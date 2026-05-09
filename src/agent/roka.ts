@@ -93,6 +93,15 @@ const rokaAgent = new LlmAgent({
     const hasText = response.content.parts.some((p) => p.text?.trim() && !p.thought)
     const hasFunctionCall = response.content.parts.some((p) => 'functionCall' in p && p.functionCall)
     if (!hasText && !hasFunctionCall) {
+      logger.warn(
+        {
+          model: config.gemini.model,
+          partKeys: response.content.parts.map((p) => Object.keys(p)),
+          finishReason: (response as unknown as { finishReason?: string }).finishReason,
+          usage: (response as unknown as { usageMetadata?: unknown }).usageMetadata
+        },
+        'Empty model response — replacing with fallback'
+      )
       response.content.parts = [{ text: getRandomFallback() }]
     }
 
@@ -114,7 +123,15 @@ class ErrorRecoveryPlugin extends BasePlugin {
     llmRequest: unknown
     error: Error
   }): Promise<LlmResponse | undefined> {
-    logger.error({ errorMessage: error.message }, 'Gemini API error intercepted')
+    logger.error(
+      {
+        model: config.gemini.model,
+        errorName: error.name,
+        errorMessage: error.message,
+        stack: error.stack?.split('\n').slice(0, 5).join('\n')
+      },
+      'Gemini API error intercepted'
+    )
     return { content: { role: 'model', parts: [{ text: getRandomFallback() }] } }
   }
 }
@@ -376,6 +393,8 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
       let responseText = ''
+      let eventCount = 0
+      let lastFinalEventPartKeys: string[][] = []
       const abortController = new AbortController()
       const timeoutId = setTimeout(() => abortController.abort(), config.gemini.timeout)
 
@@ -387,8 +406,10 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
           stateDelta: { _systemPrompt: systemPrompt, participants, _userId: userId, _channelId: channelId, _guildId: guildId },
           runConfig: { maxLlmCalls: config.gemini.maxLlmCalls }
         })) {
+          eventCount += 1
           if (abortController.signal.aborted) break
           if (isFinalResponse(event) && event.content?.parts) {
+            lastFinalEventPartKeys = event.content.parts.map((p: Part) => Object.keys(p))
             responseText = event.content.parts
               .filter((p: Part) => p.text && !p.thought)
               .map((p: Part) => p.text)
@@ -401,11 +422,15 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
       }
 
       if (abortController.signal.aborted && !responseText) {
-        logger.warn({ channelId }, 'Client-side timeout triggered for ADK runner')
+        logger.warn({ channelId, model: config.gemini.model, eventCount }, 'Client-side timeout triggered for ADK runner')
         responseText = getRandomFallback()
       }
 
       if (!responseText) {
+        logger.warn(
+          { channelId, model: config.gemini.model, eventCount, lastFinalEventPartKeys, attempt },
+          'Runner produced no usable text — using fallback'
+        )
         responseText = getRandomFallback()
       }
 
