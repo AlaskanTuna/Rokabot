@@ -86,7 +86,11 @@ const rokaAgent = new LlmAgent({
 
     for (const part of response.content.parts) {
       if (part.text && !part.thought) {
-        part.text = part.text.replace(/^\[?Roka\]?:\s*/i, '').trim()
+        // Strip per-line leading whitespace — 4+ spaces or a tab makes Discord render the line as an indented code block
+        part.text = part.text
+          .replace(/^\[?Roka\]?:\s*/i, '')
+          .replace(/^[ \t]+/gm, '')
+          .trim()
       }
     }
 
