@@ -3,7 +3,7 @@
 # Environment variables can override any value below for backward compatibility.
 
 gemini:
-  model: gemini-3.1-flash-lite # Gemini model ID
+  model: gemini-3.1-flash-lite-preview # Gemini model ID
   timeout: 25000 # API request timeout in ms
   maxRetries: 3 # Max retries for transient errors (429, 500, 503)
   maxOutputTokens: 500 # Max tokens per response (safety net)
