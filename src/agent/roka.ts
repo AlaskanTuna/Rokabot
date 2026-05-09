@@ -15,7 +15,7 @@ import { getLocalHour } from '../utils/timezone.js'
 import { rokaTools } from './tools/index.js'
 import { saveMessage, loadHistory, getChannelUsers } from '../storage/sessionStore.js'
 import { getAllFactsForPrompt, refreshFactTimestamps } from '../storage/userMemory.js'
-import { getAllUserNames, type UserName } from '../storage/userNames.js'
+import { getAllUserNames } from '../storage/userNames.js'
 import { getMessages as getBufferMessages } from './passiveBuffer.js'
 
 export interface ImageAttachment {
@@ -230,7 +230,9 @@ export async function destroySession(channelId: string): Promise<void> {
       sessionId: channelId
     })
     logger.info({ channelId }, 'ADK session destroyed')
-  } catch {}
+  } catch (error) {
+    logger.debug({ channelId, error }, 'Session already destroyed or never existed')
+  }
 }
 
 /** Destroy every active ADK session for graceful shutdown */

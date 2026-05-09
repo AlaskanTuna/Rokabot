@@ -30,7 +30,7 @@ export function startReminderScheduler(client: Client): void {
               { reminderId: reminder.id, userId: reminder.userId },
               'Reminder delivered via DM (channel fallback)'
             )
-          } catch (dmError) {
+          } catch {
             markDelivered(reminder.id)
             logger.warn({ reminderId: reminder.id }, 'Reminder channel and DM both inaccessible, marking delivered')
           }
@@ -47,7 +47,7 @@ export function startReminderScheduler(client: Client): void {
             { reminderId: reminder.id, userId: reminder.userId },
             'Reminder delivered via DM (channel fallback)'
           )
-        } catch (dmError) {
+        } catch {
           markDelivered(reminder.id)
           logger.warn({ reminderId: reminder.id }, 'Both channel and DM delivery failed, marking delivered')
         }
