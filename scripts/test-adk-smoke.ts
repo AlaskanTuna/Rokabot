@@ -13,6 +13,12 @@
 process.env.DISCORD_TOKEN ||= 'smoke-test-stub'
 process.env.DISCORD_CLIENT_ID ||= 'smoke-test-stub'
 
+// Force IPv4 to match production runtime (see src/index.ts for context)
+import dns from 'node:dns'
+import net from 'node:net'
+dns.setDefaultResultOrder('ipv4first')
+net.setDefaultAutoSelectFamily(false)
+
 import { LlmAgent, Runner, InMemorySessionService, isFinalResponse, BasePlugin } from '@google/adk'
 import type { LlmResponse } from '@google/adk'
 import type { Part } from '@google/genai'
