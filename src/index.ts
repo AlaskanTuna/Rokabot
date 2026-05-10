@@ -1,3 +1,10 @@
+// Force IPv4 before any fetch — the Pi's container DNS returns AAAA records but the host has no working IPv6 path,
+// so undici's dual-stack Happy Eyeballs hangs on the v6 attempt. Both calls are stdlib (Node ≥19).
+import dns from 'node:dns'
+import net from 'node:net'
+dns.setDefaultResultOrder('ipv4first')
+net.setDefaultAutoSelectFamily(false)
+
 // Suppress ADK console output before imports
 if (process.env.ADK_QUIET) {
   const originalInfo = console.info
