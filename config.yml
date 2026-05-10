@@ -4,7 +4,7 @@
 
 gemini:
   model: gemini-3.1-flash-lite # Gemini model ID
-  timeout: 25000 # API request timeout in ms
+  timeout: 45000 # API request timeout in ms (covers initial Gemini → tool → second Gemini round)
   maxRetries: 3 # Max retries for transient errors (429, 500, 503)
   maxOutputTokens: 500 # Max tokens per response (safety net)
   baseRetryDelay: 2000 # Initial retry delay in ms (doubles each retry)
