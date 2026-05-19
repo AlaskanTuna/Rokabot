@@ -65,7 +65,9 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
     if (!client.user) return
 
     const isMentioned = message.mentions.has(client.user.id)
-    const isNameMention = NAME_MENTION_REGEX.test(message.content)
+    const componentTextsForTrigger = extractComponentTexts(message.components)
+    const triggerScanText = [message.content, ...componentTextsForTrigger].join('\n')
+    const isNameMention = NAME_MENTION_REGEX.test(triggerScanText)
 
     const referencedMessage = message.reference?.messageId
       ? await message.channel.messages.fetch(message.reference.messageId).catch(() => null)

@@ -24,4 +24,9 @@ describe('NAME_MENTION_REGEX', () => {
       expect(NAME_MENTION_REGEX.test(input)).toBe(false)
     }
   )
+
+  // Container scanning produces newline-joined strings — confirm the regex still finds the name
+  it('matches across newline-joined fragments (mimics component-text join)', () => {
+    expect(NAME_MENTION_REGEX.test(['header text', '', 'body: hey Roka', 'footer'].join('\n'))).toBe(true)
+  })
 })
