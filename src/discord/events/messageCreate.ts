@@ -55,6 +55,9 @@ function extractComponentTexts(components: Message['components']): string[] {
 const ALLOWED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp'])
 const MAX_IMAGE_ATTACHMENTS = 3
 
+/** Whole-word, case-insensitive match for the bot's name as a trigger keyword */
+export const NAME_MENTION_REGEX = /\broka\b/i
+
 /** Create a handler for mention/reply message triggers */
 export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
   return async function handleMessageCreate(message: Message): Promise<void> {
@@ -62,6 +65,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
     if (!client.user) return
 
     const isMentioned = message.mentions.has(client.user.id)
+    const isNameMention = NAME_MENTION_REGEX.test(message.content)
 
     const referencedMessage = message.reference?.messageId
       ? await message.channel.messages.fetch(message.reference.messageId).catch(() => null)
@@ -77,7 +81,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
     }
 
     // Activate monitoring before buffering so first @mention is captured
-    if (isMentioned || isReplyToBot) {
+    if (isMentioned || isReplyToBot || isNameMention) {
       markActive(message.channelId)
     }
 
@@ -97,7 +101,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
       }
     }
 
-    if (!isMentioned && !isReplyToBot) return
+    if (!isMentioned && !isReplyToBot && !isNameMention) return
 
     const channelId = message.channelId
     const displayName = message.member?.displayName ?? message.author.displayName
@@ -231,7 +235,10 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
       content = '(pinged you without saying anything)'
     }
 
-    logger.info({ channelId, trigger: isMentioned ? 'mention' : 'reply' }, 'Message trigger detected')
+    logger.info(
+      { channelId, trigger: isMentioned ? 'mention' : isReplyToBot ? 'reply' : 'name' },
+      'Message trigger detected'
+    )
     logger.debug({ channelId, content, imageCount: imageAttachments.length }, 'Message content extracted')
 
     if (!rateLimiter.tryConsume()) {
