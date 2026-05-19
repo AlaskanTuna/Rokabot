@@ -61,21 +61,25 @@ export const NAME_MENTION_REGEX = /\broka\b/i
 /** Create a handler for mention/reply message triggers */
 export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
   return async function handleMessageCreate(message: Message): Promise<void> {
-    if (message.author.bot) return
     if (!client.user) return
+    if (message.author.id === client.user.id) return // never react to own messages
 
-    const isMentioned = message.mentions.has(client.user.id)
+    const isBotAuthor = message.author.bot
+
+    // Bots can only trigger via the name keyword — @mention and reply triggers stay humans-only to prevent loops
+    const isMentioned = !isBotAuthor && message.mentions.has(client.user.id)
     const componentTextsForTrigger = extractComponentTexts(message.components)
     const triggerScanText = [message.content, ...componentTextsForTrigger].join('\n')
     const isNameMention = NAME_MENTION_REGEX.test(triggerScanText)
 
-    const referencedMessage = message.reference?.messageId
-      ? await message.channel.messages.fetch(message.reference.messageId).catch(() => null)
-      : null
+    const referencedMessage =
+      !isBotAuthor && message.reference?.messageId
+        ? await message.channel.messages.fetch(message.reference.messageId).catch(() => null)
+        : null
 
     const isReplyToBot = referencedMessage?.author?.id === client.user.id
 
-    if (message.guild) {
+    if (message.guild && !isBotAuthor) {
       const emoji = shouldReact(message.content, message.channelId)
       if (emoji) {
         message.react(emoji).catch(() => {})
@@ -110,6 +114,9 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
     const username = message.author.username
 
     let content = message.content.replace(/<@!?\d+>/g, '').trim()
+    if (!content && componentTextsForTrigger.length > 0) {
+      content = componentTextsForTrigger.join(' | ')
+    }
 
     const imageAttachments: ImageAttachment[] = message.attachments
       .filter((a) => a.contentType !== null && ALLOWED_IMAGE_TYPES.has(a.contentType))
