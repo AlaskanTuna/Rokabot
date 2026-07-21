@@ -21,6 +21,12 @@ interface YamlConfig {
     maxOutputTokens?: number
     baseRetryDelay?: number
     maxLlmCalls?: number
+    liveMaxRetries?: number
+    retryRpmFloor?: number
+    extractionRpmFloor?: number
+    extractionMaxRetries?: number
+    retryBackoffBaseMs?: number
+    retryBackoffCapMs?: number
   }
   rateLimit?: { rpm?: number; rpd?: number }
   session?: { ttl?: number; windowSize?: number; maxRehydrationAge?: number; historyRetentionDays?: number }
@@ -88,7 +94,13 @@ export const config = {
     maxRetries: envInt('GEMINI_MAX_RETRIES') ?? yaml.gemini?.maxRetries ?? 1,
     maxOutputTokens: envInt('GEMINI_MAX_OUTPUT_TOKENS') ?? yaml.gemini?.maxOutputTokens ?? 300,
     baseRetryDelay: yaml.gemini?.baseRetryDelay ?? 2000,
-    maxLlmCalls: yaml.gemini?.maxLlmCalls ?? 4
+    maxLlmCalls: yaml.gemini?.maxLlmCalls ?? 4,
+    liveMaxRetries: envInt('GEMINI_LIVE_MAX_RETRIES') ?? yaml.gemini?.liveMaxRetries ?? 2,
+    retryRpmFloor: envInt('GEMINI_RETRY_RPM_FLOOR') ?? yaml.gemini?.retryRpmFloor ?? 2,
+    extractionRpmFloor: envInt('GEMINI_EXTRACTION_RPM_FLOOR') ?? yaml.gemini?.extractionRpmFloor ?? 3,
+    extractionMaxRetries: envInt('GEMINI_EXTRACTION_MAX_RETRIES') ?? yaml.gemini?.extractionMaxRetries ?? 1,
+    retryBackoffBaseMs: envInt('GEMINI_RETRY_BACKOFF_BASE_MS') ?? yaml.gemini?.retryBackoffBaseMs ?? 1000,
+    retryBackoffCapMs: envInt('GEMINI_RETRY_BACKOFF_CAP_MS') ?? yaml.gemini?.retryBackoffCapMs ?? 12_000
   },
   logging: {
     level: envString('LOG_LEVEL') ?? yaml.logging?.level ?? 'info'
@@ -130,3 +142,13 @@ export const config = {
   statusCycleMs: yaml.statusCycleMs ?? 900_000,
   timezone: (envString('TZ') ?? yaml.timezone) as string | undefined
 } as const
+
+const maxLiveRetryWindow = config.gemini.liveMaxRetries * (config.gemini.timeout + config.gemini.retryBackoffCapMs)
+
+if (config.session.ttlMs <= maxLiveRetryWindow) {
+  const { logger } = await import('./utils/logger.js')
+  logger.warn(
+    { sessionTtlMs: config.session.ttlMs, maxLiveRetryWindow },
+    'Session idle TTL may expire before the maximum live retry window'
+  )
+}

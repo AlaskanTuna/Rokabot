@@ -4,7 +4,10 @@ import { GoogleGenAI } from '@google/genai'
 import { config } from '../config.js'
 import { getFacts, saveFact } from '../storage/userMemory.js'
 import { logger } from '../utils/logger.js'
+import { getSharedRateLimiter } from '../utils/rateLimiter.js'
+import { classifyGeminiFailure, computeBackoff } from './geminiReliability.js'
 import { type BufferedMessage, getMessages } from './passiveBuffer.js'
+import { isShuttingDown } from './shutdownSignal.js'
 
 const messageCounts = new Map<string, number>() // channelId → messages since last extraction
 
@@ -63,6 +66,8 @@ interface ExtractedFact {
 
 /** Increment message counter and trigger extraction when threshold is reached */
 export function maybeExtractFromBuffer(channelId: string, botUserId?: string, guildId?: string): void {
+  if (isShuttingDown()) return
+
   const count = (messageCounts.get(channelId) ?? 0) + 1
   messageCounts.set(channelId, count)
 
@@ -78,14 +83,62 @@ export function maybeExtractFromBuffer(channelId: string, botUserId?: string, gu
   lastExtractionTime = now
 
   const messages = [...getMessages(channelId)]
-  logger.info(
-    { channelId, messageCount: messages.length },
-    'Extraction threshold reached, triggering memory extraction'
-  )
-
   void runBufferExtraction(channelId, messages, botUserId, guildId).catch((error) => {
     logger.warn({ channelId, error }, 'Passive buffer memory extraction failed')
   })
+}
+
+function waitForRetry(delayMs: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, delayMs))
+}
+
+async function generateExtraction(channelId: string, prompt: string): Promise<string | undefined> {
+  const limiter = getSharedRateLimiter(config.rateLimit)
+
+  for (let attempt = 0; attempt <= config.gemini.extractionMaxRetries; attempt++) {
+    if (isShuttingDown()) return undefined
+
+    if (!limiter.tryConsumeAboveFloor(config.gemini.extractionRpmFloor)) {
+      logger.debug({ channelId }, 'Memory extraction skipped (RPM floor)')
+      return undefined
+    }
+
+    try {
+      const response = await getClient().models.generateContent({
+        model: config.gemini.model,
+        contents: prompt,
+        config: {
+          temperature: 0.3,
+          maxOutputTokens: 400,
+          httpOptions: { timeout: 15_000 }
+        }
+      })
+
+      const text = response.text?.trim()
+      if (!text) {
+        logger.debug({ channelId }, 'Memory extraction returned no text')
+        return undefined
+      }
+
+      return text
+    } catch (error) {
+      const failure = classifyGeminiFailure(error)
+      const canRetry = failure.kind === 'transient_http' || failure.kind === 'network'
+
+      if (!canRetry || attempt >= config.gemini.extractionMaxRetries) {
+        logger.warn({ channelId, error }, 'Memory extraction Gemini call failed')
+        return undefined
+      }
+
+      await waitForRetry(
+        computeBackoff(attempt, config.gemini.retryBackoffBaseMs, {
+          maxMs: config.gemini.retryBackoffCapMs
+        })
+      )
+    }
+  }
+
+  return undefined
 }
 
 /** Run extraction from the passive buffer messages */
@@ -108,18 +161,7 @@ async function runBufferExtraction(
   }
 
   try {
-    const client = getClient()
-    const response = await client.models.generateContent({
-      model: config.gemini.model,
-      contents: prompt,
-      config: {
-        temperature: 0.3,
-        maxOutputTokens: 400,
-        httpOptions: { timeout: 15_000 }
-      }
-    })
-
-    const text = response.text?.trim()
+    const text = await generateExtraction(channelId, prompt)
     if (!text) return
 
     const facts = parseFacts(text)

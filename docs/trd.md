@@ -252,3 +252,53 @@ services:
 - `mem_limit: 512m` is a safety guardrail against memory leaks
 - `restart: unless-stopped` survives crashes and RPi reboots (Docker must start on boot)
 - Log rotation prevents storage exhaustion on RPi's limited disk
+
+## Reliability & Failure Handling
+
+Gemini failures are classified before a live response or background extraction is finalized. The live
+path uses `liveMaxRetries = 2`: up to two retries after the initial call, with a 1s exponential base
+backoff and full jitter. Retrying must stop once the total added latency reaches approximately 12s, at
+which point the specified fallback behavior applies.
+
+| Taxonomy             | Examples / Detection                                                                          | Retryable                    | Max Attempts                 | Backoff                                                          | Rate-Limiter Token                                                                                                                    | Session Action                                                  | User-Visible Result                                                                                                              |
+| -------------------- | --------------------------------------------------------------------------------------------- | ---------------------------- | ---------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `transient_http`     | 429, 500, 503, overloaded, quota, `RESOURCE_EXHAUSTED`, or `UNAVAILABLE`                      | Yes                          | `liveMaxRetries = 2` retries | 1s exponential base with full jitter; stop at ~12s added latency | Yes; each retry consumes a token, only while `remainingRpm >= retryRpmFloor` (`2`)                                                    | Preserve                                                        | Real answer if a retry succeeds; generic fallback after exhaustion or when the RPM floor prevents a retry                        |
+| `network`            | `fetch failed`, `ECONNRESET`, `ETIMEDOUT`, `EAI_AGAIN`, or abort-timeout                      | Yes                          | `liveMaxRetries = 2` retries | 1s exponential base with full jitter; stop at ~12s added latency | Yes; each retry consumes a token, only while `remainingRpm >= retryRpmFloor` (`2`)                                                    | Preserve                                                        | Real answer if a retry succeeds; generic fallback after exhaustion or when the RPM floor prevents a retry                        |
+| `empty_text`         | No parts; `finishReason` `STOP`, `OTHER`, or unset; or `MAX_TOKENS` with thoughts-only output | Yes                          | `liveMaxRetries = 2` retries | 1s exponential base with full jitter; stop at ~12s added latency | Yes; each retry consumes a token, only while `remainingRpm >= retryRpmFloor` (`2`)                                                    | Preserve                                                        | Real answer if a retry succeeds; generic fallback after exhaustion or when the RPM floor prevents a retry                        |
+| `safety`             | `SAFETY`, `PROHIBITED_CONTENT`, `BLOCKLIST`, or `SPII`                                        | No                           | 0 retries                    | None                                                             | The initial user message consumes its token; no retry token is consumed                                                               | Preserve                                                        | Distinct in-character safety deflection: “Ehh… let's not get into that one~”                                                     |
+| `recitation`         | Gemini recitation finish reason or equivalent response classification                         | Yes, once                    | 1 resample                   | 1s full-jitter resample delay                                    | Yes; the resample consumes a token, only while `remainingRpm >= retryRpmFloor` (`2`)                                                  | Preserve                                                        | Real answer if the resample succeeds; otherwise an in-character decline                                                          |
+| `terminal`           | 400, `INVALID_ARGUMENT`, authentication failure, or permission failure                        | No                           | 0 retries                    | None                                                             | The initial user message consumes its token; no retry token is consumed                                                               | Destroy                                                         | In-character decline                                                                                                             |
+| `extraction_failure` | Any background memory-extraction failure                                                      | Only for a transient failure | 1 light retry                | Light full-jitter retry delay                                    | Yes; each extraction attempt, including its retry, consumes a token and may run only while `remainingRpm >= extractionRpmFloor` (`3`) | Preserve; background extraction never destroys the live session | No user-facing message; quietly give up after the retry or immediately for a non-transient failure, and never block user traffic |
+
+### RPM-Budget Accounting
+
+- A user message consumes one rate-limiter token today. Every live retry and every background extraction
+  attempt, including an extraction retry, must also consume a token.
+- Live retries require `remainingRpm >= retryRpmFloor` (`2`). Background extraction requires
+  `remainingRpm >= extractionRpmFloor` (`3`); otherwise it is skipped so user traffic retains priority.
+- Tool-chain calls up to `maxLlmCalls = 4` remain uncounted. This is known debt and is outside this
+  reliability-policy change.
+
+### Concurrency & Lifecycle Under Retry
+
+- A concurrent message in a channel whose live turn is retrying is rejected by the per-channel guard
+  with the existing in-character busy reply. It is dropped rather than queued or used to cancel the
+  retrying turn; its content remains in the passive buffer for a later turn, and it consumes no
+  rate-limiter token.
+- Independent channels may retry concurrently. Cross-channel RPM contention is resolved by the
+  synchronous `tryConsumeAboveFloor()` primitive, which is race-free under JavaScript run-to-completion.
+  The extraction floor (`3`) exceeds the live-retry floor (`2`), so user-facing retries win over
+  background extraction when tokens are scarce.
+- An idle TTL cannot fire during a retry: `ttlMs` is much greater than the maximum retry window. If a
+  session is nevertheless destroyed while its retry loop is in flight, the loop must resolve to a
+  graceful fallback rather than throw.
+- On `SIGTERM`, a retrying live turn aborts promptly within the existing 5s force-exit budget. This
+  lifecycle behavior does not require a change to `index.ts`.
+- The initial live attempt reuses the token already consumed by the Discord handler. Only subsequent
+  retries consume additional rate-limiter tokens.
+
+### ADK Error Delivery Constraint
+
+Google ADK yields model-call errors as runner events rather than throwing them from `runner.runAsync()`.
+Reliability handling must therefore classify yielded error events and `LlmResponse` fields before choosing
+the taxonomy behavior above; it cannot rely solely on an outer `try`/`catch` around the runner.

@@ -5,6 +5,8 @@ export interface RateLimiterConfig {
   rpd: number
 }
 
+let sharedRateLimiter: RateLimiter | undefined
+
 /**
  * Token-bucket rate limiter with per-minute (RPM) and per-day (RPD) caps.
  * Tokens refill continuously; daily counter resets at midnight UTC.
@@ -50,6 +52,11 @@ export class RateLimiter {
     return true
   }
 
+  tryConsumeAboveFloor(floor: number): boolean {
+    if (this.remainingRpm < floor) return false
+    return this.tryConsume()
+  }
+
   get remainingRpm(): number {
     this.refillTokens()
     return Math.floor(this.tokens)
@@ -83,4 +90,9 @@ export class RateLimiter {
   private todayString(): string {
     return new Date().toISOString().slice(0, 10)
   }
+}
+
+export function getSharedRateLimiter(config: RateLimiterConfig): RateLimiter {
+  sharedRateLimiter ??= new RateLimiter(config)
+  return sharedRateLimiter
 }

@@ -48,3 +48,4 @@ temp/
 # Biome owns TS/JS formatting
 *.ts
 *.js
+docs/.codex/

@@ -8,7 +8,8 @@ vi.mock('../../config.js', () => ({
   }
 }))
 
-import { RateLimiter } from '../rateLimiter.js'
+import { config } from '../../config.js'
+import { RateLimiter, getSharedRateLimiter } from '../rateLimiter.js'
 
 describe('RateLimiter', () => {
   beforeEach(() => {
@@ -56,6 +57,40 @@ describe('RateLimiter', () => {
     expect(limiter.remainingRpm).toBe(4)
   })
 
+  it('preserves RPM tokens when the floor is not met', () => {
+    const limiter = new RateLimiter({ rpm: 4, rpd: 100 })
+
+    limiter.tryConsume()
+    limiter.tryConsume()
+
+    expect(limiter.tryConsumeAboveFloor(3)).toBe(false)
+    expect(limiter.remainingRpm).toBe(2)
+  })
+
+  it('consumes one RPM token when the floor is met', () => {
+    const limiter = new RateLimiter({ rpm: 3, rpd: 100 })
+
+    expect(limiter.tryConsumeAboveFloor(3)).toBe(true)
+    expect(limiter.remainingRpm).toBe(2)
+  })
+
+  it('does not consume once interleaved retry loops fall below their RPM floor', () => {
+    const limiter = new RateLimiter({ rpm: 6, rpd: 100 })
+    const retryLoops = [() => limiter.tryConsumeAboveFloor(3), () => limiter.tryConsumeAboveFloor(3)]
+
+    for (let attempt = 0; attempt < 4; attempt++) {
+      for (const tryRetry of retryLoops) {
+        const remainingBefore = limiter.remainingRpm
+        const consumed = tryRetry()
+
+        expect(consumed).toBe(remainingBefore >= 3)
+        expect(limiter.remainingRpm).toBe(consumed ? remainingBefore - 1 : remainingBefore)
+      }
+    }
+
+    expect(limiter.remainingRpm).toBe(2)
+  })
+
   it('rejects requests after RPD exhaustion', () => {
     const limiter = new RateLimiter({ rpm: 100, rpd: 3 })
 
@@ -86,5 +121,13 @@ describe('RateLimiter', () => {
 
     expect(limiter.tryConsume()).toBe(true)
     expect(limiter.remainingRpd).toBe(1)
+  })
+
+  it('returns a shared limiter whose consumption is observable across calls', () => {
+    const limiter = getSharedRateLimiter(config.rateLimit)
+
+    expect(getSharedRateLimiter(config.rateLimit)).toBe(limiter)
+    expect(limiter.tryConsume()).toBe(true)
+    expect(getSharedRateLimiter(config.rateLimit).remainingRpm).toBe(14)
   })
 })

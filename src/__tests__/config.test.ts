@@ -1,12 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 describe('config module', () => {
+  const warn = vi.fn()
+
   beforeEach(() => {
     vi.resetModules()
+    warn.mockReset()
+    vi.doMock('../utils/logger.js', () => ({ logger: { warn } }))
   })
 
   afterEach(() => {
     vi.unstubAllEnvs()
+    vi.doUnmock('../utils/logger.js')
   })
 
   function setRequiredEnvVars() {
@@ -25,6 +30,12 @@ describe('config module', () => {
     vi.stubEnv('GEMINI_MODEL', '')
     vi.stubEnv('GEMINI_TIMEOUT', '')
     vi.stubEnv('GEMINI_MAX_RETRIES', '')
+    vi.stubEnv('GEMINI_LIVE_MAX_RETRIES', '')
+    vi.stubEnv('GEMINI_RETRY_RPM_FLOOR', '')
+    vi.stubEnv('GEMINI_EXTRACTION_RPM_FLOOR', '')
+    vi.stubEnv('GEMINI_EXTRACTION_MAX_RETRIES', '')
+    vi.stubEnv('GEMINI_RETRY_BACKOFF_BASE_MS', '')
+    vi.stubEnv('GEMINI_RETRY_BACKOFF_CAP_MS', '')
     vi.stubEnv('DISCORD_MAX_MESSAGE_LENGTH', '')
   }
 
@@ -66,6 +77,12 @@ describe('config module', () => {
     expect(config.gemini.maxOutputTokens).toBe(500)
     expect(config.gemini.baseRetryDelay).toBe(2000)
     expect(config.gemini.maxLlmCalls).toBe(4)
+    expect(config.gemini.liveMaxRetries).toBe(2)
+    expect(config.gemini.retryRpmFloor).toBe(2)
+    expect(config.gemini.extractionRpmFloor).toBe(3)
+    expect(config.gemini.extractionMaxRetries).toBe(1)
+    expect(config.gemini.retryBackoffBaseMs).toBe(1000)
+    expect(config.gemini.retryBackoffCapMs).toBe(12_000)
     expect(config.logging.level).toBe('info')
     expect(config.rateLimit.rpm).toBe(15)
     expect(config.rateLimit.rpd).toBe(500)
@@ -101,6 +118,7 @@ describe('config module', () => {
 
     // Status cycle
     expect(config.statusCycleMs).toBe(900_000)
+    expect(warn).not.toHaveBeenCalled()
   })
 
   it('env vars override config.yml values', async () => {
@@ -113,6 +131,12 @@ describe('config module', () => {
     vi.stubEnv('GEMINI_MODEL', 'gemini-pro')
     vi.stubEnv('GEMINI_TIMEOUT', '30000')
     vi.stubEnv('GEMINI_MAX_RETRIES', '3')
+    vi.stubEnv('GEMINI_LIVE_MAX_RETRIES', '4')
+    vi.stubEnv('GEMINI_RETRY_RPM_FLOOR', '5')
+    vi.stubEnv('GEMINI_EXTRACTION_RPM_FLOOR', '6')
+    vi.stubEnv('GEMINI_EXTRACTION_MAX_RETRIES', '2')
+    vi.stubEnv('GEMINI_RETRY_BACKOFF_BASE_MS', '1500')
+    vi.stubEnv('GEMINI_RETRY_BACKOFF_CAP_MS', '9000')
     vi.stubEnv('DISCORD_MAX_MESSAGE_LENGTH', '4000')
 
     const { config } = await import('../config.js')
@@ -125,7 +149,33 @@ describe('config module', () => {
     expect(config.gemini.model).toBe('gemini-pro')
     expect(config.gemini.timeout).toBe(30_000)
     expect(config.gemini.maxRetries).toBe(3)
+    expect(config.gemini.liveMaxRetries).toBe(4)
+    expect(config.gemini.retryRpmFloor).toBe(5)
+    expect(config.gemini.extractionRpmFloor).toBe(6)
+    expect(config.gemini.extractionMaxRetries).toBe(2)
+    expect(config.gemini.retryBackoffBaseMs).toBe(1500)
+    expect(config.gemini.retryBackoffCapMs).toBe(9000)
     expect(config.discord.maxMessageLength).toBe(4000)
+  })
+
+  it('warns when the session TTL is shorter than the maximum live retry window', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('SESSION_TTL_MS', '100000')
+
+    await import('../config.js')
+
+    expect(warn).toHaveBeenCalledOnce()
+  })
+
+  it('does not warn when the session TTL exceeds the maximum live retry window', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('SESSION_TTL_MS', '120000')
+
+    await import('../config.js')
+
+    expect(warn).not.toHaveBeenCalled()
   })
 
   it('throws if env int override is non-numeric', async () => {
