@@ -1,7 +1,7 @@
 {
   "name": "rokabot",
   "version": "0.1.0",
-  "description": "Server-wide Discord character chatbot embodying Maniwa Roka, powered by Gemini 3.1 Flash Lite via Google ADK",
+  "description": "Server-wide Discord character chatbot embodying Maniwa Roka, powered by Gemini 3.5 Flash Lite via Google ADK",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
@@ -12,7 +12,7 @@
     "lint": "biome check .",
     "format": "biome check --write . && prettier --write .",
     "format:check": "biome check . && prettier --check .",
-    "prepare": "husky",
+    "prepare": "husky || true",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:chat": "tsx scripts/test-chat.ts",
