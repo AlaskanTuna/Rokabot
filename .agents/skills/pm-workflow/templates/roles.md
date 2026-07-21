@@ -4,13 +4,13 @@ Defines every participant's role, responsibilities, and boundaries in this proje
 
 ## Role Registry
 
-| Key | Role             | Model / Effort     | Drives on skills                                                                                                             |
-| --- | ---------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
-| PO  | Project Owner    | HUMAN              | —                                                                                                                            |
-| PM  | Orchestrator     | Opus / high        | sequences PL→PG→QA, holds the gates                                                                                          |
-| PL  | Planner          | per profile / max  | `brainstorming`, `writing-plans`                                                                                             |
-| PG  | Programmer       | Sonnet / high      | `test-driven-development`, `executing-plans`, `react-doctor`                                                                 |
-| QA  | QA Reviewer      | per profile / high | `code-review`, `systematic-debugging`                                                                                        |
+| Key | Role             | Model / Effort     | Drives on skills                                                                                                                                                                          |
+| --- | ---------------- | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PO  | Project Owner    | HUMAN              | —                                                                                                                                                                                         |
+| PM  | Orchestrator     | Opus / high        | sequences PL→PG→QA, holds the gates                                                                                                                                                       |
+| PL  | Planner          | per profile / max  | `brainstorming`, `writing-plans`                                                                                                                                                          |
+| PG  | Programmer       | Sonnet / high      | `test-driven-development`, `executing-plans`, `react-doctor`                                                                                                                              |
+| QA  | QA Reviewer      | per profile / high | `code-review`, `systematic-debugging`                                                                                                                                                     |
 | CX  | Codex (optional) | OpenAI Codex       | Claude main only, per the enabled features: `second-opinion` (QA review) · `peer-consult` (blind planning consult, human-triggered) · `executor` (PG-contract workers) — each independent |
 
 > Models/efforts are filled into each `.claude/agents/*.md` **and** `.codex/agents/*.toml` frontmatter from the project's **model profile** (`max` / `balanced` / `economy` — the full matrix, including Codex models and the parallel-wave cap, lives in `AGENTS.md`). The table above shows the `max` profile; `balanced`/`economy` step the Opus bookends down to Sonnet while **effort stays pinned**. The PM is whatever model you launch the session as — **Opus / high recommended** on Claude (it only routes and gates). `settings.local.json` carries a session-level `fallbackModel` as an outage hedge.
@@ -50,11 +50,11 @@ Runs the pipeline from one prompt; never implements. Dispatches PL, PG, QA as su
 
 ## QA — QA Reviewer
 
-| Item    | Detail                                                                             |
-| ------- | ---------------------------------------------------------------------------------- |
-| Trigger | PG completes a task                                                                |
+| Item    | Detail                                                                                                                                                         |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Trigger | PG completes a task                                                                                                                                            |
 | Checks  | Correctness, types, edge cases, boundary error-handling, TRD contract, style — plus design (`npx impeccable detect` on UI diffs, when Impeccable is installed) |
-| Verdict | **Approve** / **Approve with comments** / **Reject with reasons** → `docs/test.md` |
+| Verdict | **Approve** / **Approve with comments** / **Reject with reasons** → `docs/test.md`                                                                             |
 
 **Rules:** Review only; never rewrites. Does not re-litigate `docs/trd.md` architecture.
 
@@ -63,7 +63,7 @@ Runs the pipeline from one prompt; never implements. Dispatches PL, PG, QA as su
 The workflow contract — roles, `docs/` files, gates — is **tool-agnostic**; canonical project instructions live in `AGENTS.md` at the repo root. How each tool realizes the roles:
 
 - **Claude Code** (full experience): the PM is the main session; PL/PG/QA are named subagents in `.claude/agents/` with pinned model + effort. `CLAUDE.md` is a thin adapter importing `AGENTS.md`.
-- **Codex CLI** (full experience, native): the PM is the Codex session; PL/PG/QA are **native Codex subagents** defined in `.codex/agents/{planner,programmer,qa}.toml` with pinned `model` + `model_reasoning_effort` from the same profile. Fan-out is governed by `[agents] max_threads` / `max_depth` in Codex config. A Codex main **never delegates Claude subagents** (cost inversion) and ignores the Codex-delegation mode below — it *is* Codex.
+- **Codex CLI** (full experience, native): the PM is the Codex session; PL/PG/QA are **native Codex subagents** defined in `.codex/agents/{planner,programmer,qa}.toml` with pinned `model` + `model_reasoning_effort` from the same profile. Fan-out is governed by `[agents] max_threads` / `max_depth` in Codex config. A Codex main **never delegates Claude subagents** (cost inversion) and ignores the Codex-delegation mode below — it _is_ Codex.
 - **Antigravity or any other agent** (degraded but correct): one context plays every role **sequentially** — same phases, same docs files, same gates. Announce which role you're in as you switch. Model pinning doesn't apply; the human gates always do.
 - **Codex delegation** (optional, **Claude main only**, requires the `codex` CLI): per the feature set in `AGENTS.md`, each gating independently — `second-opinion`: a read-only review at QA; `peer-consult`: a blind planning consult for high-stakes tasks (human-triggered; PL and Codex get the same brief independently and neither sees the other's output before synthesis); `executor`: Codex workers implementing PG tasks (note: Impeccable's live design hook does not reach Codex-executed work — its Codex-provider hook is unverified on the CLI and non-functional in the Windows Codex app — so QA's `detect` pass is the design guarantee there). Every invocation follows the PM's hardened contract (preflight, pinned model+effort, closed stdin, hard timeout, liveness monitoring) — a hung Codex never blocks the pipeline.
 

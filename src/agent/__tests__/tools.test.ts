@@ -3,12 +3,12 @@ vi.mock('../tools/jikanThrottle.js', () => ({
   jikanThrottle: vi.fn().mockResolvedValue(undefined)
 }))
 
-import { rollDice } from '../tools/rollDice.js'
 import { flipCoin } from '../tools/flipCoin.js'
-import { getCurrentTime } from '../tools/getCurrentTime.js'
-import { searchAnime } from '../tools/searchAnime.js'
 import { getAnimeSchedule } from '../tools/getAnimeSchedule.js'
+import { getCurrentTime } from '../tools/getCurrentTime.js'
 import { getWeather } from '../tools/getWeather.js'
+import { rollDice } from '../tools/rollDice.js'
+import { searchAnime } from '../tools/searchAnime.js'
 
 // ── fetch mock setup ──────────────────────────────────────────────────────────
 

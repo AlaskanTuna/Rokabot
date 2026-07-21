@@ -2,7 +2,7 @@
 
 import type { ChatInputCommandInteraction } from 'discord.js'
 import { searchWeb } from '../../../agent/tools/searchWeb.js'
-import { CURIOUS_COLOR, FLAVOR, randomFrom, buildToolMessage } from './shared.js'
+import { CURIOUS_COLOR, FLAVOR, buildToolMessage, randomFrom } from './shared.js'
 
 export async function handleSearch(interaction: ChatInputCommandInteraction) {
   const query = interaction.options.getString('query', true)

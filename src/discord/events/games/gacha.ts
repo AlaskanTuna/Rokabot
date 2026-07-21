@@ -2,28 +2,28 @@
 
 import type { ChatInputCommandInteraction } from 'discord.js'
 import {
+  type BuddyData,
   generateBuddy,
-  saveBuddy,
   getBuddy,
-  getBuddyCount,
   getBuddyCollection,
-  hasHatchedToday,
-  markDailyHatch,
+  getBuddyCount,
+  getSpeciesInfo,
   getStreak,
   getTopBuddies,
-  getSpeciesInfo,
-  type BuddyData
+  hasHatchedToday,
+  markDailyHatch,
+  saveBuddy
 } from '../../../games/buddy.js'
 import {
-  SPECIES,
+  type BuddyRarity,
   RARITY_COLORS,
   RARITY_EMOJI,
   RARITY_PLACEHOLDER_COLORS,
-  STAT_NAMES,
   RARITY_STAT_RANGE,
-  type BuddyRarity
+  SPECIES,
+  STAT_NAMES
 } from '../../../games/data/buddySpecies.js'
-import { buildGameContainer, buildBuddyContainer, randomFrom } from './shared.js'
+import { buildBuddyContainer, buildGameContainer, randomFrom } from './shared.js'
 
 /** Build a stat bar: e.g. "CHARM/魅力  ████░░░░░░  4/10" */
 function statBar(value: number, max: number = 10): string {

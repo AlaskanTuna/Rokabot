@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../config.js', () => ({
   config: {
@@ -8,8 +8,8 @@ vi.mock('../../config.js', () => ({
   }
 }))
 
-import { detectTone } from '../toneDetector.js'
 import type { WindowMessage } from '../../session/types.js'
+import { detectTone } from '../toneDetector.js'
 
 function makeMessage(content: string): WindowMessage {
   return {

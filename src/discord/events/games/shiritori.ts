@@ -1,17 +1,17 @@
 /** Shiritori game command handlers */
 
 import type { ChatInputCommandInteraction } from 'discord.js'
-import { logger } from '../../../utils/logger.js'
 import {
-  startGame as startShiritori,
-  joinGame as joinShiritori,
-  submitWord as submitShiritoriWord,
   endGame as endShiritori,
-  getScores as getShiritoriScores,
   getGame as getShiritoriGame,
-  getTimeoutAt as getShiritoriTimeoutAt
+  getScores as getShiritoriScores,
+  getTimeoutAt as getShiritoriTimeoutAt,
+  joinGame as joinShiritori,
+  startGame as startShiritori,
+  submitWord as submitShiritoriWord
 } from '../../../games/shiritori.js'
 import { getDb } from '../../../storage/database.js'
+import { logger } from '../../../utils/logger.js'
 import { buildGameContainer } from './shared.js'
 
 export const SHIRITORI_COLORS = {

@@ -1,7 +1,7 @@
 /** Shared utilities, colors, and flavor text for tool command handlers */
 
-import { MessageFlags } from 'discord.js'
 import { ContainerBuilder, TextDisplayBuilder } from '@discordjs/builders'
+import { MessageFlags } from 'discord.js'
 
 export const PLAYFUL_COLOR = 0xffb3d9
 export const CURIOUS_COLOR = 0xb2ebf2

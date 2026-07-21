@@ -1,10 +1,10 @@
 /** Anime search command handler with pagination */
 
-import type { ChatInputCommandInteraction } from 'discord.js'
 import { ActionRowBuilder, ButtonBuilder, ContainerBuilder, TextDisplayBuilder } from '@discordjs/builders'
+import type { ChatInputCommandInteraction } from 'discord.js'
 import { ButtonStyle, ComponentType, MessageFlags } from 'discord.js'
-import { searchAnime, type SearchAnimeParams } from '../../../agent/tools/searchAnime.js'
-import { CURIOUS_COLOR, FLAVOR, randomFrom, buildToolMessage } from './shared.js'
+import { type SearchAnimeParams, searchAnime } from '../../../agent/tools/searchAnime.js'
+import { CURIOUS_COLOR, FLAVOR, buildToolMessage, randomFrom } from './shared.js'
 
 export async function handleAnime(interaction: ChatInputCommandInteraction) {
   const subcommand = interaction.options.getSubcommand()

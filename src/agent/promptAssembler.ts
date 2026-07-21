@@ -1,7 +1,7 @@
+import { buildContextPrompt } from './prompts/context.js'
 import { CORE_PROMPT } from './prompts/core.js'
 import { SPEECH_PROMPT } from './prompts/speech.js'
 import { TONE_PROMPTS, type ToneKey } from './prompts/tones.js'
-import { buildContextPrompt } from './prompts/context.js'
 
 export interface AssemblerInput {
   tone: ToneKey

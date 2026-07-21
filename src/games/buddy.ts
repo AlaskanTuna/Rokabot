@@ -5,17 +5,17 @@
  * Buddies are persistent via SQLite.
  */
 
-import { getDb } from '../storage/database.js'
 import { config } from '../config.js'
+import { getDb } from '../storage/database.js'
 import { getTodayDate, getYesterdayDate } from '../utils/timezone.js'
 import {
-  SPECIES,
-  RARITY_WEIGHTS,
-  RARITY_STAT_RANGE,
+  type BuddyRarity,
   EYE_STYLES,
   HAT_STYLES,
+  RARITY_STAT_RANGE,
+  RARITY_WEIGHTS,
+  SPECIES,
   STAT_NAMES,
-  type BuddyRarity,
   type SpeciesInfo
 } from './data/buddySpecies.js'
 

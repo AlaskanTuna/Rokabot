@@ -1,6 +1,6 @@
 /** Store a fact about a user for future reference */
 
-import { saveFact, countFacts } from '../../storage/userMemory.js'
+import { countFacts, saveFact } from '../../storage/userMemory.js'
 
 export interface RememberUserParams {
   user_id: string

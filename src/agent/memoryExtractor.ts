@@ -2,9 +2,9 @@
 
 import { GoogleGenAI } from '@google/genai'
 import { config } from '../config.js'
+import { getFacts, saveFact } from '../storage/userMemory.js'
 import { logger } from '../utils/logger.js'
-import { saveFact, getFacts } from '../storage/userMemory.js'
-import { getMessages, type BufferedMessage } from './passiveBuffer.js'
+import { type BufferedMessage, getMessages } from './passiveBuffer.js'
 
 const messageCounts = new Map<string, number>() // channelId → messages since last extraction
 
@@ -78,7 +78,10 @@ export function maybeExtractFromBuffer(channelId: string, botUserId?: string, gu
   lastExtractionTime = now
 
   const messages = [...getMessages(channelId)]
-  logger.info({ channelId, messageCount: messages.length }, 'Extraction threshold reached, triggering memory extraction')
+  logger.info(
+    { channelId, messageCount: messages.length },
+    'Extraction threshold reached, triggering memory extraction'
+  )
 
   void runBufferExtraction(channelId, messages, botUserId, guildId).catch((error) => {
     logger.warn({ channelId, error }, 'Passive buffer memory extraction failed')

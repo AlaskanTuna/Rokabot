@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../config.js', () => ({
   config: {
@@ -18,11 +18,11 @@ vi.mock('../../utils/logger.js', () => ({
 }))
 
 import {
-  getOrCreateSession,
   addMessage,
-  getHistory,
-  destroySession,
   destroyAllSessions,
+  destroySession,
+  getHistory,
+  getOrCreateSession,
   getSessionCount
 } from '../sessionManager.js'
 import type { WindowMessage } from '../types.js'

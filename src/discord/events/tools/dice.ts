@@ -1,7 +1,7 @@
 /** Dice and coin flip command handlers */
 
 import type { ChatInputCommandInteraction } from 'discord.js'
-import { PLAYFUL_COLOR, FLAVOR, randomFrom, buildToolMessage } from './shared.js'
+import { FLAVOR, PLAYFUL_COLOR, buildToolMessage, randomFrom } from './shared.js'
 
 export function handleRollDice(interaction: ChatInputCommandInteraction) {
   const sides = interaction.options.getInteger('sides') ?? 6

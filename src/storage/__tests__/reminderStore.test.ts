@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import Database from 'better-sqlite3'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../config.js', () => ({
   config: {
@@ -16,12 +16,12 @@ vi.mock('../database.js', () => ({
 }))
 
 import {
+  countActiveReminders,
   createReminder,
-  getDueReminders,
-  markDelivered,
-  getActiveReminders,
   deleteReminder,
-  countActiveReminders
+  getActiveReminders,
+  getDueReminders,
+  markDelivered
 } from '../reminderStore.js'
 
 function createTestDb(): Database.Database {

@@ -1,14 +1,14 @@
 import type { Client, Interaction } from 'discord.js'
 import { DiscordAPIError } from 'discord.js'
+import { type ImageAttachment, generateResponse } from '../../agent/roka.js'
 import { logger } from '../../utils/logger.js'
-import { isIgnorableDiscordError } from '../errorHandler.js'
 import { RateLimiter } from '../../utils/rateLimiter.js'
-import { getRandomBusy, getRandomDecline, getRandomError, splitResponse } from '../responses.js'
-import { buildRokaMessage } from '../messageBuilder.js'
-import { generateResponse, type ImageAttachment } from '../../agent/roka.js'
 import { isChannelBusy, markBusy, markFree } from '../concurrency.js'
-import { createToolCommandHandler } from './toolCommands.js'
+import { isIgnorableDiscordError } from '../errorHandler.js'
+import { buildRokaMessage } from '../messageBuilder.js'
+import { getRandomBusy, getRandomDecline, getRandomError, splitResponse } from '../responses.js'
 import { createGameCommandHandler } from './gameCommands.js'
+import { createToolCommandHandler } from './toolCommands.js'
 
 /** Create a handler for all slash command interactions */
 export function createInteractionHandler(rateLimiter: RateLimiter, client?: Client) {

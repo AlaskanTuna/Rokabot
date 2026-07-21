@@ -3,7 +3,6 @@
  * Shows the user's companion spirit or tells them to hatch one.
  */
 
-import type { Message } from 'discord.js'
 import {
   ContainerBuilder,
   SectionBuilder,
@@ -11,16 +10,17 @@ import {
   TextDisplayBuilder,
   ThumbnailBuilder
 } from '@discordjs/builders'
+import type { Message } from 'discord.js'
 import { MessageFlags } from 'discord.js'
-import { logger } from '../../utils/logger.js'
 import { getBuddy, getBuddyCount, getSpeciesInfo } from '../../games/buddy.js'
 import {
+  type BuddyRarity,
   RARITY_COLORS,
   RARITY_EMOJI,
   RARITY_PLACEHOLDER_COLORS,
-  STAT_NAMES,
-  type BuddyRarity
+  STAT_NAMES
 } from '../../games/data/buddySpecies.js'
+import { logger } from '../../utils/logger.js'
 
 function statBar(value: number, max: number = 10): string {
   const filled = '\u2588'.repeat(value)

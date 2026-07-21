@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import Database from 'better-sqlite3'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../config.js', () => ({
   config: {
@@ -16,19 +16,19 @@ vi.mock('../../storage/database.js', () => ({
 }))
 
 import {
-  mulberry32,
-  hashString,
   generateBuddy,
-  saveBuddy,
   getBuddy,
   getBuddyCollection,
   getBuddyCount,
-  hasHatchedToday,
-  markDailyHatch,
+  getTodayDate,
   getTopBuddies,
-  getTodayDate
+  hasHatchedToday,
+  hashString,
+  markDailyHatch,
+  mulberry32,
+  saveBuddy
 } from '../buddy.js'
-import { SPECIES, STAT_NAMES, RARITY_STAT_RANGE, type BuddyRarity } from '../data/buddySpecies.js'
+import { type BuddyRarity, RARITY_STAT_RANGE, SPECIES, STAT_NAMES } from '../data/buddySpecies.js'
 
 function createTestDb(): Database.Database {
   const db = new Database(':memory:')

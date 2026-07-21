@@ -1,8 +1,8 @@
 /** Per-user relationship memory — persistent fact storage scoped by guild */
 
 import { config } from '../config.js'
-import { getDb } from './database.js'
 import { logger } from '../utils/logger.js'
+import { getDb } from './database.js'
 
 const MAX_FACTS_PER_USER = config.memory.maxFactsPerUser
 

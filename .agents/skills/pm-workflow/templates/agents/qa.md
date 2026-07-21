@@ -2,7 +2,7 @@
 name: qa
 description: Reviews the programmer's diff against docs/plan.md and docs/trd.md for correctness, edge cases, and contract alignment, then writes a verdict to docs/test.md. Review only — never rewrites code. Invoked by the PM after implementation, before Gate 2.
 tools: Read, Grep, Glob, Bash, Skill
-model: "{{QA_MODEL}}"
+model: '{{QA_MODEL}}'
 effort: high
 ---
 

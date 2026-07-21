@@ -4,21 +4,28 @@
  */
 
 import type { ChatInputCommandInteraction, Client, TextBasedChannel } from 'discord.js'
-import { logger } from '../../utils/logger.js'
 import { setTimeoutCallback } from '../../games/hangman.js'
+import { logger } from '../../utils/logger.js'
+import {
+  handleBuddyGuide,
+  handleBuddyLeaderboard,
+  handleBuddyStats,
+  handleBuddyView,
+  handleHatch,
+  handlePet
+} from './games/gacha.js'
+import { HANGMAN_COLORS, handleHangmanGuess, handleHangmanGuide, handleHangmanStart } from './games/hangman.js'
+import { handleLeaderboard } from './games/leaderboard.js'
 import { buildTimeoutContainer } from './games/shared.js'
-import { handleHatch, handleBuddyView, handlePet, handleBuddyStats, handleBuddyGuide, handleBuddyLeaderboard } from './games/gacha.js'
-import { HANGMAN_COLORS, handleHangmanStart, handleHangmanGuess, handleHangmanGuide } from './games/hangman.js'
 import {
   SHIRITORI_COLORS,
-  handleShiritoriStart,
+  handleShiritoriEnd,
+  handleShiritoriGuide,
   handleShiritoriJoin,
   handleShiritoriPlay,
-  handleShiritoriEnd,
   handleShiritoriScoresCmd,
-  handleShiritoriGuide
+  handleShiritoriStart
 } from './games/shiritori.js'
-import { handleLeaderboard } from './games/leaderboard.js'
 
 const GAME_COMMAND_NAMES = new Set(['gacha', 'hangman', 'shiritori'])
 

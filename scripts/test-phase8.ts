@@ -15,19 +15,19 @@ process.env.DISCORD_TOKEN ||= 'test-stub'
 process.env.DISCORD_CLIENT_ID ||= 'test-stub'
 
 import sharp from 'sharp'
-import { getDb, closeDb } from '../src/storage/database.js'
-import { saveMessage, loadHistory, clearHistory, pruneOldHistory } from '../src/storage/sessionStore.js'
+import { generateBuddy, getBuddy, getTopBuddies, saveBuddy } from '../src/games/buddy.js'
+import { EYE_STYLES, HAT_STYLES, RARITY_WEIGHTS, SPECIES, STAT_NAMES } from '../src/games/data/buddySpecies.js'
+import { closeDb, getDb } from '../src/storage/database.js'
 import {
-  createReminder,
-  getDueReminders,
-  markDelivered,
-  getActiveReminders,
   countActiveReminders,
+  createReminder,
+  deleteReminder,
+  getActiveReminders,
+  getDueReminders,
   getReminderById,
-  deleteReminder
+  markDelivered
 } from '../src/storage/reminderStore.js'
-import { generateBuddy, saveBuddy, getBuddy, getTopBuddies } from '../src/games/buddy.js'
-import { SPECIES, STAT_NAMES, EYE_STYLES, HAT_STYLES, RARITY_WEIGHTS } from '../src/games/data/buddySpecies.js'
+import { clearHistory, loadHistory, pruneOldHistory, saveMessage } from '../src/storage/sessionStore.js'
 import { processImageForGemini } from '../src/utils/imageProcessor.js'
 
 // --- Test Harness ---

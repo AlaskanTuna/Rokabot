@@ -44,3 +44,7 @@ temp/
 
 # Custom
 # ===========
+
+# Biome owns TS/JS formatting
+*.ts
+*.js

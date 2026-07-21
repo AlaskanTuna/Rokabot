@@ -1,22 +1,22 @@
 /** ADK pipeline orchestrator for in-character response generation */
 
-import { LlmAgent, Runner, InMemorySessionService, isFinalResponse, BasePlugin, createEvent } from '@google/adk'
-import type { LlmResponse, Event } from '@google/adk'
+import { BasePlugin, InMemorySessionService, LlmAgent, Runner, createEvent, isFinalResponse } from '@google/adk'
+import type { Event, LlmResponse } from '@google/adk'
 import type { GetSessionRequest, Session } from '@google/adk'
 import type { Content, Part } from '@google/genai'
-import { logger } from '../utils/logger.js'
-import { processImageForGemini } from '../utils/imageProcessor.js'
-import { assembleSystemPrompt } from './promptAssembler.js'
-import { detectTone } from './toneDetector.js'
-import type { ToneKey } from './prompts/tones.js'
-import type { WindowMessage } from '../session/types.js'
 import { config } from '../config.js'
-import { getLocalHour } from '../utils/timezone.js'
-import { rokaTools } from './tools/index.js'
-import { saveMessage, loadHistory, getChannelUsers } from '../storage/sessionStore.js'
+import type { WindowMessage } from '../session/types.js'
+import { getChannelUsers, loadHistory, saveMessage } from '../storage/sessionStore.js'
 import { getAllFactsForPrompt, refreshFactTimestamps } from '../storage/userMemory.js'
 import { getAllUserNames } from '../storage/userNames.js'
+import { processImageForGemini } from '../utils/imageProcessor.js'
+import { logger } from '../utils/logger.js'
+import { getLocalHour } from '../utils/timezone.js'
 import { getMessages as getBufferMessages } from './passiveBuffer.js'
+import { assembleSystemPrompt } from './promptAssembler.js'
+import type { ToneKey } from './prompts/tones.js'
+import { detectTone } from './toneDetector.js'
+import { rokaTools } from './tools/index.js'
 
 export interface ImageAttachment {
   url: string
@@ -343,16 +343,17 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     for (const [uid, user] of knownUsers) {
       const facts = getAllFactsForPrompt(guildId, uid)
       if (facts) {
-        const label = user.username !== user.displayName
-          ? `${user.username} (${user.displayName})`
-          : user.displayName
+        const label = user.username !== user.displayName ? `${user.username} (${user.displayName})` : user.displayName
         factLines.push(`- ${label}: ${facts}`)
         refreshFactTimestamps(guildId, uid)
       }
     }
     if (factLines.length > 0) {
       systemPrompt += `\n\n## What You Remember About People In This Channel\n${factLines.join('\n')}`
-      logger.info({ channelId, usersWithFacts: factLines.length, totalUsers: knownUsers.size }, 'User facts injected into prompt')
+      logger.info(
+        { channelId, usersWithFacts: factLines.length, totalUsers: knownUsers.size },
+        'User facts injected into prompt'
+      )
     }
   } catch (error) {
     logger.warn({ userId, error }, 'Failed to load user memory for prompt injection')
@@ -409,7 +410,13 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
           userId: channelId,
           sessionId: channelId,
           newMessage,
-          stateDelta: { _systemPrompt: systemPrompt, participants, _userId: userId, _channelId: channelId, _guildId: guildId },
+          stateDelta: {
+            _systemPrompt: systemPrompt,
+            participants,
+            _userId: userId,
+            _channelId: channelId,
+            _guildId: guildId
+          },
           runConfig: { maxLlmCalls: config.gemini.maxLlmCalls }
         })) {
           eventCount += 1
@@ -428,7 +435,10 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
       }
 
       if (abortController.signal.aborted && !responseText) {
-        logger.warn({ channelId, model: config.gemini.model, eventCount }, 'Client-side timeout triggered for ADK runner')
+        logger.warn(
+          { channelId, model: config.gemini.model, eventCount },
+          'Client-side timeout triggered for ADK runner'
+        )
         responseText = getRandomFallback()
       }
 

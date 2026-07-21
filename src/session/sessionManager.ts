@@ -5,8 +5,8 @@
 
 import { config } from '../config.js'
 import { logger } from '../utils/logger.js'
-import type { ChannelSession, WindowMessage } from './types.js'
 import { pushMessage } from './messageWindow.js'
+import type { ChannelSession, WindowMessage } from './types.js'
 
 const sessions = new Map<string, ChannelSession>()
 

@@ -13,7 +13,9 @@ const monitoredChannels = new Map<string, number>() // channelId → expiry time
 export function restoreMonitoredChannels(): void {
   const db = getDb()
   const now = Date.now()
-  const rows = db.prepare('SELECT channel_id, expires_at FROM monitored_channels WHERE expires_at > ?').all(now) as Array<{
+  const rows = db
+    .prepare('SELECT channel_id, expires_at FROM monitored_channels WHERE expires_at > ?')
+    .all(now) as Array<{
     channel_id: string
     expires_at: number
   }>

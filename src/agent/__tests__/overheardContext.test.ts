@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach } from 'vitest'
-import { addMessage, getMessages, resetAllBuffers } from '../passiveBuffer.js'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { maybeExtractFromBuffer, resetCounters } from '../memoryExtractor.js'
+import { addMessage, getMessages, resetAllBuffers } from '../passiveBuffer.js'
 
 describe('overheard context (passive buffer persistence)', () => {
   beforeEach(() => {
@@ -47,9 +47,7 @@ describe('overheard context (passive buffer persistence)', () => {
     const messages = getMessages('ch-3')
     const overheardText = messages.map((m) => `[${m.displayName}]: ${m.content}`).join('\n')
 
-    expect(overheardText).toBe(
-      '[Alice]: anyone wanna play maimai?\n[Bob]: sure, after dinner\n[Alice]: cool, 8pm?'
-    )
+    expect(overheardText).toBe('[Alice]: anyone wanna play maimai?\n[Bob]: sure, after dinner\n[Alice]: cool, 8pm?')
   })
 
   it('empty buffer produces no overheard context', () => {

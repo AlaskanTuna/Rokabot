@@ -1,18 +1,18 @@
 import type { Client, Message } from 'discord.js'
 import { DiscordAPIError } from 'discord.js'
+import { isMonitored, markActive } from '../../agent/channelMonitor.js'
+import { maybeExtractFromBuffer } from '../../agent/memoryExtractor.js'
+import { addMessage as addToPassiveBuffer } from '../../agent/passiveBuffer.js'
+import { type ImageAttachment, generateResponse } from '../../agent/roka.js'
+import { upsertUserName } from '../../storage/userNames.js'
 import { logger } from '../../utils/logger.js'
-import { isIgnorableDiscordError } from '../errorHandler.js'
 import { RateLimiter } from '../../utils/rateLimiter.js'
-import { getRandomBusy, getRandomDecline, getRandomError, splitResponse } from '../responses.js'
-import { buildRokaMessage } from '../messageBuilder.js'
-import { generateResponse, type ImageAttachment } from '../../agent/roka.js'
 import { isChannelBusy, markBusy, markFree } from '../concurrency.js'
 import { shouldReact } from '../emojiReactor.js'
+import { isIgnorableDiscordError } from '../errorHandler.js'
+import { buildRokaMessage } from '../messageBuilder.js'
+import { getRandomBusy, getRandomDecline, getRandomError, splitResponse } from '../responses.js'
 import { handleGachaMention } from './gachaMention.js'
-import { markActive, isMonitored } from '../../agent/channelMonitor.js'
-import { addMessage as addToPassiveBuffer } from '../../agent/passiveBuffer.js'
-import { maybeExtractFromBuffer } from '../../agent/memoryExtractor.js'
-import { upsertUserName } from '../../storage/userNames.js'
 
 const TEXT_DISPLAY = 10
 const SECTION = 9
@@ -95,13 +95,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
       const msgContent = message.content.replace(/<@!?\d+>/g, '').trim()
       if (msgContent) {
         const memberDisplayName = message.member?.displayName ?? message.author.displayName
-        addToPassiveBuffer(
-          message.channelId,
-          message.author.id,
-          memberDisplayName,
-          message.author.username,
-          msgContent
-        )
+        addToPassiveBuffer(message.channelId, message.author.id, memberDisplayName, message.author.username, msgContent)
         upsertUserName(message.author.id, message.author.username, memberDisplayName)
         maybeExtractFromBuffer(message.channelId, client.user?.id, message.guildId ?? undefined)
       }

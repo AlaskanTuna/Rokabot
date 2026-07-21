@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../config.js', () => ({
   config: {
@@ -8,7 +8,7 @@ vi.mock('../../config.js', () => ({
   }
 }))
 
-import { pushMessage, clearMessages } from '../messageWindow.js'
+import { clearMessages, pushMessage } from '../messageWindow.js'
 import type { WindowMessage } from '../types.js'
 
 function makeMessage(content: string, role: 'user' | 'assistant' = 'user'): WindowMessage {
