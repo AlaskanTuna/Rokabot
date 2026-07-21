@@ -41,7 +41,7 @@
   </ol>
 </details>
 
-## Who is Maniwa Roka?
+## Who Is Maniwa Roka?
 
 <img align="left" src="assets/roka-sticker-1.png" alt="Roka serving drinks" width="100" />
 
@@ -55,7 +55,7 @@ Rokabot will also respond with in-character dialogue powered by Gemini Flash Lit
 
 <p align="right"><a href="#readme-top">↑</a></p>
 
-## What it does
+## What It Does
 
 - Responds in character to `/chat`, mentions, replies, and supported name-keyword triggers.
 - Understands images, keeps channel context, and extracts user facts from monitored conversations.
@@ -81,19 +81,19 @@ flowchart TD
 
 The bot runs as a single self-hosted Node.js service. SQLite persists conversation history, user memory, reminders, and game data; the full data model, request flow, and operational constraints live in [docs/trd.md](docs/trd.md).
 
-## Tech stack
+## Tech Stack
 
-| Area | Technology |
-| --- | --- |
-| Language and runtime | TypeScript (ES2022), Node.js 24 |
-| Discord | discord.js v14 |
-| Agent and model | Google ADK, Gemini 3.5 Flash Lite (`gemini-3.5-flash-lite`) |
-| Storage | SQLite via better-sqlite3 |
-| Media and validation | sharp, Zod |
-| Quality | Vitest, ESLint, Prettier |
-| Deployment | Docker Compose on Raspberry Pi 5 (ARM64) |
+| Area                 | Technology                                                  |
+| -------------------- | ----------------------------------------------------------- |
+| Language and runtime | TypeScript (ES2022), Node.js 24                             |
+| Discord              | discord.js v14                                              |
+| Agent and model      | Google ADK, Gemini 3.5 Flash Lite (`gemini-3.5-flash-lite`) |
+| Storage              | SQLite via better-sqlite3                                   |
+| Media and validation | sharp, Zod                                                  |
+| Quality              | Vitest, Biome, Prettier, commitlint                         |
+| Deployment           | Docker Compose on Raspberry Pi 5 (ARM64)                    |
 
-## Getting started
+## Getting Started
 
 ### Prerequisites
 
@@ -103,7 +103,7 @@ The bot runs as a single self-hosted Node.js service. SQLite persists conversati
 - Docker and Docker Compose for containerized deployment
 - Optional: a Tavily API key for web search
 
-### Install and configure
+### Install and Configure
 
 ```bash
 git clone https://github.com/AlaskanTuna/rokabot.git
@@ -143,14 +143,14 @@ Useful checks: `npm run lint`, `npm run format:check`, and `npm test`.
 
 Secrets belong in `.env`; tunables belong in `config.yml` and can be overridden with environment variables.
 
-| Setting | Environment override | Purpose |
-| --- | --- | --- |
-| `gemini.model` | `GEMINI_MODEL` | Gemini model ID (`gemini-3.5-flash-lite` by default) |
-| `gemini.timeout` | `GEMINI_TIMEOUT` | Model request timeout |
-| `rateLimit.rpm` / `rateLimit.rpd` | `RATE_LIMIT_RPM` / `RATE_LIMIT_RPD` | Request limits |
-| `session.ttl` / `session.windowSize` | `SESSION_TTL_MS` / `SESSION_WINDOW_SIZE` | Conversation-memory behavior |
-| `discord.maxMessageLength` | `DISCORD_MAX_MESSAGE_LENGTH` | Reply length cap |
-| `logging.level` | `LOG_LEVEL` | Log verbosity |
+| Setting                              | Environment Override                     | Purpose                                              |
+| ------------------------------------ | ---------------------------------------- | ---------------------------------------------------- |
+| `gemini.model`                       | `GEMINI_MODEL`                           | Gemini model ID (`gemini-3.5-flash-lite` by default) |
+| `gemini.timeout`                     | `GEMINI_TIMEOUT`                         | Model request timeout                                |
+| `rateLimit.rpm` / `rateLimit.rpd`    | `RATE_LIMIT_RPM` / `RATE_LIMIT_RPD`      | Request limits                                       |
+| `session.ttl` / `session.windowSize` | `SESSION_TTL_MS` / `SESSION_WINDOW_SIZE` | Conversation-memory behavior                         |
+| `discord.maxMessageLength`           | `DISCORD_MAX_MESSAGE_LENGTH`             | Reply length cap                                     |
+| `logging.level`                      | `LOG_LEVEL`                              | Log verbosity                                        |
 
 See [config.yml](config.yml) and [docs/trd.md](docs/trd.md) for the full configuration contract.
 

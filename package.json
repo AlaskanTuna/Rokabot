@@ -9,9 +9,10 @@
     "dev:quiet": "LOG_LEVEL=debug ADK_QUIET=1 tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "lint": "eslint src/",
+    "lint": "biome check src/",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "prepare": "husky",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:chat": "tsx scripts/test-chat.ts",
@@ -32,17 +33,25 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@commitlint/cli": "^21.2.1",
+    "@commitlint/config-conventional": "^21.2.0",
     "@types/better-sqlite3": "^7.6.13",
     "@types/js-yaml": "^4.0.9",
-    "@typescript-eslint/eslint-plugin": "^8.59.2",
-    "@typescript-eslint/parser": "^8.59.2",
-    "eslint": "^8.57.0",
-    "eslint-config-prettier": "^10.0.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.1.0",
     "pino-pretty": "^13.0.0",
     "prettier": "^3.8.3",
     "tsx": "^4.19.0",
     "typescript": "^5.8.0",
     "vitest": "^3.1.0"
+  },
+  "lint-staged": {
+    "*.{ts,js}": [
+      "biome check --no-errors-on-unmatched",
+      "prettier --write"
+    ],
+    "*.{json,md,yml,yaml}": "prettier --write"
   },
   "engines": {
     "node": ">=24.13.0"

@@ -168,7 +168,7 @@ sudo docker exec -it rokabot-roka-1 sh
 
 The Pi runs a self-hosted GitHub Actions runner that auto-deploys on push to `main`. The workflow (`.github/workflows/deploy.yml`) pulls latest code, rebuilds Docker, and runs a health check.
 
-### Setting up the runner on a new device
+### Setting Up the Runner on a New Device
 
 1. Go to https://github.com/AlaskanTuna/rokabot/settings/actions/runners/new
 2. Copy the registration **token** (expires in 1 hour)
@@ -189,7 +189,7 @@ sudo ./svc.sh start
 
 4. Verify: push to `main` and check https://github.com/AlaskanTuna/rokabot/actions
 
-### Managing the runner
+### Managing the Runner
 
 ```bash
 # Check status
@@ -206,7 +206,7 @@ cd ~/actions-runner && sudo ./svc.sh stop && sudo ./svc.sh uninstall
 ./config.sh remove --token <NEW_TOKEN>
 ```
 
-### How it works
+### How It Works
 
 - The runner polls GitHub outbound (works through any NAT/WiFi)
 - On push to `main`, GitHub assigns the deploy job to the runner

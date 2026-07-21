@@ -70,10 +70,10 @@
 
 ### AI / Agent
 
-| Component       | Technology                    | Version | Notes                                                    |
-| --------------- | ----------------------------- | ------- | -------------------------------------------------------- |
-| Agent Framework | @google/adk                   | ^0.1    | TypeScript ADK; fallback to @google/genai if unavailable |
-| LLM Client      | @google/genai                 | ^1.0    | Gemini API client (ADK dependency)                       |
+| Component       | Technology            | Version | Notes                                                    |
+| --------------- | --------------------- | ------- | -------------------------------------------------------- |
+| Agent Framework | @google/adk           | ^0.1    | TypeScript ADK; fallback to @google/genai if unavailable |
+| LLM Client      | @google/genai         | ^1.0    | Gemini API client (ADK dependency)                       |
 | Model           | gemini-3.5-flash-lite | —       | 1M context, 15 RPM / 250K TPM / 500 RPD                  |
 
 ### Utilities
@@ -163,7 +163,7 @@ Enum of detected conversation tones.
 
 ### Discord Events (Inbound)
 
-#### InteractionCreate (slash command)
+#### InteractionCreate (Slash Command)
 
 ```
 Event: interactionCreate
@@ -172,7 +172,7 @@ Extract: interaction.options.getString('message'), channelId, user.displayName
 Flow: deferReply() → process → editReply(response)
 ```
 
-#### MessageCreate (mention/reply)
+#### MessageCreate (Mention/Reply)
 
 ```
 Event: messageCreate
