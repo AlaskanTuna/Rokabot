@@ -40,6 +40,13 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
     logger.info({ channelId, command: 'chat' }, 'Slash command received')
     logger.debug({ channelId, message, hasImage: !!attachment }, 'Slash command details')
 
+    if (isChannelBusy(channelId)) {
+      logger.debug({ channelId }, 'Channel busy — sending busy message')
+      const busyReply = await interaction.reply({ content: getRandomBusy(), fetchReply: true })
+      setTimeout(() => busyReply.delete().catch(() => {}), 5000)
+      return
+    }
+
     if (!rateLimiter.tryConsume()) {
       logger.debug(
         { channelId, remainingRpm: rateLimiter.remainingRpm, remainingRpd: rateLimiter.remainingRpd },
@@ -48,13 +55,6 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
 
       const declineReply = await interaction.reply({ content: getRandomDecline(), fetchReply: true })
       setTimeout(() => declineReply.delete().catch(() => {}), 5000)
-      return
-    }
-
-    if (isChannelBusy(channelId)) {
-      logger.debug({ channelId }, 'Channel busy — sending busy message')
-      const busyReply = await interaction.reply({ content: getRandomBusy(), fetchReply: true })
-      setTimeout(() => busyReply.delete().catch(() => {}), 5000)
       return
     }
 

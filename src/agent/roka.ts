@@ -11,10 +11,13 @@ import { getAllFactsForPrompt, refreshFactTimestamps } from '../storage/userMemo
 import { getAllUserNames } from '../storage/userNames.js'
 import { processImageForGemini } from '../utils/imageProcessor.js'
 import { logger } from '../utils/logger.js'
+import { getSharedRateLimiter } from '../utils/rateLimiter.js'
 import { getLocalHour } from '../utils/timezone.js'
+import { classifyGeminiFailure, computeBackoff } from './geminiReliability.js'
 import { getMessages as getBufferMessages } from './passiveBuffer.js'
 import { assembleSystemPrompt } from './promptAssembler.js'
 import type { ToneKey } from './prompts/tones.js'
+import { beginShutdown, isShuttingDown } from './shutdownSignal.js'
 import { detectTone } from './toneDetector.js'
 import { rokaTools } from './tools/index.js'
 
@@ -43,6 +46,146 @@ const APP_NAME = 'rokabot'
 
 const sessionErrorCounts = new Map<string, number>()
 let toolCallsThisRequest: string[] = []
+const activeAbortControllers = new Set<AbortController>()
+
+const SAFETY_DEFLECTION = "Ehh… let's not get into that one~"
+const RECITATION_DEFLECTION = "Ah, I don't think I should repeat that one exactly~"
+const TERMINAL_DEFLECTION = "Eep, something went wrong on my side. Let's try again later~"
+
+interface TurnOutcome {
+  text?: string
+  errorCode?: string
+  errorMessage?: string
+  finishReason?: LlmResponse['finishReason']
+  customMetadata?: LlmResponse['customMetadata']
+  hasText: boolean
+  hasFunctionCall: boolean
+  sessionMissing?: boolean
+}
+
+interface ReliabilityResult {
+  text: string
+  kind: ReturnType<typeof classifyGeminiFailure>['kind']
+  action: 'preserve' | 'destroy'
+  attempts: number
+  success: boolean
+}
+
+export interface RunTurnWithReliabilityOptions {
+  runTurn: (attempt: number, signal: AbortSignal) => Promise<TurnOutcome>
+  tryConsumeRetry: () => boolean
+  computeBackoff: (attempt: number) => number
+  sleep?: (delayMs: number, signal: AbortSignal) => Promise<void>
+  isShuttingDown?: () => boolean
+  maxRetries: number
+  maxLatencyMs: number
+  requestTimeoutMs?: number
+  genericFallback: string
+  safetyDeflection: string
+  recitationDeflection: string
+  terminalDeflection: string
+}
+
+function sleepUntil(delayMs: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    const timeoutId = setTimeout(done, delayMs)
+
+    function done(): void {
+      clearTimeout(timeoutId)
+      signal.removeEventListener('abort', done)
+      resolve()
+    }
+
+    if (signal.aborted) {
+      done()
+      return
+    }
+    signal.addEventListener('abort', done, { once: true })
+  })
+}
+
+function fallbackResult(
+  kind: ReliabilityResult['kind'],
+  action: ReliabilityResult['action'],
+  attempts: number,
+  options: RunTurnWithReliabilityOptions
+): ReliabilityResult {
+  const text =
+    kind === 'safety'
+      ? options.safetyDeflection
+      : kind === 'recitation'
+        ? options.recitationDeflection
+        : kind === 'terminal'
+          ? options.terminalDeflection
+          : options.genericFallback
+
+  return { text, kind, action, attempts, success: false }
+}
+
+/** Runs one user turn with bounded retry policy while keeping the initial user event single-shot. */
+export async function runTurnWithReliability(options: RunTurnWithReliabilityOptions): Promise<ReliabilityResult> {
+  const shouldStop = options.isShuttingDown ?? isShuttingDown
+  const sleep = options.sleep ?? sleepUntil
+  let retryLatencyMs = 0
+  let lastKind: ReliabilityResult['kind'] = 'network'
+
+  for (let attempt = 0; attempt <= options.maxRetries; attempt++) {
+    if (shouldStop()) return fallbackResult(lastKind, 'preserve', attempt, options)
+
+    const abortController = new AbortController()
+    activeAbortControllers.add(abortController)
+    const timeoutId = options.requestTimeoutMs
+      ? setTimeout(() => abortController.abort(), options.requestTimeoutMs)
+      : undefined
+
+    let outcome: TurnOutcome
+    try {
+      outcome = await options.runTurn(attempt, abortController.signal)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      outcome = {
+        errorMessage: message,
+        hasText: false,
+        hasFunctionCall: false,
+        sessionMissing: /Session not found/i.test(message)
+      }
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId)
+      activeAbortControllers.delete(abortController)
+    }
+
+    if (outcome.sessionMissing) return fallbackResult('network', 'preserve', attempt + 1, options)
+    if (shouldStop() || abortController.signal.aborted)
+      return fallbackResult(lastKind, 'preserve', attempt + 1, options)
+
+    const failure = classifyGeminiFailure(outcome)
+    lastKind = failure.kind
+    if (failure.kind === 'ok' && outcome.text) {
+      return { text: outcome.text, kind: 'ok', action: 'preserve', attempts: attempt + 1, success: true }
+    }
+
+    if (!failure.retryable)
+      return fallbackResult(failure.kind, failure.kind === 'terminal' ? 'destroy' : 'preserve', attempt + 1, options)
+
+    const retryLimit = failure.kind === 'recitation' ? Math.min(options.maxRetries, 1) : options.maxRetries
+    if (attempt >= retryLimit || shouldStop()) {
+      return fallbackResult(failure.kind, 'preserve', attempt + 1, options)
+    }
+
+    const delayMs = Math.min(options.computeBackoff(attempt), Math.max(0, options.maxLatencyMs - retryLatencyMs))
+    if (delayMs <= 0 && retryLatencyMs >= options.maxLatencyMs) {
+      return fallbackResult(failure.kind, 'preserve', attempt + 1, options)
+    }
+    if (!options.tryConsumeRetry()) return fallbackResult(failure.kind, 'preserve', attempt + 1, options)
+
+    await sleep(delayMs, abortController.signal)
+    retryLatencyMs += delayMs
+    if (shouldStop() || abortController.signal.aborted)
+      return fallbackResult(failure.kind, 'preserve', attempt + 1, options)
+  }
+
+  return fallbackResult(lastKind, 'preserve', options.maxRetries + 1, options)
+}
 
 /** Caps event history returned by getSession to keep context within budget */
 class WindowedSessionService extends InMemorySessionService {
@@ -101,12 +244,11 @@ const rokaAgent = new LlmAgent({
         {
           model: config.gemini.model,
           partKeys: response.content.parts.map((p) => Object.keys(p)),
-          finishReason: (response as unknown as { finishReason?: string }).finishReason,
-          usage: (response as unknown as { usageMetadata?: unknown }).usageMetadata
+          finishReason: response.finishReason,
+          usage: response.usageMetadata
         },
-        'Empty model response — replacing with fallback'
+        'Empty model response surfaced for reliability handling'
       )
-      response.content.parts = [{ text: getRandomFallback() }]
     }
 
     return undefined
@@ -118,7 +260,7 @@ const rokaAgent = new LlmAgent({
   }
 })
 
-/** Intercepts Gemini API errors and returns an in-character fallback */
+/** Intercepts Gemini API errors and exposes them to the turn-level reliability policy. */
 class ErrorRecoveryPlugin extends BasePlugin {
   async onModelErrorCallback({
     error
@@ -136,7 +278,12 @@ class ErrorRecoveryPlugin extends BasePlugin {
       },
       'Gemini API error intercepted'
     )
-    return { content: { role: 'model', parts: [{ text: getRandomFallback() }] } }
+    const failure = classifyGeminiFailure(error)
+    return {
+      errorCode: error.name,
+      errorMessage: error.message,
+      customMetadata: { reliabilityKind: failure.kind }
+    }
   }
 }
 
@@ -237,6 +384,9 @@ export async function destroySession(channelId: string): Promise<void> {
 
 /** Destroy every active ADK session for graceful shutdown */
 export async function destroyAllSessions(): Promise<void> {
+  beginShutdown()
+  for (const controller of activeAbortControllers) controller.abort()
+
   const channels = [...idleTimers.keys()]
   for (const channelId of channels) {
     await destroySession(channelId)
@@ -394,127 +544,95 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     'Sending ADK request'
   )
 
-  const MAX_RETRIES = config.gemini.maxRetries
-  const BASE_DELAY_MS = config.gemini.baseRetryDelay
-
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    try {
+  const reliability = await runTurnWithReliability({
+    maxRetries: config.gemini.liveMaxRetries,
+    maxLatencyMs: config.gemini.retryBackoffCapMs,
+    requestTimeoutMs: config.gemini.timeout,
+    tryConsumeRetry: () => getSharedRateLimiter(config.rateLimit).tryConsumeAboveFloor(config.gemini.retryRpmFloor),
+    computeBackoff: (attempt) =>
+      computeBackoff(attempt, config.gemini.retryBackoffBaseMs, { maxMs: config.gemini.retryBackoffCapMs }),
+    genericFallback: getRandomFallback(),
+    safetyDeflection: SAFETY_DEFLECTION,
+    recitationDeflection: RECITATION_DEFLECTION,
+    terminalDeflection: TERMINAL_DEFLECTION,
+    runTurn: async (attempt, signal) => {
       let responseText = ''
-      let eventCount = 0
-      let lastFinalEventPartKeys: string[][] = []
-      const abortController = new AbortController()
-      const timeoutId = setTimeout(() => abortController.abort(), config.gemini.timeout)
+      let hasFunctionCall = false
+      let finishReason: LlmResponse['finishReason']
 
-      try {
-        for await (const event of runner.runAsync({
-          userId: channelId,
-          sessionId: channelId,
-          newMessage,
-          stateDelta: {
-            _systemPrompt: systemPrompt,
-            participants,
-            _userId: userId,
-            _channelId: channelId,
-            _guildId: guildId
-          },
-          runConfig: { maxLlmCalls: config.gemini.maxLlmCalls }
-        })) {
-          eventCount += 1
-          if (abortController.signal.aborted) break
-          if (isFinalResponse(event) && event.content?.parts) {
-            lastFinalEventPartKeys = event.content.parts.map((p: Part) => Object.keys(p))
-            responseText = event.content.parts
-              .filter((p: Part) => p.text && !p.thought)
-              .map((p: Part) => p.text)
-              .join('')
-              .trim()
+      const request: Parameters<typeof runner.runAsync>[0] = {
+        userId: channelId,
+        sessionId: channelId,
+        // ADK's runtime only appends when this value is truthy; its type incorrectly requires it for a retry.
+        newMessage: attempt === 0 ? newMessage : (undefined as unknown as Content),
+        runConfig: { maxLlmCalls: config.gemini.maxLlmCalls },
+        stateDelta:
+          attempt === 0
+            ? {
+                _systemPrompt: systemPrompt,
+                participants,
+                _userId: userId,
+                _channelId: channelId,
+                _guildId: guildId
+              }
+            : undefined
+      }
+
+      for await (const event of runner.runAsync(request)) {
+        if (signal.aborted) break
+        if (event.errorCode) {
+          return {
+            errorCode: event.errorCode,
+            errorMessage: event.errorMessage,
+            customMetadata: event.customMetadata,
+            finishReason: event.finishReason,
+            hasText: false,
+            hasFunctionCall: false
           }
         }
-      } finally {
-        clearTimeout(timeoutId)
-      }
-
-      if (abortController.signal.aborted && !responseText) {
-        logger.warn(
-          { channelId, model: config.gemini.model, eventCount },
-          'Client-side timeout triggered for ADK runner'
-        )
-        responseText = getRandomFallback()
-      }
-
-      if (!responseText) {
-        logger.warn(
-          { channelId, model: config.gemini.model, eventCount, lastFinalEventPartKeys, attempt },
-          'Runner produced no usable text — using fallback'
-        )
-        responseText = getRandomFallback()
-      }
-
-      if (KNOWN_FALLBACKS.has(responseText)) {
-        const errorCount = (sessionErrorCounts.get(channelId) ?? 0) + 1
-        sessionErrorCounts.set(channelId, errorCount)
-
-        if (errorCount >= 2) {
-          logger.warn(
-            { channelId, errorCount },
-            'Consecutive fallbacks detected, destroying session to prevent corruption'
-          )
-          await destroySession(channelId)
-          sessionErrorCounts.delete(channelId)
-        } else {
-          logger.warn({ channelId, errorCount }, 'Fallback response detected, preserving session (first occurrence)')
+        if (isFinalResponse(event) && event.content?.parts) {
+          finishReason = event.finishReason
+          responseText = event.content.parts
+            .filter((part: Part) => part.text && !part.thought)
+            .map((part: Part) => part.text)
+            .join('')
+            .trim()
+          hasFunctionCall = event.content.parts.some((part: Part) => 'functionCall' in part && part.functionCall)
         }
       }
 
-      if (!KNOWN_FALLBACKS.has(responseText)) {
-        sessionErrorCounts.delete(channelId)
-      }
+      return { text: responseText, finishReason, hasText: Boolean(responseText), hasFunctionCall }
+    }
+  })
 
-      if (toolCallsThisRequest.length > 1) {
-        logger.info({ tools: toolCallsThisRequest }, 'Tool fallback chain detected')
-      }
+  if (reliability.action === 'destroy') await destroySession(channelId)
 
-      if (!KNOWN_FALLBACKS.has(responseText)) {
-        try {
-          saveMessage(channelId, 'user', displayName, userMessage, userId, username)
-          saveMessage(channelId, 'assistant', 'Roka', responseText)
-        } catch (error) {
-          logger.warn({ channelId, error }, 'Failed to persist messages to SQLite')
-        }
-      }
+  if (reliability.success) {
+    sessionErrorCounts.delete(channelId)
+  } else if (
+    reliability.kind === 'transient_http' ||
+    reliability.kind === 'network' ||
+    reliability.kind === 'empty_text'
+  ) {
+    sessionErrorCounts.set(channelId, (sessionErrorCounts.get(channelId) ?? 0) + 1)
+  }
 
-      logger.debug({ responseLength: responseText.length }, 'ADK response extracted')
-      return { text: responseText, tone }
+  if (toolCallsThisRequest.length > 1) {
+    logger.info({ tools: toolCallsThisRequest }, 'Tool fallback chain detected')
+  }
+
+  if (reliability.success) {
+    try {
+      saveMessage(channelId, 'user', displayName, userMessage, userId, username)
+      saveMessage(channelId, 'assistant', 'Roka', reliability.text)
     } catch (error) {
-      const errDetail =
-        error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : error
-
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      const isTransient =
-        /429|500|503|RESOURCE_EXHAUSTED|overloaded|quota|rate.limit|unavailable|EAI_AGAIN|ECONNRESET|ETIMEDOUT|fetch failed/i.test(
-          errorMsg
-        )
-
-      if (isTransient && attempt < MAX_RETRIES) {
-        const delayMs = BASE_DELAY_MS * Math.pow(2, attempt)
-        logger.warn(
-          { channelId, attempt: attempt + 1, maxRetries: MAX_RETRIES, delayMs, errorMessage: errorMsg },
-          'Transient API error, retrying with exponential backoff'
-        )
-        await new Promise((resolve) => setTimeout(resolve, delayMs))
-        continue
-      }
-
-      logger.error({ error: errDetail, channelId, attempt: attempt + 1 }, 'ADK request failed')
-
-      if (error instanceof SyntaxError) {
-        logger.warn({ channelId }, 'Session likely corrupted, destroying for recovery')
-        await destroySession(channelId)
-      }
-
-      throw error
+      logger.warn({ channelId, error }, 'Failed to persist messages to SQLite')
     }
   }
 
-  throw new Error('Exhausted all retry attempts')
+  logger.debug(
+    { responseLength: reliability.text.length, attempts: reliability.attempts, failureKind: reliability.kind },
+    'ADK response extracted'
+  )
+  return { text: reliability.text, tone }
 }

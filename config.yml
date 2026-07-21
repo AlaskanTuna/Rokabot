@@ -9,6 +9,12 @@ gemini:
   maxOutputTokens: 500 # Max tokens per response (safety net)
   baseRetryDelay: 2000 # Initial retry delay in ms (doubles each retry)
   maxLlmCalls: 4 # Max chained tool calls per request
+  liveMaxRetries: 2 # Retry attempts after a failed live Gemini response
+  retryRpmFloor: 2 # Minimum remaining RPM required before a live retry
+  extractionRpmFloor: 3 # Minimum remaining RPM required before background extraction
+  extractionMaxRetries: 1 # Retry attempts after a transient extraction failure
+  retryBackoffBaseMs: 1000 # Initial full-jitter retry backoff in ms (doubles each retry)
+  retryBackoffCapMs: 12000 # Maximum full-jitter retry backoff in ms
 
 rateLimit:
   rpm: 15 # Requests per minute (Gemini free tier: 15)
