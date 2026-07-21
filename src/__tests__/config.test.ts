@@ -60,7 +60,7 @@ describe('config module', () => {
 
     const { config } = await import('../config.js')
 
-    expect(config.gemini.model).toBe('gemini-3.1-flash-lite')
+    expect(config.gemini.model).toBe('gemini-3.5-flash-lite')
     expect(config.gemini.timeout).toBe(45_000)
     expect(config.gemini.maxRetries).toBe(3)
     expect(config.gemini.maxOutputTokens).toBe(500)
