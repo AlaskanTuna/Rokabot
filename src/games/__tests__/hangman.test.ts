@@ -1,14 +1,14 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  startGame,
+  type HangmanGame,
+  destroyAllGames,
+  getDisplayWord,
+  getGame,
+  getHangmanArt,
   guessLetter,
   guessWord,
-  getGame,
   isGameActive,
-  getDisplayWord,
-  getHangmanArt,
-  destroyAllGames,
-  type HangmanGame
+  startGame
 } from '../hangman.js'
 
 beforeEach(() => {

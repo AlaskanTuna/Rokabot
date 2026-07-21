@@ -22,18 +22,18 @@ if (process.env.ADK_QUIET) {
 }
 
 import http from 'node:http'
-import { config } from './config.js'
-import { logger } from './utils/logger.js'
-import { createClient } from './discord/client.js'
+import { cleanupExpired, restoreMonitoredChannels } from './agent/channelMonitor.js'
 import { destroyAllSessions } from './agent/roka.js'
+import { config } from './config.js'
+import { createClient } from './discord/client.js'
+import { cleanupExpiredCooldowns } from './discord/emojiReactor.js'
+import { startReminderScheduler, stopReminderScheduler } from './discord/reminderScheduler.js'
+import { stopStatusCycler } from './discord/statusCycler.js'
+import { destroyAllGames as destroyAllShiritoriGames } from './games/shiritori.js'
 import { closeDb, getDb } from './storage/database.js'
 import { pruneOldHistory } from './storage/sessionStore.js'
 import { pruneOldFacts } from './storage/userMemory.js'
-import { cleanupExpired, restoreMonitoredChannels } from './agent/channelMonitor.js'
-import { cleanupExpiredCooldowns } from './discord/emojiReactor.js'
-import { startReminderScheduler, stopReminderScheduler } from './discord/reminderScheduler.js'
-import { destroyAllGames as destroyAllShiritoriGames } from './games/shiritori.js'
-import { stopStatusCycler } from './discord/statusCycler.js'
+import { logger } from './utils/logger.js'
 
 const client = createClient()
 

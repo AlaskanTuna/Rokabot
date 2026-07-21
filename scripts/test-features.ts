@@ -14,38 +14,38 @@
 process.env.DISCORD_TOKEN ||= 'test-stub'
 process.env.DISCORD_CLIENT_ID ||= 'test-stub'
 
-import { getDb, closeDb } from '../src/storage/database.js'
-import { saveMessage, loadHistory, clearHistory } from '../src/storage/sessionStore.js'
-import { saveFact, getFacts, deleteFact, getAllFactsForPrompt, countFacts } from '../src/storage/userMemory.js'
-import {
-  createReminder,
-  getDueReminders,
-  markDelivered,
-  getActiveReminders,
-  countActiveReminders
-} from '../src/storage/reminderStore.js'
-import { generateBuddy, saveBuddy, getBuddy, getTopBuddies } from '../src/games/buddy.js'
-import {
-  startGame as startHangman,
-  guessLetter,
-  guessWord,
-  getDisplayWord,
-  getHangmanArt,
-  destroyAllGames as destroyHangman
-} from '../src/games/hangman.js'
-import {
-  startGame as startShiritori,
-  joinGame,
-  submitWord,
-  endGame,
-  destroyAllGames as destroyShiritori,
-  setDictionary
-} from '../src/games/shiritori.js'
-import { shouldReact, resetCooldowns } from '../src/discord/emojiReactor.js'
 import { detectTone } from '../src/agent/toneDetector.js'
-import type { WindowMessage } from '../src/session/types.js'
+import { resetCooldowns, shouldReact } from '../src/discord/emojiReactor.js'
+import { generateBuddy, getBuddy, getTopBuddies, saveBuddy } from '../src/games/buddy.js'
 import { SPECIES } from '../src/games/data/buddySpecies.js'
 import { HANGMAN_WORDS } from '../src/games/data/hangmanWords.js'
+import {
+  destroyAllGames as destroyHangman,
+  getDisplayWord,
+  getHangmanArt,
+  guessLetter,
+  guessWord,
+  startGame as startHangman
+} from '../src/games/hangman.js'
+import {
+  destroyAllGames as destroyShiritori,
+  endGame,
+  joinGame,
+  setDictionary,
+  startGame as startShiritori,
+  submitWord
+} from '../src/games/shiritori.js'
+import type { WindowMessage } from '../src/session/types.js'
+import { closeDb, getDb } from '../src/storage/database.js'
+import {
+  countActiveReminders,
+  createReminder,
+  getActiveReminders,
+  getDueReminders,
+  markDelivered
+} from '../src/storage/reminderStore.js'
+import { clearHistory, loadHistory, saveMessage } from '../src/storage/sessionStore.js'
+import { countFacts, deleteFact, getAllFactsForPrompt, getFacts, saveFact } from '../src/storage/userMemory.js'
 
 // --- Test Harness ---
 

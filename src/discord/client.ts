@@ -2,9 +2,9 @@ import { Client, GatewayIntentBits, Partials } from 'discord.js'
 import { config } from '../config.js'
 import { logger } from '../utils/logger.js'
 import { RateLimiter } from '../utils/rateLimiter.js'
-import { handleReady } from './events/ready.js'
 import { createInteractionHandler } from './events/interactionCreate.js'
 import { createMessageHandler } from './events/messageCreate.js'
+import { handleReady } from './events/ready.js'
 
 /** Create and configure the Discord.js client with event handlers and rate limiting */
 export function createClient(): Client {

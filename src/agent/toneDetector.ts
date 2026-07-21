@@ -1,5 +1,5 @@
-import type { ToneKey } from './prompts/tones.js'
 import type { WindowMessage } from '../session/types.js'
+import type { ToneKey } from './prompts/tones.js'
 
 /** Rule-based tone detection via keyword pattern matching */
 

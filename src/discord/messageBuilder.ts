@@ -1,9 +1,9 @@
 import { ContainerBuilder, SectionBuilder, TextDisplayBuilder, ThumbnailBuilder } from '@discordjs/builders'
 import { MessageFlags } from 'discord.js'
-import { logger } from '../utils/logger.js'
 import type { ToneKey } from '../agent/prompts/tones.js'
-import { getToneStyle } from './toneStyles.js'
+import { logger } from '../utils/logger.js'
 import { getExpressionUrl } from './expressions.js'
+import { getToneStyle } from './toneStyles.js'
 
 /** Build a Components V2 container message with tone-appropriate styling */
 export function buildRokaMessage(text: string, tone: ToneKey) {

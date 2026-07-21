@@ -2,7 +2,7 @@
 
 import type { ChatInputCommandInteraction } from 'discord.js'
 import { getCurrentTime } from '../../../agent/tools/getCurrentTime.js'
-import { CURIOUS_COLOR, FLAVOR, randomFrom, buildToolMessage } from './shared.js'
+import { CURIOUS_COLOR, FLAVOR, buildToolMessage, randomFrom } from './shared.js'
 
 export function handleTime(interaction: ChatInputCommandInteraction) {
   const location = interaction.options.getString('location', true)

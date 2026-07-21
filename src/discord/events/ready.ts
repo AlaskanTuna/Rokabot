@@ -2,8 +2,8 @@ import { Client, REST, Routes } from 'discord.js'
 import { config } from '../../config.js'
 import { logger } from '../../utils/logger.js'
 import { chatCommand } from '../commands/chat.js'
-import { toolCommands } from '../commands/tools.js'
 import { gameCommands } from '../commands/games.js'
+import { toolCommands } from '../commands/tools.js'
 import { startStatusCycler } from '../statusCycler.js'
 
 /** Register slash commands and log startup on Discord ready */

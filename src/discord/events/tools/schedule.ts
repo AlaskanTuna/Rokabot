@@ -1,10 +1,10 @@
 /** Anime schedule command handler with pagination */
 
-import type { ChatInputCommandInteraction } from 'discord.js'
 import { ActionRowBuilder, ButtonBuilder, ContainerBuilder, TextDisplayBuilder } from '@discordjs/builders'
+import type { ChatInputCommandInteraction } from 'discord.js'
 import { ButtonStyle, ComponentType, MessageFlags } from 'discord.js'
 import { getAnimeSchedule } from '../../../agent/tools/getAnimeSchedule.js'
-import { CURIOUS_COLOR, FLAVOR, randomFrom, buildToolMessage } from './shared.js'
+import { CURIOUS_COLOR, FLAVOR, buildToolMessage, randomFrom } from './shared.js'
 
 function capitalize(str: string): string {
   return str.charAt(0).toUpperCase() + str.slice(1)

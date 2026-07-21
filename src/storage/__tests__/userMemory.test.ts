@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import Database from 'better-sqlite3'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../config.js', () => ({
   config: {
@@ -22,7 +22,7 @@ vi.mock('../database.js', () => ({
   getDb: () => testDb
 }))
 
-import { saveFact, getFacts, deleteFact, getAllFactsForPrompt, countFacts } from '../userMemory.js'
+import { countFacts, deleteFact, getAllFactsForPrompt, getFacts, saveFact } from '../userMemory.js'
 
 function createTestDb(): Database.Database {
   const db = new Database(':memory:')
@@ -200,7 +200,9 @@ describe('userMemory', () => {
       // Insert 10 facts with explicit timestamps
       for (let i = 1; i <= 10; i++) {
         testDb
-          .prepare('INSERT INTO user_memory (guild_id, user_id, fact_key, fact_value, updated_at) VALUES (?, ?, ?, ?, ?)')
+          .prepare(
+            'INSERT INTO user_memory (guild_id, user_id, fact_key, fact_value, updated_at) VALUES (?, ?, ?, ?, ?)'
+          )
           .run(G, 'Alice', `fact_${i}`, `value_${i}`, i * 1000)
       }
 
@@ -222,7 +224,9 @@ describe('userMemory', () => {
     it('does not evict when updating an existing fact at the cap', () => {
       for (let i = 1; i <= 10; i++) {
         testDb
-          .prepare('INSERT INTO user_memory (guild_id, user_id, fact_key, fact_value, updated_at) VALUES (?, ?, ?, ?, ?)')
+          .prepare(
+            'INSERT INTO user_memory (guild_id, user_id, fact_key, fact_value, updated_at) VALUES (?, ?, ?, ?, ?)'
+          )
           .run(G, 'Alice', `fact_${i}`, `value_${i}`, i * 1000)
       }
 
@@ -243,7 +247,9 @@ describe('userMemory', () => {
     it('evicts correctly across multiple insertions beyond the cap', () => {
       for (let i = 1; i <= 10; i++) {
         testDb
-          .prepare('INSERT INTO user_memory (guild_id, user_id, fact_key, fact_value, updated_at) VALUES (?, ?, ?, ?, ?)')
+          .prepare(
+            'INSERT INTO user_memory (guild_id, user_id, fact_key, fact_value, updated_at) VALUES (?, ?, ?, ?, ?)'
+          )
           .run(G, 'Alice', `fact_${i}`, `value_${i}`, i * 1000)
       }
 

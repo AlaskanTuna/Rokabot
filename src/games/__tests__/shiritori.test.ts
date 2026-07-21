@@ -1,14 +1,14 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
-  startGame,
-  joinGame,
-  submitWord,
+  destroyAllGames,
   endGame,
   getGame,
-  isGameActive,
   getScores,
-  destroyAllGames,
-  setDictionary
+  isGameActive,
+  joinGame,
+  setDictionary,
+  startGame,
+  submitWord
 } from '../shiritori.js'
 
 // Use a small test dictionary

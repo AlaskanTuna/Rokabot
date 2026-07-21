@@ -1,16 +1,16 @@
 /** Hangman game command handlers */
 
 import type { ChatInputCommandInteraction } from 'discord.js'
-import { logger } from '../../../utils/logger.js'
 import {
-  startGame as startHangman,
-  guessLetter,
-  guessWord,
   getGame,
   getHangmanArt,
-  getTimeoutAt as getHangmanTimeoutAt
+  getTimeoutAt as getHangmanTimeoutAt,
+  guessLetter,
+  guessWord,
+  startGame as startHangman
 } from '../../../games/hangman.js'
 import { getDb } from '../../../storage/database.js'
+import { logger } from '../../../utils/logger.js'
 import { buildGameContainer } from './shared.js'
 
 export const HANGMAN_COLORS = {

@@ -3,9 +3,9 @@
  * Wraps SQLite operations on the `session_history` table.
  */
 
-import { getDb } from './database.js'
-import { logger } from '../utils/logger.js'
 import type { WindowMessage } from '../session/types.js'
+import { logger } from '../utils/logger.js'
+import { getDb } from './database.js'
 
 /**
  * Persist a single message to the session history table.
@@ -36,9 +36,7 @@ export function saveMessage(
     ).run(userId, username ?? null, channelId, displayName)
     // Also backfill username on rows that have user_id but no username
     if (username) {
-      db.prepare(
-        'UPDATE session_history SET username = ? WHERE user_id = ? AND username IS NULL'
-      ).run(username, userId)
+      db.prepare('UPDATE session_history SET username = ? WHERE user_id = ? AND username IS NULL').run(username, userId)
     }
   }
 }

@@ -19,12 +19,12 @@ import net from 'node:net'
 dns.setDefaultResultOrder('ipv4first')
 net.setDefaultAutoSelectFamily(false)
 
-import { LlmAgent, Runner, InMemorySessionService, isFinalResponse, BasePlugin } from '@google/adk'
+import { BasePlugin, InMemorySessionService, LlmAgent, Runner, isFinalResponse } from '@google/adk'
 import type { LlmResponse } from '@google/adk'
 import type { Part } from '@google/genai'
+import { assembleSystemPrompt } from '../src/agent/promptAssembler.js'
 import { rokaTools } from '../src/agent/tools/index.js'
 import { config } from '../src/config.js'
-import { assembleSystemPrompt } from '../src/agent/promptAssembler.js'
 
 const MODELS = ['gemini-3.1-flash-lite-preview', 'gemini-3.1-flash-lite']
 const ITERATIONS = Number(process.env.ITERATIONS ?? 3)
@@ -166,7 +166,13 @@ async function main(): Promise<void> {
         const verdict = classify(outcome)
         summary[model][verdict.category] += 1
         const tag =
-          verdict.category === 'OK' ? '\x1b[32mOK\x1b[0m' : verdict.category === 'EMPTY' ? '\x1b[33mEMPTY\x1b[0m' : verdict.category === 'FALLBACK' ? '\x1b[33mFALLBACK\x1b[0m' : '\x1b[31mERROR\x1b[0m'
+          verdict.category === 'OK'
+            ? '\x1b[32mOK\x1b[0m'
+            : verdict.category === 'EMPTY'
+              ? '\x1b[33mEMPTY\x1b[0m'
+              : verdict.category === 'FALLBACK'
+                ? '\x1b[33mFALLBACK\x1b[0m'
+                : '\x1b[31mERROR\x1b[0m'
         const toolFlag = probe.expectsTool && outcome.toolCalls.length === 0 ? ' [no-tool!]' : ''
         console.log(`  ${probe.id} #${i} (${outcome.timeMs}ms) [${tag}]${toolFlag} ${verdict.detail}`)
         if (verdict.category !== 'OK') {

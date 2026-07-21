@@ -1,12 +1,12 @@
 /** Reminder command handlers */
 
+import { ContainerBuilder, TextDisplayBuilder } from '@discordjs/builders'
 import type { ChatInputCommandInteraction } from 'discord.js'
 import { MessageFlags } from 'discord.js'
-import { ContainerBuilder, TextDisplayBuilder } from '@discordjs/builders'
-import { createReminder, getActiveReminders, getReminderById, deleteReminder } from '../../../storage/reminderStore.js'
 import { config } from '../../../config.js'
+import { createReminder, deleteReminder, getActiveReminders, getReminderById } from '../../../storage/reminderStore.js'
 import { getTimezoneLabel } from '../../../utils/timezone.js'
-import { PLAYFUL_COLOR, FLAVOR, randomFrom, buildToolMessage } from './shared.js'
+import { FLAVOR, PLAYFUL_COLOR, buildToolMessage, randomFrom } from './shared.js'
 
 export function handleRemind(interaction: ChatInputCommandInteraction) {
   const subcommand = interaction.options.getSubcommand()

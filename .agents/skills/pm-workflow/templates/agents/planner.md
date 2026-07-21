@@ -2,7 +2,7 @@
 name: planner
 description: Turns a feature or task request into a concrete, checkboxed implementation plan in docs/plan.md. Plans only — never writes source code. Invoked by the PM at the start of an iteration, before any implementation.
 tools: Read, Grep, Glob, Write, Skill, WebSearch, WebFetch
-model: "{{PLANNER_MODEL}}"
+model: '{{PLANNER_MODEL}}'
 effort: max
 ---
 

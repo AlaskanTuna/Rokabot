@@ -75,7 +75,7 @@ See `docs/trd.md` (canonical) for contracts and data models. Do not create `docs
 npm run dev          # Start with tsx watch (hot reload)
 npm run build        # Compile TypeScript to dist/
 npm start            # Run compiled JS (production)
-npm run lint         # Biome (lint only)
+npm run lint         # Biome (lint + format check)
 npm run format       # Prettier --write
 npm run format:check # Prettier --check
 npm test             # vitest run
@@ -116,7 +116,7 @@ Secrets live in `.env`, tunables live in `config.yml` at the project root. Envir
 
 ## Code Style
 
-- **Formatting:** Prettier (`.prettierrc`): single quotes, no semicolons, no trailing commas, 120 char line width, 2-space indent. Biome as linter only (biome.json; formatter and import-sorting off — Prettier owns formatting). Conventional Commits enforced by commitlint via husky commit-msg hook; lint-staged runs on pre-commit.
+- **Formatting:** Prettier (`.prettierrc`): single quotes, no semicolons, no trailing commas, 120 char line width, 2-space indent. Biome owns TS/JS linting, formatting, and import-sorting (biome.json); Prettier formats md/yml/json (.prettierignore excludes _.ts/_.js). Conventional Commits enforced by commitlint via husky commit-msg hook; lint-staged runs on pre-commit.
 - **Error Handling:** Validate at system boundaries; do not wrap internal framework calls in try/catch.
 - **Comments:** Default to none. Comment only when the _why_ is non-obvious. Never describe _what_ the code does.
 - **Changes Are Surgical:** touch only what the task requires; match existing style; don't refactor what isn't broken.

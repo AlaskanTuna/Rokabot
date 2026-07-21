@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { shouldReact, resetCooldowns } from '../emojiReactor.js'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { resetCooldowns, shouldReact } from '../emojiReactor.js'
 
 beforeEach(() => {
   resetCooldowns()

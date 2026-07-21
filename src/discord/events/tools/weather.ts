@@ -2,7 +2,7 @@
 
 import type { ChatInputCommandInteraction } from 'discord.js'
 import { getWeather } from '../../../agent/tools/getWeather.js'
-import { CURIOUS_COLOR, FLAVOR, randomFrom, buildToolMessage } from './shared.js'
+import { CURIOUS_COLOR, FLAVOR, buildToolMessage, randomFrom } from './shared.js'
 
 export async function handleWeather(interaction: ChatInputCommandInteraction) {
   const city = interaction.options.getString('city', true)

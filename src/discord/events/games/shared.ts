@@ -1,7 +1,13 @@
 /** Shared container builders and utilities for game command handlers */
 
+import {
+  ContainerBuilder,
+  SectionBuilder,
+  SeparatorBuilder,
+  TextDisplayBuilder,
+  ThumbnailBuilder
+} from '@discordjs/builders'
 import { MessageFlags } from 'discord.js'
-import { ContainerBuilder, SectionBuilder, SeparatorBuilder, TextDisplayBuilder, ThumbnailBuilder } from '@discordjs/builders'
 
 export interface GameContainerOptions {
   accentColor: number

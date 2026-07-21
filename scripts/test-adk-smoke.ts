@@ -19,12 +19,12 @@ import net from 'node:net'
 dns.setDefaultResultOrder('ipv4first')
 net.setDefaultAutoSelectFamily(false)
 
-import { LlmAgent, Runner, InMemorySessionService, isFinalResponse, BasePlugin } from '@google/adk'
+import { BasePlugin, InMemorySessionService, LlmAgent, Runner, isFinalResponse } from '@google/adk'
 import type { LlmResponse } from '@google/adk'
 import type { Part } from '@google/genai'
+import { assembleSystemPrompt } from '../src/agent/promptAssembler.js'
 import { rokaTools } from '../src/agent/tools/index.js'
 import { config } from '../src/config.js'
-import { assembleSystemPrompt } from '../src/agent/promptAssembler.js'
 
 // --- Setup ---
 
@@ -331,7 +331,7 @@ async function main() {
         observation: `No response. Error: ${r.error}`
       }
     const lastChar = r.text.slice(-1)
-    const endsCleanly = /[.!?~♪♡♥☆★)」』>*😊🎶✨]/.test(lastChar)
+    const endsCleanly = /[.!?~♪♡♥☆★)」』>*😊🎶✨]/u.test(lastChar)
     return {
       id: 'T09',
       name: 'Response not cut off',

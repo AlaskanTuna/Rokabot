@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../config.js', () => ({
   config: {
@@ -8,7 +8,7 @@ vi.mock('../../config.js', () => ({
   }
 }))
 
-import { assembleSystemPrompt, type AssemblerInput } from '../promptAssembler.js'
+import { type AssemblerInput, assembleSystemPrompt } from '../promptAssembler.js'
 import { CORE_PROMPT } from '../prompts/core.js'
 import { SPEECH_PROMPT } from '../prompts/speech.js'
 import { TONE_PROMPTS, type ToneKey } from '../prompts/tones.js'

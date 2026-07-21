@@ -13,18 +13,18 @@
 process.env.DISCORD_TOKEN ||= 'test-stub'
 process.env.DISCORD_CLIENT_ID ||= 'test-stub'
 
-import { getDb, closeDb } from '../src/storage/database.js'
-import { saveFact, getFacts, countFacts, refreshFactTimestamps, pruneOldFacts } from '../src/storage/userMemory.js'
-import { saveMessage, loadHistory, clearHistory } from '../src/storage/sessionStore.js'
-import { _parseFacts as parseFacts, EXTRACTION_INTERVAL } from '../src/agent/memoryExtractor.js'
-import { addMessage, getMessages, clearBuffer, getMessageCount, resetAllBuffers } from '../src/agent/passiveBuffer.js'
 import {
-  markActive,
-  isMonitored,
   cleanupExpired,
   getMonitoredCount,
+  isMonitored,
+  markActive,
   resetMonitor
 } from '../src/agent/channelMonitor.js'
+import { EXTRACTION_INTERVAL, _parseFacts as parseFacts } from '../src/agent/memoryExtractor.js'
+import { addMessage, clearBuffer, getMessageCount, getMessages, resetAllBuffers } from '../src/agent/passiveBuffer.js'
+import { closeDb, getDb } from '../src/storage/database.js'
+import { clearHistory, loadHistory, saveMessage } from '../src/storage/sessionStore.js'
+import { countFacts, getFacts, pruneOldFacts, refreshFactTimestamps, saveFact } from '../src/storage/userMemory.js'
 
 // --- Test Harness ---
 

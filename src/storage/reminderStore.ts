@@ -4,8 +4,8 @@
  */
 
 import { config } from '../config.js'
-import { getDb } from './database.js'
 import { logger } from '../utils/logger.js'
+import { getDb } from './database.js'
 
 const MAX_ACTIVE_REMINDERS_PER_USER = config.reminders.maxPerUser
 

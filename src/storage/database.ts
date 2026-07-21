@@ -4,9 +4,9 @@
  * DB file lives at `data/rokabot.db` relative to the project root.
  */
 
-import Database from 'better-sqlite3'
 import { mkdirSync } from 'node:fs'
 import { resolve } from 'node:path'
+import Database from 'better-sqlite3'
 import { logger } from '../utils/logger.js'
 
 let db: Database.Database | null = null
@@ -132,10 +132,10 @@ function runMigrations(database: Database.Database): void {
   const shCols = database.prepare("PRAGMA table_info('session_history')").all() as Array<{ name: string }>
   const shColNames = new Set(shCols.map((c) => c.name))
   if (!shColNames.has('user_id')) {
-    database.exec("ALTER TABLE session_history ADD COLUMN user_id TEXT DEFAULT NULL")
+    database.exec('ALTER TABLE session_history ADD COLUMN user_id TEXT DEFAULT NULL')
   }
   if (!shColNames.has('username')) {
-    database.exec("ALTER TABLE session_history ADD COLUMN username TEXT DEFAULT NULL")
+    database.exec('ALTER TABLE session_history ADD COLUMN username TEXT DEFAULT NULL')
   }
 
   // user_memory: add guild_id to PK (requires table recreation)
