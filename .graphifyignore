@@ -1,5 +1,6 @@
 # Keep the knowledge graph focused. Merged with .gitignore (! re-includes).
-docs/*
+
+docs/_
 !docs/prd.md
 !docs/trd.md
 .claude/
@@ -11,11 +12,11 @@ CLAUDE.md
 data/
 assets/
 scripts/
-*.png
-*.jpg
-*.jpeg
-*.gif
-*.webp
-*.ico
-*.svg
+_.png
+_.jpg
+_.jpeg
+_.gif
+_.webp
+_.ico
+_.svg
 package-lock.json
