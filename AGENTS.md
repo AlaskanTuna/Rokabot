@@ -411,6 +411,7 @@ graphify explain "SomeNode"                                  # plain-language ex
 ## Keeping the graph fresh
 
 - After changing code, refresh incrementally: `graphify update .` (no LLM).
+- LLM steps (community labeling / semantic extraction) use the dedicated key from `.env`: run them as `GEMINI_API_KEY="$GRAPHIFY_GEMINI_API_KEY" graphify label .` — never burn the bot's own `GEMINI_API_KEY` on graph refreshes.
 - **The graph is local-only in this workspace** — `graphify-out/` is gitignored and never committed.
 
 Graphify (codebase comprehension) and RTK (command-output compression) are complementary — use both when present.
