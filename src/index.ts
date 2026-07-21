@@ -91,7 +91,7 @@ process.on('SIGTERM', () => shutdown('SIGTERM'))
 process.on('SIGINT', () => shutdown('SIGINT'))
 
 process.on('unhandledRejection', (reason) => {
-  logger.error({ reason }, 'Unhandled rejection')
+  logger.error({ err: reason }, 'Unhandled rejection')
 })
 
 process.on('uncaughtException', (error) => {
