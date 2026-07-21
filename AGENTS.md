@@ -75,7 +75,7 @@ See `docs/trd.md` (canonical) for contracts and data models. Do not create `docs
 npm run dev          # Start with tsx watch (hot reload)
 npm run build        # Compile TypeScript to dist/
 npm start            # Run compiled JS (production)
-npm run lint         # ESLint
+npm run lint         # Biome (lint only)
 npm run format       # Prettier --write
 npm run format:check # Prettier --check
 npm test             # vitest run
@@ -116,23 +116,35 @@ Secrets live in `.env`, tunables live in `config.yml` at the project root. Envir
 
 ## Code Style
 
-- **Formatting:** Prettier (`.prettierrc`): single quotes, no semicolons, no trailing commas, 120 char line width, 2-space indent. ESLint with TypeScript, eslint-config-prettier to avoid conflicts.
-- **Error handling:** Validate at system boundaries; do not wrap internal framework calls in try/catch.
+- **Formatting:** Prettier (`.prettierrc`): single quotes, no semicolons, no trailing commas, 120 char line width, 2-space indent. Biome as linter only (biome.json; formatter and import-sorting off — Prettier owns formatting). Conventional Commits enforced by commitlint via husky commit-msg hook; lint-staged runs on pre-commit.
+- **Error Handling:** Validate at system boundaries; do not wrap internal framework calls in try/catch.
 - **Comments:** Default to none. Comment only when the _why_ is non-obvious. Never describe _what_ the code does.
-- **Changes are surgical:** touch only what the task requires; match existing style; don't refactor what isn't broken.
+- **Changes Are Surgical:** touch only what the task requires; match existing style; don't refactor what isn't broken.
 
 > Full behavioral coding guidelines (Andrej Karpathy) are appended at the end of this file.
+
+---
+
+## Documentation Hygiene
+
+All Markdown documentation in this repo (`README.md`, `AGENTS.md`, `CLAUDE.md`, `docs/*.md`) follows **TitleCase** formatting:
+
+- **Headings and Subheadings:** every word capitalized except short articles/prepositions/conjunctions (a, an, the, of, in, on, for, and, or, to, vs), e.g. `## Getting Started`, `### Key Data Models`.
+- **Table Headers:** TitleCase in every column header cell.
+- **Bullet Point Labels:** the bold lead-in label of a bullet (`- **Label:** …`) is TitleCase, e.g. `- **Error Handling:** …`.
+- **Never re-case** code identifiers, file paths, CLI commands, config keys, env vars, model IDs, or URLs — TitleCase applies to prose labels only.
+- New docs must follow this from the start; when touching an existing doc, fix casing in the sections you touch.
 
 ---
 
 ## Working Conventions
 
 - **CLI-first.** Configure via CLI tools over GUI where possible.
-- **Gate 2 (ship) mode:** `pr-auto` into `main` — the PM opens a PR and self-merges (`gh pr merge --squash --delete-branch`). A PR is opened **only for substantial changes / the end of an iteration**; small hotfixes or minor edits are committed + pushed straight to the target branch. Merged PR branches are deleted so no residue is left. Agents never bypass this mode. Agents may create commits and push **only after explicit human authorization at Gate 2** — never unprompted, never `--force`.
-- **Workflow visibility:** `hybrid` — the workflow inputs (`AGENTS.md`, `CLAUDE.md`, `.claude/agents/`, `.codex/`, `.agents/`) are committed and shared; the generated pm-workflow artifacts (`docs/roles.md`, `docs/plan.md`, `docs/progress.md`, `docs/test.md`, `docs/decisions.md`, `docs/.pm-handoff.md`, `.claude/settings.local.json`) are **local-only** (listed in `.git/info/exclude`, never committed). Each contributor runs `/pm-workflow` on their own machine to scaffold them.
-- **Model profile:** `max` — one knob that routes every role's model on **both vendors**, pins efforts (planner **max**, programmer **high**, QA **high** — on every profile), and caps parallel waves:
+- **Gate 2 (Ship) Mode:** `pr-auto` into `main` — the PM opens a PR and self-merges (`gh pr merge --squash --delete-branch`). A PR is opened **only for substantial changes / the end of an iteration**; small hotfixes or minor edits are committed + pushed straight to the target branch. Merged PR branches are deleted so no residue is left. Agents never bypass this mode. Agents may create commits and push **only after explicit human authorization at Gate 2** — never unprompted, never `--force`.
+- **Workflow Visibility:** `hybrid` — the workflow inputs (`AGENTS.md`, `CLAUDE.md`, `.claude/agents/`, `.codex/`, `.agents/`) are committed and shared; the generated pm-workflow artifacts (`docs/roles.md`, `docs/plan.md`, `docs/progress.md`, `docs/test.md`, `docs/decisions.md`, `docs/.pm-handoff.md`, `.claude/settings.local.json`) are **local-only** (listed in `.git/info/exclude`, never committed). Each contributor runs `/pm-workflow` on their own machine to scaffold them.
+- **Model Profile:** `max` — one knob that routes every role's model on **both vendors**, pins efforts (planner **max**, programmer **high**, QA **high** — on every profile), and caps parallel waves:
 
-  | Profile    | PL (Claude) | PG (Claude) | QA (Claude) | PL + QA (Codex) | PG / workers (Codex) | Wave cap |
+  | Profile    | PL (Claude) | PG (Claude) | QA (Claude) | PL + QA (Codex) | PG / Workers (Codex) | Wave Cap |
   | ---------- | ----------- | ----------- | ----------- | --------------- | -------------------- | -------- |
   | `max`      | opus        | sonnet      | opus        | gpt-5.6-sol     | gpt-5.6-terra        | 3        |
   | `balanced` | opus        | sonnet      | sonnet      | gpt-5.6-sol     | gpt-5.6-terra        | 3        |
@@ -142,7 +154,7 @@ Secrets live in `.env`, tunables live in `config.yml` at the project root. Envir
 
 - **PM skill (mandatory).** Agents in this workspace follow the PM skill at `.agents/skills/pm-workflow/` (symlinked from `.claude/skills/pm-workflow/`; SOURCE: https://github.com/AlaskanTuna/pm-workflow) when implementing any new feature or phase.
 - **Log decisions.** At Gate 2, the PM appends one line to `docs/decisions.md` for any task that settles a lasting choice (architecture, library, convention, a resolved trade-off); PL reads that log before planning and flags any reversal at Gate 1. One line per decision — not an ADR system.
-- **Codex delegation:** `executor` — Codex workers (gpt-5.6-terra / high, per the invocation contract) may implement PG tasks to conserve Claude usage; `second-opinion` and `peer-consult` remain off (peer consults still available on explicit human trigger). A Codex main agent still uses the native `.codex/agents/` role subagents regardless of this setting.
+- **Codex Delegation:** `executor` — Codex workers (gpt-5.6-terra / high, per the invocation contract) may implement PG tasks to conserve Claude usage; `second-opinion` and `peer-consult` remain off (peer consults still available on explicit human trigger). A Codex main agent still uses the native `.codex/agents/` role subagents regardless of this setting.
 - **Log progress.** After each task, PG appends a dated entry to `docs/progress.md` and ticks `docs/plan.md`. Exception — **parallel waves**: PGs in a wave return summaries instead, and the PM does the ticking/logging.
 - **No secrets in repo.** `.env.example` committed, `.env` gitignored. Discord and Gemini keys live in `.env`, never committed.
 
@@ -283,9 +295,9 @@ git add . && git commit -m "msg" && git push
 rtk git add . && rtk git commit -m "msg" && rtk git push
 ```
 
-## RTK Commands by Workflow
+## RTK Commands By Workflow
 
-### Build & Compile (80-90% savings)
+### Build & Compile (80-90% Savings)
 
 ```bash
 rtk tsc                 # TypeScript errors grouped by file/code (83%)
@@ -293,14 +305,14 @@ rtk lint                # ESLint/Biome violations grouped (84%)
 rtk prettier --check    # Files needing format only (70%)
 ```
 
-### Test (60-99% savings)
+### Test (60-99% Savings)
 
 ```bash
 rtk vitest              # Vitest failures only (99.5%)
 rtk test <cmd>          # Generic test wrapper - failures only
 ```
 
-### Git (59-80% savings)
+### Git (59-80% Savings)
 
 ```bash
 rtk git status          # Compact status
@@ -319,7 +331,7 @@ rtk git worktree        # Compact worktree
 
 Note: Git passthrough works for ALL subcommands, even those not explicitly listed.
 
-### GitHub (26-87% savings)
+### GitHub (26-87% Savings)
 
 ```bash
 rtk gh pr view <num>    # Compact PR view (87%)
@@ -329,14 +341,14 @@ rtk gh issue list       # Compact issue list (80%)
 rtk gh api              # Compact API responses (26%)
 ```
 
-### JavaScript/TypeScript Tooling (70-90% savings)
+### JavaScript/TypeScript Tooling (70-90% Savings)
 
 ```bash
 rtk npm run <script>    # Compact npm script output
 rtk npx <cmd>           # Compact npx command output
 ```
 
-### Files & Search (60-75% savings)
+### Files & Search (60-75% Savings)
 
 ```bash
 rtk ls <path>           # Tree format, compact (65%)
@@ -345,7 +357,7 @@ rtk grep <pattern>      # Search grouped by file (75%). Format flags (-c, -l, -L
 rtk find <pattern>      # Find grouped by directory (70%)
 ```
 
-### Analysis & Debug (70-90% savings)
+### Analysis & Debug (70-90% Savings)
 
 ```bash
 rtk err <cmd>           # Filter errors only from any command
@@ -357,7 +369,7 @@ rtk summary <cmd>       # Smart summary of command output
 rtk diff                # Ultra-compact diffs
 ```
 
-### Infrastructure (85% savings)
+### Infrastructure (85% Savings)
 
 ```bash
 rtk docker ps           # Compact container list
@@ -365,7 +377,7 @@ rtk docker images       # Compact image list
 rtk docker logs <c>     # Deduplicated logs
 ```
 
-### Network (65-70% savings)
+### Network (65-70% Savings)
 
 ```bash
 rtk curl <url>          # Compact HTTP responses (70%)
@@ -395,7 +407,7 @@ Overall average: **60-90% token reduction** on common development operations.
 
 Graphify builds a persistent, queryable knowledge graph of this project, so you answer architecture and relationship questions from a compact map instead of grepping and reading many files.
 
-## When to use it
+## When to Use It
 
 If `graphify-out/graph.json` exists, treat codebase questions ("how does X work", "what calls Y", "where is Z handled", "trace the data flow") as a **`graphify query`** FIRST — before grep/read:
 
@@ -408,7 +420,7 @@ graphify explain "SomeNode"                                  # plain-language ex
 
 **Applies to every agent** — the PM _and_ PG/programmer subagents (Codex workers read this AGENTS.md too): run `graphify query` before grepping for architecture/relationship questions, then drop to grep/sed/Read for exact `file:line` evidence — the graph gives you the file, not the line.
 
-## Keeping the graph fresh
+## Keeping the Graph Fresh
 
 - After changing code, refresh incrementally: `graphify update .` (no LLM).
 - LLM steps (community labeling / semantic extraction) use the dedicated key from `.env`: run them as `GEMINI_API_KEY="$GRAPHIFY_GEMINI_API_KEY" graphify label .` — never burn the bot's own `GEMINI_API_KEY` on graph refreshes.

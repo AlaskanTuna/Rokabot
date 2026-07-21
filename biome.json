@@ -1,0 +1,46 @@
+{
+  "$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
+  "formatter": {
+    "enabled": false
+  },
+  "organizeImports": {
+    "enabled": false
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "single",
+      "semicolons": "asNeeded",
+      "trailingCommas": "none"
+    }
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "style": {
+        "noNonNullAssertion": "off",
+        "useNumberNamespace": "off",
+        "useTemplate": "off",
+        "useImportType": "off",
+        "noInferrableTypes": "off",
+        "useSingleVarDeclarator": "off",
+        "noUselessElse": "off",
+        "useExponentiationOperator": "off"
+      },
+      "suspicious": {
+        "noGlobalIsNan": "off"
+      },
+      "complexity": {
+        "useLiteralKeys": "off"
+      }
+    }
+  },
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "ignore": [".agents/**", "graphify-out/**", "dist/**", "data/**"]
+  }
+}
