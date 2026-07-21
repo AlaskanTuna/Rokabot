@@ -11,6 +11,11 @@ CLAUDE.md
 data/
 assets/
 scripts/
+*.pdf
+*.mp4
+*.mp3
+*.wav
+*.zip
 *.png
 *.jpg
 *.jpeg
