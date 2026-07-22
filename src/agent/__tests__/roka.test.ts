@@ -1,6 +1,44 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { destroyAllSessions, runTurnWithReliability } from '../roka.js'
+import { config } from '../../config.js'
+import { estimateTokens } from '../../utils/tokens.js'
+import { assembleSystemPrompt } from '../promptAssembler.js'
+import {
+  __resetTestRunTurnFactory,
+  __setTestRunTurnFactory,
+  destroyAllSessions,
+  destroySession,
+  generateResponse,
+  runTurnWithReliability
+} from '../roka.js'
 import { beginShutdown, isShuttingDown, resetForTest } from '../shutdownSignal.js'
+import { rokaTools } from '../tools/index.js'
+
+vi.mock('../../storage/sessionStore.js', () => ({
+  getChannelUsers: vi.fn(() => new Map()),
+  loadHistory: vi.fn(() => []),
+  saveMessage: vi.fn()
+}))
+
+vi.mock('../../storage/userMemory.js', () => ({
+  getAllFactsForPrompt: vi.fn(),
+  refreshFactTimestamps: vi.fn()
+}))
+
+vi.mock('../../storage/userNames.js', () => ({
+  getAllUserNames: vi.fn(() => new Map())
+}))
+
+vi.mock('../passiveBuffer.js', () => ({
+  getMessages: vi.fn(() => [])
+}))
+
+vi.mock('../../utils/rateLimiter.js', () => ({
+  getSharedRateLimiter: vi.fn(() => ({ tryConsumeAboveFloor: () => true }))
+}))
+
+vi.mock('../../utils/timezone.js', () => ({
+  getLocalHour: () => 12
+}))
 
 const genericFallback = 'generic fallback'
 const safetyDeflection = 'safety deflection'
@@ -24,7 +62,9 @@ function options(overrides: Partial<Parameters<typeof runTurnWithReliability>[0]
   }
 }
 
-afterEach(() => {
+afterEach(async () => {
+  __resetTestRunTurnFactory()
+  await destroySession('roka-metrics-channel')
   resetForTest()
   vi.restoreAllMocks()
 })
@@ -170,5 +210,103 @@ describe('runTurnWithReliability', () => {
 
     await expect(response).resolves.toMatchObject({ text: genericFallback, action: 'preserve', attempts: 1 })
     expect(runTurn.mock.calls[0][1].aborted).toBe(true)
+  })
+})
+
+describe('generateResponse metrics', () => {
+  it('returns harness-comparable metrics for a successful turn', async () => {
+    __setTestRunTurnFactory(() => async () => ({ text: 'Metric reply~', hasText: true, hasFunctionCall: false }))
+
+    const result = await generateResponse({
+      channelId: 'roka-metrics-channel',
+      guildId: 'metrics-guild',
+      userMessage: 'Hello metrics.',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id'
+    })
+
+    const expectedTokensIn =
+      estimateTokens(
+        `${assembleSystemPrompt({ tone: result.tone, participants: ['Mio'], hour: 12, displayName: 'Mio' })}\n\n- The current user's Discord ID is "mio-id". Use this ID (not their name) when calling remember_user or recall_user tools.`
+      ) +
+      estimateTokens(JSON.stringify(rokaTools)) +
+      estimateTokens('[Mio]: Hello metrics.')
+
+    expect(result.metrics).toMatchObject({
+      outcome: 'ok',
+      kind: 'ok',
+      retries: 0,
+      retryLatencyMs: 0,
+      tokensInEst: expectedTokensIn,
+      tokensOutEst: estimateTokens('Metric reply~')
+    })
+    expect(result.metrics.generateMs).toBeGreaterThanOrEqual(0)
+    expect(result.metrics.llmMs).toBeGreaterThanOrEqual(0)
+  })
+
+  it('returns retry and outcome metrics without changing reliability behavior', async () => {
+    const gemini = config.gemini as { retryBackoffBaseMs: number; retryBackoffCapMs: number }
+    const originalBackoffBaseMs = gemini.retryBackoffBaseMs
+    const originalBackoffCapMs = gemini.retryBackoffCapMs
+    gemini.retryBackoffBaseMs = 1
+    gemini.retryBackoffCapMs = 5
+
+    try {
+      __setTestRunTurnFactory(
+        () => async (attempt) =>
+          attempt === 0
+            ? { errorCode: '429', errorMessage: 'quota exhausted', hasText: false, hasFunctionCall: false }
+            : { text: 'Recovered~', hasText: true, hasFunctionCall: false }
+      )
+
+      const recovered = await generateResponse({
+        channelId: 'roka-metrics-channel',
+        guildId: 'metrics-guild',
+        userMessage: 'Please retry.',
+        displayName: 'Mio',
+        username: 'mio',
+        userId: 'mio-id'
+      })
+
+      expect(recovered.metrics).toMatchObject({ retries: 1, outcome: 'ok' })
+      expect(recovered.metrics.retryLatencyMs).toBeGreaterThan(0)
+
+      __setTestRunTurnFactory(() => async () => ({ errorCode: '503', errorMessage: 'unavailable' }))
+      const fallback = await generateResponse({
+        channelId: 'roka-metrics-channel',
+        guildId: 'metrics-guild',
+        userMessage: 'Fallback please.',
+        displayName: 'Mio',
+        username: 'mio',
+        userId: 'mio-id'
+      })
+      expect(fallback.metrics).toMatchObject({ outcome: 'fallback', kind: 'transient_http' })
+
+      __setTestRunTurnFactory(() => async () => ({ finishReason: 'SAFETY', hasText: false, hasFunctionCall: false }))
+      const safety = await generateResponse({
+        channelId: 'roka-metrics-channel',
+        guildId: 'metrics-guild',
+        userMessage: 'Safety please.',
+        displayName: 'Mio',
+        username: 'mio',
+        userId: 'mio-id'
+      })
+      expect(safety.metrics).toMatchObject({ outcome: 'deflection', kind: 'safety' })
+
+      __setTestRunTurnFactory(() => async () => ({ errorCode: 'INVALID_ARGUMENT', errorMessage: 'bad request' }))
+      const terminal = await generateResponse({
+        channelId: 'roka-metrics-channel',
+        guildId: 'metrics-guild',
+        userMessage: 'Terminal please.',
+        displayName: 'Mio',
+        username: 'mio',
+        userId: 'mio-id'
+      })
+      expect(terminal.metrics).toMatchObject({ outcome: 'deflection', kind: 'terminal' })
+    } finally {
+      gemini.retryBackoffBaseMs = originalBackoffBaseMs
+      gemini.retryBackoffCapMs = originalBackoffCapMs
+    }
   })
 })

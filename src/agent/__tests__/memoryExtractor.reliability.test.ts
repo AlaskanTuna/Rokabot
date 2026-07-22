@@ -47,9 +47,12 @@ vi.mock('../../utils/rateLimiter.js', () => ({
   getSharedRateLimiter: mocks.getSharedRateLimiter
 }))
 
+import { getDb } from '../../storage/database.js'
 import { maybeExtractFromBuffer, resetCounters } from '../memoryExtractor.js'
 import { addMessage, resetAllBuffers } from '../passiveBuffer.js'
 import { beginShutdown, resetForTest } from '../shutdownSignal.js'
+
+process.env.ROKABOT_DB_PATH = ':memory:'
 
 function queueExtraction(channelId: string = 'channel-1'): void {
   addMessage(channelId, 'user-1', 'Alice', 'alice', 'I love Frieren')
@@ -70,6 +73,7 @@ describe('memory extraction reliability', () => {
     mocks.getFacts.mockReturnValue([])
     mocks.getSharedRateLimiter.mockReturnValue({ tryConsumeAboveFloor: mocks.tryConsumeAboveFloor })
     mocks.tryConsumeAboveFloor.mockReturnValue(true)
+    getDb().prepare('DELETE FROM extraction_events').run()
   })
 
   it('skips extraction without calling Gemini when the RPM floor refuses it', async () => {
@@ -80,6 +84,7 @@ describe('memory extraction reliability', () => {
 
     expect(mocks.generateContent).not.toHaveBeenCalled()
     expect(mocks.tryConsumeAboveFloor).toHaveBeenCalledWith(3)
+    expect(getDb().prepare('SELECT COUNT(*) AS count FROM extraction_events').get()).toEqual({ count: 0 })
   })
 
   it('consumes only successful floor-gated extraction attempts and preserves a two-token user retry', async () => {
@@ -113,6 +118,64 @@ describe('memory extraction reliability', () => {
 
     expect(mocks.generateContent).toHaveBeenCalledTimes(2)
     expect(mocks.tryConsumeAboveFloor).toHaveBeenCalledTimes(2)
+  })
+
+  it('records a saved extraction event', async () => {
+    mocks.generateContent.mockResolvedValueOnce({
+      text: '[{"userId":"Alice","key":"favorite_anime","value":"Frieren"}]'
+    })
+
+    queueExtraction()
+    await vi.waitFor(() => {
+      const rows = getDb()
+        .prepare('SELECT guild_id, channel_id, duration_ms, outcome, facts_saved FROM extraction_events')
+        .all() as Array<Record<string, unknown>>
+
+      expect(rows).toHaveLength(1)
+      expect(rows[0]).toMatchObject({
+        guild_id: 'guild-1',
+        channel_id: 'channel-1',
+        outcome: 'saved',
+        facts_saved: 1
+      })
+      expect(rows[0].duration_ms).toBeGreaterThanOrEqual(0)
+    })
+  })
+
+  it('records a no-facts extraction event', async () => {
+    mocks.generateContent.mockResolvedValueOnce({ text: '[]' })
+
+    queueExtraction()
+    await vi.waitFor(() => {
+      expect(getDb().prepare('SELECT outcome, facts_extracted, facts_saved FROM extraction_events').all()).toEqual([
+        { outcome: 'no_facts', facts_extracted: 0, facts_saved: 0 }
+      ])
+    })
+  })
+
+  it('records a no-facts event when every extracted fact is already saved', async () => {
+    mocks.getFacts.mockReturnValue([{ key: 'favorite_anime', value: 'Frieren' }])
+    mocks.generateContent.mockResolvedValueOnce({
+      text: '[{"userId":"Alice","key":"favorite_anime","value":"Frieren"}]'
+    })
+
+    queueExtraction()
+    await vi.waitFor(() => {
+      expect(getDb().prepare('SELECT outcome, facts_extracted, facts_saved FROM extraction_events').all()).toEqual([
+        { outcome: 'no_facts', facts_extracted: 1, facts_saved: 0 }
+      ])
+    })
+  })
+
+  it('records a failed extraction event after a Gemini failure', async () => {
+    mocks.generateContent.mockRejectedValueOnce(new Error('SAFETY block'))
+
+    queueExtraction()
+    await vi.waitFor(() => {
+      expect(getDb().prepare('SELECT outcome, facts_extracted, facts_saved FROM extraction_events').all()).toEqual([
+        { outcome: 'failed', facts_extracted: 0, facts_saved: 0 }
+      ])
+    })
   })
 
   it('uses the configured extraction model', async () => {

@@ -1,6 +1,7 @@
 import type { Client, Interaction } from 'discord.js'
 import { DiscordAPIError } from 'discord.js'
 import { type ImageAttachment, generateResponse } from '../../agent/roka.js'
+import { type ResponseEventInput, recordResponseEvent } from '../../storage/metricsStore.js'
 import { logger } from '../../utils/logger.js'
 import { RateLimiter } from '../../utils/rateLimiter.js'
 import { isChannelBusy, markBusy, markFree } from '../concurrency.js'
@@ -16,6 +17,7 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
   const handleGameCommand = createGameCommandHandler(client)
 
   return async function handleInteractionCreate(interaction: Interaction): Promise<void> {
+    const handlerStartMs = performance.now()
     if (!interaction.isChatInputCommand()) return
 
     if (interaction.commandName !== 'chat') {
@@ -28,6 +30,7 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
     const message = interaction.options.getString('message', true)
     const attachment = interaction.options.getAttachment('image')
     const channelId = interaction.channelId
+    const guildId = interaction.guildId ?? 'global'
     const member = interaction.member
     const displayName = member && 'displayName' in member ? member.displayName : interaction.user.displayName
 
@@ -37,7 +40,7 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
       imageAttachments.push({ url: attachment.url, contentType: attachment.contentType })
     }
 
-    logger.info({ channelId, command: 'chat' }, 'Slash command received')
+    logger.debug({ channelId, command: 'chat' }, 'Slash command received')
     logger.debug({ channelId, message, hasImage: !!attachment }, 'Slash command details')
 
     if (isChannelBusy(channelId)) {
@@ -62,9 +65,13 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
 
     markBusy(channelId)
     try {
-      const { text: responseText, tone } = await generateResponse({
+      const {
+        text: responseText,
+        tone,
+        metrics
+      } = await generateResponse({
         channelId,
-        guildId: interaction.guildId ?? 'global',
+        guildId,
         userMessage: message,
         displayName,
         username: interaction.user.username,
@@ -81,6 +88,18 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
       for (let i = 1; i < chunks.length; i++) {
         await interaction.followUp(buildRokaMessage(chunks[i], tone))
       }
+
+      const responseEvent: ResponseEventInput = {
+        guildId,
+        channelId,
+        userId: interaction.user.id,
+        trigger: 'slash',
+        tone,
+        e2eMs: Math.max(1, Math.round(performance.now() - handlerStartMs)),
+        ...metrics
+      }
+      logger.info(responseEvent, 'Response completed')
+      recordResponseEvent(responseEvent)
     } catch (error) {
       if (isIgnorableDiscordError(error)) {
         logger.warn({ error, channelId, code: (error as DiscordAPIError).code }, 'Discord API error (ignored)')

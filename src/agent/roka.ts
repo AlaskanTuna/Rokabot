@@ -6,6 +6,7 @@ import type { GetSessionRequest, Session } from '@google/adk'
 import type { Content, Part } from '@google/genai'
 import { config } from '../config.js'
 import type { WindowMessage } from '../session/types.js'
+import type { ResponseMetrics } from '../storage/metricsStore.js'
 import { getChannelUsers, loadHistory, saveMessage } from '../storage/sessionStore.js'
 import { getAllFactsForPrompt, refreshFactTimestamps } from '../storage/userMemory.js'
 import { getAllUserNames } from '../storage/userNames.js'
@@ -13,6 +14,7 @@ import { processImageForGemini } from '../utils/imageProcessor.js'
 import { logger } from '../utils/logger.js'
 import { getSharedRateLimiter } from '../utils/rateLimiter.js'
 import { getLocalHour } from '../utils/timezone.js'
+import { estimateTokens } from '../utils/tokens.js'
 import { classifyGeminiFailure, computeBackoff } from './geminiReliability.js'
 import { getMessages as getBufferMessages } from './passiveBuffer.js'
 import { assembleSystemPrompt } from './promptAssembler.js'
@@ -39,6 +41,7 @@ interface GenerateOptions {
 export interface GenerateResult {
   text: string
   tone: ToneKey
+  metrics: ResponseMetrics
 }
 
 const MAX_IMAGE_SIZE_BYTES = 4 * 1024 * 1024
@@ -51,6 +54,7 @@ const activeAbortControllers = new Set<AbortController>()
 const SAFETY_DEFLECTION = "Ehh… let's not get into that one~"
 const RECITATION_DEFLECTION = "Ah, I don't think I should repeat that one exactly~"
 const TERMINAL_DEFLECTION = "Eep, something went wrong on my side. Let's try again later~"
+const toolsTok = estimateTokens(JSON.stringify(rokaTools))
 
 export interface TurnOutcome {
   text?: string
@@ -83,6 +87,7 @@ interface ReliabilityResult {
   kind: ReturnType<typeof classifyGeminiFailure>['kind']
   action: 'preserve' | 'destroy'
   attempts: number
+  retryLatencyMs: number
   success: boolean
 }
 
@@ -123,6 +128,7 @@ function fallbackResult(
   kind: ReliabilityResult['kind'],
   action: ReliabilityResult['action'],
   attempts: number,
+  retryLatencyMs: number,
   options: RunTurnWithReliabilityOptions
 ): ReliabilityResult {
   const text =
@@ -134,7 +140,7 @@ function fallbackResult(
           ? options.terminalDeflection
           : options.genericFallback
 
-  return { text, kind, action, attempts, success: false }
+  return { text, kind, action, attempts, retryLatencyMs, success: false }
 }
 
 /** Runs one user turn with bounded retry policy while keeping the initial user event single-shot. */
@@ -145,7 +151,7 @@ export async function runTurnWithReliability(options: RunTurnWithReliabilityOpti
   let lastKind: ReliabilityResult['kind'] = 'network'
 
   for (let attempt = 0; attempt <= options.maxRetries; attempt++) {
-    if (shouldStop()) return fallbackResult(lastKind, 'preserve', attempt, options)
+    if (shouldStop()) return fallbackResult(lastKind, 'preserve', attempt, retryLatencyMs, options)
 
     const abortController = new AbortController()
     activeAbortControllers.add(abortController)
@@ -169,37 +175,51 @@ export async function runTurnWithReliability(options: RunTurnWithReliabilityOpti
       activeAbortControllers.delete(abortController)
     }
 
-    if (outcome.sessionMissing) return fallbackResult('network', 'preserve', attempt + 1, options)
+    if (outcome.sessionMissing) return fallbackResult('network', 'preserve', attempt + 1, retryLatencyMs, options)
     if (shouldStop() || abortController.signal.aborted)
-      return fallbackResult(lastKind, 'preserve', attempt + 1, options)
+      return fallbackResult(lastKind, 'preserve', attempt + 1, retryLatencyMs, options)
 
     const failure = classifyGeminiFailure(outcome)
     lastKind = failure.kind
     if (failure.kind === 'ok' && outcome.text) {
-      return { text: outcome.text, kind: 'ok', action: 'preserve', attempts: attempt + 1, success: true }
+      return {
+        text: outcome.text,
+        kind: 'ok',
+        action: 'preserve',
+        attempts: attempt + 1,
+        retryLatencyMs,
+        success: true
+      }
     }
 
     if (!failure.retryable)
-      return fallbackResult(failure.kind, failure.kind === 'terminal' ? 'destroy' : 'preserve', attempt + 1, options)
+      return fallbackResult(
+        failure.kind,
+        failure.kind === 'terminal' ? 'destroy' : 'preserve',
+        attempt + 1,
+        retryLatencyMs,
+        options
+      )
 
     const retryLimit = failure.kind === 'recitation' ? Math.min(options.maxRetries, 1) : options.maxRetries
     if (attempt >= retryLimit || shouldStop()) {
-      return fallbackResult(failure.kind, 'preserve', attempt + 1, options)
+      return fallbackResult(failure.kind, 'preserve', attempt + 1, retryLatencyMs, options)
     }
 
     const delayMs = Math.min(options.computeBackoff(attempt), Math.max(0, options.maxLatencyMs - retryLatencyMs))
     if (delayMs <= 0 && retryLatencyMs >= options.maxLatencyMs) {
-      return fallbackResult(failure.kind, 'preserve', attempt + 1, options)
+      return fallbackResult(failure.kind, 'preserve', attempt + 1, retryLatencyMs, options)
     }
-    if (!options.tryConsumeRetry()) return fallbackResult(failure.kind, 'preserve', attempt + 1, options)
+    if (!options.tryConsumeRetry())
+      return fallbackResult(failure.kind, 'preserve', attempt + 1, retryLatencyMs, options)
 
     await sleep(delayMs, abortController.signal)
     retryLatencyMs += delayMs
     if (shouldStop() || abortController.signal.aborted)
-      return fallbackResult(failure.kind, 'preserve', attempt + 1, options)
+      return fallbackResult(failure.kind, 'preserve', attempt + 1, retryLatencyMs, options)
   }
 
-  return fallbackResult(lastKind, 'preserve', options.maxRetries + 1, options)
+  return fallbackResult(lastKind, 'preserve', options.maxRetries + 1, retryLatencyMs, options)
 }
 
 /** Caps event history returned by getSession to keep context within budget */
@@ -473,6 +493,7 @@ function eventsToWindowMessages(events: Event[]): WindowMessage[] {
  * @returns Response text and detected tone
  */
 export async function generateResponse(options: GenerateOptions): Promise<GenerateResult> {
+  const generateStartMs = performance.now()
   const { channelId, guildId, userMessage, displayName, username, userId, imageAttachments } = options
 
   toolCallsThisRequest = []
@@ -559,6 +580,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     'Sending ADK request'
   )
 
+  const llmStartMs = performance.now()
   const reliability = await runTurnWithReliability({
     maxRetries: config.gemini.liveMaxRetries,
     maxLatencyMs: config.gemini.retryBackoffCapMs,
@@ -621,6 +643,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
         return { text: responseText, finishReason, hasText: Boolean(responseText), hasFunctionCall }
       })
   })
+  const llmMs = Math.round(performance.now() - llmStartMs)
 
   if (reliability.action === 'destroy') await destroySession(channelId)
 
@@ -651,5 +674,29 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     { responseLength: reliability.text.length, attempts: reliability.attempts, failureKind: reliability.kind },
     'ADK response extracted'
   )
-  return { text: reliability.text, tone }
+
+  const outcome: ResponseMetrics['outcome'] = reliability.success
+    ? 'ok'
+    : reliability.kind === 'transient_http' || reliability.kind === 'network' || reliability.kind === 'empty_text'
+      ? 'fallback'
+      : 'deflection'
+  const metrics: ResponseMetrics = {
+    generateMs: Math.round(performance.now() - generateStartMs),
+    llmMs,
+    retryLatencyMs: reliability.retryLatencyMs,
+    retries: reliability.attempts - 1,
+    outcome,
+    kind: reliability.kind,
+    tokensInEst:
+      estimateTokens(systemPrompt) +
+      fakeMessages.reduce(
+        (total, message) => total + estimateTokens(`[${message.displayName}]: ${message.content}`),
+        0
+      ) +
+      toolsTok +
+      estimateTokens(`[${displayName}]: ${userMessage}`),
+    tokensOutEst: estimateTokens(reliability.text)
+  }
+
+  return { text: reliability.text, tone, metrics }
 }

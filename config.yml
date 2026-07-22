@@ -39,6 +39,9 @@ memory:
   factRetentionDays: 14 # Days before unused facts are auto-pruned
   channelMonitorTtlMs: 86400000 # How long a channel stays monitored after last @mention (24h)
 
+metrics:
+  retentionDays: 90 # Days before response and extraction events are auto-pruned
+
 emoji:
   probability: 0.33 # Chance of reacting when a keyword rule matches (0-1)
   cooldownMs: 180000 # Per-channel cooldown between reactions in ms

@@ -31,6 +31,7 @@ import { startReminderScheduler, stopReminderScheduler } from './discord/reminde
 import { stopStatusCycler } from './discord/statusCycler.js'
 import { destroyAllGames as destroyAllShiritoriGames } from './games/shiritori.js'
 import { closeDb, getDb } from './storage/database.js'
+import { pruneOldMetrics } from './storage/metricsStore.js'
 import { pruneOldHistory } from './storage/sessionStore.js'
 import { pruneOldFacts } from './storage/userMemory.js'
 import { logger } from './utils/logger.js'
@@ -44,9 +45,11 @@ client.once('clientReady', () => {
 
   pruneOldHistory(config.session.historyRetentionDays)
   pruneOldFacts(config.memory.factRetentionDays)
+  pruneOldMetrics(config.metrics.retentionDays)
 
   setInterval(() => pruneOldHistory(config.session.historyRetentionDays), 60 * 60 * 1000)
   setInterval(() => pruneOldFacts(config.memory.factRetentionDays), 24 * 60 * 60 * 1000)
+  setInterval(() => pruneOldMetrics(config.metrics.retentionDays), 24 * 60 * 60 * 1000)
   setInterval(() => cleanupExpired(), 60 * 60 * 1000)
   setInterval(() => cleanupExpiredCooldowns(), 60 * 60 * 1000)
 })

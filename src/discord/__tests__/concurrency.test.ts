@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => {
   return {
     busyChannels,
     generateResponse: vi.fn(),
+    recordResponseEvent: vi.fn(),
     isChannelBusy: vi.fn((channelId: string) => busyChannels.has(channelId)),
     markBusy: vi.fn((channelId: string) => busyChannels.add(channelId)),
     markFree: vi.fn((channelId: string) => busyChannels.delete(channelId))
@@ -15,6 +16,7 @@ const mocks = vi.hoisted(() => {
 })
 
 vi.mock('../../agent/roka.js', () => ({ generateResponse: mocks.generateResponse }))
+vi.mock('../../storage/metricsStore.js', () => ({ recordResponseEvent: mocks.recordResponseEvent }))
 vi.mock('../concurrency.js', () => ({
   isChannelBusy: mocks.isChannelBusy,
   markBusy: mocks.markBusy,
@@ -143,7 +145,20 @@ describe('Discord concurrency guards', () => {
     ]
   ])('checks busy before consuming one token and frees a %s channel after completion', async (_kind, invoke) => {
     const rateLimiter = createRateLimiter()
-    let resolveResponse!: (value: { text: string; tone: string }) => void
+    let resolveResponse!: (value: {
+      text: string
+      tone: string
+      metrics: {
+        generateMs: number
+        llmMs: number
+        retryLatencyMs: number
+        retries: number
+        outcome: string
+        kind: string
+        tokensInEst: number
+        tokensOutEst: number
+      }
+    }) => void
     mocks.generateResponse.mockReturnValueOnce(
       new Promise((resolve) => {
         resolveResponse = resolve
@@ -158,7 +173,20 @@ describe('Discord concurrency guards', () => {
     expect(mocks.markBusy).toHaveBeenCalledWith('channel-1')
     expect(mocks.busyChannels.has('channel-1')).toBe(true)
 
-    resolveResponse({ text: 'response', tone: 'playful' })
+    resolveResponse({
+      text: 'response',
+      tone: 'playful',
+      metrics: {
+        generateMs: 1,
+        llmMs: 1,
+        retryLatencyMs: 0,
+        retries: 0,
+        outcome: 'ok',
+        kind: 'ok',
+        tokensInEst: 1,
+        tokensOutEst: 1
+      }
+    })
     await handling
 
     expect(mocks.markFree).toHaveBeenCalledWith('channel-1')
