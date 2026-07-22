@@ -5,6 +5,10 @@
 
 import type { ChatInputCommandInteraction, Client, TextBasedChannel } from 'discord.js'
 import { setTimeoutCallback } from '../../games/hangman.js'
+import {
+  getGame as getShiritoriGame,
+  setTimeoutCallback as setShiritoriTimeoutCallback
+} from '../../games/shiritori.js'
 import { logger } from '../../utils/logger.js'
 import {
   handleBuddyGuide,
@@ -50,49 +54,37 @@ export function createGameCommandHandler(client?: Client) {
 
   // Wire up the shiritori timeout callback
   if (client) {
-    import('../../games/shiritori.js').then((shiritori) => {
-      const game = shiritori
-      const origStartGame = game.startGame
-      game.startGame = (channelId: string, starterName: string) => {
-        const result = origStartGame(channelId, starterName)
-        if (result.success) {
-          const g = game.getGame(channelId)
-          if (g) {
-            g.onTimeout = (chId: string, playerName: string) => {
-              const channel = client.channels.cache.get(chId)
-              if (channel && 'send' in channel) {
-                const sendable = channel as Extract<typeof channel, { send: unknown }>
-                const remaining = g.currentPlayerOrder
-                if (!g.active && remaining.length === 1) {
-                  const winner = remaining[0]
-                  const payload = buildTimeoutContainer(
-                    SHIRITORI_COLORS.info,
-                    'Shiritori',
-                    `**${playerName}** took too long... they're out! \u{1F4A4}\n\n**${winner}** wins the game! Congratulations~ \u266A`
-                  )
-                  sendable
-                    .send(payload)
-                    .catch((err: unknown) =>
-                      logger.error({ error: err, channelId: chId }, 'Failed to send shiritori timeout message')
-                    )
-                } else {
-                  const nextPlayer = remaining[g.currentTurnIndex]
-                  const payload = buildTimeoutContainer(
-                    SHIRITORI_COLORS.info,
-                    'Shiritori',
-                    `**${playerName}** took too long... they're out! \u{1F4A4} Your turn, **${nextPlayer}**!`
-                  )
-                  sendable
-                    .send(payload)
-                    .catch((err: unknown) =>
-                      logger.error({ error: err, channelId: chId }, 'Failed to send shiritori timeout message')
-                    )
-                }
-              }
-            }
-          }
+    setShiritoriTimeoutCallback((channelId: string, playerName: string) => {
+      const g = getShiritoriGame(channelId)
+      const channel = client.channels.cache.get(channelId)
+      if (g && channel && 'send' in channel) {
+        const sendable = channel as Extract<typeof channel, { send: unknown }>
+        const remaining = g.currentPlayerOrder
+        if (!g.active && remaining.length === 1) {
+          const winner = remaining[0]
+          const payload = buildTimeoutContainer(
+            SHIRITORI_COLORS.info,
+            'Shiritori',
+            `**${playerName}** took too long... they're out! \u{1F4A4}\n\n**${winner}** wins the game! Congratulations~ \u266A`
+          )
+          sendable
+            .send(payload)
+            .catch((err: unknown) =>
+              logger.error({ error: err, channelId }, 'Failed to send shiritori timeout message')
+            )
+        } else {
+          const nextPlayer = remaining[g.currentTurnIndex]
+          const payload = buildTimeoutContainer(
+            SHIRITORI_COLORS.info,
+            'Shiritori',
+            `**${playerName}** took too long... they're out! \u{1F4A4} Your turn, **${nextPlayer}**!`
+          )
+          sendable
+            .send(payload)
+            .catch((err: unknown) =>
+              logger.error({ error: err, channelId }, 'Failed to send shiritori timeout message')
+            )
         }
-        return result
       }
     })
   }

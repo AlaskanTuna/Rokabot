@@ -70,7 +70,7 @@ function resetTimer(game: HangmanGame): void {
   if (game.timeoutTimer) {
     clearTimeout(game.timeoutTimer)
   }
-  game.timeoutAt = Math.floor(Date.now() / 1000) + 60
+  game.timeoutAt = Math.floor((Date.now() + TIMEOUT_MS) / 1000)
   game.timeoutTimer = setTimeout(() => {
     const word = game.word
     const channelId = game.channelId

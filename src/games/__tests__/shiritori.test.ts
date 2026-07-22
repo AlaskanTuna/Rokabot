@@ -1,9 +1,21 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import * as shiritori from '../shiritori.js'
+
+const { testConfig } = vi.hoisted(() => ({
+  testConfig: {
+    games: { shiritoriTimeoutMs: 120_000 },
+    logging: { level: 'silent' }
+  }
+}))
+
+vi.mock('../../config.js', () => ({ config: testConfig }))
+
 import {
   destroyAllGames,
   endGame,
   getGame,
   getScores,
+  getTimeoutAt,
   isGameActive,
   joinGame,
   setDictionary,
@@ -50,12 +62,15 @@ const TEST_DICTIONARY = new Set([
 
 describe('shiritori', () => {
   beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-07-22T00:00:00Z'))
     setDictionary(TEST_DICTIONARY)
     destroyAllGames()
   })
 
   afterEach(() => {
     destroyAllGames()
+    vi.useRealTimers()
   })
 
   describe('startGame', () => {
@@ -266,6 +281,26 @@ describe('shiritori', () => {
         const result = submitWord('ch-1', 'Alice', validWord.toUpperCase())
         expect(result.success).toBe(true)
       }
+    })
+  })
+
+  describe('turn timeout', () => {
+    it('uses the registered callback and configured timeout', () => {
+      const onTimeout = vi.fn()
+      shiritori.setTimeoutCallback(onTimeout)
+      startGame('ch-timeout', 'Alice')
+      joinGame('ch-timeout', 'Bob')
+
+      const game = getGame('ch-timeout')!
+      game.currentWord = 'apple'
+      game.usedWords.add('apple')
+      submitWord('ch-timeout', 'Alice', 'energy')
+
+      expect(getTimeoutAt('ch-timeout') * 1000 - Date.now()).toBe(120_000)
+
+      vi.advanceTimersByTime(120_000)
+
+      expect(onTimeout).toHaveBeenCalledWith('ch-timeout', 'Bob')
     })
   })
 
