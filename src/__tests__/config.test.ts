@@ -142,8 +142,8 @@ describe('config module', () => {
 
     // Games
     expect(config.games.hangmanLives).toBe(6)
-    expect(config.games.hangmanTimeoutMs).toBe(60_000)
-    expect(config.games.shiritoriTimeoutMs).toBe(60_000)
+    expect(config.games.hangmanTimeoutMs).toBe(120_000)
+    expect(config.games.shiritoriTimeoutMs).toBe(120_000)
     expect(config.games.shinyChance).toBe(0.01)
 
     // Status cycle

@@ -15,6 +15,7 @@ vi.mock('../../storage/database.js', () => ({
   getDb: () => testDb
 }))
 
+import { handleHatch } from '../../discord/events/games/gacha.js'
 import {
   generateBuddy,
   getBuddy,
@@ -24,6 +25,7 @@ import {
   getTopBuddies,
   hasHatchedToday,
   hashString,
+  hatchDailyBuddy,
   markDailyHatch,
   mulberry32,
   saveBuddy
@@ -66,6 +68,7 @@ describe('buddy pet system', () => {
 
   afterEach(() => {
     testDb.close()
+    vi.useRealTimers()
   })
 
   describe('mulberry32 PRNG', () => {
@@ -329,6 +332,128 @@ describe('buddy pet system', () => {
         .prepare('INSERT OR REPLACE INTO gacha_daily (user_id, last_draw_date, streak) VALUES (?, ?, ?)')
         .run('old-user', '2020-01-01', 1)
       expect(hasHatchedToday('old-user')).toBe(false)
+    })
+  })
+
+  describe('hatchDailyBuddy', () => {
+    it('hatches and marks the daily draw together', () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-04-01T12:00:00Z'))
+
+      const result = hatchDailyBuddy('normal-hatch-user')
+
+      expect(result).toMatchObject({ alreadyHatched: false, count: 1, streak: 1, adopted: false })
+      expect(hasHatchedToday('normal-hatch-user')).toBe(true)
+      expect(getBuddyCount('normal-hatch-user')).toBe(1)
+    })
+
+    it('adopts a deterministic orphan row and returns the normal hatch reply', () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-04-01T12:00:00Z'))
+      const userId = 'orphan-hatch-user'
+      saveBuddy(generateBuddy(userId))
+
+      const reply = handleHatch({ user: { id: userId } } as never)
+
+      expect(JSON.stringify(reply)).toContain('Companion Hatched!')
+      expect(hasHatchedToday(userId)).toBe(true)
+      expect(getBuddyCount(userId)).toBe(1)
+    })
+
+    it('adopts an orphan after migrating a real historical buddy table', async () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-04-01T12:00:00Z'))
+      testDb.close()
+      testDb = new Database(':memory:')
+      testDb.exec(`
+        CREATE TABLE session_history (
+          channel_id TEXT NOT NULL,
+          role TEXT NOT NULL,
+          display_name TEXT NOT NULL,
+          content TEXT NOT NULL,
+          timestamp INTEGER NOT NULL,
+          user_id TEXT DEFAULT NULL,
+          username TEXT DEFAULT NULL
+        );
+        CREATE TABLE user_memory (
+          guild_id TEXT NOT NULL,
+          user_id TEXT NOT NULL,
+          fact_key TEXT NOT NULL,
+          fact_value TEXT NOT NULL,
+          updated_at INTEGER NOT NULL,
+          PRIMARY KEY (guild_id, user_id, fact_key)
+        );
+        CREATE TABLE gacha_daily (
+          user_id TEXT NOT NULL,
+          last_draw_date TEXT NOT NULL,
+          streak INTEGER NOT NULL DEFAULT 0,
+          PRIMARY KEY (user_id)
+        );
+        CREATE TABLE buddy (
+          user_id TEXT PRIMARY KEY,
+          species TEXT NOT NULL,
+          rarity TEXT NOT NULL,
+          shiny INTEGER NOT NULL DEFAULT 0,
+          eyes TEXT NOT NULL,
+          hat TEXT NOT NULL,
+          name TEXT,
+          personality TEXT,
+          stats_json TEXT NOT NULL,
+          hatched_at INTEGER NOT NULL
+        );
+      `)
+      const userId = 'historical-orphan-user'
+      saveBuddy(generateBuddy(userId))
+
+      const { runMigrations } =
+        await vi.importActual<typeof import('../../storage/database.js')>('../../storage/database.js')
+      runMigrations(testDb)
+
+      expect(hatchDailyBuddy(userId)).toMatchObject({ alreadyHatched: false, adopted: true, count: 1 })
+      expect(hasHatchedToday(userId)).toBe(true)
+    })
+
+    it('does not adopt an orphan whose personality differs from today’s deterministic buddy', () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-04-01T12:00:00Z'))
+      const userId = 'different-personality-orphan'
+      saveBuddy(generateBuddy(userId))
+      testDb.prepare('UPDATE buddy SET personality = ? WHERE user_id = ?').run('A different personality', userId)
+
+      const result = hatchDailyBuddy(userId)
+
+      expect(result).toMatchObject({ alreadyHatched: false, adopted: false, count: 2 })
+    })
+
+    it('adds a second buddy on the next calendar day', () => {
+      vi.useFakeTimers()
+      const userId = 'daily-collection-user'
+      vi.setSystemTime(new Date('2026-04-01T12:00:00Z'))
+      hatchDailyBuddy(userId)
+
+      vi.setSystemTime(new Date('2026-04-02T12:00:00Z'))
+      const result = hatchDailyBuddy(userId)
+
+      expect(result).toMatchObject({ alreadyHatched: false, count: 2, adopted: false })
+      expect(getBuddyCount(userId)).toBe(2)
+    })
+
+    it('rolls back the buddy insert when marking the daily hatch fails', () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-04-01T12:00:00Z'))
+      testDb.exec('DROP TABLE gacha_daily')
+      testDb.exec(`
+        CREATE TABLE gacha_daily (
+          user_id TEXT NOT NULL,
+          last_draw_date TEXT NOT NULL,
+          streak INTEGER NOT NULL CHECK (streak < 0),
+          PRIMARY KEY (user_id)
+        )
+      `)
+
+      expect(() => hatchDailyBuddy('failed-daily-hatch-user')).toThrow()
+      expect(getBuddyCount('failed-daily-hatch-user')).toBe(0)
+      expect(testDb.prepare('SELECT COUNT(*) AS count FROM gacha_daily').get()).toEqual({ count: 0 })
     })
   })
 

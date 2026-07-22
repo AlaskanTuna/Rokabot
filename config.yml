@@ -64,8 +64,8 @@ reminders:
 
 games:
   hangmanLives: 6 # Wrong guesses before game over
-  hangmanTimeoutMs: 60000 # Inactivity timeout per hangman game in ms
-  shiritoriTimeoutMs: 60000 # Inactivity timeout per shiritori turn in ms
+  hangmanTimeoutMs: 120000 # Inactivity timeout per hangman game in ms
+  shiritoriTimeoutMs: 120000 # Inactivity timeout per shiritori turn in ms
   shinyChance: 0.01 # Chance of hatching a shiny buddy pet (0-1)
 
 statusCycleMs: 900000 # Bot status rotation interval in ms (15 min)

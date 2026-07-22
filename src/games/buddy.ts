@@ -60,6 +60,10 @@ export interface BuddyData {
   hatchedAt: number
 }
 
+type DailyBuddyHatch =
+  | { alreadyHatched: true; buddy: BuddyData | null }
+  | { alreadyHatched: false; buddy: BuddyData; count: number; streak: number; adopted: boolean }
+
 // ── Name / personality generation ──
 
 const NAME_PREFIXES = [
@@ -295,6 +299,45 @@ export function markDailyHatch(userId: string): void {
     today,
     newStreak
   )
+}
+
+function matchesGeneratedBuddy(stored: BuddyData, generated: BuddyData): boolean {
+  return (
+    stored.species === generated.species &&
+    stored.rarity === generated.rarity &&
+    stored.shiny === generated.shiny &&
+    stored.eyes === generated.eyes &&
+    stored.hat === generated.hat &&
+    stored.name === generated.name &&
+    stored.personality === generated.personality &&
+    JSON.stringify(stored.stats) === JSON.stringify(generated.stats)
+  )
+}
+
+/** Hatch today's buddy, atomically adopting a matching row left by a failed attempt. */
+export function hatchDailyBuddy(userId: string): DailyBuddyHatch {
+  const db = getDb()
+  return db.transaction((): DailyBuddyHatch => {
+    if (hasHatchedToday(userId)) {
+      return { alreadyHatched: true, buddy: getBuddy(userId) }
+    }
+
+    const generated = generateBuddy(userId)
+    const latest = getBuddy(userId)
+    const adopted = latest !== null && matchesGeneratedBuddy(latest, generated)
+    const buddy = adopted ? latest : generated
+
+    if (!adopted) saveBuddy(buddy)
+    markDailyHatch(userId)
+
+    return {
+      alreadyHatched: false,
+      buddy,
+      count: getBuddyCount(userId),
+      streak: getStreak(userId),
+      adopted
+    }
+  })()
 }
 
 /** Get the current hatch streak for a user. */

@@ -79,6 +79,12 @@ export function setDictionary(words: Set<string>): void {
 
 const activeGames = new Map<string, ShiritoriGame>()
 
+let onTimeoutCallback: ((channelId: string, playerName: string) => void) | null = null
+
+export function setTimeoutCallback(cb: (channelId: string, playerName: string) => void): void {
+  onTimeoutCallback = cb
+}
+
 function getLastLetter(word: string): string {
   return word[word.length - 1].toLowerCase()
 }
@@ -91,7 +97,7 @@ function resetTimeout(game: ShiritoriGame): void {
 
   if (!game.active || !game.started || game.currentPlayerOrder.length < 2) return
 
-  game.timeoutAt = Math.floor(Date.now() / 1000) + 60
+  game.timeoutAt = Math.floor((Date.now() + TIMEOUT_MS) / 1000)
   game.timeoutTimer = setTimeout(() => {
     handleTimeout(game)
   }, TIMEOUT_MS)
@@ -147,7 +153,8 @@ export function startGame(channelId: string, starterName: string): ShiritoriResu
     active: true,
     started: false,
     timeoutTimer: null,
-    timeoutAt: 0
+    timeoutAt: 0,
+    onTimeout: onTimeoutCallback ?? undefined
   }
 
   activeGames.set(channelId, game)

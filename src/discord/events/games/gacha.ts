@@ -3,16 +3,13 @@
 import type { ChatInputCommandInteraction } from 'discord.js'
 import {
   type BuddyData,
-  generateBuddy,
   getBuddy,
   getBuddyCollection,
   getBuddyCount,
   getSpeciesInfo,
   getStreak,
   getTopBuddies,
-  hasHatchedToday,
-  markDailyHatch,
-  saveBuddy
+  hatchDailyBuddy
 } from '../../../games/buddy.js'
 import {
   type BuddyRarity,
@@ -108,9 +105,10 @@ const SPECIES_ARCHETYPE: Record<string, string> = {
 
 export function handleHatch(interaction: ChatInputCommandInteraction) {
   const userId = interaction.user.id
+  const result = hatchDailyBuddy(userId)
 
-  if (hasHatchedToday(userId)) {
-    const latest = getBuddy(userId)
+  if (result.alreadyHatched) {
+    const latest = result.buddy
     const info = latest ? getSpeciesInfo(latest.species) : undefined
     const sprite = latest ? buddySprite(latest.species) : undefined
     return buildBuddyContainer({
@@ -121,11 +119,7 @@ export function handleHatch(interaction: ChatInputCommandInteraction) {
     })
   }
 
-  const buddy = generateBuddy(userId)
-  saveBuddy(buddy)
-  markDailyHatch(userId)
-
-  const count = getBuddyCount(userId)
+  const { buddy, count, streak } = result
   const info = getSpeciesInfo(buddy.species)
   const rarityEmoji = RARITY_EMOJI[buddy.rarity]
   const sprite = buddySprite(buddy.species)
@@ -144,7 +138,6 @@ export function handleHatch(interaction: ChatInputCommandInteraction) {
     body.push(`${display}  ${statBar(val)}  **${val}**/10`)
   }
 
-  const streak = getStreak(userId)
   const streakText = streak > 1 ? ` | \uD83D\uDD25 **${streak}-day streak!**` : ''
   body.push('', `You now have **${count}** companion spirit${count !== 1 ? 's' : ''}~${streakText}`)
 

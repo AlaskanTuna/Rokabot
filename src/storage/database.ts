@@ -166,7 +166,7 @@ export function getDb(): Database.Database {
 }
 
 /** Run forward-only schema migrations */
-function runMigrations(database: Database.Database): void {
+export function runMigrations(database: Database.Database): void {
   // session_history: add user_id and username columns
   const shCols = database.prepare("PRAGMA table_info('session_history')").all() as Array<{ name: string }>
   const shColNames = new Set(shCols.map((c) => c.name))
@@ -175,6 +175,67 @@ function runMigrations(database: Database.Database): void {
   }
   if (!shColNames.has('username')) {
     database.exec('ALTER TABLE session_history ADD COLUMN username TEXT DEFAULT NULL')
+  }
+
+  // gacha_daily: add streak tracking columns
+  const gdCols = database.prepare("PRAGMA table_info('gacha_daily')").all() as Array<{ name: string }>
+  const gdColNames = new Set(gdCols.map((c) => c.name))
+  if (!gdColNames.has('streak')) {
+    database.exec('ALTER TABLE gacha_daily ADD COLUMN streak INTEGER NOT NULL DEFAULT 0')
+  }
+  if (!gdColNames.has('last_draw_date')) {
+    database.exec('ALTER TABLE gacha_daily ADD COLUMN last_draw_date TEXT')
+  }
+
+  const buddyIndexes = database.prepare("PRAGMA index_list('buddy')").all() as Array<{ name: string; unique: number }>
+  const hasLegacyBuddyUserUnique = buddyIndexes.some((index) => {
+    if (index.unique !== 1) return false
+    const indexColumns = database.prepare(`PRAGMA index_info('${index.name.replaceAll("'", "''")}')`).all() as Array<{
+      name: string
+    }>
+    return indexColumns.length === 1 && indexColumns[0].name === 'user_id'
+  })
+  if (hasLegacyBuddyUserUnique) {
+    const buddyColumns = new Set(
+      (database.prepare("PRAGMA table_info('buddy')").all() as Array<{ name: string }>).map((column) => column.name)
+    )
+    const copiedBuddyColumns = [
+      'id',
+      'user_id',
+      'species',
+      'rarity',
+      'shiny',
+      'eyes',
+      'hat',
+      'name',
+      'personality',
+      'stats_json',
+      'hatched_at'
+    ].filter((column) => buddyColumns.has(column))
+
+    database.transaction(() => {
+      database.exec(`
+        CREATE TABLE buddy_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id TEXT NOT NULL DEFAULT '',
+          species TEXT NOT NULL DEFAULT '',
+          rarity TEXT NOT NULL DEFAULT '',
+          shiny INTEGER NOT NULL DEFAULT 0,
+          eyes TEXT NOT NULL DEFAULT '',
+          hat TEXT NOT NULL DEFAULT '',
+          name TEXT,
+          personality TEXT,
+          stats_json TEXT NOT NULL DEFAULT '{}',
+          hatched_at INTEGER NOT NULL DEFAULT 0
+        );
+        INSERT INTO buddy_new (${copiedBuddyColumns.join(', ')})
+          SELECT ${copiedBuddyColumns.join(', ')} FROM buddy;
+        DROP TABLE buddy;
+        ALTER TABLE buddy_new RENAME TO buddy;
+        CREATE INDEX idx_buddy_user ON buddy (user_id, hatched_at);
+      `)
+    })()
+    logger.info('Migrated buddy table to allow collection entries per user')
   }
 
   // user_memory: add guild_id to PK (requires table recreation)
