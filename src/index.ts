@@ -23,6 +23,8 @@ if (process.env.ADK_QUIET) {
 
 import http from 'node:http'
 import { cleanupExpired, restoreMonitoredChannels } from './agent/channelMonitor.js'
+import { pruneStaleClaims } from './agent/memory/memoryClaims.js'
+import { startExtractionScheduler, stopExtractionScheduler } from './agent/memory/scheduler.js'
 import { destroyAllSessions } from './agent/roka.js'
 import { config } from './config.js'
 import { createClient } from './discord/client.js'
@@ -31,12 +33,30 @@ import { startReminderScheduler, stopReminderScheduler } from './discord/reminde
 import { stopStatusCycler } from './discord/statusCycler.js'
 import { destroyAllGames as destroyAllShiritoriGames } from './games/shiritori.js'
 import { closeDb, getDb } from './storage/database.js'
+import { resetStuckProcessing } from './storage/extractionQueue.js'
+import { backfillLegacyClaims } from './storage/memoryMigration.js'
 import { pruneOldMetrics } from './storage/metricsStore.js'
 import { pruneOldHistory } from './storage/sessionStore.js'
 import { pruneOldFacts } from './storage/userMemory.js'
 import { logger } from './utils/logger.js'
 
 const client = createClient()
+let claimPruneTimer: ReturnType<typeof setInterval> | undefined
+const EXTRACTION_QUEUE_STUCK_THRESHOLD_MS = 5 * 60 * 1000
+
+function startupMemoryTasks(): void {
+  backfillLegacyClaims()
+  pruneStaleClaims(config.memory.claimRetentionDays)
+  claimPruneTimer = setInterval(() => pruneStaleClaims(config.memory.claimRetentionDays), 24 * 60 * 60 * 1000)
+  resetStuckProcessing(EXTRACTION_QUEUE_STUCK_THRESHOLD_MS)
+  startExtractionScheduler()
+}
+
+function stopMemoryTasks(): void {
+  if (claimPruneTimer) clearInterval(claimPruneTimer)
+  claimPruneTimer = undefined
+  stopExtractionScheduler()
+}
 
 client.once('clientReady', () => {
   getDb()
@@ -46,6 +66,7 @@ client.once('clientReady', () => {
   pruneOldHistory(config.session.historyRetentionDays)
   pruneOldFacts(config.memory.factRetentionDays)
   pruneOldMetrics(config.metrics.retentionDays)
+  startupMemoryTasks()
 
   setInterval(() => pruneOldHistory(config.session.historyRetentionDays), 60 * 60 * 1000)
   setInterval(() => pruneOldFacts(config.memory.factRetentionDays), 24 * 60 * 60 * 1000)
@@ -74,6 +95,7 @@ async function shutdown(signal: string): Promise<void> {
 
   stopStatusCycler()
   stopReminderScheduler()
+  stopMemoryTasks()
   destroyAllShiritoriGames()
   await destroyAllSessions()
   closeDb()

@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
+  assertClaim: vi.fn(),
+  claimsBackend: false,
   generateContent: vi.fn(),
   getFacts: vi.fn(() => []),
   getSharedRateLimiter: vi.fn(),
@@ -31,6 +33,9 @@ vi.mock('../../config.js', () => ({
       extractionInterval: 1,
       extractionGapMs: 0,
       maxFactsPerUser: 10,
+      get claimsBackend() {
+        return mocks.claimsBackend
+      },
       factRetentionDays: 90,
       channelMonitorTtlMs: 86_400_000
     },
@@ -41,6 +46,10 @@ vi.mock('../../config.js', () => ({
 vi.mock('../../storage/userMemory.js', () => ({
   getFacts: mocks.getFacts,
   saveFact: mocks.saveFact
+}))
+
+vi.mock('../memory/memoryClaims.js', () => ({
+  assertClaim: mocks.assertClaim
 }))
 
 vi.mock('../../utils/rateLimiter.js', () => ({
@@ -70,6 +79,8 @@ describe('memory extraction reliability', () => {
     resetForTest()
     vi.clearAllMocks()
     mocks.generateContent.mockReset()
+    mocks.assertClaim.mockReset()
+    mocks.claimsBackend = false
     mocks.getFacts.mockReturnValue([])
     mocks.saveFact.mockReturnValue(true)
     mocks.getSharedRateLimiter.mockReturnValue({ tryConsumeAboveFloor: mocks.tryConsumeAboveFloor })
@@ -119,6 +130,80 @@ describe('memory extraction reliability', () => {
 
     expect(mocks.generateContent).toHaveBeenCalledTimes(2)
     expect(mocks.tryConsumeAboveFloor).toHaveBeenCalledTimes(2)
+  })
+
+  it('dual-writes a saved passive fact without another Gemini call while claims are disabled', async () => {
+    mocks.generateContent.mockResolvedValueOnce({
+      text: '[{"userId":"Alice","key":"favorite_anime","value":"Frieren"}]'
+    })
+
+    queueExtraction()
+    await vi.waitFor(() =>
+      expect(mocks.assertClaim).toHaveBeenCalledWith({
+        guildId: 'guild-1',
+        subjectUserId: 'user-1',
+        predicate: 'favorite_anime',
+        value: 'Frieren',
+        sourceKind: 'passive',
+        channelId: 'channel-1'
+      })
+    )
+
+    expect(mocks.generateContent).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps saving legacy facts when a claims mirror write fails', async () => {
+    mocks.assertClaim.mockImplementationOnce(() => {
+      throw new Error('claims unavailable')
+    })
+    mocks.generateContent.mockResolvedValueOnce({
+      text: JSON.stringify([
+        { userId: 'Alice', key: 'favorite_anime', value: 'Frieren' },
+        { userId: 'Alice', key: 'favorite_game', value: 'Senren Banka' }
+      ])
+    })
+
+    queueExtraction()
+
+    await vi.waitFor(() => {
+      expect(mocks.saveFact).toHaveBeenCalledTimes(2)
+      expect(getDb().prepare('SELECT outcome, facts_extracted, facts_saved FROM extraction_events').all()).toEqual([
+        { outcome: 'saved', facts_extracted: 2, facts_saved: 2 }
+      ])
+    })
+  })
+
+  it('does not dual-write when the claims backend is enabled', async () => {
+    mocks.claimsBackend = true
+    mocks.generateContent.mockResolvedValueOnce({
+      text: '[{"userId":"Alice","key":"favorite_anime","value":"Frieren"}]'
+    })
+
+    queueExtraction()
+    await vi.waitFor(() => expect(mocks.saveFact).toHaveBeenCalled())
+
+    expect(mocks.assertClaim).not.toHaveBeenCalled()
+  })
+
+  it('uses a synthetic DM scope when the buffer has no guild', async () => {
+    mocks.generateContent.mockResolvedValueOnce({
+      text: '[{"userId":"Alice","key":"favorite_anime","value":"Frieren"}]'
+    })
+    addMessage('dm-channel-1', 'user-1', 'Alice', 'alice', 'I love Frieren')
+
+    maybeExtractFromBuffer('dm-channel-1')
+
+    await vi.waitFor(() =>
+      expect(mocks.assertClaim).toHaveBeenCalledWith({
+        guildId: 'dm:dm-channel-1',
+        subjectUserId: 'user-1',
+        predicate: 'favorite_anime',
+        value: 'Frieren',
+        sourceKind: 'passive',
+        channelId: 'dm-channel-1'
+      })
+    )
+    expect(mocks.saveFact).toHaveBeenCalledWith('dm:dm-channel-1', 'user-1', 'favorite_anime', 'Frieren')
   })
 
   it('records a saved extraction event', async () => {

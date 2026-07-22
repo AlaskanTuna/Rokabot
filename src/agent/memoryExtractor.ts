@@ -7,6 +7,7 @@ import { getFacts, saveFact } from '../storage/userMemory.js'
 import { logger } from '../utils/logger.js'
 import { getSharedRateLimiter } from '../utils/rateLimiter.js'
 import { classifyGeminiFailure, computeBackoff } from './geminiReliability.js'
+import { assertClaim } from './memory/memoryClaims.js'
 import { type BufferedMessage, getMessages } from './passiveBuffer.js'
 import { isShuttingDown } from './shutdownSignal.js'
 
@@ -161,7 +162,7 @@ async function runBufferExtraction(
   if (!conversationText.trim()) return
 
   const prompt = EXTRACTION_PROMPT + conversationText
-  const effectiveGuildId = guildId ?? 'global'
+  const effectiveGuildId = guildId ?? `dm:${channelId}`
 
   // Case-insensitive map so LLM name variations ("hiro" vs "Hiro") still resolve
   const userMap = new Map<string, string>()
@@ -250,6 +251,23 @@ async function runBufferExtraction(
       const alreadyExists = existingFacts.some((f) => f.key === fact.key && f.value === fact.value)
       if (!alreadyExists) {
         if (saveFact(effectiveGuildId, resolvedUserId, fact.key, fact.value)) {
+          if (!config.memory.claimsBackend) {
+            try {
+              assertClaim({
+                guildId: effectiveGuildId,
+                subjectUserId: resolvedUserId,
+                predicate: fact.key,
+                value: fact.value,
+                sourceKind: 'passive',
+                channelId
+              })
+            } catch (error) {
+              logger.warn(
+                { err: error, guildId: effectiveGuildId, channelId, subjectUserId: resolvedUserId },
+                'Failed to mirror passive fact into claims'
+              )
+            }
+          }
           savedCount++
         }
       }

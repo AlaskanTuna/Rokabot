@@ -40,6 +40,17 @@ interface YamlConfig {
     maxFactsPerUser?: number
     factRetentionDays?: number
     channelMonitorTtlMs?: number
+    claimsBackend?: boolean
+    maxClaimsPerTurn?: number
+    retrievalTokenBudget?: number
+    recentParticipantLimit?: number
+    speakerMinShare?: number
+    maxActiveClaimsPerUser?: number
+    claimRetentionDays?: number
+    extractionDailyBudgetRatio?: number
+    perGuildGapMs?: number
+    extractionQueueMaxPerGuild?: number
+    vaultExportDir?: string
   }
   metrics?: { retentionDays?: number }
   emoji?: { probability?: number; cooldownMs?: number }
@@ -76,6 +87,24 @@ function envInt(key: string): number | undefined {
     throw new Error(`Environment variable ${key} must be a number, got: ${raw}`)
   }
   return parsed
+}
+
+function envNumber(key: string): number | undefined {
+  const raw = process.env[key]
+  if (!raw) return undefined
+  const parsed = Number(raw)
+  if (isNaN(parsed)) {
+    throw new Error(`Environment variable ${key} must be a number, got: ${raw}`)
+  }
+  return parsed
+}
+
+function envBool(key: string): boolean | undefined {
+  const raw = process.env[key]
+  if (!raw) return undefined
+  if (raw === 'true') return true
+  if (raw === 'false') return false
+  throw new Error(`Environment variable ${key} must be true or false, got: ${raw}`)
 }
 
 function envString(key: string): string | undefined {
@@ -130,7 +159,20 @@ export const config = {
     extractionGapMs: envInt('MEMORY_EXTRACTION_GAP_MS') ?? yaml.memory?.extractionGapMs ?? 20_000,
     maxFactsPerUser: yaml.memory?.maxFactsPerUser ?? 10,
     factRetentionDays: yaml.memory?.factRetentionDays ?? 90,
-    channelMonitorTtlMs: yaml.memory?.channelMonitorTtlMs ?? 86_400_000
+    channelMonitorTtlMs: yaml.memory?.channelMonitorTtlMs ?? 86_400_000,
+    claimsBackend: envBool('MEMORY_CLAIMS_BACKEND') ?? yaml.memory?.claimsBackend ?? false,
+    maxClaimsPerTurn: envInt('MEMORY_MAX_CLAIMS_PER_TURN') ?? yaml.memory?.maxClaimsPerTurn ?? 10,
+    retrievalTokenBudget: envInt('MEMORY_RETRIEVAL_TOKEN_BUDGET') ?? yaml.memory?.retrievalTokenBudget ?? 350,
+    recentParticipantLimit: envInt('MEMORY_RECENT_PARTICIPANT_LIMIT') ?? yaml.memory?.recentParticipantLimit ?? 3,
+    speakerMinShare: envNumber('MEMORY_SPEAKER_MIN_SHARE') ?? yaml.memory?.speakerMinShare ?? 0.5,
+    maxActiveClaimsPerUser: envInt('MEMORY_MAX_ACTIVE_CLAIMS_PER_USER') ?? yaml.memory?.maxActiveClaimsPerUser ?? 20,
+    claimRetentionDays: envInt('MEMORY_CLAIM_RETENTION_DAYS') ?? yaml.memory?.claimRetentionDays ?? 90,
+    extractionDailyBudgetRatio:
+      envNumber('MEMORY_EXTRACTION_DAILY_BUDGET_RATIO') ?? yaml.memory?.extractionDailyBudgetRatio ?? 0.4,
+    perGuildGapMs: envInt('MEMORY_PER_GUILD_GAP_MS') ?? yaml.memory?.perGuildGapMs ?? 20_000,
+    extractionQueueMaxPerGuild:
+      envInt('MEMORY_EXTRACTION_QUEUE_MAX_PER_GUILD') ?? yaml.memory?.extractionQueueMaxPerGuild ?? 50,
+    vaultExportDir: envString('MEMORY_VAULT_EXPORT_DIR') ?? yaml.memory?.vaultExportDir ?? 'data/vault'
   },
   metrics: {
     retentionDays: envInt('METRICS_RETENTION_DAYS') ?? yaml.metrics?.retentionDays ?? 90

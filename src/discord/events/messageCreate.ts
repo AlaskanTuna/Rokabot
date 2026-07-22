@@ -1,9 +1,13 @@
 import type { Client, Message } from 'discord.js'
 import { DiscordAPIError } from 'discord.js'
 import { isMonitored, markActive } from '../../agent/channelMonitor.js'
+import { shouldExtract } from '../../agent/memory/candidateGate.js'
+import { getActiveClaims } from '../../agent/memory/memoryClaims.js'
+import { enqueueAndSchedule } from '../../agent/memory/scheduler.js'
 import { maybeExtractFromBuffer } from '../../agent/memoryExtractor.js'
-import { addMessage as addToPassiveBuffer } from '../../agent/passiveBuffer.js'
+import { addMessage as addToPassiveBuffer, getMessages } from '../../agent/passiveBuffer.js'
 import { type ImageAttachment, generateResponse } from '../../agent/roka.js'
+import { config } from '../../config.js'
 import { type ResponseEventInput, recordResponseEvent } from '../../storage/metricsStore.js'
 import { upsertUserName } from '../../storage/userNames.js'
 import { logger } from '../../utils/logger.js'
@@ -59,6 +63,26 @@ const MAX_IMAGE_ATTACHMENTS = 3
 /** Whole-word, case-insensitive match for the bot's name as a trigger keyword */
 export const NAME_MENTION_REGEX = /\broka\b/i
 
+function dispatchClaimExtraction(channelId: string, guildId: string): void {
+  try {
+    const messages = [...getMessages(channelId)]
+    const userIds = new Set(messages.map((message) => message.userId))
+    const knownClaimKeys = new Set(
+      [...userIds].flatMap((userId) => getActiveClaims(guildId, userId).map((claim) => claim.predicate))
+    )
+
+    if (!shouldExtract(messages, knownClaimKeys).extract) return
+
+    enqueueAndSchedule({
+      guildId,
+      channelId,
+      messages: messages.map(({ userId, displayName, content }) => ({ userId, displayName, content }))
+    })
+  } catch (error) {
+    logger.warn({ channelId, guildId, error }, 'Claim extraction dispatch failed')
+  }
+}
+
 /** Create a handler for mention/reply message triggers */
 export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
   return async function handleMessageCreate(message: Message): Promise<void> {
@@ -99,7 +123,11 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
         const memberDisplayName = message.member?.displayName ?? message.author.displayName
         addToPassiveBuffer(message.channelId, message.author.id, memberDisplayName, message.author.username, msgContent)
         upsertUserName(message.author.id, message.author.username, memberDisplayName)
-        maybeExtractFromBuffer(message.channelId, client.user?.id, message.guildId ?? undefined)
+        if (config.memory.claimsBackend) {
+          dispatchClaimExtraction(message.channelId, message.guildId ?? `dm:${message.channelId}`)
+        } else {
+          maybeExtractFromBuffer(message.channelId, client.user?.id, message.guildId ?? undefined)
+        }
       }
     }
 
@@ -317,7 +345,11 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
       if (message.guild && client.user && isMonitored(channelId)) {
         const botName = message.guild.members.me?.displayName ?? client.user.displayName
         addToPassiveBuffer(channelId, client.user.id, botName, client.user.username, responseText)
-        maybeExtractFromBuffer(channelId, client.user.id, message.guildId ?? undefined)
+        if (config.memory.claimsBackend) {
+          dispatchClaimExtraction(channelId, message.guildId ?? `dm:${channelId}`)
+        } else {
+          maybeExtractFromBuffer(channelId, client.user.id, message.guildId ?? undefined)
+        }
       }
     } catch (error) {
       if (isIgnorableDiscordError(error)) {
