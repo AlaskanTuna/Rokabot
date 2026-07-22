@@ -21,6 +21,7 @@ import {
   getBuddy,
   getBuddyCollection,
   getBuddyCount,
+  getStreak,
   getTodayDate,
   getTopBuddies,
   hasHatchedToday,
@@ -55,6 +56,7 @@ function createTestDb(): Database.Database {
       user_id TEXT NOT NULL,
       last_draw_date TEXT NOT NULL,
       streak INTEGER NOT NULL DEFAULT 0,
+      last_hatch_at INTEGER,
       PRIMARY KEY (user_id)
     );
   `)
@@ -347,6 +349,78 @@ describe('buddy pet system', () => {
       expect(getBuddyCount('normal-hatch-user')).toBe(1)
     })
 
+    it('rejects a second hatch 23 hours and 59 minutes later with the remaining time', () => {
+      vi.useFakeTimers()
+      const userId = 'rolling-gate-user'
+      vi.setSystemTime(new Date('2026-04-01T23:30:00Z'))
+      hatchDailyBuddy(userId)
+
+      vi.setSystemTime(new Date('2026-04-02T23:29:00Z'))
+      const result = hatchDailyBuddy(userId)
+
+      expect(result).toMatchObject({ alreadyHatched: true, msUntilNext: 60_000 })
+      expect(getBuddyCount(userId)).toBe(1)
+    })
+
+    it('allows a second hatch after 24 hours and grows the collection', () => {
+      vi.useFakeTimers()
+      const userId = 'rolling-gate-collection-user'
+      vi.setSystemTime(new Date('2026-04-01T23:30:00Z'))
+      hatchDailyBuddy(userId)
+
+      vi.setSystemTime(new Date('2026-04-02T23:31:00Z'))
+      const result = hatchDailyBuddy(userId)
+
+      expect(result).toMatchObject({ alreadyHatched: false, count: 2 })
+      expect(getBuddyCount(userId)).toBe(2)
+    })
+
+    it('uses the calendar-date gate for legacy rows without a hatch timestamp', () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-04-01T12:00:00Z'))
+      testDb
+        .prepare('INSERT INTO gacha_daily (user_id, last_draw_date, streak) VALUES (?, ?, ?)')
+        .run('legacy-hatch-user', '2026-04-01', 2)
+
+      expect(hatchDailyBuddy('legacy-hatch-user')).toMatchObject({ alreadyHatched: true })
+    })
+
+    it('continues a streak when the previous hatch was within 48 hours', () => {
+      vi.useFakeTimers()
+      const userId = 'rolling-streak-user'
+      vi.setSystemTime(new Date('2026-04-01T12:00:00Z'))
+      hatchDailyBuddy(userId)
+
+      vi.setSystemTime(new Date('2026-04-03T11:59:00Z'))
+      expect(hatchDailyBuddy(userId)).toMatchObject({ alreadyHatched: false, streak: 2 })
+    })
+
+    it('resets a streak and reports zero after a gap longer than 48 hours', () => {
+      vi.useFakeTimers()
+      const userId = 'expired-streak-user'
+      vi.setSystemTime(new Date('2026-04-01T12:00:00Z'))
+      hatchDailyBuddy(userId)
+
+      vi.setSystemTime(new Date('2026-04-03T12:01:00Z'))
+      expect(getStreak(userId)).toBe(0)
+      expect(hatchDailyBuddy(userId)).toMatchObject({ alreadyHatched: false, streak: 1 })
+    })
+
+    it('renders timestamp-neutral cooldown copy with the remaining hatch time', () => {
+      vi.useFakeTimers()
+      const userId = 'rolling-reply-user'
+      vi.setSystemTime(new Date('2026-04-01T23:30:00Z'))
+      hatchDailyBuddy(userId)
+
+      vi.setSystemTime(new Date('2026-04-02T23:29:00Z'))
+      const reply = handleHatch({ user: { id: userId } } as never)
+
+      const content = JSON.stringify(reply)
+      expect(content).toContain('Hatch Cooling Down')
+      expect(content).toContain('recently hatched')
+      expect(content).toContain('0h 1m')
+    })
+
     it('adopts a deterministic orphan row and returns the normal hatch reply', () => {
       vi.useFakeTimers()
       vi.setSystemTime(new Date('2026-04-01T12:00:00Z'))
@@ -438,7 +512,7 @@ describe('buddy pet system', () => {
       expect(getBuddyCount(userId)).toBe(2)
     })
 
-    it('rolls back the buddy insert when marking the daily hatch fails', () => {
+    it('rolls back the buddy insert when markDailyHatch fails', () => {
       vi.useFakeTimers()
       vi.setSystemTime(new Date('2026-04-01T12:00:00Z'))
       testDb.exec('DROP TABLE gacha_daily')
@@ -447,12 +521,16 @@ describe('buddy pet system', () => {
           user_id TEXT NOT NULL,
           last_draw_date TEXT NOT NULL,
           streak INTEGER NOT NULL CHECK (streak < 0),
+          last_hatch_at INTEGER,
           PRIMARY KEY (user_id)
         )
       `)
 
       expect(() => hatchDailyBuddy('failed-daily-hatch-user')).toThrow()
       expect(getBuddyCount('failed-daily-hatch-user')).toBe(0)
+      expect(
+        testDb.prepare('SELECT COUNT(*) AS count FROM buddy WHERE user_id = ?').get('failed-daily-hatch-user')
+      ).toEqual({ count: 0 })
       expect(testDb.prepare('SELECT COUNT(*) AS count FROM gacha_daily').get()).toEqual({ count: 0 })
     })
   })

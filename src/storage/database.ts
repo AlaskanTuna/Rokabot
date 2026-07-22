@@ -79,6 +79,7 @@ function createTables(database: Database.Database): void {
       user_id TEXT NOT NULL,
       last_draw_date TEXT NOT NULL,
       streak INTEGER NOT NULL DEFAULT 0,
+      last_hatch_at INTEGER,
       PRIMARY KEY (user_id)
     );
 
@@ -185,6 +186,9 @@ export function runMigrations(database: Database.Database): void {
   }
   if (!gdColNames.has('last_draw_date')) {
     database.exec('ALTER TABLE gacha_daily ADD COLUMN last_draw_date TEXT')
+  }
+  if (!gdColNames.has('last_hatch_at')) {
+    database.exec('ALTER TABLE gacha_daily ADD COLUMN last_hatch_at INTEGER')
   }
 
   const buddyIndexes = database.prepare("PRAGMA index_list('buddy')").all() as Array<{ name: string; unique: number }>

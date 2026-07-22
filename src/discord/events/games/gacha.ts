@@ -53,6 +53,11 @@ function formatBuddySummary(buddy: BuddyData): string {
   return lines.join('\n')
 }
 
+function formatHatchTimeRemaining(ms: number): string {
+  const minutes = Math.ceil(ms / 60_000)
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`
+}
+
 /** Pet interaction responses grouped by species personality archetypes. */
 const PET_RESPONSES: Record<string, string[]> = {
   cute: [
@@ -113,8 +118,8 @@ export function handleHatch(interaction: ChatInputCommandInteraction) {
     const sprite = latest ? buddySprite(latest.species) : undefined
     return buildBuddyContainer({
       accentColor: latest ? RARITY_COLORS[latest.rarity] : 0xb0c4de,
-      title: 'Already Hatched Today!',
-      body: `You already hatched **${latest?.name ?? 'a companion'}** the ${info?.name ?? 'spirit'} today~ Come back tomorrow!`,
+      title: 'Hatch Cooling Down',
+      body: `You recently hatched **${latest?.name ?? 'a companion'}** the ${info?.name ?? 'spirit'}~ Come back in **${formatHatchTimeRemaining(result.msUntilNext)}**!`,
       thumbnailUrl: sprite
     })
   }
@@ -289,6 +294,7 @@ export function handleBuddyGuide() {
       '\u2022 `/gacha view` \u2014 View your latest companion',
       '\u2022 `/gacha pet` \u2014 Interact with your latest companion',
       '\u2022 `/gacha stats` \u2014 Collection overview and detailed stats',
+      '\u2022 `/gacha collection` \u2014 Browse your full collection',
       '\u2022 `/gacha leaderboard` \u2014 Top companions by total stats',
       '',
       '**Rarity Tiers:**',

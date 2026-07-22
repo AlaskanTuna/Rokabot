@@ -61,8 +61,11 @@ export interface BuddyData {
 }
 
 type DailyBuddyHatch =
-  | { alreadyHatched: true; buddy: BuddyData | null }
+  | { alreadyHatched: true; buddy: BuddyData | null; msUntilNext: number }
   | { alreadyHatched: false; buddy: BuddyData; count: number; streak: number; adopted: boolean }
+
+const HATCH_COOLDOWN_MS = 24 * 60 * 60 * 1000
+const STREAK_GRACE_MS = 48 * 60 * 60 * 1000
 
 // ── Name / personality generation ──
 
@@ -271,34 +274,66 @@ export function getBuddyCount(userId: string): number {
   return row.cnt
 }
 
-/** Check whether the user has already hatched a buddy today (reuses gacha_daily table). */
-export function hasHatchedToday(userId: string): boolean {
-  const db = getDb()
-  const today = getTodayDate()
-  const row = db.prepare('SELECT last_draw_date FROM gacha_daily WHERE user_id = ?').get(userId) as
-    | { last_draw_date: string }
-    | undefined
-  return row?.last_draw_date === today
+interface DailyHatchRow {
+  last_draw_date: string | null
+  streak: number
+  last_hatch_at: number | null
 }
 
-/** Mark that the user has hatched today and update their streak. */
+function getDailyHatchRow(userId: string): DailyHatchRow | undefined {
+  const db = getDb()
+  return db.prepare('SELECT last_draw_date, streak, last_hatch_at FROM gacha_daily WHERE user_id = ?').get(userId) as
+    | DailyHatchRow
+    | undefined
+}
+
+function msUntilNextLocalDay(): number {
+  const now = new Date()
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: config.timezone,
+    hour: 'numeric',
+    minute: 'numeric',
+    second: 'numeric',
+    hourCycle: 'h23'
+  }).formatToParts(now)
+  const values = Object.fromEntries(parts.map((part) => [part.type, Number(part.value)]))
+  return (
+    (23 - values.hour) * 60 * 60 * 1000 +
+    (59 - values.minute) * 60 * 1000 +
+    (59 - values.second) * 1000 +
+    (1000 - now.getMilliseconds())
+  )
+}
+
+/** Return the remaining cooldown in milliseconds, or zero when a hatch is available. */
+export function msUntilNextHatch(userId: string): number {
+  const row = getDailyHatchRow(userId)
+  if (!row) return 0
+  if (row.last_hatch_at !== null) return Math.max(0, HATCH_COOLDOWN_MS - (Date.now() - row.last_hatch_at))
+  return row.last_draw_date === getTodayDate() ? msUntilNextLocalDay() : 0
+}
+
+/** Check whether the user is still inside their hatch cooldown. */
+export function hasHatchedToday(userId: string): boolean {
+  return msUntilNextHatch(userId) > 0
+}
+
+/** Mark that the user has hatched and update their streak. */
 export function markDailyHatch(userId: string): void {
   const db = getDb()
   const today = getTodayDate()
   const yesterday = getYesterdayDate()
+  const now = Date.now()
 
-  const row = db.prepare('SELECT last_draw_date, streak FROM gacha_daily WHERE user_id = ?').get(userId) as
-    | { last_draw_date: string; streak: number }
-    | undefined
+  const row = getDailyHatchRow(userId)
 
-  // Continue streak if last hatch was yesterday, otherwise reset to 1
-  const newStreak = row?.last_draw_date === yesterday ? (row.streak ?? 0) + 1 : 1
+  const continuesStreak =
+    row?.last_hatch_at != null ? now - row.last_hatch_at <= STREAK_GRACE_MS : row?.last_draw_date === yesterday
+  const newStreak = continuesStreak ? (row?.streak ?? 0) + 1 : 1
 
-  db.prepare('INSERT OR REPLACE INTO gacha_daily (user_id, last_draw_date, streak) VALUES (?, ?, ?)').run(
-    userId,
-    today,
-    newStreak
-  )
+  db.prepare(
+    'INSERT OR REPLACE INTO gacha_daily (user_id, last_draw_date, streak, last_hatch_at) VALUES (?, ?, ?, ?)'
+  ).run(userId, today, newStreak, now)
 }
 
 function matchesGeneratedBuddy(stored: BuddyData, generated: BuddyData): boolean {
@@ -318,8 +353,9 @@ function matchesGeneratedBuddy(stored: BuddyData, generated: BuddyData): boolean
 export function hatchDailyBuddy(userId: string): DailyBuddyHatch {
   const db = getDb()
   return db.transaction((): DailyBuddyHatch => {
-    if (hasHatchedToday(userId)) {
-      return { alreadyHatched: true, buddy: getBuddy(userId) }
+    const msUntilNext = msUntilNextHatch(userId)
+    if (msUntilNext > 0) {
+      return { alreadyHatched: true, buddy: getBuddy(userId), msUntilNext }
     }
 
     const generated = generateBuddy(userId)
@@ -342,18 +378,14 @@ export function hatchDailyBuddy(userId: string): DailyBuddyHatch {
 
 /** Get the current hatch streak for a user. */
 export function getStreak(userId: string): number {
-  const db = getDb()
   const today = getTodayDate()
   const yesterday = getYesterdayDate()
-
-  const row = db.prepare('SELECT last_draw_date, streak FROM gacha_daily WHERE user_id = ?').get(userId) as
-    | { last_draw_date: string; streak: number }
-    | undefined
+  const row = getDailyHatchRow(userId)
 
   if (!row) return 0
-  // Streak is valid if last hatch was today or yesterday
+  if (row.last_hatch_at !== null) return Date.now() - row.last_hatch_at <= STREAK_GRACE_MS ? (row.streak ?? 0) : 0
   if (row.last_draw_date === today || row.last_draw_date === yesterday) return row.streak ?? 0
-  return 0 // Streak broken
+  return 0
 }
 
 /** Update a buddy's name and personality (updates the latest buddy). */
