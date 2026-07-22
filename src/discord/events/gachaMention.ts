@@ -13,26 +13,14 @@ import {
 import type { Message } from 'discord.js'
 import { MessageFlags } from 'discord.js'
 import { getBuddy, getBuddyCount, getSpeciesInfo } from '../../games/buddy.js'
-import {
-  type BuddyRarity,
-  RARITY_COLORS,
-  RARITY_EMOJI,
-  RARITY_PLACEHOLDER_COLORS,
-  STAT_NAMES
-} from '../../games/data/buddySpecies.js'
+import { RARITY_COLORS, RARITY_EMOJI, STAT_NAMES } from '../../games/data/buddySpecies.js'
 import { logger } from '../../utils/logger.js'
+import { buddySprite } from './games/shared.js'
 
 function statBar(value: number, max: number = 10): string {
   const filled = '\u2588'.repeat(value)
   const empty = '\u2591'.repeat(max - value)
   return `${filled}${empty}`
-}
-
-function buddyThumbnailUrl(species: string, rarity: BuddyRarity): string {
-  const info = getSpeciesInfo(species)
-  const color = RARITY_PLACEHOLDER_COLORS[rarity]
-  const emoji = info?.emoji ?? '\u2753'
-  return `https://placehold.co/80x80/${color}/white?text=${encodeURIComponent(emoji)}`
 }
 
 /** Handle a gacha/buddy mention. Returns true if handled. */
@@ -51,6 +39,7 @@ export async function handleGachaMention(message: Message): Promise<boolean> {
 
     const info = getSpeciesInfo(buddy.species)
     const rarityEmoji = RARITY_EMOJI[buddy.rarity]
+    const sprite = buddySprite(buddy.species)
     const shinyTag = buddy.shiny ? ' \u2728 **SHINY**' : ''
     const hatDisplay = buddy.hat !== 'none' ? ` | Hat: ${buddy.hat}` : ''
 
@@ -73,7 +62,7 @@ export async function handleGachaMention(message: Message): Promise<boolean> {
 
     const section = new SectionBuilder()
       .addTextDisplayComponents(new TextDisplayBuilder().setContent(`### ${buddy.name}\n\n${body}`))
-      .setThumbnailAccessory(new ThumbnailBuilder({ media: { url: buddyThumbnailUrl(buddy.species, buddy.rarity) } }))
+      .setThumbnailAccessory(new ThumbnailBuilder({ media: { url: sprite.url } }))
 
     const container = new ContainerBuilder()
       .setAccentColor(RARITY_COLORS[buddy.rarity])
@@ -87,7 +76,8 @@ export async function handleGachaMention(message: Message): Promise<boolean> {
 
     await message.reply({
       components: [container],
-      flags: MessageFlags.IsComponentsV2 as typeof MessageFlags.IsComponentsV2
+      flags: MessageFlags.IsComponentsV2 as typeof MessageFlags.IsComponentsV2,
+      files: [sprite.file]
     })
     return true
   } catch (error) {
