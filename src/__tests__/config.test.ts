@@ -28,6 +28,7 @@ describe('config module', () => {
     vi.stubEnv('SESSION_TTL_MS', '')
     vi.stubEnv('SESSION_WINDOW_SIZE', '')
     vi.stubEnv('GEMINI_MODEL', '')
+    vi.stubEnv('GEMINI_EXTRACTION_MODEL', '')
     vi.stubEnv('GEMINI_TIMEOUT', '')
     vi.stubEnv('GEMINI_MAX_RETRIES', '')
     vi.stubEnv('GEMINI_LIVE_MAX_RETRIES', '')
@@ -36,6 +37,9 @@ describe('config module', () => {
     vi.stubEnv('GEMINI_EXTRACTION_MAX_RETRIES', '')
     vi.stubEnv('GEMINI_RETRY_BACKOFF_BASE_MS', '')
     vi.stubEnv('GEMINI_RETRY_BACKOFF_CAP_MS', '')
+    vi.stubEnv('MEMORY_BUFFER_SIZE', '')
+    vi.stubEnv('MEMORY_EXTRACTION_INTERVAL', '')
+    vi.stubEnv('MEMORY_EXTRACTION_GAP_MS', '')
     vi.stubEnv('DISCORD_MAX_MESSAGE_LENGTH', '')
   }
 
@@ -72,6 +76,7 @@ describe('config module', () => {
     const { config } = await import('../config.js')
 
     expect(config.gemini.model).toBe('gemini-3.5-flash-lite')
+    expect(config.gemini.extractionModel).toBe(config.gemini.model)
     expect(config.gemini.timeout).toBe(45_000)
     expect(config.gemini.maxRetries).toBe(3)
     expect(config.gemini.maxOutputTokens).toBe(500)
@@ -93,10 +98,10 @@ describe('config module', () => {
     expect(config.discord.maxMessageLength).toBe(1500)
 
     // Memory
-    expect(config.memory.bufferSize).toBe(20)
+    expect(config.memory.bufferSize).toBe(30)
     expect(config.memory.contextSize).toBe(10)
-    expect(config.memory.extractionInterval).toBe(10)
-    expect(config.memory.extractionGapMs).toBe(10_000)
+    expect(config.memory.extractionInterval).toBe(20)
+    expect(config.memory.extractionGapMs).toBe(20_000)
     expect(config.memory.maxFactsPerUser).toBe(20)
     expect(config.memory.factRetentionDays).toBe(14)
     expect(config.memory.channelMonitorTtlMs).toBe(86_400_000)
@@ -129,6 +134,7 @@ describe('config module', () => {
     vi.stubEnv('SESSION_TTL_MS', '600000')
     vi.stubEnv('SESSION_WINDOW_SIZE', '20')
     vi.stubEnv('GEMINI_MODEL', 'gemini-pro')
+    vi.stubEnv('GEMINI_EXTRACTION_MODEL', 'gemini-extraction-pro')
     vi.stubEnv('GEMINI_TIMEOUT', '30000')
     vi.stubEnv('GEMINI_MAX_RETRIES', '3')
     vi.stubEnv('GEMINI_LIVE_MAX_RETRIES', '4')
@@ -137,6 +143,9 @@ describe('config module', () => {
     vi.stubEnv('GEMINI_EXTRACTION_MAX_RETRIES', '2')
     vi.stubEnv('GEMINI_RETRY_BACKOFF_BASE_MS', '1500')
     vi.stubEnv('GEMINI_RETRY_BACKOFF_CAP_MS', '9000')
+    vi.stubEnv('MEMORY_BUFFER_SIZE', '40')
+    vi.stubEnv('MEMORY_EXTRACTION_INTERVAL', '30')
+    vi.stubEnv('MEMORY_EXTRACTION_GAP_MS', '25000')
     vi.stubEnv('DISCORD_MAX_MESSAGE_LENGTH', '4000')
 
     const { config } = await import('../config.js')
@@ -147,6 +156,7 @@ describe('config module', () => {
     expect(config.session.ttlMs).toBe(600_000)
     expect(config.session.windowSize).toBe(20)
     expect(config.gemini.model).toBe('gemini-pro')
+    expect(config.gemini.extractionModel).toBe('gemini-extraction-pro')
     expect(config.gemini.timeout).toBe(30_000)
     expect(config.gemini.maxRetries).toBe(3)
     expect(config.gemini.liveMaxRetries).toBe(4)
@@ -155,6 +165,9 @@ describe('config module', () => {
     expect(config.gemini.extractionMaxRetries).toBe(2)
     expect(config.gemini.retryBackoffBaseMs).toBe(1500)
     expect(config.gemini.retryBackoffCapMs).toBe(9000)
+    expect(config.memory.bufferSize).toBe(40)
+    expect(config.memory.extractionInterval).toBe(30)
+    expect(config.memory.extractionGapMs).toBe(25_000)
     expect(config.discord.maxMessageLength).toBe(4000)
   })
 
@@ -185,5 +198,17 @@ describe('config module', () => {
     await expect(() => import('../config.js')).rejects.toThrow(
       'Environment variable RATE_LIMIT_RPM must be a number, got: not-a-number'
     )
+  })
+
+  it('clamps the extraction interval to the passive buffer size', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('MEMORY_BUFFER_SIZE', '20')
+    vi.stubEnv('MEMORY_EXTRACTION_INTERVAL', '30')
+
+    const { config } = await import('../config.js')
+
+    expect(config.memory.extractionInterval).toBe(20)
+    expect(warn).toHaveBeenCalledOnce()
   })
 })

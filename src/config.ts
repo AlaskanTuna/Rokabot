@@ -16,6 +16,7 @@ function requiredEnv(key: string): string {
 interface YamlConfig {
   gemini?: {
     model?: string
+    extractionModel?: string
     timeout?: number
     maxRetries?: number
     maxOutputTokens?: number
@@ -80,6 +81,11 @@ function envString(key: string): string | undefined {
   return process.env[key] || undefined
 }
 
+const geminiModel = envString('GEMINI_MODEL') ?? yaml.gemini?.model ?? 'gemini-2.0-flash-lite'
+const memoryBufferSize = envInt('MEMORY_BUFFER_SIZE') ?? yaml.memory?.bufferSize ?? 30
+const requestedExtractionInterval = envInt('MEMORY_EXTRACTION_INTERVAL') ?? yaml.memory?.extractionInterval ?? 20
+const extractionInterval = Math.min(requestedExtractionInterval, memoryBufferSize)
+
 /** Merged config: env overrides > config.yml > hardcoded defaults */
 export const config = {
   discord: {
@@ -89,7 +95,8 @@ export const config = {
   },
   gemini: {
     apiKey: requiredEnv('GEMINI_API_KEY'),
-    model: envString('GEMINI_MODEL') ?? yaml.gemini?.model ?? 'gemini-2.0-flash-lite',
+    model: geminiModel,
+    extractionModel: envString('GEMINI_EXTRACTION_MODEL') ?? yaml.gemini?.extractionModel ?? geminiModel,
     timeout: envInt('GEMINI_TIMEOUT') ?? yaml.gemini?.timeout ?? 15_000,
     maxRetries: envInt('GEMINI_MAX_RETRIES') ?? yaml.gemini?.maxRetries ?? 1,
     maxOutputTokens: envInt('GEMINI_MAX_OUTPUT_TOKENS') ?? yaml.gemini?.maxOutputTokens ?? 300,
@@ -116,10 +123,10 @@ export const config = {
     historyRetentionDays: yaml.session?.historyRetentionDays ?? 7
   },
   memory: {
-    bufferSize: yaml.memory?.bufferSize ?? 20,
+    bufferSize: memoryBufferSize,
     contextSize: yaml.memory?.contextSize ?? 10,
-    extractionInterval: yaml.memory?.extractionInterval ?? 20,
-    extractionGapMs: yaml.memory?.extractionGapMs ?? 10_000,
+    extractionInterval,
+    extractionGapMs: envInt('MEMORY_EXTRACTION_GAP_MS') ?? yaml.memory?.extractionGapMs ?? 20_000,
     maxFactsPerUser: yaml.memory?.maxFactsPerUser ?? 10,
     factRetentionDays: yaml.memory?.factRetentionDays ?? 90,
     channelMonitorTtlMs: yaml.memory?.channelMonitorTtlMs ?? 86_400_000
@@ -144,6 +151,14 @@ export const config = {
 } as const
 
 const maxLiveRetryWindow = config.gemini.liveMaxRetries * (config.gemini.timeout + config.gemini.retryBackoffCapMs)
+
+if (requestedExtractionInterval > memoryBufferSize) {
+  const { logger } = await import('./utils/logger.js')
+  logger.warn(
+    { bufferSize: memoryBufferSize, extractionInterval: requestedExtractionInterval },
+    'Memory extraction interval exceeds passive buffer size; clamping to buffer size'
+  )
+}
 
 if (config.session.ttlMs <= maxLiveRetryWindow) {
   const { logger } = await import('./utils/logger.js')

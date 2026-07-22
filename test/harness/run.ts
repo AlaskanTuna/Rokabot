@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import './env.js'
+import { detectTone } from '../../src/agent/toneDetector.js'
 import { createCaptureSink } from './captureSink.js'
 import { makeClient, makeGuild, makeInteraction, makeMessage } from './discordDoubles.js'
 import { renderPayload } from './renderPayload.js'
@@ -12,6 +13,7 @@ import {
   startLlmTiming,
   startTurnTiming
 } from './timing.js'
+import { type RequestTokenBreakdown, type TokenHistoryMessage, measureRequest } from './tokens.js'
 
 export interface TranscriptAttachment {
   url: string
@@ -33,6 +35,7 @@ export interface TranscriptTurn {
   line: TranscriptLine
   rendered: string[]
   timing: TurnTiming
+  tokens: RequestTokenBreakdown
 }
 
 export interface TranscriptReport {
@@ -43,6 +46,8 @@ export interface TranscriptReport {
 export interface RunTranscriptOptions {
   live?: boolean
 }
+
+const MEASUREMENT_HOUR = 14
 
 function parseTranscriptLine(raw: string, lineNumber: number): TranscriptLine {
   let parsed: unknown
@@ -93,6 +98,29 @@ function fixturePath(args: readonly string[]): string {
   return resolve(fixture)
 }
 
+function requestMessageContent(line: TranscriptLine): string {
+  const content = line.kind === 'message' ? line.content.replace(/<@!?\d+>/g, '').trim() : line.content
+  const replyContext = line.replyToId ? '[Replying to Roka: Previous Roka reply]' : ''
+  return [replyContext, content || '(pinged you without saying anything)'].filter(Boolean).join('\n')
+}
+
+function renderTokenTable(rows: readonly { turn: number; tokens: RequestTokenBreakdown }[]): string {
+  const headers = ['Turn', 'system', 'tools', 'history', 'user', 'total', 'tool_count']
+  const values = rows.map(({ turn, tokens }) => [
+    String(turn),
+    String(tokens.systemTok),
+    String(tokens.toolsTok),
+    String(tokens.historyTok),
+    String(tokens.userMsgTok),
+    String(tokens.totalTok),
+    String(tokens.toolCount)
+  ])
+  const widths = headers.map((header, index) => Math.max(header.length, ...values.map((row) => row[index].length)))
+  const renderRow = (row: string[]) => row.map((value, index) => value.padEnd(widths[index])).join(' | ')
+
+  return [renderRow(headers), widths.map((width) => '-'.repeat(width)).join('-|-'), ...values.map(renderRow)].join('\n')
+}
+
 /** Drive one JSONL transcript through the real Discord handlers without connecting to Discord. */
 export async function runTranscript(path: string, options: RunTranscriptOptions = {}): Promise<TranscriptReport> {
   const live = options.live ?? process.argv.includes('--live')
@@ -113,6 +141,8 @@ export async function runTranscript(path: string, options: RunTranscriptOptions 
   const handleInteractionCreate = interactionEvents.createInteractionHandler(rateLimiter)
   const channelIds = new Set<string>()
   const turns: TranscriptTurn[] = []
+  const measurementHistory = new Map<string, TokenHistoryMessage[]>()
+  const participants = new Map<string, Set<string>>()
   let scriptedReply = ''
   let activeTiming: ReturnType<typeof startTurnTiming> | undefined
   ;(config.memory as { extractionInterval: number }).extractionInterval = Number.MAX_SAFE_INTEGER
@@ -134,6 +164,23 @@ export async function runTranscript(path: string, options: RunTranscriptOptions 
       const sink = createCaptureSink()
       const guild = makeGuild({ me: { displayName: client.user?.displayName } })
       scriptedReply = `Harness reply ${index + 1}: ${line.content}`
+      const userMessage = requestMessageContent(line)
+      const channelHistory = measurementHistory.get(line.channelId) ?? []
+      const channelParticipants = participants.get(line.channelId) ?? new Set<string>()
+      channelParticipants.add(line.displayName)
+      participants.set(line.channelId, channelParticipants)
+      const tone = detectTone(
+        channelHistory.map((message) => ({ ...message, timestamp: 0 })),
+        MEASUREMENT_HOUR
+      )
+      const tokens = measureRequest({
+        tone,
+        participants: [...channelParticipants],
+        hour: MEASUREMENT_HOUR,
+        displayName: line.displayName,
+        history: channelHistory,
+        userMessage
+      })
       activeTiming = startTurnTiming()
       channelIds.add(line.channelId)
 
@@ -186,7 +233,12 @@ export async function runTranscript(path: string, options: RunTranscriptOptions 
       const records = sink.all()
       const timing = finishTurnTiming(activeTiming, records)
       const rendered = records.map((record, recordIndex) => renderPayload(record, recordIndex, records))
-      turns.push({ line, rendered, timing })
+      turns.push({ line, rendered, timing, tokens })
+      measurementHistory.set(line.channelId, [
+        ...channelHistory,
+        { role: 'user', displayName: line.displayName, content: userMessage },
+        { role: 'assistant', displayName: 'Roka', content: scriptedReply }
+      ])
       activeTiming = undefined
     }
   } finally {
@@ -203,7 +255,10 @@ export async function runTranscript(path: string, options: RunTranscriptOptions 
     ]),
     '',
     'Timing',
-    renderTimingTable(turns.map((turn, index) => ({ turn: index + 1, kind: turn.line.kind, timing: turn.timing })))
+    renderTimingTable(turns.map((turn, index) => ({ turn: index + 1, kind: turn.line.kind, timing: turn.timing }))),
+    '',
+    'Tokens (deterministic chars/4 estimator; system = core + speech + tone + context)',
+    renderTokenTable(turns.map((turn, index) => ({ turn: index + 1, tokens: turn.tokens })))
   ].join('\n')
 
   return { turns, output }
