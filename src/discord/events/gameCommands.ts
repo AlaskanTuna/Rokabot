@@ -10,6 +10,7 @@ import {
   setTimeoutCallback as setShiritoriTimeoutCallback
 } from '../../games/shiritori.js'
 import { logger } from '../../utils/logger.js'
+import { handleBuddyCollection } from './games/collection.js'
 import {
   handleBuddyGuide,
   handleBuddyLeaderboard,
@@ -119,6 +120,12 @@ export function createGameCommandHandler(client?: Client) {
           case 'stats': {
             const payload = handleBuddyStats(interaction)
             await interaction.reply(payload)
+            break
+          }
+          case 'collection': {
+            await interaction.deferReply()
+            const payload = await handleBuddyCollection(interaction)
+            if (payload) await interaction.editReply(payload)
             break
           }
           case 'guide': {

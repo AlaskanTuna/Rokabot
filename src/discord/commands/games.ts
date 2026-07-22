@@ -9,6 +9,7 @@ export const gachaCommand = new SlashCommandBuilder()
   .addSubcommand((sub) => sub.setName('view').setDescription('View your companion spirit'))
   .addSubcommand((sub) => sub.setName('pet').setDescription('Interact with your companion~'))
   .addSubcommand((sub) => sub.setName('stats').setDescription("View your companion's detailed stats"))
+  .addSubcommand((sub) => sub.setName('collection').setDescription('Browse your full companion collection'))
   .addSubcommand((sub) => sub.setName('guide').setDescription('Learn about the companion system'))
   .addSubcommand((sub) => sub.setName('leaderboard').setDescription('View top companions by stats'))
 
