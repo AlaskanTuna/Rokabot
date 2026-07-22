@@ -13,13 +13,13 @@ const buddySourceFiles = [
 ]
 
 describe('buddy sprites', () => {
-  it('provides a unique Catbox sprite URL for every buddy species', () => {
+  it('provides a unique Postimages sprite URL for every buddy species', () => {
     const spriteUrls = SPECIES.map(({ spriteUrl }) => spriteUrl)
 
     expect(spriteUrls).toHaveLength(18)
     expect(spriteUrls).toEqual(
       expect.arrayContaining(
-        spriteUrls.map((url) => expect.stringMatching(/^https:\/\/files\.catbox\.moe\/[a-z0-9]+\.png$/))
+        spriteUrls.map((url) => expect.stringMatching(/^https:\/\/i\.postimg\.cc\/[a-zA-Z0-9]+\/[a-zA-Z0-9_-]+\.png$/))
       )
     )
     expect(new Set(spriteUrls).size).toBe(18)
