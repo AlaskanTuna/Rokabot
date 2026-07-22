@@ -20,7 +20,8 @@
     "test:smoke": "tsx scripts/test-adk-smoke.ts",
     "test:features": "tsx scripts/test-features.ts",
     "test:phase8": "tsx scripts/test-phase8.ts",
-    "test:memory": "tsx scripts/test-memory-extraction.ts"
+    "test:memory": "tsx scripts/test-memory-extraction.ts",
+    "export:vault": "tsx scripts/export-vault.ts"
   },
   "dependencies": {
     "@google/adk": "^0.1.0",
