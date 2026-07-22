@@ -1,10 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('../../config.js', () => ({
+  config: {
+    games: {
+      hangmanLives: 6,
+      hangmanTimeoutMs: 120_000
+    }
+  }
+}))
+
 import {
   type HangmanGame,
   destroyAllGames,
   getDisplayWord,
   getGame,
   getHangmanArt,
+  getTimeoutAt,
   guessLetter,
   guessWord,
   isGameActive,
@@ -43,6 +54,12 @@ describe('startGame', () => {
     expect(r1.success).toBe(true)
     expect(r2.success).toBe(true)
   })
+
+  it('sets the displayed countdown to the configured timeout', () => {
+    startGame('ch1', 'player1')
+
+    expect(getTimeoutAt('ch1') * 1000 - Date.now()).toBeGreaterThanOrEqual(119_000)
+  })
 })
 
 describe('guessLetter', () => {
@@ -75,6 +92,17 @@ describe('guessLetter', () => {
     expect(result.correct).toBe(false)
     expect(result.remainingLives).toBe(5)
     expect(result.message).toContain('z')
+  })
+
+  it('resets the displayed countdown to the configured timeout after a wrong guess', () => {
+    startGame('ch1', 'player1')
+    const game = getGame('ch1')!
+    ;(game as { word: string }).word = 'ramen'
+
+    vi.advanceTimersByTime(10_000)
+    guessLetter('ch1', 'z')
+
+    expect(getTimeoutAt('ch1') * 1000 - Date.now()).toBeGreaterThanOrEqual(119_000)
   })
 
   it('handles duplicate letter guess', () => {
@@ -324,11 +352,11 @@ describe('game lifecycle', () => {
     expect(isGameActive('ch2')).toBe(false)
   })
 
-  it('game times out after 60 seconds of inactivity', () => {
+  it('game times out after 120 seconds of inactivity', () => {
     startGame('ch1', 'player1')
     expect(isGameActive('ch1')).toBe(true)
 
-    vi.advanceTimersByTime(60_000)
+    vi.advanceTimersByTime(120_000)
     expect(isGameActive('ch1')).toBe(false)
   })
 
@@ -337,7 +365,7 @@ describe('game lifecycle', () => {
     const game = getGame('ch1')!
     ;(game as { word: string }).word = 'ramen'
 
-    // Advance 50 seconds (less than 60s timeout)
+    // Advance 50 seconds (less than 120s timeout)
     vi.advanceTimersByTime(50_000)
     expect(isGameActive('ch1')).toBe(true)
 
@@ -348,8 +376,8 @@ describe('game lifecycle', () => {
     vi.advanceTimersByTime(50_000)
     expect(isGameActive('ch1')).toBe(true)
 
-    // Advance to trigger timeout (10s more = 60s total since last guess)
-    vi.advanceTimersByTime(10_001)
+    // Advance to trigger timeout (70s more = 120s total since last guess)
+    vi.advanceTimersByTime(70_001)
     expect(isGameActive('ch1')).toBe(false)
   })
 

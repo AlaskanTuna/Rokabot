@@ -92,6 +92,7 @@ export const config = {
   discord: {
     token: requiredEnv('DISCORD_TOKEN'),
     clientId: requiredEnv('DISCORD_CLIENT_ID'),
+    devGuildId: envString('DISCORD_DEV_GUILD_ID'),
     maxMessageLength: envInt('DISCORD_MAX_MESSAGE_LENGTH') ?? yaml.discord?.maxMessageLength ?? 2000
   },
   gemini: {

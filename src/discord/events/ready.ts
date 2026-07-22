@@ -15,7 +15,11 @@ export async function handleReady(client: Client): Promise<void> {
   const rest = new REST({ version: '10' }).setToken(config.discord.token)
 
   try {
-    await rest.put(Routes.applicationCommands(config.discord.clientId), {
+    const commandRoute = config.discord.devGuildId
+      ? Routes.applicationGuildCommands(config.discord.clientId, config.discord.devGuildId)
+      : Routes.applicationCommands(config.discord.clientId)
+
+    await rest.put(commandRoute, {
       body: [chatCommand.toJSON(), ...toolCommands.map((c) => c.toJSON()), ...gameCommands.map((c) => c.toJSON())]
     })
     logger.info('Slash commands registered')
