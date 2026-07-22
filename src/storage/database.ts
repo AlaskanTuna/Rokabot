@@ -13,6 +13,9 @@ let db: Database.Database | null = null
 
 /** Resolve the database file path relative to the project root. */
 function resolveDbPath(): string {
+  const override = process.env.ROKABOT_DB_PATH
+  if (override) return override
+
   const root = resolve(import.meta.dirname ?? '.', '..', '..')
   const dataDir = resolve(root, 'data')
   mkdirSync(dataDir, { recursive: true })

@@ -52,7 +52,7 @@ const SAFETY_DEFLECTION = "Ehh… let's not get into that one~"
 const RECITATION_DEFLECTION = "Ah, I don't think I should repeat that one exactly~"
 const TERMINAL_DEFLECTION = "Eep, something went wrong on my side. Let's try again later~"
 
-interface TurnOutcome {
+export interface TurnOutcome {
   text?: string
   errorCode?: string
   errorMessage?: string
@@ -61,6 +61,21 @@ interface TurnOutcome {
   hasText: boolean
   hasFunctionCall: boolean
   sessionMissing?: boolean
+}
+
+export type TestRunTurn = (attempt: number, signal: AbortSignal) => Promise<TurnOutcome>
+export type TestRunTurnFactory = () => TestRunTurn
+
+let testRunTurnFactory: TestRunTurnFactory | undefined
+
+/** Test-only seam for supplying the innermost turn while retaining reliability orchestration. */
+export function __setTestRunTurnFactory(factory: TestRunTurnFactory): void {
+  testRunTurnFactory = factory
+}
+
+/** Clears the test-only turn seam so generateResponse uses the ADK runner. */
+export function __resetTestRunTurnFactory(): void {
+  testRunTurnFactory = undefined
 }
 
 interface ReliabilityResult {
@@ -555,54 +570,56 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     safetyDeflection: SAFETY_DEFLECTION,
     recitationDeflection: RECITATION_DEFLECTION,
     terminalDeflection: TERMINAL_DEFLECTION,
-    runTurn: async (attempt, signal) => {
-      let responseText = ''
-      let hasFunctionCall = false
-      let finishReason: LlmResponse['finishReason']
+    runTurn:
+      testRunTurnFactory?.() ??
+      (async (attempt, signal) => {
+        let responseText = ''
+        let hasFunctionCall = false
+        let finishReason: LlmResponse['finishReason']
 
-      const request: Parameters<typeof runner.runAsync>[0] = {
-        userId: channelId,
-        sessionId: channelId,
-        // ADK's runtime only appends when this value is truthy; its type incorrectly requires it for a retry.
-        newMessage: attempt === 0 ? newMessage : (undefined as unknown as Content),
-        runConfig: { maxLlmCalls: config.gemini.maxLlmCalls },
-        stateDelta:
-          attempt === 0
-            ? {
-                _systemPrompt: systemPrompt,
-                participants,
-                _userId: userId,
-                _channelId: channelId,
-                _guildId: guildId
-              }
-            : undefined
-      }
+        const request: Parameters<typeof runner.runAsync>[0] = {
+          userId: channelId,
+          sessionId: channelId,
+          // ADK's runtime only appends when this value is truthy; its type incorrectly requires it for a retry.
+          newMessage: attempt === 0 ? newMessage : (undefined as unknown as Content),
+          runConfig: { maxLlmCalls: config.gemini.maxLlmCalls },
+          stateDelta:
+            attempt === 0
+              ? {
+                  _systemPrompt: systemPrompt,
+                  participants,
+                  _userId: userId,
+                  _channelId: channelId,
+                  _guildId: guildId
+                }
+              : undefined
+        }
 
-      for await (const event of runner.runAsync(request)) {
-        if (signal.aborted) break
-        if (event.errorCode) {
-          return {
-            errorCode: event.errorCode,
-            errorMessage: event.errorMessage,
-            customMetadata: event.customMetadata,
-            finishReason: event.finishReason,
-            hasText: false,
-            hasFunctionCall: false
+        for await (const event of runner.runAsync(request)) {
+          if (signal.aborted) break
+          if (event.errorCode) {
+            return {
+              errorCode: event.errorCode,
+              errorMessage: event.errorMessage,
+              customMetadata: event.customMetadata,
+              finishReason: event.finishReason,
+              hasText: false,
+              hasFunctionCall: false
+            }
+          }
+          if (isFinalResponse(event) && event.content?.parts) {
+            finishReason = event.finishReason
+            responseText = event.content.parts
+              .filter((part: Part) => part.text && !part.thought)
+              .map((part: Part) => part.text)
+              .join('')
+              .trim()
+            hasFunctionCall = event.content.parts.some((part: Part) => 'functionCall' in part && part.functionCall)
           }
         }
-        if (isFinalResponse(event) && event.content?.parts) {
-          finishReason = event.finishReason
-          responseText = event.content.parts
-            .filter((part: Part) => part.text && !part.thought)
-            .map((part: Part) => part.text)
-            .join('')
-            .trim()
-          hasFunctionCall = event.content.parts.some((part: Part) => 'functionCall' in part && part.functionCall)
-        }
-      }
 
-      return { text: responseText, finishReason, hasText: Boolean(responseText), hasFunctionCall }
-    }
+        return { text: responseText, finishReason, hasText: Boolean(responseText), hasFunctionCall }
+      })
   })
 
   if (reliability.action === 'destroy') await destroySession(channelId)
