@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => {
       readyHandler = handler
     },
     resetStuckProcessing: vi.fn(),
+    logger: { error: vi.fn(), fatal: vi.fn(), info: vi.fn(), warn: vi.fn() },
     startExtractionScheduler: vi.fn(),
     stopExtractionScheduler: vi.fn(),
     triggerReady: () => readyHandler?.()
@@ -51,7 +52,7 @@ vi.mock('../storage/memoryMigration.js', () => ({ backfillLegacyClaims: mocks.ba
 vi.mock('../storage/metricsStore.js', () => ({ pruneOldMetrics: vi.fn() }))
 vi.mock('../storage/sessionStore.js', () => ({ pruneOldHistory: vi.fn() }))
 vi.mock('../storage/userMemory.js', () => ({ pruneOldFacts: vi.fn() }))
-vi.mock('../utils/logger.js', () => ({ logger: { error: vi.fn(), fatal: vi.fn(), info: vi.fn(), warn: vi.fn() } }))
+vi.mock('../utils/logger.js', () => ({ logger: mocks.logger }))
 
 describe('startup memory tasks', () => {
   beforeEach(() => {
@@ -67,5 +68,17 @@ describe('startup memory tasks', () => {
     expect(mocks.resetStuckProcessing.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.startExtractionScheduler.mock.invocationCallOrder[0]
     )
+  })
+
+  it('contains startup memory task failures', async () => {
+    const error = new Error('backfill failed')
+    mocks.backfillLegacyClaims.mockImplementation(() => {
+      throw error
+    })
+
+    await import('../index.js')
+
+    expect(() => mocks.triggerReady()).not.toThrow()
+    expect(mocks.logger.error).toHaveBeenCalledWith({ err: error }, 'Failed to start memory tasks')
   })
 })

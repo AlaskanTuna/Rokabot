@@ -12,6 +12,10 @@ type LegacyMemoryRow = {
 
 const BACKFILL_MARKER = 'legacy_claims_v1'
 
+function isUnsafeClaimError(error: unknown): boolean {
+  return error instanceof Error && error.message === 'Claim value is unsafe'
+}
+
 function attestedScopes(userId: string): string[] {
   const db = getDb()
   const rows = db
@@ -45,6 +49,7 @@ export function backfillLegacyClaims(): void {
       .prepare('SELECT guild_id, user_id, fact_key, fact_value, updated_at FROM user_memory')
       .all() as LegacyMemoryRow[]
     let skippedWithoutScope = 0
+    let skippedUnsafeValues = 0
 
     for (const row of rows) {
       const scopes = row.guild_id === 'global' ? attestedScopes(row.user_id) : [row.guild_id]
@@ -54,25 +59,35 @@ export function backfillLegacyClaims(): void {
       }
 
       const needsReview = row.guild_id === 'global' && scopes.length !== 1
-      for (const guildId of scopes) {
-        assertClaim(
-          {
-            guildId,
-            subjectUserId: row.user_id,
-            predicate: row.fact_key,
-            value: row.fact_value,
-            sourceKind: 'legacy',
-            observedAt: row.updated_at,
-            needsReview
-          },
-          { transaction: true }
-        )
+      try {
+        for (const guildId of scopes) {
+          assertClaim(
+            {
+              guildId,
+              subjectUserId: row.user_id,
+              predicate: row.fact_key,
+              value: row.fact_value,
+              sourceKind: 'legacy',
+              observedAt: row.updated_at,
+              needsReview
+            },
+            { transaction: true }
+          )
+        }
+      } catch (error) {
+        if (!isUnsafeClaimError(error)) throw error
+
+        skippedUnsafeValues++
+        logger.warn({ factKey: row.fact_key }, 'Legacy memory fact skipped because claim value is unsafe')
       }
     }
 
     db.prepare('INSERT INTO memory_backfill_marker (name, completed_at) VALUES (?, ?)').run(BACKFILL_MARKER, Date.now())
     if (skippedWithoutScope > 0) {
       logger.warn({ skippedWithoutScope }, 'Legacy memory facts skipped because no legal scope could be inferred')
+    }
+    if (skippedUnsafeValues > 0) {
+      logger.warn({ skippedUnsafeValues }, 'Legacy memory facts skipped because claim values are unsafe')
     }
   })
 
