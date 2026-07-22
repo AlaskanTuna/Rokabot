@@ -1,6 +1,7 @@
 import { resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import '../env.js'
+import { assertClaim } from '../../../src/agent/memory/memoryClaims.js'
 import { FACTS_UNTRUSTED_DATA_LABEL } from '../../../src/agent/promptSafety.js'
 import {
   __resetTestRunTurnFactory,
@@ -12,7 +13,7 @@ import { config } from '../../../src/config.js'
 import { createInteractionHandler } from '../../../src/discord/events/interactionCreate.js'
 import { createMessageHandler } from '../../../src/discord/events/messageCreate.js'
 import { buildRokaMessage } from '../../../src/discord/messageBuilder.js'
-import { deleteFact, saveFact } from '../../../src/storage/userMemory.js'
+import { getDb } from '../../../src/storage/database.js'
 import { RateLimiter } from '../../../src/utils/rateLimiter.js'
 import { createCaptureSink } from '../captureSink.js'
 import { makeClient, makeGuild, makeInteraction, makeMessage } from '../discordDoubles.js'
@@ -50,7 +51,7 @@ vi.mock('@google/adk', async (importOriginal) => {
 
 const transcript = resolve('test/harness/transcripts/multi-guild.jsonl')
 const memoryUserId = 'mio-memory'
-const memoryFactKey = 'favorite_drink'
+const memoryFactKey = 'likes'
 
 function responseText(record: { kind: string; payload: unknown }): string {
   return renderPayload({ ...record, channelId: null, ts: 0 })
@@ -99,8 +100,9 @@ afterEach(async () => {
     destroySession('memory-garden'),
     destroySession('memory-library')
   ])
-  deleteFact('guild-garden', memoryUserId, memoryFactKey)
-  deleteFact('guild-library', memoryUserId, memoryFactKey)
+  getDb()
+    .prepare('DELETE FROM memory_claim WHERE guild_id IN (?, ?) AND subject_user_id = ? AND predicate = ?')
+    .run('guild-garden', 'guild-library', memoryUserId, memoryFactKey)
   mocks.generateContent.mockClear()
   mocks.runnerRequests.length = 0
   vi.restoreAllMocks()
@@ -428,12 +430,26 @@ describe('harness self-tests', () => {
     }
   )
 
-  it('injects only the current guild memory while replaying the multi-guild transcript', async () => {
+  it('injects only the current guild claims while replaying the multi-guild transcript', async () => {
     const lines = (await loadTranscript(transcript)).filter((line) => line.userId === memoryUserId)
     const client = makeClient()
     const handler = createMessageHandler(client as never, new RateLimiter({ rpm: 2, rpd: 2 }))
-    saveFact('guild-garden', memoryUserId, memoryFactKey, 'jasmine tea')
-    saveFact('guild-library', memoryUserId, memoryFactKey, 'espresso')
+    expect(config.memory.claimsBackend).toBe(true)
+    assertClaim({
+      guildId: 'guild-garden',
+      subjectUserId: memoryUserId,
+      predicate: memoryFactKey,
+      value: 'jasmine tea',
+      sourceKind: 'human'
+    })
+    assertClaim({
+      guildId: 'guild-library',
+      subjectUserId: memoryUserId,
+      predicate: memoryFactKey,
+      value: 'espresso',
+      sourceKind: 'human'
+    })
+    getDb().prepare("DELETE FROM memory_events WHERE kind = 'retrieval'").run()
 
     for (const line of lines) {
       await handler(
@@ -453,12 +469,22 @@ describe('harness self-tests', () => {
     expect(lines).toHaveLength(2)
     expect(mocks.runnerRequests).toHaveLength(2)
     expect(capturedSystemPrompt(mocks.runnerRequests[0])).toContain(
-      `${FACTS_UNTRUSTED_DATA_LABEL}\n{"facts":[{"person":"mio (Mio)","attributes":[{"key":"favorite_drink","value":"jasmine tea"}]}]}`
+      `${FACTS_UNTRUSTED_DATA_LABEL}\n{"facts":[{"person":"Mio","attributes":[{"key":"likes","value":"jasmine tea"}]}]}`
     )
     expect(capturedSystemPrompt(mocks.runnerRequests[0])).not.toContain('espresso')
     expect(capturedSystemPrompt(mocks.runnerRequests[1])).toContain(
-      `${FACTS_UNTRUSTED_DATA_LABEL}\n{"facts":[{"person":"mio (Mio)","attributes":[{"key":"favorite_drink","value":"espresso"}]}]}`
+      `${FACTS_UNTRUSTED_DATA_LABEL}\n{"facts":[{"person":"Mio","attributes":[{"key":"likes","value":"espresso"}]}]}`
     )
     expect(capturedSystemPrompt(mocks.runnerRequests[1])).not.toContain('jasmine tea')
+    expect(
+      getDb()
+        .prepare(
+          "SELECT guild_id, subject_user_id, n_candidates, n_selected FROM memory_events WHERE kind = 'retrieval' ORDER BY id"
+        )
+        .all()
+    ).toEqual([
+      { guild_id: 'guild-garden', subject_user_id: memoryUserId, n_candidates: 1, n_selected: 1 },
+      { guild_id: 'guild-library', subject_user_id: memoryUserId, n_candidates: 1, n_selected: 1 }
+    ])
   })
 })

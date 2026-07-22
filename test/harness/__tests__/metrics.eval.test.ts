@@ -2,10 +2,10 @@ import { resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import '../env.js'
 import { resetMonitor } from '../../../src/agent/channelMonitor.js'
+import { resetForTest as resetScheduler, stopExtractionScheduler } from '../../../src/agent/memory/scheduler.js'
 import { resetCounters } from '../../../src/agent/memoryExtractor.js'
 import { resetAllBuffers } from '../../../src/agent/passiveBuffer.js'
 import { __resetTestRunTurnFactory, __setTestRunTurnFactory, destroySession } from '../../../src/agent/roka.js'
-import { config } from '../../../src/config.js'
 import { createMessageHandler } from '../../../src/discord/events/messageCreate.js'
 import { getDb } from '../../../src/storage/database.js'
 import { RateLimiter } from '../../../src/utils/rateLimiter.js'
@@ -22,10 +22,6 @@ vi.mock('@google/genai', () => ({
 }))
 
 const transcript = resolve('test/harness/transcripts/metrics.jsonl')
-const memoryConfig = config.memory as { extractionInterval: number; extractionGapMs: number }
-const defaultExtractionInterval = memoryConfig.extractionInterval
-const defaultExtractionGapMs = memoryConfig.extractionGapMs
-
 interface ResponseEventRow {
   guild_id: string
   channel_id: string
@@ -50,13 +46,14 @@ function responseRows(): ResponseEventRow[] {
 
 afterEach(async () => {
   __resetTestRunTurnFactory()
-  memoryConfig.extractionInterval = defaultExtractionInterval
-  memoryConfig.extractionGapMs = defaultExtractionGapMs
+  stopExtractionScheduler()
+  resetScheduler()
   resetCounters()
   resetAllBuffers()
   resetMonitor()
   getDb().prepare('DELETE FROM response_events').run()
   getDb().prepare('DELETE FROM extraction_events').run()
+  getDb().prepare('DELETE FROM extraction_queue').run()
   await Promise.all([
     destroySession('tea-room'),
     destroySession('reading-nook'),
@@ -99,11 +96,7 @@ describe('harness metrics evaluation', () => {
     expect(rows.map((row) => row.guild_id)).toEqual(['guild-garden', 'guild-library', 'guild-garden', 'guild-library'])
   })
 
-  it('excludes busy and intercepted turns while recording mocked extraction events', async () => {
-    memoryConfig.extractionInterval = 1
-    memoryConfig.extractionGapMs = 0
-    mocks.generateContent.mockResolvedValue({ text: '[]' })
-
+  it('excludes busy and intercepted turns while queueing claims extraction snapshots', async () => {
     const client = makeClient()
     const guild = makeGuild({ me: { displayName: 'Roka' } })
     const handler = createMessageHandler(client as never, new RateLimiter({ rpm: 10, rpd: 10 }))
@@ -127,11 +120,12 @@ describe('harness metrics evaluation', () => {
         guildId: 'guild-extraction',
         guild,
         channelId: 'metrics-early-exit-channel',
-        content: '<@roka> Tell me about tea and coffee.',
+        content: '<@roka> I love tea and coffee.',
         sink
       }) as never
     )
     await firstTurnStarted
+    stopExtractionScheduler()
 
     await handler(
       makeMessage({
@@ -144,9 +138,11 @@ describe('harness metrics evaluation', () => {
         sink
       }) as never
     )
+    stopExtractionScheduler()
 
     resolveFirstTurn()
     await firstTurn
+    stopExtractionScheduler()
 
     await handler(
       makeMessage({
@@ -159,27 +155,29 @@ describe('harness metrics evaluation', () => {
         sink
       }) as never
     )
+    stopExtractionScheduler()
 
     expect(responseRows()).toHaveLength(1)
     expect(sink.all()).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'reply' })]))
 
-    await vi.waitFor(() => {
-      const extractionRows = getDb()
-        .prepare('SELECT guild_id, channel_id, duration_ms, outcome FROM extraction_events')
-        .all() as Array<{ guild_id: string; channel_id: string; duration_ms: number; outcome: string }>
+    const queueRows = getDb()
+      .prepare('SELECT guild_id, channel_id, payload, status FROM extraction_queue ORDER BY id')
+      .all() as Array<{ guild_id: string; channel_id: string; payload: string; status: string }>
 
-      expect(extractionRows.length).toBeGreaterThan(0)
-      expect(extractionRows).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            guild_id: 'guild-extraction',
-            channel_id: 'metrics-early-exit-channel',
-            outcome: 'no_facts'
-          })
-        ])
-      )
-      expect(extractionRows.every((row) => row.duration_ms >= 0)).toBe(true)
-    })
-    expect(mocks.generateContent).toHaveBeenCalled()
+    expect(queueRows).toHaveLength(4)
+    expect(queueRows.map(({ guild_id, channel_id, status }) => ({ guild_id, channel_id, status }))).toEqual([
+      { guild_id: 'guild-extraction', channel_id: 'metrics-early-exit-channel', status: 'pending' },
+      { guild_id: 'guild-extraction', channel_id: 'metrics-early-exit-channel', status: 'pending' },
+      { guild_id: 'guild-extraction', channel_id: 'metrics-early-exit-channel', status: 'pending' },
+      { guild_id: 'guild-extraction', channel_id: 'metrics-early-exit-channel', status: 'pending' }
+    ])
+    expect(queueRows.map(({ payload }) => JSON.parse(payload).at(-1)?.content)).toEqual([
+      '<@roka> I love tea and coffee.',
+      '<@roka> Can you wait?',
+      'First metrics response~',
+      'gacha'
+    ])
+    expect(getDb().prepare('SELECT * FROM extraction_events').all()).toHaveLength(0)
+    expect(mocks.generateContent).not.toHaveBeenCalled()
   })
 })

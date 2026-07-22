@@ -161,7 +161,7 @@ export const config = {
     maxFactsPerUser: yaml.memory?.maxFactsPerUser ?? 10,
     factRetentionDays: yaml.memory?.factRetentionDays ?? 90,
     channelMonitorTtlMs: yaml.memory?.channelMonitorTtlMs ?? 86_400_000,
-    claimsBackend: envBool('MEMORY_CLAIMS_BACKEND') ?? yaml.memory?.claimsBackend ?? false,
+    claimsBackend: envBool('MEMORY_CLAIMS_BACKEND') ?? yaml.memory?.claimsBackend ?? true,
     maxClaimsPerTurn: envInt('MEMORY_MAX_CLAIMS_PER_TURN') ?? yaml.memory?.maxClaimsPerTurn ?? 10,
     retrievalTokenBudget: envInt('MEMORY_RETRIEVAL_TOKEN_BUDGET') ?? yaml.memory?.retrievalTokenBudget ?? 350,
     recentParticipantLimit: envInt('MEMORY_RECENT_PARTICIPANT_LIMIT') ?? yaml.memory?.recentParticipantLimit ?? 3,

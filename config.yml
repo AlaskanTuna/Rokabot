@@ -38,7 +38,7 @@ memory:
   maxFactsPerUser: 20 # Max stored facts per user (oldest evicted on overflow)
   factRetentionDays: 14 # Days before unused facts are auto-pruned
   channelMonitorTtlMs: 86400000 # How long a channel stays monitored after last @mention (24h)
-  claimsBackend: false # Enable typed claims extraction and retrieval (Phase 14 remains shadow-only)
+  claimsBackend: true # Enable typed claims extraction and retrieval (set MEMORY_CLAIMS_BACKEND=false to roll back)
   maxClaimsPerTurn: 10 # Hard cap on claims injected into one response
   retrievalTokenBudget: 350 # Approximate token budget for the claims envelope
   recentParticipantLimit: 3 # Recent non-speaker participants considered for retrieval
