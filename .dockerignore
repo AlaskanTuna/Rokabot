@@ -7,8 +7,6 @@ data
 .vscode
 docs
 assets
-!assets/sprites
-!assets/sprites/**
 scripts
 *.md
 !package.json

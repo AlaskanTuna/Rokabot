@@ -1,11 +1,9 @@
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
-import sharp from 'sharp'
 import { describe, expect, it } from 'vitest'
 import { buddySprite, buildBuddyContainer } from '../../discord/events/games/shared.js'
 import { SPECIES } from '../data/buddySpecies.js'
 
-const spritesDirectory = resolve(process.cwd(), 'assets/sprites/buddies')
 const buddySourceFiles = [
   ...readdirSync(resolve(process.cwd(), 'src/discord/events/games'))
     .filter((file) => file.endsWith('.ts'))
@@ -15,38 +13,33 @@ const buddySourceFiles = [
 ]
 
 describe('buddy sprites', () => {
-  it('provides a valid bundled PNG for every buddy species', async () => {
-    await Promise.all(
-      SPECIES.map(async ({ id }) => {
-        const path = resolve(spritesDirectory, `${id}.png`)
+  it('provides a unique Catbox sprite URL for every buddy species', () => {
+    const spriteUrls = SPECIES.map(({ spriteUrl }) => spriteUrl)
 
-        expect(existsSync(path)).toBe(true)
-        expect(statSync(path).size).toBeLessThanOrEqual(256 * 1024)
-
-        const metadata = await sharp(path).metadata()
-
-        expect(metadata.format).toBe('png')
-        expect(metadata.width).toBe(metadata.height)
-        expect(metadata.hasAlpha).toBe(true)
-      })
+    expect(spriteUrls).toHaveLength(18)
+    expect(spriteUrls).toEqual(
+      expect.arrayContaining(
+        spriteUrls.map((url) => expect.stringMatching(/^https:\/\/files\.catbox\.moe\/[a-z0-9]+\.png$/))
+      )
     )
+    expect(new Set(spriteUrls).size).toBe(18)
   })
 
-  it('serializes a sprite thumbnail with its matching attachment', () => {
-    const sprite = buddySprite('kitsune')
+  it('serializes the species sprite URL as its thumbnail without files', () => {
+    const species = SPECIES.find(({ id }) => id === 'kitsune')
+    expect(species).toBeDefined()
 
     const payload = buildBuddyContainer({
       accentColor: 0xffffff,
       title: 'Kitsune',
       body: 'A fox spirit',
-      thumbnailUrl: sprite.url,
-      files: [sprite.file]
+      thumbnailUrl: buddySprite(species!.id)
     })
 
     expect(payload.components[0].toJSON().components[0]).toMatchObject({
-      accessory: { media: { url: 'attachment://kitsune.png' } }
+      accessory: { media: { url: species!.spriteUrl } }
     })
-    expect(payload.files?.[0].name).toBe('kitsune.png')
+    expect(payload).not.toHaveProperty('files')
   })
 
   it('does not include files in a container without a thumbnail', () => {

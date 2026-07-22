@@ -1,6 +1,5 @@
 /** Shared container builders and utilities for game command handlers */
 
-import { resolve } from 'node:path'
 import {
   ContainerBuilder,
   SectionBuilder,
@@ -8,14 +7,11 @@ import {
   TextDisplayBuilder,
   ThumbnailBuilder
 } from '@discordjs/builders'
-import { AttachmentBuilder, MessageFlags } from 'discord.js'
+import { MessageFlags } from 'discord.js'
+import { SPECIES } from '../../../games/data/buddySpecies.js'
 
-export function buddySprite(speciesId: string) {
-  const name = `${speciesId}.png`
-  return {
-    url: `attachment://${name}`,
-    file: new AttachmentBuilder(resolve(process.cwd(), 'assets/sprites/buddies', name), { name })
-  }
+export function buddySprite(speciesId: string): string {
+  return SPECIES.find(({ id }) => id === speciesId)?.spriteUrl ?? ''
 }
 
 export interface GameContainerOptions {
@@ -51,7 +47,6 @@ export function buildBuddyContainer(options: {
   body: string
   thumbnailUrl?: string
   footer?: string
-  files?: AttachmentBuilder[]
 }) {
   const container = new ContainerBuilder().setAccentColor(options.accentColor)
 
@@ -75,8 +70,7 @@ export function buildBuddyContainer(options: {
 
   return {
     components: [container],
-    flags: MessageFlags.IsComponentsV2 as typeof MessageFlags.IsComponentsV2,
-    ...(options.files ? { files: options.files } : {})
+    flags: MessageFlags.IsComponentsV2 as typeof MessageFlags.IsComponentsV2
   }
 }
 

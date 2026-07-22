@@ -71,12 +71,19 @@ for (const file of spriteFiles) {
     }
   }
 
-  await sharp(data, { raw: { width, height, channels: 4 } })
+  const normalized = await sharp(data, { raw: { width, height, channels: 4 } })
     .trim()
     .resize(512, 512, {
       fit: 'contain',
       background: { r: 0, g: 0, b: 0, alpha: 0 }
     })
+    .png()
+    .toBuffer()
+
+  const pixelated = await sharp(normalized).resize(96, 96, { kernel: 'lanczos3' }).png().toBuffer()
+
+  await sharp(pixelated)
+    .resize(512, 512, { kernel: 'nearest' })
     .png({ palette: true, compressionLevel: 9, effort: 10 })
     .toFile(`${filePath}.tmp`)
 
