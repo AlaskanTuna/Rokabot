@@ -8,7 +8,7 @@ import { config } from '../config.js'
 import type { WindowMessage } from '../session/types.js'
 import type { ResponseMetrics } from '../storage/metricsStore.js'
 import { getChannelUsers, loadHistory, saveMessage } from '../storage/sessionStore.js'
-import { getAllFactsForPrompt, refreshFactTimestamps } from '../storage/userMemory.js'
+import { getFacts, refreshFactTimestamps } from '../storage/userMemory.js'
 import { getAllUserNames } from '../storage/userNames.js'
 import { processImageForGemini } from '../utils/imageProcessor.js'
 import { logger } from '../utils/logger.js'
@@ -18,6 +18,7 @@ import { estimateTokens } from '../utils/tokens.js'
 import { classifyGeminiFailure, computeBackoff } from './geminiReliability.js'
 import { getMessages as getBufferMessages } from './passiveBuffer.js'
 import { assembleSystemPrompt } from './promptAssembler.js'
+import { buildFactsEnvelope, buildOverheardBlock } from './promptSafety.js'
 import type { ToneKey } from './prompts/tones.js'
 import { beginShutdown, isShuttingDown } from './shutdownSignal.js'
 import { detectTone } from './toneDetector.js'
@@ -68,7 +69,7 @@ export interface TurnOutcome {
 }
 
 export type TestRunTurn = (attempt: number, signal: AbortSignal) => Promise<TurnOutcome>
-export type TestRunTurnFactory = () => TestRunTurn
+export type TestRunTurnFactory = (systemPrompt: string) => TestRunTurn
 
 let testRunTurnFactory: TestRunTurnFactory | undefined
 
@@ -525,19 +526,20 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     // Ensure current speaker is included
     knownUsers.set(userId, { userId, username, displayName })
 
-    const factLines: string[] = []
+    const factEntries: Array<{ person: string; facts: Array<{ key: string; value: string }> }> = []
     for (const [uid, user] of knownUsers) {
-      const facts = getAllFactsForPrompt(guildId, uid)
-      if (facts) {
+      const facts = getFacts(guildId, uid)
+      if (facts.length > 0) {
         const label = user.username !== user.displayName ? `${user.username} (${user.displayName})` : user.displayName
-        factLines.push(`- ${label}: ${facts}`)
+        factEntries.push({ person: label, facts })
         refreshFactTimestamps(guildId, uid)
       }
     }
-    if (factLines.length > 0) {
-      systemPrompt += `\n\n## What You Remember About People In This Channel\n${factLines.join('\n')}`
+    const factsEnvelope = buildFactsEnvelope(factEntries)
+    if (factsEnvelope) {
+      systemPrompt += `\n\n## What You Remember About People In This Channel\n${factsEnvelope}`
       logger.info(
-        { channelId, usersWithFacts: factLines.length, totalUsers: knownUsers.size },
+        { channelId, usersWithFacts: factEntries.length, totalUsers: knownUsers.size },
         'User facts injected into prompt'
       )
     }
@@ -546,9 +548,9 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   }
 
   const overheard = getBufferMessages(channelId).slice(-config.memory.contextSize)
-  if (overheard.length > 0) {
-    const overheardText = overheard.map((m) => `[${m.displayName}]: ${m.content}`).join('\n')
-    systemPrompt += `\n\n## Recent Channel Activity (messages you overheard)\n${overheardText}`
+  const overheardBlock = buildOverheardBlock(overheard)
+  if (overheardBlock) {
+    systemPrompt += `\n\n## Recent Channel Activity (messages you overheard)\n${overheardBlock}`
   }
 
   systemPrompt +=
@@ -593,7 +595,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     recitationDeflection: RECITATION_DEFLECTION,
     terminalDeflection: TERMINAL_DEFLECTION,
     runTurn:
-      testRunTurnFactory?.() ??
+      testRunTurnFactory?.(systemPrompt) ??
       (async (attempt, signal) => {
         let responseText = ''
         let hasFunctionCall = false

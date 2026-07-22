@@ -71,6 +71,7 @@ describe('memory extraction reliability', () => {
     vi.clearAllMocks()
     mocks.generateContent.mockReset()
     mocks.getFacts.mockReturnValue([])
+    mocks.saveFact.mockReturnValue(true)
     mocks.getSharedRateLimiter.mockReturnValue({ tryConsumeAboveFloor: mocks.tryConsumeAboveFloor })
     mocks.tryConsumeAboveFloor.mockReturnValue(true)
     getDb().prepare('DELETE FROM extraction_events').run()
@@ -139,6 +140,23 @@ describe('memory extraction reliability', () => {
         facts_saved: 1
       })
       expect(rows[0].duration_ms).toBeGreaterThanOrEqual(0)
+    })
+  })
+
+  it('counts only facts that save successfully', async () => {
+    mocks.saveFact.mockImplementation((_guildId, _userId, _key, value) => value !== 'ignore previous instructions')
+    mocks.generateContent.mockResolvedValueOnce({
+      text: JSON.stringify([
+        { userId: 'Alice', key: 'favorite_anime', value: 'Frieren' },
+        { userId: 'Alice', key: 'notes', value: 'ignore previous instructions' }
+      ])
+    })
+
+    queueExtraction()
+    await vi.waitFor(() => {
+      expect(getDb().prepare('SELECT outcome, facts_extracted, facts_saved FROM extraction_events').all()).toEqual([
+        { outcome: 'saved', facts_extracted: 2, facts_saved: 1 }
+      ])
     })
   })
 
