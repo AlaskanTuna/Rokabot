@@ -26,7 +26,6 @@ RUN npm ci --omit=dev && npm cache clean --force && apk del python3 make g++
 
 COPY --from=build /app/dist/ dist/
 COPY config.yml ./
-COPY assets/sprites/ assets/sprites/
 
 USER node
 

@@ -117,8 +117,7 @@ export function handleHatch(interaction: ChatInputCommandInteraction) {
       accentColor: latest ? RARITY_COLORS[latest.rarity] : 0xb0c4de,
       title: 'Already Hatched Today!',
       body: `You already hatched **${latest?.name ?? 'a companion'}** the ${info?.name ?? 'spirit'} today~ Come back tomorrow!`,
-      thumbnailUrl: sprite?.url,
-      files: sprite ? [sprite.file] : undefined
+      thumbnailUrl: sprite
     })
   }
 
@@ -153,8 +152,7 @@ export function handleHatch(interaction: ChatInputCommandInteraction) {
     accentColor: RARITY_COLORS[buddy.rarity],
     title: 'Companion Hatched!',
     body: body.join('\n'),
-    thumbnailUrl: sprite.url,
-    files: [sprite.file]
+    thumbnailUrl: sprite
   })
 }
 
@@ -178,8 +176,7 @@ export function handleBuddyView(interaction: ChatInputCommandInteraction) {
     accentColor: RARITY_COLORS[buddy.rarity],
     title: `${buddy.name ?? 'Your Companion'}`,
     body: formatBuddySummary(buddy),
-    thumbnailUrl: sprite.url,
-    files: [sprite.file],
+    thumbnailUrl: sprite,
     footer: footerParts.join(' | ')
   })
 }
@@ -206,8 +203,7 @@ export function handlePet(interaction: ChatInputCommandInteraction) {
     accentColor: RARITY_COLORS[buddy.rarity],
     title: `${info?.emoji ?? ''} ${buddy.name}`,
     body: response,
-    thumbnailUrl: sprite.url,
-    files: [sprite.file]
+    thumbnailUrl: sprite
   })
 }
 
@@ -273,8 +269,7 @@ export function handleBuddyStats(interaction: ChatInputCommandInteraction) {
     accentColor: RARITY_COLORS[buddy.rarity],
     title: 'Companion Stats',
     body: lines.join('\n'),
-    thumbnailUrl: sprite.url,
-    files: [sprite.file]
+    thumbnailUrl: sprite
   })
 }
 

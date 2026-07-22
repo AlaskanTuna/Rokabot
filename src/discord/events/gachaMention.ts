@@ -62,7 +62,7 @@ export async function handleGachaMention(message: Message): Promise<boolean> {
 
     const section = new SectionBuilder()
       .addTextDisplayComponents(new TextDisplayBuilder().setContent(`### ${buddy.name}\n\n${body}`))
-      .setThumbnailAccessory(new ThumbnailBuilder({ media: { url: sprite.url } }))
+      .setThumbnailAccessory(new ThumbnailBuilder({ media: { url: sprite } }))
 
     const container = new ContainerBuilder()
       .setAccentColor(RARITY_COLORS[buddy.rarity])
@@ -76,8 +76,7 @@ export async function handleGachaMention(message: Message): Promise<boolean> {
 
     await message.reply({
       components: [container],
-      flags: MessageFlags.IsComponentsV2 as typeof MessageFlags.IsComponentsV2,
-      files: [sprite.file]
+      flags: MessageFlags.IsComponentsV2 as typeof MessageFlags.IsComponentsV2
     })
     return true
   } catch (error) {

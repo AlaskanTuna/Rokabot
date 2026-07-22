@@ -162,6 +162,7 @@ temp/
 # ===========
 
 /data/
+assets/sprites/
 graphify-out/
 *.tsbuildinfo
 settings.local.json
