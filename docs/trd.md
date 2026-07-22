@@ -1,6 +1,6 @@
 # Technical Requirements Document — Rokabot
 
-> References: [`docs/PRD.md`](./PRD.md) for product requirements, [`docs/ROADMAP.md`](./ROADMAP.md) for phase timeline.
+> References: [`PRD`](./prd.md) for product requirements.
 
 ---
 
@@ -26,10 +26,10 @@
                    ▼
 ┌─────────────────────────────────────────────────┐
 │              Session Manager                      │
-│  In-memory Map<channelId, ChannelSession>         │
-│  - 10-message FIFO window (push/shift)            │
-│  - 5-min idle TTL (setTimeout per channel)        │
-│  - Creates/destroys sessions on demand            │
+│  Hot per-channel cache over SQLite history         │
+│  - Rehydrates the ADK window on session creation   │
+│  - FIFO window bounded by `session.windowSize`     │
+│  - Idle TTL bounded by `session.ttl`               │
 └──────────────────┬──────────────────────────────┘
                    │
                    ▼
@@ -38,7 +38,7 @@
 │  - 4-layer prompt system                          │
 │  - Rule-based tone detector                       │
 │  - Prompt assembler                               │
-│  - Gemini 3.1 Flash Lite backend                  │
+│  - gemini-3.5-flash-lite backend                  │
 │  - Future: ADK tool integrations                  │
 └──────────────────┬──────────────────────────────┘
                    │
@@ -49,6 +49,22 @@
 │  15 RPM │ 250K TPM │ 500 RPD                     │
 └─────────────────────────────────────────────────┘
 ```
+
+SQLite (`better-sqlite3`) is the canonical store for durable bot state. `session_history` is rehydrated into the
+ADK window up to `session.windowSize`, while `session.historyRetentionDays` governs history pruning. The in-memory
+per-channel window is a hot cache, not the source of truth, so a bot restart does not erase retained history or other
+durable state.
+
+### Persistence & Storage
+
+| SQLite Table                                                                                                       | Contents                                                                                                                            |
+| ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `session_history`                                                                                                  | Channel messages, including message role, display name, content, timestamp, and optional user identity fields.                      |
+| `user_memory`, `memory_claim`, `memory_evidence`, `memory_claim_fts`, `extraction_queue`, `memory_backfill_marker` | Legacy facts, typed claims and their evidence/search mirror, restart-safe extraction work, and the one-time legacy backfill marker. |
+| `reminders`                                                                                                        | Scheduled user reminders and delivery state.                                                                                        |
+| `game_scores`, `gacha_collection`, `gacha_daily`, `buddy`                                                          | Game scores and gacha/companion data.                                                                                               |
+| `user_names`, `monitored_channels`                                                                                 | Durable user identity lookup and passive-monitoring state.                                                                          |
+| `response_events`, `extraction_events`, `memory_events`                                                            | Response, legacy extraction, and value-free claims-memory telemetry.                                                                |
 
 ## Technology Stack
 
@@ -117,12 +133,12 @@ Represents a single message in the per-channel FIFO window.
 
 Per-channel session state maintained by the SessionManager.
 
-| Field          | Type              | Description                          |
-| -------------- | ----------------- | ------------------------------------ |
-| `channelId`    | `string`          | Discord channel ID (map key)         |
-| `messages`     | `WindowMessage[]` | FIFO window (max 10, oldest evicted) |
-| `idleTimer`    | `Timeout \| null` | 5-min idle TTL timer handle          |
-| `lastActivity` | `number`          | Unix timestamp of last interaction   |
+| Field          | Type              | Description                                                      |
+| -------------- | ----------------- | ---------------------------------------------------------------- |
+| `channelId`    | `string`          | Discord channel ID (map key)                                     |
+| `messages`     | `WindowMessage[]` | FIFO hot cache (bounded by `session.windowSize`, oldest evicted) |
+| `idleTimer`    | `Timeout \| null` | Idle TTL timer handle (bounded by `session.ttl`)                 |
+| `lastActivity` | `number`          | Unix timestamp of last interaction                               |
 
 ### RateLimiterConfig
 
@@ -158,6 +174,99 @@ Enum of detected conversation tones.
 | `'annoyed'`   | Defiance/recklessness/teasing her  | Pouty exasperation, "mou~" energy  |
 | `'tender'`    | Vulnerability/worry/quiet softness | Guard down, warm vulnerability     |
 | `'confident'` | Help/advice/trust keywords         | Cool, composed onee-san authority  |
+
+## Memory Architecture (Claims)
+
+Claims memory is SQLite-backed, guild-scoped, and selected before the prompt is assembled. It replaces the
+all-facts retrieval path when `memory.claimsBackend` is enabled; the legacy path remains available only as a rollback.
+
+### Storage Schema
+
+| Table              | Columns                                                                                                                                                                                                                                       | Contract                                                                                                    |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `memory_claim`     | `id`, `guild_id`, `subject_user_id`, `predicate`, `value`, `object_kind`, `object_user_id`, `source_kind`, `status`, `confidence`, `salience`, `pinned`, `needs_review`, `superseded_by`, `first_seen_at`, `last_seen_at`, `last_recalled_at` | Typed claims. `idx_memory_claim_dedup` is unique on (`guild_id`, `subject_user_id`, `predicate`, `value`).  |
+| `memory_claim_fts` | `value`, `predicate`                                                                                                                                                                                                                          | FTS5 virtual-table mirror of active `memory_claim` rows, maintained by insert, update, and delete triggers. |
+| `memory_evidence`  | `id`, `claim_id`, `channel_id`, `source_kind`, `observed_at`                                                                                                                                                                                  | Evidence observations attached to claims.                                                                   |
+| `extraction_queue` | `id`, `guild_id`, `channel_id`, `payload`, `status`, `attempts`, `enqueued_at`                                                                                                                                                                | Persisted extraction batches; queue statuses are `pending` and `processing`.                                |
+| `memory_events`    | `id`, `kind`, `guild_id`, `channel_id`, `subject_user_id`, `duration_ms`, `n_candidates`, `n_selected`, `n_changed`, `tokens_est`, `op`, `created_at`                                                                                         | Value-free pipeline telemetry. `op` records `assert`, `retract`, `supersede`, or `none` when applicable.    |
+
+### Claim Lifecycle
+
+Claim statuses are `candidate`, `active`, `superseded`, and `rejected`, with the normal lifecycle
+`candidate → active → superseded → rejected`. Activation or assertion of a new active claim for a
+single-cardinality predicate supersedes prior active claims for the same (`guild_id`, `subject_user_id`, `predicate`)
+and sets their `superseded_by` to the replacement claim. Retractions, capacity eviction, and retention pruning mark
+claims `rejected`.
+
+Claims with `needs_review` are excluded from the general retrieval candidates. They can be selected only as anchors
+for their own `subject_user_id`, so they never surface as cross-context memories.
+
+### Timestamps, Retention & Capacity
+
+- `first_seen_at` records the first observation.
+- `last_seen_at` records the latest observation and drives expiry.
+- `last_recalled_at` changes only when the retriever selects a claim for the prompt.
+
+The current retention job marks unpinned `candidate` and `active` claims `rejected` when `last_seen_at` exceeds
+`memory.claimRetentionDays` (90 days); pinned claims are exempt. `memory.maxActiveClaimsPerUser` (20) limits active
+claims per user, evicting the least salient unpinned claims first.
+
+### Bounded Retrieval Contract
+
+Retrieval is guild-scoped and bounded to at most `memory.maxClaimsPerTurn` (10) claims and approximately
+`memory.retrievalTokenBudget` (350) tokens. It reserves up to `memory.speakerMinShare` (0.5) of the selected slots
+for speaker anchors; anchors are considered before every other candidate and are never displaced by general
+selection. It considers at most `memory.recentParticipantLimit` (3) non-speaker participants and may expand one hop
+through an active `relationship_to` claim to an included participant.
+
+The retriever, not `refreshFactTimestamps`, calls `touchRecalled()` for selected claims. The resulting entries are
+rendered through the shared Phase 13 `buildFactsEnvelope` untrusted-data envelope; the claims path does not fork the
+envelope.
+
+### Extraction Pipeline
+
+The pipeline is: candidate gate → persisted `extraction_queue` → per-guild round-robin scheduler → user-ID-keyed
+batched extractor → transactional `assert`/`retract` operations in `memory_claim`. The candidate gate rejects
+sensitive, trivial, and already-known-only batches before any extraction call. Persisted queue state is restart-safe:
+stuck `processing` work can be returned to `pending`, and failed work is retried up to the queue attempt cap before it
+is dropped.
+
+The scheduler enforces `memory.perGuildGapMs` (20 seconds) between batches from the same guild and caps each guild at
+`memory.extractionQueueMaxPerGuild` (50) pending batches. Extraction is limited to
+`floor(rateLimit.rpd × memory.extractionDailyBudgetRatio)` (0.4 of RPD) and requires
+`gemini.extractionRpmFloor` (3) remaining RPM, so live traffic wins. This is the same floor-priority behavior defined
+in [Reliability & Failure Handling](#reliability--failure-handling).
+
+### Tenancy
+
+Every claim is scoped by `guild_id`. DM-origin facts use `dm:<channelId>` as their scope. There is no `'global'`
+claims tenant: cross-guild isolation is an invariant, and legacy facts with no attested scope are logged and skipped
+during backfill rather than assigned a tenant.
+
+### Prompt-Assembly Invariant
+
+Retrieval runs once in `generateResponse` while assembling `_systemPrompt`. `beforeModelCallback` reads only that
+already-assembled state to assign the system instruction; it never triggers retrieval or reads the database.
+
+### Flag, Rollback & Legacy Path
+
+`memory.claimsBackend` defaults to `true`. Set `MEMORY_CLAIMS_BACKEND=false` to roll back to the legacy
+`user_memory` all-facts path, or revert the configuration default. The legacy dual-write tap remains present but is
+inert while the claims backend is enabled; it is retained for later cleanup.
+
+### Vault Export Technical Contract
+
+`exportVault()` and `npm run export:vault` are read-only, offline export paths. They write one note per
+(`guild_id`, `subject_user_id`), with YAML frontmatter grouped by predicate and `relationship_to` facts rendered as
+`[[wikilinks]]`. `dm:` scopes remain isolated in their own export paths. A containment guard based on `path.relative`
+and `path.isAbsolute` rejects a note path outside the export directory. Export performs no store writes and no network
+requests.
+
+### Deferred Items
+
+- Embeddings and `sqlite-vec` semantic retrieval.
+- An ADK `globalInstruction` spike.
+- Two-way Obsidian vault synchronization; the current export is one-way and read-only.
 
 ## API Contracts
 

@@ -1,6 +1,6 @@
 # Product Requirements Document
 
-> References: [`docs/TRD.md`](./TRD.md) for technical details, [`docs/ROADMAP.md`](./ROADMAP.md) for phase timeline.
+> References: [`docs/trd.md`](./trd.md) for technical details.
 
 ---
 

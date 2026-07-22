@@ -41,7 +41,7 @@ Gemini API (15 RPM / 250K TPM / 500 RPD)
 
 **Key constraints:**
 
-- All state is in-memory — no persistence. Bot restart = clean slate.
+- SQLite (better-sqlite3, `data/rokabot.db`) is canonical for session history, memory claims, reminders, game/gacha data, and metrics. The per-channel in-memory window is a hot cache rehydrated from SQLite on restart.
 - RPM is the binding rate limit (~1 response every 4 seconds).
 - System prompt budget: ~1000-1600 tokens per request.
 - Docker memory cap: 512MB (expected runtime: ~80-150MB).
