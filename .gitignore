@@ -163,6 +163,7 @@ temp/
 
 /data/
 assets/sprites/
+docs/archive/
 graphify-out/
 *.tsbuildinfo
 settings.local.json
