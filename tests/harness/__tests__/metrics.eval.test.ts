@@ -21,7 +21,7 @@ vi.mock('@google/genai', () => ({
   }
 }))
 
-const transcript = resolve('test/harness/transcripts/metrics.jsonl')
+const transcript = resolve('tests/harness/transcripts/metrics.jsonl')
 interface ResponseEventRow {
   guild_id: string
   channel_id: string

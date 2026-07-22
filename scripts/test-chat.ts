@@ -11,12 +11,12 @@
 
 import * as readline from 'node:readline'
 
-await import('../test/harness/env.js')
+await import('../tests/harness/env.js')
 
 const { generateResponse } = await import('../src/agent/roka.js')
 const { buildRokaMessage } = await import('../src/discord/messageBuilder.js')
 const { config } = await import('../src/config.js')
-const { renderPayload } = await import('../test/harness/renderPayload.js')
+const { renderPayload } = await import('../tests/harness/renderPayload.js')
 
 const displayName = process.argv.slice(2).find((argument) => argument !== '--live') ?? 'Tester'
 const username = displayName.toLowerCase().replaceAll(/\s+/g, '-')

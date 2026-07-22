@@ -168,3 +168,4 @@ graphify-out/
 *.tsbuildinfo
 settings.local.json
 roka-expressions/
+node-compile-cache/

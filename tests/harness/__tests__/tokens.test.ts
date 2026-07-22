@@ -55,7 +55,7 @@ describe('harness token measurement', () => {
   })
 
   it('keeps the frozen baseline structurally consistent without re-deriving it', async () => {
-    const path = resolve('test/harness/perf-baseline.json')
+    const path = resolve('tests/harness/perf-baseline.json')
     const snapshot = JSON.parse(await readFile(path, 'utf8')) as {
       estimator: string
       requests: Array<{

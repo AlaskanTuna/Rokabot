@@ -1,7 +1,7 @@
 {
   "snapshot": "phase-11-pre-optimization",
   "status": "FROZEN",
-  "transcript": "test/harness/transcripts/benchmark.jsonl",
+  "transcript": "tests/harness/transcripts/benchmark.jsonl",
   "estimator": "deterministic whitespace-normalized chars/4, rounded up per component; --live models.countTokens is the ground-truth cross-check",
   "toolCount": 12,
   "requests": [

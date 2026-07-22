@@ -11,7 +11,7 @@ import { getAllUserNames, upsertUserName } from '../../src/storage/userNames.js'
 import { estimateTokens } from '../../src/utils/tokens.js'
 import { type TranscriptLine, runTranscript } from './run.js'
 
-const REPLAY_PATH = resolve('test/harness/memory-replay/shadow-replay.jsonl')
+const REPLAY_PATH = resolve('tests/harness/memory-replay/shadow-replay.jsonl')
 
 type FixtureClaim = {
   label: string

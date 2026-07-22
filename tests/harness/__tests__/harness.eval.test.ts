@@ -49,7 +49,7 @@ vi.mock('@google/adk', async (importOriginal) => {
   return { ...actual, Runner: CapturingRunner }
 })
 
-const transcript = resolve('test/harness/transcripts/multi-guild.jsonl')
+const transcript = resolve('tests/harness/transcripts/multi-guild.jsonl')
 const memoryUserId = 'mio-memory'
 const memoryFactKey = 'likes'
 
