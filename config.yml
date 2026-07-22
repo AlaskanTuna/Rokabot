@@ -38,6 +38,17 @@ memory:
   maxFactsPerUser: 20 # Max stored facts per user (oldest evicted on overflow)
   factRetentionDays: 14 # Days before unused facts are auto-pruned
   channelMonitorTtlMs: 86400000 # How long a channel stays monitored after last @mention (24h)
+  claimsBackend: false # Enable typed claims extraction and retrieval (Phase 14 remains shadow-only)
+  maxClaimsPerTurn: 10 # Hard cap on claims injected into one response
+  retrievalTokenBudget: 350 # Approximate token budget for the claims envelope
+  recentParticipantLimit: 3 # Recent non-speaker participants considered for retrieval
+  speakerMinShare: 0.5 # Minimum fraction of selected claims reserved for the speaker
+  maxActiveClaimsPerUser: 20 # Active claim cap per user (pinned claims are exempt)
+  claimRetentionDays: 90 # Days before inactive, unpinned claims expire
+  extractionDailyBudgetRatio: 0.4 # Share of the Gemini RPD budget reserved for extraction
+  perGuildGapMs: 20000 # Minimum ms between extraction batches for one guild
+  extractionQueueMaxPerGuild: 50 # Maximum queued extraction payloads for one guild
+  vaultExportDir: data/vault # Directory for read-only Obsidian vault exports
 
 metrics:
   retentionDays: 90 # Days before response and extraction events are auto-pruned

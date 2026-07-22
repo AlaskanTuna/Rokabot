@@ -260,6 +260,108 @@ export function runMigrations(database: Database.Database): void {
     `)
     logger.info('Migrated user_memory table to include guild_id')
   }
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS memory_claim (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      guild_id TEXT NOT NULL,
+      subject_user_id TEXT NOT NULL,
+      predicate TEXT NOT NULL,
+      value TEXT NOT NULL,
+      object_kind TEXT,
+      object_user_id TEXT,
+      source_kind TEXT NOT NULL,
+      status TEXT NOT NULL,
+      confidence REAL NOT NULL DEFAULT 0.5,
+      salience REAL NOT NULL DEFAULT 0.5,
+      pinned INTEGER NOT NULL DEFAULT 0,
+      needs_review INTEGER NOT NULL DEFAULT 0,
+      superseded_by INTEGER,
+      first_seen_at INTEGER NOT NULL,
+      last_seen_at INTEGER NOT NULL,
+      last_recalled_at INTEGER
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_memory_claim_guild_subject_status
+      ON memory_claim (guild_id, subject_user_id, status);
+
+    CREATE INDEX IF NOT EXISTS idx_memory_claim_guild_status_last_seen
+      ON memory_claim (guild_id, status, last_seen_at);
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_claim_dedup
+      ON memory_claim (guild_id, subject_user_id, predicate, value);
+
+    CREATE TABLE IF NOT EXISTS memory_evidence (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      claim_id INTEGER NOT NULL,
+      channel_id TEXT,
+      source_kind TEXT NOT NULL,
+      observed_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_memory_evidence_claim
+      ON memory_evidence (claim_id);
+
+    CREATE VIRTUAL TABLE IF NOT EXISTS memory_claim_fts
+      USING fts5(value, predicate, content='memory_claim', content_rowid='id');
+
+    DROP TRIGGER IF EXISTS memory_claim_fts_after_insert;
+    DROP TRIGGER IF EXISTS memory_claim_fts_after_delete;
+    DROP TRIGGER IF EXISTS memory_claim_fts_after_update;
+
+    CREATE TRIGGER memory_claim_fts_after_insert
+    AFTER INSERT ON memory_claim WHEN new.status = 'active' BEGIN
+      INSERT INTO memory_claim_fts(rowid, value, predicate) VALUES (new.id, new.value, new.predicate);
+    END;
+
+    CREATE TRIGGER memory_claim_fts_after_delete
+    AFTER DELETE ON memory_claim WHEN old.status = 'active' BEGIN
+      INSERT INTO memory_claim_fts(memory_claim_fts, rowid, value, predicate)
+      VALUES ('delete', old.id, old.value, old.predicate);
+    END;
+
+    CREATE TRIGGER memory_claim_fts_after_update
+    AFTER UPDATE ON memory_claim WHEN old.status = 'active' OR new.status = 'active' BEGIN
+      INSERT INTO memory_claim_fts(memory_claim_fts, rowid, value, predicate)
+      SELECT 'delete', old.id, old.value, old.predicate WHERE old.status = 'active';
+      INSERT INTO memory_claim_fts(rowid, value, predicate)
+      SELECT new.id, new.value, new.predicate WHERE new.status = 'active';
+    END;
+
+    CREATE TABLE IF NOT EXISTS extraction_queue (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      guild_id TEXT NOT NULL,
+      channel_id TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      status TEXT NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      enqueued_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_extraction_queue_guild_status_enqueued
+      ON extraction_queue (guild_id, status, enqueued_at);
+
+    CREATE TABLE IF NOT EXISTS memory_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      kind TEXT NOT NULL,
+      guild_id TEXT,
+      channel_id TEXT,
+      subject_user_id TEXT,
+      duration_ms INTEGER,
+      n_candidates INTEGER,
+      n_selected INTEGER,
+      n_changed INTEGER,
+      tokens_est INTEGER,
+      op TEXT,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_memory_events_kind_created
+      ON memory_events (kind, created_at);
+
+    CREATE INDEX IF NOT EXISTS idx_memory_events_guild_created
+      ON memory_events (guild_id, created_at);
+  `)
 }
 
 /** Close the database connection. Safe to call multiple times. */

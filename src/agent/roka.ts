@@ -6,6 +6,7 @@ import type { GetSessionRequest, Session } from '@google/adk'
 import type { Content, Part } from '@google/genai'
 import { config } from '../config.js'
 import type { WindowMessage } from '../session/types.js'
+import { recordMemoryEvent } from '../storage/metricsStore.js'
 import type { ResponseMetrics } from '../storage/metricsStore.js'
 import { getChannelUsers, loadHistory, saveMessage } from '../storage/sessionStore.js'
 import { getFacts, refreshFactTimestamps } from '../storage/userMemory.js'
@@ -16,6 +17,7 @@ import { getSharedRateLimiter } from '../utils/rateLimiter.js'
 import { getLocalHour } from '../utils/timezone.js'
 import { estimateTokens } from '../utils/tokens.js'
 import { classifyGeminiFailure, computeBackoff } from './geminiReliability.js'
+import { retrieveForTurn } from './memory/retriever.js'
 import { getMessages as getBufferMessages } from './passiveBuffer.js'
 import { assembleSystemPrompt } from './promptAssembler.js'
 import { buildFactsEnvelope, buildOverheardBlock } from './promptSafety.js'
@@ -526,15 +528,32 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     // Ensure current speaker is included
     knownUsers.set(userId, { userId, username, displayName })
 
-    const factEntries: Array<{ person: string; facts: Array<{ key: string; value: string }> }> = []
-    for (const [uid, user] of knownUsers) {
-      const facts = getFacts(guildId, uid)
-      if (facts.length > 0) {
-        const label = user.username !== user.displayName ? `${user.username} (${user.displayName})` : user.displayName
-        factEntries.push({ person: label, facts })
-        refreshFactTimestamps(guildId, uid)
+    let factEntries: Array<{ person: string; facts: Array<{ key: string; value: string }> }>
+    let retrievalSelected = 0
+
+    if (config.memory.claimsBackend) {
+      const retrieval = retrieveForTurn({
+        guildId,
+        speakerId: userId,
+        participantIds: [...channelUsers.keys()]
+          .filter((participantId) => participantId !== userId)
+          .slice(0, config.memory.recentParticipantLimit),
+        message: userMessage
+      })
+      factEntries = retrieval.entries
+      retrievalSelected = retrieval.claims.length
+    } else {
+      factEntries = []
+      for (const [uid, user] of knownUsers) {
+        const facts = getFacts(guildId, uid)
+        if (facts.length > 0) {
+          const label = user.username !== user.displayName ? `${user.username} (${user.displayName})` : user.displayName
+          factEntries.push({ person: label, facts })
+          refreshFactTimestamps(guildId, uid)
+        }
       }
     }
+
     const factsEnvelope = buildFactsEnvelope(factEntries)
     if (factsEnvelope) {
       systemPrompt += `\n\n## What You Remember About People In This Channel\n${factsEnvelope}`
@@ -543,7 +562,27 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
         'User facts injected into prompt'
       )
     }
+    if (config.memory.claimsBackend) {
+      recordMemoryEvent({
+        kind: 'context_build',
+        guildId,
+        channelId,
+        subjectUserId: userId,
+        nSelected: retrievalSelected,
+        tokensEst: factsEnvelope ? estimateTokens(factsEnvelope) : 0
+      })
+    }
   } catch (error) {
+    if (config.memory.claimsBackend) {
+      recordMemoryEvent({
+        kind: 'context_build',
+        guildId,
+        channelId,
+        subjectUserId: userId,
+        nSelected: 0,
+        tokensEst: 0
+      })
+    }
     logger.warn({ userId, error }, 'Failed to load user memory for prompt injection')
   }
 

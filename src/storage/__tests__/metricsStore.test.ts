@@ -11,7 +11,14 @@ vi.mock('../../utils/logger.js', () => ({
 }))
 
 import { closeDb, getDb } from '../database.js'
-import { pruneOldMetrics, recordExtractionEvent, recordResponseEvent } from '../metricsStore.js'
+import {
+  type MemoryEventInput,
+  countMemoryEvents,
+  pruneOldMetrics,
+  recordExtractionEvent,
+  recordMemoryEvent,
+  recordResponseEvent
+} from '../metricsStore.js'
 
 const ONE_DAY = 24 * 60 * 60 * 1000
 
@@ -31,6 +38,19 @@ const responseEvent = {
   tokensInEst: 42,
   tokensOutEst: 24
 } as const
+
+const memoryEvent: MemoryEventInput = {
+  kind: 'retrieval',
+  guildId: 'guild-1',
+  channelId: 'channel-1',
+  subjectUserId: 'user-1',
+  durationMs: 12,
+  nCandidates: 4,
+  nSelected: 2,
+  nChanged: 0,
+  tokensEst: 36,
+  op: 'none'
+}
 
 beforeAll(() => {
   process.env.ROKABOT_DB_PATH = ':memory:'
@@ -116,22 +136,80 @@ describe('metricsStore', () => {
     vi.restoreAllMocks()
   })
 
+  it('records value-free memory events with timestamps', () => {
+    const now = 1_700_000_000_000
+    vi.spyOn(Date, 'now').mockReturnValue(now)
+    const db = getDb()
+    db.prepare('DELETE FROM memory_events').run()
+
+    recordMemoryEvent(memoryEvent)
+
+    const memory = db.prepare('SELECT * FROM memory_events').get() as Record<string, unknown>
+
+    expect(countMemoryEvents()).toBe(1)
+    expect(countMemoryEvents('retrieval')).toBe(1)
+    expect(memory).toMatchObject({
+      kind: memoryEvent.kind,
+      guild_id: memoryEvent.guildId,
+      channel_id: memoryEvent.channelId,
+      subject_user_id: memoryEvent.subjectUserId,
+      duration_ms: memoryEvent.durationMs,
+      n_candidates: memoryEvent.nCandidates,
+      n_selected: memoryEvent.nSelected,
+      n_changed: memoryEvent.nChanged,
+      tokens_est: memoryEvent.tokensEst,
+      op: memoryEvent.op,
+      created_at: now
+    })
+    expect(Object.keys(memory)).toEqual([
+      'id',
+      'kind',
+      'guild_id',
+      'channel_id',
+      'subject_user_id',
+      'duration_ms',
+      'n_candidates',
+      'n_selected',
+      'n_changed',
+      'tokens_est',
+      'op',
+      'created_at'
+    ])
+    expect(memory).not.toHaveProperty('value')
+    expect(memory).not.toHaveProperty('key')
+    vi.restoreAllMocks()
+  })
+
   it('swallows and logs malformed telemetry writes', () => {
     expect(() => recordResponseEvent({} as never)).not.toThrow()
     expect(warn).toHaveBeenCalled()
   })
 
-  it('prunes expired rows from both event tables and returns their combined count', () => {
+  it('swallows and logs malformed memory telemetry writes', () => {
+    warn.mockClear()
+
+    expect(() => recordMemoryEvent({} as never)).not.toThrow()
+    expect(warn).toHaveBeenCalled()
+  })
+
+  it('prunes expired rows from all event tables and returns their combined count', () => {
     const now = Date.now()
     const db = getDb()
     db.prepare('DELETE FROM response_events').run()
     db.prepare('DELETE FROM extraction_events').run()
+    db.prepare('DELETE FROM memory_events').run()
     db.prepare(
       'INSERT INTO response_events (guild_id, channel_id, user_id, trigger, tone, outcome, kind, e2e_ms, generate_ms, llm_ms, retry_latency_ms, retries, tokens_in_est, tokens_out_est, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     ).run('guild-1', 'channel-1', 'user-1', 'mention', 'playful', 'ok', 'ok', 1, 1, 1, 0, 0, 1, 1, now - 8 * ONE_DAY)
     db.prepare(
       'INSERT INTO extraction_events (guild_id, channel_id, duration_ms, outcome, facts_extracted, facts_saved, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
     ).run('guild-1', 'channel-1', 1, 'saved', 1, 1, now - 8 * ONE_DAY)
+    db.prepare('INSERT INTO memory_events (kind, guild_id, n_selected, created_at) VALUES (?, ?, ?, ?)').run(
+      'retrieval',
+      'guild-1',
+      1,
+      now - 8 * ONE_DAY
+    )
     recordResponseEvent(responseEvent)
     recordExtractionEvent({
       guildId: 'guild-1',
@@ -141,9 +219,11 @@ describe('metricsStore', () => {
       factsExtracted: 1,
       factsSaved: 1
     })
+    recordMemoryEvent(memoryEvent)
 
-    expect(pruneOldMetrics(7)).toBe(2)
+    expect(pruneOldMetrics(7)).toBe(3)
     expect(db.prepare('SELECT COUNT(*) AS count FROM response_events').get()).toEqual({ count: 1 })
     expect(db.prepare('SELECT COUNT(*) AS count FROM extraction_events').get()).toEqual({ count: 1 })
+    expect(db.prepare('SELECT COUNT(*) AS count FROM memory_events').get()).toEqual({ count: 1 })
   })
 })

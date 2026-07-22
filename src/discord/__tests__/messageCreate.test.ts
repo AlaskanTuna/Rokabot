@@ -4,18 +4,40 @@ const mocks = vi.hoisted(() => ({
   generateResponse: vi.fn(),
   recordResponseEvent: vi.fn(),
   info: vi.fn(),
+  warn: vi.fn(),
   isChannelBusy: vi.fn(() => false),
-  tryConsume: vi.fn(() => true)
+  isMonitored: vi.fn(() => false),
+  tryConsume: vi.fn(() => true),
+  maybeExtractFromBuffer: vi.fn(),
+  addToPassiveBuffer: vi.fn(),
+  getMessages: vi.fn(() => [
+    {
+      userId: 'user-1',
+      displayName: 'Alice',
+      username: 'alice',
+      content: 'I love tea',
+      timestamp: 1
+    }
+  ]),
+  getActiveClaims: vi.fn(() => []),
+  shouldExtract: vi.fn(() => ({ extract: true, reason: 'test signal' })),
+  enqueueAndSchedule: vi.fn()
 }))
 
 vi.mock('../../agent/roka.js', () => ({ generateResponse: mocks.generateResponse }))
-vi.mock('../../agent/channelMonitor.js', () => ({ isMonitored: () => false, markActive: vi.fn() }))
-vi.mock('../../agent/memoryExtractor.js', () => ({ maybeExtractFromBuffer: vi.fn() }))
-vi.mock('../../agent/passiveBuffer.js', () => ({ addMessage: vi.fn() }))
+vi.mock('../../agent/channelMonitor.js', () => ({ isMonitored: mocks.isMonitored, markActive: vi.fn() }))
+vi.mock('../../agent/memoryExtractor.js', () => ({ maybeExtractFromBuffer: mocks.maybeExtractFromBuffer }))
+vi.mock('../../agent/passiveBuffer.js', () => ({
+  addMessage: mocks.addToPassiveBuffer,
+  getMessages: mocks.getMessages
+}))
+vi.mock('../../agent/memory/candidateGate.js', () => ({ shouldExtract: mocks.shouldExtract }))
+vi.mock('../../agent/memory/memoryClaims.js', () => ({ getActiveClaims: mocks.getActiveClaims }))
+vi.mock('../../agent/memory/scheduler.js', () => ({ enqueueAndSchedule: mocks.enqueueAndSchedule }))
 vi.mock('../../storage/metricsStore.js', () => ({ recordResponseEvent: mocks.recordResponseEvent }))
 vi.mock('../../storage/userNames.js', () => ({ upsertUserName: vi.fn() }))
 vi.mock('../../utils/logger.js', () => ({
-  logger: { debug: vi.fn(), error: vi.fn(), info: mocks.info, warn: vi.fn() }
+  logger: { debug: vi.fn(), error: vi.fn(), info: mocks.info, warn: mocks.warn }
 }))
 vi.mock('../concurrency.js', () => ({ isChannelBusy: mocks.isChannelBusy, markBusy: vi.fn(), markFree: vi.fn() }))
 vi.mock('../emojiReactor.js', () => ({ shouldReact: () => null }))
@@ -29,6 +51,7 @@ vi.mock('../responses.js', () => ({
 }))
 vi.mock('../events/gachaMention.js', () => ({ handleGachaMention: vi.fn() }))
 
+import { config } from '../../config.js'
 import { NAME_MENTION_REGEX } from '../events/messageCreate.js'
 import { createMessageHandler } from '../events/messageCreate.js'
 
@@ -46,10 +69,12 @@ const metrics = {
 function createMessage({
   mentioned = true,
   content = '<@bot-1> hello',
+  guild,
   referencedMessage
 }: {
   mentioned?: boolean
   content?: string
+  guild?: object | null
   referencedMessage?: object
 } = {}) {
   const reply = vi.fn().mockResolvedValue({ delete: vi.fn().mockResolvedValue(undefined) })
@@ -62,7 +87,7 @@ function createMessage({
       mentions: { has: vi.fn(() => mentioned) },
       components: [],
       reference: referencedMessage ? { messageId: 'message-0' } : null,
-      guild: null,
+      guild: guild ?? null,
       guildId: 'guild-1',
       member: { displayName: 'Alice' },
       attachments: [],
@@ -117,7 +142,9 @@ describe('NAME_MENTION_REGEX', () => {
 describe('message handler metrics', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    config.memory.claimsBackend = false
     mocks.isChannelBusy.mockReturnValue(false)
+    mocks.isMonitored.mockReturnValue(false)
     mocks.tryConsume.mockReturnValue(true)
     mocks.generateResponse.mockResolvedValue({ text: 'Hello~', tone: 'playful', metrics })
   })
@@ -179,5 +206,80 @@ describe('message handler metrics', () => {
     await createMessageHandler({ user: { id: 'bot-1' } } as never, createRateLimiter() as never)(message as never)
 
     expect(mocks.recordResponseEvent).not.toHaveBeenCalled()
+  })
+})
+
+describe('message handler claims extraction dispatch', () => {
+  const guild = { members: { me: { displayName: 'Roka' } } }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    config.memory.claimsBackend = false
+    mocks.isChannelBusy.mockReturnValue(false)
+    mocks.isMonitored.mockReturnValue(true)
+    mocks.tryConsume.mockReturnValue(true)
+    mocks.generateResponse.mockResolvedValue({ text: 'Hello~', tone: 'playful', metrics })
+  })
+
+  it('keeps the legacy extractor path unchanged when claimsBackend is false', async () => {
+    const { message } = createMessage({ guild })
+
+    await createMessageHandler(
+      { user: { id: 'bot-1', displayName: 'Roka', username: 'roka' } } as never,
+      createRateLimiter() as never
+    )(message as never)
+
+    expect(mocks.maybeExtractFromBuffer).toHaveBeenNthCalledWith(1, 'channel-1', 'bot-1', 'guild-1')
+    expect(mocks.maybeExtractFromBuffer).toHaveBeenNthCalledWith(2, 'channel-1', 'bot-1', 'guild-1')
+    expect(mocks.getMessages).not.toHaveBeenCalled()
+    expect(mocks.shouldExtract).not.toHaveBeenCalled()
+    expect(mocks.enqueueAndSchedule).not.toHaveBeenCalled()
+  })
+
+  it('gates and enqueues a user-ID-keyed snapshot when claimsBackend is true', async () => {
+    config.memory.claimsBackend = true
+    const { message } = createMessage({ guild })
+
+    await createMessageHandler(
+      { user: { id: 'bot-1', displayName: 'Roka', username: 'roka' } } as never,
+      createRateLimiter() as never
+    )(message as never)
+
+    expect(mocks.maybeExtractFromBuffer).not.toHaveBeenCalled()
+    expect(mocks.shouldExtract).toHaveBeenCalledWith(
+      [
+        {
+          userId: 'user-1',
+          displayName: 'Alice',
+          username: 'alice',
+          content: 'I love tea',
+          timestamp: 1
+        }
+      ],
+      new Set()
+    )
+    expect(mocks.enqueueAndSchedule).toHaveBeenCalledWith({
+      guildId: 'guild-1',
+      channelId: 'channel-1',
+      messages: [{ userId: 'user-1', displayName: 'Alice', content: 'I love tea' }]
+    })
+  })
+
+  it('does not let a scheduler failure interrupt the reply', async () => {
+    config.memory.claimsBackend = true
+    mocks.enqueueAndSchedule.mockImplementationOnce(() => {
+      throw new Error('queue unavailable')
+    })
+    const { message, reply } = createMessage({ guild })
+
+    await expect(
+      createMessageHandler(
+        { user: { id: 'bot-1', displayName: 'Roka', username: 'roka' } } as never,
+        createRateLimiter() as never
+      )(message as never)
+    ).resolves.toBeUndefined()
+
+    expect(reply).toHaveBeenCalledWith('Hello~')
+    expect(mocks.maybeExtractFromBuffer).not.toHaveBeenCalled()
   })
 })
