@@ -1,5 +1,6 @@
 /** Per-user relationship memory — persistent fact storage scoped by guild */
 
+import { MAX_FACT_KEY_LEN, MAX_FACT_VALUE_LEN, isSafeFactScalar } from '../agent/promptSafety.js'
 import { config } from '../config.js'
 import { logger } from '../utils/logger.js'
 import { getDb } from './database.js'
@@ -7,7 +8,12 @@ import { getDb } from './database.js'
 const MAX_FACTS_PER_USER = config.memory.maxFactsPerUser
 
 /** Upsert a fact about a user within a guild. Evicts oldest fact if at capacity. */
-export function saveFact(guildId: string, userId: string, key: string, value: string): void {
+export function saveFact(guildId: string, userId: string, key: string, value: string): boolean {
+  if (!isSafeFactScalar(key, MAX_FACT_KEY_LEN) || !isSafeFactScalar(value, MAX_FACT_VALUE_LEN)) {
+    logger.debug({ guildId, userId, reason: 'unsafe_fact_scalar' }, 'Rejected unsafe user memory fact')
+    return false
+  }
+
   const db = getDb()
 
   const existing = db
@@ -31,6 +37,8 @@ export function saveFact(guildId: string, userId: string, key: string, value: st
   db.prepare(
     'INSERT OR REPLACE INTO user_memory (guild_id, user_id, fact_key, fact_value, updated_at) VALUES (?, ?, ?, ?, ?)'
   ).run(guildId, userId, key, value, Date.now())
+
+  return true
 }
 
 /** Get all stored facts for a user in a guild (falls back to 'global' for pre-migration facts) */

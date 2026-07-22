@@ -1,6 +1,7 @@
 import { resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import '../env.js'
+import { FACTS_UNTRUSTED_DATA_LABEL } from '../../../src/agent/promptSafety.js'
 import {
   __resetTestRunTurnFactory,
   __setTestRunTurnFactory,
@@ -451,9 +452,13 @@ describe('harness self-tests', () => {
 
     expect(lines).toHaveLength(2)
     expect(mocks.runnerRequests).toHaveLength(2)
-    expect(capturedSystemPrompt(mocks.runnerRequests[0])).toContain('favorite_drink: jasmine tea')
+    expect(capturedSystemPrompt(mocks.runnerRequests[0])).toContain(
+      `${FACTS_UNTRUSTED_DATA_LABEL}\n{"facts":[{"person":"mio (Mio)","attributes":[{"key":"favorite_drink","value":"jasmine tea"}]}]}`
+    )
     expect(capturedSystemPrompt(mocks.runnerRequests[0])).not.toContain('espresso')
-    expect(capturedSystemPrompt(mocks.runnerRequests[1])).toContain('favorite_drink: espresso')
+    expect(capturedSystemPrompt(mocks.runnerRequests[1])).toContain(
+      `${FACTS_UNTRUSTED_DATA_LABEL}\n{"facts":[{"person":"mio (Mio)","attributes":[{"key":"favorite_drink","value":"espresso"}]}]}`
+    )
     expect(capturedSystemPrompt(mocks.runnerRequests[1])).not.toContain('jasmine tea')
   })
 })

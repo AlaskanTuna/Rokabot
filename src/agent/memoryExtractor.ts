@@ -249,8 +249,9 @@ async function runBufferExtraction(
       const existingFacts = getFacts(effectiveGuildId, resolvedUserId)
       const alreadyExists = existingFacts.some((f) => f.key === fact.key && f.value === fact.value)
       if (!alreadyExists) {
-        saveFact(effectiveGuildId, resolvedUserId, fact.key, fact.value)
-        savedCount++
+        if (saveFact(effectiveGuildId, resolvedUserId, fact.key, fact.value)) {
+          savedCount++
+        }
       }
     }
 
