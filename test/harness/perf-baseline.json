@@ -1,0 +1,117 @@
+{
+  "snapshot": "phase-11-pre-optimization",
+  "status": "FROZEN",
+  "transcript": "test/harness/transcripts/benchmark.jsonl",
+  "estimator": "deterministic whitespace-normalized chars/4, rounded up per component; --live models.countTokens is the ground-truth cross-check",
+  "toolCount": 12,
+  "requests": [
+    {
+      "turn": 1,
+      "scenario": "1:1 chat",
+      "tokens": {
+        "coreTok": 2356,
+        "speechTok": 740,
+        "toneTok": 161,
+        "contextTok": 40,
+        "systemTok": 3297,
+        "toolsTok": 1549,
+        "historyTok": 0,
+        "userMsgTok": 25,
+        "totalTok": 4871,
+        "toolCount": 12
+      },
+      "timingMs": {
+        "handlerTotal": 28.797,
+        "llm": 0.062,
+        "discordOverhead": 28.735,
+        "timeToFirstSend": 10,
+        "sendSpan": 18
+      }
+    },
+    {
+      "turn": 2,
+      "scenario": "group chat fact-bearing turn",
+      "tokens": {
+        "coreTok": 2356,
+        "speechTok": 740,
+        "toneTok": 161,
+        "contextTok": 40,
+        "systemTok": 3297,
+        "toolsTok": 1549,
+        "historyTok": 0,
+        "userMsgTok": 22,
+        "totalTok": 4868,
+        "toolCount": 12
+      },
+      "timingMs": {
+        "handlerTotal": 2.849,
+        "llm": 0.004,
+        "discordOverhead": 2.845,
+        "timeToFirstSend": 1,
+        "sendSpan": 1
+      }
+    },
+    {
+      "turn": 3,
+      "scenario": "information-seeking question",
+      "tokens": {
+        "coreTok": 2356,
+        "speechTok": 740,
+        "toneTok": 161,
+        "contextTok": 67,
+        "systemTok": 3324,
+        "toolsTok": 1549,
+        "historyTok": 49,
+        "userMsgTok": 24,
+        "totalTok": 4946,
+        "toolCount": 12
+      },
+      "timingMs": {
+        "handlerTotal": 1.347,
+        "llm": 0.005,
+        "discordOverhead": 1.342,
+        "timeToFirstSend": 0,
+        "sendSpan": 1
+      }
+    },
+    {
+      "turn": 4,
+      "scenario": "name-keyword turn",
+      "tokens": {
+        "coreTok": 2356,
+        "speechTok": 740,
+        "toneTok": 161,
+        "contextTok": 68,
+        "systemTok": 3325,
+        "toolsTok": 1549,
+        "historyTok": 101,
+        "userMsgTok": 19,
+        "totalTok": 4994,
+        "toolCount": 12
+      },
+      "timingMs": {
+        "handlerTotal": 1.39,
+        "llm": 0.004,
+        "discordOverhead": 1.386,
+        "timeToFirstSend": 0,
+        "sendSpan": 1
+      }
+    }
+  ],
+  "summary": {
+    "tokens": {
+      "averageSystemTok": 3310.75,
+      "averageToolsTok": 1549,
+      "averageHistoryTok": 37.5,
+      "averageUserMsgTok": 22.5,
+      "averageTotalTok": 4919.75
+    },
+    "timingMs": {
+      "handlerTotal": { "mean": 8.596, "p50": 2.12, "min": 1.347, "max": 28.797 },
+      "llm": { "mean": 0.019, "p50": 0.005, "min": 0.004, "max": 0.062 },
+      "discordOverhead": { "mean": 8.577, "p50": 2.116, "min": 1.342, "max": 28.735 },
+      "timeToFirstSend": { "mean": 2.75, "p50": 0.5, "min": 0, "max": 10 },
+      "sendSpan": { "mean": 5.25, "p50": 1, "min": 1, "max": 18 }
+    }
+  }
+}

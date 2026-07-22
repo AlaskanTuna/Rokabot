@@ -27,16 +27,16 @@ describe('overheard context (passive buffer persistence)', () => {
   })
 
   it('buffer caps at bufferSize via FIFO eviction', () => {
-    // Add 25 messages to exceed buffer size of 20
-    for (let i = 0; i < 25; i++) {
+    // Add 35 messages to exceed the default buffer size of 30
+    for (let i = 0; i < 35; i++) {
       addMessage('ch-2', 'user-1', 'Alice', 'alice', `msg ${i}`)
     }
 
     const messages = getMessages('ch-2')
-    expect(messages.length).toBe(20)
+    expect(messages.length).toBe(30)
     // Oldest 5 should be evicted
     expect(messages[0].content).toBe('msg 5')
-    expect(messages[19].content).toBe('msg 24')
+    expect(messages[29].content).toBe('msg 34')
   })
 
   it('overheard context format matches expected prompt structure', () => {

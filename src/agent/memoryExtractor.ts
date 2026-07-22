@@ -105,7 +105,7 @@ async function generateExtraction(channelId: string, prompt: string): Promise<st
 
     try {
       const response = await getClient().models.generateContent({
-        model: config.gemini.model,
+        model: config.gemini.extractionModel,
         contents: prompt,
         config: {
           temperature: 0.3,

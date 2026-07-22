@@ -4,6 +4,7 @@
 
 gemini:
   model: gemini-3.5-flash-lite # Gemini model ID
+  # extractionModel: gemini-3.5-flash-lite # Optional background fact-extraction model (defaults to model)
   timeout: 45000 # API request timeout in ms (covers initial Gemini → tool → second Gemini round)
   maxRetries: 3 # Max retries for transient errors (429, 500, 503)
   maxOutputTokens: 500 # Max tokens per response (safety net)
@@ -30,10 +31,10 @@ discord:
   maxMessageLength: 1500 # Char limit for bot replies (Discord max is 2000)
 
 memory:
-  bufferSize: 20 # Max messages in passive ring buffer per channel (in-memory)
+  bufferSize: 30 # Max messages in passive ring buffer per channel (in-memory)
   contextSize: 10 # Max overheard messages injected into system prompt per request
-  extractionInterval: 10 # Messages between each background fact extraction
-  extractionGapMs: 10000 # Minimum ms between extractions across all channels
+  extractionInterval: 20 # Messages between each background fact extraction
+  extractionGapMs: 20000 # Minimum ms between extractions across all channels
   maxFactsPerUser: 20 # Max stored facts per user (oldest evicted on overflow)
   factRetentionDays: 14 # Days before unused facts are auto-pruned
   channelMonitorTtlMs: 86400000 # How long a channel stays monitored after last @mention (24h)

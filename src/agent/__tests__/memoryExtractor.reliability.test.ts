@@ -19,6 +19,7 @@ vi.mock('../../config.js', () => ({
     gemini: {
       apiKey: 'test-key',
       model: 'gemini-test',
+      extractionModel: 'gemini-extraction-test',
       extractionRpmFloor: 3,
       extractionMaxRetries: 1,
       retryBackoffBaseMs: 0,
@@ -112,6 +113,15 @@ describe('memory extraction reliability', () => {
 
     expect(mocks.generateContent).toHaveBeenCalledTimes(2)
     expect(mocks.tryConsumeAboveFloor).toHaveBeenCalledTimes(2)
+  })
+
+  it('uses the configured extraction model', async () => {
+    mocks.generateContent.mockResolvedValueOnce({ text: '[]' })
+
+    queueExtraction()
+    await waitForExtraction()
+
+    expect(mocks.generateContent).toHaveBeenCalledWith(expect.objectContaining({ model: 'gemini-extraction-test' }))
   })
 
   it.each([
