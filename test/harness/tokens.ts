@@ -4,6 +4,9 @@ import { CORE_PROMPT } from '../../src/agent/prompts/core.js'
 import { SPEECH_PROMPT } from '../../src/agent/prompts/speech.js'
 import { TONE_PROMPTS, type ToneKey } from '../../src/agent/prompts/tones.js'
 import { rokaTools } from '../../src/agent/tools/index.js'
+import { estimateTokens } from '../../src/utils/tokens.js'
+
+export { estimateTokens }
 
 export interface TokenHistoryMessage {
   role: 'user' | 'assistant'
@@ -36,15 +39,6 @@ export interface RequestTokenBreakdown {
   userMsgTok: number
   totalTok: number
   toolCount: number
-}
-
-/**
- * A deterministic offline estimator: whitespace-normalized characters divided by four, rounded up.
- * Use the harness's optional --live models.countTokens cross-check when ground-truth Gemini counts are needed.
- */
-export function estimateTokens(value: string): number {
-  const normalized = value.replace(/\s+/g, ' ').trim()
-  return normalized === '' ? 0 : Math.ceil(normalized.length / 4)
 }
 
 function stableJson(value: unknown): string {

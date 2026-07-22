@@ -2,6 +2,7 @@
 
 import { GoogleGenAI } from '@google/genai'
 import { config } from '../config.js'
+import { recordExtractionEvent } from '../storage/metricsStore.js'
 import { getFacts, saveFact } from '../storage/userMemory.js'
 import { logger } from '../utils/logger.js'
 import { getSharedRateLimiter } from '../utils/rateLimiter.js'
@@ -92,7 +93,12 @@ function waitForRetry(delayMs: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, delayMs))
 }
 
-async function generateExtraction(channelId: string, prompt: string): Promise<string | undefined> {
+async function generateExtraction(
+  channelId: string,
+  prompt: string,
+  onModelAttempt?: () => void,
+  onGiveUp?: (error: unknown) => void
+): Promise<string | undefined> {
   const limiter = getSharedRateLimiter(config.rateLimit)
 
   for (let attempt = 0; attempt <= config.gemini.extractionMaxRetries; attempt++) {
@@ -104,6 +110,7 @@ async function generateExtraction(channelId: string, prompt: string): Promise<st
     }
 
     try {
+      onModelAttempt?.()
       const response = await getClient().models.generateContent({
         model: config.gemini.extractionModel,
         contents: prompt,
@@ -126,7 +133,7 @@ async function generateExtraction(channelId: string, prompt: string): Promise<st
       const canRetry = failure.kind === 'transient_http' || failure.kind === 'network'
 
       if (!canRetry || attempt >= config.gemini.extractionMaxRetries) {
-        logger.warn({ channelId, error }, 'Memory extraction Gemini call failed')
+        onGiveUp?.(error)
         return undefined
       }
 
@@ -148,11 +155,13 @@ async function runBufferExtraction(
   botUserId?: string,
   guildId?: string
 ): Promise<void> {
+  const startedAt = performance.now()
   const conversationText = messages.map((m) => `[${m.displayName}]: ${m.content}`).join('\n')
 
   if (!conversationText.trim()) return
 
   const prompt = EXTRACTION_PROMPT + conversationText
+  const effectiveGuildId = guildId ?? 'global'
 
   // Case-insensitive map so LLM name variations ("hiro" vs "Hiro") still resolve
   const userMap = new Map<string, string>()
@@ -161,12 +170,71 @@ async function runBufferExtraction(
   }
 
   try {
-    const text = await generateExtraction(channelId, prompt)
-    if (!text) return
+    let reachedModel = false
+    let failure: unknown
+    const text = await generateExtraction(
+      channelId,
+      prompt,
+      () => {
+        reachedModel = true
+      },
+      (error) => {
+        failure = error
+      }
+    )
+    if (!text) {
+      // Skips never reach Gemini, so they remain debug-log-only without a metrics event.
+      if (!reachedModel) return
+
+      const durationMs = performance.now() - startedAt
+      const logFields = {
+        channelId,
+        guildId: effectiveGuildId,
+        durationMs,
+        batchSize: messages.length,
+        extracted: 0,
+        saved: 0,
+        outcome: 'failed'
+      }
+      if (failure) {
+        logger.warn({ ...logFields, error: failure }, 'Memory extraction Gemini call failed')
+      } else {
+        logger.info(logFields, 'Passive buffer memory extraction complete')
+      }
+      recordExtractionEvent({
+        guildId: effectiveGuildId,
+        channelId,
+        durationMs,
+        outcome: 'failed',
+        factsExtracted: 0,
+        factsSaved: 0
+      })
+      return
+    }
 
     const facts = parseFacts(text)
     if (facts.length === 0) {
-      logger.info({ channelId }, 'Memory extraction complete — no facts found')
+      const durationMs = performance.now() - startedAt
+      logger.info(
+        {
+          channelId,
+          guildId: effectiveGuildId,
+          durationMs,
+          batchSize: messages.length,
+          extracted: 0,
+          saved: 0,
+          outcome: 'no_facts'
+        },
+        'Memory extraction complete — no facts found'
+      )
+      recordExtractionEvent({
+        guildId: effectiveGuildId,
+        channelId,
+        durationMs,
+        outcome: 'no_facts',
+        factsExtracted: 0,
+        factsSaved: 0
+      })
       return
     }
 
@@ -178,7 +246,6 @@ async function runBufferExtraction(
         continue
       }
       if (botUserId && resolvedUserId === botUserId) continue
-      const effectiveGuildId = guildId ?? 'global'
       const existingFacts = getFacts(effectiveGuildId, resolvedUserId)
       const alreadyExists = existingFacts.some((f) => f.key === fact.key && f.value === fact.value)
       if (!alreadyExists) {
@@ -188,10 +255,49 @@ async function runBufferExtraction(
     }
 
     if (savedCount > 0) {
+      const durationMs = performance.now() - startedAt
       logger.info(
-        { channelId, extracted: facts.length, saved: savedCount },
+        {
+          channelId,
+          guildId: effectiveGuildId,
+          durationMs,
+          batchSize: messages.length,
+          extracted: facts.length,
+          saved: savedCount,
+          outcome: 'saved'
+        },
         'Passive buffer memory extraction complete'
       )
+      recordExtractionEvent({
+        guildId: effectiveGuildId,
+        channelId,
+        durationMs,
+        outcome: 'saved',
+        factsExtracted: facts.length,
+        factsSaved: savedCount
+      })
+    } else {
+      const durationMs = performance.now() - startedAt
+      logger.info(
+        {
+          channelId,
+          guildId: effectiveGuildId,
+          durationMs,
+          batchSize: messages.length,
+          extracted: facts.length,
+          saved: 0,
+          outcome: 'no_facts'
+        },
+        'Passive buffer memory extraction complete'
+      )
+      recordExtractionEvent({
+        guildId: effectiveGuildId,
+        channelId,
+        durationMs,
+        outcome: 'no_facts',
+        factsExtracted: facts.length,
+        factsSaved: 0
+      })
     }
   } catch (error) {
     logger.warn({ channelId, error }, 'Memory extraction Gemini call failed')

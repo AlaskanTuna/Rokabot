@@ -41,6 +41,7 @@ interface YamlConfig {
     factRetentionDays?: number
     channelMonitorTtlMs?: number
   }
+  metrics?: { retentionDays?: number }
   emoji?: { probability?: number; cooldownMs?: number }
   reminders?: { checkIntervalMs?: number; maxPerUser?: number; staleThresholdMs?: number }
   games?: { hangmanLives?: number; hangmanTimeoutMs?: number; shiritoriTimeoutMs?: number; shinyChance?: number }
@@ -130,6 +131,9 @@ export const config = {
     maxFactsPerUser: yaml.memory?.maxFactsPerUser ?? 10,
     factRetentionDays: yaml.memory?.factRetentionDays ?? 90,
     channelMonitorTtlMs: yaml.memory?.channelMonitorTtlMs ?? 86_400_000
+  },
+  metrics: {
+    retentionDays: envInt('METRICS_RETENTION_DAYS') ?? yaml.metrics?.retentionDays ?? 90
   },
   emoji: {
     probability: yaml.emoji?.probability ?? 0.33,

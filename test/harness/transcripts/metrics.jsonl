@@ -1,0 +1,4 @@
+{"kind":"message","guildId":"guild-garden","channelId":"tea-room","userId":"mio","displayName":"Mio","content":"<@roka> Tea and coffee make a cozy morning."}
+{"kind":"message","guildId":"guild-library","channelId":"reading-nook","userId":"ren","displayName":"Ren","content":"Tea and coffee help at breakfast.","replyToId":"roka-previous"}
+{"kind":"message","guildId":"guild-garden","channelId":"tea-room","userId":"mio","displayName":"Mio","content":"Roka, tea and coffee please."}
+{"kind":"slash","guildId":"guild-library","channelId":"reading-nook","userId":"ren","displayName":"Ren","content":"Tea and coffee, please."}

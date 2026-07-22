@@ -40,6 +40,7 @@ describe('config module', () => {
     vi.stubEnv('MEMORY_BUFFER_SIZE', '')
     vi.stubEnv('MEMORY_EXTRACTION_INTERVAL', '')
     vi.stubEnv('MEMORY_EXTRACTION_GAP_MS', '')
+    vi.stubEnv('METRICS_RETENTION_DAYS', '')
     vi.stubEnv('DISCORD_MAX_MESSAGE_LENGTH', '')
   }
 
@@ -105,6 +106,7 @@ describe('config module', () => {
     expect(config.memory.maxFactsPerUser).toBe(20)
     expect(config.memory.factRetentionDays).toBe(14)
     expect(config.memory.channelMonitorTtlMs).toBe(86_400_000)
+    expect(config.metrics.retentionDays).toBe(90)
 
     // Emoji
     expect(config.emoji.probability).toBe(0.33)
@@ -146,6 +148,7 @@ describe('config module', () => {
     vi.stubEnv('MEMORY_BUFFER_SIZE', '40')
     vi.stubEnv('MEMORY_EXTRACTION_INTERVAL', '30')
     vi.stubEnv('MEMORY_EXTRACTION_GAP_MS', '25000')
+    vi.stubEnv('METRICS_RETENTION_DAYS', '120')
     vi.stubEnv('DISCORD_MAX_MESSAGE_LENGTH', '4000')
 
     const { config } = await import('../config.js')
@@ -168,6 +171,7 @@ describe('config module', () => {
     expect(config.memory.bufferSize).toBe(40)
     expect(config.memory.extractionInterval).toBe(30)
     expect(config.memory.extractionGapMs).toBe(25_000)
+    expect(config.metrics.retentionDays).toBe(120)
     expect(config.discord.maxMessageLength).toBe(4000)
   })
 

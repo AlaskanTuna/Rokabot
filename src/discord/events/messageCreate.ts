@@ -4,6 +4,7 @@ import { isMonitored, markActive } from '../../agent/channelMonitor.js'
 import { maybeExtractFromBuffer } from '../../agent/memoryExtractor.js'
 import { addMessage as addToPassiveBuffer } from '../../agent/passiveBuffer.js'
 import { type ImageAttachment, generateResponse } from '../../agent/roka.js'
+import { type ResponseEventInput, recordResponseEvent } from '../../storage/metricsStore.js'
 import { upsertUserName } from '../../storage/userNames.js'
 import { logger } from '../../utils/logger.js'
 import { RateLimiter } from '../../utils/rateLimiter.js'
@@ -61,6 +62,7 @@ export const NAME_MENTION_REGEX = /\broka\b/i
 /** Create a handler for mention/reply message triggers */
 export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
   return async function handleMessageCreate(message: Message): Promise<void> {
+    const handlerStartMs = performance.now()
     if (!client.user) return
     if (message.author.id === client.user.id) return // never react to own messages
 
@@ -104,8 +106,10 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
     if (!isMentioned && !isReplyToBot && !isNameMention) return
 
     const channelId = message.channelId
+    const guildId = message.guildId ?? 'global'
     const displayName = message.member?.displayName ?? message.author.displayName
     const username = message.author.username
+    const trigger: ResponseEventInput['trigger'] = isMentioned ? 'mention' : isReplyToBot ? 'reply' : 'name_keyword'
 
     let content = message.content.replace(/<@!?\d+>/g, '').trim()
     if (!content && componentTextsForTrigger.length > 0) {
@@ -238,10 +242,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
       content = '(pinged you without saying anything)'
     }
 
-    logger.info(
-      { channelId, trigger: isMentioned ? 'mention' : isReplyToBot ? 'reply' : 'name' },
-      'Message trigger detected'
-    )
+    logger.debug({ channelId, trigger }, 'Message trigger detected')
     logger.debug({ channelId, content, imageCount: imageAttachments.length }, 'Message content extracted')
 
     if (isChannelBusy(channelId)) {
@@ -274,9 +275,13 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
 
     markBusy(channelId)
     try {
-      const { text: responseText, tone } = await generateResponse({
+      const {
+        text: responseText,
+        tone,
+        metrics
+      } = await generateResponse({
         channelId,
-        guildId: message.guildId ?? 'global',
+        guildId,
         userMessage: content || '(shared an image)',
         displayName,
         username,
@@ -295,6 +300,18 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
           await message.channel.send(buildRokaMessage(chunks[i], tone))
         }
       }
+
+      const responseEvent: ResponseEventInput = {
+        guildId,
+        channelId,
+        userId: message.author.id,
+        trigger,
+        tone,
+        e2eMs: Math.max(1, Math.round(performance.now() - handlerStartMs)),
+        ...metrics
+      }
+      logger.info(responseEvent, 'Response completed')
+      recordResponseEvent(responseEvent)
 
       // Add bot response to passive buffer for richer extraction context
       if (message.guild && client.user && isMonitored(channelId)) {

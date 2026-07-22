@@ -109,6 +109,42 @@ function createTables(database: Database.Database): void {
       channel_id TEXT PRIMARY KEY,
       expires_at INTEGER NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS response_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      guild_id TEXT NOT NULL,
+      channel_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      trigger TEXT NOT NULL,
+      tone TEXT NOT NULL,
+      outcome TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      e2e_ms INTEGER NOT NULL,
+      generate_ms INTEGER NOT NULL,
+      llm_ms INTEGER NOT NULL,
+      retry_latency_ms INTEGER NOT NULL,
+      retries INTEGER NOT NULL,
+      tokens_in_est INTEGER NOT NULL,
+      tokens_out_est INTEGER NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_response_events_guild_ts
+      ON response_events (guild_id, created_at);
+
+    CREATE TABLE IF NOT EXISTS extraction_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      guild_id TEXT NOT NULL,
+      channel_id TEXT NOT NULL,
+      duration_ms INTEGER NOT NULL,
+      outcome TEXT NOT NULL,
+      facts_extracted INTEGER NOT NULL,
+      facts_saved INTEGER NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_extraction_events_guild_ts
+      ON extraction_events (guild_id, created_at);
   `)
 }
 
