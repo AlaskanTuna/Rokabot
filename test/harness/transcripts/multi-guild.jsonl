@@ -1,0 +1,5 @@
+{"kind":"message","guildId":"guild-garden","channelId":"tea-room","userId":"mio","displayName":"Mio","content":"<@roka> Tea is ready!"}
+{"kind":"message","guildId":"guild-garden","channelId":"tea-room","userId":"mio","displayName":"Mio","content":"What do you think?","replyToId":"roka-previous"}
+{"kind":"slash","guildId":"guild-library","channelId":"reading-nook","userId":"ren","displayName":"Ren","content":"Recommend a quiet book for tonight."}
+{"kind":"message","guildId":"guild-garden","channelId":"memory-garden","userId":"mio-memory","displayName":"Mio","content":"<@roka> Do you remember my tea?"}
+{"kind":"message","guildId":"guild-library","channelId":"memory-library","userId":"mio-memory","displayName":"Mio","content":"<@roka> What do you remember here?"}
