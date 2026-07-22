@@ -18,26 +18,17 @@ import {
   type BuddyRarity,
   RARITY_COLORS,
   RARITY_EMOJI,
-  RARITY_PLACEHOLDER_COLORS,
   RARITY_STAT_RANGE,
   SPECIES,
   STAT_NAMES
 } from '../../../games/data/buddySpecies.js'
-import { buildBuddyContainer, buildGameContainer, randomFrom } from './shared.js'
+import { buddySprite, buildBuddyContainer, buildGameContainer, randomFrom } from './shared.js'
 
 /** Build a stat bar: e.g. "CHARM/魅力  ████░░░░░░  4/10" */
 function statBar(value: number, max: number = 10): string {
   const filled = '\u2588'.repeat(value)
   const empty = '\u2591'.repeat(max - value)
   return `${filled}${empty}`
-}
-
-/** Build a placehold.co thumbnail URL for a species + rarity. */
-function buddyThumbnailUrl(species: string, rarity: BuddyRarity): string {
-  const info = getSpeciesInfo(species)
-  const color = RARITY_PLACEHOLDER_COLORS[rarity]
-  const emoji = info?.emoji ?? '\u2753'
-  return `https://placehold.co/80x80/${color}/white?text=${encodeURIComponent(emoji)}`
 }
 
 /** Format a buddy summary for display. */
@@ -121,11 +112,13 @@ export function handleHatch(interaction: ChatInputCommandInteraction) {
   if (hasHatchedToday(userId)) {
     const latest = getBuddy(userId)
     const info = latest ? getSpeciesInfo(latest.species) : undefined
+    const sprite = latest ? buddySprite(latest.species) : undefined
     return buildBuddyContainer({
       accentColor: latest ? RARITY_COLORS[latest.rarity] : 0xb0c4de,
       title: 'Already Hatched Today!',
       body: `You already hatched **${latest?.name ?? 'a companion'}** the ${info?.name ?? 'spirit'} today~ Come back tomorrow!`,
-      thumbnailUrl: latest ? buddyThumbnailUrl(latest.species, latest.rarity) : undefined
+      thumbnailUrl: sprite?.url,
+      files: sprite ? [sprite.file] : undefined
     })
   }
 
@@ -136,6 +129,7 @@ export function handleHatch(interaction: ChatInputCommandInteraction) {
   const count = getBuddyCount(userId)
   const info = getSpeciesInfo(buddy.species)
   const rarityEmoji = RARITY_EMOJI[buddy.rarity]
+  const sprite = buddySprite(buddy.species)
   const shinyTag = buddy.shiny ? '\n\u2728 **SHINY VARIANT!** \u2728' : ''
 
   const body = [
@@ -159,7 +153,8 @@ export function handleHatch(interaction: ChatInputCommandInteraction) {
     accentColor: RARITY_COLORS[buddy.rarity],
     title: 'Companion Hatched!',
     body: body.join('\n'),
-    thumbnailUrl: buddyThumbnailUrl(buddy.species, buddy.rarity)
+    thumbnailUrl: sprite.url,
+    files: [sprite.file]
   })
 }
 
@@ -177,12 +172,14 @@ export function handleBuddyView(interaction: ChatInputCommandInteraction) {
 
   const count = getBuddyCount(userId)
   const footerParts = [`Companion 1 of ${count}`, `Hatched on ${new Date(buddy.hatchedAt).toLocaleDateString('en-GB')}`]
+  const sprite = buddySprite(buddy.species)
 
   return buildBuddyContainer({
     accentColor: RARITY_COLORS[buddy.rarity],
     title: `${buddy.name ?? 'Your Companion'}`,
     body: formatBuddySummary(buddy),
-    thumbnailUrl: buddyThumbnailUrl(buddy.species, buddy.rarity),
+    thumbnailUrl: sprite.url,
+    files: [sprite.file],
     footer: footerParts.join(' | ')
   })
 }
@@ -203,12 +200,14 @@ export function handlePet(interaction: ChatInputCommandInteraction) {
   const responses = PET_RESPONSES[archetype] ?? PET_RESPONSES.cute
   const response = randomFrom(responses)
   const info = getSpeciesInfo(buddy.species)
+  const sprite = buddySprite(buddy.species)
 
   return buildBuddyContainer({
     accentColor: RARITY_COLORS[buddy.rarity],
     title: `${info?.emoji ?? ''} ${buddy.name}`,
     body: response,
-    thumbnailUrl: buddyThumbnailUrl(buddy.species, buddy.rarity)
+    thumbnailUrl: sprite.url,
+    files: [sprite.file]
   })
 }
 
@@ -229,6 +228,7 @@ export function handleBuddyStats(interaction: ChatInputCommandInteraction) {
   const rarityEmoji = RARITY_EMOJI[buddy.rarity]
   const range = RARITY_STAT_RANGE[buddy.rarity]
   const totalStats = Object.values(buddy.stats).reduce((s, v) => s + v, 0)
+  const sprite = buddySprite(buddy.species)
 
   // Collection overview
   const rarityCounts: Record<BuddyRarity, number> = { common: 0, uncommon: 0, rare: 0, epic: 0, legendary: 0 }
@@ -273,7 +273,8 @@ export function handleBuddyStats(interaction: ChatInputCommandInteraction) {
     accentColor: RARITY_COLORS[buddy.rarity],
     title: 'Companion Stats',
     body: lines.join('\n'),
-    thumbnailUrl: buddyThumbnailUrl(buddy.species, buddy.rarity)
+    thumbnailUrl: sprite.url,
+    files: [sprite.file]
   })
 }
 
