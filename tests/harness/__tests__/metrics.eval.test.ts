@@ -70,6 +70,7 @@ describe('harness metrics evaluation', () => {
 
     expect(report.turns).toHaveLength(lines.length)
     expect(rows).toHaveLength(lines.length)
+    const expectedTones = ['playful', 'playful', 'domestic', 'domestic']
     expect(rows).toEqual(
       lines.map((line, index) =>
         expect.objectContaining({
@@ -77,7 +78,7 @@ describe('harness metrics evaluation', () => {
           channel_id: line.channelId,
           user_id: line.userId,
           trigger: ['mention', 'reply', 'name_keyword', 'slash'][index],
-          tone: 'playful',
+          tone: expectedTones[index],
           outcome: 'ok'
         })
       )

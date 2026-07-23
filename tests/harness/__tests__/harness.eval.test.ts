@@ -50,6 +50,7 @@ vi.mock('@google/adk', async (importOriginal) => {
 })
 
 const transcript = resolve('tests/harness/transcripts/multi-guild.jsonl')
+const benchmarkTranscript = resolve('tests/harness/transcripts/benchmark.jsonl')
 const memoryUserId = 'mio-memory'
 const memoryFactKey = 'likes'
 
@@ -140,6 +141,18 @@ describe('harness self-tests', () => {
       expect(timing.sendSpan).not.toBeNull()
       expect(timing.sendSpan).toBeGreaterThanOrEqual(0)
     }
+  })
+
+  it('rehydrates fake transcript history so the benchmark spans at least eight tones', async () => {
+    const { turns } = await runTranscript(benchmarkTranscript)
+    const tones = turns.flatMap(({ rendered }) =>
+      rendered.flatMap((payload) => {
+        const tone = /Tone Accent: (\w+)/.exec(payload)?.[1]
+        return tone ? [tone] : []
+      })
+    )
+
+    expect(new Set(tones).size).toBeGreaterThanOrEqual(8)
   })
 
   it('routes scripted transient outcomes through the real retry orchestration', async () => {

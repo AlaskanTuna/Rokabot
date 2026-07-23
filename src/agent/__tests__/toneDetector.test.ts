@@ -52,8 +52,13 @@ describe('detectTone', () => {
 
   describe('annoyed detection', () => {
     it('detects annoyed tone from defiance keywords', () => {
-      const messages = [makeMessage("no I won't do it")]
+      const messages = [makeMessage("I won't do it, I refuse")]
       expect(detectTone(messages)).toBe('annoyed')
+    })
+
+    it('does not detect annoyed tone from ordinary agreement', () => {
+      const messages = [makeMessage("no, that's fine")]
+      expect(detectTone(messages)).toBe('playful')
     })
 
     it('detects annoyed tone from recklessness keywords', () => {
@@ -102,6 +107,11 @@ describe('detectTone', () => {
   })
 
   describe('curious detection', () => {
+    it('detects curious tone from questions that also mention domestic details', () => {
+      const messages = [makeMessage('What recipe should I cook for dinner, and how do I start?')]
+      expect(detectTone(messages)).toBe('curious')
+    })
+
     it('detects curious tone from question words', () => {
       const messages = [makeMessage('what is that and how does it work?')]
       expect(detectTone(messages)).toBe('curious')
@@ -270,9 +280,9 @@ describe('detectTone', () => {
     })
 
     it('annoyed beats sincere when both match', () => {
-      // "no" + "won't" = annoyed; "sad" + "lonely" = sincere
+      // "won't" + "refuse" = annoyed; "sad" + "lonely" = sincere
       // annoyed is checked before sincere
-      const messages = [makeMessage("no I won't, I feel sad and lonely")]
+      const messages = [makeMessage("I won't, I refuse, I feel sad and lonely")]
       expect(detectTone(messages)).toBe('annoyed')
     })
 
@@ -283,9 +293,9 @@ describe('detectTone', () => {
     })
 
     it('annoyed beats sleepy when both match', () => {
-      // "no" + "won't" = annoyed; "tired" + "exhausted" = sleepy
+      // "won't" + "refuse" = annoyed; "tired" + "exhausted" = sleepy
       // annoyed is checked before sleepy
-      const messages = [makeMessage("no I won't, I'm tired and exhausted")]
+      const messages = [makeMessage("I won't, I refuse, I'm tired and exhausted")]
       expect(detectTone(messages)).toBe('annoyed')
     })
 

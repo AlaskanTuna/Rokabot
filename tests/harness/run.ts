@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import './env.js'
 import { detectTone } from '../../src/agent/toneDetector.js'
+import { clearHistory } from '../../src/storage/sessionStore.js'
 import { createCaptureSink } from './captureSink.js'
 import { makeClient, makeGuild, makeInteraction, makeMessage } from './discordDoubles.js'
 import { renderPayload } from './renderPayload.js'
@@ -148,6 +149,11 @@ export async function runTranscript(path: string, options: RunTranscriptOptions 
   ;(config.memory as { extractionInterval: number }).extractionInterval = Number.MAX_SAFE_INTEGER
 
   if (!live) {
+    for (const channelId of new Set(lines.map((line) => line.channelId))) {
+      await roka.destroySession(channelId)
+      clearHistory(channelId)
+    }
+
     roka.__setTestRunTurnFactory(() => async () => {
       if (!activeTiming) throw new Error('Fake model invoked outside a transcript turn')
       startLlmTiming(activeTiming)
@@ -234,12 +240,20 @@ export async function runTranscript(path: string, options: RunTranscriptOptions 
       const timing = finishTurnTiming(activeTiming, records)
       const rendered = records.map((record, recordIndex) => renderPayload(record, recordIndex, records))
       turns.push({ line, rendered, timing, tokens })
+
+      // The fake factory skips Runner.runAsync, so rehydrate persisted events before the next turn.
+      if (!live) await roka.destroySession(line.channelId)
+
       measurementHistory.set(line.channelId, [
         ...channelHistory,
         { role: 'user', displayName: line.displayName, content: userMessage },
         { role: 'assistant', displayName: 'Roka', content: scriptedReply }
       ])
       activeTiming = undefined
+
+      if (live && index < lines.length - 1) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 5000))
+      }
     }
   } finally {
     roka.__resetTestRunTurnFactory()

@@ -1,4 +1,16 @@
-{"kind":"message","guildId":"benchmark-guild","channelId":"tea-table","userId":"mio","displayName":"Mio","content":"<@roka> I finally brewed the jasmine tea you recommended. What sweet would you serve with it?"}
-{"kind":"message","guildId":"benchmark-guild","channelId":"garden-party","userId":"ren","displayName":"Ren","content":"<@roka> My favorite tea is jasmine too, and I brought fruit daifuku for everyone."}
-{"kind":"message","guildId":"benchmark-guild","channelId":"garden-party","userId":"aya","displayName":"Aya","content":"<@roka> Could you search for the latest news about the Senren*Banka anniversary event?"}
-{"kind":"message","guildId":"benchmark-guild","channelId":"garden-party","userId":"mio","displayName":"Mio","content":"Roka, should Ren and Aya start with jasmine tea or roasted green tea?"}
+{"kind":"message","guildId":"benchmark-guild","channelId":"rose-letters","userId":"mio","displayName":"Mio","content":"<@roka> I love jasmine tea, and I have a crush on its floral scent."}
+{"kind":"message","guildId":"benchmark-guild","channelId":"rose-letters","userId":"mio","displayName":"Mio","content":"Do you remember that jasmine tea is my favorite?","replyToId":"roka-previous"}
+{"kind":"slash","guildId":"benchmark-guild","channelId":"tender-porch","userId":"aki","displayName":"Aki","content":"I feel worried and alone after today."}
+{"kind":"message","guildId":"benchmark-guild","channelId":"tender-porch","userId":"mei","displayName":"Mei","content":"Roka, 心配しないで。Could you keep Aki company for a moment?"}
+{"kind":"message","guildId":"benchmark-guild","channelId":"annoyed-hall","userId":"ren","displayName":"Ren","content":"<@roka> This is boring, whatever; I refuse to pick the music."}
+{"kind":"slash","guildId":"benchmark-guild","channelId":"annoyed-hall","userId":"aya","displayName":"Aya","content":"Please settle our music disagreement."}
+{"kind":"message","guildId":"benchmark-guild","channelId":"moon-room","userId":"kyo","displayName":"Kyo","content":"Roka, I am sleepy and need a nap."}
+{"kind":"message","guildId":"benchmark-guild","channelId":"moon-room","userId":"hana","displayName":"Hana","content":"<@roka> うん！🍵🌸✨"}
+{"kind":"slash","guildId":"benchmark-guild","channelId":"quiet-stacks","userId":"sora","displayName":"Sora","content":"I feel sad and stressed. Could you search for the latest official Senren*Banka anniversary news?"}
+{"kind":"message","guildId":"benchmark-guild","channelId":"quiet-stacks","userId":"sora","displayName":"Sora","content":"Could you stay with me while I read it?","replyToId":"roka-previous"}
+{"kind":"message","guildId":"benchmark-guild","channelId":"kitchen-table","userId":"yui","displayName":"Yui","content":"<@roka> Jasmine tea and breakfast make this rainy morning feel warm."}
+{"kind":"message","guildId":"benchmark-guild","channelId":"kitchen-table","userId":"yui","displayName":"Yui","content":"Roka, お茶に合う小さなお菓子を選んでくれる？"}
+{"kind":"message","guildId":"benchmark-guild","channelId":"lantern-walk","userId":"nagi","displayName":"Nagi","content":"<@roka> I dare you to plan a harmless prank for our secret picnic."}
+{"kind":"slash","guildId":"benchmark-guild","channelId":"lantern-walk","userId":"nagi","displayName":"Nagi","content":"Surprise me with the picnic details."}
+{"kind":"message","guildId":"benchmark-guild","channelId":"game-room","userId":"rin","displayName":"Rin","content":"<@roka> This game is close; I want to win the next match."}
+{"kind":"message","guildId":"benchmark-guild","channelId":"game-room","userId":"toma","displayName":"Toma","content":"One more round?","replyToId":"roka-previous"}
