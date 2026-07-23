@@ -220,10 +220,10 @@ describe('stats queries', () => {
 
     seedMemory()
 
-    expect(activeClaimCount('guild-1')).toBe(3)
-    expect(distinctRememberedUsers('guild-1')).toBe(2)
-    expect(activeClaimCount('guild-2')).toBe(1)
-    expect(distinctRememberedUsers('guild-2')).toBe(1)
+    expect(activeClaimCount('guild-1', 'roka-user')).toBe(3)
+    expect(distinctRememberedUsers('guild-1', 'roka-user')).toBe(2)
+    expect(activeClaimCount('guild-2', 'roka-user')).toBe(1)
+    expect(distinctRememberedUsers('guild-2', 'roka-user')).toBe(1)
   })
 
   it('keeps memory stats queries count-only and value-free', () => {
@@ -266,21 +266,25 @@ describe('stats queries', () => {
     insertClaim({ userId: 'user-5', predicate: 'music', salience: 0.4, firstSeenAt: now - 5 * DAY_MS })
     insertClaim({ userId: 'user-6', predicate: 'ignored', status: 'candidate', firstSeenAt: now })
     insertClaim({ userId: 'old-user', predicate: 'hobby', salience: 1, firstSeenAt: monthSinceMs - 1 })
+    insertClaim({ userId: 'roka-user', predicate: 'likes', salience: 1, firstSeenAt: now })
+    insertClaim({ userId: 'roka-user', predicate: 'hobby', salience: 1, firstSeenAt: now })
 
-    expect(statsQueries.newClaimsThisMonth('guild-1', monthSinceMs)).toBe(7)
-    expect(statsQueries.topPredicates('guild-1', monthSinceMs)).toEqual([
+    expect(statsQueries.activeClaimCount('guild-1', 'roka-user')).toBe(8)
+    expect(statsQueries.distinctRememberedUsers('guild-1', 'roka-user')).toBe(6)
+    expect(statsQueries.newClaimsThisMonth('guild-1', monthSinceMs, 'roka-user')).toBe(7)
+    expect(statsQueries.topPredicates('guild-1', monthSinceMs, 'roka-user')).toEqual([
       { predicate: 'hobby', count: 2 },
       { predicate: 'favorite_anime', count: 1 },
       { predicate: 'favorite_food', count: 1 }
     ])
-    expect(statsQueries.topRememberedMembers('guild-1', monthSinceMs)).toEqual([
+    expect(statsQueries.topRememberedMembers('guild-1', monthSinceMs, 'roka-user')).toEqual([
       { userId: 'user-1', count: 2, predicate: 'favorite_anime' },
       { userId: 'user-2', count: 2, predicate: 'favorite_food' },
       { userId: 'user-3', count: 1, predicate: 'preference' },
       { userId: 'user-4', count: 1, predicate: 'game' },
       { userId: 'user-5', count: 1, predicate: 'music' }
     ])
-    expect(statsQueries.memoryGrowthSeries('guild-1', monthSinceMs)).toEqual([
+    expect(statsQueries.memoryGrowthSeries('guild-1', monthSinceMs, 'roka-user')).toEqual([
       { day: '2026-06-23', cumulative: 1 },
       { day: '2026-07-18', cumulative: 2 },
       { day: '2026-07-19', cumulative: 3 },

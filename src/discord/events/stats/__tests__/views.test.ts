@@ -44,9 +44,10 @@ vi.mock('../../../../utils/logger.js', () => ({
 }))
 
 import { handleStatsCommand } from '../statsCommand.js'
-import { buildStatsView, getMoodLabel } from '../views.js'
+import { PREDICATE_PHRASES, buildStatsView, getMoodLabel } from '../views.js'
 
 const guild = {
+  client: { user: { id: 'roka-user' } },
   channels: { cache: new Map([['channel-1', { name: 'general' }]]) },
   members: {
     fetch: vi.fn(async (userId: string) =>
@@ -97,11 +98,11 @@ beforeEach(() => {
   queries.newClaimsThisMonth.mockReturnValue(6)
   queries.topPredicates.mockReturnValue([
     { predicate: 'favorite_anime', count: 5 },
-    { predicate: 'hobbies', count: 4 }
+    { predicate: 'likes', count: 4 }
   ])
   queries.topRememberedMembers.mockReturnValue([
     { userId: 'user-1', count: 5, predicate: 'favorite_anime' },
-    { userId: 'departed', count: 4, predicate: 'favorite_food' }
+    { userId: 'departed', count: 4, predicate: 'likes' }
   ])
   queries.memoryGrowthSeries.mockReturnValue([{ day: '2026-07-23', cumulative: 6 }])
   queries.latencyE2e.mockReturnValue({ p50: 3000, p95: 6100, min: 500, max: 9100, total: 1_440_000 })
@@ -123,6 +124,7 @@ describe('/stats redesigned views', () => {
 
     expect(payload.flags).toBeDefined()
     expect(jsonFor(payload).type).toBe(17)
+    expect(content).toContain(`\"content\":\"# ${view[0].toUpperCase()}${view.slice(1)}\\n-# Last 30 Days\"`)
     expect(content).toContain('Last 30 Days')
     expect(content).toMatch(/### [📊🎭🌸🔧]/u)
     expect(content).toMatch(/> \*\*.+:\*\* `.+`/)
@@ -135,7 +137,8 @@ describe('/stats redesigned views', () => {
     const select = selectsFor(payload).at(0)!
 
     expect(content).toContain('Chats This Month')
-    expect(content).toContain('<#channel-1>')
+    expect(content).toContain('> **Busiest Channel:** `#general (42 chats)`')
+    expect(content).not.toContain('<#channel-1>')
     expect(content).not.toContain('Top 3 Moods')
     expect(payload.files).toHaveLength(2)
     expect(select.custom_id).toBe('stats:view')
@@ -151,14 +154,18 @@ describe('/stats redesigned views', () => {
     expect(queries.activityByDay).toHaveBeenCalledWith('guild-1', expect.any(Number))
   })
 
-  it('labels mood deterministically and uses its top-three summary as the sole caption', async () => {
+  it('labels mood deterministically and describes the dominant tone in the caption', async () => {
     const payload = await buildStatsView('guild-1', guild, 'mood')
     const content = contentFor(payload)
 
     expect(getMoodLabel('domestic', 'flustered')).toBe('A Cozy Little Panic')
     expect(getMoodLabel('sleepy', null)).toBeTruthy()
+    expect(content).toContain('# Mood')
     expect(content).toContain('A Cozy Little Panic')
-    expect(content).toContain('Mostly domestic (`46%`), with flustered (`29%`) and playful (`25%`) close behind')
+    expect(content).toContain('> **Server Mood:** `A Cozy Little Panic`')
+    expect(content).toContain(
+      'Mostly domestic (`46%`), with flustered (`29%`) and playful (`25%`) close behind. This is a cozy server!'
+    )
     expect(payload.files).toHaveLength(1)
   })
 
@@ -168,16 +175,47 @@ describe('/stats redesigned views', () => {
 
     expect(content).toContain('Active Memories')
     expect(content).toContain('Member user-1')
-    expect(content).toContain('I remember their favorite anime~')
+    expect(content).toContain('> I remember their favorite anime~')
+    expect(content).toContain('> **Mostly Remembers:** `Favorite Anime` · `Likes`')
     expect(content).not.toContain('departed')
     expect(content).not.toContain('forbidden-memory-value')
     expect(content).not.toContain('secret-predicate')
-    expect(queries.topRememberedMembers).toHaveBeenCalledWith('guild-1', expect.any(Number))
+    expect(queries.topRememberedMembers).toHaveBeenCalledWith('guild-1', expect.any(Number), 'roka-user')
     expect(payload.files).toHaveLength(1)
     const countComponents = (node: { components?: unknown[] }): number =>
       1 + (node.components ?? []).reduce<number>((sum, child) => sum + countComponents(child as never), 0)
     expect(countComponents(jsonFor(payload))).toBeLessThanOrEqual(40)
     expect(content.length).toBeLessThanOrEqual(4000)
+  })
+
+  it('has a Roka-voice phrase for every supported memory predicate', () => {
+    expect(PREDICATE_PHRASES).toMatchObject({
+      nickname: expect.any(String),
+      language_spoken: expect.any(String),
+      nationality: expect.any(String),
+      pronouns: expect.any(String),
+      pets: expect.any(String),
+      daily_routine: expect.any(String),
+      diet: expect.any(String),
+      general_occupation: expect.any(String),
+      likes: expect.any(String),
+      dislikes: expect.any(String),
+      favorite_anime: expect.any(String),
+      favorite_game: expect.any(String),
+      favorite_music: expect.any(String),
+      hobby: expect.any(String),
+      currently_watching: expect.any(String),
+      relationship_to: expect.any(String),
+      friend_group: expect.any(String),
+      communication_style: expect.any(String),
+      humor_style: expect.any(String),
+      catchphrase: expect.any(String),
+      teasing_habit: expect.any(String),
+      recommends: expect.any(String),
+      complains_about: expect.any(String),
+      strong_opinion: expect.any(String),
+      misc: expect.any(String)
+    })
   })
 
   it('renders e2e-only nerd metrics, including nonzero failures and word estimates', async () => {

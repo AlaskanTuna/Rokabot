@@ -104,14 +104,74 @@ const MOOD_FALLBACKS: Record<ToneKey, string> = {
 }
 
 export const PREDICATE_PHRASES: Record<string, string> = {
+  nickname: 'I remember what they like to be called~',
+  language_spoken: 'I remember which words feel like home to them~',
+  nationality: 'I remember where their story begins~',
+  pronouns: 'I remember how they like to be addressed~',
+  pets: 'I remember their adorable little companions~',
+  daily_routine: 'I remember the rhythm of their day~',
+  diet: 'I remember what keeps them happily fed~',
+  general_occupation: 'I remember what keeps their days busy~',
+  likes: 'I remember the things they like~',
+  dislikes: 'I remember the things they are not fond of~',
   favorite_anime: 'I remember their favorite anime~',
-  favorite_food: 'I remember their favorite food~',
   favorite_game: 'I remember their favorite game~',
-  hobbies: 'I remember what they enjoy doing~',
-  preferences: 'I remember their little preferences~',
-  birthday: 'I remember their special day~',
-  timezone: 'I remember when their day begins~',
-  pronouns: 'I remember how they like to be addressed~'
+  favorite_music: 'I remember the music they hold close~',
+  hobby: 'I remember what they enjoy doing~',
+  currently_watching: 'I remember what they have been watching~',
+  relationship_to: 'I remember who they hold dear~',
+  friend_group: 'I remember who they spend time with~',
+  communication_style: 'I remember how they like to talk~',
+  humor_style: 'I remember what makes them laugh~',
+  catchphrase: 'I remember the words they always say~',
+  teasing_habit: 'I remember the way they tease~',
+  recommends: 'I remember their little recommendations~',
+  complains_about: 'I remember what gets under their skin~',
+  strong_opinion: 'I remember what they feel strongly about~',
+  misc: 'I remember a little something about them~'
+}
+
+export const HUMANIZED_LABEL: Record<string, string> = {
+  nickname: 'Nickname',
+  language_spoken: 'Languages',
+  nationality: 'Nationality',
+  pronouns: 'Pronouns',
+  pets: 'Pets',
+  daily_routine: 'Routine',
+  diet: 'Diet',
+  general_occupation: 'Work',
+  likes: 'Likes',
+  dislikes: 'Dislikes',
+  favorite_anime: 'Favorite Anime',
+  favorite_game: 'Favorite Game',
+  favorite_music: 'Favorite Music',
+  hobby: 'Hobbies',
+  currently_watching: 'Watching',
+  relationship_to: 'Relationships',
+  friend_group: 'Friends',
+  communication_style: 'How They Talk',
+  humor_style: 'Sense of Humor',
+  catchphrase: 'Catchphrases',
+  teasing_habit: 'Teasing',
+  recommends: 'Recommendations',
+  complains_about: 'Pet Peeves',
+  strong_opinion: 'Strong Opinions',
+  misc: 'Misc'
+}
+
+export const DOMINANT_TONE_ADJECTIVES: Record<ToneKey, string> = {
+  domestic: 'cozy',
+  playful: 'lively',
+  flustered: 'easily flustered',
+  sincere: 'heartfelt',
+  curious: 'inquisitive',
+  annoyed: 'feisty',
+  tender: 'gentle',
+  confident: 'bold',
+  nostalgic: 'sentimental',
+  mischievous: 'cheeky',
+  sleepy: 'drowsy',
+  competitive: 'spirited'
 }
 
 function sinceFor(days: number): number {
@@ -160,7 +220,7 @@ function toneCounts(guildId: string, sinceMs: number): { tone: ToneKey; count: n
 }
 
 function predicateLabel(predicate: string): string {
-  return titleCase(predicate)
+  return HUMANIZED_LABEL[predicate] ?? titleCase(predicate)
 }
 
 function predicatePhrase(predicate: string): string {
@@ -208,7 +268,7 @@ function buildOverview(guildId: string, guild: Guild, sinceMs: number, container
   const reachHer = triggers.map(({ trigger, count }) => `${titleCase(trigger)}: ${formatNumber(count)}`).join(' · ')
 
   container
-    .addTextDisplayComponents(text('**Roka’s Server Ledger**\n-# Overview · Last 30 Days'))
+    .addTextDisplayComponents(text('# Overview\n-# Last 30 Days'))
     .addSeparatorComponents(separator())
     .addTextDisplayComponents(
       text(
@@ -216,10 +276,7 @@ function buildOverview(guildId: string, guild: Guild, sinceMs: number, container
           '### 📊 Conversation',
           stat('Chats This Month', formatNumber(chats)),
           stat('Unique Chatters', formatNumber(uniqueChatters(guildId, sinceMs))),
-          stat(
-            'Busiest Channel',
-            channel ? `<#${channel.channelId}> · #${channelName} · ${formatNumber(channel.count)}` : 'No chats yet'
-          ),
+          stat('Busiest Channel', channel ? `#${channelName} (${formatNumber(channel.count)} chats)` : 'No chats yet'),
           stat(
             'Most Active Day',
             activeDay ? `${activeDay.day} · ${formatNumber(activeDay.count)} chats` : 'No chats yet'
@@ -247,7 +304,7 @@ function buildMood(guildId: string, sinceMs: number, container: ContainerBuilder
   const total = tones.reduce((sum, entry) => sum + entry.count, 0)
   const [dominant, runnerUp, third] = tones
   const summary = dominant
-    ? `Mostly ${dominant.tone} (\`${Math.round((dominant.count / total) * 100)}%\`), with ${runnerUp?.tone ?? 'no runner-up'} (\`${runnerUp ? Math.round((runnerUp.count / total) * 100) : 0}%\`) and ${third?.tone ?? 'no third mood'} (\`${third ? Math.round((third.count / total) * 100) : 0}%\`) close behind`
+    ? `Mostly ${dominant.tone} (\`${Math.round((dominant.count / total) * 100)}%\`), with ${runnerUp?.tone ?? 'no runner-up'} (\`${runnerUp ? Math.round((runnerUp.count / total) * 100) : 0}%\`) and ${third?.tone ?? 'no third mood'} (\`${third ? Math.round((third.count / total) * 100) : 0}%\`) close behind. This is a ${DOMINANT_TONE_ADJECTIVES[dominant.tone]} server!`
     : 'The server mood is waiting for its first little chat'
   const moodLines = tones
     .slice(0, 3)
@@ -257,33 +314,40 @@ function buildMood(guildId: string, sinceMs: number, container: ContainerBuilder
 
   container
     .setAccentColor(getToneStyle(dominant?.tone ?? 'playful').color)
-    .addTextDisplayComponents(
-      text(`**${getMoodLabel(dominant?.tone ?? null, runnerUp?.tone ?? null)}**\n-# Mood · Last 30 Days`)
-    )
+    .addTextDisplayComponents(text('# Mood\n-# Last 30 Days'))
     .addSeparatorComponents(separator())
-    .addTextDisplayComponents(text(['### 🎭 Top 3 Moods', ...moodLines].join('\n')))
+    .addTextDisplayComponents(
+      text(
+        [
+          '### 🎭 Top 3 Moods',
+          stat('Server Mood', getMoodLabel(dominant?.tone ?? null, runnerUp?.tone ?? null)),
+          ...moodLines
+        ].join('\n')
+      )
+    )
     .addTextDisplayComponents(text(`-# ${summary}`))
 
   return renderMoodDonut(tones)
 }
 
 async function buildMemory(guildId: string, guild: Guild, sinceMs: number, container: ContainerBuilder) {
-  const predicates = topPredicates(guildId, sinceMs)
+  const botUserId = guild.client.user.id
+  const predicates = topPredicates(guildId, sinceMs, botUserId)
   const predicateText = predicates.length
-    ? `Mostly ${predicates.map(({ predicate }) => `\`${predicateLabel(predicate)}\``).join(' and ')}`
-    : 'No memory categories yet'
+    ? `> **Mostly Remembers:** ${predicates.map(({ predicate }) => `\`${predicateLabel(predicate)}\``).join(' · ')}`
+    : '> **Mostly Remembers:** No memory categories yet'
 
   container
-    .addTextDisplayComponents(text('**Roka’s Memory Ledger**\n-# Memory · Last 30 Days'))
+    .addTextDisplayComponents(text('# Memory\n-# Last 30 Days'))
     .addSeparatorComponents(separator())
     .addTextDisplayComponents(
       text(
         [
           '### 🌸 Remembering Together',
-          stat('Active Memories', formatNumber(activeClaimCount(guildId))),
-          stat('Members Remembered', formatNumber(distinctRememberedUsers(guildId))),
-          stat('New This Month', formatNumber(newClaimsThisMonth(guildId, sinceMs))),
-          stat('Mostly Remembers', predicateText)
+          stat('Active Memories', formatNumber(activeClaimCount(guildId, botUserId))),
+          stat('Members Remembered', formatNumber(distinctRememberedUsers(guildId, botUserId))),
+          stat('New This Month', formatNumber(newClaimsThisMonth(guildId, sinceMs, botUserId))),
+          predicateText
         ].join('\n')
       )
     )
@@ -291,7 +355,7 @@ async function buildMemory(guildId: string, guild: Guild, sinceMs: number, conta
     .addTextDisplayComponents(text('### 🌸 Who She Knows Best'))
 
   const members = await Promise.all(
-    topRememberedMembers(guildId, sinceMs).map(async (entry) => {
+    topRememberedMembers(guildId, sinceMs, botUserId).map(async (entry) => {
       try {
         const member = await guild.members.fetch(entry.userId)
         return member ? { ...entry, member } : null
@@ -306,7 +370,7 @@ async function buildMemory(guildId: string, guild: Guild, sinceMs: number, conta
       new SectionBuilder()
         .addTextDisplayComponents(
           text(
-            `**${entry.member.displayName}**\n\`${formatNumber(entry.count)}\` memories · ${predicatePhrase(entry.predicate)}`
+            `**${entry.member.displayName}**\n\`${formatNumber(entry.count)}\` memories\n> ${predicatePhrase(entry.predicate)}`
           )
         )
         .setThumbnailAccessory(new ThumbnailBuilder({ media: { url: entry.member.displayAvatarURL() } }))
@@ -315,7 +379,7 @@ async function buildMemory(guildId: string, guild: Guild, sinceMs: number, conta
   container.addTextDisplayComponents(
     text('-# I keep the details tucked safely away, but I do remember the important things.')
   )
-  return renderMemoryGrowth(memoryGrowthSeries(guildId, sinceMs))
+  return renderMemoryGrowth(memoryGrowthSeries(guildId, sinceMs, botUserId))
 }
 
 function buildNerd(guildId: string, sinceMs: number, container: ContainerBuilder) {
@@ -334,7 +398,7 @@ function buildNerd(guildId: string, sinceMs: number, container: ContainerBuilder
   const retryPercent = success.total === 0 ? 0 : Math.round((retries.retriedChats / success.total) * 100)
 
   container
-    .addTextDisplayComponents(text('**Roka’s Quiet Mechanics**\n-# Nerd · Last 30 Days'))
+    .addTextDisplayComponents(text('# Nerd\n-# Last 30 Days'))
     .addSeparatorComponents(separator())
     .addTextDisplayComponents(
       text(
