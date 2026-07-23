@@ -1,5 +1,5 @@
 import type { Client, Interaction } from 'discord.js'
-import { DiscordAPIError } from 'discord.js'
+import { DiscordAPIError, MessageFlags } from 'discord.js'
 import { type ImageAttachment, generateResponse } from '../../agent/roka.js'
 import { type ResponseEventInput, recordResponseEvent } from '../../storage/metricsStore.js'
 import { logger } from '../../utils/logger.js'
@@ -22,7 +22,36 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
     if (!interaction.isChatInputCommand()) return
 
     if (interaction.commandName === 'stats') {
-      await handleStatsCommand(interaction)
+      try {
+        await handleStatsCommand(interaction)
+      } catch (error) {
+        if (isIgnorableDiscordError(error)) {
+          logger.warn(
+            { error, channelId: interaction.channelId, code: (error as DiscordAPIError).code },
+            'Discord API error (ignored)'
+          )
+          return
+        }
+        const errDetail =
+          error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : error
+        logger.error({ error: errDetail, channelId: interaction.channelId }, 'Error handling /stats command')
+        try {
+          if (interaction.deferred || interaction.replied) {
+            await interaction.editReply({ content: getRandomError() })
+          } else {
+            await interaction.reply({ content: getRandomError(), flags: MessageFlags.Ephemeral })
+          }
+        } catch (replyError) {
+          if (isIgnorableDiscordError(replyError)) {
+            logger.warn(
+              { error: replyError, channelId: interaction.channelId },
+              'Could not send stats error reply (ignored)'
+            )
+          } else {
+            logger.error({ error: replyError, channelId: interaction.channelId }, 'Failed to send stats error reply')
+          }
+        }
+      }
       return
     }
 

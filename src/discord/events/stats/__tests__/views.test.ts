@@ -20,8 +20,17 @@ const charts = vi.hoisted(() => ({
   renderToneBarChart: vi.fn()
 }))
 
+const errors = vi.hoisted(() => ({
+  error: vi.fn(),
+  warn: vi.fn()
+}))
+
 vi.mock('../queries.js', () => queries)
 vi.mock('../charts.js', () => charts)
+vi.mock('../../../errorHandler.js', () => ({ isIgnorableDiscordError: () => false }))
+vi.mock('../../../../utils/logger.js', () => ({
+  logger: { debug: vi.fn(), error: errors.error, info: vi.fn(), warn: errors.warn }
+}))
 
 import { handleStatsCommand } from '../statsCommand.js'
 import { TONE_KAOMOJI, buildStatsView } from '../views.js'
@@ -249,5 +258,79 @@ describe('/stats views', () => {
     const ended = selectsFor(editReply.mock.calls.at(-1)![0])
     expect(ended).toHaveLength(2)
     expect(ended.every((select) => select.disabled)).toBe(true)
+  })
+
+  it('acknowledges /stats in DMs with an ephemeral in-character decline', async () => {
+    const reply = vi.fn().mockResolvedValue(undefined)
+    const interaction = { guildId: null, reply } as never
+
+    await expect(handleStatsCommand(interaction)).resolves.toBeUndefined()
+
+    expect(reply).toHaveBeenCalledWith(
+      expect.objectContaining({ content: expect.stringContaining('shop floor'), flags: expect.any(Number) })
+    )
+  })
+
+  it('logs an initial render failure and returns an in-character error reply', async () => {
+    queries.topTones.mockImplementationOnce(() => {
+      throw new Error('stats database unavailable')
+    })
+    const editReply = vi.fn().mockResolvedValue(undefined)
+    const interaction = {
+      guildId: 'guild-1',
+      user: { id: 'owner-1' },
+      deferred: true,
+      replied: false,
+      deferReply: vi.fn().mockResolvedValue(undefined),
+      editReply,
+      reply: vi.fn().mockResolvedValue(undefined)
+    } as never
+
+    await expect(handleStatsCommand(interaction)).resolves.toBeUndefined()
+
+    expect(errors.error).toHaveBeenCalledWith(
+      expect.objectContaining({ guildId: 'guild-1' }),
+      'Error handling /stats command'
+    )
+    expect(editReply).toHaveBeenCalledWith(expect.objectContaining({ content: expect.any(String) }))
+  })
+
+  it('logs collector failures without rejecting the event callback', async () => {
+    const handlers: Record<string, (component: never) => Promise<void>> = {}
+    const collector = {
+      on: vi.fn((event: string, handler: (component: never) => Promise<void>) => {
+        handlers[event] = handler
+        return collector
+      })
+    }
+    const reply = { createMessageComponentCollector: vi.fn(() => collector) }
+    const interaction = {
+      guildId: 'guild-1',
+      user: { id: 'owner-1' },
+      deferred: true,
+      replied: false,
+      deferReply: vi.fn().mockResolvedValue(undefined),
+      editReply: vi.fn().mockResolvedValue(reply),
+      reply: vi.fn().mockResolvedValue(undefined)
+    } as never
+
+    await handleStatsCommand(interaction)
+
+    await expect(
+      handlers.collect({
+        user: { id: 'owner-1' },
+        customId: 'stats:view:7d',
+        values: ['nerd'],
+        deferred: false,
+        replied: false,
+        reply: vi.fn().mockResolvedValue(undefined),
+        update: vi.fn().mockRejectedValue(new Error('update expired'))
+      } as never)
+    ).resolves.toBeUndefined()
+
+    expect(errors.error).toHaveBeenCalledWith(
+      expect.objectContaining({ guildId: 'guild-1' }),
+      'Error updating /stats view'
+    )
   })
 })

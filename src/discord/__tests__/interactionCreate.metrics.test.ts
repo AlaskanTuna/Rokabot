@@ -4,6 +4,8 @@ const mocks = vi.hoisted(() => ({
   generateResponse: vi.fn(),
   recordResponseEvent: vi.fn(),
   info: vi.fn(),
+  error: vi.fn(),
+  warn: vi.fn(),
   gameCommandHandler: vi.fn(),
   toolCommandHandler: vi.fn(),
   handleStatsCommand: vi.fn(),
@@ -13,7 +15,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../agent/roka.js', () => ({ generateResponse: mocks.generateResponse }))
 vi.mock('../../storage/metricsStore.js', () => ({ recordResponseEvent: mocks.recordResponseEvent }))
 vi.mock('../../utils/logger.js', () => ({
-  logger: { debug: vi.fn(), error: vi.fn(), info: mocks.info, warn: vi.fn() }
+  logger: { debug: vi.fn(), error: mocks.error, info: mocks.info, warn: mocks.warn }
 }))
 vi.mock('../concurrency.js', () => ({ isChannelBusy: () => false, markBusy: vi.fn(), markFree: vi.fn() }))
 vi.mock('../errorHandler.js', () => ({ isIgnorableDiscordError: () => false }))
@@ -130,5 +132,26 @@ describe('interaction handler metrics', () => {
     expect(mocks.handleStatsCommand).toHaveBeenCalledWith(interaction)
     expect(mocks.gameCommandHandler).not.toHaveBeenCalled()
     expect(mocks.toolCommandHandler).not.toHaveBeenCalled()
+  })
+
+  it('contains stats handler failures and sends an error reply', async () => {
+    mocks.handleStatsCommand.mockRejectedValueOnce(new Error('stats database unavailable'))
+    const interaction = {
+      isChatInputCommand: () => true,
+      commandName: 'stats',
+      channelId: 'channel-1',
+      deferred: false,
+      replied: false,
+      reply: vi.fn().mockResolvedValue(undefined)
+    }
+    const rateLimiter = { tryConsume: vi.fn(() => true), remainingRpm: 14, remainingRpd: 499 }
+
+    await expect(createInteractionHandler(rateLimiter as never)(interaction as never)).resolves.toBeUndefined()
+
+    expect(mocks.error).toHaveBeenCalledWith(
+      expect.objectContaining({ channelId: 'channel-1' }),
+      'Error handling /stats command'
+    )
+    expect(interaction.reply).toHaveBeenCalledWith(expect.objectContaining({ content: 'error' }))
   })
 })

@@ -404,7 +404,7 @@ flowchart LR
 
     Database[(Pi SQLite DB)] --> Export[npm run export:vault]
     Export --> Vault[data/vault]
-    Vault --> Transfer[rsync or scp over Tailscale]
+    Vault --> Transfer[Copy to your desktop]
     Transfer --> Desktop[Desktop]
     Desktop --> Obsidian[Obsidian]
 ```
@@ -418,15 +418,15 @@ flowchart LR
 1. On the Pi, run the export against the live SQLite database.
 2. The default destination is `data/vault/`; set `MEMORY_VAULT_EXPORT_DIR` to write a different destination.
 3. Treat the result as a read-only static snapshot. Re-run the export whenever you want it refreshed.
-4. Copy it over Tailscale to a desktop, then open the copied folder as an Obsidian vault to browse the per-guild memory graph.
+4. Copy it to a desktop machine, then open the copied folder as an Obsidian vault to browse the per-guild memory graph.
 
 ```bash
-cd ~/rokabot
+cd /path/to/rokabot
 npm run export:vault
-rsync -av ~/rokabot/data/vault/ desktop-user@desktop-host:~/Rokabot-vault/
+rsync -av data/vault/ desktop-user@desktop-host:~/Rokabot-vault/
 ```
 
-Obsidian belongs on the desktop, not the Pi: it is a graphical desktop application, while the Pi is kept focused on the bot and has limited disk headroom (about 80% used).
+Obsidian belongs on the desktop, not the Pi: it is a graphical desktop application, while the Pi is kept focused on the bot as a headless server.
 
 <p align="right"><a href="#readme-top">↑</a></p>
 
