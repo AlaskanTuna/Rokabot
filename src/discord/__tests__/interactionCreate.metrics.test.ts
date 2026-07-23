@@ -45,7 +45,7 @@ const metrics = {
 describe('interaction handler metrics', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mocks.generateResponse.mockResolvedValue({ text: 'Hello~', tone: 'playful', metrics })
+    mocks.generateResponse.mockResolvedValue({ text: 'Hello~', tone: 'playful', toolsUsed: [], metrics })
   })
 
   it('records one completed slash turn with an enriched summary', async () => {
@@ -72,6 +72,7 @@ describe('interaction handler metrics', () => {
         userId: 'user-1',
         trigger: 'slash',
         tone: 'playful',
+        toolsUsed: [],
         ...metrics,
         e2eMs: expect.any(Number)
       })
@@ -118,6 +119,7 @@ describe('interaction handler metrics', () => {
       '-# 🌸 cast the fortune dice'
     )
     expect(JSON.stringify(interaction.followUp.mock.calls[0][0].components[0].toJSON())).not.toContain('-# 🌸')
+    expect(mocks.recordResponseEvent).toHaveBeenCalledWith(expect.objectContaining({ toolsUsed: ['roll_dice'] }))
   })
 
   it('dispatches stats interactions to the stats command handler', async () => {

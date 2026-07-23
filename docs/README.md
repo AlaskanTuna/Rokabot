@@ -66,17 +66,43 @@ She can chat with a server, remember useful context within its own guild boundar
 - **Games:** Buddy Pets, Hangman, and Shiritori, with SQLite-backed progress and leaderboards.
 - **Interaction & UX:** Rule-based tone detection, expression thumbnails, Components V2 replies, emoji reactions, rate limits, and per-channel concurrency protection.
 
-| Command or Capability  | Use                                                                                          |
-| ---------------------- | -------------------------------------------------------------------------------------------- |
-| `/chat`                | Talk with Roka; optionally attach an image.                                                  |
-| `/gacha`               | Hatch, view, pet, inspect stats, browse collection, read the guide, or view the leaderboard. |
-| `/hangman`             | Start and play a word-guessing game.                                                         |
-| `/shiritori`           | Start, join, and score a word-chain game.                                                    |
-| `/search`              | Search the web for current information.                                                      |
-| `/anime`               | Search or browse anime, or search or browse airing schedules.                                |
-| `/remind`              | Create, list, and cancel reminders.                                                          |
-| `/stats`               | Explore overview, mood, memory, and nerd analytics with selectable windows and charts.       |
-| In-Conversation Memory | Recall or save useful user facts within the current guild.                                   |
+| Command or Capability  | Use                                                                                                                                                                                                                                          |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/chat`                | Talk with Roka; optionally attach an image.                                                                                                                                                                                                  |
+| `/gacha`               | Hatch, view, pet, inspect stats, browse collection, read the guide, or view the leaderboard.                                                                                                                                                 |
+| `/hangman`             | Start and play a word-guessing game.                                                                                                                                                                                                         |
+| `/shiritori`           | Start, join, and score a word-chain game.                                                                                                                                                                                                    |
+| `/search`              | Search the web for current information.                                                                                                                                                                                                      |
+| `/anime`               | Search or browse anime, or search or browse airing schedules.                                                                                                                                                                                |
+| `/remind`              | Create, list, and cancel reminders.                                                                                                                                                                                                          |
+| `/stats`               | Explore four fixed, non-overlapping Last 30 Days views with no window selector: Overview (activity, heatmap, channel histogram); Mood (label, donut); Memory (who she knows best, growth curve); Nerd (latency, reliability, volume, trend). |
+| In-Conversation Memory | Recall or save useful user facts within the current guild.                                                                                                                                                                                   |
+
+### Tool Footer
+
+When Roka uses a tool mid-conversation, her reply ends with a small footer line (e.g. `🌸 cast the fortune dice · divined today's weather • <relative timestamp>`, rendered by Discord as "2 minutes ago") noting each tool she invoked, phrased as a little shrine ritual. Up to three labels are shown (`…and more` beyond that). Every tool below is available implicitly in chat — Roka decides when to call it; some also have an explicit slash command.
+
+<details>
+<summary><strong>Footer Labels & Tool Availability</strong></summary>
+
+| Tool                 | Footer Label                 | Slash Command | Implicit In Chat |
+| -------------------- | ---------------------------- | ------------- | ---------------- |
+| `roll_dice`          | cast the fortune dice        | —             | ✅               |
+| `flip_coin`          | tossed a shrine coin         | —             | ✅               |
+| `get_current_time`   | peeked at the temple clock   | —             | ✅               |
+| `get_weather`        | divined today's weather      | —             | ✅               |
+| `search_web`         | searched the wider world     | `/search`     | ✅               |
+| `search_anime`       | leafed through anime scrolls | `/anime`      | ✅               |
+| `get_anime_schedule` | checked the airing almanac   | `/anime`      | ✅               |
+| `set_reminder`       | tied a reminder charm        | `/remind`     | ✅               |
+| `list_reminders`     | counted her reminder charms  | `/remind`     | ✅               |
+| `cancel_reminder`    | untied a reminder charm      | `/remind`     | ✅               |
+| `remember_user`      | pressed a memory flower      | —             | ✅               |
+| `recall_user`        | recalled a pressed memory    | —             | ✅               |
+
+Passive memory extraction runs automatically in the background through the per-message pipeline, while `remember_user` is only invoked when someone explicitly asks Roka to remember something.
+
+</details>
 
 <p align="right"><a href="#readme-top">↑</a></p>
 

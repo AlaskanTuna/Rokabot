@@ -127,6 +127,7 @@ function createTables(database: Database.Database): void {
       retries INTEGER NOT NULL,
       tokens_in_est INTEGER NOT NULL,
       tokens_out_est INTEGER NOT NULL,
+      tools_used TEXT DEFAULT NULL,
       created_at INTEGER NOT NULL
     );
 
@@ -189,6 +190,11 @@ export function runMigrations(database: Database.Database): void {
   }
   if (!gdColNames.has('last_hatch_at')) {
     database.exec('ALTER TABLE gacha_daily ADD COLUMN last_hatch_at INTEGER')
+  }
+
+  const responseEventCols = database.prepare("PRAGMA table_info('response_events')").all() as Array<{ name: string }>
+  if (responseEventCols.length > 0 && !responseEventCols.some((column) => column.name === 'tools_used')) {
+    database.exec('ALTER TABLE response_events ADD COLUMN tools_used TEXT DEFAULT NULL')
   }
 
   const buddyIndexes = database.prepare("PRAGMA index_list('buddy')").all() as Array<{ name: string; unique: number }>

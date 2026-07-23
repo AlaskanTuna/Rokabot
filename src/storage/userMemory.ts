@@ -41,13 +41,13 @@ export function saveFact(guildId: string, userId: string, key: string, value: st
   return true
 }
 
-/** Get all stored facts for a user in a guild (falls back to 'global' for pre-migration facts) */
+/** Get all stored facts for a user in a guild; scopes never cross ('global' rows are DM-only) */
 export function getFacts(guildId: string, userId: string): Array<{ key: string; value: string }> {
   const db = getDb()
   const rows = db
     .prepare(
       `SELECT fact_key, fact_value FROM user_memory
-       WHERE guild_id IN (?, 'global') AND user_id = ?
+       WHERE guild_id = ? AND user_id = ?
        ORDER BY updated_at DESC`
     )
     .all(guildId, userId) as Array<{ fact_key: string; fact_value: string }>

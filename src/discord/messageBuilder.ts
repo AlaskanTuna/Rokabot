@@ -48,7 +48,9 @@ export function buildRokaMessage(text: string, tone: ToneKey, toolsUsed: readonl
     const suffix = toolLabels.length > visibleLabels.length ? ' …and more' : ''
     container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
     container.addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(`-# 🌸 ${visibleLabels.join(' · ')}${suffix}`)
+      new TextDisplayBuilder().setContent(
+        `-# 🌸 ${visibleLabels.join(' · ')}${suffix} • <t:${Math.floor(Date.now() / 1000)}:R>`
+      )
     )
   }
 

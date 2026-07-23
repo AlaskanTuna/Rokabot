@@ -3,6 +3,7 @@
 import { FunctionTool } from '@google/adk'
 import { z } from 'zod'
 import { config } from '../../config.js'
+import { findUserByName } from '../../storage/userNames.js'
 import { flipCoin } from './flipCoin.js'
 import { getAnimeSchedule } from './getAnimeSchedule.js'
 import { getCurrentTime } from './getCurrentTime.js'
@@ -142,11 +143,21 @@ export const rememberUserTool = new FunctionTool({
 export const recallUserTool = new FunctionTool({
   name: 'recall_user',
   description:
-    'Recall stored facts about the current user. Use when you want to check what you remember about them. The user ID is filled in automatically.',
-  parameters: z.object({}),
-  execute: async (_input, toolContext) => {
+    'Look up what you remember about a server member. Call this whenever another member is the topic of the message — a direct question ("what do you know about X?"), a story or claim involving them ("X promised to attend the seminar"), or a request about them — not only explicit memory questions. Call it even if you might have no notes; an empty result is fine. Omit user_name to recall facts about the current speaker.',
+  parameters: z.object({
+    user_name: z
+      .string()
+      .describe('Name or nickname of the server member to recall. Omit to recall the current user.')
+      .optional()
+  }),
+  execute: async (input, toolContext) => {
     const userId = toolContext?.state?.get<string>('_userId') ?? 'unknown'
     const guildId = toolContext?.state?.get<string>('_guildId') ?? 'global'
+    if (input.user_name) {
+      const user = findUserByName(input.user_name, guildId)
+      if (!user) return { facts: "I don't know anyone by that name here yet.", factCount: 0 }
+      return recallUser({ user_id: user.userId, guild_id: guildId })
+    }
     return recallUser({ user_id: userId, guild_id: guildId })
   }
 })

@@ -3,21 +3,14 @@ import type { ChatInputCommandInteraction, RepliableInteraction } from 'discord.
 import { logger } from '../../../utils/logger.js'
 import { isIgnorableDiscordError } from '../../errorHandler.js'
 import { getRandomError } from '../../responses.js'
-import { STATS_VIEWS, STATS_WINDOWS, type StatsView, type StatsWindow, buildStatsView } from './views.js'
+import { STATS_VIEWS, type StatsView, buildStatsView } from './views.js'
 
 function isStatsView(value: string | undefined): value is StatsView {
   return value !== undefined && (STATS_VIEWS as readonly string[]).includes(value)
 }
 
-function isStatsWindow(value: string | undefined): value is StatsWindow {
-  return value !== undefined && (STATS_WINDOWS as readonly string[]).includes(value)
-}
-
-function selectionFor(customId: string, value: string | undefined): { view: StatsView; window: StatsWindow } | null {
-  const [kind, dimension] = customId.split(':').slice(1)
-  if (kind === 'view' && isStatsWindow(dimension) && isStatsView(value)) return { view: value, window: dimension }
-  if (kind === 'window' && isStatsView(dimension) && isStatsWindow(value)) return { view: dimension, window: value }
-  return null
+function selectionFor(customId: string, value: string | undefined): StatsView | null {
+  return customId === 'stats:view' && isStatsView(value) ? value : null
 }
 
 function logStatsError(error: unknown, guildId: string | null, message: string) {
@@ -55,10 +48,14 @@ export async function handleStatsCommand(interaction: ChatInputCommandInteractio
   }
 
   let view: StatsView = 'overview'
-  let window: StatsWindow = '7d'
+  const guild = interaction.guild
+  if (!guild) {
+    await sendStatsError(interaction, interaction.guildId)
+    return
+  }
   try {
     await interaction.deferReply()
-    const reply = await interaction.editReply(await buildStatsView(interaction.guildId, view, window))
+    const reply = await interaction.editReply(await buildStatsView(interaction.guildId, guild, view))
     const collector = reply.createMessageComponentCollector({
       componentType: ComponentType.StringSelect,
       time: 120_000
@@ -76,9 +73,8 @@ export async function handleStatsCommand(interaction: ChatInputCommandInteractio
 
         const selection = selectionFor(selectInteraction.customId, selectInteraction.values[0])
         if (!selection) return
-        view = selection.view
-        window = selection.window
-        await selectInteraction.update(await buildStatsView(interaction.guildId!, selection.view, selection.window))
+        view = selection
+        await selectInteraction.update(await buildStatsView(interaction.guildId!, guild, selection))
       } catch (error) {
         logStatsError(error, interaction.guildId, 'Error updating /stats view')
         await sendStatsError(selectInteraction, interaction.guildId)
@@ -87,7 +83,7 @@ export async function handleStatsCommand(interaction: ChatInputCommandInteractio
 
     collector.on('end', async () => {
       try {
-        await interaction.editReply(await buildStatsView(interaction.guildId!, view, window, true))
+        await interaction.editReply(await buildStatsView(interaction.guildId!, guild, view, true))
       } catch (error) {
         logStatsError(error, interaction.guildId, 'Error closing /stats view')
       }

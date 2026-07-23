@@ -243,7 +243,7 @@ describe('generateResponse metrics', () => {
 
     const expectedTokensIn =
       estimateTokens(
-        `${assembleSystemPrompt({ tone: result.tone, participants: ['Mio'], hour: 12, displayName: 'Mio' })}\n\n- The current user's Discord ID is "mio-id". Use this ID (not their name) when calling remember_user or recall_user tools.`
+        `${assembleSystemPrompt({ tone: result.tone, participants: ['Mio'], hour: 12, displayName: 'Mio' })}\n\n- The current user's Discord ID is "mio-id". remember_user and recall_user target the current user automatically; to recall a different server member, pass their name as user_name.`
       ) +
       estimateTokens(JSON.stringify(rokaTools)) +
       estimateTokens('[Mio]: Hello metrics.')
@@ -394,7 +394,7 @@ describe('generateResponse prompt safety', () => {
       `\n\n## What You Remember About People In This Channel\n${buildFactsEnvelope([
         { person: 'mio (Mio)', facts: [{ key: 'favorite anime', value: 'Frieren' }] }
       ])}` +
-      '\n\n- The current user\'s Discord ID is "mio-id". Use this ID (not their name) when calling remember_user or recall_user tools.'
+      '\n\n- The current user\'s Discord ID is "mio-id". remember_user and recall_user target the current user automatically; to recall a different server member, pass their name as user_name.'
 
     expect(capturedPrompt).toBe(expectedPrompt)
     expect(refreshFactTimestamps).toHaveBeenCalledWith('prompt-safety-guild', 'mio-id')
