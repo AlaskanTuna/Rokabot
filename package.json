@@ -26,6 +26,7 @@
   "dependencies": {
     "@google/adk": "^0.1.0",
     "@google/genai": "^1.0.0",
+    "@napi-rs/canvas": "^1.0.2",
     "better-sqlite3": "^12.9.0",
     "discord.js": "^14.26.4",
     "dotenv": "^16.5.0",

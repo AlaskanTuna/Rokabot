@@ -21,7 +21,8 @@ const mocks = vi.hoisted(() => ({
   ]),
   getActiveClaims: vi.fn(() => []),
   shouldExtract: vi.fn(() => ({ extract: true, reason: 'test signal' })),
-  enqueueAndSchedule: vi.fn()
+  enqueueAndSchedule: vi.fn(),
+  splitResponse: vi.fn((response: string) => [response])
 }))
 
 vi.mock('../../agent/roka.js', () => ({ generateResponse: mocks.generateResponse }))
@@ -42,12 +43,11 @@ vi.mock('../../utils/logger.js', () => ({
 vi.mock('../concurrency.js', () => ({ isChannelBusy: mocks.isChannelBusy, markBusy: vi.fn(), markFree: vi.fn() }))
 vi.mock('../emojiReactor.js', () => ({ shouldReact: () => null }))
 vi.mock('../errorHandler.js', () => ({ isIgnorableDiscordError: () => false }))
-vi.mock('../messageBuilder.js', () => ({ buildRokaMessage: (content: string) => content }))
 vi.mock('../responses.js', () => ({
   getRandomBusy: () => 'busy',
   getRandomDecline: () => 'decline',
   getRandomError: () => 'error',
-  splitResponse: (response: string) => [response]
+  splitResponse: mocks.splitResponse
 }))
 vi.mock('../events/gachaMention.js', () => ({ handleGachaMention: vi.fn() }))
 
@@ -78,6 +78,7 @@ function createMessage({
   referencedMessage?: object
 } = {}) {
   const reply = vi.fn().mockResolvedValue({ delete: vi.fn().mockResolvedValue(undefined) })
+  const send = vi.fn().mockResolvedValue(undefined)
 
   return {
     message: {
@@ -93,11 +94,13 @@ function createMessage({
       attachments: [],
       channel: {
         sendTyping: vi.fn().mockResolvedValue(undefined),
+        send,
         messages: { fetch: vi.fn().mockResolvedValue(referencedMessage) }
       },
       reply
     },
-    reply
+    reply,
+    send
   }
 }
 
@@ -170,7 +173,7 @@ describe('message handler metrics', () => {
       })
     ],
     ['name_keyword', createMessage({ mentioned: false, content: 'Roka, hello' })]
-  ])('records one completed %s turn with an enriched summary', async (trigger, { message }) => {
+  ])('records one completed %s turn with an enriched summary', async (trigger, { message, reply }) => {
     await createMessageHandler({ user: { id: 'bot-1' } } as never, createRateLimiter() as never)(message as never)
 
     expect(mocks.recordResponseEvent).toHaveBeenCalledOnce()
@@ -194,6 +197,23 @@ describe('message handler metrics', () => {
       expect.objectContaining({ trigger, guildId: 'guild-1', channelId: 'channel-1', userId: 'user-1', ...metrics }),
       'Response completed'
     )
+    expect(JSON.stringify(reply.mock.calls[0][0].components[0].toJSON())).not.toContain('-# 🌸')
+  })
+
+  it('renders a tool footer on the initial mention reply only', async () => {
+    mocks.generateResponse.mockResolvedValueOnce({
+      text: 'The dice have spoken~',
+      tone: 'playful',
+      toolsUsed: ['roll_dice'],
+      metrics
+    })
+    mocks.splitResponse.mockReturnValueOnce(['The dice have spoken~', 'A second thought~'])
+    const { message, reply, send } = createMessage()
+
+    await createMessageHandler({ user: { id: 'bot-1' } } as never, createRateLimiter() as never)(message as never)
+
+    expect(JSON.stringify(reply.mock.calls[0][0].components[0].toJSON())).toContain('-# 🌸 cast the fortune dice')
+    expect(JSON.stringify(send.mock.calls[0][0].components[0].toJSON())).not.toContain('-# 🌸')
   })
 
   it.each([
@@ -279,7 +299,7 @@ describe('message handler claims extraction dispatch', () => {
       )(message as never)
     ).resolves.toBeUndefined()
 
-    expect(reply).toHaveBeenCalledWith('Hello~')
+    expect(JSON.stringify(reply.mock.calls[0][0].components[0].toJSON())).toContain('Hello~')
     expect(mocks.maybeExtractFromBuffer).not.toHaveBeenCalled()
   })
 })

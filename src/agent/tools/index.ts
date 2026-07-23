@@ -27,6 +27,36 @@ export type { SearchWebParams } from './searchWeb.js'
 export type { RememberUserParams } from './rememberUser.js'
 export type { RecallUserParams } from './recallUser.js'
 
+export const rollDiceTool = new FunctionTool({
+  name: 'roll_dice',
+  description: 'Roll dice. Use when someone wants to roll dice or play a dice game.',
+  parameters: z.object({
+    count: z.number().int().describe('Number of dice to roll (1-10)').optional(),
+    sides: z.number().int().describe('Number of sides per die (2-100)').optional()
+  }),
+  execute: async (input) => rollDice(input)
+})
+
+export const flipCoinTool = new FunctionTool({
+  name: 'flip_coin',
+  description: 'Flip a coin. Use when someone wants to flip a coin or make a random heads/tails choice.',
+  execute: async () => flipCoin()
+})
+
+export const getCurrentTimeTool = new FunctionTool({
+  name: 'get_current_time',
+  description:
+    'Get the current time, date, and day of the week for a location. IMPORTANT: Always report the exact time returned by this tool — never estimate or guess the time yourself.',
+  parameters: z.object({
+    location: z
+      .string()
+      .describe('IANA timezone (e.g. Asia/Tokyo) or city name (e.g. London). Defaults to configured timezone.')
+      .optional(),
+    format: z.enum(['12h', '24h']).describe('Time format: 12h or 24h. Defaults to 24h.').optional()
+  }),
+  execute: async (input) => getCurrentTime(input)
+})
+
 export const searchAnimeTool = new FunctionTool({
   name: 'search_anime',
   description:
@@ -70,6 +100,16 @@ export const getAnimeScheduleTool = new FunctionTool({
       .optional()
   }),
   execute: async (input) => await getAnimeSchedule({ scope: input.scope ?? 'day', ...input })
+})
+
+export const getWeatherTool = new FunctionTool({
+  name: 'get_weather',
+  description:
+    "Get the current weather for a city. Defaults to the bot's configured timezone location if no city is specified. Use when someone asks about the weather, temperature, or conditions in a location.",
+  parameters: z.object({
+    city: z.string().describe('City name to get weather for. Omit to use the default location.').optional()
+  }),
+  execute: async (input) => await getWeather(input)
 })
 
 export const searchWebTool = new FunctionTool({
@@ -205,5 +245,9 @@ export const rokaTools = [
   recallUserTool,
   setReminderTool,
   listRemindersTool,
-  cancelReminderTool
+  cancelReminderTool,
+  rollDiceTool,
+  flipCoinTool,
+  getCurrentTimeTool,
+  getWeatherTool
 ]

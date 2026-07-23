@@ -1,5 +1,5 @@
 import type { Client, Interaction } from 'discord.js'
-import { DiscordAPIError } from 'discord.js'
+import { DiscordAPIError, MessageFlags } from 'discord.js'
 import { type ImageAttachment, generateResponse } from '../../agent/roka.js'
 import { type ResponseEventInput, recordResponseEvent } from '../../storage/metricsStore.js'
 import { logger } from '../../utils/logger.js'
@@ -9,6 +9,7 @@ import { isIgnorableDiscordError } from '../errorHandler.js'
 import { buildRokaMessage } from '../messageBuilder.js'
 import { getRandomBusy, getRandomDecline, getRandomError, splitResponse } from '../responses.js'
 import { createGameCommandHandler } from './gameCommands.js'
+import { handleStatsCommand } from './stats/statsCommand.js'
 import { createToolCommandHandler } from './toolCommands.js'
 
 /** Create a handler for all slash command interactions */
@@ -19,6 +20,40 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
   return async function handleInteractionCreate(interaction: Interaction): Promise<void> {
     const handlerStartMs = performance.now()
     if (!interaction.isChatInputCommand()) return
+
+    if (interaction.commandName === 'stats') {
+      try {
+        await handleStatsCommand(interaction)
+      } catch (error) {
+        if (isIgnorableDiscordError(error)) {
+          logger.warn(
+            { error, channelId: interaction.channelId, code: (error as DiscordAPIError).code },
+            'Discord API error (ignored)'
+          )
+          return
+        }
+        const errDetail =
+          error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : error
+        logger.error({ error: errDetail, channelId: interaction.channelId }, 'Error handling /stats command')
+        try {
+          if (interaction.deferred || interaction.replied) {
+            await interaction.editReply({ content: getRandomError() })
+          } else {
+            await interaction.reply({ content: getRandomError(), flags: MessageFlags.Ephemeral })
+          }
+        } catch (replyError) {
+          if (isIgnorableDiscordError(replyError)) {
+            logger.warn(
+              { error: replyError, channelId: interaction.channelId },
+              'Could not send stats error reply (ignored)'
+            )
+          } else {
+            logger.error({ error: replyError, channelId: interaction.channelId }, 'Failed to send stats error reply')
+          }
+        }
+      }
+      return
+    }
 
     if (interaction.commandName !== 'chat') {
       const handled = await handleGameCommand(interaction)
@@ -68,6 +103,7 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
       const {
         text: responseText,
         tone,
+        toolsUsed,
         metrics
       } = await generateResponse({
         channelId,
@@ -83,7 +119,7 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
 
       const chunks = splitResponse(responseText)
       logger.debug({ channelId, chunkCount: chunks.length }, 'Response split into chunks')
-      await interaction.editReply(buildRokaMessage(chunks[0], tone))
+      await interaction.editReply(buildRokaMessage(chunks[0], tone, toolsUsed))
 
       for (let i = 1; i < chunks.length; i++) {
         await interaction.followUp(buildRokaMessage(chunks[i], tone))

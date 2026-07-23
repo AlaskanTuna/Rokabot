@@ -3,25 +3,31 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   generateResponse: vi.fn(),
   recordResponseEvent: vi.fn(),
-  info: vi.fn()
+  info: vi.fn(),
+  error: vi.fn(),
+  warn: vi.fn(),
+  gameCommandHandler: vi.fn(),
+  toolCommandHandler: vi.fn(),
+  handleStatsCommand: vi.fn(),
+  splitResponse: vi.fn((response: string) => [response])
 }))
 
 vi.mock('../../agent/roka.js', () => ({ generateResponse: mocks.generateResponse }))
 vi.mock('../../storage/metricsStore.js', () => ({ recordResponseEvent: mocks.recordResponseEvent }))
 vi.mock('../../utils/logger.js', () => ({
-  logger: { debug: vi.fn(), error: vi.fn(), info: mocks.info, warn: vi.fn() }
+  logger: { debug: vi.fn(), error: mocks.error, info: mocks.info, warn: mocks.warn }
 }))
 vi.mock('../concurrency.js', () => ({ isChannelBusy: () => false, markBusy: vi.fn(), markFree: vi.fn() }))
 vi.mock('../errorHandler.js', () => ({ isIgnorableDiscordError: () => false }))
-vi.mock('../messageBuilder.js', () => ({ buildRokaMessage: (content: string) => content }))
 vi.mock('../responses.js', () => ({
   getRandomBusy: () => 'busy',
   getRandomDecline: () => 'decline',
   getRandomError: () => 'error',
-  splitResponse: (response: string) => [response]
+  splitResponse: mocks.splitResponse
 }))
-vi.mock('../events/gameCommands.js', () => ({ createGameCommandHandler: () => vi.fn() }))
-vi.mock('../events/toolCommands.js', () => ({ createToolCommandHandler: () => vi.fn() }))
+vi.mock('../events/gameCommands.js', () => ({ createGameCommandHandler: () => mocks.gameCommandHandler }))
+vi.mock('../events/stats/statsCommand.js', () => ({ handleStatsCommand: mocks.handleStatsCommand }))
+vi.mock('../events/toolCommands.js', () => ({ createToolCommandHandler: () => mocks.toolCommandHandler }))
 
 import { createInteractionHandler } from '../events/interactionCreate.js'
 
@@ -81,5 +87,71 @@ describe('interaction handler metrics', () => {
       }),
       'Response completed'
     )
+    expect(JSON.stringify(interaction.editReply.mock.calls[0][0].components[0].toJSON())).not.toContain('-# 🌸')
+  })
+
+  it('renders a tool footer on the initial slash reply only', async () => {
+    mocks.generateResponse.mockResolvedValueOnce({
+      text: 'The dice have spoken~',
+      tone: 'playful',
+      toolsUsed: ['roll_dice'],
+      metrics
+    })
+    mocks.splitResponse.mockReturnValueOnce(['The dice have spoken~', 'A second thought~'])
+    const interaction = {
+      isChatInputCommand: () => true,
+      commandName: 'chat',
+      options: { getString: vi.fn(() => 'roll a die'), getAttachment: vi.fn() },
+      channelId: 'channel-1',
+      member: null,
+      user: { displayName: 'Alice', username: 'alice', id: 'user-1' },
+      guildId: 'guild-1',
+      deferReply: vi.fn().mockResolvedValue(undefined),
+      editReply: vi.fn().mockResolvedValue(undefined),
+      followUp: vi.fn().mockResolvedValue(undefined)
+    }
+    const rateLimiter = { tryConsume: vi.fn(() => true), remainingRpm: 14, remainingRpd: 499 }
+
+    await createInteractionHandler(rateLimiter as never)(interaction as never)
+
+    expect(JSON.stringify(interaction.editReply.mock.calls[0][0].components[0].toJSON())).toContain(
+      '-# 🌸 cast the fortune dice'
+    )
+    expect(JSON.stringify(interaction.followUp.mock.calls[0][0].components[0].toJSON())).not.toContain('-# 🌸')
+  })
+
+  it('dispatches stats interactions to the stats command handler', async () => {
+    const interaction = {
+      isChatInputCommand: () => true,
+      commandName: 'stats'
+    }
+    const rateLimiter = { tryConsume: vi.fn(() => true), remainingRpm: 14, remainingRpd: 499 }
+
+    await createInteractionHandler(rateLimiter as never)(interaction as never)
+
+    expect(mocks.handleStatsCommand).toHaveBeenCalledWith(interaction)
+    expect(mocks.gameCommandHandler).not.toHaveBeenCalled()
+    expect(mocks.toolCommandHandler).not.toHaveBeenCalled()
+  })
+
+  it('contains stats handler failures and sends an error reply', async () => {
+    mocks.handleStatsCommand.mockRejectedValueOnce(new Error('stats database unavailable'))
+    const interaction = {
+      isChatInputCommand: () => true,
+      commandName: 'stats',
+      channelId: 'channel-1',
+      deferred: false,
+      replied: false,
+      reply: vi.fn().mockResolvedValue(undefined)
+    }
+    const rateLimiter = { tryConsume: vi.fn(() => true), remainingRpm: 14, remainingRpd: 499 }
+
+    await expect(createInteractionHandler(rateLimiter as never)(interaction as never)).resolves.toBeUndefined()
+
+    expect(mocks.error).toHaveBeenCalledWith(
+      expect.objectContaining({ channelId: 'channel-1' }),
+      'Error handling /stats command'
+    )
+    expect(interaction.reply).toHaveBeenCalledWith(expect.objectContaining({ content: 'error' }))
   })
 })

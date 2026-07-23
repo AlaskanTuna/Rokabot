@@ -61,25 +61,22 @@ She can chat with a server, remember useful context within its own guild boundar
 
 - **Conversation & Perception:** `/chat`, mentions, replies, and supported name-keyword triggers; image-aware conversations and recent channel context.
 - **Memory:** Passive context monitoring and claims-based memory, isolated per guild and surfaced only through a bounded prompt envelope.
-- **Tools:** Dice, coin flips, time, weather, web search, anime discovery, airing schedules, and reminders.
+- **Tools:** In chat, Roka can roll dice, flip coins, check the time and weather, search the web, discover anime and airing schedules, and manage reminders; a cute footer notes the little ritual she performed.
+- **Stats:** Fun server analytics with a mood ring, charts, and memory counts across 7D, 30D, and 90D views.
 - **Games:** Buddy Pets, Hangman, and Shiritori, with SQLite-backed progress and leaderboards.
 - **Interaction & UX:** Rule-based tone detection, expression thumbnails, Components V2 replies, emoji reactions, rate limits, and per-channel concurrency protection.
 
-| Command or Capability  | Use                                                        |
-| ---------------------- | ---------------------------------------------------------- |
-| `/chat`                | Talk with Roka; optionally attach an image.                |
-| `/gacha`               | Hatch, view, pet, and compare Buddy Pets.                  |
-| `/hangman`             | Start and play a word-guessing game.                       |
-| `/shiritori`           | Start, join, and score a word-chain game.                  |
-| `/roll_dice`           | Roll configurable dice.                                    |
-| `/flip_coin`           | Flip a coin.                                               |
-| `/time`                | Check a city or timezone.                                  |
-| `/weather`             | Check a city's weather.                                    |
-| `/search`              | Search the web for current information.                    |
-| `/anime`               | Search or browse anime.                                    |
-| `/schedule`            | Search or browse airing schedules.                         |
-| `/remind`              | Create, list, and cancel reminders.                        |
-| In-Conversation Memory | Recall or save useful user facts within the current guild. |
+| Command or Capability  | Use                                                                                          |
+| ---------------------- | -------------------------------------------------------------------------------------------- |
+| `/chat`                | Talk with Roka; optionally attach an image.                                                  |
+| `/gacha`               | Hatch, view, pet, inspect stats, browse collection, read the guide, or view the leaderboard. |
+| `/hangman`             | Start and play a word-guessing game.                                                         |
+| `/shiritori`           | Start, join, and score a word-chain game.                                                    |
+| `/search`              | Search the web for current information.                                                      |
+| `/anime`               | Search or browse anime, or search or browse airing schedules.                                |
+| `/remind`              | Create, list, and cancel reminders.                                                          |
+| `/stats`               | Explore overview, mood, memory, and nerd analytics with selectable windows and charts.       |
+| In-Conversation Memory | Recall or save useful user facts within the current guild.                                   |
 
 <p align="right"><a href="#readme-top">↑</a></p>
 
@@ -273,7 +270,7 @@ GEMINI_API_KEY=your_gemini_api_key
 TAVILY_API_KEY=your_tavily_api_key
 ```
 
-Other optional environment values, including `DISCORD_DEV_GUILD_ID`, `GRAPHIFY_GEMINI_API_KEY`, and `ROKABOT_DB_PATH`, are documented in [`.env.example`](../.env.example).
+Other optional environment values, including `GRAPHIFY_GEMINI_API_KEY` and `ROKABOT_DB_PATH`, are documented in [`.env.example`](../.env.example).
 
 ### Run
 
@@ -407,7 +404,7 @@ flowchart LR
 
     Database[(Pi SQLite DB)] --> Export[npm run export:vault]
     Export --> Vault[data/vault]
-    Vault --> Transfer[rsync or scp over Tailscale]
+    Vault --> Transfer[Copy to your desktop]
     Transfer --> Desktop[Desktop]
     Desktop --> Obsidian[Obsidian]
 ```
@@ -421,15 +418,15 @@ flowchart LR
 1. On the Pi, run the export against the live SQLite database.
 2. The default destination is `data/vault/`; set `MEMORY_VAULT_EXPORT_DIR` to write a different destination.
 3. Treat the result as a read-only static snapshot. Re-run the export whenever you want it refreshed.
-4. Copy it over Tailscale to a desktop, then open the copied folder as an Obsidian vault to browse the per-guild memory graph.
+4. Copy it to a desktop machine, then open the copied folder as an Obsidian vault to browse the per-guild memory graph.
 
 ```bash
-cd ~/rokabot
+cd /path/to/rokabot
 npm run export:vault
-rsync -av ~/rokabot/data/vault/ desktop-user@desktop-host:~/Rokabot-vault/
+rsync -av data/vault/ desktop-user@desktop-host:~/Rokabot-vault/
 ```
 
-Obsidian belongs on the desktop, not the Pi: it is a graphical desktop application, while the Pi is kept focused on the bot and has limited disk headroom (about 80% used).
+Obsidian belongs on the desktop, not the Pi: it is a graphical desktop application, while the Pi is kept focused on the bot as a headless server.
 
 <p align="right"><a href="#readme-top">↑</a></p>
 

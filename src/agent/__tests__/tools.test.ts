@@ -7,6 +7,7 @@ import { flipCoin } from '../tools/flipCoin.js'
 import { getAnimeSchedule } from '../tools/getAnimeSchedule.js'
 import { getCurrentTime } from '../tools/getCurrentTime.js'
 import { getWeather } from '../tools/getWeather.js'
+import { flipCoinTool, getCurrentTimeTool, getWeatherTool, rokaTools, rollDiceTool } from '../tools/index.js'
 import { rollDice } from '../tools/rollDice.js'
 import { searchAnime } from '../tools/searchAnime.js'
 
@@ -26,6 +27,78 @@ afterEach(() => {
   globalThis.fetch = originalFetch
   vi.useRealTimers()
   vi.restoreAllMocks()
+})
+
+// ── utility FunctionTools ────────────────────────────────────────────────────
+
+describe('utility FunctionTools', () => {
+  it('registers the four implicit utilities with their input schemas', () => {
+    const declarations = new Map(rokaTools.map((tool) => [tool.name, tool._getDeclaration()]))
+
+    expect(rokaTools).toHaveLength(12)
+    expect(declarations.get('roll_dice')?.parameters).toMatchObject({
+      properties: { count: { type: 'INTEGER' }, sides: { type: 'INTEGER' } }
+    })
+    expect(declarations.get('flip_coin')?.parameters).toMatchObject({ properties: {} })
+    expect(declarations.get('get_current_time')?.parameters).toMatchObject({
+      properties: { location: { type: 'STRING' }, format: { type: 'STRING' } }
+    })
+    expect(declarations.get('get_weather')?.parameters).toMatchObject({ properties: { city: { type: 'STRING' } } })
+  })
+
+  it('delegates roll_dice to rollDice', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0)
+
+    await expect(rollDiceTool.runAsync({ args: { count: 2, sides: 8 } })).resolves.toEqual({
+      rolls: [1, 1],
+      total: 2,
+      description: '2d8: [1, 1] = 2'
+    })
+  })
+
+  it('delegates flip_coin to flipCoin', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0)
+
+    await expect(flipCoinTool.runAsync({ args: {} })).resolves.toEqual({ result: 'heads' })
+  })
+
+  it('delegates get_current_time to getCurrentTime', async () => {
+    const params = { location: 'Asia/Tokyo', format: '24h' as const }
+
+    await expect(getCurrentTimeTool.runAsync({ args: params })).resolves.toEqual(getCurrentTime(params))
+  })
+
+  it('delegates get_weather to getWeather', async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ results: [{ name: 'Tokyo', latitude: 35.68, longitude: 139.69, country: 'Japan' }] })
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          current: {
+            temperature_2m: 22.5,
+            apparent_temperature: 20.1,
+            relative_humidity_2m: 65,
+            weather_code: 2,
+            wind_speed_10m: 12.3,
+            is_day: 1
+          }
+        })
+      })
+
+    await expect(getWeatherTool.runAsync({ args: { city: 'Tokyo' } })).resolves.toEqual({
+      city: 'Tokyo',
+      country: 'Japan',
+      temperature: 22.5,
+      feelsLike: 20.1,
+      humidity: 65,
+      condition: 'Partly cloudy',
+      windSpeed: 12.3,
+      isDay: true
+    })
+  })
 })
 
 // ── rollDice ──────────────────────────────────────────────────────────────────

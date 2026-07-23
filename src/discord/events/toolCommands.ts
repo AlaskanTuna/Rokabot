@@ -7,24 +7,12 @@ import { logger } from '../../utils/logger.js'
 import { RateLimiter } from '../../utils/rateLimiter.js'
 import { getRandomDecline } from '../responses.js'
 import { handleAnime } from './tools/anime.js'
-import { handleFlipCoin, handleRollDice } from './tools/dice.js'
 import { handleRemind } from './tools/reminder.js'
 import { handleSchedule } from './tools/schedule.js'
 import { handleSearch } from './tools/search.js'
 import { ERROR_MESSAGES, PLAYFUL_COLOR, buildToolMessage, randomFrom } from './tools/shared.js'
-import { handleTime } from './tools/time.js'
-import { handleWeather } from './tools/weather.js'
 
-const TOOL_COMMAND_NAMES = new Set([
-  'roll_dice',
-  'flip_coin',
-  'time',
-  'anime',
-  'schedule',
-  'weather',
-  'search',
-  'remind'
-])
+const TOOL_COMMAND_NAMES = new Set(['anime', 'search', 'remind'])
 
 /** Create a dispatcher that routes tool slash commands to their respective handlers. */
 export function createToolCommandHandler(rateLimiter: RateLimiter) {
@@ -43,37 +31,13 @@ export function createToolCommandHandler(rateLimiter: RateLimiter) {
 
     try {
       switch (commandName) {
-        case 'roll_dice': {
-          const payload = handleRollDice(interaction)
-          await interaction.reply(payload)
-          break
-        }
-        case 'flip_coin': {
-          const payload = handleFlipCoin()
-          await interaction.reply(payload)
-          break
-        }
-        case 'time': {
-          const payload = handleTime(interaction)
-          await interaction.reply(payload)
-          break
-        }
         case 'anime': {
           await interaction.deferReply()
-          const payload = await handleAnime(interaction)
+          const payload =
+            interaction.options.getSubcommandGroup(false) === 'schedule'
+              ? await handleSchedule(interaction)
+              : await handleAnime(interaction)
           if (payload) await interaction.editReply(payload)
-          break
-        }
-        case 'schedule': {
-          await interaction.deferReply()
-          const payload = await handleSchedule(interaction)
-          if (payload) await interaction.editReply(payload)
-          break
-        }
-        case 'weather': {
-          await interaction.deferReply()
-          const payload = await handleWeather(interaction)
-          await interaction.editReply(payload)
           break
         }
         case 'search': {
