@@ -143,6 +143,7 @@ describe('memory promotion harness evaluation', () => {
       'retries',
       'tokens_in_est',
       'tokens_out_est',
+      'tools_used',
       'created_at'
     ])
 
@@ -301,7 +302,7 @@ describe('memory promotion harness evaluation', () => {
       `\n\n## What You Remember About People In This Channel\n${buildFactsEnvelope([
         { person: 'mio (Mio)', facts: [{ key: 'favorite anime', value: 'legacy-series' }] }
       ])}` +
-      '\n\n- The current user\'s Discord ID is "promotion-legacy-user". Use this ID (not their name) when calling remember_user or recall_user tools.'
+      '\n\n- The current user\'s Discord ID is "promotion-legacy-user". remember_user and recall_user target the current user automatically; to recall a different server member, pass their name as user_name.'
 
     expect(capturedPrompt).toBe(expectedPrompt)
   })

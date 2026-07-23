@@ -131,6 +131,7 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
         userId: interaction.user.id,
         trigger: 'slash',
         tone,
+        toolsUsed,
         e2eMs: Math.max(1, Math.round(performance.now() - handlerStartMs)),
         ...metrics
       }

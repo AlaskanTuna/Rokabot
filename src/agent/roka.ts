@@ -594,7 +594,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
 
   systemPrompt +=
     `\n\n- The current user's Discord ID is "${userId}".` +
-    ' Use this ID (not their name) when calling remember_user or recall_user tools.'
+    ' remember_user and recall_user target the current user automatically; to recall a different server member, pass their name as user_name.'
 
   logger.debug({ tone, participantCount: participants.length, hour }, 'Prompt assembled')
 

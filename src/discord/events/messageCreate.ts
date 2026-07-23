@@ -19,6 +19,17 @@ import { buildRokaMessage } from '../messageBuilder.js'
 import { getRandomBusy, getRandomDecline, getRandomError, splitResponse } from '../responses.js'
 import { handleGachaMention } from './gachaMention.js'
 
+/** Strip the bot's own mention; replace other user mentions with @display-name so names survive into the prompt */
+function replaceUserMentions(message: Message, botId: string | undefined): string {
+  return message.content
+    .replace(/<@!?(\d+)>/g, (_match, id: string) => {
+      if (id === botId) return ''
+      const name = message.mentions.members?.get(id)?.displayName ?? message.mentions.users?.get(id)?.username
+      return name ? `@${name}` : ''
+    })
+    .trim()
+}
+
 const TEXT_DISPLAY = 10
 const SECTION = 9
 const CONTAINER = 17
@@ -118,7 +129,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
     }
 
     if (message.guild && !message.author.bot && isMonitored(message.channelId)) {
-      const msgContent = message.content.replace(/<@!?\d+>/g, '').trim()
+      const msgContent = replaceUserMentions(message, client.user?.id)
       if (msgContent) {
         const memberDisplayName = message.member?.displayName ?? message.author.displayName
         addToPassiveBuffer(message.channelId, message.author.id, memberDisplayName, message.author.username, msgContent)
@@ -139,7 +150,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
     const username = message.author.username
     const trigger: ResponseEventInput['trigger'] = isMentioned ? 'mention' : isReplyToBot ? 'reply' : 'name_keyword'
 
-    let content = message.content.replace(/<@!?\d+>/g, '').trim()
+    let content = replaceUserMentions(message, client.user?.id)
     if (!content && componentTextsForTrigger.length > 0) {
       content = componentTextsForTrigger.join(' | ')
     }
@@ -336,6 +347,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
         userId: message.author.id,
         trigger,
         tone,
+        toolsUsed,
         e2eMs: Math.max(1, Math.round(performance.now() - handlerStartMs)),
         ...metrics
       }

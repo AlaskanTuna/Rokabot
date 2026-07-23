@@ -36,7 +36,8 @@ const responseEvent = {
   retryLatencyMs: 0,
   retries: 0,
   tokensInEst: 42,
-  tokensOutEst: 24
+  tokensOutEst: 24,
+  toolsUsed: ['roll_dice']
 } as const
 
 const memoryEvent: MemoryEventInput = {
@@ -86,6 +87,7 @@ describe('metricsStore', () => {
       'retries',
       'tokens_in_est',
       'tokens_out_est',
+      'tools_used',
       'created_at'
     ])
     expect(extractionColumns.map((column) => column.name)).toEqual([
@@ -107,6 +109,7 @@ describe('metricsStore', () => {
     vi.spyOn(Date, 'now').mockReturnValue(now)
 
     recordResponseEvent(responseEvent)
+    recordResponseEvent({ ...responseEvent, toolsUsed: [] })
     recordExtractionEvent({
       guildId: 'guild-1',
       channelId: 'channel-1',
@@ -116,16 +119,22 @@ describe('metricsStore', () => {
       factsSaved: 2
     })
 
-    const response = getDb().prepare('SELECT * FROM response_events').get() as Record<string, unknown>
+    const responses = getDb().prepare('SELECT * FROM response_events ORDER BY id').all() as Array<
+      Record<string, unknown>
+    >
     const extraction = getDb().prepare('SELECT * FROM extraction_events').get() as Record<string, unknown>
 
-    expect(response).toMatchObject({
+    expect(responses[0]).toMatchObject({
       guild_id: responseEvent.guildId,
       trigger: responseEvent.trigger,
       e2e_ms: responseEvent.e2eMs,
       tokens_out_est: responseEvent.tokensOutEst,
+      tools_used: JSON.stringify(responseEvent.toolsUsed),
       created_at: now
     })
+    expect(JSON.parse(responses[0].tools_used as string)).toEqual(responseEvent.toolsUsed)
+    expect(responses[1].tools_used).toBe('[]')
+    expect(JSON.parse(responses[1].tools_used as string)).toEqual([])
     expect(extraction).toMatchObject({
       guild_id: 'guild-1',
       duration_ms: 75,

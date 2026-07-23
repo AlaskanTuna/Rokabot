@@ -46,6 +46,19 @@ describe('buildRokaMessage', () => {
     expect(components[footerIndex - 1]).toMatchObject({ type: 14, divider: true, spacing: 1 })
   })
 
+  it('ends the tool-usage footer with a Discord relative timestamp', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-07-23T12:00:00Z'))
+
+    const components = buildRokaMessage('A ritual completed~', 'playful', ['roll_dice']).components[0].toJSON()
+      .components
+    const footer = components.find((component) => component.type === 10 && component.content.startsWith('-# 🌸'))
+
+    expect(footer).toMatchObject({ content: '-# 🌸 cast the fortune dice • <t:1784808000:R>' })
+
+    vi.useRealTimers()
+  })
+
   it('keeps plain replies byte-identical and adds no footer for no tools', () => {
     const currentOutput = payloadJson('Tea is ready~')
     const noToolsOutput = payloadJson('Tea is ready~', [])
@@ -63,8 +76,8 @@ describe('buildRokaMessage', () => {
       'get_weather'
     ])
 
-    expect(payload).toContain(
-      '-# 🌸 cast the fortune dice · tossed a shrine coin · peeked at the temple clock …and more'
+    expect(payload).toMatch(
+      /-# 🌸 cast the fortune dice · tossed a shrine coin · peeked at the temple clock …and more • <t:\d+:R>/
     )
     expect(payload).not.toContain("read the sky's mood")
     expect(payload).not.toContain('unknown_tool')

@@ -149,7 +149,21 @@ describe('message handler metrics', () => {
     mocks.isChannelBusy.mockReturnValue(false)
     mocks.isMonitored.mockReturnValue(false)
     mocks.tryConsume.mockReturnValue(true)
-    mocks.generateResponse.mockResolvedValue({ text: 'Hello~', tone: 'playful', metrics })
+    mocks.generateResponse.mockResolvedValue({ text: 'Hello~', tone: 'playful', toolsUsed: [], metrics })
+  })
+
+  it('replaces third-party mentions with @display-name and strips only the bot mention', async () => {
+    const { message } = createMessage({ content: '<@111> what do you know about <@222>?' })
+    message.mentions = {
+      has: vi.fn(() => true),
+      members: new Map([['222', { displayName: 'Bob' }]]),
+      users: new Map([['222', { username: 'bob' }]])
+    } as never
+    await createMessageHandler({ user: { id: '111' } } as never, createRateLimiter() as never)(message as never)
+
+    expect(mocks.generateResponse).toHaveBeenCalledWith(
+      expect.objectContaining({ userMessage: 'what do you know about @Bob?' })
+    )
   })
 
   it.each([
@@ -184,6 +198,7 @@ describe('message handler metrics', () => {
         userId: 'user-1',
         trigger,
         tone: 'playful',
+        toolsUsed: [],
         ...metrics,
         e2eMs: expect.any(Number)
       })
@@ -214,6 +229,7 @@ describe('message handler metrics', () => {
 
     expect(JSON.stringify(reply.mock.calls[0][0].components[0].toJSON())).toContain('-# 🌸 cast the fortune dice')
     expect(JSON.stringify(send.mock.calls[0][0].components[0].toJSON())).not.toContain('-# 🌸')
+    expect(mocks.recordResponseEvent).toHaveBeenCalledWith(expect.objectContaining({ toolsUsed: ['roll_dice'] }))
   })
 
   it.each([
@@ -238,7 +254,7 @@ describe('message handler claims extraction dispatch', () => {
     mocks.isChannelBusy.mockReturnValue(false)
     mocks.isMonitored.mockReturnValue(true)
     mocks.tryConsume.mockReturnValue(true)
-    mocks.generateResponse.mockResolvedValue({ text: 'Hello~', tone: 'playful', metrics })
+    mocks.generateResponse.mockResolvedValue({ text: 'Hello~', tone: 'playful', toolsUsed: [], metrics })
   })
 
   it('keeps the legacy extractor path unchanged when claimsBackend is false', async () => {
