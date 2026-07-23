@@ -101,8 +101,8 @@ beforeEach(() => {
     { predicate: 'likes', count: 4 }
   ])
   queries.topRememberedMembers.mockReturnValue([
-    { userId: 'user-1', count: 5, predicate: 'favorite_anime' },
-    { userId: 'departed', count: 4, predicate: 'likes' }
+    { userId: 'user-1', count: 5, predicate: 'favorite_anime', value: 'Frieren' },
+    { userId: 'departed', count: 4, predicate: 'likes', value: 'forbidden-memory-value' }
   ])
   queries.memoryGrowthSeries.mockReturnValue([{ day: '2026-07-23', cumulative: 6 }])
   queries.latencyE2e.mockReturnValue({ p50: 3000, p95: 6100, min: 500, max: 9100, total: 1_440_000 })
@@ -175,9 +175,10 @@ describe('/stats redesigned views', () => {
 
     expect(content).toContain('Active Memories')
     expect(content).toContain('Member user-1')
-    expect(content).toContain('> I remember their favorite anime~')
+    expect(content).toContain('> I remember their favorite anime — “Frieren”~')
     expect(content).toContain('> **Mostly Remembers:** `Favorite Anime` · `Likes`')
     expect(content).not.toContain('departed')
+    expect(content).toContain('the rest stays between us')
     expect(content).not.toContain('forbidden-memory-value')
     expect(content).not.toContain('secret-predicate')
     expect(queries.topRememberedMembers).toHaveBeenCalledWith('guild-1', expect.any(Number), 'roka-user')
@@ -216,6 +217,17 @@ describe('/stats redesigned views', () => {
       strong_opinion: expect.any(String),
       misc: expect.any(String)
     })
+  })
+
+  it('falls back gracefully when the top memory is unquotable', async () => {
+    queries.topRememberedMembers.mockReturnValue([
+      { userId: 'user-1', count: 2, predicate: null, value: null },
+      { userId: 'user-2', count: 1, predicate: 'likes', value: null }
+    ])
+    const content = contentFor(await buildStatsView('guild-1', guild, 'memory'))
+
+    expect(content).toContain('> I remember a little something about them~')
+    expect(content).toContain('> I remember the things they like~')
   })
 
   it('renders e2e-only nerd metrics, including nonzero failures and word estimates', async () => {
