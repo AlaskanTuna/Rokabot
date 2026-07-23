@@ -9,6 +9,7 @@ import { isIgnorableDiscordError } from '../errorHandler.js'
 import { buildRokaMessage } from '../messageBuilder.js'
 import { getRandomBusy, getRandomDecline, getRandomError, splitResponse } from '../responses.js'
 import { createGameCommandHandler } from './gameCommands.js'
+import { handleStatsCommand } from './stats/statsCommand.js'
 import { createToolCommandHandler } from './toolCommands.js'
 
 /** Create a handler for all slash command interactions */
@@ -19,6 +20,11 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
   return async function handleInteractionCreate(interaction: Interaction): Promise<void> {
     const handlerStartMs = performance.now()
     if (!interaction.isChatInputCommand()) return
+
+    if (interaction.commandName === 'stats') {
+      await handleStatsCommand(interaction)
+      return
+    }
 
     if (interaction.commandName !== 'chat') {
       const handled = await handleGameCommand(interaction)
@@ -68,6 +74,7 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
       const {
         text: responseText,
         tone,
+        toolsUsed,
         metrics
       } = await generateResponse({
         channelId,
@@ -83,7 +90,7 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
 
       const chunks = splitResponse(responseText)
       logger.debug({ channelId, chunkCount: chunks.length }, 'Response split into chunks')
-      await interaction.editReply(buildRokaMessage(chunks[0], tone))
+      await interaction.editReply(buildRokaMessage(chunks[0], tone, toolsUsed))
 
       for (let i = 1; i < chunks.length; i++) {
         await interaction.followUp(buildRokaMessage(chunks[i], tone))

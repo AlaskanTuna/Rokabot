@@ -3,6 +3,7 @@ import { config } from '../../config.js'
 import { logger } from '../../utils/logger.js'
 import { chatCommand } from '../commands/chat.js'
 import { gameCommands } from '../commands/games.js'
+import { statsCommand } from '../commands/stats.js'
 import { toolCommands } from '../commands/tools.js'
 import { startStatusCycler } from '../statusCycler.js'
 
@@ -15,12 +16,13 @@ export async function handleReady(client: Client): Promise<void> {
   const rest = new REST({ version: '10' }).setToken(config.discord.token)
 
   try {
-    const commandRoute = config.discord.devGuildId
-      ? Routes.applicationGuildCommands(config.discord.clientId, config.discord.devGuildId)
-      : Routes.applicationCommands(config.discord.clientId)
-
-    await rest.put(commandRoute, {
-      body: [chatCommand.toJSON(), ...toolCommands.map((c) => c.toJSON()), ...gameCommands.map((c) => c.toJSON())]
+    await rest.put(Routes.applicationCommands(config.discord.clientId), {
+      body: [
+        chatCommand.toJSON(),
+        ...toolCommands.map((c) => c.toJSON()),
+        ...gameCommands.map((c) => c.toJSON()),
+        statsCommand.toJSON()
+      ]
     })
     logger.info('Slash commands registered')
   } catch (error) {

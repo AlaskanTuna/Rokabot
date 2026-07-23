@@ -2,37 +2,6 @@
 
 import { SlashCommandBuilder } from 'discord.js'
 
-export const rollDiceCommand = new SlashCommandBuilder()
-  .setName('roll_dice')
-  .setDescription('Roll some dice!')
-  .addIntegerOption((opt) =>
-    opt
-      .setName('sides')
-      .setDescription('Number of sides (default: 6)')
-      .setRequired(false)
-      .setMinValue(2)
-      .setMaxValue(100)
-  )
-  .addIntegerOption((opt) =>
-    opt.setName('count').setDescription('Number of dice (default: 1)').setRequired(false).setMinValue(1).setMaxValue(10)
-  )
-
-export const flipCoinCommand = new SlashCommandBuilder().setName('flip_coin').setDescription('Flip a coin!')
-
-export const timeCommand = new SlashCommandBuilder()
-  .setName('time')
-  .setDescription('Ask Roka what time it is somewhere!')
-  .addStringOption((opt) =>
-    opt.setName('location').setDescription('City or timezone (e.g. Tokyo, America/New_York)').setRequired(true)
-  )
-  .addStringOption((opt) =>
-    opt
-      .setName('format')
-      .setDescription('Time format')
-      .setRequired(false)
-      .addChoices({ name: '12-hour', value: '12h' }, { name: '24-hour', value: '24h' })
-  )
-
 export const animeCommand = new SlashCommandBuilder()
   .setName('anime')
   .setDescription('Search for anime!')
@@ -83,49 +52,45 @@ export const animeCommand = new SlashCommandBuilder()
           )
       )
   )
-
-export const scheduleCommand = new SlashCommandBuilder()
-  .setName('schedule')
-  .setDescription('Check the anime airing schedule!')
-  .addSubcommand((sub) =>
-    sub
-      .setName('search')
-      .setDescription('Look up a specific anime schedule')
-      .addStringOption((opt) => opt.setName('anime').setDescription('Anime name to look up').setRequired(true))
-  )
-  .addSubcommand((sub) =>
-    sub
-      .setName('browse')
-      .setDescription('Browse airing schedule')
-      .addStringOption((opt) =>
-        opt
-          .setName('scope')
-          .setDescription('Time range (default: Today)')
-          .setRequired(false)
-          .addChoices(
-            { name: 'Today', value: 'day' },
-            { name: 'This Week', value: 'week' },
-            { name: 'This Season', value: 'season' }
+  .addSubcommandGroup((group) =>
+    group
+      .setName('schedule')
+      .setDescription('Check the anime airing schedule!')
+      .addSubcommand((sub) =>
+        sub
+          .setName('search')
+          .setDescription('Look up a specific anime schedule')
+          .addStringOption((opt) => opt.setName('anime').setDescription('Anime name to look up').setRequired(true))
+      )
+      .addSubcommand((sub) =>
+        sub
+          .setName('browse')
+          .setDescription('Browse airing schedule')
+          .addStringOption((opt) =>
+            opt
+              .setName('scope')
+              .setDescription('Time range (default: Today)')
+              .setRequired(false)
+              .addChoices(
+                { name: 'Today', value: 'day' },
+                { name: 'This Week', value: 'week' },
+                { name: 'This Season', value: 'season' }
+              )
+          )
+          .addStringOption((opt) =>
+            opt
+              .setName('sort_by')
+              .setDescription('Sort results by (default: score)')
+              .setRequired(false)
+              .addChoices(
+                { name: 'Score', value: 'score' },
+                { name: 'Popularity', value: 'popularity' },
+                { name: 'Members', value: 'members' },
+                { name: 'Title', value: 'title' }
+              )
           )
       )
-      .addStringOption((opt) =>
-        opt
-          .setName('sort_by')
-          .setDescription('Sort results by (default: score)')
-          .setRequired(false)
-          .addChoices(
-            { name: 'Score', value: 'score' },
-            { name: 'Popularity', value: 'popularity' },
-            { name: 'Members', value: 'members' },
-            { name: 'Title', value: 'title' }
-          )
-      )
   )
-
-export const weatherCommand = new SlashCommandBuilder()
-  .setName('weather')
-  .setDescription('Check the weather!')
-  .addStringOption((opt) => opt.setName('city').setDescription('City name (e.g. Tokyo, London)').setRequired(true))
 
 export const searchCommand = new SlashCommandBuilder()
   .setName('search')
@@ -169,13 +134,4 @@ export const remindCommand = new SlashCommandBuilder()
       .addIntegerOption((opt) => opt.setName('id').setDescription('Reminder ID (from /remind list)').setRequired(true))
   )
 
-export const toolCommands = [
-  rollDiceCommand,
-  flipCoinCommand,
-  timeCommand,
-  animeCommand,
-  scheduleCommand,
-  weatherCommand,
-  searchCommand,
-  remindCommand
-]
+export const toolCommands = [animeCommand, searchCommand, remindCommand]

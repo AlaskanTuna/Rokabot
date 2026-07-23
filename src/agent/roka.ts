@@ -1,5 +1,6 @@
 /** ADK pipeline orchestrator for in-character response generation */
 
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { BasePlugin, InMemorySessionService, LlmAgent, Runner, createEvent, isFinalResponse } from '@google/adk'
 import type { Event, LlmResponse } from '@google/adk'
 import type { GetSessionRequest, Session } from '@google/adk'
@@ -45,13 +46,14 @@ export interface GenerateResult {
   text: string
   tone: ToneKey
   metrics: ResponseMetrics
+  toolsUsed: string[]
 }
 
 const MAX_IMAGE_SIZE_BYTES = 4 * 1024 * 1024
 const APP_NAME = 'rokabot'
 
 const sessionErrorCounts = new Map<string, number>()
-let toolCallsThisRequest: string[] = []
+const toolCallsForRequest = new AsyncLocalStorage<Set<string>>()
 const activeAbortControllers = new Set<AbortController>()
 
 const SAFETY_DEFLECTION = "Ehh… let's not get into that one~"
@@ -293,7 +295,7 @@ const rokaAgent = new LlmAgent({
   },
   beforeToolCallback: async ({ tool, args }) => {
     logger.info({ tool: tool.name, args }, 'Tool call requested')
-    toolCallsThisRequest.push(tool.name)
+    toolCallsForRequest.getStore()?.add(tool.name)
     return undefined
   }
 })
@@ -499,8 +501,6 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   const generateStartMs = performance.now()
   const { channelId, guildId, userMessage, displayName, username, userId, imageAttachments } = options
 
-  toolCallsThisRequest = []
-
   const session = await ensureSession(channelId)
   resetIdleTimer(channelId)
 
@@ -622,68 +622,71 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   )
 
   const llmStartMs = performance.now()
-  const reliability = await runTurnWithReliability({
-    maxRetries: config.gemini.liveMaxRetries,
-    maxLatencyMs: config.gemini.retryBackoffCapMs,
-    requestTimeoutMs: config.gemini.timeout,
-    tryConsumeRetry: () => getSharedRateLimiter(config.rateLimit).tryConsumeAboveFloor(config.gemini.retryRpmFloor),
-    computeBackoff: (attempt) =>
-      computeBackoff(attempt, config.gemini.retryBackoffBaseMs, { maxMs: config.gemini.retryBackoffCapMs }),
-    genericFallback: getRandomFallback(),
-    safetyDeflection: SAFETY_DEFLECTION,
-    recitationDeflection: RECITATION_DEFLECTION,
-    terminalDeflection: TERMINAL_DEFLECTION,
-    runTurn:
-      testRunTurnFactory?.(systemPrompt) ??
-      (async (attempt, signal) => {
-        let responseText = ''
-        let hasFunctionCall = false
-        let finishReason: LlmResponse['finishReason']
+  const usedToolNames = new Set<string>()
+  const reliability = await toolCallsForRequest.run(usedToolNames, () =>
+    runTurnWithReliability({
+      maxRetries: config.gemini.liveMaxRetries,
+      maxLatencyMs: config.gemini.retryBackoffCapMs,
+      requestTimeoutMs: config.gemini.timeout,
+      tryConsumeRetry: () => getSharedRateLimiter(config.rateLimit).tryConsumeAboveFloor(config.gemini.retryRpmFloor),
+      computeBackoff: (attempt) =>
+        computeBackoff(attempt, config.gemini.retryBackoffBaseMs, { maxMs: config.gemini.retryBackoffCapMs }),
+      genericFallback: getRandomFallback(),
+      safetyDeflection: SAFETY_DEFLECTION,
+      recitationDeflection: RECITATION_DEFLECTION,
+      terminalDeflection: TERMINAL_DEFLECTION,
+      runTurn:
+        testRunTurnFactory?.(systemPrompt) ??
+        (async (attempt, signal) => {
+          let responseText = ''
+          let hasFunctionCall = false
+          let finishReason: LlmResponse['finishReason']
 
-        const request: Parameters<typeof runner.runAsync>[0] = {
-          userId: channelId,
-          sessionId: channelId,
-          // ADK's runtime only appends when this value is truthy; its type incorrectly requires it for a retry.
-          newMessage: attempt === 0 ? newMessage : (undefined as unknown as Content),
-          runConfig: { maxLlmCalls: config.gemini.maxLlmCalls },
-          stateDelta:
-            attempt === 0
-              ? {
-                  _systemPrompt: systemPrompt,
-                  participants,
-                  _userId: userId,
-                  _channelId: channelId,
-                  _guildId: guildId
-                }
-              : undefined
-        }
+          const request: Parameters<typeof runner.runAsync>[0] = {
+            userId: channelId,
+            sessionId: channelId,
+            // ADK's runtime only appends when this value is truthy; its type incorrectly requires it for a retry.
+            newMessage: attempt === 0 ? newMessage : (undefined as unknown as Content),
+            runConfig: { maxLlmCalls: config.gemini.maxLlmCalls },
+            stateDelta:
+              attempt === 0
+                ? {
+                    _systemPrompt: systemPrompt,
+                    participants,
+                    _userId: userId,
+                    _channelId: channelId,
+                    _guildId: guildId
+                  }
+                : undefined
+          }
 
-        for await (const event of runner.runAsync(request)) {
-          if (signal.aborted) break
-          if (event.errorCode) {
-            return {
-              errorCode: event.errorCode,
-              errorMessage: event.errorMessage,
-              customMetadata: event.customMetadata,
-              finishReason: event.finishReason,
-              hasText: false,
-              hasFunctionCall: false
+          for await (const event of runner.runAsync(request)) {
+            if (signal.aborted) break
+            if (event.errorCode) {
+              return {
+                errorCode: event.errorCode,
+                errorMessage: event.errorMessage,
+                customMetadata: event.customMetadata,
+                finishReason: event.finishReason,
+                hasText: false,
+                hasFunctionCall: false
+              }
+            }
+            if (isFinalResponse(event) && event.content?.parts) {
+              finishReason = event.finishReason
+              responseText = event.content.parts
+                .filter((part: Part) => part.text && !part.thought)
+                .map((part: Part) => part.text)
+                .join('')
+                .trim()
+              hasFunctionCall = event.content.parts.some((part: Part) => 'functionCall' in part && part.functionCall)
             }
           }
-          if (isFinalResponse(event) && event.content?.parts) {
-            finishReason = event.finishReason
-            responseText = event.content.parts
-              .filter((part: Part) => part.text && !part.thought)
-              .map((part: Part) => part.text)
-              .join('')
-              .trim()
-            hasFunctionCall = event.content.parts.some((part: Part) => 'functionCall' in part && part.functionCall)
-          }
-        }
 
-        return { text: responseText, finishReason, hasText: Boolean(responseText), hasFunctionCall }
-      })
-  })
+          return { text: responseText, finishReason, hasText: Boolean(responseText), hasFunctionCall }
+        })
+    })
+  )
   const llmMs = Math.round(performance.now() - llmStartMs)
 
   if (reliability.action === 'destroy') await destroySession(channelId)
@@ -698,8 +701,9 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     sessionErrorCounts.set(channelId, (sessionErrorCounts.get(channelId) ?? 0) + 1)
   }
 
-  if (toolCallsThisRequest.length > 1) {
-    logger.info({ tools: toolCallsThisRequest }, 'Tool fallback chain detected')
+  const toolsUsed = [...usedToolNames]
+  if (toolsUsed.length > 1) {
+    logger.info({ tools: toolsUsed }, 'Tool fallback chain detected')
   }
 
   if (reliability.success) {
@@ -739,5 +743,5 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     tokensOutEst: estimateTokens(reliability.text)
   }
 
-  return { text: reliability.text, tone, metrics }
+  return { text: reliability.text, tone, metrics, toolsUsed }
 }

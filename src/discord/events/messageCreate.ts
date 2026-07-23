@@ -306,6 +306,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
       const {
         text: responseText,
         tone,
+        toolsUsed,
         metrics
       } = await generateResponse({
         channelId,
@@ -321,7 +322,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
 
       const chunks = splitResponse(responseText)
       logger.debug({ channelId, chunkCount: chunks.length }, 'Response split into chunks')
-      await message.reply(buildRokaMessage(chunks[0], tone))
+      await message.reply(buildRokaMessage(chunks[0], tone, toolsUsed))
 
       for (let i = 1; i < chunks.length; i++) {
         if ('send' in message.channel) {

@@ -258,6 +258,7 @@ describe('generateResponse metrics', () => {
     })
     expect(result.metrics.generateMs).toBeGreaterThanOrEqual(0)
     expect(result.metrics.llmMs).toBeGreaterThanOrEqual(0)
+    expect(result.toolsUsed).toEqual([])
   })
 
   it('returns retry and outcome metrics without changing reliability behavior', async () => {
