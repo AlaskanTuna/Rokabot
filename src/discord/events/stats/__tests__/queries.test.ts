@@ -269,6 +269,14 @@ describe('stats queries', () => {
     expect(statsQueries.mostUsedTool('guild-2', monthSinceMs)).toBeNull()
   })
 
+  it('blends recency into the quote pick so a fresh claim can beat a slightly more salient stale one', () => {
+    insertClaim({ userId: 'user-1', predicate: 'likes', salience: 0.6, firstSeenAt: now - 25 * DAY_MS })
+    insertClaim({ userId: 'user-1', predicate: 'hobby', salience: 0.55, firstSeenAt: now })
+
+    const [top] = statsQueries.topRememberedMembers('guild-1', monthSinceMs, 'roka-user', now)
+    expect(top).toMatchObject({ userId: 'user-1', count: 2, predicate: 'hobby' })
+  })
+
   it('excludes needs_review claims from the quote while still counting them, with a null quote for review-only members', () => {
     insertClaim({ userId: 'mixed', predicate: 'hobby', salience: 0.2 })
     insertClaim({ userId: 'mixed', predicate: 'strong_opinion', salience: 0.9, needsReview: 1 })
