@@ -244,11 +244,14 @@ export async function runTranscript(path: string, options: RunTranscriptOptions 
       // The fake factory skips Runner.runAsync, so rehydrate persisted events before the next turn.
       if (!live) await roka.destroySession(line.channelId)
 
-      measurementHistory.set(line.channelId, [
-        ...channelHistory,
-        { role: 'user', displayName: line.displayName, content: userMessage },
-        { role: 'assistant', displayName: 'Roka', content: scriptedReply }
-      ])
+      measurementHistory.set(
+        line.channelId,
+        [
+          ...channelHistory,
+          { role: 'user', displayName: line.displayName, content: userMessage },
+          { role: 'assistant', displayName: 'Roka', content: scriptedReply }
+        ].slice(-10)
+      )
       activeTiming = undefined
 
       if (live && index < lines.length - 1) {

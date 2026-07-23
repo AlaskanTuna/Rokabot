@@ -70,7 +70,6 @@ const TONE_PATTERNS: ToneRule[] = [
       /\bcurious\b/i,
       /\blearn\b/i,
       /\bthink about\b/i,
-      /\bwhat if\b/i,
       /\btheory\b/i
     ]
   },

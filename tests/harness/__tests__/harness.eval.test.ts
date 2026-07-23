@@ -143,8 +143,8 @@ describe('harness self-tests', () => {
     }
   })
 
-  it('rehydrates fake transcript history so the benchmark spans at least eight tones', async () => {
-    const { turns } = await runTranscript(benchmarkTranscript)
+  it('rehydrates forced fake-mode transcript history across all nine benchmark tones', async () => {
+    const { turns } = await runTranscript(benchmarkTranscript, { live: false })
     const tones = turns.flatMap(({ rendered }) =>
       rendered.flatMap((payload) => {
         const tone = /Tone Accent: (\w+)/.exec(payload)?.[1]
@@ -152,7 +152,7 @@ describe('harness self-tests', () => {
       })
     )
 
-    expect(new Set(tones).size).toBeGreaterThanOrEqual(8)
+    expect(new Set(tones).size).toBe(9)
   })
 
   it('routes scripted transient outcomes through the real retry orchestration', async () => {
