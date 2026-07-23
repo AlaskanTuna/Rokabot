@@ -50,7 +50,9 @@ describe('harness token measurement', () => {
     expect(CORE_PROMPT).not.toContain('weather')
     expect(CORE_PROMPT).toContain('Maniwa Roka')
     expect(CORE_PROMPT).toContain('big-sister')
-    expect(CORE_PROMPT).toContain('80-100 words')
+    expect(CORE_PROMPT).toContain(
+      'Keep responses between 50-70 words. 1-3 sentences for casual chat, up to 4 for complex topics. Always finish your thought — end naturally, never trail off mid-sentence.'
+    )
     expect(CORE_PROMPT).toContain('## Hard Boundaries')
   })
 

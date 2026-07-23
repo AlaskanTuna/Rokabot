@@ -57,13 +57,31 @@ const TONE_PATTERNS: ToneRule[] = [
     ]
   },
   {
+    tone: 'curious',
+    minMatches: 2,
+    patterns: [
+      /\bwhat\b/i,
+      /\bhow\b/i,
+      /\bwhy\b/i,
+      /\bexplain\b/i,
+      /\btell me about\b/i,
+      /\binteresting\b/i,
+      /\bwonder\b/i,
+      /\bcurious\b/i,
+      /\blearn\b/i,
+      /\bthink about\b/i,
+      /\btheory\b/i
+    ]
+  },
+  {
     tone: 'annoyed',
     minMatches: 2,
     patterns: [
-      /\bno\b/i,
       /\bwon't\b/i,
       /\brefuse\b/i,
       /\bdon't want to\b/i,
+      /\bno way\b/i,
+      /\bnot fair\b/i,
       /\bskipped? (?:lunch|dinner|breakfast|meal)/i,
       /\bdidn't eat\b/i,
       /\bstayed up\b/i,
@@ -73,7 +91,6 @@ const TONE_PATTERNS: ToneRule[] = [
       /\bgranny\b/i,
       /\bboring\b/i,
       /\bwhatever\b/i,
-      /\bfine\b/i,
       /\bdon't care\b/i
     ]
   },
@@ -195,24 +212,6 @@ const TONE_PATTERNS: ToneRule[] = [
       /\brematch\b/i,
       /🏆/,
       /🎮/
-    ]
-  },
-  {
-    tone: 'curious',
-    minMatches: 2,
-    patterns: [
-      /\bwhat\b/i,
-      /\bhow\b/i,
-      /\bwhy\b/i,
-      /\bexplain\b/i,
-      /\btell me about\b/i,
-      /\binteresting\b/i,
-      /\bwonder\b/i,
-      /\bcurious\b/i,
-      /\blearn\b/i,
-      /\bthink about\b/i,
-      /\bwhat if\b/i,
-      /\btheory\b/i
     ]
   },
   {
