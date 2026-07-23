@@ -46,6 +46,33 @@ describe('memory tools', () => {
     })
   })
 
+  it('recalls freshest claims first and caps the merged list at 15 with legacy facts at the tail', () => {
+    const now = Date.now()
+    for (let index = 0; index < 16; index++) {
+      assertClaim({
+        guildId: 'guild-1',
+        subjectUserId: 'user-1',
+        predicate: 'likes',
+        value: `thing-${index}`,
+        sourceKind: 'passive',
+        observedAt: now - (16 - index) * 60_000
+      })
+    }
+    saveFact('guild-1', 'user-1', 'ancient_fact', 'from the archive')
+
+    const result = recallUser({ guild_id: 'guild-1', user_id: 'user-1' })
+
+    expect(result.factCount).toBe(15)
+    expect(result.facts.startsWith('likes: thing-15')).toBe(true)
+    expect(result.facts).not.toContain('ancient_fact')
+
+    const recalled = getDb()
+      .prepare("SELECT value FROM memory_claim WHERE last_recalled_at IS NOT NULL AND subject_user_id = 'user-1'")
+      .all() as Array<{ value: string }>
+    expect(recalled).toHaveLength(15)
+    expect(recalled.map(({ value }) => value)).not.toContain('thing-0')
+  })
+
   it('finds a known user by trimmed, case-insensitive display name before username', () => {
     upsertUserName('user-1', 'alice', 'Alice')
     upsertUserName('user-2', 'ALICE', 'Mio')

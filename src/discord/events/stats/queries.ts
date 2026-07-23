@@ -113,7 +113,7 @@ export const MEMORY_DETAIL_SQL = {
                   ORDER BY count DESC, predicate ASC
                   LIMIT 3`,
   topRememberedMembers: `WITH active_claims AS (
-                            SELECT subject_user_id, predicate, salience, value, needs_review
+                            SELECT subject_user_id, predicate, salience, value, needs_review, last_seen_at
                             FROM memory_claim
                             WHERE guild_id = ? AND status = 'active' AND first_seen_at >= ? AND subject_user_id != ?
                           ), member_counts AS (
@@ -124,7 +124,8 @@ export const MEMORY_DETAIL_SQL = {
                             SELECT subject_user_id, predicate, value,
                                    ROW_NUMBER() OVER (
                                      PARTITION BY subject_user_id
-                                     ORDER BY salience DESC, predicate ASC
+                                     ORDER BY salience + 0.5 / (1.0 + ((? - last_seen_at) / 86400000.0) / 30.0) DESC,
+                                              predicate ASC
                                    ) AS rank
                             FROM active_claims
                             WHERE needs_review = 0
@@ -371,10 +372,15 @@ export function topPredicates(guildId: string, sinceMs: number, excludeUserId: s
   return getDb().prepare(MEMORY_DETAIL_SQL.topPredicates).all(guildId, sinceMs, excludeUserId) as CountByPredicate[]
 }
 
-export function topRememberedMembers(guildId: string, sinceMs: number, excludeUserId: string): RememberedMember[] {
+export function topRememberedMembers(
+  guildId: string,
+  sinceMs: number,
+  excludeUserId: string,
+  nowMs: number = Date.now()
+): RememberedMember[] {
   return getDb()
     .prepare(MEMORY_DETAIL_SQL.topRememberedMembers)
-    .all(guildId, sinceMs, excludeUserId) as RememberedMember[]
+    .all(guildId, sinceMs, excludeUserId, nowMs) as RememberedMember[]
 }
 
 export function memoryGrowthSeries(guildId: string, sinceMs: number, excludeUserId: string): MemoryGrowthPoint[] {

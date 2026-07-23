@@ -1,4 +1,12 @@
-export type FailureKind = 'transient_http' | 'network' | 'empty_text' | 'safety' | 'recitation' | 'terminal' | 'ok'
+export type FailureKind =
+  | 'transient_http'
+  | 'network'
+  | 'empty_text'
+  | 'safety'
+  | 'recitation'
+  | 'session_corrupt'
+  | 'terminal'
+  | 'ok'
 
 export interface GeminiFailureResult {
   kind: FailureKind
@@ -16,6 +24,7 @@ export const DEFAULT_MAX_BACKOFF_MS = 12_000
 
 const SAFETY_PATTERN = /SAFETY|PROHIBITED_CONTENT|BLOCKLIST|SPII/i
 const RECITATION_PATTERN = /RECITATION/i
+const SESSION_CORRUPT_PATTERN = /function call turn comes immediately after/i
 const TERMINAL_PATTERN =
   /400|INVALID_ARGUMENT|UNAUTHENTICATED|UNAUTHORIZED|AUTHENTICATION|PERMISSION_DENIED|FORBIDDEN|401|403/i
 const TRANSIENT_HTTP_PATTERN = /429|500|503|RESOURCE_EXHAUSTED|overloaded|quota|rate.limit|UNAVAILABLE/i
@@ -24,8 +33,13 @@ const NETWORK_PATTERN = /fetch failed|ECONNRESET|ETIMEDOUT|EAI_AGAIN|abort(?:ed)
 function result(kind: FailureKind): GeminiFailureResult {
   return {
     kind,
-    retryable: kind === 'transient_http' || kind === 'network' || kind === 'empty_text' || kind === 'recitation',
-    deflect: kind === 'safety' || kind === 'recitation' || kind === 'terminal'
+    retryable:
+      kind === 'transient_http' ||
+      kind === 'network' ||
+      kind === 'empty_text' ||
+      kind === 'recitation' ||
+      kind === 'session_corrupt',
+    deflect: kind === 'safety' || kind === 'recitation' || kind === 'session_corrupt' || kind === 'terminal'
   }
 }
 
@@ -41,6 +55,7 @@ function classifyMarker(marker: string | undefined): FailureKind | undefined {
   if (!marker) return undefined
   if (SAFETY_PATTERN.test(marker)) return 'safety'
   if (RECITATION_PATTERN.test(marker)) return 'recitation'
+  if (SESSION_CORRUPT_PATTERN.test(marker)) return 'session_corrupt'
   if (TERMINAL_PATTERN.test(marker)) return 'terminal'
   if (TRANSIENT_HTTP_PATTERN.test(marker)) return 'transient_http'
   if (NETWORK_PATTERN.test(marker)) return 'network'
@@ -58,6 +73,8 @@ export function classifyGeminiFailure(input: unknown): GeminiFailureResult {
   const finishReason = stringValue(input.finishReason)
   const errorMessage = stringValue(input.errorMessage ?? input.message) ?? ''
   const name = stringValue(input.name) ?? ''
+
+  if (SESSION_CORRUPT_PATTERN.test(`${name} ${errorMessage}`)) return result('session_corrupt')
 
   const markedKind = classifyMarker(errorCode) ?? classifyMarker(finishReason)
   if (markedKind) return result(markedKind)

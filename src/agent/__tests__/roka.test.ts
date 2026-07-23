@@ -57,6 +57,8 @@ const genericFallback = 'generic fallback'
 const safetyDeflection = 'safety deflection'
 const recitationDeflection = 'recitation deflection'
 const terminalDeflection = 'terminal deflection'
+const functionCallOrderingError =
+  'Please ensure that function call turn comes immediately after a user turn or after a function response turn.'
 
 function options(overrides: Partial<Parameters<typeof runTurnWithReliability>[0]> = {}) {
   return {
@@ -174,6 +176,66 @@ describe('runTurnWithReliability', () => {
     expect(testOptions.tryConsumeRetry).toHaveBeenCalledTimes(1)
   })
 
+  it('resets a corrupt session before one successful retry', async () => {
+    const runTurn = vi
+      .fn()
+      .mockResolvedValueOnce({ errorCode: 'INVALID_ARGUMENT', errorMessage: functionCallOrderingError })
+      .mockResolvedValueOnce({ text: 'The session is all tidy again~', hasText: true })
+    const resetSession = vi.fn(() => Promise.resolve())
+    const testOptions = options({ runTurn, resetSession })
+
+    const result = await runTurnWithReliability(testOptions)
+
+    expect(result).toMatchObject({
+      text: 'The session is all tidy again~',
+      kind: 'ok',
+      action: 'preserve',
+      attempts: 2
+    })
+    expect(resetSession).toHaveBeenCalledOnce()
+    expect(runTurn).toHaveBeenCalledTimes(2)
+    expect(testOptions.tryConsumeRetry).toHaveBeenCalledTimes(1)
+  })
+
+  it('deflects and destroys a session when the reset retry remains corrupt', async () => {
+    const runTurn = vi
+      .fn()
+      .mockResolvedValue({ errorCode: 'INVALID_ARGUMENT', errorMessage: functionCallOrderingError })
+    const resetSession = vi.fn(() => Promise.resolve())
+    const testOptions = options({ runTurn, resetSession })
+
+    const result = await runTurnWithReliability(testOptions)
+
+    expect(result).toMatchObject({ text: terminalDeflection, kind: 'session_corrupt', action: 'destroy', attempts: 2 })
+    expect(resetSession).toHaveBeenCalledOnce()
+    expect(runTurn).toHaveBeenCalledTimes(2)
+  })
+
+  it('deflects and destroys a corrupt session when the reset itself fails', async () => {
+    const runTurn = vi
+      .fn()
+      .mockResolvedValue({ errorCode: 'INVALID_ARGUMENT', errorMessage: functionCallOrderingError })
+    const resetSession = vi.fn(() => Promise.reject(new Error('session store unavailable')))
+    const testOptions = options({ runTurn, resetSession })
+
+    const result = await runTurnWithReliability(testOptions)
+
+    expect(result).toMatchObject({ text: terminalDeflection, kind: 'session_corrupt', action: 'destroy' })
+    expect(resetSession).toHaveBeenCalledOnce()
+    expect(runTurn).toHaveBeenCalledOnce()
+  })
+
+  it('deflects and destroys a corrupt session when no reset hook is supplied', async () => {
+    const runTurn = vi
+      .fn()
+      .mockResolvedValue({ errorCode: 'INVALID_ARGUMENT', errorMessage: functionCallOrderingError })
+
+    const result = await runTurnWithReliability(options({ runTurn }))
+
+    expect(result).toMatchObject({ text: terminalDeflection, kind: 'session_corrupt', action: 'destroy', attempts: 1 })
+    expect(runTurn).toHaveBeenCalledOnce()
+  })
+
   it('returns a graceful fallback if the session disappears between attempts', async () => {
     const runTurn = vi
       .fn()
@@ -229,6 +291,49 @@ describe('runTurnWithReliability', () => {
 })
 
 describe('generateResponse metrics', () => {
+  it('resends the current turn and prompt state to a reset session', async () => {
+    const gemini = config.gemini as { retryBackoffBaseMs: number; retryBackoffCapMs: number }
+    const originalBackoffBaseMs = gemini.retryBackoffBaseMs
+    const originalBackoffCapMs = gemini.retryBackoffCapMs
+    const requests: unknown[] = []
+    gemini.retryBackoffBaseMs = 1
+    gemini.retryBackoffCapMs = 5
+
+    try {
+      __setTestRunTurnFactory(() => async (...args) => {
+        const [attempt, , request] = args
+        requests.push(request)
+        return attempt === 0
+          ? { errorCode: 'INVALID_ARGUMENT', errorMessage: functionCallOrderingError }
+          : { text: 'The restored session remembers~', hasText: true, hasFunctionCall: false }
+      })
+
+      await generateResponse({
+        channelId: 'roka-metrics-channel',
+        guildId: 'metrics-guild',
+        userMessage: 'Please keep this turn.',
+        displayName: 'Mio',
+        username: 'mio',
+        userId: 'mio-id'
+      })
+
+      expect(requests).toHaveLength(2)
+      expect(requests[1]).toMatchObject({
+        newMessage: { role: 'user', parts: [{ text: '[Mio]: Please keep this turn.' }] },
+        stateDelta: {
+          _systemPrompt: expect.any(String),
+          participants: ['Mio'],
+          _userId: 'mio-id',
+          _channelId: 'roka-metrics-channel',
+          _guildId: 'metrics-guild'
+        }
+      })
+    } finally {
+      gemini.retryBackoffBaseMs = originalBackoffBaseMs
+      gemini.retryBackoffCapMs = originalBackoffCapMs
+    }
+  })
+
   it('returns harness-comparable metrics for a successful turn', async () => {
     __setTestRunTurnFactory(() => async () => ({ text: 'Metric reply~', hasText: true, hasFunctionCall: false }))
 
@@ -265,16 +370,18 @@ describe('generateResponse metrics', () => {
     const gemini = config.gemini as { retryBackoffBaseMs: number; retryBackoffCapMs: number }
     const originalBackoffBaseMs = gemini.retryBackoffBaseMs
     const originalBackoffCapMs = gemini.retryBackoffCapMs
+    const normalRetryRequests: unknown[] = []
     gemini.retryBackoffBaseMs = 1
     gemini.retryBackoffCapMs = 5
 
     try {
-      __setTestRunTurnFactory(
-        () => async (attempt) =>
-          attempt === 0
-            ? { errorCode: '429', errorMessage: 'quota exhausted', hasText: false, hasFunctionCall: false }
-            : { text: 'Recovered~', hasText: true, hasFunctionCall: false }
-      )
+      __setTestRunTurnFactory(() => async (...args) => {
+        const [attempt, , request] = args
+        normalRetryRequests.push(request)
+        return attempt === 0
+          ? { errorCode: '429', errorMessage: 'quota exhausted', hasText: false, hasFunctionCall: false }
+          : { text: 'Recovered~', hasText: true, hasFunctionCall: false }
+      })
 
       const recovered = await generateResponse({
         channelId: 'roka-metrics-channel',
@@ -287,6 +394,7 @@ describe('generateResponse metrics', () => {
 
       expect(recovered.metrics).toMatchObject({ retries: 1, outcome: 'ok' })
       expect(recovered.metrics.retryLatencyMs).toBeGreaterThan(0)
+      expect(normalRetryRequests[1]).toEqual({ newMessage: undefined, stateDelta: undefined })
 
       __setTestRunTurnFactory(() => async () => ({ errorCode: '503', errorMessage: 'unavailable' }))
       const fallback = await generateResponse({
@@ -320,6 +428,20 @@ describe('generateResponse metrics', () => {
         userId: 'mio-id'
       })
       expect(terminal.metrics).toMatchObject({ outcome: 'deflection', kind: 'terminal' })
+
+      __setTestRunTurnFactory(() => async () => ({
+        errorCode: 'INVALID_ARGUMENT',
+        errorMessage: functionCallOrderingError
+      }))
+      const sessionCorrupt = await generateResponse({
+        channelId: 'roka-metrics-channel',
+        guildId: 'metrics-guild',
+        userMessage: 'Recover the session please.',
+        displayName: 'Mio',
+        username: 'mio',
+        userId: 'mio-id'
+      })
+      expect(sessionCorrupt.metrics).toMatchObject({ outcome: 'deflection', kind: 'session_corrupt', retries: 1 })
     } finally {
       gemini.retryBackoffBaseMs = originalBackoffBaseMs
       gemini.retryBackoffCapMs = originalBackoffCapMs

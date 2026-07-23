@@ -72,7 +72,18 @@ export interface TurnOutcome {
   sessionMissing?: boolean
 }
 
-export type TestRunTurn = (attempt: number, signal: AbortSignal) => Promise<TurnOutcome>
+interface TestTurnRequest {
+  newMessage?: Content
+  stateDelta?: {
+    _systemPrompt: string
+    participants: string[]
+    _userId: string
+    _channelId: string
+    _guildId: string
+  }
+}
+
+export type TestRunTurn = (attempt: number, signal: AbortSignal, request?: TestTurnRequest) => Promise<TurnOutcome>
 export type TestRunTurnFactory = (systemPrompt: string) => TestRunTurn
 
 let testRunTurnFactory: TestRunTurnFactory | undefined
@@ -109,6 +120,7 @@ export interface RunTurnWithReliabilityOptions {
   safetyDeflection: string
   recitationDeflection: string
   terminalDeflection: string
+  resetSession?: () => Promise<void>
 }
 
 function sleepUntil(delayMs: number, signal: AbortSignal): Promise<void> {
@@ -141,7 +153,7 @@ function fallbackResult(
       ? options.safetyDeflection
       : kind === 'recitation'
         ? options.recitationDeflection
-        : kind === 'terminal'
+        : kind === 'terminal' || kind === 'session_corrupt'
           ? options.terminalDeflection
           : options.genericFallback
 
@@ -206,22 +218,54 @@ export async function runTurnWithReliability(options: RunTurnWithReliabilityOpti
         options
       )
 
-    const retryLimit = failure.kind === 'recitation' ? Math.min(options.maxRetries, 1) : options.maxRetries
+    if (failure.kind === 'session_corrupt' && !options.resetSession)
+      return fallbackResult(failure.kind, 'destroy', attempt + 1, retryLatencyMs, options)
+
+    const retryLimit =
+      failure.kind === 'recitation' || failure.kind === 'session_corrupt'
+        ? Math.min(options.maxRetries, 1)
+        : options.maxRetries
     if (attempt >= retryLimit || shouldStop()) {
-      return fallbackResult(failure.kind, 'preserve', attempt + 1, retryLatencyMs, options)
+      return fallbackResult(
+        failure.kind,
+        failure.kind === 'session_corrupt' ? 'destroy' : 'preserve',
+        attempt + 1,
+        retryLatencyMs,
+        options
+      )
     }
 
     const delayMs = Math.min(options.computeBackoff(attempt), Math.max(0, options.maxLatencyMs - retryLatencyMs))
     if (delayMs <= 0 && retryLatencyMs >= options.maxLatencyMs) {
-      return fallbackResult(failure.kind, 'preserve', attempt + 1, retryLatencyMs, options)
+      return fallbackResult(
+        failure.kind,
+        failure.kind === 'session_corrupt' ? 'destroy' : 'preserve',
+        attempt + 1,
+        retryLatencyMs,
+        options
+      )
     }
     if (!options.tryConsumeRetry())
-      return fallbackResult(failure.kind, 'preserve', attempt + 1, retryLatencyMs, options)
+      return fallbackResult(
+        failure.kind,
+        failure.kind === 'session_corrupt' ? 'destroy' : 'preserve',
+        attempt + 1,
+        retryLatencyMs,
+        options
+      )
 
     await sleep(delayMs, abortController.signal)
     retryLatencyMs += delayMs
     if (shouldStop() || abortController.signal.aborted)
       return fallbackResult(failure.kind, 'preserve', attempt + 1, retryLatencyMs, options)
+
+    if (failure.kind === 'session_corrupt') {
+      try {
+        await options.resetSession!()
+      } catch {
+        return fallbackResult(failure.kind, 'destroy', attempt + 1, retryLatencyMs, options)
+      }
+    }
   }
 
   return fallbackResult(lastKind, 'preserve', options.maxRetries + 1, retryLatencyMs, options)
@@ -623,6 +667,8 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
 
   const llmStartMs = performance.now()
   const usedToolNames = new Set<string>()
+  const testRunTurn = testRunTurnFactory?.(systemPrompt)
+  let sessionWasReset = false
   const reliability = await toolCallsForRequest.run(usedToolNames, () =>
     runTurnWithReliability({
       maxRetries: config.gemini.liveMaxRetries,
@@ -635,56 +681,66 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
       safetyDeflection: SAFETY_DEFLECTION,
       recitationDeflection: RECITATION_DEFLECTION,
       terminalDeflection: TERMINAL_DEFLECTION,
-      runTurn:
-        testRunTurnFactory?.(systemPrompt) ??
-        (async (attempt, signal) => {
-          let responseText = ''
-          let hasFunctionCall = false
-          let finishReason: LlmResponse['finishReason']
-
-          const request: Parameters<typeof runner.runAsync>[0] = {
-            userId: channelId,
-            sessionId: channelId,
-            // ADK's runtime only appends when this value is truthy; its type incorrectly requires it for a retry.
-            newMessage: attempt === 0 ? newMessage : (undefined as unknown as Content),
-            runConfig: { maxLlmCalls: config.gemini.maxLlmCalls },
-            stateDelta:
-              attempt === 0
-                ? {
-                    _systemPrompt: systemPrompt,
-                    participants,
-                    _userId: userId,
-                    _channelId: channelId,
-                    _guildId: guildId
-                  }
-                : undefined
-          }
-
-          for await (const event of runner.runAsync(request)) {
-            if (signal.aborted) break
-            if (event.errorCode) {
-              return {
-                errorCode: event.errorCode,
-                errorMessage: event.errorMessage,
-                customMetadata: event.customMetadata,
-                finishReason: event.finishReason,
-                hasText: false,
-                hasFunctionCall: false
+      resetSession: async () => {
+        await destroySession(channelId)
+        await ensureSession(channelId)
+        resetIdleTimer(channelId)
+        sessionWasReset = true
+      },
+      runTurn: async (attempt, signal) => {
+        const includeCurrentTurn = attempt === 0 || sessionWasReset
+        const testRequest: TestTurnRequest = {
+          newMessage: includeCurrentTurn ? newMessage : undefined,
+          stateDelta: includeCurrentTurn
+            ? {
+                _systemPrompt: systemPrompt,
+                participants,
+                _userId: userId,
+                _channelId: channelId,
+                _guildId: guildId
               }
-            }
-            if (isFinalResponse(event) && event.content?.parts) {
-              finishReason = event.finishReason
-              responseText = event.content.parts
-                .filter((part: Part) => part.text && !part.thought)
-                .map((part: Part) => part.text)
-                .join('')
-                .trim()
-              hasFunctionCall = event.content.parts.some((part: Part) => 'functionCall' in part && part.functionCall)
+            : undefined
+        }
+        if (testRunTurn) return testRunTurn(attempt, signal, testRequest)
+
+        let responseText = ''
+        let hasFunctionCall = false
+        let finishReason: LlmResponse['finishReason']
+
+        const request: Parameters<typeof runner.runAsync>[0] = {
+          userId: channelId,
+          sessionId: channelId,
+          // ADK's runtime only appends when this value is truthy; its type incorrectly requires Content otherwise.
+          newMessage: testRequest.newMessage ?? (undefined as unknown as Content),
+          runConfig: { maxLlmCalls: config.gemini.maxLlmCalls },
+          stateDelta: testRequest.stateDelta
+        }
+
+        for await (const event of runner.runAsync(request)) {
+          if (signal.aborted) break
+          if (event.errorCode) {
+            return {
+              errorCode: event.errorCode,
+              errorMessage: event.errorMessage,
+              customMetadata: event.customMetadata,
+              finishReason: event.finishReason,
+              hasText: false,
+              hasFunctionCall: false
             }
           }
+          if (isFinalResponse(event) && event.content?.parts) {
+            finishReason = event.finishReason
+            responseText = event.content.parts
+              .filter((part: Part) => part.text && !part.thought)
+              .map((part: Part) => part.text)
+              .join('')
+              .trim()
+            hasFunctionCall = event.content.parts.some((part: Part) => 'functionCall' in part && part.functionCall)
+          }
+        }
 
-          return { text: responseText, finishReason, hasText: Boolean(responseText), hasFunctionCall }
-        })
+        return { text: responseText, finishReason, hasText: Boolean(responseText), hasFunctionCall }
+      }
     })
   )
   const llmMs = Math.round(performance.now() - llmStartMs)

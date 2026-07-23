@@ -42,6 +42,15 @@ describe('classifyGeminiFailure', () => {
       { finishReason: 'MAX_TOKENS', hasText: false, hasFunctionCall: false },
       { kind: 'empty_text', retryable: true, deflect: false }
     ],
+    [
+      'function-call ordering error',
+      {
+        errorCode: 'INVALID_ARGUMENT',
+        errorMessage:
+          'Please ensure that function call turn comes immediately after a user turn or after a function response turn.'
+      },
+      { kind: 'session_corrupt', retryable: true, deflect: true }
+    ],
     ['400', { errorCode: 400 }, { kind: 'terminal', retryable: false, deflect: true }],
     ['INVALID_ARGUMENT', { errorCode: 'INVALID_ARGUMENT' }, { kind: 'terminal', retryable: false, deflect: true }]
   ])('classifies %s', (_name, input, expected) => {

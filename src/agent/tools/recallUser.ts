@@ -13,21 +13,32 @@ export interface RecallUserResult {
   factCount: number
 }
 
+/** Freshest memories first, capped so the model sees her sharpest notes rather than the whole archive */
+const MAX_RECALLED_FACTS = 15
+
 export function recallUser(params: RecallUserParams): RecallUserResult {
   const { user_id, guild_id } = params
   const claims = guild_id === 'global' ? [] : getActiveClaims(guild_id, user_id)
+  const sortedClaims = [...claims].sort((left, right) => right.lastSeenAt - left.lastSeenAt)
   const facts = [
-    ...claims.map((claim) => ({ key: claim.predicate, value: claim.value })),
+    ...sortedClaims.map((claim) => ({ key: claim.predicate, value: claim.value })),
     ...getFacts(guild_id, user_id)
   ]
-  const uniqueFacts = facts.filter((fact, index) => {
-    const identity = `${fact.key}\u0000${fact.value}`.toLowerCase()
-    return (
-      index === facts.findIndex((candidate) => `${candidate.key}\u0000${candidate.value}`.toLowerCase() === identity)
-    )
-  })
+  const uniqueFacts = facts
+    .filter((fact, index) => {
+      const identity = `${fact.key}\u0000${fact.value}`.toLowerCase()
+      return (
+        index === facts.findIndex((candidate) => `${candidate.key}\u0000${candidate.value}`.toLowerCase() === identity)
+      )
+    })
+    .slice(0, MAX_RECALLED_FACTS)
 
-  touchRecalled(claims.map((claim) => claim.id))
+  const surfaced = new Set(uniqueFacts.map((fact) => `${fact.key}\u0000${fact.value}`.toLowerCase()))
+  touchRecalled(
+    sortedClaims
+      .filter((claim) => surfaced.has(`${claim.predicate}\u0000${claim.value}`.toLowerCase()))
+      .map((claim) => claim.id)
+  )
 
   if (uniqueFacts.length === 0) {
     return {
