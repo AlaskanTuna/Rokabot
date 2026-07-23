@@ -227,6 +227,15 @@ function predicatePhrase(predicate: string): string {
   return PREDICATE_PHRASES[predicate] ?? `I remember their ${predicateLabel(predicate).toLowerCase()}~`
 }
 
+/** Quote the member's most memorable memory: coy phrase plus the actual fact value (guild-scoped by query) */
+function memoryQuote(predicate: string | null, value: string | null): string {
+  if (!predicate) return 'I remember a little something about them~'
+  const phrase = predicatePhrase(predicate).replace(/~$/, '')
+  if (!value) return `${phrase}~`
+  const trimmed = value.length > 60 ? `${value.slice(0, 57)}…` : value
+  return `${phrase} — “${trimmed}”~`
+}
+
 export function getMoodLabel(dominant: ToneKey | null, runnerUp: ToneKey | null): string {
   if (!dominant) return 'A Quiet Little Pause'
   return (runnerUp && MOOD_PAIR_LABELS[`${dominant}:${runnerUp}`]) ?? MOOD_FALLBACKS[dominant]
@@ -370,15 +379,13 @@ async function buildMemory(guildId: string, guild: Guild, sinceMs: number, conta
       new SectionBuilder()
         .addTextDisplayComponents(
           text(
-            `**${entry.member.displayName}**\n\`${formatNumber(entry.count)}\` memories\n> ${predicatePhrase(entry.predicate)}`
+            `**${entry.member.displayName}**\n\`${formatNumber(entry.count)}\` memories\n> ${memoryQuote(entry.predicate, entry.value)}`
           )
         )
         .setThumbnailAccessory(new ThumbnailBuilder({ media: { url: entry.member.displayAvatarURL() } }))
     )
   }
-  container.addTextDisplayComponents(
-    text('-# I keep the details tucked safely away, but I do remember the important things.')
-  )
+  container.addTextDisplayComponents(text('-# A little peek at what I treasure — the rest stays between us, ne~'))
   return renderMemoryGrowth(memoryGrowthSeries(guildId, sinceMs, botUserId))
 }
 

@@ -102,7 +102,8 @@ function insertClaim({
   predicate,
   status = 'active',
   salience = 0.5,
-  firstSeenAt = now
+  firstSeenAt = now,
+  needsReview = 0
 }: {
   guildId?: string
   userId: string
@@ -110,14 +111,26 @@ function insertClaim({
   status?: string
   salience?: number
   firstSeenAt?: number
+  needsReview?: number
 }): void {
   getDb()
     .prepare(
       `INSERT INTO memory_claim (
-        guild_id, subject_user_id, predicate, value, source_kind, status, salience, first_seen_at, last_seen_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        guild_id, subject_user_id, predicate, value, source_kind, status, salience, needs_review, first_seen_at, last_seen_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(guildId, userId, predicate, 'private value', 'explicit', status, salience, firstSeenAt, firstSeenAt)
+    .run(
+      guildId,
+      userId,
+      predicate,
+      'private value',
+      'explicit',
+      status,
+      salience,
+      needsReview,
+      firstSeenAt,
+      firstSeenAt
+    )
 }
 
 function seedMemory(): void {
@@ -256,7 +269,18 @@ describe('stats queries', () => {
     expect(statsQueries.mostUsedTool('guild-2', monthSinceMs)).toBeNull()
   })
 
-  it('returns value-free memory details ordered by active claim count', () => {
+  it('excludes needs_review claims from the quote while still counting them, with a null quote for review-only members', () => {
+    insertClaim({ userId: 'mixed', predicate: 'hobby', salience: 0.2 })
+    insertClaim({ userId: 'mixed', predicate: 'strong_opinion', salience: 0.9, needsReview: 1 })
+    insertClaim({ userId: 'review-only', predicate: 'strong_opinion', needsReview: 1 })
+
+    expect(statsQueries.topRememberedMembers('guild-1', monthSinceMs, 'roka-user')).toEqual([
+      { userId: 'mixed', count: 2, predicate: 'hobby', value: 'private value' },
+      { userId: 'review-only', count: 1, predicate: null, value: null }
+    ])
+  })
+
+  it('returns memory details ordered by active claim count, quoting values only for top members', () => {
     insertClaim({ userId: 'user-1', predicate: 'favorite_anime', salience: 0.9, firstSeenAt: monthSinceMs })
     insertClaim({ userId: 'user-1', predicate: 'hobby', salience: 0.2, firstSeenAt: now - DAY_MS })
     insertClaim({ userId: 'user-2', predicate: 'favorite_food', salience: 0.7, firstSeenAt: now - 2 * DAY_MS })
@@ -278,11 +302,11 @@ describe('stats queries', () => {
       { predicate: 'favorite_food', count: 1 }
     ])
     expect(statsQueries.topRememberedMembers('guild-1', monthSinceMs, 'roka-user')).toEqual([
-      { userId: 'user-1', count: 2, predicate: 'favorite_anime' },
-      { userId: 'user-2', count: 2, predicate: 'favorite_food' },
-      { userId: 'user-3', count: 1, predicate: 'preference' },
-      { userId: 'user-4', count: 1, predicate: 'game' },
-      { userId: 'user-5', count: 1, predicate: 'music' }
+      { userId: 'user-1', count: 2, predicate: 'favorite_anime', value: 'private value' },
+      { userId: 'user-2', count: 2, predicate: 'favorite_food', value: 'private value' },
+      { userId: 'user-3', count: 1, predicate: 'preference', value: 'private value' },
+      { userId: 'user-4', count: 1, predicate: 'game', value: 'private value' },
+      { userId: 'user-5', count: 1, predicate: 'music', value: 'private value' }
     ])
     expect(statsQueries.memoryGrowthSeries('guild-1', monthSinceMs, 'roka-user')).toEqual([
       { day: '2026-06-23', cumulative: 1 },
@@ -293,9 +317,15 @@ describe('stats queries', () => {
       { day: '2026-07-22', cumulative: 7 }
     ])
 
-    for (const sql of Object.values(statsQueries.MEMORY_DETAIL_SQL)) {
+    for (const [name, sql] of Object.entries(statsQueries.MEMORY_DETAIL_SQL)) {
       expect(sql).toMatch(/\b(predicate|salience)\b/i)
-      expect(sql).not.toMatch(/\b(value|fact_value)\b/i)
+      if (name === 'topRememberedMembers') {
+        // Human-directed exception (2026-07-24): the memory quote surfaces the top-salience claim's
+        // value in-guild; needs_review claims stay excluded and no other query may select values.
+        expect(sql).toMatch(/\bneeds_review = 0\b/)
+      } else {
+        expect(sql).not.toMatch(/\b(value|fact_value)\b/i)
+      }
     }
   })
 

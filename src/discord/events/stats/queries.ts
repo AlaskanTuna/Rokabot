@@ -53,7 +53,8 @@ export interface CountByPredicate {
 export interface RememberedMember {
   userId: string
   count: number
-  predicate: string
+  predicate: string | null
+  value: string | null
 }
 
 export interface MemoryGrowthPoint {
@@ -112,7 +113,7 @@ export const MEMORY_DETAIL_SQL = {
                   ORDER BY count DESC, predicate ASC
                   LIMIT 3`,
   topRememberedMembers: `WITH active_claims AS (
-                            SELECT subject_user_id, predicate, salience
+                            SELECT subject_user_id, predicate, salience, value, needs_review
                             FROM memory_claim
                             WHERE guild_id = ? AND status = 'active' AND first_seen_at >= ? AND subject_user_id != ?
                           ), member_counts AS (
@@ -120,17 +121,19 @@ export const MEMORY_DETAIL_SQL = {
                             FROM active_claims
                             GROUP BY subject_user_id
                           ), highest_salience AS (
-                            SELECT subject_user_id, predicate,
+                            SELECT subject_user_id, predicate, value,
                                    ROW_NUMBER() OVER (
                                      PARTITION BY subject_user_id
                                      ORDER BY salience DESC, predicate ASC
                                    ) AS rank
                             FROM active_claims
+                            WHERE needs_review = 0
                           )
-                          SELECT member_counts.subject_user_id AS userId, member_counts.count, highest_salience.predicate
+                          SELECT member_counts.subject_user_id AS userId, member_counts.count,
+                                 highest_salience.predicate, highest_salience.value
                           FROM member_counts
-                          JOIN highest_salience ON highest_salience.subject_user_id = member_counts.subject_user_id
-                          WHERE highest_salience.rank = 1
+                          LEFT JOIN highest_salience ON highest_salience.subject_user_id = member_counts.subject_user_id
+                            AND highest_salience.rank = 1
                           ORDER BY member_counts.count DESC, userId ASC
                           LIMIT 5`
 } as const
