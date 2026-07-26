@@ -39,7 +39,8 @@ const metrics = {
   outcome: 'ok',
   kind: 'ok',
   tokensInEst: 20,
-  tokensOutEst: 10
+  tokensOutEst: 10,
+  failureMarker: 'SAFETY'
 }
 
 describe('interaction handler metrics', () => {

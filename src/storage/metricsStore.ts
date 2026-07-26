@@ -17,6 +17,7 @@ export interface ResponseMetrics {
   kind: string
   tokensInEst: number
   tokensOutEst: number
+  failureMarker?: string
 }
 
 export interface ResponseEventInput extends ResponseMetrics {
@@ -59,8 +60,8 @@ function getResponseEventStatement(): Database.Statement {
   responseEventStatement ??= getDb().prepare(
     `INSERT INTO response_events (
       guild_id, channel_id, user_id, trigger, tone, outcome, kind, e2e_ms, generate_ms, llm_ms,
-      retry_latency_ms, retries, tokens_in_est, tokens_out_est, tools_used, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      retry_latency_ms, retries, tokens_in_est, tokens_out_est, tools_used, failure_marker, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
   return responseEventStatement
 }
@@ -103,6 +104,7 @@ export function recordResponseEvent(row: ResponseEventInput): void {
       row.tokensInEst,
       row.tokensOutEst,
       JSON.stringify(row.toolsUsed),
+      row.failureMarker ?? null,
       Date.now()
     )
   } catch (error) {

@@ -25,7 +25,8 @@ const mocks = vi.hoisted(() => ({
   runnerRequests: [] as unknown[]
 }))
 
-vi.mock('@google/genai', () => ({
+vi.mock('@google/genai', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   GoogleGenAI: class {
     models = { generateContent: mocks.generateContent }
   }

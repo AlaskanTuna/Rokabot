@@ -9,6 +9,7 @@ import { getSharedRateLimiter } from '../utils/rateLimiter.js'
 import { classifyGeminiFailure, computeBackoff } from './geminiReliability.js'
 import { assertClaim } from './memory/memoryClaims.js'
 import { type BufferedMessage, getMessages } from './passiveBuffer.js'
+import { SAFETY_SETTINGS } from './safetySettings.js'
 import { isShuttingDown } from './shutdownSignal.js'
 
 const messageCounts = new Map<string, number>() // channelId → messages since last extraction
@@ -118,6 +119,7 @@ async function generateExtraction(
         config: {
           temperature: 0.3,
           maxOutputTokens: 400,
+          safetySettings: SAFETY_SETTINGS,
           httpOptions: { timeout: 15_000 }
         }
       })

@@ -5,7 +5,8 @@ const mocks = vi.hoisted(() => ({
   tryConsumeAboveFloor: vi.fn()
 }))
 
-vi.mock('@google/genai', () => ({
+vi.mock('@google/genai', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   GoogleGenAI: class {
     models = { generateContent: mocks.generateContent }
   }
@@ -19,7 +20,8 @@ vi.mock('../../../config.js', () => ({
       extractionRpmFloor: 3,
       extractionMaxRetries: 1,
       retryBackoffBaseMs: 0,
-      retryBackoffCapMs: 0
+      retryBackoffCapMs: 0,
+      safetyThreshold: 'OFF'
     },
     logging: { level: 'silent' },
     memory: { maxActiveClaimsPerUser: 20 },
@@ -32,6 +34,7 @@ vi.mock('../../../utils/rateLimiter.js', () => ({
 }))
 
 import { closeDb, getDb } from '../../../storage/database.js'
+import { buildSafetySettings } from '../../safetySettings.js'
 import { type ExtractionJob, runExtraction } from '../extractor.js'
 import { getActiveClaims } from '../memoryClaims.js'
 
@@ -135,6 +138,16 @@ describe('runExtraction', () => {
     expect(mocks.tryConsumeAboveFloor).toHaveBeenCalledTimes(2)
     expect(mocks.tryConsumeAboveFloor).toHaveBeenNthCalledWith(1, 3)
     expect(mocks.generateContent).toHaveBeenCalledTimes(2)
+  })
+
+  it('applies the configured safety settings to the extraction call', async () => {
+    mocks.generateContent.mockResolvedValueOnce({ text: '[]' })
+
+    await runExtraction(job([{ userId: 'user-1', displayName: 'Alex', content: 'I love anime' }]))
+
+    expect(mocks.generateContent).toHaveBeenCalledWith(
+      expect.objectContaining({ config: expect.objectContaining({ safetySettings: buildSafetySettings('OFF') }) })
+    )
   })
 
   it('keeps memory telemetry structurally unable to contain fact values', async () => {

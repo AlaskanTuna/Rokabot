@@ -26,7 +26,8 @@ const mocks = vi.hoisted(() => ({
   tryConsumeAboveFloor: vi.fn()
 }))
 
-vi.mock('@google/genai', () => ({
+vi.mock('@google/genai', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   GoogleGenAI: class {
     models = { generateContent: mocks.generateContent }
   }
@@ -48,7 +49,8 @@ vi.mock('../../config.js', () => ({
       extractionRpmFloor: 3,
       extractionMaxRetries: 1,
       retryBackoffBaseMs: 0,
-      retryBackoffCapMs: 12_000
+      retryBackoffCapMs: 12_000,
+      safetyThreshold: 'OFF'
     },
     logging: { level: 'silent' },
     rateLimit: { rpm: 15, rpd: 500 },

@@ -327,21 +327,22 @@ Secrets belong in `.env`; tunables belong in [`config.yml`](../config.yml). Envi
 <details>
 <summary>View Tunables</summary>
 
-| YAML Path                     | Env Override                    | Purpose                                                           |
-| ----------------------------- | ------------------------------- | ----------------------------------------------------------------- |
-| `gemini.model`                | `GEMINI_MODEL`                  | Live Gemini model ID.                                             |
-| `gemini.extractionModel`      | `GEMINI_EXTRACTION_MODEL`       | Optional background extraction model; defaults to the live model. |
-| `gemini.timeout`              | `GEMINI_TIMEOUT`                | Request timeout in milliseconds.                                  |
-| `gemini.maxRetries`           | `GEMINI_MAX_RETRIES`            | Maximum retries for transient failures.                           |
-| `gemini.maxOutputTokens`      | `GEMINI_MAX_OUTPUT_TOKENS`      | Response token safety cap.                                        |
-| `gemini.baseRetryDelay`       | —                               | Initial retry delay in milliseconds.                              |
-| `gemini.maxLlmCalls`          | —                               | Maximum chained tool calls per request.                           |
-| `gemini.liveMaxRetries`       | `GEMINI_LIVE_MAX_RETRIES`       | Retry attempts after a failed live response.                      |
-| `gemini.retryRpmFloor`        | `GEMINI_RETRY_RPM_FLOOR`        | Minimum remaining RPM required for a live retry.                  |
-| `gemini.extractionRpmFloor`   | `GEMINI_EXTRACTION_RPM_FLOOR`   | Minimum remaining RPM required for background extraction.         |
-| `gemini.extractionMaxRetries` | `GEMINI_EXTRACTION_MAX_RETRIES` | Retry attempts after a transient extraction failure.              |
-| `gemini.retryBackoffBaseMs`   | `GEMINI_RETRY_BACKOFF_BASE_MS`  | Initial full-jitter retry backoff in milliseconds.                |
-| `gemini.retryBackoffCapMs`    | `GEMINI_RETRY_BACKOFF_CAP_MS`   | Maximum full-jitter retry backoff in milliseconds.                |
+| YAML Path                     | Env Override                    | Purpose                                                                                                                                                            |
+| ----------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `gemini.model`                | `GEMINI_MODEL`                  | Live Gemini model ID.                                                                                                                                              |
+| `gemini.extractionModel`      | `GEMINI_EXTRACTION_MODEL`       | Optional background extraction model; defaults to the live model.                                                                                                  |
+| `gemini.timeout`              | `GEMINI_TIMEOUT`                | Request timeout in milliseconds.                                                                                                                                   |
+| `gemini.maxRetries`           | `GEMINI_MAX_RETRIES`            | Maximum retries for transient failures.                                                                                                                            |
+| `gemini.maxOutputTokens`      | `GEMINI_MAX_OUTPUT_TOKENS`      | Response token safety cap.                                                                                                                                         |
+| `gemini.safetyThreshold`      | `GEMINI_SAFETY_THRESHOLD`       | Harm block threshold applied to all four Gemini-API-supported categories: `OFF`, `BLOCK_NONE`, `BLOCK_ONLY_HIGH`, `BLOCK_MEDIUM_AND_ABOVE`, `BLOCK_LOW_AND_ABOVE`. |
+| `gemini.baseRetryDelay`       | —                               | Initial retry delay in milliseconds.                                                                                                                               |
+| `gemini.maxLlmCalls`          | —                               | Maximum chained tool calls per request.                                                                                                                            |
+| `gemini.liveMaxRetries`       | `GEMINI_LIVE_MAX_RETRIES`       | Retry attempts after a failed live response.                                                                                                                       |
+| `gemini.retryRpmFloor`        | `GEMINI_RETRY_RPM_FLOOR`        | Minimum remaining RPM required for a live retry.                                                                                                                   |
+| `gemini.extractionRpmFloor`   | `GEMINI_EXTRACTION_RPM_FLOOR`   | Minimum remaining RPM required for background extraction.                                                                                                          |
+| `gemini.extractionMaxRetries` | `GEMINI_EXTRACTION_MAX_RETRIES` | Retry attempts after a transient extraction failure.                                                                                                               |
+| `gemini.retryBackoffBaseMs`   | `GEMINI_RETRY_BACKOFF_BASE_MS`  | Initial full-jitter retry backoff in milliseconds.                                                                                                                 |
+| `gemini.retryBackoffCapMs`    | `GEMINI_RETRY_BACKOFF_CAP_MS`   | Maximum full-jitter retry backoff in milliseconds.                                                                                                                 |
 
 </details>
 

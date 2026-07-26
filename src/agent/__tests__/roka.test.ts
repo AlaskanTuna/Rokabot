@@ -1,7 +1,9 @@
+import type { CallbackContext, LlmRequest } from '@google/adk'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { config } from '../../config.js'
 import { recordMemoryEvent } from '../../storage/metricsStore.js'
 import { getFacts, refreshFactTimestamps } from '../../storage/userMemory.js'
+import { logger } from '../../utils/logger.js'
 import { estimateTokens } from '../../utils/tokens.js'
 import { retrieveForTurn } from '../memory/retriever.js'
 import { getMessages } from '../passiveBuffer.js'
@@ -13,8 +15,11 @@ import {
   destroyAllSessions,
   destroySession,
   generateResponse,
-  runTurnWithReliability
+  rokaAgent,
+  runTurnWithReliability,
+  steeringForRequest
 } from '../roka.js'
+import { buildSafetySettings } from '../safetySettings.js'
 import { beginShutdown, isShuttingDown, resetForTest } from '../shutdownSignal.js'
 import { rokaTools } from '../tools/index.js'
 
@@ -96,9 +101,24 @@ describe('runTurnWithReliability', () => {
 
     const result = await runTurnWithReliability(testOptions)
 
-    expect(result).toMatchObject({ text: 'I am back~', kind: 'ok', action: 'preserve', attempts: 2 })
+    expect(result).toMatchObject({
+      text: 'I am back~',
+      kind: 'ok',
+      action: 'preserve',
+      attempts: 2,
+      success: true,
+      failureMarker: '429'
+    })
     expect(runTurn).toHaveBeenCalledTimes(2)
     expect(testOptions.tryConsumeRetry).toHaveBeenCalledTimes(1)
+  })
+
+  it('returns no failure marker for a clean first-attempt turn', async () => {
+    const runTurn = vi.fn().mockResolvedValue({ text: 'All clear~', hasText: true, hasFunctionCall: false })
+
+    const result = await runTurnWithReliability(options({ runTurn }))
+
+    expect(result).toMatchObject({ text: 'All clear~', success: true, failureMarker: undefined })
   })
 
   it('retries an empty final response before returning real text', async () => {
@@ -130,8 +150,77 @@ describe('runTurnWithReliability', () => {
 
     const result = await runTurnWithReliability(testOptions)
 
-    expect(result).toMatchObject({ text: safetyDeflection, kind: 'safety', action: 'preserve', attempts: 1 })
+    expect(result).toMatchObject({
+      text: safetyDeflection,
+      kind: 'safety',
+      action: 'preserve',
+      attempts: 1,
+      failureMarker: 'SAFETY'
+    })
     expect(testOptions.tryConsumeRetry).not.toHaveBeenCalled()
+  })
+
+  it('falls through to finishReason for the failure marker when errorCode is an empty string', async () => {
+    const runTurn = vi
+      .fn()
+      .mockResolvedValue({ errorCode: '', finishReason: 'SAFETY', hasText: false, hasFunctionCall: false })
+    const testOptions = options({ runTurn })
+
+    const result = await runTurnWithReliability(testOptions)
+
+    expect(result).toMatchObject({ kind: 'safety', failureMarker: 'SAFETY' })
+  })
+
+  it('regenerates once on a safety block and returns the recovered text', async () => {
+    const runTurn = vi
+      .fn()
+      .mockResolvedValueOnce({ finishReason: 'SAFETY', hasText: false, hasFunctionCall: false })
+      .mockResolvedValueOnce({ text: 'A tasteful dodge~', hasText: true, hasFunctionCall: false })
+    const regenerateOnSafety = vi.fn()
+    const testOptions = options({ runTurn, regenerateOnSafety })
+
+    const result = await runTurnWithReliability(testOptions)
+
+    expect(result).toMatchObject({
+      text: 'A tasteful dodge~',
+      kind: 'ok',
+      attempts: 2,
+      success: true,
+      retryLatencyMs: 0
+    })
+    expect(regenerateOnSafety).toHaveBeenCalledOnce()
+    expect(testOptions.sleep).not.toHaveBeenCalled()
+  })
+
+  it('falls back to the static safety deflection when the regenerated attempt is blocked again', async () => {
+    const runTurn = vi.fn().mockResolvedValue({ finishReason: 'SAFETY', hasText: false, hasFunctionCall: false })
+    const regenerateOnSafety = vi.fn()
+    const testOptions = options({ runTurn, regenerateOnSafety })
+
+    const result = await runTurnWithReliability(testOptions)
+
+    expect(result).toMatchObject({
+      text: safetyDeflection,
+      kind: 'safety',
+      action: 'preserve',
+      attempts: 2,
+      failureMarker: 'SAFETY'
+    })
+    expect(regenerateOnSafety).toHaveBeenCalledOnce()
+    expect(testOptions.sleep).not.toHaveBeenCalled()
+  })
+
+  it('skips the steered regeneration when the RPM floor refuses a retry token', async () => {
+    const runTurn = vi.fn().mockResolvedValue({ finishReason: 'SAFETY', hasText: false, hasFunctionCall: false })
+    const tryConsumeRetry = vi.fn(() => false)
+    const regenerateOnSafety = vi.fn()
+    const testOptions = options({ runTurn, tryConsumeRetry, regenerateOnSafety })
+
+    const result = await runTurnWithReliability(testOptions)
+
+    expect(result).toMatchObject({ text: safetyDeflection, kind: 'safety', attempts: 1 })
+    expect(regenerateOnSafety).not.toHaveBeenCalled()
+    expect(runTurn).toHaveBeenCalledTimes(1)
   })
 
   it('destroys only terminal failures', async () => {
@@ -139,7 +228,13 @@ describe('runTurnWithReliability', () => {
 
     const result = await runTurnWithReliability(options({ runTurn }))
 
-    expect(result).toMatchObject({ text: terminalDeflection, kind: 'terminal', action: 'destroy', attempts: 1 })
+    expect(result).toMatchObject({
+      text: terminalDeflection,
+      kind: 'terminal',
+      action: 'destroy',
+      attempts: 1,
+      failureMarker: 'INVALID_ARGUMENT'
+    })
     expect(runTurn).toHaveBeenCalledTimes(1)
   })
 
@@ -288,6 +383,69 @@ describe('runTurnWithReliability', () => {
     await expect(response).resolves.toMatchObject({ text: genericFallback, action: 'preserve', attempts: 1 })
     expect(runTurn.mock.calls[0][1].aborted).toBe(true)
   })
+
+  it('warns once per failed attempt and not at all on a clean turn', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never)
+    const runTurn = vi
+      .fn()
+      .mockResolvedValueOnce({ errorCode: '429', errorMessage: 'quota exhausted' })
+      .mockResolvedValueOnce({ text: 'Recovered~', hasText: true, hasFunctionCall: false })
+
+    await runTurnWithReliability(options({ runTurn }))
+
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attempt: 0,
+        kind: 'transient_http',
+        marker: '429',
+        errorMessage: 'quota exhausted',
+        model: config.gemini.model
+      }),
+      'Live turn attempt failed'
+    )
+
+    warn.mockClear()
+    await runTurnWithReliability(
+      options({ runTurn: vi.fn().mockResolvedValue({ text: 'All clear~', hasText: true, hasFunctionCall: false }) })
+    )
+    expect(warn).not.toHaveBeenCalled()
+  })
+})
+
+describe('rokaAgent safety settings', () => {
+  it('applies the configured safety thresholds to the agent-level generateContentConfig', () => {
+    expect(rokaAgent.generateContentConfig?.safetySettings).toEqual(buildSafetySettings(config.gemini.safetyThreshold))
+  })
+})
+
+describe('beforeModelCallback safety steering seam', () => {
+  function fakeContext(prompt: string): CallbackContext {
+    return { state: { get: () => prompt } } as unknown as CallbackContext
+  }
+
+  function callback() {
+    return rokaAgent.beforeModelCallback as (params: {
+      context: CallbackContext
+      request: LlmRequest
+    }) => Promise<unknown>
+  }
+
+  it('prefers the ALS steering prompt over session state', async () => {
+    const request = {} as LlmRequest
+
+    await steeringForRequest.run({ prompt: 'STEERED' }, () => callback()({ context: fakeContext('BASE'), request }))
+
+    expect(request.config?.systemInstruction).toBe('STEERED')
+  })
+
+  it('falls back to session state when the steering store is empty', async () => {
+    const request = {} as LlmRequest
+
+    await callback()({ context: fakeContext('BASE'), request })
+
+    expect(request.config?.systemInstruction).toBe('BASE')
+  })
 })
 
 describe('generateResponse metrics', () => {
@@ -366,6 +524,28 @@ describe('generateResponse metrics', () => {
     expect(result.toolsUsed).toEqual([])
   })
 
+  it('recovers from a safety block via one steered regeneration', async () => {
+    let callCount = 0
+    __setTestRunTurnFactory(() => async () => {
+      callCount += 1
+      return callCount === 1
+        ? { finishReason: 'SAFETY', hasText: false, hasFunctionCall: false }
+        : { text: 'A playful dodge~', hasText: true, hasFunctionCall: false }
+    })
+
+    const result = await generateResponse({
+      channelId: 'roka-metrics-channel',
+      guildId: 'metrics-guild',
+      userMessage: 'Off-limits please.',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id'
+    })
+
+    expect(result.text).toBe('A playful dodge~')
+    expect(result.metrics).toMatchObject({ outcome: 'ok', kind: 'ok', retries: 1, failureMarker: 'SAFETY' })
+  })
+
   it('returns retry and outcome metrics without changing reliability behavior', async () => {
     const gemini = config.gemini as { retryBackoffBaseMs: number; retryBackoffCapMs: number }
     const originalBackoffBaseMs = gemini.retryBackoffBaseMs
@@ -392,7 +572,7 @@ describe('generateResponse metrics', () => {
         userId: 'mio-id'
       })
 
-      expect(recovered.metrics).toMatchObject({ retries: 1, outcome: 'ok' })
+      expect(recovered.metrics).toMatchObject({ retries: 1, outcome: 'ok', failureMarker: '429' })
       expect(recovered.metrics.retryLatencyMs).toBeGreaterThan(0)
       expect(normalRetryRequests[1]).toEqual({ newMessage: undefined, stateDelta: undefined })
 
@@ -416,7 +596,7 @@ describe('generateResponse metrics', () => {
         username: 'mio',
         userId: 'mio-id'
       })
-      expect(safety.metrics).toMatchObject({ outcome: 'deflection', kind: 'safety' })
+      expect(safety.metrics).toMatchObject({ outcome: 'deflection', kind: 'safety', failureMarker: 'SAFETY' })
 
       __setTestRunTurnFactory(() => async () => ({ errorCode: 'INVALID_ARGUMENT', errorMessage: 'bad request' }))
       const terminal = await generateResponse({

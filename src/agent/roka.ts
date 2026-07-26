@@ -23,6 +23,7 @@ import { getMessages as getBufferMessages } from './passiveBuffer.js'
 import { assembleSystemPrompt } from './promptAssembler.js'
 import { buildFactsEnvelope, buildOverheardBlock } from './promptSafety.js'
 import type { ToneKey } from './prompts/tones.js'
+import { SAFETY_SETTINGS } from './safetySettings.js'
 import { beginShutdown, isShuttingDown } from './shutdownSignal.js'
 import { detectTone } from './toneDetector.js'
 import { rokaTools } from './tools/index.js'
@@ -54,11 +55,16 @@ const APP_NAME = 'rokabot'
 
 const sessionErrorCounts = new Map<string, number>()
 const toolCallsForRequest = new AsyncLocalStorage<Set<string>>()
+// Exported so tests can drive the beforeModelCallback ALS seam directly (task 122's only observable proof point)
+export const steeringForRequest = new AsyncLocalStorage<{ prompt?: string }>()
 const activeAbortControllers = new Set<AbortController>()
 
 const SAFETY_DEFLECTION = "Ehh… let's not get into that one~"
 const RECITATION_DEFLECTION = "Ah, I don't think I should repeat that one exactly~"
 const TERMINAL_DEFLECTION = "Eep, something went wrong on my side. Let's try again later~"
+const SAFETY_STEER_ADDENDUM =
+  '## Redirect This One\n' +
+  'Do not answer the previous message on its own terms, and never repeat, quote, or hint at what it was about. Stay completely in character: respond to the person, not the topic — a light dodge, a tease, or a small change of subject in your own voice. Never mention rules, filters, errors, or that anything went wrong. Every other instruction above still applies exactly as written.'
 const toolsTok = estimateTokens(JSON.stringify(rokaTools))
 
 export interface TurnOutcome {
@@ -105,6 +111,7 @@ interface ReliabilityResult {
   attempts: number
   retryLatencyMs: number
   success: boolean
+  failureMarker?: string
 }
 
 export interface RunTurnWithReliabilityOptions {
@@ -121,6 +128,7 @@ export interface RunTurnWithReliabilityOptions {
   recitationDeflection: string
   terminalDeflection: string
   resetSession?: () => Promise<void>
+  regenerateOnSafety?: () => void
 }
 
 function sleepUntil(delayMs: number, signal: AbortSignal): Promise<void> {
@@ -141,12 +149,19 @@ function sleepUntil(delayMs: number, signal: AbortSignal): Promise<void> {
   })
 }
 
+/** Derives the persistable failure marker — never `errorMessage`, which can echo request content. */
+function markerFrom(outcome: TurnOutcome): string | undefined {
+  const marker = outcome.errorCode || outcome.finishReason
+  return marker ? String(marker).slice(0, 64) : undefined
+}
+
 function fallbackResult(
   kind: ReliabilityResult['kind'],
   action: ReliabilityResult['action'],
   attempts: number,
   retryLatencyMs: number,
-  options: RunTurnWithReliabilityOptions
+  options: RunTurnWithReliabilityOptions,
+  failureMarker?: string
 ): ReliabilityResult {
   const text =
     kind === 'safety'
@@ -157,7 +172,7 @@ function fallbackResult(
           ? options.terminalDeflection
           : options.genericFallback
 
-  return { text, kind, action, attempts, retryLatencyMs, success: false }
+  return { text, kind, action, attempts, retryLatencyMs, success: false, failureMarker }
 }
 
 /** Runs one user turn with bounded retry policy while keeping the initial user event single-shot. */
@@ -166,9 +181,11 @@ export async function runTurnWithReliability(options: RunTurnWithReliabilityOpti
   const sleep = options.sleep ?? sleepUntil
   let retryLatencyMs = 0
   let lastKind: ReliabilityResult['kind'] = 'network'
+  let lastMarker: string | undefined
+  let safetyRegenerated = false
 
   for (let attempt = 0; attempt <= options.maxRetries; attempt++) {
-    if (shouldStop()) return fallbackResult(lastKind, 'preserve', attempt, retryLatencyMs, options)
+    if (shouldStop()) return fallbackResult(lastKind, 'preserve', attempt, retryLatencyMs, options, lastMarker)
 
     const abortController = new AbortController()
     activeAbortControllers.add(abortController)
@@ -192,12 +209,26 @@ export async function runTurnWithReliability(options: RunTurnWithReliabilityOpti
       activeAbortControllers.delete(abortController)
     }
 
-    if (outcome.sessionMissing) return fallbackResult('network', 'preserve', attempt + 1, retryLatencyMs, options)
+    if (outcome.sessionMissing)
+      return fallbackResult('network', 'preserve', attempt + 1, retryLatencyMs, options, lastMarker)
     if (shouldStop() || abortController.signal.aborted)
-      return fallbackResult(lastKind, 'preserve', attempt + 1, retryLatencyMs, options)
+      return fallbackResult(lastKind, 'preserve', attempt + 1, retryLatencyMs, options, lastMarker)
 
     const failure = classifyGeminiFailure(outcome)
     lastKind = failure.kind
+    if (failure.kind !== 'ok') {
+      lastMarker = markerFrom(outcome)
+      logger.warn(
+        {
+          attempt,
+          kind: failure.kind,
+          marker: lastMarker,
+          errorMessage: outcome.errorMessage,
+          model: config.gemini.model
+        },
+        'Live turn attempt failed'
+      )
+    }
     if (failure.kind === 'ok' && outcome.text) {
       return {
         text: outcome.text,
@@ -205,8 +236,23 @@ export async function runTurnWithReliability(options: RunTurnWithReliabilityOpti
         action: 'preserve',
         attempts: attempt + 1,
         retryLatencyMs,
-        success: true
+        success: true,
+        failureMarker: lastMarker
       }
+    }
+
+    if (
+      failure.kind === 'safety' &&
+      options.regenerateOnSafety &&
+      !safetyRegenerated &&
+      attempt < options.maxRetries &&
+      !shouldStop()
+    ) {
+      safetyRegenerated = true
+      if (!options.tryConsumeRetry())
+        return fallbackResult('safety', 'preserve', attempt + 1, retryLatencyMs, options, lastMarker)
+      options.regenerateOnSafety()
+      continue
     }
 
     if (!failure.retryable)
@@ -215,11 +261,12 @@ export async function runTurnWithReliability(options: RunTurnWithReliabilityOpti
         failure.kind === 'terminal' ? 'destroy' : 'preserve',
         attempt + 1,
         retryLatencyMs,
-        options
+        options,
+        lastMarker
       )
 
     if (failure.kind === 'session_corrupt' && !options.resetSession)
-      return fallbackResult(failure.kind, 'destroy', attempt + 1, retryLatencyMs, options)
+      return fallbackResult(failure.kind, 'destroy', attempt + 1, retryLatencyMs, options, lastMarker)
 
     const retryLimit =
       failure.kind === 'recitation' || failure.kind === 'session_corrupt'
@@ -231,7 +278,8 @@ export async function runTurnWithReliability(options: RunTurnWithReliabilityOpti
         failure.kind === 'session_corrupt' ? 'destroy' : 'preserve',
         attempt + 1,
         retryLatencyMs,
-        options
+        options,
+        lastMarker
       )
     }
 
@@ -242,7 +290,8 @@ export async function runTurnWithReliability(options: RunTurnWithReliabilityOpti
         failure.kind === 'session_corrupt' ? 'destroy' : 'preserve',
         attempt + 1,
         retryLatencyMs,
-        options
+        options,
+        lastMarker
       )
     }
     if (!options.tryConsumeRetry())
@@ -251,24 +300,25 @@ export async function runTurnWithReliability(options: RunTurnWithReliabilityOpti
         failure.kind === 'session_corrupt' ? 'destroy' : 'preserve',
         attempt + 1,
         retryLatencyMs,
-        options
+        options,
+        lastMarker
       )
 
     await sleep(delayMs, abortController.signal)
     retryLatencyMs += delayMs
     if (shouldStop() || abortController.signal.aborted)
-      return fallbackResult(failure.kind, 'preserve', attempt + 1, retryLatencyMs, options)
+      return fallbackResult(failure.kind, 'preserve', attempt + 1, retryLatencyMs, options, lastMarker)
 
     if (failure.kind === 'session_corrupt') {
       try {
         await options.resetSession!()
       } catch {
-        return fallbackResult(failure.kind, 'destroy', attempt + 1, retryLatencyMs, options)
+        return fallbackResult(failure.kind, 'destroy', attempt + 1, retryLatencyMs, options, lastMarker)
       }
     }
   }
 
-  return fallbackResult(lastKind, 'preserve', options.maxRetries + 1, retryLatencyMs, options)
+  return fallbackResult(lastKind, 'preserve', options.maxRetries + 1, retryLatencyMs, options, lastMarker)
 }
 
 /** Caps event history returned by getSession to keep context within budget */
@@ -287,7 +337,8 @@ class WindowedSessionService extends InMemorySessionService {
 
 const sessionService = new WindowedSessionService(config.session.windowSize * 2)
 
-const rokaAgent = new LlmAgent({
+// Exported so tests can assert the agent-level config and beforeModelCallback seam directly
+export const rokaAgent = new LlmAgent({
   name: 'roka',
   model: config.gemini.model,
   instruction: '',
@@ -298,10 +349,11 @@ const rokaAgent = new LlmAgent({
     temperature: 0.9,
     topP: 0.95,
     maxOutputTokens: config.gemini.maxOutputTokens,
+    safetySettings: SAFETY_SETTINGS,
     httpOptions: { timeout: config.gemini.timeout }
   },
   beforeModelCallback: async ({ context, request }) => {
-    const prompt = context.state.get<string>('_systemPrompt')
+    const prompt = steeringForRequest.getStore()?.prompt ?? context.state.get<string>('_systemPrompt')
     if (prompt) {
       request.config = request.config ?? ({} as NonNullable<typeof request.config>)
       request.config!.systemInstruction = prompt
@@ -669,79 +721,85 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   const usedToolNames = new Set<string>()
   const testRunTurn = testRunTurnFactory?.(systemPrompt)
   let sessionWasReset = false
+  const steering: { prompt?: string } = {}
   const reliability = await toolCallsForRequest.run(usedToolNames, () =>
-    runTurnWithReliability({
-      maxRetries: config.gemini.liveMaxRetries,
-      maxLatencyMs: config.gemini.retryBackoffCapMs,
-      requestTimeoutMs: config.gemini.timeout,
-      tryConsumeRetry: () => getSharedRateLimiter(config.rateLimit).tryConsumeAboveFloor(config.gemini.retryRpmFloor),
-      computeBackoff: (attempt) =>
-        computeBackoff(attempt, config.gemini.retryBackoffBaseMs, { maxMs: config.gemini.retryBackoffCapMs }),
-      genericFallback: getRandomFallback(),
-      safetyDeflection: SAFETY_DEFLECTION,
-      recitationDeflection: RECITATION_DEFLECTION,
-      terminalDeflection: TERMINAL_DEFLECTION,
-      resetSession: async () => {
-        await destroySession(channelId)
-        await ensureSession(channelId)
-        resetIdleTimer(channelId)
-        sessionWasReset = true
-      },
-      runTurn: async (attempt, signal) => {
-        const includeCurrentTurn = attempt === 0 || sessionWasReset
-        const testRequest: TestTurnRequest = {
-          newMessage: includeCurrentTurn ? newMessage : undefined,
-          stateDelta: includeCurrentTurn
-            ? {
-                _systemPrompt: systemPrompt,
-                participants,
-                _userId: userId,
-                _channelId: channelId,
-                _guildId: guildId
+    steeringForRequest.run(steering, () =>
+      runTurnWithReliability({
+        maxRetries: config.gemini.liveMaxRetries,
+        maxLatencyMs: config.gemini.retryBackoffCapMs,
+        requestTimeoutMs: config.gemini.timeout,
+        tryConsumeRetry: () => getSharedRateLimiter(config.rateLimit).tryConsumeAboveFloor(config.gemini.retryRpmFloor),
+        computeBackoff: (attempt) =>
+          computeBackoff(attempt, config.gemini.retryBackoffBaseMs, { maxMs: config.gemini.retryBackoffCapMs }),
+        genericFallback: getRandomFallback(),
+        safetyDeflection: SAFETY_DEFLECTION,
+        recitationDeflection: RECITATION_DEFLECTION,
+        terminalDeflection: TERMINAL_DEFLECTION,
+        resetSession: async () => {
+          await destroySession(channelId)
+          await ensureSession(channelId)
+          resetIdleTimer(channelId)
+          sessionWasReset = true
+        },
+        regenerateOnSafety: () => {
+          steering.prompt = `${systemPrompt}\n\n${SAFETY_STEER_ADDENDUM}`
+        },
+        runTurn: async (attempt, signal) => {
+          const includeCurrentTurn = attempt === 0 || sessionWasReset
+          const testRequest: TestTurnRequest = {
+            newMessage: includeCurrentTurn ? newMessage : undefined,
+            stateDelta: includeCurrentTurn
+              ? {
+                  _systemPrompt: systemPrompt,
+                  participants,
+                  _userId: userId,
+                  _channelId: channelId,
+                  _guildId: guildId
+                }
+              : undefined
+          }
+          if (testRunTurn) return testRunTurn(attempt, signal, testRequest)
+
+          let responseText = ''
+          let hasFunctionCall = false
+          let finishReason: LlmResponse['finishReason']
+
+          const request: Parameters<typeof runner.runAsync>[0] = {
+            userId: channelId,
+            sessionId: channelId,
+            // ADK's runtime only appends when this value is truthy; its type incorrectly requires Content otherwise.
+            newMessage: testRequest.newMessage ?? (undefined as unknown as Content),
+            runConfig: { maxLlmCalls: config.gemini.maxLlmCalls },
+            stateDelta: testRequest.stateDelta
+          }
+
+          for await (const event of runner.runAsync(request)) {
+            if (signal.aborted) break
+            if (event.errorCode) {
+              return {
+                errorCode: event.errorCode,
+                errorMessage: event.errorMessage,
+                customMetadata: event.customMetadata,
+                finishReason: event.finishReason,
+                hasText: false,
+                hasFunctionCall: false
               }
-            : undefined
-        }
-        if (testRunTurn) return testRunTurn(attempt, signal, testRequest)
-
-        let responseText = ''
-        let hasFunctionCall = false
-        let finishReason: LlmResponse['finishReason']
-
-        const request: Parameters<typeof runner.runAsync>[0] = {
-          userId: channelId,
-          sessionId: channelId,
-          // ADK's runtime only appends when this value is truthy; its type incorrectly requires Content otherwise.
-          newMessage: testRequest.newMessage ?? (undefined as unknown as Content),
-          runConfig: { maxLlmCalls: config.gemini.maxLlmCalls },
-          stateDelta: testRequest.stateDelta
-        }
-
-        for await (const event of runner.runAsync(request)) {
-          if (signal.aborted) break
-          if (event.errorCode) {
-            return {
-              errorCode: event.errorCode,
-              errorMessage: event.errorMessage,
-              customMetadata: event.customMetadata,
-              finishReason: event.finishReason,
-              hasText: false,
-              hasFunctionCall: false
+            }
+            if (isFinalResponse(event) && event.content?.parts) {
+              finishReason = event.finishReason
+              responseText = event.content.parts
+                .filter((part: Part) => part.text && !part.thought)
+                .map((part: Part) => part.text)
+                .join('')
+                .trim()
+              hasFunctionCall = event.content.parts.some((part: Part) => 'functionCall' in part && part.functionCall)
             }
           }
-          if (isFinalResponse(event) && event.content?.parts) {
-            finishReason = event.finishReason
-            responseText = event.content.parts
-              .filter((part: Part) => part.text && !part.thought)
-              .map((part: Part) => part.text)
-              .join('')
-              .trim()
-            hasFunctionCall = event.content.parts.some((part: Part) => 'functionCall' in part && part.functionCall)
-          }
-        }
 
-        return { text: responseText, finishReason, hasText: Boolean(responseText), hasFunctionCall }
-      }
-    })
+          return { text: responseText, finishReason, hasText: Boolean(responseText), hasFunctionCall }
+        }
+      })
+    )
   )
   const llmMs = Math.round(performance.now() - llmStartMs)
 
@@ -788,6 +846,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     retries: reliability.attempts - 1,
     outcome,
     kind: reliability.kind,
+    failureMarker: reliability.failureMarker,
     tokensInEst:
       estimateTokens(systemPrompt) +
       fakeMessages.reduce(
