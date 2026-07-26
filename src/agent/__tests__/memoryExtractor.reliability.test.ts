@@ -10,7 +10,8 @@ const mocks = vi.hoisted(() => ({
   tryConsumeAboveFloor: vi.fn()
 }))
 
-vi.mock('@google/genai', () => ({
+vi.mock('@google/genai', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   GoogleGenAI: class {
     models = { generateContent: mocks.generateContent }
   }
@@ -25,7 +26,8 @@ vi.mock('../../config.js', () => ({
       extractionRpmFloor: 3,
       extractionMaxRetries: 1,
       retryBackoffBaseMs: 0,
-      retryBackoffCapMs: 0
+      retryBackoffCapMs: 0,
+      safetyThreshold: 'OFF'
     },
     logging: { level: 'silent' },
     memory: {
@@ -59,6 +61,7 @@ vi.mock('../../utils/rateLimiter.js', () => ({
 import { getDb } from '../../storage/database.js'
 import { maybeExtractFromBuffer, resetCounters } from '../memoryExtractor.js'
 import { addMessage, resetAllBuffers } from '../passiveBuffer.js'
+import { buildSafetySettings } from '../safetySettings.js'
 import { beginShutdown, resetForTest } from '../shutdownSignal.js'
 
 process.env.ROKABOT_DB_PATH = ':memory:'
@@ -288,6 +291,17 @@ describe('memory extraction reliability', () => {
     await waitForExtraction()
 
     expect(mocks.generateContent).toHaveBeenCalledWith(expect.objectContaining({ model: 'gemini-extraction-test' }))
+  })
+
+  it('applies the configured safety settings to every extraction call', async () => {
+    mocks.generateContent.mockResolvedValueOnce({ text: '[]' })
+
+    queueExtraction()
+    await waitForExtraction()
+
+    expect(mocks.generateContent).toHaveBeenCalledWith(
+      expect.objectContaining({ config: expect.objectContaining({ safetySettings: buildSafetySettings('OFF') }) })
+    )
   })
 
   it.each([

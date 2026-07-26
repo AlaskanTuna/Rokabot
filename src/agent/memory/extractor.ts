@@ -4,6 +4,7 @@ import { getDb } from '../../storage/database.js'
 import { recordMemoryEvent } from '../../storage/metricsStore.js'
 import { getSharedRateLimiter } from '../../utils/rateLimiter.js'
 import { classifyGeminiFailure, computeBackoff } from '../geminiReliability.js'
+import { SAFETY_SETTINGS } from '../safetySettings.js'
 import { isShuttingDown } from '../shutdownSignal.js'
 import { shouldExtract } from './candidateGate.js'
 import { assertClaim, getActiveClaims, retractClaim } from './memoryClaims.js'
@@ -97,6 +98,7 @@ async function generateExtraction(prompt: string): Promise<string | undefined> {
         config: {
           temperature: 0.3,
           maxOutputTokens: 400,
+          safetySettings: SAFETY_SETTINGS,
           httpOptions: { timeout: 15_000 }
         }
       })

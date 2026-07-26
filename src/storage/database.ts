@@ -128,6 +128,7 @@ function createTables(database: Database.Database): void {
       tokens_in_est INTEGER NOT NULL,
       tokens_out_est INTEGER NOT NULL,
       tools_used TEXT DEFAULT NULL,
+      failure_marker TEXT DEFAULT NULL,
       created_at INTEGER NOT NULL
     );
 
@@ -195,6 +196,9 @@ export function runMigrations(database: Database.Database): void {
   const responseEventCols = database.prepare("PRAGMA table_info('response_events')").all() as Array<{ name: string }>
   if (responseEventCols.length > 0 && !responseEventCols.some((column) => column.name === 'tools_used')) {
     database.exec('ALTER TABLE response_events ADD COLUMN tools_used TEXT DEFAULT NULL')
+  }
+  if (responseEventCols.length > 0 && !responseEventCols.some((column) => column.name === 'failure_marker')) {
+    database.exec('ALTER TABLE response_events ADD COLUMN failure_marker TEXT DEFAULT NULL')
   }
 
   const buddyIndexes = database.prepare("PRAGMA index_list('buddy')").all() as Array<{ name: string; unique: number }>

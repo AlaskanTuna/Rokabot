@@ -88,6 +88,7 @@ describe('metricsStore', () => {
       'tokens_in_est',
       'tokens_out_est',
       'tools_used',
+      'failure_marker',
       'created_at'
     ])
     expect(extractionColumns.map((column) => column.name)).toEqual([
@@ -143,6 +144,18 @@ describe('metricsStore', () => {
       created_at: now
     })
     vi.restoreAllMocks()
+  })
+
+  it('persists a supplied failure marker verbatim and stores NULL when omitted', () => {
+    recordResponseEvent({ ...responseEvent, failureMarker: 'SAFETY' })
+    recordResponseEvent(responseEvent)
+
+    const rows = getDb().prepare('SELECT failure_marker FROM response_events ORDER BY id DESC LIMIT 2').all() as Array<{
+      failure_marker: string | null
+    }>
+
+    expect(rows[0].failure_marker).toBeNull()
+    expect(rows[1].failure_marker).toBe('SAFETY')
   })
 
   it('records value-free memory events with timestamps', () => {

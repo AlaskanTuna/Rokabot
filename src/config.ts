@@ -20,6 +20,7 @@ interface YamlConfig {
     timeout?: number
     maxRetries?: number
     maxOutputTokens?: number
+    safetyThreshold?: string
     baseRetryDelay?: number
     maxLlmCalls?: number
     liveMaxRetries?: number
@@ -130,6 +131,7 @@ export const config = {
     timeout: envInt('GEMINI_TIMEOUT') ?? yaml.gemini?.timeout ?? 15_000,
     maxRetries: envInt('GEMINI_MAX_RETRIES') ?? yaml.gemini?.maxRetries ?? 1,
     maxOutputTokens: envInt('GEMINI_MAX_OUTPUT_TOKENS') ?? yaml.gemini?.maxOutputTokens ?? 300,
+    safetyThreshold: envString('GEMINI_SAFETY_THRESHOLD') ?? yaml.gemini?.safetyThreshold ?? 'OFF',
     baseRetryDelay: yaml.gemini?.baseRetryDelay ?? 2000,
     maxLlmCalls: yaml.gemini?.maxLlmCalls ?? 4,
     liveMaxRetries: envInt('GEMINI_LIVE_MAX_RETRIES') ?? yaml.gemini?.liveMaxRetries ?? 2,

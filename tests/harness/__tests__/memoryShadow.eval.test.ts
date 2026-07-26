@@ -4,7 +4,8 @@ import { evaluateMemoryShadow, loadReplaySet } from '../memoryShadow.js'
 
 const mocks = vi.hoisted(() => ({ generateContent: vi.fn() }))
 
-vi.mock('@google/genai', () => ({
+vi.mock('@google/genai', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   GoogleGenAI: class {
     models = { generateContent: mocks.generateContent }
   }
