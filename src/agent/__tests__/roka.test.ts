@@ -395,11 +395,16 @@ describe('runTurnWithReliability', () => {
 
     expect(warn).toHaveBeenCalledTimes(1)
     expect(warn).toHaveBeenCalledWith(
+      expect.not.objectContaining({
+        errorMessage: expect.anything()
+      }),
+      'Live turn attempt failed'
+    )
+    expect(warn).toHaveBeenCalledWith(
       expect.objectContaining({
         attempt: 0,
         kind: 'transient_http',
         marker: '429',
-        errorMessage: 'quota exhausted',
         model: config.gemini.model
       }),
       'Live turn attempt failed'

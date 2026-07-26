@@ -223,7 +223,6 @@ export async function runTurnWithReliability(options: RunTurnWithReliabilityOpti
           attempt,
           kind: failure.kind,
           marker: lastMarker,
-          errorMessage: outcome.errorMessage,
           model: config.gemini.model
         },
         'Live turn attempt failed'
