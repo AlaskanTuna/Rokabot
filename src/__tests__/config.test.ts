@@ -31,6 +31,7 @@ describe('config module', () => {
     vi.stubEnv('GEMINI_EXTRACTION_MODEL', '')
     vi.stubEnv('GEMINI_TIMEOUT', '')
     vi.stubEnv('GEMINI_MAX_RETRIES', '')
+    vi.stubEnv('GEMINI_MAX_OUTPUT_TOKENS', '')
     vi.stubEnv('GEMINI_LIVE_MAX_RETRIES', '')
     vi.stubEnv('GEMINI_RETRY_RPM_FLOOR', '')
     vi.stubEnv('GEMINI_EXTRACTION_RPM_FLOOR', '')
@@ -307,6 +308,42 @@ describe('config module', () => {
     )
   })
 
+  it('throws if a min:1 numeric tunable is set to a negative value', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('GEMINI_TIMEOUT', '-5000')
+
+    await expect(() => import('../config.js')).rejects.toThrow('Config value gemini.timeout must be >= 1, got: -5000')
+  })
+
+  it('throws if a min:1 numeric tunable is set to zero', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('GEMINI_TIMEOUT', '0')
+
+    await expect(() => import('../config.js')).rejects.toThrow('Config value gemini.timeout must be >= 1, got: 0')
+  })
+
+  it('accepts a min:1 numeric tunable at exactly the boundary', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('GEMINI_TIMEOUT', '1')
+
+    const { config } = await import('../config.js')
+
+    expect(config.gemini.timeout).toBe(1)
+  })
+
+  it('accepts zero for a min:0 numeric tunable', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('GEMINI_MAX_RETRIES', '0')
+
+    const { config } = await import('../config.js')
+
+    expect(config.gemini.maxRetries).toBe(0)
+  })
+
   it('clamps the extraction interval to the passive buffer size', async () => {
     setRequiredEnvVars()
     clearTunableEnvVars()
@@ -317,5 +354,100 @@ describe('config module', () => {
 
     expect(config.memory.extractionInterval).toBe(20)
     expect(warn).toHaveBeenCalledOnce()
+  })
+
+  it('throws if an env int override uses underscore digit grouping', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('GEMINI_TIMEOUT', '20_000')
+
+    await expect(() => import('../config.js')).rejects.toThrow(
+      'Environment variable GEMINI_TIMEOUT must be a number, got: 20_000'
+    )
+  })
+
+  it('accepts a well-formed integer env override', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('GEMINI_TIMEOUT', '20000')
+
+    const { config } = await import('../config.js')
+
+    expect(config.gemini.timeout).toBe(20000)
+  })
+
+  it('bounds every env-overridable numeric tunable', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+
+    const EXPECTED_BOUNDS: ReadonlyArray<{ path: string; min: number; max?: number }> = [
+      { path: 'gemini.timeout', min: 1 },
+      { path: 'gemini.maxOutputTokens', min: 1 },
+      { path: 'gemini.turnDeadlineMs', min: 1 },
+      { path: 'gemini.retryBackoffCapMs', min: 1 },
+      { path: 'gemini.maxRetries', min: 0 },
+      { path: 'gemini.liveMaxRetries', min: 0 },
+      { path: 'gemini.extractionMaxRetries', min: 0 },
+      { path: 'gemini.retryBackoffBaseMs', min: 0 },
+      { path: 'gemini.retryRpmFloor', min: 0 },
+      { path: 'gemini.extractionRpmFloor', min: 0 },
+      { path: 'rateLimit.rpm', min: 1 },
+      { path: 'rateLimit.rpd', min: 1 },
+      { path: 'session.ttlMs', min: 1 },
+      { path: 'session.windowSize', min: 1 },
+      { path: 'discord.maxMessageLength', min: 1 },
+      { path: 'memory.bufferSize', min: 1 },
+      { path: 'memory.extractionInterval', min: 0 },
+      { path: 'memory.extractionGapMs', min: 0 },
+      { path: 'memory.maxClaimsPerTurn', min: 1 },
+      { path: 'memory.retrievalTokenBudget', min: 1 },
+      { path: 'memory.recentParticipantLimit', min: 1 },
+      { path: 'memory.speakerMinShare', min: 0, max: 1 },
+      { path: 'memory.maxActiveClaimsPerUser', min: 1 },
+      { path: 'memory.claimRetentionDays', min: 1 },
+      { path: 'memory.extractionDailyBudgetRatio', min: 0, max: 1 },
+      { path: 'memory.perGuildGapMs', min: 0 },
+      { path: 'memory.extractionQueueMaxPerGuild', min: 1 },
+      { path: 'metrics.retentionDays', min: 1 }
+    ]
+
+    const { NUMERIC_BOUNDS } = await import('../config.js')
+
+    expect(NUMERIC_BOUNDS.map((bound) => bound.path).sort()).toEqual(EXPECTED_BOUNDS.map((bound) => bound.path).sort())
+    for (const expected of EXPECTED_BOUNDS) {
+      const actual = NUMERIC_BOUNDS.find((bound) => bound.path === expected.path)
+      expect(actual?.min).toBe(expected.min)
+      expect(actual?.max).toBe(expected.max)
+    }
+  })
+
+  it('throws if memory.extractionDailyBudgetRatio exceeds 1', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('MEMORY_EXTRACTION_DAILY_BUDGET_RATIO', '5')
+
+    await expect(() => import('../config.js')).rejects.toThrow(
+      'Config value memory.extractionDailyBudgetRatio must be <= 1, got: 5'
+    )
+  })
+
+  it('throws if memory.speakerMinShare exceeds 1', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('MEMORY_SPEAKER_MIN_SHARE', '2.5')
+
+    await expect(() => import('../config.js')).rejects.toThrow(
+      'Config value memory.speakerMinShare must be <= 1, got: 2.5'
+    )
+  })
+
+  it('accepts a ratio at exactly the upper bound of 1', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('MEMORY_EXTRACTION_DAILY_BUDGET_RATIO', '1')
+
+    const { config } = await import('../config.js')
+
+    expect(config.memory.extractionDailyBudgetRatio).toBe(1)
   })
 })

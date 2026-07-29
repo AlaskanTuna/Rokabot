@@ -84,8 +84,12 @@ const yaml = loadYamlConfig()
 function envInt(key: string): number | undefined {
   const raw = process.env[key]
   if (!raw) return undefined
-  const parsed = parseInt(raw, 10)
-  if (isNaN(parsed)) {
+  const trimmed = raw.trim()
+  if (!/^[+-]?\d+$/.test(trimmed)) {
+    throw new Error(`Environment variable ${key} must be a number, got: ${raw}`)
+  }
+  const parsed = Number(trimmed)
+  if (!Number.isFinite(parsed)) {
     throw new Error(`Environment variable ${key} must be a number, got: ${raw}`)
   }
   return parsed
@@ -95,7 +99,7 @@ function envNumber(key: string): number | undefined {
   const raw = process.env[key]
   if (!raw) return undefined
   const parsed = Number(raw)
-  if (isNaN(parsed)) {
+  if (!Number.isFinite(parsed)) {
     throw new Error(`Environment variable ${key} must be a number, got: ${raw}`)
   }
   return parsed
@@ -199,6 +203,54 @@ export const config = {
   statusCycleMs: yaml.statusCycleMs ?? 900_000,
   timezone: (envString('TZ') ?? yaml.timezone) as string | undefined
 } as const
+
+/**
+ * Bounds for every env-overridable numeric tunable, re-derived from resolved config values so a
+ * dropped or mis-wired row shows up in `NUMERIC_BOUNDS`, not just at runtime. min: 1 keys silently
+ * break the behaviour they gate at zero or below (e.g. gemini.timeout: 0 aborts every request
+ * instantly); min: 0 keys have a legitimate "off"/"no floor" meaning at zero (e.g.
+ * gemini.maxRetries: 0 means "don't retry"). max is optional and only set on fractions where any
+ * value above it is definitionally meaningless (e.g. a share greater than 1).
+ */
+export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: number; max?: number }> = [
+  { path: 'gemini.timeout', value: config.gemini.timeout, min: 1 },
+  { path: 'gemini.maxOutputTokens', value: config.gemini.maxOutputTokens, min: 1 },
+  { path: 'gemini.turnDeadlineMs', value: config.gemini.turnDeadlineMs, min: 1 },
+  { path: 'gemini.retryBackoffCapMs', value: config.gemini.retryBackoffCapMs, min: 1 },
+  { path: 'gemini.maxRetries', value: config.gemini.maxRetries, min: 0 },
+  { path: 'gemini.liveMaxRetries', value: config.gemini.liveMaxRetries, min: 0 },
+  { path: 'gemini.extractionMaxRetries', value: config.gemini.extractionMaxRetries, min: 0 },
+  { path: 'gemini.retryBackoffBaseMs', value: config.gemini.retryBackoffBaseMs, min: 0 },
+  { path: 'gemini.retryRpmFloor', value: config.gemini.retryRpmFloor, min: 0 },
+  { path: 'gemini.extractionRpmFloor', value: config.gemini.extractionRpmFloor, min: 0 },
+  { path: 'rateLimit.rpm', value: config.rateLimit.rpm, min: 1 },
+  { path: 'rateLimit.rpd', value: config.rateLimit.rpd, min: 1 },
+  { path: 'session.ttlMs', value: config.session.ttlMs, min: 1 },
+  { path: 'session.windowSize', value: config.session.windowSize, min: 1 },
+  { path: 'discord.maxMessageLength', value: config.discord.maxMessageLength, min: 1 },
+  { path: 'memory.bufferSize', value: config.memory.bufferSize, min: 1 },
+  { path: 'memory.extractionInterval', value: config.memory.extractionInterval, min: 0 },
+  { path: 'memory.extractionGapMs', value: config.memory.extractionGapMs, min: 0 },
+  { path: 'memory.maxClaimsPerTurn', value: config.memory.maxClaimsPerTurn, min: 1 },
+  { path: 'memory.retrievalTokenBudget', value: config.memory.retrievalTokenBudget, min: 1 },
+  { path: 'memory.recentParticipantLimit', value: config.memory.recentParticipantLimit, min: 1 },
+  { path: 'memory.speakerMinShare', value: config.memory.speakerMinShare, min: 0, max: 1 },
+  { path: 'memory.maxActiveClaimsPerUser', value: config.memory.maxActiveClaimsPerUser, min: 1 },
+  { path: 'memory.claimRetentionDays', value: config.memory.claimRetentionDays, min: 1 },
+  { path: 'memory.extractionDailyBudgetRatio', value: config.memory.extractionDailyBudgetRatio, min: 0, max: 1 },
+  { path: 'memory.perGuildGapMs', value: config.memory.perGuildGapMs, min: 0 },
+  { path: 'memory.extractionQueueMaxPerGuild', value: config.memory.extractionQueueMaxPerGuild, min: 1 },
+  { path: 'metrics.retentionDays', value: config.metrics.retentionDays, min: 1 }
+]
+
+for (const { path, value, min, max } of NUMERIC_BOUNDS) {
+  if (value < min) {
+    throw new Error(`Config value ${path} must be >= ${min}, got: ${value}`)
+  }
+  if (max !== undefined && value > max) {
+    throw new Error(`Config value ${path} must be <= ${max}, got: ${value}`)
+  }
+}
 
 const maxLiveRetryWindow = config.gemini.liveMaxRetries * (config.gemini.timeout + config.gemini.retryBackoffCapMs)
 
