@@ -29,6 +29,7 @@ interface YamlConfig {
     extractionMaxRetries?: number
     retryBackoffBaseMs?: number
     retryBackoffCapMs?: number
+    turnDeadlineMs?: number
   }
   rateLimit?: { rpm?: number; rpd?: number }
   session?: { ttl?: number; windowSize?: number; maxRehydrationAge?: number; historyRetentionDays?: number }
@@ -139,7 +140,8 @@ export const config = {
     extractionRpmFloor: envInt('GEMINI_EXTRACTION_RPM_FLOOR') ?? yaml.gemini?.extractionRpmFloor ?? 3,
     extractionMaxRetries: envInt('GEMINI_EXTRACTION_MAX_RETRIES') ?? yaml.gemini?.extractionMaxRetries ?? 1,
     retryBackoffBaseMs: envInt('GEMINI_RETRY_BACKOFF_BASE_MS') ?? yaml.gemini?.retryBackoffBaseMs ?? 1000,
-    retryBackoffCapMs: envInt('GEMINI_RETRY_BACKOFF_CAP_MS') ?? yaml.gemini?.retryBackoffCapMs ?? 12_000
+    retryBackoffCapMs: envInt('GEMINI_RETRY_BACKOFF_CAP_MS') ?? yaml.gemini?.retryBackoffCapMs ?? 12_000,
+    turnDeadlineMs: envInt('GEMINI_TURN_DEADLINE_MS') ?? yaml.gemini?.turnDeadlineMs ?? 60_000
   },
   logging: {
     level: envString('LOG_LEVEL') ?? yaml.logging?.level ?? 'info'
@@ -213,5 +215,13 @@ if (config.session.ttlMs <= maxLiveRetryWindow) {
   logger.warn(
     { sessionTtlMs: config.session.ttlMs, maxLiveRetryWindow },
     'Session idle TTL may expire before the maximum live retry window'
+  )
+}
+
+if (config.gemini.turnDeadlineMs <= config.gemini.timeout) {
+  const { logger } = await import('./utils/logger.js')
+  logger.warn(
+    { turnDeadlineMs: config.gemini.turnDeadlineMs, timeout: config.gemini.timeout },
+    'Turn deadline is shorter than the request timeout; no live retry can ever start'
   )
 }

@@ -418,6 +418,123 @@ describe('runTurnWithReliability', () => {
   })
 })
 
+describe('runTurnWithReliability turn deadline', () => {
+  it('stops before a retry that would not fit in the remaining budget', async () => {
+    let clock = 0
+    const now = vi.fn(() => clock)
+    const runTurn = vi.fn(async () => {
+      clock += 45_000
+      return { errorCode: '503', errorMessage: 'unavailable' }
+    })
+    const testOptions = options({ runTurn, now, turnDeadlineMs: 60_000, requestTimeoutMs: 45_000 })
+
+    const result = await runTurnWithReliability(testOptions)
+
+    expect(runTurn).toHaveBeenCalledTimes(1)
+    expect(result).toMatchObject({
+      text: genericFallback,
+      kind: 'transient_http',
+      action: 'preserve',
+      attempts: 1
+    })
+    expect(now).toHaveBeenCalled()
+  })
+
+  it('stops when the deadline is exhausted during backoff, not by the backoff cap', async () => {
+    let clock = 0
+    const now = () => clock
+    const runTurn = vi.fn().mockResolvedValue({ errorCode: '503', errorMessage: 'unavailable' })
+    const sleep = vi.fn(async () => {
+      clock += 55_000
+    })
+    const testOptions = options({
+      runTurn,
+      sleep,
+      now,
+      computeBackoff: () => 1000,
+      turnDeadlineMs: 60_000,
+      requestTimeoutMs: 45_000
+    })
+
+    const result = await runTurnWithReliability(testOptions)
+
+    expect(runTurn).toHaveBeenCalledTimes(1)
+    expect(result.retryLatencyMs).toBeLessThan(testOptions.retryBackoffCapMs)
+    expect(result).toMatchObject({ text: genericFallback, action: 'preserve' })
+  })
+
+  it('admits exactly as many full-length attempts as fit the deadline', async () => {
+    const makeRunTurn = (clockRef: { value: number }) =>
+      vi.fn(async () => {
+        clockRef.value += 45_000
+        return { errorCode: '503', errorMessage: 'unavailable' }
+      })
+
+    const twoAttemptClock = { value: 0 }
+    const twoAttemptRunTurn = makeRunTurn(twoAttemptClock)
+    const twoAttemptResult = await runTurnWithReliability(
+      options({
+        runTurn: twoAttemptRunTurn,
+        now: () => twoAttemptClock.value,
+        turnDeadlineMs: 100_000,
+        requestTimeoutMs: 45_000
+      })
+    )
+    expect(twoAttemptRunTurn).toHaveBeenCalledTimes(2)
+    expect(twoAttemptResult.text).toBe(genericFallback)
+
+    const threeAttemptClock = { value: 0 }
+    const threeAttemptRunTurn = makeRunTurn(threeAttemptClock)
+    const threeAttemptResult = await runTurnWithReliability(
+      options({
+        runTurn: threeAttemptRunTurn,
+        now: () => threeAttemptClock.value,
+        turnDeadlineMs: 140_000,
+        requestTimeoutMs: 45_000
+      })
+    )
+    expect(threeAttemptRunTurn).toHaveBeenCalledTimes(3)
+    expect(threeAttemptResult.text).toBe(genericFallback)
+  })
+
+  it('never gates attempt zero, even with a deadline shorter than the request timeout', async () => {
+    const runTurn = vi.fn().mockResolvedValue({ errorCode: '503', errorMessage: 'unavailable' })
+    const testOptions = options({ runTurn, now: () => 0, turnDeadlineMs: 1, requestTimeoutMs: 45_000 })
+
+    const result = await runTurnWithReliability(testOptions)
+
+    expect(runTurn).toHaveBeenCalledTimes(1)
+    expect(result).toMatchObject({ text: genericFallback, attempts: 1 })
+  })
+
+  it('leaves the Phase 19 safety regeneration unaffected by a turn deadline', async () => {
+    const runTurn = vi
+      .fn()
+      .mockResolvedValueOnce({ finishReason: 'SAFETY', hasText: false, hasFunctionCall: false })
+      .mockResolvedValueOnce({ text: 'A tasteful dodge~', hasText: true, hasFunctionCall: false })
+    const regenerateOnSafety = vi.fn()
+    const testOptions = options({
+      runTurn,
+      regenerateOnSafety,
+      now: () => 0,
+      turnDeadlineMs: 60_000,
+      requestTimeoutMs: 45_000
+    })
+
+    const result = await runTurnWithReliability(testOptions)
+
+    expect(result).toMatchObject({
+      text: 'A tasteful dodge~',
+      kind: 'ok',
+      attempts: 2,
+      success: true,
+      retryLatencyMs: 0
+    })
+    expect(regenerateOnSafety).toHaveBeenCalledOnce()
+    expect(testOptions.sleep).not.toHaveBeenCalled()
+  })
+})
+
 describe('rokaAgent safety settings', () => {
   it('applies the configured safety thresholds to the agent-level generateContentConfig', () => {
     expect(rokaAgent.generateContentConfig?.safetySettings).toEqual(buildSafetySettings(config.gemini.safetyThreshold))

@@ -343,6 +343,7 @@ Secrets belong in `.env`; tunables belong in [`config.yml`](../config.yml). Envi
 | `gemini.extractionMaxRetries` | `GEMINI_EXTRACTION_MAX_RETRIES` | Retry attempts after a transient extraction failure.                                                                                                               |
 | `gemini.retryBackoffBaseMs`   | `GEMINI_RETRY_BACKOFF_BASE_MS`  | Initial full-jitter retry backoff in milliseconds.                                                                                                                 |
 | `gemini.retryBackoffCapMs`    | `GEMINI_RETRY_BACKOFF_CAP_MS`   | Maximum full-jitter retry backoff in milliseconds.                                                                                                                 |
+| `gemini.turnDeadlineMs`       | `GEMINI_TURN_DEADLINE_MS`       | Wall-clock budget for the live retry loop; a retry starts only if a full `gemini.timeout` still fits, and the first attempt is never gated.                        |
 
 </details>
 
