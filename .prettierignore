@@ -49,3 +49,10 @@ temp/
 *.ts
 *.js
 docs/.codex/
+
+# Local-only pm-workflow artifacts (git-excluded; scaffolded per contributor)
+docs/plan.md
+docs/progress.md
+docs/test.md
+docs/decisions.md
+docs/roles.md
