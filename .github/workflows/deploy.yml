@@ -18,14 +18,23 @@ on:
       - '.coderabbit.yaml'
       - '.agents/**'
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      DISCORD_TOKEN: ci-dummy-discord-token
+      DISCORD_CLIENT_ID: ci-dummy-discord-client-id
+      GEMINI_API_KEY: ci-dummy-gemini-api-key
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Setup Node
         uses: actions/setup-node@v4
