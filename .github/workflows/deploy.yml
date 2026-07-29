@@ -9,9 +9,48 @@ on:
       - '.claude/**'
       - '.coderabbit.yaml'
       - '.agents/**'
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - '*.md'
+      - 'docs/**'
+      - '.claude/**'
+      - '.coderabbit.yaml'
+      - '.agents/**'
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: node_modules/.bin/biome check .
+
+      - name: Run tests
+        run: npm test
+
+      - name: Run perf tests
+        run: npm run test:perf
+
   deploy:
+    needs: test
+    if: github.event_name == 'push'
     runs-on: self-hosted
     timeout-minutes: 10
 
