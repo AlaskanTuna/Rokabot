@@ -121,7 +121,7 @@ export interface RunTurnWithReliabilityOptions {
   sleep?: (delayMs: number, signal: AbortSignal) => Promise<void>
   isShuttingDown?: () => boolean
   maxRetries: number
-  maxLatencyMs: number
+  retryBackoffCapMs: number
   requestTimeoutMs?: number
   genericFallback: string
   safetyDeflection: string
@@ -282,8 +282,8 @@ export async function runTurnWithReliability(options: RunTurnWithReliabilityOpti
       )
     }
 
-    const delayMs = Math.min(options.computeBackoff(attempt), Math.max(0, options.maxLatencyMs - retryLatencyMs))
-    if (delayMs <= 0 && retryLatencyMs >= options.maxLatencyMs) {
+    const delayMs = Math.min(options.computeBackoff(attempt), Math.max(0, options.retryBackoffCapMs - retryLatencyMs))
+    if (delayMs <= 0 && retryLatencyMs >= options.retryBackoffCapMs) {
       return fallbackResult(
         failure.kind,
         failure.kind === 'session_corrupt' ? 'destroy' : 'preserve',
@@ -725,7 +725,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     steeringForRequest.run(steering, () =>
       runTurnWithReliability({
         maxRetries: config.gemini.liveMaxRetries,
-        maxLatencyMs: config.gemini.retryBackoffCapMs,
+        retryBackoffCapMs: config.gemini.retryBackoffCapMs,
         requestTimeoutMs: config.gemini.timeout,
         tryConsumeRetry: () => getSharedRateLimiter(config.rateLimit).tryConsumeAboveFloor(config.gemini.retryRpmFloor),
         computeBackoff: (attempt) =>

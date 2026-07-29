@@ -102,7 +102,7 @@ function options(overrides: Partial<Parameters<typeof runTurnWithReliability>[0]
     sleep: vi.fn(() => Promise.resolve()),
     isShuttingDown,
     maxRetries: 2,
-    maxLatencyMs: 12_000,
+    retryBackoffCapMs: 12_000,
     genericFallback,
     safetyDeflection,
     recitationDeflection,
@@ -273,7 +273,7 @@ describe('reliability evaluation harness', () => {
 
     const result = await runTurnWithReliability(testOptions)
 
-    expect(300_000).toBeGreaterThan(testOptions.maxLatencyMs)
+    expect(300_000).toBeGreaterThan(testOptions.retryBackoffCapMs)
     expect(result).toMatchObject({ text: genericFallback, action: 'preserve', attempts: 2 })
   })
 
