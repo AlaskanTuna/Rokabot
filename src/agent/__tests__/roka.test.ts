@@ -592,6 +592,27 @@ describe('runTurnWithReliability turn deadline', () => {
       attempts: 1
     })
   })
+
+  it('admits a retry after a timeout-class failure at the shipped config values', async () => {
+    let clock = 0
+    const now = () => clock
+    const runTurn = vi.fn(async () => {
+      clock += config.gemini.timeout
+      return { errorMessage: 'The operation timed out', hasText: false, hasFunctionCall: false }
+    })
+    const testOptions = options({
+      runTurn,
+      now,
+      computeBackoff: () => 1_000,
+      turnDeadlineMs: config.gemini.turnDeadlineMs,
+      requestTimeoutMs: config.gemini.timeout
+    })
+
+    await runTurnWithReliability(testOptions)
+
+    expect(testOptions.tryConsumeRetry).toHaveBeenCalledTimes(1)
+    expect(runTurn).toHaveBeenCalledTimes(2)
+  })
 })
 
 describe('rokaAgent safety settings', () => {

@@ -91,7 +91,7 @@ describe('config module', () => {
 
     expect(config.gemini.model).toBe('gemini-3.5-flash-lite')
     expect(config.gemini.extractionModel).toBe(config.gemini.model)
-    expect(config.gemini.timeout).toBe(45_000)
+    expect(config.gemini.timeout).toBe(20_000)
     expect(config.gemini.maxRetries).toBe(3)
     expect(config.gemini.maxOutputTokens).toBe(500)
     expect(config.gemini.safetyThreshold).toBe('OFF')
@@ -232,14 +232,14 @@ describe('config module', () => {
   it('warns when the session TTL is shorter than the maximum live retry window', async () => {
     setRequiredEnvVars()
     clearTunableEnvVars()
-    vi.stubEnv('SESSION_TTL_MS', '100000')
+    vi.stubEnv('SESSION_TTL_MS', '50000')
 
     await import('../config.js')
 
     expect(warn).toHaveBeenCalledOnce()
   })
 
-  it('warns when the turn deadline is shorter than the request timeout', async () => {
+  it('warns when the turn deadline cannot fit a request timeout plus a same-length retry', async () => {
     setRequiredEnvVars()
     clearTunableEnvVars()
     vi.stubEnv('GEMINI_TURN_DEADLINE_MS', '10000')
@@ -247,9 +247,45 @@ describe('config module', () => {
     await import('../config.js')
 
     expect(warn).toHaveBeenCalledWith(
-      expect.objectContaining({ turnDeadlineMs: 10_000, timeout: 45_000 }),
-      'Turn deadline is shorter than the request timeout; no live retry can ever start'
+      expect.objectContaining({ turnDeadlineMs: 10_000, timeout: 20_000 }),
+      'Turn deadline cannot fit a request timeout plus a retry of the same length; maxRetries cannot engage'
     )
+  })
+
+  it('warns when the turn deadline is just below twice the request timeout', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('GEMINI_TURN_DEADLINE_MS', '39999')
+
+    await import('../config.js')
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ turnDeadlineMs: 39_999, timeout: 20_000 }),
+      'Turn deadline cannot fit a request timeout plus a retry of the same length; maxRetries cannot engage'
+    )
+  })
+
+  it('warns when the turn deadline is exactly twice the request timeout', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('GEMINI_TURN_DEADLINE_MS', '40000')
+
+    await import('../config.js')
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ turnDeadlineMs: 40_000, timeout: 20_000 }),
+      'Turn deadline cannot fit a request timeout plus a retry of the same length; maxRetries cannot engage'
+    )
+  })
+
+  it('does not warn when the turn deadline exceeds twice the request timeout', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('GEMINI_TURN_DEADLINE_MS', '40001')
+
+    await import('../config.js')
+
+    expect(warn).not.toHaveBeenCalled()
   })
 
   it('does not warn when the session TTL exceeds the maximum live retry window', async () => {
