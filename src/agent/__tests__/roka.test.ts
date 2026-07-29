@@ -73,7 +73,7 @@ function options(overrides: Partial<Parameters<typeof runTurnWithReliability>[0]
     sleep: vi.fn(() => Promise.resolve()),
     isShuttingDown: () => false,
     maxRetries: 2,
-    maxLatencyMs: 12_000,
+    retryBackoffCapMs: 12_000,
     genericFallback,
     safetyDeflection,
     recitationDeflection,
@@ -348,7 +348,7 @@ describe('runTurnWithReliability', () => {
     const runTurn = vi.fn().mockResolvedValue({ errorCode: '429', errorMessage: 'quota exhausted' })
 
     const result = await runTurnWithReliability(
-      options({ runTurn, tryConsumeRetry, sleep, computeBackoff: () => 1, maxLatencyMs: 1 })
+      options({ runTurn, tryConsumeRetry, sleep, computeBackoff: () => 1, retryBackoffCapMs: 1 })
     )
 
     expect(result).toMatchObject({ text: genericFallback, attempts: 2 })
