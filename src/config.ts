@@ -218,10 +218,10 @@ if (config.session.ttlMs <= maxLiveRetryWindow) {
   )
 }
 
-if (config.gemini.turnDeadlineMs <= config.gemini.timeout) {
+if (config.gemini.turnDeadlineMs <= 2 * config.gemini.timeout) {
   const { logger } = await import('./utils/logger.js')
   logger.warn(
     { turnDeadlineMs: config.gemini.turnDeadlineMs, timeout: config.gemini.timeout },
-    'Turn deadline is shorter than the request timeout; no live retry can ever start'
+    'Turn deadline cannot fit a request timeout plus a retry of the same length; maxRetries cannot engage'
   )
 }

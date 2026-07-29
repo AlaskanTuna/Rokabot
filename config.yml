@@ -5,7 +5,7 @@
 gemini:
   model: gemini-3.5-flash-lite # Gemini model ID
   # extractionModel: gemini-3.5-flash-lite # Optional background fact-extraction model (defaults to model)
-  timeout: 45000 # API request timeout in ms (covers initial Gemini → tool → second Gemini round)
+  timeout: 20000 # API request timeout in ms (covers initial Gemini → tool → second Gemini round; ~2x measured p95 of 9801ms, 2026-07-29 n=78, with headroom over the 13613ms worst observed tool chain, while still admitting a retry inside turnDeadlineMs)
   maxRetries: 3 # Max retries for transient errors (429, 500, 503)
   maxOutputTokens: 500 # Max tokens per response (safety net)
   safetyThreshold: OFF # Harm block threshold: OFF, BLOCK_NONE, BLOCK_ONLY_HIGH, BLOCK_MEDIUM_AND_ABOVE, BLOCK_LOW_AND_ABOVE
