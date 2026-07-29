@@ -25,10 +25,13 @@ export const DEFAULT_MAX_BACKOFF_MS = 12_000
 const SAFETY_PATTERN = /SAFETY|PROHIBITED_CONTENT|BLOCKLIST|SPII/i
 const RECITATION_PATTERN = /RECITATION/i
 const SESSION_CORRUPT_PATTERN = /function call turn comes immediately after/i
-const TERMINAL_PATTERN =
-  /400|INVALID_ARGUMENT|UNAUTHENTICATED|UNAUTHORIZED|AUTHENTICATION|PERMISSION_DENIED|FORBIDDEN|401|403/i
-const TRANSIENT_HTTP_PATTERN = /429|500|503|RESOURCE_EXHAUSTED|overloaded|quota|rate.limit|UNAVAILABLE/i
+const TERMINAL_SYMBOLIC_PATTERN =
+  /INVALID_ARGUMENT|UNAUTHENTICATED|UNAUTHORIZED|AUTHENTICATION|PERMISSION_DENIED|FORBIDDEN/i
+const TRANSIENT_SYMBOLIC_PATTERN = /RESOURCE_EXHAUSTED|overloaded|quota|rate.limit|UNAVAILABLE/i
 const NETWORK_PATTERN = /fetch failed|ECONNRESET|ETIMEDOUT|EAI_AGAIN|abort(?:ed)?|timeout|DEADLINE_EXCEEDED/i
+// Bare status codes are matched last and digit-anchored, so `400` cannot match inside `4000000`.
+const TERMINAL_STATUS_PATTERN = /(?<!\d)(?:400|401|403)(?!\d)/
+const TRANSIENT_STATUS_PATTERN = /(?<!\d)(?:429|500|503)(?!\d)/
 
 function result(kind: FailureKind): GeminiFailureResult {
   return {
@@ -56,9 +59,11 @@ function classifyMarker(marker: string | undefined): FailureKind | undefined {
   if (SAFETY_PATTERN.test(marker)) return 'safety'
   if (RECITATION_PATTERN.test(marker)) return 'recitation'
   if (SESSION_CORRUPT_PATTERN.test(marker)) return 'session_corrupt'
-  if (TERMINAL_PATTERN.test(marker)) return 'terminal'
-  if (TRANSIENT_HTTP_PATTERN.test(marker)) return 'transient_http'
+  if (TERMINAL_SYMBOLIC_PATTERN.test(marker)) return 'terminal'
+  if (TRANSIENT_SYMBOLIC_PATTERN.test(marker)) return 'transient_http'
   if (NETWORK_PATTERN.test(marker)) return 'network'
+  if (TERMINAL_STATUS_PATTERN.test(marker)) return 'terminal'
+  if (TRANSIENT_STATUS_PATTERN.test(marker)) return 'transient_http'
   return undefined
 }
 

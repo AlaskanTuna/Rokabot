@@ -37,6 +37,7 @@ describe('config module', () => {
     vi.stubEnv('GEMINI_EXTRACTION_MAX_RETRIES', '')
     vi.stubEnv('GEMINI_RETRY_BACKOFF_BASE_MS', '')
     vi.stubEnv('GEMINI_RETRY_BACKOFF_CAP_MS', '')
+    vi.stubEnv('GEMINI_TURN_DEADLINE_MS', '')
     vi.stubEnv('GEMINI_SAFETY_THRESHOLD', '')
     vi.stubEnv('MEMORY_BUFFER_SIZE', '')
     vi.stubEnv('MEMORY_EXTRACTION_INTERVAL', '')
@@ -102,6 +103,7 @@ describe('config module', () => {
     expect(config.gemini.extractionMaxRetries).toBe(1)
     expect(config.gemini.retryBackoffBaseMs).toBe(1000)
     expect(config.gemini.retryBackoffCapMs).toBe(12_000)
+    expect(config.gemini.turnDeadlineMs).toBe(60_000)
     expect(config.logging.level).toBe('info')
     expect(config.rateLimit.rpm).toBe(15)
     expect(config.rateLimit.rpd).toBe(500)
@@ -170,6 +172,7 @@ describe('config module', () => {
     vi.stubEnv('GEMINI_EXTRACTION_MAX_RETRIES', '2')
     vi.stubEnv('GEMINI_RETRY_BACKOFF_BASE_MS', '1500')
     vi.stubEnv('GEMINI_RETRY_BACKOFF_CAP_MS', '9000')
+    vi.stubEnv('GEMINI_TURN_DEADLINE_MS', '90000')
     vi.stubEnv('GEMINI_SAFETY_THRESHOLD', 'BLOCK_ONLY_HIGH')
     vi.stubEnv('MEMORY_BUFFER_SIZE', '40')
     vi.stubEnv('MEMORY_EXTRACTION_INTERVAL', '30')
@@ -205,6 +208,7 @@ describe('config module', () => {
     expect(config.gemini.extractionMaxRetries).toBe(2)
     expect(config.gemini.retryBackoffBaseMs).toBe(1500)
     expect(config.gemini.retryBackoffCapMs).toBe(9000)
+    expect(config.gemini.turnDeadlineMs).toBe(90_000)
     expect(config.gemini.safetyThreshold).toBe('BLOCK_ONLY_HIGH')
     expect(config.memory.bufferSize).toBe(40)
     expect(config.memory.extractionInterval).toBe(30)
@@ -233,6 +237,19 @@ describe('config module', () => {
     await import('../config.js')
 
     expect(warn).toHaveBeenCalledOnce()
+  })
+
+  it('warns when the turn deadline is shorter than the request timeout', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('GEMINI_TURN_DEADLINE_MS', '10000')
+
+    await import('../config.js')
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ turnDeadlineMs: 10_000, timeout: 45_000 }),
+      'Turn deadline is shorter than the request timeout; no live retry can ever start'
+    )
   })
 
   it('does not warn when the session TTL exceeds the maximum live retry window', async () => {

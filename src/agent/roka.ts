@@ -123,6 +123,8 @@ export interface RunTurnWithReliabilityOptions {
   maxRetries: number
   retryBackoffCapMs: number
   requestTimeoutMs?: number
+  turnDeadlineMs?: number
+  now?: () => number
   genericFallback: string
   safetyDeflection: string
   recitationDeflection: string
@@ -179,6 +181,8 @@ function fallbackResult(
 export async function runTurnWithReliability(options: RunTurnWithReliabilityOptions): Promise<ReliabilityResult> {
   const shouldStop = options.isShuttingDown ?? isShuttingDown
   const sleep = options.sleep ?? sleepUntil
+  const now = options.now ?? (() => performance.now())
+  const startedAtMs = now()
   let retryLatencyMs = 0
   let lastKind: ReliabilityResult['kind'] = 'network'
   let lastMarker: string | undefined
@@ -186,6 +190,24 @@ export async function runTurnWithReliability(options: RunTurnWithReliabilityOpti
 
   for (let attempt = 0; attempt <= options.maxRetries; attempt++) {
     if (shouldStop()) return fallbackResult(lastKind, 'preserve', attempt, retryLatencyMs, options, lastMarker)
+
+    if (attempt > 0 && options.turnDeadlineMs !== undefined) {
+      const elapsedMs = now() - startedAtMs
+      const remainingMs = options.turnDeadlineMs - elapsedMs
+      if (remainingMs < (options.requestTimeoutMs ?? 0)) {
+        logger.warn(
+          {
+            attempt,
+            elapsedMs,
+            deadlineMs: options.turnDeadlineMs,
+            requestTimeoutMs: options.requestTimeoutMs,
+            kind: lastKind
+          },
+          'Turn deadline exhausted before next attempt'
+        )
+        return fallbackResult(lastKind, 'preserve', attempt, retryLatencyMs, options, lastMarker)
+      }
+    }
 
     const abortController = new AbortController()
     activeAbortControllers.add(abortController)
@@ -293,6 +315,33 @@ export async function runTurnWithReliability(options: RunTurnWithReliabilityOpti
         lastMarker
       )
     }
+
+    if (options.turnDeadlineMs !== undefined) {
+      const elapsedMs = now() - startedAtMs
+      const remainingMs = options.turnDeadlineMs - elapsedMs
+      if (remainingMs < delayMs + (options.requestTimeoutMs ?? 0)) {
+        logger.warn(
+          {
+            attempt,
+            elapsedMs,
+            delayMs,
+            deadlineMs: options.turnDeadlineMs,
+            requestTimeoutMs: options.requestTimeoutMs,
+            kind: failure.kind
+          },
+          'Turn deadline would be exceeded by planned retry backoff'
+        )
+        return fallbackResult(
+          failure.kind,
+          failure.kind === 'session_corrupt' ? 'destroy' : 'preserve',
+          attempt + 1,
+          retryLatencyMs,
+          options,
+          lastMarker
+        )
+      }
+    }
+
     if (!options.tryConsumeRetry())
       return fallbackResult(
         failure.kind,
@@ -727,7 +776,12 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
         maxRetries: config.gemini.liveMaxRetries,
         retryBackoffCapMs: config.gemini.retryBackoffCapMs,
         requestTimeoutMs: config.gemini.timeout,
+        turnDeadlineMs: config.gemini.turnDeadlineMs,
         tryConsumeRetry: () => getSharedRateLimiter(config.rateLimit).tryConsumeAboveFloor(config.gemini.retryRpmFloor),
+        // retryBackoffCapMs doubles as computeBackoff's per-attempt maxMs: a single backoff delay
+        // should never be advertised as larger than the total budget it is measured against — the
+        // remaining-budget clamp in runTurnWithReliability's retry loop would cut an oversized delay down
+        // to size anyway, so sharing the value keeps the pre-jitter range honest with the ceiling.
         computeBackoff: (attempt) =>
           computeBackoff(attempt, config.gemini.retryBackoffBaseMs, { maxMs: config.gemini.retryBackoffCapMs }),
         genericFallback: getRandomFallback(),

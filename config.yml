@@ -17,6 +17,7 @@ gemini:
   extractionMaxRetries: 1 # Retry attempts after a transient extraction failure
   retryBackoffBaseMs: 1000 # Initial full-jitter retry backoff in ms (doubles each retry)
   retryBackoffCapMs: 12000 # Maximum full-jitter retry backoff in ms
+  turnDeadlineMs: 60000 # Wall-clock budget for the live retry loop; a retry starts only if a full timeout still fits (never gates the first attempt)
 
 rateLimit:
   rpm: 15 # Requests per minute (Gemini free tier: 15)
