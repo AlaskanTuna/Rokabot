@@ -270,6 +270,23 @@ export async function runTurnWithReliability(options: RunTurnWithReliabilityOpti
       !shouldStop()
     ) {
       safetyRegenerated = true
+      if (options.turnDeadlineMs !== undefined) {
+        const elapsedMs = now() - startedAtMs
+        const remainingMs = options.turnDeadlineMs - elapsedMs
+        if (remainingMs < (options.requestTimeoutMs ?? 0)) {
+          logger.warn(
+            {
+              attempt,
+              elapsedMs,
+              deadlineMs: options.turnDeadlineMs,
+              requestTimeoutMs: options.requestTimeoutMs,
+              kind: failure.kind
+            },
+            'Turn deadline exhausted before safety regeneration'
+          )
+          return fallbackResult('safety', 'preserve', attempt + 1, retryLatencyMs, options, lastMarker)
+        }
+      }
       if (!options.tryConsumeRetry())
         return fallbackResult('safety', 'preserve', attempt + 1, retryLatencyMs, options, lastMarker)
       options.regenerateOnSafety()

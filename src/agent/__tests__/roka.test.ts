@@ -562,6 +562,36 @@ describe('runTurnWithReliability turn deadline', () => {
     expect(regenerateOnSafety).toHaveBeenCalledOnce()
     expect(testOptions.sleep).not.toHaveBeenCalled()
   })
+
+  it('consumes no retry token when a safety regeneration is gated by the deadline', async () => {
+    let clock = 0
+    const now = () => clock
+    const runTurn = vi.fn(async () => {
+      clock += 20_000
+      return { finishReason: 'SAFETY', hasText: false, hasFunctionCall: false }
+    })
+    const regenerateOnSafety = vi.fn()
+    const tryConsumeRetry = vi.fn(() => true)
+    const testOptions = options({
+      runTurn,
+      regenerateOnSafety,
+      tryConsumeRetry,
+      now,
+      turnDeadlineMs: 60_000,
+      requestTimeoutMs: 45_000
+    })
+
+    const result = await runTurnWithReliability(testOptions)
+
+    expect(tryConsumeRetry).not.toHaveBeenCalled()
+    expect(regenerateOnSafety).not.toHaveBeenCalled()
+    expect(result).toMatchObject({
+      text: safetyDeflection,
+      kind: 'safety',
+      action: 'preserve',
+      attempts: 1
+    })
+  })
 })
 
 describe('rokaAgent safety settings', () => {
