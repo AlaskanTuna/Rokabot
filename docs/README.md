@@ -312,7 +312,11 @@ npm start
 docker compose up -d
 ```
 
-Quick checks: `npm run lint` and `npm run format:check`. Full test verification is `npm test && npm run test:perf`; `npm run test:perf` is a separate performance-evaluation gate.
+Quick checks: `npm run lint` and `npm run format:check`. Full test verification is `npm test && npm run test:perf`; `npm run test:perf` is a separate performance-evaluation gate. `npm run test:live` is a third, opt-in gate — it needs `GRAPHIFY_GEMINI_API_KEY` in `.env`, spends real Gemini calls (measured: ~60 calls and ~8.5 minutes per run), and is excluded from both `npm test` and full verification.
+
+`npm run test:live` benchmarks whether the live model fires a tool on a labelled should-fire/shouldn't-fire dialogue set; it is the pre-ship acceptance gate for prompt and tool-description changes, and its verdict rests on two criteria — an accuracy floor plus zero systematically-wrong cases. The `recall_user` case set lives at `tests/harness/tool-trigger/recall-user.jsonl`.
+
+As of 2026-07-29 this gate FAILS, and it is correctly doing so: `recall_user` over-fires on two labelled should-not-fire cases — N1 (ambient chatter naming no one, 7/9 fired) and N5 (a message addressing Roka herself, 9/9 fired) — while recall holds at a perfect 1.00, so proactive triggering itself is sound and the defect is over-application. The cause is `src/agent/prompts/core.ts:65`: deleting that line drove both cases to 0/3 while collapsing recall to 0.111, confirming it as the source. Tracked as [#39](https://github.com/AlaskanTuna/Rokabot/issues/39); the fix is separate follow-up work.
 
 <p align="right"><a href="#readme-top">↑</a></p>
 

@@ -1,0 +1,13 @@
+{"type":"header","tool":"recall_user","guildId":"eval-guild","members":[{"id":"sora","username":"sora","displayName":"Sora"},{"id":"mio","username":"mio","displayName":"Mio"},{"id":"ren","username":"ren","displayName":"Ren"},{"id":"kaede","username":"kaede","displayName":"Kaede"}],"claims":[{"subjectId":"mio","predicate":"likes","value":"jasmine tea"},{"subjectId":"mio","predicate":"general_occupation","value":"librarian"},{"subjectId":"kaede","predicate":"favorite_anime","value":"Mushishi"},{"subjectId":"sora","predicate":"hobby","value":"pressed flowers"}],"history":[{"speakerId":"sora","content":"hey"},{"speakerId":"mio","content":"hi everyone"},{"speakerId":"ren","content":"yo"},{"speakerId":"kaede","content":"morning"}]}
+{"type":"case","id":"F1","tool":"recall_user","shouldFire":true,"speakerId":"sora","message":"what do you know about Mio?"}
+{"type":"case","id":"F2","tool":"recall_user","shouldFire":true,"speakerId":"sora","message":"Mio promised she'd come to the seminar last week and then just vanished"}
+{"type":"case","id":"F3","tool":"recall_user","shouldFire":true,"speakerId":"sora","message":"hey, have you heard from @Mio today?"}
+{"type":"case","id":"F4","tool":"recall_user","shouldFire":true,"speakerId":"sora","message":"what's Ren been up to lately?"}
+{"type":"case","id":"F5","tool":"recall_user","shouldFire":true,"speakerId":"sora","message":"what sort of gift do you think Mio would like?"}
+{"type":"case","id":"F6","tool":"recall_user","shouldFire":true,"speakerId":"sora","message":"who do you think is more organized, Ren or Mio?"}
+{"type":"case","id":"N1","tool":"recall_user","shouldFire":false,"speakerId":"sora","message":"ugh it's raining again and I still haven't done laundry"}
+{"type":"case","id":"N2","tool":"recall_user","shouldFire":false,"speakerId":"sora","message":"I've been so tired lately, I really need more sleep"}
+{"type":"case","id":"N3","tool":"recall_user","shouldFire":false,"speakerId":"sora","message":"I finally finished Frieren last night"}
+{"type":"case","id":"N4","tool":"recall_user","shouldFire":false,"speakerId":"sora","message":"morning! ready for the day?"}
+{"type":"case","id":"N5","tool":"recall_user","shouldFire":false,"speakerId":"sora","message":"Roka, do you ever get nervous talking in front of a crowd?"}
+{"type":"case","id":"N6","tool":"recall_user","shouldFire":false,"speakerId":"sora","message":"what's the best way to stay motivated when you're feeling lazy?"}

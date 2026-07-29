@@ -15,6 +15,7 @@
     "prepare": "husky || true",
     "test": "vitest run",
     "test:perf": "vitest run --config vitest.perf.config.ts",
+    "test:live": "ROKABOT_HARNESS_LIVE=1 vitest run --config vitest.live.config.ts",
     "test:watch": "vitest",
     "test:chat": "tsx scripts/test-chat.ts",
     "harness": "tsx tests/harness/run.ts",

@@ -5,7 +5,11 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['src/**/*.test.ts', 'tests/**/*.test.ts'],
-    exclude: [...configDefaults.exclude, 'tests/harness/__tests__/memoryShadow.eval.test.ts'],
+    exclude: [
+      ...configDefaults.exclude,
+      'tests/harness/__tests__/memoryShadow.eval.test.ts',
+      'tests/harness/__tests__/*.live.test.ts'
+    ],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],

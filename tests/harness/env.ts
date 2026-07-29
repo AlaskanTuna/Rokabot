@@ -7,7 +7,7 @@ process.env.ROKABOT_DB_PATH = ':memory:'
 process.env.DISCORD_TOKEN = 'harness-discord-token'
 process.env.DISCORD_CLIENT_ID = 'harness-discord-client-id'
 
-if (process.argv.includes('--live')) {
+if (process.argv.includes('--live') || process.env.ROKABOT_HARNESS_LIVE === '1') {
   const graphifyKey = parsed.GRAPHIFY_GEMINI_API_KEY
   if (!graphifyKey) {
     throw new Error('Missing GRAPHIFY_GEMINI_API_KEY for live harness mode')

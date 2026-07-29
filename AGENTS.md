@@ -79,7 +79,8 @@ npm run lint         # Biome (lint + format check)
 npm run format       # Prettier --write
 npm run format:check # Prettier --check
 npm test             # vitest run — main gate
-npm run test:perf    # Separate performance-evaluation gate; full verification: npm test && npm run test:perf
+npm run test:perf    # Separate performance-evaluation gate; full verification remains npm test && npm run test:perf
+npm run test:live    # Opt-in live-model gate; needs GRAPHIFY_GEMINI_API_KEY, spends real Gemini calls; not part of full verification
 npm run test:watch   # vitest (watch mode)
 docker compose up    # Run via Docker
 docker compose build # Build Docker image
