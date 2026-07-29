@@ -315,6 +315,33 @@ export async function runTurnWithReliability(options: RunTurnWithReliabilityOpti
         lastMarker
       )
     }
+
+    if (options.turnDeadlineMs !== undefined) {
+      const elapsedMs = now() - startedAtMs
+      const remainingMs = options.turnDeadlineMs - elapsedMs
+      if (remainingMs < delayMs + (options.requestTimeoutMs ?? 0)) {
+        logger.warn(
+          {
+            attempt,
+            elapsedMs,
+            delayMs,
+            deadlineMs: options.turnDeadlineMs,
+            requestTimeoutMs: options.requestTimeoutMs,
+            kind: failure.kind
+          },
+          'Turn deadline would be exceeded by planned retry backoff'
+        )
+        return fallbackResult(
+          failure.kind,
+          failure.kind === 'session_corrupt' ? 'destroy' : 'preserve',
+          attempt + 1,
+          retryLatencyMs,
+          options,
+          lastMarker
+        )
+      }
+    }
+
     if (!options.tryConsumeRetry())
       return fallbackResult(
         failure.kind,

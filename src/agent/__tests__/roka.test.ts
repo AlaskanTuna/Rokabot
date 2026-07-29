@@ -463,6 +463,35 @@ describe('runTurnWithReliability turn deadline', () => {
     expect(result).toMatchObject({ text: genericFallback, action: 'preserve' })
   })
 
+  it('rejects a planned retry before consuming a token or sleeping when it would not fit the deadline', async () => {
+    let clock = 0
+    const now = () => clock
+    const runTurn = vi.fn(async () => {
+      clock += 20_000
+      return { errorCode: '503', errorMessage: 'unavailable' }
+    })
+    const testOptions = options({
+      runTurn,
+      now,
+      computeBackoff: () => 1_000,
+      turnDeadlineMs: 60_000,
+      requestTimeoutMs: 45_000
+    })
+
+    const result = await runTurnWithReliability(testOptions)
+
+    expect(runTurn).toHaveBeenCalledTimes(1)
+    expect(testOptions.tryConsumeRetry).not.toHaveBeenCalled()
+    expect(testOptions.sleep).not.toHaveBeenCalled()
+    expect(result).toMatchObject({
+      text: genericFallback,
+      kind: 'transient_http',
+      action: 'preserve',
+      attempts: 1,
+      retryLatencyMs: 0
+    })
+  })
+
   it('admits exactly as many full-length attempts as fit the deadline', async () => {
     const makeRunTurn = (clockRef: { value: number }) =>
       vi.fn(async () => {

@@ -115,7 +115,15 @@ describe('classifyGeminiFailure', () => {
       { kind: 'session_corrupt', retryable: true, deflect: true }
     ],
     ['403 bare numeric', { errorCode: 403 }, { kind: 'terminal', retryable: false, deflect: true }],
-    ['500 bare numeric string', { errorCode: '500' }, { kind: 'transient_http', retryable: true, deflect: false }]
+    ['500 bare numeric string', { errorCode: '500' }, { kind: 'transient_http', retryable: true, deflect: false }],
+    [
+      '500 envelope with quota figure, no symbolic marker',
+      {
+        errorCode: 'ApiError',
+        errorMessage: 'got status: 500 Internal Server Error. {"error":{"code":500,"message":"limit: 4000000"}}'
+      },
+      { kind: 'transient_http', retryable: true, deflect: false }
+    ]
   ])('classifies %s', (_name, input, expected) => {
     expect(classifyGeminiFailure(input)).toEqual(expected)
   })
