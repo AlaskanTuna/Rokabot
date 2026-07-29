@@ -312,7 +312,7 @@ npm start
 docker compose up -d
 ```
 
-Quick checks: `npm run lint`, `npm run format:check`, and `npm test`.
+Quick checks: `npm run lint` and `npm run format:check`. Full test verification is `npm test && npm run test:perf`; `npm run test:perf` is a separate performance-evaluation gate.
 
 <p align="right"><a href="#readme-top">↑</a></p>
 

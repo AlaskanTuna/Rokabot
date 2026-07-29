@@ -16,6 +16,7 @@ scripts
 .eslintrc.cjs
 .prettierrc
 vitest.config.ts
+vitest.perf.config.ts
 *.log
 tmp
 temp

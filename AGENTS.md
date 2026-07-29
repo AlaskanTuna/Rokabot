@@ -78,7 +78,8 @@ npm start            # Run compiled JS (production)
 npm run lint         # Biome (lint + format check)
 npm run format       # Prettier --write
 npm run format:check # Prettier --check
-npm test             # vitest run
+npm test             # vitest run — main gate
+npm run test:perf    # Separate performance-evaluation gate; full verification: npm test && npm run test:perf
 npm run test:watch   # vitest (watch mode)
 docker compose up    # Run via Docker
 docker compose build # Build Docker image
