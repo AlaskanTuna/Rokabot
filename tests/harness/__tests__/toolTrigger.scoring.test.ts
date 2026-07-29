@@ -83,12 +83,27 @@ describe('tool-trigger fixture integrity', () => {
       /line 1 has an unknown predicate "unknown"/
     ],
     [
+      'a claim subjectId outside members',
+      [{ ...header, claims: [{ subjectId: 'mio', predicate: 'likes', value: 'popcorn' }] }],
+      /line 1 claim subjectId "mio" is not a declared member/
+    ],
+    [
       'a case tool that does not match the header tool',
       [header, { ...testCase, tool: 'search_web' }],
       /line 2 case tool "search_web" does not match header tool "recall_user"/
     ]
   ])('rejects %s with its real error message', async (_description, lines, messagePattern) => {
     await expect(loadCaseSet(await writeFixture(lines))).rejects.toThrow(messagePattern)
+  })
+
+  it('reports the true file line number across a blank separator line', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'rokabot-tool-trigger-'))
+    temporaryDirectories.push(directory)
+    const path = join(directory, 'fixture.jsonl')
+    const content = [JSON.stringify(header), '', JSON.stringify({ ...testCase, shouldFire: 'yes' })].join('\n')
+    await writeFile(path, `${content}\n`)
+
+    await expect(loadCaseSet(path)).rejects.toThrow(/line 3 requires a boolean shouldFire/)
   })
 })
 

@@ -51,15 +51,19 @@ function asMember(value: unknown, line: number): FixtureMember {
   }
 }
 
-function asClaim(value: unknown, line: number): FixtureClaim {
+function asClaim(value: unknown, line: number, memberIds: Set<string>): FixtureClaim {
   if (!value || typeof value !== 'object') throw new Error(`Tool-trigger fixture line ${line} has an invalid claim`)
   const claim = value as Partial<FixtureClaim>
   const predicate = nonEmptyString(claim.predicate, line, 'claim predicate')
   if (!isKnownPredicate(predicate)) {
     throw new Error(`Tool-trigger fixture line ${line} has an unknown predicate "${predicate}"`)
   }
+  const subjectId = nonEmptyString(claim.subjectId, line, 'claim subjectId')
+  if (!memberIds.has(subjectId)) {
+    throw new Error(`Tool-trigger fixture line ${line} claim subjectId "${subjectId}" is not a declared member`)
+  }
   return {
-    subjectId: nonEmptyString(claim.subjectId, line, 'claim subjectId'),
+    subjectId,
     predicate,
     value: nonEmptyString(claim.value, line, 'claim value')
   }
@@ -92,7 +96,7 @@ function asHeader(value: unknown, line: number): CaseSetHeader {
     tool: nonEmptyString(header.tool, line, 'header tool'),
     guildId: nonEmptyString(header.guildId, line, 'header guildId'),
     members,
-    claims: header.claims.map((claim) => asClaim(claim, line)),
+    claims: header.claims.map((claim) => asClaim(claim, line, memberIds)),
     history: header.history.map((entry) => asHistoryLine(entry, line, memberIds))
   }
 }
@@ -129,20 +133,21 @@ function asCase(value: unknown, line: number, memberIds: Set<string>, headerTool
 export async function loadCaseSet(path: string = DEFAULT_CASE_SET_PATH): Promise<ToolTriggerCaseSet> {
   const rows = (await readFile(path, 'utf8'))
     .split(/\r?\n/)
-    .filter((line) => line.trim().length > 0)
-    .map((line, index) => {
+    .map((line, index) => ({ line, number: index + 1 }))
+    .filter((entry) => entry.line.trim().length > 0)
+    .map((entry) => {
       try {
-        return JSON.parse(line) as unknown
+        return { value: JSON.parse(entry.line) as unknown, number: entry.number }
       } catch {
-        throw new Error(`Tool-trigger fixture line ${index + 1} is not valid JSON`)
+        throw new Error(`Tool-trigger fixture line ${entry.number} is not valid JSON`)
       }
     })
 
   const [first, ...rest] = rows
   if (!first) throw new Error('Tool-trigger fixture is empty')
-  const header = asHeader(first, 1)
+  const header = asHeader(first.value, first.number)
   const memberIds = new Set(header.members.map((member) => member.id))
-  const cases = rest.map((row, index) => asCase(row, index + 2, memberIds, header.tool))
+  const cases = rest.map((row) => asCase(row.value, row.number, memberIds, header.tool))
   return { header, cases }
 }
 

@@ -9,7 +9,7 @@ import { MIN_ACCURACY, loadCaseSet, meetsLiveVerdict, scoreCaseSet } from '../to
 const TRIALS = 3
 
 function assertLiveEnvironment(): void {
-  expect(process.env.GEMINI_API_KEY).toBeDefined()
+  expect(process.env.GEMINI_API_KEY).toBeTruthy()
   expect(process.env.GEMINI_API_KEY).not.toBe('harness-fake-sentinel')
   expect(process.env.GOOGLE_GENAI_API_KEY).toBeTruthy()
   expect(process.env.ROKABOT_DB_PATH).toBe(':memory:')
