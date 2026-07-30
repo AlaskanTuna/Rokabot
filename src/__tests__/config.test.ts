@@ -12,7 +12,31 @@ describe('config module', () => {
   afterEach(() => {
     vi.unstubAllEnvs()
     vi.doUnmock('../utils/logger.js')
+    vi.doUnmock('js-yaml')
   })
+
+  /** Shallow-recursive merge used only to layer a test override onto the real parsed config.yml */
+  function merge(base: unknown, override: Record<string, unknown>): unknown {
+    if (typeof base !== 'object' || base === null) return override
+    const result: Record<string, unknown> = { ...(base as Record<string, unknown>) }
+    for (const [key, value] of Object.entries(override)) {
+      const existing = result[key]
+      if (typeof value === 'object' && value !== null && typeof existing === 'object' && existing !== null) {
+        result[key] = merge(existing, value as Record<string, unknown>)
+      } else {
+        result[key] = value
+      }
+    }
+    return result
+  }
+
+  /** Mocks js-yaml's `load` to parse the real config.yml, then layer a test override on top */
+  function withYamlOverride(override: Record<string, unknown>) {
+    vi.doMock('js-yaml', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('js-yaml')>()
+      return { ...actual, load: (raw: string) => merge(actual.load(raw), override) }
+    })
+  }
 
   function setRequiredEnvVars() {
     vi.stubEnv('DISCORD_TOKEN', 'test-token')
@@ -376,7 +400,7 @@ describe('config module', () => {
     expect(config.gemini.timeout).toBe(20000)
   })
 
-  it('bounds every env-overridable numeric tunable', async () => {
+  it('bounds every numeric tunable, env-overridable or yaml-only', async () => {
     setRequiredEnvVars()
     clearTunableEnvVars()
 
@@ -389,16 +413,24 @@ describe('config module', () => {
       { path: 'gemini.liveMaxRetries', min: 0 },
       { path: 'gemini.extractionMaxRetries', min: 0 },
       { path: 'gemini.retryBackoffBaseMs', min: 0 },
+      { path: 'gemini.baseRetryDelay', min: 0 },
       { path: 'gemini.retryRpmFloor', min: 0 },
       { path: 'gemini.extractionRpmFloor', min: 0 },
+      { path: 'gemini.maxLlmCalls', min: 1 },
       { path: 'rateLimit.rpm', min: 1 },
       { path: 'rateLimit.rpd', min: 1 },
       { path: 'session.ttlMs', min: 1 },
       { path: 'session.windowSize', min: 1 },
+      { path: 'session.maxRehydrationAge', min: 0 },
+      { path: 'session.historyRetentionDays', min: 1 },
       { path: 'discord.maxMessageLength', min: 1 },
       { path: 'memory.bufferSize', min: 1 },
+      { path: 'memory.contextSize', min: 1 },
       { path: 'memory.extractionInterval', min: 0 },
       { path: 'memory.extractionGapMs', min: 0 },
+      { path: 'memory.maxFactsPerUser', min: 1 },
+      { path: 'memory.factRetentionDays', min: 1 },
+      { path: 'memory.channelMonitorTtlMs', min: 1 },
       { path: 'memory.maxClaimsPerTurn', min: 1 },
       { path: 'memory.retrievalTokenBudget', min: 1 },
       { path: 'memory.recentParticipantLimit', min: 1 },
@@ -408,7 +440,17 @@ describe('config module', () => {
       { path: 'memory.extractionDailyBudgetRatio', min: 0, max: 1 },
       { path: 'memory.perGuildGapMs', min: 0 },
       { path: 'memory.extractionQueueMaxPerGuild', min: 1 },
-      { path: 'metrics.retentionDays', min: 1 }
+      { path: 'metrics.retentionDays', min: 1 },
+      { path: 'emoji.probability', min: 0, max: 1 },
+      { path: 'emoji.cooldownMs', min: 0 },
+      { path: 'reminders.checkIntervalMs', min: 1 },
+      { path: 'reminders.maxPerUser', min: 1 },
+      { path: 'reminders.staleThresholdMs', min: 1 },
+      { path: 'games.hangmanLives', min: 1 },
+      { path: 'games.hangmanTimeoutMs', min: 1 },
+      { path: 'games.shiritoriTimeoutMs', min: 1 },
+      { path: 'games.shinyChance', min: 0, max: 1 },
+      { path: 'statusCycleMs', min: 1 }
     ]
 
     const { NUMERIC_BOUNDS } = await import('../config.js')
@@ -449,5 +491,81 @@ describe('config module', () => {
     const { config } = await import('../config.js')
 
     expect(config.memory.extractionDailyBudgetRatio).toBe(1)
+  })
+
+  it('throws if statusCycleMs is set to zero in config.yml', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    withYamlOverride({ statusCycleMs: 0 })
+
+    await expect(() => import('../config.js')).rejects.toThrow('Config value statusCycleMs must be >= 1, got: 0')
+  })
+
+  it('throws if session.historyRetentionDays is set to zero in config.yml', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    withYamlOverride({ session: { historyRetentionDays: 0 } })
+
+    await expect(() => import('../config.js')).rejects.toThrow(
+      'Config value session.historyRetentionDays must be >= 1, got: 0'
+    )
+  })
+
+  it('throws if memory.factRetentionDays is set to a negative value in config.yml', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    withYamlOverride({ memory: { factRetentionDays: -1 } })
+
+    await expect(() => import('../config.js')).rejects.toThrow(
+      'Config value memory.factRetentionDays must be >= 1, got: -1'
+    )
+  })
+
+  it('throws if emoji.probability exceeds 1 in config.yml', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    withYamlOverride({ emoji: { probability: 1.5 } })
+
+    await expect(() => import('../config.js')).rejects.toThrow('Config value emoji.probability must be <= 1, got: 1.5')
+  })
+
+  it('loads when session.maxRehydrationAge is set to zero in config.yml', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    withYamlOverride({ session: { maxRehydrationAge: 0 } })
+
+    const { config } = await import('../config.js')
+
+    expect(config.session.maxRehydrationAge).toBe(0)
+  })
+
+  it('loads when games.hangmanLives is set to exactly the min:1 boundary in config.yml', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    withYamlOverride({ games: { hangmanLives: 1 } })
+
+    const { config } = await import('../config.js')
+
+    expect(config.games.hangmanLives).toBe(1)
+  })
+
+  it('throws if games.hangmanLives is a quoted string in config.yml', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    withYamlOverride({ games: { hangmanLives: '6' } })
+
+    await expect(() => import('../config.js')).rejects.toThrow(
+      'Config value games.hangmanLives must be a finite number, got: 6 (string)'
+    )
+  })
+
+  it('throws if statusCycleMs is .nan in config.yml', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    withYamlOverride({ statusCycleMs: Number.NaN })
+
+    await expect(() => import('../config.js')).rejects.toThrow(
+      'Config value statusCycleMs must be a finite number, got: NaN (number)'
+    )
   })
 })
