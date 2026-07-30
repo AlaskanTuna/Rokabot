@@ -5,7 +5,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { isKnownPredicate } from '../../../src/agent/memory/predicates.js'
 import {
   type CaseObservations,
-  MIN_ACCURACY,
+  MIN_PRECISION,
+  MIN_RECALL,
   type ToolTriggerCase,
   type ToolTriggerReport,
   loadCaseSet,
@@ -158,7 +159,7 @@ describe('tool-trigger scoring verdict', () => {
     expect(meetsLiveVerdict(report)).toBe(false)
   })
 
-  it('fails the accuracy floor when every case is correct on two of three trials', async () => {
+  it('fails the verdict when every case is correct on two of three trials', async () => {
     const { cases } = await loadCaseSet(fixturePath)
     const report = scoreCaseSet(
       cases,
@@ -166,9 +167,9 @@ describe('tool-trigger scoring verdict', () => {
     )
 
     expect(report.perCase.every((entry) => entry.correct === 2)).toBe(true)
-    expect(report.systematicFailures).toEqual([])
     expect(report.accuracy).toBeCloseTo(0.667, 3)
-    expect(report.accuracy).toBeLessThan(MIN_ACCURACY)
+    expect(report.precision).toBeLessThan(MIN_PRECISION)
+    expect(report.recall).toBeLessThan(MIN_RECALL)
     expect(meetsLiveVerdict(report)).toBe(false)
   })
 
@@ -183,7 +184,7 @@ describe('tool-trigger scoring verdict', () => {
     expect(report.trials).toBe(fiveTrials)
   })
 
-  it('fails on one systematically bad case despite eleven perfect cases', async () => {
+  it('passes despite one systematically bad case, an accepted tradeoff, while still reporting it', async () => {
     const { cases } = await loadCaseSet(fixturePath)
     const report = scoreCaseSet(
       cases,
@@ -191,8 +192,22 @@ describe('tool-trigger scoring verdict', () => {
     )
 
     expect(report.accuracy).toBeCloseTo(0.917, 3)
-    expect(report.accuracy).toBeGreaterThanOrEqual(MIN_ACCURACY)
+    expect(report.recall).toBeCloseTo(0.833, 3)
     expect(report.systematicFailures).toEqual(['F1'])
+    expect(meetsLiveVerdict(report)).toBe(true)
+  })
+
+  it('fails when two dead should-fire cases drag recall below the floor', async () => {
+    const { cases } = await loadCaseSet(fixturePath)
+    const deadCases = new Set(['F1', 'F2'])
+    const report = scoreCaseSet(
+      cases,
+      observationsFor(cases, (testCase) => Array(trials).fill(deadCases.has(testCase.id) ? false : testCase.shouldFire))
+    )
+
+    expect(report.recall).toBeCloseTo(0.667, 3)
+    expect(report.recall).toBeLessThan(MIN_RECALL)
+    expect(report.systematicFailures).toEqual(['F1', 'F2'])
     expect(meetsLiveVerdict(report)).toBe(false)
   })
 
@@ -218,8 +233,8 @@ describe('tool-trigger scoring verdict', () => {
     expect(meetsLiveVerdict(report)).toBe(true)
   })
 
-  it('applies the exported MIN_ACCURACY as the verdict floor, not a redefinition of it', () => {
-    const reportAt: ToolTriggerReport = {
+  it('applies the exported MIN_PRECISION and MIN_RECALL as the verdict floors, not a redefinition of them', () => {
+    const base: ToolTriggerReport = {
       tool: 'recall_user',
       caseCount: 12,
       trials: 3,
@@ -228,15 +243,167 @@ describe('tool-trigger scoring verdict', () => {
       falsePositives: 0,
       trueNegatives: 0,
       falseNegatives: 0,
-      accuracy: MIN_ACCURACY,
-      precision: 0,
-      recall: 0,
+      accuracy: 1,
+      precision: 1,
+      recall: 1,
       systematicFailures: [],
       hour: 0
     }
-    const reportBelow: ToolTriggerReport = { ...reportAt, accuracy: MIN_ACCURACY - 0.0001 }
 
-    expect(meetsLiveVerdict(reportAt)).toBe(true)
-    expect(meetsLiveVerdict(reportBelow)).toBe(false)
+    expect(meetsLiveVerdict({ ...base, precision: MIN_PRECISION })).toBe(true)
+    expect(meetsLiveVerdict({ ...base, precision: MIN_PRECISION - 0.0001 })).toBe(false)
+    expect(meetsLiveVerdict({ ...base, recall: MIN_RECALL })).toBe(true)
+    expect(meetsLiveVerdict({ ...base, recall: MIN_RECALL - 0.0001 })).toBe(false)
+  })
+
+  it('pins the precision floor at observation granularity, holding recall at 1.000: 4 false positives of 18 true positives passes, 5 fails', async () => {
+    const { cases } = await loadCaseSet(fixturePath)
+    const fpFourObservations = observationsFor(cases, (testCase) => {
+      if (testCase.id === 'N1') return [true, true, true]
+      if (testCase.id === 'N2') return [true, false, false]
+      return Array(trials).fill(testCase.shouldFire)
+    })
+    const reportAtFourFp = scoreCaseSet(cases, fpFourObservations)
+
+    expect(reportAtFourFp.falsePositives).toBe(4)
+    expect(reportAtFourFp.recall).toBe(1)
+    expect(reportAtFourFp.precision).toBeCloseTo(18 / 22, 6)
+    expect(meetsLiveVerdict(reportAtFourFp)).toBe(true)
+
+    const fpFiveObservations = observationsFor(cases, (testCase) => {
+      if (testCase.id === 'N1') return [true, true, true]
+      if (testCase.id === 'N2') return [true, true, false]
+      return Array(trials).fill(testCase.shouldFire)
+    })
+    const reportAtFiveFp = scoreCaseSet(cases, fpFiveObservations)
+
+    expect(reportAtFiveFp.falsePositives).toBe(5)
+    expect(reportAtFiveFp.recall).toBe(1)
+    expect(reportAtFiveFp.precision).toBeCloseTo(18 / 23, 6)
+    expect(meetsLiveVerdict(reportAtFiveFp)).toBe(false)
+  })
+
+  it('pins the recall floor at observation granularity: 15 true positives of 18 passes, 14 fails', async () => {
+    const { cases } = await loadCaseSet(fixturePath)
+    const tpFifteenObservations = observationsFor(cases, (testCase) => {
+      if (testCase.id === 'F1') return [false, false, false]
+      return Array(trials).fill(testCase.shouldFire)
+    })
+    const reportAtFifteenTp = scoreCaseSet(cases, tpFifteenObservations)
+
+    expect(reportAtFifteenTp.truePositives).toBe(15)
+    expect(reportAtFifteenTp.recall).toBeCloseTo(15 / 18, 6)
+    expect(meetsLiveVerdict(reportAtFifteenTp)).toBe(true)
+
+    const tpFourteenObservations = observationsFor(cases, (testCase) => {
+      if (testCase.id === 'F1') return [false, false, false]
+      if (testCase.id === 'F2') return [true, true, false]
+      return Array(trials).fill(testCase.shouldFire)
+    })
+    const reportAtFourteenTp = scoreCaseSet(cases, tpFourteenObservations)
+
+    expect(reportAtFourteenTp.truePositives).toBe(14)
+    expect(reportAtFourteenTp.recall).toBeCloseTo(14 / 18, 6)
+    expect(meetsLiveVerdict(reportAtFourteenTp)).toBe(false)
+  })
+
+  it('passes when a single no-fire case fires every trial against an otherwise-clean baseline — the aggregate floor residual blindness (see toolTriggerScoring.ts), reported via systematicFailures', async () => {
+    const { cases } = await loadCaseSet(fixturePath)
+    const report = scoreCaseSet(
+      cases,
+      observationsFor(cases, (testCase) =>
+        testCase.id === 'N5' ? [true, true, true] : Array(trials).fill(testCase.shouldFire)
+      )
+    )
+
+    expect(report.truePositives).toBe(18)
+    expect(report.falsePositives).toBe(3)
+    expect(report.precision).toBeCloseTo(18 / 21, 6)
+    expect(report.recall).toBe(1)
+    expect(report.systematicFailures).toEqual(['N5'])
+    expect(meetsLiveVerdict(report)).toBe(true)
+  })
+
+  // main's per-case fire rates (docs/progress.md:529), rounded to trial counts at 3 trials: N1
+  // 7/9->2/3, N2 2/9->1/3, N3 1/9->0/3, N4 0/9->0/3, N5 9/9->3/3, N6 3/9->1/3 — FP=7, the modal
+  // total, now attributed to the case (N5) that actually drives it. main is red in 98.47% of real
+  // runs, not deterministically: the exact central-95% interval for FP is [5, 10] (not a normal
+  // approximation), every value in that range fails, and P(FP <= 4) is the 1.53% pass rate already
+  // documented in toolTriggerScoring.ts.
+  it('fails on a modal-total reconstruction of mains measured rates (TP=18, FP=7) and names N5 as the culprit', async () => {
+    const { cases } = await loadCaseSet(fixturePath)
+    const report = scoreCaseSet(
+      cases,
+      observationsFor(cases, (testCase) => {
+        if (testCase.id === 'N1') return [true, true, false]
+        if (testCase.id === 'N2') return [true, false, false]
+        if (testCase.id === 'N3') return [false, false, false]
+        if (testCase.id === 'N4') return [false, false, false]
+        if (testCase.id === 'N5') return [true, true, true]
+        if (testCase.id === 'N6') return [true, false, false]
+        return Array(trials).fill(testCase.shouldFire)
+      })
+    )
+
+    expect(report.truePositives).toBe(18)
+    expect(report.falsePositives).toBe(7)
+    expect(report.precision).toBeCloseTo(18 / 25, 6)
+    expect(report.recall).toBe(1)
+    expect(report.systematicFailures).toContain('N5')
+    expect(meetsLiveVerdict(report)).toBe(false)
+  })
+})
+
+describe('tool-trigger live verdict determinism (issue #49)', () => {
+  // Exhaustive, not sampled: N6 (a should-not-fire case) is the only case with free trials, and 3
+  // free boolean trials has exactly 2^3 = 8 outcomes. Every other case is fixed at its correct
+  // value — a clean idealisation, not a reproduction of the issue: both real live runs reported
+  // FP=7, so cases other than N6 varied too in practice.
+  const n6TrialOutcomes: boolean[][] = [
+    [false, false, false],
+    [false, false, true],
+    [false, true, false],
+    [false, true, true],
+    [true, false, false],
+    [true, false, true],
+    [true, true, false],
+    [true, true, true]
+  ]
+
+  // This isolates that the *retired* all-cases-must-pass rule was the flake source in #49's
+  // evidence, not that the new precision/recall verdict is deterministic in general: it passes 8/8
+  // here, but with only one FP observation of real headroom — the scenario's worst case (N6 3/3,
+  // FP=3) sits at precision 18/21=0.8571, and the floor still admits FP=4 (18/22=0.8182) before
+  // failing at FP=5 (18/23=0.7826, which this scenario can never realize). Raising MIN_PRECISION to
+  // 0.9166 only passes 4 of these 8 outcomes. The verdict's own residual disagreement across
+  // independent runs is quantified in toolTriggerScoring.ts — ~3.0% on main, ~0.3% once #39 is fixed
+  // to q=0.05 — not zero.
+  it('is true in 8 of 8 outcomes, where the retired all-cases rule was false in 1 of 8', async () => {
+    const { cases } = await loadCaseSet(fixturePath)
+
+    let verdictPassCount = 0
+    let retiredRuleFailCount = 0
+    let retiredRuleFailureReport: ToolTriggerReport | undefined
+
+    for (const n6Trials of n6TrialOutcomes) {
+      const observations = observationsFor(cases, (testCase) =>
+        testCase.id === 'N6' ? n6Trials : Array(trials).fill(testCase.shouldFire)
+      )
+      const report = scoreCaseSet(cases, observations)
+
+      if (meetsLiveVerdict(report)) verdictPassCount++
+
+      // Written against systematicFailures directly, not meetsLiveVerdict: this is what documents
+      // the defect, since meetsLiveVerdict no longer gates on it.
+      const retiredRulePasses = report.systematicFailures.length === 0
+      if (!retiredRulePasses) {
+        retiredRuleFailCount++
+        retiredRuleFailureReport = report
+      }
+    }
+
+    expect(verdictPassCount).toBe(8)
+    expect(retiredRuleFailCount).toBe(1)
+    expect(retiredRuleFailureReport?.systematicFailures).toEqual(['N6'])
   })
 })
