@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { config } from '../../../src/config.js'
 import { closeDb, getDb } from '../../../src/storage/database.js'
 import { runCaseSet } from '../toolTrigger.js'
-import { MIN_ACCURACY, loadCaseSet, meetsLiveVerdict, scoreCaseSet } from '../toolTriggerScoring.js'
+import { loadCaseSet, meetsLiveVerdict, scoreCaseSet } from '../toolTriggerScoring.js'
 
 const TRIALS = 3
 
@@ -46,8 +46,6 @@ describe('live tool-trigger evaluation', () => {
 
       expect(report.caseCount).toBe(12)
       expect(report.trials).toBe(TRIALS)
-      expect(report.accuracy).toBeGreaterThanOrEqual(MIN_ACCURACY)
-      expect(report.systematicFailures).toEqual([])
       expect(meetsLiveVerdict(report)).toBe(true)
       expect(getDb().prepare('SELECT COUNT(*) AS count FROM extraction_events').get()).toEqual({ count: 0 })
     } finally {

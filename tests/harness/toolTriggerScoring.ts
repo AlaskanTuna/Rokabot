@@ -172,18 +172,75 @@ export interface ToolTriggerReport {
   accuracy: number
   precision: number
   recall: number
+  /** Case ids scoring 0 of N trials. Diagnostic only (issue #49) — does not gate meetsLiveVerdict. */
   systematicFailures: string[]
   hour: number
 }
 
-export const MIN_ACCURACY = 0.75 // calibration runs (2026-07-29): 0.8333, 0.8056, 0.7500 — lowest in [0.75, 0.90), so kept at 0.75
+// Floor placed at the *target* behaviour, not the pre-fix baseline (exact Binomial convolution over
+// main's per-case fire rates, docs/progress.md:529): main's measured precision is 0.7105, so this
+// floor sits above the known-defective baseline by construction, not beneath it. All figures below
+// are at full recall (TP=18), where precision >= 0.8 is exactly FP <= 4; at TP=15 the same floor
+// permits only FP <= 3.
+//   P(pass) on main:                            1.53%  (honestly and reproducibly red)
+//   P(pass) once no-fire rate reaches q=0.05:   99.85%
+//   P(pass) once no-fire rate reaches q=0.10:   97.18%
+//   P(pass) once no-fire rate reaches q=0.15:   87.94%
+// Rejected 0.85 (99.89% red on main, but only 90.18% green once #39's fix lands at q=0.10 — a
+// 1-in-10 false failure re-creates the dismissal risk issue #49 exists to remove) and 0.75 (28.15%
+// pass on main — too close to the defective baseline to separate it). The gate is expected RED on
+// main until #39 lands; that is the design, not a bug — see the pin against main's own observation
+// counts in toolTrigger.scoring.test.ts.
+//
+// The "expected RED on main" premise leans heavily on one case: relabelling N5 as
+// shouldFire: true reads main green 80.11%; removing N5 entirely reads it green 55.91%. N5's
+// label is nonetheless correct, for two independent reasons (relevant to #39's open question):
+// (i) N5's speakerId is sora asking about Roka, so even the licensed no-arg self-recall
+// (src/agent/tools/index.ts: omit user_name to recall facts about the current speaker) would
+// return Sora's facts, not answer the question — wrong person either way, not a legitimate
+// self-recall firing; (ii) Phase 21's mutation probe deleted only core.ts:65 (the proactive-recall
+// rule) and left that self-recall description untouched, yet N5 still fell to 0/3 — so N5's firing
+// is driven by the proactive rule under test, not the self-recall licence.
+export const MIN_PRECISION = 0.8
 
-/** The live gate's pass/fail rule, in one place: an accuracy floor AND zero systematic failures.
+// 0.80 false-fails 0.00% at the measured rate, 1.41% at the 95% Clopper-Pearson lower bound
+// (r=0.9460 from 54/54 observed should-fire trials); 0.90 false-fails 25.33% at that same
+// pessimistic rate — too high. Catches the mutation-probe collapse to recall 0.111 with
+// probability 1.0000. Budget, not per-case: tolerates up to 3 of the 18 should-fire trials missing
+// in total (15/18=0.833 passes, 14/18=0.778 fails) — one dead should-fire case (3 of 3 trials
+// missing) spends that entire budget by itself, so the floor only lets it through when no other
+// should-fire trial also misses.
+export const MIN_RECALL = 0.8
+
+/** The live gate's pass/fail rule, in one place: a precision floor AND a recall floor, both
+ * aggregate rates over the full observation set — an aggregate rate over 18 observations does not
+ * flake the way a per-case count over 3 trials does (see the reproducibility note below).
  * toolTrigger.live.test.ts and toolTrigger.scoring.test.ts both import this rather than
  * re-implementing it, so a threshold change here can never drift out of sync with what the
- * mutation pin (toolTrigger.scoring.test.ts) validates. */
+ * mutation pin (toolTrigger.scoring.test.ts) validates.
+ *
+ * Reproducibility, quantified rather than assumed: two consecutive runs on identical code disagree
+ * ~3.0% of the time on main and ~0.3% once #39 is fixed to q=0.05, against 45.07% for the retired
+ * all-cases-must-pass rule on a p=0.7 borderline case. This gate is satisfied to that ~97%/~99.7%,
+ * not absolutely.
+ *
+ * Power against a regression, with the model stated: an over-trigger that lifts every no-fire
+ * case's fire rate to q=0.7 is caught 99.996% of the time (TP=18 fixed, FP ~ Binomial(18, 0.7),
+ * gate fails at FP >= 5).
+ *
+ * Residual, stated rather than hidden by the aggregate framing: no aggregate floor can catch a
+ * single no-fire case firing every trial against an otherwise-clean baseline (3 FP of 18 gives
+ * precision ~0.86, above any floor a near-clean state must clear — see the mirror test in
+ * toolTrigger.scoring.test.ts). Honest per-case gating needs 0.05^(1/k) > 0.5, i.e. k >= 5 to prove
+ * one case's true fire rate exceeds 0.5 at 95% confidence — but across the 6 no-fire cases, and
+ * evaluated at the q=0.5 decision boundary where a compliant case is hardest to distinguish, that
+ * compounds to a 17.4% false-failure rate at N=5 (1-(1-0.5^5)^6), and only falls to ~0.6% at N~=10
+ * (~200 calls/run). Those are worst-case boundary figures, not target-state ones: at q=0.15 the same
+ * quantities are 0.046% at N=5 and ~0.0000035% at N=10. That is why the criterion here stays
+ * aggregate at the trial counts this gate can afford; systematicFailures carries the
+ * per-case signal as a diagnostic instead. */
 export function meetsLiveVerdict(report: ToolTriggerReport): boolean {
-  return report.accuracy >= MIN_ACCURACY && report.systematicFailures.length === 0
+  return report.precision >= MIN_PRECISION && report.recall >= MIN_RECALL
 }
 
 /** Pure scorer over recorded fire/no-fire booleans — no database, no socket, no injected clock — so
