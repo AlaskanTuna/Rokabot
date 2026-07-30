@@ -205,10 +205,10 @@ export const config = {
 } as const
 
 /**
- * Bounds for every env-overridable numeric tunable, re-derived from resolved config values so a
- * dropped or mis-wired row shows up in `NUMERIC_BOUNDS`, not just at runtime. min: 1 keys silently
- * break the behaviour they gate at zero or below (e.g. gemini.timeout: 0 aborts every request
- * instantly); min: 0 keys have a legitimate "off"/"no floor" meaning at zero (e.g.
+ * Bounds for every numeric tunable, env-overridable or yaml-only, re-derived from resolved config
+ * values so a dropped or mis-wired row shows up in `NUMERIC_BOUNDS`, not just at runtime. min: 1
+ * keys silently break the behaviour they gate at zero or below (e.g. gemini.timeout: 0 aborts
+ * every request instantly); min: 0 keys have a legitimate "off"/"no floor" meaning at zero (e.g.
  * gemini.maxRetries: 0 means "don't retry"). max is optional and only set on fractions where any
  * value above it is definitionally meaningless (e.g. a share greater than 1).
  */
@@ -221,16 +221,24 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'gemini.liveMaxRetries', value: config.gemini.liveMaxRetries, min: 0 },
   { path: 'gemini.extractionMaxRetries', value: config.gemini.extractionMaxRetries, min: 0 },
   { path: 'gemini.retryBackoffBaseMs', value: config.gemini.retryBackoffBaseMs, min: 0 },
+  { path: 'gemini.baseRetryDelay', value: config.gemini.baseRetryDelay, min: 0 },
   { path: 'gemini.retryRpmFloor', value: config.gemini.retryRpmFloor, min: 0 },
   { path: 'gemini.extractionRpmFloor', value: config.gemini.extractionRpmFloor, min: 0 },
+  { path: 'gemini.maxLlmCalls', value: config.gemini.maxLlmCalls, min: 1 },
   { path: 'rateLimit.rpm', value: config.rateLimit.rpm, min: 1 },
   { path: 'rateLimit.rpd', value: config.rateLimit.rpd, min: 1 },
   { path: 'session.ttlMs', value: config.session.ttlMs, min: 1 },
   { path: 'session.windowSize', value: config.session.windowSize, min: 1 },
+  { path: 'session.maxRehydrationAge', value: config.session.maxRehydrationAge, min: 0 },
+  { path: 'session.historyRetentionDays', value: config.session.historyRetentionDays, min: 1 },
   { path: 'discord.maxMessageLength', value: config.discord.maxMessageLength, min: 1 },
   { path: 'memory.bufferSize', value: config.memory.bufferSize, min: 1 },
+  { path: 'memory.contextSize', value: config.memory.contextSize, min: 1 },
   { path: 'memory.extractionInterval', value: config.memory.extractionInterval, min: 0 },
   { path: 'memory.extractionGapMs', value: config.memory.extractionGapMs, min: 0 },
+  { path: 'memory.maxFactsPerUser', value: config.memory.maxFactsPerUser, min: 1 },
+  { path: 'memory.factRetentionDays', value: config.memory.factRetentionDays, min: 1 },
+  { path: 'memory.channelMonitorTtlMs', value: config.memory.channelMonitorTtlMs, min: 1 },
   { path: 'memory.maxClaimsPerTurn', value: config.memory.maxClaimsPerTurn, min: 1 },
   { path: 'memory.retrievalTokenBudget', value: config.memory.retrievalTokenBudget, min: 1 },
   { path: 'memory.recentParticipantLimit', value: config.memory.recentParticipantLimit, min: 1 },
@@ -240,10 +248,27 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'memory.extractionDailyBudgetRatio', value: config.memory.extractionDailyBudgetRatio, min: 0, max: 1 },
   { path: 'memory.perGuildGapMs', value: config.memory.perGuildGapMs, min: 0 },
   { path: 'memory.extractionQueueMaxPerGuild', value: config.memory.extractionQueueMaxPerGuild, min: 1 },
-  { path: 'metrics.retentionDays', value: config.metrics.retentionDays, min: 1 }
+  { path: 'metrics.retentionDays', value: config.metrics.retentionDays, min: 1 },
+  { path: 'emoji.probability', value: config.emoji.probability, min: 0, max: 1 },
+  { path: 'emoji.cooldownMs', value: config.emoji.cooldownMs, min: 0 },
+  { path: 'reminders.checkIntervalMs', value: config.reminders.checkIntervalMs, min: 1 },
+  { path: 'reminders.maxPerUser', value: config.reminders.maxPerUser, min: 1 },
+  { path: 'reminders.staleThresholdMs', value: config.reminders.staleThresholdMs, min: 1 },
+  { path: 'games.hangmanLives', value: config.games.hangmanLives, min: 1 },
+  { path: 'games.hangmanTimeoutMs', value: config.games.hangmanTimeoutMs, min: 1 },
+  { path: 'games.shiritoriTimeoutMs', value: config.games.shiritoriTimeoutMs, min: 1 },
+  { path: 'games.shinyChance', value: config.games.shinyChance, min: 0, max: 1 },
+  { path: 'statusCycleMs', value: config.statusCycleMs, min: 1 }
 ]
 
 for (const { path, value, min, max } of NUMERIC_BOUNDS) {
+  // TS sees `value: number` and reads this as unreachable, but the `as YamlConfig` cast at :79
+  // makes that type a fiction for YAML-sourced values — a quoted scalar, `.nan`, or `.inf` all
+  // reach here as a genuine non-number or non-finite number and must be rejected before either
+  // comparison below, since both `<` and `>` are false against NaN and Infinity passes any min.
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new Error(`Config value ${path} must be a finite number, got: ${String(value)} (${typeof value})`)
+  }
   if (value < min) {
     throw new Error(`Config value ${path} must be >= ${min}, got: ${value}`)
   }
