@@ -56,6 +56,12 @@ describe('harness token measurement', () => {
     expect(CORE_PROMPT).toContain('## Hard Boundaries')
   })
 
+  it('keeps the recall_user proactive rule scoped to the current message (issue #39)', () => {
+    expect(CORE_PROMPT).toContain("When the message you're replying to names another server member")
+    expect(CORE_PROMPT).toContain('someone other than you or the person speaking')
+    expect(CORE_PROMPT).toContain('Someone who only appears earlier in the conversation is not a reason to call it')
+  })
+
   it('keeps the frozen baseline structurally consistent without re-deriving it', async () => {
     const path = resolve('tests/harness/perf-baseline.json')
     const snapshot = JSON.parse(await readFile(path, 'utf8')) as {
