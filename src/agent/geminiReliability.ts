@@ -31,7 +31,7 @@ const TRANSIENT_SYMBOLIC_PATTERN = /RESOURCE_EXHAUSTED|overloaded|quota|rate.lim
 const NETWORK_PATTERN = /fetch failed|ECONNRESET|ETIMEDOUT|EAI_AGAIN|abort(?:ed)?|timeout|DEADLINE_EXCEEDED/i
 // Bare status codes are matched last and digit-anchored, so `400` cannot match inside `4000000`.
 const TERMINAL_STATUS_PATTERN = /(?<!\d)(?:400|401|403)(?!\d)/
-const TRANSIENT_STATUS_PATTERN = /(?<!\d)(?:429|500|503)(?!\d)/
+const TRANSIENT_STATUS_PATTERN = /(?<!\d)(?:429|500|503|504)(?!\d)/
 
 function result(kind: FailureKind): GeminiFailureResult {
   return {

@@ -277,6 +277,7 @@ for (const { path, value, min, max } of NUMERIC_BOUNDS) {
   }
 }
 
+// Worst-case duration tail, checked against the session TTL.
 const maxLiveRetryWindow = config.gemini.liveMaxRetries * (config.gemini.timeout + config.gemini.retryBackoffCapMs)
 
 if (requestedExtractionInterval > memoryBufferSize) {
@@ -295,10 +296,25 @@ if (config.session.ttlMs <= maxLiveRetryWindow) {
   )
 }
 
-if (config.gemini.turnDeadlineMs <= 2 * config.gemini.timeout) {
+const requiredMs =
+  (config.gemini.liveMaxRetries + 1) * config.gemini.timeout +
+  Array.from({ length: config.gemini.liveMaxRetries }, (_, retryIndex) =>
+    Math.min(config.gemini.retryBackoffBaseMs * 2 ** retryIndex, config.gemini.retryBackoffCapMs)
+  ).reduce((total, backoffMs) => total + backoffMs, 0)
+
+// Last-attempt reachability tail, checked against the turn deadline; necessary but not sufficient because attempts are modeled
+// at timeout and requestTimeoutMs cannot interrupt hung attempts.
+if (config.gemini.turnDeadlineMs < requiredMs) {
   const { logger } = await import('./utils/logger.js')
   logger.warn(
-    { turnDeadlineMs: config.gemini.turnDeadlineMs, timeout: config.gemini.timeout },
-    'Turn deadline cannot fit a request timeout plus a retry of the same length; maxRetries cannot engage'
+    {
+      turnDeadlineMs: config.gemini.turnDeadlineMs,
+      timeout: config.gemini.timeout,
+      liveMaxRetries: config.gemini.liveMaxRetries,
+      retryBackoffBaseMs: config.gemini.retryBackoffBaseMs,
+      retryBackoffCapMs: config.gemini.retryBackoffCapMs,
+      requiredMs
+    },
+    'Turn deadline is smaller than the requiredMs budget needed for all liveMaxRetries + 1 attempts, so the last attempt(s) can never be admitted'
   )
 }
