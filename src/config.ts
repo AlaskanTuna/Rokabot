@@ -228,7 +228,8 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'session.windowSize', value: config.session.windowSize, min: 1 },
   { path: 'session.maxRehydrationAge', value: config.session.maxRehydrationAge, min: 0 },
   { path: 'session.historyRetentionDays', value: config.session.historyRetentionDays, min: 1 },
-  // Components V2's 4000-character shared text budget—not the unused 2000-character content limit (src/discord/messageBuilder.ts:57-60).
+  // Components V2's 4000-character shared text budget, not Discord's 2000-character content limit -
+  // this bot never sends via content, see src/discord/messageBuilder.ts:57-60.
   { path: 'discord.maxMessageLength', value: config.discord.maxMessageLength, min: 1, max: 4000 },
   { path: 'memory.bufferSize', value: config.memory.bufferSize, min: 1 },
   { path: 'memory.contextSize', value: config.memory.contextSize, min: 1 },
