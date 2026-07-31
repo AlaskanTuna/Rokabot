@@ -4,10 +4,14 @@ vi.mock('../expressions.js', () => ({
   getExpressionUrl: () => 'https://example.test/roka.png'
 }))
 
-import { buildRokaMessage } from '../messageBuilder.js'
+import { MAX_TOOL_FOOTER_CHARS, buildRokaMessage, buildToolFooter } from '../messageBuilder.js'
 
 function payloadJson(text: string, toolsUsed?: string[]) {
   return JSON.stringify(buildRokaMessage(text, 'playful', toolsUsed).components[0].toJSON())
+}
+
+function footerWithoutTimestamp(labels: string[]) {
+  return buildToolFooter(labels, 0).replace(' • <t:0:R>', '')
 }
 
 describe('buildRokaMessage', () => {
@@ -25,14 +29,14 @@ describe('buildRokaMessage', () => {
     ['remember_user', 'pressed a memory flower'],
     ['recall_user', 'recalled a pressed memory']
   ])('renders the approved label for %s', (toolName, label) => {
-    expect(payloadJson('A ritual completed~', [toolName])).toContain(`-# 🌸 ${label}`)
+    expect(payloadJson('A ritual completed~', [toolName])).toContain(footerWithoutTimestamp([label]))
   })
 
   it('exposes labels only, never a distinctive tool argument', () => {
     const distinctiveArgument = 'ARGUMENT-MUST-NEVER-REACH-DISCORD-5f1a'
     const payload = payloadJson('A ritual completed~', ['roll_dice', distinctiveArgument])
 
-    expect(payload).toContain('-# 🌸 cast the fortune dice')
+    expect(payload).toContain(footerWithoutTimestamp(['cast the fortune dice']))
     expect(payload).not.toContain(distinctiveArgument)
   })
 
@@ -40,7 +44,7 @@ describe('buildRokaMessage', () => {
     const components = buildRokaMessage('A ritual completed~', 'playful', ['roll_dice']).components[0].toJSON()
       .components
     const footerIndex = components.findIndex(
-      (component) => component.type === 10 && component.content.startsWith('-# 🌸')
+      (component) => component.type === 10 && component.content.startsWith(footerWithoutTimestamp(['']))
     )
 
     expect(components[footerIndex - 1]).toMatchObject({ type: 14, divider: true, spacing: 1 })
@@ -52,11 +56,41 @@ describe('buildRokaMessage', () => {
 
     const components = buildRokaMessage('A ritual completed~', 'playful', ['roll_dice']).components[0].toJSON()
       .components
-    const footer = components.find((component) => component.type === 10 && component.content.startsWith('-# 🌸'))
+    const footer = components.find(
+      (component) => component.type === 10 && component.content.startsWith(footerWithoutTimestamp(['']))
+    )
 
-    expect(footer).toMatchObject({ content: '-# 🌸 cast the fortune dice • <t:1784808000:R>' })
+    expect(footer).toMatchObject({ content: buildToolFooter(['cast the fortune dice'], 1_784_808_000) })
 
     vi.useRealTimers()
+  })
+
+  it('derives the worst-case tool footer size independently of the current clock', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2020-01-01T00:00:00Z'))
+    vi.resetModules()
+    const { MAX_TOOL_FOOTER_CHARS: atFirstDate } = await import('../messageBuilder.js')
+
+    vi.setSystemTime(new Date('2030-01-01T00:00:00Z'))
+    vi.resetModules()
+    const { MAX_TOOL_FOOTER_CHARS: atSecondDate } = await import('../messageBuilder.js')
+
+    expect(atFirstDate).toBe(122)
+    expect(atSecondDate).toBe(atFirstDate)
+
+    vi.useRealTimers()
+  })
+
+  it('pins the max message length to the shared budget minus the measured tool footer', async () => {
+    vi.stubEnv('DISCORD_TOKEN', 'test-token')
+    vi.stubEnv('DISCORD_CLIENT_ID', 'test-client-id')
+    vi.stubEnv('GEMINI_API_KEY', 'test-api-key')
+    const { NUMERIC_BOUNDS } = await import('../../config.js')
+    const maxMessageLength = NUMERIC_BOUNDS.find((bound) => bound.path === 'discord.maxMessageLength')
+
+    expect(maxMessageLength?.max).toBe(4000 - MAX_TOOL_FOOTER_CHARS)
+
+    vi.unstubAllEnvs()
   })
 
   it('keeps plain replies byte-identical and adds no footer for no tools', () => {
@@ -64,7 +98,7 @@ describe('buildRokaMessage', () => {
     const noToolsOutput = payloadJson('Tea is ready~', [])
 
     expect(noToolsOutput).toBe(currentOutput)
-    expect(noToolsOutput).not.toContain('-# 🌸')
+    expect(noToolsOutput).not.toContain(footerWithoutTimestamp(['']))
   })
 
   it('skips unknown tools and caps the footer after three known labels', () => {
@@ -76,8 +110,13 @@ describe('buildRokaMessage', () => {
       'get_weather'
     ])
 
-    expect(payload).toMatch(
-      /-# 🌸 cast the fortune dice · tossed a shrine coin · peeked at the temple clock …and more • <t:\d+:R>/
+    expect(payload).toContain(
+      footerWithoutTimestamp([
+        'cast the fortune dice',
+        'tossed a shrine coin',
+        'peeked at the temple clock',
+        'a fourth label'
+      ])
     )
     expect(payload).not.toContain("read the sky's mood")
     expect(payload).not.toContain('unknown_tool')

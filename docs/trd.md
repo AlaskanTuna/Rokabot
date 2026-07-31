@@ -179,6 +179,10 @@ Enum of detected conversation tones.
 | `'sleepy'`      | Tiredness keywords (or 1 match during 22:00-04:00) | Drowsy, guard-down, sentences dissolving |
 | `'competitive'` | Game/rivalry/challenge keywords                    | Fired-up, affectionate trash-talk        |
 
+`detectTone` is first-match-wins over `TONE_PATTERNS`' declaration order in `src/agent/toneDetector.ts`, not
+the row order above. A trigger listed against a later tone is unreachable whenever an earlier tone matches the same
+text. Behavioral precedence is pinned by `src/agent/__tests__/toneDetector.test.ts`.
+
 ## Memory Architecture (Claims)
 
 Claims memory is SQLite-backed, guild-scoped, and selected before the prompt is assembled. It replaces the

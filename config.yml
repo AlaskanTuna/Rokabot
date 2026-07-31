@@ -29,7 +29,7 @@ session:
   historyRetentionDays: 7 # Days before session history is auto-pruned (hourly check)
 
 discord:
-  maxMessageLength: 1500 # Char limit for bot replies (Components V2 shared text budget is 4000)
+  maxMessageLength: 1500 # Char limit for bot replies (effective ceiling is 4000 minus the tool-disclosure footer)
 
 memory:
   bufferSize: 30 # Max messages in passive ring buffer per channel (in-memory)

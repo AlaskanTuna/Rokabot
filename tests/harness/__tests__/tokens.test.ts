@@ -118,16 +118,17 @@ describe('harness token measurement', () => {
 
     const worst = results.reduce((max, result) => (result.systemTok > max.systemTok ? result : max))
 
+    // The loop guarantees every assembled tone retains all four prompt layers.
+    for (const result of results) {
+      expect(result.coreTok, `tone "${result.tone}": core layer produced 0 tokens`).toBeGreaterThan(0)
+      expect(result.speechTok, `tone "${result.tone}": speech layer produced 0 tokens`).toBeGreaterThan(0)
+      expect(result.toneTok, `tone "${result.tone}": tone layer produced 0 tokens`).toBeGreaterThan(0)
+      expect(result.contextTok, `tone "${result.tone}": context layer produced 0 tokens`).toBeGreaterThan(0)
+    }
+
     expect(
       worst.systemTok,
       `worst-case tone "${worst.tone}" assembled to ${worst.systemTok} tokens, over MAX_SYSTEM_PROMPT_TOKENS=${MAX_SYSTEM_PROMPT_TOKENS}`
     ).toBeLessThanOrEqual(MAX_SYSTEM_PROMPT_TOKENS)
-    // The core, speech and context layers are tone-invariant, so these floors catch any of the three
-    // being deleted or emptied. The tone floor is weaker: 'worst' is elected by size, so emptying one
-    // tone's prompt just demotes it — only emptying all of them trips this.
-    expect(worst.coreTok, `worst-case tone "${worst.tone}": core layer produced 0 tokens`).toBeGreaterThan(0)
-    expect(worst.speechTok, `worst-case tone "${worst.tone}": speech layer produced 0 tokens`).toBeGreaterThan(0)
-    expect(worst.toneTok, `worst-case tone "${worst.tone}": tone layer produced 0 tokens`).toBeGreaterThan(0)
-    expect(worst.contextTok, `worst-case tone "${worst.tone}": context layer produced 0 tokens`).toBeGreaterThan(0)
   })
 })

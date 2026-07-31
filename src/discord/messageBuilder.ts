@@ -26,6 +26,21 @@ const TOOL_USAGE_LABELS: Record<string, string> = {
   recall_user: 'recalled a pressed memory'
 }
 
+const MAX_VISIBLE_TOOL_LABELS = 3
+
+export function buildToolFooter(labels: readonly string[], epochSeconds = Math.floor(Date.now() / 1000)) {
+  const visibleLabels = labels.slice(0, MAX_VISIBLE_TOOL_LABELS)
+  const suffix = labels.length > visibleLabels.length ? ' …and more' : ''
+  return `-# 🌸 ${visibleLabels.join(' · ')}${suffix} • <t:${epochSeconds}:R>`
+}
+
+const worstCaseToolFooterLabels = Object.values(TOOL_USAGE_LABELS)
+  .sort((left, right) => right.length - left.length)
+  .slice(0, MAX_VISIBLE_TOOL_LABELS + 1)
+// Math.floor(Date.now() / 1000) has 10 digits until 2286, so this keeps the measurement deterministic.
+const TOOL_FOOTER_EPOCH_SAMPLE = 1_784_808_000
+export const MAX_TOOL_FOOTER_CHARS = buildToolFooter(worstCaseToolFooterLabels, TOOL_FOOTER_EPOCH_SAMPLE).length
+
 /** Build a Components V2 container message with tone-appropriate styling */
 export function buildRokaMessage(text: string, tone: ToneKey, toolsUsed: readonly string[] = []) {
   const style = getToneStyle(tone)
@@ -44,14 +59,8 @@ export function buildRokaMessage(text: string, tone: ToneKey, toolsUsed: readonl
   })
 
   if (toolLabels.length > 0) {
-    const visibleLabels = toolLabels.slice(0, 3)
-    const suffix = toolLabels.length > visibleLabels.length ? ' …and more' : ''
     container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
-    container.addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(
-        `-# 🌸 ${visibleLabels.join(' · ')}${suffix} • <t:${Math.floor(Date.now() / 1000)}:R>`
-      )
-    )
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(buildToolFooter(toolLabels)))
   }
 
   const payload = {
