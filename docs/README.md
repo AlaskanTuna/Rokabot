@@ -174,7 +174,7 @@ flowchart TD
 
 - The four layers are core identity, speech patterns, a tone variant, and channel context.
 - The detector selects from 12 tones using recent messages; it adds no LLM cost.
-- The assembled system prompt is budgeted at roughly 1,000–1,600 tokens. See the [technical reference](./trd.md) for the deeper contract.
+- The assembled system prompt is size-capped for change detection, not tuned for a target size. See the [technical reference](./trd.md) for the deeper contract.
 
 ### Memory
 

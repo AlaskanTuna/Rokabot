@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../config.js', () => ({
@@ -158,5 +160,39 @@ describe('assembleSystemPrompt', () => {
     const result = assembleSystemPrompt(baseInput)
     // Verify the structure has all layers separated by \n\n
     expect(result).toContain(CORE_PROMPT + '\n\n' + SPEECH_PROMPT)
+  })
+})
+
+describe('docs/trd.md ToneKey table', () => {
+  it('documents exactly the current TONE_PROMPTS keys (change-detection gate)', async () => {
+    const trd = await readFile(resolve('docs/trd.md'), 'utf8')
+    const lines = trd.split('\n')
+
+    const headingIndex = lines.findIndex((line) => line.trim() === '### ToneKey')
+    if (headingIndex === -1) throw new Error('docs/trd.md is missing its "### ToneKey" section')
+
+    const nextHeadingOffset = lines.slice(headingIndex + 1).findIndex((line) => line.trim().startsWith('#'))
+    const sectionEnd = nextHeadingOffset === -1 ? lines.length : headingIndex + 1 + nextHeadingOffset
+    const tableRows = lines.slice(headingIndex + 1, sectionEnd).filter((line) => line.trim().startsWith('|'))
+
+    // First matched row is the header, second is the `---` separator; the rest are data rows.
+    const documentedTones = tableRows.slice(2).map((row) => {
+      const firstCell = row.split('|')[1] ?? ''
+      const match = firstCell.match(/'([^']+)'/)
+      if (!match) throw new Error(`Could not parse a tone value out of ToneKey table row: ${row}`)
+      return match[1]
+    })
+
+    const documented = new Set(documentedTones)
+    const actual = new Set(Object.keys(TONE_PROMPTS))
+
+    const missing = [...actual].filter((tone) => !documented.has(tone))
+    const extra = [...documented].filter((tone) => !actual.has(tone))
+
+    expect(missing, `docs/trd.md ToneKey table is missing tone(s): ${missing.join(', ')}`).toEqual([])
+    expect(
+      extra,
+      `docs/trd.md ToneKey table documents tone(s) that no longer exist in TONE_PROMPTS: ${extra.join(', ')}`
+    ).toEqual([])
   })
 })

@@ -2,8 +2,9 @@ import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { CORE_PROMPT } from '../../../src/agent/prompts/core.js'
+import { TONE_PROMPTS, type ToneKey } from '../../../src/agent/prompts/tones.js'
 import { rokaTools } from '../../../src/agent/tools/index.js'
-import { measureRequest } from '../tokens.js'
+import { MAX_SYSTEM_PROMPT_TOKENS, measureRequest } from '../tokens.js'
 
 const fixture = {
   tone: 'playful' as const,
@@ -87,5 +88,46 @@ describe('harness token measurement', () => {
       expect(tokens.coreTok + tokens.speechTok + tokens.toneTok + tokens.contextTok).toBe(tokens.systemTok)
       expect(tokens.systemTok + tokens.toolsTok + tokens.historyTok + tokens.userMsgTok).toBe(tokens.totalTok)
     }
+  })
+
+  it('keeps the assembled system prompt within the enforced ceiling across every tone (change-detection gate)', () => {
+    // Bound systemTok (core + speech + tone + context) only, not totalTok. The runtime
+    // "What You Remember About People In This Channel" facts block scales with channel
+    // population, so bounding the whole request would make this gate flap on a busy
+    // server instead of on a code change — see AGENTS.md / docs/trd.md.
+    const worstCaseParticipants = [
+      'Yamashita Katsuragi',
+      'Reiko Fujimiya-Nakamura',
+      'Christopherson',
+      'Bartholomew',
+      'Constantina'
+    ]
+    const worstCaseDisplayName = 'Bartholomew Christopherson-Yamanaka'
+    const tones = Object.keys(TONE_PROMPTS) as ToneKey[]
+
+    const results = tones.map((tone) => ({
+      tone,
+      ...measureRequest({
+        tone,
+        participants: worstCaseParticipants,
+        hour: 5,
+        displayName: worstCaseDisplayName,
+        userMessage: 'placeholder'
+      })
+    }))
+
+    const worst = results.reduce((max, result) => (result.systemTok > max.systemTok ? result : max))
+
+    expect(
+      worst.systemTok,
+      `worst-case tone "${worst.tone}" assembled to ${worst.systemTok} tokens, over MAX_SYSTEM_PROMPT_TOKENS=${MAX_SYSTEM_PROMPT_TOKENS}`
+    ).toBeLessThanOrEqual(MAX_SYSTEM_PROMPT_TOKENS)
+    // The core, speech and context layers are tone-invariant, so these floors catch any of the three
+    // being deleted or emptied. The tone floor is weaker: 'worst' is elected by size, so emptying one
+    // tone's prompt just demotes it — only emptying all of them trips this.
+    expect(worst.coreTok, `worst-case tone "${worst.tone}": core layer produced 0 tokens`).toBeGreaterThan(0)
+    expect(worst.speechTok, `worst-case tone "${worst.tone}": speech layer produced 0 tokens`).toBeGreaterThan(0)
+    expect(worst.toneTok, `worst-case tone "${worst.tone}": tone layer produced 0 tokens`).toBeGreaterThan(0)
+    expect(worst.contextTok, `worst-case tone "${worst.tone}": context layer produced 0 tokens`).toBeGreaterThan(0)
   })
 })
