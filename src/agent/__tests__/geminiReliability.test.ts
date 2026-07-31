@@ -5,6 +5,15 @@ describe('classifyGeminiFailure', () => {
   it.each([
     ['429', { errorCode: 429 }, { kind: 'transient_http', retryable: true, deflect: false }],
     ['503', { errorCode: 503 }, { kind: 'transient_http', retryable: true, deflect: false }],
+    ['504', { errorCode: 504 }, { kind: 'transient_http', retryable: true, deflect: false }],
+    [
+      '504 envelope without a network marker',
+      {
+        name: 'ApiError',
+        errorMessage: 'got status: 504 Gateway Failure. {"error":{"code":504,"message":"upstream failed"}}'
+      },
+      { kind: 'transient_http', retryable: true, deflect: false }
+    ],
     [
       'RESOURCE_EXHAUSTED',
       { errorCode: 'RESOURCE_EXHAUSTED' },
@@ -102,6 +111,14 @@ describe('classifyGeminiFailure', () => {
       {
         errorCode: 'ApiError',
         errorMessage: 'Backend returned an unexpected value: 5000000'
+      },
+      { kind: 'terminal', retryable: false, deflect: true }
+    ],
+    [
+      '504-inside-5040000 is not a status code',
+      {
+        errorCode: 'ApiError',
+        errorMessage: 'Backend returned an unexpected value: 5040000'
       },
       { kind: 'terminal', retryable: false, deflect: true }
     ],

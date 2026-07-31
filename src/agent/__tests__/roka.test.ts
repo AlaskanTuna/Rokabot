@@ -5,6 +5,7 @@ import { recordMemoryEvent } from '../../storage/metricsStore.js'
 import { getFacts, refreshFactTimestamps } from '../../storage/userMemory.js'
 import { logger } from '../../utils/logger.js'
 import { estimateTokens } from '../../utils/tokens.js'
+import { computeBackoff as computeRetryBackoff } from '../geminiReliability.js'
 import { retrieveForTurn } from '../memory/retriever.js'
 import { getMessages } from '../passiveBuffer.js'
 import { assembleSystemPrompt } from '../promptAssembler.js'
@@ -593,25 +594,36 @@ describe('runTurnWithReliability turn deadline', () => {
     })
   })
 
-  it('admits a retry after a timeout-class failure at the shipped config values', async () => {
+  it('reaches all liveMaxRetries + 1 attempts within the shipped turn deadline', async () => {
     let clock = 0
     const now = () => clock
     const runTurn = vi.fn(async () => {
       clock += config.gemini.timeout
       return { errorMessage: 'The operation timed out', hasText: false, hasFunctionCall: false }
     })
+    const sleep = vi.fn((delayMs: number) => {
+      clock += delayMs
+      return Promise.resolve()
+    })
     const testOptions = options({
       runTurn,
       now,
-      computeBackoff: () => 1_000,
+      sleep,
+      computeBackoff: (attempt: number) =>
+        computeRetryBackoff(attempt, config.gemini.retryBackoffBaseMs, {
+          maxMs: config.gemini.retryBackoffCapMs,
+          random: () => 1
+        }),
+      maxRetries: config.gemini.liveMaxRetries,
+      retryBackoffCapMs: config.gemini.retryBackoffCapMs,
       turnDeadlineMs: config.gemini.turnDeadlineMs,
       requestTimeoutMs: config.gemini.timeout
     })
 
     await runTurnWithReliability(testOptions)
 
-    expect(testOptions.tryConsumeRetry).toHaveBeenCalledTimes(1)
-    expect(runTurn).toHaveBeenCalledTimes(2)
+    expect(testOptions.tryConsumeRetry).toHaveBeenCalledTimes(config.gemini.liveMaxRetries)
+    expect(runTurn).toHaveBeenCalledTimes(config.gemini.liveMaxRetries + 1)
   })
 })
 
