@@ -120,7 +120,6 @@ describe('config module', () => {
     expect(config.gemini.maxRetries).toBe(3)
     expect(config.gemini.maxOutputTokens).toBe(500)
     expect(config.gemini.safetyThreshold).toBe('OFF')
-    expect(config.gemini.baseRetryDelay).toBe(2000)
     expect(config.gemini.maxLlmCalls).toBe(4)
     expect(config.gemini.liveMaxRetries).toBe(2)
     expect(config.gemini.retryRpmFloor).toBe(2)
@@ -383,6 +382,65 @@ describe('config module', () => {
     expect(warn).not.toHaveBeenCalled()
   })
 
+  it('warns when a reminder can be swept stale before a scheduler tick can deliver it', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    withYamlOverride({ reminders: { staleThresholdMs: 4000 } })
+
+    await import('../config.js')
+
+    expect(warn).toHaveBeenCalledWith(
+      { staleThresholdMs: 4000, checkIntervalMs: 5000 },
+      'Reminder stale threshold can sweep a reminder before any scheduler tick can deliver it'
+    )
+  })
+
+  it('warns when a reminder stale threshold equals the scheduler interval', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    withYamlOverride({ reminders: { staleThresholdMs: 5000 } })
+
+    await import('../config.js')
+
+    expect(warn).toHaveBeenCalledWith(
+      { staleThresholdMs: 5000, checkIntervalMs: 5000 },
+      'Reminder stale threshold can sweep a reminder before any scheduler tick can deliver it'
+    )
+  })
+
+  it('does not warn when a reminder stale threshold exceeds the scheduler interval by 1ms', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    withYamlOverride({ reminders: { staleThresholdMs: 5001 } })
+
+    await import('../config.js')
+
+    expect(warn).not.toHaveBeenCalled()
+  })
+
+  it('warns when values above the memory buffer size are silently ineffective', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    withYamlOverride({ memory: { contextSize: 31 } })
+
+    await import('../config.js')
+
+    expect(warn).toHaveBeenCalledWith(
+      { contextSize: 31, bufferSize: 30 },
+      'Memory context size above passive buffer size is silently ineffective'
+    )
+  })
+
+  it('does not warn when the memory context size equals the buffer size', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    withYamlOverride({ memory: { contextSize: 30 } })
+
+    await import('../config.js')
+
+    expect(warn).not.toHaveBeenCalled()
+  })
+
   it('throws if env int override is non-numeric', async () => {
     setRequiredEnvVars()
     vi.stubEnv('RATE_LIMIT_RPM', 'not-a-number')
@@ -460,6 +518,26 @@ describe('config module', () => {
     expect(config.gemini.timeout).toBe(20000)
   })
 
+  it('throws if DISCORD_MAX_MESSAGE_LENGTH exceeds 4000', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('DISCORD_MAX_MESSAGE_LENGTH', '4001')
+
+    await expect(() => import('../config.js')).rejects.toThrow(
+      'Config value discord.maxMessageLength must be <= 4000, got: 4001'
+    )
+  })
+
+  it('accepts DISCORD_MAX_MESSAGE_LENGTH at exactly 4000', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('DISCORD_MAX_MESSAGE_LENGTH', '4000')
+
+    const { config } = await import('../config.js')
+
+    expect(config.discord.maxMessageLength).toBe(4000)
+  })
+
   it('bounds every numeric tunable, env-overridable or yaml-only', async () => {
     setRequiredEnvVars()
     clearTunableEnvVars()
@@ -473,7 +551,6 @@ describe('config module', () => {
       { path: 'gemini.liveMaxRetries', min: 0 },
       { path: 'gemini.extractionMaxRetries', min: 0 },
       { path: 'gemini.retryBackoffBaseMs', min: 0 },
-      { path: 'gemini.baseRetryDelay', min: 0 },
       { path: 'gemini.retryRpmFloor', min: 0 },
       { path: 'gemini.extractionRpmFloor', min: 0 },
       { path: 'gemini.maxLlmCalls', min: 1 },
@@ -483,7 +560,7 @@ describe('config module', () => {
       { path: 'session.windowSize', min: 1 },
       { path: 'session.maxRehydrationAge', min: 0 },
       { path: 'session.historyRetentionDays', min: 1 },
-      { path: 'discord.maxMessageLength', min: 1 },
+      { path: 'discord.maxMessageLength', min: 1, max: 4000 },
       { path: 'memory.bufferSize', min: 1 },
       { path: 'memory.contextSize', min: 1 },
       { path: 'memory.extractionInterval', min: 0 },

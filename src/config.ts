@@ -21,7 +21,6 @@ interface YamlConfig {
     maxRetries?: number
     maxOutputTokens?: number
     safetyThreshold?: string
-    baseRetryDelay?: number
     maxLlmCalls?: number
     liveMaxRetries?: number
     retryRpmFloor?: number
@@ -137,7 +136,6 @@ export const config = {
     maxRetries: envInt('GEMINI_MAX_RETRIES') ?? yaml.gemini?.maxRetries ?? 1,
     maxOutputTokens: envInt('GEMINI_MAX_OUTPUT_TOKENS') ?? yaml.gemini?.maxOutputTokens ?? 300,
     safetyThreshold: envString('GEMINI_SAFETY_THRESHOLD') ?? yaml.gemini?.safetyThreshold ?? 'OFF',
-    baseRetryDelay: yaml.gemini?.baseRetryDelay ?? 2000,
     maxLlmCalls: yaml.gemini?.maxLlmCalls ?? 4,
     liveMaxRetries: envInt('GEMINI_LIVE_MAX_RETRIES') ?? yaml.gemini?.liveMaxRetries ?? 2,
     retryRpmFloor: envInt('GEMINI_RETRY_RPM_FLOOR') ?? yaml.gemini?.retryRpmFloor ?? 2,
@@ -221,7 +219,6 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'gemini.liveMaxRetries', value: config.gemini.liveMaxRetries, min: 0 },
   { path: 'gemini.extractionMaxRetries', value: config.gemini.extractionMaxRetries, min: 0 },
   { path: 'gemini.retryBackoffBaseMs', value: config.gemini.retryBackoffBaseMs, min: 0 },
-  { path: 'gemini.baseRetryDelay', value: config.gemini.baseRetryDelay, min: 0 },
   { path: 'gemini.retryRpmFloor', value: config.gemini.retryRpmFloor, min: 0 },
   { path: 'gemini.extractionRpmFloor', value: config.gemini.extractionRpmFloor, min: 0 },
   { path: 'gemini.maxLlmCalls', value: config.gemini.maxLlmCalls, min: 1 },
@@ -231,7 +228,8 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'session.windowSize', value: config.session.windowSize, min: 1 },
   { path: 'session.maxRehydrationAge', value: config.session.maxRehydrationAge, min: 0 },
   { path: 'session.historyRetentionDays', value: config.session.historyRetentionDays, min: 1 },
-  { path: 'discord.maxMessageLength', value: config.discord.maxMessageLength, min: 1 },
+  // Components V2's 4000-character shared text budget—not the unused 2000-character content limit (src/discord/messageBuilder.ts:57-60).
+  { path: 'discord.maxMessageLength', value: config.discord.maxMessageLength, min: 1, max: 4000 },
   { path: 'memory.bufferSize', value: config.memory.bufferSize, min: 1 },
   { path: 'memory.contextSize', value: config.memory.contextSize, min: 1 },
   { path: 'memory.extractionInterval', value: config.memory.extractionInterval, min: 0 },
@@ -293,6 +291,28 @@ if (config.session.ttlMs <= maxLiveRetryWindow) {
   logger.warn(
     { sessionTtlMs: config.session.ttlMs, maxLiveRetryWindow },
     'Session idle TTL may expire before the maximum live retry window'
+  )
+}
+
+// Equality is only safe in steady state; the scheduler (reminderScheduler.ts:11) has no leading tick, so the
+// first tick after a restart has no predecessor and sweeps (reminderStore.ts:84) whatever fell due during
+// downtime, and setInterval drift means the real gap is >= checkIntervalMs, not ==.
+if (config.reminders.staleThresholdMs <= config.reminders.checkIntervalMs) {
+  const { logger } = await import('./utils/logger.js')
+  logger.warn(
+    {
+      staleThresholdMs: config.reminders.staleThresholdMs,
+      checkIntervalMs: config.reminders.checkIntervalMs
+    },
+    'Reminder stale threshold can sweep a reminder before any scheduler tick can deliver it'
+  )
+}
+
+if (config.memory.contextSize > config.memory.bufferSize) {
+  const { logger } = await import('./utils/logger.js')
+  logger.warn(
+    { contextSize: config.memory.contextSize, bufferSize: config.memory.bufferSize },
+    'Memory context size above passive buffer size is silently ineffective'
   )
 }
 

@@ -42,7 +42,6 @@ vi.mock('../../config.js', () => ({
       timeout: 100,
       maxRetries: 1,
       maxOutputTokens: 300,
-      baseRetryDelay: 0,
       maxLlmCalls: 4,
       liveMaxRetries: 2,
       retryRpmFloor: 2,
