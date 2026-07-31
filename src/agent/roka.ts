@@ -17,7 +17,7 @@ import { logger } from '../utils/logger.js'
 import { getSharedRateLimiter } from '../utils/rateLimiter.js'
 import { getLocalHour } from '../utils/timezone.js'
 import { estimateTokens } from '../utils/tokens.js'
-import { classifyGeminiFailure, computeBackoff } from './geminiReliability.js'
+import { classifyGeminiFailure, computeBackoff, extractGeminiStatus } from './geminiReliability.js'
 import { retrieveForTurn } from './memory/retriever.js'
 import { getMessages as getBufferMessages } from './passiveBuffer.js'
 import { assembleSystemPrompt } from './promptAssembler.js'
@@ -151,9 +151,12 @@ function sleepUntil(delayMs: number, signal: AbortSignal): Promise<void> {
   })
 }
 
-/** Derives the persistable failure marker — never `errorMessage`, which can echo request content. */
+/**
+ * Derives the persistable failure marker — never the message itself, only an allowlisted status token derived from it.
+ * Its fixed output alphabet (400|401|403|429|500|503|504) cannot echo request content; the allowlist is load-bearing.
+ */
 function markerFrom(outcome: TurnOutcome): string | undefined {
-  const marker = outcome.errorCode || outcome.finishReason
+  const marker = outcome.errorCode || outcome.finishReason || extractGeminiStatus(outcome.errorMessage ?? '')
   return marker ? String(marker).slice(0, 64) : undefined
 }
 

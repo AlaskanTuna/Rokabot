@@ -33,6 +33,15 @@ const NETWORK_PATTERN = /fetch failed|ECONNRESET|ETIMEDOUT|EAI_AGAIN|abort(?:ed)
 const TERMINAL_STATUS_PATTERN = /(?<!\d)(?:400|401|403)(?!\d)/
 const TRANSIENT_STATUS_PATTERN = /(?<!\d)(?:429|500|503|504)(?!\d)/
 
+export function extractGeminiStatus(errorMessage: string): string | undefined {
+  for (const pattern of [TERMINAL_STATUS_PATTERN, TRANSIENT_STATUS_PATTERN]) {
+    const status = errorMessage.match(pattern)?.[0]
+    if (status) return status
+  }
+
+  return undefined
+}
+
 function result(kind: FailureKind): GeminiFailureResult {
   return {
     kind,

@@ -228,9 +228,9 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'session.windowSize', value: config.session.windowSize, min: 1 },
   { path: 'session.maxRehydrationAge', value: config.session.maxRehydrationAge, min: 0 },
   { path: 'session.historyRetentionDays', value: config.session.historyRetentionDays, min: 1 },
-  // Components V2's 4000-character shared text budget, not Discord's 2000-character content limit -
-  // this bot never sends via content, see src/discord/messageBuilder.ts:57-60.
-  { path: 'discord.maxMessageLength', value: config.discord.maxMessageLength, min: 1, max: 4000 },
+  // 4000 (Components V2 shared TextDisplay budget) − MAX_TOOL_FOOTER_CHARS (122, derived in
+  // src/discord/messageBuilder.ts) = 3878; this bot never sends via content.
+  { path: 'discord.maxMessageLength', value: config.discord.maxMessageLength, min: 1, max: 3878 },
   { path: 'memory.bufferSize', value: config.memory.bufferSize, min: 1 },
   { path: 'memory.contextSize', value: config.memory.contextSize, min: 1 },
   { path: 'memory.extractionInterval', value: config.memory.extractionInterval, min: 0 },
@@ -276,6 +276,26 @@ for (const { path, value, min, max } of NUMERIC_BOUNDS) {
   }
 }
 
+export function deriveAchievableRetries(
+  liveMaxRetries: number,
+  retryBackoffBaseMs: number,
+  retryBackoffCapMs: number,
+  jitterFactor: number
+) {
+  if (retryBackoffBaseMs === 0) return liveMaxRetries
+
+  let retryLatencyMs = 0
+  for (let retryIndex = 0; retryIndex < liveMaxRetries; retryIndex++) {
+    const backoffMs = Math.min(retryBackoffBaseMs * 2 ** retryIndex, retryBackoffCapMs) * jitterFactor
+    const delayMs = Math.min(backoffMs, Math.max(0, retryBackoffCapMs - retryLatencyMs))
+
+    if (delayMs <= 0 && retryLatencyMs >= retryBackoffCapMs) return retryIndex
+    retryLatencyMs += delayMs
+  }
+
+  return liveMaxRetries
+}
+
 // Worst-case duration tail, checked against the session TTL.
 const maxLiveRetryWindow = config.gemini.liveMaxRetries * (config.gemini.timeout + config.gemini.retryBackoffCapMs)
 
@@ -317,11 +337,43 @@ if (config.memory.contextSize > config.memory.bufferSize) {
   )
 }
 
+// The deadline budget asks whether the last attempt is guaranteed, so it uses maximum jitter.
+const maxJitterAchievableRetries = deriveAchievableRetries(
+  config.gemini.liveMaxRetries,
+  config.gemini.retryBackoffBaseMs,
+  config.gemini.retryBackoffCapMs,
+  1
+)
+
+// The cap-reachability warning asks whether the configured count is impossible, so it uses minimum jitter.
+const minJitterAchievableRetries = deriveAchievableRetries(
+  config.gemini.liveMaxRetries,
+  config.gemini.retryBackoffBaseMs,
+  config.gemini.retryBackoffCapMs,
+  0.5
+)
+
 const requiredMs =
-  (config.gemini.liveMaxRetries + 1) * config.gemini.timeout +
-  Array.from({ length: config.gemini.liveMaxRetries }, (_, retryIndex) =>
-    Math.min(config.gemini.retryBackoffBaseMs * 2 ** retryIndex, config.gemini.retryBackoffCapMs)
-  ).reduce((total, backoffMs) => total + backoffMs, 0)
+  (maxJitterAchievableRetries + 1) * config.gemini.timeout +
+  Math.min(
+    config.gemini.retryBackoffCapMs,
+    Array.from({ length: maxJitterAchievableRetries }, (_, retryIndex) =>
+      Math.min(config.gemini.retryBackoffBaseMs * 2 ** retryIndex, config.gemini.retryBackoffCapMs)
+    ).reduce((total, backoffMs) => total + backoffMs, 0)
+  )
+
+if (config.gemini.liveMaxRetries > minJitterAchievableRetries) {
+  const { logger } = await import('./utils/logger.js')
+  logger.warn(
+    {
+      liveMaxRetries: config.gemini.liveMaxRetries,
+      achievableRetries: minJitterAchievableRetries,
+      retryBackoffBaseMs: config.gemini.retryBackoffBaseMs,
+      retryBackoffCapMs: config.gemini.retryBackoffCapMs
+    },
+    'Configured live retry count can never be reached because the cumulative backoff cap fires first'
+  )
+}
 
 // Last-attempt reachability tail, checked against the turn deadline; necessary but not sufficient because attempts are modeled
 // at timeout and requestTimeoutMs cannot interrupt hung attempts.

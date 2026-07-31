@@ -213,7 +213,7 @@ describe('config module', () => {
     vi.stubEnv('MEMORY_EXTRACTION_QUEUE_MAX_PER_GUILD', '75')
     vi.stubEnv('MEMORY_VAULT_EXPORT_DIR', 'tmp/vault')
     vi.stubEnv('METRICS_RETENTION_DAYS', '120')
-    vi.stubEnv('DISCORD_MAX_MESSAGE_LENGTH', '4000')
+    vi.stubEnv('DISCORD_MAX_MESSAGE_LENGTH', '3878')
 
     const { config } = await import('../config.js')
 
@@ -250,7 +250,7 @@ describe('config module', () => {
     expect(config.memory).not.toHaveProperty('extractionBatchSize')
     expect(config.memory.vaultExportDir).toBe('tmp/vault')
     expect(config.metrics.retentionDays).toBe(120)
-    expect(config.discord.maxMessageLength).toBe(4000)
+    expect(config.discord.maxMessageLength).toBe(3878)
   })
 
   it('warns when the session TTL is shorter than the maximum live retry window', async () => {
@@ -326,6 +326,59 @@ describe('config module', () => {
     setRequiredEnvVars()
     clearTunableEnvVars()
     vi.stubEnv('GEMINI_TURN_DEADLINE_MS', '63000')
+
+    await import('../config.js')
+
+    expect(warn).not.toHaveBeenCalled()
+  })
+
+  it('does not warn when configured live retries equal what the cumulative backoff cap can reach under minimum jitter', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('GEMINI_LIVE_MAX_RETRIES', '5')
+    vi.stubEnv('GEMINI_TURN_DEADLINE_MS', '150000')
+
+    await import('../config.js')
+
+    expect(warn).not.toHaveBeenCalledWith(
+      expect.any(Object),
+      'Configured live retry count can never be reached because the cumulative backoff cap fires first'
+    )
+  })
+
+  it('warns when configured live retries exceed what the cumulative backoff cap can reach under minimum jitter', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('GEMINI_LIVE_MAX_RETRIES', '6')
+    vi.stubEnv('GEMINI_TURN_DEADLINE_MS', '150000')
+
+    await import('../config.js')
+
+    expect(warn).toHaveBeenCalledWith(
+      {
+        liveMaxRetries: 6,
+        achievableRetries: 5,
+        retryBackoffBaseMs: 1_000,
+        retryBackoffCapMs: 12_000
+      },
+      'Configured live retry count can never be reached because the cumulative backoff cap fires first'
+    )
+  })
+
+  it('does not warn when the cumulative backoff cap makes the deadline sufficient', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('GEMINI_LIVE_MAX_RETRIES', '4')
+    vi.stubEnv('GEMINI_TURN_DEADLINE_MS', '112000')
+
+    await import('../config.js')
+
+    expect(warn).not.toHaveBeenCalled()
+  })
+
+  it('does not warn about retry reachability or deadline at shipped defaults', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
 
     await import('../config.js')
 
@@ -518,24 +571,24 @@ describe('config module', () => {
     expect(config.gemini.timeout).toBe(20000)
   })
 
-  it('throws if DISCORD_MAX_MESSAGE_LENGTH exceeds 4000', async () => {
+  it('throws if DISCORD_MAX_MESSAGE_LENGTH exceeds the tool-footer-adjusted maximum', async () => {
     setRequiredEnvVars()
     clearTunableEnvVars()
-    vi.stubEnv('DISCORD_MAX_MESSAGE_LENGTH', '4001')
+    vi.stubEnv('DISCORD_MAX_MESSAGE_LENGTH', '3879')
 
     await expect(() => import('../config.js')).rejects.toThrow(
-      'Config value discord.maxMessageLength must be <= 4000, got: 4001'
+      'Config value discord.maxMessageLength must be <= 3878, got: 3879'
     )
   })
 
-  it('accepts DISCORD_MAX_MESSAGE_LENGTH at exactly 4000', async () => {
+  it('accepts DISCORD_MAX_MESSAGE_LENGTH at exactly the tool-footer-adjusted maximum', async () => {
     setRequiredEnvVars()
     clearTunableEnvVars()
-    vi.stubEnv('DISCORD_MAX_MESSAGE_LENGTH', '4000')
+    vi.stubEnv('DISCORD_MAX_MESSAGE_LENGTH', '3878')
 
     const { config } = await import('../config.js')
 
-    expect(config.discord.maxMessageLength).toBe(4000)
+    expect(config.discord.maxMessageLength).toBe(3878)
   })
 
   it('bounds every numeric tunable, env-overridable or yaml-only', async () => {
@@ -560,7 +613,7 @@ describe('config module', () => {
       { path: 'session.windowSize', min: 1 },
       { path: 'session.maxRehydrationAge', min: 0 },
       { path: 'session.historyRetentionDays', min: 1 },
-      { path: 'discord.maxMessageLength', min: 1, max: 4000 },
+      { path: 'discord.maxMessageLength', min: 1, max: 3878 },
       { path: 'memory.bufferSize', min: 1 },
       { path: 'memory.contextSize', min: 1 },
       { path: 'memory.extractionInterval', min: 0 },

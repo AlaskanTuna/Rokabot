@@ -8,7 +8,7 @@
 
 **Rokabot** — a server-wide Discord character chatbot embodying Maniwa Roka (馬庭 芦花) from Senren\*Banka.
 
-It runs on Gemini via Google ADK TypeScript, deployed on a Raspberry Pi 5 (8GB, reachable over Tailscale) using Docker Compose. The bot responds to slash commands (`/chat`) and mention/reply/name-keyword triggers, maintaining per-channel conversational memory with a 10-message sliding window and 5-minute idle TTL.
+It runs on Gemini via Google ADK TypeScript, deployed on a Raspberry Pi 5 (8GB, reachable over Tailscale) using Docker Compose. The bot responds to slash commands (`/chat`) and mention/reply/name-keyword triggers, maintaining per-channel conversational memory with a FIFO window and idle TTL configured by `session.windowSize` and `session.ttl` in `config.yml`.
 
 ---
 
@@ -26,8 +26,7 @@ Discord Gateway Layer (discord.js)
     ▼
 Session Manager (in-memory)
   - channelId → ChannelSession map
-  - 10-message FIFO window
-  - 5-min idle TTL per channel
+  - Per-channel FIFO window and idle TTL (configured in `config.yml`)
     │
     ▼
 Roka Agent (ADK)
@@ -36,15 +35,15 @@ Roka Agent (ADK)
   - Gemini Flash Lite backend
     │
     ▼
-Gemini API (15 RPM / 250K TPM / 500 RPD)
+Gemini API (rate limits configured in `config.yml`)
 ```
 
 **Key constraints:**
 
 - SQLite (better-sqlite3, `data/rokabot.db`) is canonical for session history, memory claims, reminders, game/gacha data, and metrics. The per-channel in-memory window is a hot cache rehydrated from SQLite on restart.
-- RPM is the binding rate limit (~1 response every 4 seconds).
+- RPM, rather than RPD, is the binding rate limit; its value is configured in `config.yml`.
 - System prompt (4 assembled layers) is size-capped; the cap is `MAX_SYSTEM_PROMPT_TOKENS` in `tests/harness/tokens.ts`, enforced by `tests/harness/__tests__/tokens.test.ts`. It exists for change detection, not latency.
-- Docker memory cap: 512MB (expected runtime: ~80-150MB).
+- Docker container memory is capped by `docker-compose.yml`.
 
 See `docs/trd.md` (canonical) for contracts and data models. Do not create `docs/architecture.md`.
 
@@ -52,59 +51,35 @@ See `docs/trd.md` (canonical) for contracts and data models. Do not create `docs
 
 ## Tech Stack
 
-- **Runtime:** TypeScript (ES2022, Node16 module resolution), Node.js 24 (Alpine, ARM64 for RPi 5)
-- **Discord:** discord.js v14 (Guilds, GuildMessages, MessageContent intents)
+- **Runtime:** TypeScript (compiler options in `tsconfig.json`), Node.js (version pinned in `package.json` `engines` and the `Dockerfile`)
+- **Discord:** discord.js (Guilds, GuildMessages, MessageContent intents)
 - **AI/Agent:** @google/adk (TypeScript ADK), Gemini Flash Lite (model name set in `config.yml` → `gemini.model`)
 - **Utilities:** pino (structured JSON logging), dotenv (secrets), js-yaml (YAML config)
 - **Testing:** vitest
-- **Deployment:** Docker Compose (multi-stage build, node:24-alpine) on Raspberry Pi 5
+- **Deployment:** Docker Compose (multi-stage build) on Raspberry Pi 5
 
 ---
 
 ## Commands
 
 ```bash
-npm run dev          # Start with tsx watch (hot reload)
-npm run build        # Compile TypeScript to dist/
-npm start            # Run compiled JS (production)
-npm run lint         # Biome (lint + format check)
-npm run format       # Prettier --write
-npm run format:check # Prettier --check
-npm test             # vitest run — main gate
+npm run dev       # Start with tsx watch (hot reload)
+npm run build     # Compile TypeScript to dist/
+npm run lint      # Check all files with Biome; npm run format:check also checks Prettier formatting
+npm test          # Run Vitest — main gate
 npm run test:perf    # Separate performance-evaluation gate; full verification remains npm test && npm run test:perf
 npm run test:live    # Opt-in live-model gate; needs GRAPHIFY_GEMINI_API_KEY, spends real Gemini calls; not part of full verification
-npm run test:watch   # vitest (watch mode)
-docker compose up    # Run via Docker
-docker compose build # Build Docker image
 ```
+
+See `package.json` for all other scripts.
 
 ---
 
 ## Configuration
 
-Secrets live in `.env`, tunables live in `config.yml` at the project root. Environment variables can override any `config.yml` value.
+Secrets are enumerated in `.env.example`; `requiredEnv` in `src/config.ts` validates the variables it guards.
 
-### Secrets (`.env`)
-
-| Variable            | Required | Description                   |
-| ------------------- | -------- | ----------------------------- |
-| `DISCORD_TOKEN`     | Yes      | Discord bot token             |
-| `DISCORD_CLIENT_ID` | Yes      | Discord application client ID |
-| `GEMINI_API_KEY`    | Yes      | Google AI API key             |
-
-### Tunables (`config.yml`)
-
-| YAML Path                  | Env Override                 | Description                             |
-| -------------------------- | ---------------------------- | --------------------------------------- |
-| `gemini.model`             | `GEMINI_MODEL`               | Gemini model name                       |
-| `gemini.timeout`           | `GEMINI_TIMEOUT`             | Request timeout in ms                   |
-| `gemini.maxRetries`        | `GEMINI_MAX_RETRIES`         | Max retry attempts for transient errors |
-| `rateLimit.rpm`            | `RATE_LIMIT_RPM`             | Requests per minute cap                 |
-| `rateLimit.rpd`            | `RATE_LIMIT_RPD`             | Requests per day cap                    |
-| `session.ttl`              | `SESSION_TTL_MS`             | Idle session TTL in ms                  |
-| `session.windowSize`       | `SESSION_WINDOW_SIZE`        | FIFO message window size                |
-| `discord.maxMessageLength` | `DISCORD_MAX_MESSAGE_LENGTH` | Discord message char limit              |
-| `logging.level`            | `LOG_LEVEL`                  | Pino log level                          |
+Every tunable lives in `config.yml` with an inline comment; environment overrides are wired in `src/config.ts`, and numeric tunables are bounded by `NUMERIC_BOUNDS`.
 
 ---
 

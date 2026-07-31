@@ -33,6 +33,12 @@ describe('assembleSystemPrompt', () => {
     expect(result).toContain(SPEECH_PROMPT)
   })
 
+  it('keeps every tone prompt non-empty', () => {
+    for (const [tone, prompt] of Object.entries(TONE_PROMPTS)) {
+      expect(prompt, `tone "${tone}" prompt is empty`).not.toBe('')
+    }
+  })
+
   it('contains Layer 2: Tone prompt', () => {
     const result = assembleSystemPrompt(baseInput)
     expect(result).toContain(TONE_PROMPTS.playful)
@@ -50,20 +56,7 @@ describe('assembleSystemPrompt', () => {
   })
 
   it('uses different Layer 2 for each tone', () => {
-    const tones: ToneKey[] = [
-      'playful',
-      'sincere',
-      'domestic',
-      'flustered',
-      'curious',
-      'annoyed',
-      'tender',
-      'confident',
-      'nostalgic',
-      'mischievous',
-      'sleepy',
-      'competitive'
-    ]
+    const tones = Object.keys(TONE_PROMPTS) as ToneKey[]
     const results = tones.map((tone) => assembleSystemPrompt({ ...baseInput, tone }))
 
     // Each result should contain the corresponding tone prompt

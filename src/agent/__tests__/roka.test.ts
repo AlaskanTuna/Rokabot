@@ -172,6 +172,30 @@ describe('runTurnWithReliability', () => {
     expect(result).toMatchObject({ kind: 'safety', failureMarker: 'SAFETY' })
   })
 
+  it('uses an allowlisted status from an ADK-thrown error as the failure marker', async () => {
+    const runTurn = vi.fn().mockRejectedValue(new Error('Upstream returned status 504'))
+
+    const result = await runTurnWithReliability(options({ runTurn }))
+
+    expect(result).toMatchObject({ kind: 'transient_http', failureMarker: '504' })
+  })
+
+  it('prefers errorCode over an allowlisted status in the error message', async () => {
+    const runTurn = vi.fn().mockResolvedValue({ errorCode: '429', errorMessage: 'Upstream returned status 503' })
+
+    const result = await runTurnWithReliability(options({ runTurn, maxRetries: 0 }))
+
+    expect(result).toMatchObject({ kind: 'transient_http', failureMarker: '429' })
+  })
+
+  it('leaves the failure marker undefined when the error message has no allowlisted status', async () => {
+    const runTurn = vi.fn().mockResolvedValue({ errorMessage: 'Upstream refused the request' })
+
+    const result = await runTurnWithReliability(options({ runTurn, maxRetries: 0 }))
+
+    expect(result).toMatchObject({ kind: 'terminal', failureMarker: undefined })
+  })
+
   it('regenerates once on a safety block and returns the recovered text', async () => {
     const runTurn = vi
       .fn()

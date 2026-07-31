@@ -333,6 +333,53 @@ describe('detectTone', () => {
       const messages = [makeMessage('I dare you to a trick in this game, you will not win')]
       expect(detectTone(messages)).toBe('mischievous')
     })
+
+    const toneKeyPrecedenceCases = [
+      { description: 'keeps the playful fallback', input: 'hey there', expectedTone: 'playful' },
+      { description: 'keeps sincere emotional matching', input: 'I feel sad and lonely', expectedTone: 'sincere' },
+      { description: 'keeps domestic daily-life matching', input: 'let us cook food', expectedTone: 'domestic' },
+      { description: 'keeps flustered romantic matching', input: 'I love my crush', expectedTone: 'flustered' },
+      // Curious shadows confident when both question phrases match.
+      {
+        description: 'keeps curious ahead of confident question phrases',
+        input: 'how do I do this, what should I pick',
+        expectedTone: 'curious'
+      },
+      { description: 'keeps annoyed defiance matching', input: "I won't, I refuse", expectedTone: 'annoyed' },
+      { description: 'keeps tender vulnerable matching', input: 'I miss you, goodnight', expectedTone: 'tender' },
+      {
+        description: 'keeps confident advice matching',
+        input: 'can you help me with advice',
+        expectedTone: 'confident'
+      },
+      {
+        description: 'keeps nostalgic memory matching',
+        input: 'I remember the past',
+        expectedTone: 'nostalgic'
+      },
+      { description: 'keeps mischievous plotting matching', input: 'a secret trick', expectedTone: 'mischievous' },
+      // Sleepy shadows sincere when tired and exhausted both match.
+      {
+        description: 'keeps sleepy ahead of sincere tiredness matching',
+        input: "I'm so tired and exhausted",
+        expectedTone: 'sleepy'
+      },
+      { description: 'keeps competitive game matching', input: 'this game will win', expectedTone: 'competitive' },
+      // Sleepy shadows sincere through its late-night single-match branch.
+      {
+        description: 'keeps the late-night sleepy branch ahead of sincere',
+        input: "I'm tired",
+        hour: 23,
+        expectedTone: 'sleepy'
+      }
+    ]
+
+    it.each(toneKeyPrecedenceCases)('$description', ({ input, hour, expectedTone }) => {
+      expect(
+        detectTone([makeMessage(input)], hour),
+        "Tone precedence changed; update docs/trd.md's ToneKey section if this is intentional"
+      ).toBe(expectedTone)
+    })
   })
 
   describe('scans only last 3 messages', () => {

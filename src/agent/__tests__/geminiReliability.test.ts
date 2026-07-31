@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { classifyGeminiFailure, computeBackoff } from '../geminiReliability.js'
+import { classifyGeminiFailure, computeBackoff, extractGeminiStatus } from '../geminiReliability.js'
+
+describe('extractGeminiStatus', () => {
+  it.each(['4000000', 'my room is 305'])('returns undefined for %s', (errorMessage) => {
+    expect(extractGeminiStatus(errorMessage)).toBeUndefined()
+  })
+})
 
 describe('classifyGeminiFailure', () => {
   it.each([
