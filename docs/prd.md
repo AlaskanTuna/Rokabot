@@ -110,9 +110,9 @@ Roka's system prompt is assembled from 4 layers derived from the character bible
 
 - [ ] Layer 0 (Core Identity) always included — personality, behavioral rules
 - [ ] Layer 1 (Speech Patterns) always included — verbal style, response length
-- [ ] Layer 2 (Conversation Tone) dynamically selected — playful/sincere/domestic/flustered
+- [ ] Layer 2 (Conversation Tone) dynamically selected by detected tone (see `docs/trd.md` for the canonical tone list)
 - [ ] Layer 3 (Channel Awareness) dynamically built — participant names, time of day
-- [ ] Total system prompt stays within ~1000-1600 tokens
+- [ ] System prompt (4 assembled layers) stays within `MAX_SYSTEM_PROMPT_TOKENS` (`tests/harness/tokens.ts`), enforced by `tests/harness/__tests__/tokens.test.ts`
 
 ### FR-5: Tone Detection
 

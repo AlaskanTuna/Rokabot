@@ -43,18 +43,10 @@ Gemini API (15 RPM / 250K TPM / 500 RPD)
 
 - SQLite (better-sqlite3, `data/rokabot.db`) is canonical for session history, memory claims, reminders, game/gacha data, and metrics. The per-channel in-memory window is a hot cache rehydrated from SQLite on restart.
 - RPM is the binding rate limit (~1 response every 4 seconds).
-- System prompt budget: ~1000-1600 tokens per request.
+- System prompt (4 assembled layers) is size-capped; the cap is `MAX_SYSTEM_PROMPT_TOKENS` in `tests/harness/tokens.ts`, enforced by `tests/harness/__tests__/tokens.test.ts`. It exists for change detection, not latency.
 - Docker memory cap: 512MB (expected runtime: ~80-150MB).
 
 See `docs/trd.md` (canonical) for contracts and data models. Do not create `docs/architecture.md`.
-
-### Key Data Models
-
-- **WindowMessage** — `{ role: 'user' | 'assistant', displayName: string, content: string, timestamp: number }` — single message in the FIFO window
-- **ChannelSession** — `{ channelId: string, messages: WindowMessage[], idleTimer: Timeout | null, lastActivity: number }` — per-channel session state
-- **RateLimiterConfig** — `{ rpm: number, rpd: number }` — rate limit thresholds
-- **AssemblerInput** — `{ tone: ToneKey, participants: string[], hour: number }` — input to the prompt assembler
-- **ToneKey** — `'playful' | 'sincere' | 'domestic' | 'flustered'` — detected conversation tone
 
 ---
 
@@ -131,7 +123,7 @@ Secrets live in `.env`, tunables live in `config.yml` at the project root. Envir
 
 All Markdown documentation in this repo (`README.md`, `AGENTS.md`, `CLAUDE.md`, `docs/*.md`) follows **TitleCase** formatting:
 
-- **Headings and Subheadings:** every word capitalized except short articles/prepositions/conjunctions (a, an, the, of, in, on, for, and, or, to, vs), e.g. `## Getting Started`, `### Key Data Models`.
+- **Headings and Subheadings:** every word capitalized except short articles/prepositions/conjunctions (a, an, the, of, in, on, for, and, or, to, vs), e.g. `## Getting Started`, `### WindowMessage`.
 - **Table Headers:** TitleCase in every column header cell.
 - **Bullet Point Labels:** the bold lead-in label of a bullet (`- **Label:** …`) is TitleCase, e.g. `- **Error Handling:** …`.
 - **Never re-case** code identifiers, file paths, CLI commands, config keys, env vars, model IDs, or URLs — TitleCase applies to prose labels only.

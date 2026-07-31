@@ -164,16 +164,20 @@ Input to the prompt assembler for building the system prompt.
 
 Enum of detected conversation tones.
 
-| Value         | Trigger                            | Layer 2 Effect                     |
-| ------------- | ---------------------------------- | ---------------------------------- |
-| `'playful'`   | Default / no match                 | Teasing, big-sister energy         |
-| `'sincere'`   | Emotional/supportive keywords      | Genuine, reflective                |
-| `'domestic'`  | Food/daily life keywords           | Cozy, food-centered care           |
-| `'flustered'` | Romantic/flirty keywords           | Stammering, composure breaking     |
-| `'curious'`   | Questions/learning/analysis        | Engaged, enthusiastic, explanatory |
-| `'annoyed'`   | Defiance/recklessness/teasing her  | Pouty exasperation, "mou~" energy  |
-| `'tender'`    | Vulnerability/worry/quiet softness | Guard down, warm vulnerability     |
-| `'confident'` | Help/advice/trust keywords         | Cool, composed onee-san authority  |
+| Value           | Trigger                                            | Layer 2 Effect                           |
+| --------------- | -------------------------------------------------- | ---------------------------------------- |
+| `'playful'`     | Default / no match                                 | Teasing, big-sister energy               |
+| `'sincere'`     | Emotional/supportive keywords                      | Genuine, reflective                      |
+| `'domestic'`    | Food/daily life keywords                           | Cozy, food-centered care                 |
+| `'flustered'`   | Romantic/flirty keywords                           | Stammering, composure breaking           |
+| `'curious'`     | Questions/learning/analysis                        | Engaged, enthusiastic, explanatory       |
+| `'annoyed'`     | Defiance/recklessness/teasing her                  | Pouty exasperation, "mou~" energy        |
+| `'tender'`      | Vulnerability/worry/quiet softness                 | Guard down, warm vulnerability           |
+| `'confident'`   | Help/advice/trust keywords                         | Cool, composed onee-san authority        |
+| `'nostalgic'`   | Memory/reminiscing keywords                        | Wistful, trailing-off reflection         |
+| `'mischievous'` | Scheming/dare/prank keywords                       | Conspiratorial, gleeful plotting         |
+| `'sleepy'`      | Tiredness keywords (or 1 match during 22:00-04:00) | Drowsy, guard-down, sentences dissolving |
+| `'competitive'` | Game/rivalry/challenge keywords                    | Fired-up, affectionate trash-talk        |
 
 ## Memory Architecture (Claims)
 
@@ -307,15 +311,14 @@ Safety Settings: HARM_CATEGORY_HARASSMENT, HARM_CATEGORY_HATE_SPEECH, HARM_CATEG
 
 **Token budget per request:**
 
-- System prompt: ~1000-1600 tokens
-- History (10 msgs x ~200-400 tokens): ~2000-4000 tokens
-- User message: ~50-200 tokens
-- **Total input: ~3K-6K tokens**
+- The system prompt (the four layers assembled by `assembleSystemPrompt` in `src/agent/promptAssembler.ts`) is size-capped and enforced: `MAX_SYSTEM_PROMPT_TOKENS` in `tests/harness/tokens.ts`, checked by `tests/harness/__tests__/tokens.test.ts`. The cap exists as a change-detection gate, not a latency budget.
+- `src/agent/roka.ts` adds further components on top before a request goes out — tool declarations, conversation history, recalled facts, overheard channel messages, and the current user message are examples of what gets added, not an exhaustive list.
+- Some of those components carry their own bounds elsewhere in the code (e.g. `config.memory.retrievalTokenBudget`, `config.session.windowSize`, `config.memory.contextSize`) — for what a given request actually contains and how each piece is sized, read `assembleSystemPrompt` and the prompt-assembly path in `src/agent/roka.ts` directly rather than this doc.
 
 **Rate limits:**
 
 - 15 RPM (binding constraint)
-- 250K TPM (not the bottleneck at ~3K-6K per request)
+- 250K TPM (not the binding constraint — RPM caps request volume well before the token ceiling)
 - 500 RPD (~20 req/hr sustained)
 
 ## Deployment Pipeline
