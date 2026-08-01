@@ -1,0 +1,84 @@
+import { ApplicationIntegrationType, InteractionContextType } from 'discord.js'
+import { describe, expect, it } from 'vitest'
+import { buildCommandBody } from '../index.js'
+
+const expectedPolicy = {
+  chat: {
+    integrationTypes: [ApplicationIntegrationType.GuildInstall, ApplicationIntegrationType.UserInstall],
+    contexts: [InteractionContextType.Guild, InteractionContextType.BotDM, InteractionContextType.PrivateChannel]
+  },
+  anime: {
+    integrationTypes: [ApplicationIntegrationType.GuildInstall, ApplicationIntegrationType.UserInstall],
+    contexts: [InteractionContextType.Guild, InteractionContextType.BotDM, InteractionContextType.PrivateChannel]
+  },
+  search: {
+    integrationTypes: [ApplicationIntegrationType.GuildInstall, ApplicationIntegrationType.UserInstall],
+    contexts: [InteractionContextType.Guild, InteractionContextType.BotDM, InteractionContextType.PrivateChannel]
+  },
+  remind: {
+    integrationTypes: [ApplicationIntegrationType.GuildInstall, ApplicationIntegrationType.UserInstall],
+    contexts: [InteractionContextType.Guild, InteractionContextType.BotDM, InteractionContextType.PrivateChannel]
+  },
+  gacha: {
+    integrationTypes: [ApplicationIntegrationType.GuildInstall, ApplicationIntegrationType.UserInstall],
+    contexts: [InteractionContextType.Guild, InteractionContextType.BotDM, InteractionContextType.PrivateChannel]
+  },
+  hangman: {
+    integrationTypes: [ApplicationIntegrationType.GuildInstall],
+    contexts: [InteractionContextType.Guild]
+  },
+  shiritori: {
+    integrationTypes: [ApplicationIntegrationType.GuildInstall],
+    contexts: [InteractionContextType.Guild]
+  },
+  stats: {
+    integrationTypes: [ApplicationIntegrationType.GuildInstall],
+    contexts: [InteractionContextType.Guild]
+  }
+} as const
+
+describe('buildCommandBody', () => {
+  it('registers exactly the expected set of command names', () => {
+    const commandJson = buildCommandBody()
+
+    const names = commandJson.map((command) => command.name).sort()
+    const expectedNames = Object.keys(expectedPolicy).sort()
+
+    expect(names).toEqual(expectedNames)
+  })
+
+  it('sets the expected installation and context policy per command', () => {
+    const commandJson = buildCommandBody()
+
+    for (const [name, policy] of Object.entries(expectedPolicy)) {
+      const command = commandJson.find((command) => command.name === name)
+
+      expect(command).toMatchObject({
+        contexts: policy.contexts,
+        integration_types: policy.integrationTypes
+      })
+    }
+  })
+
+  it('never leaves contexts or integration_types undefined', () => {
+    const commandJson = buildCommandBody()
+
+    const missingByCommand = Object.fromEntries(
+      commandJson
+        .filter((command) => command.contexts === undefined || command.integration_types === undefined)
+        .map((command) => [command.name, { contexts: command.contexts, integration_types: command.integration_types }])
+    )
+
+    expect(missingByCommand).toEqual({})
+  })
+
+  it('requires UserInstall wherever PrivateChannel is a context', () => {
+    const commandJson = buildCommandBody()
+
+    for (const command of commandJson) {
+      if (command.contexts?.includes(InteractionContextType.PrivateChannel)) {
+        expect(command.integration_types).toContain(ApplicationIntegrationType.UserInstall)
+      }
+    }
+  })
+})

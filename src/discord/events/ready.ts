@@ -1,10 +1,7 @@
 import { Client, REST, Routes } from 'discord.js'
 import { config } from '../../config.js'
 import { logger } from '../../utils/logger.js'
-import { chatCommand } from '../commands/chat.js'
-import { gameCommands } from '../commands/games.js'
-import { statsCommand } from '../commands/stats.js'
-import { toolCommands } from '../commands/tools.js'
+import { buildCommandBody } from '../commands/index.js'
 import { startStatusCycler } from '../statusCycler.js'
 
 /** Register slash commands and log startup on Discord ready */
@@ -17,12 +14,7 @@ export async function handleReady(client: Client): Promise<void> {
 
   try {
     await rest.put(Routes.applicationCommands(config.discord.clientId), {
-      body: [
-        chatCommand.toJSON(),
-        ...toolCommands.map((c) => c.toJSON()),
-        ...gameCommands.map((c) => c.toJSON()),
-        statsCommand.toJSON()
-      ]
+      body: buildCommandBody()
     })
     logger.info('Slash commands registered')
   } catch (error) {

@@ -1,10 +1,12 @@
 /** Slash command definitions for direct tool invocations */
 
-import { SlashCommandBuilder } from 'discord.js'
+import { ApplicationIntegrationType, InteractionContextType, SlashCommandBuilder } from 'discord.js'
 
 export const animeCommand = new SlashCommandBuilder()
   .setName('anime')
   .setDescription('Search for anime!')
+  .setIntegrationTypes(ApplicationIntegrationType.GuildInstall, ApplicationIntegrationType.UserInstall)
+  .setContexts(InteractionContextType.Guild, InteractionContextType.BotDM, InteractionContextType.PrivateChannel)
   .addSubcommand((sub) =>
     sub
       .setName('search')
@@ -95,11 +97,15 @@ export const animeCommand = new SlashCommandBuilder()
 export const searchCommand = new SlashCommandBuilder()
   .setName('search')
   .setDescription('Search the web for current info!')
+  .setIntegrationTypes(ApplicationIntegrationType.GuildInstall, ApplicationIntegrationType.UserInstall)
+  .setContexts(InteractionContextType.Guild, InteractionContextType.BotDM, InteractionContextType.PrivateChannel)
   .addStringOption((opt) => opt.setName('query').setDescription('What to search for').setRequired(true))
 
 export const remindCommand = new SlashCommandBuilder()
   .setName('remind')
   .setDescription('Ask Roka to remind you about something!')
+  .setIntegrationTypes(ApplicationIntegrationType.GuildInstall, ApplicationIntegrationType.UserInstall)
+  .setContexts(InteractionContextType.Guild, InteractionContextType.BotDM, InteractionContextType.PrivateChannel)
   .addSubcommand((sub) =>
     sub
       .setName('in')

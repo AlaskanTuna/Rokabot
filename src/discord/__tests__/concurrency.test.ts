@@ -74,9 +74,10 @@ function createMessage(channelId = 'channel-1') {
 }
 
 function createInteraction(channelId = 'channel-1') {
-  const reply = vi.fn().mockResolvedValue({ delete: vi.fn().mockResolvedValue(undefined) })
+  const reply = vi.fn().mockResolvedValue(undefined)
   const deferReply = vi.fn().mockResolvedValue(undefined)
   const editReply = vi.fn().mockResolvedValue(undefined)
+  const deleteReply = vi.fn().mockResolvedValue(undefined)
 
   return {
     interaction: {
@@ -90,11 +91,13 @@ function createInteraction(channelId = 'channel-1') {
       reply,
       deferReply,
       editReply,
+      deleteReply,
       followUp: vi.fn()
     } as unknown as Interaction,
     reply,
     deferReply,
-    editReply
+    editReply,
+    deleteReply
   }
 }
 
@@ -116,16 +119,30 @@ describe('Discord concurrency guards', () => {
     expect(mocks.generateResponse).not.toHaveBeenCalled()
   })
 
-  it('drops a busy interaction with the busy reply without consuming a token or generating a response', async () => {
-    const { interaction, reply } = createInteraction()
-    const rateLimiter = createRateLimiter()
-    mocks.busyChannels.add(interaction.channelId)
+  it('drops a busy interaction with the busy reply, later removed, without consuming a token or generating a response', async () => {
+    vi.useFakeTimers()
+    try {
+      const { interaction, reply, deleteReply } = createInteraction()
+      const rateLimiter = createRateLimiter()
+      mocks.busyChannels.add(interaction.channelId)
 
-    await createInteractionHandler(rateLimiter)(interaction)
+      await createInteractionHandler(rateLimiter)(interaction)
 
-    expect(reply).toHaveBeenCalledWith({ content: 'busy', fetchReply: true })
-    expect(rateLimiter.tryConsume).not.toHaveBeenCalled()
-    expect(mocks.generateResponse).not.toHaveBeenCalled()
+      expect(reply).toHaveBeenCalledWith({ content: 'busy' })
+      expect(rateLimiter.tryConsume).not.toHaveBeenCalled()
+      expect(mocks.generateResponse).not.toHaveBeenCalled()
+      expect(deleteReply).not.toHaveBeenCalled()
+
+      await vi.advanceTimersByTimeAsync(4999)
+
+      expect(deleteReply).not.toHaveBeenCalled()
+
+      await vi.advanceTimersByTimeAsync(1)
+
+      expect(deleteReply).toHaveBeenCalledOnce()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it.each([
@@ -231,9 +248,23 @@ describe('Discord concurrency guards', () => {
     [
       'interaction',
       async (rateLimiter: RateLimiter) => {
-        const { interaction, reply } = createInteraction()
-        await createInteractionHandler(rateLimiter)(interaction)
-        expect(reply).toHaveBeenCalledWith({ content: 'decline', fetchReply: true })
+        vi.useFakeTimers()
+        try {
+          const { interaction, reply, deleteReply } = createInteraction()
+          await createInteractionHandler(rateLimiter)(interaction)
+          expect(reply).toHaveBeenCalledWith({ content: 'decline' })
+          expect(deleteReply).not.toHaveBeenCalled()
+
+          await vi.advanceTimersByTimeAsync(4999)
+
+          expect(deleteReply).not.toHaveBeenCalled()
+
+          await vi.advanceTimersByTimeAsync(1)
+
+          expect(deleteReply).toHaveBeenCalledOnce()
+        } finally {
+          vi.useRealTimers()
+        }
       }
     ]
   ])('keeps the rate-limit decline path for a free %s channel', async (_kind, invoke) => {

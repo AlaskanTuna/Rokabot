@@ -31,10 +31,9 @@ vi.mock('discord.js', () => ({
 
 vi.mock('../../../config.js', () => ({ config: mocks.config }))
 vi.mock('../../../utils/logger.js', () => ({ logger: { info: mocks.info, error: mocks.error } }))
-vi.mock('../../commands/chat.js', () => ({ chatCommand: { toJSON: () => ({ name: 'chat' }) } }))
-vi.mock('../../commands/games.js', () => ({ gameCommands: [{ toJSON: () => ({ name: 'game' }) }] }))
-vi.mock('../../commands/stats.js', () => ({ statsCommand: { toJSON: () => ({ name: 'stats' }) } }))
-vi.mock('../../commands/tools.js', () => ({ toolCommands: [{ toJSON: () => ({ name: 'tool' }) }] }))
+vi.mock('../../commands/index.js', () => ({
+  buildCommandBody: () => [{ name: 'chat' }, { name: 'tool' }, { name: 'game' }, { name: 'stats' }]
+}))
 vi.mock('../../statusCycler.js', () => ({ startStatusCycler: mocks.startStatusCycler }))
 
 import { handleReady } from '../ready.js'
