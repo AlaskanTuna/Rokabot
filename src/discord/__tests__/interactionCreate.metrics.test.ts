@@ -29,6 +29,7 @@ vi.mock('../events/gameCommands.js', () => ({ createGameCommandHandler: () => mo
 vi.mock('../events/stats/statsCommand.js', () => ({ handleStatsCommand: mocks.handleStatsCommand }))
 vi.mock('../events/toolCommands.js', () => ({ createToolCommandHandler: () => mocks.toolCommandHandler }))
 
+import { config } from '../../config.js'
 import { createInteractionHandler } from '../events/interactionCreate.js'
 
 const metrics = {
@@ -121,6 +122,35 @@ describe('interaction handler metrics', () => {
     )
     expect(JSON.stringify(interaction.followUp.mock.calls[0][0].components[0].toJSON())).not.toContain('-# 🌸')
     expect(mocks.recordResponseEvent).toHaveBeenCalledWith(expect.objectContaining({ toolsUsed: ['roll_dice'] }))
+  })
+
+  it('derives a per-channel DM tenant when there is no guild', async () => {
+    const interaction = {
+      isChatInputCommand: () => true,
+      commandName: 'chat',
+      options: { getString: vi.fn(() => 'hello'), getAttachment: vi.fn() },
+      channelId: 'channel-1',
+      member: null,
+      user: { displayName: 'Alice', username: 'alice', id: 'user-1' },
+      guildId: null,
+      deferReply: vi.fn().mockResolvedValue(undefined),
+      editReply: vi.fn().mockResolvedValue(undefined),
+      followUp: vi.fn().mockResolvedValue(undefined)
+    }
+    const rateLimiter = { tryConsume: vi.fn(() => true), remainingRpm: 14, remainingRpd: 499 }
+
+    await createInteractionHandler(rateLimiter as never)(interaction as never)
+
+    expect(mocks.generateResponse).toHaveBeenCalledWith(expect.objectContaining({ guildId: 'dm:channel-1' }))
+    expect(mocks.recordResponseEvent).toHaveBeenCalledWith(expect.objectContaining({ guildId: 'dm:channel-1' }))
+  })
+
+  it("keeps the follow-up chunk count under Discord's 5-follow-up cap at the max response length", async () => {
+    const { splitResponse: realSplitResponse } =
+      await vi.importActual<typeof import('../responses.js')>('../responses.js')
+    const text = 'a'.repeat(config.gemini.maxOutputTokens)
+
+    expect(realSplitResponse(text).length).toBeLessThan(5)
   })
 
   it('dispatches stats interactions to the stats command handler', async () => {

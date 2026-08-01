@@ -4,6 +4,7 @@ import { FunctionTool } from '@google/adk'
 import { z } from 'zod'
 import { config } from '../../config.js'
 import { findUserByName } from '../../storage/userNames.js'
+import { logger } from '../../utils/logger.js'
 import { flipCoin } from './flipCoin.js'
 import { getAnimeSchedule } from './getAnimeSchedule.js'
 import { getCurrentTime } from './getCurrentTime.js'
@@ -135,7 +136,18 @@ export const rememberUserTool = new FunctionTool({
   }),
   execute: async (input, toolContext) => {
     const userId = toolContext?.state?.get<string>('_userId') ?? 'unknown'
-    const guildId = toolContext?.state?.get<string>('_guildId') ?? 'global'
+    const guildId = toolContext?.state?.get<string>('_guildId')
+    if (!guildId || guildId === 'global') {
+      logger.warn(
+        { tool: 'remember_user', tenantState: guildId ? 'global' : 'missing' },
+        'Memory tool failed closed on unusable tenant state'
+      )
+      return {
+        success: false,
+        message: "I couldn't tell where we are right now, so I didn't save that.",
+        totalFacts: 0
+      }
+    }
     return rememberUser({ user_id: userId, guild_id: guildId, fact_key: input.fact_key, fact_value: input.fact_value })
   }
 })
@@ -152,7 +164,16 @@ export const recallUserTool = new FunctionTool({
   }),
   execute: async (input, toolContext) => {
     const userId = toolContext?.state?.get<string>('_userId') ?? 'unknown'
-    const guildId = toolContext?.state?.get<string>('_guildId') ?? 'global'
+    const guildId = toolContext?.state?.get<string>('_guildId')
+    if (!guildId || guildId === 'global') {
+      // The returned copy is byte-identical to a genuine empty recall, so the log is the only place
+      // an operator can tell a broken tenant wiring apart from "nothing stored yet".
+      logger.warn(
+        { tool: 'recall_user', tenantState: guildId ? 'global' : 'missing' },
+        'Memory tool failed closed on unusable tenant state'
+      )
+      return { facts: "I don't have any notes about this person yet.", factCount: 0 }
+    }
     if (input.user_name) {
       const user = findUserByName(input.user_name, guildId)
       if (!user) return { facts: "I don't know anyone by that name here yet.", factCount: 0 }

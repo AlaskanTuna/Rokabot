@@ -65,6 +65,16 @@ describe('buildRokaMessage', () => {
     vi.useRealTimers()
   })
 
+  it('pins the tool footer prefix, separator, overflow suffix, and timestamp form as literal strings', () => {
+    const twoLabelFooter = buildToolFooter(['first label', 'second label'], 1_784_808_000)
+    expect(twoLabelFooter).toBe('-# 🌸 first label · second label • <t:1784808000:R>')
+
+    const overflowFooter = buildToolFooter(['a', 'b', 'c', 'd'], 1_784_808_000)
+    expect(overflowFooter).toBe('-# 🌸 a · b · c …and more • <t:1784808000:R>')
+
+    expect(overflowFooter).toMatch(/<t:\d+:R>$/)
+  })
+
   it('derives the worst-case tool footer size independently of the current clock', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2020-01-01T00:00:00Z'))

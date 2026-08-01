@@ -70,11 +70,13 @@ function createMessage({
   mentioned = true,
   content = '<@bot-1> hello',
   guild,
+  guildId = 'guild-1',
   referencedMessage
 }: {
   mentioned?: boolean
   content?: string
   guild?: object | null
+  guildId?: string | null
   referencedMessage?: object
 } = {}) {
   const reply = vi.fn().mockResolvedValue({ delete: vi.fn().mockResolvedValue(undefined) })
@@ -89,7 +91,7 @@ function createMessage({
       components: [],
       reference: referencedMessage ? { messageId: 'message-0' } : null,
       guild: guild ?? null,
-      guildId: 'guild-1',
+      guildId,
       member: { displayName: 'Alice' },
       attachments: [],
       channel: {
@@ -213,6 +215,14 @@ describe('message handler metrics', () => {
       'Response completed'
     )
     expect(JSON.stringify(reply.mock.calls[0][0].components[0].toJSON())).not.toContain('-# 🌸')
+  })
+
+  it('derives a per-channel DM tenant when there is no guild', async () => {
+    const { message } = createMessage({ guildId: null })
+
+    await createMessageHandler({ user: { id: 'bot-1' } } as never, createRateLimiter() as never)(message as never)
+
+    expect(mocks.generateResponse).toHaveBeenCalledWith(expect.objectContaining({ guildId: 'dm:channel-1' }))
   })
 
   it('renders a tool footer on the initial mention reply only', async () => {
