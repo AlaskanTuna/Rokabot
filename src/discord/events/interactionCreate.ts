@@ -65,7 +65,7 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
     const message = interaction.options.getString('message', true)
     const attachment = interaction.options.getAttachment('image')
     const channelId = interaction.channelId
-    const guildId = interaction.guildId ?? 'global'
+    const guildId = interaction.guildId ?? `dm:${channelId}`
     const member = interaction.member
     const displayName = member && 'displayName' in member ? member.displayName : interaction.user.displayName
 

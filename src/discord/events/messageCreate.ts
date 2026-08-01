@@ -145,7 +145,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
     if (!isMentioned && !isReplyToBot && !isNameMention) return
 
     const channelId = message.channelId
-    const guildId = message.guildId ?? 'global'
+    const guildId = message.guildId ?? `dm:${channelId}`
     const displayName = message.member?.displayName ?? message.author.displayName
     const username = message.author.username
     const trigger: ResponseEventInput['trigger'] = isMentioned ? 'mention' : isReplyToBot ? 'reply' : 'name_keyword'

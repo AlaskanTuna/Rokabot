@@ -38,7 +38,7 @@ Roka Agent (ADK)
 Gemini API (rate limits configured in `config.yml`)
 ```
 
-**Key constraints:**
+**Key Constraints:**
 
 - SQLite (better-sqlite3, `data/rokabot.db`) is canonical for session history, memory claims, reminders, game/gacha data, and metrics. The per-channel in-memory window is a hot cache rehydrated from SQLite on restart.
 - RPM, rather than RPD, is the binding rate limit; its value is configured in `config.yml`.

@@ -1,14 +1,21 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('../../../utils/logger.js', () => ({
+  logger: { debug: vi.fn(), error: vi.fn(), fatal: vi.fn(), info: vi.fn(), warn: vi.fn() }
+}))
+
 import { closeDb, getDb } from '../../../storage/database.js'
 import { getFacts, saveFact } from '../../../storage/userMemory.js'
 import { findUserByName, upsertUserName } from '../../../storage/userNames.js'
+import { logger } from '../../../utils/logger.js'
 import { assertClaim, getActiveClaims } from '../../memory/memoryClaims.js'
-import { recallUserTool } from '../index.js'
+import { recallUserTool, rememberUserTool } from '../index.js'
 import { recallUser } from '../recallUser.js'
 import { rememberUser } from '../rememberUser.js'
 
 beforeEach(() => {
   process.env.ROKABOT_DB_PATH = ':memory:'
+  vi.clearAllMocks()
 })
 
 afterEach(() => {
@@ -122,5 +129,83 @@ describe('memory tools', () => {
     ])
     expect(getFacts('global', 'user-2')).toEqual([{ key: 'hobby', value: 'gardening' }])
     expect(getActiveClaims('global', 'user-2')).toEqual([])
+  })
+
+  it('keeps a DM fact scoped to its own channel tenant, invisible from a different DM', () => {
+    rememberUser({ guild_id: 'dm:channel-A', user_id: 'user-A', fact_key: 'favorite_anime', fact_value: 'Frieren' })
+
+    expect(recallUser({ guild_id: 'dm:channel-B', user_id: 'user-A' }).factCount).toBe(0)
+    expect(recallUser({ guild_id: 'dm:channel-A', user_id: 'user-A' }).factCount).toBe(1)
+  })
+
+  it('fails closed instead of writing to the shared global tenant when the FunctionTool has no usable _guildId', async () => {
+    await expect(
+      rememberUserTool.runAsync({
+        args: { fact_key: 'favorite_anime', fact_value: 'Frieren' },
+        toolContext: { state: new Map([['_userId', 'user-x']]) }
+      })
+    ).resolves.toEqual({
+      success: false,
+      message: "I couldn't tell where we are right now, so I didn't save that.",
+      totalFacts: 0
+    })
+    await expect(
+      rememberUserTool.runAsync({
+        args: { fact_key: 'favorite_anime', fact_value: 'Frieren' },
+        toolContext: {
+          state: new Map([
+            ['_userId', 'user-x'],
+            ['_guildId', 'global']
+          ])
+        }
+      })
+    ).resolves.toEqual({
+      success: false,
+      message: "I couldn't tell where we are right now, so I didn't save that.",
+      totalFacts: 0
+    })
+    expect(getFacts('global', 'user-x')).toEqual([])
+  })
+
+  it('fails closed instead of reading the shared global tenant when the FunctionTool has no usable _guildId', async () => {
+    saveFact('global', 'user-x', 'favorite_anime', 'Frieren')
+
+    await expect(
+      recallUserTool.runAsync({ args: {}, toolContext: { state: new Map([['_userId', 'user-x']]) } })
+    ).resolves.toEqual({ facts: "I don't have any notes about this person yet.", factCount: 0 })
+    await expect(
+      recallUserTool.runAsync({
+        args: {},
+        toolContext: {
+          state: new Map([
+            ['_userId', 'user-x'],
+            ['_guildId', 'global']
+          ])
+        }
+      })
+    ).resolves.toEqual({ facts: "I don't have any notes about this person yet.", factCount: 0 })
+  })
+
+  it('warns with the tool name and tenant state on every fail-closed path', async () => {
+    const noTenant = new Map([['_userId', 'user-x']])
+    const globalTenant = new Map([
+      ['_userId', 'user-x'],
+      ['_guildId', 'global']
+    ])
+    const fact = { fact_key: 'favorite_anime', fact_value: 'Frieren' }
+
+    await rememberUserTool.runAsync({ args: fact, toolContext: { state: noTenant } })
+    await rememberUserTool.runAsync({ args: fact, toolContext: { state: globalTenant } })
+    await recallUserTool.runAsync({ args: { user_name: 'Mio' }, toolContext: { state: noTenant } })
+    await recallUserTool.runAsync({ args: { user_name: 'Mio' }, toolContext: { state: globalTenant } })
+
+    // Equality over every call, not toHaveBeenCalledWith: an exact payload is what proves no fact
+    // value, argument, or user identifier rode along, and that absent stays distinguishable from 'global'.
+    expect(vi.mocked(logger.warn).mock.calls).toEqual([
+      [{ tool: 'remember_user', tenantState: 'missing' }, 'Memory tool failed closed on unusable tenant state'],
+      [{ tool: 'remember_user', tenantState: 'global' }, 'Memory tool failed closed on unusable tenant state'],
+      [{ tool: 'recall_user', tenantState: 'missing' }, 'Memory tool failed closed on unusable tenant state'],
+      [{ tool: 'recall_user', tenantState: 'global' }, 'Memory tool failed closed on unusable tenant state']
+    ])
   })
 })
