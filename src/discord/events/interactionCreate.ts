@@ -80,8 +80,8 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
 
     if (isChannelBusy(channelId)) {
       logger.debug({ channelId }, 'Channel busy — sending busy message')
-      const busyReply = await interaction.reply({ content: getRandomBusy(), fetchReply: true })
-      setTimeout(() => busyReply.delete().catch(() => {}), 5000)
+      await interaction.reply({ content: getRandomBusy() })
+      setTimeout(() => interaction.deleteReply().catch(() => {}), 5000)
       return
     }
 
@@ -91,8 +91,8 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
         'Rate limit hit — declining'
       )
 
-      const declineReply = await interaction.reply({ content: getRandomDecline(), fetchReply: true })
-      setTimeout(() => declineReply.delete().catch(() => {}), 5000)
+      await interaction.reply({ content: getRandomDecline() })
+      setTimeout(() => interaction.deleteReply().catch(() => {}), 5000)
       return
     }
 

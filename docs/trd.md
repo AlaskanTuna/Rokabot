@@ -247,9 +247,11 @@ in [Reliability & Failure Handling](#reliability--failure-handling).
 
 ### Tenancy
 
-Every claim is scoped by `guild_id`. DM-origin facts use `dm:<channelId>` as their scope. There is no `'global'`
-claims tenant: cross-guild isolation is an invariant, and legacy facts with no attested scope are logged and skipped
-during backfill rather than assigned a tenant.
+Every claim is scoped by `guild_id`. A guild interaction uses the real guild id. Every non-guild channel — bot DM
+and group DM alike — is its own tenant, shaped `dm:<channelId>` and derived at the two handler sites. There is no
+shared `'global'` claims tenant: `assertWritableGuild` (`src/agent/memory/memoryClaims.ts:109`) throws on it, and
+DM↔DM isolation is pinned by `src/agent/tools/__tests__/memoryTools.test.ts`. Legacy facts with no attested scope
+are still logged and skipped during backfill rather than assigned a tenant.
 
 ### Prompt-Assembly Invariant
 
@@ -297,6 +299,15 @@ Filter: !author.bot && (isMentioned || isReplyToBot)
 Extract: content (stripped of mention tags), channelId, member.displayName
 Flow: sendTyping() → process → message.reply(response)
 ```
+
+#### Installation & Context Policy
+
+Commands are registered globally (`src/discord/events/ready.ts`). Each command carries an explicit installation
+context (`GuildInstall`/`UserInstall`) and interaction context (`Guild`/`BotDM`/`PrivateChannel`) set on its builder;
+the whole policy is pinned by `src/discord/commands/__tests__/registration.test.ts`, which is the authoritative
+list. A user-install context delivers interactions only, with no gateway message stream, so there is no
+mention/reply trigger and no passive extraction there; that absence is pinned by
+`src/discord/__tests__/client.test.ts`.
 
 ### Gemini API (Outbound)
 

@@ -1,10 +1,12 @@
 /** Slash command definitions for game features */
 
-import { SlashCommandBuilder } from 'discord.js'
+import { ApplicationIntegrationType, InteractionContextType, SlashCommandBuilder } from 'discord.js'
 
 export const gachaCommand = new SlashCommandBuilder()
   .setName('gacha')
   .setDescription('Meet your VN companion spirit~')
+  .setIntegrationTypes(ApplicationIntegrationType.GuildInstall, ApplicationIntegrationType.UserInstall)
+  .setContexts(InteractionContextType.Guild, InteractionContextType.BotDM, InteractionContextType.PrivateChannel)
   .addSubcommand((sub) => sub.setName('hatch').setDescription('Hatch your companion spirit for the first time!'))
   .addSubcommand((sub) => sub.setName('view').setDescription('View your companion spirit'))
   .addSubcommand((sub) => sub.setName('pet').setDescription('Interact with your companion~'))
@@ -16,6 +18,8 @@ export const gachaCommand = new SlashCommandBuilder()
 export const hangmanCommand = new SlashCommandBuilder()
   .setName('hangman')
   .setDescription('Play Hangman with Roka!')
+  .setIntegrationTypes(ApplicationIntegrationType.GuildInstall)
+  .setContexts(InteractionContextType.Guild)
   .addSubcommand((sub) => sub.setName('start').setDescription('Start a new game'))
   .addSubcommand((sub) =>
     sub
@@ -31,6 +35,8 @@ export const hangmanCommand = new SlashCommandBuilder()
 export const shiritoriCommand = new SlashCommandBuilder()
   .setName('shiritori')
   .setDescription('Play Shiritori (word chain) with Roka!')
+  .setIntegrationTypes(ApplicationIntegrationType.GuildInstall)
+  .setContexts(InteractionContextType.Guild)
   .addSubcommand((sub) => sub.setName('start').setDescription('Start a new game'))
   .addSubcommand((sub) => sub.setName('join').setDescription('Join the current game'))
   .addSubcommand((sub) =>

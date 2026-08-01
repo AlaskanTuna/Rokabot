@@ -68,7 +68,7 @@ User types /chat "message"     User @mentions Roka
 
 ### FR-1: Slash Command Interaction
 
-The bot registers a `/chat` guild-scoped slash command with a required `message` string option.
+The bot registers a `/chat` slash command globally, with a required `message` string option; availability is set per command.
 
 **Acceptance Criteria:**
 
