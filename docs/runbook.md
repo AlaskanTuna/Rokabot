@@ -8,11 +8,14 @@ Quick reference for managing Rokabot on the Raspberry Pi 5.
 
 ```bash
 # Via Ethernet (static IP, always works)
-ssh adam@192.168.50.1
+ssh <pi-user>@<pi-ethernet-ip>
 
 # Via WiFi (if both devices on same network — may not work on phone hotspots due to AP isolation)
-ssh adam@<wifi-ip>
+ssh <pi-user>@<pi-wifi-ip>
 ```
+
+> Substitute your own login and addresses. The Ethernet static IP and WiFi are set in
+> `/etc/netplan/50-cloud-init.yaml` (see [Network Config Files](#network-config-files)).
 
 ---
 
