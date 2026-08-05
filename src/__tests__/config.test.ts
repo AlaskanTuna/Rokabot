@@ -630,6 +630,7 @@ describe('config module', () => {
       { path: 'memory.extractionDailyBudgetRatio', min: 0, max: 1 },
       { path: 'memory.perGuildGapMs', min: 0 },
       { path: 'memory.extractionQueueMaxPerGuild', min: 1 },
+      { path: 'metrics.diagnosticsRetentionHours', min: 1 },
       { path: 'metrics.retentionDays', min: 1 },
       { path: 'emoji.probability', min: 0, max: 1 },
       { path: 'emoji.cooldownMs', min: 0 },

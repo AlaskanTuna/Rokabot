@@ -7,7 +7,7 @@ import type { GetSessionRequest, Session } from '@google/adk'
 import type { Content, Part } from '@google/genai'
 import { config } from '../config.js'
 import type { WindowMessage } from '../session/types.js'
-import { recordMemoryEvent } from '../storage/metricsStore.js'
+import { recordFailureDiagnostic, recordMemoryEvent } from '../storage/metricsStore.js'
 import type { ResponseMetrics } from '../storage/metricsStore.js'
 import { getChannelUsers, loadHistory, saveMessage } from '../storage/sessionStore.js'
 import { getFacts, refreshFactTimestamps } from '../storage/userMemory.js'
@@ -57,6 +57,14 @@ const sessionErrorCounts = new Map<string, number>()
 const toolCallsForRequest = new AsyncLocalStorage<Set<string>>()
 // Exported so tests can drive the beforeModelCallback ALS seam directly (task 122's only observable proof point)
 export const steeringForRequest = new AsyncLocalStorage<{ prompt?: string }>()
+interface ModelVerdict {
+  finishReason?: string
+  safetyRatings?: string
+  /** Heuristic: a finish reason on a returned candidate means Roka's own output was rejected; an
+   * error surfaced before any candidate means the prompt was. */
+  blockSide?: 'prompt' | 'response'
+}
+const modelVerdictForRequest = new AsyncLocalStorage<ModelVerdict>()
 const activeAbortControllers = new Set<AbortController>()
 
 const SAFETY_DEFLECTION = "Ehh… let's not get into that one~"
@@ -452,6 +460,20 @@ export const rokaAgent = new LlmAgent({
 
     const hasText = response.content.parts.some((p) => p.text?.trim() && !p.thought)
     const hasFunctionCall = response.content.parts.some((p) => 'functionCall' in p && p.functionCall)
+
+    const verdict = modelVerdictForRequest.getStore()
+    if (verdict) {
+      const raw = response as unknown as { safetyRatings?: unknown; promptFeedback?: { blockReason?: string } }
+      if (response.finishReason) verdict.finishReason = String(response.finishReason)
+      if (raw.safetyRatings) verdict.safetyRatings = JSON.stringify(raw.safetyRatings).slice(0, 1000)
+      if (raw.promptFeedback?.blockReason) {
+        verdict.blockSide = 'prompt'
+        verdict.finishReason ??= raw.promptFeedback.blockReason
+      } else if (response.finishReason && !hasText && !hasFunctionCall) {
+        verdict.blockSide = 'response'
+      }
+    }
+
     if (!hasText && !hasFunctionCall) {
       logger.warn(
         {
@@ -492,6 +514,12 @@ class ErrorRecoveryPlugin extends BasePlugin {
       'Gemini API error intercepted'
     )
     const failure = classifyGeminiFailure(error)
+    const verdict = modelVerdictForRequest.getStore()
+    if (verdict) {
+      // No candidate was ever produced, so anything rejected here was rejected on the way in.
+      verdict.blockSide ??= failure.kind === 'safety' ? 'prompt' : undefined
+      verdict.finishReason ??= error.name
+    }
     return {
       errorCode: error.name,
       errorMessage: error.message,
@@ -696,6 +724,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   const basePrompt = assembleSystemPrompt({ tone, participants, hour, displayName })
   let factsSection = ''
   let overheardSection = ''
+  let factEntryCount = 0
 
   try {
     // Resolve user identities from persistent lookup table (survives restarts)
@@ -741,6 +770,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     const factsEnvelope = buildFactsEnvelope(factEntries)
     if (factsEnvelope) {
       factsSection = `\n\n## What You Remember About People In This Channel\n${factsEnvelope}`
+      factEntryCount = factEntries.length
       logger.info(
         { channelId, usersWithFacts: factEntries.length, totalUsers: knownUsers.size },
         'User facts injected into prompt'
@@ -832,103 +862,107 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   const testRunTurn = testRunTurnFactory?.(systemPrompt)
   let sessionWasReset = false
   const steering: { prompt?: string } = {}
+  const verdict: ModelVerdict = {}
   const reliability = await toolCallsForRequest.run(usedToolNames, () =>
-    steeringForRequest.run(steering, () =>
-      runTurnWithReliability({
-        maxRetries: config.gemini.liveMaxRetries,
-        retryBackoffCapMs: config.gemini.retryBackoffCapMs,
-        requestTimeoutMs: config.gemini.timeout,
-        turnDeadlineMs: config.gemini.turnDeadlineMs,
-        tryConsumeRetry: () => getSharedRateLimiter(config.rateLimit).tryConsumeAboveFloor(config.gemini.retryRpmFloor),
-        // retryBackoffCapMs doubles as computeBackoff's per-attempt maxMs: a single backoff delay
-        // should never be advertised as larger than the total budget it is measured against — the
-        // remaining-budget clamp in runTurnWithReliability's retry loop would cut an oversized delay down
-        // to size anyway, so sharing the value keeps the pre-jitter range honest with the ceiling.
-        computeBackoff: (attempt) =>
-          computeBackoff(attempt, config.gemini.retryBackoffBaseMs, { maxMs: config.gemini.retryBackoffCapMs }),
-        genericFallback: getRandomFallback(),
-        safetyDeflection: SAFETY_DEFLECTION,
-        recitationDeflection: RECITATION_DEFLECTION,
-        terminalDeflection: TERMINAL_DEFLECTION,
-        resetSession: async () => {
-          await destroySession(channelId)
-          await ensureSession(channelId)
-          resetIdleTimer(channelId)
-          sessionWasReset = true
-        },
-        escalateSafety: async () => {
-          if (safetyRung >= SAFETY_LADDER.length) return undefined
-          safetyRung++
-
-          if (safetyRung === 3) {
-            // Carried history is the only remaining suspect: rebuild the window empty and drop images.
-            dropImages = true
+    modelVerdictForRequest.run(verdict, () =>
+      steeringForRequest.run(steering, () =>
+        runTurnWithReliability({
+          maxRetries: config.gemini.liveMaxRetries,
+          retryBackoffCapMs: config.gemini.retryBackoffCapMs,
+          requestTimeoutMs: config.gemini.timeout,
+          turnDeadlineMs: config.gemini.turnDeadlineMs,
+          tryConsumeRetry: () =>
+            getSharedRateLimiter(config.rateLimit).tryConsumeAboveFloor(config.gemini.retryRpmFloor),
+          // retryBackoffCapMs doubles as computeBackoff's per-attempt maxMs: a single backoff delay
+          // should never be advertised as larger than the total budget it is measured against — the
+          // remaining-budget clamp in runTurnWithReliability's retry loop would cut an oversized delay down
+          // to size anyway, so sharing the value keeps the pre-jitter range honest with the ceiling.
+          computeBackoff: (attempt) =>
+            computeBackoff(attempt, config.gemini.retryBackoffBaseMs, { maxMs: config.gemini.retryBackoffCapMs }),
+          genericFallback: getRandomFallback(),
+          safetyDeflection: SAFETY_DEFLECTION,
+          recitationDeflection: RECITATION_DEFLECTION,
+          terminalDeflection: TERMINAL_DEFLECTION,
+          resetSession: async () => {
             await destroySession(channelId)
-            rehydrationSuppressed.add(channelId)
             await ensureSession(channelId)
             resetIdleTimer(channelId)
             sessionWasReset = true
-          }
+          },
+          escalateSafety: async () => {
+            if (safetyRung >= SAFETY_LADDER.length) return undefined
+            safetyRung++
 
-          systemPrompt = composePrompt()
-          steering.prompt = systemPrompt
-          return SAFETY_LADDER[safetyRung - 1]
-        },
-        runTurn: async (attempt, signal) => {
-          const includeCurrentTurn = attempt === 0 || sessionWasReset
-          const testRequest: TestTurnRequest = {
-            newMessage: includeCurrentTurn ? buildNewMessage() : undefined,
-            stateDelta: includeCurrentTurn
-              ? {
-                  _systemPrompt: systemPrompt,
-                  participants,
-                  _userId: userId,
-                  _channelId: channelId,
-                  _guildId: guildId
+            if (safetyRung === 3) {
+              // Carried history is the only remaining suspect: rebuild the window empty and drop images.
+              dropImages = true
+              await destroySession(channelId)
+              rehydrationSuppressed.add(channelId)
+              await ensureSession(channelId)
+              resetIdleTimer(channelId)
+              sessionWasReset = true
+            }
+
+            systemPrompt = composePrompt()
+            steering.prompt = systemPrompt
+            return SAFETY_LADDER[safetyRung - 1]
+          },
+          runTurn: async (attempt, signal) => {
+            const includeCurrentTurn = attempt === 0 || sessionWasReset
+            const testRequest: TestTurnRequest = {
+              newMessage: includeCurrentTurn ? buildNewMessage() : undefined,
+              stateDelta: includeCurrentTurn
+                ? {
+                    _systemPrompt: systemPrompt,
+                    participants,
+                    _userId: userId,
+                    _channelId: channelId,
+                    _guildId: guildId
+                  }
+                : undefined
+            }
+            if (testRunTurn) return testRunTurn(attempt, signal, testRequest)
+
+            let responseText = ''
+            let hasFunctionCall = false
+            let finishReason: LlmResponse['finishReason']
+
+            const request: Parameters<typeof runner.runAsync>[0] = {
+              userId: channelId,
+              sessionId: channelId,
+              // ADK's runtime only appends when this value is truthy; its type incorrectly requires Content otherwise.
+              newMessage: testRequest.newMessage ?? (undefined as unknown as Content),
+              runConfig: { maxLlmCalls: config.gemini.maxLlmCalls },
+              stateDelta: testRequest.stateDelta
+            }
+
+            for await (const event of runner.runAsync(request)) {
+              if (signal.aborted) break
+              if (event.errorCode) {
+                return {
+                  errorCode: event.errorCode,
+                  errorMessage: event.errorMessage,
+                  customMetadata: event.customMetadata,
+                  finishReason: event.finishReason,
+                  hasText: false,
+                  hasFunctionCall: false
                 }
-              : undefined
-          }
-          if (testRunTurn) return testRunTurn(attempt, signal, testRequest)
-
-          let responseText = ''
-          let hasFunctionCall = false
-          let finishReason: LlmResponse['finishReason']
-
-          const request: Parameters<typeof runner.runAsync>[0] = {
-            userId: channelId,
-            sessionId: channelId,
-            // ADK's runtime only appends when this value is truthy; its type incorrectly requires Content otherwise.
-            newMessage: testRequest.newMessage ?? (undefined as unknown as Content),
-            runConfig: { maxLlmCalls: config.gemini.maxLlmCalls },
-            stateDelta: testRequest.stateDelta
-          }
-
-          for await (const event of runner.runAsync(request)) {
-            if (signal.aborted) break
-            if (event.errorCode) {
-              return {
-                errorCode: event.errorCode,
-                errorMessage: event.errorMessage,
-                customMetadata: event.customMetadata,
-                finishReason: event.finishReason,
-                hasText: false,
-                hasFunctionCall: false
+              }
+              if (isFinalResponse(event) && event.content?.parts) {
+                finishReason = event.finishReason
+                responseText = event.content.parts
+                  .filter((part: Part) => part.text && !part.thought)
+                  .map((part: Part) => part.text)
+                  .join('')
+                  .trim()
+                hasFunctionCall = event.content.parts.some((part: Part) => 'functionCall' in part && part.functionCall)
               }
             }
-            if (isFinalResponse(event) && event.content?.parts) {
-              finishReason = event.finishReason
-              responseText = event.content.parts
-                .filter((part: Part) => part.text && !part.thought)
-                .map((part: Part) => part.text)
-                .join('')
-                .trim()
-              hasFunctionCall = event.content.parts.some((part: Part) => 'functionCall' in part && part.functionCall)
-            }
-          }
 
-          return { text: responseText, finishReason, hasText: Boolean(responseText), hasFunctionCall }
-        }
-      })
+            return { text: responseText, finishReason, hasText: Boolean(responseText), hasFunctionCall }
+          }
+        })
+      )
     )
   )
   const llmMs = Math.round(performance.now() - llmStartMs)
@@ -969,6 +1003,31 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     : reliability.kind === 'transient_http' || reliability.kind === 'network' || reliability.kind === 'empty_text'
       ? 'fallback'
       : 'deflection'
+
+  // Failed turns are never written to session_history, so without this row the triggering input is
+  // unrecoverable and the failure cannot be explained after the fact.
+  if (!reliability.success) {
+    recordFailureDiagnostic({
+      guildId,
+      channelId,
+      userId,
+      outcome,
+      kind: reliability.kind,
+      failureMarker: reliability.failureMarker,
+      blockSide: verdict.blockSide,
+      finishReason: verdict.finishReason,
+      safetyRatings: verdict.safetyRatings,
+      safetyRungsUsed: safetyRung,
+      attempts: reliability.attempts,
+      tone,
+      imageCount: imageParts.length,
+      imageMimes: imageAttachments?.map((img) => img.contentType).join(',') || undefined,
+      overheardChars: overheardSection.length,
+      historyDepth: session.events?.length ?? 0,
+      factEntries: factEntryCount,
+      userMessage
+    })
+  }
   const metrics: ResponseMetrics = {
     generateMs: Math.round(performance.now() - generateStartMs),
     llmMs,

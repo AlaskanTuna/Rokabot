@@ -1,7 +1,7 @@
 import type { CallbackContext, LlmRequest } from '@google/adk'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { config } from '../../config.js'
-import { recordMemoryEvent } from '../../storage/metricsStore.js'
+import { recordFailureDiagnostic, recordMemoryEvent } from '../../storage/metricsStore.js'
 import { getFacts, refreshFactTimestamps } from '../../storage/userMemory.js'
 import { logger } from '../../utils/logger.js'
 import { estimateTokens } from '../../utils/tokens.js'
@@ -40,7 +40,8 @@ vi.mock('../../storage/userNames.js', () => ({
 }))
 
 vi.mock('../../storage/metricsStore.js', () => ({
-  recordMemoryEvent: vi.fn()
+  recordMemoryEvent: vi.fn(),
+  recordFailureDiagnostic: vi.fn()
 }))
 
 vi.mock('../memory/retriever.js', () => ({
@@ -838,6 +839,34 @@ describe('generateResponse metrics', () => {
     expect(prompts[1]).not.toContain('Recent Channel Activity')
     expect(result.text).toBe('Answered without the extra context~')
     expect(result.metrics).toMatchObject({ outcome: 'ok', kind: 'ok' })
+  })
+
+  it('records a durable failure diagnostic when every rung is blocked', async () => {
+    vi.mocked(recordFailureDiagnostic).mockClear()
+    __setTestRunTurnFactory(() => async () => ({
+      finishReason: 'SAFETY',
+      hasText: false,
+      hasFunctionCall: false
+    }))
+
+    const result = await generateResponse({
+      channelId: 'roka-diagnostic-channel',
+      guildId: 'diagnostic-guild',
+      userMessage: 'the message that got blocked',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id'
+    })
+
+    expect(result.metrics.outcome).toBe('deflection')
+    expect(recordFailureDiagnostic).toHaveBeenCalledOnce()
+    expect(vi.mocked(recordFailureDiagnostic).mock.calls[0][0]).toMatchObject({
+      outcome: 'deflection',
+      kind: 'safety',
+      failureMarker: 'SAFETY',
+      userMessage: 'the message that got blocked',
+      safetyRungsUsed: SAFETY_RUNGS.length
+    })
   })
 
   it('returns retry and outcome metrics without changing reliability behavior', async () => {

@@ -53,7 +53,7 @@ interface YamlConfig {
     extractionQueueMaxPerGuild?: number
     vaultExportDir?: string
   }
-  metrics?: { retentionDays?: number }
+  metrics?: { retentionDays?: number; diagnosticsRetentionHours?: number }
   emoji?: { probability?: number; cooldownMs?: number }
   reminders?: { checkIntervalMs?: number; maxPerUser?: number; staleThresholdMs?: number }
   games?: { hangmanLives?: number; hangmanTimeoutMs?: number; shiritoriTimeoutMs?: number; shinyChance?: number }
@@ -181,7 +181,9 @@ export const config = {
     vaultExportDir: envString('MEMORY_VAULT_EXPORT_DIR') ?? yaml.memory?.vaultExportDir ?? 'data/vault'
   },
   metrics: {
-    retentionDays: envInt('METRICS_RETENTION_DAYS') ?? yaml.metrics?.retentionDays ?? 90
+    retentionDays: envInt('METRICS_RETENTION_DAYS') ?? yaml.metrics?.retentionDays ?? 90,
+    diagnosticsRetentionHours:
+      envInt('METRICS_DIAGNOSTICS_RETENTION_HOURS') ?? yaml.metrics?.diagnosticsRetentionHours ?? 72
   },
   emoji: {
     probability: yaml.emoji?.probability ?? 0.33,
@@ -248,6 +250,7 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'memory.perGuildGapMs', value: config.memory.perGuildGapMs, min: 0 },
   { path: 'memory.extractionQueueMaxPerGuild', value: config.memory.extractionQueueMaxPerGuild, min: 1 },
   { path: 'metrics.retentionDays', value: config.metrics.retentionDays, min: 1 },
+  { path: 'metrics.diagnosticsRetentionHours', value: config.metrics.diagnosticsRetentionHours, min: 1 },
   { path: 'emoji.probability', value: config.emoji.probability, min: 0, max: 1 },
   { path: 'emoji.cooldownMs', value: config.emoji.cooldownMs, min: 0 },
   { path: 'reminders.checkIntervalMs', value: config.reminders.checkIntervalMs, min: 1 },
