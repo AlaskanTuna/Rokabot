@@ -297,6 +297,25 @@ sqlite3 ~/rokabot/data/rokabot.db "SELECT user_id, game, score, datetime(played_
 sqlite3 ~/rokabot/data/rokabot.db "SELECT user_id, SUM(score) as total, COUNT(*) as games FROM game_scores WHERE game='hangman' GROUP BY user_id ORDER BY total DESC;"
 ```
 
+### Failure Diagnostics
+
+Forensic detail for turns that fell back or deflected. Holds the triggering message verbatim, so it is
+pruned on a shorter window than the other metrics tables (`metrics.diagnosticsRetentionHours`, default 72h).
+
+```bash
+# Recent failures, newest first
+sqlite3 ~/rokabot/data/rokabot.db "SELECT datetime(created_at/1000,'unixepoch','+8 hours') t, outcome, kind, failure_marker, block_side, safety_rungs_used FROM failure_diagnostics ORDER BY created_at DESC LIMIT 20;"
+
+# Did Gemini reject the input or Roka's own output?
+sqlite3 ~/rokabot/data/rokabot.db "SELECT block_side, COUNT(*) FROM failure_diagnostics WHERE kind='safety' GROUP BY block_side;"
+
+# What was actually sent when a turn was blocked
+sqlite3 ~/rokabot/data/rokabot.db "SELECT datetime(created_at/1000,'unixepoch','+8 hours') t, tone, image_count, overheard_chars, history_depth, fact_entries, user_message FROM failure_diagnostics WHERE kind='safety' ORDER BY created_at DESC LIMIT 5;"
+
+# Did the de-escalation ladder rescue turns? (rungs used > 0 with a later ok means yes)
+sqlite3 ~/rokabot/data/rokabot.db "SELECT safety_rungs_used, COUNT(*) FROM failure_diagnostics GROUP BY safety_rungs_used;"
+```
+
 ### Database Overview
 
 ```bash
