@@ -140,6 +140,8 @@ export interface RunTurnWithReliabilityOptions {
   resetSession?: () => Promise<void>
   /** Sheds one rung of carried context after a safety block. Resolves to the rung name, or undefined when exhausted. */
   escalateSafety?: () => Promise<string | undefined>
+  /** Number of rungs escalateSafety can yield. Lets the loop stop before spending a retry token it cannot use. */
+  safetyLadderLength?: number
 }
 
 function sleepUntil(delayMs: number, signal: AbortSignal): Promise<void> {
@@ -282,7 +284,12 @@ export async function runTurnWithReliability(options: RunTurnWithReliabilityOpti
       }
     }
 
-    if (failure.kind === 'safety' && options.escalateSafety && !shouldStop()) {
+    if (
+      failure.kind === 'safety' &&
+      options.escalateSafety &&
+      extraSafetyAttempts < (options.safetyLadderLength ?? 0) &&
+      !shouldStop()
+    ) {
       if (options.turnDeadlineMs !== undefined) {
         const elapsedMs = now() - startedAtMs
         const remainingMs = options.turnDeadlineMs - elapsedMs
@@ -889,6 +896,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
             resetIdleTimer(channelId)
             sessionWasReset = true
           },
+          safetyLadderLength: SAFETY_LADDER.length,
           escalateSafety: async () => {
             if (safetyRung >= SAFETY_LADDER.length) return undefined
             safetyRung++

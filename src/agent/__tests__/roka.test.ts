@@ -85,6 +85,7 @@ function options(overrides: Partial<Parameters<typeof runTurnWithReliability>[0]
     isShuttingDown: () => false,
     maxRetries: 2,
     retryBackoffCapMs: 12_000,
+    safetyLadderLength: SAFETY_RUNGS.length,
     genericFallback,
     safetyDeflection,
     recitationDeflection,
@@ -241,8 +242,8 @@ describe('runTurnWithReliability', () => {
       attempts: SAFETY_RUNGS.length + 1,
       failureMarker: 'SAFETY'
     })
-    // One call per rung, plus the exhausting call that reports no rungs left
-    expect(escalateSafety).toHaveBeenCalledTimes(SAFETY_RUNGS.length + 1)
+    // The loop stops entering the branch once every rung is spent, so no wasted exhausting call
+    expect(escalateSafety).toHaveBeenCalledTimes(SAFETY_RUNGS.length)
     expect(runTurn).toHaveBeenCalledTimes(SAFETY_RUNGS.length + 1)
     expect(testOptions.sleep).not.toHaveBeenCalled()
   })
@@ -259,6 +260,17 @@ describe('runTurnWithReliability', () => {
 
     expect(result).toMatchObject({ text: 'context dropped, answered', kind: 'ok', success: true, attempts: 3 })
     expect(escalateSafety).toHaveBeenCalledTimes(2)
+  })
+
+  it('spends no retry token on the final blocked attempt once the ladder is exhausted', async () => {
+    const runTurn = vi.fn().mockResolvedValue({ finishReason: 'SAFETY', hasText: false, hasFunctionCall: false })
+    const tryConsumeRetry = vi.fn(() => true)
+    const escalateSafety = ladder()
+
+    await runTurnWithReliability(options({ runTurn, tryConsumeRetry, escalateSafety }))
+
+    // One token per rung actually taken — the exhausted attempt must not burn one
+    expect(tryConsumeRetry).toHaveBeenCalledTimes(SAFETY_RUNGS.length)
   })
 
   it('skips de-escalation when the RPM floor refuses a retry token', async () => {

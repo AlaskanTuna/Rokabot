@@ -136,7 +136,7 @@ function createTables(database: Database.Database): void {
       ON response_events (guild_id, created_at);
 
     -- Forensic detail for turns that did not succeed. Holds the triggering message verbatim, so it
-    -- carries a shorter retention than response_events (see diagnostics.retentionHours).
+    -- carries a shorter retention than response_events (see metrics.diagnosticsRetentionHours).
     CREATE TABLE IF NOT EXISTS failure_diagnostics (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       guild_id TEXT NOT NULL,
