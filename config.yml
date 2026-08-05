@@ -53,6 +53,7 @@ memory:
 
 metrics:
   retentionDays: 90 # Days before response and extraction events are auto-pruned
+  diagnosticsRetentionHours: 72 # Hours before failure diagnostics (which hold the triggering message verbatim) are auto-pruned
 
 emoji:
   probability: 0.33 # Chance of reacting when a keyword rule matches (0-1)

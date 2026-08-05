@@ -52,7 +52,31 @@ export interface MemoryEventInput {
   op?: 'assert' | 'retract' | 'supersede' | 'none'
 }
 
+export interface FailureDiagnosticInput {
+  guildId: string
+  channelId: string
+  userId: string
+  outcome: string
+  kind: string
+  failureMarker?: string
+  /** 'prompt' when Gemini rejected the input, 'response' when it rejected Roka's own output */
+  blockSide?: string
+  finishReason?: string
+  safetyRatings?: string
+  errorMessage?: string
+  safetyRungsUsed?: number
+  attempts?: number
+  tone?: string
+  imageCount?: number
+  imageMimes?: string
+  overheardChars?: number
+  historyDepth?: number
+  factEntries?: number
+  userMessage?: string
+}
+
 let responseEventStatement: Database.Statement | undefined
+let failureDiagnosticStatement: Database.Statement | undefined
 let extractionEventStatement: Database.Statement | undefined
 let memoryEventStatement: Database.Statement | undefined
 
@@ -64,6 +88,62 @@ function getResponseEventStatement(): Database.Statement {
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
   return responseEventStatement
+}
+
+function getFailureDiagnosticStatement(): Database.Statement {
+  failureDiagnosticStatement ??= getDb().prepare(
+    `INSERT INTO failure_diagnostics (
+      guild_id, channel_id, user_id, outcome, kind, failure_marker, block_side, finish_reason,
+      safety_ratings, error_message, safety_rungs_used, attempts, tone, image_count, image_mimes,
+      overheard_chars, history_depth, fact_entries, user_message, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  )
+  return failureDiagnosticStatement
+}
+
+/** Record forensic detail for a failed turn. Never allowed to affect the response path. */
+export function recordFailureDiagnostic(row: FailureDiagnosticInput): void {
+  try {
+    getFailureDiagnosticStatement().run(
+      row.guildId,
+      row.channelId,
+      row.userId,
+      row.outcome,
+      row.kind,
+      row.failureMarker ?? null,
+      row.blockSide ?? null,
+      row.finishReason ?? null,
+      row.safetyRatings ?? null,
+      row.errorMessage ?? null,
+      row.safetyRungsUsed ?? 0,
+      row.attempts ?? 0,
+      row.tone ?? null,
+      row.imageCount ?? 0,
+      row.imageMimes ?? null,
+      row.overheardChars ?? 0,
+      row.historyDepth ?? 0,
+      row.factEntries ?? 0,
+      row.userMessage ?? null,
+      Date.now()
+    )
+  } catch (error) {
+    logger.warn({ err: error }, 'Failed to record failure diagnostic')
+  }
+}
+
+/** Delete failure diagnostics past their (shorter) retention window. */
+export function pruneFailureDiagnostics(retentionHours: number): number {
+  try {
+    const cutoff = Date.now() - retentionHours * 60 * 60 * 1000
+    const result = getDb().prepare('DELETE FROM failure_diagnostics WHERE created_at < ?').run(cutoff)
+    if (result.changes > 0) {
+      logger.info({ pruned: result.changes, retentionHours }, 'Pruned old failure diagnostics')
+    }
+    return result.changes
+  } catch (error) {
+    logger.warn({ err: error }, 'Failed to prune failure diagnostics')
+    return 0
+  }
 }
 
 function getExtractionEventStatement(): Database.Statement {

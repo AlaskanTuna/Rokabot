@@ -135,6 +135,35 @@ function createTables(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_response_events_guild_ts
       ON response_events (guild_id, created_at);
 
+    -- Forensic detail for turns that did not succeed. Holds the triggering message verbatim, so it
+    -- carries a shorter retention than response_events (see metrics.diagnosticsRetentionHours).
+    CREATE TABLE IF NOT EXISTS failure_diagnostics (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      guild_id TEXT NOT NULL,
+      channel_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      outcome TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      failure_marker TEXT DEFAULT NULL,
+      block_side TEXT DEFAULT NULL,
+      finish_reason TEXT DEFAULT NULL,
+      safety_ratings TEXT DEFAULT NULL,
+      error_message TEXT DEFAULT NULL,
+      safety_rungs_used INTEGER NOT NULL DEFAULT 0,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      tone TEXT DEFAULT NULL,
+      image_count INTEGER NOT NULL DEFAULT 0,
+      image_mimes TEXT DEFAULT NULL,
+      overheard_chars INTEGER NOT NULL DEFAULT 0,
+      history_depth INTEGER NOT NULL DEFAULT 0,
+      fact_entries INTEGER NOT NULL DEFAULT 0,
+      user_message TEXT DEFAULT NULL,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_failure_diagnostics_ts
+      ON failure_diagnostics (created_at);
+
     CREATE TABLE IF NOT EXISTS extraction_events (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       guild_id TEXT NOT NULL,

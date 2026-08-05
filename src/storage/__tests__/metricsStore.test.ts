@@ -14,8 +14,10 @@ import { closeDb, getDb } from '../database.js'
 import {
   type MemoryEventInput,
   countMemoryEvents,
+  pruneFailureDiagnostics,
   pruneOldMetrics,
   recordExtractionEvent,
+  recordFailureDiagnostic,
   recordMemoryEvent,
   recordResponseEvent
 } from '../metricsStore.js'
@@ -247,5 +249,46 @@ describe('metricsStore', () => {
     expect(db.prepare('SELECT COUNT(*) AS count FROM response_events').get()).toEqual({ count: 1 })
     expect(db.prepare('SELECT COUNT(*) AS count FROM extraction_events').get()).toEqual({ count: 1 })
     expect(db.prepare('SELECT COUNT(*) AS count FROM memory_events').get()).toEqual({ count: 1 })
+  })
+
+  it('persists failure diagnostics with the block side and prunes them on the shorter window', () => {
+    const db = getDb()
+    db.prepare('DELETE FROM failure_diagnostics').run()
+
+    recordFailureDiagnostic({
+      guildId: 'guild-1',
+      channelId: 'channel-1',
+      userId: 'user-1',
+      outcome: 'deflection',
+      kind: 'safety',
+      failureMarker: 'PROHIBITED_CONTENT',
+      blockSide: 'response',
+      finishReason: 'PROHIBITED_CONTENT',
+      safetyRungsUsed: 3,
+      attempts: 4,
+      tone: 'playful',
+      imageCount: 1,
+      imageMimes: 'image/png',
+      overheardChars: 512,
+      historyDepth: 12,
+      factEntries: 2,
+      userMessage: 'the message that triggered the block'
+    })
+
+    const row = db
+      .prepare('SELECT block_side, safety_rungs_used, overheard_chars, user_message FROM failure_diagnostics')
+      .get() as Record<string, unknown>
+    expect(row).toMatchObject({
+      block_side: 'response',
+      safety_rungs_used: 3,
+      overheard_chars: 512,
+      user_message: 'the message that triggered the block'
+    })
+
+    // Nothing is older than the retention window yet
+    expect(pruneFailureDiagnostics(72)).toBe(0)
+    db.prepare('UPDATE failure_diagnostics SET created_at = ?').run(Date.now() - 96 * 60 * 60 * 1000)
+    expect(pruneFailureDiagnostics(72)).toBe(1)
+    expect(db.prepare('SELECT COUNT(*) AS count FROM failure_diagnostics').get()).toEqual({ count: 0 })
   })
 })

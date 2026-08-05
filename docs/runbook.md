@@ -297,6 +297,34 @@ sqlite3 ~/rokabot/data/rokabot.db "SELECT user_id, game, score, datetime(played_
 sqlite3 ~/rokabot/data/rokabot.db "SELECT user_id, SUM(score) as total, COUNT(*) as games FROM game_scores WHERE game='hangman' GROUP BY user_id ORDER BY total DESC;"
 ```
 
+### Failure Diagnostics
+
+Forensic detail for turns that fell back or deflected. Holds the triggering message verbatim, so it is
+pruned on a shorter window than the other metrics tables (`metrics.diagnosticsRetentionHours`, default 72h).
+
+```bash
+# Recent failures, newest first
+sqlite3 ~/rokabot/data/rokabot.db "SELECT datetime(created_at/1000,'unixepoch','+8 hours') t, outcome, kind, failure_marker, block_side, safety_rungs_used FROM failure_diagnostics ORDER BY created_at DESC LIMIT 20;"
+
+# Did Gemini reject the input or Roka's own output?
+sqlite3 ~/rokabot/data/rokabot.db "SELECT block_side, COUNT(*) FROM failure_diagnostics WHERE kind='safety' GROUP BY block_side;"
+
+# What was actually sent when a turn was blocked
+sqlite3 ~/rokabot/data/rokabot.db "SELECT datetime(created_at/1000,'unixepoch','+8 hours') t, tone, image_count, overheard_chars, history_depth, fact_entries, user_message FROM failure_diagnostics WHERE kind='safety' ORDER BY created_at DESC LIMIT 5;"
+
+# How far the ladder got on turns it could NOT rescue.
+# This table only records failures, so every row here is a ladder that ran out of rungs.
+sqlite3 ~/rokabot/data/rokabot.db "SELECT safety_rungs_used, COUNT(*) FROM failure_diagnostics WHERE kind='safety' GROUP BY safety_rungs_used;"
+```
+
+Rescues are the turns that never reach this table. To count them, compare the deflection rate in
+`response_events` before and after, or read the per-rung log line from the container:
+
+```bash
+# Each rung the ladder took; a turn logging these with no matching deflection was rescued
+sudo docker logs rokabot-roka-1 2>&1 | grep 'de-escalating carried context'
+```
+
 ### Database Overview
 
 ```bash

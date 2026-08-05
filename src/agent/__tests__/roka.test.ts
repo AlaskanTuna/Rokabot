@@ -1,7 +1,7 @@
 import type { CallbackContext, LlmRequest } from '@google/adk'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { config } from '../../config.js'
-import { recordMemoryEvent } from '../../storage/metricsStore.js'
+import { recordFailureDiagnostic, recordMemoryEvent } from '../../storage/metricsStore.js'
 import { getFacts, refreshFactTimestamps } from '../../storage/userMemory.js'
 import { logger } from '../../utils/logger.js'
 import { estimateTokens } from '../../utils/tokens.js'
@@ -40,7 +40,8 @@ vi.mock('../../storage/userNames.js', () => ({
 }))
 
 vi.mock('../../storage/metricsStore.js', () => ({
-  recordMemoryEvent: vi.fn()
+  recordMemoryEvent: vi.fn(),
+  recordFailureDiagnostic: vi.fn()
 }))
 
 vi.mock('../memory/retriever.js', () => ({
@@ -61,6 +62,15 @@ vi.mock('../../utils/timezone.js', () => ({
 
 const genericFallback = 'generic fallback'
 const safetyDeflection = 'safety deflection'
+/** Mirrors generateResponse's de-escalation rungs so the loop contract is asserted against real rung names */
+const SAFETY_RUNGS = ['drop_overheard', 'drop_facts', 'clear_history'] as const
+
+/** Yields each rung once, then reports exhaustion by resolving undefined */
+function ladder() {
+  let rung = 0
+  return vi.fn(async () => (rung < SAFETY_RUNGS.length ? SAFETY_RUNGS[rung++] : undefined))
+}
+
 const recitationDeflection = 'recitation deflection'
 const terminalDeflection = 'terminal deflection'
 const functionCallOrderingError =
@@ -75,6 +85,7 @@ function options(overrides: Partial<Parameters<typeof runTurnWithReliability>[0]
     isShuttingDown: () => false,
     maxRetries: 2,
     retryBackoffCapMs: 12_000,
+    safetyLadderLength: SAFETY_RUNGS.length,
     genericFallback,
     safetyDeflection,
     recitationDeflection,
@@ -201,8 +212,8 @@ describe('runTurnWithReliability', () => {
       .fn()
       .mockResolvedValueOnce({ finishReason: 'SAFETY', hasText: false, hasFunctionCall: false })
       .mockResolvedValueOnce({ text: 'A tasteful dodge~', hasText: true, hasFunctionCall: false })
-    const regenerateOnSafety = vi.fn()
-    const testOptions = options({ runTurn, regenerateOnSafety })
+    const escalateSafety = ladder()
+    const testOptions = options({ runTurn, escalateSafety })
 
     const result = await runTurnWithReliability(testOptions)
 
@@ -213,14 +224,14 @@ describe('runTurnWithReliability', () => {
       success: true,
       retryLatencyMs: 0
     })
-    expect(regenerateOnSafety).toHaveBeenCalledOnce()
+    expect(escalateSafety).toHaveBeenCalledOnce()
     expect(testOptions.sleep).not.toHaveBeenCalled()
   })
 
-  it('falls back to the static safety deflection when the regenerated attempt is blocked again', async () => {
+  it('walks every de-escalation rung before falling back to the static safety deflection', async () => {
     const runTurn = vi.fn().mockResolvedValue({ finishReason: 'SAFETY', hasText: false, hasFunctionCall: false })
-    const regenerateOnSafety = vi.fn()
-    const testOptions = options({ runTurn, regenerateOnSafety })
+    const escalateSafety = ladder()
+    const testOptions = options({ runTurn, escalateSafety })
 
     const result = await runTurnWithReliability(testOptions)
 
@@ -228,23 +239,50 @@ describe('runTurnWithReliability', () => {
       text: safetyDeflection,
       kind: 'safety',
       action: 'preserve',
-      attempts: 2,
+      attempts: SAFETY_RUNGS.length + 1,
       failureMarker: 'SAFETY'
     })
-    expect(regenerateOnSafety).toHaveBeenCalledOnce()
+    // The loop stops entering the branch once every rung is spent, so no wasted exhausting call
+    expect(escalateSafety).toHaveBeenCalledTimes(SAFETY_RUNGS.length)
+    expect(runTurn).toHaveBeenCalledTimes(SAFETY_RUNGS.length + 1)
     expect(testOptions.sleep).not.toHaveBeenCalled()
   })
 
-  it('skips the steered regeneration when the RPM floor refuses a retry token', async () => {
+  it('recovers as soon as a rung clears the block, without walking the remaining rungs', async () => {
+    const runTurn = vi
+      .fn()
+      .mockResolvedValueOnce({ finishReason: 'SAFETY', hasText: false, hasFunctionCall: false })
+      .mockResolvedValueOnce({ finishReason: 'SAFETY', hasText: false, hasFunctionCall: false })
+      .mockResolvedValue({ text: 'context dropped, answered', hasText: true, hasFunctionCall: false })
+    const escalateSafety = ladder()
+
+    const result = await runTurnWithReliability(options({ runTurn, escalateSafety }))
+
+    expect(result).toMatchObject({ text: 'context dropped, answered', kind: 'ok', success: true, attempts: 3 })
+    expect(escalateSafety).toHaveBeenCalledTimes(2)
+  })
+
+  it('spends no retry token on the final blocked attempt once the ladder is exhausted', async () => {
+    const runTurn = vi.fn().mockResolvedValue({ finishReason: 'SAFETY', hasText: false, hasFunctionCall: false })
+    const tryConsumeRetry = vi.fn(() => true)
+    const escalateSafety = ladder()
+
+    await runTurnWithReliability(options({ runTurn, tryConsumeRetry, escalateSafety }))
+
+    // One token per rung actually taken — the exhausted attempt must not burn one
+    expect(tryConsumeRetry).toHaveBeenCalledTimes(SAFETY_RUNGS.length)
+  })
+
+  it('skips de-escalation when the RPM floor refuses a retry token', async () => {
     const runTurn = vi.fn().mockResolvedValue({ finishReason: 'SAFETY', hasText: false, hasFunctionCall: false })
     const tryConsumeRetry = vi.fn(() => false)
-    const regenerateOnSafety = vi.fn()
-    const testOptions = options({ runTurn, tryConsumeRetry, regenerateOnSafety })
+    const escalateSafety = ladder()
+    const testOptions = options({ runTurn, tryConsumeRetry, escalateSafety })
 
     const result = await runTurnWithReliability(testOptions)
 
     expect(result).toMatchObject({ text: safetyDeflection, kind: 'safety', attempts: 1 })
-    expect(regenerateOnSafety).not.toHaveBeenCalled()
+    expect(escalateSafety).not.toHaveBeenCalled()
     expect(runTurn).toHaveBeenCalledTimes(1)
   })
 
@@ -561,15 +599,15 @@ describe('runTurnWithReliability turn deadline', () => {
     expect(result).toMatchObject({ text: genericFallback, attempts: 1 })
   })
 
-  it('leaves the Phase 19 safety regeneration unaffected by a turn deadline', async () => {
+  it('leaves safety de-escalation unaffected by a generous turn deadline', async () => {
     const runTurn = vi
       .fn()
       .mockResolvedValueOnce({ finishReason: 'SAFETY', hasText: false, hasFunctionCall: false })
       .mockResolvedValueOnce({ text: 'A tasteful dodge~', hasText: true, hasFunctionCall: false })
-    const regenerateOnSafety = vi.fn()
+    const escalateSafety = ladder()
     const testOptions = options({
       runTurn,
-      regenerateOnSafety,
+      escalateSafety,
       now: () => 0,
       turnDeadlineMs: 60_000,
       requestTimeoutMs: 45_000
@@ -584,22 +622,22 @@ describe('runTurnWithReliability turn deadline', () => {
       success: true,
       retryLatencyMs: 0
     })
-    expect(regenerateOnSafety).toHaveBeenCalledOnce()
+    expect(escalateSafety).toHaveBeenCalledOnce()
     expect(testOptions.sleep).not.toHaveBeenCalled()
   })
 
-  it('consumes no retry token when a safety regeneration is gated by the deadline', async () => {
+  it('consumes no retry token when safety de-escalation is gated by the deadline', async () => {
     let clock = 0
     const now = () => clock
     const runTurn = vi.fn(async () => {
       clock += 20_000
       return { finishReason: 'SAFETY', hasText: false, hasFunctionCall: false }
     })
-    const regenerateOnSafety = vi.fn()
+    const escalateSafety = ladder()
     const tryConsumeRetry = vi.fn(() => true)
     const testOptions = options({
       runTurn,
-      regenerateOnSafety,
+      escalateSafety,
       tryConsumeRetry,
       now,
       turnDeadlineMs: 60_000,
@@ -609,7 +647,7 @@ describe('runTurnWithReliability turn deadline', () => {
     const result = await runTurnWithReliability(testOptions)
 
     expect(tryConsumeRetry).not.toHaveBeenCalled()
-    expect(regenerateOnSafety).not.toHaveBeenCalled()
+    expect(escalateSafety).not.toHaveBeenCalled()
     expect(result).toMatchObject({
       text: safetyDeflection,
       kind: 'safety',
@@ -782,6 +820,65 @@ describe('generateResponse metrics', () => {
 
     expect(result.text).toBe('A playful dodge~')
     expect(result.metrics).toMatchObject({ outcome: 'ok', kind: 'ok', retries: 1, failureMarker: 'SAFETY' })
+  })
+
+  it('sheds the overheard block on the first de-escalation rung and answers once it clears', async () => {
+    const channelId = 'roka-ladder-channel'
+    vi.mocked(getMessages).mockReturnValueOnce([
+      { userId: 'other-id', displayName: 'Ayaka', username: 'ayaka', content: 'some unrelated channel chatter' }
+    ] as unknown as ReturnType<typeof getMessages>)
+
+    const prompts: string[] = []
+    __setTestRunTurnFactory((initialPrompt) => async () => {
+      const active = steeringForRequest.getStore()?.prompt ?? initialPrompt
+      prompts.push(active)
+      // Blocked only while the overheard block is still carried
+      return active.includes('Recent Channel Activity')
+        ? { finishReason: 'SAFETY', hasText: false, hasFunctionCall: false }
+        : { text: 'Answered without the extra context~', hasText: true, hasFunctionCall: false }
+    })
+
+    const result = await generateResponse({
+      channelId,
+      guildId: 'ladder-guild',
+      userMessage: 'totally innocuous question',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id'
+    })
+
+    expect(prompts[0]).toContain('Recent Channel Activity')
+    expect(prompts[1]).not.toContain('Recent Channel Activity')
+    expect(result.text).toBe('Answered without the extra context~')
+    expect(result.metrics).toMatchObject({ outcome: 'ok', kind: 'ok' })
+  })
+
+  it('records a durable failure diagnostic when every rung is blocked', async () => {
+    vi.mocked(recordFailureDiagnostic).mockClear()
+    __setTestRunTurnFactory(() => async () => ({
+      finishReason: 'SAFETY',
+      hasText: false,
+      hasFunctionCall: false
+    }))
+
+    const result = await generateResponse({
+      channelId: 'roka-diagnostic-channel',
+      guildId: 'diagnostic-guild',
+      userMessage: 'the message that got blocked',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id'
+    })
+
+    expect(result.metrics.outcome).toBe('deflection')
+    expect(recordFailureDiagnostic).toHaveBeenCalledOnce()
+    expect(vi.mocked(recordFailureDiagnostic).mock.calls[0][0]).toMatchObject({
+      outcome: 'deflection',
+      kind: 'safety',
+      failureMarker: 'SAFETY',
+      userMessage: 'the message that got blocked',
+      safetyRungsUsed: SAFETY_RUNGS.length
+    })
   })
 
   it('returns retry and outcome metrics without changing reliability behavior', async () => {
