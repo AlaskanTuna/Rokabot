@@ -130,7 +130,8 @@ export interface RunTurnWithReliabilityOptions {
   recitationDeflection: string
   terminalDeflection: string
   resetSession?: () => Promise<void>
-  regenerateOnSafety?: () => void
+  /** Sheds one rung of carried context after a safety block. Resolves to the rung name, or undefined when exhausted. */
+  escalateSafety?: () => Promise<string | undefined>
 }
 
 function sleepUntil(delayMs: number, signal: AbortSignal): Promise<void> {
@@ -189,9 +190,11 @@ export async function runTurnWithReliability(options: RunTurnWithReliabilityOpti
   let retryLatencyMs = 0
   let lastKind: ReliabilityResult['kind'] = 'network'
   let lastMarker: string | undefined
-  let safetyRegenerated = false
 
-  for (let attempt = 0; attempt <= options.maxRetries; attempt++) {
+  // Safety de-escalation rungs are granted on top of the ordinary retry budget: each one strictly
+  // removes carried context, so it is cheaper and more likely to pass than the attempt before it.
+  let extraSafetyAttempts = 0
+  for (let attempt = 0; attempt <= options.maxRetries + extraSafetyAttempts; attempt++) {
     if (shouldStop()) return fallbackResult(lastKind, 'preserve', attempt, retryLatencyMs, options, lastMarker)
 
     if (attempt > 0 && options.turnDeadlineMs !== undefined) {
@@ -271,14 +274,7 @@ export async function runTurnWithReliability(options: RunTurnWithReliabilityOpti
       }
     }
 
-    if (
-      failure.kind === 'safety' &&
-      options.regenerateOnSafety &&
-      !safetyRegenerated &&
-      attempt < options.maxRetries &&
-      !shouldStop()
-    ) {
-      safetyRegenerated = true
+    if (failure.kind === 'safety' && options.escalateSafety && !shouldStop()) {
       if (options.turnDeadlineMs !== undefined) {
         const elapsedMs = now() - startedAtMs
         const remainingMs = options.turnDeadlineMs - elapsedMs
@@ -291,15 +287,20 @@ export async function runTurnWithReliability(options: RunTurnWithReliabilityOpti
               requestTimeoutMs: options.requestTimeoutMs,
               kind: failure.kind
             },
-            'Turn deadline exhausted before safety regeneration'
+            'Turn deadline exhausted before safety de-escalation'
           )
           return fallbackResult('safety', 'preserve', attempt + 1, retryLatencyMs, options, lastMarker)
         }
       }
       if (!options.tryConsumeRetry())
         return fallbackResult('safety', 'preserve', attempt + 1, retryLatencyMs, options, lastMarker)
-      options.regenerateOnSafety()
-      continue
+
+      const rung = await options.escalateSafety()
+      if (rung) {
+        extraSafetyAttempts++
+        logger.warn({ attempt, rung, kind: failure.kind }, 'Safety block — de-escalating carried context')
+        continue
+      }
     }
 
     if (!failure.retryable)
@@ -520,6 +521,9 @@ function resetIdleTimer(channelId: string): void {
   idleTimers.set(channelId, timer)
 }
 
+/** Channels whose next session rebuild must skip SQLite rehydration after a safety de-escalation */
+const rehydrationSuppressed = new Set<string>()
+
 /** Retrieve or create an ADK session for the given channel */
 async function ensureSession(channelId: string) {
   let session = await sessionService.getSession({
@@ -538,7 +542,12 @@ async function ensureSession(channelId: string) {
     logger.info({ channelId }, 'ADK session created')
 
     try {
-      const prior = loadHistory(channelId, config.session.windowSize, config.session.maxRehydrationAge)
+      // A channel whose carried history tripped the safety filter rebuilds its window empty rather than
+      // rehydrating the same content straight back. In-memory only — SQLite history is left intact, and
+      // the suppression lifts when the session is next destroyed.
+      const prior = rehydrationSuppressed.has(channelId)
+        ? []
+        : loadHistory(channelId, config.session.windowSize, config.session.maxRehydrationAge)
       if (prior.length > 0) {
         for (const msg of prior) {
           const role = msg.role === 'user' ? 'user' : 'model'
@@ -581,6 +590,7 @@ export async function destroySession(channelId: string): Promise<void> {
   }
 
   sessionErrorCounts.delete(channelId)
+  rehydrationSuppressed.delete(channelId)
 
   try {
     await sessionService.deleteSession({
@@ -683,7 +693,9 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   const hour = getLocalHour()
   const tone = detectTone(fakeMessages, hour)
 
-  let systemPrompt = assembleSystemPrompt({ tone, participants, hour, displayName })
+  const basePrompt = assembleSystemPrompt({ tone, participants, hour, displayName })
+  let factsSection = ''
+  let overheardSection = ''
 
   try {
     // Resolve user identities from persistent lookup table (survives restarts)
@@ -728,7 +740,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
 
     const factsEnvelope = buildFactsEnvelope(factEntries)
     if (factsEnvelope) {
-      systemPrompt += `\n\n## What You Remember About People In This Channel\n${factsEnvelope}`
+      factsSection = `\n\n## What You Remember About People In This Channel\n${factsEnvelope}`
       logger.info(
         { channelId, usersWithFacts: factEntries.length, totalUsers: knownUsers.size },
         'User facts injected into prompt'
@@ -761,12 +773,32 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   const overheard = getBufferMessages(channelId).slice(-config.memory.contextSize)
   const overheardBlock = buildOverheardBlock(overheard)
   if (overheardBlock) {
-    systemPrompt += `\n\n## Recent Channel Activity (messages you overheard)\n${overheardBlock}`
+    overheardSection = `\n\n## Recent Channel Activity (messages you overheard)\n${overheardBlock}`
   }
 
-  systemPrompt +=
+  const tailSection =
     `\n\n- The current user's Discord ID is "${userId}".` +
     ' remember_user and recall_user target the current user automatically; to recall a different server member, pass their name as user_name.'
+
+  // Safety de-escalation ladder. Each rung strictly removes carried context — never the current message —
+  // so Roka answers with less surrounding context rather than refusing outright.
+  const SAFETY_LADDER = ['drop_overheard', 'drop_facts', 'clear_history'] as const
+  let safetyRung = 0
+  let dropImages = false
+
+  function composePrompt(): string {
+    const head =
+      safetyRung >= 3 ? assembleSystemPrompt({ tone: 'sincere', participants, hour, displayName }) : basePrompt
+    return [
+      head,
+      safetyRung < 2 ? factsSection : '',
+      safetyRung < 1 ? overheardSection : '',
+      tailSection,
+      safetyRung > 0 ? `\n\n${SAFETY_STEER_ADDENDUM}` : ''
+    ].join('')
+  }
+
+  let systemPrompt = composePrompt()
 
   logger.debug({ tone, participantCount: participants.length, hour }, 'Prompt assembled')
 
@@ -783,10 +815,12 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     }
   }
 
-  const newMessage: Content = {
+  const buildNewMessage = (): Content => ({
     role: 'user',
-    parts: [...imageParts, { text: `[${displayName}]: ${userMessage}` }]
-  }
+    parts: dropImages
+      ? [{ text: `[${displayName}]: ${userMessage}` }]
+      : [...imageParts, { text: `[${displayName}]: ${userMessage}` }]
+  })
 
   logger.debug(
     { model: config.gemini.model, sessionEvents: session.events?.length ?? 0, hasImages: imageParts.length > 0 },
@@ -822,13 +856,28 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
           resetIdleTimer(channelId)
           sessionWasReset = true
         },
-        regenerateOnSafety: () => {
-          steering.prompt = `${systemPrompt}\n\n${SAFETY_STEER_ADDENDUM}`
+        escalateSafety: async () => {
+          if (safetyRung >= SAFETY_LADDER.length) return undefined
+          safetyRung++
+
+          if (safetyRung === 3) {
+            // Carried history is the only remaining suspect: rebuild the window empty and drop images.
+            dropImages = true
+            await destroySession(channelId)
+            rehydrationSuppressed.add(channelId)
+            await ensureSession(channelId)
+            resetIdleTimer(channelId)
+            sessionWasReset = true
+          }
+
+          systemPrompt = composePrompt()
+          steering.prompt = systemPrompt
+          return SAFETY_LADDER[safetyRung - 1]
         },
         runTurn: async (attempt, signal) => {
           const includeCurrentTurn = attempt === 0 || sessionWasReset
           const testRequest: TestTurnRequest = {
-            newMessage: includeCurrentTurn ? newMessage : undefined,
+            newMessage: includeCurrentTurn ? buildNewMessage() : undefined,
             stateDelta: includeCurrentTurn
               ? {
                   _systemPrompt: systemPrompt,
