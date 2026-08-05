@@ -214,8 +214,14 @@ export async function runTurnWithReliability(options: RunTurnWithReliabilityOpti
 
     const abortController = new AbortController()
     activeAbortControllers.add(abortController)
+    // Distinguishes our own per-attempt timeout from a shutdown abort: a timed-out attempt is the most
+    // transient failure there is and must stay eligible for the retry budget, while shutdown must not.
+    let attemptTimedOut = false
     const timeoutId = options.requestTimeoutMs
-      ? setTimeout(() => abortController.abort(), options.requestTimeoutMs)
+      ? setTimeout(() => {
+          attemptTimedOut = true
+          abortController.abort()
+        }, options.requestTimeoutMs)
       : undefined
 
     let outcome: TurnOutcome
@@ -236,7 +242,7 @@ export async function runTurnWithReliability(options: RunTurnWithReliabilityOpti
 
     if (outcome.sessionMissing)
       return fallbackResult('network', 'preserve', attempt + 1, retryLatencyMs, options, lastMarker)
-    if (shouldStop() || abortController.signal.aborted)
+    if (shouldStop() || (abortController.signal.aborted && !attemptTimedOut))
       return fallbackResult(lastKind, 'preserve', attempt + 1, retryLatencyMs, options, lastMarker)
 
     const failure = classifyGeminiFailure(outcome)
@@ -372,9 +378,11 @@ export async function runTurnWithReliability(options: RunTurnWithReliabilityOpti
         lastMarker
       )
 
-    await sleep(delayMs, abortController.signal)
+    // A timed-out attempt leaves its controller aborted; backing off against it would skip the delay
+    // entirely, so the retry sleeps on a fresh signal instead.
+    await sleep(delayMs, attemptTimedOut ? new AbortController().signal : abortController.signal)
     retryLatencyMs += delayMs
-    if (shouldStop() || abortController.signal.aborted)
+    if (shouldStop() || (abortController.signal.aborted && !attemptTimedOut))
       return fallbackResult(failure.kind, 'preserve', attempt + 1, retryLatencyMs, options, lastMarker)
 
     if (failure.kind === 'session_corrupt') {
