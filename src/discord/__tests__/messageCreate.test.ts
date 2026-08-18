@@ -47,6 +47,7 @@ vi.mock('../responses.js', () => ({
   getRandomBusy: () => 'busy',
   getRandomDecline: () => 'decline',
   getRandomError: () => 'error',
+  getRandomUnsupportedAttachment: () => "I couldn't open that file~",
   splitResponse: mocks.splitResponse
 }))
 vi.mock('../events/gachaMention.js', () => ({ handleGachaMention: vi.fn() }))
@@ -71,13 +72,15 @@ function createMessage({
   content = '<@bot-1> hello',
   guild,
   guildId = 'guild-1',
-  referencedMessage
+  referencedMessage,
+  attachments = []
 }: {
   mentioned?: boolean
   content?: string
   guild?: object | null
   guildId?: string | null
   referencedMessage?: object
+  attachments?: Array<{ url: string; contentType: string | null }>
 } = {}) {
   const reply = vi.fn().mockResolvedValue({ delete: vi.fn().mockResolvedValue(undefined) })
   const send = vi.fn().mockResolvedValue(undefined)
@@ -93,7 +96,7 @@ function createMessage({
       guild: guild ?? null,
       guildId,
       member: { displayName: 'Alice' },
-      attachments: [],
+      attachments,
       channel: {
         sendTyping: vi.fn().mockResolvedValue(undefined),
         send,
@@ -361,5 +364,28 @@ describe('message handler claims extraction dispatch', () => {
     )(message as never)
 
     expect(mocks.enqueueAndSchedule).not.toHaveBeenCalled()
+  })
+})
+
+describe('unsupported attachments on the mention path', () => {
+  const PDF = { url: 'https://cdn.test/a.pdf', contentType: 'application/pdf' }
+  const PNG = { url: 'https://cdn.test/a.png', contentType: 'image/png' }
+
+  // Filtering an unopenable file out silently makes her answer as though nothing were attached, which
+  // reads as hallucination rather than a limitation. /ask says so; this path has to match (#19).
+  it('nudges in character when a mentioned message carries a file she cannot open', async () => {
+    const { message, reply } = createMessage({ content: '<@bot-1> what is in this?', attachments: [PDF] })
+
+    await createMessageHandler({ user: { id: 'bot-1' } } as never, createRateLimiter() as never)(message as never)
+
+    expect(JSON.stringify(reply.mock.calls[0][0])).toContain("I couldn't open that file~")
+  })
+
+  it('stays quiet about attachments it could open', async () => {
+    const { message, reply } = createMessage({ content: '<@bot-1> what is in this?', attachments: [PNG] })
+
+    await createMessageHandler({ user: { id: 'bot-1' } } as never, createRateLimiter() as never)(message as never)
+
+    expect(JSON.stringify(reply.mock.calls[0][0])).not.toContain("I couldn't open that file~")
   })
 })

@@ -23,6 +23,7 @@ vi.mock('../responses.js', () => ({
   getRandomBusy: () => 'busy',
   getRandomDecline: () => 'decline',
   getRandomError: () => 'error',
+  getRandomUnsupportedAttachment: () => "I couldn't open that file~",
   splitResponse: mocks.splitResponse
 }))
 vi.mock('../events/gameCommands.js', () => ({ createGameCommandHandler: () => mocks.gameCommandHandler }))
@@ -92,6 +93,68 @@ describe('interaction handler metrics', () => {
       'Response completed'
     )
     expect(JSON.stringify(interaction.editReply.mock.calls[0][0].components[0].toJSON())).not.toContain('-# 🌸')
+  })
+
+  function askWith(attachments: Array<{ url: string; contentType: string | null } | null>) {
+    return {
+      isChatInputCommand: () => true,
+      commandName: 'ask',
+      options: {
+        getString: vi.fn(() => 'what is this?'),
+        getAttachment: vi.fn((name: string) => {
+          const index = name === 'image' ? 0 : Number(name.replace('image', '')) - 1
+          return attachments[index] ?? null
+        })
+      },
+      channelId: 'channel-1',
+      member: null,
+      user: { displayName: 'Alice', username: 'alice', id: 'user-1' },
+      guildId: 'guild-1',
+      deferReply: vi.fn().mockResolvedValue(undefined),
+      editReply: vi.fn().mockResolvedValue(undefined),
+      followUp: vi.fn().mockResolvedValue(undefined)
+    }
+  }
+
+  const PNG = { url: 'https://cdn.test/a.png', contentType: 'image/png' }
+  const PDF = { url: 'https://cdn.test/a.pdf', contentType: 'application/pdf' }
+  const rateLimiterStub = () => ({ tryConsume: vi.fn(() => true), remainingRpm: 14, remainingRpd: 499 })
+
+  it('forwards every supported image slot, not just the first', async () => {
+    const interaction = askWith([
+      PNG,
+      { ...PNG, url: 'https://cdn.test/b.png' },
+      { ...PNG, url: 'https://cdn.test/c.png' }
+    ])
+
+    await createInteractionHandler(rateLimiterStub() as never)(interaction as never)
+
+    expect(mocks.generateResponse.mock.calls[0][0].imageAttachments).toHaveLength(3)
+  })
+
+  it('drops an unsupported attachment instead of forwarding it', async () => {
+    const interaction = askWith([PDF])
+
+    await createInteractionHandler(rateLimiterStub() as never)(interaction as never)
+
+    expect(mocks.generateResponse.mock.calls[0][0].imageAttachments).toBeUndefined()
+  })
+
+  // Silence reads as hallucination: she answered "what is this?" as though nothing were attached.
+  it('nudges in character when an attachment cannot be opened', async () => {
+    const interaction = askWith([PDF])
+
+    await createInteractionHandler(rateLimiterStub() as never)(interaction as never)
+
+    expect(mocks.splitResponse.mock.calls[0][0]).toContain("I couldn't open that file~")
+  })
+
+  it('adds no nudge when every attachment was supported', async () => {
+    const interaction = askWith([PNG])
+
+    await createInteractionHandler(rateLimiterStub() as never)(interaction as never)
+
+    expect(mocks.splitResponse.mock.calls[0][0]).toBe('Hello~')
   })
 
   // getString is mocked by position, not name, so every other test here passes whether the handler reads

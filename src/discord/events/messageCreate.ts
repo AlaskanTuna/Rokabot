@@ -13,11 +13,18 @@ import { type ResponseEventInput, recordResponseEvent } from '../../storage/metr
 import { upsertUserName } from '../../storage/userNames.js'
 import { logger } from '../../utils/logger.js'
 import { RateLimiter } from '../../utils/rateLimiter.js'
+import { MAX_IMAGE_ATTACHMENTS, isSupportedImage } from '../attachments.js'
 import { isChannelBusy, markBusy, markFree } from '../concurrency.js'
 import { shouldReact } from '../emojiReactor.js'
 import { isIgnorableDiscordError } from '../errorHandler.js'
 import { buildRokaMessage } from '../messageBuilder.js'
-import { getRandomBusy, getRandomDecline, getRandomError, splitResponse } from '../responses.js'
+import {
+  getRandomBusy,
+  getRandomDecline,
+  getRandomError,
+  getRandomUnsupportedAttachment,
+  splitResponse
+} from '../responses.js'
 import { handleGachaMention } from './gachaMention.js'
 
 /** Strip the bot's own mention; replace other user mentions with @display-name so names survive into the prompt */
@@ -68,9 +75,6 @@ function extractComponentTexts(components: Message['components']): string[] {
 
   return texts
 }
-
-const ALLOWED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp'])
-const MAX_IMAGE_ATTACHMENTS = 3
 
 /** Whole-word, case-insensitive match for the bot's name as a trigger keyword */
 export const NAME_MENTION_REGEX = /\broka\b/i
@@ -157,9 +161,13 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
     }
 
     const imageAttachments: ImageAttachment[] = message.attachments
-      .filter((a) => a.contentType !== null && ALLOWED_IMAGE_TYPES.has(a.contentType))
+      .filter(isSupportedImage)
       .map((a) => ({ url: a.url, contentType: a.contentType! }))
       .slice(0, MAX_IMAGE_ATTACHMENTS)
+    // Only what this message carried: a forwarded or replied-to file is not what the sender just handed her.
+    // Materialised first so the count reads the same off a discord.js Collection or a plain array.
+    const ownAttachments = [...message.attachments.values()]
+    const unsupportedCount = ownAttachments.length - ownAttachments.filter(isSupportedImage).length
 
     if (referencedMessage) {
       const refAuthor = referencedMessage.member?.displayName ?? referencedMessage.author.displayName
@@ -219,7 +227,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
 
           if (snapshot.attachments && snapshot.attachments.size > 0) {
             const fwdImages = snapshot.attachments
-              .filter((a) => a.contentType !== null && ALLOWED_IMAGE_TYPES.has(a.contentType))
+              .filter(isSupportedImage)
               .map((a) => ({ url: a.url, contentType: a.contentType! }))
               .slice(0, MAX_IMAGE_ATTACHMENTS - imageAttachments.length)
             imageAttachments.push(...fwdImages)
@@ -254,7 +262,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
       // Skip image extraction from bot's own messages (expression thumbnails waste tokens)
       if (!isReplyToBot) {
         const refImages: ImageAttachment[] = referencedMessage.attachments
-          .filter((a) => a.contentType !== null && ALLOWED_IMAGE_TYPES.has(a.contentType))
+          .filter(isSupportedImage)
           .map((a) => ({ url: a.url, contentType: a.contentType! }))
           .slice(0, MAX_IMAGE_ATTACHMENTS - imageAttachments.length)
 
@@ -329,7 +337,9 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
 
       logger.debug({ channelId, tone, responseLength: responseText.length }, 'ADK response received')
 
-      const chunks = splitResponse(responseText)
+      // Same nudge as /ask: she answers either way, and says plainly the file was not one she can open.
+      const withNudge = unsupportedCount > 0 ? `${responseText}\n\n${getRandomUnsupportedAttachment()}` : responseText
+      const chunks = splitResponse(withNudge)
       logger.debug({ channelId, chunkCount: chunks.length }, 'Response split into chunks')
       await message.reply(buildRokaMessage(chunks[0], tone, toolsUsed, sources))
 

@@ -46,6 +46,7 @@ vi.mock('../responses.js', () => ({
   getRandomBusy: () => 'busy',
   getRandomDecline: () => 'decline',
   getRandomError: () => 'error',
+  getRandomUnsupportedAttachment: () => "I couldn't open that file~",
   splitResponse: mocks.splitResponse
 }))
 vi.mock('../events/gameCommands.js', () => ({ createGameCommandHandler: () => mocks.gameCommandHandler }))
