@@ -1,0 +1,13 @@
+{"type":"header","tool":"search_web","guildId":"eval-guild","members":[{"id":"sora","username":"sora","displayName":"Sora"},{"id":"mio","username":"mio","displayName":"Mio"},{"id":"ren","username":"ren","displayName":"Ren"}],"claims":[{"subjectId":"mio","predicate":"likes","value":"jasmine tea"},{"subjectId":"mio","predicate":"general_occupation","value":"librarian"}],"history":[{"speakerId":"sora","content":"hey"},{"speakerId":"mio","content":"hi everyone"},{"speakerId":"ren","content":"yo"}]}
+{"type":"case","id":"S1","tool":"search_web","shouldFire":true,"speakerId":"sora","message":"what's the context window on the GPT-5.6 models?"}
+{"type":"case","id":"S2","tool":"search_web","shouldFire":true,"speakerId":"sora","message":"what is GPT Astra all about?"}
+{"type":"case","id":"S3","tool":"search_web","shouldFire":true,"speakerId":"ren","message":"has any anime been delayed this month?"}
+{"type":"case","id":"S4","tool":"search_web","shouldFire":true,"speakerId":"mio","message":"where can I get a Frieren nendoroid?"}
+{"type":"case","id":"S5","tool":"search_web","shouldFire":true,"speakerId":"sora","message":"how much does Claude Opus 5 cost per million tokens?"}
+{"type":"case","id":"S6","tool":"search_web","shouldFire":true,"speakerId":"ren","message":"what's going on with the deepseek harness hype?"}
+{"type":"case","id":"N1","tool":"search_web","shouldFire":false,"speakerId":"sora","message":"morning Roka"}
+{"type":"case","id":"N2","tool":"search_web","shouldFire":false,"speakerId":"mio","message":"you're in a good mood today huh"}
+{"type":"case","id":"N3","tool":"search_web","shouldFire":false,"speakerId":"ren","message":"what's your favourite season?"}
+{"type":"case","id":"N4","tool":"search_web","shouldFire":false,"speakerId":"sora","message":"*hands you a cup of tea*"}
+{"type":"case","id":"N5","tool":"search_web","shouldFire":false,"speakerId":"sora","message":"what do you know about Mio?"}
+{"type":"case","id":"N6","tool":"search_web","shouldFire":false,"speakerId":"mio","message":"how's the sweets shop doing?"}
