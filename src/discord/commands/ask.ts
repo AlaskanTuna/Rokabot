@@ -1,7 +1,7 @@
 /** /ask slash command definition — single-turn chat that searches the web on its own when it needs to */
 
 import { ApplicationIntegrationType, InteractionContextType, SlashCommandBuilder } from 'discord.js'
-import { MAX_IMAGE_ATTACHMENTS, imageOptionName } from '../attachments.js'
+import { MAX_ATTACHMENTS, attachmentOptionName } from '../attachments.js'
 
 const command = new SlashCommandBuilder()
   .setName('ask')
@@ -14,12 +14,14 @@ const command = new SlashCommandBuilder()
 
 // One option per attachment slot, driven by the same ceiling the mention path uses, so the two surfaces
 // cannot drift apart and the count is stated once.
-for (let index = 0; index < MAX_IMAGE_ATTACHMENTS; index++) {
+for (let index = 0; index < MAX_ATTACHMENTS; index++) {
   command.addAttachmentOption((option) =>
     option
-      .setName(imageOptionName(index))
+      .setName(attachmentOptionName(index))
       .setDescription(
-        index === 0 ? 'Share an image or PDF with Roka' : `Another file (${index + 1} of ${MAX_IMAGE_ATTACHMENTS})`
+        index === 0
+          ? `Share an image or PDF with Roka (1 of ${MAX_ATTACHMENTS})`
+          : `Another image or PDF (${index + 1} of ${MAX_ATTACHMENTS})`
       )
       .setRequired(false)
   )
@@ -28,7 +30,7 @@ for (let index = 0; index < MAX_IMAGE_ATTACHMENTS; index++) {
 // A link, not an upload: deliberately typed, so it needs no embed and sidesteps the unfurl-timing problem
 // the mention path has. Added after the attachment slots so it reads last in Discord's option list.
 command.addStringOption((option) =>
-  option.setName('image_url').setDescription('Link to an image for Roka to look at').setRequired(false)
+  option.setName('attachment_url').setDescription('Link to an image for Roka to look at').setRequired(false)
 )
 
 export const askCommand = command

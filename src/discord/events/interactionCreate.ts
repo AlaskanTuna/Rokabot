@@ -5,7 +5,7 @@ import { withSearchCitations } from '../../agent/searchCitations.js'
 import { type ResponseEventInput, recordResponseEvent } from '../../storage/metricsStore.js'
 import { logger } from '../../utils/logger.js'
 import { RateLimiter } from '../../utils/rateLimiter.js'
-import { MAX_IMAGE_ATTACHMENTS, imageOptionName, isSupportedMedia, resolveImageUrl } from '../attachments.js'
+import { MAX_ATTACHMENTS, attachmentOptionName, isSupportedMedia, resolveImageUrl } from '../attachments.js'
 import { isChannelBusy, markBusy, markFree } from '../concurrency.js'
 import { isIgnorableDiscordError } from '../errorHandler.js'
 import { buildRokaMessage } from '../messageBuilder.js'
@@ -72,8 +72,8 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
 
     const message = interaction.options.getString('question', true)
     // Truthiness rather than a null check: an unfilled option is absent, and callers spell that both ways.
-    const attached = Array.from({ length: MAX_IMAGE_ATTACHMENTS }, (_, index) =>
-      interaction.options.getAttachment(imageOptionName(index))
+    const attached = Array.from({ length: MAX_ATTACHMENTS }, (_, index) =>
+      interaction.options.getAttachment(attachmentOptionName(index))
     ).filter((candidate): candidate is Attachment => Boolean(candidate))
     const channelId = interaction.channelId
     const guildId = interaction.guildId ?? `dm:${channelId}`
@@ -88,10 +88,10 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
     let unsupportedCount = attached.length - imageAttachments.length
 
     // One visual budget per turn regardless of where the picture came from: a linked image competes for the
-    // same MAX_IMAGE_ATTACHMENTS slots as an uploaded one, so the cost of a turn stays one number.
-    const linkedUrl = interaction.options.getString('image_url')
+    // same MAX_ATTACHMENTS slots as an uploaded one, so the cost of a turn stays one number.
+    const linkedUrl = interaction.options.getString('attachment_url')
     if (linkedUrl) {
-      const resolved = imageAttachments.length < MAX_IMAGE_ATTACHMENTS ? await resolveImageUrl(linkedUrl) : null
+      const resolved = imageAttachments.length < MAX_ATTACHMENTS ? await resolveImageUrl(linkedUrl) : null
       if (resolved) imageAttachments.push(resolved)
       else unsupportedCount += 1
     }

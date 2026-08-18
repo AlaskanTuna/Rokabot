@@ -13,7 +13,7 @@ import { type ResponseEventInput, recordResponseEvent } from '../../storage/metr
 import { upsertUserName } from '../../storage/userNames.js'
 import { logger } from '../../utils/logger.js'
 import { RateLimiter } from '../../utils/rateLimiter.js'
-import { MAX_IMAGE_ATTACHMENTS, isSupportedImage } from '../attachments.js'
+import { MAX_ATTACHMENTS, isSupportedImage } from '../attachments.js'
 import { isChannelBusy, markBusy, markFree } from '../concurrency.js'
 import { shouldReact } from '../emojiReactor.js'
 import { isIgnorableDiscordError } from '../errorHandler.js'
@@ -239,7 +239,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
     const imageAttachments: ImageAttachment[] = message.attachments
       .filter(isSupportedImage)
       .map((a) => ({ url: a.url, contentType: a.contentType! }))
-      .slice(0, MAX_IMAGE_ATTACHMENTS)
+      .slice(0, MAX_ATTACHMENTS)
 
     // Everything else this message shows. The replied-to message has always been read this thoroughly; the
     // message actually being sent to her was not, so a shared link's preview text — where the substance of a
@@ -263,7 +263,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
     // Embed images are genuinely visual, so they compete for the same slots as attachments rather than
     // getting their own budget — the sender's own message fills them before the replied-to one does.
     for (const embed of message.embeds) {
-      if (imageAttachments.length >= MAX_IMAGE_ATTACHMENTS) break
+      if (imageAttachments.length >= MAX_ATTACHMENTS) break
       const embedImageUrl = embed.image?.url ?? embed.thumbnail?.url
       if (embedImageUrl) imageAttachments.push({ url: embedImageUrl, contentType: 'image/png' })
     }
@@ -271,10 +271,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
     // Forwarding something and asking about it in the same breath is the more natural gesture than replying
     // to it, and it was the one that reached her as a bare mention. Last of the sender's own sources: a
     // forward is someone else's post, so it fills image slots only after what they attached or linked.
-    const forwarded = describeForwardedSnapshots(
-      message.messageSnapshots,
-      MAX_IMAGE_ATTACHMENTS - imageAttachments.length
-    )
+    const forwarded = describeForwardedSnapshots(message.messageSnapshots, MAX_ATTACHMENTS - imageAttachments.length)
     ownParts.push(...forwarded.parts)
     imageAttachments.push(...forwarded.images)
 
@@ -305,7 +302,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
 
       const forwardedRef = describeForwardedSnapshots(
         referencedMessage.messageSnapshots,
-        MAX_IMAGE_ATTACHMENTS - imageAttachments.length
+        MAX_ATTACHMENTS - imageAttachments.length
       )
       refParts.push(...forwardedRef.parts)
       imageAttachments.push(...forwardedRef.images)
@@ -332,9 +329,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
         .map((a) => ({ url: a.url, contentType: a.contentType! }))
       // Her own expression thumbnails are skipped deliberately to save tokens, so a reply to herself takes
       // nothing — the marker names those as unseen rather than claiming she can see them.
-      const refImagesTaken = isReplyToBot
-        ? []
-        : refImageCandidates.slice(0, MAX_IMAGE_ATTACHMENTS - imageAttachments.length)
+      const refImagesTaken = isReplyToBot ? [] : refImageCandidates.slice(0, MAX_ATTACHMENTS - imageAttachments.length)
       const refUnseen = refImageCandidates.length - refImagesTaken.length
       if (refImageCandidates.length > 0) {
         refParts.push(refUnseen > 0 ? `(attached image(s), ${refUnseen} not shown)` : '(attached image(s))')
@@ -349,9 +344,9 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
       if (!isReplyToBot) {
         imageAttachments.push(...refImagesTaken)
 
-        if (imageAttachments.length < MAX_IMAGE_ATTACHMENTS) {
+        if (imageAttachments.length < MAX_ATTACHMENTS) {
           for (const embed of referencedMessage.embeds) {
-            if (imageAttachments.length >= MAX_IMAGE_ATTACHMENTS) break
+            if (imageAttachments.length >= MAX_ATTACHMENTS) break
             const embedImageUrl = embed.image?.url ?? embed.thumbnail?.url
             if (embedImageUrl) {
               imageAttachments.push({ url: embedImageUrl, contentType: 'image/png' })

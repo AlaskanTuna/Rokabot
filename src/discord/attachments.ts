@@ -21,19 +21,20 @@ export function isSupportedMedia(attachment: { contentType: string | null }): bo
   return isSupportedImage(attachment) || isSupportedDocument(attachment)
 }
 
-/** Per-turn ceiling. Both the mention path and /ask's option list derive their limit from this. */
-export const MAX_IMAGE_ATTACHMENTS = 3
+/** Per-turn ceiling across every kind of attachment. Both the mention path and /ask derive their limit from this. */
+export const MAX_ATTACHMENTS = 3
 
 export function isSupportedImage(attachment: { contentType: string | null }): boolean {
   return attachment.contentType !== null && ALLOWED_IMAGE_TYPES.has(attachment.contentType)
 }
 
 /**
- * Discord has no multi-attachment option type, so /ask exposes one option per slot. The first keeps the
- * original name so existing usage still resolves; the rest are numbered.
+ * Discord has no multi-attachment option type, so /ask exposes one option per slot. Named for attachments
+ * rather than images because the slots take PDFs too — see ALLOWED_DOCUMENT_TYPES — and numbered from 1
+ * so the list reads evenly instead of the first slot carrying a different shape from the rest.
  */
-export function imageOptionName(index: number): string {
-  return index === 0 ? 'image' : `image${index + 1}`
+export function attachmentOptionName(index: number): string {
+  return `attachment_${index + 1}`
 }
 
 // The Pi fetches these itself and sits on a private Tailnet, so a user-supplied URL is an SSRF vector: a
