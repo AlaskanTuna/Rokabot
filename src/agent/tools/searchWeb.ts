@@ -1,6 +1,5 @@
 /** Web search via the Tavily API */
 
-import { config } from '../../config.js'
 import { logger } from '../../utils/logger.js'
 
 export interface SearchWebParams {
@@ -32,10 +31,6 @@ export async function searchWeb(
   }
 
   const { query, topic = 'general', max_results = 5 } = params
-  const today = new Date().toISOString().split('T')[0]
-  const tz = config.timezone
-  const location = tz ? tz.split('/').pop()?.replace(/_/g, ' ') : null
-  const context = location ? `(as of ${today}, ${location})` : `(as of ${today})`
 
   try {
     const response = await fetch('https://api.tavily.com/search', {
@@ -44,8 +39,13 @@ export async function searchWeb(
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`
       },
+      // The query is sent verbatim. Appending a date and the configured location used to seem helpful and
+      // measurably was not: the location token pulled back region-local pages and the date token pulled back
+      // same-day pages, both regardless of subject, and Tavily's synthesiser then wrote confident answers off
+      // those sources. Recency belongs in Tavily's own parameters, not in the query text — but `days` measured
+      // as a net negative too (issue #19), so nothing is passed until there is a per-call signal worth keying on.
       body: JSON.stringify({
-        query: `${query} ${context}`,
+        query,
         topic,
         max_results,
         include_answer: 'basic'
