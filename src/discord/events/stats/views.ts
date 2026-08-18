@@ -378,9 +378,7 @@ async function buildMemory(guildId: string, guild: Guild, sinceMs: number, conta
     container.addSectionComponents(
       new SectionBuilder()
         .addTextDisplayComponents(
-          text(
-            `**${entry.member.displayName}**\n\`${formatNumber(entry.count)}\` memories\n> ${memoryQuote(entry.predicate, entry.value)}`
-          )
+          text(`**${entry.member.displayName}**\n> ${memoryQuote(entry.predicate, entry.value)}`)
         )
         .setThumbnailAccessory(new ThumbnailBuilder({ media: { url: entry.member.displayAvatarURL() } }))
     )

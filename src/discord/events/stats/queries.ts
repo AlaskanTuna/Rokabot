@@ -52,9 +52,8 @@ export interface CountByPredicate {
 
 export interface RememberedMember {
   userId: string
-  count: number
-  predicate: string | null
-  value: string | null
+  predicate: string
+  value: string
 }
 
 export interface MemoryGrowthPoint {
@@ -112,30 +111,24 @@ export const MEMORY_DETAIL_SQL = {
                   GROUP BY predicate
                   ORDER BY count DESC, predicate ASC
                   LIMIT 3`,
-  topRememberedMembers: `WITH active_claims AS (
-                            SELECT subject_user_id, predicate, salience, value, needs_review, last_seen_at
-                            FROM memory_claim
-                            WHERE guild_id = ? AND status = 'active' AND first_seen_at >= ? AND subject_user_id != ?
-                          ), member_counts AS (
-                            SELECT subject_user_id, COUNT(*) AS count
-                            FROM active_claims
-                            GROUP BY subject_user_id
-                          ), highest_salience AS (
-                            SELECT subject_user_id, predicate, value,
+  // Simplified 2026-08-19 (human-directed): one row per member is their single most recent presentable
+  // claim, and the five members shown are whichever five had the most recent one. No salience, no count —
+  // recency only. A member whose only claims need review has no presentable row and is not shown at all,
+  // rather than appearing with a blank quote as the previous ranking-by-count design allowed.
+  topRememberedMembers: `WITH ranked AS (
+                            SELECT subject_user_id, predicate, value, last_seen_at,
                                    ROW_NUMBER() OVER (
                                      PARTITION BY subject_user_id
-                                     ORDER BY salience + 0.5 / (1.0 + ((? - last_seen_at) / 86400000.0) / 30.0) DESC,
-                                              predicate ASC
+                                     ORDER BY last_seen_at DESC, predicate ASC
                                    ) AS rank
-                            FROM active_claims
-                            WHERE needs_review = 0
+                            FROM memory_claim
+                            WHERE guild_id = ? AND status = 'active' AND last_seen_at >= ?
+                              AND subject_user_id != ? AND needs_review = 0
                           )
-                          SELECT member_counts.subject_user_id AS userId, member_counts.count,
-                                 highest_salience.predicate, highest_salience.value
-                          FROM member_counts
-                          LEFT JOIN highest_salience ON highest_salience.subject_user_id = member_counts.subject_user_id
-                            AND highest_salience.rank = 1
-                          ORDER BY member_counts.count DESC, userId ASC
+                          SELECT subject_user_id AS userId, predicate, value
+                          FROM ranked
+                          WHERE rank = 1
+                          ORDER BY last_seen_at DESC, userId ASC
                           LIMIT 5`
 } as const
 
@@ -372,15 +365,10 @@ export function topPredicates(guildId: string, sinceMs: number, excludeUserId: s
   return getDb().prepare(MEMORY_DETAIL_SQL.topPredicates).all(guildId, sinceMs, excludeUserId) as CountByPredicate[]
 }
 
-export function topRememberedMembers(
-  guildId: string,
-  sinceMs: number,
-  excludeUserId: string,
-  nowMs: number = Date.now()
-): RememberedMember[] {
+export function topRememberedMembers(guildId: string, sinceMs: number, excludeUserId: string): RememberedMember[] {
   return getDb()
     .prepare(MEMORY_DETAIL_SQL.topRememberedMembers)
-    .all(guildId, sinceMs, excludeUserId, nowMs) as RememberedMember[]
+    .all(guildId, sinceMs, excludeUserId) as RememberedMember[]
 }
 
 export function memoryGrowthSeries(guildId: string, sinceMs: number, excludeUserId: string): MemoryGrowthPoint[] {
