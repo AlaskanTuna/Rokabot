@@ -12,7 +12,16 @@ import type { CaseObservations, CaseSetHeader, ToolTriggerCase } from './toolTri
 // the 15 RPM cap (config.rateLimit.rpm) — the rig bypasses the handlers' RateLimiter entirely,
 // so this pacing is the only limiter. Gate-1 amendment (human, 2026-07-29): do not tune below
 // 12000 — the plan's original 8000 sits at exactly 15 RPM, leaving no headroom for a real gate.
-export const TRIAL_PACING_MS = 12000
+const TRIAL_PACING_FLOOR_MS = 12000
+
+/** Raise-only override. The 2-calls-per-turn worst case above predates the safety de-escalation ladder
+ * (#81), which can spend further attempts inside one turn, so a run competing with live production traffic
+ * on the same project quota can still trip the 15 RPM cap. Lowering is refused rather than clamped silently:
+ * the floor is the human's Gate-1 amendment, so it is enforced here rather than left in a comment. */
+export const TRIAL_PACING_MS = Math.max(
+  TRIAL_PACING_FLOOR_MS,
+  Number(process.env.ROKABOT_TRIAL_PACING_MS) || TRIAL_PACING_FLOOR_MS
+)
 
 /** Seeds the shared world state (user_names, memory_claim) and one trial channel's session_history —
  * the exact triple that reaches the prompt via retrieveForTurn + getAllUserNames. Claims and members
