@@ -25,6 +25,86 @@ function footerWithoutTimestamp(labels: string[]) {
   return buildToolFooter(labels, 0).replace(' • <t:0:R>', '')
 }
 
+const TOOL_NAMES = [
+  'roll_dice',
+  'flip_coin',
+  'get_current_time',
+  'get_weather',
+  'search_web',
+  'search_anime',
+  'get_anime_schedule',
+  'set_reminder',
+  'list_reminders',
+  'cancel_reminder',
+  'remember_user',
+  'recall_user'
+]
+
+// MAX_TOOL_FOOTER_CHARS is derived by guessing the worst case — the three longest labels plus the overflow
+// suffix — and config.discord.maxMessageLength's ceiling is that guess subtracted from the budget. These
+// sweep the guess instead of trusting it, over the selections a real turn can actually produce.
+describe('tool footer budget', () => {
+  // buildToolFooter takes labels, not tool names, so the labels are read back out of a rendered footer
+  // rather than restated here — a copy would drift the moment a label is reworded.
+  function labelFor(toolName: string): string {
+    const container = buildRokaMessage('x', 'playful', [toolName]).components[0].toJSON() as {
+      components: Array<{ content?: string; components?: Array<{ content?: string }> }>
+    }
+    const footer = container.components
+      .flatMap((component) => component.components ?? [component])
+      .map((component) => component.content ?? '')
+      .find((content) => content.startsWith('-# 🌸'))
+    return (footer ?? '').replace('-# 🌸 ', '').replace(/ • <t:\d+:R>$/, '')
+  }
+
+  // Any 10-digit epoch renders the same width, which is the assumption the derivation itself documents.
+  const EPOCH = 1_784_808_000
+  const LABELS = TOOL_NAMES.map(labelFor)
+
+  /**
+   * Longest footer over every distinct ordered selection. Distinct because generateResponse builds toolsUsed
+   * from a Set (src/agent/roka.ts), which is what keeps the derivation valid — repeated labels would push the
+   * worst case past it, and the ceiling in NUMERIC_BOUNDS with it.
+   */
+  function worstDistinctFooter(): number {
+    let worst = 0
+    for (let i = 0; i < LABELS.length; i++) {
+      for (let j = 0; j < LABELS.length; j++) {
+        for (let k = 0; k < LABELS.length; k++) {
+          if (i === j || j === k || i === k) continue
+          for (const overflow of [[], ['a fourth label']]) {
+            worst = Math.max(worst, buildToolFooter([LABELS[i], LABELS[j], LABELS[k], ...overflow], EPOCH).length)
+          }
+        }
+      }
+    }
+    return worst
+  }
+
+  it('bounds every reachable tool combination, not just the one the derivation guessed', () => {
+    expect(worstDistinctFooter()).toBeLessThanOrEqual(MAX_TOOL_FOOTER_CHARS)
+  })
+
+  // Exactly tight, not merely sufficient: slack here would silently shrink every reply's usable length.
+  it('is exactly the longest reachable footer rather than an overestimate', () => {
+    expect(worstDistinctFooter()).toBe(MAX_TOOL_FOOTER_CHARS)
+  })
+
+  // The invariant the ceiling exists to guarantee, swept over tool counts as well as reply lengths.
+  it('keeps the rendered message within the budget for every tool count at the ceiling', () => {
+    const ceiling = TEXT_DISPLAY_BUDGET - MAX_TOOL_FOOTER_CHARS
+    const sources = [{ url: 'https://www.crunchyroll.com/news/a' }, { url: 'https://vndb.org/b' }]
+    let worst = 0
+    for (let count = 0; count <= TOOL_NAMES.length; count++) {
+      for (let length = ceiling - 120; length <= ceiling; length++) {
+        worst = Math.max(worst, renderedChars('x'.repeat(length), TOOL_NAMES.slice(0, count), sources))
+      }
+    }
+
+    expect(worst).toBeLessThanOrEqual(TEXT_DISPLAY_BUDGET)
+  })
+})
+
 describe('buildRokaMessage citations', () => {
   const SOURCES = [{ url: 'https://www.crunchyroll.com/news/a' }, { url: 'https://vndb.org/b' }]
 
