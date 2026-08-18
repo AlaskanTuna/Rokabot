@@ -97,6 +97,52 @@ function extractComponentTexts(components: Message['components']): string[] {
   return texts
 }
 
+interface ForwardedContent {
+  parts: string[]
+  images: ImageAttachment[]
+}
+
+/**
+ * A forwarded message carries its payload in messageSnapshots rather than on the message itself. Shared by both
+ * paths so a forward reads the same whether it was sent to her directly or replied to; `imageSlots` is what is
+ * left of the shared ceiling, so a forward can never out-bid what the sender attached themselves.
+ */
+function describeForwardedSnapshots(snapshots: Message['messageSnapshots'], imageSlots: number): ForwardedContent {
+  const parts: string[] = []
+  const images: ImageAttachment[] = []
+
+  for (const snapshot of snapshots.values()) {
+    const fwdParts: string[] = []
+
+    const fwdContent = snapshot.content?.trim()
+    if (fwdContent) fwdParts.push(fwdContent)
+
+    if (snapshot.components && snapshot.components.length > 0) {
+      const compTexts = extractComponentTexts(snapshot.components)
+      if (compTexts.length > 0) fwdParts.push(compTexts.join(' | '))
+    }
+
+    // Read through describeEmbed rather than title+description: a forwarded link keeps its substance in the
+    // embed, and the narrower form dropped the author, fields and footer that say where it came from.
+    for (const embed of snapshot.embeds ?? []) {
+      const described = describeEmbed(embed)
+      if (described) fwdParts.push(described)
+    }
+
+    const fwdAttachments = snapshot.attachments ? [...snapshot.attachments.values()] : []
+    const fwdImages = fwdAttachments
+      .filter(isSupportedImage)
+      .map((a) => ({ url: a.url, contentType: a.contentType! }))
+      .slice(0, imageSlots - images.length)
+    images.push(...fwdImages)
+    if (fwdImages.length > 0) fwdParts.push('(forwarded image(s))')
+
+    if (fwdParts.length > 0) parts.push(`[Forwarded: ${fwdParts.join(' | ')}]`)
+  }
+
+  return { parts, images }
+}
+
 /** Whole-word, case-insensitive match for the bot's name as a trigger keyword */
 export const NAME_MENTION_REGEX = /\broka\b/i
 
@@ -201,9 +247,6 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
       // Name only: stickers may be APNG or Lottie, neither of which is a still image the vision model reads.
       ownParts.push(`(sticker: ${message.stickers.map((sticker) => sticker.name).join(', ')})`)
     }
-    if (ownParts.length > 0) {
-      content = content ? `${content}\n${ownParts.join('\n')}` : ownParts.join('\n')
-    }
 
     // Embed images are genuinely visual, so they compete for the same slots as attachments rather than
     // getting their own budget — the sender's own message fills them before the replied-to one does.
@@ -211,6 +254,20 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
       if (imageAttachments.length >= MAX_IMAGE_ATTACHMENTS) break
       const embedImageUrl = embed.image?.url ?? embed.thumbnail?.url
       if (embedImageUrl) imageAttachments.push({ url: embedImageUrl, contentType: 'image/png' })
+    }
+
+    // Forwarding something and asking about it in the same breath is the more natural gesture than replying
+    // to it, and it was the one that reached her as a bare mention. Last of the sender's own sources: a
+    // forward is someone else's post, so it fills image slots only after what they attached or linked.
+    const forwarded = describeForwardedSnapshots(
+      message.messageSnapshots,
+      MAX_IMAGE_ATTACHMENTS - imageAttachments.length
+    )
+    ownParts.push(...forwarded.parts)
+    imageAttachments.push(...forwarded.images)
+
+    if (ownParts.length > 0) {
+      content = content ? `${content}\n${ownParts.join('\n')}` : ownParts.join('\n')
     }
     // Only what this message carried: a forwarded or replied-to file is not what the sender just handed her.
     // Materialised first so the count reads the same off a discord.js Collection or a plain array.
@@ -234,41 +291,12 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
         if (described) refParts.push(described)
       }
 
-      if (referencedMessage.messageSnapshots.size > 0) {
-        for (const snapshot of referencedMessage.messageSnapshots.values()) {
-          const fwdParts: string[] = []
-
-          const fwdContent = snapshot.content?.trim()
-          if (fwdContent) fwdParts.push(fwdContent)
-
-          if (snapshot.components && snapshot.components.length > 0) {
-            const compTexts = extractComponentTexts(snapshot.components)
-            if (compTexts.length > 0) fwdParts.push(compTexts.join(' | '))
-          }
-
-          if (snapshot.embeds && snapshot.embeds.length > 0) {
-            for (const embed of snapshot.embeds) {
-              const eParts: string[] = []
-              if (embed.title) eParts.push(embed.title)
-              if (embed.description) eParts.push(embed.description)
-              if (eParts.length > 0) fwdParts.push(eParts.join(': '))
-            }
-          }
-
-          if (snapshot.attachments && snapshot.attachments.size > 0) {
-            const fwdImages = snapshot.attachments
-              .filter(isSupportedImage)
-              .map((a) => ({ url: a.url, contentType: a.contentType! }))
-              .slice(0, MAX_IMAGE_ATTACHMENTS - imageAttachments.length)
-            imageAttachments.push(...fwdImages)
-            if (fwdImages.length > 0) fwdParts.push('(forwarded image(s))')
-          }
-
-          if (fwdParts.length > 0) {
-            refParts.push(`[Forwarded: ${fwdParts.join(' | ')}]`)
-          }
-        }
-      }
+      const forwardedRef = describeForwardedSnapshots(
+        referencedMessage.messageSnapshots,
+        MAX_IMAGE_ATTACHMENTS - imageAttachments.length
+      )
+      refParts.push(...forwardedRef.parts)
+      imageAttachments.push(...forwardedRef.images)
 
       if (referencedMessage.components.length > 0) {
         const componentTexts = extractComponentTexts(referencedMessage.components)
