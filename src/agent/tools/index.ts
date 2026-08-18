@@ -117,7 +117,7 @@ export const getWeatherTool = new FunctionTool({
 export const searchWebTool = new FunctionTool({
   name: 'search_web',
   description:
-    'FALLBACK: Search the web only when the user explicitly asks about recent news or current events, or when no other available tool can answer the question.',
+    'Look something up on the web. Call this for any specific factual question you are not fully certain of — names, numbers, prices, versions, release dates, availability, local details — and for anything recent or time-sensitive. When you are unsure whether to search, search.',
   parameters: z.object({
     query: z.string().describe('Search query'),
     topic: z.enum(['general', 'news']).describe('Search topic. Use news for current events.').optional(),
