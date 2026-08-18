@@ -58,7 +58,7 @@ User types /chat "message"     User @mentions Roka
         │
         ▼
    Send Roka's response
-   (split if >2000 chars)
+   (split past the length cap)
         │
         ▼
    Update session window
@@ -156,7 +156,10 @@ Responses respect Discord's message length limits.
 
 **Acceptance Criteria:**
 
-- [ ] Responses >2000 characters split at sentence boundaries
+- [ ] Long responses split at a newline, else a word boundary, else a hard cut (`splitResponse` in
+      `src/discord/responses.ts`), each chunk under the cap bounded on `discord.maxMessageLength` in
+      `src/config.ts` — the Components V2 `TextDisplay` budget minus the tool footer, pinned by
+      `src/discord/__tests__/messageBuilder.test.ts`
 - [ ] Split chunks sent sequentially with ~500ms delay
 - [ ] Empty/whitespace responses replaced with in-character fallback
 

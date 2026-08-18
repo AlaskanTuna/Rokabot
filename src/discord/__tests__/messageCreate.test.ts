@@ -328,4 +328,38 @@ describe('message handler claims extraction dispatch', () => {
     expect(JSON.stringify(reply.mock.calls[0][0].components[0].toJSON())).toContain('Hello~')
     expect(mocks.maybeExtractFromBuffer).not.toHaveBeenCalled()
   })
+
+  it('does not buffer passive messages outside a guild', async () => {
+    const { message } = createMessage({ guild: null, guildId: null })
+
+    await createMessageHandler(
+      { user: { id: 'bot-1', displayName: 'Roka', username: 'roka' } } as never,
+      createRateLimiter() as never
+    )(message as never)
+
+    expect(mocks.addToPassiveBuffer).not.toHaveBeenCalled()
+  })
+
+  it('does not run the legacy extractor outside a guild', async () => {
+    const { message } = createMessage({ guild: null, guildId: null })
+
+    await createMessageHandler(
+      { user: { id: 'bot-1', displayName: 'Roka', username: 'roka' } } as never,
+      createRateLimiter() as never
+    )(message as never)
+
+    expect(mocks.maybeExtractFromBuffer).not.toHaveBeenCalled()
+  })
+
+  it('does not dispatch claim extraction outside a guild', async () => {
+    config.memory.claimsBackend = true
+    const { message } = createMessage({ guild: null, guildId: null })
+
+    await createMessageHandler(
+      { user: { id: 'bot-1', displayName: 'Roka', username: 'roka' } } as never,
+      createRateLimiter() as never
+    )(message as never)
+
+    expect(mocks.enqueueAndSchedule).not.toHaveBeenCalled()
+  })
 })
