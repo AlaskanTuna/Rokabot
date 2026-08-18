@@ -8,13 +8,16 @@ process.env.DISCORD_TOKEN = 'harness-discord-token'
 process.env.DISCORD_CLIENT_ID = 'harness-discord-client-id'
 
 if (process.argv.includes('--live') || process.env.ROKABOT_HARNESS_LIVE === '1') {
-  const graphifyKey = parsed.GRAPHIFY_GEMINI_API_KEY
-  if (!graphifyKey) {
-    throw new Error('Missing GRAPHIFY_GEMINI_API_KEY for live harness mode')
+  // Which .env key funds a live run. Each key sits in its own Google project with its own daily
+  // quota, so exhausting one does not have to stall the gate; name another instead of waiting.
+  const keyName = process.env.ROKABOT_HARNESS_KEY ?? 'GRAPHIFY_GEMINI_API_KEY'
+  const harnessKey = parsed[keyName]
+  if (!harnessKey) {
+    throw new Error(`Missing ${keyName} for live harness mode`)
   }
 
-  process.env.GEMINI_API_KEY = graphifyKey
-  process.env.GOOGLE_GENAI_API_KEY = graphifyKey
+  process.env.GEMINI_API_KEY = harnessKey
+  process.env.GOOGLE_GENAI_API_KEY = harnessKey
 } else {
   process.env.GEMINI_API_KEY = 'harness-fake-sentinel'
 }
