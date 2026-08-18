@@ -59,6 +59,11 @@ function describeEmbed(embed: Message['embeds'][number]): string | null {
     parts.push(`${field.name}: ${field.value}`)
   }
   if (embed.footer?.text) parts.push(`Footer: ${embed.footer.text}`)
+  // A pasted Tenor or Giphy link arrives as a gifv embed whose only content is embed.video — no title, no
+  // description — so this returned null and the message reached her as a bare mention. Named rather than
+  // fetched: embed.video.url serves an MP4, and everything bound for the vision slots goes through sharp,
+  // which cannot decode one. Showing her the motion needs #100's video intake, not this.
+  if (embed.video) parts.push(embed.data.type === 'gifv' ? 'animated GIF' : 'video')
   return parts.length > 0 ? `[Embed: ${parts.join(' | ')}]` : null
 }
 
