@@ -25,4 +25,10 @@ for (let index = 0; index < MAX_IMAGE_ATTACHMENTS; index++) {
   )
 }
 
+// A link, not an upload: deliberately typed, so it needs no embed and sidesteps the unfurl-timing problem
+// the mention path has. Added after the attachment slots so it reads last in Discord's option list.
+command.addStringOption((option) =>
+  option.setName('image_url').setDescription('Link to an image for Roka to look at').setRequired(false)
+)
+
 export const askCommand = command
