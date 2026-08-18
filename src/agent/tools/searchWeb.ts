@@ -41,14 +41,21 @@ export async function searchWeb(
       },
       // The query is sent verbatim. Appending a date and the configured location used to seem helpful and
       // measurably was not: the location token pulled back region-local pages and the date token pulled back
-      // same-day pages, both regardless of subject, and Tavily's synthesiser then wrote confident answers off
-      // those sources. Recency belongs in Tavily's own parameters, not in the query text — but `days` measured
-      // as a net negative too (issue #19), so nothing is passed until there is a per-call signal worth keying on.
+      // same-day pages, both regardless of subject. Recency belongs in Tavily's own parameters, not in the query
+      // text — but `days` measured as a net negative too (issue #19), so nothing replaces them until there is a
+      // per-call signal worth keying on.
+      //
+      // Both 'advanced' settings are load-bearing and fix different layers (issue #19):
+      // search_depth governs which sources come back — on basic it surfaced fan wikis and returned two different
+      // wrong voice actresses for the same character, where advanced surfaced vndb/tvtropes and the corroborated
+      // one. include_answer governs the synthesis over those sources — on basic it attributed OpenAI's models to
+      // Amazon. A better synthesiser cannot repair bad sources, so neither setting substitutes for the other.
       body: JSON.stringify({
         query,
         topic,
         max_results,
-        include_answer: 'basic'
+        search_depth: 'advanced',
+        include_answer: 'advanced'
       })
     })
 

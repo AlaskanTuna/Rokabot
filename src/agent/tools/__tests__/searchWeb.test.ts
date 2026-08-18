@@ -23,7 +23,13 @@ function tavilyReplies(body: unknown, init: { ok?: boolean; status?: number } = 
 }
 
 /** The request body searchWeb actually handed to Tavily on the most recent call. */
-function sentBody(): { query: string; topic: string; max_results: number } {
+function sentBody(): {
+  query: string
+  topic: string
+  max_results: number
+  search_depth: string
+  include_answer: string
+} {
   return JSON.parse(fetchMock.mock.calls[0][1].body)
 }
 
@@ -65,6 +71,25 @@ describe('searchWeb', () => {
       results: [],
       resultCount: 0
     })
+  })
+
+  // On include_answer 'basic' the synthesiser attributed OpenAI's models to Amazon over correct sources, and on
+  // search_depth 'basic' retrieval surfaced fan wikis that produced two different wrong answers for the same
+  // character (issue #19). They fix different layers, so both are pinned.
+  it('asks Tavily for advanced retrieval, not the default depth', async () => {
+    tavilyReplies({ answer: 'a', results: [], response_time: 1 })
+
+    await searchWeb({ query: 'q' })
+
+    expect(sentBody().search_depth).toBe('advanced')
+  })
+
+  it('asks Tavily for advanced answer synthesis, not the quick summary', async () => {
+    tavilyReplies({ answer: 'a', results: [], response_time: 1 })
+
+    await searchWeb({ query: 'q' })
+
+    expect(sentBody().include_answer).toBe('advanced')
   })
 
   it('leaves the caller-supplied topic and result count intact', async () => {
