@@ -213,9 +213,14 @@ function assertClaimInTransaction(op: ClaimAssert): MemoryClaim {
       1,
       Math.max(current.salience, baseSalienceOf(predicate) * sourceWeight(op.sourceKind)) + 0.02
     )
-    db.prepare('UPDATE memory_claim SET last_seen_at = ?, salience = ? WHERE id = ?').run(
+    // Being told a fact directly pins it, even when passive extraction got there first: the eviction
+    // exemption exists for facts someone deliberately asked her to keep, and confirming one out loud is
+    // that same act. Never unpins — a later passive sighting of a pinned fact must not demote it.
+    const pinned = current.pinned || op.sourceKind === 'explicit' ? 1 : 0
+    db.prepare('UPDATE memory_claim SET last_seen_at = ?, salience = ?, pinned = ? WHERE id = ?').run(
       observedAt,
       salience,
+      pinned,
       current.id
     )
     return appendEvidenceInTransaction(current.id, {
@@ -230,8 +235,8 @@ function assertClaimInTransaction(op: ClaimAssert): MemoryClaim {
     .prepare(
       `INSERT INTO memory_claim (
         guild_id, subject_user_id, predicate, value, object_kind, object_user_id, source_kind, status,
-        salience, needs_review, first_seen_at, last_seen_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        salience, pinned, needs_review, first_seen_at, last_seen_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       op.guildId,
@@ -243,6 +248,9 @@ function assertClaimInTransaction(op: ClaimAssert): MemoryClaim {
       op.sourceKind,
       op.status ?? 'active',
       baseSalienceOf(predicate) * sourceWeight(op.sourceKind),
+      // A fact someone asked her to remember outright is the one thing the eviction ceiling should not
+      // take. Passive extraction stays evictable — it is inference, not instruction.
+      op.sourceKind === 'explicit' ? 1 : 0,
       op.needsReview ? 1 : 0,
       observedAt,
       observedAt
