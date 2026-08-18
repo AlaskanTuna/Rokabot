@@ -94,6 +94,7 @@ interface TestTurnRequest {
     _userId: string
     _channelId: string
     _guildId: string
+    _userMessage: string
   }
 }
 
@@ -925,7 +926,8 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
                     participants,
                     _userId: userId,
                     _channelId: channelId,
-                    _guildId: guildId
+                    _guildId: guildId,
+                    _userMessage: userMessage
                   }
                 : undefined
             }

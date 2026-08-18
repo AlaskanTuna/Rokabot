@@ -34,7 +34,10 @@ vi.mock('@google/adk', async (importOriginal) => {
 
   return { ...actual, Runner: CapturingRunner }
 })
-vi.mock('../../agent/memory/retriever.js', () => ({ retrieveForTurn: mocks.retrieveForTurn }))
+vi.mock('../../agent/memory/retriever.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../agent/memory/retriever.js')>()),
+  retrieveForTurn: mocks.retrieveForTurn
+}))
 vi.mock('../../utils/logger.js', () => ({
   logger: { debug: vi.fn(), error: mocks.error, info: mocks.info, warn: mocks.warn }
 }))

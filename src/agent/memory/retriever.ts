@@ -154,6 +154,38 @@ function tokensFor(claims: RetrievedClaim[], names: ReturnType<typeof getAllUser
 }
 
 /** Retrieve a bounded, guild-scoped memory context without formatting it for the prompt. */
+function routedPredicatesFor(message: string): Set<PredicateId> {
+  const routedTopics = routeTopics(message)
+  return new Set<PredicateId>(
+    Object.keys(PREDICATES).filter((predicate): predicate is PredicateId =>
+      routedTopics.has(predicateCategory(predicate as PredicateId))
+    )
+  )
+}
+
+/**
+ * Same relevance scoring as `retrieveForTurn`, for a single named subject rather than a channel's
+ * whole passive envelope — no speaker anchoring, cross-user expansion, or token budget, since
+ * `recall_user` targets one person by design. Reused so a fact ranks the same way regardless of
+ * which of the two paths surfaced it.
+ */
+export function retrieveForSubject(
+  guildId: string,
+  subjectUserId: string,
+  message: string,
+  limit: number
+): RetrievedClaim[] {
+  const activeClaims = getActiveClaims(guildId, [subjectUserId])
+  const ftsIds = searchClaimIds(guildId, [subjectUserId], message)
+  const routedPredicates = routedPredicatesFor(message)
+  const now = Date.now()
+  return activeClaims
+    .filter((claim) => !claim.needsReview)
+    .map((claim) => ({ claim, score: scoreClaim(claim, ftsIds, routedPredicates, now) }))
+    .sort(compareRetrieved)
+    .slice(0, limit)
+}
+
 export function retrieveForTurn(input: RetrieveForTurnInput): RetrievalResult {
   const startedAt = Date.now()
   const participantIds = [...new Set(input.participantIds.filter((id) => id !== input.speakerId))].slice(
@@ -163,12 +195,7 @@ export function retrieveForTurn(input: RetrieveForTurnInput): RetrievalResult {
   const userIds = [input.speakerId, ...participantIds]
   const activeClaims = getActiveClaims(input.guildId, userIds)
   const ftsIds = searchClaimIds(input.guildId, userIds, input.message)
-  const routedTopics = routeTopics(input.message)
-  const routedPredicates = new Set<PredicateId>(
-    Object.keys(PREDICATES).filter((predicate): predicate is PredicateId =>
-      routedTopics.has(predicateCategory(predicate as PredicateId))
-    )
-  )
+  const routedPredicates = routedPredicatesFor(input.message)
   const now = Date.now()
   const scoredClaims = activeClaims.map((claim) => ({ claim, score: scoreClaim(claim, ftsIds, routedPredicates, now) }))
   const candidates = scoredClaims.filter(({ claim }) => !claim.needsReview).sort(compareRetrieved)
