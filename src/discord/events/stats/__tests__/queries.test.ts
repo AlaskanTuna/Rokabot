@@ -269,23 +269,35 @@ describe('stats queries', () => {
     expect(statsQueries.mostUsedTool('guild-2', monthSinceMs)).toBeNull()
   })
 
-  it('blends recency into the quote pick so a fresh claim can beat a slightly more salient stale one', () => {
-    insertClaim({ userId: 'user-1', predicate: 'likes', salience: 0.6, firstSeenAt: now - 25 * DAY_MS })
-    insertClaim({ userId: 'user-1', predicate: 'hobby', salience: 0.55, firstSeenAt: now })
+  it('picks the most recent claim regardless of salience or alphabetical order — recency only, no blending', () => {
+    // 'likes' sorts before 'pets' alphabetically, the opposite of recency order here, so this can only
+    // pass if last_seen_at is what actually decides the pick — not salience, and not an alphabetical
+    // tiebreak accidentally agreeing with recency.
+    insertClaim({ userId: 'user-1', predicate: 'likes', salience: 0.99, firstSeenAt: now - 25 * DAY_MS })
+    insertClaim({ userId: 'user-1', predicate: 'pets', salience: 0.01, firstSeenAt: now })
 
-    const [top] = statsQueries.topRememberedMembers('guild-1', monthSinceMs, 'roka-user', now)
-    expect(top).toMatchObject({ userId: 'user-1', count: 2, predicate: 'hobby' })
+    const [top] = statsQueries.topRememberedMembers('guild-1', monthSinceMs, 'roka-user')
+    expect(top).toEqual({ userId: 'user-1', predicate: 'pets', value: 'private value' })
   })
 
-  it('excludes needs_review claims from the quote while still counting them, with a null quote for review-only members', () => {
-    insertClaim({ userId: 'mixed', predicate: 'hobby', salience: 0.2 })
-    insertClaim({ userId: 'mixed', predicate: 'strong_opinion', salience: 0.9, needsReview: 1 })
+  it('excludes a needs_review claim from the pick, and drops a member entirely when it is their only claim', () => {
+    insertClaim({ userId: 'mixed', predicate: 'hobby', firstSeenAt: now - DAY_MS })
+    insertClaim({ userId: 'mixed', predicate: 'strong_opinion', needsReview: 1, firstSeenAt: now })
     insertClaim({ userId: 'review-only', predicate: 'strong_opinion', needsReview: 1 })
 
     expect(statsQueries.topRememberedMembers('guild-1', monthSinceMs, 'roka-user')).toEqual([
-      { userId: 'mixed', count: 2, predicate: 'hobby', value: 'private value' },
-      { userId: 'review-only', count: 1, predicate: null, value: null }
+      { userId: 'mixed', predicate: 'hobby', value: 'private value' }
     ])
+  })
+
+  it('caps at 5 even when more members are eligible, keeping the 5 most recent', () => {
+    for (let index = 0; index < 7; index++) {
+      insertClaim({ userId: `user-${index}`, predicate: 'likes', firstSeenAt: now - index * DAY_MS })
+    }
+
+    const members = statsQueries.topRememberedMembers('guild-1', monthSinceMs, 'roka-user')
+    expect(members).toHaveLength(5)
+    expect(members.map((m) => m.userId)).toEqual(['user-0', 'user-1', 'user-2', 'user-3', 'user-4'])
   })
 
   it('returns memory details ordered by active claim count, quoting values only for top members', () => {
@@ -310,11 +322,11 @@ describe('stats queries', () => {
       { predicate: 'favorite_food', count: 1 }
     ])
     expect(statsQueries.topRememberedMembers('guild-1', monthSinceMs, 'roka-user')).toEqual([
-      { userId: 'user-1', count: 2, predicate: 'favorite_anime', value: 'private value' },
-      { userId: 'user-2', count: 2, predicate: 'favorite_food', value: 'private value' },
-      { userId: 'user-3', count: 1, predicate: 'preference', value: 'private value' },
-      { userId: 'user-4', count: 1, predicate: 'game', value: 'private value' },
-      { userId: 'user-5', count: 1, predicate: 'music', value: 'private value' }
+      { userId: 'user-1', predicate: 'hobby', value: 'private value' },
+      { userId: 'user-2', predicate: 'favorite_food', value: 'private value' },
+      { userId: 'user-3', predicate: 'preference', value: 'private value' },
+      { userId: 'user-4', predicate: 'game', value: 'private value' },
+      { userId: 'user-5', predicate: 'music', value: 'private value' }
     ])
     expect(statsQueries.memoryGrowthSeries('guild-1', monthSinceMs, 'roka-user')).toEqual([
       { day: '2026-06-23', cumulative: 1 },
@@ -328,8 +340,9 @@ describe('stats queries', () => {
     for (const [name, sql] of Object.entries(statsQueries.MEMORY_DETAIL_SQL)) {
       expect(sql).toMatch(/\b(predicate|salience)\b/i)
       if (name === 'topRememberedMembers') {
-        // Human-directed exception (2026-07-24): the memory quote surfaces the top-salience claim's
-        // value in-guild; needs_review claims stay excluded and no other query may select values.
+        // Human-directed exception (2026-07-24, simplified 2026-08-19): the memory quote surfaces the
+        // most recent claim's value in-guild; needs_review claims stay excluded and no other query may
+        // select values.
         expect(sql).toMatch(/\bneeds_review = 0\b/)
       } else {
         expect(sql).not.toMatch(/\b(value|fact_value)\b/i)

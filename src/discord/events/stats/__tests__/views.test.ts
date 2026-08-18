@@ -101,8 +101,8 @@ beforeEach(() => {
     { predicate: 'likes', count: 4 }
   ])
   queries.topRememberedMembers.mockReturnValue([
-    { userId: 'user-1', count: 5, predicate: 'favorite_anime', value: 'Frieren' },
-    { userId: 'departed', count: 4, predicate: 'likes', value: 'forbidden-memory-value' }
+    { userId: 'user-1', predicate: 'favorite_anime', value: 'Frieren' },
+    { userId: 'departed', predicate: 'likes', value: 'forbidden-memory-value' }
   ])
   queries.memoryGrowthSeries.mockReturnValue([{ day: '2026-07-23', cumulative: 6 }])
   queries.latencyE2e.mockReturnValue({ p50: 3000, p95: 6100, min: 500, max: 9100, total: 1_440_000 })
@@ -221,8 +221,8 @@ describe('/stats redesigned views', () => {
 
   it('falls back gracefully when the top memory is unquotable', async () => {
     queries.topRememberedMembers.mockReturnValue([
-      { userId: 'user-1', count: 2, predicate: null, value: null },
-      { userId: 'user-2', count: 1, predicate: 'likes', value: null }
+      { userId: 'user-1', predicate: null, value: null },
+      { userId: 'user-2', predicate: 'likes', value: null }
     ])
     const content = contentFor(await buildStatsView('guild-1', guild, 'memory'))
 
