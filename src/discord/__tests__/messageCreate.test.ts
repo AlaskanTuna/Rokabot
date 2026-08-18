@@ -612,4 +612,61 @@ describe('reading a message forwarded straight to her', () => {
 
     expect((await handle(message)).userMessage).toContain('The original post.')
   })
+
+  // The marker is the only trace of an image she has no slot for. Keyed to the taken count it vanished with
+  // the image, so "what's in the second one?" had nothing behind it and she answered as though the forward
+  // carried no picture at all (#107).
+  it('still names a forwarded image it had no room to show her', async () => {
+    const { message } = createMessage({
+      content: '<@bot-1> what is in these?',
+      attachments: [PNG('own-a'), PNG('own-b'), PNG('own-c')],
+      snapshots: [snapshot({ attachments: new Collection([['0', PNG('fwd')]]) })]
+    })
+
+    const result = await handle(message)
+
+    expect(result.imageAttachments).toHaveLength(3)
+    expect(result.userMessage).toContain('forwarded image(s)')
+  })
+
+  it('says how many forwarded images it could not show her', async () => {
+    const { message } = createMessage({
+      content: '<@bot-1> what is in these?',
+      attachments: [PNG('own-a'), PNG('own-b'), PNG('own-c')],
+      snapshots: [
+        snapshot({
+          attachments: new Collection([
+            ['0', PNG('fwd-a')],
+            ['1', PNG('fwd-b')]
+          ])
+        })
+      ]
+    })
+
+    expect((await handle(message)).userMessage).toContain('2 not shown')
+  })
+
+  it('does not qualify the marker when every forwarded image fits', async () => {
+    const { message } = createMessage({
+      content: '<@bot-1> what is this?',
+      snapshots: [snapshot({ attachments: new Collection([['0', PNG('fwd')]]) })]
+    })
+
+    expect((await handle(message)).userMessage).toContain('(forwarded image(s))')
+  })
+
+  // Unsupported files are not images she is missing — they are files nothing could have shown her, and the
+  // reply-side nudge already covers them. Counting them here would invent images that do not exist.
+  it('does not count an unopenable forwarded file as an image it could not show', async () => {
+    const { message } = createMessage({
+      content: '<@bot-1> what is this?',
+      snapshots: [
+        snapshot({
+          attachments: new Collection([['0', { url: 'https://cdn.test/a.pdf', contentType: 'application/pdf' }]])
+        })
+      ]
+    })
+
+    expect((await handle(message)).userMessage).not.toContain('forwarded image(s)')
+  })
 })
