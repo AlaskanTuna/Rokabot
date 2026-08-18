@@ -8,9 +8,9 @@ const THREE = [
 ]
 
 describe('fitCitations', () => {
-  it('cites sources as numbered domains rather than raw URLs', () => {
+  it('cites sources as bare domains rather than raw URLs', () => {
     expect(fitCitations(THREE, 4000)).toBe(
-      '-# 🔗 1. [crunchyroll.com](<https://www.crunchyroll.com/news/a>)  ·  2. [polygon.com](<https://www.polygon.com/b>)  ·  3. [vndb.org](<https://vndb.org/c>)'
+      '-# 🔗 [crunchyroll.com](<https://www.crunchyroll.com/news/a>)  ·  [polygon.com](<https://www.polygon.com/b>)  ·  [vndb.org](<https://vndb.org/c>)'
     )
   })
 
@@ -26,7 +26,7 @@ describe('fitCitations', () => {
     const twoOfThree = fitCitations(THREE, fitCitations(THREE, 4000).length - 1)
 
     expect(twoOfThree).toBe(
-      '-# 🔗 1. [crunchyroll.com](<https://www.crunchyroll.com/news/a>)  ·  2. [polygon.com](<https://www.polygon.com/b>)'
+      '-# 🔗 [crunchyroll.com](<https://www.crunchyroll.com/news/a>)  ·  [polygon.com](<https://www.polygon.com/b>)'
     )
   })
 
@@ -41,7 +41,7 @@ describe('fitCitations', () => {
   })
 
   it('leaves a URL it cannot parse as its own label rather than throwing', () => {
-    expect(fitCitations([{ url: 'not a url' }], 4000)).toBe('-# 🔗 1. [not a url](<not a url>)')
+    expect(fitCitations([{ url: 'not a url' }], 4000)).toBe('-# 🔗 [not a url](<not a url>)')
   })
 })
 
