@@ -1,0 +1,13 @@
+{"type":"header","tool":"remember_user","guildId":"eval-guild","members":[{"id":"sora","username":"sora","displayName":"Sora"},{"id":"mio","username":"mio","displayName":"Mio"},{"id":"kaede","username":"kaede","displayName":"Kaede"}],"claims":[{"subjectId":"sora","predicate":"favorite_game","value":"Slay the Spire"},{"subjectId":"mio","predicate":"likes","value":"jasmine tea"},{"subjectId":"kaede","predicate":"favorite_anime","value":"Mushishi"}],"history":[{"speakerId":"sora","content":"hey"},{"speakerId":"mio","content":"hi everyone"},{"speakerId":"kaede","content":"morning"}]}
+{"type":"case","id":"R1","tool":"remember_user","shouldFire":true,"speakerId":"sora","message":"Remember that my favourite anime is Frieren."}
+{"type":"case","id":"R2","tool":"remember_user","shouldFire":true,"speakerId":"sora","message":"I want you to remember that I go by Sora-chan with my friends."}
+{"type":"case","id":"R3","tool":"remember_user","shouldFire":true,"speakerId":"sora","message":"I am learning to play the shamisen, don't forget that okay?"}
+{"type":"case","id":"R4","tool":"remember_user","shouldFire":true,"speakerId":"sora","message":"Keep this in mind for me: I cannot stand horror games."}
+{"type":"case","id":"R5","tool":"remember_user","shouldFire":true,"speakerId":"sora","message":"Make a note that I usually only get online after midnight."}
+{"type":"case","id":"R6","tool":"remember_user","shouldFire":true,"speakerId":"sora","message":"Please remember that my favourite game is Slay the Spire."}
+{"type":"case","id":"N1","tool":"remember_user","shouldFire":false,"speakerId":"sora","message":"What time do the shops in Hoori usually close?"}
+{"type":"case","id":"N2","tool":"remember_user","shouldFire":false,"speakerId":"sora","message":"haha that's a good one"}
+{"type":"case","id":"N3","tool":"remember_user","shouldFire":false,"speakerId":"sora","message":"what do you know about Mio?"}
+{"type":"case","id":"N4","tool":"remember_user","shouldFire":false,"speakerId":"sora","message":"I'm feeling a bit tired today"}
+{"type":"case","id":"N5","tool":"remember_user","shouldFire":false,"speakerId":"sora","message":"morning everyone"}
+{"type":"case","id":"N6","tool":"remember_user","shouldFire":false,"speakerId":"sora","message":"can you recommend a good anime to watch?"}

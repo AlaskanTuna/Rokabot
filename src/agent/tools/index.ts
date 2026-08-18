@@ -129,7 +129,7 @@ export const searchWebTool = new FunctionTool({
 export const rememberUserTool = new FunctionTool({
   name: 'remember_user',
   description:
-    'Remember a fact about the current user. Use when someone shares personal details worth remembering — their name preference, favorite anime, hobbies, birthday, etc. Only store genuinely useful facts, not temporary conversation details. The user ID is filled in automatically.',
+    'Store a lasting fact about the current speaker. Call this whenever they ask you to remember something, however they phrase it — a leading "remember that...", an "I want you to remember...", a "do not forget" tacked on the end, or simply telling you a detail they plainly expect you to keep. Call it even when you already know the fact: being told it outright is what marks it as theirs to keep. Skip what will not be true later — their mood right now, or what they are doing this minute. The user ID is filled in automatically.',
   parameters: z.object({
     fact_key: z.string().describe('A short label for the fact (e.g. "favorite_anime", "nickname", "birthday")'),
     fact_value: z.string().describe('The value of the fact (e.g. "Frieren", "Ali", "March 15")')
