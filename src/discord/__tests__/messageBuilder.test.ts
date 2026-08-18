@@ -62,18 +62,26 @@ describe('tool footer budget', () => {
   const LABELS = TOOL_NAMES.map(labelFor)
 
   /**
-   * Longest footer over every distinct ordered selection. Distinct because generateResponse builds toolsUsed
-   * from a Set (src/agent/roka.ts), which is what keeps the derivation valid — repeated labels would push the
-   * worst case past it, and the ceiling in NUMERIC_BOUNDS with it.
+   * Longest footer over every distinct ordered selection, plus a tool selection that achieves it. Distinct
+   * because generateResponse builds toolsUsed from a Set (src/agent/roka.ts), which is what keeps the
+   * derivation valid — repeated labels would push the worst case past it, and the NUMERIC_BOUNDS ceiling
+   * derived from it too. The names are returned so the render test can exercise the same worst case rather
+   * than whichever selection happens to come first in declaration order.
    */
-  function worstDistinctFooter(): number {
-    let worst = 0
+  function worstDistinctFooter(): { chars: number; names: string[] } {
+    let worst = { chars: 0, names: [] as string[] }
     for (let i = 0; i < LABELS.length; i++) {
       for (let j = 0; j < LABELS.length; j++) {
         for (let k = 0; k < LABELS.length; k++) {
           if (i === j || j === k || i === k) continue
-          for (const overflow of [[], ['a fourth label']]) {
-            worst = Math.max(worst, buildToolFooter([LABELS[i], LABELS[j], LABELS[k], ...overflow], EPOCH).length)
+          const spare = TOOL_NAMES.findIndex((_, index) => index !== i && index !== j && index !== k)
+          for (const overflow of [[], [spare]]) {
+            const picked = [i, j, k, ...overflow]
+            const chars = buildToolFooter(
+              picked.map((index) => LABELS[index]),
+              EPOCH
+            ).length
+            if (chars > worst.chars) worst = { chars, names: picked.map((index) => TOOL_NAMES[index]) }
           }
         }
       }
@@ -82,22 +90,26 @@ describe('tool footer budget', () => {
   }
 
   it('bounds every reachable tool combination, not just the one the derivation guessed', () => {
-    expect(worstDistinctFooter()).toBeLessThanOrEqual(MAX_TOOL_FOOTER_CHARS)
+    expect(worstDistinctFooter().chars).toBeLessThanOrEqual(MAX_TOOL_FOOTER_CHARS)
   })
 
   // Exactly tight, not merely sufficient: slack here would silently shrink every reply's usable length.
   it('is exactly the longest reachable footer rather than an overestimate', () => {
-    expect(worstDistinctFooter()).toBe(MAX_TOOL_FOOTER_CHARS)
+    expect(worstDistinctFooter().chars).toBe(MAX_TOOL_FOOTER_CHARS)
   })
 
-  // The invariant the ceiling exists to guarantee, swept over tool counts as well as reply lengths.
-  it('keeps the rendered message within the budget for every tool count at the ceiling', () => {
+  // The invariant the ceiling exists to guarantee. Declaration order is not the worst case — the selection
+  // that maximises the footer is what leaves fitCitations the least room — so it is rendered explicitly
+  // alongside the short-footer cases rather than hoping a count-based sweep happens to reach it.
+  it('keeps the rendered message within the budget for the worst tool selection at the ceiling', () => {
     const ceiling = TEXT_DISPLAY_BUDGET - MAX_TOOL_FOOTER_CHARS
     const sources = [{ url: 'https://www.crunchyroll.com/news/a' }, { url: 'https://vndb.org/b' }]
+    const heaviest = worstDistinctFooter().names
+    const selections = [[], TOOL_NAMES.slice(0, 1), TOOL_NAMES.slice(0, 2), heaviest.slice(0, 3), heaviest]
     let worst = 0
-    for (let count = 0; count <= TOOL_NAMES.length; count++) {
+    for (const selection of selections) {
       for (let length = ceiling - 120; length <= ceiling; length++) {
-        worst = Math.max(worst, renderedChars('x'.repeat(length), TOOL_NAMES.slice(0, count), sources))
+        worst = Math.max(worst, renderedChars('x'.repeat(length), selection, sources))
       }
     }
 
