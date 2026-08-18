@@ -77,7 +77,8 @@ function createMessage({
   attachments = [],
   embeds = [],
   stickers = [] as Array<{ name: string }>,
-  poll = null
+  poll = null,
+  snapshots = [] as object[]
 }: {
   mentioned?: boolean
   content?: string
@@ -88,6 +89,7 @@ function createMessage({
   embeds?: object[]
   stickers?: Array<{ name: string }>
   poll?: object | null
+  snapshots?: object[]
 } = {}) {
   const reply = vi.fn().mockResolvedValue({ delete: vi.fn().mockResolvedValue(undefined) })
   const send = vi.fn().mockResolvedValue(undefined)
@@ -107,6 +109,7 @@ function createMessage({
       embeds,
       poll,
       stickers: new Collection(stickers.map((sticker, index) => [String(index), sticker])),
+      messageSnapshots: new Collection(snapshots.map((snapshot, index) => [String(index), snapshot])),
       channel: {
         sendTyping: vi.fn().mockResolvedValue(undefined),
         send,
@@ -472,5 +475,141 @@ describe("reading what the sender's own message shows", () => {
     const { message } = createMessage({ content: '<@bot-1> vote for me', poll })
 
     expect((await handle(message)).userMessage).toContain('Best girl?')
+  })
+})
+
+describe('reading a message forwarded straight to her', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    config.memory.claimsBackend = false
+    mocks.isChannelBusy.mockReturnValue(false)
+    mocks.isMonitored.mockReturnValue(false)
+    mocks.tryConsume.mockReturnValue(true)
+    mocks.generateResponse.mockResolvedValue({ text: 'Hello~', tone: 'playful', toolsUsed: [], metrics })
+  })
+
+  const PNG = (n: string) => ({ url: `https://cdn.test/${n}.png`, contentType: 'image/png' })
+
+  const FORWARDED_PREVIEW = {
+    author: { name: 'The Register' },
+    title: 'DeepSeek Harness treats everything as a plug-in',
+    description: 'The framework drew 100,000 GitHub stars in days.',
+    fields: [],
+    footer: { text: 'Posted 2h ago' },
+    image: null,
+    thumbnail: null
+  }
+
+  function snapshot(overrides: object = {}) {
+    return { content: '', components: [], embeds: [], attachments: new Collection(), ...overrides }
+  }
+
+  async function handle(message: object) {
+    await createMessageHandler({ user: { id: 'bot-1' } } as never, createRateLimiter() as never)(message as never)
+    return mocks.generateResponse.mock.calls[0][0]
+  }
+
+  // Forwarding a post and asking about it in the same message is the more natural gesture than replying to
+  // it, and it was the one that arrived as a bare mention (#104).
+  it('reads the forwarded text on the message it was asked about', async () => {
+    const { message } = createMessage({
+      content: '<@bot-1> what do you make of this?',
+      snapshots: [snapshot({ content: 'Studio Pierrot has postponed the anniversary episodes.' })]
+    })
+
+    expect((await handle(message)).userMessage).toContain('Studio Pierrot has postponed the anniversary episodes.')
+  })
+
+  // A numeric id, because replaceUserMentions only strips <@\d+> — with a non-numeric one the mention
+  // survives, content is never empty, and the bare-ping fallback this pins could never fire.
+  it('no longer treats a wordless forward as a bare ping', async () => {
+    const { message } = createMessage({
+      content: '<@111>',
+      snapshots: [snapshot({ content: 'Look at this.' })]
+    })
+
+    await createMessageHandler({ user: { id: '111' } } as never, createRateLimiter() as never)(message as never)
+
+    expect(mocks.generateResponse.mock.calls[0][0].userMessage).toBe('[Forwarded: Look at this.]')
+  })
+
+  // The replied-to path read snapshot embeds as title + description only, which dropped exactly the fields
+  // that say where a forwarded link came from. Both paths now read them through describeEmbed.
+  it('reads a forwarded link preview past its title and description', async () => {
+    const { message } = createMessage({
+      content: '<@bot-1> thoughts?',
+      snapshots: [snapshot({ embeds: [FORWARDED_PREVIEW] })]
+    })
+
+    const userMessage = (await handle(message)).userMessage
+    expect(userMessage).toContain('The Register')
+    expect(userMessage).toContain('Posted 2h ago')
+  })
+
+  it('reads container text inside a forward', async () => {
+    const { message } = createMessage({
+      content: '<@bot-1> what is this?',
+      snapshots: [snapshot({ components: [{ toJSON: () => ({ type: 10, content: 'Build 4821 failed' }) }] })]
+    })
+
+    expect((await handle(message)).userMessage).toContain('Build 4821 failed')
+  })
+
+  it('sends a forwarded image to the vision slots', async () => {
+    const { message } = createMessage({
+      content: '<@bot-1> what is this?',
+      snapshots: [snapshot({ attachments: new Collection([['0', PNG('fwd')]]) })]
+    })
+
+    expect((await handle(message)).imageAttachments).toEqual([PNG('fwd')])
+  })
+
+  // A forward is someone else's post: it draws on the same ceiling as the sender's own files, and only
+  // after them. A forwarded gallery must not push out the screenshot they attached themselves.
+  it('fills the vision slots from the sender own attachments before the forward', async () => {
+    const { message } = createMessage({
+      content: '<@bot-1> compare these',
+      attachments: [PNG('own-a'), PNG('own-b')],
+      snapshots: [
+        snapshot({
+          attachments: new Collection([
+            ['0', PNG('fwd-a')],
+            ['1', PNG('fwd-b')]
+          ])
+        })
+      ]
+    })
+
+    expect((await handle(message)).imageAttachments).toEqual([PNG('own-a'), PNG('own-b'), PNG('fwd-a')])
+  })
+
+  it('never lets forwarded images exceed the shared attachment ceiling', async () => {
+    const many = Array.from({ length: 5 }, (_, index) => [String(index), PNG(`fwd-${index}`)] as const)
+    const { message } = createMessage({
+      content: '<@bot-1> what are these?',
+      snapshots: [snapshot({ attachments: new Collection(many) })]
+    })
+
+    expect((await handle(message)).imageAttachments).toHaveLength(3)
+  })
+
+  // Both paths share one describer now; the replied-to path had no test over its forwarded output before.
+  it('still reads a forward that arrives as a reply', async () => {
+    const { message } = createMessage({
+      content: '<@bot-1> what is this?',
+      referencedMessage: {
+        author: { id: 'user-2', displayName: 'Bob' },
+        member: null,
+        content: '',
+        embeds: [],
+        poll: null,
+        messageSnapshots: new Collection([['0', snapshot({ content: 'The original post.' })]]),
+        components: [],
+        stickers: new Collection(),
+        attachments: new Collection()
+      }
+    })
+
+    expect((await handle(message)).userMessage).toContain('The original post.')
   })
 })

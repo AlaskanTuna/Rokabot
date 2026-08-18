@@ -85,7 +85,7 @@ Every tunable lives in `config.yml` with an inline comment; environment override
 
 ## Code Style
 
-- **Formatting:** Prettier (`.prettierrc`): single quotes, no semicolons, no trailing commas, 120 char line width, 2-space indent. Biome owns TS/JS linting, formatting, and import-sorting (biome.json); Prettier formats md/yml/json (.prettierignore excludes _.ts/_.js). Conventional Commits enforced by commitlint via husky commit-msg hook; lint-staged runs on pre-commit.
+- **Formatting:** Prettier (`.prettierrc`): single quotes, no semicolons, no trailing commas, 120 char line width, 2-space indent. Biome's `quoteStyle: single` (biome.json) means _prefer_ single — it switches a string to double quotes rather than escape an apostrophe inside it, so `"I couldn't open that file"` is correct and rewriting it to single quotes fails `biome check`. Biome owns TS/JS linting, formatting, and import-sorting (biome.json); Prettier formats md/yml/json (.prettierignore excludes _.ts/_.js). Conventional Commits enforced by commitlint via husky commit-msg hook; lint-staged runs on pre-commit.
 - **Error Handling:** Validate at system boundaries; do not wrap internal framework calls in try/catch.
 - **Comments:** Default to none. Comment only when the _why_ is non-obvious. Never describe _what_ the code does.
 - **Changes Are Surgical:** touch only what the task requires; match existing style; don't refactor what isn't broken.

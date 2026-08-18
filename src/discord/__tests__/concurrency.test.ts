@@ -71,6 +71,7 @@ function createMessage(channelId = 'channel-1') {
       embeds: [],
       poll: null,
       stickers: new Collection(),
+      messageSnapshots: new Collection(),
       channel: { sendTyping: vi.fn().mockResolvedValue(undefined), messages: { fetch: vi.fn() } },
       reply
     } as unknown as Message,
