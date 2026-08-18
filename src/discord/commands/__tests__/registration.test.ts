@@ -2,16 +2,15 @@ import { ApplicationIntegrationType, InteractionContextType } from 'discord.js'
 import { describe, expect, it } from 'vitest'
 import { buildCommandBody } from '../index.js'
 
+// /ask replaced both /chat and /search (#19). Retiring two names and adding one moves this list, and the
+// comparison below is a sorted array rather than a Set on purpose: a Set absorbs a duplicate command name,
+// which Discord rejects and ready.ts swallows into a log line.
 const expectedPolicy = {
-  chat: {
+  ask: {
     integrationTypes: [ApplicationIntegrationType.GuildInstall, ApplicationIntegrationType.UserInstall],
     contexts: [InteractionContextType.Guild, InteractionContextType.BotDM, InteractionContextType.PrivateChannel]
   },
   anime: {
-    integrationTypes: [ApplicationIntegrationType.GuildInstall, ApplicationIntegrationType.UserInstall],
-    contexts: [InteractionContextType.Guild, InteractionContextType.BotDM, InteractionContextType.PrivateChannel]
-  },
-  search: {
     integrationTypes: [ApplicationIntegrationType.GuildInstall, ApplicationIntegrationType.UserInstall],
     contexts: [InteractionContextType.Guild, InteractionContextType.BotDM, InteractionContextType.PrivateChannel]
   },

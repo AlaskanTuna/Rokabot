@@ -8,6 +8,7 @@ import {
 import { MessageFlags, SeparatorSpacingSize } from 'discord.js'
 import type { ToneKey } from '../agent/prompts/tones.js'
 import { logger } from '../utils/logger.js'
+import { fitCitations } from './citations.js'
 import { getExpressionUrl } from './expressions.js'
 import { getToneStyle } from './toneStyles.js'
 
@@ -28,6 +29,13 @@ const TOOL_USAGE_LABELS: Record<string, string> = {
 
 const MAX_VISIBLE_TOOL_LABELS = 3
 
+/**
+ * Components V2 budgets TextDisplay content across the whole message, not per component, so the reply text,
+ * the tool footer and the citation row all draw on this one allowance. config.discord.maxMessageLength bounds
+ * the text against it; the citation row takes only what the other two leave and is dropped when nothing does.
+ */
+export const TEXT_DISPLAY_BUDGET = 4000
+
 export function buildToolFooter(labels: readonly string[], epochSeconds = Math.floor(Date.now() / 1000)) {
   const visibleLabels = labels.slice(0, MAX_VISIBLE_TOOL_LABELS)
   const suffix = labels.length > visibleLabels.length ? ' …and more' : ''
@@ -42,7 +50,12 @@ const TOOL_FOOTER_EPOCH_SAMPLE = 1_784_808_000
 export const MAX_TOOL_FOOTER_CHARS = buildToolFooter(worstCaseToolFooterLabels, TOOL_FOOTER_EPOCH_SAMPLE).length
 
 /** Build a Components V2 container message with tone-appropriate styling */
-export function buildRokaMessage(text: string, tone: ToneKey, toolsUsed: readonly string[] = []) {
+export function buildRokaMessage(
+  text: string,
+  tone: ToneKey,
+  toolsUsed: readonly string[] = [],
+  sources: ReadonlyArray<{ url: string }> = []
+) {
   const style = getToneStyle(tone)
   const imageUrl = getExpressionUrl(tone) || style.imageUrl
 
@@ -58,9 +71,15 @@ export function buildRokaMessage(text: string, tone: ToneKey, toolsUsed: readonl
     return label ? [label] : []
   })
 
-  if (toolLabels.length > 0) {
+  const footer = toolLabels.length > 0 ? buildToolFooter(toolLabels) : ''
+  // The footer says what she did; the citations say where it came from. Complementary, not duplicated (#19).
+  const citations = fitCitations(sources, TEXT_DISPLAY_BUDGET - text.length - footer.length)
+
+  if (footer || citations) {
     container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
-    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(buildToolFooter(toolLabels)))
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent([footer, citations].filter(Boolean).join('\n'))
+    )
   }
 
   const payload = {

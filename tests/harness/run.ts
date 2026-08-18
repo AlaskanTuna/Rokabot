@@ -229,7 +229,7 @@ export async function runTranscript(path: string, options: RunTranscriptOptions 
           guildId: line.guildId,
           member: { displayName: line.displayName },
           user: { id: line.userId, username: line.displayName.toLowerCase(), displayName: line.displayName },
-          stringOptions: { message: line.content },
+          stringOptions: { question: line.content },
           attachmentOptions: line.attachments?.[0] ? { image: line.attachments[0] } : undefined,
           sink
         })

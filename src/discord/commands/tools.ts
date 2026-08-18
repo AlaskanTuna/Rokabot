@@ -94,13 +94,6 @@ export const animeCommand = new SlashCommandBuilder()
       )
   )
 
-export const searchCommand = new SlashCommandBuilder()
-  .setName('search')
-  .setDescription('Search the web for current info!')
-  .setIntegrationTypes(ApplicationIntegrationType.GuildInstall, ApplicationIntegrationType.UserInstall)
-  .setContexts(InteractionContextType.Guild, InteractionContextType.BotDM, InteractionContextType.PrivateChannel)
-  .addStringOption((opt) => opt.setName('query').setDescription('What to search for').setRequired(true))
-
 export const remindCommand = new SlashCommandBuilder()
   .setName('remind')
   .setDescription('Ask Roka to remind you about something!')
@@ -140,4 +133,4 @@ export const remindCommand = new SlashCommandBuilder()
       .addIntegerOption((opt) => opt.setName('id').setDescription('Reminder ID (from /remind list)').setRequired(true))
   )
 
-export const toolCommands = [animeCommand, searchCommand, remindCommand]
+export const toolCommands = [animeCommand, remindCommand]

@@ -7,6 +7,7 @@ import { enqueueAndSchedule } from '../../agent/memory/scheduler.js'
 import { maybeExtractFromBuffer } from '../../agent/memoryExtractor.js'
 import { addMessage as addToPassiveBuffer, getMessages } from '../../agent/passiveBuffer.js'
 import { type ImageAttachment, generateResponse } from '../../agent/roka.js'
+import { withSearchCitations } from '../../agent/searchCitations.js'
 import { config } from '../../config.js'
 import { type ResponseEventInput, recordResponseEvent } from '../../storage/metricsStore.js'
 import { upsertUserName } from '../../storage/userNames.js'
@@ -314,26 +315,23 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
 
     markBusy(channelId)
     try {
-      const {
-        text: responseText,
-        tone,
-        toolsUsed,
-        metrics
-      } = await generateResponse({
-        channelId,
-        guildId,
-        userMessage: content || '(shared an image)',
-        displayName,
-        username,
-        userId: message.author.id,
-        imageAttachments: imageAttachments.length > 0 ? imageAttachments : undefined
-      })
+      const [{ text: responseText, tone, toolsUsed, metrics }, sources] = await withSearchCitations(() =>
+        generateResponse({
+          channelId,
+          guildId,
+          userMessage: content || '(shared an image)',
+          displayName,
+          username,
+          userId: message.author.id,
+          imageAttachments: imageAttachments.length > 0 ? imageAttachments : undefined
+        })
+      )
 
       logger.debug({ channelId, tone, responseLength: responseText.length }, 'ADK response received')
 
       const chunks = splitResponse(responseText)
       logger.debug({ channelId, chunkCount: chunks.length }, 'Response split into chunks')
-      await message.reply(buildRokaMessage(chunks[0], tone, toolsUsed))
+      await message.reply(buildRokaMessage(chunks[0], tone, toolsUsed, sources))
 
       for (let i = 1; i < chunks.length; i++) {
         if ('send' in message.channel) {

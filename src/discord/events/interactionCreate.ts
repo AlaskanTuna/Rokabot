@@ -1,6 +1,7 @@
 import type { Client, Interaction } from 'discord.js'
 import { DiscordAPIError, MessageFlags } from 'discord.js'
 import { type ImageAttachment, generateResponse } from '../../agent/roka.js'
+import { withSearchCitations } from '../../agent/searchCitations.js'
 import { type ResponseEventInput, recordResponseEvent } from '../../storage/metricsStore.js'
 import { logger } from '../../utils/logger.js'
 import { RateLimiter } from '../../utils/rateLimiter.js'
@@ -55,14 +56,14 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
       return
     }
 
-    if (interaction.commandName !== 'chat') {
+    if (interaction.commandName !== 'ask') {
       const handled = await handleGameCommand(interaction)
       if (handled) return
       await handleToolCommand(interaction)
       return
     }
 
-    const message = interaction.options.getString('message', true)
+    const message = interaction.options.getString('question', true)
     const attachment = interaction.options.getAttachment('image')
     const channelId = interaction.channelId
     const guildId = interaction.guildId ?? `dm:${channelId}`
@@ -75,7 +76,7 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
       imageAttachments.push({ url: attachment.url, contentType: attachment.contentType })
     }
 
-    logger.debug({ channelId, command: 'chat' }, 'Slash command received')
+    logger.debug({ channelId, command: 'ask' }, 'Slash command received')
     logger.debug({ channelId, message, hasImage: !!attachment }, 'Slash command details')
 
     if (isChannelBusy(channelId)) {
@@ -100,26 +101,23 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
 
     markBusy(channelId)
     try {
-      const {
-        text: responseText,
-        tone,
-        toolsUsed,
-        metrics
-      } = await generateResponse({
-        channelId,
-        guildId,
-        userMessage: message,
-        displayName,
-        username: interaction.user.username,
-        userId: interaction.user.id,
-        imageAttachments: imageAttachments.length > 0 ? imageAttachments : undefined
-      })
+      const [{ text: responseText, tone, toolsUsed, metrics }, sources] = await withSearchCitations(() =>
+        generateResponse({
+          channelId,
+          guildId,
+          userMessage: message,
+          displayName,
+          username: interaction.user.username,
+          userId: interaction.user.id,
+          imageAttachments: imageAttachments.length > 0 ? imageAttachments : undefined
+        })
+      )
 
       logger.debug({ channelId, tone, responseLength: responseText.length }, 'ADK response received')
 
       const chunks = splitResponse(responseText)
       logger.debug({ channelId, chunkCount: chunks.length }, 'Response split into chunks')
-      await interaction.editReply(buildRokaMessage(chunks[0], tone, toolsUsed))
+      await interaction.editReply(buildRokaMessage(chunks[0], tone, toolsUsed, sources))
 
       for (let i = 1; i < chunks.length; i++) {
         await interaction.followUp(buildRokaMessage(chunks[i], tone))
@@ -144,7 +142,7 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
       }
       const errDetail =
         error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : error
-      logger.error({ error: errDetail, channelId }, 'Error handling /chat command')
+      logger.error({ error: errDetail, channelId }, 'Error handling /ask command')
       try {
         await interaction.editReply({ content: getRandomError() })
       } catch (replyError) {

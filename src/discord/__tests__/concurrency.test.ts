@@ -82,7 +82,7 @@ function createInteraction(channelId = 'channel-1') {
   return {
     interaction: {
       isChatInputCommand: () => true,
-      commandName: 'chat',
+      commandName: 'ask',
       options: { getString: vi.fn(() => 'hello'), getAttachment: vi.fn() },
       channelId,
       member: null,

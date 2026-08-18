@@ -9,14 +9,14 @@
 ```
 ┌─────────────────────────────────────────────────┐
 │                  Discord Server                  │
-│  User sends /chat or @Roka                       │
+│  User sends /ask or @Roka                        │
 └──────────────────┬──────────────────────────────┘
                    │
                    ▼
 ┌─────────────────────────────────────────────────┐
 │              Discord Gateway Layer                │
 │  discord.js v14 client                            │
-│  - Slash command handler (/chat)                  │
+│  - Slash command handler (/ask)                   │
 │  - Message handler (mention/reply detection)      │
 │  - Rate limit guard (token bucket RPM + daily RPD)│
 │  - Concurrency guard (1 active req per channel)   │

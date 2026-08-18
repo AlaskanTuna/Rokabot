@@ -6,7 +6,7 @@ describe('tool command registration', () => {
     const anime = animeCommand.toJSON()
     const schedule = anime.options?.find((option) => option.name === 'schedule')
 
-    expect(toolCommands.map((command) => command.name)).toEqual(['anime', 'search', 'remind'])
+    expect(toolCommands.map((command) => command.name)).toEqual(['anime', 'remind'])
     expect(schedule).toMatchObject({
       type: 2,
       options: [{ name: 'search' }, { name: 'browse' }]

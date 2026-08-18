@@ -361,7 +361,7 @@ describe('harness self-tests', () => {
       makeInteraction({
         channelId: 'chunk-channel',
         guildId: 'chunk-guild',
-        stringOptions: { message: 'Please send the long answer.' },
+        stringOptions: { question: 'Please send the long answer.' },
         sink
       }) as never
     )

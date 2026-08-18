@@ -27,7 +27,7 @@ Fans of visual novel characters like Maniwa Roka (Senren\*Banka) want to interac
 ## User Workflow Overview
 
 ```
-User types /chat "message"     User @mentions Roka
+User types /ask "question"     User @mentions Roka
         │                              │
         ▼                              ▼
   Discord delivers             Discord delivers
@@ -68,12 +68,12 @@ User types /chat "message"     User @mentions Roka
 
 ### FR-1: Slash Command Interaction
 
-The bot registers a `/chat` slash command globally, with a required `message` string option; availability is set per command.
+The bot registers an `/ask` slash command globally, with a required `question` string option; availability is set per command. It replaced the separate `/chat` and `/search` commands, so a single surface answers both conversation and lookups.
 
 **Acceptance Criteria:**
 
-- [ ] `/chat` command appears in Discord command picker
-- [ ] Command accepts a `message` string parameter
+- [ ] `/ask` command appears in Discord command picker
+- [ ] Command accepts a `question` string parameter
 - [ ] Bot defers reply (shows "thinking...") while processing
 - [ ] Bot edits deferred reply with Roka's response
 - [ ] Commands are re-registered on every bot startup

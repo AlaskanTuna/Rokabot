@@ -42,12 +42,6 @@ export function randomFrom<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)]
 }
 
-/**
- * Discord's per-TextDisplay character budget. buildToolMessage puts the whole message in one TextDisplay,
- * so this is the ceiling any caller assembling variable-length content has to budget against.
- */
-export const TEXT_DISPLAY_LIMIT = 4000
-
 /** Wrap text in a colored Components V2 container for consistent tool output styling. */
 export function buildToolMessage(text: string, color: number) {
   const container = new ContainerBuilder()

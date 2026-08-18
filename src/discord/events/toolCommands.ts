@@ -9,10 +9,9 @@ import { getRandomDecline } from '../responses.js'
 import { handleAnime } from './tools/anime.js'
 import { handleRemind } from './tools/reminder.js'
 import { handleSchedule } from './tools/schedule.js'
-import { handleSearch } from './tools/search.js'
 import { ERROR_MESSAGES, PLAYFUL_COLOR, buildToolMessage, randomFrom } from './tools/shared.js'
 
-const TOOL_COMMAND_NAMES = new Set(['anime', 'search', 'remind'])
+const TOOL_COMMAND_NAMES = new Set(['anime', 'remind'])
 
 /** Create a dispatcher that routes tool slash commands to their respective handlers. */
 export function createToolCommandHandler(rateLimiter: RateLimiter) {
@@ -38,12 +37,6 @@ export function createToolCommandHandler(rateLimiter: RateLimiter) {
               ? await handleSchedule(interaction)
               : await handleAnime(interaction)
           if (payload) await interaction.editReply(payload)
-          break
-        }
-        case 'search': {
-          await interaction.deferReply()
-          const payload = await handleSearch(interaction)
-          await interaction.editReply(payload)
           break
         }
         case 'remind': {

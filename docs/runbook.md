@@ -372,7 +372,7 @@ docker compose up -d
 
 A guild install must request **both** `bot` and `applications.commands`.
 
-Requesting only `applications.commands` produces an install with **no bot member**: the app registers its slash commands and nothing else. There are no gateway events, so mention, reply and name-keyword triggers never fire and reactions never appear. `/chat` still works, which is what makes this failure so quiet — the bot looks half-alive rather than broken.
+Requesting only `applications.commands` produces an install with **no bot member**: the app registers its slash commands and nothing else. There are no gateway events, so mention, reply and name-keyword triggers never fire and reactions never appear. `/ask` still works, which is what makes this failure so quiet — the bot looks half-alive rather than broken.
 
 This was the Portal's actual state until 2026-08-01. Nothing was ever observed to be wrong because the existing server install predates the Discord-provided link and was made with a hand-built OAuth URL.
 
