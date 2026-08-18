@@ -74,8 +74,24 @@ describe('harness token measurement', () => {
     expect(CORE_PROMPT).toContain('Web search results are the exception: lead with the finding, then react.')
   })
 
+  it('keeps the searched-turn rules scoped to search_web so other tools keep their personality (issue #94)', () => {
+    expect(CORE_PROMPT).toContain('Results from every other tool keep the personality-integrated style')
+  })
+
   it('keeps the speech quotas scoped off searched turns so they stop manufacturing a closing block (issue #94)', () => {
-    expect(SPEECH_PROMPT).toContain('The kaomoji and teasing-phrase quotas above do not apply on that turn.')
+    expect(SPEECH_PROMPT).toContain(
+      'do not let the kaomoji and teasing-phrase quotas above pull you into a second paragraph'
+    )
+  })
+
+  it('keeps bolding in play on a searched turn even with the other quotas lifted (issue #94)', () => {
+    expect(SPEECH_PROMPT).toContain('Bold still earns its place — keep it on the names and numbers in the finding.')
+  })
+
+  it('keeps the speech layer from re-manufacturing a closing roleplay block (issue #94)', () => {
+    expect(SPEECH_PROMPT).toContain(
+      'Never add a closing paragraph of roleplay just to give those flourishes somewhere to live.'
+    )
   })
 
   it('keeps the frozen baseline structurally consistent without re-deriving it', async () => {
