@@ -80,6 +80,33 @@ describe('memory tools', () => {
     expect(recalled.map(({ value }) => value)).not.toContain('thing-0')
   })
 
+  it('keeps an explicitly remembered claim in the window against fresher passive trivia', () => {
+    const now = Date.now()
+    assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'general_occupation',
+      value: 'shrine caretaker',
+      sourceKind: 'explicit',
+      observedAt: now - 90 * 60_000
+    })
+    for (let index = 0; index < 15; index++) {
+      assertClaim({
+        guildId: 'guild-1',
+        subjectUserId: 'user-1',
+        predicate: 'likes',
+        value: `thing-${index}`,
+        sourceKind: 'passive',
+        observedAt: now - (15 - index) * 60_000
+      })
+    }
+
+    const result = recallUser({ guild_id: 'guild-1', user_id: 'user-1' })
+
+    expect(result.factCount).toBe(15)
+    expect(result.facts).toContain('general_occupation: shrine caretaker')
+  })
+
   it('finds a known user by trimmed, case-insensitive display name before username', () => {
     upsertUserName('user-1', 'alice', 'Alice')
     upsertUserName('user-2', 'ALICE', 'Mio')
