@@ -50,7 +50,6 @@ interface RawComponent {
 }
 
 /** Recursively extract text content from Discord message components */
-/** Renders an embed's text as one bracketed part, or null when it carries no text at all. */
 function describeEmbed(embed: Message['embeds'][number]): string | null {
   const parts: string[] = []
   if (embed.author?.name) parts.push(`Author: ${embed.author.name}`)
@@ -63,7 +62,6 @@ function describeEmbed(embed: Message['embeds'][number]): string | null {
   return parts.length > 0 ? `[Embed: ${parts.join(' | ')}]` : null
 }
 
-/** Renders a poll's question and options as one bracketed part, or null when it has neither. */
 function describePoll(poll: NonNullable<Message['poll']>): string | null {
   const parts: string[] = []
   if (poll.question.text) parts.push(`Poll: ${poll.question.text}`)
