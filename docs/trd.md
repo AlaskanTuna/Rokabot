@@ -9,14 +9,14 @@
 ```
 ┌─────────────────────────────────────────────────┐
 │                  Discord Server                  │
-│  User sends /chat or @Roka                       │
+│  User sends /ask or @Roka                        │
 └──────────────────┬──────────────────────────────┘
                    │
                    ▼
 ┌─────────────────────────────────────────────────┐
 │              Discord Gateway Layer                │
 │  discord.js v14 client                            │
-│  - Slash command handler (/chat)                  │
+│  - Slash command handler (/ask)                   │
 │  - Message handler (mention/reply detection)      │
 │  - Rate limit guard (token bucket RPM + daily RPD)│
 │  - Concurrency guard (1 active req per channel)   │
@@ -286,8 +286,8 @@ requests.
 
 ```
 Event: interactionCreate
-Filter: isChatInputCommand() && commandName === 'chat'
-Extract: interaction.options.getString('message'), channelId, user.displayName
+Filter: isChatInputCommand() && commandName === 'ask'
+Extract: interaction.options.getString('question'), channelId, user.displayName
 Flow: deferReply() → process → editReply(response)
 ```
 

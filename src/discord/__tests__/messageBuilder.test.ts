@@ -4,15 +4,68 @@ vi.mock('../expressions.js', () => ({
   getExpressionUrl: () => 'https://example.test/roka.png'
 }))
 
-import { MAX_TOOL_FOOTER_CHARS, buildRokaMessage, buildToolFooter } from '../messageBuilder.js'
+import { MAX_TOOL_FOOTER_CHARS, TEXT_DISPLAY_BUDGET, buildRokaMessage, buildToolFooter } from '../messageBuilder.js'
 
-function payloadJson(text: string, toolsUsed?: string[]) {
-  return JSON.stringify(buildRokaMessage(text, 'playful', toolsUsed).components[0].toJSON())
+function payloadJson(text: string, toolsUsed?: string[], sources?: Array<{ url: string }>) {
+  return JSON.stringify(buildRokaMessage(text, 'playful', toolsUsed, sources).components[0].toJSON())
+}
+
+/** Every TextDisplay in the container — Components V2 budgets their content together, not separately. */
+function renderedChars(text: string, toolsUsed?: string[], sources?: Array<{ url: string }>) {
+  const container = buildRokaMessage(text, 'playful', toolsUsed, sources).components[0].toJSON() as {
+    components: Array<{ content?: string; components?: Array<{ content?: string }> }>
+  }
+  return container.components
+    .flatMap((component) => component.components ?? [component])
+    .map((component) => component.content ?? '')
+    .join('').length
 }
 
 function footerWithoutTimestamp(labels: string[]) {
   return buildToolFooter(labels, 0).replace(' • <t:0:R>', '')
 }
+
+describe('buildRokaMessage citations', () => {
+  const SOURCES = [{ url: 'https://www.crunchyroll.com/news/a' }, { url: 'https://vndb.org/b' }]
+
+  // With the search rubric live, search_web fires on most factual questions, so a reply is routinely built
+  // on sources the reader cannot otherwise see (#19 item 1).
+  it('cites the sources a searched reply was built on', () => {
+    expect(payloadJson('She premiered in January~', ['search_web'], SOURCES)).toContain('crunchyroll.com')
+  })
+
+  // The footer says what she did; the citations say where it came from. Complementary, not duplicated.
+  it('keeps the tool footer alongside the citations rather than replacing it', () => {
+    expect(payloadJson('She premiered in January~', ['search_web'], SOURCES)).toContain(
+      footerWithoutTimestamp(['searched the wider world'])
+    )
+  })
+
+  it('adds nothing when the turn searched nothing', () => {
+    expect(payloadJson('Tea is ready~', ['roll_dice'], [])).toBe(payloadJson('Tea is ready~', ['roll_dice']))
+  })
+
+  // The reply text, the footer and the citation row share one budget, and only the citations are droppable.
+  // The longest reply production can build is bounded by discord.maxMessageLength, whose own ceiling is
+  // TEXT_DISPLAY_BUDGET - MAX_TOOL_FOOTER_CHARS, so that is the worst case the citation row has to survive.
+  it('keeps a maximum-length searched reply within the shared budget', () => {
+    const longestReply = 'x'.repeat(TEXT_DISPLAY_BUDGET - MAX_TOOL_FOOTER_CHARS)
+
+    expect(renderedChars(longestReply, ['search_web'], SOURCES)).toBeLessThanOrEqual(TEXT_DISPLAY_BUDGET)
+  })
+
+  // Swept rather than sampled: the overrun only appears at the lengths where the citation row exactly fills
+  // its budget, which any single fixed reply length walks straight past.
+  it('never overruns the shared budget at any reply length', () => {
+    const ceiling = TEXT_DISPLAY_BUDGET - MAX_TOOL_FOOTER_CHARS
+    const rendered = []
+    for (let length = ceiling - 250; length <= ceiling; length++) {
+      rendered.push(renderedChars('x'.repeat(length), ['search_web'], SOURCES))
+    }
+
+    expect(Math.max(...rendered)).toBeLessThanOrEqual(TEXT_DISPLAY_BUDGET)
+  })
+})
 
 describe('buildRokaMessage', () => {
   it.each([

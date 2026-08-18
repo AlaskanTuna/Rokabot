@@ -432,7 +432,7 @@ export interface FakeInteraction {
 
 export function makeInteraction(spec: InteractionSpec = {}): FakeInteraction {
   const interaction: FakeInteraction = {
-    commandName: spec.commandName ?? 'chat',
+    commandName: spec.commandName ?? 'ask',
     channelId: spec.channelId ?? 'channel-1',
     member: spec.member === null ? null : spec.member ? makeMember(spec.member) : null,
     user: makeUser(spec.user),

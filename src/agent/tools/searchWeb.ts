@@ -1,6 +1,7 @@
 /** Web search via the Tavily API */
 
 import { logger } from '../../utils/logger.js'
+import { recordSearchCitations } from '../searchCitations.js'
 
 export interface SearchWebParams {
   query: string
@@ -77,6 +78,9 @@ export async function searchWeb(
     }))
 
     logger.debug({ query, resultCount: results.length, responseTime: data.response_time }, 'Tavily search completed')
+
+    // The model receives these as text; the reply surface needs the URLs to cite them.
+    recordSearchCitations(results.map(({ title, url }) => ({ title, url })))
 
     return {
       answer: data.answer || 'No summary available.',

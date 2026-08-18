@@ -8,7 +8,7 @@
 
 **Rokabot** — a server-wide Discord character chatbot embodying Maniwa Roka (馬庭 芦花) from Senren\*Banka.
 
-It runs on Gemini via Google ADK TypeScript, deployed on a Raspberry Pi 5 (8GB, reachable over Tailscale) using Docker Compose. The bot responds to slash commands (`/chat`) and mention/reply/name-keyword triggers, maintaining per-channel conversational memory with a FIFO window and idle TTL configured by `session.windowSize` and `session.ttl` in `config.yml`.
+It runs on Gemini via Google ADK TypeScript, deployed on a Raspberry Pi 5 (8GB, reachable over Tailscale) using Docker Compose. The bot responds to slash commands (`/ask`) and mention/reply/name-keyword triggers, maintaining per-channel conversational memory with a FIFO window and idle TTL configured by `session.windowSize` and `session.ttl` in `config.yml`.
 
 ---
 
@@ -19,7 +19,7 @@ Discord Server
     │
     ▼
 Discord Gateway Layer (discord.js)
-  - /chat slash command + mention/reply + name-keyword trigger
+  - /ask slash command + mention/reply + name-keyword trigger
   - Rate limit guard (token bucket RPM + daily RPD)
   - Concurrency guard (1 active request per channel)
     │

@@ -29,6 +29,7 @@ vi.mock('../events/gameCommands.js', () => ({ createGameCommandHandler: () => mo
 vi.mock('../events/stats/statsCommand.js', () => ({ handleStatsCommand: mocks.handleStatsCommand }))
 vi.mock('../events/toolCommands.js', () => ({ createToolCommandHandler: () => mocks.toolCommandHandler }))
 
+import { recordSearchCitations } from '../../agent/searchCitations.js'
 import { config } from '../../config.js'
 import { createInteractionHandler } from '../events/interactionCreate.js'
 
@@ -53,7 +54,7 @@ describe('interaction handler metrics', () => {
   it('records one completed slash turn with an enriched summary', async () => {
     const interaction = {
       isChatInputCommand: () => true,
-      commandName: 'chat',
+      commandName: 'ask',
       options: { getString: vi.fn(() => 'hello'), getAttachment: vi.fn() },
       channelId: 'channel-1',
       member: null,
@@ -93,6 +94,54 @@ describe('interaction handler metrics', () => {
     expect(JSON.stringify(interaction.editReply.mock.calls[0][0].components[0].toJSON())).not.toContain('-# 🌸')
   })
 
+  // getString is mocked by position, not name, so every other test here passes whether the handler reads
+  // 'question' or the retired 'message'. This is the only thing pinning the rename to the command definition.
+  it('reads the renamed question option rather than the retired message one', async () => {
+    const interaction = {
+      isChatInputCommand: () => true,
+      commandName: 'ask',
+      options: { getString: vi.fn(() => 'hello'), getAttachment: vi.fn() },
+      channelId: 'channel-1',
+      member: null,
+      user: { displayName: 'Alice', username: 'alice', id: 'user-1' },
+      guildId: 'guild-1',
+      deferReply: vi.fn().mockResolvedValue(undefined),
+      editReply: vi.fn().mockResolvedValue(undefined),
+      followUp: vi.fn().mockResolvedValue(undefined)
+    }
+    const rateLimiter = { tryConsume: vi.fn(() => true), remainingRpm: 14, remainingRpd: 499 }
+
+    await createInteractionHandler(rateLimiter as never)(interaction as never)
+
+    expect(interaction.options.getString).toHaveBeenCalledWith('question', true)
+  })
+
+  // roka.js is mocked here but searchCitations.js is not, so this exercises the real sink the handler opens
+  // around the turn — the seam that carries searched sources from inside ADK out to the reply.
+  it('cites the sources a searched slash turn was built on', async () => {
+    mocks.generateResponse.mockImplementation(async () => {
+      recordSearchCitations([{ title: 'Crunchyroll News', url: 'https://www.crunchyroll.com/news/a' }])
+      return { text: 'She premiered in January~', tone: 'playful', toolsUsed: ['search_web'], metrics }
+    })
+    const interaction = {
+      isChatInputCommand: () => true,
+      commandName: 'ask',
+      options: { getString: vi.fn(() => 'when did frieren air?'), getAttachment: vi.fn() },
+      channelId: 'channel-1',
+      member: null,
+      user: { displayName: 'Alice', username: 'alice', id: 'user-1' },
+      guildId: 'guild-1',
+      deferReply: vi.fn().mockResolvedValue(undefined),
+      editReply: vi.fn().mockResolvedValue(undefined),
+      followUp: vi.fn().mockResolvedValue(undefined)
+    }
+    const rateLimiter = { tryConsume: vi.fn(() => true), remainingRpm: 14, remainingRpd: 499 }
+
+    await createInteractionHandler(rateLimiter as never)(interaction as never)
+
+    expect(JSON.stringify(interaction.editReply.mock.calls[0][0].components[0].toJSON())).toContain('crunchyroll.com')
+  })
+
   it('renders a tool footer on the initial slash reply only', async () => {
     mocks.generateResponse.mockResolvedValueOnce({
       text: 'The dice have spoken~',
@@ -103,7 +152,7 @@ describe('interaction handler metrics', () => {
     mocks.splitResponse.mockReturnValueOnce(['The dice have spoken~', 'A second thought~'])
     const interaction = {
       isChatInputCommand: () => true,
-      commandName: 'chat',
+      commandName: 'ask',
       options: { getString: vi.fn(() => 'roll a die'), getAttachment: vi.fn() },
       channelId: 'channel-1',
       member: null,
@@ -127,7 +176,7 @@ describe('interaction handler metrics', () => {
   it('derives a per-channel DM tenant when there is no guild', async () => {
     const interaction = {
       isChatInputCommand: () => true,
-      commandName: 'chat',
+      commandName: 'ask',
       options: { getString: vi.fn(() => 'hello'), getAttachment: vi.fn() },
       channelId: 'channel-1',
       member: null,

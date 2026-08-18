@@ -64,7 +64,7 @@ const USER_A = 'memory-bridge-user-a'
 function makeInteraction(channelId: string, userId: string, message: string) {
   return {
     isChatInputCommand: () => true,
-    commandName: 'chat',
+    commandName: 'ask',
     options: { getString: vi.fn(() => message), getAttachment: vi.fn() },
     channelId,
     member: null,

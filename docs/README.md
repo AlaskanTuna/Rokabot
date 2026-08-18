@@ -59,7 +59,7 @@ She can chat with a server, remember useful context within its own guild boundar
 
 ## Features
 
-- **Conversation & Perception:** `/chat`, mentions, replies, and supported name-keyword triggers; image-aware conversations and recent channel context.
+- **Conversation & Perception:** `/ask`, mentions, replies, and supported name-keyword triggers; image-aware conversations and recent channel context.
 - **Memory:** Passive context monitoring and claims-based memory, isolated per guild and surfaced only through a bounded prompt envelope.
 - **Tools:** In chat, Roka can roll dice, flip coins, check the time and weather, search the web, discover anime and airing schedules, and manage reminders; a cute footer notes the little ritual she performed.
 - **Stats:** Fun server analytics with a mood ring, charts, and memory counts across 7D, 30D, and 90D views.
@@ -68,11 +68,10 @@ She can chat with a server, remember useful context within its own guild boundar
 
 | Command or Capability  | Use                                                                                                                                                                                                                                          |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/chat`                | Talk with Roka; optionally attach an image.                                                                                                                                                                                                  |
+| `/ask`                 | Ask Roka anything or just talk; she searches the web herself when she needs to. Optionally attach an image.                                                                                                                                  |
 | `/gacha`               | Hatch, view, pet, inspect stats, browse collection, read the guide, or view the leaderboard.                                                                                                                                                 |
 | `/hangman`             | Start and play a word-guessing game.                                                                                                                                                                                                         |
 | `/shiritori`           | Start, join, and score a word-chain game.                                                                                                                                                                                                    |
-| `/search`              | Search the web for current information.                                                                                                                                                                                                      |
 | `/anime`               | Search or browse anime, or search or browse airing schedules.                                                                                                                                                                                |
 | `/remind`              | Create, list, and cancel reminders.                                                                                                                                                                                                          |
 | `/stats`               | Explore four fixed, non-overlapping Last 30 Days views with no window selector: Overview (activity, heatmap, channel histogram); Mood (label, donut); Memory (who she knows best, growth curve); Nerd (latency, reliability, volume, trend). |
@@ -91,7 +90,7 @@ When Roka uses a tool mid-conversation, her reply ends with a small footer line 
 | `flip_coin`          | tossed a shrine coin         | —             | ✅               |
 | `get_current_time`   | peeked at the temple clock   | —             | ✅               |
 | `get_weather`        | divined today's weather      | —             | ✅               |
-| `search_web`         | searched the wider world     | `/search`     | ✅               |
+| `search_web`         | searched the wider world     | —             | ✅               |
 | `search_anime`       | leafed through anime scrolls | `/anime`      | ✅               |
 | `get_anime_schedule` | checked the airing almanac   | `/anime`      | ✅               |
 | `set_reminder`       | tied a reminder charm        | `/remind`     | ✅               |

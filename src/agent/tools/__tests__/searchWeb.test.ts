@@ -9,7 +9,7 @@ import { searchWeb } from '../searchWeb.js'
 const originalFetch = globalThis.fetch
 const originalKey = process.env.TAVILY_API_KEY
 
-/** The exact string src/discord/events/tools/search.ts compares against to pick its not-found branch. */
+/** What the model is handed when the provider returns results but no synthesised answer. */
 const NO_SUMMARY = 'No summary available.'
 
 let fetchMock: ReturnType<typeof vi.fn>
@@ -42,7 +42,9 @@ describe('searchWeb', () => {
 
   afterEach(() => {
     globalThis.fetch = originalFetch
-    process.env.TAVILY_API_KEY = originalKey
+    // biome-ignore lint/performance/noDelete: assigning undefined would coerce to the string "undefined", leaving searchWeb's `if (!apiKey)` guard truthy
+    if (originalKey === undefined) delete process.env.TAVILY_API_KEY
+    else process.env.TAVILY_API_KEY = originalKey
     vi.clearAllMocks()
   })
 
@@ -56,7 +58,7 @@ describe('searchWeb', () => {
     expect(sentBody().query).toBe('Frieren season 2 release date')
   })
 
-  it('preserves the no-summary sentinel the slash command branches on', async () => {
+  it('hands the model a stated absence rather than an empty answer', async () => {
     tavilyReplies({ results: [], response_time: 1 })
 
     await expect(searchWeb({ query: 'anything' })).resolves.toMatchObject({ answer: NO_SUMMARY })
