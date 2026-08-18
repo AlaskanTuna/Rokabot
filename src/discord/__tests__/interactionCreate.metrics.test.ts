@@ -94,6 +94,28 @@ describe('interaction handler metrics', () => {
     expect(JSON.stringify(interaction.editReply.mock.calls[0][0].components[0].toJSON())).not.toContain('-# 🌸')
   })
 
+  // getString is mocked by position, not name, so every other test here passes whether the handler reads
+  // 'question' or the retired 'message'. This is the only thing pinning the rename to the command definition.
+  it('reads the renamed question option rather than the retired message one', async () => {
+    const interaction = {
+      isChatInputCommand: () => true,
+      commandName: 'ask',
+      options: { getString: vi.fn(() => 'hello'), getAttachment: vi.fn() },
+      channelId: 'channel-1',
+      member: null,
+      user: { displayName: 'Alice', username: 'alice', id: 'user-1' },
+      guildId: 'guild-1',
+      deferReply: vi.fn().mockResolvedValue(undefined),
+      editReply: vi.fn().mockResolvedValue(undefined),
+      followUp: vi.fn().mockResolvedValue(undefined)
+    }
+    const rateLimiter = { tryConsume: vi.fn(() => true), remainingRpm: 14, remainingRpd: 499 }
+
+    await createInteractionHandler(rateLimiter as never)(interaction as never)
+
+    expect(interaction.options.getString).toHaveBeenCalledWith('question', true)
+  })
+
   // roka.js is mocked here but searchCitations.js is not, so this exercises the real sink the handler opens
   // around the turn — the seam that carries searched sources from inside ADK out to the reply.
   it('cites the sources a searched slash turn was built on', async () => {

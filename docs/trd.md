@@ -286,8 +286,8 @@ requests.
 
 ```
 Event: interactionCreate
-Filter: isChatInputCommand() && commandName === 'chat'
-Extract: interaction.options.getString('message'), channelId, user.displayName
+Filter: isChatInputCommand() && commandName === 'ask'
+Extract: interaction.options.getString('question'), channelId, user.displayName
 Flow: deferReply() → process → editReply(response)
 ```
 

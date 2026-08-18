@@ -53,6 +53,18 @@ describe('buildRokaMessage citations', () => {
 
     expect(renderedChars(longestReply, ['search_web'], SOURCES)).toBeLessThanOrEqual(TEXT_DISPLAY_BUDGET)
   })
+
+  // Swept rather than sampled: the overrun only appears at the lengths where the citation row exactly fills
+  // its budget, which any single fixed reply length walks straight past.
+  it('never overruns the shared budget at any reply length', () => {
+    const ceiling = TEXT_DISPLAY_BUDGET - MAX_TOOL_FOOTER_CHARS
+    const rendered = []
+    for (let length = ceiling - 250; length <= ceiling; length++) {
+      rendered.push(renderedChars('x'.repeat(length), ['search_web'], SOURCES))
+    }
+
+    expect(Math.max(...rendered)).toBeLessThanOrEqual(TEXT_DISPLAY_BUDGET)
+  })
 })
 
 describe('buildRokaMessage', () => {

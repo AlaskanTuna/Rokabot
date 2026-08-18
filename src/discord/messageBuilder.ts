@@ -73,7 +73,10 @@ export function buildRokaMessage(
 
   const footer = toolLabels.length > 0 ? buildToolFooter(toolLabels) : ''
   // The footer says what she did; the citations say where it came from. Complementary, not duplicated (#19).
-  const citations = fitCitations(sources, TEXT_DISPLAY_BUDGET - text.length - footer.length)
+  // The newline that joins them below is part of the rendered content, so it is budgeted here rather than
+  // silently borrowed — a citation row that exactly filled its budget would otherwise overrun by one.
+  const joinChars = footer ? 1 : 0
+  const citations = fitCitations(sources, TEXT_DISPLAY_BUDGET - text.length - footer.length - joinChars)
 
   if (footer || citations) {
     container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))

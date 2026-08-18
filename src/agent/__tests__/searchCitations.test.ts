@@ -79,7 +79,9 @@ describe('search citation capture', () => {
 
   afterEach(() => {
     globalThis.fetch = originalFetch
-    process.env.TAVILY_API_KEY = originalKey
+    // biome-ignore lint/performance/noDelete: assigning undefined would coerce to the string "undefined", leaving searchWeb's `if (!apiKey)` guard truthy
+    if (originalKey === undefined) delete process.env.TAVILY_API_KEY
+    else process.env.TAVILY_API_KEY = originalKey
     vi.clearAllMocks()
   })
 
