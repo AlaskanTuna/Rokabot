@@ -719,3 +719,89 @@ describe('reading a message forwarded straight to her', () => {
     expect((await handle(message)).userMessage).not.toContain('forwarded image(s)')
   })
 })
+
+describe('naming a replied-to image she cannot see', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    config.memory.claimsBackend = false
+    mocks.isChannelBusy.mockReturnValue(false)
+    mocks.isMonitored.mockReturnValue(false)
+    mocks.tryConsume.mockReturnValue(true)
+    mocks.generateResponse.mockResolvedValue({ text: 'Hello~', tone: 'playful', toolsUsed: [], metrics })
+  })
+
+  const PNG = (n: string) => ({ url: `https://cdn.test/${n}.png`, contentType: 'image/png' })
+
+  function repliedTo(attachments: object[], authorId = 'user-2') {
+    return {
+      author: { id: authorId, displayName: 'Bob' },
+      member: null,
+      content: 'have a look at this',
+      embeds: [],
+      poll: null,
+      messageSnapshots: new Collection(),
+      components: [],
+      stickers: new Collection(),
+      attachments: new Collection(attachments.map((a, index) => [String(index), a]))
+    }
+  }
+
+  async function handle(message: object) {
+    await createMessageHandler({ user: { id: 'bot-1' } } as never, createRateLimiter() as never)(message as never)
+    return mocks.generateResponse.mock.calls[0][0]
+  }
+
+  // The defect this block exists for (#109): the marker keyed off raw attachment count with no type filter,
+  // so replying to a PDF asserted an image was attached. She is not merely uninformed there, she is
+  // misinformed, and the plausible completion is a description of an image that does not exist.
+  it('does not claim an image when the replied-to message carries only an unopenable file', async () => {
+    const { message } = createMessage({
+      content: '<@bot-1> what is in this?',
+      referencedMessage: repliedTo([{ url: 'https://cdn.test/a.pdf', contentType: 'application/pdf' }])
+    })
+
+    expect((await handle(message)).userMessage).not.toContain('attached image(s)')
+  })
+
+  it('still names a replied-to image when one fits', async () => {
+    const { message } = createMessage({
+      content: '<@bot-1> what is in this?',
+      referencedMessage: repliedTo([PNG('ref')])
+    })
+
+    const result = await handle(message)
+
+    expect(result.imageAttachments).toHaveLength(1)
+    expect(result.userMessage).toContain('(attached image(s))')
+  })
+
+  // Mirror of #107 on this path: with the sender's own slots full nothing is taken, and a marker keyed to
+  // the taken count would vanish in exactly the case where it carried information.
+  it('says how many replied-to images it had no room to show her', async () => {
+    const { message } = createMessage({
+      content: '<@bot-1> what is in these?',
+      attachments: [PNG('own-a'), PNG('own-b'), PNG('own-c')],
+      referencedMessage: repliedTo([PNG('ref-a'), PNG('ref-b')])
+    })
+
+    const result = await handle(message)
+
+    expect(result.imageAttachments).toHaveLength(3)
+    expect(result.userMessage).toContain('(attached image(s), 2 not shown)')
+  })
+
+  // Her own expression thumbnails are skipped deliberately to save tokens, so nothing is taken from a reply
+  // to herself. Saying "attached image(s)" flat there is the same false assertion in a different dress.
+  it('names her own skipped thumbnail as unseen rather than claiming she can see it', async () => {
+    const { message } = createMessage({
+      content: '<@bot-1> what was that?',
+      referencedMessage: repliedTo([PNG('roka-sprite')], 'bot-1')
+    })
+
+    const result = await handle(message)
+
+    // The handler passes undefined rather than an empty array when nothing was taken (messageCreate.ts:415).
+    expect(result.imageAttachments).toBeUndefined()
+    expect(result.userMessage).toContain('(attached image(s), 1 not shown)')
+  })
+})

@@ -322,7 +322,23 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
         refParts.push(`(sticker: ${stickerNames})`)
       }
 
-      if (referencedMessage.attachments.size > 0) refParts.push('(attached image(s))')
+      // Counted off supported-image candidates, not raw attachment count: this marker's only value is
+      // naming an image she cannot see, so an unfiltered count asserted a replied-to PDF was an image and
+      // she answered as though describing one. #107 settled the same question for the forwarded marker;
+      // this line predated that decision. Materialised so the count reads the same off a discord.js
+      // Collection or a plain array.
+      const refImageCandidates: ImageAttachment[] = [...referencedMessage.attachments.values()]
+        .filter(isSupportedImage)
+        .map((a) => ({ url: a.url, contentType: a.contentType! }))
+      // Her own expression thumbnails are skipped deliberately to save tokens, so a reply to herself takes
+      // nothing — the marker names those as unseen rather than claiming she can see them.
+      const refImagesTaken = isReplyToBot
+        ? []
+        : refImageCandidates.slice(0, MAX_IMAGE_ATTACHMENTS - imageAttachments.length)
+      const refUnseen = refImageCandidates.length - refImagesTaken.length
+      if (refImageCandidates.length > 0) {
+        refParts.push(refUnseen > 0 ? `(attached image(s), ${refUnseen} not shown)` : '(attached image(s))')
+      }
 
       if (refParts.length > 0) {
         const refContext = `[Replying to ${refAuthor}: ${refParts.join('\n')}]`
@@ -331,12 +347,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
 
       // Skip image extraction from bot's own messages (expression thumbnails waste tokens)
       if (!isReplyToBot) {
-        const refImages: ImageAttachment[] = referencedMessage.attachments
-          .filter(isSupportedImage)
-          .map((a) => ({ url: a.url, contentType: a.contentType! }))
-          .slice(0, MAX_IMAGE_ATTACHMENTS - imageAttachments.length)
-
-        imageAttachments.push(...refImages)
+        imageAttachments.push(...refImagesTaken)
 
         if (imageAttachments.length < MAX_IMAGE_ATTACHMENTS) {
           for (const embed of referencedMessage.embeds) {
