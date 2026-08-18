@@ -5,7 +5,7 @@ import { withSearchCitations } from '../../agent/searchCitations.js'
 import { type ResponseEventInput, recordResponseEvent } from '../../storage/metricsStore.js'
 import { logger } from '../../utils/logger.js'
 import { RateLimiter } from '../../utils/rateLimiter.js'
-import { MAX_IMAGE_ATTACHMENTS, imageOptionName, isSupportedImage, resolveImageUrl } from '../attachments.js'
+import { MAX_IMAGE_ATTACHMENTS, imageOptionName, isSupportedMedia, resolveImageUrl } from '../attachments.js'
 import { isChannelBusy, markBusy, markFree } from '../concurrency.js'
 import { isIgnorableDiscordError } from '../errorHandler.js'
 import { buildRokaMessage } from '../messageBuilder.js'
@@ -80,8 +80,10 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
     const member = interaction.member
     const displayName = member && 'displayName' in member ? member.displayName : interaction.user.displayName
 
+    // Documents ride the existing attachment slots rather than getting their own option: Discord's attachment
+    // options accept any file already, so admitting the type is the whole change.
     const imageAttachments: ImageAttachment[] = attached
-      .filter(isSupportedImage)
+      .filter(isSupportedMedia)
       .map((supported) => ({ url: supported.url, contentType: supported.contentType as string }))
     let unsupportedCount = attached.length - imageAttachments.length
 

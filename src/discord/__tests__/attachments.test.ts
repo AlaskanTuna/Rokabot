@@ -3,7 +3,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({ lookup: vi.fn() }))
 vi.mock('node:dns/promises', () => ({ lookup: mocks.lookup }))
 
-import { isPrivateAddress, resolveImageUrl, resolvesToPublicAddress } from '../attachments.js'
+import {
+  isPrivateAddress,
+  isSupportedDocument,
+  isSupportedImage,
+  isSupportedMedia,
+  resolveImageUrl,
+  resolvesToPublicAddress
+} from '../attachments.js'
 
 function headResponse({ ok = true, contentType = 'image/png', url = 'https://cdn.test/a.png' } = {}) {
   return { ok, url, headers: { get: (name: string) => (name === 'content-type' ? contentType : null) } }
@@ -208,5 +215,29 @@ describe('resolveImageUrl', () => {
       url: 'https://cdn.test/final.png',
       contentType: 'image/png'
     })
+  })
+})
+
+describe('document policy', () => {
+  it('recognises a PDF as a document', () => {
+    expect(isSupportedDocument({ contentType: 'application/pdf' })).toBe(true)
+  })
+
+  // A document is not an image: the image predicate still gates the vision-only paths, where a PDF handed to
+  // sharp would be re-encoded into nonsense.
+  it('does not count a PDF as an image', () => {
+    expect(isSupportedImage({ contentType: 'application/pdf' })).toBe(false)
+  })
+
+  it.each(['text/plain', 'application/zip', 'video/mp4', 'application/msword'])('refuses %s', (contentType) => {
+    expect(isSupportedDocument({ contentType })).toBe(false)
+  })
+
+  it.each(['image/png', 'image/webp', 'application/pdf'])('accepts %s as media she can read', (contentType) => {
+    expect(isSupportedMedia({ contentType })).toBe(true)
+  })
+
+  it.each(['application/zip', 'text/plain', null])('refuses %s as media', (contentType) => {
+    expect(isSupportedMedia({ contentType })).toBe(false)
   })
 })

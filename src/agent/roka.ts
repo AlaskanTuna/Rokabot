@@ -51,6 +51,10 @@ export interface GenerateResult {
 }
 
 const MAX_IMAGE_SIZE_BYTES = 4 * 1024 * 1024
+// Documents get their own ceiling rather than sharing the image one: a PDF is not resized before sending, so
+// its bytes reach the request as-is, and 10 MB is what upload latency admits inside gemini.timeout at the
+// Pi's measured 2.5 MB/s upstream. See docs/multimodal.md.
+const MAX_DOCUMENT_SIZE_BYTES = 10 * 1024 * 1024
 const APP_NAME = 'rokabot'
 
 const sessionErrorCounts = new Map<string, number>()
@@ -652,34 +656,45 @@ export async function destroyAllSessions(): Promise<void> {
   logger.info('All ADK sessions destroyed')
 }
 
-/** Download an image as base64, returning null if it fails or exceeds 4 MB */
-async function downloadImage(url: string): Promise<{ data: string; mimeType: string } | null> {
+/** Download one attachment as base64, returning null if it fails or exceeds the ceiling for its type */
+async function downloadAttachment(attachment: ImageAttachment): Promise<{ data: string; mimeType: string } | null> {
+  const { url, contentType } = attachment
+  // Which types are admitted at all is the Discord layer's decision; this only decides how to handle one that
+  // already got through. Routing on image/* rather than an allowlist keeps the type sets in one place — the
+  // agent layer has no imports from the Discord layer and should not gain one for a constant.
+  const isImage = contentType.startsWith('image/')
+  const limit = isImage ? MAX_IMAGE_SIZE_BYTES : MAX_DOCUMENT_SIZE_BYTES
+
   try {
     const response = await fetch(url)
     if (!response.ok) {
-      logger.warn({ url, status: response.status }, 'Failed to download image')
+      logger.warn({ url, status: response.status }, 'Failed to download attachment')
       return null
     }
 
     const contentLength = response.headers.get('content-length')
-    if (contentLength && parseInt(contentLength, 10) > MAX_IMAGE_SIZE_BYTES) {
-      logger.warn({ url, size: contentLength }, 'Image exceeds 4 MB size limit, skipping')
+    if (contentLength && parseInt(contentLength, 10) > limit) {
+      logger.warn({ url, size: contentLength, limit }, 'Attachment exceeds its size limit, skipping')
       return null
     }
 
     const buffer = await response.arrayBuffer()
 
-    if (buffer.byteLength > MAX_IMAGE_SIZE_BYTES) {
-      logger.warn({ url, size: buffer.byteLength }, 'Image exceeds 4 MB size limit, skipping')
+    if (buffer.byteLength > limit) {
+      logger.warn({ url, size: buffer.byteLength, limit }, 'Attachment exceeds its size limit, skipping')
       return null
     }
 
-    const rawBuffer = Buffer.from(buffer)
-    const processed = await processImageForGemini(rawBuffer)
-    const base64 = processed.data.toString('base64')
-    return { data: base64, mimeType: processed.mimeType }
+    // A document goes to the model exactly as it arrived. sharp is an image pipeline — handed a PDF it throws,
+    // and its catch returns the undecoded bytes labelled image/jpeg, which would misdeclare the whole file.
+    if (!isImage) {
+      return { data: Buffer.from(buffer).toString('base64'), mimeType: contentType }
+    }
+
+    const processed = await processImageForGemini(Buffer.from(buffer))
+    return { data: processed.data.toString('base64'), mimeType: processed.mimeType }
   } catch (error) {
-    logger.warn({ url, error }, 'Error downloading image')
+    logger.warn({ url, error }, 'Error downloading attachment')
     return null
   }
 }
@@ -842,7 +857,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
 
   const imageParts: Part[] = []
   if (imageAttachments?.length) {
-    const downloads = await Promise.all(imageAttachments.map((img) => downloadImage(img.url)))
+    const downloads = await Promise.all(imageAttachments.map((img) => downloadAttachment(img)))
     for (const result of downloads) {
       if (result) {
         imageParts.push({ inlineData: { data: result.data, mimeType: result.mimeType } })

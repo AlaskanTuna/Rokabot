@@ -19,7 +19,7 @@ for (let index = 0; index < MAX_IMAGE_ATTACHMENTS; index++) {
     option
       .setName(imageOptionName(index))
       .setDescription(
-        index === 0 ? 'Share an image with Roka' : `Another image (${index + 1} of ${MAX_IMAGE_ATTACHMENTS})`
+        index === 0 ? 'Share an image or PDF with Roka' : `Another file (${index + 1} of ${MAX_IMAGE_ATTACHMENTS})`
       )
       .setRequired(false)
   )
