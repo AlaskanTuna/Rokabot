@@ -1,3 +1,4 @@
+import { Collection } from 'discord.js'
 import type { Interaction, Message } from 'discord.js'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { RateLimiter } from '../../utils/rateLimiter.js'
@@ -67,6 +68,9 @@ function createMessage(channelId = 'channel-1') {
       guildId: null,
       member: null,
       attachments: [],
+      embeds: [],
+      poll: null,
+      stickers: new Collection(),
       channel: { sendTyping: vi.fn().mockResolvedValue(undefined), messages: { fetch: vi.fn() } },
       reply
     } as unknown as Message,

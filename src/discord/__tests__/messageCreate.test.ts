@@ -1,3 +1,4 @@
+import { Collection } from 'discord.js'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
@@ -73,7 +74,10 @@ function createMessage({
   guild,
   guildId = 'guild-1',
   referencedMessage,
-  attachments = []
+  attachments = [],
+  embeds = [],
+  stickers = [] as Array<{ name: string }>,
+  poll = null
 }: {
   mentioned?: boolean
   content?: string
@@ -81,6 +85,9 @@ function createMessage({
   guildId?: string | null
   referencedMessage?: object
   attachments?: Array<{ url: string; contentType: string | null }>
+  embeds?: object[]
+  stickers?: Array<{ name: string }>
+  poll?: object | null
 } = {}) {
   const reply = vi.fn().mockResolvedValue({ delete: vi.fn().mockResolvedValue(undefined) })
   const send = vi.fn().mockResolvedValue(undefined)
@@ -97,6 +104,9 @@ function createMessage({
       guildId,
       member: { displayName: 'Alice' },
       attachments,
+      embeds,
+      poll,
+      stickers: new Collection(stickers.map((sticker, index) => [String(index), sticker])),
       channel: {
         sendTyping: vi.fn().mockResolvedValue(undefined),
         send,
@@ -387,5 +397,80 @@ describe('unsupported attachments on the mention path', () => {
     await createMessageHandler({ user: { id: 'bot-1' } } as never, createRateLimiter() as never)(message as never)
 
     expect(JSON.stringify(reply.mock.calls[0][0])).not.toContain("I couldn't open that file~")
+  })
+})
+
+describe("reading what the sender's own message shows", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    config.memory.claimsBackend = false
+    mocks.isChannelBusy.mockReturnValue(false)
+    mocks.isMonitored.mockReturnValue(false)
+    mocks.tryConsume.mockReturnValue(true)
+    mocks.generateResponse.mockResolvedValue({ text: 'Hello~', tone: 'playful', toolsUsed: [], metrics })
+  })
+
+  const LINK_PREVIEW = {
+    author: { name: 'The Register' },
+    title: 'DeepSeek Harness treats everything as a plug-in',
+    description: 'The framework drew 100,000 GitHub stars in days.',
+    fields: [],
+    footer: null,
+    image: { url: 'https://cdn.test/preview.png' },
+    thumbnail: null
+  }
+
+  async function handle(message: object) {
+    await createMessageHandler({ user: { id: 'bot-1' } } as never, createRateLimiter() as never)(message as never)
+    return mocks.generateResponse.mock.calls[0][0]
+  }
+
+  // A link preview puts the substance in its description. The replied-to message has always been read this
+  // way; the message actually sent to her was not, so sharing a link and asking about it gave her nothing.
+  it('reads the text of an embed on the message it was asked about', async () => {
+    const { message } = createMessage({ content: '<@bot-1> what is this?', embeds: [LINK_PREVIEW] })
+
+    expect((await handle(message)).userMessage).toContain('The framework drew 100,000 GitHub stars in days.')
+  })
+
+  it('sends an embed image to the vision slots', async () => {
+    const { message } = createMessage({ content: '<@bot-1> what is this?', embeds: [LINK_PREVIEW] })
+
+    expect((await handle(message)).imageAttachments).toEqual([
+      { url: 'https://cdn.test/preview.png', contentType: 'image/png' }
+    ])
+  })
+
+  it('never lets embed images exceed the shared attachment ceiling', async () => {
+    const embeds = Array.from({ length: 6 }, (_, index) => ({
+      ...LINK_PREVIEW,
+      image: { url: `https://cdn.test/${index}.png` }
+    }))
+    const { message } = createMessage({ content: '<@bot-1> what are these?', embeds })
+
+    expect((await handle(message)).imageAttachments).toHaveLength(3)
+  })
+
+  // Container text was read only when there was no message text beside it, so she could match her own name
+  // inside a container she then never saw the contents of.
+  it('keeps container text when the message carries plain text as well', async () => {
+    const { message } = createMessage({ content: '<@bot-1> explain this' })
+    // discord.js hands components as builders; extractComponentTexts reads them through toJSON().
+    message.components = [{ toJSON: () => ({ type: 10, content: 'Deploy finished: 3 services healthy' }) }] as never
+
+    expect((await handle(message)).userMessage).toContain('Deploy finished: 3 services healthy')
+  })
+
+  it('names a sticker on the message rather than ignoring it', async () => {
+    const { message } = createMessage({ content: '<@bot-1> what is this?', stickers: [{ name: 'roka_wink' }] })
+
+    expect((await handle(message)).userMessage).toContain('roka_wink')
+  })
+
+  it('reads a poll on the message', async () => {
+    const poll = { question: { text: 'Best girl?' }, answers: new Collection([['1', { text: 'Roka' }]]) }
+    const { message } = createMessage({ content: '<@bot-1> vote for me', poll })
+
+    expect((await handle(message)).userMessage).toContain('Best girl?')
   })
 })
