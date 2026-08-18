@@ -130,12 +130,19 @@ function describeForwardedSnapshots(snapshots: Message['messageSnapshots'], imag
     }
 
     const fwdAttachments = snapshot.attachments ? [...snapshot.attachments.values()] : []
-    const fwdImages = fwdAttachments
+    const fwdCandidates = fwdAttachments
       .filter(isSupportedImage)
       .map((a) => ({ url: a.url, contentType: a.contentType! }))
-      .slice(0, imageSlots - images.length)
+    const fwdImages = fwdCandidates.slice(0, imageSlots - images.length)
     images.push(...fwdImages)
-    if (fwdImages.length > 0) fwdParts.push('(forwarded image(s))')
+
+    // Counted off the candidates, not the ones taken. This marker is not a caption for an image she can
+    // already see — its only value is naming one she cannot, so keying it to the taken count dropped it in
+    // exactly the case where it carried information, and she answered as though nothing had been forwarded.
+    const unseen = fwdCandidates.length - fwdImages.length
+    if (fwdCandidates.length > 0) {
+      fwdParts.push(unseen > 0 ? `(forwarded image(s), ${unseen} not shown)` : '(forwarded image(s))')
+    }
 
     if (fwdParts.length > 0) parts.push(`[Forwarded: ${fwdParts.join(' | ')}]`)
   }
