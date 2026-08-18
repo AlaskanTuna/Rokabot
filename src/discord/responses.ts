@@ -55,6 +55,11 @@ export function splitResponse(text: string, maxLength = config.discord.maxMessag
     }
     if (splitIndex === -1 || splitIndex < maxLength * 0.5) {
       splitIndex = maxLength
+      // A hard cut lands on an arbitrary UTF-16 code unit, and Roka's replies are full of emoji, which are
+      // surrogate pairs. Cutting between the halves emits two lone surrogates that Discord renders as
+      // replacement characters, so step back off the pair. Never past index 1, which would stall the loop.
+      const trailing = remaining.charCodeAt(splitIndex - 1)
+      if (splitIndex > 1 && trailing >= 0xd800 && trailing <= 0xdbff) splitIndex -= 1
     }
 
     chunks.push(remaining.slice(0, splitIndex))
