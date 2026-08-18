@@ -1,14 +1,21 @@
-import type { Client, Interaction } from 'discord.js'
+import type { Attachment, Client, Interaction } from 'discord.js'
 import { DiscordAPIError, MessageFlags } from 'discord.js'
 import { type ImageAttachment, generateResponse } from '../../agent/roka.js'
 import { withSearchCitations } from '../../agent/searchCitations.js'
 import { type ResponseEventInput, recordResponseEvent } from '../../storage/metricsStore.js'
 import { logger } from '../../utils/logger.js'
 import { RateLimiter } from '../../utils/rateLimiter.js'
+import { MAX_IMAGE_ATTACHMENTS, imageOptionName, isSupportedImage } from '../attachments.js'
 import { isChannelBusy, markBusy, markFree } from '../concurrency.js'
 import { isIgnorableDiscordError } from '../errorHandler.js'
 import { buildRokaMessage } from '../messageBuilder.js'
-import { getRandomBusy, getRandomDecline, getRandomError, splitResponse } from '../responses.js'
+import {
+  getRandomBusy,
+  getRandomDecline,
+  getRandomError,
+  getRandomUnsupportedAttachment,
+  splitResponse
+} from '../responses.js'
 import { createGameCommandHandler } from './gameCommands.js'
 import { handleStatsCommand } from './stats/statsCommand.js'
 import { createToolCommandHandler } from './toolCommands.js'
@@ -64,20 +71,22 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
     }
 
     const message = interaction.options.getString('question', true)
-    const attachment = interaction.options.getAttachment('image')
+    // Truthiness rather than a null check: an unfilled option is absent, and callers spell that both ways.
+    const attached = Array.from({ length: MAX_IMAGE_ATTACHMENTS }, (_, index) =>
+      interaction.options.getAttachment(imageOptionName(index))
+    ).filter((candidate): candidate is Attachment => Boolean(candidate))
     const channelId = interaction.channelId
     const guildId = interaction.guildId ?? `dm:${channelId}`
     const member = interaction.member
     const displayName = member && 'displayName' in member ? member.displayName : interaction.user.displayName
 
-    const ALLOWED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp'])
-    const imageAttachments: ImageAttachment[] = []
-    if (attachment?.contentType && ALLOWED_IMAGE_TYPES.has(attachment.contentType)) {
-      imageAttachments.push({ url: attachment.url, contentType: attachment.contentType })
-    }
+    const imageAttachments: ImageAttachment[] = attached
+      .filter(isSupportedImage)
+      .map((supported) => ({ url: supported.url, contentType: supported.contentType as string }))
+    const unsupportedCount = attached.length - imageAttachments.length
 
     logger.debug({ channelId, command: 'ask' }, 'Slash command received')
-    logger.debug({ channelId, message, hasImage: !!attachment }, 'Slash command details')
+    logger.debug({ channelId, message, imageCount: imageAttachments.length, unsupportedCount }, 'Slash command details')
 
     if (isChannelBusy(channelId)) {
       logger.debug({ channelId }, 'Channel busy — sending busy message')
@@ -115,7 +124,9 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
 
       logger.debug({ channelId, tone, responseLength: responseText.length }, 'ADK response received')
 
-      const chunks = splitResponse(responseText)
+      // She answers the question either way; the nudge only tells them the file was not something she can open.
+      const withNudge = unsupportedCount > 0 ? `${responseText}\n\n${getRandomUnsupportedAttachment()}` : responseText
+      const chunks = splitResponse(withNudge)
       logger.debug({ channelId, chunkCount: chunks.length }, 'Response split into chunks')
       await interaction.editReply(buildRokaMessage(chunks[0], tone, toolsUsed, sources))
 

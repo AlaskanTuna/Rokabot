@@ -24,6 +24,19 @@ const ERROR_MESSAGES = [
   'Mou, I lost my train of thought... sorry about that.'
 ]
 
+// Appended to a normal reply when someone attaches something she cannot open. Silence reads as
+// hallucination or evasion — she answers the question and says plainly that the file was not one of them.
+const UNSUPPORTED_ATTACHMENT_MESSAGES = [
+  "Ah — I couldn't open that file, sorry~ Could you tell me what's in it?",
+  "Mou~ that kind of file is beyond me. Describe it for me and I'll help!",
+  "Nn... I can't peek inside that one. Images I can see, but not that~",
+  "Sorry, that attachment isn't something I can look at — but I'm listening!"
+]
+
+export function getRandomUnsupportedAttachment(): string {
+  return UNSUPPORTED_ATTACHMENT_MESSAGES[Math.floor(Math.random() * UNSUPPORTED_ATTACHMENT_MESSAGES.length)]
+}
+
 export function getRandomDecline(): string {
   return DECLINE_MESSAGES[Math.floor(Math.random() * DECLINE_MESSAGES.length)]
 }

@@ -33,6 +33,7 @@ vi.mock('../responses.js', () => ({
   getRandomBusy: () => 'busy',
   getRandomDecline: () => 'decline',
   getRandomError: () => 'error',
+  getRandomUnsupportedAttachment: () => "I couldn't open that file~",
   splitResponse: (response: string) => [response]
 }))
 vi.mock('../events/gachaMention.js', () => ({ handleGachaMention: vi.fn() }))

@@ -1,5 +1,6 @@
 import { ApplicationIntegrationType, InteractionContextType } from 'discord.js'
 import { describe, expect, it } from 'vitest'
+import { MAX_IMAGE_ATTACHMENTS, imageOptionName } from '../../attachments.js'
 import { buildCommandBody } from '../index.js'
 
 // /ask replaced both /chat and /search (#19). Retiring two names and adding one moves this list, and the
@@ -44,6 +45,15 @@ describe('buildCommandBody', () => {
     const expectedNames = Object.keys(expectedPolicy).sort()
 
     expect(names).toEqual(expectedNames)
+  })
+
+  // Discord has no multi-attachment option type, so /ask exposes one slot per image the mention path accepts.
+  it('offers one attachment slot per image the mention path would accept', () => {
+    const ask = buildCommandBody().find((command) => command.name === 'ask')
+
+    expect((ask?.options ?? []).filter((option) => option.type === 11).map((option) => option.name)).toEqual(
+      Array.from({ length: MAX_IMAGE_ATTACHMENTS }, (_, index) => imageOptionName(index))
+    )
   })
 
   it('sets the expected installation and context policy per command', () => {
