@@ -6,6 +6,18 @@ const MIN_DIMENSION = 512
 const JPEG_QUALITY = 80
 
 /**
+ * What Gemini charges for one image, measured against gemini-3.5-flash-lite with countTokens on
+ * 2026-08-19: 1089 tokens for every square image from 64x64 through 1024x1024, easing slightly at
+ * extreme aspect ratios (1081 at 2:1, 1056 at 4:1). Flat, so resizing an image cannot change what it
+ * costs — there is no cheap tier for a small one and no tiling growth for a large one.
+ *
+ * Note for anyone reaching for the published tile model — 258 tokens per tile, one tile below 384px:
+ * it does not describe this model's billing, and measuring beats citing it. A 64x64 image costs the
+ * same 1089 as a 1024x1024 one, so neither the cheap tier nor the tiling growth shows up in practice.
+ */
+export const GEMINI_IMAGE_TOKENS = 1089
+
+/**
  * Process an image buffer for optimal Gemini vision input.
  * - Resize large images to max 1024px on longest side
  * - Upscale small images to min 512px on shortest side (lanczos3)
