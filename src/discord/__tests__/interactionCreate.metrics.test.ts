@@ -9,8 +9,13 @@ const mocks = vi.hoisted(() => ({
   gameCommandHandler: vi.fn(),
   toolCommandHandler: vi.fn(),
   handleStatsCommand: vi.fn(),
-  splitResponse: vi.fn((response: string) => [response])
+  splitResponse: vi.fn((response: string) => [response]),
+  lookup: vi.fn(async () => [{ address: '93.184.216.34', family: 4 }])
 }))
+
+// The URL guard resolves a hostname before connecting, so without this a linked-image test fails closed on
+// the test host not existing — and passes for the wrong reason wherever a rejection is what it asserts.
+vi.mock('node:dns/promises', () => ({ lookup: mocks.lookup }))
 
 vi.mock('../../agent/roka.js', () => ({ generateResponse: mocks.generateResponse }))
 vi.mock('../../storage/metricsStore.js', () => ({ recordResponseEvent: mocks.recordResponseEvent }))

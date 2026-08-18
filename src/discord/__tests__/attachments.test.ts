@@ -1,16 +1,18 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { isPubliclyRoutableHost, resolveImageUrl } from '../attachments.js'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+const mocks = vi.hoisted(() => ({ lookup: vi.fn() }))
+vi.mock('node:dns/promises', () => ({ lookup: mocks.lookup }))
+
+import { isPrivateAddress, resolveImageUrl, resolvesToPublicAddress } from '../attachments.js'
 
 function headResponse({ ok = true, contentType = 'image/png', url = 'https://cdn.test/a.png' } = {}) {
   return { ok, url, headers: { get: (name: string) => (name === 'content-type' ? contentType : null) } }
 }
 
-describe('isPubliclyRoutableHost', () => {
-  // The Pi reaches these itself and lives on a Tailnet, so the guard is what stops a pasted link turning the
-  // bot into a probe for the poster. 100.64.0.0/10 is the one that matters most here — it is Tailscale's.
+const PUBLIC_ANSWER = [{ address: '93.184.216.34', family: 4 }]
+
+describe('isPrivateAddress', () => {
   it.each([
-    'localhost',
-    'api.localhost',
     '127.0.0.1',
     '10.0.0.5',
     '192.168.1.1',
@@ -22,22 +24,82 @@ describe('isPubliclyRoutableHost', () => {
     '0.0.0.0',
     '::1',
     'fd00::1',
-    'fe80::1'
-  ])('refuses %s', (host) => {
-    expect(isPubliclyRoutableHost(host)).toBe(false)
+    'fe80::1',
+    '::ffff:127.0.0.1' // an IPv4-mapped v6 address is the same loopback wearing a different spelling
+  ])('recognises %s as private', (address) => {
+    expect(isPrivateAddress(address)).toBe(true)
   })
 
-  // 172.15 and 172.32 sit just outside the private block, and 100.128 just outside CGNAT — a guard that
-  // rejects these is over-broad and would refuse legitimate hosts.
-  it.each(['cdn.discordapp.com', 'media.tenor.com', '8.8.8.8', '172.15.0.1', '172.32.0.1', '100.128.0.1'])(
-    'allows %s',
-    (host) => {
-      expect(isPubliclyRoutableHost(host)).toBe(true)
+  // Just outside each block. A check that rejects these is over-broad and refuses legitimate hosts.
+  it.each(['93.184.216.34', '8.8.8.8', '172.15.0.1', '172.32.0.1', '100.128.0.1', '2606:4700::1111'])(
+    'treats %s as public',
+    (address) => {
+      expect(isPrivateAddress(address)).toBe(false)
     }
   )
 })
 
+describe('resolvesToPublicAddress', () => {
+  beforeEach(() => {
+    mocks.lookup.mockReset()
+    mocks.lookup.mockResolvedValue(PUBLIC_ANSWER)
+  })
+
+  // The whole point of the rewrite. A hostname is not an address, and nothing about the text of
+  // `localtest.me` says it answers ::1 — only resolving it does.
+  it('refuses a hostname that resolves into a private range', async () => {
+    mocks.lookup.mockResolvedValue([{ address: '100.64.0.1', family: 4 }])
+
+    expect(await resolvesToPublicAddress('roka-probe.example')).toBe(false)
+  })
+
+  it('refuses a hostname where only one of several answers is private', async () => {
+    mocks.lookup.mockResolvedValue([
+      { address: '93.184.216.34', family: 4 },
+      { address: '10.0.0.5', family: 4 }
+    ])
+
+    expect(await resolvesToPublicAddress('split.example')).toBe(false)
+  })
+
+  it('accepts a hostname whose every answer is public', async () => {
+    expect(await resolvesToPublicAddress('cdn.discordapp.com')).toBe(true)
+  })
+
+  it('fails closed when the name does not resolve', async () => {
+    mocks.lookup.mockRejectedValue(new Error('ENOTFOUND'))
+
+    expect(await resolvesToPublicAddress('nope.example')).toBe(false)
+  })
+
+  it('fails closed when a name resolves to nothing at all', async () => {
+    mocks.lookup.mockResolvedValue([])
+
+    expect(await resolvesToPublicAddress('empty.example')).toBe(false)
+  })
+
+  // localhost need not appear in DNS, so it is refused by name rather than by resolution.
+  it.each(['localhost', 'api.localhost'])('refuses %s without resolving it', async (host) => {
+    expect(await resolvesToPublicAddress(host)).toBe(false)
+    expect(mocks.lookup).not.toHaveBeenCalled()
+  })
+
+  it.each(['10.0.0.5', '[::1]', '100.64.0.1'])('refuses the private literal %s without resolving it', async (host) => {
+    expect(await resolvesToPublicAddress(host)).toBe(false)
+    expect(mocks.lookup).not.toHaveBeenCalled()
+  })
+
+  it('accepts a public literal without resolving it', async () => {
+    expect(await resolvesToPublicAddress('8.8.8.8')).toBe(true)
+    expect(mocks.lookup).not.toHaveBeenCalled()
+  })
+})
+
 describe('resolveImageUrl', () => {
+  beforeEach(() => {
+    mocks.lookup.mockReset()
+    mocks.lookup.mockResolvedValue(PUBLIC_ANSWER)
+  })
   afterEach(() => vi.unstubAllGlobals())
 
   it('refuses a protocol that is not http or https', async () => {
@@ -54,12 +116,22 @@ describe('resolveImageUrl', () => {
     expect(await resolveImageUrl('what is in this picture?')).toBeNull()
   })
 
-  // The assertion that matters: refused *before* the request, so the bot never touches the tailnet at all.
-  it('refuses a private host without making any request', async () => {
+  it('refuses a private literal without making any request', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
 
     expect(await resolveImageUrl('http://100.64.0.1/admin')).toBeNull()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  // The hole this PR was rejected for. A perfectly ordinary-looking hostname, one static DNS record, no
+  // redirect and no rebinding — the request must not happen at all.
+  it('refuses an ordinary hostname that resolves onto the tailnet, without making any request', async () => {
+    mocks.lookup.mockResolvedValue([{ address: '100.64.0.1', family: 4 }])
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    expect(await resolveImageUrl('https://roka-probe.example/x.png')).toBeNull()
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
@@ -104,12 +176,23 @@ describe('resolveImageUrl', () => {
     })
   })
 
-  // Validating only the typed hostname would guard nothing: roka.ts's GET follows redirects of its own, so a
-  // public URL that bounces to the tailnet has to be caught on where it landed, not where it started.
-  it('refuses a public URL that redirects onto a private host', async () => {
+  it('refuses a public URL that redirects onto a private literal', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => headResponse({ url: 'http://10.0.0.5/secret.png' }))
+    )
+
+    expect(await resolveImageUrl('https://public.test/redirect')).toBeNull()
+  })
+
+  // The redirect target gets the same resolution treatment, not just the literal check.
+  it('refuses a redirect onto a hostname that resolves privately', async () => {
+    mocks.lookup.mockImplementation(async (host: string) =>
+      host === 'public.test' ? PUBLIC_ANSWER : [{ address: '169.254.169.254', family: 4 }]
+    )
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => headResponse({ url: 'http://metadata.example/latest' }))
     )
 
     expect(await resolveImageUrl('https://public.test/redirect')).toBeNull()
