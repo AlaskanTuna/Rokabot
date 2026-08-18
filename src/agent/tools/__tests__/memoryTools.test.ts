@@ -43,7 +43,7 @@ describe('memory tools', () => {
       sourceKind: 'passive'
     })
 
-    const result = recallUser({ guild_id: 'guild-1', user_id: 'user-1' })
+    const result = recallUser({ guild_id: 'guild-1', user_id: 'user-1', message: '' })
 
     expect(result.factCount).toBe(3)
     expect(result.facts).toContain('favorite_anime: frieren')
@@ -68,7 +68,7 @@ describe('memory tools', () => {
     }
     saveFact('guild-1', 'user-1', 'ancient_fact', 'from the archive')
 
-    const result = recallUser({ guild_id: 'guild-1', user_id: 'user-1' })
+    const result = recallUser({ guild_id: 'guild-1', user_id: 'user-1', message: '' })
 
     expect(result.factCount).toBe(15)
     expect(result.facts.startsWith('likes: thing-15')).toBe(true)
@@ -102,7 +102,7 @@ describe('memory tools', () => {
       })
     }
 
-    const result = recallUser({ guild_id: 'guild-1', user_id: 'user-1' })
+    const result = recallUser({ guild_id: 'guild-1', user_id: 'user-1', message: '' })
 
     expect(result.factCount).toBe(15)
     expect(result.facts).toContain('general_occupation: shrine caretaker')
@@ -131,6 +131,51 @@ describe('memory tools', () => {
         }
       })
     ).resolves.toEqual({ facts: 'favorite_anime: Frieren', factCount: 1 })
+  })
+
+  it('threads _userMessage from toolContext.state into ranking, surfacing a fact buried by recency', async () => {
+    const now = Date.now()
+    assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'misc',
+      value: 'volunteers at the animal shelter on weekends',
+      sourceKind: 'explicit',
+      observedAt: now - 40 * 24 * 60 * 60 * 1000
+    })
+    for (let index = 0; index < 19; index++) {
+      assertClaim({
+        guildId: 'guild-1',
+        subjectUserId: 'user-1',
+        predicate: 'misc',
+        value: `noise item ${index}`,
+        sourceKind: 'explicit',
+        observedAt: now - (19 - index) * 24 * 60 * 60 * 1000
+      })
+    }
+
+    const withoutMessage = await recallUserTool.runAsync({
+      args: {},
+      toolContext: {
+        state: new Map([
+          ['_userId', 'user-1'],
+          ['_guildId', 'guild-1']
+        ])
+      }
+    })
+    const withMessage = await recallUserTool.runAsync({
+      args: {},
+      toolContext: {
+        state: new Map([
+          ['_userId', 'user-1'],
+          ['_guildId', 'guild-1'],
+          ['_userMessage', 'what does she do at the shelter?']
+        ])
+      }
+    })
+
+    expect((withoutMessage as { facts: string }).facts).not.toContain('volunteers at the animal shelter')
+    expect((withMessage as { facts: string }).facts).toContain('volunteers at the animal shelter')
   })
 
   it('returns the graceful result when user_name is unknown', async () => {
@@ -162,8 +207,8 @@ describe('memory tools', () => {
   it('keeps a DM fact scoped to its own channel tenant, invisible from a different DM', () => {
     rememberUser({ guild_id: 'dm:channel-A', user_id: 'user-A', fact_key: 'favorite_anime', fact_value: 'Frieren' })
 
-    expect(recallUser({ guild_id: 'dm:channel-B', user_id: 'user-A' }).factCount).toBe(0)
-    expect(recallUser({ guild_id: 'dm:channel-A', user_id: 'user-A' }).factCount).toBe(1)
+    expect(recallUser({ guild_id: 'dm:channel-B', user_id: 'user-A', message: '' }).factCount).toBe(0)
+    expect(recallUser({ guild_id: 'dm:channel-A', user_id: 'user-A', message: '' }).factCount).toBe(1)
   })
 
   it('fails closed instead of writing to the shared global tenant when the FunctionTool has no usable _guildId', async () => {

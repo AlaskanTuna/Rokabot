@@ -165,6 +165,7 @@ export const recallUserTool = new FunctionTool({
   execute: async (input, toolContext) => {
     const userId = toolContext?.state?.get<string>('_userId') ?? 'unknown'
     const guildId = toolContext?.state?.get<string>('_guildId')
+    const message = toolContext?.state?.get<string>('_userMessage') ?? ''
     if (!guildId || guildId === 'global') {
       // The returned copy is byte-identical to a genuine empty recall, so the log is the only place
       // an operator can tell a broken tenant wiring apart from "nothing stored yet".
@@ -177,9 +178,9 @@ export const recallUserTool = new FunctionTool({
     if (input.user_name) {
       const user = findUserByName(input.user_name, guildId)
       if (!user) return { facts: "I don't know anyone by that name here yet.", factCount: 0 }
-      return recallUser({ user_id: user.userId, guild_id: guildId })
+      return recallUser({ user_id: user.userId, guild_id: guildId, message })
     }
-    return recallUser({ user_id: userId, guild_id: guildId })
+    return recallUser({ user_id: userId, guild_id: guildId, message })
   }
 })
 

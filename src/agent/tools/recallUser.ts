@@ -1,11 +1,13 @@
 /** Recall all stored facts about a user */
 
 import { getFacts } from '../../storage/userMemory.js'
-import { getActiveClaims, touchRecalled } from '../memory/memoryClaims.js'
+import { touchRecalled } from '../memory/memoryClaims.js'
+import { retrieveForSubject } from '../memory/retriever.js'
 
 export interface RecallUserParams {
   user_id: string
   guild_id: string
+  message: string
 }
 
 export interface RecallUserResult {
@@ -13,12 +15,13 @@ export interface RecallUserResult {
   factCount: number
 }
 
-/** Capped so the model sees her sharpest notes rather than the whole archive; getActiveClaims owns the ordering */
+/** Capped so the model sees her sharpest notes rather than the whole archive; retrieveForSubject owns the ordering */
 const MAX_RECALLED_FACTS = 15
 
 export function recallUser(params: RecallUserParams): RecallUserResult {
-  const { user_id, guild_id } = params
-  const claims = guild_id === 'global' ? [] : getActiveClaims(guild_id, user_id)
+  const { user_id, guild_id, message } = params
+  const claims =
+    guild_id === 'global' ? [] : retrieveForSubject(guild_id, user_id, message, MAX_RECALLED_FACTS).map((r) => r.claim)
   const facts = [
     ...claims.map((claim) => ({ key: claim.predicate, value: claim.value })),
     ...getFacts(guild_id, user_id)
