@@ -27,9 +27,7 @@ export function clampToBudget(text: string, budget: number): string {
  * expanding into link embeds. The label is the host, which cannot contain the ']' that would break it.
  */
 export function fitCitations(sources: ReadonlyArray<{ url: string }>, budget: number): string {
-  const cites = sources
-    .slice(0, MAX_CITATIONS)
-    .map((source, index) => `${index + 1}. [${sourceHost(source.url)}](<${source.url}>)`)
+  const cites = sources.slice(0, MAX_CITATIONS).map((source) => `[${sourceHost(source.url)}](<${source.url}>)`)
   while (cites.length > 0) {
     const line = `-# 🔗 ${cites.join('  ·  ')}`
     if (line.length <= budget) return line

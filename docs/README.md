@@ -49,7 +49,7 @@
 
 <img align="right" src="../assets/roka-sticker-2.png" alt="Roka in casual outfit" width="80" />
 
-She can chat with a server, remember useful context within its own guild boundary, help with everyday requests, and make downtime more playful.
+She can chat with a server, remember useful context without carrying it into another server or DM, help with everyday requests, and make downtime more playful.
 
 <img src="../assets/banner.png" alt="Yuzucook" />
 
@@ -60,7 +60,7 @@ She can chat with a server, remember useful context within its own guild boundar
 ## Features
 
 - **Conversation & Perception:** `/ask`, mentions, replies, and supported name-keyword triggers; image-aware conversations and recent channel context.
-- **Memory:** Passive context monitoring and claims-based memory, isolated per guild and surfaced only through a bounded prompt envelope.
+- **Memory:** Passive context monitoring and claims-based memory, isolated per tenant — a guild, or a single DM or group chat — and surfaced only through a bounded prompt envelope.
 - **Tools:** In chat, Roka can roll dice, flip coins, check the time and weather, search the web, discover anime and airing schedules, and manage reminders; a cute footer notes the little ritual she performed.
 - **Stats:** Fun server analytics with a mood ring, charts, and memory counts across 7D, 30D, and 90D views.
 - **Games:** Buddy Pets, Hangman, and Shiritori, with SQLite-backed progress and leaderboards.
@@ -75,11 +75,13 @@ She can chat with a server, remember useful context within its own guild boundar
 | `/anime`               | Search or browse anime, or search or browse airing schedules.                                                                                                                                                                                |
 | `/remind`              | Create, list, and cancel reminders.                                                                                                                                                                                                          |
 | `/stats`               | Explore four fixed, non-overlapping Last 30 Days views with no window selector: Overview (activity, heatmap, channel histogram); Mood (label, donut); Memory (who she knows best, growth curve); Nerd (latency, reliability, volume, trend). |
-| In-Conversation Memory | Recall or save useful user facts within the current guild.                                                                                                                                                                                   |
+| In-Conversation Memory | Recall or save useful user facts within the current server or DM.                                                                                                                                                                            |
 
 ### Tool Footer
 
-When Roka uses a tool mid-conversation, her reply ends with a small footer line (e.g. `🌸 cast the fortune dice · divined today's weather • <relative timestamp>`, rendered by Discord as "2 minutes ago") noting each tool she invoked, phrased as a little shrine ritual. Up to three labels are shown (`…and more` beyond that). Every tool below is available implicitly in chat — Roka decides when to call it; some also have an explicit slash command.
+When Roka uses a tool mid-conversation, her reply ends with a small footer line (e.g. `🌸 cast the fortune dice · divined today's weather • <relative timestamp>`, rendered by Discord as "2 minutes ago") noting each tool she invoked, phrased as a little shrine ritual. Up to three labels are shown (`…and more` beyond that). When she searched the web, a second small line cites the sources the answer was built on — up to three, shown as linked domains (e.g. `🔗 crunchyroll.com · polygon.com`) so the footer says what she did and the citations say where it came from.
+
+Every tool below is available implicitly in chat — Roka decides when to call it. The **Slash Command** column names the command built around that tool: `/anime` and `/remind` invoke theirs directly, and `/ask` is listed against `search_web` because looking things up is what that command is for. The rest are reached only by talking to her.
 
 <details>
 <summary><strong>Footer Labels & Tool Availability</strong></summary>
@@ -90,7 +92,7 @@ When Roka uses a tool mid-conversation, her reply ends with a small footer line 
 | `flip_coin`          | tossed a shrine coin         | —             | ✅               |
 | `get_current_time`   | peeked at the temple clock   | —             | ✅               |
 | `get_weather`        | divined today's weather      | —             | ✅               |
-| `search_web`         | searched the wider world     | —             | ✅               |
+| `search_web`         | searched the wider world     | `/ask`        | ✅               |
 | `search_anime`       | leafed through anime scrolls | `/anime`      | ✅               |
 | `get_anime_schedule` | checked the airing almanac   | `/anime`      | ✅               |
 | `set_reminder`       | tied a reminder charm        | `/remind`     | ✅               |
@@ -201,7 +203,7 @@ flowchart LR
 
 </details>
 
-- Roka retains useful facts and relationships for the guild where they were observed; memory does not cross servers.
+- Roka retains useful facts and relationships for the place they were observed — a guild, or a single DM or group chat; memory never crosses between them.
 - Extraction is asynchronous, while retrieval remains bounded before a response is generated.
 - The exported memory graph is browseable in Obsidian; see [Browsing Memory in Obsidian](#browsing-memory-in-obsidian).
 - For schema, lifecycle, and retrieval details, see [Memory Architecture (Claims)](./trd.md#memory-architecture-claims).
@@ -474,7 +476,7 @@ Obsidian belongs on the desktop, not the Pi: it is a graphical desktop applicati
 
 ## Privacy
 
-Rokabot is self-hosted and stores session history, memory claims, reminders, game data, and metrics in local SQLite. Claims are isolated per guild. Messages used to generate responses and extract memory are sent to the Gemini API. Server operators should disclose passive monitoring in channels where Roka has been mentioned.
+Rokabot is self-hosted and stores session history, memory claims, reminders, game data, and metrics in local SQLite. Claims are isolated per tenant: a guild, or an individual DM or group chat, never crossing between them. Messages used to generate responses and extract memory are sent to the Gemini API. Server operators should disclose passive monitoring in channels where Roka has been mentioned.
 
 <p align="right"><a href="#readme-top">↑</a></p>
 
