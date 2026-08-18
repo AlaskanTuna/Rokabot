@@ -50,6 +50,29 @@ interface RawComponent {
 }
 
 /** Recursively extract text content from Discord message components */
+/** Renders an embed's text as one bracketed part, or null when it carries no text at all. */
+function describeEmbed(embed: Message['embeds'][number]): string | null {
+  const parts: string[] = []
+  if (embed.author?.name) parts.push(`Author: ${embed.author.name}`)
+  if (embed.title) parts.push(`Title: ${embed.title}`)
+  if (embed.description) parts.push(embed.description)
+  for (const field of embed.fields) {
+    parts.push(`${field.name}: ${field.value}`)
+  }
+  if (embed.footer?.text) parts.push(`Footer: ${embed.footer.text}`)
+  return parts.length > 0 ? `[Embed: ${parts.join(' | ')}]` : null
+}
+
+/** Renders a poll's question and options as one bracketed part, or null when it has neither. */
+function describePoll(poll: NonNullable<Message['poll']>): string | null {
+  const parts: string[] = []
+  if (poll.question.text) parts.push(`Poll: ${poll.question.text}`)
+  for (const answer of poll.answers.values()) {
+    if (answer.text) parts.push(`- ${answer.text}`)
+  }
+  return parts.length > 0 ? `[${parts.join(' | ')}]` : null
+}
+
 function extractComponentTexts(components: Message['components']): string[] {
   const texts: string[] = []
 
@@ -156,14 +179,41 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
     const trigger: ResponseEventInput['trigger'] = isMentioned ? 'mention' : isReplyToBot ? 'reply' : 'name_keyword'
 
     let content = replaceUserMentions(message, client.user?.id)
-    if (!content && componentTextsForTrigger.length > 0) {
-      content = componentTextsForTrigger.join(' | ')
-    }
 
     const imageAttachments: ImageAttachment[] = message.attachments
       .filter(isSupportedImage)
       .map((a) => ({ url: a.url, contentType: a.contentType! }))
       .slice(0, MAX_IMAGE_ATTACHMENTS)
+
+    // Everything else this message shows. The replied-to message has always been read this thoroughly; the
+    // message actually being sent to her was not, so a shared link's preview text — where the substance of a
+    // link preview lives — reached her as nothing at all. Container text was read, but only when there was no
+    // message text beside it, so a message carrying both lost its container entirely.
+    const ownParts: string[] = []
+    if (componentTextsForTrigger.length > 0) ownParts.push(`[Container: ${componentTextsForTrigger.join(' | ')}]`)
+    for (const embed of message.embeds) {
+      const described = describeEmbed(embed)
+      if (described) ownParts.push(described)
+    }
+    if (message.poll) {
+      const described = describePoll(message.poll)
+      if (described) ownParts.push(described)
+    }
+    if (message.stickers.size > 0) {
+      // Name only: stickers may be APNG or Lottie, neither of which is a still image the vision model reads.
+      ownParts.push(`(sticker: ${message.stickers.map((sticker) => sticker.name).join(', ')})`)
+    }
+    if (ownParts.length > 0) {
+      content = content ? `${content}\n${ownParts.join('\n')}` : ownParts.join('\n')
+    }
+
+    // Embed images are genuinely visual, so they compete for the same slots as attachments rather than
+    // getting their own budget — the sender's own message fills them before the replied-to one does.
+    for (const embed of message.embeds) {
+      if (imageAttachments.length >= MAX_IMAGE_ATTACHMENTS) break
+      const embedImageUrl = embed.image?.url ?? embed.thumbnail?.url
+      if (embedImageUrl) imageAttachments.push({ url: embedImageUrl, contentType: 'image/png' })
+    }
     // Only what this message carried: a forwarded or replied-to file is not what the sender just handed her.
     // Materialised first so the count reads the same off a discord.js Collection or a plain array.
     const ownAttachments = [...message.attachments.values()]
@@ -177,31 +227,13 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
       if (refContent) refParts.push(refContent)
 
       for (const embed of referencedMessage.embeds) {
-        const embedParts: string[] = []
-        if (embed.author?.name) embedParts.push(`Author: ${embed.author.name}`)
-        if (embed.title) embedParts.push(`Title: ${embed.title}`)
-        if (embed.description) embedParts.push(embed.description)
-        for (const field of embed.fields) {
-          embedParts.push(`${field.name}: ${field.value}`)
-        }
-        if (embed.footer?.text) embedParts.push(`Footer: ${embed.footer.text}`)
-        if (embedParts.length > 0) {
-          refParts.push(`[Embed: ${embedParts.join(' | ')}]`)
-        }
+        const described = describeEmbed(embed)
+        if (described) refParts.push(described)
       }
 
       if (referencedMessage.poll) {
-        const poll = referencedMessage.poll
-        const pollParts: string[] = []
-        if (poll.question.text) pollParts.push(`Poll: ${poll.question.text}`)
-        if (poll.answers.size > 0) {
-          for (const answer of poll.answers.values()) {
-            if (answer.text) pollParts.push(`- ${answer.text}`)
-          }
-        }
-        if (pollParts.length > 0) {
-          refParts.push(`[${pollParts.join(' | ')}]`)
-        }
+        const described = describePoll(referencedMessage.poll)
+        if (described) refParts.push(described)
       }
 
       if (referencedMessage.messageSnapshots.size > 0) {
