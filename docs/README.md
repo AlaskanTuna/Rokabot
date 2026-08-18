@@ -317,7 +317,9 @@ Quick checks: `npm run lint` and `npm run format:check`. Full test verification 
 
 `npm run test:live` benchmarks whether the live model fires a tool on a labelled should-fire/shouldn't-fire dialogue set; it is the pre-ship acceptance gate for prompt and tool-description changes, and its verdict rests on two criteria — an accuracy floor plus zero systematically-wrong cases. The `recall_user` case set lives at `tests/harness/tool-trigger/recall-user.jsonl`.
 
-As of 2026-07-29 this gate FAILS, and it is correctly doing so: `recall_user` over-fires on two labelled should-not-fire cases — N1 (ambient chatter naming no one, 7/9 fired) and N5 (a message addressing Roka herself, 9/9 fired) — while recall holds at a perfect 1.00, so proactive triggering itself is sound and the defect is over-application. The cause is `src/agent/prompts/core.ts:65`: deleting that line drove both cases to 0/3 while collapsing recall to 0.111, confirming it as the source. Tracked as [#39](https://github.com/AlaskanTuna/Rokabot/issues/39); the fix is separate follow-up work.
+As of 2026-08-18 this gate **passes**, measured on two consecutive runs that returned identical figures: precision 0.900, recall 1.000, accuracy 0.944, and no systematically-wrong cases. The residual over-fire is N1 (ambient chatter naming no one), which fired 2 of 3 and 1 of 3 across those runs; every other should-not-fire case was clean in both. Notably N5 (a message addressing Roka herself) fired 0 of 3 in both runs, having been the worst offender when this gate last failed.
+
+It previously failed as of 2026-07-29, when N1 fired 7 of 9 and N5 9 of 9 against the same perfect recall, with `src/agent/prompts/core.ts`'s `recall_user` rule identified as the source. That was tracked as [#39](https://github.com/AlaskanTuna/Rokabot/issues/39), now closed. **No causal claim is made for the improvement** — the prompt has changed repeatedly since, and two runs at three trials cannot establish a shift; only that the gate's verdict and the per-case figures are what they are on the dates given.
 
 <p align="right"><a href="#readme-top">↑</a></p>
 
