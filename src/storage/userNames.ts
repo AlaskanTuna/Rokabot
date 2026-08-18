@@ -43,7 +43,7 @@ export function getUserName(userId: string): UserName | null {
   return { userId: row.user_id, username: row.username, displayName: row.display_name }
 }
 
-/** Find a user by name; when guildId is given, prefer members with claims or activity in that guild */
+/** Find a user by name; when guildId is given, resolve only members with claims, legacy facts or activity in that tenant */
 export function findUserByName(name: string, guildId?: string): UserName | null {
   const db = getDb()
   const normalizedName = name.trim()
@@ -59,13 +59,16 @@ export function findUserByName(name: string, guildId?: string): UserName | null 
     return db
       .prepare(
         `${base}
-         ORDER BY (
+         AND (
            EXISTS(SELECT 1 FROM memory_claim WHERE guild_id = ? AND subject_user_id = user_names.user_id)
+           OR EXISTS(SELECT 1 FROM user_memory WHERE guild_id = ? AND user_id = user_names.user_id)
            OR EXISTS(SELECT 1 FROM response_events WHERE guild_id = ? AND user_id = user_names.user_id)
-         ) DESC
+         )
          LIMIT 1`
       )
-      .get(normalizedName, guildId, guildId) as { user_id: string; username: string; display_name: string } | undefined
+      .get(normalizedName, guildId, guildId, guildId) as
+      | { user_id: string; username: string; display_name: string }
+      | undefined
   }
   const row = find('display_name') ?? find('username')
 
