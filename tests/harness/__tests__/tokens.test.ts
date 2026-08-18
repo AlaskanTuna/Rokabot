@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { CORE_PROMPT } from '../../../src/agent/prompts/core.js'
+import { SPEECH_PROMPT } from '../../../src/agent/prompts/speech.js'
 import { TONE_PROMPTS, type ToneKey } from '../../../src/agent/prompts/tones.js'
 import { rokaTools } from '../../../src/agent/tools/index.js'
 import { MAX_SYSTEM_PROMPT_TOKENS, measureRequest } from '../tokens.js'
@@ -61,6 +62,20 @@ describe('harness token measurement', () => {
     expect(CORE_PROMPT).toContain("When the message you're replying to names another server member")
     expect(CORE_PROMPT).toContain('someone other than you or the person speaking')
     expect(CORE_PROMPT).toContain('Someone who only appears earlier in the conversation is not a reason to call it')
+  })
+
+  it('keeps the searched-turn rule that puts the finding before the roleplay (issue #94)', () => {
+    expect(CORE_PROMPT).toContain(
+      'Open with the finding itself — the name, the number, the date, the actual answer. No greeting, no "let me check", no preamble about looking it up.'
+    )
+  })
+
+  it('keeps web search exempt from the weave-results-into-personality rule (issue #94)', () => {
+    expect(CORE_PROMPT).toContain('Web search results are the exception: lead with the finding, then react.')
+  })
+
+  it('keeps the speech quotas scoped off searched turns so they stop manufacturing a closing block (issue #94)', () => {
+    expect(SPEECH_PROMPT).toContain('The kaomoji and teasing-phrase quotas above do not apply on that turn.')
   })
 
   it('keeps the frozen baseline structurally consistent without re-deriving it', async () => {
