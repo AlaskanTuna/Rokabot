@@ -106,7 +106,10 @@ describe('exportVault', () => {
     expect(frontmatter).toBeDefined()
     expect(load(frontmatter as string)).toEqual({
       favorite_anime: [{ value: 'Frieren', source_kind: 'explicit', pinned: true, last_seen_at: 1_000 }],
-      favorite_game: [{ value: 'Hollow Knight', source_kind: 'explicit', pinned: false, last_seen_at: 1_600 }],
+      // Auto-pinned at write for being explicit, without any pinClaim() call. `relationship_to` below is
+      // 'human', which carries the same source weight as 'explicit' — it stays unpinned, so this pair also
+      // pins that the rule keys off the source kind and not off the weight.
+      favorite_game: [{ value: 'Hollow Knight', source_kind: 'explicit', pinned: true, last_seen_at: 1_600 }],
       relationship_to: [{ value: 'friend', source_kind: 'human', pinned: false, last_seen_at: 2_000 }]
     })
     expect(note).not.toContain('Chess')

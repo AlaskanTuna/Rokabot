@@ -132,12 +132,14 @@ describe('memoryClaims', () => {
   it('expires by last seen rather than recall while keeping pinned claims', () => {
     const now = 100 * DAY
     vi.spyOn(Date, 'now').mockReturnValue(now)
+    // Passive, so it stays unpinned and therefore prunable — an explicit claim is auto-pinned at write and
+    // pinning exempts a claim from staleness pruning as well as the overflow ceiling.
     const stale = assertClaim({
       guildId: 'guild-1',
       subjectUserId: 'user-1',
       predicate: 'likes',
       value: 'chess',
-      sourceKind: 'explicit',
+      sourceKind: 'passive',
       observedAt: now - 10 * DAY
     })
     const pinned = assertClaim({
@@ -153,6 +155,80 @@ describe('memoryClaims', () => {
 
     expect(pruneStaleClaims(7)).toBe(1)
     expect(getActiveClaims('guild-1', 'user-1')).toEqual([expect.objectContaining({ id: pinned.id, pinned: true })])
+  })
+
+  // #111: pinClaim/unpinClaim had no production callers, so the eviction exemption config.yml documents
+  // for pinned claims was unreachable and nothing was ever protected from maxActiveClaimsPerUser.
+  it('pins a claim written explicitly, so the thing someone asked her to remember survives the ceiling', () => {
+    const explicit = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'nickname',
+      value: 'Kotori',
+      sourceKind: 'explicit'
+    })
+
+    expect(explicit.pinned).toBe(true)
+  })
+
+  // Keyed to the source kind, not the source weight: 'human' scores identically to 'explicit' in
+  // SOURCE_WEIGHT, and inference by any route is not the same act as being told outright.
+  it.each(['passive', 'human', 'legacy'] as const)('leaves a %s claim unpinned and evictable', (sourceKind) => {
+    const claim = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'nickname',
+      value: 'Kotori',
+      sourceKind
+    })
+
+    expect(claim.pinned).toBe(false)
+  })
+
+  // Passive extraction usually gets there first, so the realistic path to a pinned claim is someone
+  // confirming out loud a fact she had already inferred.
+  it('pins a passively-held claim when the same fact is later asserted explicitly', () => {
+    const passive = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'hobby',
+      value: 'pressed flowers',
+      sourceKind: 'passive'
+    })
+    expect(passive.pinned).toBe(false)
+
+    const confirmed = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'hobby',
+      value: 'pressed flowers',
+      sourceKind: 'explicit'
+    })
+
+    expect(confirmed.pinned).toBe(true)
+  })
+
+  // A later passive sighting must not undo the pin — otherwise ordinary conversation quietly demotes a
+  // fact someone deliberately asked her to keep.
+  it('does not unpin an explicit claim when the same fact is seen again passively', () => {
+    const explicit = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'hobby',
+      value: 'pressed flowers',
+      sourceKind: 'explicit'
+    })
+    expect(explicit.pinned).toBe(true)
+
+    const seenAgain = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'hobby',
+      value: 'pressed flowers',
+      sourceKind: 'passive'
+    })
+
+    expect(seenAgain.pinned).toBe(true)
   })
 
   it('keeps reads tenant-scoped and rejects the legacy global tenant', () => {
