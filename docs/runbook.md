@@ -363,3 +363,40 @@ docker compose up -d
 | `~/rokabot/.env`                  | Bot secrets (Discord token, API keys)      |
 | `~/rokabot/config.yml`            | Bot tunables (model, timeout, rate limits) |
 | `~/rokabot/data/rokabot.db`       | SQLite database (sessions, memory, games)  |
+
+---
+
+## Discord Install Requirements
+
+### The `bot` Scope Is Load-Bearing
+
+A guild install must request **both** `bot` and `applications.commands`.
+
+Requesting only `applications.commands` produces an install with **no bot member**: the app registers its slash commands and nothing else. There are no gateway events, so mention, reply and name-keyword triggers never fire and reactions never appear. `/chat` still works, which is what makes this failure so quiet — the bot looks half-alive rather than broken.
+
+This was the Portal's actual state until 2026-08-01. Nothing was ever observed to be wrong because the existing server install predates the Discord-provided link and was made with a hand-built OAuth URL.
+
+### Guild Permissions Are Derived From the API Surface
+
+The permission set is not a preference. Every bit traces to a Discord API call this bot actually makes, so the current set can always be re-derived by grepping for the operations below. Files are named; **line numbers deliberately are not** — they rot, and the citation list this section replaces had already drifted before it was written down.
+
+| Discord Operation                          | Where                                                                                                           | Permission Implied               |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| receiving `messageCreate` at all           | gateway intents in `src/discord/client.ts`                                                                      | View Channels                    |
+| `message.reply(...)` / `channel.send(...)` | `src/discord/events/messageCreate.ts`, `src/discord/events/gameCommands.ts`, `src/discord/reminderScheduler.ts` | Send Messages                    |
+| `channel.messages.fetch(...)`              | `src/discord/events/messageCreate.ts` — resolving the referenced message on a reply trigger                     | Read Message History             |
+| `message.react(...)`                       | `src/discord/events/messageCreate.ts`                                                                           | Add Reactions                    |
+| `AttachmentBuilder` on the reply           | `src/discord/events/stats/views.ts` — the `/stats` chart PNGs                                                   | Attach Files                     |
+| _none today_                               | no `EmbedBuilder` and no `embeds:` anywhere in `src/`                                                           | Embed Links — see the note below |
+
+**Embed Links is granted but unused.** Components V2 messages carry no embeds and bare URLs stay clickable without it. It is pre-granted for the hyperlink-footnote work in issue #19, which would introduce masked links.
+
+**Reminders need guild Send Messages.** `src/discord/reminderScheduler.ts` delivers to the originating **channel** first and only falls back to a user DM when that channel is unreachable — the module docstring says "delivers due reminders to Discord channels". A reading of this file that sees only the DM path will under-derive the permission set.
+
+### There Is No Build-Time Pin, and That Is Deliberate
+
+The permission set lives in the Discord Developer Portal, outside this tree, where no test can reach it. So unlike every other constraint in this repo, this one is stated rather than enforced, and it can drift silently.
+
+A test that walks `src/` for Discord operations and asserts they match a declared list was considered and **rejected**: it would pin our list against our own grep, not against the Portal — which is where the value actually lives and where the drift actually happens. That is the "passes for the wrong reason" failure mode, and buying a green check for it would be worse than the honest gap.
+
+The mitigation is the derivation above, not a pin. If you change what Discord APIs this bot calls, re-derive the set and update the Portal.
