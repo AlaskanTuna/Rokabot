@@ -5,6 +5,22 @@ import { isIP } from 'node:net'
 /** Types Gemini accepts and this bot forwards; anything else is unsupported and earns a nudge. */
 export const ALLOWED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp'])
 
+/**
+ * Documents Gemini reads natively: 258 tokens a page, and text already embedded in the PDF is extracted
+ * without being charged, so a text-layer document is close to free. Kept separate from the image set because
+ * the two take different paths — an image is re-encoded by sharp, a document must reach the model untouched.
+ */
+export const ALLOWED_DOCUMENT_TYPES = new Set(['application/pdf'])
+
+export function isSupportedDocument(attachment: { contentType: string | null }): boolean {
+  return attachment.contentType !== null && ALLOWED_DOCUMENT_TYPES.has(attachment.contentType)
+}
+
+/** Anything she can be handed and actually read, whichever path it takes once inside. */
+export function isSupportedMedia(attachment: { contentType: string | null }): boolean {
+  return isSupportedImage(attachment) || isSupportedDocument(attachment)
+}
+
 /** Per-turn ceiling. Both the mention path and /ask's option list derive their limit from this. */
 export const MAX_IMAGE_ATTACHMENTS = 3
 

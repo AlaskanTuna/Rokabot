@@ -1123,3 +1123,82 @@ describe('generateResponse prompt safety', () => {
     })
   })
 })
+
+describe('attachment intake', () => {
+  // A real 1x1 PNG, so the sharp path actually runs rather than falling into its catch.
+  const PNG_BYTES = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==',
+    'base64'
+  )
+  const PDF_BYTES = Buffer.from('%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\n')
+  const MB = 1024 * 1024
+
+  afterEach(() => {
+    __resetTestRunTurnFactory()
+    vi.unstubAllGlobals()
+  })
+
+  function serve(bytes: Buffer) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        headers: { get: (name: string) => (name === 'content-length' ? String(bytes.byteLength) : null) },
+        arrayBuffer: async () => new Uint8Array(bytes).buffer
+      }))
+    )
+  }
+
+  async function inlineFor(contentType: string, bytes: Buffer) {
+    serve(bytes)
+    let captured: { newMessage?: { parts?: Array<{ inlineData?: { data: string; mimeType: string } }> } } | undefined
+    __setTestRunTurnFactory(() => async (_attempt, _signal, request) => {
+      captured = request
+      return { text: 'Read it~', hasText: true, hasFunctionCall: false }
+    })
+
+    await generateResponse({
+      channelId: 'roka-attachment-channel',
+      guildId: 'attachment-guild',
+      userMessage: 'what does this say?',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id',
+      imageAttachments: [{ url: 'https://cdn.test/file', contentType }]
+    })
+    await destroySession('roka-attachment-channel')
+
+    return (captured?.newMessage?.parts ?? []).flatMap((part) => part.inlineData ?? [])
+  }
+
+  it('sends a PDF to the model as a PDF', async () => {
+    expect((await inlineFor('application/pdf', PDF_BYTES)).map((part) => part.mimeType)).toEqual(['application/pdf'])
+  })
+
+  // Asserted as a pair on purpose. sharp handed a PDF throws, and its catch returns the *undecoded* bytes
+  // labelled image/jpeg — so a document routed through it arrives byte-identical but misdeclared, and a test
+  // checking only the data passes while the file is unreadable at the other end.
+  it('hands the model the document exactly as it arrived, and says so', async () => {
+    const [document] = await inlineFor('application/pdf', PDF_BYTES)
+
+    expect(document).toEqual({ data: PDF_BYTES.toString('base64'), mimeType: 'application/pdf' })
+  })
+
+  it('still routes an image through sharp', async () => {
+    expect((await inlineFor('image/png', PNG_BYTES)).map((part) => part.mimeType)).toEqual(['image/jpeg'])
+  })
+
+  // 6 MB is the discriminating size: over the 4 MB image ceiling, under the 10 MB document one. These two
+  // cases together are what make the cap per-type rather than one global number.
+  it('accepts a document larger than the image ceiling', async () => {
+    expect(await inlineFor('application/pdf', Buffer.alloc(6 * MB, 0x20))).toHaveLength(1)
+  })
+
+  it('still refuses an image larger than the image ceiling', async () => {
+    expect(await inlineFor('image/png', Buffer.alloc(6 * MB, 0x20))).toEqual([])
+  })
+
+  it('refuses a document past the document ceiling', async () => {
+    expect(await inlineFor('application/pdf', Buffer.alloc(11 * MB, 0x20))).toEqual([])
+  })
+})

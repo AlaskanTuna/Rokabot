@@ -124,7 +124,8 @@ describe('interaction handler metrics', () => {
   }
 
   const PNG = { url: 'https://cdn.test/a.png', contentType: 'image/png' }
-  const PDF = { url: 'https://cdn.test/a.pdf', contentType: 'application/pdf' }
+  const PDF_DOC = { url: 'https://cdn.test/notes.pdf', contentType: 'application/pdf' }
+  const UNREADABLE = { url: 'https://cdn.test/a.zip', contentType: 'application/zip' }
   const rateLimiterStub = () => ({ tryConsume: vi.fn(() => true), remainingRpm: 14, remainingRpd: 499 })
 
   it('forwards every supported image slot, not just the first', async () => {
@@ -140,7 +141,7 @@ describe('interaction handler metrics', () => {
   })
 
   it('drops an unsupported attachment instead of forwarding it', async () => {
-    const interaction = askWith([PDF])
+    const interaction = askWith([UNREADABLE])
 
     await createInteractionHandler(rateLimiterStub() as never)(interaction as never)
 
@@ -149,11 +150,24 @@ describe('interaction handler metrics', () => {
 
   // Silence reads as hallucination: she answered "what is this?" as though nothing were attached.
   it('nudges in character when an attachment cannot be opened', async () => {
-    const interaction = askWith([PDF])
+    const interaction = askWith([UNREADABLE])
 
     await createInteractionHandler(rateLimiterStub() as never)(interaction as never)
 
     expect(mocks.splitResponse.mock.calls[0][0]).toContain("I couldn't open that file~")
+  })
+
+  // Documents ride the existing attachment slots, so accepting the type is the whole of the change on this
+  // surface — no new option, and the nudge must stop firing for a file she can now actually read.
+  it('accepts a PDF on /ask rather than nudging about it', async () => {
+    const interaction = askWith([PDF_DOC])
+
+    await createInteractionHandler(rateLimiterStub() as never)(interaction as never)
+
+    expect(mocks.generateResponse.mock.calls[0][0].imageAttachments).toEqual([
+      { url: 'https://cdn.test/notes.pdf', contentType: 'application/pdf' }
+    ])
+    expect(mocks.splitResponse.mock.calls[0][0]).toBe('Hello~')
   })
 
   it('adds no nudge when every attachment was supported', async () => {
