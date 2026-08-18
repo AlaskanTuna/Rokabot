@@ -470,6 +470,55 @@ describe("reading what the sender's own message shows", () => {
     expect((await handle(message)).userMessage).toContain('roka_wink')
   })
 
+  // A Tenor link is a gifv embed carrying only embed.video — no title, no description — so describeEmbed
+  // returned null and a message whose whole content was a shared GIF arrived as a bare mention (#100).
+  const TENOR_GIF = {
+    author: null,
+    title: null,
+    description: null,
+    fields: [],
+    footer: null,
+    image: null,
+    thumbnail: null,
+    video: { url: 'https://media.tenor.com/abc/roka-wink.mp4', width: 480, height: 270 },
+    data: { type: 'gifv' }
+  }
+
+  it('names a shared GIF that would otherwise arrive as a bare mention', async () => {
+    const { message } = createMessage({ content: '<@bot-1> reaction?', embeds: [TENOR_GIF] })
+
+    expect((await handle(message)).userMessage).toContain('animated GIF')
+  })
+
+  it('calls a video embed a video rather than a GIF', async () => {
+    const clip = { ...TENOR_GIF, data: { type: 'video' } }
+    const { message } = createMessage({ content: '<@bot-1> what happens here?', embeds: [clip] })
+
+    const userMessage = (await handle(message)).userMessage
+    expect(userMessage).toContain('video')
+    expect(userMessage).not.toContain('animated GIF')
+  })
+
+  // The guard that matters. embed.video.url serves an MP4; sharp cannot decode one, and imageProcessor's
+  // catch returns the undecoded buffer labelled image/jpeg — so routing it here would send MP4 bytes to
+  // Gemini declared as a JPEG, burning a vision slot on garbage. Showing motion needs #100's intake.
+  it('never sends an embed video URL to the vision slots', async () => {
+    const { message } = createMessage({ content: '<@bot-1> reaction?', embeds: [TENOR_GIF] })
+
+    expect((await handle(message)).imageAttachments).toBeUndefined()
+  })
+
+  it('still sends the still frame when a GIF embed carries a thumbnail', async () => {
+    const withStill = { ...TENOR_GIF, thumbnail: { url: 'https://media.tenor.com/abc/still.png' } }
+    const { message } = createMessage({ content: '<@bot-1> reaction?', embeds: [withStill] })
+
+    const result = await handle(message)
+    expect(result.imageAttachments).toEqual([
+      { url: 'https://media.tenor.com/abc/still.png', contentType: 'image/png' }
+    ])
+    expect(result.userMessage).toContain('animated GIF')
+  })
+
   it('reads a poll on the message', async () => {
     const poll = { question: { text: 'Best girl?' }, answers: new Collection([['1', { text: 'Roka' }]]) }
     const { message } = createMessage({ content: '<@bot-1> vote for me', poll })
