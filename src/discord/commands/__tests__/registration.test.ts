@@ -1,6 +1,6 @@
 import { ApplicationIntegrationType, InteractionContextType } from 'discord.js'
 import { describe, expect, it } from 'vitest'
-import { MAX_IMAGE_ATTACHMENTS, imageOptionName } from '../../attachments.js'
+import { MAX_ATTACHMENTS, attachmentOptionName } from '../../attachments.js'
 import { buildCommandBody } from '../index.js'
 
 // /ask replaced both /chat and /search (#19). Retiring two names and adding one moves this list, and the
@@ -47,13 +47,23 @@ describe('buildCommandBody', () => {
     expect(names).toEqual(expectedNames)
   })
 
-  // Discord has no multi-attachment option type, so /ask exposes one slot per image the mention path accepts.
-  it('offers one attachment slot per image the mention path would accept', () => {
+  // Discord has no multi-attachment option type, so /ask exposes one slot per file the mention path accepts.
+  it('offers one attachment slot per file the mention path would accept', () => {
     const ask = buildCommandBody().find((command) => command.name === 'ask')
 
     expect((ask?.options ?? []).filter((option) => option.type === 11).map((option) => option.name)).toEqual(
-      Array.from({ length: MAX_IMAGE_ATTACHMENTS }, (_, index) => imageOptionName(index))
+      Array.from({ length: MAX_ATTACHMENTS }, (_, index) => attachmentOptionName(index))
     )
+  })
+
+  // The assertion above derives its expectation from attachmentOptionName, so it holds for whatever that
+  // function returns and cannot notice a rename. These names are the user-facing surface of the command —
+  // renaming one silently changes what everybody types — so they are pinned literally, once.
+  it('names the /ask attachment options for attachments rather than images', () => {
+    const ask = buildCommandBody().find((command) => command.name === 'ask')
+    const optionNames = (ask?.options ?? []).map((option) => option.name)
+
+    expect(optionNames).toEqual(['question', 'attachment_1', 'attachment_2', 'attachment_3', 'attachment_url'])
   })
 
   it('sets the expected installation and context policy per command', () => {

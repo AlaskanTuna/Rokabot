@@ -106,11 +106,13 @@ describe('interaction handler metrics', () => {
       commandName: 'ask',
       options: {
         getString: vi.fn((name: string) =>
-          name === 'question' ? 'what is this?' : name === 'image_url' ? (imageUrl ?? null) : null
+          name === 'question' ? 'what is this?' : name === 'attachment_url' ? (imageUrl ?? null) : null
         ),
+        // Answers by name the way Discord does, so a slot the handler asks for under the wrong name reads
+        // as absent rather than silently returning the first attachment.
         getAttachment: vi.fn((name: string) => {
-          const index = name === 'image' ? 0 : Number(name.replace('image', '')) - 1
-          return attachments[index] ?? null
+          const match = /^attachment_(\d+)$/.exec(name)
+          return match ? (attachments[Number(match[1]) - 1] ?? null) : null
         })
       },
       channelId: 'channel-1',
