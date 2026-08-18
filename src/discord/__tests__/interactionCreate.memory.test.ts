@@ -69,7 +69,7 @@ function makeInteraction(channelId: string, userId: string, message: string) {
   return {
     isChatInputCommand: () => true,
     commandName: 'ask',
-    options: { getString: vi.fn(() => message), getAttachment: vi.fn() },
+    options: { getString: vi.fn((name: string) => (name === 'question' ? message : null)), getAttachment: vi.fn() },
     channelId,
     member: null,
     user: { displayName: 'Rin', username: 'rin', id: userId },

@@ -9,8 +9,13 @@ const mocks = vi.hoisted(() => ({
   gameCommandHandler: vi.fn(),
   toolCommandHandler: vi.fn(),
   handleStatsCommand: vi.fn(),
-  splitResponse: vi.fn((response: string) => [response])
+  splitResponse: vi.fn((response: string) => [response]),
+  lookup: vi.fn(async () => [{ address: '93.184.216.34', family: 4 }])
 }))
+
+// The URL guard resolves a hostname before connecting, so without this a linked-image test fails closed on
+// the test host not existing — and passes for the wrong reason wherever a rejection is what it asserts.
+vi.mock('node:dns/promises', () => ({ lookup: mocks.lookup }))
 
 vi.mock('../../agent/roka.js', () => ({ generateResponse: mocks.generateResponse }))
 vi.mock('../../storage/metricsStore.js', () => ({ recordResponseEvent: mocks.recordResponseEvent }))
@@ -56,7 +61,7 @@ describe('interaction handler metrics', () => {
     const interaction = {
       isChatInputCommand: () => true,
       commandName: 'ask',
-      options: { getString: vi.fn(() => 'hello'), getAttachment: vi.fn() },
+      options: { getString: vi.fn((name: string) => (name === 'question' ? 'hello' : null)), getAttachment: vi.fn() },
       channelId: 'channel-1',
       member: null,
       user: { displayName: 'Alice', username: 'alice', id: 'user-1' },
@@ -95,12 +100,14 @@ describe('interaction handler metrics', () => {
     expect(JSON.stringify(interaction.editReply.mock.calls[0][0].components[0].toJSON())).not.toContain('-# 🌸')
   })
 
-  function askWith(attachments: Array<{ url: string; contentType: string | null } | null>) {
+  function askWith(attachments: Array<{ url: string; contentType: string | null } | null>, imageUrl?: string) {
     return {
       isChatInputCommand: () => true,
       commandName: 'ask',
       options: {
-        getString: vi.fn(() => 'what is this?'),
+        getString: vi.fn((name: string) =>
+          name === 'question' ? 'what is this?' : name === 'image_url' ? (imageUrl ?? null) : null
+        ),
         getAttachment: vi.fn((name: string) => {
           const index = name === 'image' ? 0 : Number(name.replace('image', '')) - 1
           return attachments[index] ?? null
@@ -157,13 +164,59 @@ describe('interaction handler metrics', () => {
     expect(mocks.splitResponse.mock.calls[0][0]).toBe('Hello~')
   })
 
-  // getString is mocked by position, not name, so every other test here passes whether the handler reads
-  // 'question' or the retired 'message'. This is the only thing pinning the rename to the command definition.
+  function headOk(contentType: string, url = 'https://cdn.test/linked.png') {
+    return vi.fn(async () => ({
+      ok: true,
+      url,
+      headers: { get: (name: string) => (name === 'content-type' ? contentType : null) }
+    }))
+  }
+
+  // A typed link needs no embed and no unfurl, which is the whole reason it works on a slash command where
+  // the mention path's timing problem does not apply.
+  it('sends a linked image to the vision slots', async () => {
+    vi.stubGlobal('fetch', headOk('image/png'))
+    const interaction = askWith([], 'https://cdn.test/linked.png')
+
+    await createInteractionHandler(rateLimiterStub() as never)(interaction as never)
+
+    expect(mocks.generateResponse.mock.calls[0][0].imageAttachments).toEqual([
+      { url: 'https://cdn.test/linked.png', contentType: 'image/png' }
+    ])
+    vi.unstubAllGlobals()
+  })
+
+  it('nudges rather than staying silent when the link is not an image', async () => {
+    vi.stubGlobal('fetch', headOk('text/html'))
+    const interaction = askWith([], 'https://example.test/an-article')
+
+    await createInteractionHandler(rateLimiterStub() as never)(interaction as never)
+
+    expect(mocks.splitResponse.mock.calls[0][0]).toContain("I couldn't open that file~")
+    vi.unstubAllGlobals()
+  })
+
+  // One visual budget per turn whatever the source: three uploads already fill it, so the link gets no slot
+  // and is never even requested.
+  it('does not let a link exceed the ceiling three uploads already filled', async () => {
+    const fetchMock = headOk('image/png')
+    vi.stubGlobal('fetch', fetchMock)
+    const interaction = askWith([PNG, PNG, PNG], 'https://cdn.test/linked.png')
+
+    await createInteractionHandler(rateLimiterStub() as never)(interaction as never)
+
+    expect(mocks.generateResponse.mock.calls[0][0].imageAttachments).toHaveLength(3)
+    expect(fetchMock).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
+  })
+
+  // The doubles answer by option name now, so a handler reading the retired 'message' would get null rather
+  // than the question. This still pins the name itself, which no other assertion here depends on.
   it('reads the renamed question option rather than the retired message one', async () => {
     const interaction = {
       isChatInputCommand: () => true,
       commandName: 'ask',
-      options: { getString: vi.fn(() => 'hello'), getAttachment: vi.fn() },
+      options: { getString: vi.fn((name: string) => (name === 'question' ? 'hello' : null)), getAttachment: vi.fn() },
       channelId: 'channel-1',
       member: null,
       user: { displayName: 'Alice', username: 'alice', id: 'user-1' },
@@ -189,7 +242,10 @@ describe('interaction handler metrics', () => {
     const interaction = {
       isChatInputCommand: () => true,
       commandName: 'ask',
-      options: { getString: vi.fn(() => 'when did frieren air?'), getAttachment: vi.fn() },
+      options: {
+        getString: vi.fn((name: string) => (name === 'question' ? 'when did frieren air?' : null)),
+        getAttachment: vi.fn()
+      },
       channelId: 'channel-1',
       member: null,
       user: { displayName: 'Alice', username: 'alice', id: 'user-1' },
@@ -216,7 +272,10 @@ describe('interaction handler metrics', () => {
     const interaction = {
       isChatInputCommand: () => true,
       commandName: 'ask',
-      options: { getString: vi.fn(() => 'roll a die'), getAttachment: vi.fn() },
+      options: {
+        getString: vi.fn((name: string) => (name === 'question' ? 'roll a die' : null)),
+        getAttachment: vi.fn()
+      },
       channelId: 'channel-1',
       member: null,
       user: { displayName: 'Alice', username: 'alice', id: 'user-1' },
@@ -240,7 +299,7 @@ describe('interaction handler metrics', () => {
     const interaction = {
       isChatInputCommand: () => true,
       commandName: 'ask',
-      options: { getString: vi.fn(() => 'hello'), getAttachment: vi.fn() },
+      options: { getString: vi.fn((name: string) => (name === 'question' ? 'hello' : null)), getAttachment: vi.fn() },
       channelId: 'channel-1',
       member: null,
       user: { displayName: 'Alice', username: 'alice', id: 'user-1' },

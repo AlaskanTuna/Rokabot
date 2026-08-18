@@ -5,7 +5,7 @@ import { withSearchCitations } from '../../agent/searchCitations.js'
 import { type ResponseEventInput, recordResponseEvent } from '../../storage/metricsStore.js'
 import { logger } from '../../utils/logger.js'
 import { RateLimiter } from '../../utils/rateLimiter.js'
-import { MAX_IMAGE_ATTACHMENTS, imageOptionName, isSupportedImage } from '../attachments.js'
+import { MAX_IMAGE_ATTACHMENTS, imageOptionName, isSupportedImage, resolveImageUrl } from '../attachments.js'
 import { isChannelBusy, markBusy, markFree } from '../concurrency.js'
 import { isIgnorableDiscordError } from '../errorHandler.js'
 import { buildRokaMessage } from '../messageBuilder.js'
@@ -83,7 +83,16 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
     const imageAttachments: ImageAttachment[] = attached
       .filter(isSupportedImage)
       .map((supported) => ({ url: supported.url, contentType: supported.contentType as string }))
-    const unsupportedCount = attached.length - imageAttachments.length
+    let unsupportedCount = attached.length - imageAttachments.length
+
+    // One visual budget per turn regardless of where the picture came from: a linked image competes for the
+    // same MAX_IMAGE_ATTACHMENTS slots as an uploaded one, so the cost of a turn stays one number.
+    const linkedUrl = interaction.options.getString('image_url')
+    if (linkedUrl) {
+      const resolved = imageAttachments.length < MAX_IMAGE_ATTACHMENTS ? await resolveImageUrl(linkedUrl) : null
+      if (resolved) imageAttachments.push(resolved)
+      else unsupportedCount += 1
+    }
 
     logger.debug({ channelId, command: 'ask' }, 'Slash command received')
     logger.debug({ channelId, message, imageCount: imageAttachments.length, unsupportedCount }, 'Slash command details')
