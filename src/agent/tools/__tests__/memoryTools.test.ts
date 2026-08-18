@@ -5,6 +5,7 @@ vi.mock('../../../utils/logger.js', () => ({
 }))
 
 import { closeDb, getDb } from '../../../storage/database.js'
+import { recordResponseEvent } from '../../../storage/metricsStore.js'
 import { getFacts, saveFact } from '../../../storage/userMemory.js'
 import { findUserByName, upsertUserName } from '../../../storage/userNames.js'
 import { logger } from '../../../utils/logger.js'
@@ -234,5 +235,65 @@ describe('memory tools', () => {
       [{ tool: 'recall_user', tenantState: 'missing' }, 'Memory tool failed closed on unusable tenant state'],
       [{ tool: 'recall_user', tenantState: 'global' }, 'Memory tool failed closed on unusable tenant state']
     ])
+  })
+})
+
+describe('tenant-scoped name resolution', () => {
+  const activityIn = (guildId: string, userId: string) => ({
+    guildId,
+    channelId: 'channel-1',
+    userId,
+    trigger: 'mention' as const,
+    tone: 'playful',
+    outcome: 'ok',
+    kind: 'none',
+    e2eMs: 1,
+    generateMs: 1,
+    llmMs: 1,
+    retryLatencyMs: 0,
+    retries: 0,
+    tokensInEst: 1,
+    tokensOutEst: 1,
+    toolsUsed: []
+  })
+
+  it('does not resolve a globally known name from a tenant the user has no presence in', () => {
+    upsertUserName('user-1', 'alice', 'Alice')
+    assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'likes',
+      value: 'tea',
+      sourceKind: 'passive'
+    })
+
+    expect(findUserByName('Alice', 'dm:channel-B')).toBeNull()
+  })
+
+  it('resolves a name backed by a claim in the current tenant', () => {
+    upsertUserName('user-1', 'alice', 'Alice')
+    assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'likes',
+      value: 'tea',
+      sourceKind: 'passive'
+    })
+
+    expect(findUserByName('Alice', 'guild-1')).toEqual({ userId: 'user-1', username: 'alice', displayName: 'Alice' })
+  })
+
+  it('resolves a name backed only by a legacy fact in the current tenant', () => {
+    upsertUserName('user-1', 'alice', 'Alice')
+    saveFact('guild-1', 'user-1', 'nickname', 'Ali')
+
+    expect(findUserByName('Alice', 'guild-1')).toEqual({ userId: 'user-1', username: 'alice', displayName: 'Alice' })
+  })
+
+  it('resolves a name backed only by response activity in the current tenant', () => {
+    upsertUserName('user-1', 'alice', 'Alice')
+    recordResponseEvent(activityIn('guild-1', 'user-1'))
+
+    expect(findUserByName('Alice', 'guild-1')).toEqual({ userId: 'user-1', username: 'alice', displayName: 'Alice' })
   })
 })
