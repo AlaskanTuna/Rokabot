@@ -19,7 +19,7 @@ The caps are the feature, and two independent constraints — container memory a
 
 ## Three Premise Corrections
 
-**The container cap is 512 MB, not 8 GB.** `docker-compose.yml:13` reads `mem_limit: 512m`. The issue body says "Raspberry Pi 5 (8 GB) in Docker with a memory cap", which reads as though 8 GB were the budget. It is not; the host has 8 GB and the bot may use one sixteenth of it. Today's 4 MB image ceiling is 0.8% of the container, which is why nothing has broken yet.
+**The container cap was 512 MB, not 8 GB.** The issue body says "Raspberry Pi 5 (8 GB) in Docker with a memory cap", which reads as though 8 GB were the budget. It was not: `mem_limit` read `512m`, one sixteenth of the host. Today's 4 MB image ceiling is 0.8% of that, which is why nothing had broken yet. **Acted on since this research: raised to `mem_limit: 1g` with `memswap_limit: 1g`.** Every measurement below was taken at 512 MB and remains valid as a measurement — the 4.7× multiplier and the kill behaviour are cap-independent — but the derived budgets have been recomputed against 1 GB and are marked where they changed.
 
 **`ALLOWED_IMAGE_TYPES` is no longer duplicated.** The issue lists "keep the type sets in one place — they are currently duplicated across two files" as an open constraint. #101 already consolidated it into `src/discord/attachments.ts`, which is now the single declaration and the natural home for any new type set. That constraint is satisfied before this work starts.
 
@@ -86,7 +86,7 @@ OOMKilled=false RestartCount=0     # today: never happened
 Two consequences:
 
 - **A cap you cannot observe approaching is a cap you must design a margin against**, because there is no runtime signal to react to. Everything below is sized accordingly.
-- **The swap allowance makes this worse, not better.** `docker inspect` reports `MemSwap=1073741824` — Docker defaulted the swap allowance to 2× `mem_limit` because `memswap_limit` was never set. So the container gets 512 MB of RAM plus 512 MB of swap **on the SD card**. It does not fail fast at 512 MB; it degrades into SD-card paging first, which blows `turnDeadlineMs` and wears the card, and _then_ dies at 1 GiB. The observed behaviour confirms it: RSS pinned at ~547 MB while total allocation climbed past 990 MB. **Recommend setting `memswap_limit: 512m` so the container fails fast instead of thrashing** — a one-line change, and the only config edit this research recommends.
+- **The swap allowance makes this worse, not better.** `docker inspect` reports `MemSwap=1073741824` — Docker defaulted the swap allowance to 2× `mem_limit` because `memswap_limit` was never set. So the container gets 512 MB of RAM plus 512 MB of swap **on the SD card**. It does not fail fast at 512 MB; it degrades into SD-card paging first, which blows `turnDeadlineMs` and wears the card, and _then_ dies at 1 GiB. The observed behaviour confirms it: RSS pinned at ~547 MB while total allocation climbed past 990 MB. **Resolved:** `memswap_limit` is now set equal to `mem_limit`, which disables swap entirely — `memswap_limit` is the memory-plus-swap total, so equal values leave no swap runway. Verified at the new ceiling: `--memory=1g --memory-swap=1g` dies at 1 GB with exit 137 rather than paging first.
 
 ---
 
@@ -109,7 +109,7 @@ The 4.7× is not mysterious and that is why it can be trusted: the payload exist
 
 ### V8's Heap Limit Does Not Protect You
 
-Node 24 **is** cgroup-aware: inside a 512 MB container, `v8.getHeapStatistics().heap_size_limit` reports **259 MB** even though `os.totalmem()` still reports the host's full memory. That was worth verifying rather than assuming, because the protection it offers is narrower than it looks:
+Node 24 **is** cgroup-aware, and the ceiling tracks the cgroup rather than the host: `v8.getHeapStatistics().heap_size_limit` reports **259 MB** inside a 512 MB container and **560 MB** inside a 1 GB one, while `os.totalmem()` reports the host's full memory in both. Measured at both sizes rather than scaled, because the heuristic is not a clean half. That was worth verifying rather than assuming, because the protection it offers is narrower than it looks:
 
 **Buffers are external to the V8 heap.** The two `Buffer` copies — 2 of the 4.7 multiples — never count against the 259 MB heap limit and never trigger a `JavaScript heap out of memory` error. They consume container RSS directly, and the first thing that notices is the kernel's OOM killer. So the mechanism that would ordinarily throw a catchable error is bypassed by precisely the allocations this feature adds.
 
@@ -117,13 +117,15 @@ Node 24 **is** cgroup-aware: inside a 512 MB container, `v8.getHeapStatistics().
 
 `src/discord/concurrency.ts` is a `Set<string>` of channel IDs. It guarantees **one active request per channel** and imposes **no global limit whatsoever**. K busy channels means K simultaneous downloads, each holding its own 4.7× footprint.
 
-With the Pi's measured idle RSS of **55.59 MiB** against a 512 MB cap, headroom is ~456 MB, so the _total_ in-flight payload budget across all channels is:
+With the Pi's measured idle RSS of **55.59 MiB**, headroom is ~968 MB against the raised 1 GB cap, so the _total_ in-flight payload the container can hold before the kill threshold is:
 
 ```
-456 MB / 4.7 ≈ 97 MB of concurrent attachment bytes — at zero safety margin
+968 MB / 4.7 ≈ 206 MB of concurrent attachment bytes  (was ~97 MB at 512 MB)
 ```
 
-At a 10 MB per-turn cap that is nine or ten concurrent attachment turns to reach the kill threshold, with no warning at eight. On a small server that is unlikely; it is not impossible, and the failure mode is the whole bot dying rather than one turn failing. **This is the single change that has to precede audio and video: a global in-flight byte budget, not just a per-turn size cap.** A budget of 32 MB holds worst-case RSS to ~150 MB + baseline ≈ 40% of the cap, and turns arriving over budget take the existing busy/decline path rather than a new one.
+At a 10 MB per-turn cap that is about twenty concurrent attachment turns rather than nine or ten. **Raising the cap widened the margin; it did not remove the need for the guard.** Twenty is still reachable, the failure mode is still the whole bot dying rather than one turn failing, and there is still no warning at nineteen — so a global in-flight byte budget remains the change that has to precede audio and video. What the raise buys is that the guard is no longer the only thing standing between a busy evening and a SIGKILL.
+
+**The 32 MB budget stays at 32 MB.** It is sized by what a small server plausibly needs concurrently — three simultaneous 10 MB turns — not by what the cap permits, so a larger cap is not a reason to raise it. At 1 GB it holds worst-case residency to ~206 MB including baseline, about 20% of the cap rather than 40%. Turns arriving over budget take the existing busy/decline path rather than a new one.
 
 ### The Size Guard Cannot Protect Against a Missing Content-Length
 
@@ -161,7 +163,9 @@ Enforced in `src/discord/attachments.ts` alongside the existing image policy, an
 | PDF / documents                   | 10 MB     | Latency; 258 tok/page is never binding     | ~1,000 pages by API limit |
 | Audio                             | 8 MB      | ~5 min at 128 kbps; 32 tok/s is negligible | ~5 min typical            |
 | Video (low res)                   | 10 MB     | Latency and memory agree                   | ~60 s typical             |
-| **Total in flight, all channels** | **32 MB** | ~40% of the container cap at worst case    | —                         |
+| **Total in flight, all channels** | **32 MB** | ~20% of the 1 GB cap at worst case         | —                         |
+
+**The per-turn caps did not move.** 10 MB and 8 MB are set by upload latency against `gemini.timeout`, not by container memory, so doubling the cap leaves them exactly where they were. Recorded explicitly rather than left ambiguous.
 
 **On duration caps specifically:** the issue asks for explicit duration limits, and this is where I would push back on the framing. Duration is not knowable without decoding the file, and decoding to measure it costs the same memory the cap exists to protect. **The byte cap is the enforceable proxy** and the duration column above is what a byte cap implies at typical bitrates, not an independently enforced limit. A user posting a 60 s video at an unusually low bitrate gets it accepted; that is correct, because bytes are what threaten the host. Enforcing true duration limits would require `ffprobe` in the image and a decode pass, and I do not recommend paying that for a bound the byte cap already achieves.
 
@@ -169,7 +173,7 @@ Enforced in `src/discord/attachments.ts` alongside the existing image policy, an
 
 ## Suggested Sequencing
 
-1. **`memswap_limit: 512m`** — one line, independent of everything else, converts a slow SD-thrashing death into a fast honest one.
+1. ~~**Set `memswap_limit`**~~ — **done**, alongside raising `mem_limit` to `1g`. Converts a slow SD-thrashing death into a fast honest one. Deploy-affecting: takes effect only on the next container recreate, which needs explicit authorization.
 2. **PDF support** — no new infrastructure; MIME routing plus skipping `sharp`. Ships alone and is the highest value per unit of work, with an obvious use in a server that discusses visual novels.
 3. **Global in-flight byte budget** — the prerequisite for anything larger. Worth landing on its own with its own tests, because it is the piece that prevents the OOM.
 4. **Audio** — smallest payloads, cheapest tokens, no new failure modes once (3) exists.

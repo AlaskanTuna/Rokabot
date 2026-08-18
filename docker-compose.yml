@@ -10,7 +10,8 @@ services:
       panel.name: Maniwa Roka
       panel.icon: "\U0001F361"
       panel.db: /home/adam/rokabot/data/rokabot.db
-    mem_limit: 512m
+    mem_limit: 1g # Host has 8 GB and nothing else competes; 512m left no margin once an attachment is in flight
+    memswap_limit: 1g # Must equal mem_limit — this is memory+swap combined, so equal values mean no swap at all
     ports:
       - '3000:3000'
     volumes:
