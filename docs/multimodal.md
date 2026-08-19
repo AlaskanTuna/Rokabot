@@ -49,6 +49,10 @@ The hard limit is **20 MB for the total request, including the prompt and all fi
 | Audio                     | 32 tokens/second (1 min = 1,920) | 1,920 tokens    |
 | PDF                       | 258 tokens/page, text layer free | 5,160 tokens    |
 
+Every figure below is the cost of the turn that carries the media, which holds only because attachment bytes
+are stripped from session history once their turn is over. Before that fix they were re-sent as history on
+every later turn, so a single upload could be charged up to twenty times — see `docs/trd.md`.
+
 Against `rpm: 15` and `rpd: 500`, and the free-tier ceiling of **250,000 input tokens per minute** — measured, below:
 
 - **Audio and PDF never reach TPM.** At 1,920 tokens a minute of audio, RPM 15 binds first by an order of magnitude.
