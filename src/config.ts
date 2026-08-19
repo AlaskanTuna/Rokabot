@@ -4,6 +4,10 @@ import 'dotenv/config'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { load } from 'js-yaml'
+// Both are pure leaves — attachmentLimits.ts imports nothing and attachments.ts only node built-ins — so
+// reading them here derives the floor instead of restating it, and cannot close a cycle back into config.
+import { GEMINI_IMAGE_TOKENS } from './agent/attachmentLimits.js'
+import { MAX_ATTACHMENTS } from './discord/attachments.js'
 
 function requiredEnv(key: string): string {
   const value = process.env[key]
@@ -20,6 +24,7 @@ interface YamlConfig {
     timeout?: number
     maxRetries?: number
     maxOutputTokens?: number
+    maxAttachmentTokens?: number
     safetyThreshold?: string
     maxLlmCalls?: number
     liveMaxRetries?: number
@@ -137,6 +142,7 @@ export const config = {
     timeout: envInt('GEMINI_TIMEOUT') ?? yaml.gemini?.timeout ?? 15_000,
     maxRetries: envInt('GEMINI_MAX_RETRIES') ?? yaml.gemini?.maxRetries ?? 1,
     maxOutputTokens: envInt('GEMINI_MAX_OUTPUT_TOKENS') ?? yaml.gemini?.maxOutputTokens ?? 300,
+    maxAttachmentTokens: envInt('GEMINI_MAX_ATTACHMENT_TOKENS') ?? yaml.gemini?.maxAttachmentTokens ?? 50_000,
     safetyThreshold: envString('GEMINI_SAFETY_THRESHOLD') ?? yaml.gemini?.safetyThreshold ?? 'OFF',
     maxLlmCalls: yaml.gemini?.maxLlmCalls ?? 4,
     liveMaxRetries: envInt('GEMINI_LIVE_MAX_RETRIES') ?? yaml.gemini?.liveMaxRetries ?? 2,
@@ -217,6 +223,16 @@ export const config = {
 export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: number; max?: number }> = [
   { path: 'gemini.timeout', value: config.gemini.timeout, min: 1 },
   { path: 'gemini.maxOutputTokens', value: config.gemini.maxOutputTokens, min: 1 },
+  // Floor is a full turn of plain images, derived rather than restated: below it a maximal image turn could
+  // be refused,
+  // and images are the one type whose cost is already known to be bounded and safe. Ceiling is the measured
+  // 250,000 TPM (#125) — a single turn priced above the whole minute's budget can only ever fail on 429.
+  {
+    path: 'gemini.maxAttachmentTokens',
+    value: config.gemini.maxAttachmentTokens,
+    min: MAX_ATTACHMENTS * GEMINI_IMAGE_TOKENS,
+    max: 250_000
+  },
   { path: 'gemini.turnDeadlineMs', value: config.gemini.turnDeadlineMs, min: 1 },
   { path: 'gemini.retryBackoffCapMs', value: config.gemini.retryBackoffCapMs, min: 1 },
   { path: 'gemini.maxRetries', value: config.gemini.maxRetries, min: 0 },

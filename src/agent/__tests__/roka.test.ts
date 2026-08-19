@@ -6,6 +6,7 @@ import { getFacts, refreshFactTimestamps } from '../../storage/userMemory.js'
 import { GEMINI_IMAGE_TOKENS } from '../../utils/imageProcessor.js'
 import { logger } from '../../utils/logger.js'
 import { estimateTokens } from '../../utils/tokens.js'
+import { measureAttachmentTokens, needsMeasuring } from '../attachmentCost.js'
 import { computeBackoff as computeRetryBackoff } from '../geminiReliability.js'
 import { retrieveForTurn } from '../memory/retriever.js'
 import { getMessages } from '../passiveBuffer.js'
@@ -48,6 +49,13 @@ vi.mock('../../storage/metricsStore.js', () => ({
 
 vi.mock('../memory/retriever.js', () => ({
   retrieveForTurn: vi.fn()
+}))
+
+// Pricing an attachment is a network call. Mocked to a cheap value so the download tests below can keep
+// counting fetches; a real countTokens would add one per non-image turn and break their arithmetic.
+vi.mock('../attachmentCost.js', () => ({
+  measureAttachmentTokens: vi.fn(async () => 100),
+  needsMeasuring: vi.fn(() => false)
 }))
 
 vi.mock('../passiveBuffer.js', () => ({
@@ -1644,6 +1652,105 @@ describe('attachment intake', () => {
   })
 
   // Documents are billed per page rather than per image, so the image rate must not be applied to them.
+  // #136: size does not bound token cost — a 17 KB PDF is 560 tokens a page. Over the ceiling the turn is
+  // refused here rather than sent to fail on a 429, which would retry into the same wall and spend the
+  // minute's TPM for every other channel.
+  it('refuses attachments that cost more than one turn may spend', async () => {
+    let captured: { newMessage?: { parts?: Array<{ inlineData?: unknown }> } } | undefined
+    vi.mocked(needsMeasuring).mockReturnValueOnce(true)
+    vi.mocked(measureAttachmentTokens).mockResolvedValueOnce(config.gemini.maxAttachmentTokens + 1)
+    serve(PDF_BYTES)
+    __setTestRunTurnFactory(() => async (_a, _s, request) => {
+      captured = request
+      return { text: 'Mm~', hasText: true, hasFunctionCall: false }
+    })
+
+    const result = await generateResponse({
+      channelId: 'refuse-cost',
+      guildId: 'attachment-guild',
+      userMessage: 'read this',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id',
+      imageAttachments: [{ url: 'https://cdn.test/file', contentType: 'application/pdf' }]
+    })
+    await destroySession('refuse-cost')
+
+    expect(result.refusedAttachments).toBe(1)
+    expect((captured?.newMessage?.parts ?? []).some((part) => part.inlineData)).toBe(false)
+  })
+
+  // The two mechanisms meet here: refusing on cost removes the attachment, which re-creates exactly the
+  // condition #137 fixed — file gone, request unchanged, and the model reaching for search_web to fill the
+  // hole. A refusal has to say so for the same reason a failed download does.
+  //
+  // Two attachments rather than one, because with one the notice reads correctly whatever number the code
+  // put in it. The peer probed this: `refusedAttachments = 1` in place of `imageParts.length` failed nothing
+  // at all. Refusal is all-or-nothing, so the count is the whole set and the assertion has to be able to
+  // tell the whole set from one of it.
+  it('tells the model when attachments were refused on cost, and how many went with them', async () => {
+    let captured: { newMessage?: { parts?: Array<{ text?: string }> } } | undefined
+    vi.mocked(needsMeasuring).mockReturnValueOnce(true)
+    vi.mocked(measureAttachmentTokens).mockResolvedValueOnce(config.gemini.maxAttachmentTokens + 1)
+    serve(PDF_BYTES)
+    __setTestRunTurnFactory(() => async (_a, _s, request) => {
+      captured = request
+      return { text: 'Mm~', hasText: true, hasFunctionCall: false }
+    })
+
+    await generateResponse({
+      channelId: 'refuse-notice',
+      guildId: 'attachment-guild',
+      userMessage: 'read this',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id',
+      imageAttachments: [
+        { url: 'https://cdn.test/file', contentType: 'application/pdf' },
+        { url: 'https://cdn.test/file', contentType: 'application/pdf' }
+      ]
+    })
+    await destroySession('refuse-notice')
+
+    const texts = (captured?.newMessage?.parts ?? []).flatMap((part) => (part.text ? [part.text] : []))
+    expect(texts.some((text) => text.includes('2 file(s)') && text.includes('together they are too long'))).toBe(true)
+  })
+
+  it('admits attachments that fit the ceiling', async () => {
+    let captured: { newMessage?: { parts?: Array<{ inlineData?: unknown }> } } | undefined
+    vi.mocked(needsMeasuring).mockReturnValueOnce(true)
+    vi.mocked(measureAttachmentTokens).mockResolvedValueOnce(config.gemini.maxAttachmentTokens - 1)
+    serve(PDF_BYTES)
+    __setTestRunTurnFactory(() => async (_a, _s, request) => {
+      captured = request
+      return { text: 'Mm~', hasText: true, hasFunctionCall: false }
+    })
+
+    const result = await generateResponse({
+      channelId: 'admit-cost',
+      guildId: 'attachment-guild',
+      userMessage: 'read this',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id',
+      imageAttachments: [{ url: 'https://cdn.test/file', contentType: 'application/pdf' }]
+    })
+    await destroySession('admit-cost')
+
+    expect(result.refusedAttachments).toBe(0)
+    expect((captured?.newMessage?.parts ?? []).some((part) => part.inlineData)).toBe(true)
+  })
+
+  // The probe is a network round trip. Spending one on a turn whose cost is already known would tax every
+  // image turn to learn a number that cannot reach the ceiling.
+  it('does not price a turn whose attachments are all images', async () => {
+    vi.mocked(measureAttachmentTokens).mockClear()
+    serve(PNG_BYTES)
+    await inlineFor('image/png', PNG_BYTES)
+
+    expect(measureAttachmentTokens).not.toHaveBeenCalled()
+  })
+
   it('does not charge a document at the image rate', async () => {
     serve(PDF_BYTES)
     const withDocument = await tokensInFor({ url: 'https://cdn.test/file', contentType: 'application/pdf' })

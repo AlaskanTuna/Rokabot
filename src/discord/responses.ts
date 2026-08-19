@@ -42,6 +42,18 @@ const PARTIAL_ATTACHMENT_MESSAGES = [
   'I could only manage the opening of that — it was much too long for me to take in one go!'
 ]
 
+/** Attachments refused on measured cost: intact and readable, just too expensive to spend one turn on. */
+const OVERSIZED_ATTACHMENT_MESSAGES = [
+  "That's far too much for me to take in all at once~ Send me a smaller piece and I'll look properly.",
+  'Mou, that would take me all afternoon to get through! Something shorter, please?',
+  "Ara, you've given me enough to read for a week. Trim it down a little for me?",
+  "That's a bit much for one sitting, ne? Give me a shorter one and I'll go through it properly."
+]
+
+export function getRandomOversizedAttachment(): string {
+  return OVERSIZED_ATTACHMENT_MESSAGES[Math.floor(Math.random() * OVERSIZED_ATTACHMENT_MESSAGES.length)]
+}
+
 export function getRandomPartialAttachment(): string {
   return PARTIAL_ATTACHMENT_MESSAGES[Math.floor(Math.random() * PARTIAL_ATTACHMENT_MESSAGES.length)]
 }

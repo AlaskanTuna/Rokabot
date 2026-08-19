@@ -18,6 +18,7 @@ import { logger } from '../utils/logger.js'
 import { getSharedRateLimiter } from '../utils/rateLimiter.js'
 import { getLocalHour } from '../utils/timezone.js'
 import { estimateTokens } from '../utils/tokens.js'
+import { measureAttachmentTokens, needsMeasuring } from './attachmentCost.js'
 import { geminiMimeType, sizeLimitFor } from './attachmentLimits.js'
 import { classifyGeminiFailure, computeBackoff, extractGeminiStatus } from './geminiReliability.js'
 import { isobmffAllowsPrefix, prefixPolicyFor } from './mediaPrefix.js'
@@ -59,6 +60,11 @@ export interface GenerateResult {
    * dropped in total silence and she answers as though nothing were attached, which reads as her ignoring it.
    */
   droppedAttachments: number
+  /**
+   * Attachments refused because their measured token cost was past `gemini.maxAttachmentTokens`. Distinct
+   * from dropped: these arrived intact and were readable, they were simply too expensive to spend a turn on.
+   */
+  refusedAttachments: number
   /**
    * Attachments sent as a prefix because the whole file was past its ceiling. She saw a real part of it, so
    * this is not a failure — but answering as though she had the whole thing would be a quiet lie about a
@@ -1063,6 +1069,24 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     }
   }
 
+  // Priced before sending, because size does not bound token cost — a 17 KB PDF is 560 tokens a page and can
+  // exceed a whole request's budget on its own. Over the ceiling the turn is refused here rather than sent to
+  // fail on a 429, which would retry into the same wall and spend the minute's TPM for every other channel.
+  // Only asked when something is not an image: images are a flat 1,089 each and cannot reach the ceiling.
+  let refusedAttachments = 0
+  if (imageParts.length > 0 && needsMeasuring(imageParts)) {
+    const measured = await measureAttachmentTokens(imageParts)
+    if (measured !== undefined && measured > config.gemini.maxAttachmentTokens) {
+      logger.info(
+        { channelId, measured, ceiling: config.gemini.maxAttachmentTokens, count: imageParts.length },
+        'Attachments cost more than one turn may spend, refusing them'
+      )
+      refusedAttachments = imageParts.length
+      imageParts.length = 0
+      imageTokens = 0
+    }
+  }
+
   /**
    * Told to the model, not just to the user. Without it the turn looks exactly like an ordinary question
    * about a video, and what follows is not misbehaviour: CORE_PROMPT says to quietly call search_web for a
@@ -1076,10 +1100,26 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
    * buy the two-green-live-run cost for a sentence that only appears once a download has already failed.
    * It is a statement of fact for the same reason.
    */
-  const failedAttachmentNotice =
-    droppedAttachments > 0
+  // Both reasons an attachment can be absent, worded apart because they are not the same fact: one never
+  // arrived, the other arrived intact and cost more than a turn may spend. A refusal without this line
+  // re-creates exactly the condition above — attachment gone, request unchanged, search_web fills the hole.
+  //
+  // The refusal arm says "together" because the refusal is all-or-nothing: one cheap image beside one
+  // 500-page PDF refuses both, and blaming each file individually would tell the sender their 1,089-token
+  // picture was too long to read. Pricing per attachment to refuse only the expensive one would cost a
+  // round trip each, and each of those round trips re-uploads the file.
+  const failedAttachmentNotice = [
+    ...(droppedAttachments > 0
       ? [{ text: `[${droppedAttachments} file(s) were shared with this message but could not be retrieved.]` }]
-      : []
+      : []),
+    ...(refusedAttachments > 0
+      ? [
+          {
+            text: `[${refusedAttachments} file(s) were shared with this message; together they are too long to read in one turn, so none of them were opened.]`
+          }
+        ]
+      : [])
+  ]
 
   // One list rather than a branch per case: the notice was duplicated across both arms, and a mutation
   // deleting it from the dropImages arm alone broke nothing — a second copy nobody could have caught going
@@ -1300,5 +1340,13 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     tokensOutEst: estimateTokens(reliability.text)
   }
 
-  return { text: reliability.text, tone, metrics, toolsUsed, droppedAttachments, truncatedAttachments }
+  return {
+    text: reliability.text,
+    tone,
+    metrics,
+    toolsUsed,
+    droppedAttachments,
+    truncatedAttachments,
+    refusedAttachments
+  }
 }

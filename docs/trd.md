@@ -535,6 +535,38 @@ byte budget cannot disagree about the same file.
   that makes the Pi fetch a user-named host, so its type set is a security decision rather than a feature
   one; widening it belongs in its own change.
 
+### Attachment Token Admission
+
+Size does not bound token cost, so the byte ceilings above do not bound the bill. A 17 KB PDF is 50 pages at a
+measured ~560 tokens each — 28,001 tokens from a file small enough to pass every check on the way in — and
+three 200-page PDFs reach 341,543 tokens in a single request, over the whole 250,000 TPM ceiling. `roka.ts`
+therefore prices the parts with `countTokens` before sending them and refuses the turn's attachments above
+`gemini.maxAttachmentTokens`, rather than letting the request fail on a 429 that would retry into the same
+wall and spend the minute's budget for every other channel.
+
+- **Images are skipped, and that skip is model-specific.** `needsMeasuring` returns false when every part is
+  an image, because an image is a flat 1,089 tokens regardless of dimensions and `MAX_ATTACHMENTS` of them
+  cannot reach any legal ceiling. That number is _this_ model's; `gemini.model` is configurable, and a model
+  that priced images by size would make the skip wrong rather than merely stale. The floor on
+  `maxAttachmentTokens` is derived from the same constant (`MAX_ATTACHMENTS * GEMINI_IMAGE_TOKENS`) so the
+  two cannot drift apart silently.
+- **`countTokens` does not draw on the generate quota.** Verified twice against a key at its RPD limit: the
+  call succeeds where `generateContent` 429s. Pricing is therefore free in quota, but not in transfer.
+- **It costs a second upload.** `countTokens` sends the same base64 payload the message will send, so a
+  priced attachment crosses the wire twice. At the Pi's measured ~2.5 MB/s that is ~4 s each way for a 10 MB
+  PDF, inside the 20 s timeout with room to spare, but it is real latency on the largest admitted files and
+  it is why the image skip is worth having rather than an optimisation for its own sake.
+- **It fails open.** A `countTokens` that throws or times out returns `undefined` and the turn proceeds
+  unpriced. The check exists to stop a predictable overrun, not to become a new way for an ordinary message
+  to fail.
+- **A refusal is told to the model.** The same `failedAttachmentNotice` that covers a failed download covers
+  a cost refusal, in its own wording. Without it a refused turn looks identical to a question about a file
+  that was never attached — the exact condition that produced the `search_web` fabrications described above.
+- **Refusal is all-or-nothing, and the wording says so.** One cheap image beside one 500-page PDF refuses
+  both, so the notice blames the set (`together they are too long to read`) rather than each file — otherwise
+  she tells the sender their 1,089-token picture was too long to read. Refusing only the expensive member
+  would need a `countTokens` per attachment, and each of those re-uploads the file.
+
 ### Attachment Bytes Do Not Live in History
 
 ADK's runner appends the incoming message to the session verbatim, and nothing in the framework removes it.

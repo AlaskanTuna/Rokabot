@@ -8,6 +8,7 @@ gemini:
   timeout: 20000 # API request timeout in ms (covers initial Gemini → tool → second Gemini round; ~2x measured p95 of 9801ms, 2026-07-29 n=78, with headroom over the 13613ms worst observed tool chain, while still admitting two retries inside turnDeadlineMs)
   maxRetries: 3 # Max retries for transient errors (429, 500, 503)
   maxOutputTokens: 500 # Max tokens per response (safety net)
+  maxAttachmentTokens: 50000 # Max measured token cost of one turn's attachments before they are refused. Size does not bound this: a PDF is ~560 tokens/page, so a 17 KB document can cost 28,000. 50,000 is a fifth of the 250,000 TPM ceiling, admitting three max-length audio clips and refusing a 200-page PDF.
   safetyThreshold: OFF # Harm block threshold: OFF, BLOCK_NONE, BLOCK_ONLY_HIGH, BLOCK_MEDIUM_AND_ABOVE, BLOCK_LOW_AND_ABOVE
   maxLlmCalls: 4 # Max chained tool calls per request
   liveMaxRetries: 2 # Retry attempts after a failed live Gemini response
