@@ -1063,11 +1063,27 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     }
   }
 
+  /**
+   * Told to the model, not just to the user. Without it the turn looks exactly like an ordinary question
+   * about a video: the request says "watch this" and nothing anywhere contradicts it, so the model answers
+   * from nothing and invents a plausible film. An instruction not to invent cannot help, because from its
+   * position there is nothing to notice — this is a missing-input problem, and the input is this line.
+   *
+   * Deliberately a statement of fact and not an instruction. What to do about it is already covered; adding
+   * a rule here would put behavioural wording on the prompt path and buy the two-green-live-run cost for a
+   * sentence that only ever appears when a download has already failed.
+   */
+  const failedAttachmentNotice =
+    droppedAttachments > 0
+      ? [{ text: `[${droppedAttachments} file(s) were shared with this message but could not be retrieved.]` }]
+      : []
+
+  // One list rather than a branch per case: the notice was duplicated across both arms, and a mutation
+  // deleting it from the dropImages arm alone broke nothing — a second copy nobody could have caught going
+  // wrong. The safety ladder drops the images; it has no reason to drop the reason they are missing.
   const buildNewMessage = (): Content => ({
     role: 'user',
-    parts: dropImages
-      ? [{ text: `[${displayName}]: ${userMessage}` }]
-      : [...imageParts, { text: `[${displayName}]: ${userMessage}` }]
+    parts: [...(dropImages ? [] : imageParts), ...failedAttachmentNotice, { text: `[${displayName}]: ${userMessage}` }]
   })
 
   logger.debug(

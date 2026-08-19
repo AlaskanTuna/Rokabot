@@ -1397,6 +1397,83 @@ describe('attachment intake', () => {
 
   // An oversized file passes the Discord layer's type check and dies at the download, so without this count
   // it vanishes: she answers the text and never mentions the file, which reads as her ignoring it.
+  // --- telling the model when an attachment did not arrive (#137) ---
+
+  /** Every text part the model is handed for the turn, which is where a missing attachment has to be said. */
+  async function turnTextsFor(attachments: Array<{ contentType: string; ok: boolean }>) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: attachments[0]?.ok ?? true,
+        headers: { get: () => String(OGG_BYTES.byteLength) },
+        body: new ReadableStream<Uint8Array>({
+          pull(controller) {
+            controller.enqueue(new Uint8Array(OGG_BYTES))
+            controller.close()
+          }
+        })
+      }))
+    )
+
+    let captured: { newMessage?: { parts?: Array<{ text?: string }> } } | undefined
+    __setTestRunTurnFactory(() => async (_attempt, _signal, request) => {
+      captured = request
+      return { text: 'Mm~', hasText: true, hasFunctionCall: false }
+    })
+
+    const channelId = `roka-notice-${attachments.map((a) => a.ok).join('-')}-${attachments.length}`
+    await generateResponse({
+      channelId,
+      guildId: 'attachment-guild',
+      userMessage: 'watch this and tell me what happens in it',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id',
+      imageAttachments: attachments.length
+        ? attachments.map((a, i) => ({ url: `https://cdn.test/f${i}`, contentType: a.contentType }))
+        : undefined
+    })
+    await destroySession(channelId)
+
+    return (captured?.newMessage?.parts ?? []).flatMap((part) => (part.text ? [part.text] : []))
+  }
+
+  // The whole bug: without this the turn looks like an ordinary question about a video, and the model
+  // answers from nothing. It invented a 19-minute Stephen King recap, unhedged.
+  it('tells the model when an attachment could not be retrieved', async () => {
+    const texts = await turnTextsFor([{ contentType: 'video/mp4', ok: false }])
+
+    expect(texts.some((text) => text.includes('could not be retrieved'))).toBe(true)
+  })
+
+  it('says how many failed rather than that something did', async () => {
+    const texts = await turnTextsFor([
+      { contentType: 'video/mp4', ok: false },
+      { contentType: 'video/mp4', ok: false }
+    ])
+
+    expect(texts.some((text) => text.includes('2 file(s)'))).toBe(true)
+  })
+
+  it('still hands the model what the user actually said', async () => {
+    const texts = await turnTextsFor([{ contentType: 'video/mp4', ok: false }])
+
+    expect(texts.some((text) => text.includes('watch this and tell me what happens in it'))).toBe(true)
+  })
+
+  // The cheap way to pass the test above is to inject the line always, so the quiet path is asserted too.
+  it('says nothing when the attachment arrived', async () => {
+    const texts = await turnTextsFor([{ contentType: 'audio/ogg', ok: true }])
+
+    expect(texts.some((text) => text.includes('could not be retrieved'))).toBe(false)
+  })
+
+  it('says nothing when there was no attachment at all', async () => {
+    const texts = await turnTextsFor([])
+
+    expect(texts.some((text) => text.includes('could not be retrieved'))).toBe(false)
+  })
+
   // --- oversized media taken as a prefix (#135) ---
 
   function isobmff(order: string[], padTo: number) {
