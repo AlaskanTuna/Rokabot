@@ -63,6 +63,13 @@ describe('reservationFor', () => {
   // Honest limitation: MAX_VIDEO_SIZE_BYTES and MAX_DOCUMENT_SIZE_BYTES are both 10 MB today, so removing
   // video's branch from sizeLimitFor changes no behaviour and this assertion cannot fail. It is here to
   // state the intended ceiling, not to guard it — it starts guarding the moment the two diverge.
+  // The prefix path depends on this: an oversized file is Range-fetched down to its ceiling, so the ceiling
+  // is what actually arrives and what must be reserved. The clamp was written for a different reason — the
+  // download refuses on Content-Length before buffering — and happens to be right for this one too.
+  it('reserves only what will arrive for a file far past its ceiling', () => {
+    expect(reservationFor([audio(200 * 1024 * 1024)])).toBe(MAX_AUDIO_SIZE_BYTES)
+  })
+
   it('reserves the video ceiling when a video states no size', () => {
     expect(reservationFor([video()])).toBe(MAX_VIDEO_SIZE_BYTES)
   })

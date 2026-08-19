@@ -20,6 +20,7 @@ import { getLocalHour } from '../utils/timezone.js'
 import { estimateTokens } from '../utils/tokens.js'
 import { geminiMimeType, sizeLimitFor } from './attachmentLimits.js'
 import { classifyGeminiFailure, computeBackoff, extractGeminiStatus } from './geminiReliability.js'
+import { isobmffAllowsPrefix, prefixPolicyFor } from './mediaPrefix.js'
 import { retrieveForTurn } from './memory/retriever.js'
 import { getMessages as getBufferMessages } from './passiveBuffer.js'
 import { assembleSystemPrompt } from './promptAssembler.js'
@@ -58,6 +59,12 @@ export interface GenerateResult {
    * dropped in total silence and she answers as though nothing were attached, which reads as her ignoring it.
    */
   droppedAttachments: number
+  /**
+   * Attachments sent as a prefix because the whole file was past its ceiling. She saw a real part of it, so
+   * this is not a failure — but answering as though she had the whole thing would be a quiet lie about a
+   * five-minute clip she heard ninety seconds of.
+   */
+  truncatedAttachments: number
 }
 
 const APP_NAME = 'rokabot'
@@ -754,7 +761,12 @@ export async function destroyAllSessions(): Promise<void> {
  * There is deliberately no `arrayBuffer()` fallback for a body-less response: a fallback is a path where the
  * guard does not run, and it would be taken by exactly the malformed responses the guard is for.
  */
-async function readWithinLimit(response: Response, limit: number, url: string): Promise<Buffer | null> {
+async function readWithinLimit(
+  response: Response,
+  limit: number,
+  url: string,
+  onOverflow: 'refuse' | 'truncate'
+): Promise<Buffer | null> {
   if (!response.body) {
     logger.warn({ url }, 'Attachment response carried no readable body, skipping')
     return null
@@ -766,12 +778,21 @@ async function readWithinLimit(response: Response, limit: number, url: string): 
 
   let chunk = await reader.read()
   while (!chunk.done) {
-    received += chunk.value.byteLength
-    if (received > limit) {
+    const overflow = received + chunk.value.byteLength - limit
+    if (overflow > 0) {
+      // `truncate` is for a deliberate prefix fetch, where reaching the ceiling is the plan rather than a
+      // failure. It matters because a server may ignore `Range` and answer 200 with the whole file: without
+      // this the read would abort and the prefix would be lost, turning the saving into a refusal.
+      if (onOverflow === 'truncate') {
+        chunks.push(chunk.value.subarray(0, chunk.value.byteLength - overflow))
+        await reader.cancel()
+        return Buffer.concat(chunks)
+      }
       await reader.cancel()
       logger.warn({ url, received, limit }, 'Attachment passed its size limit mid-transfer, aborted')
       return null
     }
+    received += chunk.value.byteLength
     chunks.push(chunk.value)
     chunk = await reader.read()
   }
@@ -779,10 +800,19 @@ async function readWithinLimit(response: Response, limit: number, url: string): 
   return Buffer.concat(chunks)
 }
 
-/** Download one attachment as base64, returning null if it fails or exceeds the ceiling for its type */
+/**
+ * Download one attachment as base64, returning null if it fails or cannot be made to fit.
+ *
+ * A file past its ceiling is not automatically refused any more: where the container tolerates being cut
+ * short, the first `limit` bytes are fetched with a `Range` header and sent as a prefix, so the excess never
+ * crosses the wire. Whole-file ingestion of very large media is not merely expensive but arithmetically
+ * impossible — 200 MB of audio is ~5.3 h, ~611,000 tokens against a 250,000 TPM ceiling — so a bounded
+ * prefix is the only shape that works at all. `truncated` tells the caller to say so rather than pretend
+ * she heard the whole thing.
+ */
 async function downloadAttachment(
   attachment: ImageAttachment
-): Promise<{ data: string; mimeType: string; tokens: number } | null> {
+): Promise<{ data: string; mimeType: string; tokens: number; truncated: boolean } | null> {
   const { url, contentType } = attachment
   // Which types are admitted at all is the Discord layer's decision; this only decides how to handle one that
   // already got through. Routing on image/* rather than an allowlist keeps the type sets in one place — the
@@ -790,21 +820,43 @@ async function downloadAttachment(
   const isImage = contentType.startsWith('image/')
   const limit = sizeLimitFor(contentType)
 
+  // Only a size Discord stated can be trusted here. An embed image or a resolved link states none, so it
+  // takes the ordinary path and the size guard catches it — guessing "oversized" from a missing size would
+  // truncate files that were never too big.
+  const policy = prefixPolicyFor(contentType)
+  const wantsPrefix = attachment.size !== undefined && attachment.size > limit && policy !== 'none'
+
+  if (attachment.size !== undefined && attachment.size > limit && policy === 'none') {
+    logger.warn({ url, size: attachment.size, limit, contentType }, 'Oversized and not safely prefixable, refusing')
+    return null
+  }
+
   try {
-    const response = await fetch(url)
+    // Range makes the saving real: on a 206 the excess is never sent at all. A server that ignores it answers
+    // 200 with the whole body, and readWithinLimit still stops at the same byte — so correctness does not
+    // depend on Range being honoured, only the bandwidth does.
+    const response = await fetch(url, wantsPrefix ? { headers: { Range: `bytes=0-${limit - 1}` } } : undefined)
     if (!response.ok) {
       logger.warn({ url, status: response.status }, 'Failed to download attachment')
       return null
     }
 
     const contentLength = response.headers.get('content-length')
-    if (contentLength && parseInt(contentLength, 10) > limit) {
+    if (!wantsPrefix && contentLength && parseInt(contentLength, 10) > limit) {
       logger.warn({ url, size: contentLength, limit }, 'Attachment exceeds its size limit, skipping')
       return null
     }
 
-    const buffer = await readWithinLimit(response, limit, url)
+    const buffer = await readWithinLimit(response, limit, url, wantsPrefix ? 'truncate' : 'refuse')
     if (!buffer) return null
+
+    // Whether this particular file survives being cut is a property of the file, not of its type: a phone MP4
+    // carries its index last and a prefix of one has nothing to decode against. Refused rather than sent,
+    // because sending it raises no error anywhere — the request succeeds and the answer is about nothing.
+    if (wantsPrefix && policy === 'isobmff' && !isobmffAllowsPrefix(buffer)) {
+      logger.warn({ url, contentType }, 'Oversized video has no index before its media data, refusing')
+      return null
+    }
 
     // A document or an audio clip goes to the model exactly as it arrived. sharp is an image pipeline — handed
     // anything else it throws, and its catch returns the undecoded bytes relabelled image/jpeg, so the file
@@ -812,11 +864,21 @@ async function downloadAttachment(
     // spelling of MP3. tokens stays 0: audio is billed per second, and seconds are not knowable without
     // decoding — the same argument docs/multimodal.md makes against enforcing duration caps.
     if (!isImage) {
-      return { data: buffer.toString('base64'), mimeType: geminiMimeType(contentType), tokens: 0 }
+      return {
+        data: buffer.toString('base64'),
+        mimeType: geminiMimeType(contentType),
+        tokens: 0,
+        truncated: wantsPrefix
+      }
     }
 
     const processed = await processImageForGemini(buffer)
-    return { data: processed.data.toString('base64'), mimeType: processed.mimeType, tokens: GEMINI_IMAGE_TOKENS }
+    return {
+      data: processed.data.toString('base64'),
+      mimeType: processed.mimeType,
+      tokens: GEMINI_IMAGE_TOKENS,
+      truncated: wantsPrefix
+    }
   } catch (error) {
     logger.warn({ url, error }, 'Error downloading attachment')
     return null
@@ -982,9 +1044,11 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   const imageParts: Part[] = []
   let imageTokens = 0
   let droppedAttachments = 0
+  let truncatedAttachments = 0
   if (imageAttachments?.length) {
     const downloads = await Promise.all(imageAttachments.map((img) => downloadAttachment(img)))
     droppedAttachments = downloads.filter((result) => result === null).length
+    truncatedAttachments = downloads.filter((result) => result?.truncated).length
     for (const result of downloads) {
       if (result) {
         imageParts.push({ inlineData: { data: result.data, mimeType: result.mimeType } })
@@ -1214,5 +1278,5 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     tokensOutEst: estimateTokens(reliability.text)
   }
 
-  return { text: reliability.text, tone, metrics, toolsUsed, droppedAttachments }
+  return { text: reliability.text, tone, metrics, toolsUsed, droppedAttachments, truncatedAttachments }
 }

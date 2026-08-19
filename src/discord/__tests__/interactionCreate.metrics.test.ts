@@ -29,6 +29,7 @@ vi.mock('../responses.js', () => ({
   getRandomDecline: () => 'decline',
   getRandomError: () => 'error',
   getRandomUnsupportedAttachment: () => "I couldn't open that file~",
+  getRandomPartialAttachment: () => 'I only got through the beginning of that~',
   splitResponse: mocks.splitResponse
 }))
 vi.mock('../events/gameCommands.js', () => ({ createGameCommandHandler: () => mocks.gameCommandHandler }))
@@ -59,7 +60,8 @@ describe('interaction handler metrics', () => {
       tone: 'playful',
       toolsUsed: [],
       metrics,
-      droppedAttachments: 0
+      droppedAttachments: 0,
+      truncatedAttachments: 0
     })
   })
 
@@ -214,13 +216,52 @@ describe('interaction handler metrics', () => {
       tone: 'playful',
       toolsUsed: [],
       metrics,
-      droppedAttachments: 1
+      droppedAttachments: 1,
+      truncatedAttachments: 0
     })
     const interaction = askWith([PNG])
 
     await createInteractionHandler(rateLimiterStub() as never)(interaction as never)
 
     expect(mocks.splitResponse.mock.calls[0][0]).toContain("I couldn't open that file~")
+  })
+
+  // Naming the truncation is the difference between a partial answer and a confident wrong one: she really
+  // did not hear the end, and silence about that reads as though she had.
+  it('says she only got through the beginning when a file was truncated', async () => {
+    mocks.generateResponse.mockResolvedValue({
+      text: 'Hello~',
+      tone: 'playful',
+      toolsUsed: [],
+      metrics,
+      droppedAttachments: 0,
+      truncatedAttachments: 1
+    })
+    const interaction = askWith([PNG])
+
+    await createInteractionHandler(rateLimiterStub() as never)(interaction as never)
+
+    expect(mocks.splitResponse.mock.calls[0][0]).toContain('only got through the beginning')
+  })
+
+  // A turn can carry one file she could not open and another she could only start, and they are different
+  // things to say — the second must not swallow the first.
+  it('says both when one file was unreadable and another was truncated', async () => {
+    mocks.generateResponse.mockResolvedValue({
+      text: 'Hello~',
+      tone: 'playful',
+      toolsUsed: [],
+      metrics,
+      droppedAttachments: 1,
+      truncatedAttachments: 1
+    })
+    const interaction = askWith([PNG])
+
+    await createInteractionHandler(rateLimiterStub() as never)(interaction as never)
+
+    const sent = mocks.splitResponse.mock.calls[0][0]
+    expect(sent).toContain("I couldn't open that file~")
+    expect(sent).toContain('only got through the beginning')
   })
 
   it('adds no nudge when every attachment was supported', async () => {
