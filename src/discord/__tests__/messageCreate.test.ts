@@ -55,6 +55,10 @@ vi.mock('../responses.js', () => ({
 vi.mock('../events/gachaMention.js', () => ({ handleGachaMention: vi.fn() }))
 
 import { config } from '../../config.js'
+
+// Aliased rather than cast at each site: the config type is readonly, and a `(config.x as ...)` statement
+// opens with a paren, which the formatter will happily weld onto the end of the line above it.
+const mutableMemoryConfig = config.memory as { claimsBackend: boolean }
 import { NAME_MENTION_REGEX } from '../events/messageCreate.js'
 import { createMessageHandler } from '../events/messageCreate.js'
 
@@ -164,7 +168,7 @@ describe('NAME_MENTION_REGEX', () => {
 describe('message handler metrics', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    config.memory.claimsBackend = false
+    mutableMemoryConfig.claimsBackend = false
     mocks.isChannelBusy.mockReturnValue(false)
     mocks.isMonitored.mockReturnValue(false)
     mocks.tryConsume.mockReturnValue(true)
@@ -284,7 +288,7 @@ describe('message handler claims extraction dispatch', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    config.memory.claimsBackend = false
+    mutableMemoryConfig.claimsBackend = false
     mocks.isChannelBusy.mockReturnValue(false)
     mocks.isMonitored.mockReturnValue(true)
     mocks.tryConsume.mockReturnValue(true)
@@ -314,7 +318,7 @@ describe('message handler claims extraction dispatch', () => {
   })
 
   it('gates and enqueues a user-ID-keyed snapshot when claimsBackend is true', async () => {
-    config.memory.claimsBackend = true
+    mutableMemoryConfig.claimsBackend = true
     const { message } = createMessage({ guild })
 
     await createMessageHandler(
@@ -343,7 +347,7 @@ describe('message handler claims extraction dispatch', () => {
   })
 
   it('does not let a scheduler failure interrupt the reply', async () => {
-    config.memory.claimsBackend = true
+    mutableMemoryConfig.claimsBackend = true
     mocks.enqueueAndSchedule.mockImplementationOnce(() => {
       throw new Error('queue unavailable')
     })
@@ -383,7 +387,7 @@ describe('message handler claims extraction dispatch', () => {
   })
 
   it('does not dispatch claim extraction outside a guild', async () => {
-    config.memory.claimsBackend = true
+    mutableMemoryConfig.claimsBackend = true
     const { message } = createMessage({ guild: null, guildId: null })
 
     await createMessageHandler(
@@ -400,7 +404,7 @@ describe('unsupported attachments on the mention path', () => {
   // mocks, so a test here that set a return value changed the meaning of the ones after it.
   beforeEach(() => {
     vi.clearAllMocks()
-    config.memory.claimsBackend = false
+    mutableMemoryConfig.claimsBackend = false
     mocks.isChannelBusy.mockReturnValue(false)
     mocks.isMonitored.mockReturnValue(false)
     mocks.tryConsume.mockReturnValue(true)
@@ -486,7 +490,7 @@ describe('media she can take on the mention path, not only images', () => {
   // the file, so these assertions pass in isolation and read stale state in the suite.
   beforeEach(() => {
     vi.clearAllMocks()
-    config.memory.claimsBackend = false
+    mutableMemoryConfig.claimsBackend = false
     mocks.isChannelBusy.mockReturnValue(false)
     mocks.isMonitored.mockReturnValue(false)
     mocks.tryConsume.mockReturnValue(true)
@@ -535,7 +539,7 @@ describe('media she can take on the mention path, not only images', () => {
 describe("reading what the sender's own message shows", () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    config.memory.claimsBackend = false
+    mutableMemoryConfig.claimsBackend = false
     mocks.isChannelBusy.mockReturnValue(false)
     mocks.isMonitored.mockReturnValue(false)
     mocks.tryConsume.mockReturnValue(true)
@@ -666,7 +670,7 @@ describe("reading what the sender's own message shows", () => {
 describe('reading a message forwarded straight to her', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    config.memory.claimsBackend = false
+    mutableMemoryConfig.claimsBackend = false
     mocks.isChannelBusy.mockReturnValue(false)
     mocks.isMonitored.mockReturnValue(false)
     mocks.tryConsume.mockReturnValue(true)
@@ -866,7 +870,7 @@ describe('reading a message forwarded straight to her', () => {
 describe('naming a replied-to image she cannot see', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    config.memory.claimsBackend = false
+    mutableMemoryConfig.claimsBackend = false
     mocks.isChannelBusy.mockReturnValue(false)
     mocks.isMonitored.mockReturnValue(false)
     mocks.tryConsume.mockReturnValue(true)

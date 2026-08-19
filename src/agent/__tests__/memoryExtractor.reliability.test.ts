@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({
   assertClaim: vi.fn(),
   claimsBackend: false,
   generateContent: vi.fn(),
-  getFacts: vi.fn(() => []),
+  getFacts: vi.fn((): Array<{ key: string; value: string }> => []),
   getSharedRateLimiter: vi.fn(),
   saveFact: vi.fn(),
   tryConsumeAboveFloor: vi.fn()
