@@ -84,12 +84,40 @@ describe('runCaseSet transient recovery', () => {
     expect(vi.mocked(generateResponse)).toHaveBeenCalledTimes(1)
   })
 
-  it('aborts once the transient budget is spent, naming the count', async () => {
+  it('aborts when one trial fails every attempt, naming how many it had', async () => {
     vi.mocked(generateResponse).mockResolvedValue(turn('fallback', 'transient_http') as never)
 
-    await expect(runPaced(1)).rejects.toThrow(/spent 4 transient retries/)
-    // Budget of 3 means three retried turns plus the one that exceeds it.
-    expect(vi.mocked(generateResponse)).toHaveBeenCalledTimes(4)
+    await expect(runPaced(1)).rejects.toThrow(/on all 3 of its attempts/)
+    // A budget of 2 retries is 3 attempts, and no more: the abort is what stops it, not exhaustion.
+    expect(vi.mocked(generateResponse)).toHaveBeenCalledTimes(3)
+  })
+
+  // The distinction the per-trial budget exists to make. Scattered noise is not a finding; the same case
+  // failing over and over is. A run-level count could not tell these two apart.
+  it('does not accumulate scattered transients into an abort', async () => {
+    const spread: ToolTriggerCase[] = ['A', 'B', 'C', 'D'].map((id) => ({
+      type: 'case',
+      id,
+      tool: 'recall_user',
+      shouldFire: true,
+      speakerId: 'sora',
+      message: 'what about Sora?'
+    }))
+    // One transient per case, four in total — more than any run-level budget worth setting would allow.
+    vi.mocked(generateResponse).mockImplementation((async (input: { channelId: string }) =>
+      input.channelId.includes('-retry') ? ok() : turn('fallback', 'network')) as never)
+
+    const run = runCaseSet(header, spread, { trials: 1 })
+    const settled = run.then(
+      (value) => ({ value }),
+      (error: unknown) => ({ error })
+    )
+    await vi.runAllTimersAsync()
+    const outcome = await settled
+    if ('error' in outcome) throw outcome.error
+
+    expect(outcome.value.transientRetries).toBe(4)
+    expect([...outcome.value.observations.values()]).toEqual([[true], [true], [true], [true]])
   })
 
   it('reports zero retries on a clean run, so the count distinguishes clean from recovered', async () => {

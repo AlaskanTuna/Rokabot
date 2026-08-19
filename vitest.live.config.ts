@@ -19,10 +19,14 @@ const TURNS_PER_RUN = 36
  * avoid, sprung by the term it omitted. */
 const TURN_BUDGET_MS = 13_000
 
-/** Kept in step with MAX_TRANSIENT_RETRIES in tests/harness/toolTrigger.ts by hand, the same way
+/** Kept in step with MAX_TRIAL_RETRIES in tests/harness/toolTrigger.ts by hand, the same way
  * TRIAL_PACING_FLOOR_MS above is: importing the harness here would load src/config.ts and dotenv while
- * vitest is still reading its own config. Retries are budgeted turns, so the timeout has to buy them. */
-const MAX_TRANSIENT_RETRIES = 3
+ * vitest is still reading its own config. Retries are budgeted turns, so the timeout has to buy them —
+ * and budgeted per trial means the run's worst case is every trial spending its whole allowance, not a
+ * shared pool. Buying only the pool would leave the timeout aborting runs the retry budget still permits,
+ * which is the failure this derivation exists to prevent. */
+const MAX_TRIAL_RETRIES = 2
+const WORST_CASE_RETRIES = TURNS_PER_RUN * MAX_TRIAL_RETRIES
 
 export default defineConfig({
   test: {
@@ -37,6 +41,6 @@ export default defineConfig({
     // verdict, and reports nothing about what was being measured. Now costs a turn what a turn actually
     // costs, so the 2x is 2x. The 900_000 floor is gone rather than kept alongside: it was below every
     // value this can now produce, so leaving it in would only suggest it still protected something.
-    testTimeout: (TRIAL_PACING_MS + TURN_BUDGET_MS) * (TURNS_PER_RUN + MAX_TRANSIENT_RETRIES) * 2
+    testTimeout: (TRIAL_PACING_MS + TURN_BUDGET_MS) * (TURNS_PER_RUN + WORST_CASE_RETRIES) * 2
   }
 })
