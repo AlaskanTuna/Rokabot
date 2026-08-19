@@ -134,22 +134,26 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
       // Inside the try, not before it, so the reservation above cannot be stranded by anything between the
       // two — markFree on a channel that was never marked is a no-op delete, so this costs nothing.
       markBusy(channelId)
-      const [{ text: responseText, tone, toolsUsed, metrics }, sources] = await withSearchCitations(() =>
-        generateResponse({
-          channelId,
-          guildId,
-          userMessage: message,
-          displayName,
-          username: interaction.user.username,
-          userId: interaction.user.id,
-          imageAttachments: imageAttachments.length > 0 ? imageAttachments : undefined
-        })
+      const [{ text: responseText, tone, toolsUsed, metrics, droppedAttachments }, sources] = await withSearchCitations(
+        () =>
+          generateResponse({
+            channelId,
+            guildId,
+            userMessage: message,
+            displayName,
+            username: interaction.user.username,
+            userId: interaction.user.id,
+            imageAttachments: imageAttachments.length > 0 ? imageAttachments : undefined
+          })
       )
 
       logger.debug({ channelId, tone, responseLength: responseText.length }, 'ADK response received')
 
       // She answers the question either way; the nudge only tells them the file was not something she can open.
-      const withNudge = unsupportedCount > 0 ? `${responseText}\n\n${getRandomUnsupportedAttachment()}` : responseText
+      // droppedAttachments covers the other way that fails: a type she takes, but bytes she could not — an
+      // oversized clip is admitted here and refused at the download, and silence there reads as her ignoring it.
+      const unopened = unsupportedCount > 0 || droppedAttachments > 0
+      const withNudge = unopened ? `${responseText}\n\n${getRandomUnsupportedAttachment()}` : responseText
       const chunks = splitResponse(withNudge)
       logger.debug({ channelId, chunkCount: chunks.length }, 'Response split into chunks')
       await interaction.editReply(buildRokaMessage(chunks[0], tone, toolsUsed, sources))

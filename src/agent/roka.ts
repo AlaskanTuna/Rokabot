@@ -52,6 +52,12 @@ export interface GenerateResult {
   tone: ToneKey
   metrics: ResponseMetrics
   toolsUsed: string[]
+  /**
+   * Attachments that were admitted by type but never reached the model — oversized, or the download failed.
+   * The Discord layer counts only *unsupported types* on its own side, so without this an oversized file is
+   * dropped in total silence and she answers as though nothing were attached, which reads as her ignoring it.
+   */
+  droppedAttachments: number
 }
 
 const APP_NAME = 'rokabot'
@@ -976,8 +982,10 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
 
   const imageParts: Part[] = []
   let imageTokens = 0
+  let droppedAttachments = 0
   if (imageAttachments?.length) {
     const downloads = await Promise.all(imageAttachments.map((img) => downloadAttachment(img)))
+    droppedAttachments = downloads.filter((result) => result === null).length
     for (const result of downloads) {
       if (result) {
         imageParts.push({ inlineData: { data: result.data, mimeType: result.mimeType } })
@@ -1207,5 +1215,5 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     tokensOutEst: estimateTokens(reliability.text)
   }
 
-  return { text: reliability.text, tone, metrics, toolsUsed }
+  return { text: reliability.text, tone, metrics, toolsUsed, droppedAttachments }
 }

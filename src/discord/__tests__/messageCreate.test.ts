@@ -167,7 +167,13 @@ describe('message handler metrics', () => {
     mocks.isChannelBusy.mockReturnValue(false)
     mocks.isMonitored.mockReturnValue(false)
     mocks.tryConsume.mockReturnValue(true)
-    mocks.generateResponse.mockResolvedValue({ text: 'Hello~', tone: 'playful', toolsUsed: [], metrics })
+    mocks.generateResponse.mockResolvedValue({
+      text: 'Hello~',
+      tone: 'playful',
+      toolsUsed: [],
+      metrics,
+      droppedAttachments: 0
+    })
   })
 
   it('replaces third-party mentions with @display-name and strips only the bot mention', async () => {
@@ -280,7 +286,13 @@ describe('message handler claims extraction dispatch', () => {
     mocks.isChannelBusy.mockReturnValue(false)
     mocks.isMonitored.mockReturnValue(true)
     mocks.tryConsume.mockReturnValue(true)
-    mocks.generateResponse.mockResolvedValue({ text: 'Hello~', tone: 'playful', toolsUsed: [], metrics })
+    mocks.generateResponse.mockResolvedValue({
+      text: 'Hello~',
+      tone: 'playful',
+      toolsUsed: [],
+      metrics,
+      droppedAttachments: 0
+    })
   })
 
   it('keeps the legacy extractor path unchanged when claimsBackend is false', async () => {
@@ -381,6 +393,23 @@ describe('message handler claims extraction dispatch', () => {
 })
 
 describe('unsupported attachments on the mention path', () => {
+  // This block had no setup of its own and was inheriting whatever the previous describe last left on the
+  // mocks, so a test here that set a return value changed the meaning of the ones after it.
+  beforeEach(() => {
+    vi.clearAllMocks()
+    config.memory.claimsBackend = false
+    mocks.isChannelBusy.mockReturnValue(false)
+    mocks.isMonitored.mockReturnValue(false)
+    mocks.tryConsume.mockReturnValue(true)
+    mocks.generateResponse.mockResolvedValue({
+      text: 'Hello~',
+      tone: 'playful',
+      toolsUsed: [],
+      metrics,
+      droppedAttachments: 0
+    })
+  })
+
   // Deliberately not a PDF or an audio clip: both of those are openable on this path now, so using either
   // as the "cannot open" fixture would pass while asserting the opposite of the behaviour.
   const ZIP = { url: 'https://cdn.test/a.zip', contentType: 'application/zip' }
@@ -390,6 +419,21 @@ describe('unsupported attachments on the mention path', () => {
   // reads as hallucination rather than a limitation. /ask says so; this path has to match (#19).
   it('nudges in character when a mentioned message carries a file she cannot open', async () => {
     const { message, reply } = createMessage({ content: '<@bot-1> what is in this?', attachments: [ZIP] })
+
+    await createMessageHandler({ user: { id: 'bot-1' } } as never, createRateLimiter() as never)(message as never)
+
+    expect(JSON.stringify(reply.mock.calls[0][0])).toContain("I couldn't open that file~")
+  })
+
+  it('nudges when a supported attachment was too big to fetch', async () => {
+    mocks.generateResponse.mockResolvedValue({
+      text: 'Hello~',
+      tone: 'playful',
+      toolsUsed: [],
+      metrics,
+      droppedAttachments: 1
+    })
+    const { message, reply } = createMessage({ content: '<@bot-1> what is in this?', attachments: [PNG] })
 
     await createMessageHandler({ user: { id: 'bot-1' } } as never, createRateLimiter() as never)(message as never)
 
@@ -425,7 +469,13 @@ describe('media she can take on the mention path, not only images', () => {
     mocks.isChannelBusy.mockReturnValue(false)
     mocks.isMonitored.mockReturnValue(false)
     mocks.tryConsume.mockReturnValue(true)
-    mocks.generateResponse.mockResolvedValue({ text: 'Hello~', tone: 'playful', toolsUsed: [], metrics })
+    mocks.generateResponse.mockResolvedValue({
+      text: 'Hello~',
+      tone: 'playful',
+      toolsUsed: [],
+      metrics,
+      droppedAttachments: 0
+    })
   })
 
   async function handle(message: object) {
@@ -467,7 +517,13 @@ describe("reading what the sender's own message shows", () => {
     mocks.isChannelBusy.mockReturnValue(false)
     mocks.isMonitored.mockReturnValue(false)
     mocks.tryConsume.mockReturnValue(true)
-    mocks.generateResponse.mockResolvedValue({ text: 'Hello~', tone: 'playful', toolsUsed: [], metrics })
+    mocks.generateResponse.mockResolvedValue({
+      text: 'Hello~',
+      tone: 'playful',
+      toolsUsed: [],
+      metrics,
+      droppedAttachments: 0
+    })
   })
 
   const LINK_PREVIEW = {
@@ -591,7 +647,13 @@ describe('reading a message forwarded straight to her', () => {
     mocks.isChannelBusy.mockReturnValue(false)
     mocks.isMonitored.mockReturnValue(false)
     mocks.tryConsume.mockReturnValue(true)
-    mocks.generateResponse.mockResolvedValue({ text: 'Hello~', tone: 'playful', toolsUsed: [], metrics })
+    mocks.generateResponse.mockResolvedValue({
+      text: 'Hello~',
+      tone: 'playful',
+      toolsUsed: [],
+      metrics,
+      droppedAttachments: 0
+    })
   })
 
   const PNG = (n: string) => ({ url: `https://cdn.test/${n}.png`, contentType: 'image/png' })
@@ -784,7 +846,13 @@ describe('naming a replied-to image she cannot see', () => {
     mocks.isChannelBusy.mockReturnValue(false)
     mocks.isMonitored.mockReturnValue(false)
     mocks.tryConsume.mockReturnValue(true)
-    mocks.generateResponse.mockResolvedValue({ text: 'Hello~', tone: 'playful', toolsUsed: [], metrics })
+    mocks.generateResponse.mockResolvedValue({
+      text: 'Hello~',
+      tone: 'playful',
+      toolsUsed: [],
+      metrics,
+      droppedAttachments: 0
+    })
   })
 
   const PNG = (n: string) => ({ url: `https://cdn.test/${n}.png`, contentType: 'image/png' })

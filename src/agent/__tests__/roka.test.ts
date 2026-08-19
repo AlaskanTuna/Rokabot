@@ -1366,6 +1366,33 @@ describe('attachment intake', () => {
     expect(await inlineFor('video/mp4', Buffer.alloc(10 * MB, 0x20), { contentLength: null })).toHaveLength(1)
   })
 
+  async function droppedFor(contentType: string, bytes: Buffer) {
+    serve(bytes)
+    __setTestRunTurnFactory(() => async () => ({ text: 'Mm~', hasText: true, hasFunctionCall: false }))
+    const channelId = `roka-dropped-${contentType.replace('/', '-')}-${bytes.byteLength}`
+    const result = await generateResponse({
+      channelId,
+      guildId: 'attachment-guild',
+      userMessage: 'look at this',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id',
+      imageAttachments: [{ url: 'https://cdn.test/file', contentType }]
+    })
+    await destroySession(channelId)
+    return result.droppedAttachments
+  }
+
+  // An oversized file passes the Discord layer's type check and dies at the download, so without this count
+  // it vanishes: she answers the text and never mentions the file, which reads as her ignoring it.
+  it('reports an oversized attachment as dropped', async () => {
+    expect(await droppedFor('video/mp4', Buffer.alloc(11 * MB, 0x20))).toBe(1)
+  })
+
+  it('reports nothing dropped when the attachment arrived', async () => {
+    expect(await droppedFor('video/mp4', VIDEO_BYTES)).toBe(0)
+  })
+
   async function tokensInFor(attachment?: { url: string; contentType: string }) {
     __setTestRunTurnFactory(() => async () => ({ text: 'Mm~', hasText: true, hasFunctionCall: false }))
     const channelId = `roka-token-metrics-${attachment?.contentType ?? 'none'}`
