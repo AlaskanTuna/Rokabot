@@ -6,8 +6,10 @@ import { isIP } from 'node:net'
 export const ALLOWED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp'])
 
 /**
- * Documents Gemini reads natively: 258 tokens a page, and text already embedded in the PDF is extracted
- * without being charged, so a text-layer document is close to free. Kept separate from the image set because
+ * Documents Gemini reads natively, at 560 tokens a page — measured, and page content makes no difference: a
+ * dense page and a blank one cost the same, so cost tracks page count alone and byte size does not bound it
+ * at all. An earlier 258-a-page figure here came from Google's documentation rather than the API, along with
+ * a claim that a text-layer document is close to free; both were wrong. Kept separate from the image set because
  * the two take different paths — an image is re-encoded by sharp, a document must reach the model untouched.
  */
 export const ALLOWED_DOCUMENT_TYPES = new Set(['application/pdf'])
