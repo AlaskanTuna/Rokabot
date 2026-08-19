@@ -416,8 +416,26 @@ export async function runTurnWithReliability(options: RunTurnWithReliabilityOpti
   return fallbackResult(lastKind, 'preserve', options.maxRetries + 1, retryLatencyMs, options, lastMarker)
 }
 
-/** Caps event history returned by getSession to keep context within budget */
-class WindowedSessionService extends InMemorySessionService {
+/** What replaces an attachment's bytes in history: enough for her to know it was there, at no per-turn cost. */
+function attachmentMarker(mimeType: string): string {
+  if (mimeType.startsWith('image/')) return '(an image)'
+  if (mimeType.startsWith('audio/')) return '(an audio clip)'
+  return '(a document)'
+}
+
+/** Caps event history returned by getSession to keep context within budget. Exported so the retention
+ * contract test can drive a real ADK Runner against this exact class rather than a stand-in — the
+ * `__setTestRunTurnFactory` seam replaces the call to `runner.runAsync`, so `appendEvent` never runs under
+ * it and a test using that seam would observe no retention whether or not any existed. */
+export class WindowedSessionService extends InMemorySessionService {
+  /**
+   * Stored events still holding attachment bytes, by session. `appendEvent` receives the very object that
+   * gets pushed into storage — neither it nor `createEvent` copies — so holding the reference is what makes
+   * the later strip reach the stored history. `getSession` deep-clones, so stripping a fetched session
+   * would mutate a copy and change nothing.
+   */
+  private attachmentEvents = new Map<string, Event[]>()
+
   constructor(private maxEvents: number) {
     super()
   }
@@ -428,9 +446,55 @@ class WindowedSessionService extends InMemorySessionService {
       config: { ...request?.config, numRecentEvents: this.maxEvents }
     })
   }
+
+  override async appendEvent(request: Parameters<InMemorySessionService['appendEvent']>[0]): Promise<Event> {
+    const appended = await super.appendEvent(request)
+    if (request.event.content?.parts?.some((part: Part) => part.inlineData)) {
+      const pending = this.attachmentEvents.get(request.session.id) ?? []
+      pending.push(request.event)
+      this.attachmentEvents.set(request.session.id, pending)
+    }
+    return appended
+  }
+
+  /**
+   * Replace attachment bytes in this session's stored history with a text marker, once the turn that carried
+   * them is over. ADK appends the incoming message verbatim and nothing removes it, so without this the bytes
+   * are re-sent to the model as history on every later turn until they age out of the window — paying for one
+   * upload up to twenty times — and are held on the heap for as long. A retried turn appends the message once
+   * per attempt, so a single upload can leave several copies; every one of them is tracked and stripped.
+   *
+   * Returns the number of parts replaced, so a caller can log it and a test can tell "nothing to do" from
+   * "did nothing".
+   */
+  stripAttachmentBytes(sessionId: string): number {
+    const events = this.attachmentEvents.get(sessionId)
+    this.attachmentEvents.delete(sessionId)
+    if (!events) return 0
+
+    let stripped = 0
+    for (const event of events) {
+      const parts = event.content?.parts
+      if (!parts) continue
+      for (let index = 0; index < parts.length; index++) {
+        const inline = parts[index].inlineData
+        if (!inline) continue
+        parts[index] = { text: attachmentMarker(inline.mimeType ?? '') }
+        stripped++
+      }
+    }
+    return stripped
+  }
+
+  override async deleteSession(request: Parameters<InMemorySessionService['deleteSession']>[0]): Promise<void> {
+    this.attachmentEvents.delete(request.sessionId)
+    return super.deleteSession(request)
+  }
 }
 
-const sessionService = new WindowedSessionService(config.session.windowSize * 2)
+// Exported alongside rokaAgent so a test can assert generateResponse actually reaches the strip. Without
+// that, deleting the call site leaves every retention test green while attachments are retained again.
+export const sessionService = new WindowedSessionService(config.session.windowSize * 2)
 
 // Exported so tests can assert the agent-level config and beforeModelCallback seam directly
 export const rokaAgent = new LlmAgent({
@@ -993,6 +1057,11 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     )
   )
   const llmMs = Math.round(performance.now() - llmStartMs)
+
+  // After every attempt, never between them: a retry re-sends the same message, so stripping mid-loop would
+  // hand the model a marker where the first attempt had the picture.
+  const strippedParts = sessionService.stripAttachmentBytes(channelId)
+  if (strippedParts > 0) logger.debug({ channelId, strippedParts }, 'Attachment bytes stripped from history')
 
   if (reliability.action === 'destroy') await destroySession(channelId)
 

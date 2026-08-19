@@ -19,6 +19,7 @@ import {
   generateResponse,
   rokaAgent,
   runTurnWithReliability,
+  sessionService,
   steeringForRequest
 } from '../roka.js'
 import { buildSafetySettings } from '../safetySettings.js'
@@ -1237,5 +1238,44 @@ describe('attachment intake', () => {
     const withoutDocument = await tokensInFor()
 
     expect(withDocument - withoutDocument).toBe(0)
+  })
+})
+
+describe('attachment bytes are released after the turn', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  async function runTurn(channelId: string, fail: boolean) {
+    __setTestRunTurnFactory(() => async () => {
+      if (fail) throw new Error('model exploded')
+      return { text: 'Mm~', hasText: true, hasFunctionCall: false }
+    })
+    await generateResponse({
+      channelId,
+      guildId: 'strip-guild',
+      userMessage: 'look at this',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id'
+    })
+    await destroySession(channelId)
+  }
+
+  // The retention contract test proves the strip works; this proves the turn reaches it. Deleting the call
+  // site passes every one of those tests, because they drive the session service directly.
+  it('strips history once the turn is over', async () => {
+    const strip = vi.spyOn(sessionService, 'stripAttachmentBytes')
+    await runTurn('roka-strip-ok', false)
+
+    expect(strip).toHaveBeenCalledWith('roka-strip-ok')
+  })
+
+  // A failed turn still appended the message, so its bytes are retained exactly as a successful one's are.
+  it('strips history even when the turn failed', async () => {
+    const strip = vi.spyOn(sessionService, 'stripAttachmentBytes')
+    await runTurn('roka-strip-fail', true)
+
+    expect(strip).toHaveBeenCalledWith('roka-strip-fail')
   })
 })

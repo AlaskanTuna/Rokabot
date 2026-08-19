@@ -468,6 +468,32 @@ The container is SIGKILLed instead. `src/discord/byteBudget.ts` is the admission
 Per-turn caps are unchanged and independent of this: 4 MB per image and 10 MB per document are set by upload
 latency against `gemini.timeout`, not by container memory. See `docs/multimodal.md`.
 
+### Attachment Bytes Do Not Live in History
+
+ADK's runner appends the incoming message to the session verbatim, and nothing in the framework removes it.
+`inlineData` parts therefore stayed in the live event list and were **re-sent to Gemini as conversation
+history on every later turn** until they aged out of the window, the idle TTL fired, or the bot restarted.
+Measured before the fix: ~11.5 MB of heap retained per attachment, accumulating turn over turn and released
+only on teardown, and a five-minute clip re-charged on every turn that followed it.
+
+`WindowedSessionService.stripAttachmentBytes` replaces those bytes with a text marker — `(an image)`,
+`(an audio clip)`, `(a document)` — once the turn is over.
+
+- **After every attempt, never between them.** A retry re-sends the same message, so ADK appends it again;
+  stripping mid-loop would hand the model a marker where the first attempt had the picture. One upload can
+  therefore leave several copies in history, and all of them are tracked and stripped.
+- **The reference, not a copy.** `appendEvent` receives the very object pushed into storage — neither it nor
+  `createEvent` clones — which is what lets a later strip reach stored history. `getSession` deep-clones, so
+  stripping a fetched session would mutate a copy and change nothing.
+- **It runs on failed turns too.** A turn that errored still appended its message, so its bytes are retained
+  exactly as a successful turn's are.
+
+**The capability this removes.** She can no longer refer back to a picture from an earlier turn — she knows
+one was there, not what was in it. That is a real loss, and it is chosen rather than inherited: rehydration
+after a restart already rebuilds history as text-only, so the two paths previously disagreed about whether an
+image from four turns ago was still visible. They now agree, and the behaviour is the same before and after a
+restart instead of depending on how recently the bot was deployed.
+
 ### ADK Error Delivery Constraint
 
 Google ADK yields model-call errors as runner events rather than throwing them from `runner.runAsync()`.
