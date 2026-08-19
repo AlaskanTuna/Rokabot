@@ -38,6 +38,16 @@ describe('per-minute token budget', () => {
     expect(remainingTokensThisMinute()).toBe(BUDGET / 2)
   })
 
+  // The reason the bound is half the measured TPM ceiling rather than the whole of it: the bucket's capacity
+  // IS its rate, so one rolling minute admits both — a burst arriving at an empty bucket spends the entire
+  // budget, then spends whatever drains in behind it. Simulated against maximal turns under rpm 15, a
+  // setting of 200,000 reached 389,382 in the worst 60 seconds. Raising the knob past 125,000 re-opens that.
+  it('has the whole budget available again one minute after spending it', () => {
+    chargeTokens(BUDGET)
+    vi.advanceTimersByTime(60_000)
+    expect(remainingTokensThisMinute()).toBe(BUDGET)
+  })
+
   // A quiet hour must not become a minute in which three times the quota may be spent.
   it('does not bank credit while idle', () => {
     vi.advanceTimersByTime(10 * 60_000)

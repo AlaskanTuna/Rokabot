@@ -607,9 +607,16 @@ a project quota: the harm from overspending lands on every other channel, not on
 - **`tokensInEst` and the charge are one expression.** The metric reports exactly what the budget is charged,
   because two expressions for the same quantity is how a budget starts describing something other than the
   spend it bounds.
-- **`maxTokensPerMinute` defaults below the measured ceiling** (200,000 against 250,000) because the text
-  half of each turn is estimated rather than measured, and a budget tracking the real ceiling exactly would
-  let that estimate's error be the thing that trips a 429.
+- **`maxTokensPerMinute` is bounded at half the measured ceiling, not the whole of it.** A continuously
+  draining bucket has no capacity separate from its rate, so a rolling minute admits both: a burst arriving
+  at an empty bucket spends the entire budget and then spends whatever drains in behind it, for up to 2x the
+  configured value inside one 60-second window. Simulated against the module's exact drain arithmetic with
+  maximal 55,626-token turns under `rateLimit.rpm` 15, the worst rolling minute is 389,382 tokens at a
+  setting of 200,000 — 156% of the ceiling the guard exists to defend, in precisely the burst case it was
+  built for. The default and the `NUMERIC_BOUNDS` ceiling are both 125,000, which makes the worst case
+  250,000 by construction. Capping capacity separately from rate is the more precise alternative and was
+  not taken: it adds a second concept to a module that currently has one, to buy throughput this project
+  has never needed at a measured peak of 38 requests a day.
 
 ### Attachment Bytes Do Not Live in History
 
