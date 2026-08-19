@@ -5,6 +5,7 @@ vi.mock('node:dns/promises', () => ({ lookup: mocks.lookup }))
 
 import {
   isPrivateAddress,
+  isSupportedAudio,
   isSupportedDocument,
   isSupportedImage,
   isSupportedMedia,
@@ -233,11 +234,44 @@ describe('document policy', () => {
     expect(isSupportedDocument({ contentType })).toBe(false)
   })
 
-  it.each(['image/png', 'image/webp', 'application/pdf'])('accepts %s as media she can read', (contentType) => {
-    expect(isSupportedMedia({ contentType })).toBe(true)
-  })
+  it.each(['image/png', 'image/webp', 'application/pdf', 'audio/ogg', 'audio/mpeg'])(
+    'accepts %s as media she can read',
+    (contentType) => {
+      expect(isSupportedMedia({ contentType })).toBe(true)
+    }
+  )
 
   it.each(['application/zip', 'text/plain', null])('refuses %s as media', (contentType) => {
     expect(isSupportedMedia({ contentType })).toBe(false)
+  })
+})
+
+describe('audio policy', () => {
+  it.each(['audio/wav', 'audio/mp3', 'audio/aiff', 'audio/aac', 'audio/ogg', 'audio/flac'])(
+    'accepts %s, which Gemini documents',
+    (contentType) => {
+      expect(isSupportedAudio({ contentType })).toBe(true)
+    }
+  )
+
+  // The registered type for an MP3, and the one Discord actually reports for the commonest audio upload
+  // there is. Gemini documents audio/mp3 instead, so this is renamed at the download boundary rather than
+  // refused here — refusing it would reject nearly every mp3 anyone sends.
+  it('accepts audio/mpeg, the type an mp3 actually arrives as', () => {
+    expect(isSupportedAudio({ contentType: 'audio/mpeg' })).toBe(true)
+  })
+
+  // Discord will label an .m4a audio/mp4 quite happily. Starting with audio/ is not the same question as
+  // whether the model accepts it, so the check is against the set rather than the prefix.
+  it.each(['audio/mp4', 'audio/x-m4a', 'audio/webm'])('refuses %s, which Gemini does not list', (contentType) => {
+    expect(isSupportedAudio({ contentType })).toBe(false)
+  })
+
+  it('does not count audio as an image', () => {
+    expect(isSupportedImage({ contentType: 'audio/ogg' })).toBe(false)
+  })
+
+  it('does not count audio as a document', () => {
+    expect(isSupportedDocument({ contentType: 'audio/ogg' })).toBe(false)
   })
 })

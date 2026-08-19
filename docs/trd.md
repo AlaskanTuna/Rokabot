@@ -468,6 +468,38 @@ The container is SIGKILLed instead. `src/discord/byteBudget.ts` is the admission
 Per-turn caps are unchanged and independent of this: 4 MB per image and 10 MB per document are set by upload
 latency against `gemini.timeout`, not by container memory. See `docs/multimodal.md`.
 
+### Attachment Types and Their Ceilings
+
+`src/discord/attachments.ts` holds the single declaration of every admitted type; `src/agent/attachmentLimits.ts`
+holds the ceilings and the one function that maps a type to its ceiling, so the download and the in-flight
+byte budget cannot disagree about the same file.
+
+| Kind     | Types                                              | Ceiling | Path                  |
+| -------- | -------------------------------------------------- | ------- | --------------------- |
+| Image    | `png`, `jpeg`, `gif`, `webp`                       | 4 MB    | Re-encoded by `sharp` |
+| Document | `application/pdf`                                  | 10 MB   | Untouched             |
+| Audio    | `wav`, `mp3`, `mpeg`, `aiff`, `aac`, `ogg`, `flac` | 8 MB    | Untouched             |
+
+- **Only images go through `sharp`.** Handed anything else it throws, and its catch returns the _undecoded_
+  bytes relabelled `image/jpeg` — so a document or clip routed through it arrives byte-identical but
+  misdeclared and unreadable. Tests assert the data and the mimeType as a pair for exactly this reason; the
+  data alone matches even when the file is broken.
+- **`audio/mpeg` is admitted and renamed.** Gemini documents `audio/mp3`, which is not a registered MIME
+  type; the registered one for an MP3 is `audio/mpeg` (RFC 3003), and that is what Discord reports. The
+  rename happens once, in `geminiMimeType`, at the download boundary. **Both labels are accepted** —
+  measured with real MP3 bytes, identical token counts under either, because Gemini routes on content rather
+  than on the declared type. The rename is therefore a preference, not a requirement: the documented name is
+  the one with a compatibility promise, and it costs nothing to send.
+- **Audio contributes 0 to `tokensInEst`.** It is billed per second of media, and seconds are not knowable
+  without decoding — the same argument `docs/multimodal.md` makes against enforcing duration caps. Left at
+  zero deliberately rather than estimated.
+- **Both surfaces admit the same set.** `/ask` and the mention path each filter with `isSupportedMedia`.
+  The forwarded, referenced and embed sub-paths on the mention path remain images-only, because their text
+  markers describe what they carry as images.
+- **`attachment_url` is images-only**, narrower than the upload slots beside it. It is the SSRF-guarded path
+  that makes the Pi fetch a user-named host, so its type set is a security decision rather than a feature
+  one; widening it belongs in its own change.
+
 ### ADK Error Delivery Constraint
 
 Google ADK yields model-call errors as runner events rather than throwing them from `runner.runAsync()`.

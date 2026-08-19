@@ -16,9 +16,28 @@ export function isSupportedDocument(attachment: { contentType: string | null }):
   return attachment.contentType !== null && ALLOWED_DOCUMENT_TYPES.has(attachment.contentType)
 }
 
+/**
+ * Audio Gemini hears natively, at 32 tokens a second. `audio/mpeg` is admitted alongside `audio/mp3` because
+ * it is the registered type for an MP3 and the name Discord actually reports; it is renamed for the API at
+ * the download boundary, in `geminiMimeType`.
+ */
+export const ALLOWED_AUDIO_TYPES = new Set([
+  'audio/wav',
+  'audio/mp3',
+  'audio/mpeg',
+  'audio/aiff',
+  'audio/aac',
+  'audio/ogg',
+  'audio/flac'
+])
+
+export function isSupportedAudio(attachment: { contentType: string | null }): boolean {
+  return attachment.contentType !== null && ALLOWED_AUDIO_TYPES.has(attachment.contentType)
+}
+
 /** Anything she can be handed and actually read, whichever path it takes once inside. */
 export function isSupportedMedia(attachment: { contentType: string | null }): boolean {
-  return isSupportedImage(attachment) || isSupportedDocument(attachment)
+  return isSupportedImage(attachment) || isSupportedDocument(attachment) || isSupportedAudio(attachment)
 }
 
 /** Per-turn ceiling across every kind of attachment. Both the mention path and /ask derive their limit from this. */

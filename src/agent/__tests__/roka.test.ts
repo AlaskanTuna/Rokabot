@@ -1132,6 +1132,7 @@ describe('attachment intake', () => {
     'base64'
   )
   const PDF_BYTES = Buffer.from('%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\n')
+  const OGG_BYTES = Buffer.from('OggS\x00\x02vorbis-ish payload that is not an image at all')
   const MB = 1024 * 1024
 
   afterEach(() => {
@@ -1203,6 +1204,40 @@ describe('attachment intake', () => {
     expect(await inlineFor('application/pdf', Buffer.alloc(11 * MB, 0x20))).toEqual([])
   })
 
+  it('sends an audio clip to the model as audio', async () => {
+    expect((await inlineFor('audio/ogg', OGG_BYTES)).map((part) => part.mimeType)).toEqual(['audio/ogg'])
+  })
+
+  // The same pair the document case is asserted as, and for the same reason: sharp handed audio throws, and
+  // its catch returns the *undecoded* bytes relabelled image/jpeg. A test checking only the data passes
+  // while the clip arrives misdeclared and unplayable, so both halves have to be asserted together.
+  it('hands the model the clip exactly as it arrived, and says so', async () => {
+    const [clip] = await inlineFor('audio/ogg', OGG_BYTES)
+
+    expect(clip).toEqual({ data: OGG_BYTES.toString('base64'), mimeType: 'audio/ogg' })
+  })
+
+  // Discord labels an MP3 audio/mpeg, the registered type; Gemini documents audio/mp3 and not audio/mpeg.
+  // Both are accepted in practice, so this pins a deliberate preference for the documented name rather than
+  // a workaround for a rejection — see geminiMimeType.
+  it('renames an mp3 to the spelling Gemini documents', async () => {
+    expect((await inlineFor('audio/mpeg', OGG_BYTES)).map((part) => part.mimeType)).toEqual(['audio/mp3'])
+  })
+
+  // 9 MB is the discriminating size for audio: over the 8 MB audio ceiling, under the 10 MB document one.
+  // Without a ceiling of its own, audio would inherit the document limit and this clip would be admitted.
+  it('refuses an audio clip past the audio ceiling', async () => {
+    expect(await inlineFor('audio/ogg', Buffer.alloc(9 * MB, 0x20))).toEqual([])
+  })
+
+  it('still accepts a document at the size that audio is refused at', async () => {
+    expect(await inlineFor('application/pdf', Buffer.alloc(9 * MB, 0x20))).toHaveLength(1)
+  })
+
+  it('accepts an audio clip larger than the image ceiling', async () => {
+    expect(await inlineFor('audio/ogg', Buffer.alloc(6 * MB, 0x20))).toHaveLength(1)
+  })
+
   async function tokensInFor(attachment?: { url: string; contentType: string }) {
     __setTestRunTurnFactory(() => async () => ({ text: 'Mm~', hasText: true, hasFunctionCall: false }))
     const channelId = `roka-token-metrics-${attachment?.contentType ?? 'none'}`
@@ -1237,5 +1272,15 @@ describe('attachment intake', () => {
     const withoutDocument = await tokensInFor()
 
     expect(withDocument - withoutDocument).toBe(0)
+  })
+
+  // Audio is billed per second, so the image rate is wrong for it too. Left at 0 rather than estimated:
+  // seconds are not knowable without decoding, and decoding for a metric costs the memory the caps protect.
+  it('does not charge an audio clip at the image rate', async () => {
+    serve(OGG_BYTES)
+    const withAudio = await tokensInFor({ url: 'https://cdn.test/file', contentType: 'audio/ogg' })
+    const withoutAudio = await tokensInFor()
+
+    expect(withAudio - withoutAudio).toBe(0)
   })
 })
