@@ -10,9 +10,14 @@ function box(type: string, payloadBytes = 0) {
 }
 
 describe('prefixPolicyFor', () => {
-  it.each(['audio/mpeg', 'audio/mp3'])('treats %s as frame-based, so any prefix is valid audio', (contentType) => {
-    expect(prefixPolicyFor(contentType)).toBe('frames')
-  })
+  // Each of these has been cut in half and had its tokens counted; the ratio tracked the byte fraction every
+  // time. WAV and WebM are here despite the paper reasoning saying they should not be — see prefixPolicyFor.
+  it.each(['audio/mpeg', 'audio/mp3', 'audio/ogg', 'audio/flac', 'audio/aac', 'audio/wav', 'video/webm'])(
+    'prefixes %s, measured rather than argued',
+    (contentType) => {
+      expect(prefixPolicyFor(contentType)).toBe('streamable')
+    }
+  )
 
   it.each(['video/mp4', 'video/mov', 'video/quicktime', 'video/3gpp'])(
     'treats %s as ISO base media, prefixable only per file',
@@ -21,9 +26,8 @@ describe('prefixPolicyFor', () => {
     }
   )
 
-  // Refusing is the safe default: a wrong guess here is not an error anywhere, it is a file that arrives as
-  // nonsense and an answer about nothing. These are plausibly prefixable and none has been measured.
-  it.each(['audio/ogg', 'audio/flac', 'audio/wav', 'video/webm', 'video/avi'])(
+  // Still refused, because still unmeasured. The bar is a cut file and a token count, not an argument.
+  it.each(['video/avi', 'video/wmv', 'video/x-flv', 'video/mpeg'])(
     'refuses to prefix %s without a measurement behind it',
     (contentType) => {
       expect(prefixPolicyFor(contentType)).toBe('none')

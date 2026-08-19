@@ -8,22 +8,55 @@
  */
 
 /** How a type behaves when cut short. `none` means a prefix is not safe to send and the file must be refused. */
-export type PrefixPolicy = 'frames' | 'isobmff' | 'none'
+export type PrefixPolicy = 'streamable' | 'isobmff' | 'none'
 
+/**
+ * Every entry here is measured, not argued. A prefix that fails to decode raises no error — the request
+ * succeeds and the answer is about nothing — so a plausible-sounding format is refused until someone has
+ * actually cut one in half and counted the tokens.
+ *
+ * Measured by `countTokens` on a 40% byte prefix against the whole file, 120 s audio and 60 s video sources:
+ *
+ * ```
+ * audio/mpeg  a 1 MB cut of a 2.77 MB 84 kbps file summarised correctly, with an exact quote
+ * audio/ogg   full 3841  prefix 1538  40.0%
+ * audio/flac  full 3842  prefix 1526  39.7%
+ * audio/aac   full 3842  prefix 1539  40.1%
+ * audio/wav   full 3841  prefix 1537  40.0%
+ * video/webm  full 6001  prefix 2295  38.2%
+ * ```
+ *
+ * Each ratio tracking its byte fraction is the evidence: a container that failed to decode would not come
+ * back proportional, it would come back near zero. Two of these contradict the paper reasoning — WAV
+ * survives despite a header declaring a length the file no longer has, because the decoder takes the PCM
+ * present rather than trusting it, and WebM survives despite Matroska being able to carry its cues at the
+ * end. Both would have been refused on argument.
+ *
+ * Caveat on the five: they were synthetic single-stream files from ffmpeg. A Discord voice message is
+ * OGG/Opus, so that one matches real input directly; the others are "measured on a clean file" rather than
+ * on whatever a user uploads, and a chained or multiplexed stream could still behave differently.
+ */
 export function prefixPolicyFor(contentType: string): PrefixPolicy {
-  // MP3 is a stream of self-describing frames with no trailing index, so any prefix is valid audio. Measured:
-  // a 1 MB cut of a 2.77 MB 84 kbps file summarised correctly, with an exact quote, at 3,175 tokens.
-  if (contentType === 'audio/mpeg' || contentType === 'audio/mp3') return 'frames'
+  if (STREAMABLE_TYPES.has(contentType)) return 'streamable'
 
   // ISO base media: prefixable only when `moov` precedes the media data, which is a property of the specific
   // file rather than of the format. Checked per file by isobmffAllowsPrefix.
   if (['video/mp4', 'video/mov', 'video/quicktime', 'video/3gpp'].includes(contentType)) return 'isobmff'
 
-  // Everything else refuses rather than guesses. OGG, WebM, FLAC and ADTS AAC are all plausibly prefixable on
-  // paper; none has been measured here, and a wrong guess is silent corruption rather than a failure. They
-  // belong in this list only with a measurement behind them.
+  // Anything unmeasured refuses. AVI and WMV are the remaining admitted types and neither has been cut.
   return 'none'
 }
+
+/** Types where a byte prefix decodes to exactly the media it contains, whatever the container does at the end. */
+const STREAMABLE_TYPES = new Set([
+  'audio/mpeg',
+  'audio/mp3',
+  'audio/ogg',
+  'audio/flac',
+  'audio/aac',
+  'audio/wav',
+  'video/webm'
+])
 
 /**
  * Walk the top-level ISO-BMFF box list and report whether `moov` arrives before the media data.
