@@ -227,13 +227,18 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'gemini.maxOutputTokens', value: config.gemini.maxOutputTokens, min: 1 },
   // Floor is a full turn of plain images, derived rather than restated: below it a maximal image turn could
   // be refused,
-  // and images are the one type whose cost is already known to be bounded and safe. Ceiling is the measured
-  // 250,000 TPM (#125) — a single turn priced above the whole minute's budget can only ever fail on 429.
+  // and images are the one type whose cost is already known to be bounded and safe.
+  //
+  // Ceiling matches `maxTokensPerMinute`'s ceiling rather than the measured 250,000 TPM, because that knob
+  // takes its FLOOR from this one. At 250,000 an operator could set an attachment ceiling that leaves
+  // `maxTokensPerMinute` with no legal value at all — floor above ceiling — and both rows would still read
+  // as valid on their own. Nothing above 125,000 could ever be admitted anyway, since a turn is only let in
+  // when the minute can fund a whole one.
   {
     path: 'gemini.maxAttachmentTokens',
     value: config.gemini.maxAttachmentTokens,
     min: MAX_ATTACHMENTS * GEMINI_IMAGE_TOKENS,
-    max: 250_000
+    max: 125_000
   },
   // Floor is one maximal attachment turn: a budget smaller than the per-turn ceiling could never admit an
   // attachment at all, so the two knobs would silently contradict each other.
