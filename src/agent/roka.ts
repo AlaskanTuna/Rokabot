@@ -18,6 +18,7 @@ import { logger } from '../utils/logger.js'
 import { getSharedRateLimiter } from '../utils/rateLimiter.js'
 import { getLocalHour } from '../utils/timezone.js'
 import { estimateTokens } from '../utils/tokens.js'
+import { measureAttachmentTokens, needsMeasuring } from './attachmentCost.js'
 import { geminiMimeType, sizeLimitFor } from './attachmentLimits.js'
 import { classifyGeminiFailure, computeBackoff, extractGeminiStatus } from './geminiReliability.js'
 import { isobmffAllowsPrefix, prefixPolicyFor } from './mediaPrefix.js'
@@ -59,6 +60,11 @@ export interface GenerateResult {
    * dropped in total silence and she answers as though nothing were attached, which reads as her ignoring it.
    */
   droppedAttachments: number
+  /**
+   * Attachments refused because their measured token cost was past `gemini.maxAttachmentTokens`. Distinct
+   * from dropped: these arrived intact and were readable, they were simply too expensive to spend a turn on.
+   */
+  refusedAttachments: number
   /**
    * Attachments sent as a prefix because the whole file was past its ceiling. She saw a real part of it, so
    * this is not a failure — but answering as though she had the whole thing would be a quiet lie about a
@@ -1063,6 +1069,24 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     }
   }
 
+  // Priced before sending, because size does not bound token cost — a 17 KB PDF is 560 tokens a page and can
+  // exceed a whole request's budget on its own. Over the ceiling the turn is refused here rather than sent to
+  // fail on a 429, which would retry into the same wall and spend the minute's TPM for every other channel.
+  // Only asked when something is not an image: images are a flat 1,089 each and cannot reach the ceiling.
+  let refusedAttachments = 0
+  if (imageParts.length > 0 && needsMeasuring(imageParts)) {
+    const measured = await measureAttachmentTokens(imageParts)
+    if (measured !== undefined && measured > config.gemini.maxAttachmentTokens) {
+      logger.info(
+        { channelId, measured, ceiling: config.gemini.maxAttachmentTokens, count: imageParts.length },
+        'Attachments cost more than one turn may spend, refusing them'
+      )
+      refusedAttachments = imageParts.length
+      imageParts.length = 0
+      imageTokens = 0
+    }
+  }
+
   const buildNewMessage = (): Content => ({
     role: 'user',
     parts: dropImages
@@ -1281,5 +1305,13 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     tokensOutEst: estimateTokens(reliability.text)
   }
 
-  return { text: reliability.text, tone, metrics, toolsUsed, droppedAttachments, truncatedAttachments }
+  return {
+    text: reliability.text,
+    tone,
+    metrics,
+    toolsUsed,
+    droppedAttachments,
+    truncatedAttachments,
+    refusedAttachments
+  }
 }

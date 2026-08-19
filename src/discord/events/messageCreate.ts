@@ -23,6 +23,7 @@ import {
   getRandomBusy,
   getRandomDecline,
   getRandomError,
+  getRandomOversizedAttachment,
   getRandomPartialAttachment,
   getRandomUnsupportedAttachment,
   splitResponse
@@ -414,18 +415,20 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
       // Inside the try, not before it, so the reservation above cannot be stranded by anything between the
       // two — markFree on a channel that was never marked is a no-op delete, so this costs nothing.
       markBusy(channelId)
-      const [{ text: responseText, tone, toolsUsed, metrics, droppedAttachments, truncatedAttachments }, sources] =
-        await withSearchCitations(() =>
-          generateResponse({
-            channelId,
-            guildId,
-            userMessage: content || '(shared an image)',
-            displayName,
-            username,
-            userId: message.author.id,
-            imageAttachments: imageAttachments.length > 0 ? imageAttachments : undefined
-          })
-        )
+      const [
+        { text: responseText, tone, toolsUsed, metrics, droppedAttachments, truncatedAttachments, refusedAttachments },
+        sources
+      ] = await withSearchCitations(() =>
+        generateResponse({
+          channelId,
+          guildId,
+          userMessage: content || '(shared an image)',
+          displayName,
+          username,
+          userId: message.author.id,
+          imageAttachments: imageAttachments.length > 0 ? imageAttachments : undefined
+        })
+      )
 
       logger.debug({ channelId, tone, responseLength: responseText.length }, 'ADK response received')
 
@@ -436,6 +439,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
       const notes: string[] = []
       if (unsupportedCount > 0 || droppedAttachments > 0) notes.push(getRandomUnsupportedAttachment())
       if (truncatedAttachments > 0) notes.push(getRandomPartialAttachment())
+      if (refusedAttachments > 0) notes.push(getRandomOversizedAttachment())
       const withNudge = notes.length > 0 ? `${responseText}\n\n${notes.join('\n\n')}` : responseText
       const chunks = splitResponse(withNudge)
       logger.debug({ channelId, chunkCount: chunks.length }, 'Response split into chunks')

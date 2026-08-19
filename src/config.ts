@@ -20,6 +20,7 @@ interface YamlConfig {
     timeout?: number
     maxRetries?: number
     maxOutputTokens?: number
+    maxAttachmentTokens?: number
     safetyThreshold?: string
     maxLlmCalls?: number
     liveMaxRetries?: number
@@ -137,6 +138,7 @@ export const config = {
     timeout: envInt('GEMINI_TIMEOUT') ?? yaml.gemini?.timeout ?? 15_000,
     maxRetries: envInt('GEMINI_MAX_RETRIES') ?? yaml.gemini?.maxRetries ?? 1,
     maxOutputTokens: envInt('GEMINI_MAX_OUTPUT_TOKENS') ?? yaml.gemini?.maxOutputTokens ?? 300,
+    maxAttachmentTokens: envInt('GEMINI_MAX_ATTACHMENT_TOKENS') ?? yaml.gemini?.maxAttachmentTokens ?? 50_000,
     safetyThreshold: envString('GEMINI_SAFETY_THRESHOLD') ?? yaml.gemini?.safetyThreshold ?? 'OFF',
     maxLlmCalls: yaml.gemini?.maxLlmCalls ?? 4,
     liveMaxRetries: envInt('GEMINI_LIVE_MAX_RETRIES') ?? yaml.gemini?.liveMaxRetries ?? 2,
@@ -217,6 +219,18 @@ export const config = {
 export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: number; max?: number }> = [
   { path: 'gemini.timeout', value: config.gemini.timeout, min: 1 },
   { path: 'gemini.maxOutputTokens', value: config.gemini.maxOutputTokens, min: 1 },
+  // Floor is 3267 = MAX_ATTACHMENTS x GEMINI_IMAGE_TOKENS, written as a literal because importing either
+  // constant here would close a cycle (imageProcessor -> logger -> config). A test pins the arithmetic, so
+  // raising MAX_ATTACHMENTS without raising this fails loudly rather than silently refusing whole turns.
+  // Below the floor a full turn of plain images could be refused,
+  // and images are the one type whose cost is already known to be bounded and safe. Ceiling is the measured
+  // 250,000 TPM (#125) — a single turn priced above the whole minute's budget can only ever fail on 429.
+  {
+    path: 'gemini.maxAttachmentTokens',
+    value: config.gemini.maxAttachmentTokens,
+    min: 3267,
+    max: 250_000
+  },
   { path: 'gemini.turnDeadlineMs', value: config.gemini.turnDeadlineMs, min: 1 },
   { path: 'gemini.retryBackoffCapMs', value: config.gemini.retryBackoffCapMs, min: 1 },
   { path: 'gemini.maxRetries', value: config.gemini.maxRetries, min: 0 },
