@@ -32,7 +32,7 @@ interface YamlConfig {
   }
   rateLimit?: { rpm?: number; rpd?: number }
   session?: { ttl?: number; windowSize?: number; maxRehydrationAge?: number; historyRetentionDays?: number }
-  discord?: { maxMessageLength?: number }
+  discord?: { maxMessageLength?: number; maxInFlightAttachmentBytes?: number }
   memory?: {
     bufferSize?: number
     contextSize?: number
@@ -126,7 +126,9 @@ export const config = {
   discord: {
     token: requiredEnv('DISCORD_TOKEN'),
     clientId: requiredEnv('DISCORD_CLIENT_ID'),
-    maxMessageLength: envInt('DISCORD_MAX_MESSAGE_LENGTH') ?? yaml.discord?.maxMessageLength ?? 2000
+    maxMessageLength: envInt('DISCORD_MAX_MESSAGE_LENGTH') ?? yaml.discord?.maxMessageLength ?? 2000,
+    maxInFlightAttachmentBytes:
+      envInt('DISCORD_MAX_INFLIGHT_ATTACHMENT_BYTES') ?? yaml.discord?.maxInFlightAttachmentBytes ?? 33_554_432
   },
   gemini: {
     apiKey: requiredEnv('GEMINI_API_KEY'),
@@ -233,6 +235,10 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   // 4000 (Components V2 shared TextDisplay budget) − MAX_TOOL_FOOTER_CHARS (122, derived in
   // src/discord/messageBuilder.ts) = 3878; this bot never sends via content.
   { path: 'discord.maxMessageLength', value: config.discord.maxMessageLength, min: 1, max: 3878 },
+  // min is the largest a single turn can be (MAX_ATTACHMENTS x MAX_DOCUMENT_SIZE_BYTES): below that, a
+  // full-sized turn could never be admitted even on an idle bot, so it would be refused forever rather
+  // than merely delayed. Asserted from the constants themselves in the byteBudget tests.
+  { path: 'discord.maxInFlightAttachmentBytes', value: config.discord.maxInFlightAttachmentBytes, min: 31_457_280 },
   { path: 'memory.bufferSize', value: config.memory.bufferSize, min: 1 },
   { path: 'memory.contextSize', value: config.memory.contextSize, min: 1 },
   { path: 'memory.extractionInterval', value: config.memory.extractionInterval, min: 0 },

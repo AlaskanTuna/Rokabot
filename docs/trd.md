@@ -439,6 +439,32 @@ path must remain even after the thresholds are relaxed.
 - The initial live attempt reuses the token already consumed by the Discord handler. Only subsequent
   retries consume additional rate-limiter tokens.
 
+### Global In-Flight Attachment Budget
+
+The per-channel guard bounds how many turns one channel runs, never how many run in total, so K busy
+channels means K simultaneous attachment downloads. Each attachment costs roughly **4.7×** its own size in
+RSS — the `arrayBuffer`, the `Buffer` copy, the base64 string and the JSON body all coexist — and two of
+those multiples are `Buffer`s, which live outside the V8 heap and so never raise a catchable heap error.
+The container is SIGKILLed instead. `src/discord/byteBudget.ts` is the admission control for that:
+
+- **Reserved before the download starts**, not after. A check that runs once the bytes have landed is a
+  measurement, not a guard.
+- `discord.maxInFlightAttachmentBytes` (32 MB) is the ceiling across every channel at once. Its `min` bound
+  is `MAX_ATTACHMENTS × MAX_DOCUMENT_SIZE_BYTES`: below that a maximal turn could never be admitted even on
+  an idle bot, so it would be refused permanently rather than delayed.
+- A turn is reserved its attachments' **stated** sizes where Discord gives them, and its type's ceiling where
+  it does not — an embed image or a link resolved by HEAD states no size, and an unknown must cost the most
+  it could. A stated size above the ceiling is clamped to it, since the download refuses on `Content-Length`
+  before buffering.
+- **Over-budget turns take the existing in-character busy reply**, not a new path and not a silent drop.
+- **The reservation is released on every exit path** — success, download failure, model error and timeout —
+  from the same `finally` that releases the per-channel guard. A leak here degrades into a permanent refusal
+  rather than a failed turn, which is the harder failure to notice, so both the succeeding and the failing
+  path are pinned by tests.
+
+Per-turn caps are unchanged and independent of this: 4 MB per image and 10 MB per document are set by upload
+latency against `gemini.timeout`, not by container memory. See `docs/multimodal.md`.
+
 ### ADK Error Delivery Constraint
 
 Google ADK yields model-call errors as runner events rather than throwing them from `runner.runAsync()`.

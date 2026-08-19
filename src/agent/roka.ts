@@ -17,6 +17,7 @@ import { logger } from '../utils/logger.js'
 import { getSharedRateLimiter } from '../utils/rateLimiter.js'
 import { getLocalHour } from '../utils/timezone.js'
 import { estimateTokens } from '../utils/tokens.js'
+import { MAX_DOCUMENT_SIZE_BYTES, MAX_IMAGE_SIZE_BYTES } from './attachmentLimits.js'
 import { classifyGeminiFailure, computeBackoff, extractGeminiStatus } from './geminiReliability.js'
 import { retrieveForTurn } from './memory/retriever.js'
 import { getMessages as getBufferMessages } from './passiveBuffer.js'
@@ -31,6 +32,8 @@ import { rokaTools } from './tools/index.js'
 export interface ImageAttachment {
   url: string
   contentType: string
+  /** Bytes, when the source states them. Discord does on an upload; an embed or a resolved link does not. */
+  size?: number
 }
 
 interface GenerateOptions {
@@ -50,11 +53,6 @@ export interface GenerateResult {
   toolsUsed: string[]
 }
 
-const MAX_IMAGE_SIZE_BYTES = 4 * 1024 * 1024
-// Documents get their own ceiling rather than sharing the image one: a PDF is not resized before sending, so
-// its bytes reach the request as-is, and 10 MB is what upload latency admits inside gemini.timeout at the
-// Pi's measured 2.5 MB/s upstream. See docs/multimodal.md.
-const MAX_DOCUMENT_SIZE_BYTES = 10 * 1024 * 1024
 const APP_NAME = 'rokabot'
 
 const sessionErrorCounts = new Map<string, number>()

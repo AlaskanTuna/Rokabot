@@ -199,7 +199,7 @@ Enforced in `src/discord/attachments.ts` alongside the existing image policy, an
 
 1. ~~**Set `memswap_limit`**~~ — **done**, alongside raising `mem_limit` to `1g`. Converts a slow SD-thrashing death into a fast honest one. Deploy-affecting: takes effect only on the next container recreate, which needs explicit authorization.
 2. **PDF support** — no new infrastructure; MIME routing plus skipping `sharp`. Ships alone and is the highest value per unit of work, with an obvious use in a server that discusses visual novels.
-3. **Global in-flight byte budget** — the prerequisite for anything larger. Worth landing on its own with its own tests, because it is the piece that prevents the OOM.
+3. ~~**Global in-flight byte budget**~~ — **done**, 32 MB across all channels, reserved before download and released on every exit path. `discord.maxInFlightAttachmentBytes` in `config.yml`; contract in `docs/trd.md`.
 4. **Audio** — smallest payloads, cheapest tokens, no new failure modes once (3) exists.
 5. **Streaming size guard** — replaces `buffer-then-check`; only video needs it.
 6. **Video, low media resolution only** — last, largest, and the only modality whose token cost can bind before RPM.
