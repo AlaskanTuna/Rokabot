@@ -66,6 +66,25 @@ describe('isobmffAllowsPrefix', () => {
     expect(isobmffAllowsPrefix(Buffer.concat([box('ftyp', 16), box('free', 32)]))).toBe(false)
   })
 
+  /** A moov box that declares `declaredSize` but only has `presentBody` bytes of it inside the prefix. */
+  function moovDeclaring(declaredSize: number, presentBody: number) {
+    const header = Buffer.alloc(8)
+    header.writeUInt32BE(declaredSize, 0)
+    header.write('moov', 4, 'latin1')
+    return Buffer.concat([box('ftyp', 16), header, Buffer.alloc(presentBody, 0)])
+  }
+
+  // Finding the index is not the same as having it. A moov that starts inside the cut but runs past it
+  // leaves a *truncated* index, which decodes to nothing and produces the confident-answer-about-nothing
+  // this module exists to rule out. "Cannot prove it" has to mean refuse here as everywhere else.
+  it('refuses an index that starts inside the prefix but runs past the end of it', () => {
+    expect(isobmffAllowsPrefix(moovDeclaring(1024, 100))).toBe(false)
+  })
+
+  it('allows an index that fits entirely inside the prefix', () => {
+    expect(isobmffAllowsPrefix(moovDeclaring(1024, 1024 - 8))).toBe(true)
+  })
+
   it('refuses bytes that are not a box list at all', () => {
     expect(isobmffAllowsPrefix(Buffer.from('this is not an MP4 by any reading of it'))).toBe(false)
   })

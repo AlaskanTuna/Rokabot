@@ -76,22 +76,28 @@ export function isobmffAllowsPrefix(prefix: Buffer): boolean {
     // is not what its MIME type claims, which is a refusal rather than a guess.
     if (!/^[\x20-\x7e]{4}$/.test(type)) return false
 
-    if (type === 'moov') return true
-    // Media data reached with no index before it: a prefix of this file has nothing to decode against.
-    if (type === 'mdat' || type === 'moof') return false
-
+    // Size is resolved before any decision about the type, because finding the index is not the same as
+    // having it: a moov that begins inside the cut but runs past it leaves a truncated index, and a
+    // truncated index decodes to nothing while the request still succeeds.
     let size = declared
     if (declared === 1) {
       if (offset + 16 > prefix.length) return false
-      // 64-bit sizes only matter for boxes larger than 4 GB, which is far past any cap here; reading the low
-      // half is enough to keep walking, and an implausible value falls through to the guard below.
+      // The real size is a 64-bit value following the type. Read whole and narrowed to a Number, which is
+      // exact below 2^53 — anything larger is rejected by the Number.isSafeInteger guard below rather than
+      // silently wrapping.
       size = Number(prefix.readBigUInt64BE(offset + 8))
     } else if (declared === 0) {
-      // Extends to end of file, so nothing follows it to find.
+      // Extends to end of file. Nothing can follow it, and if it is the index then the index is not
+      // contained in the prefix either.
       return false
     }
 
     if (size < 8 || !Number.isSafeInteger(size)) return false
+
+    if (type === 'moov') return offset + size <= prefix.length
+    // Media data reached with no index before it: a prefix of this file has nothing to decode against.
+    if (type === 'mdat' || type === 'moof') return false
+
     offset += size
   }
 
