@@ -12,7 +12,7 @@ import type { ResponseMetrics } from '../storage/metricsStore.js'
 import { getChannelUsers, loadHistory, saveMessage } from '../storage/sessionStore.js'
 import { getFacts, refreshFactTimestamps } from '../storage/userMemory.js'
 import { getAllUserNames } from '../storage/userNames.js'
-import { processImageForGemini } from '../utils/imageProcessor.js'
+import { GEMINI_IMAGE_TOKENS, processImageForGemini } from '../utils/imageProcessor.js'
 import { logger } from '../utils/logger.js'
 import { getSharedRateLimiter } from '../utils/rateLimiter.js'
 import { getLocalHour } from '../utils/timezone.js'
@@ -655,7 +655,9 @@ export async function destroyAllSessions(): Promise<void> {
 }
 
 /** Download one attachment as base64, returning null if it fails or exceeds the ceiling for its type */
-async function downloadAttachment(attachment: ImageAttachment): Promise<{ data: string; mimeType: string } | null> {
+async function downloadAttachment(
+  attachment: ImageAttachment
+): Promise<{ data: string; mimeType: string; tokens: number } | null> {
   const { url, contentType } = attachment
   // Which types are admitted at all is the Discord layer's decision; this only decides how to handle one that
   // already got through. Routing on image/* rather than an allowlist keeps the type sets in one place — the
@@ -686,11 +688,11 @@ async function downloadAttachment(attachment: ImageAttachment): Promise<{ data: 
     // A document goes to the model exactly as it arrived. sharp is an image pipeline — handed a PDF it throws,
     // and its catch returns the undecoded bytes labelled image/jpeg, which would misdeclare the whole file.
     if (!isImage) {
-      return { data: Buffer.from(buffer).toString('base64'), mimeType: contentType }
+      return { data: Buffer.from(buffer).toString('base64'), mimeType: contentType, tokens: 0 }
     }
 
     const processed = await processImageForGemini(Buffer.from(buffer))
-    return { data: processed.data.toString('base64'), mimeType: processed.mimeType }
+    return { data: processed.data.toString('base64'), mimeType: processed.mimeType, tokens: GEMINI_IMAGE_TOKENS }
   } catch (error) {
     logger.warn({ url, error }, 'Error downloading attachment')
     return null
@@ -854,15 +856,17 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   logger.debug({ tone, participantCount: participants.length, hour }, 'Prompt assembled')
 
   const imageParts: Part[] = []
+  let imageTokens = 0
   if (imageAttachments?.length) {
     const downloads = await Promise.all(imageAttachments.map((img) => downloadAttachment(img)))
     for (const result of downloads) {
       if (result) {
         imageParts.push({ inlineData: { data: result.data, mimeType: result.mimeType } })
+        imageTokens += result.tokens
       }
     }
     if (imageParts.length > 0) {
-      logger.debug({ imageCount: imageParts.length }, 'Attached images to request')
+      logger.debug({ imageCount: imageParts.length, imageTokens }, 'Attached images to request')
     }
   }
 
@@ -1066,7 +1070,8 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
         0
       ) +
       toolsTok +
-      estimateTokens(`[${displayName}]: ${userMessage}`),
+      estimateTokens(`[${displayName}]: ${userMessage}`) +
+      imageTokens,
     tokensOutEst: estimateTokens(reliability.text)
   }
 
