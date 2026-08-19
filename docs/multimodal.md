@@ -49,12 +49,36 @@ The hard limit is **20 MB for the total request, including the prompt and all fi
 | Audio                     | 32 tokens/second (1 min = 1,920) | 1,920 tokens    |
 | PDF                       | 258 tokens/page, text layer free | 5,160 tokens    |
 
-Against `rpm: 15` and `rpd: 500`, and taking the widely-reported free-tier ceiling of **250,000 TPM** as indicative:
+Against `rpm: 15` and `rpd: 500`, and the free-tier ceiling of **250,000 input tokens per minute** — measured, below:
 
 - **Audio and PDF never reach TPM.** At 1,920 tokens a minute of audio, RPM 15 binds first by an order of magnitude.
-- **Video can.** At default resolution, roughly 13 one-minute clips per minute exhausts 250K TPM before RPM 15 does — so TPM becomes the binding limit, exactly as the issue predicted. Low media resolution cuts that 3× and moves the binding limit back to RPM.
+- **Video can.** At default resolution, ten one-minute clips exhaust 250K TPM before RPM 15 does — counting the text baseline each turn also carries — so TPM becomes the binding limit, exactly as the issue predicted. Low media resolution cuts that 3× and moves the binding limit back to RPM.
 
-**This is the one number I could not verify.** Google moved per-tier rate limits off the public rate-limits page and into AI Studio, which needs an authenticated session. The 250,000 figure comes from a developer-forum thread, not Google's own documentation, and it does not name Flash-Lite specifically. **Gate 1 action: read the TPM figure from [AI Studio's rate-limit page](https://aistudio.google.com/rate-limit) — ten seconds of operator time settles it.** If TPM is materially below 250K, video's cap tightens further; if it is at or above, low-resolution video is comfortable. Nothing else in this document depends on it.
+**This number is now confirmed — from the API, not the documentation.** Google moved per-tier rate limits off the public rate-limits page into AI Studio, behind an authenticated session, so it could not be read. It can be provoked instead: a single deliberately oversized `generateContent` request states the limit in its own rejection. One 407,640-token request on the dedicated development key returned `429 RESOURCE_EXHAUSTED` carrying:
+
+```
+quotaId     GenerateContentInputTokensPerModelPerMinute-FreeTier
+quotaValue  250000
+dimensions  { location: global, model: gemini-3.5-flash-lite }
+metric      generativelanguage.googleapis.com/generate_content_free_tier_input_token_count
+```
+
+Three things it settles that the forum figure did not:
+
+- **250,000 is correct**, and the quota is scoped **per model**, with `gemini-3.5-flash-lite` named in the dimensions — precisely the gap the forum thread left open.
+- **It counts input tokens only.** Output is not charged against TPM.
+- **Overshooting is free.** The request was refused before processing, so it consumed no tokens; the rejection carries a `RetryInfo` of 18 s. A 429 must be attributed by its `quotaId`, though — RPM, RPD and TPM all surface as the same status code, and the daily limit rejects with `GenerateRequestsPerDayPerProjectPerModel-FreeTier` instead.
+
+**What that permits, worst case.** TPM counts _every_ input token, not only the media — system prompt and history land in the same bucket, and production averages 5,543 text-only tokens per turn (`response_events`, n=256). A minute saturated at RPM 15 therefore spends ~83,000 tokens on text before any media, leaving ~11,100 tokens of media per turn:
+
+| Media Resolution | Tokens/Second | Longest Video in a Saturated Minute |
+| ---------------- | ------------- | ----------------------------------- |
+| Low              | 100           | ~110 s                              |
+| Default          | 300           | ~37 s                               |
+
+The 10 MB byte cap recommended below buys roughly 40–160 s of video across typical Discord bitrates, so **at low resolution the byte cap already holds video inside TPM** — no decode pass needed, which is the same argument the duration-cap note makes below. At default resolution it does not, and that is a second independent reason to decline it. This is also worst case by a wide margin: the observed peak is 38 requests in a _day_, so a fully saturated minute is a bound rather than a forecast.
+
+One caveat on transfer: this was measured on the development project's key. The production key is a separate project, also free tier — consistent with the `limit: 500` seen in its own daily-quota rejection — so the same figures should apply, but they have not been provoked on that key and should not be.
 
 ### 4. Do Documents Need New Plumbing? — Almost None
 
@@ -180,7 +204,7 @@ Enforced in `src/discord/attachments.ts` alongside the existing image policy, an
 5. **Streaming size guard** — replaces `buffer-then-check`; only video needs it.
 6. **Video, low media resolution only** — last, largest, and the only modality whose token cost can bind before RPM.
 
-Steps 1 and 2 are shippable now. Steps 3–6 are a second Gate 1 conversation, and video should not start before the TPM figure is confirmed.
+Steps 1 and 2 are shippable now. Steps 3–6 are a second Gate 1 conversation. The TPM figure that previously gated video is confirmed above, so what now stands between here and video is the global byte budget and the streaming guard — engineering, not research.
 
 ## What This Does Not Cover
 
