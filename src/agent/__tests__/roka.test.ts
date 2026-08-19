@@ -1446,6 +1446,15 @@ describe('attachment intake', () => {
     expect(texts.some((text) => text.includes('could not be retrieved'))).toBe(true)
   })
 
+  // Not a video fix. The driver is the phrasing that reaches the model, not the modality — "listen to this"
+  // happens to read less like a searchable title than "watch this and tell me what happens in it", which is
+  // why audio looked safe until someone varied the sentence instead of the file type.
+  it('tells the model about a failed audio download too, not only video', async () => {
+    const texts = await turnTextsFor([{ contentType: 'audio/ogg', ok: false }])
+
+    expect(texts.some((text) => text.includes('could not be retrieved'))).toBe(true)
+  })
+
   it('says how many failed rather than that something did', async () => {
     const texts = await turnTextsFor([
       { contentType: 'video/mp4', ok: false },

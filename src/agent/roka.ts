@@ -1065,13 +1065,16 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
 
   /**
    * Told to the model, not just to the user. Without it the turn looks exactly like an ordinary question
-   * about a video: the request says "watch this" and nothing anywhere contradicts it, so the model answers
-   * from nothing and invents a plausible film. An instruction not to invent cannot help, because from its
-   * position there is nothing to notice — this is a missing-input problem, and the input is this line.
+   * about a video, and what follows is not misbehaviour: CORE_PROMPT says to quietly call search_web for a
+   * fact she is unsure of, and "what happens in this video" is precisely that when no video is present. So
+   * she searches the web for the user's own phrasing and reports the result as the file's contents. Measured
+   * 4 of 4 without this line and 0 of 4 with it — the fabrications were real games and real films because
+   * they were search results, not inventions.
    *
-   * Deliberately a statement of fact and not an instruction. What to do about it is already covered; adding
-   * a rule here would put behavioural wording on the prompt path and buy the two-green-live-run cost for a
-   * sentence that only ever appears when a download has already failed.
+   * That is why the fix removes the premise rather than adding a prohibition. A rule saying "do not invent"
+   * aims at a disobedience that never happened, and it would put behavioural wording on the prompt path and
+   * buy the two-green-live-run cost for a sentence that only appears once a download has already failed.
+   * It is a statement of fact for the same reason.
    */
   const failedAttachmentNotice =
     droppedAttachments > 0
