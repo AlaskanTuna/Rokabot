@@ -33,6 +33,19 @@ const UNSUPPORTED_ATTACHMENT_MESSAGES = [
   "Sorry, that attachment isn't something I can look at — but I'm listening!"
 ]
 
+// A file too big to take whole is sent as its opening minutes instead. Saying so is the difference between
+// a partial answer and a confident wrong one — she genuinely did not hear the end.
+const PARTIAL_ATTACHMENT_MESSAGES = [
+  'That one was rather long, so I only got through the beginning of it~',
+  'Mm, too big to take all at once — I only saw the first part, so ask me again if the rest matters!',
+  "Nn... that's a big one. I stopped partway through, so I might have missed the ending~",
+  'I could only manage the opening of that — it was much too long for me to take in one go!'
+]
+
+export function getRandomPartialAttachment(): string {
+  return PARTIAL_ATTACHMENT_MESSAGES[Math.floor(Math.random() * PARTIAL_ATTACHMENT_MESSAGES.length)]
+}
+
 export function getRandomUnsupportedAttachment(): string {
   return UNSUPPORTED_ATTACHMENT_MESSAGES[Math.floor(Math.random() * UNSUPPORTED_ATTACHMENT_MESSAGES.length)]
 }

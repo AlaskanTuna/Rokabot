@@ -49,6 +49,7 @@ vi.mock('../responses.js', () => ({
   getRandomDecline: () => 'decline',
   getRandomError: () => 'error',
   getRandomUnsupportedAttachment: () => "I couldn't open that file~",
+  getRandomPartialAttachment: () => 'I only got through the beginning of that~',
   splitResponse: mocks.splitResponse
 }))
 vi.mock('../events/gachaMention.js', () => ({ handleGachaMention: vi.fn() }))
@@ -172,7 +173,8 @@ describe('message handler metrics', () => {
       tone: 'playful',
       toolsUsed: [],
       metrics,
-      droppedAttachments: 0
+      droppedAttachments: 0,
+      truncatedAttachments: 0
     })
   })
 
@@ -291,7 +293,8 @@ describe('message handler claims extraction dispatch', () => {
       tone: 'playful',
       toolsUsed: [],
       metrics,
-      droppedAttachments: 0
+      droppedAttachments: 0,
+      truncatedAttachments: 0
     })
   })
 
@@ -406,7 +409,8 @@ describe('unsupported attachments on the mention path', () => {
       tone: 'playful',
       toolsUsed: [],
       metrics,
-      droppedAttachments: 0
+      droppedAttachments: 0,
+      truncatedAttachments: 0
     })
   })
 
@@ -431,13 +435,30 @@ describe('unsupported attachments on the mention path', () => {
       tone: 'playful',
       toolsUsed: [],
       metrics,
-      droppedAttachments: 1
+      droppedAttachments: 1,
+      truncatedAttachments: 0
     })
     const { message, reply } = createMessage({ content: '<@bot-1> what is in this?', attachments: [PNG] })
 
     await createMessageHandler({ user: { id: 'bot-1' } } as never, createRateLimiter() as never)(message as never)
 
     expect(JSON.stringify(reply.mock.calls[0][0])).toContain("I couldn't open that file~")
+  })
+
+  it('says she only got through the beginning when a file was truncated', async () => {
+    mocks.generateResponse.mockResolvedValue({
+      text: 'Hello~',
+      tone: 'playful',
+      toolsUsed: [],
+      metrics,
+      droppedAttachments: 0,
+      truncatedAttachments: 1
+    })
+    const { message, reply } = createMessage({ content: '<@bot-1> listen to this', attachments: [PNG] })
+
+    await createMessageHandler({ user: { id: 'bot-1' } } as never, createRateLimiter() as never)(message as never)
+
+    expect(JSON.stringify(reply.mock.calls[0][0])).toContain('only got through the beginning')
   })
 
   it('stays quiet about attachments it could open', async () => {
@@ -474,7 +495,8 @@ describe('media she can take on the mention path, not only images', () => {
       tone: 'playful',
       toolsUsed: [],
       metrics,
-      droppedAttachments: 0
+      droppedAttachments: 0,
+      truncatedAttachments: 0
     })
   })
 
@@ -522,7 +544,8 @@ describe("reading what the sender's own message shows", () => {
       tone: 'playful',
       toolsUsed: [],
       metrics,
-      droppedAttachments: 0
+      droppedAttachments: 0,
+      truncatedAttachments: 0
     })
   })
 
@@ -652,7 +675,8 @@ describe('reading a message forwarded straight to her', () => {
       tone: 'playful',
       toolsUsed: [],
       metrics,
-      droppedAttachments: 0
+      droppedAttachments: 0,
+      truncatedAttachments: 0
     })
   })
 
@@ -851,7 +875,8 @@ describe('naming a replied-to image she cannot see', () => {
       tone: 'playful',
       toolsUsed: [],
       metrics,
-      droppedAttachments: 0
+      droppedAttachments: 0,
+      truncatedAttachments: 0
     })
   })
 

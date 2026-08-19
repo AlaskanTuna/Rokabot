@@ -1190,40 +1190,52 @@ describe('attachment intake', () => {
    * exercised. `contentLength` is separately controllable because the guard exists for responses whose
    * header is absent or understated — a stub that always tells the truth would never reach it.
    */
-  let lastServe: { delivered: number; cancelled: boolean }
+  let lastServe: { delivered: number; cancelled: boolean; init?: RequestInit; calls: number }
 
   function serve(bytes: Buffer, { contentLength }: { contentLength?: string | null } = {}) {
     const header = contentLength === undefined ? String(bytes.byteLength) : contentLength
     const chunkSize = 64 * 1024
-    const state = { delivered: 0, cancelled: false }
+    const state: { delivered: number; cancelled: boolean; init?: RequestInit; calls: number } = {
+      delivered: 0,
+      cancelled: false,
+      calls: 0
+    }
 
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => ({
-        ok: true,
-        headers: { get: (name: string) => (name === 'content-length' ? header : null) },
-        body: new ReadableStream<Uint8Array>({
-          pull(controller) {
-            if (state.delivered >= bytes.byteLength) {
-              controller.close()
-              return
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        state.calls += 1
+        state.init = init
+        return {
+          ok: true,
+          headers: { get: (name: string) => (name === 'content-length' ? header : null) },
+          body: new ReadableStream<Uint8Array>({
+            pull(controller) {
+              if (state.delivered >= bytes.byteLength) {
+                controller.close()
+                return
+              }
+              const slice = bytes.subarray(state.delivered, state.delivered + chunkSize)
+              state.delivered += slice.byteLength
+              controller.enqueue(new Uint8Array(slice))
+            },
+            cancel() {
+              state.cancelled = true
             }
-            const slice = bytes.subarray(state.delivered, state.delivered + chunkSize)
-            state.delivered += slice.byteLength
-            controller.enqueue(new Uint8Array(slice))
-          },
-          cancel() {
-            state.cancelled = true
-          }
-        })
-      }))
+          })
+        }
+      })
     )
 
     lastServe = state
     return state
   }
 
-  async function inlineFor(contentType: string, bytes: Buffer, serveOpts?: { contentLength?: string | null }) {
+  async function inlineFor(
+    contentType: string,
+    bytes: Buffer,
+    serveOpts?: { contentLength?: string | null; statedSize?: number }
+  ) {
     serve(bytes, serveOpts)
     let captured: { newMessage?: { parts?: Array<{ inlineData?: { data: string; mimeType: string } }> } } | undefined
     __setTestRunTurnFactory(() => async (_attempt, _signal, request) => {
@@ -1238,7 +1250,7 @@ describe('attachment intake', () => {
       displayName: 'Mio',
       username: 'mio',
       userId: 'mio-id',
-      imageAttachments: [{ url: 'https://cdn.test/file', contentType }]
+      imageAttachments: [{ url: 'https://cdn.test/file', contentType, size: serveOpts?.statedSize }]
     })
     await destroySession('roka-attachment-channel')
 
@@ -1385,8 +1397,122 @@ describe('attachment intake', () => {
 
   // An oversized file passes the Discord layer's type check and dies at the download, so without this count
   // it vanishes: she answers the text and never mentions the file, which reads as her ignoring it.
+  // --- oversized media taken as a prefix (#135) ---
+
+  function isobmff(order: string[], padTo: number) {
+    const boxes = order.map((type) => {
+      const b = Buffer.alloc(64, 0)
+      b.writeUInt32BE(64, 0)
+      b.write(type, 4, 'latin1')
+      return b
+    })
+    const head = Buffer.concat(boxes)
+    return Buffer.concat([head, Buffer.alloc(Math.max(0, padTo - head.length), 0x20)])
+  }
+
+  const OVERSIZED_MP3 = 20 * MB
+  const OVERSIZED_MP4 = 30 * MB
+
+  it('takes the opening of an oversized mp3 rather than refusing it', async () => {
+    const parts = await inlineFor('audio/mpeg', Buffer.alloc(9 * MB, 0x20), { statedSize: OVERSIZED_MP3 })
+
+    expect(parts.map((part) => part.mimeType)).toEqual(['audio/mp3'])
+  })
+
+  // The saving is the whole point: on a 206 the excess is never sent. Asserted on the request rather than on
+  // the bytes, because a server that ignores Range would still yield the right bytes and no saving at all.
+  it('asks for only the first bytes rather than the whole file', async () => {
+    await inlineFor('audio/mpeg', Buffer.alloc(9 * MB, 0x20), { statedSize: OVERSIZED_MP3 })
+
+    expect((lastServe.init?.headers as Record<string, string>)?.Range).toBe(`bytes=0-${8 * MB - 1}`)
+  })
+
+  it('asks for the whole file when it fits', async () => {
+    await inlineFor('audio/mpeg', OGG_BYTES, { statedSize: 1024 })
+
+    expect(lastServe.init).toBeUndefined()
+  })
+
+  // Not an edge case: this is what Discord's CDN actually does. It advertises `accept-ranges: bytes` and
+  // then answers 200 with the whole body, measured. The first version of this treated that overflow as a
+  // failure, which would have turned every oversized file into a silent refusal on the only path that runs.
+  it('keeps the prefix when the server ignores Range and sends the whole file, as Discord does', async () => {
+    const parts = await inlineFor('audio/mpeg', Buffer.alloc(20 * MB, 0x20), { statedSize: OVERSIZED_MP3 })
+
+    expect(parts).toHaveLength(1)
+  })
+
+  it('cuts the prefix at exactly the ceiling, not the chunk that crossed it', async () => {
+    const [clip] = await inlineFor('audio/mpeg', Buffer.alloc(20 * MB, 0x20), { statedSize: OVERSIZED_MP3 })
+
+    expect(Buffer.from(clip.data, 'base64').byteLength).toBe(8 * MB)
+  })
+
+  it('takes the opening of an oversized video whose index comes first', async () => {
+    const parts = await inlineFor('video/mp4', isobmff(['ftyp', 'moov', 'mdat'], 9 * MB), {
+      statedSize: OVERSIZED_MP4
+    })
+
+    expect(parts).toHaveLength(1)
+  })
+
+  // A phone MP4 carries its index last, so a prefix has nothing to decode against. Sending it raises no
+  // error anywhere — the request succeeds and the answer is about nothing — so it must be refused instead.
+  it('refuses an oversized video whose index sits behind its media data', async () => {
+    const parts = await inlineFor('video/mp4', isobmff(['ftyp', 'mdat', 'moov'], 9 * MB), {
+      statedSize: OVERSIZED_MP4
+    })
+
+    expect(parts).toEqual([])
+  })
+
+  it('refuses an oversized document, which has no valid prefix at all', async () => {
+    expect(await inlineFor('application/pdf', PDF_BYTES, { statedSize: 30 * MB })).toEqual([])
+  })
+
+  // Refused on the stated size before any request, so a 200 MB upload costs not one byte of transfer.
+  it('never even asks for an oversized file it could not prefix', async () => {
+    await inlineFor('application/pdf', PDF_BYTES, { statedSize: 30 * MB })
+
+    expect(lastServe.calls).toBe(0)
+  })
+
   it('reports an oversized attachment as dropped', async () => {
     expect(await droppedFor('video/mp4', Buffer.alloc(11 * MB, 0x20))).toBe(1)
+  })
+
+  it('reports an oversized-but-prefixed attachment as truncated, not dropped', async () => {
+    serve(Buffer.alloc(9 * MB, 0x20))
+    __setTestRunTurnFactory(() => async () => ({ text: 'Mm~', hasText: true, hasFunctionCall: false }))
+    const result = await generateResponse({
+      channelId: 'roka-truncated',
+      guildId: 'attachment-guild',
+      userMessage: 'listen to this',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id',
+      imageAttachments: [{ url: 'https://cdn.test/file', contentType: 'audio/mpeg', size: 20 * MB }]
+    })
+    await destroySession('roka-truncated')
+
+    expect([result.truncatedAttachments, result.droppedAttachments]).toEqual([1, 0])
+  })
+
+  it('reports nothing truncated when the whole file fitted', async () => {
+    serve(OGG_BYTES)
+    __setTestRunTurnFactory(() => async () => ({ text: 'Mm~', hasText: true, hasFunctionCall: false }))
+    const result = await generateResponse({
+      channelId: 'roka-untruncated',
+      guildId: 'attachment-guild',
+      userMessage: 'listen to this',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id',
+      imageAttachments: [{ url: 'https://cdn.test/file', contentType: 'audio/mpeg', size: 1024 }]
+    })
+    await destroySession('roka-untruncated')
+
+    expect(result.truncatedAttachments).toBe(0)
   })
 
   it('reports nothing dropped when the attachment arrived', async () => {
@@ -1446,6 +1572,12 @@ describe('attachment bytes are released after the turn', () => {
   })
 
   async function runTurn(channelId: string, fail: boolean) {
+    // A thrown turn goes through the real retry ladder with real backoff, which is several seconds and has
+    // timed out under load. The retry count is incidental to what this asserts — that a failed turn still
+    // reaches the strip — so it is taken out rather than waited on.
+    const retries = config.gemini.liveMaxRetries
+    if (fail) config.gemini.liveMaxRetries = 0
+
     __setTestRunTurnFactory(() => async () => {
       if (fail) throw new Error('model exploded')
       return { text: 'Mm~', hasText: true, hasFunctionCall: false }
@@ -1459,6 +1591,7 @@ describe('attachment bytes are released after the turn', () => {
       userId: 'mio-id'
     })
     await destroySession(channelId)
+    config.gemini.liveMaxRetries = retries
   }
 
   // The retention contract test proves the strip works; this proves the turn reaches it. Deleting the call

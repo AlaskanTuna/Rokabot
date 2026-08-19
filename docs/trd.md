@@ -485,6 +485,28 @@ byte budget cannot disagree about the same file.
   bytes relabelled `image/jpeg` — so a document or clip routed through it arrives byte-identical but
   misdeclared and unreadable. Tests assert the data and the mimeType as a pair for exactly this reason; the
   data alone matches even when the file is broken.
+- **Oversized media is taken as a prefix, not refused.** A file past its ceiling is `Range`-fetched down to
+  exactly that ceiling and sent as its opening, so the excess never crosses the wire. Whole-file ingestion of
+  very large media is not merely expensive but arithmetically impossible — 200 MB of audio is ~5.3 h, about
+  611,000 tokens against a 250,000 TPM ceiling — so a bounded prefix is the only shape that works.
+  - **Only where the container survives being cut.** MP3 is a stream of self-describing frames, so any prefix
+    is valid audio. ISO base media (`mp4`, `mov`, `3gpp`) is prefixable only when `moov` precedes the media
+    data, which is a property of the file rather than the format: a phone MP4 carries its index last and a
+    prefix of one is undecodable. `isobmffAllowsPrefix` walks the box list of the bytes already fetched, so
+    the check costs no extra request. Everything else refuses — OGG, WebM, FLAC and AAC are all plausibly
+    prefixable and none is measured, and a wrong guess here raises no error anywhere: the request succeeds
+    and the answer is about nothing.
+  - **A file refused on its stated size is never requested at all**, so a 200 MB upload of an unprefixable
+    type costs zero transfer.
+  - **The saving is the cancel, not `Range`.** Measured against `cdn.discordapp.com`: it advertises
+    `accept-ranges: bytes` and then answers **200 with the whole body** for a ranged request, so the
+    Range-ignored path is the only one that runs in production, not a fallback. What bounds the transfer is
+    `readWithinLimit` cancelling the reader at the ceiling — measured on a 50 MB body, 1 MB read in 178 ms
+    against 2,750 ms for the whole file, so the transfer genuinely stops rather than being read and
+    discarded. `Range` is still sent because it costs nothing and a 206 would be better; nothing depends on
+    it. Treating the resulting overflow as a failure would turn the saving into a refusal on every file.
+  - **She says so.** `truncatedAttachments` reaches the Discord layer and adds a line naming the truncation,
+    separately from the unreadable-file line — a turn can carry one of each.
 - **The download aborts mid-transfer.** `readWithinLimit` streams the body with a running byte counter and
   cancels the reader the moment it passes the ceiling. What it replaced buffered the whole body and measured
   it afterwards, safe only while every response carries an honest `content-length` — a header that is absent
