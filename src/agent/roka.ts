@@ -438,7 +438,6 @@ function requestCarriesVideo(request: { contents?: Content[] }): boolean {
     (content.parts ?? []).some((part) => part.inlineData?.mimeType?.startsWith('video/'))
   )
 }
-
 /** Caps event history returned by getSession to keep context within budget. Exported so the retention
  * contract test can drive a real ADK Runner against this exact class rather than a stand-in — the
  * `__setTestRunTurnFactory` seam replaces the call to `runner.runAsync`, so `appendEvent` never runs under
