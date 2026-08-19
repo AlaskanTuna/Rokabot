@@ -4,6 +4,10 @@ import 'dotenv/config'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { load } from 'js-yaml'
+// Both are pure leaves — attachmentLimits.ts imports nothing and attachments.ts only node built-ins — so
+// reading them here derives the floor instead of restating it, and cannot close a cycle back into config.
+import { GEMINI_IMAGE_TOKENS } from './agent/attachmentLimits.js'
+import { MAX_ATTACHMENTS } from './discord/attachments.js'
 
 function requiredEnv(key: string): string {
   const value = process.env[key]
@@ -219,16 +223,14 @@ export const config = {
 export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: number; max?: number }> = [
   { path: 'gemini.timeout', value: config.gemini.timeout, min: 1 },
   { path: 'gemini.maxOutputTokens', value: config.gemini.maxOutputTokens, min: 1 },
-  // Floor is 3267 = MAX_ATTACHMENTS x GEMINI_IMAGE_TOKENS, written as a literal because importing either
-  // constant here would close a cycle (imageProcessor -> logger -> config). A test pins the arithmetic, so
-  // raising MAX_ATTACHMENTS without raising this fails loudly rather than silently refusing whole turns.
-  // Below the floor a full turn of plain images could be refused,
+  // Floor is a full turn of plain images, derived rather than restated: below it a maximal image turn could
+  // be refused,
   // and images are the one type whose cost is already known to be bounded and safe. Ceiling is the measured
   // 250,000 TPM (#125) — a single turn priced above the whole minute's budget can only ever fail on 429.
   {
     path: 'gemini.maxAttachmentTokens',
     value: config.gemini.maxAttachmentTokens,
-    min: 3267,
+    min: MAX_ATTACHMENTS * GEMINI_IMAGE_TOKENS,
     max: 250_000
   },
   { path: 'gemini.turnDeadlineMs', value: config.gemini.turnDeadlineMs, min: 1 },

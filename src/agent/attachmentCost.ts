@@ -13,6 +13,10 @@ let client: GoogleGenAI | undefined
  * `countTokens` is the only thing that prices all four without parsing containers, counting pages or probing
  * durations, and it does not draw on the generate quota — verified against a key whose 500 RPD was exhausted
  * and which still answered here normally.
+ *
+ * It is not free in transfer, though: this sends the same base64 the message will send, so a priced
+ * attachment crosses the wire twice — ~4s each way for a 10 MB PDF at the Pi's measured throughput, inside
+ * the 20s timeout but real. That is what `needsMeasuring` is for.
  */
 export async function measureAttachmentTokens(parts: Part[]): Promise<number | undefined> {
   if (parts.length === 0) return 0
@@ -37,5 +41,10 @@ export async function measureAttachmentTokens(parts: Part[]): Promise<number | u
 export function needsMeasuring(parts: Array<{ inlineData?: { mimeType?: string } }>): boolean {
   // An image costs a flat 1,089 regardless of pixels, so MAX_ATTACHMENTS of them is bounded at ~3,267 and
   // cannot approach any sane ceiling. Only the types whose cost tracks duration or page count need asking.
+  //
+  // That 1,089 is *this* model's number, and `gemini.model` is configurable. A model that priced images by
+  // resolution would not make this stale, it would make it wrong — the skip would wave through the one case
+  // it was built to bound. The floor on `gemini.maxAttachmentTokens` derives from the same constant, so the
+  // ceiling moves with it; nothing else does.
   return parts.some((part) => !part.inlineData?.mimeType?.startsWith('image/'))
 }

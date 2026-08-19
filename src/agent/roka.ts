@@ -1087,11 +1087,41 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     }
   }
 
+  /**
+   * Told to the model, not just to the user. Without it the turn looks exactly like an ordinary question
+   * about a video, and what follows is not misbehaviour: CORE_PROMPT says to quietly call search_web for a
+   * fact she is unsure of, and "what happens in this video" is precisely that when no video is present. So
+   * she searches the web for the user's own phrasing and reports the result as the file's contents. Measured
+   * 4 of 4 without this line and 0 of 4 with it — the fabrications were real games and real films because
+   * they were search results, not inventions.
+   *
+   * That is why the fix removes the premise rather than adding a prohibition. A rule saying "do not invent"
+   * aims at a disobedience that never happened, and it would put behavioural wording on the prompt path and
+   * buy the two-green-live-run cost for a sentence that only appears once a download has already failed.
+   * It is a statement of fact for the same reason.
+   */
+  // Both reasons an attachment can be absent, worded apart because they are not the same fact: one never
+  // arrived, the other arrived intact and cost more than a turn may spend. A refusal without this line
+  // re-creates exactly the condition above — attachment gone, request unchanged, search_web fills the hole.
+  const failedAttachmentNotice = [
+    ...(droppedAttachments > 0
+      ? [{ text: `[${droppedAttachments} file(s) were shared with this message but could not be retrieved.]` }]
+      : []),
+    ...(refusedAttachments > 0
+      ? [
+          {
+            text: `[${refusedAttachments} file(s) were shared with this message but are too long to read in one turn.]`
+          }
+        ]
+      : [])
+  ]
+
+  // One list rather than a branch per case: the notice was duplicated across both arms, and a mutation
+  // deleting it from the dropImages arm alone broke nothing — a second copy nobody could have caught going
+  // wrong. The safety ladder drops the images; it has no reason to drop the reason they are missing.
   const buildNewMessage = (): Content => ({
     role: 'user',
-    parts: dropImages
-      ? [{ text: `[${displayName}]: ${userMessage}` }]
-      : [...imageParts, { text: `[${displayName}]: ${userMessage}` }]
+    parts: [...(dropImages ? [] : imageParts), ...failedAttachmentNotice, { text: `[${displayName}]: ${userMessage}` }]
   })
 
   logger.debug(
