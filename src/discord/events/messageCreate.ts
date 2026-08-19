@@ -14,6 +14,7 @@ import { upsertUserName } from '../../storage/userNames.js'
 import { logger } from '../../utils/logger.js'
 import { RateLimiter } from '../../utils/rateLimiter.js'
 import { MAX_ATTACHMENTS, isSupportedImage } from '../attachments.js'
+import { release, reservationFor, tryReserve } from '../byteBudget.js'
 import { isChannelBusy, markBusy, markFree } from '../concurrency.js'
 import { shouldReact } from '../emojiReactor.js'
 import { isIgnorableDiscordError } from '../errorHandler.js'
@@ -137,7 +138,7 @@ function describeForwardedSnapshots(snapshots: Message['messageSnapshots'], imag
     const fwdAttachments = snapshot.attachments ? [...snapshot.attachments.values()] : []
     const fwdCandidates = fwdAttachments
       .filter(isSupportedImage)
-      .map((a) => ({ url: a.url, contentType: a.contentType! }))
+      .map((a) => ({ url: a.url, contentType: a.contentType!, size: a.size }))
     const fwdImages = fwdCandidates.slice(0, imageSlots - images.length)
     images.push(...fwdImages)
 
@@ -238,7 +239,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
 
     const imageAttachments: ImageAttachment[] = message.attachments
       .filter(isSupportedImage)
-      .map((a) => ({ url: a.url, contentType: a.contentType! }))
+      .map((a) => ({ url: a.url, contentType: a.contentType!, size: a.size }))
       .slice(0, MAX_ATTACHMENTS)
 
     // Everything else this message shows. The replied-to message has always been read this thoroughly; the
@@ -326,7 +327,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
       // Collection or a plain array.
       const refImageCandidates: ImageAttachment[] = [...referencedMessage.attachments.values()]
         .filter(isSupportedImage)
-        .map((a) => ({ url: a.url, contentType: a.contentType! }))
+        .map((a) => ({ url: a.url, contentType: a.contentType!, size: a.size }))
       // Her own expression thumbnails are skipped deliberately to save tokens, so a reply to herself takes
       // nothing — the marker names those as unseen rather than claiming she can see them.
       const refImagesTaken = isReplyToBot ? [] : refImageCandidates.slice(0, MAX_ATTACHMENTS - imageAttachments.length)
@@ -397,8 +398,21 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
           }, 7000)
         : null
 
-    markBusy(channelId)
+    // Reserved here rather than earlier so nothing can throw between taking the bytes and the try/finally
+    // that hands them back — a reservation that leaks becomes a permanent refusal, not a failed turn.
+    const reservedBytes = reservationFor(imageAttachments)
+    if (!tryReserve(reservedBytes)) {
+      if (typingInterval) clearInterval(typingInterval)
+      logger.debug({ channelId, reservedBytes }, 'In-flight attachment budget full — sending busy message')
+      const budgetMsg = await message.reply(getRandomBusy())
+      setTimeout(() => budgetMsg.delete().catch(() => {}), 5000)
+      return
+    }
+
     try {
+      // Inside the try, not before it, so the reservation above cannot be stranded by anything between the
+      // two — markFree on a channel that was never marked is a no-op delete, so this costs nothing.
+      markBusy(channelId)
       const [{ text: responseText, tone, toolsUsed, metrics }, sources] = await withSearchCitations(() =>
         generateResponse({
           channelId,
@@ -468,6 +482,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
     } finally {
       if (typingInterval) clearInterval(typingInterval)
       markFree(channelId)
+      release(reservedBytes)
     }
   }
 }

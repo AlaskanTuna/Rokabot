@@ -6,6 +6,7 @@ import { type ResponseEventInput, recordResponseEvent } from '../../storage/metr
 import { logger } from '../../utils/logger.js'
 import { RateLimiter } from '../../utils/rateLimiter.js'
 import { MAX_ATTACHMENTS, attachmentOptionName, isSupportedMedia, resolveImageUrl } from '../attachments.js'
+import { release, reservationFor, tryReserve } from '../byteBudget.js'
 import { isChannelBusy, markBusy, markFree } from '../concurrency.js'
 import { isIgnorableDiscordError } from '../errorHandler.js'
 import { buildRokaMessage } from '../messageBuilder.js'
@@ -84,7 +85,7 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
     // options accept any file already, so admitting the type is the whole change.
     const imageAttachments: ImageAttachment[] = attached
       .filter(isSupportedMedia)
-      .map((supported) => ({ url: supported.url, contentType: supported.contentType as string }))
+      .map((supported) => ({ url: supported.url, contentType: supported.contentType as string, size: supported.size }))
     let unsupportedCount = attached.length - imageAttachments.length
 
     // One visual budget per turn regardless of where the picture came from: a linked image competes for the
@@ -119,8 +120,20 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
 
     await interaction.deferReply()
 
-    markBusy(channelId)
+    // Reserved here rather than earlier so nothing can throw between taking the bytes and the try/finally
+    // that hands them back — a reservation that leaks becomes a permanent refusal, not a failed turn.
+    const reservedBytes = reservationFor(imageAttachments)
+    if (!tryReserve(reservedBytes)) {
+      logger.debug({ channelId, reservedBytes }, 'In-flight attachment budget full — sending busy message')
+      await interaction.editReply({ content: getRandomBusy() })
+      setTimeout(() => interaction.deleteReply().catch(() => {}), 5000)
+      return
+    }
+
     try {
+      // Inside the try, not before it, so the reservation above cannot be stranded by anything between the
+      // two — markFree on a channel that was never marked is a no-op delete, so this costs nothing.
+      markBusy(channelId)
       const [{ text: responseText, tone, toolsUsed, metrics }, sources] = await withSearchCitations(() =>
         generateResponse({
           channelId,
@@ -176,6 +189,7 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
       }
     } finally {
       markFree(channelId)
+      release(reservedBytes)
     }
   }
 }

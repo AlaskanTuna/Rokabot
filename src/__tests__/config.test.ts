@@ -614,6 +614,7 @@ describe('config module', () => {
       { path: 'session.maxRehydrationAge', min: 0 },
       { path: 'session.historyRetentionDays', min: 1 },
       { path: 'discord.maxMessageLength', min: 1, max: 3878 },
+      { path: 'discord.maxInFlightAttachmentBytes', min: 31_457_280 },
       { path: 'memory.bufferSize', min: 1 },
       { path: 'memory.contextSize', min: 1 },
       { path: 'memory.extractionInterval', min: 0 },

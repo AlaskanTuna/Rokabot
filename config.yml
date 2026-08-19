@@ -30,6 +30,7 @@ session:
 
 discord:
   maxMessageLength: 1500 # Char limit for bot replies (effective ceiling is 4000 minus the tool-disclosure footer)
+  maxInFlightAttachmentBytes: 33554432 # 32 MB ceiling on attachment bytes downloading across ALL channels at once; each byte costs ~4.7x its size in RSS, so this holds worst-case residency near 20% of the container's 1g mem_limit ; a single turn of three 10 MB documents reserves 30 MB of this, so the default sits just above its own floor and one such turn holds off other channels until it finishes (see docs/multimodal.md)
 
 memory:
   bufferSize: 30 # Max messages in passive ring buffer per channel (in-memory)
