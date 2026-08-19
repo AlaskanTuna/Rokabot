@@ -55,7 +55,9 @@ export interface RunCaseSetOptions {
 }
 
 /** `transientRetries` rides along with the observations rather than staying in the log, so a run that
- * needed retries to reach its verdict says so next to the verdict. */
+ * needed retries to reach its verdict says so next to the verdict. It counts every retried attempt across
+ * the case set even though the budget is per trial — the budget decides when to stop, the count is what a
+ * reader needs to know how much of the verdict was recovered rather than measured first time. */
 export interface CaseSetRun {
   observations: CaseObservations
   transientRetries: number
@@ -65,14 +67,20 @@ function sleep(delayMs: number): Promise<void> {
   return new Promise((resolveSleep) => setTimeout(resolveSleep, delayMs))
 }
 
-/** How many trials across one case set may be re-run after a transient before the run is abandoned.
+/** How many times one trial may be re-run after a transient before the run is abandoned.
  *
  * Not a retry-until-green dial. A prompt that genuinely makes the model return nothing would otherwise
  * hide behind unlimited retries and score as though it never had, which is the failure this file's own
- * guard exists to prevent. Three is above the observed rate — the in-turn ladder exhausted exactly once
- * per ~108 trials across every run recorded so far — and far below what a systematically broken prompt
- * would need. Exceeding it aborts with the count, so the number is reported rather than absorbed. */
-const MAX_TRANSIENT_RETRIES = 3
+ * guard exists to prevent.
+ *
+ * Budgeted per trial rather than across the run, because the variable that separates the two failures is
+ * **concentration on one case**, not total volume: noise on the wire lands one-each on scattered cases,
+ * a broken prompt lands repeatedly on the same one, and a run-level count sums that distinction away —
+ * it cannot tell three unlucky cases from one broken one. Per-trial is tighter where it should be (a
+ * broken case aborts on its own third failure, rather than waiting for a fourth failure anywhere) and
+ * looser where it should be (four scattered transients never accumulate into an abort). It also needs no
+ * fitted rate to justify it: "this trial failed three times running" is a statement about the trial. */
+const MAX_TRIAL_RETRIES = 2
 
 /** Runs every case for `options.trials` trials against the live model, one unique channel per trial
  * so nothing carries over between them, and paced at TRIAL_PACING_MS.
@@ -145,18 +153,18 @@ export async function runCaseSet(
 
             if (result.metrics.outcome !== 'ok') {
               transientRetries++
-              if (transientRetries > MAX_TRANSIENT_RETRIES) {
+              if (retry >= MAX_TRIAL_RETRIES) {
                 throw new Error(
                   `Reliability guard: case "${testCase.id}" trial ${trial} returned outcome=` +
-                    `${result.metrics.outcome} (kind=${result.metrics.kind}), and this case set has now ` +
-                    `spent ${transientRetries} transient retries against a budget of ${MAX_TRANSIENT_RETRIES} — ` +
-                    'aborting. At this rate the failures are not one bad minute on the wire.'
+                    `${result.metrics.outcome} (kind=${result.metrics.kind}) on all ` +
+                    `${MAX_TRIAL_RETRIES + 1} of its attempts — aborting. Failing this consistently on one ` +
+                    'case is not one bad minute on the wire.'
                 )
               }
               console.warn(
                 `[tool-trigger] case "${testCase.id}" trial ${trial} returned ${result.metrics.outcome} ` +
                   `(kind=${result.metrics.kind}); retrying on a fresh channel ` +
-                  `(${transientRetries}/${MAX_TRANSIENT_RETRIES} budget spent).`
+                  `(attempt ${retry + 2} of ${MAX_TRIAL_RETRIES + 1}, ${transientRetries} retried so far).`
               )
               continue
             }
