@@ -1103,6 +1103,11 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   // Both reasons an attachment can be absent, worded apart because they are not the same fact: one never
   // arrived, the other arrived intact and cost more than a turn may spend. A refusal without this line
   // re-creates exactly the condition above — attachment gone, request unchanged, search_web fills the hole.
+  //
+  // The refusal arm says "together" because the refusal is all-or-nothing: one cheap image beside one
+  // 500-page PDF refuses both, and blaming each file individually would tell the sender their 1,089-token
+  // picture was too long to read. Pricing per attachment to refuse only the expensive one would cost a
+  // round trip each, and each of those round trips re-uploads the file.
   const failedAttachmentNotice = [
     ...(droppedAttachments > 0
       ? [{ text: `[${droppedAttachments} file(s) were shared with this message but could not be retrieved.]` }]
@@ -1110,7 +1115,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     ...(refusedAttachments > 0
       ? [
           {
-            text: `[${refusedAttachments} file(s) were shared with this message but are too long to read in one turn.]`
+            text: `[${refusedAttachments} file(s) were shared with this message; together they are too long to read in one turn, so none of them were opened.]`
           }
         ]
       : [])

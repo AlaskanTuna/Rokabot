@@ -1683,7 +1683,12 @@ describe('attachment intake', () => {
   // The two mechanisms meet here: refusing on cost removes the attachment, which re-creates exactly the
   // condition #137 fixed — file gone, request unchanged, and the model reaching for search_web to fill the
   // hole. A refusal has to say so for the same reason a failed download does.
-  it('tells the model when attachments were refused on cost, not only when they failed', async () => {
+  //
+  // Two attachments rather than one, because with one the notice reads correctly whatever number the code
+  // put in it. The peer probed this: `refusedAttachments = 1` in place of `imageParts.length` failed nothing
+  // at all. Refusal is all-or-nothing, so the count is the whole set and the assertion has to be able to
+  // tell the whole set from one of it.
+  it('tells the model when attachments were refused on cost, and how many went with them', async () => {
     let captured: { newMessage?: { parts?: Array<{ text?: string }> } } | undefined
     vi.mocked(needsMeasuring).mockReturnValueOnce(true)
     vi.mocked(measureAttachmentTokens).mockResolvedValueOnce(config.gemini.maxAttachmentTokens + 1)
@@ -1700,12 +1705,15 @@ describe('attachment intake', () => {
       displayName: 'Mio',
       username: 'mio',
       userId: 'mio-id',
-      imageAttachments: [{ url: 'https://cdn.test/file', contentType: 'application/pdf' }]
+      imageAttachments: [
+        { url: 'https://cdn.test/file', contentType: 'application/pdf' },
+        { url: 'https://cdn.test/file', contentType: 'application/pdf' }
+      ]
     })
     await destroySession('refuse-notice')
 
     const texts = (captured?.newMessage?.parts ?? []).flatMap((part) => (part.text ? [part.text] : []))
-    expect(texts.some((text) => text.includes('too long to read in one turn'))).toBe(true)
+    expect(texts.some((text) => text.includes('2 file(s)') && text.includes('together they are too long'))).toBe(true)
   })
 
   it('admits attachments that fit the ceiling', async () => {

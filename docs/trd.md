@@ -562,6 +562,10 @@ wall and spend the minute's budget for every other channel.
 - **A refusal is told to the model.** The same `failedAttachmentNotice` that covers a failed download covers
   a cost refusal, in its own wording. Without it a refused turn looks identical to a question about a file
   that was never attached — the exact condition that produced the `search_web` fabrications described above.
+- **Refusal is all-or-nothing, and the wording says so.** One cheap image beside one 500-page PDF refuses
+  both, so the notice blames the set (`together they are too long to read`) rather than each file — otherwise
+  she tells the sender their 1,089-token picture was too long to read. Refusing only the expensive member
+  would need a `countTokens` per attachment, and each of those re-uploads the file.
 
 ### Attachment Bytes Do Not Live in History
 
