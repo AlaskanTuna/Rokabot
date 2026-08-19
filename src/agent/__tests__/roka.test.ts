@@ -1572,6 +1572,12 @@ describe('attachment bytes are released after the turn', () => {
   })
 
   async function runTurn(channelId: string, fail: boolean) {
+    // A thrown turn goes through the real retry ladder with real backoff, which is several seconds and has
+    // timed out under load. The retry count is incidental to what this asserts — that a failed turn still
+    // reaches the strip — so it is taken out rather than waited on.
+    const retries = config.gemini.liveMaxRetries
+    if (fail) config.gemini.liveMaxRetries = 0
+
     __setTestRunTurnFactory(() => async () => {
       if (fail) throw new Error('model exploded')
       return { text: 'Mm~', hasText: true, hasFunctionCall: false }
@@ -1585,6 +1591,7 @@ describe('attachment bytes are released after the turn', () => {
       userId: 'mio-id'
     })
     await destroySession(channelId)
+    config.gemini.liveMaxRetries = retries
   }
 
   // The retention contract test proves the strip works; this proves the turn reaches it. Deleting the call
