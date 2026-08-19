@@ -10,7 +10,12 @@ async function pacingWith(override: string | undefined): Promise<number> {
   return TRIAL_PACING_MS
 }
 
-describe('live-gate trial pacing', () => {
+// Each case calls vi.resetModules() and then re-imports toolTrigger.js cold, which pulls the harness and
+// ADK back through the transform pipeline. Measured at 3,588 ms for the first of the four — 72% of vitest's
+// 5,000 ms default — and it has been seen failing a full run while passing in isolation and on clean
+// re-runs. The cost is import time, not a timer, so waiting longer is the honest fix rather than a smell:
+// the alternative is an intermittent that looks exactly like a real regression on a loaded CI box.
+describe('live-gate trial pacing', { timeout: 30_000 }, () => {
   afterEach(() => {
     vi.unstubAllEnvs()
     vi.resetModules()

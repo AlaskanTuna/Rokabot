@@ -18,8 +18,10 @@ import { logger } from '../utils/logger.js'
 import { getSharedRateLimiter } from '../utils/rateLimiter.js'
 import { getLocalHour } from '../utils/timezone.js'
 import { estimateTokens } from '../utils/tokens.js'
+import { measureAttachmentTokens, needsMeasuring } from './attachmentCost.js'
 import { geminiMimeType, sizeLimitFor } from './attachmentLimits.js'
 import { classifyGeminiFailure, computeBackoff, extractGeminiStatus } from './geminiReliability.js'
+import { isobmffAllowsPrefix, prefixPolicyFor } from './mediaPrefix.js'
 import { retrieveForTurn } from './memory/retriever.js'
 import { getMessages as getBufferMessages } from './passiveBuffer.js'
 import { assembleSystemPrompt } from './promptAssembler.js'
@@ -58,6 +60,17 @@ export interface GenerateResult {
    * dropped in total silence and she answers as though nothing were attached, which reads as her ignoring it.
    */
   droppedAttachments: number
+  /**
+   * Attachments refused because their measured token cost was past `gemini.maxAttachmentTokens`. Distinct
+   * from dropped: these arrived intact and were readable, they were simply too expensive to spend a turn on.
+   */
+  refusedAttachments: number
+  /**
+   * Attachments sent as a prefix because the whole file was past its ceiling. She saw a real part of it, so
+   * this is not a failure — but answering as though she had the whole thing would be a quiet lie about a
+   * five-minute clip she heard ninety seconds of.
+   */
+  truncatedAttachments: number
 }
 
 const APP_NAME = 'rokabot'
@@ -754,7 +767,12 @@ export async function destroyAllSessions(): Promise<void> {
  * There is deliberately no `arrayBuffer()` fallback for a body-less response: a fallback is a path where the
  * guard does not run, and it would be taken by exactly the malformed responses the guard is for.
  */
-async function readWithinLimit(response: Response, limit: number, url: string): Promise<Buffer | null> {
+async function readWithinLimit(
+  response: Response,
+  limit: number,
+  url: string,
+  onOverflow: 'refuse' | 'truncate'
+): Promise<Buffer | null> {
   if (!response.body) {
     logger.warn({ url }, 'Attachment response carried no readable body, skipping')
     return null
@@ -766,12 +784,21 @@ async function readWithinLimit(response: Response, limit: number, url: string): 
 
   let chunk = await reader.read()
   while (!chunk.done) {
-    received += chunk.value.byteLength
-    if (received > limit) {
+    const overflow = received + chunk.value.byteLength - limit
+    if (overflow > 0) {
+      // `truncate` is for a deliberate prefix fetch, where reaching the ceiling is the plan rather than a
+      // failure. It matters because a server may ignore `Range` and answer 200 with the whole file: without
+      // this the read would abort and the prefix would be lost, turning the saving into a refusal.
+      if (onOverflow === 'truncate') {
+        chunks.push(chunk.value.subarray(0, chunk.value.byteLength - overflow))
+        await reader.cancel()
+        return Buffer.concat(chunks)
+      }
       await reader.cancel()
       logger.warn({ url, received, limit }, 'Attachment passed its size limit mid-transfer, aborted')
       return null
     }
+    received += chunk.value.byteLength
     chunks.push(chunk.value)
     chunk = await reader.read()
   }
@@ -779,10 +806,19 @@ async function readWithinLimit(response: Response, limit: number, url: string): 
   return Buffer.concat(chunks)
 }
 
-/** Download one attachment as base64, returning null if it fails or exceeds the ceiling for its type */
+/**
+ * Download one attachment as base64, returning null if it fails or cannot be made to fit.
+ *
+ * A file past its ceiling is not automatically refused any more: where the container tolerates being cut
+ * short, the first `limit` bytes are fetched with a `Range` header and sent as a prefix, so the excess never
+ * crosses the wire. Whole-file ingestion of very large media is not merely expensive but arithmetically
+ * impossible — 200 MB of audio is ~5.3 h, ~611,000 tokens against a 250,000 TPM ceiling — so a bounded
+ * prefix is the only shape that works at all. `truncated` tells the caller to say so rather than pretend
+ * she heard the whole thing.
+ */
 async function downloadAttachment(
   attachment: ImageAttachment
-): Promise<{ data: string; mimeType: string; tokens: number } | null> {
+): Promise<{ data: string; mimeType: string; tokens: number; truncated: boolean } | null> {
   const { url, contentType } = attachment
   // Which types are admitted at all is the Discord layer's decision; this only decides how to handle one that
   // already got through. Routing on image/* rather than an allowlist keeps the type sets in one place — the
@@ -790,21 +826,46 @@ async function downloadAttachment(
   const isImage = contentType.startsWith('image/')
   const limit = sizeLimitFor(contentType)
 
+  // Only a size Discord stated can be trusted here. An embed image or a resolved link states none, so it
+  // takes the ordinary path and the size guard catches it — guessing "oversized" from a missing size would
+  // truncate files that were never too big.
+  const policy = prefixPolicyFor(contentType)
+  const wantsPrefix = attachment.size !== undefined && attachment.size > limit && policy !== 'none'
+
+  if (attachment.size !== undefined && attachment.size > limit && policy === 'none') {
+    logger.warn({ url, size: attachment.size, limit, contentType }, 'Oversized and not safely prefixable, refusing')
+    return null
+  }
+
   try {
-    const response = await fetch(url)
+    // Range is asked for, and Discord's CDN does not grant it: measured against cdn.discordapp.com, which
+    // advertises `accept-ranges: bytes` and then answers 200 with the whole body anyway. So the saving does
+    // not come from Range — it comes from readWithinLimit cancelling the reader at the ceiling, which stops
+    // the transfer rather than reading on and discarding. Measured on a 50 MB body: 1 MB read in 178 ms
+    // against 2,750 ms for the whole thing. Range stays because it costs nothing and a 206 would be better
+    // still, but nothing depends on it.
+    const response = await fetch(url, wantsPrefix ? { headers: { Range: `bytes=0-${limit - 1}` } } : undefined)
     if (!response.ok) {
       logger.warn({ url, status: response.status }, 'Failed to download attachment')
       return null
     }
 
     const contentLength = response.headers.get('content-length')
-    if (contentLength && parseInt(contentLength, 10) > limit) {
+    if (!wantsPrefix && contentLength && parseInt(contentLength, 10) > limit) {
       logger.warn({ url, size: contentLength, limit }, 'Attachment exceeds its size limit, skipping')
       return null
     }
 
-    const buffer = await readWithinLimit(response, limit, url)
+    const buffer = await readWithinLimit(response, limit, url, wantsPrefix ? 'truncate' : 'refuse')
     if (!buffer) return null
+
+    // Whether this particular file survives being cut is a property of the file, not of its type: a phone MP4
+    // carries its index last and a prefix of one has nothing to decode against. Refused rather than sent,
+    // because sending it raises no error anywhere — the request succeeds and the answer is about nothing.
+    if (wantsPrefix && policy === 'isobmff' && !isobmffAllowsPrefix(buffer)) {
+      logger.warn({ url, contentType }, 'Oversized video has no index before its media data, refusing')
+      return null
+    }
 
     // A document or an audio clip goes to the model exactly as it arrived. sharp is an image pipeline — handed
     // anything else it throws, and its catch returns the undecoded bytes relabelled image/jpeg, so the file
@@ -812,11 +873,21 @@ async function downloadAttachment(
     // spelling of MP3. tokens stays 0: audio is billed per second, and seconds are not knowable without
     // decoding — the same argument docs/multimodal.md makes against enforcing duration caps.
     if (!isImage) {
-      return { data: buffer.toString('base64'), mimeType: geminiMimeType(contentType), tokens: 0 }
+      return {
+        data: buffer.toString('base64'),
+        mimeType: geminiMimeType(contentType),
+        tokens: 0,
+        truncated: wantsPrefix
+      }
     }
 
     const processed = await processImageForGemini(buffer)
-    return { data: processed.data.toString('base64'), mimeType: processed.mimeType, tokens: GEMINI_IMAGE_TOKENS }
+    return {
+      data: processed.data.toString('base64'),
+      mimeType: processed.mimeType,
+      tokens: GEMINI_IMAGE_TOKENS,
+      truncated: wantsPrefix
+    }
   } catch (error) {
     logger.warn({ url, error }, 'Error downloading attachment')
     return null
@@ -982,9 +1053,11 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   const imageParts: Part[] = []
   let imageTokens = 0
   let droppedAttachments = 0
+  let truncatedAttachments = 0
   if (imageAttachments?.length) {
     const downloads = await Promise.all(imageAttachments.map((img) => downloadAttachment(img)))
     droppedAttachments = downloads.filter((result) => result === null).length
+    truncatedAttachments = downloads.filter((result) => result?.truncated).length
     for (const result of downloads) {
       if (result) {
         imageParts.push({ inlineData: { data: result.data, mimeType: result.mimeType } })
@@ -996,11 +1069,64 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     }
   }
 
+  // Priced before sending, because size does not bound token cost — a 17 KB PDF is 560 tokens a page and can
+  // exceed a whole request's budget on its own. Over the ceiling the turn is refused here rather than sent to
+  // fail on a 429, which would retry into the same wall and spend the minute's TPM for every other channel.
+  // Only asked when something is not an image: images are a flat 1,089 each and cannot reach the ceiling.
+  let refusedAttachments = 0
+  if (imageParts.length > 0 && needsMeasuring(imageParts)) {
+    const measured = await measureAttachmentTokens(imageParts)
+    if (measured !== undefined && measured > config.gemini.maxAttachmentTokens) {
+      logger.info(
+        { channelId, measured, ceiling: config.gemini.maxAttachmentTokens, count: imageParts.length },
+        'Attachments cost more than one turn may spend, refusing them'
+      )
+      refusedAttachments = imageParts.length
+      imageParts.length = 0
+      imageTokens = 0
+    }
+  }
+
+  /**
+   * Told to the model, not just to the user. Without it the turn looks exactly like an ordinary question
+   * about a video, and what follows is not misbehaviour: CORE_PROMPT says to quietly call search_web for a
+   * fact she is unsure of, and "what happens in this video" is precisely that when no video is present. So
+   * she searches the web for the user's own phrasing and reports the result as the file's contents. Measured
+   * 4 of 4 without this line and 0 of 4 with it — the fabrications were real games and real films because
+   * they were search results, not inventions.
+   *
+   * That is why the fix removes the premise rather than adding a prohibition. A rule saying "do not invent"
+   * aims at a disobedience that never happened, and it would put behavioural wording on the prompt path and
+   * buy the two-green-live-run cost for a sentence that only appears once a download has already failed.
+   * It is a statement of fact for the same reason.
+   */
+  // Both reasons an attachment can be absent, worded apart because they are not the same fact: one never
+  // arrived, the other arrived intact and cost more than a turn may spend. A refusal without this line
+  // re-creates exactly the condition above — attachment gone, request unchanged, search_web fills the hole.
+  //
+  // The refusal arm says "together" because the refusal is all-or-nothing: one cheap image beside one
+  // 500-page PDF refuses both, and blaming each file individually would tell the sender their 1,089-token
+  // picture was too long to read. Pricing per attachment to refuse only the expensive one would cost a
+  // round trip each, and each of those round trips re-uploads the file.
+  const failedAttachmentNotice = [
+    ...(droppedAttachments > 0
+      ? [{ text: `[${droppedAttachments} file(s) were shared with this message but could not be retrieved.]` }]
+      : []),
+    ...(refusedAttachments > 0
+      ? [
+          {
+            text: `[${refusedAttachments} file(s) were shared with this message; together they are too long to read in one turn, so none of them were opened.]`
+          }
+        ]
+      : [])
+  ]
+
+  // One list rather than a branch per case: the notice was duplicated across both arms, and a mutation
+  // deleting it from the dropImages arm alone broke nothing — a second copy nobody could have caught going
+  // wrong. The safety ladder drops the images; it has no reason to drop the reason they are missing.
   const buildNewMessage = (): Content => ({
     role: 'user',
-    parts: dropImages
-      ? [{ text: `[${displayName}]: ${userMessage}` }]
-      : [...imageParts, { text: `[${displayName}]: ${userMessage}` }]
+    parts: [...(dropImages ? [] : imageParts), ...failedAttachmentNotice, { text: `[${displayName}]: ${userMessage}` }]
   })
 
   logger.debug(
@@ -1214,5 +1340,13 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     tokensOutEst: estimateTokens(reliability.text)
   }
 
-  return { text: reliability.text, tone, metrics, toolsUsed, droppedAttachments }
+  return {
+    text: reliability.text,
+    tone,
+    metrics,
+    toolsUsed,
+    droppedAttachments,
+    truncatedAttachments,
+    refusedAttachments
+  }
 }

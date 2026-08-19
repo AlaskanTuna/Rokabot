@@ -22,6 +22,7 @@ vi.mock('../responses.js', () => ({
   getRandomDecline: () => 'decline',
   getRandomError: () => 'error',
   getRandomUnsupportedAttachment: () => "I couldn't open that file~",
+  getRandomPartialAttachment: () => 'I only got through the beginning of that~',
   splitResponse: (response: string) => [response]
 }))
 vi.mock('../events/gachaMention.js', () => ({ handleGachaMention: vi.fn() }))
@@ -188,7 +189,14 @@ describe('global in-flight byte budget, at the handlers', () => {
       () =>
         new Promise((resolve) => {
           releaseFirst = () =>
-            resolve({ text: 'hi', tone: 'neutral', metrics: {}, toolsUsed: [], droppedAttachments: 0 })
+            resolve({
+              text: 'hi',
+              tone: 'neutral',
+              metrics: {},
+              toolsUsed: [],
+              droppedAttachments: 0,
+              truncatedAttachments: 0
+            })
         })
     )
 

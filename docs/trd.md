@@ -485,6 +485,28 @@ byte budget cannot disagree about the same file.
   bytes relabelled `image/jpeg` — so a document or clip routed through it arrives byte-identical but
   misdeclared and unreadable. Tests assert the data and the mimeType as a pair for exactly this reason; the
   data alone matches even when the file is broken.
+- **Oversized media is taken as a prefix, not refused.** A file past its ceiling is `Range`-fetched down to
+  exactly that ceiling and sent as its opening, so the excess never crosses the wire. Whole-file ingestion of
+  very large media is not merely expensive but arithmetically impossible — 200 MB of audio is ~5.3 h, about
+  611,000 tokens against a 250,000 TPM ceiling — so a bounded prefix is the only shape that works.
+  - **Only where the container survives being cut.** MP3 is a stream of self-describing frames, so any prefix
+    is valid audio. ISO base media (`mp4`, `mov`, `3gpp`) is prefixable only when `moov` precedes the media
+    data, which is a property of the file rather than the format: a phone MP4 carries its index last and a
+    prefix of one is undecodable. `isobmffAllowsPrefix` walks the box list of the bytes already fetched, so
+    the check costs no extra request. Everything else refuses — OGG, WebM, FLAC and AAC are all plausibly
+    prefixable and none is measured, and a wrong guess here raises no error anywhere: the request succeeds
+    and the answer is about nothing.
+  - **A file refused on its stated size is never requested at all**, so a 200 MB upload of an unprefixable
+    type costs zero transfer.
+  - **The saving is the cancel, not `Range`.** Measured against `cdn.discordapp.com`: it advertises
+    `accept-ranges: bytes` and then answers **200 with the whole body** for a ranged request, so the
+    Range-ignored path is the only one that runs in production, not a fallback. What bounds the transfer is
+    `readWithinLimit` cancelling the reader at the ceiling — measured on a 50 MB body, 1 MB read in 178 ms
+    against 2,750 ms for the whole file, so the transfer genuinely stops rather than being read and
+    discarded. `Range` is still sent because it costs nothing and a 206 would be better; nothing depends on
+    it. Treating the resulting overflow as a failure would turn the saving into a refusal on every file.
+  - **She says so.** `truncatedAttachments` reaches the Discord layer and adds a line naming the truncation,
+    separately from the unreadable-file line — a turn can carry one of each.
 - **The download aborts mid-transfer.** `readWithinLimit` streams the body with a running byte counter and
   cancels the reader the moment it passes the ceiling. What it replaced buffered the whole body and measured
   it afterwards, safe only while every response carries an honest `content-length` — a header that is absent
@@ -512,6 +534,38 @@ byte budget cannot disagree about the same file.
 - **`attachment_url` is images-only**, narrower than the upload slots beside it. It is the SSRF-guarded path
   that makes the Pi fetch a user-named host, so its type set is a security decision rather than a feature
   one; widening it belongs in its own change.
+
+### Attachment Token Admission
+
+Size does not bound token cost, so the byte ceilings above do not bound the bill. A 17 KB PDF is 50 pages at a
+measured ~560 tokens each — 28,001 tokens from a file small enough to pass every check on the way in — and
+three 200-page PDFs reach 341,543 tokens in a single request, over the whole 250,000 TPM ceiling. `roka.ts`
+therefore prices the parts with `countTokens` before sending them and refuses the turn's attachments above
+`gemini.maxAttachmentTokens`, rather than letting the request fail on a 429 that would retry into the same
+wall and spend the minute's budget for every other channel.
+
+- **Images are skipped, and that skip is model-specific.** `needsMeasuring` returns false when every part is
+  an image, because an image is a flat 1,089 tokens regardless of dimensions and `MAX_ATTACHMENTS` of them
+  cannot reach any legal ceiling. That number is _this_ model's; `gemini.model` is configurable, and a model
+  that priced images by size would make the skip wrong rather than merely stale. The floor on
+  `maxAttachmentTokens` is derived from the same constant (`MAX_ATTACHMENTS * GEMINI_IMAGE_TOKENS`) so the
+  two cannot drift apart silently.
+- **`countTokens` does not draw on the generate quota.** Verified twice against a key at its RPD limit: the
+  call succeeds where `generateContent` 429s. Pricing is therefore free in quota, but not in transfer.
+- **It costs a second upload.** `countTokens` sends the same base64 payload the message will send, so a
+  priced attachment crosses the wire twice. At the Pi's measured ~2.5 MB/s that is ~4 s each way for a 10 MB
+  PDF, inside the 20 s timeout with room to spare, but it is real latency on the largest admitted files and
+  it is why the image skip is worth having rather than an optimisation for its own sake.
+- **It fails open.** A `countTokens` that throws or times out returns `undefined` and the turn proceeds
+  unpriced. The check exists to stop a predictable overrun, not to become a new way for an ordinary message
+  to fail.
+- **A refusal is told to the model.** The same `failedAttachmentNotice` that covers a failed download covers
+  a cost refusal, in its own wording. Without it a refused turn looks identical to a question about a file
+  that was never attached — the exact condition that produced the `search_web` fabrications described above.
+- **Refusal is all-or-nothing, and the wording says so.** One cheap image beside one 500-page PDF refuses
+  both, so the notice blames the set (`together they are too long to read`) rather than each file — otherwise
+  she tells the sender their 1,089-token picture was too long to read. Refusing only the expensive member
+  would need a `countTokens` per attachment, and each of those re-uploads the file.
 
 ### Attachment Bytes Do Not Live in History
 

@@ -40,14 +40,14 @@ The hard limit is **20 MB for the total request, including the prompt and all fi
 - **The Files API is out of scope entirely.** That removes an upload round trip, a storage lifetime to manage, and a second failure mode on the hot path — the exact concerns the issue raised.
 - Note a documentation inconsistency: the video-understanding page describes inline as suiting "small files (<100MB)", which contradicts the 20 MB request ceiling stated on the audio page. **Design to 20 MB.** The larger figure appears to describe the Files API's remit rather than inline's.
 
-### 3. Token Cost — Only Video Can Trip TPM
+### 3. Token Cost — Video and Documents Can Both Trip TPM
 
-| Modality                  | Cited Cost                       | 60 s / 20 pages |
-| ------------------------- | -------------------------------- | --------------- |
-| Video, default resolution | ~300 tokens/second               | 18,000 tokens   |
-| Video, low resolution     | 100 tokens/second                | 6,000 tokens    |
-| Audio                     | 32 tokens/second (1 min = 1,920) | 1,920 tokens    |
-| PDF                       | 258 tokens/page, text layer free | 5,160 tokens    |
+| Modality                  | Cited Cost                          | 60 s / 20 pages |
+| ------------------------- | ----------------------------------- | --------------- |
+| Video, default resolution | ~300 tokens/second                  | 18,000 tokens   |
+| Video, low resolution     | 100 tokens/second                   | 6,000 tokens    |
+| Audio                     | 32 tokens/second (1 min = 1,920)    | 1,920 tokens    |
+| PDF                       | 560 tokens/page, content irrelevant | 11,200 tokens   |
 
 Every figure below is the cost of the turn that carries the media, which holds only because attachment bytes
 are stripped from session history once their turn is over. Before that fix they were re-sent as history on
@@ -55,7 +55,12 @@ every later turn, so a single upload could be charged up to twenty times — see
 
 Against `rpm: 15` and `rpd: 500`, and the free-tier ceiling of **250,000 input tokens per minute** — measured, below:
 
-- **Audio and PDF never reach TPM.** At 1,920 tokens a minute of audio, RPM 15 binds first by an order of magnitude.
+- **Audio never reaches TPM.** At 1,920 tokens a minute of audio, RPM 15 binds first by an order of magnitude.
+- **A document can exceed TPM on its own.** At 560 tokens a page, **447 pages is a whole minute's budget in a
+  single request** — and the API accepts up to 1,000. Three 200-page documents in one turn is 336,000 tokens,
+  refused before it is sent by `gemini.maxAttachmentTokens` (#136), because no rate limiter helps here: the
+  request fails on 429, the reliability ladder retries into the same wall, and it spends the minute's TPM for
+  every other channel rather than only the sender's.
 - **Video can.** At default resolution, ten one-minute clips exhaust 250K TPM before RPM 15 does — counting the text baseline each turn also carries — so TPM becomes the binding limit, exactly as the issue predicted. Low media resolution cuts that 3× and moves the binding limit back to RPM.
 
 **This number is now confirmed — from the API, not the documentation.** Google moved per-tier rate limits off the public rate-limits page into AI Studio, behind an authenticated session, so it could not be read. It can be provoked instead: a single deliberately oversized `generateContent` request states the limit in its own rejection. One 407,640-token request on the dedicated development key returned `429 RESOURCE_EXHAUSTED` carrying:
@@ -86,7 +91,23 @@ One caveat on transfer: this was measured on the development project's key. The 
 
 ### 4. Do Documents Need New Plumbing? — Almost None
 
-PDFs are accepted natively: **258 tokens per page**, up to **1,000 pages** and **50 MB**, processed with native vision on page images up to 3072×3072, and text already embedded in the PDF is extracted and **not** charged as tokens. So a text-layer PDF is close to free.
+PDFs are accepted natively at **560 tokens per page**, up to **1,000 pages** and **50 MB**, processed with
+native vision on page images up to 3072×3072.
+
+**Measured, and it corrects what this document said before.** The figure here was 258 tokens a page, taken
+from Google's documentation rather than from the API, together with the claim that embedded text is extracted
+free and so "a text-layer PDF is close to free". Both were wrong. Priced with `countTokens` against
+`gemini-3.5-flash-lite` on generated PDFs of known length:
+
+```
+blank,  1 page                561 tokens
+blank, 10 pages              5601 tokens    560.0 per page, marginal
+text-heavy, ~300 words/page  5601 tokens    identical — text adds nothing
+```
+
+So the rate is **more than double** what was recorded, and **page content does not matter at all**: a dense
+page and an empty page cost the same. Cost tracks page count and nothing else, which is why byte size bounds
+it not even weakly — a 17 KB document can carry 50 pages and cost 28,000 tokens.
 
 The existing path in `src/agent/roka.ts` already does everything required — download, size-check, base64, attach as `inlineData`. Two changes only:
 
@@ -188,7 +209,7 @@ Enforced in `src/discord/attachments.ts` alongside the existing image policy, an
 
 | Modality                          | Byte Cap  | Rationale                                  | Duration Implied          |
 | --------------------------------- | --------- | ------------------------------------------ | ------------------------- |
-| PDF / documents                   | 10 MB     | Latency; 258 tok/page is never binding     | ~1,000 pages by API limit |
+| PDF / documents                   | 10 MB     | Latency; 560 tok/page binds well before it | ~1,000 pages by API limit |
 | Audio                             | 8 MB      | ~5 min at 128 kbps; 32 tok/s is negligible | ~5 min typical            |
 | Video (low res)                   | 10 MB     | Latency and memory agree                   | ~60 s typical             |
 | **Total in flight, all channels** | **32 MB** | ~20% of the 1 GB cap at worst case         | —                         |

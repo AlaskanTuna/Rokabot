@@ -6,6 +6,7 @@ import { getFacts, refreshFactTimestamps } from '../../storage/userMemory.js'
 import { GEMINI_IMAGE_TOKENS } from '../../utils/imageProcessor.js'
 import { logger } from '../../utils/logger.js'
 import { estimateTokens } from '../../utils/tokens.js'
+import { measureAttachmentTokens, needsMeasuring } from '../attachmentCost.js'
 import { computeBackoff as computeRetryBackoff } from '../geminiReliability.js'
 import { retrieveForTurn } from '../memory/retriever.js'
 import { getMessages } from '../passiveBuffer.js'
@@ -48,6 +49,13 @@ vi.mock('../../storage/metricsStore.js', () => ({
 
 vi.mock('../memory/retriever.js', () => ({
   retrieveForTurn: vi.fn()
+}))
+
+// Pricing an attachment is a network call. Mocked to a cheap value so the download tests below can keep
+// counting fetches; a real countTokens would add one per non-image turn and break their arithmetic.
+vi.mock('../attachmentCost.js', () => ({
+  measureAttachmentTokens: vi.fn(async () => 100),
+  needsMeasuring: vi.fn(() => false)
 }))
 
 vi.mock('../passiveBuffer.js', () => ({
@@ -1190,40 +1198,52 @@ describe('attachment intake', () => {
    * exercised. `contentLength` is separately controllable because the guard exists for responses whose
    * header is absent or understated — a stub that always tells the truth would never reach it.
    */
-  let lastServe: { delivered: number; cancelled: boolean }
+  let lastServe: { delivered: number; cancelled: boolean; init?: RequestInit; calls: number }
 
   function serve(bytes: Buffer, { contentLength }: { contentLength?: string | null } = {}) {
     const header = contentLength === undefined ? String(bytes.byteLength) : contentLength
     const chunkSize = 64 * 1024
-    const state = { delivered: 0, cancelled: false }
+    const state: { delivered: number; cancelled: boolean; init?: RequestInit; calls: number } = {
+      delivered: 0,
+      cancelled: false,
+      calls: 0
+    }
 
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => ({
-        ok: true,
-        headers: { get: (name: string) => (name === 'content-length' ? header : null) },
-        body: new ReadableStream<Uint8Array>({
-          pull(controller) {
-            if (state.delivered >= bytes.byteLength) {
-              controller.close()
-              return
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        state.calls += 1
+        state.init = init
+        return {
+          ok: true,
+          headers: { get: (name: string) => (name === 'content-length' ? header : null) },
+          body: new ReadableStream<Uint8Array>({
+            pull(controller) {
+              if (state.delivered >= bytes.byteLength) {
+                controller.close()
+                return
+              }
+              const slice = bytes.subarray(state.delivered, state.delivered + chunkSize)
+              state.delivered += slice.byteLength
+              controller.enqueue(new Uint8Array(slice))
+            },
+            cancel() {
+              state.cancelled = true
             }
-            const slice = bytes.subarray(state.delivered, state.delivered + chunkSize)
-            state.delivered += slice.byteLength
-            controller.enqueue(new Uint8Array(slice))
-          },
-          cancel() {
-            state.cancelled = true
-          }
-        })
-      }))
+          })
+        }
+      })
     )
 
     lastServe = state
     return state
   }
 
-  async function inlineFor(contentType: string, bytes: Buffer, serveOpts?: { contentLength?: string | null }) {
+  async function inlineFor(
+    contentType: string,
+    bytes: Buffer,
+    serveOpts?: { contentLength?: string | null; statedSize?: number }
+  ) {
     serve(bytes, serveOpts)
     let captured: { newMessage?: { parts?: Array<{ inlineData?: { data: string; mimeType: string } }> } } | undefined
     __setTestRunTurnFactory(() => async (_attempt, _signal, request) => {
@@ -1238,7 +1258,7 @@ describe('attachment intake', () => {
       displayName: 'Mio',
       username: 'mio',
       userId: 'mio-id',
-      imageAttachments: [{ url: 'https://cdn.test/file', contentType }]
+      imageAttachments: [{ url: 'https://cdn.test/file', contentType, size: serveOpts?.statedSize }]
     })
     await destroySession('roka-attachment-channel')
 
@@ -1385,8 +1405,219 @@ describe('attachment intake', () => {
 
   // An oversized file passes the Discord layer's type check and dies at the download, so without this count
   // it vanishes: she answers the text and never mentions the file, which reads as her ignoring it.
+  // --- telling the model when an attachment did not arrive (#137) ---
+
+  /** Every text part the model is handed for the turn, which is where a missing attachment has to be said. */
+  async function turnTextsFor(attachments: Array<{ contentType: string; ok: boolean }>) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: attachments[0]?.ok ?? true,
+        headers: { get: () => String(OGG_BYTES.byteLength) },
+        body: new ReadableStream<Uint8Array>({
+          pull(controller) {
+            controller.enqueue(new Uint8Array(OGG_BYTES))
+            controller.close()
+          }
+        })
+      }))
+    )
+
+    let captured: { newMessage?: { parts?: Array<{ text?: string }> } } | undefined
+    __setTestRunTurnFactory(() => async (_attempt, _signal, request) => {
+      captured = request
+      return { text: 'Mm~', hasText: true, hasFunctionCall: false }
+    })
+
+    const channelId = `roka-notice-${attachments.map((a) => a.ok).join('-')}-${attachments.length}`
+    await generateResponse({
+      channelId,
+      guildId: 'attachment-guild',
+      userMessage: 'watch this and tell me what happens in it',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id',
+      imageAttachments: attachments.length
+        ? attachments.map((a, i) => ({ url: `https://cdn.test/f${i}`, contentType: a.contentType }))
+        : undefined
+    })
+    await destroySession(channelId)
+
+    return (captured?.newMessage?.parts ?? []).flatMap((part) => (part.text ? [part.text] : []))
+  }
+
+  // The whole bug: without this the turn looks like an ordinary question about a video, and the model
+  // answers from nothing. It invented a 19-minute Stephen King recap, unhedged.
+  it('tells the model when an attachment could not be retrieved', async () => {
+    const texts = await turnTextsFor([{ contentType: 'video/mp4', ok: false }])
+
+    expect(texts.some((text) => text.includes('could not be retrieved'))).toBe(true)
+  })
+
+  // Not a video fix. The driver is the phrasing that reaches the model, not the modality — "listen to this"
+  // happens to read less like a searchable title than "watch this and tell me what happens in it", which is
+  // why audio looked safe until someone varied the sentence instead of the file type.
+  it('tells the model about a failed audio download too, not only video', async () => {
+    const texts = await turnTextsFor([{ contentType: 'audio/ogg', ok: false }])
+
+    expect(texts.some((text) => text.includes('could not be retrieved'))).toBe(true)
+  })
+
+  it('says how many failed rather than that something did', async () => {
+    const texts = await turnTextsFor([
+      { contentType: 'video/mp4', ok: false },
+      { contentType: 'video/mp4', ok: false }
+    ])
+
+    expect(texts.some((text) => text.includes('2 file(s)'))).toBe(true)
+  })
+
+  // Order is load-bearing, not cosmetic. Measured: with no notice the model answers the request by reaching
+  // for search_web — 4 of 4 — and reports what it finds as though it had watched the file, which is why the
+  // fabrications on #137 were real titles. The notice has to be in front of the request it is contradicting.
+  it('puts the notice before the request it contradicts', async () => {
+    const texts = await turnTextsFor([{ contentType: 'video/mp4', ok: false }])
+    const notice = texts.findIndex((text) => text.includes('could not be retrieved'))
+    const request = texts.findIndex((text) => text.includes('watch this'))
+
+    expect(notice).toBeLessThan(request)
+  })
+
+  it('still hands the model what the user actually said', async () => {
+    const texts = await turnTextsFor([{ contentType: 'video/mp4', ok: false }])
+
+    expect(texts.some((text) => text.includes('watch this and tell me what happens in it'))).toBe(true)
+  })
+
+  // The cheap way to pass the test above is to inject the line always, so the quiet path is asserted too.
+  it('says nothing when the attachment arrived', async () => {
+    const texts = await turnTextsFor([{ contentType: 'audio/ogg', ok: true }])
+
+    expect(texts.some((text) => text.includes('could not be retrieved'))).toBe(false)
+  })
+
+  it('says nothing when there was no attachment at all', async () => {
+    const texts = await turnTextsFor([])
+
+    expect(texts.some((text) => text.includes('could not be retrieved'))).toBe(false)
+  })
+
+  // --- oversized media taken as a prefix (#135) ---
+
+  function isobmff(order: string[], padTo: number) {
+    const boxes = order.map((type) => {
+      const b = Buffer.alloc(64, 0)
+      b.writeUInt32BE(64, 0)
+      b.write(type, 4, 'latin1')
+      return b
+    })
+    const head = Buffer.concat(boxes)
+    return Buffer.concat([head, Buffer.alloc(Math.max(0, padTo - head.length), 0x20)])
+  }
+
+  const OVERSIZED_MP3 = 20 * MB
+  const OVERSIZED_MP4 = 30 * MB
+
+  it('takes the opening of an oversized mp3 rather than refusing it', async () => {
+    const parts = await inlineFor('audio/mpeg', Buffer.alloc(9 * MB, 0x20), { statedSize: OVERSIZED_MP3 })
+
+    expect(parts.map((part) => part.mimeType)).toEqual(['audio/mp3'])
+  })
+
+  // The saving is the whole point: on a 206 the excess is never sent. Asserted on the request rather than on
+  // the bytes, because a server that ignores Range would still yield the right bytes and no saving at all.
+  it('asks for only the first bytes rather than the whole file', async () => {
+    await inlineFor('audio/mpeg', Buffer.alloc(9 * MB, 0x20), { statedSize: OVERSIZED_MP3 })
+
+    expect((lastServe.init?.headers as Record<string, string>)?.Range).toBe(`bytes=0-${8 * MB - 1}`)
+  })
+
+  it('asks for the whole file when it fits', async () => {
+    await inlineFor('audio/mpeg', OGG_BYTES, { statedSize: 1024 })
+
+    expect(lastServe.init).toBeUndefined()
+  })
+
+  // Not an edge case: this is what Discord's CDN actually does. It advertises `accept-ranges: bytes` and
+  // then answers 200 with the whole body, measured. The first version of this treated that overflow as a
+  // failure, which would have turned every oversized file into a silent refusal on the only path that runs.
+  it('keeps the prefix when the server ignores Range and sends the whole file, as Discord does', async () => {
+    const parts = await inlineFor('audio/mpeg', Buffer.alloc(20 * MB, 0x20), { statedSize: OVERSIZED_MP3 })
+
+    expect(parts).toHaveLength(1)
+  })
+
+  it('cuts the prefix at exactly the ceiling, not the chunk that crossed it', async () => {
+    const [clip] = await inlineFor('audio/mpeg', Buffer.alloc(20 * MB, 0x20), { statedSize: OVERSIZED_MP3 })
+
+    expect(Buffer.from(clip.data, 'base64').byteLength).toBe(8 * MB)
+  })
+
+  it('takes the opening of an oversized video whose index comes first', async () => {
+    const parts = await inlineFor('video/mp4', isobmff(['ftyp', 'moov', 'mdat'], 9 * MB), {
+      statedSize: OVERSIZED_MP4
+    })
+
+    expect(parts).toHaveLength(1)
+  })
+
+  // A phone MP4 carries its index last, so a prefix has nothing to decode against. Sending it raises no
+  // error anywhere — the request succeeds and the answer is about nothing — so it must be refused instead.
+  it('refuses an oversized video whose index sits behind its media data', async () => {
+    const parts = await inlineFor('video/mp4', isobmff(['ftyp', 'mdat', 'moov'], 9 * MB), {
+      statedSize: OVERSIZED_MP4
+    })
+
+    expect(parts).toEqual([])
+  })
+
+  it('refuses an oversized document, which has no valid prefix at all', async () => {
+    expect(await inlineFor('application/pdf', PDF_BYTES, { statedSize: 30 * MB })).toEqual([])
+  })
+
+  // Refused on the stated size before any request, so a 200 MB upload costs not one byte of transfer.
+  it('never even asks for an oversized file it could not prefix', async () => {
+    await inlineFor('application/pdf', PDF_BYTES, { statedSize: 30 * MB })
+
+    expect(lastServe.calls).toBe(0)
+  })
+
   it('reports an oversized attachment as dropped', async () => {
     expect(await droppedFor('video/mp4', Buffer.alloc(11 * MB, 0x20))).toBe(1)
+  })
+
+  it('reports an oversized-but-prefixed attachment as truncated, not dropped', async () => {
+    serve(Buffer.alloc(9 * MB, 0x20))
+    __setTestRunTurnFactory(() => async () => ({ text: 'Mm~', hasText: true, hasFunctionCall: false }))
+    const result = await generateResponse({
+      channelId: 'roka-truncated',
+      guildId: 'attachment-guild',
+      userMessage: 'listen to this',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id',
+      imageAttachments: [{ url: 'https://cdn.test/file', contentType: 'audio/mpeg', size: 20 * MB }]
+    })
+    await destroySession('roka-truncated')
+
+    expect([result.truncatedAttachments, result.droppedAttachments]).toEqual([1, 0])
+  })
+
+  it('reports nothing truncated when the whole file fitted', async () => {
+    serve(OGG_BYTES)
+    __setTestRunTurnFactory(() => async () => ({ text: 'Mm~', hasText: true, hasFunctionCall: false }))
+    const result = await generateResponse({
+      channelId: 'roka-untruncated',
+      guildId: 'attachment-guild',
+      userMessage: 'listen to this',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id',
+      imageAttachments: [{ url: 'https://cdn.test/file', contentType: 'audio/mpeg', size: 1024 }]
+    })
+    await destroySession('roka-untruncated')
+
+    expect(result.truncatedAttachments).toBe(0)
   })
 
   it('reports nothing dropped when the attachment arrived', async () => {
@@ -1421,6 +1652,105 @@ describe('attachment intake', () => {
   })
 
   // Documents are billed per page rather than per image, so the image rate must not be applied to them.
+  // #136: size does not bound token cost — a 17 KB PDF is 560 tokens a page. Over the ceiling the turn is
+  // refused here rather than sent to fail on a 429, which would retry into the same wall and spend the
+  // minute's TPM for every other channel.
+  it('refuses attachments that cost more than one turn may spend', async () => {
+    let captured: { newMessage?: { parts?: Array<{ inlineData?: unknown }> } } | undefined
+    vi.mocked(needsMeasuring).mockReturnValueOnce(true)
+    vi.mocked(measureAttachmentTokens).mockResolvedValueOnce(config.gemini.maxAttachmentTokens + 1)
+    serve(PDF_BYTES)
+    __setTestRunTurnFactory(() => async (_a, _s, request) => {
+      captured = request
+      return { text: 'Mm~', hasText: true, hasFunctionCall: false }
+    })
+
+    const result = await generateResponse({
+      channelId: 'refuse-cost',
+      guildId: 'attachment-guild',
+      userMessage: 'read this',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id',
+      imageAttachments: [{ url: 'https://cdn.test/file', contentType: 'application/pdf' }]
+    })
+    await destroySession('refuse-cost')
+
+    expect(result.refusedAttachments).toBe(1)
+    expect((captured?.newMessage?.parts ?? []).some((part) => part.inlineData)).toBe(false)
+  })
+
+  // The two mechanisms meet here: refusing on cost removes the attachment, which re-creates exactly the
+  // condition #137 fixed — file gone, request unchanged, and the model reaching for search_web to fill the
+  // hole. A refusal has to say so for the same reason a failed download does.
+  //
+  // Two attachments rather than one, because with one the notice reads correctly whatever number the code
+  // put in it. The peer probed this: `refusedAttachments = 1` in place of `imageParts.length` failed nothing
+  // at all. Refusal is all-or-nothing, so the count is the whole set and the assertion has to be able to
+  // tell the whole set from one of it.
+  it('tells the model when attachments were refused on cost, and how many went with them', async () => {
+    let captured: { newMessage?: { parts?: Array<{ text?: string }> } } | undefined
+    vi.mocked(needsMeasuring).mockReturnValueOnce(true)
+    vi.mocked(measureAttachmentTokens).mockResolvedValueOnce(config.gemini.maxAttachmentTokens + 1)
+    serve(PDF_BYTES)
+    __setTestRunTurnFactory(() => async (_a, _s, request) => {
+      captured = request
+      return { text: 'Mm~', hasText: true, hasFunctionCall: false }
+    })
+
+    await generateResponse({
+      channelId: 'refuse-notice',
+      guildId: 'attachment-guild',
+      userMessage: 'read this',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id',
+      imageAttachments: [
+        { url: 'https://cdn.test/file', contentType: 'application/pdf' },
+        { url: 'https://cdn.test/file', contentType: 'application/pdf' }
+      ]
+    })
+    await destroySession('refuse-notice')
+
+    const texts = (captured?.newMessage?.parts ?? []).flatMap((part) => (part.text ? [part.text] : []))
+    expect(texts.some((text) => text.includes('2 file(s)') && text.includes('together they are too long'))).toBe(true)
+  })
+
+  it('admits attachments that fit the ceiling', async () => {
+    let captured: { newMessage?: { parts?: Array<{ inlineData?: unknown }> } } | undefined
+    vi.mocked(needsMeasuring).mockReturnValueOnce(true)
+    vi.mocked(measureAttachmentTokens).mockResolvedValueOnce(config.gemini.maxAttachmentTokens - 1)
+    serve(PDF_BYTES)
+    __setTestRunTurnFactory(() => async (_a, _s, request) => {
+      captured = request
+      return { text: 'Mm~', hasText: true, hasFunctionCall: false }
+    })
+
+    const result = await generateResponse({
+      channelId: 'admit-cost',
+      guildId: 'attachment-guild',
+      userMessage: 'read this',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id',
+      imageAttachments: [{ url: 'https://cdn.test/file', contentType: 'application/pdf' }]
+    })
+    await destroySession('admit-cost')
+
+    expect(result.refusedAttachments).toBe(0)
+    expect((captured?.newMessage?.parts ?? []).some((part) => part.inlineData)).toBe(true)
+  })
+
+  // The probe is a network round trip. Spending one on a turn whose cost is already known would tax every
+  // image turn to learn a number that cannot reach the ceiling.
+  it('does not price a turn whose attachments are all images', async () => {
+    vi.mocked(measureAttachmentTokens).mockClear()
+    serve(PNG_BYTES)
+    await inlineFor('image/png', PNG_BYTES)
+
+    expect(measureAttachmentTokens).not.toHaveBeenCalled()
+  })
+
   it('does not charge a document at the image rate', async () => {
     serve(PDF_BYTES)
     const withDocument = await tokensInFor({ url: 'https://cdn.test/file', contentType: 'application/pdf' })
@@ -1446,6 +1776,12 @@ describe('attachment bytes are released after the turn', () => {
   })
 
   async function runTurn(channelId: string, fail: boolean) {
+    // A thrown turn goes through the real retry ladder with real backoff, which is several seconds and has
+    // timed out under load. The retry count is incidental to what this asserts — that a failed turn still
+    // reaches the strip — so it is taken out rather than waited on.
+    const retries = config.gemini.liveMaxRetries
+    if (fail) config.gemini.liveMaxRetries = 0
+
     __setTestRunTurnFactory(() => async () => {
       if (fail) throw new Error('model exploded')
       return { text: 'Mm~', hasText: true, hasFunctionCall: false }
@@ -1459,6 +1795,7 @@ describe('attachment bytes are released after the turn', () => {
       userId: 'mio-id'
     })
     await destroySession(channelId)
+    config.gemini.liveMaxRetries = retries
   }
 
   // The retention contract test proves the strip works; this proves the turn reaches it. Deleting the call

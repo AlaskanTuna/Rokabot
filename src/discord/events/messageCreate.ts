@@ -23,6 +23,8 @@ import {
   getRandomBusy,
   getRandomDecline,
   getRandomError,
+  getRandomOversizedAttachment,
+  getRandomPartialAttachment,
   getRandomUnsupportedAttachment,
   splitResponse
 } from '../responses.js'
@@ -413,25 +415,32 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
       // Inside the try, not before it, so the reservation above cannot be stranded by anything between the
       // two — markFree on a channel that was never marked is a no-op delete, so this costs nothing.
       markBusy(channelId)
-      const [{ text: responseText, tone, toolsUsed, metrics, droppedAttachments }, sources] = await withSearchCitations(
-        () =>
-          generateResponse({
-            channelId,
-            guildId,
-            userMessage: content || '(shared an image)',
-            displayName,
-            username,
-            userId: message.author.id,
-            imageAttachments: imageAttachments.length > 0 ? imageAttachments : undefined
-          })
+      const [
+        { text: responseText, tone, toolsUsed, metrics, droppedAttachments, truncatedAttachments, refusedAttachments },
+        sources
+      ] = await withSearchCitations(() =>
+        generateResponse({
+          channelId,
+          guildId,
+          userMessage: content || '(shared an image)',
+          displayName,
+          username,
+          userId: message.author.id,
+          imageAttachments: imageAttachments.length > 0 ? imageAttachments : undefined
+        })
       )
 
       logger.debug({ channelId, tone, responseLength: responseText.length }, 'ADK response received')
 
       // Same nudge as /ask: she answers either way, and says plainly the file was not one she can open, whether
       // the type was wrong or the bytes never arrived — an oversized clip passes the type check and fails later.
-      const unopened = unsupportedCount > 0 || droppedAttachments > 0
-      const withNudge = unopened ? `${responseText}\n\n${getRandomUnsupportedAttachment()}` : responseText
+      // Two different things to say, and they are not alternatives: a turn can carry one file she could not
+      // open and another she could only take the opening of.
+      const notes: string[] = []
+      if (unsupportedCount > 0 || droppedAttachments > 0) notes.push(getRandomUnsupportedAttachment())
+      if (truncatedAttachments > 0) notes.push(getRandomPartialAttachment())
+      if (refusedAttachments > 0) notes.push(getRandomOversizedAttachment())
+      const withNudge = notes.length > 0 ? `${responseText}\n\n${notes.join('\n\n')}` : responseText
       const chunks = splitResponse(withNudge)
       logger.debug({ channelId, chunkCount: chunks.length }, 'Response split into chunks')
       await message.reply(buildRokaMessage(chunks[0], tone, toolsUsed, sources))
