@@ -187,7 +187,8 @@ describe('global in-flight byte budget, at the handlers', () => {
     mocks.generateResponse.mockImplementationOnce(
       () =>
         new Promise((resolve) => {
-          releaseFirst = () => resolve({ text: 'hi', tone: 'neutral', metrics: {}, toolsUsed: [] })
+          releaseFirst = () =>
+            resolve({ text: 'hi', tone: 'neutral', metrics: {}, toolsUsed: [], droppedAttachments: 0 })
         })
     )
 

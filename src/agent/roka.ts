@@ -4,6 +4,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { BasePlugin, InMemorySessionService, LlmAgent, Runner, createEvent, isFinalResponse } from '@google/adk'
 import type { Event, LlmResponse } from '@google/adk'
 import type { GetSessionRequest, Session } from '@google/adk'
+import { MediaResolution } from '@google/genai'
 import type { Content, Part } from '@google/genai'
 import { config } from '../config.js'
 import type { WindowMessage } from '../session/types.js'
@@ -51,6 +52,12 @@ export interface GenerateResult {
   tone: ToneKey
   metrics: ResponseMetrics
   toolsUsed: string[]
+  /**
+   * Attachments that were admitted by type but never reached the model — oversized, or the download failed.
+   * The Discord layer counts only *unsupported types* on its own side, so without this an oversized file is
+   * dropped in total silence and she answers as though nothing were attached, which reads as her ignoring it.
+   */
+  droppedAttachments: number
 }
 
 const APP_NAME = 'rokabot'
@@ -420,9 +427,17 @@ export async function runTurnWithReliability(options: RunTurnWithReliabilityOpti
 function attachmentMarker(mimeType: string): string {
   if (mimeType.startsWith('image/')) return '(an image)'
   if (mimeType.startsWith('audio/')) return '(an audio clip)'
+  if (mimeType.startsWith('video/')) return '(a video)'
   return '(a document)'
 }
 
+/** Does this request carry video? Only then is media resolution worth pinning, since the setting is
+ * request-wide and would otherwise change how images are read too. */
+function requestCarriesVideo(request: { contents?: Content[] }): boolean {
+  return (request.contents ?? []).some((content) =>
+    (content.parts ?? []).some((part) => part.inlineData?.mimeType?.startsWith('video/'))
+  )
+}
 /** Caps event history returned by getSession to keep context within budget. Exported so the retention
  * contract test can drive a real ADK Runner against this exact class rather than a stand-in — the
  * `__setTestRunTurnFactory` seam replaces the call to `runner.runAsync`, so `appendEvent` never runs under
@@ -516,6 +531,14 @@ export const rokaAgent = new LlmAgent({
     if (prompt) {
       request.config = request.config ?? ({} as NonNullable<typeof request.config>)
       request.config!.systemInstruction = prompt
+    }
+    // Low media resolution is 100 tokens a second of video rather than 300, and at the 10 MB cap that is
+    // what keeps a clip inside the measured 250,000 TPM. Set per request rather than on the agent because
+    // mediaResolution is request-level and governs images as well — pinning it globally would quietly
+    // re-price and re-render every picture she has ever been able to see, which is not this change.
+    if (requestCarriesVideo(request)) {
+      request.config = request.config ?? ({} as NonNullable<typeof request.config>)
+      request.config!.mediaResolution = MediaResolution.MEDIA_RESOLUTION_LOW
     }
     return undefined
   },
@@ -718,6 +741,44 @@ export async function destroyAllSessions(): Promise<void> {
   logger.info('All ADK sessions destroyed')
 }
 
+/**
+ * Read a response body, stopping the transfer the moment it passes `limit`.
+ *
+ * What this replaces read the whole body into memory with `arrayBuffer()` and measured it afterwards, which
+ * is only safe while every response carries an honest `content-length`. Discord's CDN does, and at 4-10 MB
+ * an overrun was harmless anyway — but a header that is absent or understated would have let a response
+ * exhaust the container before anything checked it, and at video sizes that is the OOM kill the byte budget
+ * exists to prevent. Cancelling the reader discards the rest and closes the connection, so an oversized
+ * transfer costs only the bytes already in flight.
+ *
+ * There is deliberately no `arrayBuffer()` fallback for a body-less response: a fallback is a path where the
+ * guard does not run, and it would be taken by exactly the malformed responses the guard is for.
+ */
+async function readWithinLimit(response: Response, limit: number, url: string): Promise<Buffer | null> {
+  if (!response.body) {
+    logger.warn({ url }, 'Attachment response carried no readable body, skipping')
+    return null
+  }
+
+  const reader = response.body.getReader()
+  const chunks: Uint8Array[] = []
+  let received = 0
+
+  let chunk = await reader.read()
+  while (!chunk.done) {
+    received += chunk.value.byteLength
+    if (received > limit) {
+      await reader.cancel()
+      logger.warn({ url, received, limit }, 'Attachment passed its size limit mid-transfer, aborted')
+      return null
+    }
+    chunks.push(chunk.value)
+    chunk = await reader.read()
+  }
+
+  return Buffer.concat(chunks)
+}
+
 /** Download one attachment as base64, returning null if it fails or exceeds the ceiling for its type */
 async function downloadAttachment(
   attachment: ImageAttachment
@@ -742,12 +803,8 @@ async function downloadAttachment(
       return null
     }
 
-    const buffer = await response.arrayBuffer()
-
-    if (buffer.byteLength > limit) {
-      logger.warn({ url, size: buffer.byteLength, limit }, 'Attachment exceeds its size limit, skipping')
-      return null
-    }
+    const buffer = await readWithinLimit(response, limit, url)
+    if (!buffer) return null
 
     // A document or an audio clip goes to the model exactly as it arrived. sharp is an image pipeline — handed
     // anything else it throws, and its catch returns the undecoded bytes relabelled image/jpeg, so the file
@@ -755,10 +812,10 @@ async function downloadAttachment(
     // spelling of MP3. tokens stays 0: audio is billed per second, and seconds are not knowable without
     // decoding — the same argument docs/multimodal.md makes against enforcing duration caps.
     if (!isImage) {
-      return { data: Buffer.from(buffer).toString('base64'), mimeType: geminiMimeType(contentType), tokens: 0 }
+      return { data: buffer.toString('base64'), mimeType: geminiMimeType(contentType), tokens: 0 }
     }
 
-    const processed = await processImageForGemini(Buffer.from(buffer))
+    const processed = await processImageForGemini(buffer)
     return { data: processed.data.toString('base64'), mimeType: processed.mimeType, tokens: GEMINI_IMAGE_TOKENS }
   } catch (error) {
     logger.warn({ url, error }, 'Error downloading attachment')
@@ -924,8 +981,10 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
 
   const imageParts: Part[] = []
   let imageTokens = 0
+  let droppedAttachments = 0
   if (imageAttachments?.length) {
     const downloads = await Promise.all(imageAttachments.map((img) => downloadAttachment(img)))
+    droppedAttachments = downloads.filter((result) => result === null).length
     for (const result of downloads) {
       if (result) {
         imageParts.push({ inlineData: { data: result.data, mimeType: result.mimeType } })
@@ -1155,5 +1214,5 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     tokensOutEst: estimateTokens(reliability.text)
   }
 
-  return { text: reliability.text, tone, metrics, toolsUsed }
+  return { text: reliability.text, tone, metrics, toolsUsed, droppedAttachments }
 }

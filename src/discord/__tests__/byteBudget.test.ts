@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { MAX_AUDIO_SIZE_BYTES, MAX_DOCUMENT_SIZE_BYTES, MAX_IMAGE_SIZE_BYTES } from '../../agent/attachmentLimits.js'
+import {
+  MAX_AUDIO_SIZE_BYTES,
+  MAX_DOCUMENT_SIZE_BYTES,
+  MAX_IMAGE_SIZE_BYTES,
+  MAX_VIDEO_SIZE_BYTES
+} from '../../agent/attachmentLimits.js'
 import { config } from '../../config.js'
 import { MAX_ATTACHMENTS } from '../attachments.js'
 import { inFlightBytes, release, reservationFor, tryReserve } from '../byteBudget.js'
@@ -9,6 +14,7 @@ const BUDGET = config.discord.maxInFlightAttachmentBytes
 const image = (size?: number) => ({ url: 'https://cdn.example/i.png', contentType: 'image/png', size })
 const document = (size?: number) => ({ url: 'https://cdn.example/d.pdf', contentType: 'application/pdf', size })
 const audio = (size?: number) => ({ url: 'https://cdn.example/a.ogg', contentType: 'audio/ogg', size })
+const video = (size?: number) => ({ url: 'https://cdn.example/v.mp4', contentType: 'video/mp4', size })
 
 beforeEach(() => {
   release(inFlightBytes())
@@ -52,6 +58,13 @@ describe('reservationFor', () => {
 
   it('clamps an oversized audio clip to the audio ceiling, not the document one', () => {
     expect(reservationFor([audio(MAX_DOCUMENT_SIZE_BYTES)])).toBe(MAX_AUDIO_SIZE_BYTES)
+  })
+
+  // Honest limitation: MAX_VIDEO_SIZE_BYTES and MAX_DOCUMENT_SIZE_BYTES are both 10 MB today, so removing
+  // video's branch from sizeLimitFor changes no behaviour and this assertion cannot fail. It is here to
+  // state the intended ceiling, not to guard it — it starts guarding the moment the two diverge.
+  it('reserves the video ceiling when a video states no size', () => {
+    expect(reservationFor([video()])).toBe(MAX_VIDEO_SIZE_BYTES)
   })
 })
 

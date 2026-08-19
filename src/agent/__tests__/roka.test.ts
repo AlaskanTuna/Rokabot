@@ -697,6 +697,49 @@ describe('rokaAgent safety settings', () => {
   })
 })
 
+describe('media resolution on the model request', () => {
+  const context = { state: { get: () => 'a prompt' } } as unknown as CallbackContext
+  const callback = rokaAgent.beforeModelCallback as (params: {
+    context: CallbackContext
+    request: LlmRequest
+  }) => Promise<unknown>
+
+  const requestCarrying = (mimeType: string) =>
+    ({ contents: [{ role: 'user', parts: [{ inlineData: { mimeType, data: 'AA==' } }] }] }) as LlmRequest
+
+  // Asserted on the request rather than read off the agent config: mediaResolution is request-level, so
+  // where it is set decides what it applies to, and only the request shows that.
+  it('pins low media resolution when the request carries a video', async () => {
+    const request = requestCarrying('video/mp4')
+    await callback({ context, request })
+
+    expect(request.config?.mediaResolution).toBe('MEDIA_RESOLUTION_LOW')
+  })
+
+  // The reason it is not on the agent. mediaResolution governs images as well as video frames, so pinning
+  // it globally would re-price and re-render every picture — a change to a shipped feature, not to this one.
+  it('leaves an image request at the default resolution', async () => {
+    const request = requestCarrying('image/png')
+    await callback({ context, request })
+
+    expect(request.config?.mediaResolution).toBeUndefined()
+  })
+
+  it('leaves a text-only request at the default resolution', async () => {
+    const request = { contents: [{ role: 'user', parts: [{ text: 'hello' }] }] } as LlmRequest
+    await callback({ context, request })
+
+    expect(request.config?.mediaResolution).toBeUndefined()
+  })
+
+  it('still applies the system prompt on a video request', async () => {
+    const request = requestCarrying('video/mp4')
+    await callback({ context, request })
+
+    expect(request.config?.systemInstruction).toBe('a prompt')
+  })
+})
+
 describe('beforeModelCallback safety steering seam', () => {
   function fakeContext(prompt: string): CallbackContext {
     return { state: { get: () => prompt } } as unknown as CallbackContext
@@ -1134,6 +1177,7 @@ describe('attachment intake', () => {
   )
   const PDF_BYTES = Buffer.from('%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\n')
   const OGG_BYTES = Buffer.from('OggS\x00\x02vorbis-ish payload that is not an image at all')
+  const VIDEO_BYTES = Buffer.from('\x00\x00\x00\x18ftypmp42 not a picture either')
   const MB = 1024 * 1024
 
   afterEach(() => {
@@ -1141,19 +1185,46 @@ describe('attachment intake', () => {
     vi.unstubAllGlobals()
   })
 
-  function serve(bytes: Buffer) {
+  /**
+   * Serves the bytes as a real stream, in chunks, so the download's running byte counter is actually
+   * exercised. `contentLength` is separately controllable because the guard exists for responses whose
+   * header is absent or understated — a stub that always tells the truth would never reach it.
+   */
+  let lastServe: { delivered: number; cancelled: boolean }
+
+  function serve(bytes: Buffer, { contentLength }: { contentLength?: string | null } = {}) {
+    const header = contentLength === undefined ? String(bytes.byteLength) : contentLength
+    const chunkSize = 64 * 1024
+    const state = { delivered: 0, cancelled: false }
+
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => ({
         ok: true,
-        headers: { get: (name: string) => (name === 'content-length' ? String(bytes.byteLength) : null) },
-        arrayBuffer: async () => new Uint8Array(bytes).buffer
+        headers: { get: (name: string) => (name === 'content-length' ? header : null) },
+        body: new ReadableStream<Uint8Array>({
+          pull(controller) {
+            if (state.delivered >= bytes.byteLength) {
+              controller.close()
+              return
+            }
+            const slice = bytes.subarray(state.delivered, state.delivered + chunkSize)
+            state.delivered += slice.byteLength
+            controller.enqueue(new Uint8Array(slice))
+          },
+          cancel() {
+            state.cancelled = true
+          }
+        })
       }))
     )
+
+    lastServe = state
+    return state
   }
 
-  async function inlineFor(contentType: string, bytes: Buffer) {
-    serve(bytes)
+  async function inlineFor(contentType: string, bytes: Buffer, serveOpts?: { contentLength?: string | null }) {
+    serve(bytes, serveOpts)
     let captured: { newMessage?: { parts?: Array<{ inlineData?: { data: string; mimeType: string } }> } } | undefined
     __setTestRunTurnFactory(() => async (_attempt, _signal, request) => {
       captured = request
@@ -1237,6 +1308,89 @@ describe('attachment intake', () => {
 
   it('accepts an audio clip larger than the image ceiling', async () => {
     expect(await inlineFor('audio/ogg', Buffer.alloc(6 * MB, 0x20))).toHaveLength(1)
+  })
+
+  it('sends a video to the model as video', async () => {
+    expect((await inlineFor('video/mp4', VIDEO_BYTES)).map((part) => part.mimeType)).toEqual(['video/mp4'])
+  })
+
+  // The same pair as the document and audio cases. sharp handed MP4 bytes raises "Input buffer contains
+  // unsupported image format", and its catch returns the undecoded bytes relabelled image/jpeg — so a clip
+  // routed through it arrives byte-identical and misdeclared, and data alone cannot tell the difference.
+  it('hands the model the video exactly as it arrived, and says so', async () => {
+    const [clip] = await inlineFor('video/mp4', VIDEO_BYTES)
+
+    expect(clip).toEqual({ data: VIDEO_BYTES.toString('base64'), mimeType: 'video/mp4' })
+  })
+
+  // A .mov arrives as video/quicktime, the registered type; Gemini's list says video/mov.
+  it('renames a .mov to the spelling Gemini documents', async () => {
+    expect((await inlineFor('video/quicktime', VIDEO_BYTES)).map((part) => part.mimeType)).toEqual(['video/mov'])
+  })
+
+  // 9 MB discriminates video from audio: over the 8 MB audio ceiling, under video's 10 MB.
+  it('accepts a video at a size audio is refused at', async () => {
+    expect(await inlineFor('video/mp4', Buffer.alloc(9 * MB, 0x20))).toHaveLength(1)
+  })
+
+  it('refuses a video past the video ceiling', async () => {
+    expect(await inlineFor('video/mp4', Buffer.alloc(11 * MB, 0x20))).toEqual([])
+  })
+
+  // The guard exists for responses whose content-length is absent or lying. buffer-then-check passes every
+  // test where the header is honest, which is why these two say nothing about the header and everything
+  // about what was actually read.
+  it('refuses an oversized body that sent no content-length at all', async () => {
+    expect(await inlineFor('video/mp4', Buffer.alloc(11 * MB, 0x20), { contentLength: null })).toEqual([])
+  })
+
+  it('aborts the transfer rather than reading an oversized body to the end', async () => {
+    await inlineFor('video/mp4', Buffer.alloc(11 * MB, 0x20), { contentLength: null })
+
+    expect(lastServe.cancelled).toBe(true)
+  })
+
+  // The load-bearing half: buffer-then-check would also have refused the file, having first read all 11 MB
+  // into memory. This is what says the bytes never arrived.
+  it('stops reading well before the whole oversized body has arrived', async () => {
+    await inlineFor('video/mp4', Buffer.alloc(11 * MB, 0x20), { contentLength: null })
+
+    expect(lastServe.delivered).toBeLessThan(11 * MB)
+  })
+
+  it('refuses an oversized body whose content-length understates it', async () => {
+    expect(await inlineFor('video/mp4', Buffer.alloc(11 * MB, 0x20), { contentLength: '1024' })).toEqual([])
+  })
+
+  it('still reads a body of exactly the ceiling to the end', async () => {
+    expect(await inlineFor('video/mp4', Buffer.alloc(10 * MB, 0x20), { contentLength: null })).toHaveLength(1)
+  })
+
+  async function droppedFor(contentType: string, bytes: Buffer) {
+    serve(bytes)
+    __setTestRunTurnFactory(() => async () => ({ text: 'Mm~', hasText: true, hasFunctionCall: false }))
+    const channelId = `roka-dropped-${contentType.replace('/', '-')}-${bytes.byteLength}`
+    const result = await generateResponse({
+      channelId,
+      guildId: 'attachment-guild',
+      userMessage: 'look at this',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id',
+      imageAttachments: [{ url: 'https://cdn.test/file', contentType }]
+    })
+    await destroySession(channelId)
+    return result.droppedAttachments
+  }
+
+  // An oversized file passes the Discord layer's type check and dies at the download, so without this count
+  // it vanishes: she answers the text and never mentions the file, which reads as her ignoring it.
+  it('reports an oversized attachment as dropped', async () => {
+    expect(await droppedFor('video/mp4', Buffer.alloc(11 * MB, 0x20))).toBe(1)
+  })
+
+  it('reports nothing dropped when the attachment arrived', async () => {
+    expect(await droppedFor('video/mp4', VIDEO_BYTES)).toBe(0)
   })
 
   async function tokensInFor(attachment?: { url: string; contentType: string }) {

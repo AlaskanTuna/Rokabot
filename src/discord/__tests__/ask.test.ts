@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ALLOWED_AUDIO_TYPES, ALLOWED_DOCUMENT_TYPES, ALLOWED_IMAGE_TYPES } from '../attachments.js'
+import { ALLOWED_MEDIA_TYPES } from '../attachments.js'
 import { askCommand } from '../commands/ask.js'
 
 const options = askCommand.toJSON().options ?? []
@@ -20,10 +20,22 @@ const LABELS: Record<string, string> = {
   'audio/aiff': 'AIFF',
   'audio/aac': 'AAC',
   'audio/ogg': 'OGG',
-  'audio/flac': 'FLAC'
+  'audio/flac': 'FLAC',
+  'video/mp4': 'MP4',
+  'video/mov': 'MOV',
+  'video/quicktime': 'MOV',
+  'video/webm': 'WebM',
+  'video/avi': 'AVI',
+  'video/mpeg': 'MPEG',
+  'video/mpg': 'MPEG',
+  'video/x-flv': 'FLV',
+  'video/wmv': 'WMV',
+  'video/3gpp': '3GP'
 }
 
-const admitted = [...ALLOWED_IMAGE_TYPES, ...ALLOWED_DOCUMENT_TYPES, ...ALLOWED_AUDIO_TYPES]
+// Read off the union, not the individual sets: enumerating them by hand is how video ended up admitted
+// and unnamed while this very test stayed green.
+const admitted = [...ALLOWED_MEDIA_TYPES]
 
 describe('/ask option descriptions', () => {
   it('exposes one slot per attachment the turn admits', () => {
@@ -48,7 +60,7 @@ describe('/ask option descriptions', () => {
 
   // The link option is images-only on purpose — resolveImageUrl gates on ALLOWED_IMAGE_TYPES. Naming a
   // format it would refuse is the over-promise this test exists to stop.
-  it.each(['PDF', 'MP3', 'OGG', 'FLAC'])('does not promise %s on the link option', (label) => {
+  it.each(['PDF', 'MP3', 'OGG', 'FLAC', 'MP4', 'WebM'])('does not promise %s on the link option', (label) => {
     expect(linkOption!.description).not.toContain(label)
   })
 })

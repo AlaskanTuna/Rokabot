@@ -54,7 +54,13 @@ const metrics = {
 describe('interaction handler metrics', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mocks.generateResponse.mockResolvedValue({ text: 'Hello~', tone: 'playful', toolsUsed: [], metrics })
+    mocks.generateResponse.mockResolvedValue({
+      text: 'Hello~',
+      tone: 'playful',
+      toolsUsed: [],
+      metrics,
+      droppedAttachments: 0
+    })
   })
 
   it('records one completed slash turn with an enriched summary', async () => {
@@ -194,6 +200,23 @@ describe('interaction handler metrics', () => {
   // Not every audio/* type is one the model accepts, and an .m4a is the common way to find that out.
   it('nudges about an audio type the model does not accept', async () => {
     const interaction = askWith([{ url: 'https://cdn.test/a.m4a', contentType: 'audio/mp4' }])
+
+    await createInteractionHandler(rateLimiterStub() as never)(interaction as never)
+
+    expect(mocks.splitResponse.mock.calls[0][0]).toContain("I couldn't open that file~")
+  })
+
+  // A supported type whose bytes never arrived — an oversized clip is the ordinary way this happens. The
+  // type check passes, so unsupportedCount is 0 and only droppedAttachments can speak for it.
+  it('nudges when a supported attachment was too big to fetch', async () => {
+    mocks.generateResponse.mockResolvedValue({
+      text: 'Hello~',
+      tone: 'playful',
+      toolsUsed: [],
+      metrics,
+      droppedAttachments: 1
+    })
+    const interaction = askWith([PNG])
 
     await createInteractionHandler(rateLimiterStub() as never)(interaction as never)
 

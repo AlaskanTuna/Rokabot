@@ -474,18 +474,31 @@ latency against `gemini.timeout`, not by container memory. See `docs/multimodal.
 holds the ceilings and the one function that maps a type to its ceiling, so the download and the in-flight
 byte budget cannot disagree about the same file.
 
-| Kind     | Types                                              | Ceiling | Path                  |
-| -------- | -------------------------------------------------- | ------- | --------------------- |
-| Image    | `png`, `jpeg`, `gif`, `webp`                       | 4 MB    | Re-encoded by `sharp` |
-| Document | `application/pdf`                                  | 10 MB   | Untouched             |
-| Audio    | `wav`, `mp3`, `mpeg`, `aiff`, `aac`, `ogg`, `flac` | 8 MB    | Untouched             |
+| Kind     | Types                                                                           | Ceiling | Path                            |
+| -------- | ------------------------------------------------------------------------------- | ------- | ------------------------------- |
+| Image    | `png`, `jpeg`, `gif`, `webp`                                                    | 4 MB    | Re-encoded by `sharp`           |
+| Document | `application/pdf`                                                               | 10 MB   | Untouched                       |
+| Audio    | `wav`, `mp3`, `mpeg`, `aiff`, `aac`, `ogg`, `flac`                              | 8 MB    | Untouched                       |
+| Video    | `mp4`, `mpeg`, `mov`, `quicktime`, `avi`, `x-flv`, `mpg`, `webm`, `wmv`, `3gpp` | 10 MB   | Untouched, low media resolution |
 
 - **Only images go through `sharp`.** Handed anything else it throws, and its catch returns the _undecoded_
   bytes relabelled `image/jpeg` — so a document or clip routed through it arrives byte-identical but
   misdeclared and unreadable. Tests assert the data and the mimeType as a pair for exactly this reason; the
   data alone matches even when the file is broken.
-- **`audio/mpeg` is admitted and renamed.** Gemini documents `audio/mp3`, which is not a registered MIME
-  type; the registered one for an MP3 is `audio/mpeg` (RFC 3003), and that is what Discord reports. The
+- **The download aborts mid-transfer.** `readWithinLimit` streams the body with a running byte counter and
+  cancels the reader the moment it passes the ceiling. What it replaced buffered the whole body and measured
+  it afterwards, safe only while every response carries an honest `content-length` — a header that is absent
+  or understated would have let a response exhaust the container before anything checked it. There is
+  deliberately no `arrayBuffer()` fallback for a body-less response: a fallback is a path where the guard
+  does not run, and it is the path a malformed response would take. The `content-length` pre-check remains a
+  cheap early exit, and is what refuses an honestly-declared oversized file before a byte is read.
+- **Media resolution is pinned low per request, not on the agent.** `mediaResolution` is request-level and
+  governs images as well as video frames, so setting it on `rokaAgent` would re-price and re-render every
+  picture she can already see. `beforeModelCallback` sets it only when the request carries a video part.
+- **`audio/mpeg` and `video/quicktime` are admitted and renamed.** Gemini documents `audio/mp3` and
+  `video/mov`, neither of which is a registered MIME
+  type; the registered ones are `audio/mpeg` (RFC 3003) and `video/quicktime`, and those are what Discord
+  reports. The
   rename happens once, in `geminiMimeType`, at the download boundary. **Both labels are accepted** —
   measured with real MP3 bytes, identical token counts under either, because Gemini routes on content rather
   than on the declared type. The rename is therefore a preference, not a requirement: the documented name is

@@ -16,6 +16,14 @@ export const MAX_DOCUMENT_SIZE_BYTES = 10 * 1024 * 1024
 // cap is upload latency against gemini.timeout, same as the others. See docs/multimodal.md.
 export const MAX_AUDIO_SIZE_BYTES = 8 * 1024 * 1024
 
+// Video shares the document ceiling rather than getting a larger one: 10 MB is what upload latency admits
+// inside gemini.timeout, and at low media resolution it is also what holds a clip inside the measured
+// 250,000 TPM without a decode pass — roughly 40-160 s at typical Discord bitrates. See docs/multimodal.md.
+// Equal to the document ceiling today, so sizeLimitFor's video branch is not independently observable and
+// no test can pin it. Kept separate anyway: the two are set by different arguments, and a later change to
+// one should not silently move the other.
+export const MAX_VIDEO_SIZE_BYTES = 10 * 1024 * 1024
+
 /**
  * The ceiling one attachment is held to, by kind. Single declaration because the download and the in-flight
  * byte budget both need it and must not disagree — a budget that reserved one number while the download
@@ -24,6 +32,7 @@ export const MAX_AUDIO_SIZE_BYTES = 8 * 1024 * 1024
 export function sizeLimitFor(contentType: string): number {
   if (contentType.startsWith('image/')) return MAX_IMAGE_SIZE_BYTES
   if (contentType.startsWith('audio/')) return MAX_AUDIO_SIZE_BYTES
+  if (contentType.startsWith('video/')) return MAX_VIDEO_SIZE_BYTES
   return MAX_DOCUMENT_SIZE_BYTES
 }
 
@@ -38,5 +47,17 @@ export function sizeLimitFor(contentType: string): number {
  * nothing, so it is worth having. Everything else passes through.
  */
 export function geminiMimeType(contentType: string): string {
-  return contentType === 'audio/mpeg' ? 'audio/mp3' : contentType
+  return GEMINI_SPELLINGS[contentType] ?? contentType
+}
+
+/**
+ * Types whose registered name differs from the one Gemini documents. `audio/mpeg` is the registered type for
+ * an MP3 (RFC 3003) and `video/quicktime` for a .mov, and both are what Discord reports — Gemini's own list
+ * says `audio/mp3` and `video/mov`. The audio pair is measured as interchangeable, so this is a preference
+ * for the documented spelling rather than a workaround; the documented name is the one carrying a
+ * compatibility promise, and it costs nothing to send.
+ */
+const GEMINI_SPELLINGS: Record<string, string> = {
+  'audio/mpeg': 'audio/mp3',
+  'video/quicktime': 'video/mov'
 }

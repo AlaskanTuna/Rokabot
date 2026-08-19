@@ -205,8 +205,8 @@ Enforced in `src/discord/attachments.ts` alongside the existing image policy, an
 2. **PDF support** — no new infrastructure; MIME routing plus skipping `sharp`. Ships alone and is the highest value per unit of work, with an obvious use in a server that discusses visual novels.
 3. ~~**Global in-flight byte budget**~~ — **done**, 32 MB across all channels, reserved before download and released on every exit path. `discord.maxInFlightAttachmentBytes` in `config.yml`; contract in `docs/trd.md`.
 4. ~~**Audio**~~ — **done**, 8 MB, both surfaces. `audio/mpeg` is admitted and renamed to Gemini's `audio/mp3` at the download boundary; token cost stays 0 in `tokensInEst` because audio is billed per second and seconds need a decode.
-5. **Streaming size guard** — replaces `buffer-then-check`; only video needs it.
-6. **Video, low media resolution only** — last, largest, and the only modality whose token cost can bind before RPM.
+5. ~~**Streaming size guard**~~ — **done**, a running byte counter that cancels the reader mid-transfer; the `content-length` pre-check stays as a cheap early exit.
+6. ~~**Video, low media resolution only**~~ — **done**, 10 MB, resolution pinned low per request rather than on the agent so images keep their own. Default resolution declined.
 
 Steps 1 and 2 are shippable now. Steps 3–6 are a second Gate 1 conversation. The TPM figure that previously gated video is confirmed above, so what now stands between here and video is the global byte budget and the streaming guard — engineering, not research.
 
