@@ -172,6 +172,34 @@ describe('interaction handler metrics', () => {
     expect(mocks.splitResponse.mock.calls[0][0]).toBe('Hello~')
   })
 
+  // Audio rides the same slots as images and documents: accepting the type is the whole change here too.
+  it('accepts an audio clip on /ask rather than nudging about it', async () => {
+    const interaction = askWith([{ url: 'https://cdn.test/voice.ogg', contentType: 'audio/ogg' }])
+
+    await createInteractionHandler(rateLimiterStub() as never)(interaction as never)
+
+    expect(mocks.generateResponse.mock.calls[0][0].imageAttachments).toEqual([
+      { url: 'https://cdn.test/voice.ogg', contentType: 'audio/ogg' }
+    ])
+  })
+
+  it('takes an mp3 arriving under its registered audio/mpeg type', async () => {
+    const interaction = askWith([{ url: 'https://cdn.test/song.mp3', contentType: 'audio/mpeg' }])
+
+    await createInteractionHandler(rateLimiterStub() as never)(interaction as never)
+
+    expect(mocks.generateResponse.mock.calls[0][0].imageAttachments).toHaveLength(1)
+  })
+
+  // Not every audio/* type is one the model accepts, and an .m4a is the common way to find that out.
+  it('nudges about an audio type the model does not accept', async () => {
+    const interaction = askWith([{ url: 'https://cdn.test/a.m4a', contentType: 'audio/mp4' }])
+
+    await createInteractionHandler(rateLimiterStub() as never)(interaction as never)
+
+    expect(mocks.splitResponse.mock.calls[0][0]).toContain("I couldn't open that file~")
+  })
+
   it('adds no nudge when every attachment was supported', async () => {
     const interaction = askWith([PNG])
 

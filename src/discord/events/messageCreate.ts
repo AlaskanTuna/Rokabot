@@ -13,7 +13,7 @@ import { type ResponseEventInput, recordResponseEvent } from '../../storage/metr
 import { upsertUserName } from '../../storage/userNames.js'
 import { logger } from '../../utils/logger.js'
 import { RateLimiter } from '../../utils/rateLimiter.js'
-import { MAX_ATTACHMENTS, isSupportedImage } from '../attachments.js'
+import { MAX_ATTACHMENTS, isSupportedImage, isSupportedMedia } from '../attachments.js'
 import { release, reservationFor, tryReserve } from '../byteBudget.js'
 import { isChannelBusy, markBusy, markFree } from '../concurrency.js'
 import { shouldReact } from '../emojiReactor.js'
@@ -238,7 +238,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
     let content = replaceUserMentions(message, client.user?.id)
 
     const imageAttachments: ImageAttachment[] = message.attachments
-      .filter(isSupportedImage)
+      .filter(isSupportedMedia)
       .map((a) => ({ url: a.url, contentType: a.contentType!, size: a.size }))
       .slice(0, MAX_ATTACHMENTS)
 
@@ -282,7 +282,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
     // Only what this message carried: a forwarded or replied-to file is not what the sender just handed her.
     // Materialised first so the count reads the same off a discord.js Collection or a plain array.
     const ownAttachments = [...message.attachments.values()]
-    const unsupportedCount = ownAttachments.length - ownAttachments.filter(isSupportedImage).length
+    const unsupportedCount = ownAttachments.length - ownAttachments.filter(isSupportedMedia).length
 
     if (referencedMessage) {
       const refAuthor = referencedMessage.member?.displayName ?? referencedMessage.author.displayName

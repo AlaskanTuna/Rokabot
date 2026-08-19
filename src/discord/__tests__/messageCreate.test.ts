@@ -381,13 +381,15 @@ describe('message handler claims extraction dispatch', () => {
 })
 
 describe('unsupported attachments on the mention path', () => {
-  const PDF = { url: 'https://cdn.test/a.pdf', contentType: 'application/pdf' }
+  // Deliberately not a PDF or an audio clip: both of those are openable on this path now, so using either
+  // as the "cannot open" fixture would pass while asserting the opposite of the behaviour.
+  const ZIP = { url: 'https://cdn.test/a.zip', contentType: 'application/zip' }
   const PNG = { url: 'https://cdn.test/a.png', contentType: 'image/png' }
 
   // Filtering an unopenable file out silently makes her answer as though nothing were attached, which
   // reads as hallucination rather than a limitation. /ask says so; this path has to match (#19).
   it('nudges in character when a mentioned message carries a file she cannot open', async () => {
-    const { message, reply } = createMessage({ content: '<@bot-1> what is in this?', attachments: [PDF] })
+    const { message, reply } = createMessage({ content: '<@bot-1> what is in this?', attachments: [ZIP] })
 
     await createMessageHandler({ user: { id: 'bot-1' } } as never, createRateLimiter() as never)(message as never)
 
@@ -400,6 +402,61 @@ describe('unsupported attachments on the mention path', () => {
     await createMessageHandler({ user: { id: 'bot-1' } } as never, createRateLimiter() as never)(message as never)
 
     expect(JSON.stringify(reply.mock.calls[0][0])).not.toContain("I couldn't open that file~")
+  })
+
+  // An audio type Gemini does not accept. Discord will hand over an .m4a as audio/mp4 quite happily, so
+  // "starts with audio/" is not the same question as "she can hear it".
+  it('nudges about an audio type the model does not accept rather than dropping it', async () => {
+    const M4A = { url: 'https://cdn.test/a.m4a', contentType: 'audio/mp4' }
+    const { message, reply } = createMessage({ content: '<@bot-1> listen', attachments: [M4A] })
+
+    await createMessageHandler({ user: { id: 'bot-1' } } as never, createRateLimiter() as never)(message as never)
+
+    expect(JSON.stringify(reply.mock.calls[0][0])).toContain("I couldn't open that file~")
+  })
+})
+
+describe('media she can take on the mention path, not only images', () => {
+  // Matches the sibling blocks. Without it `mock.calls[0][0]` reads the first call made anywhere earlier in
+  // the file, so these assertions pass in isolation and read stale state in the suite.
+  beforeEach(() => {
+    vi.clearAllMocks()
+    config.memory.claimsBackend = false
+    mocks.isChannelBusy.mockReturnValue(false)
+    mocks.isMonitored.mockReturnValue(false)
+    mocks.tryConsume.mockReturnValue(true)
+    mocks.generateResponse.mockResolvedValue({ text: 'Hello~', tone: 'playful', toolsUsed: [], metrics })
+  })
+
+  async function handle(message: object) {
+    await createMessageHandler({ user: { id: 'bot-1' } } as never, createRateLimiter() as never)(message as never)
+    return mocks.generateResponse.mock.calls[0][0]
+  }
+
+  it('hears an audio clip attached to the message that mentioned her', async () => {
+    const OGG = { url: 'https://cdn.test/a.ogg', contentType: 'audio/ogg', size: 1024 }
+    const { message } = createMessage({ content: '<@bot-1> what is this?', attachments: [OGG] })
+
+    expect((await handle(message)).imageAttachments).toEqual([
+      { url: 'https://cdn.test/a.ogg', contentType: 'audio/ogg', size: 1024 }
+    ])
+  })
+
+  // The MP3 an upload actually arrives as. Admitted here under its registered name and renamed for Gemini
+  // at the download boundary, not here.
+  it('hears an mp3 arriving under its registered audio/mpeg type', async () => {
+    const MP3 = { url: 'https://cdn.test/a.mp3', contentType: 'audio/mpeg', size: 2048 }
+    const { message } = createMessage({ content: '<@bot-1> what is this?', attachments: [MP3] })
+
+    expect((await handle(message)).imageAttachments).toHaveLength(1)
+  })
+
+  // #119 shipped PDFs to /ask only, with the mention path left until messageCreate.ts was clear. It is.
+  it('reads a PDF attached to the message that mentioned her', async () => {
+    const PDF = { url: 'https://cdn.test/a.pdf', contentType: 'application/pdf', size: 4096 }
+    const { message } = createMessage({ content: '<@bot-1> what is this?', attachments: [PDF] })
+
+    expect((await handle(message)).imageAttachments).toHaveLength(1)
   })
 })
 
