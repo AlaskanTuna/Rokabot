@@ -3,6 +3,7 @@ import { getDb } from '../../storage/database.js'
 import { logger } from '../../utils/logger.js'
 import { MAX_FACT_VALUE_LEN, isSafeFactScalar } from '../promptSafety.js'
 import { PREDICATES, type PredicateId, baseSalienceOf, cardinalityOf, normalizePredicate } from './predicates.js'
+import { sensitiveValueReason } from './privacyGuard.js'
 
 export type ClaimSource = 'explicit' | 'human' | 'passive' | 'legacy'
 export type ClaimStatus = 'candidate' | 'active' | 'superseded' | 'rejected'
@@ -112,6 +113,14 @@ function assertWritableGuild(guildId: string): void {
 
 function assertSafeValue(value: string): void {
   if (!isSafeFactScalar(value, MAX_FACT_VALUE_LEN)) throw new Error('Claim value is unsafe')
+  // Value-only: by the time any writer reaches here normalizePredicate has collapsed a telling key like
+  // `home_address` to `misc`, so the value is the only signal left. Reuses the existing message verbatim
+  // because the extractor skips exactly that one and would otherwise abort the whole batch.
+  const sensitive = sensitiveValueReason(value)
+  if (sensitive) {
+    logger.info({ reason: sensitive }, 'Refused to store a sensitive claim value')
+    throw new Error('Claim value is unsafe')
+  }
 }
 
 function sourceWeight(sourceKind: ClaimSource): number {

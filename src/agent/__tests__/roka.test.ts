@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { config } from '../../config.js'
 import { recordFailureDiagnostic, recordMemoryEvent } from '../../storage/metricsStore.js'
 import { getFacts, refreshFactTimestamps } from '../../storage/userMemory.js'
+import { GEMINI_IMAGE_TOKENS } from '../../utils/imageProcessor.js'
 import { logger } from '../../utils/logger.js'
 import { estimateTokens } from '../../utils/tokens.js'
 import { computeBackoff as computeRetryBackoff } from '../geminiReliability.js'
@@ -1200,5 +1201,41 @@ describe('attachment intake', () => {
 
   it('refuses a document past the document ceiling', async () => {
     expect(await inlineFor('application/pdf', Buffer.alloc(11 * MB, 0x20))).toEqual([])
+  })
+
+  async function tokensInFor(attachment?: { url: string; contentType: string }) {
+    __setTestRunTurnFactory(() => async () => ({ text: 'Mm~', hasText: true, hasFunctionCall: false }))
+    const channelId = `roka-token-metrics-${attachment?.contentType ?? 'none'}`
+    const result = await generateResponse({
+      channelId,
+      guildId: 'attachment-guild',
+      userMessage: 'look at this',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id',
+      imageAttachments: attachment ? [attachment] : undefined
+    })
+    await destroySession(channelId)
+    return result.metrics.tokensInEst
+  }
+
+  // Differential, so only the image contributes to the delta. A 1x1 PNG is the smallest thing anyone can
+  // send and it costs the full rate: Gemini charges the same for any image regardless of size (#121).
+  // tokensInEst counted every image as free before that, which is what made the cost invisible.
+  it('counts an attached image against tokensInEst', async () => {
+    serve(PNG_BYTES)
+    const withImage = await tokensInFor({ url: 'https://cdn.test/file', contentType: 'image/png' })
+    const withoutImage = await tokensInFor()
+
+    expect(withImage - withoutImage).toBe(GEMINI_IMAGE_TOKENS)
+  })
+
+  // Documents are billed per page rather than per image, so the image rate must not be applied to them.
+  it('does not charge a document at the image rate', async () => {
+    serve(PDF_BYTES)
+    const withDocument = await tokensInFor({ url: 'https://cdn.test/file', contentType: 'application/pdf' })
+    const withoutDocument = await tokensInFor()
+
+    expect(withDocument - withoutDocument).toBe(0)
   })
 })
