@@ -1433,10 +1433,10 @@ describe('attachment intake', () => {
     expect(lastServe.init).toBeUndefined()
   })
 
-  // A server is free to ignore Range and answer 200 with the whole body. The read still stops at the
-  // ceiling, so the bandwidth saving is nearly preserved — but treating that overflow as a failure would
-  // turn the prefix into a refusal, which is what the first version of this did.
-  it('keeps the prefix when the server ignores Range and sends the whole file', async () => {
+  // Not an edge case: this is what Discord's CDN actually does. It advertises `accept-ranges: bytes` and
+  // then answers 200 with the whole body, measured. The first version of this treated that overflow as a
+  // failure, which would have turned every oversized file into a silent refusal on the only path that runs.
+  it('keeps the prefix when the server ignores Range and sends the whole file, as Discord does', async () => {
     const parts = await inlineFor('audio/mpeg', Buffer.alloc(20 * MB, 0x20), { statedSize: OVERSIZED_MP3 })
 
     expect(parts).toHaveLength(1)
