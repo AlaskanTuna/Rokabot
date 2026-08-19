@@ -17,7 +17,7 @@ const command = new SlashCommandBuilder()
 // option description at 100 characters — SlashCommandBuilder throws at construction past it, so overrunning
 // is a load failure rather than a subtle one — which is what keeps this a list of extensions, not MIME types.
 // A test asserts every admitted type is named here, so adding one to the sets fails until this is updated.
-const READABLE_FORMATS = 'PNG, JPEG, GIF, WebP, PDF, MP3, WAV, OGG, FLAC, AAC or AIFF'
+const READABLE_FORMATS = 'PNG JPEG GIF WebP | PDF | MP3 WAV OGG FLAC AAC AIFF | MP4 MOV WebM AVI MPEG FLV WMV 3GP'
 
 // One option per attachment slot, driven by the same ceiling the mention path uses, so the two surfaces
 // cannot drift apart and the count is stated once.
@@ -27,8 +27,8 @@ for (let index = 0; index < MAX_ATTACHMENTS; index++) {
       .setName(attachmentOptionName(index))
       .setDescription(
         index === 0
-          ? `Share a file with Roka: ${READABLE_FORMATS} (1 of ${MAX_ATTACHMENTS})`
-          : `Another file: ${READABLE_FORMATS} (${index + 1} of ${MAX_ATTACHMENTS})`
+          ? `${READABLE_FORMATS} (1 of ${MAX_ATTACHMENTS})`
+          : `${READABLE_FORMATS} (${index + 1} of ${MAX_ATTACHMENTS})`
       )
       .setRequired(false)
   )

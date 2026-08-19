@@ -9,6 +9,7 @@ import {
   isSupportedDocument,
   isSupportedImage,
   isSupportedMedia,
+  isSupportedVideo,
   resolveImageUrl,
   resolvesToPublicAddress
 } from '../attachments.js'
@@ -273,5 +274,35 @@ describe('audio policy', () => {
 
   it('does not count audio as a document', () => {
     expect(isSupportedDocument({ contentType: 'audio/ogg' })).toBe(false)
+  })
+})
+
+describe('video policy', () => {
+  it.each(['video/mp4', 'video/mpeg', 'video/mov', 'video/avi', 'video/x-flv', 'video/webm', 'video/3gpp'])(
+    'accepts %s, which Gemini documents',
+    (contentType) => {
+      expect(isSupportedVideo({ contentType })).toBe(true)
+    }
+  )
+
+  // The registered type for a .mov, and what Discord reports. Gemini's list says video/mov instead, so this
+  // is renamed at the download boundary rather than refused here — refusing it would reject every .mov.
+  it('accepts video/quicktime, the type a .mov actually arrives as', () => {
+    expect(isSupportedVideo({ contentType: 'video/quicktime' })).toBe(true)
+  })
+
+  it.each(['video/x-matroska', 'video/ogg', 'application/mp4'])(
+    'refuses %s, which Gemini does not list',
+    (contentType) => {
+      expect(isSupportedVideo({ contentType })).toBe(false)
+    }
+  )
+
+  it('counts a video as media she can take', () => {
+    expect(isSupportedMedia({ contentType: 'video/mp4' })).toBe(true)
+  })
+
+  it('does not count video as an image', () => {
+    expect(isSupportedImage({ contentType: 'video/mp4' })).toBe(false)
   })
 })

@@ -35,9 +35,44 @@ export function isSupportedAudio(attachment: { contentType: string | null }): bo
   return attachment.contentType !== null && ALLOWED_AUDIO_TYPES.has(attachment.contentType)
 }
 
+/**
+ * Video Gemini watches, at 100 tokens a second once media resolution is pinned to low. `video/quicktime` is
+ * admitted alongside `video/mov` for the same reason `audio/mpeg` is: it is the registered type for a .mov
+ * and the name Discord reports, and it is renamed for the API at the download boundary.
+ */
+export const ALLOWED_VIDEO_TYPES = new Set([
+  'video/mp4',
+  'video/mpeg',
+  'video/mov',
+  'video/quicktime',
+  'video/avi',
+  'video/x-flv',
+  'video/mpg',
+  'video/webm',
+  'video/wmv',
+  'video/3gpp'
+])
+
+export function isSupportedVideo(attachment: { contentType: string | null }): boolean {
+  return attachment.contentType !== null && ALLOWED_VIDEO_TYPES.has(attachment.contentType)
+}
+
+/**
+ * Every type she can be handed and actually read. Declared as the union rather than as an OR of the four
+ * predicates so that one list answers both "does she take this?" and "is this named in the /ask picker?" —
+ * a drift guard that enumerates the sets by hand goes stale the moment a fifth one is added, which is
+ * exactly how a type ends up admitted and never mentioned to anyone.
+ */
+export const ALLOWED_MEDIA_TYPES = new Set([
+  ...ALLOWED_IMAGE_TYPES,
+  ...ALLOWED_DOCUMENT_TYPES,
+  ...ALLOWED_AUDIO_TYPES,
+  ...ALLOWED_VIDEO_TYPES
+])
+
 /** Anything she can be handed and actually read, whichever path it takes once inside. */
 export function isSupportedMedia(attachment: { contentType: string | null }): boolean {
-  return isSupportedImage(attachment) || isSupportedDocument(attachment) || isSupportedAudio(attachment)
+  return attachment.contentType !== null && ALLOWED_MEDIA_TYPES.has(attachment.contentType)
 }
 
 /** Per-turn ceiling across every kind of attachment. Both the mention path and /ask derive their limit from this. */
