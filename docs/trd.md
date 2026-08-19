@@ -486,7 +486,10 @@ byte budget cannot disagree about the same file.
   data alone matches even when the file is broken.
 - **`audio/mpeg` is admitted and renamed.** Gemini documents `audio/mp3`, which is not a registered MIME
   type; the registered one for an MP3 is `audio/mpeg` (RFC 3003), and that is what Discord reports. The
-  rename happens once, in `geminiMimeType`, at the download boundary.
+  rename happens once, in `geminiMimeType`, at the download boundary. **Both labels are accepted** —
+  measured with real MP3 bytes, identical token counts under either, because Gemini routes on content rather
+  than on the declared type. The rename is therefore a preference, not a requirement: the documented name is
+  the one with a compatibility promise, and it costs nothing to send.
 - **Audio contributes 0 to `tokensInEst`.** It is billed per second of media, and seconds are not knowable
   without decoding — the same argument `docs/multimodal.md` makes against enforcing duration caps. Left at
   zero deliberately rather than estimated.

@@ -29,9 +29,13 @@ export function sizeLimitFor(contentType: string): number {
 
 /**
  * What to call this type when handing it to Gemini. Gemini documents `audio/mp3`, which is not a registered
- * MIME type; the registered one for an MP3 is `audio/mpeg` (RFC 3003), and that is what Discord labels the
- * commonest audio upload there is. Admitting the registered name and renaming it at the boundary is safe
- * whichever the API accepts, where sending Discord's name unchanged is a guess. Everything else passes through.
+ * MIME type; the registered one for an MP3 is `audio/mpeg` (RFC 3003), and that is what Discord reports.
+ *
+ * Both labels are in fact accepted — measured with real MP3 bytes against `countTokens` and `generateContent`,
+ * which returned identical token counts under either, because Gemini routes on the content rather than the
+ * declared type. So the rename is a deliberate preference and not a necessity: the documented name is the one
+ * carrying a compatibility promise, and an undocumented alias can stop working without notice. It costs
+ * nothing, so it is worth having. Everything else passes through.
  */
 export function geminiMimeType(contentType: string): string {
   return contentType === 'audio/mpeg' ? 'audio/mp3' : contentType

@@ -1218,7 +1218,8 @@ describe('attachment intake', () => {
   })
 
   // Discord labels an MP3 audio/mpeg, the registered type; Gemini documents audio/mp3 and not audio/mpeg.
-  // Admitted under the name it arrives as, renamed at this boundary rather than guessed at either end.
+  // Both are accepted in practice, so this pins a deliberate preference for the documented name rather than
+  // a workaround for a rejection — see geminiMimeType.
   it('renames an mp3 to the spelling Gemini documents', async () => {
     expect((await inlineFor('audio/mpeg', OGG_BYTES)).map((part) => part.mimeType)).toEqual(['audio/mp3'])
   })
