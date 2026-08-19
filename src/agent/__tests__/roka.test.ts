@@ -1455,6 +1455,17 @@ describe('attachment intake', () => {
     expect(texts.some((text) => text.includes('2 file(s)'))).toBe(true)
   })
 
+  // Order is load-bearing, not cosmetic. Measured: with no notice the model answers the request by reaching
+  // for search_web — 4 of 4 — and reports what it finds as though it had watched the file, which is why the
+  // fabrications on #137 were real titles. The notice has to be in front of the request it is contradicting.
+  it('puts the notice before the request it contradicts', async () => {
+    const texts = await turnTextsFor([{ contentType: 'video/mp4', ok: false }])
+    const notice = texts.findIndex((text) => text.includes('could not be retrieved'))
+    const request = texts.findIndex((text) => text.includes('watch this'))
+
+    expect(notice).toBeLessThan(request)
+  })
+
   it('still hands the model what the user actually said', async () => {
     const texts = await turnTextsFor([{ contentType: 'video/mp4', ok: false }])
 
