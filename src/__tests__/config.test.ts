@@ -615,6 +615,7 @@ describe('config module', () => {
     const EXPECTED_BOUNDS: ReadonlyArray<{ path: string; min: number; max?: number }> = [
       { path: 'gemini.timeout', min: 1 },
       { path: 'gemini.maxAttachmentTokens', min: 3267, max: 250_000 },
+      { path: 'gemini.maxTokensPerMinute', min: 50_000, max: 250_000 },
       { path: 'gemini.maxOutputTokens', min: 1 },
       { path: 'gemini.turnDeadlineMs', min: 1 },
       { path: 'gemini.retryBackoffCapMs', min: 1 },

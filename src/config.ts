@@ -25,6 +25,7 @@ interface YamlConfig {
     maxRetries?: number
     maxOutputTokens?: number
     maxAttachmentTokens?: number
+    maxTokensPerMinute?: number
     safetyThreshold?: string
     maxLlmCalls?: number
     liveMaxRetries?: number
@@ -143,6 +144,7 @@ export const config = {
     maxRetries: envInt('GEMINI_MAX_RETRIES') ?? yaml.gemini?.maxRetries ?? 1,
     maxOutputTokens: envInt('GEMINI_MAX_OUTPUT_TOKENS') ?? yaml.gemini?.maxOutputTokens ?? 300,
     maxAttachmentTokens: envInt('GEMINI_MAX_ATTACHMENT_TOKENS') ?? yaml.gemini?.maxAttachmentTokens ?? 50_000,
+    maxTokensPerMinute: envInt('GEMINI_MAX_TOKENS_PER_MINUTE') ?? yaml.gemini?.maxTokensPerMinute ?? 200_000,
     safetyThreshold: envString('GEMINI_SAFETY_THRESHOLD') ?? yaml.gemini?.safetyThreshold ?? 'OFF',
     maxLlmCalls: yaml.gemini?.maxLlmCalls ?? 4,
     liveMaxRetries: envInt('GEMINI_LIVE_MAX_RETRIES') ?? yaml.gemini?.liveMaxRetries ?? 2,
@@ -231,6 +233,15 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
     path: 'gemini.maxAttachmentTokens',
     value: config.gemini.maxAttachmentTokens,
     min: MAX_ATTACHMENTS * GEMINI_IMAGE_TOKENS,
+    max: 250_000
+  },
+  // Floor is one maximal attachment turn: a budget smaller than the per-turn ceiling could never admit an
+  // attachment at all, so the two knobs would silently contradict each other. Ceiling is the measured 250,000
+  // TPM (#125) — budget we do not have is not budget.
+  {
+    path: 'gemini.maxTokensPerMinute',
+    value: config.gemini.maxTokensPerMinute,
+    min: config.gemini.maxAttachmentTokens,
     max: 250_000
   },
   { path: 'gemini.turnDeadlineMs', value: config.gemini.turnDeadlineMs, min: 1 },

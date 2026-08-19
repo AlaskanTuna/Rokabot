@@ -8,6 +8,7 @@ import { maybeExtractFromBuffer } from '../../agent/memoryExtractor.js'
 import { addMessage as addToPassiveBuffer, getMessages } from '../../agent/passiveBuffer.js'
 import { type ImageAttachment, generateResponse } from '../../agent/roka.js'
 import { withSearchCitations } from '../../agent/searchCitations.js'
+import { canAffordAttachments } from '../../agent/tokenBudget.js'
 import { config } from '../../config.js'
 import { type ResponseEventInput, recordResponseEvent } from '../../storage/metricsStore.js'
 import { upsertUserName } from '../../storage/userNames.js'
@@ -399,6 +400,18 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
             ;(message.channel as { sendTyping: () => Promise<void> }).sendTyping().catch(() => {})
           }, 7000)
         : null
+
+    // Bytes are not the only thing an attachment spends, and the two do not track each other: an 89-page PDF
+    // is 35 KB of the byte budget and 49,841 tokens of the minute's. `rateLimit.rpm` bounds how many turns
+    // happen, which bounded spend adequately while every turn cost about the same; it does not bound this.
+    // Asked before the reservation below so a declined turn has taken nothing it must hand back.
+    if (imageAttachments.length > 0 && !canAffordAttachments()) {
+      if (typingInterval) clearInterval(typingInterval)
+      logger.debug({ channelId }, 'Per-minute token budget too low for an attachment turn — sending busy message')
+      const tokenMsg = await message.reply(getRandomBusy())
+      setTimeout(() => tokenMsg.delete().catch(() => {}), 5000)
+      return
+    }
 
     // Reserved here rather than earlier so nothing can throw between taking the bytes and the try/finally
     // that hands them back — a reservation that leaks becomes a permanent refusal, not a failed turn.

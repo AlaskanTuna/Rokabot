@@ -567,6 +567,50 @@ wall and spend the minute's budget for every other channel.
   she tells the sender their 1,089-token picture was too long to read. Refusing only the expensive member
   would need a `countTokens` per attachment, and each of those re-uploads the file.
 
+### The Per-Minute Token Budget
+
+`rateLimit.rpm` bounds how many turns happen, not what they cost, and that bounded spend adequately only
+while every turn cost about the same. A text turn is ~5,600 tokens, so 15 of them is 34% of the measured
+250,000 TPM (#125). Attachments end that relationship: one turn may now carry `gemini.maxAttachmentTokens`,
+and 15 of those is over three times the minute's budget.
+
+Neither existing guard sees it. `byteBudget` meters bytes, and the whole finding of #136 is that bytes do not
+bound tokens — a generated 89-page PDF measured 49,841 tokens in 35 KB, which passes the per-turn ceiling and
+reserves 0.107% of the byte budget. Fifteen of those a minute is 299% of TPM while the byte budget reads 1.6%
+used. `gemini.maxAttachmentTokens` bounds one turn and says nothing about their rate.
+
+`src/agent/tokenBudget.ts` is a global account of tokens spent per rolling minute, draining continuously
+rather than resetting on a boundary, mirroring the RPM bucket. Global rather than per-channel because TPM is
+a project quota: the harm from overspending lands on every other channel, not on the sender.
+
+- **Admission and accounting are separate decisions, taken in different places.** Exact cost is only knowable
+  after a file has been downloaded and measured, which is far too late to decline politely. Admission
+  therefore asks the answerable question in the Discord handlers, before the turn: for a turn carrying
+  attachments, is there room for the worst turn `gemini.maxAttachmentTokens` admits? That is the same floor
+  idiom as `retryRpmFloor` and `extractionRpmFloor`. Accounting happens afterwards in `roka.ts`, charging
+  what was actually sent.
+- **Over-budget takes the existing in-character busy reply,** exactly as `byteBudget` does, and is asked
+  before the byte reservation so a declined turn has taken nothing it must hand back. No new counter, notice,
+  or message pool: the condition is transient and "she is swamped" is what it means.
+- **Text turns are never gated.** `rateLimit.rpm` already bounds them to about a third of the minute, and
+  gating them would refuse ordinary conversation to protect a quota conversation does not threaten. The
+  `NUMERIC_BOUNDS` floor pins `maxTokensPerMinute >= maxAttachmentTokens`, so a budget too small to ever
+  admit an attachment is rejected at startup rather than silently refusing every one.
+- **The charge is measured where measuring was already paid for.** The `countTokens` probe above already runs
+  for non-image turns and its answer was previously compared to the ceiling and discarded; it is now kept as
+  the attachment term. Image-only turns charge the flat 1,089 each. No probe is ever added to feed the
+  budget — a round trip that re-uploads a file to price it is the resource being rationed.
+- **A refused turn is not charged.** It never reaches `generateContent`, so it spends none of the quota this
+  bucket meters, and charging it would refuse other channels for spend that did not happen. The bandwidth
+  path is already bounded upstream: `rateLimiter.tryConsume()` runs in the handler before `generateResponse`,
+  so a refused turn has already burned an RPM token.
+- **`tokensInEst` and the charge are one expression.** The metric reports exactly what the budget is charged,
+  because two expressions for the same quantity is how a budget starts describing something other than the
+  spend it bounds.
+- **`maxTokensPerMinute` defaults below the measured ceiling** (200,000 against 250,000) because the text
+  half of each turn is estimated rather than measured, and a budget tracking the real ceiling exactly would
+  let that estimate's error be the thing that trips a 429.
+
 ### Attachment Bytes Do Not Live in History
 
 ADK's runner appends the incoming message to the session verbatim, and nothing in the framework removes it.
