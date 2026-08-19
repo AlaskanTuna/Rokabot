@@ -9,6 +9,7 @@ gemini:
   maxRetries: 3 # Max retries for transient errors (429, 500, 503)
   maxOutputTokens: 500 # Max tokens per response (safety net)
   maxAttachmentTokens: 50000 # Max measured token cost of one turn's attachments before they are refused. Size does not bound this: a PDF is ~560 tokens/page, so a 17 KB document can cost 28,000. 50,000 is a fifth of the 250,000 TPM ceiling, admitting three max-length audio clips and refusing a 200-page PDF.
+  maxTokensPerMinute: 125000 # Tokens per rolling minute the bot will spend before it declines new attachment turns. Half the measured 250,000 ceiling (#125), because a continuously-draining bucket admits its capacity AND its rate inside one rolling minute — so 125,000 is worth 250,000 in the worst burst, which is the whole ceiling and no more.
   safetyThreshold: OFF # Harm block threshold: OFF, BLOCK_NONE, BLOCK_ONLY_HIGH, BLOCK_MEDIUM_AND_ABOVE, BLOCK_LOW_AND_ABOVE
   maxLlmCalls: 4 # Max chained tool calls per request
   liveMaxRetries: 2 # Retry attempts after a failed live Gemini response

@@ -29,6 +29,7 @@ import { buildFactsEnvelope, buildOverheardBlock } from './promptSafety.js'
 import type { ToneKey } from './prompts/tones.js'
 import { SAFETY_SETTINGS } from './safetySettings.js'
 import { beginShutdown, isShuttingDown } from './shutdownSignal.js'
+import { chargeTokens } from './tokenBudget.js'
 import { detectTone } from './toneDetector.js'
 import { rokaTools } from './tools/index.js'
 
@@ -1084,6 +1085,11 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
       refusedAttachments = imageParts.length
       imageParts.length = 0
       imageTokens = 0
+    } else if (measured !== undefined) {
+      // The probe has already been paid for, so keep its answer rather than the per-type derivation this
+      // started as. They agree closely — a measured 89-page PDF came back one token off 560/page — but only
+      // one of the two is what the request will actually be billed.
+      imageTokens = measured
     }
   }
 
@@ -1320,6 +1326,21 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
       userMessage
     })
   }
+  // Named once and used twice on purpose: this is both what the turn is reported to have cost and what it is
+  // charged for, and letting the two be separate expressions is how a budget starts describing something
+  // other than the spend it is meant to bound.
+  const tokensInEst =
+    estimateTokens(systemPrompt) +
+    fakeMessages.reduce((total, message) => total + estimateTokens(`[${message.displayName}]: ${message.content}`), 0) +
+    toolsTok +
+    estimateTokens(`[${displayName}]: ${userMessage}`) +
+    imageTokens
+
+  // Charged after the fact rather than reserved before it, because the cost is only knowable once the
+  // reliability ladder has finished — a safety re-rung turn recomposes the system prompt and a retry sends it
+  // again, and both are real spend. Admission is the separate, earlier decision made in the Discord handlers.
+  chargeTokens(tokensInEst)
+
   const metrics: ResponseMetrics = {
     generateMs: Math.round(performance.now() - generateStartMs),
     llmMs,
@@ -1328,15 +1349,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     outcome,
     kind: reliability.kind,
     failureMarker: reliability.failureMarker,
-    tokensInEst:
-      estimateTokens(systemPrompt) +
-      fakeMessages.reduce(
-        (total, message) => total + estimateTokens(`[${message.displayName}]: ${message.content}`),
-        0
-      ) +
-      toolsTok +
-      estimateTokens(`[${displayName}]: ${userMessage}`) +
-      imageTokens,
+    tokensInEst,
     tokensOutEst: estimateTokens(reliability.text)
   }
 
