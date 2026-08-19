@@ -32,17 +32,8 @@ export function rememberUser(params: RememberUserParams): RememberUserResult {
       totalFacts: countFacts(guild_id, user_id)
     }
   }
-  // saveFact's rejection was previously discarded, so a fact the prompt-safety guard dropped still came
-  // back as "Remembered" — the legacy store feeds the facts envelope (roka.ts), so a rejection here means
-  // the fact landed nowhere at all and she said otherwise.
-  if (!saveFact(guild_id, user_id, fact_key, fact_value)) {
-    logger.info({ factKey: fact_key }, 'Refused to store a fact that failed the prompt-safety guard')
-    return {
-      success: false,
-      message: 'Not saved — I could not keep that one as it was written.',
-      totalFacts: countFacts(guild_id, user_id)
-    }
-  }
+  const storedFact = saveFact(guild_id, user_id, fact_key, fact_value)
+  let storedClaim = false
   if (guild_id !== 'global') {
     try {
       assertClaim({
@@ -52,8 +43,22 @@ export function rememberUser(params: RememberUserParams): RememberUserResult {
         value: fact_value,
         sourceKind: 'explicit'
       })
+      storedClaim = true
     } catch {
       logger.warn({ factKey: fact_key }, 'Explicit memory fact was not written to claims')
+    }
+  }
+  // Both outcomes were previously discarded, so a fact neither store accepted still came back as
+  // "Remembered". Report on the pair rather than on saveFact alone: the two guards do not agree —
+  // saveFact rejects an unsafe key as well as an unsafe value, while the claim path checks only the
+  // value and lets normalizePredicate fold an awkward key into `misc`. A verbose fact_key must not
+  // cost the explicit claim, since that claim is the only thing this tool exists to write.
+  if (!storedFact && !storedClaim) {
+    logger.info({ factKey: fact_key }, 'Refused to store a fact that failed the prompt-safety guard')
+    return {
+      success: false,
+      message: 'Not saved — I could not keep that one as it was written.',
+      totalFacts: countFacts(guild_id, user_id)
     }
   }
   const total = countFacts(guild_id, user_id)

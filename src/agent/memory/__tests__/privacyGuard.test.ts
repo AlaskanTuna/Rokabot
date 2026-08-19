@@ -100,6 +100,23 @@ describe('remember_user privacy floor', () => {
     expect(getActiveClaims('guild-1', 'user-1')).toHaveLength(0)
   })
 
+  // The two guards disagree, and the disagreement is load-bearing: saveFact rejects a key over
+  // MAX_FACT_KEY_LEN (64) as well as an unsafe value, while the claim path checks only the value and
+  // folds an awkward key into `misc`. A verbose fact_key from the model must still yield the explicit
+  // claim — that claim is the entire reason this tool exists (#118), so it cannot ride on the label.
+  it('still writes the claim when only the key is unusable', () => {
+    const result = rememberUser({
+      user_id: 'user-1',
+      guild_id: 'guild-1',
+      fact_key: 'the_thing_they_mentioned_about_their_morning_routine_and_their_coffee_order',
+      fact_value: 'drinks cold brew before work'
+    })
+
+    expect(result.success).toBe(true)
+    expect(getDb().prepare('SELECT COUNT(*) AS n FROM user_memory').get()).toEqual({ n: 0 })
+    expect(getActiveClaims('guild-1', 'user-1')).toMatchObject([{ predicate: 'misc', sourceKind: 'explicit' }])
+  })
+
   it('still stores an ordinary fact', () => {
     const result = rememberUser({
       user_id: 'user-1',
