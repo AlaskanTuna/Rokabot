@@ -409,8 +409,10 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
       return
     }
 
-    markBusy(channelId)
     try {
+      // Inside the try, not before it, so the reservation above cannot be stranded by anything between the
+      // two — markFree on a channel that was never marked is a no-op delete, so this costs nothing.
+      markBusy(channelId)
       const [{ text: responseText, tone, toolsUsed, metrics }, sources] = await withSearchCitations(() =>
         generateResponse({
           channelId,
