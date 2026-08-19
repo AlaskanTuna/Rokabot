@@ -54,26 +54,53 @@ export interface RunCaseSetOptions {
   trials: number
 }
 
+/** `transientRetries` rides along with the observations rather than staying in the log, so a run that
+ * needed retries to reach its verdict says so next to the verdict. */
+export interface CaseSetRun {
+  observations: CaseObservations
+  transientRetries: number
+}
+
 function sleep(delayMs: number): Promise<void> {
   return new Promise((resolveSleep) => setTimeout(resolveSleep, delayMs))
 }
 
+/** How many trials across one case set may be re-run after a transient before the run is abandoned.
+ *
+ * Not a retry-until-green dial. A prompt that genuinely makes the model return nothing would otherwise
+ * hide behind unlimited retries and score as though it never had, which is the failure this file's own
+ * guard exists to prevent. Three is above the observed rate — the in-turn ladder exhausted exactly once
+ * per ~108 trials across every run recorded so far — and far below what a systematically broken prompt
+ * would need. Exceeding it aborts with the count, so the number is reported rather than absorbed. */
+const MAX_TRANSIENT_RETRIES = 3
+
 /** Runs every case for `options.trials` trials against the live model, one unique channel per trial
- * so nothing carries over between them, and paced at TRIAL_PACING_MS. Aborts the entire run the
- * instant a call does not come back as a genuine model turn (metrics.outcome !== 'ok') — that covers
- * a retry-exhausted fallback (transient_http/network/empty_text) and also a deflection (safety,
- * recitation, session_corrupt, or terminal, e.g. an expired/revoked GRAPHIFY_GEMINI_API_KEY) — rather
- * than recording an empty toolsUsed as a genuine no-fire. A deflected turn is not an observation of
- * the trigger rule at all, and every fixture message is benign, so a safety block here is itself a
- * reportable anomaly, not a data point; scoring it would be a false negative indistinguishable from a
- * real one, biasing accuracy downward silently. */
+ * so nothing carries over between them, and paced at TRIAL_PACING_MS.
+ *
+ * A call that does not come back as a genuine model turn is never scored — recording an empty
+ * toolsUsed as a real no-fire would be a false negative indistinguishable from a true one, biasing
+ * accuracy downward silently. But the two ways that happens are not the same event, and treating them
+ * alike cost two entire runs:
+ *
+ * - **A deflection** (safety, recitation, session_corrupt, terminal — e.g. an expired or revoked
+ *   GRAPHIFY_GEMINI_API_KEY) aborts immediately. Every fixture message is benign, so a safety block
+ *   here is itself a reportable anomaly rather than a data point, and retrying it would only bury the
+ *   report.
+ * - **A transient fallback** (transient_http, network, empty_text) retries the trial on a fresh
+ *   channel. It says nothing about the trigger rule and nothing about the prompt — it is one bad
+ *   minute on the wire. Aborting on it discarded ~40 minutes and ~108 requests over a single case out
+ *   of 108, and it happened on two consecutive runs for two different kinds, which made the project's
+ *   own two-green-runs bar for a prompt change unreachable in practice.
+ *
+ * The invariant is unchanged: no corrupted observation is ever scored. Only the recovery differs. */
 export async function runCaseSet(
   header: CaseSetHeader,
   cases: ToolTriggerCase[],
   options: RunCaseSetOptions
-): Promise<CaseObservations> {
+): Promise<CaseSetRun> {
   const membersById = new Map(header.members.map((member) => [member.id, member]))
   const observations: CaseObservations = new Map(cases.map((testCase) => [testCase.id, []]))
+  let transientRetries = 0
 
   // src/config.ts imports dotenv/config, so a developer's real Tavily key is live in harness runs;
   // recall_user's tool declaration is the thing under test, so search_web must stay unreachable.
@@ -88,33 +115,59 @@ export async function runCaseSet(
       if (!speaker) throw new Error(`Case "${testCase.id}" references unknown speaker "${testCase.speakerId}"`)
 
       for (let trial = 0; trial < options.trials; trial++) {
-        if (!isFirstCall) await sleep(TRIAL_PACING_MS)
-        isFirstCall = false
+        let fired: boolean | undefined
 
-        const channelId = `live-${testCase.id}-${trial}`
-        seedWorld(header, channelId)
-        try {
-          const result = await generateResponse({
-            channelId,
-            guildId: header.guildId,
-            userMessage: testCase.message,
-            displayName: speaker.displayName,
-            username: speaker.username,
-            userId: speaker.id
-          })
+        // A retry gets its own channel rather than reusing the trial's, so the retried turn is as
+        // clean an observation as a first attempt — the failed one already wrote session state.
+        for (let retry = 0; fired === undefined; retry++) {
+          if (!isFirstCall) await sleep(TRIAL_PACING_MS)
+          isFirstCall = false
 
-          if (result.metrics.outcome !== 'ok') {
-            throw new Error(
-              `Rate-limit/reliability guard: case "${testCase.id}" trial ${trial} returned outcome=` +
-                `${result.metrics.outcome} (kind=${result.metrics.kind}) instead of a genuine model turn — ` +
-                'aborting the run rather than scoring a corrupted observation.'
-            )
+          const channelId = `live-${testCase.id}-${trial}${retry > 0 ? `-retry${retry}` : ''}`
+          seedWorld(header, channelId)
+          try {
+            const result = await generateResponse({
+              channelId,
+              guildId: header.guildId,
+              userMessage: testCase.message,
+              displayName: speaker.displayName,
+              username: speaker.username,
+              userId: speaker.id
+            })
+
+            if (result.metrics.outcome === 'deflection') {
+              throw new Error(
+                `Reliability guard: case "${testCase.id}" trial ${trial} was deflected (kind=` +
+                  `${result.metrics.kind}) instead of returning a genuine model turn — aborting the run. ` +
+                  'Every fixture message is benign, so this is an anomaly to report, not a turn to retry.'
+              )
+            }
+
+            if (result.metrics.outcome !== 'ok') {
+              transientRetries++
+              if (transientRetries > MAX_TRANSIENT_RETRIES) {
+                throw new Error(
+                  `Reliability guard: case "${testCase.id}" trial ${trial} returned outcome=` +
+                    `${result.metrics.outcome} (kind=${result.metrics.kind}), and this case set has now ` +
+                    `spent ${transientRetries} transient retries against a budget of ${MAX_TRANSIENT_RETRIES} — ` +
+                    'aborting. At this rate the failures are not one bad minute on the wire.'
+                )
+              }
+              console.warn(
+                `[tool-trigger] case "${testCase.id}" trial ${trial} returned ${result.metrics.outcome} ` +
+                  `(kind=${result.metrics.kind}); retrying on a fresh channel ` +
+                  `(${transientRetries}/${MAX_TRANSIENT_RETRIES} budget spent).`
+              )
+              continue
+            }
+
+            fired = result.toolsUsed.includes(header.tool)
+          } finally {
+            await destroySession(channelId)
           }
-
-          observations.get(testCase.id)!.push(result.toolsUsed.includes(header.tool))
-        } finally {
-          await destroySession(channelId)
         }
+
+        observations.get(testCase.id)!.push(fired)
       }
     }
   } finally {
@@ -126,5 +179,5 @@ export async function runCaseSet(
     }
   }
 
-  return observations
+  return { observations, transientRetries }
 }
