@@ -17,7 +17,7 @@ import { logger } from '../utils/logger.js'
 import { getSharedRateLimiter } from '../utils/rateLimiter.js'
 import { getLocalHour } from '../utils/timezone.js'
 import { estimateTokens } from '../utils/tokens.js'
-import { MAX_DOCUMENT_SIZE_BYTES, MAX_IMAGE_SIZE_BYTES } from './attachmentLimits.js'
+import { geminiMimeType, sizeLimitFor } from './attachmentLimits.js'
 import { classifyGeminiFailure, computeBackoff, extractGeminiStatus } from './geminiReliability.js'
 import { retrieveForTurn } from './memory/retriever.js'
 import { getMessages as getBufferMessages } from './passiveBuffer.js'
@@ -663,7 +663,7 @@ async function downloadAttachment(
   // already got through. Routing on image/* rather than an allowlist keeps the type sets in one place — the
   // agent layer has no imports from the Discord layer and should not gain one for a constant.
   const isImage = contentType.startsWith('image/')
-  const limit = isImage ? MAX_IMAGE_SIZE_BYTES : MAX_DOCUMENT_SIZE_BYTES
+  const limit = sizeLimitFor(contentType)
 
   try {
     const response = await fetch(url)
@@ -685,10 +685,13 @@ async function downloadAttachment(
       return null
     }
 
-    // A document goes to the model exactly as it arrived. sharp is an image pipeline — handed a PDF it throws,
-    // and its catch returns the undecoded bytes labelled image/jpeg, which would misdeclare the whole file.
+    // A document or an audio clip goes to the model exactly as it arrived. sharp is an image pipeline — handed
+    // anything else it throws, and its catch returns the undecoded bytes relabelled image/jpeg, so the file
+    // would arrive byte-identical but misdeclared and unreadable. Only the name is adjusted, for Gemini's
+    // spelling of MP3. tokens stays 0: audio is billed per second, and seconds are not knowable without
+    // decoding — the same argument docs/multimodal.md makes against enforcing duration caps.
     if (!isImage) {
-      return { data: Buffer.from(buffer).toString('base64'), mimeType: contentType, tokens: 0 }
+      return { data: Buffer.from(buffer).toString('base64'), mimeType: geminiMimeType(contentType), tokens: 0 }
     }
 
     const processed = await processImageForGemini(Buffer.from(buffer))

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { MAX_DOCUMENT_SIZE_BYTES, MAX_IMAGE_SIZE_BYTES } from '../../agent/attachmentLimits.js'
+import { MAX_AUDIO_SIZE_BYTES, MAX_DOCUMENT_SIZE_BYTES, MAX_IMAGE_SIZE_BYTES } from '../../agent/attachmentLimits.js'
 import { config } from '../../config.js'
 import { MAX_ATTACHMENTS } from '../attachments.js'
 import { inFlightBytes, release, reservationFor, tryReserve } from '../byteBudget.js'
@@ -8,6 +8,7 @@ const BUDGET = config.discord.maxInFlightAttachmentBytes
 
 const image = (size?: number) => ({ url: 'https://cdn.example/i.png', contentType: 'image/png', size })
 const document = (size?: number) => ({ url: 'https://cdn.example/d.pdf', contentType: 'application/pdf', size })
+const audio = (size?: number) => ({ url: 'https://cdn.example/a.ogg', contentType: 'audio/ogg', size })
 
 beforeEach(() => {
   release(inFlightBytes())
@@ -41,6 +42,16 @@ describe('reservationFor', () => {
 
   it('clamps an oversized document to the document ceiling', () => {
     expect(reservationFor([document(MAX_DOCUMENT_SIZE_BYTES * 5)])).toBe(MAX_DOCUMENT_SIZE_BYTES)
+  })
+
+  // Audio has a ceiling of its own. Inheriting the document one would reserve 10 MB for a clip the download
+  // refuses at 8, so the budget and the download would disagree about the same file.
+  it('reserves the audio ceiling when an audio clip states no size', () => {
+    expect(reservationFor([audio()])).toBe(MAX_AUDIO_SIZE_BYTES)
+  })
+
+  it('clamps an oversized audio clip to the audio ceiling, not the document one', () => {
+    expect(reservationFor([audio(MAX_DOCUMENT_SIZE_BYTES)])).toBe(MAX_AUDIO_SIZE_BYTES)
   })
 })
 

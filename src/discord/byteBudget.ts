@@ -1,4 +1,4 @@
-import { MAX_DOCUMENT_SIZE_BYTES, MAX_IMAGE_SIZE_BYTES } from '../agent/attachmentLimits.js'
+import { sizeLimitFor } from '../agent/attachmentLimits.js'
 import type { ImageAttachment } from '../agent/roka.js'
 import { config } from '../config.js'
 
@@ -23,7 +23,7 @@ let inFlight = 0
  */
 export function reservationFor(attachments: ImageAttachment[]): number {
   return attachments.reduce((total, attachment) => {
-    const ceiling = attachment.contentType.startsWith('image/') ? MAX_IMAGE_SIZE_BYTES : MAX_DOCUMENT_SIZE_BYTES
+    const ceiling = sizeLimitFor(attachment.contentType)
     return total + Math.min(attachment.size ?? ceiling, ceiling)
   }, 0)
 }

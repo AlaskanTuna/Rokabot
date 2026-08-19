@@ -20,8 +20,8 @@ for (let index = 0; index < MAX_ATTACHMENTS; index++) {
       .setName(attachmentOptionName(index))
       .setDescription(
         index === 0
-          ? `Share an image or PDF with Roka (1 of ${MAX_ATTACHMENTS})`
-          : `Another image or PDF (${index + 1} of ${MAX_ATTACHMENTS})`
+          ? `Share an image, PDF or audio clip with Roka (1 of ${MAX_ATTACHMENTS})`
+          : `Another image, PDF or audio clip (${index + 1} of ${MAX_ATTACHMENTS})`
       )
       .setRequired(false)
   )
@@ -29,6 +29,12 @@ for (let index = 0; index < MAX_ATTACHMENTS; index++) {
 
 // A link, not an upload: deliberately typed, so it needs no embed and sidesteps the unfurl-timing problem
 // the mention path has. Added after the attachment slots so it reads last in Discord's option list.
+//
+// Images only, and deliberately narrower than the upload slots beside it. `resolveImageUrl` is the path that
+// makes the Pi fetch a host a user named, so widening its type set is a change to what an attacker can aim
+// it at, not just a feature — the SSRF guard covers the host, never the payload. The description says
+// "an image" rather than "a file" so the slot does not promise what it does not do. Widening it to documents
+// and audio is worth its own change, with its own tests, and should not ride along inside a modality PR.
 command.addStringOption((option) =>
   option.setName('attachment_url').setDescription('Link to an image for Roka to look at').setRequired(false)
 )
