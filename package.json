@@ -20,6 +20,7 @@
     "test:watch": "vitest",
     "test:chat": "tsx scripts/test-chat.ts",
     "harness": "tsx tests/harness/run.ts",
+    "measure": "tsx tests/harness/measure.ts",
     "test:smoke": "tsx scripts/test-adk-smoke.ts",
     "test:features": "tsx scripts/test-features.ts",
     "test:phase8": "tsx scripts/test-phase8.ts",
