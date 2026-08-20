@@ -570,28 +570,39 @@ therefore prices the parts with `countTokens` before sending them and refuses th
 `gemini.maxAttachmentTokens`, rather than letting the request fail on a 429 that would retry into the same
 wall and spend the minute's budget for every other channel.
 
-- **Video carries an allowance for audio the estimate under-prices.** `countTokens` charges a video's audio
-  stream far less than the same audio priced alone, while the model demonstrably hears it — a black-frames
-  video whose only content was speech was transcribed correctly (#153). So `measureAttachmentTokens` adds
-  `VIDEO_AUDIO_ALLOWANCE` when a video part is present.
+- **Video is not adjusted, because the estimate already runs above the bill.** `countTokens` does under-price
+  a video's soundtrack — sometimes to nothing, and how much is a property of the (video, audio) _pair_ rather
+  than of the audio. It over-prices the video itself by more. Four matched clips, `countTokens` against
+  `usageMetadata.promptTokenCount`:
 
-  **How much less is clip-dependent, and this bullet previously claimed it was always zero.** Two matched
-  black-frames pairs measured 2,133/2,133 and 2,070/2,070 — audio contributing _exactly nothing_ — and that
-  was generalised to the estimator. It does not hold: a 854x480, 24 fps, 2.6 Mbps clip measures 2,133 with
-  its audio and 2,061 without, so audio contributes 72 tokens over 20 seconds. Deterministic, twice, all four
-  figures identical on both passes. That is 3.6 tokens a second against 32 for the same audio alone, so
-  ~89% is still missing and the allowance's direction stands — but "the estimate omits all of it" was a
-  statement about black frames, not about `countTokens`.
+  | Clip                   | `countTokens` | Billed | Over-report |
+  | ---------------------- | ------------- | ------ | ----------- |
+  | black frames + audio   | 2,070         | 1,768  | 1.17x       |
+  | black frames, silent   | 2,070         | 1,268  | 1.63x       |
+  | 854x480 24 fps + audio | 2,133         | 1,828  | 1.17x       |
+  | 854x480, silent        | 2,061         | 1,328  | 1.55x       |
 
-  The two reproductions that established the original claim used different methods (speech against a sine
-  tone, 18x apart in bytes) on the same _kind_ of specimen. **Independent reproduction controls for method,
-  not for the sample.** Whether Google _bills_ that audio is **not established** — `countTokens` already diverges from
-  billing for time-based media, so its silence is not evidence the audio is free. The allowance takes the
-  conservative reading because only one direction fails badly: an under-estimate admits a turn that then 429s
-  and spends the minute's budget for every other channel, while an over-estimate refuses one long video
-  early. It is applied to silent video too, since `countTokens` cannot distinguish one and finding out means
-  parsing a container per format. A billing-side measurement (`usageMetadata.promptTokenCount` from one
-  `generateContent` per clip) would replace the constant with a fact and could remove it.
+  **Billing is the clean side.** Audio bills 500 tokens for 20 seconds beside _both_ videos — identical across
+  clips differing in resolution, framerate, bitrate, content and 35x in bytes — at ~25/second, the same rate
+  the audio bills at alone. The erratic side is the estimator: the same audio stream contributes 72 tokens to
+  `countTokens` beside one video and 0 beside another, decided by its companion. That is an artefact of the
+  estimator, not a property of the cost model.
+
+  A `VIDEO_AUDIO_ALLOWANCE` of 0.31 was briefly added on the reading that audio was unpriced and the guard
+  therefore too permissive. Measured against billing that was false in both halves: the estimate was already
+  1.17x-1.63x above the bill, and the allowance pushed it to 1.53x-2.14x — worst on silent video, the case it
+  deliberately over-charged. Removed.
+
+- **The margin is borrowed from `MEDIA_RESOLUTION_LOW`, not inherent to the estimate.** `roka.ts` pins low
+  media resolution on any request carrying video, so the biller charges ~65 tokens/second while `countTokens`
+  prices at ~103. The probe cannot pin anything: `CountTokensConfig.generationConfig`, where `mediaResolution`
+  lives, is documented "Not supported by the Gemini Developer API". Both terms are linear in duration, so the
+  ratio is duration-independent and a 20-second measurement generalises by construction rather than by
+  extrapolation — the 854x480 ceiling still binds the video rate. **Remove that setting, or let a future part
+  shape stop matching `requestCarriesVideo`, and billing rises toward the default resolution while the
+  estimate does not move: the guard flips from over- to under-estimating with nothing in `attachmentCost.ts`
+  changing.** Pinned at both ends — `prices video at whatever resolution the request will use` in
+  `attachmentCost`'s tests, and a roka test named for this consequence rather than for the setting.
 
 - **Images are skipped, and that skip is model-specific.** `needsMeasuring` returns false when every part is
   an image, because an image is a flat 1,089 tokens regardless of dimensions and `MAX_ATTACHMENTS` of them
