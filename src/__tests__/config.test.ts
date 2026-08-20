@@ -56,6 +56,8 @@ describe('config module', () => {
     vi.stubEnv('GEMINI_TIMEOUT', '')
     vi.stubEnv('GEMINI_MAX_RETRIES', '')
     vi.stubEnv('GEMINI_MAX_OUTPUT_TOKENS', '')
+    vi.stubEnv('GEMINI_MAX_ATTACHMENT_TOKENS', '')
+    vi.stubEnv('GEMINI_MAX_TOKENS_PER_MINUTE', '')
     vi.stubEnv('GEMINI_LIVE_MAX_RETRIES', '')
     vi.stubEnv('GEMINI_RETRY_RPM_FLOOR', '')
     vi.stubEnv('GEMINI_EXTRACTION_RPM_FLOOR', '')
@@ -503,6 +505,36 @@ describe('config module', () => {
     )
   })
 
+  // `maxTokensPerMinute` takes its floor from `maxAttachmentTokens`, so the two ceilings are not independent:
+  // an attachment ceiling above the per-minute one leaves that knob with no legal value at all. Before this
+  // was pinned, 200,000 was a legal attachment ceiling and the failure surfaced as a complaint about
+  // `maxTokensPerMinute` being below a floor the operator never set — the wrong knob named for the right
+  // contradiction.
+  it('refuses an attachment ceiling no per-minute budget could satisfy, and names the knob at fault', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('GEMINI_MAX_ATTACHMENT_TOKENS', '200000')
+
+    await expect(() => import('../config.js')).rejects.toThrow(
+      'Config value gemini.maxAttachmentTokens must be <= 125000, got: 200000'
+    )
+  })
+
+  // States the dependency the two ceilings have, which nothing else does. A generic "floor <= ceiling" check
+  // would not help: any row whose floor exceeds its own ceiling makes its own value illegal too, so it
+  // already throws at load. This one is different precisely because it is satisfiable at defaults and only
+  // becomes unsatisfiable at a setting an operator is allowed to choose.
+  it('keeps the attachment ceiling inside what a per-minute budget can be set to', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+
+    const { NUMERIC_BOUNDS } = await import('../config.js')
+    const attachment = NUMERIC_BOUNDS.find((bound) => bound.path === 'gemini.maxAttachmentTokens')
+    const perMinute = NUMERIC_BOUNDS.find((bound) => bound.path === 'gemini.maxTokensPerMinute')
+
+    expect(attachment?.max).toBeLessThanOrEqual(perMinute?.max ?? Number.POSITIVE_INFINITY)
+  })
+
   it('throws if a min:1 numeric tunable is set to a negative value', async () => {
     setRequiredEnvVars()
     clearTunableEnvVars()
@@ -619,7 +651,7 @@ describe('config module', () => {
 
     const EXPECTED_BOUNDS: ReadonlyArray<{ path: string; min: number; max?: number }> = [
       { path: 'gemini.timeout', min: 1 },
-      { path: 'gemini.maxAttachmentTokens', min: MAX_ATTACHMENTS * GEMINI_IMAGE_TOKENS, max: 250_000 },
+      { path: 'gemini.maxAttachmentTokens', min: MAX_ATTACHMENTS * GEMINI_IMAGE_TOKENS, max: 125_000 },
       { path: 'gemini.maxTokensPerMinute', min: 50_000, max: 125_000 },
       { path: 'gemini.maxOutputTokens', min: 1 },
       { path: 'gemini.turnDeadlineMs', min: 1 },

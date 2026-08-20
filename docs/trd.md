@@ -614,7 +614,12 @@ a project quota: the harm from overspending lands on every other channel, not on
 - **Text turns are never gated.** `rateLimit.rpm` already bounds them to about a third of the minute, and
   gating them would refuse ordinary conversation to protect a quota conversation does not threaten. The
   `NUMERIC_BOUNDS` floor pins `maxTokensPerMinute >= maxAttachmentTokens`, so a budget too small to ever
-  admit an attachment is rejected at startup rather than silently refusing every one.
+  admit an attachment is rejected at startup rather than silently refusing every one. The two ceilings are
+  pinned together for the same reason read backwards: because one knob's floor is the other knob's value,
+  an attachment ceiling above the per-minute ceiling would leave `maxTokensPerMinute` with no legal value at
+  all, while both rows still read as valid on their own. `maxAttachmentTokens` is therefore capped at 125,000
+  too — nothing above it could ever be admitted anyway, since a turn is only let in when the minute can fund
+  a whole one.
 - **The charge is measured where measuring was already paid for.** The `countTokens` probe above already runs
   for non-image turns and its answer was previously compared to the ceiling and discarded; it is now kept as
   the attachment term. Image-only turns charge the flat 1,089 each. No probe is ever added to feed the
