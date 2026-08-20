@@ -451,10 +451,12 @@ The container is SIGKILLed instead. `src/discord/byteBudget.ts` is the admission
   measurement, not a guard.
 - `discord.maxInFlightAttachmentBytes` (32 MB) is the ceiling across every channel at once. Its `min` bound
   is `MAX_ATTACHMENTS × MAX_DOCUMENT_SIZE_BYTES`: below that a maximal turn could never be admitted even on
-  an idle bot, so it would be refused permanently rather than delayed. The default therefore sits only 2 MB
-  above its own floor, and that is deliberate — one turn carrying three 10 MB documents reserves 30 MB and
-  holds off every other channel until it completes. That is the budget working, made visible by the busy
-  reply rather than silent; `discord.maxInFlightAttachmentBytes` is the knob to loosen it.
+  an idle bot, so it would be refused permanently rather than delayed. **At `MAX_ATTACHMENTS = 1` that floor
+  is 10 MB**, so the 32 MB default sits at a little over three times it and three channels can download
+  concurrently. That headroom is the point of the one-attachment ceiling rather than a side effect: at three
+  attachments the floor was 30 MB, the default sat 2 MB above it, and a single maximal turn held off every
+  other channel on every other server until it completed. `discord.maxInFlightAttachmentBytes` remains the
+  knob to loosen it further.
 - A turn is reserved its attachments' **stated** sizes where Discord gives them, and its type's ceiling where
   it does not — an embed image or a link resolved by HEAD states no size, and an unknown must cost the most
   it could. A stated size above the ceiling is clamped to it, since the download refuses on `Content-Length`
@@ -531,9 +533,26 @@ byte budget cannot disagree about the same file.
 - **Both surfaces admit the same set.** `/ask` and the mention path each filter with `isSupportedMedia`.
   The forwarded, referenced and embed sub-paths on the mention path remain images-only, because their text
   markers describe what they carry as images.
-- **`attachment_url` is images-only**, narrower than the upload slots beside it. It is the SSRF-guarded path
-  that makes the Pi fetch a user-named host, so its type set is a security decision rather than a feature
-  one; widening it belongs in its own change.
+- **Components V2 media is read, and what cannot be read is still counted.** A Components V2 message keeps
+  its files in `components` rather than in `attachments`, so `Thumbnail` (11), `MediaGallery` (12) and `File`
+  (13) reached her as nothing at all — and as nothing _silently_, because a path that never detects a file
+  cannot report one. `extractComponentMedia` walks the same tree the text walker does and routes what it
+  finds into the ordinary attachment slots, after the sender's own uploads: an explicit upload is the more
+  deliberate of the two gestures. A component whose `content_type` she cannot read, **or that states none at
+  all**, adds to `unsupportedCount` rather than being skipped — guessing a type from the URL would be the
+  same silent assumption that created the gap. Nothing here makes a network call: the type comes from what
+  Discord already resolved.
+- **`attachment_url` takes the same set as the upload slot.** It was images-only, on the reasoning that this
+  is the SSRF-guarded path where the Pi fetches a host the _sender_ named — but the guard checks the host and
+  never the payload, so the narrow type set was not what made it safe. What does: the 2 s HEAD and 15 s body
+  timeouts, the per-type size ceilings, and the measured token ceiling, none of which care about type. The
+  resolver also carries the `content-length` the server declared, so a linked file reaches the same
+  truncate-or-refuse decision an uploaded one does; a host that lies about it costs nothing, because that
+  size only chooses the policy and `readWithinLimit` bounds the transfer either way.
+- **Two asymmetries remain and are deliberate.** Only images are re-encoded by `sharp` on the way through, so
+  every other type is relayed to the model verbatim; and time-based media lets the sender pick the token cost
+  per byte, where an image is a flat 1,089 whatever it contains. Both are bounded downstream by
+  `gemini.maxAttachmentTokens`, which refuses after the download rather than before it.
 
 ### Attachment Token Admission
 
@@ -566,6 +585,57 @@ wall and spend the minute's budget for every other channel.
   both, so the notice blames the set (`together they are too long to read`) rather than each file — otherwise
   she tells the sender their 1,089-token picture was too long to read. Refusing only the expensive member
   would need a `countTokens` per attachment, and each of those re-uploads the file.
+
+### The Per-Minute Token Budget
+
+`rateLimit.rpm` bounds how many turns happen, not what they cost, and that bounded spend adequately only
+while every turn cost about the same. A text turn is ~5,600 tokens, so 15 of them is 34% of the measured
+250,000 TPM (#125). Attachments end that relationship: one turn may now carry `gemini.maxAttachmentTokens`,
+and 15 of those is over three times the minute's budget.
+
+Neither existing guard sees it. `byteBudget` meters bytes, and the whole finding of #136 is that bytes do not
+bound tokens — a generated 89-page PDF measured 49,841 tokens in 35 KB, which passes the per-turn ceiling and
+reserves 0.107% of the byte budget. Fifteen of those a minute is 299% of TPM while the byte budget reads 1.6%
+used. `gemini.maxAttachmentTokens` bounds one turn and says nothing about their rate.
+
+`src/agent/tokenBudget.ts` is a global account of tokens spent per rolling minute, draining continuously
+rather than resetting on a boundary, mirroring the RPM bucket. Global rather than per-channel because TPM is
+a project quota: the harm from overspending lands on every other channel, not on the sender.
+
+- **Admission and accounting are separate decisions, taken in different places.** Exact cost is only knowable
+  after a file has been downloaded and measured, which is far too late to decline politely. Admission
+  therefore asks the answerable question in the Discord handlers, before the turn: for a turn carrying
+  attachments, is there room for the worst turn `gemini.maxAttachmentTokens` admits? That is the same floor
+  idiom as `retryRpmFloor` and `extractionRpmFloor`. Accounting happens afterwards in `roka.ts`, charging
+  what was actually sent.
+- **Over-budget takes the existing in-character busy reply,** exactly as `byteBudget` does, and is asked
+  before the byte reservation so a declined turn has taken nothing it must hand back. No new counter, notice,
+  or message pool: the condition is transient and "she is swamped" is what it means.
+- **Text turns are never gated.** `rateLimit.rpm` already bounds them to about a third of the minute, and
+  gating them would refuse ordinary conversation to protect a quota conversation does not threaten. The
+  `NUMERIC_BOUNDS` floor pins `maxTokensPerMinute >= maxAttachmentTokens`, so a budget too small to ever
+  admit an attachment is rejected at startup rather than silently refusing every one.
+- **The charge is measured where measuring was already paid for.** The `countTokens` probe above already runs
+  for non-image turns and its answer was previously compared to the ceiling and discarded; it is now kept as
+  the attachment term. Image-only turns charge the flat 1,089 each. No probe is ever added to feed the
+  budget — a round trip that re-uploads a file to price it is the resource being rationed.
+- **A refused turn is not charged.** It never reaches `generateContent`, so it spends none of the quota this
+  bucket meters, and charging it would refuse other channels for spend that did not happen. The bandwidth
+  path is already bounded upstream: `rateLimiter.tryConsume()` runs in the handler before `generateResponse`,
+  so a refused turn has already burned an RPM token.
+- **`tokensInEst` and the charge are one expression.** The metric reports exactly what the budget is charged,
+  because two expressions for the same quantity is how a budget starts describing something other than the
+  spend it bounds.
+- **`maxTokensPerMinute` is bounded at half the measured ceiling, not the whole of it.** A continuously
+  draining bucket has no capacity separate from its rate, so a rolling minute admits both: a burst arriving
+  at an empty bucket spends the entire budget and then spends whatever drains in behind it, for up to 2x the
+  configured value inside one 60-second window. Simulated against the module's exact drain arithmetic with
+  maximal 55,626-token turns under `rateLimit.rpm` 15, the worst rolling minute is 389,382 tokens at a
+  setting of 200,000 — 156% of the ceiling the guard exists to defend, in precisely the burst case it was
+  built for. The default and the `NUMERIC_BOUNDS` ceiling are both 125,000, which makes the worst case
+  250,000 by construction. Capping capacity separately from rate is the more precise alternative and was
+  not taken: it adds a second concept to a module that currently has one, to buy throughput this project
+  has never needed at a measured peak of 38 requests a day.
 
 ### Attachment Bytes Do Not Live in History
 

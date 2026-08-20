@@ -31,6 +31,7 @@ import {
 } from '../roka.js'
 import { buildSafetySettings } from '../safetySettings.js'
 import { beginShutdown, isShuttingDown, resetForTest } from '../shutdownSignal.js'
+import { __resetTokenBudgetForTest, remainingTokensThisMinute } from '../tokenBudget.js'
 import { rokaTools } from '../tools/index.js'
 
 vi.mock('../../storage/sessionStore.js', () => ({
@@ -1607,7 +1608,10 @@ describe('attachment intake', () => {
   it('asks for the whole file when it fits', async () => {
     await inlineFor('audio/mpeg', OGG_BYTES, { statedSize: 1024 })
 
-    expect(lastServe.init).toBeUndefined()
+    // Names the header rather than asserting the init object is absent: every download now carries an abort
+    // signal, so "no init" stopped meaning "no Range" and started meaning "no timeout either".
+    expect((lastServe.init?.headers as Record<string, string> | undefined)?.Range).toBeUndefined()
+    expect(lastServe.init?.signal).toBeDefined()
   })
 
   // Not an edge case: this is what Discord's CDN actually does. It advertises `accept-ranges: bytes` and
@@ -1721,6 +1725,31 @@ describe('attachment intake', () => {
     const withoutImage = await tokensInFor()
 
     expect(withImage - withoutImage).toBe(GEMINI_IMAGE_TOKENS)
+  })
+
+  // Wiring, not arithmetic: tokenBudget.test.ts pins what the bucket does with a number, and this pins that
+  // the number ever reaches it. Compared within a window rather than exactly because the bucket drains
+  // against the real clock while the turn runs — a few hundred tokens across one turn, against the
+  // thousands that separate "charged the turn" from "charged nothing" or "charged a flat constant".
+  it('charges the turn against the per-minute budget', async () => {
+    __resetTokenBudgetForTest()
+    const before = remainingTokensThisMinute()
+    const spent = await tokensInFor()
+
+    expect(Math.abs(before - remainingTokensThisMinute() - spent)).toBeLessThan(1000)
+  })
+
+  // The probe #142 runs has already been paid for, so its answer is kept instead of the per-type derivation
+  // it replaces. Both are close — a measured 89-page PDF came back one token off 560/page — so the two are
+  // separated here by a measured figure no derivation would produce.
+  it('keeps the measured attachment cost once the probe has run', async () => {
+    vi.mocked(needsMeasuring).mockReturnValueOnce(true)
+    vi.mocked(measureAttachmentTokens).mockResolvedValueOnce(7_777)
+    serve(PDF_BYTES)
+    const withPdf = await tokensInFor({ url: 'https://cdn.test/file', contentType: 'application/pdf' })
+    const withoutPdf = await tokensInFor()
+
+    expect(withPdf - withoutPdf).toBe(7_777)
   })
 
   // Documents are billed per page rather than per image, so the image rate must not be applied to them.

@@ -591,10 +591,10 @@ describe('config module', () => {
     expect(config.discord.maxMessageLength).toBe(3878)
   })
 
-  // config.ts states this floor as the literal 3267 because importing either constant there would close a
-  // cycle (imageProcessor -> logger -> config). This is the pin that makes the arithmetic fail loudly:
-  // raising MAX_ATTACHMENTS without raising the floor would silently start refusing whole turns of plain
-  // images, the one type whose cost is already known to be bounded and safe.
+  // config.ts derives this floor from the same two constants (attachmentLimits.ts is a zero-import leaf, so
+  // there is no cycle to close). The pin stays because the derivation is the thing worth asserting: a floor
+  // that stopped tracking MAX_ATTACHMENTS would silently start refusing whole turns of plain images, the one
+  // type whose cost is already known to be bounded and safe.
   it('floors the attachment ceiling at a full turn of images', async () => {
     setRequiredEnvVars()
     clearTunableEnvVars()
@@ -612,9 +612,15 @@ describe('config module', () => {
     setRequiredEnvVars()
     clearTunableEnvVars()
 
+    // Derived, not restated: a hardcoded 3267 here would have to be edited by hand every time
+    // MAX_ATTACHMENTS moves, which is the failure this whole suite exists to prevent elsewhere.
+    const { MAX_ATTACHMENTS } = await import('../discord/attachments.js')
+    const { GEMINI_IMAGE_TOKENS } = await import('../utils/imageProcessor.js')
+
     const EXPECTED_BOUNDS: ReadonlyArray<{ path: string; min: number; max?: number }> = [
       { path: 'gemini.timeout', min: 1 },
-      { path: 'gemini.maxAttachmentTokens', min: 3267, max: 250_000 },
+      { path: 'gemini.maxAttachmentTokens', min: MAX_ATTACHMENTS * GEMINI_IMAGE_TOKENS, max: 250_000 },
+      { path: 'gemini.maxTokensPerMinute', min: 50_000, max: 125_000 },
       { path: 'gemini.maxOutputTokens', min: 1 },
       { path: 'gemini.turnDeadlineMs', min: 1 },
       { path: 'gemini.retryBackoffCapMs', min: 1 },

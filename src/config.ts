@@ -25,6 +25,7 @@ interface YamlConfig {
     maxRetries?: number
     maxOutputTokens?: number
     maxAttachmentTokens?: number
+    maxTokensPerMinute?: number
     safetyThreshold?: string
     maxLlmCalls?: number
     liveMaxRetries?: number
@@ -143,6 +144,7 @@ export const config = {
     maxRetries: envInt('GEMINI_MAX_RETRIES') ?? yaml.gemini?.maxRetries ?? 1,
     maxOutputTokens: envInt('GEMINI_MAX_OUTPUT_TOKENS') ?? yaml.gemini?.maxOutputTokens ?? 300,
     maxAttachmentTokens: envInt('GEMINI_MAX_ATTACHMENT_TOKENS') ?? yaml.gemini?.maxAttachmentTokens ?? 50_000,
+    maxTokensPerMinute: envInt('GEMINI_MAX_TOKENS_PER_MINUTE') ?? yaml.gemini?.maxTokensPerMinute ?? 125_000,
     safetyThreshold: envString('GEMINI_SAFETY_THRESHOLD') ?? yaml.gemini?.safetyThreshold ?? 'OFF',
     maxLlmCalls: yaml.gemini?.maxLlmCalls ?? 4,
     liveMaxRetries: envInt('GEMINI_LIVE_MAX_RETRIES') ?? yaml.gemini?.liveMaxRetries ?? 2,
@@ -232,6 +234,21 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
     value: config.gemini.maxAttachmentTokens,
     min: MAX_ATTACHMENTS * GEMINI_IMAGE_TOKENS,
     max: 250_000
+  },
+  // Floor is one maximal attachment turn: a budget smaller than the per-turn ceiling could never admit an
+  // attachment at all, so the two knobs would silently contradict each other.
+  //
+  // Ceiling is HALF the measured 250,000 TPM (#125), not the whole of it. The bucket's capacity is its rate,
+  // so a rolling minute gets both: an adversary finds it empty, spends the full budget, and spends what
+  // drains in on top, for up to 2x the configured value inside one 60s window. Simulated against this
+  // module's exact drain arithmetic with maximal 55,626-token turns under rpm 15, the worst rolling minute
+  // is 389,382 tokens at a setting of 200,000 — the guard permitting 156% of the ceiling it exists to defend.
+  // Bounding the knob at 125,000 makes the worst case 250,000 by construction rather than by hope.
+  {
+    path: 'gemini.maxTokensPerMinute',
+    value: config.gemini.maxTokensPerMinute,
+    min: config.gemini.maxAttachmentTokens,
+    max: 125_000
   },
   { path: 'gemini.turnDeadlineMs', value: config.gemini.turnDeadlineMs, min: 1 },
   { path: 'gemini.retryBackoffCapMs', value: config.gemini.retryBackoffCapMs, min: 1 },

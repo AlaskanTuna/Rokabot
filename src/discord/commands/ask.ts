@@ -20,15 +20,14 @@ const command = new SlashCommandBuilder()
 const READABLE_FORMATS = 'PNG JPEG GIF WebP | PDF | MP3 WAV OGG FLAC AAC AIFF | MP4 MOV WebM AVI MPEG FLV WMV 3GP'
 
 // One option per attachment slot, driven by the same ceiling the mention path uses, so the two surfaces
-// cannot drift apart and the count is stated once.
+// cannot drift apart and the count is stated once. The "n of m" suffix is dropped at a single slot, where it
+// would read as a promise of more slots that are not there.
 for (let index = 0; index < MAX_ATTACHMENTS; index++) {
   command.addAttachmentOption((option) =>
     option
       .setName(attachmentOptionName(index))
       .setDescription(
-        index === 0
-          ? `${READABLE_FORMATS} (1 of ${MAX_ATTACHMENTS})`
-          : `${READABLE_FORMATS} (${index + 1} of ${MAX_ATTACHMENTS})`
+        MAX_ATTACHMENTS === 1 ? READABLE_FORMATS : `${READABLE_FORMATS} (${index + 1} of ${MAX_ATTACHMENTS})`
       )
       .setRequired(false)
   )
@@ -37,16 +36,14 @@ for (let index = 0; index < MAX_ATTACHMENTS; index++) {
 // A link, not an upload: deliberately typed, so it needs no embed and sidesteps the unfurl-timing problem
 // the mention path has. Added after the attachment slots so it reads last in Discord's option list.
 //
-// Images only, and deliberately narrower than the upload slots beside it. `resolveImageUrl` is the path that
-// makes the Pi fetch a host a user named, so widening its type set is a change to what an attacker can aim
-// it at, not just a feature — the SSRF guard covers the host, never the payload. It names its four formats
-// rather than saying "a file", so the slot does not promise what it does not do. Widening it to documents and
-// audio is worth its own change, with its own tests, and should not ride along inside a modality PR.
+// Takes the same formats as the upload slot beside it. It used to be images alone, on the reasoning that
+// this is the path that makes the Pi fetch a host a user named — but the SSRF guard covers the host and never
+// the payload, so the narrow type set was not the thing making it safe. What is: #157's 2s HEAD and 15s body
+// timeouts, the per-type size ceilings, and #136's measured token ceiling, none of which care about type.
+// Kept at 'Link to ' + READABLE_FORMATS so the two options name the same set in the same words — 95 of
+// Discord's 100 characters, and the reason this reads as a bare list rather than a sentence.
 command.addStringOption((option) =>
-  option
-    .setName('attachment_url')
-    .setDescription('Link to a PNG, JPEG, GIF or WebP for Roka to look at')
-    .setRequired(false)
+  option.setName('attachment_url').setDescription(`Link to ${READABLE_FORMATS}`).setRequired(false)
 )
 
 export const askCommand = command

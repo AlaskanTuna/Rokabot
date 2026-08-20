@@ -38,6 +38,7 @@ vi.mock('../events/toolCommands.js', () => ({ createToolCommandHandler: () => mo
 
 import { recordSearchCitations } from '../../agent/searchCitations.js'
 import { config } from '../../config.js'
+import { MAX_ATTACHMENTS, attachmentOptionName } from '../attachments.js'
 import { createInteractionHandler } from '../events/interactionCreate.js'
 
 const metrics = {
@@ -118,10 +119,9 @@ describe('interaction handler metrics', () => {
         ),
         // Answers by name the way Discord does, so a slot the handler asks for under the wrong name reads
         // as absent rather than silently returning the first attachment.
-        getAttachment: vi.fn((name: string) => {
-          const match = /^attachment_(\d+)$/.exec(name)
-          return match ? (attachments[Number(match[1]) - 1] ?? null) : null
-        })
+        getAttachment: vi.fn(
+          (name: string) => attachments.find((_, index) => attachmentOptionName(index) === name) ?? null
+        )
       },
       channelId: 'channel-1',
       member: null,
@@ -138,16 +138,21 @@ describe('interaction handler metrics', () => {
   const UNREADABLE = { url: 'https://cdn.test/a.zip', contentType: 'application/zip' }
   const rateLimiterStub = () => ({ tryConsume: vi.fn(() => true), remainingRpm: 14, remainingRpd: 499 })
 
-  it('forwards every supported image slot, not just the first', async () => {
-    const interaction = askWith([
-      PNG,
-      { ...PNG, url: 'https://cdn.test/b.png' },
-      { ...PNG, url: 'https://cdn.test/c.png' }
-    ])
+  // Offers one more than the ceiling admits, so the assertion is non-vacuous at any MAX_ATTACHMENTS: it
+  // fails if the handler stops short of the ceiling AND if it reads past it. The original pinned the
+  // literal 3, which said nothing once the ceiling moved.
+  it('reads every slot the ceiling admits, and no more', async () => {
+    const offered = Array.from({ length: MAX_ATTACHMENTS + 1 }, (_, index) => ({
+      ...PNG,
+      url: `https://cdn.test/${index}.png`
+    }))
+    const interaction = askWith(offered)
 
     await createInteractionHandler(rateLimiterStub() as never)(interaction as never)
 
-    expect(mocks.generateResponse.mock.calls[0][0].imageAttachments).toHaveLength(3)
+    const forwarded = mocks.generateResponse.mock.calls[0][0].imageAttachments
+    expect(forwarded).toHaveLength(MAX_ATTACHMENTS)
+    expect(forwarded.map((a: { url: string }) => a.url)).toEqual(offered.slice(0, MAX_ATTACHMENTS).map((a) => a.url))
   })
 
   it('drops an unsupported attachment instead of forwarding it', async () => {
@@ -306,14 +311,17 @@ describe('interaction handler metrics', () => {
 
   // One visual budget per turn whatever the source: three uploads already fill it, so the link gets no slot
   // and is never even requested.
-  it('does not let a link exceed the ceiling three uploads already filled', async () => {
+  it('does not let a link exceed a ceiling the uploads already filled', async () => {
     const fetchMock = headOk('image/png')
     vi.stubGlobal('fetch', fetchMock)
-    const interaction = askWith([PNG, PNG, PNG], 'https://cdn.test/linked.png')
+    const full = Array.from({ length: MAX_ATTACHMENTS }, () => PNG)
+    const interaction = askWith(full, 'https://cdn.test/linked.png')
 
     await createInteractionHandler(rateLimiterStub() as never)(interaction as never)
 
-    expect(mocks.generateResponse.mock.calls[0][0].imageAttachments).toHaveLength(3)
+    expect(mocks.generateResponse.mock.calls[0][0].imageAttachments).toHaveLength(MAX_ATTACHMENTS)
+    // Not fetched at all, rather than fetched and discarded: resolveMediaUrl makes the Pi call a host the
+    // user named, so a slot that is already full must not reach the network.
     expect(fetchMock).not.toHaveBeenCalled()
     vi.unstubAllGlobals()
   })

@@ -9,6 +9,7 @@ gemini:
   maxRetries: 3 # Max retries for transient errors (429, 500, 503)
   maxOutputTokens: 500 # Max tokens per response (safety net)
   maxAttachmentTokens: 50000 # Max measured token cost of one turn's attachments before they are refused. Size does not bound this: a PDF is ~560 tokens/page, so a 17 KB document can cost 28,000. 50,000 is a fifth of the 250,000 TPM ceiling, admitting three max-length audio clips and refusing a 200-page PDF.
+  maxTokensPerMinute: 125000 # Tokens per rolling minute the bot will spend before it declines new attachment turns. Half the measured 250,000 ceiling (#125), because a continuously-draining bucket admits its capacity AND its rate inside one rolling minute — so 125,000 is worth 250,000 in the worst burst, which is the whole ceiling and no more.
   safetyThreshold: OFF # Harm block threshold: OFF, BLOCK_NONE, BLOCK_ONLY_HIGH, BLOCK_MEDIUM_AND_ABOVE, BLOCK_LOW_AND_ABOVE
   maxLlmCalls: 4 # Max chained tool calls per request
   liveMaxRetries: 2 # Retry attempts after a failed live Gemini response
@@ -31,7 +32,7 @@ session:
 
 discord:
   maxMessageLength: 1500 # Char limit for bot replies (effective ceiling is 4000 minus the tool-disclosure footer)
-  maxInFlightAttachmentBytes: 33554432 # 32 MB ceiling on attachment bytes downloading across ALL channels at once; each byte costs ~4.7x its size in RSS, so this holds worst-case residency near 20% of the container's 1g mem_limit ; a single turn of three 10 MB documents reserves 30 MB of this, so the default sits just above its own floor and one such turn holds off other channels until it finishes (see docs/multimodal.md)
+  maxInFlightAttachmentBytes: 33554432 # 32 MB ceiling on attachment bytes downloading across ALL channels at once; each byte costs ~4.7x its size in RSS, so this holds worst-case residency near 20% of the container's 1g mem_limit ; at one attachment per turn the largest turn reserves 10 MB, so three channels can download concurrently rather than one holding off the rest (see docs/multimodal.md)
 
 memory:
   bufferSize: 30 # Max messages in passive ring buffer per channel (in-memory)
