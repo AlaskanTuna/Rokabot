@@ -44,6 +44,19 @@ describe('measureAttachmentTokens', () => {
     await expect(measureAttachmentTokens([{ inlineData: { mimeType: 'video/mp4', data: 'x' } }])).resolves.toBe(2_712)
   })
 
+  // The wire between the allowance and the fact that makes it correct. `measureAttachmentTokens` inflates the
+  // WHOLE measured total, which is only the video's cost because a turn can carry exactly one attachment —
+  // and nothing in either file links those two statements. At MAX_ATTACHMENTS of 3, one video beside two
+  // images would apply 31% to the images as well. That still errs toward refusing, so it is not a bug; it is
+  // a correctness argument resting on a constant in another file, which reads as intentional long after it
+  // stops being true. Written out rather than derived, so raising the constant fails here instead of
+  // silently over-charging (#160).
+  it('rests on a turn carrying exactly one attachment', async () => {
+    const { MAX_ATTACHMENTS } = await import('../../discord/attachments.js')
+
+    expect(MAX_ATTACHMENTS).toBe(1)
+  })
+
   // The control. An allowance applied to everything would pass the test above while being wrong — audio and
   // documents are priced completely by countTokens and must come back untouched.
   it.each([
