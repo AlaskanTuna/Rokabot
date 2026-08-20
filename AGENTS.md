@@ -20,7 +20,7 @@ Discord Server
     ▼
 Discord Gateway Layer (discord.js)
   - /ask slash command + mention/reply + name-keyword trigger
-  - Rate limit guard (token bucket RPM + daily RPD)
+  - Rate limit guard (windowed RPM + daily RPD)
   - Concurrency guard (1 active request per channel)
     │
     ▼

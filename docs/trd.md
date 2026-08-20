@@ -18,7 +18,7 @@
 │  discord.js v14 client                            │
 │  - Slash command handler (/ask)                   │
 │  - Message handler (mention/reply detection)      │
-│  - Rate limit guard (token bucket RPM + daily RPD)│
+│  - Rate limit guard (windowed RPM + daily RPD)    │
 │  - Concurrency guard (1 active req per channel)   │
 │  - Typing indicator management                    │
 └──────────────────┬──────────────────────────────┘
@@ -144,10 +144,10 @@ Per-channel session state maintained by the SessionManager.
 
 Configuration for the dual rate limiter.
 
-| Field | Type     | Default | Description                                     |
-| ----- | -------- | ------- | ----------------------------------------------- |
-| `rpm` | `number` | `15`    | Max requests per minute (token bucket capacity) |
-| `rpd` | `number` | `500`   | Max requests per day (daily counter)            |
+| Field | Type     | Default | Description                                 |
+| ----- | -------- | ------- | ------------------------------------------- |
+| `rpm` | `number` | `15`    | Max requests admitted in any rolling minute |
+| `rpd` | `number` | `500`   | Max requests per day (daily counter)        |
 
 ### AssemblerInput
 
@@ -641,6 +641,28 @@ a project quota: the harm from overspending lands on every other channel, not on
   250,000 by construction. Capping capacity separately from rate is the more precise alternative and was
   not taken: it adds a second concept to a module that currently has one, to buy throughput this project
   has never needed at a measured peak of 38 requests a day.
+
+### The Two Limiters Bound Their Windows Differently, on Purpose
+
+`rateLimit.rpm` and `gemini.maxTokensPerMinute` guard per-minute quotas and are built differently. That is a
+decision, not drift, and it is recorded here so the next reader meets the distinction rather than the
+discrepancy.
+
+Both started as continuously-refilling buckets, and a bucket whose capacity equals its rate admits
+`capacity + rate x T` over a window of length T — twice the configured value at T of one minute. Measured on
+each: `rpm: 15` admitted **29** requests in the worst rolling minute (#149), and a 200,000 token budget
+admitted **389,382** (#148).
+
+- **`rateLimiter.ts` counts a sliding window**, so `rpm` means what it says. The count is `rpm` itself —
+  fifteen timestamps in a bounded array — so exactness costs nothing and gives up no throughput. Admissions
+  are released only once they are strictly older than the window, never on its edge, so no closed
+  60-second interval can contain more than `rpm` of them.
+- **`tokenBudget.ts` keeps the bucket and halves the knob** so that its 2x is the real ceiling. It meters a
+  continuous quantity rather than a count, so an exact window would mean retaining every charge rather than a
+  bounded number of them, and the ceiling it defends is a token figure we can simply configure below.
+
+The rule the two share: **exact where exactness is cheap, halved where it is not.** Converging them would
+mean either retaining unbounded charge history or halving `rpm` to 7 and giving up half the request budget.
 
 ### Attachment Bytes Do Not Live in History
 
