@@ -144,10 +144,10 @@ Per-channel session state maintained by the SessionManager.
 
 Configuration for the dual rate limiter.
 
-| Field | Type     | Default | Description                                  |
-| ----- | -------- | ------- | -------------------------------------------- |
-| `rpm` | `number` | `15`    | Max **turns** admitted in any rolling minute |
-| `rpd` | `number` | `500`   | Max **turns** per day (daily counter)        |
+| Field | Type     | Default | Description                                      |
+| ----- | -------- | ------- | ------------------------------------------------ |
+| `rpm` | `number` | `15`    | Max **requests** admitted in any rolling minute  |
+| `rpd` | `number` | `500`   | Max **turns** per day (daily counter, see below) |
 
 ### AssemblerInput
 
@@ -415,9 +415,15 @@ path must remain even after the thresholds are relaxed.
   attempt, including an extraction retry, must also consume a token.
 - Live retries require `remainingRpm >= retryRpmFloor` (`2`). Background extraction requires
   `remainingRpm >= extractionRpmFloor` (`3`); otherwise it is skipped so user traffic retains priority.
-- Tool-chain calls up to `maxLlmCalls = 4` remain uncounted. This is known debt and is outside this
-  reliability-policy change. It is why the `rpm` and `rpd` fields above are documented in **turns**: `tryConsume` admits
-  turns, Gemini's quota counts requests, and one turn may issue up to `maxLlmCalls` of them. Tracked in #167.
+- Tool-chain calls up to `maxLlmCalls = 4` were uncounted, so `rpm` bounded turns while Gemini's quota
+  counted requests. **Closed for `rpm` by #167**: a turn now reserves `maxLlmCalls` slots and releases what it
+  did not use, so `rpm` is counted in requests. See "A Turn Reserves the Calls It May Make".
+- **`rpd` still counts turns, and that is a half-closed gap rather than a decision.** `reserveCalls`
+  increments `dailyCount` once per turn and `release` never touches it, so within one object `admitted`
+  counts requests and `dailyCount` counts turns: `rpd: 500` admits 500 turns, which is up to 2,000 requests
+  against a 500-request daily quota. Left as-is because converting it needs release semantics for a counter
+  that has none, and because the reachability is the same dormant profile as the rest — production runs ~10
+  turns a day. Named here so the asymmetry does not read as deliberate.
 
 ### Concurrency & Lifecycle Under Retry
 
@@ -655,6 +661,41 @@ a project quota: the harm from overspending lands on every other channel, not on
   250,000 by construction. Capping capacity separately from rate is the more precise alternative and was
   not taken: it adds a second concept to a module that currently has one, to buy throughput this project
   has never needed at a measured peak of 38 requests a day.
+
+### A Turn Reserves the Calls It May Make
+
+`rateLimit.rpm` is counted in **requests**, and a turn is not one request. ADK is given
+`runConfig.maxLlmCalls`, so a turn that calls a tool issues an initial model call and another after the tool
+result, chaining up to that ceiling. Admitting on a single slot let 15 turns become up to 60 requests against
+a 15 RPM quota (#167) — the third instance of a guard metering a different unit than the quota it defends,
+after bytes-for-tokens (#136) and capacity-for-rate (#149).
+
+Both handlers that reach the model now reserve `gemini.maxLlmCalls` slots before the turn and hand back what
+it did not use, released in the same `finally` as the byte reservation and the concurrency flag.
+
+- **Reserved at the ceiling, released to the truth.** Production averages ~1.13 calls a turn, so pricing
+  every turn at the 4-call peak would cost most of the budget. The release is the whole difference between
+  this and simply lowering `rpm`: that would price every turn at 4 permanently, this holds 4 only while the
+  turn runs.
+- **The sustained ceiling is `rpm - maxLlmCalls + 1`, not `rpm`.** A turn is admitted only when a whole
+  reservation fits, so single-call turns settle at 12 a minute at `rpm: 15`, not 15. That headroom is the
+  standing cost of bounding the peak — a fifth of the budget — and it is the figure to quote, not `rpm`.
+- **`rateLimit.rpm` has a floor of `gemini.maxLlmCalls`.** Below it no turn can ever be admitted and the bot
+  answers nothing while reporting itself rate-limited. Found when a harness fixture at `rpm: 2` went silent
+  the moment reservations landed; now rejected at startup rather than at runtime.
+- **A turn that cannot report what it spent keeps its whole reservation.** Holding slots costs a minute;
+  handing back slots that were spent costs the quota. Made explicit rather than left to arithmetic that would
+  otherwise degrade to `NaN` and release nothing by accident.
+- **The early check is an optimisation, not the guard.** `canAdmitCalls` declines before a Discord round trip
+  is spent; the reservation taken later is authoritative, and a turn that loses the race between them is
+  refused there. Removing the peek changes which message the user sees, not whether the turn runs.
+- **`rpd` is not converted, and the asymmetry is a gap rather than a choice.** `reserveCalls` increments the
+  daily counter once per turn and the release never decrements it, so this object now counts requests by the
+  minute and turns by the day. Converting it needs release semantics for a counter that has none. See
+  "RPM-Budget Accounting".
+- **`/anime` and `/remind` still consume a Gemini slot they never use.** `toolCommands.ts` calls
+  `tryConsume()` and reaches Gemini zero times — it is borrowing this limiter as a generic abuse guard.
+  Deliberately unchanged here and tracked separately.
 
 ### The Two Limiters Bound Their Windows Differently, on Purpose
 

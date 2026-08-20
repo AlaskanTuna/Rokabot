@@ -664,7 +664,7 @@ describe('config module', () => {
       { path: 'gemini.retryRpmFloor', min: 0 },
       { path: 'gemini.extractionRpmFloor', min: 0 },
       { path: 'gemini.maxLlmCalls', min: 1 },
-      { path: 'rateLimit.rpm', min: 1 },
+      { path: 'rateLimit.rpm', min: 4 },
       { path: 'rateLimit.rpd', min: 1 },
       { path: 'session.ttlMs', min: 1 },
       { path: 'session.windowSize', min: 1 },

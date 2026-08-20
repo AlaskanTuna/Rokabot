@@ -130,7 +130,10 @@ function createMessage({
 
 function createRateLimiter() {
   return {
-    tryConsume: mocks.tryConsume,
+    // Driven by the same `mocks.tryConsume` toggle the tests already use, so a test that turns the limiter
+    // off still turns off admission — the handler asks `canAdmitCalls` now, not `tryConsume`.
+    canAdmitCalls: mocks.tryConsume,
+    reserveCalls: () => (mocks.tryConsume() ? { release: () => {} } : undefined),
     remainingRpm: 14,
     remainingRpd: 499
   }
