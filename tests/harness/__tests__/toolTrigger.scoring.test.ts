@@ -137,10 +137,18 @@ describe('per-tool recall floors', () => {
     expect(meetsLiveVerdict(reportWith('remember_user', 13 / 18))).toBe(true)
   })
 
-  // The floor still bites. 12 of 18 is below 0.70 and fails, so this is a recalibration rather than a
+  // The floor still bites. 11 of 18 is below 0.65 and fails, so this is a recalibration rather than a
   // removal.
   it('still fails remember_user below its own floor', () => {
-    expect(meetsLiveVerdict(reportWith('remember_user', 12 / 18))).toBe(false)
+    expect(meetsLiveVerdict(reportWith('remember_user', 11 / 18))).toBe(false)
+  })
+
+  // What 0.65 is actually for. It is a COLLAPSE detector: 12 of 18 passes, and the comment on
+  // RECALL_FLOOR_BY_TOOL says plainly that a genuine degradation is caught 12-45% of the time. Pinned so
+  // that a future reader who expects this gate to catch a regression meets the limit here rather than in
+  // production.
+  it('admits a degraded remember_user, which is the limit this floor is documented to have', () => {
+    expect(meetsLiveVerdict(reportWith('remember_user', 12 / 18))).toBe(true)
   })
 
   // The argument for lowering it, made checkable: the mutation-probe collapse to recall 0.111 is the
@@ -154,6 +162,11 @@ describe('per-tool recall floors', () => {
   // calibrated, so the same recall that now passes remember_user must still fail them.
   it.each(['recall_user', 'search_web'])('leaves %s judged against the shared floor', (tool) => {
     expect(meetsLiveVerdict(reportWith(tool, 13 / 18))).toBe(false)
+  })
+
+  // The floor is written out, not derived, so a change to it has to be made deliberately here too (#160).
+  it('pins remember_user to the floor its measured rate supports', () => {
+    expect(recallFloorFor('remember_user')).toBe(0.65)
   })
 
   // A tool nobody has calibrated gets the strict floor, not the lenient one.

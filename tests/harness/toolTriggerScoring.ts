@@ -217,34 +217,42 @@ export const MIN_RECALL = 0.8
  *
  * The comment above states the calibration premise outright: `r=0.9460 from 54/54 observed should-fire
  * trials`. 0.80 is well-calibrated against a tool running near 1.0, and `recall_user` and `search_web` do —
- * 0.944 to 1.000 across three pinned runs. `remember_user` does not. Pooled over the same three runs it is
- * **43/54 = 0.796**, 95% CI [0.689, 0.904], with the floor sitting INSIDE the interval, so the gate was not
- * answering the question in either direction (#141).
+ * 0.944 to 1.000 across three pinned runs. `remember_user` does not: pooled **43/54 = 0.796** over the same
+ * three runs, 95% CI [0.689, 0.904], with the floor sitting INSIDE its own confidence interval (#141).
  *
- * What that costs, at n=18 (`k` is the should-fire trials needed to pass):
+ * That shortfall is a rate, not one broken fixture — checked rather than assumed, because the two worlds
+ * call for opposite fixes. Per case over 9 trials: R1 9/9, R2 5/9, R3 7/9, R4 7/9, R5 9/9, R6 6/9. No dead
+ * case to repair, two cases clean, misses spread over four. R2 and R6 are tracked separately; lowering a
+ * floor is exactly the change that would have buried them.
  *
- *     floor  k   false-fail at 0.796   detects a collapse to 0.111
- *      0.80  15         51.6%                    100.00%
- *      0.75  14         29.9%                    100.00%
- *      0.70  13         14.3%                    100.00%
- *      0.65  12          5.6%                    100.00%
+ * WHAT THIS FLOOR IS FOR, AND WHAT IT IS NOT. Computed from the per-case rates above rather than from an
+ * assumed uniform one, degradation modelled as a proportional drop in every case:
  *
- * The right-hand column is why this is safe rather than a concession: the mutation-probe collapse to recall
- * 0.111 — the regression this floor was VALIDATED against — is caught identically at every row. Lowering it
- * for this tool gives up nothing the gate was built to detect and takes a 51.6% false-fail rate down to
- * 14.3%. Per-tool rather than global, because lowering it for the two tools it fits would weaken them for no
- * reason.
+ *     floor  k   false-fail   det@0.75  det@0.70  det@0.65  det@0.111
+ *      0.80  15      52.6%       71.1%     84.9%     93.0%    100.00%
+ *      0.75  14      28.8%       48.6%     67.9%     82.2%    100.00%
+ *      0.70  13      12.2%       27.3%     46.7%     65.3%    100.00%
+ *      0.65  12       3.9%       12.3%     27.0%     45.1%    100.00%
  *
- * The floor and the trial count are one decision, not two. At n=18 the achievable resolution is about
- * +/-0.10 at 95%, so ANY floor within 0.10 of a tool's true rate is a coin flip by construction — 0.80
- * against a tool at 0.796 was never resolvable, and 0.70 only works because 0.796 sits outside that band.
- * A tool measuring near 0.70 would need the same treatment again, not a third arbitrary number. Resolving
- * 0.83 from 0.80 needs ~600 trials, which is ~33 runs at ~240 generate calls each: two runs per key per day,
- * so eight and a half days of both keys with nothing left over. That is why this is a recalibration and not
- * a measurement.
+ * There is no good row. At any false-fail rate an operator would keep reading, detection of a genuine
+ * degradation is 12-45% — a coin flip pointing the other way. **So this is a COLLAPSE detector, not a
+ * regression detector**, and 0.65 is chosen for the only two columns that support a choice: a red run means
+ * something (3.9%, one run in 25), and total collapse is still caught with certainty. A floor of 0.70 buys
+ * detection at 0.65 of 65.3% against 45.1% for a false-fail rate three times higher — one red run in eight,
+ * which is the rate at which people learn to re-run a gate instead of reading it.
+ *
+ * Do NOT read a green `remember_user` as evidence that nothing regressed. Making this a regression detector
+ * needs the trial count moved, not the floor: holding false-fail at 5% and detection of a drop to 0.65 at
+ * 90% is unreachable at n=18, 30, 40, 50 and 60, and first becomes possible at **n≈80, floor 0.72**. At ~240
+ * generate calls a run and two runs per key per day, that is a quota decision rather than a threshold one.
+ *
+ * The floor and the trial count are one decision. At n=18 the achievable resolution is about +/-0.10 at 95%,
+ * so any floor within 0.10 of a tool's true rate is a coin flip by construction. This is an OBSERVATION of
+ * 2026-08-21 at n=54, not a specification: it is wrong if `remember_user`'s cases change, if the pooled rate
+ * moves outside [0.689, 0.904], or if the trial count moves.
  */
 export const RECALL_FLOOR_BY_TOOL: Record<string, number> = {
-  remember_user: 0.7
+  remember_user: 0.65
 }
 
 /** The recall floor this tool is judged against. */
