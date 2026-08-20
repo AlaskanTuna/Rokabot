@@ -8,8 +8,12 @@ vi.mock('../../../src/agent/roka.js', () => ({
 vi.mock('../../../src/agent/memory/memoryClaims.js', () => ({ assertClaim: vi.fn() }))
 vi.mock('../../../src/storage/sessionStore.js', () => ({ saveMessage: vi.fn() }))
 vi.mock('../../../src/storage/userNames.js', () => ({ upsertUserName: vi.fn() }))
+// Stubbed rather than allowed through: diagnoseKey spends a real generateContent request, and a unit test
+// that reached the network to produce an error message would be measuring the wire.
+vi.mock('../quotaDiagnostic.js', () => ({ diagnoseKey: vi.fn(async () => 'STUBBED DIAGNOSIS') }))
 
 const { destroySession, generateResponse } = await import('../../../src/agent/roka.js')
+const { diagnoseKey } = await import('../quotaDiagnostic.js')
 const { runCaseSet } = await import('../toolTrigger.js')
 
 // The rig sleeps TRIAL_PACING_MS (>=12s) before every turn but the first, so even a three-trial run is
@@ -55,6 +59,7 @@ const ok = (toolsUsed: string[] = ['recall_user']) => turn('ok', 'ok', toolsUsed
 beforeEach(() => {
   vi.mocked(generateResponse).mockReset()
   vi.mocked(destroySession).mockClear()
+  vi.mocked(diagnoseKey).mockClear()
 })
 
 describe('runCaseSet transient recovery', () => {
@@ -90,6 +95,26 @@ describe('runCaseSet transient recovery', () => {
     await expect(runPaced(1)).rejects.toThrow(/on all 3 of its attempts/)
     // A budget of 2 retries is 3 attempts, and no more: the abort is what stops it, not exhaustion.
     expect(vi.mocked(generateResponse)).toHaveBeenCalledTimes(3)
+  })
+
+  // #150: every 429 arrives as transient_http, so this message used to blame the fixture for a spent key
+  // and for a run outpacing its own cap alike. The diagnosis is what separates them, and it has to reach
+  // the thrown message — a diagnostic nobody reads is the comment-instead-of-a-check mistake again.
+  it('carries a diagnosis into the abort when the failure was an HTTP transient', async () => {
+    vi.mocked(generateResponse).mockResolvedValue(turn('fallback', 'transient_http') as never)
+
+    await expect(runPaced(1)).rejects.toThrow(/Diagnostic call reports: STUBBED DIAGNOSIS/)
+    expect(vi.mocked(diagnoseKey)).toHaveBeenCalledTimes(1)
+  })
+
+  // The control, and the reason the diagnosis is gated on `kind` rather than run on every abort: a socket
+  // that keeps dropping is not a quota question, and spending a request to ask would answer nothing.
+  it('does not spend a request diagnosing a failure that was never a quota refusal', async () => {
+    vi.mocked(generateResponse).mockResolvedValue(turn('fallback', 'network') as never)
+
+    await expect(runPaced(1)).rejects.toThrow(/on all 3 of its attempts/)
+    await expect(runPaced(1)).rejects.not.toThrow(/Diagnostic call reports/)
+    expect(vi.mocked(diagnoseKey)).not.toHaveBeenCalled()
   })
 
   // The distinction the per-trial budget exists to make. Scattered noise is not a finding; the same case
