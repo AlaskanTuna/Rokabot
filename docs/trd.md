@@ -144,10 +144,10 @@ Per-channel session state maintained by the SessionManager.
 
 Configuration for the dual rate limiter.
 
-| Field | Type     | Default | Description                                 |
-| ----- | -------- | ------- | ------------------------------------------- |
-| `rpm` | `number` | `15`    | Max requests admitted in any rolling minute |
-| `rpd` | `number` | `500`   | Max requests per day (daily counter)        |
+| Field | Type     | Default | Description                                  |
+| ----- | -------- | ------- | -------------------------------------------- |
+| `rpm` | `number` | `15`    | Max **turns** admitted in any rolling minute |
+| `rpd` | `number` | `500`   | Max **turns** per day (daily counter)        |
 
 ### AssemblerInput
 
@@ -416,7 +416,8 @@ path must remain even after the thresholds are relaxed.
 - Live retries require `remainingRpm >= retryRpmFloor` (`2`). Background extraction requires
   `remainingRpm >= extractionRpmFloor` (`3`); otherwise it is skipped so user traffic retains priority.
 - Tool-chain calls up to `maxLlmCalls = 4` remain uncounted. This is known debt and is outside this
-  reliability-policy change.
+  reliability-policy change. It is why the `rpm` and `rpd` fields above are documented in **turns**: `tryConsume` admits
+  turns, Gemini's quota counts requests, and one turn may issue up to `maxLlmCalls` of them. Tracked in #167.
 
 ### Concurrency & Lifecycle Under Retry
 
