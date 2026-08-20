@@ -591,6 +591,73 @@ describe("reading what the sender's own message shows", () => {
     expect((await handle(message)).imageAttachments).toHaveLength(MAX_ATTACHMENTS)
   })
 
+  // Components V2 keeps a message's files in components rather than in `attachments`, so none of the
+  // attachment paths saw them. She read the text and answered as though nothing had been shared — the same
+  // shape as the failed-download hole, minus the notice, because nothing counted what it never detected.
+  it('sees a picture posted in a media gallery rather than as an attachment', async () => {
+    const { message } = createMessage({ content: '<@bot-1> what is this?' })
+    message.components = [
+      {
+        toJSON: () => ({
+          type: 17,
+          components: [
+            {
+              type: 12,
+              items: [{ media: { url: 'https://cdn.test/gallery.png', content_type: 'image/png' } }]
+            }
+          ]
+        })
+      }
+    ] as never
+
+    expect((await handle(message)).imageAttachments).toEqual([
+      { url: 'https://cdn.test/gallery.png', contentType: 'image/png', size: undefined }
+    ])
+  })
+
+  it('hears a clip posted as a file component', async () => {
+    const { message } = createMessage({ content: '<@bot-1> what is this?' })
+    message.components = [
+      {
+        toJSON: () => ({
+          type: 13,
+          file: { url: 'https://cdn.test/clip.mp3', content_type: 'audio/mpeg' },
+          size: 2048
+        })
+      }
+    ] as never
+
+    expect((await handle(message)).imageAttachments).toEqual([
+      { url: 'https://cdn.test/clip.mp3', contentType: 'audio/mpeg', size: 2048 }
+    ])
+  })
+
+  // The half that matters even without the capability: a file she cannot open must still be *reported*, or
+  // the turn is indistinguishable from one where nothing was attached at all.
+  it('says a component file was there even when it is a type she cannot read', async () => {
+    const { message, reply } = createMessage({ content: '<@bot-1> what is this?' })
+    message.components = [
+      {
+        toJSON: () => ({ type: 13, file: { url: 'https://cdn.test/archive.zip', content_type: 'application/zip' } })
+      }
+    ] as never
+
+    const result = await handle(message)
+
+    expect(result.imageAttachments).toBeUndefined()
+    expect(JSON.stringify(reply.mock.calls[0][0])).toContain("I couldn't open that file~")
+  })
+
+  it('counts a component file Discord stated no type for, rather than guessing from the URL', async () => {
+    const { message, reply } = createMessage({ content: '<@bot-1> what is this?' })
+    message.components = [{ toJSON: () => ({ type: 11, media: { url: 'https://cdn.test/mystery.png' } }) }] as never
+
+    const result = await handle(message)
+
+    expect(result.imageAttachments).toBeUndefined()
+    expect(JSON.stringify(reply.mock.calls[0][0])).toContain("I couldn't open that file~")
+  })
+
   // Container text was read only when there was no message text beside it, so she could match her own name
   // inside a container she then never saw the contents of.
   it('keeps container text when the message carries plain text as well', async () => {
