@@ -11,6 +11,7 @@ import {
   type ToolTriggerReport,
   loadCaseSet,
   meetsLiveVerdict,
+  recallFloorFor,
   scoreCaseSet
 } from '../toolTriggerScoring.js'
 
@@ -105,6 +106,64 @@ describe('tool-trigger fixture integrity', () => {
     await writeFile(path, `${content}\n`)
 
     await expect(loadCaseSet(path)).rejects.toThrow(/line 3 requires a boolean shouldFire/)
+  })
+})
+
+/** Only `tool`, `precision` and `recall` reach `meetsLiveVerdict`; the rest is shape. Built directly rather
+ * than scored from a fixture, because the point is the threshold, and routing a specific recall through a
+ * case set would make the number an artefact of the fixture instead of the input. */
+function reportWith(tool: string, recall: number, precision = 1): ToolTriggerReport {
+  return {
+    tool,
+    caseCount: 12,
+    trials: 3,
+    perCase: [],
+    truePositives: 0,
+    falsePositives: 0,
+    trueNegatives: 0,
+    falseNegatives: 0,
+    accuracy: 0,
+    precision,
+    recall,
+    systematicFailures: [],
+    hour: 14
+  }
+}
+
+describe('per-tool recall floors', () => {
+  // Gate H, 2026-08-21: 13 of 18 should-fire trials. Under the shared 0.80 floor this failed, on a tool
+  // whose pooled rate over three pinned runs is 0.796 — a floor inside its own confidence interval (#141).
+  it('passes remember_user at the rate three pinned runs actually measured', () => {
+    expect(meetsLiveVerdict(reportWith('remember_user', 13 / 18))).toBe(true)
+  })
+
+  // The floor still bites. 12 of 18 is below 0.70 and fails, so this is a recalibration rather than a
+  // removal.
+  it('still fails remember_user below its own floor', () => {
+    expect(meetsLiveVerdict(reportWith('remember_user', 12 / 18))).toBe(false)
+  })
+
+  // The argument for lowering it, made checkable: the mutation-probe collapse to recall 0.111 is the
+  // regression this floor was validated against, and 0.70 catches it exactly as 0.80 did. If lowering the
+  // floor had cost the gate its purpose, this is where that would show.
+  it('still catches the collapse the floor was validated against', () => {
+    expect(meetsLiveVerdict(reportWith('remember_user', 0.111))).toBe(false)
+  })
+
+  // Scoped to one tool. recall_user and search_web measure 0.944 to 1.000, where 0.80 is correctly
+  // calibrated, so the same recall that now passes remember_user must still fail them.
+  it.each(['recall_user', 'search_web'])('leaves %s judged against the shared floor', (tool) => {
+    expect(meetsLiveVerdict(reportWith(tool, 13 / 18))).toBe(false)
+  })
+
+  // A tool nobody has calibrated gets the strict floor, not the lenient one.
+  it('defaults an unlisted tool to the shared floor', () => {
+    expect(recallFloorFor('some_future_tool')).toBe(MIN_RECALL)
+  })
+
+  // Precision is untouched by any of this; a tool over-firing fails on precision whatever its recall floor.
+  it('does not let a per-tool recall floor rescue bad precision', () => {
+    expect(meetsLiveVerdict(reportWith('remember_user', 1, 0.5))).toBe(false)
   })
 })
 

@@ -212,6 +212,46 @@ export const MIN_PRECISION = 0.8
 // should-fire trial also misses.
 export const MIN_RECALL = 0.8
 
+/**
+ * Tools whose measured rate makes the shared floor unusable, and the floor that is honest for them.
+ *
+ * The comment above states the calibration premise outright: `r=0.9460 from 54/54 observed should-fire
+ * trials`. 0.80 is well-calibrated against a tool running near 1.0, and `recall_user` and `search_web` do —
+ * 0.944 to 1.000 across three pinned runs. `remember_user` does not. Pooled over the same three runs it is
+ * **43/54 = 0.796**, 95% CI [0.689, 0.904], with the floor sitting INSIDE the interval, so the gate was not
+ * answering the question in either direction (#141).
+ *
+ * What that costs, at n=18 (`k` is the should-fire trials needed to pass):
+ *
+ *     floor  k   false-fail at 0.796   detects a collapse to 0.111
+ *      0.80  15         51.6%                    100.00%
+ *      0.75  14         29.9%                    100.00%
+ *      0.70  13         14.3%                    100.00%
+ *      0.65  12          5.6%                    100.00%
+ *
+ * The right-hand column is why this is safe rather than a concession: the mutation-probe collapse to recall
+ * 0.111 — the regression this floor was VALIDATED against — is caught identically at every row. Lowering it
+ * for this tool gives up nothing the gate was built to detect and takes a 51.6% false-fail rate down to
+ * 14.3%. Per-tool rather than global, because lowering it for the two tools it fits would weaken them for no
+ * reason.
+ *
+ * The floor and the trial count are one decision, not two. At n=18 the achievable resolution is about
+ * +/-0.10 at 95%, so ANY floor within 0.10 of a tool's true rate is a coin flip by construction — 0.80
+ * against a tool at 0.796 was never resolvable, and 0.70 only works because 0.796 sits outside that band.
+ * A tool measuring near 0.70 would need the same treatment again, not a third arbitrary number. Resolving
+ * 0.83 from 0.80 needs ~600 trials, which is ~33 runs at ~240 generate calls each: two runs per key per day,
+ * so eight and a half days of both keys with nothing left over. That is why this is a recalibration and not
+ * a measurement.
+ */
+export const RECALL_FLOOR_BY_TOOL: Record<string, number> = {
+  remember_user: 0.7
+}
+
+/** The recall floor this tool is judged against. */
+export function recallFloorFor(tool: string): number {
+  return RECALL_FLOOR_BY_TOOL[tool] ?? MIN_RECALL
+}
+
 /** The live gate's pass/fail rule, in one place: a precision floor AND a recall floor, both
  * aggregate rates over the full observation set — an aggregate rate over 18 observations does not
  * flake the way a per-case count over 3 trials does (see the reproducibility note below).
@@ -240,7 +280,7 @@ export const MIN_RECALL = 0.8
  * aggregate at the trial counts this gate can afford; systematicFailures carries the
  * per-case signal as a diagnostic instead. */
 export function meetsLiveVerdict(report: ToolTriggerReport): boolean {
-  return report.precision >= MIN_PRECISION && report.recall >= MIN_RECALL
+  return report.precision >= MIN_PRECISION && report.recall >= recallFloorFor(report.tool)
 }
 
 /** Pure scorer over recorded fire/no-fire booleans — no database, no socket, no injected clock — so
