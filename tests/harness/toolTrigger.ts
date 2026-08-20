@@ -3,21 +3,31 @@
 
 import { assertClaim } from '../../src/agent/memory/memoryClaims.js'
 import { destroySession, generateResponse } from '../../src/agent/roka.js'
+import { config } from '../../src/config.js'
 import { saveMessage } from '../../src/storage/sessionStore.js'
 import { upsertUserName } from '../../src/storage/userNames.js'
+import { diagnoseKey } from './quotaDiagnostic.js'
 import type { CaseObservations, CaseSetHeader, ToolTriggerCase } from './toolTriggerScoring.js'
 
-// A fired tool costs two back-to-back Gemini calls inside one generateResponse (initial ->
-// function call -> tool result -> final text), so worst case is 2 calls / 12s = 10 RPM against
-// the 15 RPM cap (config.rateLimit.rpm) — the rig bypasses the handlers' RateLimiter entirely,
-// so this pacing is the only limiter. Gate-1 amendment (human, 2026-07-29): do not tune below
-// 12000 — the plan's original 8000 sits at exactly 15 RPM, leaving no headroom for a real gate.
-const TRIAL_PACING_FLOOR_MS = 12000
+// The rig bypasses the handlers' RateLimiter entirely, so this pacing is the only limiter — and it has
+// to be sized against the requests a turn can spend, not the requests a typical turn does spend. One
+// generateResponse may issue up to config.gemini.maxLlmCalls (roka.ts passes it as runConfig), so at 4
+// calls and 15 RPM a 12s pace admits 20 requests a minute against a 15-request cap. Measured on the
+// 2026-08-20 gate runs: mean 9.2 calls/min but peak 19, four minutes over cap, and 17 RPM refusals —
+// one of which exhausted a case's retry ladder and aborted the set, so the overshoot does not merely
+// slow the gate down, it destroys the measurement (#166). Derived rather than restated so it moves when
+// either knob does. Gate-1 amendment (human, 2026-07-29): never below 12000 — the plan's original 8000
+// sits at exactly 15 RPM even on the old 2-call assumption, leaving no headroom for a real gate.
+const GATE1_FLOOR_MS = 12000
+const TRIAL_PACING_FLOOR_MS = Math.max(
+  GATE1_FLOOR_MS,
+  Math.ceil((60_000 * config.gemini.maxLlmCalls) / config.rateLimit.rpm)
+)
 
-/** Raise-only override. The 2-calls-per-turn worst case above predates the safety de-escalation ladder
- * (#81), which can spend further attempts inside one turn, so a run competing with live production traffic
- * on the same project quota can still trip the 15 RPM cap. Lowering is refused rather than clamped silently:
- * the floor is the human's Gate-1 amendment, so it is enforced here rather than left in a comment. */
+/** Raise-only override. The derived floor covers one turn's own ceiling; it does not cover a run competing
+ * with live production traffic on the same project quota, nor the safety de-escalation ladder (#81) spending
+ * further attempts inside one turn. Lowering is refused rather than clamped silently: the floor is the
+ * human's Gate-1 amendment, so it is enforced here rather than left in a comment. */
 export const TRIAL_PACING_MS = Math.max(
   TRIAL_PACING_FLOOR_MS,
   Number(process.env.ROKABOT_TRIAL_PACING_MS) || TRIAL_PACING_FLOOR_MS
@@ -154,11 +164,15 @@ export async function runCaseSet(
             if (result.metrics.outcome !== 'ok') {
               transientRetries++
               if (retry >= MAX_TRIAL_RETRIES) {
+                // Every 429 arrives as transient_http, so the old message blamed the fixture for a spent key
+                // (#150) and for a run outpacing its own cap (#166) alike. One request, only here, buys the
+                // difference between "try another key" and half an hour spent reading a case that was fine.
+                const diagnosis =
+                  result.metrics.kind === 'transient_http' ? ` Diagnostic call reports: ${await diagnoseKey()}.` : ''
                 throw new Error(
                   `Reliability guard: case "${testCase.id}" trial ${trial} returned outcome=` +
                     `${result.metrics.outcome} (kind=${result.metrics.kind}) on all ` +
-                    `${MAX_TRIAL_RETRIES + 1} of its attempts — aborting. Failing this consistently on one ` +
-                    'case is not one bad minute on the wire.'
+                    `${MAX_TRIAL_RETRIES + 1} of its attempts — aborting.${diagnosis}`
                 )
               }
               console.warn(

@@ -144,10 +144,10 @@ Per-channel session state maintained by the SessionManager.
 
 Configuration for the dual rate limiter.
 
-| Field | Type     | Default | Description                                 |
-| ----- | -------- | ------- | ------------------------------------------- |
-| `rpm` | `number` | `15`    | Max requests admitted in any rolling minute |
-| `rpd` | `number` | `500`   | Max requests per day (daily counter)        |
+| Field | Type     | Default | Description                                  |
+| ----- | -------- | ------- | -------------------------------------------- |
+| `rpm` | `number` | `15`    | Max **turns** admitted in any rolling minute |
+| `rpd` | `number` | `500`   | Max **turns** per day (daily counter)        |
 
 ### AssemblerInput
 
@@ -416,7 +416,8 @@ path must remain even after the thresholds are relaxed.
 - Live retries require `remainingRpm >= retryRpmFloor` (`2`). Background extraction requires
   `remainingRpm >= extractionRpmFloor` (`3`); otherwise it is skipped so user traffic retains priority.
 - Tool-chain calls up to `maxLlmCalls = 4` remain uncounted. This is known debt and is outside this
-  reliability-policy change.
+  reliability-policy change. It is why the `rpm` and `rpd` fields above are documented in **turns**: `tryConsume` admits
+  turns, Gemini's quota counts requests, and one turn may issue up to `maxLlmCalls` of them. Tracked in #167.
 
 ### Concurrency & Lifecycle Under Retry
 
@@ -563,6 +564,19 @@ therefore prices the parts with `countTokens` before sending them and refuses th
 `gemini.maxAttachmentTokens`, rather than letting the request fail on a 429 that would retry into the same
 wall and spend the minute's budget for every other channel.
 
+- **Video carries an allowance for audio the estimate does not price.** `countTokens` returns the _same_
+  total for a clip with and without its audio stream, while the model demonstrably hears that audio — a
+  black-frames video whose only content was speech was transcribed correctly (#153). Measured independently
+  on two matched pairs: 2,133/2,133 and 2,070/2,070 tokens either way, against 32.1 and 32.05 tokens a second
+  for the same audio priced alone. Audio is therefore ~31% of a low-resolution video's ~104/second and the
+  estimate omits all of it, so `measureAttachmentTokens` adds `VIDEO_AUDIO_ALLOWANCE` when a video part is
+  present. Whether Google _bills_ that audio is **not established** — `countTokens` already diverges from
+  billing for time-based media, so its silence is not evidence the audio is free. The allowance takes the
+  conservative reading because only one direction fails badly: an under-estimate admits a turn that then 429s
+  and spends the minute's budget for every other channel, while an over-estimate refuses one long video
+  early. It is applied to silent video too, since `countTokens` cannot distinguish one and finding out means
+  parsing a container per format. A billing-side measurement (`usageMetadata.promptTokenCount` from one
+  `generateContent` per clip) would replace the constant with a fact and could remove it.
 - **Images are skipped, and that skip is model-specific.** `needsMeasuring` returns false when every part is
   an image, because an image is a flat 1,089 tokens regardless of dimensions and `MAX_ATTACHMENTS` of them
   cannot reach any legal ceiling. That number is _this_ model's; `gemini.model` is configurable, and a model
