@@ -7,7 +7,7 @@ const generateContent = vi.fn()
 const GoogleGenAI = vi.fn(() => ({ models: { generateContent } }))
 vi.mock('@google/genai', () => ({ GoogleGenAI }))
 
-const { KEY_IS_LIVE, SPENT_FOR_THE_DAY, diagnoseKey } = await import('../quotaDiagnostic.js')
+const { DIAGNOSTIC_TIMEOUT_MS, KEY_IS_LIVE, SPENT_FOR_THE_DAY, diagnoseKey } = await import('../quotaDiagnostic.js')
 
 beforeEach(() => {
   generateContent.mockReset()
@@ -50,5 +50,15 @@ describe('diagnoseKey', () => {
     const passed = generateContent.mock.calls[0][0]
     expect(passed.config?.abortSignal).toBeInstanceOf(AbortSignal)
     expect(passed.config.abortSignal.aborted).toBe(false)
+  })
+
+  // The signal being present is wiring; the bound is the protection, and nothing else reads the value.
+  // At 600_000 the assertion above stays green while a ten-minute hang is back — the failure the constant
+  // exists to prevent, with the test still passing. Asserted on the constant rather than by driving the
+  // clock, because `AbortSignal.timeout` is native and vitest's fake timers do not reach it: measured, and
+  // a test built on them would have been green because broken rather than green because correct.
+  it('bounds the probe to a span shorter than a human would wait for it', () => {
+    expect(DIAGNOSTIC_TIMEOUT_MS).toBeLessThanOrEqual(30_000)
+    expect(DIAGNOSTIC_TIMEOUT_MS).toBeGreaterThan(0)
   })
 })

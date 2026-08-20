@@ -22,6 +22,13 @@ export const OUTPACING_THE_CAP =
 // Deliberately does not conclude the fixture is at fault. A per-minute refusal recovers in seconds, so a
 // probe run after the ladder gave up cannot rule one out — reporting what was observed beats inferring an
 // absence from a later success.
+// Google's own capacity, not ours. A 503 reaches here because `geminiReliability`'s transient pattern
+// matches 500/503/504 alongside 429, and the verbatim branch below would report it accurately while burying
+// the one thing the operator needs: nothing about this run is theirs to fix. Payload copied from the
+// 2026-08-21 03:20 runs, where both keys took 503s with zero quota refusals between them.
+export const BACKEND_OUT_OF_CAPACITY =
+  'Gemini reports the model is out of capacity, which is neither the key nor the fixture nor the pacing — ' +
+  'this run is not a measurement, and the only remedy is to run it again when capacity returns'
 export const KEY_IS_LIVE =
   'a diagnostic call succeeded, so the key is not spent for the day — but a per-minute refusal recovers ' +
   "within seconds and this probe ran after the fact, so check the run's calls/min before blaming the fixture"
@@ -29,7 +36,7 @@ export const KEY_IS_LIVE =
 /** How long the probe may take before its answer is worth less than the delay. A spent key answers in
  * milliseconds; anything approaching this is a hung socket, and a diagnostic that hangs costs the whole
  * run — the gate stops producing a verdict rather than producing a wrong one. */
-const DIAGNOSTIC_TIMEOUT_MS = 10_000
+export const DIAGNOSTIC_TIMEOUT_MS = 10_000
 
 /** Spends one request to ask the key what is wrong with it, on a path that has already given up.
  *
@@ -60,6 +67,9 @@ export function describeQuotaFailure(error: unknown): string {
   // `quotaId` values (`GenerateRequestsPerDayPerProjectPerModel-FreeTier` and its per-minute twin).
   if (/RequestsPerDay/i.test(text)) return SPENT_FOR_THE_DAY
   if (/RequestsPerMinute/i.test(text)) return OUTPACING_THE_CAP
+  // After the quota IDs, never before: a 429 payload names its quota and says nothing about availability,
+  // so the order cannot mask one with the other, and a capacity 503 carries no quota ID to be confused by.
+  if (/UNAVAILABLE|"code":\s*50[034]/i.test(text)) return BACKEND_OUT_OF_CAPACITY
   // Anything else is reported verbatim rather than bucketed. A diagnostic that guessed would recreate the
   // problem it exists to fix.
   return `the diagnostic call failed with something other than a quota error: ${text.slice(0, 300)}`

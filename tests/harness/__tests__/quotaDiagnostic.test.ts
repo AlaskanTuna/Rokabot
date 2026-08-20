@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
-import { KEY_IS_LIVE, OUTPACING_THE_CAP, SPENT_FOR_THE_DAY, describeQuotaFailure } from '../quotaDiagnostic.js'
+import {
+  BACKEND_OUT_OF_CAPACITY,
+  KEY_IS_LIVE,
+  OUTPACING_THE_CAP,
+  SPENT_FOR_THE_DAY,
+  describeQuotaFailure
+} from '../quotaDiagnostic.js'
 
 // Verbatim from a 2026-08-20 gate run. Both situations arrive as `429 RESOURCE_EXHAUSTED` with identical
 // `kind`, so the quota ID is the only thing in the payload that separates "come back tomorrow" from "slow
@@ -27,6 +33,27 @@ describe('describeQuotaFailure', () => {
 
   it('names a per-minute refusal as pacing, so the remedy is the run rather than the fixture', () => {
     expect(describeQuotaFailure(THROTTLED_429)).toBe(OUTPACING_THE_CAP)
+  })
+
+  // Verbatim from the 2026-08-21 03:20 runs. Reaches the diagnostic because geminiReliability's transient
+  // pattern matches 500/503/504 alongside 429, and the operator's remedy is neither of the quota ones.
+  it("names a capacity outage as Google's, so nobody looks for a fault that is not theirs", () => {
+    const outage = JSON.stringify({
+      error: {
+        code: 503,
+        message: 'This model is currently experiencing high demand. Spikes in demand are usually temporary.',
+        status: 'UNAVAILABLE'
+      }
+    })
+
+    expect(describeQuotaFailure(outage)).toBe(BACKEND_OUT_OF_CAPACITY)
+  })
+
+  // Order guard. A quota refusal must never be read as an outage: both are transient_http, and the remedies
+  // point opposite ways — one says run it again later, the other says the run is spending too fast.
+  it('still reads a quota refusal as a quota refusal, not as an outage', () => {
+    expect(describeQuotaFailure(THROTTLED_429)).toBe(OUTPACING_THE_CAP)
+    expect(describeQuotaFailure(SPENT_KEY_429)).toBe(SPENT_FOR_THE_DAY)
   })
 
   // The control. Both branches above match on a substring, and a classifier that reached one of them from
