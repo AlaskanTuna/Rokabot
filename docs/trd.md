@@ -451,10 +451,12 @@ The container is SIGKILLed instead. `src/discord/byteBudget.ts` is the admission
   measurement, not a guard.
 - `discord.maxInFlightAttachmentBytes` (32 MB) is the ceiling across every channel at once. Its `min` bound
   is `MAX_ATTACHMENTS × MAX_DOCUMENT_SIZE_BYTES`: below that a maximal turn could never be admitted even on
-  an idle bot, so it would be refused permanently rather than delayed. The default therefore sits only 2 MB
-  above its own floor, and that is deliberate — one turn carrying three 10 MB documents reserves 30 MB and
-  holds off every other channel until it completes. That is the budget working, made visible by the busy
-  reply rather than silent; `discord.maxInFlightAttachmentBytes` is the knob to loosen it.
+  an idle bot, so it would be refused permanently rather than delayed. **At `MAX_ATTACHMENTS = 1` that floor
+  is 10 MB**, so the 32 MB default sits at a little over three times it and three channels can download
+  concurrently. That headroom is the point of the one-attachment ceiling rather than a side effect: at three
+  attachments the floor was 30 MB, the default sat 2 MB above it, and a single maximal turn held off every
+  other channel on every other server until it completed. `discord.maxInFlightAttachmentBytes` remains the
+  knob to loosen it further.
 - A turn is reserved its attachments' **stated** sizes where Discord gives them, and its type's ceiling where
   it does not — an embed image or a link resolved by HEAD states no size, and an unknown must cost the most
   it could. A stated size above the ceiling is clamped to it, since the download refuses on `Content-Length`
@@ -531,9 +533,26 @@ byte budget cannot disagree about the same file.
 - **Both surfaces admit the same set.** `/ask` and the mention path each filter with `isSupportedMedia`.
   The forwarded, referenced and embed sub-paths on the mention path remain images-only, because their text
   markers describe what they carry as images.
-- **`attachment_url` is images-only**, narrower than the upload slots beside it. It is the SSRF-guarded path
-  that makes the Pi fetch a user-named host, so its type set is a security decision rather than a feature
-  one; widening it belongs in its own change.
+- **Components V2 media is read, and what cannot be read is still counted.** A Components V2 message keeps
+  its files in `components` rather than in `attachments`, so `Thumbnail` (11), `MediaGallery` (12) and `File`
+  (13) reached her as nothing at all — and as nothing _silently_, because a path that never detects a file
+  cannot report one. `extractComponentMedia` walks the same tree the text walker does and routes what it
+  finds into the ordinary attachment slots, after the sender's own uploads: an explicit upload is the more
+  deliberate of the two gestures. A component whose `content_type` she cannot read, **or that states none at
+  all**, adds to `unsupportedCount` rather than being skipped — guessing a type from the URL would be the
+  same silent assumption that created the gap. Nothing here makes a network call: the type comes from what
+  Discord already resolved.
+- **`attachment_url` takes the same set as the upload slot.** It was images-only, on the reasoning that this
+  is the SSRF-guarded path where the Pi fetches a host the _sender_ named — but the guard checks the host and
+  never the payload, so the narrow type set was not what made it safe. What does: the 2 s HEAD and 15 s body
+  timeouts, the per-type size ceilings, and the measured token ceiling, none of which care about type. The
+  resolver also carries the `content-length` the server declared, so a linked file reaches the same
+  truncate-or-refuse decision an uploaded one does; a host that lies about it costs nothing, because that
+  size only chooses the policy and `readWithinLimit` bounds the transfer either way.
+- **Two asymmetries remain and are deliberate.** Only images are re-encoded by `sharp` on the way through, so
+  every other type is relayed to the model verbatim; and time-based media lets the sender pick the token cost
+  per byte, where an image is a flat 1,089 whatever it contains. Both are bounded downstream by
+  `gemini.maxAttachmentTokens`, which refuses after the download rather than before it.
 
 ### Attachment Token Admission
 

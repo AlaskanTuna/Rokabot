@@ -32,6 +32,7 @@ vi.mock('../../utils/logger.js', () => ({ logger: { debug: vi.fn(), error: vi.fn
 
 import { __resetTokenBudgetForTest, chargeTokens } from '../../agent/tokenBudget.js'
 import { config } from '../../config.js'
+import { attachmentOptionName } from '../attachments.js'
 import { createInteractionHandler } from '../events/interactionCreate.js'
 import { createMessageHandler } from '../events/messageCreate.js'
 
@@ -52,7 +53,9 @@ function createInteraction(channelId: string, attachments: ReturnType<typeof upl
       commandName: 'ask',
       options: {
         getString: vi.fn((name: string) => (name === 'question' ? 'hello' : null)),
-        getAttachment: vi.fn((name: string) => attachments[Number(name.split('_')[1]) - 1] ?? null)
+        getAttachment: vi.fn(
+          (name: string) => attachments.find((_, index) => attachmentOptionName(index) === name) ?? null
+        )
       },
       channelId,
       member: null,
