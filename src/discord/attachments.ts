@@ -144,6 +144,15 @@ export async function resolvesToPublicAddress(hostname: string): Promise<boolean
 }
 
 /**
+ * How long the HEAD may take. This runs against a host the *sender* named, before `deferReply`, and Discord
+ * discards an interaction that is not acknowledged within 3 seconds — so an unbounded wait here does not make
+ * the command slow, it makes the command fail with Discord's own "did not respond" and none of her replies.
+ * A host that accepts the connection and then stalls is enough; undici's default headers timeout is 300s.
+ * Two seconds is generous for a HEAD and leaves a second of the window spare.
+ */
+const LINK_HEAD_TIMEOUT_MS = 2000
+
+/**
  * Turn a user-supplied URL into something the vision path can take, or null. The Content-Type is read from a
  * HEAD rather than guessed from the path, because an extension proves nothing about what a server returns.
  * Redirects are followed here so the *resolved* URL is what gets handed on and re-checked — the later GET in
@@ -160,7 +169,11 @@ export async function resolveImageUrl(raw: string): Promise<{ url: string; conte
   if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null
   if (!(await resolvesToPublicAddress(parsed.hostname))) return null
 
-  const response = await fetch(parsed, { method: 'HEAD', redirect: 'follow' }).catch(() => null)
+  const response = await fetch(parsed, {
+    method: 'HEAD',
+    redirect: 'follow',
+    signal: AbortSignal.timeout(LINK_HEAD_TIMEOUT_MS)
+  }).catch(() => null)
   if (!response?.ok) return null
 
   const landed = new URL(response.url || parsed.toString())

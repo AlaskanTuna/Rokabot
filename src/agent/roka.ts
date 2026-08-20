@@ -90,6 +90,15 @@ interface ModelVerdict {
 const modelVerdictForRequest = new AsyncLocalStorage<ModelVerdict>()
 const activeAbortControllers = new Set<AbortController>()
 
+/**
+ * Ceiling on a single attachment download, covering the body as well as the headers. `attachment_url` points
+ * at a host the sender named, and nothing else bounds it — the byte guard stops a *large* response, not a
+ * *slow* one, and a stalled transfer would otherwise sit inside the turn until undici's 300s default. At the
+ * Pi's measured ~2.5 MB/s a maximal 10 MB file lands in about four seconds, so this is roughly 3.7x the worst
+ * legitimate case. Aborting drops the attachment and takes the ordinary "could not be retrieved" notice.
+ */
+const ATTACHMENT_DOWNLOAD_TIMEOUT_MS = 15_000
+
 const SAFETY_DEFLECTION = "Ehh… let's not get into that one~"
 const RECITATION_DEFLECTION = "Ah, I don't think I should repeat that one exactly~"
 const TERMINAL_DEFLECTION = "Eep, something went wrong on my side. Let's try again later~"
@@ -845,7 +854,10 @@ async function downloadAttachment(
     // the transfer rather than reading on and discarding. Measured on a 50 MB body: 1 MB read in 178 ms
     // against 2,750 ms for the whole thing. Range stays because it costs nothing and a 206 would be better
     // still, but nothing depends on it.
-    const response = await fetch(url, wantsPrefix ? { headers: { Range: `bytes=0-${limit - 1}` } } : undefined)
+    const response = await fetch(url, {
+      ...(wantsPrefix ? { headers: { Range: `bytes=0-${limit - 1}` } } : {}),
+      signal: AbortSignal.timeout(ATTACHMENT_DOWNLOAD_TIMEOUT_MS)
+    })
     if (!response.ok) {
       logger.warn({ url, status: response.status }, 'Failed to download attachment')
       return null

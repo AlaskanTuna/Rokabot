@@ -111,6 +111,29 @@ describe('resolveImageUrl', () => {
   })
   afterEach(() => vi.unstubAllGlobals())
 
+  // The interaction window, not politeness. resolveImageUrl runs before deferReply, and Discord discards an
+  // interaction not acknowledged within 3 seconds — so a host that accepts the connection and stalls does not
+  // make /ask slow, it makes /ask fail with Discord's own error and none of her replies. undici would wait
+  // 300s by default.
+  it('gives up on a host that never answers, rather than holding the interaction open', async () => {
+    vi.useFakeTimers()
+    // Never settles on its own: only the abort signal can end this.
+    const fetchMock = vi.fn(
+      (_url: unknown, init?: { signal?: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(new Error('TimeoutError')))
+        })
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const pending = resolveImageUrl('https://slow.test/a.png')
+    await vi.advanceTimersByTimeAsync(3000)
+
+    expect(await pending).toBeNull()
+    expect(fetchMock.mock.calls[0][1]?.signal).toBeDefined()
+    vi.useRealTimers()
+  })
+
   it('refuses a protocol that is not http or https', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
