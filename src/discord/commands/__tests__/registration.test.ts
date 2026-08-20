@@ -65,7 +65,7 @@ describe('buildCommandBody', () => {
 
     expect(optionNames).toEqual([
       'question',
-      ...Array.from({ length: MAX_ATTACHMENTS }, (_, index) => `attachment_${index + 1}`),
+      ...Array.from({ length: MAX_ATTACHMENTS }, (_, index) => attachmentOptionName(index)),
       'attachment_url'
     ])
   })

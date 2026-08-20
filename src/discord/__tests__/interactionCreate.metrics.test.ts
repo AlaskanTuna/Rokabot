@@ -38,7 +38,7 @@ vi.mock('../events/toolCommands.js', () => ({ createToolCommandHandler: () => mo
 
 import { recordSearchCitations } from '../../agent/searchCitations.js'
 import { config } from '../../config.js'
-import { MAX_ATTACHMENTS } from '../attachments.js'
+import { MAX_ATTACHMENTS, attachmentOptionName } from '../attachments.js'
 import { createInteractionHandler } from '../events/interactionCreate.js'
 
 const metrics = {
@@ -119,10 +119,9 @@ describe('interaction handler metrics', () => {
         ),
         // Answers by name the way Discord does, so a slot the handler asks for under the wrong name reads
         // as absent rather than silently returning the first attachment.
-        getAttachment: vi.fn((name: string) => {
-          const match = /^attachment_(\d+)$/.exec(name)
-          return match ? (attachments[Number(match[1]) - 1] ?? null) : null
-        })
+        getAttachment: vi.fn(
+          (name: string) => attachments.find((_, index) => attachmentOptionName(index) === name) ?? null
+        )
       },
       channelId: 'channel-1',
       member: null,
@@ -321,7 +320,7 @@ describe('interaction handler metrics', () => {
     await createInteractionHandler(rateLimiterStub() as never)(interaction as never)
 
     expect(mocks.generateResponse.mock.calls[0][0].imageAttachments).toHaveLength(MAX_ATTACHMENTS)
-    // Not fetched at all, rather than fetched and discarded: resolveImageUrl makes the Pi call a host the
+    // Not fetched at all, rather than fetched and discarded: resolveMediaUrl makes the Pi call a host the
     // user named, so a slot that is already full must not reach the network.
     expect(fetchMock).not.toHaveBeenCalled()
     vi.unstubAllGlobals()
