@@ -1,3 +1,4 @@
+import type { ToolContext } from '@google/adk'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../../utils/logger.js', () => ({
@@ -9,6 +10,12 @@ import { recordResponseEvent } from '../../../storage/metricsStore.js'
 import { getFacts, saveFact } from '../../../storage/userMemory.js'
 import { findUserByName, upsertUserName } from '../../../storage/userNames.js'
 import { logger } from '../../../utils/logger.js'
+
+/** A deliberately partial `ToolContext`. The tools under test read only `state.get`, and ADK does not export
+ * `State` from its public surface, so a Map stands in for it. Cast once here rather than at each call site,
+ * so the double is named in one place instead of asserted away in thirteen. */
+const toolContextWith = (entries: Record<string, unknown>) =>
+  ({ state: new Map(Object.entries(entries)) }) as unknown as ToolContext
 import { assertClaim, getActiveClaims } from '../../memory/memoryClaims.js'
 import { recallUserTool, rememberUserTool } from '../index.js'
 import { recallUser } from '../recallUser.js'
@@ -123,12 +130,7 @@ describe('memory tools', () => {
     await expect(
       recallUserTool.runAsync({
         args: { user_name: 'mIo' },
-        toolContext: {
-          state: new Map([
-            ['_userId', 'speaker'],
-            ['_guildId', 'guild-1']
-          ])
-        }
+        toolContext: toolContextWith({ _userId: 'speaker', _guildId: 'guild-1' })
       })
     ).resolves.toEqual({ facts: 'favorite_anime: Frieren', factCount: 1 })
   })
@@ -156,22 +158,15 @@ describe('memory tools', () => {
 
     const withoutMessage = await recallUserTool.runAsync({
       args: {},
-      toolContext: {
-        state: new Map([
-          ['_userId', 'user-1'],
-          ['_guildId', 'guild-1']
-        ])
-      }
+      toolContext: toolContextWith({ _userId: 'user-1', _guildId: 'guild-1' })
     })
     const withMessage = await recallUserTool.runAsync({
       args: {},
-      toolContext: {
-        state: new Map([
-          ['_userId', 'user-1'],
-          ['_guildId', 'guild-1'],
-          ['_userMessage', 'what does she do at the shelter?']
-        ])
-      }
+      toolContext: toolContextWith({
+        _userId: 'user-1',
+        _guildId: 'guild-1',
+        _userMessage: 'what does she do at the shelter?'
+      })
     })
 
     expect((withoutMessage as { facts: string }).facts).not.toContain('volunteers at the animal shelter')
@@ -182,12 +177,7 @@ describe('memory tools', () => {
     await expect(
       recallUserTool.runAsync({
         args: { user_name: 'nobody' },
-        toolContext: {
-          state: new Map([
-            ['_userId', 'speaker'],
-            ['_guildId', 'guild-1']
-          ])
-        }
+        toolContext: toolContextWith({ _userId: 'speaker', _guildId: 'guild-1' })
       })
     ).resolves.toEqual({ facts: "I don't know anyone by that name here yet.", factCount: 0 })
   })
@@ -215,7 +205,7 @@ describe('memory tools', () => {
     await expect(
       rememberUserTool.runAsync({
         args: { fact_key: 'favorite_anime', fact_value: 'Frieren' },
-        toolContext: { state: new Map([['_userId', 'user-x']]) }
+        toolContext: toolContextWith({ _userId: 'user-x' })
       })
     ).resolves.toEqual({
       success: false,
@@ -225,12 +215,7 @@ describe('memory tools', () => {
     await expect(
       rememberUserTool.runAsync({
         args: { fact_key: 'favorite_anime', fact_value: 'Frieren' },
-        toolContext: {
-          state: new Map([
-            ['_userId', 'user-x'],
-            ['_guildId', 'global']
-          ])
-        }
+        toolContext: toolContextWith({ _userId: 'user-x', _guildId: 'global' })
       })
     ).resolves.toEqual({
       success: false,
@@ -244,33 +229,25 @@ describe('memory tools', () => {
     saveFact('global', 'user-x', 'favorite_anime', 'Frieren')
 
     await expect(
-      recallUserTool.runAsync({ args: {}, toolContext: { state: new Map([['_userId', 'user-x']]) } })
+      recallUserTool.runAsync({ args: {}, toolContext: toolContextWith({ _userId: 'user-x' }) })
     ).resolves.toEqual({ facts: "I don't have any notes about this person yet.", factCount: 0 })
     await expect(
       recallUserTool.runAsync({
         args: {},
-        toolContext: {
-          state: new Map([
-            ['_userId', 'user-x'],
-            ['_guildId', 'global']
-          ])
-        }
+        toolContext: toolContextWith({ _userId: 'user-x', _guildId: 'global' })
       })
     ).resolves.toEqual({ facts: "I don't have any notes about this person yet.", factCount: 0 })
   })
 
   it('warns with the tool name and tenant state on every fail-closed path', async () => {
-    const noTenant = new Map([['_userId', 'user-x']])
-    const globalTenant = new Map([
-      ['_userId', 'user-x'],
-      ['_guildId', 'global']
-    ])
+    const noTenant = toolContextWith({ _userId: 'user-x' })
+    const globalTenant = toolContextWith({ _userId: 'user-x', _guildId: 'global' })
     const fact = { fact_key: 'favorite_anime', fact_value: 'Frieren' }
 
-    await rememberUserTool.runAsync({ args: fact, toolContext: { state: noTenant } })
-    await rememberUserTool.runAsync({ args: fact, toolContext: { state: globalTenant } })
-    await recallUserTool.runAsync({ args: { user_name: 'Mio' }, toolContext: { state: noTenant } })
-    await recallUserTool.runAsync({ args: { user_name: 'Mio' }, toolContext: { state: globalTenant } })
+    await rememberUserTool.runAsync({ args: fact, toolContext: noTenant })
+    await rememberUserTool.runAsync({ args: fact, toolContext: globalTenant })
+    await recallUserTool.runAsync({ args: { user_name: 'Mio' }, toolContext: noTenant })
+    await recallUserTool.runAsync({ args: { user_name: 'Mio' }, toolContext: globalTenant })
 
     // Equality over every call, not toHaveBeenCalledWith: an exact payload is what proves no fact
     // value, argument, or user identifier rode along, and that absent stays distinguishable from 'global'.

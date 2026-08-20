@@ -3,6 +3,7 @@ vi.mock('../tools/jikanThrottle.js', () => ({
   jikanThrottle: vi.fn().mockResolvedValue(undefined)
 }))
 
+import type { RunAsyncToolRequest } from '@google/adk'
 import { flipCoin } from '../tools/flipCoin.js'
 import { getAnimeSchedule } from '../tools/getAnimeSchedule.js'
 import { getCurrentTime } from '../tools/getCurrentTime.js'
@@ -31,6 +32,10 @@ afterEach(() => {
 
 // ── utility FunctionTools ────────────────────────────────────────────────────
 
+/** These tools read their arguments and nothing else, but `RunAsyncToolRequest` requires a `toolContext`.
+ * Supplied as an named omission rather than a cast at each call, so the thing being skipped stays visible. */
+const withoutContext = (args: Record<string, unknown>) => ({ args }) as unknown as RunAsyncToolRequest
+
 describe('utility FunctionTools', () => {
   it('registers the four implicit utilities with their input schemas', () => {
     const declarations = new Map(rokaTools.map((tool) => [tool.name, tool._getDeclaration()]))
@@ -49,7 +54,7 @@ describe('utility FunctionTools', () => {
   it('delegates roll_dice to rollDice', async () => {
     vi.spyOn(Math, 'random').mockReturnValue(0)
 
-    await expect(rollDiceTool.runAsync({ args: { count: 2, sides: 8 } })).resolves.toEqual({
+    await expect(rollDiceTool.runAsync(withoutContext({ count: 2, sides: 8 }))).resolves.toEqual({
       rolls: [1, 1],
       total: 2,
       description: '2d8: [1, 1] = 2'
@@ -59,13 +64,13 @@ describe('utility FunctionTools', () => {
   it('delegates flip_coin to flipCoin', async () => {
     vi.spyOn(Math, 'random').mockReturnValue(0)
 
-    await expect(flipCoinTool.runAsync({ args: {} })).resolves.toEqual({ result: 'heads' })
+    await expect(flipCoinTool.runAsync(withoutContext({}))).resolves.toEqual({ result: 'heads' })
   })
 
   it('delegates get_current_time to getCurrentTime', async () => {
     const params = { location: 'Asia/Tokyo', format: '24h' as const }
 
-    await expect(getCurrentTimeTool.runAsync({ args: params })).resolves.toEqual(getCurrentTime(params))
+    await expect(getCurrentTimeTool.runAsync(withoutContext(params))).resolves.toEqual(getCurrentTime(params))
   })
 
   it('delegates get_weather to getWeather', async () => {
@@ -88,7 +93,7 @@ describe('utility FunctionTools', () => {
         })
       })
 
-    await expect(getWeatherTool.runAsync({ args: { city: 'Tokyo' } })).resolves.toEqual({
+    await expect(getWeatherTool.runAsync(withoutContext({ city: 'Tokyo' }))).resolves.toEqual({
       city: 'Tokyo',
       country: 'Japan',
       temperature: 22.5,

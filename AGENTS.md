@@ -66,6 +66,7 @@ See `docs/trd.md` (canonical) for contracts and data models. Do not create `docs
 npm run dev       # Start with tsx watch (hot reload)
 npm run build     # Compile TypeScript to dist/
 npm run lint      # Check all files with Biome; npm run format:check also checks Prettier formatting
+npm run typecheck # Type-check src/ AND tests/ (tsconfig.test.json). npm run build type-checks src/ only, and its `include` leaves the whole tests/ tree outside the project — vitest strips types without checking them, so this is the only gate that sees a test file
 npm test          # Run Vitest — main gate
 npm run test:perf    # Separate performance-evaluation gate; full verification remains npm test && npm run test:perf
 npm run test:live    # Opt-in live-model gate; needs GRAPHIFY_GEMINI_API_KEY, spends real Gemini calls; not part of full verification

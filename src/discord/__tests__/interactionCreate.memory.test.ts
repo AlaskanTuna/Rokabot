@@ -17,6 +17,8 @@ const mocks = vi.hoisted(() => ({
 // roka.js is intentionally left unmocked — this suite drives the real handler through generateResponse's
 // request construction, captured at runner.runAsync, the last hop this repo owns. It reconstructs
 // toolContext.state from that stateDelta instead of observing ADK's own propagation of it, which happens inside ADK.
+import type { ToolContext } from '@google/adk'
+
 vi.mock('@google/adk', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@google/adk')>()
 
@@ -84,18 +86,20 @@ function makeInteraction(channelId: string, userId: string, message: string) {
 describe('interaction handler DM memory tenant bridge', () => {
   const rateLimiter = { tryConsume: vi.fn(() => true), remainingRpm: 14, remainingRpd: 499 }
 
-  /** Drives one real turn and returns the tool state generateResponse handed to runner.runAsync for it. */
+  /** Drives one real turn and returns, as a deliberately partial `ToolContext`, the tool state
+   * generateResponse handed to runner.runAsync for it. ADK does not export `State` from its public surface,
+   * so a Map stands in for the part these tools read. */
   async function turnState(
     handler: ReturnType<typeof createInteractionHandler>,
     channelId: string,
     message: string
-  ): Promise<Map<string, unknown>> {
+  ): Promise<ToolContext> {
     mocks.runnerRequests.length = 0
     await handler(makeInteraction(channelId, USER_A, message) as never)
     expect(mocks.runnerRequests).toHaveLength(1)
     const stateDelta = mocks.runnerRequests[0].stateDelta
     if (!stateDelta) throw new Error('runner.runAsync was reached without a stateDelta')
-    return new Map(Object.entries(stateDelta))
+    return { state: new Map(Object.entries(stateDelta)) } as unknown as ToolContext
   }
 
   beforeEach(() => {
@@ -117,21 +121,21 @@ describe('interaction handler DM memory tenant bridge', () => {
     await expect(
       rememberUserTool.runAsync({
         args: { fact_key: 'favorite_anime', fact_value: 'Frieren' },
-        toolContext: { state: await turnState(handler, CHANNEL_A, 'Remember I like Frieren') }
+        toolContext: await turnState(handler, CHANNEL_A, 'Remember I like Frieren')
       })
     ).resolves.toMatchObject({ success: true })
 
     await expect(
       recallUserTool.runAsync({
         args: {},
-        toolContext: { state: await turnState(handler, CHANNEL_B, 'What do you remember about me?') }
+        toolContext: await turnState(handler, CHANNEL_B, 'What do you remember about me?')
       })
     ).resolves.toMatchObject({ factCount: 0 })
 
     await expect(
       recallUserTool.runAsync({
         args: {},
-        toolContext: { state: await turnState(handler, CHANNEL_A, 'What do you remember about me?') }
+        toolContext: await turnState(handler, CHANNEL_A, 'What do you remember about me?')
       })
     ).resolves.toMatchObject({ factCount: 1 })
   })
