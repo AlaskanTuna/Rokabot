@@ -6,6 +6,7 @@ import { destroySession, generateResponse } from '../../src/agent/roka.js'
 import { config } from '../../src/config.js'
 import { saveMessage } from '../../src/storage/sessionStore.js'
 import { upsertUserName } from '../../src/storage/userNames.js'
+import { emitTrialRecord } from './gateRecord.js'
 import { diagnoseKey } from './quotaDiagnostic.js'
 import type { CaseObservations, CaseSetHeader, ToolTriggerCase } from './toolTriggerScoring.js'
 
@@ -143,6 +144,7 @@ export async function runCaseSet(
 
           const channelId = `live-${testCase.id}-${trial}${retry > 0 ? `-retry${retry}` : ''}`
           seedWorld(header, channelId)
+          let recorded = false
           try {
             const result = await generateResponse({
               channelId,
@@ -152,6 +154,24 @@ export async function runCaseSet(
               username: speaker.username,
               userId: speaker.id
             })
+
+            // Emitted before the branches below, so an attempt that aborts the run is recorded exactly like
+            // one that survives it. A record written only on the success path would be missing precisely the
+            // attempts anyone would later want to read.
+            emitTrialRecord({
+              tool: header.tool,
+              case: testCase.id,
+              shouldFire: testCase.shouldFire,
+              trial,
+              caseAttempt: retry,
+              fired: result.toolsUsed.includes(header.tool),
+              toolsUsed: result.toolsUsed,
+              outcome: result.metrics.outcome,
+              kind: result.metrics.kind,
+              ladderRetries: result.metrics.retries,
+              channel: channelId
+            })
+            recorded = true
 
             if (result.metrics.outcome === 'deflection') {
               throw new Error(
@@ -192,6 +212,26 @@ export async function runCaseSet(
             }
 
             fired = result.toolsUsed.includes(header.tool)
+          } catch (error) {
+            // An attempt that throws never reaches the emit above, so without this the one attempt certain to
+            // be interesting — the one that ended the run — is the only one with no line in the log. Guarded
+            // by `recorded` so the reliability guard's own throws, which emit first, are not double-counted.
+            if (!recorded) {
+              emitTrialRecord({
+                tool: header.tool,
+                case: testCase.id,
+                shouldFire: testCase.shouldFire,
+                trial,
+                caseAttempt: retry,
+                fired: false,
+                toolsUsed: [],
+                outcome: 'threw',
+                kind: error instanceof Error ? error.name : typeof error,
+                ladderRetries: 0,
+                channel: channelId
+              })
+            }
+            throw error
           } finally {
             await destroySession(channelId)
           }

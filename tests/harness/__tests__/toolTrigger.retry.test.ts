@@ -11,9 +11,11 @@ vi.mock('../../../src/storage/userNames.js', () => ({ upsertUserName: vi.fn() })
 // Stubbed rather than allowed through: diagnoseKey spends a real generateContent request, and a unit test
 // that reached the network to produce an error message would be measuring the wire.
 vi.mock('../quotaDiagnostic.js', () => ({ diagnoseKey: vi.fn(async () => 'STUBBED DIAGNOSIS') }))
+vi.mock('../gateRecord.js', () => ({ emitTrialRecord: vi.fn() }))
 
 const { destroySession, generateResponse } = await import('../../../src/agent/roka.js')
 const { diagnoseKey } = await import('../quotaDiagnostic.js')
+const { emitTrialRecord } = await import('../gateRecord.js')
 const { runCaseSet } = await import('../toolTrigger.js')
 
 // The rig sleeps TRIAL_PACING_MS (>=12s) before every turn but the first, so even a three-trial run is
@@ -60,6 +62,7 @@ beforeEach(() => {
   vi.mocked(generateResponse).mockReset()
   vi.mocked(destroySession).mockClear()
   vi.mocked(diagnoseKey).mockClear()
+  vi.mocked(emitTrialRecord).mockClear()
 })
 
 describe('runCaseSet transient recovery', () => {
@@ -79,6 +82,60 @@ describe('runCaseSet transient recovery', () => {
       'live-F1-0-retry1',
       'live-F1-1'
     ])
+  })
+
+  // #156: a record written only on the success path would be missing exactly the attempts anyone would
+  // later want to read — the failed ones. Emitted per attempt, before the branches that end the run.
+  it('records the attempt that failed as well as the one that replaced it', async () => {
+    vi.mocked(generateResponse)
+      .mockResolvedValueOnce(turn('fallback', 'empty_text') as never)
+      .mockResolvedValue(ok() as never)
+
+    await runPaced(1)
+
+    const attempts = vi.mocked(emitTrialRecord).mock.calls.map((call) => call[0])
+    expect(attempts.map((a) => a.caseAttempt)).toEqual([0, 1])
+    expect(attempts.map((a) => a.outcome)).toEqual(['fallback', 'ok'])
+    expect(attempts.map((a) => a.fired)).toEqual([false, true])
+  })
+
+  // The gap the branch records do not cover: `generateResponse` throwing skips the emit entirely, so the one
+  // attempt guaranteed to matter — the one that ended the run — would be the only one absent from the log.
+  it('records an attempt that threw, rather than leaving the fatal one unlogged', async () => {
+    vi.mocked(generateResponse).mockRejectedValue(new TypeError('session exploded'))
+
+    await expect(runPaced(1)).rejects.toThrow(/session exploded/)
+
+    const records = vi.mocked(emitTrialRecord).mock.calls.map((call) => call[0])
+    expect(records).toHaveLength(1)
+    expect(records[0]).toMatchObject({ outcome: 'threw', kind: 'TypeError', fired: false })
+  })
+
+  // The discriminating case for the dedup flag's SCOPE, which neither test above reaches: the one-attempt
+  // tests cannot see a stale flag, and the two-attempt test has neither attempt throw. Declared outside the
+  // retry loop, attempt 0 returning would leave `recorded` true and silently suppress attempt 1's throw —
+  // the absence the catch exists to prevent, reintroduced by a declaration moving five lines.
+  it('records a later attempt that threw even after an earlier one returned', async () => {
+    vi.mocked(generateResponse)
+      .mockResolvedValueOnce(turn('fallback', 'empty_text') as never)
+      .mockRejectedValue(new RangeError('second attempt exploded'))
+
+    await expect(runPaced(1)).rejects.toThrow(/second attempt exploded/)
+
+    const records = vi.mocked(emitTrialRecord).mock.calls.map((call) => call[0])
+    expect(records.map((r) => r.outcome)).toEqual(['fallback', 'threw'])
+    expect(records.map((r) => r.caseAttempt)).toEqual([0, 1])
+  })
+
+  // The reliability guard emits before it throws, so the catch must not write a second record for the same
+  // attempt — an abort would otherwise appear twice and inflate any count taken from these lines.
+  it('does not double-record an attempt the reliability guard aborted', async () => {
+    vi.mocked(generateResponse).mockResolvedValue(turn('deflection', 'safety') as never)
+
+    await expect(runPaced(1)).rejects.toThrow(/was deflected/)
+
+    expect(vi.mocked(emitTrialRecord)).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(emitTrialRecord).mock.calls[0][0].outcome).toBe('deflection')
   })
 
   it('aborts immediately on a deflection rather than retrying it', async () => {
