@@ -5,7 +5,30 @@ import { logger } from '../utils/logger.js'
 let client: GoogleGenAI | undefined
 
 /**
- * What Gemini will actually charge for these attachment parts, or undefined if it could not be measured.
+ * The share of a video's own token estimate that its soundtrack would cost if charged separately.
+ *
+ * `countTokens` returns the SAME total for a clip with and without its audio stream, while the model
+ * demonstrably hears that audio — a black-frames video whose only content was speech was transcribed
+ * correctly, so the sound reached the model even though nothing in the picture could have carried it (#153).
+ * Measured twice independently on matched clips: 2,133/2,133 and 2,070/2,070 tokens with and without the
+ * stream, against 32.1 and 32.05 tokens a second for the same audio priced on its own. Audio is therefore
+ * ~31% of a low-resolution video's ~104/second, and the estimate omits all of it.
+ *
+ * Whether Google BILLS that audio is NOT established. `countTokens` is already known to diverge from billing
+ * for time-based media, so its silence here is not evidence the audio is free. Two readings fit the evidence
+ * — audio in video is genuinely unbilled and the estimate is right, or it is billed and the estimate is low.
+ * This allowance takes the second, because only one of the two fails dangerously: an under-estimate admits a
+ * turn that then 429s, which retries into the same wall and spends the minute's budget for every other
+ * channel, while an over-estimate merely refuses a long video early.
+ *
+ * A billing-side measurement — `usageMetadata.promptTokenCount` from one `generateContent` per clip — would
+ * replace this constant with a fact and could remove it entirely. It has not been run.
+ */
+const VIDEO_AUDIO_ALLOWANCE = 0.31
+
+/**
+ * What Gemini will charge for these attachment parts, or undefined if it could not be measured. For video
+ * this is `countTokens` plus an allowance for the soundtrack it does not price — see `VIDEO_AUDIO_ALLOWANCE`.
  *
  * Size does not bound token cost, and how badly it fails to depends entirely on the type: an image is a flat
  * 1,089 whatever its resolution, audio is 32 a second, video ~91 a second, and a PDF is **560 a page** — so a
@@ -27,7 +50,14 @@ export async function measureAttachmentTokens(parts: Part[]): Promise<number | u
       model: config.gemini.model,
       contents: [{ role: 'user', parts }]
     })
-    return response.totalTokens ?? undefined
+    if (response.totalTokens === undefined || response.totalTokens === null) return undefined
+
+    // `MAX_ATTACHMENTS` is 1, so when a video is present the whole total is that video's. Applied to silent
+    // video too: `countTokens` cannot distinguish one, and finding out means parsing a container per format.
+    // Over-charging a silent clip by ~31% errs toward refusing, which is the direction that costs a message
+    // rather than the minute.
+    const carriesVideo = parts.some((part) => part.inlineData?.mimeType?.startsWith('video/'))
+    return carriesVideo ? Math.round(response.totalTokens * (1 + VIDEO_AUDIO_ALLOWANCE)) : response.totalTokens
   } catch (error) {
     // Fails open on purpose. A probe that blocked the turn when it could not answer would convert a Gemini
     // hiccup into a total attachment outage — strictly worse than the over-budget turn it exists to prevent,

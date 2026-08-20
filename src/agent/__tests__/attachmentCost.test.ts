@@ -35,6 +35,27 @@ describe('measureAttachmentTokens', () => {
     )
   })
 
+  // #153: countTokens returns the same total for a clip with and without its audio stream, while the model
+  // demonstrably hears that audio. The estimate is therefore short by the soundtrack, in the permissive
+  // direction, so video carries an allowance the other types do not.
+  it('adds an allowance for the soundtrack countTokens does not price', async () => {
+    countTokens.mockResolvedValueOnce({ totalTokens: 2_070 })
+
+    await expect(measureAttachmentTokens([{ inlineData: { mimeType: 'video/mp4', data: 'x' } }])).resolves.toBe(2_712)
+  })
+
+  // The control. An allowance applied to everything would pass the test above while being wrong — audio and
+  // documents are priced completely by countTokens and must come back untouched.
+  it.each([
+    ['audio/mp3', 643],
+    ['application/pdf', 28_001],
+    ['image/png', 1_089]
+  ])('reports %s exactly as the API priced it', async (mimeType, total) => {
+    countTokens.mockResolvedValueOnce({ totalTokens: total })
+
+    await expect(measureAttachmentTokens([{ inlineData: { mimeType, data: 'x' } }])).resolves.toBe(total)
+  })
+
   // Fails open deliberately. Blocking the turn when the probe cannot answer would turn a Gemini hiccup into a
   // total attachment outage, which is worse than the single over-budget request the probe exists to prevent.
   it('admits the turn unmeasured when the probe fails', async () => {
