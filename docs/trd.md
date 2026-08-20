@@ -533,9 +533,17 @@ byte budget cannot disagree about the same file.
 - **Both surfaces admit the same set.** `/ask` and the mention path each filter with `isSupportedMedia`.
   The forwarded, referenced and embed sub-paths on the mention path remain images-only, because their text
   markers describe what they carry as images.
-- **`attachment_url` is images-only**, narrower than the upload slots beside it. It is the SSRF-guarded path
-  that makes the Pi fetch a user-named host, so its type set is a security decision rather than a feature
-  one; widening it belongs in its own change.
+- **`attachment_url` takes the same set as the upload slot.** It was images-only, on the reasoning that this
+  is the SSRF-guarded path where the Pi fetches a host the _sender_ named — but the guard checks the host and
+  never the payload, so the narrow type set was not what made it safe. What does: the 2 s HEAD and 15 s body
+  timeouts, the per-type size ceilings, and the measured token ceiling, none of which care about type. The
+  resolver also carries the `content-length` the server declared, so a linked file reaches the same
+  truncate-or-refuse decision an uploaded one does; a host that lies about it costs nothing, because that
+  size only chooses the policy and `readWithinLimit` bounds the transfer either way.
+- **Two asymmetries remain and are deliberate.** Only images are re-encoded by `sharp` on the way through, so
+  every other type is relayed to the model verbatim; and time-based media lets the sender pick the token cost
+  per byte, where an image is a flat 1,089 whatever it contains. Both are bounded downstream by
+  `gemini.maxAttachmentTokens`, which refuses after the download rather than before it.
 
 ### Attachment Token Admission
 

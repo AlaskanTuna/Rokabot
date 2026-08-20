@@ -98,11 +98,14 @@ export function isSupportedImage(attachment: { contentType: string | null }): bo
 
 /**
  * Discord has no multi-attachment option type, so /ask exposes one option per slot. Named for attachments
- * rather than images because the slots take PDFs too — see ALLOWED_DOCUMENT_TYPES — and numbered from 1
- * so the list reads evenly instead of the first slot carrying a different shape from the rest.
+ * rather than images because the slots take PDFs, audio and video too — see ALLOWED_MEDIA_TYPES.
+ *
+ * A single slot is `attachment`, with no number: `attachment_1` reads as a promise of an `attachment_2` that
+ * does not exist. The numbering returns unchanged if MAX_ATTACHMENTS ever rises again, which is why this
+ * stays a function of the index rather than a constant.
  */
 export function attachmentOptionName(index: number): string {
-  return `attachment_${index + 1}`
+  return MAX_ATTACHMENTS === 1 ? 'attachment' : `attachment_${index + 1}`
 }
 
 // The Pi fetches these itself and sits on a private Tailnet, so a user-supplied URL is an SSRF vector: a
@@ -153,12 +156,20 @@ export async function resolvesToPublicAddress(hostname: string): Promise<boolean
 const LINK_HEAD_TIMEOUT_MS = 2000
 
 /**
- * Turn a user-supplied URL into something the vision path can take, or null. The Content-Type is read from a
- * HEAD rather than guessed from the path, because an extension proves nothing about what a server returns.
+ * Turn a user-supplied URL into something she can be handed, or null. The Content-Type is read from a HEAD
+ * rather than guessed from the path, because an extension proves nothing about what a server returns.
+ *
+ * Admits the same set an upload does. It used to be images alone, on the reasoning that this is the one path
+ * where the Pi fetches a host the *sender* named — but the SSRF guard below checks the host, not the payload,
+ * so the narrower type set never protected anything the wider one does not. What genuinely differs is that
+ * only images are re-encoded by sharp on the way through, and that time-based media lets the sender choose
+ * the token cost per byte; both are bounded downstream by the per-turn ceiling and by #157's timeouts.
  * Redirects are followed here so the *resolved* URL is what gets handed on and re-checked — the later GET in
  * roka.ts follows redirects of its own, so validating only the typed hostname would guard nothing.
  */
-export async function resolveImageUrl(raw: string): Promise<{ url: string; contentType: string } | null> {
+export async function resolveMediaUrl(
+  raw: string
+): Promise<{ url: string; contentType: string; size?: number } | null> {
   let parsed: URL
   try {
     parsed = new URL(raw.trim())
@@ -180,7 +191,14 @@ export async function resolveImageUrl(raw: string): Promise<{ url: string; conte
   if (landed.hostname !== parsed.hostname && !(await resolvesToPublicAddress(landed.hostname))) return null
 
   const contentType = response.headers.get('content-type')?.split(';')[0].trim().toLowerCase()
-  if (!contentType || !ALLOWED_IMAGE_TYPES.has(contentType)) return null
+  if (!contentType || !ALLOWED_MEDIA_TYPES.has(contentType)) return null
 
-  return { url: landed.toString(), contentType }
+  // Taken from the HEAD so a linked file reaches the same decision an uploaded one does: Discord states an
+  // upload's size, and without a size here an oversized link would be refused where an identical upload is
+  // truncated to its opening. A hostile host can of course lie, which costs nothing — the policy it feeds
+  // only chooses between "prefix" and "refuse", and readWithinLimit bounds the actual transfer either way.
+  const declared = Number(response.headers.get('content-length'))
+  const size = Number.isFinite(declared) && declared > 0 ? declared : undefined
+
+  return { url: landed.toString(), contentType, size }
 }

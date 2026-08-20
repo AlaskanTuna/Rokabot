@@ -31,7 +31,7 @@ vi.mock('../events/toolCommands.js', () => ({ createToolCommandHandler: () => vi
 vi.mock('../../utils/logger.js', () => ({ logger: { debug: vi.fn(), error: vi.fn(), info: vi.fn(), warn: vi.fn() } }))
 
 import { config } from '../../config.js'
-import { MAX_ATTACHMENTS } from '../attachments.js'
+import { MAX_ATTACHMENTS, attachmentOptionName } from '../attachments.js'
 import { inFlightBytes, release, tryReserve } from '../byteBudget.js'
 import { createInteractionHandler } from '../events/interactionCreate.js'
 import { createMessageHandler } from '../events/messageCreate.js'
@@ -53,7 +53,9 @@ function createInteraction(channelId: string, attachments: ReturnType<typeof upl
       commandName: 'ask',
       options: {
         getString: vi.fn((name: string) => (name === 'question' ? 'hello' : null)),
-        getAttachment: vi.fn((name: string) => attachments[Number(name.split('_')[1]) - 1] ?? null)
+        getAttachment: vi.fn(
+          (name: string) => attachments.find((_, index) => attachmentOptionName(index) === name) ?? null
+        )
       },
       channelId,
       member: null,
