@@ -167,8 +167,16 @@ export async function runCaseSet(
                 // Every 429 arrives as transient_http, so the old message blamed the fixture for a spent key
                 // (#150) and for a run outpacing its own cap (#166) alike. One request, only here, buys the
                 // difference between "try another key" and half an hour spent reading a case that was fine.
+                // `.catch` rather than a bare await: this line runs while an abort is being assembled, so a
+                // rejecting probe would replace the finding with an error about the tool fetching it.
+                // diagnoseKey does not reject today; the guard is here because the cost of it starting to is
+                // the one failure #150 exists to prevent, and nothing in this file would notice.
                 const diagnosis =
-                  result.metrics.kind === 'transient_http' ? ` Diagnostic call reports: ${await diagnoseKey()}.` : ''
+                  result.metrics.kind === 'transient_http'
+                    ? ` Diagnostic call reports: ${await diagnoseKey().catch(
+                        (error: unknown) => `the diagnostic call itself failed (${String(error)})`
+                      )}.`
+                    : ''
                 throw new Error(
                   `Reliability guard: case "${testCase.id}" trial ${trial} returned outcome=` +
                     `${result.metrics.outcome} (kind=${result.metrics.kind}) on all ` +

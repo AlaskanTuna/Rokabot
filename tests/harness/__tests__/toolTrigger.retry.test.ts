@@ -107,6 +107,24 @@ describe('runCaseSet transient recovery', () => {
     expect(vi.mocked(diagnoseKey)).toHaveBeenCalledTimes(1)
   })
 
+  // The diagnostic must never eat the finding. This line runs while an abort is being assembled, so a
+  // rejecting probe would surface as an error about the tool that was fetching the explanation instead of
+  // the explanation — #150's own failure mode, one level up and harder to see because the message would
+  // look like a real error rather than a misleading one.
+  it('still reports the abort when the diagnostic itself fails', async () => {
+    vi.mocked(generateResponse).mockResolvedValue(turn('fallback', 'transient_http') as never)
+    vi.mocked(diagnoseKey).mockRejectedValueOnce(new Error('probe exploded'))
+
+    await expect(runPaced(1)).rejects.toThrow(/on all 3 of its attempts/)
+  })
+
+  it('says the diagnostic failed rather than staying silent about why there is no diagnosis', async () => {
+    vi.mocked(generateResponse).mockResolvedValue(turn('fallback', 'transient_http') as never)
+    vi.mocked(diagnoseKey).mockRejectedValueOnce(new Error('probe exploded'))
+
+    await expect(runPaced(1)).rejects.toThrow(/diagnostic call itself failed.*probe exploded/)
+  })
+
   // The control, and the reason the diagnosis is gated on `kind` rather than run on every abort: a socket
   // that keeps dropping is not a quota question, and spending a request to ask would answer nothing.
   it('does not spend a request diagnosing a failure that was never a quota refusal', async () => {

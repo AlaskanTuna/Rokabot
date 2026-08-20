@@ -26,11 +26,25 @@ export const KEY_IS_LIVE =
   'a diagnostic call succeeded, so the key is not spent for the day — but a per-minute refusal recovers ' +
   "within seconds and this probe ran after the fact, so check the run's calls/min before blaming the fixture"
 
-/** Spends one request to ask the key what is wrong with it, on a path that has already given up. */
+/** How long the probe may take before its answer is worth less than the delay. A spent key answers in
+ * milliseconds; anything approaching this is a hung socket, and a diagnostic that hangs costs the whole
+ * run — the gate stops producing a verdict rather than producing a wrong one. */
+const DIAGNOSTIC_TIMEOUT_MS = 10_000
+
+/** Spends one request to ask the key what is wrong with it, on a path that has already given up.
+ *
+ * Never rejects. The caller is mid-abort, so a diagnostic that threw would replace the finding with an
+ * error about the tool that was fetching it — the misdirection this module exists to remove, one level up.
+ * The client construction is inside the try for the same reason: `new GoogleGenAI` throws on a missing or
+ * malformed key, which is exactly the state a spent-key run is most likely to be near. */
 export async function diagnoseKey(): Promise<string> {
-  const client = new GoogleGenAI({ apiKey: config.gemini.apiKey })
   try {
-    await client.models.generateContent({ model: config.gemini.model, contents: 'ping' })
+    const client = new GoogleGenAI({ apiKey: config.gemini.apiKey })
+    await client.models.generateContent({
+      model: config.gemini.model,
+      contents: 'ping',
+      config: { abortSignal: AbortSignal.timeout(DIAGNOSTIC_TIMEOUT_MS) }
+    })
     return KEY_IS_LIVE
   } catch (error) {
     return describeQuotaFailure(error)
