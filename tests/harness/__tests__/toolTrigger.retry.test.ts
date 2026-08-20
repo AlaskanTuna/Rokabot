@@ -11,9 +11,11 @@ vi.mock('../../../src/storage/userNames.js', () => ({ upsertUserName: vi.fn() })
 // Stubbed rather than allowed through: diagnoseKey spends a real generateContent request, and a unit test
 // that reached the network to produce an error message would be measuring the wire.
 vi.mock('../quotaDiagnostic.js', () => ({ diagnoseKey: vi.fn(async () => 'STUBBED DIAGNOSIS') }))
+vi.mock('../gateRecord.js', () => ({ emitTrialRecord: vi.fn() }))
 
 const { destroySession, generateResponse } = await import('../../../src/agent/roka.js')
 const { diagnoseKey } = await import('../quotaDiagnostic.js')
+const { emitTrialRecord } = await import('../gateRecord.js')
 const { runCaseSet } = await import('../toolTrigger.js')
 
 // The rig sleeps TRIAL_PACING_MS (>=12s) before every turn but the first, so even a three-trial run is
@@ -60,6 +62,7 @@ beforeEach(() => {
   vi.mocked(generateResponse).mockReset()
   vi.mocked(destroySession).mockClear()
   vi.mocked(diagnoseKey).mockClear()
+  vi.mocked(emitTrialRecord).mockClear()
 })
 
 describe('runCaseSet transient recovery', () => {
@@ -79,6 +82,21 @@ describe('runCaseSet transient recovery', () => {
       'live-F1-0-retry1',
       'live-F1-1'
     ])
+  })
+
+  // #156: a record written only on the success path would be missing exactly the attempts anyone would
+  // later want to read — the failed ones. Emitted per attempt, before the branches that end the run.
+  it('records the attempt that failed as well as the one that replaced it', async () => {
+    vi.mocked(generateResponse)
+      .mockResolvedValueOnce(turn('fallback', 'empty_text') as never)
+      .mockResolvedValue(ok() as never)
+
+    await runPaced(1)
+
+    const attempts = vi.mocked(emitTrialRecord).mock.calls.map((call) => call[0])
+    expect(attempts.map((a) => a.attempt)).toEqual([0, 1])
+    expect(attempts.map((a) => a.outcome)).toEqual(['fallback', 'ok'])
+    expect(attempts.map((a) => a.fired)).toEqual([false, true])
   })
 
   it('aborts immediately on a deflection rather than retrying it', async () => {

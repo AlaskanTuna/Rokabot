@@ -6,6 +6,7 @@ import { destroySession, generateResponse } from '../../src/agent/roka.js'
 import { config } from '../../src/config.js'
 import { saveMessage } from '../../src/storage/sessionStore.js'
 import { upsertUserName } from '../../src/storage/userNames.js'
+import { emitTrialRecord } from './gateRecord.js'
 import { diagnoseKey } from './quotaDiagnostic.js'
 import type { CaseObservations, CaseSetHeader, ToolTriggerCase } from './toolTriggerScoring.js'
 
@@ -151,6 +152,23 @@ export async function runCaseSet(
               displayName: speaker.displayName,
               username: speaker.username,
               userId: speaker.id
+            })
+
+            // Emitted before the branches below, so an attempt that aborts the run is recorded exactly like
+            // one that survives it. A record written only on the success path would be missing precisely the
+            // attempts anyone would later want to read.
+            emitTrialRecord({
+              tool: header.tool,
+              case: testCase.id,
+              shouldFire: testCase.shouldFire,
+              trial,
+              attempt: retry,
+              fired: result.toolsUsed.includes(header.tool),
+              toolsUsed: result.toolsUsed,
+              outcome: result.metrics.outcome,
+              kind: result.metrics.kind,
+              retries: result.metrics.retries,
+              channel: channelId
             })
 
             if (result.metrics.outcome === 'deflection') {
