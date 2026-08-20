@@ -132,7 +132,7 @@ Dual rate limiter prevents exceeding Gemini API quotas.
 
 **Acceptance Criteria:**
 
-- [ ] Token bucket for RPM (refills over time, configurable)
+- [ ] Sliding window for RPM (no more than `rpm` admissions in any rolling minute, configurable)
 - [ ] Daily counter for RPD (resets at midnight, configurable timezone)
 - [ ] Rate limit checked before any Gemini API call
 - [ ] When limited, bot sends an in-character decline message

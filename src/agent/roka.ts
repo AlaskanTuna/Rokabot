@@ -29,6 +29,7 @@ import { buildFactsEnvelope, buildOverheardBlock } from './promptSafety.js'
 import type { ToneKey } from './prompts/tones.js'
 import { SAFETY_SETTINGS } from './safetySettings.js'
 import { beginShutdown, isShuttingDown } from './shutdownSignal.js'
+import { chargeTokens } from './tokenBudget.js'
 import { detectTone } from './toneDetector.js'
 import { rokaTools } from './tools/index.js'
 
@@ -88,6 +89,15 @@ interface ModelVerdict {
 }
 const modelVerdictForRequest = new AsyncLocalStorage<ModelVerdict>()
 const activeAbortControllers = new Set<AbortController>()
+
+/**
+ * Ceiling on a single attachment download, covering the body as well as the headers. `attachment_url` points
+ * at a host the sender named, and nothing else bounds it — the byte guard stops a *large* response, not a
+ * *slow* one, and a stalled transfer would otherwise sit inside the turn until undici's 300s default. At the
+ * Pi's measured ~2.5 MB/s a maximal 10 MB file lands in about four seconds, so this is roughly 3.7x the worst
+ * legitimate case. Aborting drops the attachment and takes the ordinary "could not be retrieved" notice.
+ */
+const ATTACHMENT_DOWNLOAD_TIMEOUT_MS = 15_000
 
 const SAFETY_DEFLECTION = "Ehh… let's not get into that one~"
 const RECITATION_DEFLECTION = "Ah, I don't think I should repeat that one exactly~"
@@ -844,7 +854,10 @@ async function downloadAttachment(
     // the transfer rather than reading on and discarding. Measured on a 50 MB body: 1 MB read in 178 ms
     // against 2,750 ms for the whole thing. Range stays because it costs nothing and a 206 would be better
     // still, but nothing depends on it.
-    const response = await fetch(url, wantsPrefix ? { headers: { Range: `bytes=0-${limit - 1}` } } : undefined)
+    const response = await fetch(url, {
+      ...(wantsPrefix ? { headers: { Range: `bytes=0-${limit - 1}` } } : {}),
+      signal: AbortSignal.timeout(ATTACHMENT_DOWNLOAD_TIMEOUT_MS)
+    })
     if (!response.ok) {
       logger.warn({ url, status: response.status }, 'Failed to download attachment')
       return null
@@ -1084,6 +1097,11 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
       refusedAttachments = imageParts.length
       imageParts.length = 0
       imageTokens = 0
+    } else if (measured !== undefined) {
+      // The probe has already been paid for, so keep its answer rather than the per-type derivation this
+      // started as. They agree closely — a measured 89-page PDF came back one token off 560/page — but only
+      // one of the two is what the request will actually be billed.
+      imageTokens = measured
     }
   }
 
@@ -1320,6 +1338,21 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
       userMessage
     })
   }
+  // Named once and used twice on purpose: this is both what the turn is reported to have cost and what it is
+  // charged for, and letting the two be separate expressions is how a budget starts describing something
+  // other than the spend it is meant to bound.
+  const tokensInEst =
+    estimateTokens(systemPrompt) +
+    fakeMessages.reduce((total, message) => total + estimateTokens(`[${message.displayName}]: ${message.content}`), 0) +
+    toolsTok +
+    estimateTokens(`[${displayName}]: ${userMessage}`) +
+    imageTokens
+
+  // Charged after the fact rather than reserved before it, because the cost is only knowable once the
+  // reliability ladder has finished — a safety re-rung turn recomposes the system prompt and a retry sends it
+  // again, and both are real spend. Admission is the separate, earlier decision made in the Discord handlers.
+  chargeTokens(tokensInEst)
+
   const metrics: ResponseMetrics = {
     generateMs: Math.round(performance.now() - generateStartMs),
     llmMs,
@@ -1328,15 +1361,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     outcome,
     kind: reliability.kind,
     failureMarker: reliability.failureMarker,
-    tokensInEst:
-      estimateTokens(systemPrompt) +
-      fakeMessages.reduce(
-        (total, message) => total + estimateTokens(`[${message.displayName}]: ${message.content}`),
-        0
-      ) +
-      toolsTok +
-      estimateTokens(`[${displayName}]: ${userMessage}`) +
-      imageTokens,
+    tokensInEst,
     tokensOutEst: estimateTokens(reliability.text)
   }
 

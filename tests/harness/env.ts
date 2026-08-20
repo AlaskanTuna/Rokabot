@@ -18,6 +18,13 @@ if (process.argv.includes('--live') || process.env.ROKABOT_HARNESS_LIVE === '1')
 
   process.env.GEMINI_API_KEY = harnessKey
   process.env.GOOGLE_GENAI_API_KEY = harnessKey
+
+  // Holds the prompt still for the length of the run. Without it a case set that happens to straddle 05:00
+  // scores one prompt for its first cases and a different one for the rest, and two runs at different hours
+  // are not comparable at all — which is what made "two green runs" read as reproducibility while delivering
+  // a coin flip. 14 is an unremarkable hour: mid-afternoon, no time-of-day boundary within hours of it, and
+  // outside detectTone's isLateNight window, so nothing about the pin is itself a special case.
+  process.env.ROKABOT_FIXED_HOUR ??= '14'
 } else {
   process.env.GEMINI_API_KEY = 'harness-fake-sentinel'
 }

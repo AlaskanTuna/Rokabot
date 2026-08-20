@@ -16,6 +16,7 @@ import { buildRokaMessage } from '../../../src/discord/messageBuilder.js'
 import { getDb } from '../../../src/storage/database.js'
 import { RateLimiter } from '../../../src/utils/rateLimiter.js'
 import { createCaptureSink } from '../captureSink.js'
+import type { CaptureRecord } from '../captureSink.js'
 import { makeClient, makeGuild, makeInteraction, makeMessage } from '../discordDoubles.js'
 import { renderPayload } from '../renderPayload.js'
 import { loadTranscript, runTranscript } from '../run.js'
@@ -55,7 +56,7 @@ const benchmarkTranscript = resolve('tests/harness/transcripts/benchmark.jsonl')
 const memoryUserId = 'mio-memory'
 const memoryFactKey = 'likes'
 
-function responseText(record: { kind: string; payload: unknown }): string {
+function responseText(record: Pick<CaptureRecord, 'kind' | 'payload'>): string {
   return renderPayload({ ...record, channelId: null, ts: 0 })
 }
 
@@ -77,7 +78,7 @@ function payloadText(payload: unknown): string {
 
 function capturedRequestText(request: unknown): string {
   const candidate = request as { newMessage?: { parts?: Array<{ text?: string }> } }
-  return candidate.newMessage?.parts.map((part) => part.text ?? '').join('') ?? ''
+  return candidate.newMessage?.parts?.map((part) => part.text ?? '').join('') ?? ''
 }
 
 function capturedSystemPrompt(request: unknown): string {

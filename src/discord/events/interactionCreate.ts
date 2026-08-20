@@ -2,10 +2,11 @@ import type { Attachment, Client, Interaction } from 'discord.js'
 import { DiscordAPIError, MessageFlags } from 'discord.js'
 import { type ImageAttachment, generateResponse } from '../../agent/roka.js'
 import { withSearchCitations } from '../../agent/searchCitations.js'
+import { canAffordAttachments } from '../../agent/tokenBudget.js'
 import { type ResponseEventInput, recordResponseEvent } from '../../storage/metricsStore.js'
 import { logger } from '../../utils/logger.js'
 import { RateLimiter } from '../../utils/rateLimiter.js'
-import { MAX_ATTACHMENTS, attachmentOptionName, isSupportedMedia, resolveImageUrl } from '../attachments.js'
+import { MAX_ATTACHMENTS, attachmentOptionName, isSupportedMedia, resolveMediaUrl } from '../attachments.js'
 import { release, reservationFor, tryReserve } from '../byteBudget.js'
 import { isChannelBusy, markBusy, markFree } from '../concurrency.js'
 import { isIgnorableDiscordError } from '../errorHandler.js'
@@ -90,11 +91,11 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
       .map((supported) => ({ url: supported.url, contentType: supported.contentType as string, size: supported.size }))
     let unsupportedCount = attached.length - imageAttachments.length
 
-    // One visual budget per turn regardless of where the picture came from: a linked image competes for the
-    // same MAX_ATTACHMENTS slots as an uploaded one, so the cost of a turn stays one number.
+    // One budget per turn regardless of where the file came from: a linked file competes for the same
+    // MAX_ATTACHMENTS slots as an uploaded one, so the cost of a turn stays one number.
     const linkedUrl = interaction.options.getString('attachment_url')
     if (linkedUrl) {
-      const resolved = imageAttachments.length < MAX_ATTACHMENTS ? await resolveImageUrl(linkedUrl) : null
+      const resolved = imageAttachments.length < MAX_ATTACHMENTS ? await resolveMediaUrl(linkedUrl) : null
       if (resolved) imageAttachments.push(resolved)
       else unsupportedCount += 1
     }
@@ -121,6 +122,17 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
     }
 
     await interaction.deferReply()
+
+    // Bytes are not the only thing an attachment spends, and the two do not track each other: an 89-page PDF
+    // is 35 KB of the byte budget and 49,841 tokens of the minute's. `rateLimit.rpm` bounds how many turns
+    // happen, which bounded spend adequately while every turn cost about the same; it does not bound this.
+    // Asked before the reservation below so a declined turn has taken nothing it must hand back.
+    if (imageAttachments.length > 0 && !canAffordAttachments()) {
+      logger.debug({ channelId }, 'Per-minute token budget too low for an attachment turn — sending busy message')
+      await interaction.editReply({ content: getRandomBusy() })
+      setTimeout(() => interaction.deleteReply().catch(() => {}), 5000)
+      return
+    }
 
     // Reserved here rather than earlier so nothing can throw between taking the bytes and the try/finally
     // that hands them back — a reservation that leaks becomes a permanent refusal, not a failed turn.

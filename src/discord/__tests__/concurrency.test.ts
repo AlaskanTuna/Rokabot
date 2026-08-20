@@ -87,6 +87,7 @@ function createInteraction(channelId = 'channel-1') {
   const deleteReply = vi.fn().mockResolvedValue(undefined)
 
   return {
+    channelId,
     interaction: {
       isChatInputCommand: () => true,
       commandName: 'ask',
@@ -129,9 +130,9 @@ describe('Discord concurrency guards', () => {
   it('drops a busy interaction with the busy reply, later removed, without consuming a token or generating a response', async () => {
     vi.useFakeTimers()
     try {
-      const { interaction, reply, deleteReply } = createInteraction()
+      const { interaction, channelId, reply, deleteReply } = createInteraction()
       const rateLimiter = createRateLimiter()
-      mocks.busyChannels.add(interaction.channelId)
+      mocks.busyChannels.add(channelId)
 
       await createInteractionHandler(rateLimiter)(interaction)
 

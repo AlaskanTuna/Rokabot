@@ -98,6 +98,11 @@ function asScenario(value: unknown, line: number): ReplayScenario {
   return {
     ...scenario,
     type: 'scenario',
+    // Restated rather than left to the spread: the guards above prove these are strings, but a spread
+    // carries a value's declared type, so `Partial<ReplayScenario>` would put `undefined` back on all three.
+    id: scenario.id,
+    category: scenario.category,
+    guildId: scenario.guildId,
     turn: scenario.turn,
     claims: scenario.claims.map((claim) => asClaim(claim, line)),
     foreignClaims: scenario.foreignClaims?.map((claim) => asClaim(claim, line)),

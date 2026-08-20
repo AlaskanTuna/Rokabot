@@ -8,6 +8,7 @@ import { maybeExtractFromBuffer } from '../../agent/memoryExtractor.js'
 import { addMessage as addToPassiveBuffer, getMessages } from '../../agent/passiveBuffer.js'
 import { type ImageAttachment, generateResponse } from '../../agent/roka.js'
 import { withSearchCitations } from '../../agent/searchCitations.js'
+import { canAffordAttachments } from '../../agent/tokenBudget.js'
 import { config } from '../../config.js'
 import { type ResponseEventInput, recordResponseEvent } from '../../storage/metricsStore.js'
 import { upsertUserName } from '../../storage/userNames.js'
@@ -44,12 +45,30 @@ function replaceUserMentions(message: Message, botId: string | undefined): strin
 const TEXT_DISPLAY = 10
 const SECTION = 9
 const CONTAINER = 17
+// The three Components V2 types that carry a file. The walker used to read text and labels only, so a
+// message whose picture lived in one of these reached her as text with the picture silently absent — and
+// absent without a notice, because nothing counted what it had not detected. Unlike an unsupported type or
+// a failed download, that leaves the turn looking exactly like a question about a file nobody attached.
+const THUMBNAIL = 11
+const MEDIA_GALLERY = 12
+const FILE = 13
+
+interface UnfurledMedia {
+  url?: string
+  content_type?: string
+  // Discord states a size on File components; media items generally do not carry one.
+  size?: number
+}
 
 interface RawComponent {
   type: number
   content?: string
   components?: RawComponent[]
   label?: string
+  media?: UnfurledMedia
+  items?: Array<{ media?: UnfurledMedia }>
+  file?: UnfurledMedia
+  size?: number
 }
 
 /** Recursively extract text content from Discord message components */
@@ -103,6 +122,41 @@ function extractComponentTexts(components: Message['components']): string[] {
   walk(raw)
 
   return texts
+}
+
+/**
+ * Every file a Components V2 message carries, in the order Discord lists them.
+ *
+ * `content_type` is what Discord resolved the file to; a component that states one she cannot read is
+ * counted as unreadable rather than skipped, so the turn still says a file was there. A component that
+ * states nothing at all is also counted, for the same reason — guessing from the URL would be the kind of
+ * silent assumption that put this gap here in the first place.
+ */
+function extractComponentMedia(components: Message['components']): { media: ImageAttachment[]; unreadable: number } {
+  const media: ImageAttachment[] = []
+  let unreadable = 0
+
+  const take = (item: UnfurledMedia | undefined, statedSize?: number) => {
+    if (!item?.url) return
+    const contentType = item.content_type?.split(';')[0].trim().toLowerCase()
+    if (!contentType || !isSupportedMedia({ contentType })) {
+      unreadable += 1
+      return
+    }
+    media.push({ url: item.url, contentType, size: item.size ?? statedSize })
+  }
+
+  function walk(items: RawComponent[]) {
+    for (const item of items) {
+      if (item.type === THUMBNAIL) take(item.media)
+      if (item.type === MEDIA_GALLERY) for (const entry of item.items ?? []) take(entry.media)
+      if (item.type === FILE) take(item.file, item.size)
+      if (item.components) walk(item.components)
+    }
+  }
+
+  walk(components.map((c) => c.toJSON()) as unknown as RawComponent[])
+  return { media, unreadable }
 }
 
 interface ForwardedContent {
@@ -244,6 +298,13 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
       .map((a) => ({ url: a.url, contentType: a.contentType!, size: a.size }))
       .slice(0, MAX_ATTACHMENTS)
 
+    // A Components V2 message keeps its files in components rather than in `attachments`, so this is the
+    // sender's own message showing her something and belongs beside their uploads rather than after the
+    // forwarded and replied-to paths. Takes the leftovers, since an explicit upload is the more deliberate
+    // gesture of the two.
+    const componentMedia = extractComponentMedia(message.components)
+    imageAttachments.push(...componentMedia.media.slice(0, MAX_ATTACHMENTS - imageAttachments.length))
+
     // Everything else this message shows. The replied-to message has always been read this thoroughly; the
     // message actually being sent to her was not, so a shared link's preview text — where the substance of a
     // link preview lives — reached her as nothing at all. Container text was read, but only when there was no
@@ -284,7 +345,10 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
     // Only what this message carried: a forwarded or replied-to file is not what the sender just handed her.
     // Materialised first so the count reads the same off a discord.js Collection or a plain array.
     const ownAttachments = [...message.attachments.values()]
-    const unsupportedCount = ownAttachments.length - ownAttachments.filter(isSupportedMedia).length
+    // Component media she could not read counts here too: without it a Components V2 file she cannot open
+    // vanishes with no notice at all, which is the one failure mode every other path already avoids.
+    const unsupportedCount =
+      ownAttachments.length - ownAttachments.filter(isSupportedMedia).length + componentMedia.unreadable
 
     if (referencedMessage) {
       const refAuthor = referencedMessage.member?.displayName ?? referencedMessage.author.displayName
@@ -399,6 +463,18 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
             ;(message.channel as { sendTyping: () => Promise<void> }).sendTyping().catch(() => {})
           }, 7000)
         : null
+
+    // Bytes are not the only thing an attachment spends, and the two do not track each other: an 89-page PDF
+    // is 35 KB of the byte budget and 49,841 tokens of the minute's. `rateLimit.rpm` bounds how many turns
+    // happen, which bounded spend adequately while every turn cost about the same; it does not bound this.
+    // Asked before the reservation below so a declined turn has taken nothing it must hand back.
+    if (imageAttachments.length > 0 && !canAffordAttachments()) {
+      if (typingInterval) clearInterval(typingInterval)
+      logger.debug({ channelId }, 'Per-minute token budget too low for an attachment turn — sending busy message')
+      const tokenMsg = await message.reply(getRandomBusy())
+      setTimeout(() => tokenMsg.delete().catch(() => {}), 5000)
+      return
+    }
 
     // Reserved here rather than earlier so nothing can throw between taking the bytes and the try/finally
     // that hands them back — a reservation that leaks becomes a permanent refusal, not a failed turn.

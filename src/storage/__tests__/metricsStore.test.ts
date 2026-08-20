@@ -24,7 +24,7 @@ import {
 
 const ONE_DAY = 24 * 60 * 60 * 1000
 
-const responseEvent = {
+const responseEvent: Parameters<typeof recordResponseEvent>[0] = {
   guildId: 'guild-1',
   channelId: 'channel-1',
   userId: 'user-1',

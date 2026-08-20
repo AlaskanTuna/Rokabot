@@ -10,12 +10,23 @@ import {
   isSupportedImage,
   isSupportedMedia,
   isSupportedVideo,
-  resolveImageUrl,
+  resolveMediaUrl,
   resolvesToPublicAddress
 } from '../attachments.js'
 
-function headResponse({ ok = true, contentType = 'image/png', url = 'https://cdn.test/a.png' } = {}) {
-  return { ok, url, headers: { get: (name: string) => (name === 'content-type' ? contentType : null) } }
+function headResponse({
+  ok = true,
+  contentType = 'image/png',
+  url = 'https://cdn.test/a.png',
+  contentLength = null as string | null
+} = {}) {
+  return {
+    ok,
+    url,
+    headers: {
+      get: (name: string) => (name === 'content-type' ? contentType : name === 'content-length' ? contentLength : null)
+    }
+  }
 }
 
 const PUBLIC_ANSWER = [{ address: '93.184.216.34', family: 4 }]
@@ -104,32 +115,55 @@ describe('resolvesToPublicAddress', () => {
   })
 })
 
-describe('resolveImageUrl', () => {
+describe('resolveMediaUrl', () => {
   beforeEach(() => {
     mocks.lookup.mockReset()
     mocks.lookup.mockResolvedValue(PUBLIC_ANSWER)
   })
   afterEach(() => vi.unstubAllGlobals())
 
+  // The interaction window, not politeness. resolveMediaUrl runs before deferReply, and Discord discards an
+  // interaction not acknowledged within 3 seconds — so a host that accepts the connection and stalls does not
+  // make /ask slow, it makes /ask fail with Discord's own error and none of her replies. undici would wait
+  // 300s by default.
+  it('gives up on a host that never answers, rather than holding the interaction open', async () => {
+    vi.useFakeTimers()
+    // Never settles on its own: only the abort signal can end this.
+    const fetchMock = vi.fn(
+      (_url: unknown, init?: { signal?: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(new Error('TimeoutError')))
+        })
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const pending = resolveMediaUrl('https://slow.test/a.png')
+    await vi.advanceTimersByTimeAsync(3000)
+
+    expect(await pending).toBeNull()
+    expect(fetchMock.mock.calls[0][1]?.signal).toBeDefined()
+    vi.useRealTimers()
+  })
+
   it('refuses a protocol that is not http or https', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
 
-    expect(await resolveImageUrl('file:///etc/passwd')).toBeNull()
+    expect(await resolveMediaUrl('file:///etc/passwd')).toBeNull()
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('refuses something that is not a URL at all', async () => {
     vi.stubGlobal('fetch', vi.fn())
 
-    expect(await resolveImageUrl('what is in this picture?')).toBeNull()
+    expect(await resolveMediaUrl('what is in this picture?')).toBeNull()
   })
 
   it('refuses a private literal without making any request', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
 
-    expect(await resolveImageUrl('http://100.64.0.1/admin')).toBeNull()
+    expect(await resolveMediaUrl('http://100.64.0.1/admin')).toBeNull()
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
@@ -140,7 +174,7 @@ describe('resolveImageUrl', () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
 
-    expect(await resolveImageUrl('https://roka-probe.example/x.png')).toBeNull()
+    expect(await resolveMediaUrl('https://roka-probe.example/x.png')).toBeNull()
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
@@ -150,7 +184,7 @@ describe('resolveImageUrl', () => {
       vi.fn(async () => headResponse({ contentType: 'text/html; charset=utf-8' }))
     )
 
-    expect(await resolveImageUrl('https://example.test/article')).toBeNull()
+    expect(await resolveMediaUrl('https://example.test/article')).toBeNull()
   })
 
   it('refuses a URL the server will not serve', async () => {
@@ -159,7 +193,7 @@ describe('resolveImageUrl', () => {
       vi.fn(async () => headResponse({ ok: false }))
     )
 
-    expect(await resolveImageUrl('https://example.test/gone.png')).toBeNull()
+    expect(await resolveMediaUrl('https://example.test/gone.png')).toBeNull()
   })
 
   it('refuses when the request itself fails', async () => {
@@ -170,7 +204,7 @@ describe('resolveImageUrl', () => {
       })
     )
 
-    expect(await resolveImageUrl('https://nope.test/a.png')).toBeNull()
+    expect(await resolveMediaUrl('https://nope.test/a.png')).toBeNull()
   })
 
   it('accepts a public URL serving a supported image type', async () => {
@@ -179,10 +213,52 @@ describe('resolveImageUrl', () => {
       vi.fn(async () => headResponse({ contentType: 'image/webp' }))
     )
 
-    expect(await resolveImageUrl('https://cdn.test/a.png')).toEqual({
+    expect(await resolveMediaUrl('https://cdn.test/a.png')).toEqual({
       url: 'https://cdn.test/a.png',
       contentType: 'image/webp'
     })
+  })
+
+  // The widening. A type the upload slot accepts and the link option refuses is a difference a user has to
+  // discover by being told no, and the SSRF guard that justified the old narrowness checks the host rather
+  // than the payload — so it never depended on the type set at all.
+  it.each(['application/pdf', 'audio/mpeg', 'video/mp4'])('accepts %s, as an upload would', async (type) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => headResponse({ contentType: type }))
+    )
+
+    expect(await resolveMediaUrl('https://cdn.test/a.bin')).toMatchObject({ contentType: type })
+  })
+
+  it('still refuses a type no upload slot would take', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => headResponse({ contentType: 'application/zip' }))
+    )
+
+    expect(await resolveMediaUrl('https://cdn.test/a.zip')).toBeNull()
+  })
+
+  // Without a size a link takes the ordinary path, and an oversized one is refused where the identical
+  // upload would be truncated to its opening — Discord states an upload's size and the resolver has to
+  // state a link's, or the two surfaces disagree about the same file.
+  it('carries the size the server declared, so a link truncates like an upload', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => headResponse({ contentType: 'audio/mpeg', contentLength: '15728640' }))
+    )
+
+    expect(await resolveMediaUrl('https://cdn.test/a.mp3')).toMatchObject({ size: 15_728_640 })
+  })
+
+  it('leaves the size out when the server states none, rather than inventing one', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => headResponse({ contentType: 'audio/mpeg' }))
+    )
+
+    expect((await resolveMediaUrl('https://cdn.test/a.mp3'))?.size).toBeUndefined()
   })
 
   it('refuses a public URL that redirects onto a private literal', async () => {
@@ -191,7 +267,7 @@ describe('resolveImageUrl', () => {
       vi.fn(async () => headResponse({ url: 'http://10.0.0.5/secret.png' }))
     )
 
-    expect(await resolveImageUrl('https://public.test/redirect')).toBeNull()
+    expect(await resolveMediaUrl('https://public.test/redirect')).toBeNull()
   })
 
   // The redirect target gets the same resolution treatment, not just the literal check.
@@ -204,7 +280,7 @@ describe('resolveImageUrl', () => {
       vi.fn(async () => headResponse({ url: 'http://metadata.example/latest' }))
     )
 
-    expect(await resolveImageUrl('https://public.test/redirect')).toBeNull()
+    expect(await resolveMediaUrl('https://public.test/redirect')).toBeNull()
   })
 
   it('hands on the URL it landed on rather than the one typed', async () => {
@@ -213,7 +289,7 @@ describe('resolveImageUrl', () => {
       vi.fn(async () => headResponse({ url: 'https://cdn.test/final.png' }))
     )
 
-    expect(await resolveImageUrl('https://public.test/shortlink')).toEqual({
+    expect(await resolveMediaUrl('https://public.test/shortlink')).toEqual({
       url: 'https://cdn.test/final.png',
       contentType: 'image/png'
     })

@@ -36,17 +36,48 @@ describe('RateLimiter', () => {
     expect(limiter.tryConsume()).toBe(false)
   })
 
-  it('refills RPM tokens after sufficient time', () => {
+  // Was 'refills RPM tokens after sufficient time', asserting that half a window bought a token back. That
+  // was true of the bucket and is the behaviour #149 is about: capacity returning before the window it was
+  // spent in has passed. A window releases nothing until an admission ages out of it.
+  it('admits nothing more while the oldest admission is still inside the window', () => {
     const limiter = new RateLimiter({ rpm: 2, rpd: 100 })
 
     limiter.tryConsume()
     limiter.tryConsume()
-    expect(limiter.tryConsume()).toBe(false)
+    vi.advanceTimersByTime(60_000)
 
-    // refillIntervalMs = 60000 / 2 = 30000ms per token
-    vi.advanceTimersByTime(30_000)
+    expect(limiter.tryConsume()).toBe(false)
+  })
+
+  it('admits again the moment the oldest admission falls out of the window', () => {
+    const limiter = new RateLimiter({ rpm: 2, rpd: 100 })
+
+    limiter.tryConsume()
+    limiter.tryConsume()
+    vi.advanceTimersByTime(60_001)
 
     expect(limiter.tryConsume()).toBe(true)
+  })
+
+  // The issue itself. Time has to pass DURING the burst for this to bite — an instantaneous burst after idle
+  // is bounded by capacity alone and the old bucket passed that too, so a test built on one could not fail.
+  // Greedy asking across three minutes is what separates 'capacity + rate' from 'rate'.
+  it('never admits more than rpm across any rolling minute, however the load arrives', () => {
+    const limiter = new RateLimiter({ rpm: 5, rpd: 10_000 })
+    const admitted: number[] = []
+
+    for (let step = 0; step <= 3_600; step += 1) {
+      if (limiter.tryConsume()) admitted.push(Date.now())
+      vi.advanceTimersByTime(50)
+    }
+
+    const worstWindow = Math.max(
+      // Closed window, deliberately. A half-open one cannot see the off-by-one at the window edge, because
+      // an admission released exactly on the edge replaces the one leaving it and the count never rises.
+      ...admitted.map((from) => admitted.filter((at) => at >= from && at <= from + 60_000).length)
+    )
+
+    expect(worstWindow).toBe(5)
   })
 
   it('reports remainingRpm correctly', () => {

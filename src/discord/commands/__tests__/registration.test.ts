@@ -63,7 +63,11 @@ describe('buildCommandBody', () => {
     const ask = buildCommandBody().find((command) => command.name === 'ask')
     const optionNames = (ask?.options ?? []).map((option) => option.name)
 
-    expect(optionNames).toEqual(['question', 'attachment_1', 'attachment_2', 'attachment_3', 'attachment_url'])
+    expect(optionNames).toEqual([
+      'question',
+      ...Array.from({ length: MAX_ATTACHMENTS }, (_, index) => attachmentOptionName(index)),
+      'attachment_url'
+    ])
   })
 
   it('sets the expected installation and context policy per command', () => {

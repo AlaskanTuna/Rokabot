@@ -5,6 +5,19 @@ import { logger } from './logger.js'
 
 /** Get the current hour (0-23) in the configured timezone */
 export function getLocalHour(): number {
+  // Harness-only, and the live gate is the whole reason it exists. `hour` reaches the prompt twice — the
+  // context layer's time-of-day sentence and detectTone's isLateNight, which step at 05:00 and 05:00 — so a
+  // 15-minute case set that straddles a boundary scores two different prompts and calls the result one
+  // number. Measured: one gate run crossed 04:59 -> 05:00 partway through, and its own log carries both
+  // sentences. Production keeps reading the clock, which is the point of the layer; only a run that has to
+  // hold the prompt still for its whole length pins it.
+  const raw = process.env.ROKABOT_HARNESS_LIVE === '1' ? process.env.ROKABOT_FIXED_HOUR?.trim() : undefined
+  // `raw` is checked for emptiness before Number(), because Number('') is 0 — a legal hour. An unset-but-
+  // present variable would otherwise pin every run to midnight, which is inside isLateNight and would have
+  // been the quietest possible way to get this wrong.
+  const pinned = raw ? Number(raw) : Number.NaN
+  if (Number.isInteger(pinned) && pinned >= 0 && pinned <= 23) return pinned
+
   const tz = config.timezone
   if (!tz) return new Date().getHours()
   try {
