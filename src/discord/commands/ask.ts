@@ -20,15 +20,14 @@ const command = new SlashCommandBuilder()
 const READABLE_FORMATS = 'PNG JPEG GIF WebP | PDF | MP3 WAV OGG FLAC AAC AIFF | MP4 MOV WebM AVI MPEG FLV WMV 3GP'
 
 // One option per attachment slot, driven by the same ceiling the mention path uses, so the two surfaces
-// cannot drift apart and the count is stated once.
+// cannot drift apart and the count is stated once. The "n of m" suffix is dropped at a single slot, where it
+// would read as a promise of more slots that are not there.
 for (let index = 0; index < MAX_ATTACHMENTS; index++) {
   command.addAttachmentOption((option) =>
     option
       .setName(attachmentOptionName(index))
       .setDescription(
-        index === 0
-          ? `${READABLE_FORMATS} (1 of ${MAX_ATTACHMENTS})`
-          : `${READABLE_FORMATS} (${index + 1} of ${MAX_ATTACHMENTS})`
+        MAX_ATTACHMENTS === 1 ? READABLE_FORMATS : `${READABLE_FORMATS} (${index + 1} of ${MAX_ATTACHMENTS})`
       )
       .setRequired(false)
   )

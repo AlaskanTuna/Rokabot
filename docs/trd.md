@@ -451,10 +451,12 @@ The container is SIGKILLed instead. `src/discord/byteBudget.ts` is the admission
   measurement, not a guard.
 - `discord.maxInFlightAttachmentBytes` (32 MB) is the ceiling across every channel at once. Its `min` bound
   is `MAX_ATTACHMENTS × MAX_DOCUMENT_SIZE_BYTES`: below that a maximal turn could never be admitted even on
-  an idle bot, so it would be refused permanently rather than delayed. The default therefore sits only 2 MB
-  above its own floor, and that is deliberate — one turn carrying three 10 MB documents reserves 30 MB and
-  holds off every other channel until it completes. That is the budget working, made visible by the busy
-  reply rather than silent; `discord.maxInFlightAttachmentBytes` is the knob to loosen it.
+  an idle bot, so it would be refused permanently rather than delayed. **At `MAX_ATTACHMENTS = 1` that floor
+  is 10 MB**, so the 32 MB default sits at a little over three times it and three channels can download
+  concurrently. That headroom is the point of the one-attachment ceiling rather than a side effect: at three
+  attachments the floor was 30 MB, the default sat 2 MB above it, and a single maximal turn held off every
+  other channel on every other server until it completed. `discord.maxInFlightAttachmentBytes` remains the
+  knob to loosen it further.
 - A turn is reserved its attachments' **stated** sizes where Discord gives them, and its type's ceiling where
   it does not — an embed image or a link resolved by HEAD states no size, and an unknown must cost the most
   it could. A stated size above the ceiling is clamped to it, since the download refuses on `Content-Length`
