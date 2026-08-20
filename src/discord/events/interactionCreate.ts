@@ -27,7 +27,7 @@ import { createToolCommandHandler } from './toolCommands.js'
 
 /** Create a handler for all slash command interactions */
 export function createInteractionHandler(rateLimiter: RateLimiter, client?: Client) {
-  const handleToolCommand = createToolCommandHandler(rateLimiter)
+  const handleToolCommand = createToolCommandHandler()
   const handleGameCommand = createGameCommandHandler(client)
 
   return async function handleInteractionCreate(interaction: Interaction): Promise<void> {

@@ -742,10 +742,12 @@ it did not use, released in the same `finally` as the byte reservation and the c
   daily counter once per turn and the release never decrements it, so this object now counts requests by the
   minute and turns by the day. Converting it needs release semantics for a counter that has none. See
   "RPM-Budget Accounting".
-- **`/anime` and `/remind` take a slot from our own counter without making a Gemini call.** `toolCommands.ts`
-  calls `tryConsume()` and reaches Gemini zero times — it is borrowing this limiter as a generic abuse guard.
-  Google's quota is untouched; **ours** is what ends up wrong, so the harm is self-inflicted pessimism: our
-  guard refuses real turns earlier than it needs to. Deliberately unchanged here and tracked separately.
+- **`/anime` and `/remind` take no slot from this limiter.** They reach Jikan and SQLite, never Gemini.
+  `toolCommands.ts` used to call `tryConsume()` anyway, borrowing this limiter as a generic abuse guard.
+  Google's quota was never touched by that; **ours** is what ended up wrong, so the harm was self-inflicted
+  pessimism — our guard refusing real turns earlier than it needed to. Removed in #172, and nothing was left
+  unguarded: `jikanThrottle` bounds Jikan calls at 350 ms apart on its own, and `/remind` writes one local
+  row.
 
 ### The Two Limiters Bound Their Windows Differently, on Purpose
 
