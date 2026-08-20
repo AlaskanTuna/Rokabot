@@ -77,8 +77,20 @@ export function isSupportedMedia(attachment: { contentType: string | null }): bo
   return attachment.contentType !== null && ALLOWED_MEDIA_TYPES.has(attachment.contentType)
 }
 
-/** Per-turn ceiling across every kind of attachment. Both the mention path and /ask derive their limit from this. */
-export const MAX_ATTACHMENTS = 3
+/**
+ * Per-turn ceiling across every kind of attachment. Both the mention path and /ask derive their limit from
+ * this, so the two surfaces cannot drift apart.
+ *
+ * One, not three. The binding argument is not quota but fairness: `byteBudget` is global, a reservation is
+ * held for the whole turn rather than just the download, and at three a single message of three 10 MB files
+ * reserved 30 of the 32 MB — holding off every other channel on every other server until it finished. At one
+ * the worst turn reserves 10 MB, so three channels proceed concurrently where one used to.
+ *
+ * It also makes the rule the same everywhere. Three-for-images-one-for-video would have been cheaper for the
+ * common case and would have needed a per-kind count, a per-kind message, and a per-kind explanation; one
+ * number needs none of those and is what someone can be told in a sentence.
+ */
+export const MAX_ATTACHMENTS = 1
 
 export function isSupportedImage(attachment: { contentType: string | null }): boolean {
   return attachment.contentType !== null && ALLOWED_IMAGE_TYPES.has(attachment.contentType)

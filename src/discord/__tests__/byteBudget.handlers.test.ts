@@ -31,6 +31,7 @@ vi.mock('../events/toolCommands.js', () => ({ createToolCommandHandler: () => vi
 vi.mock('../../utils/logger.js', () => ({ logger: { debug: vi.fn(), error: vi.fn(), info: vi.fn(), warn: vi.fn() } }))
 
 import { config } from '../../config.js'
+import { MAX_ATTACHMENTS } from '../attachments.js'
 import { inFlightBytes, release, tryReserve } from '../byteBudget.js'
 import { createInteractionHandler } from '../events/interactionCreate.js'
 import { createMessageHandler } from '../events/messageCreate.js'
@@ -200,11 +201,14 @@ describe('global in-flight byte budget, at the handlers', () => {
         })
     )
 
-    const first = createInteraction('channel-1', [upload(FOUR_MB), upload(FOUR_MB), upload(FOUR_MB)])
+    // A maximal turn, expressed in terms of the ceiling rather than a fixed count: this test is about two
+    // channels sharing one global budget, and it should keep saying that whatever MAX_ATTACHMENTS becomes.
+    const maximalTurn = Array.from({ length: MAX_ATTACHMENTS }, () => upload(FOUR_MB))
+    const first = createInteraction('channel-1', maximalTurn)
     const firstTurn = createInteractionHandler(rateLimiter())(first.interaction)
-    await vi.waitFor(() => expect(inFlightBytes()).toBe(3 * FOUR_MB))
+    await vi.waitFor(() => expect(inFlightBytes()).toBe(MAX_ATTACHMENTS * FOUR_MB))
 
-    tryReserve(BUDGET - 3 * FOUR_MB - 1)
+    tryReserve(BUDGET - MAX_ATTACHMENTS * FOUR_MB - 1)
     const second = createInteraction('channel-2', [upload(FOUR_MB)])
     await createInteractionHandler(rateLimiter())(second.interaction)
     expect(second.editReply).toHaveBeenCalledWith({ content: 'busy' })

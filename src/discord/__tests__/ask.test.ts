@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ALLOWED_MEDIA_TYPES } from '../attachments.js'
+import { ALLOWED_MEDIA_TYPES, MAX_ATTACHMENTS } from '../attachments.js'
 import { askCommand } from '../commands/ask.js'
 
 const options = askCommand.toJSON().options ?? []
@@ -39,7 +39,7 @@ const admitted = [...ALLOWED_MEDIA_TYPES]
 
 describe('/ask option descriptions', () => {
   it('exposes one slot per attachment the turn admits', () => {
-    expect(slots).toHaveLength(3)
+    expect(slots).toHaveLength(MAX_ATTACHMENTS)
   })
 
   // No test asserts the 100-character description limit on purpose: SlashCommandBuilder.setDescription throws

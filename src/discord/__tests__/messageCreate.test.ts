@@ -55,6 +55,7 @@ vi.mock('../responses.js', () => ({
 vi.mock('../events/gachaMention.js', () => ({ handleGachaMention: vi.fn() }))
 
 import { config } from '../../config.js'
+import { MAX_ATTACHMENTS } from '../attachments.js'
 import { NAME_MENTION_REGEX } from '../events/messageCreate.js'
 import { createMessageHandler } from '../events/messageCreate.js'
 
@@ -587,7 +588,7 @@ describe("reading what the sender's own message shows", () => {
     }))
     const { message } = createMessage({ content: '<@bot-1> what are these?', embeds })
 
-    expect((await handle(message)).imageAttachments).toHaveLength(3)
+    expect((await handle(message)).imageAttachments).toHaveLength(MAX_ATTACHMENTS)
   })
 
   // Container text was read only when there was no message text beside it, so she could match her own name
@@ -772,7 +773,11 @@ describe('reading a message forwarded straight to her', () => {
       ]
     })
 
-    expect((await handle(message)).imageAttachments).toEqual([PNG('own-a'), PNG('own-b'), PNG('fwd-a')])
+    // Priority, not count: the sender's own attachments fill the slots first and the forward takes what is
+    // left. Sliced to the ceiling so the ordering claim survives whatever MAX_ATTACHMENTS is.
+    expect((await handle(message)).imageAttachments).toEqual(
+      [PNG('own-a'), PNG('own-b'), PNG('fwd-a')].slice(0, MAX_ATTACHMENTS)
+    )
   })
 
   it('never lets forwarded images exceed the shared attachment ceiling', async () => {
@@ -782,7 +787,7 @@ describe('reading a message forwarded straight to her', () => {
       snapshots: [snapshot({ attachments: new Collection(many) })]
     })
 
-    expect((await handle(message)).imageAttachments).toHaveLength(3)
+    expect((await handle(message)).imageAttachments).toHaveLength(MAX_ATTACHMENTS)
   })
 
   // Both paths share one describer now; the replied-to path had no test over its forwarded output before.
@@ -809,22 +814,23 @@ describe('reading a message forwarded straight to her', () => {
   // the image, so "what's in the second one?" had nothing behind it and she answered as though the forward
   // carried no picture at all (#107).
   it('still names a forwarded image it had no room to show her', async () => {
+    // Exactly enough of her own to fill the ceiling, so the forward is always the one left out.
     const { message } = createMessage({
       content: '<@bot-1> what is in these?',
-      attachments: [PNG('own-a'), PNG('own-b'), PNG('own-c')],
+      attachments: Array.from({ length: MAX_ATTACHMENTS }, (_, index) => PNG(`own-${index}`)),
       snapshots: [snapshot({ attachments: new Collection([['0', PNG('fwd')]]) })]
     })
 
     const result = await handle(message)
 
-    expect(result.imageAttachments).toHaveLength(3)
+    expect(result.imageAttachments).toHaveLength(MAX_ATTACHMENTS)
     expect(result.userMessage).toContain('forwarded image(s)')
   })
 
   it('says how many forwarded images it could not show her', async () => {
     const { message } = createMessage({
       content: '<@bot-1> what is in these?',
-      attachments: [PNG('own-a'), PNG('own-b'), PNG('own-c')],
+      attachments: Array.from({ length: MAX_ATTACHMENTS }, (_, index) => PNG(`own-${index}`)),
       snapshots: [
         snapshot({
           attachments: new Collection([
@@ -930,13 +936,13 @@ describe('naming a replied-to image she cannot see', () => {
   it('says how many replied-to images it had no room to show her', async () => {
     const { message } = createMessage({
       content: '<@bot-1> what is in these?',
-      attachments: [PNG('own-a'), PNG('own-b'), PNG('own-c')],
+      attachments: Array.from({ length: MAX_ATTACHMENTS }, (_, index) => PNG(`own-${index}`)),
       referencedMessage: repliedTo([PNG('ref-a'), PNG('ref-b')])
     })
 
     const result = await handle(message)
 
-    expect(result.imageAttachments).toHaveLength(3)
+    expect(result.imageAttachments).toHaveLength(MAX_ATTACHMENTS)
     expect(result.userMessage).toContain('(attached image(s), 2 not shown)')
   })
 
