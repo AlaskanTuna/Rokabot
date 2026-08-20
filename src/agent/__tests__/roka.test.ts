@@ -1536,7 +1536,10 @@ describe('attachment intake', () => {
   it('asks for the whole file when it fits', async () => {
     await inlineFor('audio/mpeg', OGG_BYTES, { statedSize: 1024 })
 
-    expect(lastServe.init).toBeUndefined()
+    // Names the header rather than asserting the init object is absent: every download now carries an abort
+    // signal, so "no init" stopped meaning "no Range" and started meaning "no timeout either".
+    expect((lastServe.init?.headers as Record<string, string> | undefined)?.Range).toBeUndefined()
+    expect(lastServe.init?.signal).toBeDefined()
   })
 
   // Not an edge case: this is what Discord's CDN actually does. It advertises `accept-ranges: bytes` and
