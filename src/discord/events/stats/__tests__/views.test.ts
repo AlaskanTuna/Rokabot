@@ -67,9 +67,15 @@ function contentFor(payload: Awaited<ReturnType<typeof buildStatsView>>) {
 }
 
 function selectsFor(payload: Awaited<ReturnType<typeof buildStatsView>>) {
-  return jsonFor(payload)
-    .components.filter((component) => component.type === 1)
-    .flatMap((row) => row.components)
+  return (
+    jsonFor(payload)
+      .components.filter((component) => component.type === 1)
+      .flatMap((row) => row.components)
+      // A row's components are a union, and only the string select carries custom_id/options. Narrowed here so
+      // the helper's name is its type: today these rows hold nothing else, and a button appearing in one would
+      // change the count this filter now controls rather than quietly satisfying `custom_id` reads.
+      .filter((component) => component.type === 3)
+  )
 }
 
 beforeEach(() => {
@@ -250,9 +256,9 @@ describe('/stats redesigned views', () => {
   })
 
   it('keeps the single select owner-only and disables it after 120 seconds', async () => {
-    const handlers: Record<string, (component: never) => Promise<void>> = {}
+    const handlers: Record<string, (component?: never) => Promise<void>> = {}
     const collector = {
-      on: vi.fn((event: string, handler: (component: never) => Promise<void>) => {
+      on: vi.fn((event: string, handler: (component?: never) => Promise<void>) => {
         handlers[event] = handler
         return collector
       })

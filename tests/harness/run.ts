@@ -248,8 +248,8 @@ export async function runTranscript(path: string, options: RunTranscriptOptions 
         line.channelId,
         [
           ...channelHistory,
-          { role: 'user', displayName: line.displayName, content: userMessage },
-          { role: 'assistant', displayName: 'Roka', content: scriptedReply }
+          { role: 'user' as const, displayName: line.displayName, content: userMessage },
+          { role: 'assistant' as const, displayName: 'Roka', content: scriptedReply }
         ].slice(-10)
       )
       activeTiming = undefined
