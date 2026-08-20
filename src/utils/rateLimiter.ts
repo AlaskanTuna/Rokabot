@@ -7,6 +7,19 @@ export interface RateLimiterConfig {
 
 let sharedRateLimiter: RateLimiter | undefined
 
+/**
+ * Slots held for one turn, handed back when it turns out not to have needed them.
+ *
+ * A turn is not a request. ADK is given `runConfig.maxLlmCalls`, so one turn may issue several — measured at
+ * ~1.13 on average in production and up to 3.8 in a tool-heavy benchmark run (#167). Reserving the ceiling
+ * and releasing the remainder bounds the peak at `rpm` without pricing the average turn at the peak, which
+ * is the whole difference between this and simply lowering `rpm`.
+ */
+export interface CallReservation {
+  /** Hand back everything beyond `used`. Idempotent: a turn that both throws and unwinds releases once. */
+  release(used: number): void
+}
+
 /** The span `rpm` is counted over. Not configurable: it is the unit Google's own quota is expressed in. */
 const RPM_WINDOW_MS = 60 * 1000
 
@@ -61,6 +74,67 @@ export class RateLimiter {
     this.admitted.push(Date.now())
     this.dailyCount += 1
     return true
+  }
+
+  /**
+   * Whether `count` slots could be taken right now. A peek with no side effect, so a handler can decline
+   * early — before spending a Discord round trip — without holding anything across the work that follows.
+   * The reservation itself is taken later and is the authoritative one; a turn that loses the race between
+   * them is refused there instead.
+   */
+  canAdmitCalls(count: number): boolean {
+    this.checkDailyReset()
+    this.pruneWindow()
+    return this.dailyCount < this.maxDaily && this.admitted.length + count <= this.maxPerMinute
+  }
+
+  /**
+   * Take `count` slots for a single turn, or nothing at all. Refuses rather than partially reserving: a turn
+   * admitted with fewer slots than it may spend is exactly the overshoot this exists to stop.
+   */
+  reserveCalls(count: number): CallReservation | undefined {
+    this.checkDailyReset()
+    this.pruneWindow()
+
+    if (this.dailyCount >= this.maxDaily) {
+      logger.warn({ dailyCount: this.dailyCount, maxDaily: this.maxDaily }, 'Daily rate limit reached')
+      return undefined
+    }
+
+    if (this.admitted.length + count > this.maxPerMinute) {
+      logger.warn(
+        { inWindow: this.admitted.length, wanted: count, maxPerMinute: this.maxPerMinute },
+        'RPM rate limit reached'
+      )
+      return undefined
+    }
+
+    // Every slot carries the same stamp, which is what lets `release` give back this turn's own rather than
+    // whichever happen to be newest — two turns reserving in the same millisecond hold indistinguishable
+    // slots, so crossing them has no effect on the count or on when they age out.
+    const stamp = Date.now()
+    for (let slot = 0; slot < count; slot += 1) this.admitted.push(stamp)
+    this.dailyCount += 1
+
+    let settled = false
+    return {
+      release: (used: number) => {
+        if (settled) return
+        settled = true
+        // A non-number means the caller could not say, which happens when a turn throws before reporting.
+        // Treated as "spent everything" deliberately rather than by the arithmetic degrading to NaN: holding
+        // slots costs a minute, handing back slots that were spent costs the quota.
+        const spent = Number.isFinite(used) ? Math.min(Math.max(0, used), count) : count
+        let giveBack = count - spent
+        while (giveBack > 0) {
+          const index = this.admitted.indexOf(stamp)
+          // Gone already: the turn outlived the window, and the slots aged out on their own.
+          if (index === -1) return
+          this.admitted.splice(index, 1)
+          giveBack -= 1
+        }
+      }
+    }
   }
 
   tryConsumeAboveFloor(floor: number): boolean {

@@ -72,12 +72,26 @@ export interface GenerateResult {
    * five-minute clip she heard ninety seconds of.
    */
   truncatedAttachments: number
+  /**
+   * Model calls this turn actually issued. The Discord layer reserved `gemini.maxLlmCalls` for it and gives
+   * back the difference — a turn that used one of four returns three slots to the minute rather than holding
+   * them for a peak it never reached (#167).
+   */
+  modelCalls: number
 }
 
 const APP_NAME = 'rokabot'
 
 const sessionErrorCounts = new Map<string, number>()
 const toolCallsForRequest = new AsyncLocalStorage<Set<string>>()
+
+/**
+ * Model calls made by the turn currently running, counted where they happen rather than inferred from what
+ * came back. The Discord layer reserves `gemini.maxLlmCalls` slots before the turn and hands back what this
+ * says went unused, so the count has to be of REQUESTS — retries and tool round trips included — not of
+ * anything the reply looks like afterwards (#167).
+ */
+const modelCallsForRequest = new AsyncLocalStorage<{ count: number }>()
 // Exported so tests can drive the beforeModelCallback ALS seam directly (task 122's only observable proof point)
 export const steeringForRequest = new AsyncLocalStorage<{ prompt?: string }>()
 interface ModelVerdict {
@@ -550,6 +564,11 @@ export const rokaAgent = new LlmAgent({
     httpOptions: { timeout: config.gemini.timeout }
   },
   beforeModelCallback: async ({ context, request }) => {
+    // The one place that sees every call the turn makes. ADK issues these internally, so nothing downstream
+    // could count them and nothing upstream knows how many a turn will need.
+    const calls = modelCallsForRequest.getStore()
+    if (calls) calls.count += 1
+
     const prompt = steeringForRequest.getStore()?.prompt ?? context.state.get<string>('_systemPrompt')
     if (prompt) {
       request.config = request.config ?? ({} as NonNullable<typeof request.config>)
@@ -1158,107 +1177,112 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   let sessionWasReset = false
   const steering: { prompt?: string } = {}
   const verdict: ModelVerdict = {}
-  const reliability = await toolCallsForRequest.run(usedToolNames, () =>
-    modelVerdictForRequest.run(verdict, () =>
-      steeringForRequest.run(steering, () =>
-        runTurnWithReliability({
-          maxRetries: config.gemini.liveMaxRetries,
-          retryBackoffCapMs: config.gemini.retryBackoffCapMs,
-          requestTimeoutMs: config.gemini.timeout,
-          turnDeadlineMs: config.gemini.turnDeadlineMs,
-          tryConsumeRetry: () =>
-            getSharedRateLimiter(config.rateLimit).tryConsumeAboveFloor(config.gemini.retryRpmFloor),
-          // retryBackoffCapMs doubles as computeBackoff's per-attempt maxMs: a single backoff delay
-          // should never be advertised as larger than the total budget it is measured against — the
-          // remaining-budget clamp in runTurnWithReliability's retry loop would cut an oversized delay down
-          // to size anyway, so sharing the value keeps the pre-jitter range honest with the ceiling.
-          computeBackoff: (attempt) =>
-            computeBackoff(attempt, config.gemini.retryBackoffBaseMs, { maxMs: config.gemini.retryBackoffCapMs }),
-          genericFallback: getRandomFallback(),
-          safetyDeflection: SAFETY_DEFLECTION,
-          recitationDeflection: RECITATION_DEFLECTION,
-          terminalDeflection: TERMINAL_DEFLECTION,
-          resetSession: async () => {
-            await destroySession(channelId)
-            await ensureSession(channelId)
-            resetIdleTimer(channelId)
-            sessionWasReset = true
-          },
-          safetyLadderLength: SAFETY_LADDER.length,
-          escalateSafety: async () => {
-            if (safetyRung >= SAFETY_LADDER.length) return undefined
-            safetyRung++
-
-            if (safetyRung === 3) {
-              // Carried history is the only remaining suspect: rebuild the window empty and drop images.
-              dropImages = true
+  const modelCalls = { count: 0 }
+  const reliability = await modelCallsForRequest.run(modelCalls, () =>
+    toolCallsForRequest.run(usedToolNames, () =>
+      modelVerdictForRequest.run(verdict, () =>
+        steeringForRequest.run(steering, () =>
+          runTurnWithReliability({
+            maxRetries: config.gemini.liveMaxRetries,
+            retryBackoffCapMs: config.gemini.retryBackoffCapMs,
+            requestTimeoutMs: config.gemini.timeout,
+            turnDeadlineMs: config.gemini.turnDeadlineMs,
+            tryConsumeRetry: () =>
+              getSharedRateLimiter(config.rateLimit).tryConsumeAboveFloor(config.gemini.retryRpmFloor),
+            // retryBackoffCapMs doubles as computeBackoff's per-attempt maxMs: a single backoff delay
+            // should never be advertised as larger than the total budget it is measured against — the
+            // remaining-budget clamp in runTurnWithReliability's retry loop would cut an oversized delay down
+            // to size anyway, so sharing the value keeps the pre-jitter range honest with the ceiling.
+            computeBackoff: (attempt) =>
+              computeBackoff(attempt, config.gemini.retryBackoffBaseMs, { maxMs: config.gemini.retryBackoffCapMs }),
+            genericFallback: getRandomFallback(),
+            safetyDeflection: SAFETY_DEFLECTION,
+            recitationDeflection: RECITATION_DEFLECTION,
+            terminalDeflection: TERMINAL_DEFLECTION,
+            resetSession: async () => {
               await destroySession(channelId)
-              rehydrationSuppressed.add(channelId)
               await ensureSession(channelId)
               resetIdleTimer(channelId)
               sessionWasReset = true
-            }
+            },
+            safetyLadderLength: SAFETY_LADDER.length,
+            escalateSafety: async () => {
+              if (safetyRung >= SAFETY_LADDER.length) return undefined
+              safetyRung++
 
-            systemPrompt = composePrompt()
-            steering.prompt = systemPrompt
-            return SAFETY_LADDER[safetyRung - 1]
-          },
-          runTurn: async (attempt, signal) => {
-            const includeCurrentTurn = attempt === 0 || sessionWasReset
-            const testRequest: TestTurnRequest = {
-              newMessage: includeCurrentTurn ? buildNewMessage() : undefined,
-              stateDelta: includeCurrentTurn
-                ? {
-                    _systemPrompt: systemPrompt,
-                    participants,
-                    _userId: userId,
-                    _channelId: channelId,
-                    _guildId: guildId,
-                    _userMessage: userMessage
+              if (safetyRung === 3) {
+                // Carried history is the only remaining suspect: rebuild the window empty and drop images.
+                dropImages = true
+                await destroySession(channelId)
+                rehydrationSuppressed.add(channelId)
+                await ensureSession(channelId)
+                resetIdleTimer(channelId)
+                sessionWasReset = true
+              }
+
+              systemPrompt = composePrompt()
+              steering.prompt = systemPrompt
+              return SAFETY_LADDER[safetyRung - 1]
+            },
+            runTurn: async (attempt, signal) => {
+              const includeCurrentTurn = attempt === 0 || sessionWasReset
+              const testRequest: TestTurnRequest = {
+                newMessage: includeCurrentTurn ? buildNewMessage() : undefined,
+                stateDelta: includeCurrentTurn
+                  ? {
+                      _systemPrompt: systemPrompt,
+                      participants,
+                      _userId: userId,
+                      _channelId: channelId,
+                      _guildId: guildId,
+                      _userMessage: userMessage
+                    }
+                  : undefined
+              }
+              if (testRunTurn) return testRunTurn(attempt, signal, testRequest)
+
+              let responseText = ''
+              let hasFunctionCall = false
+              let finishReason: LlmResponse['finishReason']
+
+              const request: Parameters<typeof runner.runAsync>[0] = {
+                userId: channelId,
+                sessionId: channelId,
+                // ADK's runtime only appends when this value is truthy; its type incorrectly requires Content otherwise.
+                newMessage: testRequest.newMessage ?? (undefined as unknown as Content),
+                runConfig: { maxLlmCalls: config.gemini.maxLlmCalls },
+                stateDelta: testRequest.stateDelta
+              }
+
+              for await (const event of runner.runAsync(request)) {
+                if (signal.aborted) break
+                if (event.errorCode) {
+                  return {
+                    errorCode: event.errorCode,
+                    errorMessage: event.errorMessage,
+                    customMetadata: event.customMetadata,
+                    finishReason: event.finishReason,
+                    hasText: false,
+                    hasFunctionCall: false
                   }
-                : undefined
-            }
-            if (testRunTurn) return testRunTurn(attempt, signal, testRequest)
-
-            let responseText = ''
-            let hasFunctionCall = false
-            let finishReason: LlmResponse['finishReason']
-
-            const request: Parameters<typeof runner.runAsync>[0] = {
-              userId: channelId,
-              sessionId: channelId,
-              // ADK's runtime only appends when this value is truthy; its type incorrectly requires Content otherwise.
-              newMessage: testRequest.newMessage ?? (undefined as unknown as Content),
-              runConfig: { maxLlmCalls: config.gemini.maxLlmCalls },
-              stateDelta: testRequest.stateDelta
-            }
-
-            for await (const event of runner.runAsync(request)) {
-              if (signal.aborted) break
-              if (event.errorCode) {
-                return {
-                  errorCode: event.errorCode,
-                  errorMessage: event.errorMessage,
-                  customMetadata: event.customMetadata,
-                  finishReason: event.finishReason,
-                  hasText: false,
-                  hasFunctionCall: false
+                }
+                if (isFinalResponse(event) && event.content?.parts) {
+                  finishReason = event.finishReason
+                  responseText = event.content.parts
+                    .filter((part: Part) => part.text && !part.thought)
+                    .map((part: Part) => part.text)
+                    .join('')
+                    .trim()
+                  hasFunctionCall = event.content.parts.some(
+                    (part: Part) => 'functionCall' in part && part.functionCall
+                  )
                 }
               }
-              if (isFinalResponse(event) && event.content?.parts) {
-                finishReason = event.finishReason
-                responseText = event.content.parts
-                  .filter((part: Part) => part.text && !part.thought)
-                  .map((part: Part) => part.text)
-                  .join('')
-                  .trim()
-                hasFunctionCall = event.content.parts.some((part: Part) => 'functionCall' in part && part.functionCall)
-              }
-            }
 
-            return { text: responseText, finishReason, hasText: Boolean(responseText), hasFunctionCall }
-          }
-        })
+              return { text: responseText, finishReason, hasText: Boolean(responseText), hasFunctionCall }
+            }
+          })
+        )
       )
     )
   )
@@ -1372,6 +1396,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     toolsUsed,
     droppedAttachments,
     truncatedAttachments,
-    refusedAttachments
+    refusedAttachments,
+    modelCalls: modelCalls.count
   }
 }

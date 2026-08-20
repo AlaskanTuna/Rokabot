@@ -264,7 +264,10 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'gemini.retryRpmFloor', value: config.gemini.retryRpmFloor, min: 0 },
   { path: 'gemini.extractionRpmFloor', value: config.gemini.extractionRpmFloor, min: 0 },
   { path: 'gemini.maxLlmCalls', value: config.gemini.maxLlmCalls, min: 1 },
-  { path: 'rateLimit.rpm', value: config.rateLimit.rpm, min: 1 },
+  // Floor is one turn's worth, derived: `rpm` is counted in requests and a turn reserves `maxLlmCalls` of
+  // them, so anything below that admits no turn at all and the bot answers nothing while reporting itself
+  // rate-limited. Found by a harness fixture at `rpm: 2` going silent the moment reservations landed (#167).
+  { path: 'rateLimit.rpm', value: config.rateLimit.rpm, min: config.gemini.maxLlmCalls },
   { path: 'rateLimit.rpd', value: config.rateLimit.rpd, min: 1 },
   { path: 'session.ttlMs', value: config.session.ttlMs, min: 1 },
   { path: 'session.windowSize', value: config.session.windowSize, min: 1 },

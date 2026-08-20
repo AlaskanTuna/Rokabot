@@ -759,7 +759,11 @@ describe('media resolution on the model request', () => {
 
   // Asserted on the request rather than read off the agent config: mediaResolution is request-level, so
   // where it is set decides what it applies to, and only the request shows that.
-  it('pins low media resolution when the request carries a video', async () => {
+  // Named for its consequence, because that is what a failure here is really about: this setting is the only
+  // reason `measureAttachmentTokens` runs above the bill rather than below it. The estimator cannot be given
+  // a media resolution on the Developer API, so removing this makes billing rise toward default resolution
+  // while the estimate stays put, and the attachment guard silently flips direction (#153).
+  it('pins low media resolution for video, which is what keeps the cost estimate above the bill', async () => {
     const request = requestCarrying('video/mp4')
     await callback({ context, request })
 

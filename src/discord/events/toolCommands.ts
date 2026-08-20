@@ -4,8 +4,6 @@
 
 import type { ChatInputCommandInteraction } from 'discord.js'
 import { logger } from '../../utils/logger.js'
-import { RateLimiter } from '../../utils/rateLimiter.js'
-import { getRandomDecline } from '../responses.js'
 import { handleAnime } from './tools/anime.js'
 import { handleRemind } from './tools/reminder.js'
 import { handleSchedule } from './tools/schedule.js'
@@ -14,19 +12,21 @@ import { ERROR_MESSAGES, PLAYFUL_COLOR, buildToolMessage, randomFrom } from './t
 const TOOL_COMMAND_NAMES = new Set(['anime', 'remind'])
 
 /** Create a dispatcher that routes tool slash commands to their respective handlers. */
-export function createToolCommandHandler(rateLimiter: RateLimiter) {
+/** These commands reach Jikan and SQLite, never Gemini, so they take no slot from the model limiter.
+ *
+ * They used to. `RateLimiter` counts whatever calls `tryConsume`, and this router borrowed the Gemini one as
+ * a generic anti-spam guard — which left our own counter believing requests had gone to Google that never
+ * had, so the guard refused real turns earlier than Google would have. That mattered more after #167 made a
+ * turn reserve `maxLlmCalls` slots: the usable ceiling is `rpm - maxLlmCalls + 1`, and every `/anime` took
+ * one of those from a turn that needed it. Nothing is left unguarded by the removal — `jikanThrottle` bounds
+ * the Jikan calls at 350 ms apart on its own, and `/remind` writes one local row (#172). */
+export function createToolCommandHandler() {
   return async function handleToolCommand(interaction: ChatInputCommandInteraction): Promise<void> {
     const commandName = interaction.commandName
 
     if (!TOOL_COMMAND_NAMES.has(commandName)) return
 
     logger.info({ channelId: interaction.channelId, command: commandName }, 'Tool command received')
-
-    if (!rateLimiter.tryConsume()) {
-      logger.debug({ channelId: interaction.channelId }, 'Rate limit hit for tool command')
-      await interaction.reply({ content: getRandomDecline() })
-      return
-    }
 
     try {
       switch (commandName) {

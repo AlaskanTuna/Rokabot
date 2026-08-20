@@ -5,6 +5,8 @@ export type FailureKind =
   | 'safety'
   | 'recitation'
   | 'session_corrupt'
+  /** The key is out of requests for the day. A 429 like every other, and the only one that cannot recover. */
+  | 'quota_exhausted'
   | 'terminal'
   | 'ok'
 
@@ -28,6 +30,16 @@ const SESSION_CORRUPT_PATTERN = /function call turn comes immediately after/i
 const TERMINAL_SYMBOLIC_PATTERN =
   /INVALID_ARGUMENT|UNAUTHENTICATED|UNAUTHORIZED|AUTHENTICATION|PERMISSION_DENIED|FORBIDDEN/i
 const TRANSIENT_SYMBOLIC_PATTERN = /RESOURCE_EXHAUSTED|overloaded|quota|rate.limit|UNAVAILABLE/i
+// A spent DAY and a spent MINUTE arrive as the same 429 with the same RESOURCE_EXHAUSTED status, and only the
+// quota ID separates them (#150). One recovers in seconds and the other not until midnight Pacific, so the
+// generic 429 rule retries a wall three times per turn and reports it as a transient afterwards.
+//
+// Matched only when the payload names the day and NOT the minute. A response listing both would be ambiguous,
+// and the two mistakes are not equal: treating a minute as a day deflects a turn that a retry would have
+// rescued, while treating a day as a minute costs three refused attempts. The second is what happens today,
+// so ambiguity keeps today's behaviour.
+const DAILY_QUOTA_PATTERN = /RequestsPerDay/i
+const MINUTE_QUOTA_PATTERN = /RequestsPerMinute/i
 const NETWORK_PATTERN = /fetch failed|ECONNRESET|ETIMEDOUT|EAI_AGAIN|abort(?:ed)?|timeout|DEADLINE_EXCEEDED/i
 // Bare status codes are matched last and digit-anchored, so `400` cannot match inside `4000000`.
 const TERMINAL_STATUS_PATTERN = /(?<!\d)(?:400|401|403)(?!\d)/
@@ -51,7 +63,12 @@ function result(kind: FailureKind): GeminiFailureResult {
       kind === 'empty_text' ||
       kind === 'recitation' ||
       kind === 'session_corrupt',
-    deflect: kind === 'safety' || kind === 'recitation' || kind === 'session_corrupt' || kind === 'terminal'
+    deflect:
+      kind === 'safety' ||
+      kind === 'recitation' ||
+      kind === 'session_corrupt' ||
+      kind === 'terminal' ||
+      kind === 'quota_exhausted'
   }
 }
 
@@ -68,6 +85,9 @@ function classifyMarker(marker: string | undefined): FailureKind | undefined {
   if (SAFETY_PATTERN.test(marker)) return 'safety'
   if (RECITATION_PATTERN.test(marker)) return 'recitation'
   if (SESSION_CORRUPT_PATTERN.test(marker)) return 'session_corrupt'
+  // Ahead of every transient rule below, which would otherwise claim it on `RESOURCE_EXHAUSTED`, `quota` or a
+  // bare 429 — in that order, all three of which a daily refusal also matches.
+  if (DAILY_QUOTA_PATTERN.test(marker) && !MINUTE_QUOTA_PATTERN.test(marker)) return 'quota_exhausted'
   if (TERMINAL_SYMBOLIC_PATTERN.test(marker)) return 'terminal'
   if (TRANSIENT_SYMBOLIC_PATTERN.test(marker)) return 'transient_http'
   if (NETWORK_PATTERN.test(marker)) return 'network'
