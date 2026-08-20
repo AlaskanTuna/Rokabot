@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
 // request construction, captured at runner.runAsync, the last hop this repo owns. It reconstructs
 // toolContext.state from that stateDelta instead of observing ADK's own propagation of it, which happens inside ADK.
 import type { ToolContext } from '@google/adk'
+import { RateLimiter } from '../../utils/rateLimiter.js'
 
 vi.mock('@google/adk', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@google/adk')>()
@@ -43,7 +44,12 @@ vi.mock('../../agent/memory/retriever.js', async (importOriginal) => ({
 vi.mock('../../utils/logger.js', () => ({
   logger: { debug: vi.fn(), error: mocks.error, info: mocks.info, warn: mocks.warn }
 }))
-vi.mock('../../utils/rateLimiter.js', () => ({ getSharedRateLimiter: mocks.getSharedRateLimiter }))
+// Keeps the real `RateLimiter` class and replaces only the shared getter: the handler now constructs
+// reservations against it, and a module mock that dropped the class took the whole file down with it.
+vi.mock('../../utils/rateLimiter.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../utils/rateLimiter.js')>()),
+  getSharedRateLimiter: mocks.getSharedRateLimiter
+}))
 vi.mock('../../utils/timezone.js', () => ({ getLocalHour: mocks.getLocalHour }))
 vi.mock('../concurrency.js', () => ({ isChannelBusy: () => false, markBusy: vi.fn(), markFree: vi.fn() }))
 vi.mock('../errorHandler.js', () => ({ isIgnorableDiscordError: () => false }))
@@ -84,7 +90,7 @@ function makeInteraction(channelId: string, userId: string, message: string) {
 }
 
 describe('interaction handler DM memory tenant bridge', () => {
-  const rateLimiter = { tryConsume: vi.fn(() => true), remainingRpm: 14, remainingRpd: 499 }
+  const rateLimiter = new RateLimiter({ rpm: 1_000, rpd: 100_000 })
 
   /** Drives one real turn and returns, as a deliberately partial `ToolContext`, the tool state
    * generateResponse handed to runner.runAsync for it. ADK does not export `State` from its public surface,

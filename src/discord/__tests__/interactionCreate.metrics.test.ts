@@ -38,6 +38,7 @@ vi.mock('../events/toolCommands.js', () => ({ createToolCommandHandler: () => mo
 
 import { recordSearchCitations } from '../../agent/searchCitations.js'
 import { config } from '../../config.js'
+import { RateLimiter } from '../../utils/rateLimiter.js'
 import { MAX_ATTACHMENTS, attachmentOptionName } from '../attachments.js'
 import { createInteractionHandler } from '../events/interactionCreate.js'
 
@@ -79,7 +80,7 @@ describe('interaction handler metrics', () => {
       editReply: vi.fn().mockResolvedValue(undefined),
       followUp: vi.fn().mockResolvedValue(undefined)
     }
-    const rateLimiter = { tryConsume: vi.fn(() => true), remainingRpm: 14, remainingRpd: 499 }
+    const rateLimiter = new RateLimiter({ rpm: 1_000, rpd: 100_000 })
 
     await createInteractionHandler(rateLimiter as never)(interaction as never)
 
@@ -136,7 +137,7 @@ describe('interaction handler metrics', () => {
   const PNG = { url: 'https://cdn.test/a.png', contentType: 'image/png' }
   const PDF_DOC = { url: 'https://cdn.test/notes.pdf', contentType: 'application/pdf' }
   const UNREADABLE = { url: 'https://cdn.test/a.zip', contentType: 'application/zip' }
-  const rateLimiterStub = () => ({ tryConsume: vi.fn(() => true), remainingRpm: 14, remainingRpd: 499 })
+  const rateLimiterStub = () => new RateLimiter({ rpm: 1_000, rpd: 100_000 })
 
   // Offers one more than the ceiling admits, so the assertion is non-vacuous at any MAX_ATTACHMENTS: it
   // fails if the handler stops short of the ceiling AND if it reads past it. The original pinned the
@@ -341,7 +342,7 @@ describe('interaction handler metrics', () => {
       editReply: vi.fn().mockResolvedValue(undefined),
       followUp: vi.fn().mockResolvedValue(undefined)
     }
-    const rateLimiter = { tryConsume: vi.fn(() => true), remainingRpm: 14, remainingRpd: 499 }
+    const rateLimiter = new RateLimiter({ rpm: 1_000, rpd: 100_000 })
 
     await createInteractionHandler(rateLimiter as never)(interaction as never)
 
@@ -370,7 +371,7 @@ describe('interaction handler metrics', () => {
       editReply: vi.fn().mockResolvedValue(undefined),
       followUp: vi.fn().mockResolvedValue(undefined)
     }
-    const rateLimiter = { tryConsume: vi.fn(() => true), remainingRpm: 14, remainingRpd: 499 }
+    const rateLimiter = new RateLimiter({ rpm: 1_000, rpd: 100_000 })
 
     await createInteractionHandler(rateLimiter as never)(interaction as never)
 
@@ -400,7 +401,7 @@ describe('interaction handler metrics', () => {
       editReply: vi.fn().mockResolvedValue(undefined),
       followUp: vi.fn().mockResolvedValue(undefined)
     }
-    const rateLimiter = { tryConsume: vi.fn(() => true), remainingRpm: 14, remainingRpd: 499 }
+    const rateLimiter = new RateLimiter({ rpm: 1_000, rpd: 100_000 })
 
     await createInteractionHandler(rateLimiter as never)(interaction as never)
 
@@ -424,7 +425,7 @@ describe('interaction handler metrics', () => {
       editReply: vi.fn().mockResolvedValue(undefined),
       followUp: vi.fn().mockResolvedValue(undefined)
     }
-    const rateLimiter = { tryConsume: vi.fn(() => true), remainingRpm: 14, remainingRpd: 499 }
+    const rateLimiter = new RateLimiter({ rpm: 1_000, rpd: 100_000 })
 
     await createInteractionHandler(rateLimiter as never)(interaction as never)
 
@@ -445,7 +446,7 @@ describe('interaction handler metrics', () => {
       isChatInputCommand: () => true,
       commandName: 'stats'
     }
-    const rateLimiter = { tryConsume: vi.fn(() => true), remainingRpm: 14, remainingRpd: 499 }
+    const rateLimiter = new RateLimiter({ rpm: 1_000, rpd: 100_000 })
 
     await createInteractionHandler(rateLimiter as never)(interaction as never)
 
@@ -464,7 +465,7 @@ describe('interaction handler metrics', () => {
       replied: false,
       reply: vi.fn().mockResolvedValue(undefined)
     }
-    const rateLimiter = { tryConsume: vi.fn(() => true), remainingRpm: 14, remainingRpd: 499 }
+    const rateLimiter = new RateLimiter({ rpm: 1_000, rpd: 100_000 })
 
     await expect(createInteractionHandler(rateLimiter as never)(interaction as never)).resolves.toBeUndefined()
 

@@ -1,7 +1,7 @@
 import { Collection } from 'discord.js'
 import type { Interaction, Message } from 'discord.js'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { RateLimiter } from '../../utils/rateLimiter.js'
+import { RateLimiter } from '../../utils/rateLimiter.js'
 
 const mocks = vi.hoisted(() => ({
   generateResponse: vi.fn(),
@@ -39,8 +39,10 @@ import { createMessageHandler } from '../events/messageCreate.js'
 const BUDGET = config.discord.maxInFlightAttachmentBytes
 const FOUR_MB = 4 * 1024 * 1024
 
-const rateLimiter = () =>
-  ({ tryConsume: vi.fn(() => true), remainingRpm: 14, remainingRpd: 499 }) as unknown as RateLimiter
+// The real limiter rather than a stand-in. It has no I/O, and a hand-rolled double of it drifted the moment
+// `reserveCalls` arrived (#167) — every handler test failed at once on a method the double did not know
+// about. Limits are set far above anything these tests reach, which is what the double was for.
+const rateLimiter = () => new RateLimiter({ rpm: 1_000, rpd: 100_000 })
 
 const upload = (size: number) => ({ url: 'https://cdn.example/i.png', contentType: 'image/png', size })
 

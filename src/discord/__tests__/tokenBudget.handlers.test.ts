@@ -1,7 +1,7 @@
 import { Collection } from 'discord.js'
 import type { Interaction, Message } from 'discord.js'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { RateLimiter } from '../../utils/rateLimiter.js'
+import { RateLimiter } from '../../utils/rateLimiter.js'
 
 const mocks = vi.hoisted(() => ({
   generateResponse: vi.fn(),
@@ -39,8 +39,10 @@ import { createMessageHandler } from '../events/messageCreate.js'
 const BUDGET = config.gemini.maxTokensPerMinute
 const FOUR_MB = 4 * 1024 * 1024
 
-const rateLimiter = () =>
-  ({ tryConsume: vi.fn(() => true), remainingRpm: 14, remainingRpd: 499 }) as unknown as RateLimiter
+// The real limiter rather than a stand-in. It has no I/O, and a hand-rolled double of it drifted the moment
+// `reserveCalls` arrived (#167) — every handler test failed at once on a method the double did not know
+// about. Limits are set far above anything these tests reach, which is what the double was for.
+const rateLimiter = () => new RateLimiter({ rpm: 1_000, rpd: 100_000 })
 
 const upload = (size: number) => ({ url: 'https://cdn.example/i.png', contentType: 'image/png', size })
 
@@ -183,5 +185,89 @@ describe('per-minute token budget, at the handlers', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+// A turn reserves `maxLlmCalls` slots before it runs and gives back what it never used. Both directions are
+// pinned: without the release the reservation is simply a lowered `rpm`, and without the reservation the
+// peak is unbounded (#167).
+describe('per-turn call reservation, at the handlers', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.generateResponse.mockResolvedValue({
+      text: 'hi',
+      tone: 'neutral',
+      metrics: {},
+      toolsUsed: [],
+      modelCalls: 1
+    })
+  })
+
+  it('hands back the slots a turn did not spend', async () => {
+    const limiter = new RateLimiter({ rpm: 20, rpd: 500 })
+    const { interaction } = createInteraction('channel-1', [])
+
+    await createInteractionHandler(limiter)(interaction)
+
+    expect(limiter.remainingRpm).toBe(19)
+  })
+
+  // The early peek, which nothing exercised: `concurrency.test.ts` drives the decline path through a double,
+  // so the real `canAdmitCalls` could have returned true unconditionally and no test would have noticed.
+  it('declines before the model when the minute cannot fund a whole turn', async () => {
+    const limiter = new RateLimiter({ rpm: 4, rpd: 500 })
+    limiter.reserveCalls(4)
+    const { interaction } = createInteraction('channel-1', [])
+
+    await createInteractionHandler(limiter)(interaction)
+
+    expect(mocks.generateResponse).not.toHaveBeenCalled()
+  })
+
+  // The discriminating one, and the only test that can tell reserving the ceiling from reserving a single
+  // slot. Net of release the two are identical — reserve 4 and give back 3 leaves the same one slot as
+  // reserving 1 — so every after-the-fact assertion passes either way. What differs is the window WHILE the
+  // turn is in flight, which is exactly the peak this exists to bound.
+  it('holds the whole ceiling while the turn is still running', async () => {
+    const limiter = new RateLimiter({ rpm: 20, rpd: 500 })
+    let finishTurn: () => void = () => {}
+    mocks.generateResponse.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishTurn = () => resolve({ text: 'hi', tone: 'neutral', metrics: {}, toolsUsed: [], modelCalls: 1 })
+        })
+    )
+    const { interaction } = createInteraction('channel-1', [])
+
+    const turn = createInteractionHandler(limiter)(interaction)
+    await vi.waitFor(() => expect(limiter.remainingRpm).toBe(16))
+
+    finishTurn()
+    await turn
+  })
+
+  it('keeps every slot when the turn spends the whole ceiling', async () => {
+    const limiter = new RateLimiter({ rpm: 20, rpd: 500 })
+    mocks.generateResponse.mockResolvedValue({
+      text: 'hi',
+      tone: 'neutral',
+      metrics: {},
+      toolsUsed: [],
+      modelCalls: 4
+    })
+    const { interaction } = createInteraction('channel-1', [])
+
+    await createInteractionHandler(limiter)(interaction)
+
+    expect(limiter.remainingRpm).toBe(16)
+  })
+
+  it('hands back the slots on the mention path too', async () => {
+    const limiter = new RateLimiter({ rpm: 20, rpd: 500 })
+    const { message } = createMessage('channel-2', [])
+
+    await createMessageHandler(client, limiter)(message)
+
+    expect(limiter.remainingRpm).toBe(19)
   })
 })

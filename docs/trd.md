@@ -655,6 +655,37 @@ a project quota: the harm from overspending lands on every other channel, not on
   not taken: it adds a second concept to a module that currently has one, to buy throughput this project
   has never needed at a measured peak of 38 requests a day.
 
+### A Turn Reserves the Calls It May Make
+
+`rateLimit.rpm` is counted in **requests**, and a turn is not one request. ADK is given
+`runConfig.maxLlmCalls`, so a turn that calls a tool issues an initial model call and another after the tool
+result, chaining up to that ceiling. Admitting on a single slot let 15 turns become up to 60 requests against
+a 15 RPM quota (#167) — the third instance of a guard metering a different unit than the quota it defends,
+after bytes-for-tokens (#136) and capacity-for-rate (#149).
+
+Both handlers that reach the model now reserve `gemini.maxLlmCalls` slots before the turn and hand back what
+it did not use, released in the same `finally` as the byte reservation and the concurrency flag.
+
+- **Reserved at the ceiling, released to the truth.** Production averages ~1.13 calls a turn, so pricing
+  every turn at the 4-call peak would cost most of the budget. The release is the whole difference between
+  this and simply lowering `rpm`: that would price every turn at 4 permanently, this holds 4 only while the
+  turn runs.
+- **The sustained ceiling is `rpm - maxLlmCalls + 1`, not `rpm`.** A turn is admitted only when a whole
+  reservation fits, so single-call turns settle at 12 a minute at `rpm: 15`, not 15. That headroom is the
+  standing cost of bounding the peak — a fifth of the budget — and it is the figure to quote, not `rpm`.
+- **`rateLimit.rpm` has a floor of `gemini.maxLlmCalls`.** Below it no turn can ever be admitted and the bot
+  answers nothing while reporting itself rate-limited. Found when a harness fixture at `rpm: 2` went silent
+  the moment reservations landed; now rejected at startup rather than at runtime.
+- **A turn that cannot report what it spent keeps its whole reservation.** Holding slots costs a minute;
+  handing back slots that were spent costs the quota. Made explicit rather than left to arithmetic that would
+  otherwise degrade to `NaN` and release nothing by accident.
+- **The early check is an optimisation, not the guard.** `canAdmitCalls` declines before a Discord round trip
+  is spent; the reservation taken later is authoritative, and a turn that loses the race between them is
+  refused there. Removing the peek changes which message the user sees, not whether the turn runs.
+- **`/anime` and `/remind` still consume a Gemini slot they never use.** `toolCommands.ts` calls
+  `tryConsume()` and reaches Gemini zero times — it is borrowing this limiter as a generic abuse guard.
+  Deliberately unchanged here and tracked separately.
+
 ### The Two Limiters Bound Their Windows Differently, on Purpose
 
 `rateLimit.rpm` and `gemini.maxTokensPerMinute` guard per-minute quotas and are built differently. That is a

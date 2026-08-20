@@ -443,7 +443,11 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
       return
     }
 
-    if (!rateLimiter.tryConsume()) {
+    // Advisory, and deliberately not the reservation. A turn may issue up to `maxLlmCalls` model calls, so
+    // that is what has to be available — but holding it from here would strand the slots on every early
+    // return and on a `deferReply` that throws. Asked here to decline cheaply, taken below where a `finally`
+    // can hand it back (#167).
+    if (!rateLimiter.canAdmitCalls(config.gemini.maxLlmCalls)) {
       logger.debug(
         { channelId, remainingRpm: rateLimiter.remainingRpm, remainingRpd: rateLimiter.remainingRpd },
         'Rate limit hit — declining'
@@ -478,6 +482,23 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
 
     // Reserved here rather than earlier so nothing can throw between taking the bytes and the try/finally
     // that hands them back — a reservation that leaks becomes a permanent refusal, not a failed turn.
+    // Taken here for the same reason the bytes are, and handed back in the same `finally`. Reserving the
+    // ceiling rather than one slot is the point: the minute is spent in REQUESTS and a turn issues up to
+    // `maxLlmCalls` of them, so admitting on one slot let 15 turns become up to 60 requests (#167).
+    const callReservation = rateLimiter.reserveCalls(config.gemini.maxLlmCalls)
+    if (!callReservation) {
+      if (typingInterval) clearInterval(typingInterval)
+      logger.debug({ channelId, remainingRpm: rateLimiter.remainingRpm }, 'Lost the race for call slots')
+      const rpmMsg = await message.reply(getRandomBusy())
+      setTimeout(() => rpmMsg.delete().catch(() => {}), 5000)
+      return
+    }
+
+    // Assume the whole reservation was spent unless the turn comes back and says otherwise: a turn that
+    // throws has already made an unknown number of calls, and over-holding costs a minute where
+    // under-holding costs the quota.
+    let modelCallsUsed = config.gemini.maxLlmCalls
+
     const reservedBytes = reservationFor(imageAttachments)
     if (!tryReserve(reservedBytes)) {
       if (typingInterval) clearInterval(typingInterval)
@@ -492,7 +513,16 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
       // two — markFree on a channel that was never marked is a no-op delete, so this costs nothing.
       markBusy(channelId)
       const [
-        { text: responseText, tone, toolsUsed, metrics, droppedAttachments, truncatedAttachments, refusedAttachments },
+        {
+          text: responseText,
+          tone,
+          toolsUsed,
+          metrics,
+          droppedAttachments,
+          truncatedAttachments,
+          refusedAttachments,
+          modelCalls
+        },
         sources
       ] = await withSearchCitations(() =>
         generateResponse({
@@ -505,6 +535,10 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
           imageAttachments: imageAttachments.length > 0 ? imageAttachments : undefined
         })
       )
+
+      // Now that the turn is done, hand back the slots it never used. Reserved at the ceiling, released
+      // to the truth.
+      modelCallsUsed = modelCalls
 
       logger.debug({ channelId, tone, responseLength: responseText.length }, 'ADK response received')
 
@@ -571,6 +605,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
       if (typingInterval) clearInterval(typingInterval)
       markFree(channelId)
       release(reservedBytes)
+      callReservation.release(modelCallsUsed)
     }
   }
 }

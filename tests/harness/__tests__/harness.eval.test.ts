@@ -111,6 +111,8 @@ afterEach(async () => {
   vi.restoreAllMocks()
 })
 
+// `rpm` is counted in REQUESTS now, and one turn reserves `maxLlmCalls` of them (#167). These fixtures
+// meant "exactly N turns' worth", so the meaning is unchanged and only the arithmetic moved.
 describe('harness self-tests', () => {
   it('runs a fake-mode transcript through real handlers and captures Discord-facing payloads', async () => {
     const report = await runTranscript(transcript)
@@ -206,11 +208,11 @@ describe('harness self-tests', () => {
     expect(rendered).toContain('Expression Thumbnail: https://')
   })
 
-  it('intercepts a second in-flight message with a busy reply without a second token or model call', async () => {
+  it('intercepts a second in-flight message with a busy reply without a second reservation or model call', async () => {
     const sink = createCaptureSink()
     const client = makeClient()
-    const limiter = new RateLimiter({ rpm: 2, rpd: 2 })
-    const consume = vi.spyOn(limiter, 'tryConsume')
+    const limiter = new RateLimiter({ rpm: 8, rpd: 2 })
+    const consume = vi.spyOn(limiter, 'reserveCalls')
     vi.spyOn(Math, 'random').mockReturnValue(0)
     let resolveFirstTurn!: () => void
     const firstTurnStarted = new Promise<void>((resolve) => {
@@ -284,7 +286,7 @@ describe('harness self-tests', () => {
 
     await createMessageHandler(
       makeClient() as never,
-      new RateLimiter({ rpm: 1, rpd: 1 })
+      new RateLimiter({ rpm: 4, rpd: 1 })
     )(
       makeMessage({
         mentions: ['roka'],
@@ -306,7 +308,7 @@ describe('harness self-tests', () => {
 
     await createMessageHandler(
       makeClient() as never,
-      new RateLimiter({ rpm: 1, rpd: 1 })
+      new RateLimiter({ rpm: 4, rpd: 1 })
     )(
       makeMessage({
         mentions: ['roka'],
@@ -331,7 +333,7 @@ describe('harness self-tests', () => {
 
     await createMessageHandler(
       makeClient() as never,
-      new RateLimiter({ rpm: 1, rpd: 1 })
+      new RateLimiter({ rpm: 4, rpd: 1 })
     )(
       makeMessage({
         author: { id: 'gacha-user', username: 'gacha', displayName: 'Gacha User' },
@@ -358,7 +360,7 @@ describe('harness self-tests', () => {
     const longResponse = `${'A'.repeat(1_999)} ${'B'.repeat(1_999)} ${'C'.repeat(50)}`
     scriptedResponse(longResponse)
 
-    await createInteractionHandler(new RateLimiter({ rpm: 1, rpd: 1 }))(
+    await createInteractionHandler(new RateLimiter({ rpm: 4, rpd: 1 }))(
       makeInteraction({
         channelId: 'chunk-channel',
         guildId: 'chunk-guild',
@@ -384,7 +386,7 @@ describe('harness self-tests', () => {
 
     await createMessageHandler(
       makeClient() as never,
-      new RateLimiter({ rpm: 1, rpd: 1 })
+      new RateLimiter({ rpm: 4, rpd: 1 })
     )(makeMessage({ content: 'Roka, could you help?', channelId: 'name-channel', sink }) as never)
 
     const reply = sink.all().find((record) => record.kind === 'reply')
@@ -435,7 +437,7 @@ describe('harness self-tests', () => {
         sink
       })
 
-      await createMessageHandler(makeClient() as never, new RateLimiter({ rpm: 1, rpd: 1 }))(message as never)
+      await createMessageHandler(makeClient() as never, new RateLimiter({ rpm: 4, rpd: 1 }))(message as never)
 
       expect(mocks.runnerRequests).toHaveLength(1)
       const input = capturedRequestText(mocks.runnerRequests[0])
@@ -448,7 +450,7 @@ describe('harness self-tests', () => {
   it('injects only the current guild claims while replaying the multi-guild transcript', async () => {
     const lines = (await loadTranscript(transcript)).filter((line) => line.userId === memoryUserId)
     const client = makeClient()
-    const handler = createMessageHandler(client as never, new RateLimiter({ rpm: 2, rpd: 2 }))
+    const handler = createMessageHandler(client as never, new RateLimiter({ rpm: 8, rpd: 2 }))
     expect(config.memory.claimsBackend).toBe(true)
     assertClaim({
       guildId: 'guild-garden',

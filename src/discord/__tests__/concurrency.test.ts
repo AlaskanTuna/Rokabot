@@ -48,7 +48,11 @@ import { createMessageHandler } from '../events/messageCreate.js'
 
 function createRateLimiter(allowed = true): RateLimiter {
   return {
-    tryConsume: vi.fn(() => allowed),
+    // `canAdmitCalls` is the admission question the handlers now ask; `reserveCalls` is what they take.
+    // Both are here because a double missing either passes type-checking through the cast below and then
+    // fails at run time on a method it never heard of (#167).
+    canAdmitCalls: vi.fn(() => allowed),
+    reserveCalls: vi.fn(() => (allowed ? { release: vi.fn() } : undefined)),
     remainingRpm: 14,
     remainingRpd: 499
   } as unknown as RateLimiter
@@ -123,7 +127,7 @@ describe('Discord concurrency guards', () => {
     await createMessageHandler({ user: { id: 'bot-1' } } as never, rateLimiter)(message)
 
     expect(reply).toHaveBeenCalledWith('busy')
-    expect(rateLimiter.tryConsume).not.toHaveBeenCalled()
+    expect(rateLimiter.canAdmitCalls).not.toHaveBeenCalled()
     expect(mocks.generateResponse).not.toHaveBeenCalled()
   })
 
@@ -137,7 +141,7 @@ describe('Discord concurrency guards', () => {
       await createInteractionHandler(rateLimiter)(interaction)
 
       expect(reply).toHaveBeenCalledWith({ content: 'busy' })
-      expect(rateLimiter.tryConsume).not.toHaveBeenCalled()
+      expect(rateLimiter.canAdmitCalls).not.toHaveBeenCalled()
       expect(mocks.generateResponse).not.toHaveBeenCalled()
       expect(deleteReply).not.toHaveBeenCalled()
 
@@ -168,7 +172,7 @@ describe('Discord concurrency guards', () => {
         return createInteractionHandler(rateLimiter)(interaction)
       }
     ]
-  ])('checks busy before consuming one token and frees a %s channel after completion', async (_kind, invoke) => {
+  ])('checks busy before asking the limiter and frees a %s channel after completion', async (_kind, invoke) => {
     const rateLimiter = createRateLimiter()
     let resolveResponse!: (value: {
       text: string
@@ -193,8 +197,8 @@ describe('Discord concurrency guards', () => {
     const handling = invoke(rateLimiter)
     await vi.waitFor(() => expect(mocks.generateResponse).toHaveBeenCalledOnce())
 
-    expect(mocks.isChannelBusy).toHaveBeenCalledBefore(rateLimiter.tryConsume as ReturnType<typeof vi.fn>)
-    expect(rateLimiter.tryConsume).toHaveBeenCalledOnce()
+    expect(mocks.isChannelBusy).toHaveBeenCalledBefore(rateLimiter.canAdmitCalls as ReturnType<typeof vi.fn>)
+    expect(rateLimiter.canAdmitCalls).toHaveBeenCalledOnce()
     expect(mocks.markBusy).toHaveBeenCalledWith('channel-1')
     expect(mocks.busyChannels.has('channel-1')).toBe(true)
 
@@ -281,7 +285,7 @@ describe('Discord concurrency guards', () => {
     await invoke(rateLimiter)
 
     expect(mocks.isChannelBusy).toHaveBeenCalledWith('channel-1')
-    expect(rateLimiter.tryConsume).toHaveBeenCalledOnce()
+    expect(rateLimiter.canAdmitCalls).toHaveBeenCalledOnce()
     expect(mocks.generateResponse).not.toHaveBeenCalled()
   })
 })

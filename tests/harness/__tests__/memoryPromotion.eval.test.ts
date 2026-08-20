@@ -64,6 +64,8 @@ afterEach(async () => {
   vi.restoreAllMocks()
 })
 
+// `rpm` is counted in REQUESTS now, and one turn reserves `maxLlmCalls` of them (#167). These fixtures
+// meant "exactly N turns' worth", so the meaning is unchanged and only the arithmetic moved.
 describe('memory promotion harness evaluation', () => {
   it('uses the bounded retriever and queues extraction for a multi-guild transcript with the default enabled', async () => {
     expect(config.memory.claimsBackend).toBe(true)
@@ -184,7 +186,7 @@ describe('memory promotion harness evaluation', () => {
           })
       )
     })
-    const busyHandler = createMessageHandler(client as never, new RateLimiter({ rpm: 2, rpd: 2 }))
+    const busyHandler = createMessageHandler(client as never, new RateLimiter({ rpm: 8, rpd: 2 }))
     const busySink = createCaptureSink()
     const first = busyHandler(
       makeMessage({
@@ -241,7 +243,7 @@ describe('memory promotion harness evaluation', () => {
     const emojiSink = createCaptureSink()
     await createMessageHandler(
       client as never,
-      new RateLimiter({ rpm: 1, rpd: 1 })
+      new RateLimiter({ rpm: 4, rpd: 1 })
     )(
       makeMessage({
         mentions: ['roka'],
@@ -258,7 +260,7 @@ describe('memory promotion harness evaluation', () => {
     const gachaSink = createCaptureSink()
     await createMessageHandler(
       client as never,
-      new RateLimiter({ rpm: 1, rpd: 1 })
+      new RateLimiter({ rpm: 4, rpd: 1 })
     )(
       makeMessage({
         author: { id: 'promotion-gacha', username: 'gacha', displayName: 'Gacha' },
