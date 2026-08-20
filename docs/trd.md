@@ -533,6 +533,15 @@ byte budget cannot disagree about the same file.
 - **Both surfaces admit the same set.** `/ask` and the mention path each filter with `isSupportedMedia`.
   The forwarded, referenced and embed sub-paths on the mention path remain images-only, because their text
   markers describe what they carry as images.
+- **Components V2 media is read, and what cannot be read is still counted.** A Components V2 message keeps
+  its files in `components` rather than in `attachments`, so `Thumbnail` (11), `MediaGallery` (12) and `File`
+  (13) reached her as nothing at all — and as nothing _silently_, because a path that never detects a file
+  cannot report one. `extractComponentMedia` walks the same tree the text walker does and routes what it
+  finds into the ordinary attachment slots, after the sender's own uploads: an explicit upload is the more
+  deliberate of the two gestures. A component whose `content_type` she cannot read, **or that states none at
+  all**, adds to `unsupportedCount` rather than being skipped — guessing a type from the URL would be the
+  same silent assumption that created the gap. Nothing here makes a network call: the type comes from what
+  Discord already resolved.
 - **`attachment_url` takes the same set as the upload slot.** It was images-only, on the reasoning that this
   is the SSRF-guarded path where the Pi fetches a host the _sender_ named — but the guard checks the host and
   never the payload, so the narrow type set was not what made it safe. What does: the 2 s HEAD and 15 s body
