@@ -37,8 +37,10 @@ let client: GoogleGenAI | undefined
  * the Developer API — prices at ~103. Both terms are linear in duration, so the ratio holds at any length.
  * Remove that setting, or let a future part shape stop matching `requestCarriesVideo`, and billing rises
  * toward the default resolution while this estimate does not move: the guard would flip from over- to
- * under-estimating with nothing here changing. `prices video at whatever resolution the request will use`
- * below is what fails if that happens.
+ * under-estimating with nothing here changing. What fails if that happens is `pins low media resolution for
+ * video, which is what keeps the cost estimate above the bill`, in roka.test.ts — the check lives with the
+ * setting, because only that file can observe it. The test below pins this module's half only: that the probe
+ * cannot ask for a resolution even if it wanted to.
  */
 export async function measureAttachmentTokens(parts: Part[]): Promise<number | undefined> {
   if (parts.length === 0) return 0
