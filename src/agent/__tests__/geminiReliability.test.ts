@@ -165,6 +165,57 @@ describe('classifyGeminiFailure', () => {
   })
 })
 
+// Verbatim shapes from a 2026-08-21 measurement. Both arrive as 429 RESOURCE_EXHAUSTED with the same status,
+// and only the quota ID separates a minute that heals in seconds from a day that does not heal until midnight
+// Pacific (#150). The generic 429 rule retried the second three times a turn and reported it as a transient.
+const SPENT_DAY =
+  'got status: 429. {"error":{"code":429,"status":"RESOURCE_EXHAUSTED","details":[' +
+  '{"quotaId":"GenerateRequestsPerDayPerProjectPerModel-FreeTier","quotaValue":"500"}],"retryDelay":"39s"}}'
+const SPENT_MINUTE =
+  'got status: 429. {"error":{"code":429,"status":"RESOURCE_EXHAUSTED","details":[' +
+  '{"quotaId":"GenerateRequestsPerMinutePerProjectPerModel-FreeTier","quotaValue":"15"}],"retryDelay":"21s"}}'
+
+describe('a spent day is not a spent minute', () => {
+  it('names a daily refusal as its own kind rather than a transient', () => {
+    expect(classifyGeminiFailure({ errorMessage: SPENT_DAY }).kind).toBe('quota_exhausted')
+  })
+
+  // The whole cost of the old behaviour: three attempts and their backoff spent against a wall that does not
+  // open until midnight, on every turn for the rest of the day.
+  it('does not retry a day that cannot recover', () => {
+    expect(classifyGeminiFailure({ errorMessage: SPENT_DAY }).retryable).toBe(false)
+  })
+
+  it('deflects it, so she answers rather than failing silently', () => {
+    expect(classifyGeminiFailure({ errorMessage: SPENT_DAY }).deflect).toBe(true)
+  })
+
+  // The control, and the direction that matters more. A per-minute refusal DOES heal, so misreading one as a
+  // spent day would deflect a turn that a retry would have rescued — a user-visible regression traded for an
+  // invisible one.
+  it('leaves a per-minute refusal retryable, which is the mistake that would cost a real turn', () => {
+    expect(classifyGeminiFailure({ errorMessage: SPENT_MINUTE })).toEqual({
+      kind: 'transient_http',
+      retryable: true,
+      deflect: false
+    })
+  })
+
+  // A payload naming both is ambiguous, and the two mistakes are not equal. Keeping today's behaviour costs
+  // three refused attempts; the other way costs a turn that would have succeeded.
+  it('keeps a payload naming both quotas retryable', () => {
+    expect(classifyGeminiFailure({ errorMessage: `${SPENT_DAY} ${SPENT_MINUTE}` }).kind).toBe('transient_http')
+  })
+
+  // `retryDelay: "39s"` on a DAILY refusal is Google naming a minute-shaped remedy for a day-shaped problem.
+  // Nothing here reads it — `computeBackoff` takes only an attempt number — and this pins that, because
+  // "the server tells us when to retry, we should use that" is a reasonable-sounding change that would retry
+  // roughly two thousand times into a wall.
+  it('ignores the retryDelay the payload advertises', () => {
+    expect(computeBackoff(0, 1_000, { jitter: false })).toBe(1_000)
+  })
+})
+
 describe('computeBackoff', () => {
   it('increases monotonically before the cap when jitter is disabled', () => {
     const delays = [0, 1, 2].map((attempt) => computeBackoff(attempt, 100, { jitter: false, maxMs: 1_000 }))

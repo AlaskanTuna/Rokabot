@@ -400,6 +400,7 @@ condition is reached, the specified fallback behavior applies.
 | `safety`             | `SAFETY`, `PROHIBITED_CONTENT`, `BLOCKLIST`, or `SPII`                                                                                                                                                                       | No blind retry; one steered regeneration | 1 steered regeneration, one-shot per turn | None — the block is not rate-related                             | The regeneration consumes a token, only while `remainingRpm >= retryRpmFloor` (`2`)                                                   | Preserve                                                              | A generated in-character redirect when the regeneration succeeds; otherwise the static safety deflection: “Ehh… let's not get into that one~” |
 | `session_corrupt`    | The Gemini 400 whose message reports a function-call turn immediately following a user turn                                                                                                                                  | Yes, once                                | 1 retry                                   | 1s exponential base with full jitter; stop at ~12s added latency | Yes; the retry consumes a token, only while `remainingRpm >= retryRpmFloor` (`2`)                                                     | Destroy the ADK session and rehydrate it from SQLite before the retry | Real answer if the rehydrated retry succeeds; otherwise the same in-character decline as `terminal`                                           |
 | `recitation`         | Gemini recitation finish reason or equivalent response classification                                                                                                                                                        | Yes, once                                | 1 resample                                | 1s full-jitter resample delay                                    | Yes; the resample consumes a token, only while `remainingRpm >= retryRpmFloor` (`2`)                                                  | Preserve                                                              | Real answer if the resample succeeds; otherwise an in-character decline                                                                       |
+| `quota_exhausted`    | A 429 whose `quotaId` names `RequestsPerDay` and not `RequestsPerMinute` — the key is out of requests until midnight Pacific                                                                                                 | No                                       | None                                      | None                                                             | No                                                                                                                                    | Preserve                                                              | The same in-character decline as `terminal`                                                                                                   |
 | `terminal`           | 400, `INVALID_ARGUMENT`, authentication failure, or permission failure (bare status codes are matched last and digit-anchored, so a `400` inside a larger number — a quota figure, a token count — is not a terminal signal) | No                                       | 0 retries                                 | None                                                             | The initial user message consumes its token; no retry token is consumed                                                               | Destroy                                                               | In-character decline                                                                                                                          |
 | `extraction_failure` | Any background memory-extraction failure                                                                                                                                                                                     | Only for a transient failure             | 1 light retry                             | Light full-jitter retry delay                                    | Yes; each extraction attempt, including its retry, consumes a token and may run only while `remainingRpm >= extractionRpmFloor` (`3`) | Preserve; background extraction never destroys the live session       | No user-facing message; quietly give up after the retry or immediately for a non-transient failure, and never block user traffic              |
 
@@ -424,6 +425,33 @@ path must remain even after the thresholds are relaxed.
   against a 500-request daily quota. Left as-is because converting it needs release semantics for a counter
   that has none, and because the reachability is the same dormant profile as the rest — production runs ~10
   turns a day. Named here so the asymmetry does not read as deliberate.
+
+### A Spent Day Is Not a Spent Minute
+
+Both arrive as `429 RESOURCE_EXHAUSTED` with the same HTTP status and, until now, the same `kind`. Only the
+`quotaId` separates them, and their correct responses are opposite:
+
+| `quotaId`                                   | Recovers within a turn?            | Right response  |
+| ------------------------------------------- | ---------------------------------- | --------------- |
+| `...RequestsPerMinutePerProjectPerModel...` | Yes, in seconds                    | Retry           |
+| `...RequestsPerDayPerProjectPerModel...`    | **No, not until midnight Pacific** | Deflect at once |
+
+Classified as `transient_http`, a spent day cost three attempts and their backoff **on every turn for the rest
+of the day**, and then reported itself as a transient — so the symptom was latency nobody attributed to a rate
+limiter that reports itself as never having been hit.
+
+- **Matched only when the payload names the day and not the minute.** The two mistakes are not equal: reading
+  a minute as a day deflects a turn a retry would have rescued, while reading a day as a minute costs three
+  refused attempts. The second is the pre-existing behaviour, so an ambiguous payload keeps it.
+- **The payload's own `retryDelay` is not read, and must not be.** A daily refusal advertises
+  `retryDelay: "39s"` — a minute-shaped remedy for a day-shaped problem, which is Google failing to make the
+  same distinction. `computeBackoff` takes an attempt number and nothing else, so we are safe by construction
+  rather than by design; honouring the server's delay is a reasonable-sounding change that would retry
+  roughly two thousand times into a wall that only opens at midnight.
+- **Reachable in production, though not at today's traffic.** `rateLimiter`'s daily counter is in memory and
+  starts at zero on every restart, and `main` deploys on merge, so a busy day plus a redeploy leaves the
+  server's quota as the only guard. At ~10 turns a day nothing is close to it; the mechanism is real and the
+  reachability is not, which is why this is classification rather than a new limiter.
 
 ### Concurrency & Lifecycle Under Retry
 
@@ -570,28 +598,39 @@ therefore prices the parts with `countTokens` before sending them and refuses th
 `gemini.maxAttachmentTokens`, rather than letting the request fail on a 429 that would retry into the same
 wall and spend the minute's budget for every other channel.
 
-- **Video carries an allowance for audio the estimate under-prices.** `countTokens` charges a video's audio
-  stream far less than the same audio priced alone, while the model demonstrably hears it — a black-frames
-  video whose only content was speech was transcribed correctly (#153). So `measureAttachmentTokens` adds
-  `VIDEO_AUDIO_ALLOWANCE` when a video part is present.
+- **Video is not adjusted, because the estimate already runs above the bill.** `countTokens` does under-price
+  a video's soundtrack — sometimes to nothing, and how much is a property of the (video, audio) _pair_ rather
+  than of the audio. It over-prices the video itself by more. Four matched clips, `countTokens` against
+  `usageMetadata.promptTokenCount`:
 
-  **How much less is clip-dependent, and this bullet previously claimed it was always zero.** Two matched
-  black-frames pairs measured 2,133/2,133 and 2,070/2,070 — audio contributing _exactly nothing_ — and that
-  was generalised to the estimator. It does not hold: a 854x480, 24 fps, 2.6 Mbps clip measures 2,133 with
-  its audio and 2,061 without, so audio contributes 72 tokens over 20 seconds. Deterministic, twice, all four
-  figures identical on both passes. That is 3.6 tokens a second against 32 for the same audio alone, so
-  ~89% is still missing and the allowance's direction stands — but "the estimate omits all of it" was a
-  statement about black frames, not about `countTokens`.
+  | Clip                   | `countTokens` | Billed | Over-report |
+  | ---------------------- | ------------- | ------ | ----------- |
+  | black frames + audio   | 2,070         | 1,768  | 1.17x       |
+  | black frames, silent   | 2,070         | 1,268  | 1.63x       |
+  | 854x480 24 fps + audio | 2,133         | 1,828  | 1.17x       |
+  | 854x480, silent        | 2,061         | 1,328  | 1.55x       |
 
-  The two reproductions that established the original claim used different methods (speech against a sine
-  tone, 18x apart in bytes) on the same _kind_ of specimen. **Independent reproduction controls for method,
-  not for the sample.** Whether Google _bills_ that audio is **not established** — `countTokens` already diverges from
-  billing for time-based media, so its silence is not evidence the audio is free. The allowance takes the
-  conservative reading because only one direction fails badly: an under-estimate admits a turn that then 429s
-  and spends the minute's budget for every other channel, while an over-estimate refuses one long video
-  early. It is applied to silent video too, since `countTokens` cannot distinguish one and finding out means
-  parsing a container per format. A billing-side measurement (`usageMetadata.promptTokenCount` from one
-  `generateContent` per clip) would replace the constant with a fact and could remove it.
+  **Billing is the clean side.** Audio bills 500 tokens for 20 seconds beside _both_ videos — identical across
+  clips differing in resolution, framerate, bitrate, content and 35x in bytes — at ~25/second, the same rate
+  the audio bills at alone. The erratic side is the estimator: the same audio stream contributes 72 tokens to
+  `countTokens` beside one video and 0 beside another, decided by its companion. That is an artefact of the
+  estimator, not a property of the cost model.
+
+  A `VIDEO_AUDIO_ALLOWANCE` of 0.31 was briefly added on the reading that audio was unpriced and the guard
+  therefore too permissive. Measured against billing that was false in both halves: the estimate was already
+  1.17x-1.63x above the bill, and the allowance pushed it to 1.53x-2.14x — worst on silent video, the case it
+  deliberately over-charged. Removed.
+
+- **The margin is borrowed from `MEDIA_RESOLUTION_LOW`, not inherent to the estimate.** `roka.ts` pins low
+  media resolution on any request carrying video, so the biller charges ~65 tokens/second while `countTokens`
+  prices at ~103. The probe cannot pin anything: `CountTokensConfig.generationConfig`, where `mediaResolution`
+  lives, is documented "Not supported by the Gemini Developer API". Both terms are linear in duration, so the
+  ratio is duration-independent and a 20-second measurement generalises by construction rather than by
+  extrapolation — the 854x480 ceiling still binds the video rate. **Remove that setting, or let a future part
+  shape stop matching `requestCarriesVideo`, and billing rises toward the default resolution while the
+  estimate does not move: the guard flips from over- to under-estimating with nothing in `attachmentCost.ts`
+  changing.** Pinned at both ends — `prices video at whatever resolution the request will use` in
+  `attachmentCost`'s tests, and a roka test named for this consequence rather than for the setting.
 
 - **Images are skipped, and that skip is model-specific.** `needsMeasuring` returns false when every part is
   an image, because an image is a flat 1,089 tokens regardless of dimensions and `MAX_ATTACHMENTS` of them
@@ -704,11 +743,11 @@ it did not use, released in the same `finally` as the byte reservation and the c
   minute and turns by the day. Converting it needs release semantics for a counter that has none. See
   "RPM-Budget Accounting".
 - **`/anime` and `/remind` take no slot from this limiter.** They reach Jikan and SQLite, never Gemini.
-  `toolCommands.ts` used to call `tryConsume()` anyway, borrowing this limiter as a generic abuse guard —
-  which left the counter believing requests had gone to Google that never had, so the guard refused real
-  turns earlier than Google would have. Note that Google's quota was never touched by this; the error was
-  ours and the cost was self-inflicted. Removed in #172, and nothing was left unguarded: `jikanThrottle`
-  bounds Jikan calls at 350 ms apart on its own, and `/remind` writes one local row.
+  `toolCommands.ts` used to call `tryConsume()` anyway, borrowing this limiter as a generic abuse guard.
+  Google's quota was never touched by that; **ours** is what ended up wrong, so the harm was self-inflicted
+  pessimism — our guard refusing real turns earlier than it needed to. Removed in #172, and nothing was left
+  unguarded: `jikanThrottle` bounds Jikan calls at 350 ms apart on its own, and `/remind` writes one local
+  row.
 
 ### The Two Limiters Bound Their Windows Differently, on Purpose
 
