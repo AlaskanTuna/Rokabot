@@ -111,6 +111,22 @@ describe('runCaseSet transient recovery', () => {
     expect(records[0]).toMatchObject({ outcome: 'threw', kind: 'TypeError', fired: false })
   })
 
+  // The discriminating case for the dedup flag's SCOPE, which neither test above reaches: the one-attempt
+  // tests cannot see a stale flag, and the two-attempt test has neither attempt throw. Declared outside the
+  // retry loop, attempt 0 returning would leave `recorded` true and silently suppress attempt 1's throw —
+  // the absence the catch exists to prevent, reintroduced by a declaration moving five lines.
+  it('records a later attempt that threw even after an earlier one returned', async () => {
+    vi.mocked(generateResponse)
+      .mockResolvedValueOnce(turn('fallback', 'empty_text') as never)
+      .mockRejectedValue(new RangeError('second attempt exploded'))
+
+    await expect(runPaced(1)).rejects.toThrow(/second attempt exploded/)
+
+    const records = vi.mocked(emitTrialRecord).mock.calls.map((call) => call[0])
+    expect(records.map((r) => r.outcome)).toEqual(['fallback', 'threw'])
+    expect(records.map((r) => r.caseAttempt)).toEqual([0, 1])
+  })
+
   // The reliability guard emits before it throws, so the catch must not write a second record for the same
   // attempt — an abort would otherwise appear twice and inflate any count taken from these lines.
   it('does not double-record an attempt the reliability guard aborted', async () => {
