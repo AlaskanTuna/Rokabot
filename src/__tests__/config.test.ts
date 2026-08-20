@@ -644,14 +644,15 @@ describe('config module', () => {
     setRequiredEnvVars()
     clearTunableEnvVars()
 
-    // Derived, not restated: a hardcoded 3267 here would have to be edited by hand every time
-    // MAX_ATTACHMENTS moves, which is the failure this whole suite exists to prevent elsewhere.
-    const { MAX_ATTACHMENTS } = await import('../discord/attachments.js')
-    const { GEMINI_IMAGE_TOKENS } = await import('../utils/imageProcessor.js')
-
     const EXPECTED_BOUNDS: ReadonlyArray<{ path: string; min: number; max?: number }> = [
       { path: 'gemini.timeout', min: 1 },
-      { path: 'gemini.maxAttachmentTokens', min: MAX_ATTACHMENTS * GEMINI_IMAGE_TOKENS, max: 125_000 },
+      // Written out, not derived, and deliberately unlike its sibling test above. That one asserts the
+      // *rule* — the floor tracks a full turn of images — and derives both sides, which is right for a rule.
+      // This list is the drift guard, and its job is to make a *change* impossible to land without someone
+      // looking at it. Derived, both sides move together and the guard goes quiet: changing MAX_ATTACHMENTS
+      // from 1 to 3 produced zero failures here, measured. 1089 is MAX_ATTACHMENTS x GEMINI_IMAGE_TOKENS at
+      // the current ceiling; if you are updating this number, that is the check working.
+      { path: 'gemini.maxAttachmentTokens', min: 1089, max: 125_000 },
       { path: 'gemini.maxTokensPerMinute', min: 50_000, max: 125_000 },
       { path: 'gemini.maxOutputTokens', min: 1 },
       { path: 'gemini.turnDeadlineMs', min: 1 },
