@@ -6,6 +6,7 @@ import { destroySession, generateResponse } from '../../src/agent/roka.js'
 import { config } from '../../src/config.js'
 import { saveMessage } from '../../src/storage/sessionStore.js'
 import { upsertUserName } from '../../src/storage/userNames.js'
+import { diagnoseKey } from './quotaDiagnostic.js'
 import type { CaseObservations, CaseSetHeader, ToolTriggerCase } from './toolTriggerScoring.js'
 
 // The rig bypasses the handlers' RateLimiter entirely, so this pacing is the only limiter — and it has
@@ -163,11 +164,15 @@ export async function runCaseSet(
             if (result.metrics.outcome !== 'ok') {
               transientRetries++
               if (retry >= MAX_TRIAL_RETRIES) {
+                // Every 429 arrives as transient_http, so the old message blamed the fixture for a spent key
+                // (#150) and for a run outpacing its own cap (#166) alike. One request, only here, buys the
+                // difference between "try another key" and half an hour spent reading a case that was fine.
+                const diagnosis =
+                  result.metrics.kind === 'transient_http' ? ` Diagnostic call reports: ${await diagnoseKey()}.` : ''
                 throw new Error(
                   `Reliability guard: case "${testCase.id}" trial ${trial} returned outcome=` +
                     `${result.metrics.outcome} (kind=${result.metrics.kind}) on all ` +
-                    `${MAX_TRIAL_RETRIES + 1} of its attempts — aborting. Failing this consistently on one ` +
-                    'case is not one bad minute on the wire.'
+                    `${MAX_TRIAL_RETRIES + 1} of its attempts — aborting.${diagnosis}`
                 )
               }
               console.warn(
