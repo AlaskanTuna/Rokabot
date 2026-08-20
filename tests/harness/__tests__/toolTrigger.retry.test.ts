@@ -94,9 +94,32 @@ describe('runCaseSet transient recovery', () => {
     await runPaced(1)
 
     const attempts = vi.mocked(emitTrialRecord).mock.calls.map((call) => call[0])
-    expect(attempts.map((a) => a.attempt)).toEqual([0, 1])
+    expect(attempts.map((a) => a.caseAttempt)).toEqual([0, 1])
     expect(attempts.map((a) => a.outcome)).toEqual(['fallback', 'ok'])
     expect(attempts.map((a) => a.fired)).toEqual([false, true])
+  })
+
+  // The gap the branch records do not cover: `generateResponse` throwing skips the emit entirely, so the one
+  // attempt guaranteed to matter — the one that ended the run — would be the only one absent from the log.
+  it('records an attempt that threw, rather than leaving the fatal one unlogged', async () => {
+    vi.mocked(generateResponse).mockRejectedValue(new TypeError('session exploded'))
+
+    await expect(runPaced(1)).rejects.toThrow(/session exploded/)
+
+    const records = vi.mocked(emitTrialRecord).mock.calls.map((call) => call[0])
+    expect(records).toHaveLength(1)
+    expect(records[0]).toMatchObject({ outcome: 'threw', kind: 'TypeError', fired: false })
+  })
+
+  // The reliability guard emits before it throws, so the catch must not write a second record for the same
+  // attempt — an abort would otherwise appear twice and inflate any count taken from these lines.
+  it('does not double-record an attempt the reliability guard aborted', async () => {
+    vi.mocked(generateResponse).mockResolvedValue(turn('deflection', 'safety') as never)
+
+    await expect(runPaced(1)).rejects.toThrow(/was deflected/)
+
+    expect(vi.mocked(emitTrialRecord)).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(emitTrialRecord).mock.calls[0][0].outcome).toBe('deflection')
   })
 
   it('aborts immediately on a deflection rather than retrying it', async () => {
