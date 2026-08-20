@@ -400,6 +400,7 @@ condition is reached, the specified fallback behavior applies.
 | `safety`             | `SAFETY`, `PROHIBITED_CONTENT`, `BLOCKLIST`, or `SPII`                                                                                                                                                                       | No blind retry; one steered regeneration | 1 steered regeneration, one-shot per turn | None — the block is not rate-related                             | The regeneration consumes a token, only while `remainingRpm >= retryRpmFloor` (`2`)                                                   | Preserve                                                              | A generated in-character redirect when the regeneration succeeds; otherwise the static safety deflection: “Ehh… let's not get into that one~” |
 | `session_corrupt`    | The Gemini 400 whose message reports a function-call turn immediately following a user turn                                                                                                                                  | Yes, once                                | 1 retry                                   | 1s exponential base with full jitter; stop at ~12s added latency | Yes; the retry consumes a token, only while `remainingRpm >= retryRpmFloor` (`2`)                                                     | Destroy the ADK session and rehydrate it from SQLite before the retry | Real answer if the rehydrated retry succeeds; otherwise the same in-character decline as `terminal`                                           |
 | `recitation`         | Gemini recitation finish reason or equivalent response classification                                                                                                                                                        | Yes, once                                | 1 resample                                | 1s full-jitter resample delay                                    | Yes; the resample consumes a token, only while `remainingRpm >= retryRpmFloor` (`2`)                                                  | Preserve                                                              | Real answer if the resample succeeds; otherwise an in-character decline                                                                       |
+| `quota_exhausted`    | A 429 whose `quotaId` names `RequestsPerDay` and not `RequestsPerMinute` — the key is out of requests until midnight Pacific                                                                                                 | No                                       | None                                      | None                                                             | No                                                                                                                                    | Preserve                                                              | The same in-character decline as `terminal`                                                                                                   |
 | `terminal`           | 400, `INVALID_ARGUMENT`, authentication failure, or permission failure (bare status codes are matched last and digit-anchored, so a `400` inside a larger number — a quota figure, a token count — is not a terminal signal) | No                                       | 0 retries                                 | None                                                             | The initial user message consumes its token; no retry token is consumed                                                               | Destroy                                                               | In-character decline                                                                                                                          |
 | `extraction_failure` | Any background memory-extraction failure                                                                                                                                                                                     | Only for a transient failure             | 1 light retry                             | Light full-jitter retry delay                                    | Yes; each extraction attempt, including its retry, consumes a token and may run only while `remainingRpm >= extractionRpmFloor` (`3`) | Preserve; background extraction never destroys the live session       | No user-facing message; quietly give up after the retry or immediately for a non-transient failure, and never block user traffic              |
 
@@ -424,6 +425,33 @@ path must remain even after the thresholds are relaxed.
   against a 500-request daily quota. Left as-is because converting it needs release semantics for a counter
   that has none, and because the reachability is the same dormant profile as the rest — production runs ~10
   turns a day. Named here so the asymmetry does not read as deliberate.
+
+### A Spent Day Is Not a Spent Minute
+
+Both arrive as `429 RESOURCE_EXHAUSTED` with the same HTTP status and, until now, the same `kind`. Only the
+`quotaId` separates them, and their correct responses are opposite:
+
+| `quotaId`                                   | Recovers within a turn?            | Right response  |
+| ------------------------------------------- | ---------------------------------- | --------------- |
+| `...RequestsPerMinutePerProjectPerModel...` | Yes, in seconds                    | Retry           |
+| `...RequestsPerDayPerProjectPerModel...`    | **No, not until midnight Pacific** | Deflect at once |
+
+Classified as `transient_http`, a spent day cost three attempts and their backoff **on every turn for the rest
+of the day**, and then reported itself as a transient — so the symptom was latency nobody attributed to a rate
+limiter that reports itself as never having been hit.
+
+- **Matched only when the payload names the day and not the minute.** The two mistakes are not equal: reading
+  a minute as a day deflects a turn a retry would have rescued, while reading a day as a minute costs three
+  refused attempts. The second is the pre-existing behaviour, so an ambiguous payload keeps it.
+- **The payload's own `retryDelay` is not read, and must not be.** A daily refusal advertises
+  `retryDelay: "39s"` — a minute-shaped remedy for a day-shaped problem, which is Google failing to make the
+  same distinction. `computeBackoff` takes an attempt number and nothing else, so we are safe by construction
+  rather than by design; honouring the server's delay is a reasonable-sounding change that would retry
+  roughly two thousand times into a wall that only opens at midnight.
+- **Reachable in production, though not at today's traffic.** `rateLimiter`'s daily counter is in memory and
+  starts at zero on every restart, and `main` deploys on merge, so a busy day plus a redeploy leaves the
+  server's quota as the only guard. At ~10 turns a day nothing is close to it; the mechanism is real and the
+  reachability is not, which is why this is classification rather than a new limiter.
 
 ### Concurrency & Lifecycle Under Retry
 
@@ -714,9 +742,10 @@ it did not use, released in the same `finally` as the byte reservation and the c
   daily counter once per turn and the release never decrements it, so this object now counts requests by the
   minute and turns by the day. Converting it needs release semantics for a counter that has none. See
   "RPM-Budget Accounting".
-- **`/anime` and `/remind` still consume a Gemini slot they never use.** `toolCommands.ts` calls
-  `tryConsume()` and reaches Gemini zero times — it is borrowing this limiter as a generic abuse guard.
-  Deliberately unchanged here and tracked separately.
+- **`/anime` and `/remind` take a slot from our own counter without making a Gemini call.** `toolCommands.ts`
+  calls `tryConsume()` and reaches Gemini zero times — it is borrowing this limiter as a generic abuse guard.
+  Google's quota is untouched; **ours** is what ends up wrong, so the harm is self-inflicted pessimism: our
+  guard refuses real turns earlier than it needs to. Deliberately unchanged here and tracked separately.
 
 ### The Two Limiters Bound Their Windows Differently, on Purpose
 
