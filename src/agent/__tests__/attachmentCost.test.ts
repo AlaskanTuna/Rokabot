@@ -35,31 +35,11 @@ describe('measureAttachmentTokens', () => {
     )
   })
 
-  // #153: countTokens returns the same total for a clip with and without its audio stream, while the model
-  // demonstrably hears that audio. The estimate is therefore short by the soundtrack, in the permissive
-  // direction, so video carries an allowance the other types do not.
-  it('adds an allowance for the soundtrack countTokens does not price', async () => {
-    countTokens.mockResolvedValueOnce({ totalTokens: 2_070 })
-
-    await expect(measureAttachmentTokens([{ inlineData: { mimeType: 'video/mp4', data: 'x' } }])).resolves.toBe(2_712)
-  })
-
-  // The wire between the allowance and the fact that makes it correct. `measureAttachmentTokens` inflates the
-  // WHOLE measured total, which is only the video's cost because a turn can carry exactly one attachment —
-  // and nothing in either file links those two statements. At MAX_ATTACHMENTS of 3, one video beside two
-  // images would apply 31% to the images as well. That still errs toward refusing, so it is not a bug; it is
-  // a correctness argument resting on a constant in another file, which reads as intentional long after it
-  // stops being true. Written out rather than derived, so raising the constant fails here instead of
-  // silently over-charging (#160).
-  it('rests on a turn carrying exactly one attachment', async () => {
-    const { MAX_ATTACHMENTS } = await import('../../discord/attachments.js')
-
-    expect(MAX_ATTACHMENTS).toBe(1)
-  })
-
-  // The control. An allowance applied to everything would pass the test above while being wrong — audio and
-  // documents are priced completely by countTokens and must come back untouched.
+  // Every type comes back exactly as priced. Video used to be inflated by an allowance for the soundtrack
+  // countTokens under-prices; measured against billing, the estimate was already 1.17x-1.63x above the bill
+  // before the allowance, and the allowance pushed it to 1.53x-2.14x (#153).
   it.each([
+    ['video/mp4', 2_133],
     ['audio/mp3', 643],
     ['application/pdf', 28_001],
     ['image/png', 1_089]
@@ -67,6 +47,23 @@ describe('measureAttachmentTokens', () => {
     countTokens.mockResolvedValueOnce({ totalTokens: total })
 
     await expect(measureAttachmentTokens([{ inlineData: { mimeType, data: 'x' } }])).resolves.toBe(total)
+  })
+
+  // The wire for the margin this module now depends on. Nothing here is conservative by itself — the estimate
+  // runs above the bill only because `roka.ts` pins MEDIA_RESOLUTION_LOW on video requests while this call
+  // cannot pin anything (`generationConfig` is "Not supported by the Gemini Developer API"). So the probe
+  // prices video at the default resolution and the turn is billed at low. Asserted here, in the file whose
+  // correctness rests on it, rather than only where the setting lives: someone removing that gate for a good
+  // reason would see roka.test.ts fail, update it deliberately, and never learn they had flipped this guard
+  // from over- to under-estimating.
+  it('prices video at whatever resolution the request will use, which it cannot influence', async () => {
+    countTokens.mockResolvedValueOnce({ totalTokens: 2_061 })
+
+    await measureAttachmentTokens([{ inlineData: { mimeType: 'video/mp4', data: 'x' } }])
+
+    const asked = countTokens.mock.calls[0][0]
+    expect(asked.generationConfig).toBeUndefined()
+    expect(asked.config).toBeUndefined()
   })
 
   // Fails open deliberately. Blocking the turn when the probe cannot answer would turn a Gemini hiccup into a

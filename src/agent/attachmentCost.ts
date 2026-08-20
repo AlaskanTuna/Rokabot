@@ -5,30 +5,7 @@ import { logger } from '../utils/logger.js'
 let client: GoogleGenAI | undefined
 
 /**
- * The share of a video's own token estimate that its soundtrack would cost if charged separately.
- *
- * `countTokens` returns the SAME total for a clip with and without its audio stream, while the model
- * demonstrably hears that audio — a black-frames video whose only content was speech was transcribed
- * correctly, so the sound reached the model even though nothing in the picture could have carried it (#153).
- * Measured twice independently on matched clips: 2,133/2,133 and 2,070/2,070 tokens with and without the
- * stream, against 32.1 and 32.05 tokens a second for the same audio priced on its own. Audio is therefore
- * ~31% of a low-resolution video's ~104/second, and the estimate omits all of it.
- *
- * Whether Google BILLS that audio is NOT established. `countTokens` is already known to diverge from billing
- * for time-based media, so its silence here is not evidence the audio is free. Two readings fit the evidence
- * — audio in video is genuinely unbilled and the estimate is right, or it is billed and the estimate is low.
- * This allowance takes the second, because only one of the two fails dangerously: an under-estimate admits a
- * turn that then 429s, which retries into the same wall and spends the minute's budget for every other
- * channel, while an over-estimate merely refuses a long video early.
- *
- * A billing-side measurement — `usageMetadata.promptTokenCount` from one `generateContent` per clip — would
- * replace this constant with a fact and could remove it entirely. It has not been run.
- */
-const VIDEO_AUDIO_ALLOWANCE = 0.31
-
-/**
- * What Gemini will charge for these attachment parts, or undefined if it could not be measured. For video
- * this is `countTokens` plus an allowance for the soundtrack it does not price — see `VIDEO_AUDIO_ALLOWANCE`.
+ * What Gemini will charge for these attachment parts, or undefined if it could not be measured.
  *
  * Size does not bound token cost, and how badly it fails to depends entirely on the type: an image is a flat
  * 1,089 whatever its resolution, audio is 32 a second, video ~91 a second, and a PDF is **560 a page** — so a
@@ -41,6 +18,30 @@ const VIDEO_AUDIO_ALLOWANCE = 0.31
  * attachment crosses the wire twice — ~4s each way for a 10 MB PDF at the Pi's measured throughput, inside
  * the 20s timeout but real. That is what `needsMeasuring` is for.
  */
+/**
+ * Video is NOT adjusted upward, and the reason is measured rather than assumed.
+ *
+ * `countTokens` does under-price a video's soundtrack — sometimes to nothing at all, and how much is a
+ * property of the (video, audio) pair rather than of the audio (#153). But it over-prices the video itself by
+ * far more, so the total already runs above the bill. Four matched clips, `countTokens` against
+ * `usageMetadata.promptTokenCount`:
+ *
+ *     black frames + audio   2070 -> 1768   1.17x     black frames, silent   2070 -> 1268   1.63x
+ *     854x480 24fps + audio  2133 -> 1828   1.17x     854x480, silent        2061 -> 1328   1.55x
+ *
+ * Billing is the clean side: audio bills 500 tokens for 20 seconds beside BOTH videos, ~25/second, matching
+ * the same audio priced alone. The erratic side is the estimator.
+ *
+ * THE MARGIN IS BORROWED, NOT INHERENT. `roka.ts` sets `MEDIA_RESOLUTION_LOW` on any request carrying video,
+ * so the biller charges ~65 tokens/second while `countTokens` — which cannot be given a media resolution on
+ * the Developer API — prices at ~103. Both terms are linear in duration, so the ratio holds at any length.
+ * Remove that setting, or let a future part shape stop matching `requestCarriesVideo`, and billing rises
+ * toward the default resolution while this estimate does not move: the guard would flip from over- to
+ * under-estimating with nothing here changing. What fails if that happens is `pins low media resolution for
+ * video, which is what keeps the cost estimate above the bill`, in roka.test.ts — the check lives with the
+ * setting, because only that file can observe it. The test below pins this module's half only: that the probe
+ * cannot ask for a resolution even if it wanted to.
+ */
 export async function measureAttachmentTokens(parts: Part[]): Promise<number | undefined> {
   if (parts.length === 0) return 0
   client ??= new GoogleGenAI({ apiKey: config.gemini.apiKey })
@@ -50,14 +51,7 @@ export async function measureAttachmentTokens(parts: Part[]): Promise<number | u
       model: config.gemini.model,
       contents: [{ role: 'user', parts }]
     })
-    if (response.totalTokens === undefined || response.totalTokens === null) return undefined
-
-    // `MAX_ATTACHMENTS` is 1, so when a video is present the whole total is that video's. Applied to silent
-    // video too: `countTokens` cannot distinguish one, and finding out means parsing a container per format.
-    // Over-charging a silent clip by ~31% errs toward refusing, which is the direction that costs a message
-    // rather than the minute.
-    const carriesVideo = parts.some((part) => part.inlineData?.mimeType?.startsWith('video/'))
-    return carriesVideo ? Math.round(response.totalTokens * (1 + VIDEO_AUDIO_ALLOWANCE)) : response.totalTokens
+    return response.totalTokens ?? undefined
   } catch (error) {
     // Fails open on purpose. A probe that blocked the turn when it could not answer would convert a Gemini
     // hiccup into a total attachment outage — strictly worse than the over-budget turn it exists to prevent,
