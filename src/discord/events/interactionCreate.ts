@@ -159,6 +159,9 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
 
     const reservedBytes = reservationFor(imageAttachments)
     if (!tryReserve(reservedBytes)) {
+      // Released here rather than left to the `finally` below, which this path returns above. Nothing was
+      // sent to the model, so the turn owes neither the slots nor its daily unit.
+      callReservation.release(0)
       logger.debug({ channelId, reservedBytes }, 'In-flight attachment budget full — sending busy message')
       await interaction.editReply({ content: getRandomBusy() })
       setTimeout(() => interaction.deleteReply().catch(() => {}), 5000)

@@ -125,6 +125,11 @@ export class RateLimiter {
         // Treated as "spent everything" deliberately rather than by the arithmetic degrading to NaN: holding
         // slots costs a minute, handing back slots that were spent costs the quota.
         const spent = Number.isFinite(used) ? Math.min(Math.max(0, used), count) : count
+        // The daily unit is taken per reservation rather than per call, so a turn that made no call at all
+        // has to hand it back explicitly — unlike the slots below, it never ages out of a window. Guarded on
+        // zero rather than refunded proportionally because the counter is per-turn: any turn that reached the
+        // model has spent its unit whatever it spent of its ladder.
+        if (spent === 0) this.dailyCount = Math.max(0, this.dailyCount - 1)
         let giveBack = count - spent
         while (giveBack > 0) {
           const index = this.admitted.indexOf(stamp)
