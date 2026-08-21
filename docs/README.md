@@ -59,23 +59,24 @@ She can chat with a server, remember useful context without carrying it into ano
 
 ## Features
 
-- **Conversation & Perception:** `/ask`, mentions, replies, and supported name-keyword triggers; image-aware conversations and recent channel context.
+- **Conversation & Perception:** `/ask`, mentions, replies, and supported name-keyword triggers; she takes images, PDFs, audio and video, on both the `/ask` and mention surfaces, plus by link, and reads recent channel context.
 - **Memory:** Passive context monitoring and claims-based memory, isolated per tenant — a guild, or a single DM or group chat — and surfaced only through a bounded prompt envelope.
 - **Tools:** In chat, Roka can roll dice, flip coins, check the time and weather, search the web, discover anime and airing schedules, and manage reminders; a cute footer notes the little ritual she performed.
-- **Stats:** Fun server analytics with a mood ring, charts, and memory counts across 7D, 30D, and 90D views.
+- **Stats:** Fun server analytics with a mood ring, charts, and a peek at who she's remembered lately, across four Last 30 Days views.
 - **Games:** Buddy Pets, Hangman, and Shiritori, with SQLite-backed progress and leaderboards.
 - **Interaction & UX:** Rule-based tone detection, expression thumbnails, Components V2 replies, emoji reactions, rate limits, and per-channel concurrency protection.
+- **Files & Media:** Image, PDF, audio, and video attachments on `/ask` and the mention path, each held to its own size ceiling, with graceful in-character notices when a file can't be read — see [Handing Her a File](#handing-her-a-file) below.
 
-| Command or Capability  | Use                                                                                                                                                                                                                                          |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/ask`                 | Ask Roka anything or just talk; she searches the web herself when she needs to. Optionally attach an image.                                                                                                                                  |
-| `/gacha`               | Hatch, view, pet, inspect stats, browse collection, read the guide, or view the leaderboard.                                                                                                                                                 |
-| `/hangman`             | Start and play a word-guessing game.                                                                                                                                                                                                         |
-| `/shiritori`           | Start, join, and score a word-chain game.                                                                                                                                                                                                    |
-| `/anime`               | Search or browse anime, or search or browse airing schedules.                                                                                                                                                                                |
-| `/remind`              | Create, list, and cancel reminders.                                                                                                                                                                                                          |
-| `/stats`               | Explore four fixed, non-overlapping Last 30 Days views with no window selector: Overview (activity, heatmap, channel histogram); Mood (label, donut); Memory (who she knows best, growth curve); Nerd (latency, reliability, volume, trend). |
-| In-Conversation Memory | Recall or save useful user facts within the current server or DM.                                                                                                                                                                            |
+| Command or Capability  | Use                                                                                                                                                                                                                                                                                      |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/ask`                 | Ask Roka anything or just talk; she searches the web herself when she needs to. Optionally attach a file, or link one — see [Handing Her a File](#handing-her-a-file).                                                                                                                   |
+| `/gacha`               | Hatch, view, pet, inspect stats, browse collection, read the guide, or view the leaderboard.                                                                                                                                                                                             |
+| `/hangman`             | Start and play a word-guessing game.                                                                                                                                                                                                                                                     |
+| `/shiritori`           | Start, join, and score a word-chain game.                                                                                                                                                                                                                                                |
+| `/anime`               | Search or browse anime, or search or browse airing schedules.                                                                                                                                                                                                                            |
+| `/remind`              | Create, list, and cancel reminders.                                                                                                                                                                                                                                                      |
+| `/stats`               | Explore four fixed, non-overlapping Last 30 Days views with no window selector: Overview (activity, heatmap, channel histogram); Mood (label, donut); Memory (the 5 most recently-remembered members and their latest memory, growth curve); Nerd (latency, reliability, volume, trend). |
+| In-Conversation Memory | Recall or save useful user facts within the current server or DM.                                                                                                                                                                                                                        |
 
 ### Tool Footer
 
@@ -104,6 +105,18 @@ Every tool below is available implicitly in chat — Roka decides when to call i
 Passive memory extraction runs automatically in the background through the per-message pipeline, while `remember_user` is only invoked when someone explicitly asks Roka to remember something.
 
 </details>
+
+### Handing Her a File
+
+Roka reads four kinds of attachment — image, PDF, audio, and video — on both `/ask` (upload or link) and the mention path, each held to its own size ceiling: 4 MB for an image, 10 MB for a PDF, 8 MB for audio, and 10 MB for video. The ceilings come from how long an upload takes to reach the Pi against `gemini.timeout`, not from memory.
+
+- **One attachment per turn, on every surface.** The reason is fairness rather than quota: the in-flight byte budget is shared across every channel, so a turn allowed several attachments would reserve most of that budget and hold off everyone else.
+- **Oversized media is truncated, not dropped.** The file is fetched down to its ceiling and sent as its opening — but only for container formats that survive being cut short; some formats are refused instead.
+- **She says so when a file couldn't be read**, with a different notice for a file that could not be retrieved than for one too long to read in one turn. Without that distinction she would search the web on the user's own phrasing and report the results as the file's contents.
+- **`attachment_url`** reads the file's type from a HEAD request rather than trusting the link's path, and checks the host against the addresses it actually resolves to — re-checked on whatever host a redirect chain lands on.
+- Beyond attachments, she also reads forwarded messages, embeds, polls, stickers, and files carried inside Components V2 messages.
+
+`docs/trd.md` is the canonical contract for the behavior above; `docs/multimodal.md` is its derivation.
 
 <p align="right"><a href="#readme-top">↑</a></p>
 
@@ -153,6 +166,9 @@ flowchart LR
 </details>
 
 - The concurrency guard permits one active response per channel.
+- An attachment turn passes four admission guards in order — an advisory rate-limit check, a per-minute token-budget check, an authoritative call-slot reservation, and a global in-flight byte-budget reservation — each declining in character rather than silently.
+- `/anime` and `/remind` no longer take a Gemini call slot they never use.
+- A spent daily quota and a transient rate limit both arrive as an HTTP 429, but are now classified apart so the bot can respond to each appropriately.
 - Tone detection examines recent conversation without an extra model call.
 - Read the [technical reference](./trd.md) for request contracts, data models, and failure behavior.
 
@@ -204,6 +220,8 @@ flowchart LR
 </details>
 
 - Roka retains useful facts and relationships for the place they were observed — a guild, or a single DM or group chat; memory never crosses between them.
+- A fact the user asks her outright to remember is pinned and survives the active-claim ceiling.
+- `recall_user` ranks by relevance to the current message rather than by recency.
 - Extraction is asynchronous, while retrieval remains bounded before a response is generated.
 - The exported memory graph is browseable in Obsidian; see [Browsing Memory in Obsidian](#browsing-memory-in-obsidian).
 - For schema, lifecycle, and retrieval details, see [Memory Architecture (Claims)](./trd.md#memory-architecture-claims).
@@ -254,7 +272,7 @@ Each detected tone selects a prompt variant, an accent color, and one of its map
 | Discord              | discord.js v14                                              |
 | Agent and Model      | Google ADK, Gemini 3.5 Flash Lite (`gemini-3.5-flash-lite`) |
 | Storage              | SQLite via better-sqlite3                                   |
-| Media and Validation | sharp, Zod                                                  |
+| Media and Validation | sharp, @napi-rs/canvas, @google/genai, Zod                  |
 | Quality              | Vitest, Biome, Prettier, commitlint                         |
 | Deployment           | Docker Compose on Raspberry Pi 5 (ARM64)                    |
 
@@ -283,12 +301,14 @@ cp .env.example .env
 
 ### `.env` Secrets
 
-| Variable            | Required | Purpose                                                |
-| ------------------- | -------- | ------------------------------------------------------ |
-| `DISCORD_TOKEN`     | Yes      | Discord bot token.                                     |
-| `DISCORD_CLIENT_ID` | Yes      | Discord application client ID.                         |
-| `GEMINI_API_KEY`    | Yes      | Gemini API key for response generation and extraction. |
-| `TAVILY_API_KEY`    | No       | Tavily API key for web search.                         |
+| Variable              | Required | Purpose                                                               |
+| --------------------- | -------- | --------------------------------------------------------------------- |
+| `DISCORD_TOKEN`       | Yes      | Discord bot token.                                                    |
+| `DISCORD_CLIENT_ID`   | Yes      | Discord application client ID.                                        |
+| `GEMINI_API_KEY`      | Yes      | Gemini API key for response generation and extraction.                |
+| `TAVILY_API_KEY`      | No       | Tavily API key for web search.                                        |
+| `DEV_GEMINI_API_KEY`  | No       | Second Gemini key, harness-only, for `npm run test:live`.             |
+| `ROKABOT_HARNESS_KEY` | No       | Names which `.env` key funds a `npm run test:live` run, harness-only. |
 
 ```env
 DISCORD_TOKEN=your_discord_bot_token
@@ -313,13 +333,9 @@ npm start
 docker compose up -d
 ```
 
-Quick checks: `npm run lint` and `npm run format:check`. Full test verification is `npm test && npm run test:perf`; `npm run test:perf` is a separate performance-evaluation gate. `npm run test:live` is a third, opt-in gate — it needs `GRAPHIFY_GEMINI_API_KEY` in `.env`, spends real Gemini calls (measured: ~60 calls and ~8.5 minutes per run), and is excluded from both `npm test` and full verification.
+Quick checks: `npm run lint`, `npm run format:check`, and `npm run typecheck` — the last of these is the only gate that type-checks the `tests/` tree ([#151](https://github.com/AlaskanTuna/Rokabot/pull/151)); `npm run build` type-checks `src/` only. Full test verification is `npm test && npm run test:perf`; `npm run test:perf` is a separate performance-evaluation gate. `npm run test:live` is a third, opt-in gate: `ROKABOT_HARNESS_KEY` names which `.env` key funds a run (default `GRAPHIFY_GEMINI_API_KEY`); `DEV_GEMINI_API_KEY` is a documented second key so an exhausted daily quota can redirect a run rather than stall it. It is excluded from both `npm test` and full verification. `npm run measure -- <path>` prints an attachment's measured token cost and which ceilings it meets, and costs nothing against the generate quota.
 
-`npm run test:live` benchmarks whether the live model fires a tool on a labelled should-fire/shouldn't-fire dialogue set; it is the pre-ship acceptance gate for prompt and tool-description changes, and its verdict rests on two criteria — an accuracy floor plus zero systematically-wrong cases. The `recall_user` case set lives at `tests/harness/tool-trigger/recall-user.jsonl`.
-
-As of 2026-08-18 this gate **passes**, measured on two consecutive runs that returned identical figures: precision 0.900, recall 1.000, accuracy 0.944, and no systematically-wrong cases. The residual over-fire is N1 (ambient chatter naming no one), which fired 2 of 3 and 1 of 3 across those runs; every other should-not-fire case was clean in both. Notably N5 (a message addressing Roka herself) fired 0 of 3 in both runs, having been the worst offender when this gate last failed.
-
-It previously failed as of 2026-07-29, when N1 fired 7 of 9 and N5 9 of 9 against the same perfect recall, with `src/agent/prompts/core.ts`'s `recall_user` rule identified as the source. That was tracked as [#39](https://github.com/AlaskanTuna/Rokabot/issues/39), now closed. **No causal claim is made for the improvement** — the prompt has changed repeatedly since, and two runs at three trials cannot establish a shift; only that the gate's verdict and the per-case figures are what they are on the dates given.
+`npm run test:live` benchmarks whether the live model fires a tool on a labelled should-fire/shouldn't-fire dialogue set, scored separately across three case sets under `tests/harness/tool-trigger/` — `recall-user.jsonl`, `search-web.jsonl`, and `remember-user.jsonl`. It is the pre-ship acceptance gate for prompt and tool-description changes. Each case set's verdict rests on a precision floor and a per-tool recall floor, not an accuracy floor or a zero-systematic-failures rule; `systematicFailures` is a diagnostic and does not gate the verdict. `remember_user` is judged against its own lower recall floor because the shared floor false-fails it at its measured rate, so a green `remember_user` is a collapse detector rather than a regression detector — it is not evidence that nothing else regressed. One run costs roughly half of one Gemini key's daily request allowance and about an hour of wall clock, so budget for two runs per key per day. Each run prints its own per-case report; no verdict is quoted here, because one is only true of the prompt and the day it was measured on.
 
 <p align="right"><a href="#readme-top">↑</a></p>
 
@@ -334,22 +350,22 @@ Secrets belong in `.env`; tunables belong in [`config.yml`](../config.yml). Envi
 <details>
 <summary>View Tunables</summary>
 
-| YAML Path                     | Env Override                    | Purpose                                                                                                                                                            |
-| ----------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `gemini.model`                | `GEMINI_MODEL`                  | Live Gemini model ID.                                                                                                                                              |
-| `gemini.extractionModel`      | `GEMINI_EXTRACTION_MODEL`       | Optional background extraction model; defaults to the live model.                                                                                                  |
-| `gemini.timeout`              | `GEMINI_TIMEOUT`                | Request timeout in milliseconds.                                                                                                                                   |
-| `gemini.maxRetries`           | `GEMINI_MAX_RETRIES`            | Maximum retries for transient failures.                                                                                                                            |
-| `gemini.maxOutputTokens`      | `GEMINI_MAX_OUTPUT_TOKENS`      | Response token safety cap.                                                                                                                                         |
-| `gemini.safetyThreshold`      | `GEMINI_SAFETY_THRESHOLD`       | Harm block threshold applied to all four Gemini-API-supported categories: `OFF`, `BLOCK_NONE`, `BLOCK_ONLY_HIGH`, `BLOCK_MEDIUM_AND_ABOVE`, `BLOCK_LOW_AND_ABOVE`. |
-| `gemini.maxLlmCalls`          | —                               | Maximum chained tool calls per request.                                                                                                                            |
-| `gemini.liveMaxRetries`       | `GEMINI_LIVE_MAX_RETRIES`       | Retry attempts after a failed live response.                                                                                                                       |
-| `gemini.retryRpmFloor`        | `GEMINI_RETRY_RPM_FLOOR`        | Minimum remaining RPM required for a live retry.                                                                                                                   |
-| `gemini.extractionRpmFloor`   | `GEMINI_EXTRACTION_RPM_FLOOR`   | Minimum remaining RPM required for background extraction.                                                                                                          |
-| `gemini.extractionMaxRetries` | `GEMINI_EXTRACTION_MAX_RETRIES` | Retry attempts after a transient extraction failure.                                                                                                               |
-| `gemini.retryBackoffBaseMs`   | `GEMINI_RETRY_BACKOFF_BASE_MS`  | Initial full-jitter retry backoff in milliseconds.                                                                                                                 |
-| `gemini.retryBackoffCapMs`    | `GEMINI_RETRY_BACKOFF_CAP_MS`   | Maximum full-jitter retry backoff in milliseconds.                                                                                                                 |
-| `gemini.turnDeadlineMs`       | `GEMINI_TURN_DEADLINE_MS`       | Wall-clock budget for the live retry loop; a retry starts only if a full `gemini.timeout` still fits, and the first attempt is never gated.                        |
+| YAML Path                     | Env Override                    | Purpose                                                                                                                                                                                       |
+| ----------------------------- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `gemini.model`                | `GEMINI_MODEL`                  | Live Gemini model ID.                                                                                                                                                                         |
+| `gemini.extractionModel`      | `GEMINI_EXTRACTION_MODEL`       | Optional background extraction model; defaults to the live model.                                                                                                                             |
+| `gemini.timeout`              | `GEMINI_TIMEOUT`                | Request timeout in milliseconds.                                                                                                                                                              |
+| `gemini.maxRetries`           | `GEMINI_MAX_RETRIES`            | Maximum retries for transient failures.                                                                                                                                                       |
+| `gemini.maxOutputTokens`      | `GEMINI_MAX_OUTPUT_TOKENS`      | Response token safety cap.                                                                                                                                                                    |
+| `gemini.safetyThreshold`      | `GEMINI_SAFETY_THRESHOLD`       | Harm block threshold — one of `OFF`, `BLOCK_NONE`, `BLOCK_ONLY_HIGH`, `BLOCK_MEDIUM_AND_ABOVE`, `BLOCK_LOW_AND_ABOVE` — applied uniformly to all four Gemini-API-supported safety categories. |
+| `gemini.maxLlmCalls`          | —                               | Maximum chained tool calls per request.                                                                                                                                                       |
+| `gemini.liveMaxRetries`       | `GEMINI_LIVE_MAX_RETRIES`       | Retry attempts after a failed live response.                                                                                                                                                  |
+| `gemini.retryRpmFloor`        | `GEMINI_RETRY_RPM_FLOOR`        | Minimum remaining RPM required for a live retry.                                                                                                                                              |
+| `gemini.extractionRpmFloor`   | `GEMINI_EXTRACTION_RPM_FLOOR`   | Minimum remaining RPM required for background extraction.                                                                                                                                     |
+| `gemini.extractionMaxRetries` | `GEMINI_EXTRACTION_MAX_RETRIES` | Retry attempts after a transient extraction failure.                                                                                                                                          |
+| `gemini.retryBackoffBaseMs`   | `GEMINI_RETRY_BACKOFF_BASE_MS`  | Initial full-jitter retry backoff in milliseconds.                                                                                                                                            |
+| `gemini.retryBackoffCapMs`    | `GEMINI_RETRY_BACKOFF_CAP_MS`   | Maximum full-jitter retry backoff in milliseconds.                                                                                                                                            |
+| `gemini.turnDeadlineMs`       | `GEMINI_TURN_DEADLINE_MS`       | Wall-clock budget for the live retry loop; a retry starts only if a full `gemini.timeout` still fits, and the first attempt is never gated.                                                   |
 
 </details>
 
@@ -358,15 +374,29 @@ Secrets belong in `.env`; tunables belong in [`config.yml`](../config.yml). Envi
 <details>
 <summary>View Tunables</summary>
 
-| YAML Path                      | Env Override                 | Purpose                                           |
-| ------------------------------ | ---------------------------- | ------------------------------------------------- |
-| `rateLimit.rpm`                | `RATE_LIMIT_RPM`             | Requests per minute cap.                          |
-| `rateLimit.rpd`                | `RATE_LIMIT_RPD`             | Requests per day cap.                             |
-| `session.ttl`                  | `SESSION_TTL_MS`             | Idle session lifetime in milliseconds.            |
-| `session.windowSize`           | `SESSION_WINDOW_SIZE`        | Maximum messages rehydrated into the ADK session. |
-| `session.maxRehydrationAge`    | —                            | Maximum age of a message rehydrated from SQLite.  |
-| `session.historyRetentionDays` | —                            | Days before session history is pruned.            |
-| `discord.maxMessageLength`     | `DISCORD_MAX_MESSAGE_LENGTH` | Character cap for a bot reply.                    |
+| YAML Path                      | Env Override                 | Purpose                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------------------ | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `rateLimit.rpm`                | `RATE_LIMIT_RPM`             | Exact sliding-window cap on requests (not turns) per minute, enforced in [`src/utils/rateLimiter.ts`](../src/utils/rateLimiter.ts); each turn reserves `gemini.maxLlmCalls` slots up front, so the sustained turn ceiling sits below the nominal `rpm` ([#149](https://github.com/AlaskanTuna/Rokabot/issues/149), [#167](https://github.com/AlaskanTuna/Rokabot/issues/167)). |
+| `rateLimit.rpd`                | `RATE_LIMIT_RPD`             | Requests per day cap.                                                                                                                                                                                                                                                                                                                                                          |
+| `session.ttl`                  | `SESSION_TTL_MS`             | Idle session lifetime in milliseconds.                                                                                                                                                                                                                                                                                                                                         |
+| `session.windowSize`           | `SESSION_WINDOW_SIZE`        | Maximum messages rehydrated into the ADK session.                                                                                                                                                                                                                                                                                                                              |
+| `session.maxRehydrationAge`    | —                            | Maximum age of a message rehydrated from SQLite.                                                                                                                                                                                                                                                                                                                               |
+| `session.historyRetentionDays` | —                            | Days before session history is pruned.                                                                                                                                                                                                                                                                                                                                         |
+| `discord.maxMessageLength`     | `DISCORD_MAX_MESSAGE_LENGTH` | Character cap for a bot reply.                                                                                                                                                                                                                                                                                                                                                 |
+
+</details>
+
+### Attachments and Budgets
+
+<details>
+<summary>View Tunables</summary>
+
+| YAML Path                            | Env Override                            | Purpose                                                                                                                                                                             |
+| ------------------------------------ | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `gemini.maxAttachmentTokens`         | `GEMINI_MAX_ATTACHMENT_TOKENS`          | Max measured token cost of one turn's attachments before they are refused. Size does not bound this — a small PDF can cost tens of thousands of tokens because the driver is pages. |
+| `gemini.maxTokensPerMinute`          | `GEMINI_MAX_TOKENS_PER_MINUTE`          | Tokens per rolling minute before new attachment turns are declined.                                                                                                                 |
+| `discord.maxInFlightAttachmentBytes` | `DISCORD_MAX_INFLIGHT_ATTACHMENT_BYTES` | Ceiling on attachment bytes downloading across all channels at once, reserved before download.                                                                                      |
+| `metrics.diagnosticsRetentionHours`  | `METRICS_DIAGNOSTICS_RETENTION_HOURS`   | Retention for stored failure diagnostics.                                                                                                                                           |
 
 </details>
 
@@ -443,8 +473,8 @@ flowchart LR
     Desktop --> Obsidian[Obsidian]
 ```
 
-- Docker Compose runs Rokabot on a Raspberry Pi 5 with `mem_limit: 512m` and `restart: unless-stopped`.
-- The self-hosted GitHub Actions runner builds and health-checks code changes pushed to `main`; markdown and `docs/**` changes are ignored by that workflow.
+- Docker Compose runs Rokabot on a Raspberry Pi 5 with `mem_limit: 1g`, `memswap_limit: 1g` (equal values disable swap entirely — Docker otherwise defaults swap to twice the cap and pages onto the SD card), and `restart: unless-stopped`.
+- The self-hosted GitHub Actions runner builds and health-checks code changes pushed to `main`; the workflow's `paths-ignore` skips `*.md`, `docs/**`, `.claude/**`, `.coderabbit.yaml`, and `.agents/**`.
 - Use the [operations runbook](./runbook.md) for Pi commands, runner setup, troubleshooting, and database operations.
 
 ### Browsing Memory in Obsidian
@@ -470,6 +500,7 @@ Obsidian belongs on the desktop, not the Pi: it is a graphical desktop applicati
 
 - [Product Requirements](./prd.md)
 - [Technical Reference](./trd.md)
+- [Multimodal Attachments](./multimodal.md)
 - [Deployment and Operations Runbook](./runbook.md)
 
 <p align="right"><a href="#readme-top">↑</a></p>
@@ -478,7 +509,7 @@ Obsidian belongs on the desktop, not the Pi: it is a graphical desktop applicati
 
 ## Privacy
 
-Rokabot is self-hosted and stores session history, memory claims, reminders, game data, and metrics in local SQLite. Claims are isolated per tenant: a guild, or an individual DM or group chat, never crossing between them. Messages used to generate responses and extract memory are sent to the Gemini API. Server operators should disclose passive monitoring in channels where Roka has been mentioned.
+Rokabot is self-hosted and stores session history, memory claims, reminders, game data, metrics, and failure diagnostics (which retain the triggering message verbatim for a bounded window, configured by `metrics.diagnosticsRetentionHours`) in local SQLite. Claims are isolated per tenant: a guild, or an individual DM or group chat, never crossing between them. Messages used to generate responses and extract memory are sent to the Gemini API. Attachments are never written to disk or to SQLite — only text content is persisted, so a restart drops them entirely. Server operators should disclose passive monitoring in channels where Roka has been mentioned.
 
 <p align="right"><a href="#readme-top">↑</a></p>
 
