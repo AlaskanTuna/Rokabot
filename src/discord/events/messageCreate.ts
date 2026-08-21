@@ -502,6 +502,9 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
     const reservedBytes = reservationFor(imageAttachments)
     if (!tryReserve(reservedBytes)) {
       if (typingInterval) clearInterval(typingInterval)
+      // Released here rather than left to the `finally` below, which this path returns above. Nothing was
+      // sent to the model, so the turn owes neither the slots nor its daily unit.
+      callReservation.release(0)
       logger.debug({ channelId, reservedBytes }, 'In-flight attachment budget full — sending busy message')
       const budgetMsg = await message.reply(getRandomBusy())
       setTimeout(() => budgetMsg.delete().catch(() => {}), 5000)

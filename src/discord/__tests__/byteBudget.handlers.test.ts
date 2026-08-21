@@ -220,4 +220,45 @@ describe('global in-flight byte budget, at the handlers', () => {
     releaseFirst()
     await firstTurn
   })
+
+  // The call reservation is taken before the byte reservation is attempted, and the release lives in a
+  // `finally` the refusal path returns above. A leak here is quieter than the byte one it sits beside: the
+  // slots age out of the window on their own after a minute, so it reads as a busy bot rather than a bug,
+  // and only the daily count never comes back at all. Four separate `it` blocks because a probe that
+  // mutates one of the two release arguments must fail on that one and not on its neighbour.
+  it('hands the call slots back when the byte budget refuses a /ask turn', async () => {
+    tryReserve(BUDGET - 1)
+    const limiter = rateLimiter()
+    const before = limiter.remainingRpm
+    const { interaction } = createInteraction('channel-1', [upload(FOUR_MB)])
+    await createInteractionHandler(limiter)(interaction)
+    expect(limiter.remainingRpm).toBe(before)
+  })
+
+  it('spends no daily quota when the byte budget refuses a /ask turn', async () => {
+    tryReserve(BUDGET - 1)
+    const limiter = rateLimiter()
+    const before = limiter.remainingRpd
+    const { interaction } = createInteraction('channel-1', [upload(FOUR_MB)])
+    await createInteractionHandler(limiter)(interaction)
+    expect(limiter.remainingRpd).toBe(before)
+  })
+
+  it('hands the call slots back when the byte budget refuses a mention turn', async () => {
+    tryReserve(BUDGET - 1)
+    const limiter = rateLimiter()
+    const before = limiter.remainingRpm
+    const { message } = createMessage('channel-2', [upload(FOUR_MB)])
+    await createMessageHandler(client, limiter)(message)
+    expect(limiter.remainingRpm).toBe(before)
+  })
+
+  it('spends no daily quota when the byte budget refuses a mention turn', async () => {
+    tryReserve(BUDGET - 1)
+    const limiter = rateLimiter()
+    const before = limiter.remainingRpd
+    const { message } = createMessage('channel-2', [upload(FOUR_MB)])
+    await createMessageHandler(client, limiter)(message)
+    expect(limiter.remainingRpd).toBe(before)
+  })
 })
