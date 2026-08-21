@@ -31,7 +31,6 @@ export interface ToolSchemaSource {
 
 export interface MeasureRequestInput {
   tone: ToneKey
-  participants: readonly string[]
   hour: number
   displayName: string
   history?: readonly TokenHistoryMessage[]
@@ -73,11 +72,10 @@ function serializeToolSchemas(tools: readonly ToolSchemaSource[]): string {
 export function measureRequest(input: MeasureRequestInput): RequestTokenBreakdown {
   const assemblerInput = {
     tone: input.tone,
-    participants: [...input.participants],
     hour: input.hour,
     displayName: input.displayName
   }
-  const contextPrompt = buildContextPrompt(assemblerInput.participants, assemblerInput.hour, assemblerInput.displayName)
+  const contextPrompt = buildContextPrompt(assemblerInput.hour, assemblerInput.displayName)
   const systemPrompt = assembleSystemPrompt(assemblerInput)
   const coreTok = estimateTokens(CORE_PROMPT)
   const speechTok = estimateTokens(SPEECH_PROMPT)

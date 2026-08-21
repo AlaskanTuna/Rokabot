@@ -18,7 +18,10 @@ import { loadCaseSet } from '../toolTriggerScoring.js'
  * Every gate case runs on its own fresh channel, so before `sessionState` existed each one was a channel's
  * FIRST turn and no behaviour that accumulates across turns could be measured — the shipped verdicts describe
  * first turns and nothing else (#52). These tests pin the seam end to end, offline: the fixture field reaches
- * ADK session state, and the prompt the agent actually assembles changes because of it.
+ * the ADK session the agent looks up, and survives the turn running against it.
+ *
+ * The field's first consumer was the group-conversation roster, which #52 then removed on the measurement it
+ * made possible. The seam stays because the blind spot it closes was never specific to that one line.
  */
 
 const temporaryDirectories: string[] = []
@@ -59,18 +62,14 @@ async function writeFixture(lines: unknown[]): Promise<string> {
   return path
 }
 
-/** Runs one case the way `runCaseSet` does and returns the system prompt the agent assembled for it. */
-async function promptForCase(sessionState?: Record<string, unknown>): Promise<string> {
+/** Runs one case the way `runCaseSet` does, then reports the session state the turn actually ran against. */
+async function stateAfterCase(sessionState?: Record<string, unknown>): Promise<Record<string, unknown>> {
   const path = await writeFixture([sessionState === undefined ? header : { ...header, sessionState }, probeCase])
   const loaded = await loadCaseSet(path)
   const channelId = `session-state-${channels.length}-${sessionState ? 'seeded' : 'bare'}`
   channels.push(channelId)
 
-  let captured = ''
-  __setTestRunTurnFactory(() => async (_attempt, _signal, request) => {
-    captured = (request as { stateDelta?: { _systemPrompt?: string } })?.stateDelta?._systemPrompt ?? ''
-    return { text: 'mm~', hasText: true, hasFunctionCall: false }
-  })
+  __setTestRunTurnFactory(() => async () => ({ text: 'mm~', hasText: true, hasFunctionCall: false }))
 
   await seedWorld(loaded.header, channelId)
   await generateResponse({
@@ -81,7 +80,9 @@ async function promptForCase(sessionState?: Record<string, unknown>): Promise<st
     username: 'sora',
     userId: 'sora'
   })
-  return captured
+
+  const session = await sessionService.getSession({ appName: APP_NAME, userId: channelId, sessionId: channelId })
+  return (session?.state ?? {}) as Record<string, unknown>
 }
 
 describe('tool-trigger fixture session state', () => {
@@ -131,18 +132,19 @@ describe('tool-trigger fixture session state', () => {
     expect(session).toBeFalsy()
   })
 
-  // The decisive pair. A live run costs real quota, and the way to waste it is to measure a prompt that
-  // never changed — the empty-roster trap of docs/decisions.md. These two assert the change is real and
-  // that it is caused by the fixture field, offline and free, before any money is spent.
-  it('renders the group-conversation roster when the fixture seeds other participants', async () => {
-    const prompt = await promptForCase({ participants: ['Mio', 'Ren', 'Kaede'] })
+  // The decisive pair. A live run costs real quota, and the way to waste it is to measure a case whose state
+  // was silently never seeded — it would read as "this behaviour does not depend on session state", which is
+  // the one conclusion this seam exists to make testable. So: the turn runs against the seeded session, and
+  // the same case without a seed runs against one that carries nothing.
+  it('runs the turn against the seeded session rather than a fresh one', async () => {
+    const state = await stateAfterCase({ probeMarker: 'seeded' })
 
-    expect(prompt).toContain("You're in a group conversation with:")
+    expect(state.probeMarker).toBe('seeded')
   })
 
-  it('renders no roster for the same case without seeded participants', async () => {
-    const prompt = await promptForCase()
+  it('carries no seeded state for the same case when the fixture asks for none', async () => {
+    const state = await stateAfterCase()
 
-    expect(prompt).not.toContain("You're in a group conversation with:")
+    expect(state.probeMarker).toBeUndefined()
   })
 })

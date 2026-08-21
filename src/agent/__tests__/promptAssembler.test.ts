@@ -18,7 +18,6 @@ import { TONE_PROMPTS, type ToneKey } from '../prompts/tones.js'
 describe('assembleSystemPrompt', () => {
   const baseInput: AssemblerInput = {
     tone: 'playful',
-    participants: ['Alice'],
     hour: 14,
     displayName: 'Alice'
   }
@@ -120,18 +119,15 @@ describe('assembleSystemPrompt', () => {
     expect(result).toContain(TONE_PROMPTS.competitive)
   })
 
-  it('handles multiple participants', () => {
-    const input: AssemblerInput = {
-      tone: 'playful',
-      participants: ['Alice', 'Bob', 'Charlie'],
-      hour: 10,
-      displayName: 'Alice'
-    }
-    const result = assembleSystemPrompt(input)
+  // The context layer names the speaker and nobody else, on purpose. A roster of who else was recently in
+  // the channel names exactly the people core.ts's recall_user rule ends by excluding, and it cost recall
+  // 1.000 -> 0.722 in a paired live A/B on 2026-08-22 (#52). Asserted as an absence so re-adding it fails
+  // here rather than three weeks later on a live run nobody budgeted for.
+  it('names the current speaker and never a roster of who else is around (issue #52)', () => {
+    const result = assembleSystemPrompt({ ...baseInput, displayName: 'Alice' })
+
     expect(result).toContain('Alice')
-    expect(result).toContain('Bob')
-    expect(result).toContain('Charlie')
-    expect(result).toContain('group conversation')
+    expect(result).not.toContain('group conversation')
   })
 
   it('handles single participant', () => {

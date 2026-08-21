@@ -9,7 +9,6 @@ import { MAX_SYSTEM_PROMPT_TOKENS, measureRequest } from '../tokens.js'
 
 const fixture = {
   tone: 'playful' as const,
-  participants: ['Mio', 'Ren'],
   hour: 14,
   displayName: 'Mio',
   history: [
@@ -141,13 +140,8 @@ describe('harness token measurement', () => {
     // "What You Remember About People In This Channel" facts block scales with channel
     // population, so bounding the whole request would make this gate flap on a busy
     // server instead of on a code change — see AGENTS.md / docs/trd.md.
-    const worstCaseParticipants = [
-      'Yamashita Katsuragi',
-      'Reiko Fujimiya-Nakamura',
-      'Christopherson',
-      'Bartholomew',
-      'Constantina'
-    ]
+    // The context layer stopped scaling with the channel's population when the group-conversation roster
+    // was removed (#52), so the only name it still carries is the speaker's — worst case is one long one.
     const worstCaseDisplayName = 'Bartholomew Christopherson-Yamanaka'
     const tones = Object.keys(TONE_PROMPTS) as ToneKey[]
 
@@ -155,7 +149,6 @@ describe('harness token measurement', () => {
       tone,
       ...measureRequest({
         tone,
-        participants: worstCaseParticipants,
         hour: 5,
         displayName: worstCaseDisplayName,
         userMessage: 'placeholder'

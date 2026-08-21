@@ -1,19 +1,19 @@
 /** Layer 3: Dynamically generated situational context */
 
 /** Build the situational context layer */
-export function buildContextPrompt(participants: string[], hour: number, displayName: string): string {
+export function buildContextPrompt(hour: number, displayName: string): string {
   const lines: string[] = ['## Situation']
 
   const timeOfDay = getTimeOfDay(hour)
   lines.push(`- It's currently ${timeOfDay}.`)
   lines.push(`- The user you are currently talking to is named "${displayName}". Address them by this name.`)
 
-  if (participants.length > 1) {
-    const names = participants.slice(0, 5).join(', ')
-    lines.push(`- You're in a group conversation with: ${names}.`)
-    lines.push('- Address people by name when responding to them directly.')
-  }
-
+  // No roster of who else is around, deliberately (#52). The line named recent speakers — precisely the set
+  // core.ts's recall_user rule ends by excluding ("Someone who only appears earlier in the conversation is
+  // not a reason to call it") — and reframed absent third parties as participants. Paired A/B, same key and
+  // pinned hour, 2026-08-22: recall 1.000 -> 0.722 (Fisher one-sided p = 0.023), below the gate's own 0.80
+  // floor, against precision 0.947 -> 1.000. Measured once before at 0.389; the cost is real and reproduces,
+  // the magnitude does not. The speaker's own name above is kept — that part was never in question.
   return lines.join('\n')
 }
 
