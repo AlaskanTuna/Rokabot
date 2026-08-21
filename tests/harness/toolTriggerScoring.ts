@@ -21,6 +21,15 @@ export type CaseSetHeader = Readonly<{
   members: FixtureMember[]
   claims: FixtureClaim[]
   history: FixtureHistoryLine[]
+  /**
+   * ADK session state every case in this set starts from, or absent for the default empty state.
+   *
+   * The gate runs each case on its own fresh channel, so until this existed every case was a channel's
+   * FIRST turn and nothing that accumulates in session state across turns could be measured at all — the
+   * verdicts describe first turns only. `participants` is the case in hand (#52), but the field is the
+   * whole state object rather than that one key, because the blind spot is not specific to it.
+   */
+  sessionState?: Readonly<Record<string, unknown>>
 }>
 
 export type ToolTriggerCase = Readonly<{
@@ -81,6 +90,15 @@ function asHistoryLine(value: unknown, line: number, memberIds: Set<string>): Fi
   return { speakerId, content: nonEmptyString(entry.content, line, 'history content') }
 }
 
+/** Rejected rather than coerced: a seeded state that silently failed to apply would read as "the behaviour
+ * does not depend on session state", which is the conclusion this field exists to make measurable. */
+function asSessionState(value: unknown, line: number): Readonly<Record<string, unknown>> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`Tool-trigger fixture line ${line} header sessionState must be an object`)
+  }
+  return value as Readonly<Record<string, unknown>>
+}
+
 function asHeader(value: unknown, line: number): CaseSetHeader {
   if (!value || typeof value !== 'object' || (value as Partial<CaseSetHeader>).type !== 'header') {
     throw new Error(`Tool-trigger fixture line ${line} must begin with a header`)
@@ -97,7 +115,8 @@ function asHeader(value: unknown, line: number): CaseSetHeader {
     guildId: nonEmptyString(header.guildId, line, 'header guildId'),
     members,
     claims: header.claims.map((claim) => asClaim(claim, line, memberIds)),
-    history: header.history.map((entry) => asHistoryLine(entry, line, memberIds))
+    history: header.history.map((entry) => asHistoryLine(entry, line, memberIds)),
+    ...(header.sessionState === undefined ? {} : { sessionState: asSessionState(header.sessionState, line) })
   }
 }
 
