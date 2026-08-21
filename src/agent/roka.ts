@@ -80,7 +80,9 @@ export interface GenerateResult {
   modelCalls: number
 }
 
-const APP_NAME = 'rokabot'
+/** Exported so the live harness can pre-create the very session `getOrCreateSession` will look up, which is
+ * the only way a gate case can run as anything other than a channel's first turn (#52). */
+export const APP_NAME = 'rokabot'
 
 const sessionErrorCounts = new Map<string, number>()
 const toolCallsForRequest = new AsyncLocalStorage<Set<string>>()

@@ -2,7 +2,7 @@
  * live model call fires a given tool. Shared across future case sets (e.g. search_web, issue #19). */
 
 import { assertClaim } from '../../src/agent/memory/memoryClaims.js'
-import { destroySession, generateResponse } from '../../src/agent/roka.js'
+import { APP_NAME, destroySession, generateResponse, sessionService } from '../../src/agent/roka.js'
 import { config } from '../../src/config.js'
 import { saveMessage } from '../../src/storage/sessionStore.js'
 import { upsertUserName } from '../../src/storage/userNames.js'
@@ -38,7 +38,7 @@ export const TRIAL_PACING_MS = Math.max(
  * the exact triple that reaches the prompt via retrieveForTurn + getAllUserNames. Claims and members
  * are idempotent upserts, so re-seeding per trial channel is safe; history is channel-scoped and must
  * be re-seeded per trial. */
-export function seedWorld(header: CaseSetHeader, channelId: string): void {
+export async function seedWorld(header: CaseSetHeader, channelId: string): Promise<void> {
   for (const member of header.members) {
     upsertUserName(member.id, member.username, member.displayName)
   }
@@ -58,6 +58,18 @@ export function seedWorld(header: CaseSetHeader, channelId: string): void {
     const speaker = membersById.get(line.speakerId)
     if (!speaker) throw new Error(`Tool-trigger history references unknown member "${line.speakerId}"`)
     saveMessage(channelId, 'user', speaker.displayName, line.content, speaker.id, speaker.username)
+  }
+
+  // Created here rather than left to `getOrCreateSession`, which would build it with the empty default and
+  // never revisit it. Only when the fixture asks: an unconditional pre-create would change what every
+  // existing case measures, and the three shipped sets are baselines.
+  if (header.sessionState) {
+    await sessionService.createSession({
+      appName: APP_NAME,
+      userId: channelId,
+      sessionId: channelId,
+      state: { ...header.sessionState }
+    })
   }
 }
 
@@ -143,7 +155,7 @@ export async function runCaseSet(
           isFirstCall = false
 
           const channelId = `live-${testCase.id}-${trial}${retry > 0 ? `-retry${retry}` : ''}`
-          seedWorld(header, channelId)
+          await seedWorld(header, channelId)
           let recorded = false
           try {
             const result = await generateResponse({
