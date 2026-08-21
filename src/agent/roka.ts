@@ -138,7 +138,6 @@ interface TestTurnRequest {
   newMessage?: Content
   stateDelta?: {
     _systemPrompt: string
-    participants: string[]
     _userId: string
     _channelId: string
     _guildId: string
@@ -706,7 +705,7 @@ async function ensureSession(channelId: string) {
       appName: APP_NAME,
       userId: channelId,
       sessionId: channelId,
-      state: { participants: [] }
+      state: {}
     })
     logger.info({ channelId }, 'ADK session created')
 
@@ -966,14 +965,11 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   const session = await ensureSession(channelId)
   resetIdleTimer(channelId)
 
-  const storedParticipants = (session.state?.participants as string[]) ?? []
-  const participants = [...new Set([...storedParticipants, displayName])]
-
   const fakeMessages = eventsToWindowMessages(session.events ?? [])
   const hour = getLocalHour()
   const tone = detectTone(fakeMessages, hour)
 
-  const basePrompt = assembleSystemPrompt({ tone, participants, hour, displayName })
+  const basePrompt = assembleSystemPrompt({ tone, hour, displayName })
   let factsSection = ''
   let overheardSection = ''
   let factEntryCount = 0
@@ -1069,8 +1065,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   let dropImages = false
 
   function composePrompt(): string {
-    const head =
-      safetyRung >= 3 ? assembleSystemPrompt({ tone: 'sincere', participants, hour, displayName }) : basePrompt
+    const head = safetyRung >= 3 ? assembleSystemPrompt({ tone: 'sincere', hour, displayName }) : basePrompt
     return [
       head,
       safetyRung < 2 ? factsSection : '',
@@ -1082,7 +1077,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
 
   let systemPrompt = composePrompt()
 
-  logger.debug({ tone, participantCount: participants.length, hour }, 'Prompt assembled')
+  logger.debug({ tone, hour }, 'Prompt assembled')
 
   const imageParts: Part[] = []
   let imageTokens = 0
@@ -1233,7 +1228,6 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
                 stateDelta: includeCurrentTurn
                   ? {
                       _systemPrompt: systemPrompt,
-                      participants,
                       _userId: userId,
                       _channelId: channelId,
                       _guildId: guildId,

@@ -143,7 +143,6 @@ export async function runTranscript(path: string, options: RunTranscriptOptions 
   const channelIds = new Set<string>()
   const turns: TranscriptTurn[] = []
   const measurementHistory = new Map<string, TokenHistoryMessage[]>()
-  const participants = new Map<string, Set<string>>()
   let scriptedReply = ''
   let activeTiming: ReturnType<typeof startTurnTiming> | undefined
   ;(config.memory as { extractionInterval: number }).extractionInterval = Number.MAX_SAFE_INTEGER
@@ -172,16 +171,12 @@ export async function runTranscript(path: string, options: RunTranscriptOptions 
       scriptedReply = `Harness reply ${index + 1}: ${line.content}`
       const userMessage = requestMessageContent(line)
       const channelHistory = measurementHistory.get(line.channelId) ?? []
-      const channelParticipants = participants.get(line.channelId) ?? new Set<string>()
-      channelParticipants.add(line.displayName)
-      participants.set(line.channelId, channelParticipants)
       const tone = detectTone(
         channelHistory.map((message) => ({ ...message, timestamp: 0 })),
         MEASUREMENT_HOUR
       )
       const tokens = measureRequest({
         tone,
-        participants: [...channelParticipants],
         hour: MEASUREMENT_HOUR,
         displayName: line.displayName,
         history: channelHistory,

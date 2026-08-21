@@ -5,7 +5,6 @@ import { TONE_PROMPTS, type ToneKey } from './prompts/tones.js'
 
 export interface AssemblerInput {
   tone: ToneKey
-  participants: string[]
   hour: number
   displayName: string
 }
@@ -16,7 +15,7 @@ export function assembleSystemPrompt(input: AssemblerInput): string {
     CORE_PROMPT,
     SPEECH_PROMPT,
     TONE_PROMPTS[input.tone],
-    buildContextPrompt(input.participants, input.hour, input.displayName)
+    buildContextPrompt(input.hour, input.displayName)
   ]
 
   return layers.join('\n\n')

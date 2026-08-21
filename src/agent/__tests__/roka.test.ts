@@ -860,7 +860,6 @@ describe('generateResponse metrics', () => {
         newMessage: { role: 'user', parts: [{ text: '[Mio]: Please keep this turn.' }] },
         stateDelta: {
           _systemPrompt: expect.any(String),
-          participants: ['Mio'],
           _userId: 'mio-id',
           _channelId: 'roka-metrics-channel',
           _guildId: 'metrics-guild'
@@ -886,7 +885,7 @@ describe('generateResponse metrics', () => {
 
     const expectedTokensIn =
       estimateTokens(
-        `${assembleSystemPrompt({ tone: result.tone, participants: ['Mio'], hour: 12, displayName: 'Mio' })}\n\n- The current user's Discord ID is "mio-id". remember_user and recall_user target the current user automatically; to recall a different server member, pass their name as user_name.`
+        `${assembleSystemPrompt({ tone: result.tone, hour: 12, displayName: 'Mio' })}\n\n- The current user's Discord ID is "mio-id". remember_user and recall_user target the current user automatically; to recall a different server member, pass their name as user_name.`
       ) +
       estimateTokens(JSON.stringify(rokaTools)) +
       estimateTokens('[Mio]: Hello metrics.')
@@ -1109,7 +1108,7 @@ describe('generateResponse prompt safety', () => {
       userId: 'mio-id'
     })
 
-    const kernel = assembleSystemPrompt({ tone: result.tone, participants: ['Mio'], hour: 12, displayName: 'Mio' })
+    const kernel = assembleSystemPrompt({ tone: result.tone, hour: 12, displayName: 'Mio' })
     const factsHeading = '## What You Remember About People In This Channel\n'
     const overheardHeading = '\n\n## Recent Channel Activity (messages you overheard)\n'
     const factsStart = capturedPrompt.indexOf(factsHeading) + factsHeading.length
@@ -1149,7 +1148,7 @@ describe('generateResponse prompt safety', () => {
     })
 
     const expectedPrompt =
-      `${assembleSystemPrompt({ tone: result.tone, participants: ['Mio'], hour: 12, displayName: 'Mio' })}` +
+      `${assembleSystemPrompt({ tone: result.tone, hour: 12, displayName: 'Mio' })}` +
       `\n\n## What You Remember About People In This Channel\n${buildFactsEnvelope([
         { person: 'mio (Mio)', facts: [{ key: 'favorite anime', value: 'Frieren' }] }
       ])}` +

@@ -301,7 +301,7 @@ describe('memory promotion harness evaluation', () => {
       userId: 'promotion-legacy-user'
     })
     const expectedPrompt =
-      `${assembleSystemPrompt({ tone: result.tone, participants: ['Mio'], hour: getLocalHour(), displayName: 'Mio' })}` +
+      `${assembleSystemPrompt({ tone: result.tone, hour: getLocalHour(), displayName: 'Mio' })}` +
       `\n\n## What You Remember About People In This Channel\n${buildFactsEnvelope([
         { person: 'mio (Mio)', facts: [{ key: 'favorite anime', value: 'legacy-series' }] }
       ])}` +
