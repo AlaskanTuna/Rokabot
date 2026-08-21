@@ -64,6 +64,21 @@ describe('harness token measurement', () => {
     expect(CORE_PROMPT).toContain('Someone who only appears earlier in the conversation is not a reason to call it')
   })
 
+  // Two clauses that read as a contradiction and are not one: the first suppresses re-saving a fact she
+  // already holds, the second overrides it when the user asks outright. #118 exists because without the
+  // second, `remember_user` had never fired in production. `remember-user.jsonl` case R6 is the only live
+  // test of the override — it asks her to remember a claim already seeded for its own speaker — so if this
+  // wording goes, R6 stops testing anything and the aggregate absorbs it silently (#182).
+  it('keeps the skip-what-you-already-know clause that scopes passive extraction (issue #118)', () => {
+    expect(CORE_PROMPT).toContain('skip facts already in What You Remember')
+  })
+
+  it('keeps the outright-request carve-out that overrides it (issue #118)', () => {
+    expect(CORE_PROMPT).toContain(
+      'When they ask you outright to remember something, call it even if you already know the fact'
+    )
+  })
+
   it('keeps the searched-turn rule that puts the finding before the roleplay (issue #94)', () => {
     expect(CORE_PROMPT).toContain(
       'Open with the finding itself — the name, the number, the date, the actual answer. No greeting, no "let me check", no preamble about looking it up.'

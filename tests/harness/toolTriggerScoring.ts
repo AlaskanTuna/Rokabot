@@ -222,8 +222,26 @@ export const MIN_RECALL = 0.8
  *
  * That shortfall is a rate, not one broken fixture — checked rather than assumed, because the two worlds
  * call for opposite fixes. Per case over 9 trials: R1 9/9, R2 5/9, R3 7/9, R4 7/9, R5 9/9, R6 6/9. No dead
- * case to repair, two cases clean, misses spread over four. R2 and R6 are tracked separately; lowering a
- * floor is exactly the change that would have buried them.
+ * case to repair, two cases clean, misses spread over four.
+ *
+ * R2 AND R6, RESOLVED (#182). Both were read before the floor moved rather than after, and neither is a
+ * defect. R2 at 5/9 was reported as never clean; it is 3/3 in two earlier runs already on disk, so "never
+ * clean" is a property of the E/G/H window someone chose and not of the case. Against its five siblings'
+ * pooled 38/45 it is Fisher one-sided p=0.072, and R2 was picked for being the extreme of six, so adjusted
+ * for that selection it is ~0.36. R6's 0-of-3 in run H is three genuine model no-fires rather than fallout
+ * from that run's 17 RPM refusals — a non-`ok` turn is never scored, it retries on a fresh channel or it
+ * aborts the run (`toolTrigger.ts`) — but one whole-run zero SOMEWHERE in the 18 case-slots is expected 0.44
+ * times and arrives with probability 36.6% at the per-case rates above, and R2 was the likelier candidate
+ * (0.26) than R6 (0.11). Both are what three runs of three trials produce from the rates already recorded
+ * here. So neither fixture nor prompt is changed on this evidence. What is pinned instead, offline and free,
+ * is that R2's and R6's phrasings cannot be deleted by accident: R6 is the only should-fire case whose
+ * message repeats a claim already seeded for its own speaker, which makes it the sole live test of #118's
+ * "call it even if you already know the fact" carve-out. See `toolTrigger.scoring.test.ts` and
+ * `tokens.test.ts`.
+ *
+ * One caveat on the numbers above, which no arithmetic fixes: they describe a prompt that no longer ships.
+ * `CORE_PROMPT` gained `## Audio and Video` in #183, after this floor was set from E/G/H. 0.796 is the last
+ * measurement, not the current one.
  *
  * WHAT THIS FLOOR IS FOR, AND WHAT IT IS NOT. Computed from the per-case rates above rather than from an
  * assumed uniform one, degradation modelled as a proportional drop in every case:

@@ -16,6 +16,7 @@ import {
 } from '../toolTriggerScoring.js'
 
 const fixturePath = resolve('tests/harness/tool-trigger/recall-user.jsonl')
+const rememberFixturePath = resolve('tests/harness/tool-trigger/remember-user.jsonl')
 const trials = 3
 const temporaryDirectories: string[] = []
 
@@ -57,6 +58,65 @@ function observationsFor(
 }
 
 describe('tool-trigger fixture integrity', () => {
+  // The remember_user set had no offline assertion of any kind until #182, which is how a question about
+  // two of its cases had to be answered by re-reading run logs. These cost nothing and run on every
+  // `npm test`.
+  it('loads the shipped remember_user set with its documented world state', async () => {
+    const { header, cases } = await loadCaseSet(rememberFixturePath)
+
+    expect(cases).toHaveLength(12)
+    expect(cases.filter((testCase) => testCase.shouldFire)).toHaveLength(6)
+    expect(cases.filter((testCase) => !testCase.shouldFire)).toHaveLength(6)
+
+    const memberIds = new Set(header.members.map((member) => member.id))
+    expect(cases.every((testCase) => memberIds.has(testCase.speakerId))).toBe(true)
+    expect(header.claims.every((claim) => isKnownPredicate(claim.predicate))).toBe(true)
+  })
+
+  // R6 collides with its own seeded world on purpose. That is normally a fixture defect — the 2026-07-29
+  // rule in docs/decisions.md says a live-eval case must not restate what the world already holds — and it
+  // is the stated exception, because #118's carve-out ("call it even if you already know the fact") cannot
+  // be exercised by a case whose fact is new. Asserting the collision keeps a future tidy-up from removing
+  // the only thing testing that clause.
+  it('keeps R6 asking her to remember a fact already seeded for its own speaker (issue #118)', async () => {
+    const { header, cases } = await loadCaseSet(rememberFixturePath)
+    const r6 = cases.find((testCase) => testCase.id === 'R6')
+
+    const seededForSpeaker = header.claims.filter((claim) => claim.subjectId === r6?.speakerId)
+    expect(seededForSpeaker.some((claim) => r6?.message.includes(claim.value))).toBe(true)
+  })
+
+  it('keeps R6 the only should-fire case that restates a seeded claim, so the carve-out has one clean test', async () => {
+    const { header, cases } = await loadCaseSet(rememberFixturePath)
+
+    const restatingSeeded = cases
+      .filter((testCase) => testCase.shouldFire)
+      .filter((testCase) =>
+        header.claims.some((claim) => claim.subjectId === testCase.speakerId && testCase.message.includes(claim.value))
+      )
+    expect(restatingSeeded.map((testCase) => testCase.id)).toEqual(['R6'])
+  })
+
+  // R2 is the set's weakest case at 5/9 pooled and was reported as a possible mislabel. It is not: its
+  // phrasing is one the tool description enumerates by name, and `nickname` is one of the description's own
+  // fact_key examples, so relabelling it would delete coverage of a phrasing #118 was written to catch
+  // (#182).
+  it('keeps R2 phrased as the request form the tool description enumerates (issue #118)', async () => {
+    const { cases } = await loadCaseSet(rememberFixturePath)
+    const r2 = cases.find((testCase) => testCase.id === 'R2')
+
+    expect(r2?.message).toContain('I want you to remember')
+    expect(r2?.shouldFire).toBe(true)
+  })
+
+  it('keeps R3 phrased as the trailing do-not-forget form, the other phrasing #118 added', async () => {
+    const { cases } = await loadCaseSet(rememberFixturePath)
+    const r3 = cases.find((testCase) => testCase.id === 'R3')
+
+    expect(r3?.message).toContain("don't forget")
+    expect(r3?.shouldFire).toBe(true)
+  })
+
   it('loads the shipped recall_user set with its documented world state', async () => {
     const { header, cases } = await loadCaseSet(fixturePath)
 
