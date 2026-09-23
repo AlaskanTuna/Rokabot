@@ -71,7 +71,7 @@ describe('harness metrics evaluation', () => {
 
     expect(report.turns).toHaveLength(lines.length)
     expect(rows).toHaveLength(lines.length)
-    const expectedTones = ['playful', 'playful', 'domestic', 'domestic']
+    const expectedTones = ['domestic', 'domestic', 'domestic', 'domestic']
     expect(rows).toEqual(
       lines.map((line, index) =>
         expect.objectContaining({

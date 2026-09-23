@@ -40,6 +40,34 @@ describe('shouldExtract', () => {
     ).toEqual({ extract: true, reason: 'novel keyword: pets' })
   })
 
+  it('selects explicit remember intent when its predicate keyword is already known', () => {
+    expect(shouldExtract([message('Please remember: call me Iku from now on')], new Set(['nickname']))).toEqual({
+      extract: true,
+      reason: 'explicit remember intent'
+    })
+  })
+
+  it('selects a correction when its predicate keyword is already known', () => {
+    expect(shouldExtract([message('Actually, call me Iku from now on')], new Set(['nickname']))).toEqual({
+      extract: true,
+      reason: 'correction signal'
+    })
+  })
+
+  it('refuses a known predicate keyword without an explicit signal', () => {
+    expect(shouldExtract([message('Call me Iku from now on')], new Set(['nickname']))).toEqual({
+      extract: false,
+      reason: 'known claim keywords only'
+    })
+  })
+
+  it('prioritizes a novel predicate keyword over remember intent and correction', () => {
+    expect(shouldExtract([message('Actually, I adopted a dog, remember that')], new Set(['nickname']))).toEqual({
+      extract: true,
+      reason: 'novel keyword: pets'
+    })
+  })
+
   it('skips sensitive disclosures before they can reach extraction', () => {
     const result = shouldExtract(
       [message('My full name is Alice Example and my email is alice@example.com')],

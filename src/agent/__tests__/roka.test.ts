@@ -7,12 +7,14 @@ import { config } from '../../config.js'
 const mutableMemoryConfig = config.memory as { claimsBackend: boolean }
 const mutableGeminiConfig = config.gemini as { liveMaxRetries: number }
 import { recordFailureDiagnostic, recordMemoryEvent } from '../../storage/metricsStore.js'
+import { getChannelUsers } from '../../storage/sessionStore.js'
 import { getFacts, refreshFactTimestamps } from '../../storage/userMemory.js'
 import { GEMINI_IMAGE_TOKENS } from '../../utils/imageProcessor.js'
 import { logger } from '../../utils/logger.js'
 import { estimateTokens } from '../../utils/tokens.js'
 import { measureAttachmentTokens, needsMeasuring } from '../attachmentCost.js'
 import { computeBackoff as computeRetryBackoff } from '../geminiReliability.js'
+import { resolveReferences } from '../memory/identityResolver.js'
 import { retrieveForTurn } from '../memory/retriever.js'
 import { getMessages } from '../passiveBuffer.js'
 import { assembleSystemPrompt } from '../promptAssembler.js'
@@ -56,6 +58,10 @@ vi.mock('../../storage/metricsStore.js', () => ({
 
 vi.mock('../memory/retriever.js', () => ({
   retrieveForTurn: vi.fn()
+}))
+
+vi.mock('../memory/identityResolver.js', () => ({
+  resolveReferences: vi.fn(() => ({ resolved: [], ambiguous: [] }))
 }))
 
 // Pricing an attachment is a network call. Mocked to a cheap value so the download tests below can keep
@@ -1084,6 +1090,21 @@ describe('generateResponse metrics', () => {
 })
 
 describe('generateResponse prompt safety', () => {
+  it('detects tone from the current message', async () => {
+    __setTestRunTurnFactory(() => async () => ({ text: 'I can help~', hasText: true, hasFunctionCall: false }))
+
+    const result = await generateResponse({
+      channelId: 'roka-prompt-safety-channel',
+      guildId: 'prompt-safety-guild',
+      userMessage: 'Can you help me? What should I do?',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id'
+    })
+
+    expect(result.tone).toBe('confident')
+  })
+
   it('envelopes safe facts and fences overheard context without changing the character kernel', async () => {
     vi.mocked(getFacts).mockReturnValue([
       { key: 'favorite anime', value: 'Frieren' },
@@ -1208,6 +1229,67 @@ describe('generateResponse prompt safety', () => {
         buildFactsEnvelope([{ person: 'Mio', facts: [{ key: 'favorite_game', value: 'Senren Banka' }] }])
       )
     })
+  })
+
+  it('prioritizes resolved references and labels unambiguous nicknames in the prompt', async () => {
+    mutableMemoryConfig.claimsBackend = true
+    const info = vi.spyOn(logger, 'info').mockImplementation(() => undefined as never)
+    vi.mocked(getChannelUsers).mockReturnValueOnce(
+      new Map([
+        ['recent-1', { username: 'recent-1', displayName: 'Recent One' }],
+        ['recent-2', { username: 'recent-2', displayName: 'Recent Two' }],
+        ['recent-3', { username: 'recent-3', displayName: 'Recent Three' }],
+        ['mio-id', { username: 'mio', displayName: 'Mio' }]
+      ]) as ReturnType<typeof getChannelUsers>
+    )
+    vi.mocked(resolveReferences).mockReturnValueOnce({
+      resolved: [{ userId: 'referenced-id', alias: 'Mimi', displayName: 'Mio', matchedBy: 'nickname' }],
+      ambiguous: [{ alias: 'Rin', candidateIds: ['rin-1', 'rin-2'] }]
+    })
+    vi.mocked(retrieveForTurn).mockReturnValueOnce({
+      entries: [{ person: 'Mio', facts: [{ key: 'favorite_game', value: 'Senren Banka' }] }],
+      claims: [{ claim: {} as never, score: 1 }],
+      trace: { candidates: [], selected: [], tokensEst: 12 }
+    })
+
+    let capturedPrompt = ''
+    __setTestRunTurnFactory((systemPrompt) => {
+      capturedPrompt = systemPrompt
+      return async () => ({ text: 'Mimi likes that~', hasText: true, hasFunctionCall: false })
+    })
+
+    await generateResponse({
+      channelId: 'roka-prompt-safety-channel',
+      guildId: 'prompt-safety-guild',
+      userMessage: 'What about Mimi and Rin?',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id'
+    })
+
+    expect(resolveReferences).toHaveBeenCalledWith({
+      guildId: 'prompt-safety-guild',
+      text: 'What about Mimi and Rin?',
+      speakerId: 'mio-id',
+      mentionedUserIds: []
+    })
+    expect(retrieveForTurn).toHaveBeenCalledWith({
+      guildId: 'prompt-safety-guild',
+      speakerId: 'mio-id',
+      participantIds: ['referenced-id', 'recent-1', 'recent-2'],
+      message: 'What about Mimi and Rin?'
+    })
+    expect(capturedPrompt.indexOf('## What You Remember About People In This Channel')).toBeLessThan(
+      capturedPrompt.indexOf('## Who Is Mentioned')
+    )
+    expect(capturedPrompt).toContain('- "Mimi" means Mio')
+    expect(capturedPrompt).not.toContain('Rin')
+    expect(info.mock.calls.filter(([, message]) => message === 'Resolved message references')).toEqual([
+      [
+        { channelId: 'roka-prompt-safety-channel', resolvedReferences: 1, ambiguousReferences: 1 },
+        'Resolved message references'
+      ]
+    ])
   })
 
   it('degrades a flagged retrieval failure to an empty facts section', async () => {

@@ -182,6 +182,8 @@ Enum of detected conversation tones.
 `detectTone` is first-match-wins over `TONE_PATTERNS`' declaration order in `src/agent/toneDetector.ts`, not
 the row order above. A trigger listed against a later tone is unreachable whenever an earlier tone matches the same
 text. Behavioral precedence is pinned by `src/agent/__tests__/toneDetector.test.ts`.
+It reads the current message plus the two session messages before it, so the tone answers the message being
+replied to rather than only the history.
 
 ## Memory Architecture (Claims)
 
@@ -227,6 +229,13 @@ for speaker anchors; anchors are considered before every other candidate and are
 selection. It considers at most `memory.recentParticipantLimit` (3) non-speaker participants and may expand one hop
 through an active `relationship_to` claim to an included participant.
 
+Before selection, `resolveReferences` (`src/agent/memory/identityResolver.ts`) finds the members the message is
+about: Discord mentions, then guild-scoped display names, usernames and active `nickname` claims found in the text
+(names under 3 characters are ignored). A name that maps to one member resolves; a name that maps to several stays
+ambiguous and is never guessed. Resolved members take the participant slots first, ahead of recent speakers, and a
+member named by a nickname or username gets a `## Who Is Mentioned` line mapping the alias to their display name.
+`recall_user` uses the same lookup and asks which member is meant when a name is ambiguous.
+
 The retriever, not `refreshFactTimestamps`, calls `touchRecalled()` for selected claims. The resulting entries are
 rendered through the shared Phase 13 `buildFactsEnvelope` untrusted-data envelope; the claims path does not fork the
 envelope.
@@ -235,7 +244,8 @@ envelope.
 
 The pipeline is: candidate gate → persisted `extraction_queue` → per-guild round-robin scheduler → user-ID-keyed
 batched extractor → transactional `assert`/`retract` operations in `memory_claim`. The candidate gate rejects
-sensitive, trivial, and already-known-only batches before any extraction call. Persisted queue state is restart-safe:
+sensitive, trivial, and already-known-only batches before any extraction call; an explicit "remember" or a
+correction is admitted even when its predicate is already known, so a changed nickname or preference is not dropped. Persisted queue state is restart-safe:
 stuck `processing` work can be returned to `pending`, and failed work is retried up to the queue attempt cap before it
 is dropped.
 

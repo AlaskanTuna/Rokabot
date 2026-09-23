@@ -536,6 +536,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
           displayName,
           username,
           userId: message.author.id,
+          mentionedUserIds: [...(message.mentions.users?.keys() ?? [])].filter((userId) => userId !== client.user?.id),
           imageAttachments: imageAttachments.length > 0 ? imageAttachments : undefined
         })
       )
