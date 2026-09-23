@@ -12,7 +12,7 @@ import { recordFailureDiagnostic, recordMemoryEvent } from '../storage/metricsSt
 import type { ResponseMetrics } from '../storage/metricsStore.js'
 import { getChannelUsers, loadHistory, saveMessage } from '../storage/sessionStore.js'
 import { getFacts, refreshFactTimestamps } from '../storage/userMemory.js'
-import { getAllUserNames } from '../storage/userNames.js'
+import { getAllUserNames, getUserName } from '../storage/userNames.js'
 import { GEMINI_IMAGE_TOKENS, processImageForGemini } from '../utils/imageProcessor.js'
 import { logger } from '../utils/logger.js'
 import { getSharedRateLimiter } from '../utils/rateLimiter.js'
@@ -21,6 +21,7 @@ import { estimateTokens } from '../utils/tokens.js'
 import { measureAttachmentTokens, needsMeasuring } from './attachmentCost.js'
 import { geminiMimeType, sizeLimitFor } from './attachmentLimits.js'
 import { classifyGeminiFailure, computeBackoff, extractGeminiStatus } from './geminiReliability.js'
+import { judgeTurn } from './jev/judgments.js'
 import { isobmffAllowsPrefix, prefixPolicyFor } from './mediaPrefix.js'
 import { resolveReferences } from './memory/identityResolver.js'
 import { retrieveForTurn } from './memory/retriever.js'
@@ -969,10 +970,121 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
 
   const fakeMessages = eventsToWindowMessages(session.events ?? [])
   const hour = getLocalHour()
-  const tone = detectTone(
+  const ruleTone = detectTone(
     [...fakeMessages, { role: 'user', displayName, content: userMessage, timestamp: Date.now() }],
     hour
   )
+  let tone = ruleTone
+  let references: ReturnType<typeof resolveReferences> = { resolved: [], ambiguous: [] }
+
+  if (config.memory.claimsBackend) {
+    try {
+      references = resolveReferences({
+        guildId,
+        text: userMessage,
+        speakerId: userId,
+        mentionedUserIds: options.mentionedUserIds ?? []
+      })
+      if (references.resolved.length > 0 || references.ambiguous.length > 0) {
+        logger.info(
+          {
+            channelId,
+            resolvedReferences: references.resolved.length,
+            ambiguousReferences: references.ambiguous.length
+          },
+          'Resolved message references'
+        )
+      }
+    } catch (error) {
+      logger.warn({ channelId, error }, 'Failed to resolve message references')
+    }
+  }
+
+  const toneActive = config.jev.tone !== 'off'
+  const referentsActive = config.jev.referents !== 'off' && references.ambiguous.length > 0
+  const appliedJevReferents: Array<{ alias: string; userId: string; displayName: string }> = []
+
+  if (toneActive || referentsActive) {
+    const ambiguous = referentsActive
+      ? references.ambiguous.map(({ alias, candidateIds }) => ({
+          alias,
+          candidates: candidateIds.map((id) => ({
+            userId: id,
+            displayName: getUserName(id)?.displayName ?? id
+          }))
+        }))
+      : []
+    const input = {
+      speakerName: displayName,
+      message: userMessage,
+      recentLines: fakeMessages.slice(-6).map(({ role, displayName: historyDisplayName, content }) => {
+        const priorSpeaker = role === 'user' ? content.match(/^\[([^\]]+)\]:\s*/) : null
+        const speakerName = role === 'assistant' ? 'Roka' : historyDisplayName || priorSpeaker?.[1] || displayName
+        return `[${speakerName}]: ${priorSpeaker ? content.slice(priorSpeaker[0].length) : content}`
+      }),
+      ambiguous,
+      includeTone: toneActive
+    }
+    const blocking = config.jev.tone === 'on' || (referentsActive && config.jev.referents === 'on')
+
+    const settleJudgment = (judgment: Awaited<ReturnType<typeof judgeTurn>>, apply: boolean): void => {
+      if (!judgment) return
+
+      const toneApplied =
+        apply &&
+        config.jev.tone === 'on' &&
+        judgment.tone !== null &&
+        judgment.tone.confidence >= config.jev.toneMinConfidence
+      if (toneApplied && judgment.tone) tone = judgment.tone.tone
+
+      const referents = judgment.referents.map((referent) => {
+        const accepted =
+          apply &&
+          config.jev.referents === 'on' &&
+          referent.userId !== null &&
+          referent.userId !== userId &&
+          referent.confidence >= config.jev.referentMinConfidence
+        if (accepted && referent.userId) {
+          const candidate = ambiguous
+            .find(({ alias }) => alias === referent.alias)
+            ?.candidates.find(({ userId: candidateId }) => candidateId === referent.userId)
+          appliedJevReferents.push({
+            alias: referent.alias,
+            userId: referent.userId,
+            displayName: candidate?.displayName ?? getUserName(referent.userId)?.displayName ?? referent.userId
+          })
+        }
+        return {
+          candidates: references.ambiguous.find(({ alias }) => alias === referent.alias)?.candidateIds.length ?? 0,
+          pickedUserId: referent.userId,
+          confidence: referent.confidence,
+          applied: accepted
+        }
+      })
+
+      logger.info(
+        {
+          channelId,
+          toneMode: config.jev.tone,
+          referentsMode: config.jev.referents,
+          ruleTone,
+          jevTone: judgment.tone?.tone ?? null,
+          toneConfidence: judgment.tone?.confidence ?? null,
+          toneApplied,
+          referents,
+          latencyMs: Math.round(judgment.latencyMs),
+          inputTokens: judgment.inputTokens
+        },
+        'Jev turn judgment'
+      )
+    }
+
+    if (blocking) {
+      settleJudgment(await judgeTurn(input), true)
+    } else {
+      void judgeTurn(input).then((judgment) => settleJudgment(judgment, false))
+    }
+  }
 
   const basePrompt = assembleSystemPrompt({ tone, hour, displayName })
   let factsSection = ''
@@ -999,41 +1111,32 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     let retrievalSelected = 0
 
     if (config.memory.claimsBackend) {
-      const references = resolveReferences({
-        guildId,
-        text: userMessage,
-        speakerId: userId,
-        mentionedUserIds: options.mentionedUserIds ?? []
-      })
-      const { resolved, ambiguous } = references
-      if (resolved.length > 0 || ambiguous.length > 0) {
-        logger.info(
-          { channelId, resolvedReferences: resolved.length, ambiguousReferences: ambiguous.length },
-          'Resolved message references'
-        )
-      }
       const retrieval = retrieveForTurn({
         guildId,
         speakerId: userId,
         participantIds: [
           ...new Set(
-            [...resolved.map(({ userId: referenceId }) => referenceId), ...channelUsers.keys()].filter(
-              (participantId) => participantId !== userId
-            )
+            [
+              ...references.resolved.map(({ userId: referenceId }) => referenceId),
+              ...appliedJevReferents.map(({ userId: referenceId }) => referenceId),
+              ...channelUsers.keys()
+            ].filter((participantId) => participantId !== userId)
           )
         ].slice(0, config.memory.recentParticipantLimit),
         message: userMessage
       })
       factEntries = retrieval.entries
       retrievalSelected = retrieval.claims.length
-      const namedAliases = resolved.filter(
+      const namedAliases = references.resolved.filter(
         ({ alias, displayName: referenceName, matchedBy }) =>
           (matchedBy === 'nickname' || matchedBy === 'username') && alias.toLowerCase() !== referenceName.toLowerCase()
       )
-      if (namedAliases.length > 0) {
-        whoIsMentionedSection = `\n\n## Who Is Mentioned\n${namedAliases
-          .map(({ alias, displayName: referenceName }) => `- "${alias}" means ${referenceName}`)
-          .join('\n')}`
+      const mentionLines = [
+        ...namedAliases.map(({ alias, displayName: referenceName }) => `- "${alias}" means ${referenceName}`),
+        ...appliedJevReferents.map(({ alias, displayName: referenceName }) => `- "${alias}" means ${referenceName}`)
+      ]
+      if (mentionLines.length > 0) {
+        whoIsMentionedSection = `\n\n## Who Is Mentioned\n${mentionLines.join('\n')}`
       }
     } else {
       factEntries = []

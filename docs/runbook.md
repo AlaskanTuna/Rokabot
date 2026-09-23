@@ -167,6 +167,29 @@ sudo docker exec -it rokabot-roka-1 sh
 
 ---
 
+## Jev Shadow Mode
+
+Jev's three features (`tone`, `referents`, `extraction`) ship in `shadow`: they log what Jev would have decided and
+change nothing. Read those decisions before switching any of them on.
+
+```bash
+# What Jev picked per turn, next to the rule-based tone
+sudo docker logs rokabot-roka-1 2>&1 | grep '"msg":"Jev turn judgment"'
+
+# Which rejected memory batches Jev would have admitted
+sudo docker logs rokabot-roka-1 2>&1 | grep '"msg":"Jev extraction admission"'
+
+# Jev failures and timeouts (the bot falls back to its rules)
+sudo docker logs rokabot-roka-1 2>&1 | grep '"msg":"Jev judgment failed"'
+```
+
+To switch a feature, set `JEV_TONE`, `JEV_REFERENTS` or `JEV_EXTRACTION` to `off`, `shadow` or `on` in
+`~/rokabot/.env` and recreate the container (`sudo docker compose -f ~/rokabot/docker-compose.yml up -d`); a lasting
+change belongs in `config.yml` through a PR. Thresholds are `jev.*MinConfidence` and `jev.extractionAdmitThreshold`
+in `config.yml`. An empty `TYPESAFE_API_KEY` disables Jev entirely.
+
+---
+
 ## GitHub Actions Self-Hosted Runner
 
 The Pi runs a self-hosted GitHub Actions runner that auto-deploys on push to `main`. The workflow (`.github/workflows/deploy.yml`) pulls latest code, rebuilds Docker, and runs a health check.

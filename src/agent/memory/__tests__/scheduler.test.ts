@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => {
     guildId: string
     channelId: string
     payload: Array<{ userId: string; displayName: string; content: string }>
+    admittedBy?: 'jev'
     status: 'pending' | 'processing'
   }
 
@@ -127,6 +128,14 @@ describe('extraction scheduler', () => {
     await vi.advanceTimersByTimeAsync(1_000)
 
     expect(mocks.runExtraction.mock.calls.map(([queued]) => queued.guildId)).toEqual(['A', 'B', 'C', 'A'])
+  })
+
+  it('passes persisted Jev admission through to extraction', async () => {
+    enqueueAndSchedule({ ...job('A'), admittedBy: 'jev' })
+
+    await drain()
+
+    expect(mocks.runExtraction).toHaveBeenCalledWith(expect.objectContaining({ guildId: 'A', admittedBy: 'jev' }))
   })
 
   it('does not let a gapped busy guild block other guilds', async () => {

@@ -501,6 +501,7 @@ Obsidian belongs on the desktop, not the Pi: it is a graphical desktop applicati
 - [Product Requirements](./prd.md)
 - [Technical Reference](./trd.md)
 - [Multimodal Attachments](./research/multimodal.md)
+- [Jev Integration](./research/jev-integration.md)
 - [Deployment and Operations Runbook](./runbook.md)
 
 <p align="right"><a href="#readme-top">↑</a></p>

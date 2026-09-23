@@ -2,18 +2,32 @@ import type { CallbackContext, LlmRequest } from '@google/adk'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { config } from '../../config.js'
 
+const mocks = vi.hoisted(() => ({ judgeTurn: vi.fn() }))
+
+vi.mock('../jev/judgments.js', () => ({ judgeTurn: mocks.judgeTurn }))
+
 // Aliased rather than cast at each site: the config type is readonly, and a `(config.x as ...)` statement
 // opens with a paren, which the formatter will happily weld onto the end of the line above it.
 const mutableMemoryConfig = config.memory as { claimsBackend: boolean }
 const mutableGeminiConfig = config.gemini as { liveMaxRetries: number }
+const mutableJevConfig = config.jev as {
+  tone: 'off' | 'shadow' | 'on'
+  referents: 'off' | 'shadow' | 'on'
+  toneMinConfidence: number
+  referentMinConfidence: number
+}
+mutableJevConfig.tone = 'off'
+mutableJevConfig.referents = 'off'
 import { recordFailureDiagnostic, recordMemoryEvent } from '../../storage/metricsStore.js'
-import { getChannelUsers } from '../../storage/sessionStore.js'
+import { getChannelUsers, loadHistory } from '../../storage/sessionStore.js'
 import { getFacts, refreshFactTimestamps } from '../../storage/userMemory.js'
+import { getUserName } from '../../storage/userNames.js'
 import { GEMINI_IMAGE_TOKENS } from '../../utils/imageProcessor.js'
 import { logger } from '../../utils/logger.js'
 import { estimateTokens } from '../../utils/tokens.js'
 import { measureAttachmentTokens, needsMeasuring } from '../attachmentCost.js'
 import { computeBackoff as computeRetryBackoff } from '../geminiReliability.js'
+import { judgeTurn } from '../jev/judgments.js'
 import { resolveReferences } from '../memory/identityResolver.js'
 import { retrieveForTurn } from '../memory/retriever.js'
 import { getMessages } from '../passiveBuffer.js'
@@ -48,7 +62,8 @@ vi.mock('../../storage/userMemory.js', () => ({
 }))
 
 vi.mock('../../storage/userNames.js', () => ({
-  getAllUserNames: vi.fn(() => new Map())
+  getAllUserNames: vi.fn(() => new Map()),
+  getUserName: vi.fn(() => null)
 }))
 
 vi.mock('../../storage/metricsStore.js', () => ({
@@ -123,6 +138,9 @@ afterEach(async () => {
   await destroySession('roka-prompt-safety-channel')
   resetForTest()
   mutableMemoryConfig.claimsBackend = false
+  mutableJevConfig.tone = 'off'
+  mutableJevConfig.referents = 'off'
+  vi.mocked(judgeTurn).mockReset()
   vi.restoreAllMocks()
 })
 
@@ -1999,5 +2017,290 @@ describe('attachment bytes are released after the turn', () => {
     await runTurn('roka-strip-fail', true)
 
     expect(strip).toHaveBeenCalledWith('roka-strip-fail')
+  })
+})
+
+describe('Jev turn judgments', () => {
+  it('runs shadow tone judgment without waiting or changing the prompt or result tone', async () => {
+    mutableJevConfig.tone = 'shadow'
+    vi.mocked(judgeTurn).mockImplementation(() => new Promise(() => {}))
+    let capturedPrompt = ''
+    __setTestRunTurnFactory((systemPrompt) => {
+      capturedPrompt = systemPrompt
+      return async () => ({ text: 'I can help~', hasText: true, hasFunctionCall: false })
+    })
+
+    const result = await generateResponse({
+      channelId: 'roka-prompt-safety-channel',
+      guildId: 'prompt-safety-guild',
+      userMessage: 'Can you help me? What should I do?',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id'
+    })
+
+    expect(vi.mocked(judgeTurn)).toHaveBeenCalledOnce()
+    expect(vi.mocked(judgeTurn).mock.calls[0][0]).toMatchObject({
+      speakerName: 'Mio',
+      message: 'Can you help me? What should I do?',
+      includeTone: true,
+      ambiguous: []
+    })
+    expect(result.tone).toBe('confident')
+    expect(capturedPrompt.startsWith(assembleSystemPrompt({ tone: 'confident', hour: 12, displayName: 'Mio' }))).toBe(
+      true
+    )
+  })
+
+  it('applies an on-mode tone when confidence clears its threshold', async () => {
+    mutableJevConfig.tone = 'on'
+    mutableJevConfig.toneMinConfidence = 0.7
+    vi.mocked(judgeTurn).mockResolvedValue({
+      tone: { tone: 'sleepy', confidence: 0.8 },
+      referents: [],
+      latencyMs: 3,
+      inputTokens: 12
+    })
+    const info = vi.spyOn(logger, 'info').mockImplementation(() => undefined as never)
+    let capturedPrompt = ''
+    __setTestRunTurnFactory((systemPrompt) => {
+      capturedPrompt = systemPrompt
+      return async () => ({ text: 'All right~', hasText: true, hasFunctionCall: false })
+    })
+
+    const result = await generateResponse({
+      channelId: 'roka-prompt-safety-channel',
+      guildId: 'prompt-safety-guild',
+      userMessage: 'Can you help me? What should I do?',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id'
+    })
+
+    expect(result.tone).toBe('sleepy')
+    expect(capturedPrompt.startsWith(assembleSystemPrompt({ tone: 'sleepy', hour: 12, displayName: 'Mio' }))).toBe(true)
+    expect(info.mock.calls.filter(([, message]) => message === 'Jev turn judgment')).toHaveLength(1)
+    expect(info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channelId: 'roka-prompt-safety-channel',
+        toneMode: 'on',
+        referentsMode: 'off',
+        ruleTone: 'confident',
+        jevTone: 'sleepy',
+        toneConfidence: 0.8,
+        toneApplied: true,
+        referents: [],
+        latencyMs: 3,
+        inputTokens: 12
+      }),
+      'Jev turn judgment'
+    )
+  })
+
+  it('keeps the rule tone when an on-mode tone is below threshold', async () => {
+    mutableJevConfig.tone = 'on'
+    mutableJevConfig.toneMinConfidence = 0.9
+    vi.mocked(judgeTurn).mockResolvedValue({
+      tone: { tone: 'sleepy', confidence: 0.8 },
+      referents: [],
+      latencyMs: 3,
+      inputTokens: 12
+    })
+    __setTestRunTurnFactory(() => async () => ({ text: 'I can help~', hasText: true, hasFunctionCall: false }))
+
+    const result = await generateResponse({
+      channelId: 'roka-prompt-safety-channel',
+      guildId: 'prompt-safety-guild',
+      userMessage: 'Can you help me? What should I do?',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id'
+    })
+
+    expect(result.tone).toBe('confident')
+  })
+
+  it('adds a confident Jev referent after rule-resolved IDs and names it in the prompt', async () => {
+    mutableMemoryConfig.claimsBackend = true
+    mutableJevConfig.referents = 'on'
+    mutableJevConfig.referentMinConfidence = 0.8
+    vi.mocked(resolveReferences).mockReturnValueOnce({
+      resolved: [{ userId: 'resolved-id', alias: 'Mimi', displayName: 'Mio', matchedBy: 'nickname' }],
+      ambiguous: [{ alias: 'Rin', candidateIds: ['rin-1', 'rin-2'] }]
+    })
+    vi.mocked(getUserName).mockImplementation((userId) =>
+      userId === 'rin-1' || userId === 'rin-2' ? { userId, username: userId, displayName: `Name ${userId}` } : null
+    )
+    vi.mocked(retrieveForTurn).mockReturnValueOnce({
+      entries: [],
+      claims: [],
+      trace: { candidates: [], selected: [], tokensEst: 0 }
+    })
+    vi.mocked(judgeTurn).mockResolvedValue({
+      tone: null,
+      referents: [{ alias: 'Rin', userId: 'rin-2', confidence: 0.95 }],
+      latencyMs: 4,
+      inputTokens: 15
+    })
+    let capturedPrompt = ''
+    __setTestRunTurnFactory((systemPrompt) => {
+      capturedPrompt = systemPrompt
+      return async () => ({ text: 'That sounds like Rin~', hasText: true, hasFunctionCall: false })
+    })
+
+    await generateResponse({
+      channelId: 'roka-prompt-safety-channel',
+      guildId: 'prompt-safety-guild',
+      userMessage: 'What does Rin like?',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id'
+    })
+
+    expect(vi.mocked(judgeTurn).mock.calls[0][0].ambiguous).toEqual([
+      {
+        alias: 'Rin',
+        candidates: [
+          { userId: 'rin-1', displayName: 'Name rin-1' },
+          { userId: 'rin-2', displayName: 'Name rin-2' }
+        ]
+      }
+    ])
+    expect(retrieveForTurn).toHaveBeenCalledWith({
+      guildId: 'prompt-safety-guild',
+      speakerId: 'mio-id',
+      participantIds: ['resolved-id', 'rin-2'],
+      message: 'What does Rin like?'
+    })
+    expect(capturedPrompt).toContain('- "Mimi" means Mio\n- "Rin" means Name rin-2')
+  })
+
+  it('leaves retrieval participants and the prompt unchanged for shadow referents', async () => {
+    mutableMemoryConfig.claimsBackend = true
+    mutableJevConfig.referents = 'shadow'
+    vi.mocked(resolveReferences).mockReturnValueOnce({
+      resolved: [],
+      ambiguous: [{ alias: 'Rin', candidateIds: ['rin-1', 'rin-2'] }]
+    })
+    vi.mocked(retrieveForTurn).mockReturnValueOnce({
+      entries: [],
+      claims: [],
+      trace: { candidates: [], selected: [], tokensEst: 0 }
+    })
+    vi.mocked(judgeTurn).mockResolvedValue({
+      tone: null,
+      referents: [{ alias: 'Rin', userId: 'rin-2', confidence: 0.99 }],
+      latencyMs: 4,
+      inputTokens: 15
+    })
+    const info = vi.spyOn(logger, 'info').mockImplementation(() => undefined as never)
+    let capturedPrompt = ''
+    __setTestRunTurnFactory((systemPrompt) => {
+      capturedPrompt = systemPrompt
+      return async () => ({ text: 'Maybe~', hasText: true, hasFunctionCall: false })
+    })
+
+    await generateResponse({
+      channelId: 'roka-prompt-safety-channel',
+      guildId: 'prompt-safety-guild',
+      userMessage: 'What does Rin like?',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id'
+    })
+
+    expect(retrieveForTurn).toHaveBeenCalledWith({
+      guildId: 'prompt-safety-guild',
+      speakerId: 'mio-id',
+      participantIds: [],
+      message: 'What does Rin like?'
+    })
+    expect(capturedPrompt).not.toContain('## Who Is Mentioned')
+    expect(info.mock.calls.filter(([, message]) => message === 'Jev turn judgment')).toHaveLength(1)
+    const judgmentLog = info.mock.calls.find(([, message]) => message === 'Jev turn judgment')?.[0] as {
+      referents: unknown[]
+    }
+    expect(judgmentLog.referents).toEqual([{ candidates: 2, pickedUserId: 'rin-2', confidence: 0.99, applied: false }])
+    expect(JSON.stringify(judgmentLog)).not.toContain('Rin')
+  })
+
+  it('does not ask Jev when both turn features are off', async () => {
+    __setTestRunTurnFactory(() => async () => ({ text: 'Hello~', hasText: true, hasFunctionCall: false }))
+
+    await generateResponse({
+      channelId: 'roka-prompt-safety-channel',
+      guildId: 'prompt-safety-guild',
+      userMessage: 'Hello.',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id'
+    })
+
+    expect(judgeTurn).not.toHaveBeenCalled()
+  })
+
+  it('keeps rule behavior when an on-mode turn judgment returns null', async () => {
+    mutableJevConfig.tone = 'on'
+    vi.mocked(judgeTurn).mockResolvedValue(null)
+    __setTestRunTurnFactory(() => async () => ({ text: 'I can help~', hasText: true, hasFunctionCall: false }))
+
+    const result = await generateResponse({
+      channelId: 'roka-prompt-safety-channel',
+      guildId: 'prompt-safety-guild',
+      userMessage: 'Can you help me? What should I do?',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id'
+    })
+
+    expect(result.tone).toBe('confident')
+  })
+
+  it('formats the last session lines with prior speaker names and Roka for assistant turns', async () => {
+    mutableJevConfig.tone = 'on'
+    vi.mocked(loadHistory).mockReturnValueOnce([
+      { role: 'user', displayName: 'Earlier', content: 'I like tea', timestamp: 1 },
+      { role: 'assistant', displayName: 'Roka', content: 'Tea is lovely~', timestamp: 2 }
+    ])
+    vi.mocked(judgeTurn).mockResolvedValue(null)
+    __setTestRunTurnFactory(() => async () => ({ text: 'Hello~', hasText: true, hasFunctionCall: false }))
+
+    await generateResponse({
+      channelId: 'roka-prompt-safety-channel',
+      guildId: 'prompt-safety-guild',
+      userMessage: 'Hello.',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id'
+    })
+
+    expect(vi.mocked(judgeTurn).mock.calls[0][0].recentLines).toEqual([
+      '[Earlier]: I like tea',
+      '[Roka]: Tea is lovely~'
+    ])
+  })
+
+  it('continues the turn when resolving references throws', async () => {
+    mutableMemoryConfig.claimsBackend = true
+    vi.mocked(resolveReferences).mockImplementationOnce(() => {
+      throw new Error('identity store unavailable')
+    })
+    vi.mocked(retrieveForTurn).mockReturnValueOnce({
+      entries: [],
+      claims: [],
+      trace: { candidates: [], selected: [], tokensEst: 0 }
+    })
+    __setTestRunTurnFactory(() => async () => ({ text: 'Hello~', hasText: true, hasFunctionCall: false }))
+
+    await expect(
+      generateResponse({
+        channelId: 'roka-prompt-safety-channel',
+        guildId: 'prompt-safety-guild',
+        userMessage: 'Hello.',
+        displayName: 'Mio',
+        username: 'mio',
+        userId: 'mio-id'
+      })
+    ).resolves.toMatchObject({ text: 'Hello~' })
   })
 })

@@ -19,12 +19,14 @@ export type ExtractionQueueJob = Readonly<{
   status: 'pending' | 'processing'
   attempts: number
   enqueuedAt: number
+  admittedBy?: 'jev'
 }>
 
 export type EnqueueExtractionInput = Readonly<{
   guildId: string
   channelId: string
   payload: ExtractionPayload
+  admittedBy?: 'jev'
 }>
 
 type ExtractionQueueRow = {
@@ -35,6 +37,7 @@ type ExtractionQueueRow = {
   status: 'pending' | 'processing'
   attempts: number
   enqueued_at: number
+  admitted_by: 'jev' | null
 }
 
 function mapJob(row: ExtractionQueueRow): ExtractionQueueJob {
@@ -45,7 +48,8 @@ function mapJob(row: ExtractionQueueRow): ExtractionQueueJob {
     payload: JSON.parse(row.payload) as ExtractionPayload,
     status: row.status,
     attempts: row.attempts,
-    enqueuedAt: row.enqueued_at
+    enqueuedAt: row.enqueued_at,
+    ...(row.admitted_by === 'jev' ? { admittedBy: 'jev' as const } : {})
   }
 }
 
@@ -55,9 +59,9 @@ export function enqueueExtraction(input: EnqueueExtractionInput): ExtractionQueu
     const enqueuedAt = Date.now()
     const result = getDb()
       .prepare(
-        "INSERT INTO extraction_queue (guild_id, channel_id, payload, status, enqueued_at) VALUES (?, ?, ?, 'pending', ?)"
+        "INSERT INTO extraction_queue (guild_id, channel_id, payload, status, enqueued_at, admitted_by) VALUES (?, ?, ?, 'pending', ?, ?)"
       )
-      .run(input.guildId, input.channelId, JSON.stringify(input.payload), enqueuedAt)
+      .run(input.guildId, input.channelId, JSON.stringify(input.payload), enqueuedAt, input.admittedBy ?? null)
 
     const pending = getDb()
       .prepare("SELECT COUNT(*) AS count FROM extraction_queue WHERE guild_id = ? AND status = 'pending'")
@@ -85,7 +89,8 @@ export function enqueueExtraction(input: EnqueueExtractionInput): ExtractionQueu
       payload: input.payload,
       status: 'pending' as const,
       attempts: 0,
-      enqueuedAt
+      enqueuedAt,
+      ...(input.admittedBy ? { admittedBy: input.admittedBy } : {})
     }
   })()
 }

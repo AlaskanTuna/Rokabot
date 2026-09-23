@@ -20,6 +20,7 @@ export type ExtractionJob = Readonly<{
   guildId: string
   channelId: string
   messages: readonly ExtractionMessage[]
+  admittedBy?: 'jev'
 }>
 
 type ExtractionOp = Readonly<{
@@ -200,7 +201,9 @@ export async function runExtraction(job: ExtractionJob): Promise<void> {
     job.messages.map((message) => ({ ...message, username: '', timestamp: 0 })),
     knownClaimKeys(job)
   )
-  if (!gate.extract) {
+  const jevAdmissionCanOverride =
+    job.admittedBy === 'jev' && (gate.reason === 'known claim keywords only' || gate.reason === 'no personal signal')
+  if (!gate.extract && !jevAdmissionCanOverride) {
     recordExtraction(job, startedAt, 0, 0)
     return
   }

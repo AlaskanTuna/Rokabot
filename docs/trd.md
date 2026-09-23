@@ -288,6 +288,37 @@ requests.
 - An ADK `globalInstruction` spike.
 - Two-way Obsidian vault synchronization; the current export is one-way and read-only.
 
+## Jev Judgments
+
+Jev (TypeSafe's typed decision model, `@typesafe-ai/sdk`) answers pick-from-a-list questions; it never writes text,
+so Gemini still generates every reply, tool call and fact. The client (`src/agent/jev/client.ts`) exists only when
+`TYPESAFE_API_KEY` is set, is pinned to `jev.model` (`jev-1.13.0`), and makes one attempt with no retries. Every
+judgment returns nothing on failure or timeout, and the caller then keeps the rule-based decision.
+
+Each feature has a mode in `config.yml` (`jev.tone`, `jev.referents`, `jev.extraction`), overridable by `JEV_TONE`,
+`JEV_REFERENTS` and `JEV_EXTRACTION`:
+
+| Mode     | Behaviour                                                                                    |
+| -------- | -------------------------------------------------------------------------------------------- |
+| `off`    | Jev is not asked                                                                             |
+| `shadow` | Jev is asked and its answer is logged beside the rule decision; nothing changes or waits     |
+| `on`     | Jev's answer is applied when its confidence clears the feature's threshold, else rules stand |
+
+- **Turn Judgment:** at most one `judgeTurn` request per turn, carrying a tone `choice` over the 12 `ToneKey`s and a
+  referent `choice` for each name `resolveReferences` found ambiguous (at most 3 names, 8 candidates each, plus
+  `none`/`unclear`). It is awaited, bounded by `jev.timeoutMs` (1200 ms), only when a feature it carries is `on`. An
+  applied tone needs `jev.toneMinConfidence`; an applied referent needs `jev.referentMinConfidence` and joins the
+  retrieval participants right after the resolver's members, with a `## Who Is Mentioned` line. The safety rung-3
+  `sincere` prompt still overrides any tone. Logged as `Jev turn judgment`.
+- **Memory Admission:** when the candidate gate refuses a batch as `known claim keywords only` or
+  `no personal signal`, `judgeExtraction` asks a `noul` about the newest human message (bounded by
+  `jev.backgroundTimeoutMs`). In `on` mode a probability at or above `jev.extractionAdmitThreshold` queues the batch
+  with `extraction_queue.admitted_by = 'jev'`, which lets it past the extractor's re-gate. `sensitive content` and
+  `trivial batch` refusals are never overridden, and Jev never rejects a batch the rules admit. Logged as
+  `Jev extraction admission`.
+
+The derivation, measured latency and rollout plan are in `docs/research/jev-integration.md`.
+
 ## API Contracts
 
 ### Discord Events (Inbound)

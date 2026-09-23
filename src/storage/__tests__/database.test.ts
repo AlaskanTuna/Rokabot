@@ -18,6 +18,51 @@ afterEach(() => {
 })
 
 describe('runMigrations', () => {
+  it('adds admitted_by to an existing extraction queue', () => {
+    testDb = new Database(':memory:')
+    testDb.exec(`
+      CREATE TABLE session_history (
+        channel_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        display_name TEXT NOT NULL,
+        content TEXT NOT NULL,
+        timestamp INTEGER NOT NULL,
+        user_id TEXT DEFAULT NULL,
+        username TEXT DEFAULT NULL
+      );
+      CREATE TABLE user_memory (
+        guild_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        fact_key TEXT NOT NULL,
+        fact_value TEXT NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (guild_id, user_id, fact_key)
+      );
+      CREATE TABLE gacha_daily (
+        user_id TEXT NOT NULL,
+        last_draw_date TEXT NOT NULL,
+        streak INTEGER NOT NULL DEFAULT 0,
+        last_hatch_at INTEGER,
+        PRIMARY KEY (user_id)
+      );
+      CREATE TABLE extraction_queue (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        guild_id TEXT NOT NULL,
+        channel_id TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        status TEXT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        enqueued_at INTEGER NOT NULL
+      );
+    `)
+
+    const runMigrations = (database as unknown as DatabaseModule).runMigrations
+    runMigrations?.(testDb)
+
+    const columns = testDb.prepare("PRAGMA table_info('extraction_queue')").all() as Array<{ name: string }>
+    expect(columns.map((column) => column.name)).toContain('admitted_by')
+  })
+
   it('adds daily draw columns to legacy gacha_daily tables without losing existing rows', () => {
     testDb = new Database(':memory:')
     testDb.exec(`
