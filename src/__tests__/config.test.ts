@@ -66,6 +66,8 @@ describe('config module', () => {
     vi.stubEnv('GEMINI_RETRY_BACKOFF_CAP_MS', '')
     vi.stubEnv('GEMINI_TURN_DEADLINE_MS', '')
     vi.stubEnv('GEMINI_SAFETY_THRESHOLD', '')
+    vi.stubEnv('MODELSCOPE_API_KEY', '')
+    vi.stubEnv('FALLBACK_MODEL', '')
     vi.stubEnv('TYPESAFE_API_KEY', '')
     vi.stubEnv('JEV_MODEL', '')
     vi.stubEnv('JEV_TONE', '')
@@ -115,6 +117,32 @@ describe('config module', () => {
     await expect(() => import('../config.js')).rejects.toThrow('Missing required environment variable: GEMINI_API_KEY')
   })
 
+  it('rejects a zero fallback timeout', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    withYamlOverride({ fallback: { timeoutMs: 0 } })
+
+    await expect(() => import('../config.js')).rejects.toThrow('Config value fallback.timeoutMs must be >= 1, got: 0')
+  })
+
+  it('accepts a zero fallback sticky duration', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    withYamlOverride({ fallback: { stickyMs: 0 } })
+
+    const { config } = await import('../config.js')
+
+    expect(config.fallback.stickyMs).toBe(0)
+  })
+
+  it('rejects a negative fallback sticky duration', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    withYamlOverride({ fallback: { stickyMs: -1 } })
+
+    await expect(() => import('../config.js')).rejects.toThrow('Config value fallback.stickyMs must be >= 0, got: -1')
+  })
+
   it('loads defaults from config.yml when no env overrides set', async () => {
     setRequiredEnvVars()
     clearTunableEnvVars()
@@ -135,6 +163,11 @@ describe('config module', () => {
     expect(config.gemini.retryBackoffBaseMs).toBe(1000)
     expect(config.gemini.retryBackoffCapMs).toBe(12_000)
     expect(config.gemini.turnDeadlineMs).toBe(63_000)
+    expect(config.fallback.apiKey).toBeUndefined()
+    expect(config.fallback.model).toBe('Qwen/Qwen3.5-122B-A10B')
+    expect(config.fallback.baseUrl).toBe('https://api-inference.modelscope.ai/v1')
+    expect(config.fallback.timeoutMs).toBe(15_000)
+    expect(config.fallback.stickyMs).toBe(300_000)
     expect(config.logging.level).toBe('info')
     expect(config.rateLimit.rpm).toBe(15)
     expect(config.rateLimit.rpd).toBe(500)
@@ -216,6 +249,8 @@ describe('config module', () => {
     vi.stubEnv('GEMINI_RETRY_BACKOFF_CAP_MS', '9000')
     vi.stubEnv('GEMINI_TURN_DEADLINE_MS', '90000')
     vi.stubEnv('GEMINI_SAFETY_THRESHOLD', 'BLOCK_ONLY_HIGH')
+    vi.stubEnv('MODELSCOPE_API_KEY', 'modelscope-test-key')
+    vi.stubEnv('FALLBACK_MODEL', 'Qwen/custom-fallback')
     vi.stubEnv('JEV_MODEL', 'jev-override')
     vi.stubEnv('JEV_TONE', 'on')
     vi.stubEnv('TYPESAFE_API_KEY', 'typesafe-test-key')
@@ -248,6 +283,8 @@ describe('config module', () => {
     expect(config.gemini.timeout).toBe(30_000)
     expect(config.gemini.maxRetries).toBe(3)
     expect(config.gemini.liveMaxRetries).toBe(4)
+    expect(config.fallback.apiKey).toBe('modelscope-test-key')
+    expect(config.fallback.model).toBe('Qwen/custom-fallback')
     expect(config.gemini.retryRpmFloor).toBe(5)
     expect(config.gemini.extractionRpmFloor).toBe(6)
     expect(config.gemini.extractionMaxRetries).toBe(2)
@@ -668,6 +705,8 @@ describe('config module', () => {
 
     const EXPECTED_BOUNDS: ReadonlyArray<{ path: string; min: number; max?: number }> = [
       { path: 'gemini.timeout', min: 1 },
+      { path: 'fallback.timeoutMs', min: 1 },
+      { path: 'fallback.stickyMs', min: 0 },
       // Written out, not derived, and deliberately unlike its sibling test above. That one asserts the
       // *rule* — the floor tracks a full turn of images — and derives both sides, which is right for a rule.
       // This list is the drift guard, and its job is to make a *change* impossible to land without someone

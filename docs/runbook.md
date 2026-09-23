@@ -167,6 +167,25 @@ sudo docker exec -it rokabot-roka-1 sh
 
 ---
 
+## Fallback Model
+
+When Gemini is overloaded, timing out or out of daily quota, Roka answers with the ModelScope fallback
+(`fallback.model` in `config.yml`, key `MODELSCOPE_API_KEY` in `.env`; an empty key disables it).
+
+```bash
+# Turns Gemini could not serve, and the fallback answers that followed
+sudo docker logs rokabot-roka-1 2>&1 | grep -E '"msg":"(Gemini unavailable, answering this turn with the fallback model|Fallback model answered)"'
+
+# Fallback failures show up as ordinary failed attempts naming the fallback model
+sudo docker logs rokabot-roka-1 2>&1 | grep '"msg":"Live turn attempt failed"' | grep Qwen
+```
+
+After a fallback answer, turns go straight to the fallback for `fallback.stickyMs` (5 minutes) before Gemini is
+tried again. ModelScope's daily Magicube allowance is spent per call (1 Magicube each for this model); usage is at
+modelscope.ai/magicube/usage.
+
+---
+
 ## Jev Shadow Mode
 
 Jev's three features (`tone`, `referents`, `extraction`) ship in `shadow`: they log what Jev would have decided and

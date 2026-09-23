@@ -20,7 +20,9 @@ import { getLocalHour } from '../utils/timezone.js'
 import { estimateTokens } from '../utils/tokens.js'
 import { measureAttachmentTokens, needsMeasuring } from './attachmentCost.js'
 import { geminiMimeType, sizeLimitFor } from './attachmentLimits.js'
+import { createRokaModel, modelRouteForRequest } from './fallbackModel.js'
 import { classifyGeminiFailure, computeBackoff, extractGeminiStatus } from './geminiReliability.js'
+import type { FailureKind } from './geminiReliability.js'
 import { judgeTurn } from './jev/judgments.js'
 import { isobmffAllowsPrefix, prefixPolicyFor } from './mediaPrefix.js'
 import { resolveReferences } from './memory/identityResolver.js'
@@ -108,6 +110,18 @@ interface ModelVerdict {
 }
 const modelVerdictForRequest = new AsyncLocalStorage<ModelVerdict>()
 const activeAbortControllers = new Set<AbortController>()
+const rokaModel = createRokaModel()
+let fallbackUntilMs = 0
+
+export function __resetModelFallbackForTest(): void {
+  fallbackUntilMs = 0
+}
+
+function modelNameForCurrentRequest(): string {
+  return modelRouteForRequest.getStore()?.useFallback && rokaModel.hasFallback
+    ? (rokaModel.fallbackModelName ?? config.gemini.model)
+    : config.gemini.model
+}
 
 /**
  * Ceiling on a single attachment download, covering the body as well as the headers. `attachment_url` points
@@ -184,6 +198,10 @@ export interface RunTurnWithReliabilityOptions {
   requestTimeoutMs?: number
   turnDeadlineMs?: number
   now?: () => number
+  /** Moves the rest of the turn to the other model after an outage-shaped failure.
+   * Returns that model's per-request timeout, or undefined when there is nothing to switch to.
+   */
+  switchModel?: (kind: FailureKind) => number | undefined
   genericFallback: string
   safetyDeflection: string
   recitationDeflection: string
@@ -248,6 +266,7 @@ export async function runTurnWithReliability(options: RunTurnWithReliabilityOpti
   const sleep = options.sleep ?? sleepUntil
   const now = options.now ?? (() => performance.now())
   const startedAtMs = now()
+  let requestTimeoutMs = options.requestTimeoutMs
   let retryLatencyMs = 0
   let lastKind: ReliabilityResult['kind'] = 'network'
   let lastMarker: string | undefined
@@ -255,19 +274,21 @@ export async function runTurnWithReliability(options: RunTurnWithReliabilityOpti
   // Safety de-escalation rungs are granted on top of the ordinary retry budget: each one strictly
   // removes carried context, so it is cheaper and more likely to pass than the attempt before it.
   let extraSafetyAttempts = 0
-  for (let attempt = 0; attempt <= options.maxRetries + extraSafetyAttempts; attempt++) {
+  let extraModelAttempts = 0
+  let switchModelConsulted = false
+  for (let attempt = 0; attempt <= options.maxRetries + extraSafetyAttempts + extraModelAttempts; attempt++) {
     if (shouldStop()) return fallbackResult(lastKind, 'preserve', attempt, retryLatencyMs, options, lastMarker)
 
     if (attempt > 0 && options.turnDeadlineMs !== undefined) {
       const elapsedMs = now() - startedAtMs
       const remainingMs = options.turnDeadlineMs - elapsedMs
-      if (remainingMs < (options.requestTimeoutMs ?? 0)) {
+      if (remainingMs < (requestTimeoutMs ?? 0)) {
         logger.warn(
           {
             attempt,
             elapsedMs,
             deadlineMs: options.turnDeadlineMs,
-            requestTimeoutMs: options.requestTimeoutMs,
+            requestTimeoutMs,
             kind: lastKind
           },
           'Turn deadline exhausted before next attempt'
@@ -281,11 +302,11 @@ export async function runTurnWithReliability(options: RunTurnWithReliabilityOpti
     // Distinguishes our own per-attempt timeout from a shutdown abort: a timed-out attempt is the most
     // transient failure there is and must stay eligible for the retry budget, while shutdown must not.
     let attemptTimedOut = false
-    const timeoutId = options.requestTimeoutMs
+    const timeoutId = requestTimeoutMs
       ? setTimeout(() => {
           attemptTimedOut = true
           abortController.abort()
-        }, options.requestTimeoutMs)
+        }, requestTimeoutMs)
       : undefined
 
     let outcome: TurnOutcome
@@ -309,7 +330,12 @@ export async function runTurnWithReliability(options: RunTurnWithReliabilityOpti
     if (shouldStop() || (abortController.signal.aborted && !attemptTimedOut))
       return fallbackResult(lastKind, 'preserve', attempt + 1, retryLatencyMs, options, lastMarker)
 
-    const failure = classifyGeminiFailure(outcome)
+    // runTurn stops reading events once our timer aborts it, so an error Gemini delivers a moment later (a 504, an
+    // AbortError) never reaches the outcome and it reads as an empty answer. Outage-shaped either way.
+    const failure =
+      attemptTimedOut && !outcome.text
+        ? classifyGeminiFailure({ errorMessage: 'Attempt timeout' })
+        : classifyGeminiFailure(outcome)
     lastKind = failure.kind
     if (failure.kind !== 'ok') {
       lastMarker = markerFrom(outcome)
@@ -318,7 +344,7 @@ export async function runTurnWithReliability(options: RunTurnWithReliabilityOpti
           attempt,
           kind: failure.kind,
           marker: lastMarker,
-          model: config.gemini.model
+          model: modelNameForCurrentRequest()
         },
         'Live turn attempt failed'
       )
@@ -344,13 +370,13 @@ export async function runTurnWithReliability(options: RunTurnWithReliabilityOpti
       if (options.turnDeadlineMs !== undefined) {
         const elapsedMs = now() - startedAtMs
         const remainingMs = options.turnDeadlineMs - elapsedMs
-        if (remainingMs < (options.requestTimeoutMs ?? 0)) {
+        if (remainingMs < (requestTimeoutMs ?? 0)) {
           logger.warn(
             {
               attempt,
               elapsedMs,
               deadlineMs: options.turnDeadlineMs,
-              requestTimeoutMs: options.requestTimeoutMs,
+              requestTimeoutMs,
               kind: failure.kind
             },
             'Turn deadline exhausted before safety de-escalation'
@@ -365,6 +391,22 @@ export async function runTurnWithReliability(options: RunTurnWithReliabilityOpti
       if (rung) {
         extraSafetyAttempts++
         logger.warn({ attempt, rung, kind: failure.kind }, 'Safety block — de-escalating carried context')
+        continue
+      }
+    }
+
+    if (
+      options.switchModel &&
+      !switchModelConsulted &&
+      (failure.kind === 'transient_http' || failure.kind === 'network' || failure.kind === 'quota_exhausted') &&
+      !shouldStop()
+    ) {
+      switchModelConsulted = true
+      const nextTimeoutMs = options.switchModel(failure.kind)
+      if (nextTimeoutMs !== undefined) {
+        requestTimeoutMs = nextTimeoutMs
+        extraModelAttempts++
+        logger.warn({ attempt, kind: failure.kind }, 'Switching turn to the other model')
         continue
       }
     }
@@ -412,14 +454,14 @@ export async function runTurnWithReliability(options: RunTurnWithReliabilityOpti
     if (options.turnDeadlineMs !== undefined) {
       const elapsedMs = now() - startedAtMs
       const remainingMs = options.turnDeadlineMs - elapsedMs
-      if (remainingMs < delayMs + (options.requestTimeoutMs ?? 0)) {
+      if (remainingMs < delayMs + (requestTimeoutMs ?? 0)) {
         logger.warn(
           {
             attempt,
             elapsedMs,
             delayMs,
             deadlineMs: options.turnDeadlineMs,
-            requestTimeoutMs: options.requestTimeoutMs,
+            requestTimeoutMs,
             kind: failure.kind
           },
           'Turn deadline would be exceeded by planned retry backoff'
@@ -555,7 +597,7 @@ export const sessionService = new WindowedSessionService(config.session.windowSi
 // Exported so tests can assert the agent-level config and beforeModelCallback seam directly
 export const rokaAgent = new LlmAgent({
   name: 'roka',
-  model: config.gemini.model,
+  model: rokaModel,
   instruction: '',
   tools: [...rokaTools],
   disallowTransferToParent: true,
@@ -620,7 +662,7 @@ export const rokaAgent = new LlmAgent({
     if (!hasText && !hasFunctionCall) {
       logger.warn(
         {
-          model: config.gemini.model,
+          model: modelNameForCurrentRequest(),
           partKeys: response.content.parts.map((p) => Object.keys(p)),
           finishReason: response.finishReason,
           usage: response.usageMetadata
@@ -649,7 +691,7 @@ class ErrorRecoveryPlugin extends BasePlugin {
   }): Promise<LlmResponse | undefined> {
     logger.error(
       {
-        model: config.gemini.model,
+        model: modelNameForCurrentRequest(),
         errorName: error.name,
         errorMessage: error.message,
         stack: error.stack?.split('\n').slice(0, 5).join('\n')
@@ -1310,114 +1352,147 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   const steering: { prompt?: string } = {}
   const verdict: ModelVerdict = {}
   const modelCalls = { count: 0 }
-  const reliability = await modelCallsForRequest.run(modelCalls, () =>
-    toolCallsForRequest.run(usedToolNames, () =>
-      modelVerdictForRequest.run(verdict, () =>
-        steeringForRequest.run(steering, () =>
-          runTurnWithReliability({
-            maxRetries: config.gemini.liveMaxRetries,
-            retryBackoffCapMs: config.gemini.retryBackoffCapMs,
-            requestTimeoutMs: config.gemini.timeout,
-            turnDeadlineMs: config.gemini.turnDeadlineMs,
-            tryConsumeRetry: () =>
-              getSharedRateLimiter(config.rateLimit).tryConsumeAboveFloor(config.gemini.retryRpmFloor),
-            // retryBackoffCapMs doubles as computeBackoff's per-attempt maxMs: a single backoff delay
-            // should never be advertised as larger than the total budget it is measured against — the
-            // remaining-budget clamp in runTurnWithReliability's retry loop would cut an oversized delay down
-            // to size anyway, so sharing the value keeps the pre-jitter range honest with the ceiling.
-            computeBackoff: (attempt) =>
-              computeBackoff(attempt, config.gemini.retryBackoffBaseMs, { maxMs: config.gemini.retryBackoffCapMs }),
-            genericFallback: getRandomFallback(),
-            safetyDeflection: SAFETY_DEFLECTION,
-            recitationDeflection: RECITATION_DEFLECTION,
-            terminalDeflection: TERMINAL_DEFLECTION,
-            resetSession: async () => {
-              await destroySession(channelId)
-              await ensureSession(channelId)
-              resetIdleTimer(channelId)
-              sessionWasReset = true
-            },
-            safetyLadderLength: SAFETY_LADDER.length,
-            escalateSafety: async () => {
-              if (safetyRung >= SAFETY_LADDER.length) return undefined
-              safetyRung++
+  const route = { useFallback: rokaModel.hasFallback && Date.now() < fallbackUntilMs }
+  let movedAwayFromGemini = false
+  const reliability = await modelRouteForRequest.run(route, () =>
+    modelCallsForRequest.run(modelCalls, () =>
+      toolCallsForRequest.run(usedToolNames, () =>
+        modelVerdictForRequest.run(verdict, () =>
+          steeringForRequest.run(steering, () =>
+            runTurnWithReliability({
+              maxRetries: config.gemini.liveMaxRetries,
+              retryBackoffCapMs: config.gemini.retryBackoffCapMs,
+              requestTimeoutMs: route.useFallback ? config.fallback.timeoutMs : config.gemini.timeout,
+              turnDeadlineMs: config.gemini.turnDeadlineMs,
+              switchModel: (kind) => {
+                if (!rokaModel.hasFallback) return undefined
 
-              if (safetyRung === 3) {
-                // Carried history is the only remaining suspect: rebuild the window empty and drop images.
-                dropImages = true
+                route.useFallback = !route.useFallback
+                if (route.useFallback) {
+                  movedAwayFromGemini = true
+                  logger.warn(
+                    { channelId, kind, model: rokaModel.fallbackModelName },
+                    'Gemini unavailable, answering this turn with the fallback model'
+                  )
+                  return config.fallback.timeoutMs
+                }
+
+                return config.gemini.timeout
+              },
+              tryConsumeRetry: () =>
+                getSharedRateLimiter(config.rateLimit).tryConsumeAboveFloor(config.gemini.retryRpmFloor),
+              // retryBackoffCapMs doubles as computeBackoff's per-attempt maxMs: a single backoff delay
+              // should never be advertised as larger than the total budget it is measured against — the
+              // remaining-budget clamp in runTurnWithReliability's retry loop would cut an oversized delay down
+              // to size anyway, so sharing the value keeps the pre-jitter range honest with the ceiling.
+              computeBackoff: (attempt) =>
+                computeBackoff(attempt, config.gemini.retryBackoffBaseMs, { maxMs: config.gemini.retryBackoffCapMs }),
+              genericFallback: getRandomFallback(),
+              safetyDeflection: SAFETY_DEFLECTION,
+              recitationDeflection: RECITATION_DEFLECTION,
+              terminalDeflection: TERMINAL_DEFLECTION,
+              resetSession: async () => {
                 await destroySession(channelId)
-                rehydrationSuppressed.add(channelId)
                 await ensureSession(channelId)
                 resetIdleTimer(channelId)
                 sessionWasReset = true
-              }
+              },
+              safetyLadderLength: SAFETY_LADDER.length,
+              escalateSafety: async () => {
+                if (safetyRung >= SAFETY_LADDER.length) return undefined
+                safetyRung++
 
-              systemPrompt = composePrompt()
-              steering.prompt = systemPrompt
-              return SAFETY_LADDER[safetyRung - 1]
-            },
-            runTurn: async (attempt, signal) => {
-              const includeCurrentTurn = attempt === 0 || sessionWasReset
-              const testRequest: TestTurnRequest = {
-                newMessage: includeCurrentTurn ? buildNewMessage() : undefined,
-                stateDelta: includeCurrentTurn
-                  ? {
-                      _systemPrompt: systemPrompt,
-                      _userId: userId,
-                      _channelId: channelId,
-                      _guildId: guildId,
-                      _userMessage: userMessage
+                if (safetyRung === 3) {
+                  // Carried history is the only remaining suspect: rebuild the window empty and drop images.
+                  dropImages = true
+                  await destroySession(channelId)
+                  rehydrationSuppressed.add(channelId)
+                  await ensureSession(channelId)
+                  resetIdleTimer(channelId)
+                  sessionWasReset = true
+                }
+
+                systemPrompt = composePrompt()
+                steering.prompt = systemPrompt
+                return SAFETY_LADDER[safetyRung - 1]
+              },
+              runTurn: async (attempt, signal) => {
+                const includeCurrentTurn = attempt === 0 || sessionWasReset
+                const testRequest: TestTurnRequest = {
+                  newMessage: includeCurrentTurn ? buildNewMessage() : undefined,
+                  stateDelta: includeCurrentTurn
+                    ? {
+                        _systemPrompt: systemPrompt,
+                        _userId: userId,
+                        _channelId: channelId,
+                        _guildId: guildId,
+                        _userMessage: userMessage
+                      }
+                    : undefined
+                }
+                if (testRunTurn) return testRunTurn(attempt, signal, testRequest)
+
+                let responseText = ''
+                let hasFunctionCall = false
+                let finishReason: LlmResponse['finishReason']
+
+                const request: Parameters<typeof runner.runAsync>[0] = {
+                  userId: channelId,
+                  sessionId: channelId,
+                  // ADK's runtime only appends when this value is truthy; its type incorrectly requires Content otherwise.
+                  newMessage: testRequest.newMessage ?? (undefined as unknown as Content),
+                  runConfig: { maxLlmCalls: config.gemini.maxLlmCalls },
+                  stateDelta: testRequest.stateDelta
+                }
+
+                for await (const event of runner.runAsync(request)) {
+                  if (signal.aborted) break
+                  if (event.errorCode) {
+                    return {
+                      errorCode: event.errorCode,
+                      errorMessage: event.errorMessage,
+                      customMetadata: event.customMetadata,
+                      finishReason: event.finishReason,
+                      hasText: false,
+                      hasFunctionCall: false
                     }
-                  : undefined
-              }
-              if (testRunTurn) return testRunTurn(attempt, signal, testRequest)
-
-              let responseText = ''
-              let hasFunctionCall = false
-              let finishReason: LlmResponse['finishReason']
-
-              const request: Parameters<typeof runner.runAsync>[0] = {
-                userId: channelId,
-                sessionId: channelId,
-                // ADK's runtime only appends when this value is truthy; its type incorrectly requires Content otherwise.
-                newMessage: testRequest.newMessage ?? (undefined as unknown as Content),
-                runConfig: { maxLlmCalls: config.gemini.maxLlmCalls },
-                stateDelta: testRequest.stateDelta
-              }
-
-              for await (const event of runner.runAsync(request)) {
-                if (signal.aborted) break
-                if (event.errorCode) {
-                  return {
-                    errorCode: event.errorCode,
-                    errorMessage: event.errorMessage,
-                    customMetadata: event.customMetadata,
-                    finishReason: event.finishReason,
-                    hasText: false,
-                    hasFunctionCall: false
+                  }
+                  if (isFinalResponse(event) && event.content?.parts) {
+                    finishReason = event.finishReason
+                    responseText = event.content.parts
+                      .filter((part: Part) => part.text && !part.thought)
+                      .map((part: Part) => part.text)
+                      .join('')
+                      .trim()
+                    hasFunctionCall = event.content.parts.some(
+                      (part: Part) => 'functionCall' in part && part.functionCall
+                    )
                   }
                 }
-                if (isFinalResponse(event) && event.content?.parts) {
-                  finishReason = event.finishReason
-                  responseText = event.content.parts
-                    .filter((part: Part) => part.text && !part.thought)
-                    .map((part: Part) => part.text)
-                    .join('')
-                    .trim()
-                  hasFunctionCall = event.content.parts.some(
-                    (part: Part) => 'functionCall' in part && part.functionCall
-                  )
-                }
-              }
 
-              return { text: responseText, finishReason, hasText: Boolean(responseText), hasFunctionCall }
-            }
-          })
+                return { text: responseText, finishReason, hasText: Boolean(responseText), hasFunctionCall }
+              }
+            })
+          )
         )
       )
     )
   )
   const llmMs = Math.round(performance.now() - llmStartMs)
+
+  if (reliability.success) {
+    if (route.useFallback) {
+      logger.info(
+        { channelId, model: rokaModel.fallbackModelName, attempts: reliability.attempts },
+        'Fallback model answered'
+      )
+      if (movedAwayFromGemini) {
+        fallbackUntilMs = config.fallback.stickyMs > 0 ? Date.now() + config.fallback.stickyMs : 0
+      }
+    } else {
+      fallbackUntilMs = 0
+    }
+  }
 
   // After every attempt, never between them: a retry re-sends the same message, so stripping mid-loop would
   // hand the model a marker where the first attempt had the picture.

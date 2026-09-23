@@ -32,7 +32,7 @@ Session Manager (in-memory)
 Roka Agent (ADK)
   - 4-layer prompt system (core → speech → tone → context)
   - Rule-based tone detection (zero LLM cost)
-  - Gemini Flash Lite backend
+  - Gemini Flash Lite backend, with a ModelScope Qwen fallback when Gemini is unavailable
     │
     ▼
 Gemini API (rate limits configured in `config.yml`)
