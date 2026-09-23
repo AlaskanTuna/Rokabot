@@ -66,6 +66,11 @@ describe('config module', () => {
     vi.stubEnv('GEMINI_RETRY_BACKOFF_CAP_MS', '')
     vi.stubEnv('GEMINI_TURN_DEADLINE_MS', '')
     vi.stubEnv('GEMINI_SAFETY_THRESHOLD', '')
+    vi.stubEnv('TYPESAFE_API_KEY', '')
+    vi.stubEnv('JEV_MODEL', '')
+    vi.stubEnv('JEV_TONE', '')
+    vi.stubEnv('JEV_REFERENTS', '')
+    vi.stubEnv('JEV_EXTRACTION', '')
     vi.stubEnv('MEMORY_BUFFER_SIZE', '')
     vi.stubEnv('MEMORY_EXTRACTION_INTERVAL', '')
     vi.stubEnv('MEMORY_EXTRACTION_GAP_MS', '')
@@ -139,6 +144,17 @@ describe('config module', () => {
     expect(config.session.historyRetentionDays).toBe(7)
     expect(config.discord.maxMessageLength).toBe(1500)
 
+    expect(config.jev.apiKey).toBeUndefined()
+    expect(config.jev.model).toBe('jev-1.13.0')
+    expect(config.jev.timeoutMs).toBe(1200)
+    expect(config.jev.backgroundTimeoutMs).toBe(5000)
+    expect(config.jev.tone).toBe('shadow')
+    expect(config.jev.referents).toBe('shadow')
+    expect(config.jev.extraction).toBe('shadow')
+    expect(config.jev.toneMinConfidence).toBe(0.6)
+    expect(config.jev.referentMinConfidence).toBe(0.8)
+    expect(config.jev.extractionAdmitThreshold).toBe(0.7)
+
     // Memory
     expect(config.memory.bufferSize).toBe(30)
     expect(config.memory.contextSize).toBe(10)
@@ -200,6 +216,9 @@ describe('config module', () => {
     vi.stubEnv('GEMINI_RETRY_BACKOFF_CAP_MS', '9000')
     vi.stubEnv('GEMINI_TURN_DEADLINE_MS', '90000')
     vi.stubEnv('GEMINI_SAFETY_THRESHOLD', 'BLOCK_ONLY_HIGH')
+    vi.stubEnv('JEV_MODEL', 'jev-override')
+    vi.stubEnv('JEV_TONE', 'on')
+    vi.stubEnv('TYPESAFE_API_KEY', 'typesafe-test-key')
     vi.stubEnv('MEMORY_BUFFER_SIZE', '40')
     vi.stubEnv('MEMORY_EXTRACTION_INTERVAL', '30')
     vi.stubEnv('MEMORY_EXTRACTION_GAP_MS', '25000')
@@ -253,6 +272,9 @@ describe('config module', () => {
     expect(config.memory.vaultExportDir).toBe('tmp/vault')
     expect(config.metrics.retentionDays).toBe(120)
     expect(config.discord.maxMessageLength).toBe(3878)
+    expect(config.jev.apiKey).toBe('typesafe-test-key')
+    expect(config.jev.model).toBe('jev-override')
+    expect(config.jev.tone).toBe('on')
   })
 
   it('warns when the session TTL is shorter than the maximum live retry window', async () => {
@@ -655,6 +677,11 @@ describe('config module', () => {
       { path: 'gemini.maxAttachmentTokens', min: 1089, max: 125_000 },
       { path: 'gemini.maxTokensPerMinute', min: 50_000, max: 125_000 },
       { path: 'gemini.maxOutputTokens', min: 1 },
+      { path: 'jev.timeoutMs', min: 1 },
+      { path: 'jev.backgroundTimeoutMs', min: 1 },
+      { path: 'jev.toneMinConfidence', min: 0, max: 1 },
+      { path: 'jev.referentMinConfidence', min: 0, max: 1 },
+      { path: 'jev.extractionAdmitThreshold', min: 0, max: 1 },
       { path: 'gemini.turnDeadlineMs', min: 1 },
       { path: 'gemini.retryBackoffCapMs', min: 1 },
       { path: 'gemini.maxRetries', min: 0 },
@@ -719,6 +746,36 @@ describe('config module', () => {
 
     await expect(() => import('../config.js')).rejects.toThrow(
       'Config value memory.extractionDailyBudgetRatio must be <= 1, got: 5'
+    )
+  })
+
+  it('throws when an env Jev mode is invalid and names the env key', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('JEV_TONE', 'fast')
+
+    await expect(() => import('../config.js')).rejects.toThrow(
+      'Environment variable JEV_TONE must be off, shadow or on, got: fast'
+    )
+  })
+
+  it('throws when a YAML Jev mode is invalid and names the config key', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    withYamlOverride({ jev: { referents: 'fast' } })
+
+    await expect(() => import('../config.js')).rejects.toThrow(
+      'Config value jev.referents must be off, shadow or on, got: fast'
+    )
+  })
+
+  it('throws if a Jev confidence threshold exceeds 1', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    withYamlOverride({ jev: { toneMinConfidence: 1.1 } })
+
+    await expect(() => import('../config.js')).rejects.toThrow(
+      'Config value jev.toneMinConfidence must be <= 1, got: 1.1'
     )
   })
 

@@ -2,6 +2,17 @@
 # Secrets (DISCORD_TOKEN, DISCORD_CLIENT_ID, GEMINI_API_KEY) stay in .env
 # Environment variables can override any value below for backward compatibility.
 
+jev:
+  model: jev-1.13.0 # Pinned Jev version; thresholds are tuned against one version, and the jev-latest alias moves
+  timeoutMs: 1200 # Deadline for the in-reply judgment (Pi median ~0.5s); one attempt, no retries
+  backgroundTimeoutMs: 5000 # Deadline for background judgments (memory admission)
+  tone: shadow # off | shadow (ask Jev and log, change nothing) | on (Jev picks the tone)
+  referents: shadow # off | shadow | on (Jev settles names the resolver found ambiguous)
+  extraction: shadow # off | shadow | on (Jev can admit a batch the rule gate rejected)
+  toneMinConfidence: 0.6 # In on mode, below this confidence the rule-based tone stays
+  referentMinConfidence: 0.8 # In on mode, below this confidence an ambiguous name stays unresolved
+  extractionAdmitThreshold: 0.7 # In on mode, the probability at or above which a rejected batch is extracted anyway
+
 gemini:
   model: gemini-3.5-flash-lite # Gemini model ID
   # extractionModel: gemini-3.5-flash-lite # Optional background fact-extraction model (defaults to model)

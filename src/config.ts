@@ -18,6 +18,17 @@ function requiredEnv(key: string): string {
 }
 
 interface YamlConfig {
+  jev?: {
+    model?: string
+    timeoutMs?: number
+    backgroundTimeoutMs?: number
+    tone?: string
+    referents?: string
+    extraction?: string
+    toneMinConfidence?: number
+    referentMinConfidence?: number
+    extractionAdmitThreshold?: number
+  }
   gemini?: {
     model?: string
     extractionModel?: string
@@ -122,6 +133,16 @@ function envString(key: string): string | undefined {
   return process.env[key] || undefined
 }
 
+export type JevMode = 'off' | 'shadow' | 'on'
+
+function jevMode(key: 'tone' | 'referents' | 'extraction', envKey: string): JevMode {
+  const envValue = envString(envKey)
+  const value = envValue ?? yaml.jev?.[key] ?? 'shadow'
+  if (value === 'off' || value === 'shadow' || value === 'on') return value
+  const source = envValue ? `Environment variable ${envKey}` : `Config value jev.${key}`
+  throw new Error(`${source} must be off, shadow or on, got: ${String(value)}`)
+}
+
 const geminiModel = envString('GEMINI_MODEL') ?? yaml.gemini?.model ?? 'gemini-2.0-flash-lite'
 const memoryBufferSize = envInt('MEMORY_BUFFER_SIZE') ?? yaml.memory?.bufferSize ?? 30
 const requestedExtractionInterval = envInt('MEMORY_EXTRACTION_INTERVAL') ?? yaml.memory?.extractionInterval ?? 20
@@ -129,6 +150,18 @@ const extractionInterval = Math.min(requestedExtractionInterval, memoryBufferSiz
 
 /** Merged config: env overrides > config.yml > hardcoded defaults */
 export const config = {
+  jev: {
+    apiKey: envString('TYPESAFE_API_KEY'),
+    model: envString('JEV_MODEL') ?? yaml.jev?.model ?? 'jev-1.13.0',
+    timeoutMs: yaml.jev?.timeoutMs ?? 1200,
+    backgroundTimeoutMs: yaml.jev?.backgroundTimeoutMs ?? 5000,
+    tone: jevMode('tone', 'JEV_TONE'),
+    referents: jevMode('referents', 'JEV_REFERENTS'),
+    extraction: jevMode('extraction', 'JEV_EXTRACTION'),
+    toneMinConfidence: yaml.jev?.toneMinConfidence ?? 0.6,
+    referentMinConfidence: yaml.jev?.referentMinConfidence ?? 0.8,
+    extractionAdmitThreshold: yaml.jev?.extractionAdmitThreshold ?? 0.7
+  },
   discord: {
     token: requiredEnv('DISCORD_TOKEN'),
     clientId: requiredEnv('DISCORD_CLIENT_ID'),
@@ -223,6 +256,11 @@ export const config = {
  * value above it is definitionally meaningless (e.g. a share greater than 1).
  */
 export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: number; max?: number }> = [
+  { path: 'jev.timeoutMs', value: config.jev.timeoutMs, min: 1 },
+  { path: 'jev.backgroundTimeoutMs', value: config.jev.backgroundTimeoutMs, min: 1 },
+  { path: 'jev.toneMinConfidence', value: config.jev.toneMinConfidence, min: 0, max: 1 },
+  { path: 'jev.referentMinConfidence', value: config.jev.referentMinConfidence, min: 0, max: 1 },
+  { path: 'jev.extractionAdmitThreshold', value: config.jev.extractionAdmitThreshold, min: 0, max: 1 },
   { path: 'gemini.timeout', value: config.gemini.timeout, min: 1 },
   { path: 'gemini.maxOutputTokens', value: config.gemini.maxOutputTokens, min: 1 },
   // Floor is a full turn of plain images, derived rather than restated: below it a maximal image turn could
