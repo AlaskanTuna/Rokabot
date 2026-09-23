@@ -66,16 +66,16 @@ export function shouldExtract(batch: BufferedMessage[], knownClaimKeys: Set<stri
 
   const novelPredicate = [...matchedPredicates].find((predicate) => !known.has(predicate))
   if (novelPredicate) return { extract: true, reason: `novel keyword: ${novelPredicate}` }
-  if (matchedPredicates.size > 0) return { extract: false, reason: 'known claim keywords only' }
-
-  if (messages.some((content) => PERSONAL_SIGNAL_PATTERN.test(content))) {
-    return { extract: true, reason: 'novel personal signal' }
-  }
   if (messages.some((content) => REMEMBER_INTENT_PATTERN.test(content))) {
     return { extract: true, reason: 'explicit remember intent' }
   }
   if (messages.some((content) => CORRECTION_PATTERN.test(content))) {
     return { extract: true, reason: 'correction signal' }
+  }
+  if (matchedPredicates.size > 0) return { extract: false, reason: 'known claim keywords only' }
+
+  if (messages.some((content) => PERSONAL_SIGNAL_PATTERN.test(content))) {
+    return { extract: true, reason: 'novel personal signal' }
   }
 
   return { extract: false, reason: 'no personal signal' }

@@ -192,12 +192,15 @@ describe('message handler metrics', () => {
     message.mentions = {
       has: vi.fn(() => true),
       members: new Map([['222', { displayName: 'Bob' }]]),
-      users: new Map([['222', { username: 'bob' }]])
+      users: new Map([
+        ['111', { id: '111', username: 'bot' }],
+        ['222', { id: '222', username: 'bob' }]
+      ])
     } as never
     await createMessageHandler({ user: { id: '111' } } as never, createRateLimiter() as never)(message as never)
 
     expect(mocks.generateResponse).toHaveBeenCalledWith(
-      expect.objectContaining({ userMessage: 'what do you know about @Bob?' })
+      expect.objectContaining({ userMessage: 'what do you know about @Bob?', mentionedUserIds: ['222'] })
     )
   })
 

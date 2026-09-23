@@ -8,7 +8,7 @@ vi.mock('../../../utils/logger.js', () => ({
 import { closeDb, getDb } from '../../../storage/database.js'
 import { recordResponseEvent } from '../../../storage/metricsStore.js'
 import { getFacts, saveFact } from '../../../storage/userMemory.js'
-import { findUserByName, upsertUserName } from '../../../storage/userNames.js'
+import { upsertUserName } from '../../../storage/userNames.js'
 import { logger } from '../../../utils/logger.js'
 
 /** A deliberately partial `ToolContext`. The tools under test read only `state.get`, and ADK does not export
@@ -16,6 +16,7 @@ import { logger } from '../../../utils/logger.js'
  * so the double is named in one place instead of asserted away in thirteen. */
 const toolContextWith = (entries: Record<string, unknown>) =>
   ({ state: new Map(Object.entries(entries)) }) as unknown as ToolContext
+import { resolveName } from '../../memory/identityResolver.js'
 import { assertClaim, getActiveClaims } from '../../memory/memoryClaims.js'
 import { recallUserTool, rememberUserTool } from '../index.js'
 import { recallUser } from '../recallUser.js'
@@ -115,14 +116,6 @@ describe('memory tools', () => {
     expect(result.facts).toContain('general_occupation: shrine caretaker')
   })
 
-  it('finds a known user by trimmed, case-insensitive display name before username', () => {
-    upsertUserName('user-1', 'alice', 'Alice')
-    upsertUserName('user-2', 'ALICE', 'Mio')
-
-    expect(findUserByName('  aLiCe  ')).toEqual({ userId: 'user-1', username: 'alice', displayName: 'Alice' })
-    expect(findUserByName('mio')).toEqual({ userId: 'user-2', username: 'ALICE', displayName: 'Mio' })
-  })
-
   it('recalls a resolved user_name through the FunctionTool', async () => {
     upsertUserName('user-2', 'mio', 'Mio')
     saveFact('guild-1', 'user-2', 'favorite_anime', 'Frieren')
@@ -133,6 +126,50 @@ describe('memory tools', () => {
         toolContext: toolContextWith({ _userId: 'speaker', _guildId: 'guild-1' })
       })
     ).resolves.toEqual({ facts: 'favorite_anime: Frieren', factCount: 1 })
+  })
+
+  it('recalls a user by an active nickname claim', async () => {
+    upsertUserName('user-2', 'mio', 'Mio')
+    assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-2',
+      predicate: 'nickname',
+      value: 'Kiki',
+      sourceKind: 'explicit'
+    })
+    saveFact('guild-1', 'user-2', 'favorite_anime', 'Frieren')
+
+    const result = (await recallUserTool.runAsync({
+      args: { user_name: 'kIKI' },
+      toolContext: toolContextWith({ _userId: 'speaker', _guildId: 'guild-1' })
+    })) as { facts: string; factCount: number }
+
+    expect(result.facts).toContain('favorite_anime: Frieren')
+    expect(result.factCount).toBeGreaterThan(0)
+  })
+
+  it('asks which person when a name resolves to multiple members', async () => {
+    upsertUserName('user-1', 'mio', 'Mio')
+    upsertUserName('user-2', 'rin', 'Rin')
+    for (const userId of ['user-1', 'user-2']) {
+      assertClaim({
+        guildId: 'guild-1',
+        subjectUserId: userId,
+        predicate: 'nickname',
+        value: 'Kiki',
+        sourceKind: 'explicit'
+      })
+    }
+
+    await expect(
+      recallUserTool.runAsync({
+        args: { user_name: 'Kiki' },
+        toolContext: toolContextWith({ _userId: 'speaker', _guildId: 'guild-1' })
+      })
+    ).resolves.toEqual({
+      facts: 'Several people here go by "Kiki": Mio, Rin. Ask which one they mean.',
+      factCount: 0
+    })
   })
 
   it('threads _userMessage from toolContext.state into ranking, surfacing a fact buried by recency', async () => {
@@ -289,7 +326,7 @@ describe('tenant-scoped name resolution', () => {
       sourceKind: 'passive'
     })
 
-    expect(findUserByName('Alice', 'dm:channel-B')).toBeNull()
+    expect(resolveName('Alice', 'dm:channel-B')).toEqual([])
   })
 
   it('resolves a name backed by a claim in the current tenant', () => {
@@ -302,20 +339,20 @@ describe('tenant-scoped name resolution', () => {
       sourceKind: 'passive'
     })
 
-    expect(findUserByName('Alice', 'guild-1')).toEqual({ userId: 'user-1', username: 'alice', displayName: 'Alice' })
+    expect(resolveName('Alice', 'guild-1')).toEqual(['user-1'])
   })
 
   it('resolves a name backed only by a legacy fact in the current tenant', () => {
     upsertUserName('user-1', 'alice', 'Alice')
     saveFact('guild-1', 'user-1', 'nickname', 'Ali')
 
-    expect(findUserByName('Alice', 'guild-1')).toEqual({ userId: 'user-1', username: 'alice', displayName: 'Alice' })
+    expect(resolveName('Alice', 'guild-1')).toEqual(['user-1'])
   })
 
   it('resolves a name backed only by response activity in the current tenant', () => {
     upsertUserName('user-1', 'alice', 'Alice')
     recordResponseEvent(activityIn('guild-1', 'user-1'))
 
-    expect(findUserByName('Alice', 'guild-1')).toEqual({ userId: 'user-1', username: 'alice', displayName: 'Alice' })
+    expect(resolveName('Alice', 'guild-1')).toEqual(['user-1'])
   })
 })

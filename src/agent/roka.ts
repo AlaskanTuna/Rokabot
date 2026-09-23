@@ -22,6 +22,7 @@ import { measureAttachmentTokens, needsMeasuring } from './attachmentCost.js'
 import { geminiMimeType, sizeLimitFor } from './attachmentLimits.js'
 import { classifyGeminiFailure, computeBackoff, extractGeminiStatus } from './geminiReliability.js'
 import { isobmffAllowsPrefix, prefixPolicyFor } from './mediaPrefix.js'
+import { resolveReferences } from './memory/identityResolver.js'
 import { retrieveForTurn } from './memory/retriever.js'
 import { getMessages as getBufferMessages } from './passiveBuffer.js'
 import { assembleSystemPrompt } from './promptAssembler.js'
@@ -48,6 +49,7 @@ interface GenerateOptions {
   username: string
   userId: string
   imageAttachments?: ImageAttachment[]
+  mentionedUserIds?: string[]
 }
 
 export interface GenerateResult {
@@ -967,10 +969,14 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
 
   const fakeMessages = eventsToWindowMessages(session.events ?? [])
   const hour = getLocalHour()
-  const tone = detectTone(fakeMessages, hour)
+  const tone = detectTone(
+    [...fakeMessages, { role: 'user', displayName, content: userMessage, timestamp: Date.now() }],
+    hour
+  )
 
   const basePrompt = assembleSystemPrompt({ tone, hour, displayName })
   let factsSection = ''
+  let whoIsMentionedSection = ''
   let overheardSection = ''
   let factEntryCount = 0
 
@@ -993,16 +999,42 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     let retrievalSelected = 0
 
     if (config.memory.claimsBackend) {
+      const references = resolveReferences({
+        guildId,
+        text: userMessage,
+        speakerId: userId,
+        mentionedUserIds: options.mentionedUserIds ?? []
+      })
+      const { resolved, ambiguous } = references
+      if (resolved.length > 0 || ambiguous.length > 0) {
+        logger.info(
+          { channelId, resolvedReferences: resolved.length, ambiguousReferences: ambiguous.length },
+          'Resolved message references'
+        )
+      }
       const retrieval = retrieveForTurn({
         guildId,
         speakerId: userId,
-        participantIds: [...channelUsers.keys()]
-          .filter((participantId) => participantId !== userId)
-          .slice(0, config.memory.recentParticipantLimit),
+        participantIds: [
+          ...new Set(
+            [...resolved.map(({ userId: referenceId }) => referenceId), ...channelUsers.keys()].filter(
+              (participantId) => participantId !== userId
+            )
+          )
+        ].slice(0, config.memory.recentParticipantLimit),
         message: userMessage
       })
       factEntries = retrieval.entries
       retrievalSelected = retrieval.claims.length
+      const namedAliases = resolved.filter(
+        ({ alias, displayName: referenceName, matchedBy }) =>
+          (matchedBy === 'nickname' || matchedBy === 'username') && alias.toLowerCase() !== referenceName.toLowerCase()
+      )
+      if (namedAliases.length > 0) {
+        whoIsMentionedSection = `\n\n## Who Is Mentioned\n${namedAliases
+          .map(({ alias, displayName: referenceName }) => `- "${alias}" means ${referenceName}`)
+          .join('\n')}`
+      }
     } else {
       factEntries = []
       for (const [uid, user] of knownUsers) {
@@ -1068,7 +1100,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     const head = safetyRung >= 3 ? assembleSystemPrompt({ tone: 'sincere', hour, displayName }) : basePrompt
     return [
       head,
-      safetyRung < 2 ? factsSection : '',
+      safetyRung < 2 ? `${factsSection}${whoIsMentionedSection}` : '',
       safetyRung < 1 ? overheardSection : '',
       tailSection,
       safetyRung > 0 ? `\n\n${SAFETY_STEER_ADDENDUM}` : ''
