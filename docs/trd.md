@@ -451,6 +451,35 @@ Configurable thresholds are set on all four Gemini-API-supported harm categories
 `SPII`, and `BLOCKLIST` are server-side and not configurable, which is why the static safety deflection
 path must remain even after the thresholds are relaxed.
 
+### The Fallback Model
+
+When `MODELSCOPE_API_KEY` is set, a turn that Gemini cannot serve is answered by `fallback.model`
+(`Qwen/Qwen3.5-122B-A10B` on ModelScope API-Inference) instead of the generic fallback message.
+
+- **Where It Plugs In:** `rokaAgent`'s model is a `RoutedLlm` (`src/agent/fallbackModel.ts`) that sends each model
+  call to Gemini or to `ModelScopeLlm` according to the per-turn `modelRouteForRequest` store. The fallback runs
+  through the same ADK pipeline as Gemini — the same callbacks, tools, `maxLlmCalls` cap and error plugin — so a
+  fallback failure is classified by the same taxonomy.
+- **When It Switches:** after a `transient_http`, `network` or `quota_exhausted` failure the loop moves the rest
+  of the turn to the other model at once, with no backoff and no RPM-floor check, and grants that attempt on top
+  of the retry budget. At most one switch per turn; `safety`, `recitation`, `terminal`, `session_corrupt` and
+  `empty_text` never switch. With a fallback configured, a spent Gemini day is answered rather than deflected.
+- **Per-Attempt Timeout:** the attempt timer and the deadline check follow the model serving the attempt:
+  `gemini.timeout` (20 s) or `fallback.timeoutMs` (15 s). A Gemini timeout therefore costs about 20 s before the
+  fallback answers in 1–3 s, inside `gemini.turnDeadlineMs`.
+- **Sticky Window:** when Gemini failed and the fallback answered, turns for the next `fallback.stickyMs` (5 min)
+  start on the fallback, so an outage costs one slow reply per window rather than one per turn. A turn that only
+  started on the fallback does not extend the window; if it fails in an outage-shaped way it switches back to
+  Gemini, and any Gemini success clears the window. `stickyMs: 0` disables it.
+- **Translation:** Gemini-shaped requests become OpenAI Chat Completions with `enable_thinking: false` (thinking
+  on measured 9–15 s a call). Images pass through as data URLs; audio, video and PDFs become a text marker.
+  Tool calls the fallback returns carry `thoughtSignature: 'skip_thought_signature_validator'`, because Gemini
+  rejects an unsigned function call in the current turn (400) but accepts the tagged one, so it can read the
+  fallback's history when it recovers.
+- **Accounting:** fallback calls still take the turn's reserved Gemini RPM slots, which only makes the limiter
+  more conservative during an outage. Background memory extraction has no fallback; it waits for Gemini.
+- **Logs:** `Gemini unavailable, answering this turn with the fallback model` and `Fallback model answered`.
+
 ### RPM-Budget Accounting
 
 - A user message consumes one rate-limiter token today. Every live retry and every background extraction

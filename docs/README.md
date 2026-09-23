@@ -266,15 +266,15 @@ Each detected tone selects a prompt variant, an accent color, and one of its map
 
 ## Tech Stack
 
-| Area                 | Technology                                                  |
-| -------------------- | ----------------------------------------------------------- |
-| Language and Runtime | TypeScript (ES2022), Node.js 24                             |
-| Discord              | discord.js v14                                              |
-| Agent and Model      | Google ADK, Gemini 3.5 Flash Lite (`gemini-3.5-flash-lite`) |
-| Storage              | SQLite via better-sqlite3                                   |
-| Media and Validation | sharp, @napi-rs/canvas, @google/genai, Zod                  |
-| Quality              | Vitest, Biome, Prettier, commitlint                         |
-| Deployment           | Docker Compose on Raspberry Pi 5 (ARM64)                    |
+| Area                 | Technology                                                                                                |
+| -------------------- | --------------------------------------------------------------------------------------------------------- |
+| Language and Runtime | TypeScript (ES2022), Node.js 24                                                                           |
+| Discord              | discord.js v14                                                                                            |
+| Agent and Model      | Google ADK, Gemini 3.5 Flash Lite (`gemini-3.5-flash-lite`); ModelScope `Qwen/Qwen3.5-122B-A10B` fallback |
+| Storage              | SQLite via better-sqlite3                                                                                 |
+| Media and Validation | sharp, @napi-rs/canvas, @google/genai, Zod                                                                |
+| Quality              | Vitest, Biome, Prettier, commitlint                                                                       |
+| Deployment           | Docker Compose on Raspberry Pi 5 (ARM64)                                                                  |
 
 <p align="right"><a href="#readme-top">↑</a></p>
 
@@ -289,6 +289,8 @@ Each detected tone selects a prompt variant, an accent color, and one of its map
 - A Gemini API key.
 - Docker and Docker Compose for containerized deployment.
 - Optional: a Tavily API key for web search.
+- Optional: a ModelScope API-Inference key, so a Qwen fallback model answers when Gemini is overloaded or out of quota.
+- Optional: a TypeSafe API key for Jev judgments (tone, ambiguous names, memory admission).
 
 ### Install & Configure
 

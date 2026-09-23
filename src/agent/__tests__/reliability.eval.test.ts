@@ -51,6 +51,13 @@ vi.mock('../../config.js', () => ({
       retryBackoffCapMs: 12_000,
       safetyThreshold: 'OFF'
     },
+    fallback: {
+      apiKey: '',
+      model: 'fallback-test',
+      baseUrl: 'https://fallback.test/v1',
+      timeoutMs: 100,
+      stickyMs: 300_000
+    },
     logging: { level: 'silent' },
     rateLimit: { rpm: 15, rpd: 500 },
     session: { ttlMs: 300_000, windowSize: 10, maxRehydrationAge: 7_200_000, historyRetentionDays: 7 },

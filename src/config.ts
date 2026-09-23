@@ -47,6 +47,7 @@ interface YamlConfig {
     retryBackoffCapMs?: number
     turnDeadlineMs?: number
   }
+  fallback?: { model?: string; baseUrl?: string; timeoutMs?: number; stickyMs?: number }
   rateLimit?: { rpm?: number; rpd?: number }
   session?: { ttl?: number; windowSize?: number; maxRehydrationAge?: number; historyRetentionDays?: number }
   discord?: { maxMessageLength?: number; maxInFlightAttachmentBytes?: number }
@@ -188,6 +189,13 @@ export const config = {
     retryBackoffCapMs: envInt('GEMINI_RETRY_BACKOFF_CAP_MS') ?? yaml.gemini?.retryBackoffCapMs ?? 12_000,
     turnDeadlineMs: envInt('GEMINI_TURN_DEADLINE_MS') ?? yaml.gemini?.turnDeadlineMs ?? 60_000
   },
+  fallback: {
+    apiKey: envString('MODELSCOPE_API_KEY'),
+    model: envString('FALLBACK_MODEL') ?? yaml.fallback?.model ?? 'Qwen/Qwen3.5-122B-A10B',
+    baseUrl: yaml.fallback?.baseUrl ?? 'https://api-inference.modelscope.ai/v1',
+    timeoutMs: yaml.fallback?.timeoutMs ?? 15_000,
+    stickyMs: yaml.fallback?.stickyMs ?? 300_000
+  },
   logging: {
     level: envString('LOG_LEVEL') ?? yaml.logging?.level ?? 'info'
   },
@@ -258,6 +266,8 @@ export const config = {
 export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: number; max?: number }> = [
   { path: 'jev.timeoutMs', value: config.jev.timeoutMs, min: 1 },
   { path: 'jev.backgroundTimeoutMs', value: config.jev.backgroundTimeoutMs, min: 1 },
+  { path: 'fallback.timeoutMs', value: config.fallback.timeoutMs, min: 1 },
+  { path: 'fallback.stickyMs', value: config.fallback.stickyMs, min: 0 },
   { path: 'jev.toneMinConfidence', value: config.jev.toneMinConfidence, min: 0, max: 1 },
   { path: 'jev.referentMinConfidence', value: config.jev.referentMinConfidence, min: 0, max: 1 },
   { path: 'jev.extractionAdmitThreshold', value: config.jev.extractionAdmitThreshold, min: 0, max: 1 },

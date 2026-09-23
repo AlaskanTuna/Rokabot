@@ -31,6 +31,12 @@ gemini:
   retryBackoffCapMs: 12000 # Maximum full-jitter retry backoff in ms
   turnDeadlineMs: 63000 # 3 attempts x 20s timeout + 3s worst-case jitter; keeps gemini.timeout at #43's measured calibration
 
+fallback:
+  model: Qwen/Qwen3.5-122B-A10B # ModelScope API-Inference model that answers when Gemini is overloaded, timing out or out of daily quota
+  baseUrl: https://api-inference.modelscope.ai/v1 # OpenAI-compatible ModelScope endpoint
+  timeoutMs: 15000 # Per-request deadline for the fallback model (measured median ~1.3s with thinking off)
+  stickyMs: 300000 # After Gemini fails and the fallback answers, later turns go straight to the fallback for this long; 0 disables
+
 rateLimit:
   rpm: 15 # Requests per minute (Gemini free tier: 15)
   rpd: 500 # Requests per day (Gemini free tier: 500)
