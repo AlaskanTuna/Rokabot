@@ -37,7 +37,8 @@ function createTestDb(): Database.Database {
       payload TEXT NOT NULL,
       status TEXT NOT NULL,
       attempts INTEGER NOT NULL DEFAULT 0,
-      enqueued_at INTEGER NOT NULL
+      enqueued_at INTEGER NOT NULL,
+      admitted_by TEXT DEFAULT NULL
     );
   `)
   return db
@@ -68,6 +69,28 @@ describe('extractionQueue', () => {
     expect(markDone(first.id)).toBe(true)
     expect(markDone(first.id)).toBe(false)
     expect(testDb.prepare('SELECT status FROM extraction_queue WHERE id = ?').get(first.id)).toBeUndefined()
+  })
+
+  it('round-trips Jev admission through the persisted queue', () => {
+    const queued = enqueueExtraction({
+      guildId: 'guild-1',
+      channelId: 'channel-1',
+      payload: payload('durable detail'),
+      admittedBy: 'jev'
+    })
+
+    expect(queued.admittedBy).toBe('jev')
+    expect(claimNextForGuild('guild-1')?.admittedBy).toBe('jev')
+  })
+
+  it('maps a stored NULL Jev admission to undefined', () => {
+    testDb
+      .prepare(
+        "INSERT INTO extraction_queue (guild_id, channel_id, payload, status, enqueued_at, admitted_by) VALUES (?, ?, ?, 'pending', ?, NULL)"
+      )
+      .run('guild-1', 'channel-1', JSON.stringify(payload('legacy row')), 100)
+
+    expect(claimNextForGuild('guild-1')?.admittedBy).toBeUndefined()
   })
 
   it('drops the oldest pending job only within an over-cap guild', () => {

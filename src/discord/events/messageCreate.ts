@@ -1,6 +1,7 @@
 import type { Client, Message } from 'discord.js'
 import { DiscordAPIError } from 'discord.js'
 import { isMonitored, markActive } from '../../agent/channelMonitor.js'
+import { judgeExtraction } from '../../agent/jev/judgments.js'
 import { shouldExtract } from '../../agent/memory/candidateGate.js'
 import { getActiveClaims } from '../../agent/memory/memoryClaims.js'
 import { enqueueAndSchedule } from '../../agent/memory/scheduler.js'
@@ -216,20 +217,60 @@ function describeForwardedSnapshots(snapshots: Message['messageSnapshots'], imag
 /** Whole-word, case-insensitive match for the bot's name as a trigger keyword */
 export const NAME_MENTION_REGEX = /\broka\b/i
 
-function dispatchClaimExtraction(channelId: string, guildId: string): void {
+function dispatchClaimExtraction(channelId: string, guildId: string, askJev = false): void {
   try {
     const messages = [...getMessages(channelId)]
     const userIds = new Set(messages.map((message) => message.userId))
     const knownClaimKeys = new Set(
       [...userIds].flatMap((userId) => getActiveClaims(guildId, userId).map((claim) => claim.predicate))
     )
+    const gate = shouldExtract(messages, knownClaimKeys)
 
-    if (!shouldExtract(messages, knownClaimKeys).extract) return
+    if (gate.extract) {
+      enqueueAndSchedule({
+        guildId,
+        channelId,
+        messages: messages.map(({ userId, displayName, content }) => ({ userId, displayName, content }))
+      })
+      return
+    }
 
-    enqueueAndSchedule({
-      guildId,
-      channelId,
-      messages: messages.map(({ userId, displayName, content }) => ({ userId, displayName, content }))
+    if (
+      !askJev ||
+      config.jev.extraction === 'off' ||
+      (gate.reason !== 'known claim keywords only' && gate.reason !== 'no personal signal')
+    ) {
+      return
+    }
+
+    const lines = messages.slice(-6).map(({ displayName, content }) => `[${displayName}]: ${content}`)
+    void (async () => {
+      const result = await judgeExtraction({ lines })
+      if (!result) return
+
+      const admitted = config.jev.extraction === 'on' && result.noul >= config.jev.extractionAdmitThreshold
+      logger.info(
+        {
+          channelId,
+          guildId,
+          gateReason: gate.reason,
+          noul: result.noul,
+          admitted,
+          latencyMs: Math.round(result.latencyMs),
+          inputTokens: result.inputTokens
+        },
+        'Jev extraction admission'
+      )
+      if (admitted) {
+        enqueueAndSchedule({
+          guildId,
+          channelId,
+          messages: messages.map(({ userId, displayName, content }) => ({ userId, displayName, content })),
+          admittedBy: 'jev'
+        })
+      }
+    })().catch((error: unknown) => {
+      logger.warn({ channelId, guildId, error }, 'Jev extraction admission failed')
     })
   } catch (error) {
     logger.warn({ channelId, guildId, error }, 'Claim extraction dispatch failed')
@@ -277,7 +318,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
         addToPassiveBuffer(message.channelId, message.author.id, memberDisplayName, message.author.username, msgContent)
         upsertUserName(message.author.id, message.author.username, memberDisplayName)
         if (config.memory.claimsBackend) {
-          dispatchClaimExtraction(message.channelId, message.guildId ?? `dm:${message.channelId}`)
+          dispatchClaimExtraction(message.channelId, message.guildId ?? `dm:${message.channelId}`, true)
         } else {
           maybeExtractFromBuffer(message.channelId, client.user?.id, message.guildId ?? undefined)
         }

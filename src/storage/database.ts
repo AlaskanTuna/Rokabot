@@ -374,7 +374,8 @@ export function runMigrations(database: Database.Database): void {
       payload TEXT NOT NULL,
       status TEXT NOT NULL,
       attempts INTEGER NOT NULL DEFAULT 0,
-      enqueued_at INTEGER NOT NULL
+      enqueued_at INTEGER NOT NULL,
+      admitted_by TEXT DEFAULT NULL
     );
 
     CREATE INDEX IF NOT EXISTS idx_extraction_queue_guild_status_enqueued
@@ -401,6 +402,11 @@ export function runMigrations(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_memory_events_guild_created
       ON memory_events (guild_id, created_at);
   `)
+
+  const extractionQueueCols = database.prepare("PRAGMA table_info('extraction_queue')").all() as Array<{ name: string }>
+  if (!extractionQueueCols.some((column) => column.name === 'admitted_by')) {
+    database.exec('ALTER TABLE extraction_queue ADD COLUMN admitted_by TEXT DEFAULT NULL')
+  }
 }
 
 /** Close the database connection. Safe to call multiple times. */

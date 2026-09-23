@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   ]),
   getActiveClaims: vi.fn(() => []),
   shouldExtract: vi.fn(() => ({ extract: true, reason: 'test signal' })),
+  judgeExtraction: vi.fn(),
   enqueueAndSchedule: vi.fn(),
   splitResponse: vi.fn((response: string) => [response])
 }))
@@ -35,6 +36,7 @@ vi.mock('../../agent/passiveBuffer.js', () => ({
 }))
 vi.mock('../../agent/memory/candidateGate.js', () => ({ shouldExtract: mocks.shouldExtract }))
 vi.mock('../../agent/memory/memoryClaims.js', () => ({ getActiveClaims: mocks.getActiveClaims }))
+vi.mock('../../agent/jev/judgments.js', () => ({ judgeExtraction: mocks.judgeExtraction }))
 vi.mock('../../agent/memory/scheduler.js', () => ({ enqueueAndSchedule: mocks.enqueueAndSchedule }))
 vi.mock('../../storage/metricsStore.js', () => ({ recordResponseEvent: mocks.recordResponseEvent }))
 vi.mock('../../storage/userNames.js', () => ({ upsertUserName: vi.fn() }))
@@ -61,6 +63,12 @@ import { MAX_ATTACHMENTS } from '../attachments.js'
 // Aliased rather than cast at each site: the config type is readonly, and a `(config.x as ...)` statement
 // opens with a paren, which the formatter will happily weld onto the end of the line above it.
 const mutableMemoryConfig = config.memory as { claimsBackend: boolean }
+const mutableJevConfig = config.jev as {
+  tone: 'off' | 'shadow' | 'on'
+  referents: 'off' | 'shadow' | 'on'
+  extraction: 'off' | 'shadow' | 'on'
+  extractionAdmitThreshold: number
+}
 import { NAME_MENTION_REGEX } from '../events/messageCreate.js'
 import { createMessageHandler } from '../events/messageCreate.js'
 
@@ -174,6 +182,9 @@ describe('message handler metrics', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mutableMemoryConfig.claimsBackend = false
+    mutableJevConfig.tone = 'off'
+    mutableJevConfig.referents = 'off'
+    mutableJevConfig.extraction = 'off'
     mocks.isChannelBusy.mockReturnValue(false)
     mocks.isMonitored.mockReturnValue(false)
     mocks.tryConsume.mockReturnValue(true)
@@ -185,6 +196,7 @@ describe('message handler metrics', () => {
       droppedAttachments: 0,
       truncatedAttachments: 0
     })
+    mocks.judgeExtraction.mockResolvedValue({ noul: 0.9, latencyMs: 2, inputTokens: 10 })
   })
 
   it('replaces third-party mentions with @display-name and strips only the bot mention', async () => {
@@ -420,6 +432,120 @@ describe('message handler claims extraction dispatch', () => {
     )(message as never)
 
     expect(mocks.enqueueAndSchedule).not.toHaveBeenCalled()
+  })
+
+  it('asks Jev about a human batch refused for lack of personal signal', async () => {
+    mutableMemoryConfig.claimsBackend = true
+    mutableJevConfig.extraction = 'shadow'
+    mocks.shouldExtract.mockReturnValue({ extract: false, reason: 'no personal signal' })
+    const { message } = createMessage({ guild })
+
+    await createMessageHandler(
+      { user: { id: 'bot-1', displayName: 'Roka', username: 'roka' } } as never,
+      createRateLimiter() as never
+    )(message as never)
+    await vi.waitFor(() => expect(mocks.judgeExtraction).toHaveBeenCalledOnce())
+
+    expect(mocks.judgeExtraction).toHaveBeenCalledWith({ lines: ['[Alice]: I love tea'] })
+  })
+
+  it('logs a shadow extraction judgment without enqueuing it', async () => {
+    mutableMemoryConfig.claimsBackend = true
+    mutableJevConfig.extraction = 'shadow'
+    mocks.shouldExtract.mockReturnValue({ extract: false, reason: 'known claim keywords only' })
+    mocks.judgeExtraction.mockResolvedValue({ noul: 0.99, latencyMs: 2, inputTokens: 10 })
+    const { message } = createMessage({ guild })
+
+    await createMessageHandler(
+      { user: { id: 'bot-1', displayName: 'Roka', username: 'roka' } } as never,
+      createRateLimiter() as never
+    )(message as never)
+    await vi.waitFor(() =>
+      expect(mocks.info).toHaveBeenCalledWith(
+        expect.objectContaining({ gateReason: 'known claim keywords only', noul: 0.99, admitted: false }),
+        'Jev extraction admission'
+      )
+    )
+
+    expect(mocks.enqueueAndSchedule).not.toHaveBeenCalled()
+  })
+
+  it('enqueues a high-confidence on-mode extraction with its Jev admission', async () => {
+    mutableMemoryConfig.claimsBackend = true
+    mutableJevConfig.extraction = 'on'
+    mutableJevConfig.extractionAdmitThreshold = 0.8
+    mocks.shouldExtract.mockReturnValue({ extract: false, reason: 'no personal signal' })
+    mocks.judgeExtraction.mockResolvedValue({ noul: 0.85, latencyMs: 2, inputTokens: 10 })
+    const { message } = createMessage({ guild })
+
+    await createMessageHandler(
+      { user: { id: 'bot-1', displayName: 'Roka', username: 'roka' } } as never,
+      createRateLimiter() as never
+    )(message as never)
+    await vi.waitFor(() =>
+      expect(mocks.enqueueAndSchedule).toHaveBeenCalledWith({
+        guildId: 'guild-1',
+        channelId: 'channel-1',
+        messages: [{ userId: 'user-1', displayName: 'Alice', content: 'I love tea' }],
+        admittedBy: 'jev'
+      })
+    )
+
+    expect(mocks.judgeExtraction).toHaveBeenCalledOnce()
+  })
+
+  it('does not enqueue an on-mode extraction below threshold', async () => {
+    mutableMemoryConfig.claimsBackend = true
+    mutableJevConfig.extraction = 'on'
+    mutableJevConfig.extractionAdmitThreshold = 0.8
+    mocks.shouldExtract.mockReturnValue({ extract: false, reason: 'no personal signal' })
+    mocks.judgeExtraction.mockResolvedValue({ noul: 0.79, latencyMs: 2, inputTokens: 10 })
+    const { message } = createMessage({ guild })
+
+    await createMessageHandler(
+      { user: { id: 'bot-1', displayName: 'Roka', username: 'roka' } } as never,
+      createRateLimiter() as never
+    )(message as never)
+    await vi.waitFor(() => expect(mocks.judgeExtraction).toHaveBeenCalledOnce())
+
+    expect(mocks.enqueueAndSchedule).not.toHaveBeenCalled()
+  })
+
+  it.each(['sensitive content', 'trivial batch'])('never asks Jev for a %s batch', async (reason) => {
+    mutableMemoryConfig.claimsBackend = true
+    mutableJevConfig.extraction = 'on'
+    mocks.shouldExtract.mockReturnValue({ extract: false, reason })
+    const { message } = createMessage({ guild })
+
+    await createMessageHandler(
+      { user: { id: 'bot-1', displayName: 'Roka', username: 'roka' } } as never,
+      createRateLimiter() as never
+    )(message as never)
+
+    expect(mocks.judgeExtraction).not.toHaveBeenCalled()
+  })
+
+  it("does not ask Jev about Roka's post-reply buffer dispatch", async () => {
+    mutableMemoryConfig.claimsBackend = true
+    mutableJevConfig.extraction = 'on'
+    mocks.shouldExtract.mockReturnValue({ extract: false, reason: 'no personal signal' })
+    mocks.getMessages
+      .mockReturnValueOnce([
+        { userId: 'user-1', displayName: 'Alice', username: 'alice', content: 'I love tea', timestamp: 1 }
+      ])
+      .mockReturnValueOnce([
+        { userId: 'user-1', displayName: 'Alice', username: 'alice', content: 'I love tea', timestamp: 1 },
+        { userId: 'bot-1', displayName: 'Roka', username: 'roka', content: 'Hello~', timestamp: 2 }
+      ])
+    const { message } = createMessage({ guild })
+
+    await createMessageHandler(
+      { user: { id: 'bot-1', displayName: 'Roka', username: 'roka' } } as never,
+      createRateLimiter() as never
+    )(message as never)
+    await vi.waitFor(() => expect(mocks.judgeExtraction).toHaveBeenCalledOnce())
+
+    expect(mocks.judgeExtraction).toHaveBeenCalledWith({ lines: ['[Alice]: I love tea'] })
   })
 })
 

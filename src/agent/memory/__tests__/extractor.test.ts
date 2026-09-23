@@ -130,6 +130,26 @@ describe('runExtraction', () => {
     ])
   })
 
+  it('extracts a Jev-admitted batch refused only for lack of personal signal', async () => {
+    mocks.generateContent.mockResolvedValueOnce({ text: '[]' })
+
+    await runExtraction({
+      ...job([{ userId: 'user-1', displayName: 'Alex', content: 'That topic comes up often.' }]),
+      admittedBy: 'jev'
+    })
+
+    expect(mocks.generateContent).toHaveBeenCalledOnce()
+  })
+
+  it('still refuses sensitive content even when Jev admitted it', async () => {
+    await runExtraction({
+      ...job([{ userId: 'user-1', displayName: 'Alex', content: 'My email is alex@example.com' }]),
+      admittedBy: 'jev'
+    })
+
+    expect(mocks.generateContent).not.toHaveBeenCalled()
+  })
+
   it('uses Phase 9 floor-gating and retries one transient Gemini failure', async () => {
     mocks.generateContent.mockRejectedValueOnce(new Error('503 unavailable')).mockResolvedValueOnce({ text: '[]' })
 

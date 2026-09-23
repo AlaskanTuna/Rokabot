@@ -92,7 +92,12 @@ function nextGapDelay(guildIds: string[], timestamp: number): number {
 }
 
 function completeJob(job: ExtractionQueueJob): void {
-  void runExtraction({ guildId: job.guildId, channelId: job.channelId, messages: job.payload })
+  void runExtraction({
+    guildId: job.guildId,
+    channelId: job.channelId,
+    messages: job.payload,
+    admittedBy: job.admittedBy
+  })
     .then(() => {
       markDone(job.id)
     })
@@ -169,7 +174,12 @@ export function stopExtractionScheduler(): void {
 
 /** Enqueues a claim-extraction batch and starts the scheduler when necessary. */
 export function enqueueAndSchedule(job: SchedulerJob): void {
-  enqueueExtraction({ guildId: job.guildId, channelId: job.channelId, payload: job.messages })
+  enqueueExtraction({
+    guildId: job.guildId,
+    channelId: job.channelId,
+    payload: job.messages,
+    admittedBy: job.admittedBy
+  })
   startExtractionScheduler()
 }
 
