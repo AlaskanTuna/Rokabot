@@ -503,7 +503,7 @@ The container is SIGKILLed instead. `src/discord/byteBudget.ts` is the admission
   path are pinned by tests.
 
 Per-turn caps are unchanged and independent of this: 4 MB per image and 10 MB per document are set by upload
-latency against `gemini.timeout`, not by container memory. See `docs/multimodal.md`.
+latency against `gemini.timeout`, not by container memory. See `docs/research/multimodal.md`.
 
 ### Attachment Types and Their Ceilings
 
@@ -563,7 +563,7 @@ byte budget cannot disagree about the same file.
   than on the declared type. The rename is therefore a preference, not a requirement: the documented name is
   the one with a compatibility promise, and it costs nothing to send.
 - **Audio contributes 0 to `tokensInEst`.** It is billed per second of media, and seconds are not knowable
-  without decoding — the same argument `docs/multimodal.md` makes against enforcing duration caps. Left at
+  without decoding — the same argument `docs/research/multimodal.md` makes against enforcing duration caps. Left at
   zero deliberately rather than estimated.
 - **Both surfaces admit the same set.** `/ask` and the mention path each filter with `isSupportedMedia`.
   The forwarded, referenced and embed sub-paths on the mention path remain images-only, because their text

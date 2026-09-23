@@ -48,12 +48,7 @@ temp/
 # Biome owns TS/JS formatting
 *.ts
 *.js
-docs/.codex/
 
-# Local-only pm-workflow artifacts (git-excluded; scaffolded per contributor)
-docs/plan.md
+# Local-only history logs (git-excluded)
 docs/progress.md
-docs/test.md
 docs/decisions.md
-docs/roles.md
-docs/.pm-handoff.md

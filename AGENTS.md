@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> **Read `docs/roles.md` first** — it defines your role, boundaries, and the gates in this project's PM-orchestrated workflow. This file is the **canonical, tool-agnostic** project instructions — every agentic tool (Claude Code, Codex, Antigravity, …) works from it. Tool-specific adapters (e.g. `CLAUDE.md`, `.claude/agents/`) only point here; see "Execution Adapters" in `docs/roles.md`.
+> This file is the **canonical, tool-agnostic** project instructions — every agentic tool (Claude Code, Codex, Antigravity, …) works from it. Tool-specific adapters (e.g. `CLAUDE.md`) only point here.
 
 ---
 
@@ -97,7 +97,7 @@ Every tunable lives in `config.yml` with an inline comment; environment override
 
 ## Documentation Hygiene
 
-All Markdown documentation in this repo (`README.md`, `AGENTS.md`, `CLAUDE.md`, `docs/*.md`) follows **TitleCase** formatting:
+All Markdown documentation in this repo (`README.md`, `AGENTS.md`, `CLAUDE.md`, `docs/**/*.md`) follows **TitleCase** formatting:
 
 - **Headings and Subheadings:** every word capitalized except short articles/prepositions/conjunctions (a, an, the, of, in, on, for, and, or, to, vs), e.g. `## Getting Started`, `### WindowMessage`.
 - **Table Headers:** TitleCase in every column header cell.
@@ -110,22 +110,8 @@ All Markdown documentation in this repo (`README.md`, `AGENTS.md`, `CLAUDE.md`, 
 ## Working Conventions
 
 - **CLI-first.** Configure via CLI tools over GUI where possible.
-- **Gate 2 (Ship) Mode:** `pr-auto` into `main` — `main` is PR-only: every change, including a small hotfix or minor edit, opens a PR. After opening a PR, poll the `CodeRabbit` status check to a terminal state with `gh pr checks` or a bounded `gh api` loop; poll, never a fixed sleep. On success, merge with `gh pr merge --squash --delete-branch`; branch cleanup is only the tail of a successful merge. On an explicit failure, error, or rate-limited status, STOP immediately, report the exact state and PR URL to the human, and leave the PR open and branch intact. Keep polling pending or in-progress checks for up to 60 minutes, then STOP and report; an absent check is never success, so wait within that window and then STOP and report. `gh pr merge --auto` and `gh pr merge --admin` are forbidden. Direct commit + push remains only for non-gated branches. Agents never bypass this mode. Agents may create commits and push **only after explicit human authorization at Gate 2** — never unprompted, never `--force`.
-- **Workflow Visibility:** `hybrid` — the workflow inputs (`AGENTS.md`, `CLAUDE.md`, `.claude/agents/`, `.codex/`, `.agents/`) are committed and shared; the generated pm-workflow artifacts (`docs/roles.md`, `docs/plan.md`, `docs/progress.md`, `docs/test.md`, `docs/decisions.md`, `docs/.pm-handoff.md`, `.claude/settings.local.json`) are **local-only** (listed in `.git/info/exclude`, never committed). Each contributor runs `/pm-workflow` on their own machine to scaffold them.
-- **Model Profile:** `max` — one knob that routes every role's model on **both vendors**, pins efforts (planner **max**, programmer **high**, QA **high** — on every profile), and caps parallel waves:
-
-  | Profile    | PL (Claude) | PG (Claude) | QA (Claude) | PL + QA (Codex) | PG / Workers (Codex) | Wave Cap |
-  | ---------- | ----------- | ----------- | ----------- | --------------- | -------------------- | -------- |
-  | `max`      | opus        | sonnet      | opus        | gpt-5.6-sol     | gpt-5.6-terra        | 3        |
-  | `balanced` | opus        | sonnet      | sonnet      | gpt-5.6-sol     | gpt-5.6-terra        | 3        |
-  | `economy`  | sonnet      | sonnet      | sonnet      | gpt-5.6-terra   | gpt-5.6-terra        | 2        |
-
-  The `.claude/agents/*.md` and `.codex/agents/*.toml` frontmatter is filled from this at scaffold; switch profiles via the upgrade flow. The Codex columns also govern delegation (second opinions, peer consults, workers) when the main agent is Claude.
-
-- **PM skill (mandatory).** Agents in this workspace follow the PM skill at `.agents/skills/pm-workflow/` (symlinked from `.claude/skills/pm-workflow/`; SOURCE: https://github.com/AlaskanTuna/pm-workflow) when implementing any new feature or phase.
-- **Log decisions.** At Gate 2, the PM appends one line to `docs/decisions.md` for any task that settles a lasting choice (architecture, library, convention, a resolved trade-off); PL reads that log before planning and flags any reversal at Gate 1. One line per decision — not an ADR system.
-- **Codex Delegation:** `executor` — Codex workers (gpt-5.6-terra / high, per the invocation contract) may implement PG tasks to conserve Claude usage; `second-opinion` and `peer-consult` remain off (peer consults still available on explicit human trigger). A Codex main agent still uses the native `.codex/agents/` role subagents regardless of this setting.
-- **Log progress.** After each task, PG appends a dated entry to `docs/progress.md` and ticks `docs/plan.md`. Exception — **parallel waves**: PGs in a wave return summaries instead, and the PM does the ticking/logging.
+- **Shipping:** `main` is PR-only (repo ruleset `main-pr-ci-gate`): every change, including a small hotfix or minor edit, opens a PR, and a PR can merge only once the `test` check (the `test` job in `.github/workflows/deploy.yml`) passes. After opening a PR, poll `test` to a terminal state with `gh pr checks` or a bounded `gh api` loop; poll, never a fixed sleep. On a failure, STOP, report the PR URL and the failing check to the human, and leave the PR open and the branch intact. Merge with `gh pr merge --squash --delete-branch`; `gh pr merge --auto` and `gh pr merge --admin` are forbidden. Merging to `main` runs the deploy workflow, which rebuilds and restarts the production bot unless every changed path is in its `paths-ignore`, so a merge needs the same explicit human authorization as a restart. Agents commit and push only with explicit human authorization — never unprompted, never `--force`.
+- **Local History:** `docs/decisions.md` (past decisions and their rationale) and `docs/progress.md` are git-excluded local logs. Check `docs/decisions.md` before reversing an earlier choice.
 - **No secrets in repo.** `.env.example` committed, `.env` gitignored. Discord and Gemini keys live in `.env`, never committed.
 
 ---
@@ -133,40 +119,22 @@ All Markdown documentation in this repo (`README.md`, `AGENTS.md`, `CLAUDE.md`, 
 ## Critical Do-Nots
 
 - **Do not** `git push --force`, rewrite published history, or delete branches.
-- **Do not** commit or push without explicit human authorization (Gate 2).
+- **Do not** commit or push without explicit human authorization.
 - **Do not** create `docs/architecture.md` — architecture lives in `docs/trd.md`.
 - **Do not** commit `graphify-out/` — the knowledge graph is local-only in this workspace.
 - **Do not** restart or redeploy the production bot on the Pi without explicit human authorization.
 
 ---
 
-## Agent Workflow & Documentation Protocol
+## Reference Docs
 
-This project runs the **PM → PL → PG → QA** pipeline defined in `docs/roles.md`, with two human gates:
-
-1. **PL** writes `docs/plan.md` (after brainstorming).
-2. **Gate 1** — PM shows the plan + open questions to the human for approval.
-3. **PG** implements the approved tasks; ticks `docs/plan.md`, logs `docs/progress.md`. Independent tasks with disjoint file scopes may run as a **parallel wave** (Gate-1-approved; see `docs/roles.md`).
-4. **QA** reviews the diff into `docs/test.md` with a verdict.
-5. **Gate 2** — PM relays the verdict. Reject → back to PG. Approve → PM proposes a Conventional Commit message and **ships per this project's Gate 2 mode** (see Working Conventions / `docs/roles.md`).
-
-**One checkout = one PM:** a fresh `docs/.pm-lock` means another PM is active in this folder — never run a second pipeline here; parallel features use one PM per git worktree (see `docs/roles.md`).
-
-**Fast lane** (PM-triaged, three tiers): the PM triages every task — **trivial** (typo, one-liner, doc/config tweak, no design decision) → fast lane **automatically**, announced in one line; **ambiguous** → the PM asks fast-lane-or-full; **substantial** → full pipeline, no question. The fast lane skips PL and Gate 1 (the PM supplies acceptance criteria and dispatches PG directly); QA and Gate 2 always run. **Loop cap:** after 2 consecutive QA Rejects on a task, the PM stops and asks the human how to proceed.
-
-Reference `docs/prd.md` (requirements) and `docs/trd.md` (architecture/contracts). `docs/runbook.md` covers Pi deployment/operations.
-
----
-
-## Re-Read Discipline
-
-Start every session by reading, in order: `docs/roles.md` → tail of `docs/progress.md` → `docs/plan.md` (open tasks) → `docs/prd.md`/`docs/trd.md` only when touching the matching domain. Do not rely on memory from prior sessions. If a session-memory assist (e.g. claude-mem) is active, treat its injected recall and search results as **hints and leads** — this reading order stays mandatory, the `docs/` files stay canonical, and `docs/decisions.md` stays the decision ledger.
+Reference `docs/prd.md` (requirements) and `docs/trd.md` (architecture/contracts). `docs/runbook.md` covers Pi deployment/operations. Research write-ups live in `docs/research/`.
 
 ---
 
 ## Git Commit Convention
 
-[Conventional Commits](https://www.conventionalcommits.org/): `<type>[scope]: <description>` — single imperative sentence, no trailing period, no body or footer. Allowed types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `style`, `perf`. Scopes: `discord`, `agent`, `session`, `utils`, `config`. The PM proposes the message at Gate 2; the human authorizes the commit.
+[Conventional Commits](https://www.conventionalcommits.org/): `<type>[scope]: <description>` — single imperative sentence, no trailing period, no body or footer. Allowed types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `style`, `perf`. Scopes: `discord`, `agent`, `session`, `utils`, `config`. The human authorizes every commit.
 
 ---
 
@@ -388,7 +356,7 @@ graphify path "SessionManager" "RokaAgent"                   # shortest path bet
 graphify explain "SomeNode"                                  # plain-language explanation of a node
 ```
 
-**Applies to every agent** — the PM _and_ PG/programmer subagents (Codex workers read this AGENTS.md too): run `graphify query` before grepping for architecture/relationship questions, then drop to grep/sed/Read for exact `file:line` evidence — the graph gives you the file, not the line.
+**Applies to every agent**, subagents included: run `graphify query` before grepping for architecture/relationship questions, then drop to grep/sed/Read for exact `file:line` evidence — the graph gives you the file, not the line.
 
 ## Keeping the Graph Fresh
 
