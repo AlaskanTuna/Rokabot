@@ -121,7 +121,7 @@ All Markdown documentation in this repo (`README.md`, `AGENTS.md`, `CLAUDE.md`, 
 - **Do not** `git push --force`, rewrite published history, or delete branches.
 - **Do not** commit or push without explicit human authorization.
 - **Do not** create `docs/architecture.md` — architecture lives in `docs/trd.md`.
-- **Do not** commit `graphify-out/` — the knowledge graph is local-only in this workspace.
+- **Do not** commit anything in `graphify-out/` except the current graph (`graph.json`, `graph.html`, `GRAPH_REPORT.md`, `manifest.json`, `.graphify_labels.json`, `.graphify_labels.json.sig`, `.graphify_analysis.json`) — dated backups, `cache/` and `.graphify_python` stay local.
 - **Do not** restart or redeploy the production bot on the Pi without explicit human authorization.
 
 ---
@@ -362,7 +362,7 @@ graphify explain "SomeNode"                                  # plain-language ex
 
 - After changing code, refresh incrementally: `graphify update .` (no LLM).
 - LLM steps (community labeling / semantic extraction) use the dedicated key from `.env`: run them as `GEMINI_API_KEY="$GRAPHIFY_GEMINI_API_KEY" graphify label .` — never burn the bot's own `GEMINI_API_KEY` on graph refreshes.
-- **The graph is local-only in this workspace** — `graphify-out/` is gitignored and never committed.
+- **The current graph in `graphify-out/` is committed** — refreshing it is a normal PR, and graph-only changes do not redeploy the bot.
 
 Graphify (codebase comprehension) and RTK (command-output compression) are complementary — use both when present.
 

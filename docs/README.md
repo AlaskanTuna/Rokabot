@@ -474,7 +474,7 @@ flowchart LR
 ```
 
 - Docker Compose runs Rokabot on a Raspberry Pi 5 with `mem_limit: 1g`, `memswap_limit: 1g` (equal values disable swap entirely — Docker otherwise defaults swap to twice the cap and pages onto the SD card), and `restart: unless-stopped`.
-- The self-hosted GitHub Actions runner builds and health-checks code changes pushed to `main`; the workflow's `paths-ignore` skips `*.md`, `docs/**`, and `.claude/**`.
+- The self-hosted GitHub Actions runner builds and health-checks code changes pushed to `main`; the workflow's `paths-ignore` applies to pushes (deploys) only, skipping `*.md`, `docs/**`, `.claude/**`, and `graphify-out/**`, while every pull request runs the `test` job.
 - Use the [operations runbook](./runbook.md) for Pi commands, runner setup, troubleshooting, and database operations.
 
 ### Browsing Memory in Obsidian
