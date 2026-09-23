@@ -1,15 +1,16 @@
-# Graph Report - .  (2026-09-24)
+# Graph Report - rokabot  (2026-09-24)
 
 ## Corpus Check
-- cluster-only mode — file stats not available
+- 231 files · ~211,897 words
+- Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1961 nodes · 4816 edges · 129 communities (94 shown, 35 thin omitted)
+- 2010 nodes · 4930 edges · 128 communities (99 shown, 29 thin omitted)
 - Extraction: 96% EXTRACTED · 4% INFERRED · 0% AMBIGUOUS · INFERRED: 205 edges (avg confidence: 0.86)
-- Token cost: 6,424 input · 1,361 output
+- Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `00f28b1e`
+- Built from commit: `ba206f6a`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -103,6 +104,7 @@
 - Tool Trigger Testing
 - Quota Diagnostic Logic
 - Interaction Mocking
+- memoryQuote
 - Game Configuration
 - Capture Sink Utilities
 - User Recall Logic
@@ -112,10 +114,8 @@
 - Attachment Error Messaging
 - Timezone Testing
 - Channel Mocking
-- Harness Collection Utilities
 - Key Diagnostic Testing
 - Commit Message Standards
-- Guild Permission Management
 - Production Testing Conventions
 - Roka Bot Documentation
 - Docker Container Management
@@ -143,11 +143,11 @@
 - SSH Access Configuration
 
 ## God Nodes (most connected - your core abstractions)
-1. `getDb()` - 151 edges
-2. `config` - 68 edges
+1. `getDb()` - 154 edges
+2. `config` - 70 edges
 3. `createMessageHandler()` - 57 edges
-4. `generateResponse()` - 47 edges
-5. `logger` - 45 edges
+4. `generateResponse()` - 50 edges
+5. `logger` - 46 edges
 6. `createInteractionHandler()` - 39 edges
 7. `main()` - 33 edges
 8. `main()` - 28 edges
@@ -157,14 +157,14 @@
 ## Surprising Connections (you probably didn't know these)
 - `memory.channelMonitorTtlMs (86400000ms)` --conceptually_related_to--> `markActive()`  [INFERRED]
   config.yml → src/agent/channelMonitor.ts
-- `Telemetry Failure Marker Privacy Contract` --conceptually_related_to--> `classifyGeminiFailure()`  [INFERRED]
-  docs/trd.md → src/agent/geminiReliability.ts
-- `memory.claimsBackend (true)` --conceptually_related_to--> `runExtraction()`  [INFERRED]
-  config.yml → src/agent/memory/extractor.ts
 - `memory.retrievalTokenBudget (350)` --conceptually_related_to--> `retrieveForTurn()`  [INFERRED]
   config.yml → src/agent/memory/retriever.ts
 - `memory.bufferSize (30)` --conceptually_related_to--> `addMessage()`  [INFERRED]
   config.yml → src/agent/passiveBuffer.ts
+- `4-Layer Prompt System` --conceptually_related_to--> `assembleSystemPrompt()`  [INFERRED]
+  AGENTS.md → src/agent/promptAssembler.ts
+- `gemini.maxAttachmentTokens (50000)` --conceptually_related_to--> `canAffordAttachments()`  [INFERRED]
+  config.yml → src/agent/tokenBudget.ts
 
 ## Import Cycles
 - None detected.
@@ -189,19 +189,19 @@
 - **Gemini Free-Tier Rate & Token Budget Guard System** — config_gemini_max_attachment_tokens, config_gemini_max_tokens_per_minute, config_rate_limit_rpm, config_gemini_retry_rpm_floor, config_memory_extraction_daily_budget_ratio [INFERRED 0.85]
 - **Rokabot Request Processing Architecture Pipeline** — agents_discord_gateway_layer, agents_rate_limit_guard, agents_concurrency_guard, agents_session_manager, agents_roka_agent [EXTRACTED 1.00]
 
-## Communities (129 total, 35 thin omitted)
+## Communities (128 total, 29 thin omitted)
 
 ### Community 0 - "Reminder and Session Config"
-Cohesion: 0.05
-Nodes (82): emoji Configuration Section, emoji.cooldownMs (180000ms), emoji.probability (0.33), Historical Stats Backfill Declined, reminders Table Operations, session_history Table Operations, assert(), fail() (+74 more)
+Cohesion: 0.12
+Nodes (28): Guild Permissions Derivation Documentation, Historical Stats Backfill Declined, Reminder Channel First Delivery, reminders Table Operations, session_history Table Operations, SQLite Durable Tables Ecosystem, assert(), fail() (+20 more)
 
 ### Community 1 - "Memory Isolation and Safety"
-Cohesion: 0.07
-Nodes (53): Gemini Safety Settings Explicit OFF Configuration, Claims-Based Memory Pipeline, Pinned Claims Exemption, Tenant Memory Isolation, user_memory Table Operations, assert(), fail(), main() (+45 more)
+Cohesion: 0.08
+Nodes (46): Gemini Safety Settings Explicit OFF Configuration, Prompt Injection Defense and Memory Chokepoint, assert(), fail(), main(), pass(), results, TestResult (+38 more)
 
 ### Community 2 - "Memory Extraction Configuration"
 Cohesion: 0.06
-Nodes (52): gemini.extractionRpmFloor (3), memory Configuration Section, memory.bufferSize (30), memory.channelMonitorTtlMs (86400000ms), memory.claimRetentionDays (90), memory.claimsBackend (true), memory.contextSize (10), memory.extractionDailyBudgetRatio (0.4) (+44 more)
+Nodes (50): gemini.extractionRpmFloor (3), memory Configuration Section, memory.bufferSize (30), memory.channelMonitorTtlMs (86400000ms), memory.claimRetentionDays (90), memory.contextSize (10), memory.extractionDailyBudgetRatio (0.4), memory.extractionGapMs (20000ms) (+42 more)
 
 ### Community 3 - "Session and Prompt Management"
 Cohesion: 0.06
@@ -212,260 +212,260 @@ Cohesion: 0.05
 Nodes (45): Biome and Prettier Formatting, useLiteralKeys, files, ignore, formatter, enabled, indentStyle, indentWidth (+37 more)
 
 ### Community 5 - "Message Handling Logic"
-Cohesion: 0.13
-Nodes (36): Send Path Markdown Backtick Escaping, Split Response Midpoint Heuristic, UTF-16 Emoji Surrogate Split Protection, Per-Channel Concurrency Guard, Rich Message Perception, Trigger Surfaces (Mentions, Replies, Keywords), MessageCreate Mention/Reply Contract, enqueueAndSchedule() (+28 more)
+Cohesion: 0.11
+Nodes (42): Response Events Tools Used Logging, Send Path Markdown Backtick Escaping, Split Response Midpoint Heuristic, UTF-16 Emoji Surrogate Split Protection, Per-Channel Concurrency Guard, Rich Message Perception, Trigger Surfaces (Mentions, Replies, Keywords), MessageCreate Mention/Reply Contract (+34 more)
 
 ### Community 6 - "TypeScript Configuration"
 Cohesion: 0.05
 Nodes (37): Two-Tier Typecheck Gate, ES2022, node, **/*.test.ts, tests/**/*, ./tsconfig.json, vitest/globals, compilerOptions (+29 more)
 
 ### Community 7 - "Memory Claim Management"
-Cohesion: 0.11
-Nodes (35): Claim Deduplication Constraint (idx_memory_claim_dedup), Claim Lifecycle Management, Claim Retention and Capacity Limits, Claims Memory System, Guild Tenancy and DM Isolation, Memory Claim FTS5 Mirror, session_history SQLite Table, activateClaim() (+27 more)
+Cohesion: 0.09
+Nodes (47): Phase 14 Claims Memory Backend Dormant Ship, SQLite Storage Engine, Raspberry Pi Operations Runbook, SQLite Database Administration, Claim Deduplication Constraint (idx_memory_claim_dedup), Claim Lifecycle Management, Claim Retention and Capacity Limits, Memory Claim FTS5 Mirror (+39 more)
 
 ### Community 8 - "Discord Mocking Utilities"
-Cohesion: 0.05
-Nodes (28): AttachmentSpec, CaptureKind, CaptureSink, ChannelSpec, ClientSpec, ComponentData, ComponentSpec, EmbedSpec (+20 more)
+Cohesion: 0.06
+Nodes (43): payload(), AttachmentSpec, CaptureKind, CaptureSink, ChannelSpec, ClientSpec, ComponentData, ComponentSpec (+35 more)
 
 ### Community 9 - "Memory Statistics Visualization"
-Cohesion: 0.12
-Nodes (34): Last 30 Days Stats Views, memoryGrowthSeries(), newClaimsThisMonth(), successRate, topChannels(), topPredicates(), topRememberedMembers(), addChart() (+26 more)
+Cohesion: 0.14
+Nodes (30): Last 30 Days Stats Views, activeClaimCount(), memoryGrowthSeries(), newClaimsThisMonth(), retrySummary, tokenTotals, topChannels(), topPredicates() (+22 more)
 
 ### Community 10 - "Attachment Limit Policies"
-Cohesion: 0.11
-Nodes (26): RFC-3003, Attachment Ceilings by Media Type, One Attachment Per Turn Constraint, Oversized Media Truncation Policy, Streaming Size Guard, Media Prefixing and Streaming Abort, GEMINI_SPELLINGS, geminiMimeType() (+18 more)
+Cohesion: 0.07
+Nodes (36): RFC-3003, Buddy Sprite Hosting Migration, Buddy Sprites Generation and CDN Hosting, Sharp Multi-Stage Resize Pipeline, Attachment Ceilings by Media Type, One Attachment Per Turn Constraint, Oversized Media Truncation Policy, Byte Cap as Duration Proxy (+28 more)
 
 ### Community 11 - "Gacha Buddy System"
 Cohesion: 0.14
-Nodes (28): Buddy Table Unique Constraint Drop, Gacha Rolling 24h Hatch Cadence, buddy and gacha_daily Tables, BuddyRow, DailyBuddyHatch, DailyHatchRow, generateBuddy(), generateName() (+20 more)
+Nodes (27): Buddy Table Unique Constraint Drop, Gacha Rolling 24h Hatch Cadence, BuddyRow, DailyBuddyHatch, DailyHatchRow, generateBuddy(), generateName(), generatePersonality() (+19 more)
 
 ### Community 12 - "SQLite Data Access"
-Cohesion: 0.11
-Nodes (25): SQLite Durable Tables Ecosystem, assertClaim(), claim(), getAllUserNames(), getUserName(), upsertUserName(), UserName, asClaim() (+17 more)
+Cohesion: 0.19
+Nodes (16): claim(), asClaim(), asScenario(), evaluateMemoryShadow(), FixtureClaim, loadReplaySet(), MemoryShadowReport, oldAllFactsTokenEstimate() (+8 more)
 
 ### Community 13 - "Response Generation Testing"
 Cohesion: 0.12
-Nodes (23): Attachment and Budget Tunables, PDF Token Cost Measurement, Attachment Token Admission Control, Prompt-Assembly Retrieval Invariant, measureAttachmentTokens(), needsMeasuring(), destroySession(), generateResponse() (+15 more)
+Nodes (22): Gemini Function Call Ordering 400 Recovery, Prompt-Assembly Retrieval Invariant, destroySession(), eventsToWindowMessages(), generateResponse(), resetIdleTimer(), __setTestRunTurnFactory(), TestRunTurn (+14 more)
 
 ### Community 14 - "Metrics and Diagnostics"
-Cohesion: 0.11
-Nodes (27): metrics Configuration Section, metrics.diagnosticsRetentionHours (72), metrics.retentionDays (90), Failure Marker Closed HTTP Status Allowlist, Failure Marker Raw Token Cap and Privacy, Phase 12 SQLite Observability Metrics, Response Events Tools Used Logging, HTTP 429 Classification (+19 more)
+Cohesion: 0.12
+Nodes (22): metrics Configuration Section, metrics.diagnosticsRetentionHours (72), metrics.retentionDays (90), Phase 12 SQLite Observability Metrics, HTTP 429 Classification, failure_diagnostics Forensics, Context De-escalation Safety Ladder, countMemoryEvents() (+14 more)
 
 ### Community 15 - "CI/CD Pipeline Gates"
-Cohesion: 0.11
-Nodes (28): CI Test Job, Core NPM Commands & Verification, Main Branch PR CI Gate, Phase 10 Dev Workspace Hybrid Harness, Live Model Behavior Third Test Gate, Attachment Token Measure Utility (npm run measure), Verification and Acceptance Gates, scripts (+20 more)
+Cohesion: 0.12
+Nodes (26): CI Test Job, Core NPM Commands & Verification, Main Branch PR CI Gate, Phase 10 Dev Workspace Hybrid Harness, Live Model Behavior Third Test Gate, Verification and Acceptance Gates, scripts, build (+18 more)
 
 ### Community 16 - "Retry and Safety Logic"
 Cohesion: 0.09
-Nodes (26): AbortController Swap on Timed Out Retry, Attempt Timed Out Retry Mechanism, Capturing Runner Pattern, CountTokens Video Audio Bias Balance, Flat Image Token Cost, Post-Turn Attachment Stripping, Safety De-escalation Ladder, Safety Rehydration Suppression (+18 more)
+Nodes (25): AbortController Swap on Timed Out Retry, Attempt Timed Out Retry Mechanism, Capturing Runner Pattern, CountTokens Video Audio Bias Balance, Flat Image Token Cost, Post-Turn Attachment Stripping, Safety De-escalation Ladder, Safety Rehydration Suppression (+17 more)
 
 ### Community 17 - "Utility Tool Functions"
-Cohesion: 0.13
-Nodes (22): In-Conversation Tool Rituals, flipCoin(), FlipCoinResult, cityToTimezone, getCurrentTime(), GetCurrentTimeParams, GetCurrentTimeResult, resolveTimezone() (+14 more)
+Cohesion: 0.09
+Nodes (29): flipCoin(), FlipCoinResult, cityToTimezone, getCurrentTime(), GetCurrentTimeParams, GetCurrentTimeResult, resolveTimezone(), emptyResult() (+21 more)
 
 ### Community 18 - "Configuration and Tuning"
-Cohesion: 0.09
-Nodes (19): Achievable Retry Attempt Count Derivation, Artifact-Anchored Test Assertion, Cross-Key Config Checks Warning Without Clamping, Gemini Model Selection, Media Byte Prefix Ingestion, Modality-Decoupled Token Cost, Phase 14 Claims Memory Backend Dormant Ship, Separate Max Live Retry Window and Reachability Formulas (+11 more)
+Cohesion: 0.14
+Nodes (10): Cross-Key Config Checks Warning Without Clamping, Separate Max Live Retry Window and Reachability Formulas, Docker Multi-Stage Deployment, Runtime Environment, envString(), extractionInterval, JevMode, yaml (+2 more)
 
 ### Community 19 - "Hangman Game Logic"
-Cohesion: 0.16
-Nodes (24): Game Countdown Timers Configuration, SQLite-Backed Games Suite, buildHangmanBody(), handleHangmanGuess(), handleHangmanStart(), HANGMAN_COLORS, saveHangmanScore(), activeGames (+16 more)
+Cohesion: 0.19
+Nodes (21): buildHangmanBody(), handleHangmanGuess(), handleHangmanStart(), HANGMAN_COLORS, saveHangmanScore(), activeGames, getDisplayWord(), getGame() (+13 more)
 
 ### Community 20 - "Statistics Query Logic"
-Cohesion: 0.10
-Nodes (26): /stats Headers and Bot Self-Exclusion, ChannelCount, CountByDay, CountByHour, CountByOutcome, CountByPredicate, CountByTone, CountByTrigger (+18 more)
+Cohesion: 0.08
+Nodes (37): /stats Headers and Bot Self-Exclusion, activityByDay(), busiestChannel, ChannelCount, chatsSince(), CountByDay, CountByHour, CountByOutcome (+29 more)
 
 ### Community 21 - "Development Tooling"
 Cohesion: 0.09
 Nodes (24): Conventional Commits Convention, @biomejs/biome, @commitlint/cli, @commitlint/config-conventional, husky, lint-staged, devDependencies, @biomejs/biome (+16 more)
 
 ### Community 22 - "Database Administration"
-Cohesion: 0.13
-Nodes (25): Data Volume Mount, SQLite Storage Engine, Raspberry Pi Operations Runbook, Database Wipe and Reinitialization, SQLite Database Administration, activeClaimCount(), activityByDay(), busiestChannel (+17 more)
+Cohesion: 0.50
+Nodes (4): topTones(), isToneKey(), TONE_KEYS, toneCounts()
 
 ### Community 23 - "Logging and Tooling"
-Cohesion: 0.14
-Nodes (12): Failure Diagnostics Table, Native Timer Seam Limitation, REMEMBER_TURN, rememberUserTool, closeDb(), attestedScopes(), backfillLegacyClaims(), isUnsafeClaimError() (+4 more)
+Cohesion: 0.17
+Nodes (9): Failure Diagnostics Table, Native Timer Seam Limitation, Database Wipe and Reinitialization, mocks, closeDb(), createTables(), runMigrations(), DatabaseModule (+1 more)
 
 ### Community 24 - "Media Validation Policies"
 Cohesion: 0.14
-Nodes (23): Attachment URL SSRF and Type Validation, Audio Intake Recommendation, PDF Intake Recommendation, Video Low Resolution Recommendation, Components V2 Media Extraction, SSRF Guarded Media URL Resolution, ALLOWED_AUDIO_TYPES, ALLOWED_DOCUMENT_TYPES (+15 more)
+Nodes (23): Attachment URL SSRF and Type Validation, ALLOWED_IMAGE_TYPES Consolidation, Audio Intake Recommendation, PDF Intake Recommendation, Video Low Resolution Recommendation, Components V2 Media Extraction, SSRF Guarded Media URL Resolution, ALLOWED_AUDIO_TYPES (+15 more)
 
 ### Community 25 - "Memory Extraction Privacy"
-Cohesion: 0.14
-Nodes (22): Memory Consent Split Architecture, Privacy Guard Loose Floor, AppliedChange, applyOps(), ExtractionJob, ExtractionMessage, ExtractionOp, generateExtraction() (+14 more)
+Cohesion: 0.11
+Nodes (28): gemini.extractionMaxRetries (1), memory.claimsBackend (true), Memory Consent Split Architecture, Privacy Guard Loose Floor, CandidateGateResult, hasKeyword(), isSensitive(), isTrivial() (+20 more)
 
 ### Community 26 - "Rate Limiting Logic"
-Cohesion: 0.13
-Nodes (10): FR-6: Rate Limiting, Four-Stage Admission Guards Ladder, Rate Limit and Session Tunables, Turn Call Reservation Guard (#167), Dual Window Bounding Strategy, RPM Budget Accounting and Floor Priority, DECLINE_MESSAGES, mocks (+2 more)
+Cohesion: 0.23
+Nodes (6): rateLimit Configuration Section, rateLimit.rpd (500), Four-Stage Admission Guards Ladder, Turn Call Reservation Guard (#167), RPM Budget Accounting and Floor Priority, RateLimiter
 
 ### Community 27 - "Gacha Interaction Logic"
-Cohesion: 0.22
-Nodes (20): handleGachaMention(), statBar(), formatBuddySummary(), formatHatchTimeRemaining(), handleBuddyLeaderboard(), handleBuddyStats(), handleBuddyView(), handleHatch() (+12 more)
+Cohesion: 0.23
+Nodes (19): handleGachaMention(), statBar(), formatBuddySummary(), formatHatchTimeRemaining(), handleBuddyLeaderboard(), handleBuddyStats(), handleBuddyView(), handleHatch() (+11 more)
 
 ### Community 28 - "Discord Command Registration"
-Cohesion: 0.13
-Nodes (17): statusCycleMs (900000ms), Ask Command Consolidation, Command Registration Policy by Pointer, Command Set API Verification, Direct Messages Intent Omission Growth Barrier, Game Command Guild Restriction Rationale, Isolated It Block Assertion Convention, Slash Commands Dev Guild Registration (+9 more)
+Cohesion: 0.15
+Nodes (10): Direct Messages Intent Omission Growth Barrier, In-Flight Hold Assertion Principle, Sliding Window Rate Limiting, Discord Platform and Gateway, Installation and Context Policy, createClient(), handleReady(), mocks (+2 more)
 
 ### Community 29 - "Transcript Processing"
 Cohesion: 0.17
 Nodes (21): fixturePath(), loadTranscript(), main(), parseTranscriptLine(), renderTokenTable(), requestMessageContent(), runTranscript(), RunTranscriptOptions (+13 more)
 
 ### Community 30 - "Evaluation Harness Utilities"
-Cohesion: 0.12
-Nodes (15): CaptureInput, CaptureKind, CaptureRecord, createCaptureSink(), makeClient(), makeGuild(), toChannelMap(), benchmarkTranscript (+7 more)
+Cohesion: 0.10
+Nodes (21): resetForTest(), stopExtractionScheduler(), __resetTestRunTurnFactory(), CaptureInput, CaptureKind, CaptureRecord, createCaptureSink(), makeClient() (+13 more)
 
 ### Community 31 - "Bot Technology Stack"
-Cohesion: 0.10
-Nodes (23): Rokabot Technology Stack, discord.js, Chart Rendering Container Font Parity, Gemini API Backend, Roka Agent (ADK), dotenv, @google/adk, @google/genai (+15 more)
+Cohesion: 0.09
+Nodes (25): Rokabot Technology Stack, discord.js, Chart Rendering Container Font Parity, Gemini API Backend, Roka Agent (ADK), dotenv, @google/adk, @google/genai (+17 more)
 
 ### Community 32 - "Documentation and Governance"
 Cohesion: 0.10
 Nodes (20): AGENTS.md Data Models Section Deletion, AGENTS.md General Guidelines and No Build Pin, CodeRabbit CI PR Gate, CodeRabbit Rate Limit Review Handling, CodeRabbit Gate Unwind Procedure, Codex Worker AGENTS.md PM Lock Preamble, Codex Sandbox Network Access Flag, Codex Worker Briefs Interactive Features Pre-Decline (+12 more)
 
 ### Community 33 - "Anime Lookup Tools"
-Cohesion: 0.19
-Nodes (20): Jikan Unofficial MyAnimeList API, BROADCAST_TIMEZONES, clampLimit(), convertBroadcastTime(), fetchJikan(), getAnimeSchedule(), GetAnimeScheduleParams, GetAnimeScheduleResult (+12 more)
+Cohesion: 0.21
+Nodes (19): BROADCAST_TIMEZONES, clampLimit(), convertBroadcastTime(), fetchJikan(), getAnimeSchedule(), GetAnimeScheduleParams, GetAnimeScheduleResult, getCurrentSeason() (+11 more)
 
 ### Community 34 - "Session Attachment Management"
 Cohesion: 0.12
 Nodes (10): Attachment History Stripping, Attachment History Stripping, attachmentMarker(), ensureSession(), runner, WindowedSessionService, runTurn(), CapturingLlm (+2 more)
 
 ### Community 35 - "Slash Command UI"
-Cohesion: 0.16
-Nodes (14): Gacha Collection Components V2 UI, Phase 17 Layout B and Guild ID Migration Declined, Slash Command Consolidation Layout A, /stats Redesign Specifications, Zero-Call Slot Optimization, Discord Slash Commands, gachaCommand, gameCommands (+6 more)
+Cohesion: 0.08
+Nodes (26): Ask Command Consolidation, Command Architecture and Tool Disclosure Footer, Command Registration Policy by Pointer, Command Set API Verification, Gacha Collection Components V2 UI, Game Command Guild Restriction Rationale, Isolated It Block Assertion Convention, Discord Max Message Length Derived Ceiling (+18 more)
 
 ### Community 36 - "Memory Retrieval Logic"
-Cohesion: 0.16
-Nodes (19): Memory Recall Freshest-First Bounded Retrieval, needs_review Quarantine Invariant, ClaimSource, PredicateId, ClaimRow, compareRetrieved(), getActiveClaims(), mapClaim() (+11 more)
+Cohesion: 0.10
+Nodes (35): Claim Salience Ranking Preservation, Uniform Predicate Salience Model, User By Name Tenant Filtering, Recall Relevance Ranking, needs_review Quarantine Invariant, touchRecalled(), baseSalienceOf(), cardinalityOf() (+27 more)
 
 ### Community 37 - "Background Task Scheduling"
-Cohesion: 0.14
-Nodes (15): destroyAllSessions(), cleanupExpiredCooldowns(), cooldowns, findMatchingRule(), REACTION_RULES, ReactionRule, stopReminderScheduler(), STATUS_SCHEDULE (+7 more)
+Cohesion: 0.18
+Nodes (11): restoreMonitoredChannels(), destroyAllSessions(), cleanupExpiredCooldowns(), stopReminderScheduler(), STATUS_SCHEDULE, stopStatusCycler(), client, healthServer (+3 more)
 
 ### Community 38 - "Game Command Handling"
 Cohesion: 0.26
-Nodes (17): createGameCommandHandler(), GAME_COMMAND_NAMES, handleBuddyGuide(), handleHangmanGuide(), handleLeaderboard(), buildGameContainer(), buildTimeoutContainer(), handleShiritoriEnd() (+9 more)
+Nodes (17): createGameCommandHandler(), GAME_COMMAND_NAMES, handleBuddyGuide(), handleHangmanGuide(), handleLeaderboard(), buildGameContainer(), buildTimeoutContainer(), GameContainerOptions (+9 more)
 
 ### Community 39 - "Deployment and Infrastructure"
-Cohesion: 0.12
-Nodes (17): Discord Deployment Webhook Notifications, Deployment Health Check Loop, CD Deploy Job, CI Paths Ignore Filter, Deploy to Pi Workflow, Docker Memory Cap Constraint, discord Configuration Section, discord.maxInFlightAttachmentBytes (33554432) (+9 more)
+Cohesion: 0.13
+Nodes (15): Discord Deployment Webhook Notifications, Deployment Health Check Loop, CD Deploy Job, CI Paths Ignore Filter, Deploy to Pi Workflow, Docker Memory Cap Constraint, ADK_QUIET Environment Variable, Data Volume Mount (+7 more)
 
 ### Community 40 - "Prompt Assembly Logic"
-Cohesion: 0.19
-Nodes (15): Live Gate Hour Pinning, Prompt Injection Defense and Memory Chokepoint, Request Composition Prose Enumeration Avoidance, ToneKey Table Test Pinning, FR-4: Layered Personality Prompts, Four-Layer Prompt Assembly, AssemblerInput Model, ToneKey Model (+7 more)
+Cohesion: 0.24
+Nodes (9): Request Composition Prose Enumeration Avoidance, ToneKey Table Test Pinning, AssemblerInput Model, ToneKey Model, AssemblerInput, buildContextPrompt(), getTimeOfDay(), ToneKey (+1 more)
 
 ### Community 41 - "Memory Budgeting"
-Cohesion: 0.17
-Nodes (9): Global In-Flight Byte Budget, 4.7x RSS Attachment Multiplier, V8 Heap Limit Bypass by Buffers, Global In-Flight Attachment Byte Budget, inFlightBytes(), release(), tryReserve(), client (+1 more)
+Cohesion: 0.10
+Nodes (18): FR-9: Docker Deployment, Concurrency Binding Constraint, Container Memory Cap Correction, Flash-Lite Modality Verification, Global In-Flight Byte Budget, Inline Data vs Files API Decision, Multimodal Intake Research, 4.7x RSS Attachment Multiplier (+10 more)
 
 ### Community 42 - "Chart Rendering Logic"
-Cohesion: 0.22
-Nodes (15): degreeColor(), hexColor(), renderActivityHeatmap(), renderChannelHistogram(), renderLatencyTrend(), renderMemoryGrowth(), renderMoodDonut(), ROKA_CHART_PALETTE (+7 more)
+Cohesion: 0.30
+Nodes (12): degreeColor(), hexColor(), renderActivityHeatmap(), renderChannelHistogram(), renderLatencyTrend(), renderMemoryGrowth(), renderMoodDonut(), ROKA_CHART_PALETTE (+4 more)
 
 ### Community 43 - "Turn Budgeting Logic"
-Cohesion: 0.12
-Nodes (13): Attachment TPM RPM Divergence, Command Architecture and Tool Disclosure Footer, Complementary Config Test Split, Discord Max Message Length Derived Ceiling, NUMERIC_BOUNDS Single Registry, Retry Budget Dual Jitter Tails, Surgical Mutation Probe Discipline, Turn Deadline Budget Max-Jitter Derivation (+5 more)
+Cohesion: 0.20
+Nodes (5): Complementary Config Test Split, Retry Budget Dual Jitter Tails, Turn Deadline Budget Max-Jitter Derivation, maxJitterAchievableRetries, minJitterAchievableRetries
 
 ### Community 44 - "Gemini Error Handling"
-Cohesion: 0.16
-Nodes (15): Gemini Function Call Ordering 400 Recovery, Digit-Anchored HTTP Status Failure Classification, Transient Status 504 Classification Addition, Spent Day vs Spent Minute Classification, BackoffOptions, classifyGeminiFailure(), classifyMarker(), extractGeminiStatus() (+7 more)
+Cohesion: 0.13
+Nodes (18): Failure Marker Closed HTTP Status Allowlist, Failure Marker Raw Token Cap and Privacy, Digit-Anchored HTTP Status Failure Classification, Transient Status 504 Classification Addition, Spent Day vs Spent Minute Classification, Telemetry Failure Marker Privacy Contract, BackoffOptions, classifyGeminiFailure() (+10 more)
 
 ### Community 45 - "Privacy and Isolation"
-Cohesion: 0.18
-Nodes (13): Per-Channel DM Memory Tenancy Isolation, Memory Privacy and Guild Isolation, Memory Tools Fail Closed on Missing Tenant State, /stats Memory Quote Top-Salience Privacy Amendment, normalizeKey(), sensitiveFactReason, LEGITIMATE, SENSITIVE (+5 more)
+Cohesion: 0.16
+Nodes (15): Per-Channel DM Memory Tenancy Isolation, Memory Tools Fail Closed on Missing Tenant State, assertClaim(), normalizeKey(), sensitiveFactReason, addNickname(), LEGITIMATE, SENSITIVE (+7 more)
 
 ### Community 46 - "Mock Object Factories"
-Cohesion: 0.19
-Nodes (16): payload(), FakeComponent, has(), makeAttachments(), makeChannel(), makeComponent(), makeInteraction(), makeMember() (+8 more)
+Cohesion: 0.25
+Nodes (16): mocks, createToolCommandHandler(), TOOL_COMMAND_NAMES, handleAnime(), handleRemind(), handleRemindAt(), handleRemindCancel(), handleRemindIn() (+8 more)
 
 ### Community 47 - "Project Guidelines and Constraints"
-Cohesion: 0.10
-Nodes (20): CI Dummy Secrets, Karpathy Coding Guidelines, Configuration & Numeric Bounds, Critical Agent Constraints, TitleCase Documentation Hygiene, Graphify Knowledge Graph Integration, Maniwa Roka Persona, Rokabot Character Bot Overview (+12 more)
+Cohesion: 0.17
+Nodes (11): Karpathy Coding Guidelines, Critical Agent Constraints, TitleCase Documentation Hygiene, Graphify Knowledge Graph Integration, Maniwa Roka Persona, Rokabot Character Bot Overview, Rust Token Killer (RTK) Proxy, SQLite Canonical Storage (+3 more)
 
 ### Community 48 - "Gemini Configuration"
-Cohesion: 0.14
-Nodes (16): gemini Configuration Section, gemini.extractionMaxRetries (1), gemini.liveMaxRetries (2), gemini.maxAttachmentTokens (50000), gemini.maxLlmCalls (4), gemini.maxOutputTokens (500), gemini.maxRetries (3), gemini.retryBackoffBaseMs (1000ms) (+8 more)
+Cohesion: 0.15
+Nodes (15): gemini Configuration Section, gemini.liveMaxRetries (2), gemini.maxAttachmentTokens (50000), gemini.maxLlmCalls (4), gemini.maxOutputTokens (500), gemini.maxRetries (3), gemini.retryBackoffBaseMs (1000ms), gemini.retryBackoffCapMs (12000ms) (+7 more)
 
 ### Community 49 - "Web Search Integration"
-Cohesion: 0.16
-Nodes (12): NSFW Search Domain Policy, Search Depth and Synthesis Layering, Search Recency Handling Limitation, Search Web Tool Scoped Prompt Rules, Tavily Search Quality Repair, Tavily Search API, Shrine Ritual Tool Footer, recordSearchCitations() (+4 more)
+Cohesion: 0.15
+Nodes (12): NSFW Search Domain Policy, Positive-Only Search Rubric, Search Depth and Synthesis Layering, Search Recency Handling Limitation, Search Web Tool Scoped Prompt Rules, Tavily Search Quality Repair, Tavily Search API, Shrine Ritual Tool Footer (+4 more)
 
 ### Community 50 - "Interaction Handling"
 Cohesion: 0.15
 Nodes (13): Per-Channel Concurrency Guard, Discord Gateway Layer, Rate Limit Guard Mechanism, FR-1: Slash Command Interaction, Discord Gateway Layer, InteractionCreate Slash Command Contract, Per-Channel Concurrency Guard, askCommand (+5 more)
 
 ### Community 51 - "Rate Limiting Tests"
-Cohesion: 0.17
-Nodes (10): ADK Runner Contract Test Isolation, In-Flight Hold Assertion Principle, Sliding Window Rate Limiting, RateLimiterConfig Model, mocks, makeInteraction(), mocks, turnState() (+2 more)
+Cohesion: 0.33
+Nodes (5): ADK Runner Contract Test Isolation, recallUserTool, makeInteraction(), mocks, turnState()
 
 ### Community 52 - "Memory Predicate Logic"
-Cohesion: 0.22
-Nodes (13): Claim Salience Ranking Preservation, Uniform Predicate Salience Model, baseSalienceOf(), cardinalityOf(), isKnownPredicate(), normalizePredicate(), PredicateCardinality, predicateCategory (+5 more)
+Cohesion: 0.16
+Nodes (19): assert(), fail(), main(), makeMessage(), pass(), results, TestResult, cooldowns (+11 more)
 
 ### Community 53 - "Turn Reliability Logic"
-Cohesion: 0.14
-Nodes (14): Phase 19 Steered Safety Regeneration, Phase 20 Turn Deadline Admission Control, Phase 9 Turn Reliability, Reliability Guard Test Loop Binding, FR-7: Error Handling, Silent SIGKILL Risk, fallbackResult(), GenerateOptions (+6 more)
+Cohesion: 0.15
+Nodes (13): Phase 19 Steered Safety Regeneration, Phase 20 Turn Deadline Admission Control, Phase 9 Turn Reliability, Reliability Guard Test Loop Binding, FR-7: Error Handling, Silent SIGKILL Risk, fallbackResult(), GenerateOptions (+5 more)
 
 ### Community 54 - "Tool Trigger Fixtures"
 Cohesion: 0.24
 Nodes (14): asCase(), asClaim(), asHeader(), asHistoryLine(), asMember(), asSessionState(), DEFAULT_CASE_SET_PATH, FixtureClaim (+6 more)
 
 ### Community 55 - "Token Usage Estimation"
-Cohesion: 0.24
-Nodes (10): System Prompt Token Cap, MAX_SYSTEM_PROMPT_TOKENS Catastrophe Rail, System Prompt Token Cap Guard, estimateTokens(), fixture, measureRequest(), serializeToolSchemas(), stableJson() (+2 more)
+Cohesion: 0.21
+Nodes (13): System Prompt Token Cap, MAX_SYSTEM_PROMPT_TOKENS Catastrophe Rail, FR-4: Layered Personality Prompts, System Prompt Token Cap Guard, TONE_PROMPTS, rokaTools, estimateTokens(), fixture (+5 more)
 
 ### Community 56 - "Reminder System Configuration"
-Cohesion: 0.15
-Nodes (13): logging.level (info), reminders Configuration Section, reminders.checkIntervalMs (5000ms), reminders.maxPerUser (5), reminders.staleThresholdMs (300000ms), timezone (Asia/Singapore), Reminder Stale Threshold Inclusive Comparison, Load-Bearing bot Scope Requirement (+5 more)
+Cohesion: 0.22
+Nodes (10): reminders Configuration Section, reminders.checkIntervalMs (5000ms), reminders.maxPerUser (5), reminders.staleThresholdMs (300000ms), Reminder Stale Threshold Inclusive Comparison, Load-Bearing bot Scope Requirement, No Build-Time Permission Pin Decision, API-Derived Discord Permissions (+2 more)
 
 ### Community 57 - "Obsidian Export Logic"
 Cohesion: 0.19
 Nodes (13): memory.vaultExportDir (data/vault), Obsidian Vault Export, Obsidian Vault Export Technical Contract, export:vault, MemoryClaim, ActiveClaimSubject, ExportedClaim, exportVault() (+5 more)
 
 ### Community 58 - "Message Formatting Logic"
-Cohesion: 0.24
-Nodes (12): Components V2 TextDisplay 4000 Character Ceiling, Reply Split Bound Derivation, Tight Tool Footer Chars Bound, buildRokaMessage(), buildToolFooter(), worstCaseToolFooterLabels, footerWithoutTimestamp(), labelFor() (+4 more)
+Cohesion: 0.18
+Nodes (14): Components V2 TextDisplay 4000 Character Ceiling, Reply Split Bound Derivation, Tight Tool Footer Chars Bound, buildRokaMessage(), buildToolFooter(), worstCaseToolFooterLabels, footerWithoutTimestamp(), labelFor() (+6 more)
 
 ### Community 59 - "Benchmark Pacing Logic"
-Cohesion: 0.18
-Nodes (13): Harness Trial Pacing Guard, Live Benchmark Abort on Non-Ok Turns, Live Benchmark RPM Pacing Headroom, Live Gate Transient Fallback Retries, sessionService, pacingWith(), CaseSetRun, runCaseSet() (+5 more)
+Cohesion: 0.13
+Nodes (20): Live Eval Fixture World Collision Avoidance, Guild Tenancy and DM Isolation, buildNameIndex(), escapeRegex(), isAscii(), MATCH_PRIORITY, MatchKind, NameCandidate (+12 more)
 
 ### Community 60 - "Token Budget Management"
-Cohesion: 0.30
-Nodes (9): Free-Tier TPM Ceiling Measurement, Per-Minute Token Budget (TPM Guard), canAffordAttachments(), chargeTokens(), drain(), lastDrain, remainingTokensThisMinute(), __resetTokenBudgetForTest() (+1 more)
+Cohesion: 0.10
+Nodes (24): RPM Binding Rate Limit, gemini.maxTokensPerMinute (125000), rateLimit.rpm (15), Gemini Model Selection, Task 91 Claims Backend Default Promotion, FR-6: Rate Limiting, Memory Configuration Tunables, Free-Tier TPM Ceiling Measurement (+16 more)
 
 ### Community 61 - "Interaction Metrics Testing"
-Cohesion: 0.16
-Nodes (8): attachmentOptionName(), createInteraction(), askWith(), metrics, mocks, client, createInteraction(), mocks
+Cohesion: 0.20
+Nodes (9): citationsForTurn, recordSearchCitations(), SearchCitation, attachmentOptionName(), createInteraction(), askWith(), metrics, mocks (+1 more)
 
 ### Community 62 - "Multimodal Intake Policy"
-Cohesion: 0.19
-Nodes (12): ALLOWED_IMAGE_TYPES Consolidation, Byte Cap as Duration Proxy, Concurrency Binding Constraint, Container Memory Cap Correction, Flash-Lite Modality Verification, Inline Data vs Files API Decision, Multimodal Intake Research, Recommended Attachment Caps (+4 more)
+Cohesion: 0.17
+Nodes (12): getJevClient(), resetJevClientForTest(), BoundedAlias, boundedAliases(), judgeExtraction(), judgeTurn(), timeOfDay(), TurnJudgment (+4 more)
 
 ### Community 63 - "Search Citation Logic"
-Cohesion: 0.18
-Nodes (8): citationsForTurn, SearchCitation, withSearchCitations(), runSearchTurn(), ScriptedLlm, SEARCH_TURN, TAVILY_RESULTS, searchWebTool
+Cohesion: 0.22
+Nodes (5): runSearchTurn(), ScriptedLlm, SEARCH_TURN, TAVILY_RESULTS, searchWebTool
 
 ### Community 64 - "Test Fixture Management"
-Cohesion: 0.20
-Nodes (11): Group Conversation Roster Removal, Live Eval Fixture World Collision Avoidance, Session State Fixture Seeding, __resetTestRunTurnFactory(), channels, header, probeCase, stateAfterCase() (+3 more)
+Cohesion: 0.22
+Nodes (9): Group Conversation Roster Removal, Session State Fixture Seeding, sessionService, channels, header, probeCase, stateAfterCase(), temporaryDirectories (+1 more)
 
 ### Community 65 - "Live Model Benchmarking"
-Cohesion: 0.20
-Nodes (10): Live Model Statistical Verdict, Live Tool Trigger Gate Aggregate Floors, Prompt Addition Recall Regression Principle, Ship Red on Real Defect Policy, Verdict Thresholds Shared Registry and Predicate, Live Model Benchmark Gate (npm run test:live), CASE_SETS, meetsLiveVerdict() (+2 more)
+Cohesion: 0.15
+Nodes (14): Live Benchmark Abort on Non-Ok Turns, Live Gate Transient Fallback Retries, Live Model Statistical Verdict, Live Tool Trigger Gate Aggregate Floors, Prompt Addition Recall Regression Principle, Ship Red on Real Defect Policy, Verdict Thresholds Shared Registry and Predicate, Live Model Benchmark Gate (npm run test:live) (+6 more)
 
 ### Community 66 - "Statistical Scoring Logic"
-Cohesion: 0.18
-Nodes (8): Statistical Gate Pure Scorer Data Mutation Pin, fixturePath, header, rememberFixturePath, temporaryDirectories, testCase, scoreCaseSet(), ToolTriggerReport
+Cohesion: 0.16
+Nodes (10): Statistical Gate Pure Scorer Data Mutation Pin, fixturePath, header, rememberFixturePath, temporaryDirectories, testCase, CaseSetRun, CaseObservations (+2 more)
 
 ### Community 67 - "Prompt and Recall Logic"
-Cohesion: 0.20
-Nodes (9): Group Conversation Roster Rejection, Phase 11 Tool Suite Trimming and Prompt Diet, Positive-Only Search Rubric, Prompt Layer Recency Precedence, Recall User Proactive Trigger Current Message Scoping, Roka Voice and Kaomoji Guidelines, Speech Quota Roleplay Scoping, Unconditional Prompt Assembly Architecture (+1 more)
+Cohesion: 0.25
+Nodes (7): Group Conversation Roster Rejection, Phase 11 Tool Suite Trimming and Prompt Diet, Prompt Layer Recency Precedence, Recall User Proactive Trigger Current Message Scoping, Roka Voice and Kaomoji Guidelines, Speech Quota Roleplay Scoping, Unconditional Prompt Assembly Architecture
 
 ### Community 68 - "Tone and Expression Logic"
-Cohesion: 0.22
-Nodes (9): Discord Components V2 Reply, Rule-Based Tone Detection, Tone Expression and Accent Mapping, RawComponent, EXPRESSION_URLS, getExpressionUrl(), lastExpressionByTone, __resetExpressionState() (+1 more)
+Cohesion: 0.20
+Nodes (10): Tone Expression Variety and Detector Rebalance, Discord Components V2 Reply, Rule-Based Tone Detection, Tone Expression and Accent Mapping, RawComponent, EXPRESSION_URLS, getExpressionUrl(), lastExpressionByTone (+2 more)
 
 ### Community 69 - "Project Metadata"
 Cohesion: 0.18
@@ -476,44 +476,44 @@ Cohesion: 0.22
 Nodes (9): CapturingErrorPlugin, classify(), ITERATIONS, main(), MODELS, PROBES, runOne(), RunOutcome (+1 more)
 
 ### Community 71 - "Extraction Filtering Logic"
-Cohesion: 0.33
-Nodes (9): CandidateGateResult, hasKeyword(), isSensitive(), isTrivial(), knownKeys(), normalize(), SENSITIVE_PATTERNS, shouldExtract() (+1 more)
+Cohesion: 0.22
+Nodes (11): Artifact-Anchored Test Assertion, Media Byte Prefix Ingestion, Modality-Decoupled Token Cost, Attachment and Budget Tunables, Attachment Token Measure Utility (npm run measure), PDF Token Cost Measurement, Attachment Token Admission Control, measure (+3 more)
 
 ### Community 72 - "Payload Rendering Logic"
-Cohesion: 0.42
-Nodes (10): asObject(), asObjects(), chunkLabel(), componentDetails(), isComponentsV2Payload(), PayloadObject, renderEmbeds(), renderPayload() (+2 more)
+Cohesion: 0.38
+Nodes (11): getToneStyle(), asObject(), asObjects(), chunkLabel(), componentDetails(), isComponentsV2Payload(), PayloadObject, renderEmbeds() (+3 more)
 
 ### Community 73 - "View Statistics Testing"
-Cohesion: 0.24
-Nodes (9): charts, contentFor(), errors, guild, jsonFor(), queries, selectsFor(), getMoodLabel() (+1 more)
+Cohesion: 0.16
+Nodes (16): /stats Redesign Specifications, handleStatsCommand(), isStatsView(), logStatsError(), selectionFor(), sendStatsError(), charts, contentFor() (+8 more)
 
 ### Community 74 - "Sprite Optimization Pipeline"
-Cohesion: 0.22
-Nodes (7): Buddy Sprite Hosting Migration, Buddy Sprites Generation and CDN Hosting, Sharp Multi-Stage Resize Pipeline, Attachment Types and Ceilings Contract, sharp, spriteFiles, sharp
+Cohesion: 0.17
+Nodes (11): discord Configuration Section, discord.maxInFlightAttachmentBytes (33554432), discord.maxMessageLength (1500), emoji Configuration Section, emoji.cooldownMs (180000ms), emoji.probability (0.33), logging.level (info), statusCycleMs (900000ms) (+3 more)
 
 ### Community 75 - "ADK Smoke Testing"
-Cohesion: 0.31
-Nodes (7): ErrorRecoveryPlugin, main(), results, runQuery(), test(), TestResult, wordCount()
+Cohesion: 0.25
+Nodes (9): Four-Layer Prompt Assembly, ErrorRecoveryPlugin, main(), results, runQuery(), test(), TestResult, wordCount() (+1 more)
 
 ### Community 76 - "Weather Lookup Tool"
-Cohesion: 0.28
-Nodes (8): emptyResult(), GeocodingResult, getWeather(), GetWeatherParams, GetWeatherResult, OpenMeteoWeather, weatherCodeToCondition(), wmoWeatherCodes
+Cohesion: 0.20
+Nodes (9): Deliberately Not Done, Design, Jev Integration, Measured From The Pi, Rollout, Second Opinion, What Jev Is, Where Rokabot Decides Today (+1 more)
 
 ### Community 77 - "Anime Search Logic"
-Cohesion: 0.28
-Nodes (7): jikanThrottle(), AnimeResult, JikanAnimeEntry, JikanResponse, searchAnime(), SearchAnimeParams, SearchAnimeResult
+Cohesion: 0.24
+Nodes (8): Jikan Unofficial MyAnimeList API, jikanThrottle(), AnimeResult, JikanAnimeEntry, JikanResponse, searchAnime(), SearchAnimeParams, SearchAnimeResult
 
 ### Community 78 - "Error Handling Logic"
-Cohesion: 0.44
-Nodes (7): IGNORABLE_CODES, isIgnorableDiscordError(), handleStatsCommand(), isStatsView(), logStatsError(), selectionFor(), sendStatsError()
+Cohesion: 0.22
+Nodes (9): CI Dummy Secrets, Configuration & Numeric Bounds, Attachment TPM RPM Divergence, NUMERIC_BOUNDS Single Registry, Surgical Mutation Probe Discipline, Turn Deadline Default Raised to 63000ms, .env Secrets Configuration, NUMERIC_BOUNDS (+1 more)
 
 ### Community 79 - "Buddy Collection UI"
-Cohesion: 0.50
-Nodes (6): buildCollectionPage(), buildPaginatedCollectionPage(), getCollectionPageCount(), handleBuddyCollection(), { getBuddyCollection }, BuddyData
+Cohesion: 0.38
+Nodes (8): buddy and gacha_daily Tables, buildCollectionPage(), buildPaginatedCollectionPage(), getCollectionPageCount(), handleBuddyCollection(), { getBuddyCollection }, BuddyData, getBuddyCollection()
 
 ### Community 80 - "Message Handling Tests"
-Cohesion: 0.28
-Nodes (7): createMessage(), createRateLimiter(), handle(), metrics, mocks, mutableMemoryConfig, snapshot()
+Cohesion: 0.24
+Nodes (8): createMessage(), createRateLimiter(), handle(), metrics, mocks, mutableJevConfig, mutableMemoryConfig, snapshot()
 
 ### Community 81 - "Test Trial Recording"
 Cohesion: 0.39
@@ -543,41 +543,61 @@ Nodes (6): cases, header, ok(), turn(), CaseSetHeader, ToolTriggerCase
 Cohesion: 0.43
 Nodes (5): describeQuotaFailure(), diagnoseKey(), errorText(), SPENT_KEY_429, THROTTLED_429
 
-### Community 90 - "Game Configuration"
+### Community 89 - "memoryQuote"
 Cohesion: 0.40
-Nodes (5): games Configuration Section, games.hangmanLives (6), games.hangmanTimeoutMs (120000ms), games.shinyChance (0.01), games.shiritoriTimeoutMs (120000ms)
+Nodes (5): Memory Privacy and Guild Isolation, Memory Recall Freshest-First Bounded Retrieval, /stats Memory Quote Top-Salience Privacy Amendment, memoryQuote(), predicatePhrase()
+
+### Community 90 - "Game Configuration"
+Cohesion: 0.12
+Nodes (24): games Configuration Section, games.hangmanLives (6), games.hangmanTimeoutMs (120000ms), games.shinyChance (0.01), games.shiritoriTimeoutMs (120000ms), Game Countdown Timers Configuration, SQLite-Backed Games Suite, activeGames (+16 more)
 
 ### Community 92 - "User Recall Logic"
-Cohesion: 0.50
-Nodes (4): User By Name Tenant Filtering, Recall Relevance Ranking, recallUser(), findUserByName()
+Cohesion: 0.67
+Nodes (3): Achievable Retry Attempt Count Derivation, Gemini Tunables (config.yml), deriveAchievableRetries()
 
 ### Community 93 - "Chat Input Testing"
 Cohesion: 0.67
 Nodes (3): handleInput(), main(), username
 
+### Community 94 - "Scripted LLM Interface"
+Cohesion: 0.13
+Nodes (13): Claims-Based Memory Pipeline, Pinned Claims Exemption, Tenant Memory Isolation, user_memory Table Operations, Claims Memory System, session_history SQLite Table, REMEMBER_TURN, ScriptedLlm (+5 more)
+
+### Community 95 - "Benchmark Pacing Config"
+Cohesion: 0.40
+Nodes (5): Harness Timeout Pacing Derivation, Harness Trial Pacing Guard, Live Benchmark RPM Pacing Headroom, TRIAL_PACING_MS, TRIAL_PACING_MS
+
 ### Community 96 - "Attachment Error Messaging"
 Cohesion: 0.67
 Nodes (3): In-Character Attachment Failure Notices, OVERSIZED_ATTACHMENT_MESSAGES, UNSUPPORTED_ATTACHMENT_MESSAGES
 
+### Community 97 - "Timezone Testing"
+Cohesion: 0.35
+Nodes (8): In-Conversation Tool Rituals, cancelReminder(), listReminders(), setReminder(), loadGetLocalHour(), unpinnedHour(), formatTime(), getTimezoneLabel()
+
+### Community 98 - "Channel Mocking"
+Cohesion: 0.17
+Nodes (3): FakeChannel, FakeMessage, HarnessCollection
+
 ## Knowledge Gaps
-- **422 isolated node(s):** `$schema`, `enabled`, `indentStyle`, `indentWidth`, `lineWidth` (+417 more)
+- **444 isolated node(s):** `$schema`, `enabled`, `indentStyle`, `indentWidth`, `lineWidth` (+439 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **35 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **29 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `getDb()` connect `Database Administration` to `Reminder and Session Config`, `Memory Isolation and Safety`, `Memory Extraction Configuration`, `Memory Claim Management`, `Memory Statistics Visualization`, `Gacha Buddy System`, `SQLite Data Access`, `Response Generation Testing`, `Metrics and Diagnostics`, `Hangman Game Logic`, `Statistics Query Logic`, `Logging and Tooling`, `Memory Extraction Privacy`, `Gacha Interaction Logic`, `Evaluation Harness Utilities`, `Memory Retrieval Logic`, `Background Task Scheduling`, `Game Command Handling`, `Privacy and Isolation`, `Project Guidelines and Constraints`, `Obsidian Export Logic`, `Live Model Benchmarking`, `User Recall Logic`?**
-  _High betweenness centrality (0.118) - this node is a cross-community bridge._
-- **Why does `config` connect `Configuration and Tuning` to `Reminder and Session Config`, `Memory Isolation and Safety`, `Memory Extraction Configuration`, `Session and Prompt Management`, `Message Handling Logic`, `Memory Claim Management`, `Gacha Buddy System`, `SQLite Data Access`, `Response Generation Testing`, `Retry and Safety Logic`, `Utility Tool Functions`, `Hangman Game Logic`, `Logging and Tooling`, `Memory Extraction Privacy`, `Discord Command Registration`, `Evaluation Harness Utilities`, `Bot Technology Stack`, `Anime Lookup Tools`, `Memory Retrieval Logic`, `Background Task Scheduling`, `Memory Budgeting`, `Gemini Configuration`, `Rate Limiting Tests`, `Turn Reliability Logic`, `Obsidian Export Logic`, `Benchmark Pacing Logic`, `Token Budget Management`, `Interaction Metrics Testing`, `Live Model Benchmarking`, `Model Comparison Testing`, `ADK Smoke Testing`, `Weather Lookup Tool`, `Message Handling Tests`, `Core Message Pipeline`, `Quota Diagnostic Logic`?**
-  _High betweenness centrality (0.086) - this node is a cross-community bridge._
+- **Why does `getDb()` connect `Memory Claim Management` to `Reminder and Session Config`, `Memory Isolation and Safety`, `Memory Extraction Configuration`, `Memory Statistics Visualization`, `Gacha Buddy System`, `SQLite Data Access`, `Response Generation Testing`, `Metrics and Diagnostics`, `Hangman Game Logic`, `Statistics Query Logic`, `Database Administration`, `Logging and Tooling`, `Memory Extraction Privacy`, `Gacha Interaction Logic`, `Evaluation Harness Utilities`, `Memory Retrieval Logic`, `Background Task Scheduling`, `Game Command Handling`, `Privacy and Isolation`, `Project Guidelines and Constraints`, `Memory Predicate Logic`, `Obsidian Export Logic`, `Benchmark Pacing Logic`, `Live Model Benchmarking`, `Buddy Collection UI`, `Scripted LLM Interface`?**
+  _High betweenness centrality (0.136) - this node is a cross-community bridge._
+- **Why does `config` connect `Token Budget Management` to `Reminder and Session Config`, `Memory Isolation and Safety`, `Memory Extraction Configuration`, `Session and Prompt Management`, `Message Handling Logic`, `Memory Claim Management`, `Gacha Buddy System`, `SQLite Data Access`, `Response Generation Testing`, `Retry and Safety Logic`, `Utility Tool Functions`, `Configuration and Tuning`, `Hangman Game Logic`, `Memory Extraction Privacy`, `Discord Command Registration`, `Evaluation Harness Utilities`, `Bot Technology Stack`, `Anime Lookup Tools`, `Slash Command UI`, `Memory Retrieval Logic`, `Background Task Scheduling`, `Memory Budgeting`, `Mock Object Factories`, `Gemini Configuration`, `Memory Predicate Logic`, `Turn Reliability Logic`, `Obsidian Export Logic`, `Benchmark Pacing Logic`, `Interaction Metrics Testing`, `Multimodal Intake Policy`, `Live Model Benchmarking`, `Model Comparison Testing`, `Extraction Filtering Logic`, `ADK Smoke Testing`, `Message Handling Tests`, `Core Message Pipeline`, `Quota Diagnostic Logic`, `Game Configuration`, `User Recall Logic`, `Scripted LLM Interface`, `Timezone Testing`?**
+  _High betweenness centrality (0.081) - this node is a cross-community bridge._
 - **Why does `Core NPM Commands & Verification` connect `CI/CD Pipeline Gates` to `TypeScript Configuration`, `Project Guidelines and Constraints`?**
-  _High betweenness centrality (0.076) - this node is a cross-community bridge._
+  _High betweenness centrality (0.044) - this node is a cross-community bridge._
 - **Are the 4 inferred relationships involving `config` (e.g. with `Gemini Model Selection` and `Phase 20 Turn Deadline Admission Control`) actually correct?**
   _`config` has 4 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 5 inferred relationships involving `createMessageHandler()` (e.g. with `Discord Gateway Layer` and `message()`) actually correct?**
   _`createMessageHandler()` has 5 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `$schema`, `enabled`, `indentStyle` to the rest of the system?**
-  _422 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _444 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Reminder and Session Config` be split into smaller, more focused modules?**
-  _Cohesion score 0.0512521840419336 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.11746031746031746 - nodes in this community are weakly interconnected._
