@@ -10,7 +10,7 @@ import { config } from '../config.js'
  * arrayBuffer, the Buffer copy, the base64 string and the JSON body all coexist — and two of those multiples
  * are Buffers, which live outside the V8 heap and so never raise a catchable heap error. The container is
  * simply SIGKILLed. This is the admission control that stops that, and it reserves BEFORE downloading, since
- * a check after the bytes have landed is a measurement, not a guard. See docs/multimodal.md.
+ * a check after the bytes have landed is a measurement, not a guard. See docs/research/multimodal.md.
  */
 let inFlight = 0
 

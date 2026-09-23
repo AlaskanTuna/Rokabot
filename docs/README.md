@@ -116,7 +116,7 @@ Roka reads four kinds of attachment — image, PDF, audio, and video — on both
 - **`attachment_url`** reads the file's type from a HEAD request rather than trusting the link's path, and checks the host against the addresses it actually resolves to — re-checked on whatever host a redirect chain lands on.
 - Beyond attachments, she also reads forwarded messages, embeds, polls, stickers, and files carried inside Components V2 messages.
 
-`docs/trd.md` is the canonical contract for the behavior above; `docs/multimodal.md` is its derivation.
+`docs/trd.md` is the canonical contract for the behavior above; `docs/research/multimodal.md` is its derivation.
 
 <p align="right"><a href="#readme-top">↑</a></p>
 
@@ -474,7 +474,7 @@ flowchart LR
 ```
 
 - Docker Compose runs Rokabot on a Raspberry Pi 5 with `mem_limit: 1g`, `memswap_limit: 1g` (equal values disable swap entirely — Docker otherwise defaults swap to twice the cap and pages onto the SD card), and `restart: unless-stopped`.
-- The self-hosted GitHub Actions runner builds and health-checks code changes pushed to `main`; the workflow's `paths-ignore` skips `*.md`, `docs/**`, `.claude/**`, `.coderabbit.yaml`, and `.agents/**`.
+- The self-hosted GitHub Actions runner builds and health-checks code changes pushed to `main`; the workflow's `paths-ignore` skips `*.md`, `docs/**`, and `.claude/**`.
 - Use the [operations runbook](./runbook.md) for Pi commands, runner setup, troubleshooting, and database operations.
 
 ### Browsing Memory in Obsidian
@@ -500,7 +500,7 @@ Obsidian belongs on the desktop, not the Pi: it is a graphical desktop applicati
 
 - [Product Requirements](./prd.md)
 - [Technical Reference](./trd.md)
-- [Multimodal Attachments](./multimodal.md)
+- [Multimodal Attachments](./research/multimodal.md)
 - [Deployment and Operations Runbook](./runbook.md)
 
 <p align="right"><a href="#readme-top">↑</a></p>

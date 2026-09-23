@@ -8,17 +8,17 @@ export const MAX_IMAGE_SIZE_BYTES = 4 * 1024 * 1024
 
 // Documents get their own ceiling rather than sharing the image one: a PDF is not resized before sending, so
 // its bytes reach the request as-is, and 10 MB is what upload latency admits inside gemini.timeout at the
-// Pi's measured 2.5 MB/s upstream. See docs/multimodal.md.
+// Pi's measured 2.5 MB/s upstream. See docs/research/multimodal.md.
 export const MAX_DOCUMENT_SIZE_BYTES = 10 * 1024 * 1024
 
 // Audio sits below the document ceiling: 8 MB is roughly five minutes at 128 kbps, and at 32 tokens a second
 // its token cost never approaches the measured 250,000 TPM — RPM binds first by an order of magnitude. The
-// cap is upload latency against gemini.timeout, same as the others. See docs/multimodal.md.
+// cap is upload latency against gemini.timeout, same as the others. See docs/research/multimodal.md.
 export const MAX_AUDIO_SIZE_BYTES = 8 * 1024 * 1024
 
 // Video shares the document ceiling rather than getting a larger one: 10 MB is what upload latency admits
 // inside gemini.timeout, and at low media resolution it is also what holds a clip inside the measured
-// 250,000 TPM without a decode pass — roughly 40-160 s at typical Discord bitrates. See docs/multimodal.md.
+// 250,000 TPM without a decode pass — roughly 40-160 s at typical Discord bitrates. See docs/research/multimodal.md.
 // Equal to the document ceiling today, so sizeLimitFor's video branch is not independently observable and
 // no test can pin it. Kept separate anyway: the two are set by different arguments, and a later change to
 // one should not silently move the other.

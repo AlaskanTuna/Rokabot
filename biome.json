@@ -55,6 +55,6 @@
     "useIgnoreFile": true
   },
   "files": {
-    "ignore": [".agents/**", "graphify-out/**", "dist/**", "data/**"]
+    "ignore": ["graphify-out/**", "dist/**", "data/**"]
   }
 }

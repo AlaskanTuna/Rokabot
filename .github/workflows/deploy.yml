@@ -7,16 +7,12 @@ on:
       - '*.md'
       - 'docs/**'
       - '.claude/**'
-      - '.coderabbit.yaml'
-      - '.agents/**'
   pull_request:
     branches: [main]
     paths-ignore:
       - '*.md'
       - 'docs/**'
       - '.claude/**'
-      - '.coderabbit.yaml'
-      - '.agents/**'
 
 permissions:
   contents: read

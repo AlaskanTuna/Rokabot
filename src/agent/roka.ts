@@ -904,7 +904,7 @@ async function downloadAttachment(
     // anything else it throws, and its catch returns the undecoded bytes relabelled image/jpeg, so the file
     // would arrive byte-identical but misdeclared and unreadable. Only the name is adjusted, for Gemini's
     // spelling of MP3. tokens stays 0: audio is billed per second, and seconds are not knowable without
-    // decoding — the same argument docs/multimodal.md makes against enforcing duration caps.
+    // decoding — the same argument docs/research/multimodal.md makes against enforcing duration caps.
     if (!isImage) {
       return {
         data: buffer.toString('base64'),
