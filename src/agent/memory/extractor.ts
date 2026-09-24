@@ -201,7 +201,13 @@ function recordExtraction(job: ExtractionJob, startedAt: number, nCandidates: nu
 export async function runExtraction(job: ExtractionJob): Promise<void> {
   const startedAt = performance.now()
   const gate = shouldExtract(
-    job.messages.map((message) => ({ ...message, username: '', timestamp: 0 })),
+    job.messages.map((message, index) => ({
+      ...message,
+      messageId: `legacy-${job.channelId}-${index}`,
+      username: '',
+      timestamp: 0,
+      isBot: false
+    })),
     knownClaimKeys(job)
   )
   const jevAdmissionCanOverride =

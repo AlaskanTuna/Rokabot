@@ -4,11 +4,13 @@ import { shouldExtract } from '../candidateGate.js'
 
 function message(content: string): BufferedMessage {
   return {
+    messageId: `message-${content}`,
     displayName: 'Alice',
     username: 'alice',
     userId: 'user-1',
     content,
-    timestamp: 0
+    timestamp: 0,
+    isBot: false
   }
 }
 
