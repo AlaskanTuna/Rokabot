@@ -19,7 +19,7 @@ import { assembleSystemPrompt } from './promptAssembler.js'
 import { buildFactsEnvelope, buildOverheardBlock } from './promptSafety.js'
 import type { ToneKey } from './prompts/tones.js'
 import { recordSearchCitations } from './searchCitations.js'
-import { buildLookedUpBlock, runPrefetchForJudgment, settlePrefetch } from './searchPrefetch.js'
+import { buildLookedUpBlock, decidePrefetch, runPrefetchForJudgment, settlePrefetch } from './searchPrefetch.js'
 import type { PrefetchResult } from './searchPrefetch.js'
 import { ensureSession, resetIdleTimer } from './session.js'
 import { detectTone } from './toneDetector.js'
@@ -131,23 +131,29 @@ export function startTurnEntryWork(input: StartTurnEntryWorkInput): TurnEntryWor
   }
 }
 
-export type TurnPrefetch = { block: string; usedTool: boolean }
+export type TurnPrefetch = { block: string; usedTool: boolean; result: PrefetchResult | null }
+
+function prefetchStatusOf(judgment: TurnJudgment, result: PrefetchResult | null): string {
+  if (result) return result.outcome?.status ?? (result.decision.fire ? 'gave_up' : result.decision.reason)
+  const decision = decidePrefetch(judgment, config.jev.prefetch, config.jev.prefetchMinNoul)
+  return decision.reason === 'fired' ? 'gave_up' : decision.reason
+}
 
 export async function awaitTurnPrefetch(turnEntryWork: TurnEntryWork, channelId: string): Promise<TurnPrefetch> {
-  if (config.jev.prefetch !== 'on') return { block: '', usedTool: false }
+  if (config.jev.prefetch !== 'on') return { block: '', usedTool: false, result: null }
   const result = await settlePrefetch(turnEntryWork.prefetch, config.jev.prefetchWaitMs)
   if (!result) {
     turnEntryWork.cancel()
     logger.info({ channelId, status: 'gave_up' }, 'Search prefetch not used this turn')
-    return { block: '', usedTool: false }
+    return { block: '', usedTool: false, result: null }
   }
   const { outcome } = result
   if (!outcome || outcome.status !== 'ready') {
     logger.info({ channelId, status: outcome?.status ?? result.decision.reason }, 'Search prefetch not used this turn')
-    return { block: '', usedTool: false }
+    return { block: '', usedTool: false, result }
   }
   recordSearchCitations(outcome.sources)
-  return { block: buildLookedUpBlock(outcome), usedTool: true }
+  return { block: buildLookedUpBlock(outcome), usedTool: true, result }
 }
 
 export function applyJevTone(
@@ -216,8 +222,44 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
   const toneActive = config.jev.tone !== 'off'
   const referentsActive = config.jev.referents !== 'off' && references.ambiguous.length > 0
   const appliedJevReferents: Array<{ alias: string; userId: string; displayName: string }> = []
+  const turnEvent: {
+    prefetch?: TurnPrefetch
+    pending?: { judgment: TurnJudgment; toneApplied: boolean }
+  } = {}
 
-  if (toneActive || referentsActive) {
+  function persistTurnEventWhenReady(): void {
+    if (!turnEvent.pending || !turnEvent.prefetch) return
+    const { judgment, toneApplied } = turnEvent.pending
+    turnEvent.pending = undefined
+
+    recordJevEvent({
+      kind: 'turn',
+      guildId,
+      channelId,
+      question: JSON.stringify({
+        tone: config.jev.tone !== 'off',
+        referentCount: judgment.referents.length,
+        prefetch: config.jev.prefetch
+      }),
+      answer: JSON.stringify({
+        tone: judgment.tone?.tone ?? null,
+        referentOutcomes: {
+          total: judgment.referents.length,
+          matched: judgment.referents.filter(({ userId: referentUserId }) => referentUserId !== null).length
+        },
+        needsLookup: judgment.needsLookup,
+        prefetchStatus: prefetchStatusOf(judgment, turnEvent.prefetch.result)
+      }),
+      probability: judgment.tone?.probability ?? null,
+      confidence: judgment.tone?.confidence ?? null,
+      applied: toneApplied,
+      latencyMs: Math.round(judgment.latencyMs),
+      inputTokens: judgment.inputTokens,
+      baseline: ruleTone
+    })
+  }
+
+  if (toneActive || referentsActive || config.jev.prefetch !== 'off') {
     const ambiguous = referentsActive
       ? references.ambiguous.map(({ alias, candidateIds }) => ({
           alias,
@@ -282,28 +324,8 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
         'Jev turn judgment'
       )
 
-      recordJevEvent({
-        kind: 'turn',
-        guildId,
-        channelId,
-        question: JSON.stringify({
-          tone: config.jev.tone !== 'off',
-          referentCount: judgment.referents.length
-        }),
-        answer: JSON.stringify({
-          tone: judgment.tone?.tone ?? null,
-          referentOutcomes: {
-            total: judgment.referents.length,
-            matched: judgment.referents.filter(({ userId: referentUserId }) => referentUserId !== null).length
-          }
-        }),
-        probability: toneProbability,
-        confidence: judgment.tone?.confidence ?? null,
-        applied: toneApplied,
-        latencyMs: Math.round(judgment.latencyMs),
-        inputTokens: judgment.inputTokens,
-        baseline: ruleTone
-      })
+      turnEvent.pending = { judgment, toneApplied }
+      persistTurnEventWhenReady()
     }
 
     if (blocking) {
@@ -433,6 +455,8 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
     : `\n\n- The current user's Discord ID is "${userId}".`
 
   const prefetch = await awaitTurnPrefetch(options.turnEntryWork, channelId)
+  turnEvent.prefetch = prefetch
+  persistTurnEventWhenReady()
   const lookedUpSection = prefetch.block ? `\n\n${prefetch.block}` : ''
 
   // Safety de-escalation ladder. Each rung strictly removes carried context — never the current message —

@@ -17,6 +17,15 @@ const mocks = vi.hoisted(() => ({
   retrieveForTurn: vi.fn(() => ({ entries: [], claims: [] })),
   assembleSystemPrompt: vi.fn(() => 'prompt'),
   runPrefetchForJudgment: vi.fn(),
+  decidePrefetch: vi.fn(
+    (judgment: { needsLookup: number | null } | null, mode: 'off' | 'shadow' | 'on', threshold: number) => {
+      if (mode === 'off') return { fire: false, reason: 'off' }
+      if (!judgment) return { fire: false, reason: 'no_judgment' }
+      if (judgment.needsLookup === null) return { fire: false, reason: 'no_noul' }
+      if (judgment.needsLookup < threshold) return { fire: false, reason: 'below_threshold' }
+      return mode === 'on' ? { fire: true, reason: 'fired' } : { fire: false, reason: 'shadow_would_fire' }
+    }
+  ),
   settlePrefetch: vi.fn(),
   buildLookedUpBlock: vi.fn(() => '## Looked It Up\nIt premiered in January.'),
   buildFactsEnvelope: vi.fn(() => ''),
@@ -55,6 +64,7 @@ vi.mock('../../utils/tokens.js', () => ({ estimateTokens: mocks.estimateTokens }
 vi.mock('../toneDetector.js', () => ({ detectTone: mocks.detectTone }))
 vi.mock('../searchPrefetch.js', () => ({
   runPrefetchForJudgment: mocks.runPrefetchForJudgment,
+  decidePrefetch: mocks.decidePrefetch,
   settlePrefetch: mocks.settlePrefetch,
   buildLookedUpBlock: mocks.buildLookedUpBlock
 }))
@@ -230,7 +240,7 @@ describe('turn entry work', () => {
     const work = {
       judgment: Promise.resolve(null),
       prefetch: Promise.resolve({
-        decision: { fire: false, reason: 'no_judgment' as const },
+        decision: { fire: true, reason: 'fired' as const },
         outcome: {
           status: 'ready' as const,
           text: 'It premiered in January.',
@@ -243,7 +253,11 @@ describe('turn entry work', () => {
 
     const [result, citations] = await withSearchCitations(() => awaitTurnPrefetch(work as never, 'channel-1'))
 
-    expect(result).toMatchObject({ block: expect.stringContaining('## Looked It Up'), usedTool: true })
+    expect(result).toMatchObject({
+      block: expect.stringContaining('## Looked It Up'),
+      usedTool: true,
+      result: { decision: { fire: true, reason: 'fired' }, outcome: { status: 'ready' } }
+    })
     expect(citations).toEqual([{ title: 'C', url: 'https://c.test' }])
   })
 
@@ -275,7 +289,11 @@ describe('turn entry work', () => {
     }
     mocks.settlePrefetch.mockImplementation((prefetch: Promise<unknown>) => prefetch)
 
-    await expect(awaitTurnPrefetch(work as never, 'channel-1')).resolves.toMatchObject({ block: '', usedTool: false })
+    await expect(awaitTurnPrefetch(work as never, 'channel-1')).resolves.toMatchObject({
+      block: '',
+      usedTool: false,
+      result: { decision: { fire: true, reason: 'fired' }, outcome }
+    })
   })
 
   it('gives up at the configured bound and cancels late work', async () => {
@@ -289,7 +307,11 @@ describe('turn entry work', () => {
     }
     mocks.settlePrefetch.mockResolvedValue(null)
 
-    await expect(awaitTurnPrefetch(work as never, 'channel-1')).resolves.toMatchObject({ block: '', usedTool: false })
+    await expect(awaitTurnPrefetch(work as never, 'channel-1')).resolves.toMatchObject({
+      block: '',
+      usedTool: false,
+      result: null
+    })
     expect(mocks.settlePrefetch).toHaveBeenCalledWith(work.prefetch, 1)
     expect(work.cancel).toHaveBeenCalledOnce()
     expect(controller.signal.aborted).toBe(true)
@@ -367,8 +389,13 @@ describe('turn entry work', () => {
       kind: 'turn',
       guildId: 'guild-1',
       channelId: 'channel-1',
-      question: JSON.stringify({ tone: true, referentCount: 0 }),
-      answer: JSON.stringify({ tone: 'sincere', referentOutcomes: { total: 0, matched: 0 } }),
+      question: JSON.stringify({ tone: true, referentCount: 0, prefetch: 'shadow' }),
+      answer: JSON.stringify({
+        tone: 'sincere',
+        referentOutcomes: { total: 0, matched: 0 },
+        needsLookup: null,
+        prefetchStatus: 'no_noul'
+      }),
       probability: 0.85,
       confidence: 0.55,
       applied: true,
@@ -407,5 +434,85 @@ describe('turn entry work', () => {
     )
 
     expect(mocks.recordJevEvent).not.toHaveBeenCalled()
+  })
+
+  it('persists needs_lookup and the bounded on-mode outcome without raw message text', async () => {
+    jevConfig.tone = 'off'
+    jevConfig.referents = 'off'
+    jevConfig.prefetch = 'on'
+    mocks.judgeTurn.mockResolvedValue({
+      tone: { tone: 'curious', confidence: 0.8, probability: 0.82 },
+      referents: [],
+      needsLookup: 0.95,
+      latencyMs: 4,
+      inputTokens: 11
+    })
+    mocks.runPrefetchForJudgment.mockResolvedValue({
+      decision: { fire: true, reason: 'fired' },
+      outcome: { status: 'ready', text: 'It premiered in January.', sources: [{ title: 'C', url: 'https://c.test' }] }
+    })
+
+    const work = startTurnEntryWork({ ...entryWork(), message: 'when did frieren season 2 air?' })
+    await createTurnContext(turnOptions(work))
+    await vi.waitFor(() => expect(mocks.recordJevEvent).toHaveBeenCalledOnce())
+
+    const row = mocks.recordJevEvent.mock.calls.at(-1)?.[0]
+    expect(row.kind).toBe('turn')
+    expect(JSON.parse(row.question)).toMatchObject({ prefetch: 'on' })
+    expect(JSON.parse(row.answer)).toMatchObject({ needsLookup: 0.95, prefetchStatus: 'ready' })
+    expect(JSON.stringify(row)).not.toContain('frieren')
+  })
+
+  it('persists a shadow verdict without waiting for or storing a search result', async () => {
+    jevConfig.tone = 'off'
+    jevConfig.referents = 'off'
+    jevConfig.prefetch = 'shadow'
+    mocks.judgeTurn.mockResolvedValue({
+      tone: null,
+      referents: [],
+      needsLookup: 0.95,
+      latencyMs: 4,
+      inputTokens: 11
+    })
+    mocks.runPrefetchForJudgment.mockResolvedValue({
+      decision: { fire: false, reason: 'shadow_would_fire' },
+      outcome: null
+    })
+
+    const work = startTurnEntryWork({ ...entryWork(), message: 'when did frieren season 2 air?' })
+    await createTurnContext(turnOptions(work))
+    await vi.waitFor(() => expect(mocks.recordJevEvent).toHaveBeenCalledOnce())
+
+    const row = mocks.recordJevEvent.mock.calls.at(-1)?.[0]
+    expect(JSON.parse(row.question)).toMatchObject({ prefetch: 'shadow' })
+    expect(JSON.parse(row.answer)).toMatchObject({ needsLookup: 0.95, prefetchStatus: 'shadow_would_fire' })
+    expect(mocks.runPrefetchForJudgment).toHaveBeenCalledWith(
+      expect.objectContaining({ needsLookup: 0.95 }),
+      expect.objectContaining({ mode: 'shadow' }),
+      expect.any(Object)
+    )
+    expect(mocks.settlePrefetch).not.toHaveBeenCalled()
+    expect(JSON.stringify(row)).not.toContain('frieren')
+  })
+
+  it('persists gave_up when the bounded on-mode wait expires', async () => {
+    jevConfig.tone = 'off'
+    jevConfig.referents = 'off'
+    jevConfig.prefetch = 'on'
+    mocks.judgeTurn.mockResolvedValue({
+      tone: null,
+      referents: [],
+      needsLookup: 0.95,
+      latencyMs: 4,
+      inputTokens: 11
+    })
+    mocks.runPrefetchForJudgment.mockReturnValue(new Promise(() => undefined))
+    mocks.settlePrefetch.mockResolvedValue(null)
+
+    await createTurnContext(turnOptions(startTurnEntryWork(entryWork())))
+    await vi.waitFor(() => expect(mocks.recordJevEvent).toHaveBeenCalledOnce())
+
+    const row = mocks.recordJevEvent.mock.calls.at(-1)?.[0]
+    expect(JSON.parse(row.answer)).toMatchObject({ needsLookup: 0.95, prefetchStatus: 'gave_up' })
   })
 })
