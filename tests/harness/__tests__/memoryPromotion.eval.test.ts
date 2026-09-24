@@ -296,10 +296,11 @@ describe('memory promotion harness evaluation', () => {
       userMessage: 'Hello.',
       displayName: 'Mio',
       username: 'mio',
-      userId: 'promotion-legacy-user'
+      userId: 'promotion-legacy-user',
+      memory: true
     })
     const expectedPrompt =
-      `${assembleSystemPrompt({ tone: result.tone, hour: getLocalHour(), displayName: 'Mio' })}` +
+      `${assembleSystemPrompt({ tone: result.tone, hour: getLocalHour(), displayName: 'Mio', memory: true })}` +
       `\n\n## What You Remember About People In This Channel\n${buildFactsEnvelope([
         { person: 'mio (Mio)', facts: [{ key: 'favorite anime', value: 'legacy-series' }] }
       ])}` +

@@ -73,7 +73,10 @@ export function measureRequest(input: MeasureRequestInput): RequestTokenBreakdow
   const assemblerInput = {
     tone: input.tone,
     hour: input.hour,
-    displayName: input.displayName
+    displayName: input.displayName,
+    // The cap is set against the full kernel, which is the larger of the two; a memory-free prompt
+    // is a subset of it and so cannot exceed the same ceiling.
+    memory: true
   }
   const contextPrompt = buildContextPrompt(assemblerInput.hour, assemblerInput.displayName)
   const systemPrompt = assembleSystemPrompt(assemblerInput)

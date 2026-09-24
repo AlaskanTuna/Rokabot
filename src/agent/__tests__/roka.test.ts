@@ -47,7 +47,8 @@ import { buildSafetySettings } from '../safetySettings.js'
 import { destroyAllSessions, destroySession, sessionService } from '../session.js'
 import { beginShutdown, isShuttingDown, resetForTest } from '../shutdownSignal.js'
 import { __resetTokenBudgetForTest, remainingTokensThisMinute } from '../tokenBudget.js'
-import { rokaTools } from '../tools/index.js'
+import { MEMORY_TOOL_NAMES, rokaTools } from '../tools/index.js'
+import { createTurnContext } from '../turnContext.js'
 
 vi.mock('../../storage/sessionStore.js', () => ({
   getChannelUsers: vi.fn(() => new Map()),
@@ -846,6 +847,149 @@ describe('beforeModelCallback safety steering seam', () => {
   })
 })
 
+describe('beforeModelCallback memory-tool filtering', () => {
+  const context = { state: { get: () => 'a prompt' } } as unknown as CallbackContext
+  const callback = rokaAgent.beforeModelCallback as (params: {
+    context: CallbackContext
+    request: LlmRequest
+  }) => Promise<unknown>
+
+  /** A request shaped the way ADK hands one over: every tool registered, in a single declaration list. */
+  function requestWithEveryTool() {
+    const request = {
+      contents: [{ role: 'user', parts: [{ text: 'hello' }] }],
+      config: {
+        tools: [{ functionDeclarations: rokaTools.map((tool) => tool._getDeclaration()) as Array<{ name?: string }> }]
+      },
+      toolsDict: Object.fromEntries(rokaTools.map((tool) => [tool.name, tool]))
+    } as unknown as LlmRequest
+    return request
+  }
+
+  const declaredNames = (request: LlmRequest) =>
+    (request.config?.tools as Array<{ functionDeclarations?: Array<{ name?: string }> }>).flatMap(
+      (tool) => tool.functionDeclarations?.map(({ name }) => name ?? '') ?? []
+    )
+
+  it('offers none of the memory tools on a memory-free turn', async () => {
+    const request = requestWithEveryTool()
+
+    await steeringForRequest.run({ memory: false }, () => callback({ context, request }))
+
+    const names = declaredNames(request)
+    expect(names.length).toBe(rokaTools.length - MEMORY_TOOL_NAMES.length)
+    for (const name of MEMORY_TOOL_NAMES) expect(names).not.toContain(name)
+  })
+
+  // The declarations are what the model reads, but toolsDict is what ADK resolves a call against.
+  // Removing only the declaration would leave the model able to name a tool with nothing behind it.
+  it('resolves no memory tool on a memory-free turn', async () => {
+    const request = requestWithEveryTool()
+
+    await steeringForRequest.run({ memory: false }, () => callback({ context, request }))
+
+    for (const name of MEMORY_TOOL_NAMES) expect(request.toolsDict[name]).toBeUndefined()
+    expect(Object.keys(request.toolsDict).length).toBe(rokaTools.length - MEMORY_TOOL_NAMES.length)
+  })
+
+  it('leaves the non-memory tools alone', async () => {
+    const request = requestWithEveryTool()
+
+    await steeringForRequest.run({ memory: false }, () => callback({ context, request }))
+
+    expect(declaredNames(request)).toContain('search_web')
+    expect(request.toolsDict.search_web).toBeDefined()
+  })
+
+  it('keeps every tool on a turn that does have memory', async () => {
+    const request = requestWithEveryTool()
+
+    await steeringForRequest.run({ memory: true }, () => callback({ context, request }))
+
+    expect(declaredNames(request)).toHaveLength(rokaTools.length)
+    for (const name of MEMORY_TOOL_NAMES) expect(request.toolsDict[name]).toBeDefined()
+  })
+})
+
+describe('generateResponse memory-free turn', () => {
+  it('retrieves nothing and records no context build for a memory-free turn', async () => {
+    mutableMemoryConfig.claimsBackend = true
+    vi.mocked(getFacts).mockReturnValue([{ key: 'favorite anime', value: 'Frieren' }])
+    __setTestRunTurnFactory(() => async () => ({ text: 'On it~', hasText: true, hasFunctionCall: false }))
+
+    await generateResponse({
+      channelId: 'memory-free-channel',
+      guildId: 'memory-free-guild',
+      userMessage: 'What do you remember about me?',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id',
+      memory: false
+    })
+
+    expect(retrieveForTurn).not.toHaveBeenCalled()
+    expect(getFacts).not.toHaveBeenCalled()
+    expect(refreshFactTimestamps).not.toHaveBeenCalled()
+    expect(recordMemoryEvent).not.toHaveBeenCalled()
+  })
+
+  it('names no memory tool anywhere in a memory-free system prompt', async () => {
+    let capturedPrompt = ''
+    __setTestRunTurnFactory((systemPrompt) => {
+      capturedPrompt = systemPrompt
+      return async () => ({ text: 'Safe~', hasText: true, hasFunctionCall: false })
+    })
+
+    await generateResponse({
+      channelId: 'memory-free-channel',
+      guildId: 'memory-free-guild',
+      userMessage: 'Remember that I like Frieren.',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id',
+      memory: false
+    })
+
+    expect(capturedPrompt).not.toBe('')
+    for (const tool of MEMORY_TOOL_NAMES) expect(capturedPrompt).not.toContain(tool)
+    expect(capturedPrompt).not.toContain('What You Remember')
+  })
+
+  // The safety ladder's deepest rung rebuilds the kernel from scratch, so it is the one path that could
+  // have kept the guidance alive after the base prompt dropped it.
+  it('names no memory tool after the safety ladder rebuilds the kernel', async () => {
+    const context = await createTurnContext({
+      channelId: 'memory-free-ladder-channel',
+      guildId: 'memory-free-ladder-guild',
+      userMessage: 'Hello.',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-ladder-id',
+      memory: false
+    })
+
+    for (const rung of [0, 1, 2, 3]) {
+      const composed = context.composePrompt(rung)
+      expect(composed).not.toBe('')
+      for (const tool of MEMORY_TOOL_NAMES) expect(composed).not.toContain(tool)
+    }
+  })
+
+  it('still names the memory tools on a turn that does have memory', async () => {
+    const context = await createTurnContext({
+      channelId: 'memory-turn-channel',
+      guildId: 'memory-turn-guild',
+      userMessage: 'Hello.',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id',
+      memory: true
+    })
+
+    for (const tool of MEMORY_TOOL_NAMES) expect(context.systemPrompt).toContain(tool)
+  })
+})
+
 describe('generateResponse metrics', () => {
   it('resends the current turn and prompt state to a reset session', async () => {
     const gemini = config.gemini as { retryBackoffBaseMs: number; retryBackoffCapMs: number }
@@ -872,6 +1016,7 @@ describe('generateResponse metrics', () => {
       await generateResponse({
         channelId: 'roka-metrics-channel',
         guildId: 'metrics-guild',
+        memory: true,
         userMessage: 'Please keep this turn.',
         displayName: 'Mio',
         username: 'mio',
@@ -900,6 +1045,7 @@ describe('generateResponse metrics', () => {
     const result = await generateResponse({
       channelId: 'roka-metrics-channel',
       guildId: 'metrics-guild',
+      memory: true,
       userMessage: 'Hello metrics.',
       displayName: 'Mio',
       username: 'mio',
@@ -908,7 +1054,7 @@ describe('generateResponse metrics', () => {
 
     const expectedTokensIn =
       estimateTokens(
-        `${assembleSystemPrompt({ tone: result.tone, hour: 12, displayName: 'Mio' })}\n\n- The current user's Discord ID is "mio-id". remember_user and recall_user target the current user automatically; to recall a different server member, pass their name as user_name.`
+        `${assembleSystemPrompt({ tone: result.tone, hour: 12, displayName: 'Mio', memory: true })}\n\n- The current user's Discord ID is "mio-id". remember_user and recall_user target the current user automatically; to recall a different server member, pass their name as user_name.`
       ) +
       estimateTokens(JSON.stringify(rokaTools)) +
       estimateTokens('[Mio]: Hello metrics.')
@@ -938,6 +1084,7 @@ describe('generateResponse metrics', () => {
     const result = await generateResponse({
       channelId: 'roka-metrics-channel',
       guildId: 'metrics-guild',
+      memory: true,
       userMessage: 'Off-limits please.',
       displayName: 'Mio',
       username: 'mio',
@@ -967,6 +1114,7 @@ describe('generateResponse metrics', () => {
     const result = await generateResponse({
       channelId,
       guildId: 'ladder-guild',
+      memory: true,
       userMessage: 'totally innocuous question',
       displayName: 'Mio',
       username: 'mio',
@@ -990,6 +1138,7 @@ describe('generateResponse metrics', () => {
     const result = await generateResponse({
       channelId: 'roka-diagnostic-channel',
       guildId: 'diagnostic-guild',
+      memory: true,
       userMessage: 'the message that got blocked',
       displayName: 'Mio',
       username: 'mio',
@@ -1027,6 +1176,7 @@ describe('generateResponse metrics', () => {
       const recovered = await generateResponse({
         channelId: 'roka-metrics-channel',
         guildId: 'metrics-guild',
+        memory: true,
         userMessage: 'Please retry.',
         displayName: 'Mio',
         username: 'mio',
@@ -1046,6 +1196,7 @@ describe('generateResponse metrics', () => {
       const fallback = await generateResponse({
         channelId: 'roka-metrics-channel',
         guildId: 'metrics-guild',
+        memory: true,
         userMessage: 'Fallback please.',
         displayName: 'Mio',
         username: 'mio',
@@ -1061,6 +1212,7 @@ describe('generateResponse metrics', () => {
       const safety = await generateResponse({
         channelId: 'roka-metrics-channel',
         guildId: 'metrics-guild',
+        memory: true,
         userMessage: 'Safety please.',
         displayName: 'Mio',
         username: 'mio',
@@ -1077,6 +1229,7 @@ describe('generateResponse metrics', () => {
       const terminal = await generateResponse({
         channelId: 'roka-metrics-channel',
         guildId: 'metrics-guild',
+        memory: true,
         userMessage: 'Terminal please.',
         displayName: 'Mio',
         username: 'mio',
@@ -1093,6 +1246,7 @@ describe('generateResponse metrics', () => {
       const sessionCorrupt = await generateResponse({
         channelId: 'roka-metrics-channel',
         guildId: 'metrics-guild',
+        memory: true,
         userMessage: 'Recover the session please.',
         displayName: 'Mio',
         username: 'mio',
@@ -1113,6 +1267,7 @@ describe('generateResponse prompt safety', () => {
     const result = await generateResponse({
       channelId: 'roka-prompt-safety-channel',
       guildId: 'prompt-safety-guild',
+      memory: true,
       userMessage: 'Can you help me? What should I do?',
       displayName: 'Mio',
       username: 'mio',
@@ -1140,13 +1295,14 @@ describe('generateResponse prompt safety', () => {
     const result = await generateResponse({
       channelId: 'roka-prompt-safety-channel',
       guildId: 'prompt-safety-guild',
+      memory: true,
       userMessage: 'Hello.',
       displayName: 'Mio',
       username: 'mio',
       userId: 'mio-id'
     })
 
-    const kernel = assembleSystemPrompt({ tone: result.tone, hour: 12, displayName: 'Mio' })
+    const kernel = assembleSystemPrompt({ tone: result.tone, hour: 12, displayName: 'Mio', memory: true })
     const factsHeading = '## What You Remember About People In This Channel\n'
     const overheardHeading = '\n\n## Recent Channel Activity (messages you overheard)\n'
     const factsStart = capturedPrompt.indexOf(factsHeading) + factsHeading.length
@@ -1179,6 +1335,7 @@ describe('generateResponse prompt safety', () => {
     const result = await generateResponse({
       channelId: 'roka-prompt-safety-channel',
       guildId: 'prompt-safety-guild',
+      memory: true,
       userMessage: 'Hello.',
       displayName: 'Mio',
       username: 'mio',
@@ -1186,7 +1343,7 @@ describe('generateResponse prompt safety', () => {
     })
 
     const expectedPrompt =
-      `${assembleSystemPrompt({ tone: result.tone, hour: 12, displayName: 'Mio' })}` +
+      `${assembleSystemPrompt({ tone: result.tone, hour: 12, displayName: 'Mio', memory: true })}` +
       `\n\n## What You Remember About People In This Channel\n${buildFactsEnvelope([
         { person: 'mio (Mio)', facts: [{ key: 'favorite anime', value: 'Frieren' }] }
       ])}` +
@@ -1214,6 +1371,7 @@ describe('generateResponse prompt safety', () => {
     await generateResponse({
       channelId: 'roka-prompt-safety-channel',
       guildId: 'prompt-safety-guild',
+      memory: true,
       userMessage: 'Any good games?',
       displayName: 'Mio',
       username: 'mio',
@@ -1278,6 +1436,7 @@ describe('generateResponse prompt safety', () => {
     await generateResponse({
       channelId: 'roka-prompt-safety-channel',
       guildId: 'prompt-safety-guild',
+      memory: true,
       userMessage: 'What about Mimi and Rin?',
       displayName: 'Mio',
       username: 'mio',
@@ -1325,6 +1484,7 @@ describe('generateResponse prompt safety', () => {
       generateResponse({
         channelId: 'roka-prompt-safety-channel',
         guildId: 'prompt-safety-guild',
+        memory: true,
         userMessage: 'Hello.',
         displayName: 'Mio',
         username: 'mio',
@@ -1421,6 +1581,7 @@ describe('attachment intake', () => {
     await generateResponse({
       channelId: 'roka-attachment-channel',
       guildId: 'attachment-guild',
+      memory: true,
       userMessage: 'what does this say?',
       displayName: 'Mio',
       username: 'mio',
@@ -1568,6 +1729,7 @@ describe('attachment intake', () => {
     const result = await generateResponse({
       channelId,
       guildId: 'attachment-guild',
+      memory: true,
       userMessage: 'look at this',
       displayName: 'Mio',
       username: 'mio',
@@ -1608,6 +1770,7 @@ describe('attachment intake', () => {
     await generateResponse({
       channelId,
       guildId: 'attachment-guild',
+      memory: true,
       userMessage: 'watch this and tell me what happens in it',
       displayName: 'Mio',
       username: 'mio',
@@ -1770,6 +1933,7 @@ describe('attachment intake', () => {
     const result = await generateResponse({
       channelId: 'roka-truncated',
       guildId: 'attachment-guild',
+      memory: true,
       userMessage: 'listen to this',
       displayName: 'Mio',
       username: 'mio',
@@ -1787,6 +1951,7 @@ describe('attachment intake', () => {
     const result = await generateResponse({
       channelId: 'roka-untruncated',
       guildId: 'attachment-guild',
+      memory: true,
       userMessage: 'listen to this',
       displayName: 'Mio',
       username: 'mio',
@@ -1808,6 +1973,7 @@ describe('attachment intake', () => {
     const result = await generateResponse({
       channelId,
       guildId: 'attachment-guild',
+      memory: true,
       userMessage: 'look at this',
       displayName: 'Mio',
       username: 'mio',
@@ -1871,6 +2037,7 @@ describe('attachment intake', () => {
     const result = await generateResponse({
       channelId: 'refuse-cost',
       guildId: 'attachment-guild',
+      memory: true,
       userMessage: 'read this',
       displayName: 'Mio',
       username: 'mio',
@@ -1904,6 +2071,7 @@ describe('attachment intake', () => {
     await generateResponse({
       channelId: 'refuse-notice',
       guildId: 'attachment-guild',
+      memory: true,
       userMessage: 'read this',
       displayName: 'Mio',
       username: 'mio',
@@ -1932,6 +2100,7 @@ describe('attachment intake', () => {
     const result = await generateResponse({
       channelId: 'admit-cost',
       guildId: 'attachment-guild',
+      memory: true,
       userMessage: 'read this',
       displayName: 'Mio',
       username: 'mio',
@@ -1992,6 +2161,7 @@ describe('attachment bytes are released after the turn', () => {
     await generateResponse({
       channelId,
       guildId: 'strip-guild',
+      memory: true,
       userMessage: 'look at this',
       displayName: 'Mio',
       username: 'mio',
@@ -2032,6 +2202,7 @@ describe('Jev turn judgments', () => {
     const result = await generateResponse({
       channelId: 'roka-prompt-safety-channel',
       guildId: 'prompt-safety-guild',
+      memory: true,
       userMessage: 'Can you help me? What should I do?',
       displayName: 'Mio',
       username: 'mio',
@@ -2046,9 +2217,9 @@ describe('Jev turn judgments', () => {
       ambiguous: []
     })
     expect(result.tone).toBe('confident')
-    expect(capturedPrompt.startsWith(assembleSystemPrompt({ tone: 'confident', hour: 12, displayName: 'Mio' }))).toBe(
-      true
-    )
+    expect(
+      capturedPrompt.startsWith(assembleSystemPrompt({ tone: 'confident', hour: 12, displayName: 'Mio', memory: true }))
+    ).toBe(true)
   })
 
   it('applies an on-mode tone when confidence clears its threshold', async () => {
@@ -2070,6 +2241,7 @@ describe('Jev turn judgments', () => {
     const result = await generateResponse({
       channelId: 'roka-prompt-safety-channel',
       guildId: 'prompt-safety-guild',
+      memory: true,
       userMessage: 'Can you help me? What should I do?',
       displayName: 'Mio',
       username: 'mio',
@@ -2077,7 +2249,9 @@ describe('Jev turn judgments', () => {
     })
 
     expect(result.tone).toBe('sleepy')
-    expect(capturedPrompt.startsWith(assembleSystemPrompt({ tone: 'sleepy', hour: 12, displayName: 'Mio' }))).toBe(true)
+    expect(
+      capturedPrompt.startsWith(assembleSystemPrompt({ tone: 'sleepy', hour: 12, displayName: 'Mio', memory: true }))
+    ).toBe(true)
     expect(info.mock.calls.filter(([, message]) => message === 'Jev turn judgment')).toHaveLength(1)
     expect(info).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -2110,6 +2284,7 @@ describe('Jev turn judgments', () => {
     const result = await generateResponse({
       channelId: 'roka-prompt-safety-channel',
       guildId: 'prompt-safety-guild',
+      memory: true,
       userMessage: 'Can you help me? What should I do?',
       displayName: 'Mio',
       username: 'mio',
@@ -2150,6 +2325,7 @@ describe('Jev turn judgments', () => {
     await generateResponse({
       channelId: 'roka-prompt-safety-channel',
       guildId: 'prompt-safety-guild',
+      memory: true,
       userMessage: 'What does Rin like?',
       displayName: 'Mio',
       username: 'mio',
@@ -2202,6 +2378,7 @@ describe('Jev turn judgments', () => {
     await generateResponse({
       channelId: 'roka-prompt-safety-channel',
       guildId: 'prompt-safety-guild',
+      memory: true,
       userMessage: 'What does Rin like?',
       displayName: 'Mio',
       username: 'mio',
@@ -2229,6 +2406,7 @@ describe('Jev turn judgments', () => {
     await generateResponse({
       channelId: 'roka-prompt-safety-channel',
       guildId: 'prompt-safety-guild',
+      memory: true,
       userMessage: 'Hello.',
       displayName: 'Mio',
       username: 'mio',
@@ -2246,6 +2424,7 @@ describe('Jev turn judgments', () => {
     const result = await generateResponse({
       channelId: 'roka-prompt-safety-channel',
       guildId: 'prompt-safety-guild',
+      memory: true,
       userMessage: 'Can you help me? What should I do?',
       displayName: 'Mio',
       username: 'mio',
@@ -2267,6 +2446,7 @@ describe('Jev turn judgments', () => {
     await generateResponse({
       channelId: 'roka-prompt-safety-channel',
       guildId: 'prompt-safety-guild',
+      memory: true,
       userMessage: 'Hello.',
       displayName: 'Mio',
       username: 'mio',
@@ -2295,6 +2475,7 @@ describe('Jev turn judgments', () => {
       generateResponse({
         channelId: 'roka-prompt-safety-channel',
         guildId: 'prompt-safety-guild',
+        memory: true,
         userMessage: 'Hello.',
         displayName: 'Mio',
         username: 'mio',

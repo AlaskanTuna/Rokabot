@@ -322,3 +322,9 @@ export const rokaTools = [
   getCurrentTimeTool,
   getWeatherTool
 ]
+
+/**
+ * The tools a memory-free turn must not be offered. Tools are fixed on the agent, so `/ask` filters
+ * these out per request instead (#207) — adding a fourth memory tool means adding it here too.
+ */
+export const MEMORY_TOOL_NAMES = [rememberUserTool.name, recallUserTool.name, forgetUserTool.name]

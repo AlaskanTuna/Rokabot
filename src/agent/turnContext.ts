@@ -30,6 +30,8 @@ export interface TurnContextOptions {
   username: string
   userId: string
   mentionedUserIds?: string[]
+  /** `/ask` passes `false`: no retrieval, no facts, no memory tools, no `context_build` telemetry (#207). */
+  memory: boolean
 }
 
 /** Convert ADK session events to WindowMessages for tone detection */
@@ -48,7 +50,7 @@ function eventsToWindowMessages(events: Event[]): WindowMessage[] {
 }
 
 export async function createTurnContext(options: TurnContextOptions) {
-  const { channelId, guildId, userMessage, displayName, username, userId } = options
+  const { channelId, guildId, userMessage, displayName, username, userId, memory } = options
   const session = await ensureSession(channelId)
   resetIdleTimer(channelId)
 
@@ -170,101 +172,110 @@ export async function createTurnContext(options: TurnContextOptions) {
     }
   }
 
-  const basePrompt = assembleSystemPrompt({ tone, hour, displayName })
+  const basePrompt = assembleSystemPrompt({ tone, hour, displayName, memory })
   let factsSection = ''
-  let whoIsMentionedSection = ''
   let overheardSection = ''
   let factEntryCount = 0
 
-  try {
-    // Resolve user identities from persistent lookup table (survives restarts)
-    const knownUsers = getAllUserNames()
+  // A memory-free turn (`/ask`) reads nothing: no claims retrieval, no legacy facts, and no
+  // `context_build` telemetry, because nothing was built to measure (#207).
+  if (memory) {
+    try {
+      // Resolve user identities from persistent lookup table (survives restarts)
+      const knownUsers = getAllUserNames()
 
-    // Also pull channel-specific users from session history (has channel context)
-    const channelUsers = getChannelUsers(channelId, config.session.windowSize)
-    for (const [uid, user] of channelUsers) {
-      if (!knownUsers.has(uid) && user.username) {
-        knownUsers.set(uid, { userId: uid, username: user.username, displayName: user.displayName })
-      }
-    }
-
-    // Ensure current speaker is included
-    knownUsers.set(userId, { userId, username, displayName })
-
-    let factEntries: Array<{ person: string; facts: Array<{ key: string; value: string }> }>
-    let retrievalSelected = 0
-
-    if (config.memory.claimsBackend) {
-      const retrieval = retrieveForTurn({
-        guildId,
-        speakerId: userId,
-        participantIds: [
-          ...new Set(
-            [
-              ...references.resolved.map(({ userId: referenceId }) => referenceId),
-              ...appliedJevReferents.map(({ userId: referenceId }) => referenceId),
-              ...channelUsers.keys()
-            ].filter((participantId) => participantId !== userId)
-          )
-        ].slice(0, config.memory.recentParticipantLimit),
-        message: userMessage
-      })
-      factEntries = retrieval.entries
-      retrievalSelected = retrieval.claims.length
-      const namedAliases = references.resolved.filter(
-        ({ alias, displayName: referenceName, matchedBy }) =>
-          (matchedBy === 'nickname' || matchedBy === 'username') && alias.toLowerCase() !== referenceName.toLowerCase()
-      )
-      const mentionLines = [
-        ...namedAliases.map(({ alias, displayName: referenceName }) => `- "${alias}" means ${referenceName}`),
-        ...appliedJevReferents.map(({ alias, displayName: referenceName }) => `- "${alias}" means ${referenceName}`)
-      ]
-      if (mentionLines.length > 0) {
-        whoIsMentionedSection = `\n\n## Who Is Mentioned\n${mentionLines.join('\n')}`
-      }
-    } else {
-      factEntries = []
-      for (const [uid, user] of knownUsers) {
-        const facts = getFacts(guildId, uid)
-        if (facts.length > 0) {
-          const label = user.username !== user.displayName ? `${user.username} (${user.displayName})` : user.displayName
-          factEntries.push({ person: label, facts })
-          refreshFactTimestamps(guildId, uid)
+      // Also pull channel-specific users from session history (has channel context)
+      const channelUsers = getChannelUsers(channelId, config.session.windowSize)
+      for (const [uid, user] of channelUsers) {
+        if (!knownUsers.has(uid) && user.username) {
+          knownUsers.set(uid, { userId: uid, username: user.username, displayName: user.displayName })
         }
       }
-    }
 
-    const factsEnvelope = buildFactsEnvelope(factEntries)
-    if (factsEnvelope) {
-      factsSection = `\n\n## What You Remember About People In This Channel\n${factsEnvelope}`
-      factEntryCount = factEntries.length
-      logger.info(
-        { channelId, usersWithFacts: factEntries.length, totalUsers: knownUsers.size },
-        'User facts injected into prompt'
-      )
+      // Ensure current speaker is included
+      knownUsers.set(userId, { userId, username, displayName })
+
+      let factEntries: Array<{ person: string; facts: Array<{ key: string; value: string }> }>
+      let retrievalSelected = 0
+
+      if (config.memory.claimsBackend) {
+        const retrieval = retrieveForTurn({
+          guildId,
+          speakerId: userId,
+          participantIds: [
+            ...new Set(
+              [
+                ...references.resolved.map(({ userId: referenceId }) => referenceId),
+                ...appliedJevReferents.map(({ userId: referenceId }) => referenceId),
+                ...channelUsers.keys()
+              ].filter((participantId) => participantId !== userId)
+            )
+          ].slice(0, config.memory.recentParticipantLimit),
+          message: userMessage
+        })
+        factEntries = retrieval.entries
+        retrievalSelected = retrieval.claims.length
+      } else {
+        factEntries = []
+        for (const [uid, user] of knownUsers) {
+          const facts = getFacts(guildId, uid)
+          if (facts.length > 0) {
+            const label =
+              user.username !== user.displayName ? `${user.username} (${user.displayName})` : user.displayName
+            factEntries.push({ person: label, facts })
+            refreshFactTimestamps(guildId, uid)
+          }
+        }
+      }
+
+      const factsEnvelope = buildFactsEnvelope(factEntries)
+      if (factsEnvelope) {
+        factsSection = `\n\n## What You Remember About People In This Channel\n${factsEnvelope}`
+        factEntryCount = factEntries.length
+        logger.info(
+          { channelId, usersWithFacts: factEntries.length, totalUsers: knownUsers.size },
+          'User facts injected into prompt'
+        )
+      }
+      if (config.memory.claimsBackend) {
+        recordMemoryEvent({
+          kind: 'context_build',
+          guildId,
+          channelId,
+          subjectUserId: userId,
+          nSelected: retrievalSelected,
+          tokensEst: factsEnvelope ? estimateTokens(factsEnvelope) : 0
+        })
+      }
+    } catch (error) {
+      if (config.memory.claimsBackend) {
+        recordMemoryEvent({
+          kind: 'context_build',
+          guildId,
+          channelId,
+          subjectUserId: userId,
+          nSelected: 0,
+          tokensEst: 0
+        })
+      }
+      logger.warn({ userId, error }, 'Failed to load user memory for prompt injection')
     }
-    if (config.memory.claimsBackend) {
-      recordMemoryEvent({
-        kind: 'context_build',
-        guildId,
-        channelId,
-        subjectUserId: userId,
-        nSelected: retrievalSelected,
-        tokensEst: factsEnvelope ? estimateTokens(factsEnvelope) : 0
-      })
+  }
+
+  // Names people and nothing else, so it survives a memory-free turn as the identity line the brief allows.
+  let whoIsMentionedSection = ''
+  if (config.memory.claimsBackend) {
+    const namedAliases = references.resolved.filter(
+      ({ alias, displayName: referenceName, matchedBy }) =>
+        (matchedBy === 'nickname' || matchedBy === 'username') && alias.toLowerCase() !== referenceName.toLowerCase()
+    )
+    const mentionLines = [
+      ...namedAliases.map(({ alias, displayName: referenceName }) => `- "${alias}" means ${referenceName}`),
+      ...appliedJevReferents.map(({ alias, displayName: referenceName }) => `- "${alias}" means ${referenceName}`)
+    ]
+    if (mentionLines.length > 0) {
+      whoIsMentionedSection = `\n\n## Who Is Mentioned\n${mentionLines.join('\n')}`
     }
-  } catch (error) {
-    if (config.memory.claimsBackend) {
-      recordMemoryEvent({
-        kind: 'context_build',
-        guildId,
-        channelId,
-        subjectUserId: userId,
-        nSelected: 0,
-        tokensEst: 0
-      })
-    }
-    logger.warn({ userId, error }, 'Failed to load user memory for prompt injection')
   }
 
   const overheard = getBufferMessages(channelId).slice(-config.memory.contextSize)
@@ -273,15 +284,18 @@ export async function createTurnContext(options: TurnContextOptions) {
     overheardSection = `\n\n## Recent Channel Activity (messages you overheard)\n${overheardBlock}`
   }
 
-  const tailSection =
-    `\n\n- The current user's Discord ID is "${userId}".` +
-    ' remember_user and recall_user target the current user automatically; to recall a different server member, pass their name as user_name.'
+  // The Discord ID stays either way; only the half naming the memory tools is dropped, because a
+  // memory-free turn is offered none of them and cannot act on the instruction (#207).
+  const tailSection = memory
+    ? `\n\n- The current user's Discord ID is "${userId}".` +
+      ' remember_user and recall_user target the current user automatically; to recall a different server member, pass their name as user_name.'
+    : `\n\n- The current user's Discord ID is "${userId}".`
 
   // Safety de-escalation ladder. Each rung strictly removes carried context — never the current message —
   // so Roka answers with less surrounding context rather than refusing outright.
   const SAFETY_LADDER = ['drop_overheard', 'drop_facts', 'clear_history'] as const
   function composePrompt(safetyRung: number): string {
-    const head = safetyRung >= 3 ? assembleSystemPrompt({ tone: 'sincere', hour, displayName }) : basePrompt
+    const head = safetyRung >= 3 ? assembleSystemPrompt({ tone: 'sincere', hour, displayName, memory }) : basePrompt
     return [
       head,
       safetyRung < 2 ? `${factsSection}${whoIsMentionedSection}` : '',
