@@ -11,6 +11,7 @@ vi.mock('../../utils/logger.js', () => ({
 }))
 
 import { closeDb, getDb } from '../database.js'
+import { recordJevEvent } from '../jevEventStore.js'
 import {
   type MemoryEventInput,
   countMemoryEvents,
@@ -57,6 +58,20 @@ const memoryEvent: MemoryEventInput = {
   op: 'none'
 }
 
+const jevEvent = {
+  kind: 'turn' as const,
+  guildId: 'guild-1',
+  channelId: 'channel-1',
+  question: 'tone',
+  answer: 'playful',
+  probability: 0.84,
+  confidence: 0.71,
+  applied: true,
+  latencyMs: 86,
+  inputTokens: 42,
+  baseline: 'playful'
+}
+
 beforeAll(() => {
   process.env.ROKABOT_DB_PATH = ':memory:'
   getDb()
@@ -74,6 +89,8 @@ describe('metricsStore', () => {
     const extractionColumns = db.prepare("PRAGMA table_info('extraction_events')").all() as Array<{ name: string }>
     const responseIndexes = db.prepare("PRAGMA index_list('response_events')").all() as Array<{ name: string }>
     const extractionIndexes = db.prepare("PRAGMA index_list('extraction_events')").all() as Array<{ name: string }>
+    const jevColumns = db.prepare("PRAGMA table_info('jev_events')").all() as Array<{ name: string }>
+    const jevIndexes = db.prepare("PRAGMA index_list('jev_events')").all() as Array<{ name: string }>
 
     expect(responseColumns.map((column) => column.name)).toEqual([
       'id',
@@ -109,6 +126,72 @@ describe('metricsStore', () => {
     ])
     expect(responseIndexes.map((index) => index.name)).toContain('idx_response_events_guild_ts')
     expect(extractionIndexes.map((index) => index.name)).toContain('idx_extraction_events_guild_ts')
+    expect(jevColumns.map((column) => column.name)).toEqual([
+      'kind',
+      'guild_id',
+      'channel_id',
+      'question',
+      'answer',
+      'probability',
+      'confidence',
+      'applied',
+      'latency_ms',
+      'input_tokens',
+      'baseline',
+      'created_at'
+    ])
+    expect(jevIndexes.map((index) => index.name)).toContain('idx_jev_events_created_at')
+  })
+
+  it('records Jev judgments with nullable probability and SQLite boolean mapping', () => {
+    const now = 1_700_000_000_000
+    getDb().prepare('DELETE FROM jev_events').run()
+    vi.spyOn(Date, 'now').mockReturnValue(now)
+
+    recordJevEvent(jevEvent)
+
+    const row = getDb().prepare('SELECT * FROM jev_events').get() as Record<string, unknown>
+    expect(row).toMatchObject({
+      kind: 'turn',
+      guild_id: 'guild-1',
+      channel_id: 'channel-1',
+      question: 'tone',
+      answer: 'playful',
+      probability: 0.84,
+      confidence: 0.71,
+      applied: 1,
+      latency_ms: 86,
+      input_tokens: 42,
+      baseline: 'playful',
+      created_at: now
+    })
+    expect(Object.keys(row)).toEqual([
+      'kind',
+      'guild_id',
+      'channel_id',
+      'question',
+      'answer',
+      'probability',
+      'confidence',
+      'applied',
+      'latency_ms',
+      'input_tokens',
+      'baseline',
+      'created_at'
+    ])
+    vi.restoreAllMocks()
+  })
+
+  it('accepts all Jev event kinds', () => {
+    getDb().prepare('DELETE FROM jev_events').run()
+    expect(() => {
+      for (const kind of ['turn', 'admission', 'verification'] as const) recordJevEvent({ ...jevEvent, kind })
+    }).not.toThrow()
+    expect(getDb().prepare('SELECT kind FROM jev_events ORDER BY rowid').all()).toEqual([
+      { kind: 'turn' },
+      { kind: 'admission' },
+      { kind: 'verification' }
+    ])
   })
 
   it('records response and extraction events with timestamps', () => {
@@ -239,6 +322,7 @@ describe('metricsStore', () => {
     db.prepare('DELETE FROM response_events').run()
     db.prepare('DELETE FROM extraction_events').run()
     db.prepare('DELETE FROM memory_events').run()
+    db.prepare('DELETE FROM jev_events').run()
     db.prepare(
       'INSERT INTO response_events (guild_id, channel_id, user_id, trigger, tone, outcome, kind, e2e_ms, generate_ms, llm_ms, retry_latency_ms, retries, tokens_in_est, tokens_out_est, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     ).run('guild-1', 'channel-1', 'user-1', 'mention', 'playful', 'ok', 'ok', 1, 1, 1, 0, 0, 1, 1, now - 8 * ONE_DAY)
@@ -251,6 +335,11 @@ describe('metricsStore', () => {
       1,
       now - 8 * ONE_DAY
     )
+    const insertJev = db.prepare(
+      'INSERT INTO jev_events (kind, guild_id, channel_id, question, answer, applied, latency_ms, input_tokens, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    )
+    insertJev.run('admission', 'guild-1', 'channel-1', 'lasting_fact', '0.8', 1, 12, 9, now - 8 * ONE_DAY)
+    insertJev.run('admission', 'guild-1', 'channel-1', 'lasting_fact', '0.9', 1, 10, 8, now)
     recordResponseEvent(responseEvent)
     recordExtractionEvent({
       guildId: 'guild-1',
@@ -262,10 +351,11 @@ describe('metricsStore', () => {
     })
     recordMemoryEvent(memoryEvent)
 
-    expect(pruneOldMetrics(7)).toBe(3)
+    expect(pruneOldMetrics(7)).toBe(4)
     expect(db.prepare('SELECT COUNT(*) AS count FROM response_events').get()).toEqual({ count: 1 })
     expect(db.prepare('SELECT COUNT(*) AS count FROM extraction_events').get()).toEqual({ count: 1 })
     expect(db.prepare('SELECT COUNT(*) AS count FROM memory_events').get()).toEqual({ count: 1 })
+    expect(db.prepare('SELECT COUNT(*) AS count FROM jev_events').get()).toEqual({ count: 1 })
   })
 
   it('persists failure diagnostics with the block side and prunes them on the shorter window', () => {
