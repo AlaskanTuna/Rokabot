@@ -44,13 +44,16 @@ const client = createClient()
 let claimPruneTimer: ReturnType<typeof setInterval> | undefined
 const EXTRACTION_QUEUE_STUCK_THRESHOLD_MS = 5 * 60 * 1000
 
-function startupMemoryTasks(): void {
+function startupMemoryTasks(botUserId?: string): void {
   try {
     backfillLegacyClaims()
-    pruneStaleClaims(config.memory.claimRetentionDays)
-    claimPruneTimer = setInterval(() => pruneStaleClaims(config.memory.claimRetentionDays), 24 * 60 * 60 * 1000)
+    pruneStaleClaims(config.memory.claimRetentionDays, botUserId)
+    claimPruneTimer = setInterval(
+      () => pruneStaleClaims(config.memory.claimRetentionDays, botUserId),
+      24 * 60 * 60 * 1000
+    )
     resetStuckProcessing(EXTRACTION_QUEUE_STUCK_THRESHOLD_MS)
-    startExtractionScheduler()
+    startExtractionScheduler(botUserId)
   } catch (err) {
     logger.error({ err }, 'Failed to start memory tasks')
   }
@@ -71,7 +74,7 @@ client.once('clientReady', () => {
   pruneOldFacts(config.memory.factRetentionDays)
   pruneOldMetrics(config.metrics.retentionDays)
   pruneFailureDiagnostics(config.metrics.diagnosticsRetentionHours)
-  startupMemoryTasks()
+  startupMemoryTasks(client.user?.id)
 
   setInterval(() => pruneOldHistory(config.session.historyRetentionDays), 60 * 60 * 1000)
   setInterval(() => pruneOldFacts(config.memory.factRetentionDays), 24 * 60 * 60 * 1000)

@@ -28,6 +28,7 @@ let timer: ReturnType<typeof setTimeout> | undefined
 let lastGuildId: string | undefined
 let dailyExtractionCount = 0
 let dailyDate: string | undefined
+let botUserId: string | undefined
 let now = () => Date.now()
 let limiter: ExtractionLimiter | undefined
 const lastRunAt = new Map<string, number>()
@@ -96,6 +97,7 @@ function completeJob(job: ExtractionQueueJob): void {
     guildId: job.guildId,
     channelId: job.channelId,
     messages: job.payload,
+    ...(botUserId ? { botUserId } : {}),
     admittedBy: job.admittedBy
   })
     .then(() => {
@@ -161,7 +163,8 @@ function drainOnce(): void {
 }
 
 /** Starts the lazy in-process drain loop; safe to call repeatedly. */
-export function startExtractionScheduler(): void {
+export function startExtractionScheduler(currentBotUserId?: string): void {
+  if (currentBotUserId) botUserId = currentBotUserId
   scheduleDrain()
 }
 
@@ -180,7 +183,7 @@ export function enqueueAndSchedule(job: SchedulerJob): void {
     payload: job.messages,
     admittedBy: job.admittedBy
   })
-  startExtractionScheduler()
+  startExtractionScheduler(job.botUserId)
 }
 
 /** Overrides time and rate-limit reads for deterministic scheduler tests. */
@@ -195,6 +198,7 @@ export function resetForTest(): void {
   lastGuildId = undefined
   dailyExtractionCount = 0
   dailyDate = undefined
+  botUserId = undefined
   lastRunAt.clear()
   now = () => Date.now()
   limiter = undefined

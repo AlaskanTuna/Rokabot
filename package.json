@@ -25,6 +25,7 @@
     "test:features": "tsx scripts/test-features.ts",
     "test:phase8": "tsx scripts/test-phase8.ts",
     "test:memory": "tsx scripts/test-memory-extraction.ts",
+    "memory:prune-overflow": "tsx scripts/prune-claim-overflow.ts",
     "export:vault": "tsx scripts/export-vault.ts"
   },
   "dependencies": {
