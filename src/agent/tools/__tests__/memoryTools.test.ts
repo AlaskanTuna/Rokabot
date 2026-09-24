@@ -7,7 +7,6 @@ vi.mock('../../../utils/logger.js', () => ({
 
 import { closeDb, getDb } from '../../../storage/database.js'
 import { recordResponseEvent } from '../../../storage/metricsStore.js'
-import { getFacts, saveFact } from '../../../storage/userMemory.js'
 import { upsertUserName } from '../../../storage/userNames.js'
 import { logger } from '../../../utils/logger.js'
 
@@ -198,9 +197,7 @@ describe('memory tools', () => {
     expect(getActiveClaims('guild-1', 'user-1').map(({ id }) => id)).not.toContain(claim.id)
   })
 
-  it('merges and deduplicates active claims with legacy facts when recalling a guild member', () => {
-    saveFact('guild-1', 'user-1', 'favorite_anime', 'Frieren')
-    saveFact('guild-1', 'user-1', 'hobby', 'tea ceremonies')
+  it('recalls and deduplicates active claims for a guild member', () => {
     const claim = assertClaim({
       guildId: 'guild-1',
       subjectUserId: 'user-1',
@@ -218,16 +215,16 @@ describe('memory tools', () => {
 
     const result = recallUser({ guild_id: 'guild-1', user_id: 'user-1', message: '' })
 
-    expect(result.factCount).toBe(3)
+    expect(result.factCount).toBe(2)
     expect(result.facts).toContain('favorite_anime: frieren')
     expect(result.facts).toContain('likes: manga')
-    expect(result.facts).toContain('hobby: tea ceremonies')
+    expect(result.facts).not.toContain('tea ceremonies')
     expect(getDb().prepare('SELECT last_recalled_at FROM memory_claim WHERE id = ?').get(claim.id)).toEqual({
       last_recalled_at: expect.any(Number)
     })
   })
 
-  it('recalls freshest claims first and caps the merged list at 15 with legacy facts at the tail', () => {
+  it('recalls freshest claims first and caps the list at 15', () => {
     const now = Date.now()
     for (let index = 0; index < 16; index++) {
       assertClaim({
@@ -239,8 +236,6 @@ describe('memory tools', () => {
         observedAt: now - (16 - index) * 60_000
       })
     }
-    saveFact('guild-1', 'user-1', 'ancient_fact', 'from the archive')
-
     const result = recallUser({ guild_id: 'guild-1', user_id: 'user-1', message: '' })
 
     expect(result.factCount).toBe(15)
@@ -283,7 +278,13 @@ describe('memory tools', () => {
 
   it('recalls a resolved user_name through the FunctionTool', async () => {
     upsertUserName('user-2', 'mio', 'Mio')
-    saveFact('guild-1', 'user-2', 'favorite_anime', 'Frieren')
+    assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-2',
+      predicate: 'favorite_anime',
+      value: 'Frieren',
+      sourceKind: 'explicit'
+    })
 
     await expect(
       recallUserTool.runAsync({
@@ -302,7 +303,13 @@ describe('memory tools', () => {
       value: 'Kiki',
       sourceKind: 'explicit'
     })
-    saveFact('guild-1', 'user-2', 'favorite_anime', 'Frieren')
+    assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-2',
+      predicate: 'favorite_anime',
+      value: 'Frieren',
+      sourceKind: 'explicit'
+    })
 
     const result = (await recallUserTool.runAsync({
       args: { user_name: 'kIKI' },
@@ -384,15 +391,16 @@ describe('memory tools', () => {
     ).resolves.toEqual({ facts: "I don't know anyone by that name here yet.", factCount: 0 })
   })
 
-  it('writes remember_user facts to both stores in a guild and only legacy storage globally', () => {
-    rememberUser({ guild_id: 'guild-1', user_id: 'user-1', fact_key: 'favorite_anime', fact_value: 'Frieren' })
-    rememberUser({ guild_id: 'global', user_id: 'user-2', fact_key: 'hobby', fact_value: 'gardening' })
-
-    expect(getFacts('guild-1', 'user-1')).toEqual([{ key: 'favorite_anime', value: 'Frieren' }])
+  it('writes only active claims and refuses the unsupported global tenant', () => {
+    expect(
+      rememberUser({ guild_id: 'guild-1', user_id: 'user-1', fact_key: 'favorite_anime', fact_value: 'Frieren' })
+    ).toEqual({ success: true, message: 'Remembered favorite_anime for user-1.', totalFacts: 1 })
     expect(getActiveClaims('guild-1', 'user-1')).toEqual([
       expect.objectContaining({ predicate: 'favorite_anime', value: 'Frieren', sourceKind: 'explicit' })
     ])
-    expect(getFacts('global', 'user-2')).toEqual([{ key: 'hobby', value: 'gardening' }])
+    expect(rememberUser({ guild_id: 'global', user_id: 'user-2', fact_key: 'hobby', fact_value: 'gardening' })).toEqual(
+      expect.objectContaining({ success: false })
+    )
     expect(getActiveClaims('global', 'user-2')).toEqual([])
   })
 
@@ -424,12 +432,9 @@ describe('memory tools', () => {
       message: "I couldn't tell where we are right now, so I didn't save that.",
       totalFacts: 0
     })
-    expect(getFacts('global', 'user-x')).toEqual([])
   })
 
   it('fails closed instead of reading the shared global tenant when the FunctionTool has no usable _guildId', async () => {
-    saveFact('global', 'user-x', 'favorite_anime', 'Frieren')
-
     await expect(
       recallUserTool.runAsync({ args: {}, toolContext: toolContextWith({ _userId: 'user-x' }) })
     ).resolves.toEqual({ facts: "I don't have any notes about this person yet.", factCount: 0 })
@@ -508,9 +513,15 @@ describe('tenant-scoped name resolution', () => {
     expect(resolveName('Alice', 'guild-1')).toEqual(['user-1'])
   })
 
-  it('resolves a name backed only by a legacy fact in the current tenant', () => {
+  it('resolves a name backed only by an explicit claim in the current tenant', () => {
     upsertUserName('user-1', 'alice', 'Alice')
-    saveFact('guild-1', 'user-1', 'nickname', 'Ali')
+    assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'nickname',
+      value: 'Ali',
+      sourceKind: 'explicit'
+    })
 
     expect(resolveName('Alice', 'guild-1')).toEqual(['user-1'])
   })

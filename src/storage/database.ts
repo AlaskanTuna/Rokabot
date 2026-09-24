@@ -36,15 +36,6 @@ function createTables(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_session_history_channel_ts
       ON session_history (channel_id, timestamp);
 
-    CREATE TABLE IF NOT EXISTS user_memory (
-      guild_id TEXT NOT NULL,
-      user_id TEXT NOT NULL,
-      fact_key TEXT NOT NULL,
-      fact_value TEXT NOT NULL,
-      updated_at INTEGER NOT NULL,
-      PRIMARY KEY (guild_id, user_id, fact_key)
-    );
-
     CREATE TABLE IF NOT EXISTS reminders (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id TEXT NOT NULL,
@@ -179,6 +170,25 @@ function createTables(database: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_extraction_events_guild_ts
       ON extraction_events (guild_id, created_at);
+
+    CREATE TABLE IF NOT EXISTS jev_events (
+      kind TEXT NOT NULL CHECK (kind IN ('turn', 'admission', 'verification')),
+      guild_id TEXT NOT NULL,
+      channel_id TEXT NOT NULL,
+      question TEXT NOT NULL,
+      answer TEXT NOT NULL,
+      probability REAL,
+      confidence REAL,
+      applied INTEGER NOT NULL CHECK (applied IN (0, 1)),
+      latency_ms INTEGER NOT NULL,
+      input_tokens INTEGER NOT NULL,
+      baseline TEXT,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_jev_events_created_at
+      ON jev_events (created_at);
+
   `)
 }
 
@@ -289,25 +299,6 @@ export function runMigrations(database: Database.Database): void {
     logger.info('Migrated buddy table to allow collection entries per user')
   }
 
-  // user_memory: add guild_id to PK (requires table recreation)
-  const umCols = database.prepare("PRAGMA table_info('user_memory')").all() as Array<{ name: string }>
-  if (!umCols.some((c) => c.name === 'guild_id')) {
-    database.exec(`
-      CREATE TABLE user_memory_new (
-        guild_id TEXT NOT NULL,
-        user_id TEXT NOT NULL,
-        fact_key TEXT NOT NULL,
-        fact_value TEXT NOT NULL,
-        updated_at INTEGER NOT NULL,
-        PRIMARY KEY (guild_id, user_id, fact_key)
-      );
-      INSERT INTO user_memory_new SELECT 'global', user_id, fact_key, fact_value, updated_at FROM user_memory;
-      DROP TABLE user_memory;
-      ALTER TABLE user_memory_new RENAME TO user_memory;
-    `)
-    logger.info('Migrated user_memory table to include guild_id')
-  }
-
   database.exec(`
     CREATE TABLE IF NOT EXISTS memory_claim (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -382,8 +373,15 @@ export function runMigrations(database: Database.Database): void {
       payload TEXT NOT NULL,
       status TEXT NOT NULL,
       attempts INTEGER NOT NULL DEFAULT 0,
-      enqueued_at INTEGER NOT NULL,
-      admitted_by TEXT DEFAULT NULL
+      enqueued_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS memory_episode_cursor (
+      channel_id TEXT PRIMARY KEY,
+      guild_id TEXT NOT NULL,
+      last_message_id TEXT,
+      opened_at INTEGER,
+      message_count INTEGER NOT NULL DEFAULT 0
     );
 
     CREATE INDEX IF NOT EXISTS idx_extraction_queue_guild_status_enqueued
@@ -410,29 +408,97 @@ export function runMigrations(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_memory_events_guild_created
       ON memory_events (guild_id, created_at);
 
-    CREATE TABLE IF NOT EXISTS jev_events (
-      kind TEXT NOT NULL CHECK (kind IN ('turn', 'admission', 'verification')),
-      guild_id TEXT NOT NULL,
-      channel_id TEXT NOT NULL,
-      question TEXT NOT NULL,
-      answer TEXT NOT NULL,
-      probability REAL,
-      confidence REAL,
-      applied INTEGER NOT NULL CHECK (applied IN (0, 1)),
-      latency_ms INTEGER NOT NULL,
-      input_tokens INTEGER NOT NULL,
-      baseline TEXT,
-      created_at INTEGER NOT NULL
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_jev_events_created_at
-      ON jev_events (created_at);
   `)
 
   const extractionQueueCols = database.prepare("PRAGMA table_info('extraction_queue')").all() as Array<{ name: string }>
-  if (!extractionQueueCols.some((column) => column.name === 'admitted_by')) {
-    database.exec('ALTER TABLE extraction_queue ADD COLUMN admitted_by TEXT DEFAULT NULL')
+  const queueRows = database.prepare('SELECT * FROM extraction_queue ORDER BY id').all() as Array<{
+    id: number
+    guild_id: string
+    channel_id: string
+    payload: string
+    status: string
+    attempts: number
+    enqueued_at: number
+  }>
+  const migratedQueueRows = queueRows.map((row) => {
+    let payload: unknown
+    try {
+      payload = JSON.parse(row.payload)
+    } catch {
+      throw new Error(`Malformed extraction queue payload for job ${row.id}`)
+    }
+
+    if (Array.isArray(payload)) {
+      payload = {
+        messages: payload.map((message: unknown, index) => {
+          if (
+            typeof message !== 'object' ||
+            message === null ||
+            typeof (message as Record<string, unknown>).userId !== 'string' ||
+            typeof (message as Record<string, unknown>).displayName !== 'string' ||
+            typeof (message as Record<string, unknown>).content !== 'string'
+          ) {
+            throw new Error(`Malformed extraction queue payload for job ${row.id}`)
+          }
+          const legacyMessage = message as { userId: string; displayName: string; content: string }
+          return {
+            messageId: `legacy-${row.id}-${index}`,
+            userId: legacyMessage.userId,
+            displayName: legacyMessage.displayName,
+            content: legacyMessage.content,
+            timestamp: row.enqueued_at,
+            isBot: false
+          }
+        }),
+        context: [],
+        startedAt: row.enqueued_at,
+        endedAt: row.enqueued_at
+      }
+    } else if (
+      typeof payload !== 'object' ||
+      payload === null ||
+      !Array.isArray((payload as Record<string, unknown>).messages) ||
+      !Array.isArray((payload as Record<string, unknown>).context) ||
+      typeof (payload as Record<string, unknown>).startedAt !== 'number' ||
+      typeof (payload as Record<string, unknown>).endedAt !== 'number'
+    ) {
+      throw new Error(`Malformed extraction queue payload for job ${row.id}`)
+    }
+
+    return { ...row, payload: JSON.stringify(payload) }
+  })
+  const queueNeedsRebuild =
+    extractionQueueCols.some((column) => column.name === 'admitted_by') ||
+    migratedQueueRows.some((row, index) => row.payload !== queueRows[index].payload)
+
+  if (queueNeedsRebuild) {
+    database.transaction(() => {
+      database.exec(`
+        DROP INDEX IF EXISTS idx_extraction_queue_guild_status_enqueued;
+        CREATE TABLE extraction_queue_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          guild_id TEXT NOT NULL,
+          channel_id TEXT NOT NULL,
+          payload TEXT NOT NULL,
+          status TEXT NOT NULL,
+          attempts INTEGER NOT NULL DEFAULT 0,
+          enqueued_at INTEGER NOT NULL
+        );
+      `)
+      const insert = database.prepare(
+        'INSERT INTO extraction_queue_new (id, guild_id, channel_id, payload, status, attempts, enqueued_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      )
+      for (const row of migratedQueueRows) {
+        insert.run(row.id, row.guild_id, row.channel_id, row.payload, row.status, row.attempts, row.enqueued_at)
+      }
+      database.exec('DROP TABLE extraction_queue; ALTER TABLE extraction_queue_new RENAME TO extraction_queue;')
+    })()
   }
+
+  database.exec(`
+    CREATE INDEX IF NOT EXISTS idx_extraction_queue_guild_status_enqueued
+      ON extraction_queue (guild_id, status, enqueued_at);
+  `)
 }
 
 /** Close the database connection. Safe to call multiple times. */

@@ -1,29 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { maybeExtractFromBuffer, resetCounters } from '../memoryExtractor.js'
 import { addMessage, getMessages, resetAllBuffers } from '../passiveBuffer.js'
 
 describe('overheard context (passive buffer persistence)', () => {
   beforeEach(() => {
     resetAllBuffers()
-    resetCounters()
-  })
-
-  it('buffer retains messages after extraction triggers', () => {
-    // Fill buffer with 12 messages (exceeds extractionInterval of 10)
-    for (let i = 0; i < 12; i++) {
-      addMessage('ch-1', `user-${i % 3}`, `User${i % 3}`, `user${i % 3}`, `message ${i}`)
-    }
-
-    // Trigger extraction counting (each call increments internal counter)
-    for (let i = 0; i < 12; i++) {
-      maybeExtractFromBuffer('ch-1', 'guild-1')
-    }
-
-    // Buffer should still contain all 12 messages (not cleared)
-    const messages = getMessages('ch-1')
-    expect(messages.length).toBe(12)
-    expect(messages[0].content).toBe('message 0')
-    expect(messages[11].content).toBe('message 11')
   })
 
   it('buffer caps at bufferSize via FIFO eviction', () => {

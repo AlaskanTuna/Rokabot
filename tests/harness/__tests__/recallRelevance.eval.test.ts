@@ -1,6 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import '../env.js'
-import { assertClaim } from '../../../src/agent/memory/memoryClaims.js'
+import { assertClaim, touchRecalled } from '../../../src/agent/memory/memoryClaims.js'
+import { retrieveForTurn } from '../../../src/agent/memory/retriever.js'
 import { recallUser } from '../../../src/agent/tools/recallUser.js'
 import { closeDb, getDb } from '../../../src/storage/database.js'
 
@@ -95,6 +96,7 @@ beforeEach(() => {
 afterEach(() => {
   closeDb()
   process.env.ROKABOT_DB_PATH = undefined
+  vi.restoreAllMocks()
 })
 
 describe('recall relevance A/B (issue #25 phase 1 baseline)', () => {
@@ -133,43 +135,62 @@ describe('recall relevance A/B (issue #25 phase 1 baseline)', () => {
     expect(result.facts).toContain(testCase.targetValue)
   })
 
-  it('ranks a fact seen this week above one with 19 evidence rows last seen 35 days ago', () => {
-    const now = Date.now()
-    const subjectUserId = 'over-evidenced-user'
+  it('decays an osu hobby at one half-life, then recovers it for a matching topic', () => {
+    const now = 1_800_000_000_000
+    vi.spyOn(Date, 'now').mockReturnValue(now)
+    const subjectUserId = 'half-life-user'
     const staleValue = 'playing osu!'
-
-    for (let i = 0; i < 19; i++) {
+    const staleClaim = assertClaim({
+      guildId: GUILD,
+      subjectUserId,
+      predicate: 'hobby',
+      value: staleValue,
+      sourceKind: 'explicit',
+      observedAt: now - 30 * DAY
+    })
+    for (let index = 0; index < 10; index++) {
       assertClaim({
         guildId: GUILD,
         subjectUserId,
-        predicate: 'hobby',
-        value: staleValue,
+        predicate: 'likes',
+        value: `recent interest ${index}`,
         sourceKind: 'explicit',
-        observedAt: now - 35 * DAY
+        observedAt: now - index * 60_000
       })
     }
-    assertClaim({
+
+    const withoutMatch = retrieveForTurn({ guildId: GUILD, speakerId: subjectUserId, participantIds: [], message: '' })
+    const withMatch = retrieveForTurn({
       guildId: GUILD,
-      subjectUserId,
-      predicate: 'likes',
-      value: 'handmade pottery',
-      sourceKind: 'explicit',
-      observedAt: now - 5 * DAY
+      speakerId: subjectUserId,
+      participantIds: [],
+      message: 'what hobby does she have with osu?'
     })
 
-    const staleClaim = getDb()
-      .prepare('SELECT id, last_seen_at FROM memory_claim WHERE guild_id = ? AND subject_user_id = ? AND value = ?')
-      .get(GUILD, subjectUserId, staleValue) as { id: number; last_seen_at: number }
-    const evidenceCount = (
-      getDb().prepare('SELECT COUNT(*) AS count FROM memory_evidence WHERE claim_id = ?').get(staleClaim.id) as {
-        count: number
-      }
-    ).count
-    const result = recallUser({ user_id: subjectUserId, guild_id: GUILD, message: '' })
+    expect(withoutMatch.trace.selected.map(({ id }) => id)).not.toContain(staleClaim.id)
+    expect(withMatch.trace.selected.map(({ id }) => id)).toContain(staleClaim.id)
+  })
 
-    expect(evidenceCount).toBe(19)
-    expect(staleClaim.last_seen_at).toBe(now - 35 * DAY)
-    expect(result.facts.startsWith('likes: handmade pottery')).toBe(true)
+  it('applies the #206 recall cooldown only while no matching FTS or topic signal exists', () => {
+    const now = 1_800_000_000_000
+    vi.spyOn(Date, 'now').mockReturnValue(now)
+    const claim = assertClaim({
+      guildId: GUILD,
+      subjectUserId: 'cooldown-user',
+      predicate: 'hobby',
+      value: 'playing osu!',
+      sourceKind: 'explicit',
+      observedAt: now
+    })
+    const input = { guildId: GUILD, speakerId: 'cooldown-user', participantIds: [], message: 'tell me more' }
+    const first = retrieveForTurn(input)
+    touchRecalled([claim.id])
+    const coolingDown = retrieveForTurn(input)
+    const matched = retrieveForTurn({ ...input, message: 'what hobbies does she have?' })
+    const score = (rows: typeof first.trace.candidates) => rows.find(({ id }) => id === claim.id)?.score
+
+    expect(score(coolingDown.trace.candidates)).toBeCloseTo((score(first.trace.candidates) ?? 0) - 0.75)
+    expect(score(matched.trace.candidates)).toBeGreaterThan(score(coolingDown.trace.candidates) ?? 0)
   })
 
   it('excludes a needs_review claim even when the message matches it exactly', () => {

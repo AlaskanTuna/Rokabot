@@ -1,6 +1,6 @@
 /**
  * Phase 7 Feature Integration Test — validates all new features work end-to-end.
- * Tests SQLite persistence, user memory, reminders, games (shiritori, gacha, hangman),
+ * Tests SQLite persistence, reminders, games (shiritori, gacha, hangman),
  * emoji reactions, and expanded tone detection.
  *
  * Usage:
@@ -45,7 +45,6 @@ import {
   markDelivered
 } from '../src/storage/reminderStore.js'
 import { clearHistory, loadHistory, saveMessage } from '../src/storage/sessionStore.js'
-import { countFacts, deleteFact, getAllFactsForPrompt, getFacts, saveFact } from '../src/storage/userMemory.js'
 
 // --- Test Harness ---
 
@@ -133,49 +132,6 @@ async function main() {
 
   clearHistory('ch-1')
   assert(loadHistory('ch-1', 10).length === 0, 'Session: clear', 'History cleared', 'History not cleared')
-
-  // ─── User Memory ───
-  console.log('\n  --- User Memory ---')
-
-  saveFact('alice', 'favorite_anime', 'Frieren')
-  saveFact('alice', 'nickname', 'Ali')
-  saveFact('alice', 'birthday', 'March 15')
-
-  const facts = getFacts('alice')
-  assert(facts.length === 3, 'Memory: save + get', `${facts.length} facts stored`, `Expected 3, got ${facts.length}`)
-
-  const promptFacts = getAllFactsForPrompt('alice')
-  assert(
-    promptFacts.includes('favorite_anime') && promptFacts.includes('Frieren'),
-    'Memory: prompt format',
-    'Facts formatted for prompt',
-    `Got: ${promptFacts}`
-  )
-
-  // Test upsert
-  saveFact('alice', 'favorite_anime', 'Dandadan')
-  const updated = getFacts('alice')
-  const animeEntry = updated.find((f) => f.key === 'favorite_anime')
-  assert(animeEntry?.value === 'Dandadan', 'Memory: upsert', 'Updated Frieren → Dandadan', `Got: ${animeEntry?.value}`)
-  assert(updated.length === 3, 'Memory: upsert no dup', 'Still 3 facts after upsert', `Got ${updated.length}`)
-
-  // Test 10-fact cap
-  for (let i = 0; i < 12; i++) {
-    saveFact('bob', `fact_${i}`, `value_${i}`)
-  }
-  assert(countFacts('bob') === 10, 'Memory: 10-fact cap', 'Capped at 10', `Got ${countFacts('bob')}`)
-
-  // Test delete
-  deleteFact('alice', 'nickname')
-  assert(countFacts('alice') === 2, 'Memory: delete', '2 facts after deletion', `Got ${countFacts('alice')}`)
-
-  // Test empty user
-  assert(
-    getAllFactsForPrompt('nobody') === '',
-    'Memory: empty user',
-    'Returns empty string',
-    `Got: "${getAllFactsForPrompt('nobody')}"`
-  )
 
   // ─── Reminders ───
   console.log('\n  --- Reminders ---')

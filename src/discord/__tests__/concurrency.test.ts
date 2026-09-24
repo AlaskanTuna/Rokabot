@@ -24,7 +24,6 @@ vi.mock('../concurrency.js', () => ({
   markFree: mocks.markFree
 }))
 vi.mock('../../agent/channelMonitor.js', () => ({ isMonitored: () => false, markActive: vi.fn() }))
-vi.mock('../../agent/memoryExtractor.js', () => ({ maybeExtractFromBuffer: vi.fn() }))
 vi.mock('../../agent/passiveBuffer.js', () => ({ addMessage: vi.fn() }))
 vi.mock('../../storage/userNames.js', () => ({ upsertUserName: vi.fn() }))
 vi.mock('../emojiReactor.js', () => ({ shouldReact: () => null }))

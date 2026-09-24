@@ -27,7 +27,6 @@ const MATCH_PRIORITY: Record<MatchKind, number> = {
 
 const GUILD_PRESENCE = `(
   EXISTS(SELECT 1 FROM memory_claim WHERE guild_id = ? AND subject_user_id = user_names.user_id)
-  OR EXISTS(SELECT 1 FROM user_memory WHERE guild_id = ? AND user_id = user_names.user_id)
   OR EXISTS(SELECT 1 FROM response_events WHERE guild_id = ? AND user_id = user_names.user_id)
 )`
 
@@ -40,7 +39,7 @@ function buildNameIndex(guildId: string): NameIndex {
        ${global ? '' : `WHERE ${GUILD_PRESENCE}`}
        ORDER BY rowid`
     )
-    .all(...(global ? [] : [guildId, guildId, guildId])) as UserNameRow[]
+    .all(...(global ? [] : [guildId, guildId])) as UserNameRow[]
   const nicknameRows = global
     ? []
     : (db

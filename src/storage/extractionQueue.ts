@@ -1,32 +1,41 @@
-import { config } from '../config.js'
 import { getDb } from './database.js'
 
-export const MAX_EXTRACTION_QUEUE_ATTEMPTS = 3
+export const MAX_EXTRACTION_QUEUE_ATTEMPTS = 2
 
-export type ExtractionPayloadMessage = Readonly<{
+export type EpisodeLine = Readonly<{
+  messageId: string
   userId: string
   displayName: string
   content: string
+  timestamp: number
+  isBot: boolean
 }>
 
-export type ExtractionPayload = ReadonlyArray<ExtractionPayloadMessage>
+export type ExtractionEpisode = Readonly<{
+  messages: readonly EpisodeLine[]
+  context: readonly EpisodeLine[]
+  startedAt: number
+  endedAt: number
+}>
+
+export type EpisodeCursor = Readonly<{
+  guildId: string
+  channelId: string
+  lastMessageId: string | null
+  openedAt: number | null
+  messageCount: number
+}>
+
+export type QueueWriteOptions = Readonly<{ transaction?: boolean }>
 
 export type ExtractionQueueJob = Readonly<{
   id: number
   guildId: string
   channelId: string
-  payload: ExtractionPayload
+  episode: ExtractionEpisode
   status: 'pending' | 'processing'
   attempts: number
   enqueuedAt: number
-  admittedBy?: 'jev'
-}>
-
-export type EnqueueExtractionInput = Readonly<{
-  guildId: string
-  channelId: string
-  payload: ExtractionPayload
-  admittedBy?: 'jev'
 }>
 
 type ExtractionQueueRow = {
@@ -34,10 +43,9 @@ type ExtractionQueueRow = {
   guild_id: string
   channel_id: string
   payload: string
-  status: 'pending' | 'processing'
+  status: 'pending' | 'processing' | 'failed'
   attempts: number
   enqueued_at: number
-  admitted_by: 'jev' | null
 }
 
 function mapJob(row: ExtractionQueueRow): ExtractionQueueJob {
@@ -45,54 +53,37 @@ function mapJob(row: ExtractionQueueRow): ExtractionQueueJob {
     id: row.id,
     guildId: row.guild_id,
     channelId: row.channel_id,
-    payload: JSON.parse(row.payload) as ExtractionPayload,
-    status: row.status,
+    episode: JSON.parse(row.payload) as ExtractionEpisode,
+    status: row.status as ExtractionQueueJob['status'],
     attempts: row.attempts,
-    enqueuedAt: row.enqueued_at,
-    ...(row.admitted_by === 'jev' ? { admittedBy: 'jev' as const } : {})
+    enqueuedAt: row.enqueued_at
   }
 }
 
-/** Stores an extraction snapshot and evicts the oldest pending work beyond a guild's queue limit. */
-export function enqueueExtraction(input: EnqueueExtractionInput): ExtractionQueueJob {
-  return getDb().transaction(() => {
+export function enqueueEpisode(
+  input: { guildId: string; channelId: string; episode: ExtractionEpisode },
+  options: QueueWriteOptions = {}
+): ExtractionQueueJob {
+  const write = () => {
+    const db = getDb()
     const enqueuedAt = Date.now()
-    const result = getDb()
+    const payload = JSON.stringify(input.episode)
+    const result = db
       .prepare(
-        "INSERT INTO extraction_queue (guild_id, channel_id, payload, status, enqueued_at, admitted_by) VALUES (?, ?, ?, 'pending', ?, ?)"
+        "INSERT INTO extraction_queue (guild_id, channel_id, payload, status, enqueued_at) VALUES (?, ?, ?, 'pending', ?)"
       )
-      .run(input.guildId, input.channelId, JSON.stringify(input.payload), enqueuedAt, input.admittedBy ?? null)
-
-    const pending = getDb()
-      .prepare("SELECT COUNT(*) AS count FROM extraction_queue WHERE guild_id = ? AND status = 'pending'")
-      .get(input.guildId) as { count: number }
-    const overflow = pending.count - config.memory.extractionQueueMaxPerGuild
-
-    if (overflow > 0) {
-      getDb()
-        .prepare(
-          `DELETE FROM extraction_queue
-             WHERE id IN (
-               SELECT id FROM extraction_queue
-               WHERE guild_id = ? AND status = 'pending'
-               ORDER BY enqueued_at ASC, id ASC
-               LIMIT ?
-             )`
-        )
-        .run(input.guildId, overflow)
-    }
-
-    return {
+      .run(input.guildId, input.channelId, payload, enqueuedAt)
+    return mapJob({
       id: Number(result.lastInsertRowid),
-      guildId: input.guildId,
-      channelId: input.channelId,
-      payload: input.payload,
-      status: 'pending' as const,
+      guild_id: input.guildId,
+      channel_id: input.channelId,
+      payload,
+      status: 'pending',
       attempts: 0,
-      enqueuedAt,
-      ...(input.admittedBy ? { admittedBy: input.admittedBy } : {})
-    }
-  })()
+      enqueued_at: enqueuedAt
+    })
+  }
+  return options.transaction ? write() : getDb().transaction(write)()
 }
 
 /** Atomically claims the oldest pending job for a guild. */
@@ -126,13 +117,13 @@ export function listGuildsWithPending(): string[] {
   ).map((row) => row.guild_id)
 }
 
-/** Removes a processing job. Repeating the operation is safe and returns false after the first call. */
+/** Removes a processing job after its pipeline result and events have been recorded. */
 export function markDone(id: number): boolean {
   return getDb().prepare("DELETE FROM extraction_queue WHERE id = ? AND status = 'processing'").run(id).changes > 0
 }
 
-/** Requeues a failed processing job until its attempt cap is reached, then drops it. */
-export function markFailed(id: number): 'pending' | 'dropped' | undefined {
+/** Requeues once, then retains the failed job for inspection. */
+export function markFailed(id: number): 'pending' | 'failed' | undefined {
   return getDb().transaction(() => {
     const row = getDb().prepare("SELECT * FROM extraction_queue WHERE id = ? AND status = 'processing'").get(id) as
       | ExtractionQueueRow
@@ -140,13 +131,9 @@ export function markFailed(id: number): 'pending' | 'dropped' | undefined {
     if (!row) return undefined
 
     const attempts = row.attempts + 1
-    if (attempts >= MAX_EXTRACTION_QUEUE_ATTEMPTS) {
-      getDb().prepare('DELETE FROM extraction_queue WHERE id = ?').run(id)
-      return 'dropped'
-    }
-
-    getDb().prepare("UPDATE extraction_queue SET attempts = ?, status = 'pending' WHERE id = ?").run(attempts, id)
-    return 'pending'
+    const status = attempts >= MAX_EXTRACTION_QUEUE_ATTEMPTS ? 'failed' : 'pending'
+    getDb().prepare('UPDATE extraction_queue SET attempts = ?, status = ? WHERE id = ?').run(attempts, status, id)
+    return status
   })()
 }
 

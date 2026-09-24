@@ -1,33 +1,34 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { ExtractionEpisode } from '../../../storage/extractionQueue.js'
 
 const mocks = vi.hoisted(() => {
   type QueuedJob = {
     id: number
     guildId: string
     channelId: string
-    payload: Array<{ userId: string; displayName: string; content: string }>
-    admittedBy?: 'jev'
-    status: 'pending' | 'processing'
+    episode: ExtractionEpisode
+    status: 'pending' | 'processing' | 'failed'
+    attempts: number
   }
 
   let nextId = 1
   const jobs: QueuedJob[] = []
-  const limiter = { remainingRpm: 15, remainingRpd: 500 }
 
   return {
     jobs,
-    limiter,
-    runExtraction: vi.fn().mockResolvedValue(undefined),
+    runEpisodePipeline: vi
+      .fn()
+      .mockResolvedValue({ status: 'completed', summary: null, appliedOps: 0, duplicateOps: 0 }),
     isShuttingDown: vi.fn(() => false),
-    logger: { debug: vi.fn(), warn: vi.fn() },
+    logger: { warn: vi.fn() },
     resetQueue: () => {
       jobs.length = 0
       nextId = 1
     },
-    enqueueExtraction: vi.fn((input: Omit<QueuedJob, 'id' | 'status'>) => {
-      const job = { ...input, id: nextId++, status: 'pending' as const }
+    enqueueEpisode: vi.fn((input: { guildId: string; channelId: string; episode: ExtractionEpisode }) => {
+      const job = { ...input, id: nextId++, status: 'pending' as const, attempts: 0 }
       jobs.push(job)
-      return { ...job, enqueuedAt: Date.now(), attempts: 0 }
+      return job
     }),
     listGuildsWithPending: vi.fn(() =>
       [...new Set(jobs.filter((job) => job.status === 'pending').map((job) => job.guildId))].sort()
@@ -36,75 +37,72 @@ const mocks = vi.hoisted(() => {
       const job = jobs.find((candidate) => candidate.guildId === guildId && candidate.status === 'pending')
       if (!job) return undefined
       job.status = 'processing'
-      return { ...job, enqueuedAt: Date.now(), attempts: 0 }
+      return job
     }),
     markDone: vi.fn((id: number) => {
-      const index = jobs.findIndex((job) => job.id === id)
+      const index = jobs.findIndex((job) => job.id === id && job.status === 'processing')
       if (index === -1) return false
       jobs.splice(index, 1)
       return true
     }),
-    markFailed: vi.fn()
+    markFailed: vi.fn((id: number) => {
+      const job = jobs.find((candidate) => candidate.id === id && candidate.status === 'processing')
+      if (!job) return undefined
+      job.attempts += 1
+      job.status = job.attempts >= 2 ? 'failed' : 'pending'
+      return job.status
+    })
   }
 })
 
-vi.mock('../../../config.js', () => ({
-  config: {
-    gemini: { extractionRpmFloor: 3 },
-    memory: { extractionDailyBudgetRatio: 0.4, perGuildGapMs: 1_000 },
-    rateLimit: { rpm: 15, rpd: 5 }
-  }
-}))
-
 vi.mock('../../../storage/extractionQueue.js', () => ({
-  enqueueExtraction: mocks.enqueueExtraction,
+  enqueueEpisode: mocks.enqueueEpisode,
   listGuildsWithPending: mocks.listGuildsWithPending,
   claimNextForGuild: mocks.claimNextForGuild,
   markDone: mocks.markDone,
   markFailed: mocks.markFailed
 }))
-
-vi.mock('../../../utils/rateLimiter.js', () => ({
-  getSharedRateLimiter: () => mocks.limiter
-}))
-
-vi.mock('../../shutdownSignal.js', () => ({
-  isShuttingDown: mocks.isShuttingDown
-}))
-
-vi.mock('../extractor.js', () => ({
-  runExtraction: mocks.runExtraction
-}))
-
+vi.mock('../../shutdownSignal.js', () => ({ isShuttingDown: mocks.isShuttingDown }))
+vi.mock('../extractor.js', () => ({ runEpisodePipeline: mocks.runEpisodePipeline }))
 vi.mock('../../../utils/logger.js', () => ({ logger: mocks.logger }))
 
-import { enqueueAndSchedule, resetForTest, startExtractionScheduler, stopExtractionScheduler } from '../scheduler.js'
+import { resetForTest, startExtractionScheduler, stopExtractionScheduler } from '../scheduler.js'
 
-function job(guildId: string, content = 'I like tea') {
-  return {
-    guildId,
-    channelId: `channel-${guildId}`,
-    messages: [{ userId: `user-${guildId}`, displayName: guildId, content }]
+function episode(content: string): ExtractionEpisode {
+  const message = {
+    messageId: `${content}-1`,
+    userId: 'user-1',
+    displayName: 'Mio',
+    content,
+    timestamp: 1_000,
+    isBot: false
   }
+  return { messages: [message], context: [], startedAt: 1_000, endedAt: 1_000 }
+}
+
+function enqueue(guildId: string, content: string) {
+  return mocks.enqueueEpisode({ guildId, channelId: `channel-${guildId}`, episode: episode(content) })
 }
 
 async function drain(): Promise<void> {
-  await vi.runOnlyPendingTimersAsync()
+  for (let index = 0; index < 20; index++) {
+    for (let settle = 0; settle < 10; settle++) await Promise.resolve()
+    if (vi.getTimerCount() === 0) break
+    await vi.runOnlyPendingTimersAsync()
+  }
 }
 
-describe('extraction scheduler', () => {
+describe('episode extraction scheduler', () => {
   beforeEach(() => {
     vi.useFakeTimers()
-    vi.setSystemTime(new Date('2026-07-22T12:00:00'))
     resetForTest()
     mocks.resetQueue()
-    mocks.runExtraction.mockClear()
+    mocks.runEpisodePipeline.mockReset()
+    mocks.runEpisodePipeline.mockResolvedValue({ status: 'completed', summary: null, appliedOps: 0, duplicateOps: 0 })
     mocks.markDone.mockClear()
     mocks.markFailed.mockClear()
-    mocks.logger.debug.mockClear()
+    mocks.logger.warn.mockClear()
     mocks.isShuttingDown.mockReturnValue(false)
-    mocks.limiter.remainingRpm = 15
-    mocks.limiter.remainingRpd = 500
   })
 
   afterEach(() => {
@@ -112,98 +110,85 @@ describe('extraction scheduler', () => {
     vi.useRealTimers()
   })
 
-  it('drains guilds in round-robin order and revisits a guild after its own gap', async () => {
-    enqueueAndSchedule(job('A', 'first A'))
-    enqueueAndSchedule(job('A', 'second A'))
-    enqueueAndSchedule(job('B'))
-    enqueueAndSchedule(job('C'))
-
-    await drain()
-    await drain()
-    await drain()
-    await drain()
-
-    expect(mocks.runExtraction.mock.calls.map(([queued]) => queued.guildId)).toEqual(['A', 'B', 'C'])
-
-    await vi.advanceTimersByTimeAsync(1_000)
-
-    expect(mocks.runExtraction.mock.calls.map(([queued]) => queued.guildId)).toEqual(['A', 'B', 'C', 'A'])
-  })
-
-  it('passes persisted Jev admission through to extraction', async () => {
-    enqueueAndSchedule({ ...job('A'), admittedBy: 'jev' })
-
-    await drain()
-
-    expect(mocks.runExtraction).toHaveBeenCalledWith(expect.objectContaining({ guildId: 'A', admittedBy: 'jev' }))
-  })
-
-  it('passes the bot ID to extraction for queued jobs', async () => {
-    enqueueAndSchedule({ ...job('A'), botUserId: 'bot-1' })
-
-    await drain()
-
-    expect(mocks.runExtraction).toHaveBeenCalledWith(expect.objectContaining({ botUserId: 'bot-1' }))
-  })
-
-  it('does not let a gapped busy guild block other guilds', async () => {
-    enqueueAndSchedule(job('A', 'first A'))
-    enqueueAndSchedule(job('A', 'second A'))
-    await drain()
-
-    enqueueAndSchedule(job('B'))
-    enqueueAndSchedule(job('C'))
-    await drain()
-    await drain()
-    await drain()
-
-    expect(mocks.runExtraction.mock.calls.map(([queued]) => queued.guildId)).toEqual(['A', 'B', 'C'])
-  })
-
-  it('defers work at the extraction floor so a live retry reserve remains available', async () => {
-    mocks.limiter.remainingRpm = 2
-    enqueueAndSchedule(job('A'))
-
-    await drain()
-
-    expect(mocks.runExtraction).not.toHaveBeenCalled()
-    expect(mocks.jobs).toHaveLength(1)
-  })
-
-  it('stops at the daily extraction budget and resumes after local midnight', async () => {
-    enqueueAndSchedule(job('A'))
-    enqueueAndSchedule(job('B'))
-    enqueueAndSchedule(job('C'))
-
-    await drain()
-    await drain()
-    await drain()
-
-    expect(mocks.runExtraction).toHaveBeenCalledTimes(2)
-    expect(mocks.logger.debug).toHaveBeenCalledWith(expect.any(Object), 'Memory extraction daily budget exhausted')
-
-    await vi.advanceTimersByTimeAsync(12 * 60 * 60 * 1_000)
-
-    expect(mocks.runExtraction).toHaveBeenCalledTimes(3)
-  })
-
-  it('halts within one tick on shutdown and leaves no scheduler timer after stopping', async () => {
-    mocks.isShuttingDown.mockReturnValue(true)
-    enqueueAndSchedule(job('A'))
-
-    await drain()
-
-    expect(mocks.runExtraction).not.toHaveBeenCalled()
-    stopExtractionScheduler()
-    expect(vi.getTimerCount()).toBe(0)
-  })
-
-  it('can be started explicitly for task-87 lifecycle wiring', async () => {
-    mocks.enqueueExtraction({ guildId: 'A', channelId: 'channel-A', payload: job('A').messages })
+  it('drains queued guilds in deterministic round-robin order', async () => {
+    enqueue('A', 'first A')
+    enqueue('A', 'second A')
+    enqueue('B', 'first B')
+    enqueue('C', 'first C')
 
     startExtractionScheduler()
     await drain()
 
-    expect(mocks.runExtraction).toHaveBeenCalledTimes(1)
+    expect(mocks.runEpisodePipeline.mock.calls.map(([job]) => job.guildId)).toEqual(['A', 'B', 'C', 'A'])
+    expect(mocks.jobs).toHaveLength(0)
+  })
+
+  it('runs one job at a time per guild while other guilds continue draining', async () => {
+    let finishA: (() => void) | undefined
+    const blockedA = new Promise<{ status: 'completed'; summary: null; appliedOps: number; duplicateOps: number }>(
+      (resolve) => {
+        finishA = () => resolve({ status: 'completed', summary: null, appliedOps: 1, duplicateOps: 0 })
+      }
+    )
+    mocks.runEpisodePipeline.mockImplementation((job: { guildId: string }) =>
+      job.guildId === 'A'
+        ? blockedA
+        : Promise.resolve({ status: 'completed', summary: null, appliedOps: 1, duplicateOps: 0 })
+    )
+    enqueue('A', 'first A')
+    enqueue('A', 'second A')
+    enqueue('B', 'first B')
+
+    startExtractionScheduler()
+    await drain()
+
+    expect(mocks.runEpisodePipeline.mock.calls.map(([job]) => job.guildId)).toEqual(['A', 'B'])
+    expect(mocks.jobs.filter((job) => job.guildId === 'A' && job.status === 'processing')).toHaveLength(1)
+    finishA?.()
+    await drain()
+
+    expect(mocks.runEpisodePipeline.mock.calls.map(([job]) => job.guildId)).toEqual(['A', 'B', 'A'])
+  })
+
+  it('retries a thrown episode pipeline once and retains the failed job', async () => {
+    mocks.runEpisodePipeline
+      .mockRejectedValueOnce(new Error('schema mismatch'))
+      .mockRejectedValueOnce(new Error('schema mismatch'))
+    const queued = enqueue('A', 'retry')
+
+    startExtractionScheduler()
+    await drain()
+
+    expect(mocks.runEpisodePipeline).toHaveBeenCalledTimes(2)
+    expect(mocks.markFailed).toHaveBeenCalledTimes(2)
+    expect(mocks.jobs).toEqual([expect.objectContaining({ id: queued.id, status: 'failed', attempts: 2 })])
+    expect(mocks.logger.warn).toHaveBeenCalledWith(expect.any(Object), 'Memory episode pipeline failed')
+  })
+
+  it('completes a normally dropped admission and continues despite no legacy gates', async () => {
+    mocks.runEpisodePipeline.mockResolvedValueOnce({ status: 'dropped', summary: null, appliedOps: 0, duplicateOps: 0 })
+    enqueue('A', 'drop')
+
+    startExtractionScheduler()
+    await drain()
+
+    expect(mocks.runEpisodePipeline).toHaveBeenCalledOnce()
+    expect(mocks.markDone).toHaveBeenCalledOnce()
+    expect(mocks.jobs).toHaveLength(0)
+  })
+
+  it('does not start work after shutdown or leave a scheduled drain when stopped', async () => {
+    enqueue('A', 'shutdown')
+    mocks.isShuttingDown.mockReturnValue(true)
+    startExtractionScheduler()
+    await drain()
+    expect(mocks.runEpisodePipeline).not.toHaveBeenCalled()
+
+    mocks.isShuttingDown.mockReturnValue(false)
+    startExtractionScheduler()
+    stopExtractionScheduler()
+    expect(vi.getTimerCount()).toBe(0)
+    await drain()
+    expect(mocks.runEpisodePipeline).not.toHaveBeenCalled()
   })
 })

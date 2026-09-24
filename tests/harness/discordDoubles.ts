@@ -281,6 +281,8 @@ export function makeChannel(spec: ChannelSpec = {}): FakeChannel {
 }
 
 export interface MessageSpec {
+  id?: string
+  createdTimestamp?: number
   author?: UserSpec
   mentions?: Iterable<string>
   channelId?: string
@@ -301,6 +303,8 @@ export interface MessageSpec {
 }
 
 export interface FakeMessage {
+  id: string
+  createdTimestamp: number
   author: FakeUser
   mentions: {
     has(id: string): boolean
@@ -322,6 +326,8 @@ export interface FakeMessage {
   reply(payload: unknown): Promise<FakeSentMessage>
 }
 
+let nextMessageId = 0
+
 export function makeMessage(spec: MessageSpec = {}): FakeMessage {
   const channel =
     spec.channel ??
@@ -333,6 +339,8 @@ export function makeMessage(spec: MessageSpec = {}): FakeMessage {
   const reference = typeof spec.reference === 'string' ? { messageId: spec.reference } : (spec.reference ?? null)
 
   const message: FakeMessage = {
+    id: spec.id ?? `harness-message-${++nextMessageId}`,
+    createdTimestamp: spec.createdTimestamp ?? Date.now(),
     author: makeUser(spec.author),
     mentions: {
       has: (id) => new Set(spec.mentions).has(id)

@@ -1,0 +1,5 @@
+{"guildId":"guild-a","channelId":"channel-a","messageId":"m-1","userId":"u-1","displayName":"Mio","content":"I like tea","timestamp":1000,"isBot":false}
+{"guildId":"guild-a","channelId":"channel-a","messageId":"m-2","userId":"bot-1","displayName":"Roka","content":"Nice~","timestamp":2000,"isBot":true}
+{"guildId":"guild-a","channelId":"channel-a","messageId":"m-3","userId":"u-1","displayName":"Mio","content":"I still like tea and manga","timestamp":3000,"isBot":false}
+{"guildId":"guild-a","channelId":"channel-a","messageId":"m-4","userId":"u-1","displayName":"Mio","content":"I still like tea","timestamp":200000,"isBot":false}
+{"guildId":"guild-b","channelId":"channel-b","messageId":"m-5","userId":"u-1","displayName":"Mio","content":"I play osu!","timestamp":200001,"isBot":false}

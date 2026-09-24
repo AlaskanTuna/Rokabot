@@ -69,14 +69,18 @@ durable state.
 
 ### Persistence & Storage
 
-| SQLite Table                                                                                                       | Contents                                                                                                                                                                                        |
-| ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `session_history`                                                                                                  | Channel messages, including message role, display name, content, timestamp, and optional user identity fields.                                                                                  |
-| `user_memory`, `memory_claim`, `memory_evidence`, `memory_claim_fts`, `extraction_queue`, `memory_backfill_marker` | Legacy facts, typed claims and their evidence/search mirror, restart-safe extraction work, and the one-time legacy backfill marker.                                                             |
-| `reminders`                                                                                                        | Scheduled user reminders and delivery state.                                                                                                                                                    |
-| `game_scores`, `gacha_collection`, `gacha_daily`, `buddy`                                                          | Game scores and gacha/companion data.                                                                                                                                                           |
-| `user_names`, `monitored_channels`                                                                                 | Durable user identity lookup and passive-monitoring state.                                                                                                                                      |
-| `response_events`, `extraction_events`, `memory_events`                                                            | Response, legacy extraction, and value-free claims-memory telemetry. `response_events.failure_marker` stores the raw `finishReason`/`errorCode` token only (e.g. `SAFETY`), never message text. |
+| SQLite Table                                              | Contents                                                                                                                                                                                    |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `session_history`                                         | Channel messages, including message role, display name, content, timestamp, and optional user identity fields.                                                                              |
+| `memory_claim`, `memory_evidence`, `memory_claim_fts`     | User-subject claims, their evidence, and the FTS5 mirror of active claims.                                                                                                                  |
+| `memory_episode_cursor`                                   | Per-channel episode checkpoint: tenant, last message ID, open time, and delta-message count.                                                                                                |
+| `extraction_queue`                                        | Closed episode payloads, with `pending`, `processing`, or retained `failed` status and attempt count.                                                                                       |
+| `memory_events`                                           | Value-free retrieval and claim-change telemetry.                                                                                                                                            |
+| `jev_events`                                              | TypeSafe judgment kind, question key, answer, probability/confidence, applied flag, latency, input tokens, optional baseline, and timestamp.                                                |
+| `reminders`                                               | Scheduled user reminders and delivery state.                                                                                                                                                |
+| `game_scores`, `gacha_collection`, `gacha_daily`, `buddy` | Game scores and gacha/companion data.                                                                                                                                                       |
+| `user_names`, `monitored_channels`                        | Durable user identity lookup and passive-monitoring state.                                                                                                                                  |
+| `response_events`, `extraction_events`                    | Response telemetry and retained historical extraction telemetry. `response_events.failure_marker` stores the raw `finishReason`/`errorCode` token only (e.g. `SAFETY`), never message text. |
 
 ## Technology Stack
 
@@ -186,45 +190,87 @@ text. Behavioral precedence is pinned by `src/agent/__tests__/toneDetector.test.
 It reads the current message plus the two session messages before it, so the tone answers the message being
 replied to rather than only the history.
 
-## Memory Architecture (Claims)
+## Memory Architecture (User Claims)
 
-Claims memory is SQLite-backed, guild-scoped, and selected before the prompt is assembled. It replaces the
-all-facts retrieval path when `memory.claimsBackend` is enabled; the legacy path remains available only as a rollback.
+The shipped memory write path extracts user-subject claims from monitored guild-channel episodes and stores them in
+SQLite. `guild_id` is the tenant scope: the Discord guild ID in a server and `dm:<channelId>` for an explicit DM memory
+tool call. Subjects in the write schema are always Discord users. Group or guild subjects and durable episodic recall
+are later-phase work.
 
 ### Storage Schema
 
-| Table              | Columns                                                                                                                                                                                                                                       | Contract                                                                                                    |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `memory_claim`     | `id`, `guild_id`, `subject_user_id`, `predicate`, `value`, `object_kind`, `object_user_id`, `source_kind`, `status`, `confidence`, `salience`, `pinned`, `needs_review`, `superseded_by`, `first_seen_at`, `last_seen_at`, `last_recalled_at` | Typed claims. `idx_memory_claim_dedup` is unique on (`guild_id`, `subject_user_id`, `predicate`, `value`).  |
-| `memory_claim_fts` | `value`, `predicate`                                                                                                                                                                                                                          | FTS5 virtual-table mirror of active `memory_claim` rows, maintained by insert, update, and delete triggers. |
-| `memory_evidence`  | `id`, `claim_id`, `channel_id`, `source_kind`, `observed_at`                                                                                                                                                                                  | Evidence observations attached to claims.                                                                   |
-| `extraction_queue` | `id`, `guild_id`, `channel_id`, `payload`, `status`, `attempts`, `enqueued_at`                                                                                                                                                                | Persisted extraction batches; queue statuses are `pending` and `processing`.                                |
-| `memory_events`    | `id`, `kind`, `guild_id`, `channel_id`, `subject_user_id`, `duration_ms`, `n_candidates`, `n_selected`, `n_changed`, `tokens_est`, `op`, `created_at`                                                                                         | Value-free pipeline telemetry. `op` records `assert`, `retract`, `supersede`, or `none` when applicable.    |
+| Table                   | Columns                                                                                                                                                                                                                                       | Contract                                                                                                          |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `memory_claim`          | `id`, `guild_id`, `subject_user_id`, `predicate`, `value`, `object_kind`, `object_user_id`, `source_kind`, `status`, `confidence`, `salience`, `pinned`, `needs_review`, `superseded_by`, `first_seen_at`, `last_seen_at`, `last_recalled_at` | User-subject claims. `idx_memory_claim_dedup` is unique on (`guild_id`, `subject_user_id`, `predicate`, `value`). |
+| `memory_evidence`       | `id`, `claim_id`, `channel_id`, `source_kind`, `observed_at`                                                                                                                                                                                  | Evidence observations attached to claims.                                                                         |
+| `memory_claim_fts`      | `value`, `predicate`                                                                                                                                                                                                                          | FTS5 mirror of active claims, maintained by insert, update, and delete triggers.                                  |
+| `memory_episode_cursor` | `channel_id`, `guild_id`, `last_message_id`, `opened_at`, `message_count`                                                                                                                                                                     | Per-channel checkpoint for the open episode.                                                                      |
+| `extraction_queue`      | `id`, `guild_id`, `channel_id`, `payload`, `status`, `attempts`, `enqueued_at`                                                                                                                                                                | Closed episode payloads in `pending`, `processing`, or retained `failed` state.                                   |
+| `memory_events`         | `id`, `kind`, `guild_id`, `channel_id`, `subject_user_id`, `duration_ms`, `n_candidates`, `n_selected`, `n_changed`, `tokens_est`, `op`, `created_at`                                                                                         | Value-free retrieval and claim-change telemetry.                                                                  |
+| `jev_events`            | `kind`, `guild_id`, `channel_id`, `question`, `answer`, `probability`, `confidence`, `applied`, `latency_ms`, `input_tokens`, `baseline`, `created_at`                                                                                        | Value-free Jev judgment telemetry. The kind is `turn`, `admission`, or `verification`; `baseline` is optional.    |
 
-### Claim Lifecycle
+The `extraction_queue` payload contains the episode's delta messages, up to three preceding context lines, and start
+and end timestamps. It is user content and remains in a failed queue row for inspection; success deletes the queue
+row. `jev_events` stores question keys and judgment results, not episode or message text.
 
-Claim statuses are `candidate`, `active`, `superseded`, and `rejected`, with the normal lifecycle
-`candidate → active → superseded → rejected`. Activation or assertion of a new active claim for a
-single-cardinality predicate supersedes prior active claims for the same (`guild_id`, `subject_user_id`, `predicate`)
-and sets their `superseded_by` to the replacement claim. Retractions, capacity eviction, and retention pruning mark
-claims `rejected`.
+### Episode Capture And Write Path
 
-Claims with `needs_review` are excluded from the general retrieval candidates. They can be selected only as anchors
-for their own `subject_user_id`, so they never surface as cross-context memories.
+In monitored guild channels, `episodeTracker` stores delta messages in the channel buffer and updates
+`memory_episode_cursor`. Silence for `memory.episodeLullMs` (180 seconds) or reaching
+`memory.episodeMaxMessages` (25 deltas) closes an episode. The queue insert and cursor advance share one SQLite
+transaction. Startup converts legacy queue payloads into the episode shape while preserving every queue row and its
+status, including `failed`; processing rows older than five minutes return to `pending`.
 
-### Timestamps, Retention & Capacity
+The per-guild round-robin scheduler runs at most one job per guild at a time. A failure is retried once; after the
+second failed attempt the job remains `failed` in `extraction_queue`. There is no per-guild delay, queue-size setting,
+Gemini daily budget ratio, or separate extraction RPM floor. Memory work is asynchronous and does not block the reply
+that captured the messages.
+
+The pipeline is **local precheck → Jev admission → Gemini typed extraction → Jev verification → claim writes**.
+Sensitive or wholly trivial episodes are dropped locally. Other episodes require a successful Jev `lasting_fact`
+judgment with probability at least `memory.admitThreshold` (0.5); if Jev is unavailable, times out, or returns no
+usable answer, the episode is dropped without a Gemini extraction request. `TYPESAFE_API_KEY` is therefore required
+for passive memory, and startup warns once when it is absent.
+
+Gemini uses `gemini.extractionModel` (defaulting to `gemini.model`) and returns a strict operation list plus an
+ephemeral one-to-two-sentence summary. The summary is not written to SQLite. Each operation subject is
+`{ kind: 'user', userId }`; operations are:
+
+- **Add:** insert an active claim for a user and predicate.
+- **Update:** replace an existing claim for the same user and predicate, linking the old row through
+  `superseded_by`.
+- **Remove:** reject an existing active claim without deleting its row.
+- **Noop:** make no claim change.
+
+Jev verifies durability and attribution for every write operation. It also checks whether an add duplicates an
+existing claim for the same user and predicate; a verified duplicate appends evidence instead of creating a row.
+`memory.verifyThreshold` (0.5) gates durability and attribution. If verification is incomplete, remove operations are
+not applied and permitted add/update operations are marked `needs_review`. Sensitive operations are always rejected.
+For single-cardinality predicates, a successful replacement supersedes the prior active claim. Capacity eviction,
+explicit removal, and retention pruning change claim status to `rejected`; they do not delete claim rows.
+
+Completed admission judgments write one `jev_events` row with `kind='admission'` and question `lasting_fact`.
+Completed verification writes one row per answer key (`durable_N`, `attributed_N`, or `same_as_N_M`). These rows
+include the answer, probability, application outcome, latency, and input-token count, but no source message text.
+`jev.memoryTimeoutMs` (5000 ms) bounds admission and verification calls.
+
+### Claim Lifecycle And Retention
+
+Claim statuses are `candidate`, `active`, `superseded`, and `rejected`. Episode operations write active claims directly;
+single-cardinality updates move prior active claims to `superseded`, and removals, capacity eviction, and retention
+pruning mark claims `rejected`. Rows are retained for history and evidence links.
 
 - `first_seen_at` records the first observation.
 - `last_seen_at` records the latest observation and drives expiry.
 - `last_recalled_at` changes only when the retriever selects a claim for the prompt.
 
-The current retention job marks unpinned `candidate` and `active` claims `rejected` when `last_seen_at` exceeds
+The retention job marks unpinned candidate and active claims `rejected` when `last_seen_at` exceeds
 `memory.claimRetentionDays` (90 days); pinned claims are exempt. `memory.maxActiveClaimsPerUser` (20) limits active
-claims per user, evicting the least salient unpinned claims first.
+claims per subject, evicting the least salient unpinned claims first. Explicitly remembered claims are pinned.
 
 ### Bounded Retrieval Contract
 
-Retrieval is guild-scoped and bounded to at most `memory.maxClaimsPerTurn` (10) claims and approximately
+Retrieval is tenant-scoped and bounded to at most `memory.maxClaimsPerTurn` (10) claims and approximately
 `memory.retrievalTokenBudget` (350) tokens. It reserves up to `memory.speakerMinShare` (0.5) of the selected slots
 for speaker anchors; anchors are considered before every other candidate and are never displaced by general
 selection. It considers at most `memory.recentParticipantLimit` (3) non-speaker participants and may expand one hop
@@ -247,93 +293,61 @@ member named by a nickname or username gets a `## Who Is Mentioned` line mapping
 rejects one to three matches and returns up to four matching values when clarification is needed. It does not accept a
 target member ID or name, and its responses replace values that `privacyGuard.ts` marks sensitive with a generic label.
 
-The retriever, not `refreshFactTimestamps`, calls `touchRecalled()` for selected claims. The resulting entries are
-rendered through the shared Phase 13 `buildFactsEnvelope` untrusted-data envelope; the claims path does not fork the
-envelope.
+Retrieval runs once in `src/agent/turnContext.ts` while assembling `_systemPrompt`. `beforeModelCallback` reads only
+that already-assembled state to assign the system instruction; it never triggers retrieval or reads the database.
+Selected claims use the shared `buildFactsEnvelope` untrusted-data envelope.
 
-### Extraction Pipeline
+### Explicit Legacy Migration
 
-The pipeline is: candidate gate → persisted `extraction_queue` → per-guild round-robin scheduler → user-ID-keyed
-batched extractor → transactional `assert`/`retract` operations in `memory_claim`. The candidate gate rejects
-sensitive, trivial, and already-known-only batches before any extraction call; an explicit "remember" or a
-correction is admitted even when its predicate is already known, so a changed nickname or preference is not dropped. Persisted queue state is restart-safe:
-stuck `processing` work can be returned to `pending`, and failed work is retried up to the queue attempt cap before it
-is dropped.
+`npm run migrate:memory-v2` is an explicit offline command; startup never drops `user_memory` or invokes the migration.
+If the legacy marker is absent, the command attempts the one-time backfill and infers legal scopes for old `global`
+rows only from recorded guild or channel evidence. It then verifies every old row against its normalized claim in every
+attested scope. Any row without a legal scope or a matching claim aborts the command and leaves `user_memory` intact.
+On success, the report shows legacy-row count and the top ten active claims per subject before and after the shared
+overflow eviction, then the command drops `user_memory`. Eviction changes claim status; it never deletes claims. A
+second run after success is an empty, safe no-op.
 
-The scheduler enforces `memory.perGuildGapMs` (20 seconds) between batches from the same guild and caps each guild at
-`memory.extractionQueueMaxPerGuild` (50) pending batches. Extraction is limited to
-`floor(rateLimit.rpd × memory.extractionDailyBudgetRatio)` (0.4 of RPD) and requires
-`gemini.extractionRpmFloor` (3) remaining RPM, so live traffic wins. This is the same floor-priority behavior defined
-in [Reliability & Failure Handling](#reliability--failure-handling).
+### Replay Baseline
 
-### Tenancy
+The offline `npm run memory:replay -- --session-history <database>` command uses stub admission, extraction, and
+verification adapters and makes no network calls. The captured PR 3 replay processed 122 rows (20 transcript, 102
+snapshot), with 0 unmapped and 0 ambiguous snapshot rows; it segmented 37 episodes, admitted 37, dropped 0, and
+produced 0 operations because the offline extractor stub returns an empty operation list. It made 0 network calls and
+recorded 0 model latency or token estimates.
 
-Every claim is scoped by `guild_id`, and a claim only exists because a message turn wrote it. A guild message uses
-the real guild id. There is no shared `'global'` claims tenant: `assertWritableGuild`
-(`src/agent/memory/memoryClaims.ts:109`) throws on it. Legacy facts with no attested scope are still logged and
-skipped during backfill rather than assigned a tenant.
-
-**DMs have no memory.** The client holds no `DirectMessages` intent, so no message event ever arrives from a DM
-and none of the `dm:` handling on the message path can be reached. A `/ask` in a DM still derives a
-`dm:<channelId>` label, but it is a metrics and session identity only: `/ask` runs memory-free, so that label
-never becomes a claims tenant and never reaches a memory table. `dm:` rows already in the database are left
-untouched: no turn selects or writes them any more, and the one-time legacy backfill still reads historical
-`response_events` labels to attribute pre-existing facts.
-
-### Memory-Free Turns
-
-`generateResponse` takes a required `memory` flag. The message handler passes `true`; the `/ask` handler passes
-`false`. With `memory: false` a turn runs no `retrieveForTurn`, no legacy `getFacts`/`refreshFactTimestamps`, and
-no `context_build` memory event; it builds no facts section and no `context_build` telemetry because there was
-nothing to measure. `beforeModelCallback` strips `remember_user`, `recall_user` and `forget_user` from both
-`request.config.tools` function declarations and `request.toolsDict`, driven by a per-request `AsyncLocalStorage`
-value, so the model is never offered a tool the turn cannot service.
-
-The two identity lines that name no stored fact survive a memory-free turn: the `## Who Is Mentioned` block, which
-only resolves nicknames to display names, and the `## Recent Channel Activity` overheard block, which is recent
-channel context rather than memory. What does not survive is any prompt text describing a memory tool —
-`assembleSystemPrompt` takes the same flag and omits the `remember_user`/`recall_user`/`forget_user` rules from
-the kernel, and the tail section's tool guidance, on both the base prompt and the safety ladder's rung-3
-rebuild.
-
-### Prompt-Assembly Invariant
-
-Retrieval runs once in `src/agent/turnContext.ts` while assembling `_systemPrompt`. `beforeModelCallback` reads only that
-already-assembled state to assign the system instruction; it never triggers retrieval or reads the database.
-
-### Flag, Rollback & Legacy Path
-
-`memory.claimsBackend` defaults to `true`. Set `MEMORY_CLAIMS_BACKEND=false` to roll back to the legacy
-`user_memory` all-facts path, or revert the configuration default. The legacy dual-write tap remains present but is
-inert while the claims backend is enabled; it is retained for later cleanup.
+The combined transcript and snapshot inter-message gap distribution had 106 samples, 22 zero-gap ties, and 84
+positive gaps. The positive-gap percentiles were p50 23.4 s, p75 236.8 s, p90 25,867.6 s, p95 70,514.2 s, and p99
+218,938.9 s. The snapshot-only distribution had 98 samples, 22 ties, and 76 positive gaps; positive-gap percentiles
+were p50 19.1 s, p75 933.4 s, p90 30,852.8 s, p95 71,515.0 s, and p99 231,320.6 s. Percentiles use linear
+interpolation and exclude zero-gap ties; ties remain in `sampleCount`.
 
 ### Vault Export Technical Contract
 
 `exportVault()` and `npm run export:vault` are read-only, offline export paths. They write one note per
 (`guild_id`, `subject_user_id`), with YAML frontmatter grouped by predicate and `relationship_to` facts rendered as
-`[[wikilinks]]`. Any `dm:` scopes still in the database are exported on their own isolated paths, unchanged by the
-`/ask` memory-free change. A containment guard based on `path.relative`
+`[[wikilinks]]`. `dm:` scopes remain isolated in their own export paths. A containment guard based on `path.relative`
 and `path.isAbsolute` rejects a note path outside the export directory. Export performs no store writes and no network
 requests.
 
 ### Deferred Items
 
+- Group or guild-subject facts, stored `memory_episode` records, dates, and episodic-recall blocks are later PR 4/5 work.
 - Embeddings and `sqlite-vec` semantic retrieval.
 - An ADK `globalInstruction` spike.
 - Two-way Obsidian vault synchronization; the current export is one-way and read-only.
 
 ## Jev Judgments
 
-Jev (TypeSafe's typed decision model, `@typesafe-ai/sdk`) answers pick-from-a-list questions; it never writes text,
-so Gemini still generates every reply, tool call and fact. The client (`src/agent/jev/client.ts`) exists only when
-`TYPESAFE_API_KEY` is set, is pinned to `jev.model` (`jev-1.13.0`), and makes one attempt with no retries. Each
-message and `/ask` handler starts one `TurnEntryWork` before reply fetching, admission checks, linked-media
-resolution, deferral, or ADK session loading. Generation receives that same handle and awaits its judgment only when
-an enabled feature is `on`; `shadow` observes it asynchronously. A declined turn aborts the request, and failures
-keep the rule-based decision.
+Jev (TypeSafe's typed decision model, `@typesafe-ai/sdk`) answers pick-from-a-list questions; Gemini generates every
+reply, tool call and memory operation. The client (`src/agent/jev/client.ts`) exists only when `TYPESAFE_API_KEY` is
+set, is pinned to `jev.model` (`jev-1.13.0`), and makes one attempt with no retries. Message and `/ask` handlers
+start one `TurnEntryWork` before reply fetching, deferral or ADK session loading. Generation receives that same handle
+and waits only when an enabled feature is `on`; `shadow` observes it asynchronously. A declined turn aborts the work,
+and failures keep the rule-based decision.
 
-Each feature has a mode in `config.yml` (`jev.tone`, `jev.referents`, `jev.extraction`, `jev.prefetch`),
-overridable by `JEV_TONE`, `JEV_REFERENTS`, `JEV_EXTRACTION` and `JEV_PREFETCH`:
+In-reply tone, referent and lookup judgments use `jev.tone`, `jev.referents` and `jev.prefetch`, each with `off`,
+`shadow` or `on` mode. Tone and referents can be overridden by `JEV_TONE` and `JEV_REFERENTS`; prefetch can be
+controlled with `JEV_PREFETCH`:
 
 | Mode     | Behaviour                                                            |
 | -------- | -------------------------------------------------------------------- |
@@ -344,28 +358,29 @@ overridable by `JEV_TONE`, `JEV_REFERENTS`, `JEV_EXTRACTION` and `JEV_PREFETCH`:
 - **Turn Judgment:** at most one `judgeTurn` request per turn, carrying a tone `choice` over the 12 `ToneKey`s and a
   referent `choice` for each name `resolveReferences` found ambiguous (at most 3 names, 8 candidates each, plus
   `none`/`unclear`). It receives at most three prior lines from `session_history` and is bounded by `jev.timeoutMs`
-  (1200 ms). An `on` tone uses the selected-choice probability threshold `jev.toneMinProbability`; a missing
-  probability keeps the regex tone. An `on` referent still uses `jev.referentMinConfidence` and joins the retrieval
-  participants after the resolver's members, with a `## Who Is Mentioned` line. The safety rung-3 `sincere` prompt
-  still overrides any tone. Logged as `Jev turn judgment`.
-- **Lookup Judgment:** when `jev.prefetch` is not `off`, the same `systemOne` request includes a `needs_lookup` `noul`
-  asking whether the message needs a specific, niche, recent or real-world fact. It is returned as
-  `TurnJudgment.needsLookup`; a missing, malformed or out-of-range answer becomes `null`. This adds no second Jev
-  request. The lookup query itself uses the mention-stripped message text, before reply, container, embed, poll or
-  forwarded-content wrappers are added.
+  (1200 ms). An `on` tone uses selected-choice probability threshold `jev.toneMinProbability`; a missing probability
+  keeps the rule tone. An `on` referent uses `jev.referentMinConfidence` and joins the retrieval participants after
+  the resolver's members, with a `## Who Is Mentioned` line. The safety rung-3 `sincere` prompt overrides any tone.
+- **Lookup Judgment:** when `jev.prefetch` is not `off`, the same request includes a `needs_lookup` `noul` asking
+  whether the message needs a specific, niche, recent or real-world fact. It is returned as `TurnJudgment.needsLookup`;
+  a missing, malformed or out-of-range answer becomes `null`. This adds no second Jev request. The lookup query uses
+  the mention-stripped message text before reply, container, embed, poll or forwarded-content wrappers are added.
 - **Turn Events:** each non-null turn judgment writes one `kind = 'turn'` row to `jev_events` with the rule baseline,
   decision labels, probability, confidence, whether tone was applied, rounded latency and input tokens. The `question`
   JSON records the `prefetch` mode; the `answer` JSON records `needsLookup` and `prefetchStatus`. It stores no message
   text, alias or user ID. `metrics.retentionDays` prunes these rows with the other metrics tables.
+- **Memory Admission And Verification:** Jev is a hard dependency for passive memory. After the local sensitive/trivial
+  precheck, admission asks whether an episode contains a lasting fact and requires `memory.admitThreshold` (0.5).
+  Verification checks operation durability and attribution against `memory.verifyThreshold` (0.5), and checks additions
+  against same-predicate claims. Both are bounded by `jev.memoryTimeoutMs` (5000 ms). A missing key, timeout, or unusable
+  admission answer drops the episode before Gemini extraction; incomplete verification blocks removals and marks
+  allowed additions or updates for review.
 - **Replay Comparator:** `npm run replay:jev -- data/rokabot.db --max-turns 100` compares Jev tone labels with the
-  regex tone on retained history and transcript fixtures, including CJK turns. Regex agreement is a tuning
-  comparator, not ground-truth accuracy; the cutoff support rule also checks CJK agreement before tone can turn on.
-- **Memory Admission:** when the candidate gate refuses a batch as `known claim keywords only` or
-  `no personal signal`, `judgeExtraction` asks a `noul` about the newest human message (bounded by
-  `jev.backgroundTimeoutMs`). In `on` mode a probability at or above `jev.extractionAdmitThreshold` queues the batch
-  with `extraction_queue.admitted_by = 'jev'`, which lets it past the extractor's re-gate. `sensitive content` and
-  `trivial batch` refusals are never overridden, and Jev never rejects a batch the rules admit. Logged as
-  `Jev extraction admission`.
+  regex tone on retained history and transcript fixtures, including CJK turns. Regex agreement is a tuning comparator,
+  not ground-truth accuracy; the cutoff support rule also checks CJK agreement before tone can turn on.
+- **Event Recording:** admission and verification judgments are recorded in `jev_events` with question key, answer,
+  probability, confidence, `applied`, latency and input-token count. Source messages are not stored in this table.
+  `memory.admitThreshold` and `memory.verifyThreshold` are the memory thresholds; there is no Jev extraction mode.
 
 ### Search Prefetch
 
@@ -374,19 +389,19 @@ the threshold without searching; `on` starts a Tavily search when `needsLookup` 
 The default threshold is `0.7`, and the maximum wait before the first model request proceeds without results is
 `jev.prefetchWaitMs` (4000 ms).
 
-The message handler starts `TurnEntryWork` before reply fetching, admission checks and session loading. Once the
-shared Jev judgment clears the threshold in `on` mode, it starts at most one automatic prefetch using the original
-mention-stripped message text (or the `/ask` question). That search can run while session and memory context are prepared.
-It does not reserve a Gemini RPM slot. Rejected turns cancel the shared work; if a Tavily request is already in flight,
-the abort signal is passed through to its fetch.
+The message handler starts `TurnEntryWork` before reply fetching and session loading. Once the shared Jev judgment clears
+the threshold in `on` mode, it starts at most one automatic prefetch using the original mention-stripped message text
+(or the `/ask` question). That search can run while session and memory context are prepared. It does not reserve a
+Gemini RPM slot. Rejected turns cancel the shared work; if a Tavily request is already in flight, the abort signal is
+passed through to its fetch.
 
 A successful result is injected into the first model system prompt in a `## Looked It Up` block, capped at 2000
 characters. The existing lookup-answer instructions in `src/agent/prompts/core.ts` apply, including the direction to
 call `search_web` again if the results are thin or off-topic. The normal search citation footer uses the prefetched
-URLs; a later model-issued search replaces that citation list. A prefetched result counts `search_web` in
-`toolsUsed`, once even if Gemini also calls the tool. The tool remains registered in all modes. Empty, failed,
-aborted, canceled or timed-out prefetches add no prompt block, and the turn answers normally. The safety ladder drops
-the prefetch block after its first rung.
+URLs; a later model-issued search replaces that citation list. A prefetched result counts `search_web` in `toolsUsed`,
+once even if Gemini also calls the tool. The tool remains registered in all modes. Empty, failed, aborted, canceled or
+timed-out prefetches add no prompt block, and the turn answers normally. The safety ladder drops the prefetch block
+after its first rung.
 
 The derivation, measured latency and rollout plan are in `docs/research/jev-integration.md`.
 
@@ -400,7 +415,7 @@ The derivation, measured latency and rollout plan are in `docs/research/jev-inte
 Event: interactionCreate
 Filter: isChatInputCommand() && commandName === 'ask'
 Extract: interaction.options.getString('question'), channelId, user.displayName
-Flow: deferReply() → process → editReply(response)
+Flow: start turn work → deferReply() → process → editReply(response)
 ```
 
 #### MessageCreate (Mention/Reply)
@@ -496,7 +511,7 @@ services:
 
 ## Reliability & Failure Handling
 
-Gemini failures are classified before a live response or background extraction is finalized. The live
+Gemini failures on a live response are classified before the retry or fallback decision. The live
 path uses `liveMaxRetries = 2`: up to two retries after the initial call, with a 1s exponential base
 backoff and full jitter. Retrying stops at whichever of two conditions is reached first: the ~12s
 accumulated-backoff cap (`gemini.retryBackoffCapMs`), or the `gemini.turnDeadlineMs` wall-clock budget for
@@ -504,17 +519,16 @@ the whole retry loop. The deadline is evaluated only before a retry — never be
 and admits one only when a full `gemini.timeout` still fits in the remaining budget; once either
 condition is reached, the specified fallback behavior applies.
 
-| Taxonomy             | Examples / Detection                                                                                                                                                                                                         | Retryable                                | Max Attempts                              | Backoff                                                          | Rate-Limiter Token                                                                                                                    | Session Action                                                        | User-Visible Result                                                                                                                           |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- | ----------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `transient_http`     | 429, 500, 503, overloaded, quota, `RESOURCE_EXHAUSTED`, or `UNAVAILABLE`                                                                                                                                                     | Yes                                      | `liveMaxRetries = 2` retries              | 1s exponential base with full jitter; stop at ~12s added latency | Yes; each retry consumes a token, only while `remainingRpm >= retryRpmFloor` (`2`)                                                    | Preserve                                                              | Real answer if a retry succeeds; generic fallback after exhaustion or when the RPM floor prevents a retry                                     |
-| `network`            | `fetch failed`, `ECONNRESET`, `ETIMEDOUT`, `EAI_AGAIN`, or abort-timeout                                                                                                                                                     | Yes                                      | `liveMaxRetries = 2` retries              | 1s exponential base with full jitter; stop at ~12s added latency | Yes; each retry consumes a token, only while `remainingRpm >= retryRpmFloor` (`2`)                                                    | Preserve                                                              | Real answer if a retry succeeds; generic fallback after exhaustion or when the RPM floor prevents a retry                                     |
-| `empty_text`         | No parts; `finishReason` `STOP`, `OTHER`, or unset; or `MAX_TOKENS` with thoughts-only output                                                                                                                                | Yes                                      | `liveMaxRetries = 2` retries              | 1s exponential base with full jitter; stop at ~12s added latency | Yes; each retry consumes a token, only while `remainingRpm >= retryRpmFloor` (`2`)                                                    | Preserve                                                              | Real answer if a retry succeeds; generic fallback after exhaustion or when the RPM floor prevents a retry                                     |
-| `safety`             | `SAFETY`, `PROHIBITED_CONTENT`, `BLOCKLIST`, or `SPII`                                                                                                                                                                       | No blind retry; one steered regeneration | 1 steered regeneration, one-shot per turn | None — the block is not rate-related                             | The regeneration consumes a token, only while `remainingRpm >= retryRpmFloor` (`2`)                                                   | Preserve                                                              | A generated in-character redirect when the regeneration succeeds; otherwise the static safety deflection: “Ehh… let's not get into that one~” |
-| `session_corrupt`    | The Gemini 400 whose message reports a function-call turn immediately following a user turn                                                                                                                                  | Yes, once                                | 1 retry                                   | 1s exponential base with full jitter; stop at ~12s added latency | Yes; the retry consumes a token, only while `remainingRpm >= retryRpmFloor` (`2`)                                                     | Destroy the ADK session and rehydrate it from SQLite before the retry | Real answer if the rehydrated retry succeeds; otherwise the same in-character decline as `terminal`                                           |
-| `recitation`         | Gemini recitation finish reason or equivalent response classification                                                                                                                                                        | Yes, once                                | 1 resample                                | 1s full-jitter resample delay                                    | Yes; the resample consumes a token, only while `remainingRpm >= retryRpmFloor` (`2`)                                                  | Preserve                                                              | Real answer if the resample succeeds; otherwise an in-character decline                                                                       |
-| `quota_exhausted`    | A 429 whose `quotaId` names `RequestsPerDay` and not `RequestsPerMinute` — the key is out of requests until midnight Pacific                                                                                                 | No                                       | None                                      | None                                                             | No                                                                                                                                    | Preserve                                                              | The same in-character decline as `terminal`                                                                                                   |
-| `terminal`           | 400, `INVALID_ARGUMENT`, authentication failure, or permission failure (bare status codes are matched last and digit-anchored, so a `400` inside a larger number — a quota figure, a token count — is not a terminal signal) | No                                       | 0 retries                                 | None                                                             | The initial user message consumes its token; no retry token is consumed                                                               | Destroy                                                               | In-character decline                                                                                                                          |
-| `extraction_failure` | Any background memory-extraction failure                                                                                                                                                                                     | Only for a transient failure             | 1 light retry                             | Light full-jitter retry delay                                    | Yes; each extraction attempt, including its retry, consumes a token and may run only while `remainingRpm >= extractionRpmFloor` (`3`) | Preserve; background extraction never destroys the live session       | No user-facing message; quietly give up after the retry or immediately for a non-transient failure, and never block user traffic              |
+| Taxonomy          | Examples / Detection                                                                                                                                                                                                         | Retryable                                | Max Attempts                              | Backoff                                                          | Rate-Limiter Token                                                                   | Session Action                                                        | User-Visible Result                                                                                                                           |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- | ----------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `transient_http`  | 429, 500, 503, overloaded, quota, `RESOURCE_EXHAUSTED`, or `UNAVAILABLE`                                                                                                                                                     | Yes                                      | `liveMaxRetries = 2` retries              | 1s exponential base with full jitter; stop at ~12s added latency | Yes; each retry consumes a token, only while `remainingRpm >= retryRpmFloor` (`2`)   | Preserve                                                              | Real answer if a retry succeeds; generic fallback after exhaustion or when the RPM floor prevents a retry                                     |
+| `network`         | `fetch failed`, `ECONNRESET`, `ETIMEDOUT`, `EAI_AGAIN`, or abort-timeout                                                                                                                                                     | Yes                                      | `liveMaxRetries = 2` retries              | 1s exponential base with full jitter; stop at ~12s added latency | Yes; each retry consumes a token, only while `remainingRpm >= retryRpmFloor` (`2`)   | Preserve                                                              | Real answer if a retry succeeds; generic fallback after exhaustion or when the RPM floor prevents a retry                                     |
+| `empty_text`      | No parts; `finishReason` `STOP`, `OTHER`, or unset; or `MAX_TOKENS` with thoughts-only output                                                                                                                                | Yes                                      | `liveMaxRetries = 2` retries              | 1s exponential base with full jitter; stop at ~12s added latency | Yes; each retry consumes a token, only while `remainingRpm >= retryRpmFloor` (`2`)   | Preserve                                                              | Real answer if a retry succeeds; generic fallback after exhaustion or when the RPM floor prevents a retry                                     |
+| `safety`          | `SAFETY`, `PROHIBITED_CONTENT`, `BLOCKLIST`, or `SPII`                                                                                                                                                                       | No blind retry; one steered regeneration | 1 steered regeneration, one-shot per turn | None — the block is not rate-related                             | The regeneration consumes a token, only while `remainingRpm >= retryRpmFloor` (`2`)  | Preserve                                                              | A generated in-character redirect when the regeneration succeeds; otherwise the static safety deflection: “Ehh… let's not get into that one~” |
+| `session_corrupt` | The Gemini 400 whose message reports a function-call turn immediately following a user turn                                                                                                                                  | Yes, once                                | 1 retry                                   | 1s exponential base with full jitter; stop at ~12s added latency | Yes; the retry consumes a token, only while `remainingRpm >= retryRpmFloor` (`2`)    | Destroy the ADK session and rehydrate it from SQLite before the retry | Real answer if the rehydrated retry succeeds; otherwise the same in-character decline as `terminal`                                           |
+| `recitation`      | Gemini recitation finish reason or equivalent response classification                                                                                                                                                        | Yes, once                                | 1 resample                                | 1s full-jitter resample delay                                    | Yes; the resample consumes a token, only while `remainingRpm >= retryRpmFloor` (`2`) | Preserve                                                              | Real answer if the resample succeeds; otherwise an in-character decline                                                                       |
+| `quota_exhausted` | A 429 whose `quotaId` names `RequestsPerDay` and not `RequestsPerMinute` — the key is out of requests until midnight Pacific                                                                                                 | No                                       | None                                      | None                                                             | No                                                                                   | Preserve                                                              | The same in-character decline as `terminal`                                                                                                   |
+| `terminal`        | 400, `INVALID_ARGUMENT`, authentication failure, or permission failure (bare status codes are matched last and digit-anchored, so a `400` inside a larger number — a quota figure, a token count — is not a terminal signal) | No                                       | 0 retries                                 | None                                                             | The initial user message consumes its token; no retry token is consumed              | Destroy                                                               | In-character decline                                                                                                                          |
 
 Configurable thresholds are set on all four Gemini-API-supported harm categories
 (`HARM_CATEGORY_HARASSMENT`, `HARM_CATEGORY_HATE_SPEECH`, `HARM_CATEGORY_SEXUALLY_EXPLICIT`,
@@ -596,10 +610,8 @@ Gemini was still running` is logged only when the turn ends with both sides fail
 
 ### RPM-Budget Accounting
 
-- A user message consumes one rate-limiter token today. Every live retry and every background extraction
-  attempt, including an extraction retry, must also consume a token.
-- Live retries require `remainingRpm >= retryRpmFloor` (`2`). Background extraction requires
-  `remainingRpm >= extractionRpmFloor` (`3`); otherwise it is skipped so user traffic retains priority.
+- A turn reserves `gemini.maxLlmCalls` rate-limiter slots, then releases the unused portion. Live retries require
+  `remainingRpm >= retryRpmFloor` (`2`).
 - Tool-chain calls up to `maxLlmCalls = 4` were uncounted, so `rpm` bounded turns while Gemini's quota
   counted requests. **Closed for `rpm` by #167**: a turn now reserves `maxLlmCalls` slots and releases what it
   did not use, so `rpm` is counted in requests. See "A Turn Reserves the Calls It May Make".
@@ -647,9 +659,8 @@ limiter that reports itself as never having been hit.
   assembly, memory retrieval, image download), rather than up to `(liveMaxRetries + 1) × gemini.timeout`
   as before — this is the blast-radius bound the deadline actually buys.
 - Independent channels may retry concurrently. Cross-channel RPM contention is resolved by the
-  synchronous `tryConsumeAboveFloor()` primitive, which is race-free under JavaScript run-to-completion.
-  The extraction floor (`3`) exceeds the live-retry floor (`2`), so user-facing retries win over
-  background extraction when tokens are scarce.
+  synchronous `tryConsumeAboveFloor()` primitive, which is race-free under JavaScript run-to-completion. The
+  memory scheduler runs independently and processes queued episodes asynchronously.
 - An idle TTL cannot fire during a retry: `ttlMs` is much greater than the maximum retry window. If a
   session is nevertheless destroyed while its retry loop is in flight, the loop must resolve to a
   graceful fallback rather than throw.
@@ -859,7 +870,7 @@ a project quota: the harm from overspending lands on every other channel, not on
   after a file has been downloaded and measured, which is far too late to decline politely. Admission
   therefore asks the answerable question in the Discord handlers, before the turn: for a turn carrying
   attachments, is there room for the worst turn `gemini.maxAttachmentTokens` admits? That is the same floor
-  idiom as `retryRpmFloor` and `extractionRpmFloor`. Accounting happens afterwards in `src/agent/roka.ts`, charging
+  idiom as `retryRpmFloor`. Accounting happens afterwards in `src/agent/roka.ts`, charging
   what was actually sent.
 - **Over-budget takes the existing in-character busy reply,** exactly as `byteBudget` does, and is asked
   before the byte reservation so a declined turn has taken nothing it must hand back. No new counter, notice,

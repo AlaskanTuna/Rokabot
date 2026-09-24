@@ -16,8 +16,13 @@ afterEach(() => {
 function addUser(userId: string, username: string, displayName: string, guildId = 'guild-a'): void {
   upsertUserName(userId, username, displayName)
   getDb()
-    .prepare('INSERT INTO user_memory (guild_id, user_id, fact_key, fact_value, updated_at) VALUES (?, ?, ?, ?, ?)')
-    .run(guildId, userId, 'known', 'yes', Date.now())
+    .prepare(`
+      INSERT INTO response_events (
+        guild_id, channel_id, user_id, trigger, tone, outcome, kind, e2e_ms, generate_ms, llm_ms,
+        retry_latency_ms, retries, tokens_in_est, tokens_out_est, created_at
+      ) VALUES (?, 'channel-1', ?, 'mention', 'playful', 'ok', 'none', 1, 1, 1, 0, 0, 1, 1, 1)
+    `)
+    .run(guildId, userId)
 }
 
 function addNickname(userId: string, nickname: string, guildId = 'guild-a'): void {
@@ -31,6 +36,19 @@ function addNickname(userId: string, nickname: string, guildId = 'guild-a'): voi
 }
 
 describe('resolveName', () => {
+  it('does not use a legacy fact table to establish guild presence', () => {
+    upsertUserName('legacy-user', 'alice', 'Alice')
+    getDb().exec(`
+      CREATE TABLE IF NOT EXISTS user_memory (
+        guild_id TEXT NOT NULL, user_id TEXT NOT NULL, fact_key TEXT NOT NULL, fact_value TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      INSERT INTO user_memory VALUES ('guild-a', 'legacy-user', 'nickname', 'Ali', 1);
+    `)
+
+    expect(resolveName('Alice', 'guild-a')).toEqual([])
+  })
+
   it('returns display name, username, and active nickname matches in priority order', () => {
     addUser('display-match', 'display-user', 'Alias')
     addUser('username-match', 'ALIAS', 'Username User')

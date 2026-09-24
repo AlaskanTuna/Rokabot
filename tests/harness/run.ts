@@ -146,7 +146,6 @@ export async function runTranscript(path: string, options: RunTranscriptOptions 
   const measurementHistory = new Map<string, TokenHistoryMessage[]>()
   let scriptedReply = ''
   let activeTiming: ReturnType<typeof startTurnTiming> | undefined
-  ;(config.memory as { extractionInterval: number }).extractionInterval = Number.MAX_SAFE_INTEGER
 
   if (!live) {
     for (const channelId of new Set(lines.map((line) => line.channelId))) {

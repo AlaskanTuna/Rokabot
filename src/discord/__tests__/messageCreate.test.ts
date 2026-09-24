@@ -10,41 +10,20 @@ const mocks = vi.hoisted(() => ({
   warn: vi.fn(),
   isChannelBusy: vi.fn(() => false),
   isMonitored: vi.fn(() => false),
+  markActive: vi.fn(() => mocks.isMonitored.mockReturnValue(true)),
   tryConsume: vi.fn(() => true),
+  recordEpisodeMessage: vi.fn(),
   canAffordAttachments: vi.fn(() => true),
   tryReserve: vi.fn(() => true),
   release: vi.fn(),
-  maybeExtractFromBuffer: vi.fn(),
-  addToPassiveBuffer: vi.fn(),
-  getMessages: vi.fn(() => [
-    {
-      userId: 'user-1',
-      displayName: 'Alice',
-      username: 'alice',
-      content: 'I love tea',
-      timestamp: 1
-    }
-  ]),
-  getActiveClaims: vi.fn(() => []),
-  shouldExtract: vi.fn(() => ({ extract: true, reason: 'test signal' })),
-  judgeExtraction: vi.fn(),
-  enqueueAndSchedule: vi.fn(),
   splitResponse: vi.fn((response: string) => [response])
 }))
 
 vi.mock('../../agent/roka.js', () => ({ generateResponse: mocks.generateResponse }))
+vi.mock('../../agent/channelMonitor.js', () => ({ isMonitored: mocks.isMonitored, markActive: mocks.markActive }))
+vi.mock('../../agent/memory/episodeTracker.js', () => ({ recordEpisodeMessage: mocks.recordEpisodeMessage }))
 vi.mock('../../agent/turnContext.js', () => ({ startTurnEntryWork: mocks.startTurnEntryWork }))
 vi.mock('../../agent/tokenBudget.js', () => ({ canAffordAttachments: mocks.canAffordAttachments }))
-vi.mock('../../agent/channelMonitor.js', () => ({ isMonitored: mocks.isMonitored, markActive: vi.fn() }))
-vi.mock('../../agent/memoryExtractor.js', () => ({ maybeExtractFromBuffer: mocks.maybeExtractFromBuffer }))
-vi.mock('../../agent/passiveBuffer.js', () => ({
-  addMessage: mocks.addToPassiveBuffer,
-  getMessages: mocks.getMessages
-}))
-vi.mock('../../agent/memory/candidateGate.js', () => ({ shouldExtract: mocks.shouldExtract }))
-vi.mock('../../agent/memory/memoryClaims.js', () => ({ getActiveClaims: mocks.getActiveClaims }))
-vi.mock('../../agent/jev/judgments.js', () => ({ judgeExtraction: mocks.judgeExtraction }))
-vi.mock('../../agent/memory/scheduler.js', () => ({ enqueueAndSchedule: mocks.enqueueAndSchedule }))
 vi.mock('../../storage/metricsStore.js', () => ({ recordResponseEvent: mocks.recordResponseEvent }))
 vi.mock('../../storage/userNames.js', () => ({ upsertUserName: vi.fn() }))
 vi.mock('../../utils/logger.js', () => ({
@@ -69,18 +48,7 @@ vi.mock('../responses.js', () => ({
 }))
 vi.mock('../events/gachaMention.js', () => ({ handleGachaMention: vi.fn() }))
 
-import { config } from '../../config.js'
 import { MAX_ATTACHMENTS } from '../attachments.js'
-
-// Aliased rather than cast at each site: the config type is readonly, and a `(config.x as ...)` statement
-// opens with a paren, which the formatter will happily weld onto the end of the line above it.
-const mutableMemoryConfig = config.memory as { claimsBackend: boolean }
-const mutableJevConfig = config.jev as {
-  tone: 'off' | 'shadow' | 'on'
-  referents: 'off' | 'shadow' | 'on'
-  extraction: 'off' | 'shadow' | 'on'
-  extractionAdmitThreshold: number
-}
 import { NAME_MENTION_REGEX } from '../events/messageCreate.js'
 import { createMessageHandler } from '../events/messageCreate.js'
 import { assertTurnEntryRejections } from './turnEntryRejections.js'
@@ -127,6 +95,8 @@ function createMessage({
   return {
     message: {
       author: { id: 'user-1', bot: false, displayName: 'Alice', username: 'alice' },
+      id: 'message-1',
+      createdTimestamp: 1_000,
       channelId: 'channel-1',
       content,
       mentions: { has: vi.fn(() => mentioned), repliedUser },
@@ -173,10 +143,6 @@ const turnEntryWork = { judgment: Promise.resolve(null), cancel: mocks.cancelTur
 
 function resetMessageMocks() {
   vi.clearAllMocks()
-  mutableMemoryConfig.claimsBackend = false
-  mutableJevConfig.tone = 'off'
-  mutableJevConfig.referents = 'off'
-  mutableJevConfig.extraction = 'off'
   mocks.isChannelBusy.mockReturnValue(false)
   mocks.isMonitored.mockReturnValue(false)
   mocks.tryConsume.mockReturnValue(true)
@@ -191,7 +157,6 @@ function resetMessageMocks() {
     droppedAttachments: 0,
     truncatedAttachments: 0
   })
-  mocks.judgeExtraction.mockResolvedValue({ noul: 0.9, latencyMs: 2, inputTokens: 10 })
 }
 
 describe('NAME_MENTION_REGEX', () => {
@@ -527,24 +492,14 @@ describe('message handler metrics', () => {
   })
 })
 
-describe('message handler claims extraction dispatch', () => {
+describe('message handler episode tracking', () => {
   const guild = { members: { me: { displayName: 'Roka' } } }
 
   beforeEach(() => {
     vi.clearAllMocks()
-    mutableMemoryConfig.claimsBackend = false
     mocks.isChannelBusy.mockReturnValue(false)
     mocks.isMonitored.mockReturnValue(true)
     mocks.tryConsume.mockReturnValue(true)
-    mocks.getMessages.mockReturnValue([
-      {
-        userId: 'user-1',
-        displayName: 'Alice',
-        username: 'alice',
-        content: 'I love tea',
-        timestamp: 1
-      }
-    ])
     mocks.generateResponse.mockResolvedValue({
       text: 'Hello~',
       tone: 'playful',
@@ -555,93 +510,64 @@ describe('message handler claims extraction dispatch', () => {
     })
   })
 
-  it('keeps the legacy extractor path unchanged when claimsBackend is false', async () => {
-    const { message } = createMessage({ guild })
+  it('tracks normalized monitored human messages as episode delta lines', async () => {
+    const { message } = createMessage({ guild, content: '<@111> I love tea' })
 
     await createMessageHandler(
-      { user: { id: 'bot-1', displayName: 'Roka', username: 'roka' } } as never,
+      { user: { id: '111', displayName: 'Roka', username: 'roka' } } as never,
       createRateLimiter() as never
     )(message as never)
 
-    expect(mocks.maybeExtractFromBuffer).toHaveBeenNthCalledWith(1, 'channel-1', 'guild-1', 'bot-1')
-    expect(mocks.maybeExtractFromBuffer).toHaveBeenNthCalledWith(2, 'channel-1', 'guild-1', 'bot-1')
-    expect(mocks.getMessages).not.toHaveBeenCalled()
-    expect(mocks.shouldExtract).not.toHaveBeenCalled()
-    expect(mocks.enqueueAndSchedule).not.toHaveBeenCalled()
-  })
-
-  it('gates and enqueues a user-ID-keyed snapshot when claimsBackend is true', async () => {
-    mutableMemoryConfig.claimsBackend = true
-    const { message } = createMessage({ guild })
-
-    await createMessageHandler(
-      { user: { id: 'bot-1', displayName: 'Roka', username: 'roka' } } as never,
-      createRateLimiter() as never
-    )(message as never)
-
-    expect(mocks.maybeExtractFromBuffer).not.toHaveBeenCalled()
-    expect(mocks.shouldExtract).toHaveBeenCalledWith(
-      [
-        {
-          userId: 'user-1',
-          displayName: 'Alice',
-          username: 'alice',
-          content: 'I love tea',
-          timestamp: 1
-        }
-      ],
-      new Set()
-    )
-    expect(mocks.enqueueAndSchedule).toHaveBeenCalledWith({
+    expect(mocks.recordEpisodeMessage).toHaveBeenCalledWith({
       guildId: 'guild-1',
       channelId: 'channel-1',
-      botUserId: 'bot-1',
-      messages: [{ userId: 'user-1', displayName: 'Alice', content: 'I love tea' }]
+      message: {
+        messageId: 'message-1',
+        userId: 'user-1',
+        displayName: 'Alice',
+        content: 'I love tea',
+        timestamp: 1_000,
+        isBot: false
+      }
     })
   })
 
-  it('keeps buffered bot replies in context but excludes the bot from extraction subjects', async () => {
-    mutableMemoryConfig.claimsBackend = true
-    mocks.getMessages.mockReturnValue([
-      {
-        userId: 'user-1',
-        displayName: 'Alice',
-        username: 'alice',
-        content: 'I love tea',
-        timestamp: 1
-      },
-      {
-        userId: 'bot-1',
-        displayName: 'Roka',
-        username: 'roka',
-        content: 'I love tea too',
-        timestamp: 2
-      }
-    ])
-    const { message } = createMessage({ guild })
+  it('tracks a bot-authored guild message before returning and marks it as context only', async () => {
+    const { message } = createMessage({ guild, mentioned: false, content: 'Hello~' })
+    message.author = { id: 'bot-1', bot: true, displayName: 'Roka', username: 'roka' } as never
 
     await createMessageHandler(
       { user: { id: 'bot-1', displayName: 'Roka', username: 'roka' } } as never,
       createRateLimiter() as never
     )(message as never)
 
-    expect(mocks.getActiveClaims).not.toHaveBeenCalledWith('guild-1', 'bot-1')
-    expect(mocks.enqueueAndSchedule).toHaveBeenCalledWith(
-      expect.objectContaining({
-        botUserId: 'bot-1',
-        messages: expect.arrayContaining([
-          expect.objectContaining({ userId: 'bot-1', displayName: 'Roka', content: 'I love tea too' })
-        ])
-      })
-    )
+    expect(mocks.recordEpisodeMessage).toHaveBeenCalledWith({
+      guildId: 'guild-1',
+      channelId: 'channel-1',
+      message: expect.objectContaining({ messageId: 'message-1', userId: 'bot-1', isBot: true, content: 'Hello~' })
+    })
+    expect(mocks.generateResponse).not.toHaveBeenCalled()
   })
 
-  it('does not let a scheduler failure interrupt the reply', async () => {
-    mutableMemoryConfig.claimsBackend = true
-    mocks.enqueueAndSchedule.mockImplementationOnce(() => {
+  it('does not track direct messages or unmonitored guild channels', async () => {
+    const dm = createMessage({ guild: null, guildId: null })
+    await createMessageHandler({ user: { id: 'bot-1' } } as never, createRateLimiter() as never)(dm.message as never)
+    expect(mocks.recordEpisodeMessage).not.toHaveBeenCalled()
+
+    mocks.isMonitored.mockReturnValue(false)
+    const unmonitored = createMessage({ guild, mentioned: false, content: 'I love tea' })
+    await createMessageHandler(
+      { user: { id: 'bot-1' } } as never,
+      createRateLimiter() as never
+    )(unmonitored.message as never)
+    expect(mocks.recordEpisodeMessage).not.toHaveBeenCalled()
+  })
+
+  it('does not let episode-tracker storage errors interrupt the reply', async () => {
+    mocks.recordEpisodeMessage.mockImplementationOnce(() => {
       throw new Error('queue unavailable')
     })
-    const { message, reply } = createMessage({ guild })
+    const { message, reply } = createMessage({ guild, content: '<@bot-1> I love tea' })
 
     await expect(
       createMessageHandler(
@@ -651,156 +577,6 @@ describe('message handler claims extraction dispatch', () => {
     ).resolves.toBeUndefined()
 
     expect(JSON.stringify(reply.mock.calls[0][0].components[0].toJSON())).toContain('Hello~')
-    expect(mocks.maybeExtractFromBuffer).not.toHaveBeenCalled()
-  })
-
-  it('does not buffer passive messages outside a guild', async () => {
-    const { message } = createMessage({ guild: null, guildId: null })
-
-    await createMessageHandler(
-      { user: { id: 'bot-1', displayName: 'Roka', username: 'roka' } } as never,
-      createRateLimiter() as never
-    )(message as never)
-
-    expect(mocks.addToPassiveBuffer).not.toHaveBeenCalled()
-  })
-
-  it('does not run the legacy extractor outside a guild', async () => {
-    const { message } = createMessage({ guild: null, guildId: null })
-
-    await createMessageHandler(
-      { user: { id: 'bot-1', displayName: 'Roka', username: 'roka' } } as never,
-      createRateLimiter() as never
-    )(message as never)
-
-    expect(mocks.maybeExtractFromBuffer).not.toHaveBeenCalled()
-  })
-
-  it('does not dispatch claim extraction outside a guild', async () => {
-    mutableMemoryConfig.claimsBackend = true
-    const { message } = createMessage({ guild: null, guildId: null })
-
-    await createMessageHandler(
-      { user: { id: 'bot-1', displayName: 'Roka', username: 'roka' } } as never,
-      createRateLimiter() as never
-    )(message as never)
-
-    expect(mocks.enqueueAndSchedule).not.toHaveBeenCalled()
-  })
-
-  it('asks Jev about a human batch refused for lack of personal signal', async () => {
-    mutableMemoryConfig.claimsBackend = true
-    mutableJevConfig.extraction = 'shadow'
-    mocks.shouldExtract.mockReturnValue({ extract: false, reason: 'no personal signal' })
-    const { message } = createMessage({ guild })
-
-    await createMessageHandler(
-      { user: { id: 'bot-1', displayName: 'Roka', username: 'roka' } } as never,
-      createRateLimiter() as never
-    )(message as never)
-    await vi.waitFor(() => expect(mocks.judgeExtraction).toHaveBeenCalledOnce())
-
-    expect(mocks.judgeExtraction).toHaveBeenCalledWith({ lines: ['[Alice]: I love tea'] })
-  })
-
-  it('logs a shadow extraction judgment without enqueuing it', async () => {
-    mutableMemoryConfig.claimsBackend = true
-    mutableJevConfig.extraction = 'shadow'
-    mocks.shouldExtract.mockReturnValue({ extract: false, reason: 'known claim keywords only' })
-    mocks.judgeExtraction.mockResolvedValue({ noul: 0.99, latencyMs: 2, inputTokens: 10 })
-    const { message } = createMessage({ guild })
-
-    await createMessageHandler(
-      { user: { id: 'bot-1', displayName: 'Roka', username: 'roka' } } as never,
-      createRateLimiter() as never
-    )(message as never)
-    await vi.waitFor(() =>
-      expect(mocks.info).toHaveBeenCalledWith(
-        expect.objectContaining({ gateReason: 'known claim keywords only', noul: 0.99, admitted: false }),
-        'Jev extraction admission'
-      )
-    )
-
-    expect(mocks.enqueueAndSchedule).not.toHaveBeenCalled()
-  })
-
-  it('enqueues a high-confidence on-mode extraction with its Jev admission', async () => {
-    mutableMemoryConfig.claimsBackend = true
-    mutableJevConfig.extraction = 'on'
-    mutableJevConfig.extractionAdmitThreshold = 0.8
-    mocks.shouldExtract.mockReturnValue({ extract: false, reason: 'no personal signal' })
-    mocks.judgeExtraction.mockResolvedValue({ noul: 0.85, latencyMs: 2, inputTokens: 10 })
-    const { message } = createMessage({ guild })
-
-    await createMessageHandler(
-      { user: { id: 'bot-1', displayName: 'Roka', username: 'roka' } } as never,
-      createRateLimiter() as never
-    )(message as never)
-    await vi.waitFor(() =>
-      expect(mocks.enqueueAndSchedule).toHaveBeenCalledWith({
-        guildId: 'guild-1',
-        channelId: 'channel-1',
-        botUserId: 'bot-1',
-        messages: [{ userId: 'user-1', displayName: 'Alice', content: 'I love tea' }],
-        admittedBy: 'jev'
-      })
-    )
-
-    expect(mocks.judgeExtraction).toHaveBeenCalledOnce()
-  })
-
-  it('does not enqueue an on-mode extraction below threshold', async () => {
-    mutableMemoryConfig.claimsBackend = true
-    mutableJevConfig.extraction = 'on'
-    mutableJevConfig.extractionAdmitThreshold = 0.8
-    mocks.shouldExtract.mockReturnValue({ extract: false, reason: 'no personal signal' })
-    mocks.judgeExtraction.mockResolvedValue({ noul: 0.79, latencyMs: 2, inputTokens: 10 })
-    const { message } = createMessage({ guild })
-
-    await createMessageHandler(
-      { user: { id: 'bot-1', displayName: 'Roka', username: 'roka' } } as never,
-      createRateLimiter() as never
-    )(message as never)
-    await vi.waitFor(() => expect(mocks.judgeExtraction).toHaveBeenCalledOnce())
-
-    expect(mocks.enqueueAndSchedule).not.toHaveBeenCalled()
-  })
-
-  it.each(['sensitive content', 'trivial batch'])('never asks Jev for a %s batch', async (reason) => {
-    mutableMemoryConfig.claimsBackend = true
-    mutableJevConfig.extraction = 'on'
-    mocks.shouldExtract.mockReturnValue({ extract: false, reason })
-    const { message } = createMessage({ guild })
-
-    await createMessageHandler(
-      { user: { id: 'bot-1', displayName: 'Roka', username: 'roka' } } as never,
-      createRateLimiter() as never
-    )(message as never)
-
-    expect(mocks.judgeExtraction).not.toHaveBeenCalled()
-  })
-
-  it("does not ask Jev about Roka's post-reply buffer dispatch", async () => {
-    mutableMemoryConfig.claimsBackend = true
-    mutableJevConfig.extraction = 'on'
-    mocks.shouldExtract.mockReturnValue({ extract: false, reason: 'no personal signal' })
-    mocks.getMessages
-      .mockReturnValueOnce([
-        { userId: 'user-1', displayName: 'Alice', username: 'alice', content: 'I love tea', timestamp: 1 }
-      ])
-      .mockReturnValueOnce([
-        { userId: 'user-1', displayName: 'Alice', username: 'alice', content: 'I love tea', timestamp: 1 },
-        { userId: 'bot-1', displayName: 'Roka', username: 'roka', content: 'Hello~', timestamp: 2 }
-      ])
-    const { message } = createMessage({ guild })
-
-    await createMessageHandler(
-      { user: { id: 'bot-1', displayName: 'Roka', username: 'roka' } } as never,
-      createRateLimiter() as never
-    )(message as never)
-    await vi.waitFor(() => expect(mocks.judgeExtraction).toHaveBeenCalledOnce())
-
-    expect(mocks.judgeExtraction).toHaveBeenCalledWith({ lines: ['[Alice]: I love tea'] })
   })
 })
 
@@ -809,7 +585,6 @@ describe('unsupported attachments on the mention path', () => {
   // mocks, so a test here that set a return value changed the meaning of the ones after it.
   beforeEach(() => {
     vi.clearAllMocks()
-    mutableMemoryConfig.claimsBackend = false
     mocks.isChannelBusy.mockReturnValue(false)
     mocks.isMonitored.mockReturnValue(false)
     mocks.tryConsume.mockReturnValue(true)
@@ -895,7 +670,6 @@ describe('media she can take on the mention path, not only images', () => {
   // the file, so these assertions pass in isolation and read stale state in the suite.
   beforeEach(() => {
     vi.clearAllMocks()
-    mutableMemoryConfig.claimsBackend = false
     mocks.isChannelBusy.mockReturnValue(false)
     mocks.isMonitored.mockReturnValue(false)
     mocks.tryConsume.mockReturnValue(true)
@@ -944,7 +718,6 @@ describe('media she can take on the mention path, not only images', () => {
 describe("reading what the sender's own message shows", () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mutableMemoryConfig.claimsBackend = false
     mocks.isChannelBusy.mockReturnValue(false)
     mocks.isMonitored.mockReturnValue(false)
     mocks.tryConsume.mockReturnValue(true)
@@ -1142,7 +915,6 @@ describe("reading what the sender's own message shows", () => {
 describe('reading a message forwarded straight to her', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mutableMemoryConfig.claimsBackend = false
     mocks.isChannelBusy.mockReturnValue(false)
     mocks.isMonitored.mockReturnValue(false)
     mocks.tryConsume.mockReturnValue(true)
@@ -1347,7 +1119,6 @@ describe('reading a message forwarded straight to her', () => {
 describe('naming a replied-to image she cannot see', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mutableMemoryConfig.claimsBackend = false
     mocks.isChannelBusy.mockReturnValue(false)
     mocks.isMonitored.mockReturnValue(false)
     mocks.tryConsume.mockReturnValue(true)

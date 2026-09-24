@@ -23,9 +23,15 @@ if (process.env.ADK_QUIET) {
 
 import http from 'node:http'
 import { cleanupExpired, restoreMonitoredChannels } from './agent/channelMonitor.js'
+import { flushOpenEpisodes } from './agent/memory/episodeTracker.js'
 import { pruneStaleClaims } from './agent/memory/memoryClaims.js'
-import { startExtractionScheduler, stopExtractionScheduler } from './agent/memory/scheduler.js'
+import {
+  startExtractionScheduler,
+  stopExtractionScheduler,
+  waitForInFlightExtractions
+} from './agent/memory/scheduler.js'
 import { destroyAllSessions } from './agent/session.js'
+import { beginShutdown } from './agent/shutdownSignal.js'
 import { config } from './config.js'
 import { createClient } from './discord/client.js'
 import { cleanupExpiredCooldowns } from './discord/emojiReactor.js'
@@ -34,26 +40,29 @@ import { stopStatusCycler } from './discord/statusCycler.js'
 import { destroyAllGames as destroyAllShiritoriGames } from './games/shiritori.js'
 import { closeDb, getDb } from './storage/database.js'
 import { resetStuckProcessing } from './storage/extractionQueue.js'
-import { backfillLegacyClaims } from './storage/memoryMigration.js'
 import { pruneFailureDiagnostics, pruneOldMetrics } from './storage/metricsStore.js'
 import { pruneOldHistory } from './storage/sessionStore.js'
-import { pruneOldFacts } from './storage/userMemory.js'
 import { logger } from './utils/logger.js'
 
 const client = createClient()
 let claimPruneTimer: ReturnType<typeof setInterval> | undefined
+let loggedPassiveMemoryDisabled = false
 const EXTRACTION_QUEUE_STUCK_THRESHOLD_MS = 5 * 60 * 1000
 
 function startupMemoryTasks(botUserId?: string): void {
+  if (!config.jev.apiKey && !loggedPassiveMemoryDisabled) {
+    logger.warn('Passive memory extraction is disabled: no TypeSafe API key')
+    loggedPassiveMemoryDisabled = true
+  }
+
   try {
-    backfillLegacyClaims()
     pruneStaleClaims(config.memory.claimRetentionDays, botUserId)
     claimPruneTimer = setInterval(
       () => pruneStaleClaims(config.memory.claimRetentionDays, botUserId),
       24 * 60 * 60 * 1000
     )
     resetStuckProcessing(EXTRACTION_QUEUE_STUCK_THRESHOLD_MS)
-    startExtractionScheduler(botUserId)
+    startExtractionScheduler()
   } catch (err) {
     logger.error({ err }, 'Failed to start memory tasks')
   }
@@ -71,13 +80,11 @@ client.once('clientReady', () => {
   startReminderScheduler(client)
 
   pruneOldHistory(config.session.historyRetentionDays)
-  pruneOldFacts(config.memory.factRetentionDays)
   pruneOldMetrics(config.metrics.retentionDays)
   pruneFailureDiagnostics(config.metrics.diagnosticsRetentionHours)
   startupMemoryTasks(client.user?.id)
 
   setInterval(() => pruneOldHistory(config.session.historyRetentionDays), 60 * 60 * 1000)
-  setInterval(() => pruneOldFacts(config.memory.factRetentionDays), 24 * 60 * 60 * 1000)
   setInterval(() => pruneOldMetrics(config.metrics.retentionDays), 24 * 60 * 60 * 1000)
   setInterval(() => pruneFailureDiagnostics(config.metrics.diagnosticsRetentionHours), 60 * 60 * 1000)
   setInterval(() => cleanupExpired(), 60 * 60 * 1000)
@@ -102,11 +109,14 @@ healthServer.listen(3000, '0.0.0.0')
 async function shutdown(signal: string): Promise<void> {
   logger.info({ signal }, 'Shutdown signal received')
 
+  beginShutdown()
+  flushOpenEpisodes()
   stopStatusCycler()
   stopReminderScheduler()
   stopMemoryTasks()
   destroyAllShiritoriGames()
   await destroyAllSessions()
+  await waitForInFlightExtractions()
   closeDb()
   client.destroy()
 

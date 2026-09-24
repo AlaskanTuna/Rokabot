@@ -5,7 +5,6 @@ import type { WindowMessage } from '../session/types.js'
 import { recordJevEvent } from '../storage/jevEventStore.js'
 import { recordMemoryEvent } from '../storage/metricsStore.js'
 import { getChannelUsers, loadHistory } from '../storage/sessionStore.js'
-import { getFacts, refreshFactTimestamps } from '../storage/userMemory.js'
 import { getAllUserNames, getUserName } from '../storage/userNames.js'
 import { logger } from '../utils/logger.js'
 import { getLocalHour } from '../utils/timezone.js'
@@ -65,7 +64,7 @@ interface TurnContextEntryOptions extends TurnContextOptions {
 function buildEntryJudgmentInput(input: StartTurnEntryWorkInput): TurnJudgmentInput {
   const history = loadHistory(input.channelId, 3, config.session.maxRehydrationAge)
   const ambiguous =
-    config.memory.claimsBackend && config.jev.referents !== 'off'
+    config.jev.referents !== 'off'
       ? resolveReferences({
           guildId: input.guildId,
           text: input.message,
@@ -210,7 +209,7 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
   let tone = ruleTone
   let references: ReturnType<typeof resolveReferences> = { resolved: [], ambiguous: [] }
 
-  if (config.memory.claimsBackend) {
+  if (memory) {
     try {
       references = resolveReferences({
         guildId,
@@ -375,35 +374,22 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
       let factEntries: Array<{ person: string; facts: Array<{ key: string; value: string }> }>
       let retrievalSelected = 0
 
-      if (config.memory.claimsBackend) {
-        const retrieval = retrieveForTurn({
-          guildId,
-          speakerId: userId,
-          participantIds: [
-            ...new Set(
-              [
-                ...references.resolved.map(({ userId: referenceId }) => referenceId),
-                ...appliedJevReferents.map(({ userId: referenceId }) => referenceId),
-                ...channelUsers.keys()
-              ].filter((participantId) => participantId !== userId)
-            )
-          ].slice(0, config.memory.recentParticipantLimit),
-          message: userMessage
-        })
-        factEntries = retrieval.entries
-        retrievalSelected = retrieval.claims.length
-      } else {
-        factEntries = []
-        for (const [uid, user] of knownUsers) {
-          const facts = getFacts(guildId, uid)
-          if (facts.length > 0) {
-            const label =
-              user.username !== user.displayName ? `${user.username} (${user.displayName})` : user.displayName
-            factEntries.push({ person: label, facts })
-            refreshFactTimestamps(guildId, uid)
-          }
-        }
-      }
+      const retrieval = retrieveForTurn({
+        guildId,
+        speakerId: userId,
+        participantIds: [
+          ...new Set(
+            [
+              ...references.resolved.map(({ userId: referenceId }) => referenceId),
+              ...appliedJevReferents.map(({ userId: referenceId }) => referenceId),
+              ...channelUsers.keys()
+            ].filter((participantId) => participantId !== userId)
+          )
+        ].slice(0, config.memory.recentParticipantLimit),
+        message: userMessage
+      })
+      factEntries = retrieval.entries
+      retrievalSelected = retrieval.claims.length
 
       const factsEnvelope = buildFactsEnvelope(factEntries)
       if (factsEnvelope) {
@@ -414,34 +400,30 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
           'User facts injected into prompt'
         )
       }
-      if (config.memory.claimsBackend) {
-        recordMemoryEvent({
-          kind: 'context_build',
-          guildId,
-          channelId,
-          subjectUserId: userId,
-          nSelected: retrievalSelected,
-          tokensEst: factsEnvelope ? estimateTokens(factsEnvelope) : 0
-        })
-      }
+      recordMemoryEvent({
+        kind: 'context_build',
+        guildId,
+        channelId,
+        subjectUserId: userId,
+        nSelected: retrievalSelected,
+        tokensEst: factsEnvelope ? estimateTokens(factsEnvelope) : 0
+      })
     } catch (error) {
-      if (config.memory.claimsBackend) {
-        recordMemoryEvent({
-          kind: 'context_build',
-          guildId,
-          channelId,
-          subjectUserId: userId,
-          nSelected: 0,
-          tokensEst: 0
-        })
-      }
+      recordMemoryEvent({
+        kind: 'context_build',
+        guildId,
+        channelId,
+        subjectUserId: userId,
+        nSelected: 0,
+        tokensEst: 0
+      })
       logger.warn({ userId, error }, 'Failed to load user memory for prompt injection')
     }
   }
 
   // Names people and nothing else, so it survives a memory-free turn as the identity line the brief allows.
   let whoIsMentionedSection = ''
-  if (config.memory.claimsBackend) {
+  if (memory) {
     const namedAliases = references.resolved.filter(
       ({ alias, displayName: referenceName, matchedBy }) =>
         (matchedBy === 'nickname' || matchedBy === 'username') && alias.toLowerCase() !== referenceName.toLowerCase()

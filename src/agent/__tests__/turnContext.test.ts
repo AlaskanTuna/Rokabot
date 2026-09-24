@@ -6,8 +6,6 @@ const mocks = vi.hoisted(() => ({
   resetIdleTimer: vi.fn(),
   loadHistory: vi.fn(() => []),
   getChannelUsers: vi.fn(() => new Map()),
-  getFacts: vi.fn(() => []),
-  refreshFactTimestamps: vi.fn(),
   getAllUserNames: vi.fn(() => new Map()),
   getUserName: vi.fn(),
   recordMemoryEvent: vi.fn(),
@@ -40,10 +38,6 @@ vi.mock('../session.js', () => ({ ensureSession: mocks.ensureSession, resetIdleT
 vi.mock('../../storage/sessionStore.js', () => ({
   loadHistory: mocks.loadHistory,
   getChannelUsers: mocks.getChannelUsers
-}))
-vi.mock('../../storage/userMemory.js', () => ({
-  getFacts: mocks.getFacts,
-  refreshFactTimestamps: mocks.refreshFactTimestamps
 }))
 vi.mock('../../storage/userNames.js', () => ({
   getAllUserNames: mocks.getAllUserNames,
@@ -92,7 +86,6 @@ const jevConfig = config.jev as {
   prefetchWaitMs: number
   toneMinProbability: number
 }
-const memoryConfig = config.memory as { claimsBackend: boolean }
 
 function entryWork() {
   return {
@@ -126,7 +119,6 @@ describe('turn entry work', () => {
     jevConfig.prefetchMinNoul = 0.7
     jevConfig.prefetchWaitMs = 4000
     jevConfig.toneMinProbability = 0.85
-    memoryConfig.claimsBackend = false
     mocks.loadHistory.mockReturnValue([])
     mocks.ensureSession.mockResolvedValue({ events: [] })
     mocks.judgeTurn.mockResolvedValue(null)

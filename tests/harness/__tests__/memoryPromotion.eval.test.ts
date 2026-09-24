@@ -1,22 +1,18 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import '../env.js'
 import { resetMonitor } from '../../../src/agent/channelMonitor.js'
+import { flushOpenEpisodes, resetEpisodeTrackerForTest } from '../../../src/agent/memory/episodeTracker.js'
 import { assertClaim } from '../../../src/agent/memory/memoryClaims.js'
 import { resetForTest as resetScheduler, stopExtractionScheduler } from '../../../src/agent/memory/scheduler.js'
-import { assembleSystemPrompt } from '../../../src/agent/promptAssembler.js'
-import { buildFactsEnvelope } from '../../../src/agent/promptSafety.js'
+import { resetAllBuffers } from '../../../src/agent/passiveBuffer.js'
 import { __resetTestRunTurnFactory, __setTestRunTurnFactory, generateResponse } from '../../../src/agent/roka.js'
 import { destroySession } from '../../../src/agent/session.js'
-import { config } from '../../../src/config.js'
 import { createMessageHandler } from '../../../src/discord/events/messageCreate.js'
 import { getDb } from '../../../src/storage/database.js'
-import { saveFact } from '../../../src/storage/userMemory.js'
 import { RateLimiter } from '../../../src/utils/rateLimiter.js'
-import { getLocalHour } from '../../../src/utils/timezone.js'
 import { createCaptureSink } from '../captureSink.js'
 import { makeClient, makeGuild, makeMessage } from '../discordDoubles.js'
 
-const memoryConfig = config.memory as { claimsBackend: boolean }
 const transcript = [
   {
     guildId: 'promotion-garden',
@@ -41,19 +37,18 @@ afterEach(async () => {
   stopExtractionScheduler()
   resetScheduler()
   resetMonitor()
-  memoryConfig.claimsBackend = true
+  resetEpisodeTrackerForTest()
+  resetAllBuffers()
   await Promise.all([
     ...transcript.map(({ channelId }) => destroySession(channelId)),
     destroySession('promotion-busy'),
-    destroySession('promotion-emoji'),
-    destroySession('promotion-legacy')
+    destroySession('promotion-emoji')
   ])
   getDb().exec(`
     DELETE FROM extraction_queue;
     DELETE FROM memory_events;
     DELETE FROM response_events;
     DELETE FROM memory_claim;
-    DELETE FROM user_memory;
     DELETE FROM user_names;
     DELETE FROM monitored_channels;
   `)
@@ -64,7 +59,7 @@ afterEach(async () => {
 // meant "exactly N turns' worth", so the meaning is unchanged and only the arithmetic moved.
 describe('memory promotion harness evaluation', () => {
   it('uses the bounded retriever and queues extraction for a multi-guild transcript with the default enabled', async () => {
-    expect(config.memory.claimsBackend).toBe(true)
+    resetAllBuffers()
     assertClaim({
       guildId: 'promotion-garden',
       subjectUserId: 'promotion-mio',
@@ -108,6 +103,8 @@ describe('memory promotion harness evaluation', () => {
     expect(prompts[1]).toContain('"library-series"')
     expect(prompts[1]).not.toContain('"garden-series"')
 
+    flushOpenEpisodes()
+    stopExtractionScheduler()
     const queued = getDb()
       .prepare('SELECT guild_id, channel_id, status FROM extraction_queue ORDER BY id')
       .all() as Array<{ guild_id: string; channel_id: string; status: string }>
@@ -277,35 +274,5 @@ describe('memory promotion harness evaluation', () => {
       ])
     )
     expect(responseEventCount()).toBe(afterEmoji)
-  })
-
-  it('restores the byte-identical Phase 13 facts prompt when rollback forces the flag off', async () => {
-    vi.stubEnv('MEMORY_CLAIMS_BACKEND', 'false')
-    memoryConfig.claimsBackend = false
-    saveFact('promotion-legacy-guild', 'promotion-legacy-user', 'favorite anime', 'legacy-series')
-
-    let capturedPrompt = ''
-    __setTestRunTurnFactory((systemPrompt) => {
-      capturedPrompt = systemPrompt
-      return async () => ({ text: 'Legacy promotion reply~', hasText: true, hasFunctionCall: false })
-    })
-
-    const result = await generateResponse({
-      channelId: 'promotion-legacy',
-      guildId: 'promotion-legacy-guild',
-      userMessage: 'Hello.',
-      displayName: 'Mio',
-      username: 'mio',
-      userId: 'promotion-legacy-user',
-      memory: true
-    })
-    const expectedPrompt =
-      `${assembleSystemPrompt({ tone: result.tone, hour: getLocalHour(), displayName: 'Mio', memory: true })}` +
-      `\n\n## What You Remember About People In This Channel\n${buildFactsEnvelope([
-        { person: 'mio (Mio)', facts: [{ key: 'favorite anime', value: 'legacy-series' }] }
-      ])}` +
-      '\n\n- The current user\'s Discord ID is "promotion-legacy-user". remember_user and recall_user target the current user automatically; to recall a different server member, pass their name as user_name.'
-
-    expect(capturedPrompt).toBe(expectedPrompt)
   })
 })

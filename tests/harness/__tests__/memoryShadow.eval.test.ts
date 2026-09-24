@@ -23,17 +23,17 @@ describe('memory shadow replay evaluation', () => {
     expect(report.networkCalls).toBe(0)
     expect(mocks.generateContent).not.toHaveBeenCalled()
     expect(report.harnessTurns).toBe(40)
-    expect(report.visibleClaimsBackend).toBe(false)
     expect(report.crossGuildResults).toBe(0)
     expect(report.p95LatencyMs).toBeLessThan(10)
     expect(report.maxSelectedTokens).toBeLessThanOrEqual(report.retrievalTokenBudget)
     expect(report.speakerAnchorsDropped).toBe(0)
     expect(report.top10Recall).toBeGreaterThanOrEqual(0.9)
-    expect(report.promptReduction).toBeGreaterThan(0.3)
+    expect(report.selectedClaims).toBeGreaterThan(0)
+    expect(report.expectedClaims).toBeGreaterThan(0)
     expect(report.telemetryContainsFactValues).toBe(false)
 
     console.log(
-      `Memory shadow exit criteria: p95=${report.p95LatencyMs.toFixed(3)}ms recall=${(report.top10Recall * 100).toFixed(1)}% prompt_reduction=${(report.promptReduction * 100).toFixed(1)}%`
+      `Memory shadow exit criteria: p95=${report.p95LatencyMs.toFixed(3)}ms recall=${(report.top10Recall * 100).toFixed(1)}% selected=${report.selectedClaims}/${report.expectedClaims}`
     )
   })
 

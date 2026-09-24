@@ -1,12 +1,7 @@
 import type { Client, Message } from 'discord.js'
 import { DiscordAPIError } from 'discord.js'
 import { isMonitored, markActive } from '../../agent/channelMonitor.js'
-import { judgeExtraction } from '../../agent/jev/judgments.js'
-import { shouldExtract } from '../../agent/memory/candidateGate.js'
-import { getActiveClaims } from '../../agent/memory/memoryClaims.js'
-import { enqueueAndSchedule } from '../../agent/memory/scheduler.js'
-import { maybeExtractFromBuffer } from '../../agent/memoryExtractor.js'
-import { addMessage as addToPassiveBuffer, getMessages } from '../../agent/passiveBuffer.js'
+import { recordEpisodeMessage } from '../../agent/memory/episodeTracker.js'
 import { generateResponse } from '../../agent/roka.js'
 import { withSearchCitations } from '../../agent/searchCitations.js'
 import { canAffordAttachments } from '../../agent/tokenBudget.js'
@@ -42,65 +37,29 @@ import { handleGachaMention } from './gachaMention.js'
 /** Whole-word, case-insensitive match for the bot's name as a trigger keyword */
 export const NAME_MENTION_REGEX = /\broka\b/i
 
-function dispatchClaimExtraction(channelId: string, guildId: string, botUserId: string, askJev = false): void {
+function recordMonitoredEpisodeMessage(message: Message, botUserId: string): void {
+  if (!message.guild || !isMonitored(message.channelId)) return
+
   try {
-    const messages = [...getMessages(channelId)]
-    const userIds = new Set(messages.map((message) => message.userId).filter((userId) => userId !== botUserId))
-    const knownClaimKeys = new Set(
-      [...userIds].flatMap((userId) => getActiveClaims(guildId, userId).map((claim) => claim.predicate))
-    )
-    const gate = shouldExtract(messages, knownClaimKeys)
+    const content = replaceUserMentions(message, botUserId)
+    if (!content) return
 
-    if (gate.extract) {
-      enqueueAndSchedule({
-        guildId,
-        channelId,
-        botUserId,
-        messages: messages.map(({ userId, displayName, content }) => ({ userId, displayName, content }))
-      })
-      return
-    }
-
-    if (
-      !askJev ||
-      config.jev.extraction === 'off' ||
-      (gate.reason !== 'known claim keywords only' && gate.reason !== 'no personal signal')
-    ) {
-      return
-    }
-
-    const lines = messages.slice(-6).map(({ displayName, content }) => `[${displayName}]: ${content}`)
-    void (async () => {
-      const result = await judgeExtraction({ lines })
-      if (!result) return
-
-      const admitted = config.jev.extraction === 'on' && result.noul >= config.jev.extractionAdmitThreshold
-      logger.info(
-        {
-          channelId,
-          guildId,
-          gateReason: gate.reason,
-          noul: result.noul,
-          admitted,
-          latencyMs: Math.round(result.latencyMs),
-          inputTokens: result.inputTokens
-        },
-        'Jev extraction admission'
-      )
-      if (admitted) {
-        enqueueAndSchedule({
-          guildId,
-          channelId,
-          botUserId,
-          messages: messages.map(({ userId, displayName, content }) => ({ userId, displayName, content })),
-          admittedBy: 'jev'
-        })
+    const displayName = message.member?.displayName ?? message.author.displayName
+    recordEpisodeMessage({
+      guildId: message.guildId!,
+      channelId: message.channelId,
+      message: {
+        messageId: message.id,
+        userId: message.author.id,
+        displayName,
+        content,
+        timestamp: message.createdTimestamp,
+        isBot: message.author.bot
       }
-    })().catch((error: unknown) => {
-      logger.warn({ channelId, guildId, error }, 'Jev extraction admission failed')
     })
+    if (!message.author.bot) upsertUserName(message.author.id, message.author.username, displayName)
   } catch (error) {
-    logger.warn({ channelId, guildId, error }, 'Claim extraction dispatch failed')
+    logger.warn({ channelId: message.channelId, error }, 'Passive memory episode tracking failed')
   }
 }
 
@@ -109,7 +68,10 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
   return async function handleMessageCreate(message: Message): Promise<void> {
     const handlerStartMs = performance.now()
     if (!client.user) return
-    if (message.author.id === client.user.id) return // never react to own messages
+    if (message.author.id === client.user.id) {
+      recordMonitoredEpisodeMessage(message, client.user.id)
+      return
+    }
 
     const isBotAuthor = message.author.bot
 
@@ -166,20 +128,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
       markActive(message.channelId)
     }
 
-    if (message.guild && !message.author.bot && isMonitored(message.channelId)) {
-      const msgContent = replaceUserMentions(message, client.user?.id)
-      if (msgContent) {
-        const memberDisplayName = message.member?.displayName ?? message.author.displayName
-        addToPassiveBuffer(message.channelId, message.author.id, memberDisplayName, message.author.username, msgContent)
-        upsertUserName(message.author.id, message.author.username, memberDisplayName)
-        if (config.memory.claimsBackend) {
-          // Inside a `message.guild` guard, so guildId is set: a DM turn has no memory tenant to name.
-          dispatchClaimExtraction(message.channelId, message.guildId!, client.user.id, true)
-        } else {
-          maybeExtractFromBuffer(message.channelId, message.guildId!, client.user?.id)
-        }
-      }
-    }
+    recordMonitoredEpisodeMessage(message, client.user.id)
 
     if (!isMentioned && !isReplyToBot && !isNameMention) {
       cancelTurnEntryWork()
@@ -355,17 +304,6 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
       }
       logger.info(responseEvent, 'Response completed')
       recordResponseEvent(responseEvent)
-
-      // Add bot response to passive buffer for richer extraction context
-      if (message.guild && client.user && isMonitored(channelId)) {
-        const botName = message.guild.members.me?.displayName ?? client.user.displayName
-        addToPassiveBuffer(channelId, client.user.id, botName, client.user.username, responseText)
-        if (config.memory.claimsBackend) {
-          dispatchClaimExtraction(channelId, message.guildId!, client.user.id)
-        } else {
-          maybeExtractFromBuffer(channelId, message.guildId!, client.user.id)
-        }
-      }
     } catch (error) {
       if (isIgnorableDiscordError(error)) {
         logger.warn({ error, channelId, code: (error as DiscordAPIError).code }, 'Discord API error (ignored)')

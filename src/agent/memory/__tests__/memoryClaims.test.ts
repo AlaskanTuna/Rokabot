@@ -13,11 +13,14 @@ import { closeDb, getDb } from '../../../storage/database.js'
 import {
   activateClaim,
   assertClaim,
+  getActiveClaimById,
   getActiveClaims,
   getEdges,
   pinClaim,
   pruneActiveClaimOverflow,
   pruneStaleClaims,
+  rejectActiveClaimById,
+  replaceActiveClaim,
   searchClaims,
   touchRecalled
 } from '../memoryClaims.js'
@@ -128,6 +131,108 @@ describe('memoryClaims', () => {
       count: 2
     })
     expect(searchClaims('guild-1', 'user-1', 'Senren', 10)).toEqual([second])
+  })
+
+  it('replaces an active claim by ID and keeps the old row linked as superseded', () => {
+    const prior = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'likes',
+      value: 'tea',
+      sourceKind: 'passive'
+    })
+
+    const replacement = replaceActiveClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      existingId: prior.id,
+      predicate: 'likes',
+      value: 'green tea',
+      channelId: 'channel-1'
+    })
+
+    expect(replacement).toMatchObject({ predicate: 'likes', value: 'green tea', status: 'active' })
+    expect(getDb().prepare('SELECT status, superseded_by FROM memory_claim WHERE id = ?').get(prior.id)).toEqual({
+      status: 'superseded',
+      superseded_by: replacement?.id
+    })
+    expect(getActiveClaims('guild-1', 'user-1')).toEqual([replacement])
+  })
+
+  it('adds evidence instead of replacing a claim with the same value', () => {
+    const prior = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'likes',
+      value: 'tea',
+      sourceKind: 'passive'
+    })
+
+    const duplicate = replaceActiveClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      existingId: prior.id,
+      predicate: 'likes',
+      value: 'tea',
+      channelId: 'channel-2'
+    })
+
+    expect(duplicate?.id).toBe(prior.id)
+    expect(getDb().prepare('SELECT COUNT(*) AS count FROM memory_claim').get()).toEqual({ count: 1 })
+    expect(getDb().prepare('SELECT COUNT(*) AS count FROM memory_evidence WHERE claim_id = ?').get(prior.id)).toEqual({
+      count: 2
+    })
+  })
+
+  it('rejects claim IDs outside their guild, subject, or predicate scope', () => {
+    const claim = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-2',
+      predicate: 'likes',
+      value: 'tea',
+      sourceKind: 'explicit'
+    })
+
+    expect(getActiveClaimById('guild-1', 'user-1', claim.id)).toBeUndefined()
+    expect(
+      replaceActiveClaim({
+        guildId: 'guild-1',
+        subjectUserId: 'user-1',
+        existingId: claim.id,
+        predicate: 'likes',
+        value: 'green tea',
+        channelId: 'channel-1'
+      })
+    ).toBeNull()
+    expect(
+      replaceActiveClaim({
+        guildId: 'guild-1',
+        subjectUserId: 'user-2',
+        existingId: claim.id,
+        predicate: 'nickname',
+        value: 'Rin',
+        channelId: 'channel-1'
+      })
+    ).toBeNull()
+    expect(rejectActiveClaimById({ guildId: 'guild-1', subjectUserId: 'user-1', existingId: claim.id })).toBe(false)
+    expect(getActiveClaimById('guild-1', 'user-2', claim.id)).toEqual(claim)
+  })
+
+  it('rejects a scoped active claim without deleting it or linking a replacement', () => {
+    const claim = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'likes',
+      value: 'tea',
+      sourceKind: 'explicit'
+    })
+
+    expect(rejectActiveClaimById({ guildId: 'guild-1', subjectUserId: 'user-1', existingId: claim.id })).toBe(true)
+    expect(getDb().prepare('SELECT status, superseded_by FROM memory_claim WHERE id = ?').get(claim.id)).toEqual({
+      status: 'rejected',
+      superseded_by: null
+    })
+    expect(getDb().prepare('SELECT COUNT(*) AS count FROM memory_claim').get()).toEqual({ count: 1 })
   })
 
   it('expires by last seen rather than recall while keeping pinned claims', () => {
