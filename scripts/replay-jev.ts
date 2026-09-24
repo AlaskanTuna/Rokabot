@@ -31,6 +31,9 @@ export async function runReplayCli(
   process.env.DISCORD_TOKEN ??= 'replay-unused'
   process.env.DISCORD_CLIENT_ID ??= 'replay-unused'
   process.env.GEMINI_API_KEY ??= 'replay-unused'
+  // The regex baseline scores every turn at 14:00; Jev must see the same hour or a late-night run floods it with 'sleepy'.
+  process.env.ROKABOT_HARNESS_LIVE ??= '1'
+  process.env.ROKABOT_FIXED_HOUR ??= '14'
   const judge = await loadJudge()
   const turns = await loadJevReplayTurns(parsed.databasePath, 'tests/harness/transcripts', parsed.maxTurns)
   const report = await runJevReplay(turns, judge)
