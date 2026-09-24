@@ -39,6 +39,7 @@
     "js-yaml": "^4.1.1",
     "pino": "^9.6.0",
     "sharp": "^0.34.5",
+    "undici": "^8.11.2",
     "zod": "^3.25.76"
   },
   "devDependencies": {

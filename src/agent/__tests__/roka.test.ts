@@ -2056,7 +2056,7 @@ describe('Jev turn judgments', () => {
     mutableJevConfig.tone = 'on'
     mutableJevConfig.toneMinConfidence = 0.7
     vi.mocked(judgeTurn).mockResolvedValue({
-      tone: { tone: 'sleepy', confidence: 0.8 },
+      tone: { tone: 'sleepy', confidence: 0.8, probability: null },
       referents: [],
       latencyMs: 3,
       inputTokens: 12
@@ -2101,7 +2101,7 @@ describe('Jev turn judgments', () => {
     mutableJevConfig.tone = 'on'
     mutableJevConfig.toneMinConfidence = 0.9
     vi.mocked(judgeTurn).mockResolvedValue({
-      tone: { tone: 'sleepy', confidence: 0.8 },
+      tone: { tone: 'sleepy', confidence: 0.8, probability: null },
       referents: [],
       latencyMs: 3,
       inputTokens: 12
