@@ -89,10 +89,7 @@ export function buildLookedUpBlock(outcome: Extract<PrefetchOutcome, { status: '
   return block.length > MAX_BLOCK_CHARS ? `${block.slice(0, MAX_BLOCK_CHARS - 1)}…` : block
 }
 
-export async function settlePrefetch(
-  prefetch: Promise<PrefetchOutcome> | undefined,
-  waitMs: number
-): Promise<PrefetchOutcome | null> {
+export async function settlePrefetch<T>(prefetch: Promise<T> | undefined, waitMs: number): Promise<T | null> {
   if (!prefetch || waitMs <= 0) return null
   let timer: ReturnType<typeof setTimeout> | undefined
   const giveUp = new Promise<null>((resolve) => {

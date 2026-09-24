@@ -14,11 +14,13 @@ const mutableGeminiConfig = config.gemini as { liveMaxRetries: number }
 const mutableJevConfig = config.jev as {
   tone: 'off' | 'shadow' | 'on'
   referents: 'off' | 'shadow' | 'on'
+  prefetch: 'off' | 'shadow' | 'on'
   toneMinProbability: number
   referentMinConfidence: number
 }
 mutableJevConfig.tone = 'off'
 mutableJevConfig.referents = 'off'
+mutableJevConfig.prefetch = 'shadow'
 import { recordFailureDiagnostic, recordMemoryEvent } from '../../storage/metricsStore.js'
 import { getChannelUsers, loadHistory } from '../../storage/sessionStore.js'
 import { getFacts, refreshFactTimestamps } from '../../storage/userMemory.js'
@@ -141,6 +143,7 @@ afterEach(async () => {
   mutableMemoryConfig.claimsBackend = false
   mutableJevConfig.tone = 'off'
   mutableJevConfig.referents = 'off'
+  mutableJevConfig.prefetch = 'shadow'
   mutableJevConfig.toneMinProbability = 0.85
   vi.mocked(judgeTurn).mockReset()
   mocks.recordJevEvent.mockReset()
@@ -928,7 +931,11 @@ describe('generateResponse memory-free turn', () => {
       username: 'mio',
       userId: 'mio-id',
       memory: false,
-      turnEntryWork: { judgment: Promise.resolve(null), cancel: () => {} }
+      turnEntryWork: {
+        judgment: Promise.resolve(null),
+        prefetch: Promise.resolve({ decision: { fire: false, reason: 'no_judgment' as const }, outcome: null }),
+        cancel: () => {}
+      }
     })
 
     expect(retrieveForTurn).not.toHaveBeenCalled()
@@ -952,7 +959,11 @@ describe('generateResponse memory-free turn', () => {
       username: 'mio',
       userId: 'mio-id',
       memory: false,
-      turnEntryWork: { judgment: Promise.resolve(null), cancel: () => {} }
+      turnEntryWork: {
+        judgment: Promise.resolve(null),
+        prefetch: Promise.resolve({ decision: { fire: false, reason: 'no_judgment' as const }, outcome: null }),
+        cancel: () => {}
+      }
     })
 
     expect(capturedPrompt).not.toBe('')
@@ -971,7 +982,11 @@ describe('generateResponse memory-free turn', () => {
       username: 'mio',
       userId: 'mio-ladder-id',
       memory: false,
-      turnEntryWork: { judgment: Promise.resolve(null), cancel: () => {} }
+      turnEntryWork: {
+        judgment: Promise.resolve(null),
+        prefetch: Promise.resolve({ decision: { fire: false, reason: 'no_judgment' as const }, outcome: null }),
+        cancel: () => {}
+      }
     })
 
     for (const rung of [0, 1, 2, 3]) {
@@ -990,7 +1005,11 @@ describe('generateResponse memory-free turn', () => {
       username: 'mio',
       userId: 'mio-id',
       memory: true,
-      turnEntryWork: { judgment: Promise.resolve(null), cancel: () => {} }
+      turnEntryWork: {
+        judgment: Promise.resolve(null),
+        prefetch: Promise.resolve({ decision: { fire: false, reason: 'no_judgment' as const }, outcome: null }),
+        cancel: () => {}
+      }
     })
 
     for (const tool of MEMORY_TOOL_NAMES) expect(context.systemPrompt).toContain(tool)
@@ -2414,7 +2433,8 @@ describe('Jev turn judgments', () => {
     expect(JSON.stringify(judgmentLog)).not.toContain('Rin')
   })
 
-  it('does not ask Jev when both turn features are off', async () => {
+  it('does not ask Jev when all turn features are off', async () => {
+    mutableJevConfig.prefetch = 'off'
     __setTestRunTurnFactory(() => async () => ({ text: 'Hello~', hasText: true, hasFunctionCall: false }))
 
     await generateResponse({

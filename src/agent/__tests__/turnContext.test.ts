@@ -16,6 +16,9 @@ const mocks = vi.hoisted(() => ({
   resolveReferences: vi.fn(() => ({ resolved: [], ambiguous: [] })),
   retrieveForTurn: vi.fn(() => ({ entries: [], claims: [] })),
   assembleSystemPrompt: vi.fn(() => 'prompt'),
+  runPrefetchForJudgment: vi.fn(),
+  settlePrefetch: vi.fn(),
+  buildLookedUpBlock: vi.fn(() => '## Looked It Up\nIt premiered in January.'),
   buildFactsEnvelope: vi.fn(() => ''),
   buildOverheardBlock: vi.fn(() => ''),
   getLocalHour: vi.fn(() => 14),
@@ -50,10 +53,16 @@ vi.mock('../promptSafety.js', () => ({
 vi.mock('../../utils/timezone.js', () => ({ getLocalHour: mocks.getLocalHour }))
 vi.mock('../../utils/tokens.js', () => ({ estimateTokens: mocks.estimateTokens }))
 vi.mock('../toneDetector.js', () => ({ detectTone: mocks.detectTone }))
+vi.mock('../searchPrefetch.js', () => ({
+  runPrefetchForJudgment: mocks.runPrefetchForJudgment,
+  settlePrefetch: mocks.settlePrefetch,
+  buildLookedUpBlock: mocks.buildLookedUpBlock
+}))
 
 import { config } from '../../config.js'
 import type { TurnJudgment } from '../jev/judgments.js'
-import { applyJevTone, createTurnContext, startTurnEntryWork } from '../turnContext.js'
+import { withSearchCitations } from '../searchCitations.js'
+import { applyJevTone, awaitTurnPrefetch, createTurnContext, startTurnEntryWork } from '../turnContext.js'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -68,6 +77,9 @@ function deferred<T>() {
 const jevConfig = config.jev as {
   tone: 'off' | 'shadow' | 'on'
   referents: 'off' | 'shadow' | 'on'
+  prefetch: 'off' | 'shadow' | 'on'
+  prefetchMinNoul: number
+  prefetchWaitMs: number
   toneMinProbability: number
 }
 const memoryConfig = config.memory as { claimsBackend: boolean }
@@ -100,11 +112,16 @@ describe('turn entry work', () => {
     vi.clearAllMocks()
     jevConfig.tone = 'shadow'
     jevConfig.referents = 'off'
+    jevConfig.prefetch = 'shadow'
+    jevConfig.prefetchMinNoul = 0.7
+    jevConfig.prefetchWaitMs = 4000
     jevConfig.toneMinProbability = 0.85
     memoryConfig.claimsBackend = false
     mocks.loadHistory.mockReturnValue([])
     mocks.ensureSession.mockResolvedValue({ events: [] })
     mocks.judgeTurn.mockResolvedValue(null)
+    mocks.runPrefetchForJudgment.mockResolvedValue({ decision: { fire: false, reason: 'no_judgment' }, outcome: null })
+    mocks.settlePrefetch.mockImplementation((prefetch: Promise<unknown>) => prefetch)
   })
 
   it('aborts and absorbs an in-flight judgment when an admitted turn is canceled', async () => {
@@ -131,6 +148,151 @@ describe('turn entry work', () => {
     const work = startTurnEntryWork(entryWork())
 
     await expect(work.judgment).resolves.toBeNull()
+  })
+
+  it('arms the prefetch from the same judgment and uses the raw message', async () => {
+    jevConfig.prefetch = 'on'
+    mocks.judgeTurn.mockResolvedValue({
+      tone: { tone: 'curious', confidence: 0.8, probability: 0.8 },
+      referents: [],
+      needsLookup: 0.95,
+      latencyMs: 3,
+      inputTokens: 12
+    })
+    mocks.runPrefetchForJudgment.mockResolvedValue({
+      decision: { fire: true, reason: 'fired' },
+      outcome: { status: 'ready', text: 'It premiered in January.', sources: [{ title: 'C', url: 'https://c.test' }] }
+    })
+
+    const work = startTurnEntryWork({ ...entryWork(), message: 'when did frieren season 2 air?' })
+
+    await expect(work.judgment).resolves.toMatchObject({ needsLookup: 0.95 })
+    await expect(work.prefetch).resolves.toMatchObject({ decision: { fire: true } })
+    expect(mocks.judgeTurn).toHaveBeenCalledOnce()
+    expect(mocks.runPrefetchForJudgment.mock.calls[0]?.[0]).toMatchObject({ needsLookup: 0.95 })
+    expect(mocks.runPrefetchForJudgment.mock.calls[0]?.[2]).toMatchObject({
+      query: 'when did frieren season 2 air?'
+    })
+  })
+
+  it('resolves off and shadow decisions without searching', async () => {
+    jevConfig.tone = 'off'
+    mocks.judgeTurn.mockResolvedValue({ tone: null, referents: [], needsLookup: 0.99, latencyMs: 1, inputTokens: 5 })
+    mocks.runPrefetchForJudgment
+      .mockResolvedValueOnce({ decision: { fire: false, reason: 'off' }, outcome: null })
+      .mockResolvedValueOnce({ decision: { fire: false, reason: 'shadow_would_fire' }, outcome: null })
+
+    jevConfig.prefetch = 'off'
+    const off = startTurnEntryWork({ ...entryWork(), channelId: 'off-channel' })
+    await expect(off.prefetch).resolves.toMatchObject({ decision: { fire: false, reason: 'off' }, outcome: null })
+    expect(mocks.judgeTurn).not.toHaveBeenCalled()
+
+    jevConfig.prefetch = 'shadow'
+    const shadow = startTurnEntryWork({ ...entryWork(), channelId: 'shadow-channel' })
+    await expect(shadow.prefetch).resolves.toMatchObject({
+      decision: { fire: false, reason: 'shadow_would_fire' },
+      outcome: null
+    })
+    expect(mocks.judgeTurn).toHaveBeenCalledOnce()
+    expect(mocks.judgeTurn.mock.calls[0]?.[0].includeLookup).toBe(true)
+    expect(mocks.runPrefetchForJudgment).toHaveBeenCalledTimes(2)
+  })
+
+  it('aborts the in-flight prefetch when the turn is canceled', async () => {
+    jevConfig.prefetch = 'on'
+    let signal: AbortSignal | undefined
+    mocks.judgeTurn.mockResolvedValue({ tone: null, referents: [], needsLookup: 0.95, latencyMs: 1, inputTokens: 5 })
+    mocks.runPrefetchForJudgment.mockImplementation(
+      (_judgment, _context, options) =>
+        new Promise((resolve) => {
+          const activeSignal: AbortSignal = options.signal
+          signal = activeSignal
+          activeSignal.addEventListener(
+            'abort',
+            () => resolve({ decision: { fire: true, reason: 'fired' }, outcome: { status: 'canceled' } }),
+            { once: true }
+          )
+        })
+    )
+
+    const work = startTurnEntryWork(entryWork())
+    await work.judgment
+    await vi.waitFor(() => expect(mocks.runPrefetchForJudgment).toHaveBeenCalledOnce())
+    work.cancel()
+
+    await expect(work.prefetch).resolves.toMatchObject({ outcome: { status: 'canceled' } })
+    expect(signal?.aborted).toBe(true)
+  })
+
+  it('records ready prefetch sources inside the citation scope', async () => {
+    jevConfig.prefetch = 'on'
+    const controller = new AbortController()
+    const work = {
+      judgment: Promise.resolve(null),
+      prefetch: Promise.resolve({
+        decision: { fire: false, reason: 'no_judgment' as const },
+        outcome: {
+          status: 'ready' as const,
+          text: 'It premiered in January.',
+          sources: [{ title: 'C', url: 'https://c.test' }]
+        }
+      }),
+      cancel: () => controller.abort()
+    }
+    mocks.settlePrefetch.mockImplementation((prefetch: Promise<unknown>) => prefetch)
+
+    const [result, citations] = await withSearchCitations(() => awaitTurnPrefetch(work as never, 'channel-1'))
+
+    expect(result).toMatchObject({ block: expect.stringContaining('## Looked It Up'), usedTool: true })
+    expect(citations).toEqual([{ title: 'C', url: 'https://c.test' }])
+  })
+
+  it('injects the looked-up block at rung zero and drops it on the safety rung', async () => {
+    jevConfig.prefetch = 'on'
+    mocks.judgeTurn.mockResolvedValue({ tone: null, referents: [], needsLookup: 0.95, latencyMs: 1, inputTokens: 5 })
+    mocks.runPrefetchForJudgment.mockResolvedValue({
+      decision: { fire: true, reason: 'fired' },
+      outcome: { status: 'ready', text: 'It premiered in January.', sources: [{ title: 'C', url: 'https://c.test' }] }
+    })
+
+    const context = await createTurnContext(turnOptions(startTurnEntryWork(entryWork())))
+
+    expect(context.systemPrompt).toContain('## Looked It Up')
+    expect(context.composePrompt(1)).not.toContain('## Looked It Up')
+  })
+
+  it.each([
+    ['empty', { status: 'empty' }],
+    ['failed', { status: 'failed', error: 'boom' }],
+    ['aborted', { status: 'aborted' }],
+    ['canceled', { status: 'canceled' }]
+  ])('injects nothing for a %s prefetch', async (_label, outcome) => {
+    jevConfig.prefetch = 'on'
+    const work = {
+      judgment: Promise.resolve(null),
+      prefetch: Promise.resolve({ decision: { fire: true, reason: 'fired' as const }, outcome }),
+      cancel: vi.fn()
+    }
+    mocks.settlePrefetch.mockImplementation((prefetch: Promise<unknown>) => prefetch)
+
+    await expect(awaitTurnPrefetch(work as never, 'channel-1')).resolves.toMatchObject({ block: '', usedTool: false })
+  })
+
+  it('gives up at the configured bound and cancels late work', async () => {
+    jevConfig.prefetch = 'on'
+    jevConfig.prefetchWaitMs = 1
+    const controller = new AbortController()
+    const work = {
+      judgment: Promise.resolve(null),
+      prefetch: new Promise(() => undefined),
+      cancel: vi.fn(() => controller.abort())
+    }
+    mocks.settlePrefetch.mockResolvedValue(null)
+
+    await expect(awaitTurnPrefetch(work as never, 'channel-1')).resolves.toMatchObject({ block: '', usedTool: false })
+    expect(mocks.settlePrefetch).toHaveBeenCalledWith(work.prefetch, 1)
+    expect(work.cancel).toHaveBeenCalledOnce()
+    expect(controller.signal.aborted).toBe(true)
   })
 
   it('starts the judgment while session loading is still pending and consumes that same work', async () => {
@@ -193,7 +355,13 @@ describe('turn entry work', () => {
       inputTokens: 24
     }
 
-    await createTurnContext(turnOptions({ judgment: Promise.resolve(judgment), cancel: vi.fn() }))
+    await createTurnContext(
+      turnOptions({
+        judgment: Promise.resolve(judgment),
+        prefetch: Promise.resolve({ decision: { fire: false, reason: 'no_judgment' }, outcome: null }),
+        cancel: vi.fn()
+      })
+    )
 
     expect(mocks.recordJevEvent).toHaveBeenCalledWith({
       kind: 'turn',
@@ -219,12 +387,24 @@ describe('turn entry work', () => {
       inputTokens: 24
     }
 
-    await createTurnContext(turnOptions({ judgment: Promise.resolve(judgment), cancel: vi.fn() }))
+    await createTurnContext(
+      turnOptions({
+        judgment: Promise.resolve(judgment),
+        prefetch: Promise.resolve({ decision: { fire: false, reason: 'no_judgment' }, outcome: null }),
+        cancel: vi.fn()
+      })
+    )
     expect(mocks.recordJevEvent).toHaveBeenCalledWith(expect.objectContaining({ applied: false }))
 
     mocks.recordJevEvent.mockClear()
     jevConfig.tone = 'on'
-    await createTurnContext(turnOptions({ judgment: Promise.resolve(null), cancel: vi.fn() }))
+    await createTurnContext(
+      turnOptions({
+        judgment: Promise.resolve(null),
+        prefetch: Promise.resolve({ decision: { fire: false, reason: 'no_judgment' }, outcome: null }),
+        cancel: vi.fn()
+      })
+    )
 
     expect(mocks.recordJevEvent).not.toHaveBeenCalled()
   })

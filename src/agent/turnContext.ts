@@ -18,6 +18,9 @@ import { getMessages as getBufferMessages } from './passiveBuffer.js'
 import { assembleSystemPrompt } from './promptAssembler.js'
 import { buildFactsEnvelope, buildOverheardBlock } from './promptSafety.js'
 import type { ToneKey } from './prompts/tones.js'
+import { recordSearchCitations } from './searchCitations.js'
+import { buildLookedUpBlock, runPrefetchForJudgment, settlePrefetch } from './searchPrefetch.js'
+import type { PrefetchResult } from './searchPrefetch.js'
 import { ensureSession, resetIdleTimer } from './session.js'
 import { detectTone } from './toneDetector.js'
 
@@ -49,6 +52,7 @@ export type PendingTurnJudgment = Promise<TurnJudgment | null>
 
 export interface TurnEntryWork {
   judgment: PendingTurnJudgment
+  prefetch: Promise<PrefetchResult>
   cancel(): void
 }
 
@@ -83,7 +87,7 @@ function buildEntryJudgmentInput(input: StartTurnEntryWorkInput): TurnJudgmentIn
     }),
     ambiguous,
     includeTone: config.jev.tone !== 'off',
-    includeLookup: false
+    includeLookup: config.jev.prefetch !== 'off'
   }
 }
 
@@ -96,20 +100,54 @@ export function startTurnEntryWork(input: StartTurnEntryWorkInput): TurnEntryWor
     logger.warn({ channelId: input.channelId, error }, 'Failed to prepare Jev judgment')
     return {
       judgment: Promise.resolve(null),
+      prefetch: Promise.resolve({ decision: { fire: false, reason: 'no_judgment' }, outcome: null }),
       cancel: () => controller.abort()
     }
   }
-  const shouldAsk = judgmentInput.includeTone || judgmentInput.ambiguous.length > 0
+  const shouldAsk = judgmentInput.includeTone || judgmentInput.ambiguous.length > 0 || judgmentInput.includeLookup
   const judgment = shouldAsk
     ? Promise.resolve()
         .then(() => (controller.signal.aborted ? null : judgeTurn(judgmentInput, { signal: controller.signal })))
         .catch(() => null)
     : Promise.resolve(null)
+  const prefetch = judgment
+    .then((settled) =>
+      runPrefetchForJudgment(
+        settled,
+        {
+          mode: config.jev.prefetch,
+          minimumNoul: config.jev.prefetchMinNoul,
+          channelId: input.channelId
+        },
+        { query: input.message, signal: controller.signal }
+      )
+    )
+    .catch(() => ({ decision: { fire: false, reason: 'no_judgment' as const }, outcome: null }))
 
   return {
     judgment,
+    prefetch,
     cancel: () => controller.abort()
   }
+}
+
+export type TurnPrefetch = { block: string; usedTool: boolean }
+
+export async function awaitTurnPrefetch(turnEntryWork: TurnEntryWork, channelId: string): Promise<TurnPrefetch> {
+  if (config.jev.prefetch !== 'on') return { block: '', usedTool: false }
+  const result = await settlePrefetch(turnEntryWork.prefetch, config.jev.prefetchWaitMs)
+  if (!result) {
+    turnEntryWork.cancel()
+    logger.info({ channelId, status: 'gave_up' }, 'Search prefetch not used this turn')
+    return { block: '', usedTool: false }
+  }
+  const { outcome } = result
+  if (!outcome || outcome.status !== 'ready') {
+    logger.info({ channelId, status: outcome?.status ?? result.decision.reason }, 'Search prefetch not used this turn')
+    return { block: '', usedTool: false }
+  }
+  recordSearchCitations(outcome.sources)
+  return { block: buildLookedUpBlock(outcome), usedTool: true }
 }
 
 export function applyJevTone(
@@ -394,6 +432,9 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
       ' remember_user and recall_user target the current user automatically; to recall a different server member, pass their name as user_name.'
     : `\n\n- The current user's Discord ID is "${userId}".`
 
+  const prefetch = await awaitTurnPrefetch(options.turnEntryWork, channelId)
+  const lookedUpSection = prefetch.block ? `\n\n${prefetch.block}` : ''
+
   // Safety de-escalation ladder. Each rung strictly removes carried context — never the current message —
   // so Roka answers with less surrounding context rather than refusing outright.
   const SAFETY_LADDER = ['drop_overheard', 'drop_facts', 'clear_history'] as const
@@ -404,6 +445,7 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
       safetyRung < 2 ? `${factsSection}${whoIsMentionedSection}` : '',
       safetyRung < 1 ? overheardSection : '',
       tailSection,
+      safetyRung === 0 ? lookedUpSection : '',
       safetyRung > 0 ? `\n\n${SAFETY_STEER_ADDENDUM}` : ''
     ].join('')
   }
