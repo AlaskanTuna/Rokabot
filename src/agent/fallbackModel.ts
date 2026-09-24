@@ -6,15 +6,17 @@ import type { Part } from '@google/genai'
 import { config } from '../config.js'
 import { logger } from '../utils/logger.js'
 
-export const modelRouteForRequest = new AsyncLocalStorage<{ useFallback: boolean }>()
-
-/** Whether any model call of the current turn has fired a hedge; carried out on `response_events.hedged`. */
-export const hedgeForRequest = new AsyncLocalStorage<{ hedged: boolean }>()
-
 export type AnswerModel = 'gemini' | 'fallback'
 
-/** Which provider produced a call's response, or null when the turn produced no answer to attribute. */
-export const answerModelForRequest = new AsyncLocalStorage<{ model: AnswerModel | null }>()
+export interface ModelRoute {
+  useFallback: boolean
+  /** 1 once any model call of the turn has fired a hedge. */
+  hedged: boolean
+  /** Which provider produced the turn's answer; null until a call answers, and on a turn that produced none. */
+  answeredBy: AnswerModel | null
+}
+
+export const modelRouteForRequest = new AsyncLocalStorage<ModelRoute>()
 
 type JsonObject = Record<string, unknown>
 type ChatMessage = Record<string, unknown>
@@ -368,8 +370,8 @@ export class ModelScopeLlm extends BaseLlm {
 type RaceSide = 'gemini' | 'fallback'
 
 type RaceOutcome =
-  | { winner: RaceSide; responses: LlmResponse[]; error: null }
-  | { winner: null; responses: null; error: { side: RaceSide; error: unknown } }
+  | { winner: RaceSide; responses: LlmResponse[]; errors: [] }
+  | { winner: null; responses: null; errors: Array<{ side: RaceSide; error: unknown }> }
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -394,10 +396,11 @@ function withAbort(llmRequest: LlmRequest, signal: AbortSignal): LlmRequest {
 }
 
 /**
- * Runs both sides of the hedge race and returns once one of them has finished, which is what "answered first"
- * means here: a non-streaming Gemini call yields its single response when the whole call is done, so finishing
- * and answering are the same event. The first side to finish settles the race and aborts the other, which is
- * why an aborted loser can only ever arrive as a rejection and never as a response.
+ * Runs both sides of the hedge race and returns once one of them has answered, which is what "answered first"
+ * means here: a non-streaming Gemini call yields its single response when the whole call is done, so answering
+ * and winning are the same event. A side that fails only drops out of the race — the other side may still
+ * answer, and a fallback that fails fast is exactly the case this has to survive. Only when both have failed
+ * is there nothing left to wait for.
  */
 async function raceForWinner(
   llmRequest: LlmRequest,
@@ -412,38 +415,49 @@ async function raceForWinner(
   const settled = new Promise<RaceOutcome>((resolve) => {
     settle = resolve
   })
-  let winner: RaceOutcome | undefined
+  let decided = false
+  let hedgeStarted = false
+  const errors: Array<{ side: RaceSide; error: unknown }> = []
+  let started = 0
 
-  const run = async (side: RaceSide, llm: BaseLlm, request: LlmRequest): Promise<RaceOutcome> => {
+  const decide = (outcome: RaceOutcome) => {
+    if (decided) return
+    decided = true
+    fallbackAbort.abort()
+    primaryAbort.abort()
+    settle?.(outcome)
+  }
+
+  const run = async (side: RaceSide, llm: BaseLlm, request: LlmRequest): Promise<void> => {
     const responses: LlmResponse[] = []
     try {
       for await (const response of llm.generateContentAsync(request)) responses.push(response)
-      return { winner: side, responses, error: null }
     } catch (error) {
-      return { winner: null, responses: null, error: { side, error } }
+      if (decided) return
+      errors.push({ side, error })
+      // Nothing is racing yet, so Gemini's failure is the turn's own: waiting out the timer to start a
+      // fallback call would delay a failure the ladder already knows how to handle.
+      if (side === 'gemini' && !hedgeStarted) {
+        clearTimeout(timer)
+        decide({ winner: null, responses: null, errors })
+        return
+      }
+      started++
+      if (started === 2) decide({ winner: null, responses: null, errors })
+      return
     }
+    if (decided) return
+    decide({ winner: side, responses, errors: [] })
   }
 
   const timer = setTimeout(() => {
-    if (winner) return
+    if (decided) return
+    hedgeStarted = true
     onHedgeFired()
-    void run('fallback', fallback, withAbort(llmRequest, fallbackAbort.signal)).then((outcome) => {
-      if (winner) return
-      winner = outcome
-      // The winner keeps the turn: its answer is the one the session is built on, tool calls included, so
-      // the loser is the call to spend nothing on. The grace period leaves an un-aborted stack available
-      // for a human debugging a lost race.
-      setTimeout(() => primaryAbort.abort(), 2).unref?.()
-      settle?.(outcome)
-    })
+    void run('fallback', fallback, withAbort(llmRequest, fallbackAbort.signal))
   }, hedgeAfterMs)
 
-  void run('gemini', primary, withAbort(llmRequest, primaryAbort.signal)).then((outcome) => {
-    if (winner) return
-    winner = outcome
-    fallbackAbort.abort()
-    settle?.(outcome)
-  })
+  void run('gemini', primary, withAbort(llmRequest, primaryAbort.signal))
 
   const outcome = await settled
   clearTimeout(timer)
@@ -469,31 +483,31 @@ export class RoutedLlm extends BaseLlm {
   }
 
   async *generateContentAsync(llmRequest: LlmRequest, stream?: boolean): AsyncGenerator<LlmResponse, void> {
-    const onFallback = modelRouteForRequest.getStore()?.useFallback && this.fallback
-    if (onFallback || !this.fallback || !hedgeForRequest.getStore()) {
-      const selected = onFallback ? this.fallback : this.primary
-      yield* selected.generateContentAsync(llmRequest, stream)
-      return
-    }
-    if (this.hedgeAfterMs <= 0 || !isHedgeEligible(llmRequest)) {
-      yield* this.primary.generateContentAsync(llmRequest, stream)
+    const route = modelRouteForRequest.getStore()
+    const onFallback = route?.useFallback && this.fallback
+    const side: AnswerModel = onFallback ? 'fallback' : 'gemini'
+    if (onFallback || !this.fallback || !route || this.hedgeAfterMs <= 0 || !isHedgeEligible(llmRequest)) {
+      if (route) route.answeredBy = side
+      yield* (onFallback ? this.fallback : this.primary).generateContentAsync(llmRequest, stream)
       return
     }
 
-    const hedge = hedgeForRequest.getStore() as { hedged: boolean }
     const outcome = await raceForWinner(llmRequest, this.primary, this.fallback, this.hedgeAfterMs, () => {
-      hedge.hedged = true
+      route.hedged = true
     })
     if (outcome.winner === null) {
       // One turn-level failure, unchanged for the ladder: the fallback's loss is logged and dropped, because
       // it is Gemini's outage that the switch policy, the sticky window and the retry budget are all keyed on.
-      const { side, error } = outcome.error
-      if (side === 'fallback') logger.warn({ err: error }, 'Hedged fallback call failed while Gemini was still running')
-      throw side === 'gemini' ? error : new Error(`Both models failed (${errorText(error)})`)
+      for (const failure of outcome.errors) {
+        if (failure.side === 'fallback') {
+          logger.warn({ err: failure.error }, 'Hedged fallback call failed while Gemini was still running')
+        }
+      }
+      const geminiError = outcome.errors.find((failure) => failure.side === 'gemini')?.error
+      throw geminiError ?? new Error(`Both models failed (${errorText(outcome.errors[0]?.error)})`)
     }
 
-    const answer = answerModelForRequest.getStore()
-    if (answer) answer.model = outcome.winner
+    route.answeredBy = outcome.winner
     logger.warn(
       { winner: outcome.winner, hedgeAfterMs: this.hedgeAfterMs },
       'Hedged slow Gemini call; kept the faster answer'

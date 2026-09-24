@@ -20,8 +20,8 @@ import { getLocalHour } from '../utils/timezone.js'
 import { estimateTokens } from '../utils/tokens.js'
 import { measureAttachmentTokens, needsMeasuring } from './attachmentCost.js'
 import { geminiMimeType, sizeLimitFor } from './attachmentLimits.js'
-import type { AnswerModel } from './fallbackModel.js'
-import { answerModelForRequest, createRokaModel, hedgeForRequest, modelRouteForRequest } from './fallbackModel.js'
+import type { ModelRoute } from './fallbackModel.js'
+import { createRokaModel, modelRouteForRequest } from './fallbackModel.js'
 import { classifyGeminiFailure, computeBackoff, extractGeminiStatus } from './geminiReliability.js'
 import type { FailureKind } from './geminiReliability.js'
 import { judgeTurn } from './jev/judgments.js'
@@ -1353,131 +1353,131 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   const steering: { prompt?: string } = {}
   const verdict: ModelVerdict = {}
   const modelCalls = { count: 0 }
-  const hedge = { hedged: false }
-  const answer = { model: null as AnswerModel | null }
-  const route = { useFallback: rokaModel.hasFallback && Date.now() < fallbackUntilMs }
+  const route: ModelRoute = {
+    useFallback: rokaModel.hasFallback && Date.now() < fallbackUntilMs,
+    hedged: false,
+    answeredBy: null
+  }
   let movedAwayFromGemini = false
   const reliability = await modelRouteForRequest.run(route, () =>
     modelCallsForRequest.run(modelCalls, () =>
       toolCallsForRequest.run(usedToolNames, () =>
         modelVerdictForRequest.run(verdict, () =>
-          hedgeForRequest.run(hedge, () =>
-            answerModelForRequest.run(answer, () =>
-              runTurnWithReliability({
-                maxRetries: config.gemini.liveMaxRetries,
-                retryBackoffCapMs: config.gemini.retryBackoffCapMs,
-                requestTimeoutMs: route.useFallback ? config.fallback.timeoutMs : config.gemini.timeout,
-                turnDeadlineMs: config.gemini.turnDeadlineMs,
-                switchModel: (kind) => {
-                  if (!rokaModel.hasFallback) return undefined
+          steeringForRequest.run(steering, () =>
+            runTurnWithReliability({
+              maxRetries: config.gemini.liveMaxRetries,
+              retryBackoffCapMs: config.gemini.retryBackoffCapMs,
+              requestTimeoutMs: route.useFallback ? config.fallback.timeoutMs : config.gemini.timeout,
+              turnDeadlineMs: config.gemini.turnDeadlineMs,
+              switchModel: (kind) => {
+                if (!rokaModel.hasFallback) return undefined
 
-                  route.useFallback = !route.useFallback
-                  if (route.useFallback) {
-                    movedAwayFromGemini = true
-                    logger.warn(
-                      { channelId, kind, model: rokaModel.fallbackModelName },
-                      'Gemini unavailable, answering this turn with the fallback model'
-                    )
-                    return config.fallback.timeoutMs
-                  }
+                route.useFallback = !route.useFallback
+                if (route.useFallback) {
+                  movedAwayFromGemini = true
+                  logger.warn(
+                    { channelId, kind, model: rokaModel.fallbackModelName },
+                    'Gemini unavailable, answering this turn with the fallback model'
+                  )
+                  return config.fallback.timeoutMs
+                }
 
-                  return config.gemini.timeout
-                },
-                tryConsumeRetry: () =>
-                  getSharedRateLimiter(config.rateLimit).tryConsumeAboveFloor(config.gemini.retryRpmFloor),
-                // retryBackoffCapMs doubles as computeBackoff's per-attempt maxMs: a single backoff delay
-                // should never be advertised as larger than the total budget it is measured against — the
-                // remaining-budget clamp in runTurnWithReliability's retry loop would cut an oversized delay down
-                // to size anyway, so sharing the value keeps the pre-jitter range honest with the ceiling.
-                computeBackoff: (attempt) =>
-                  computeBackoff(attempt, config.gemini.retryBackoffBaseMs, { maxMs: config.gemini.retryBackoffCapMs }),
-                genericFallback: getRandomFallback(),
-                safetyDeflection: SAFETY_DEFLECTION,
-                recitationDeflection: RECITATION_DEFLECTION,
-                terminalDeflection: TERMINAL_DEFLECTION,
-                resetSession: async () => {
+                return config.gemini.timeout
+              },
+              tryConsumeRetry: () =>
+                getSharedRateLimiter(config.rateLimit).tryConsumeAboveFloor(config.gemini.retryRpmFloor),
+              // retryBackoffCapMs doubles as computeBackoff's per-attempt maxMs: a single backoff delay
+              // should never be advertised as larger than the total budget it is measured against — the
+              // remaining-budget clamp in runTurnWithReliability's retry loop would cut an oversized delay down
+              // to size anyway, so sharing the value keeps the pre-jitter range honest with the ceiling.
+              computeBackoff: (attempt) =>
+                computeBackoff(attempt, config.gemini.retryBackoffBaseMs, { maxMs: config.gemini.retryBackoffCapMs }),
+              genericFallback: getRandomFallback(),
+              safetyDeflection: SAFETY_DEFLECTION,
+              recitationDeflection: RECITATION_DEFLECTION,
+              terminalDeflection: TERMINAL_DEFLECTION,
+              resetSession: async () => {
+                await destroySession(channelId)
+                await ensureSession(channelId)
+                resetIdleTimer(channelId)
+                sessionWasReset = true
+              },
+              safetyLadderLength: SAFETY_LADDER.length,
+              escalateSafety: async () => {
+                if (safetyRung >= SAFETY_LADDER.length) return undefined
+                safetyRung++
+
+                if (safetyRung === 3) {
+                  // Carried history is the only remaining suspect: rebuild the window empty and drop images.
+                  dropImages = true
                   await destroySession(channelId)
+                  rehydrationSuppressed.add(channelId)
                   await ensureSession(channelId)
                   resetIdleTimer(channelId)
                   sessionWasReset = true
-                },
-                safetyLadderLength: SAFETY_LADDER.length,
-                escalateSafety: async () => {
-                  if (safetyRung >= SAFETY_LADDER.length) return undefined
-                  safetyRung++
-
-                  if (safetyRung === 3) {
-                    // Carried history is the only remaining suspect: rebuild the window empty and drop images.
-                    dropImages = true
-                    await destroySession(channelId)
-                    rehydrationSuppressed.add(channelId)
-                    await ensureSession(channelId)
-                    resetIdleTimer(channelId)
-                    sessionWasReset = true
-                  }
-
-                  systemPrompt = composePrompt()
-                  steering.prompt = systemPrompt
-                  return SAFETY_LADDER[safetyRung - 1]
-                },
-                runTurn: async (attempt, signal) => {
-                  const includeCurrentTurn = attempt === 0 || sessionWasReset
-                  const testRequest: TestTurnRequest = {
-                    newMessage: includeCurrentTurn ? buildNewMessage() : undefined,
-                    stateDelta: includeCurrentTurn
-                      ? {
-                          _systemPrompt: systemPrompt,
-                          _userId: userId,
-                          _channelId: channelId,
-                          _guildId: guildId,
-                          _userMessage: userMessage
-                        }
-                      : undefined
-                  }
-                  if (testRunTurn) return testRunTurn(attempt, signal, testRequest)
-
-                  let responseText = ''
-                  let hasFunctionCall = false
-                  let finishReason: LlmResponse['finishReason']
-
-                  const request: Parameters<typeof runner.runAsync>[0] = {
-                    userId: channelId,
-                    sessionId: channelId,
-                    // ADK's runtime only appends when this value is truthy; its type incorrectly requires Content otherwise.
-                    newMessage: testRequest.newMessage ?? (undefined as unknown as Content),
-                    runConfig: { maxLlmCalls: config.gemini.maxLlmCalls },
-                    stateDelta: testRequest.stateDelta
-                  }
-
-                  for await (const event of runner.runAsync(request)) {
-                    if (signal.aborted) break
-                    if (event.errorCode) {
-                      return {
-                        errorCode: event.errorCode,
-                        errorMessage: event.errorMessage,
-                        customMetadata: event.customMetadata,
-                        finishReason: event.finishReason,
-                        hasText: false,
-                        hasFunctionCall: false
-                      }
-                    }
-                    if (isFinalResponse(event) && event.content?.parts) {
-                      finishReason = event.finishReason
-                      responseText = event.content.parts
-                        .filter((part: Part) => part.text && !part.thought)
-                        .map((part: Part) => part.text)
-                        .join('')
-                        .trim()
-                      hasFunctionCall = event.content.parts.some(
-                        (part: Part) => 'functionCall' in part && part.functionCall
-                      )
-                    }
-                  }
-
-                  return { text: responseText, finishReason, hasText: Boolean(responseText), hasFunctionCall }
                 }
-              })
-            )
+
+                systemPrompt = composePrompt()
+                steering.prompt = systemPrompt
+                return SAFETY_LADDER[safetyRung - 1]
+              },
+              runTurn: async (attempt, signal) => {
+                const includeCurrentTurn = attempt === 0 || sessionWasReset
+                const testRequest: TestTurnRequest = {
+                  newMessage: includeCurrentTurn ? buildNewMessage() : undefined,
+                  stateDelta: includeCurrentTurn
+                    ? {
+                        _systemPrompt: systemPrompt,
+                        _userId: userId,
+                        _channelId: channelId,
+                        _guildId: guildId,
+                        _userMessage: userMessage
+                      }
+                    : undefined
+                }
+                if (testRunTurn) return testRunTurn(attempt, signal, testRequest)
+
+                let responseText = ''
+                let hasFunctionCall = false
+                let finishReason: LlmResponse['finishReason']
+
+                const request: Parameters<typeof runner.runAsync>[0] = {
+                  userId: channelId,
+                  sessionId: channelId,
+                  // ADK's runtime only appends when this value is truthy; its type incorrectly requires Content otherwise.
+                  newMessage: testRequest.newMessage ?? (undefined as unknown as Content),
+                  runConfig: { maxLlmCalls: config.gemini.maxLlmCalls },
+                  stateDelta: testRequest.stateDelta
+                }
+
+                for await (const event of runner.runAsync(request)) {
+                  if (signal.aborted) break
+                  if (event.errorCode) {
+                    return {
+                      errorCode: event.errorCode,
+                      errorMessage: event.errorMessage,
+                      customMetadata: event.customMetadata,
+                      finishReason: event.finishReason,
+                      hasText: false,
+                      hasFunctionCall: false
+                    }
+                  }
+                  if (isFinalResponse(event) && event.content?.parts) {
+                    finishReason = event.finishReason
+                    responseText = event.content.parts
+                      .filter((part: Part) => part.text && !part.thought)
+                      .map((part: Part) => part.text)
+                      .join('')
+                      .trim()
+                    hasFunctionCall = event.content.parts.some(
+                      (part: Part) => 'functionCall' in part && part.functionCall
+                    )
+                  }
+                }
+
+                return { text: responseText, finishReason, hasText: Boolean(responseText), hasFunctionCall }
+              }
+            })
           )
         )
       )
@@ -1598,8 +1598,8 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     failureMarker: reliability.failureMarker,
     tokensInEst,
     tokensOutEst: estimateTokens(reliability.text),
-    model: answer.model ?? undefined,
-    hedged: hedge.hedged ? 1 : 0
+    model: route.answeredBy ?? undefined,
+    hedged: route.hedged ? 1 : 0
   }
 
   return {

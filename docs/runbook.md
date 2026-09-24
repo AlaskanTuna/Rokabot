@@ -216,7 +216,9 @@ modelscope.ai/magicube/usage.
 ## Hedging Slow Gemini Calls
 
 When a fallback is configured, a Gemini call that has not answered within `gemini.hedgeAfterMs` (5 s, `0` disables)
-is started on the fallback as well, and whichever answers first is what the user sees. A hedge win does **not** arm
+is started on the fallback as well, and whichever answers first is what the user sees — a call that fails is out of
+the race, not the winner, so a fast-failing ModelScope call never costs the turn its still-running Gemini call. If
+both sides fail, the turn fails with Gemini's own error, as it would without hedging. A hedge win does **not** arm
 the sticky window, so the next turn still tries Gemini. Each hedged call costs one extra ModelScope call.
 
 ```bash

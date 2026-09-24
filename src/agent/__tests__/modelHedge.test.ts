@@ -14,7 +14,8 @@ vi.mock('../../utils/logger.js', () => ({ logger: loggerMock }))
 vi.mock('../../config.js', () => ({ config: { gemini: { model: 'gemini-test' } } }))
 vi.mock('../src/agent/../config.js', () => ({ config: { gemini: { model: 'gemini-test' } } }))
 
-import { RoutedLlm, answerModelForRequest, hedgeForRequest, modelRouteForRequest } from '../fallbackModel.js'
+import { RoutedLlm, modelRouteForRequest } from '../fallbackModel.js'
+import type { ModelRoute } from '../fallbackModel.js'
 
 type Outcome = { text: string } | { error: Error }
 
@@ -63,6 +64,10 @@ async function responses(model: BaseLlm, llmRequest: LlmRequest): Promise<LlmRes
   return result
 }
 
+function route(overrides: Partial<ModelRoute> = {}): ModelRoute {
+  return { useFallback: false, hedged: false, answeredBy: null, ...overrides }
+}
+
 /** The hedge timer is real, so a test waits out the threshold rather than moving a fake clock. */
 async function afterHedge(fallback: DeferredLlm): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 40))
@@ -78,60 +83,128 @@ describe('RoutedLlm hedging', () => {
     const primary = new DeferredLlm('primary')
     const fallback = new DeferredLlm('fallback')
     const routed = new RoutedLlm(primary, fallback, HEDGE_MS)
-    const hedge = { hedged: false }
+    const turn = route()
 
-    const pending = modelRouteForRequest.run({ useFallback: false }, () =>
-      hedgeForRequest.run(hedge, () => responses(routed, request()))
-    )
+    const pending = modelRouteForRequest.run(turn, () => responses(routed, request()))
     await new Promise((resolve) => setTimeout(resolve, 5))
     primary.resolve(0, { text: 'gemini answer' })
 
     expect((await pending)[0]?.content?.parts?.[0]?.text).toBe('gemini answer')
     expect(fallback.calls).toBe(0)
-    expect(hedge.hedged).toBe(false)
+    expect(turn.hedged).toBe(false)
+    expect(turn.answeredBy).toBe('gemini')
   })
 
-  it('hedges after the threshold and takes the faster fallback, aborting Gemini', async () => {
+  it('hedges after the threshold and takes the faster fallback, aborting Gemini in the same tick', async () => {
     const primary = new DeferredLlm('primary')
     const fallback = new DeferredLlm('fallback')
     const routed = new RoutedLlm(primary, fallback, HEDGE_MS)
-    const hedge = { hedged: false }
-    const answer = { model: null as 'gemini' | 'fallback' | null }
+    const turn = route()
+    const warnBeforeWin = loggerMock.warn.mock.calls.length
 
-    const pending = modelRouteForRequest.run({ useFallback: false }, () =>
-      hedgeForRequest.run(hedge, () => answerModelForRequest.run(answer, () => responses(routed, request())))
-    )
+    const pending = modelRouteForRequest.run(turn, () => responses(routed, request()))
     await afterHedge(fallback)
 
     fallback.resolve(0, { text: 'fallback answer' })
     expect((await pending)[0]?.content?.parts?.[0]?.text).toBe('fallback answer')
-    expect(hedge.hedged).toBe(true)
-    expect(answer.model).toBe('fallback')
-    expect(fallback.signals[0]?.aborted).toBe(false)
-    // The grace period passes before the loser is killed, so the abort arrives while it is still in flight.
-    primary.resolve(0, { text: 'too late' })
-    await vi.waitFor(() => expect(primary.signals[0]?.aborted).toBe(true), { timeout: 1000 })
+    expect(turn.hedged).toBe(true)
+    expect(turn.answeredBy).toBe('fallback')
+    // The loser is killed the moment the winner is in hand, not after any grace period: the answer is
+    // already yielded by the time the caller's continuation runs.
+    expect(primary.signals[0]?.aborted).toBe(true)
+    expect(loggerMock.warn.mock.calls.length).toBe(warnBeforeWin + 1)
   })
 
   it('keeps the Gemini answer when it lands after the hedge started, aborting the fallback', async () => {
     const primary = new DeferredLlm('primary')
     const fallback = new DeferredLlm('fallback')
     const routed = new RoutedLlm(primary, fallback, HEDGE_MS)
-    const hedge = { hedged: false }
-    const answer = { model: null as 'gemini' | 'fallback' | null }
+    const turn = route()
 
-    const pending = modelRouteForRequest.run({ useFallback: false }, () =>
-      hedgeForRequest.run(hedge, () => answerModelForRequest.run(answer, () => responses(routed, request())))
-    )
+    const pending = modelRouteForRequest.run(turn, () => responses(routed, request()))
     await afterHedge(fallback)
     primary.resolve(0, { text: 'slow gemini answer' })
 
     expect((await pending)[0]?.content?.parts?.[0]?.text).toBe('slow gemini answer')
-    expect(hedge.hedged).toBe(true)
-    expect(answer.model).toBe('gemini')
+    expect(turn.hedged).toBe(true)
+    expect(turn.answeredBy).toBe('gemini')
     expect(fallback.signals[0]?.aborted).toBe(true)
-    fallback.resolve(0, { text: 'too late' })
-    await vi.waitFor(() => expect(fallback.signals[0]?.aborted).toBe(true), { timeout: 1000 })
+  })
+
+  it('still lets Gemini answer when the fallback fails fast after the hedge fired', async () => {
+    const primary = new DeferredLlm('primary')
+    const fallback = new DeferredLlm('fallback')
+    const routed = new RoutedLlm(primary, fallback, HEDGE_MS)
+    const turn = route()
+    const fallbackError = new Error('ModelScope 429: rate limited')
+
+    const pending = modelRouteForRequest.run(turn, () => responses(routed, request()))
+    await afterHedge(fallback)
+    // A fallback that dies first is out of the race, not the winner: the turn still waits for Gemini.
+    fallback.resolve(0, { error: fallbackError })
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    expect(primary.signals[0]?.aborted).toBe(false)
+
+    primary.resolve(0, { text: 'gemini answer' })
+    expect((await pending)[0]?.content?.parts?.[0]?.text).toBe('gemini answer')
+    expect(turn.hedged).toBe(true)
+    expect(turn.answeredBy).toBe('gemini')
+    // The rescued turn is an ordinary success, so the fallback's loss is not reported as a failure.
+    expect(loggerMock.warn.mock.calls).toEqual([
+      [{ winner: 'gemini', hedgeAfterMs: HEDGE_MS }, 'Hedged slow Gemini call; kept the faster answer']
+    ])
+  })
+
+  it('still lets the fallback answer when Gemini fails after the hedge fired', async () => {
+    const primary = new DeferredLlm('primary')
+    const fallback = new DeferredLlm('fallback')
+    const routed = new RoutedLlm(primary, fallback, HEDGE_MS)
+    const turn = route()
+
+    const pending = modelRouteForRequest.run(turn, () => responses(routed, request()))
+    await afterHedge(fallback)
+    primary.resolve(0, { error: new Error('503 overloaded') })
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    expect(fallback.signals[0]?.aborted).toBe(false)
+
+    fallback.resolve(0, { text: 'fallback answer' })
+    expect((await pending)[0]?.content?.parts?.[0]?.text).toBe('fallback answer')
+    expect(turn.hedged).toBe(true)
+    expect(turn.answeredBy).toBe('fallback')
+  })
+
+  it('rethrows the Gemini error unchanged once both sides have failed', async () => {
+    const primary = new DeferredLlm('primary')
+    const fallback = new DeferredLlm('fallback')
+    const routed = new RoutedLlm(primary, fallback, HEDGE_MS)
+    const geminiError = new Error('503 overloaded')
+    const fallbackError = new Error('ModelScope 429: rate limited')
+
+    const pending = modelRouteForRequest.run(route(), () => responses(routed, request()))
+    await afterHedge(fallback)
+    fallback.resolve(0, { error: fallbackError })
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    primary.resolve(0, { error: geminiError })
+
+    // The reliability ladder classifies Gemini's failure kind, so Gemini's own error object is what surfaces.
+    await expect(pending).rejects.toBe(geminiError)
+  })
+
+  it('rethrows a Gemini failure before the threshold without ever starting the hedge', async () => {
+    const primary = new DeferredLlm('primary')
+    const fallback = new DeferredLlm('fallback')
+    const routed = new RoutedLlm(primary, fallback, HEDGE_MS)
+    const turn = route()
+    const geminiError = new Error('429 quota exhausted')
+
+    const pending = modelRouteForRequest.run(turn, () => responses(routed, request()))
+    primary.resolve(0, { error: geminiError })
+
+    await expect(pending).rejects.toBe(geminiError)
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    expect(fallback.calls).toBe(0)
+    expect(turn.hedged).toBe(false)
+    expect(loggerMock.warn).not.toHaveBeenCalled()
   })
 
   it('never hedges a request carrying media the fallback cannot open', async () => {
@@ -142,7 +215,7 @@ describe('RoutedLlm hedging', () => {
       { role: 'user', parts: [{ inlineData: { mimeType: 'application/pdf', data: 'JVBER' } }] }
     ])
 
-    const pending = modelRouteForRequest.run({ useFallback: false }, () => responses(routed, pdfRequest))
+    const pending = modelRouteForRequest.run(route(), () => responses(routed, pdfRequest))
     await new Promise((resolve) => setTimeout(resolve, 60))
     expect(fallback.calls).toBe(0)
 
@@ -156,47 +229,27 @@ describe('RoutedLlm hedging', () => {
     const routed = new RoutedLlm(primary, fallback, HEDGE_MS)
     const imageRequest = request([{ role: 'user', parts: [{ inlineData: { mimeType: 'image/png', data: 'iVBOR' } }] }])
 
-    const pending = modelRouteForRequest.run({ useFallback: false }, () =>
-      hedgeForRequest.run({ hedged: false }, () => responses(routed, imageRequest))
-    )
+    const pending = modelRouteForRequest.run(route(), () => responses(routed, imageRequest))
     await afterHedge(fallback)
 
     fallback.resolve(0, { text: 'fallback read the image' })
     expect((await pending)[0]?.content?.parts?.[0]?.text).toBe('fallback read the image')
-    primary.resolve(0, { text: 'too late' })
   })
 
   it('never hedges a turn already routed to the fallback', async () => {
     const primary = new DeferredLlm('primary')
     const fallback = new DeferredLlm('fallback')
     const routed = new RoutedLlm(primary, fallback, HEDGE_MS)
+    const turn = route({ useFallback: true })
 
-    const pending = modelRouteForRequest.run({ useFallback: true }, () =>
-      hedgeForRequest.run({ hedged: false }, () => responses(routed, request()))
-    )
+    const pending = modelRouteForRequest.run(turn, () => responses(routed, request()))
     await new Promise((resolve) => setTimeout(resolve, 60))
     expect(primary.calls).toBe(0)
     expect(fallback.calls).toBe(1)
 
     fallback.resolve(0, { text: 'fallback answer' })
     expect((await pending)[0]?.content?.parts?.[0]?.text).toBe('fallback answer')
-  })
-
-  it('propagates the Gemini failure unchanged when both sides fail', async () => {
-    const primary = new DeferredLlm('primary')
-    const fallback = new DeferredLlm('fallback')
-    const routed = new RoutedLlm(primary, fallback, HEDGE_MS)
-    const geminiError = new Error('503 overloaded')
-
-    const pending = modelRouteForRequest.run({ useFallback: false }, () =>
-      hedgeForRequest.run({ hedged: false }, () => responses(routed, request()))
-    )
-    await afterHedge(fallback)
-    primary.resolve(0, { error: geminiError })
-    await expect(pending).rejects.toBe(geminiError)
-    // The fallback is settled afterwards: the race is the first side to FINISH, and the turn keeps whatever
-    // it was built on, which is Gemini's.
-    fallback.resolve(0, { error: new Error('fallback down') })
+    expect(turn.answeredBy).toBe('fallback')
   })
 
   it('logs nothing for an aborted loser', async () => {
@@ -204,15 +257,11 @@ describe('RoutedLlm hedging', () => {
     const fallback = new DeferredLlm('fallback')
     const routed = new RoutedLlm(primary, fallback, HEDGE_MS)
 
-    const pending = modelRouteForRequest.run({ useFallback: false }, () =>
-      hedgeForRequest.run({ hedged: false }, () => responses(routed, request()))
-    )
+    const pending = modelRouteForRequest.run(route(), () => responses(routed, request()))
     await afterHedge(fallback)
     fallback.resolve(0, { text: 'fallback answer' })
     expect((await pending)[0]?.content?.parts?.[0]?.text).toBe('fallback answer')
-    // The grace period passes before the loser is killed, so the abort arrives while it is still in flight.
-    primary.resolve(0, { text: 'too late' })
-    await vi.waitFor(() => expect(primary.signals[0]?.aborted).toBe(true), { timeout: 1000 })
+    expect(primary.signals[0]?.aborted).toBe(true)
 
     // The one warning the hedge is allowed to make is the one naming the answer it kept.
     expect(loggerMock.warn.mock.calls).toEqual([
@@ -225,17 +274,15 @@ describe('RoutedLlm hedging', () => {
     const primary = new DeferredLlm('primary')
     const fallback = new DeferredLlm('fallback')
     const routed = new RoutedLlm(primary, fallback, 0)
-    const hedge = { hedged: false }
+    const turn = route()
 
-    const pending = modelRouteForRequest.run({ useFallback: false }, () =>
-      hedgeForRequest.run(hedge, () => responses(routed, request()))
-    )
+    const pending = modelRouteForRequest.run(turn, () => responses(routed, request()))
     await new Promise((resolve) => setTimeout(resolve, 60))
     expect(fallback.calls).toBe(0)
 
     primary.resolve(0, { text: 'gemini answer' })
     expect((await pending)[0]?.content?.parts?.[0]?.text).toBe('gemini answer')
-    expect(hedge.hedged).toBe(false)
+    expect(turn.hedged).toBe(false)
   })
 
   it('leaves the request untouched when no fallback is configured', async () => {

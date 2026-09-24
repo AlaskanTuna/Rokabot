@@ -1,14 +1,7 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { config } from '../../config.js'
 
 const mocks = vi.hoisted(() => ({ hasFallback: true, tryConsumeRetry: vi.fn(() => true) }))
-
-// The config module this file exercises validates its secrets at import time, and a worktree has no .env.
-vi.hoisted(() => {
-  process.env.DISCORD_TOKEN ??= 'test-token'
-  process.env.DISCORD_CLIENT_ID ??= 'test-client'
-  process.env.GEMINI_API_KEY ??= 'test-key'
-})
 
 vi.mock('../fallbackModel.js', async (importOriginal) => {
   const original = await importOriginal<typeof import('../fallbackModel.js')>()
@@ -68,7 +61,7 @@ vi.mock('../../utils/rateLimiter.js', () => ({
 
 vi.mock('../../utils/timezone.js', () => ({ getLocalHour: () => 12 }))
 
-import { RoutedLlm, hedgeForRequest, modelRouteForRequest } from '../fallbackModel.js'
+import { RoutedLlm, modelRouteForRequest } from '../fallbackModel.js'
 import {
   __resetModelFallbackForTest,
   __resetTestRunTurnFactory,
@@ -87,6 +80,7 @@ const mutableGeminiConfig = config.gemini as unknown as {
   liveMaxRetries: number
   retryBackoffBaseMs: number
   retryBackoffCapMs: number
+  hedgeAfterMs: number
 }
 const mutableJevConfig = config.jev as unknown as { tone: 'off' | 'shadow' | 'on'; referents: 'off' | 'shadow' | 'on' }
 const channelId = 'model-fallback-test'
@@ -97,7 +91,8 @@ const originalConfig = {
   geminiTimeout: mutableGeminiConfig.timeout,
   liveMaxRetries: mutableGeminiConfig.liveMaxRetries,
   retryBackoffBaseMs: mutableGeminiConfig.retryBackoffBaseMs,
-  retryBackoffCapMs: mutableGeminiConfig.retryBackoffCapMs
+  retryBackoffCapMs: mutableGeminiConfig.retryBackoffCapMs,
+  hedgeAfterMs: mutableGeminiConfig.hedgeAfterMs
 }
 
 const genericFallback = 'generic fallback'
@@ -151,6 +146,7 @@ beforeEach(() => {
   mutableGeminiConfig.liveMaxRetries = originalConfig.liveMaxRetries
   mutableGeminiConfig.retryBackoffBaseMs = 0
   mutableGeminiConfig.retryBackoffCapMs = 0
+  mutableGeminiConfig.hedgeAfterMs = 0
   mutableJevConfig.tone = 'off'
   mutableJevConfig.referents = 'off'
 })
@@ -402,33 +398,38 @@ describe('generateResponse model fallback', () => {
     expect(nextRoutes).toEqual([false])
   })
 
-  it('does not arm the sticky window for a hedge win, so the next turn still tries Gemini', async () => {
+  it('records the answering model on every answered turn, and never arms the sticky window for a hedge', async () => {
     mutableFallbackConfig.stickyMs = 10_000
-    const first = await generateResponse(responseOptions())
-    // Stand in for a hedged call: the fallback answered a turn the route had left on Gemini.
-    const routes: Array<boolean | undefined> = []
+    const answeredBy: Array<string | null | undefined> = []
     __setTestRunTurnFactory(() => async () => {
-      routes.push(modelRouteForRequest.getStore()?.useFallback)
-      // Stand in for a hedge: a model call fired one and the fallback's answer is the one this turn keeps.
-      const hedge = hedgeForRequest.getStore() as { hedged: boolean }
-      hedge.hedged = true
+      const route = modelRouteForRequest.getStore()
+      // Stand in for a model call the hedge beat: it fired one, and the fallback is what answered.
+      if (route) {
+        route.hedged = true
+        route.answeredBy = 'fallback'
+      }
+      answeredBy.push(route?.answeredBy)
       return { text: 'Hedge answer~', hasText: true, hasFunctionCall: false }
     })
-    const routed = await hedgeForRequest.run({ hedged: true }, () => generateResponse(responseOptions('A slow one.')))
+    const first = await generateResponse(responseOptions())
+    const second = await generateResponse(responseOptions('A slow one.'))
 
-    expect(first.metrics).toMatchObject({ model: undefined, hedged: 0 })
-    expect(routed.metrics).toMatchObject({ model: undefined, hedged: 1 })
-    // A hedge fired but the route never left Gemini, so nothing here can arm the window.
-    expect(routes).toEqual([false])
+    expect(first.metrics).toMatchObject({ model: 'fallback', hedged: 1 })
+    expect(second.metrics).toMatchObject({ model: 'fallback', hedged: 1 })
+    expect(answeredBy).toEqual(['fallback', 'fallback'])
 
     const nextRoutes: Array<boolean | undefined> = []
     __setTestRunTurnFactory(() => async () => {
-      nextRoutes.push(modelRouteForRequest.getStore()?.useFallback)
+      const route = modelRouteForRequest.getStore()
+      // An unhedged Gemini call still records who answered.
+      if (route) route.answeredBy = 'gemini'
+      nextRoutes.push(route?.useFallback)
       return { text: 'Gemini next~', hasText: true, hasFunctionCall: false }
     })
-    await generateResponse(responseOptions('And now?'))
+    const next = await generateResponse(responseOptions('And now?'))
 
     expect(nextRoutes).toEqual([false])
+    expect(next.metrics).toMatchObject({ model: 'gemini', hedged: 0 })
   })
 
   it('keeps the existing fallback reply when no fallback model is configured', async () => {

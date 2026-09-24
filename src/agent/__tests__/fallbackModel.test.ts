@@ -434,8 +434,11 @@ describe('RoutedLlm', () => {
 
     expect((await responses(routed, llmRequest))[0]?.content?.parts?.[0]?.text).toBe('primary answer')
     expect(
-      (await modelRouteForRequest.run({ useFallback: true }, () => responses(routed, llmRequest, true)))[0]?.content
-        ?.parts?.[0]?.text
+      (
+        await modelRouteForRequest.run({ useFallback: true, hedged: false, answeredBy: null }, () =>
+          responses(routed, llmRequest, true)
+        )
+      )[0]?.content?.parts?.[0]?.text
     ).toBe('fallback answer')
     expect(primary.calls).toHaveLength(1)
     expect(fallback.calls).toHaveLength(1)
@@ -449,7 +452,7 @@ describe('RoutedLlm', () => {
     const primary = new TextLlm('primary', 'primary answer')
     const routed = new RoutedLlm(primary, null)
 
-    const result = await modelRouteForRequest.run({ useFallback: true }, () =>
+    const result = await modelRouteForRequest.run({ useFallback: true, hedged: false, answeredBy: null }, () =>
       responses(routed, request([{ role: 'user', parts: [{ text: 'hello' }] }]))
     )
 
