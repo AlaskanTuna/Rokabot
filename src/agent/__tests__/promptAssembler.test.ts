@@ -206,3 +206,10 @@ describe('docs/trd.md ToneKey table', () => {
     ).toEqual([])
   })
 })
+
+describe('memory tool rules', () => {
+  it('reach the model as plain code spans, not escaped backticks', () => {
+    expect(CORE_PROMPT).not.toContain('\\`')
+    expect(CORE_PROMPT).toContain('call `remember_user`')
+  })
+})
