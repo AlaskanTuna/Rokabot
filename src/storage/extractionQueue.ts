@@ -11,10 +11,37 @@ export type ExtractionPayloadMessage = Readonly<{
 
 export type ExtractionPayload = ReadonlyArray<ExtractionPayloadMessage>
 
+export type EpisodeLine = Readonly<{
+  messageId: string
+  userId: string
+  displayName: string
+  content: string
+  timestamp: number
+  isBot: boolean
+}>
+
+export type ExtractionEpisode = Readonly<{
+  messages: readonly EpisodeLine[]
+  context: readonly EpisodeLine[]
+  startedAt: number
+  endedAt: number
+}>
+
+export type EpisodeCursor = Readonly<{
+  guildId: string
+  channelId: string
+  lastMessageId: string | null
+  openedAt: number | null
+  messageCount: number
+}>
+
+export type QueueWriteOptions = Readonly<{ transaction?: boolean }>
+
 export type ExtractionQueueJob = Readonly<{
   id: number
   guildId: string
   channelId: string
+  episode: ExtractionEpisode
   payload: ExtractionPayload
   status: 'pending' | 'processing'
   attempts: number
@@ -40,12 +67,32 @@ type ExtractionQueueRow = {
   admitted_by: 'jev' | null
 }
 
+function payloadFromEpisode(episode: ExtractionEpisode): ExtractionPayload {
+  return episode.messages.map(({ userId, displayName, content }) => ({ userId, displayName, content }))
+}
+
+function episodeFromRow(row: ExtractionQueueRow): ExtractionEpisode {
+  const payload: unknown = JSON.parse(row.payload)
+  if (Array.isArray(payload)) {
+    const messages = payload.map((message, index) => ({
+      ...(message as ExtractionPayloadMessage),
+      messageId: `legacy-${row.id}-${index}`,
+      timestamp: row.enqueued_at,
+      isBot: false
+    }))
+    return { messages, context: [], startedAt: row.enqueued_at, endedAt: row.enqueued_at }
+  }
+  return payload as ExtractionEpisode
+}
+
 function mapJob(row: ExtractionQueueRow): ExtractionQueueJob {
+  const episode = episodeFromRow(row)
   return {
     id: row.id,
     guildId: row.guild_id,
     channelId: row.channel_id,
-    payload: JSON.parse(row.payload) as ExtractionPayload,
+    episode,
+    payload: payloadFromEpisode(episode),
     status: row.status,
     attempts: row.attempts,
     enqueuedAt: row.enqueued_at,
@@ -56,43 +103,69 @@ function mapJob(row: ExtractionQueueRow): ExtractionQueueJob {
 /** Stores an extraction snapshot and evicts the oldest pending work beyond a guild's queue limit. */
 export function enqueueExtraction(input: EnqueueExtractionInput): ExtractionQueueJob {
   return getDb().transaction(() => {
+    const db = getDb()
     const enqueuedAt = Date.now()
-    const result = getDb()
+    const result = db
       .prepare(
         "INSERT INTO extraction_queue (guild_id, channel_id, payload, status, enqueued_at, admitted_by) VALUES (?, ?, ?, 'pending', ?, ?)"
       )
       .run(input.guildId, input.channelId, JSON.stringify(input.payload), enqueuedAt, input.admittedBy ?? null)
 
-    const pending = getDb()
+    const pending = db
       .prepare("SELECT COUNT(*) AS count FROM extraction_queue WHERE guild_id = ? AND status = 'pending'")
       .get(input.guildId) as { count: number }
     const overflow = pending.count - config.memory.extractionQueueMaxPerGuild
 
     if (overflow > 0) {
-      getDb()
-        .prepare(
-          `DELETE FROM extraction_queue
+      db.prepare(
+        `DELETE FROM extraction_queue
              WHERE id IN (
                SELECT id FROM extraction_queue
                WHERE guild_id = ? AND status = 'pending'
                ORDER BY enqueued_at ASC, id ASC
                LIMIT ?
              )`
-        )
-        .run(input.guildId, overflow)
+      ).run(input.guildId, overflow)
     }
 
-    return {
+    return mapJob({
       id: Number(result.lastInsertRowid),
-      guildId: input.guildId,
-      channelId: input.channelId,
-      payload: input.payload,
+      guild_id: input.guildId,
+      channel_id: input.channelId,
+      payload: JSON.stringify(input.payload),
       status: 'pending' as const,
       attempts: 0,
-      enqueuedAt,
-      ...(input.admittedBy ? { admittedBy: input.admittedBy } : {})
-    }
+      enqueued_at: enqueuedAt,
+      admitted_by: input.admittedBy ?? null
+    })
   })()
+}
+
+export function enqueueEpisode(
+  input: { guildId: string; channelId: string; episode: ExtractionEpisode },
+  options: QueueWriteOptions = {}
+): ExtractionQueueJob {
+  const write = () => {
+    const db = getDb()
+    const enqueuedAt = Date.now()
+    const payload = JSON.stringify(input.episode)
+    const result = db
+      .prepare(
+        "INSERT INTO extraction_queue (guild_id, channel_id, payload, status, enqueued_at, admitted_by) VALUES (?, ?, ?, 'pending', ?, NULL)"
+      )
+      .run(input.guildId, input.channelId, payload, enqueuedAt)
+    return mapJob({
+      id: Number(result.lastInsertRowid),
+      guild_id: input.guildId,
+      channel_id: input.channelId,
+      payload,
+      status: 'pending',
+      attempts: 0,
+      enqueued_at: enqueuedAt,
+      admitted_by: null
+    })
+  }
+  return options.transaction ? write() : getDb().transaction(write)()
 }
 
 /** Atomically claims the oldest pending job for a guild. */

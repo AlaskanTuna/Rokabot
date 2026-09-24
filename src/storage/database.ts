@@ -386,6 +386,14 @@ export function runMigrations(database: Database.Database): void {
       admitted_by TEXT DEFAULT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS memory_episode_cursor (
+      channel_id TEXT PRIMARY KEY,
+      guild_id TEXT NOT NULL,
+      last_message_id TEXT,
+      opened_at INTEGER,
+      message_count INTEGER NOT NULL DEFAULT 0
+    );
+
     CREATE INDEX IF NOT EXISTS idx_extraction_queue_guild_status_enqueued
       ON extraction_queue (guild_id, status, enqueued_at);
 

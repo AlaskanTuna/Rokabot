@@ -6,6 +6,7 @@ jev:
   model: jev-1.13.0 # Pinned Jev version; thresholds are tuned against one version, and the jev-latest alias moves
   timeoutMs: 1200 # Deadline for the in-reply judgment (Pi median ~0.5s); one attempt, no retries
   backgroundTimeoutMs: 5000 # Deadline for background judgments (memory admission)
+  memoryTimeoutMs: 5000 # Deadline for background memory admission and verification
   tone: shadow # off | shadow (ask Jev and log, change nothing) | on (Jev picks the tone)
   referents: shadow # off | shadow | on (Jev settles names the resolver found ambiguous)
   extraction: shadow # off | shadow | on (Jev can admit a batch the rule gate rejected)
@@ -69,6 +70,10 @@ memory:
   claimRetentionDays: 90 # Days before inactive, unpinned claims expire
   salienceHalfLifeDays: 30 # Days for claim salience to halve after its last observation
   recallCooldownMs: 21600000 # Recalled claims lose 0.75 score for this long unless the message matches them
+  episodeLullMs: 180000 # Close an open memory episode after this much channel silence
+  episodeMaxMessages: 25 # Close an episode at this many delta messages; leave room for three context lines
+  admitThreshold: 0.5 # Minimum Jev lasting_fact probability required before Gemini extraction
+  verifyThreshold: 0.5 # Minimum Jev probability for durable and attributed operations
   extractionDailyBudgetRatio: 0.4 # Share of the Gemini RPD budget reserved for extraction
   perGuildGapMs: 20000 # Minimum ms between extraction batches for one guild
   extractionQueueMaxPerGuild: 50 # Maximum queued extraction payloads for one guild

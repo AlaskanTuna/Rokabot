@@ -232,6 +232,31 @@ describe('config module', () => {
     expect(warn).not.toHaveBeenCalled()
   })
 
+  it('exposes bounded episode memory settings', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+
+    const { config, NUMERIC_BOUNDS } = await import('../config.js')
+
+    expect(config.memory.episodeLullMs).toBe(180_000)
+    expect(config.memory.episodeMaxMessages).toBe(25)
+    expect(config.memory.admitThreshold).toBe(0.5)
+    expect(config.memory.verifyThreshold).toBe(0.5)
+    expect(config.jev.memoryTimeoutMs).toBe(5_000)
+    expect(NUMERIC_BOUNDS.find(({ path }) => path === 'memory.episodeMaxMessages')?.max).toBe(
+      config.memory.bufferSize - 3
+    )
+    expect(NUMERIC_BOUNDS.map(({ path }) => path)).toEqual(
+      expect.arrayContaining([
+        'memory.episodeLullMs',
+        'memory.episodeMaxMessages',
+        'memory.admitThreshold',
+        'memory.verifyThreshold',
+        'jev.memoryTimeoutMs'
+      ])
+    )
+  })
+
   it('env vars override config.yml values', async () => {
     setRequiredEnvVars()
     vi.stubEnv('LOG_LEVEL', 'debug')
@@ -641,6 +666,7 @@ describe('config module', () => {
     const { config } = await import('../config.js')
 
     expect(config.memory.extractionInterval).toBe(20)
+    expect(config.memory.episodeMaxMessages).toBe(17)
     expect(warn).toHaveBeenCalledOnce()
   })
 
@@ -720,9 +746,12 @@ describe('config module', () => {
       { path: 'gemini.maxOutputTokens', min: 1 },
       { path: 'jev.timeoutMs', min: 1 },
       { path: 'jev.backgroundTimeoutMs', min: 1 },
+      { path: 'jev.memoryTimeoutMs', min: 1 },
       { path: 'jev.toneMinConfidence', min: 0, max: 1 },
       { path: 'jev.referentMinConfidence', min: 0, max: 1 },
       { path: 'jev.extractionAdmitThreshold', min: 0, max: 1 },
+      { path: 'memory.admitThreshold', min: 0, max: 1 },
+      { path: 'memory.verifyThreshold', min: 0, max: 1 },
       { path: 'gemini.turnDeadlineMs', min: 1 },
       { path: 'gemini.retryBackoffCapMs', min: 1 },
       { path: 'gemini.maxRetries', min: 0 },
@@ -756,6 +785,8 @@ describe('config module', () => {
       { path: 'memory.claimRetentionDays', min: 1 },
       { path: 'memory.salienceHalfLifeDays', min: 1 },
       { path: 'memory.recallCooldownMs', min: 0 },
+      { path: 'memory.episodeLullMs', min: 1 },
+      { path: 'memory.episodeMaxMessages', min: 1, max: 27 },
       { path: 'memory.extractionDailyBudgetRatio', min: 0, max: 1 },
       { path: 'memory.perGuildGapMs', min: 0 },
       { path: 'memory.extractionQueueMaxPerGuild', min: 1 },

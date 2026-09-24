@@ -22,6 +22,7 @@ interface YamlConfig {
     model?: string
     timeoutMs?: number
     backgroundTimeoutMs?: number
+    memoryTimeoutMs?: number
     tone?: string
     referents?: string
     extraction?: string
@@ -69,6 +70,10 @@ interface YamlConfig {
     claimRetentionDays?: number
     salienceHalfLifeDays?: number
     recallCooldownMs?: number
+    episodeLullMs?: number
+    episodeMaxMessages?: number
+    admitThreshold?: number
+    verifyThreshold?: number
     extractionDailyBudgetRatio?: number
     perGuildGapMs?: number
     extractionQueueMaxPerGuild?: number
@@ -151,6 +156,8 @@ const geminiModel = envString('GEMINI_MODEL') ?? yaml.gemini?.model ?? 'gemini-2
 const memoryBufferSize = envInt('MEMORY_BUFFER_SIZE') ?? yaml.memory?.bufferSize ?? 30
 const requestedExtractionInterval = envInt('MEMORY_EXTRACTION_INTERVAL') ?? yaml.memory?.extractionInterval ?? 20
 const extractionInterval = Math.min(requestedExtractionInterval, memoryBufferSize)
+const requestedEpisodeMaxMessages = yaml.memory?.episodeMaxMessages ?? 25
+const episodeMaxMessages = Math.min(requestedEpisodeMaxMessages, memoryBufferSize - 3)
 
 /** Merged config: env overrides > config.yml > hardcoded defaults */
 export const config = {
@@ -159,6 +166,7 @@ export const config = {
     model: envString('JEV_MODEL') ?? yaml.jev?.model ?? 'jev-1.13.0',
     timeoutMs: yaml.jev?.timeoutMs ?? 1200,
     backgroundTimeoutMs: yaml.jev?.backgroundTimeoutMs ?? 5000,
+    memoryTimeoutMs: yaml.jev?.memoryTimeoutMs ?? 5000,
     tone: jevMode('tone', 'JEV_TONE'),
     referents: jevMode('referents', 'JEV_REFERENTS'),
     extraction: jevMode('extraction', 'JEV_EXTRACTION'),
@@ -230,6 +238,10 @@ export const config = {
     claimRetentionDays: envInt('MEMORY_CLAIM_RETENTION_DAYS') ?? yaml.memory?.claimRetentionDays ?? 90,
     salienceHalfLifeDays: yaml.memory?.salienceHalfLifeDays ?? 30,
     recallCooldownMs: yaml.memory?.recallCooldownMs ?? 21_600_000,
+    episodeLullMs: yaml.memory?.episodeLullMs ?? 180_000,
+    episodeMaxMessages,
+    admitThreshold: yaml.memory?.admitThreshold ?? 0.5,
+    verifyThreshold: yaml.memory?.verifyThreshold ?? 0.5,
     extractionDailyBudgetRatio:
       envNumber('MEMORY_EXTRACTION_DAILY_BUDGET_RATIO') ?? yaml.memory?.extractionDailyBudgetRatio ?? 0.4,
     perGuildGapMs: envInt('MEMORY_PER_GUILD_GAP_MS') ?? yaml.memory?.perGuildGapMs ?? 20_000,
@@ -272,6 +284,7 @@ export const config = {
 export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: number; max?: number }> = [
   { path: 'jev.timeoutMs', value: config.jev.timeoutMs, min: 1 },
   { path: 'jev.backgroundTimeoutMs', value: config.jev.backgroundTimeoutMs, min: 1 },
+  { path: 'jev.memoryTimeoutMs', value: config.jev.memoryTimeoutMs, min: 1 },
   { path: 'fallback.timeoutMs', value: config.fallback.timeoutMs, min: 1 },
   { path: 'fallback.stickyMs', value: config.fallback.stickyMs, min: 0 },
   { path: 'jev.toneMinConfidence', value: config.jev.toneMinConfidence, min: 0, max: 1 },
@@ -351,6 +364,15 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'memory.claimRetentionDays', value: config.memory.claimRetentionDays, min: 1 },
   { path: 'memory.salienceHalfLifeDays', value: config.memory.salienceHalfLifeDays, min: 1 },
   { path: 'memory.recallCooldownMs', value: config.memory.recallCooldownMs, min: 0 },
+  { path: 'memory.episodeLullMs', value: config.memory.episodeLullMs, min: 1 },
+  {
+    path: 'memory.episodeMaxMessages',
+    value: config.memory.episodeMaxMessages,
+    min: 1,
+    max: config.memory.bufferSize - 3
+  },
+  { path: 'memory.admitThreshold', value: config.memory.admitThreshold, min: 0, max: 1 },
+  { path: 'memory.verifyThreshold', value: config.memory.verifyThreshold, min: 0, max: 1 },
   { path: 'memory.extractionDailyBudgetRatio', value: config.memory.extractionDailyBudgetRatio, min: 0, max: 1 },
   { path: 'memory.perGuildGapMs', value: config.memory.perGuildGapMs, min: 0 },
   { path: 'memory.extractionQueueMaxPerGuild', value: config.memory.extractionQueueMaxPerGuild, min: 1 },

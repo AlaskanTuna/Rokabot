@@ -20,12 +20,14 @@ vi.mock('../database.js', () => ({
 import {
   MAX_EXTRACTION_QUEUE_ATTEMPTS,
   claimNextForGuild,
+  enqueueEpisode,
   enqueueExtraction,
   listGuildsWithPending,
   markDone,
   markFailed,
   resetStuckProcessing
 } from '../extractionQueue.js'
+import type { ExtractionEpisode } from '../extractionQueue.js'
 
 function createTestDb(): Database.Database {
   const db = new Database(':memory:')
@@ -46,6 +48,18 @@ function createTestDb(): Database.Database {
 
 function payload(content: string) {
   return [{ userId: 'user-1', displayName: 'Roka Fan', content }]
+}
+
+function episode(content: string): ExtractionEpisode {
+  const message = {
+    messageId: 'message-1',
+    userId: 'user-1',
+    displayName: 'Roka Fan',
+    content,
+    timestamp: 100,
+    isBot: false
+  }
+  return { messages: [message], context: [{ ...message, messageId: 'context-1' }], startedAt: 100, endedAt: 100 }
 }
 
 describe('extractionQueue', () => {
@@ -71,6 +85,19 @@ describe('extractionQueue', () => {
     expect(testDb.prepare('SELECT status FROM extraction_queue WHERE id = ?').get(first.id)).toBeUndefined()
   })
 
+  it('round-trips episode messages and context while preserving the legacy payload projection', () => {
+    const input = episode('I like tea')
+    const job = enqueueEpisode({ guildId: 'guild-1', channelId: 'channel-1', episode: input })
+    const stored = testDb.prepare('SELECT payload FROM extraction_queue WHERE id = ?').get(job.id) as {
+      payload: string
+    }
+
+    expect(JSON.parse(stored.payload)).toEqual(input)
+    expect(job.episode).toEqual(input)
+    expect(job.payload).toEqual([{ userId: 'user-1', displayName: 'Roka Fan', content: 'I like tea' }])
+    expect(claimNextForGuild('guild-1')?.episode).toEqual(input)
+  })
+
   it('round-trips Jev admission through the persisted queue', () => {
     const queued = enqueueExtraction({
       guildId: 'guild-1',
@@ -91,6 +118,34 @@ describe('extractionQueue', () => {
       .run('guild-1', 'channel-1', JSON.stringify(payload('legacy row')), 100)
 
     expect(claimNextForGuild('guild-1')?.admittedBy).toBeUndefined()
+  })
+
+  it('wraps a legacy message array in an episode without changing its scheduler payload', () => {
+    const legacyPayload = payload('legacy row')
+    testDb
+      .prepare(
+        "INSERT INTO extraction_queue (guild_id, channel_id, payload, status, enqueued_at, admitted_by) VALUES (?, ?, ?, 'pending', ?, NULL)"
+      )
+      .run('guild-1', 'channel-1', JSON.stringify(legacyPayload), 123)
+
+    const job = claimNextForGuild('guild-1')
+
+    expect(job?.payload).toEqual(legacyPayload)
+    expect(job?.episode).toEqual({
+      messages: [
+        {
+          messageId: 'legacy-1-0',
+          userId: 'user-1',
+          displayName: 'Roka Fan',
+          content: 'legacy row',
+          timestamp: 123,
+          isBot: false
+        }
+      ],
+      context: [],
+      startedAt: 123,
+      endedAt: 123
+    })
   })
 
   it('drops the oldest pending job only within an over-cap guild', () => {
