@@ -7,6 +7,7 @@ export interface SearchWebParams {
   query: string
   topic?: 'general' | 'news'
   max_results?: number
+  signal?: AbortSignal
 }
 
 interface TavilyResult {
@@ -31,7 +32,7 @@ export async function searchWeb(
     return { answer: 'Web search is not configured.', results: [], resultCount: 0 }
   }
 
-  const { query, topic = 'general', max_results = 5 } = params
+  const { query, topic = 'general', max_results = 5, signal } = params
 
   try {
     const response = await fetch('https://api.tavily.com/search', {
@@ -40,6 +41,7 @@ export async function searchWeb(
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`
       },
+      ...(signal ? { signal } : {}),
       // The query is sent verbatim. Appending a date and the configured location used to seem helpful and
       // measurably was not: the location token pulled back region-local pages and the date token pulled back
       // same-day pages, both regardless of subject. Recency belongs in Tavily's own parameters, not in the query
