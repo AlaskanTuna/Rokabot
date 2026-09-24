@@ -251,7 +251,8 @@ export function pruneOldMetrics(maxAgeDays: number): number {
     const responseResult = db.prepare('DELETE FROM response_events WHERE created_at < ?').run(cutoff)
     const extractionResult = db.prepare('DELETE FROM extraction_events WHERE created_at < ?').run(cutoff)
     const memoryResult = db.prepare('DELETE FROM memory_events WHERE created_at < ?').run(cutoff)
-    const pruned = responseResult.changes + extractionResult.changes + memoryResult.changes
+    const jevResult = db.prepare('DELETE FROM jev_events WHERE created_at < ?').run(cutoff)
+    const pruned = responseResult.changes + extractionResult.changes + memoryResult.changes + jevResult.changes
     if (pruned > 0) {
       logger.info({ pruned, maxAgeDays }, 'Pruned old metrics events')
     }
