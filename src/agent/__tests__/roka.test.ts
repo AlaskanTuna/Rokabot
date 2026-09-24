@@ -138,6 +138,7 @@ function options(overrides: Partial<Parameters<typeof runTurnWithReliability>[0]
 
 function readyPrefetchWork() {
   return {
+    needsLookup: 0.95,
     judgment: Promise.resolve({ tone: null, referents: [], needsLookup: 0.95, latencyMs: 2, inputTokens: 10 }),
     prefetch: Promise.resolve({
       decision: { fire: true, reason: 'fired' as const },
@@ -1058,6 +1059,8 @@ describe('generateResponse search prefetch', () => {
     expect(capturedPrompt).toContain('## Looked It Up')
     expect(capturedPrompt).toContain('The latest release date is September 25, 2026.')
     expect(result.toolsUsed).toEqual(['search_web'])
+    expect(result.prefetchUsed).toBe(true)
+    expect(result.needsLookup).toBe(0.95)
     expect(citations).toEqual([{ title: 'Release notes', url: 'https://example.test/release' }])
   })
 

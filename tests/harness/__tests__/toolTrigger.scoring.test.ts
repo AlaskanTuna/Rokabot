@@ -17,6 +17,7 @@ import {
 
 const fixturePath = resolve('tests/harness/tool-trigger/recall-user.jsonl')
 const rememberFixturePath = resolve('tests/harness/tool-trigger/remember-user.jsonl')
+const searchWebFixturePath = resolve('tests/harness/tool-trigger/search-web.jsonl')
 const trials = 3
 const temporaryDirectories: string[] = []
 
@@ -185,6 +186,7 @@ function reportWith(tool: string, recall: number, precision = 1): ToolTriggerRep
     accuracy: 0,
     precision,
     recall,
+    prefetchSearchTurns: 0,
     systematicFailures: [],
     hour: 14
   }
@@ -227,6 +229,22 @@ describe('per-tool recall floors', () => {
   // The floor is written out, not derived, so a change to it has to be made deliberately here too (#160).
   it('pins remember_user to the floor its measured rate supports', () => {
     expect(recallFloorFor('remember_user')).toBe(0.65)
+  })
+
+  it('keeps the search_web recall floor at 0.8 so a prefetch cannot quietly lower it', () => {
+    expect(recallFloorFor('search_web')).toBe(0.8)
+  })
+
+  it('scores a prefetch-used turn exactly as a tool-called turn', async () => {
+    const { cases } = await loadCaseSet(searchWebFixturePath)
+    const observations: CaseObservations = new Map(
+      cases.map((testCase) => [testCase.id, Array.from({ length: 3 }, () => testCase.shouldFire)])
+    )
+
+    const report = scoreCaseSet(cases, observations, 3)
+
+    expect(report.recall).toBe(1)
+    expect(report.prefetchSearchTurns).toBe(3)
   })
 
   // A tool nobody has calibrated gets the strict floor, not the lenient one.
@@ -378,6 +396,7 @@ describe('tool-trigger scoring verdict', () => {
       accuracy: 1,
       precision: 1,
       recall: 1,
+      prefetchSearchTurns: 0,
       systematicFailures: [],
       hour: 0
     }

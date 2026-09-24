@@ -25,8 +25,8 @@ vi.useFakeTimers()
 
 /** Runs the rig with the pacing sleeps driven rather than waited. `runAllTimersAsync` keeps draining as
  * each awaited turn schedules the next sleep, so it follows the loop to the end. */
-async function runPaced(trials: number) {
-  const run = runCaseSet(header, cases, { trials })
+async function runPaced(trials: number, caseHeader = header, caseSet = cases) {
+  const run = runCaseSet(caseHeader, caseSet, { trials })
   const settled = run.then(
     (value) => ({ value }),
     (error: unknown) => ({ error })
@@ -52,6 +52,8 @@ const cases: ToolTriggerCase[] = [
 
 const turn = (outcome: string, kind: string, toolsUsed: string[] = []) => ({
   toolsUsed,
+  prefetchUsed: false,
+  needsLookup: null,
   metrics: { outcome, kind }
 })
 
@@ -70,10 +72,11 @@ describe('runCaseSet transient recovery', () => {
       .mockResolvedValueOnce(turn('fallback', 'empty_text') as never)
       .mockResolvedValue(ok() as never)
 
-    const { observations, transientRetries } = await runPaced(2)
+    const { observations, transientRetries, prefetchSearchTurns } = await runPaced(2)
 
     expect(observations.get('F1')).toEqual([true, true])
     expect(transientRetries).toBe(1)
+    expect(prefetchSearchTurns).toBe(0)
     // A retry that reused the trial's channel would score a turn whose session already held the
     // failed attempt, so the fresh id is the point rather than a detail.
     expect(vi.mocked(destroySession).mock.calls.map((call) => call[0])).toEqual([
@@ -96,6 +99,26 @@ describe('runCaseSet transient recovery', () => {
     expect(attempts.map((a) => a.caseAttempt)).toEqual([0, 1])
     expect(attempts.map((a) => a.outcome)).toEqual(['fallback', 'ok'])
     expect(attempts.map((a) => a.fired)).toEqual([false, true])
+  })
+
+  it('records prefetch-assisted search use and carries the noul into the trial report line', async () => {
+    const searchHeader = { ...header, tool: 'search_web' }
+    const searchCases = cases.map((testCase) => ({ ...testCase, tool: 'search_web' }))
+    vi.mocked(generateResponse).mockResolvedValue({
+      ...turn('ok', 'ok', ['search_web']),
+      prefetchUsed: true,
+      needsLookup: 0.93
+    } as never)
+
+    const result = await runPaced(1, searchHeader, searchCases)
+
+    expect(result.prefetchSearchTurns).toBe(1)
+    expect(result.observations.get('F1')).toEqual([true])
+    expect(vi.mocked(emitTrialRecord).mock.calls[0]?.[0]).toMatchObject({
+      fired: true,
+      prefetchUsed: true,
+      needsLookup: 0.93
+    })
   })
 
   // The gap the branch records do not cover: `generateResponse` throwing skips the emit entirely, so the one

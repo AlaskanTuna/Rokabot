@@ -56,6 +56,8 @@ export interface GenerateResult {
   tone: ToneKey
   metrics: ResponseMetrics
   toolsUsed: string[]
+  prefetchUsed: boolean
+  needsLookup: number | null
   /**
    * Attachments that were admitted by type but never reached the model — oversized, or the download failed.
    * The Discord layer counts only *unsupported types* on its own side, so without this an oversized file is
@@ -550,6 +552,8 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     tone,
     metrics,
     toolsUsed,
+    prefetchUsed,
+    needsLookup: turnEntryWork.needsLookup ?? null,
     droppedAttachments,
     truncatedAttachments,
     refusedAttachments,

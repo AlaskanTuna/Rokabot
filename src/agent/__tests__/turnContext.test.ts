@@ -177,6 +177,7 @@ describe('turn entry work', () => {
     const work = startTurnEntryWork({ ...entryWork(), message: 'when did frieren season 2 air?' })
 
     await expect(work.judgment).resolves.toMatchObject({ needsLookup: 0.95 })
+    expect(work.needsLookup).toBe(0.95)
     await expect(work.prefetch).resolves.toMatchObject({ decision: { fire: true } })
     expect(mocks.judgeTurn).toHaveBeenCalledOnce()
     expect(mocks.runPrefetchForJudgment.mock.calls[0]?.[0]).toMatchObject({ needsLookup: 0.95 })

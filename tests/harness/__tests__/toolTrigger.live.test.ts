@@ -47,8 +47,10 @@ describe('live tool-trigger evaluation', () => {
       const { header, cases } = await loadCaseSet(resolve(fixturePath))
       expect(header.tool).toBe(tool)
 
-      const { observations, transientRetries } = await runCaseSet(header, cases, { trials: TRIALS })
-      const report = scoreCaseSet(cases, observations)
+      const { observations, transientRetries, prefetchSearchTurns } = await runCaseSet(header, cases, {
+        trials: TRIALS
+      })
+      const report = scoreCaseSet(cases, observations, prefetchSearchTurns)
 
       console.log(`Tool-trigger live confusion matrix [${tool}]:`, {
         transientRetries,
@@ -59,6 +61,7 @@ describe('live tool-trigger evaluation', () => {
         accuracy: report.accuracy,
         precision: report.precision,
         recall: report.recall,
+        prefetchSearchTurns: report.prefetchSearchTurns,
         systematicFailures: report.systematicFailures,
         hour: report.hour
       })

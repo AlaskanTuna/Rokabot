@@ -53,6 +53,7 @@ export type PendingTurnJudgment = Promise<TurnJudgment | null>
 export interface TurnEntryWork {
   judgment: PendingTurnJudgment
   prefetch: Promise<PrefetchResult>
+  needsLookup?: number | null
   cancel(): void
 }
 
@@ -101,14 +102,23 @@ export function startTurnEntryWork(input: StartTurnEntryWorkInput): TurnEntryWor
     return {
       judgment: Promise.resolve(null),
       prefetch: Promise.resolve({ decision: { fire: false, reason: 'no_judgment' }, outcome: null }),
+      needsLookup: null,
       cancel: () => controller.abort()
     }
   }
   const shouldAsk = judgmentInput.includeTone || judgmentInput.ambiguous.length > 0 || judgmentInput.includeLookup
+  let needsLookup: number | null = null
   const judgment = shouldAsk
     ? Promise.resolve()
         .then(() => (controller.signal.aborted ? null : judgeTurn(judgmentInput, { signal: controller.signal })))
-        .catch(() => null)
+        .then((settled) => {
+          needsLookup = settled?.needsLookup ?? null
+          return settled
+        })
+        .catch(() => {
+          needsLookup = null
+          return null
+        })
     : Promise.resolve(null)
   const prefetch = judgment
     .then((settled) =>
@@ -127,6 +137,9 @@ export function startTurnEntryWork(input: StartTurnEntryWorkInput): TurnEntryWor
   return {
     judgment,
     prefetch,
+    get needsLookup() {
+      return needsLookup
+    },
     cancel: () => controller.abort()
   }
 }
