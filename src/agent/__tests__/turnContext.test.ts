@@ -156,6 +156,7 @@ describe('turn entry work', () => {
     pendingJudgment.resolve({
       tone: { tone: 'playful', confidence: 0.55, probability: 0.85 },
       referents: [],
+      needsLookup: null,
       latencyMs: 260,
       inputTokens: 24
     })
@@ -168,6 +169,7 @@ describe('turn entry work', () => {
     const judgment: TurnJudgment = {
       tone: { tone: 'sincere', confidence: 0.55, probability: 0.85 },
       referents: [],
+      needsLookup: null,
       latencyMs: 260,
       inputTokens: 24
     }
@@ -186,6 +188,7 @@ describe('turn entry work', () => {
     const judgment: TurnJudgment = {
       tone: { tone: 'sincere', confidence: 0.55, probability: 0.85 },
       referents: [],
+      needsLookup: null,
       latencyMs: 260,
       inputTokens: 24
     }
@@ -211,6 +214,7 @@ describe('turn entry work', () => {
     const judgment: TurnJudgment = {
       tone: { tone: 'sincere', confidence: 0.55, probability: 0.85 },
       referents: [],
+      needsLookup: null,
       latencyMs: 260,
       inputTokens: 24
     }

@@ -82,7 +82,8 @@ function buildEntryJudgmentInput(input: StartTurnEntryWorkInput): TurnJudgmentIn
       return '[' + speaker + ']: ' + content
     }),
     ambiguous,
-    includeTone: config.jev.tone !== 'off'
+    includeTone: config.jev.tone !== 'off',
+    includeLookup: false
   }
 }
 

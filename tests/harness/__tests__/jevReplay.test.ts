@@ -48,7 +48,7 @@ function replayTurn(overrides: Partial<JevReplayTurn> = {}): JevReplayTurn {
 }
 
 function judgment(tone: NonNullable<TurnJudgment['tone']>): TurnJudgment {
-  return { tone, referents: [], latencyMs: 18, inputTokens: 12 }
+  return { tone, referents: [], needsLookup: null, latencyMs: 18, inputTokens: 12 }
 }
 
 describe('Jev replay loader', () => {

@@ -2235,6 +2235,7 @@ describe('Jev turn judgments', () => {
     vi.mocked(judgeTurn).mockResolvedValue({
       tone: { tone: 'sleepy', confidence: 0.55, probability: 0.85 },
       referents: [],
+      needsLookup: null,
       latencyMs: 3,
       inputTokens: 12
     })
@@ -2284,6 +2285,7 @@ describe('Jev turn judgments', () => {
     vi.mocked(judgeTurn).mockResolvedValue({
       tone: { tone: 'sleepy', confidence: 0.9, probability: 0.85 },
       referents: [],
+      needsLookup: null,
       latencyMs: 3,
       inputTokens: 12
     })
@@ -2322,6 +2324,7 @@ describe('Jev turn judgments', () => {
     vi.mocked(judgeTurn).mockResolvedValue({
       tone: null,
       referents: [{ alias: 'Rin', userId: 'rin-2', confidence: 0.95 }],
+      needsLookup: null,
       latencyMs: 4,
       inputTokens: 15
     })
@@ -2375,6 +2378,7 @@ describe('Jev turn judgments', () => {
     vi.mocked(judgeTurn).mockResolvedValue({
       tone: null,
       referents: [{ alias: 'Rin', userId: 'rin-2', confidence: 0.99 }],
+      needsLookup: null,
       latencyMs: 4,
       inputTokens: 15
     })
