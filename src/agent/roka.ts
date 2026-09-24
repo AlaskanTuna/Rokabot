@@ -30,6 +30,7 @@ import {
 } from './reliability.js'
 import type { ModelVerdict, TurnOutcome } from './reliability.js'
 import { SAFETY_SETTINGS } from './safetySettings.js'
+import { PREFETCH_TOOL_NAME } from './searchPrefetch.js'
 import {
   APP_NAME,
   clearSessionErrorCount,
@@ -261,7 +262,17 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
       mentionedUserIds: options.mentionedUserIds
     })
   const context = await createTurnContext({ ...options, turnEntryWork })
-  const { session, fakeMessages, tone, hour, factEntryCount, overheardSection, safetyLadder, composePrompt } = context
+  const {
+    session,
+    fakeMessages,
+    tone,
+    hour,
+    factEntryCount,
+    overheardSection,
+    prefetchUsed,
+    safetyLadder,
+    composePrompt
+  } = context
   let safetyRung = 0
   let dropImages = false
   let systemPrompt = context.systemPrompt
@@ -295,7 +306,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   )
 
   const llmStartMs = performance.now()
-  const usedToolNames = new Set<string>()
+  const usedToolNames = new Set<string>(prefetchUsed ? [PREFETCH_TOOL_NAME] : [])
   const testRunTurn = testRunTurnFactory?.(systemPrompt)
   let sessionWasReset = false
   const steering: { prompt?: string; memory?: boolean } = { memory }

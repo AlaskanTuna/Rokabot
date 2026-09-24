@@ -141,13 +141,17 @@ describe('interaction handler metrics', () => {
     expect(JSON.stringify(interaction.editReply.mock.calls[0][0].components[0].toJSON())).not.toContain('-# 🌸')
   })
 
-  function askWith(attachments: Array<{ url: string; contentType: string | null } | null>, imageUrl?: string) {
+  function askWith(
+    attachments: Array<{ url: string; contentType: string | null } | null>,
+    imageUrl?: string,
+    question = 'what is this?'
+  ) {
     return {
       isChatInputCommand: () => true,
       commandName: 'ask',
       options: {
         getString: vi.fn((name: string) =>
-          name === 'question' ? 'what is this?' : name === 'attachment_url' ? (imageUrl ?? null) : null
+          name === 'question' ? question : name === 'attachment_url' ? (imageUrl ?? null) : null
         ),
         // Answers by name the way Discord does, so a slot the handler asks for under the wrong name reads
         // as absent rather than silently returning the first attachment.
@@ -207,6 +211,16 @@ describe('interaction handler metrics', () => {
       interaction.deferReply.mock.invocationCallOrder[0]
     )
     expect(mocks.generateResponse).toHaveBeenCalledWith(expect.objectContaining({ turnEntryWork }))
+  })
+
+  it('starts entry work with the raw /ask question', async () => {
+    const question = 'When did the newest season premiere?'
+    const interaction = askWith([], undefined, question)
+
+    await createInteractionHandler(rateLimiterStub() as never)(interaction as never)
+
+    expect(mocks.startTurnEntryWork).toHaveBeenCalledWith(expect.objectContaining({ message: question }))
+    expect(mocks.generateResponse.mock.calls[0][0].userMessage).toBe(question)
   })
 
   // Offers one more than the ceiling admits, so the assertion is non-vacuous at any MAX_ATTACHMENTS: it

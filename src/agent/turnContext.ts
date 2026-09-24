@@ -461,6 +461,7 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
     hour,
     factEntryCount,
     overheardSection,
+    prefetchUsed: prefetch.usedTool,
     safetyLadder: SAFETY_LADDER,
     composePrompt
   }

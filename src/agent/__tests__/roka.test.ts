@@ -47,6 +47,7 @@ import {
   steeringForRequest
 } from '../roka.js'
 import { buildSafetySettings } from '../safetySettings.js'
+import { withSearchCitations } from '../searchCitations.js'
 import { destroyAllSessions, destroySession, sessionService } from '../session.js'
 import { beginShutdown, isShuttingDown, resetForTest } from '../shutdownSignal.js'
 import { __resetTokenBudgetForTest, remainingTokensThisMinute } from '../tokenBudget.js'
@@ -135,10 +136,26 @@ function options(overrides: Partial<Parameters<typeof runTurnWithReliability>[0]
   }
 }
 
+function readyPrefetchWork() {
+  return {
+    judgment: Promise.resolve({ tone: null, referents: [], needsLookup: 0.95, latencyMs: 2, inputTokens: 10 }),
+    prefetch: Promise.resolve({
+      decision: { fire: true, reason: 'fired' as const },
+      outcome: {
+        status: 'ready' as const,
+        text: 'The latest release date is September 25, 2026.',
+        sources: [{ title: 'Release notes', url: 'https://example.test/release' }]
+      }
+    }),
+    cancel: vi.fn()
+  }
+}
+
 afterEach(async () => {
   __resetTestRunTurnFactory()
   await destroySession('roka-metrics-channel')
   await destroySession('roka-prompt-safety-channel')
+  await destroySession('roka-search-prefetch-channel')
   resetForTest()
   mutableMemoryConfig.claimsBackend = false
   mutableJevConfig.tone = 'off'
@@ -1013,6 +1030,89 @@ describe('generateResponse memory-free turn', () => {
     })
 
     for (const tool of MEMORY_TOOL_NAMES) expect(context.systemPrompt).toContain(tool)
+  })
+})
+
+describe('generateResponse search prefetch', () => {
+  it('injects ready results into the first prompt, captures citations, and marks search_web as used', async () => {
+    mutableJevConfig.prefetch = 'on'
+    let capturedPrompt = ''
+    __setTestRunTurnFactory((systemPrompt) => {
+      capturedPrompt = systemPrompt
+      return async () => ({ text: 'It was released in September~', hasText: true, hasFunctionCall: false })
+    })
+
+    const [result, citations] = await withSearchCitations(() =>
+      generateResponse({
+        channelId: 'roka-search-prefetch-channel',
+        guildId: 'search-prefetch-guild',
+        memory: false,
+        userMessage: 'When was the latest release?',
+        displayName: 'Mio',
+        username: 'mio',
+        userId: 'mio-id',
+        turnEntryWork: readyPrefetchWork()
+      })
+    )
+
+    expect(capturedPrompt).toContain('## Looked It Up')
+    expect(capturedPrompt).toContain('The latest release date is September 25, 2026.')
+    expect(result.toolsUsed).toEqual(['search_web'])
+    expect(citations).toEqual([{ title: 'Release notes', url: 'https://example.test/release' }])
+  })
+
+  it('does not inject or count an unsuccessful prefetch', async () => {
+    mutableJevConfig.prefetch = 'on'
+    let capturedPrompt = ''
+    __setTestRunTurnFactory((systemPrompt) => {
+      capturedPrompt = systemPrompt
+      return async () => ({ text: 'I am not sure~', hasText: true, hasFunctionCall: false })
+    })
+
+    const result = await generateResponse({
+      channelId: 'roka-search-prefetch-channel',
+      guildId: 'search-prefetch-guild',
+      memory: false,
+      userMessage: 'When was the latest release?',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id',
+      turnEntryWork: {
+        ...readyPrefetchWork(),
+        prefetch: Promise.resolve({
+          decision: { fire: true, reason: 'fired' as const },
+          outcome: { status: 'failed' as const, error: 'search unavailable' }
+        })
+      }
+    })
+
+    expect(capturedPrompt).not.toContain('## Looked It Up')
+    expect(result.toolsUsed).toEqual([])
+  })
+
+  it('counts a model search_web call once when a prefetch already used the same tool', async () => {
+    mutableJevConfig.prefetch = 'on'
+    __setTestRunTurnFactory(() => async () => {
+      await rokaAgent.canonicalBeforeToolCallbacks[0]?.({
+        tool: { name: 'search_web' },
+        args: { query: 'latest release' },
+        context: {}
+      } as never)
+      return { text: 'The release was recent~', hasText: true, hasFunctionCall: false }
+    })
+
+    const result = await generateResponse({
+      channelId: 'roka-search-prefetch-channel',
+      guildId: 'search-prefetch-guild',
+      memory: false,
+      userMessage: 'When was the latest release?',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id',
+      turnEntryWork: readyPrefetchWork()
+    })
+
+    expect(result.toolsUsed).toEqual(['search_web'])
   })
 })
 
