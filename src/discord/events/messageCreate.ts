@@ -236,7 +236,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
     }
 
     if ('sendTyping' in message.channel) {
-      await message.channel.sendTyping()
+      void message.channel.sendTyping().catch(() => {})
     }
     const typingInterval =
       'sendTyping' in message.channel

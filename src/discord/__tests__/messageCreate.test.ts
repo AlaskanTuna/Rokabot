@@ -369,6 +369,40 @@ describe('message handler metrics', () => {
     expect(mocks.generateResponse).toHaveBeenCalledWith(expect.objectContaining({ turnEntryWork }))
   })
 
+  it('starts generation while the initial typing acknowledgement is pending', async () => {
+    let releaseTyping: () => void = () => {}
+    const { message } = createMessage()
+    message.channel.sendTyping = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseTyping = resolve
+        })
+    )
+
+    const handling = createMessageHandler(
+      { user: { id: 'bot-1' } } as never,
+      createRateLimiter() as never
+    )(message as never)
+
+    await Promise.resolve()
+    const generateCallsBeforeTypingResolved = mocks.generateResponse.mock.calls.length
+    releaseTyping()
+    await handling
+
+    expect(generateCallsBeforeTypingResolved).toBe(1)
+  })
+
+  it('continues generation when the initial typing request rejects', async () => {
+    const { message } = createMessage()
+    message.channel.sendTyping = vi.fn().mockRejectedValue(new Error('Discord typing failed'))
+
+    await expect(
+      createMessageHandler({ user: { id: 'bot-1' } } as never, createRateLimiter() as never)(message as never)
+    ).resolves.toBeUndefined()
+
+    expect(mocks.generateResponse).toHaveBeenCalledOnce()
+  })
+
   it.each([
     ['busy', () => mocks.isChannelBusy.mockReturnValue(true)],
     ['rate-limited', () => mocks.tryConsume.mockReturnValue(false)]
