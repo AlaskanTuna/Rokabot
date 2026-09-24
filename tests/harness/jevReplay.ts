@@ -275,7 +275,8 @@ export async function runJevReplay(
       message: turn.message,
       recentLines: turn.recentLines,
       ambiguous: [],
-      includeTone: true
+      includeTone: true,
+      includeLookup: false
     })
     rows.push({ turn, judgment })
     if (index + 1 < turns.length) await wait(1_000)

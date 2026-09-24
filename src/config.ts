@@ -25,7 +25,10 @@ interface YamlConfig {
     tone?: string
     referents?: string
     extraction?: string
+    prefetch?: string
     toneMinProbability?: number
+    prefetchMinNoul?: number
+    prefetchWaitMs?: number
     referentMinConfidence?: number
     extractionAdmitThreshold?: number
   }
@@ -139,7 +142,7 @@ function envString(key: string): string | undefined {
 
 export type JevMode = 'off' | 'shadow' | 'on'
 
-function jevMode(key: 'tone' | 'referents' | 'extraction', envKey: string): JevMode {
+function jevMode(key: 'tone' | 'referents' | 'extraction' | 'prefetch', envKey: string): JevMode {
   const envValue = envString(envKey)
   const value = envValue ?? yaml.jev?.[key] ?? 'shadow'
   if (value === 'off' || value === 'shadow' || value === 'on') return value
@@ -162,7 +165,10 @@ export const config = {
     tone: jevMode('tone', 'JEV_TONE'),
     referents: jevMode('referents', 'JEV_REFERENTS'),
     extraction: jevMode('extraction', 'JEV_EXTRACTION'),
+    prefetch: jevMode('prefetch', 'JEV_PREFETCH'),
     toneMinProbability: yaml.jev?.toneMinProbability ?? 0.85,
+    prefetchMinNoul: yaml.jev?.prefetchMinNoul ?? 0.7,
+    prefetchWaitMs: yaml.jev?.prefetchWaitMs ?? 4000,
     referentMinConfidence: yaml.jev?.referentMinConfidence ?? 0.8,
     extractionAdmitThreshold: yaml.jev?.extractionAdmitThreshold ?? 0.7
   },
@@ -275,6 +281,8 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'fallback.timeoutMs', value: config.fallback.timeoutMs, min: 1 },
   { path: 'fallback.stickyMs', value: config.fallback.stickyMs, min: 0 },
   { path: 'jev.toneMinProbability', value: config.jev.toneMinProbability, min: 0, max: 1 },
+  { path: 'jev.prefetchMinNoul', value: config.jev.prefetchMinNoul, min: 0, max: 1 },
+  { path: 'jev.prefetchWaitMs', value: config.jev.prefetchWaitMs, min: 0 },
   { path: 'jev.referentMinConfidence', value: config.jev.referentMinConfidence, min: 0, max: 1 },
   { path: 'jev.extractionAdmitThreshold', value: config.jev.extractionAdmitThreshold, min: 0, max: 1 },
   { path: 'gemini.timeout', value: config.gemini.timeout, min: 1 },

@@ -373,6 +373,45 @@ describe('message handler metrics', () => {
     expect(mocks.generateResponse).toHaveBeenCalledWith(expect.objectContaining({ turnEntryWork }))
   })
 
+  it('starts entry work with the raw current question before adding reply context', async () => {
+    const question = 'When did the newest season premiere?'
+    const replyTarget = {
+      author: { id: '123456789', displayName: 'Roka' },
+      content: 'previous answer',
+      embeds: [],
+      poll: null,
+      messageSnapshots: new Collection(),
+      components: [],
+      stickers: new Collection(),
+      attachments: new Collection()
+    }
+    const { message } = createMessage({ content: `<@123456789> ${question}`, referencedMessage: replyTarget })
+
+    await createMessageHandler({ user: { id: '123456789' } } as never, createRateLimiter() as never)(message as never)
+
+    expect(mocks.startTurnEntryWork).toHaveBeenCalledWith(expect.objectContaining({ message: question }))
+    expect(mocks.startTurnEntryWork.mock.calls[0][0].message).not.toContain('Replying to')
+    expect(mocks.generateResponse.mock.calls[0][0].userMessage).toContain('previous answer')
+  })
+
+  it('keeps generated message wrappers out of the lookup query', async () => {
+    const question = 'What is this?'
+    const { message } = createMessage({
+      content: `<@123456789> ${question}`,
+      snapshots: [{ content: 'forwarded details', components: [], embeds: [], attachments: new Collection() }]
+    })
+    message.components = [{ toJSON: () => ({ type: 10, content: 'container details' }) }] as never
+
+    await createMessageHandler({ user: { id: '123456789' } } as never, createRateLimiter() as never)(message as never)
+
+    expect(mocks.startTurnEntryWork).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: `${question}\n[Container: container details]\n[Forwarded: forwarded details]`,
+        lookupQuery: question
+      })
+    )
+  })
+
   it('still reads the replied-to message when a mention replies to another member', async () => {
     const replyTarget = {
       author: { id: 'user-2', displayName: 'Bob' },

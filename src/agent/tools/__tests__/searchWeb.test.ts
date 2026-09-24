@@ -58,6 +58,15 @@ describe('searchWeb', () => {
     expect(sentBody().query).toBe('Frieren season 2 release date')
   })
 
+  it('passes an optional abort signal through to Tavily', async () => {
+    tavilyReplies({ answer: 'a', results: [], response_time: 1 })
+    const signal = new AbortController().signal
+
+    await searchWeb({ query: 'q', signal })
+
+    expect(fetchMock.mock.calls[0]?.[1].signal).toBe(signal)
+  })
+
   it('hands the model a stated absence rather than an empty answer', async () => {
     tavilyReplies({ results: [], response_time: 1 })
 

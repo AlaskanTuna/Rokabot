@@ -191,6 +191,7 @@ export interface ToolTriggerReport {
   accuracy: number
   precision: number
   recall: number
+  prefetchSearchTurns: number
   /** Case ids scoring 0 of N trials. Diagnostic only (issue #49) — does not gate meetsLiveVerdict. */
   systematicFailures: string[]
   hour: number
@@ -332,7 +333,11 @@ export function meetsLiveVerdict(report: ToolTriggerReport): boolean {
  * task 129 can pin the verdict by feeding it synthetic observations offline and free, on every
  * `npm test`, forever. `fired` and `correct` on each perCase row are trial counts, not booleans, so a
  * report can show "fired 2 of 3" rather than collapsing multi-trial evidence into one bit. */
-export function scoreCaseSet(cases: ToolTriggerCase[], observations: CaseObservations): ToolTriggerReport {
+export function scoreCaseSet(
+  cases: ToolTriggerCase[],
+  observations: CaseObservations,
+  prefetchSearchTurns = 0
+): ToolTriggerReport {
   let truePositives = 0
   let falsePositives = 0
   let trueNegatives = 0
@@ -376,6 +381,7 @@ export function scoreCaseSet(cases: ToolTriggerCase[], observations: CaseObserva
     accuracy,
     precision,
     recall,
+    prefetchSearchTurns,
     systematicFailures,
     hour: getLocalHour()
   }

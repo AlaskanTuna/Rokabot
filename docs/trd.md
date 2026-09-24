@@ -332,14 +332,14 @@ resolution, deferral, or ADK session loading. Generation receives that same hand
 an enabled feature is `on`; `shadow` observes it asynchronously. A declined turn aborts the request, and failures
 keep the rule-based decision.
 
-Each feature has a mode in `config.yml` (`jev.tone`, `jev.referents`, `jev.extraction`), overridable by `JEV_TONE`,
-`JEV_REFERENTS` and `JEV_EXTRACTION`:
+Each feature has a mode in `config.yml` (`jev.tone`, `jev.referents`, `jev.extraction`, `jev.prefetch`),
+overridable by `JEV_TONE`, `JEV_REFERENTS`, `JEV_EXTRACTION` and `JEV_PREFETCH`:
 
-| Mode     | Behaviour                                                                           |
-| -------- | ----------------------------------------------------------------------------------- |
-| `off`    | Jev is not asked                                                                    |
-| `shadow` | Jev is asked without waiting; turn judgments are logged and persisted               |
-| `on`     | Jev is applied when its feature-specific threshold passes; otherwise the rule stays |
+| Mode     | Behaviour                                                            |
+| -------- | -------------------------------------------------------------------- |
+| `off`    | The feature adds no Jev decision                                     |
+| `shadow` | The decision is observed without applying it; turn judgments persist |
+| `on`     | The decision may be used when its feature-specific threshold passes  |
 
 - **Turn Judgment:** at most one `judgeTurn` request per turn, carrying a tone `choice` over the 12 `ToneKey`s and a
   referent `choice` for each name `resolveReferences` found ambiguous (at most 3 names, 8 candidates each, plus
@@ -348,9 +348,15 @@ Each feature has a mode in `config.yml` (`jev.tone`, `jev.referents`, `jev.extra
   probability keeps the regex tone. An `on` referent still uses `jev.referentMinConfidence` and joins the retrieval
   participants after the resolver's members, with a `## Who Is Mentioned` line. The safety rung-3 `sincere` prompt
   still overrides any tone. Logged as `Jev turn judgment`.
+- **Lookup Judgment:** when `jev.prefetch` is not `off`, the same `systemOne` request includes a `needs_lookup` `noul`
+  asking whether the message needs a specific, niche, recent or real-world fact. It is returned as
+  `TurnJudgment.needsLookup`; a missing, malformed or out-of-range answer becomes `null`. This adds no second Jev
+  request. The lookup query itself uses the mention-stripped message text, before reply, container, embed, poll or
+  forwarded-content wrappers are added.
 - **Turn Events:** each non-null turn judgment writes one `kind = 'turn'` row to `jev_events` with the rule baseline,
-  decision labels, probability, confidence, whether tone was applied, rounded latency and input tokens. It stores no
-  message text, alias or user ID. `metrics.retentionDays` prunes these rows with the other metrics tables.
+  decision labels, probability, confidence, whether tone was applied, rounded latency and input tokens. The `question`
+  JSON records the `prefetch` mode; the `answer` JSON records `needsLookup` and `prefetchStatus`. It stores no message
+  text, alias or user ID. `metrics.retentionDays` prunes these rows with the other metrics tables.
 - **Replay Comparator:** `npm run replay:jev -- data/rokabot.db --max-turns 100` compares Jev tone labels with the
   regex tone on retained history and transcript fixtures, including CJK turns. Regex agreement is a tuning
   comparator, not ground-truth accuracy; the cutoff support rule also checks CJK agreement before tone can turn on.
@@ -360,6 +366,27 @@ Each feature has a mode in `config.yml` (`jev.tone`, `jev.referents`, `jev.extra
   with `extraction_queue.admitted_by = 'jev'`, which lets it past the extractor's re-gate. `sensitive content` and
   `trivial batch` refusals are never overridden, and Jev never rejects a batch the rules admit. Logged as
   `Jev extraction admission`.
+
+### Search Prefetch
+
+`jev.prefetch` defaults to `shadow`. `off` omits the lookup question; `shadow` asks it and records whether it crossed
+the threshold without searching; `on` starts a Tavily search when `needsLookup` is at least `jev.prefetchMinNoul`.
+The default threshold is `0.7`, and the maximum wait before the first model request proceeds without results is
+`jev.prefetchWaitMs` (4000 ms).
+
+The message handler starts `TurnEntryWork` before reply fetching, admission checks and session loading. Once the
+shared Jev judgment clears the threshold in `on` mode, it starts at most one automatic prefetch using the original
+mention-stripped message text (or the `/ask` question). That search can run while session and memory context are prepared.
+It does not reserve a Gemini RPM slot. Rejected turns cancel the shared work; if a Tavily request is already in flight,
+the abort signal is passed through to its fetch.
+
+A successful result is injected into the first model system prompt in a `## Looked It Up` block, capped at 2000
+characters. The existing lookup-answer instructions in `src/agent/prompts/core.ts` apply, including the direction to
+call `search_web` again if the results are thin or off-topic. The normal search citation footer uses the prefetched
+URLs; a later model-issued search replaces that citation list. A prefetched result counts `search_web` in
+`toolsUsed`, once even if Gemini also calls the tool. The tool remains registered in all modes. Empty, failed,
+aborted, canceled or timed-out prefetches add no prompt block, and the turn answers normally. The safety ladder drops
+the prefetch block after its first rung.
 
 The derivation, measured latency and rollout plan are in `docs/research/jev-integration.md`.
 

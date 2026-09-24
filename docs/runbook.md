@@ -273,11 +273,41 @@ sudo docker logs rokabot-roka-1 2>&1 | grep '"msg":"Jev extraction admission"'
 sudo docker logs rokabot-roka-1 2>&1 | grep '"msg":"Jev judgment failed"'
 ```
 
-To switch a feature, set `JEV_TONE`, `JEV_REFERENTS` or `JEV_EXTRACTION` to `off`, `shadow` or `on` in
+### Search Prefetch Shadow
+
+`jev.prefetch` ships as `shadow`. Jev asks whether a turn needs lookup, but Tavily is not called. Review the persisted
+score and outcome without storing or displaying the message text:
+
+```sql
+SELECT created_at,
+       json_extract(question, '$.prefetch') AS prefetch_mode,
+       json_extract(answer, '$.needsLookup') AS needs_lookup,
+       json_extract(answer, '$.prefetchStatus') AS prefetch_status,
+       json_extract(answer, '$.tone') AS jev_tone,
+       probability,
+       applied,
+       latency_ms
+FROM jev_events
+WHERE kind = 'turn'
+ORDER BY created_at DESC
+LIMIT 20;
+```
+
+`shadow_would_fire` means the score met `jev.prefetchMinNoul`, but no search ran. `ready` means a search result was
+obtained for the first prompt (the safety ladder may later drop it). `off`, `below_threshold`, `no_noul` and
+`no_judgment` explain why no prefetch was started; `failed`, `empty`,
+`aborted`, `canceled` and `gave_up` describe a prefetch that supplied no result. At most one automatic Tavily search
+starts per turn; Gemini can still call the existing `search_web` tool if the prefetched results are thin or off-topic.
+The automatic prefetch uses no Gemini RPM slot.
+
+Keep `jev.prefetch` in `shadow` while reviewing these rows. Switching it to `on` should be a reviewed `config.yml`
+change through a PR after the shadow evidence supports it.
+
+To switch a feature, set `JEV_TONE`, `JEV_REFERENTS`, `JEV_EXTRACTION` or `JEV_PREFETCH` to `off`, `shadow` or `on` in
 `~/rokabot/.env` and recreate the container (`sudo docker compose -f ~/rokabot/docker-compose.yml up -d`); a lasting
 change belongs in `config.yml` through a PR. Tone uses `jev.toneMinProbability`; referents use
-`jev.referentMinConfidence`; extraction uses `jev.extractionAdmitThreshold`. An empty `TYPESAFE_API_KEY` disables
-Jev entirely.
+`jev.referentMinConfidence`; extraction uses `jev.extractionAdmitThreshold`; prefetch uses `jev.prefetchMinNoul` and
+`jev.prefetchWaitMs`. An empty `TYPESAFE_API_KEY` disables Jev entirely.
 
 After an authorized deployment of the unawaited typing change, compare `Response completed`'s `e2e_ms - generate_ms`
 before and after. The supplied baseline is p50 1.06 s and p95 2.2 s; removing the initial typing wait should lower
