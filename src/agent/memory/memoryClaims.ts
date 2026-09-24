@@ -366,6 +366,26 @@ export function searchClaims(guildId: string, userId: string, ftsQuery: string, 
   ).map(mapClaim)
 }
 
+export function rejectClaimIdsForSpeaker(guildId: string, userId: string, claimIds: number[]): boolean {
+  if (claimIds.length === 0) return false
+  const write = () => {
+    assertWritableGuild(guildId)
+    const placeholders = claimIds.map(() => '?').join(', ')
+    const claims = (
+      getDb()
+        .prepare(
+          `SELECT * FROM memory_claim
+           WHERE guild_id = ? AND subject_user_id = ? AND status = 'active' AND id IN (${placeholders})`
+        )
+        .all(guildId, userId, ...claimIds) as ClaimRow[]
+    ).map(mapClaim)
+    if (claims.length !== claimIds.length) return false
+    rejectClaims(claims)
+    return true
+  }
+  return getDb().transaction(write)()
+}
+
 export function getEdges(guildId: string, userId: string): MemoryClaim[] {
   return (
     getDb()

@@ -8,7 +8,14 @@ import { flipCoin } from '../tools/flipCoin.js'
 import { getAnimeSchedule } from '../tools/getAnimeSchedule.js'
 import { getCurrentTime } from '../tools/getCurrentTime.js'
 import { getWeather } from '../tools/getWeather.js'
-import { flipCoinTool, getCurrentTimeTool, getWeatherTool, rokaTools, rollDiceTool } from '../tools/index.js'
+import {
+  flipCoinTool,
+  forgetUserTool,
+  getCurrentTimeTool,
+  getWeatherTool,
+  rokaTools,
+  rollDiceTool
+} from '../tools/index.js'
 import { rollDice } from '../tools/rollDice.js'
 import { searchAnime } from '../tools/searchAnime.js'
 
@@ -40,7 +47,7 @@ describe('utility FunctionTools', () => {
   it('registers the four implicit utilities with their input schemas', () => {
     const declarations = new Map(rokaTools.map((tool) => [tool.name, tool._getDeclaration()]))
 
-    expect(rokaTools).toHaveLength(12)
+    expect(rokaTools).toHaveLength(13)
     expect(declarations.get('roll_dice')?.parameters).toMatchObject({
       properties: { count: { type: 'INTEGER' }, sides: { type: 'INTEGER' } }
     })
@@ -49,6 +56,11 @@ describe('utility FunctionTools', () => {
       properties: { location: { type: 'STRING' }, format: { type: 'STRING' } }
     })
     expect(declarations.get('get_weather')?.parameters).toMatchObject({ properties: { city: { type: 'STRING' } } })
+    expect(declarations.get('forget_user')?.parameters).toMatchObject({
+      properties: { query: { type: 'STRING' } },
+      required: ['query']
+    })
+    expect(rokaTools).toContain(forgetUserTool)
   })
 
   it('delegates roll_dice to rollDice', async () => {

@@ -133,6 +133,45 @@ describe('recall relevance A/B (issue #25 phase 1 baseline)', () => {
     expect(result.facts).toContain(testCase.targetValue)
   })
 
+  it('ranks a fact seen this week above one with 19 evidence rows last seen 35 days ago', () => {
+    const now = Date.now()
+    const subjectUserId = 'over-evidenced-user'
+    const staleValue = 'playing osu!'
+
+    for (let i = 0; i < 19; i++) {
+      assertClaim({
+        guildId: GUILD,
+        subjectUserId,
+        predicate: 'hobby',
+        value: staleValue,
+        sourceKind: 'explicit',
+        observedAt: now - 35 * DAY
+      })
+    }
+    assertClaim({
+      guildId: GUILD,
+      subjectUserId,
+      predicate: 'likes',
+      value: 'handmade pottery',
+      sourceKind: 'explicit',
+      observedAt: now - 5 * DAY
+    })
+
+    const staleClaim = getDb()
+      .prepare('SELECT id, last_seen_at FROM memory_claim WHERE guild_id = ? AND subject_user_id = ? AND value = ?')
+      .get(GUILD, subjectUserId, staleValue) as { id: number; last_seen_at: number }
+    const evidenceCount = (
+      getDb().prepare('SELECT COUNT(*) AS count FROM memory_evidence WHERE claim_id = ?').get(staleClaim.id) as {
+        count: number
+      }
+    ).count
+    const result = recallUser({ user_id: subjectUserId, guild_id: GUILD, message: '' })
+
+    expect(evidenceCount).toBe(19)
+    expect(staleClaim.last_seen_at).toBe(now - 35 * DAY)
+    expect(result.facts.startsWith('likes: handmade pottery')).toBe(true)
+  })
+
   it('excludes a needs_review claim even when the message matches it exactly', () => {
     const now = Date.now()
     const subjectUserId = 'needs-review-user'

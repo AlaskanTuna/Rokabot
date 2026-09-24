@@ -66,6 +66,8 @@ memory:
   speakerMinShare: 0.5 # Minimum fraction of selected claims reserved for the speaker
   maxActiveClaimsPerUser: 20 # Active claim cap per user (pinned claims are exempt)
   claimRetentionDays: 90 # Days before inactive, unpinned claims expire
+  salienceHalfLifeDays: 30 # Days for claim salience to halve after its last observation
+  recallCooldownMs: 21600000 # Recalled claims lose 0.75 score for this long unless the message matches them
   extractionDailyBudgetRatio: 0.4 # Share of the Gemini RPD budget reserved for extraction
   perGuildGapMs: 20000 # Minimum ms between extraction batches for one guild
   extractionQueueMaxPerGuild: 50 # Maximum queued extraction payloads for one guild
