@@ -244,7 +244,7 @@ member named by a nickname or username gets a `## Who Is Mentioned` line mapping
 
 `forget_user` searches the current speaker's active claims using AND semantics across up to six query keywords. It
 rejects one to three matches and returns up to four matching values when clarification is needed. It does not accept a
-target member ID or name, and confirmations replace values that `privacyGuard.ts` marks sensitive with a generic label.
+target member ID or name, and its responses replace values that `privacyGuard.ts` marks sensitive with a generic label.
 
 The retriever, not `refreshFactTimestamps`, calls `touchRecalled()` for selected claims. The resulting entries are
 rendered through the shared Phase 13 `buildFactsEnvelope` untrusted-data envelope; the claims path does not fork the

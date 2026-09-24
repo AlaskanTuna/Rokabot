@@ -308,7 +308,7 @@ export function retractClaim(op: ClaimRetract, options: ClaimWriteOptions = {}):
       )
       .get(op.guildId, op.subjectUserId, predicate, op.value) as ClaimRow | undefined
     if (!row) return false
-    getDb().prepare("UPDATE memory_claim SET status = 'rejected', superseded_by = NULL WHERE id = ?").run(row.id)
+    rejectClaims([mapClaim(row)])
     return true
   }
   return options.transaction ? write() : getDb().transaction(write)()
@@ -348,6 +348,26 @@ export function searchClaims(guildId: string, userId: string, ftsQuery: string, 
       )
       .all(guildId, userId, ftsQuery, limit) as ClaimRow[]
   ).map(mapClaim)
+}
+
+export function rejectClaimIdsForSpeaker(guildId: string, userId: string, claimIds: number[]): boolean {
+  if (claimIds.length === 0) return false
+  const write = () => {
+    assertWritableGuild(guildId)
+    const placeholders = claimIds.map(() => '?').join(', ')
+    const claims = (
+      getDb()
+        .prepare(
+          `SELECT * FROM memory_claim
+           WHERE guild_id = ? AND subject_user_id = ? AND status = 'active' AND id IN (${placeholders})`
+        )
+        .all(guildId, userId, ...claimIds) as ClaimRow[]
+    ).map(mapClaim)
+    if (claims.length !== claimIds.length) return false
+    rejectClaims(claims)
+    return true
+  }
+  return getDb().transaction(write)()
 }
 
 export function getEdges(guildId: string, userId: string): MemoryClaim[] {

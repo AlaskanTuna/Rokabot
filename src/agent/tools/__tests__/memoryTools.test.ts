@@ -16,9 +16,18 @@ import { logger } from '../../../utils/logger.js'
  * so the double is named in one place instead of asserted away in thirteen. */
 const toolContextWith = (entries: Record<string, unknown>) =>
   ({ state: new Map(Object.entries(entries)) }) as unknown as ToolContext
+const runForget = (
+  query: string,
+  userId = 'user-1',
+  guildId = 'guild-1'
+): Promise<{ success: boolean; message: string }> =>
+  forgetUserTool.runAsync({
+    args: { query },
+    toolContext: toolContextWith({ _userId: userId, _guildId: guildId })
+  }) as Promise<{ success: boolean; message: string }>
 import { resolveName } from '../../memory/identityResolver.js'
 import { assertClaim, getActiveClaims } from '../../memory/memoryClaims.js'
-import { forgetUserTool, recallUserTool, rememberUserTool, rokaTools } from '../index.js'
+import { forgetUserTool, recallUserTool, rememberUserTool } from '../index.js'
 import { recallUser } from '../recallUser.js'
 import { rememberUser } from '../rememberUser.js'
 
@@ -33,52 +42,93 @@ afterEach(() => {
 })
 
 describe('memory tools', () => {
-  it('forgets the best FTS match only from the current speaker’s active claims', async () => {
-    const ownClaim = assertClaim({
+  it('forgets all keyword matches only from the current speaker in the current guild', async () => {
+    const shortMatch = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'hobby',
+      value: 'osu!',
+      sourceKind: 'explicit'
+    })
+    const longMatch = assertClaim({
       guildId: 'guild-1',
       subjectUserId: 'user-1',
       predicate: 'hobby',
       value: 'playing osu!',
       sourceKind: 'explicit'
     })
-    const otherClaim = assertClaim({
+    const otherMemberClaim = assertClaim({
       guildId: 'guild-1',
       subjectUserId: 'user-2',
       predicate: 'hobby',
       value: 'playing osu!',
       sourceKind: 'explicit'
     })
-    getDb().prepare('UPDATE memory_claim SET superseded_by = ? WHERE id = ?').run(otherClaim.id, ownClaim.id)
-
-    const result = await forgetUserTool.runAsync({
-      args: {},
-      toolContext: toolContextWith({ _userId: 'user-1', _guildId: 'guild-1', _userMessage: 'forget that I play osu' })
-    })
-
-    expect(result).toEqual({ success: true, message: 'I forgot the hobby note “playing osu!”.' })
-    expect(getDb().prepare('SELECT status, superseded_by FROM memory_claim WHERE id = ?').get(ownClaim.id)).toEqual({
-      status: 'rejected',
-      superseded_by: null
-    })
-    expect(getActiveClaims('guild-1', 'user-2').map(({ id }) => id)).toContain(otherClaim.id)
-  })
-
-  it('returns a no-match result without changing unrelated claims', async () => {
-    const activeClaim = assertClaim({
-      guildId: 'guild-1',
+    const otherGuildClaim = assertClaim({
+      guildId: 'guild-2',
       subjectUserId: 'user-1',
       predicate: 'hobby',
-      value: 'knitting',
+      value: 'playing osu!',
       sourceKind: 'explicit'
     })
 
-    await expect(
-      forgetUserTool.runAsync({
-        args: {},
-        toolContext: toolContextWith({ _userId: 'user-1', _guildId: 'guild-1', _userMessage: 'forget that I play osu' })
-      })
-    ).resolves.toEqual({ success: false, message: "I couldn't find a matching active note to forget." })
+    const result = await runForget('osu')
+
+    expect(result).toEqual({
+      success: true,
+      message: expect.stringContaining('hobby "osu!"')
+    })
+    expect(result.message).toContain('hobby "playing osu!"')
+    expect(getActiveClaims('guild-1', 'user-1')).toEqual([])
+    expect(getActiveClaims('guild-1', 'user-2').map(({ id }) => id)).toContain(otherMemberClaim.id)
+    expect(getActiveClaims('guild-2', 'user-1').map(({ id }) => id)).toContain(otherGuildClaim.id)
+    expect(getDb().prepare('SELECT status, superseded_by FROM memory_claim WHERE id = ?').get(shortMatch.id)).toEqual({
+      status: 'rejected',
+      superseded_by: null
+    })
+    expect(getDb().prepare('SELECT status, superseded_by FROM memory_claim WHERE id = ?').get(longMatch.id)).toEqual({
+      status: 'rejected',
+      superseded_by: null
+    })
+  })
+
+  it('requires every query keyword to match and preserves claims on no match', async () => {
+    const activeClaim = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'likes',
+      value: 'playing osu!',
+      sourceKind: 'explicit'
+    })
+
+    await expect(runForget('osu piano')).resolves.toEqual({
+      success: false,
+      message: "I couldn't find a matching note to forget."
+    })
     expect(getActiveClaims('guild-1', 'user-1').map(({ id }) => id)).toContain(activeClaim.id)
+  })
+
+  it('returns four matching values for clarification without rejecting any claims', async () => {
+    const claims = ['guitar lessons', 'guitar practice', 'guitar collection', 'guitar covers'].map((value) =>
+      assertClaim({
+        guildId: 'guild-1',
+        subjectUserId: 'user-1',
+        predicate: 'likes',
+        value,
+        sourceKind: 'explicit'
+      })
+    )
+
+    const result = await runForget('guitar')
+
+    expect(result.success).toBe(false)
+    expect(result.message).toContain('Which one did you mean?')
+    for (const { value } of claims) expect(result.message).toContain(value)
+    expect(
+      getActiveClaims('guild-1', 'user-1')
+        .map(({ id }) => id)
+        .sort()
+    ).toEqual(claims.map(({ id }) => id).sort())
   })
 
   it('does not repeat a privacy-sensitive value in its confirmation', async () => {
@@ -91,16 +141,10 @@ describe('memory tools', () => {
     })
     getDb().prepare('UPDATE memory_claim SET value = ? WHERE id = ?').run('alice@example.com', sensitiveClaim.id)
 
-    const result = await forgetUserTool.runAsync({
-      args: {},
-      toolContext: toolContextWith({
-        _userId: 'user-1',
-        _guildId: 'guild-1',
-        _userMessage: 'forget alice@example.com'
-      })
-    })
+    const result = await runForget('alice@example.com')
 
-    expect(result).toEqual({ success: true, message: 'I removed that sensitive note.' })
+    expect(result).toEqual({ success: true, message: 'I forgot these notes: misc "a sensitive note".' })
+    expect(result.message).not.toContain('alice@example.com')
     expect(getDb().prepare('SELECT status FROM memory_claim WHERE id = ?').get(sensitiveClaim.id)).toEqual({
       status: 'rejected'
     })
@@ -115,16 +159,43 @@ describe('memory tools', () => {
       sourceKind: 'explicit'
     })
 
-    await expect(
-      forgetUserTool.runAsync({
-        args: {},
-        toolContext: toolContextWith({ _userId: 'user-1', _guildId: 'global', _userMessage: 'forget osu' })
-      })
-    ).resolves.toEqual({
+    await expect(runForget('osu', 'user-1', 'global')).resolves.toEqual({
       success: false,
       message: "I couldn't identify the current member or server, so I didn't forget anything."
     })
     expect(getActiveClaims('guild-1', 'user-1').map(({ id }) => id)).toContain(activeClaim.id)
+  })
+
+  it('matches CJK keywords in a claim value', async () => {
+    const claim = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'likes',
+      value: '桜餅が好き',
+      sourceKind: 'explicit'
+    })
+
+    await expect(runForget('桜餅が好き')).resolves.toEqual({
+      success: true,
+      message: 'I forgot these notes: likes "桜餅が好き".'
+    })
+    expect(getActiveClaims('guild-1', 'user-1').map(({ id }) => id)).not.toContain(claim.id)
+  })
+
+  it('caps the keyword query at six terms', async () => {
+    const claim = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'likes',
+      value: 'alpha bravo charlie delta echo foxtrot',
+      sourceKind: 'explicit'
+    })
+
+    await expect(runForget('alpha bravo charlie delta echo foxtrot golf')).resolves.toEqual({
+      success: true,
+      message: 'I forgot these notes: likes "alpha bravo charlie delta echo foxtrot".'
+    })
+    expect(getActiveClaims('guild-1', 'user-1').map(({ id }) => id)).not.toContain(claim.id)
   })
 
   it('merges and deduplicates active claims with legacy facts when recalling a guild member', () => {

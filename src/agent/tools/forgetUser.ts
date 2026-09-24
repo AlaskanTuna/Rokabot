@@ -1,10 +1,10 @@
-import { retractClaim, searchClaims } from '../memory/memoryClaims.js'
+import { rejectClaimIdsForSpeaker, searchClaims } from '../memory/memoryClaims.js'
 import { sensitiveFactReason } from '../memory/privacyGuard.js'
 
 export interface ForgetUserParams {
   user_id: string
   guild_id: string
-  message: string
+  query: string
 }
 
 export interface ForgetUserResult {
@@ -13,26 +13,34 @@ export interface ForgetUserResult {
 }
 
 export function forgetUser(params: ForgetUserParams): ForgetUserResult {
-  const { user_id, guild_id, message } = params
-  const terms = [...new Set(message.toLowerCase().match(/[a-z0-9]{2,}/g) ?? [])].slice(0, 12)
-  const ftsQuery = terms.map((term) => `"${term}"`).join(' OR ')
-  const match = searchClaims(guild_id, user_id, ftsQuery, 1)[0]
+  const { user_id, guild_id, query } = params
+  const terms = query.match(/[\p{L}\p{N}]{2,}/gu)?.slice(0, 6) ?? []
+  const ftsQuery = terms.map((term) => `"${term}"`).join(' ')
+  const matches = searchClaims(guild_id, user_id, ftsQuery, 4)
+
+  if (matches.length === 0) {
+    return { success: false, message: "I couldn't find a matching note to forget." }
+  }
+
+  const notes = matches
+    .map(
+      ({ predicate, value }) => `${predicate} "${sensitiveFactReason(predicate, value) ? 'a sensitive note' : value}"`
+    )
+    .join(', ')
+
+  if (matches.length > 3) {
+    return { success: false, message: `I found several matching notes: ${notes}. Which one did you mean?` }
+  }
 
   if (
-    !match ||
-    !retractClaim({
-      guildId: guild_id,
-      subjectUserId: user_id,
-      predicate: match.predicate,
-      value: match.value
-    })
+    !rejectClaimIdsForSpeaker(
+      guild_id,
+      user_id,
+      matches.map(({ id }) => id)
+    )
   ) {
-    return { success: false, message: "I couldn't find a matching active note to forget." }
+    return { success: false, message: "I couldn't find a matching note to forget." }
   }
 
-  if (sensitiveFactReason(match.predicate, match.value)) {
-    return { success: true, message: 'I removed that sensitive note.' }
-  }
-
-  return { success: true, message: `I forgot the ${match.predicate} note “${match.value}”.` }
+  return { success: true, message: `I forgot these notes: ${notes}.` }
 }

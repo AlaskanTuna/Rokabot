@@ -56,7 +56,10 @@ describe('utility FunctionTools', () => {
       properties: { location: { type: 'STRING' }, format: { type: 'STRING' } }
     })
     expect(declarations.get('get_weather')?.parameters).toMatchObject({ properties: { city: { type: 'STRING' } } })
-    expect(declarations.get('forget_user')?.parameters).toMatchObject({ properties: {} })
+    expect(declarations.get('forget_user')?.parameters).toMatchObject({
+      properties: { query: { type: 'STRING' } },
+      required: ['query']
+    })
     expect(rokaTools).toContain(forgetUserTool)
   })
 

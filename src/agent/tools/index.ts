@@ -197,9 +197,11 @@ export const recallUserTool = new FunctionTool({
 export const forgetUserTool = new FunctionTool({
   name: 'forget_user',
   description:
-    'Forget the best matching active fact about the current speaker. Use when they ask you to forget, remove, or stop remembering something about themselves. It searches only their own notes using the current message; never use it for another member.',
-  parameters: z.object({}),
-  execute: async (_input, toolContext) => {
+    'Forget active notes about the current speaker. Use when they ask you to forget, remove, or stop remembering something about themselves. Pass a few keywords naming what to forget in query, such as osu. It searches only their own notes; never use it for another member.',
+  parameters: z.object({
+    query: z.string().describe('A few keywords naming what to forget, e.g. `osu`')
+  }),
+  execute: async (input, toolContext) => {
     const userId = toolContext?.state?.get<string>('_userId')
     const guildId = toolContext?.state?.get<string>('_guildId')
     if (!userId || !guildId || guildId === 'global') {
@@ -215,8 +217,7 @@ export const forgetUserTool = new FunctionTool({
         message: "I couldn't identify the current member or server, so I didn't forget anything."
       }
     }
-    const message = toolContext?.state?.get<string>('_userMessage') ?? ''
-    return forgetUser({ user_id: userId, guild_id: guildId, message })
+    return forgetUser({ user_id: userId, guild_id: guildId, query: input.query })
   }
 })
 
