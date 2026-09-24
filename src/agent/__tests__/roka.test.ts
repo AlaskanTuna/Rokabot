@@ -2123,10 +2123,11 @@ describe('Jev turn judgments', () => {
     mutableMemoryConfig.claimsBackend = true
     mutableJevConfig.referents = 'on'
     mutableJevConfig.referentMinConfidence = 0.8
-    vi.mocked(resolveReferences).mockReturnValueOnce({
-      resolved: [{ userId: 'resolved-id', alias: 'Mimi', displayName: 'Mio', matchedBy: 'nickname' }],
+    const references = {
+      resolved: [{ userId: 'resolved-id', alias: 'Mimi', displayName: 'Mio', matchedBy: 'nickname' as const }],
       ambiguous: [{ alias: 'Rin', candidateIds: ['rin-1', 'rin-2'] }]
-    })
+    }
+    vi.mocked(resolveReferences).mockReturnValueOnce(references).mockReturnValueOnce(references)
     vi.mocked(getUserName).mockImplementation((userId) =>
       userId === 'rin-1' || userId === 'rin-2' ? { userId, username: userId, displayName: `Name ${userId}` } : null
     )
@@ -2177,10 +2178,11 @@ describe('Jev turn judgments', () => {
   it('leaves retrieval participants and the prompt unchanged for shadow referents', async () => {
     mutableMemoryConfig.claimsBackend = true
     mutableJevConfig.referents = 'shadow'
-    vi.mocked(resolveReferences).mockReturnValueOnce({
+    const references = {
       resolved: [],
       ambiguous: [{ alias: 'Rin', candidateIds: ['rin-1', 'rin-2'] }]
-    })
+    }
+    vi.mocked(resolveReferences).mockReturnValueOnce(references).mockReturnValueOnce(references)
     vi.mocked(retrieveForTurn).mockReturnValueOnce({
       entries: [],
       claims: [],

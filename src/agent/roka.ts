@@ -42,10 +42,11 @@ import {
 } from './session.js'
 import { chargeTokens } from './tokenBudget.js'
 import { rokaTools } from './tools/index.js'
-import { createTurnContext } from './turnContext.js'
-import type { TurnContextOptions } from './turnContext.js'
+import { createTurnContext, startTurnEntryWork } from './turnContext.js'
+import type { TurnContextOptions, TurnEntryWork } from './turnContext.js'
 
 interface GenerateOptions extends TurnContextOptions {
+  turnEntryWork?: TurnEntryWork
   imageAttachments?: ImageAttachment[]
 }
 
@@ -233,7 +234,17 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   const generateStartMs = performance.now()
   const { channelId, guildId, userMessage, displayName, username, userId, imageAttachments } = options
 
-  const context = await createTurnContext(options)
+  const turnEntryWork =
+    options.turnEntryWork ??
+    startTurnEntryWork({
+      channelId,
+      guildId,
+      userId,
+      speakerName: displayName,
+      message: userMessage,
+      mentionedUserIds: options.mentionedUserIds
+    })
+  const context = await createTurnContext({ ...options, turnEntryWork })
   const { session, fakeMessages, tone, hour, factEntryCount, overheardSection, safetyLadder, composePrompt } = context
   let safetyRung = 0
   let dropImages = false

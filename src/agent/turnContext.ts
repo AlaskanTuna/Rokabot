@@ -3,13 +3,14 @@ import type { Part } from '@google/genai'
 import { config } from '../config.js'
 import type { WindowMessage } from '../session/types.js'
 import { recordMemoryEvent } from '../storage/metricsStore.js'
-import { getChannelUsers } from '../storage/sessionStore.js'
+import { getChannelUsers, loadHistory } from '../storage/sessionStore.js'
 import { getFacts, refreshFactTimestamps } from '../storage/userMemory.js'
 import { getAllUserNames, getUserName } from '../storage/userNames.js'
 import { logger } from '../utils/logger.js'
 import { getLocalHour } from '../utils/timezone.js'
 import { estimateTokens } from '../utils/tokens.js'
 import { judgeTurn } from './jev/judgments.js'
+import type { TurnJudgment, TurnJudgmentInput } from './jev/judgments.js'
 import { resolveReferences } from './memory/identityResolver.js'
 import { retrieveForTurn } from './memory/retriever.js'
 import { getMessages as getBufferMessages } from './passiveBuffer.js'
@@ -32,6 +33,81 @@ export interface TurnContextOptions {
   mentionedUserIds?: string[]
 }
 
+export interface StartTurnEntryWorkInput {
+  channelId: string
+  guildId: string
+  userId: string
+  speakerName: string
+  message: string
+  mentionedUserIds?: string[]
+}
+
+export type PendingTurnJudgment = Promise<TurnJudgment | null>
+
+export interface TurnEntryWork {
+  judgment: PendingTurnJudgment
+  cancel(): void
+}
+
+interface TurnContextEntryOptions extends TurnContextOptions {
+  turnEntryWork: TurnEntryWork
+}
+
+function buildEntryJudgmentInput(input: StartTurnEntryWorkInput): TurnJudgmentInput {
+  const history = loadHistory(input.channelId, 3, config.session.maxRehydrationAge)
+  const ambiguous =
+    config.memory.claimsBackend && config.jev.referents !== 'off'
+      ? resolveReferences({
+          guildId: input.guildId,
+          text: input.message,
+          speakerId: input.userId,
+          mentionedUserIds: input.mentionedUserIds ?? []
+        }).ambiguous.map(({ alias, candidateIds }) => ({
+          alias,
+          candidates: candidateIds.map((userId) => ({
+            userId,
+            displayName: getUserName(userId)?.displayName ?? userId
+          }))
+        }))
+      : []
+
+  return {
+    speakerName: input.speakerName,
+    message: input.message,
+    recentLines: history.map(({ role, displayName, content }) => {
+      const speaker = role === 'assistant' ? 'Roka' : displayName || input.speakerName
+      return '[' + speaker + ']: ' + content
+    }),
+    ambiguous,
+    includeTone: config.jev.tone !== 'off'
+  }
+}
+
+export function startTurnEntryWork(input: StartTurnEntryWorkInput): TurnEntryWork {
+  const controller = new AbortController()
+  let judgmentInput: TurnJudgmentInput
+  try {
+    judgmentInput = buildEntryJudgmentInput(input)
+  } catch (error) {
+    logger.warn({ channelId: input.channelId, error }, 'Failed to prepare Jev judgment')
+    return {
+      judgment: Promise.resolve(null),
+      cancel: () => controller.abort()
+    }
+  }
+  const shouldAsk = judgmentInput.includeTone || judgmentInput.ambiguous.length > 0
+  const judgment = shouldAsk
+    ? Promise.resolve()
+        .then(() => (controller.signal.aborted ? null : judgeTurn(judgmentInput, { signal: controller.signal })))
+        .catch(() => null)
+    : Promise.resolve(null)
+
+  return {
+    judgment,
+    cancel: () => controller.abort()
+  }
+}
+
 /** Convert ADK session events to WindowMessages for tone detection */
 function eventsToWindowMessages(events: Event[]): WindowMessage[] {
   return events
@@ -47,7 +123,7 @@ function eventsToWindowMessages(events: Event[]): WindowMessage[] {
     }))
 }
 
-export async function createTurnContext(options: TurnContextOptions) {
+export async function createTurnContext(options: TurnContextEntryOptions) {
   const { channelId, guildId, userMessage, displayName, username, userId } = options
   const session = await ensureSession(channelId)
   resetIdleTimer(channelId)
@@ -98,20 +174,9 @@ export async function createTurnContext(options: TurnContextOptions) {
           }))
         }))
       : []
-    const input = {
-      speakerName: displayName,
-      message: userMessage,
-      recentLines: fakeMessages.slice(-6).map(({ role, displayName: historyDisplayName, content }) => {
-        const priorSpeaker = role === 'user' ? content.match(/^\[([^\]]+)\]:\s*/) : null
-        const speakerName = role === 'assistant' ? 'Roka' : historyDisplayName || priorSpeaker?.[1] || displayName
-        return `[${speakerName}]: ${priorSpeaker ? content.slice(priorSpeaker[0].length) : content}`
-      }),
-      ambiguous,
-      includeTone: toneActive
-    }
     const blocking = config.jev.tone === 'on' || (referentsActive && config.jev.referents === 'on')
 
-    const settleJudgment = (judgment: Awaited<ReturnType<typeof judgeTurn>>, apply: boolean): void => {
+    const settleJudgment = (judgment: TurnJudgment | null, apply: boolean): void => {
       if (!judgment) return
 
       const toneApplied =
@@ -164,9 +229,9 @@ export async function createTurnContext(options: TurnContextOptions) {
     }
 
     if (blocking) {
-      settleJudgment(await judgeTurn(input), true)
+      settleJudgment(await options.turnEntryWork.judgment, true)
     } else {
-      void judgeTurn(input).then((judgment) => settleJudgment(judgment, false))
+      void options.turnEntryWork.judgment.then((judgment) => settleJudgment(judgment, false))
     }
   }
 
