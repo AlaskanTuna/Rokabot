@@ -369,6 +369,28 @@ describe('message handler metrics', () => {
     expect(mocks.generateResponse).toHaveBeenCalledWith(expect.objectContaining({ turnEntryWork }))
   })
 
+  it('still reads the replied-to message when a mention replies to another member', async () => {
+    const replyTarget = {
+      author: { id: 'user-2', displayName: 'Bob' },
+      content: 'the original question',
+      embeds: [],
+      poll: null,
+      messageSnapshots: new Collection(),
+      components: [],
+      stickers: new Collection(),
+      attachments: new Collection()
+    }
+    const { message } = createMessage({ referencedMessage: replyTarget, repliedUser: { id: 'user-2' } })
+
+    await createMessageHandler({ user: { id: 'bot-1' } } as never, createRateLimiter() as never)(message as never)
+
+    expect(message.channel.messages.fetch).toHaveBeenCalledWith('message-0')
+    expect(mocks.startTurnEntryWork).toHaveBeenCalledOnce()
+    expect(mocks.generateResponse).toHaveBeenCalledWith(
+      expect.objectContaining({ userMessage: expect.stringContaining('the original question') })
+    )
+  })
+
   it('starts generation while the initial typing acknowledgement is pending', async () => {
     let releaseTyping: () => void = () => {}
     const { message } = createMessage()

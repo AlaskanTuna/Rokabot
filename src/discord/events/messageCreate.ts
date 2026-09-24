@@ -125,7 +125,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
       message.mentions.repliedUser &&
       message.mentions.repliedUser.id !== client.user.id
     const replyFetch =
-      !isBotAuthor && message.reference?.messageId && !replyKnownNotBot
+      !isBotAuthor && message.reference?.messageId
         ? message.channel.messages.fetch(message.reference.messageId).catch(() => null)
         : Promise.resolve(null)
     const isReplyCandidate = !isBotAuthor && Boolean(message.reference?.messageId) && !replyKnownNotBot
