@@ -268,11 +268,33 @@ in [Reliability & Failure Handling](#reliability--failure-handling).
 
 ### Tenancy
 
-Every claim is scoped by `guild_id`. A guild interaction uses the real guild id. Every non-guild channel — bot DM
-and group DM alike — is its own tenant, shaped `dm:<channelId>` and derived at the two handler sites. There is no
-shared `'global'` claims tenant: `assertWritableGuild` (`src/agent/memory/memoryClaims.ts:109`) throws on it, and
-DM↔DM isolation is pinned by `src/agent/tools/__tests__/memoryTools.test.ts`. Legacy facts with no attested scope
-are still logged and skipped during backfill rather than assigned a tenant.
+Every claim is scoped by `guild_id`, and a claim only exists because a message turn wrote it. A guild message uses
+the real guild id. There is no shared `'global'` claims tenant: `assertWritableGuild`
+(`src/agent/memory/memoryClaims.ts:109`) throws on it. Legacy facts with no attested scope are still logged and
+skipped during backfill rather than assigned a tenant.
+
+**DMs have no memory.** The client holds no `DirectMessages` intent, so no message event ever arrives from a DM
+and none of the `dm:` handling on the message path can be reached. A `/ask` in a DM still derives a
+`dm:<channelId>` label, but it is a metrics and session identity only: `/ask` runs memory-free, so that label
+never becomes a claims tenant and never reaches a memory table. `dm:` rows already in the database are left
+untouched: no turn selects or writes them any more, and the one-time legacy backfill still reads historical
+`response_events` labels to attribute pre-existing facts.
+
+### Memory-Free Turns
+
+`generateResponse` takes a required `memory` flag. The message handler passes `true`; the `/ask` handler passes
+`false`. With `memory: false` a turn runs no `retrieveForTurn`, no legacy `getFacts`/`refreshFactTimestamps`, and
+no `context_build` memory event; it builds no facts section and no `context_build` telemetry because there was
+nothing to measure. `beforeModelCallback` strips `remember_user`, `recall_user` and `forget_user` from both
+`request.config.tools` function declarations and `request.toolsDict`, driven by a per-request `AsyncLocalStorage`
+value, so the model is never offered a tool the turn cannot service.
+
+The two identity lines that name no stored fact survive a memory-free turn: the `## Who Is Mentioned` block, which
+only resolves nicknames to display names, and the `## Recent Channel Activity` overheard block, which is recent
+channel context rather than memory. What does not survive is any prompt text describing a memory tool —
+`assembleSystemPrompt` takes the same flag and omits the `remember_user`/`recall_user`/`forget_user` rules from
+the kernel, and the tail section's tool guidance, on both the base prompt and the safety ladder's rung-3
+rebuild.
 
 ### Prompt-Assembly Invariant
 
@@ -289,7 +311,8 @@ inert while the claims backend is enabled; it is retained for later cleanup.
 
 `exportVault()` and `npm run export:vault` are read-only, offline export paths. They write one note per
 (`guild_id`, `subject_user_id`), with YAML frontmatter grouped by predicate and `relationship_to` facts rendered as
-`[[wikilinks]]`. `dm:` scopes remain isolated in their own export paths. A containment guard based on `path.relative`
+`[[wikilinks]]`. Any `dm:` scopes still in the database are exported on their own isolated paths, unchanged by the
+`/ask` memory-free change. A containment guard based on `path.relative`
 and `path.isAbsolute` rejects a note path outside the export directory. Export performs no store writes and no network
 requests.
 

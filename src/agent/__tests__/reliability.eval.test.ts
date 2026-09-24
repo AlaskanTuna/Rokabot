@@ -119,7 +119,7 @@ function options(overrides: Partial<Parameters<typeof runTurnWithReliability>[0]
 
 function queueExtraction(channelId = 'extraction-channel'): void {
   addMessage(channelId, 'user-1', 'Alice', 'alice', 'I love Frieren')
-  maybeExtractFromBuffer(channelId, undefined, 'guild-1')
+  maybeExtractFromBuffer(channelId, 'guild-1')
 }
 
 beforeEach(() => {

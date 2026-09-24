@@ -67,46 +67,40 @@ vi.mock('../events/stats/statsCommand.js', () => ({ handleStatsCommand: mocks.ha
 vi.mock('../events/toolCommands.js', () => ({ createToolCommandHandler: () => mocks.toolCommandHandler }))
 
 import { destroySession } from '../../agent/session.js'
-import { recallUserTool, rememberUserTool } from '../../agent/tools/index.js'
-import { closeDb } from '../../storage/database.js'
+import { MEMORY_TOOL_NAMES } from '../../agent/tools/index.js'
+import { closeDb, getDb } from '../../storage/database.js'
 import { createInteractionHandler } from '../events/interactionCreate.js'
 
-const CHANNEL_A = 'memory-bridge-dm-channel-a'
-const CHANNEL_B = 'memory-bridge-dm-channel-b'
-const USER_A = 'memory-bridge-user-a'
+const DM_CHANNEL = 'ask-memory-free-dm-channel'
+const GUILD_CHANNEL = 'ask-memory-free-guild-channel'
+const USER = 'ask-memory-free-user'
 
-function makeInteraction(channelId: string, userId: string, message: string) {
+function makeInteraction(channelId: string, message: string, guildId: string | null) {
   return {
     isChatInputCommand: () => true,
     commandName: 'ask',
     options: { getString: vi.fn((name: string) => (name === 'question' ? message : null)), getAttachment: vi.fn() },
     channelId,
     member: null,
-    user: { displayName: 'Rin', username: 'rin', id: userId },
-    guildId: null,
+    user: { displayName: 'Rin', username: 'rin', id: USER },
+    guildId,
     deferReply: vi.fn().mockResolvedValue(undefined),
     editReply: vi.fn().mockResolvedValue(undefined),
     followUp: vi.fn().mockResolvedValue(undefined)
   }
 }
 
-describe('interaction handler DM memory tenant bridge', () => {
+describe('/ask is memory-free', () => {
   const rateLimiter = new RateLimiter({ rpm: 1_000, rpd: 100_000 })
 
-  /** Drives one real turn and returns, as a deliberately partial `ToolContext`, the tool state
-   * generateResponse handed to runner.runAsync for it. ADK does not export `State` from its public surface,
-   * so a Map stands in for the part these tools read. */
-  async function turnState(
-    handler: ReturnType<typeof createInteractionHandler>,
-    channelId: string,
-    message: string
-  ): Promise<ToolContext> {
+  /** Drives one real turn and returns the system prompt generateResponse handed to runner.runAsync. */
+  async function turn(channelId: string, message: string, guildId: string | null): Promise<{ systemPrompt: string }> {
     mocks.runnerRequests.length = 0
-    await handler(makeInteraction(channelId, USER_A, message) as never)
+    await createInteractionHandler(rateLimiter as never)(makeInteraction(channelId, message, guildId) as never)
     expect(mocks.runnerRequests).toHaveLength(1)
     const stateDelta = mocks.runnerRequests[0].stateDelta
     if (!stateDelta) throw new Error('runner.runAsync was reached without a stateDelta')
-    return { state: new Map(Object.entries(stateDelta)) } as unknown as ToolContext
+    return { systemPrompt: stateDelta._systemPrompt as string }
   }
 
   beforeEach(() => {
@@ -116,34 +110,52 @@ describe('interaction handler DM memory tenant bridge', () => {
   })
 
   afterEach(async () => {
-    await destroySession(CHANNEL_A)
-    await destroySession(CHANNEL_B)
+    await destroySession(DM_CHANNEL)
+    await destroySession(GUILD_CHANNEL)
     closeDb()
     process.env.ROKABOT_DB_PATH = undefined
   })
 
-  it('keeps a fact written in one DM invisible to the same user in a different DM, visible in its own DM', async () => {
-    const handler = createInteractionHandler(rateLimiter as never)
+  it('injects no facts in a guild, however many are stored', async () => {
+    const guild = 'ask-memory-free-guild'
+    const db = getDb()
+    db.prepare(
+      `INSERT INTO memory_claim (guild_id, subject_user_id, predicate, value, source_kind, status, first_seen_at, last_seen_at)
+       VALUES (?, ?, 'favorite_anime', 'Frieren', 'message', 'active', 0, 0)`
+    ).run(guild, USER)
 
-    await expect(
-      rememberUserTool.runAsync({
-        args: { fact_key: 'favorite_anime', fact_value: 'Frieren' },
-        toolContext: await turnState(handler, CHANNEL_A, 'Remember I like Frieren')
-      })
-    ).resolves.toMatchObject({ success: true })
+    const { systemPrompt } = await turn(GUILD_CHANNEL, 'What do you remember about me?', guild)
 
-    await expect(
-      recallUserTool.runAsync({
-        args: {},
-        toolContext: await turnState(handler, CHANNEL_B, 'What do you remember about me?')
-      })
-    ).resolves.toMatchObject({ factCount: 0 })
+    expect(systemPrompt).not.toContain('What You Remember About People In This Channel')
+    expect(systemPrompt).not.toContain('Frieren')
+  })
 
-    await expect(
-      recallUserTool.runAsync({
-        args: {},
-        toolContext: await turnState(handler, CHANNEL_A, 'What do you remember about me?')
-      })
-    ).resolves.toMatchObject({ factCount: 1 })
+  it('names none of the memory tools in a guild turn', async () => {
+    const { systemPrompt } = await turn(GUILD_CHANNEL, 'Remember that I like Frieren.', 'ask-memory-free-guild')
+
+    for (const tool of MEMORY_TOOL_NAMES) expect(systemPrompt).not.toContain(tool)
+  })
+
+  it('writes no memory_claim rows for a /ask in a DM', async () => {
+    await turn(DM_CHANNEL, 'Remember that I like Frieren.', null)
+
+    const rows = getDb()
+      .prepare('SELECT guild_id, subject_user_id, value FROM memory_claim WHERE subject_user_id = ?')
+      .all(USER)
+    expect(rows).toEqual([])
+  })
+
+  // The `dm:` label survives as the turn's tenant identity, and it is a metrics label only: the turn
+  // carried it and still wrote no claim under it, which is the whole of what /ask leaving memory means.
+  it('keeps the dm label as the turn identity while creating no memory tenant', async () => {
+    mocks.runnerRequests.length = 0
+    await createInteractionHandler(rateLimiter as never)(
+      makeInteraction(DM_CHANNEL, 'Remember that I like Frieren.', null) as never
+    )
+
+    expect(mocks.runnerRequests[0].stateDelta?._guildId).toBe(`dm:${DM_CHANNEL}`)
+    expect(getDb().prepare("SELECT COUNT(*) AS count FROM memory_claim WHERE guild_id LIKE 'dm:%'").get()).toEqual({
+      count: 0
+    })
   })
 })

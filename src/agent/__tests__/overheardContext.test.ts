@@ -16,7 +16,7 @@ describe('overheard context (passive buffer persistence)', () => {
 
     // Trigger extraction counting (each call increments internal counter)
     for (let i = 0; i < 12; i++) {
-      maybeExtractFromBuffer('ch-1')
+      maybeExtractFromBuffer('ch-1', 'guild-1')
     }
 
     // Buffer should still contain all 12 messages (not cleared)

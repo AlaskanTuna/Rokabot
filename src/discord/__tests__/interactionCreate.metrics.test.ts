@@ -431,7 +431,7 @@ describe('interaction handler metrics', () => {
     expect(mocks.recordResponseEvent).toHaveBeenCalledWith(expect.objectContaining({ toolsUsed: ['roll_dice'] }))
   })
 
-  it('derives a per-channel DM tenant when there is no guild', async () => {
+  it('asks for no memory in a DM, while keeping the per-channel label metrics need', async () => {
     const interaction = {
       isChatInputCommand: () => true,
       commandName: 'ask',
@@ -448,8 +448,32 @@ describe('interaction handler metrics', () => {
 
     await createInteractionHandler(rateLimiter as never)(interaction as never)
 
-    expect(mocks.generateResponse).toHaveBeenCalledWith(expect.objectContaining({ guildId: 'dm:channel-1' }))
+    // The label is a metrics and session identity only: a DM turn has no memory tenant to name.
+    expect(mocks.generateResponse).toHaveBeenCalledWith(
+      expect.objectContaining({ guildId: 'dm:channel-1', memory: false })
+    )
     expect(mocks.recordResponseEvent).toHaveBeenCalledWith(expect.objectContaining({ guildId: 'dm:channel-1' }))
+  })
+
+  it('asks for no memory in a guild either', async () => {
+    const interaction = {
+      isChatInputCommand: () => true,
+      commandName: 'ask',
+      options: { getString: vi.fn((name: string) => (name === 'question' ? 'hello' : null)), getAttachment: vi.fn() },
+      channelId: 'channel-1',
+      member: null,
+      user: { displayName: 'Alice', username: 'alice', id: 'user-1' },
+      guildId: 'guild-1',
+      deferReply: vi.fn().mockResolvedValue(undefined),
+      editReply: vi.fn().mockResolvedValue(undefined),
+      followUp: vi.fn().mockResolvedValue(undefined)
+    }
+    const rateLimiter = new RateLimiter({ rpm: 1_000, rpd: 100_000 })
+
+    await createInteractionHandler(rateLimiter as never)(interaction as never)
+
+    // Being in a guild is what made /ask memoryful before; it is not what makes it so now.
+    expect(mocks.generateResponse).toHaveBeenCalledWith(expect.objectContaining({ guildId: 'guild-1', memory: false }))
   })
 
   it("keeps the follow-up chunk count under Discord's 5-follow-up cap at the max response length", async () => {

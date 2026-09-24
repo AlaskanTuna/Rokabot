@@ -177,7 +177,8 @@ describe('harness self-tests', () => {
           userMessage: 'Please retry this scripted turn.',
           displayName: 'Mio',
           username: 'mio',
-          userId: 'mio'
+          userId: 'mio',
+          memory: true
         })
       ).resolves.toMatchObject({ text: 'Recovered through the retry loop~' })
       expect(attempts).toHaveBeenCalledTimes(2)

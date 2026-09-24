@@ -165,7 +165,8 @@ export async function runCaseSet(
               userMessage: testCase.message,
               displayName: speaker.displayName,
               username: speaker.username,
-              userId: speaker.id
+              userId: speaker.id,
+              memory: true
             })
 
             // Emitted before the branches below, so an attempt that aborts the run is recorded exactly like
