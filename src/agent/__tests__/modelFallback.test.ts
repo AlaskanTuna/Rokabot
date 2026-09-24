@@ -62,16 +62,15 @@ vi.mock('../../utils/rateLimiter.js', () => ({
 vi.mock('../../utils/timezone.js', () => ({ getLocalHour: () => 12 }))
 
 import { RoutedLlm, modelRouteForRequest } from '../fallbackModel.js'
+import { __resetModelFallbackForTest, runTurnWithReliability } from '../reliability.js'
+import type { TurnOutcome } from '../reliability.js'
 import {
-  __resetModelFallbackForTest,
   __resetTestRunTurnFactory,
   __setTestRunTurnFactory,
   destroySession,
   generateResponse,
-  rokaAgent,
-  runTurnWithReliability
+  rokaAgent
 } from '../roka.js'
-import type { TurnOutcome } from '../roka.js'
 import { resetForTest } from '../shutdownSignal.js'
 
 const mutableFallbackConfig = config.fallback as unknown as { timeoutMs: number; stickyMs: number }
