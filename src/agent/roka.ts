@@ -80,12 +80,7 @@ export interface GenerateResult {
 
 const toolCallsForRequest = new AsyncLocalStorage<Set<string>>()
 
-/**
- * Model calls made by the turn currently running, counted where they happen rather than inferred from what
- * came back. The Discord layer reserves `gemini.maxLlmCalls` slots before the turn and hands back what this
- * says went unused, so the count has to be of REQUESTS — retries and tool round trips included — not of
- * anything the reply looks like afterwards (#167).
- */
+// Count every ADK request so retries and tool calls are included in the reservation refund.
 const modelCallsForRequest = new AsyncLocalStorage<{ count: number }>()
 // Exported so tests can drive the beforeModelCallback ALS seam directly (task 122's only observable proof point)
 export const steeringForRequest = new AsyncLocalStorage<{ prompt?: string }>()
@@ -153,10 +148,7 @@ export const rokaAgent = new LlmAgent({
       request.config = request.config ?? ({} as NonNullable<typeof request.config>)
       request.config!.systemInstruction = prompt
     }
-    // Low media resolution is 100 tokens a second of video rather than 300, and at the 10 MB cap that is
-    // what keeps a clip inside the measured 250,000 TPM. Set per request rather than on the agent because
-    // mediaResolution is request-level and governs images as well — pinning it globally would quietly
-    // re-price and re-render every picture she has ever been able to see, which is not this change.
+    // Pin low resolution only for video requests to stay within measured cost without changing image processing.
     if (requestCarriesVideo(request)) {
       request.config = request.config ?? ({} as NonNullable<typeof request.config>)
       request.config!.mediaResolution = MediaResolution.MEDIA_RESOLUTION_LOW
@@ -249,27 +241,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   const { imageParts, imageTokens, droppedAttachments, truncatedAttachments, refusedAttachments } =
     await prepareAttachments(channelId, imageAttachments)
 
-  /**
-   * Told to the model, not just to the user. Without it the turn looks exactly like an ordinary question
-   * about a video, and what follows is not misbehaviour: CORE_PROMPT says to quietly call search_web for a
-   * fact she is unsure of, and "what happens in this video" is precisely that when no video is present. So
-   * she searches the web for the user's own phrasing and reports the result as the file's contents. Measured
-   * 4 of 4 without this line and 0 of 4 with it — the fabrications were real games and real films because
-   * they were search results, not inventions.
-   *
-   * That is why the fix removes the premise rather than adding a prohibition. A rule saying "do not invent"
-   * aims at a disobedience that never happened, and it would put behavioural wording on the prompt path and
-   * buy the two-green-live-run cost for a sentence that only appears once a download has already failed.
-   * It is a statement of fact for the same reason.
-   */
-  // Both reasons an attachment can be absent, worded apart because they are not the same fact: one never
-  // arrived, the other arrived intact and cost more than a turn may spend. A refusal without this line
-  // re-creates exactly the condition above — attachment gone, request unchanged, search_web fills the hole.
-  //
-  // The refusal arm says "together" because the refusal is all-or-nothing: one cheap image beside one
-  // 500-page PDF refuses both, and blaming each file individually would tell the sender their 1,089-token
-  // picture was too long to read. Pricing per attachment to refuse only the expensive one would cost a
-  // round trip each, and each of those round trips re-uploads the file.
+  // Tell the model when files are absent or refused so it does not search for their missing contents.
   const failedAttachmentNotice = [
     ...(droppedAttachments > 0
       ? [{ text: `[${droppedAttachments} file(s) were shared with this message but could not be retrieved.]` }]
@@ -283,9 +255,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
       : [])
   ]
 
-  // One list rather than a branch per case: the notice was duplicated across both arms, and a mutation
-  // deleting it from the dropImages arm alone broke nothing — a second copy nobody could have caught going
-  // wrong. The safety ladder drops the images; it has no reason to drop the reason they are missing.
+  // Keep attachment notices in both ordinary and safety-rebuilt turns.
   const buildNewMessage = (): Content => ({
     role: 'user',
     parts: [...(dropImages ? [] : imageParts), ...failedAttachmentNotice, { text: `[${displayName}]: ${userMessage}` }]
@@ -332,10 +302,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
               },
               tryConsumeRetry: () =>
                 getSharedRateLimiter(config.rateLimit).tryConsumeAboveFloor(config.gemini.retryRpmFloor),
-              // retryBackoffCapMs doubles as computeBackoff's per-attempt maxMs: a single backoff delay
-              // should never be advertised as larger than the total budget it is measured against — the
-              // remaining-budget clamp in runTurnWithReliability's retry loop would cut an oversized delay down
-              // to size anyway, so sharing the value keeps the pre-jitter range honest with the ceiling.
+              // Bound each advertised backoff by the configured total retry ceiling.
               computeBackoff: (attempt) =>
                 computeBackoff(attempt, config.gemini.retryBackoffBaseMs, { maxMs: config.gemini.retryBackoffCapMs }),
               genericFallback: getRandomFallback(),
@@ -445,16 +412,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     }
   }
 
-  // After every attempt, never between them: a retry re-sends the same message, so stripping mid-loop would
-  // hand the model a marker where the first attempt had the picture.
-  //
-  // Not in a finally, deliberately. runTurnWithReliability converts model failures into a fallbackResult
-  // rather than throwing, so every ordinary path arrives here — but that is a property of *that* function,
-  // not a guarantee of this one, and an unexpected throw from inside it would skip the strip. The cost if
-  // that happens is bounded and self-healing: the events stay tracked, the next turn in this channel strips
-  // them along with its own, and deleteSession clears them when the idle TTL fires. One extra resend, not a
-  // permanent leak. Wrapping the ~100-line reliability expression in a try/finally to close that was judged
-  // not worth the diff; if runTurnWithReliability ever gains a throwing path, revisit this.
+  // Strip after retries so they resend the original bytes; a missed strip is cleaned up on the next turn or TTL.
   const strippedParts = sessionService.stripAttachmentBytes(channelId)
   if (strippedParts > 0) logger.debug({ channelId, strippedParts }, 'Attachment bytes stripped from history')
 
@@ -519,9 +477,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
       userMessage
     })
   }
-  // Named once and used twice on purpose: this is both what the turn is reported to have cost and what it is
-  // charged for, and letting the two be separate expressions is how a budget starts describing something
-  // other than the spend it is meant to bound.
+  // Reuse one estimate for both reported and charged token cost.
   const tokensInEst =
     estimateTokens(systemPrompt) +
     fakeMessages.reduce((total, message) => total + estimateTokens(`[${message.displayName}]: ${message.content}`), 0) +
@@ -529,9 +485,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     estimateTokens(`[${displayName}]: ${userMessage}`) +
     imageTokens
 
-  // Charged after the fact rather than reserved before it, because the cost is only knowable once the
-  // reliability ladder has finished — a safety re-rung turn recomposes the system prompt and a retry sends it
-  // again, and both are real spend. Admission is the separate, earlier decision made in the Discord handlers.
+  // Charge after the reliability ladder so retries and rebuilt prompts are included in actual spend.
   chargeTokens(tokensInEst)
 
   const metrics: ResponseMetrics = {
