@@ -33,19 +33,18 @@ import { retrieveForTurn } from '../memory/retriever.js'
 import { getMessages } from '../passiveBuffer.js'
 import { assembleSystemPrompt } from '../promptAssembler.js'
 import { FACTS_UNTRUSTED_DATA_LABEL, OVERHEARD_UNTRUSTED_DATA_LABEL, buildFactsEnvelope } from '../promptSafety.js'
-import type { TestRunTurn, TurnOutcome } from '../roka.js'
+import type { TurnOutcome } from '../reliability.js'
+import { runTurnWithReliability } from '../reliability.js'
+import type { TestRunTurn } from '../roka.js'
 import {
   __resetTestRunTurnFactory,
   __setTestRunTurnFactory,
-  destroyAllSessions,
-  destroySession,
   generateResponse,
   rokaAgent,
-  runTurnWithReliability,
-  sessionService,
   steeringForRequest
 } from '../roka.js'
 import { buildSafetySettings } from '../safetySettings.js'
+import { destroyAllSessions, destroySession, sessionService } from '../session.js'
 import { beginShutdown, isShuttingDown, resetForTest } from '../shutdownSignal.js'
 import { __resetTokenBudgetForTest, remainingTokensThisMinute } from '../tokenBudget.js'
 import { rokaTools } from '../tools/index.js'

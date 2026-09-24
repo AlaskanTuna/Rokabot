@@ -1,59 +1,52 @@
 /** ADK pipeline orchestrator for in-character response generation */
 
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { BasePlugin, InMemorySessionService, LlmAgent, Runner, createEvent, isFinalResponse } from '@google/adk'
-import type { Event, LlmResponse } from '@google/adk'
-import type { GetSessionRequest, Session } from '@google/adk'
+import { LlmAgent, Runner, isFinalResponse } from '@google/adk'
+import type { LlmResponse } from '@google/adk'
 import { MediaResolution } from '@google/genai'
 import type { Content, Part } from '@google/genai'
 import { config } from '../config.js'
-import type { WindowMessage } from '../session/types.js'
-import { recordFailureDiagnostic, recordMemoryEvent } from '../storage/metricsStore.js'
+import { recordFailureDiagnostic } from '../storage/metricsStore.js'
 import type { ResponseMetrics } from '../storage/metricsStore.js'
-import { getChannelUsers, loadHistory, saveMessage } from '../storage/sessionStore.js'
-import { getFacts, refreshFactTimestamps } from '../storage/userMemory.js'
-import { getAllUserNames, getUserName } from '../storage/userNames.js'
-import { GEMINI_IMAGE_TOKENS, processImageForGemini } from '../utils/imageProcessor.js'
+import { saveMessage } from '../storage/sessionStore.js'
 import { logger } from '../utils/logger.js'
 import { getSharedRateLimiter } from '../utils/rateLimiter.js'
-import { getLocalHour } from '../utils/timezone.js'
 import { estimateTokens } from '../utils/tokens.js'
-import { measureAttachmentTokens, needsMeasuring } from './attachmentCost.js'
-import { geminiMimeType, sizeLimitFor } from './attachmentLimits.js'
+import { prepareAttachments } from './attachments.js'
+import type { ImageAttachment } from './attachments.js'
 import type { ModelRoute } from './fallbackModel.js'
-import { createRokaModel, modelRouteForRequest } from './fallbackModel.js'
-import { classifyGeminiFailure, computeBackoff, extractGeminiStatus } from './geminiReliability.js'
-import type { FailureKind } from './geminiReliability.js'
-import { judgeTurn } from './jev/judgments.js'
-import { isobmffAllowsPrefix, prefixPolicyFor } from './mediaPrefix.js'
-import { resolveReferences } from './memory/identityResolver.js'
-import { retrieveForTurn } from './memory/retriever.js'
-import { getMessages as getBufferMessages } from './passiveBuffer.js'
-import { assembleSystemPrompt } from './promptAssembler.js'
-import { buildFactsEnvelope, buildOverheardBlock } from './promptSafety.js'
+import { modelRouteForRequest } from './fallbackModel.js'
+import { computeBackoff } from './geminiReliability.js'
 import type { ToneKey } from './prompts/tones.js'
+import {
+  ErrorRecoveryPlugin,
+  abortActiveTurns,
+  hasStickyFallback,
+  modelNameForCurrentRequest,
+  modelVerdictForRequest,
+  rokaModel,
+  runTurnWithReliability,
+  setFallbackUntilMs
+} from './reliability.js'
+import type { ModelVerdict, TurnOutcome } from './reliability.js'
 import { SAFETY_SETTINGS } from './safetySettings.js'
-import { beginShutdown, isShuttingDown } from './shutdownSignal.js'
+import {
+  APP_NAME,
+  clearSessionErrorCount,
+  destroySession,
+  ensureSession,
+  incrementSessionErrorCount,
+  resetIdleTimer,
+  sessionService,
+  suppressSessionRehydration
+} from './session.js'
 import { chargeTokens } from './tokenBudget.js'
-import { detectTone } from './toneDetector.js'
 import { rokaTools } from './tools/index.js'
+import { createTurnContext } from './turnContext.js'
+import type { TurnContextOptions } from './turnContext.js'
 
-export interface ImageAttachment {
-  url: string
-  contentType: string
-  /** Bytes, when the source states them. Discord does on an upload; an embed or a resolved link does not. */
-  size?: number
-}
-
-interface GenerateOptions {
-  channelId: string
-  guildId: string
-  userMessage: string
-  displayName: string
-  username: string
-  userId: string
+interface GenerateOptions extends TurnContextOptions {
   imageAttachments?: ImageAttachment[]
-  mentionedUserIds?: string[]
 }
 
 export interface GenerateResult {
@@ -86,71 +79,16 @@ export interface GenerateResult {
   modelCalls: number
 }
 
-/** Exported so the live harness can pre-create the very session `getOrCreateSession` will look up, which is
- * the only way a gate case can run as anything other than a channel's first turn (#52). */
-export const APP_NAME = 'rokabot'
-
-const sessionErrorCounts = new Map<string, number>()
 const toolCallsForRequest = new AsyncLocalStorage<Set<string>>()
 
-/**
- * Model calls made by the turn currently running, counted where they happen rather than inferred from what
- * came back. The Discord layer reserves `gemini.maxLlmCalls` slots before the turn and hands back what this
- * says went unused, so the count has to be of REQUESTS — retries and tool round trips included — not of
- * anything the reply looks like afterwards (#167).
- */
+// Count every ADK request so retries and tool calls are included in the reservation refund.
 const modelCallsForRequest = new AsyncLocalStorage<{ count: number }>()
 // Exported so tests can drive the beforeModelCallback ALS seam directly (task 122's only observable proof point)
 export const steeringForRequest = new AsyncLocalStorage<{ prompt?: string }>()
-interface ModelVerdict {
-  finishReason?: string
-  safetyRatings?: string
-  /** Heuristic: a finish reason on a returned candidate means Roka's own output was rejected; an
-   * error surfaced before any candidate means the prompt was. */
-  blockSide?: 'prompt' | 'response'
-}
-const modelVerdictForRequest = new AsyncLocalStorage<ModelVerdict>()
-const activeAbortControllers = new Set<AbortController>()
-const rokaModel = createRokaModel()
-let fallbackUntilMs = 0
-
-export function __resetModelFallbackForTest(): void {
-  fallbackUntilMs = 0
-}
-
-function modelNameForCurrentRequest(): string {
-  return modelRouteForRequest.getStore()?.useFallback && rokaModel.hasFallback
-    ? (rokaModel.fallbackModelName ?? config.gemini.model)
-    : config.gemini.model
-}
-
-/**
- * Ceiling on a single attachment download, covering the body as well as the headers. `attachment_url` points
- * at a host the sender named, and nothing else bounds it — the byte guard stops a *large* response, not a
- * *slow* one, and a stalled transfer would otherwise sit inside the turn until undici's 300s default. At the
- * Pi's measured ~2.5 MB/s a maximal 10 MB file lands in about four seconds, so this is roughly 3.7x the worst
- * legitimate case. Aborting drops the attachment and takes the ordinary "could not be retrieved" notice.
- */
-const ATTACHMENT_DOWNLOAD_TIMEOUT_MS = 15_000
-
 const SAFETY_DEFLECTION = "Ehh… let's not get into that one~"
 const RECITATION_DEFLECTION = "Ah, I don't think I should repeat that one exactly~"
 const TERMINAL_DEFLECTION = "Eep, something went wrong on my side. Let's try again later~"
-const SAFETY_STEER_ADDENDUM =
-  '## Redirect This One\n' +
-  'Do not answer the previous message on its own terms, and never repeat, quote, or hint at what it was about. Stay completely in character: respond to the person, not the topic — a light dodge, a tease, or a small change of subject in your own voice. Never mention rules, filters, errors, or that anything went wrong. Every other instruction above still applies exactly as written.'
 const toolsTok = estimateTokens(JSON.stringify(rokaTools))
-
-export interface TurnOutcome {
-  text?: string
-  errorCode?: string
-  errorMessage?: string
-  finishReason?: LlmResponse['finishReason']
-  customMetadata?: LlmResponse['customMetadata']
-  hasText: boolean
-  hasFunctionCall: boolean
-  sessionMissing?: boolean
-}
 
 interface TestTurnRequest {
   newMessage?: Content
@@ -178,343 +116,6 @@ export function __resetTestRunTurnFactory(): void {
   testRunTurnFactory = undefined
 }
 
-interface ReliabilityResult {
-  text: string
-  kind: ReturnType<typeof classifyGeminiFailure>['kind']
-  action: 'preserve' | 'destroy'
-  attempts: number
-  retryLatencyMs: number
-  success: boolean
-  failureMarker?: string
-}
-
-export interface RunTurnWithReliabilityOptions {
-  runTurn: (attempt: number, signal: AbortSignal) => Promise<TurnOutcome>
-  tryConsumeRetry: () => boolean
-  computeBackoff: (attempt: number) => number
-  sleep?: (delayMs: number, signal: AbortSignal) => Promise<void>
-  isShuttingDown?: () => boolean
-  maxRetries: number
-  retryBackoffCapMs: number
-  requestTimeoutMs?: number
-  turnDeadlineMs?: number
-  now?: () => number
-  /** Moves the rest of the turn to the other model after an outage-shaped failure.
-   * Returns that model's per-request timeout, or undefined when there is nothing to switch to.
-   */
-  switchModel?: (kind: FailureKind) => number | undefined
-  genericFallback: string
-  safetyDeflection: string
-  recitationDeflection: string
-  terminalDeflection: string
-  resetSession?: () => Promise<void>
-  /** Sheds one rung of carried context after a safety block. Resolves to the rung name, or undefined when exhausted. */
-  escalateSafety?: () => Promise<string | undefined>
-  /** Number of rungs escalateSafety can yield. Lets the loop stop before spending a retry token it cannot use. */
-  safetyLadderLength?: number
-}
-
-function sleepUntil(delayMs: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve) => {
-    const timeoutId = setTimeout(done, delayMs)
-
-    function done(): void {
-      clearTimeout(timeoutId)
-      signal.removeEventListener('abort', done)
-      resolve()
-    }
-
-    if (signal.aborted) {
-      done()
-      return
-    }
-    signal.addEventListener('abort', done, { once: true })
-  })
-}
-
-/**
- * Derives the persistable failure marker — never the message itself, only an allowlisted status token derived from it.
- * Its fixed output alphabet (400|401|403|429|500|503|504) cannot echo request content; the allowlist is load-bearing.
- */
-function markerFrom(outcome: TurnOutcome): string | undefined {
-  const marker = outcome.errorCode || outcome.finishReason || extractGeminiStatus(outcome.errorMessage ?? '')
-  return marker ? String(marker).slice(0, 64) : undefined
-}
-
-function fallbackResult(
-  kind: ReliabilityResult['kind'],
-  action: ReliabilityResult['action'],
-  attempts: number,
-  retryLatencyMs: number,
-  options: RunTurnWithReliabilityOptions,
-  failureMarker?: string
-): ReliabilityResult {
-  const text =
-    kind === 'safety'
-      ? options.safetyDeflection
-      : kind === 'recitation'
-        ? options.recitationDeflection
-        : kind === 'terminal' || kind === 'session_corrupt'
-          ? options.terminalDeflection
-          : options.genericFallback
-
-  return { text, kind, action, attempts, retryLatencyMs, success: false, failureMarker }
-}
-
-/** Runs one user turn with bounded retry policy while keeping the initial user event single-shot. */
-export async function runTurnWithReliability(options: RunTurnWithReliabilityOptions): Promise<ReliabilityResult> {
-  const shouldStop = options.isShuttingDown ?? isShuttingDown
-  const sleep = options.sleep ?? sleepUntil
-  const now = options.now ?? (() => performance.now())
-  const startedAtMs = now()
-  let requestTimeoutMs = options.requestTimeoutMs
-  let retryLatencyMs = 0
-  let lastKind: ReliabilityResult['kind'] = 'network'
-  let lastMarker: string | undefined
-
-  // Safety de-escalation rungs are granted on top of the ordinary retry budget: each one strictly
-  // removes carried context, so it is cheaper and more likely to pass than the attempt before it.
-  let extraSafetyAttempts = 0
-  let extraModelAttempts = 0
-  let switchModelConsulted = false
-  for (let attempt = 0; attempt <= options.maxRetries + extraSafetyAttempts + extraModelAttempts; attempt++) {
-    if (shouldStop()) return fallbackResult(lastKind, 'preserve', attempt, retryLatencyMs, options, lastMarker)
-
-    if (attempt > 0 && options.turnDeadlineMs !== undefined) {
-      const elapsedMs = now() - startedAtMs
-      const remainingMs = options.turnDeadlineMs - elapsedMs
-      if (remainingMs < (requestTimeoutMs ?? 0)) {
-        logger.warn(
-          {
-            attempt,
-            elapsedMs,
-            deadlineMs: options.turnDeadlineMs,
-            requestTimeoutMs,
-            kind: lastKind
-          },
-          'Turn deadline exhausted before next attempt'
-        )
-        return fallbackResult(lastKind, 'preserve', attempt, retryLatencyMs, options, lastMarker)
-      }
-    }
-
-    const abortController = new AbortController()
-    activeAbortControllers.add(abortController)
-    // Distinguishes our own per-attempt timeout from a shutdown abort: a timed-out attempt is the most
-    // transient failure there is and must stay eligible for the retry budget, while shutdown must not.
-    let attemptTimedOut = false
-    const timeoutId = requestTimeoutMs
-      ? setTimeout(() => {
-          attemptTimedOut = true
-          abortController.abort()
-        }, requestTimeoutMs)
-      : undefined
-
-    let outcome: TurnOutcome
-    try {
-      outcome = await options.runTurn(attempt, abortController.signal)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      outcome = {
-        errorMessage: message,
-        hasText: false,
-        hasFunctionCall: false,
-        sessionMissing: /Session not found/i.test(message)
-      }
-    } finally {
-      if (timeoutId) clearTimeout(timeoutId)
-      activeAbortControllers.delete(abortController)
-    }
-
-    if (outcome.sessionMissing)
-      return fallbackResult('network', 'preserve', attempt + 1, retryLatencyMs, options, lastMarker)
-    if (shouldStop() || (abortController.signal.aborted && !attemptTimedOut))
-      return fallbackResult(lastKind, 'preserve', attempt + 1, retryLatencyMs, options, lastMarker)
-
-    // runTurn stops reading events once our timer aborts it, so an error Gemini delivers a moment later (a 504, an
-    // AbortError) never reaches the outcome and it reads as an empty answer. Outage-shaped either way.
-    const failure =
-      attemptTimedOut && !outcome.text
-        ? classifyGeminiFailure({ errorMessage: 'Attempt timeout' })
-        : classifyGeminiFailure(outcome)
-    lastKind = failure.kind
-    if (failure.kind !== 'ok') {
-      lastMarker = markerFrom(outcome)
-      logger.warn(
-        {
-          attempt,
-          kind: failure.kind,
-          marker: lastMarker,
-          model: modelNameForCurrentRequest()
-        },
-        'Live turn attempt failed'
-      )
-    }
-    if (failure.kind === 'ok' && outcome.text) {
-      return {
-        text: outcome.text,
-        kind: 'ok',
-        action: 'preserve',
-        attempts: attempt + 1,
-        retryLatencyMs,
-        success: true,
-        failureMarker: lastMarker
-      }
-    }
-
-    if (
-      failure.kind === 'safety' &&
-      options.escalateSafety &&
-      extraSafetyAttempts < (options.safetyLadderLength ?? 0) &&
-      !shouldStop()
-    ) {
-      if (options.turnDeadlineMs !== undefined) {
-        const elapsedMs = now() - startedAtMs
-        const remainingMs = options.turnDeadlineMs - elapsedMs
-        if (remainingMs < (requestTimeoutMs ?? 0)) {
-          logger.warn(
-            {
-              attempt,
-              elapsedMs,
-              deadlineMs: options.turnDeadlineMs,
-              requestTimeoutMs,
-              kind: failure.kind
-            },
-            'Turn deadline exhausted before safety de-escalation'
-          )
-          return fallbackResult('safety', 'preserve', attempt + 1, retryLatencyMs, options, lastMarker)
-        }
-      }
-      if (!options.tryConsumeRetry())
-        return fallbackResult('safety', 'preserve', attempt + 1, retryLatencyMs, options, lastMarker)
-
-      const rung = await options.escalateSafety()
-      if (rung) {
-        extraSafetyAttempts++
-        logger.warn({ attempt, rung, kind: failure.kind }, 'Safety block — de-escalating carried context')
-        continue
-      }
-    }
-
-    if (
-      options.switchModel &&
-      !switchModelConsulted &&
-      (failure.kind === 'transient_http' || failure.kind === 'network' || failure.kind === 'quota_exhausted') &&
-      !shouldStop()
-    ) {
-      switchModelConsulted = true
-      const nextTimeoutMs = options.switchModel(failure.kind)
-      if (nextTimeoutMs !== undefined) {
-        requestTimeoutMs = nextTimeoutMs
-        extraModelAttempts++
-        logger.warn({ attempt, kind: failure.kind }, 'Switching turn to the other model')
-        continue
-      }
-    }
-
-    if (!failure.retryable)
-      return fallbackResult(
-        failure.kind,
-        failure.kind === 'terminal' ? 'destroy' : 'preserve',
-        attempt + 1,
-        retryLatencyMs,
-        options,
-        lastMarker
-      )
-
-    if (failure.kind === 'session_corrupt' && !options.resetSession)
-      return fallbackResult(failure.kind, 'destroy', attempt + 1, retryLatencyMs, options, lastMarker)
-
-    const retryLimit =
-      failure.kind === 'recitation' || failure.kind === 'session_corrupt'
-        ? Math.min(options.maxRetries, 1)
-        : options.maxRetries
-    if (attempt >= retryLimit || shouldStop()) {
-      return fallbackResult(
-        failure.kind,
-        failure.kind === 'session_corrupt' ? 'destroy' : 'preserve',
-        attempt + 1,
-        retryLatencyMs,
-        options,
-        lastMarker
-      )
-    }
-
-    const delayMs = Math.min(options.computeBackoff(attempt), Math.max(0, options.retryBackoffCapMs - retryLatencyMs))
-    if (delayMs <= 0 && retryLatencyMs >= options.retryBackoffCapMs) {
-      return fallbackResult(
-        failure.kind,
-        failure.kind === 'session_corrupt' ? 'destroy' : 'preserve',
-        attempt + 1,
-        retryLatencyMs,
-        options,
-        lastMarker
-      )
-    }
-
-    if (options.turnDeadlineMs !== undefined) {
-      const elapsedMs = now() - startedAtMs
-      const remainingMs = options.turnDeadlineMs - elapsedMs
-      if (remainingMs < delayMs + (requestTimeoutMs ?? 0)) {
-        logger.warn(
-          {
-            attempt,
-            elapsedMs,
-            delayMs,
-            deadlineMs: options.turnDeadlineMs,
-            requestTimeoutMs,
-            kind: failure.kind
-          },
-          'Turn deadline would be exceeded by planned retry backoff'
-        )
-        return fallbackResult(
-          failure.kind,
-          failure.kind === 'session_corrupt' ? 'destroy' : 'preserve',
-          attempt + 1,
-          retryLatencyMs,
-          options,
-          lastMarker
-        )
-      }
-    }
-
-    if (!options.tryConsumeRetry())
-      return fallbackResult(
-        failure.kind,
-        failure.kind === 'session_corrupt' ? 'destroy' : 'preserve',
-        attempt + 1,
-        retryLatencyMs,
-        options,
-        lastMarker
-      )
-
-    // A timed-out attempt leaves its controller aborted; backing off against it would skip the delay
-    // entirely, so the retry sleeps on a fresh signal instead.
-    await sleep(delayMs, attemptTimedOut ? new AbortController().signal : abortController.signal)
-    retryLatencyMs += delayMs
-    if (shouldStop() || (abortController.signal.aborted && !attemptTimedOut))
-      return fallbackResult(failure.kind, 'preserve', attempt + 1, retryLatencyMs, options, lastMarker)
-
-    if (failure.kind === 'session_corrupt') {
-      try {
-        await options.resetSession!()
-      } catch {
-        return fallbackResult(failure.kind, 'destroy', attempt + 1, retryLatencyMs, options, lastMarker)
-      }
-    }
-  }
-
-  return fallbackResult(lastKind, 'preserve', options.maxRetries + 1, retryLatencyMs, options, lastMarker)
-}
-
-/** What replaces an attachment's bytes in history: enough for her to know it was there, at no per-turn cost. */
-function attachmentMarker(mimeType: string): string {
-  if (mimeType.startsWith('image/')) return '(an image)'
-  if (mimeType.startsWith('audio/')) return '(an audio clip)'
-  if (mimeType.startsWith('video/')) return '(a video)'
-  return '(a document)'
-}
-
 /** Does this request carry video? Only then is media resolution worth pinning, since the setting is
  * request-wide and would otherwise change how images are read too. */
 function requestCarriesVideo(request: { contents?: Content[] }): boolean {
@@ -522,79 +123,6 @@ function requestCarriesVideo(request: { contents?: Content[] }): boolean {
     (content.parts ?? []).some((part) => part.inlineData?.mimeType?.startsWith('video/'))
   )
 }
-/** Caps event history returned by getSession to keep context within budget. Exported so the retention
- * contract test can drive a real ADK Runner against this exact class rather than a stand-in — the
- * `__setTestRunTurnFactory` seam replaces the call to `runner.runAsync`, so `appendEvent` never runs under
- * it and a test using that seam would observe no retention whether or not any existed. */
-export class WindowedSessionService extends InMemorySessionService {
-  /**
-   * Stored events still holding attachment bytes, by session. `appendEvent` receives the very object that
-   * gets pushed into storage — neither it nor `createEvent` copies — so holding the reference is what makes
-   * the later strip reach the stored history. `getSession` deep-clones, so stripping a fetched session
-   * would mutate a copy and change nothing.
-   */
-  private attachmentEvents = new Map<string, Event[]>()
-
-  constructor(private maxEvents: number) {
-    super()
-  }
-
-  override async getSession(request: GetSessionRequest): Promise<Session | undefined> {
-    return super.getSession({
-      ...request,
-      config: { ...request?.config, numRecentEvents: this.maxEvents }
-    })
-  }
-
-  override async appendEvent(request: Parameters<InMemorySessionService['appendEvent']>[0]): Promise<Event> {
-    const appended = await super.appendEvent(request)
-    if (request.event.content?.parts?.some((part: Part) => part.inlineData)) {
-      const pending = this.attachmentEvents.get(request.session.id) ?? []
-      pending.push(request.event)
-      this.attachmentEvents.set(request.session.id, pending)
-    }
-    return appended
-  }
-
-  /**
-   * Replace attachment bytes in this session's stored history with a text marker, once the turn that carried
-   * them is over. ADK appends the incoming message verbatim and nothing removes it, so without this the bytes
-   * are re-sent to the model as history on every later turn until they age out of the window — paying for one
-   * upload up to twenty times — and are held on the heap for as long. A retried turn appends the message once
-   * per attempt, so a single upload can leave several copies; every one of them is tracked and stripped.
-   *
-   * Returns the number of parts replaced, so a caller can log it and a test can tell "nothing to do" from
-   * "did nothing".
-   */
-  stripAttachmentBytes(sessionId: string): number {
-    const events = this.attachmentEvents.get(sessionId)
-    this.attachmentEvents.delete(sessionId)
-    if (!events) return 0
-
-    let stripped = 0
-    for (const event of events) {
-      const parts = event.content?.parts
-      if (!parts) continue
-      for (let index = 0; index < parts.length; index++) {
-        const inline = parts[index].inlineData
-        if (!inline) continue
-        parts[index] = { text: attachmentMarker(inline.mimeType ?? '') }
-        stripped++
-      }
-    }
-    return stripped
-  }
-
-  override async deleteSession(request: Parameters<InMemorySessionService['deleteSession']>[0]): Promise<void> {
-    this.attachmentEvents.delete(request.sessionId)
-    return super.deleteSession(request)
-  }
-}
-
-// Exported alongside rokaAgent so a test can assert generateResponse actually reaches the strip. Without
-// that, deleting the call site leaves every retention test green while attachments are retained again.
-export const sessionService = new WindowedSessionService(config.session.windowSize * 2)
-
 // Exported so tests can assert the agent-level config and beforeModelCallback seam directly
 export const rokaAgent = new LlmAgent({
   name: 'roka',
@@ -621,10 +149,7 @@ export const rokaAgent = new LlmAgent({
       request.config = request.config ?? ({} as NonNullable<typeof request.config>)
       request.config!.systemInstruction = prompt
     }
-    // Low media resolution is 100 tokens a second of video rather than 300, and at the 10 MB cap that is
-    // what keeps a clip inside the measured 250,000 TPM. Set per request rather than on the agent because
-    // mediaResolution is request-level and governs images as well — pinning it globally would quietly
-    // re-price and re-render every picture she has ever been able to see, which is not this change.
+    // Pin low resolution only for video requests to stay within measured cost without changing image processing.
     if (requestCarriesVideo(request)) {
       request.config = request.config ?? ({} as NonNullable<typeof request.config>)
       request.config!.mediaResolution = MediaResolution.MEDIA_RESOLUTION_LOW
@@ -681,297 +206,12 @@ export const rokaAgent = new LlmAgent({
   }
 })
 
-/** Intercepts Gemini API errors and exposes them to the turn-level reliability policy. */
-class ErrorRecoveryPlugin extends BasePlugin {
-  async onModelErrorCallback({
-    error
-  }: {
-    callbackContext: unknown
-    llmRequest: unknown
-    error: Error
-  }): Promise<LlmResponse | undefined> {
-    logger.error(
-      {
-        model: modelNameForCurrentRequest(),
-        errorName: error.name,
-        errorMessage: error.message,
-        stack: error.stack?.split('\n').slice(0, 5).join('\n')
-      },
-      'Gemini API error intercepted'
-    )
-    const failure = classifyGeminiFailure(error)
-    const verdict = modelVerdictForRequest.getStore()
-    if (verdict) {
-      // No candidate was ever produced, so anything rejected here was rejected on the way in.
-      verdict.blockSide ??= failure.kind === 'safety' ? 'prompt' : undefined
-      verdict.finishReason ??= error.name
-    }
-    return {
-      errorCode: error.name,
-      errorMessage: error.message,
-      customMetadata: { reliabilityKind: failure.kind }
-    }
-  }
-}
-
 const runner = new Runner({
   appName: APP_NAME,
   agent: rokaAgent,
   sessionService,
   plugins: [new ErrorRecoveryPlugin('error-recovery')]
 })
-
-const idleTimers = new Map<string, ReturnType<typeof setTimeout>>()
-
-function resetIdleTimer(channelId: string): void {
-  const existing = idleTimers.get(channelId)
-  if (existing) clearTimeout(existing)
-
-  const timer = setTimeout(() => {
-    logger.info({ channelId }, 'Session idle timeout')
-    void destroySession(channelId)
-  }, config.session.ttlMs)
-
-  idleTimers.set(channelId, timer)
-}
-
-/** Channels whose next session rebuild must skip SQLite rehydration after a safety de-escalation */
-const rehydrationSuppressed = new Set<string>()
-
-/** Retrieve or create an ADK session for the given channel */
-async function ensureSession(channelId: string) {
-  let session = await sessionService.getSession({
-    appName: APP_NAME,
-    userId: channelId,
-    sessionId: channelId
-  })
-
-  if (!session) {
-    session = await sessionService.createSession({
-      appName: APP_NAME,
-      userId: channelId,
-      sessionId: channelId,
-      state: {}
-    })
-    logger.info({ channelId }, 'ADK session created')
-
-    try {
-      // A channel whose carried history tripped the safety filter rebuilds its window empty rather than
-      // rehydrating the same content straight back. In-memory only — SQLite history is left intact, and
-      // the suppression lifts when the session is next destroyed.
-      const prior = rehydrationSuppressed.has(channelId)
-        ? []
-        : loadHistory(channelId, config.session.windowSize, config.session.maxRehydrationAge)
-      if (prior.length > 0) {
-        for (const msg of prior) {
-          const role = msg.role === 'user' ? 'user' : 'model'
-          const content: Content = {
-            role,
-            parts: [
-              {
-                text: msg.role === 'user' ? `[${msg.displayName}]: ${msg.content}` : msg.content
-              }
-            ]
-          }
-          const event = createEvent({
-            author: msg.role === 'user' ? 'user' : 'roka',
-            invocationId: `rehydrate-${channelId}`,
-            content
-          })
-          await sessionService.appendEvent({ session, event })
-        }
-        session = (await sessionService.getSession({
-          appName: APP_NAME,
-          userId: channelId,
-          sessionId: channelId
-        }))!
-        logger.info({ channelId, rehydratedMessages: prior.length }, 'Session rehydrated from SQLite')
-      }
-    } catch (error) {
-      logger.warn({ channelId, error }, 'Failed to rehydrate session from SQLite')
-    }
-  }
-
-  return session
-}
-
-/** Clear the idle timer and delete the ADK session for a channel */
-export async function destroySession(channelId: string): Promise<void> {
-  const timer = idleTimers.get(channelId)
-  if (timer) {
-    clearTimeout(timer)
-    idleTimers.delete(channelId)
-  }
-
-  sessionErrorCounts.delete(channelId)
-  rehydrationSuppressed.delete(channelId)
-
-  try {
-    await sessionService.deleteSession({
-      appName: APP_NAME,
-      userId: channelId,
-      sessionId: channelId
-    })
-    logger.info({ channelId }, 'ADK session destroyed')
-  } catch (error) {
-    logger.debug({ channelId, error }, 'Session already destroyed or never existed')
-  }
-}
-
-/** Destroy every active ADK session for graceful shutdown */
-export async function destroyAllSessions(): Promise<void> {
-  beginShutdown()
-  for (const controller of activeAbortControllers) controller.abort()
-
-  const channels = [...idleTimers.keys()]
-  for (const channelId of channels) {
-    await destroySession(channelId)
-  }
-  logger.info('All ADK sessions destroyed')
-}
-
-/**
- * Read a response body, stopping the transfer the moment it passes `limit`.
- *
- * What this replaces read the whole body into memory with `arrayBuffer()` and measured it afterwards, which
- * is only safe while every response carries an honest `content-length`. Discord's CDN does, and at 4-10 MB
- * an overrun was harmless anyway — but a header that is absent or understated would have let a response
- * exhaust the container before anything checked it, and at video sizes that is the OOM kill the byte budget
- * exists to prevent. Cancelling the reader discards the rest and closes the connection, so an oversized
- * transfer costs only the bytes already in flight.
- *
- * There is deliberately no `arrayBuffer()` fallback for a body-less response: a fallback is a path where the
- * guard does not run, and it would be taken by exactly the malformed responses the guard is for.
- */
-async function readWithinLimit(
-  response: Response,
-  limit: number,
-  url: string,
-  onOverflow: 'refuse' | 'truncate'
-): Promise<Buffer | null> {
-  if (!response.body) {
-    logger.warn({ url }, 'Attachment response carried no readable body, skipping')
-    return null
-  }
-
-  const reader = response.body.getReader()
-  const chunks: Uint8Array[] = []
-  let received = 0
-
-  let chunk = await reader.read()
-  while (!chunk.done) {
-    const overflow = received + chunk.value.byteLength - limit
-    if (overflow > 0) {
-      // `truncate` is for a deliberate prefix fetch, where reaching the ceiling is the plan rather than a
-      // failure. It matters because a server may ignore `Range` and answer 200 with the whole file: without
-      // this the read would abort and the prefix would be lost, turning the saving into a refusal.
-      if (onOverflow === 'truncate') {
-        chunks.push(chunk.value.subarray(0, chunk.value.byteLength - overflow))
-        await reader.cancel()
-        return Buffer.concat(chunks)
-      }
-      await reader.cancel()
-      logger.warn({ url, received, limit }, 'Attachment passed its size limit mid-transfer, aborted')
-      return null
-    }
-    received += chunk.value.byteLength
-    chunks.push(chunk.value)
-    chunk = await reader.read()
-  }
-
-  return Buffer.concat(chunks)
-}
-
-/**
- * Download one attachment as base64, returning null if it fails or cannot be made to fit.
- *
- * A file past its ceiling is not automatically refused any more: where the container tolerates being cut
- * short, the first `limit` bytes are fetched with a `Range` header and sent as a prefix, so the excess never
- * crosses the wire. Whole-file ingestion of very large media is not merely expensive but arithmetically
- * impossible — 200 MB of audio is ~5.3 h, ~611,000 tokens against a 250,000 TPM ceiling — so a bounded
- * prefix is the only shape that works at all. `truncated` tells the caller to say so rather than pretend
- * she heard the whole thing.
- */
-async function downloadAttachment(
-  attachment: ImageAttachment
-): Promise<{ data: string; mimeType: string; tokens: number; truncated: boolean } | null> {
-  const { url, contentType } = attachment
-  // Which types are admitted at all is the Discord layer's decision; this only decides how to handle one that
-  // already got through. Routing on image/* rather than an allowlist keeps the type sets in one place — the
-  // agent layer has no imports from the Discord layer and should not gain one for a constant.
-  const isImage = contentType.startsWith('image/')
-  const limit = sizeLimitFor(contentType)
-
-  // Only a size Discord stated can be trusted here. An embed image or a resolved link states none, so it
-  // takes the ordinary path and the size guard catches it — guessing "oversized" from a missing size would
-  // truncate files that were never too big.
-  const policy = prefixPolicyFor(contentType)
-  const wantsPrefix = attachment.size !== undefined && attachment.size > limit && policy !== 'none'
-
-  if (attachment.size !== undefined && attachment.size > limit && policy === 'none') {
-    logger.warn({ url, size: attachment.size, limit, contentType }, 'Oversized and not safely prefixable, refusing')
-    return null
-  }
-
-  try {
-    // Range is asked for, and Discord's CDN does not grant it: measured against cdn.discordapp.com, which
-    // advertises `accept-ranges: bytes` and then answers 200 with the whole body anyway. So the saving does
-    // not come from Range — it comes from readWithinLimit cancelling the reader at the ceiling, which stops
-    // the transfer rather than reading on and discarding. Measured on a 50 MB body: 1 MB read in 178 ms
-    // against 2,750 ms for the whole thing. Range stays because it costs nothing and a 206 would be better
-    // still, but nothing depends on it.
-    const response = await fetch(url, {
-      ...(wantsPrefix ? { headers: { Range: `bytes=0-${limit - 1}` } } : {}),
-      signal: AbortSignal.timeout(ATTACHMENT_DOWNLOAD_TIMEOUT_MS)
-    })
-    if (!response.ok) {
-      logger.warn({ url, status: response.status }, 'Failed to download attachment')
-      return null
-    }
-
-    const contentLength = response.headers.get('content-length')
-    if (!wantsPrefix && contentLength && parseInt(contentLength, 10) > limit) {
-      logger.warn({ url, size: contentLength, limit }, 'Attachment exceeds its size limit, skipping')
-      return null
-    }
-
-    const buffer = await readWithinLimit(response, limit, url, wantsPrefix ? 'truncate' : 'refuse')
-    if (!buffer) return null
-
-    // Whether this particular file survives being cut is a property of the file, not of its type: a phone MP4
-    // carries its index last and a prefix of one has nothing to decode against. Refused rather than sent,
-    // because sending it raises no error anywhere — the request succeeds and the answer is about nothing.
-    if (wantsPrefix && policy === 'isobmff' && !isobmffAllowsPrefix(buffer)) {
-      logger.warn({ url, contentType }, 'Oversized video has no index before its media data, refusing')
-      return null
-    }
-
-    // A document or an audio clip goes to the model exactly as it arrived. sharp is an image pipeline — handed
-    // anything else it throws, and its catch returns the undecoded bytes relabelled image/jpeg, so the file
-    // would arrive byte-identical but misdeclared and unreadable. Only the name is adjusted, for Gemini's
-    // spelling of MP3. tokens stays 0: audio is billed per second, and seconds are not knowable without
-    // decoding — the same argument docs/research/multimodal.md makes against enforcing duration caps.
-    if (!isImage) {
-      return {
-        data: buffer.toString('base64'),
-        mimeType: geminiMimeType(contentType),
-        tokens: 0,
-        truncated: wantsPrefix
-      }
-    }
-
-    const processed = await processImageForGemini(buffer)
-    return {
-      data: processed.data.toString('base64'),
-      mimeType: processed.mimeType,
-      tokens: GEMINI_IMAGE_TOKENS,
-      truncated: wantsPrefix
-    }
-  } catch (error) {
-    logger.warn({ url, error }, 'Error downloading attachment')
-    return null
-  }
-}
 
 const KNOWN_FALLBACKS = new Set([
   'Hmm? Sorry, I spaced out for a moment there~',
@@ -985,21 +225,6 @@ function getRandomFallback(): string {
   return fallbacks[Math.floor(Math.random() * fallbacks.length)]
 }
 
-/** Convert ADK session events to WindowMessages for tone detection */
-function eventsToWindowMessages(events: Event[]): WindowMessage[] {
-  return events
-    .filter((e) => e.content?.parts?.some((p: Part) => p.text && !p.thought))
-    .map((e) => ({
-      role: (e.author === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
-      displayName: '',
-      content: (e.content?.parts ?? [])
-        .filter((p: Part) => p.text && !p.thought)
-        .map((p: Part) => p.text)
-        .join(' '),
-      timestamp: e.timestamp ?? 0
-    }))
-}
-
 /** Generate an in-character response using the ADK agent pipeline
  * @param options - Channel ID, user message, display name, and optional image attachments
  * @returns Response text and detected tone
@@ -1008,318 +233,16 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   const generateStartMs = performance.now()
   const { channelId, guildId, userMessage, displayName, username, userId, imageAttachments } = options
 
-  const session = await ensureSession(channelId)
-  resetIdleTimer(channelId)
-
-  const fakeMessages = eventsToWindowMessages(session.events ?? [])
-  const hour = getLocalHour()
-  const ruleTone = detectTone(
-    [...fakeMessages, { role: 'user', displayName, content: userMessage, timestamp: Date.now() }],
-    hour
-  )
-  let tone = ruleTone
-  let references: ReturnType<typeof resolveReferences> = { resolved: [], ambiguous: [] }
-
-  if (config.memory.claimsBackend) {
-    try {
-      references = resolveReferences({
-        guildId,
-        text: userMessage,
-        speakerId: userId,
-        mentionedUserIds: options.mentionedUserIds ?? []
-      })
-      if (references.resolved.length > 0 || references.ambiguous.length > 0) {
-        logger.info(
-          {
-            channelId,
-            resolvedReferences: references.resolved.length,
-            ambiguousReferences: references.ambiguous.length
-          },
-          'Resolved message references'
-        )
-      }
-    } catch (error) {
-      logger.warn({ channelId, error }, 'Failed to resolve message references')
-    }
-  }
-
-  const toneActive = config.jev.tone !== 'off'
-  const referentsActive = config.jev.referents !== 'off' && references.ambiguous.length > 0
-  const appliedJevReferents: Array<{ alias: string; userId: string; displayName: string }> = []
-
-  if (toneActive || referentsActive) {
-    const ambiguous = referentsActive
-      ? references.ambiguous.map(({ alias, candidateIds }) => ({
-          alias,
-          candidates: candidateIds.map((id) => ({
-            userId: id,
-            displayName: getUserName(id)?.displayName ?? id
-          }))
-        }))
-      : []
-    const input = {
-      speakerName: displayName,
-      message: userMessage,
-      recentLines: fakeMessages.slice(-6).map(({ role, displayName: historyDisplayName, content }) => {
-        const priorSpeaker = role === 'user' ? content.match(/^\[([^\]]+)\]:\s*/) : null
-        const speakerName = role === 'assistant' ? 'Roka' : historyDisplayName || priorSpeaker?.[1] || displayName
-        return `[${speakerName}]: ${priorSpeaker ? content.slice(priorSpeaker[0].length) : content}`
-      }),
-      ambiguous,
-      includeTone: toneActive
-    }
-    const blocking = config.jev.tone === 'on' || (referentsActive && config.jev.referents === 'on')
-
-    const settleJudgment = (judgment: Awaited<ReturnType<typeof judgeTurn>>, apply: boolean): void => {
-      if (!judgment) return
-
-      const toneApplied =
-        apply &&
-        config.jev.tone === 'on' &&
-        judgment.tone !== null &&
-        judgment.tone.confidence >= config.jev.toneMinConfidence
-      if (toneApplied && judgment.tone) tone = judgment.tone.tone
-
-      const referents = judgment.referents.map((referent) => {
-        const accepted =
-          apply &&
-          config.jev.referents === 'on' &&
-          referent.userId !== null &&
-          referent.userId !== userId &&
-          referent.confidence >= config.jev.referentMinConfidence
-        if (accepted && referent.userId) {
-          const candidate = ambiguous
-            .find(({ alias }) => alias === referent.alias)
-            ?.candidates.find(({ userId: candidateId }) => candidateId === referent.userId)
-          appliedJevReferents.push({
-            alias: referent.alias,
-            userId: referent.userId,
-            displayName: candidate?.displayName ?? getUserName(referent.userId)?.displayName ?? referent.userId
-          })
-        }
-        return {
-          candidates: references.ambiguous.find(({ alias }) => alias === referent.alias)?.candidateIds.length ?? 0,
-          pickedUserId: referent.userId,
-          confidence: referent.confidence,
-          applied: accepted
-        }
-      })
-
-      logger.info(
-        {
-          channelId,
-          toneMode: config.jev.tone,
-          referentsMode: config.jev.referents,
-          ruleTone,
-          jevTone: judgment.tone?.tone ?? null,
-          toneConfidence: judgment.tone?.confidence ?? null,
-          toneApplied,
-          referents,
-          latencyMs: Math.round(judgment.latencyMs),
-          inputTokens: judgment.inputTokens
-        },
-        'Jev turn judgment'
-      )
-    }
-
-    if (blocking) {
-      settleJudgment(await judgeTurn(input), true)
-    } else {
-      void judgeTurn(input).then((judgment) => settleJudgment(judgment, false))
-    }
-  }
-
-  const basePrompt = assembleSystemPrompt({ tone, hour, displayName })
-  let factsSection = ''
-  let whoIsMentionedSection = ''
-  let overheardSection = ''
-  let factEntryCount = 0
-
-  try {
-    // Resolve user identities from persistent lookup table (survives restarts)
-    const knownUsers = getAllUserNames()
-
-    // Also pull channel-specific users from session history (has channel context)
-    const channelUsers = getChannelUsers(channelId, config.session.windowSize)
-    for (const [uid, user] of channelUsers) {
-      if (!knownUsers.has(uid) && user.username) {
-        knownUsers.set(uid, { userId: uid, username: user.username, displayName: user.displayName })
-      }
-    }
-
-    // Ensure current speaker is included
-    knownUsers.set(userId, { userId, username, displayName })
-
-    let factEntries: Array<{ person: string; facts: Array<{ key: string; value: string }> }>
-    let retrievalSelected = 0
-
-    if (config.memory.claimsBackend) {
-      const retrieval = retrieveForTurn({
-        guildId,
-        speakerId: userId,
-        participantIds: [
-          ...new Set(
-            [
-              ...references.resolved.map(({ userId: referenceId }) => referenceId),
-              ...appliedJevReferents.map(({ userId: referenceId }) => referenceId),
-              ...channelUsers.keys()
-            ].filter((participantId) => participantId !== userId)
-          )
-        ].slice(0, config.memory.recentParticipantLimit),
-        message: userMessage
-      })
-      factEntries = retrieval.entries
-      retrievalSelected = retrieval.claims.length
-      const namedAliases = references.resolved.filter(
-        ({ alias, displayName: referenceName, matchedBy }) =>
-          (matchedBy === 'nickname' || matchedBy === 'username') && alias.toLowerCase() !== referenceName.toLowerCase()
-      )
-      const mentionLines = [
-        ...namedAliases.map(({ alias, displayName: referenceName }) => `- "${alias}" means ${referenceName}`),
-        ...appliedJevReferents.map(({ alias, displayName: referenceName }) => `- "${alias}" means ${referenceName}`)
-      ]
-      if (mentionLines.length > 0) {
-        whoIsMentionedSection = `\n\n## Who Is Mentioned\n${mentionLines.join('\n')}`
-      }
-    } else {
-      factEntries = []
-      for (const [uid, user] of knownUsers) {
-        const facts = getFacts(guildId, uid)
-        if (facts.length > 0) {
-          const label = user.username !== user.displayName ? `${user.username} (${user.displayName})` : user.displayName
-          factEntries.push({ person: label, facts })
-          refreshFactTimestamps(guildId, uid)
-        }
-      }
-    }
-
-    const factsEnvelope = buildFactsEnvelope(factEntries)
-    if (factsEnvelope) {
-      factsSection = `\n\n## What You Remember About People In This Channel\n${factsEnvelope}`
-      factEntryCount = factEntries.length
-      logger.info(
-        { channelId, usersWithFacts: factEntries.length, totalUsers: knownUsers.size },
-        'User facts injected into prompt'
-      )
-    }
-    if (config.memory.claimsBackend) {
-      recordMemoryEvent({
-        kind: 'context_build',
-        guildId,
-        channelId,
-        subjectUserId: userId,
-        nSelected: retrievalSelected,
-        tokensEst: factsEnvelope ? estimateTokens(factsEnvelope) : 0
-      })
-    }
-  } catch (error) {
-    if (config.memory.claimsBackend) {
-      recordMemoryEvent({
-        kind: 'context_build',
-        guildId,
-        channelId,
-        subjectUserId: userId,
-        nSelected: 0,
-        tokensEst: 0
-      })
-    }
-    logger.warn({ userId, error }, 'Failed to load user memory for prompt injection')
-  }
-
-  const overheard = getBufferMessages(channelId).slice(-config.memory.contextSize)
-  const overheardBlock = buildOverheardBlock(overheard)
-  if (overheardBlock) {
-    overheardSection = `\n\n## Recent Channel Activity (messages you overheard)\n${overheardBlock}`
-  }
-
-  const tailSection =
-    `\n\n- The current user's Discord ID is "${userId}".` +
-    ' remember_user and recall_user target the current user automatically; to recall a different server member, pass their name as user_name.'
-
-  // Safety de-escalation ladder. Each rung strictly removes carried context — never the current message —
-  // so Roka answers with less surrounding context rather than refusing outright.
-  const SAFETY_LADDER = ['drop_overheard', 'drop_facts', 'clear_history'] as const
+  const context = await createTurnContext(options)
+  const { session, fakeMessages, tone, hour, factEntryCount, overheardSection, safetyLadder, composePrompt } = context
   let safetyRung = 0
   let dropImages = false
+  let systemPrompt = context.systemPrompt
 
-  function composePrompt(): string {
-    const head = safetyRung >= 3 ? assembleSystemPrompt({ tone: 'sincere', hour, displayName }) : basePrompt
-    return [
-      head,
-      safetyRung < 2 ? `${factsSection}${whoIsMentionedSection}` : '',
-      safetyRung < 1 ? overheardSection : '',
-      tailSection,
-      safetyRung > 0 ? `\n\n${SAFETY_STEER_ADDENDUM}` : ''
-    ].join('')
-  }
+  const { imageParts, imageTokens, droppedAttachments, truncatedAttachments, refusedAttachments } =
+    await prepareAttachments(channelId, imageAttachments)
 
-  let systemPrompt = composePrompt()
-
-  logger.debug({ tone, hour }, 'Prompt assembled')
-
-  const imageParts: Part[] = []
-  let imageTokens = 0
-  let droppedAttachments = 0
-  let truncatedAttachments = 0
-  if (imageAttachments?.length) {
-    const downloads = await Promise.all(imageAttachments.map((img) => downloadAttachment(img)))
-    droppedAttachments = downloads.filter((result) => result === null).length
-    truncatedAttachments = downloads.filter((result) => result?.truncated).length
-    for (const result of downloads) {
-      if (result) {
-        imageParts.push({ inlineData: { data: result.data, mimeType: result.mimeType } })
-        imageTokens += result.tokens
-      }
-    }
-    if (imageParts.length > 0) {
-      logger.debug({ imageCount: imageParts.length, imageTokens }, 'Attached images to request')
-    }
-  }
-
-  // Priced before sending, because size does not bound token cost — a 17 KB PDF is 560 tokens a page and can
-  // exceed a whole request's budget on its own. Over the ceiling the turn is refused here rather than sent to
-  // fail on a 429, which would retry into the same wall and spend the minute's TPM for every other channel.
-  // Only asked when something is not an image: images are a flat 1,089 each and cannot reach the ceiling.
-  let refusedAttachments = 0
-  if (imageParts.length > 0 && needsMeasuring(imageParts)) {
-    const measured = await measureAttachmentTokens(imageParts)
-    if (measured !== undefined && measured > config.gemini.maxAttachmentTokens) {
-      logger.info(
-        { channelId, measured, ceiling: config.gemini.maxAttachmentTokens, count: imageParts.length },
-        'Attachments cost more than one turn may spend, refusing them'
-      )
-      refusedAttachments = imageParts.length
-      imageParts.length = 0
-      imageTokens = 0
-    } else if (measured !== undefined) {
-      // The probe has already been paid for, so keep its answer rather than the per-type derivation this
-      // started as. They agree closely — a measured 89-page PDF came back one token off 560/page — but only
-      // one of the two is what the request will actually be billed.
-      imageTokens = measured
-    }
-  }
-
-  /**
-   * Told to the model, not just to the user. Without it the turn looks exactly like an ordinary question
-   * about a video, and what follows is not misbehaviour: CORE_PROMPT says to quietly call search_web for a
-   * fact she is unsure of, and "what happens in this video" is precisely that when no video is present. So
-   * she searches the web for the user's own phrasing and reports the result as the file's contents. Measured
-   * 4 of 4 without this line and 0 of 4 with it — the fabrications were real games and real films because
-   * they were search results, not inventions.
-   *
-   * That is why the fix removes the premise rather than adding a prohibition. A rule saying "do not invent"
-   * aims at a disobedience that never happened, and it would put behavioural wording on the prompt path and
-   * buy the two-green-live-run cost for a sentence that only appears once a download has already failed.
-   * It is a statement of fact for the same reason.
-   */
-  // Both reasons an attachment can be absent, worded apart because they are not the same fact: one never
-  // arrived, the other arrived intact and cost more than a turn may spend. A refusal without this line
-  // re-creates exactly the condition above — attachment gone, request unchanged, search_web fills the hole.
-  //
-  // The refusal arm says "together" because the refusal is all-or-nothing: one cheap image beside one
-  // 500-page PDF refuses both, and blaming each file individually would tell the sender their 1,089-token
-  // picture was too long to read. Pricing per attachment to refuse only the expensive one would cost a
-  // round trip each, and each of those round trips re-uploads the file.
+  // Tell the model when files are absent or refused so it does not search for their missing contents.
   const failedAttachmentNotice = [
     ...(droppedAttachments > 0
       ? [{ text: `[${droppedAttachments} file(s) were shared with this message but could not be retrieved.]` }]
@@ -1333,9 +256,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
       : [])
   ]
 
-  // One list rather than a branch per case: the notice was duplicated across both arms, and a mutation
-  // deleting it from the dropImages arm alone broke nothing — a second copy nobody could have caught going
-  // wrong. The safety ladder drops the images; it has no reason to drop the reason they are missing.
+  // Keep attachment notices in both ordinary and safety-rebuilt turns.
   const buildNewMessage = (): Content => ({
     role: 'user',
     parts: [...(dropImages ? [] : imageParts), ...failedAttachmentNotice, { text: `[${displayName}]: ${userMessage}` }]
@@ -1354,7 +275,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   const verdict: ModelVerdict = {}
   const modelCalls = { count: 0 }
   const route: ModelRoute = {
-    useFallback: rokaModel.hasFallback && Date.now() < fallbackUntilMs,
+    useFallback: rokaModel.hasFallback && hasStickyFallback(),
     hedged: false,
     answeredBy: null
   }
@@ -1386,10 +307,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
               },
               tryConsumeRetry: () =>
                 getSharedRateLimiter(config.rateLimit).tryConsumeAboveFloor(config.gemini.retryRpmFloor),
-              // retryBackoffCapMs doubles as computeBackoff's per-attempt maxMs: a single backoff delay
-              // should never be advertised as larger than the total budget it is measured against — the
-              // remaining-budget clamp in runTurnWithReliability's retry loop would cut an oversized delay down
-              // to size anyway, so sharing the value keeps the pre-jitter range honest with the ceiling.
+              // Bound each advertised backoff by the configured total retry ceiling.
               computeBackoff: (attempt) =>
                 computeBackoff(attempt, config.gemini.retryBackoffBaseMs, { maxMs: config.gemini.retryBackoffCapMs }),
               genericFallback: getRandomFallback(),
@@ -1402,24 +320,24 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
                 resetIdleTimer(channelId)
                 sessionWasReset = true
               },
-              safetyLadderLength: SAFETY_LADDER.length,
+              safetyLadderLength: safetyLadder.length,
               escalateSafety: async () => {
-                if (safetyRung >= SAFETY_LADDER.length) return undefined
+                if (safetyRung >= safetyLadder.length) return undefined
                 safetyRung++
 
                 if (safetyRung === 3) {
                   // Carried history is the only remaining suspect: rebuild the window empty and drop images.
                   dropImages = true
                   await destroySession(channelId)
-                  rehydrationSuppressed.add(channelId)
+                  suppressSessionRehydration(channelId)
                   await ensureSession(channelId)
                   resetIdleTimer(channelId)
                   sessionWasReset = true
                 }
 
-                systemPrompt = composePrompt()
+                systemPrompt = composePrompt(safetyRung)
                 steering.prompt = systemPrompt
-                return SAFETY_LADDER[safetyRung - 1]
+                return safetyLadder[safetyRung - 1]
               },
               runTurn: async (attempt, signal) => {
                 const includeCurrentTurn = attempt === 0 || sessionWasReset
@@ -1492,36 +410,27 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
         'Fallback model answered'
       )
       if (movedAwayFromGemini) {
-        fallbackUntilMs = config.fallback.stickyMs > 0 ? Date.now() + config.fallback.stickyMs : 0
+        setFallbackUntilMs(config.fallback.stickyMs > 0 ? Date.now() + config.fallback.stickyMs : 0)
       }
     } else {
-      fallbackUntilMs = 0
+      setFallbackUntilMs(0)
     }
   }
 
-  // After every attempt, never between them: a retry re-sends the same message, so stripping mid-loop would
-  // hand the model a marker where the first attempt had the picture.
-  //
-  // Not in a finally, deliberately. runTurnWithReliability converts model failures into a fallbackResult
-  // rather than throwing, so every ordinary path arrives here — but that is a property of *that* function,
-  // not a guarantee of this one, and an unexpected throw from inside it would skip the strip. The cost if
-  // that happens is bounded and self-healing: the events stay tracked, the next turn in this channel strips
-  // them along with its own, and deleteSession clears them when the idle TTL fires. One extra resend, not a
-  // permanent leak. Wrapping the ~100-line reliability expression in a try/finally to close that was judged
-  // not worth the diff; if runTurnWithReliability ever gains a throwing path, revisit this.
+  // Strip after retries so they resend the original bytes; a missed strip is cleaned up on the next turn or TTL.
   const strippedParts = sessionService.stripAttachmentBytes(channelId)
   if (strippedParts > 0) logger.debug({ channelId, strippedParts }, 'Attachment bytes stripped from history')
 
   if (reliability.action === 'destroy') await destroySession(channelId)
 
   if (reliability.success) {
-    sessionErrorCounts.delete(channelId)
+    clearSessionErrorCount(channelId)
   } else if (
     reliability.kind === 'transient_http' ||
     reliability.kind === 'network' ||
     reliability.kind === 'empty_text'
   ) {
-    sessionErrorCounts.set(channelId, (sessionErrorCounts.get(channelId) ?? 0) + 1)
+    incrementSessionErrorCount(channelId)
   }
 
   const toolsUsed = [...usedToolNames]
@@ -1573,9 +482,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
       userMessage
     })
   }
-  // Named once and used twice on purpose: this is both what the turn is reported to have cost and what it is
-  // charged for, and letting the two be separate expressions is how a budget starts describing something
-  // other than the spend it is meant to bound.
+  // Reuse one estimate for both reported and charged token cost.
   const tokensInEst =
     estimateTokens(systemPrompt) +
     fakeMessages.reduce((total, message) => total + estimateTokens(`[${message.displayName}]: ${message.content}`), 0) +
@@ -1583,9 +490,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     estimateTokens(`[${displayName}]: ${userMessage}`) +
     imageTokens
 
-  // Charged after the fact rather than reserved before it, because the cost is only knowable once the
-  // reliability ladder has finished — a safety re-rung turn recomposes the system prompt and a retry sends it
-  // again, and both are real spend. Admission is the separate, earlier decision made in the Discord handlers.
+  // Charge after the reliability ladder so retries and rebuilt prompts are included in actual spend.
   chargeTokens(tokensInEst)
 
   const metrics: ResponseMetrics = {

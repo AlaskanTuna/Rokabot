@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { computeBackoff } from '../agent/geminiReliability.js'
-import { runTurnWithReliability } from '../agent/roka.js'
+import { runTurnWithReliability } from '../agent/reliability.js'
 import { deriveAchievableRetries } from '../config.js'
 
 describe('retry budget', () => {

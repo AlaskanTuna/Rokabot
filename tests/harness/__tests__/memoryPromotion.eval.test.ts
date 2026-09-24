@@ -5,12 +5,8 @@ import { assertClaim } from '../../../src/agent/memory/memoryClaims.js'
 import { resetForTest as resetScheduler, stopExtractionScheduler } from '../../../src/agent/memory/scheduler.js'
 import { assembleSystemPrompt } from '../../../src/agent/promptAssembler.js'
 import { buildFactsEnvelope } from '../../../src/agent/promptSafety.js'
-import {
-  __resetTestRunTurnFactory,
-  __setTestRunTurnFactory,
-  destroySession,
-  generateResponse
-} from '../../../src/agent/roka.js'
+import { __resetTestRunTurnFactory, __setTestRunTurnFactory, generateResponse } from '../../../src/agent/roka.js'
+import { destroySession } from '../../../src/agent/session.js'
 import { config } from '../../../src/config.js'
 import { createMessageHandler } from '../../../src/discord/events/messageCreate.js'
 import { getDb } from '../../../src/storage/database.js'
