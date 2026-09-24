@@ -95,10 +95,7 @@ function sleepUntil(delayMs: number, signal: AbortSignal): Promise<void> {
   })
 }
 
-/**
- * Derives the persistable failure marker — never the message itself, only an allowlisted status token derived from it.
- * Its fixed output alphabet (400|401|403|429|500|503|504) cannot echo request content; the allowlist is load-bearing.
- */
+// Persist only a bounded status marker in diagnostics, never the API error message.
 function markerFrom(outcome: TurnOutcome): string | undefined {
   const marker = outcome.errorCode || outcome.finishReason || extractGeminiStatus(outcome.errorMessage ?? '')
   return marker ? String(marker).slice(0, 64) : undefined
