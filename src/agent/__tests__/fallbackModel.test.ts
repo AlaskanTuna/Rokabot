@@ -4,7 +4,8 @@ import { FinishReason } from '@google/genai'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const configState = vi.hoisted(() => ({
-  gemini: { model: 'gemini-test' },
+  gemini: { model: 'gemini-test', hedgeAfterMs: 0 },
+  logging: { level: 'silent' },
   fallback: {
     apiKey: undefined as string | undefined,
     model: 'Qwen/Qwen3.5-122B-A10B',
@@ -14,7 +15,10 @@ const configState = vi.hoisted(() => ({
   }
 }))
 
+// Under this tsconfig vitest loads tests as CJS, and the RelativePath.keys tsc emits for this file do not
+// collide with the literal key the source keeps, so both forms are registered.
 vi.mock('../../config.js', () => ({ config: configState }))
+vi.mock('../src/agent/../config.js', () => ({ config: configState }))
 
 import { ModelScopeLlm, RoutedLlm, createRokaModel, modelRouteForRequest } from '../fallbackModel.js'
 

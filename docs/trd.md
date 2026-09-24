@@ -480,6 +480,40 @@ When `MODELSCOPE_API_KEY` is set, a turn that Gemini cannot serve is answered by
   more conservative during an outage. Background memory extraction has no fallback; it waits for Gemini.
 - **Logs:** `Gemini unavailable, answering this turn with the fallback model` and `Fallback model answered`.
 
+#### Hedging Slow Gemini Calls
+
+A slow Gemini call is a latency problem the switch policy cannot see: nothing has failed, so the turn waits out
+`gemini.timeout` (20 s) before the fallback is even considered. So `RoutedLlm` does not wait to be told to switch —
+if a fallback is configured, `gemini.hedgeAfterMs` (5 s, `0` disables) elapses and Gemini has still not finished
+the call, the same call starts on the fallback and whichever side finishes first keeps the turn.
+
+- **Per Model Call, Not Per Turn:** the hedge lives inside `RoutedLlm.generateContentAsync`, so the ADK runner
+  still sees one model call per call and `maxLlmCalls` is unaffected. Tool round-trips are separate model calls
+  and are hedged independently. The runner is never run twice, so session events are never appended twice.
+- **The Race Is On The Completed Response:** the bot runs non-streaming (`streamingMode` is never set), so
+  `generateContentAsync` yields once, after the whole call. Finishing and answering are therefore the same event,
+  and the winner's single response is yielded while the loser's response is discarded. The first side to finish
+  wins even if it is the fallback answering after a Gemini failure — the turn keeps whatever it was built on.
+- **Eligibility:** a request is hedged only when the fallback can serve it fully. Images and tool calls are fine;
+  any inline or file media the fallback can only stand in for (audio, video, PDFs, documents) blocks the hedge, and
+  so does a turn already routed to the fallback.
+- **Abort Semantics:** each side gets its own `AbortController`, passed as `GenerateContentConfig.abortSignal` to
+  Gemini and composed with `AbortSignal.timeout(fallback.timeoutMs)` for ModelScope. The loser is aborted once
+  the winner is in hand (2 s grace, so a lost race is still debuggable), and an aborted loser logs nothing, counts
+  as no failure, and neither arms the sticky window nor spends a retry.
+- **Sticky Window:** a hedge win does **not** set `fallbackUntilMs`. The window is keyed on Gemini having failed;
+  one slow call is not an outage, and arming it would push every later turn onto the fallback for 5 minutes. For
+  the same reason the window is only set when the turn was moved onto the fallback by the reliability ladder.
+- **Accounting And Recording:** a hedged call spends one Gemini RPM slot, and the hedge's own ModelScope call
+  spends none. `response_events` gains two columns: `model` (`'gemini'`, `'fallback'`, or `NULL` when the turn
+  produced no answer) and `hedged` (`1` once any model call of the turn fired a hedge). A hedge win is otherwise
+  recorded as an ordinary successful turn, so the win rate is visible without inflating the failure rate.
+- **Calibration:** production per-turn `llm_ms` for no-tool turns is p50 1.9 s / p75 2.7 s / p90 6.2 s / p95 14.4 s,
+  so 5 s fires on roughly the slowest 10–15% of calls, at the cost of one extra call on each of them.
+- **Logs:** `Hedged slow Gemini call; kept the faster answer` names the winner; a hedge's fallback failing while
+  Gemini is still running logs `Hedged fallback call failed while Gemini was still running` and is otherwise
+  dropped.
+
 ### RPM-Budget Accounting
 
 - A user message consumes one rate-limiter token today. Every live retry and every background extraction

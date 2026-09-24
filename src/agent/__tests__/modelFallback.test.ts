@@ -1,7 +1,14 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { config } from '../../config.js'
 
 const mocks = vi.hoisted(() => ({ hasFallback: true, tryConsumeRetry: vi.fn(() => true) }))
+
+// The config module this file exercises validates its secrets at import time, and a worktree has no .env.
+vi.hoisted(() => {
+  process.env.DISCORD_TOKEN ??= 'test-token'
+  process.env.DISCORD_CLIENT_ID ??= 'test-client'
+  process.env.GEMINI_API_KEY ??= 'test-key'
+})
 
 vi.mock('../fallbackModel.js', async (importOriginal) => {
   const original = await importOriginal<typeof import('../fallbackModel.js')>()
@@ -61,7 +68,7 @@ vi.mock('../../utils/rateLimiter.js', () => ({
 
 vi.mock('../../utils/timezone.js', () => ({ getLocalHour: () => 12 }))
 
-import { RoutedLlm, modelRouteForRequest } from '../fallbackModel.js'
+import { RoutedLlm, hedgeForRequest, modelRouteForRequest } from '../fallbackModel.js'
 import {
   __resetModelFallbackForTest,
   __resetTestRunTurnFactory,
@@ -392,6 +399,35 @@ describe('generateResponse model fallback', () => {
     await generateResponse(responseOptions('Try Gemini again.'))
 
     expect(firstRoutes).toEqual([false, true])
+    expect(nextRoutes).toEqual([false])
+  })
+
+  it('does not arm the sticky window for a hedge win, so the next turn still tries Gemini', async () => {
+    mutableFallbackConfig.stickyMs = 10_000
+    const first = await generateResponse(responseOptions())
+    // Stand in for a hedged call: the fallback answered a turn the route had left on Gemini.
+    const routes: Array<boolean | undefined> = []
+    __setTestRunTurnFactory(() => async () => {
+      routes.push(modelRouteForRequest.getStore()?.useFallback)
+      // Stand in for a hedge: a model call fired one and the fallback's answer is the one this turn keeps.
+      const hedge = hedgeForRequest.getStore() as { hedged: boolean }
+      hedge.hedged = true
+      return { text: 'Hedge answer~', hasText: true, hasFunctionCall: false }
+    })
+    const routed = await hedgeForRequest.run({ hedged: true }, () => generateResponse(responseOptions('A slow one.')))
+
+    expect(first.metrics).toMatchObject({ model: undefined, hedged: 0 })
+    expect(routed.metrics).toMatchObject({ model: undefined, hedged: 1 })
+    // A hedge fired but the route never left Gemini, so nothing here can arm the window.
+    expect(routes).toEqual([false])
+
+    const nextRoutes: Array<boolean | undefined> = []
+    __setTestRunTurnFactory(() => async () => {
+      nextRoutes.push(modelRouteForRequest.getStore()?.useFallback)
+      return { text: 'Gemini next~', hasText: true, hasFunctionCall: false }
+    })
+    await generateResponse(responseOptions('And now?'))
+
     expect(nextRoutes).toEqual([false])
   })
 

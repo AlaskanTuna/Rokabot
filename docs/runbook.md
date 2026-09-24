@@ -213,6 +213,24 @@ After a fallback answer, turns go straight to the fallback for `fallback.stickyM
 tried again. ModelScope's daily Magicube allowance is spent per call (1 Magicube each for this model); usage is at
 modelscope.ai/magicube/usage.
 
+## Hedging Slow Gemini Calls
+
+When a fallback is configured, a Gemini call that has not answered within `gemini.hedgeAfterMs` (5 s, `0` disables)
+is started on the fallback as well, and whichever answers first is what the user sees. A hedge win does **not** arm
+the sticky window, so the next turn still tries Gemini. Each hedged call costs one extra ModelScope call.
+
+```bash
+# Hedged calls, and which model won each one
+sudo docker logs rokabot-roka-1 2>&1 | grep '"msg":"Hedged slow Gemini call; kept the faster answer"'
+
+# How often the hedge is winning, against how many turns it fired on
+sqlite3 data/rokabot.db "SELECT model, COUNT(*) FROM response_events WHERE hedged = 1 GROUP BY model"
+```
+
+Tuning: raise `hedgeAfterMs` to hedge fewer calls (cheaper, but a longer tail), lower it to hedge more (a shorter
+tail, more ModelScope spend). If a turn carried an audio clip, a video or a PDF, no hedge is possible — the fallback
+cannot read those — so those turns only ever wait out `gemini.timeout`.
+
 ---
 
 ## Jev Shadow Mode

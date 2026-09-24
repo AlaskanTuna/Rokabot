@@ -4,8 +4,17 @@ import type { BaseLlmConnection, LlmRequest, LlmResponse } from '@google/adk'
 import { FinishReason } from '@google/genai'
 import type { Part } from '@google/genai'
 import { config } from '../config.js'
+import { logger } from '../utils/logger.js'
 
 export const modelRouteForRequest = new AsyncLocalStorage<{ useFallback: boolean }>()
+
+/** Whether any model call of the current turn has fired a hedge; carried out on `response_events.hedged`. */
+export const hedgeForRequest = new AsyncLocalStorage<{ hedged: boolean }>()
+
+export type AnswerModel = 'gemini' | 'fallback'
+
+/** Which provider produced a call's response, or null when the turn produced no answer to attribute. */
+export const answerModelForRequest = new AsyncLocalStorage<{ model: AnswerModel | null }>()
 
 type JsonObject = Record<string, unknown>
 type ChatMessage = Record<string, unknown>
@@ -268,6 +277,7 @@ export class ModelScopeLlm extends BaseLlm {
   async *generateContentAsync(llmRequest: LlmRequest, _stream?: boolean): AsyncGenerator<LlmResponse, void> {
     this.maybeAppendUserContent(llmRequest)
 
+    const externalSignal = llmRequest.config?.abortSignal
     const requestBody: Record<string, unknown> = {
       model: this.model,
       messages: openAiMessages(llmRequest),
@@ -290,7 +300,9 @@ export class ModelScopeLlm extends BaseLlm {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(requestBody),
-      signal: AbortSignal.timeout(this.timeoutMs)
+      signal: externalSignal
+        ? AbortSignal.any([externalSignal, AbortSignal.timeout(this.timeoutMs)])
+        : AbortSignal.timeout(this.timeoutMs)
     })
     if (!response.ok) {
       const bodyText = await response.text()
@@ -353,15 +365,103 @@ export class ModelScopeLlm extends BaseLlm {
   }
 }
 
+type RaceSide = 'gemini' | 'fallback'
+
+type RaceOutcome =
+  | { winner: RaceSide; responses: LlmResponse[]; error: null }
+  | { winner: null; responses: null; error: { side: RaceSide; error: unknown } }
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+/**
+ * The fallback substitutes text markers for anything but images, so a hedge on such a turn would answer from
+ * a request the user never sent. It costs the user their attachment to save them a few seconds — the tail
+ * hedge exists to bound is better absorbed by `gemini.timeout`.
+ */
+function isHedgeEligible(llmRequest: LlmRequest): boolean {
+  return !(llmRequest.contents ?? []).some((content) =>
+    (content.parts ?? []).some((part) => {
+      const mimeType = part.inlineData?.mimeType ?? part.fileData?.mimeType
+      return Boolean(mimeType) && !mimeType?.startsWith('image/')
+    })
+  )
+}
+
+function withAbort(llmRequest: LlmRequest, signal: AbortSignal): LlmRequest {
+  return { ...llmRequest, config: { ...llmRequest.config, abortSignal: signal } }
+}
+
+/**
+ * Runs both sides of the hedge race and returns once one of them has finished, which is what "answered first"
+ * means here: a non-streaming Gemini call yields its single response when the whole call is done, so finishing
+ * and answering are the same event. The first side to finish settles the race and aborts the other, which is
+ * why an aborted loser can only ever arrive as a rejection and never as a response.
+ */
+async function raceForWinner(
+  llmRequest: LlmRequest,
+  primary: BaseLlm,
+  fallback: BaseLlm,
+  hedgeAfterMs: number,
+  onHedgeFired: () => void
+): Promise<RaceOutcome> {
+  const primaryAbort = new AbortController()
+  const fallbackAbort = new AbortController()
+  let settle: ((outcome: RaceOutcome) => void) | undefined
+  const settled = new Promise<RaceOutcome>((resolve) => {
+    settle = resolve
+  })
+  let winner: RaceOutcome | undefined
+
+  const run = async (side: RaceSide, llm: BaseLlm, request: LlmRequest): Promise<RaceOutcome> => {
+    const responses: LlmResponse[] = []
+    try {
+      for await (const response of llm.generateContentAsync(request)) responses.push(response)
+      return { winner: side, responses, error: null }
+    } catch (error) {
+      return { winner: null, responses: null, error: { side, error } }
+    }
+  }
+
+  const timer = setTimeout(() => {
+    if (winner) return
+    onHedgeFired()
+    void run('fallback', fallback, withAbort(llmRequest, fallbackAbort.signal)).then((outcome) => {
+      if (winner) return
+      winner = outcome
+      // The winner keeps the turn: its answer is the one the session is built on, tool calls included, so
+      // the loser is the call to spend nothing on. The grace period leaves an un-aborted stack available
+      // for a human debugging a lost race.
+      setTimeout(() => primaryAbort.abort(), 2).unref?.()
+      settle?.(outcome)
+    })
+  }, hedgeAfterMs)
+
+  void run('gemini', primary, withAbort(llmRequest, primaryAbort.signal)).then((outcome) => {
+    if (winner) return
+    winner = outcome
+    fallbackAbort.abort()
+    settle?.(outcome)
+  })
+
+  const outcome = await settled
+  clearTimeout(timer)
+  return outcome
+}
+
 export class RoutedLlm extends BaseLlm {
   readonly fallbackModelName: string | undefined
+  readonly hedgeAfterMs: number
 
   constructor(
     private readonly primary: BaseLlm,
-    private readonly fallback: BaseLlm | null
+    private readonly fallback: BaseLlm | null,
+    hedgeAfterMs: number = config.gemini.hedgeAfterMs
   ) {
     super({ model: primary.model })
     this.fallbackModelName = fallback?.model
+    this.hedgeAfterMs = hedgeAfterMs
   }
 
   get hasFallback(): boolean {
@@ -369,8 +469,36 @@ export class RoutedLlm extends BaseLlm {
   }
 
   async *generateContentAsync(llmRequest: LlmRequest, stream?: boolean): AsyncGenerator<LlmResponse, void> {
-    const selected = modelRouteForRequest.getStore()?.useFallback && this.fallback ? this.fallback : this.primary
-    yield* selected.generateContentAsync(llmRequest, stream)
+    const onFallback = modelRouteForRequest.getStore()?.useFallback && this.fallback
+    if (onFallback || !this.fallback || !hedgeForRequest.getStore()) {
+      const selected = onFallback ? this.fallback : this.primary
+      yield* selected.generateContentAsync(llmRequest, stream)
+      return
+    }
+    if (this.hedgeAfterMs <= 0 || !isHedgeEligible(llmRequest)) {
+      yield* this.primary.generateContentAsync(llmRequest, stream)
+      return
+    }
+
+    const hedge = hedgeForRequest.getStore() as { hedged: boolean }
+    const outcome = await raceForWinner(llmRequest, this.primary, this.fallback, this.hedgeAfterMs, () => {
+      hedge.hedged = true
+    })
+    if (outcome.winner === null) {
+      // One turn-level failure, unchanged for the ladder: the fallback's loss is logged and dropped, because
+      // it is Gemini's outage that the switch policy, the sticky window and the retry budget are all keyed on.
+      const { side, error } = outcome.error
+      if (side === 'fallback') logger.warn({ err: error }, 'Hedged fallback call failed while Gemini was still running')
+      throw side === 'gemini' ? error : new Error(`Both models failed (${errorText(error)})`)
+    }
+
+    const answer = answerModelForRequest.getStore()
+    if (answer) answer.model = outcome.winner
+    logger.warn(
+      { winner: outcome.winner, hedgeAfterMs: this.hedgeAfterMs },
+      'Hedged slow Gemini call; kept the faster answer'
+    )
+    yield* outcome.responses[Symbol.iterator]()
   }
 
   connect(llmRequest: LlmRequest): Promise<BaseLlmConnection> {
