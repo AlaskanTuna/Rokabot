@@ -409,6 +409,24 @@ export function runMigrations(database: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_memory_events_guild_created
       ON memory_events (guild_id, created_at);
+
+    CREATE TABLE IF NOT EXISTS jev_events (
+      kind TEXT NOT NULL CHECK (kind IN ('turn', 'admission', 'verification')),
+      guild_id TEXT NOT NULL,
+      channel_id TEXT NOT NULL,
+      question TEXT NOT NULL,
+      answer TEXT NOT NULL,
+      probability REAL,
+      confidence REAL,
+      applied INTEGER NOT NULL CHECK (applied IN (0, 1)),
+      latency_ms INTEGER NOT NULL,
+      input_tokens INTEGER NOT NULL,
+      baseline TEXT,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_jev_events_created_at
+      ON jev_events (created_at);
   `)
 
   const extractionQueueCols = database.prepare("PRAGMA table_info('extraction_queue')").all() as Array<{ name: string }>

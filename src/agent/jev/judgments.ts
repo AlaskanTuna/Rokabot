@@ -14,7 +14,7 @@ export type TurnJudgmentInput = {
 }
 
 export type TurnJudgment = {
-  tone: { tone: ToneKey; confidence: number } | null
+  tone: { tone: ToneKey; confidence: number; probability: number | null } | null
   referents: Array<{ alias: string; userId: string | null; confidence: number }>
   latencyMs: number
   inputTokens: number
@@ -67,6 +67,10 @@ function warningDetails(kind: 'turn' | 'extraction', error: unknown) {
   return { kind, errorName: details.constructor?.name ?? 'Error', status: details.status }
 }
 
+function validProbability(value: unknown): number | null {
+  return typeof value === 'number' && value >= 0 && value <= 1 ? value : null
+}
+
 export async function judgeTurn(
   input: TurnJudgmentInput,
   options?: { signal?: AbortSignal }
@@ -100,7 +104,7 @@ export async function judgeTurn(
     const state = {
       speaker: input.speakerName,
       message: input.message,
-      recent_messages: input.recentLines.slice(-6),
+      recent_messages: input.recentLines.slice(-3),
       time_of_day: timeOfDay(getLocalHour()),
       ...(aliases.length > 0 ? { candidates: aliases.map(({ alias, members }) => ({ alias, members })) } : {})
     }
@@ -113,7 +117,11 @@ export async function judgeTurn(
     const toneAnswer = result.answers.tone
     const tone =
       toneAnswer?.type === 'choice' && toneAnswer.choice in TONE_CRITERIA
-        ? { tone: toneAnswer.choice as ToneKey, confidence: toneAnswer.confidence }
+        ? {
+            tone: toneAnswer.choice as ToneKey,
+            confidence: toneAnswer.confidence,
+            probability: validProbability(toneAnswer.probabilities?.[toneAnswer.choice])
+          }
         : null
     const referents = aliases.map((alias, index) => {
       const answer = result.answers[`referent_${index}`]
