@@ -13,17 +13,15 @@ import type { ResponseMetrics } from '../storage/metricsStore.js'
 import { getChannelUsers, loadHistory, saveMessage } from '../storage/sessionStore.js'
 import { getFacts, refreshFactTimestamps } from '../storage/userMemory.js'
 import { getAllUserNames, getUserName } from '../storage/userNames.js'
-import { GEMINI_IMAGE_TOKENS, processImageForGemini } from '../utils/imageProcessor.js'
 import { logger } from '../utils/logger.js'
 import { getSharedRateLimiter } from '../utils/rateLimiter.js'
 import { getLocalHour } from '../utils/timezone.js'
 import { estimateTokens } from '../utils/tokens.js'
-import { measureAttachmentTokens, needsMeasuring } from './attachmentCost.js'
-import { geminiMimeType, sizeLimitFor } from './attachmentLimits.js'
+import { attachmentMarker, prepareAttachments } from './attachments.js'
+import type { ImageAttachment } from './attachments.js'
 import { modelRouteForRequest } from './fallbackModel.js'
 import { computeBackoff } from './geminiReliability.js'
 import { judgeTurn } from './jev/judgments.js'
-import { isobmffAllowsPrefix, prefixPolicyFor } from './mediaPrefix.js'
 import { resolveReferences } from './memory/identityResolver.js'
 import { retrieveForTurn } from './memory/retriever.js'
 import { getMessages as getBufferMessages } from './passiveBuffer.js'
@@ -46,13 +44,6 @@ import { beginShutdown, isShuttingDown } from './shutdownSignal.js'
 import { chargeTokens } from './tokenBudget.js'
 import { detectTone } from './toneDetector.js'
 import { rokaTools } from './tools/index.js'
-
-export interface ImageAttachment {
-  url: string
-  contentType: string
-  /** Bytes, when the source states them. Discord does on an upload; an embed or a resolved link does not. */
-  size?: number
-}
 
 interface GenerateOptions {
   channelId: string
@@ -111,15 +102,6 @@ const toolCallsForRequest = new AsyncLocalStorage<Set<string>>()
 const modelCallsForRequest = new AsyncLocalStorage<{ count: number }>()
 // Exported so tests can drive the beforeModelCallback ALS seam directly (task 122's only observable proof point)
 export const steeringForRequest = new AsyncLocalStorage<{ prompt?: string }>()
-/**
- * Ceiling on a single attachment download, covering the body as well as the headers. `attachment_url` points
- * at a host the sender named, and nothing else bounds it — the byte guard stops a *large* response, not a
- * *slow* one, and a stalled transfer would otherwise sit inside the turn until undici's 300s default. At the
- * Pi's measured ~2.5 MB/s a maximal 10 MB file lands in about four seconds, so this is roughly 3.7x the worst
- * legitimate case. Aborting drops the attachment and takes the ordinary "could not be retrieved" notice.
- */
-const ATTACHMENT_DOWNLOAD_TIMEOUT_MS = 15_000
-
 const SAFETY_DEFLECTION = "Ehh… let's not get into that one~"
 const RECITATION_DEFLECTION = "Ah, I don't think I should repeat that one exactly~"
 const TERMINAL_DEFLECTION = "Eep, something went wrong on my side. Let's try again later~"
@@ -152,14 +134,6 @@ export function __setTestRunTurnFactory(factory: TestRunTurnFactory): void {
 /** Clears the test-only turn seam so generateResponse uses the ADK runner. */
 export function __resetTestRunTurnFactory(): void {
   testRunTurnFactory = undefined
-}
-
-/** What replaces an attachment's bytes in history: enough for her to know it was there, at no per-turn cost. */
-function attachmentMarker(mimeType: string): string {
-  if (mimeType.startsWith('image/')) return '(an image)'
-  if (mimeType.startsWith('audio/')) return '(an audio clip)'
-  if (mimeType.startsWith('video/')) return '(a video)'
-  return '(a document)'
 }
 
 /** Does this request carry video? Only then is media resolution worth pinning, since the setting is
@@ -442,149 +416,6 @@ export async function destroyAllSessions(): Promise<void> {
     await destroySession(channelId)
   }
   logger.info('All ADK sessions destroyed')
-}
-
-/**
- * Read a response body, stopping the transfer the moment it passes `limit`.
- *
- * What this replaces read the whole body into memory with `arrayBuffer()` and measured it afterwards, which
- * is only safe while every response carries an honest `content-length`. Discord's CDN does, and at 4-10 MB
- * an overrun was harmless anyway — but a header that is absent or understated would have let a response
- * exhaust the container before anything checked it, and at video sizes that is the OOM kill the byte budget
- * exists to prevent. Cancelling the reader discards the rest and closes the connection, so an oversized
- * transfer costs only the bytes already in flight.
- *
- * There is deliberately no `arrayBuffer()` fallback for a body-less response: a fallback is a path where the
- * guard does not run, and it would be taken by exactly the malformed responses the guard is for.
- */
-async function readWithinLimit(
-  response: Response,
-  limit: number,
-  url: string,
-  onOverflow: 'refuse' | 'truncate'
-): Promise<Buffer | null> {
-  if (!response.body) {
-    logger.warn({ url }, 'Attachment response carried no readable body, skipping')
-    return null
-  }
-
-  const reader = response.body.getReader()
-  const chunks: Uint8Array[] = []
-  let received = 0
-
-  let chunk = await reader.read()
-  while (!chunk.done) {
-    const overflow = received + chunk.value.byteLength - limit
-    if (overflow > 0) {
-      // `truncate` is for a deliberate prefix fetch, where reaching the ceiling is the plan rather than a
-      // failure. It matters because a server may ignore `Range` and answer 200 with the whole file: without
-      // this the read would abort and the prefix would be lost, turning the saving into a refusal.
-      if (onOverflow === 'truncate') {
-        chunks.push(chunk.value.subarray(0, chunk.value.byteLength - overflow))
-        await reader.cancel()
-        return Buffer.concat(chunks)
-      }
-      await reader.cancel()
-      logger.warn({ url, received, limit }, 'Attachment passed its size limit mid-transfer, aborted')
-      return null
-    }
-    received += chunk.value.byteLength
-    chunks.push(chunk.value)
-    chunk = await reader.read()
-  }
-
-  return Buffer.concat(chunks)
-}
-
-/**
- * Download one attachment as base64, returning null if it fails or cannot be made to fit.
- *
- * A file past its ceiling is not automatically refused any more: where the container tolerates being cut
- * short, the first `limit` bytes are fetched with a `Range` header and sent as a prefix, so the excess never
- * crosses the wire. Whole-file ingestion of very large media is not merely expensive but arithmetically
- * impossible — 200 MB of audio is ~5.3 h, ~611,000 tokens against a 250,000 TPM ceiling — so a bounded
- * prefix is the only shape that works at all. `truncated` tells the caller to say so rather than pretend
- * she heard the whole thing.
- */
-async function downloadAttachment(
-  attachment: ImageAttachment
-): Promise<{ data: string; mimeType: string; tokens: number; truncated: boolean } | null> {
-  const { url, contentType } = attachment
-  // Which types are admitted at all is the Discord layer's decision; this only decides how to handle one that
-  // already got through. Routing on image/* rather than an allowlist keeps the type sets in one place — the
-  // agent layer has no imports from the Discord layer and should not gain one for a constant.
-  const isImage = contentType.startsWith('image/')
-  const limit = sizeLimitFor(contentType)
-
-  // Only a size Discord stated can be trusted here. An embed image or a resolved link states none, so it
-  // takes the ordinary path and the size guard catches it — guessing "oversized" from a missing size would
-  // truncate files that were never too big.
-  const policy = prefixPolicyFor(contentType)
-  const wantsPrefix = attachment.size !== undefined && attachment.size > limit && policy !== 'none'
-
-  if (attachment.size !== undefined && attachment.size > limit && policy === 'none') {
-    logger.warn({ url, size: attachment.size, limit, contentType }, 'Oversized and not safely prefixable, refusing')
-    return null
-  }
-
-  try {
-    // Range is asked for, and Discord's CDN does not grant it: measured against cdn.discordapp.com, which
-    // advertises `accept-ranges: bytes` and then answers 200 with the whole body anyway. So the saving does
-    // not come from Range — it comes from readWithinLimit cancelling the reader at the ceiling, which stops
-    // the transfer rather than reading on and discarding. Measured on a 50 MB body: 1 MB read in 178 ms
-    // against 2,750 ms for the whole thing. Range stays because it costs nothing and a 206 would be better
-    // still, but nothing depends on it.
-    const response = await fetch(url, {
-      ...(wantsPrefix ? { headers: { Range: `bytes=0-${limit - 1}` } } : {}),
-      signal: AbortSignal.timeout(ATTACHMENT_DOWNLOAD_TIMEOUT_MS)
-    })
-    if (!response.ok) {
-      logger.warn({ url, status: response.status }, 'Failed to download attachment')
-      return null
-    }
-
-    const contentLength = response.headers.get('content-length')
-    if (!wantsPrefix && contentLength && parseInt(contentLength, 10) > limit) {
-      logger.warn({ url, size: contentLength, limit }, 'Attachment exceeds its size limit, skipping')
-      return null
-    }
-
-    const buffer = await readWithinLimit(response, limit, url, wantsPrefix ? 'truncate' : 'refuse')
-    if (!buffer) return null
-
-    // Whether this particular file survives being cut is a property of the file, not of its type: a phone MP4
-    // carries its index last and a prefix of one has nothing to decode against. Refused rather than sent,
-    // because sending it raises no error anywhere — the request succeeds and the answer is about nothing.
-    if (wantsPrefix && policy === 'isobmff' && !isobmffAllowsPrefix(buffer)) {
-      logger.warn({ url, contentType }, 'Oversized video has no index before its media data, refusing')
-      return null
-    }
-
-    // A document or an audio clip goes to the model exactly as it arrived. sharp is an image pipeline — handed
-    // anything else it throws, and its catch returns the undecoded bytes relabelled image/jpeg, so the file
-    // would arrive byte-identical but misdeclared and unreadable. Only the name is adjusted, for Gemini's
-    // spelling of MP3. tokens stays 0: audio is billed per second, and seconds are not knowable without
-    // decoding — the same argument docs/research/multimodal.md makes against enforcing duration caps.
-    if (!isImage) {
-      return {
-        data: buffer.toString('base64'),
-        mimeType: geminiMimeType(contentType),
-        tokens: 0,
-        truncated: wantsPrefix
-      }
-    }
-
-    const processed = await processImageForGemini(buffer)
-    return {
-      data: processed.data.toString('base64'),
-      mimeType: processed.mimeType,
-      tokens: GEMINI_IMAGE_TOKENS,
-      truncated: wantsPrefix
-    }
-  } catch (error) {
-    logger.warn({ url, error }, 'Error downloading attachment')
-    return null
-  }
 }
 
 const KNOWN_FALLBACKS = new Set([
@@ -871,47 +702,8 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
 
   logger.debug({ tone, hour }, 'Prompt assembled')
 
-  const imageParts: Part[] = []
-  let imageTokens = 0
-  let droppedAttachments = 0
-  let truncatedAttachments = 0
-  if (imageAttachments?.length) {
-    const downloads = await Promise.all(imageAttachments.map((img) => downloadAttachment(img)))
-    droppedAttachments = downloads.filter((result) => result === null).length
-    truncatedAttachments = downloads.filter((result) => result?.truncated).length
-    for (const result of downloads) {
-      if (result) {
-        imageParts.push({ inlineData: { data: result.data, mimeType: result.mimeType } })
-        imageTokens += result.tokens
-      }
-    }
-    if (imageParts.length > 0) {
-      logger.debug({ imageCount: imageParts.length, imageTokens }, 'Attached images to request')
-    }
-  }
-
-  // Priced before sending, because size does not bound token cost — a 17 KB PDF is 560 tokens a page and can
-  // exceed a whole request's budget on its own. Over the ceiling the turn is refused here rather than sent to
-  // fail on a 429, which would retry into the same wall and spend the minute's TPM for every other channel.
-  // Only asked when something is not an image: images are a flat 1,089 each and cannot reach the ceiling.
-  let refusedAttachments = 0
-  if (imageParts.length > 0 && needsMeasuring(imageParts)) {
-    const measured = await measureAttachmentTokens(imageParts)
-    if (measured !== undefined && measured > config.gemini.maxAttachmentTokens) {
-      logger.info(
-        { channelId, measured, ceiling: config.gemini.maxAttachmentTokens, count: imageParts.length },
-        'Attachments cost more than one turn may spend, refusing them'
-      )
-      refusedAttachments = imageParts.length
-      imageParts.length = 0
-      imageTokens = 0
-    } else if (measured !== undefined) {
-      // The probe has already been paid for, so keep its answer rather than the per-type derivation this
-      // started as. They agree closely — a measured 89-page PDF came back one token off 560/page — but only
-      // one of the two is what the request will actually be billed.
-      imageTokens = measured
-    }
-  }
+  const { imageParts, imageTokens, droppedAttachments, truncatedAttachments, refusedAttachments } =
+    await prepareAttachments(channelId, imageAttachments)
 
   /**
    * Told to the model, not just to the user. Without it the turn looks exactly like an ordinary question
