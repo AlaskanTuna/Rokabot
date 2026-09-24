@@ -67,6 +67,8 @@ interface YamlConfig {
     speakerMinShare?: number
     maxActiveClaimsPerUser?: number
     claimRetentionDays?: number
+    salienceHalfLifeDays?: number
+    recallCooldownMs?: number
     extractionDailyBudgetRatio?: number
     perGuildGapMs?: number
     extractionQueueMaxPerGuild?: number
@@ -226,6 +228,8 @@ export const config = {
     speakerMinShare: envNumber('MEMORY_SPEAKER_MIN_SHARE') ?? yaml.memory?.speakerMinShare ?? 0.5,
     maxActiveClaimsPerUser: envInt('MEMORY_MAX_ACTIVE_CLAIMS_PER_USER') ?? yaml.memory?.maxActiveClaimsPerUser ?? 20,
     claimRetentionDays: envInt('MEMORY_CLAIM_RETENTION_DAYS') ?? yaml.memory?.claimRetentionDays ?? 90,
+    salienceHalfLifeDays: yaml.memory?.salienceHalfLifeDays ?? 30,
+    recallCooldownMs: yaml.memory?.recallCooldownMs ?? 21_600_000,
     extractionDailyBudgetRatio:
       envNumber('MEMORY_EXTRACTION_DAILY_BUDGET_RATIO') ?? yaml.memory?.extractionDailyBudgetRatio ?? 0.4,
     perGuildGapMs: envInt('MEMORY_PER_GUILD_GAP_MS') ?? yaml.memory?.perGuildGapMs ?? 20_000,
@@ -345,6 +349,8 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'memory.speakerMinShare', value: config.memory.speakerMinShare, min: 0, max: 1 },
   { path: 'memory.maxActiveClaimsPerUser', value: config.memory.maxActiveClaimsPerUser, min: 1 },
   { path: 'memory.claimRetentionDays', value: config.memory.claimRetentionDays, min: 1 },
+  { path: 'memory.salienceHalfLifeDays', value: config.memory.salienceHalfLifeDays, min: 1 },
+  { path: 'memory.recallCooldownMs', value: config.memory.recallCooldownMs, min: 0 },
   { path: 'memory.extractionDailyBudgetRatio', value: config.memory.extractionDailyBudgetRatio, min: 0, max: 1 },
   { path: 'memory.perGuildGapMs', value: config.memory.perGuildGapMs, min: 0 },
   { path: 'memory.extractionQueueMaxPerGuild', value: config.memory.extractionQueueMaxPerGuild, min: 1 },

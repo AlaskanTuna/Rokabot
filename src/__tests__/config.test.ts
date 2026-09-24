@@ -203,6 +203,8 @@ describe('config module', () => {
     expect(config.memory.speakerMinShare).toBe(0.5)
     expect(config.memory.maxActiveClaimsPerUser).toBe(20)
     expect(config.memory.claimRetentionDays).toBe(90)
+    expect(config.memory.salienceHalfLifeDays).toBe(30)
+    expect(config.memory.recallCooldownMs).toBe(21_600_000)
     expect(config.memory.extractionDailyBudgetRatio).toBe(0.4)
     expect(config.memory.perGuildGapMs).toBe(20_000)
     expect(config.memory.extractionQueueMaxPerGuild).toBe(50)
@@ -752,6 +754,8 @@ describe('config module', () => {
       { path: 'memory.speakerMinShare', min: 0, max: 1 },
       { path: 'memory.maxActiveClaimsPerUser', min: 1 },
       { path: 'memory.claimRetentionDays', min: 1 },
+      { path: 'memory.salienceHalfLifeDays', min: 1 },
+      { path: 'memory.recallCooldownMs', min: 0 },
       { path: 'memory.extractionDailyBudgetRatio', min: 0, max: 1 },
       { path: 'memory.perGuildGapMs', min: 0 },
       { path: 'memory.extractionQueueMaxPerGuild', min: 1 },

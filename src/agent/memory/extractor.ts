@@ -20,6 +20,7 @@ export type ExtractionJob = Readonly<{
   guildId: string
   channelId: string
   messages: readonly ExtractionMessage[]
+  botUserId?: string
   admittedBy?: 'jev'
 }>
 
@@ -178,7 +179,9 @@ function getDbTransaction(fn: () => void): void {
 
 function knownClaimKeys(job: ExtractionJob): Set<string> {
   return new Set(
-    job.messages.flatMap((message) => getActiveClaims(job.guildId, message.userId).map((claim) => claim.predicate))
+    job.messages
+      .filter((message) => message.userId !== job.botUserId)
+      .flatMap((message) => getActiveClaims(job.guildId, message.userId).map((claim) => claim.predicate))
   )
 }
 
@@ -220,7 +223,10 @@ export async function runExtraction(job: ExtractionJob): Promise<void> {
   }
 
   try {
-    const changes = applyOps(job, parseOps(text), new Set(job.messages.map((message) => message.userId)))
+    const suppliedUserIds = new Set(
+      job.messages.map((message) => message.userId).filter((userId) => userId !== job.botUserId)
+    )
+    const changes = applyOps(job, parseOps(text), suppliedUserIds)
     for (const change of changes) {
       recordMemoryEvent({
         kind: 'claim_change',

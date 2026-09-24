@@ -138,6 +138,14 @@ describe('extraction scheduler', () => {
     expect(mocks.runExtraction).toHaveBeenCalledWith(expect.objectContaining({ guildId: 'A', admittedBy: 'jev' }))
   })
 
+  it('passes the bot ID to extraction for queued jobs', async () => {
+    enqueueAndSchedule({ ...job('A'), botUserId: 'bot-1' })
+
+    await drain()
+
+    expect(mocks.runExtraction).toHaveBeenCalledWith(expect.objectContaining({ botUserId: 'bot-1' }))
+  })
+
   it('does not let a gapped busy guild block other guilds', async () => {
     enqueueAndSchedule(job('A', 'first A'))
     enqueueAndSchedule(job('A', 'second A'))
