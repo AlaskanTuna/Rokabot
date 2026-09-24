@@ -1,12 +1,14 @@
 import { GoogleGenAI } from '@google/genai'
 import { config } from '../../config.js'
 import { getDb } from '../../storage/database.js'
+import type { ExtractionEpisode } from '../../storage/extractionQueue.js'
 import { recordMemoryEvent } from '../../storage/metricsStore.js'
 import { getSharedRateLimiter } from '../../utils/rateLimiter.js'
 import { classifyGeminiFailure, computeBackoff } from '../geminiReliability.js'
 import { SAFETY_SETTINGS } from '../safetySettings.js'
 import { isShuttingDown } from '../shutdownSignal.js'
 import { shouldExtract } from './candidateGate.js'
+import { EXTRACTION_RESPONSE_SCHEMA, type ExtractionOutput, parseExtractionOutput } from './extractionSchema.js'
 import { assertClaim, getActiveClaims, retractClaim } from './memoryClaims.js'
 import { PREDICATES, cardinalityOf, normalizePredicate } from './predicates.js'
 
@@ -57,6 +59,51 @@ Conversation:
 function getClient(): GoogleGenAI {
   genaiClient ??= new GoogleGenAI({ apiKey: config.gemini.apiKey })
   return genaiClient
+}
+
+function formatEpisodeLine(message: ExtractionEpisode['messages'][number]): string {
+  const role = message.isBot ? ' (bot context only)' : ''
+  return `[${message.userId}|${message.displayName}${role}]: ${message.content}`
+}
+
+function episodePrompt(guildId: string, episode: ExtractionEpisode): string {
+  const humanIds = [...new Set(episode.messages.filter((message) => !message.isBot).map((message) => message.userId))]
+  const claims = humanIds.map((userId) => ({
+    userId,
+    claims: getActiveClaims(guildId, userId).map(({ id, predicate, value }) => ({ id, predicate, value }))
+  }))
+  return [
+    'You extract durable personal details about users from a Discord episode. Never create facts about the bot or group.',
+    'Never extract sensitive personal information: real/legal names, age or birthday, address or specific residence, phone numbers, email addresses, social media handles, school or workplace names, financial information, credentials, or medical/health details.',
+    'Use only the supplied user IDs. Attribute facts only to the person who stated them, not someone quoted, addressed, or joked about. Context lines are background only and cannot supply a subject or fact.',
+    'Add a new claim only for a durable fact. Use update or remove with an existing claim ID instead of adding a rewording. Return noop when nothing changed.',
+    'Return a one-to-two sentence third-person summary.',
+    `Allowed human user IDs: ${humanIds.join(', ') || '(none)'}`,
+    `Current active claims:\n${JSON.stringify(claims, null, 2)}`,
+    `Context (background only, never a subject):\n${episode.context.map(formatEpisodeLine).join('\n') || '(none)'}`,
+    `Delta messages:\n${episode.messages.map(formatEpisodeLine).join('\n')}`
+  ].join('\n\n')
+}
+
+export async function extractEpisode(input: {
+  guildId: string
+  channelId: string
+  episode: ExtractionEpisode
+}): Promise<ExtractionOutput> {
+  const response = await getClient().models.generateContent({
+    model: config.gemini.extractionModel,
+    contents: episodePrompt(input.guildId, input.episode),
+    config: {
+      responseMimeType: 'application/json',
+      responseSchema: EXTRACTION_RESPONSE_SCHEMA,
+      temperature: 0.3,
+      maxOutputTokens: 700,
+      safetySettings: SAFETY_SETTINGS,
+      httpOptions: { timeout: config.gemini.timeout }
+    }
+  })
+  if (!response.text) throw new Error('Memory extraction returned no JSON')
+  return parseExtractionOutput(response.text)
 }
 
 function waitForRetry(delayMs: number): Promise<void> {
