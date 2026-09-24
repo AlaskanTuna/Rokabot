@@ -338,34 +338,72 @@ requests.
 
 ## Jev Judgments
 
-Jev (`@typesafe-ai/sdk`) returns typed judgments; Gemini generates replies and extracts claim operations. The Jev client
-exists only when `TYPESAFE_API_KEY` is set, uses `jev.model` (`jev-1.13.0`), and makes one attempt without retries.
+Jev (TypeSafe's typed decision model, `@typesafe-ai/sdk`) answers pick-from-a-list questions; Gemini generates every
+reply, tool call and memory operation. The client (`src/agent/jev/client.ts`) exists only when `TYPESAFE_API_KEY` is
+set, is pinned to `jev.model` (`jev-1.13.0`), and makes one attempt with no retries. Message and `/ask` handlers
+start one `TurnEntryWork` before reply fetching, deferral or ADK session loading. Generation receives that same handle
+and waits only when an enabled feature is `on`; `shadow` observes it asynchronously. A declined turn aborts the work,
+and failures keep the rule-based decision.
 
-In-reply tone and referent judgments use `jev.tone` and `jev.referents`, each with `off`, `shadow`, or `on` mode and
-an optional environment override (`JEV_TONE`, `JEV_REFERENTS`):
+In-reply tone, referent and lookup judgments use `jev.tone`, `jev.referents` and `jev.prefetch`, each with `off`,
+`shadow` or `on` mode. Tone and referents can be overridden by `JEV_TONE` and `JEV_REFERENTS`; prefetch can be
+controlled with `JEV_PREFETCH`:
 
-| Mode     | Behaviour                                                                                    |
-| -------- | -------------------------------------------------------------------------------------------- |
-| `off`    | Jev is not asked                                                                             |
-| `shadow` | Jev is asked and its answer is logged beside the rule decision; nothing changes or waits     |
-| `on`     | Jev's answer is applied when its confidence clears the feature's threshold, else rules stand |
+| Mode     | Behaviour                                                            |
+| -------- | -------------------------------------------------------------------- |
+| `off`    | The feature adds no Jev decision                                     |
+| `shadow` | The decision is observed without applying it; turn judgments persist |
+| `on`     | The decision may be used when its feature-specific threshold passes  |
 
 - **Turn Judgment:** at most one `judgeTurn` request per turn, carrying a tone `choice` over the 12 `ToneKey`s and a
   referent `choice` for each name `resolveReferences` found ambiguous (at most 3 names, 8 candidates each, plus
-  `none`/`unclear`). It is awaited, bounded by `jev.timeoutMs` (1200 ms), when a carried feature is not `off`. An
-  applied tone needs `jev.toneMinConfidence`; an applied referent needs `jev.referentMinConfidence` and joins the
-  retrieval participants right after the resolver's members, with a `## Who Is Mentioned` line. The safety rung-3
-  `sincere` prompt still overrides any tone. The turn judgment is logged without message text.
-- **Memory Admission And Verification:** Jev is a hard dependency for passive memory, not a shadow feature. After the
-  local sensitive/trivial precheck, admission asks whether the episode contains a lasting fact and requires
-  `memory.admitThreshold` (0.5). Verification checks operation durability and attribution against
-  `memory.verifyThreshold` (0.5), and checks additions against same-predicate claims. Both are bounded by
-  `jev.memoryTimeoutMs` (5000 ms). A missing key, timeout, or unusable admission answer drops the episode before
-  Gemini extraction; an incomplete verification blocks removals and marks allowed additions/updates for review.
-- **Event Recording:** completed admission and verification judgments are recorded in `jev_events` with question key,
-  answer, probability, confidence, `applied`, latency, and input-token count. Source messages are not stored in this
-  table. `memory.admitThreshold` and `memory.verifyThreshold` are the memory thresholds; there is no Jev extraction
-  mode.
+  `none`/`unclear`). It receives at most three prior lines from `session_history` and is bounded by `jev.timeoutMs`
+  (1200 ms). An `on` tone uses selected-choice probability threshold `jev.toneMinProbability`; a missing probability
+  keeps the rule tone. An `on` referent uses `jev.referentMinConfidence` and joins the retrieval participants after
+  the resolver's members, with a `## Who Is Mentioned` line. The safety rung-3 `sincere` prompt overrides any tone.
+- **Lookup Judgment:** when `jev.prefetch` is not `off`, the same request includes a `needs_lookup` `noul` asking
+  whether the message needs a specific, niche, recent or real-world fact. It is returned as `TurnJudgment.needsLookup`;
+  a missing, malformed or out-of-range answer becomes `null`. This adds no second Jev request. The lookup query uses
+  the mention-stripped message text before reply, container, embed, poll or forwarded-content wrappers are added.
+- **Turn Events:** each non-null turn judgment writes one `kind = 'turn'` row to `jev_events` with the rule baseline,
+  decision labels, probability, confidence, whether tone was applied, rounded latency and input tokens. The `question`
+  JSON records the `prefetch` mode; the `answer` JSON records `needsLookup` and `prefetchStatus`. It stores no message
+  text, alias or user ID. `metrics.retentionDays` prunes these rows with the other metrics tables.
+- **Memory Admission And Verification:** Jev is a hard dependency for passive memory. After the local sensitive/trivial
+  precheck, admission asks whether an episode contains a lasting fact and requires `memory.admitThreshold` (0.5).
+  Verification checks operation durability and attribution against `memory.verifyThreshold` (0.5), and checks additions
+  against same-predicate claims. Both are bounded by `jev.memoryTimeoutMs` (5000 ms). A missing key, timeout, or unusable
+  admission answer drops the episode before Gemini extraction; incomplete verification blocks removals and marks
+  allowed additions or updates for review.
+- **Replay Comparator:** `npm run replay:jev -- data/rokabot.db --max-turns 100` compares Jev tone labels with the
+  regex tone on retained history and transcript fixtures, including CJK turns. Regex agreement is a tuning comparator,
+  not ground-truth accuracy; the cutoff support rule also checks CJK agreement before tone can turn on.
+- **Event Recording:** admission and verification judgments are recorded in `jev_events` with question key, answer,
+  probability, confidence, `applied`, latency and input-token count. Source messages are not stored in this table.
+  `memory.admitThreshold` and `memory.verifyThreshold` are the memory thresholds; there is no Jev extraction mode.
+
+### Search Prefetch
+
+`jev.prefetch` defaults to `shadow`. `off` omits the lookup question; `shadow` asks it and records whether it crossed
+the threshold without searching; `on` starts a Tavily search when `needsLookup` is at least `jev.prefetchMinNoul`.
+The default threshold is `0.7`, and the maximum wait before the first model request proceeds without results is
+`jev.prefetchWaitMs` (4000 ms).
+
+The message handler starts `TurnEntryWork` before reply fetching and session loading. Once the shared Jev judgment clears
+the threshold in `on` mode, it starts at most one automatic prefetch using the original mention-stripped message text
+(or the `/ask` question). That search can run while session and memory context are prepared. It does not reserve a
+Gemini RPM slot. Rejected turns cancel the shared work; if a Tavily request is already in flight, the abort signal is
+passed through to its fetch.
+
+A successful result is injected into the first model system prompt in a `## Looked It Up` block, capped at 2000
+characters. The existing lookup-answer instructions in `src/agent/prompts/core.ts` apply, including the direction to
+call `search_web` again if the results are thin or off-topic. The normal search citation footer uses the prefetched
+URLs; a later model-issued search replaces that citation list. A prefetched result counts `search_web` in `toolsUsed`,
+once even if Gemini also calls the tool. The tool remains registered in all modes. Empty, failed, aborted, canceled or
+timed-out prefetches add no prompt block, and the turn answers normally. The safety ladder drops the prefetch block
+after its first rung.
+
+The derivation, measured latency and rollout plan are in `docs/research/jev-integration.md`.
 
 ## API Contracts
 
@@ -377,7 +415,7 @@ an optional environment override (`JEV_TONE`, `JEV_REFERENTS`):
 Event: interactionCreate
 Filter: isChatInputCommand() && commandName === 'ask'
 Extract: interaction.options.getString('question'), channelId, user.displayName
-Flow: deferReply() → process → editReply(response)
+Flow: start turn work → deferReply() → process → editReply(response)
 ```
 
 #### MessageCreate (Mention/Reply)
@@ -386,7 +424,7 @@ Flow: deferReply() → process → editReply(response)
 Event: messageCreate
 Filter: !author.bot && (isMentioned || isReplyToBot)
 Extract: content (stripped of mention tags), channelId, member.displayName
-Flow: sendTyping() → process → message.reply(response)
+Flow: start turn work and sendTyping() without waiting → fetch reply context → process → message.reply(response)
 ```
 
 #### Installation & Context Policy

@@ -116,6 +116,7 @@ function responseOptions(userMessage = 'Hello fallback.') {
   return {
     channelId,
     guildId: 'fallback-guild',
+    memory: true,
     userMessage,
     displayName: 'Mio',
     username: 'mio',

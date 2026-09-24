@@ -243,17 +243,70 @@ extraction. Without `TYPESAFE_API_KEY`, startup logs `Passive memory extraction 
 once, and passive episodes are dropped. Set `jev.memoryTimeoutMs`, `memory.admitThreshold` and
 `memory.verifyThreshold` in `config.yml` through a PR.
 
-```bash
-# What Jev picked per turn, next to the rule-based tone
-sudo docker logs rokabot-roka-1 2>&1 | grep '"msg":"Jev turn judgment"'
+The replay at hour 14:00 covered 77 turns (51 production-history and 26 transcript turns); Jev chose `playful` on
+52/77. Regex-fired turn agreement was 14% at cutoff 0. At cutoff 0.85, 19/77 turns met the probability threshold
+(25% coverage); 10 had a regex rule and Jev agreed on 60%. This does not meet the replay support rule, so
+`jev.toneMinProbability` is `0.85` and `jev.tone` remains `shadow`. Regex agreement is a comparator, not ground-truth
+accuracy. Shadow judgments are persisted with `applied = 0` for later review. The replay command requires
+`TYPESAFE_API_KEY`.
 
-# Jev failures and timeouts
-sudo docker logs rokabot-roka-1 2>&1 | grep '"msg":"Jev judgment failed"'
+```bash
+npm run replay:jev -- data/rokabot.db --max-turns 100
 ```
 
-To switch an in-reply feature, set `JEV_TONE` or `JEV_REFERENTS` to `off`, `shadow` or `on` in `~/rokabot/.env`
-and recreate the container (`sudo docker compose -f ~/rokabot/docker-compose.yml up -d`). The memory judgments are
-not shadow modes and cannot be disabled independently of passive extraction.
+Review recent persisted tone judgments without message text or member IDs:
+
+```sql
+SELECT created_at,
+       baseline,
+       json_extract(answer, '$.tone') AS jev_tone,
+       probability,
+       confidence,
+       applied,
+       latency_ms,
+       input_tokens
+FROM jev_events
+WHERE kind = 'turn'
+ORDER BY created_at DESC
+LIMIT 20;
+```
+
+`jev.prefetch` ships as `shadow`. Jev asks whether a turn needs lookup, but Tavily is not called. Review the persisted
+score and outcome without storing or displaying the message text:
+
+```sql
+SELECT created_at,
+       json_extract(question, '$.prefetch') AS prefetch_mode,
+       json_extract(answer, '$.needsLookup') AS needs_lookup,
+       json_extract(answer, '$.prefetchStatus') AS prefetch_status,
+       json_extract(answer, '$.tone') AS jev_tone,
+       probability,
+       applied,
+       latency_ms
+FROM jev_events
+WHERE kind = 'turn'
+ORDER BY created_at DESC
+LIMIT 20;
+```
+
+`shadow_would_fire` means the score met `jev.prefetchMinNoul`, but no search ran. `ready` means a search result was
+obtained for the first prompt (the safety ladder may later drop it). `off`, `below_threshold`, `no_noul` and
+`no_judgment` explain why no prefetch was started; `failed`, `empty`, `aborted`, `canceled` and `gave_up` describe a
+prefetch that supplied no result. At most one automatic Tavily search starts per turn; Gemini can still call the
+existing `search_web` tool if the prefetched results are thin or off-topic. The automatic prefetch uses no Gemini RPM
+slot.
+
+Keep `jev.prefetch` in `shadow` while reviewing these rows. Switching it to `on` should be a reviewed `config.yml`
+change through a PR.
+
+To switch an in-reply feature, set `JEV_TONE` or `JEV_REFERENTS` to `off`, `shadow` or `on` in `~/rokabot/.env` and
+recreate the container (`sudo docker compose -f ~/rokabot/docker-compose.yml up -d`). The memory judgments are not
+shadow modes and cannot be disabled independently of passive extraction. Prefetch can be switched with `JEV_PREFETCH`.
+
+After an authorized deployment of the unawaited typing change, compare `Response completed`'s `e2e_ms - generate_ms`
+before and after. The supplied baseline is p50 1.06 s and p95 2.2 s; removing the initial typing wait should lower
+the difference by about one Discord REST round trip. Record the sample count and time window; unit tests do not
+measure this production effect.
 
 Memory admission and verification totals are retained in `jev_events`; the table stores judgment metadata, not source
 message text:
@@ -269,11 +322,9 @@ sqlite3 ~/rokabot/data/rokabot.db "SELECT kind, question, applied, COUNT(*) AS e
   ORDER BY kind, question, applied;"
 ```
 
-Admission uses the `lasting_fact` question. Verification questions are `durable_N`, `attributed_N` and
-`same_as_N_M`. `applied = 0` means no corresponding operation or duplicate-evidence update was applied; an operation
-can be blocked by its threshold or by operation rules.
-
----
+Admission uses the `lasting_fact` question. Verification questions are `durable_N`, `attributed_N` and `same_as_N_M`.
+`applied = 0` means no corresponding operation or duplicate-evidence update was applied; an operation can be blocked
+by its threshold or by operation rules.
 
 ## GitHub Actions Self-Hosted Runner
 

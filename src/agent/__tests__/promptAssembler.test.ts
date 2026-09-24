@@ -19,7 +19,8 @@ describe('assembleSystemPrompt', () => {
   const baseInput: AssemblerInput = {
     tone: 'playful',
     hour: 14,
-    displayName: 'Alice'
+    displayName: 'Alice',
+    memory: true
   }
 
   it('contains Layer 0: Core identity', () => {
@@ -50,13 +51,13 @@ describe('assembleSystemPrompt', () => {
   })
 
   it('contains time-of-day context', () => {
-    const result = assembleSystemPrompt({ ...baseInput, hour: 14 })
+    const result = assembleSystemPrompt({ ...baseInput, hour: 14, memory: true })
     expect(result).toContain('afternoon')
   })
 
   it('uses different Layer 2 for each tone', () => {
     const tones = Object.keys(TONE_PROMPTS) as ToneKey[]
-    const results = tones.map((tone) => assembleSystemPrompt({ ...baseInput, tone }))
+    const results = tones.map((tone) => assembleSystemPrompt({ ...baseInput, tone, memory: true }))
 
     // Each result should contain the corresponding tone prompt
     for (let i = 0; i < tones.length; i++) {
@@ -72,49 +73,49 @@ describe('assembleSystemPrompt', () => {
   })
 
   it('contains curious tone prompt when tone is curious', () => {
-    const result = assembleSystemPrompt({ ...baseInput, tone: 'curious' })
+    const result = assembleSystemPrompt({ ...baseInput, tone: 'curious', memory: true })
     expect(result).toContain('Curious')
     expect(result).toContain(TONE_PROMPTS.curious)
   })
 
   it('contains annoyed tone prompt when tone is annoyed', () => {
-    const result = assembleSystemPrompt({ ...baseInput, tone: 'annoyed' })
+    const result = assembleSystemPrompt({ ...baseInput, tone: 'annoyed', memory: true })
     expect(result).toContain('Annoyed')
     expect(result).toContain(TONE_PROMPTS.annoyed)
   })
 
   it('contains tender tone prompt when tone is tender', () => {
-    const result = assembleSystemPrompt({ ...baseInput, tone: 'tender' })
+    const result = assembleSystemPrompt({ ...baseInput, tone: 'tender', memory: true })
     expect(result).toContain('Tender')
     expect(result).toContain(TONE_PROMPTS.tender)
   })
 
   it('contains confident tone prompt when tone is confident', () => {
-    const result = assembleSystemPrompt({ ...baseInput, tone: 'confident' })
+    const result = assembleSystemPrompt({ ...baseInput, tone: 'confident', memory: true })
     expect(result).toContain('Confident')
     expect(result).toContain(TONE_PROMPTS.confident)
   })
 
   it('contains nostalgic tone prompt when tone is nostalgic', () => {
-    const result = assembleSystemPrompt({ ...baseInput, tone: 'nostalgic' })
+    const result = assembleSystemPrompt({ ...baseInput, tone: 'nostalgic', memory: true })
     expect(result).toContain('Nostalgic')
     expect(result).toContain(TONE_PROMPTS.nostalgic)
   })
 
   it('contains mischievous tone prompt when tone is mischievous', () => {
-    const result = assembleSystemPrompt({ ...baseInput, tone: 'mischievous' })
+    const result = assembleSystemPrompt({ ...baseInput, tone: 'mischievous', memory: true })
     expect(result).toContain('Mischievous')
     expect(result).toContain(TONE_PROMPTS.mischievous)
   })
 
   it('contains sleepy tone prompt when tone is sleepy', () => {
-    const result = assembleSystemPrompt({ ...baseInput, tone: 'sleepy' })
+    const result = assembleSystemPrompt({ ...baseInput, tone: 'sleepy', memory: true })
     expect(result).toContain('Sleepy')
     expect(result).toContain(TONE_PROMPTS.sleepy)
   })
 
   it('contains competitive tone prompt when tone is competitive', () => {
-    const result = assembleSystemPrompt({ ...baseInput, tone: 'competitive' })
+    const result = assembleSystemPrompt({ ...baseInput, tone: 'competitive', memory: true })
     expect(result).toContain('Competitive')
     expect(result).toContain(TONE_PROMPTS.competitive)
   })
@@ -124,7 +125,7 @@ describe('assembleSystemPrompt', () => {
   // 1.000 -> 0.722 in a paired live A/B on 2026-08-22 (#52). Asserted as an absence so re-adding it fails
   // here rather than three weeks later on a live run nobody budgeted for.
   it('names the current speaker and never a roster of who else is around (issue #52)', () => {
-    const result = assembleSystemPrompt({ ...baseInput, displayName: 'Alice' })
+    const result = assembleSystemPrompt({ ...baseInput, displayName: 'Alice', memory: true })
 
     expect(result).toContain('Alice')
     expect(result).not.toContain('group conversation')
@@ -136,12 +137,12 @@ describe('assembleSystemPrompt', () => {
   })
 
   it('includes early morning context', () => {
-    const result = assembleSystemPrompt({ ...baseInput, hour: 6 })
+    const result = assembleSystemPrompt({ ...baseInput, hour: 6, memory: true })
     expect(result).toContain('early morning')
   })
 
   it('includes late night context', () => {
-    const result = assembleSystemPrompt({ ...baseInput, hour: 23 })
+    const result = assembleSystemPrompt({ ...baseInput, hour: 23, memory: true })
     expect(result).toContain('late night')
   })
 
@@ -149,6 +150,26 @@ describe('assembleSystemPrompt', () => {
     const result = assembleSystemPrompt(baseInput)
     // Verify the structure has all layers separated by \n\n
     expect(result).toContain(CORE_PROMPT + '\n\n' + SPEECH_PROMPT)
+  })
+
+  // A /ask turn is handed no memory tool declarations, so prompt text naming them would be instructions
+  // she cannot act on — and the "what you remember" rule would describe a section that is never built.
+  it('names none of the memory tools when the turn has no memory', () => {
+    const result = assembleSystemPrompt({ ...baseInput, memory: false })
+
+    expect(result).not.toContain('remember_user')
+    expect(result).not.toContain('recall_user')
+    expect(result).not.toContain('forget_user')
+    expect(result).not.toContain('What You Remember')
+  })
+
+  it('differs from the memory kernel only by the memory tool rules', () => {
+    const memoryFree = assembleSystemPrompt({ ...baseInput, memory: false })
+    const withMemory = assembleSystemPrompt({ ...baseInput, memory: true })
+
+    expect(memoryFree.length).toBeLessThan(withMemory.length)
+    expect(memoryFree).toContain(SPEECH_PROMPT)
+    expect(memoryFree).toContain(TONE_PROMPTS.playful)
   })
 })
 
@@ -183,5 +204,12 @@ describe('docs/trd.md ToneKey table', () => {
       extra,
       `docs/trd.md ToneKey table documents tone(s) that no longer exist in TONE_PROMPTS: ${extra.join(', ')}`
     ).toEqual([])
+  })
+})
+
+describe('memory tool rules', () => {
+  it('reach the model as plain code spans, not escaped backticks', () => {
+    expect(CORE_PROMPT).not.toContain('\\`')
+    expect(CORE_PROMPT).toContain('call `remember_user`')
   })
 })

@@ -13,14 +13,19 @@ export type TurnJudgmentInput = {
   recentLines: string[]
   ambiguous: Array<{ alias: string; candidates: Array<{ userId: string; displayName: string }> }>
   includeTone: boolean
+  includeLookup: boolean
 }
 
 export type TurnJudgment = {
-  tone: { tone: ToneKey; confidence: number } | null
+  tone: { tone: ToneKey; confidence: number; probability: number | null } | null
   referents: Array<{ alias: string; userId: string | null; confidence: number }>
+  needsLookup: number | null
   latencyMs: number
   inputTokens: number
 }
+
+export const LOOKUP_QUESTION =
+  'Does answering `message` need a specific, niche, recent or real-world fact Roka would not reliably know?'
 
 export const TONE_CRITERIA = {
   playful: 'casual banter, jokes or light small talk; the default when nothing else fits',
@@ -69,12 +74,16 @@ function warningDetails(kind: 'turn' | 'extraction', error: unknown) {
   return { kind, errorName: details.constructor?.name ?? 'Error', status: details.status }
 }
 
+function validProbability(value: unknown): number | null {
+  return typeof value === 'number' && value >= 0 && value <= 1 ? value : null
+}
+
 export async function judgeTurn(
   input: TurnJudgmentInput,
   options?: { signal?: AbortSignal }
 ): Promise<TurnJudgment | null> {
   try {
-    if (!input.includeTone && input.ambiguous.length === 0) return null
+    if (!input.includeTone && input.ambiguous.length === 0 && !input.includeLookup) return null
     const client = getJevClient()
     if (!client) return null
 
@@ -85,6 +94,9 @@ export async function judgeTurn(
         'Which mood should Roka, a warm and teasing shopkeeper, reply to `message` in, given `recent_messages` and `time_of_day`?',
         TONE_CRITERIA
       )
+    }
+    if (input.includeLookup) {
+      questions.needs_lookup = noul(LOOKUP_QUESTION)
     }
     for (const [index, alias] of aliases.entries()) {
       const criteria: Record<string, string> = {}
@@ -102,7 +114,7 @@ export async function judgeTurn(
     const state = {
       speaker: input.speakerName,
       message: input.message,
-      recent_messages: input.recentLines.slice(-6),
+      recent_messages: input.recentLines.slice(-3),
       time_of_day: timeOfDay(getLocalHour()),
       ...(aliases.length > 0 ? { candidates: aliases.map(({ alias, members }) => ({ alias, members })) } : {})
     }
@@ -115,7 +127,11 @@ export async function judgeTurn(
     const toneAnswer = result.answers.tone
     const tone =
       toneAnswer?.type === 'choice' && toneAnswer.choice in TONE_CRITERIA
-        ? { tone: toneAnswer.choice as ToneKey, confidence: toneAnswer.confidence }
+        ? {
+            tone: toneAnswer.choice as ToneKey,
+            confidence: toneAnswer.confidence,
+            probability: validProbability(toneAnswer.probabilities?.[toneAnswer.choice])
+          }
         : null
     const referents = aliases.map((alias, index) => {
       const answer = result.answers[`referent_${index}`]
@@ -126,7 +142,10 @@ export async function judgeTurn(
         confidence: answer.confidence
       }
     })
-    return { tone, referents, latencyMs, inputTokens: result.usage.input_tokens }
+    const lookupAnswer = result.answers.needs_lookup
+    const needsLookup =
+      input.includeLookup && lookupAnswer?.type === 'noul' ? validProbability(lookupAnswer.noul) : null
+    return { tone, referents, needsLookup, latencyMs, inputTokens: result.usage.input_tokens }
   } catch (error) {
     logger.warn(warningDetails('turn', error), 'Jev judgment failed')
     return null

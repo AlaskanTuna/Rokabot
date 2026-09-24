@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   generateResponse: vi.fn(),
+  startTurnEntryWork: vi.fn(),
+  cancelTurnEntryWork: vi.fn(),
   recordResponseEvent: vi.fn(),
   info: vi.fn(),
   warn: vi.fn(),
@@ -11,18 +13,28 @@ const mocks = vi.hoisted(() => ({
   markActive: vi.fn(() => mocks.isMonitored.mockReturnValue(true)),
   tryConsume: vi.fn(() => true),
   recordEpisodeMessage: vi.fn(),
+  canAffordAttachments: vi.fn(() => true),
+  tryReserve: vi.fn(() => true),
+  release: vi.fn(),
   splitResponse: vi.fn((response: string) => [response])
 }))
 
 vi.mock('../../agent/roka.js', () => ({ generateResponse: mocks.generateResponse }))
 vi.mock('../../agent/channelMonitor.js', () => ({ isMonitored: mocks.isMonitored, markActive: mocks.markActive }))
 vi.mock('../../agent/memory/episodeTracker.js', () => ({ recordEpisodeMessage: mocks.recordEpisodeMessage }))
+vi.mock('../../agent/turnContext.js', () => ({ startTurnEntryWork: mocks.startTurnEntryWork }))
+vi.mock('../../agent/tokenBudget.js', () => ({ canAffordAttachments: mocks.canAffordAttachments }))
 vi.mock('../../storage/metricsStore.js', () => ({ recordResponseEvent: mocks.recordResponseEvent }))
 vi.mock('../../storage/userNames.js', () => ({ upsertUserName: vi.fn() }))
 vi.mock('../../utils/logger.js', () => ({
   logger: { debug: vi.fn(), error: vi.fn(), info: mocks.info, warn: mocks.warn }
 }))
 vi.mock('../concurrency.js', () => ({ isChannelBusy: mocks.isChannelBusy, markBusy: vi.fn(), markFree: vi.fn() }))
+vi.mock('../byteBudget.js', () => ({
+  release: mocks.release,
+  reservationFor: vi.fn(() => 0),
+  tryReserve: mocks.tryReserve
+}))
 vi.mock('../emojiReactor.js', () => ({ shouldReact: () => null }))
 vi.mock('../errorHandler.js', () => ({ isIgnorableDiscordError: () => false }))
 vi.mock('../responses.js', () => ({
@@ -39,6 +51,7 @@ vi.mock('../events/gachaMention.js', () => ({ handleGachaMention: vi.fn() }))
 import { MAX_ATTACHMENTS } from '../attachments.js'
 import { NAME_MENTION_REGEX } from '../events/messageCreate.js'
 import { createMessageHandler } from '../events/messageCreate.js'
+import { assertTurnEntryRejections } from './turnEntryRejections.js'
 
 const metrics = {
   generateMs: 1,
@@ -57,6 +70,7 @@ function createMessage({
   guild,
   guildId = 'guild-1',
   referencedMessage,
+  repliedUser,
   attachments = [],
   embeds = [],
   stickers = [] as Array<{ name: string }>,
@@ -68,6 +82,7 @@ function createMessage({
   guild?: object | null
   guildId?: string | null
   referencedMessage?: object
+  repliedUser?: { id: string } | null
   attachments?: Array<{ url: string; contentType: string | null }>
   embeds?: object[]
   stickers?: Array<{ name: string }>
@@ -84,7 +99,7 @@ function createMessage({
       createdTimestamp: 1_000,
       channelId: 'channel-1',
       content,
-      mentions: { has: vi.fn(() => mentioned) },
+      mentions: { has: vi.fn(() => mentioned), repliedUser },
       components: [],
       reference: referencedMessage ? { messageId: 'message-0' } : null,
       guild: guild ?? null,
@@ -107,15 +122,41 @@ function createMessage({
   }
 }
 
-function createRateLimiter() {
+function createRateLimiter({
+  canAdmitCalls = mocks.tryConsume,
+  reserveCalls
+}: {
+  canAdmitCalls?: () => boolean
+  reserveCalls?: () => { release: () => void } | undefined
+} = {}) {
   return {
     // Driven by the same `mocks.tryConsume` toggle the tests already use, so a test that turns the limiter
     // off still turns off admission — the handler asks `canAdmitCalls` now, not `tryConsume`.
-    canAdmitCalls: mocks.tryConsume,
-    reserveCalls: () => (mocks.tryConsume() ? { release: () => {} } : undefined),
+    canAdmitCalls,
+    reserveCalls: reserveCalls ?? (() => (mocks.tryConsume() ? { release: () => {} } : undefined)),
     remainingRpm: 14,
     remainingRpd: 499
   }
+}
+
+const turnEntryWork = { judgment: Promise.resolve(null), cancel: mocks.cancelTurnEntryWork }
+
+function resetMessageMocks() {
+  vi.clearAllMocks()
+  mocks.isChannelBusy.mockReturnValue(false)
+  mocks.isMonitored.mockReturnValue(false)
+  mocks.tryConsume.mockReturnValue(true)
+  mocks.canAffordAttachments.mockReturnValue(true)
+  mocks.tryReserve.mockReturnValue(true)
+  mocks.startTurnEntryWork.mockReturnValue(turnEntryWork)
+  mocks.generateResponse.mockResolvedValue({
+    text: 'Hello~',
+    tone: 'playful',
+    toolsUsed: [],
+    metrics,
+    droppedAttachments: 0,
+    truncatedAttachments: 0
+  })
 }
 
 describe('NAME_MENTION_REGEX', () => {
@@ -149,20 +190,7 @@ describe('NAME_MENTION_REGEX', () => {
 })
 
 describe('message handler metrics', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mocks.isChannelBusy.mockReturnValue(false)
-    mocks.isMonitored.mockReturnValue(false)
-    mocks.tryConsume.mockReturnValue(true)
-    mocks.generateResponse.mockResolvedValue({
-      text: 'Hello~',
-      tone: 'playful',
-      toolsUsed: [],
-      metrics,
-      droppedAttachments: 0,
-      truncatedAttachments: 0
-    })
-  })
+  beforeEach(resetMessageMocks)
 
   it('replaces third-party mentions with @display-name and strips only the bot mention', async () => {
     const { message } = createMessage({ content: '<@111> what do you know about <@222>?' })
@@ -230,12 +258,16 @@ describe('message handler metrics', () => {
     expect(JSON.stringify(reply.mock.calls[0][0].components[0].toJSON())).not.toContain('-# 🌸')
   })
 
-  it('derives a per-channel DM tenant when there is no guild', async () => {
+  // The mention path is the other half of the /ask split, and the other call site of generateResponse's
+  // memory flag. Asserting it here and `false` over there is what keeps one from drifting into the other.
+  it('asks for memory, and a per-channel DM label, when a message arrives', async () => {
     const { message } = createMessage({ guildId: null })
 
     await createMessageHandler({ user: { id: 'bot-1' } } as never, createRateLimiter() as never)(message as never)
 
-    expect(mocks.generateResponse).toHaveBeenCalledWith(expect.objectContaining({ guildId: 'dm:channel-1' }))
+    expect(mocks.generateResponse).toHaveBeenCalledWith(
+      expect.objectContaining({ guildId: 'dm:channel-1', memory: true })
+    )
   })
 
   // Pins the mention path; /ask is pinned in interactionCreate.metrics.test.ts. Two call sites, so two
@@ -271,6 +303,136 @@ describe('message handler metrics', () => {
     expect(mocks.recordResponseEvent).toHaveBeenCalledWith(expect.objectContaining({ toolsUsed: ['roll_dice'] }))
   })
 
+  it('starts entry work before an unknown reply target resolves and hands it to generation', async () => {
+    const replyTarget = {
+      author: { id: 'bot-1', displayName: 'Roka' },
+      content: 'previous answer',
+      embeds: [],
+      poll: null,
+      messageSnapshots: new Collection(),
+      components: [],
+      stickers: new Collection(),
+      attachments: new Collection()
+    }
+    const { message } = createMessage({ mentioned: false, content: 'hello', referencedMessage: replyTarget })
+    let resolveFetch: (value: typeof replyTarget) => void = () => {}
+    message.channel.messages.fetch = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          resolveFetch = resolve
+        })
+    )
+
+    const handling = createMessageHandler(
+      { user: { id: 'bot-1' } } as never,
+      createRateLimiter() as never
+    )(message as never)
+
+    expect(mocks.startTurnEntryWork).toHaveBeenCalledWith(
+      expect.objectContaining({ channelId: 'channel-1', message: 'hello' })
+    )
+    expect(mocks.generateResponse).not.toHaveBeenCalled()
+    resolveFetch(replyTarget)
+    await handling
+
+    expect(mocks.generateResponse).toHaveBeenCalledWith(expect.objectContaining({ turnEntryWork }))
+  })
+
+  it('starts entry work with the raw current question before adding reply context', async () => {
+    const question = 'When did the newest season premiere?'
+    const replyTarget = {
+      author: { id: '123456789', displayName: 'Roka' },
+      content: 'previous answer',
+      embeds: [],
+      poll: null,
+      messageSnapshots: new Collection(),
+      components: [],
+      stickers: new Collection(),
+      attachments: new Collection()
+    }
+    const { message } = createMessage({ content: `<@123456789> ${question}`, referencedMessage: replyTarget })
+
+    await createMessageHandler({ user: { id: '123456789' } } as never, createRateLimiter() as never)(message as never)
+
+    expect(mocks.startTurnEntryWork).toHaveBeenCalledWith(expect.objectContaining({ message: question }))
+    expect(mocks.startTurnEntryWork.mock.calls[0][0].message).not.toContain('Replying to')
+    expect(mocks.generateResponse.mock.calls[0][0].userMessage).toContain('previous answer')
+  })
+
+  it('keeps generated message wrappers out of the lookup query', async () => {
+    const question = 'What is this?'
+    const { message } = createMessage({
+      content: `<@123456789> ${question}`,
+      snapshots: [{ content: 'forwarded details', components: [], embeds: [], attachments: new Collection() }]
+    })
+    message.components = [{ toJSON: () => ({ type: 10, content: 'container details' }) }] as never
+
+    await createMessageHandler({ user: { id: '123456789' } } as never, createRateLimiter() as never)(message as never)
+
+    expect(mocks.startTurnEntryWork).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: `${question}\n[Container: container details]\n[Forwarded: forwarded details]`,
+        lookupQuery: question
+      })
+    )
+  })
+
+  it('still reads the replied-to message when a mention replies to another member', async () => {
+    const replyTarget = {
+      author: { id: 'user-2', displayName: 'Bob' },
+      content: 'the original question',
+      embeds: [],
+      poll: null,
+      messageSnapshots: new Collection(),
+      components: [],
+      stickers: new Collection(),
+      attachments: new Collection()
+    }
+    const { message } = createMessage({ referencedMessage: replyTarget, repliedUser: { id: 'user-2' } })
+
+    await createMessageHandler({ user: { id: 'bot-1' } } as never, createRateLimiter() as never)(message as never)
+
+    expect(message.channel.messages.fetch).toHaveBeenCalledWith('message-0')
+    expect(mocks.startTurnEntryWork).toHaveBeenCalledOnce()
+    expect(mocks.generateResponse).toHaveBeenCalledWith(
+      expect.objectContaining({ userMessage: expect.stringContaining('the original question') })
+    )
+  })
+
+  it('starts generation while the initial typing acknowledgement is pending', async () => {
+    let releaseTyping: () => void = () => {}
+    const { message } = createMessage()
+    message.channel.sendTyping = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseTyping = resolve
+        })
+    )
+
+    const handling = createMessageHandler(
+      { user: { id: 'bot-1' } } as never,
+      createRateLimiter() as never
+    )(message as never)
+
+    await Promise.resolve()
+    const generateCallsBeforeTypingResolved = mocks.generateResponse.mock.calls.length
+    releaseTyping()
+    await handling
+
+    expect(generateCallsBeforeTypingResolved).toBe(1)
+  })
+
+  it('continues generation when the initial typing request rejects', async () => {
+    const { message } = createMessage()
+    message.channel.sendTyping = vi.fn().mockRejectedValue(new Error('Discord typing failed'))
+
+    await expect(
+      createMessageHandler({ user: { id: 'bot-1' } } as never, createRateLimiter() as never)(message as never)
+    ).resolves.toBeUndefined()
+
+    expect(mocks.generateResponse).toHaveBeenCalledOnce()
+  })
+
   it.each([
     ['busy', () => mocks.isChannelBusy.mockReturnValue(true)],
     ['rate-limited', () => mocks.tryConsume.mockReturnValue(false)]
@@ -281,6 +443,52 @@ describe('message handler metrics', () => {
     await createMessageHandler({ user: { id: 'bot-1' } } as never, createRateLimiter() as never)(message as never)
 
     expect(mocks.recordResponseEvent).not.toHaveBeenCalled()
+  })
+
+  it('cancels speculative Jev work on each pre-generation rejection', async () => {
+    const replyTarget = {
+      author: { id: 'user-2', displayName: 'Bob' },
+      content: 'hello',
+      embeds: [],
+      poll: null,
+      messageSnapshots: new Collection(),
+      components: [],
+      stickers: new Collection(),
+      attachments: new Collection()
+    }
+
+    await assertTurnEntryRejections(async (rejection) => {
+      resetMessageMocks()
+      let rateLimiter = createRateLimiter()
+      let attachments: Array<{ url: string; contentType: string | null }> = []
+      let repliedUser: { id: string } | null | undefined
+
+      if (rejection === 'busy-channel') mocks.isChannelBusy.mockReturnValue(true)
+      if (rejection === 'advisory-rate-limit') mocks.tryConsume.mockReturnValue(false)
+      if (rejection === 'call-reservation') rateLimiter = createRateLimiter({ reserveCalls: () => undefined })
+      if (rejection === 'attachment-token' || rejection === 'byte-budget') {
+        attachments = [{ url: 'https://cdn.test/a.png', contentType: 'image/png' }]
+      }
+      if (rejection === 'attachment-token') mocks.canAffordAttachments.mockReturnValue(false)
+      if (rejection === 'byte-budget') mocks.tryReserve.mockReturnValue(false)
+      if (rejection === 'non-bot-reply') repliedUser = { id: 'user-2' }
+
+      const { message } = createMessage({
+        mentioned: rejection !== 'non-bot-reply',
+        content: rejection === 'non-bot-reply' ? 'hello' : '<@bot-1> hello',
+        attachments,
+        referencedMessage: rejection === 'non-bot-reply' ? replyTarget : undefined,
+        repliedUser
+      })
+
+      await createMessageHandler({ user: { id: 'bot-1' } } as never, rateLimiter as never)(message as never)
+
+      return {
+        start: mocks.startTurnEntryWork,
+        cancel: mocks.cancelTurnEntryWork,
+        generate: mocks.generateResponse
+      }
+    })
   })
 })
 

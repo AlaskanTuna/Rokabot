@@ -20,14 +20,18 @@ vi.mock('@typesafe-ai/sdk', () => ({
 }))
 
 import { choice, noul } from '@typesafe-ai/sdk'
-import { TONE_CRITERIA, judgeTurn } from '../judgments.js'
+import { LOOKUP_QUESTION, TONE_CRITERIA, judgeTurn } from '../judgments.js'
 
 function setAnswers(answers: Record<string, unknown>, inputTokens = 17) {
   mocks.systemOne.mockResolvedValueOnce({ answers, usage: { input_tokens: inputTokens, output_tokens: 3 } })
 }
 
-function choiceAnswer(choiceValue: string, confidence = 0.9) {
-  return { type: 'choice', choice: choiceValue, confidence, probabilities: {} }
+function choiceAnswer(choiceValue: string, confidence = 0.9, probabilities: Record<string, number> = {}) {
+  return { type: 'choice', choice: choiceValue, confidence, probabilities }
+}
+
+function noulAnswer(noulValue: number) {
+  return { type: 'noul', noul: noulValue }
 }
 
 function turnInput(overrides: Partial<Parameters<typeof judgeTurn>[0]> = {}) {
@@ -37,6 +41,7 @@ function turnInput(overrides: Partial<Parameters<typeof judgeTurn>[0]> = {}) {
     recentLines: ['[Rin]: old line'],
     ambiguous: [],
     includeTone: true,
+    includeLookup: false,
     ...overrides
   }
 }
@@ -47,10 +52,59 @@ describe('judgeTurn', () => {
     mocks.systemOne.mockReset()
     mocks.localHour.mockReset().mockReturnValue(10)
     mocks.warn.mockReset()
+    vi.mocked(noul).mockClear()
   })
 
   it('does not request a judgment when there is nothing to ask', async () => {
     const result = await judgeTurn(turnInput({ includeTone: false }))
+
+    expect(result).toBeNull()
+    expect(mocks.systemOne).not.toHaveBeenCalled()
+  })
+
+  it('asks for needs_lookup on the same request and returns its probability', async () => {
+    setAnswers({
+      tone: choiceAnswer('curious', 0.8, { curious: 0.8 }),
+      needs_lookup: noulAnswer(0.91)
+    })
+
+    const result = await judgeTurn(turnInput({ includeLookup: true }))
+    const request = mocks.systemOne.mock.calls[0]?.[0]
+
+    expect(noul).toHaveBeenCalledWith(LOOKUP_QUESTION)
+    expect(Object.keys(request.questions)).toEqual(['tone', 'needs_lookup'])
+    expect(result?.needsLookup).toBe(0.91)
+    expect(result?.tone).toEqual({ tone: 'curious', confidence: 0.8, probability: expect.any(Number) })
+  })
+
+  it('omits the noul entirely when the caller does not ask for it', async () => {
+    setAnswers({ tone: choiceAnswer('curious', 0.8, { curious: 0.8 }) })
+
+    const result = await judgeTurn(turnInput())
+
+    expect(noul).not.toHaveBeenCalled()
+    expect(Object.keys(mocks.systemOne.mock.calls[0]?.[0].questions)).toEqual(['tone'])
+    expect(result?.needsLookup).toBeNull()
+  })
+
+  it('returns a null needsLookup when the noul answer is not a number', async () => {
+    setAnswers({ tone: choiceAnswer('curious', 0.8), needs_lookup: { type: 'noul', noul: 'high' } })
+
+    const result = await judgeTurn(turnInput({ includeLookup: true }))
+
+    expect(result?.needsLookup).toBeNull()
+  })
+
+  it('returns a null needsLookup when the noul is absent from the answers', async () => {
+    setAnswers({ tone: choiceAnswer('curious', 0.8) })
+
+    const result = await judgeTurn(turnInput({ includeLookup: true }))
+
+    expect(result?.needsLookup).toBeNull()
+  })
+
+  it('makes no request when lookup is the only feature asked for and it is off', async () => {
+    const result = await judgeTurn(turnInput({ includeTone: false, ambiguous: [], includeLookup: false }))
 
     expect(result).toBeNull()
     expect(mocks.systemOne).not.toHaveBeenCalled()
@@ -93,6 +147,45 @@ describe('judgeTurn', () => {
     )
     expect(result).toMatchObject({ tone: { tone: 'nostalgic', confidence: 0.94 }, referents: [], inputTokens: 21 })
     expect(result?.latencyMs).toBeGreaterThanOrEqual(0)
+  })
+
+  it('trims recent context to three lines and returns the selected option probability', async () => {
+    setAnswers({
+      tone: choiceAnswer('sincere', 0.71, { sincere: 0.84, playful: 0.16 })
+    })
+
+    const result = await judgeTurn(turnInput({ recentLines: ['line-1', 'line-2', 'line-3', 'line-4'] }))
+    const request = mocks.systemOne.mock.calls[0]?.[0]
+
+    expect(request.state.recent_messages).toEqual(['line-2', 'line-3', 'line-4'])
+    expect(result?.tone).toEqual({ tone: 'sincere', confidence: 0.71, probability: 0.84 })
+  })
+
+  it('returns null probability when the SDK omits the selected option probability', async () => {
+    setAnswers({ tone: choiceAnswer('sincere', 0.71) })
+
+    const result = await judgeTurn(turnInput())
+
+    expect(result?.tone).toEqual({ tone: 'sincere', confidence: 0.71, probability: null })
+  })
+
+  it.each([[-0.01], [1.01], [Number.NaN], [Number.POSITIVE_INFINITY]])(
+    'returns null probability when the SDK returns an invalid value (%s)',
+    async (probability) => {
+      setAnswers({ tone: choiceAnswer('sincere', 0.71, { sincere: probability }) })
+
+      const result = await judgeTurn(turnInput())
+
+      expect(result?.tone?.probability).toBeNull()
+    }
+  )
+
+  it.each([0, 1])('accepts probabilities at the inclusive boundary %s', async (probability) => {
+    setAnswers({ tone: choiceAnswer('sincere', 0.71, { sincere: probability }) })
+
+    const result = await judgeTurn(turnInput())
+
+    expect(result?.tone?.probability).toBe(probability)
   })
 
   it('maps referent choices back to user IDs', async () => {

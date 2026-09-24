@@ -28,7 +28,8 @@
     "migrate:memory-v2": "tsx scripts/migrate-memory-v2.ts",
     "export:vault": "tsx scripts/export-vault.ts",
     "memory:replay": "tsx scripts/replay-memory-v2.ts",
-    "memory:replay:live": "ROKABOT_MEMORY_REPLAY_LIVE=1 tsx scripts/replay-memory-v2.ts --live"
+    "memory:replay:live": "ROKABOT_MEMORY_REPLAY_LIVE=1 tsx scripts/replay-memory-v2.ts --live",
+    "replay:jev": "tsx scripts/replay-jev.ts"
   },
   "dependencies": {
     "@google/adk": "^0.1.0",
@@ -41,6 +42,7 @@
     "js-yaml": "^4.1.1",
     "pino": "^9.6.0",
     "sharp": "^0.34.5",
+    "undici": "^8.11.2",
     "zod": "^3.25.76"
   },
   "devDependencies": {

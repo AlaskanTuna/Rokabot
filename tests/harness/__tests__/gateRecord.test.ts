@@ -13,7 +13,9 @@ const record: TrialRecord = {
   outcome: 'ok',
   kind: 'ok',
   ladderRetries: 0,
-  channel: 'live-R4-1'
+  channel: 'live-R4-1',
+  prefetchUsed: false,
+  needsLookup: null
 }
 
 describe('formatTrialRecord', () => {
@@ -41,6 +43,15 @@ describe('formatTrialRecord', () => {
 
     expect(parsed.shouldFire).toBe(true)
     expect(parsed.fired).toBe(false)
+  })
+
+  it('carries the prefetch decision alongside what the model did', () => {
+    const parsed = JSON.parse(
+      formatTrialRecord({ ...record, prefetchUsed: true, needsLookup: 0.91 }).slice('[gate-trial] '.length)
+    )
+
+    expect(parsed.prefetchUsed).toBe(true)
+    expect(parsed.needsLookup).toBe(0.91)
   })
 
   // Two runs at different hours score different prompts, so a record without the hour cannot be compared to

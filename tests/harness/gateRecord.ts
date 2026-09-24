@@ -29,6 +29,10 @@ export interface TrialRecord {
    * `ladderRetries + 1`, so neither field alone answers "how often did this trial reach the model". */
   ladderRetries: number
   channel: string
+  /** Whether the Jev lookup supplied context, even when the model also called `search_web`. */
+  prefetchUsed: boolean
+  /** The `needs_lookup` score, or null when no judgment landed. */
+  needsLookup: number | null
 }
 
 export function formatTrialRecord(record: TrialRecord): string {

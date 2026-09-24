@@ -85,6 +85,7 @@ export interface RunCaseSetOptions {
 export interface CaseSetRun {
   observations: CaseObservations
   transientRetries: number
+  prefetchSearchTurns: number
 }
 
 function sleep(delayMs: number): Promise<void> {
@@ -133,9 +134,11 @@ export async function runCaseSet(
   const membersById = new Map(header.members.map((member) => [member.id, member]))
   const observations: CaseObservations = new Map(cases.map((testCase) => [testCase.id, []]))
   let transientRetries = 0
+  let prefetchSearchTurns = 0
 
   // src/config.ts imports dotenv/config, so a developer's real Tavily key is live in harness runs;
   // recall_user's tool declaration is the thing under test, so search_web must stay unreachable.
+  // With jev.prefetch: on, this also leaves prefetch unexercised; measuring it needs a separate run with the key present.
   const originalTavilyKey = process.env.TAVILY_API_KEY
   // biome-ignore lint/performance/noDelete: assigning undefined would coerce to the string "undefined", leaving searchWeb's `if (!apiKey)` guard truthy
   delete process.env.TAVILY_API_KEY
@@ -165,8 +168,10 @@ export async function runCaseSet(
               userMessage: testCase.message,
               displayName: speaker.displayName,
               username: speaker.username,
-              userId: speaker.id
+              userId: speaker.id,
+              memory: true
             })
+            if (result.prefetchUsed) prefetchSearchTurns++
 
             // Emitted before the branches below, so an attempt that aborts the run is recorded exactly like
             // one that survives it. A record written only on the success path would be missing precisely the
@@ -182,7 +187,9 @@ export async function runCaseSet(
               outcome: result.metrics.outcome,
               kind: result.metrics.kind,
               ladderRetries: result.metrics.retries,
-              channel: channelId
+              channel: channelId,
+              prefetchUsed: result.prefetchUsed,
+              needsLookup: result.needsLookup
             })
             recorded = true
 
@@ -241,7 +248,9 @@ export async function runCaseSet(
                 outcome: 'threw',
                 kind: error instanceof Error ? error.name : typeof error,
                 ladderRetries: 0,
-                channel: channelId
+                channel: channelId,
+                prefetchUsed: false,
+                needsLookup: null
               })
             }
             throw error
@@ -262,5 +271,5 @@ export async function runCaseSet(
     }
   }
 
-  return { observations, transientRetries }
+  return { observations, transientRetries, prefetchSearchTurns }
 }

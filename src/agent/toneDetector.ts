@@ -241,6 +241,10 @@ const TONE_PATTERNS: ToneRule[] = [
  * @returns Matched tone key, or 'playful' as default
  */
 export function detectTone(messages: WindowMessage[], hour?: number): ToneKey {
+  return detectToneWithSource(messages, hour).tone
+}
+
+export function detectToneWithSource(messages: WindowMessage[], hour?: number): { tone: ToneKey; ruleFired: boolean } {
   const recentMessages = messages.slice(-3)
   const text = recentMessages.map((m) => m.content).join(' ')
 
@@ -250,11 +254,11 @@ export function detectTone(messages: WindowMessage[], hour?: number): ToneKey {
     // Sleepy triggers with 1 match during late night (22:00-04:00)
     if (tone === 'sleepy' && matchCount >= 1 && matchCount < minMatches && hour !== undefined) {
       const isLateNight = hour >= 22 || hour <= 4
-      if (isLateNight) return 'sleepy'
+      if (isLateNight) return { tone: 'sleepy', ruleFired: true }
     }
 
-    if (matchCount >= minMatches) return tone
+    if (matchCount >= minMatches) return { tone, ruleFired: true }
   }
 
-  return 'playful'
+  return { tone: 'playful', ruleFired: false }
 }

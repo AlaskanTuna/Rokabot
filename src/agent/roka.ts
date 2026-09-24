@@ -30,6 +30,7 @@ import {
 } from './reliability.js'
 import type { ModelVerdict, TurnOutcome } from './reliability.js'
 import { SAFETY_SETTINGS } from './safetySettings.js'
+import { PREFETCH_TOOL_NAME } from './searchPrefetch.js'
 import {
   APP_NAME,
   clearSessionErrorCount,
@@ -41,11 +42,12 @@ import {
   suppressSessionRehydration
 } from './session.js'
 import { chargeTokens } from './tokenBudget.js'
-import { rokaTools } from './tools/index.js'
-import { createTurnContext } from './turnContext.js'
-import type { TurnContextOptions } from './turnContext.js'
+import { MEMORY_TOOL_NAMES, rokaTools } from './tools/index.js'
+import { createTurnContext, startTurnEntryWork } from './turnContext.js'
+import type { TurnContextOptions, TurnEntryWork } from './turnContext.js'
 
 interface GenerateOptions extends TurnContextOptions {
+  turnEntryWork?: TurnEntryWork
   imageAttachments?: ImageAttachment[]
 }
 
@@ -54,6 +56,8 @@ export interface GenerateResult {
   tone: ToneKey
   metrics: ResponseMetrics
   toolsUsed: string[]
+  prefetchUsed: boolean
+  needsLookup: number | null
   /**
    * Attachments that were admitted by type but never reached the model — oversized, or the download failed.
    * The Discord layer counts only *unsupported types* on its own side, so without this an oversized file is
@@ -84,7 +88,7 @@ const toolCallsForRequest = new AsyncLocalStorage<Set<string>>()
 // Count every ADK request so retries and tool calls are included in the reservation refund.
 const modelCallsForRequest = new AsyncLocalStorage<{ count: number }>()
 // Exported so tests can drive the beforeModelCallback ALS seam directly (task 122's only observable proof point)
-export const steeringForRequest = new AsyncLocalStorage<{ prompt?: string }>()
+export const steeringForRequest = new AsyncLocalStorage<{ prompt?: string; memory?: boolean }>()
 const SAFETY_DEFLECTION = "Ehh… let's not get into that one~"
 const RECITATION_DEFLECTION = "Ah, I don't think I should repeat that one exactly~"
 const TERMINAL_DEFLECTION = "Eep, something went wrong on my side. Let's try again later~"
@@ -153,6 +157,22 @@ export const rokaAgent = new LlmAgent({
     if (requestCarriesVideo(request)) {
       request.config = request.config ?? ({} as NonNullable<typeof request.config>)
       request.config!.mediaResolution = MediaResolution.MEDIA_RESOLUTION_LOW
+    }
+    // A `/ask` request must not advertise the memory tools. Both halves go: the function declarations are
+    // what the model reads, but toolsDict is what ADK resolves a call against, so a declaration removed on
+    // its own would leave the model able to name a tool with nothing behind it (#207).
+    if (steeringForRequest.getStore()?.memory === false) {
+      for (const declaration of request.config?.tools ?? []) {
+        // `ToolUnion` is `Tool | CallableTool`; only `Tool` carries declarations, and only
+        // `CallableTool` has `tool()`, which is what tells them apart.
+        if (typeof (declaration as { tool?: unknown }).tool === 'function') continue
+        const tool = declaration as { functionDeclarations?: Array<{ name?: string }> }
+        if (!tool.functionDeclarations) continue
+        tool.functionDeclarations = tool.functionDeclarations.filter(
+          ({ name }) => !MEMORY_TOOL_NAMES.includes(name ?? '')
+        )
+      }
+      for (const name of MEMORY_TOOL_NAMES) delete request.toolsDict[name]
     }
     return undefined
   },
@@ -231,10 +251,30 @@ function getRandomFallback(): string {
  */
 export async function generateResponse(options: GenerateOptions): Promise<GenerateResult> {
   const generateStartMs = performance.now()
-  const { channelId, guildId, userMessage, displayName, username, userId, imageAttachments } = options
+  const { channelId, guildId, userMessage, displayName, username, userId, memory, imageAttachments } = options
 
-  const context = await createTurnContext(options)
-  const { session, fakeMessages, tone, hour, factEntryCount, overheardSection, safetyLadder, composePrompt } = context
+  const turnEntryWork =
+    options.turnEntryWork ??
+    startTurnEntryWork({
+      channelId,
+      guildId,
+      userId,
+      speakerName: displayName,
+      message: userMessage,
+      mentionedUserIds: options.mentionedUserIds
+    })
+  const context = await createTurnContext({ ...options, turnEntryWork })
+  const {
+    session,
+    fakeMessages,
+    tone,
+    hour,
+    factEntryCount,
+    overheardSection,
+    prefetchUsed,
+    safetyLadder,
+    composePrompt
+  } = context
   let safetyRung = 0
   let dropImages = false
   let systemPrompt = context.systemPrompt
@@ -268,10 +308,10 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   )
 
   const llmStartMs = performance.now()
-  const usedToolNames = new Set<string>()
+  const usedToolNames = new Set<string>(prefetchUsed ? [PREFETCH_TOOL_NAME] : [])
   const testRunTurn = testRunTurnFactory?.(systemPrompt)
   let sessionWasReset = false
-  const steering: { prompt?: string } = {}
+  const steering: { prompt?: string; memory?: boolean } = { memory }
   const verdict: ModelVerdict = {}
   const modelCalls = { count: 0 }
   const route: ModelRoute = {
@@ -512,6 +552,8 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     tone,
     metrics,
     toolsUsed,
+    prefetchUsed,
+    needsLookup: turnEntryWork.needsLookup ?? null,
     droppedAttachments,
     truncatedAttachments,
     refusedAttachments,

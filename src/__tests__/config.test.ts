@@ -70,6 +70,7 @@ describe('config module', () => {
     vi.stubEnv('JEV_MODEL', '')
     vi.stubEnv('JEV_TONE', '')
     vi.stubEnv('JEV_REFERENTS', '')
+    vi.stubEnv('JEV_PREFETCH', '')
     vi.stubEnv('MEMORY_BUFFER_SIZE', '')
     vi.stubEnv('MEMORY_MAX_CLAIMS_PER_TURN', '')
     vi.stubEnv('MEMORY_RETRIEVAL_TOKEN_BUDGET', '')
@@ -171,7 +172,10 @@ describe('config module', () => {
     expect(config.jev.timeoutMs).toBe(1200)
     expect(config.jev.tone).toBe('shadow')
     expect(config.jev.referents).toBe('shadow')
-    expect(config.jev.toneMinConfidence).toBe(0.6)
+    expect(config.jev.prefetch).toBe('shadow')
+    expect(config.jev.prefetchMinNoul).toBe(0.7)
+    expect(config.jev.prefetchWaitMs).toBe(4000)
+    expect(config.jev.toneMinProbability).toBe(0.85)
     expect(config.jev.referentMinConfidence).toBe(0.8)
 
     // Memory
@@ -190,7 +194,6 @@ describe('config module', () => {
     expect(config.memory).not.toHaveProperty('extractionGapMs')
     expect(config.memory).not.toHaveProperty('maxFactsPerUser')
     expect(config.memory).not.toHaveProperty('factRetentionDays')
-    expect(config.memory).not.toHaveProperty('claimsBackend')
     expect(config.memory).not.toHaveProperty('extractionDailyBudgetRatio')
     expect(config.memory).not.toHaveProperty('perGuildGapMs')
     expect(config.memory).not.toHaveProperty('extractionQueueMaxPerGuild')
@@ -269,14 +272,13 @@ describe('config module', () => {
     vi.stubEnv('FALLBACK_MODEL', 'Qwen/custom-fallback')
     vi.stubEnv('JEV_MODEL', 'jev-override')
     vi.stubEnv('JEV_TONE', 'on')
+    vi.stubEnv('JEV_PREFETCH', 'on')
     vi.stubEnv('TYPESAFE_API_KEY', 'typesafe-test-key')
     vi.stubEnv('MEMORY_BUFFER_SIZE', '40')
     vi.stubEnv('GEMINI_EXTRACTION_RPM_FLOOR', '6')
     vi.stubEnv('GEMINI_EXTRACTION_MAX_RETRIES', '2')
-    vi.stubEnv('JEV_EXTRACTION', 'shadow')
     vi.stubEnv('MEMORY_EXTRACTION_INTERVAL', '30')
     vi.stubEnv('MEMORY_EXTRACTION_GAP_MS', '25000')
-    vi.stubEnv('MEMORY_CLAIMS_BACKEND', 'false')
     vi.stubEnv('MEMORY_EXTRACTION_DAILY_BUDGET_RATIO', '0.35')
     vi.stubEnv('MEMORY_PER_GUILD_GAP_MS', '30000')
     vi.stubEnv('MEMORY_EXTRACTION_QUEUE_MAX_PER_GUILD', '75')
@@ -320,7 +322,6 @@ describe('config module', () => {
     expect(config.memory).not.toHaveProperty('extractionGapMs')
     expect(config.memory).not.toHaveProperty('maxFactsPerUser')
     expect(config.memory).not.toHaveProperty('factRetentionDays')
-    expect(config.memory).not.toHaveProperty('claimsBackend')
     expect(config.memory).not.toHaveProperty('extractionDailyBudgetRatio')
     expect(config.memory).not.toHaveProperty('perGuildGapMs')
     expect(config.memory).not.toHaveProperty('extractionQueueMaxPerGuild')
@@ -336,6 +337,7 @@ describe('config module', () => {
     expect(config.jev.apiKey).toBe('typesafe-test-key')
     expect(config.jev.model).toBe('jev-override')
     expect(config.jev.tone).toBe('on')
+    expect(config.jev.prefetch).toBe('on')
   })
 
   it('warns when the session TTL is shorter than the maximum live retry window', async () => {
@@ -730,7 +732,9 @@ describe('config module', () => {
       { path: 'gemini.maxOutputTokens', min: 1 },
       { path: 'jev.timeoutMs', min: 1 },
       { path: 'jev.memoryTimeoutMs', min: 1 },
-      { path: 'jev.toneMinConfidence', min: 0, max: 1 },
+      { path: 'jev.toneMinProbability', min: 0, max: 1 },
+      { path: 'jev.prefetchMinNoul', min: 0, max: 1 },
+      { path: 'jev.prefetchWaitMs', min: 0 },
       { path: 'jev.referentMinConfidence', min: 0, max: 1 },
       { path: 'memory.admitThreshold', min: 0, max: 1 },
       { path: 'memory.verifyThreshold', min: 0, max: 1 },
@@ -797,6 +801,16 @@ describe('config module', () => {
     )
   })
 
+  it('throws when the env prefetch mode is invalid and names the env key', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('JEV_PREFETCH', 'fast')
+
+    await expect(() => import('../config.js')).rejects.toThrow(
+      'Environment variable JEV_PREFETCH must be off, shadow or on, got: fast'
+    )
+  })
+
   it('throws when a YAML Jev mode is invalid and names the config key', async () => {
     setRequiredEnvVars()
     clearTunableEnvVars()
@@ -807,14 +821,32 @@ describe('config module', () => {
     )
   })
 
-  it('throws if a Jev confidence threshold exceeds 1', async () => {
+  it('throws if a Jev tone probability threshold exceeds 1', async () => {
     setRequiredEnvVars()
     clearTunableEnvVars()
-    withYamlOverride({ jev: { toneMinConfidence: 1.1 } })
+    withYamlOverride({ jev: { toneMinProbability: 1.1 } })
 
     await expect(() => import('../config.js')).rejects.toThrow(
-      'Config value jev.toneMinConfidence must be <= 1, got: 1.1'
+      'Config value jev.toneMinProbability must be <= 1, got: 1.1'
     )
+  })
+
+  it('throws if jev.prefetchMinNoul exceeds 1', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    withYamlOverride({ jev: { prefetchMinNoul: 1.1 } })
+
+    await expect(() => import('../config.js')).rejects.toThrow(
+      'Config value jev.prefetchMinNoul must be <= 1, got: 1.1'
+    )
+  })
+
+  it('throws if jev.prefetchWaitMs is negative', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    withYamlOverride({ jev: { prefetchWaitMs: -1 } })
+
+    await expect(() => import('../config.js')).rejects.toThrow('Config value jev.prefetchWaitMs must be >= 0, got: -1')
   })
 
   it('throws if memory.speakerMinShare exceeds 1', async () => {

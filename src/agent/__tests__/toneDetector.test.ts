@@ -9,7 +9,7 @@ vi.mock('../../config.js', () => ({
 }))
 
 import type { WindowMessage } from '../../session/types.js'
-import { detectTone } from '../toneDetector.js'
+import { detectTone, detectToneWithSource } from '../toneDetector.js'
 
 function makeMessage(content: string): WindowMessage {
   return {
@@ -21,6 +21,16 @@ function makeMessage(content: string): WindowMessage {
 }
 
 describe('detectTone', () => {
+  it('reports whether a tone came from a rule or the default', () => {
+    const defaultTone = [makeMessage('今日は花がきれいです')]
+    const matchedTone = [makeMessage('I feel sad and lonely')]
+
+    expect(detectToneWithSource(defaultTone, 14)).toEqual({ tone: 'playful', ruleFired: false })
+    expect(detectToneWithSource(matchedTone, 14)).toEqual({ tone: 'sincere', ruleFired: true })
+    expect(detectTone(defaultTone, 14)).toBe('playful')
+    expect(detectTone(matchedTone, 14)).toBe('sincere')
+  })
+
   describe('flustered detection', () => {
     it('detects flustered tone from romantic keywords', () => {
       const messages = [makeMessage('I think I have a crush on you, you are so cute')]

@@ -5,6 +5,7 @@ import { recordEpisodeMessage } from '../../agent/memory/episodeTracker.js'
 import { generateResponse } from '../../agent/roka.js'
 import { withSearchCitations } from '../../agent/searchCitations.js'
 import { canAffordAttachments } from '../../agent/tokenBudget.js'
+import { startTurnEntryWork } from '../../agent/turnContext.js'
 import { config } from '../../config.js'
 import { type ResponseEventInput, recordResponseEvent } from '../../storage/metricsStore.js'
 import { upsertUserName } from '../../storage/userNames.js'
@@ -15,7 +16,12 @@ import { isChannelBusy, markBusy, markFree } from '../concurrency.js'
 import { shouldReact } from '../emojiReactor.js'
 import { isIgnorableDiscordError } from '../errorHandler.js'
 import { buildRokaMessage } from '../messageBuilder.js'
-import { extractComponentTexts, extractMessageContent, replaceUserMentions } from '../messageContent.js'
+import {
+  extractComponentTexts,
+  extractCurrentMessageContent,
+  extractMessageContent,
+  replaceUserMentions
+} from '../messageContent.js'
 import {
   escapeBackticks,
   getRandomBusy,
@@ -75,10 +81,38 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
     const triggerScanText = [message.content, ...componentTextsForTrigger].join('\n')
     const isNameMention = NAME_MENTION_REGEX.test(triggerScanText)
 
-    const referencedMessage =
+    const replyKnownNotBot =
+      !isBotAuthor &&
+      message.reference?.messageId &&
+      message.mentions.repliedUser &&
+      message.mentions.repliedUser.id !== client.user.id
+    const replyFetch =
       !isBotAuthor && message.reference?.messageId
-        ? await message.channel.messages.fetch(message.reference.messageId).catch(() => null)
-        : null
+        ? message.channel.messages.fetch(message.reference.messageId).catch(() => null)
+        : Promise.resolve(null)
+    const isReplyCandidate = !isBotAuthor && Boolean(message.reference?.messageId) && !replyKnownNotBot
+    let turnEntryWork: ReturnType<typeof startTurnEntryWork> | undefined
+    if (isMentioned || isNameMention || isReplyCandidate) {
+      const currentMessage = extractCurrentMessageContent(message, client.user.id, componentTextsForTrigger)
+      turnEntryWork = startTurnEntryWork({
+        channelId: message.channelId,
+        guildId: message.guildId ?? `dm:${message.channelId}`,
+        userId: message.author.id,
+        speakerName: message.member?.displayName ?? message.author.displayName,
+        message: currentMessage,
+        lookupQuery: replaceUserMentions(message, client.user.id),
+        mentionedUserIds: [...(message.mentions.users?.keys() ?? [])].filter((userId) => userId !== client.user?.id)
+      })
+    }
+    let turnEntryWorkHandedOff = false
+    const cancelTurnEntryWork = () => {
+      if (turnEntryWork && !turnEntryWorkHandedOff) {
+        turnEntryWork.cancel()
+        turnEntryWork = undefined
+      }
+    }
+
+    const referencedMessage = await replyFetch
 
     const isReplyToBot = referencedMessage?.author?.id === client.user.id
 
@@ -95,9 +129,16 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
     }
 
     recordMonitoredEpisodeMessage(message, client.user.id)
-    if (!isMentioned && !isReplyToBot && !isNameMention) return
+
+    if (!isMentioned && !isReplyToBot && !isNameMention) {
+      cancelTurnEntryWork()
+      return
+    }
 
     const channelId = message.channelId
+    // A metrics and session identity, not a memory tenant. The client has no DirectMessages intent, so
+    // this fallback is never reached in production; it stands so a message carrying no guild is still
+    // labelled distinctly rather than filed under the real guild (#207).
     const guildId = message.guildId ?? `dm:${channelId}`
     const displayName = message.member?.displayName ?? message.author.displayName
     const username = message.author.username
@@ -114,7 +155,10 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
     const gachaKeywords = /^(gacha|draw|fortune|omikuji)$/i
     if (gachaKeywords.test(content.trim())) {
       const handled = await handleGachaMention(message)
-      if (handled) return
+      if (handled) {
+        cancelTurnEntryWork()
+        return
+      }
     }
 
     if (!content && imageAttachments.length === 0) {
@@ -125,6 +169,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
     logger.debug({ channelId, content, imageCount: imageAttachments.length }, 'Message content extracted')
 
     if (isChannelBusy(channelId)) {
+      cancelTurnEntryWork()
       logger.debug({ channelId }, 'Channel busy — sending busy message')
       const busyMsg = await message.reply(getRandomBusy())
       setTimeout(() => busyMsg.delete().catch(() => {}), 5000)
@@ -133,6 +178,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
 
     // Check the full call ceiling before reserving so early exits do not hold slots.
     if (!rateLimiter.canAdmitCalls(config.gemini.maxLlmCalls)) {
+      cancelTurnEntryWork()
       logger.debug(
         { channelId, remainingRpm: rateLimiter.remainingRpm, remainingRpd: rateLimiter.remainingRpd },
         'Rate limit hit — declining'
@@ -144,7 +190,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
     }
 
     if ('sendTyping' in message.channel) {
-      await message.channel.sendTyping()
+      void message.channel.sendTyping().catch(() => {})
     }
     const typingInterval =
       'sendTyping' in message.channel
@@ -155,6 +201,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
 
     // Attachment token cost is independent of the byte and call budgets.
     if (imageAttachments.length > 0 && !canAffordAttachments()) {
+      cancelTurnEntryWork()
       if (typingInterval) clearInterval(typingInterval)
       logger.debug({ channelId }, 'Per-minute token budget too low for an attachment turn — sending busy message')
       const tokenMsg = await message.reply(getRandomBusy())
@@ -165,6 +212,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
     // Reserve the call ceiling and attachment bytes immediately before the cleanup scope.
     const callReservation = rateLimiter.reserveCalls(config.gemini.maxLlmCalls)
     if (!callReservation) {
+      cancelTurnEntryWork()
       if (typingInterval) clearInterval(typingInterval)
       logger.debug({ channelId, remainingRpm: rateLimiter.remainingRpm }, 'Lost the race for call slots')
       const rpmMsg = await message.reply(getRandomBusy())
@@ -177,6 +225,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
 
     const reservedBytes = reservationFor(imageAttachments)
     if (!tryReserve(reservedBytes)) {
+      cancelTurnEntryWork()
       if (typingInterval) clearInterval(typingInterval)
       // Released here rather than left to the `finally` below, which this path returns above. Nothing was
       // sent to the model, so the turn owes neither the slots nor its daily unit.
@@ -191,6 +240,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
       // Inside the try, not before it, so the reservation above cannot be stranded by anything between the
       // two — markFree on a channel that was never marked is a no-op delete, so this costs nothing.
       markBusy(channelId)
+      turnEntryWorkHandedOff = true
       const [
         {
           text: responseText,
@@ -211,7 +261,9 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
           displayName,
           username,
           userId: message.author.id,
+          memory: true,
           mentionedUserIds: [...(message.mentions.users?.keys() ?? [])].filter((userId) => userId !== client.user?.id),
+          turnEntryWork,
           imageAttachments: imageAttachments.length > 0 ? imageAttachments : undefined
         })
       )

@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   generateResponse: vi.fn(),
+  startTurnEntryWork: vi.fn(),
+  cancelTurnEntryWork: vi.fn(),
   recordResponseEvent: vi.fn(),
   info: vi.fn(),
   error: vi.fn(),
@@ -10,7 +12,11 @@ const mocks = vi.hoisted(() => ({
   toolCommandHandler: vi.fn(),
   handleStatsCommand: vi.fn(),
   splitResponse: vi.fn((response: string) => [response]),
-  lookup: vi.fn(async () => [{ address: '93.184.216.34', family: 4 }])
+  lookup: vi.fn(async () => [{ address: '93.184.216.34', family: 4 }]),
+  isChannelBusy: vi.fn(() => false),
+  canAffordAttachments: vi.fn(() => true),
+  tryReserve: vi.fn(() => true),
+  release: vi.fn()
 }))
 
 // The URL guard resolves a hostname before connecting, so without this a linked-image test fails closed on
@@ -18,11 +24,22 @@ const mocks = vi.hoisted(() => ({
 vi.mock('node:dns/promises', () => ({ lookup: mocks.lookup }))
 
 vi.mock('../../agent/roka.js', () => ({ generateResponse: mocks.generateResponse }))
+vi.mock('../../agent/turnContext.js', () => ({ startTurnEntryWork: mocks.startTurnEntryWork }))
+vi.mock('../../agent/tokenBudget.js', () => ({ canAffordAttachments: mocks.canAffordAttachments }))
 vi.mock('../../storage/metricsStore.js', () => ({ recordResponseEvent: mocks.recordResponseEvent }))
 vi.mock('../../utils/logger.js', () => ({
   logger: { debug: vi.fn(), error: mocks.error, info: mocks.info, warn: mocks.warn }
 }))
-vi.mock('../concurrency.js', () => ({ isChannelBusy: () => false, markBusy: vi.fn(), markFree: vi.fn() }))
+vi.mock('../concurrency.js', () => ({
+  isChannelBusy: mocks.isChannelBusy,
+  markBusy: vi.fn(),
+  markFree: vi.fn()
+}))
+vi.mock('../byteBudget.js', () => ({
+  release: mocks.release,
+  reservationFor: vi.fn(() => 0),
+  tryReserve: mocks.tryReserve
+}))
 vi.mock('../errorHandler.js', () => ({ isIgnorableDiscordError: () => false }))
 vi.mock('../responses.js', () => ({
   escapeBackticks: (text: string) => text.replace(/\\?`/g, '\\`'),
@@ -42,6 +59,7 @@ import { config } from '../../config.js'
 import { RateLimiter } from '../../utils/rateLimiter.js'
 import { MAX_ATTACHMENTS, attachmentOptionName } from '../attachments.js'
 import { createInteractionHandler } from '../events/interactionCreate.js'
+import { assertTurnEntryRejections } from './turnEntryRejections.js'
 
 const metrics = {
   generateMs: 1,
@@ -55,17 +73,27 @@ const metrics = {
   failureMarker: 'SAFETY'
 }
 
+const turnEntryWork = { judgment: Promise.resolve(null), cancel: mocks.cancelTurnEntryWork }
+
+function resetInteractionMocks() {
+  vi.clearAllMocks()
+  mocks.isChannelBusy.mockReturnValue(false)
+  mocks.canAffordAttachments.mockReturnValue(true)
+  mocks.tryReserve.mockReturnValue(true)
+  mocks.startTurnEntryWork.mockReturnValue(turnEntryWork)
+  mocks.generateResponse.mockResolvedValue({
+    text: 'Hello~',
+    tone: 'playful',
+    toolsUsed: [],
+    metrics,
+    droppedAttachments: 0,
+    truncatedAttachments: 0
+  })
+}
+
 describe('interaction handler metrics', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
-    mocks.generateResponse.mockResolvedValue({
-      text: 'Hello~',
-      tone: 'playful',
-      toolsUsed: [],
-      metrics,
-      droppedAttachments: 0,
-      truncatedAttachments: 0
-    })
+    resetInteractionMocks()
   })
 
   it('records one completed slash turn with an enriched summary', async () => {
@@ -78,6 +106,8 @@ describe('interaction handler metrics', () => {
       user: { displayName: 'Alice', username: 'alice', id: 'user-1' },
       guildId: 'guild-1',
       deferReply: vi.fn().mockResolvedValue(undefined),
+      reply: vi.fn().mockResolvedValue(undefined),
+      deleteReply: vi.fn().mockResolvedValue(undefined),
       editReply: vi.fn().mockResolvedValue(undefined),
       followUp: vi.fn().mockResolvedValue(undefined)
     }
@@ -111,13 +141,17 @@ describe('interaction handler metrics', () => {
     expect(JSON.stringify(interaction.editReply.mock.calls[0][0].components[0].toJSON())).not.toContain('-# 🌸')
   })
 
-  function askWith(attachments: Array<{ url: string; contentType: string | null } | null>, imageUrl?: string) {
+  function askWith(
+    attachments: Array<{ url: string; contentType: string | null } | null>,
+    imageUrl?: string,
+    question = 'what is this?'
+  ) {
     return {
       isChatInputCommand: () => true,
       commandName: 'ask',
       options: {
         getString: vi.fn((name: string) =>
-          name === 'question' ? 'what is this?' : name === 'attachment_url' ? (imageUrl ?? null) : null
+          name === 'question' ? question : name === 'attachment_url' ? (imageUrl ?? null) : null
         ),
         // Answers by name the way Discord does, so a slot the handler asks for under the wrong name reads
         // as absent rather than silently returning the first attachment.
@@ -130,6 +164,8 @@ describe('interaction handler metrics', () => {
       user: { displayName: 'Alice', username: 'alice', id: 'user-1' },
       guildId: 'guild-1',
       deferReply: vi.fn().mockResolvedValue(undefined),
+      reply: vi.fn().mockResolvedValue(undefined),
+      deleteReply: vi.fn().mockResolvedValue(undefined),
       editReply: vi.fn().mockResolvedValue(undefined),
       followUp: vi.fn().mockResolvedValue(undefined)
     }
@@ -139,6 +175,53 @@ describe('interaction handler metrics', () => {
   const PDF_DOC = { url: 'https://cdn.test/notes.pdf', contentType: 'application/pdf' }
   const UNREADABLE = { url: 'https://cdn.test/a.zip', contentType: 'application/zip' }
   const rateLimiterStub = () => new RateLimiter({ rpm: 1_000, rpd: 100_000 })
+
+  it('cancels speculative Jev work on each pre-generation rejection', async () => {
+    await assertTurnEntryRejections(async (rejection) => {
+      resetInteractionMocks()
+      const reservation = { release: vi.fn() }
+      const rateLimiter = {
+        canAdmitCalls: vi.fn(() => rejection !== 'advisory-rate-limit'),
+        reserveCalls: vi.fn(() => (rejection === 'call-reservation' ? undefined : reservation)),
+        remainingRpm: 10,
+        remainingRpd: 100
+      }
+      const interaction = askWith(rejection === 'attachment-token' || rejection === 'byte-budget' ? [PNG] : [])
+      if (rejection === 'busy-channel') mocks.isChannelBusy.mockReturnValue(true)
+      if (rejection === 'attachment-token') mocks.canAffordAttachments.mockReturnValue(false)
+      if (rejection === 'byte-budget') mocks.tryReserve.mockReturnValue(false)
+
+      await createInteractionHandler(rateLimiter as never)(interaction as never)
+
+      if (rejection === 'byte-budget') expect(reservation.release).toHaveBeenCalledWith(0)
+      return {
+        start: mocks.startTurnEntryWork,
+        cancel: mocks.cancelTurnEntryWork,
+        generate: mocks.generateResponse
+      }
+    }, false)
+  })
+
+  it('starts Jev work before /ask defers and hands the same work to generation', async () => {
+    const interaction = askWith([])
+
+    await createInteractionHandler(rateLimiterStub() as never)(interaction as never)
+
+    expect(mocks.startTurnEntryWork.mock.invocationCallOrder[0]).toBeLessThan(
+      interaction.deferReply.mock.invocationCallOrder[0]
+    )
+    expect(mocks.generateResponse).toHaveBeenCalledWith(expect.objectContaining({ turnEntryWork }))
+  })
+
+  it('starts entry work with the raw /ask question', async () => {
+    const question = 'When did the newest season premiere?'
+    const interaction = askWith([], undefined, question)
+
+    await createInteractionHandler(rateLimiterStub() as never)(interaction as never)
+
+    expect(mocks.startTurnEntryWork).toHaveBeenCalledWith(expect.objectContaining({ message: question }))
+    expect(mocks.generateResponse.mock.calls[0][0].userMessage).toBe(question)
+  })
 
   // Offers one more than the ceiling admits, so the assertion is non-vacuous at any MAX_ATTACHMENTS: it
   // fails if the handler stops short of the ceiling AND if it reads past it. The original pinned the
@@ -431,7 +514,7 @@ describe('interaction handler metrics', () => {
     expect(mocks.recordResponseEvent).toHaveBeenCalledWith(expect.objectContaining({ toolsUsed: ['roll_dice'] }))
   })
 
-  it('derives a per-channel DM tenant when there is no guild', async () => {
+  it('asks for no memory in a DM, while keeping the per-channel label metrics need', async () => {
     const interaction = {
       isChatInputCommand: () => true,
       commandName: 'ask',
@@ -448,8 +531,32 @@ describe('interaction handler metrics', () => {
 
     await createInteractionHandler(rateLimiter as never)(interaction as never)
 
-    expect(mocks.generateResponse).toHaveBeenCalledWith(expect.objectContaining({ guildId: 'dm:channel-1' }))
+    // The label is a metrics and session identity only: a DM turn has no memory tenant to name.
+    expect(mocks.generateResponse).toHaveBeenCalledWith(
+      expect.objectContaining({ guildId: 'dm:channel-1', memory: false })
+    )
     expect(mocks.recordResponseEvent).toHaveBeenCalledWith(expect.objectContaining({ guildId: 'dm:channel-1' }))
+  })
+
+  it('asks for no memory in a guild either', async () => {
+    const interaction = {
+      isChatInputCommand: () => true,
+      commandName: 'ask',
+      options: { getString: vi.fn((name: string) => (name === 'question' ? 'hello' : null)), getAttachment: vi.fn() },
+      channelId: 'channel-1',
+      member: null,
+      user: { displayName: 'Alice', username: 'alice', id: 'user-1' },
+      guildId: 'guild-1',
+      deferReply: vi.fn().mockResolvedValue(undefined),
+      editReply: vi.fn().mockResolvedValue(undefined),
+      followUp: vi.fn().mockResolvedValue(undefined)
+    }
+    const rateLimiter = new RateLimiter({ rpm: 1_000, rpd: 100_000 })
+
+    await createInteractionHandler(rateLimiter as never)(interaction as never)
+
+    // Being in a guild is what made /ask memoryful before; it is not what makes it so now.
+    expect(mocks.generateResponse).toHaveBeenCalledWith(expect.objectContaining({ guildId: 'guild-1', memory: false }))
   })
 
   it("keeps the follow-up chunk count under Discord's 5-follow-up cap at the max response length", async () => {
