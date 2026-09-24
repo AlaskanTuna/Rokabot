@@ -1,11 +1,11 @@
 # Rokabot Configuration
 # Secrets (DISCORD_TOKEN, DISCORD_CLIENT_ID, GEMINI_API_KEY) stay in .env
-# Environment variables can override any value below for backward compatibility.
+# Environment variables override values only where `src/config.ts` wires them.
 
 jev:
   model: jev-1.13.0 # Pinned Jev version; thresholds are tuned against one version, and the jev-latest alias moves
   timeoutMs: 1200 # Deadline for the in-reply judgment (Pi median ~0.5s); one attempt, no retries
-  memoryTimeoutMs: 5000 # Deadline for background memory admission and verification
+  memoryTimeoutMs: 5000 # Deadline for background memory admission and verification judgments
   tone: shadow # off | shadow (ask Jev and log, change nothing) | on (Jev picks the tone)
   referents: shadow # off | shadow | on (Jev settles names the resolver found ambiguous)
   toneMinConfidence: 0.6 # In on mode, below this confidence the rule-based tone stays
@@ -62,7 +62,7 @@ memory:
   recallCooldownMs: 21600000 # Recalled claims lose 0.75 score for this long unless the message matches them
   episodeLullMs: 180000 # Close an open memory episode after this much channel silence
   episodeMaxMessages: 25 # Close an episode at this many delta messages; leave room for three context lines
-  admitThreshold: 0.5 # Minimum Jev lasting_fact probability required before Gemini extraction
+  admitThreshold: 0.5 # Minimum Jev lasting_fact probability; unavailable or lower judgments drop the episode
   verifyThreshold: 0.5 # Minimum Jev probability for durable and attributed operations
   vaultExportDir: data/vault # Directory for read-only Obsidian vault exports
 

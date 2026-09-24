@@ -235,27 +235,43 @@ cannot read those — so those turns only ever wait out `gemini.timeout`.
 
 ---
 
-## Jev Shadow Mode
+## Jev Judgments and Passive Memory
 
-Jev's three features (`tone`, `referents`, `extraction`) ship in `shadow`: they log what Jev would have decided and
-change nothing. Read those decisions before switching any of them on.
+Jev tone and referent judgments can run in `off`, `shadow` or `on` mode. Passive memory uses Jev admission and
+verification as hard gates: an unavailable client, timeout, or low admission score drops the episode before Gemini
+extraction. Without `TYPESAFE_API_KEY`, startup logs `Passive memory extraction is disabled: no TypeSafe API key`
+once, and passive episodes are dropped. Set `jev.memoryTimeoutMs`, `memory.admitThreshold` and
+`memory.verifyThreshold` in `config.yml` through a PR.
 
 ```bash
 # What Jev picked per turn, next to the rule-based tone
 sudo docker logs rokabot-roka-1 2>&1 | grep '"msg":"Jev turn judgment"'
 
-# Which rejected memory batches Jev would have admitted
-sudo docker logs rokabot-roka-1 2>&1 | grep '"msg":"Jev extraction admission"'
-
-# Jev failures and timeouts (the bot falls back to its rules)
+# Jev failures and timeouts
 sudo docker logs rokabot-roka-1 2>&1 | grep '"msg":"Jev judgment failed"'
 ```
 
-To switch a feature, set `JEV_TONE`, `JEV_REFERENTS` or `JEV_EXTRACTION` to `off`, `shadow` or `on` in
-`~/rokabot/.env` and recreate the container (`sudo docker compose -f ~/rokabot/docker-compose.yml up -d`); a lasting
-change belongs in `config.yml` through a PR. Thresholds are `jev.*MinConfidence` and `jev.extractionAdmitThreshold`
-in `config.yml`. Without `TYPESAFE_API_KEY`, startup logs `Passive memory extraction is disabled: no TypeSafe API key`
-once and passive memory drops every episode because Jev admission is required.
+To switch an in-reply feature, set `JEV_TONE` or `JEV_REFERENTS` to `off`, `shadow` or `on` in `~/rokabot/.env`
+and recreate the container (`sudo docker compose -f ~/rokabot/docker-compose.yml up -d`). The memory judgments are
+not shadow modes and cannot be disabled independently of passive extraction.
+
+Memory admission and verification totals are retained in `jev_events`; the table stores judgment metadata, not source
+message text:
+
+```bash
+sqlite3 ~/rokabot/data/rokabot.db "SELECT kind, question, applied, COUNT(*) AS events,
+  ROUND(AVG(probability), 3) AS avg_probability,
+  ROUND(AVG(latency_ms), 1) AS avg_latency_ms,
+  SUM(input_tokens) AS input_tokens
+  FROM jev_events
+  WHERE kind IN ('admission', 'verification')
+  GROUP BY kind, question, applied
+  ORDER BY kind, question, applied;"
+```
+
+Admission uses the `lasting_fact` question. Verification questions are `durable_N`, `attributed_N` and
+`same_as_N_M`. `applied = 0` means no corresponding operation or duplicate-evidence update was applied; an operation
+can be blocked by its threshold or by operation rules.
 
 ---
 
@@ -315,24 +331,47 @@ cd ~/actions-runner && sudo ./svc.sh stop && sudo ./svc.sh uninstall
 
 DB location: `~/rokabot/data/rokabot.db`
 
-### User Memory
+### User Claims and Extraction Queue
 
 ```bash
-# All user facts
-sqlite3 ~/rokabot/data/rokabot.db 'SELECT * FROM user_memory ORDER BY updated_at DESC;'
+# Recent active claims
+sqlite3 ~/rokabot/data/rokabot.db "SELECT id, guild_id, subject_user_id, predicate, value,
+  needs_review, first_seen_at, last_seen_at
+  FROM memory_claim WHERE status='active' ORDER BY last_seen_at DESC LIMIT 100;"
 
-# Facts for a specific user ID
-sqlite3 ~/rokabot/data/rokabot.db "SELECT * FROM user_memory WHERE user_id='USER_ID';"
+# Claims for a user in one guild
+sqlite3 ~/rokabot/data/rokabot.db "SELECT id, predicate, value, status, needs_review, last_seen_at
+  FROM memory_claim WHERE guild_id='GUILD_ID' AND subject_user_id='USER_ID'
+  ORDER BY last_seen_at DESC;"
 
-# Count facts per user
-sqlite3 ~/rokabot/data/rokabot.db 'SELECT user_id, COUNT(*) as facts FROM user_memory GROUP BY user_id;'
+# Active claims by guild and subject
+sqlite3 ~/rokabot/data/rokabot.db "SELECT guild_id, subject_user_id, COUNT(*) AS active_claims
+  FROM memory_claim WHERE status='active' GROUP BY guild_id, subject_user_id
+  ORDER BY active_claims DESC;"
 
-# Delete a specific fact
-sqlite3 ~/rokabot/data/rokabot.db "DELETE FROM user_memory WHERE user_id='USER_ID' AND fact_key='KEY';"
-
-# Delete all facts for a user
-sqlite3 ~/rokabot/data/rokabot.db "DELETE FROM user_memory WHERE user_id='USER_ID';"
+# Queue backlog by status; failed rows are retained for inspection
+sqlite3 ~/rokabot/data/rokabot.db 'SELECT status, COUNT(*) AS jobs FROM extraction_queue GROUP BY status;'
 ```
+
+Use the bot's `forget_user` tool to retract a claim. It changes claim status so the historical claim row is retained.
+
+### Memory V2 Migration
+
+Run this explicit migration only with the bot stopped, from a repository checkout with Node.js 24 and dependencies
+installed. The commands below first back up the whole SQLite database. The migration checks that every legacy row has
+a matching claim in a legal scope, reports the top active claims before and after capacity eviction, and drops the
+legacy table only if the check succeeds. An incomplete backfill exits with an error and leaves `user_memory` intact.
+Startup never invokes this migration.
+
+```bash
+cd ~/rokabot
+sudo docker compose stop roka
+sqlite3 data/rokabot.db '.backup data/rokabot.db.pre-memory-v2'
+ROKABOT_DB_PATH="$PWD/data/rokabot.db" npm run migrate:memory-v2
+```
+
+Review the migration report and the backup before restarting the bot. If the backfill check passed, restart it with
+`sudo docker compose up -d roka`. Do not delete `user_memory` manually.
 
 ### Reminders
 
@@ -426,16 +465,15 @@ sqlite3 ~/rokabot/data/rokabot.db '.tables'
 # DB file size
 ls -lh ~/rokabot/data/rokabot.db
 
-# Schema for a table
-sqlite3 ~/rokabot/data/rokabot.db '.schema user_memory'
+# Schemas for memory tables
+sqlite3 ~/rokabot/data/rokabot.db '.schema memory_claim'
+sqlite3 ~/rokabot/data/rokabot.db '.schema extraction_queue'
+sqlite3 ~/rokabot/data/rokabot.db '.schema jev_events'
 ```
 
 ### Dangerous Operations
 
 ```bash
-# Truncate a single table (keep schema)
-sqlite3 ~/rokabot/data/rokabot.db 'DELETE FROM user_memory;'
-
 # Full DB wipe (stop bot first, it recreates on restart)
 cd ~/rokabot && docker compose stop
 rm -f data/rokabot.db data/rokabot.db-wal data/rokabot.db-shm

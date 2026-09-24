@@ -200,31 +200,33 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    Passive[Passive buffer] --> Gate[Candidate gate]
-    Gate --> Queue[extraction_queue]
+    Passive[Monitored guild messages] --> Tracker[Episode tracker and cursor]
+    Tracker --> Queue[Durable extraction_queue]
     Queue --> Scheduler[Per-guild scheduler]
-    Scheduler --> Extractor[Extractor]
-    Extractor --> Claims[(memory_claim)]
+    Scheduler --> Precheck[Sensitive and trivial precheck]
+    Precheck --> Admission[Jev admission required]
+    Admission --> Extractor[Gemini typed extraction]
+    Extractor --> Verification[Jev verification]
+    Verification --> Claims[(User-subject memory_claim)]
     Claims --> Retriever[Bounded retriever]
     Retriever --> Envelope[Prompt safety envelope]
 
     subgraph Lifecycle[Claim Lifecycle]
-        Candidate[candidate] --> Active[active]
-        Active --> Superseded[superseded]
+        Active[active] --> Superseded[superseded]
         Active --> Rejected[rejected]
     end
-
-    Extractor --> Candidate
 ```
 
 </details>
 
-- Roka retains useful facts and relationships for the place they were observed — a guild, or a single DM or group chat; memory never crosses between them.
+- Claims always describe users and stay within their tenant (guild or individual DM/group-chat channel); passive episode capture currently runs in monitored guild channels.
 - A fact the user asks her outright to remember is pinned and survives the active-claim ceiling.
 - `recall_user` ranks by relevance to the current message rather than by recency.
-- Extraction is asynchronous, while retrieval remains bounded before a response is generated.
+- Episode writes run asynchronously; retrieval stays bounded before a response is generated. Jev admission runs before Gemini extraction and Jev verification runs before claim updates. Without `TYPESAFE_API_KEY`, passive episodes are dropped.
+- Queue jobs retry once after an extraction failure; jobs that fail again remain in `failed` for inspection.
+- Group or guild-subject facts and durable episodic recall are later-phase work; the current pipeline does not store an episode summary or a `memory_episode` record.
 - The exported memory graph is browseable in Obsidian; see [Browsing Memory in Obsidian](#browsing-memory-in-obsidian).
-- For schema, lifecycle, and retrieval details, see [Memory Architecture (Claims)](./trd.md#memory-architecture-claims).
+- For schema, lifecycle, and retrieval details, see [Memory Architecture (User Claims)](./trd.md#memory-architecture-user-claims).
 
 ### Expressions & Tones
 
@@ -290,7 +292,7 @@ Each detected tone selects a prompt variant, an accent color, and one of its map
 - Docker and Docker Compose for containerized deployment.
 - Optional: a Tavily API key for web search.
 - Optional: a ModelScope API-Inference key, so a Qwen fallback model answers when Gemini is overloaded or out of quota.
-- Optional: a TypeSafe API key for Jev judgments (tone, ambiguous names, memory admission).
+- Optional: a TypeSafe API key for Jev tone and ambiguous-name judgments. A key is required for passive memory admission and verification; without it, passive episodes are dropped.
 
 ### Install & Configure
 
@@ -303,19 +305,21 @@ cp .env.example .env
 
 ### `.env` Secrets
 
-| Variable              | Required | Purpose                                                               |
-| --------------------- | -------- | --------------------------------------------------------------------- |
-| `DISCORD_TOKEN`       | Yes      | Discord bot token.                                                    |
-| `DISCORD_CLIENT_ID`   | Yes      | Discord application client ID.                                        |
-| `GEMINI_API_KEY`      | Yes      | Gemini API key for response generation and extraction.                |
-| `TAVILY_API_KEY`      | No       | Tavily API key for web search.                                        |
-| `DEV_GEMINI_API_KEY`  | No       | Second Gemini key, harness-only, for `npm run test:live`.             |
-| `ROKABOT_HARNESS_KEY` | No       | Names which `.env` key funds a `npm run test:live` run, harness-only. |
+| Variable              | Required | Purpose                                                                |
+| --------------------- | -------- | ---------------------------------------------------------------------- |
+| `DISCORD_TOKEN`       | Yes      | Discord bot token.                                                     |
+| `DISCORD_CLIENT_ID`   | Yes      | Discord application client ID.                                         |
+| `GEMINI_API_KEY`      | Yes      | Gemini API key for response generation and extraction.                 |
+| `TYPESAFE_API_KEY`    | No       | Jev judgments; required for passive memory admission and verification. |
+| `TAVILY_API_KEY`      | No       | Tavily API key for web search.                                         |
+| `DEV_GEMINI_API_KEY`  | No       | Second Gemini key, harness-only, for `npm run test:live`.              |
+| `ROKABOT_HARNESS_KEY` | No       | Names which `.env` key funds a `npm run test:live` run, harness-only.  |
 
 ```env
 DISCORD_TOKEN=your_discord_bot_token
 DISCORD_CLIENT_ID=your_discord_client_id
 GEMINI_API_KEY=your_gemini_api_key
+TYPESAFE_API_KEY=your_typesafe_api_key
 TAVILY_API_KEY=your_tavily_api_key
 ```
 
@@ -352,22 +356,37 @@ Secrets belong in `.env`; tunables belong in [`config.yml`](../config.yml). Envi
 <details>
 <summary>View Tunables</summary>
 
-| YAML Path                     | Env Override                    | Purpose                                                                                                                                                                                       |
-| ----------------------------- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `gemini.model`                | `GEMINI_MODEL`                  | Live Gemini model ID.                                                                                                                                                                         |
-| `gemini.extractionModel`      | `GEMINI_EXTRACTION_MODEL`       | Optional background extraction model; defaults to the live model.                                                                                                                             |
-| `gemini.timeout`              | `GEMINI_TIMEOUT`                | Request timeout in milliseconds.                                                                                                                                                              |
-| `gemini.maxRetries`           | `GEMINI_MAX_RETRIES`            | Maximum retries for transient failures.                                                                                                                                                       |
-| `gemini.maxOutputTokens`      | `GEMINI_MAX_OUTPUT_TOKENS`      | Response token safety cap.                                                                                                                                                                    |
-| `gemini.safetyThreshold`      | `GEMINI_SAFETY_THRESHOLD`       | Harm block threshold — one of `OFF`, `BLOCK_NONE`, `BLOCK_ONLY_HIGH`, `BLOCK_MEDIUM_AND_ABOVE`, `BLOCK_LOW_AND_ABOVE` — applied uniformly to all four Gemini-API-supported safety categories. |
-| `gemini.maxLlmCalls`          | —                               | Maximum chained tool calls per request.                                                                                                                                                       |
-| `gemini.liveMaxRetries`       | `GEMINI_LIVE_MAX_RETRIES`       | Retry attempts after a failed live response.                                                                                                                                                  |
-| `gemini.retryRpmFloor`        | `GEMINI_RETRY_RPM_FLOOR`        | Minimum remaining RPM required for a live retry.                                                                                                                                              |
-| `gemini.extractionRpmFloor`   | `GEMINI_EXTRACTION_RPM_FLOOR`   | Minimum remaining RPM required for background extraction.                                                                                                                                     |
-| `gemini.extractionMaxRetries` | `GEMINI_EXTRACTION_MAX_RETRIES` | Retry attempts after a transient extraction failure.                                                                                                                                          |
-| `gemini.retryBackoffBaseMs`   | `GEMINI_RETRY_BACKOFF_BASE_MS`  | Initial full-jitter retry backoff in milliseconds.                                                                                                                                            |
-| `gemini.retryBackoffCapMs`    | `GEMINI_RETRY_BACKOFF_CAP_MS`   | Maximum full-jitter retry backoff in milliseconds.                                                                                                                                            |
-| `gemini.turnDeadlineMs`       | `GEMINI_TURN_DEADLINE_MS`       | Wall-clock budget for the live retry loop; a retry starts only if a full `gemini.timeout` still fits, and the first attempt is never gated.                                                   |
+| YAML Path                   | Env Override                   | Purpose                                                                                                                                                                                       |
+| --------------------------- | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `gemini.model`              | `GEMINI_MODEL`                 | Live Gemini model ID.                                                                                                                                                                         |
+| `gemini.extractionModel`    | `GEMINI_EXTRACTION_MODEL`      | Optional background extraction model; defaults to the live model.                                                                                                                             |
+| `gemini.timeout`            | `GEMINI_TIMEOUT`               | Request timeout in milliseconds.                                                                                                                                                              |
+| `gemini.maxRetries`         | `GEMINI_MAX_RETRIES`           | Maximum retries for transient failures.                                                                                                                                                       |
+| `gemini.maxOutputTokens`    | `GEMINI_MAX_OUTPUT_TOKENS`     | Response token safety cap.                                                                                                                                                                    |
+| `gemini.safetyThreshold`    | `GEMINI_SAFETY_THRESHOLD`      | Harm block threshold — one of `OFF`, `BLOCK_NONE`, `BLOCK_ONLY_HIGH`, `BLOCK_MEDIUM_AND_ABOVE`, `BLOCK_LOW_AND_ABOVE` — applied uniformly to all four Gemini-API-supported safety categories. |
+| `gemini.maxLlmCalls`        | —                              | Maximum chained tool calls per request.                                                                                                                                                       |
+| `gemini.liveMaxRetries`     | `GEMINI_LIVE_MAX_RETRIES`      | Retry attempts after a failed live response.                                                                                                                                                  |
+| `gemini.retryRpmFloor`      | `GEMINI_RETRY_RPM_FLOOR`       | Minimum remaining RPM required for a live retry.                                                                                                                                              |
+| `gemini.retryBackoffBaseMs` | `GEMINI_RETRY_BACKOFF_BASE_MS` | Initial full-jitter retry backoff in milliseconds.                                                                                                                                            |
+| `gemini.retryBackoffCapMs`  | `GEMINI_RETRY_BACKOFF_CAP_MS`  | Maximum full-jitter retry backoff in milliseconds.                                                                                                                                            |
+| `gemini.turnDeadlineMs`     | `GEMINI_TURN_DEADLINE_MS`      | Wall-clock budget for the live retry loop; a retry starts only if a full `gemini.timeout` still fits, and the first attempt is never gated.                                                   |
+
+</details>
+
+### Jev
+
+<details>
+<summary>View Tunables</summary>
+
+| YAML Path                   | Env Override    | Purpose                                                             |
+| --------------------------- | --------------- | ------------------------------------------------------------------- |
+| `jev.model`                 | `JEV_MODEL`     | Pinned TypeSafe judgment model.                                     |
+| `jev.timeoutMs`             | —               | Deadline for in-reply tone and referent judgments.                  |
+| `jev.memoryTimeoutMs`       | —               | Deadline for passive memory admission and verification judgments.   |
+| `jev.tone`                  | `JEV_TONE`      | `off`, `shadow`, or `on` mode for in-reply tone decisions.          |
+| `jev.referents`             | `JEV_REFERENTS` | `off`, `shadow`, or `on` mode for resolving ambiguous member names. |
+| `jev.toneMinConfidence`     | —               | Minimum confidence required to apply a Jev tone.                    |
+| `jev.referentMinConfidence` | —               | Minimum confidence required to apply a Jev referent.                |
 
 </details>
 
@@ -407,26 +426,24 @@ Secrets belong in `.env`; tunables belong in [`config.yml`](../config.yml). Envi
 <details>
 <summary>View Tunables</summary>
 
-| YAML Path                           | Env Override                            | Purpose                                                    |
-| ----------------------------------- | --------------------------------------- | ---------------------------------------------------------- |
-| `memory.bufferSize`                 | `MEMORY_BUFFER_SIZE`                    | Passive in-memory buffer size per channel.                 |
-| `memory.contextSize`                | —                                       | Overheard messages injected into one prompt.               |
-| `memory.extractionInterval`         | `MEMORY_EXTRACTION_INTERVAL`            | Messages between background fact extraction attempts.      |
-| `memory.extractionGapMs`            | `MEMORY_EXTRACTION_GAP_MS`              | Minimum time between extractions.                          |
-| `memory.maxFactsPerUser`            | —                                       | Legacy stored-fact cap per user.                           |
-| `memory.factRetentionDays`          | —                                       | Legacy unused-fact retention period.                       |
-| `memory.channelMonitorTtlMs`        | —                                       | Monitoring lifetime after the latest mention.              |
-| `memory.claimsBackend`              | `MEMORY_CLAIMS_BACKEND`                 | Enables typed claims extraction and retrieval.             |
-| `memory.maxClaimsPerTurn`           | `MEMORY_MAX_CLAIMS_PER_TURN`            | Maximum claims included in one response.                   |
-| `memory.retrievalTokenBudget`       | `MEMORY_RETRIEVAL_TOKEN_BUDGET`         | Approximate claims-envelope token budget.                  |
-| `memory.recentParticipantLimit`     | `MEMORY_RECENT_PARTICIPANT_LIMIT`       | Non-speaker participants considered for retrieval.         |
-| `memory.speakerMinShare`            | `MEMORY_SPEAKER_MIN_SHARE`              | Minimum share of selected claims reserved for the speaker. |
-| `memory.maxActiveClaimsPerUser`     | `MEMORY_MAX_ACTIVE_CLAIMS_PER_USER`     | Active claim cap per user; pinned claims are exempt.       |
-| `memory.claimRetentionDays`         | `MEMORY_CLAIM_RETENTION_DAYS`           | Retention period for inactive, unpinned claims.            |
-| `memory.extractionDailyBudgetRatio` | `MEMORY_EXTRACTION_DAILY_BUDGET_RATIO`  | Gemini daily budget share reserved for extraction.         |
-| `memory.perGuildGapMs`              | `MEMORY_PER_GUILD_GAP_MS`               | Minimum time between extraction batches for one guild.     |
-| `memory.extractionQueueMaxPerGuild` | `MEMORY_EXTRACTION_QUEUE_MAX_PER_GUILD` | Maximum queued extraction payloads for one guild.          |
-| `memory.vaultExportDir`             | `MEMORY_VAULT_EXPORT_DIR`               | Output directory for read-only Obsidian vault exports.     |
+| YAML Path                       | Env Override                        | Purpose                                                     |
+| ------------------------------- | ----------------------------------- | ----------------------------------------------------------- |
+| `memory.bufferSize`             | `MEMORY_BUFFER_SIZE`                | Passive in-memory buffer size per channel.                  |
+| `memory.contextSize`            | —                                   | Overheard messages injected into one prompt.                |
+| `memory.channelMonitorTtlMs`    | —                                   | Monitoring lifetime after the latest mention.               |
+| `memory.maxClaimsPerTurn`       | `MEMORY_MAX_CLAIMS_PER_TURN`        | Maximum claims included in one response.                    |
+| `memory.retrievalTokenBudget`   | `MEMORY_RETRIEVAL_TOKEN_BUDGET`     | Approximate claims-envelope token budget.                   |
+| `memory.recentParticipantLimit` | `MEMORY_RECENT_PARTICIPANT_LIMIT`   | Non-speaker participants considered for retrieval.          |
+| `memory.speakerMinShare`        | `MEMORY_SPEAKER_MIN_SHARE`          | Minimum share of selected claims reserved for the speaker.  |
+| `memory.maxActiveClaimsPerUser` | `MEMORY_MAX_ACTIVE_CLAIMS_PER_USER` | Active claim cap per user; pinned claims are exempt.        |
+| `memory.claimRetentionDays`     | `MEMORY_CLAIM_RETENTION_DAYS`       | Retention period for inactive, unpinned claims.             |
+| `memory.salienceHalfLifeDays`   | `MEMORY_SALIENCE_HALF_LIFE_DAYS`    | Days for salience to halve during retrieval scoring.        |
+| `memory.recallCooldownMs`       | `MEMORY_RECALL_COOLDOWN_MS`         | Time a recalled claim is damped unless it matches the turn. |
+| `memory.episodeLullMs`          | —                                   | Silence interval that closes an open episode.               |
+| `memory.episodeMaxMessages`     | —                                   | Maximum delta messages in one episode.                      |
+| `memory.admitThreshold`         | —                                   | Minimum Jev admission probability before Gemini extraction. |
+| `memory.verifyThreshold`        | —                                   | Minimum Jev durability and attribution probability.         |
+| `memory.vaultExportDir`         | `MEMORY_VAULT_EXPORT_DIR`           | Output directory for read-only Obsidian vault exports.      |
 
 </details>
 
@@ -512,7 +529,7 @@ Obsidian belongs on the desktop, not the Pi: it is a graphical desktop applicati
 
 ## Privacy
 
-Rokabot is self-hosted and stores session history, memory claims, reminders, game data, metrics, and failure diagnostics (which retain the triggering message verbatim for a bounded window, configured by `metrics.diagnosticsRetentionHours`) in local SQLite. Claims are isolated per tenant: a guild, or an individual DM or group chat, never crossing between them. Messages used to generate responses and extract memory are sent to the Gemini API. Attachments are never written to disk or to SQLite — only text content is persisted, so a restart drops them entirely. Server operators should disclose passive monitoring in channels where Roka has been mentioned.
+Rokabot is self-hosted and stores session history, memory claims, reminders, game data, metrics, and failure diagnostics (which retain the triggering message verbatim for a bounded window, configured by `metrics.diagnosticsRetentionHours`) in local SQLite. Claims are isolated per tenant: a guild, or an individual DM or group chat, never crossing between them. Messages used to generate responses and extract memory are sent to Gemini; passive episode content and candidate claims are also sent to TypeSafe Jev for admission and verification. Attachments are never written to disk or to SQLite — only text content is persisted, so a restart drops them entirely. Server operators should disclose passive monitoring in channels where Roka has been mentioned.
 
 <p align="right"><a href="#readme-top">↑</a></p>
 
