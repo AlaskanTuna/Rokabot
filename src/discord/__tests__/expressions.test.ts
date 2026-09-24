@@ -16,7 +16,9 @@ describe('getExpressionUrl', () => {
   })
 
   it('uses an injected RNG for deterministic selection', () => {
-    expect(getExpressionUrl('playful', { rng: () => 0.9 })).toBe('https://files.catbox.moe/p4blh6.png')
+    expect(getExpressionUrl('playful', { rng: () => 0.9 })).toBe(
+      'https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/expressions/v1/cheerful.webp'
+    )
   })
 
   it('does not repeat the previous expression from a multi-expression pool', () => {
@@ -26,7 +28,9 @@ describe('getExpressionUrl', () => {
   })
 
   it('falls back to the base expression for an unknown tone', () => {
-    expect(getExpressionUrl('unknown' as never)).toBe('https://files.catbox.moe/uc9lpk.png')
+    expect(getExpressionUrl('unknown' as never)).toBe(
+      'https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/expressions/v1/base.webp'
+    )
   })
 
   it('resets remembered expression picks', () => {
