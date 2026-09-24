@@ -209,7 +209,7 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
   let tone = ruleTone
   let references: ReturnType<typeof resolveReferences> = { resolved: [], ambiguous: [] }
 
-  if (memory && config.jev.referents !== 'off') {
+  if (memory) {
     try {
       references = resolveReferences({
         guildId,
