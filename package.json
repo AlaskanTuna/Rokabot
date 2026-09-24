@@ -26,7 +26,9 @@
     "test:phase8": "tsx scripts/test-phase8.ts",
     "test:memory": "tsx scripts/test-memory-extraction.ts",
     "memory:prune-overflow": "tsx scripts/prune-claim-overflow.ts",
-    "export:vault": "tsx scripts/export-vault.ts"
+    "export:vault": "tsx scripts/export-vault.ts",
+    "memory:replay": "tsx scripts/replay-memory-v2.ts",
+    "memory:replay:live": "ROKABOT_MEMORY_REPLAY_LIVE=1 tsx scripts/replay-memory-v2.ts --live"
   },
   "dependencies": {
     "@google/adk": "^0.1.0",

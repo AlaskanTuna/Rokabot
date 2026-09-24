@@ -6,9 +6,7 @@ import { assertClaim } from '../../src/agent/memory/memoryClaims.js'
 import { retrieveForTurn } from '../../src/agent/memory/retriever.js'
 import { config } from '../../src/config.js'
 import { closeDb, getDb } from '../../src/storage/database.js'
-import { getAllFactsForPrompt } from '../../src/storage/userMemory.js'
-import { getAllUserNames, upsertUserName } from '../../src/storage/userNames.js'
-import { estimateTokens } from '../../src/utils/tokens.js'
+import { upsertUserName } from '../../src/storage/userNames.js'
 import { type TranscriptLine, runTranscript } from './run.js'
 
 const REPLAY_PATH = resolve('tests/harness/memory-replay/shadow-replay.jsonl')
@@ -48,8 +46,8 @@ export type MemoryShadowReport = {
   retrievalTokenBudget: number
   speakerAnchorsDropped: number
   top10Recall: number
-  promptReduction: number
-  visibleClaimsBackend: boolean
+  expectedClaims: number
+  selectedClaims: number
   telemetryContainsFactValues: boolean
 }
 
@@ -155,21 +153,6 @@ function seedClaim(guildId: string, claim: FixtureClaim, labelToId: Map<string, 
     sourceKind: 'explicit'
   })
   labelToId.set(claim.label, saved.id)
-  getDb()
-    .prepare(
-      'INSERT OR REPLACE INTO user_memory (guild_id, user_id, fact_key, fact_value, updated_at) VALUES (?, ?, ?, ?, ?)'
-    )
-    .run(guildId, claim.subjectId, claim.label, claim.value, Date.now())
-}
-
-function oldAllFactsTokenEstimate(guildId: string): number {
-  const entries = [...getAllUserNames().values()]
-    .map((user) => ({
-      person: `${user.username} (${user.displayName})`,
-      facts: getAllFactsForPrompt(guildId, user.userId)
-    }))
-    .filter(({ facts }) => facts.length > 0)
-  return estimateTokens(JSON.stringify(entries))
 }
 
 function percentile95(values: number[]): number {
@@ -206,25 +189,21 @@ async function runReplayThroughHarness(scenarios: ReplayScenario[]): Promise<num
   }
 }
 
-/** Run the new retriever beside the default-off legacy all-facts path and collect promotion metrics. */
+/** Evaluate typed-claim retrieval against the labelled memory scenarios. */
 export async function evaluateMemoryShadow(
   scenarios: ReplayScenario[],
   options: { runHarness?: boolean } = {}
 ): Promise<MemoryShadowReport> {
   if (!replayHeader) throw new Error('Load the replay set before evaluating it')
-  const memoryConfig = config.memory as { claimsBackend: boolean; retrievalTokenBudget: number }
-  const originalClaimsBackend = memoryConfig.claimsBackend
   const latencies: number[] = []
   let crossGuildResults = 0
   let maxSelectedTokens = 0
   let speakerAnchorsDropped = 0
   let expectedClaims = 0
   let recalledExpectedClaims = 0
-  let oldPromptTokens = 0
-  let shadowPromptTokens = 0
+  let selectedClaims = 0
   let telemetryContainsFactValues = false
 
-  memoryConfig.claimsBackend = false
   try {
     closeDb()
     for (const scenario of scenarios) {
@@ -233,12 +212,11 @@ export async function evaluateMemoryShadow(
       for (const claim of scenario.claims) seedClaim(scenario.guildId, claim, labelToId)
       for (const claim of scenario.foreignClaims ?? []) seedClaim(`${scenario.guildId}-foreign`, claim, labelToId)
 
-      oldPromptTokens += oldAllFactsTokenEstimate(scenario.guildId)
       const startedAt = performance.now()
       const result = retrieveForTurn({ guildId: scenario.guildId, ...scenario.turn })
       latencies.push(performance.now() - startedAt)
       maxSelectedTokens = Math.max(maxSelectedTokens, result.trace.tokensEst)
-      shadowPromptTokens += result.trace.tokensEst
+      selectedClaims += result.claims.length
       crossGuildResults += result.claims.filter(({ claim }) => claim.guildId !== scenario.guildId).length
       if (
         scenario.claims.some((claim) => claim.subjectId === scenario.turn.speakerId) &&
@@ -266,15 +244,14 @@ export async function evaluateMemoryShadow(
       crossGuildResults,
       p95LatencyMs: percentile95(latencies),
       maxSelectedTokens,
-      retrievalTokenBudget: memoryConfig.retrievalTokenBudget,
+      retrievalTokenBudget: config.memory.retrievalTokenBudget,
       speakerAnchorsDropped,
       top10Recall: expectedClaims === 0 ? 1 : recalledExpectedClaims / expectedClaims,
-      promptReduction: oldPromptTokens === 0 ? 0 : 1 - shadowPromptTokens / oldPromptTokens,
-      visibleClaimsBackend: memoryConfig.claimsBackend,
+      expectedClaims,
+      selectedClaims,
       telemetryContainsFactValues
     }
   } finally {
     closeDb()
-    memoryConfig.claimsBackend = originalClaimsBackend
   }
 }
