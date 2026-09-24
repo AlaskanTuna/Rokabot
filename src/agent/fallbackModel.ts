@@ -377,11 +377,7 @@ function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-/**
- * The fallback substitutes text markers for anything but images, so a hedge on such a turn would answer from
- * a request the user never sent. It costs the user their attachment to save them a few seconds — the tail
- * hedge exists to bound is better absorbed by `gemini.timeout`.
- */
+/** The fallback replaces non-image media with a text marker, so a hedge there would answer a message nobody sent. */
 function isHedgeEligible(llmRequest: LlmRequest): boolean {
   return !(llmRequest.contents ?? []).some((content) =>
     (content.parts ?? []).some((part) => {
@@ -418,7 +414,7 @@ async function raceForWinner(
   let decided = false
   let hedgeStarted = false
   const errors: Array<{ side: RaceSide; error: unknown }> = []
-  let started = 0
+  let failures = 0
 
   const decide = (outcome: RaceOutcome) => {
     if (decided) return
@@ -442,8 +438,8 @@ async function raceForWinner(
         decide({ winner: null, responses: null, errors })
         return
       }
-      started++
-      if (started === 2) decide({ winner: null, responses: null, errors })
+      failures++
+      if (failures === 2) decide({ winner: null, responses: null, errors })
       return
     }
     if (decided) return
