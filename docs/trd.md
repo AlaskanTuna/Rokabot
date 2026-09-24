@@ -25,11 +25,11 @@
                    │
                    ▼
 ┌─────────────────────────────────────────────────┐
-│              Session Manager                      │
-│  Hot per-channel cache over SQLite history         │
-│  - Rehydrates the ADK window on session creation   │
+│          WindowedSessionService (ADK)              │
+│  Per-channel ADK sessions                          │
 │  - FIFO window bounded by `session.windowSize`     │
 │  - Idle TTL bounded by `session.ttl`               │
+│  - Rehydrates retained session history from SQLite │
 └──────────────────┬──────────────────────────────┘
                    │
                    ▼
@@ -120,7 +120,7 @@ durable state.
 
 ### WindowMessage
 
-Represents a single message in the per-channel FIFO window.
+Represents a text message projected from an ADK session event for tone detection.
 
 | Field         | Type                    | Description                                   |
 | ------------- | ----------------------- | --------------------------------------------- |
@@ -128,17 +128,6 @@ Represents a single message in the per-channel FIFO window.
 | `displayName` | `string`                | Discord display name of the sender            |
 | `content`     | `string`                | Message text content                          |
 | `timestamp`   | `number`                | Unix timestamp (ms) when message was received |
-
-### ChannelSession
-
-Per-channel session state maintained by the SessionManager.
-
-| Field          | Type              | Description                                                      |
-| -------------- | ----------------- | ---------------------------------------------------------------- |
-| `channelId`    | `string`          | Discord channel ID (map key)                                     |
-| `messages`     | `WindowMessage[]` | FIFO hot cache (bounded by `session.windowSize`, oldest evicted) |
-| `idleTimer`    | `Timeout \| null` | Idle TTL timer handle (bounded by `session.ttl`)                 |
-| `lastActivity` | `number`          | Unix timestamp of last interaction                               |
 
 ### RateLimiterConfig
 
