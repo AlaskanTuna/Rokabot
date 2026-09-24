@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => {
     runEpisodePipeline: vi
       .fn()
       .mockResolvedValue({ status: 'completed', summary: null, appliedOps: 0, duplicateOps: 0 }),
+    persistEpisodeResult: vi.fn().mockResolvedValue(undefined),
     isShuttingDown: vi.fn(() => false),
     logger: { warn: vi.fn() },
     resetQueue: () => {
@@ -64,6 +65,7 @@ vi.mock('../../../storage/extractionQueue.js', () => ({
 }))
 vi.mock('../../shutdownSignal.js', () => ({ isShuttingDown: mocks.isShuttingDown }))
 vi.mock('../extractor.js', () => ({ runEpisodePipeline: mocks.runEpisodePipeline }))
+vi.mock('../episodePersistence.js', () => ({ persistEpisodeResult: mocks.persistEpisodeResult }))
 vi.mock('../../../utils/logger.js', () => ({ logger: mocks.logger }))
 
 import { resetForTest, startExtractionScheduler, stopExtractionScheduler } from '../scheduler.js'
@@ -99,6 +101,7 @@ describe('episode extraction scheduler', () => {
     mocks.resetQueue()
     mocks.runEpisodePipeline.mockReset()
     mocks.runEpisodePipeline.mockResolvedValue({ status: 'completed', summary: null, appliedOps: 0, duplicateOps: 0 })
+    mocks.persistEpisodeResult.mockReset().mockResolvedValue(undefined)
     mocks.markDone.mockClear()
     mocks.markFailed.mockClear()
     mocks.logger.warn.mockClear()
@@ -175,6 +178,38 @@ describe('episode extraction scheduler', () => {
     expect(mocks.runEpisodePipeline).toHaveBeenCalledOnce()
     expect(mocks.markDone).toHaveBeenCalledOnce()
     expect(mocks.jobs).toHaveLength(0)
+  })
+
+  it('persists a completed summary before marking its queue job done', async () => {
+    let finishPersistence: (() => void) | undefined
+    const persistence = new Promise<void>((resolve) => {
+      finishPersistence = resolve
+    })
+    mocks.runEpisodePipeline.mockResolvedValueOnce({
+      status: 'completed',
+      summary: 'The group planned a picnic.',
+      appliedOps: 0,
+      duplicateOps: 0
+    })
+    mocks.persistEpisodeResult.mockReturnValueOnce(persistence)
+    const queued = enqueue('A', 'summary')
+
+    startExtractionScheduler()
+    await drain()
+
+    expect(mocks.persistEpisodeResult).toHaveBeenCalledWith({
+      job: expect.objectContaining({ id: queued.id }),
+      result: { status: 'completed', summary: 'The group planned a picnic.', appliedOps: 0, duplicateOps: 0 }
+    })
+    expect(mocks.markDone).not.toHaveBeenCalled()
+
+    finishPersistence?.()
+    await drain()
+
+    expect(mocks.markDone).toHaveBeenCalledWith(queued.id)
+    expect(mocks.persistEpisodeResult.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.markDone.mock.invocationCallOrder[0]
+    )
   })
 
   it('does not start work after shutdown or leave a scheduled drain when stopped', async () => {
