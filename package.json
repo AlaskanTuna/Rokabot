@@ -26,7 +26,8 @@
     "test:phase8": "tsx scripts/test-phase8.ts",
     "test:memory": "tsx scripts/test-memory-extraction.ts",
     "memory:prune-overflow": "tsx scripts/prune-claim-overflow.ts",
-    "export:vault": "tsx scripts/export-vault.ts"
+    "export:vault": "tsx scripts/export-vault.ts",
+    "replay:jev": "tsx scripts/replay-jev.ts"
   },
   "dependencies": {
     "@google/adk": "^0.1.0",
