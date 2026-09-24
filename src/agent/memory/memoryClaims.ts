@@ -350,6 +350,83 @@ export function getActiveClaims(guildId: string, userId: string): MemoryClaim[] 
   ).map(mapClaim)
 }
 
+export function getActiveClaimById(guildId: string, subjectUserId: string, claimId: number): MemoryClaim | undefined {
+  const row = getDb()
+    .prepare(
+      `SELECT * FROM memory_claim
+       WHERE guild_id = ? AND subject_user_id = ? AND id = ? AND status = 'active'`
+    )
+    .get(guildId, subjectUserId, claimId) as ClaimRow | undefined
+  return row ? mapClaim(row) : undefined
+}
+
+export function replaceActiveClaim(
+  input: {
+    guildId: string
+    subjectUserId: string
+    existingId: number
+    predicate: PredicateId
+    value: string
+    channelId: string
+    objectUserId?: string
+    needsReview?: boolean
+  },
+  options: ClaimWriteOptions = {}
+): MemoryClaim | null {
+  const write = () => {
+    assertWritableGuild(input.guildId)
+    const prior = getActiveClaimById(input.guildId, input.subjectUserId, input.existingId)
+    if (!prior || prior.predicate !== input.predicate) return null
+
+    const replacementInput: ClaimAssert = {
+      guildId: input.guildId,
+      subjectUserId: input.subjectUserId,
+      predicate: input.predicate,
+      value: input.value,
+      objectUserId: input.objectUserId,
+      sourceKind: 'passive',
+      channelId: input.channelId,
+      needsReview: input.needsReview
+    }
+    if (prior.value === input.value) return assertClaim(replacementInput, { transaction: true })
+
+    const db = getDb()
+    const retired = db
+      .prepare(
+        `UPDATE memory_claim SET status = 'superseded', superseded_by = NULL
+         WHERE guild_id = ? AND subject_user_id = ? AND id = ? AND status = 'active'`
+      )
+      .run(input.guildId, input.subjectUserId, input.existingId)
+    if (retired.changes !== 1) return null
+
+    const replacement = assertClaim(replacementInput, { transaction: true })
+    if (replacement.status !== 'active') throw new Error('Replacement claim is not active')
+    db.prepare(
+      `UPDATE memory_claim SET superseded_by = ?
+       WHERE guild_id = ? AND subject_user_id = ? AND id = ? AND status = 'superseded'`
+    ).run(replacement.id, input.guildId, input.subjectUserId, input.existingId)
+    return getClaim(replacement.id) ?? null
+  }
+  return options.transaction ? write() : getDb().transaction(write)()
+}
+
+export function rejectActiveClaimById(
+  input: { guildId: string; subjectUserId: string; existingId: number },
+  options: ClaimWriteOptions = {}
+): boolean {
+  const write = () => {
+    assertWritableGuild(input.guildId)
+    const result = getDb()
+      .prepare(
+        `UPDATE memory_claim SET status = 'rejected', superseded_by = NULL
+         WHERE guild_id = ? AND subject_user_id = ? AND id = ? AND status = 'active'`
+      )
+      .run(input.guildId, input.subjectUserId, input.existingId)
+    return result.changes === 1
+  }
+  return options.transaction ? write() : getDb().transaction(write)()
+}
+
 export function searchClaims(guildId: string, userId: string, ftsQuery: string, limit: number): MemoryClaim[] {
   if (!ftsQuery.trim() || limit <= 0) return []
   return (

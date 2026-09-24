@@ -2,6 +2,8 @@ import { type Questions, choice, noul } from '@typesafe-ai/sdk'
 import { config } from '../../config.js'
 import { logger } from '../../utils/logger.js'
 import { getLocalHour } from '../../utils/timezone.js'
+import type { ExtractionOp } from '../memory/extractionSchema.js'
+import type { MemoryClaim } from '../memory/memoryClaims.js'
 import type { ToneKey } from '../prompts/tones.js'
 import { getJevClient } from './client.js'
 
@@ -183,6 +185,81 @@ export async function judgeEpisodeAdmission(input: {
     const answer = result.answers.lasting_fact
     if (answer?.type !== 'noul') return null
     return { noul: answer.noul, confidence: null, latencyMs, inputTokens: result.usage.input_tokens }
+  } catch (error) {
+    logger.warn(warningDetails('extraction', error), 'Jev judgment failed')
+    return null
+  }
+}
+
+export type MemoryVerification = {
+  answers: Record<string, { noul: number; confidence: null }>
+  latencyMs: number
+  inputTokens: number
+}
+
+export async function judgeEpisodeOperations(input: {
+  lines: string[]
+  ops: readonly ExtractionOp[]
+  existing: readonly MemoryClaim[]
+}): Promise<MemoryVerification | null> {
+  try {
+    const client = getJevClient()
+    if (!client) return null
+
+    const questions: Questions = {}
+    const questionKeys: string[] = []
+    for (const [index, op] of input.ops.entries()) {
+      if (op.op === 'noop') continue
+      const durableKey = `durable_${index}`
+      const attributedKey = `attributed_${index}`
+      questions[durableKey] = noul(
+        'Is this operation a lasting trait, preference, relationship or plan rather than a momentary state or an event that has already happened?'
+      )
+      questions[attributedKey] = noul(
+        'Do the episode messages attribute this fact to the named user, rather than quoting, addressing or joking about them?'
+      )
+      questionKeys.push(durableKey, attributedKey)
+
+      if (op.op === 'add') {
+        const claims = input.existing.filter(
+          (claim) => claim.subjectUserId === op.subject.userId && claim.predicate === op.predicate
+        )
+        for (const [claimIndex, claim] of claims.entries()) {
+          const key = `same_as_${index}_${claimIndex}`
+          questions[key] = noul(
+            `Do the episode messages state the same fact about ${op.subject.userId} as existing claim #${claim.id}: ${claim.value}?`
+          )
+          questionKeys.push(key)
+        }
+      }
+    }
+    if (questionKeys.length === 0) return null
+
+    const startedAt = performance.now()
+    const result = await client.systemOne(
+      {
+        state: {
+          messages: input.lines,
+          operations: input.ops.map((op) => (op.op === 'noop' ? { ...op } : { ...op, subject: { ...op.subject } })),
+          existing: input.existing.map(({ id, subjectUserId, predicate, value }) => ({
+            id,
+            subjectUserId,
+            predicate,
+            value
+          }))
+        },
+        questions
+      },
+      { timeout: config.jev.memoryTimeoutMs }
+    )
+    const latencyMs = performance.now() - startedAt
+    const answers: MemoryVerification['answers'] = {}
+    for (const key of questionKeys) {
+      const answer = result.answers[key]
+      if (answer?.type !== 'noul' || !Number.isFinite(answer.noul) || answer.noul < 0 || answer.noul > 1) return null
+      answers[key] = { noul: answer.noul, confidence: null }
+    }
+    return { answers, latencyMs, inputTokens: result.usage.input_tokens }
   } catch (error) {
     logger.warn(warningDetails('extraction', error), 'Jev judgment failed')
     return null

@@ -14,13 +14,14 @@ vi.mock('../../../utils/logger.js', () => ({ logger: { warn: mocks.warn } }))
 vi.mock('@typesafe-ai/sdk', () => ({ noul: vi.fn((instructions) => ({ instructions })) }))
 
 import { noul } from '@typesafe-ai/sdk'
-import { judgeEpisodeAdmission } from '../judgments.js'
+import { judgeEpisodeAdmission, judgeEpisodeOperations } from '../judgments.js'
 
 describe('judgeEpisodeAdmission', () => {
   beforeEach(() => {
     mocks.clientAvailable = true
     mocks.systemOne.mockReset()
     mocks.warn.mockReset()
+    vi.mocked(noul).mockClear()
   })
 
   it('asks one lasting-fact question over the complete delta', async () => {
@@ -64,5 +65,72 @@ describe('judgeEpisodeAdmission', () => {
       'Jev judgment failed'
     )
     expect(JSON.stringify(mocks.warn.mock.calls)).not.toContain('private episode text')
+  })
+})
+
+describe('judgeEpisodeOperations', () => {
+  beforeEach(() => {
+    mocks.clientAvailable = true
+    mocks.systemOne.mockReset()
+    mocks.warn.mockReset()
+    vi.mocked(noul).mockClear()
+  })
+
+  it('asks one batched set of durable, attribution, and same-as questions', async () => {
+    mocks.systemOne.mockResolvedValueOnce({
+      answers: {
+        durable_0: { type: 'noul', noul: 0.9 },
+        attributed_0: { type: 'noul', noul: 0.95 },
+        same_as_0_0: { type: 'noul', noul: 0.8 }
+      },
+      usage: { input_tokens: 24, output_tokens: 3 }
+    })
+    const ops = [
+      { op: 'add', subject: { kind: 'user', userId: 'u-1' }, predicate: 'likes', value: 'tea' },
+      { op: 'noop' }
+    ] as const
+    const existing = [{ id: 7, guildId: 'g-1', subjectUserId: 'u-1', predicate: 'likes', value: 'green tea' }] as never
+
+    const result = await judgeEpisodeOperations({ lines: ['[u-1|Mio]: I like tea'], ops: [ops[0]], existing })
+
+    expect(noul).toHaveBeenCalledTimes(3)
+    expect(mocks.systemOne).toHaveBeenCalledOnce()
+    expect(mocks.systemOne.mock.calls[0][0]).toMatchObject({
+      state: {
+        messages: ['[u-1|Mio]: I like tea'],
+        operations: [ops[0]],
+        existing: [expect.objectContaining({ id: 7, predicate: 'likes', value: 'green tea' })]
+      },
+      questions: {
+        durable_0: expect.any(Object),
+        attributed_0: expect.any(Object),
+        same_as_0_0: expect.any(Object)
+      }
+    })
+    expect(result).toMatchObject({
+      answers: {
+        durable_0: { noul: 0.9, confidence: null },
+        attributed_0: { noul: 0.95, confidence: null },
+        same_as_0_0: { noul: 0.8, confidence: null }
+      },
+      inputTokens: 24
+    })
+  })
+
+  it('returns null for partial verification answers and skips an empty request', async () => {
+    mocks.systemOne.mockResolvedValueOnce({
+      answers: { durable_0: { type: 'noul', noul: 0.9 } },
+      usage: { input_tokens: 10, output_tokens: 1 }
+    })
+
+    await expect(
+      judgeEpisodeOperations({
+        lines: ['fact'],
+        ops: [{ op: 'add', subject: { kind: 'user', userId: 'u-1' }, predicate: 'likes', value: 'tea' }],
+        existing: []
+      })
+    ).resolves.toBeNull()
+    await expect(judgeEpisodeOperations({ lines: [], ops: [], existing: [] })).resolves.toBeNull()
+    expect(mocks.systemOne).toHaveBeenCalledOnce()
   })
 })
