@@ -328,6 +328,15 @@ describe('message handler claims extraction dispatch', () => {
     mocks.isChannelBusy.mockReturnValue(false)
     mocks.isMonitored.mockReturnValue(true)
     mocks.tryConsume.mockReturnValue(true)
+    mocks.getMessages.mockReturnValue([
+      {
+        userId: 'user-1',
+        displayName: 'Alice',
+        username: 'alice',
+        content: 'I love tea',
+        timestamp: 1
+      }
+    ])
     mocks.generateResponse.mockResolvedValue({
       text: 'Hello~',
       tone: 'playful',
@@ -378,8 +387,45 @@ describe('message handler claims extraction dispatch', () => {
     expect(mocks.enqueueAndSchedule).toHaveBeenCalledWith({
       guildId: 'guild-1',
       channelId: 'channel-1',
+      botUserId: 'bot-1',
       messages: [{ userId: 'user-1', displayName: 'Alice', content: 'I love tea' }]
     })
+  })
+
+  it('keeps buffered bot replies in context but excludes the bot from extraction subjects', async () => {
+    mutableMemoryConfig.claimsBackend = true
+    mocks.getMessages.mockReturnValue([
+      {
+        userId: 'user-1',
+        displayName: 'Alice',
+        username: 'alice',
+        content: 'I love tea',
+        timestamp: 1
+      },
+      {
+        userId: 'bot-1',
+        displayName: 'Roka',
+        username: 'roka',
+        content: 'I love tea too',
+        timestamp: 2
+      }
+    ])
+    const { message } = createMessage({ guild })
+
+    await createMessageHandler(
+      { user: { id: 'bot-1', displayName: 'Roka', username: 'roka' } } as never,
+      createRateLimiter() as never
+    )(message as never)
+
+    expect(mocks.getActiveClaims).not.toHaveBeenCalledWith('guild-1', 'bot-1')
+    expect(mocks.enqueueAndSchedule).toHaveBeenCalledWith(
+      expect.objectContaining({
+        botUserId: 'bot-1',
+        messages: expect.arrayContaining([
+          expect.objectContaining({ userId: 'bot-1', displayName: 'Roka', content: 'I love tea too' })
+        ])
+      })
+    )
   })
 
   it('does not let a scheduler failure interrupt the reply', async () => {
@@ -486,6 +532,7 @@ describe('message handler claims extraction dispatch', () => {
       expect(mocks.enqueueAndSchedule).toHaveBeenCalledWith({
         guildId: 'guild-1',
         channelId: 'channel-1',
+        botUserId: 'bot-1',
         messages: [{ userId: 'user-1', displayName: 'Alice', content: 'I love tea' }],
         admittedBy: 'jev'
       })

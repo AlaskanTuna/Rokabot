@@ -24,9 +24,10 @@ Discord Gateway Layer (discord.js)
   - Concurrency guard (1 active request per channel)
     │
     ▼
-Session Manager (in-memory)
-  - channelId → ChannelSession map
-  - Per-channel FIFO window and idle TTL (configured in `config.yml`)
+WindowedSessionService (ADK)
+  - Per-channel ADK sessions
+  - FIFO window and idle TTL configured by `session.windowSize` and `session.ttl` in `config.yml`
+  - Rehydrates retained session history from SQLite
     │
     ▼
 Roka Agent (ADK)
@@ -40,7 +41,7 @@ Gemini API (rate limits configured in `config.yml`)
 
 **Key Constraints:**
 
-- SQLite (better-sqlite3, `data/rokabot.db`) is canonical for session history, memory claims, reminders, game/gacha data, and metrics. The per-channel in-memory window is a hot cache rehydrated from SQLite on restart.
+- SQLite (better-sqlite3, `data/rokabot.db`) is canonical for session history, memory claims, reminders, game/gacha data, and metrics. `WindowedSessionService` maintains a per-channel in-memory session window rehydrated from SQLite on restart.
 - RPM, rather than RPD, is the binding rate limit; its value is configured in `config.yml`.
 - System prompt (4 assembled layers) is size-capped; the cap is `MAX_SYSTEM_PROMPT_TOKENS` in `tests/harness/tokens.ts`, enforced by `tests/harness/__tests__/tokens.test.ts`. It exists for change detection, not latency.
 - Docker container memory is capped by `docker-compose.yml`.
@@ -352,7 +353,7 @@ If `graphify-out/graph.json` exists, treat codebase questions ("how does X work"
 ```bash
 graphify query "how does a mention reach the Gemini call"   # BFS over the graph
 graphify query "..." --budget 1500                           # cap the answer at N tokens
-graphify path "SessionManager" "RokaAgent"                   # shortest path between two concepts
+graphify path "WindowedSessionService" "RokaAgent"           # shortest path between two concepts
 graphify explain "SomeNode"                                  # plain-language explanation of a node
 ```
 

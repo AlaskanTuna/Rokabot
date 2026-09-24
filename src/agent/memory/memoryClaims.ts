@@ -171,7 +171,7 @@ function rejectClaims(claims: MemoryClaim[]): void {
   }
 }
 
-function evictOverflow(guildId: string, subjectUserId: string): void {
+function evictOverflow(guildId: string, subjectUserId: string): number {
   const overflow = (
     getDb()
       .prepare(
@@ -184,6 +184,22 @@ function evictOverflow(guildId: string, subjectUserId: string): void {
   ).map(mapClaim)
 
   rejectClaims(overflow)
+  return overflow.length
+}
+
+function evictAllOverflow(): number {
+  const subjects = getDb()
+    .prepare("SELECT DISTINCT guild_id, subject_user_id FROM memory_claim WHERE status = 'active'")
+    .all() as Array<{ guild_id: string; subject_user_id: string }>
+  return subjects.reduce((evicted, subject) => {
+    return evicted + evictOverflow(subject.guild_id, subject.subject_user_id)
+  }, 0)
+}
+
+export function pruneActiveClaimOverflow(): number {
+  const evicted = getDb().transaction(evictAllOverflow)()
+  if (evicted > 0) logger.info({ evicted }, 'Pruned overflow memory claims')
+  return evicted
 }
 
 function supersedePriorActive(claim: MemoryClaim): void {
@@ -390,19 +406,28 @@ export function touchRecalled(claimIds: number[]): void {
     .run(Date.now(), ...claimIds)
 }
 
-export function pruneStaleClaims(maxAgeDays: number = 90): number {
+export function pruneStaleClaims(maxAgeDays: number = 90, botUserId?: string): number {
   const cutoff = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000
   const pruned = getDb().transaction(() => {
+    const db = getDb()
     const stale = (
-      getDb()
+      db
         .prepare(
           "SELECT * FROM memory_claim WHERE status IN ('candidate', 'active') AND pinned = 0 AND last_seen_at < ?"
         )
         .all(cutoff) as ClaimRow[]
     ).map(mapClaim)
     rejectClaims(stale)
-    return stale.length
+    const botClaims = botUserId
+      ? (
+          db
+            .prepare("SELECT * FROM memory_claim WHERE status = 'active' AND subject_user_id = ?")
+            .all(botUserId) as ClaimRow[]
+        ).map(mapClaim)
+      : []
+    rejectClaims(botClaims)
+    return stale.length + botClaims.length + evictAllOverflow()
   })()
-  if (pruned > 0) logger.info({ pruned, maxAgeDays }, 'Pruned stale memory claims')
+  if (pruned > 0) logger.info({ pruned, maxAgeDays }, 'Pruned memory claims')
   return pruned
 }
