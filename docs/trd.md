@@ -229,12 +229,22 @@ for speaker anchors; anchors are considered before every other candidate and are
 selection. It considers at most `memory.recentParticipantLimit` (3) non-speaker participants and may expand one hop
 through an active `relationship_to` claim to an included participant.
 
+Candidate score is `salience × sourceWeight × 2 + confidence + recency × 0.5`, plus the pin, FTS, and topic-route
+bonuses. At scoring time only, salience is multiplied by `0.5 ^ (ageDays / memory.salienceHalfLifeDays)`; stored
+salience is unchanged. A claim recalled within `memory.recallCooldownMs` loses 0.75 points unless FTS or topic
+routing matched it for the current message. Speaker anchors use the same final score. `retrieveForSubject`, including
+`recall_user`, shares this scorer.
+
 Before selection, `resolveReferences` (`src/agent/memory/identityResolver.ts`) finds the members the message is
 about: Discord mentions, then guild-scoped display names, usernames and active `nickname` claims found in the text
 (names under 3 characters are ignored). A name that maps to one member resolves; a name that maps to several stays
 ambiguous and is never guessed. Resolved members take the participant slots first, ahead of recent speakers, and a
 member named by a nickname or username gets a `## Who Is Mentioned` line mapping the alias to their display name.
 `recall_user` uses the same lookup and asks which member is meant when a name is ambiguous.
+
+`forget_user` uses FTS over the current speaker's active claims, rejects the best match, and returns a confirmation
+or a no-match response. It does not accept a target member ID or name, and it is excluded from the `/ask` tool list.
+The confirmation does not repeat a value that `privacyGuard.ts` marks sensitive.
 
 The retriever, not `refreshFactTimestamps`, calls `touchRecalled()` for selected claims. The resulting entries are
 rendered through the shared Phase 13 `buildFactsEnvelope` untrusted-data envelope; the claims path does not fork the

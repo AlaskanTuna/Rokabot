@@ -308,7 +308,7 @@ export function retractClaim(op: ClaimRetract, options: ClaimWriteOptions = {}):
       )
       .get(op.guildId, op.subjectUserId, predicate, op.value) as ClaimRow | undefined
     if (!row) return false
-    rejectClaims([mapClaim(row)])
+    getDb().prepare("UPDATE memory_claim SET status = 'rejected', superseded_by = NULL WHERE id = ?").run(row.id)
     return true
   }
   return options.transaction ? write() : getDb().transaction(write)()

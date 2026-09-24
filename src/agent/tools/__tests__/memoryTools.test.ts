@@ -18,7 +18,7 @@ const toolContextWith = (entries: Record<string, unknown>) =>
   ({ state: new Map(Object.entries(entries)) }) as unknown as ToolContext
 import { resolveName } from '../../memory/identityResolver.js'
 import { assertClaim, getActiveClaims } from '../../memory/memoryClaims.js'
-import { recallUserTool, rememberUserTool } from '../index.js'
+import { askTools, forgetUserTool, recallUserTool, rememberUserTool, rokaTools } from '../index.js'
 import { recallUser } from '../recallUser.js'
 import { rememberUser } from '../rememberUser.js'
 
@@ -33,6 +33,106 @@ afterEach(() => {
 })
 
 describe('memory tools', () => {
+  it('forgets the best FTS match only from the current speaker’s active claims', async () => {
+    const ownClaim = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'hobby',
+      value: 'playing osu!',
+      sourceKind: 'explicit'
+    })
+    const otherClaim = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-2',
+      predicate: 'hobby',
+      value: 'playing osu!',
+      sourceKind: 'explicit'
+    })
+    getDb().prepare('UPDATE memory_claim SET superseded_by = ? WHERE id = ?').run(otherClaim.id, ownClaim.id)
+
+    const result = await forgetUserTool.runAsync({
+      args: {},
+      toolContext: toolContextWith({ _userId: 'user-1', _guildId: 'guild-1', _userMessage: 'forget that I play osu' })
+    })
+
+    expect(result).toEqual({ success: true, message: 'I forgot the hobby note “playing osu!”.' })
+    expect(getDb().prepare('SELECT status, superseded_by FROM memory_claim WHERE id = ?').get(ownClaim.id)).toEqual({
+      status: 'rejected',
+      superseded_by: null
+    })
+    expect(getActiveClaims('guild-1', 'user-2').map(({ id }) => id)).toContain(otherClaim.id)
+  })
+
+  it('returns a no-match result without changing unrelated claims', async () => {
+    const activeClaim = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'hobby',
+      value: 'knitting',
+      sourceKind: 'explicit'
+    })
+
+    await expect(
+      forgetUserTool.runAsync({
+        args: {},
+        toolContext: toolContextWith({ _userId: 'user-1', _guildId: 'guild-1', _userMessage: 'forget that I play osu' })
+      })
+    ).resolves.toEqual({ success: false, message: "I couldn't find a matching active note to forget." })
+    expect(getActiveClaims('guild-1', 'user-1').map(({ id }) => id)).toContain(activeClaim.id)
+  })
+
+  it('does not repeat a privacy-sensitive value in its confirmation', async () => {
+    const sensitiveClaim = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'misc',
+      value: 'old contact note',
+      sourceKind: 'legacy'
+    })
+    getDb().prepare('UPDATE memory_claim SET value = ? WHERE id = ?').run('alice@example.com', sensitiveClaim.id)
+
+    const result = await forgetUserTool.runAsync({
+      args: {},
+      toolContext: toolContextWith({
+        _userId: 'user-1',
+        _guildId: 'guild-1',
+        _userMessage: 'forget alice@example.com'
+      })
+    })
+
+    expect(result).toEqual({ success: true, message: 'I removed that sensitive note.' })
+    expect(getDb().prepare('SELECT status FROM memory_claim WHERE id = ?').get(sensitiveClaim.id)).toEqual({
+      status: 'rejected'
+    })
+  })
+
+  it('fails closed when it cannot identify a guild member', async () => {
+    const activeClaim = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'hobby',
+      value: 'playing osu!',
+      sourceKind: 'explicit'
+    })
+
+    await expect(
+      forgetUserTool.runAsync({
+        args: {},
+        toolContext: toolContextWith({ _userId: 'user-1', _guildId: 'global', _userMessage: 'forget osu' })
+      })
+    ).resolves.toEqual({
+      success: false,
+      message: "I couldn't identify the current member or server, so I didn't forget anything."
+    })
+    expect(getActiveClaims('guild-1', 'user-1').map(({ id }) => id)).toContain(activeClaim.id)
+  })
+
+  it('keeps forget_user available to Roka but off the /ask tool list', () => {
+    expect(rokaTools).toContain(forgetUserTool)
+    expect(askTools).not.toContain(forgetUserTool)
+    expect(askTools).toContain(recallUserTool)
+  })
+
   it('merges and deduplicates active claims with legacy facts when recalling a guild member', () => {
     saveFact('guild-1', 'user-1', 'favorite_anime', 'Frieren')
     saveFact('guild-1', 'user-1', 'hobby', 'tea ceremonies')

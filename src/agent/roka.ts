@@ -35,7 +35,7 @@ import { SAFETY_SETTINGS } from './safetySettings.js'
 import { beginShutdown, isShuttingDown } from './shutdownSignal.js'
 import { chargeTokens } from './tokenBudget.js'
 import { detectTone } from './toneDetector.js'
-import { rokaTools } from './tools/index.js'
+import { askTools, rokaTools } from './tools/index.js'
 
 export interface ImageAttachment {
   url: string
@@ -51,6 +51,7 @@ interface GenerateOptions {
   displayName: string
   username: string
   userId: string
+  isAsk?: boolean
   imageAttachments?: ImageAttachment[]
   mentionedUserIds?: string[]
 }
@@ -594,91 +595,96 @@ export class WindowedSessionService extends InMemorySessionService {
 // that, deleting the call site leaves every retention test green while attachments are retained again.
 export const sessionService = new WindowedSessionService(config.session.windowSize * 2)
 
+function createRokaAgent(name: string, tools: typeof rokaTools) {
+  return new LlmAgent({
+    name,
+    model: rokaModel,
+    instruction: '',
+    tools: [...tools],
+    disallowTransferToParent: true,
+    disallowTransferToPeers: true,
+    generateContentConfig: {
+      temperature: 0.9,
+      topP: 0.95,
+      maxOutputTokens: config.gemini.maxOutputTokens,
+      safetySettings: SAFETY_SETTINGS,
+      httpOptions: { timeout: config.gemini.timeout }
+    },
+    beforeModelCallback: async ({ context, request }) => {
+      // The one place that sees every call the turn makes. ADK issues these internally, so nothing downstream
+      // could count them and nothing upstream knows how many a turn will need.
+      const calls = modelCallsForRequest.getStore()
+      if (calls) calls.count += 1
+
+      const prompt = steeringForRequest.getStore()?.prompt ?? context.state.get<string>('_systemPrompt')
+      if (prompt) {
+        request.config = request.config ?? ({} as NonNullable<typeof request.config>)
+        request.config!.systemInstruction = prompt
+      }
+      // Low media resolution is 100 tokens a second of video rather than 300, and at the 10 MB cap that is
+      // what keeps a clip inside the measured 250,000 TPM. Set per request rather than on the agent because
+      // mediaResolution is request-level and governs images as well — pinning it globally would quietly
+      // re-price and re-render every picture she has ever been able to see, which is not this change.
+      if (requestCarriesVideo(request)) {
+        request.config = request.config ?? ({} as NonNullable<typeof request.config>)
+        request.config!.mediaResolution = MediaResolution.MEDIA_RESOLUTION_LOW
+      }
+      return undefined
+    },
+    afterModelCallback: async ({ response }) => {
+      if (!response.content?.parts) return undefined
+
+      for (const part of response.content.parts) {
+        if (part.text && !part.thought) {
+          // Strip per-line leading whitespace — 4+ spaces or a tab makes Discord render the line as an indented code block
+          part.text = part.text
+            .replace(/^\[?Roka\]?:\s*/i, '')
+            .replace(/^[ \t]+/gm, '')
+            .trim()
+        }
+      }
+
+      const hasText = response.content.parts.some((p) => p.text?.trim() && !p.thought)
+      const hasFunctionCall = response.content.parts.some((p) => 'functionCall' in p && p.functionCall)
+
+      const verdict = modelVerdictForRequest.getStore()
+      if (verdict) {
+        const raw = response as unknown as { safetyRatings?: unknown; promptFeedback?: { blockReason?: string } }
+        if (response.finishReason) verdict.finishReason = String(response.finishReason)
+        if (raw.safetyRatings) verdict.safetyRatings = JSON.stringify(raw.safetyRatings).slice(0, 1000)
+        if (raw.promptFeedback?.blockReason) {
+          verdict.blockSide = 'prompt'
+          verdict.finishReason ??= raw.promptFeedback.blockReason
+        } else if (response.finishReason && !hasText && !hasFunctionCall) {
+          verdict.blockSide = 'response'
+        }
+      }
+
+      if (!hasText && !hasFunctionCall) {
+        logger.warn(
+          {
+            model: modelNameForCurrentRequest(),
+            partKeys: response.content.parts.map((p) => Object.keys(p)),
+            finishReason: response.finishReason,
+            usage: response.usageMetadata
+          },
+          'Empty model response surfaced for reliability handling'
+        )
+      }
+
+      return undefined
+    },
+    beforeToolCallback: async ({ tool, args }) => {
+      logger.info({ tool: tool.name, args }, 'Tool call requested')
+      toolCallsForRequest.getStore()?.add(tool.name)
+      return undefined
+    }
+  })
+}
+
 // Exported so tests can assert the agent-level config and beforeModelCallback seam directly
-export const rokaAgent = new LlmAgent({
-  name: 'roka',
-  model: rokaModel,
-  instruction: '',
-  tools: [...rokaTools],
-  disallowTransferToParent: true,
-  disallowTransferToPeers: true,
-  generateContentConfig: {
-    temperature: 0.9,
-    topP: 0.95,
-    maxOutputTokens: config.gemini.maxOutputTokens,
-    safetySettings: SAFETY_SETTINGS,
-    httpOptions: { timeout: config.gemini.timeout }
-  },
-  beforeModelCallback: async ({ context, request }) => {
-    // The one place that sees every call the turn makes. ADK issues these internally, so nothing downstream
-    // could count them and nothing upstream knows how many a turn will need.
-    const calls = modelCallsForRequest.getStore()
-    if (calls) calls.count += 1
-
-    const prompt = steeringForRequest.getStore()?.prompt ?? context.state.get<string>('_systemPrompt')
-    if (prompt) {
-      request.config = request.config ?? ({} as NonNullable<typeof request.config>)
-      request.config!.systemInstruction = prompt
-    }
-    // Low media resolution is 100 tokens a second of video rather than 300, and at the 10 MB cap that is
-    // what keeps a clip inside the measured 250,000 TPM. Set per request rather than on the agent because
-    // mediaResolution is request-level and governs images as well — pinning it globally would quietly
-    // re-price and re-render every picture she has ever been able to see, which is not this change.
-    if (requestCarriesVideo(request)) {
-      request.config = request.config ?? ({} as NonNullable<typeof request.config>)
-      request.config!.mediaResolution = MediaResolution.MEDIA_RESOLUTION_LOW
-    }
-    return undefined
-  },
-  afterModelCallback: async ({ response }) => {
-    if (!response.content?.parts) return undefined
-
-    for (const part of response.content.parts) {
-      if (part.text && !part.thought) {
-        // Strip per-line leading whitespace — 4+ spaces or a tab makes Discord render the line as an indented code block
-        part.text = part.text
-          .replace(/^\[?Roka\]?:\s*/i, '')
-          .replace(/^[ \t]+/gm, '')
-          .trim()
-      }
-    }
-
-    const hasText = response.content.parts.some((p) => p.text?.trim() && !p.thought)
-    const hasFunctionCall = response.content.parts.some((p) => 'functionCall' in p && p.functionCall)
-
-    const verdict = modelVerdictForRequest.getStore()
-    if (verdict) {
-      const raw = response as unknown as { safetyRatings?: unknown; promptFeedback?: { blockReason?: string } }
-      if (response.finishReason) verdict.finishReason = String(response.finishReason)
-      if (raw.safetyRatings) verdict.safetyRatings = JSON.stringify(raw.safetyRatings).slice(0, 1000)
-      if (raw.promptFeedback?.blockReason) {
-        verdict.blockSide = 'prompt'
-        verdict.finishReason ??= raw.promptFeedback.blockReason
-      } else if (response.finishReason && !hasText && !hasFunctionCall) {
-        verdict.blockSide = 'response'
-      }
-    }
-
-    if (!hasText && !hasFunctionCall) {
-      logger.warn(
-        {
-          model: modelNameForCurrentRequest(),
-          partKeys: response.content.parts.map((p) => Object.keys(p)),
-          finishReason: response.finishReason,
-          usage: response.usageMetadata
-        },
-        'Empty model response surfaced for reliability handling'
-      )
-    }
-
-    return undefined
-  },
-  beforeToolCallback: async ({ tool, args }) => {
-    logger.info({ tool: tool.name, args }, 'Tool call requested')
-    toolCallsForRequest.getStore()?.add(tool.name)
-    return undefined
-  }
-})
+export const rokaAgent = createRokaAgent('roka', rokaTools)
+const askAgent = createRokaAgent('roka_ask', askTools)
 
 /** Intercepts Gemini API errors and exposes them to the turn-level reliability policy. */
 class ErrorRecoveryPlugin extends BasePlugin {
@@ -716,6 +722,12 @@ class ErrorRecoveryPlugin extends BasePlugin {
 const runner = new Runner({
   appName: APP_NAME,
   agent: rokaAgent,
+  sessionService,
+  plugins: [new ErrorRecoveryPlugin('error-recovery')]
+})
+const askRunner = new Runner({
+  appName: APP_NAME,
+  agent: askAgent,
   sessionService,
   plugins: [new ErrorRecoveryPlugin('error-recovery')]
 })
@@ -1006,6 +1018,7 @@ function eventsToWindowMessages(events: Event[]): WindowMessage[] {
 export async function generateResponse(options: GenerateOptions): Promise<GenerateResult> {
   const generateStartMs = performance.now()
   const { channelId, guildId, userMessage, displayName, username, userId, imageAttachments } = options
+  const activeRunner = options.isAsk ? askRunner : runner
 
   const session = await ensureSession(channelId)
   resetIdleTimer(channelId)
@@ -1128,7 +1141,8 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     }
   }
 
-  const basePrompt = assembleSystemPrompt({ tone, hour, displayName })
+  const includeForgetUser = !options.isAsk
+  const basePrompt = assembleSystemPrompt({ tone, hour, displayName, includeForgetUser })
   let factsSection = ''
   let whoIsMentionedSection = ''
   let overheardSection = ''
@@ -1242,7 +1256,8 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   let dropImages = false
 
   function composePrompt(): string {
-    const head = safetyRung >= 3 ? assembleSystemPrompt({ tone: 'sincere', hour, displayName }) : basePrompt
+    const head =
+      safetyRung >= 3 ? assembleSystemPrompt({ tone: 'sincere', hour, displayName, includeForgetUser }) : basePrompt
     return [
       head,
       safetyRung < 2 ? `${factsSection}${whoIsMentionedSection}` : '',
@@ -1436,7 +1451,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
                 let hasFunctionCall = false
                 let finishReason: LlmResponse['finishReason']
 
-                const request: Parameters<typeof runner.runAsync>[0] = {
+                const request: Parameters<typeof activeRunner.runAsync>[0] = {
                   userId: channelId,
                   sessionId: channelId,
                   // ADK's runtime only appends when this value is truthy; its type incorrectly requires Content otherwise.
@@ -1445,7 +1460,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
                   stateDelta: testRequest.stateDelta
                 }
 
-                for await (const event of runner.runAsync(request)) {
+                for await (const event of activeRunner.runAsync(request)) {
                   if (signal.aborted) break
                   if (event.errorCode) {
                     return {

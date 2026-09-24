@@ -193,6 +193,7 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
           displayName,
           username: interaction.user.username,
           userId: interaction.user.id,
+          isAsk: true,
           imageAttachments: imageAttachments.length > 0 ? imageAttachments : undefined
         })
       )

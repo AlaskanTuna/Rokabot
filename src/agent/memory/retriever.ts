@@ -115,15 +115,21 @@ function searchClaimIds(guildId: string, userIds: string[], message: string): Se
 function scoreClaim(claim: MemoryClaim, ftsIds: Set<number>, routedPredicates: Set<PredicateId>, now: number): number {
   const ageDays = Math.max(0, now - claim.lastSeenAt) / (24 * 60 * 60 * 1000)
   const recency = 1 / (1 + ageDays / 30)
+  const decayedSalience = claim.salience * 0.5 ** (ageDays / config.memory.salienceHalfLifeDays)
+  const recallIsCoolingDown =
+    claim.lastRecalledAt !== null &&
+    now - claim.lastRecalledAt <= config.memory.recallCooldownMs &&
+    !ftsIds.has(claim.id) &&
+    !routedPredicates.has(claim.predicate)
 
-  // Score combines durable importance with turn relevance; deterministic tie-breaks appear below.
   return (
-    claim.salience * SOURCE_WEIGHT[claim.sourceKind] * 2 +
+    decayedSalience * SOURCE_WEIGHT[claim.sourceKind] * 2 +
     claim.confidence +
     recency * 0.5 +
     (claim.pinned ? 1 : 0) +
     (ftsIds.has(claim.id) ? 1.5 : 0) +
-    (routedPredicates.has(claim.predicate) ? 1 : 0)
+    (routedPredicates.has(claim.predicate) ? 1 : 0) +
+    (recallIsCoolingDown ? -0.75 : 0)
   )
 }
 
@@ -204,9 +210,7 @@ export function retrieveForTurn(input: RetrieveForTurnInput): RetrievalResult {
     speakerCandidates.length,
     Math.ceil(config.memory.maxClaimsPerTurn * config.memory.speakerMinShare)
   )
-  const anchors = [...speakerCandidates]
-    .sort((left, right) => right.claim.salience - left.claim.salience || compareRetrieved(left, right))
-    .slice(0, speakerAnchorCount)
+  const anchors = [...speakerCandidates].sort(compareRetrieved).slice(0, speakerAnchorCount)
   const names = getAllUserNames()
   const selected: RetrievedClaim[] = []
   const selectedIds = new Set(selected.map(({ claim }) => claim.id))

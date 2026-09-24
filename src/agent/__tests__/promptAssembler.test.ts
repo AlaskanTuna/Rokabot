@@ -27,6 +27,12 @@ describe('assembleSystemPrompt', () => {
     expect(result).toContain(CORE_PROMPT)
   })
 
+  it('omits forget_user guidance when that tool is unavailable', () => {
+    const result = assembleSystemPrompt({ ...baseInput, includeForgetUser: false })
+
+    expect(result).not.toContain('forget_user')
+  })
+
   it('contains Layer 1: Speech patterns', () => {
     const result = assembleSystemPrompt(baseInput)
     expect(result).toContain(SPEECH_PROMPT)
