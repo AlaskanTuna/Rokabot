@@ -160,7 +160,7 @@ describe('turn entry work', () => {
     await expect(work.judgment).resolves.toBeNull()
   })
 
-  it('arms the prefetch from the same judgment and uses the raw message', async () => {
+  it('arms the prefetch from the same judgment and uses the lookup query', async () => {
     jevConfig.prefetch = 'on'
     mocks.judgeTurn.mockResolvedValue({
       tone: { tone: 'curious', confidence: 0.8, probability: 0.8 },
@@ -174,7 +174,11 @@ describe('turn entry work', () => {
       outcome: { status: 'ready', text: 'It premiered in January.', sources: [{ title: 'C', url: 'https://c.test' }] }
     })
 
-    const work = startTurnEntryWork({ ...entryWork(), message: 'when did frieren season 2 air?' })
+    const work = startTurnEntryWork({
+      ...entryWork(),
+      message: 'When did Frieren season 2 air? [Container: forwarded context]',
+      lookupQuery: 'when did frieren season 2 air?'
+    })
 
     await expect(work.judgment).resolves.toMatchObject({ needsLookup: 0.95 })
     expect(work.needsLookup).toBe(0.95)

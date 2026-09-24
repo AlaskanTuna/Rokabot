@@ -138,6 +138,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
         userId: message.author.id,
         speakerName: message.member?.displayName ?? message.author.displayName,
         message: currentMessage,
+        lookupQuery: replaceUserMentions(message, client.user.id),
         mentionedUserIds: [...(message.mentions.users?.keys() ?? [])].filter((userId) => userId !== client.user?.id)
       })
     }

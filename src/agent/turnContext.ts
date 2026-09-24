@@ -45,6 +45,7 @@ export interface StartTurnEntryWorkInput {
   userId: string
   speakerName: string
   message: string
+  lookupQuery?: string
   mentionedUserIds?: string[]
 }
 
@@ -129,7 +130,7 @@ export function startTurnEntryWork(input: StartTurnEntryWorkInput): TurnEntryWor
           minimumNoul: config.jev.prefetchMinNoul,
           channelId: input.channelId
         },
-        { query: input.message, signal: controller.signal }
+        { query: input.lookupQuery ?? input.message, signal: controller.signal }
       )
     )
     .catch(() => ({ decision: { fire: false, reason: 'no_judgment' as const }, outcome: null }))
