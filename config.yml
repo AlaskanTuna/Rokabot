@@ -9,7 +9,7 @@ jev:
   tone: shadow # off | shadow (ask Jev and log, change nothing) | on (Jev picks the tone)
   referents: shadow # off | shadow | on (Jev settles names the resolver found ambiguous)
   extraction: shadow # off | shadow | on (Jev can admit a batch the rule gate rejected)
-  toneMinConfidence: 0.6 # In on mode, below this confidence the rule-based tone stays
+  toneMinProbability: 0.85 # Selected-choice probability (0..1) from the replay sweep; keep tone shadow if replay support fails
   referentMinConfidence: 0.8 # In on mode, below this confidence an ambiguous name stays unresolved
   extractionAdmitThreshold: 0.7 # In on mode, the probability at or above which a rejected batch is extracted anyway
 

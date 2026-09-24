@@ -53,7 +53,7 @@ vi.mock('../toneDetector.js', () => ({ detectTone: mocks.detectTone }))
 
 import { config } from '../../config.js'
 import type { TurnJudgment } from '../jev/judgments.js'
-import { createTurnContext, startTurnEntryWork } from '../turnContext.js'
+import { applyJevTone, createTurnContext, startTurnEntryWork } from '../turnContext.js'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -65,7 +65,11 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 
-const jevConfig = config.jev as { tone: 'off' | 'shadow' | 'on'; referents: 'off' | 'shadow' | 'on' }
+const jevConfig = config.jev as {
+  tone: 'off' | 'shadow' | 'on'
+  referents: 'off' | 'shadow' | 'on'
+  toneMinProbability: number
+}
 const memoryConfig = config.memory as { claimsBackend: boolean }
 
 function entryWork() {
@@ -95,6 +99,7 @@ describe('turn entry work', () => {
     vi.clearAllMocks()
     jevConfig.tone = 'shadow'
     jevConfig.referents = 'off'
+    jevConfig.toneMinProbability = 0.85
     memoryConfig.claimsBackend = false
     mocks.loadHistory.mockReturnValue([])
     mocks.ensureSession.mockResolvedValue({ events: [] })
@@ -156,5 +161,66 @@ describe('turn entry work', () => {
 
     await expect(context).resolves.toMatchObject({ tone: 'playful' })
     expect(mocks.judgeTurn).toHaveBeenCalledOnce()
+  })
+
+  it('gates Jev tone on the selected-choice probability', () => {
+    const judgment: TurnJudgment = {
+      tone: { tone: 'sincere', confidence: 0.55, probability: 0.85 },
+      referents: [],
+      latencyMs: 260,
+      inputTokens: 24
+    }
+
+    expect(applyJevTone('playful', judgment, 'on', 0.85)).toBe('sincere')
+    expect(applyJevTone('playful', judgment, 'on', 0.86)).toBe('playful')
+    expect(applyJevTone('playful', { ...judgment, tone: { ...judgment.tone!, probability: null } }, 'on', 0.5)).toBe(
+      'playful'
+    )
+    expect(applyJevTone('playful', judgment, 'shadow', 0)).toBe('playful')
+    expect(applyJevTone('playful', judgment, 'off', 0)).toBe('playful')
+  })
+
+  it('persists an applied judgment with bounded decision metadata', async () => {
+    jevConfig.tone = 'on'
+    const judgment: TurnJudgment = {
+      tone: { tone: 'sincere', confidence: 0.55, probability: 0.85 },
+      referents: [],
+      latencyMs: 260,
+      inputTokens: 24
+    }
+
+    await createTurnContext(turnOptions({ judgment: Promise.resolve(judgment), cancel: vi.fn() }))
+
+    expect(mocks.recordJevEvent).toHaveBeenCalledWith({
+      kind: 'turn',
+      guildId: 'guild-1',
+      channelId: 'channel-1',
+      question: JSON.stringify({ tone: true, referentCount: 0 }),
+      answer: JSON.stringify({ tone: 'sincere', referentOutcomes: { total: 0, matched: 0 } }),
+      probability: 0.85,
+      confidence: 0.55,
+      applied: true,
+      latencyMs: 260,
+      inputTokens: 24,
+      baseline: 'playful'
+    })
+  })
+
+  it('records shadow judgments as unapplied and skips null judgments', async () => {
+    const judgment: TurnJudgment = {
+      tone: { tone: 'sincere', confidence: 0.55, probability: 0.85 },
+      referents: [],
+      latencyMs: 260,
+      inputTokens: 24
+    }
+
+    await createTurnContext(turnOptions({ judgment: Promise.resolve(judgment), cancel: vi.fn() }))
+    expect(mocks.recordJevEvent).toHaveBeenCalledWith(expect.objectContaining({ applied: false }))
+
+    mocks.recordJevEvent.mockClear()
+    jevConfig.tone = 'on'
+    await createTurnContext(turnOptions({ judgment: Promise.resolve(null), cancel: vi.fn() }))
+
+    expect(mocks.recordJevEvent).not.toHaveBeenCalled()
   })
 })

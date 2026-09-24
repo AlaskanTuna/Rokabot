@@ -25,7 +25,7 @@ interface YamlConfig {
     tone?: string
     referents?: string
     extraction?: string
-    toneMinConfidence?: number
+    toneMinProbability?: number
     referentMinConfidence?: number
     extractionAdmitThreshold?: number
   }
@@ -162,7 +162,7 @@ export const config = {
     tone: jevMode('tone', 'JEV_TONE'),
     referents: jevMode('referents', 'JEV_REFERENTS'),
     extraction: jevMode('extraction', 'JEV_EXTRACTION'),
-    toneMinConfidence: yaml.jev?.toneMinConfidence ?? 0.6,
+    toneMinProbability: yaml.jev?.toneMinProbability ?? 0.85,
     referentMinConfidence: yaml.jev?.referentMinConfidence ?? 0.8,
     extractionAdmitThreshold: yaml.jev?.extractionAdmitThreshold ?? 0.7
   },
@@ -274,7 +274,7 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'jev.backgroundTimeoutMs', value: config.jev.backgroundTimeoutMs, min: 1 },
   { path: 'fallback.timeoutMs', value: config.fallback.timeoutMs, min: 1 },
   { path: 'fallback.stickyMs', value: config.fallback.stickyMs, min: 0 },
-  { path: 'jev.toneMinConfidence', value: config.jev.toneMinConfidence, min: 0, max: 1 },
+  { path: 'jev.toneMinProbability', value: config.jev.toneMinProbability, min: 0, max: 1 },
   { path: 'jev.referentMinConfidence', value: config.jev.referentMinConfidence, min: 0, max: 1 },
   { path: 'jev.extractionAdmitThreshold', value: config.jev.extractionAdmitThreshold, min: 0, max: 1 },
   { path: 'gemini.timeout', value: config.gemini.timeout, min: 1 },

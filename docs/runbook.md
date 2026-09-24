@@ -237,24 +237,52 @@ cannot read those — so those turns only ever wait out `gemini.timeout`.
 
 ## Jev Shadow Mode
 
-Jev's three features (`tone`, `referents`, `extraction`) ship in `shadow`: they log what Jev would have decided and
-change nothing. Read those decisions before switching any of them on.
+The replay at hour 14:00 covered 77 turns (51 production-history and 26 transcript turns); Jev chose `playful` on
+52/77. Regex-fired turn agreement was 14% at cutoff 0. At cutoff 0.85, 19/77 turns met the probability threshold
+(25% coverage); 10 had a regex rule and Jev agreed on 60%. This does not meet the replay support rule, so
+`jev.toneMinProbability` is `0.85` and `jev.tone` remains `shadow`. Regex agreement is a comparator, not ground-truth
+accuracy. Shadow judgments are persisted with `applied = 0` for later review. The replay command requires
+`TYPESAFE_API_KEY`.
 
 ```bash
-# What Jev picked per turn, next to the rule-based tone
-sudo docker logs rokabot-roka-1 2>&1 | grep '"msg":"Jev turn judgment"'
+npm run replay:jev -- data/rokabot.db --max-turns 100
+```
 
-# Which rejected memory batches Jev would have admitted
+Review recent persisted tone judgments without message text or member IDs:
+
+```sql
+SELECT created_at,
+       baseline,
+       json_extract(answer, '$.tone') AS jev_tone,
+       probability,
+       confidence,
+       applied,
+       latency_ms,
+       input_tokens
+FROM jev_events
+WHERE kind = 'turn'
+ORDER BY created_at DESC
+LIMIT 20;
+```
+
+Jev's `referents` and `extraction` features also remain in `shadow` by default. Their background logs are available:
+
+```bash
 sudo docker logs rokabot-roka-1 2>&1 | grep '"msg":"Jev extraction admission"'
 
-# Jev failures and timeouts (the bot falls back to its rules)
 sudo docker logs rokabot-roka-1 2>&1 | grep '"msg":"Jev judgment failed"'
 ```
 
 To switch a feature, set `JEV_TONE`, `JEV_REFERENTS` or `JEV_EXTRACTION` to `off`, `shadow` or `on` in
 `~/rokabot/.env` and recreate the container (`sudo docker compose -f ~/rokabot/docker-compose.yml up -d`); a lasting
-change belongs in `config.yml` through a PR. Thresholds are `jev.*MinConfidence` and `jev.extractionAdmitThreshold`
-in `config.yml`. An empty `TYPESAFE_API_KEY` disables Jev entirely.
+change belongs in `config.yml` through a PR. Tone uses `jev.toneMinProbability`; referents use
+`jev.referentMinConfidence`; extraction uses `jev.extractionAdmitThreshold`. An empty `TYPESAFE_API_KEY` disables
+Jev entirely.
+
+After an authorized deployment of the unawaited typing change, compare `Response completed`'s `e2e_ms - generate_ms`
+before and after. The supplied baseline is p50 1.06 s and p95 2.2 s; removing the initial typing wait should lower
+the difference by about one Discord REST round trip. Record the sample count and time window; unit tests do not
+measure this production effect.
 
 ---
 

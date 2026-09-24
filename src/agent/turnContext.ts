@@ -2,6 +2,7 @@ import type { Event, Session } from '@google/adk'
 import type { Part } from '@google/genai'
 import { config } from '../config.js'
 import type { WindowMessage } from '../session/types.js'
+import { recordJevEvent } from '../storage/jevEventStore.js'
 import { recordMemoryEvent } from '../storage/metricsStore.js'
 import { getChannelUsers, loadHistory } from '../storage/sessionStore.js'
 import { getFacts, refreshFactTimestamps } from '../storage/userMemory.js'
@@ -108,6 +109,17 @@ export function startTurnEntryWork(input: StartTurnEntryWorkInput): TurnEntryWor
   }
 }
 
+export function applyJevTone(
+  ruleTone: ToneKey,
+  judgment: TurnJudgment | null,
+  mode: 'off' | 'shadow' | 'on',
+  minimumProbability: number
+): ToneKey {
+  const tone = judgment?.tone
+  if (mode !== 'on' || !tone || tone.probability === null) return ruleTone
+  return tone.probability >= minimumProbability ? tone.tone : ruleTone
+}
+
 /** Convert ADK session events to WindowMessages for tone detection */
 function eventsToWindowMessages(events: Event[]): WindowMessage[] {
   return events
@@ -179,12 +191,13 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
     const settleJudgment = (judgment: TurnJudgment | null, apply: boolean): void => {
       if (!judgment) return
 
+      const toneProbability = judgment.tone?.probability ?? null
       const toneApplied =
         apply &&
         config.jev.tone === 'on' &&
-        judgment.tone !== null &&
-        judgment.tone.confidence >= config.jev.toneMinConfidence
-      if (toneApplied && judgment.tone) tone = judgment.tone.tone
+        toneProbability !== null &&
+        toneProbability >= config.jev.toneMinProbability
+      tone = applyJevTone(ruleTone, judgment, apply ? config.jev.tone : 'shadow', config.jev.toneMinProbability)
 
       const referents = judgment.referents.map((referent) => {
         const accepted =
@@ -219,6 +232,7 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
           ruleTone,
           jevTone: judgment.tone?.tone ?? null,
           toneConfidence: judgment.tone?.confidence ?? null,
+          toneProbability,
           toneApplied,
           referents,
           latencyMs: Math.round(judgment.latencyMs),
@@ -226,6 +240,29 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
         },
         'Jev turn judgment'
       )
+
+      recordJevEvent({
+        kind: 'turn',
+        guildId,
+        channelId,
+        question: JSON.stringify({
+          tone: config.jev.tone !== 'off',
+          referentCount: judgment.referents.length
+        }),
+        answer: JSON.stringify({
+          tone: judgment.tone?.tone ?? null,
+          referentOutcomes: {
+            total: judgment.referents.length,
+            matched: judgment.referents.filter(({ userId: referentUserId }) => referentUserId !== null).length
+          }
+        }),
+        probability: toneProbability,
+        confidence: judgment.tone?.confidence ?? null,
+        applied: toneApplied,
+        latencyMs: Math.round(judgment.latencyMs),
+        inputTokens: judgment.inputTokens,
+        baseline: ruleTone
+      })
     }
 
     if (blocking) {
