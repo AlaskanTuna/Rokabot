@@ -53,8 +53,7 @@ describe('claims schema', () => {
       'payload',
       'status',
       'attempts',
-      'enqueued_at',
-      'admitted_by'
+      'enqueued_at'
     ])
     expect(columns('memory_events')).toEqual([
       'id',

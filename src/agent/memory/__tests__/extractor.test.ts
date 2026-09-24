@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
+  admitEpisode: vi.fn(),
   generateContent: vi.fn(),
   tryConsumeAboveFloor: vi.fn()
 }))
@@ -29,6 +30,8 @@ vi.mock('../../../config.js', () => ({
   }
 }))
 
+vi.mock('../admission.js', () => ({ admitEpisode: mocks.admitEpisode }))
+
 vi.mock('../../../utils/rateLimiter.js', () => ({
   getSharedRateLimiter: () => ({ tryConsumeAboveFloor: mocks.tryConsumeAboveFloor })
 }))
@@ -36,7 +39,7 @@ vi.mock('../../../utils/rateLimiter.js', () => ({
 import { closeDb, getDb } from '../../../storage/database.js'
 import type { ExtractionEpisode } from '../../../storage/extractionQueue.js'
 import { buildSafetySettings } from '../../safetySettings.js'
-import { type ExtractionJob, extractEpisode, runExtraction } from '../extractor.js'
+import { type ExtractionJob, extractEpisode, runEpisodePipeline, runExtraction } from '../extractor.js'
 import { assertClaim, getActiveClaims } from '../memoryClaims.js'
 
 function job(messages: ExtractionJob['messages']): ExtractionJob {
@@ -49,6 +52,8 @@ beforeAll(() => {
 })
 
 beforeEach(() => {
+  mocks.admitEpisode.mockReset()
+  mocks.admitEpisode.mockResolvedValue({ admitted: true, reason: 'admitted' })
   mocks.generateContent.mockReset()
   mocks.tryConsumeAboveFloor.mockReset()
   mocks.tryConsumeAboveFloor.mockReturnValue(true)
@@ -58,6 +63,55 @@ beforeEach(() => {
 afterAll(() => {
   closeDb()
   process.env.ROKABOT_DB_PATH = undefined
+})
+
+describe('runEpisodePipeline', () => {
+  const episode: ExtractionEpisode = {
+    messages: [
+      { messageId: 'm-1', userId: 'user-1', displayName: 'Alice', content: 'I like tea', timestamp: 1, isBot: false },
+      { messageId: 'm-2', userId: 'bot-1', displayName: 'Roka', content: 'Nice~', timestamp: 2, isBot: true }
+    ],
+    context: [],
+    startedAt: 1,
+    endedAt: 2
+  }
+  const queueJob = {
+    id: 1,
+    guildId: 'guild-1',
+    channelId: 'channel-1',
+    episode,
+    status: 'processing' as const,
+    attempts: 0,
+    enqueuedAt: 2
+  }
+
+  it('drops before Gemini when admission rejects the episode', async () => {
+    mocks.admitEpisode.mockResolvedValueOnce({ admitted: false, reason: 'below_threshold' })
+
+    await expect(runEpisodePipeline(queueJob)).resolves.toEqual({
+      status: 'dropped',
+      summary: null,
+      appliedOps: 0,
+      duplicateOps: 0
+    })
+    expect(mocks.generateContent).not.toHaveBeenCalled()
+  })
+
+  it('extracts only after admission and returns its summary and write counts', async () => {
+    mocks.generateContent.mockResolvedValueOnce({
+      text: JSON.stringify({ ops: [{ op: 'noop' }], summary: 'Alice likes tea.' })
+    })
+
+    await expect(runEpisodePipeline(queueJob)).resolves.toEqual({
+      status: 'completed',
+      summary: 'Alice likes tea.',
+      appliedOps: 0,
+      duplicateOps: 0
+    })
+    expect(mocks.admitEpisode).toHaveBeenCalledWith({ guildId: 'guild-1', channelId: 'channel-1', episode })
+    expect(mocks.generateContent).toHaveBeenCalledOnce()
+    expect(mocks.generateContent.mock.calls[0][0].contents).toContain('[bot-1|Roka (bot context only)]')
+  })
 })
 
 describe('runExtraction', () => {

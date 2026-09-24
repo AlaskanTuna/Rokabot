@@ -4,9 +4,12 @@ import type { EpisodeLine } from '../../../storage/extractionQueue.js'
 
 let testDb: Database.Database
 
+const mocks = vi.hoisted(() => ({ startExtractionScheduler: vi.fn() }))
+
 vi.mock('../../../storage/database.js', () => ({
   getDb: () => testDb
 }))
+vi.mock('../scheduler.js', () => ({ startExtractionScheduler: mocks.startExtractionScheduler }))
 
 import { getEpisodeCursor } from '../../../storage/memoryEpisodeStore.js'
 import { addMessage, getMessages, getUserMap, resetAllBuffers } from '../../passiveBuffer.js'
@@ -45,6 +48,7 @@ describe('episodeTracker', () => {
     `)
     resetAllBuffers()
     resetEpisodeTrackerForTest()
+    mocks.startExtractionScheduler.mockClear()
   })
 
   afterEach(() => {
@@ -77,6 +81,14 @@ describe('episodeTracker', () => {
 
     expect(queueEpisodes().map(({ messages }) => messages)).toEqual([[first]])
     expect(getEpisodeCursor('c-1')).toMatchObject({ lastMessageId: 'm-1', messageCount: 1 })
+  })
+
+  it('starts the durable worker after an episode is queued', () => {
+    vi.useFakeTimers({ now: 1_000 })
+    recordEpisodeMessage({ guildId: 'g-1', channelId: 'c-1', message: line({ messageId: 'm-1' }) })
+    flushEpisode('c-1')
+
+    expect(mocks.startExtractionScheduler).toHaveBeenCalledOnce()
   })
 
   it('keeps equal-timestamp messages in one delta', () => {

@@ -51,7 +51,7 @@ describe('runMigrations', () => {
     ])
   })
 
-  it('adds admitted_by to an existing extraction queue', () => {
+  it('rebuilds the old extraction queue without losing pending, processing, or failed episodes', () => {
     testDb = new Database(':memory:')
     testDb.exec(`
       CREATE TABLE session_history (
@@ -85,15 +85,122 @@ describe('runMigrations', () => {
         payload TEXT NOT NULL,
         status TEXT NOT NULL,
         attempts INTEGER NOT NULL DEFAULT 0,
-        enqueued_at INTEGER NOT NULL
+        enqueued_at INTEGER NOT NULL,
+        admitted_by TEXT DEFAULT NULL
       );
     `)
+    const insert = testDb.prepare(
+      'INSERT INTO extraction_queue (id, guild_id, channel_id, payload, status, attempts, enqueued_at, admitted_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    )
+    for (const row of [
+      { id: 1, status: 'pending', attempts: 0, enqueuedAt: 100 },
+      { id: 2, status: 'processing', attempts: 1, enqueuedAt: 200 },
+      { id: 3, status: 'failed', attempts: 2, enqueuedAt: 300 }
+    ]) {
+      insert.run(
+        row.id,
+        'guild-1',
+        'channel-1',
+        JSON.stringify([{ userId: `user-${row.id}`, displayName: 'Mio', content: `legacy ${row.id}` }]),
+        row.status,
+        row.attempts,
+        row.enqueuedAt,
+        null
+      )
+    }
 
     const runMigrations = (database as unknown as DatabaseModule).runMigrations
     runMigrations?.(testDb)
+    runMigrations?.(testDb)
 
     const columns = testDb.prepare("PRAGMA table_info('extraction_queue')").all() as Array<{ name: string }>
-    expect(columns.map((column) => column.name)).toContain('admitted_by')
+    const jobs = testDb
+      .prepare('SELECT id, payload, status, attempts, enqueued_at FROM extraction_queue ORDER BY id')
+      .all() as Array<{ id: number; payload: string; status: string; attempts: number; enqueued_at: number }>
+    expect(columns.map((column) => column.name)).not.toContain('admitted_by')
+    expect(jobs.map(({ id, status, attempts, enqueued_at }) => ({ id, status, attempts, enqueued_at }))).toEqual([
+      { id: 1, status: 'pending', attempts: 0, enqueued_at: 100 },
+      { id: 2, status: 'processing', attempts: 1, enqueued_at: 200 },
+      { id: 3, status: 'failed', attempts: 2, enqueued_at: 300 }
+    ])
+    expect(jobs.map(({ id, payload }) => JSON.parse(payload))).toEqual(
+      [1, 2, 3].map((id) => ({
+        messages: [
+          {
+            messageId: `legacy-${id}-0`,
+            userId: `user-${id}`,
+            displayName: 'Mio',
+            content: `legacy ${id}`,
+            timestamp: id * 100,
+            isBot: false
+          }
+        ],
+        context: [],
+        startedAt: id * 100,
+        endedAt: id * 100
+      }))
+    )
+  })
+
+  it('keeps an old user_memory table and its rows during startup schema migration', () => {
+    testDb = new Database(':memory:')
+    testDb.exec(`
+      CREATE TABLE session_history (
+        channel_id TEXT NOT NULL, role TEXT NOT NULL, display_name TEXT NOT NULL, content TEXT NOT NULL,
+        timestamp INTEGER NOT NULL, user_id TEXT DEFAULT NULL, username TEXT DEFAULT NULL
+      );
+      CREATE TABLE user_memory (
+        user_id TEXT NOT NULL, fact_key TEXT NOT NULL, fact_value TEXT NOT NULL, updated_at INTEGER NOT NULL,
+        PRIMARY KEY (user_id, fact_key)
+      );
+      CREATE TABLE gacha_daily (
+        user_id TEXT NOT NULL, last_draw_date TEXT NOT NULL, streak INTEGER NOT NULL DEFAULT 0,
+        last_hatch_at INTEGER, PRIMARY KEY (user_id)
+      );
+    `)
+    testDb.prepare('INSERT INTO user_memory VALUES (?, ?, ?, ?)').run('user-1', 'likes', 'tea', 1)
+
+    database.runMigrations(testDb)
+
+    expect(testDb.prepare('SELECT * FROM user_memory').all()).toEqual([
+      { user_id: 'user-1', fact_key: 'likes', fact_value: 'tea', updated_at: 1 }
+    ])
+  })
+
+  it('does not rewrite or discard a malformed legacy queue row', () => {
+    testDb = new Database(':memory:')
+    testDb.exec(`
+      CREATE TABLE session_history (
+        channel_id TEXT NOT NULL, role TEXT NOT NULL, display_name TEXT NOT NULL, content TEXT NOT NULL,
+        timestamp INTEGER NOT NULL, user_id TEXT DEFAULT NULL, username TEXT DEFAULT NULL
+      );
+      CREATE TABLE user_memory (
+        guild_id TEXT NOT NULL, user_id TEXT NOT NULL, fact_key TEXT NOT NULL, fact_value TEXT NOT NULL,
+        updated_at INTEGER NOT NULL, PRIMARY KEY (guild_id, user_id, fact_key)
+      );
+      CREATE TABLE gacha_daily (
+        user_id TEXT NOT NULL, last_draw_date TEXT NOT NULL, streak INTEGER NOT NULL DEFAULT 0,
+        last_hatch_at INTEGER, PRIMARY KEY (user_id)
+      );
+      CREATE TABLE extraction_queue (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id TEXT NOT NULL, channel_id TEXT NOT NULL,
+        payload TEXT NOT NULL, status TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
+        enqueued_at INTEGER NOT NULL, admitted_by TEXT DEFAULT NULL
+      );
+      INSERT INTO extraction_queue (guild_id, channel_id, payload, status, enqueued_at)
+        VALUES ('guild-1', 'channel-1', '{broken', 'pending', 100);
+    `)
+
+    expect(() => database.runMigrations(testDb)).toThrow('Malformed extraction queue payload for job 1')
+    expect(testDb.prepare('SELECT payload, status FROM extraction_queue WHERE id = 1').get()).toEqual({
+      payload: '{broken',
+      status: 'pending'
+    })
+    expect(
+      (testDb.prepare("PRAGMA table_info('extraction_queue')").all() as Array<{ name: string }>).map(
+        (column) => column.name
+      )
+    ).toContain('admitted_by')
   })
 
   it('adds daily draw columns to legacy gacha_daily tables without losing existing rows', () => {

@@ -6,6 +6,7 @@ import {
   recordOpenEpisodeMessage
 } from '../../storage/memoryEpisodeStore.js'
 import { type BufferedMessage, addMessage, getMessages } from '../passiveBuffer.js'
+import { startExtractionScheduler } from './scheduler.js'
 
 const timers = new Map<string, ReturnType<typeof setTimeout>>()
 
@@ -97,6 +98,7 @@ export function flushEpisode(channelId: string): void {
     },
     lastMessageId: messages.at(-1)!.messageId
   })
+  startExtractionScheduler()
   clearTimer(channelId)
 }
 

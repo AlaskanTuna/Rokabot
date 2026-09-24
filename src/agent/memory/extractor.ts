@@ -1,7 +1,7 @@
 import { GoogleGenAI } from '@google/genai'
 import { config } from '../../config.js'
 import { getDb } from '../../storage/database.js'
-import type { ExtractionEpisode } from '../../storage/extractionQueue.js'
+import type { ExtractionEpisode, ExtractionQueueJob } from '../../storage/extractionQueue.js'
 import { recordJevEvent } from '../../storage/jevEventStore.js'
 import { recordMemoryEvent } from '../../storage/metricsStore.js'
 import { getSharedRateLimiter } from '../../utils/rateLimiter.js'
@@ -9,6 +9,7 @@ import { classifyGeminiFailure, computeBackoff } from '../geminiReliability.js'
 import { judgeEpisodeOperations } from '../jev/judgments.js'
 import { SAFETY_SETTINGS } from '../safetySettings.js'
 import { isShuttingDown } from '../shutdownSignal.js'
+import { admitEpisode } from './admission.js'
 import { shouldExtract } from './candidateGate.js'
 import {
   EXTRACTION_RESPONSE_SCHEMA,
@@ -329,6 +330,34 @@ export async function verifyAndApplyOperations(input: {
     appliedOps: results.filter(({ applied }) => applied).length,
     droppedOps: results.filter(({ applied, duplicate }) => !applied && !duplicate).length,
     duplicateOps: results.filter(({ duplicate }) => duplicate).length
+  }
+}
+
+export type EpisodeRunResult = Readonly<{
+  status: 'dropped' | 'completed'
+  summary: string | null
+  appliedOps: number
+  duplicateOps: number
+}>
+
+export async function runEpisodePipeline(job: ExtractionQueueJob): Promise<EpisodeRunResult> {
+  const admission = await admitEpisode({ guildId: job.guildId, channelId: job.channelId, episode: job.episode })
+  if (!admission.admitted) return { status: 'dropped', summary: null, appliedOps: 0, duplicateOps: 0 }
+
+  const output = await extractEpisode({ guildId: job.guildId, channelId: job.channelId, episode: job.episode })
+  const subjectIds = new Set(job.episode.messages.filter((message) => !message.isBot).map((message) => message.userId))
+  const report = await verifyAndApplyOperations({
+    guildId: job.guildId,
+    channelId: job.channelId,
+    episode: job.episode,
+    output,
+    subjectIds
+  })
+  return {
+    status: 'completed',
+    summary: output.summary,
+    appliedOps: report.appliedOps,
+    duplicateOps: report.duplicateOps
   }
 }
 

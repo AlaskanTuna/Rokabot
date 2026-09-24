@@ -1,10 +1,15 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => {
   let readyHandler: (() => void) | undefined
   return {
     backfillLegacyClaims: vi.fn(),
+    beginShutdown: vi.fn(),
+    closeDb: vi.fn(),
     createServer: vi.fn(() => ({ listen: vi.fn() })),
+    destroyAllSessions: vi.fn().mockResolvedValue(undefined),
+    destroyClient: vi.fn(),
+    flushOpenEpisodes: vi.fn(),
     getDb: vi.fn(),
     pruneStaleClaims: vi.fn(),
     ready: (handler: () => void) => {
@@ -14,6 +19,7 @@ const mocks = vi.hoisted(() => {
     logger: { error: vi.fn(), fatal: vi.fn(), info: vi.fn(), warn: vi.fn() },
     startExtractionScheduler: vi.fn(),
     stopExtractionScheduler: vi.fn(),
+    waitForInFlightExtractions: vi.fn().mockResolvedValue(undefined),
     triggerReady: () => readyHandler?.()
   }
 })
@@ -21,7 +27,7 @@ const mocks = vi.hoisted(() => {
 vi.mock('node:http', () => ({ default: { createServer: mocks.createServer } }))
 vi.mock('../discord/client.js', () => ({
   createClient: () => ({
-    destroy: vi.fn(),
+    destroy: mocks.destroyClient,
     isReady: () => true,
     login: vi.fn().mockResolvedValue(undefined),
     once: (_event: string, handler: () => void) => mocks.ready(handler),
@@ -41,14 +47,17 @@ vi.mock('../agent/channelMonitor.js', () => ({ cleanupExpired: vi.fn(), restoreM
 vi.mock('../agent/memory/memoryClaims.js', () => ({ pruneStaleClaims: mocks.pruneStaleClaims }))
 vi.mock('../agent/memory/scheduler.js', () => ({
   startExtractionScheduler: mocks.startExtractionScheduler,
-  stopExtractionScheduler: mocks.stopExtractionScheduler
+  stopExtractionScheduler: mocks.stopExtractionScheduler,
+  waitForInFlightExtractions: mocks.waitForInFlightExtractions
 }))
-vi.mock('../agent/session.js', () => ({ destroyAllSessions: vi.fn() }))
+vi.mock('../agent/memory/episodeTracker.js', () => ({ flushOpenEpisodes: mocks.flushOpenEpisodes }))
+vi.mock('../agent/shutdownSignal.js', () => ({ beginShutdown: mocks.beginShutdown }))
+vi.mock('../agent/session.js', () => ({ destroyAllSessions: mocks.destroyAllSessions }))
 vi.mock('../discord/emojiReactor.js', () => ({ cleanupExpiredCooldowns: vi.fn() }))
 vi.mock('../discord/reminderScheduler.js', () => ({ startReminderScheduler: vi.fn(), stopReminderScheduler: vi.fn() }))
 vi.mock('../discord/statusCycler.js', () => ({ stopStatusCycler: vi.fn() }))
 vi.mock('../games/shiritori.js', () => ({ destroyAllGames: vi.fn() }))
-vi.mock('../storage/database.js', () => ({ closeDb: vi.fn(), getDb: mocks.getDb }))
+vi.mock('../storage/database.js', () => ({ closeDb: mocks.closeDb, getDb: mocks.getDb }))
 vi.mock('../storage/extractionQueue.js', () => ({ resetStuckProcessing: mocks.resetStuckProcessing }))
 vi.mock('../storage/memoryMigration.js', () => ({ backfillLegacyClaims: mocks.backfillLegacyClaims }))
 vi.mock('../storage/metricsStore.js', () => ({ pruneOldMetrics: vi.fn(), pruneFailureDiagnostics: vi.fn() }))
@@ -62,13 +71,17 @@ describe('startup memory tasks', () => {
     vi.clearAllMocks()
   })
 
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it('recovers stale processing jobs before starting the extraction scheduler', async () => {
     await import('../index.js')
     mocks.triggerReady()
 
     expect(mocks.resetStuckProcessing).toHaveBeenCalledOnce()
     expect(mocks.pruneStaleClaims).toHaveBeenCalledWith(90, 'bot-1')
-    expect(mocks.startExtractionScheduler).toHaveBeenCalledWith('bot-1')
+    expect(mocks.startExtractionScheduler).toHaveBeenCalledOnce()
     expect(mocks.resetStuckProcessing.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.startExtractionScheduler.mock.invocationCallOrder[0]
     )
@@ -80,6 +93,30 @@ describe('startup memory tasks', () => {
 
     expect(mocks.logger.warn).toHaveBeenCalledOnce()
     expect(mocks.logger.warn).toHaveBeenCalledWith('Passive memory extraction is disabled: no TypeSafe API key')
+  })
+
+  it('flushes open episodes and waits for active extraction before closing SQLite', async () => {
+    await import('../index.js')
+    const exit = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never)
+    const shutdown = process.listeners('SIGTERM').at(-1) as (() => Promise<void>) | undefined
+    expect(shutdown).toBeDefined()
+    await shutdown?.()
+
+    expect(mocks.beginShutdown).toHaveBeenCalledOnce()
+    expect(mocks.flushOpenEpisodes).toHaveBeenCalledOnce()
+    expect(mocks.stopExtractionScheduler).toHaveBeenCalledOnce()
+    expect(mocks.waitForInFlightExtractions).toHaveBeenCalledOnce()
+    expect(mocks.closeDb).toHaveBeenCalledOnce()
+    expect(mocks.beginShutdown.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.flushOpenEpisodes.mock.invocationCallOrder[0]
+    )
+    expect(mocks.flushOpenEpisodes.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.stopExtractionScheduler.mock.invocationCallOrder[0]
+    )
+    expect(mocks.waitForInFlightExtractions.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.closeDb.mock.invocationCallOrder[0]
+    )
+    expect(exit).toHaveBeenCalledWith(0)
   })
 
   it('contains startup memory task failures', async () => {

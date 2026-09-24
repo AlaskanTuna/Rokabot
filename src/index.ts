@@ -23,9 +23,15 @@ if (process.env.ADK_QUIET) {
 
 import http from 'node:http'
 import { cleanupExpired, restoreMonitoredChannels } from './agent/channelMonitor.js'
+import { flushOpenEpisodes } from './agent/memory/episodeTracker.js'
 import { pruneStaleClaims } from './agent/memory/memoryClaims.js'
-import { startExtractionScheduler, stopExtractionScheduler } from './agent/memory/scheduler.js'
+import {
+  startExtractionScheduler,
+  stopExtractionScheduler,
+  waitForInFlightExtractions
+} from './agent/memory/scheduler.js'
 import { destroyAllSessions } from './agent/session.js'
+import { beginShutdown } from './agent/shutdownSignal.js'
 import { config } from './config.js'
 import { createClient } from './discord/client.js'
 import { cleanupExpiredCooldowns } from './discord/emojiReactor.js'
@@ -59,7 +65,7 @@ function startupMemoryTasks(botUserId?: string): void {
       24 * 60 * 60 * 1000
     )
     resetStuckProcessing(EXTRACTION_QUEUE_STUCK_THRESHOLD_MS)
-    startExtractionScheduler(botUserId)
+    startExtractionScheduler()
   } catch (err) {
     logger.error({ err }, 'Failed to start memory tasks')
   }
@@ -108,11 +114,14 @@ healthServer.listen(3000, '0.0.0.0')
 async function shutdown(signal: string): Promise<void> {
   logger.info({ signal }, 'Shutdown signal received')
 
+  beginShutdown()
+  flushOpenEpisodes()
   stopStatusCycler()
   stopReminderScheduler()
   stopMemoryTasks()
   destroyAllShiritoriGames()
   await destroyAllSessions()
+  await waitForInFlightExtractions()
   closeDb()
   client.destroy()
 

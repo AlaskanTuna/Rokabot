@@ -1,27 +1,16 @@
+import { mkdirSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
 import Database from 'better-sqlite3'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { config } = vi.hoisted(() => ({
-  config: {
-    memory: {
-      extractionQueueMaxPerGuild: 2
-    }
-  }
-}))
-
-vi.mock('../../config.js', () => ({ config }))
-
 let testDb: Database.Database
 
-vi.mock('../database.js', () => ({
-  getDb: () => testDb
-}))
+vi.mock('../database.js', () => ({ getDb: () => testDb }))
 
 import {
   MAX_EXTRACTION_QUEUE_ATTEMPTS,
   claimNextForGuild,
   enqueueEpisode,
-  enqueueExtraction,
   listGuildsWithPending,
   markDone,
   markFailed,
@@ -29,54 +18,51 @@ import {
 } from '../extractionQueue.js'
 import type { ExtractionEpisode } from '../extractionQueue.js'
 
-function createTestDb(): Database.Database {
-  const db = new Database(':memory:')
+const reopenPath = join(process.cwd(), 'data', '.extraction-queue-reopen.test.db')
+
+function createTestDb(path = ':memory:'): Database.Database {
+  const db = new Database(path)
   db.exec(`
-    CREATE TABLE extraction_queue (
+    CREATE TABLE IF NOT EXISTS extraction_queue (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       guild_id TEXT NOT NULL,
       channel_id TEXT NOT NULL,
       payload TEXT NOT NULL,
       status TEXT NOT NULL,
       attempts INTEGER NOT NULL DEFAULT 0,
-      enqueued_at INTEGER NOT NULL,
-      admitted_by TEXT DEFAULT NULL
+      enqueued_at INTEGER NOT NULL
     );
   `)
   return db
 }
 
-function payload(content: string) {
-  return [{ userId: 'user-1', displayName: 'Roka Fan', content }]
-}
-
-function episode(content: string): ExtractionEpisode {
+function episodeFor(content: string): ExtractionEpisode {
   const message = {
     messageId: 'message-1',
     userId: 'user-1',
-    displayName: 'Roka Fan',
+    displayName: 'Mio',
     content,
     timestamp: 100,
     isBot: false
   }
-  return { messages: [message], context: [{ ...message, messageId: 'context-1' }], startedAt: 100, endedAt: 100 }
+  return { messages: [message], context: [], startedAt: 100, endedAt: 100 }
 }
 
 describe('extractionQueue', () => {
   beforeEach(() => {
     testDb = createTestDb()
-    config.memory.extractionQueueMaxPerGuild = 2
   })
 
   afterEach(() => {
     testDb.close()
+    rmSync(reopenPath, { force: true })
     vi.restoreAllMocks()
   })
 
-  it('claims pending jobs in FIFO order and completes idempotently', () => {
+  it('claims episode jobs in FIFO order and completes idempotently', () => {
     vi.spyOn(Date, 'now').mockReturnValueOnce(100).mockReturnValueOnce(200)
-    const first = enqueueExtraction({ guildId: 'guild-1', channelId: 'channel-1', payload: payload('first') })
-    const second = enqueueExtraction({ guildId: 'guild-1', channelId: 'channel-1', payload: payload('second') })
+    const first = enqueueEpisode({ guildId: 'guild-1', channelId: 'channel-1', episode: episodeFor('first') })
+    const second = enqueueEpisode({ guildId: 'guild-1', channelId: 'channel-1', episode: episodeFor('second') })
 
     expect(claimNextForGuild('guild-1')).toMatchObject({ ...first, status: 'processing' })
     expect(claimNextForGuild('guild-1')).toMatchObject({ ...second, status: 'processing' })
@@ -85,86 +71,46 @@ describe('extractionQueue', () => {
     expect(testDb.prepare('SELECT status FROM extraction_queue WHERE id = ?').get(first.id)).toBeUndefined()
   })
 
-  it('round-trips episode messages and context while preserving the legacy payload projection', () => {
-    const input = episode('I like tea')
-    const job = enqueueEpisode({ guildId: 'guild-1', channelId: 'channel-1', episode: input })
+  it('round-trips complete episode messages and context', () => {
+    const input = episodeFor('I like tea')
+    const episode = { ...input, context: [{ ...input.messages[0], messageId: 'context-1' }] }
+    const job = enqueueEpisode({ guildId: 'guild-1', channelId: 'channel-1', episode })
     const stored = testDb.prepare('SELECT payload FROM extraction_queue WHERE id = ?').get(job.id) as {
       payload: string
     }
 
-    expect(JSON.parse(stored.payload)).toEqual(input)
-    expect(job.episode).toEqual(input)
-    expect(job.payload).toEqual([{ userId: 'user-1', displayName: 'Roka Fan', content: 'I like tea' }])
-    expect(claimNextForGuild('guild-1')?.episode).toEqual(input)
+    expect(JSON.parse(stored.payload)).toEqual(episode)
+    expect(job.episode).toEqual(episode)
+    expect(claimNextForGuild('guild-1')?.episode).toEqual(episode)
   })
 
-  it('round-trips Jev admission through the persisted queue', () => {
-    const queued = enqueueExtraction({
-      guildId: 'guild-1',
-      channelId: 'channel-1',
-      payload: payload('durable detail'),
-      admittedBy: 'jev'
-    })
+  it('retains a failed episode after the one queue retry', () => {
+    const job = enqueueEpisode({ guildId: 'g-1', channelId: 'c-1', episode: episodeFor('retry') })
 
-    expect(queued.admittedBy).toBe('jev')
-    expect(claimNextForGuild('guild-1')?.admittedBy).toBe('jev')
-  })
-
-  it('maps a stored NULL Jev admission to undefined', () => {
-    testDb
-      .prepare(
-        "INSERT INTO extraction_queue (guild_id, channel_id, payload, status, enqueued_at, admitted_by) VALUES (?, ?, ?, 'pending', ?, NULL)"
-      )
-      .run('guild-1', 'channel-1', JSON.stringify(payload('legacy row')), 100)
-
-    expect(claimNextForGuild('guild-1')?.admittedBy).toBeUndefined()
-  })
-
-  it('wraps a legacy message array in an episode without changing its scheduler payload', () => {
-    const legacyPayload = payload('legacy row')
-    testDb
-      .prepare(
-        "INSERT INTO extraction_queue (guild_id, channel_id, payload, status, enqueued_at, admitted_by) VALUES (?, ?, ?, 'pending', ?, NULL)"
-      )
-      .run('guild-1', 'channel-1', JSON.stringify(legacyPayload), 123)
-
-    const job = claimNextForGuild('guild-1')
-
-    expect(job?.payload).toEqual(legacyPayload)
-    expect(job?.episode).toEqual({
-      messages: [
-        {
-          messageId: 'legacy-1-0',
-          userId: 'user-1',
-          displayName: 'Roka Fan',
-          content: 'legacy row',
-          timestamp: 123,
-          isBot: false
-        }
-      ],
-      context: [],
-      startedAt: 123,
-      endedAt: 123
+    claimNextForGuild('g-1')
+    expect(markFailed(job.id)).toBe('pending')
+    claimNextForGuild('g-1')
+    expect(markFailed(job.id)).toBe('failed')
+    expect(MAX_EXTRACTION_QUEUE_ATTEMPTS).toBe(2)
+    expect(testDb.prepare('SELECT status, attempts FROM extraction_queue WHERE id = ?').get(job.id)).toEqual({
+      status: 'failed',
+      attempts: 2
     })
   })
 
-  it('drops the oldest pending job only within an over-cap guild', () => {
-    vi.spyOn(Date, 'now').mockReturnValueOnce(100).mockReturnValueOnce(200).mockReturnValueOnce(300)
-    const oldest = enqueueExtraction({ guildId: 'guild-1', channelId: 'channel-1', payload: payload('oldest') })
-    const newest = enqueueExtraction({ guildId: 'guild-1', channelId: 'channel-1', payload: payload('newest') })
-    const otherGuild = enqueueExtraction({ guildId: 'guild-2', channelId: 'channel-2', payload: payload('other') })
+  it('does not evict older episodes when the queue grows', () => {
+    for (let index = 0; index < 100; index++) {
+      enqueueEpisode({ guildId: 'guild-1', channelId: 'channel-1', episode: episodeFor(`message ${index}`) })
+    }
 
-    enqueueExtraction({ guildId: 'guild-1', channelId: 'channel-1', payload: payload('overflow') })
-
-    expect(claimNextForGuild('guild-1')?.id).toBe(newest.id)
-    expect(testDb.prepare('SELECT id FROM extraction_queue WHERE id = ?').get(oldest.id)).toBeUndefined()
-    expect(claimNextForGuild('guild-2')?.id).toBe(otherGuild.id)
+    expect(testDb.prepare('SELECT COUNT(*) AS count FROM extraction_queue').get()).toEqual({ count: 100 })
+    expect(claimNextForGuild('guild-1')?.episode.messages[0].content).toBe('message 0')
   })
 
   it('lists only pending guilds and recovers stale processing jobs', () => {
     vi.spyOn(Date, 'now').mockReturnValueOnce(100).mockReturnValueOnce(200).mockReturnValueOnce(1_000)
-    enqueueExtraction({ guildId: 'guild-1', channelId: 'channel-1', payload: payload('stale') })
-    enqueueExtraction({ guildId: 'guild-2', channelId: 'channel-2', payload: payload('pending') })
+    enqueueEpisode({ guildId: 'guild-1', channelId: 'channel-1', episode: episodeFor('stale') })
+    enqueueEpisode({ guildId: 'guild-2', channelId: 'channel-2', episode: episodeFor('pending') })
     claimNextForGuild('guild-1')
 
     expect(listGuildsWithPending()).toEqual(['guild-2'])
@@ -172,16 +118,16 @@ describe('extractionQueue', () => {
     expect(listGuildsWithPending()).toEqual(['guild-1', 'guild-2'])
   })
 
-  it('requeues failures until the attempt cap, then drops the job', () => {
-    const job = enqueueExtraction({ guildId: 'guild-1', channelId: 'channel-1', payload: payload('retry') })
+  it('preserves an episode payload across database close and reopen', () => {
+    mkdirSync(join(process.cwd(), 'data'), { recursive: true })
+    rmSync(reopenPath, { force: true })
+    testDb.close()
+    testDb = createTestDb(reopenPath)
+    const episode = episodeFor('persisted episode')
+    enqueueEpisode({ guildId: 'guild-1', channelId: 'channel-1', episode })
+    testDb.close()
+    testDb = createTestDb(reopenPath)
 
-    for (let attempt = 1; attempt < MAX_EXTRACTION_QUEUE_ATTEMPTS; attempt++) {
-      claimNextForGuild('guild-1')
-      expect(markFailed(job.id)).toBe('pending')
-    }
-
-    claimNextForGuild('guild-1')
-    expect(markFailed(job.id)).toBe('dropped')
-    expect(testDb.prepare('SELECT * FROM extraction_queue WHERE id = ?').get(job.id)).toBeUndefined()
+    expect(claimNextForGuild('guild-1')?.episode).toEqual(episode)
   })
 })

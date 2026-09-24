@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import '../env.js'
 import { resetMonitor } from '../../../src/agent/channelMonitor.js'
+import { flushOpenEpisodes, resetEpisodeTrackerForTest } from '../../../src/agent/memory/episodeTracker.js'
 import { assertClaim } from '../../../src/agent/memory/memoryClaims.js'
 import { resetForTest as resetScheduler, stopExtractionScheduler } from '../../../src/agent/memory/scheduler.js'
+import { resetAllBuffers } from '../../../src/agent/passiveBuffer.js'
 import { assembleSystemPrompt } from '../../../src/agent/promptAssembler.js'
 import { buildFactsEnvelope } from '../../../src/agent/promptSafety.js'
 import { __resetTestRunTurnFactory, __setTestRunTurnFactory, generateResponse } from '../../../src/agent/roka.js'
@@ -41,6 +43,8 @@ afterEach(async () => {
   stopExtractionScheduler()
   resetScheduler()
   resetMonitor()
+  resetEpisodeTrackerForTest()
+  resetAllBuffers()
   memoryConfig.claimsBackend = true
   await Promise.all([
     ...transcript.map(({ channelId }) => destroySession(channelId)),
@@ -65,6 +69,7 @@ afterEach(async () => {
 describe('memory promotion harness evaluation', () => {
   it('uses the bounded retriever and queues extraction for a multi-guild transcript with the default enabled', async () => {
     expect(config.memory.claimsBackend).toBe(true)
+    resetAllBuffers()
     assertClaim({
       guildId: 'promotion-garden',
       subjectUserId: 'promotion-mio',
@@ -108,6 +113,8 @@ describe('memory promotion harness evaluation', () => {
     expect(prompts[1]).toContain('"library-series"')
     expect(prompts[1]).not.toContain('"garden-series"')
 
+    flushOpenEpisodes()
+    stopExtractionScheduler()
     const queued = getDb()
       .prepare('SELECT guild_id, channel_id, status FROM extraction_queue ORDER BY id')
       .all() as Array<{ guild_id: string; channel_id: string; status: string }>

@@ -1,77 +1,21 @@
-import { config } from '../../config.js'
-import {
-  type ExtractionQueueJob,
-  claimNextForGuild,
-  enqueueExtraction,
-  listGuildsWithPending,
-  markDone,
-  markFailed
-} from '../../storage/extractionQueue.js'
+import { claimNextForGuild, listGuildsWithPending, markDone, markFailed } from '../../storage/extractionQueue.js'
 import { logger } from '../../utils/logger.js'
-import { getSharedRateLimiter } from '../../utils/rateLimiter.js'
 import { isShuttingDown } from '../shutdownSignal.js'
-import { type ExtractionJob, runExtraction } from './extractor.js'
-
-type ExtractionLimiter = Readonly<{
-  remainingRpm: number
-  remainingRpd: number
-}>
-
-export type SchedulerJob = ExtractionJob
-
-export type SchedulerTestDependencies = Readonly<{
-  now?: () => number
-  limiter?: ExtractionLimiter
-}>
+import { runEpisodePipeline } from './extractor.js'
 
 let timer: ReturnType<typeof setTimeout> | undefined
 let lastGuildId: string | undefined
-let dailyExtractionCount = 0
-let dailyDate: string | undefined
-let botUserId: string | undefined
-let now = () => Date.now()
-let limiter: ExtractionLimiter | undefined
-const lastRunAt = new Map<string, number>()
+let stopped = false
+const inFlightGuilds = new Set<string>()
+const inFlightTasks = new Set<Promise<void>>()
 
-function localDate(timestamp: number): string {
-  const date = new Date(timestamp)
-  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`
-}
-
-function resetDailyBudget(timestamp: number): void {
-  const currentDate = localDate(timestamp)
-  if (dailyDate !== currentDate) {
-    dailyDate = currentDate
-    dailyExtractionCount = 0
-  }
-}
-
-function dailyBudget(): number {
-  return Math.floor(config.rateLimit.rpd * config.memory.extractionDailyBudgetRatio)
-}
-
-function msUntilLocalMidnight(timestamp: number): number {
-  const midnight = new Date(timestamp)
-  midnight.setHours(24, 0, 0, 0)
-  return Math.max(1, midnight.getTime() - timestamp)
-}
-
-function schedulerLimiter(): ExtractionLimiter {
-  return limiter ?? getSharedRateLimiter(config.rateLimit)
-}
-
-function hasExtractionHeadroom(): boolean {
-  const currentLimiter = schedulerLimiter()
-  return currentLimiter.remainingRpm >= config.gemini.extractionRpmFloor && currentLimiter.remainingRpd > 0
-}
-
-function scheduleDrain(delayMs = 0): void {
-  if (timer || isShuttingDown()) return
+function scheduleDrain(): void {
+  if (timer || stopped || isShuttingDown()) return
 
   timer = setTimeout(() => {
     timer = undefined
     drainOnce()
-  }, delayMs)
+  }, 0)
   timer.unref?.()
 }
 
@@ -83,23 +27,14 @@ function orderedGuilds(guildIds: string[]): string[] {
   return [...guildIds.slice(nextIndex), ...guildIds.slice(0, nextIndex)]
 }
 
-function nextGapDelay(guildIds: string[], timestamp: number): number {
-  return Math.min(
-    ...guildIds.map((guildId) => {
-      const lastRun = lastRunAt.get(guildId)
-      return lastRun === undefined ? 0 : Math.max(0, lastRun + config.memory.perGuildGapMs - timestamp)
-    })
-  )
+function finishJob(guildId: string): void {
+  inFlightGuilds.delete(guildId)
+  scheduleDrain()
 }
 
-function completeJob(job: ExtractionQueueJob): void {
-  void runExtraction({
-    guildId: job.guildId,
-    channelId: job.channelId,
-    messages: job.payload,
-    ...(botUserId ? { botUserId } : {}),
-    admittedBy: job.admittedBy
-  })
+function runJob(job: NonNullable<ReturnType<typeof claimNextForGuild>>): void {
+  inFlightGuilds.add(job.guildId)
+  const task = runEpisodePipeline(job)
     .then(() => {
       markDone(job.id)
     })
@@ -107,99 +42,55 @@ function completeJob(job: ExtractionQueueJob): void {
       markFailed(job.id)
       logger.warn(
         { guildId: job.guildId, channelId: job.channelId, jobId: job.id, error },
-        'Memory extraction scheduler failed'
+        'Memory episode pipeline failed'
       )
     })
     .finally(() => {
-      startExtractionScheduler()
+      inFlightTasks.delete(task)
+      finishJob(job.guildId)
     })
+  inFlightTasks.add(task)
 }
 
 function drainOnce(): void {
-  if (isShuttingDown()) return
+  if (stopped || isShuttingDown()) return
 
-  const timestamp = now()
-  resetDailyBudget(timestamp)
-  const guildIds = listGuildsWithPending()
-  if (guildIds.length === 0) return
+  const guildId = orderedGuilds(listGuildsWithPending().filter((id) => !inFlightGuilds.has(id)))[0]
+  if (!guildId) return
 
-  if (dailyExtractionCount >= dailyBudget()) {
-    logger.debug({ dailyExtractionCount, dailyBudget: dailyBudget() }, 'Memory extraction daily budget exhausted')
-    scheduleDrain(msUntilLocalMidnight(timestamp))
-    return
-  }
-
-  if (!hasExtractionHeadroom()) {
-    logger.debug(
-      { extractionRpmFloor: config.gemini.extractionRpmFloor },
-      'Memory extraction deferred for live traffic'
-    )
-    scheduleDrain(1_000)
-    return
-  }
-
-  const eligibleGuildId = orderedGuilds(guildIds).find((guildId) => {
-    const lastRun = lastRunAt.get(guildId)
-    return lastRun === undefined || timestamp - lastRun >= config.memory.perGuildGapMs
-  })
-
-  if (!eligibleGuildId) {
-    scheduleDrain(nextGapDelay(guildIds, timestamp))
-    return
-  }
-
-  const job = claimNextForGuild(eligibleGuildId)
+  const job = claimNextForGuild(guildId)
   if (!job) {
     scheduleDrain()
     return
   }
 
-  lastGuildId = eligibleGuildId
-  lastRunAt.set(eligibleGuildId, timestamp)
-  dailyExtractionCount += 1
-  completeJob(job)
-
-  if (listGuildsWithPending().length > 0) scheduleDrain()
+  lastGuildId = guildId
+  runJob(job)
+  scheduleDrain()
 }
 
 /** Starts the lazy in-process drain loop; safe to call repeatedly. */
-export function startExtractionScheduler(currentBotUserId?: string): void {
-  if (currentBotUserId) botUserId = currentBotUserId
+export function startExtractionScheduler(): void {
+  if (isShuttingDown()) return
+  stopped = false
   scheduleDrain()
 }
 
 /** Stops future queue drains without interrupting an extraction already in flight. */
 export function stopExtractionScheduler(): void {
+  stopped = true
   if (!timer) return
   clearTimeout(timer)
   timer = undefined
 }
 
-/** Enqueues a claim-extraction batch and starts the scheduler when necessary. */
-export function enqueueAndSchedule(job: SchedulerJob): void {
-  enqueueExtraction({
-    guildId: job.guildId,
-    channelId: job.channelId,
-    payload: job.messages,
-    admittedBy: job.admittedBy
-  })
-  startExtractionScheduler(job.botUserId)
+export async function waitForInFlightExtractions(): Promise<void> {
+  while (inFlightTasks.size > 0) await Promise.all([...inFlightTasks])
 }
 
-/** Overrides time and rate-limit reads for deterministic scheduler tests. */
-export function configureForTest(dependencies: SchedulerTestDependencies): void {
-  now = dependencies.now ?? (() => Date.now())
-  limiter = dependencies.limiter
-}
-
-/** Clears scheduler state and test overrides. */
+/** Clears scheduler state for deterministic tests. */
 export function resetForTest(): void {
   stopExtractionScheduler()
   lastGuildId = undefined
-  dailyExtractionCount = 0
-  dailyDate = undefined
-  botUserId = undefined
-  lastRunAt.clear()
-  now = () => Date.now()
-  limiter = undefined
+  inFlightGuilds.clear()
 }

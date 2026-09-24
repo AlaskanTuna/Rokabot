@@ -2,6 +2,7 @@ import { resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import '../env.js'
 import { resetMonitor } from '../../../src/agent/channelMonitor.js'
+import { flushEpisode, resetEpisodeTrackerForTest } from '../../../src/agent/memory/episodeTracker.js'
 import { resetForTest as resetScheduler, stopExtractionScheduler } from '../../../src/agent/memory/scheduler.js'
 import { resetCounters } from '../../../src/agent/memoryExtractor.js'
 import { resetAllBuffers } from '../../../src/agent/passiveBuffer.js'
@@ -52,6 +53,7 @@ afterEach(async () => {
   resetScheduler()
   resetCounters()
   resetAllBuffers()
+  resetEpisodeTrackerForTest()
   resetMonitor()
   getDb().prepare('DELETE FROM response_events').run()
   getDb().prepare('DELETE FROM extraction_events').run()
@@ -99,7 +101,7 @@ describe('harness metrics evaluation', () => {
     expect(rows.map((row) => row.guild_id)).toEqual(['guild-garden', 'guild-library', 'guild-garden', 'guild-library'])
   })
 
-  it('excludes busy and intercepted turns while queueing claims extraction snapshots', async () => {
+  it('excludes busy and intercepted turns while retaining monitored messages in an open episode', async () => {
     const client = makeClient()
     const guild = makeGuild({ me: { displayName: 'Roka' } })
     const handler = createMessageHandler(client as never, new RateLimiter({ rpm: 10, rpd: 10 }))
@@ -163,22 +165,25 @@ describe('harness metrics evaluation', () => {
     expect(responseRows()).toHaveLength(1)
     expect(sink.all()).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'reply' })]))
 
+    flushEpisode('metrics-early-exit-channel')
+    stopExtractionScheduler()
     const queueRows = getDb()
       .prepare('SELECT guild_id, channel_id, payload, status FROM extraction_queue ORDER BY id')
       .all() as Array<{ guild_id: string; channel_id: string; payload: string; status: string }>
 
-    expect(queueRows).toHaveLength(4)
+    expect(queueRows).toHaveLength(1)
     expect(queueRows.map(({ guild_id, channel_id, status }) => ({ guild_id, channel_id, status }))).toEqual([
-      { guild_id: 'guild-extraction', channel_id: 'metrics-early-exit-channel', status: 'pending' },
-      { guild_id: 'guild-extraction', channel_id: 'metrics-early-exit-channel', status: 'pending' },
-      { guild_id: 'guild-extraction', channel_id: 'metrics-early-exit-channel', status: 'pending' },
       { guild_id: 'guild-extraction', channel_id: 'metrics-early-exit-channel', status: 'pending' }
     ])
-    expect(queueRows.map(({ payload }) => JSON.parse(payload).at(-1)?.content)).toEqual([
-      '<@roka> I love tea and coffee.',
-      '<@roka> Can you wait?',
-      'First metrics response~',
-      'gacha'
+    expect(
+      JSON.parse(queueRows[0].payload).messages.map(({ content, isBot }: { content: string; isBot: boolean }) => ({
+        content,
+        isBot
+      }))
+    ).toEqual([
+      { content: '<@roka> I love tea and coffee.', isBot: false },
+      { content: '<@roka> Can you wait?', isBot: false },
+      { content: 'gacha', isBot: false }
     ])
     expect(getDb().prepare('SELECT * FROM extraction_events').all()).toHaveLength(0)
     expect(mocks.generateContent).not.toHaveBeenCalled()

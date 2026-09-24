@@ -1,15 +1,6 @@
-import { config } from '../config.js'
 import { getDb } from './database.js'
 
-export const MAX_EXTRACTION_QUEUE_ATTEMPTS = 3
-
-export type ExtractionPayloadMessage = Readonly<{
-  userId: string
-  displayName: string
-  content: string
-}>
-
-export type ExtractionPayload = ReadonlyArray<ExtractionPayloadMessage>
+export const MAX_EXTRACTION_QUEUE_ATTEMPTS = 2
 
 export type EpisodeLine = Readonly<{
   messageId: string
@@ -42,18 +33,9 @@ export type ExtractionQueueJob = Readonly<{
   guildId: string
   channelId: string
   episode: ExtractionEpisode
-  payload: ExtractionPayload
   status: 'pending' | 'processing'
   attempts: number
   enqueuedAt: number
-  admittedBy?: 'jev'
-}>
-
-export type EnqueueExtractionInput = Readonly<{
-  guildId: string
-  channelId: string
-  payload: ExtractionPayload
-  admittedBy?: 'jev'
 }>
 
 type ExtractionQueueRow = {
@@ -61,84 +43,21 @@ type ExtractionQueueRow = {
   guild_id: string
   channel_id: string
   payload: string
-  status: 'pending' | 'processing'
+  status: 'pending' | 'processing' | 'failed'
   attempts: number
   enqueued_at: number
-  admitted_by: 'jev' | null
-}
-
-function payloadFromEpisode(episode: ExtractionEpisode): ExtractionPayload {
-  return episode.messages.map(({ userId, displayName, content }) => ({ userId, displayName, content }))
-}
-
-function episodeFromRow(row: ExtractionQueueRow): ExtractionEpisode {
-  const payload: unknown = JSON.parse(row.payload)
-  if (Array.isArray(payload)) {
-    const messages = payload.map((message, index) => ({
-      ...(message as ExtractionPayloadMessage),
-      messageId: `legacy-${row.id}-${index}`,
-      timestamp: row.enqueued_at,
-      isBot: false
-    }))
-    return { messages, context: [], startedAt: row.enqueued_at, endedAt: row.enqueued_at }
-  }
-  return payload as ExtractionEpisode
 }
 
 function mapJob(row: ExtractionQueueRow): ExtractionQueueJob {
-  const episode = episodeFromRow(row)
   return {
     id: row.id,
     guildId: row.guild_id,
     channelId: row.channel_id,
-    episode,
-    payload: payloadFromEpisode(episode),
-    status: row.status,
+    episode: JSON.parse(row.payload) as ExtractionEpisode,
+    status: row.status as ExtractionQueueJob['status'],
     attempts: row.attempts,
-    enqueuedAt: row.enqueued_at,
-    ...(row.admitted_by === 'jev' ? { admittedBy: 'jev' as const } : {})
+    enqueuedAt: row.enqueued_at
   }
-}
-
-/** Stores an extraction snapshot and evicts the oldest pending work beyond a guild's queue limit. */
-export function enqueueExtraction(input: EnqueueExtractionInput): ExtractionQueueJob {
-  return getDb().transaction(() => {
-    const db = getDb()
-    const enqueuedAt = Date.now()
-    const result = db
-      .prepare(
-        "INSERT INTO extraction_queue (guild_id, channel_id, payload, status, enqueued_at, admitted_by) VALUES (?, ?, ?, 'pending', ?, ?)"
-      )
-      .run(input.guildId, input.channelId, JSON.stringify(input.payload), enqueuedAt, input.admittedBy ?? null)
-
-    const pending = db
-      .prepare("SELECT COUNT(*) AS count FROM extraction_queue WHERE guild_id = ? AND status = 'pending'")
-      .get(input.guildId) as { count: number }
-    const overflow = pending.count - config.memory.extractionQueueMaxPerGuild
-
-    if (overflow > 0) {
-      db.prepare(
-        `DELETE FROM extraction_queue
-             WHERE id IN (
-               SELECT id FROM extraction_queue
-               WHERE guild_id = ? AND status = 'pending'
-               ORDER BY enqueued_at ASC, id ASC
-               LIMIT ?
-             )`
-      ).run(input.guildId, overflow)
-    }
-
-    return mapJob({
-      id: Number(result.lastInsertRowid),
-      guild_id: input.guildId,
-      channel_id: input.channelId,
-      payload: JSON.stringify(input.payload),
-      status: 'pending' as const,
-      attempts: 0,
-      enqueued_at: enqueuedAt,
-      admitted_by: input.admittedBy ?? null
-    })
-  })()
 }
 
 export function enqueueEpisode(
@@ -151,7 +70,7 @@ export function enqueueEpisode(
     const payload = JSON.stringify(input.episode)
     const result = db
       .prepare(
-        "INSERT INTO extraction_queue (guild_id, channel_id, payload, status, enqueued_at, admitted_by) VALUES (?, ?, ?, 'pending', ?, NULL)"
+        "INSERT INTO extraction_queue (guild_id, channel_id, payload, status, enqueued_at) VALUES (?, ?, ?, 'pending', ?)"
       )
       .run(input.guildId, input.channelId, payload, enqueuedAt)
     return mapJob({
@@ -161,8 +80,7 @@ export function enqueueEpisode(
       payload,
       status: 'pending',
       attempts: 0,
-      enqueued_at: enqueuedAt,
-      admitted_by: null
+      enqueued_at: enqueuedAt
     })
   }
   return options.transaction ? write() : getDb().transaction(write)()
@@ -199,13 +117,13 @@ export function listGuildsWithPending(): string[] {
   ).map((row) => row.guild_id)
 }
 
-/** Removes a processing job. Repeating the operation is safe and returns false after the first call. */
+/** Removes a processing job after its pipeline result and events have been recorded. */
 export function markDone(id: number): boolean {
   return getDb().prepare("DELETE FROM extraction_queue WHERE id = ? AND status = 'processing'").run(id).changes > 0
 }
 
-/** Requeues a failed processing job until its attempt cap is reached, then drops it. */
-export function markFailed(id: number): 'pending' | 'dropped' | undefined {
+/** Requeues once, then retains the failed job for inspection. */
+export function markFailed(id: number): 'pending' | 'failed' | undefined {
   return getDb().transaction(() => {
     const row = getDb().prepare("SELECT * FROM extraction_queue WHERE id = ? AND status = 'processing'").get(id) as
       | ExtractionQueueRow
@@ -213,13 +131,9 @@ export function markFailed(id: number): 'pending' | 'dropped' | undefined {
     if (!row) return undefined
 
     const attempts = row.attempts + 1
-    if (attempts >= MAX_EXTRACTION_QUEUE_ATTEMPTS) {
-      getDb().prepare('DELETE FROM extraction_queue WHERE id = ?').run(id)
-      return 'dropped'
-    }
-
-    getDb().prepare("UPDATE extraction_queue SET attempts = ?, status = 'pending' WHERE id = ?").run(attempts, id)
-    return 'pending'
+    const status = attempts >= MAX_EXTRACTION_QUEUE_ATTEMPTS ? 'failed' : 'pending'
+    getDb().prepare('UPDATE extraction_queue SET attempts = ?, status = ? WHERE id = ?').run(attempts, status, id)
+    return status
   })()
 }
 
