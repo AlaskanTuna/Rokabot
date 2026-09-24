@@ -39,6 +39,7 @@ interface YamlConfig {
     maxTokensPerMinute?: number
     safetyThreshold?: string
     maxLlmCalls?: number
+    hedgeAfterMs?: number
     liveMaxRetries?: number
     retryRpmFloor?: number
     extractionRpmFloor?: number
@@ -183,6 +184,7 @@ export const config = {
     maxTokensPerMinute: envInt('GEMINI_MAX_TOKENS_PER_MINUTE') ?? yaml.gemini?.maxTokensPerMinute ?? 125_000,
     safetyThreshold: envString('GEMINI_SAFETY_THRESHOLD') ?? yaml.gemini?.safetyThreshold ?? 'OFF',
     maxLlmCalls: yaml.gemini?.maxLlmCalls ?? 4,
+    hedgeAfterMs: envInt('GEMINI_HEDGE_AFTER_MS') ?? yaml.gemini?.hedgeAfterMs ?? 5_000,
     liveMaxRetries: envInt('GEMINI_LIVE_MAX_RETRIES') ?? yaml.gemini?.liveMaxRetries ?? 2,
     retryRpmFloor: envInt('GEMINI_RETRY_RPM_FLOOR') ?? yaml.gemini?.retryRpmFloor ?? 2,
     extractionRpmFloor: envInt('GEMINI_EXTRACTION_RPM_FLOOR') ?? yaml.gemini?.extractionRpmFloor ?? 3,
@@ -316,6 +318,8 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'gemini.retryRpmFloor', value: config.gemini.retryRpmFloor, min: 0 },
   { path: 'gemini.extractionRpmFloor', value: config.gemini.extractionRpmFloor, min: 0 },
   { path: 'gemini.maxLlmCalls', value: config.gemini.maxLlmCalls, min: 1 },
+  // min: 0 because zero is the documented off switch, not a misconfiguration.
+  { path: 'gemini.hedgeAfterMs', value: config.gemini.hedgeAfterMs, min: 0 },
   // Floor is one turn's worth, derived: `rpm` is counted in requests and a turn reserves `maxLlmCalls` of
   // them, so anything below that admits no turn at all and the bot answers nothing while reporting itself
   // rate-limited. Found by a harness fixture at `rpm: 2` going silent the moment reservations landed (#167).

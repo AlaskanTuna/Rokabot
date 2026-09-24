@@ -478,7 +478,8 @@ describe('tenant-scoped name resolution', () => {
     retries: 0,
     tokensInEst: 1,
     tokensOutEst: 1,
-    toolsUsed: []
+    toolsUsed: [],
+    hedged: 0
   })
 
   it('does not resolve a globally known name from a tenant the user has no presence in', () => {

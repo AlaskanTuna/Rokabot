@@ -39,7 +39,9 @@ const responseEvent: Parameters<typeof recordResponseEvent>[0] = {
   retries: 0,
   tokensInEst: 42,
   tokensOutEst: 24,
-  toolsUsed: ['roll_dice']
+  toolsUsed: ['roll_dice'],
+  model: 'gemini',
+  hedged: 0
 } as const
 
 const memoryEvent: MemoryEventInput = {
@@ -91,6 +93,8 @@ describe('metricsStore', () => {
       'tokens_out_est',
       'tools_used',
       'failure_marker',
+      'model',
+      'hedged',
       'created_at'
     ])
     expect(extractionColumns.map((column) => column.name)).toEqual([
@@ -146,6 +150,19 @@ describe('metricsStore', () => {
       created_at: now
     })
     vi.restoreAllMocks()
+  })
+
+  it('persists which model answered and whether a hedge fired, and NULLs the model when there was no answer', () => {
+    recordResponseEvent({ ...responseEvent, model: 'fallback', hedged: 1 })
+    recordResponseEvent({ ...responseEvent, model: undefined, hedged: 0 })
+
+    const rows = getDb().prepare('SELECT model, hedged FROM response_events ORDER BY id DESC LIMIT 2').all() as Array<{
+      model: string | null
+      hedged: number
+    }>
+
+    expect(rows[0]).toEqual({ model: null, hedged: 0 })
+    expect(rows[1]).toEqual({ model: 'fallback', hedged: 1 })
   })
 
   it('persists a supplied failure marker verbatim and stores NULL when omitted', () => {

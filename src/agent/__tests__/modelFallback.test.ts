@@ -80,6 +80,7 @@ const mutableGeminiConfig = config.gemini as unknown as {
   liveMaxRetries: number
   retryBackoffBaseMs: number
   retryBackoffCapMs: number
+  hedgeAfterMs: number
 }
 const mutableJevConfig = config.jev as unknown as { tone: 'off' | 'shadow' | 'on'; referents: 'off' | 'shadow' | 'on' }
 const channelId = 'model-fallback-test'
@@ -90,7 +91,8 @@ const originalConfig = {
   geminiTimeout: mutableGeminiConfig.timeout,
   liveMaxRetries: mutableGeminiConfig.liveMaxRetries,
   retryBackoffBaseMs: mutableGeminiConfig.retryBackoffBaseMs,
-  retryBackoffCapMs: mutableGeminiConfig.retryBackoffCapMs
+  retryBackoffCapMs: mutableGeminiConfig.retryBackoffCapMs,
+  hedgeAfterMs: mutableGeminiConfig.hedgeAfterMs
 }
 
 const genericFallback = 'generic fallback'
@@ -144,6 +146,7 @@ beforeEach(() => {
   mutableGeminiConfig.liveMaxRetries = originalConfig.liveMaxRetries
   mutableGeminiConfig.retryBackoffBaseMs = 0
   mutableGeminiConfig.retryBackoffCapMs = 0
+  mutableGeminiConfig.hedgeAfterMs = 0
   mutableJevConfig.tone = 'off'
   mutableJevConfig.referents = 'off'
 })
@@ -393,6 +396,40 @@ describe('generateResponse model fallback', () => {
 
     expect(firstRoutes).toEqual([false, true])
     expect(nextRoutes).toEqual([false])
+  })
+
+  it('records the answering model on every answered turn, and never arms the sticky window for a hedge', async () => {
+    mutableFallbackConfig.stickyMs = 10_000
+    const answeredBy: Array<string | null | undefined> = []
+    __setTestRunTurnFactory(() => async () => {
+      const route = modelRouteForRequest.getStore()
+      // Stand in for a model call the hedge beat: it fired one, and the fallback is what answered.
+      if (route) {
+        route.hedged = true
+        route.answeredBy = 'fallback'
+      }
+      answeredBy.push(route?.answeredBy)
+      return { text: 'Hedge answer~', hasText: true, hasFunctionCall: false }
+    })
+    const first = await generateResponse(responseOptions())
+    const second = await generateResponse(responseOptions('A slow one.'))
+
+    expect(first.metrics).toMatchObject({ model: 'fallback', hedged: 1 })
+    expect(second.metrics).toMatchObject({ model: 'fallback', hedged: 1 })
+    expect(answeredBy).toEqual(['fallback', 'fallback'])
+
+    const nextRoutes: Array<boolean | undefined> = []
+    __setTestRunTurnFactory(() => async () => {
+      const route = modelRouteForRequest.getStore()
+      // An unhedged Gemini call still records who answered.
+      if (route) route.answeredBy = 'gemini'
+      nextRoutes.push(route?.useFallback)
+      return { text: 'Gemini next~', hasText: true, hasFunctionCall: false }
+    })
+    const next = await generateResponse(responseOptions('And now?'))
+
+    expect(nextRoutes).toEqual([false])
+    expect(next.metrics).toMatchObject({ model: 'gemini', hedged: 0 })
   })
 
   it('keeps the existing fallback reply when no fallback model is configured', async () => {

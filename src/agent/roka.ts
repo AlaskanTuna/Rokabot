@@ -20,6 +20,7 @@ import { getLocalHour } from '../utils/timezone.js'
 import { estimateTokens } from '../utils/tokens.js'
 import { measureAttachmentTokens, needsMeasuring } from './attachmentCost.js'
 import { geminiMimeType, sizeLimitFor } from './attachmentLimits.js'
+import type { ModelRoute } from './fallbackModel.js'
 import { createRokaModel, modelRouteForRequest } from './fallbackModel.js'
 import { classifyGeminiFailure, computeBackoff, extractGeminiStatus } from './geminiReliability.js'
 import type { FailureKind } from './geminiReliability.js'
@@ -1352,7 +1353,11 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   const steering: { prompt?: string } = {}
   const verdict: ModelVerdict = {}
   const modelCalls = { count: 0 }
-  const route = { useFallback: rokaModel.hasFallback && Date.now() < fallbackUntilMs }
+  const route: ModelRoute = {
+    useFallback: rokaModel.hasFallback && Date.now() < fallbackUntilMs,
+    hedged: false,
+    answeredBy: null
+  }
   let movedAwayFromGemini = false
   const reliability = await modelRouteForRequest.run(route, () =>
     modelCallsForRequest.run(modelCalls, () =>
@@ -1592,7 +1597,9 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     kind: reliability.kind,
     failureMarker: reliability.failureMarker,
     tokensInEst,
-    tokensOutEst: estimateTokens(reliability.text)
+    tokensOutEst: estimateTokens(reliability.text),
+    model: route.answeredBy ?? undefined,
+    hedged: route.hedged ? 1 : 0
   }
 
   return {

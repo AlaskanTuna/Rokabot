@@ -129,6 +129,8 @@ function createTables(database: Database.Database): void {
       tokens_out_est INTEGER NOT NULL,
       tools_used TEXT DEFAULT NULL,
       failure_marker TEXT DEFAULT NULL,
+      model TEXT DEFAULT NULL,
+      hedged INTEGER NOT NULL DEFAULT 0,
       created_at INTEGER NOT NULL
     );
 
@@ -228,6 +230,12 @@ export function runMigrations(database: Database.Database): void {
   }
   if (responseEventCols.length > 0 && !responseEventCols.some((column) => column.name === 'failure_marker')) {
     database.exec('ALTER TABLE response_events ADD COLUMN failure_marker TEXT DEFAULT NULL')
+  }
+  if (responseEventCols.length > 0 && !responseEventCols.some((column) => column.name === 'model')) {
+    database.exec('ALTER TABLE response_events ADD COLUMN model TEXT DEFAULT NULL')
+  }
+  if (responseEventCols.length > 0 && !responseEventCols.some((column) => column.name === 'hedged')) {
+    database.exec('ALTER TABLE response_events ADD COLUMN hedged INTEGER NOT NULL DEFAULT 0')
   }
 
   const buddyIndexes = database.prepare("PRAGMA index_list('buddy')").all() as Array<{ name: string; unique: number }>
