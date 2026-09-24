@@ -1,6 +1,7 @@
 import type { Attachment, Client, Interaction } from 'discord.js'
 import { DiscordAPIError, MessageFlags } from 'discord.js'
-import { type ImageAttachment, generateResponse } from '../../agent/roka.js'
+import type { ImageAttachment } from '../../agent/attachments.js'
+import { generateResponse } from '../../agent/roka.js'
 import { withSearchCitations } from '../../agent/searchCitations.js'
 import { canAffordAttachments } from '../../agent/tokenBudget.js'
 import { config } from '../../config.js'

@@ -66,7 +66,7 @@ vi.mock('../events/gameCommands.js', () => ({ createGameCommandHandler: () => mo
 vi.mock('../events/stats/statsCommand.js', () => ({ handleStatsCommand: mocks.handleStatsCommand }))
 vi.mock('../events/toolCommands.js', () => ({ createToolCommandHandler: () => mocks.toolCommandHandler }))
 
-import { destroySession } from '../../agent/roka.js'
+import { destroySession } from '../../agent/session.js'
 import { recallUserTool, rememberUserTool } from '../../agent/tools/index.js'
 import { closeDb } from '../../storage/database.js'
 import { createInteractionHandler } from '../events/interactionCreate.js'

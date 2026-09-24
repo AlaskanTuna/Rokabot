@@ -125,9 +125,10 @@ function renderTokenTable(rows: readonly { turn: number; tokens: RequestTokenBre
 /** Drive one JSONL transcript through the real Discord handlers without connecting to Discord. */
 export async function runTranscript(path: string, options: RunTranscriptOptions = {}): Promise<TranscriptReport> {
   const live = options.live ?? process.argv.includes('--live')
-  const [{ config }, roka, messageEvents, interactionEvents, { RateLimiter }] = await Promise.all([
+  const [{ config }, roka, session, messageEvents, interactionEvents, { RateLimiter }] = await Promise.all([
     import('../../src/config.js'),
     import('../../src/agent/roka.js'),
+    import('../../src/agent/session.js'),
     import('../../src/discord/events/messageCreate.js'),
     import('../../src/discord/events/interactionCreate.js'),
     import('../../src/utils/rateLimiter.js')
@@ -149,7 +150,7 @@ export async function runTranscript(path: string, options: RunTranscriptOptions 
 
   if (!live) {
     for (const channelId of new Set(lines.map((line) => line.channelId))) {
-      await roka.destroySession(channelId)
+      await session.destroySession(channelId)
       clearHistory(channelId)
     }
 
@@ -237,7 +238,7 @@ export async function runTranscript(path: string, options: RunTranscriptOptions 
       turns.push({ line, rendered, timing, tokens })
 
       // The fake factory skips Runner.runAsync, so rehydrate persisted events before the next turn.
-      if (!live) await roka.destroySession(line.channelId)
+      if (!live) await session.destroySession(line.channelId)
 
       measurementHistory.set(
         line.channelId,
@@ -255,7 +256,7 @@ export async function runTranscript(path: string, options: RunTranscriptOptions 
     }
   } finally {
     roka.__resetTestRunTurnFactory()
-    await Promise.all([...channelIds].map((channelId) => roka.destroySession(channelId)))
+    await Promise.all([...channelIds].map((channelId) => session.destroySession(channelId)))
   }
 
   const output = [

@@ -2,7 +2,8 @@
  * live model call fires a given tool. Shared across future case sets (e.g. search_web, issue #19). */
 
 import { assertClaim } from '../../src/agent/memory/memoryClaims.js'
-import { APP_NAME, destroySession, generateResponse, sessionService } from '../../src/agent/roka.js'
+import { generateResponse } from '../../src/agent/roka.js'
+import { APP_NAME, destroySession, sessionService } from '../../src/agent/session.js'
 import { config } from '../../src/config.js'
 import { saveMessage } from '../../src/storage/sessionStore.js'
 import { upsertUserName } from '../../src/storage/userNames.js'

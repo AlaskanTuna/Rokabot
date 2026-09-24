@@ -1,5 +1,5 @@
 import { sizeLimitFor } from '../agent/attachmentLimits.js'
-import type { ImageAttachment } from '../agent/roka.js'
+import type { ImageAttachment } from '../agent/attachments.js'
 import { config } from '../config.js'
 
 /**

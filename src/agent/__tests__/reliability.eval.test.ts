@@ -92,7 +92,7 @@ vi.mock('../../utils/rateLimiter.js', () => ({
 import { isChannelBusy, markBusy, markFree } from '../../discord/concurrency.js'
 import { maybeExtractFromBuffer, resetCounters } from '../memoryExtractor.js'
 import { addMessage, resetAllBuffers } from '../passiveBuffer.js'
-import { runTurnWithReliability } from '../roka.js'
+import { runTurnWithReliability } from '../reliability.js'
 import { beginShutdown, isShuttingDown, resetForTest } from '../shutdownSignal.js'
 
 const genericFallback = 'generic fallback'

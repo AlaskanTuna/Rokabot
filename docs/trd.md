@@ -55,6 +55,18 @@ ADK window up to `session.windowSize`, while `session.historyRetentionDays` gove
 per-channel window is a hot cache, not the source of truth, so a bot restart does not erase retained history or other
 durable state.
 
+### Core Code Modules
+
+| Module                                | Responsibility                                                                                                             |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `src/discord/events/messageCreate.ts` | Detect triggers, admit turns, reserve rate and byte budgets, and send replies.                                             |
+| `src/discord/messageContent.ts`       | Convert messages, embeds, polls, stickers, forwards, Components V2, and reply context into prompt content and attachments. |
+| `src/agent/roka.ts`                   | Configure the ADK agent and runner, then orchestrate `generateResponse`.                                                   |
+| `src/agent/turnContext.ts`            | Assemble session, tone, Jev, identity, retrieval, and prompt context for each turn.                                        |
+| `src/agent/attachments.ts`            | Download and measure media, prepare model parts, and provide attachment markers.                                           |
+| `src/agent/reliability.ts`            | Run retry and fallback orchestration and register the error recovery plugin.                                               |
+| `src/agent/session.ts`                | Own the ADK session service and session lifecycle.                                                                         |
+
 ### Persistence & Storage
 
 | SQLite Table                                                                                                       | Contents                                                                                                                                                                                        |
@@ -264,7 +276,7 @@ are still logged and skipped during backfill rather than assigned a tenant.
 
 ### Prompt-Assembly Invariant
 
-Retrieval runs once in `generateResponse` while assembling `_systemPrompt`. `beforeModelCallback` reads only that
+Retrieval runs once in `src/agent/turnContext.ts` while assembling `_systemPrompt`. `beforeModelCallback` reads only that
 already-assembled state to assign the system instruction; it never triggers retrieval or reads the database.
 
 ### Flag, Rollback & Legacy Path
@@ -367,8 +379,8 @@ Safety Settings: HARM_CATEGORY_HARASSMENT, HARM_CATEGORY_HATE_SPEECH, HARM_CATEG
 **Token budget per request:**
 
 - The system prompt (the four layers assembled by `assembleSystemPrompt` in `src/agent/promptAssembler.ts`) is size-capped and enforced: `MAX_SYSTEM_PROMPT_TOKENS` in `tests/harness/tokens.ts`, checked by `tests/harness/__tests__/tokens.test.ts`. The cap exists as a change-detection gate, not a latency budget.
-- `src/agent/roka.ts` adds further components on top before a request goes out — tool declarations, conversation history, recalled facts, overheard channel messages, and the current user message are examples of what gets added, not an exhaustive list.
-- Some of those components carry their own bounds elsewhere in the code (e.g. `config.memory.retrievalTokenBudget`, `config.session.windowSize`, `config.memory.contextSize`) — for what a given request actually contains and how each piece is sized, read `assembleSystemPrompt` and the prompt-assembly path in `src/agent/roka.ts` directly rather than this doc.
+- `src/agent/turnContext.ts` assembles session history, recalled facts, overheard channel messages, identity context, and the system prompt; `src/agent/roka.ts` adds tool declarations and the current user message before sending the request.
+- Some components carry their own bounds elsewhere in the code (e.g. `config.memory.retrievalTokenBudget`, `config.session.windowSize`, `config.memory.contextSize`) — read `assembleSystemPrompt` and `createTurnContext` for what each request contains and how its prompt context is sized.
 
 **Rate limits:**
 
@@ -705,8 +717,8 @@ byte budget cannot disagree about the same file.
 
 Size does not bound token cost, so the byte ceilings above do not bound the bill. A 17 KB PDF is 50 pages at a
 measured ~560 tokens each — 28,001 tokens from a file small enough to pass every check on the way in — and
-three 200-page PDFs reach 341,543 tokens in a single request, over the whole 250,000 TPM ceiling. `roka.ts`
-therefore prices the parts with `countTokens` before sending them and refuses the turn's attachments above
+three 200-page PDFs reach 341,543 tokens in a single request, over the whole 250,000 TPM ceiling.
+`src/agent/attachments.ts` therefore prices the parts with `countTokens` before sending them and refuses attachments above
 `gemini.maxAttachmentTokens`, rather than letting the request fail on a 429 that would retry into the same
 wall and spend the minute's budget for every other channel.
 
@@ -733,7 +745,7 @@ wall and spend the minute's budget for every other channel.
   1.17x-1.63x above the bill, and the allowance pushed it to 1.53x-2.14x — worst on silent video, the case it
   deliberately over-charged. Removed.
 
-- **The margin is borrowed from `MEDIA_RESOLUTION_LOW`, not inherent to the estimate.** `roka.ts` pins low
+- **The margin is borrowed from `MEDIA_RESOLUTION_LOW`, not inherent to the estimate.** `src/agent/roka.ts` pins low
   media resolution on any request carrying video, so the biller charges ~65 tokens/second while `countTokens`
   prices at ~103. The probe cannot pin anything: `CountTokensConfig.generationConfig`, where `mediaResolution`
   lives, is documented "Not supported by the Gemini Developer API". Both terms are linear in duration, so the
@@ -787,7 +799,7 @@ a project quota: the harm from overspending lands on every other channel, not on
   after a file has been downloaded and measured, which is far too late to decline politely. Admission
   therefore asks the answerable question in the Discord handlers, before the turn: for a turn carrying
   attachments, is there room for the worst turn `gemini.maxAttachmentTokens` admits? That is the same floor
-  idiom as `retryRpmFloor` and `extractionRpmFloor`. Accounting happens afterwards in `roka.ts`, charging
+  idiom as `retryRpmFloor` and `extractionRpmFloor`. Accounting happens afterwards in `src/agent/roka.ts`, charging
   what was actually sent.
 - **Over-budget takes the existing in-character busy reply,** exactly as `byteBudget` does, and is asked
   before the byte reservation so a declined turn has taken nothing it must hand back. No new counter, notice,
@@ -807,7 +819,7 @@ a project quota: the harm from overspending lands on every other channel, not on
   budget — a round trip that re-uploads a file to price it is the resource being rationed.
 - **A refused turn is not charged.** It never reaches `generateContent`, so it spends none of the quota this
   bucket meters, and charging it would refuse other channels for spend that did not happen. The bandwidth
-  path is already bounded upstream: `rateLimiter.tryConsume()` runs in the handler before `generateResponse`,
+  path is already bounded upstream: `src/discord/events/messageCreate.ts` reserves calls before `generateResponse`,
   so a refused turn has already burned an RPM token.
 - **`tokensInEst` and the charge are one expression.** The metric reports exactly what the budget is charged,
   because two expressions for the same quantity is how a budget starts describing something other than the
@@ -891,7 +903,7 @@ history on every later turn** until they aged out of the window, the idle TTL fi
 Measured before the fix: ~11.5 MB of heap retained per attachment, accumulating turn over turn and released
 only on teardown, and a five-minute clip re-charged on every turn that followed it.
 
-`WindowedSessionService.stripAttachmentBytes` replaces those bytes with a text marker — `(an image)`,
+`src/agent/session.ts`'s `WindowedSessionService.stripAttachmentBytes` replaces those bytes with a text marker — `(an image)`,
 `(an audio clip)`, `(a document)` — once the turn is over.
 
 - **After every attempt, never between them.** A retry re-sends the same message, so ADK appends it again;

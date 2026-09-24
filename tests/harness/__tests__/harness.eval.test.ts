@@ -3,12 +3,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import '../env.js'
 import { assertClaim } from '../../../src/agent/memory/memoryClaims.js'
 import { FACTS_UNTRUSTED_DATA_LABEL } from '../../../src/agent/promptSafety.js'
-import {
-  __resetTestRunTurnFactory,
-  __setTestRunTurnFactory,
-  destroySession,
-  generateResponse
-} from '../../../src/agent/roka.js'
+import { __resetTestRunTurnFactory, __setTestRunTurnFactory, generateResponse } from '../../../src/agent/roka.js'
+import { destroySession } from '../../../src/agent/session.js'
 import { config } from '../../../src/config.js'
 import { createInteractionHandler } from '../../../src/discord/events/interactionCreate.js'
 import { createMessageHandler } from '../../../src/discord/events/messageCreate.js'
