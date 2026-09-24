@@ -40,10 +40,8 @@ import { stopStatusCycler } from './discord/statusCycler.js'
 import { destroyAllGames as destroyAllShiritoriGames } from './games/shiritori.js'
 import { closeDb, getDb } from './storage/database.js'
 import { resetStuckProcessing } from './storage/extractionQueue.js'
-import { backfillLegacyClaims } from './storage/memoryMigration.js'
 import { pruneFailureDiagnostics, pruneOldMetrics } from './storage/metricsStore.js'
 import { pruneOldHistory } from './storage/sessionStore.js'
-import { pruneOldFacts } from './storage/userMemory.js'
 import { logger } from './utils/logger.js'
 
 const client = createClient()
@@ -58,7 +56,6 @@ function startupMemoryTasks(botUserId?: string): void {
   }
 
   try {
-    backfillLegacyClaims()
     pruneStaleClaims(config.memory.claimRetentionDays, botUserId)
     claimPruneTimer = setInterval(
       () => pruneStaleClaims(config.memory.claimRetentionDays, botUserId),
@@ -83,13 +80,11 @@ client.once('clientReady', () => {
   startReminderScheduler(client)
 
   pruneOldHistory(config.session.historyRetentionDays)
-  pruneOldFacts(config.memory.factRetentionDays)
   pruneOldMetrics(config.metrics.retentionDays)
   pruneFailureDiagnostics(config.metrics.diagnosticsRetentionHours)
   startupMemoryTasks(client.user?.id)
 
   setInterval(() => pruneOldHistory(config.session.historyRetentionDays), 60 * 60 * 1000)
-  setInterval(() => pruneOldFacts(config.memory.factRetentionDays), 24 * 60 * 60 * 1000)
   setInterval(() => pruneOldMetrics(config.metrics.retentionDays), 24 * 60 * 60 * 1000)
   setInterval(() => pruneFailureDiagnostics(config.metrics.diagnosticsRetentionHours), 60 * 60 * 1000)
   setInterval(() => cleanupExpired(), 60 * 60 * 1000)

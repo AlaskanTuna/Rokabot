@@ -449,14 +449,6 @@ describe('buddy pet system', () => {
           user_id TEXT DEFAULT NULL,
           username TEXT DEFAULT NULL
         );
-        CREATE TABLE user_memory (
-          guild_id TEXT NOT NULL,
-          user_id TEXT NOT NULL,
-          fact_key TEXT NOT NULL,
-          fact_value TEXT NOT NULL,
-          updated_at INTEGER NOT NULL,
-          PRIMARY KEY (guild_id, user_id, fact_key)
-        );
         CREATE TABLE gacha_daily (
           user_id TEXT NOT NULL,
           last_draw_date TEXT NOT NULL,

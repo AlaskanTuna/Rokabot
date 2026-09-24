@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => {
   let readyHandler: (() => void) | undefined
   return {
-    backfillLegacyClaims: vi.fn(),
     beginShutdown: vi.fn(),
     closeDb: vi.fn(),
     createServer: vi.fn(() => ({ listen: vi.fn() })),
@@ -59,10 +58,8 @@ vi.mock('../discord/statusCycler.js', () => ({ stopStatusCycler: vi.fn() }))
 vi.mock('../games/shiritori.js', () => ({ destroyAllGames: vi.fn() }))
 vi.mock('../storage/database.js', () => ({ closeDb: mocks.closeDb, getDb: mocks.getDb }))
 vi.mock('../storage/extractionQueue.js', () => ({ resetStuckProcessing: mocks.resetStuckProcessing }))
-vi.mock('../storage/memoryMigration.js', () => ({ backfillLegacyClaims: mocks.backfillLegacyClaims }))
 vi.mock('../storage/metricsStore.js', () => ({ pruneOldMetrics: vi.fn(), pruneFailureDiagnostics: vi.fn() }))
 vi.mock('../storage/sessionStore.js', () => ({ pruneOldHistory: vi.fn() }))
-vi.mock('../storage/userMemory.js', () => ({ pruneOldFacts: vi.fn() }))
 vi.mock('../utils/logger.js', () => ({ logger: mocks.logger }))
 
 describe('startup memory tasks', () => {
@@ -120,8 +117,8 @@ describe('startup memory tasks', () => {
   })
 
   it('contains startup memory task failures', async () => {
-    const error = new Error('backfill failed')
-    mocks.backfillLegacyClaims.mockImplementation(() => {
+    const error = new Error('claim pruning failed')
+    mocks.pruneStaleClaims.mockImplementation(() => {
       throw error
     })
 

@@ -5,14 +5,11 @@
 jev:
   model: jev-1.13.0 # Pinned Jev version; thresholds are tuned against one version, and the jev-latest alias moves
   timeoutMs: 1200 # Deadline for the in-reply judgment (Pi median ~0.5s); one attempt, no retries
-  backgroundTimeoutMs: 5000 # Deadline for background judgments (memory admission)
   memoryTimeoutMs: 5000 # Deadline for background memory admission and verification
   tone: shadow # off | shadow (ask Jev and log, change nothing) | on (Jev picks the tone)
   referents: shadow # off | shadow | on (Jev settles names the resolver found ambiguous)
-  extraction: shadow # off | shadow | on (Jev can admit a batch the rule gate rejected)
   toneMinConfidence: 0.6 # In on mode, below this confidence the rule-based tone stays
   referentMinConfidence: 0.8 # In on mode, below this confidence an ambiguous name stays unresolved
-  extractionAdmitThreshold: 0.7 # In on mode, the probability at or above which a rejected batch is extracted anyway
 
 gemini:
   model: gemini-3.5-flash-lite # Gemini model ID
@@ -27,8 +24,6 @@ gemini:
   hedgeAfterMs: 5000 # Start the same call on the fallback model if Gemini has not answered in this many ms, and keep whichever answers first; 0 disables. Production per-turn llm_ms for no-tool turns is p50 1.9s / p75 2.7s / p90 6.2s / p95 14.4s, so 5s hedges roughly the slowest 10-15% of calls at the cost of a second call on each of them.
   liveMaxRetries: 2 # Retry attempts after a failed live Gemini response
   retryRpmFloor: 2 # Minimum remaining RPM required before a live retry
-  extractionRpmFloor: 3 # Minimum remaining RPM required before background extraction
-  extractionMaxRetries: 1 # Retry attempts after a transient extraction failure
   retryBackoffBaseMs: 1000 # Initial full-jitter retry backoff in ms (doubles each retry)
   retryBackoffCapMs: 12000 # Maximum full-jitter retry backoff in ms
   turnDeadlineMs: 63000 # 3 attempts x 20s timeout + 3s worst-case jitter; keeps gemini.timeout at #43's measured calibration
@@ -56,12 +51,7 @@ discord:
 memory:
   bufferSize: 30 # Max messages in passive ring buffer per channel (in-memory)
   contextSize: 10 # Max overheard messages injected into system prompt per request
-  extractionInterval: 20 # Messages between each background fact extraction
-  extractionGapMs: 20000 # Minimum ms between extractions across all channels
-  maxFactsPerUser: 20 # Max stored facts per user (oldest evicted on overflow)
-  factRetentionDays: 14 # Days before unused facts are auto-pruned
   channelMonitorTtlMs: 86400000 # How long a channel stays monitored after last @mention (24h)
-  claimsBackend: true # Enable typed claims extraction and retrieval (set MEMORY_CLAIMS_BACKEND=false to roll back)
   maxClaimsPerTurn: 10 # Hard cap on claims injected into one response
   retrievalTokenBudget: 350 # Approximate token budget for the claims envelope
   recentParticipantLimit: 3 # Recent non-speaker participants considered for retrieval
@@ -74,9 +64,6 @@ memory:
   episodeMaxMessages: 25 # Close an episode at this many delta messages; leave room for three context lines
   admitThreshold: 0.5 # Minimum Jev lasting_fact probability required before Gemini extraction
   verifyThreshold: 0.5 # Minimum Jev probability for durable and attributed operations
-  extractionDailyBudgetRatio: 0.4 # Share of the Gemini RPD budget reserved for extraction
-  perGuildGapMs: 20000 # Minimum ms between extraction batches for one guild
-  extractionQueueMaxPerGuild: 50 # Maximum queued extraction payloads for one guild
   vaultExportDir: data/vault # Directory for read-only Obsidian vault exports
 
 metrics:

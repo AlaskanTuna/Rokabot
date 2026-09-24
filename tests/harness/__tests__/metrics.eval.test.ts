@@ -4,7 +4,6 @@ import '../env.js'
 import { resetMonitor } from '../../../src/agent/channelMonitor.js'
 import { flushEpisode, resetEpisodeTrackerForTest } from '../../../src/agent/memory/episodeTracker.js'
 import { resetForTest as resetScheduler, stopExtractionScheduler } from '../../../src/agent/memory/scheduler.js'
-import { resetCounters } from '../../../src/agent/memoryExtractor.js'
 import { resetAllBuffers } from '../../../src/agent/passiveBuffer.js'
 import { __resetTestRunTurnFactory, __setTestRunTurnFactory } from '../../../src/agent/roka.js'
 import { destroySession } from '../../../src/agent/session.js'
@@ -51,7 +50,6 @@ afterEach(async () => {
   __resetTestRunTurnFactory()
   stopExtractionScheduler()
   resetScheduler()
-  resetCounters()
   resetAllBuffers()
   resetEpisodeTrackerForTest()
   resetMonitor()

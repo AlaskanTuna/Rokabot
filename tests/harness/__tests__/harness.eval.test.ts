@@ -447,7 +447,6 @@ describe('harness self-tests', () => {
     const lines = (await loadTranscript(transcript)).filter((line) => line.userId === memoryUserId)
     const client = makeClient()
     const handler = createMessageHandler(client as never, new RateLimiter({ rpm: 8, rpd: 2 }))
-    expect(config.memory.claimsBackend).toBe(true)
     assertClaim({
       guildId: 'guild-garden',
       subjectUserId: memoryUserId,

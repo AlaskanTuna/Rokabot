@@ -36,15 +36,6 @@ function createTables(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_session_history_channel_ts
       ON session_history (channel_id, timestamp);
 
-    CREATE TABLE IF NOT EXISTS user_memory (
-      guild_id TEXT NOT NULL,
-      user_id TEXT NOT NULL,
-      fact_key TEXT NOT NULL,
-      fact_value TEXT NOT NULL,
-      updated_at INTEGER NOT NULL,
-      PRIMARY KEY (guild_id, user_id, fact_key)
-    );
-
     CREATE TABLE IF NOT EXISTS reminders (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id TEXT NOT NULL,

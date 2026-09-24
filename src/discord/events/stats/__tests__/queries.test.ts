@@ -145,13 +145,6 @@ function seedMemory(): void {
   claim.run('guild-1', 'user-2', 'plays', 'chess', 'explicit', 'active', now, now)
   claim.run('guild-1', 'user-3', 'likes', 'coffee', 'explicit', 'candidate', now, now)
   claim.run('guild-2', 'user-4', 'likes', 'ramen', 'explicit', 'active', now, now)
-
-  const fact = db.prepare(
-    'INSERT INTO user_memory (guild_id, user_id, fact_key, fact_value, updated_at) VALUES (?, ?, ?, ?, ?)'
-  )
-  fact.run('guild-1', 'user-1', 'favorite_food', 'curry', now)
-  fact.run('guild-1', 'user-2', 'favorite_drink', 'tea', now)
-  fact.run('guild-2', 'user-4', 'favorite_food', 'ramen', now)
 }
 
 describe('stats queries', () => {

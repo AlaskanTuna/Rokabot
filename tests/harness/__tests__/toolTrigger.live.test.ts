@@ -2,7 +2,6 @@ import '../env.js'
 
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { config } from '../../../src/config.js'
 import { closeDb, getDb } from '../../../src/storage/database.js'
 import { runCaseSet } from '../toolTrigger.js'
 import { loadCaseSet, meetsLiveVerdict, scoreCaseSet } from '../toolTriggerScoring.js'
@@ -30,7 +29,6 @@ function assertLiveEnvironment(): void {
   expect(process.env.GEMINI_API_KEY).not.toBe('harness-fake-sentinel')
   expect(process.env.GOOGLE_GENAI_API_KEY).toBeTruthy()
   expect(process.env.ROKABOT_DB_PATH).toBe(':memory:')
-  expect(config.memory.claimsBackend).toBe(true)
 }
 
 describe('live tool-trigger evaluation', () => {

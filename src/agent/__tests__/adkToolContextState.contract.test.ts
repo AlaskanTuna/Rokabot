@@ -2,7 +2,7 @@ import { BaseLlm, InMemorySessionService, LlmAgent, LogLevel, Runner, setLogLeve
 import type { BaseLlmConnection, Event, LlmResponse } from '@google/adk'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { closeDb } from '../../storage/database.js'
-import { getFacts } from '../../storage/userMemory.js'
+import { getActiveClaims } from '../memory/memoryClaims.js'
 import { rememberUserTool } from '../tools/index.js'
 
 // A contract test against ADK itself, not against this repo's code. Everything past the runAsync call —
@@ -95,7 +95,9 @@ describe('ADK stateDelta to toolContext.state propagation', () => {
   it('stores the fact under the tenant the runAsync stateDelta named', async () => {
     await runTurn()
 
-    expect(getFacts(TENANT, USER)).toEqual([{ key: 'favorite_anime', value: 'Frieren' }])
+    expect(getActiveClaims(TENANT, USER)).toEqual([
+      expect.objectContaining({ predicate: 'favorite_anime', value: 'Frieren', sourceKind: 'explicit' })
+    ])
   })
 
   it('reaches the tool with usable tenant state rather than tripping its fail-closed guard', async () => {

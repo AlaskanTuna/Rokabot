@@ -11,7 +11,7 @@ vi.mock('../client.js', () => ({
   getJevClient: vi.fn(() => (mocks.clientAvailable ? { systemOne: mocks.systemOne } : null))
 }))
 
-vi.mock('../../../config.js', () => ({ config: { jev: { timeoutMs: 1200, backgroundTimeoutMs: 5000 } } }))
+vi.mock('../../../config.js', () => ({ config: { jev: { timeoutMs: 1200, memoryTimeoutMs: 5000 } } }))
 vi.mock('../../../utils/logger.js', () => ({ logger: { warn: mocks.warn } }))
 vi.mock('../../../utils/timezone.js', () => ({ getLocalHour: mocks.localHour }))
 vi.mock('@typesafe-ai/sdk', () => ({
@@ -20,7 +20,7 @@ vi.mock('@typesafe-ai/sdk', () => ({
 }))
 
 import { choice, noul } from '@typesafe-ai/sdk'
-import { TONE_CRITERIA, judgeExtraction, judgeTurn } from '../judgments.js'
+import { TONE_CRITERIA, judgeTurn } from '../judgments.js'
 
 function setAnswers(answers: Record<string, unknown>, inputTokens = 17) {
   mocks.systemOne.mockResolvedValueOnce({ answers, usage: { input_tokens: inputTokens, output_tokens: 3 } })
@@ -181,52 +181,5 @@ describe('judgeTurn', () => {
     expect(mocks.warn).toHaveBeenCalledWith({ kind: 'turn', errorName: 'Error', status: 503 }, 'Jev judgment failed')
     expect(JSON.stringify(mocks.warn.mock.calls)).not.toContain('private message')
     expect(JSON.stringify(mocks.warn.mock.calls)).not.toContain('Private Name')
-  })
-})
-
-describe('judgeExtraction', () => {
-  beforeEach(() => {
-    mocks.clientAvailable = true
-    mocks.systemOne.mockReset()
-    mocks.warn.mockReset()
-  })
-
-  it('returns the lasting-fact probability and sends only the last six lines', async () => {
-    mocks.systemOne.mockResolvedValueOnce({
-      answers: { lasting_fact: { type: 'noul', noul: 0.82 } },
-      usage: { input_tokens: 12, output_tokens: 2 }
-    })
-
-    const result = await judgeExtraction({ lines: ['1', '2', '3', '4', '5', '6', '7', '8'] })
-
-    expect(noul).toHaveBeenCalledWith(
-      'Does the last line of `messages` state a lasting fact about a member — their likes, life, work, relationships, plans or nickname — or correct something said earlier? Jokes, questions, greetings and passing moods do not count.'
-    )
-    expect(mocks.systemOne).toHaveBeenCalledWith(
-      { state: { messages: ['3', '4', '5', '6', '7', '8'] }, questions: { lasting_fact: expect.any(Object) } },
-      { timeout: 5000 }
-    )
-    expect(result).toMatchObject({ noul: 0.82, inputTokens: 12 })
-    expect(result?.latencyMs).toBeGreaterThanOrEqual(0)
-  })
-
-  it('fails open when extraction judgment fails', async () => {
-    mocks.systemOne.mockRejectedValueOnce(new Error('private content'))
-
-    await expect(judgeExtraction({ lines: ['private content'] })).resolves.toBeNull()
-
-    expect(mocks.warn).toHaveBeenCalledWith(
-      { kind: 'extraction', errorName: 'Error', status: undefined },
-      'Jev judgment failed'
-    )
-    expect(JSON.stringify(mocks.warn.mock.calls)).not.toContain('private content')
-  })
-
-  it('does not request a judgment without a configured client', async () => {
-    mocks.clientAvailable = false
-
-    await expect(judgeExtraction({ lines: ['fact'] })).resolves.toBeNull()
-
-    expect(mocks.systemOne).not.toHaveBeenCalled()
   })
 })

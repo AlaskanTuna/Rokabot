@@ -60,8 +60,6 @@ describe('config module', () => {
     vi.stubEnv('GEMINI_MAX_TOKENS_PER_MINUTE', '')
     vi.stubEnv('GEMINI_LIVE_MAX_RETRIES', '')
     vi.stubEnv('GEMINI_RETRY_RPM_FLOOR', '')
-    vi.stubEnv('GEMINI_EXTRACTION_RPM_FLOOR', '')
-    vi.stubEnv('GEMINI_EXTRACTION_MAX_RETRIES', '')
     vi.stubEnv('GEMINI_RETRY_BACKOFF_BASE_MS', '')
     vi.stubEnv('GEMINI_RETRY_BACKOFF_CAP_MS', '')
     vi.stubEnv('GEMINI_TURN_DEADLINE_MS', '')
@@ -72,20 +70,13 @@ describe('config module', () => {
     vi.stubEnv('JEV_MODEL', '')
     vi.stubEnv('JEV_TONE', '')
     vi.stubEnv('JEV_REFERENTS', '')
-    vi.stubEnv('JEV_EXTRACTION', '')
     vi.stubEnv('MEMORY_BUFFER_SIZE', '')
-    vi.stubEnv('MEMORY_EXTRACTION_INTERVAL', '')
-    vi.stubEnv('MEMORY_EXTRACTION_GAP_MS', '')
-    vi.stubEnv('MEMORY_CLAIMS_BACKEND', '')
     vi.stubEnv('MEMORY_MAX_CLAIMS_PER_TURN', '')
     vi.stubEnv('MEMORY_RETRIEVAL_TOKEN_BUDGET', '')
     vi.stubEnv('MEMORY_RECENT_PARTICIPANT_LIMIT', '')
     vi.stubEnv('MEMORY_SPEAKER_MIN_SHARE', '')
     vi.stubEnv('MEMORY_MAX_ACTIVE_CLAIMS_PER_USER', '')
     vi.stubEnv('MEMORY_CLAIM_RETENTION_DAYS', '')
-    vi.stubEnv('MEMORY_EXTRACTION_DAILY_BUDGET_RATIO', '')
-    vi.stubEnv('MEMORY_PER_GUILD_GAP_MS', '')
-    vi.stubEnv('MEMORY_EXTRACTION_QUEUE_MAX_PER_GUILD', '')
     vi.stubEnv('MEMORY_VAULT_EXPORT_DIR', '')
     vi.stubEnv('METRICS_RETENTION_DAYS', '')
     vi.stubEnv('DISCORD_MAX_MESSAGE_LENGTH', '')
@@ -158,8 +149,6 @@ describe('config module', () => {
     expect(config.gemini.maxLlmCalls).toBe(4)
     expect(config.gemini.liveMaxRetries).toBe(2)
     expect(config.gemini.retryRpmFloor).toBe(2)
-    expect(config.gemini.extractionRpmFloor).toBe(3)
-    expect(config.gemini.extractionMaxRetries).toBe(1)
     expect(config.gemini.retryBackoffBaseMs).toBe(1000)
     expect(config.gemini.retryBackoffCapMs).toBe(12_000)
     expect(config.gemini.turnDeadlineMs).toBe(63_000)
@@ -180,23 +169,15 @@ describe('config module', () => {
     expect(config.jev.apiKey).toBeUndefined()
     expect(config.jev.model).toBe('jev-1.13.0')
     expect(config.jev.timeoutMs).toBe(1200)
-    expect(config.jev.backgroundTimeoutMs).toBe(5000)
     expect(config.jev.tone).toBe('shadow')
     expect(config.jev.referents).toBe('shadow')
-    expect(config.jev.extraction).toBe('shadow')
     expect(config.jev.toneMinConfidence).toBe(0.6)
     expect(config.jev.referentMinConfidence).toBe(0.8)
-    expect(config.jev.extractionAdmitThreshold).toBe(0.7)
 
     // Memory
     expect(config.memory.bufferSize).toBe(30)
     expect(config.memory.contextSize).toBe(10)
-    expect(config.memory.extractionInterval).toBe(20)
-    expect(config.memory.extractionGapMs).toBe(20_000)
-    expect(config.memory.maxFactsPerUser).toBe(20)
-    expect(config.memory.factRetentionDays).toBe(14)
     expect(config.memory.channelMonitorTtlMs).toBe(86_400_000)
-    expect(config.memory.claimsBackend).toBe(true)
     expect(config.memory.maxClaimsPerTurn).toBe(10)
     expect(config.memory.retrievalTokenBudget).toBe(350)
     expect(config.memory.recentParticipantLimit).toBe(3)
@@ -205,9 +186,19 @@ describe('config module', () => {
     expect(config.memory.claimRetentionDays).toBe(90)
     expect(config.memory.salienceHalfLifeDays).toBe(30)
     expect(config.memory.recallCooldownMs).toBe(21_600_000)
-    expect(config.memory.extractionDailyBudgetRatio).toBe(0.4)
-    expect(config.memory.perGuildGapMs).toBe(20_000)
-    expect(config.memory.extractionQueueMaxPerGuild).toBe(50)
+    expect(config.memory).not.toHaveProperty('extractionInterval')
+    expect(config.memory).not.toHaveProperty('extractionGapMs')
+    expect(config.memory).not.toHaveProperty('maxFactsPerUser')
+    expect(config.memory).not.toHaveProperty('factRetentionDays')
+    expect(config.memory).not.toHaveProperty('claimsBackend')
+    expect(config.memory).not.toHaveProperty('extractionDailyBudgetRatio')
+    expect(config.memory).not.toHaveProperty('perGuildGapMs')
+    expect(config.memory).not.toHaveProperty('extractionQueueMaxPerGuild')
+    expect(config.jev).not.toHaveProperty('extraction')
+    expect(config.jev).not.toHaveProperty('backgroundTimeoutMs')
+    expect(config.jev).not.toHaveProperty('extractionAdmitThreshold')
+    expect(config.gemini).not.toHaveProperty('extractionRpmFloor')
+    expect(config.gemini).not.toHaveProperty('extractionMaxRetries')
     expect(config.memory).not.toHaveProperty('extractionBatchSize')
     expect(config.memory.vaultExportDir).toBe('data/vault')
     expect(config.metrics.retentionDays).toBe(90)
@@ -270,8 +261,6 @@ describe('config module', () => {
     vi.stubEnv('GEMINI_MAX_RETRIES', '3')
     vi.stubEnv('GEMINI_LIVE_MAX_RETRIES', '4')
     vi.stubEnv('GEMINI_RETRY_RPM_FLOOR', '5')
-    vi.stubEnv('GEMINI_EXTRACTION_RPM_FLOOR', '6')
-    vi.stubEnv('GEMINI_EXTRACTION_MAX_RETRIES', '2')
     vi.stubEnv('GEMINI_RETRY_BACKOFF_BASE_MS', '1500')
     vi.stubEnv('GEMINI_RETRY_BACKOFF_CAP_MS', '9000')
     vi.stubEnv('GEMINI_TURN_DEADLINE_MS', '90000')
@@ -282,18 +271,21 @@ describe('config module', () => {
     vi.stubEnv('JEV_TONE', 'on')
     vi.stubEnv('TYPESAFE_API_KEY', 'typesafe-test-key')
     vi.stubEnv('MEMORY_BUFFER_SIZE', '40')
+    vi.stubEnv('GEMINI_EXTRACTION_RPM_FLOOR', '6')
+    vi.stubEnv('GEMINI_EXTRACTION_MAX_RETRIES', '2')
+    vi.stubEnv('JEV_EXTRACTION', 'shadow')
     vi.stubEnv('MEMORY_EXTRACTION_INTERVAL', '30')
     vi.stubEnv('MEMORY_EXTRACTION_GAP_MS', '25000')
     vi.stubEnv('MEMORY_CLAIMS_BACKEND', 'false')
+    vi.stubEnv('MEMORY_EXTRACTION_DAILY_BUDGET_RATIO', '0.35')
+    vi.stubEnv('MEMORY_PER_GUILD_GAP_MS', '30000')
+    vi.stubEnv('MEMORY_EXTRACTION_QUEUE_MAX_PER_GUILD', '75')
     vi.stubEnv('MEMORY_MAX_CLAIMS_PER_TURN', '8')
     vi.stubEnv('MEMORY_RETRIEVAL_TOKEN_BUDGET', '300')
     vi.stubEnv('MEMORY_RECENT_PARTICIPANT_LIMIT', '2')
     vi.stubEnv('MEMORY_SPEAKER_MIN_SHARE', '0.75')
     vi.stubEnv('MEMORY_MAX_ACTIVE_CLAIMS_PER_USER', '25')
     vi.stubEnv('MEMORY_CLAIM_RETENTION_DAYS', '120')
-    vi.stubEnv('MEMORY_EXTRACTION_DAILY_BUDGET_RATIO', '0.35')
-    vi.stubEnv('MEMORY_PER_GUILD_GAP_MS', '30000')
-    vi.stubEnv('MEMORY_EXTRACTION_QUEUE_MAX_PER_GUILD', '75')
     vi.stubEnv('MEMORY_VAULT_EXPORT_DIR', 'tmp/vault')
     vi.stubEnv('METRICS_RETENTION_DAYS', '120')
     vi.stubEnv('DISCORD_MAX_MESSAGE_LENGTH', '3878')
@@ -313,25 +305,30 @@ describe('config module', () => {
     expect(config.fallback.apiKey).toBe('modelscope-test-key')
     expect(config.fallback.model).toBe('Qwen/custom-fallback')
     expect(config.gemini.retryRpmFloor).toBe(5)
-    expect(config.gemini.extractionRpmFloor).toBe(6)
-    expect(config.gemini.extractionMaxRetries).toBe(2)
     expect(config.gemini.retryBackoffBaseMs).toBe(1500)
     expect(config.gemini.retryBackoffCapMs).toBe(9000)
     expect(config.gemini.turnDeadlineMs).toBe(90_000)
     expect(config.gemini.safetyThreshold).toBe('BLOCK_ONLY_HIGH')
     expect(config.memory.bufferSize).toBe(40)
-    expect(config.memory.extractionInterval).toBe(30)
-    expect(config.memory.extractionGapMs).toBe(25_000)
-    expect(config.memory.claimsBackend).toBe(false)
     expect(config.memory.maxClaimsPerTurn).toBe(8)
     expect(config.memory.retrievalTokenBudget).toBe(300)
     expect(config.memory.recentParticipantLimit).toBe(2)
     expect(config.memory.speakerMinShare).toBe(0.75)
     expect(config.memory.maxActiveClaimsPerUser).toBe(25)
     expect(config.memory.claimRetentionDays).toBe(120)
-    expect(config.memory.extractionDailyBudgetRatio).toBe(0.35)
-    expect(config.memory.perGuildGapMs).toBe(30_000)
-    expect(config.memory.extractionQueueMaxPerGuild).toBe(75)
+    expect(config.memory).not.toHaveProperty('extractionInterval')
+    expect(config.memory).not.toHaveProperty('extractionGapMs')
+    expect(config.memory).not.toHaveProperty('maxFactsPerUser')
+    expect(config.memory).not.toHaveProperty('factRetentionDays')
+    expect(config.memory).not.toHaveProperty('claimsBackend')
+    expect(config.memory).not.toHaveProperty('extractionDailyBudgetRatio')
+    expect(config.memory).not.toHaveProperty('perGuildGapMs')
+    expect(config.memory).not.toHaveProperty('extractionQueueMaxPerGuild')
+    expect(config.jev).not.toHaveProperty('extraction')
+    expect(config.jev).not.toHaveProperty('backgroundTimeoutMs')
+    expect(config.jev).not.toHaveProperty('extractionAdmitThreshold')
+    expect(config.gemini).not.toHaveProperty('extractionRpmFloor')
+    expect(config.gemini).not.toHaveProperty('extractionMaxRetries')
     expect(config.memory).not.toHaveProperty('extractionBatchSize')
     expect(config.memory.vaultExportDir).toBe('tmp/vault')
     expect(config.metrics.retentionDays).toBe(120)
@@ -657,19 +654,6 @@ describe('config module', () => {
     expect(config.gemini.maxRetries).toBe(0)
   })
 
-  it('clamps the extraction interval to the passive buffer size', async () => {
-    setRequiredEnvVars()
-    clearTunableEnvVars()
-    vi.stubEnv('MEMORY_BUFFER_SIZE', '20')
-    vi.stubEnv('MEMORY_EXTRACTION_INTERVAL', '30')
-
-    const { config } = await import('../config.js')
-
-    expect(config.memory.extractionInterval).toBe(20)
-    expect(config.memory.episodeMaxMessages).toBe(17)
-    expect(warn).toHaveBeenCalledOnce()
-  })
-
   it('throws if an env int override uses underscore digit grouping', async () => {
     setRequiredEnvVars()
     clearTunableEnvVars()
@@ -745,21 +729,17 @@ describe('config module', () => {
       { path: 'gemini.maxTokensPerMinute', min: 50_000, max: 125_000 },
       { path: 'gemini.maxOutputTokens', min: 1 },
       { path: 'jev.timeoutMs', min: 1 },
-      { path: 'jev.backgroundTimeoutMs', min: 1 },
       { path: 'jev.memoryTimeoutMs', min: 1 },
       { path: 'jev.toneMinConfidence', min: 0, max: 1 },
       { path: 'jev.referentMinConfidence', min: 0, max: 1 },
-      { path: 'jev.extractionAdmitThreshold', min: 0, max: 1 },
       { path: 'memory.admitThreshold', min: 0, max: 1 },
       { path: 'memory.verifyThreshold', min: 0, max: 1 },
       { path: 'gemini.turnDeadlineMs', min: 1 },
       { path: 'gemini.retryBackoffCapMs', min: 1 },
       { path: 'gemini.maxRetries', min: 0 },
       { path: 'gemini.liveMaxRetries', min: 0 },
-      { path: 'gemini.extractionMaxRetries', min: 0 },
       { path: 'gemini.retryBackoffBaseMs', min: 0 },
       { path: 'gemini.retryRpmFloor', min: 0 },
-      { path: 'gemini.extractionRpmFloor', min: 0 },
       { path: 'gemini.maxLlmCalls', min: 1 },
       { path: 'gemini.hedgeAfterMs', min: 0 },
       { path: 'rateLimit.rpm', min: 4 },
@@ -772,10 +752,6 @@ describe('config module', () => {
       { path: 'discord.maxInFlightAttachmentBytes', min: 31_457_280 },
       { path: 'memory.bufferSize', min: 1 },
       { path: 'memory.contextSize', min: 1 },
-      { path: 'memory.extractionInterval', min: 0 },
-      { path: 'memory.extractionGapMs', min: 0 },
-      { path: 'memory.maxFactsPerUser', min: 1 },
-      { path: 'memory.factRetentionDays', min: 1 },
       { path: 'memory.channelMonitorTtlMs', min: 1 },
       { path: 'memory.maxClaimsPerTurn', min: 1 },
       { path: 'memory.retrievalTokenBudget', min: 1 },
@@ -787,9 +763,6 @@ describe('config module', () => {
       { path: 'memory.recallCooldownMs', min: 0 },
       { path: 'memory.episodeLullMs', min: 1 },
       { path: 'memory.episodeMaxMessages', min: 1, max: 27 },
-      { path: 'memory.extractionDailyBudgetRatio', min: 0, max: 1 },
-      { path: 'memory.perGuildGapMs', min: 0 },
-      { path: 'memory.extractionQueueMaxPerGuild', min: 1 },
       { path: 'metrics.diagnosticsRetentionHours', min: 1 },
       { path: 'metrics.retentionDays', min: 1 },
       { path: 'emoji.probability', min: 0, max: 1 },
@@ -812,16 +785,6 @@ describe('config module', () => {
       expect(actual?.min).toBe(expected.min)
       expect(actual?.max).toBe(expected.max)
     }
-  })
-
-  it('throws if memory.extractionDailyBudgetRatio exceeds 1', async () => {
-    setRequiredEnvVars()
-    clearTunableEnvVars()
-    vi.stubEnv('MEMORY_EXTRACTION_DAILY_BUDGET_RATIO', '5')
-
-    await expect(() => import('../config.js')).rejects.toThrow(
-      'Config value memory.extractionDailyBudgetRatio must be <= 1, got: 5'
-    )
   })
 
   it('throws when an env Jev mode is invalid and names the env key', async () => {
@@ -864,16 +827,6 @@ describe('config module', () => {
     )
   })
 
-  it('accepts a ratio at exactly the upper bound of 1', async () => {
-    setRequiredEnvVars()
-    clearTunableEnvVars()
-    vi.stubEnv('MEMORY_EXTRACTION_DAILY_BUDGET_RATIO', '1')
-
-    const { config } = await import('../config.js')
-
-    expect(config.memory.extractionDailyBudgetRatio).toBe(1)
-  })
-
   it('throws if statusCycleMs is set to zero in config.yml', async () => {
     setRequiredEnvVars()
     clearTunableEnvVars()
@@ -889,16 +842,6 @@ describe('config module', () => {
 
     await expect(() => import('../config.js')).rejects.toThrow(
       'Config value session.historyRetentionDays must be >= 1, got: 0'
-    )
-  })
-
-  it('throws if memory.factRetentionDays is set to a negative value in config.yml', async () => {
-    setRequiredEnvVars()
-    clearTunableEnvVars()
-    withYamlOverride({ memory: { factRetentionDays: -1 } })
-
-    await expect(() => import('../config.js')).rejects.toThrow(
-      'Config value memory.factRetentionDays must be >= 1, got: -1'
     )
   })
 

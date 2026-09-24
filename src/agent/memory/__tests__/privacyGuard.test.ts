@@ -3,11 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('../../../config.js', () => ({
   config: {
     logging: { level: 'silent' },
-    memory: { maxActiveClaimsPerUser: 20, maxFactsPerUser: 20 }
+    memory: { maxActiveClaimsPerUser: 20 }
   }
 }))
 
-import { closeDb, getDb } from '../../../storage/database.js'
+import { closeDb } from '../../../storage/database.js'
 import { rememberUser } from '../../tools/rememberUser.js'
 import { assertClaim, getActiveClaims } from '../memoryClaims.js'
 import { sensitiveFactReason } from '../privacyGuard.js'
@@ -81,11 +81,9 @@ describe('remember_user privacy floor', () => {
     expect(result.success).toBe(false)
     expect(result.message).not.toMatch(/^Remembered/)
     expect(getActiveClaims('guild-1', 'user-1')).toHaveLength(0)
-    expect(getDb().prepare('SELECT COUNT(*) AS n FROM user_memory').get()).toEqual({ n: 0 })
   })
 
-  // Separate from the privacy floor: the prompt-safety guard drops the fact too, and saveFact's boolean
-  // used to be discarded, so this path answered "Remembered" about a fact that reached neither store.
+  // Separate from the privacy floor: prompt safety refuses values that could inject into the system prompt.
   it('reports failure when the injection guard drops the fact', () => {
     const result = rememberUser({
       user_id: 'user-1',
@@ -96,14 +94,10 @@ describe('remember_user privacy floor', () => {
 
     expect(result.success).toBe(false)
     expect(result.message).not.toMatch(/^Remembered/)
-    expect(getDb().prepare('SELECT COUNT(*) AS n FROM user_memory').get()).toEqual({ n: 0 })
     expect(getActiveClaims('guild-1', 'user-1')).toHaveLength(0)
   })
 
-  // The two guards disagree, and the disagreement is load-bearing: saveFact rejects a key over
-  // MAX_FACT_KEY_LEN (64) as well as an unsafe value, while the claim path checks only the value and
-  // folds an awkward key into `misc`. A verbose fact_key from the model must still yield the explicit
-  // claim — that claim is the entire reason this tool exists (#118), so it cannot ride on the label.
+  // A verbose predicate is normalized to `misc`; the claim remains anchored to its safe value.
   it('still writes the claim when only the key is unusable', () => {
     const result = rememberUser({
       user_id: 'user-1',
@@ -113,7 +107,6 @@ describe('remember_user privacy floor', () => {
     })
 
     expect(result.success).toBe(true)
-    expect(getDb().prepare('SELECT COUNT(*) AS n FROM user_memory').get()).toEqual({ n: 0 })
     expect(getActiveClaims('guild-1', 'user-1')).toMatchObject([{ predicate: 'misc', sourceKind: 'explicit' }])
   })
 
@@ -143,9 +136,7 @@ describe('claim-level privacy floor', () => {
     ).toThrow('Claim value is unsafe')
   })
 
-  // The extractor skips an unsafe op by matching this message exactly (extractor.ts isUnsafeClaimError).
-  // Reword either side and a single sensitive value stops being skipped and aborts the whole batch, taking
-  // every good claim in it down with one bad one — silently, since the batch runs in the background.
+  // The tool maps this writer error to its refusal result.
   it('refuses with the exact message the extractor skips on', () => {
     let message: string | undefined
     try {

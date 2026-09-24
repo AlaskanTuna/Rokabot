@@ -1,6 +1,5 @@
 /** Recall all stored facts about a user */
 
-import { getFacts } from '../../storage/userMemory.js'
 import { touchRecalled } from '../memory/memoryClaims.js'
 import { retrieveForSubject } from '../memory/retriever.js'
 
@@ -22,10 +21,7 @@ export function recallUser(params: RecallUserParams): RecallUserResult {
   const { user_id, guild_id, message } = params
   const claims =
     guild_id === 'global' ? [] : retrieveForSubject(guild_id, user_id, message, MAX_RECALLED_FACTS).map((r) => r.claim)
-  const facts = [
-    ...claims.map((claim) => ({ key: claim.predicate, value: claim.value })),
-    ...getFacts(guild_id, user_id)
-  ]
+  const facts = claims.map((claim) => ({ key: claim.predicate, value: claim.value }))
   const uniqueFacts = facts
     .filter((fact, index) => {
       const identity = `${fact.key}\u0000${fact.value}`.toLowerCase()

@@ -25,11 +25,6 @@ vi.mock('../../storage/sessionStore.js', () => ({
   saveMessage: vi.fn()
 }))
 
-vi.mock('../../storage/userMemory.js', () => ({
-  getFacts: vi.fn(() => []),
-  refreshFactTimestamps: vi.fn()
-}))
-
 vi.mock('../../storage/userNames.js', () => ({
   getAllUserNames: vi.fn(() => new Map()),
   getUserName: vi.fn(() => null)

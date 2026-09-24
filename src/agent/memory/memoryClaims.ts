@@ -187,7 +187,7 @@ function evictOverflow(guildId: string, subjectUserId: string): number {
   return overflow.length
 }
 
-function evictAllOverflow(): number {
+function evictOverflowForAllSubjectsInTransaction(): number {
   const subjects = getDb()
     .prepare("SELECT DISTINCT guild_id, subject_user_id FROM memory_claim WHERE status = 'active'")
     .all() as Array<{ guild_id: string; subject_user_id: string }>
@@ -196,8 +196,12 @@ function evictAllOverflow(): number {
   }, 0)
 }
 
+export function evictOverflowForAllSubjects(): number {
+  return getDb().transaction(evictOverflowForAllSubjectsInTransaction)()
+}
+
 export function pruneActiveClaimOverflow(): number {
-  const evicted = getDb().transaction(evictAllOverflow)()
+  const evicted = evictOverflowForAllSubjects()
   if (evicted > 0) logger.info({ evicted }, 'Pruned overflow memory claims')
   return evicted
 }
@@ -503,7 +507,7 @@ export function pruneStaleClaims(maxAgeDays: number = 90, botUserId?: string): n
         ).map(mapClaim)
       : []
     rejectClaims(botClaims)
-    return stale.length + botClaims.length + evictAllOverflow()
+    return stale.length + botClaims.length + evictOverflowForAllSubjectsInTransaction()
   })()
   if (pruned > 0) logger.info({ pruned, maxAgeDays }, 'Pruned memory claims')
   return pruned

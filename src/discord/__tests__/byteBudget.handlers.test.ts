@@ -11,7 +11,6 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../agent/roka.js', () => ({ generateResponse: mocks.generateResponse }))
 vi.mock('../../storage/metricsStore.js', () => ({ recordResponseEvent: mocks.recordResponseEvent }))
 vi.mock('../../agent/channelMonitor.js', () => ({ isMonitored: () => false, markActive: vi.fn() }))
-vi.mock('../../agent/memoryExtractor.js', () => ({ maybeExtractFromBuffer: vi.fn() }))
 vi.mock('../../agent/passiveBuffer.js', () => ({ addMessage: vi.fn(), getMessages: () => [] }))
 vi.mock('../../storage/userNames.js', () => ({ upsertUserName: vi.fn() }))
 vi.mock('../emojiReactor.js', () => ({ shouldReact: () => null }))

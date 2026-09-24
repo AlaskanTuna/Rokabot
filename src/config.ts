@@ -21,14 +21,11 @@ interface YamlConfig {
   jev?: {
     model?: string
     timeoutMs?: number
-    backgroundTimeoutMs?: number
     memoryTimeoutMs?: number
     tone?: string
     referents?: string
-    extraction?: string
     toneMinConfidence?: number
     referentMinConfidence?: number
-    extractionAdmitThreshold?: number
   }
   gemini?: {
     model?: string
@@ -43,8 +40,6 @@ interface YamlConfig {
     hedgeAfterMs?: number
     liveMaxRetries?: number
     retryRpmFloor?: number
-    extractionRpmFloor?: number
-    extractionMaxRetries?: number
     retryBackoffBaseMs?: number
     retryBackoffCapMs?: number
     turnDeadlineMs?: number
@@ -56,12 +51,7 @@ interface YamlConfig {
   memory?: {
     bufferSize?: number
     contextSize?: number
-    extractionInterval?: number
-    extractionGapMs?: number
-    maxFactsPerUser?: number
-    factRetentionDays?: number
     channelMonitorTtlMs?: number
-    claimsBackend?: boolean
     maxClaimsPerTurn?: number
     retrievalTokenBudget?: number
     recentParticipantLimit?: number
@@ -74,9 +64,6 @@ interface YamlConfig {
     episodeMaxMessages?: number
     admitThreshold?: number
     verifyThreshold?: number
-    extractionDailyBudgetRatio?: number
-    perGuildGapMs?: number
-    extractionQueueMaxPerGuild?: number
     vaultExportDir?: string
   }
   metrics?: { retentionDays?: number; diagnosticsRetentionHours?: number }
@@ -130,21 +117,13 @@ function envNumber(key: string): number | undefined {
   return parsed
 }
 
-function envBool(key: string): boolean | undefined {
-  const raw = process.env[key]
-  if (!raw) return undefined
-  if (raw === 'true') return true
-  if (raw === 'false') return false
-  throw new Error(`Environment variable ${key} must be true or false, got: ${raw}`)
-}
-
 function envString(key: string): string | undefined {
   return process.env[key] || undefined
 }
 
 export type JevMode = 'off' | 'shadow' | 'on'
 
-function jevMode(key: 'tone' | 'referents' | 'extraction', envKey: string): JevMode {
+function jevMode(key: 'tone' | 'referents', envKey: string): JevMode {
   const envValue = envString(envKey)
   const value = envValue ?? yaml.jev?.[key] ?? 'shadow'
   if (value === 'off' || value === 'shadow' || value === 'on') return value
@@ -154,8 +133,6 @@ function jevMode(key: 'tone' | 'referents' | 'extraction', envKey: string): JevM
 
 const geminiModel = envString('GEMINI_MODEL') ?? yaml.gemini?.model ?? 'gemini-2.0-flash-lite'
 const memoryBufferSize = envInt('MEMORY_BUFFER_SIZE') ?? yaml.memory?.bufferSize ?? 30
-const requestedExtractionInterval = envInt('MEMORY_EXTRACTION_INTERVAL') ?? yaml.memory?.extractionInterval ?? 20
-const extractionInterval = Math.min(requestedExtractionInterval, memoryBufferSize)
 const requestedEpisodeMaxMessages = yaml.memory?.episodeMaxMessages ?? 25
 const episodeMaxMessages = Math.min(requestedEpisodeMaxMessages, memoryBufferSize - 3)
 
@@ -165,14 +142,11 @@ export const config = {
     apiKey: envString('TYPESAFE_API_KEY'),
     model: envString('JEV_MODEL') ?? yaml.jev?.model ?? 'jev-1.13.0',
     timeoutMs: yaml.jev?.timeoutMs ?? 1200,
-    backgroundTimeoutMs: yaml.jev?.backgroundTimeoutMs ?? 5000,
     memoryTimeoutMs: yaml.jev?.memoryTimeoutMs ?? 5000,
     tone: jevMode('tone', 'JEV_TONE'),
     referents: jevMode('referents', 'JEV_REFERENTS'),
-    extraction: jevMode('extraction', 'JEV_EXTRACTION'),
     toneMinConfidence: yaml.jev?.toneMinConfidence ?? 0.6,
-    referentMinConfidence: yaml.jev?.referentMinConfidence ?? 0.8,
-    extractionAdmitThreshold: yaml.jev?.extractionAdmitThreshold ?? 0.7
+    referentMinConfidence: yaml.jev?.referentMinConfidence ?? 0.8
   },
   discord: {
     token: requiredEnv('DISCORD_TOKEN'),
@@ -195,8 +169,6 @@ export const config = {
     hedgeAfterMs: envInt('GEMINI_HEDGE_AFTER_MS') ?? yaml.gemini?.hedgeAfterMs ?? 5_000,
     liveMaxRetries: envInt('GEMINI_LIVE_MAX_RETRIES') ?? yaml.gemini?.liveMaxRetries ?? 2,
     retryRpmFloor: envInt('GEMINI_RETRY_RPM_FLOOR') ?? yaml.gemini?.retryRpmFloor ?? 2,
-    extractionRpmFloor: envInt('GEMINI_EXTRACTION_RPM_FLOOR') ?? yaml.gemini?.extractionRpmFloor ?? 3,
-    extractionMaxRetries: envInt('GEMINI_EXTRACTION_MAX_RETRIES') ?? yaml.gemini?.extractionMaxRetries ?? 1,
     retryBackoffBaseMs: envInt('GEMINI_RETRY_BACKOFF_BASE_MS') ?? yaml.gemini?.retryBackoffBaseMs ?? 1000,
     retryBackoffCapMs: envInt('GEMINI_RETRY_BACKOFF_CAP_MS') ?? yaml.gemini?.retryBackoffCapMs ?? 12_000,
     turnDeadlineMs: envInt('GEMINI_TURN_DEADLINE_MS') ?? yaml.gemini?.turnDeadlineMs ?? 60_000
@@ -224,12 +196,7 @@ export const config = {
   memory: {
     bufferSize: memoryBufferSize,
     contextSize: yaml.memory?.contextSize ?? 10,
-    extractionInterval,
-    extractionGapMs: envInt('MEMORY_EXTRACTION_GAP_MS') ?? yaml.memory?.extractionGapMs ?? 20_000,
-    maxFactsPerUser: yaml.memory?.maxFactsPerUser ?? 10,
-    factRetentionDays: yaml.memory?.factRetentionDays ?? 90,
     channelMonitorTtlMs: yaml.memory?.channelMonitorTtlMs ?? 86_400_000,
-    claimsBackend: envBool('MEMORY_CLAIMS_BACKEND') ?? yaml.memory?.claimsBackend ?? true,
     maxClaimsPerTurn: envInt('MEMORY_MAX_CLAIMS_PER_TURN') ?? yaml.memory?.maxClaimsPerTurn ?? 10,
     retrievalTokenBudget: envInt('MEMORY_RETRIEVAL_TOKEN_BUDGET') ?? yaml.memory?.retrievalTokenBudget ?? 350,
     recentParticipantLimit: envInt('MEMORY_RECENT_PARTICIPANT_LIMIT') ?? yaml.memory?.recentParticipantLimit ?? 3,
@@ -242,11 +209,6 @@ export const config = {
     episodeMaxMessages,
     admitThreshold: yaml.memory?.admitThreshold ?? 0.5,
     verifyThreshold: yaml.memory?.verifyThreshold ?? 0.5,
-    extractionDailyBudgetRatio:
-      envNumber('MEMORY_EXTRACTION_DAILY_BUDGET_RATIO') ?? yaml.memory?.extractionDailyBudgetRatio ?? 0.4,
-    perGuildGapMs: envInt('MEMORY_PER_GUILD_GAP_MS') ?? yaml.memory?.perGuildGapMs ?? 20_000,
-    extractionQueueMaxPerGuild:
-      envInt('MEMORY_EXTRACTION_QUEUE_MAX_PER_GUILD') ?? yaml.memory?.extractionQueueMaxPerGuild ?? 50,
     vaultExportDir: envString('MEMORY_VAULT_EXPORT_DIR') ?? yaml.memory?.vaultExportDir ?? 'data/vault'
   },
   metrics: {
@@ -283,13 +245,11 @@ export const config = {
  */
 export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: number; max?: number }> = [
   { path: 'jev.timeoutMs', value: config.jev.timeoutMs, min: 1 },
-  { path: 'jev.backgroundTimeoutMs', value: config.jev.backgroundTimeoutMs, min: 1 },
   { path: 'jev.memoryTimeoutMs', value: config.jev.memoryTimeoutMs, min: 1 },
   { path: 'fallback.timeoutMs', value: config.fallback.timeoutMs, min: 1 },
   { path: 'fallback.stickyMs', value: config.fallback.stickyMs, min: 0 },
   { path: 'jev.toneMinConfidence', value: config.jev.toneMinConfidence, min: 0, max: 1 },
   { path: 'jev.referentMinConfidence', value: config.jev.referentMinConfidence, min: 0, max: 1 },
-  { path: 'jev.extractionAdmitThreshold', value: config.jev.extractionAdmitThreshold, min: 0, max: 1 },
   { path: 'gemini.timeout', value: config.gemini.timeout, min: 1 },
   { path: 'gemini.maxOutputTokens', value: config.gemini.maxOutputTokens, min: 1 },
   // Floor is a full turn of plain images, derived rather than restated: below it a maximal image turn could
@@ -326,10 +286,8 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'gemini.retryBackoffCapMs', value: config.gemini.retryBackoffCapMs, min: 1 },
   { path: 'gemini.maxRetries', value: config.gemini.maxRetries, min: 0 },
   { path: 'gemini.liveMaxRetries', value: config.gemini.liveMaxRetries, min: 0 },
-  { path: 'gemini.extractionMaxRetries', value: config.gemini.extractionMaxRetries, min: 0 },
   { path: 'gemini.retryBackoffBaseMs', value: config.gemini.retryBackoffBaseMs, min: 0 },
   { path: 'gemini.retryRpmFloor', value: config.gemini.retryRpmFloor, min: 0 },
-  { path: 'gemini.extractionRpmFloor', value: config.gemini.extractionRpmFloor, min: 0 },
   { path: 'gemini.maxLlmCalls', value: config.gemini.maxLlmCalls, min: 1 },
   // min: 0 because zero is the documented off switch, not a misconfiguration.
   { path: 'gemini.hedgeAfterMs', value: config.gemini.hedgeAfterMs, min: 0 },
@@ -351,10 +309,6 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'discord.maxInFlightAttachmentBytes', value: config.discord.maxInFlightAttachmentBytes, min: 31_457_280 },
   { path: 'memory.bufferSize', value: config.memory.bufferSize, min: 1 },
   { path: 'memory.contextSize', value: config.memory.contextSize, min: 1 },
-  { path: 'memory.extractionInterval', value: config.memory.extractionInterval, min: 0 },
-  { path: 'memory.extractionGapMs', value: config.memory.extractionGapMs, min: 0 },
-  { path: 'memory.maxFactsPerUser', value: config.memory.maxFactsPerUser, min: 1 },
-  { path: 'memory.factRetentionDays', value: config.memory.factRetentionDays, min: 1 },
   { path: 'memory.channelMonitorTtlMs', value: config.memory.channelMonitorTtlMs, min: 1 },
   { path: 'memory.maxClaimsPerTurn', value: config.memory.maxClaimsPerTurn, min: 1 },
   { path: 'memory.retrievalTokenBudget', value: config.memory.retrievalTokenBudget, min: 1 },
@@ -373,9 +327,6 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   },
   { path: 'memory.admitThreshold', value: config.memory.admitThreshold, min: 0, max: 1 },
   { path: 'memory.verifyThreshold', value: config.memory.verifyThreshold, min: 0, max: 1 },
-  { path: 'memory.extractionDailyBudgetRatio', value: config.memory.extractionDailyBudgetRatio, min: 0, max: 1 },
-  { path: 'memory.perGuildGapMs', value: config.memory.perGuildGapMs, min: 0 },
-  { path: 'memory.extractionQueueMaxPerGuild', value: config.memory.extractionQueueMaxPerGuild, min: 1 },
   { path: 'metrics.retentionDays', value: config.metrics.retentionDays, min: 1 },
   { path: 'metrics.diagnosticsRetentionHours', value: config.metrics.diagnosticsRetentionHours, min: 1 },
   { path: 'emoji.probability', value: config.emoji.probability, min: 0, max: 1 },
@@ -428,14 +379,6 @@ export function deriveAchievableRetries(
 
 // Worst-case duration tail, checked against the session TTL.
 const maxLiveRetryWindow = config.gemini.liveMaxRetries * (config.gemini.timeout + config.gemini.retryBackoffCapMs)
-
-if (requestedExtractionInterval > memoryBufferSize) {
-  const { logger } = await import('./utils/logger.js')
-  logger.warn(
-    { bufferSize: memoryBufferSize, extractionInterval: requestedExtractionInterval },
-    'Memory extraction interval exceeds passive buffer size; clamping to buffer size'
-  )
-}
 
 if (config.session.ttlMs <= maxLiveRetryWindow) {
   const { logger } = await import('./utils/logger.js')
