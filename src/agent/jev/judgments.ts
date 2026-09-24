@@ -67,6 +67,10 @@ function warningDetails(kind: 'turn' | 'extraction', error: unknown) {
   return { kind, errorName: details.constructor?.name ?? 'Error', status: details.status }
 }
 
+function validProbability(value: unknown): number | null {
+  return typeof value === 'number' && value >= 0 && value <= 1 ? value : null
+}
+
 export async function judgeTurn(
   input: TurnJudgmentInput,
   options?: { signal?: AbortSignal }
@@ -116,13 +120,7 @@ export async function judgeTurn(
         ? {
             tone: toneAnswer.choice as ToneKey,
             confidence: toneAnswer.confidence,
-            probability:
-              typeof toneAnswer.probabilities?.[toneAnswer.choice] === 'number' &&
-              Number.isFinite(toneAnswer.probabilities[toneAnswer.choice]) &&
-              toneAnswer.probabilities[toneAnswer.choice] >= 0 &&
-              toneAnswer.probabilities[toneAnswer.choice] <= 1
-                ? toneAnswer.probabilities[toneAnswer.choice]
-                : null
+            probability: validProbability(toneAnswer.probabilities?.[toneAnswer.choice])
           }
         : null
     const referents = aliases.map((alias, index) => {
