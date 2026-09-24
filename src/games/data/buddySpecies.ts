@@ -19,7 +19,7 @@ export const SPECIES: SpeciesInfo[] = [
     emoji: '\uD83C\uDF61',
     rarity: 'common',
     description: 'A squishy rice cake blob that bounces around happily~',
-    spriteUrl: 'https://i.postimg.cc/ykDQ6kYC/mochi.png'
+    spriteUrl: 'https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/buddies/v1/mochi.png'
   },
   {
     id: 'chibi',
@@ -27,7 +27,7 @@ export const SPECIES: SpeciesInfo[] = [
     emoji: '\uD83D\uDC76',
     rarity: 'common',
     description: 'A tiny human companion with oversized sparkling eyes~',
-    spriteUrl: 'https://i.postimg.cc/rzFZbfB2/chibi.png'
+    spriteUrl: 'https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/buddies/v1/chibi.png'
   },
   {
     id: 'kodama',
@@ -35,7 +35,7 @@ export const SPECIES: SpeciesInfo[] = [
     emoji: '\uD83C\uDF33',
     rarity: 'common',
     description: 'A gentle tree spirit that rattles its head when happy~',
-    spriteUrl: 'https://i.postimg.cc/hfXy4f4r/kodama.png'
+    spriteUrl: 'https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/buddies/v1/kodama.png'
   },
   {
     id: 'usagi',
@@ -43,7 +43,7 @@ export const SPECIES: SpeciesInfo[] = [
     emoji: '\uD83D\uDC30',
     rarity: 'common',
     description: 'A fluffy moon rabbit who dreams of mochi pounding~',
-    spriteUrl: 'https://i.postimg.cc/8Jk42CnR/usagi.png'
+    spriteUrl: 'https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/buddies/v1/usagi.png'
   },
   {
     id: 'obake',
@@ -51,7 +51,7 @@ export const SPECIES: SpeciesInfo[] = [
     emoji: '\uD83D\uDC7B',
     rarity: 'common',
     description: 'A shapeshifter ghost that can never quite hold a form~',
-    spriteUrl: 'https://i.postimg.cc/crPDv0rY/obake.png'
+    spriteUrl: 'https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/buddies/v1/obake.png'
   },
   {
     id: 'sakura',
@@ -59,7 +59,7 @@ export const SPECIES: SpeciesInfo[] = [
     emoji: '\uD83C\uDF38',
     rarity: 'common',
     description: 'A cherry blossom fairy who dances on spring breezes~',
-    spriteUrl: 'https://i.postimg.cc/CZgm47Cy/sakura.png'
+    spriteUrl: 'https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/buddies/v1/sakura.png'
   },
   {
     id: 'tsukimi',
@@ -67,7 +67,7 @@ export const SPECIES: SpeciesInfo[] = [
     emoji: '\uD83C\uDF19',
     rarity: 'common',
     description: 'A moon watcher spirit who stays up way too late~',
-    spriteUrl: 'https://i.postimg.cc/f3f5qd5f/tsukimi.png'
+    spriteUrl: 'https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/buddies/v1/tsukimi.png'
   },
 
   // Uncommon (4 species — 25%)
@@ -77,7 +77,7 @@ export const SPECIES: SpeciesInfo[] = [
     emoji: '\uD83E\uDD9D',
     rarity: 'uncommon',
     description: 'A mischievous raccoon dog with a talent for disguises~',
-    spriteUrl: 'https://i.postimg.cc/67XYhcVK/tanuki.png'
+    spriteUrl: 'https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/buddies/v1/tanuki.png'
   },
   {
     id: 'bakeneko',
@@ -85,7 +85,7 @@ export const SPECIES: SpeciesInfo[] = [
     emoji: '\uD83D\uDC31',
     rarity: 'uncommon',
     description: 'A cat yokai who walks on two legs when nobody is looking~',
-    spriteUrl: 'https://i.postimg.cc/tnCcNkjW/bakeneko.png'
+    spriteUrl: 'https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/buddies/v1/bakeneko.png'
   },
   {
     id: 'yuki',
@@ -93,7 +93,7 @@ export const SPECIES: SpeciesInfo[] = [
     emoji: '\u2744\uFE0F',
     rarity: 'uncommon',
     description: 'A snow spirit who melts a little when flustered~',
-    spriteUrl: 'https://i.postimg.cc/ZBYHGqD7/yuki.png'
+    spriteUrl: 'https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/buddies/v1/yuki.png'
   },
   {
     id: 'inugami',
@@ -101,7 +101,7 @@ export const SPECIES: SpeciesInfo[] = [
     emoji: '\uD83D\uDC15',
     rarity: 'uncommon',
     description: 'A loyal dog spirit who guards you with fierce devotion~',
-    spriteUrl: 'https://i.postimg.cc/QVxYPf2H/inugami.png'
+    spriteUrl: 'https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/buddies/v1/inugami.png'
   },
 
   // Rare (3 species — 10%)
@@ -111,7 +111,7 @@ export const SPECIES: SpeciesInfo[] = [
     emoji: '\uD83E\uDD8A',
     rarity: 'rare',
     description: 'A mischievous fox spirit with multiple tails~',
-    spriteUrl: 'https://i.postimg.cc/hhyZq9ns/kitsune.png'
+    spriteUrl: 'https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/buddies/v1/kitsune.png'
   },
   {
     id: 'kappa',
@@ -119,7 +119,7 @@ export const SPECIES: SpeciesInfo[] = [
     emoji: '\uD83E\uDD9C',
     rarity: 'rare',
     description: 'A water imp obsessed with cucumbers and politeness~',
-    spriteUrl: 'https://i.postimg.cc/rznZLST4/kappa.png'
+    spriteUrl: 'https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/buddies/v1/kappa.png'
   },
   {
     id: 'tengu',
@@ -127,7 +127,7 @@ export const SPECIES: SpeciesInfo[] = [
     emoji: '\uD83E\uDDB9',
     rarity: 'rare',
     description: 'A proud crow spirit with a very long nose~',
-    spriteUrl: 'https://i.postimg.cc/Y4z8DF8j/tengu.png'
+    spriteUrl: 'https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/buddies/v1/tengu.png'
   },
 
   // Epic (2 species — 4%)
@@ -137,7 +137,7 @@ export const SPECIES: SpeciesInfo[] = [
     emoji: '\uD83D\uDC08\u200D\u2B1B',
     rarity: 'epic',
     description: 'A ghost cat with twin tails and eerie supernatural powers~',
-    spriteUrl: 'https://i.postimg.cc/QHv6FhHZ/nekomata.png'
+    spriteUrl: 'https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/buddies/v1/nekomata.png'
   },
   {
     id: 'tatsu',
@@ -145,7 +145,7 @@ export const SPECIES: SpeciesInfo[] = [
     emoji: '\uD83D\uDC09',
     rarity: 'epic',
     description: 'A baby dragon still learning to breathe fire without sneezing~',
-    spriteUrl: 'https://i.postimg.cc/SXfV19Vk/tatsu.png'
+    spriteUrl: 'https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/buddies/v1/tatsu.png'
   },
 
   // Legendary (2 species — 1%)
@@ -155,7 +155,7 @@ export const SPECIES: SpeciesInfo[] = [
     emoji: '\uD83D\uDC79',
     rarity: 'legendary',
     description: 'A fearsome demon child whose tantrums shake the earth~',
-    spriteUrl: 'https://i.postimg.cc/RWfgfyHy/oni.png'
+    spriteUrl: 'https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/buddies/v1/oni.png'
   },
   {
     id: 'kaiju',
@@ -163,7 +163,7 @@ export const SPECIES: SpeciesInfo[] = [
     emoji: '\uD83E\uDD96',
     rarity: 'legendary',
     description: 'A tiny monster with city-destroying dreams and a squeaky roar~',
-    spriteUrl: 'https://i.postimg.cc/NLJCw1tF/kaiju.png'
+    spriteUrl: 'https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/buddies/v1/kaiju.png'
   }
 ]
 
