@@ -18,7 +18,7 @@ const toolContextWith = (entries: Record<string, unknown>) =>
   ({ state: new Map(Object.entries(entries)) }) as unknown as ToolContext
 import { resolveName } from '../../memory/identityResolver.js'
 import { assertClaim, getActiveClaims } from '../../memory/memoryClaims.js'
-import { askTools, forgetUserTool, recallUserTool, rememberUserTool, rokaTools } from '../index.js'
+import { forgetUserTool, recallUserTool, rememberUserTool, rokaTools } from '../index.js'
 import { recallUser } from '../recallUser.js'
 import { rememberUser } from '../rememberUser.js'
 
@@ -125,12 +125,6 @@ describe('memory tools', () => {
       message: "I couldn't identify the current member or server, so I didn't forget anything."
     })
     expect(getActiveClaims('guild-1', 'user-1').map(({ id }) => id)).toContain(activeClaim.id)
-  })
-
-  it('keeps forget_user available to Roka but off the /ask tool list', () => {
-    expect(rokaTools).toContain(forgetUserTool)
-    expect(askTools).not.toContain(forgetUserTool)
-    expect(askTools).toContain(recallUserTool)
   })
 
   it('merges and deduplicates active claims with legacy facts when recalling a guild member', () => {

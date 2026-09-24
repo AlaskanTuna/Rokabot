@@ -321,6 +321,3 @@ export const rokaTools = [
   getCurrentTimeTool,
   getWeatherTool
 ]
-
-/** /ask retains its existing memory tools, but forget_user is unavailable there. */
-export const askTools = rokaTools.filter((tool) => tool !== forgetUserTool)

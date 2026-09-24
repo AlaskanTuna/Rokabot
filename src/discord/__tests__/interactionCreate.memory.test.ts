@@ -11,8 +11,7 @@ const mocks = vi.hoisted(() => ({
   retrieveForTurn: vi.fn(() => ({ entries: [], claims: [] })),
   getSharedRateLimiter: vi.fn(() => ({ tryConsumeAboveFloor: () => true })),
   getLocalHour: vi.fn(() => 12),
-  runnerRequests: [] as Array<{ stateDelta?: Record<string, unknown> }>,
-  runnerAgents: [] as string[]
+  runnerRequests: [] as Array<{ stateDelta?: Record<string, unknown> }>
 }))
 
 // roka.js is intentionally left unmocked — this suite drives the real handler through generateResponse's
@@ -25,16 +24,8 @@ vi.mock('@google/adk', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@google/adk')>()
 
   class CapturingRunner extends actual.Runner {
-    private readonly agentName: string
-
-    constructor(options: ConstructorParameters<typeof actual.Runner>[0]) {
-      super(options)
-      this.agentName = options.agent.name
-    }
-
     override runAsync(request: Parameters<InstanceType<typeof actual.Runner>['runAsync']>[0]) {
       mocks.runnerRequests.push(request)
-      mocks.runnerAgents.push(this.agentName)
       return (async function* () {
         yield actual.createEvent({
           author: 'roka',
@@ -122,7 +113,6 @@ describe('interaction handler DM memory tenant bridge', () => {
     process.env.ROKABOT_DB_PATH = ':memory:'
     vi.clearAllMocks()
     mocks.runnerRequests.length = 0
-    mocks.runnerAgents.length = 0
   })
 
   afterEach(async () => {
@@ -155,13 +145,5 @@ describe('interaction handler DM memory tenant bridge', () => {
         toolContext: await turnState(handler, CHANNEL_A, 'What do you remember about me?')
       })
     ).resolves.toMatchObject({ factCount: 1 })
-  })
-
-  it('routes /ask through the agent configured without forget_user', async () => {
-    const handler = createInteractionHandler(rateLimiter as never)
-
-    await turnState(handler, CHANNEL_A, 'Forget that I play osu')
-
-    expect(mocks.runnerAgents).toEqual(['roka_ask'])
   })
 })

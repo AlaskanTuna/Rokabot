@@ -85,7 +85,6 @@ describe('interaction handler metrics', () => {
 
     await createInteractionHandler(rateLimiter as never)(interaction as never)
 
-    expect(mocks.generateResponse).toHaveBeenCalledWith(expect.objectContaining({ isAsk: true }))
     expect(mocks.recordResponseEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         guildId: 'guild-1',

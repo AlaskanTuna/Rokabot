@@ -242,9 +242,9 @@ ambiguous and is never guessed. Resolved members take the participant slots firs
 member named by a nickname or username gets a `## Who Is Mentioned` line mapping the alias to their display name.
 `recall_user` uses the same lookup and asks which member is meant when a name is ambiguous.
 
-`forget_user` uses FTS over the current speaker's active claims, rejects the best match, and returns a confirmation
-or a no-match response. It does not accept a target member ID or name, and it is excluded from the `/ask` tool list.
-The confirmation does not repeat a value that `privacyGuard.ts` marks sensitive.
+`forget_user` searches the current speaker's active claims using AND semantics across up to six query keywords. It
+rejects one to three matches and returns up to four matching values when clarification is needed. It does not accept a
+target member ID or name, and confirmations replace values that `privacyGuard.ts` marks sensitive with a generic label.
 
 The retriever, not `refreshFactTimestamps`, calls `touchRecalled()` for selected claims. The resulting entries are
 rendered through the shared Phase 13 `buildFactsEnvelope` untrusted-data envelope; the claims path does not fork the
