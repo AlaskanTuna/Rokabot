@@ -39,6 +39,7 @@ interface YamlConfig {
     maxTokensPerMinute?: number
     safetyThreshold?: string
     maxLlmCalls?: number
+    hedgeAfterMs?: number
     liveMaxRetries?: number
     retryRpmFloor?: number
     extractionRpmFloor?: number
@@ -66,6 +67,8 @@ interface YamlConfig {
     speakerMinShare?: number
     maxActiveClaimsPerUser?: number
     claimRetentionDays?: number
+    salienceHalfLifeDays?: number
+    recallCooldownMs?: number
     extractionDailyBudgetRatio?: number
     perGuildGapMs?: number
     extractionQueueMaxPerGuild?: number
@@ -181,6 +184,7 @@ export const config = {
     maxTokensPerMinute: envInt('GEMINI_MAX_TOKENS_PER_MINUTE') ?? yaml.gemini?.maxTokensPerMinute ?? 125_000,
     safetyThreshold: envString('GEMINI_SAFETY_THRESHOLD') ?? yaml.gemini?.safetyThreshold ?? 'OFF',
     maxLlmCalls: yaml.gemini?.maxLlmCalls ?? 4,
+    hedgeAfterMs: envInt('GEMINI_HEDGE_AFTER_MS') ?? yaml.gemini?.hedgeAfterMs ?? 5_000,
     liveMaxRetries: envInt('GEMINI_LIVE_MAX_RETRIES') ?? yaml.gemini?.liveMaxRetries ?? 2,
     retryRpmFloor: envInt('GEMINI_RETRY_RPM_FLOOR') ?? yaml.gemini?.retryRpmFloor ?? 2,
     extractionRpmFloor: envInt('GEMINI_EXTRACTION_RPM_FLOOR') ?? yaml.gemini?.extractionRpmFloor ?? 3,
@@ -224,6 +228,8 @@ export const config = {
     speakerMinShare: envNumber('MEMORY_SPEAKER_MIN_SHARE') ?? yaml.memory?.speakerMinShare ?? 0.5,
     maxActiveClaimsPerUser: envInt('MEMORY_MAX_ACTIVE_CLAIMS_PER_USER') ?? yaml.memory?.maxActiveClaimsPerUser ?? 20,
     claimRetentionDays: envInt('MEMORY_CLAIM_RETENTION_DAYS') ?? yaml.memory?.claimRetentionDays ?? 90,
+    salienceHalfLifeDays: yaml.memory?.salienceHalfLifeDays ?? 30,
+    recallCooldownMs: yaml.memory?.recallCooldownMs ?? 21_600_000,
     extractionDailyBudgetRatio:
       envNumber('MEMORY_EXTRACTION_DAILY_BUDGET_RATIO') ?? yaml.memory?.extractionDailyBudgetRatio ?? 0.4,
     perGuildGapMs: envInt('MEMORY_PER_GUILD_GAP_MS') ?? yaml.memory?.perGuildGapMs ?? 20_000,
@@ -312,6 +318,8 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'gemini.retryRpmFloor', value: config.gemini.retryRpmFloor, min: 0 },
   { path: 'gemini.extractionRpmFloor', value: config.gemini.extractionRpmFloor, min: 0 },
   { path: 'gemini.maxLlmCalls', value: config.gemini.maxLlmCalls, min: 1 },
+  // min: 0 because zero is the documented off switch, not a misconfiguration.
+  { path: 'gemini.hedgeAfterMs', value: config.gemini.hedgeAfterMs, min: 0 },
   // Floor is one turn's worth, derived: `rpm` is counted in requests and a turn reserves `maxLlmCalls` of
   // them, so anything below that admits no turn at all and the bot answers nothing while reporting itself
   // rate-limited. Found by a harness fixture at `rpm: 2` going silent the moment reservations landed (#167).
@@ -341,6 +349,8 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'memory.speakerMinShare', value: config.memory.speakerMinShare, min: 0, max: 1 },
   { path: 'memory.maxActiveClaimsPerUser', value: config.memory.maxActiveClaimsPerUser, min: 1 },
   { path: 'memory.claimRetentionDays', value: config.memory.claimRetentionDays, min: 1 },
+  { path: 'memory.salienceHalfLifeDays', value: config.memory.salienceHalfLifeDays, min: 1 },
+  { path: 'memory.recallCooldownMs', value: config.memory.recallCooldownMs, min: 0 },
   { path: 'memory.extractionDailyBudgetRatio', value: config.memory.extractionDailyBudgetRatio, min: 0, max: 1 },
   { path: 'memory.perGuildGapMs', value: config.memory.perGuildGapMs, min: 0 },
   { path: 'memory.extractionQueueMaxPerGuild', value: config.memory.extractionQueueMaxPerGuild, min: 1 },

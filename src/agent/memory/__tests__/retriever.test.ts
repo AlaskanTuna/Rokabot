@@ -8,7 +8,9 @@ vi.mock('../../../config.js', () => ({
       maxClaimsPerTurn: 10,
       retrievalTokenBudget: 350,
       recentParticipantLimit: 3,
-      speakerMinShare: 0.5
+      speakerMinShare: 0.5,
+      salienceHalfLifeDays: 30,
+      recallCooldownMs: 21_600_000
     }
   }
 }))
@@ -18,9 +20,10 @@ import { recordMemoryEvent } from '../../../storage/metricsStore.js'
 import { upsertUserName } from '../../../storage/userNames.js'
 import { estimateTokens } from '../../../utils/tokens.js'
 import { assertClaim } from '../memoryClaims.js'
-import { retrieveForTurn } from '../retriever.js'
+import { retrieveForSubject, retrieveForTurn } from '../retriever.js'
 
 const NOW = 1_000_000
+const DAY = 24 * 60 * 60 * 1000
 
 function claim(
   userId: string,
@@ -193,5 +196,67 @@ describe('retrieveForTurn', () => {
       recalled.filter(({ id }) => !selectedIds.has(id)).every(({ last_recalled_at }) => last_recalled_at === null)
     ).toBe(true)
     expect(recalled.map(({ id, last_seen_at }) => [id, { last_seen_at }])).toEqual([...lastSeenById])
+  })
+
+  it('decays salience by its configured half-life without changing stored salience', () => {
+    const oldClaim = claim('speaker', 'hobby', 'old hobby')
+    getDb()
+      .prepare('UPDATE memory_claim SET salience = ?, confidence = ?, last_seen_at = ?, pinned = 0 WHERE id = ?')
+      .run(0.8, 0.6, NOW - 30 * DAY, oldClaim.id)
+
+    const result = retrieveForSubject('guild-a', 'speaker', '', 1)
+
+    expect(result[0].score).toBeCloseTo(1.65)
+    expect(getDb().prepare('SELECT salience FROM memory_claim WHERE id = ?').get(oldClaim.id)).toEqual({
+      salience: 0.8
+    })
+  })
+
+  it('penalizes recently recalled claims when the message has no matching signal', () => {
+    const recalled = claim('speaker', 'hobby', 'playing osu!')
+    getDb()
+      .prepare('UPDATE memory_claim SET salience = ?, confidence = ?, last_recalled_at = ? WHERE id = ?')
+      .run(0.7, 0.8, NOW - 1, recalled.id)
+
+    const damped = retrieveForSubject('guild-a', 'speaker', '', 1)[0].score
+    getDb().prepare('UPDATE memory_claim SET last_recalled_at = NULL WHERE id = ?').run(recalled.id)
+    const undamped = retrieveForSubject('guild-a', 'speaker', '', 1)[0].score
+
+    expect(undamped - damped).toBeCloseTo(0.75)
+  })
+
+  it.each(['osu', 'what hobbies have you mentioned'])('skips the recall penalty for a message match: %s', (message) => {
+    const recalled = claim('speaker', 'hobby', 'playing osu!')
+    getDb()
+      .prepare('UPDATE memory_claim SET salience = ?, confidence = ?, last_recalled_at = ? WHERE id = ?')
+      .run(0.7, 0.8, NOW - 1, recalled.id)
+
+    const withCooldown = retrieveForSubject('guild-a', 'speaker', message, 1)[0].score
+    getDb().prepare('UPDATE memory_claim SET last_recalled_at = NULL WHERE id = ?').run(recalled.id)
+    const withoutCooldown = retrieveForSubject('guild-a', 'speaker', message, 1)[0].score
+
+    expect(withCooldown).toBeCloseTo(withoutCooldown)
+  })
+
+  it('uses decayed scores when choosing speaker anchors', () => {
+    const stale = claim('speaker', 'hobby', 'old hobby')
+    const recent = Array.from({ length: 5 }, (_, index) => claim('speaker', 'likes', `fresh interest ${index}`))
+    getDb()
+      .prepare('UPDATE memory_claim SET salience = ?, confidence = ?, last_seen_at = ? WHERE id = ?')
+      .run(0.95, 0.95, NOW - 35 * DAY, stale.id)
+    for (const candidate of recent) {
+      getDb()
+        .prepare('UPDATE memory_claim SET salience = ?, confidence = ?, last_seen_at = ? WHERE id = ?')
+        .run(0.5, 0.6, NOW, candidate.id)
+    }
+
+    const result = retrieveForTurn({
+      guildId: 'guild-a',
+      speakerId: 'speaker',
+      participantIds: [],
+      message: ''
+    })
+
+    expect(result.claims.slice(0, 5).map(({ claim: candidate }) => candidate.id)).not.toContain(stale.id)
   })
 })

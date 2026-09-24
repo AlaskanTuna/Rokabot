@@ -143,6 +143,8 @@ describe('memory promotion harness evaluation', () => {
       'tokens_out_est',
       'tools_used',
       'failure_marker',
+      'model',
+      'hedged',
       'created_at'
     ])
 

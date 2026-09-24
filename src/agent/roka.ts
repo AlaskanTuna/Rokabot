@@ -14,6 +14,7 @@ import { getSharedRateLimiter } from '../utils/rateLimiter.js'
 import { estimateTokens } from '../utils/tokens.js'
 import { prepareAttachments } from './attachments.js'
 import type { ImageAttachment } from './attachments.js'
+import type { ModelRoute } from './fallbackModel.js'
 import { modelRouteForRequest } from './fallbackModel.js'
 import { computeBackoff } from './geminiReliability.js'
 import type { ToneKey } from './prompts/tones.js'
@@ -273,7 +274,11 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   const steering: { prompt?: string } = {}
   const verdict: ModelVerdict = {}
   const modelCalls = { count: 0 }
-  const route = { useFallback: rokaModel.hasFallback && hasStickyFallback() }
+  const route: ModelRoute = {
+    useFallback: rokaModel.hasFallback && hasStickyFallback(),
+    hedged: false,
+    answeredBy: null
+  }
   let movedAwayFromGemini = false
   const reliability = await modelRouteForRequest.run(route, () =>
     modelCallsForRequest.run(modelCalls, () =>
@@ -497,7 +502,9 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     kind: reliability.kind,
     failureMarker: reliability.failureMarker,
     tokensInEst,
-    tokensOutEst: estimateTokens(reliability.text)
+    tokensOutEst: estimateTokens(reliability.text),
+    model: route.answeredBy ?? undefined,
+    hedged: route.hedged ? 1 : 0
   }
 
   return {

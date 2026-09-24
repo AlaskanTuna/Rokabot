@@ -7,6 +7,7 @@ import { getUserName } from '../../storage/userNames.js'
 import { logger } from '../../utils/logger.js'
 import { resolveName } from '../memory/identityResolver.js'
 import { flipCoin } from './flipCoin.js'
+import { forgetUser } from './forgetUser.js'
 import { getAnimeSchedule } from './getAnimeSchedule.js'
 import { getCurrentTime } from './getCurrentTime.js'
 import { getWeather } from './getWeather.js'
@@ -18,7 +19,7 @@ import { searchWeb } from './searchWeb.js'
 import { cancelReminder, listReminders, setReminder } from './setReminder.js'
 
 export { rollDice, flipCoin, getCurrentTime, searchAnime, getAnimeSchedule, getWeather, searchWeb }
-export { rememberUser, recallUser }
+export { rememberUser, recallUser, forgetUser }
 export { setReminder }
 export type { SetReminderParams } from './setReminder.js'
 export type { RollDiceParams } from './rollDice.js'
@@ -29,6 +30,7 @@ export type { GetWeatherParams } from './getWeather.js'
 export type { SearchWebParams } from './searchWeb.js'
 export type { RememberUserParams } from './rememberUser.js'
 export type { RecallUserParams } from './recallUser.js'
+export type { ForgetUserParams } from './forgetUser.js'
 
 export const rollDiceTool = new FunctionTool({
   name: 'roll_dice',
@@ -192,6 +194,33 @@ export const recallUserTool = new FunctionTool({
   }
 })
 
+export const forgetUserTool = new FunctionTool({
+  name: 'forget_user',
+  description:
+    'Forget active notes about the current speaker. Use when they ask you to forget, remove, or stop remembering something about themselves. Pass a few keywords naming what to forget in query, such as osu. It searches only their own notes; never use it for another member.',
+  parameters: z.object({
+    query: z.string().describe('A few keywords naming what to forget, e.g. `osu`')
+  }),
+  execute: async (input, toolContext) => {
+    const userId = toolContext?.state?.get<string>('_userId')
+    const guildId = toolContext?.state?.get<string>('_guildId')
+    if (!userId || !guildId || guildId === 'global') {
+      logger.warn(
+        {
+          tool: 'forget_user',
+          tenantState: !guildId ? 'missing' : guildId === 'global' ? 'global' : 'speaker_missing'
+        },
+        'Memory tool failed closed on unusable tenant state'
+      )
+      return {
+        success: false,
+        message: "I couldn't identify the current member or server, so I didn't forget anything."
+      }
+    }
+    return forgetUser({ user_id: userId, guild_id: guildId, query: input.query })
+  }
+})
+
 export const setReminderTool = new FunctionTool({
   name: 'set_reminder',
   description:
@@ -284,6 +313,7 @@ export const rokaTools = [
   searchWebTool,
   rememberUserTool,
   recallUserTool,
+  forgetUserTool,
   setReminderTool,
   listRemindersTool,
   cancelReminderTool,

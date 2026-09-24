@@ -36,10 +36,10 @@ import { handleGachaMention } from './gachaMention.js'
 /** Whole-word, case-insensitive match for the bot's name as a trigger keyword */
 export const NAME_MENTION_REGEX = /\broka\b/i
 
-function dispatchClaimExtraction(channelId: string, guildId: string, askJev = false): void {
+function dispatchClaimExtraction(channelId: string, guildId: string, botUserId: string, askJev = false): void {
   try {
     const messages = [...getMessages(channelId)]
-    const userIds = new Set(messages.map((message) => message.userId))
+    const userIds = new Set(messages.map((message) => message.userId).filter((userId) => userId !== botUserId))
     const knownClaimKeys = new Set(
       [...userIds].flatMap((userId) => getActiveClaims(guildId, userId).map((claim) => claim.predicate))
     )
@@ -49,6 +49,7 @@ function dispatchClaimExtraction(channelId: string, guildId: string, askJev = fa
       enqueueAndSchedule({
         guildId,
         channelId,
+        botUserId,
         messages: messages.map(({ userId, displayName, content }) => ({ userId, displayName, content }))
       })
       return
@@ -84,6 +85,7 @@ function dispatchClaimExtraction(channelId: string, guildId: string, askJev = fa
         enqueueAndSchedule({
           guildId,
           channelId,
+          botUserId,
           messages: messages.map(({ userId, displayName, content }) => ({ userId, displayName, content })),
           admittedBy: 'jev'
         })
@@ -137,7 +139,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
         addToPassiveBuffer(message.channelId, message.author.id, memberDisplayName, message.author.username, msgContent)
         upsertUserName(message.author.id, message.author.username, memberDisplayName)
         if (config.memory.claimsBackend) {
-          dispatchClaimExtraction(message.channelId, message.guildId ?? `dm:${message.channelId}`, true)
+          dispatchClaimExtraction(message.channelId, message.guildId ?? `dm:${message.channelId}`, client.user.id, true)
         } else {
           maybeExtractFromBuffer(message.channelId, client.user?.id, message.guildId ?? undefined)
         }
@@ -307,7 +309,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
         const botName = message.guild.members.me?.displayName ?? client.user.displayName
         addToPassiveBuffer(channelId, client.user.id, botName, client.user.username, responseText)
         if (config.memory.claimsBackend) {
-          dispatchClaimExtraction(channelId, message.guildId ?? `dm:${channelId}`)
+          dispatchClaimExtraction(channelId, message.guildId ?? `dm:${channelId}`, client.user.id)
         } else {
           maybeExtractFromBuffer(channelId, client.user.id, message.guildId ?? undefined)
         }

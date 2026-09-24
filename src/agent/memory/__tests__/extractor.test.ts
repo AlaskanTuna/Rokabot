@@ -86,6 +86,31 @@ describe('runExtraction', () => {
     )
   })
 
+  it('keeps bot messages in extraction context while excluding the bot ID from extraction subjects', async () => {
+    mocks.generateContent.mockResolvedValueOnce({
+      text: JSON.stringify([
+        { op: 'assert', userId: 'bot-1', predicate: 'likes', value: 'tea' },
+        { op: 'assert', userId: 'user-1', predicate: 'likes', value: 'anime' }
+      ])
+    })
+
+    await runExtraction({
+      ...job([
+        { userId: 'bot-1', displayName: 'Roka', content: 'I like tea' },
+        { userId: 'user-1', displayName: 'Alice', content: 'I like anime' }
+      ]),
+      botUserId: 'bot-1'
+    })
+
+    expect(mocks.generateContent).toHaveBeenCalledWith(
+      expect.objectContaining({ contents: expect.stringContaining('[bot-1|Roka]: I like tea') })
+    )
+    expect(getActiveClaims('guild-1', 'bot-1')).toEqual([])
+    expect(getActiveClaims('guild-1', 'user-1')).toEqual([
+      expect.objectContaining({ predicate: 'likes', value: 'anime' })
+    ])
+  })
+
   it('rolls back all claim writes when an op fails mid-batch', async () => {
     getDb().exec(`
       CREATE TRIGGER fail_second_evidence BEFORE INSERT ON memory_evidence

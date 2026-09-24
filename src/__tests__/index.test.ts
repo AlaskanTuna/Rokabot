@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => {
     backfillLegacyClaims: vi.fn(),
     createServer: vi.fn(() => ({ listen: vi.fn() })),
     getDb: vi.fn(),
+    pruneStaleClaims: vi.fn(),
     ready: (handler: () => void) => {
       readyHandler = handler
     },
@@ -24,7 +25,7 @@ vi.mock('../discord/client.js', () => ({
     isReady: () => true,
     login: vi.fn().mockResolvedValue(undefined),
     once: (_event: string, handler: () => void) => mocks.ready(handler),
-    user: { displayName: 'Roka' }
+    user: { id: 'bot-1', displayName: 'Roka' }
   })
 }))
 vi.mock('../config.js', () => ({
@@ -36,7 +37,7 @@ vi.mock('../config.js', () => ({
   }
 }))
 vi.mock('../agent/channelMonitor.js', () => ({ cleanupExpired: vi.fn(), restoreMonitoredChannels: vi.fn() }))
-vi.mock('../agent/memory/memoryClaims.js', () => ({ pruneStaleClaims: vi.fn() }))
+vi.mock('../agent/memory/memoryClaims.js', () => ({ pruneStaleClaims: mocks.pruneStaleClaims }))
 vi.mock('../agent/memory/scheduler.js', () => ({
   startExtractionScheduler: mocks.startExtractionScheduler,
   stopExtractionScheduler: mocks.stopExtractionScheduler
@@ -65,6 +66,8 @@ describe('startup memory tasks', () => {
     mocks.triggerReady()
 
     expect(mocks.resetStuckProcessing).toHaveBeenCalledOnce()
+    expect(mocks.pruneStaleClaims).toHaveBeenCalledWith(90, 'bot-1')
+    expect(mocks.startExtractionScheduler).toHaveBeenCalledWith('bot-1')
     expect(mocks.resetStuckProcessing.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.startExtractionScheduler.mock.invocationCallOrder[0]
     )

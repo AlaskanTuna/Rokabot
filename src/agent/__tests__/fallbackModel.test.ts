@@ -4,7 +4,8 @@ import { FinishReason } from '@google/genai'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const configState = vi.hoisted(() => ({
-  gemini: { model: 'gemini-test' },
+  gemini: { model: 'gemini-test', hedgeAfterMs: 0 },
+  logging: { level: 'silent' },
   fallback: {
     apiKey: undefined as string | undefined,
     model: 'Qwen/Qwen3.5-122B-A10B',
@@ -14,7 +15,10 @@ const configState = vi.hoisted(() => ({
   }
 }))
 
+// Under this tsconfig vitest loads tests as CJS, and the RelativePath.keys tsc emits for this file do not
+// collide with the literal key the source keeps, so both forms are registered.
 vi.mock('../../config.js', () => ({ config: configState }))
+vi.mock('../src/agent/../config.js', () => ({ config: configState }))
 
 import { ModelScopeLlm, RoutedLlm, createRokaModel, modelRouteForRequest } from '../fallbackModel.js'
 
@@ -430,8 +434,11 @@ describe('RoutedLlm', () => {
 
     expect((await responses(routed, llmRequest))[0]?.content?.parts?.[0]?.text).toBe('primary answer')
     expect(
-      (await modelRouteForRequest.run({ useFallback: true }, () => responses(routed, llmRequest, true)))[0]?.content
-        ?.parts?.[0]?.text
+      (
+        await modelRouteForRequest.run({ useFallback: true, hedged: false, answeredBy: null }, () =>
+          responses(routed, llmRequest, true)
+        )
+      )[0]?.content?.parts?.[0]?.text
     ).toBe('fallback answer')
     expect(primary.calls).toHaveLength(1)
     expect(fallback.calls).toHaveLength(1)
@@ -445,7 +452,7 @@ describe('RoutedLlm', () => {
     const primary = new TextLlm('primary', 'primary answer')
     const routed = new RoutedLlm(primary, null)
 
-    const result = await modelRouteForRequest.run({ useFallback: true }, () =>
+    const result = await modelRouteForRequest.run({ useFallback: true, hedged: false, answeredBy: null }, () =>
       responses(routed, request([{ role: 'user', parts: [{ text: 'hello' }] }]))
     )
 
