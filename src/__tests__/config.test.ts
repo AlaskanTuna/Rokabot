@@ -73,6 +73,7 @@ describe('config module', () => {
     vi.stubEnv('JEV_TONE', '')
     vi.stubEnv('JEV_REFERENTS', '')
     vi.stubEnv('JEV_EXTRACTION', '')
+    vi.stubEnv('JEV_PREFETCH', '')
     vi.stubEnv('MEMORY_BUFFER_SIZE', '')
     vi.stubEnv('MEMORY_EXTRACTION_INTERVAL', '')
     vi.stubEnv('MEMORY_EXTRACTION_GAP_MS', '')
@@ -184,6 +185,9 @@ describe('config module', () => {
     expect(config.jev.tone).toBe('shadow')
     expect(config.jev.referents).toBe('shadow')
     expect(config.jev.extraction).toBe('shadow')
+    expect(config.jev.prefetch).toBe('shadow')
+    expect(config.jev.prefetchMinNoul).toBe(0.7)
+    expect(config.jev.prefetchWaitMs).toBe(4000)
     expect(config.jev.toneMinProbability).toBe(0.85)
     expect(config.jev.referentMinConfidence).toBe(0.8)
     expect(config.jev.extractionAdmitThreshold).toBe(0.7)
@@ -255,6 +259,7 @@ describe('config module', () => {
     vi.stubEnv('FALLBACK_MODEL', 'Qwen/custom-fallback')
     vi.stubEnv('JEV_MODEL', 'jev-override')
     vi.stubEnv('JEV_TONE', 'on')
+    vi.stubEnv('JEV_PREFETCH', 'on')
     vi.stubEnv('TYPESAFE_API_KEY', 'typesafe-test-key')
     vi.stubEnv('MEMORY_BUFFER_SIZE', '40')
     vi.stubEnv('MEMORY_EXTRACTION_INTERVAL', '30')
@@ -314,6 +319,7 @@ describe('config module', () => {
     expect(config.jev.apiKey).toBe('typesafe-test-key')
     expect(config.jev.model).toBe('jev-override')
     expect(config.jev.tone).toBe('on')
+    expect(config.jev.prefetch).toBe('on')
   })
 
   it('warns when the session TTL is shorter than the maximum live retry window', async () => {
@@ -721,6 +727,8 @@ describe('config module', () => {
       { path: 'jev.timeoutMs', min: 1 },
       { path: 'jev.backgroundTimeoutMs', min: 1 },
       { path: 'jev.toneMinProbability', min: 0, max: 1 },
+      { path: 'jev.prefetchMinNoul', min: 0, max: 1 },
+      { path: 'jev.prefetchWaitMs', min: 0 },
       { path: 'jev.referentMinConfidence', min: 0, max: 1 },
       { path: 'jev.extractionAdmitThreshold', min: 0, max: 1 },
       { path: 'gemini.turnDeadlineMs', min: 1 },
@@ -803,6 +811,16 @@ describe('config module', () => {
     )
   })
 
+  it('throws when the env prefetch mode is invalid and names the env key', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('JEV_PREFETCH', 'fast')
+
+    await expect(() => import('../config.js')).rejects.toThrow(
+      'Environment variable JEV_PREFETCH must be off, shadow or on, got: fast'
+    )
+  })
+
   it('throws when a YAML Jev mode is invalid and names the config key', async () => {
     setRequiredEnvVars()
     clearTunableEnvVars()
@@ -821,6 +839,24 @@ describe('config module', () => {
     await expect(() => import('../config.js')).rejects.toThrow(
       'Config value jev.toneMinProbability must be <= 1, got: 1.1'
     )
+  })
+
+  it('throws if jev.prefetchMinNoul exceeds 1', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    withYamlOverride({ jev: { prefetchMinNoul: 1.1 } })
+
+    await expect(() => import('../config.js')).rejects.toThrow(
+      'Config value jev.prefetchMinNoul must be <= 1, got: 1.1'
+    )
+  })
+
+  it('throws if jev.prefetchWaitMs is negative', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    withYamlOverride({ jev: { prefetchWaitMs: -1 } })
+
+    await expect(() => import('../config.js')).rejects.toThrow('Config value jev.prefetchWaitMs must be >= 0, got: -1')
   })
 
   it('throws if memory.speakerMinShare exceeds 1', async () => {

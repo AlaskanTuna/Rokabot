@@ -9,7 +9,10 @@ jev:
   tone: shadow # off | shadow (ask Jev and log, change nothing) | on (Jev picks the tone)
   referents: shadow # off | shadow | on (Jev settles names the resolver found ambiguous)
   extraction: shadow # off | shadow | on (Jev can admit a batch the rule gate rejected)
+  prefetch: shadow # off | shadow (ask Jev, log and persist what it would have prefetched, change nothing) | on (search ahead of the first Gemini call when the noul clears the threshold)
   toneMinProbability: 0.85 # Selected-choice probability (0..1) from the replay sweep; keep tone shadow if replay support fails
+  prefetchMinNoul: 0.7 # In on mode, the needs_lookup probability at or above which a Tavily search starts at handler entry
+  prefetchWaitMs: 4000 # How long the first Gemini call waits for a started prefetch before answering without it; a slower or failed search costs the turn at most this much
   referentMinConfidence: 0.8 # In on mode, below this confidence an ambiguous name stays unresolved
   extractionAdmitThreshold: 0.7 # In on mode, the probability at or above which a rejected batch is extracted anyway
 
