@@ -68,7 +68,7 @@ process.env.ROKABOT_DB_PATH = ':memory:'
 
 function queueExtraction(channelId: string = 'channel-1'): void {
   addMessage(channelId, 'user-1', 'Alice', 'alice', 'I love Frieren')
-  maybeExtractFromBuffer(channelId, undefined, 'guild-1')
+  maybeExtractFromBuffer(channelId, 'guild-1')
 }
 
 async function waitForExtraction(): Promise<void> {
@@ -188,25 +188,16 @@ describe('memory extraction reliability', () => {
     expect(mocks.assertClaim).not.toHaveBeenCalled()
   })
 
-  it('uses a synthetic DM scope when the buffer has no guild', async () => {
-    mocks.generateContent.mockResolvedValueOnce({
-      text: '[{"userId":"Alice","key":"favorite_anime","value":"Frieren"}]'
-    })
-    addMessage('dm-channel-1', 'user-1', 'Alice', 'alice', 'I love Frieren')
+  // Replaces a test that pinned the opposite: a synthesized `dm:` scope let a DM acquire claims rows.
+  // The tenant is now a required argument, so the type itself refuses a guildless call — asserted here
+  // by the @ts-expect-error, which fails the typecheck if the signature ever loosens again (#207).
+  it('requires a guild rather than synthesizing a DM scope for passive extraction', () => {
+    maybeExtractFromBuffer('guild-channel-1', 'guild-1')
 
+    // @ts-expect-error a guildless extraction call must not typecheck: there is no DM tenant to invent
     maybeExtractFromBuffer('dm-channel-1')
 
-    await vi.waitFor(() =>
-      expect(mocks.assertClaim).toHaveBeenCalledWith({
-        guildId: 'dm:dm-channel-1',
-        subjectUserId: 'user-1',
-        predicate: 'favorite_anime',
-        value: 'Frieren',
-        sourceKind: 'passive',
-        channelId: 'dm-channel-1'
-      })
-    )
-    expect(mocks.saveFact).toHaveBeenCalledWith('dm:dm-channel-1', 'user-1', 'favorite_anime', 'Frieren')
+    expect(mocks.assertClaim).not.toHaveBeenCalled()
   })
 
   it('records a saved extraction event', async () => {

@@ -172,9 +172,10 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
         addToPassiveBuffer(message.channelId, message.author.id, memberDisplayName, message.author.username, msgContent)
         upsertUserName(message.author.id, message.author.username, memberDisplayName)
         if (config.memory.claimsBackend) {
-          dispatchClaimExtraction(message.channelId, message.guildId ?? `dm:${message.channelId}`, client.user.id, true)
+          // Inside a `message.guild` guard, so guildId is set: a DM turn has no memory tenant to name.
+          dispatchClaimExtraction(message.channelId, message.guildId!, client.user.id, true)
         } else {
-          maybeExtractFromBuffer(message.channelId, client.user?.id, message.guildId ?? undefined)
+          maybeExtractFromBuffer(message.channelId, message.guildId!, client.user?.id)
         }
       }
     }
@@ -185,6 +186,9 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
     }
 
     const channelId = message.channelId
+    // A metrics and session identity, not a memory tenant. The client has no DirectMessages intent, so
+    // this fallback is never reached in production; it stands so a message carrying no guild is still
+    // labelled distinctly rather than filed under the real guild (#207).
     const guildId = message.guildId ?? `dm:${channelId}`
     const displayName = message.member?.displayName ?? message.author.displayName
     const username = message.author.username
@@ -307,6 +311,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
           displayName,
           username,
           userId: message.author.id,
+          memory: true,
           mentionedUserIds: [...(message.mentions.users?.keys() ?? [])].filter((userId) => userId !== client.user?.id),
           turnEntryWork,
           imageAttachments: imageAttachments.length > 0 ? imageAttachments : undefined
@@ -355,9 +360,9 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
         const botName = message.guild.members.me?.displayName ?? client.user.displayName
         addToPassiveBuffer(channelId, client.user.id, botName, client.user.username, responseText)
         if (config.memory.claimsBackend) {
-          dispatchClaimExtraction(channelId, message.guildId ?? `dm:${channelId}`, client.user.id)
+          dispatchClaimExtraction(channelId, message.guildId!, client.user.id)
         } else {
-          maybeExtractFromBuffer(channelId, client.user.id, message.guildId ?? undefined)
+          maybeExtractFromBuffer(channelId, message.guildId!, client.user.id)
         }
       }
     } catch (error) {

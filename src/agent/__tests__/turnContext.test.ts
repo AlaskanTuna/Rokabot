@@ -90,6 +90,7 @@ function turnOptions(turnEntryWork: ReturnType<typeof startTurnEntryWork>) {
     displayName: 'Alice',
     username: 'alice',
     userId: 'user-1',
+    memory: true,
     turnEntryWork
   }
 }

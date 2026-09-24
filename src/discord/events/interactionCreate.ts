@@ -80,6 +80,8 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
 
     const message = interaction.options.getString('question', true)
     const channelId = interaction.channelId
+    // A label for metrics and session identity only. /ask runs memory-free, so this never becomes a
+    // memory tenant — the client has no DirectMessages intent, so no message event ever yields one (#207).
     const guildId = interaction.guildId ?? `dm:${channelId}`
     const member = interaction.member
     const displayName = member && 'displayName' in member ? member.displayName : interaction.user.displayName
@@ -217,6 +219,7 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
           displayName,
           username: interaction.user.username,
           userId: interaction.user.id,
+          memory: false,
           turnEntryWork,
           imageAttachments: imageAttachments.length > 0 ? imageAttachments : undefined
         })

@@ -72,7 +72,8 @@ async function stateAfterCase(sessionState?: Record<string, unknown>): Promise<R
     userMessage: probeCase.message,
     displayName: 'Sora',
     username: 'sora',
-    userId: 'sora'
+    userId: 'sora',
+    memory: true
   })
 
   const session = await sessionService.getSession({ appName: APP_NAME, userId: channelId, sessionId: channelId })

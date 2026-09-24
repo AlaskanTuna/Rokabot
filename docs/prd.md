@@ -77,6 +77,7 @@ The bot registers an `/ask` slash command globally, with a required `question` s
 - [ ] Bot defers reply (shows "thinking...") while processing
 - [ ] Bot edits deferred reply with Roka's response
 - [ ] Commands are re-registered on every bot startup
+- [ ] `/ask` is memory-free: it retrieves no stored facts, offers no memory tools, and writes no memory rows — which is what makes it the one surface that works in a DM, where Roka has no memory of anyone
 
 ### FR-2: Mention/Reply Interaction
 

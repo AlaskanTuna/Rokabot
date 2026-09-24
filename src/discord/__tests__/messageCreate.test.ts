@@ -293,12 +293,16 @@ describe('message handler metrics', () => {
     expect(JSON.stringify(reply.mock.calls[0][0].components[0].toJSON())).not.toContain('-# 🌸')
   })
 
-  it('derives a per-channel DM tenant when there is no guild', async () => {
+  // The mention path is the other half of the /ask split, and the other call site of generateResponse's
+  // memory flag. Asserting it here and `false` over there is what keeps one from drifting into the other.
+  it('asks for memory, and a per-channel DM label, when a message arrives', async () => {
     const { message } = createMessage({ guildId: null })
 
     await createMessageHandler({ user: { id: 'bot-1' } } as never, createRateLimiter() as never)(message as never)
 
-    expect(mocks.generateResponse).toHaveBeenCalledWith(expect.objectContaining({ guildId: 'dm:channel-1' }))
+    expect(mocks.generateResponse).toHaveBeenCalledWith(
+      expect.objectContaining({ guildId: 'dm:channel-1', memory: true })
+    )
   })
 
   // Pins the mention path; /ask is pinned in interactionCreate.metrics.test.ts. Two call sites, so two
@@ -520,8 +524,8 @@ describe('message handler claims extraction dispatch', () => {
       createRateLimiter() as never
     )(message as never)
 
-    expect(mocks.maybeExtractFromBuffer).toHaveBeenNthCalledWith(1, 'channel-1', 'bot-1', 'guild-1')
-    expect(mocks.maybeExtractFromBuffer).toHaveBeenNthCalledWith(2, 'channel-1', 'bot-1', 'guild-1')
+    expect(mocks.maybeExtractFromBuffer).toHaveBeenNthCalledWith(1, 'channel-1', 'guild-1', 'bot-1')
+    expect(mocks.maybeExtractFromBuffer).toHaveBeenNthCalledWith(2, 'channel-1', 'guild-1', 'bot-1')
     expect(mocks.getMessages).not.toHaveBeenCalled()
     expect(mocks.shouldExtract).not.toHaveBeenCalled()
     expect(mocks.enqueueAndSchedule).not.toHaveBeenCalled()

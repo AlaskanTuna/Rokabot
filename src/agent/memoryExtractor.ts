@@ -67,8 +67,12 @@ interface ExtractedFact {
   value: string
 }
 
-/** Increment message counter and trigger extraction when threshold is reached */
-export function maybeExtractFromBuffer(channelId: string, botUserId?: string, guildId?: string): void {
+/**
+ * Increment message counter and trigger extraction when threshold is reached. `guildId` is required:
+ * passive extraction only ever runs from a guild message, and synthesizing a `dm:` scope here is what
+ * let a DM acquire memory rows it should never have had (#207).
+ */
+export function maybeExtractFromBuffer(channelId: string, guildId: string, botUserId?: string): void {
   if (isShuttingDown()) return
 
   const count = (messageCounts.get(channelId) ?? 0) + 1
@@ -86,7 +90,7 @@ export function maybeExtractFromBuffer(channelId: string, botUserId?: string, gu
   lastExtractionTime = now
 
   const messages = [...getMessages(channelId)]
-  void runBufferExtraction(channelId, messages, botUserId, guildId).catch((error) => {
+  void runBufferExtraction(channelId, messages, guildId, botUserId).catch((error) => {
     logger.warn({ channelId, error }, 'Passive buffer memory extraction failed')
   })
 }
@@ -155,8 +159,8 @@ async function generateExtraction(
 async function runBufferExtraction(
   channelId: string,
   messages: BufferedMessage[],
-  botUserId?: string,
-  guildId?: string
+  guildId: string,
+  botUserId?: string
 ): Promise<void> {
   const startedAt = performance.now()
   const conversationText = messages.map((m) => `[${m.displayName}]: ${m.content}`).join('\n')
@@ -164,7 +168,6 @@ async function runBufferExtraction(
   if (!conversationText.trim()) return
 
   const prompt = EXTRACTION_PROMPT + conversationText
-  const effectiveGuildId = guildId ?? `dm:${channelId}`
 
   // Case-insensitive map so LLM name variations ("hiro" vs "Hiro") still resolve
   const userMap = new Map<string, string>()
@@ -192,7 +195,7 @@ async function runBufferExtraction(
       const durationMs = performance.now() - startedAt
       const logFields = {
         channelId,
-        guildId: effectiveGuildId,
+        guildId: guildId,
         durationMs,
         batchSize: messages.length,
         extracted: 0,
@@ -205,7 +208,7 @@ async function runBufferExtraction(
         logger.info(logFields, 'Passive buffer memory extraction complete')
       }
       recordExtractionEvent({
-        guildId: effectiveGuildId,
+        guildId: guildId,
         channelId,
         durationMs,
         outcome: 'failed',
@@ -221,7 +224,7 @@ async function runBufferExtraction(
       logger.info(
         {
           channelId,
-          guildId: effectiveGuildId,
+          guildId: guildId,
           durationMs,
           batchSize: messages.length,
           extracted: 0,
@@ -231,7 +234,7 @@ async function runBufferExtraction(
         'Memory extraction complete — no facts found'
       )
       recordExtractionEvent({
-        guildId: effectiveGuildId,
+        guildId: guildId,
         channelId,
         durationMs,
         outcome: 'no_facts',
@@ -249,14 +252,14 @@ async function runBufferExtraction(
         continue
       }
       if (botUserId && resolvedUserId === botUserId) continue
-      const existingFacts = getFacts(effectiveGuildId, resolvedUserId)
+      const existingFacts = getFacts(guildId, resolvedUserId)
       const alreadyExists = existingFacts.some((f) => f.key === fact.key && f.value === fact.value)
       if (!alreadyExists) {
-        if (saveFact(effectiveGuildId, resolvedUserId, fact.key, fact.value)) {
+        if (saveFact(guildId, resolvedUserId, fact.key, fact.value)) {
           if (!config.memory.claimsBackend) {
             try {
               assertClaim({
-                guildId: effectiveGuildId,
+                guildId: guildId,
                 subjectUserId: resolvedUserId,
                 predicate: fact.key,
                 value: fact.value,
@@ -265,7 +268,7 @@ async function runBufferExtraction(
               })
             } catch (error) {
               logger.warn(
-                { err: error, guildId: effectiveGuildId, channelId, subjectUserId: resolvedUserId },
+                { err: error, guildId: guildId, channelId, subjectUserId: resolvedUserId },
                 'Failed to mirror passive fact into claims'
               )
             }
@@ -280,7 +283,7 @@ async function runBufferExtraction(
       logger.info(
         {
           channelId,
-          guildId: effectiveGuildId,
+          guildId: guildId,
           durationMs,
           batchSize: messages.length,
           extracted: facts.length,
@@ -290,7 +293,7 @@ async function runBufferExtraction(
         'Passive buffer memory extraction complete'
       )
       recordExtractionEvent({
-        guildId: effectiveGuildId,
+        guildId: guildId,
         channelId,
         durationMs,
         outcome: 'saved',
@@ -302,7 +305,7 @@ async function runBufferExtraction(
       logger.info(
         {
           channelId,
-          guildId: effectiveGuildId,
+          guildId: guildId,
           durationMs,
           batchSize: messages.length,
           extracted: facts.length,
@@ -312,7 +315,7 @@ async function runBufferExtraction(
         'Passive buffer memory extraction complete'
       )
       recordExtractionEvent({
-        guildId: effectiveGuildId,
+        guildId: guildId,
         channelId,
         durationMs,
         outcome: 'no_facts',
