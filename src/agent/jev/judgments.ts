@@ -159,3 +159,32 @@ export async function judgeExtraction(input: {
     return null
   }
 }
+
+export async function judgeEpisodeAdmission(input: {
+  lines: string[]
+}): Promise<{ noul: number; confidence: null; latencyMs: number; inputTokens: number } | null> {
+  try {
+    const client = getJevClient()
+    if (!client) return null
+
+    const startedAt = performance.now()
+    const result = await client.systemOne(
+      {
+        state: { messages: input.lines },
+        questions: {
+          lasting_fact: noul(
+            'Do `messages` state a lasting fact about a member — their likes, life, work, relationships, plans or nickname — or a fact about the group such as an event, a plan, a place or a running joke, or correct something said earlier? Jokes, questions, greetings and passing moods do not count.'
+          )
+        }
+      },
+      { timeout: config.jev.memoryTimeoutMs }
+    )
+    const latencyMs = performance.now() - startedAt
+    const answer = result.answers.lasting_fact
+    if (answer?.type !== 'noul') return null
+    return { noul: answer.noul, confidence: null, latencyMs, inputTokens: result.usage.input_tokens }
+  } catch (error) {
+    logger.warn(warningDetails('extraction', error), 'Jev judgment failed')
+    return null
+  }
+}

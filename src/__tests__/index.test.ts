@@ -31,6 +31,7 @@ vi.mock('../discord/client.js', () => ({
 vi.mock('../config.js', () => ({
   config: {
     discord: { token: 'token' },
+    jev: { apiKey: undefined },
     memory: { claimRetentionDays: 90 },
     metrics: { retentionDays: 90 },
     session: { historyRetentionDays: 7 }
@@ -71,6 +72,14 @@ describe('startup memory tasks', () => {
     expect(mocks.resetStuckProcessing.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.startExtractionScheduler.mock.invocationCallOrder[0]
     )
+  })
+
+  it('warns once at startup when passive memory has no TypeSafe API key', async () => {
+    await import('../index.js')
+    mocks.triggerReady()
+
+    expect(mocks.logger.warn).toHaveBeenCalledOnce()
+    expect(mocks.logger.warn).toHaveBeenCalledWith('Passive memory extraction is disabled: no TypeSafe API key')
   })
 
   it('contains startup memory task failures', async () => {

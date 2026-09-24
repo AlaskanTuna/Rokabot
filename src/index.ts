@@ -42,9 +42,15 @@ import { logger } from './utils/logger.js'
 
 const client = createClient()
 let claimPruneTimer: ReturnType<typeof setInterval> | undefined
+let loggedPassiveMemoryDisabled = false
 const EXTRACTION_QUEUE_STUCK_THRESHOLD_MS = 5 * 60 * 1000
 
 function startupMemoryTasks(botUserId?: string): void {
+  if (!config.jev.apiKey && !loggedPassiveMemoryDisabled) {
+    logger.warn('Passive memory extraction is disabled: no TypeSafe API key')
+    loggedPassiveMemoryDisabled = true
+  }
+
   try {
     backfillLegacyClaims()
     pruneStaleClaims(config.memory.claimRetentionDays, botUserId)

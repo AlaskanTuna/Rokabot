@@ -254,7 +254,8 @@ sudo docker logs rokabot-roka-1 2>&1 | grep '"msg":"Jev judgment failed"'
 To switch a feature, set `JEV_TONE`, `JEV_REFERENTS` or `JEV_EXTRACTION` to `off`, `shadow` or `on` in
 `~/rokabot/.env` and recreate the container (`sudo docker compose -f ~/rokabot/docker-compose.yml up -d`); a lasting
 change belongs in `config.yml` through a PR. Thresholds are `jev.*MinConfidence` and `jev.extractionAdmitThreshold`
-in `config.yml`. An empty `TYPESAFE_API_KEY` disables Jev entirely.
+in `config.yml`. Without `TYPESAFE_API_KEY`, startup logs `Passive memory extraction is disabled: no TypeSafe API key`
+once and passive memory drops every episode because Jev admission is required.
 
 ---
 
