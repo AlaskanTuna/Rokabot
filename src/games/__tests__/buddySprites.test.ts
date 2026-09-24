@@ -19,7 +19,9 @@ describe('buddy sprites', () => {
     expect(spriteUrls).toHaveLength(18)
     expect(spriteUrls).toEqual(
       expect.arrayContaining(
-        spriteUrls.map((url) => expect.stringMatching(/^https:\/\/i\.postimg\.cc\/[a-zA-Z0-9]+\/[a-zA-Z0-9_-]+\.png$/))
+        spriteUrls.map((url) =>
+          expect.stringMatching(/^https:\/\/pub-86e06f51812b4cd9a7562bf00fd8739c\.r2\.dev\/buddies\/v1\/[a-z]+\.png$/)
+        )
       )
     )
     expect(new Set(spriteUrls).size).toBe(18)

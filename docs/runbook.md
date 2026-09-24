@@ -167,11 +167,18 @@ sudo docker exec -it rokabot-roka-1 sh
 
 ---
 
-## Expression Thumbnails
+## Hosted Images
 
-The 33 expression thumbnails in `src/discord/expressions.ts` are served from the Cloudflare R2 bucket
-`rokabot-assets` through its public `r2.dev` URL, under `expressions/v1/<name>.webp` (512px WebP, about 38 KB
-each). The source PNGs stay local in `assets/roka-expressions-curated/` and are not committed.
+The 33 expression thumbnails in `src/discord/expressions.ts` and the 18 buddy sprites in
+`src/games/data/buddySpecies.ts` are served from the Cloudflare R2 bucket `rokabot-assets` through its public
+`r2.dev` URL:
+
+| Asset                 | Key                          | Format                              | Local Source                       |
+| --------------------- | ---------------------------- | ----------------------------------- | ---------------------------------- |
+| Expression Thumbnails | `expressions/v1/<name>.webp` | 512px WebP, about 38 KB each        | `assets/roka-expressions-curated/` |
+| Buddy Sprites         | `buddies/v1/<species>.png`   | 512px pixel-art PNG, uploaded as is | `assets/sprites/buddies/`          |
+
+Neither source folder is committed.
 
 Objects are uploaded with `Cache-Control: public, max-age=31536000, immutable`, so never overwrite one in place:
 upload a changed set under a new prefix (`expressions/v2/`) and swap the URLs in a PR. Wrangler needs IPv4 on this
