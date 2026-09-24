@@ -40,7 +40,6 @@ import {
   __resetTestRunTurnFactory,
   __setTestRunTurnFactory,
   generateResponse,
-  memoryToolsForRequest,
   rokaAgent,
   steeringForRequest
 } from '../roka.js'
@@ -875,7 +874,7 @@ describe('beforeModelCallback memory-tool filtering', () => {
   it('offers none of the memory tools on a memory-free turn', async () => {
     const request = requestWithEveryTool()
 
-    await memoryToolsForRequest.run({ memory: false }, () => callback({ context, request }))
+    await steeringForRequest.run({ memory: false }, () => callback({ context, request }))
 
     const names = declaredNames(request)
     expect(names.length).toBe(rokaTools.length - MEMORY_TOOL_NAMES.length)
@@ -887,7 +886,7 @@ describe('beforeModelCallback memory-tool filtering', () => {
   it('resolves no memory tool on a memory-free turn', async () => {
     const request = requestWithEveryTool()
 
-    await memoryToolsForRequest.run({ memory: false }, () => callback({ context, request }))
+    await steeringForRequest.run({ memory: false }, () => callback({ context, request }))
 
     for (const name of MEMORY_TOOL_NAMES) expect(request.toolsDict[name]).toBeUndefined()
     expect(Object.keys(request.toolsDict).length).toBe(rokaTools.length - MEMORY_TOOL_NAMES.length)
@@ -896,7 +895,7 @@ describe('beforeModelCallback memory-tool filtering', () => {
   it('leaves the non-memory tools alone', async () => {
     const request = requestWithEveryTool()
 
-    await memoryToolsForRequest.run({ memory: false }, () => callback({ context, request }))
+    await steeringForRequest.run({ memory: false }, () => callback({ context, request }))
 
     expect(declaredNames(request)).toContain('search_web')
     expect(request.toolsDict.search_web).toBeDefined()
@@ -905,7 +904,7 @@ describe('beforeModelCallback memory-tool filtering', () => {
   it('keeps every tool on a turn that does have memory', async () => {
     const request = requestWithEveryTool()
 
-    await memoryToolsForRequest.run({ memory: true }, () => callback({ context, request }))
+    await steeringForRequest.run({ memory: true }, () => callback({ context, request }))
 
     expect(declaredNames(request)).toHaveLength(rokaTools.length)
     for (const name of MEMORY_TOOL_NAMES) expect(request.toolsDict[name]).toBeDefined()
