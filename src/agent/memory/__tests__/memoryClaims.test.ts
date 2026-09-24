@@ -16,6 +16,7 @@ import {
   getActiveClaims,
   getEdges,
   pinClaim,
+  pruneActiveClaimOverflow,
   pruneStaleClaims,
   searchClaims,
   touchRecalled
@@ -155,6 +156,61 @@ describe('memoryClaims', () => {
 
     expect(pruneStaleClaims(7)).toBe(1)
     expect(getActiveClaims('guild-1', 'user-1')).toEqual([expect.objectContaining({ id: pinned.id, pinned: true })])
+  })
+
+  it('rejects active bot claims during pruning and does so only once', () => {
+    const botClaim = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'bot-1',
+      predicate: 'hobby',
+      value: 'tea ceremony',
+      sourceKind: 'explicit'
+    })
+    const userClaim = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'hobby',
+      value: 'pressed flowers',
+      sourceKind: 'explicit'
+    })
+
+    expect(pruneStaleClaims(90, 'bot-1')).toBe(1)
+    expect(getDb().prepare('SELECT status FROM memory_claim WHERE id = ?').get(botClaim.id)).toEqual({
+      status: 'rejected'
+    })
+    expect(getActiveClaims('guild-1', 'user-1')).toEqual([userClaim])
+    expect(pruneStaleClaims(90, 'bot-1')).toBe(0)
+  })
+
+  it('enforces the active claim cap during pruning while preserving pinned and higher-ranked claims', () => {
+    const now = Date.now()
+    const insert = getDb().prepare(`
+      INSERT INTO memory_claim (
+        guild_id, subject_user_id, predicate, value, source_kind, status,
+        salience, pinned, first_seen_at, last_seen_at
+      ) VALUES ('guild-1', 'legacy-user', 'likes', ?, 'legacy', 'active', ?, ?, ?, ?)
+    `)
+    for (const claim of [
+      { value: 'pinned', salience: 0.1, pinned: 1 },
+      { value: 'low', salience: 0.1, pinned: 0 },
+      { value: 'middle', salience: 0.2, pinned: 0 },
+      { value: 'high', salience: 0.3, pinned: 0 }
+    ]) {
+      insert.run(claim.value, claim.salience, claim.pinned, now, now)
+    }
+
+    expect(pruneStaleClaims()).toBe(2)
+    expect(getActiveClaims('guild-1', 'legacy-user').map(({ value }) => value)).toEqual(['pinned', 'high'])
+    expect(
+      getDb().prepare("SELECT value, status FROM memory_claim WHERE status = 'rejected' ORDER BY value").all()
+    ).toEqual([
+      { value: 'low', status: 'rejected' },
+      { value: 'middle', status: 'rejected' }
+    ])
+
+    insert.run('new-low', 0.05, 0, now, now)
+    expect(pruneActiveClaimOverflow()).toBe(1)
+    expect(getActiveClaims('guild-1', 'legacy-user').map(({ value }) => value)).toEqual(['pinned', 'high'])
   })
 
   // #111: pinClaim/unpinClaim had no production callers, so the eviction exemption config.yml documents
