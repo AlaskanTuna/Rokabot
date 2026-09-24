@@ -51,15 +51,15 @@ The tone answer's low confidence is why tone ships in shadow: the threshold has 
 - **One Client:** `src/agent/jev/client.ts` wraps the SDK. No key means no client, and every feature falls back to today's behaviour. One attempt only, no retries; failures log `Jev judgment failed` and return nothing.
 - **Per-Feature Modes:** `off`, `shadow` (ask Jev and log the answer next to the current decision, change nothing, never delay a reply) and `on`. All three ship in `shadow`.
 - **In The Reply Path (one request per turn):**
-  - **Tone:** a `choice` over the 12 tones. In `on` mode it replaces the regex tone at or above `jev.toneMinConfidence`.
+  - **Tone:** a `choice` over the 12 tones. In `on` mode it replaces the regex tone at or above `jev.toneMinProbability`.
   - **Referents:** a `choice` over candidate members for each name the resolver found ambiguous, plus `none`/`unclear`. In `on` mode a pick at or above `jev.referentMinConfidence` joins the people whose facts are injected. Unresolved stays unresolved.
-  - In `on` mode the request is awaited (bounded by `jev.timeoutMs`); in `shadow` it runs alongside the reply and only logs.
+  - In `on` mode the request is awaited (bounded by `jev.timeoutMs`); in `shadow` it runs alongside the reply without changing it.
 - **In The Background:** a `noul` asks whether the newest human message in a batch the rule gate rejected states a lasting fact or a correction. In `on` mode, at or above `jev.extractionAdmitThreshold`, the batch is queued with `admitted_by = 'jev'` so the extractor's re-gate does not drop it. Jev never overrides a sensitive or trivial refusal, and never vetoes a batch the rules admit.
 
 ## Rollout
 
-1. **Shadow:** read the `Jev turn judgment` and `Jev extraction admission` log lines against real chats for a few days (commands in `docs/runbook.md`).
-2. **Tune:** set the thresholds in `config.yml` from what shadow logged. Where Jev and the rules disagree is where to look.
+1. **Shadow:** use the persisted `jev_events` query in `docs/runbook.md` to review turn judgments across deploys, alongside `Jev extraction admission` logs.
+2. **Tune:** set the thresholds in `config.yml` from persisted turn judgments and extraction admission logs. Where Jev and the rules disagree is where to look.
 3. **Switch On:** one feature at a time, tone first, since its mistakes are visible and harmless. `JEV_TONE`, `JEV_REFERENTS` and `JEV_EXTRACTION` in `.env` override the `config.yml` modes without a code change.
 
 ## Deliberately Not Done

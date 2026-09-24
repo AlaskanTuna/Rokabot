@@ -184,7 +184,7 @@ describe('config module', () => {
     expect(config.jev.tone).toBe('shadow')
     expect(config.jev.referents).toBe('shadow')
     expect(config.jev.extraction).toBe('shadow')
-    expect(config.jev.toneMinConfidence).toBe(0.6)
+    expect(config.jev.toneMinProbability).toBe(0.85)
     expect(config.jev.referentMinConfidence).toBe(0.8)
     expect(config.jev.extractionAdmitThreshold).toBe(0.7)
 
@@ -720,7 +720,7 @@ describe('config module', () => {
       { path: 'gemini.maxOutputTokens', min: 1 },
       { path: 'jev.timeoutMs', min: 1 },
       { path: 'jev.backgroundTimeoutMs', min: 1 },
-      { path: 'jev.toneMinConfidence', min: 0, max: 1 },
+      { path: 'jev.toneMinProbability', min: 0, max: 1 },
       { path: 'jev.referentMinConfidence', min: 0, max: 1 },
       { path: 'jev.extractionAdmitThreshold', min: 0, max: 1 },
       { path: 'gemini.turnDeadlineMs', min: 1 },
@@ -813,13 +813,13 @@ describe('config module', () => {
     )
   })
 
-  it('throws if a Jev confidence threshold exceeds 1', async () => {
+  it('throws if a Jev tone probability threshold exceeds 1', async () => {
     setRequiredEnvVars()
     clearTunableEnvVars()
-    withYamlOverride({ jev: { toneMinConfidence: 1.1 } })
+    withYamlOverride({ jev: { toneMinProbability: 1.1 } })
 
     await expect(() => import('../config.js')).rejects.toThrow(
-      'Config value jev.toneMinConfidence must be <= 1, got: 1.1'
+      'Config value jev.toneMinProbability must be <= 1, got: 1.1'
     )
   })
 

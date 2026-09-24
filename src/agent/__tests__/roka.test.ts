@@ -2,9 +2,10 @@ import type { CallbackContext, LlmRequest } from '@google/adk'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { config } from '../../config.js'
 
-const mocks = vi.hoisted(() => ({ judgeTurn: vi.fn() }))
+const mocks = vi.hoisted(() => ({ judgeTurn: vi.fn(), recordJevEvent: vi.fn() }))
 
 vi.mock('../jev/judgments.js', () => ({ judgeTurn: mocks.judgeTurn }))
+vi.mock('../../storage/jevEventStore.js', () => ({ recordJevEvent: mocks.recordJevEvent }))
 
 // Aliased rather than cast at each site: the config type is readonly, and a `(config.x as ...)` statement
 // opens with a paren, which the formatter will happily weld onto the end of the line above it.
@@ -13,7 +14,7 @@ const mutableGeminiConfig = config.gemini as { liveMaxRetries: number }
 const mutableJevConfig = config.jev as {
   tone: 'off' | 'shadow' | 'on'
   referents: 'off' | 'shadow' | 'on'
-  toneMinConfidence: number
+  toneMinProbability: number
   referentMinConfidence: number
 }
 mutableJevConfig.tone = 'off'
@@ -140,7 +141,9 @@ afterEach(async () => {
   mutableMemoryConfig.claimsBackend = false
   mutableJevConfig.tone = 'off'
   mutableJevConfig.referents = 'off'
+  mutableJevConfig.toneMinProbability = 0.85
   vi.mocked(judgeTurn).mockReset()
+  mocks.recordJevEvent.mockReset()
   vi.restoreAllMocks()
 })
 
@@ -924,7 +927,8 @@ describe('generateResponse memory-free turn', () => {
       displayName: 'Mio',
       username: 'mio',
       userId: 'mio-id',
-      memory: false
+      memory: false,
+      turnEntryWork: { judgment: Promise.resolve(null), cancel: () => {} }
     })
 
     expect(retrieveForTurn).not.toHaveBeenCalled()
@@ -947,7 +951,8 @@ describe('generateResponse memory-free turn', () => {
       displayName: 'Mio',
       username: 'mio',
       userId: 'mio-id',
-      memory: false
+      memory: false,
+      turnEntryWork: { judgment: Promise.resolve(null), cancel: () => {} }
     })
 
     expect(capturedPrompt).not.toBe('')
@@ -965,7 +970,8 @@ describe('generateResponse memory-free turn', () => {
       displayName: 'Mio',
       username: 'mio',
       userId: 'mio-ladder-id',
-      memory: false
+      memory: false,
+      turnEntryWork: { judgment: Promise.resolve(null), cancel: () => {} }
     })
 
     for (const rung of [0, 1, 2, 3]) {
@@ -983,7 +989,8 @@ describe('generateResponse memory-free turn', () => {
       displayName: 'Mio',
       username: 'mio',
       userId: 'mio-id',
-      memory: true
+      memory: true,
+      turnEntryWork: { judgment: Promise.resolve(null), cancel: () => {} }
     })
 
     for (const tool of MEMORY_TOOL_NAMES) expect(context.systemPrompt).toContain(tool)
@@ -2222,11 +2229,11 @@ describe('Jev turn judgments', () => {
     ).toBe(true)
   })
 
-  it('applies an on-mode tone when confidence clears its threshold', async () => {
+  it('applies an on-mode tone when probability clears its threshold', async () => {
     mutableJevConfig.tone = 'on'
-    mutableJevConfig.toneMinConfidence = 0.7
+    mutableJevConfig.toneMinProbability = 0.85
     vi.mocked(judgeTurn).mockResolvedValue({
-      tone: { tone: 'sleepy', confidence: 0.8, probability: null },
+      tone: { tone: 'sleepy', confidence: 0.55, probability: 0.85 },
       referents: [],
       latencyMs: 3,
       inputTokens: 12
@@ -2260,7 +2267,8 @@ describe('Jev turn judgments', () => {
         referentsMode: 'off',
         ruleTone: 'confident',
         jevTone: 'sleepy',
-        toneConfidence: 0.8,
+        toneConfidence: 0.55,
+        toneProbability: 0.85,
         toneApplied: true,
         referents: [],
         latencyMs: 3,
@@ -2270,11 +2278,11 @@ describe('Jev turn judgments', () => {
     )
   })
 
-  it('keeps the rule tone when an on-mode tone is below threshold', async () => {
+  it('keeps the rule tone when an on-mode probability is below threshold', async () => {
     mutableJevConfig.tone = 'on'
-    mutableJevConfig.toneMinConfidence = 0.9
+    mutableJevConfig.toneMinProbability = 0.86
     vi.mocked(judgeTurn).mockResolvedValue({
-      tone: { tone: 'sleepy', confidence: 0.8, probability: null },
+      tone: { tone: 'sleepy', confidence: 0.9, probability: 0.85 },
       referents: [],
       latencyMs: 3,
       inputTokens: 12
@@ -2298,10 +2306,11 @@ describe('Jev turn judgments', () => {
     mutableMemoryConfig.claimsBackend = true
     mutableJevConfig.referents = 'on'
     mutableJevConfig.referentMinConfidence = 0.8
-    vi.mocked(resolveReferences).mockReturnValueOnce({
-      resolved: [{ userId: 'resolved-id', alias: 'Mimi', displayName: 'Mio', matchedBy: 'nickname' }],
+    const references = {
+      resolved: [{ userId: 'resolved-id', alias: 'Mimi', displayName: 'Mio', matchedBy: 'nickname' as const }],
       ambiguous: [{ alias: 'Rin', candidateIds: ['rin-1', 'rin-2'] }]
-    })
+    }
+    vi.mocked(resolveReferences).mockReturnValueOnce(references).mockReturnValueOnce(references)
     vi.mocked(getUserName).mockImplementation((userId) =>
       userId === 'rin-1' || userId === 'rin-2' ? { userId, username: userId, displayName: `Name ${userId}` } : null
     )
@@ -2353,10 +2362,11 @@ describe('Jev turn judgments', () => {
   it('leaves retrieval participants and the prompt unchanged for shadow referents', async () => {
     mutableMemoryConfig.claimsBackend = true
     mutableJevConfig.referents = 'shadow'
-    vi.mocked(resolveReferences).mockReturnValueOnce({
+    const references = {
       resolved: [],
       ambiguous: [{ alias: 'Rin', candidateIds: ['rin-1', 'rin-2'] }]
-    })
+    }
+    vi.mocked(resolveReferences).mockReturnValueOnce(references).mockReturnValueOnce(references)
     vi.mocked(retrieveForTurn).mockReturnValueOnce({
       entries: [],
       claims: [],

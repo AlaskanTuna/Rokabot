@@ -278,3 +278,11 @@ export function extractMessageContent(
 
   return { content, imageAttachments, unsupportedCount }
 }
+
+export function extractCurrentMessageContent(
+  message: Message,
+  botId: string | undefined,
+  componentTextsForTrigger: string[]
+): string {
+  return extractMessageContent(message, null, false, botId, componentTextsForTrigger).content
+}

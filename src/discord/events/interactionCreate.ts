@@ -4,6 +4,7 @@ import type { ImageAttachment } from '../../agent/attachments.js'
 import { generateResponse } from '../../agent/roka.js'
 import { withSearchCitations } from '../../agent/searchCitations.js'
 import { canAffordAttachments } from '../../agent/tokenBudget.js'
+import { startTurnEntryWork } from '../../agent/turnContext.js'
 import { config } from '../../config.js'
 import { type ResponseEventInput, recordResponseEvent } from '../../storage/metricsStore.js'
 import { logger } from '../../utils/logger.js'
@@ -78,16 +79,32 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
     }
 
     const message = interaction.options.getString('question', true)
-    // Truthiness rather than a null check: an unfilled option is absent, and callers spell that both ways.
-    const attached = Array.from({ length: MAX_ATTACHMENTS }, (_, index) =>
-      interaction.options.getAttachment(attachmentOptionName(index))
-    ).filter((candidate): candidate is Attachment => Boolean(candidate))
     const channelId = interaction.channelId
     // A label for metrics and session identity only. /ask runs memory-free, so this never becomes a
     // memory tenant — the client has no DirectMessages intent, so no message event ever yields one (#207).
     const guildId = interaction.guildId ?? `dm:${channelId}`
     const member = interaction.member
     const displayName = member && 'displayName' in member ? member.displayName : interaction.user.displayName
+    const turnEntryWork = startTurnEntryWork({
+      channelId,
+      guildId,
+      userId: interaction.user.id,
+      speakerName: displayName,
+      message
+    })
+    let turnEntryWorkHandedOff = false
+    let turnEntryWorkCancelled = false
+    const cancelTurnEntryWork = () => {
+      if (!turnEntryWorkHandedOff && !turnEntryWorkCancelled) {
+        turnEntryWork.cancel()
+        turnEntryWorkCancelled = true
+      }
+    }
+
+    // Truthiness rather than a null check: an unfilled option is absent, and callers spell that both ways.
+    const attached = Array.from({ length: MAX_ATTACHMENTS }, (_, index) =>
+      interaction.options.getAttachment(attachmentOptionName(index))
+    ).filter((candidate): candidate is Attachment => Boolean(candidate))
 
     // Documents ride the existing attachment slots rather than getting their own option: Discord's attachment
     // options accept any file already, so admitting the type is the whole change.
@@ -109,6 +126,7 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
     logger.debug({ channelId, message, imageCount: imageAttachments.length, unsupportedCount }, 'Slash command details')
 
     if (isChannelBusy(channelId)) {
+      cancelTurnEntryWork()
       logger.debug({ channelId }, 'Channel busy — sending busy message')
       await interaction.reply({ content: getRandomBusy() })
       setTimeout(() => interaction.deleteReply().catch(() => {}), 5000)
@@ -120,6 +138,7 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
     // return and on a `deferReply` that throws. Asked here to decline cheaply, taken below where a `finally`
     // can hand it back (#167).
     if (!rateLimiter.canAdmitCalls(config.gemini.maxLlmCalls)) {
+      cancelTurnEntryWork()
       logger.debug(
         { channelId, remainingRpm: rateLimiter.remainingRpm, remainingRpd: rateLimiter.remainingRpd },
         'Rate limit hit — declining'
@@ -137,6 +156,7 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
     // happen, which bounded spend adequately while every turn cost about the same; it does not bound this.
     // Asked before the reservation below so a declined turn has taken nothing it must hand back.
     if (imageAttachments.length > 0 && !canAffordAttachments()) {
+      cancelTurnEntryWork()
       logger.debug({ channelId }, 'Per-minute token budget too low for an attachment turn — sending busy message')
       await interaction.editReply({ content: getRandomBusy() })
       setTimeout(() => interaction.deleteReply().catch(() => {}), 5000)
@@ -150,6 +170,7 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
     // `maxLlmCalls` of them, so admitting on one slot let 15 turns become up to 60 requests (#167).
     const callReservation = rateLimiter.reserveCalls(config.gemini.maxLlmCalls)
     if (!callReservation) {
+      cancelTurnEntryWork()
       logger.debug({ channelId, remainingRpm: rateLimiter.remainingRpm }, 'Lost the race for call slots')
       await interaction.editReply({ content: getRandomBusy() })
       setTimeout(() => interaction.deleteReply().catch(() => {}), 5000)
@@ -163,6 +184,7 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
 
     const reservedBytes = reservationFor(imageAttachments)
     if (!tryReserve(reservedBytes)) {
+      cancelTurnEntryWork()
       // Released here rather than left to the `finally` below, which this path returns above. Nothing was
       // sent to the model, so the turn owes neither the slots nor its daily unit.
       callReservation.release(0)
@@ -176,6 +198,7 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
       // Inside the try, not before it, so the reservation above cannot be stranded by anything between the
       // two — markFree on a channel that was never marked is a no-op delete, so this costs nothing.
       markBusy(channelId)
+      turnEntryWorkHandedOff = true
       const [
         {
           text: responseText,
@@ -197,6 +220,7 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
           username: interaction.user.username,
           userId: interaction.user.id,
           memory: false,
+          turnEntryWork,
           imageAttachments: imageAttachments.length > 0 ? imageAttachments : undefined
         })
       )

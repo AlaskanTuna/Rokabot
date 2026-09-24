@@ -326,24 +326,34 @@ requests.
 
 Jev (TypeSafe's typed decision model, `@typesafe-ai/sdk`) answers pick-from-a-list questions; it never writes text,
 so Gemini still generates every reply, tool call and fact. The client (`src/agent/jev/client.ts`) exists only when
-`TYPESAFE_API_KEY` is set, is pinned to `jev.model` (`jev-1.13.0`), and makes one attempt with no retries. Every
-judgment returns nothing on failure or timeout, and the caller then keeps the rule-based decision.
+`TYPESAFE_API_KEY` is set, is pinned to `jev.model` (`jev-1.13.0`), and makes one attempt with no retries. Each
+message and `/ask` handler starts one `TurnEntryWork` before reply fetching, admission checks, linked-media
+resolution, deferral, or ADK session loading. Generation receives that same handle and awaits its judgment only when
+an enabled feature is `on`; `shadow` observes it asynchronously. A declined turn aborts the request, and failures
+keep the rule-based decision.
 
 Each feature has a mode in `config.yml` (`jev.tone`, `jev.referents`, `jev.extraction`), overridable by `JEV_TONE`,
 `JEV_REFERENTS` and `JEV_EXTRACTION`:
 
-| Mode     | Behaviour                                                                                    |
-| -------- | -------------------------------------------------------------------------------------------- |
-| `off`    | Jev is not asked                                                                             |
-| `shadow` | Jev is asked and its answer is logged beside the rule decision; nothing changes or waits     |
-| `on`     | Jev's answer is applied when its confidence clears the feature's threshold, else rules stand |
+| Mode     | Behaviour                                                                           |
+| -------- | ----------------------------------------------------------------------------------- |
+| `off`    | Jev is not asked                                                                    |
+| `shadow` | Jev is asked without waiting; turn judgments are logged and persisted               |
+| `on`     | Jev is applied when its feature-specific threshold passes; otherwise the rule stays |
 
 - **Turn Judgment:** at most one `judgeTurn` request per turn, carrying a tone `choice` over the 12 `ToneKey`s and a
   referent `choice` for each name `resolveReferences` found ambiguous (at most 3 names, 8 candidates each, plus
-  `none`/`unclear`). It is awaited, bounded by `jev.timeoutMs` (1200 ms), only when a feature it carries is `on`. An
-  applied tone needs `jev.toneMinConfidence`; an applied referent needs `jev.referentMinConfidence` and joins the
-  retrieval participants right after the resolver's members, with a `## Who Is Mentioned` line. The safety rung-3
-  `sincere` prompt still overrides any tone. Logged as `Jev turn judgment`.
+  `none`/`unclear`). It receives at most three prior lines from `session_history` and is bounded by `jev.timeoutMs`
+  (1200 ms). An `on` tone uses the selected-choice probability threshold `jev.toneMinProbability`; a missing
+  probability keeps the regex tone. An `on` referent still uses `jev.referentMinConfidence` and joins the retrieval
+  participants after the resolver's members, with a `## Who Is Mentioned` line. The safety rung-3 `sincere` prompt
+  still overrides any tone. Logged as `Jev turn judgment`.
+- **Turn Events:** each non-null turn judgment writes one `kind = 'turn'` row to `jev_events` with the rule baseline,
+  decision labels, probability, confidence, whether tone was applied, rounded latency and input tokens. It stores no
+  message text, alias or user ID. `metrics.retentionDays` prunes these rows with the other metrics tables.
+- **Replay Comparator:** `npm run replay:jev -- data/rokabot.db --max-turns 100` compares Jev tone labels with the
+  regex tone on retained history and transcript fixtures, including CJK turns. Regex agreement is a tuning
+  comparator, not ground-truth accuracy; the cutoff support rule also checks CJK agreement before tone can turn on.
 - **Memory Admission:** when the candidate gate refuses a batch as `known claim keywords only` or
   `no personal signal`, `judgeExtraction` asks a `noul` about the newest human message (bounded by
   `jev.backgroundTimeoutMs`). In `on` mode a probability at or above `jev.extractionAdmitThreshold` queues the batch
@@ -372,7 +382,7 @@ Flow: deferReply() → process → editReply(response)
 Event: messageCreate
 Filter: !author.bot && (isMentioned || isReplyToBot)
 Extract: content (stripped of mention tags), channelId, member.displayName
-Flow: sendTyping() → process → message.reply(response)
+Flow: start turn work and sendTyping() without waiting → fetch reply context → process → message.reply(response)
 ```
 
 #### Installation & Context Policy
