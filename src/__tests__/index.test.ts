@@ -41,7 +41,7 @@ vi.mock('../agent/memory/scheduler.js', () => ({
   startExtractionScheduler: mocks.startExtractionScheduler,
   stopExtractionScheduler: mocks.stopExtractionScheduler
 }))
-vi.mock('../agent/roka.js', () => ({ destroyAllSessions: vi.fn() }))
+vi.mock('../agent/session.js', () => ({ destroyAllSessions: vi.fn() }))
 vi.mock('../discord/emojiReactor.js', () => ({ cleanupExpiredCooldowns: vi.fn() }))
 vi.mock('../discord/reminderScheduler.js', () => ({ startReminderScheduler: vi.fn(), stopReminderScheduler: vi.fn() }))
 vi.mock('../discord/statusCycler.js', () => ({ stopStatusCycler: vi.fn() }))

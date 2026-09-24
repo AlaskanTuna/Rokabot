@@ -1,9 +1,8 @@
 /** ADK pipeline orchestrator for in-character response generation */
 
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { InMemorySessionService, LlmAgent, Runner, createEvent, isFinalResponse } from '@google/adk'
+import { LlmAgent, Runner, isFinalResponse } from '@google/adk'
 import type { Event, LlmResponse } from '@google/adk'
-import type { GetSessionRequest, Session } from '@google/adk'
 import { MediaResolution } from '@google/genai'
 import type { Content, Part } from '@google/genai'
 import { config } from '../config.js'
@@ -17,7 +16,7 @@ import { logger } from '../utils/logger.js'
 import { getSharedRateLimiter } from '../utils/rateLimiter.js'
 import { getLocalHour } from '../utils/timezone.js'
 import { estimateTokens } from '../utils/tokens.js'
-import { attachmentMarker, prepareAttachments } from './attachments.js'
+import { prepareAttachments } from './attachments.js'
 import type { ImageAttachment } from './attachments.js'
 import { modelRouteForRequest } from './fallbackModel.js'
 import { computeBackoff } from './geminiReliability.js'
@@ -40,7 +39,16 @@ import {
 } from './reliability.js'
 import type { ModelVerdict, TurnOutcome } from './reliability.js'
 import { SAFETY_SETTINGS } from './safetySettings.js'
-import { beginShutdown, isShuttingDown } from './shutdownSignal.js'
+import {
+  APP_NAME,
+  clearSessionErrorCount,
+  destroySession,
+  ensureSession,
+  incrementSessionErrorCount,
+  resetIdleTimer,
+  sessionService,
+  suppressSessionRehydration
+} from './session.js'
 import { chargeTokens } from './tokenBudget.js'
 import { detectTone } from './toneDetector.js'
 import { rokaTools } from './tools/index.js'
@@ -86,11 +94,6 @@ export interface GenerateResult {
   modelCalls: number
 }
 
-/** Exported so the live harness can pre-create the very session `getOrCreateSession` will look up, which is
- * the only way a gate case can run as anything other than a channel's first turn (#52). */
-export const APP_NAME = 'rokabot'
-
-const sessionErrorCounts = new Map<string, number>()
 const toolCallsForRequest = new AsyncLocalStorage<Set<string>>()
 
 /**
@@ -143,79 +146,6 @@ function requestCarriesVideo(request: { contents?: Content[] }): boolean {
     (content.parts ?? []).some((part) => part.inlineData?.mimeType?.startsWith('video/'))
   )
 }
-/** Caps event history returned by getSession to keep context within budget. Exported so the retention
- * contract test can drive a real ADK Runner against this exact class rather than a stand-in — the
- * `__setTestRunTurnFactory` seam replaces the call to `runner.runAsync`, so `appendEvent` never runs under
- * it and a test using that seam would observe no retention whether or not any existed. */
-export class WindowedSessionService extends InMemorySessionService {
-  /**
-   * Stored events still holding attachment bytes, by session. `appendEvent` receives the very object that
-   * gets pushed into storage — neither it nor `createEvent` copies — so holding the reference is what makes
-   * the later strip reach the stored history. `getSession` deep-clones, so stripping a fetched session
-   * would mutate a copy and change nothing.
-   */
-  private attachmentEvents = new Map<string, Event[]>()
-
-  constructor(private maxEvents: number) {
-    super()
-  }
-
-  override async getSession(request: GetSessionRequest): Promise<Session | undefined> {
-    return super.getSession({
-      ...request,
-      config: { ...request?.config, numRecentEvents: this.maxEvents }
-    })
-  }
-
-  override async appendEvent(request: Parameters<InMemorySessionService['appendEvent']>[0]): Promise<Event> {
-    const appended = await super.appendEvent(request)
-    if (request.event.content?.parts?.some((part: Part) => part.inlineData)) {
-      const pending = this.attachmentEvents.get(request.session.id) ?? []
-      pending.push(request.event)
-      this.attachmentEvents.set(request.session.id, pending)
-    }
-    return appended
-  }
-
-  /**
-   * Replace attachment bytes in this session's stored history with a text marker, once the turn that carried
-   * them is over. ADK appends the incoming message verbatim and nothing removes it, so without this the bytes
-   * are re-sent to the model as history on every later turn until they age out of the window — paying for one
-   * upload up to twenty times — and are held on the heap for as long. A retried turn appends the message once
-   * per attempt, so a single upload can leave several copies; every one of them is tracked and stripped.
-   *
-   * Returns the number of parts replaced, so a caller can log it and a test can tell "nothing to do" from
-   * "did nothing".
-   */
-  stripAttachmentBytes(sessionId: string): number {
-    const events = this.attachmentEvents.get(sessionId)
-    this.attachmentEvents.delete(sessionId)
-    if (!events) return 0
-
-    let stripped = 0
-    for (const event of events) {
-      const parts = event.content?.parts
-      if (!parts) continue
-      for (let index = 0; index < parts.length; index++) {
-        const inline = parts[index].inlineData
-        if (!inline) continue
-        parts[index] = { text: attachmentMarker(inline.mimeType ?? '') }
-        stripped++
-      }
-    }
-    return stripped
-  }
-
-  override async deleteSession(request: Parameters<InMemorySessionService['deleteSession']>[0]): Promise<void> {
-    this.attachmentEvents.delete(request.sessionId)
-    return super.deleteSession(request)
-  }
-}
-
-// Exported alongside rokaAgent so a test can assert generateResponse actually reaches the strip. Without
-// that, deleting the call site leaves every retention test green while attachments are retained again.
-export const sessionService = new WindowedSessionService(config.session.windowSize * 2)
-
 // Exported so tests can assert the agent-level config and beforeModelCallback seam directly
 export const rokaAgent = new LlmAgent({
   name: 'roka',
@@ -308,115 +238,6 @@ const runner = new Runner({
   sessionService,
   plugins: [new ErrorRecoveryPlugin('error-recovery')]
 })
-
-const idleTimers = new Map<string, ReturnType<typeof setTimeout>>()
-
-function resetIdleTimer(channelId: string): void {
-  const existing = idleTimers.get(channelId)
-  if (existing) clearTimeout(existing)
-
-  const timer = setTimeout(() => {
-    logger.info({ channelId }, 'Session idle timeout')
-    void destroySession(channelId)
-  }, config.session.ttlMs)
-
-  idleTimers.set(channelId, timer)
-}
-
-/** Channels whose next session rebuild must skip SQLite rehydration after a safety de-escalation */
-const rehydrationSuppressed = new Set<string>()
-
-/** Retrieve or create an ADK session for the given channel */
-async function ensureSession(channelId: string) {
-  let session = await sessionService.getSession({
-    appName: APP_NAME,
-    userId: channelId,
-    sessionId: channelId
-  })
-
-  if (!session) {
-    session = await sessionService.createSession({
-      appName: APP_NAME,
-      userId: channelId,
-      sessionId: channelId,
-      state: {}
-    })
-    logger.info({ channelId }, 'ADK session created')
-
-    try {
-      // A channel whose carried history tripped the safety filter rebuilds its window empty rather than
-      // rehydrating the same content straight back. In-memory only — SQLite history is left intact, and
-      // the suppression lifts when the session is next destroyed.
-      const prior = rehydrationSuppressed.has(channelId)
-        ? []
-        : loadHistory(channelId, config.session.windowSize, config.session.maxRehydrationAge)
-      if (prior.length > 0) {
-        for (const msg of prior) {
-          const role = msg.role === 'user' ? 'user' : 'model'
-          const content: Content = {
-            role,
-            parts: [
-              {
-                text: msg.role === 'user' ? `[${msg.displayName}]: ${msg.content}` : msg.content
-              }
-            ]
-          }
-          const event = createEvent({
-            author: msg.role === 'user' ? 'user' : 'roka',
-            invocationId: `rehydrate-${channelId}`,
-            content
-          })
-          await sessionService.appendEvent({ session, event })
-        }
-        session = (await sessionService.getSession({
-          appName: APP_NAME,
-          userId: channelId,
-          sessionId: channelId
-        }))!
-        logger.info({ channelId, rehydratedMessages: prior.length }, 'Session rehydrated from SQLite')
-      }
-    } catch (error) {
-      logger.warn({ channelId, error }, 'Failed to rehydrate session from SQLite')
-    }
-  }
-
-  return session
-}
-
-/** Clear the idle timer and delete the ADK session for a channel */
-export async function destroySession(channelId: string): Promise<void> {
-  const timer = idleTimers.get(channelId)
-  if (timer) {
-    clearTimeout(timer)
-    idleTimers.delete(channelId)
-  }
-
-  sessionErrorCounts.delete(channelId)
-  rehydrationSuppressed.delete(channelId)
-
-  try {
-    await sessionService.deleteSession({
-      appName: APP_NAME,
-      userId: channelId,
-      sessionId: channelId
-    })
-    logger.info({ channelId }, 'ADK session destroyed')
-  } catch (error) {
-    logger.debug({ channelId, error }, 'Session already destroyed or never existed')
-  }
-}
-
-/** Destroy every active ADK session for graceful shutdown */
-export async function destroyAllSessions(): Promise<void> {
-  beginShutdown()
-  abortActiveTurns()
-
-  const channels = [...idleTimers.keys()]
-  for (const channelId of channels) {
-    await destroySession(channelId)
-  }
-  logger.info('All ADK sessions destroyed')
-}
 
 const KNOWN_FALLBACKS = new Set([
   'Hmm? Sorry, I spaced out for a moment there~',
@@ -813,7 +634,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
                   // Carried history is the only remaining suspect: rebuild the window empty and drop images.
                   dropImages = true
                   await destroySession(channelId)
-                  rehydrationSuppressed.add(channelId)
+                  suppressSessionRehydration(channelId)
                   await ensureSession(channelId)
                   resetIdleTimer(channelId)
                   sessionWasReset = true
@@ -917,13 +738,13 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   if (reliability.action === 'destroy') await destroySession(channelId)
 
   if (reliability.success) {
-    sessionErrorCounts.delete(channelId)
+    clearSessionErrorCount(channelId)
   } else if (
     reliability.kind === 'transient_http' ||
     reliability.kind === 'network' ||
     reliability.kind === 'empty_text'
   ) {
-    sessionErrorCounts.set(channelId, (sessionErrorCounts.get(channelId) ?? 0) + 1)
+    incrementSessionErrorCount(channelId)
   }
 
   const toolsUsed = [...usedToolNames]

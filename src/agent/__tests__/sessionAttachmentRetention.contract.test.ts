@@ -1,7 +1,7 @@
 import { BaseLlm, LlmAgent, LogLevel, Runner, setLogLevel } from '@google/adk'
 import type { BaseLlmConnection, LlmRequest, LlmResponse } from '@google/adk'
 import { describe, expect, it } from 'vitest'
-import { WindowedSessionService } from '../roka.js'
+import { WindowedSessionService } from '../session.js'
 
 // A contract test against ADK itself, driving a real Runner. ADK appends the incoming message to the session
 // verbatim and nothing removes it, so attachment bytes are re-sent as history on every later turn until they

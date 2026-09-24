@@ -64,13 +64,8 @@ vi.mock('../../utils/timezone.js', () => ({ getLocalHour: () => 12 }))
 import { RoutedLlm, modelRouteForRequest } from '../fallbackModel.js'
 import { __resetModelFallbackForTest, runTurnWithReliability } from '../reliability.js'
 import type { TurnOutcome } from '../reliability.js'
-import {
-  __resetTestRunTurnFactory,
-  __setTestRunTurnFactory,
-  destroySession,
-  generateResponse,
-  rokaAgent
-} from '../roka.js'
+import { __resetTestRunTurnFactory, __setTestRunTurnFactory, generateResponse, rokaAgent } from '../roka.js'
+import { destroySession } from '../session.js'
 import { resetForTest } from '../shutdownSignal.js'
 
 const mutableFallbackConfig = config.fallback as unknown as { timeoutMs: number; stickyMs: number }

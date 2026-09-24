@@ -39,14 +39,12 @@ import type { TestRunTurn } from '../roka.js'
 import {
   __resetTestRunTurnFactory,
   __setTestRunTurnFactory,
-  destroyAllSessions,
-  destroySession,
   generateResponse,
   rokaAgent,
-  sessionService,
   steeringForRequest
 } from '../roka.js'
 import { buildSafetySettings } from '../safetySettings.js'
+import { destroyAllSessions, destroySession, sessionService } from '../session.js'
 import { beginShutdown, isShuttingDown, resetForTest } from '../shutdownSignal.js'
 import { __resetTokenBudgetForTest, remainingTokensThisMinute } from '../tokenBudget.js'
 import { rokaTools } from '../tools/index.js'

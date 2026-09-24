@@ -3,14 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import '../env.js'
-import {
-  APP_NAME,
-  __resetTestRunTurnFactory,
-  __setTestRunTurnFactory,
-  destroySession,
-  generateResponse,
-  sessionService
-} from '../../../src/agent/roka.js'
+import { __resetTestRunTurnFactory, __setTestRunTurnFactory, generateResponse } from '../../../src/agent/roka.js'
+import { APP_NAME, destroySession, sessionService } from '../../../src/agent/session.js'
 import { seedWorld } from '../toolTrigger.js'
 import { loadCaseSet } from '../toolTriggerScoring.js'
 

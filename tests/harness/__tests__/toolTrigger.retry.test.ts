@@ -1,10 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CaseSetHeader, ToolTriggerCase } from '../toolTriggerScoring.js'
 
-vi.mock('../../../src/agent/roka.js', () => ({
-  generateResponse: vi.fn(),
-  destroySession: vi.fn(async () => {})
-}))
+vi.mock('../../../src/agent/roka.js', () => ({ generateResponse: vi.fn() }))
+vi.mock('../../../src/agent/session.js', () => ({ destroySession: vi.fn(async () => {}) }))
 vi.mock('../../../src/agent/memory/memoryClaims.js', () => ({ assertClaim: vi.fn() }))
 vi.mock('../../../src/storage/sessionStore.js', () => ({ saveMessage: vi.fn() }))
 vi.mock('../../../src/storage/userNames.js', () => ({ upsertUserName: vi.fn() }))
@@ -13,7 +11,8 @@ vi.mock('../../../src/storage/userNames.js', () => ({ upsertUserName: vi.fn() })
 vi.mock('../quotaDiagnostic.js', () => ({ diagnoseKey: vi.fn(async () => 'STUBBED DIAGNOSIS') }))
 vi.mock('../gateRecord.js', () => ({ emitTrialRecord: vi.fn() }))
 
-const { destroySession, generateResponse } = await import('../../../src/agent/roka.js')
+const { generateResponse } = await import('../../../src/agent/roka.js')
+const { destroySession } = await import('../../../src/agent/session.js')
 const { diagnoseKey } = await import('../quotaDiagnostic.js')
 const { emitTrialRecord } = await import('../gateRecord.js')
 const { runCaseSet } = await import('../toolTrigger.js')
