@@ -18,6 +18,39 @@ describe('parseExtractionOutput', () => {
     expect(parseExtractionOutput(JSON.stringify(output))).toEqual(output)
   })
 
+  it('accepts dated guild plans and rejects subject, predicate, and field mismatches', () => {
+    const plan = {
+      ops: [
+        {
+          op: 'add',
+          subject: { kind: 'guild' },
+          predicate: 'plan',
+          value: 'Members planned a game night',
+          date: { relative: 'tomorrow' }
+        }
+      ],
+      summary: 'Members made a server plan.'
+    }
+
+    expect(parseExtractionOutput(JSON.stringify(plan))).toEqual(plan)
+    for (const op of [
+      { op: 'add', subject, predicate: 'plan', value: 'Game night', date: { relative: 'tomorrow' } },
+      { op: 'add', subject: { kind: 'guild' }, predicate: 'likes', value: 'tea' },
+      {
+        op: 'add',
+        subject: { kind: 'guild' },
+        predicate: 'plan',
+        value: 'Game night',
+        date: { relative: 'tomorrow' },
+        objectUserId: 'u-2'
+      },
+      { op: 'add', subject: { kind: 'user', userId: 'u-1' }, predicate: 'likes', value: 'tea', date: {} },
+      { op: 'add', subject: { kind: 'guild' }, predicate: 'plan', value: 'Game night' }
+    ]) {
+      expect(() => parseExtractionOutput(JSON.stringify({ ops: [op], summary: 'A fact.' }))).toThrow()
+    }
+  })
+
   it('rejects an update without an existing claim ID', () => {
     expect(() =>
       parseExtractionOutput(

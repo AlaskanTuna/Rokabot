@@ -3,20 +3,21 @@ import { getDb } from '../../storage/database.js'
 import { recordMemoryEvent } from '../../storage/metricsStore.js'
 import { getAllUserNames } from '../../storage/userNames.js'
 import { estimateTokens } from '../../utils/tokens.js'
-import type { ClaimSource, MemoryClaim } from './memoryClaims.js'
+import type { ClaimSource, UserMemoryClaim } from './memoryClaims.js'
 import { touchRecalled } from './memoryClaims.js'
 import { PREDICATES, type PredicateId, predicateCategory, routeTopics } from './predicates.js'
 
 type ClaimRow = {
   id: number
   guild_id: string
+  subject_kind: 'user'
   subject_user_id: string
   predicate: PredicateId
   value: string
   object_kind: 'user' | null
   object_user_id: string | null
   source_kind: ClaimSource
-  status: MemoryClaim['status']
+  status: UserMemoryClaim['status']
   confidence: number
   salience: number
   pinned: number
@@ -25,6 +26,7 @@ type ClaimRow = {
   first_seen_at: number
   last_seen_at: number
   last_recalled_at: number | null
+  expires_at: number | null
 }
 
 export type RetrieveForTurnInput = Readonly<{
@@ -35,7 +37,7 @@ export type RetrieveForTurnInput = Readonly<{
 }>
 
 export type RetrievedClaim = Readonly<{
-  claim: MemoryClaim
+  claim: UserMemoryClaim
   score: number
 }>
 
@@ -58,10 +60,11 @@ const SOURCE_WEIGHT: Readonly<Record<ClaimSource, number>> = {
   legacy: 0.5
 }
 
-function mapClaim(row: ClaimRow): MemoryClaim {
+function mapClaim(row: ClaimRow): UserMemoryClaim {
   return {
     id: row.id,
     guildId: row.guild_id,
+    subjectKind: 'user',
     subjectUserId: row.subject_user_id,
     predicate: row.predicate,
     value: row.value,
@@ -76,17 +79,18 @@ function mapClaim(row: ClaimRow): MemoryClaim {
     supersededBy: row.superseded_by,
     firstSeenAt: row.first_seen_at,
     lastSeenAt: row.last_seen_at,
-    lastRecalledAt: row.last_recalled_at
+    lastRecalledAt: row.last_recalled_at,
+    expiresAt: row.expires_at
   }
 }
 
-function getActiveClaims(guildId: string, userIds: string[]): MemoryClaim[] {
+function getActiveClaims(guildId: string, userIds: string[]): UserMemoryClaim[] {
   if (userIds.length === 0) return []
   const placeholders = userIds.map(() => '?').join(', ')
   const rows = getDb()
     .prepare(
       `SELECT * FROM memory_claim
-       WHERE guild_id = ? AND status = 'active' AND subject_user_id IN (${placeholders})`
+       WHERE guild_id = ? AND subject_kind = 'user' AND status = 'active' AND subject_user_id IN (${placeholders})`
     )
     .all(guildId, ...userIds) as ClaimRow[]
   return rows.map(mapClaim)
@@ -102,7 +106,7 @@ function searchClaimIds(guildId: string, userIds: string[], message: string): Se
     .prepare(
       `SELECT memory_claim.id FROM memory_claim
        JOIN memory_claim_fts ON memory_claim.id = memory_claim_fts.rowid
-       WHERE memory_claim.guild_id = ? AND memory_claim.status = 'active'
+       WHERE memory_claim.guild_id = ? AND memory_claim.subject_kind = 'user' AND memory_claim.status = 'active'
          AND memory_claim.needs_review = 0 AND memory_claim.subject_user_id IN (${placeholders})
          AND memory_claim_fts MATCH ?
        ORDER BY bm25(memory_claim_fts), memory_claim.salience DESC
@@ -112,7 +116,12 @@ function searchClaimIds(guildId: string, userIds: string[], message: string): Se
   return new Set(rows.map(({ id }) => id))
 }
 
-function scoreClaim(claim: MemoryClaim, ftsIds: Set<number>, routedPredicates: Set<PredicateId>, now: number): number {
+function scoreClaim(
+  claim: UserMemoryClaim,
+  ftsIds: Set<number>,
+  routedPredicates: Set<PredicateId>,
+  now: number
+): number {
   const ageDays = Math.max(0, now - claim.lastSeenAt) / (24 * 60 * 60 * 1000)
   const recency = 1 / (1 + ageDays / 30)
   const decayedSalience = claim.salience * 0.5 ** (ageDays / config.memory.salienceHalfLifeDays)
@@ -223,7 +232,7 @@ export function retrieveForTurn(input: RetrieveForTurnInput): RetrievalResult {
     return true
   }
 
-  const addExpansion = (claim: MemoryClaim): void => {
+  const addExpansion = (claim: UserMemoryClaim): void => {
     if (claim.objectKind !== 'user' || !claim.objectUserId || !participantIds.includes(claim.objectUserId)) return
     const expansion = candidates.find(({ claim: candidate }) => candidate.subjectUserId === claim.objectUserId)
     if (expansion) add(expansion)

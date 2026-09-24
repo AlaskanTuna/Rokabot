@@ -29,6 +29,7 @@ describe('claims schema', () => {
     expect(columns('memory_claim')).toEqual([
       'id',
       'guild_id',
+      'subject_kind',
       'subject_user_id',
       'predicate',
       'value',
@@ -43,7 +44,8 @@ describe('claims schema', () => {
       'superseded_by',
       'first_seen_at',
       'last_seen_at',
-      'last_recalled_at'
+      'last_recalled_at',
+      'expires_at'
     ])
     expect(columns('memory_evidence')).toEqual(['id', 'claim_id', 'channel_id', 'source_kind', 'observed_at'])
     expect(columns('extraction_queue')).toEqual([
@@ -73,7 +75,8 @@ describe('claims schema', () => {
       expect.arrayContaining([
         'idx_memory_claim_guild_subject_status',
         'idx_memory_claim_guild_status_last_seen',
-        'idx_memory_claim_dedup'
+        'idx_memory_claim_user_dedup',
+        'idx_memory_claim_guild_dedup'
       ])
     )
     expect(indexes('memory_evidence')).toContain('idx_memory_evidence_claim')

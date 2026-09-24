@@ -199,7 +199,7 @@ export async function judgeEpisodeOperations(input: {
     const questions: Questions = {}
     const questionKeys: string[] = []
     for (const [index, op] of input.ops.entries()) {
-      if (op.op === 'noop') continue
+      if (op.op === 'noop' || op.subject.kind !== 'user') continue
       const durableKey = `durable_${index}`
       const attributedKey = `attributed_${index}`
       questions[durableKey] = noul(
@@ -211,13 +211,14 @@ export async function judgeEpisodeOperations(input: {
       questionKeys.push(durableKey, attributedKey)
 
       if (op.op === 'add') {
+        const subjectUserId = op.subject.userId
         const claims = input.existing.filter(
-          (claim) => claim.subjectUserId === op.subject.userId && claim.predicate === op.predicate
+          (claim) => claim.subjectUserId === subjectUserId && claim.predicate === op.predicate
         )
         for (const [claimIndex, claim] of claims.entries()) {
           const key = `same_as_${index}_${claimIndex}`
           questions[key] = noul(
-            `Do the episode messages state the same fact about ${op.subject.userId} as existing claim #${claim.id}: ${claim.value}?`
+            `Do the episode messages state the same fact about ${subjectUserId} as existing claim #${claim.id}: ${claim.value}?`
           )
           questionKeys.push(key)
         }

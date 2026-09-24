@@ -10,6 +10,7 @@ import {
   EXTRACTION_RESPONSE_SCHEMA,
   type ExtractionOutput as EpisodeExtractionOutput,
   type ExtractionOp as EpisodeOperation,
+  type UserExtractionOp,
   parseExtractionOutput
 } from './extractionSchema.js'
 import {
@@ -83,7 +84,7 @@ export type OperationApplicationReport = {
   duplicateOps: number
 }
 
-type EpisodeWriteOp = Exclude<EpisodeOperation, { op: 'noop' }>
+type EpisodeWriteOp = Exclude<UserExtractionOp, { op: 'noop' }>
 type PlannedOperation = {
   index: number
   op: EpisodeWriteOp
@@ -127,7 +128,9 @@ function hasCompleteVerification(
 
 function operationAllowed(op: EpisodeWriteOp, subjectIds: Set<string>): boolean {
   const objectUserId = 'objectUserId' in op ? op.objectUserId : undefined
-  return subjectIds.has(op.subject.userId) && (!objectUserId || subjectIds.has(objectUserId))
+  return (
+    op.subject.kind === 'user' && subjectIds.has(op.subject.userId) && (!objectUserId || subjectIds.has(objectUserId))
+  )
 }
 
 function operationSafe(op: EpisodeWriteOp): boolean {
@@ -141,7 +144,7 @@ export async function verifyAndApplyOperations(input: {
   output: EpisodeExtractionOutput
   subjectIds: Set<string>
 }): Promise<OperationApplicationReport> {
-  const writeOps = input.output.ops.filter((op): op is EpisodeWriteOp => op.op !== 'noop')
+  const writeOps = input.output.ops.filter((op): op is EpisodeWriteOp => op.op !== 'noop' && op.subject.kind === 'user')
   if (writeOps.length === 0) return { appliedOps: 0, droppedOps: 0, duplicateOps: 0 }
 
   const humanIds = new Set(input.episode.messages.filter((message) => !message.isBot).map((message) => message.userId))

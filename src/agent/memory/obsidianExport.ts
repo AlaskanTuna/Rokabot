@@ -3,7 +3,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { dump } from 'js-yaml'
 import { config } from '../../config.js'
 import { getDb } from '../../storage/database.js'
-import { type MemoryClaim, getActiveClaims } from './memoryClaims.js'
+import { type UserMemoryClaim, getActiveClaims } from './memoryClaims.js'
 
 type ActiveClaimSubject = Readonly<{
   guild_id: string
@@ -27,13 +27,13 @@ function listActiveClaimSubjects(): ActiveClaimSubject[] {
     .prepare(
       `SELECT DISTINCT guild_id, subject_user_id
        FROM memory_claim
-       WHERE status = 'active'
+       WHERE subject_kind = 'user' AND status = 'active'
        ORDER BY guild_id, subject_user_id`
     )
     .all() as ActiveClaimSubject[]
 }
 
-function formatClaimGroups(claims: MemoryClaim[]): Record<string, ExportedClaim[]> {
+function formatClaimGroups(claims: UserMemoryClaim[]): Record<string, ExportedClaim[]> {
   const groups: Record<string, ExportedClaim[]> = {}
 
   for (const { predicate, value, sourceKind, pinned, lastSeenAt } of claims) {
@@ -50,14 +50,14 @@ function formatClaimGroups(claims: MemoryClaim[]): Record<string, ExportedClaim[
   return groups
 }
 
-function formatRelationships(claims: MemoryClaim[]): string {
+function formatRelationships(claims: UserMemoryClaim[]): string {
   const edges = claims.filter(({ predicate, objectUserId }) => predicate === 'relationship_to' && objectUserId)
   if (edges.length === 0) return ''
 
   return `## Relationships\n\n${edges.map(({ objectUserId, value }) => `- [[${objectUserId}]] — ${value}`).join('\n')}\n`
 }
 
-function formatNote(claims: MemoryClaim[]): string {
+function formatNote(claims: UserMemoryClaim[]): string {
   return `---\n${dump(formatClaimGroups(claims))}---\n\n${formatRelationships(claims)}`
 }
 
