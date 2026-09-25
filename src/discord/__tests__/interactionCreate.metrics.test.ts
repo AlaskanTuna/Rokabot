@@ -211,6 +211,7 @@ describe('interaction handler metrics', () => {
       interaction.deferReply.mock.invocationCallOrder[0]
     )
     expect(mocks.generateResponse).toHaveBeenCalledWith(expect.objectContaining({ turnEntryWork }))
+    expect(mocks.startTurnEntryWork).toHaveBeenCalledWith(expect.objectContaining({ includeEpisodeRecall: false }))
   })
 
   it('starts entry work with the raw /ask question', async () => {
@@ -536,6 +537,7 @@ describe('interaction handler metrics', () => {
       expect.objectContaining({ guildId: 'dm:channel-1', memory: false })
     )
     expect(mocks.recordResponseEvent).toHaveBeenCalledWith(expect.objectContaining({ guildId: 'dm:channel-1' }))
+    expect(mocks.startTurnEntryWork).toHaveBeenCalledWith(expect.objectContaining({ includeEpisodeRecall: false }))
   })
 
   it('asks for no memory in a guild either', async () => {
@@ -557,6 +559,7 @@ describe('interaction handler metrics', () => {
 
     // Being in a guild is what made /ask memoryful before; it is not what makes it so now.
     expect(mocks.generateResponse).toHaveBeenCalledWith(expect.objectContaining({ guildId: 'guild-1', memory: false }))
+    expect(mocks.startTurnEntryWork).toHaveBeenCalledWith(expect.objectContaining({ includeEpisodeRecall: false }))
   })
 
   it("keeps the follow-up chunk count under Discord's 5-follow-up cap at the max response length", async () => {

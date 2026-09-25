@@ -67,6 +67,12 @@ interface YamlConfig {
     episodeMaxMessages?: number
     admitThreshold?: number
     verifyThreshold?: number
+    episodeRecallK?: number
+    episodeTokenBudget?: number
+    episodeMinSimilarity?: number
+    episodeRetentionDays?: number
+    embeddingModel?: string
+    embeddingTimeoutMs?: number
     vaultExportDir?: string
   }
   metrics?: { retentionDays?: number; diagnosticsRetentionHours?: number }
@@ -215,6 +221,12 @@ export const config = {
     episodeMaxMessages,
     admitThreshold: yaml.memory?.admitThreshold ?? 0.5,
     verifyThreshold: yaml.memory?.verifyThreshold ?? 0.5,
+    episodeRecallK: yaml.memory?.episodeRecallK ?? 3,
+    episodeTokenBudget: yaml.memory?.episodeTokenBudget ?? 200,
+    episodeMinSimilarity: yaml.memory?.episodeMinSimilarity ?? 0.45,
+    episodeRetentionDays: yaml.memory?.episodeRetentionDays ?? 90,
+    embeddingModel: yaml.memory?.embeddingModel ?? 'gemini-embedding-2',
+    embeddingTimeoutMs: yaml.memory?.embeddingTimeoutMs ?? 1500,
     vaultExportDir: envString('MEMORY_VAULT_EXPORT_DIR') ?? yaml.memory?.vaultExportDir ?? 'data/vault'
   },
   metrics: {
@@ -335,6 +347,11 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   },
   { path: 'memory.admitThreshold', value: config.memory.admitThreshold, min: 0, max: 1 },
   { path: 'memory.verifyThreshold', value: config.memory.verifyThreshold, min: 0, max: 1 },
+  { path: 'memory.episodeRecallK', value: config.memory.episodeRecallK, min: 1, max: 10 },
+  { path: 'memory.episodeTokenBudget', value: config.memory.episodeTokenBudget, min: 1 },
+  { path: 'memory.episodeMinSimilarity', value: config.memory.episodeMinSimilarity, min: 0, max: 1 },
+  { path: 'memory.episodeRetentionDays', value: config.memory.episodeRetentionDays, min: 1 },
+  { path: 'memory.embeddingTimeoutMs', value: config.memory.embeddingTimeoutMs, min: 1 },
   { path: 'metrics.retentionDays', value: config.metrics.retentionDays, min: 1 },
   { path: 'metrics.diagnosticsRetentionHours', value: config.metrics.diagnosticsRetentionHours, min: 1 },
   { path: 'emoji.probability', value: config.emoji.probability, min: 0, max: 1 },

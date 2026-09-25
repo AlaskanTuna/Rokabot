@@ -189,6 +189,23 @@ function createTables(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_jev_events_created_at
       ON jev_events (created_at);
 
+    CREATE TABLE IF NOT EXISTS memory_episode (
+      id INTEGER PRIMARY KEY,
+      guild_id TEXT NOT NULL,
+      channel_id TEXT NOT NULL,
+      started_at INTEGER NOT NULL,
+      ended_at INTEGER NOT NULL,
+      summary TEXT NOT NULL,
+      embedding BLOB,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_memory_episode_guild_ended
+      ON memory_episode (guild_id, ended_at DESC, id DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_memory_episode_ended
+      ON memory_episode (ended_at);
+
   `)
 }
 

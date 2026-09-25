@@ -3,6 +3,7 @@ import type { Part } from '@google/genai'
 import { config } from '../config.js'
 import type { WindowMessage } from '../session/types.js'
 import { recordJevEvent } from '../storage/jevEventStore.js'
+import type { EpisodeEmbedding } from '../storage/memoryEpisodeStore.js'
 import { recordMemoryEvent } from '../storage/metricsStore.js'
 import { getChannelUsers, loadHistory } from '../storage/sessionStore.js'
 import { getAllUserNames, getUserName } from '../storage/userNames.js'
@@ -11,6 +12,8 @@ import { getLocalHour } from '../utils/timezone.js'
 import { estimateTokens } from '../utils/tokens.js'
 import { judgeTurn } from './jev/judgments.js'
 import type { TurnJudgment, TurnJudgmentInput } from './jev/judgments.js'
+import { embedEpisodeText } from './memory/episodeEmbeddings.js'
+import { buildEpisodeRecallBlock } from './memory/episodeRetriever.js'
 import { resolveReferences } from './memory/identityResolver.js'
 import { retrieveForTurn } from './memory/retriever.js'
 import { getMessages as getBufferMessages } from './passiveBuffer.js'
@@ -46,6 +49,7 @@ export interface StartTurnEntryWorkInput {
   message: string
   lookupQuery?: string
   mentionedUserIds?: string[]
+  includeEpisodeRecall?: boolean
 }
 
 export type PendingTurnJudgment = Promise<TurnJudgment | null>
@@ -53,6 +57,7 @@ export type PendingTurnJudgment = Promise<TurnJudgment | null>
 export interface TurnEntryWork {
   judgment: PendingTurnJudgment
   prefetch: Promise<PrefetchResult>
+  queryEmbedding?: Promise<EpisodeEmbedding | null>
   needsLookup?: number | null
   cancel(): void
 }
@@ -94,6 +99,16 @@ function buildEntryJudgmentInput(input: StartTurnEntryWorkInput): TurnJudgmentIn
 
 export function startTurnEntryWork(input: StartTurnEntryWorkInput): TurnEntryWork {
   const controller = new AbortController()
+  const embeddingController = new AbortController()
+  const queryEmbedding = input.includeEpisodeRecall
+    ? Promise.resolve()
+        .then(() =>
+          embeddingController.signal.aborted
+            ? null
+            : embedEpisodeText({ text: input.message, role: 'RETRIEVAL_QUERY', signal: embeddingController.signal })
+        )
+        .catch(() => null)
+    : undefined
   let judgmentInput: TurnJudgmentInput
   try {
     judgmentInput = buildEntryJudgmentInput(input)
@@ -102,8 +117,12 @@ export function startTurnEntryWork(input: StartTurnEntryWorkInput): TurnEntryWor
     return {
       judgment: Promise.resolve(null),
       prefetch: Promise.resolve({ decision: { fire: false, reason: 'no_judgment' }, outcome: null }),
+      queryEmbedding,
       needsLookup: null,
-      cancel: () => controller.abort()
+      cancel: () => {
+        controller.abort()
+        embeddingController.abort()
+      }
     }
   }
   const shouldAsk = judgmentInput.includeTone || judgmentInput.ambiguous.length > 0 || judgmentInput.includeLookup
@@ -137,10 +156,30 @@ export function startTurnEntryWork(input: StartTurnEntryWorkInput): TurnEntryWor
   return {
     judgment,
     prefetch,
+    queryEmbedding,
     get needsLookup() {
       return needsLookup
     },
-    cancel: () => controller.abort()
+    cancel: () => {
+      controller.abort()
+      embeddingController.abort()
+    }
+  }
+}
+
+async function awaitEpisodeRecallBlock(pending: Promise<EpisodeEmbedding | null>, guildId: string): Promise<string> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), config.memory.embeddingTimeoutMs)
+  })
+  try {
+    const embedding = await Promise.race([pending, timeout])
+    if (!embedding) return ''
+    return buildEpisodeRecallBlock({ guildId, queryEmbedding: embedding })
+  } catch {
+    return ''
+  } finally {
+    if (timer) clearTimeout(timer)
   }
 }
 
@@ -350,6 +389,12 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
 
   const basePrompt = assembleSystemPrompt({ tone, hour, displayName, memory })
   let factsSection = ''
+  const episodeSectionPromise =
+    memory && guildId && !guildId.startsWith('dm:') && options.turnEntryWork.queryEmbedding
+      ? awaitEpisodeRecallBlock(options.turnEntryWork.queryEmbedding, guildId).then((block) =>
+          block ? `\n\n${block}` : ''
+        )
+      : Promise.resolve('')
   let overheardSection = ''
   let factEntryCount = 0
 
@@ -451,6 +496,7 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
     : `\n\n- The current user's Discord ID is "${userId}".`
 
   const prefetch = await awaitTurnPrefetch(options.turnEntryWork, channelId)
+  const episodeSection = await episodeSectionPromise
   turnEvent.prefetch = prefetch
   persistTurnEventWhenReady()
   const lookedUpSection = prefetch.block ? `\n\n${prefetch.block}` : ''
@@ -463,6 +509,7 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
     return [
       head,
       safetyRung < 2 ? `${factsSection}${whoIsMentionedSection}` : '',
+      safetyRung < 2 ? episodeSection : '',
       safetyRung < 1 ? overheardSection : '',
       tailSection,
       safetyRung === 0 ? lookedUpSection : '',

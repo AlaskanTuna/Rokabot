@@ -190,12 +190,12 @@ text. Behavioral precedence is pinned by `src/agent/__tests__/toneDetector.test.
 It reads the current message plus the two session messages before it, so the tone answers the message being
 replied to rather than only the history.
 
-## Memory Architecture (User Claims)
+## Memory Architecture
 
 The shipped memory write path extracts user-subject claims from monitored guild-channel episodes and stores them in
 SQLite. `guild_id` is the tenant scope: the Discord guild ID in a server and `dm:<channelId>` for an explicit DM memory
-tool call. Subjects in the write schema are always Discord users. Group or guild subjects and durable episodic recall
-are later-phase work.
+tool call. Subjects in the claim write schema are always Discord users. Guild-scoped episode summaries are stored
+separately and are not user-subject claims.
 
 ### Storage Schema
 
@@ -206,6 +206,7 @@ are later-phase work.
 | `memory_claim_fts`      | `value`, `predicate`                                                                                                                                                                                                                          | FTS5 mirror of active claims, maintained by insert, update, and delete triggers.                                  |
 | `memory_episode_cursor` | `channel_id`, `guild_id`, `last_message_id`, `opened_at`, `message_count`                                                                                                                                                                     | Per-channel checkpoint for the open episode.                                                                      |
 | `extraction_queue`      | `id`, `guild_id`, `channel_id`, `payload`, `status`, `attempts`, `enqueued_at`                                                                                                                                                                | Closed episode payloads in `pending`, `processing`, or retained `failed` state.                                   |
+| `memory_episode`        | `id`, `guild_id`, `channel_id`, `started_at`, `ended_at`, `summary`, `embedding`, `created_at`                                                                                                                                                | One completed episode summary per queue ID; nullable 768-value float32 embedding.                                 |
 | `memory_events`         | `id`, `kind`, `guild_id`, `channel_id`, `subject_user_id`, `duration_ms`, `n_candidates`, `n_selected`, `n_changed`, `tokens_est`, `op`, `created_at`                                                                                         | Value-free retrieval and claim-change telemetry.                                                                  |
 | `jev_events`            | `kind`, `guild_id`, `channel_id`, `question`, `answer`, `probability`, `confidence`, `applied`, `latency_ms`, `input_tokens`, `baseline`, `created_at`                                                                                        | Value-free Jev judgment telemetry. The kind is `turn`, `admission`, or `verification`; `baseline` is optional.    |
 
@@ -232,8 +233,9 @@ judgment with probability at least `memory.admitThreshold` (0.5); if Jev is unav
 usable answer, the episode is dropped without a Gemini extraction request. `TYPESAFE_API_KEY` is therefore required
 for passive memory, and startup warns once when it is absent.
 
-Gemini uses `gemini.extractionModel` (defaulting to `gemini.model`) and returns a strict operation list plus an
-ephemeral one-to-two-sentence summary. The summary is not written to SQLite. Each operation subject is
+Gemini uses `gemini.extractionModel` (defaulting to `gemini.model`) and returns a strict operation list plus a
+one-to-two-sentence summary. The summary is persisted in `memory_episode` with the extraction queue ID as its
+idempotency key; its document embedding is stored in the same row when the embedding call succeeds. Each operation subject is
 `{ kind: 'user', userId }`; operations are:
 
 - **Add:** insert an active claim for a user and predicate.
@@ -267,6 +269,8 @@ pruning mark claims `rejected`. Rows are retained for history and evidence links
 The retention job marks unpinned candidate and active claims `rejected` when `last_seen_at` exceeds
 `memory.claimRetentionDays` (90 days); pinned claims are exempt. `memory.maxActiveClaimsPerUser` (20) limits active
 claims per subject, evicting the least salient unpinned claims first. Explicitly remembered claims are pinned.
+The daily episode retention pass deletes `memory_episode` rows with `ended_at` strictly older than
+`memory.episodeRetentionDays` (90 days) and re-embeds retained rows with missing or unreadable vectors.
 
 ### Bounded Retrieval Contract
 
@@ -297,6 +301,28 @@ Retrieval runs once in `src/agent/turnContext.ts` while assembling `_systemPromp
 that already-assembled state to assign the system instruction; it never triggers retrieval or reads the database.
 Selected claims use the shared `buildFactsEnvelope` untrusted-data envelope.
 
+### Episodic Recall
+
+Completed episode summaries are embedded with `memory.embeddingModel` (`gemini-embedding-2`) at 768 dimensions and
+stored as 3072-byte little-endian float32 BLOBs in `memory_episode.embedding`. Document input is prefixed with
+`title: none | text: `; query input is prefixed with `task: search result | query: `. The role prefixes are required
+by `gemini-embedding-2`; requests set `outputDimensionality: 768` and omit `taskType`. The embedding client uses
+`GEMINI_API_KEY` and `memory.embeddingTimeoutMs` (1500 ms). A failed summary embedding leaves a null vector for
+maintenance to repair.
+
+Message handlers start the query embedding inside `TurnEntryWork` at the same point as Jev entry work. Only guild
+message turns request it; `/ask` and DMs do not. Recall reads episodes with `WHERE guild_id = ?` and computes cosine
+similarity in JavaScript. Results must score strictly above `memory.episodeMinSimilarity` (0.45), are ordered by score,
+then `ended_at` descending and ID ascending, and are limited by `memory.episodeRecallK` (3) and the rendered
+`memory.episodeTokenBudget` (200). The prompt uses the UTC end date and JSON-escaped summaries under an explicit
+untrusted-data heading. If query embedding or retrieval fails or reaches its timeout, context assembly continues
+without episode context.
+
+The daily maintenance pass deletes rows whose `ended_at` is older than `memory.episodeRetentionDays` (90 days), then
+visits each guild's null or unreadable embeddings sequentially and retries document embedding. A failed row remains
+available for a later pass. `/stats` reports the number of episodes ended in the last 30 days, and the vault export
+writes guild-local `Episodes.md` files without embedding bytes.
+
 ### Explicit Legacy Migration
 
 `npm run migrate:memory-v2` is an explicit offline command; startup never drops `user_memory` or invokes the migration.
@@ -325,14 +351,14 @@ interpolation and exclude zero-gap ties; ties remain in `sampleCount`.
 
 `exportVault()` and `npm run export:vault` are read-only, offline export paths. They write one note per
 (`guild_id`, `subject_user_id`), with YAML frontmatter grouped by predicate and `relationship_to` facts rendered as
-`[[wikilinks]]`. `dm:` scopes remain isolated in their own export paths. A containment guard based on `path.relative`
-and `path.isAbsolute` rejects a note path outside the export directory. Export performs no store writes and no network
-requests.
+`[[wikilinks]]`, plus one guild-local `Episodes.md` for stored episode summaries. Episode dates and time ranges use
+UTC; each summary is a JSON-encoded blockquote payload, and embeddings are omitted. `dm:` claim scopes remain isolated
+in their own export paths. A containment guard based on `path.relative` and `path.isAbsolute` rejects every note path
+outside the export directory. Export performs no store writes and no network requests.
 
 ### Deferred Items
 
-- Group or guild-subject facts, stored `memory_episode` records, dates, and episodic-recall blocks are later PR 4/5 work.
-- Embeddings and `sqlite-vec` semantic retrieval.
+- Group or guild-subject claims and `sqlite-vec` semantic retrieval.
 - An ADK `globalInstruction` spike.
 - Two-way Obsidian vault synchronization; the current export is one-way and read-only.
 

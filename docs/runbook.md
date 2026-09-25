@@ -406,6 +406,20 @@ sqlite3 ~/rokabot/data/rokabot.db 'SELECT status, COUNT(*) AS jobs FROM extracti
 
 Use the bot's `forget_user` tool to retract a claim. It changes claim status so the historical claim row is retained.
 
+### Episodic Memory
+
+Episode summaries and 768-dimensional embeddings are stored by guild in `memory_episode`. Embedding requests use
+`GEMINI_API_KEY` and `memory.embeddingModel` (`gemini-embedding-2`); they consume a separate project quota from text
+generation. For planning only, the spec's free-tier estimate is 100 RPM, 30 K TPM, and 1 K RPD; check AI Studio for
+your project's current limits. Embedding requests do not debit the bot's generation rate limiter. The daily
+maintenance pass deletes episodes past `memory.episodeRetentionDays` and retries rows with missing or unreadable
+embeddings.
+
+```bash
+# Episode counts by guild
+sqlite3 ~/rokabot/data/rokabot.db 'SELECT guild_id, COUNT(*) AS episodes FROM memory_episode GROUP BY guild_id ORDER BY guild_id;'
+```
+
 ### Memory V2 Migration
 
 Run this explicit migration only with the bot stopped, from a repository checkout with Node.js 24 and dependencies

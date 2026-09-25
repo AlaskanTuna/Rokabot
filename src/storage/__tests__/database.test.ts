@@ -59,6 +59,28 @@ describe('runMigrations', () => {
     ])
   })
 
+  it('creates the guild-scoped memory episode table and indexes at startup', () => {
+    process.env.ROKABOT_DB_PATH = ':memory:'
+
+    const startupDb = database.getDb()
+    const columns = startupDb.prepare("PRAGMA table_info('memory_episode')").all() as Array<{ name: string }>
+    const indexes = startupDb.prepare("PRAGMA index_list('memory_episode')").all() as Array<{ name: string }>
+
+    expect(columns.map((column) => column.name)).toEqual([
+      'id',
+      'guild_id',
+      'channel_id',
+      'started_at',
+      'ended_at',
+      'summary',
+      'embedding',
+      'created_at'
+    ])
+    expect(indexes.map((index) => index.name)).toEqual(
+      expect.arrayContaining(['idx_memory_episode_guild_ended', 'idx_memory_episode_ended'])
+    )
+  })
+
   it('rebuilds the old extraction queue without losing pending, processing, or failed episodes', () => {
     testDb = new Database(':memory:')
     testDb.exec(`
