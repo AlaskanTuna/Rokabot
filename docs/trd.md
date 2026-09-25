@@ -349,7 +349,7 @@ maintenance to repair.
 
 Message handlers start the query embedding inside `TurnEntryWork` at the same point as Jev entry work. Only guild
 message turns request it; `/ask` and DMs do not. Recall reads episodes with `WHERE guild_id = ?` and computes cosine
-similarity in JavaScript. Results must score strictly above `memory.episodeMinSimilarity` (0.45), are ordered by score,
+similarity in JavaScript. Results must score strictly above `memory.episodeMinSimilarity` (0.7), are ordered by score,
 then `ended_at` descending and ID ascending, and are limited by `memory.episodeRecallK` (3) and the rendered
 `memory.episodeTokenBudget` (200). The prompt uses the UTC end date and JSON-escaped summaries under an explicit
 untrusted-data heading. If query embedding or retrieval fails or reaches its timeout, context assembly continues

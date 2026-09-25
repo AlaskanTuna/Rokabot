@@ -137,8 +137,12 @@ export function normalizePredicate(rawKey: string): PredicateId {
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '')
 
-  if (isKnownPredicate(normalized)) return normalized
-  return SYNONYMS[normalized] ?? 'misc'
+  for (const candidate of [normalized, normalized.replace(/ies$/, 'y').replace(/s$/, ''), `${normalized}s`]) {
+    if (isKnownPredicate(candidate)) return candidate
+    const synonym = SYNONYMS[candidate]
+    if (synonym) return synonym
+  }
+  return 'misc'
 }
 
 export function predicateCategory(predicateId: PredicateId): PredicateCategory {

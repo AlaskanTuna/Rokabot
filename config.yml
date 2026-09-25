@@ -73,7 +73,7 @@ memory:
   verifyThreshold: 0.5 # Minimum Jev probability for durable and attributed operations
   episodeRecallK: 3 # Maximum episode summaries recalled for one guild turn
   episodeTokenBudget: 200 # Approximate token budget for the dated episode block
-  episodeMinSimilarity: 0.45 # Minimum cosine similarity required for episode recall
+  episodeMinSimilarity: 0.7 # Minimum cosine similarity required for episode recall. A 648-pair calibration (2026-09-25) admitted 0 of 624 unrelated query-summary pairs at 0.7 and kept 20 of 24 related ones; 0.45 admitted 622 unrelated
   episodeRetentionDays: 90 # Days to retain episode summaries and embeddings
   embeddingModel: gemini-embedding-2 # Gemini embedding model used for episode summaries and queries
   embeddingTimeoutMs: 1500 # Maximum wait for one episode embedding before memory fails open

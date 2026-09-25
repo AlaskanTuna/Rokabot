@@ -81,6 +81,15 @@ describe('predicate helpers', () => {
     expect(isKnownPredicate('unrecognized_detail')).toBe(false)
   })
 
+  it('maps the singular or plural form of a known predicate or synonym to it', () => {
+    expect(normalizePredicate('hobbies')).toBe('hobby')
+    expect(normalizePredicate('favorite_games')).toBe('favorite_game')
+    expect(normalizePredicate('pronoun')).toBe('pronouns')
+    expect(normalizePredicate('like')).toBe('likes')
+    expect(normalizePredicate('routines')).toBe('daily_routine')
+    expect(normalizePredicate('news')).toBe('misc')
+  })
+
   it('returns registered metadata for a normalized predicate', () => {
     expect(predicateCategory('favorite_anime')).toBe('interests')
     expect(cardinalityOf('favorite_anime')).toBe('single')

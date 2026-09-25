@@ -231,7 +231,7 @@ export const config = {
     verifyThreshold: yaml.memory?.verifyThreshold ?? 0.5,
     episodeRecallK: yaml.memory?.episodeRecallK ?? 3,
     episodeTokenBudget: yaml.memory?.episodeTokenBudget ?? 200,
-    episodeMinSimilarity: yaml.memory?.episodeMinSimilarity ?? 0.45,
+    episodeMinSimilarity: yaml.memory?.episodeMinSimilarity ?? 0.7,
     episodeRetentionDays: yaml.memory?.episodeRetentionDays ?? 90,
     embeddingModel: yaml.memory?.embeddingModel ?? 'gemini-embedding-2',
     embeddingTimeoutMs: yaml.memory?.embeddingTimeoutMs ?? 1500,
