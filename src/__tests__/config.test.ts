@@ -253,6 +253,29 @@ describe('config module', () => {
     )
   })
 
+  it('loads bounded episodic memory settings', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+
+    const { config, NUMERIC_BOUNDS } = await import('../config.js')
+
+    expect(config.memory.episodeRecallK).toBe(3)
+    expect(config.memory.episodeTokenBudget).toBe(200)
+    expect(config.memory.episodeMinSimilarity).toBe(0.45)
+    expect(config.memory.episodeRetentionDays).toBe(90)
+    expect(config.memory.embeddingModel).toBe('gemini-embedding-2')
+    expect(config.memory.embeddingTimeoutMs).toBe(1500)
+    expect(NUMERIC_BOUNDS.map(({ path }) => path)).toEqual(
+      expect.arrayContaining([
+        'memory.episodeRecallK',
+        'memory.episodeTokenBudget',
+        'memory.episodeMinSimilarity',
+        'memory.episodeRetentionDays',
+        'memory.embeddingTimeoutMs'
+      ])
+    )
+  })
+
   it('env vars override config.yml values', async () => {
     setRequiredEnvVars()
     vi.stubEnv('LOG_LEVEL', 'debug')
@@ -782,6 +805,11 @@ describe('config module', () => {
       { path: 'memory.recallCooldownMs', min: 0 },
       { path: 'memory.episodeLullMs', min: 1 },
       { path: 'memory.episodeMaxMessages', min: 1, max: 27 },
+      { path: 'memory.episodeRecallK', min: 1, max: 10 },
+      { path: 'memory.episodeTokenBudget', min: 1 },
+      { path: 'memory.episodeMinSimilarity', min: 0, max: 1 },
+      { path: 'memory.episodeRetentionDays', min: 1 },
+      { path: 'memory.embeddingTimeoutMs', min: 1 },
       { path: 'metrics.diagnosticsRetentionHours', min: 1 },
       { path: 'metrics.retentionDays', min: 1 },
       { path: 'emoji.probability', min: 0, max: 1 },

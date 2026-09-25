@@ -33,7 +33,7 @@ WindowedSessionService (ADK)
 Roka Agent (ADK)
   - 4-layer prompt system (core → speech → tone → context)
   - Rule-based tone detection (zero LLM cost)
-  - Passive memory: episode tracker → durable queue → Jev admission → Gemini typed extraction → Jev verification → user and guild claims
+  - Passive memory: episode tracker → durable queue → Jev admission → Gemini typed extraction → Jev verification → user and guild claims; completed summaries are embedded for guild-scoped recall
   - Gemini Flash Lite backend, with a ModelScope Qwen fallback when Gemini is unavailable
     │
     ▼
@@ -42,8 +42,9 @@ Gemini API (rate limits configured in `config.yml`)
 
 **Key Constraints:**
 
-- SQLite (better-sqlite3, `data/rokabot.db`) is canonical for session history, memory claims, the passive extraction queue, reminders, game/gacha data, and metrics. `WindowedSessionService` maintains a per-channel in-memory session window rehydrated from SQLite on restart.
+- SQLite (better-sqlite3, `data/rokabot.db`) is canonical for session history, memory claims, episode summaries and embeddings, the passive extraction queue, reminders, game/gacha data, and metrics. `WindowedSessionService` maintains a per-channel in-memory session window rehydrated from SQLite on restart.
 - Passive memory writes user-subject claims and guild-subject facts from monitored guild messages. Guild rows use `subject_kind='guild'`, a null `subject_user_id`, and optional `expires_at`; upcoming events and plans expire at the next configured-local midnight after their date. The episode cursor checkpoints messages, closed episodes enter the durable queue, and Jev admission and verification gate Gemini's typed operations.
+- Passive memory writes user-subject claims and guild-scoped episode summaries. The episode cursor checkpoints monitored guild messages, closed episodes enter the durable queue, and Jev admission and verification gate Gemini's typed operations. Episode summaries are retained according to `memory.episodeRetentionDays` and recalled only within their guild.
 - Memory-enabled guild turns add a separate, same-guild server-fact prompt block bounded by `memory.guildFactsTokenBudget`; `/ask` reads no memory, and `forget_user` targets user subjects only.
 - RPM, rather than RPD, is the binding rate limit; its value is configured in `config.yml`.
 - System prompt (4 assembled layers) is size-capped; the cap is `MAX_SYSTEM_PROMPT_TOKENS` in `tests/harness/tokens.ts`, enforced by `tests/harness/__tests__/tokens.test.ts`. It exists for change detection, not latency.

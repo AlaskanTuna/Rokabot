@@ -1,6 +1,7 @@
 import { claimNextForGuild, listGuildsWithPending, markDone, markFailed } from '../../storage/extractionQueue.js'
 import { logger } from '../../utils/logger.js'
 import { isShuttingDown } from '../shutdownSignal.js'
+import { persistEpisodeResult } from './episodePersistence.js'
 import { runEpisodePipeline } from './extractor.js'
 
 let timer: ReturnType<typeof setTimeout> | undefined
@@ -35,7 +36,8 @@ function finishJob(guildId: string): void {
 function runJob(job: NonNullable<ReturnType<typeof claimNextForGuild>>): void {
   inFlightGuilds.add(job.guildId)
   const task = runEpisodePipeline(job)
-    .then(() => {
+    .then(async (result) => {
+      await persistEpisodeResult({ job, result })
       markDone(job.id)
     })
     .catch((error: unknown) => {

@@ -27,6 +27,7 @@ import {
   chatsSince,
   currentAndBestStreak,
   distinctRememberedUsers,
+  episodeCount,
   latencyE2e,
   memoryGrowthSeries,
   mostActiveDay,
@@ -355,6 +356,7 @@ async function buildMemory(guildId: string, guild: Guild, sinceMs: number, conta
           '### 🌸 Remembering Together',
           stat('Active Memories', formatNumber(activeClaimCount(guildId, botUserId))),
           stat('Members Remembered', formatNumber(distinctRememberedUsers(guildId, botUserId))),
+          stat('Episodes Remembered', formatNumber(episodeCount(guildId, sinceMs))),
           stat('New This Month', formatNumber(newClaimsThisMonth(guildId, sinceMs, botUserId))),
           predicateText
         ].join('\n')

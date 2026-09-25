@@ -5,6 +5,7 @@ vi.mock('../../../../utils/logger.js', () => ({
 }))
 
 import { closeDb, getDb } from '../../../../storage/database.js'
+import { saveMemoryEpisode } from '../../../../storage/memoryEpisodeStore.js'
 import * as statsQueries from '../queries.js'
 import {
   MEMORY_STATS_SQL,
@@ -13,6 +14,7 @@ import {
   busiestChannel,
   chatsSince,
   distinctRememberedUsers,
+  episodeCount,
   hourHistogram,
   outcomeBreakdown,
   retrySummary,
@@ -157,6 +159,18 @@ function insertGuildClaim({
     .run(guildId, predicate, value, firstSeenAt, firstSeenAt, expiresAt)
 }
 
+function seedEpisode(id: number, guildId: string, endedAt: number): void {
+  saveMemoryEpisode({
+    id,
+    guildId,
+    channelId: 'channel-a',
+    startedAt: endedAt - 1000,
+    endedAt,
+    summary: 'A test episode.',
+    embedding: null
+  })
+}
+
 function seedMemory(): void {
   const db = getDb()
   const claim = db.prepare(
@@ -172,6 +186,14 @@ function seedMemory(): void {
 }
 
 describe('stats queries', () => {
+  it('counts recent episodes for only the requested guild', () => {
+    seedEpisode(11, 'guild-a', sinceMs + 1)
+    seedEpisode(12, 'guild-a', sinceMs - 1)
+    seedEpisode(13, 'guild-b', sinceMs + 1)
+
+    expect(episodeCount('guild-a', sinceMs)).toBe(1)
+  })
+
   it('returns guild-scoped, windowed response metrics with the cutoff included', () => {
     const tones = [
       'playful',

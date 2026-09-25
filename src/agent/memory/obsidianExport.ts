@@ -3,6 +3,8 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { dump } from 'js-yaml'
 import { config } from '../../config.js'
 import { getDb } from '../../storage/database.js'
+import { listEpisodeGuildIds, listEpisodesForGuild } from '../../storage/memoryEpisodeStore.js'
+import type { MemoryEpisode } from '../../storage/memoryEpisodeStore.js'
 import { type GuildMemoryClaim, type UserMemoryClaim, getActiveClaims, getActiveGuildClaims } from './memoryClaims.js'
 
 type ActiveClaimSubject = Readonly<{
@@ -24,6 +26,7 @@ type ExportedGuildClaim = ExportedClaim & Readonly<{ expires_at?: number }>
 export type VaultExportResult = Readonly<{
   notes: number
   claims: number
+  episodes: number
 }>
 
 function listActiveClaimSubjects(): ActiveClaimSubject[] {
@@ -102,6 +105,20 @@ function notePath(exportDir: string, guildId: string, fileName: string): string 
   return path
 }
 
+function formatEpisodeNote(episodes: readonly MemoryEpisode[]): string {
+  return [...episodes]
+    .sort((left, right) => right.endedAt - left.endedAt || left.id - right.id)
+    .map((episode) => {
+      const date = new Date(episode.endedAt).toISOString().slice(0, 10).replace(/#/g, '\\#')
+      const range =
+        new Date(episode.startedAt).toISOString().slice(11, 16) +
+        '–' +
+        new Date(episode.endedAt).toISOString().slice(11, 16)
+      return '### ' + date + ' (' + range + ' UTC)\n\n> ' + JSON.stringify(episode.summary) + '\n'
+    })
+    .join('\n')
+}
+
 export async function exportVault(dir: string = config.memory.vaultExportDir): Promise<VaultExportResult> {
   const subjects = listActiveClaimSubjects()
   const now = Date.now()
@@ -109,6 +126,7 @@ export async function exportVault(dir: string = config.memory.vaultExportDir): P
   const exportDir = resolve(dir)
   let claims = 0
   let notes = subjects.length
+  let episodes = 0
 
   for (const { guild_id: guildId, subject_user_id: userId } of subjects) {
     const activeClaims = getActiveClaims(guildId, userId)
@@ -130,5 +148,15 @@ export async function exportVault(dir: string = config.memory.vaultExportDir): P
     notes++
   }
 
-  return { notes, claims }
+  for (const guildId of listEpisodeGuildIds()) {
+    const guildEpisodes = listEpisodesForGuild(guildId)
+    if (guildEpisodes.length === 0) continue
+    const path = notePath(exportDir, guildId, 'Episodes.md')
+
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, formatEpisodeNote(guildEpisodes), 'utf8')
+    episodes += guildEpisodes.length
+  }
+
+  return { notes, claims, episodes }
 }

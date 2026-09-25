@@ -68,6 +68,12 @@ memory:
   episodeMaxMessages: 25 # Close an episode at this many delta messages; leave room for three context lines
   admitThreshold: 0.5 # Minimum Jev lasting_fact probability; unavailable or lower judgments drop the episode
   verifyThreshold: 0.5 # Minimum Jev probability for durable and attributed operations
+  episodeRecallK: 3 # Maximum episode summaries recalled for one guild turn
+  episodeTokenBudget: 200 # Approximate token budget for the dated episode block
+  episodeMinSimilarity: 0.45 # Minimum cosine similarity required for episode recall
+  episodeRetentionDays: 90 # Days to retain episode summaries and embeddings
+  embeddingModel: gemini-embedding-2 # Gemini embedding model used for episode summaries and queries
+  embeddingTimeoutMs: 1500 # Maximum wait for one episode embedding before memory fails open
   vaultExportDir: data/vault # Directory for read-only Obsidian vault exports
 
 metrics:

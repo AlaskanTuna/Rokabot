@@ -104,7 +104,8 @@ export const MEMORY_STATS_SQL = {
                       AND ((subject_kind = 'guild' AND (expires_at IS NULL OR expires_at > ?))
                         OR (subject_kind = 'user' AND subject_user_id != ?))`,
   distinctRememberedUsers:
-    "SELECT COUNT(DISTINCT subject_user_id) AS count FROM memory_claim WHERE guild_id = ? AND subject_kind = 'user' AND status = 'active' AND subject_user_id != ?"
+    "SELECT COUNT(DISTINCT subject_user_id) AS count FROM memory_claim WHERE guild_id = ? AND subject_kind = 'user' AND status = 'active' AND subject_user_id != ?",
+  episodeCount: 'SELECT COUNT(*) AS count FROM memory_episode WHERE guild_id = ? AND ended_at >= ?'
 } as const
 
 export const MEMORY_DETAIL_SQL = {
@@ -355,6 +356,10 @@ export function activeClaimCount(guildId: string, excludeUserId: string): number
 export function distinctRememberedUsers(guildId: string, excludeUserId: string): number {
   return (getDb().prepare(MEMORY_STATS_SQL.distinctRememberedUsers).get(guildId, excludeUserId) as { count: number })
     .count
+}
+
+export function episodeCount(guildId: string, sinceMs: number): number {
+  return (getDb().prepare(MEMORY_STATS_SQL.episodeCount).get(guildId, sinceMs) as { count: number }).count
 }
 
 export function newClaimsThisMonth(guildId: string, sinceMs: number, excludeUserId: string): number {

@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   recordMemoryEvent: vi.fn(),
   recordJevEvent: vi.fn(),
   getMessages: vi.fn(() => []),
+  embedEpisodeText: vi.fn(),
+  buildEpisodeRecallBlock: vi.fn(() => ''),
   resolveReferences: vi.fn(() => ({ resolved: [], ambiguous: [] })),
   retrieveForTurn: vi.fn(() => ({ entries: [], claims: [] })),
   retrieveGuildFacts: vi.fn(() => ({ facts: [], tokensEst: 0 })),
@@ -52,6 +54,8 @@ vi.mock('../../agent/memory/retriever.js', () => ({
   retrieveForTurn: mocks.retrieveForTurn,
   retrieveGuildFacts: mocks.retrieveGuildFacts
 }))
+vi.mock('../memory/episodeEmbeddings.js', () => ({ embedEpisodeText: mocks.embedEpisodeText }))
+vi.mock('../memory/episodeRetriever.js', () => ({ buildEpisodeRecallBlock: mocks.buildEpisodeRecallBlock }))
 vi.mock('../passiveBuffer.js', () => ({ getMessages: mocks.getMessages }))
 vi.mock('../promptAssembler.js', () => ({ assembleSystemPrompt: mocks.assembleSystemPrompt }))
 vi.mock('../promptSafety.js', () => ({
@@ -128,6 +132,8 @@ describe('turn entry work', () => {
     mocks.ensureSession.mockResolvedValue({ events: [] })
     mocks.retrieveGuildFacts.mockReturnValue({ facts: [], tokensEst: 0 })
     mocks.judgeTurn.mockResolvedValue(null)
+    mocks.embedEpisodeText.mockResolvedValue(Array.from({ length: 768 }, () => 0.25))
+    mocks.buildEpisodeRecallBlock.mockReturnValue('')
     mocks.runPrefetchForJudgment.mockResolvedValue({ decision: { fire: false, reason: 'no_judgment' }, outcome: null })
     mocks.settlePrefetch.mockImplementation((prefetch: Promise<unknown>) => prefetch)
   })
@@ -148,6 +154,63 @@ describe('turn entry work', () => {
 
     await expect(work.judgment).resolves.toBeNull()
     expect(signal?.aborted).toBe(true)
+  })
+
+  it('starts query embedding alongside Jev work only when episode recall is enabled', async () => {
+    const pendingJudgment = deferred<TurnJudgment | null>()
+    const vector = Array.from({ length: 768 }, () => 0.25)
+    mocks.judgeTurn.mockReturnValue(pendingJudgment.promise)
+    mocks.embedEpisodeText.mockResolvedValue(vector)
+
+    const work = startTurnEntryWork({ ...entryWork(), includeEpisodeRecall: true })
+
+    await vi.waitFor(() => {
+      expect(mocks.judgeTurn).toHaveBeenCalledOnce()
+      expect(mocks.embedEpisodeText).toHaveBeenCalledOnce()
+    })
+    expect(mocks.embedEpisodeText).toHaveBeenCalledWith({
+      text: 'hello',
+      role: 'RETRIEVAL_QUERY',
+      signal: expect.any(AbortSignal)
+    })
+    await expect(work.queryEmbedding).resolves.toEqual(vector)
+    pendingJudgment.resolve(null)
+    await expect(work.judgment).resolves.toBeNull()
+
+    const disabled = startTurnEntryWork(entryWork())
+    expect(disabled.queryEmbedding).toBeUndefined()
+    expect(mocks.embedEpisodeText).toHaveBeenCalledOnce()
+  })
+
+  it('aborts Jev and query embedding through separate signals when canceled', async () => {
+    let judgmentSignal: AbortSignal | undefined
+    let embeddingSignal: AbortSignal | undefined
+    mocks.judgeTurn.mockImplementation(
+      (_input, options) =>
+        new Promise((_resolve, reject) => {
+          judgmentSignal = options?.signal
+          judgmentSignal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
+        })
+    )
+    mocks.embedEpisodeText.mockImplementation(
+      ({ signal }: { signal?: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          embeddingSignal = signal
+          signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
+        })
+    )
+
+    const work = startTurnEntryWork({ ...entryWork(), includeEpisodeRecall: true })
+    await vi.waitFor(() => {
+      expect(judgmentSignal).toBeDefined()
+      expect(embeddingSignal).toBeDefined()
+    })
+    work.cancel()
+
+    await expect(work.judgment).resolves.toBeNull()
+    await expect(work.queryEmbedding).resolves.toBeNull()
+    expect(judgmentSignal?.aborted).toBe(true)
+    expect(embeddingSignal?.aborted).toBe(true)
   })
 
   it('resolves the pending judgment to null when the judge rejects', async () => {
@@ -276,6 +339,60 @@ describe('turn entry work', () => {
 
     expect(context.systemPrompt).toContain('## Looked It Up')
     expect(context.composePrompt(1)).not.toContain('## Looked It Up')
+  })
+
+  it('adds the guild episode block after its query embedding is ready', async () => {
+    const vector = Array.from({ length: 768 }, () => 0.25)
+    const block = '## Things you remember happening here\nThe group planned a picnic.'
+    mocks.embedEpisodeText.mockResolvedValue(vector)
+    mocks.buildEpisodeRecallBlock.mockReturnValue(block)
+    const work = startTurnEntryWork({ ...entryWork(), includeEpisodeRecall: true })
+
+    const context = await createTurnContext(turnOptions(work))
+
+    expect(mocks.buildEpisodeRecallBlock).toHaveBeenCalledWith({ guildId: 'guild-1', queryEmbedding: vector })
+    expect(context.systemPrompt).toContain(block)
+    expect(context.composePrompt(2)).not.toContain(block)
+  })
+
+  it('omits episode context when query embedding fails', async () => {
+    mocks.embedEpisodeText.mockRejectedValue(new Error('embedding unavailable'))
+    const work = startTurnEntryWork({ ...entryWork(), includeEpisodeRecall: true })
+
+    const context = await createTurnContext(turnOptions(work))
+
+    expect(mocks.buildEpisodeRecallBlock).not.toHaveBeenCalled()
+    expect(context.systemPrompt).not.toContain('Things you remember happening here')
+  })
+
+  it('finishes context after the query embedding timeout with no episode block', async () => {
+    vi.useFakeTimers()
+    mocks.embedEpisodeText.mockImplementation(() => new Promise(() => undefined))
+    const work = startTurnEntryWork({ ...entryWork(), includeEpisodeRecall: true })
+    const contextPromise = createTurnContext(turnOptions(work))
+
+    await vi.advanceTimersByTimeAsync(config.memory.embeddingTimeoutMs)
+    const context = await contextPromise
+
+    expect(mocks.buildEpisodeRecallBlock).not.toHaveBeenCalled()
+    expect(context.systemPrompt).not.toContain('Things you remember happening here')
+    vi.useRealTimers()
+  })
+
+  it('does not await or build episode context for a memory-free turn', async () => {
+    const queryEmbedding = new Promise<number[] | null>(() => undefined)
+    const work = {
+      judgment: Promise.resolve(null),
+      prefetch: Promise.resolve({ decision: { fire: false as const, reason: 'off' as const }, outcome: null }),
+      queryEmbedding,
+      cancel: vi.fn()
+    }
+
+    const context = await createTurnContext({ ...turnOptions(work), memory: false })
+
+    expect(mocks.buildEpisodeRecallBlock).not.toHaveBeenCalled()
+    expect(mocks.retrieveForTurn).not.toHaveBeenCalled()
+    expect(context.systemPrompt).not.toContain('Things you remember happening here')
   })
 
   it.each([
