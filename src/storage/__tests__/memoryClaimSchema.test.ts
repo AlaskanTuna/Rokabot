@@ -130,4 +130,25 @@ describe('ensureMemoryClaimSchema', () => {
     expect(db.prepare('SELECT last_seen_at FROM memory_claim WHERE id = 1').get()).toEqual({ last_seen_at: 200 })
     db.close()
   })
+  it('adds event_date to existing tables without disturbing rows, idempotently', () => {
+    const db = legacyClaimDatabase()
+    runMigrations(db)
+
+    const column = () =>
+      (db.prepare("PRAGMA table_info('memory_claim')").all() as Array<{ name: string }>).find(
+        ({ name }) => name === 'event_date'
+      )
+    expect(column()).toBeDefined()
+    expect(db.prepare('SELECT event_date FROM memory_claim WHERE id = 7').get()).toEqual({ event_date: null })
+
+    runMigrations(db)
+
+    expect(column()).toBeDefined()
+    expect(db.prepare('SELECT id, event_date, status FROM memory_claim').get()).toEqual({
+      id: 7,
+      event_date: null,
+      status: 'active'
+    })
+    db.close()
+  })
 })

@@ -50,7 +50,8 @@ vi.mock('../../storage/userNames.js', () => ({
 vi.mock('../../storage/metricsStore.js', () => ({ recordMemoryEvent: mocks.recordMemoryEvent }))
 vi.mock('../../storage/jevEventStore.js', () => ({ recordJevEvent: mocks.recordJevEvent }))
 vi.mock('../../agent/memory/identityResolver.js', () => ({ resolveReferences: mocks.resolveReferences }))
-vi.mock('../../agent/memory/retriever.js', () => ({
+vi.mock('../../agent/memory/retriever.js', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   retrieveForTurn: mocks.retrieveForTurn,
   retrieveGuildFacts: mocks.retrieveGuildFacts
 }))
@@ -654,6 +655,25 @@ describe('turn entry work', () => {
     expect(context.systemPrompt).toContain('## Things You Remember About This Server')
     expect(context.systemPrompt).toContain('- plan (2026-09-26): Game night on September 26')
     expect(context.composePrompt(2)).not.toContain('Things You Remember About This Server')
+  })
+
+  it('shows a month-precision guild fact as its month, not the day its expiry falls on', async () => {
+    mocks.retrieveGuildFacts.mockReturnValue({
+      facts: [
+        {
+          predicate: 'upcoming_event',
+          value: 'Server tournament',
+          expiresAt: Date.parse('2026-10-31T16:00:00Z'),
+          eventDate: '2026-10'
+        } as never
+      ],
+      tokensEst: 12
+    })
+
+    const context = await createTurnContext(turnOptions(startTurnEntryWork(entryWork())))
+
+    expect(context.systemPrompt).toContain('- upcoming_event (October 2026): Server tournament')
+    expect(context.systemPrompt).not.toContain('2026-10-31')
   })
 
   it('skips both user and guild retrieval on memory-free turns', async () => {

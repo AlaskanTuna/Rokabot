@@ -12,7 +12,7 @@ const GuildFactDateSchema = z
     month: z.number().int().min(1).max(12).optional(),
     day: z.number().int().min(1).max(31).optional(),
     weekday: z.enum(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']).optional(),
-    relative: z.enum(['today', 'tomorrow', 'this_week', 'next_week']).optional()
+    relative: z.enum(['today', 'tomorrow', 'this_week', 'next_week', 'this_month', 'next_month']).optional()
   })
   .strict()
   .refine((date) => Object.values(date).some((value) => value !== undefined))
@@ -112,7 +112,7 @@ export type GuildFactDate = Readonly<{
   month?: number
   day?: number
   weekday?: 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday'
-  relative?: 'today' | 'tomorrow' | 'this_week' | 'next_week'
+  relative?: 'today' | 'tomorrow' | 'this_week' | 'next_week' | 'this_month' | 'next_month'
 }>
 export type ExtractionOp = z.infer<typeof ExtractionOutputSchema>['ops'][number]
 export type UserExtractionOp = Extract<ExtractionOp, { subject: UserSubject }>
@@ -137,8 +137,15 @@ const calendarDateProperties = {
   month: { type: Type.INTEGER, description: 'The month, 1-12.' },
   day: { type: Type.INTEGER, description: 'The day of the month, 1-31.' }
 }
+const monthDateProperties = {
+  year: { type: Type.INTEGER, description: 'The year, only when the messages state one. Omit it otherwise.' },
+  month: { type: Type.INTEGER, description: 'The month, 1-12.' }
+}
 const relativeDateProperties = {
-  relative: { type: Type.STRING, enum: ['today', 'tomorrow', 'this_week', 'next_week'] },
+  relative: {
+    type: Type.STRING,
+    enum: ['today', 'tomorrow', 'this_week', 'next_week', 'this_month', 'next_month']
+  },
   weekday: {
     type: Type.STRING,
     enum: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
@@ -155,7 +162,13 @@ const guildFactDateResponseSchema = {
     },
     {
       type: Type.OBJECT,
-      description: 'A date given only relative to today. Use this when the messages give no calendar date.',
+      description: 'Use this only when the messages name a month but no day. Never invent a day to fill this shape in.',
+      properties: monthDateProperties,
+      required: ['month']
+    },
+    {
+      type: Type.OBJECT,
+      description: 'A date given only relative to today. Use this when the messages give no calendar date or month.',
       properties: relativeDateProperties,
       required: ['relative']
     }

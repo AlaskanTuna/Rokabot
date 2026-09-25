@@ -198,16 +198,16 @@ and `/ask` neither read nor write memory. Guild-scoped episode summaries are sto
 
 ### Storage Schema
 
-| Table                   | Columns                                                                                                                                                                                                                                                                                                        | Contract                                                                                                                              |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `memory_claim`          | `id`, `guild_id`, `subject_kind`, nullable `subject_user_id`, `predicate`, `value`, `object_kind`, `object_user_id`, `source_kind`, `status`, `confidence`, `salience`, `pinned`, `needs_review`, `superseded_by`, `expires_at`, `first_seen_at`, `last_seen_at`, `last_recalled_at`, `ended_at`, `end_reason` | User and guild claims. User rows require a user ID; guild rows require NULL. Separate partial indexes deduplicate each subject scope. |
-| `memory_evidence`       | `id`, `claim_id`, `channel_id`, `source_kind`, `observed_at`                                                                                                                                                                                                                                                   | Evidence observations attached to claims.                                                                                             |
-| `memory_claim_fts`      | `value`, `predicate`                                                                                                                                                                                                                                                                                           | FTS5 mirror of active claims, maintained by insert, update, and delete triggers.                                                      |
-| `memory_episode_cursor` | `channel_id`, `guild_id`, `last_message_id`, `opened_at`, `message_count`                                                                                                                                                                                                                                      | Per-channel checkpoint for the open episode.                                                                                          |
-| `extraction_queue`      | `id`, `guild_id`, `channel_id`, `payload`, `status`, `attempts`, `enqueued_at`                                                                                                                                                                                                                                 | Closed episode payloads in `pending`, `processing`, or retained `failed` state.                                                       |
-| `memory_episode`        | `id`, `guild_id`, `channel_id`, `started_at`, `ended_at`, `summary`, `embedding`, `created_at`                                                                                                                                                                                                                 | One completed episode summary per queue ID; nullable 768-value float32 embedding.                                                     |
-| `memory_events`         | `id`, `kind`, `guild_id`, `channel_id`, `subject_user_id`, `duration_ms`, `n_candidates`, `n_selected`, `n_changed`, `tokens_est`, `op`, `created_at`                                                                                                                                                          | Value-free retrieval and claim-change telemetry.                                                                                      |
-| `jev_events`            | `kind`, `guild_id`, `channel_id`, `question`, `answer`, `probability`, `confidence`, `applied`, `latency_ms`, `input_tokens`, `baseline`, `created_at`                                                                                                                                                         | Value-free Jev judgment telemetry. The kind is `turn`, `admission`, or `verification`; `baseline` is optional.                        |
+| Table                   | Columns                                                                                                                                                                                                                                                                                                                      | Contract                                                                                                                              |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `memory_claim`          | `id`, `guild_id`, `subject_kind`, nullable `subject_user_id`, `predicate`, `value`, `object_kind`, `object_user_id`, `source_kind`, `status`, `confidence`, `salience`, `pinned`, `needs_review`, `superseded_by`, `expires_at`, `event_date`, `first_seen_at`, `last_seen_at`, `last_recalled_at`, `ended_at`, `end_reason` | User and guild claims. User rows require a user ID; guild rows require NULL. Separate partial indexes deduplicate each subject scope. |
+| `memory_evidence`       | `id`, `claim_id`, `channel_id`, `source_kind`, `observed_at`                                                                                                                                                                                                                                                                 | Evidence observations attached to claims.                                                                                             |
+| `memory_claim_fts`      | `value`, `predicate`                                                                                                                                                                                                                                                                                                         | FTS5 mirror of active claims, maintained by insert, update, and delete triggers.                                                      |
+| `memory_episode_cursor` | `channel_id`, `guild_id`, `last_message_id`, `opened_at`, `message_count`                                                                                                                                                                                                                                                    | Per-channel checkpoint for the open episode.                                                                                          |
+| `extraction_queue`      | `id`, `guild_id`, `channel_id`, `payload`, `status`, `attempts`, `enqueued_at`                                                                                                                                                                                                                                               | Closed episode payloads in `pending`, `processing`, or retained `failed` state.                                                       |
+| `memory_episode`        | `id`, `guild_id`, `channel_id`, `started_at`, `ended_at`, `summary`, `embedding`, `created_at`                                                                                                                                                                                                                               | One completed episode summary per queue ID; nullable 768-value float32 embedding.                                                     |
+| `memory_events`         | `id`, `kind`, `guild_id`, `channel_id`, `subject_user_id`, `duration_ms`, `n_candidates`, `n_selected`, `n_changed`, `tokens_est`, `op`, `created_at`                                                                                                                                                                        | Value-free retrieval and claim-change telemetry.                                                                                      |
+| `jev_events`            | `kind`, `guild_id`, `channel_id`, `question`, `answer`, `probability`, `confidence`, `applied`, `latency_ms`, `input_tokens`, `baseline`, `created_at`                                                                                                                                                                       | Value-free Jev judgment telemetry. The kind is `turn`, `admission`, or `verification`; `baseline` is optional.                        |
 
 The `extraction_queue` payload contains the episode's delta messages, up to three preceding context lines, and start
 and end timestamps. It is user content and remains in a failed queue row for inspection; success deletes the queue
@@ -247,13 +247,18 @@ restates a current durable fact. It never adds a rewording and returns `noop` on
 
 Guild predicates are `upcoming_event`, `plan`, `running_joke`, `place`, `rule`, and `announcement`. All claims pass
 through `privacyGuard.ts`. `upcoming_event` and `plan` require resolvable date components; other guild predicates have
-no expiry. Dates accept a complete `year`/`month`/`day`, a `month`/`day` for the next future occurrence, `today` or
-`tomorrow`, or `this_week`/`next_week` paired with a weekday. A supplied weekday must agree with the resolved date.
-Gemini's response schema requires a `month` and `day` on a calendar date, so a stated day cannot be dropped, and asks
-for the `year` only when the messages state it. Missing, impossible, past, or contradictory dates are rejected rather
-than guessed. Resolution uses the current date
-in `config.timezone` (including the existing `TZ` override); expiry is the first instant of the following local day,
-stored as epoch milliseconds in `expires_at`.
+no expiry. Dates accept a complete `year`/`month`/`day`, a `month`/`day` for the next future occurrence, a bare
+`month` (optionally with a `year`) for month precision, `today` or `tomorrow`, `this_week`/`next_week` paired with a
+weekday, or `this_month`/`next_month` for month precision relative to today. A supplied weekday must agree with the
+resolved date. Gemini's response schema has three date branches: one requiring `month` and `day`, so a stated day is
+never dropped or invented; one requiring only `month` for messages that name a month but no day; and one requiring
+`relative`. `year` is asked for only when the messages state it, because the prompt carries no current date and a
+guessed year can resolve into the past. Missing, impossible, past, or contradictory dates are rejected rather than
+guessed. Resolution uses the current date in `config.timezone` (including the existing `TZ` override). Day-precision
+dates expire at the first instant of the following local day; month-precision dates expire at the first instant of the
+following month. The expiry is stored as epoch milliseconds in `expires_at`, and the precision the messages gave is
+stored alongside it in the nullable `event_date` column as `YYYY-MM-DD` for day precision and `YYYY-MM` for month
+precision. A yearless month resolves to its next occurrence, and a month already past is rejected.
 
 Jev verifies durability for every write operation and verifies attribution for user subjects with `attributed_N` or
 shared guild scope with `guild_scoped_N`. Adds are checked against same-subject, same-predicate claims with
@@ -286,7 +291,7 @@ newest evidence time.
 An assertion revives a rejected or superseded value in its existing row, clears `superseded_by`, `ended_at`, and
 `end_reason`, refreshes evidence, then applies single-value supersession and the active-claim cap. A passive assertion
 cannot revive a value ended with `forgotten`; an explicit `remember_user` assertion can revive it and pins it. Guild
-facts revive the same way and receive the newly resolved `expires_at`. A value can only revive in the same row while
+facts revive the same way and receive the newly resolved `expires_at` and `event_date`. A value can only revive in the same row while
 that row remains retained.
 
 The retention job expires unpinned candidate and active user claims from `last_seen_at` by predicate tier: stable
@@ -314,10 +319,13 @@ through an active `relationship_to` claim to an included participant.
 
 On memory-enabled guild turns, `turnContext.ts` separately retrieves active, unexpired, same-guild facts that do not
 need review and appends a server-memory block under the independent `memory.guildFactsTokenBudget` (150) token
-budget. `/ask` has no user or server memory block. `forget_user` searches and rejects only user-subject claims.
+budget. A dated fact is shown at the precision the messages gave, from `event_date`: day precision renders as
+`YYYY-MM-DD`, month precision as the month name and year such as `October 2026`, so an expiry at the end of the month
+is never shown as a false day. Legacy rows with a NULL `event_date` fall back to deriving the date from `expires_at`.
+The retriever's `serializeGuildFact` applies the same rule when budgeting the block. `/ask` has no user or server memory block. `forget_user` searches and rejects only user-subject claims.
 `/stats` includes active unexpired guild facts in memory totals and growth, while remembered-member metrics remain
 user-only. The vault export writes active unexpired guild facts to `<vault>/<guildId>/guild.md`, including `expires_at`
-when set; member notes retain their user-only shape.
+and `event_date` when set; member notes retain their user-only shape.
 
 Candidate score is `salience × sourceWeight × 2 + confidence + recency × 0.5`, plus the pin, FTS, and topic-route
 bonuses. At scoring time only, salience is multiplied by `0.5 ^ (ageDays / memory.salienceHalfLifeDays)`; stored
@@ -391,8 +399,8 @@ interpolation and exclude zero-gap ties; ties remain in `sampleCount`.
 `exportVault()` and `npm run export:vault` are read-only, offline export paths. They write one note per
 (`guild_id`, `subject_user_id`), with YAML frontmatter grouped by predicate and `relationship_to` facts rendered as
 `[[wikilinks]]`, plus one guild-local `Episodes.md` for stored episode summaries. For each guild with eligible claims,
-they also write `<exportDir>/<guildId>/guild.md` with YAML frontmatter grouped by guild predicate and `expires_at` for
-dated facts. Expired, rejected, and `needs_review` guild claims are omitted. Episode dates and time ranges use UTC; each
+they also write `<exportDir>/<guildId>/guild.md` with YAML frontmatter grouped by guild predicate, plus `expires_at`
+and `event_date` for dated facts. Expired, rejected, and `needs_review` guild claims are omitted. Episode dates and time ranges use UTC; each
 summary is a JSON-encoded blockquote payload, and embeddings are omitted. `dm:` claim scopes remain isolated in their own
 export paths. A containment guard based on `path.relative` and `path.isAbsolute` rejects every note path outside the
 export directory. Export performs no store writes and no network requests.

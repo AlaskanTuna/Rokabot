@@ -22,7 +22,7 @@ import { recordMemoryEvent } from '../../../storage/metricsStore.js'
 import { upsertUserName } from '../../../storage/userNames.js'
 import { estimateTokens } from '../../../utils/tokens.js'
 import { assertClaim, assertGuildClaim } from '../memoryClaims.js'
-import { retrieveForSubject, retrieveForTurn, retrieveGuildFacts } from '../retriever.js'
+import { formatGuildFactDate, retrieveForSubject, retrieveForTurn, retrieveGuildFacts } from '../retriever.js'
 
 const NOW = 1_000_000
 const DAY = 24 * 60 * 60 * 1000
@@ -373,5 +373,52 @@ describe('retrieveGuildFacts', () => {
       sameTimeSecond.id,
       older.id
     ])
+  })
+})
+
+describe('formatGuildFactDate', () => {
+  const base = {
+    id: 1,
+    guildId: 'guild-a',
+    subjectKind: 'guild' as const,
+    subjectUserId: null,
+    predicate: 'upcoming_event' as const,
+    value: 'Server tournament',
+    objectKind: null,
+    objectUserId: null,
+    sourceKind: 'passive' as const,
+    status: 'active' as const,
+    confidence: 0.5,
+    salience: 0.5,
+    pinned: false,
+    needsReview: false,
+    supersededBy: null,
+    firstSeenAt: 0,
+    lastSeenAt: 0,
+    lastRecalledAt: null
+  }
+  const expiresAt = Date.parse('2026-10-31T16:00:00Z')
+
+  it('renders a day-precision fact as its full date', () => {
+    expect(formatGuildFactDate({ ...base, expiresAt, eventDate: '2026-10-17' })).toBe('2026-10-17')
+  })
+
+  it('renders a month-precision fact as the month name and year, not the expiry day', () => {
+    expect(formatGuildFactDate({ ...base, expiresAt, eventDate: '2026-10' })).toBe('October 2026')
+  })
+
+  it('falls back to the expiry derivation for a legacy row with no event_date', () => {
+    expect(formatGuildFactDate({ ...base, expiresAt, eventDate: null })).toBe('2026-10-31')
+  })
+
+  it('returns nothing for an undated guild predicate', () => {
+    expect(
+      formatGuildFactDate({
+        ...base,
+        predicate: 'running_joke',
+        expiresAt: null,
+        eventDate: null
+      })
+    ).toBeUndefined()
   })
 })

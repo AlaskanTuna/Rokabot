@@ -28,6 +28,7 @@ type ClaimRow = {
   last_seen_at: number
   last_recalled_at: number | null
   expires_at: number | null
+  event_date: string | null
 }
 
 export type RetrieveForTurnInput = Readonly<{
@@ -81,7 +82,8 @@ function mapClaim(row: ClaimRow): UserMemoryClaim {
     firstSeenAt: row.first_seen_at,
     lastSeenAt: row.last_seen_at,
     lastRecalledAt: row.last_recalled_at,
-    expiresAt: row.expires_at
+    expiresAt: row.expires_at,
+    eventDate: row.event_date
   }
 }
 
@@ -271,11 +273,41 @@ export function retrieveForTurn(input: RetrieveForTurnInput): RetrievalResult {
   }
 }
 
+const MONTH_NAMES = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December'
+] as const
+
+/**
+ * The precision the messages gave, not the precision the expiry can express: a month-only fact
+ * expires at the end of its month, so `expires_at - 1` would show it on the wrong day. Legacy rows
+ * predate `event_date` and keep the old derivation.
+ */
+export function formatGuildFactDate(claim: GuildMemoryClaim): string | undefined {
+  if (claim.predicate !== 'upcoming_event' && claim.predicate !== 'plan') return undefined
+  if (claim.eventDate) {
+    const parts = /^(\d{4})-(\d{2})(?:-(\d{2}))?$/.exec(claim.eventDate)
+    const month = parts ? Number(parts[2]) : 0
+    if (parts && month >= 1 && month <= 12) {
+      const name = MONTH_NAMES[month - 1]
+      return parts[3] ? claim.eventDate : `${name} ${parts[1]}`
+    }
+  }
+  return claim.expiresAt === null ? undefined : getLocalDate(claim.expiresAt - 1)
+}
+
 function serializeGuildFact(claim: GuildMemoryClaim): string {
-  const eventDate =
-    (claim.predicate === 'upcoming_event' || claim.predicate === 'plan') && claim.expiresAt !== null
-      ? getLocalDate(claim.expiresAt - 1)
-      : undefined
+  const eventDate = formatGuildFactDate(claim)
   return JSON.stringify({ predicate: claim.predicate, ...(eventDate ? { date: eventDate } : {}), value: claim.value })
 }
 

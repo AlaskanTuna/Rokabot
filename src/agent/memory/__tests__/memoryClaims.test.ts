@@ -30,6 +30,7 @@ import {
   rejectActiveClaimById,
   rejectClaimIdsForSpeaker,
   replaceActiveClaim,
+  replaceActiveGuildClaim,
   searchClaims,
   touchRecalled
 } from '../memoryClaims.js'
@@ -610,10 +611,17 @@ describe('memoryClaims', () => {
       predicate: 'upcoming_event',
       value: 'Game night',
       expiresAt: now + DAY,
+      eventDate: '2026-10',
       sourceKind: 'passive',
       observedAt: now
     })
-    expect(revived).toMatchObject({ id: fact.id, status: 'active', expiresAt: now + DAY, lastSeenAt: now })
+    expect(revived).toMatchObject({
+      id: fact.id,
+      status: 'active',
+      expiresAt: now + DAY,
+      eventDate: '2026-10',
+      lastSeenAt: now
+    })
     expect(getActiveGuildClaims('guild-1', now)).toEqual([expect.objectContaining({ id: fact.id })])
   })
 
@@ -853,5 +861,42 @@ describe('memoryClaims', () => {
         sourceKind: 'explicit'
       })
     ).toThrow('unsafe')
+  })
+})
+
+describe('guild claim event_date', () => {
+  it('stores the event date on insert, on revival, and on replacement', () => {
+    const inserted = assertGuildClaim({
+      guildId: 'guild-a',
+      predicate: 'upcoming_event',
+      value: 'Tournament',
+      expiresAt: 1_000,
+      eventDate: '2026-10',
+      sourceKind: 'passive',
+      observedAt: 1
+    })
+    expect(inserted.eventDate).toBe('2026-10')
+
+    const replaced = replaceActiveGuildClaim({
+      guildId: 'guild-a',
+      existingId: inserted.id,
+      predicate: 'upcoming_event',
+      value: 'Tournament, rescheduled',
+      expiresAt: 2_000,
+      eventDate: '2026-11',
+      channelId: 'channel-1'
+    })
+    expect(replaced).toMatchObject({ eventDate: '2026-11', expiresAt: 2_000 })
+
+    const revived = assertGuildClaim({
+      guildId: 'guild-a',
+      predicate: 'upcoming_event',
+      value: 'Tournament, rescheduled',
+      expiresAt: 3_000,
+      eventDate: '2026-12',
+      sourceKind: 'passive',
+      observedAt: 3
+    })
+    expect(revived).toMatchObject({ id: replaced?.id, status: 'active', eventDate: '2026-12' })
   })
 })

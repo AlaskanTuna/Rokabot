@@ -23,6 +23,7 @@ const CREATE_MEMORY_CLAIM = `
     ended_at INTEGER,
     end_reason TEXT,
     expires_at INTEGER,
+    event_date TEXT,
     CHECK ((subject_kind = 'user' AND subject_user_id IS NOT NULL) OR
            (subject_kind = 'guild' AND subject_user_id IS NULL)),
     CHECK (subject_kind != 'guild' OR predicate NOT IN ('upcoming_event', 'plan') OR expires_at IS NOT NULL)
@@ -136,6 +137,7 @@ function migrateClaimLifecycle(database: Database.Database): void {
   database.transaction(() => {
     if (!columns.has('ended_at')) database.exec('ALTER TABLE memory_claim ADD COLUMN ended_at INTEGER')
     if (!columns.has('end_reason')) database.exec('ALTER TABLE memory_claim ADD COLUMN end_reason TEXT')
+    if (!columns.has('event_date')) database.exec('ALTER TABLE memory_claim ADD COLUMN event_date TEXT')
     database
       .prepare("UPDATE memory_claim SET ended_at = ? WHERE status IN ('rejected', 'superseded') AND ended_at IS NULL")
       .run(migratedAt)

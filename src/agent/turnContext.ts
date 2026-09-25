@@ -15,7 +15,7 @@ import type { TurnJudgment, TurnJudgmentInput } from './jev/judgments.js'
 import { embedEpisodeText } from './memory/episodeEmbeddings.js'
 import { buildEpisodeRecallBlock } from './memory/episodeRetriever.js'
 import { resolveReferences } from './memory/identityResolver.js'
-import { retrieveForTurn, retrieveGuildFacts } from './memory/retriever.js'
+import { formatGuildFactDate, retrieveForTurn, retrieveGuildFacts } from './memory/retriever.js'
 import { getMessages as getBufferMessages } from './passiveBuffer.js'
 import { assembleSystemPrompt } from './promptAssembler.js'
 import { buildFactsEnvelope, buildOverheardBlock } from './promptSafety.js'
@@ -67,10 +67,7 @@ interface TurnContextEntryOptions extends TurnContextOptions {
 }
 
 function formatServerFact(fact: ReturnType<typeof retrieveGuildFacts>['facts'][number]): string {
-  const eventDate =
-    (fact.predicate === 'upcoming_event' || fact.predicate === 'plan') && fact.expiresAt !== null
-      ? getLocalDate(fact.expiresAt - 1)
-      : undefined
+  const eventDate = formatGuildFactDate(fact)
   return `- ${fact.predicate}${eventDate ? ` (${eventDate})` : ''}: ${fact.value}`
 }
 
