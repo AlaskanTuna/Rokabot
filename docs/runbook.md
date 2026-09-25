@@ -243,6 +243,13 @@ extraction. Without `TYPESAFE_API_KEY`, startup logs `Passive memory extraction 
 once, and passive episodes are dropped. Set `jev.memoryTimeoutMs`, `memory.admitThreshold` and
 `memory.verifyThreshold` in `config.yml` through a PR.
 
+Guild facts are scoped to their Discord server. `upcoming_event` and `plan` claims store `expires_at` as epoch
+milliseconds for the first instant of the next local day, using `config.timezone` (or the `TZ` override). A daily prune
+changes expired active guild claims to `rejected`; it retains their claim and evidence rows. `/stats` includes active,
+unexpired guild facts in memory totals and growth, while its remembered-member list remains user-only. The read-only
+vault export writes each guild's active, unexpired facts to `<vault>/<guildId>/guild.md` and includes `expires_at` on
+dated facts.
+
 The replay at hour 14:00 covered 77 turns (51 production-history and 26 transcript turns); Jev chose `playful` on
 52/77. Regex-fired turn agreement was 14% at cutoff 0. At cutoff 0.85, 19/77 turns met the probability threshold
 (25% coverage); 10 had a regex rule and Jev agreed on 60%. This does not meet the replay support rule, so
@@ -382,22 +389,22 @@ cd ~/actions-runner && sudo ./svc.sh stop && sudo ./svc.sh uninstall
 
 DB location: `~/rokabot/data/rokabot.db`
 
-### User Claims and Extraction Queue
+### Memory Claims and Extraction Queue
 
 ```bash
-# Recent active claims
-sqlite3 ~/rokabot/data/rokabot.db "SELECT id, guild_id, subject_user_id, predicate, value,
-  needs_review, first_seen_at, last_seen_at
+# Recent active claims; expires_at is Unix epoch milliseconds when set
+sqlite3 ~/rokabot/data/rokabot.db "SELECT id, guild_id, subject_kind, subject_user_id, predicate, value,
+  expires_at, needs_review, first_seen_at, last_seen_at
   FROM memory_claim WHERE status='active' ORDER BY last_seen_at DESC LIMIT 100;"
 
 # Claims for a user in one guild
 sqlite3 ~/rokabot/data/rokabot.db "SELECT id, predicate, value, status, needs_review, last_seen_at
-  FROM memory_claim WHERE guild_id='GUILD_ID' AND subject_user_id='USER_ID'
+  FROM memory_claim WHERE guild_id='GUILD_ID' AND subject_kind='user' AND subject_user_id='USER_ID'
   ORDER BY last_seen_at DESC;"
 
 # Active claims by guild and subject
-sqlite3 ~/rokabot/data/rokabot.db "SELECT guild_id, subject_user_id, COUNT(*) AS active_claims
-  FROM memory_claim WHERE status='active' GROUP BY guild_id, subject_user_id
+sqlite3 ~/rokabot/data/rokabot.db "SELECT guild_id, subject_kind, subject_user_id, COUNT(*) AS active_claims
+  FROM memory_claim WHERE status='active' GROUP BY guild_id, subject_kind, subject_user_id
   ORDER BY active_claims DESC;"
 
 # Queue backlog by status; failed rows are retained for inspection

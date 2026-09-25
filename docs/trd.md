@@ -190,24 +190,23 @@ text. Behavioral precedence is pinned by `src/agent/__tests__/toneDetector.test.
 It reads the current message plus the two session messages before it, so the tone answers the message being
 replied to rather than only the history.
 
-## Memory Architecture (User Claims)
+## Memory Architecture (Guild and User Claims)
 
-The shipped memory write path extracts user-subject claims from monitored guild-channel episodes and stores them in
-SQLite. `guild_id` is the tenant scope: the Discord guild ID in a server and `dm:<channelId>` for an explicit DM memory
-tool call. Subjects in the write schema are always Discord users. Group or guild subjects and durable episodic recall
-are later-phase work.
+The shipped memory write path extracts user-subject claims and guild-subject facts from monitored guild-channel
+episodes and stores them in SQLite. `guild_id` is the Discord server scope. Guild facts are restricted to servers; DMs
+and `/ask` neither read nor write memory. Durable episodic recall is a separate feature.
 
 ### Storage Schema
 
-| Table                   | Columns                                                                                                                                                                                                                                       | Contract                                                                                                          |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `memory_claim`          | `id`, `guild_id`, `subject_user_id`, `predicate`, `value`, `object_kind`, `object_user_id`, `source_kind`, `status`, `confidence`, `salience`, `pinned`, `needs_review`, `superseded_by`, `first_seen_at`, `last_seen_at`, `last_recalled_at` | User-subject claims. `idx_memory_claim_dedup` is unique on (`guild_id`, `subject_user_id`, `predicate`, `value`). |
-| `memory_evidence`       | `id`, `claim_id`, `channel_id`, `source_kind`, `observed_at`                                                                                                                                                                                  | Evidence observations attached to claims.                                                                         |
-| `memory_claim_fts`      | `value`, `predicate`                                                                                                                                                                                                                          | FTS5 mirror of active claims, maintained by insert, update, and delete triggers.                                  |
-| `memory_episode_cursor` | `channel_id`, `guild_id`, `last_message_id`, `opened_at`, `message_count`                                                                                                                                                                     | Per-channel checkpoint for the open episode.                                                                      |
-| `extraction_queue`      | `id`, `guild_id`, `channel_id`, `payload`, `status`, `attempts`, `enqueued_at`                                                                                                                                                                | Closed episode payloads in `pending`, `processing`, or retained `failed` state.                                   |
-| `memory_events`         | `id`, `kind`, `guild_id`, `channel_id`, `subject_user_id`, `duration_ms`, `n_candidates`, `n_selected`, `n_changed`, `tokens_est`, `op`, `created_at`                                                                                         | Value-free retrieval and claim-change telemetry.                                                                  |
-| `jev_events`            | `kind`, `guild_id`, `channel_id`, `question`, `answer`, `probability`, `confidence`, `applied`, `latency_ms`, `input_tokens`, `baseline`, `created_at`                                                                                        | Value-free Jev judgment telemetry. The kind is `turn`, `admission`, or `verification`; `baseline` is optional.    |
+| Table                   | Columns                                                                                                                                                                                                                                                                              | Contract                                                                                                                              |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `memory_claim`          | `id`, `guild_id`, `subject_kind`, nullable `subject_user_id`, `predicate`, `value`, `object_kind`, `object_user_id`, `source_kind`, `status`, `confidence`, `salience`, `pinned`, `needs_review`, `superseded_by`, `expires_at`, `first_seen_at`, `last_seen_at`, `last_recalled_at` | User and guild claims. User rows require a user ID; guild rows require NULL. Separate partial indexes deduplicate each subject scope. |
+| `memory_evidence`       | `id`, `claim_id`, `channel_id`, `source_kind`, `observed_at`                                                                                                                                                                                                                         | Evidence observations attached to claims.                                                                                             |
+| `memory_claim_fts`      | `value`, `predicate`                                                                                                                                                                                                                                                                 | FTS5 mirror of active claims, maintained by insert, update, and delete triggers.                                                      |
+| `memory_episode_cursor` | `channel_id`, `guild_id`, `last_message_id`, `opened_at`, `message_count`                                                                                                                                                                                                            | Per-channel checkpoint for the open episode.                                                                                          |
+| `extraction_queue`      | `id`, `guild_id`, `channel_id`, `payload`, `status`, `attempts`, `enqueued_at`                                                                                                                                                                                                       | Closed episode payloads in `pending`, `processing`, or retained `failed` state.                                                       |
+| `memory_events`         | `id`, `kind`, `guild_id`, `channel_id`, `subject_user_id`, `duration_ms`, `n_candidates`, `n_selected`, `n_changed`, `tokens_est`, `op`, `created_at`                                                                                                                                | Value-free retrieval and claim-change telemetry.                                                                                      |
+| `jev_events`            | `kind`, `guild_id`, `channel_id`, `question`, `answer`, `probability`, `confidence`, `applied`, `latency_ms`, `input_tokens`, `baseline`, `created_at`                                                                                                                               | Value-free Jev judgment telemetry. The kind is `turn`, `admission`, or `verification`; `baseline` is optional.                        |
 
 The `extraction_queue` payload contains the episode's delta messages, up to three preceding context lines, and start
 and end timestamps. It is user content and remains in a failed queue row for inspection; success deletes the queue
@@ -233,25 +232,33 @@ usable answer, the episode is dropped without a Gemini extraction request. `TYPE
 for passive memory, and startup warns once when it is absent.
 
 Gemini uses `gemini.extractionModel` (defaulting to `gemini.model`) and returns a strict operation list plus an
-ephemeral one-to-two-sentence summary. The summary is not written to SQLite. Each operation subject is
-`{ kind: 'user', userId }`; operations are:
+ephemeral one-to-two-sentence summary. The summary is not written to SQLite. Operations can target a user subject
+`{ kind: 'user', userId }` or the current guild subject `{ kind: 'guild' }`:
 
-- **Add:** insert an active claim for a user and predicate.
-- **Update:** replace an existing claim for the same user and predicate, linking the old row through
-  `superseded_by`.
-- **Remove:** reject an existing active claim without deleting its row.
+- **Add:** insert an active claim for a user or a guild and predicate.
+- **Update:** replace an existing claim for the same subject and predicate, linking the old row through `superseded_by`.
+- **Remove:** reject an existing active claim for the same subject without deleting its row.
 - **Noop:** make no claim change.
 
-Jev verifies durability and attribution for every write operation. It also checks whether an add duplicates an
-existing claim for the same user and predicate; a verified duplicate appends evidence instead of creating a row.
-`memory.verifyThreshold` (0.5) gates durability and attribution. If verification is incomplete, remove operations are
-not applied and permitted add/update operations are marked `needs_review`. Sensitive operations are always rejected.
-For single-cardinality predicates, a successful replacement supersedes the prior active claim. Capacity eviction,
-explicit removal, and retention pruning change claim status to `rejected`; they do not delete claim rows.
+Guild predicates are `upcoming_event`, `plan`, `running_joke`, `place`, `rule`, and `announcement`. All claims pass
+through `privacyGuard.ts`. `upcoming_event` and `plan` require resolvable date components; other guild predicates have
+no expiry. Dates accept a complete `year`/`month`/`day`, a `month`/`day` for the next future occurrence, `today` or
+`tomorrow`, or `this_week`/`next_week` paired with a weekday. A supplied weekday must agree with the resolved date.
+Missing, impossible, past, or contradictory dates are rejected rather than guessed. Resolution uses the current date
+in `config.timezone` (including the existing `TZ` override); expiry is the first instant of the following local day,
+stored as epoch milliseconds in `expires_at`.
+
+Jev verifies durability for every write operation and verifies attribution for user subjects with `attributed_N` or
+shared guild scope with `guild_scoped_N`. Adds are checked against same-subject, same-predicate claims with
+`same_as_N_M`; a verified duplicate appends evidence instead of creating a row. `memory.verifyThreshold` (0.5) gates
+these answers. If verification is incomplete, remove operations are not applied and permitted add/update operations
+are marked `needs_review`. Sensitive operations are always rejected. For single-cardinality predicates, a successful
+replacement supersedes the prior active claim. Capacity eviction, explicit removal, retention pruning, and the daily
+guild-expiry prune change claim status to `rejected`; rows and evidence are retained.
 
 Completed admission judgments write one `jev_events` row with `kind='admission'` and question `lasting_fact`.
-Completed verification writes one row per answer key (`durable_N`, `attributed_N`, or `same_as_N_M`). These rows
-include the answer, probability, application outcome, latency, and input-token count, but no source message text.
+Completed verification writes one row per answer key (`durable_N`, `attributed_N`, `guild_scoped_N`, or `same_as_N_M`).
+These rows include the answer, probability, application outcome, latency, and input-token count, but no source message text.
 `jev.memoryTimeoutMs` (5000 ms) bounds admission and verification calls.
 
 ### Claim Lifecycle And Retention
@@ -264,9 +271,10 @@ pruning mark claims `rejected`. Rows are retained for history and evidence links
 - `last_seen_at` records the latest observation and drives expiry.
 - `last_recalled_at` changes only when the retriever selects a claim for the prompt.
 
-The retention job marks unpinned candidate and active claims `rejected` when `last_seen_at` exceeds
-`memory.claimRetentionDays` (90 days); pinned claims are exempt. `memory.maxActiveClaimsPerUser` (20) limits active
-claims per subject, evicting the least salient unpinned claims first. Explicitly remembered claims are pinned.
+The retention job marks unpinned candidate and active user claims `rejected` when `last_seen_at` exceeds
+`memory.claimRetentionDays` (90 days); pinned claims are exempt. A daily prune also marks expired active guild claims
+`rejected`. `memory.maxActiveClaimsPerUser` (20) limits active user claims per subject, evicting the least salient
+unpinned claims first. Explicitly remembered claims are pinned.
 
 ### Bounded Retrieval Contract
 
@@ -275,6 +283,13 @@ Retrieval is tenant-scoped and bounded to at most `memory.maxClaimsPerTurn` (10)
 for speaker anchors; anchors are considered before every other candidate and are never displaced by general
 selection. It considers at most `memory.recentParticipantLimit` (3) non-speaker participants and may expand one hop
 through an active `relationship_to` claim to an included participant.
+
+On memory-enabled guild turns, `turnContext.ts` separately retrieves active, unexpired, same-guild facts that do not
+need review and appends a server-memory block under the independent `memory.guildFactsTokenBudget` (150) token
+budget. `/ask` has no user or server memory block. `forget_user` searches and rejects only user-subject claims.
+`/stats` includes active unexpired guild facts in memory totals and growth, while remembered-member metrics remain
+user-only. The vault export writes active unexpired guild facts to `<vault>/<guildId>/guild.md`, including `expires_at`
+when set; member notes retain their user-only shape.
 
 Candidate score is `salience × sourceWeight × 2 + confidence + recency × 0.5`, plus the pin, FTS, and topic-route
 bonuses. At scoring time only, salience is multiplied by `0.5 ^ (ageDays / memory.salienceHalfLifeDays)`; stored
@@ -325,13 +340,15 @@ interpolation and exclude zero-gap ties; ties remain in `sampleCount`.
 
 `exportVault()` and `npm run export:vault` are read-only, offline export paths. They write one note per
 (`guild_id`, `subject_user_id`), with YAML frontmatter grouped by predicate and `relationship_to` facts rendered as
-`[[wikilinks]]`. `dm:` scopes remain isolated in their own export paths. A containment guard based on `path.relative`
-and `path.isAbsolute` rejects a note path outside the export directory. Export performs no store writes and no network
-requests.
+`[[wikilinks]]`. For each guild with eligible claims, they also write `<exportDir>/<guildId>/guild.md` with YAML
+frontmatter grouped by guild predicate and `expires_at` for dated facts. Expired, rejected, and `needs_review` guild
+claims are omitted. `dm:` scopes remain isolated in their own export paths. A containment guard based on `path.relative`
+and `path.isAbsolute` rejects user or guild note paths outside the export directory. Export performs no store writes and
+no network requests.
 
 ### Deferred Items
 
-- Group or guild-subject facts, stored `memory_episode` records, dates, and episodic-recall blocks are later PR 4/5 work.
+- Stored `memory_episode` records and episodic-recall blocks are separate follow-up work.
 - Embeddings and `sqlite-vec` semantic retrieval.
 - An ADK `globalInstruction` spike.
 - Two-way Obsidian vault synchronization; the current export is one-way and read-only.
