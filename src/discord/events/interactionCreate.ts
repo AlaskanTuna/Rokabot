@@ -90,7 +90,8 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
       guildId,
       userId: interaction.user.id,
       speakerName: displayName,
-      message
+      message,
+      includeEpisodeRecall: false
     })
     let turnEntryWorkHandedOff = false
     let turnEntryWorkCancelled = false

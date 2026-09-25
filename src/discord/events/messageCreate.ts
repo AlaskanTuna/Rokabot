@@ -101,7 +101,8 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
         speakerName: message.member?.displayName ?? message.author.displayName,
         message: currentMessage,
         lookupQuery: replaceUserMentions(message, client.user.id),
-        mentionedUserIds: [...(message.mentions.users?.keys() ?? [])].filter((userId) => userId !== client.user?.id)
+        mentionedUserIds: [...(message.mentions.users?.keys() ?? [])].filter((userId) => userId !== client.user?.id),
+        includeEpisodeRecall: Boolean(message.guildId)
       })
     }
     let turnEntryWorkHandedOff = false

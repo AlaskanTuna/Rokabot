@@ -260,13 +260,16 @@ describe('message handler metrics', () => {
 
   // The mention path is the other half of the /ask split, and the other call site of generateResponse's
   // memory flag. Asserting it here and `false` over there is what keeps one from drifting into the other.
-  it('asks for memory, and a per-channel DM label, when a message arrives', async () => {
+  it('does not request episodic recall for a direct-message turn', async () => {
     const { message } = createMessage({ guildId: null })
 
     await createMessageHandler({ user: { id: 'bot-1' } } as never, createRateLimiter() as never)(message as never)
 
     expect(mocks.generateResponse).toHaveBeenCalledWith(
       expect.objectContaining({ guildId: 'dm:channel-1', memory: true })
+    )
+    expect(mocks.startTurnEntryWork).toHaveBeenCalledWith(
+      expect.objectContaining({ guildId: 'dm:channel-1', includeEpisodeRecall: false })
     )
   })
 
@@ -354,7 +357,9 @@ describe('message handler metrics', () => {
 
     await createMessageHandler({ user: { id: '123456789' } } as never, createRateLimiter() as never)(message as never)
 
-    expect(mocks.startTurnEntryWork).toHaveBeenCalledWith(expect.objectContaining({ message: question }))
+    expect(mocks.startTurnEntryWork).toHaveBeenCalledWith(
+      expect.objectContaining({ message: question, includeEpisodeRecall: true })
+    )
     expect(mocks.startTurnEntryWork.mock.calls[0][0].message).not.toContain('Replying to')
     expect(mocks.generateResponse.mock.calls[0][0].userMessage).toContain('previous answer')
   })
@@ -547,20 +552,24 @@ describe('message handler episode tracking', () => {
       message: expect.objectContaining({ messageId: 'message-1', userId: 'bot-1', isBot: true, content: 'Hello~' })
     })
     expect(mocks.generateResponse).not.toHaveBeenCalled()
+    expect(mocks.startTurnEntryWork).not.toHaveBeenCalled()
   })
 
   it('does not track direct messages or unmonitored guild channels', async () => {
     const dm = createMessage({ guild: null, guildId: null })
     await createMessageHandler({ user: { id: 'bot-1' } } as never, createRateLimiter() as never)(dm.message as never)
     expect(mocks.recordEpisodeMessage).not.toHaveBeenCalled()
+    expect(mocks.startTurnEntryWork).toHaveBeenCalledWith(expect.objectContaining({ includeEpisodeRecall: false }))
 
     mocks.isMonitored.mockReturnValue(false)
+    mocks.startTurnEntryWork.mockClear()
     const unmonitored = createMessage({ guild, mentioned: false, content: 'I love tea' })
     await createMessageHandler(
       { user: { id: 'bot-1' } } as never,
       createRateLimiter() as never
     )(unmonitored.message as never)
     expect(mocks.recordEpisodeMessage).not.toHaveBeenCalled()
+    expect(mocks.startTurnEntryWork).not.toHaveBeenCalled()
   })
 
   it('does not let episode-tracker storage errors interrupt the reply', async () => {
