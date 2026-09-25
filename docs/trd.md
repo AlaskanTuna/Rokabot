@@ -249,7 +249,9 @@ Guild predicates are `upcoming_event`, `plan`, `running_joke`, `place`, `rule`, 
 through `privacyGuard.ts`. `upcoming_event` and `plan` require resolvable date components; other guild predicates have
 no expiry. Dates accept a complete `year`/`month`/`day`, a `month`/`day` for the next future occurrence, `today` or
 `tomorrow`, or `this_week`/`next_week` paired with a weekday. A supplied weekday must agree with the resolved date.
-Missing, impossible, past, or contradictory dates are rejected rather than guessed. Resolution uses the current date
+Gemini's response schema requires a `month` and `day` on a calendar date, so a stated day cannot be dropped, and asks
+for the `year` only when the messages state it. Missing, impossible, past, or contradictory dates are rejected rather
+than guessed. Resolution uses the current date
 in `config.timezone` (including the existing `TZ` override); expiry is the first instant of the following local day,
 stored as epoch milliseconds in `expires_at`.
 
