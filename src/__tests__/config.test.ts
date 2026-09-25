@@ -189,7 +189,9 @@ describe('config module', () => {
     expect(config.memory.recentParticipantLimit).toBe(3)
     expect(config.memory.speakerMinShare).toBe(0.5)
     expect(config.memory.maxActiveClaimsPerUser).toBe(20)
-    expect(config.memory.claimRetentionDays).toBe(90)
+    expect(config.memory.stableClaimRetentionDays).toBe(180)
+    expect(config.memory.claimRetentionDays).toBe(30)
+    expect(config.memory.transientClaimRetentionDays).toBe(14)
     expect(config.memory.salienceHalfLifeDays).toBe(30)
     expect(config.memory.recallCooldownMs).toBe(21_600_000)
     expect(config.memory).not.toHaveProperty('extractionInterval')
@@ -800,7 +802,9 @@ describe('config module', () => {
       { path: 'memory.recentParticipantLimit', min: 1 },
       { path: 'memory.speakerMinShare', min: 0, max: 1 },
       { path: 'memory.maxActiveClaimsPerUser', min: 1 },
+      { path: 'memory.stableClaimRetentionDays', min: 1 },
       { path: 'memory.claimRetentionDays', min: 1 },
+      { path: 'memory.transientClaimRetentionDays', min: 1 },
       { path: 'memory.salienceHalfLifeDays', min: 1 },
       { path: 'memory.recallCooldownMs', min: 0 },
       { path: 'memory.episodeLullMs', min: 1 },

@@ -744,18 +744,29 @@ export function touchRecalled(claimIds: number[]): void {
     .run(Date.now(), ...claimIds)
 }
 
-export function pruneStaleClaims(maxAgeDays: number = 90, botUserId?: string): number {
-  const cutoff = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000
+export function pruneStaleClaims(
+  standardRetentionDays: number = config.memory.claimRetentionDays,
+  botUserId?: string
+): number {
   const now = Date.now()
+  const retentionDays = {
+    stable: config.memory.stableClaimRetentionDays,
+    standard: standardRetentionDays,
+    transient: config.memory.transientClaimRetentionDays
+  }
   const pruned = getDb().transaction(() => {
     const db = getDb()
-    const stale = (
+    const staleCandidates = (
       db
         .prepare(
-          "SELECT * FROM memory_claim WHERE subject_kind = 'user' AND status IN ('candidate', 'active') AND pinned = 0 AND last_seen_at < ?"
+          "SELECT * FROM memory_claim WHERE subject_kind = 'user' AND status IN ('candidate', 'active') AND pinned = 0"
         )
-        .all(cutoff) as ClaimRow[]
-    ).map(mapClaim)
+        .all() as ClaimRow[]
+    ).filter(({ predicate, last_seen_at }) => {
+      const tier = PREDICATES[predicate as PredicateId].retentionTier
+      return last_seen_at < now - retentionDays[tier] * 24 * 60 * 60 * 1000
+    })
+    const stale = staleCandidates.map(mapClaim)
     const expiredGuild = (
       db
         .prepare(
@@ -778,6 +789,6 @@ export function pruneStaleClaims(maxAgeDays: number = 90, botUserId?: string): n
     rejectClaims(botClaims, 'self')
     return stale.length + expiredGuild.length + botClaims.length + evictOverflowForAllSubjectsInTransaction()
   })()
-  if (pruned > 0) logger.info({ pruned, maxAgeDays }, 'Pruned memory claims')
+  if (pruned > 0) logger.info({ pruned, standardRetentionDays }, 'Pruned memory claims')
   return pruned
 }

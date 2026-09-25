@@ -5,7 +5,11 @@ vi.mock('../../../config.js', () => ({
   config: {
     logging: { level: 'silent' },
     memory: {
-      maxActiveClaimsPerUser: 2
+      maxActiveClaimsPerUser: 2,
+      stableClaimRetentionDays: 180,
+      claimRetentionDays: 30,
+      transientClaimRetentionDays: 14,
+      deadClaimRetentionDays: 30
     }
   }
 }))
@@ -343,6 +347,45 @@ describe('memoryClaims', () => {
 
     expect(pruneStaleClaims(7)).toBe(1)
     expect(getActiveClaims('guild-1', 'user-1')).toEqual([expect.objectContaining({ id: pinned.id, pinned: true })])
+  })
+
+  it('uses stable, standard, and transient retention tiers while exempting pinned claims', () => {
+    const now = 300 * DAY
+    vi.spyOn(Date, 'now').mockReturnValue(now)
+    const rows: Array<{ userId: string; predicate: string; days: number; pinned?: boolean }> = [
+      { userId: 'stable-recent', predicate: 'nickname', days: 179 },
+      { userId: 'stable-stale', predicate: 'nickname', days: 181 },
+      { userId: 'standard-recent', predicate: 'likes', days: 29 },
+      { userId: 'standard-stale', predicate: 'likes', days: 31 },
+      { userId: 'transient-recent', predicate: 'misc', days: 13 },
+      { userId: 'transient-stale', predicate: 'misc', days: 15 },
+      { userId: 'watch-stale', predicate: 'currently_watching', days: 15 },
+      { userId: 'pinned-stale', predicate: 'nickname', days: 181, pinned: true }
+    ]
+    const claims = rows.map(({ userId, predicate, days, pinned }) =>
+      assertClaim({
+        guildId: 'guild-1',
+        subjectUserId: userId,
+        predicate,
+        value: userId,
+        sourceKind: pinned ? 'explicit' : 'passive',
+        observedAt: now - days * DAY
+      })
+    )
+
+    expect(pruneStaleClaims()).toBe(4)
+    expect(
+      claims.map(({ id }) => getDb().prepare('SELECT status, end_reason FROM memory_claim WHERE id = ?').get(id))
+    ).toEqual([
+      { status: 'active', end_reason: null },
+      { status: 'rejected', end_reason: 'expired' },
+      { status: 'active', end_reason: null },
+      { status: 'rejected', end_reason: 'expired' },
+      { status: 'active', end_reason: null },
+      { status: 'rejected', end_reason: 'expired' },
+      { status: 'rejected', end_reason: 'expired' },
+      { status: 'active', end_reason: null }
+    ])
   })
 
   it('revives an expired value in the same row and clears its lifecycle metadata', () => {
