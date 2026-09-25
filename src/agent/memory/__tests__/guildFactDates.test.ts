@@ -114,6 +114,22 @@ describe('resolveGuildFactDate', () => {
     })
   })
 
+  it('keeps a yearless month that is the current month', async () => {
+    await expectResolved({ month: 9 }, '2026-09-25T10:00:00Z', 'Asia/Singapore', {
+      localDate: '2026-09-01',
+      eventDate: '2026-09',
+      expiresAt: Date.parse('2026-09-30T16:00:00Z')
+    })
+  })
+
+  it('rolls a yearless month that has passed to the same month next year', async () => {
+    await expectResolved({ month: 8 }, '2026-09-25T10:00:00Z', 'Asia/Singapore', {
+      localDate: '2027-08-01',
+      eventDate: '2027-08',
+      expiresAt: Date.parse('2027-08-31T16:00:00Z')
+    })
+  })
+
   it('resolves this_month and next_month in the configured timezone', async () => {
     const resolveGuildFactDate = await loadResolver()
     expect(resolveGuildFactDate).toBeTypeOf('function')
