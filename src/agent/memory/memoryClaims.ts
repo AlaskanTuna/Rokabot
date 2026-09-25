@@ -204,7 +204,11 @@ function appendEvidenceInTransaction(claimId: number, input: EvidenceInput): Mem
     }
   ).count
   const confidence = confidenceForEvidence(evidenceCount, observedAt)
-  db.prepare('UPDATE memory_claim SET confidence = ? WHERE id = ?').run(confidence, claimId)
+  db.prepare('UPDATE memory_claim SET confidence = ?, last_seen_at = MAX(last_seen_at, ?) WHERE id = ?').run(
+    confidence,
+    observedAt,
+    claimId
+  )
   return getClaim(claimId) as MemoryClaim
 }
 
@@ -315,7 +319,7 @@ function assertClaimInTransaction(op: ClaimAssert): UserMemoryClaim {
       dead ? null : current.supersededBy,
       dead ? null : existing.ended_at,
       dead ? null : existing.end_reason,
-      dead ? Math.max(current.lastSeenAt, observedAt) : current.lastSeenAt,
+      Math.max(current.lastSeenAt, observedAt),
       salience,
       pinned,
       current.id

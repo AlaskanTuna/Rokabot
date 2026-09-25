@@ -168,6 +168,11 @@ describe('extractEpisode', () => {
     expect(request.contents).toContain('Allowed human user IDs: user-1, user-2')
     expect(request.contents).toContain('"userId": "user-1"')
     expect(request.contents).toContain('"predicate": "likes"')
+    expect(request.contents).toContain(
+      'If a user restates a current durable fact, return add with the same subject, predicate, and exact value as its existing claim.'
+    )
+    expect(request.contents).toContain('Never add a rewording.')
+    expect(request.contents).toContain('Return noop only when no durable fact came up.')
     expect(request.contents).not.toContain('context only claim')
     expect(request.contents).toContain('one-to-two sentence third-person summary')
   })

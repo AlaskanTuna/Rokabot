@@ -178,6 +178,66 @@ describe('verifyAndApplyOperations', () => {
     })
   })
 
+  it('refreshes an exact active value after verified attribution even when same-as is below threshold', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(20_000)
+    const existing = assertClaim({
+      guildId: 'g-1',
+      subjectUserId: 'u-1',
+      predicate: 'likes',
+      value: 'tea',
+      sourceKind: 'passive',
+      observedAt: 1_000
+    })
+    setAnswers({ durable_0: { noul: 0.9 }, attributed_0: { noul: 0.9 }, same_as_0_0: { noul: 0.1 } })
+
+    await expect(
+      verifyAndApplyOperations({
+        guildId: 'g-1',
+        channelId: 'c-1',
+        episode: episode(),
+        output: output(add()),
+        subjectIds: new Set(['u-1'])
+      })
+    ).resolves.toEqual({ appliedOps: 0, droppedOps: 0, duplicateOps: 1 })
+
+    expect(getActiveClaims('g-1', 'u-1')).toEqual([expect.objectContaining({ id: existing.id, lastSeenAt: 20_000 })])
+    expect(
+      getDb().prepare('SELECT COUNT(*) AS count FROM memory_evidence WHERE claim_id = ?').get(existing.id)
+    ).toEqual({
+      count: 2
+    })
+  })
+
+  it('does not refresh an exact active value when Jev verification is unavailable', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(20_000)
+    const existing = assertClaim({
+      guildId: 'g-1',
+      subjectUserId: 'u-1',
+      predicate: 'likes',
+      value: 'tea',
+      sourceKind: 'passive',
+      observedAt: 1_000
+    })
+    mocks.judgeEpisodeOperations.mockResolvedValueOnce(null)
+
+    await expect(
+      verifyAndApplyOperations({
+        guildId: 'g-1',
+        channelId: 'c-1',
+        episode: episode(),
+        output: output(add()),
+        subjectIds: new Set(['u-1'])
+      })
+    ).resolves.toEqual({ appliedOps: 0, droppedOps: 1, duplicateOps: 0 })
+
+    expect(getActiveClaims('g-1', 'u-1')).toEqual([expect.objectContaining({ id: existing.id, lastSeenAt: 1_000 })])
+    expect(
+      getDb().prepare('SELECT COUNT(*) AS count FROM memory_evidence WHERE claim_id = ?').get(existing.id)
+    ).toEqual({
+      count: 1
+    })
+  })
+
   it('replaces claims and rejects removals by scoped ID without deleting history', async () => {
     const prior = assertClaim({
       guildId: 'g-1',

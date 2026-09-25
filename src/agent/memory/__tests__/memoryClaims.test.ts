@@ -13,6 +13,7 @@ vi.mock('../../../config.js', () => ({
 import { closeDb, getDb } from '../../../storage/database.js'
 import {
   activateClaim,
+  appendEvidence,
   assertClaim,
   assertGuildClaim,
   getActiveClaimById,
@@ -148,6 +149,23 @@ describe('memoryClaims', () => {
       count: 2
     })
     expect(searchClaims('guild-1', 'user-1', 'Senren', 10)).toEqual([second])
+  })
+
+  it('refreshes last seen from evidence without moving it backwards', () => {
+    const claim = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'likes',
+      value: 'tea',
+      sourceKind: 'passive',
+      observedAt: 2_000
+    })
+
+    const refreshed = appendEvidence(claim.id, { sourceKind: 'passive', observedAt: 3_000 })
+    expect(refreshed.lastSeenAt).toBe(3_000)
+
+    const older = appendEvidence(claim.id, { sourceKind: 'passive', observedAt: 1_500 })
+    expect(older.lastSeenAt).toBe(3_000)
   })
 
   it('stores guild facts without a user subject and keeps user reads scoped to users', () => {
