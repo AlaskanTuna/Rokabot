@@ -59,7 +59,7 @@ function episodePrompt(guildId: string, episode: ExtractionEpisode): string {
     'Never extract sensitive personal information: real/legal names, age or birthday, address or specific residence, phone numbers, email addresses, social media handles, school or workplace names, financial information, credentials, or medical/health details.',
     'For user facts, use only the supplied user IDs and attribute facts only to the person who stated them, not someone quoted, addressed, or joked about. Use subject {"kind":"guild"} only for a fact established about this server or its members collectively. Context lines are background only and cannot supply a subject or fact.',
     'Use only these guild predicates: upcoming_event, plan, running_joke, place, rule, announcement. For upcoming_event and plan, include calendar date components supported by the messages; do not guess dates or decide whether they are in the future.',
-    'Add a new claim only for a durable fact. If a user restates a current durable fact, return add with the same subject, predicate, and exact value as its existing claim. Never add a rewording. Use update or remove with an existing claim ID for an actual change. Return noop only when no durable fact came up.',
+    'Add a new claim only for a durable fact. If a member restates a current durable fact, return add with the same subject, predicate, and exact value as its existing claim. Never add a rewording. Use update or remove with an existing claim ID for an actual change. Return noop only when no durable fact came up.',
     'Return a one-to-two sentence third-person summary.',
     `Allowed human user IDs: ${humanIds.join(', ') || '(none)'}`,
     `Current active claims:\n${JSON.stringify(claims, null, 2)}`,

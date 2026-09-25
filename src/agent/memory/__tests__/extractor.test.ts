@@ -169,7 +169,7 @@ describe('extractEpisode', () => {
     expect(request.contents).toContain('"userId": "user-1"')
     expect(request.contents).toContain('"predicate": "likes"')
     expect(request.contents).toContain(
-      'If a user restates a current durable fact, return add with the same subject, predicate, and exact value as its existing claim.'
+      'If a member restates a current durable fact, return add with the same subject, predicate, and exact value as its existing claim.'
     )
     expect(request.contents).toContain('Never add a rewording.')
     expect(request.contents).toContain('Return noop only when no durable fact came up.')
