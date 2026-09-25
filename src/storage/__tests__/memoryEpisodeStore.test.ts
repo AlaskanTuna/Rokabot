@@ -13,6 +13,7 @@ import {
   getEpisodeCursor,
   listEpisodeGuildIds,
   listEpisodesForGuild,
+  pruneExpiredEpisodes,
   recordOpenEpisodeMessage,
   saveMemoryEpisode
 } from '../memoryEpisodeStore.js'
@@ -166,6 +167,27 @@ describe('memoryEpisodeStore', () => {
 
     expect(listEpisodesForGuild('guild-a').map(({ guildId }) => guildId)).toEqual(['guild-a'])
     expect(listEpisodeGuildIds()).toEqual(['guild-a', 'guild-b'])
+  })
+
+  it('prunes episodes strictly older than the cutoff and returns the deleted count', () => {
+    for (const [id, endedAt] of [
+      [1, 99],
+      [2, 100],
+      [3, 101]
+    ] as const) {
+      saveMemoryEpisode({
+        id,
+        guildId: 'guild-a',
+        channelId: 'channel-a',
+        startedAt: endedAt - 10,
+        endedAt,
+        summary: `Episode ${id}.`,
+        embedding: null
+      })
+    }
+
+    expect(pruneExpiredEpisodes(100)).toBe(1)
+    expect(listEpisodesForGuild('guild-a').map(({ id }) => id)).toEqual([3, 2])
   })
 
   it('decodes malformed, zero-norm, and non-finite vectors as missing', () => {

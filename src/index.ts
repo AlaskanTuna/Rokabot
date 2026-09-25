@@ -23,6 +23,7 @@ if (process.env.ADK_QUIET) {
 
 import http from 'node:http'
 import { cleanupExpired, restoreMonitoredChannels } from './agent/channelMonitor.js'
+import { pruneEpisodesAndReembed } from './agent/memory/episodeMaintenance.js'
 import { flushOpenEpisodes } from './agent/memory/episodeTracker.js'
 import { pruneStaleClaims } from './agent/memory/memoryClaims.js'
 import {
@@ -58,14 +59,24 @@ function startupMemoryTasks(botUserId?: string): void {
   try {
     pruneStaleClaims(config.memory.claimRetentionDays, botUserId)
     claimPruneTimer = setInterval(
-      () => pruneStaleClaims(config.memory.claimRetentionDays, botUserId),
+      () => {
+        pruneStaleClaims(config.memory.claimRetentionDays, botUserId)
+        pruneEpisodesInBackground()
+      },
       24 * 60 * 60 * 1000
     )
     resetStuckProcessing(EXTRACTION_QUEUE_STUCK_THRESHOLD_MS)
     startExtractionScheduler()
+    pruneEpisodesInBackground()
   } catch (err) {
     logger.error({ err }, 'Failed to start memory tasks')
   }
+}
+
+function pruneEpisodesInBackground(): void {
+  void pruneEpisodesAndReembed().catch((err: unknown) => {
+    logger.error({ err }, 'Failed to prune and repair memory episodes')
+  })
 }
 
 function stopMemoryTasks(): void {

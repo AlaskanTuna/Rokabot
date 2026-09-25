@@ -127,6 +127,21 @@ export function listEpisodeGuildIds(): string[] {
   return rows.map(({ guild_id }) => guild_id)
 }
 
+export function pruneExpiredEpisodes(cutoffMs: number): number {
+  return getDb().prepare('DELETE FROM memory_episode WHERE ended_at < ?').run(cutoffMs).changes
+}
+
+export function setEpisodeEmbedding(input: {
+  guildId: string
+  id: number
+  embedding: EpisodeEmbedding
+}): boolean {
+  const result = getDb()
+    .prepare('UPDATE memory_episode SET embedding = ? WHERE guild_id = ? AND id = ?')
+    .run(encodeEmbedding(input.embedding), input.guildId, input.id)
+  return result.changes === 1
+}
+
 export function getEpisodeCursor(channelId: string): EpisodeCursor | undefined {
   const row = getDb()
     .prepare(

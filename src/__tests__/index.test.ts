@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => {
     resetStuckProcessing: vi.fn(),
     logger: { error: vi.fn(), fatal: vi.fn(), info: vi.fn(), warn: vi.fn() },
     startExtractionScheduler: vi.fn(),
+    pruneEpisodesAndReembed: vi.fn().mockResolvedValue({ deleted: 0, reembedded: 0, failed: 0 }),
     stopExtractionScheduler: vi.fn(),
     waitForInFlightExtractions: vi.fn().mockResolvedValue(undefined),
     triggerReady: () => readyHandler?.()
@@ -37,7 +38,7 @@ vi.mock('../config.js', () => ({
   config: {
     discord: { token: 'token' },
     jev: { apiKey: undefined },
-    memory: { claimRetentionDays: 90 },
+    memory: { claimRetentionDays: 90, episodeRetentionDays: 90 },
     metrics: { retentionDays: 90 },
     session: { historyRetentionDays: 7 }
   }
@@ -50,6 +51,7 @@ vi.mock('../agent/memory/scheduler.js', () => ({
   waitForInFlightExtractions: mocks.waitForInFlightExtractions
 }))
 vi.mock('../agent/memory/episodeTracker.js', () => ({ flushOpenEpisodes: mocks.flushOpenEpisodes }))
+vi.mock('../agent/memory/episodeMaintenance.js', () => ({ pruneEpisodesAndReembed: mocks.pruneEpisodesAndReembed }))
 vi.mock('../agent/shutdownSignal.js', () => ({ beginShutdown: mocks.beginShutdown }))
 vi.mock('../agent/session.js', () => ({ destroyAllSessions: mocks.destroyAllSessions }))
 vi.mock('../discord/emojiReactor.js', () => ({ cleanupExpiredCooldowns: vi.fn() }))
@@ -66,6 +68,7 @@ describe('startup memory tasks', () => {
   beforeEach(() => {
     vi.resetModules()
     vi.clearAllMocks()
+    mocks.pruneEpisodesAndReembed.mockResolvedValue({ deleted: 0, reembedded: 0, failed: 0 })
   })
 
   afterEach(() => {
@@ -90,6 +93,43 @@ describe('startup memory tasks', () => {
 
     expect(mocks.logger.warn).toHaveBeenCalledOnce()
     expect(mocks.logger.warn).toHaveBeenCalledWith('Passive memory extraction is disabled: no TypeSafe API key')
+  })
+
+  it('starts episode maintenance without waiting for the pass to finish', async () => {
+    let finishMaintenance: (() => void) | undefined
+    mocks.pruneEpisodesAndReembed.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        finishMaintenance = resolve
+      })
+    )
+    await import('../index.js')
+
+    expect(() => mocks.triggerReady()).not.toThrow()
+    expect(mocks.pruneEpisodesAndReembed).toHaveBeenCalledOnce()
+    finishMaintenance?.()
+  })
+
+  it('runs episode maintenance from the daily claim-prune interval', async () => {
+    vi.useFakeTimers()
+    await import('../index.js')
+    mocks.triggerReady()
+
+    expect(mocks.pruneEpisodesAndReembed).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1000)
+
+    expect(mocks.pruneEpisodesAndReembed).toHaveBeenCalledTimes(2)
+    vi.useRealTimers()
+  })
+
+  it('catches background episode maintenance errors', async () => {
+    const error = new Error('episode pruning failed')
+    mocks.pruneEpisodesAndReembed.mockRejectedValueOnce(error)
+    await import('../index.js')
+    mocks.triggerReady()
+
+    await vi.waitFor(() =>
+      expect(mocks.logger.error).toHaveBeenCalledWith({ err: error }, 'Failed to prune and repair memory episodes')
+    )
   })
 
   it('flushes open episodes and waits for active extraction before closing SQLite', async () => {
