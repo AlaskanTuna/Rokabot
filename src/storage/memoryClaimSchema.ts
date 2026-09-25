@@ -20,6 +20,8 @@ const CREATE_MEMORY_CLAIM = `
     first_seen_at INTEGER NOT NULL,
     last_seen_at INTEGER NOT NULL,
     last_recalled_at INTEGER,
+    ended_at INTEGER,
+    end_reason TEXT,
     expires_at INTEGER,
     CHECK ((subject_kind = 'user' AND subject_user_id IS NOT NULL) OR
            (subject_kind = 'guild' AND subject_user_id IS NULL)),
@@ -128,6 +130,26 @@ function createEvidenceTable(database: Database.Database): void {
   `)
 }
 
+function migrateClaimLifecycle(database: Database.Database): void {
+  const columns = columnsOf(database)
+  const migratedAt = Date.now()
+  database.transaction(() => {
+    if (!columns.has('ended_at')) database.exec('ALTER TABLE memory_claim ADD COLUMN ended_at INTEGER')
+    if (!columns.has('end_reason')) database.exec('ALTER TABLE memory_claim ADD COLUMN end_reason TEXT')
+    database
+      .prepare("UPDATE memory_claim SET ended_at = ? WHERE status IN ('rejected', 'superseded') AND ended_at IS NULL")
+      .run(migratedAt)
+    database.exec(`
+      UPDATE memory_claim
+      SET last_seen_at = MAX(
+        last_seen_at,
+        COALESCE((SELECT MAX(observed_at) FROM memory_evidence WHERE claim_id = memory_claim.id), last_seen_at)
+      )
+      WHERE status = 'active';
+    `)
+  })()
+}
+
 function createFts(database: Database.Database, rebuild: boolean): void {
   database.exec(`
     CREATE VIRTUAL TABLE IF NOT EXISTS memory_claim_fts
@@ -172,6 +194,7 @@ export function ensureMemoryClaimSchema(database: Database.Database): void {
   }
 
   createEvidenceTable(database)
+  migrateClaimLifecycle(database)
   createIndexes(database)
   createFts(database, rebuildFts)
 }
