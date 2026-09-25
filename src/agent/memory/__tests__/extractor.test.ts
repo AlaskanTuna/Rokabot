@@ -176,4 +176,41 @@ describe('extractEpisode', () => {
     expect(request.contents).not.toContain('context only claim')
     expect(request.contents).toContain('one-to-two sentence third-person summary')
   })
+
+  it('asks for a member’s own occupation and keeps employer, workplace, and school names forbidden', async () => {
+    mocks.generateContent.mockResolvedValueOnce({ text: JSON.stringify({ ops: [{ op: 'noop' }], summary: 'A fact.' }) })
+    const episode: ExtractionEpisode = {
+      messages: [
+        { messageId: 'm-1', userId: 'user-1', displayName: 'Bea', content: 'I work nights', timestamp: 1, isBot: false }
+      ],
+      context: [],
+      startedAt: 1,
+      endedAt: 1
+    }
+
+    await extractEpisode({ guildId: 'guild-1', channelId: 'channel-1', episode })
+
+    const prompt = mocks.generateContent.mock.calls[0][0].contents
+    expect(prompt).toContain('general_occupation')
+    expect(prompt).toContain('never the employer, workplace, or location')
+    expect(prompt).toContain('names of schools, employers, or workplaces')
+  })
+
+  it('requires the day but leaves the year to the messages', async () => {
+    mocks.generateContent.mockResolvedValueOnce({ text: JSON.stringify({ ops: [{ op: 'noop' }], summary: 'A fact.' }) })
+    const episode: ExtractionEpisode = {
+      messages: [
+        { messageId: 'm-1', userId: 'user-1', displayName: 'Ari', content: 'Movie night', timestamp: 1, isBot: false }
+      ],
+      context: [],
+      startedAt: 1,
+      endedAt: 1
+    }
+
+    await extractEpisode({ guildId: 'guild-1', channelId: 'channel-1', episode })
+
+    expect(mocks.generateContent.mock.calls[0][0].contents).toContain(
+      'give the month and day, plus the year only when the messages state it'
+    )
+  })
 })
