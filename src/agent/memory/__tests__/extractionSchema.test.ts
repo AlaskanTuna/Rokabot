@@ -87,7 +87,11 @@ describe('parseExtractionOutput', () => {
     type DateVariant = {
       description: string
       required: string[]
-      properties: { year: { description: string }; day: { description: string } }
+      properties: {
+        year: { description: string }
+        day: { description: string }
+        relative: { enum: string[] }
+      }
     }
     const date = (
       EXTRACTION_RESPONSE_SCHEMA as unknown as {
@@ -100,12 +104,41 @@ describe('parseExtractionOutput', () => {
     ).properties.ops.items.anyOf
       .map((variant) => variant.properties.date)
       .find((value) => value?.anyOf)
-    const [calendar, relative] = date?.anyOf ?? []
+    const [calendar, monthOnly, relative] = date?.anyOf ?? []
 
     expect(calendar.required).toEqual(['month', 'day'])
     expect(calendar.properties.day.description).toContain('day of the month')
     expect(calendar.properties.year.description).toContain('only when the messages state one')
     expect(calendar.description).toContain('Give the month and day whenever the messages name a day')
     expect(relative.required).toEqual(['relative'])
+    expect(relative.properties.relative.enum).toContain('this_month')
+    expect(relative.properties.relative.enum).toContain('next_month')
+    expect(monthOnly.required).toEqual(['month'])
+    expect(monthOnly.properties.day).toBeUndefined()
+    expect(monthOnly.description).toContain('name a month but no day')
+  })
+
+  it('accepts a month-only or relative-month guild fact date', () => {
+    const output = {
+      ops: [
+        {
+          op: 'add',
+          subject: { kind: 'guild' },
+          predicate: 'upcoming_event',
+          value: 'Server tournament',
+          date: { month: 10 }
+        },
+        {
+          op: 'add',
+          subject: { kind: 'guild' },
+          predicate: 'plan',
+          value: 'Start a Minecraft server',
+          date: { relative: 'next_month' }
+        }
+      ],
+      summary: 'The members dated two guild facts.'
+    }
+
+    expect(parseExtractionOutput(JSON.stringify(output))).toEqual(output)
   })
 })

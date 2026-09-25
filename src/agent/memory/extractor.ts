@@ -59,7 +59,7 @@ function episodePrompt(guildId: string, episode: ExtractionEpisode): string {
     'Never extract sensitive personal information: real/legal names, age or birthday, address or specific residence, phone numbers, email addresses, social media handles, names of schools, employers, or workplaces, financial information, credentials, or medical/health details.',
     'A member\'s own job, trade or line of work is general_occupation and is never sensitive: record the role itself ("line cook", "freelance illustrator"), never the employer, workplace, or location.',
     'For user facts, use only the supplied user IDs and attribute facts only to the person who stated them, not someone quoted, addressed, or joked about. Use subject {"kind":"guild"} only for a fact established about this server or its members collectively. Context lines are background only and cannot supply a subject or fact.',
-    'Use only these guild predicates: upcoming_event, plan, running_joke, place, rule, announcement. For upcoming_event and plan, date the fact from the messages: if they name a calendar day, give the month and day, plus the year only when the messages state it; if they only say today, tomorrow, this week, or next week, give the relative form. Never guess a date the messages do not support, and never decide whether it is in the future.',
+    'Use only these guild predicates: upcoming_event, plan, running_joke, place, rule, announcement. For upcoming_event and plan, date the fact from the messages: if they name a calendar day, give the month and day, plus the year only when the messages state it; if they name a month but no day, give just the month, and never invent a day; if they only say today, tomorrow, this week, next week, this month, or next month, give the relative form. Never guess a date the messages do not support, and never decide whether it is in the future.',
     'Add a new claim only for a durable fact. If a member restates a current durable fact, return add with the same subject, predicate, and exact value as its existing claim. Never add a rewording. Use update or remove with an existing claim ID for an actual change. Return noop only when no durable fact came up.',
     'Return a one-to-two sentence third-person summary.',
     `Allowed human user IDs: ${humanIds.join(', ') || '(none)'}`,
@@ -105,6 +105,7 @@ type PlannedOperation = {
   sameAsClaims: MemoryClaim[]
   questionKeys: string[]
   expiresAt: number | null
+  eventDate: string | null
   dateValid: boolean
 }
 
@@ -143,6 +144,7 @@ function planVerification(
       op,
       sameAsClaims,
       expiresAt: expires?.expiresAt ?? null,
+      eventDate: expires?.eventDate ?? null,
       dateValid: !requiresDate || expires !== null,
       questionKeys: [
         `durable_${index}`,
@@ -299,6 +301,7 @@ export async function verifyAndApplyOperations(input: {
               predicate: op.predicate,
               value: op.value,
               expiresAt: entry.expiresAt,
+              eventDate: entry.eventDate,
               sourceKind: 'passive',
               channelId: input.channelId,
               needsReview: !verified
@@ -335,6 +338,7 @@ export async function verifyAndApplyOperations(input: {
                 predicate: op.predicate,
                 value: op.value,
                 expiresAt: entry.expiresAt,
+                eventDate: entry.eventDate,
                 channelId: input.channelId,
                 needsReview: !verified
               },
