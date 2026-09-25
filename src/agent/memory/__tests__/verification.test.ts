@@ -16,7 +16,7 @@ vi.mock('../../../config.js', () => ({
 
 import { closeDb, getDb } from '../../../storage/database.js'
 import { verifyAndApplyOperations } from '../extractor.js'
-import { assertClaim, getActiveClaims } from '../memoryClaims.js'
+import { assertClaim, assertGuildClaim, getActiveClaims, getActiveGuildClaims } from '../memoryClaims.js'
 
 function episode(): ExtractionEpisode {
   return {
@@ -31,6 +31,13 @@ function episode(): ExtractionEpisode {
 
 function add(value = 'tea', subjectUserId = 'u-1'): ExtractionOp {
   return { op: 'add', subject: { kind: 'user', userId: subjectUserId }, predicate: 'likes', value }
+}
+
+function guildPlan(
+  value = 'Game night on September 26',
+  date: { year: number; month: number; day: number } = { year: 2029, month: 9, day: 26 }
+): ExtractionOp {
+  return { op: 'add', subject: { kind: 'guild' }, predicate: 'plan', value, date }
 }
 
 function output(...ops: ExtractionOp[]) {
@@ -303,5 +310,204 @@ describe('verifyAndApplyOperations', () => {
       })
     ).resolves.toEqual({ appliedOps: 0, droppedOps: 1, duplicateOps: 0 })
     expect(getActiveClaims('g-1', 'u-1')).toHaveLength(1)
+  })
+
+  it('applies a guild plan with durable and guild-scope verification and records both answers', async () => {
+    setAnswers(positiveAnswers('durable_0', 'guild_scoped_0'))
+
+    await expect(
+      verifyAndApplyOperations({
+        guildId: 'g-1',
+        channelId: 'c-1',
+        episode: episode(),
+        output: output(guildPlan()),
+        subjectIds: new Set()
+      })
+    ).resolves.toEqual({ appliedOps: 1, droppedOps: 0, duplicateOps: 0 })
+
+    expect(getActiveGuildClaims('g-1')).toEqual([
+      expect.objectContaining({ predicate: 'plan', value: 'Game night on September 26', subjectUserId: null })
+    ])
+    expect(getActiveClaims('g-1', 'u-1')).toEqual([])
+    expect(getDb().prepare('SELECT question, answer FROM jev_events ORDER BY question').all()).toEqual([
+      { question: 'durable_0', answer: '0.9' },
+      { question: 'guild_scoped_0', answer: '0.9' }
+    ])
+  })
+
+  it('drops a guild operation below the guild-scope threshold', async () => {
+    setAnswers({ durable_0: { noul: 0.9 }, guild_scoped_0: { noul: 0.49 } })
+
+    await expect(
+      verifyAndApplyOperations({
+        guildId: 'g-1',
+        channelId: 'c-1',
+        episode: episode(),
+        output: output(guildPlan()),
+        subjectIds: new Set()
+      })
+    ).resolves.toEqual({ appliedOps: 0, droppedOps: 1, duplicateOps: 0 })
+    expect(getDb().prepare('SELECT COUNT(*) AS count FROM memory_claim').get()).toEqual({ count: 0 })
+  })
+
+  it.each(['timeout', 'partial answers'])('marks a valid guild plan for review when Jev has %s', async (failure) => {
+    if (failure === 'timeout') mocks.judgeEpisodeOperations.mockResolvedValueOnce(null)
+    else
+      mocks.judgeEpisodeOperations.mockResolvedValueOnce({
+        answers: { durable_0: { noul: 0.9, confidence: null } },
+        latencyMs: 3,
+        inputTokens: 2
+      })
+
+    await expect(
+      verifyAndApplyOperations({
+        guildId: 'g-1',
+        channelId: 'c-1',
+        episode: episode(),
+        output: output(guildPlan()),
+        subjectIds: new Set()
+      })
+    ).resolves.toEqual({ appliedOps: 1, droppedOps: 0, duplicateOps: 0 })
+    expect(getDb().prepare("SELECT status, needs_review FROM memory_claim WHERE subject_kind = 'guild'").get()).toEqual(
+      {
+        status: 'active',
+        needs_review: 1
+      }
+    )
+    expect(getActiveGuildClaims('g-1')).toEqual([])
+  })
+
+  it('adds evidence to an existing guild fact for a same-as answer', async () => {
+    const existing = assertGuildClaim({
+      guildId: 'g-1',
+      predicate: 'plan',
+      value: 'Game night on September 26',
+      expiresAt: Date.parse('2029-09-26T16:00:00Z'),
+      sourceKind: 'passive'
+    })
+    setAnswers(positiveAnswers('durable_0', 'guild_scoped_0', 'same_as_0_0'))
+
+    await expect(
+      verifyAndApplyOperations({
+        guildId: 'g-1',
+        channelId: 'c-1',
+        episode: episode(),
+        output: output(guildPlan()),
+        subjectIds: new Set()
+      })
+    ).resolves.toEqual({ appliedOps: 0, droppedOps: 0, duplicateOps: 1 })
+
+    expect(getDb().prepare('SELECT COUNT(*) AS count FROM memory_claim').get()).toEqual({ count: 1 })
+    expect(
+      getDb().prepare('SELECT COUNT(*) AS count FROM memory_evidence WHERE claim_id = ?').get(existing.id)
+    ).toEqual({
+      count: 2
+    })
+  })
+
+  it.each(['another guild', 'a user subject'])('rejects a guild operation targeting an ID from %s', async (scope) => {
+    const other =
+      scope === 'another guild'
+        ? assertGuildClaim({
+            guildId: 'g-2',
+            predicate: 'plan',
+            value: 'Other game night',
+            expiresAt: Date.parse('2029-09-26T16:00:00Z'),
+            sourceKind: 'passive'
+          })
+        : assertClaim({
+            guildId: 'g-1',
+            subjectUserId: 'u-1',
+            predicate: 'likes',
+            value: 'tea',
+            sourceKind: 'explicit'
+          })
+    setAnswers(positiveAnswers('durable_0', 'guild_scoped_0'))
+
+    for (const op of ['update', 'remove'] as const) {
+      await expect(
+        verifyAndApplyOperations({
+          guildId: 'g-1',
+          channelId: 'c-1',
+          episode: episode(),
+          output: output(
+            op === 'update'
+              ? {
+                  op,
+                  subject: { kind: 'guild' },
+                  existingId: other.id,
+                  predicate: 'plan',
+                  value: 'Revised game night',
+                  date: { year: 2029, month: 9, day: 26 }
+                }
+              : {
+                  op,
+                  subject: { kind: 'guild' },
+                  existingId: other.id,
+                  predicate: 'plan',
+                  value: 'Other game night'
+                }
+          ),
+          subjectIds: new Set()
+        })
+      ).resolves.toEqual({ appliedOps: 0, droppedOps: 1, duplicateOps: 0 })
+      setAnswers(positiveAnswers('durable_0', 'guild_scoped_0'))
+    }
+    expect(getDb().prepare('SELECT status FROM memory_claim WHERE id = ?').get(other.id)).toEqual({ status: 'active' })
+  })
+
+  it('marks a guild update for review when Jev verification fails', async () => {
+    const prior = assertGuildClaim({
+      guildId: 'g-1',
+      predicate: 'plan',
+      value: 'Game night on September 25',
+      expiresAt: Date.parse('2029-09-26T16:00:00Z'),
+      sourceKind: 'passive'
+    })
+    mocks.judgeEpisodeOperations.mockResolvedValueOnce(null)
+
+    await expect(
+      verifyAndApplyOperations({
+        guildId: 'g-1',
+        channelId: 'c-1',
+        episode: episode(),
+        output: output({
+          op: 'update',
+          subject: { kind: 'guild' },
+          existingId: prior.id,
+          predicate: 'plan',
+          value: 'Game night on September 26',
+          date: { year: 2029, month: 9, day: 26 }
+        }),
+        subjectIds: new Set()
+      })
+    ).resolves.toEqual({ appliedOps: 1, droppedOps: 0, duplicateOps: 0 })
+    expect(getDb().prepare("SELECT status, needs_review FROM memory_claim WHERE subject_kind = 'guild'").all()).toEqual(
+      [
+        { status: 'superseded', needs_review: 0 },
+        { status: 'active', needs_review: 1 }
+      ]
+    )
+  })
+
+  it('drops a guild plan whose date components cannot be resolved before writing', async () => {
+    setAnswers(positiveAnswers('durable_0', 'guild_scoped_0'))
+
+    await expect(
+      verifyAndApplyOperations({
+        guildId: 'g-1',
+        channelId: 'c-1',
+        episode: episode(),
+        output: output({
+          op: 'add',
+          subject: { kind: 'guild' },
+          predicate: 'plan',
+          value: 'A plan with an incomplete relative date',
+          date: { relative: 'next_week' }
+        }),
+        subjectIds: new Set()
+      })
+    ).resolves.toEqual({ appliedOps: 0, droppedOps: 1, duplicateOps: 0 })
+    expect(getDb().prepare('SELECT COUNT(*) AS count FROM memory_claim').get()).toEqual({ count: 0 })
   })
 })

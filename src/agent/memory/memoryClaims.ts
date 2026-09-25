@@ -213,9 +213,9 @@ export function appendEvidence(claimId: number, input: EvidenceInput, options: C
 
 function rejectClaims(claims: MemoryClaim[]): void {
   const db = getDb()
-  const reject = db.prepare("UPDATE memory_claim SET status = 'rejected' WHERE id = ?")
+  const reject = db.prepare("UPDATE memory_claim SET status = 'rejected' WHERE id = ? AND subject_kind = ?")
   for (const claim of claims) {
-    reject.run(claim.id)
+    reject.run(claim.id, claim.subjectKind)
   }
 }
 
@@ -542,16 +542,19 @@ export function getEdges(guildId: string, userId: string): UserMemoryClaim[] {
   ).map(mapUserClaim)
 }
 
-export function assertGuildClaim(input: {
-  guildId: string
-  predicate: GuildPredicateId
-  value: string
-  expiresAt: number | null
-  sourceKind: ClaimSource
-  channelId?: string
-  observedAt?: number
-  needsReview?: boolean
-}): GuildMemoryClaim {
+export function assertGuildClaim(
+  input: {
+    guildId: string
+    predicate: GuildPredicateId
+    value: string
+    expiresAt: number | null
+    sourceKind: ClaimSource
+    channelId?: string
+    observedAt?: number
+    needsReview?: boolean
+  },
+  options: ClaimWriteOptions = {}
+): GuildMemoryClaim {
   const write = () => {
     assertWritableGuild(input.guildId)
     assertSafeValue(input.value)
@@ -606,7 +609,7 @@ export function assertGuildClaim(input: {
     })
     return getGuildClaim(Number(result.lastInsertRowid)) as GuildMemoryClaim
   }
-  return getDb().transaction(write)()
+  return options.transaction ? write() : getDb().transaction(write)()
 }
 
 export function getActiveGuildClaims(guildId: string, now: number = Date.now()): GuildMemoryClaim[] {
@@ -622,6 +625,81 @@ export function getActiveGuildClaims(guildId: string, now: number = Date.now()):
   ).map(mapGuildClaim)
 }
 
+export function getActiveGuildClaimById(guildId: string, claimId: number): GuildMemoryClaim | undefined {
+  const row = getDb()
+    .prepare(
+      `SELECT * FROM memory_claim
+       WHERE guild_id = ? AND subject_kind = 'guild' AND subject_user_id IS NULL AND id = ? AND status = 'active'`
+    )
+    .get(guildId, claimId) as ClaimRow | undefined
+  return row ? mapGuildClaim(row) : undefined
+}
+
+export function replaceActiveGuildClaim(
+  input: {
+    guildId: string
+    existingId: number
+    predicate: GuildPredicateId
+    value: string
+    expiresAt: number | null
+    channelId: string
+    needsReview?: boolean
+  },
+  options: ClaimWriteOptions = {}
+): GuildMemoryClaim | null {
+  const write = () => {
+    assertWritableGuild(input.guildId)
+    const prior = getActiveGuildClaimById(input.guildId, input.existingId)
+    if (!prior || prior.predicate !== input.predicate) return null
+
+    const replacementInput = {
+      guildId: input.guildId,
+      predicate: input.predicate,
+      value: input.value,
+      expiresAt: input.expiresAt,
+      sourceKind: 'passive' as const,
+      channelId: input.channelId,
+      needsReview: input.needsReview
+    }
+    if (prior.value === input.value) return assertGuildClaim(replacementInput, { transaction: true })
+
+    const db = getDb()
+    const retired = db
+      .prepare(
+        `UPDATE memory_claim SET status = 'superseded', superseded_by = NULL
+         WHERE guild_id = ? AND subject_kind = 'guild' AND subject_user_id IS NULL AND id = ? AND status = 'active'`
+      )
+      .run(input.guildId, input.existingId)
+    if (retired.changes !== 1) return null
+
+    const replacement = assertGuildClaim(replacementInput, { transaction: true })
+    if (replacement.status !== 'active') throw new Error('Replacement guild claim is not active')
+    db.prepare(
+      `UPDATE memory_claim SET superseded_by = ?
+       WHERE guild_id = ? AND subject_kind = 'guild' AND subject_user_id IS NULL AND id = ? AND status = 'superseded'`
+    ).run(replacement.id, input.guildId, input.existingId)
+    return getGuildClaim(replacement.id) ?? null
+  }
+  return options.transaction ? write() : getDb().transaction(write)()
+}
+
+export function rejectActiveGuildClaimById(
+  input: { guildId: string; existingId: number },
+  options: ClaimWriteOptions = {}
+): boolean {
+  const write = () => {
+    assertWritableGuild(input.guildId)
+    const result = getDb()
+      .prepare(
+        `UPDATE memory_claim SET status = 'rejected', superseded_by = NULL
+         WHERE guild_id = ? AND subject_kind = 'guild' AND subject_user_id IS NULL AND id = ? AND status = 'active'`
+      )
+      .run(input.guildId, input.existingId)
+    return result.changes === 1
+  }
+  return options.transaction ? write() : getDb().transaction(write)()
+}
+
 export function touchRecalled(claimIds: number[]): void {
   if (claimIds.length === 0) return
   const placeholders = claimIds.map(() => '?').join(', ')
@@ -632,6 +710,7 @@ export function touchRecalled(claimIds: number[]): void {
 
 export function pruneStaleClaims(maxAgeDays: number = 90, botUserId?: string): number {
   const cutoff = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000
+  const now = Date.now()
   const pruned = getDb().transaction(() => {
     const db = getDb()
     const stale = (
@@ -641,7 +720,16 @@ export function pruneStaleClaims(maxAgeDays: number = 90, botUserId?: string): n
         )
         .all(cutoff) as ClaimRow[]
     ).map(mapClaim)
-    rejectClaims(stale)
+    const expiredGuild = (
+      db
+        .prepare(
+          `SELECT * FROM memory_claim
+           WHERE subject_kind = 'guild' AND subject_user_id IS NULL AND status IN ('candidate', 'active')
+             AND expires_at IS NOT NULL AND expires_at <= ?`
+        )
+        .all(now) as ClaimRow[]
+    ).map(mapGuildClaim)
+    rejectClaims([...stale, ...expiredGuild])
     const botClaims = botUserId
       ? (
           db
@@ -652,7 +740,7 @@ export function pruneStaleClaims(maxAgeDays: number = 90, botUserId?: string): n
         ).map(mapClaim)
       : []
     rejectClaims(botClaims)
-    return stale.length + botClaims.length + evictOverflowForAllSubjectsInTransaction()
+    return stale.length + expiredGuild.length + botClaims.length + evictOverflowForAllSubjectsInTransaction()
   })()
   if (pruned > 0) logger.info({ pruned, maxAgeDays }, 'Pruned memory claims')
   return pruned

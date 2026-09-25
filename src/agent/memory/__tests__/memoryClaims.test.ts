@@ -14,8 +14,10 @@ import { closeDb, getDb } from '../../../storage/database.js'
 import {
   activateClaim,
   assertClaim,
+  assertGuildClaim,
   getActiveClaimById,
   getActiveClaims,
+  getActiveGuildClaims,
   getEdges,
   pinClaim,
   pruneActiveClaimOverflow,
@@ -304,6 +306,29 @@ describe('memoryClaims', () => {
 
     expect(pruneStaleClaims(7)).toBe(1)
     expect(getActiveClaims('guild-1', 'user-1')).toEqual([expect.objectContaining({ id: pinned.id, pinned: true })])
+  })
+
+  it('rejects expired guild facts during pruning without deleting claims or evidence', () => {
+    const now = 10_000
+    const fact = assertGuildClaim({
+      guildId: 'guild-1',
+      predicate: 'plan',
+      value: 'Past game night',
+      expiresAt: now - 1,
+      sourceKind: 'passive',
+      observedAt: now - DAY
+    })
+    vi.spyOn(Date, 'now').mockReturnValue(now)
+
+    expect(pruneStaleClaims()).toBe(1)
+    expect(getDb().prepare('SELECT status FROM memory_claim WHERE id = ?').get(fact.id)).toEqual({ status: 'rejected' })
+    expect(getDb().prepare('SELECT COUNT(*) AS count FROM memory_claim WHERE id = ?').get(fact.id)).toEqual({
+      count: 1
+    })
+    expect(getDb().prepare('SELECT COUNT(*) AS count FROM memory_evidence WHERE claim_id = ?').get(fact.id)).toEqual({
+      count: 1
+    })
+    expect(getActiveGuildClaims('guild-1', now)).toEqual([])
   })
 
   it('rejects active bot claims during pruning and does so only once', () => {

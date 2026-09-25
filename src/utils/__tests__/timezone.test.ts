@@ -5,6 +5,11 @@ async function loadGetLocalHour() {
   return (await import('../timezone.js')).getLocalHour
 }
 
+async function loadTimezoneModule() {
+  vi.resetModules()
+  return import('../timezone.js')
+}
+
 afterEach(() => {
   vi.unstubAllEnvs()
   vi.useRealTimers()
@@ -67,5 +72,22 @@ describe('getLocalHour under the harness pin', () => {
       vi.stubEnv('ROKABOT_FIXED_HOUR', hour)
       expect((await loadGetLocalHour())()).toBe(Number(hour))
     }
+  })
+})
+
+describe('local date helpers', () => {
+  it('formats a timestamp in the configured timezone and finds the local day start', async () => {
+    vi.stubEnv('TZ', 'Asia/Singapore')
+    const timezone = await loadTimezoneModule()
+    const getLocalDate = Reflect.get(timezone, 'getLocalDate') as ((timestamp: number) => string) | undefined
+    const localDateStartEpoch = Reflect.get(timezone, 'localDateStartEpoch') as
+      | ((date: string, timezone: string) => number)
+      | undefined
+    expect(getLocalDate).toBeTypeOf('function')
+    expect(localDateStartEpoch).toBeTypeOf('function')
+    if (!getLocalDate || !localDateStartEpoch) return
+
+    expect(getLocalDate(Date.parse('2026-09-25T16:30:00Z'))).toBe('2026-09-26')
+    expect(localDateStartEpoch('2026-09-26', 'Asia/Singapore')).toBe(Date.parse('2026-09-25T16:00:00Z'))
   })
 })

@@ -19,9 +19,13 @@ export interface JevEventInput {
 }
 
 let jevEventStatement: Database.Statement | undefined
+let jevEventDatabase: Database.Database | undefined
 
 function getJevEventStatement(): Database.Statement {
-  jevEventStatement ??= getDb().prepare(
+  const database = getDb()
+  if (jevEventDatabase === database && jevEventStatement) return jevEventStatement
+  jevEventDatabase = database
+  jevEventStatement = database.prepare(
     'INSERT INTO jev_events (kind, guild_id, channel_id, question, answer, probability, confidence, applied, ' +
       'latency_ms, input_tokens, baseline, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   )
