@@ -13,6 +13,8 @@ import {
 } from './predicates.js'
 import { sensitiveValueReason } from './privacyGuard.js'
 
+const DAY_MS = 24 * 60 * 60 * 1000
+
 export type ClaimSource = 'explicit' | 'human' | 'passive' | 'legacy'
 export type ClaimStatus = 'candidate' | 'active' | 'superseded' | 'rejected'
 
@@ -93,6 +95,8 @@ type ClaimRow = {
   first_seen_at: number
   last_seen_at: number
   last_recalled_at: number | null
+  ended_at: number | null
+  end_reason: string | null
   expires_at: number | null
 }
 
@@ -202,7 +206,11 @@ function appendEvidenceInTransaction(claimId: number, input: EvidenceInput): Mem
     }
   ).count
   const confidence = confidenceForEvidence(evidenceCount, observedAt)
-  db.prepare('UPDATE memory_claim SET confidence = ? WHERE id = ?').run(confidence, claimId)
+  db.prepare('UPDATE memory_claim SET confidence = ?, last_seen_at = MAX(last_seen_at, ?) WHERE id = ?').run(
+    confidence,
+    observedAt,
+    claimId
+  )
   return getClaim(claimId) as MemoryClaim
 }
 
@@ -211,11 +219,14 @@ export function appendEvidence(claimId: number, input: EvidenceInput, options: C
   return options.transaction ? write() : getDb().transaction(write)()
 }
 
-function rejectClaims(claims: MemoryClaim[]): void {
+function rejectClaims(claims: MemoryClaim[], reason: string): void {
   const db = getDb()
-  const reject = db.prepare("UPDATE memory_claim SET status = 'rejected' WHERE id = ? AND subject_kind = ?")
+  const reject = db.prepare(
+    "UPDATE memory_claim SET status = 'rejected', ended_at = ?, end_reason = ? WHERE id = ? AND subject_kind = ? AND status IN ('candidate', 'active')"
+  )
+  const endedAt = Date.now()
   for (const claim of claims) {
-    reject.run(claim.id, claim.subjectKind)
+    reject.run(endedAt, reason, claim.id, claim.subjectKind)
   }
 }
 
@@ -231,7 +242,7 @@ function evictOverflow(guildId: string, subjectUserId: string): number {
       .all(guildId, subjectUserId, guildId, subjectUserId, config.memory.maxActiveClaimsPerUser) as ClaimRow[]
   ).map(mapUserClaim)
 
-  rejectClaims(overflow)
+  rejectClaims(overflow, 'evicted')
   return overflow.length
 }
 
@@ -256,6 +267,26 @@ export function pruneActiveClaimOverflow(): number {
   return evicted
 }
 
+function purgeDeadClaims(now: number): number {
+  const db = getDb()
+  const cutoff = now - config.memory.deadClaimRetentionDays * DAY_MS
+  const count = (
+    db
+      .prepare("SELECT COUNT(*) AS count FROM memory_claim WHERE status IN ('rejected', 'superseded') AND ended_at < ?")
+      .get(cutoff) as { count: number }
+  ).count
+  if (count === 0) return 0
+
+  db.prepare(
+    `DELETE FROM memory_evidence
+     WHERE claim_id IN (
+       SELECT id FROM memory_claim WHERE status IN ('rejected', 'superseded') AND ended_at < ?
+     )`
+  ).run(cutoff)
+  db.prepare("DELETE FROM memory_claim WHERE status IN ('rejected', 'superseded') AND ended_at < ?").run(cutoff)
+  return count
+}
+
 function supersedePriorActive(claim: UserMemoryClaim): void {
   if (cardinalityOf(claim.predicate) !== 'single') return
 
@@ -269,11 +300,12 @@ function supersedePriorActive(claim: UserMemoryClaim): void {
       .all(claim.guildId, claim.subjectUserId, claim.predicate, claim.id) as ClaimRow[]
   ).map(mapUserClaim)
   const update = db.prepare(
-    "UPDATE memory_claim SET status = 'superseded', superseded_by = ? WHERE id = ? AND subject_kind = 'user'"
+    "UPDATE memory_claim SET status = 'superseded', superseded_by = ?, ended_at = ?, end_reason = 'superseded' WHERE id = ? AND subject_kind = 'user' AND status = 'active'"
   )
 
+  const endedAt = Date.now()
   for (const prior of superseded) {
-    update.run(claim.id, prior.id)
+    update.run(claim.id, endedAt, prior.id)
   }
 }
 
@@ -292,6 +324,8 @@ function assertClaimInTransaction(op: ClaimAssert): UserMemoryClaim {
 
   if (existing) {
     const current = mapUserClaim(existing)
+    const dead = current.status === 'rejected' || current.status === 'superseded'
+    if (dead && existing.end_reason === 'forgotten' && op.sourceKind !== 'explicit') return current
     const salience = Math.min(
       1,
       Math.max(current.salience, baseSalienceOf(predicate) * sourceWeight(op.sourceKind)) + 0.02
@@ -300,8 +334,14 @@ function assertClaimInTransaction(op: ClaimAssert): UserMemoryClaim {
     // exemption exists for facts someone deliberately asked her to keep, and confirming one out loud is
     // that same act. Never unpins — a later passive sighting of a pinned fact must not demote it.
     const pinned = current.pinned || op.sourceKind === 'explicit' ? 1 : 0
-    db.prepare('UPDATE memory_claim SET last_seen_at = ?, salience = ?, pinned = ? WHERE id = ?').run(
-      observedAt,
+    db.prepare(
+      'UPDATE memory_claim SET status = ?, superseded_by = ?, ended_at = ?, end_reason = ?, last_seen_at = ?, salience = ?, pinned = ? WHERE id = ?'
+    ).run(
+      dead ? 'active' : current.status,
+      dead ? null : current.supersededBy,
+      dead ? null : existing.ended_at,
+      dead ? null : existing.end_reason,
+      Math.max(current.lastSeenAt, observedAt),
       salience,
       pinned,
       current.id
@@ -311,6 +351,11 @@ function assertClaimInTransaction(op: ClaimAssert): UserMemoryClaim {
       sourceKind: op.sourceKind,
       observedAt
     })
+    const claim = getUserClaim(current.id) as UserMemoryClaim
+    if (dead && claim.status === 'active') {
+      supersedePriorActive(claim)
+      evictOverflow(op.guildId, op.subjectUserId)
+    }
     return getUserClaim(current.id) as UserMemoryClaim
   }
 
@@ -386,7 +431,7 @@ export function retractClaim(op: ClaimRetract, options: ClaimWriteOptions = {}):
       )
       .get(op.guildId, op.subjectUserId, predicate, op.value) as ClaimRow | undefined
     if (!row) return false
-    rejectClaims([mapUserClaim(row)])
+    rejectClaims([mapUserClaim(row)], 'removed')
     return true
   }
   return options.transaction ? write() : getDb().transaction(write)()
@@ -444,6 +489,15 @@ export function replaceActiveClaim(
     const prior = getActiveClaimById(input.guildId, input.subjectUserId, input.existingId)
     if (!prior || prior.predicate !== input.predicate) return null
 
+    const forgotten = getDb()
+      .prepare(
+        `SELECT 1 FROM memory_claim
+         WHERE subject_kind = 'user' AND guild_id = ? AND subject_user_id = ? AND predicate = ? AND value = ?
+           AND status IN ('rejected', 'superseded') AND end_reason = 'forgotten'`
+      )
+      .get(input.guildId, input.subjectUserId, input.predicate, input.value)
+    if (forgotten) return null
+
     const replacementInput: ClaimAssert = {
       guildId: input.guildId,
       subjectUserId: input.subjectUserId,
@@ -457,12 +511,13 @@ export function replaceActiveClaim(
     if (prior.value === input.value) return assertClaim(replacementInput, { transaction: true })
 
     const db = getDb()
+    const endedAt = Date.now()
     const retired = db
       .prepare(
-        `UPDATE memory_claim SET status = 'superseded', superseded_by = NULL
+        `UPDATE memory_claim SET status = 'superseded', superseded_by = NULL, ended_at = ?, end_reason = 'superseded'
          WHERE guild_id = ? AND subject_kind = 'user' AND subject_user_id = ? AND id = ? AND status = 'active'`
       )
-      .run(input.guildId, input.subjectUserId, input.existingId)
+      .run(endedAt, input.guildId, input.subjectUserId, input.existingId)
     if (retired.changes !== 1) return null
 
     const replacement = assertClaim(replacementInput, { transaction: true })
@@ -484,10 +539,10 @@ export function rejectActiveClaimById(
     assertWritableGuild(input.guildId)
     const result = getDb()
       .prepare(
-        `UPDATE memory_claim SET status = 'rejected', superseded_by = NULL
+        `UPDATE memory_claim SET status = 'rejected', superseded_by = NULL, ended_at = ?, end_reason = 'removed'
          WHERE guild_id = ? AND subject_kind = 'user' AND subject_user_id = ? AND id = ? AND status = 'active'`
       )
-      .run(input.guildId, input.subjectUserId, input.existingId)
+      .run(Date.now(), input.guildId, input.subjectUserId, input.existingId)
     return result.changes === 1
   }
   return options.transaction ? write() : getDb().transaction(write)()
@@ -524,7 +579,7 @@ export function rejectClaimIdsForSpeaker(guildId: string, userId: string, claimI
         .all(guildId, userId, ...claimIds) as ClaimRow[]
     ).map(mapUserClaim)
     if (claims.length !== claimIds.length) return false
-    rejectClaims(claims)
+    rejectClaims(claims, 'forgotten')
     return true
   }
   return getDb().transaction(write)()
@@ -574,9 +629,20 @@ export function assertGuildClaim(
 
     if (existing) {
       const current = mapGuildClaim(existing)
+      const dead = current.status === 'rejected' || current.status === 'superseded'
       db.prepare(
-        'UPDATE memory_claim SET last_seen_at = ?, salience = ?, expires_at = ?, needs_review = CASE WHEN ? = 1 THEN 1 ELSE needs_review END WHERE id = ?'
-      ).run(observedAt, Math.min(1, current.salience + 0.02), input.expiresAt, input.needsReview ? 1 : 0, current.id)
+        'UPDATE memory_claim SET status = ?, superseded_by = ?, ended_at = ?, end_reason = ?, last_seen_at = ?, salience = ?, expires_at = ?, needs_review = CASE WHEN ? = 1 THEN 1 ELSE needs_review END WHERE id = ?'
+      ).run(
+        dead ? 'active' : current.status,
+        dead ? null : current.supersededBy,
+        dead ? null : existing.ended_at,
+        dead ? null : existing.end_reason,
+        dead ? Math.max(current.lastSeenAt, observedAt) : current.lastSeenAt,
+        Math.min(1, current.salience + 0.02),
+        input.expiresAt,
+        input.needsReview ? 1 : 0,
+        current.id
+      )
       return appendEvidenceInTransaction(current.id, {
         channelId: input.channelId,
         sourceKind: input.sourceKind,
@@ -664,12 +730,13 @@ export function replaceActiveGuildClaim(
     if (prior.value === input.value) return assertGuildClaim(replacementInput, { transaction: true })
 
     const db = getDb()
+    const endedAt = Date.now()
     const retired = db
       .prepare(
-        `UPDATE memory_claim SET status = 'superseded', superseded_by = NULL
+        `UPDATE memory_claim SET status = 'superseded', superseded_by = NULL, ended_at = ?, end_reason = 'superseded'
          WHERE guild_id = ? AND subject_kind = 'guild' AND subject_user_id IS NULL AND id = ? AND status = 'active'`
       )
-      .run(input.guildId, input.existingId)
+      .run(endedAt, input.guildId, input.existingId)
     if (retired.changes !== 1) return null
 
     const replacement = assertGuildClaim(replacementInput, { transaction: true })
@@ -691,10 +758,10 @@ export function rejectActiveGuildClaimById(
     assertWritableGuild(input.guildId)
     const result = getDb()
       .prepare(
-        `UPDATE memory_claim SET status = 'rejected', superseded_by = NULL
+        `UPDATE memory_claim SET status = 'rejected', superseded_by = NULL, ended_at = ?, end_reason = 'removed'
          WHERE guild_id = ? AND subject_kind = 'guild' AND subject_user_id IS NULL AND id = ? AND status = 'active'`
       )
-      .run(input.guildId, input.existingId)
+      .run(Date.now(), input.guildId, input.existingId)
     return result.changes === 1
   }
   return options.transaction ? write() : getDb().transaction(write)()
@@ -708,18 +775,29 @@ export function touchRecalled(claimIds: number[]): void {
     .run(Date.now(), ...claimIds)
 }
 
-export function pruneStaleClaims(maxAgeDays: number = 90, botUserId?: string): number {
-  const cutoff = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000
+export function pruneStaleClaims(
+  standardRetentionDays: number = config.memory.claimRetentionDays,
+  botUserId?: string
+): number {
   const now = Date.now()
+  const retentionDays = {
+    stable: config.memory.stableClaimRetentionDays,
+    standard: standardRetentionDays,
+    transient: config.memory.transientClaimRetentionDays
+  }
   const pruned = getDb().transaction(() => {
     const db = getDb()
-    const stale = (
+    const staleCandidates = (
       db
         .prepare(
-          "SELECT * FROM memory_claim WHERE subject_kind = 'user' AND status IN ('candidate', 'active') AND pinned = 0 AND last_seen_at < ?"
+          "SELECT * FROM memory_claim WHERE subject_kind = 'user' AND status IN ('candidate', 'active') AND pinned = 0"
         )
-        .all(cutoff) as ClaimRow[]
-    ).map(mapClaim)
+        .all() as ClaimRow[]
+    ).filter(({ predicate, last_seen_at }) => {
+      const tier = PREDICATES[predicate as PredicateId].retentionTier
+      return last_seen_at < now - retentionDays[tier] * DAY_MS
+    })
+    const stale = staleCandidates.map(mapClaim)
     const expiredGuild = (
       db
         .prepare(
@@ -729,7 +807,7 @@ export function pruneStaleClaims(maxAgeDays: number = 90, botUserId?: string): n
         )
         .all(now) as ClaimRow[]
     ).map(mapGuildClaim)
-    rejectClaims([...stale, ...expiredGuild])
+    rejectClaims([...stale, ...expiredGuild], 'expired')
     const botClaims = botUserId
       ? (
           db
@@ -739,9 +817,10 @@ export function pruneStaleClaims(maxAgeDays: number = 90, botUserId?: string): n
             .all(botUserId) as ClaimRow[]
         ).map(mapClaim)
       : []
-    rejectClaims(botClaims)
-    return stale.length + expiredGuild.length + botClaims.length + evictOverflowForAllSubjectsInTransaction()
+    rejectClaims(botClaims, 'self')
+    const evicted = evictOverflowForAllSubjectsInTransaction()
+    return stale.length + expiredGuild.length + botClaims.length + evicted + purgeDeadClaims(now)
   })()
-  if (pruned > 0) logger.info({ pruned, maxAgeDays }, 'Pruned memory claims')
+  if (pruned > 0) logger.info({ pruned, standardRetentionDays }, 'Pruned memory claims')
   return pruned
 }

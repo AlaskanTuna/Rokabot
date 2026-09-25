@@ -227,7 +227,7 @@ flowchart LR
 - `recall_user` ranks by relevance to the current message rather than by recency.
 - Episode writes run asynchronously; user retrieval and the separately budgeted guild-fact block stay bounded before a response is generated. Jev admission runs before Gemini extraction and Jev verification runs before claim updates. Without `TYPESAFE_API_KEY`, passive episodes are dropped.
 - Queue jobs retry once after an extraction failure; jobs that fail again remain in `failed` for inspection.
-- `upcoming_event` and `plan` facts expire at the next midnight in `config.timezone`; a daily prune marks expired facts rejected while retaining claim and evidence rows. `/ask` has no memory block, and `forget_user` only searches user claims.
+- `upcoming_event` and `plan` facts expire at the next midnight in `config.timezone`; a daily prune marks expired facts rejected. Rejected and superseded claims and their evidence are purged after `memory.deadClaimRetentionDays`. `/ask` has no memory block, and `forget_user` only searches user claims.
 - `/stats` includes active, unexpired guild facts in memory totals and growth while remembered-member metrics stay user-only. The vault export writes guild facts to `<vault>/<guildId>/guild.md` with expiry metadata.
 - Durable episodic recall is a separate feature; the current pipeline does not store an episode summary or a `memory_episode` record.
 - The exported memory graph is browseable in Obsidian; see [Browsing Memory in Obsidian](#browsing-memory-in-obsidian).
@@ -431,25 +431,28 @@ Secrets belong in `.env`; tunables belong in [`config.yml`](../config.yml). Envi
 <details>
 <summary>View Tunables</summary>
 
-| YAML Path                       | Env Override                        | Purpose                                                     |
-| ------------------------------- | ----------------------------------- | ----------------------------------------------------------- |
-| `memory.bufferSize`             | `MEMORY_BUFFER_SIZE`                | Passive in-memory buffer size per channel.                  |
-| `memory.contextSize`            | —                                   | Overheard messages injected into one prompt.                |
-| `memory.channelMonitorTtlMs`    | —                                   | Monitoring lifetime after the latest mention.               |
-| `memory.maxClaimsPerTurn`       | `MEMORY_MAX_CLAIMS_PER_TURN`        | Maximum claims included in one response.                    |
-| `memory.retrievalTokenBudget`   | `MEMORY_RETRIEVAL_TOKEN_BUDGET`     | Approximate claims-envelope token budget.                   |
-| `memory.guildFactsTokenBudget`  | `MEMORY_GUILD_FACTS_TOKEN_BUDGET`   | Approximate server-memory block token budget.               |
-| `memory.recentParticipantLimit` | `MEMORY_RECENT_PARTICIPANT_LIMIT`   | Non-speaker participants considered for retrieval.          |
-| `memory.speakerMinShare`        | `MEMORY_SPEAKER_MIN_SHARE`          | Minimum share of selected claims reserved for the speaker.  |
-| `memory.maxActiveClaimsPerUser` | `MEMORY_MAX_ACTIVE_CLAIMS_PER_USER` | Active claim cap per user; pinned claims are exempt.        |
-| `memory.claimRetentionDays`     | `MEMORY_CLAIM_RETENTION_DAYS`       | Retention period for inactive, unpinned claims.             |
-| `memory.salienceHalfLifeDays`   | `MEMORY_SALIENCE_HALF_LIFE_DAYS`    | Days for salience to halve during retrieval scoring.        |
-| `memory.recallCooldownMs`       | `MEMORY_RECALL_COOLDOWN_MS`         | Time a recalled claim is damped unless it matches the turn. |
-| `memory.episodeLullMs`          | —                                   | Silence interval that closes an open episode.               |
-| `memory.episodeMaxMessages`     | —                                   | Maximum delta messages in one episode.                      |
-| `memory.admitThreshold`         | —                                   | Minimum Jev admission probability before Gemini extraction. |
-| `memory.verifyThreshold`        | —                                   | Minimum Jev durability and attribution probability.         |
-| `memory.vaultExportDir`         | `MEMORY_VAULT_EXPORT_DIR`           | Output directory for read-only Obsidian vault exports.      |
+| YAML Path                            | Env Override                        | Purpose                                                             |
+| ------------------------------------ | ----------------------------------- | ------------------------------------------------------------------- |
+| `memory.bufferSize`                  | `MEMORY_BUFFER_SIZE`                | Passive in-memory buffer size per channel.                          |
+| `memory.contextSize`                 | —                                   | Overheard messages injected into one prompt.                        |
+| `memory.channelMonitorTtlMs`         | —                                   | Monitoring lifetime after the latest mention.                       |
+| `memory.maxClaimsPerTurn`            | `MEMORY_MAX_CLAIMS_PER_TURN`        | Maximum claims included in one response.                            |
+| `memory.retrievalTokenBudget`        | `MEMORY_RETRIEVAL_TOKEN_BUDGET`     | Approximate claims-envelope token budget.                           |
+| `memory.guildFactsTokenBudget`       | `MEMORY_GUILD_FACTS_TOKEN_BUDGET`   | Approximate server-memory block token budget.                       |
+| `memory.recentParticipantLimit`      | `MEMORY_RECENT_PARTICIPANT_LIMIT`   | Non-speaker participants considered for retrieval.                  |
+| `memory.speakerMinShare`             | `MEMORY_SPEAKER_MIN_SHARE`          | Minimum share of selected claims reserved for the speaker.          |
+| `memory.maxActiveClaimsPerUser`      | `MEMORY_MAX_ACTIVE_CLAIMS_PER_USER` | Active claim cap per user; pinned claims are exempt.                |
+| `memory.stableClaimRetentionDays`    | —                                   | Retention for identity and social claims (180 days).                |
+| `memory.claimRetentionDays`          | `MEMORY_CLAIM_RETENTION_DAYS`       | Standard retention for lifestyle, interests, personality (30 days). |
+| `memory.transientClaimRetentionDays` | —                                   | Retention for opinions, misc, and currently watching (14 days).     |
+| `memory.deadClaimRetentionDays`      | —                                   | Retention for rejected and superseded rows and evidence (30 days).  |
+| `memory.salienceHalfLifeDays`        | `MEMORY_SALIENCE_HALF_LIFE_DAYS`    | Days for salience to halve during retrieval scoring.                |
+| `memory.recallCooldownMs`            | `MEMORY_RECALL_COOLDOWN_MS`         | Time a recalled claim is damped unless it matches the turn.         |
+| `memory.episodeLullMs`               | —                                   | Silence interval that closes an open episode.                       |
+| `memory.episodeMaxMessages`          | —                                   | Maximum delta messages in one episode.                              |
+| `memory.admitThreshold`              | —                                   | Minimum Jev admission probability before Gemini extraction.         |
+| `memory.verifyThreshold`             | —                                   | Minimum Jev durability and attribution probability.                 |
+| `memory.vaultExportDir`              | `MEMORY_VAULT_EXPORT_DIR`           | Output directory for read-only Obsidian vault exports.              |
 
 </details>
 

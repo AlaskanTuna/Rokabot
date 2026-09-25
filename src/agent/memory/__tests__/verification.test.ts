@@ -16,7 +16,13 @@ vi.mock('../../../config.js', () => ({
 
 import { closeDb, getDb } from '../../../storage/database.js'
 import { verifyAndApplyOperations } from '../extractor.js'
-import { assertClaim, assertGuildClaim, getActiveClaims, getActiveGuildClaims } from '../memoryClaims.js'
+import {
+  assertClaim,
+  assertGuildClaim,
+  getActiveClaims,
+  getActiveGuildClaims,
+  rejectClaimIdsForSpeaker
+} from '../memoryClaims.js'
 
 function episode(): ExtractionEpisode {
   return {
@@ -172,6 +178,66 @@ describe('verifyAndApplyOperations', () => {
     })
   })
 
+  it('refreshes an exact active value after verified attribution even when same-as is below threshold', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(20_000)
+    const existing = assertClaim({
+      guildId: 'g-1',
+      subjectUserId: 'u-1',
+      predicate: 'likes',
+      value: 'tea',
+      sourceKind: 'passive',
+      observedAt: 1_000
+    })
+    setAnswers({ durable_0: { noul: 0.9 }, attributed_0: { noul: 0.9 }, same_as_0_0: { noul: 0.1 } })
+
+    await expect(
+      verifyAndApplyOperations({
+        guildId: 'g-1',
+        channelId: 'c-1',
+        episode: episode(),
+        output: output(add()),
+        subjectIds: new Set(['u-1'])
+      })
+    ).resolves.toEqual({ appliedOps: 0, droppedOps: 0, duplicateOps: 1 })
+
+    expect(getActiveClaims('g-1', 'u-1')).toEqual([expect.objectContaining({ id: existing.id, lastSeenAt: 20_000 })])
+    expect(
+      getDb().prepare('SELECT COUNT(*) AS count FROM memory_evidence WHERE claim_id = ?').get(existing.id)
+    ).toEqual({
+      count: 2
+    })
+  })
+
+  it('does not refresh an exact active value when Jev verification is unavailable', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(20_000)
+    const existing = assertClaim({
+      guildId: 'g-1',
+      subjectUserId: 'u-1',
+      predicate: 'likes',
+      value: 'tea',
+      sourceKind: 'passive',
+      observedAt: 1_000
+    })
+    mocks.judgeEpisodeOperations.mockResolvedValueOnce(null)
+
+    await expect(
+      verifyAndApplyOperations({
+        guildId: 'g-1',
+        channelId: 'c-1',
+        episode: episode(),
+        output: output(add()),
+        subjectIds: new Set(['u-1'])
+      })
+    ).resolves.toEqual({ appliedOps: 0, droppedOps: 1, duplicateOps: 0 })
+
+    expect(getActiveClaims('g-1', 'u-1')).toEqual([expect.objectContaining({ id: existing.id, lastSeenAt: 1_000 })])
+    expect(
+      getDb().prepare('SELECT COUNT(*) AS count FROM memory_evidence WHERE claim_id = ?').get(existing.id)
+    ).toEqual({
+      count: 1
+    })
+  })
+
   it('replaces claims and rejects removals by scoped ID without deleting history', async () => {
     const prior = assertClaim({
       guildId: 'g-1',
@@ -198,9 +264,12 @@ describe('verifyAndApplyOperations', () => {
     ).resolves.toEqual({ appliedOps: 1, droppedOps: 0, duplicateOps: 0 })
     const replacement = getActiveClaims('g-1', 'u-1')[0]
     expect(replacement).toMatchObject({ value: 'green tea', status: 'active' })
-    expect(getDb().prepare('SELECT status, superseded_by FROM memory_claim WHERE id = ?').get(prior.id)).toEqual({
+    expect(
+      getDb().prepare('SELECT status, superseded_by, end_reason FROM memory_claim WHERE id = ?').get(prior.id)
+    ).toEqual({
       status: 'superseded',
-      superseded_by: replacement.id
+      superseded_by: replacement.id,
+      end_reason: 'superseded'
     })
 
     setAnswers(positiveAnswers('durable_0', 'attributed_0'))
@@ -219,9 +288,12 @@ describe('verifyAndApplyOperations', () => {
         subjectIds: new Set(['u-1'])
       })
     ).resolves.toEqual({ appliedOps: 1, droppedOps: 0, duplicateOps: 0 })
-    expect(getDb().prepare('SELECT status, superseded_by FROM memory_claim WHERE id = ?').get(replacement.id)).toEqual({
+    expect(
+      getDb().prepare('SELECT status, superseded_by, end_reason FROM memory_claim WHERE id = ?').get(replacement.id)
+    ).toEqual({
       status: 'rejected',
-      superseded_by: null
+      superseded_by: null,
+      end_reason: 'removed'
     })
     expect(getDb().prepare('SELECT COUNT(*) AS count FROM memory_claim').get()).toEqual({ count: 2 })
   })
@@ -252,6 +324,179 @@ describe('verifyAndApplyOperations', () => {
       })
     ).resolves.toEqual({ appliedOps: 0, droppedOps: 1, duplicateOps: 0 })
     expect(getActiveClaims('g-1', 'u-2')).toEqual([expect.objectContaining({ id: other.id, status: 'active' })])
+  })
+
+  it('switches back to a superseded value through an add operation', async () => {
+    const original = assertClaim({
+      guildId: 'g-1',
+      subjectUserId: 'u-1',
+      predicate: 'nickname',
+      value: 'Rin',
+      sourceKind: 'passive'
+    })
+    setAnswers({ durable_0: { noul: 0.9 }, attributed_0: { noul: 0.9 }, same_as_0_0: { noul: 0.1 } })
+    await verifyAndApplyOperations({
+      guildId: 'g-1',
+      channelId: 'c-1',
+      episode: episode(),
+      output: output({ op: 'add', subject: { kind: 'user', userId: 'u-1' }, predicate: 'nickname', value: 'Rinnie' }),
+      subjectIds: new Set(['u-1'])
+    })
+    const replacement = getActiveClaims('g-1', 'u-1')[0]
+
+    setAnswers({ durable_0: { noul: 0.9 }, attributed_0: { noul: 0.9 }, same_as_0_0: { noul: 0.1 } })
+    await expect(
+      verifyAndApplyOperations({
+        guildId: 'g-1',
+        channelId: 'c-1',
+        episode: episode(),
+        output: output({ op: 'add', subject: { kind: 'user', userId: 'u-1' }, predicate: 'nickname', value: 'Rin' }),
+        subjectIds: new Set(['u-1'])
+      })
+    ).resolves.toEqual({ appliedOps: 1, droppedOps: 0, duplicateOps: 0 })
+
+    expect(getActiveClaims('g-1', 'u-1')).toEqual([expect.objectContaining({ id: original.id, value: 'Rin' })])
+    expect(
+      getDb().prepare('SELECT status, superseded_by, end_reason FROM memory_claim WHERE id = ?').get(replacement.id)
+    ).toEqual({
+      status: 'superseded',
+      superseded_by: original.id,
+      end_reason: 'superseded'
+    })
+  })
+
+  it('switches back to a superseded value through an update operation', async () => {
+    const original = assertClaim({
+      guildId: 'g-1',
+      subjectUserId: 'u-1',
+      predicate: 'nickname',
+      value: 'Rin',
+      sourceKind: 'passive'
+    })
+    setAnswers(positiveAnswers('durable_0', 'attributed_0'))
+    await verifyAndApplyOperations({
+      guildId: 'g-1',
+      channelId: 'c-1',
+      episode: episode(),
+      output: output({
+        op: 'update',
+        subject: { kind: 'user', userId: 'u-1' },
+        existingId: original.id,
+        predicate: 'nickname',
+        value: 'Rinnie'
+      }),
+      subjectIds: new Set(['u-1'])
+    })
+    const replacement = getActiveClaims('g-1', 'u-1')[0]
+
+    setAnswers(positiveAnswers('durable_0', 'attributed_0'))
+    await expect(
+      verifyAndApplyOperations({
+        guildId: 'g-1',
+        channelId: 'c-1',
+        episode: episode(),
+        output: output({
+          op: 'update',
+          subject: { kind: 'user', userId: 'u-1' },
+          existingId: replacement.id,
+          predicate: 'nickname',
+          value: 'Rin'
+        }),
+        subjectIds: new Set(['u-1'])
+      })
+    ).resolves.toEqual({ appliedOps: 1, droppedOps: 0, duplicateOps: 0 })
+
+    expect(getActiveClaims('g-1', 'u-1')).toEqual([expect.objectContaining({ id: original.id, value: 'Rin' })])
+    expect(
+      getDb().prepare('SELECT status, superseded_by, end_reason FROM memory_claim WHERE id = ?').get(replacement.id)
+    ).toEqual({
+      status: 'superseded',
+      superseded_by: original.id,
+      end_reason: 'superseded'
+    })
+  })
+
+  it('counts a passive assertion of a forgotten value as dropped without refreshing it', async () => {
+    const forgotten = assertClaim({
+      guildId: 'g-1',
+      subjectUserId: 'u-1',
+      predicate: 'nickname',
+      value: 'Rin',
+      sourceKind: 'explicit',
+      observedAt: 1_000
+    })
+    expect(rejectClaimIdsForSpeaker('g-1', 'u-1', [forgotten.id])).toBe(true)
+    setAnswers(positiveAnswers('durable_0', 'attributed_0'))
+
+    await expect(
+      verifyAndApplyOperations({
+        guildId: 'g-1',
+        channelId: 'c-1',
+        episode: episode(),
+        output: output({ op: 'add', subject: { kind: 'user', userId: 'u-1' }, predicate: 'nickname', value: 'Rin' }),
+        subjectIds: new Set(['u-1'])
+      })
+    ).resolves.toEqual({ appliedOps: 0, droppedOps: 1, duplicateOps: 0 })
+    expect(
+      getDb().prepare('SELECT status, last_seen_at, end_reason FROM memory_claim WHERE id = ?').get(forgotten.id)
+    ).toEqual({
+      status: 'rejected',
+      last_seen_at: 1_000,
+      end_reason: 'forgotten'
+    })
+    expect(
+      getDb().prepare('SELECT COUNT(*) AS count FROM memory_evidence WHERE claim_id = ?').get(forgotten.id)
+    ).toEqual({
+      count: 1
+    })
+  })
+
+  it('drops an update targeting a forgotten value without retiring the active value', async () => {
+    const active = assertClaim({
+      guildId: 'g-1',
+      subjectUserId: 'u-1',
+      predicate: 'likes',
+      value: 'tea',
+      sourceKind: 'explicit'
+    })
+    const forgotten = assertClaim({
+      guildId: 'g-1',
+      subjectUserId: 'u-1',
+      predicate: 'likes',
+      value: 'coffee',
+      sourceKind: 'explicit',
+      observedAt: 1_000
+    })
+    expect(rejectClaimIdsForSpeaker('g-1', 'u-1', [forgotten.id])).toBe(true)
+    setAnswers(positiveAnswers('durable_0', 'attributed_0'))
+
+    await expect(
+      verifyAndApplyOperations({
+        guildId: 'g-1',
+        channelId: 'c-1',
+        episode: episode(),
+        output: output({
+          op: 'update',
+          subject: { kind: 'user', userId: 'u-1' },
+          existingId: active.id,
+          predicate: 'likes',
+          value: 'coffee'
+        }),
+        subjectIds: new Set(['u-1'])
+      })
+    ).resolves.toEqual({ appliedOps: 0, droppedOps: 1, duplicateOps: 0 })
+
+    expect(getActiveClaims('g-1', 'u-1')).toEqual([expect.objectContaining({ id: active.id, value: 'tea' })])
+    expect(
+      getDb().prepare('SELECT status, last_seen_at, end_reason FROM memory_claim WHERE id = ?').get(forgotten.id)
+    ).toEqual({
+      status: 'rejected',
+      last_seen_at: 1_000,
+      end_reason: 'forgotten'
+    })
+    expect(
+      getDb().prepare('SELECT COUNT(*) AS count FROM memory_evidence WHERE claim_id = ?').get(forgotten.id)
+    ).toEqual({ count: 1 })
   })
 
   it.each(['timeout', 'partial answers'])('marks an add for review when verification has %s', async (failure) => {

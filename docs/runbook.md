@@ -245,7 +245,8 @@ once, and passive episodes are dropped. Set `jev.memoryTimeoutMs`, `memory.admit
 
 Guild facts are scoped to their Discord server. `upcoming_event` and `plan` claims store `expires_at` as epoch
 milliseconds for the first instant of the next local day, using `config.timezone` (or the `TZ` override). A daily prune
-changes expired active guild claims to `rejected`; it retains their claim and evidence rows. `/stats` includes active,
+changes expired active guild claims to `rejected`. Startup and daily prunes hard-delete rejected and superseded claims,
+plus their evidence, after `memory.deadClaimRetentionDays` (30 days from `ended_at`). `/stats` includes active,
 unexpired guild facts in memory totals and growth, while its remembered-member list remains user-only. The read-only
 vault export writes each guild's active, unexpired facts to `<vault>/<guildId>/guild.md` and includes `expires_at` on
 dated facts.
@@ -331,7 +332,8 @@ sqlite3 ~/rokabot/data/rokabot.db "SELECT kind, question, applied, COUNT(*) AS e
 
 Admission uses the `lasting_fact` question. Verification questions are `durable_N`, `attributed_N` and `same_as_N_M`.
 `applied = 0` means no corresponding operation or duplicate-evidence update was applied; an operation can be blocked
-by its threshold or by operation rules.
+by its threshold or by operation rules. An exact re-sighting of an active value appends evidence after durability and
+attribution pass even when its `same_as_N_M` score is below threshold.
 
 ## GitHub Actions Self-Hosted Runner
 
@@ -398,7 +400,7 @@ sqlite3 ~/rokabot/data/rokabot.db "SELECT id, guild_id, subject_kind, subject_us
   FROM memory_claim WHERE status='active' ORDER BY last_seen_at DESC LIMIT 100;"
 
 # Claims for a user in one guild
-sqlite3 ~/rokabot/data/rokabot.db "SELECT id, predicate, value, status, needs_review, last_seen_at
+sqlite3 ~/rokabot/data/rokabot.db "SELECT id, predicate, value, status, needs_review, last_seen_at, ended_at, end_reason
   FROM memory_claim WHERE guild_id='GUILD_ID' AND subject_kind='user' AND subject_user_id='USER_ID'
   ORDER BY last_seen_at DESC;"
 
@@ -411,7 +413,9 @@ sqlite3 ~/rokabot/data/rokabot.db "SELECT guild_id, subject_kind, subject_user_i
 sqlite3 ~/rokabot/data/rokabot.db 'SELECT status, COUNT(*) AS jobs FROM extraction_queue GROUP BY status;'
 ```
 
-Use the bot's `forget_user` tool to retract a claim. It changes claim status so the historical claim row is retained.
+Use the bot's `forget_user` tool to retract a claim. It sets `status='rejected'`, `ended_at`, and
+`end_reason='forgotten'`; the claim and evidence remain for `memory.deadClaimRetentionDays` (30 days) before the next
+prune deletes them. A passive sighting cannot restore a forgotten value; `remember_user` can explicitly restore and pin it.
 
 ### Episodic Memory
 

@@ -45,6 +45,7 @@ describe('PREDICATES', () => {
         predicate.category
       )
       expect(['single', 'multi']).toContain(predicate.cardinality)
+      expect(['stable', 'standard', 'transient']).toContain(predicate.retentionTier)
       expect(predicate.keywords.length).toBeGreaterThan(0)
       expect(predicate.baseSalience).toBeGreaterThanOrEqual(0)
       expect(predicate.baseSalience).toBeLessThanOrEqual(1)
@@ -56,6 +57,17 @@ describe('PREDICATES', () => {
       cardinality: 'multi',
       objectKind: 'user'
     })
+  })
+
+  it('assigns retention tiers by fact category and makes currently watching transient', () => {
+    expect(PREDICATES.nickname.retentionTier).toBe('stable')
+    expect(PREDICATES.relationship_to.retentionTier).toBe('stable')
+    expect(PREDICATES.diet.retentionTier).toBe('standard')
+    expect(PREDICATES.likes.retentionTier).toBe('standard')
+    expect(PREDICATES.humor_style.retentionTier).toBe('standard')
+    expect(PREDICATES.recommends.retentionTier).toBe('transient')
+    expect(PREDICATES.misc.retentionTier).toBe('transient')
+    expect(PREDICATES.currently_watching.retentionTier).toBe('transient')
   })
 })
 

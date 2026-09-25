@@ -1,9 +1,11 @@
 export type PredicateCategory = 'identity' | 'lifestyle' | 'interests' | 'social' | 'personality' | 'opinions' | 'misc'
 export type PredicateCardinality = 'single' | 'multi'
+export type PredicateRetentionTier = 'stable' | 'standard' | 'transient'
 
 export type PredicateDefinition = Readonly<{
   category: PredicateCategory
   cardinality: PredicateCardinality
+  retentionTier: PredicateRetentionTier
   keywords: readonly string[]
   baseSalience: number
   objectKind?: 'user'
@@ -13,11 +15,17 @@ function predicate(
   category: PredicateCategory,
   cardinality: PredicateCardinality,
   keywords: string[],
-  objectKind?: 'user'
+  objectKind?: 'user',
+  retentionTier: PredicateRetentionTier = category === 'identity' || category === 'social'
+    ? 'stable'
+    : category === 'opinions' || category === 'misc'
+      ? 'transient'
+      : 'standard'
 ): PredicateDefinition {
   return Object.freeze({
     category,
     cardinality,
+    retentionTier,
     keywords: Object.freeze(keywords),
     baseSalience: 0.5,
     ...(objectKind ? { objectKind } : {})
@@ -46,7 +54,13 @@ export const PREDICATES = Object.freeze({
   favorite_game: predicate('interests', 'single', ['game', 'games', 'gaming', 'play', 'playing']),
   favorite_music: predicate('interests', 'single', ['music', 'song', 'songs', 'artist', 'artists']),
   hobby: predicate('interests', 'multi', ['hobby', 'hobbies', 'pastime', 'pastimes', 'craft', 'crafts']),
-  currently_watching: predicate('interests', 'multi', ['watch', 'watching', 'show', 'shows', 'series', 'episode']),
+  currently_watching: predicate(
+    'interests',
+    'multi',
+    ['watch', 'watching', 'show', 'shows', 'series', 'episode'],
+    undefined,
+    'transient'
+  ),
   relationship_to: predicate(
     'social',
     'multi',

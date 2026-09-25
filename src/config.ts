@@ -61,7 +61,10 @@ interface YamlConfig {
     recentParticipantLimit?: number
     speakerMinShare?: number
     maxActiveClaimsPerUser?: number
+    stableClaimRetentionDays?: number
     claimRetentionDays?: number
+    transientClaimRetentionDays?: number
+    deadClaimRetentionDays?: number
     salienceHalfLifeDays?: number
     recallCooldownMs?: number
     episodeLullMs?: number
@@ -216,7 +219,10 @@ export const config = {
     recentParticipantLimit: envInt('MEMORY_RECENT_PARTICIPANT_LIMIT') ?? yaml.memory?.recentParticipantLimit ?? 3,
     speakerMinShare: envNumber('MEMORY_SPEAKER_MIN_SHARE') ?? yaml.memory?.speakerMinShare ?? 0.5,
     maxActiveClaimsPerUser: envInt('MEMORY_MAX_ACTIVE_CLAIMS_PER_USER') ?? yaml.memory?.maxActiveClaimsPerUser ?? 20,
-    claimRetentionDays: envInt('MEMORY_CLAIM_RETENTION_DAYS') ?? yaml.memory?.claimRetentionDays ?? 90,
+    stableClaimRetentionDays: yaml.memory?.stableClaimRetentionDays ?? 180,
+    claimRetentionDays: envInt('MEMORY_CLAIM_RETENTION_DAYS') ?? yaml.memory?.claimRetentionDays ?? 30,
+    transientClaimRetentionDays: yaml.memory?.transientClaimRetentionDays ?? 14,
+    deadClaimRetentionDays: yaml.memory?.deadClaimRetentionDays ?? 30,
     salienceHalfLifeDays: yaml.memory?.salienceHalfLifeDays ?? 30,
     recallCooldownMs: yaml.memory?.recallCooldownMs ?? 21_600_000,
     episodeLullMs: yaml.memory?.episodeLullMs ?? 180_000,
@@ -338,7 +344,10 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'memory.recentParticipantLimit', value: config.memory.recentParticipantLimit, min: 1 },
   { path: 'memory.speakerMinShare', value: config.memory.speakerMinShare, min: 0, max: 1 },
   { path: 'memory.maxActiveClaimsPerUser', value: config.memory.maxActiveClaimsPerUser, min: 1 },
+  { path: 'memory.stableClaimRetentionDays', value: config.memory.stableClaimRetentionDays, min: 1 },
   { path: 'memory.claimRetentionDays', value: config.memory.claimRetentionDays, min: 1 },
+  { path: 'memory.transientClaimRetentionDays', value: config.memory.transientClaimRetentionDays, min: 1 },
+  { path: 'memory.deadClaimRetentionDays', value: config.memory.deadClaimRetentionDays, min: 1 },
   { path: 'memory.salienceHalfLifeDays', value: config.memory.salienceHalfLifeDays, min: 1 },
   { path: 'memory.recallCooldownMs', value: config.memory.recallCooldownMs, min: 0 },
   { path: 'memory.episodeLullMs', value: config.memory.episodeLullMs, min: 1 },
