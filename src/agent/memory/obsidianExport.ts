@@ -21,7 +21,7 @@ type ExportedClaim = Readonly<{
   last_seen_at: number
 }>
 
-type ExportedGuildClaim = ExportedClaim & Readonly<{ expires_at?: number }>
+type ExportedGuildClaim = ExportedClaim & Readonly<{ expires_at?: number; event_date?: string }>
 
 export type VaultExportResult = Readonly<{
   notes: number
@@ -82,14 +82,15 @@ function formatNote(claims: UserMemoryClaim[]): string {
 
 function formatGuildNote(claims: GuildMemoryClaim[]): string {
   const groups: Record<string, ExportedGuildClaim[]> = {}
-  for (const { predicate, value, sourceKind, pinned, lastSeenAt, expiresAt } of claims) {
+  for (const { predicate, value, sourceKind, pinned, lastSeenAt, expiresAt, eventDate } of claims) {
     const group = groups[predicate] ?? []
     group.push({
       value,
       source_kind: sourceKind,
       pinned,
       last_seen_at: lastSeenAt,
-      ...(expiresAt !== null ? { expires_at: expiresAt } : {})
+      ...(expiresAt !== null ? { expires_at: expiresAt } : {}),
+      ...(eventDate ? { event_date: eventDate } : {})
     })
     groups[predicate] = group
   }

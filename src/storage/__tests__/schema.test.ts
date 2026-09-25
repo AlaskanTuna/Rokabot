@@ -47,7 +47,8 @@ describe('claims schema', () => {
       'last_recalled_at',
       'ended_at',
       'end_reason',
-      'expires_at'
+      'expires_at',
+      'event_date'
     ])
     expect(columns('memory_evidence')).toEqual(['id', 'claim_id', 'channel_id', 'source_kind', 'observed_at'])
     expect(columns('extraction_queue')).toEqual([

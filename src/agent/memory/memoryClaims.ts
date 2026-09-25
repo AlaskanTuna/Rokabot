@@ -36,6 +36,7 @@ type MemoryClaimBase = Readonly<{
   lastSeenAt: number
   lastRecalledAt: number | null
   expiresAt: number | null
+  eventDate: string | null
 }>
 
 export type UserMemoryClaim = MemoryClaimBase &
@@ -98,6 +99,7 @@ type ClaimRow = {
   ended_at: number | null
   end_reason: string | null
   expires_at: number | null
+  event_date: string | null
 }
 
 const SOURCE_WEIGHT: Readonly<Record<ClaimSource, number>> = {
@@ -125,7 +127,8 @@ function mapClaim(row: ClaimRow): MemoryClaim {
     firstSeenAt: row.first_seen_at,
     lastSeenAt: row.last_seen_at,
     lastRecalledAt: row.last_recalled_at,
-    expiresAt: row.expires_at
+    expiresAt: row.expires_at,
+    eventDate: row.event_date
   }
   return row.subject_kind === 'guild'
     ? { ...base, subjectKind: 'guild', subjectUserId: null, predicate: row.predicate as GuildPredicateId }
@@ -603,6 +606,7 @@ export function assertGuildClaim(
     predicate: GuildPredicateId
     value: string
     expiresAt: number | null
+    eventDate?: string | null
     sourceKind: ClaimSource
     channelId?: string
     observedAt?: number
@@ -631,7 +635,7 @@ export function assertGuildClaim(
       const current = mapGuildClaim(existing)
       const dead = current.status === 'rejected' || current.status === 'superseded'
       db.prepare(
-        'UPDATE memory_claim SET status = ?, superseded_by = ?, ended_at = ?, end_reason = ?, last_seen_at = ?, salience = ?, expires_at = ?, needs_review = CASE WHEN ? = 1 THEN 1 ELSE needs_review END WHERE id = ?'
+        'UPDATE memory_claim SET status = ?, superseded_by = ?, ended_at = ?, end_reason = ?, last_seen_at = ?, salience = ?, expires_at = ?, event_date = ?, needs_review = CASE WHEN ? = 1 THEN 1 ELSE needs_review END WHERE id = ?'
       ).run(
         dead ? 'active' : current.status,
         dead ? null : current.supersededBy,
@@ -640,6 +644,7 @@ export function assertGuildClaim(
         dead ? Math.max(current.lastSeenAt, observedAt) : current.lastSeenAt,
         Math.min(1, current.salience + 0.02),
         input.expiresAt,
+        input.eventDate ?? null,
         input.needsReview ? 1 : 0,
         current.id
       )
@@ -654,8 +659,8 @@ export function assertGuildClaim(
       .prepare(
         `INSERT INTO memory_claim (
           guild_id, subject_kind, subject_user_id, predicate, value, object_kind, object_user_id, source_kind, status,
-          confidence, salience, pinned, needs_review, first_seen_at, last_seen_at, expires_at
-        ) VALUES (?, 'guild', NULL, ?, ?, NULL, NULL, ?, 'active', 0.5, ?, 0, ?, ?, ?, ?)`
+          confidence, salience, pinned, needs_review, first_seen_at, last_seen_at, expires_at, event_date
+        ) VALUES (?, 'guild', NULL, ?, ?, NULL, NULL, ?, 'active', 0.5, ?, 0, ?, ?, ?, ?, ?)`
       )
       .run(
         input.guildId,
@@ -666,7 +671,8 @@ export function assertGuildClaim(
         input.needsReview ? 1 : 0,
         observedAt,
         observedAt,
-        input.expiresAt
+        input.expiresAt,
+        input.eventDate ?? null
       )
     appendEvidenceInTransaction(Number(result.lastInsertRowid), {
       channelId: input.channelId,
@@ -708,6 +714,7 @@ export function replaceActiveGuildClaim(
     predicate: GuildPredicateId
     value: string
     expiresAt: number | null
+    eventDate?: string | null
     channelId: string
     needsReview?: boolean
   },
@@ -723,6 +730,7 @@ export function replaceActiveGuildClaim(
       predicate: input.predicate,
       value: input.value,
       expiresAt: input.expiresAt,
+      eventDate: input.eventDate ?? null,
       sourceKind: 'passive' as const,
       channelId: input.channelId,
       needsReview: input.needsReview
