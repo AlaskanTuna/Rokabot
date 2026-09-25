@@ -488,7 +488,10 @@ export class RoutedLlm extends BaseLlm {
       return
     }
 
+    // route.hedged is turn-wide, so a later call in a turn that already hedged cannot tell whether it hedged itself.
+    let hedgeFired = false
     const outcome = await raceForWinner(llmRequest, this.primary, this.fallback, this.hedgeAfterMs, () => {
+      hedgeFired = true
       route.hedged = true
     })
     if (outcome.winner === null) {
@@ -504,10 +507,12 @@ export class RoutedLlm extends BaseLlm {
     }
 
     route.answeredBy = outcome.winner
-    logger.warn(
-      { winner: outcome.winner, hedgeAfterMs: this.hedgeAfterMs },
-      'Hedged slow Gemini call; kept the faster answer'
-    )
+    if (hedgeFired) {
+      logger.warn(
+        { winner: outcome.winner, hedgeAfterMs: this.hedgeAfterMs },
+        'Hedged slow Gemini call; kept the faster answer'
+      )
+    }
     yield* outcome.responses[Symbol.iterator]()
   }
 

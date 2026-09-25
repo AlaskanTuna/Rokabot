@@ -93,6 +93,7 @@ describe('RoutedLlm hedging', () => {
     expect(fallback.calls).toBe(0)
     expect(turn.hedged).toBe(false)
     expect(turn.answeredBy).toBe('gemini')
+    expect(loggerMock.warn).not.toHaveBeenCalled()
   })
 
   it('hedges after the threshold and takes the faster fallback, aborting Gemini in the same tick', async () => {
