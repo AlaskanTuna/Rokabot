@@ -241,7 +241,7 @@ describe('exportVault', () => {
     const memberNote = await readFile(join(vaultDir, 'guild-1', 'user-1.md'), 'utf8')
     const guildNote = await readFile(join(vaultDir, 'guild-1', 'guild.md'), 'utf8')
 
-    expect(result).toEqual({ notes: 2, claims: 2 })
+    expect(result).toEqual({ notes: 2, claims: 2, episodes: 0 })
     expect(load(memberNote.match(/^---\n([\s\S]*?)\n---\n/)?.[1] ?? '')).toEqual({
       likes: [{ value: 'tea', source_kind: 'passive', pinned: false, last_seen_at: 1_000 }]
     })
