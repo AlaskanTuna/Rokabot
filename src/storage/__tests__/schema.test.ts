@@ -45,6 +45,8 @@ describe('claims schema', () => {
       'first_seen_at',
       'last_seen_at',
       'last_recalled_at',
+      'ended_at',
+      'end_reason',
       'expires_at'
     ])
     expect(columns('memory_evidence')).toEqual(['id', 'claim_id', 'channel_id', 'source_kind', 'observed_at'])
