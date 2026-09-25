@@ -192,6 +192,7 @@ describe('config module', () => {
     expect(config.memory.stableClaimRetentionDays).toBe(180)
     expect(config.memory.claimRetentionDays).toBe(30)
     expect(config.memory.transientClaimRetentionDays).toBe(14)
+    expect(config.memory.deadClaimRetentionDays).toBe(30)
     expect(config.memory.salienceHalfLifeDays).toBe(30)
     expect(config.memory.recallCooldownMs).toBe(21_600_000)
     expect(config.memory).not.toHaveProperty('extractionInterval')
@@ -805,6 +806,7 @@ describe('config module', () => {
       { path: 'memory.stableClaimRetentionDays', min: 1 },
       { path: 'memory.claimRetentionDays', min: 1 },
       { path: 'memory.transientClaimRetentionDays', min: 1 },
+      { path: 'memory.deadClaimRetentionDays', min: 1 },
       { path: 'memory.salienceHalfLifeDays', min: 1 },
       { path: 'memory.recallCooldownMs', min: 0 },
       { path: 'memory.episodeLullMs', min: 1 },

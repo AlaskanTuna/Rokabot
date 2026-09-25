@@ -388,6 +388,69 @@ describe('memoryClaims', () => {
     ])
   })
 
+  it('purges old rejected and superseded rows with evidence but keeps other statuses and newer dead rows', () => {
+    const now = 100 * DAY
+    vi.spyOn(Date, 'now').mockReturnValue(now)
+    const makeClaim = (userId: string, value: string, status: 'active' | 'candidate' = 'active') =>
+      assertClaim({
+        guildId: 'guild-1',
+        subjectUserId: userId,
+        predicate: 'misc',
+        value,
+        sourceKind: 'passive',
+        status,
+        observedAt: now
+      })
+    const rejected = makeClaim('old-rejected', 'purgeoldrejected')
+    const superseded = makeClaim('old-superseded', 'purgeoldsuperseded')
+    const recent = makeClaim('recent-dead', 'keeprecentdead')
+    const boundary = makeClaim('boundary-dead', 'keepboundarydead')
+    const active = makeClaim('active', 'keepactivefts')
+    const candidate = makeClaim('candidate', 'keepcandidate', 'candidate')
+    getDb()
+      .prepare('UPDATE memory_claim SET status = ?, ended_at = ? WHERE id = ?')
+      .run('rejected', now - 31 * DAY, rejected.id)
+    getDb()
+      .prepare('UPDATE memory_claim SET status = ?, ended_at = ? WHERE id = ?')
+      .run('superseded', now - 31 * DAY, superseded.id)
+    getDb()
+      .prepare('UPDATE memory_claim SET status = ?, ended_at = ? WHERE id = ?')
+      .run('rejected', now - 29 * DAY, recent.id)
+    getDb()
+      .prepare('UPDATE memory_claim SET status = ?, ended_at = ? WHERE id = ?')
+      .run('rejected', now - 30 * DAY, boundary.id)
+    getDb()
+      .prepare('UPDATE memory_claim SET ended_at = ? WHERE id = ?')
+      .run(now - 31 * DAY, active.id)
+    getDb()
+      .prepare('UPDATE memory_claim SET ended_at = ? WHERE id = ?')
+      .run(now - 31 * DAY, candidate.id)
+
+    expect(pruneStaleClaims()).toBe(2)
+    expect(getDb().prepare('SELECT id FROM memory_claim WHERE id IN (?, ?)').all(rejected.id, superseded.id)).toEqual(
+      []
+    )
+    expect(
+      getDb().prepare('SELECT id FROM memory_evidence WHERE claim_id IN (?, ?)').all(rejected.id, superseded.id)
+    ).toEqual([])
+    expect(getDb().prepare('SELECT status FROM memory_claim WHERE id = ?').get(recent.id)).toEqual({
+      status: 'rejected'
+    })
+    expect(getDb().prepare('SELECT status FROM memory_claim WHERE id = ?').get(boundary.id)).toEqual({
+      status: 'rejected'
+    })
+    expect(getDb().prepare('SELECT status FROM memory_claim WHERE id = ?').get(active.id)).toEqual({ status: 'active' })
+    expect(getDb().prepare('SELECT status FROM memory_claim WHERE id = ?').get(candidate.id)).toEqual({
+      status: 'candidate'
+    })
+    expect(
+      getDb().prepare("SELECT rowid FROM memory_claim_fts WHERE memory_claim_fts MATCH 'keepactivefts'").all()
+    ).toEqual([{ rowid: active.id }])
+    expect(
+      getDb().prepare("SELECT rowid FROM memory_claim_fts WHERE memory_claim_fts MATCH 'purgeoldrejected'").all()
+    ).toEqual([])
+  })
+
   it('revives an expired value in the same row and clears its lifecycle metadata', () => {
     const now = 100 * DAY
     vi.spyOn(Date, 'now').mockReturnValue(now)

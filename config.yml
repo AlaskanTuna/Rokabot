@@ -64,6 +64,7 @@ memory:
   stableClaimRetentionDays: 180 # Days before identity and social claims expire
   claimRetentionDays: 30 # Days before lifestyle, interest, and personality claims expire
   transientClaimRetentionDays: 14 # Days before opinion, misc, and currently watching claims expire
+  deadClaimRetentionDays: 30 # Days to retain rejected and superseded claims after they end
   salienceHalfLifeDays: 30 # Days for claim salience to halve after its last observation
   recallCooldownMs: 21600000 # Recalled claims lose 0.75 score for this long unless the message matches them
   episodeLullMs: 180000 # Close an open memory episode after this much channel silence

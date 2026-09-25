@@ -13,6 +13,8 @@ import {
 } from './predicates.js'
 import { sensitiveValueReason } from './privacyGuard.js'
 
+const DAY_MS = 24 * 60 * 60 * 1000
+
 export type ClaimSource = 'explicit' | 'human' | 'passive' | 'legacy'
 export type ClaimStatus = 'candidate' | 'active' | 'superseded' | 'rejected'
 
@@ -263,6 +265,26 @@ export function pruneActiveClaimOverflow(): number {
   const evicted = evictOverflowForAllSubjects()
   if (evicted > 0) logger.info({ evicted }, 'Pruned overflow memory claims')
   return evicted
+}
+
+function purgeDeadClaims(now: number): number {
+  const db = getDb()
+  const cutoff = now - config.memory.deadClaimRetentionDays * DAY_MS
+  const count = (
+    db
+      .prepare("SELECT COUNT(*) AS count FROM memory_claim WHERE status IN ('rejected', 'superseded') AND ended_at < ?")
+      .get(cutoff) as { count: number }
+  ).count
+  if (count === 0) return 0
+
+  db.prepare(
+    `DELETE FROM memory_evidence
+     WHERE claim_id IN (
+       SELECT id FROM memory_claim WHERE status IN ('rejected', 'superseded') AND ended_at < ?
+     )`
+  ).run(cutoff)
+  db.prepare("DELETE FROM memory_claim WHERE status IN ('rejected', 'superseded') AND ended_at < ?").run(cutoff)
+  return count
 }
 
 function supersedePriorActive(claim: UserMemoryClaim): void {
@@ -764,7 +786,7 @@ export function pruneStaleClaims(
         .all() as ClaimRow[]
     ).filter(({ predicate, last_seen_at }) => {
       const tier = PREDICATES[predicate as PredicateId].retentionTier
-      return last_seen_at < now - retentionDays[tier] * 24 * 60 * 60 * 1000
+      return last_seen_at < now - retentionDays[tier] * DAY_MS
     })
     const stale = staleCandidates.map(mapClaim)
     const expiredGuild = (
@@ -787,7 +809,8 @@ export function pruneStaleClaims(
         ).map(mapClaim)
       : []
     rejectClaims(botClaims, 'self')
-    return stale.length + expiredGuild.length + botClaims.length + evictOverflowForAllSubjectsInTransaction()
+    const evicted = evictOverflowForAllSubjectsInTransaction()
+    return stale.length + expiredGuild.length + botClaims.length + evicted + purgeDeadClaims(now)
   })()
   if (pruned > 0) logger.info({ pruned, standardRetentionDays }, 'Pruned memory claims')
   return pruned

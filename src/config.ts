@@ -64,6 +64,7 @@ interface YamlConfig {
     stableClaimRetentionDays?: number
     claimRetentionDays?: number
     transientClaimRetentionDays?: number
+    deadClaimRetentionDays?: number
     salienceHalfLifeDays?: number
     recallCooldownMs?: number
     episodeLullMs?: number
@@ -221,6 +222,7 @@ export const config = {
     stableClaimRetentionDays: yaml.memory?.stableClaimRetentionDays ?? 180,
     claimRetentionDays: envInt('MEMORY_CLAIM_RETENTION_DAYS') ?? yaml.memory?.claimRetentionDays ?? 30,
     transientClaimRetentionDays: yaml.memory?.transientClaimRetentionDays ?? 14,
+    deadClaimRetentionDays: yaml.memory?.deadClaimRetentionDays ?? 30,
     salienceHalfLifeDays: yaml.memory?.salienceHalfLifeDays ?? 30,
     recallCooldownMs: yaml.memory?.recallCooldownMs ?? 21_600_000,
     episodeLullMs: yaml.memory?.episodeLullMs ?? 180_000,
@@ -345,6 +347,7 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'memory.stableClaimRetentionDays', value: config.memory.stableClaimRetentionDays, min: 1 },
   { path: 'memory.claimRetentionDays', value: config.memory.claimRetentionDays, min: 1 },
   { path: 'memory.transientClaimRetentionDays', value: config.memory.transientClaimRetentionDays, min: 1 },
+  { path: 'memory.deadClaimRetentionDays', value: config.memory.deadClaimRetentionDays, min: 1 },
   { path: 'memory.salienceHalfLifeDays', value: config.memory.salienceHalfLifeDays, min: 1 },
   { path: 'memory.recallCooldownMs', value: config.memory.recallCooldownMs, min: 0 },
   { path: 'memory.episodeLullMs', value: config.memory.episodeLullMs, min: 1 },
