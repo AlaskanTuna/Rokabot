@@ -264,7 +264,7 @@ describe('config module', () => {
 
     expect(config.memory.episodeRecallK).toBe(3)
     expect(config.memory.episodeTokenBudget).toBe(200)
-    expect(config.memory.episodeMinSimilarity).toBe(0.45)
+    expect(config.memory.episodeMinSimilarity).toBe(0.7)
     expect(config.memory.episodeRetentionDays).toBe(90)
     expect(config.memory.embeddingModel).toBe('gemini-embedding-2')
     expect(config.memory.embeddingTimeoutMs).toBe(1500)
