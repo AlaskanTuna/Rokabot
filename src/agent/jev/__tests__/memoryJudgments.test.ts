@@ -89,7 +89,9 @@ describe('judgeEpisodeOperations', () => {
       { op: 'add', subject: { kind: 'user', userId: 'u-1' }, predicate: 'likes', value: 'tea' },
       { op: 'noop' }
     ] as const
-    const existing = [{ id: 7, guildId: 'g-1', subjectUserId: 'u-1', predicate: 'likes', value: 'green tea' }] as never
+    const existing = [
+      { id: 7, guildId: 'g-1', subjectKind: 'user', subjectUserId: 'u-1', predicate: 'likes', value: 'green tea' }
+    ] as never
 
     const result = await judgeEpisodeOperations({ lines: ['[u-1|Mio]: I like tea'], ops: [ops[0]], existing })
 
@@ -132,5 +134,37 @@ describe('judgeEpisodeOperations', () => {
     ).resolves.toBeNull()
     await expect(judgeEpisodeOperations({ lines: [], ops: [], existing: [] })).resolves.toBeNull()
     expect(mocks.systemOne).toHaveBeenCalledOnce()
+  })
+
+  it('uses guild scope questions in place of user attribution questions', async () => {
+    mocks.systemOne.mockResolvedValueOnce({
+      answers: {
+        durable_0: { type: 'noul', noul: 0.99 },
+        guild_scoped_0: { type: 'noul', noul: 0.99 }
+      },
+      usage: { input_tokens: 20, output_tokens: 2 }
+    })
+    const result = await judgeEpisodeOperations({
+      lines: ['[u-1|Mio]: We should host a game night tomorrow.'],
+      ops: [
+        {
+          op: 'add',
+          subject: { kind: 'guild' },
+          predicate: 'plan',
+          value: 'Members planned a game night',
+          date: { relative: 'tomorrow' }
+        }
+      ],
+      existing: []
+    })
+
+    expect(mocks.systemOne).toHaveBeenCalledOnce()
+    const questions = mocks.systemOne.mock.calls[0]?.[0]?.questions ?? {}
+    expect(Object.keys(questions)).toEqual(['durable_0', 'guild_scoped_0'])
+    expect(Object.keys(questions)).not.toContain('attributed_0')
+    expect(result?.answers).toEqual({
+      durable_0: { noul: 0.99, confidence: null },
+      guild_scoped_0: { noul: 0.99, confidence: null }
+    })
   })
 })

@@ -12,17 +12,22 @@ import {
   type ExtractionOp as EpisodeOperation,
   parseExtractionOutput
 } from './extractionSchema.js'
+import { resolveGuildFactDate } from './guildFactDates.js'
 import {
   type MemoryClaim,
   appendEvidence,
   assertClaim,
+  assertGuildClaim,
   getActiveClaimById,
   getActiveClaims,
+  getActiveGuildClaimById,
+  getActiveGuildClaims,
   rejectActiveClaimById,
+  rejectActiveGuildClaimById,
   replaceActiveClaim,
+  replaceActiveGuildClaim,
   retractClaim
 } from './memoryClaims.js'
-import { PREDICATES, cardinalityOf, normalizePredicate } from './predicates.js'
 import { sensitiveFactReason } from './privacyGuard.js'
 
 let genaiClient: GoogleGenAI | undefined
@@ -43,14 +48,22 @@ function episodePrompt(guildId: string, episode: ExtractionEpisode): string {
     userId,
     claims: getActiveClaims(guildId, userId).map(({ id, predicate, value }) => ({ id, predicate, value }))
   }))
+  const guildClaims = getActiveGuildClaims(guildId).map(({ id, predicate, value, expiresAt }) => ({
+    id,
+    predicate,
+    value,
+    expiresAt
+  }))
   return [
-    'You extract durable personal details about users from a Discord episode. Never create facts about the bot or group.',
+    'You extract durable personal details about users and shared facts about this Discord server from an episode.',
     'Never extract sensitive personal information: real/legal names, age or birthday, address or specific residence, phone numbers, email addresses, social media handles, school or workplace names, financial information, credentials, or medical/health details.',
-    'Use only the supplied user IDs. Attribute facts only to the person who stated them, not someone quoted, addressed, or joked about. Context lines are background only and cannot supply a subject or fact.',
+    'For user facts, use only the supplied user IDs and attribute facts only to the person who stated them, not someone quoted, addressed, or joked about. Use subject {"kind":"guild"} only for a fact established about this server or its members collectively. Context lines are background only and cannot supply a subject or fact.',
+    'Use only these guild predicates: upcoming_event, plan, running_joke, place, rule, announcement. For upcoming_event and plan, include calendar date components supported by the messages; do not guess dates or decide whether they are in the future.',
     'Add a new claim only for a durable fact. Use update or remove with an existing claim ID instead of adding a rewording. Return noop when nothing changed.',
     'Return a one-to-two sentence third-person summary.',
     `Allowed human user IDs: ${humanIds.join(', ') || '(none)'}`,
     `Current active claims:\n${JSON.stringify(claims, null, 2)}`,
+    `Current active guild facts:\n${JSON.stringify(guildClaims, null, 2)}`,
     `Context (background only, never a subject):\n${episode.context.map(formatEpisodeLine).join('\n') || '(none)'}`,
     `Delta messages:\n${episode.messages.map(formatEpisodeLine).join('\n')}`
   ].join('\n\n')
@@ -84,26 +97,55 @@ export type OperationApplicationReport = {
 }
 
 type EpisodeWriteOp = Exclude<EpisodeOperation, { op: 'noop' }>
+type GuildWriteOperation = Extract<EpisodeWriteOp, { subject: { kind: 'guild' } }>
 type PlannedOperation = {
   index: number
   op: EpisodeWriteOp
   sameAsClaims: MemoryClaim[]
   questionKeys: string[]
+  expiresAt: number | null
+  dateValid: boolean
 }
 
-function planVerification(ops: readonly EpisodeWriteOp[], existing: MemoryClaim[]): PlannedOperation[] {
+function isGuildWriteOperation(op: EpisodeWriteOp): op is GuildWriteOperation {
+  return op.subject.kind === 'guild'
+}
+
+function planVerification(
+  ops: readonly EpisodeWriteOp[],
+  existing: MemoryClaim[],
+  now: number,
+  timezone: string | undefined
+): PlannedOperation[] {
   return ops.map((op, index) => {
     const sameAsClaims =
       op.op === 'add'
-        ? existing.filter((claim) => claim.subjectUserId === op.subject.userId && claim.predicate === op.predicate)
+        ? existing.filter((claim) => {
+            if (claim.subjectKind !== op.subject.kind || claim.predicate !== op.predicate) return false
+            return op.subject.kind === 'guild' || claim.subjectUserId === op.subject.userId
+          })
         : []
+    const expires =
+      op.subject.kind === 'guild' &&
+      op.op !== 'remove' &&
+      (op.predicate === 'upcoming_event' || op.predicate === 'plan')
+        ? op.date
+          ? resolveGuildFactDate(op.date, now, timezone)
+          : null
+        : null
+    const requiresDate =
+      op.subject.kind === 'guild' &&
+      op.op !== 'remove' &&
+      (op.predicate === 'upcoming_event' || op.predicate === 'plan')
     return {
       index,
       op,
       sameAsClaims,
+      expiresAt: expires?.expiresAt ?? null,
+      dateValid: !requiresDate || expires !== null,
       questionKeys: [
         `durable_${index}`,
-        `attributed_${index}`,
+        `${op.subject.kind === 'guild' ? 'guild_scoped' : 'attributed'}_${index}`,
         ...sameAsClaims.map((_, claimIndex) => `same_as_${index}_${claimIndex}`)
       ]
     }
@@ -126,6 +168,7 @@ function hasCompleteVerification(
 }
 
 function operationAllowed(op: EpisodeWriteOp, subjectIds: Set<string>): boolean {
+  if (op.subject.kind === 'guild') return true
   const objectUserId = 'objectUserId' in op ? op.objectUserId : undefined
   return subjectIds.has(op.subject.userId) && (!objectUserId || subjectIds.has(objectUserId))
 }
@@ -146,8 +189,11 @@ export async function verifyAndApplyOperations(input: {
 
   const humanIds = new Set(input.episode.messages.filter((message) => !message.isBot).map((message) => message.userId))
   const subjectIds = new Set([...input.subjectIds].filter((userId) => humanIds.has(userId)))
-  const existing = [...subjectIds].flatMap((userId) => getActiveClaims(input.guildId, userId))
-  const planned = planVerification(writeOps, existing)
+  const existing = [
+    ...[...subjectIds].flatMap((userId) => getActiveClaims(input.guildId, userId)),
+    ...getActiveGuildClaims(input.guildId)
+  ]
+  const planned = planVerification(writeOps, existing, Date.now(), config.timezone)
   const verification = await judgeEpisodeOperations({
     lines: input.episode.messages.map(formatEpisodeLine),
     ops: writeOps,
@@ -164,8 +210,17 @@ export async function verifyAndApplyOperations(input: {
         results.push({ applied: false, duplicate: false })
         continue
       }
+      if (!entry.dateValid) {
+        results.push({ applied: false, duplicate: false })
+        continue
+      }
 
-      const target = op.op === 'add' ? undefined : getActiveClaimById(input.guildId, op.subject.userId, op.existingId)
+      const target =
+        op.op === 'add'
+          ? undefined
+          : op.subject.kind === 'guild'
+            ? getActiveGuildClaimById(input.guildId, op.existingId)
+            : getActiveClaimById(input.guildId, op.subject.userId, op.existingId)
       if (op.op !== 'add' && (!target || target.predicate !== op.predicate)) {
         results.push({ applied: false, duplicate: false })
         continue
@@ -173,8 +228,9 @@ export async function verifyAndApplyOperations(input: {
 
       if (verified) {
         const durable = verification.answers[`durable_${index}`].noul >= config.memory.verifyThreshold
-        const attributed = verification.answers[`attributed_${index}`].noul >= config.memory.verifyThreshold
-        if (!durable || !attributed) {
+        const scopedKey = `${op.subject.kind === 'guild' ? 'guild_scoped' : 'attributed'}_${index}`
+        const scoped = verification.answers[scopedKey].noul >= config.memory.verifyThreshold
+        if (!durable || !scoped) {
           results.push({ applied: false, duplicate: false })
           continue
         }
@@ -183,7 +239,10 @@ export async function verifyAndApplyOperations(input: {
           results.push({ applied: false, duplicate: false })
           continue
         }
-        const current = getActiveClaims(input.guildId, op.subject.userId)
+        const current =
+          op.subject.kind === 'guild'
+            ? getActiveGuildClaims(input.guildId)
+            : getActiveClaims(input.guildId, op.subject.userId)
         const sameValue = current.find((claim) => claim.predicate === op.predicate && claim.value === op.value)
         if (sameValue || (op.op === 'update' && target?.value === op.value)) {
           results.push({ applied: false, duplicate: false })
@@ -198,7 +257,10 @@ export async function verifyAndApplyOperations(input: {
             return answer.noul >= config.memory.verifyThreshold
           })
           if (sameAs) {
-            const active = getActiveClaimById(input.guildId, op.subject.userId, sameAs.id)
+            const active =
+              op.subject.kind === 'guild'
+                ? getActiveGuildClaimById(input.guildId, sameAs.id)
+                : getActiveClaimById(input.guildId, op.subject.userId, sameAs.id)
             if (active) {
               appendEvidence(active.id, { channelId: input.channelId, sourceKind: 'passive' }, { transaction: true })
               appliedEvidence.add(`same_as_${index}_${sameAsClaims.indexOf(sameAs)}`)
@@ -212,6 +274,23 @@ export async function verifyAndApplyOperations(input: {
             results.push({ applied: false, duplicate: false })
             continue
           }
+        }
+
+        if (isGuildWriteOperation(op)) {
+          const claim = assertGuildClaim(
+            {
+              guildId: input.guildId,
+              predicate: op.predicate,
+              value: op.value,
+              expiresAt: entry.expiresAt,
+              sourceKind: 'passive',
+              channelId: input.channelId,
+              needsReview: !verified
+            },
+            { transaction: true }
+          )
+          results.push({ applied: claim.status === 'active', duplicate: false })
+          continue
         }
 
         const claim = assertClaim(
@@ -232,28 +311,43 @@ export async function verifyAndApplyOperations(input: {
       }
 
       if (op.op === 'update') {
-        const replacement = replaceActiveClaim(
-          {
-            guildId: input.guildId,
-            subjectUserId: op.subject.userId,
-            existingId: op.existingId,
-            predicate: op.predicate,
-            value: op.value,
-            objectUserId: op.objectUserId,
-            channelId: input.channelId,
-            needsReview: !verified
-          },
-          { transaction: true }
-        )
+        const replacement = isGuildWriteOperation(op)
+          ? replaceActiveGuildClaim(
+              {
+                guildId: input.guildId,
+                existingId: op.existingId,
+                predicate: op.predicate,
+                value: op.value,
+                expiresAt: entry.expiresAt,
+                channelId: input.channelId,
+                needsReview: !verified
+              },
+              { transaction: true }
+            )
+          : replaceActiveClaim(
+              {
+                guildId: input.guildId,
+                subjectUserId: op.subject.userId,
+                existingId: op.existingId,
+                predicate: op.predicate,
+                value: op.value,
+                objectUserId: op.objectUserId,
+                channelId: input.channelId,
+                needsReview: !verified
+              },
+              { transaction: true }
+            )
         const duplicate = replacement?.id === op.existingId
         results.push({ applied: Boolean(replacement) && !duplicate, duplicate })
         continue
       }
 
-      const applied = rejectActiveClaimById(
-        { guildId: input.guildId, subjectUserId: op.subject.userId, existingId: op.existingId },
-        { transaction: true }
-      )
+      const applied = isGuildWriteOperation(op)
+        ? rejectActiveGuildClaimById({ guildId: input.guildId, existingId: op.existingId }, { transaction: true })
+        : rejectActiveClaimById(
+            { guildId: input.guildId, subjectUserId: op.subject.userId, existingId: op.existingId },
+            { transaction: true }
+          )
       results.push({ applied, duplicate: false })
     }
   })()

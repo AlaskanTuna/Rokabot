@@ -60,23 +60,23 @@ She can chat with a server, remember useful context without carrying it into ano
 ## Features
 
 - **Conversation & Perception:** `/ask`, mentions, replies, and supported name-keyword triggers; she takes images, PDFs, audio and video, on both the `/ask` and mention surfaces, plus by link, and reads recent channel context.
-- **Memory:** Passive context monitoring and claims-based memory, isolated per tenant — a guild, or a single DM or group chat — and surfaced only through a bounded prompt envelope.
+- **Memory:** Passive context monitoring and claims-based user and guild facts, scoped to monitored servers and surfaced through bounded prompt blocks. DMs and `/ask` do not read or write memory.
 - **Tools:** In chat, Roka can roll dice, flip coins, check the time and weather, search the web, discover anime and airing schedules, and manage reminders; a cute footer notes the little ritual she performed.
 - **Stats:** Fun server analytics with a mood ring, charts, and a peek at who she's remembered lately, across four Last 30 Days views.
 - **Games:** Buddy Pets, Hangman, and Shiritori, with SQLite-backed progress and leaderboards.
 - **Interaction & UX:** Rule-based tone detection, expression thumbnails, Components V2 replies, emoji reactions, rate limits, and per-channel concurrency protection.
 - **Files & Media:** Image, PDF, audio, and video attachments on `/ask` and the mention path, each held to its own size ceiling, with graceful in-character notices when a file can't be read — see [Handing Her a File](#handing-her-a-file) below.
 
-| Command or Capability  | Use                                                                                                                                                                                                                                                                                      |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/ask`                 | Ask Roka anything or just talk; she searches the web herself when she needs to. Optionally attach a file, or link one — see [Handing Her a File](#handing-her-a-file).                                                                                                                   |
-| `/gacha`               | Hatch, view, pet, inspect stats, browse collection, read the guide, or view the leaderboard.                                                                                                                                                                                             |
-| `/hangman`             | Start and play a word-guessing game.                                                                                                                                                                                                                                                     |
-| `/shiritori`           | Start, join, and score a word-chain game.                                                                                                                                                                                                                                                |
-| `/anime`               | Search or browse anime, or search or browse airing schedules.                                                                                                                                                                                                                            |
-| `/remind`              | Create, list, and cancel reminders.                                                                                                                                                                                                                                                      |
-| `/stats`               | Explore four fixed, non-overlapping Last 30 Days views with no window selector: Overview (activity, heatmap, channel histogram); Mood (label, donut); Memory (the 5 most recently-remembered members and their latest memory, growth curve); Nerd (latency, reliability, volume, trend). |
-| In-Conversation Memory | Recall or save useful user facts within the current server or DM.                                                                                                                                                                                                                        |
+| Command or Capability  | Use                                                                                                                                                                                                                                                                                                   |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/ask`                 | Ask Roka anything or just talk; she searches the web herself when she needs to. Optionally attach a file, or link one — see [Handing Her a File](#handing-her-a-file).                                                                                                                                |
+| `/gacha`               | Hatch, view, pet, inspect stats, browse collection, read the guide, or view the leaderboard.                                                                                                                                                                                                          |
+| `/hangman`             | Start and play a word-guessing game.                                                                                                                                                                                                                                                                  |
+| `/shiritori`           | Start, join, and score a word-chain game.                                                                                                                                                                                                                                                             |
+| `/anime`               | Search or browse anime, or search or browse airing schedules.                                                                                                                                                                                                                                         |
+| `/remind`              | Create, list, and cancel reminders.                                                                                                                                                                                                                                                                   |
+| `/stats`               | Explore four fixed, non-overlapping Last 30 Days views with no window selector: Overview (activity, heatmap, channel histogram); Mood (label, donut); Memory (active user and guild fact totals and growth, plus the 5 most recently-remembered members); Nerd (latency, reliability, volume, trend). |
+| In-Conversation Memory | Recall or save useful user facts during memory-enabled server conversations.                                                                                                                                                                                                                          |
 
 ### Tool Footer
 
@@ -207,9 +207,12 @@ flowchart LR
     Precheck --> Admission[Jev admission required]
     Admission --> Extractor[Gemini typed extraction]
     Extractor --> Verification[Jev verification]
-    Verification --> Claims[(User-subject memory_claim)]
-    Claims --> Retriever[Bounded retriever]
-    Retriever --> Envelope[Prompt safety envelope]
+    Verification --> Claims[(User and guild memory_claim)]
+    Claims --> UserRetriever[Bounded user retriever]
+    UserRetriever --> Envelope[Prompt safety envelope]
+    Claims --> GuildRetriever[Same-guild unexpired facts]
+    GuildRetriever --> ServerBlock[Separate server-memory block]
+    ServerBlock --> Envelope
 
     subgraph Lifecycle[Claim Lifecycle]
         Active[active] --> Superseded[superseded]
@@ -219,14 +222,16 @@ flowchart LR
 
 </details>
 
-- Claims always describe users and stay within their tenant (guild or individual DM/group-chat channel); passive episode capture currently runs in monitored guild channels.
+- User claims and guild facts stay within their Discord server. Guild facts describe shared server details. Passive episode capture runs in monitored guild channels.
 - A fact the user asks her outright to remember is pinned and survives the active-claim ceiling.
 - `recall_user` ranks by relevance to the current message rather than by recency.
-- Episode writes run asynchronously; retrieval stays bounded before a response is generated. Jev admission runs before Gemini extraction and Jev verification runs before claim updates. Without `TYPESAFE_API_KEY`, passive episodes are dropped.
+- Episode writes run asynchronously; user retrieval and the separately budgeted guild-fact block stay bounded before a response is generated. Jev admission runs before Gemini extraction and Jev verification runs before claim updates. Without `TYPESAFE_API_KEY`, passive episodes are dropped.
 - Queue jobs retry once after an extraction failure; jobs that fail again remain in `failed` for inspection.
-- Group or guild-subject facts and durable episodic recall are later-phase work; the current pipeline does not store an episode summary or a `memory_episode` record.
+- `upcoming_event` and `plan` facts expire at the next midnight in `config.timezone`; a daily prune marks expired facts rejected while retaining claim and evidence rows. `/ask` has no memory block, and `forget_user` only searches user claims.
+- `/stats` includes active, unexpired guild facts in memory totals and growth while remembered-member metrics stay user-only. The vault export writes guild facts to `<vault>/<guildId>/guild.md` with expiry metadata.
+- Durable episodic recall is a separate feature; the current pipeline does not store an episode summary or a `memory_episode` record.
 - The exported memory graph is browseable in Obsidian; see [Browsing Memory in Obsidian](#browsing-memory-in-obsidian).
-- For schema, lifecycle, and retrieval details, see [Memory Architecture (User Claims)](./trd.md#memory-architecture-user-claims).
+- For schema, lifecycle, and retrieval details, see [Memory Architecture (Guild and User Claims)](./trd.md#memory-architecture-guild-and-user-claims).
 
 ### Expressions & Tones
 
@@ -433,6 +438,7 @@ Secrets belong in `.env`; tunables belong in [`config.yml`](../config.yml). Envi
 | `memory.channelMonitorTtlMs`    | —                                   | Monitoring lifetime after the latest mention.               |
 | `memory.maxClaimsPerTurn`       | `MEMORY_MAX_CLAIMS_PER_TURN`        | Maximum claims included in one response.                    |
 | `memory.retrievalTokenBudget`   | `MEMORY_RETRIEVAL_TOKEN_BUDGET`     | Approximate claims-envelope token budget.                   |
+| `memory.guildFactsTokenBudget`  | `MEMORY_GUILD_FACTS_TOKEN_BUDGET`   | Approximate server-memory block token budget.               |
 | `memory.recentParticipantLimit` | `MEMORY_RECENT_PARTICIPANT_LIMIT`   | Non-speaker participants considered for retrieval.          |
 | `memory.speakerMinShare`        | `MEMORY_SPEAKER_MIN_SHARE`          | Minimum share of selected claims reserved for the speaker.  |
 | `memory.maxActiveClaimsPerUser` | `MEMORY_MAX_ACTIVE_CLAIMS_PER_USER` | Active claim cap per user; pinned claims are exempt.        |
@@ -501,7 +507,7 @@ flowchart LR
 1. On the Pi, run the export against the live SQLite database.
 2. The default destination is `data/vault/`; set `MEMORY_VAULT_EXPORT_DIR` to write a different destination.
 3. Treat the result as a read-only static snapshot. Re-run the export whenever you want it refreshed.
-4. Copy it to a desktop machine, then open the copied folder as an Obsidian vault to browse the per-guild memory graph.
+4. Copy it to a desktop machine, then open the copied folder as an Obsidian vault to browse member notes and each guild's `guild.md` facts note.
 
 ```bash
 cd /path/to/rokabot
@@ -529,7 +535,7 @@ Obsidian belongs on the desktop, not the Pi: it is a graphical desktop applicati
 
 ## Privacy
 
-Rokabot is self-hosted and stores session history, memory claims, reminders, game data, metrics, and failure diagnostics (which retain the triggering message verbatim for a bounded window, configured by `metrics.diagnosticsRetentionHours`) in local SQLite. Claims are isolated per tenant: a guild, or an individual DM or group chat, never crossing between them. Messages used to generate responses and extract memory are sent to Gemini; passive episode content and candidate claims are also sent to TypeSafe Jev for admission and verification. Attachments are never written to disk or to SQLite — only text content is persisted, so a restart drops them entirely. Server operators should disclose passive monitoring in channels where Roka has been mentioned.
+Rokabot is self-hosted and stores session history, memory claims, reminders, game data, metrics, and failure diagnostics (which retain the triggering message verbatim for a bounded window, configured by `metrics.diagnosticsRetentionHours`) in local SQLite. Claims are scoped to their Discord server and never cross between servers. DMs and `/ask` do not read or write memory. Messages used to generate responses and extract memory are sent to Gemini; passive episode content and candidate claims are also sent to TypeSafe Jev for admission and verification. Attachments are never written to disk or to SQLite — only text content is persisted, so a restart drops them entirely. Server operators should disclose passive monitoring in channels where Roka has been mentioned.
 
 <p align="right"><a href="#readme-top">↑</a></p>
 

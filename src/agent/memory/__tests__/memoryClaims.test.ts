@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import * as memoryClaimsModule from '../memoryClaims.js'
 
 vi.mock('../../../config.js', () => ({
   config: {
@@ -13,8 +14,10 @@ import { closeDb, getDb } from '../../../storage/database.js'
 import {
   activateClaim,
   assertClaim,
+  assertGuildClaim,
   getActiveClaimById,
   getActiveClaims,
+  getActiveGuildClaims,
   getEdges,
   pinClaim,
   pruneActiveClaimOverflow,
@@ -45,6 +48,9 @@ describe('memoryClaims', () => {
       predicate: 'nickname',
       value: 'Rin',
       sourceKind: 'explicit'
+    })
+    expect(getDb().prepare('SELECT subject_kind FROM memory_claim WHERE id = ?').get(active.id)).toEqual({
+      subject_kind: 'user'
     })
     const candidate = assertClaim({
       guildId: 'guild-1',
@@ -131,6 +137,45 @@ describe('memoryClaims', () => {
       count: 2
     })
     expect(searchClaims('guild-1', 'user-1', 'Senren', 10)).toEqual([second])
+  })
+
+  it('stores guild facts without a user subject and keeps user reads scoped to users', () => {
+    const assertGuildClaim = Reflect.get(memoryClaimsModule, 'assertGuildClaim') as
+      | ((input: {
+          guildId: string
+          predicate: 'plan'
+          value: string
+          expiresAt: number
+          sourceKind: 'passive'
+          observedAt: number
+        }) => { id: number; subjectKind: string; subjectUserId: string | null; predicate: string })
+      | undefined
+    const getActiveGuildClaims = Reflect.get(memoryClaimsModule, 'getActiveGuildClaims') as
+      | ((guildId: string, now: number) => unknown[])
+      | undefined
+    expect(assertGuildClaim).toBeTypeOf('function')
+    expect(getActiveGuildClaims).toBeTypeOf('function')
+    if (!assertGuildClaim || !getActiveGuildClaims) return
+
+    const guildFact = assertGuildClaim({
+      guildId: 'guild-1',
+      predicate: 'plan',
+      value: 'Game night tomorrow',
+      expiresAt: 10_000,
+      sourceKind: 'passive',
+      observedAt: 1_000
+    })
+
+    expect(guildFact).toMatchObject({ subjectKind: 'guild', subjectUserId: null, predicate: 'plan' })
+    expect(
+      getDb().prepare('SELECT subject_kind, subject_user_id FROM memory_claim WHERE id = ?').get(guildFact.id)
+    ).toEqual({
+      subject_kind: 'guild',
+      subject_user_id: null
+    })
+    expect(getActiveClaims('guild-1', 'user-1')).toEqual([])
+    expect(getActiveGuildClaims('guild-1', 9_999)).toEqual([guildFact])
+    expect(getActiveGuildClaims('guild-1', 10_000)).toEqual([])
   })
 
   it('replaces an active claim by ID and keeps the old row linked as superseded', () => {
@@ -261,6 +306,29 @@ describe('memoryClaims', () => {
 
     expect(pruneStaleClaims(7)).toBe(1)
     expect(getActiveClaims('guild-1', 'user-1')).toEqual([expect.objectContaining({ id: pinned.id, pinned: true })])
+  })
+
+  it('rejects expired guild facts during pruning without deleting claims or evidence', () => {
+    const now = 10_000
+    const fact = assertGuildClaim({
+      guildId: 'guild-1',
+      predicate: 'plan',
+      value: 'Past game night',
+      expiresAt: now - 1,
+      sourceKind: 'passive',
+      observedAt: now - DAY
+    })
+    vi.spyOn(Date, 'now').mockReturnValue(now)
+
+    expect(pruneStaleClaims()).toBe(1)
+    expect(getDb().prepare('SELECT status FROM memory_claim WHERE id = ?').get(fact.id)).toEqual({ status: 'rejected' })
+    expect(getDb().prepare('SELECT COUNT(*) AS count FROM memory_claim WHERE id = ?').get(fact.id)).toEqual({
+      count: 1
+    })
+    expect(getDb().prepare('SELECT COUNT(*) AS count FROM memory_evidence WHERE claim_id = ?').get(fact.id)).toEqual({
+      count: 1
+    })
+    expect(getActiveGuildClaims('guild-1', now)).toEqual([])
   })
 
   it('rejects active bot claims during pruning and does so only once', () => {

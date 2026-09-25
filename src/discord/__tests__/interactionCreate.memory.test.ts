@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   handleStatsCommand: vi.fn(),
   splitResponse: vi.fn((response: string) => [response]),
   retrieveForTurn: vi.fn(() => ({ entries: [], claims: [] })),
+  retrieveGuildFacts: vi.fn(() => ({ facts: [], tokensEst: 0 })),
   getSharedRateLimiter: vi.fn(() => ({ tryConsumeAboveFloor: () => true })),
   getLocalHour: vi.fn(() => 12),
   runnerRequests: [] as Array<{ stateDelta?: Record<string, unknown> }>
@@ -39,7 +40,8 @@ vi.mock('@google/adk', async (importOriginal) => {
 })
 vi.mock('../../agent/memory/retriever.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../agent/memory/retriever.js')>()),
-  retrieveForTurn: mocks.retrieveForTurn
+  retrieveForTurn: mocks.retrieveForTurn,
+  retrieveGuildFacts: mocks.retrieveGuildFacts
 }))
 vi.mock('../../utils/logger.js', () => ({
   logger: { debug: vi.fn(), error: mocks.error, info: mocks.info, warn: mocks.warn }
@@ -128,6 +130,7 @@ describe('/ask is memory-free', () => {
 
     expect(systemPrompt).not.toContain('What You Remember About People In This Channel')
     expect(systemPrompt).not.toContain('Frieren')
+    expect(mocks.retrieveGuildFacts).not.toHaveBeenCalled()
   })
 
   it('names none of the memory tools in a guild turn', async () => {

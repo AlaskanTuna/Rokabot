@@ -25,7 +25,7 @@ const runForget = (
     toolContext: toolContextWith({ _userId: userId, _guildId: guildId })
   }) as Promise<{ success: boolean; message: string }>
 import { resolveName } from '../../memory/identityResolver.js'
-import { assertClaim, getActiveClaims } from '../../memory/memoryClaims.js'
+import { assertClaim, assertGuildClaim, getActiveClaims, getActiveGuildClaims } from '../../memory/memoryClaims.js'
 import { forgetUserTool, recallUserTool, rememberUserTool } from '../index.js'
 import { recallUser } from '../recallUser.js'
 import { rememberUser } from '../rememberUser.js'
@@ -41,6 +41,28 @@ afterEach(() => {
 })
 
 describe('memory tools', () => {
+  it('forgets only the speaker’s user claim and leaves guild facts intact', async () => {
+    assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'likes',
+      value: 'tea',
+      sourceKind: 'explicit'
+    })
+    const guildFact = assertGuildClaim({
+      guildId: 'guild-1',
+      predicate: 'place',
+      value: 'The group meets in voice chat',
+      expiresAt: null,
+      sourceKind: 'passive'
+    })
+
+    await expect(runForget('tea')).resolves.toMatchObject({ success: true })
+
+    expect(getActiveClaims('guild-1', 'user-1')).toEqual([])
+    expect(getActiveGuildClaims('guild-1')).toEqual([expect.objectContaining({ id: guildFact.id })])
+  })
+
   it('forgets all keyword matches only from the current speaker in the current guild', async () => {
     const shortMatch = assertClaim({
       guildId: 'guild-1',

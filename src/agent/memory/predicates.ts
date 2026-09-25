@@ -66,6 +66,18 @@ export const PREDICATES = Object.freeze({
 
 export type PredicateId = keyof typeof PREDICATES
 
+export const GUILD_PREDICATES = Object.freeze({
+  upcoming_event: true,
+  plan: true,
+  running_joke: true,
+  place: true,
+  rule: true,
+  announcement: true
+} as const)
+
+export type GuildPredicateId = keyof typeof GUILD_PREDICATES
+export type MemoryPredicateId = PredicateId | GuildPredicateId
+
 const SYNONYMS: Readonly<Record<string, PredicateId>> = {
   name: 'nickname',
   names: 'nickname',
@@ -96,6 +108,10 @@ const SYNONYMS: Readonly<Record<string, PredicateId>> = {
 
 export function isKnownPredicate(predicateId: string): predicateId is PredicateId {
   return Object.hasOwn(PREDICATES, predicateId)
+}
+
+export function isGuildPredicate(predicateId: string): predicateId is GuildPredicateId {
+  return Object.hasOwn(GUILD_PREDICATES, predicateId)
 }
 
 export function normalizePredicate(rawKey: string): PredicateId {

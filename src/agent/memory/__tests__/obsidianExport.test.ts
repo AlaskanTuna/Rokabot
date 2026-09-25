@@ -16,7 +16,7 @@ vi.mock('../../../config.js', () => ({
 
 import { closeDb, getDb } from '../../../storage/database.js'
 import { saveMemoryEpisode } from '../../../storage/memoryEpisodeStore.js'
-import { assertClaim, pinClaim } from '../memoryClaims.js'
+import { assertClaim, assertGuildClaim, pinClaim } from '../memoryClaims.js'
 
 let vaultDir: string
 let escapeDir: string
@@ -34,6 +34,7 @@ afterEach(async () => {
   await rm(escapeDir, { recursive: true, force: true })
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
+  vi.useRealTimers()
 })
 
 describe('exportVault', () => {
@@ -205,5 +206,69 @@ describe('exportVault', () => {
 
     await expect(exportVault(vaultDir)).rejects.toThrow('outside the export directory')
     await expect(readFile(join(escapeDir, 'user-1.md'), 'utf8')).rejects.toThrow()
+  })
+
+  it('exports unexpired guild facts to a guild-level note with expiry metadata', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-25T10:00:00Z'))
+    assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'likes',
+      value: 'tea',
+      sourceKind: 'passive',
+      observedAt: 1_000
+    })
+    assertGuildClaim({
+      guildId: 'guild-1',
+      predicate: 'plan',
+      value: 'Game night on September 26',
+      expiresAt: Date.parse('2026-09-26T16:00:00Z'),
+      sourceKind: 'passive',
+      observedAt: 1_000
+    })
+    assertGuildClaim({
+      guildId: 'guild-1',
+      predicate: 'plan',
+      value: 'Expired game night',
+      expiresAt: Date.parse('2026-09-25T09:59:00Z'),
+      sourceKind: 'passive',
+      observedAt: 1_000
+    })
+
+    const { exportVault } = await import('../obsidianExport.js')
+    const result = await exportVault(vaultDir)
+    const memberNote = await readFile(join(vaultDir, 'guild-1', 'user-1.md'), 'utf8')
+    const guildNote = await readFile(join(vaultDir, 'guild-1', 'guild.md'), 'utf8')
+
+    expect(result).toEqual({ notes: 2, claims: 2, episodes: 0 })
+    expect(load(memberNote.match(/^---\n([\s\S]*?)\n---\n/)?.[1] ?? '')).toEqual({
+      likes: [{ value: 'tea', source_kind: 'passive', pinned: false, last_seen_at: 1_000 }]
+    })
+    expect(load(guildNote.match(/^---\n([\s\S]*?)\n---\n/)?.[1] ?? '')).toMatchObject({
+      plan: [
+        {
+          value: 'Game night on September 26',
+          expires_at: Date.parse('2026-09-26T16:00:00Z')
+        }
+      ]
+    })
+    expect(guildNote).not.toContain('Expired game night')
+  })
+
+  it('rejects a guild scope that would write outside the export directory', async () => {
+    assertGuildClaim({
+      guildId: `../${basename(escapeDir)}`,
+      predicate: 'place',
+      value: 'outside venue',
+      expiresAt: null,
+      sourceKind: 'explicit',
+      observedAt: 1_000
+    })
+
+    const { exportVault } = await import('../obsidianExport.js')
+
+    await expect(exportVault(vaultDir)).rejects.toThrow('outside the export directory')
+    await expect(readFile(join(escapeDir, 'guild.md'), 'utf8')).rejects.toThrow()
   })
 })

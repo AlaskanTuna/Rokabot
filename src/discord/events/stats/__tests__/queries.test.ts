@@ -36,6 +36,7 @@ beforeEach(() => {
 afterEach(() => {
   closeDb()
   vi.unstubAllEnvs()
+  vi.restoreAllMocks()
 })
 
 function insertResponse({
@@ -133,6 +134,29 @@ function insertClaim({
       firstSeenAt,
       firstSeenAt
     )
+}
+
+function insertGuildClaim({
+  guildId = 'guild-1',
+  predicate = 'plan',
+  value,
+  firstSeenAt = now,
+  expiresAt
+}: {
+  guildId?: string
+  predicate?: string
+  value: string
+  firstSeenAt?: number
+  expiresAt: number | null
+}): void {
+  getDb()
+    .prepare(
+      `INSERT INTO memory_claim (
+        guild_id, subject_kind, subject_user_id, predicate, value, source_kind, status, first_seen_at, last_seen_at,
+        expires_at
+      ) VALUES (?, 'guild', NULL, ?, ?, 'passive', 'active', ?, ?, ?)`
+    )
+    .run(guildId, predicate, value, firstSeenAt, firstSeenAt, expiresAt)
 }
 
 function seedEpisode(id: number, guildId: string, endedAt: number): void {
@@ -252,6 +276,27 @@ describe('stats queries', () => {
     expect(distinctRememberedUsers('guild-1', 'roka-user')).toBe(2)
     expect(activeClaimCount('guild-2', 'roka-user')).toBe(1)
     expect(distinctRememberedUsers('guild-2', 'roka-user')).toBe(1)
+  })
+
+  it('includes unexpired guild facts in active counts and growth without counting guild members', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(now)
+    insertClaim({ userId: 'user-1', predicate: 'likes', firstSeenAt: now })
+    insertClaim({ userId: 'user-2', predicate: 'hobby', firstSeenAt: now })
+    insertClaim({ userId: 'roka-user', predicate: 'likes', firstSeenAt: now })
+    insertGuildClaim({ value: 'Game night', firstSeenAt: now, expiresAt: now + DAY_MS })
+    insertGuildClaim({ value: 'Expired game night', firstSeenAt: now, expiresAt: now - 1 })
+    insertGuildClaim({ guildId: 'guild-2', value: 'Other guild game night', expiresAt: now + DAY_MS })
+
+    expect(statsQueries.activeClaimCount('guild-1', 'roka-user')).toBe(3)
+    expect(statsQueries.newClaimsThisMonth('guild-1', monthSinceMs, 'roka-user')).toBe(3)
+    expect(statsQueries.memoryGrowthSeries('guild-1', monthSinceMs, 'roka-user')).toEqual([
+      { day: '2026-07-23', cumulative: 3 }
+    ])
+    expect(statsQueries.distinctRememberedUsers('guild-1', 'roka-user')).toBe(2)
+    expect(statsQueries.topRememberedMembers('guild-1', monthSinceMs, 'roka-user')).toEqual([
+      { userId: 'user-1', predicate: 'likes', value: 'private value' },
+      { userId: 'user-2', predicate: 'hobby', value: 'private value' }
+    ])
   })
 
   it('keeps memory stats queries count-only and value-free', () => {

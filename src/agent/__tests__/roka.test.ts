@@ -67,7 +67,8 @@ vi.mock('../../storage/metricsStore.js', () => ({
 }))
 
 vi.mock('../memory/retriever.js', () => ({
-  retrieveForTurn: vi.fn()
+  retrieveForTurn: vi.fn(),
+  retrieveGuildFacts: vi.fn(() => ({ facts: [], tokensEst: 0 }))
 }))
 
 vi.mock('../memory/identityResolver.js', () => ({

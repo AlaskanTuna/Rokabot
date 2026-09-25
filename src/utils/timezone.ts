@@ -3,6 +3,55 @@
 import { config } from '../config.js'
 import { logger } from './logger.js'
 
+type LocalDateTimeParts = {
+  year: number
+  month: number
+  day: number
+  hour: number
+  minute: number
+  second: number
+}
+
+function localDateTimeFormatter(timezone?: string): Intl.DateTimeFormat {
+  const options: Intl.DateTimeFormatOptions = {
+    calendar: 'gregory',
+    numberingSystem: 'latn',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+    ...(timezone ? { timeZone: timezone } : {})
+  }
+  try {
+    return new Intl.DateTimeFormat('en-US', options)
+  } catch {
+    logger.warn({ timezone }, 'Invalid timezone in config, falling back to system time')
+    const { timeZone: _timeZone, ...systemOptions } = options
+    return new Intl.DateTimeFormat('en-US', systemOptions)
+  }
+}
+
+function dateTimeParts(formatter: Intl.DateTimeFormat, timestamp: number): LocalDateTimeParts {
+  const parts = formatter.formatToParts(new Date(timestamp))
+  const numberPart = (type: Intl.DateTimeFormatPartTypes): number =>
+    Number(parts.find((part) => part.type === type)?.value)
+  return {
+    year: numberPart('year'),
+    month: numberPart('month'),
+    day: numberPart('day'),
+    hour: numberPart('hour'),
+    minute: numberPart('minute'),
+    second: numberPart('second')
+  }
+}
+
+function dateString({ year, month, day }: LocalDateTimeParts): string {
+  return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+}
+
 /** Get the current hour (0-23) in the configured timezone */
 export function getLocalHour(): number {
   // Harness-only, and the live gate is the whole reason it exists. `hour` reaches the prompt twice — the
@@ -27,6 +76,48 @@ export function getLocalHour(): number {
     logger.warn({ timezone: tz }, 'Invalid timezone in config, falling back to system time')
     return new Date().getHours()
   }
+}
+
+export function getLocalDate(timestamp: number = Date.now(), timezone: string | undefined = config.timezone): string {
+  return dateString(dateTimeParts(localDateTimeFormatter(timezone), timestamp))
+}
+
+export function localDateStartEpoch(date: string, timezone: string | undefined = config.timezone): number {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date)
+  if (!match) throw new Error('Expected an ISO calendar date')
+  const [, yearText, monthText, dayText] = match
+  const year = Number(yearText)
+  const month = Number(monthText)
+  const day = Number(dayText)
+  const target = new Date(0)
+  target.setUTCFullYear(year, month - 1, day)
+  target.setUTCHours(0, 0, 0, 0)
+  if (target.getUTCFullYear() !== year || target.getUTCMonth() !== month - 1 || target.getUTCDate() !== day) {
+    throw new Error('Invalid ISO calendar date')
+  }
+
+  const targetEpoch = target.getTime()
+  const formatter = localDateTimeFormatter(timezone)
+  let candidate = targetEpoch
+  for (let iteration = 0; iteration < 6; iteration++) {
+    const parts = dateTimeParts(formatter, candidate)
+    const representedEpoch = new Date(0)
+    representedEpoch.setUTCFullYear(parts.year, parts.month - 1, parts.day)
+    representedEpoch.setUTCHours(parts.hour, parts.minute, parts.second, 0)
+    const correction = targetEpoch - representedEpoch.getTime()
+    if (correction === 0) return candidate
+    candidate += correction
+  }
+
+  let low = targetEpoch - 36 * 60 * 60 * 1000
+  let high = targetEpoch + 36 * 60 * 60 * 1000
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2)
+    if (dateString(dateTimeParts(formatter, middle)) < date) low = middle + 1
+    else high = middle
+  }
+  if (dateString(dateTimeParts(formatter, low)) !== date) throw new Error('Could not resolve the local calendar date')
+  return low
 }
 
 /** Get today's date string (YYYY-MM-DD) in the configured timezone */

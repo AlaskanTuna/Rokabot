@@ -201,23 +201,29 @@ export async function judgeEpisodeOperations(input: {
     for (const [index, op] of input.ops.entries()) {
       if (op.op === 'noop') continue
       const durableKey = `durable_${index}`
-      const attributedKey = `attributed_${index}`
+      const scopeKey = `${op.subject.kind === 'guild' ? 'guild_scoped' : 'attributed'}_${index}`
       questions[durableKey] = noul(
-        'Is this operation a lasting trait, preference, relationship or plan rather than a momentary state or an event that has already happened?'
+        op.subject.kind === 'guild'
+          ? 'Is this a lasting shared server fact or an agreed plan/event, rather than an uncommitted suggestion, greeting, or passing mood?'
+          : 'Is this operation a lasting trait, preference, relationship or plan rather than a momentary state or an event that has already happened?'
       )
-      questions[attributedKey] = noul(
-        'Do the episode messages attribute this fact to the named user, rather than quoting, addressing or joking about them?'
+      questions[scopeKey] = noul(
+        op.subject.kind === 'guild'
+          ? 'Do the episode messages establish this fact as about this Discord server or its members collectively, rather than one person, a quoted person, or another group?'
+          : 'Do the episode messages attribute this fact to the named user, rather than quoting, addressing or joking about them?'
       )
-      questionKeys.push(durableKey, attributedKey)
+      questionKeys.push(durableKey, scopeKey)
 
       if (op.op === 'add') {
-        const claims = input.existing.filter(
-          (claim) => claim.subjectUserId === op.subject.userId && claim.predicate === op.predicate
-        )
+        const claims = input.existing.filter((claim) => {
+          if (claim.subjectKind !== op.subject.kind || claim.predicate !== op.predicate) return false
+          return op.subject.kind === 'guild' || claim.subjectUserId === op.subject.userId
+        })
         for (const [claimIndex, claim] of claims.entries()) {
           const key = `same_as_${index}_${claimIndex}`
+          const subjectLabel = op.subject.kind === 'guild' ? 'this server' : op.subject.userId
           questions[key] = noul(
-            `Do the episode messages state the same fact about ${op.subject.userId} as existing claim #${claim.id}: ${claim.value}?`
+            `Do the episode messages state the same fact about ${subjectLabel} as existing claim #${claim.id}: ${claim.value}?`
           )
           questionKeys.push(key)
         }
@@ -231,8 +237,9 @@ export async function judgeEpisodeOperations(input: {
         state: {
           messages: input.lines,
           operations: input.ops.map((op) => (op.op === 'noop' ? { ...op } : { ...op, subject: { ...op.subject } })),
-          existing: input.existing.map(({ id, subjectUserId, predicate, value }) => ({
+          existing: input.existing.map(({ id, subjectKind, subjectUserId, predicate, value }) => ({
             id,
+            subjectKind,
             subjectUserId,
             predicate,
             value

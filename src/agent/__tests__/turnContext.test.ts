@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   buildEpisodeRecallBlock: vi.fn(() => ''),
   resolveReferences: vi.fn(() => ({ resolved: [], ambiguous: [] })),
   retrieveForTurn: vi.fn(() => ({ entries: [], claims: [] })),
+  retrieveGuildFacts: vi.fn(() => ({ facts: [], tokensEst: 0 })),
   assembleSystemPrompt: vi.fn(() => 'prompt'),
   runPrefetchForJudgment: vi.fn(),
   decidePrefetch: vi.fn(
@@ -31,6 +32,7 @@ const mocks = vi.hoisted(() => ({
   buildFactsEnvelope: vi.fn(() => ''),
   buildOverheardBlock: vi.fn(() => ''),
   getLocalHour: vi.fn(() => 14),
+  getLocalDate: vi.fn(() => '2026-09-26'),
   estimateTokens: vi.fn(() => 0),
   detectTone: vi.fn(() => 'playful')
 }))
@@ -48,7 +50,10 @@ vi.mock('../../storage/userNames.js', () => ({
 vi.mock('../../storage/metricsStore.js', () => ({ recordMemoryEvent: mocks.recordMemoryEvent }))
 vi.mock('../../storage/jevEventStore.js', () => ({ recordJevEvent: mocks.recordJevEvent }))
 vi.mock('../../agent/memory/identityResolver.js', () => ({ resolveReferences: mocks.resolveReferences }))
-vi.mock('../../agent/memory/retriever.js', () => ({ retrieveForTurn: mocks.retrieveForTurn }))
+vi.mock('../../agent/memory/retriever.js', () => ({
+  retrieveForTurn: mocks.retrieveForTurn,
+  retrieveGuildFacts: mocks.retrieveGuildFacts
+}))
 vi.mock('../memory/episodeEmbeddings.js', () => ({ embedEpisodeText: mocks.embedEpisodeText }))
 vi.mock('../memory/episodeRetriever.js', () => ({ buildEpisodeRecallBlock: mocks.buildEpisodeRecallBlock }))
 vi.mock('../passiveBuffer.js', () => ({ getMessages: mocks.getMessages }))
@@ -57,7 +62,7 @@ vi.mock('../promptSafety.js', () => ({
   buildFactsEnvelope: mocks.buildFactsEnvelope,
   buildOverheardBlock: mocks.buildOverheardBlock
 }))
-vi.mock('../../utils/timezone.js', () => ({ getLocalHour: mocks.getLocalHour }))
+vi.mock('../../utils/timezone.js', () => ({ getLocalHour: mocks.getLocalHour, getLocalDate: mocks.getLocalDate }))
 vi.mock('../../utils/tokens.js', () => ({ estimateTokens: mocks.estimateTokens }))
 vi.mock('../toneDetector.js', () => ({ detectTone: mocks.detectTone }))
 vi.mock('../searchPrefetch.js', () => ({
@@ -125,6 +130,7 @@ describe('turn entry work', () => {
     jevConfig.toneMinProbability = 0.85
     mocks.loadHistory.mockReturnValue([])
     mocks.ensureSession.mockResolvedValue({ events: [] })
+    mocks.retrieveGuildFacts.mockReturnValue({ facts: [], tokensEst: 0 })
     mocks.judgeTurn.mockResolvedValue(null)
     mocks.embedEpisodeText.mockResolvedValue(Array.from({ length: 768 }, () => 0.25))
     mocks.buildEpisodeRecallBlock.mockReturnValue('')
@@ -628,5 +634,37 @@ describe('turn entry work', () => {
 
     const row = mocks.recordJevEvent.mock.calls.at(-1)?.[0]
     expect(JSON.parse(row.answer)).toMatchObject({ needsLookup: 0.95, prefetchStatus: 'gave_up' })
+  })
+
+  it('adds guild facts as a separate memory-enabled server block', async () => {
+    mocks.retrieveGuildFacts.mockReturnValue({
+      facts: [
+        {
+          predicate: 'plan',
+          value: 'Game night on September 26',
+          expiresAt: Date.parse('2026-09-26T16:00:00Z')
+        } as never
+      ],
+      tokensEst: 12
+    })
+
+    const context = await createTurnContext(turnOptions(startTurnEntryWork(entryWork())))
+
+    expect(mocks.retrieveGuildFacts).toHaveBeenCalledWith('guild-1')
+    expect(context.systemPrompt).toContain('## Things You Remember About This Server')
+    expect(context.systemPrompt).toContain('- plan (2026-09-26): Game night on September 26')
+    expect(context.composePrompt(2)).not.toContain('Things You Remember About This Server')
+  })
+
+  it('skips both user and guild retrieval on memory-free turns', async () => {
+    const context = await createTurnContext({
+      ...turnOptions(startTurnEntryWork(entryWork())),
+      memory: false
+    })
+
+    expect(mocks.retrieveForTurn).not.toHaveBeenCalled()
+    expect(mocks.retrieveGuildFacts).not.toHaveBeenCalled()
+    expect(context.systemPrompt).not.toContain('Things You Remember About This Server')
+    expect(context.systemPrompt).not.toContain('Game night')
   })
 })

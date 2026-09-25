@@ -5,12 +5,14 @@ import { config } from '../../config.js'
 import { getDb } from '../../storage/database.js'
 import { listEpisodeGuildIds, listEpisodesForGuild } from '../../storage/memoryEpisodeStore.js'
 import type { MemoryEpisode } from '../../storage/memoryEpisodeStore.js'
-import { type MemoryClaim, getActiveClaims } from './memoryClaims.js'
+import { type GuildMemoryClaim, type UserMemoryClaim, getActiveClaims, getActiveGuildClaims } from './memoryClaims.js'
 
 type ActiveClaimSubject = Readonly<{
   guild_id: string
   subject_user_id: string
 }>
+
+type ActiveGuildSubject = Readonly<{ guild_id: string }>
 
 type ExportedClaim = Readonly<{
   value: string
@@ -18,6 +20,8 @@ type ExportedClaim = Readonly<{
   pinned: boolean
   last_seen_at: number
 }>
+
+type ExportedGuildClaim = ExportedClaim & Readonly<{ expires_at?: number }>
 
 export type VaultExportResult = Readonly<{
   notes: number
@@ -30,13 +34,25 @@ function listActiveClaimSubjects(): ActiveClaimSubject[] {
     .prepare(
       `SELECT DISTINCT guild_id, subject_user_id
        FROM memory_claim
-       WHERE status = 'active'
+       WHERE subject_kind = 'user' AND status = 'active'
        ORDER BY guild_id, subject_user_id`
     )
     .all() as ActiveClaimSubject[]
 }
 
-function formatClaimGroups(claims: MemoryClaim[]): Record<string, ExportedClaim[]> {
+function listActiveGuildSubjects(now: number): ActiveGuildSubject[] {
+  return getDb()
+    .prepare(
+      `SELECT DISTINCT guild_id
+       FROM memory_claim
+       WHERE subject_kind = 'guild' AND subject_user_id IS NULL AND status = 'active' AND needs_review = 0
+         AND (expires_at IS NULL OR expires_at > ?)
+       ORDER BY guild_id`
+    )
+    .all(now) as ActiveGuildSubject[]
+}
+
+function formatClaimGroups(claims: UserMemoryClaim[]): Record<string, ExportedClaim[]> {
   const groups: Record<string, ExportedClaim[]> = {}
 
   for (const { predicate, value, sourceKind, pinned, lastSeenAt } of claims) {
@@ -53,15 +69,40 @@ function formatClaimGroups(claims: MemoryClaim[]): Record<string, ExportedClaim[
   return groups
 }
 
-function formatRelationships(claims: MemoryClaim[]): string {
+function formatRelationships(claims: UserMemoryClaim[]): string {
   const edges = claims.filter(({ predicate, objectUserId }) => predicate === 'relationship_to' && objectUserId)
   if (edges.length === 0) return ''
 
   return `## Relationships\n\n${edges.map(({ objectUserId, value }) => `- [[${objectUserId}]] — ${value}`).join('\n')}\n`
 }
 
-function formatNote(claims: MemoryClaim[]): string {
+function formatNote(claims: UserMemoryClaim[]): string {
   return `---\n${dump(formatClaimGroups(claims))}---\n\n${formatRelationships(claims)}`
+}
+
+function formatGuildNote(claims: GuildMemoryClaim[]): string {
+  const groups: Record<string, ExportedGuildClaim[]> = {}
+  for (const { predicate, value, sourceKind, pinned, lastSeenAt, expiresAt } of claims) {
+    const group = groups[predicate] ?? []
+    group.push({
+      value,
+      source_kind: sourceKind,
+      pinned,
+      last_seen_at: lastSeenAt,
+      ...(expiresAt !== null ? { expires_at: expiresAt } : {})
+    })
+    groups[predicate] = group
+  }
+  return `---\n${dump(groups)}---\n`
+}
+
+function notePath(exportDir: string, guildId: string, fileName: string): string {
+  const path = resolve(join(exportDir, guildId, fileName))
+  const relativePath = relative(exportDir, path)
+  if (relativePath === '..' || relativePath.startsWith(`..${sep}`) || isAbsolute(relativePath)) {
+    throw new Error('Vault note path is outside the export directory')
+  }
+  return path
 }
 
 function formatEpisodeNote(episodes: readonly MemoryEpisode[]): string {
@@ -78,40 +119,44 @@ function formatEpisodeNote(episodes: readonly MemoryEpisode[]): string {
     .join('\n')
 }
 
-function assertInsideExportDir(exportDir: string, notePath: string): void {
-  const relativeNotePath = relative(exportDir, notePath)
-  if (relativeNotePath === '..' || relativeNotePath.startsWith(`..${sep}`) || isAbsolute(relativeNotePath)) {
-    throw new Error('Vault note path is outside the export directory')
-  }
-}
-
 export async function exportVault(dir: string = config.memory.vaultExportDir): Promise<VaultExportResult> {
   const subjects = listActiveClaimSubjects()
+  const now = Date.now()
+  const guilds = listActiveGuildSubjects(now)
   const exportDir = resolve(dir)
-  const guildIds = new Set([...subjects.map(({ guild_id }) => guild_id), ...listEpisodeGuildIds()])
   let claims = 0
+  let notes = subjects.length
   let episodes = 0
 
-  for (const guildId of guildIds) {
-    for (const { subject_user_id: userId } of subjects.filter((subject) => subject.guild_id === guildId)) {
-      const activeClaims = getActiveClaims(guildId, userId)
-      const notePath = resolve(join(exportDir, guildId, `${userId}.md`))
-      assertInsideExportDir(exportDir, notePath)
+  for (const { guild_id: guildId, subject_user_id: userId } of subjects) {
+    const activeClaims = getActiveClaims(guildId, userId)
+    const path = notePath(exportDir, guildId, `${userId}.md`)
 
-      await mkdir(dirname(notePath), { recursive: true })
-      await writeFile(notePath, formatNote(activeClaims), 'utf8')
-      claims += activeClaims.length
-    }
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, formatNote(activeClaims), 'utf8')
+    claims += activeClaims.length
+  }
 
+  for (const { guild_id: guildId } of guilds) {
+    const activeClaims = getActiveGuildClaims(guildId, now)
+    if (activeClaims.length === 0) continue
+    const path = notePath(exportDir, guildId, 'guild.md')
+
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, formatGuildNote(activeClaims), 'utf8')
+    claims += activeClaims.length
+    notes++
+  }
+
+  for (const guildId of listEpisodeGuildIds()) {
     const guildEpisodes = listEpisodesForGuild(guildId)
     if (guildEpisodes.length === 0) continue
+    const path = notePath(exportDir, guildId, 'Episodes.md')
 
-    const notePath = resolve(join(exportDir, guildId, 'Episodes.md'))
-    assertInsideExportDir(exportDir, notePath)
-    await mkdir(dirname(notePath), { recursive: true })
-    await writeFile(notePath, formatEpisodeNote(guildEpisodes), 'utf8')
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, formatEpisodeNote(guildEpisodes), 'utf8')
     episodes += guildEpisodes.length
   }
 
-  return { notes: subjects.length, claims, episodes }
+  return { notes, claims, episodes }
 }

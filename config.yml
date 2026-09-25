@@ -57,6 +57,7 @@ memory:
   channelMonitorTtlMs: 86400000 # How long a channel stays monitored after last @mention (24h)
   maxClaimsPerTurn: 10 # Hard cap on claims injected into one response
   retrievalTokenBudget: 350 # Approximate token budget for the claims envelope
+  guildFactsTokenBudget: 150 # Maximum estimated prompt tokens reserved for unexpired facts about this server
   recentParticipantLimit: 3 # Recent non-speaker participants considered for retrieval
   speakerMinShare: 0.5 # Minimum fraction of selected claims reserved for the speaker
   maxActiveClaimsPerUser: 20 # Active claim cap per user (pinned claims are exempt)
