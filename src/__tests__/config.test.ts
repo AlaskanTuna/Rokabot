@@ -74,6 +74,7 @@ describe('config module', () => {
     vi.stubEnv('MEMORY_BUFFER_SIZE', '')
     vi.stubEnv('MEMORY_MAX_CLAIMS_PER_TURN', '')
     vi.stubEnv('MEMORY_RETRIEVAL_TOKEN_BUDGET', '')
+    vi.stubEnv('MEMORY_GUILD_FACTS_TOKEN_BUDGET', '')
     vi.stubEnv('MEMORY_RECENT_PARTICIPANT_LIMIT', '')
     vi.stubEnv('MEMORY_SPEAKER_MIN_SHARE', '')
     vi.stubEnv('MEMORY_MAX_ACTIVE_CLAIMS_PER_USER', '')
@@ -184,6 +185,7 @@ describe('config module', () => {
     expect(config.memory.channelMonitorTtlMs).toBe(86_400_000)
     expect(config.memory.maxClaimsPerTurn).toBe(10)
     expect(config.memory.retrievalTokenBudget).toBe(350)
+    expect(config.memory.guildFactsTokenBudget).toBe(150)
     expect(config.memory.recentParticipantLimit).toBe(3)
     expect(config.memory.speakerMinShare).toBe(0.5)
     expect(config.memory.maxActiveClaimsPerUser).toBe(20)
@@ -284,6 +286,7 @@ describe('config module', () => {
     vi.stubEnv('MEMORY_EXTRACTION_QUEUE_MAX_PER_GUILD', '75')
     vi.stubEnv('MEMORY_MAX_CLAIMS_PER_TURN', '8')
     vi.stubEnv('MEMORY_RETRIEVAL_TOKEN_BUDGET', '300')
+    vi.stubEnv('MEMORY_GUILD_FACTS_TOKEN_BUDGET', '220')
     vi.stubEnv('MEMORY_RECENT_PARTICIPANT_LIMIT', '2')
     vi.stubEnv('MEMORY_SPEAKER_MIN_SHARE', '0.75')
     vi.stubEnv('MEMORY_MAX_ACTIVE_CLAIMS_PER_USER', '25')
@@ -314,6 +317,7 @@ describe('config module', () => {
     expect(config.memory.bufferSize).toBe(40)
     expect(config.memory.maxClaimsPerTurn).toBe(8)
     expect(config.memory.retrievalTokenBudget).toBe(300)
+    expect(config.memory.guildFactsTokenBudget).toBe(220)
     expect(config.memory.recentParticipantLimit).toBe(2)
     expect(config.memory.speakerMinShare).toBe(0.75)
     expect(config.memory.maxActiveClaimsPerUser).toBe(25)
@@ -656,6 +660,16 @@ describe('config module', () => {
     expect(config.gemini.maxRetries).toBe(0)
   })
 
+  it('accepts zero for the guild facts token budget', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('MEMORY_GUILD_FACTS_TOKEN_BUDGET', '0')
+
+    const { config } = await import('../config.js')
+
+    expect(config.memory.guildFactsTokenBudget).toBe(0)
+  })
+
   it('throws if an env int override uses underscore digit grouping', async () => {
     setRequiredEnvVars()
     clearTunableEnvVars()
@@ -759,6 +773,7 @@ describe('config module', () => {
       { path: 'memory.channelMonitorTtlMs', min: 1 },
       { path: 'memory.maxClaimsPerTurn', min: 1 },
       { path: 'memory.retrievalTokenBudget', min: 1 },
+      { path: 'memory.guildFactsTokenBudget', min: 0 },
       { path: 'memory.recentParticipantLimit', min: 1 },
       { path: 'memory.speakerMinShare', min: 0, max: 1 },
       { path: 'memory.maxActiveClaimsPerUser', min: 1 },

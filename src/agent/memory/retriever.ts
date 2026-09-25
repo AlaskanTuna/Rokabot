@@ -2,9 +2,10 @@ import { config } from '../../config.js'
 import { getDb } from '../../storage/database.js'
 import { recordMemoryEvent } from '../../storage/metricsStore.js'
 import { getAllUserNames } from '../../storage/userNames.js'
+import { getLocalDate } from '../../utils/timezone.js'
 import { estimateTokens } from '../../utils/tokens.js'
-import type { ClaimSource, UserMemoryClaim } from './memoryClaims.js'
-import { touchRecalled } from './memoryClaims.js'
+import type { ClaimSource, GuildMemoryClaim, UserMemoryClaim } from './memoryClaims.js'
+import { getActiveGuildClaims, touchRecalled } from './memoryClaims.js'
 import { PREDICATES, type PredicateId, predicateCategory, routeTopics } from './predicates.js'
 
 type ClaimRow = {
@@ -268,4 +269,38 @@ export function retrieveForTurn(input: RetrieveForTurnInput): RetrievalResult {
       tokensEst
     }
   }
+}
+
+function serializeGuildFact(claim: GuildMemoryClaim): string {
+  const eventDate =
+    (claim.predicate === 'upcoming_event' || claim.predicate === 'plan') && claim.expiresAt !== null
+      ? getLocalDate(claim.expiresAt - 1)
+      : undefined
+  return JSON.stringify({ predicate: claim.predicate, ...(eventDate ? { date: eventDate } : {}), value: claim.value })
+}
+
+export function retrieveGuildFacts(
+  guildId: string,
+  now: number = Date.now()
+): { facts: GuildMemoryClaim[]; tokensEst: number } {
+  const facts = getActiveGuildClaims(guildId, now)
+    .map((fact) => {
+      const ageDays = Math.max(0, now - fact.lastSeenAt) / (24 * 60 * 60 * 1000)
+      return { fact, score: fact.salience * 0.5 ** (ageDays / config.memory.salienceHalfLifeDays) }
+    })
+    .sort(
+      (left, right) =>
+        right.score - left.score || right.fact.lastSeenAt - left.fact.lastSeenAt || left.fact.id - right.fact.id
+    )
+
+  const selected: GuildMemoryClaim[] = []
+  let tokensEst = 0
+  for (const { fact } of facts) {
+    const tokens = estimateTokens(serializeGuildFact(fact))
+    if (tokensEst + tokens > config.memory.guildFactsTokenBudget) continue
+    selected.push(fact)
+    tokensEst += tokens
+  }
+
+  return { facts: selected, tokensEst }
 }

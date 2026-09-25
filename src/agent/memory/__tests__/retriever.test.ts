@@ -4,6 +4,7 @@ vi.mock('../../../config.js', () => ({
   config: {
     logging: { level: 'silent' },
     memory: {
+      guildFactsTokenBudget: 50,
       maxActiveClaimsPerUser: 20,
       maxClaimsPerTurn: 10,
       retrievalTokenBudget: 350,
@@ -15,12 +16,13 @@ vi.mock('../../../config.js', () => ({
   }
 }))
 
+import { config } from '../../../config.js'
 import { closeDb, getDb } from '../../../storage/database.js'
 import { recordMemoryEvent } from '../../../storage/metricsStore.js'
 import { upsertUserName } from '../../../storage/userNames.js'
 import { estimateTokens } from '../../../utils/tokens.js'
-import { assertClaim } from '../memoryClaims.js'
-import { retrieveForSubject, retrieveForTurn } from '../retriever.js'
+import { assertClaim, assertGuildClaim } from '../memoryClaims.js'
+import { retrieveForSubject, retrieveForTurn, retrieveGuildFacts } from '../retriever.js'
 
 const NOW = 1_000_000
 const DAY = 24 * 60 * 60 * 1000
@@ -258,5 +260,118 @@ describe('retrieveForTurn', () => {
     })
 
     expect(result.claims.slice(0, 5).map(({ claim: candidate }) => candidate.id)).not.toContain(stale.id)
+  })
+})
+
+describe('retrieveGuildFacts', () => {
+  const now = Date.parse('2026-09-25T10:00:00Z')
+
+  it('returns only eligible facts from this guild in recency-decayed order within its token budget', () => {
+    const oversized = assertGuildClaim({
+      guildId: 'guild-a',
+      predicate: 'announcement',
+      value: 'x'.repeat(200),
+      expiresAt: null,
+      sourceKind: 'passive',
+      observedAt: now
+    })
+    const plan = assertGuildClaim({
+      guildId: 'guild-a',
+      predicate: 'plan',
+      value: 'Game night on September 26',
+      expiresAt: Date.parse('2026-09-26T16:00:00Z'),
+      sourceKind: 'passive',
+      observedAt: now
+    })
+    const place = assertGuildClaim({
+      guildId: 'guild-a',
+      predicate: 'place',
+      value: 'The group meets in voice chat',
+      expiresAt: null,
+      sourceKind: 'passive',
+      observedAt: now - 30 * DAY
+    })
+    assertGuildClaim({
+      guildId: 'guild-a',
+      predicate: 'rule',
+      value: 'Unverified rule',
+      expiresAt: null,
+      sourceKind: 'passive',
+      needsReview: true,
+      observedAt: now
+    })
+    assertGuildClaim({
+      guildId: 'guild-a',
+      predicate: 'plan',
+      value: 'Expired plan',
+      expiresAt: now - 1,
+      sourceKind: 'passive',
+      observedAt: now
+    })
+    assertGuildClaim({
+      guildId: 'guild-b',
+      predicate: 'place',
+      value: 'Other guild venue',
+      expiresAt: null,
+      sourceKind: 'passive',
+      observedAt: now
+    })
+    getDb().prepare('UPDATE memory_claim SET salience = ? WHERE id = ?').run(0.99, oversized.id)
+    getDb().prepare('UPDATE memory_claim SET salience = ? WHERE id = ?').run(0.8, plan.id)
+    getDb().prepare('UPDATE memory_claim SET salience = ? WHERE id = ?').run(0.9, place.id)
+
+    const result = retrieveGuildFacts('guild-a', now)
+
+    expect(result.facts.map(({ predicate, value }) => [predicate, value])).toEqual([
+      ['plan', 'Game night on September 26'],
+      ['place', 'The group meets in voice chat']
+    ])
+    expect(result.tokensEst).toBeLessThanOrEqual(config.memory.guildFactsTokenBudget)
+  })
+
+  it('breaks equal-score ties by recency and then ascending claim ID', () => {
+    const older = assertGuildClaim({
+      guildId: 'guild-a',
+      predicate: 'place',
+      value: 'O',
+      expiresAt: null,
+      sourceKind: 'passive',
+      observedAt: now - 30 * DAY
+    })
+    const recent = assertGuildClaim({
+      guildId: 'guild-a',
+      predicate: 'rule',
+      value: 'R',
+      expiresAt: null,
+      sourceKind: 'passive',
+      observedAt: now
+    })
+    const sameTimeFirst = assertGuildClaim({
+      guildId: 'guild-a',
+      predicate: 'announcement',
+      value: 'F',
+      expiresAt: null,
+      sourceKind: 'passive',
+      observedAt: now
+    })
+    const sameTimeSecond = assertGuildClaim({
+      guildId: 'guild-a',
+      predicate: 'running_joke',
+      value: 'S',
+      expiresAt: null,
+      sourceKind: 'passive',
+      observedAt: now
+    })
+    getDb().prepare('UPDATE memory_claim SET salience = ? WHERE id = ?').run(0.8, older.id)
+    getDb().prepare('UPDATE memory_claim SET salience = ? WHERE id = ?').run(0.4, recent.id)
+    getDb().prepare('UPDATE memory_claim SET salience = ? WHERE id = ?').run(0.4, sameTimeFirst.id)
+    getDb().prepare('UPDATE memory_claim SET salience = ? WHERE id = ?').run(0.4, sameTimeSecond.id)
+
+    expect(retrieveGuildFacts('guild-a', now).facts.map(({ id }) => id)).toEqual([
+      recent.id,
+      sameTimeFirst.id,
+      sameTimeSecond.id,
+      older.id
+    ])
   })
 })

@@ -57,6 +57,7 @@ interface YamlConfig {
     channelMonitorTtlMs?: number
     maxClaimsPerTurn?: number
     retrievalTokenBudget?: number
+    guildFactsTokenBudget?: number
     recentParticipantLimit?: number
     speakerMinShare?: number
     maxActiveClaimsPerUser?: number
@@ -205,6 +206,7 @@ export const config = {
     channelMonitorTtlMs: yaml.memory?.channelMonitorTtlMs ?? 86_400_000,
     maxClaimsPerTurn: envInt('MEMORY_MAX_CLAIMS_PER_TURN') ?? yaml.memory?.maxClaimsPerTurn ?? 10,
     retrievalTokenBudget: envInt('MEMORY_RETRIEVAL_TOKEN_BUDGET') ?? yaml.memory?.retrievalTokenBudget ?? 350,
+    guildFactsTokenBudget: envInt('MEMORY_GUILD_FACTS_TOKEN_BUDGET') ?? yaml.memory?.guildFactsTokenBudget ?? 150,
     recentParticipantLimit: envInt('MEMORY_RECENT_PARTICIPANT_LIMIT') ?? yaml.memory?.recentParticipantLimit ?? 3,
     speakerMinShare: envNumber('MEMORY_SPEAKER_MIN_SHARE') ?? yaml.memory?.speakerMinShare ?? 0.5,
     maxActiveClaimsPerUser: envInt('MEMORY_MAX_ACTIVE_CLAIMS_PER_USER') ?? yaml.memory?.maxActiveClaimsPerUser ?? 20,
@@ -320,6 +322,7 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'memory.channelMonitorTtlMs', value: config.memory.channelMonitorTtlMs, min: 1 },
   { path: 'memory.maxClaimsPerTurn', value: config.memory.maxClaimsPerTurn, min: 1 },
   { path: 'memory.retrievalTokenBudget', value: config.memory.retrievalTokenBudget, min: 1 },
+  { path: 'memory.guildFactsTokenBudget', value: config.memory.guildFactsTokenBudget, min: 0 },
   { path: 'memory.recentParticipantLimit', value: config.memory.recentParticipantLimit, min: 1 },
   { path: 'memory.speakerMinShare', value: config.memory.speakerMinShare, min: 0, max: 1 },
   { path: 'memory.maxActiveClaimsPerUser', value: config.memory.maxActiveClaimsPerUser, min: 1 },

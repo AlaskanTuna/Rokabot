@@ -7,12 +7,12 @@ import { recordMemoryEvent } from '../storage/metricsStore.js'
 import { getChannelUsers, loadHistory } from '../storage/sessionStore.js'
 import { getAllUserNames, getUserName } from '../storage/userNames.js'
 import { logger } from '../utils/logger.js'
-import { getLocalHour } from '../utils/timezone.js'
+import { getLocalDate, getLocalHour } from '../utils/timezone.js'
 import { estimateTokens } from '../utils/tokens.js'
 import { judgeTurn } from './jev/judgments.js'
 import type { TurnJudgment, TurnJudgmentInput } from './jev/judgments.js'
 import { resolveReferences } from './memory/identityResolver.js'
-import { retrieveForTurn } from './memory/retriever.js'
+import { retrieveForTurn, retrieveGuildFacts } from './memory/retriever.js'
 import { getMessages as getBufferMessages } from './passiveBuffer.js'
 import { assembleSystemPrompt } from './promptAssembler.js'
 import { buildFactsEnvelope, buildOverheardBlock } from './promptSafety.js'
@@ -59,6 +59,14 @@ export interface TurnEntryWork {
 
 interface TurnContextEntryOptions extends TurnContextOptions {
   turnEntryWork: TurnEntryWork
+}
+
+function formatServerFact(fact: ReturnType<typeof retrieveGuildFacts>['facts'][number]): string {
+  const eventDate =
+    (fact.predicate === 'upcoming_event' || fact.predicate === 'plan') && fact.expiresAt !== null
+      ? getLocalDate(fact.expiresAt - 1)
+      : undefined
+  return `- ${fact.predicate}${eventDate ? ` (${eventDate})` : ''}: ${fact.value}`
 }
 
 function buildEntryJudgmentInput(input: StartTurnEntryWorkInput): TurnJudgmentInput {
@@ -350,6 +358,7 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
 
   const basePrompt = assembleSystemPrompt({ tone, hour, displayName, memory })
   let factsSection = ''
+  let serverFactsSection = ''
   let overheardSection = ''
   let factEntryCount = 0
 
@@ -400,6 +409,15 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
           'User facts injected into prompt'
         )
       }
+
+      if (guildId) {
+        const serverFacts = retrieveGuildFacts(guildId).facts
+        if (serverFacts.length > 0) {
+          serverFactsSection =
+            '\n\n## Things You Remember About This Server\n' + serverFacts.map(formatServerFact).join('\n')
+        }
+      }
+
       recordMemoryEvent({
         kind: 'context_build',
         guildId,
@@ -463,6 +481,7 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
     return [
       head,
       safetyRung < 2 ? `${factsSection}${whoIsMentionedSection}` : '',
+      safetyRung < 2 ? serverFactsSection : '',
       safetyRung < 1 ? overheardSection : '',
       tailSection,
       safetyRung === 0 ? lookedUpSection : '',
