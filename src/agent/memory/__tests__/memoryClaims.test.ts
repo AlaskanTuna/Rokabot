@@ -23,6 +23,7 @@ import {
   pruneActiveClaimOverflow,
   pruneStaleClaims,
   rejectActiveClaimById,
+  rejectClaimIdsForSpeaker,
   replaceActiveClaim,
   searchClaims,
   touchRecalled
@@ -64,9 +65,15 @@ describe('memoryClaims', () => {
     expect(activateClaim('guild-1', candidate.id)).toEqual(
       expect.objectContaining({ id: candidate.id, status: 'active' })
     )
-    expect(getDb().prepare('SELECT status, superseded_by FROM memory_claim WHERE id = ?').get(active.id)).toEqual({
+    expect(
+      getDb()
+        .prepare('SELECT status, superseded_by, ended_at, end_reason FROM memory_claim WHERE id = ?')
+        .get(active.id)
+    ).toEqual({
       status: 'superseded',
-      superseded_by: candidate.id
+      superseded_by: candidate.id,
+      ended_at: expect.any(Number),
+      end_reason: 'superseded'
     })
   })
 
@@ -87,9 +94,13 @@ describe('memoryClaims', () => {
     })
 
     expect(getActiveClaims('guild-1', 'user-1').filter((claim) => claim.predicate === 'nickname')).toEqual([second])
-    expect(getDb().prepare('SELECT status, superseded_by FROM memory_claim WHERE id = ?').get(first.id)).toEqual({
+    expect(
+      getDb().prepare('SELECT status, superseded_by, ended_at, end_reason FROM memory_claim WHERE id = ?').get(first.id)
+    ).toEqual({
       status: 'superseded',
-      superseded_by: second.id
+      superseded_by: second.id,
+      ended_at: expect.any(Number),
+      end_reason: 'superseded'
     })
 
     assertClaim({
@@ -197,9 +208,13 @@ describe('memoryClaims', () => {
     })
 
     expect(replacement).toMatchObject({ predicate: 'likes', value: 'green tea', status: 'active' })
-    expect(getDb().prepare('SELECT status, superseded_by FROM memory_claim WHERE id = ?').get(prior.id)).toEqual({
+    expect(
+      getDb().prepare('SELECT status, superseded_by, ended_at, end_reason FROM memory_claim WHERE id = ?').get(prior.id)
+    ).toEqual({
       status: 'superseded',
-      superseded_by: replacement?.id
+      superseded_by: replacement?.id,
+      ended_at: expect.any(Number),
+      end_reason: 'superseded'
     })
     expect(getActiveClaims('guild-1', 'user-1')).toEqual([replacement])
   })
@@ -273,9 +288,13 @@ describe('memoryClaims', () => {
     })
 
     expect(rejectActiveClaimById({ guildId: 'guild-1', subjectUserId: 'user-1', existingId: claim.id })).toBe(true)
-    expect(getDb().prepare('SELECT status, superseded_by FROM memory_claim WHERE id = ?').get(claim.id)).toEqual({
+    expect(
+      getDb().prepare('SELECT status, superseded_by, ended_at, end_reason FROM memory_claim WHERE id = ?').get(claim.id)
+    ).toEqual({
       status: 'rejected',
-      superseded_by: null
+      superseded_by: null,
+      ended_at: expect.any(Number),
+      end_reason: 'removed'
     })
     expect(getDb().prepare('SELECT COUNT(*) AS count FROM memory_claim').get()).toEqual({ count: 1 })
   })
@@ -308,6 +327,172 @@ describe('memoryClaims', () => {
     expect(getActiveClaims('guild-1', 'user-1')).toEqual([expect.objectContaining({ id: pinned.id, pinned: true })])
   })
 
+  it('revives an expired value in the same row and clears its lifecycle metadata', () => {
+    const now = 100 * DAY
+    vi.spyOn(Date, 'now').mockReturnValue(now)
+    const claim = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'likes',
+      value: 'tea',
+      sourceKind: 'passive',
+      observedAt: now - 2 * DAY
+    })
+
+    expect(pruneStaleClaims(1)).toBe(1)
+    expect(getDb().prepare('SELECT status, ended_at, end_reason FROM memory_claim WHERE id = ?').get(claim.id)).toEqual(
+      {
+        status: 'rejected',
+        ended_at: now,
+        end_reason: 'expired'
+      }
+    )
+
+    const revived = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'likes',
+      value: 'tea',
+      sourceKind: 'passive',
+      observedAt: now + 1
+    })
+
+    expect(revived).toMatchObject({ id: claim.id, status: 'active', lastSeenAt: now + 1 })
+    expect(
+      getDb().prepare('SELECT superseded_by, ended_at, end_reason FROM memory_claim WHERE id = ?').get(claim.id)
+    ).toEqual({
+      superseded_by: null,
+      ended_at: null,
+      end_reason: null
+    })
+    expect(getDb().prepare('SELECT COUNT(*) AS count FROM memory_evidence WHERE claim_id = ?').get(claim.id)).toEqual({
+      count: 2
+    })
+  })
+
+  it('revives an evicted value and lets the active cap evict another claim', () => {
+    const now = 100 * DAY
+    vi.spyOn(Date, 'now').mockReturnValue(now)
+    const evicted = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'likes',
+      value: 'tea',
+      sourceKind: 'passive',
+      observedAt: now - 3
+    })
+    assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'likes',
+      value: 'coffee',
+      sourceKind: 'passive',
+      observedAt: now - 2
+    })
+    assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'likes',
+      value: 'matcha',
+      sourceKind: 'passive',
+      observedAt: now - 1
+    })
+
+    expect(getDb().prepare('SELECT status, end_reason FROM memory_claim WHERE id = ?').get(evicted.id)).toEqual({
+      status: 'rejected',
+      end_reason: 'evicted'
+    })
+    const revived = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'likes',
+      value: 'tea',
+      sourceKind: 'passive',
+      observedAt: now
+    })
+
+    expect(revived).toMatchObject({ id: evicted.id, status: 'active', lastSeenAt: now })
+    expect(getActiveClaims('guild-1', 'user-1').some(({ id }) => id === evicted.id)).toBe(true)
+  })
+
+  it('keeps forgotten claims inert for passive sightings and revives them explicitly', () => {
+    const now = 100 * DAY
+    vi.spyOn(Date, 'now').mockReturnValue(now)
+    const claim = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'nickname',
+      value: 'Rin',
+      sourceKind: 'explicit',
+      observedAt: now - DAY
+    })
+
+    expect(rejectClaimIdsForSpeaker('guild-1', 'user-1', [claim.id])).toBe(true)
+    expect(getDb().prepare('SELECT status, ended_at, end_reason FROM memory_claim WHERE id = ?').get(claim.id)).toEqual(
+      {
+        status: 'rejected',
+        ended_at: now,
+        end_reason: 'forgotten'
+      }
+    )
+
+    const passive = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'nickname',
+      value: 'Rin',
+      sourceKind: 'passive',
+      observedAt: now + 1
+    })
+    expect(passive).toMatchObject({ id: claim.id, status: 'rejected', lastSeenAt: now - DAY })
+    expect(getDb().prepare('SELECT COUNT(*) AS count FROM memory_evidence WHERE claim_id = ?').get(claim.id)).toEqual({
+      count: 1
+    })
+
+    const explicit = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'nickname',
+      value: 'Rin',
+      sourceKind: 'explicit',
+      observedAt: now + 2
+    })
+    expect(explicit).toMatchObject({ id: claim.id, status: 'active', pinned: true, lastSeenAt: now + 2 })
+    expect(getDb().prepare('SELECT ended_at, end_reason FROM memory_claim WHERE id = ?').get(claim.id)).toEqual({
+      ended_at: null,
+      end_reason: null
+    })
+  })
+
+  it('revives an expired guild event with its new expiry', () => {
+    const now = 100_000
+    vi.spyOn(Date, 'now').mockReturnValue(now)
+    const fact = assertGuildClaim({
+      guildId: 'guild-1',
+      predicate: 'upcoming_event',
+      value: 'Game night',
+      expiresAt: now - 1,
+      sourceKind: 'passive',
+      observedAt: now - DAY
+    })
+
+    expect(pruneStaleClaims()).toBe(1)
+    expect(getDb().prepare('SELECT end_reason FROM memory_claim WHERE id = ?').get(fact.id)).toEqual({
+      end_reason: 'expired'
+    })
+
+    const revived = assertGuildClaim({
+      guildId: 'guild-1',
+      predicate: 'upcoming_event',
+      value: 'Game night',
+      expiresAt: now + DAY,
+      sourceKind: 'passive',
+      observedAt: now
+    })
+    expect(revived).toMatchObject({ id: fact.id, status: 'active', expiresAt: now + DAY, lastSeenAt: now })
+    expect(getActiveGuildClaims('guild-1', now)).toEqual([expect.objectContaining({ id: fact.id })])
+  })
+
   it('rejects expired guild facts during pruning without deleting claims or evidence', () => {
     const now = 10_000
     const fact = assertGuildClaim({
@@ -321,7 +506,10 @@ describe('memoryClaims', () => {
     vi.spyOn(Date, 'now').mockReturnValue(now)
 
     expect(pruneStaleClaims()).toBe(1)
-    expect(getDb().prepare('SELECT status FROM memory_claim WHERE id = ?').get(fact.id)).toEqual({ status: 'rejected' })
+    expect(getDb().prepare('SELECT status, end_reason FROM memory_claim WHERE id = ?').get(fact.id)).toEqual({
+      status: 'rejected',
+      end_reason: 'expired'
+    })
     expect(getDb().prepare('SELECT COUNT(*) AS count FROM memory_claim WHERE id = ?').get(fact.id)).toEqual({
       count: 1
     })
@@ -348,8 +536,9 @@ describe('memoryClaims', () => {
     })
 
     expect(pruneStaleClaims(90, 'bot-1')).toBe(1)
-    expect(getDb().prepare('SELECT status FROM memory_claim WHERE id = ?').get(botClaim.id)).toEqual({
-      status: 'rejected'
+    expect(getDb().prepare('SELECT status, end_reason FROM memory_claim WHERE id = ?').get(botClaim.id)).toEqual({
+      status: 'rejected',
+      end_reason: 'self'
     })
     expect(getActiveClaims('guild-1', 'user-1')).toEqual([userClaim])
     expect(pruneStaleClaims(90, 'bot-1')).toBe(0)
@@ -375,10 +564,12 @@ describe('memoryClaims', () => {
     expect(pruneStaleClaims()).toBe(2)
     expect(getActiveClaims('guild-1', 'legacy-user').map(({ value }) => value)).toEqual(['pinned', 'high'])
     expect(
-      getDb().prepare("SELECT value, status FROM memory_claim WHERE status = 'rejected' ORDER BY value").all()
+      getDb()
+        .prepare("SELECT value, status, end_reason FROM memory_claim WHERE status = 'rejected' ORDER BY value")
+        .all()
     ).toEqual([
-      { value: 'low', status: 'rejected' },
-      { value: 'middle', status: 'rejected' }
+      { value: 'low', status: 'rejected', end_reason: 'evicted' },
+      { value: 'middle', status: 'rejected', end_reason: 'evicted' }
     ])
 
     insert.run('new-low', 0.05, 0, now, now)
