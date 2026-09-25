@@ -489,6 +489,15 @@ export function replaceActiveClaim(
     const prior = getActiveClaimById(input.guildId, input.subjectUserId, input.existingId)
     if (!prior || prior.predicate !== input.predicate) return null
 
+    const forgotten = getDb()
+      .prepare(
+        `SELECT 1 FROM memory_claim
+         WHERE subject_kind = 'user' AND guild_id = ? AND subject_user_id = ? AND predicate = ? AND value = ?
+           AND status IN ('rejected', 'superseded') AND end_reason = 'forgotten'`
+      )
+      .get(input.guildId, input.subjectUserId, input.predicate, input.value)
+    if (forgotten) return null
+
     const replacementInput: ClaimAssert = {
       guildId: input.guildId,
       subjectUserId: input.subjectUserId,
