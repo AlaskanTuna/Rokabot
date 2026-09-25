@@ -33,7 +33,7 @@ WindowedSessionService (ADK)
 Roka Agent (ADK)
   - 4-layer prompt system (core → speech → tone → context)
   - Rule-based tone detection (zero LLM cost)
-  - Passive memory: episode tracker → durable queue → Jev admission → Gemini typed extraction → Jev verification → user claims
+  - Passive memory: episode tracker → durable queue → Jev admission → Gemini typed extraction → Jev verification → user claims; completed summaries are embedded for guild-scoped recall
   - Gemini Flash Lite backend, with a ModelScope Qwen fallback when Gemini is unavailable
     │
     ▼
@@ -42,8 +42,8 @@ Gemini API (rate limits configured in `config.yml`)
 
 **Key Constraints:**
 
-- SQLite (better-sqlite3, `data/rokabot.db`) is canonical for session history, memory claims, the passive extraction queue, reminders, game/gacha data, and metrics. `WindowedSessionService` maintains a per-channel in-memory session window rehydrated from SQLite on restart.
-- Passive memory writes user-subject claims. The episode cursor checkpoints monitored guild messages, closed episodes enter the durable queue, and Jev admission and verification gate Gemini's typed operations.
+- SQLite (better-sqlite3, `data/rokabot.db`) is canonical for session history, memory claims, episode summaries and embeddings, the passive extraction queue, reminders, game/gacha data, and metrics. `WindowedSessionService` maintains a per-channel in-memory session window rehydrated from SQLite on restart.
+- Passive memory writes user-subject claims and guild-scoped episode summaries. The episode cursor checkpoints monitored guild messages, closed episodes enter the durable queue, and Jev admission and verification gate Gemini's typed operations. Episode summaries are retained according to `memory.episodeRetentionDays` and recalled only within their guild.
 - RPM, rather than RPD, is the binding rate limit; its value is configured in `config.yml`.
 - System prompt (4 assembled layers) is size-capped; the cap is `MAX_SYSTEM_PROMPT_TOKENS` in `tests/harness/tokens.ts`, enforced by `tests/harness/__tests__/tokens.test.ts`. It exists for change detection, not latency.
 - Docker container memory is capped by `docker-compose.yml`.

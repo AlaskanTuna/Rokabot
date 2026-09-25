@@ -7,6 +7,7 @@ const queries = vi.hoisted(() => ({
   chatsSince: vi.fn(),
   currentAndBestStreak: vi.fn(),
   distinctRememberedUsers: vi.fn(),
+  episodeCount: vi.fn(),
   latencyE2e: vi.fn(),
   memoryGrowthSeries: vi.fn(),
   mostActiveDay: vi.fn(),
@@ -101,6 +102,7 @@ beforeEach(() => {
   ])
   queries.activeClaimCount.mockReturnValue(13)
   queries.distinctRememberedUsers.mockReturnValue(4)
+  queries.episodeCount.mockReturnValue(8)
   queries.newClaimsThisMonth.mockReturnValue(6)
   queries.topPredicates.mockReturnValue([
     { predicate: 'favorite_anime', count: 5 },
@@ -180,6 +182,7 @@ describe('/stats redesigned views', () => {
     const content = contentFor(payload)
 
     expect(content).toContain('Active Memories')
+    expect(content).toContain('Episodes Remembered')
     expect(content).toContain('Member user-1')
     expect(content).toContain('> I remember their favorite anime — “Frieren”~')
     expect(content).toContain('> **Mostly Remembers:** `Favorite Anime` · `Likes`')
@@ -188,6 +191,7 @@ describe('/stats redesigned views', () => {
     expect(content).not.toContain('forbidden-memory-value')
     expect(content).not.toContain('secret-predicate')
     expect(queries.topRememberedMembers).toHaveBeenCalledWith('guild-1', expect.any(Number), 'roka-user')
+    expect(queries.episodeCount).toHaveBeenCalledWith('guild-1', expect.any(Number))
     expect(payload.files).toHaveLength(1)
     const countComponents = (node: { components?: unknown[] }): number =>
       1 + (node.components ?? []).reduce<number>((sum, child) => sum + countComponents(child as never), 0)
