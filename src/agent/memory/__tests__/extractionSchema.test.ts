@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseExtractionOutput } from '../extractionSchema.js'
+import { EXTRACTION_RESPONSE_SCHEMA, parseExtractionOutput } from '../extractionSchema.js'
 
 const subject = { kind: 'user', userId: 'u-1' }
 
@@ -81,5 +81,31 @@ describe('parseExtractionOutput', () => {
 
   it('rejects malformed JSON', () => {
     expect(() => parseExtractionOutput('{')).toThrow()
+  })
+
+  it('requires a month and day, but not a year, on a calendar date in the response schema', () => {
+    type DateVariant = {
+      description: string
+      required: string[]
+      properties: { year: { description: string }; day: { description: string } }
+    }
+    const date = (
+      EXTRACTION_RESPONSE_SCHEMA as unknown as {
+        properties: {
+          ops: {
+            items: { anyOf: Array<{ properties: { date?: { anyOf: DateVariant[] } } }> }
+          }
+        }
+      }
+    ).properties.ops.items.anyOf
+      .map((variant) => variant.properties.date)
+      .find((value) => value?.anyOf)
+    const [calendar, relative] = date?.anyOf ?? []
+
+    expect(calendar.required).toEqual(['month', 'day'])
+    expect(calendar.properties.day.description).toContain('day of the month')
+    expect(calendar.properties.year.description).toContain('only when the messages state one')
+    expect(calendar.description).toContain('Give the month and day whenever the messages name a day')
+    expect(relative.required).toEqual(['relative'])
   })
 })

@@ -132,18 +132,34 @@ const guildSubjectResponseSchema = {
   properties: { kind: { type: Type.STRING, enum: ['guild'] } },
   required: ['kind']
 }
-const guildFactDateResponseSchema = {
-  type: Type.OBJECT,
-  properties: {
-    year: { type: Type.INTEGER },
-    month: { type: Type.INTEGER },
-    day: { type: Type.INTEGER },
-    weekday: {
-      type: Type.STRING,
-      enum: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
-    },
-    relative: { type: Type.STRING, enum: ['today', 'tomorrow', 'this_week', 'next_week'] }
+const calendarDateProperties = {
+  year: { type: Type.INTEGER, description: 'The year, only when the messages state one. Omit it otherwise.' },
+  month: { type: Type.INTEGER, description: 'The month, 1-12.' },
+  day: { type: Type.INTEGER, description: 'The day of the month, 1-31.' }
+}
+const relativeDateProperties = {
+  relative: { type: Type.STRING, enum: ['today', 'tomorrow', 'this_week', 'next_week'] },
+  weekday: {
+    type: Type.STRING,
+    enum: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
+    description: 'The day of the week, only with this_week or next_week.'
   }
+}
+const guildFactDateResponseSchema = {
+  anyOf: [
+    {
+      type: Type.OBJECT,
+      description: 'A calendar date named by the messages. Give the month and day whenever the messages name a day.',
+      properties: calendarDateProperties,
+      required: ['month', 'day']
+    },
+    {
+      type: Type.OBJECT,
+      description: 'A date given only relative to today. Use this when the messages give no calendar date.',
+      properties: relativeDateProperties,
+      required: ['relative']
+    }
+  ]
 }
 
 function responseOperationSchema(input: {
