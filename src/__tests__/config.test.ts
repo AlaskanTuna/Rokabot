@@ -188,12 +188,12 @@ describe('config module', () => {
     expect(config.jev.apiKey).toBeUndefined()
     expect(config.jev.model).toBe('jev-1.13.0')
     expect(config.jev.timeoutMs).toBe(1200)
-    expect(config.jev.tone).toBe('shadow')
+    expect(config.jev.tone).toBe('on')
     expect(config.jev.referents).toBe('shadow')
     expect(config.jev.prefetch).toBe('shadow')
     expect(config.jev.prefetchMinNoul).toBe(0.7)
     expect(config.jev.prefetchWaitMs).toBe(4000)
-    expect(config.jev.toneMinProbability).toBe(0.85)
+    expect(config.jev.toneMinProbability).toBe(0.3)
     expect(config.jev.referentMinConfidence).toBe(0.8)
 
     // Memory

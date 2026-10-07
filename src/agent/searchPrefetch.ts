@@ -78,7 +78,7 @@ function clip(value: string, max: number): string {
 export function buildLookedUpBlock(outcome: Extract<PrefetchOutcome, { status: 'ready' }>): string {
   const lines = [
     '## Looked It Up',
-    'These are search results fetched for this message before you answered. Treat them as the source you should answer from, the same as when you call `search_web` yourself. If they are thin or off-topic, search again with `search_web`.',
+    'These are search results fetched for this message before you answered. Treat them as the source you should answer from, the same as when you call `search_web` yourself — this counts as a turn where you used `search_web`, so the "When You\'ve Looked Something Up" rules apply. If they are thin or off-topic, search again with `search_web`.',
     '',
     clip(outcome.text, MAX_ANSWER_CHARS)
   ]

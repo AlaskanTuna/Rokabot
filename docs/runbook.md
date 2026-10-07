@@ -261,12 +261,24 @@ unexpired guild facts in memory totals and growth, while its remembered-member l
 vault export writes each guild's active, unexpired facts to `<vault>/<guildId>/guild.md` and includes `expires_at` on
 dated facts.
 
-The replay at hour 14:00 covered 77 turns (51 production-history and 26 transcript turns); Jev chose `playful` on
-52/77. Regex-fired turn agreement was 14% at cutoff 0. At cutoff 0.85, 19/77 turns met the probability threshold
-(25% coverage); 10 had a regex rule and Jev agreed on 60%. This does not meet the replay support rule, so
-`jev.toneMinProbability` is `0.85` and `jev.tone` remains `shadow`. Regex agreement is a comparator, not ground-truth
-accuracy. Shadow judgments are persisted with `applied = 0` for later review. The replay command requires
-`TYPESAFE_API_KEY`.
+`jev.tone` is `on` with `jev.toneMinProbability: 0.3`. The threshold comes from 163 production turns judged in shadow
+between 2026-09-25 and 2026-10-07, each labeled blind by two independent model labelers with the moods that would make
+a fitting reply. Agreement with the regex detector was the earlier support rule, but the regex is what tone replaces
+(it fired `playful` on 67% of turns), so it was dropped as a target. Results:
+
+| Labels                 | Regex Tone Fits | Jev Tone Fits | CJK Turns (n=24): Regex / Jev |
+| ---------------------- | --------------- | ------------- | ----------------------------- |
+| Labeler A              | 48%             | 75%           | 46% / 67%                     |
+| Labeler B              | 36%             | 46%           | 33% / 54%                     |
+| Either labeler accepts | 56%             | 80%           | 54% / 75%                     |
+| Both labelers accept   | 28%             | 41%           | 25% / 46%                     |
+
+Jev matched or beat the regex in every probability band from 0.3 up for both labelers. A higher cutoff only handed
+turns back to the worse detector: at the old 0.85, the overall fit fell from 80% to 60% (either-labeler). Below 0.3
+there was a single turn, so 0.3 is the floor. A judgment with no probability, a timeout or an error keeps the regex tone.
+Known weakness: Jev picks `sleepy` for late-night turns more readily than the labelers did (they accepted 10–15 of its
+32 `sleepy` picks), so watch `sleepy` in the query below. The labeled data stays local because it carries message text.
+Re-run the regex comparator with `TYPESAFE_API_KEY`:
 
 ```bash
 npm run replay:jev -- data/rokabot.db --max-turns 100
@@ -289,7 +301,7 @@ ORDER BY created_at DESC
 LIMIT 20;
 ```
 
-`jev.prefetch` ships as `shadow`. Jev asks whether a turn needs lookup, but Tavily is not called. Review the persisted
+`jev.prefetch` stays `shadow`. Jev asks whether a turn needs lookup, but Tavily is not called. Review the persisted
 score and outcome without storing or displaying the message text:
 
 ```sql
@@ -314,17 +326,34 @@ prefetch that supplied no result. At most one automatic Tavily search starts per
 existing `search_web` tool if the prefetched results are thin or off-topic. The automatic prefetch uses no Gemini RPM
 slot.
 
-Keep `jev.prefetch` in `shadow` while reviewing these rows. Switching it to `on` should be a reviewed `config.yml`
-change through a PR.
+Production shadow rows (2026-09-25 to 2026-10-07) show the judgment itself is sound: at `jev.prefetchMinNoul` 0.7 it
+fired on 10 of 242 turns, and Gemini searched on 8 of those. Turning prefetch `on` still lost a live A/B on the
+`search-web` tool-trigger cases (3 trials each, harness Gemini key, real Tavily and Jev):
+
+| Metric                              | `shadow`       | `on`            |
+| ----------------------------------- | -------------- | --------------- |
+| Search recall on should-search      | 17/18          | 14/18           |
+| False searches on should-not-search | 0/18           | 0/18            |
+| Should-search `generateMs` p50/p95  | 9.3 s / 20.2 s | 13.5 s / 28.5 s |
+| Mean model calls on should-search   | 2.17           | 1.89            |
+| Prefetches fired / injected         | 0 / 0          | 20 / 0          |
+
+Every prefetch was aborted at `jev.prefetchWaitMs` (4 s) before injection. The Jev judgment plus a Tavily search at
+`search_depth: advanced` (3.4–4.1 s, and basic depth is a measured quality regression, #19) does not fit in front of
+the first Gemini call, so `on` adds the wait and then searches again. Re-run the A/B before switching:
+
+```bash
+npm run measure:prefetch -- --live --prefetch off --out /tmp/prefetch-off.json
+npm run measure:prefetch -- --live --prefetch on --out /tmp/prefetch-on.json
+```
 
 To switch an in-reply feature, set `JEV_TONE` or `JEV_REFERENTS` to `off`, `shadow` or `on` in `~/rokabot/.env` and
 recreate the container (`sudo docker compose -f ~/rokabot/docker-compose.yml up -d`). The memory judgments are not
 shadow modes and cannot be disabled independently of passive extraction. Prefetch can be switched with `JEV_PREFETCH`.
 
-After an authorized deployment of the unawaited typing change, compare `Response completed`'s `e2e_ms - generate_ms`
-before and after. The supplied baseline is p50 1.06 s and p95 2.2 s; removing the initial typing wait should lower
-the difference by about one Discord REST round trip. Record the sample count and time window; unit tests do not
-measure this production effect.
+Starting the Jev judgment at handler entry and no longer awaiting typing (#220) cut the Discord-side overhead,
+`e2e_ms - generate_ms` on `ok` turns in `response_events`, from p50 1,084 ms / p95 2,344 ms (429 turns, 2026-07-22 to
+2026-09-24) to p50 576 ms / p95 1,500 ms (242 turns, 2026-09-25 to 2026-10-07).
 
 Memory admission and verification totals are retained in `jev_events`; the table stores judgment metadata, not source
 message text:

@@ -1067,6 +1067,7 @@ describe('generateResponse search prefetch', () => {
     expect(capturedPrompt).toContain('The latest release date is September 25, 2026.')
     expect(result.toolsUsed).toEqual(['search_web'])
     expect(result.prefetchUsed).toBe(true)
+    expect(result.geminiCalledSearch).toBe(false)
     expect(result.needsLookup).toBe(0.95)
     expect(citations).toEqual([{ title: 'Release notes', url: 'https://example.test/release' }])
   })
@@ -1123,6 +1124,7 @@ describe('generateResponse search prefetch', () => {
     })
 
     expect(result.toolsUsed).toEqual(['search_web'])
+    expect(result.geminiCalledSearch).toBe(true)
   })
 })
 
