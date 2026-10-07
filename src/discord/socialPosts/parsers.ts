@@ -30,6 +30,10 @@ function capped(value: unknown, maxTextChars: number): string {
   return compact(string(value)).slice(0, maxTextChars)
 }
 
+function nonNegativeInteger(value: unknown): number | null {
+  return Number.isInteger(value) && (value as number) >= 0 ? (value as number) : null
+}
+
 function date(value: unknown): string | null {
   const input = string(value)
   const parsed = /^\d{8}$/.test(input)
@@ -58,7 +62,8 @@ function base(target: SocialPostTarget): SocialPost {
     photoCount: 0,
     videoCount: 0,
     imageUrl: null,
-    externalTitle: ''
+    externalTitle: '',
+    replyCount: null
   }
 }
 
@@ -82,6 +87,7 @@ export function parseFxTwitterResponse(payload: unknown, target: SocialPostTarge
   post.photoCount = photos.length
   post.videoCount = videos.length
   post.imageUrl = imageUrl(firstPhoto.url) ?? imageUrl(firstVideo.thumbnail_url)
+  post.replyCount = nonNegativeInteger(tweet.replies)
   return post
 }
 
@@ -122,6 +128,7 @@ export function parseBlueskyThread(
   post.videoCount = videos.length
   post.externalTitle = string(external.title)
   post.imageUrl = imageUrl(firstImage.fullsize) ?? imageUrl(videos[0]?.thumbnail) ?? imageUrl(external.thumb)
+  post.replyCount = nonNegativeInteger(postView.replyCount)
   return post
 }
 
@@ -157,5 +164,6 @@ export function parseYtDlpMetadata(payload: unknown, target: SocialPostTarget, m
   post.imageUrl = imageUrl(data.thumbnail)
   post.photoCount = target.platform === 'instagram' ? 1 : 0
   post.videoCount = typeof data.duration === 'number' ? 1 : 0
+  post.replyCount = nonNegativeInteger(data.comment_count)
   return post
 }

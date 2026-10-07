@@ -10,6 +10,8 @@ import type { ToneKey } from '../agent/prompts/tones.js'
 import { logger } from '../utils/logger.js'
 import { fitCitations } from './citations.js'
 import { getExpressionUrl } from './expressions.js'
+import type { SocialPostLookup } from './socialPosts/types.js'
+import type { SocialPlatform } from './socialPosts/urls.js'
 import { getToneStyle } from './toneStyles.js'
 
 const TOOL_USAGE_LABELS: Record<string, string> = {
@@ -27,6 +29,22 @@ const TOOL_USAGE_LABELS: Record<string, string> = {
   recall_user: 'recalled a pressed memory'
 }
 
+const SOCIAL_POST_KINDS: Record<SocialPlatform, string> = {
+  x: 'X post',
+  bluesky: 'Bluesky post',
+  youtube: 'YouTube video',
+  tiktok: 'TikTok video',
+  reddit: 'Reddit post',
+  instagram: 'Instagram post',
+  bilibili: 'Bilibili video'
+}
+
+// A linked post is read before the model runs, so it never appears in toolsUsed; without its own label the
+// reader cannot tell whether she saw the post or only searched around it.
+function socialPostLabel(outcome: 'found' | 'failed', platform: SocialPlatform): string {
+  return `${outcome === 'found' ? 'peeked at' : "couldn't open"} the ${SOCIAL_POST_KINDS[platform]}`
+}
+
 const MAX_VISIBLE_TOOL_LABELS = 3
 
 /**
@@ -42,19 +60,35 @@ export function buildToolFooter(labels: readonly string[], epochSeconds = Math.f
   return `-# 🌸 ${visibleLabels.join(' · ')}${suffix} • <t:${epochSeconds}:R>`
 }
 
-const worstCaseToolFooterLabels = Object.values(TOOL_USAGE_LABELS)
-  .sort((left, right) => right.length - left.length)
-  .slice(0, MAX_VISIBLE_TOOL_LABELS + 1)
+function longestFirst(labels: string[]): string[] {
+  return [...labels].sort((left, right) => right.length - left.length)
+}
+
+const toolLabelsByLength = longestFirst(Object.values(TOOL_USAGE_LABELS))
+const longestSocialPostLabel = longestFirst(
+  (Object.keys(SOCIAL_POST_KINDS) as SocialPlatform[]).flatMap((platform) => [
+    socialPostLabel('found', platform),
+    socialPostLabel('failed', platform)
+  ])
+)[0]
 // Math.floor(Date.now() / 1000) has 10 digits until 2286, so this keeps the measurement deterministic.
 const TOOL_FOOTER_EPOCH_SAMPLE = 1_784_808_000
-export const MAX_TOOL_FOOTER_CHARS = buildToolFooter(worstCaseToolFooterLabels, TOOL_FOOTER_EPOCH_SAMPLE).length
+// A turn opens at most one linked post and its label leads, so it displaces a tool label rather than adding one.
+export const MAX_TOOL_FOOTER_CHARS = Math.max(
+  buildToolFooter(toolLabelsByLength.slice(0, MAX_VISIBLE_TOOL_LABELS + 1), TOOL_FOOTER_EPOCH_SAMPLE).length,
+  buildToolFooter(
+    [longestSocialPostLabel, ...toolLabelsByLength.slice(0, MAX_VISIBLE_TOOL_LABELS)],
+    TOOL_FOOTER_EPOCH_SAMPLE
+  ).length
+)
 
 /** Build a Components V2 container message with tone-appropriate styling */
 export function buildRokaMessage(
   text: string,
   tone: ToneKey,
   toolsUsed: readonly string[] = [],
-  sources: ReadonlyArray<{ url: string }> = []
+  sources: ReadonlyArray<{ url: string }> = [],
+  socialPost: SocialPostLookup = { status: 'none' }
 ) {
   const style = getToneStyle(tone)
   const imageUrl = getExpressionUrl(tone) || style.imageUrl
@@ -66,17 +100,27 @@ export function buildRokaMessage(
   }
 
   const container = new ContainerBuilder().setAccentColor(style.color).addSectionComponents(section)
-  const toolLabels = toolsUsed.flatMap((toolName) => {
-    const label = TOOL_USAGE_LABELS[toolName]
-    return label ? [label] : []
-  })
+  const postLabels =
+    socialPost.status === 'found'
+      ? [socialPostLabel('found', socialPost.post.platform)]
+      : socialPost.status === 'failed'
+        ? [socialPostLabel('failed', socialPost.platform)]
+        : []
+  const toolLabels = [
+    ...postLabels,
+    ...toolsUsed.flatMap((toolName) => {
+      const label = TOOL_USAGE_LABELS[toolName]
+      return label ? [label] : []
+    })
+  ]
+  const citedSources = socialPost.status === 'found' ? [{ url: socialPost.post.canonicalUrl }, ...sources] : sources
 
   const footer = toolLabels.length > 0 ? buildToolFooter(toolLabels) : ''
   // The footer says what she did; the citations say where it came from. Complementary, not duplicated (#19).
   // The newline that joins them below is part of the rendered content, so it is budgeted here rather than
   // silently borrowed — a citation row that exactly filled its budget would otherwise overrun by one.
   const joinChars = footer ? 1 : 0
-  const citations = fitCitations(sources, TEXT_DISPLAY_BUDGET - text.length - footer.length - joinChars)
+  const citations = fitCitations(citedSources, TEXT_DISPLAY_BUDGET - text.length - footer.length - joinChars)
 
   if (footer || citations) {
     container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))

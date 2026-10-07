@@ -5,14 +5,26 @@ vi.mock('../expressions.js', () => ({
 }))
 
 import { MAX_TOOL_FOOTER_CHARS, TEXT_DISPLAY_BUDGET, buildRokaMessage, buildToolFooter } from '../messageBuilder.js'
+import type { SocialPost, SocialPostLookup } from '../socialPosts/types.js'
+import { type SocialPlatform, parseSocialPostUrl } from '../socialPosts/urls.js'
 
-function payloadJson(text: string, toolsUsed?: string[], sources?: Array<{ url: string }>) {
-  return JSON.stringify(buildRokaMessage(text, 'playful', toolsUsed, sources).components[0].toJSON())
+function payloadJson(
+  text: string,
+  toolsUsed?: string[],
+  sources?: Array<{ url: string }>,
+  socialPost?: SocialPostLookup
+) {
+  return JSON.stringify(buildRokaMessage(text, 'playful', toolsUsed, sources, socialPost).components[0].toJSON())
 }
 
 /** Every TextDisplay in the container — Components V2 budgets their content together, not separately. */
-function renderedChars(text: string, toolsUsed?: string[], sources?: Array<{ url: string }>) {
-  const container = buildRokaMessage(text, 'playful', toolsUsed, sources).components[0].toJSON() as {
+function renderedChars(
+  text: string,
+  toolsUsed?: string[],
+  sources?: Array<{ url: string }>,
+  socialPost?: SocialPostLookup
+) {
+  const container = buildRokaMessage(text, 'playful', toolsUsed, sources, socialPost).components[0].toJSON() as {
     components: Array<{ content?: string; components?: Array<{ content?: string }> }>
   }
   return container.components
@@ -24,6 +36,34 @@ function renderedChars(text: string, toolsUsed?: string[], sources?: Array<{ url
 function footerWithoutTimestamp(labels: string[]) {
   return buildToolFooter(labels, 0).replace(' • <t:0:R>', '')
 }
+
+function foundPost(url: string): SocialPostLookup {
+  const target = parseSocialPostUrl(url)!
+  const post: SocialPost = {
+    platform: target.platform,
+    id: target.id,
+    canonicalUrl: target.canonicalUrl,
+    target,
+    authorHandle: 'roka',
+    authorName: 'Roka',
+    createdAt: null,
+    text: 'post',
+    quotedText: '',
+    quotedAuthorHandle: '',
+    photoCount: 0,
+    videoCount: 0,
+    imageUrl: null,
+    externalTitle: '',
+    replyCount: null
+  }
+  return { status: 'found', post }
+}
+
+const PLATFORMS: SocialPlatform[] = ['x', 'bluesky', 'youtube', 'tiktok', 'reddit', 'instagram', 'bilibili']
+const SOCIAL_POST_OUTCOMES: SocialPostLookup[] = [
+  foundPost('https://x.com/roka/status/123'),
+  ...PLATFORMS.map((platform): SocialPostLookup => ({ status: 'failed', platform, reason: 'timeout' }))
+]
 
 const TOOL_NAMES = [
   'roll_dice',
@@ -46,20 +86,32 @@ const TOOL_NAMES = [
 describe('tool footer budget', () => {
   // buildToolFooter takes labels, not tool names, so the labels are read back out of a rendered footer
   // rather than restated here — a copy would drift the moment a label is reworded.
-  function labelFor(toolName: string): string {
-    const container = buildRokaMessage('x', 'playful', [toolName]).components[0].toJSON() as {
+  function labelFor(toolName: string, socialPost?: SocialPostLookup): string {
+    const container = buildRokaMessage(
+      'x',
+      'playful',
+      toolName ? [toolName] : [],
+      [],
+      socialPost
+    ).components[0].toJSON() as {
       components: Array<{ content?: string; components?: Array<{ content?: string }> }>
     }
     const footer = container.components
       .flatMap((component) => component.components ?? [component])
       .map((component) => component.content ?? '')
       .find((content) => content.startsWith('-# 🌸'))
-    return (footer ?? '').replace('-# 🌸 ', '').replace(/ • <t:\d+:R>$/, '')
+    // An opened post also adds a citation row beneath the footer line.
+    return (footer ?? '')
+      .split('\n')[0]
+      .replace('-# 🌸 ', '')
+      .replace(/ • <t:\d+:R>$/, '')
   }
 
   // Any 10-digit epoch renders the same width, which is the assumption the derivation itself documents.
   const EPOCH = 1_784_808_000
-  const LABELS = TOOL_NAMES.map(labelFor)
+  const LABELS = TOOL_NAMES.map((toolName) => labelFor(toolName))
+  // A turn opens at most one linked post, and its label leads the footer ahead of the tools.
+  const POST_LABELS = SOCIAL_POST_OUTCOMES.map((socialPost) => labelFor('', socialPost))
 
   /**
    * Longest footer over every distinct ordered selection, plus a tool selection that achieves it. Distinct
@@ -68,20 +120,26 @@ describe('tool footer budget', () => {
    * derived from it too. The names are returned so the render test can exercise the same worst case rather
    * than whichever selection happens to come first in declaration order.
    */
-  function worstDistinctFooter(): { chars: number; names: string[] } {
-    let worst = { chars: 0, names: [] as string[] }
-    for (let i = 0; i < LABELS.length; i++) {
-      for (let j = 0; j < LABELS.length; j++) {
-        for (let k = 0; k < LABELS.length; k++) {
-          if (i === j || j === k || i === k) continue
-          const spare = TOOL_NAMES.findIndex((_, index) => index !== i && index !== j && index !== k)
-          for (const overflow of [[], [spare]]) {
-            const picked = [i, j, k, ...overflow]
-            const chars = buildToolFooter(
-              picked.map((index) => LABELS[index]),
-              EPOCH
-            ).length
-            if (chars > worst.chars) worst = { chars, names: picked.map((index) => TOOL_NAMES[index]) }
+  function worstDistinctFooter(): { chars: number; names: string[]; socialPost?: SocialPostLookup } {
+    let worst: { chars: number; names: string[]; socialPost?: SocialPostLookup } = { chars: 0, names: [] }
+    for (let post = -1; post < POST_LABELS.length; post++) {
+      const lead = post < 0 ? [] : [POST_LABELS[post]]
+      for (let i = 0; i < LABELS.length; i++) {
+        for (let j = 0; j < LABELS.length; j++) {
+          for (let k = 0; k < LABELS.length; k++) {
+            if (i === j || j === k || i === k) continue
+            const spare = TOOL_NAMES.findIndex((_, index) => index !== i && index !== j && index !== k)
+            for (const overflow of [[], [spare]]) {
+              const picked = [i, j, k, ...overflow]
+              const chars = buildToolFooter([...lead, ...picked.map((index) => LABELS[index])], EPOCH).length
+              if (chars > worst.chars) {
+                worst = {
+                  chars,
+                  names: picked.map((index) => TOOL_NAMES[index]),
+                  socialPost: post < 0 ? undefined : SOCIAL_POST_OUTCOMES[post]
+                }
+              }
+            }
           }
         }
       }
@@ -104,12 +162,12 @@ describe('tool footer budget', () => {
   it('keeps the rendered message within the budget for the worst tool selection at the ceiling', () => {
     const ceiling = TEXT_DISPLAY_BUDGET - MAX_TOOL_FOOTER_CHARS
     const sources = [{ url: 'https://www.crunchyroll.com/news/a' }, { url: 'https://vndb.org/b' }]
-    const heaviest = worstDistinctFooter().names
+    const { names: heaviest, socialPost } = worstDistinctFooter()
     const selections = [[], TOOL_NAMES.slice(0, 1), TOOL_NAMES.slice(0, 2), heaviest.slice(0, 3), heaviest]
     let worst = 0
     for (const selection of selections) {
       for (let length = ceiling - 120; length <= ceiling; length++) {
-        worst = Math.max(worst, renderedChars('x'.repeat(length), selection, sources))
+        worst = Math.max(worst, renderedChars('x'.repeat(length), selection, sources, socialPost))
       }
     }
 
@@ -156,6 +214,49 @@ describe('buildRokaMessage citations', () => {
     }
 
     expect(Math.max(...rendered)).toBeLessThanOrEqual(TEXT_DISPLAY_BUDGET)
+  })
+})
+
+// A linked post is read before the model runs, so it is not a tool call; without this the reader cannot tell
+// whether she saw the post or only searched around it.
+describe('buildRokaMessage linked posts', () => {
+  const SOURCES = [{ url: 'https://news.ycombinator.com/item?id=1' }]
+
+  it('leads the footer with the post she opened, ahead of the tools she used', () => {
+    expect(payloadJson('Credits~', ['search_web'], SOURCES, foundPost('https://x.com/roka/status/123'))).toContain(
+      footerWithoutTimestamp(['peeked at the X post', 'searched the wider world'])
+    )
+  })
+
+  it.each([
+    ['https://www.youtube.com/watch?v=jNQXAC9IVRw', 'peeked at the YouTube video'],
+    ['https://bsky.app/profile/atproto.com/post/3mx7uc3l6i22k', 'peeked at the Bluesky post']
+  ])('names the platform and kind of post for %s', (url, label) => {
+    expect(payloadJson('Cute~', [], [], foundPost(url))).toContain(footerWithoutTimestamp([label]))
+  })
+
+  it('says so when the linked post could not be opened', () => {
+    const failed: SocialPostLookup = { status: 'failed', platform: 'x', reason: 'timeout' }
+
+    expect(payloadJson('Hmm~', [], [], failed)).toContain(footerWithoutTimestamp(["couldn't open the X post"]))
+  })
+
+  it('cites the opened post ahead of the search sources', () => {
+    expect(payloadJson('Credits~', ['search_web'], SOURCES, foundPost('https://x.com/roka/status/123'))).toContain(
+      '-# 🔗 [x.com](<https://x.com/i/status/123>)  ·  [news.ycombinator.com](<https://news.ycombinator.com/item?id=1>)'
+    )
+  })
+
+  it('does not cite a post it could not open', () => {
+    const failed: SocialPostLookup = { status: 'failed', platform: 'x', reason: 'timeout' }
+
+    expect(payloadJson('Hmm~', [], [], failed)).not.toContain('🔗')
+  })
+
+  it('renders byte-identically when the turn had no linked post', () => {
+    expect(payloadJson('Tea is ready~', ['roll_dice'], SOURCES, { status: 'none' })).toBe(
+      payloadJson('Tea is ready~', ['roll_dice'], SOURCES)
+    )
   })
 })
 
@@ -230,7 +331,7 @@ describe('buildRokaMessage', () => {
     vi.resetModules()
     const { MAX_TOOL_FOOTER_CHARS: atSecondDate } = await import('../messageBuilder.js')
 
-    expect(atFirstDate).toBe(122)
+    expect(atFirstDate).toBe(128)
     expect(atSecondDate).toBe(atFirstDate)
 
     vi.useRealTimers()

@@ -28,6 +28,14 @@ function author(post: SocialPost): string {
   return `${PLATFORM_NAMES[post.platform]}${handle ? ` ${handle}` : ''}${name}`
 }
 
+// Only the post itself is fetched, never its replies, so the line says as much rather than leave her to pass
+// search results off as the post's comments.
+function replies(count: number | null): string {
+  if (count === 0) return 'no replies'
+  if (count === null) return 'replies not visible to you'
+  return `${count} ${count === 1 ? 'reply' : 'replies'} (text not visible to you)`
+}
+
 export function formatSocialPostLine(post: SocialPost, maxTextChars: number): string {
   const text = quoted(post.text, maxTextChars)
   const quotedText = quoted(post.quotedText, Math.max(0, maxTextChars - text.length))
@@ -42,6 +50,7 @@ export function formatSocialPostLine(post: SocialPost, maxTextChars: number): st
   if (post.videoCount > 0) media.push(`${post.videoCount} ${post.videoCount === 1 ? 'video' : 'videos'}`)
   if (media.length > 0) details.push(media.join(', '))
   if (post.externalTitle) details.push(`link card: ${quoted(post.externalTitle, 120)}`)
+  details.push(replies(post.replyCount))
 
   return `${SOCIAL_POST_UNTRUSTED_DATA_LABEL}\n[Linked post — ${details.join(' | ')}]`
 }
