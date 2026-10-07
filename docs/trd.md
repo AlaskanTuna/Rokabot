@@ -9,14 +9,14 @@
 ```
 ┌─────────────────────────────────────────────────┐
 │                  Discord Server                  │
-│  User sends /ask or @Roka                        │
+│  User sends /ask, /report or @Roka               │
 └──────────────────┬──────────────────────────────┘
                    │
                    ▼
 ┌─────────────────────────────────────────────────┐
 │              Discord Gateway Layer                │
 │  discord.js v14 client                            │
-│  - Slash command handler (/ask)                   │
+│  - Slash command handler (/ask, /report)          │
 │  - Message handler (mention/reply detection)      │
 │  - Rate limit guard (windowed RPM + daily RPD)    │
 │  - Concurrency guard (1 active req per channel)   │
@@ -67,6 +67,8 @@ durable state.
 | `src/agent/attachments.ts`            | Download and measure media, prepare model parts, and provide attachment markers.                                                                                                                                        |
 | `src/agent/reliability.ts`            | Run retry and fallback orchestration and register the error recovery plugin.                                                                                                                                            |
 | `src/agent/session.ts`                | Own the ADK session service and session lifecycle.                                                                                                                                                                      |
+| `src/discord/events/reportCommand.ts` | Store `/report` submissions and bounded Discord CDN attachment copies without entering the model path.                                                                                                                  |
+| `src/storage/reportStore.ts`          | Enforce the per-user report window and persist report rows with bounded channel snapshots.                                                                                                                              |
 
 ### Persistence & Storage
 
@@ -82,6 +84,27 @@ durable state.
 | `game_scores`, `gacha_collection`, `gacha_daily`, `buddy` | Game scores and gacha/companion data.                                                                                                                                                       |
 | `user_names`, `monitored_channels`                        | Durable user identity lookup and passive-monitoring state.                                                                                                                                  |
 | `response_events`, `extraction_events`                    | Response telemetry and retained historical extraction telemetry. `response_events.failure_marker` stores the raw `finishReason`/`errorCode` token only (e.g. `SAFETY`), never message text. |
+| `bug_reports`                                             | User-submitted issue details, Discord context, build/runtime metadata, retained snapshot JSON, and optional attachment metadata/path.                                                       |
+
+`/report` is a global command available in guilds, bot DMs, and group DMs with user installs. It takes a required
+`type` choice (`bug`, `wrong_answer`, `unsafe`, or `other`), a required message up to 1,500 characters, and one
+optional attachment. It defers ephemerally and confirms with the saved report ID. It writes directly to SQLite and
+does not use the LLM, Gemini rate limiter, or session state.
+
+The `bug_reports` row stores `id`, `created_at`, `type`, `status`, `message`, `user_id`, `username`, `display_name`,
+`context`, `guild_id`, `channel_id`, `interaction_id`, `locale`, `attachment_name`, `attachment_content_type`,
+`attachment_size`, `attachment_path`, `attachment_error`, `bot_version`, `git_commit`, `gemini_model`,
+`fallback_model`, `uptime_s`, and `context_json`. New reports have status `open`; reports are retained independently
+of `metrics.retentionDays`.
+
+`context_json` captures the reporting channel's last `report.historyMessages` `session_history` rows, up to 10
+`response_events`, 5 `failure_diagnostics`, and 5 `jev_events` within `report.historyMaxAgeMs`. It preserves user IDs
+on user history rows. The snapshot is capped at 64 KiB by removing the oldest entries first; an unavailable channel
+has empty arrays, and a failed snapshot query logs a warning while retaining any other captured sections.
+
+An attachment copy is fetched only from `cdn.discordapp.com` or `media.discordapp.net` and only when its declared
+size is at most `report.maxAttachmentBytes`; the streamed response is subject to the same limit. Copies live under
+`data/reports/`, while metadata and a failure reason remain on the report row when a copy is not saved.
 
 ## Technology Stack
 

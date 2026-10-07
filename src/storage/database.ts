@@ -190,6 +190,36 @@ function createTables(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_jev_events_created_at
       ON jev_events (created_at);
 
+    CREATE TABLE IF NOT EXISTS bug_reports (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      created_at INTEGER NOT NULL,
+      type TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'open',
+      message TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      username TEXT,
+      display_name TEXT,
+      context TEXT NOT NULL,
+      guild_id TEXT,
+      channel_id TEXT,
+      interaction_id TEXT NOT NULL,
+      locale TEXT,
+      attachment_name TEXT,
+      attachment_content_type TEXT,
+      attachment_size INTEGER,
+      attachment_path TEXT,
+      attachment_error TEXT,
+      bot_version TEXT,
+      git_commit TEXT,
+      gemini_model TEXT,
+      fallback_model TEXT,
+      uptime_s INTEGER,
+      context_json TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_bug_reports_created_at
+      ON bug_reports (created_at);
+
     CREATE TABLE IF NOT EXISTS memory_episode (
       id INTEGER PRIMARY KEY,
       guild_id TEXT NOT NULL,

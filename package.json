@@ -27,6 +27,7 @@
     "memory:prune-overflow": "tsx scripts/prune-claim-overflow.ts",
     "migrate:memory-v2": "tsx scripts/migrate-memory-v2.ts",
     "export:vault": "tsx scripts/export-vault.ts",
+    "reports": "tsx scripts/reports.ts",
     "memory:replay": "tsx scripts/replay-memory-v2.ts",
     "memory:replay:live": "ROKABOT_MEMORY_REPLAY_LIVE=1 tsx scripts/replay-memory-v2.ts --live",
     "replay:jev": "tsx scripts/replay-jev.ts"

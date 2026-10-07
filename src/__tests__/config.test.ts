@@ -167,6 +167,12 @@ describe('config module', () => {
     expect(config.session.maxRehydrationAge).toBe(7_200_000)
     expect(config.session.historyRetentionDays).toBe(7)
     expect(config.discord.maxMessageLength).toBe(1500)
+    expect(config.report).toEqual({
+      maxPerUserPerHour: 5,
+      maxAttachmentBytes: 8_388_608,
+      historyMessages: 20,
+      historyMaxAgeMs: 7_200_000
+    })
 
     expect(config.jev.apiKey).toBeUndefined()
     expect(config.jev.model).toBe('jev-1.13.0')
@@ -818,6 +824,10 @@ describe('config module', () => {
       { path: 'memory.embeddingTimeoutMs', min: 1 },
       { path: 'metrics.diagnosticsRetentionHours', min: 1 },
       { path: 'metrics.retentionDays', min: 1 },
+      { path: 'report.historyMaxAgeMs', min: 0 },
+      { path: 'report.historyMessages', min: 1 },
+      { path: 'report.maxAttachmentBytes', min: 1 },
+      { path: 'report.maxPerUserPerHour', min: 1 },
       { path: 'emoji.probability', min: 0, max: 1 },
       { path: 'emoji.cooldownMs', min: 0 },
       { path: 'reminders.checkIntervalMs', min: 1 },

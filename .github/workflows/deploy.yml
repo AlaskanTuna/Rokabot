@@ -61,7 +61,7 @@ jobs:
         run: cd ~/rokabot && git fetch origin main && git reset --hard origin/main
 
       - name: Build and restart
-        run: cd ~/rokabot && docker compose up -d --build
+        run: cd ~/rokabot && export GIT_COMMIT=$(git rev-parse --short HEAD) && docker compose up -d --build
 
       - name: Health check
         run: |

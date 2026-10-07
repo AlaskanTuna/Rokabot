@@ -83,6 +83,12 @@ metrics:
   retentionDays: 90 # Days before response and extraction events are auto-pruned
   diagnosticsRetentionHours: 72 # Hours before failure diagnostics (which hold the triggering message verbatim) are auto-pruned
 
+report:
+  maxPerUserPerHour: 5 # Reports one user may file in a rolling hour
+  maxAttachmentBytes: 8388608 # Largest attachment copy kept with a report (8 MiB); bigger files keep metadata only
+  historyMessages: 20 # Channel session_history rows captured into a report
+  historyMaxAgeMs: 7200000 # Only capture history and events this recent (2h)
+
 emoji:
   probability: 0.33 # Chance of reacting when a keyword rule matches (0-1)
   cooldownMs: 180000 # Per-channel cooldown between reactions in ms
