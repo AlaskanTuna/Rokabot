@@ -57,15 +57,16 @@ durable state.
 
 ### Core Code Modules
 
-| Module                                | Responsibility                                                                                                             |
-| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `src/discord/events/messageCreate.ts` | Detect triggers, admit turns, reserve rate and byte budgets, and send replies.                                             |
-| `src/discord/messageContent.ts`       | Convert messages, embeds, polls, stickers, forwards, Components V2, and reply context into prompt content and attachments. |
-| `src/agent/roka.ts`                   | Configure the ADK agent and runner, then orchestrate `generateResponse`.                                                   |
-| `src/agent/turnContext.ts`            | Assemble session, tone, Jev, identity, retrieval, and prompt context for each turn.                                        |
-| `src/agent/attachments.ts`            | Download and measure media, prepare model parts, and provide attachment markers.                                           |
-| `src/agent/reliability.ts`            | Run retry and fallback orchestration and register the error recovery plugin.                                               |
-| `src/agent/session.ts`                | Own the ADK session service and session lifecycle.                                                                         |
+| Module                                | Responsibility                                                                                                                                                                                                          |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/discord/events/messageCreate.ts` | Detect triggers, admit turns, reserve rate and byte budgets, and send replies.                                                                                                                                          |
+| `src/discord/messageContent.ts`       | Convert messages, embeds, polls, stickers, forwards, Components V2, and reply context into prompt content and attachments.                                                                                              |
+| `src/agent/roka.ts`                   | Configure the ADK agent and runner, then orchestrate `generateResponse`.                                                                                                                                                |
+| `src/agent/narratedToolCalls.ts`      | Strip tool calls the model wrote as reply text (`*(recall_user: X)*`, a `tool_code` fence, Qwen's `<tool_call>`) in `afterModelCallback`, before ADK records the event, so they never reach Discord or session history. |
+| `src/agent/turnContext.ts`            | Assemble session, tone, Jev, identity, retrieval, and prompt context for each turn.                                                                                                                                     |
+| `src/agent/attachments.ts`            | Download and measure media, prepare model parts, and provide attachment markers.                                                                                                                                        |
+| `src/agent/reliability.ts`            | Run retry and fallback orchestration and register the error recovery plugin.                                                                                                                                            |
+| `src/agent/session.ts`                | Own the ADK session service and session lifecycle.                                                                                                                                                                      |
 
 ### Persistence & Storage
 

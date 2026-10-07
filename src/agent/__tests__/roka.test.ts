@@ -1,4 +1,4 @@
-import type { CallbackContext, LlmRequest } from '@google/adk'
+import type { CallbackContext, LlmRequest, LlmResponse } from '@google/adk'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { config } from '../../config.js'
 
@@ -783,6 +783,26 @@ describe('runTurnWithReliability turn deadline', () => {
 describe('rokaAgent safety settings', () => {
   it('applies the configured safety thresholds to the agent-level generateContentConfig', () => {
     expect(rokaAgent.generateContentConfig?.safetySettings).toEqual(buildSafetySettings(config.gemini.safetyThreshold))
+  })
+})
+
+describe('afterModelCallback narrated tool calls', () => {
+  const callback = rokaAgent.afterModelCallback as (params: { response: LlmResponse }) => Promise<unknown>
+
+  it('removes a tool call Gemini wrote as text before it reaches the reply or session history', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never)
+    const response = {
+      content: { role: 'model', parts: [{ text: '*(recall_user: WhiteAvocado)*\nMou~ you again?' }] }
+    } as LlmResponse
+
+    await callback({ response })
+
+    expect(response.content?.parts?.[0].text).toBe('Mou~ you again?')
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ stripped: 1 }),
+      'Stripped tool calls the model wrote as text'
+    )
+    warn.mockRestore()
   })
 })
 
