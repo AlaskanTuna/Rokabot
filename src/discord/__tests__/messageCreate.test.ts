@@ -96,7 +96,8 @@ function foundSocialPost(imageUrl: string | null = null) {
       photoCount: imageUrl ? 1 : 0,
       videoCount: 0,
       imageUrl,
-      externalTitle: ''
+      externalTitle: '',
+      replyCount: null
     }
   }
 }
@@ -903,6 +904,15 @@ describe("reading what the sender's own message shows", () => {
     const { message } = createMessage({ content: '<@bot-1> what is this? https://x.com/roka/status/123' })
 
     expect((await handle(message)).userMessage).toContain('(the linked post could not be opened)')
+  })
+
+  it('shows in the reply footer which post she opened', async () => {
+    mocks.beginSocialPostLookup.mockResolvedValueOnce(foundSocialPost())
+    const { message, reply } = createMessage({ content: '<@bot-1> what is this? https://x.com/roka/status/123' })
+
+    await handle(message)
+
+    expect(JSON.stringify(reply.mock.calls[0][0].components[0].toJSON())).toContain('-# 🌸 peeked at the X post')
   })
 
   it('never lets embed images exceed the shared attachment ceiling', async () => {

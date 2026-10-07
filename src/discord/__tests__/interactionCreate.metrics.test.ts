@@ -226,7 +226,8 @@ describe('interaction handler metrics', () => {
         photoCount: imageUrl ? 1 : 0,
         videoCount: 0,
         imageUrl,
-        externalTitle: ''
+        externalTitle: '',
+        replyCount: null
       }
     }
   }
@@ -313,6 +314,17 @@ describe('interaction handler metrics', () => {
     await createInteractionHandler(rateLimiterStub() as never)(interaction as never)
 
     expect(mocks.generateResponse.mock.calls[0][0].userMessage).toContain('(the linked post could not be opened)')
+  })
+
+  it("shows in the /ask reply footer that the linked post couldn't be opened", async () => {
+    mocks.beginSocialPostLookup.mockResolvedValueOnce({ status: 'failed', platform: 'x', reason: 'http_404' })
+    const interaction = askWith([], undefined, 'What is this? https://x.com/roka/status/123')
+
+    await createInteractionHandler(rateLimiterStub() as never)(interaction as never)
+
+    expect(JSON.stringify(interaction.editReply.mock.calls[0][0].components[0].toJSON())).toContain(
+      "-# 🌸 couldn't open the X post"
+    )
   })
 
   // Offers one more than the ceiling admits, so the assertion is non-vacuous at any MAX_ATTACHMENTS: it

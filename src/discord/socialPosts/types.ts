@@ -15,6 +15,7 @@ export interface SocialPost {
   videoCount: number
   imageUrl: string | null
   externalTitle: string
+  replyCount: number | null
 }
 
 export type SocialPostLookup =

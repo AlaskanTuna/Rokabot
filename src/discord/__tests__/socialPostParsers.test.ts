@@ -1,6 +1,11 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { parseBlueskyThread, parseFxTwitterResponse, parseYtDlpMetadata } from '../socialPosts/parsers.js'
+import {
+  parseBlueskyThread,
+  parseFxTwitterResponse,
+  parseYouTubeOEmbed,
+  parseYtDlpMetadata
+} from '../socialPosts/parsers.js'
 import { parseSocialPostUrl } from '../socialPosts/urls.js'
 import type { SocialPostTarget } from '../socialPosts/urls.js'
 
@@ -137,6 +142,27 @@ describe('social post parsers', () => {
     })
     expect(parseFxTwitterResponse({ tweet: { text: 'longer than cap' } }, xTarget, 4).text).toBe('long')
     expect(parseBlueskyThread({}, blueskyTarget, 4)).toBeNull()
+  })
+
+  // Field names as the live APIs return them: FxTwitter `replies`, Bluesky `replyCount`, yt-dlp `comment_count`.
+  it('reads the reply count each source reports', () => {
+    const youtube = parseSocialPostUrl('https://youtu.be/abcdefghijk')!
+
+    expect(parseFxTwitterResponse({ tweet: { replies: 193 } }, xTarget, 100).replyCount).toBe(193)
+    expect(
+      parseBlueskyThread({ thread: { post: { ...blueskyFixture.thread.post, replyCount: 4 } } }, blueskyTarget, 100)
+        ?.replyCount
+    ).toBe(4)
+    expect(parseYtDlpMetadata({ title: 'Video', comment_count: 0 }, youtube, 100).replyCount).toBe(0)
+  })
+
+  it('leaves the reply count unknown when the source omits it', () => {
+    const youtube = parseSocialPostUrl('https://youtu.be/abcdefghijk')!
+
+    expect(parseFxTwitterResponse({ tweet: {} }, xTarget, 100).replyCount).toBeNull()
+    expect(parseBlueskyThread(blueskyFixture, blueskyTarget, 100)?.replyCount).toBeNull()
+    expect(parseYtDlpMetadata({ title: 'Video' }, youtube, 100).replyCount).toBeNull()
+    expect(parseYouTubeOEmbed({ title: 'Video' }, youtube, 100)?.replyCount).toBeNull()
   })
 
   it('parses yt-dlp upload dates in YYYYMMDD format', () => {

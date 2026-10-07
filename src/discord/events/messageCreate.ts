@@ -339,7 +339,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
       // chunk sized against the raw length overrun the TextDisplay budget it was measured for.
       const chunks = splitResponse(escapeBackticks(withNudge))
       logger.debug({ channelId, chunkCount: chunks.length }, 'Response split into chunks')
-      await message.reply(buildRokaMessage(chunks[0], tone, toolsUsed, sources))
+      await message.reply(buildRokaMessage(chunks[0], tone, toolsUsed, sources, socialPostResult))
 
       for (let i = 1; i < chunks.length; i++) {
         if ('send' in message.channel) {
