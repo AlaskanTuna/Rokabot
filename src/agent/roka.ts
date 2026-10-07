@@ -17,6 +17,7 @@ import type { ImageAttachment } from './attachments.js'
 import type { ModelRoute } from './fallbackModel.js'
 import { modelRouteForRequest } from './fallbackModel.js'
 import { computeBackoff } from './geminiReliability.js'
+import { stripNarratedToolCalls } from './narratedToolCalls.js'
 import type { ToneKey } from './prompts/tones.js'
 import {
   ErrorRecoveryPlugin,
@@ -127,6 +128,8 @@ function requestCarriesVideo(request: { contents?: Content[] }): boolean {
     (content.parts ?? []).some((part) => part.inlineData?.mimeType?.startsWith('video/'))
   )
 }
+const ROKA_TOOL_NAMES = rokaTools.map((tool) => tool.name)
+
 // Exported so tests can assert the agent-level config and beforeModelCallback seam directly
 export const rokaAgent = new LlmAgent({
   name: 'roka',
@@ -181,8 +184,17 @@ export const rokaAgent = new LlmAgent({
 
     for (const part of response.content.parts) {
       if (part.text && !part.thought) {
+        // Cleaned here rather than at send time so the narrated call never reaches session history, where
+        // the next turn copies it.
+        const narrated = stripNarratedToolCalls(part.text, ROKA_TOOL_NAMES)
+        if (narrated.stripped > 0) {
+          logger.warn(
+            { model: modelNameForCurrentRequest(), stripped: narrated.stripped },
+            'Stripped tool calls the model wrote as text'
+          )
+        }
         // Strip per-line leading whitespace — 4+ spaces or a tab makes Discord render the line as an indented code block
-        part.text = part.text
+        part.text = narrated.text
           .replace(/^\[?Roka\]?:\s*/i, '')
           .replace(/^[ \t]+/gm, '')
           .trim()
