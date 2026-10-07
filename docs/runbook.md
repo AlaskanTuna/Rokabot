@@ -133,7 +133,7 @@ The runtime image includes the official yt-dlp musl onedir build (`yt-dlp_muslli
 
 To disable social post viewing, set `SOCIAL_POSTS_ENABLED=false` in the bot container environment. The bot keeps its existing embed and attachment behavior. X and Bluesky use public APIs; disabling yt-dlp at startup leaves those two platforms available.
 
-Lookup failures are logged as `Social post lookup failed` with only `platform` and `reason`. If yt-dlp is absent during startup, the log says `Social video extractors disabled` with reason `binary_missing`; YouTube, TikTok, Reddit, Instagram, and Bilibili lookups then receive the normal “could not be opened” marker.
+Lookup failures are logged as `Social post lookup failed` with only `platform` and `reason`. YouTube can refuse yt-dlp from the Pi's home IP (`exit_1`; run yt-dlp by hand in the container to see `HTTP Error 429` / `Sign in to confirm you're not a bot`); those links fall back to YouTube oEmbed (title, channel, thumbnail) and only log a failure when oEmbed fails too. If yt-dlp is absent during startup, the log says `Social video extractors disabled` with reason `binary_missing`; YouTube, TikTok, Reddit, Instagram, and Bilibili lookups then receive the normal “could not be opened” marker.
 
 ---
 

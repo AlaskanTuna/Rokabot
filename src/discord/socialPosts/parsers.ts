@@ -125,6 +125,23 @@ export function parseBlueskyThread(
   return post
 }
 
+export function parseYouTubeOEmbed(
+  payload: unknown,
+  target: SocialPostTarget,
+  maxTextChars: number
+): SocialPost | null {
+  const data = object(payload)
+  const title = capped(data.title, maxTextChars)
+  if (!title) return null
+  const post = base(target)
+  post.authorHandle = string(data.author_url).match(/\/@([^/?#]+)/)?.[1] ?? ''
+  post.authorName = string(data.author_name)
+  post.text = title
+  post.imageUrl = imageUrl(data.thumbnail_url)
+  post.videoCount = 1
+  return post
+}
+
 export function parseYtDlpMetadata(payload: unknown, target: SocialPostTarget, maxTextChars: number): SocialPost {
   const data = object(payload)
   const post = base(target)

@@ -94,6 +94,50 @@ describe('SocialPostViewer', () => {
     expect(fetcher).not.toHaveBeenCalled()
   })
 
+  // YouTube answers repeated requests from one home IP with a "confirm you're not a bot" wall (seen on the Pi);
+  // its oEmbed endpoint has no such check and still gives the title, channel and thumbnail.
+  it('falls back to YouTube oEmbed when yt-dlp is refused', async () => {
+    const fetcher = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) =>
+      jsonResponse({
+        title: 'Me at the zoo',
+        author_name: 'jawed',
+        author_url: 'https://www.youtube.com/@jawed',
+        thumbnail_url: 'https://i.ytimg.com/vi/jNQXAC9IVRw/hqdefault.jpg'
+      })
+    )
+    const runExtractor = vi.fn(async (_binaryPath: string, _url: string, _timeoutMs: number) => ({ reason: 'exit_1' }))
+    const viewer = createSocialPostViewer(settings, { fetcher, runExtractor, warn: vi.fn() })
+
+    const result = await viewer.lookup(parseSocialPostUrl('https://youtu.be/jNQXAC9IVRw')!)
+
+    expect(result).toMatchObject({
+      status: 'found',
+      post: {
+        platform: 'youtube',
+        authorHandle: 'jawed',
+        authorName: 'jawed',
+        text: 'Me at the zoo',
+        imageUrl: 'https://i.ytimg.com/vi/jNQXAC9IVRw/hqdefault.jpg',
+        videoCount: 1
+      }
+    })
+    const oembedUrl = new URL(String(fetcher.mock.calls[0][0]))
+    expect(oembedUrl.origin + oembedUrl.pathname).toBe('https://www.youtube.com/oembed')
+    expect(oembedUrl.searchParams.get('url')).toBe('https://www.youtube.com/watch?v=jNQXAC9IVRw')
+  })
+
+  it("keeps yt-dlp's failure reason when YouTube oEmbed fails too", async () => {
+    const fetcher = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) => jsonResponse({}, 401))
+    const runExtractor = vi.fn(async (_binaryPath: string, _url: string, _timeoutMs: number) => ({ reason: 'exit_1' }))
+    const viewer = createSocialPostViewer(settings, { fetcher, runExtractor, warn: vi.fn() })
+
+    await expect(viewer.lookup(parseSocialPostUrl('https://youtu.be/jNQXAC9IVRw')!)).resolves.toEqual({
+      status: 'failed',
+      platform: 'youtube',
+      reason: 'exit_1'
+    })
+  })
+
   it('keeps X available when yt-dlp platforms are disabled at startup', async () => {
     const fetcher = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) =>
       jsonResponse({ tweet: { id: '123', text: 'post' } })

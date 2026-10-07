@@ -1,6 +1,6 @@
 import { config } from '../../config.js'
 import { logger } from '../../utils/logger.js'
-import { parseBlueskyThread, parseFxTwitterResponse, parseYtDlpMetadata } from './parsers.js'
+import { parseBlueskyThread, parseFxTwitterResponse, parseYouTubeOEmbed, parseYtDlpMetadata } from './parsers.js'
 import type { SocialPost, SocialPostLookup } from './types.js'
 import { type SocialPlatform, type SocialPostTarget, findSocialPostTarget } from './urls.js'
 import { isYtDlpAvailable, runYtDlp } from './ytDlp.js'
@@ -151,7 +151,16 @@ export class SocialPostViewer {
     }
 
     const result = await this.runExtractor(this.settings.ytDlpPath, target.extractorUrl, this.settings.timeoutMs)
-    if ('reason' in result) return failure(target.platform, result.reason)
+    if ('reason' in result) {
+      if (target.platform !== 'youtube' || signal.aborted) return failure(target.platform, result.reason)
+      // YouTube walls repeated requests from one home IP behind a bot check that oEmbed does not have.
+      const oembedUrl = new URL('https://www.youtube.com/oembed')
+      oembedUrl.searchParams.set('url', target.canonicalUrl)
+      oembedUrl.searchParams.set('format', 'json')
+      const response = await this.fetcher(oembedUrl, { signal })
+      const post = response.ok ? parseYouTubeOEmbed(await response.json(), target, this.settings.maxTextChars) : null
+      return post ? { status: 'found', post } : failure('youtube', result.reason)
+    }
     return { status: 'found', post: parseYtDlpMetadata(result.metadata, target, this.settings.maxTextChars) }
   }
 }
