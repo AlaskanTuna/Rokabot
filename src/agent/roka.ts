@@ -58,6 +58,7 @@ export interface GenerateResult {
   metrics: ResponseMetrics
   toolsUsed: string[]
   prefetchUsed: boolean
+  geminiCalledSearch: boolean
   needsLookup: number | null
   /**
    * Attachments that were admitted by type but never reached the model — oversized, or the download failed.
@@ -84,7 +85,10 @@ export interface GenerateResult {
   modelCalls: number
 }
 
-const toolCallsForRequest = new AsyncLocalStorage<Set<string>>()
+const toolCallsForRequest = new AsyncLocalStorage<{
+  usedToolNames: Set<string>
+  geminiToolNames: Set<string>
+}>()
 
 // Count every ADK request so retries and tool calls are included in the reservation refund.
 const modelCallsForRequest = new AsyncLocalStorage<{ count: number }>()
@@ -233,7 +237,9 @@ export const rokaAgent = new LlmAgent({
   },
   beforeToolCallback: async ({ tool, args }) => {
     logger.info({ tool: tool.name, args }, 'Tool call requested')
-    toolCallsForRequest.getStore()?.add(tool.name)
+    const toolCalls = toolCallsForRequest.getStore()
+    toolCalls?.usedToolNames.add(tool.name)
+    if (!modelRouteForRequest.getStore()?.useFallback) toolCalls?.geminiToolNames.add(tool.name)
     return undefined
   }
 })
@@ -321,6 +327,8 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
 
   const llmStartMs = performance.now()
   const usedToolNames = new Set<string>(prefetchUsed ? [PREFETCH_TOOL_NAME] : [])
+  const geminiToolNames = new Set<string>()
+  const toolCalls = { usedToolNames, geminiToolNames }
   const testRunTurn = testRunTurnFactory?.(systemPrompt)
   let sessionWasReset = false
   const steering: { prompt?: string; memory?: boolean } = { memory }
@@ -334,7 +342,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   let movedAwayFromGemini = false
   const reliability = await modelRouteForRequest.run(route, () =>
     modelCallsForRequest.run(modelCalls, () =>
-      toolCallsForRequest.run(usedToolNames, () =>
+      toolCallsForRequest.run(toolCalls, () =>
         modelVerdictForRequest.run(verdict, () =>
           steeringForRequest.run(steering, () =>
             runTurnWithReliability({
@@ -565,6 +573,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     metrics,
     toolsUsed,
     prefetchUsed,
+    geminiCalledSearch: geminiToolNames.has(PREFETCH_TOOL_NAME),
     needsLookup: turnEntryWork.needsLookup ?? null,
     droppedAttachments,
     truncatedAttachments,
