@@ -130,7 +130,10 @@ export function parseYtDlpMetadata(payload: unknown, target: SocialPostTarget, m
   const post = base(target)
   const title = compact(string(data.title))
   const description = compact(string(data.description))
-  post.authorHandle = string(data.uploader_id) || string(data.channel_id) || string(data.uploader)
+  // channel_id is a subreddit or a YouTube channel key and a numeric uploader_id is a TikTok account number, so
+  // neither names the account the way a reader would.
+  const uploaderId = string(data.uploader_id).replace(/^@/, '')
+  post.authorHandle = (/^\d+$/.test(uploaderId) ? '' : uploaderId) || string(data.uploader)
   post.authorName = string(data.uploader) || string(data.channel) || string(data.channel_id)
   post.createdAt = date(data.upload_date)
   post.text = [title, description].filter(Boolean).join(' — ').slice(0, maxTextChars)

@@ -144,4 +144,24 @@ describe('social post parsers', () => {
 
     expect(parseYtDlpMetadata({ title: 'Video', upload_date: '20261006' }, target, 100).createdAt).toBe('2026-10-06')
   })
+
+  // Field shapes as yt-dlp returned them in production: YouTube's uploader_id already carries the @, Reddit's
+  // channel_id is the subreddit, and TikTok's uploader_id is a numeric account id.
+  it.each([
+    [
+      'https://youtu.be/jNQXAC9IVRw',
+      { uploader: 'jawed', uploader_id: '@jawed', channel_id: 'UC4QobU6STFB0P71PMvOGN5A' },
+      'jawed'
+    ],
+    ['https://www.reddit.com/r/videos/comments/6rrwyj/x/', { uploader: 'Antw87', channel_id: 'videos' }, 'Antw87'],
+    [
+      'https://www.tiktok.com/@pokemonlife22/video/7059698374567611694',
+      { uploader: 'pokemonlife22', uploader_id: '6820838815978423302' },
+      'pokemonlife22'
+    ]
+  ])('names the posting account for %s', (url, fields, handle) => {
+    const target = parseSocialPostUrl(url)!
+
+    expect(parseYtDlpMetadata({ title: 'Post', ...fields }, target, 100).authorHandle).toBe(handle)
+  })
 })
