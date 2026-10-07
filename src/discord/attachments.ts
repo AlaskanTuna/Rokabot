@@ -108,6 +108,20 @@ export function attachmentOptionName(index: number): string {
   return MAX_ATTACHMENTS === 1 ? 'attachment' : `attachment_${index + 1}`
 }
 
+export function isAllowedDiscordCdnUrl(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return (
+      url.protocol === 'https:' &&
+      (url.hostname === 'cdn.discordapp.com' || url.hostname === 'media.discordapp.net') &&
+      !url.username &&
+      !url.password
+    )
+  } catch {
+    return false
+  }
+}
+
 // The Pi fetches these itself and sits on a private Tailnet, so a user-supplied URL is an SSRF vector: a
 // pasted link would have the bot probe the tailnet on the poster's behalf. Checked against the addresses a
 // hostname RESOLVES to, never the hostname text — `localtest.me` is a real registered name that answers

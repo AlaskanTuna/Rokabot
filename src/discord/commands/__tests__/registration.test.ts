@@ -34,6 +34,10 @@ const expectedPolicy = {
   stats: {
     integrationTypes: [ApplicationIntegrationType.GuildInstall],
     contexts: [InteractionContextType.Guild]
+  },
+  report: {
+    integrationTypes: [ApplicationIntegrationType.GuildInstall, ApplicationIntegrationType.UserInstall],
+    contexts: [InteractionContextType.Guild, InteractionContextType.BotDM, InteractionContextType.PrivateChannel]
   }
 } as const
 
@@ -103,5 +107,23 @@ describe('buildCommandBody', () => {
         expect(command.integration_types).toContain(ApplicationIntegrationType.UserInstall)
       }
     }
+  })
+
+  it('defines the /report options and issue types in order', () => {
+    const report = buildCommandBody().find((command) => command.name === 'report')
+
+    expect(report?.options?.map((option) => option.name)).toEqual(['type', 'message', 'attachment'])
+    expect(report?.options?.[0]).toMatchObject({
+      type: 3,
+      required: true,
+      choices: [
+        { name: 'Something broke', value: 'bug' },
+        { name: 'Wrong or made-up answer', value: 'wrong_answer' },
+        { name: 'Offensive or unsafe reply', value: 'unsafe' },
+        { name: 'Something else', value: 'other' }
+      ]
+    })
+    expect(report?.options?.[1]).toMatchObject({ type: 3, required: true, max_length: 1500 })
+    expect(report?.options?.[2]).toMatchObject({ type: 11, required: false })
   })
 })

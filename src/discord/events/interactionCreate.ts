@@ -28,6 +28,7 @@ import { SOCIAL_POST_FAILURE_MARKER, formatSocialPostLine } from '../socialPosts
 import { beginSocialPostLookup } from '../socialPosts/service.js'
 import { parseSocialPostUrl } from '../socialPosts/urls.js'
 import { createGameCommandHandler } from './gameCommands.js'
+import { handleReportCommand } from './reportCommand.js'
 import { handleStatsCommand } from './stats/statsCommand.js'
 import { createToolCommandHandler } from './toolCommands.js'
 
@@ -69,6 +70,27 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
           } else {
             logger.error({ error: replyError, channelId: interaction.channelId }, 'Failed to send stats error reply')
           }
+        }
+      }
+      return
+    }
+
+    if (interaction.commandName === 'report') {
+      try {
+        await handleReportCommand(interaction)
+      } catch (error) {
+        logger.error({ error, channelId: interaction.channelId }, 'Error handling /report command')
+        try {
+          if (interaction.deferred || interaction.replied) {
+            await interaction.editReply({ content: 'Something went wrong while filing your report. Please try again.' })
+          } else {
+            await interaction.reply({
+              content: 'Something went wrong while filing your report. Please try again.',
+              flags: MessageFlags.Ephemeral
+            })
+          }
+        } catch (replyError) {
+          logger.warn({ error: replyError, channelId: interaction.channelId }, 'Failed to send /report error reply')
         }
       }
       return

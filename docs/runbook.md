@@ -397,6 +397,41 @@ cd ~/actions-runner && sudo ./svc.sh stop && sudo ./svc.sh uninstall
 
 ---
 
+## Bug Reports
+
+Users file reports with `/report` (servers, group DMs and DMs). List recent open reports on the Pi, where only
+`sqlite3` is installed on the host:
+
+```bash
+sqlite3 -header -column ~/rokabot/data/rokabot.db "SELECT id, datetime(created_at / 1000, 'unixepoch') AS filed,
+  type, context, user_id, substr(message, 1, 80) AS message, attachment_path IS NOT NULL AS saved
+  FROM bug_reports WHERE status = 'open' ORDER BY id DESC LIMIT 20;"
+```
+
+For a full report with its parsed context snapshot, back up the database and read it from a development checkout:
+
+```bash
+ssh <pi-user>@<pi-ethernet-ip> "sqlite3 ~/rokabot/data/rokabot.db '.backup /tmp/rokabot-reports.db'"
+scp <pi-user>@<pi-ethernet-ip>:/tmp/rokabot-reports.db ./data/rokabot-reports.db
+npm run reports -- data/rokabot-reports.db --id 42
+```
+
+The command is read-only. Its syntax is `npm run reports -- [db] [--id N] [--status open] [--limit 20]`. Saved
+attachment copies live in `~/rokabot/data/reports/`; unsaved attachments still have their metadata and failure reason
+in `bug_reports`.
+
+Mark a report resolved by replacing `42` with its report ID:
+
+```bash
+sqlite3 ~/rokabot/data/rokabot.db "UPDATE bug_reports SET status='resolved' WHERE id=42;"
+```
+
+Copy saved attachments from the Pi to the current directory:
+
+```bash
+scp -r <pi-user>@<pi-ethernet-ip>:~/rokabot/data/reports ./data/reports
+```
+
 ## SQLite Database
 
 DB location: `~/rokabot/data/rokabot.db`

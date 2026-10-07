@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   gameCommandHandler: vi.fn(),
   toolCommandHandler: vi.fn(),
   handleStatsCommand: vi.fn(),
+  handleReportCommand: vi.fn(),
   splitResponse: vi.fn((response: string) => [response]),
   lookup: vi.fn(async () => [{ address: '93.184.216.34', family: 4 }]),
   isChannelBusy: vi.fn(() => false),
@@ -68,6 +69,7 @@ vi.mock('../responses.js', () => ({
 }))
 vi.mock('../events/gameCommands.js', () => ({ createGameCommandHandler: () => mocks.gameCommandHandler }))
 vi.mock('../events/stats/statsCommand.js', () => ({ handleStatsCommand: mocks.handleStatsCommand }))
+vi.mock('../events/reportCommand.js', () => ({ handleReportCommand: mocks.handleReportCommand }))
 vi.mock('../events/toolCommands.js', () => ({ createToolCommandHandler: () => mocks.toolCommandHandler }))
 
 import { recordSearchCitations } from '../../agent/searchCitations.js'
@@ -112,6 +114,18 @@ function resetInteractionMocks() {
 describe('interaction handler metrics', () => {
   beforeEach(() => {
     resetInteractionMocks()
+  })
+
+  it('routes /report without entering the model path', async () => {
+    const interaction = { isChatInputCommand: () => true, commandName: 'report' }
+    const rateLimiter = { canAdmitCalls: vi.fn(), reserveCalls: vi.fn() }
+
+    await createInteractionHandler(rateLimiter as never)(interaction as never)
+
+    expect(mocks.handleReportCommand).toHaveBeenCalledWith(interaction)
+    expect(rateLimiter.canAdmitCalls).not.toHaveBeenCalled()
+    expect(rateLimiter.reserveCalls).not.toHaveBeenCalled()
+    expect(mocks.generateResponse).not.toHaveBeenCalled()
   })
 
   it('records one completed slash turn with an enriched summary', async () => {

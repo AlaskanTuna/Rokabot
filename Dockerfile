@@ -15,6 +15,8 @@ RUN npm run build
 # Stage 2: Runtime
 FROM node:24-alpine
 
+ARG GIT_COMMIT=unknown
+ENV GIT_COMMIT=$GIT_COMMIT
 ENV NODE_ENV=production
 
 WORKDIR /app

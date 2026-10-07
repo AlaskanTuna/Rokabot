@@ -89,6 +89,12 @@ interface YamlConfig {
     vaultExportDir?: string
   }
   metrics?: { retentionDays?: number; diagnosticsRetentionHours?: number }
+  report?: {
+    maxPerUserPerHour?: number
+    maxAttachmentBytes?: number
+    historyMessages?: number
+    historyMaxAgeMs?: number
+  }
   emoji?: { probability?: number; cooldownMs?: number }
   reminders?: { checkIntervalMs?: number; maxPerUser?: number; staleThresholdMs?: number }
   games?: { hangmanLives?: number; hangmanTimeoutMs?: number; shiritoriTimeoutMs?: number; shinyChance?: number }
@@ -268,6 +274,12 @@ export const config = {
     diagnosticsRetentionHours:
       envInt('METRICS_DIAGNOSTICS_RETENTION_HOURS') ?? yaml.metrics?.diagnosticsRetentionHours ?? 72
   },
+  report: {
+    maxPerUserPerHour: yaml.report?.maxPerUserPerHour ?? 5,
+    maxAttachmentBytes: yaml.report?.maxAttachmentBytes ?? 8_388_608,
+    historyMessages: yaml.report?.historyMessages ?? 20,
+    historyMaxAgeMs: yaml.report?.historyMaxAgeMs ?? 7_200_000
+  },
   emoji: {
     probability: yaml.emoji?.probability ?? 0.33,
     cooldownMs: yaml.emoji?.cooldownMs ?? 180_000
@@ -397,6 +409,10 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'memory.embeddingTimeoutMs', value: config.memory.embeddingTimeoutMs, min: 1 },
   { path: 'metrics.retentionDays', value: config.metrics.retentionDays, min: 1 },
   { path: 'metrics.diagnosticsRetentionHours', value: config.metrics.diagnosticsRetentionHours, min: 1 },
+  { path: 'report.maxPerUserPerHour', value: config.report.maxPerUserPerHour, min: 1 },
+  { path: 'report.maxAttachmentBytes', value: config.report.maxAttachmentBytes, min: 1 },
+  { path: 'report.historyMessages', value: config.report.historyMessages, min: 1 },
+  { path: 'report.historyMaxAgeMs', value: config.report.historyMaxAgeMs, min: 0 },
   { path: 'emoji.probability', value: config.emoji.probability, min: 0, max: 1 },
   { path: 'emoji.cooldownMs', value: config.emoji.cooldownMs, min: 0 },
   { path: 'reminders.checkIntervalMs', value: config.reminders.checkIntervalMs, min: 1 },
