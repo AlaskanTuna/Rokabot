@@ -24,6 +24,9 @@ import {
   getRandomUnsupportedAttachment,
   splitResponse
 } from '../responses.js'
+import { SOCIAL_POST_FAILURE_MARKER, formatSocialPostLine } from '../socialPosts/format.js'
+import { beginSocialPostLookup } from '../socialPosts/service.js'
+import { parseSocialPostUrl } from '../socialPosts/urls.js'
 import { createGameCommandHandler } from './gameCommands.js'
 import { handleReportCommand } from './reportCommand.js'
 import { handleStatsCommand } from './stats/statsCommand.js'
@@ -101,6 +104,10 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
     }
 
     const message = interaction.options.getString('question', true)
+    const linkedUrl = interaction.options.getString('attachment_url')
+    const socialPostWork = config.socialPosts.enabled
+      ? beginSocialPostLookup([message, linkedUrl ?? ''], Promise.resolve([]))
+      : null
     const channelId = interaction.channelId
     // A label for metrics and session identity only. /ask runs memory-free, so this never becomes a
     // memory tenant — the client has no DirectMessages intent, so no message event ever yields one (#207).
@@ -138,8 +145,7 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
 
     // One budget per turn regardless of where the file came from: a linked file competes for the same
     // MAX_ATTACHMENTS slots as an uploaded one, so the cost of a turn stays one number.
-    const linkedUrl = interaction.options.getString('attachment_url')
-    if (linkedUrl) {
+    if (linkedUrl && (!config.socialPosts.enabled || !parseSocialPostUrl(linkedUrl))) {
       const resolved = imageAttachments.length < MAX_ATTACHMENTS ? await resolveMediaUrl(linkedUrl) : null
       if (resolved) imageAttachments.push(resolved)
       else unsupportedCount += 1
@@ -173,6 +179,18 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
     }
 
     await interaction.deferReply()
+
+    let userMessage = message
+    const socialPostResult = socialPostWork ? await socialPostWork : { status: 'none' as const }
+    if (socialPostResult.status === 'found') {
+      userMessage = `${userMessage}\n${formatSocialPostLine(socialPostResult.post, config.socialPosts.maxTextChars)}`
+      if (socialPostResult.post.imageUrl && imageAttachments.length < MAX_ATTACHMENTS) {
+        const imageAttachment = await resolveMediaUrl(socialPostResult.post.imageUrl).catch(() => null)
+        if (imageAttachment) imageAttachments.push(imageAttachment)
+      }
+    } else if (socialPostResult.status === 'failed') {
+      userMessage = `${userMessage}\n${SOCIAL_POST_FAILURE_MARKER}`
+    }
 
     // Bytes are not the only thing an attachment spends, and the two do not track each other: an 89-page PDF
     // is 35 KB of the byte budget and 49,841 tokens of the minute's. `rateLimit.rpm` bounds how many turns
@@ -238,7 +256,7 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
         generateResponse({
           channelId,
           guildId,
-          userMessage: message,
+          userMessage,
           displayName,
           username: interaction.user.username,
           userId: interaction.user.id,

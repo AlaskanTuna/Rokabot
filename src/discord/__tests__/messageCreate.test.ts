@@ -1,5 +1,6 @@
 import { Collection } from 'discord.js'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { SocialPostLookup } from '../socialPosts/types.js'
 
 const mocks = vi.hoisted(() => ({
   generateResponse: vi.fn(),
@@ -16,7 +17,16 @@ const mocks = vi.hoisted(() => ({
   canAffordAttachments: vi.fn(() => true),
   tryReserve: vi.fn(() => true),
   release: vi.fn(),
-  splitResponse: vi.fn((response: string) => [response])
+  splitResponse: vi.fn((response: string) => [response]),
+  beginSocialPostLookup: vi.fn((_texts: string[], _later: Promise<string[]>) =>
+    Promise.resolve({ status: 'none' } as SocialPostLookup)
+  ),
+  resolveMediaUrl: vi.fn(
+    async (url: string): Promise<{ url: string; contentType: string; size?: number } | null> => ({
+      url,
+      contentType: 'image/jpeg'
+    })
+  )
 }))
 
 vi.mock('../../agent/roka.js', () => ({ generateResponse: mocks.generateResponse }))
@@ -36,6 +46,19 @@ vi.mock('../byteBudget.js', () => ({
   tryReserve: mocks.tryReserve
 }))
 vi.mock('../emojiReactor.js', () => ({ shouldReact: () => null }))
+vi.mock('../attachments.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../attachments.js')>()
+  return { ...actual, resolveMediaUrl: mocks.resolveMediaUrl }
+})
+vi.mock('../socialPosts/service.js', () => ({
+  beginSocialPostLookup: mocks.beginSocialPostLookup,
+  socialPostTexts: (message: { content?: string; embeds?: Array<{ url?: string; description?: string }> }) => [
+    message.content ?? '',
+    ...(message.embeds ?? []).flatMap((embed) => [embed.url ?? '', embed.description ?? ''])
+  ],
+  socialPostSnapshotTexts: (message: { messageSnapshots?: Collection<string, { content?: string }> }) =>
+    [...(message.messageSnapshots?.values() ?? [])].map((snapshot) => snapshot.content ?? '')
+}))
 vi.mock('../errorHandler.js', () => ({ isIgnorableDiscordError: () => false }))
 vi.mock('../responses.js', () => ({
   escapeBackticks: (text: string) => text.replace(/\\?`/g, '\\`'),
@@ -51,7 +74,32 @@ vi.mock('../events/gachaMention.js', () => ({ handleGachaMention: vi.fn() }))
 import { MAX_ATTACHMENTS } from '../attachments.js'
 import { NAME_MENTION_REGEX } from '../events/messageCreate.js'
 import { createMessageHandler } from '../events/messageCreate.js'
+import { parseSocialPostUrl } from '../socialPosts/urls.js'
 import { assertTurnEntryRejections } from './turnEntryRejections.js'
+
+const socialTarget = parseSocialPostUrl('https://x.com/roka/status/123')!
+
+function foundSocialPost(imageUrl: string | null = null) {
+  return {
+    status: 'found' as const,
+    post: {
+      platform: 'x' as const,
+      id: socialTarget.id,
+      canonicalUrl: socialTarget.canonicalUrl,
+      target: socialTarget,
+      authorHandle: 'roka',
+      authorName: 'Roka',
+      createdAt: '2026-10-06',
+      text: 'The linked post text',
+      quotedText: '',
+      quotedAuthorHandle: '',
+      photoCount: imageUrl ? 1 : 0,
+      videoCount: 0,
+      imageUrl,
+      externalTitle: ''
+    }
+  }
+}
 
 const metrics = {
   generateMs: 1,
@@ -148,6 +196,8 @@ function resetMessageMocks() {
   mocks.tryConsume.mockReturnValue(true)
   mocks.canAffordAttachments.mockReturnValue(true)
   mocks.tryReserve.mockReturnValue(true)
+  mocks.beginSocialPostLookup.mockResolvedValue({ status: 'none' })
+  mocks.resolveMediaUrl.mockImplementation(async (url: string) => ({ url, contentType: 'image/jpeg' }))
   mocks.startTurnEntryWork.mockReturnValue(turnEntryWork)
   mocks.generateResponse.mockResolvedValue({
     text: 'Hello~',
@@ -769,6 +819,90 @@ describe("reading what the sender's own message shows", () => {
     expect((await handle(message)).imageAttachments).toEqual([
       { url: 'https://cdn.test/preview.png', contentType: 'image/png' }
     ])
+  })
+
+  it('adds a linked post found in the current message to model input', async () => {
+    mocks.beginSocialPostLookup.mockResolvedValueOnce(foundSocialPost())
+    const { message } = createMessage({
+      content: '<@bot-1> what is this? https://x.com/roka/status/123'
+    })
+
+    const result = await handle(message)
+
+    expect(mocks.beginSocialPostLookup.mock.calls[0][0]).toContain(
+      '<@bot-1> what is this? https://x.com/roka/status/123'
+    )
+    expect(result.userMessage).toContain('[Linked post — X @roka (Roka), 2026-10-06: "The linked post text"')
+  })
+
+  it('checks the replied-to message before forwarded snapshots for a social URL', async () => {
+    mocks.beginSocialPostLookup.mockResolvedValueOnce(foundSocialPost())
+    const reply = {
+      author: { id: 'bot-1', displayName: 'Roka' },
+      member: null,
+      content: 'https://vxtwitter.com/roka/status/123',
+      embeds: [],
+      poll: null,
+      messageSnapshots: new Collection(),
+      components: [],
+      stickers: new Collection(),
+      attachments: new Collection()
+    }
+    const { message } = createMessage({
+      content: '<@bot-1> what is this?',
+      referencedMessage: reply,
+      snapshots: [
+        { content: 'https://twitter.com/other/status/456', components: [], embeds: [], attachments: new Collection() }
+      ]
+    })
+
+    await handle(message)
+
+    const laterTexts = mocks.beginSocialPostLookup.mock.calls[0][1]
+    await expect(laterTexts).resolves.toContain('https://vxtwitter.com/roka/status/123')
+    await expect(laterTexts).resolves.toContain('https://twitter.com/other/status/456')
+  })
+
+  it('replaces a matching social embed and its thumbnail with the opened post', async () => {
+    mocks.beginSocialPostLookup.mockResolvedValueOnce(foundSocialPost('https://pbs.twimg.com/post.jpg'))
+    const { message } = createMessage({
+      content: '<@bot-1> what is this? https://x.com/roka/status/123',
+      embeds: [
+        {
+          ...LINK_PREVIEW,
+          url: 'https://x.com/roka/status/123',
+          description: 'Discord embed description',
+          thumbnail: { url: 'https://pbs.twimg.com/embed-thumb.jpg' }
+        }
+      ]
+    })
+
+    const result = await handle(message)
+
+    expect(result.userMessage).toContain('[Linked post — X @roka (Roka), 2026-10-06: "The linked post text"')
+    expect(result.userMessage).not.toContain('Discord embed description')
+    expect(result.imageAttachments).toEqual([{ url: 'https://pbs.twimg.com/post.jpg', contentType: 'image/jpeg' }])
+  })
+
+  it('keeps a user attachment ahead of the social post image', async () => {
+    mocks.beginSocialPostLookup.mockResolvedValueOnce(foundSocialPost('https://pbs.twimg.com/post.jpg'))
+    const ownImage = { url: 'https://cdn.test/own.png', contentType: 'image/png' }
+    const { message } = createMessage({
+      content: '<@bot-1> what is this? https://x.com/roka/status/123',
+      attachments: [ownImage]
+    })
+
+    const result = await handle(message)
+
+    expect(result.imageAttachments).toEqual([ownImage])
+    expect(mocks.resolveMediaUrl).not.toHaveBeenCalled()
+  })
+
+  it('marks a linked post that could not be opened', async () => {
+    mocks.beginSocialPostLookup.mockResolvedValueOnce({ status: 'failed', platform: 'x', reason: 'http_404' })
+    const { message } = createMessage({ content: '<@bot-1> what is this? https://x.com/roka/status/123' })
+
+    expect((await handle(message)).userMessage).toContain('(the linked post could not be opened)')
   })
 
   it('never lets embed images exceed the shared attachment ceiling', async () => {

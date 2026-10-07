@@ -82,6 +82,7 @@ describe('config module', () => {
     vi.stubEnv('MEMORY_VAULT_EXPORT_DIR', '')
     vi.stubEnv('METRICS_RETENTION_DAYS', '')
     vi.stubEnv('DISCORD_MAX_MESSAGE_LENGTH', '')
+    vi.stubEnv('SOCIAL_POSTS_ENABLED', '')
   }
 
   it('throws if DISCORD_TOKEN is missing', async () => {
@@ -174,6 +175,16 @@ describe('config module', () => {
       historyMaxAgeMs: 7_200_000
     })
 
+    expect(config.socialPosts).toEqual({
+      enabled: true,
+      maxLookupsPerTurn: 1,
+      timeoutMs: 6000,
+      maxTextChars: 1500,
+      cacheTtlMs: 900_000,
+      maxCacheEntries: 256,
+      ytDlpPath: 'yt-dlp'
+    })
+
     expect(config.jev.apiKey).toBeUndefined()
     expect(config.jev.model).toBe('jev-1.13.0')
     expect(config.jev.timeoutMs).toBe(1200)
@@ -235,6 +246,16 @@ describe('config module', () => {
     // Status cycle
     expect(config.statusCycleMs).toBe(900_000)
     expect(warn).not.toHaveBeenCalled()
+  })
+
+  it('allows SOCIAL_POSTS_ENABLED to disable the feature', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('SOCIAL_POSTS_ENABLED', 'false')
+
+    const { config } = await import('../config.js')
+
+    expect(config.socialPosts.enabled).toBe(false)
   })
 
   it('exposes bounded episode memory settings', async () => {
@@ -765,6 +786,11 @@ describe('config module', () => {
 
     const EXPECTED_BOUNDS: ReadonlyArray<{ path: string; min: number; max?: number }> = [
       { path: 'gemini.timeout', min: 1 },
+      { path: 'socialPosts.maxLookupsPerTurn', min: 1, max: 1 },
+      { path: 'socialPosts.timeoutMs', min: 1, max: 30_000 },
+      { path: 'socialPosts.maxTextChars', min: 1, max: 10_000 },
+      { path: 'socialPosts.cacheTtlMs', min: 0 },
+      { path: 'socialPosts.maxCacheEntries', min: 1, max: 10_000 },
       { path: 'fallback.timeoutMs', min: 1 },
       { path: 'fallback.stickyMs', min: 0 },
       // Written out, not derived, and deliberately unlike its sibling test above. That one asserts the

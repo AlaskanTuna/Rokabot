@@ -61,6 +61,7 @@ durable state.
 | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `src/discord/events/messageCreate.ts` | Detect triggers, admit turns, reserve rate and byte budgets, and send replies.                                                                                                                                          |
 | `src/discord/messageContent.ts`       | Convert messages, embeds, polls, stickers, forwards, Components V2, and reply context into prompt content and attachments.                                                                                              |
+| `src/discord/socialPosts/`            | Validate social post URLs, fetch bounded metadata from public APIs or yt-dlp, cache normalized posts, and format untrusted quoted context.                                                                              |
 | `src/agent/roka.ts`                   | Configure the ADK agent and runner, then orchestrate `generateResponse`.                                                                                                                                                |
 | `src/agent/narratedToolCalls.ts`      | Strip tool calls the model wrote as reply text (`*(recall_user: X)*`, a `tool_code` fence, Qwen's `<tool_call>`) in `afterModelCallback`, before ADK records the event, so they never reach Discord or session history. |
 | `src/agent/turnContext.ts`            | Assemble session, tone, Jev, identity, retrieval, and prompt context for each turn.                                                                                                                                     |
@@ -69,6 +70,18 @@ durable state.
 | `src/agent/session.ts`                | Own the ADK session service and session lifecycle.                                                                                                                                                                      |
 | `src/discord/events/reportCommand.ts` | Store `/report` submissions and bounded Discord CDN attachment copies without entering the model path.                                                                                                                  |
 | `src/storage/reportStore.ts`          | Enforce the per-user report window and persist report rows with bounded channel snapshots.                                                                                                                              |
+
+### Social Post Viewing
+
+Mention, reply, and name-keyword turns start one supported post lookup alongside reply fetching and turn-entry work. The current message takes priority, followed by the message being replied to and then forwarded snapshots. `/ask` checks its question and `attachment_url` option. `socialPosts.maxLookupsPerTurn` is bounded to one.
+
+X and Twitter links use the public FxTwitter status API. Bluesky links resolve handles through the public AppView when the URL does not already contain a DID, then request one post thread at depth zero. YouTube, TikTok, Reddit, Instagram, and Bilibili use metadata-only yt-dlp. No cookies, video downloads, ffmpeg, captions, or transcripts are used.
+
+The lookup is awaited while assembling model input and is bounded by `socialPosts.timeoutMs`. The in-memory cache stores normalized post metadata by platform and post ID for `socialPosts.cacheTtlMs`, up to `socialPosts.maxCacheEntries`. Text is capped by `socialPosts.maxTextChars` and labelled as untrusted quoted content. If a successful post has a photo or cover thumbnail, the first image is admitted through `resolveMediaUrl` and the existing byte, attachment, and token budgets. A user attachment keeps the only attachment slot; a matching Discord embed is replaced by the normalized post line.
+
+Only HTTPS post URLs on the supported host allowlist are accepted. URLs with ports, IP literals, or unsupported paths are rejected. yt-dlp receives a canonical URL rebuilt from parsed post identifiers through an argument array with `shell: false`, an isolated temporary home, a timeout, and a 2 MiB stdout limit. Its output is reduced to selected metadata; format and signed media URLs are never sent to the model. Image URLs pass the existing public-address and redirect checks before download. Lookup warnings contain only the platform and failure reason.
+
+If a supported link cannot be opened, Roka receives the original message and a short failure marker so she does not claim to have read unseen content. If yt-dlp is missing at startup, only its five platforms are disabled; X and Bluesky continue to work. `SOCIAL_POSTS_ENABLED=false` disables the feature.
 
 ### Persistence & Storage
 

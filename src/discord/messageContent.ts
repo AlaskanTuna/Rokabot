@@ -1,6 +1,8 @@
 import type { Message } from 'discord.js'
 import type { ImageAttachment } from '../agent/attachments.js'
 import { MAX_ATTACHMENTS, isSupportedImage, isSupportedMedia } from './attachments.js'
+import type { SocialPostTarget } from './socialPosts/urls.js'
+import { findSocialPostTarget } from './socialPosts/urls.js'
 
 export function replaceUserMentions(message: Message, botId: string | undefined): string {
   return message.content
@@ -48,6 +50,23 @@ function describeEmbed(embed: Message['embeds'][number]): string | null {
   // Embedded video stays textual until video intake can process it.
   if (embed.video) parts.push(embed.data.type === 'gifv' ? 'animated GIF' : 'video')
   return parts.length > 0 ? `[Embed: ${parts.join(' | ')}]` : null
+}
+
+export interface SocialPostPresentation {
+  target: SocialPostTarget
+  line: string
+  imageAttachment?: ImageAttachment
+}
+
+function embedMatchesSocialPost(
+  embed: Message['embeds'][number],
+  socialPost: SocialPostPresentation | undefined
+): boolean {
+  if (!socialPost) return false
+  const texts = [embed.url, embed.description, ...embed.fields.map((field) => field.value)].filter(
+    (value): value is string => Boolean(value)
+  )
+  return texts.some((text) => findSocialPostTarget(text)?.lookupKey === socialPost.target.lookupKey)
 }
 
 function describePoll(poll: NonNullable<Message['poll']>): string | null {
@@ -115,11 +134,17 @@ function extractComponentMedia(components: Message['components']): { media: Imag
 interface ForwardedContent {
   parts: string[]
   images: ImageAttachment[]
+  hasSocialPost: boolean
 }
 
-function describeForwardedSnapshots(snapshots: Message['messageSnapshots'], imageSlots: number): ForwardedContent {
+function describeForwardedSnapshots(
+  snapshots: Message['messageSnapshots'],
+  imageSlots: number,
+  socialPost?: SocialPostPresentation
+): ForwardedContent {
   const parts: string[] = []
   const images: ImageAttachment[] = []
+  let hasSocialPost = false
 
   for (const snapshot of snapshots.values()) {
     const fwdParts: string[] = []
@@ -134,6 +159,11 @@ function describeForwardedSnapshots(snapshots: Message['messageSnapshots'], imag
 
     // Forwarded links can carry their source context in embed fields beyond the title and description.
     for (const embed of snapshot.embeds ?? []) {
+      if (embedMatchesSocialPost(embed, socialPost)) {
+        if (!hasSocialPost) fwdParts.push(socialPost!.line)
+        hasSocialPost = true
+        continue
+      }
       const described = describeEmbed(embed)
       if (described) fwdParts.push(described)
     }
@@ -153,7 +183,7 @@ function describeForwardedSnapshots(snapshots: Message['messageSnapshots'], imag
     if (fwdParts.length > 0) parts.push(`[Forwarded: ${fwdParts.join(' | ')}]`)
   }
 
-  return { parts, images }
+  return { parts, images, hasSocialPost }
 }
 
 export interface ExtractedMessageContent {
@@ -167,7 +197,8 @@ export function extractMessageContent(
   referencedMessage: Message | null,
   isReplyToBot: boolean,
   botId: string | undefined,
-  componentTextsForTrigger: string[]
+  componentTextsForTrigger: string[],
+  socialPost?: SocialPostPresentation
 ): ExtractedMessageContent {
   let content = replaceUserMentions(message, botId)
 
@@ -181,7 +212,13 @@ export function extractMessageContent(
 
   const ownParts: string[] = []
   if (componentTextsForTrigger.length > 0) ownParts.push(`[Container: ${componentTextsForTrigger.join(' | ')}]`)
+  let socialPostIncluded = false
   for (const embed of message.embeds) {
+    if (embedMatchesSocialPost(embed, socialPost)) {
+      if (!socialPostIncluded) ownParts.push(socialPost!.line)
+      socialPostIncluded = true
+      continue
+    }
     const described = describeEmbed(embed)
     if (described) ownParts.push(described)
   }
@@ -196,13 +233,19 @@ export function extractMessageContent(
 
   for (const embed of message.embeds) {
     if (imageAttachments.length >= MAX_ATTACHMENTS) break
+    if (embedMatchesSocialPost(embed, socialPost)) continue
     const embedImageUrl = embed.image?.url ?? embed.thumbnail?.url
     if (embedImageUrl) imageAttachments.push({ url: embedImageUrl, contentType: 'image/png' })
   }
 
-  const forwarded = describeForwardedSnapshots(message.messageSnapshots, MAX_ATTACHMENTS - imageAttachments.length)
+  const forwarded = describeForwardedSnapshots(
+    message.messageSnapshots,
+    MAX_ATTACHMENTS - imageAttachments.length,
+    socialPost
+  )
   ownParts.push(...forwarded.parts)
   imageAttachments.push(...forwarded.images)
+  socialPostIncluded ||= forwarded.hasSocialPost
 
   if (ownParts.length > 0) {
     content = content ? `${content}\n${ownParts.join('\n')}` : ownParts.join('\n')
@@ -219,6 +262,11 @@ export function extractMessageContent(
     if (refContent) refParts.push(refContent)
 
     for (const embed of referencedMessage.embeds) {
+      if (embedMatchesSocialPost(embed, socialPost)) {
+        if (!socialPostIncluded) refParts.push(socialPost!.line)
+        socialPostIncluded = true
+        continue
+      }
       const described = describeEmbed(embed)
       if (described) refParts.push(described)
     }
@@ -230,10 +278,12 @@ export function extractMessageContent(
 
     const forwardedRef = describeForwardedSnapshots(
       referencedMessage.messageSnapshots,
-      MAX_ATTACHMENTS - imageAttachments.length
+      MAX_ATTACHMENTS - imageAttachments.length,
+      socialPost
     )
     refParts.push(...forwardedRef.parts)
     imageAttachments.push(...forwardedRef.images)
+    socialPostIncluded ||= forwardedRef.hasSocialPost
 
     if (referencedMessage.components.length > 0) {
       const componentTexts = extractComponentTexts(referencedMessage.components)
@@ -267,6 +317,7 @@ export function extractMessageContent(
       if (imageAttachments.length < MAX_ATTACHMENTS) {
         for (const embed of referencedMessage.embeds) {
           if (imageAttachments.length >= MAX_ATTACHMENTS) break
+          if (embedMatchesSocialPost(embed, socialPost)) continue
           const embedImageUrl = embed.image?.url ?? embed.thumbnail?.url
           if (embedImageUrl) {
             imageAttachments.push({ url: embedImageUrl, contentType: 'image/png' })
@@ -274,6 +325,11 @@ export function extractMessageContent(
         }
       }
     }
+  }
+
+  if (socialPost && !socialPostIncluded) content = content ? `${content}\n${socialPost.line}` : socialPost.line
+  if (socialPost?.imageAttachment && imageAttachments.length < MAX_ATTACHMENTS) {
+    imageAttachments.push(socialPost.imageAttachment)
   }
 
   return { content, imageAttachments, unsupportedCount }

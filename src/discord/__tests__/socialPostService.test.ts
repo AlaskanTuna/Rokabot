@@ -1,0 +1,165 @@
+import { describe, expect, it, vi } from 'vitest'
+import { beginSocialPostLookup, createSocialPostViewer } from '../socialPosts/service.js'
+import { parseSocialPostUrl } from '../socialPosts/urls.js'
+
+const settings = {
+  enabled: true,
+  maxLookupsPerTurn: 1,
+  timeoutMs: 1000,
+  maxTextChars: 1500,
+  cacheTtlMs: 900_000,
+  maxCacheEntries: 2,
+  ytDlpPath: 'yt-dlp'
+}
+
+function jsonResponse(data: unknown, status = 200): Response {
+  return new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } })
+}
+
+describe('SocialPostViewer', () => {
+  it('fetches and caches one normalized X post by platform and post ID', async () => {
+    const fetcher = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) =>
+      jsonResponse({ tweet: { id: '123', text: 'post' } })
+    )
+    const viewer = createSocialPostViewer(settings, { fetcher })
+    const target = parseSocialPostUrl('https://x.com/roka/status/123')!
+
+    const first = await viewer.lookup(target)
+    const second = await viewer.lookup(target)
+
+    expect(first).toMatchObject({ status: 'found', post: { platform: 'x', id: '123', text: 'post' } })
+    expect(second).toEqual(first)
+    expect(fetcher).toHaveBeenCalledOnce()
+    expect(String(fetcher.mock.calls[0][0])).toBe('https://api.fxtwitter.com/status/123')
+  })
+
+  it('resolves Bluesky handles and requests a depth-zero post thread', async () => {
+    const fetcher = vi
+      .fn(async (_input: string | URL | Request, _init?: RequestInit) => jsonResponse({}))
+      .mockResolvedValueOnce(jsonResponse({ did: 'did:plc:abcdef123' }))
+      .mockResolvedValueOnce(jsonResponse({ thread: { post: { record: { text: 'post' } } } }))
+    const viewer = createSocialPostViewer(settings, { fetcher })
+
+    await viewer.lookup(parseSocialPostUrl('https://bsky.app/profile/roka.bsky.social/post/abc123')!)
+
+    expect(String(fetcher.mock.calls[0][0])).toBe(
+      'https://public.api.bsky.app/xrpc/com.atproto.identity.resolveHandle?handle=roka.bsky.social'
+    )
+    const threadUrl = new URL(String(fetcher.mock.calls[1][0]))
+    expect(threadUrl.origin).toBe('https://public.api.bsky.app')
+    expect(threadUrl.pathname).toBe('/xrpc/app.bsky.feed.getPostThread')
+    expect(threadUrl.searchParams.get('uri')).toBe('at://did:plc:abcdef123/app.bsky.feed.post/abc123')
+    expect(threadUrl.searchParams.get('depth')).toBe('0')
+    expect(threadUrl.searchParams.get('parentHeight')).toBe('0')
+  })
+
+  it('skips Bluesky handle resolution when the post URL already has a DID', async () => {
+    const fetcher = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) =>
+      jsonResponse({ thread: { post: { record: { text: 'post' } } } })
+    )
+    const viewer = createSocialPostViewer(settings, { fetcher })
+
+    await viewer.lookup(parseSocialPostUrl('https://bsky.app/profile/did:plc:abcdef123/post/abc123')!)
+
+    expect(fetcher).toHaveBeenCalledOnce()
+    expect(new URL(String(fetcher.mock.calls[0][0])).searchParams.get('uri')).toBe(
+      'at://did:plc:abcdef123/app.bsky.feed.post/abc123'
+    )
+  })
+
+  it('returns a platform and status reason for unavailable posts without exposing response text', async () => {
+    const fetcher = vi.fn(
+      async (_input: string | URL | Request, _init?: RequestInit) =>
+        new Response('secret token content', { status: 404 })
+    )
+    const warn = vi.fn()
+    const viewer = createSocialPostViewer(settings, { fetcher, warn })
+
+    await expect(viewer.lookup(parseSocialPostUrl('https://x.com/roka/status/123')!)).resolves.toEqual({
+      status: 'failed',
+      platform: 'x',
+      reason: 'http_404'
+    })
+    expect(warn).toHaveBeenCalledWith('x', 'http_404')
+    expect(warn.mock.calls.flat().join(' ')).not.toContain('secret')
+  })
+
+  it('does not start a network lookup when disabled', async () => {
+    const fetcher = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) => jsonResponse({}))
+    const viewer = createSocialPostViewer({ ...settings, enabled: false }, { fetcher })
+
+    await expect(viewer.lookup(parseSocialPostUrl('https://x.com/roka/status/123')!)).resolves.toEqual({
+      status: 'none'
+    })
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+
+  it('keeps X available when yt-dlp platforms are disabled at startup', async () => {
+    const fetcher = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) =>
+      jsonResponse({ tweet: { id: '123', text: 'post' } })
+    )
+    const runExtractor = vi.fn(async (_binaryPath: string, _url: string, _timeoutMs: number) => ({
+      reason: 'binary_missing'
+    }))
+    const warn = vi.fn()
+    const viewer = createSocialPostViewer(settings, { fetcher, runExtractor, warn })
+    viewer.setYtDlpAvailable(false)
+
+    await expect(viewer.lookup(parseSocialPostUrl('https://www.youtube.com/watch?v=abc_123')!)).resolves.toEqual({
+      status: 'failed',
+      platform: 'youtube',
+      reason: 'binary_missing'
+    })
+    await expect(viewer.lookup(parseSocialPostUrl('https://x.com/roka/status/123')!)).resolves.toMatchObject({
+      status: 'found',
+      post: { platform: 'x' }
+    })
+    expect(runExtractor).not.toHaveBeenCalled()
+    expect(warn).not.toHaveBeenCalled()
+  })
+
+  it('prefers current message URLs, then reply URLs, before forwarded URLs', async () => {
+    const fetcher = vi.fn(async (input: string | URL | Request, _init?: RequestInit) => {
+      const id = new URL(String(input)).pathname.split('/').at(-1)!
+      return jsonResponse({ tweet: { id, text: id } })
+    })
+    const viewer = createSocialPostViewer(settings, { fetcher })
+    const forwarded = ['https://x.com/forwarded/status/303']
+
+    await beginSocialPostLookup(
+      ['question https://x.com/current/status/101'],
+      Promise.resolve(['https://x.com/reply/status/202', ...forwarded]),
+      viewer
+    )
+    await beginSocialPostLookup(
+      ['question without a URL'],
+      Promise.resolve(['https://x.com/reply/status/202', ...forwarded]),
+      viewer
+    )
+
+    expect(String(fetcher.mock.calls[0][0])).toBe('https://api.fxtwitter.com/status/101')
+    expect(String(fetcher.mock.calls[1][0])).toBe('https://api.fxtwitter.com/status/202')
+  })
+
+  it('expires old cache entries and evicts the oldest when full', async () => {
+    let now = 0
+    const fetcher = vi.fn(async (url: string | URL | Request, _init?: RequestInit) => {
+      const id = String(url).split('/').at(-1)!
+      return jsonResponse({ tweet: { id, text: id } })
+    })
+    const viewer = createSocialPostViewer({ ...settings, cacheTtlMs: 10 }, { fetcher, now: () => now })
+    const first = parseSocialPostUrl('https://x.com/roka/status/101')!
+    const second = parseSocialPostUrl('https://x.com/roka/status/102')!
+    const third = parseSocialPostUrl('https://x.com/roka/status/103')!
+
+    await viewer.lookup(first)
+    await viewer.lookup(second)
+    await viewer.lookup(third)
+    await viewer.lookup(first)
+    await viewer.lookup(second)
+    now = 11
+    await viewer.lookup(second)
+
+    expect(fetcher).toHaveBeenCalledTimes(6)
+  })
+})

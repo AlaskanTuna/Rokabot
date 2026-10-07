@@ -51,6 +51,15 @@ discord:
   maxMessageLength: 1500 # Char limit for bot replies (effective ceiling is 4000 minus the tool-disclosure footer)
   maxInFlightAttachmentBytes: 33554432 # 32 MB ceiling on attachment bytes downloading across ALL channels at once; each byte costs ~4.7x its size in RSS, so this holds worst-case residency near 20% of the container's 1g mem_limit ; at one attachment per turn the largest turn reserves 10 MB, so three channels can download concurrently rather than one holding off the rest (see docs/multimodal.md)
 
+socialPosts:
+  enabled: true # Read X, Bluesky, YouTube, TikTok, Reddit, Instagram and Bilibili links in triggered messages
+  maxLookupsPerTurn: 1 # Linked posts opened per turn
+  timeoutMs: 6000 # Longest a turn waits for a linked post; slower lookups are skipped and noted
+  maxTextChars: 1500 # Post text, description or caption kept per post
+  cacheTtlMs: 900000 # How long an opened post is reused (15 min)
+  maxCacheEntries: 256 # Posts kept in the reuse cache
+  ytDlpPath: yt-dlp # yt-dlp binary for YouTube, TikTok, Reddit, Instagram and Bilibili
+
 memory:
   bufferSize: 30 # Max messages in passive ring buffer per channel (in-memory)
   contextSize: 10 # Max overheard messages injected into system prompt per request
