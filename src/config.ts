@@ -165,7 +165,7 @@ export const config = {
     tone: jevMode('tone', 'JEV_TONE'),
     referents: jevMode('referents', 'JEV_REFERENTS'),
     prefetch: jevMode('prefetch', 'JEV_PREFETCH'),
-    toneMinProbability: yaml.jev?.toneMinProbability ?? 0.85,
+    toneMinProbability: yaml.jev?.toneMinProbability ?? 0.3,
     prefetchMinNoul: yaml.jev?.prefetchMinNoul ?? 0.7,
     prefetchWaitMs: yaml.jev?.prefetchWaitMs ?? 4000,
     referentMinConfidence: yaml.jev?.referentMinConfidence ?? 0.8

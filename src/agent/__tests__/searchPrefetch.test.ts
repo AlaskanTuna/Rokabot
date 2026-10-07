@@ -10,6 +10,7 @@ vi.mock('../../utils/logger.js', () => ({ logger: { info: mocks.info, warn: mock
 vi.mock('../tools/searchWeb.js', () => ({ searchWeb: mocks.searchWeb }))
 
 import type { TurnJudgment } from '../jev/judgments.js'
+import { CORE_PROMPT } from '../prompts/core.js'
 import {
   buildLookedUpBlock,
   decidePrefetch,
@@ -172,6 +173,16 @@ describe('buildLookedUpBlock', () => {
     expect(block).toContain('It premiered in January.')
     expect(block).toContain('https://example.com/2')
     expect(block).not.toContain('https://example.com/3')
+  })
+
+  // The core prompt's looked-up rules are worded for a turn that called search_web; a prefetched turn may
+  // not, so the block has to claim them by the heading's exact name.
+  it('claims the core prompt looked-up rules by their heading', () => {
+    const block = buildLookedUpBlock({ status: 'ready', text: 'It premiered in January.', sources: [] })
+    const heading = "When You've Looked Something Up"
+
+    expect(CORE_PROMPT).toContain(`### ${heading}`)
+    expect(block).toContain(`"${heading}" rules apply`)
   })
 
   it('bounds each source line and the whole block', () => {

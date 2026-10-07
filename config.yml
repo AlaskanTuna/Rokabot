@@ -6,10 +6,10 @@ jev:
   model: jev-1.13.0 # Pinned Jev version; thresholds are tuned against one version, and the jev-latest alias moves
   timeoutMs: 1200 # Deadline for the in-reply judgment (Pi median ~0.5s); one attempt, no retries
   memoryTimeoutMs: 5000 # Deadline for background memory admission and verification judgments
-  tone: shadow # off | shadow (ask Jev and log, change nothing) | on (Jev picks the tone)
+  tone: on # off | shadow (ask Jev and log, change nothing) | on (Jev picks the tone)
   referents: shadow # off | shadow | on (Jev settles names the resolver found ambiguous)
-  prefetch: shadow # off | shadow (ask Jev, log and persist what it would have prefetched, change nothing) | on (search ahead of the first Gemini call when the noul clears the threshold)
-  toneMinProbability: 0.85 # Selected-choice probability (0..1) from the replay sweep; keep tone shadow if replay support fails
+  prefetch: shadow # off | shadow (ask Jev, log and persist what it would have prefetched, change nothing) | on (search ahead of the first Gemini call when the noul clears the threshold); stays shadow because a live A/B lost recall and latency (docs/runbook.md)
+  toneMinProbability: 0.3 # Selected-choice probability (0..1) below which the regex tone stays; on 163 labeled production turns Jev matched or beat the regex in every band from 0.3 up (docs/runbook.md)
   prefetchMinNoul: 0.7 # In on mode, the needs_lookup probability at or above which a Tavily search starts at handler entry
   prefetchWaitMs: 4000 # How long the first Gemini call waits for a started prefetch before answering without it; a slower or failed search costs the turn at most this much
   referentMinConfidence: 0.8 # In on mode, below this confidence an ambiguous name stays unresolved

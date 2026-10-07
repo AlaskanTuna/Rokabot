@@ -457,8 +457,9 @@ controlled with `JEV_PREFETCH`:
 - **Turn Judgment:** at most one `judgeTurn` request per turn, carrying a tone `choice` over the 12 `ToneKey`s and a
   referent `choice` for each name `resolveReferences` found ambiguous (at most 3 names, 8 candidates each, plus
   `none`/`unclear`). It receives at most three prior lines from `session_history` and is bounded by `jev.timeoutMs`
-  (1200 ms). An `on` tone uses selected-choice probability threshold `jev.toneMinProbability`; a missing probability
-  keeps the rule tone. An `on` referent uses `jev.referentMinConfidence` and joins the retrieval participants after
+  (1200 ms). `jev.tone` ships `on`: Jev's tone replaces the rule tone when its selected-choice probability is at least
+  `jev.toneMinProbability` (0.3, from labeled production turns; see `docs/runbook.md`); a missing probability keeps the
+  rule tone. An `on` referent uses `jev.referentMinConfidence` and joins the retrieval participants after
   the resolver's members, with a `## Who Is Mentioned` line. The safety rung-3 `sincere` prompt overrides any tone.
 - **Lookup Judgment:** when `jev.prefetch` is not `off`, the same request includes a `needs_lookup` `noul` asking
   whether the message needs a specific, niche, recent or real-world fact. It is returned as `TurnJudgment.needsLookup`;
@@ -475,15 +476,16 @@ controlled with `JEV_PREFETCH`:
   admission answer drops the episode before Gemini extraction; incomplete verification blocks removals and marks
   allowed additions or updates for review.
 - **Replay Comparator:** `npm run replay:jev -- data/rokabot.db --max-turns 100` compares Jev tone labels with the
-  regex tone on retained history and transcript fixtures, including CJK turns. Regex agreement is a tuning comparator,
-  not ground-truth accuracy; the cutoff support rule also checks CJK agreement before tone can turn on.
+  regex tone on retained history and transcript fixtures, including CJK turns. Regex agreement is a comparator, not
+  accuracy; the tone threshold is chosen against blind labels of which moods fit each production turn.
 - **Event Recording:** admission and verification judgments are recorded in `jev_events` with question key, answer,
   probability, confidence, `applied`, latency and input-token count. Source messages are not stored in this table.
   `memory.admitThreshold` and `memory.verifyThreshold` are the memory thresholds; there is no Jev extraction mode.
 
 ### Search Prefetch
 
-`jev.prefetch` defaults to `shadow`. `off` omits the lookup question; `shadow` asks it and records whether it crossed
+`jev.prefetch` ships `shadow`; a live A/B on the search tool-trigger cases (`npm run measure:prefetch`) lost recall and
+latency in `on` mode (see `docs/runbook.md`). `off` omits the lookup question; `shadow` asks it and records whether it crossed
 the threshold without searching; `on` starts a Tavily search when `needsLookup` is at least `jev.prefetchMinNoul`.
 The default threshold is `0.7`, and the maximum wait before the first model request proceeds without results is
 `jev.prefetchWaitMs` (4000 ms).
@@ -495,7 +497,8 @@ Gemini RPM slot. Rejected turns cancel the shared work; if a Tavily request is a
 passed through to its fetch.
 
 A successful result is injected into the first model system prompt in a `## Looked It Up` block, capped at 2000
-characters. The existing lookup-answer instructions in `src/agent/prompts/core.ts` apply, including the direction to
+characters. The block names the "When You've Looked Something Up" rules in `src/agent/prompts/core.ts`, which are worded
+for a turn that called `search_web`, so they apply, including the direction to
 call `search_web` again if the results are thin or off-topic. The normal search citation footer uses the prefetched
 URLs; a later model-issued search replaces that citation list. A prefetched result counts `search_web` in `toolsUsed`,
 once even if Gemini also calls the tool. The tool remains registered in all modes. Empty, failed, aborted, canceled or
