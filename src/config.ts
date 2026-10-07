@@ -51,6 +51,15 @@ interface YamlConfig {
   rateLimit?: { rpm?: number; rpd?: number }
   session?: { ttl?: number; windowSize?: number; maxRehydrationAge?: number; historyRetentionDays?: number }
   discord?: { maxMessageLength?: number; maxInFlightAttachmentBytes?: number }
+  socialPosts?: {
+    enabled?: boolean
+    maxLookupsPerTurn?: number
+    timeoutMs?: number
+    maxTextChars?: number
+    cacheTtlMs?: number
+    maxCacheEntries?: number
+    ytDlpPath?: string
+  }
   memory?: {
     bufferSize?: number
     contextSize?: number
@@ -134,6 +143,14 @@ function envString(key: string): string | undefined {
   return process.env[key] || undefined
 }
 
+function envBoolean(key: string): boolean | undefined {
+  const raw = process.env[key]?.trim().toLowerCase()
+  if (!raw) return undefined
+  if (raw === 'true') return true
+  if (raw === 'false') return false
+  throw new Error(`Environment variable ${key} must be true or false`)
+}
+
 export type JevMode = 'off' | 'shadow' | 'on'
 
 function jevMode(key: 'tone' | 'referents' | 'prefetch', envKey: string): JevMode {
@@ -170,6 +187,15 @@ export const config = {
     maxMessageLength: envInt('DISCORD_MAX_MESSAGE_LENGTH') ?? yaml.discord?.maxMessageLength ?? 2000,
     maxInFlightAttachmentBytes:
       envInt('DISCORD_MAX_INFLIGHT_ATTACHMENT_BYTES') ?? yaml.discord?.maxInFlightAttachmentBytes ?? 33_554_432
+  },
+  socialPosts: {
+    enabled: envBoolean('SOCIAL_POSTS_ENABLED') ?? yaml.socialPosts?.enabled ?? true,
+    maxLookupsPerTurn: yaml.socialPosts?.maxLookupsPerTurn ?? 1,
+    timeoutMs: yaml.socialPosts?.timeoutMs ?? 6000,
+    maxTextChars: yaml.socialPosts?.maxTextChars ?? 1500,
+    cacheTtlMs: yaml.socialPosts?.cacheTtlMs ?? 900_000,
+    maxCacheEntries: yaml.socialPosts?.maxCacheEntries ?? 256,
+    ytDlpPath: yaml.socialPosts?.ytDlpPath ?? 'yt-dlp'
   },
   gemini: {
     apiKey: requiredEnv('GEMINI_API_KEY'),
@@ -279,6 +305,11 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'jev.prefetchWaitMs', value: config.jev.prefetchWaitMs, min: 0 },
   { path: 'jev.referentMinConfidence', value: config.jev.referentMinConfidence, min: 0, max: 1 },
   { path: 'gemini.timeout', value: config.gemini.timeout, min: 1 },
+  { path: 'socialPosts.maxLookupsPerTurn', value: config.socialPosts.maxLookupsPerTurn, min: 1, max: 1 },
+  { path: 'socialPosts.timeoutMs', value: config.socialPosts.timeoutMs, min: 1, max: 30_000 },
+  { path: 'socialPosts.maxTextChars', value: config.socialPosts.maxTextChars, min: 1, max: 10_000 },
+  { path: 'socialPosts.cacheTtlMs', value: config.socialPosts.cacheTtlMs, min: 0 },
+  { path: 'socialPosts.maxCacheEntries', value: config.socialPosts.maxCacheEntries, min: 1, max: 10_000 },
   { path: 'gemini.maxOutputTokens', value: config.gemini.maxOutputTokens, min: 1 },
   // Floor is a full turn of plain images, derived rather than restated: below it a maximal image turn could
   // be refused,

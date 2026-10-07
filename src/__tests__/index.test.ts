@@ -37,6 +37,7 @@ vi.mock('../discord/client.js', () => ({
 vi.mock('../config.js', () => ({
   config: {
     discord: { token: 'token' },
+    socialPosts: { enabled: false, ytDlpPath: 'yt-dlp' },
     jev: { apiKey: undefined },
     memory: { claimRetentionDays: 90, episodeRetentionDays: 90 },
     metrics: { retentionDays: 90 },

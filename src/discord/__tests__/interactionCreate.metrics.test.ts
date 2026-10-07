@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { SocialPostLookup } from '../socialPosts/types.js'
 
 const mocks = vi.hoisted(() => ({
   generateResponse: vi.fn(),
@@ -16,7 +17,16 @@ const mocks = vi.hoisted(() => ({
   isChannelBusy: vi.fn(() => false),
   canAffordAttachments: vi.fn(() => true),
   tryReserve: vi.fn(() => true),
-  release: vi.fn()
+  release: vi.fn(),
+  beginSocialPostLookup: vi.fn((_texts: string[], _later: Promise<string[]>) =>
+    Promise.resolve({ status: 'none' } as SocialPostLookup)
+  ),
+  resolveMediaUrl: vi.fn(
+    async (url: string): Promise<{ url: string; contentType: string; size?: number } | null> => ({
+      url,
+      contentType: 'image/jpeg'
+    })
+  )
 }))
 
 // The URL guard resolves a hostname before connecting, so without this a linked-image test fails closed on
@@ -40,6 +50,12 @@ vi.mock('../byteBudget.js', () => ({
   reservationFor: vi.fn(() => 0),
   tryReserve: mocks.tryReserve
 }))
+vi.mock('../attachments.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../attachments.js')>()
+  mocks.resolveMediaUrl.mockImplementation(actual.resolveMediaUrl)
+  return { ...actual, resolveMediaUrl: mocks.resolveMediaUrl }
+})
+vi.mock('../socialPosts/service.js', () => ({ beginSocialPostLookup: mocks.beginSocialPostLookup }))
 vi.mock('../errorHandler.js', () => ({ isIgnorableDiscordError: () => false }))
 vi.mock('../responses.js', () => ({
   escapeBackticks: (text: string) => text.replace(/\\?`/g, '\\`'),
@@ -59,6 +75,7 @@ import { config } from '../../config.js'
 import { RateLimiter } from '../../utils/rateLimiter.js'
 import { MAX_ATTACHMENTS, attachmentOptionName } from '../attachments.js'
 import { createInteractionHandler } from '../events/interactionCreate.js'
+import { parseSocialPostUrl } from '../socialPosts/urls.js'
 import { assertTurnEntryRejections } from './turnEntryRejections.js'
 
 const metrics = {
@@ -80,6 +97,7 @@ function resetInteractionMocks() {
   mocks.isChannelBusy.mockReturnValue(false)
   mocks.canAffordAttachments.mockReturnValue(true)
   mocks.tryReserve.mockReturnValue(true)
+  mocks.beginSocialPostLookup.mockResolvedValue({ status: 'none' })
   mocks.startTurnEntryWork.mockReturnValue(turnEntryWork)
   mocks.generateResponse.mockResolvedValue({
     text: 'Hello~',
@@ -175,6 +193,29 @@ describe('interaction handler metrics', () => {
   const PDF_DOC = { url: 'https://cdn.test/notes.pdf', contentType: 'application/pdf' }
   const UNREADABLE = { url: 'https://cdn.test/a.zip', contentType: 'application/zip' }
   const rateLimiterStub = () => new RateLimiter({ rpm: 1_000, rpd: 100_000 })
+  const socialTarget = parseSocialPostUrl('https://x.com/roka/status/123')!
+
+  function foundSocialPost(imageUrl: string | null = null) {
+    return {
+      status: 'found' as const,
+      post: {
+        platform: 'x' as const,
+        id: socialTarget.id,
+        canonicalUrl: socialTarget.canonicalUrl,
+        target: socialTarget,
+        authorHandle: 'roka',
+        authorName: 'Roka',
+        createdAt: '2026-10-06',
+        text: 'The linked post text',
+        quotedText: '',
+        quotedAuthorHandle: '',
+        photoCount: imageUrl ? 1 : 0,
+        videoCount: 0,
+        imageUrl,
+        externalTitle: ''
+      }
+    }
+  }
 
   it('cancels speculative Jev work on each pre-generation rejection', async () => {
     await assertTurnEntryRejections(async (rejection) => {
@@ -222,6 +263,42 @@ describe('interaction handler metrics', () => {
 
     expect(mocks.startTurnEntryWork).toHaveBeenCalledWith(expect.objectContaining({ message: question }))
     expect(mocks.generateResponse.mock.calls[0][0].userMessage).toBe(question)
+  })
+
+  it('opens a social URL in the /ask question before building model input', async () => {
+    const question = 'What is in this post? https://x.com/roka/status/123'
+    mocks.beginSocialPostLookup.mockResolvedValueOnce(foundSocialPost())
+    const interaction = askWith([], undefined, question)
+
+    await createInteractionHandler(rateLimiterStub() as never)(interaction as never)
+
+    expect(mocks.beginSocialPostLookup.mock.calls[0][0]).toContain(question)
+    expect(mocks.generateResponse.mock.calls[0][0].userMessage).toContain(
+      '[Linked post — X @roka (Roka), 2026-10-06: "The linked post text"'
+    )
+  })
+
+  it('recognizes a social post in the /ask URL option and uses its image through the attachment path', async () => {
+    mocks.beginSocialPostLookup.mockResolvedValueOnce(foundSocialPost('https://pbs.twimg.com/post.jpg'))
+    mocks.resolveMediaUrl.mockResolvedValueOnce({ url: 'https://pbs.twimg.com/post.jpg', contentType: 'image/jpeg' })
+    const interaction = askWith([], 'https://vxtwitter.com/roka/status/123')
+
+    await createInteractionHandler(rateLimiterStub() as never)(interaction as never)
+
+    expect(mocks.beginSocialPostLookup.mock.calls[0][0]).toContain('https://vxtwitter.com/roka/status/123')
+    expect(mocks.resolveMediaUrl).toHaveBeenCalledWith('https://pbs.twimg.com/post.jpg')
+    expect(mocks.generateResponse.mock.calls[0][0].imageAttachments).toEqual([
+      { url: 'https://pbs.twimg.com/post.jpg', contentType: 'image/jpeg' }
+    ])
+  })
+
+  it('marks a supported /ask post link when it could not be opened', async () => {
+    mocks.beginSocialPostLookup.mockResolvedValueOnce({ status: 'failed', platform: 'x', reason: 'http_404' })
+    const interaction = askWith([], undefined, 'What is this? https://x.com/roka/status/123')
+
+    await createInteractionHandler(rateLimiterStub() as never)(interaction as never)
+
+    expect(mocks.generateResponse.mock.calls[0][0].userMessage).toContain('(the linked post could not be opened)')
   })
 
   // Offers one more than the ceiling admits, so the assertion is non-vacuous at any MAX_ATTACHMENTS: it

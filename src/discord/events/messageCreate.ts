@@ -11,6 +11,7 @@ import { type ResponseEventInput, recordResponseEvent } from '../../storage/metr
 import { upsertUserName } from '../../storage/userNames.js'
 import { logger } from '../../utils/logger.js'
 import { RateLimiter } from '../../utils/rateLimiter.js'
+import { MAX_ATTACHMENTS, resolveMediaUrl } from '../attachments.js'
 import { release, reservationFor, tryReserve } from '../byteBudget.js'
 import { isChannelBusy, markBusy, markFree } from '../concurrency.js'
 import { shouldReact } from '../emojiReactor.js'
@@ -32,6 +33,9 @@ import {
   getRandomUnsupportedAttachment,
   splitResponse
 } from '../responses.js'
+import { SOCIAL_POST_FAILURE_MARKER, formatSocialPostLine } from '../socialPosts/format.js'
+import { beginSocialPostLookup, socialPostSnapshotTexts, socialPostTexts } from '../socialPosts/service.js'
+import { findSocialPostTarget } from '../socialPosts/urls.js'
 import { handleGachaMention } from './gachaMention.js'
 
 /** Whole-word, case-insensitive match for the bot's name as a trigger keyword */
@@ -91,6 +95,22 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
         ? message.channel.messages.fetch(message.reference.messageId).catch(() => null)
         : Promise.resolve(null)
     const isReplyCandidate = !isBotAuthor && Boolean(message.reference?.messageId) && !replyKnownNotBot
+    const currentSocialTexts = socialPostTexts(message)
+    const forwardedSocialTexts = socialPostSnapshotTexts(message)
+    const hasSocialPostUrl = [...currentSocialTexts, ...forwardedSocialTexts].some((text) => findSocialPostTarget(text))
+    const socialPostWork =
+      config.socialPosts.enabled &&
+      (isMentioned || isNameMention || isReplyCandidate) &&
+      (hasSocialPostUrl || isReplyCandidate)
+        ? beginSocialPostLookup(
+            currentSocialTexts,
+            replyFetch.then((referencedMessage) => [
+              ...(referencedMessage ? socialPostTexts(referencedMessage) : []),
+              ...socialPostSnapshotTexts(message),
+              ...(referencedMessage ? socialPostSnapshotTexts(referencedMessage) : [])
+            ])
+          )
+        : null
     let turnEntryWork: ReturnType<typeof startTurnEntryWork> | undefined
     if (isMentioned || isNameMention || isReplyCandidate) {
       const currentMessage = extractCurrentMessageContent(message, client.user.id, componentTextsForTrigger)
@@ -199,6 +219,40 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
             ;(message.channel as { sendTyping: () => Promise<void> }).sendTyping().catch(() => {})
           }, 7000)
         : null
+
+    const socialPostResult = socialPostWork ? await socialPostWork : { status: 'none' as const }
+    if (socialPostResult.status === 'found') {
+      const presentation = {
+        target: socialPostResult.post.target,
+        line: formatSocialPostLine(socialPostResult.post, config.socialPosts.maxTextChars)
+      }
+      let enriched = extractMessageContent(
+        message,
+        referencedMessage,
+        isReplyToBot,
+        client.user.id,
+        componentTextsForTrigger,
+        presentation
+      )
+      if (socialPostResult.post.imageUrl && enriched.imageAttachments.length < MAX_ATTACHMENTS) {
+        const imageAttachment = await resolveMediaUrl(socialPostResult.post.imageUrl).catch(() => null)
+        if (imageAttachment) {
+          enriched = extractMessageContent(
+            message,
+            referencedMessage,
+            isReplyToBot,
+            client.user.id,
+            componentTextsForTrigger,
+            { ...presentation, imageAttachment }
+          )
+        }
+      }
+      content = enriched.content
+      imageAttachments = enriched.imageAttachments
+      unsupportedCount = enriched.unsupportedCount
+    } else if (socialPostResult.status === 'failed') {
+      content = content ? `${content}\n${SOCIAL_POST_FAILURE_MARKER}` : SOCIAL_POST_FAILURE_MARKER
+    }
 
     // Attachment token cost is independent of the byte and call budgets.
     if (imageAttachments.length > 0 && !canAffordAttachments()) {

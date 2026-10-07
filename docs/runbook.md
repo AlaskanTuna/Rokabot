@@ -127,6 +127,16 @@ cd ~/rokabot && sudo docker compose build --no-cache && sudo docker compose up -
 
 ---
 
+## Social Post Viewing
+
+The runtime image includes the official yt-dlp musl onedir build (`yt-dlp_musllinux_aarch64.zip` on the Pi, `yt-dlp_musllinux.zip` on amd64), unpacked to `/opt/yt-dlp` and linked as `/usr/local/bin/yt-dlp`. The single-file build is avoided because it unpacks itself on every run, which cost the Pi 0.6-1.4 s per lookup (YouTube metadata: 3.5 s single-file, 2.1 s onedir). To update it, check the latest stable release at the [yt-dlp releases page](https://github.com/yt-dlp/yt-dlp/releases), then update `YTDLP_VERSION`, `YTDLP_AMD64_SHA256`, and `YTDLP_ARM64_SHA256` in `Dockerfile` with the `.zip` entries from that release's `SHA2-256SUMS`; the image build verifies both the checksum-file entry and the downloaded zip. Rebuild and deploy the image through the normal release process.
+
+To disable social post viewing, set `SOCIAL_POSTS_ENABLED=false` in the bot container environment. The bot keeps its existing embed and attachment behavior. X and Bluesky use public APIs; disabling yt-dlp at startup leaves those two platforms available.
+
+Lookup failures are logged as `Social post lookup failed` with only `platform` and `reason`. If yt-dlp is absent during startup, the log says `Social video extractors disabled` with reason `binary_missing`; YouTube, TikTok, Reddit, Instagram, and Bilibili lookups then receive the normal “could not be opened” marker.
+
+---
+
 ## Services
 
 ```bash

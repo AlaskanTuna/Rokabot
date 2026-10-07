@@ -37,6 +37,7 @@ import { config } from './config.js'
 import { createClient } from './discord/client.js'
 import { cleanupExpiredCooldowns } from './discord/emojiReactor.js'
 import { startReminderScheduler, stopReminderScheduler } from './discord/reminderScheduler.js'
+import { initializeSocialPosts } from './discord/socialPosts/service.js'
 import { stopStatusCycler } from './discord/statusCycler.js'
 import { destroyAllGames as destroyAllShiritoriGames } from './games/shiritori.js'
 import { closeDb, getDb } from './storage/database.js'
@@ -44,6 +45,8 @@ import { resetStuckProcessing } from './storage/extractionQueue.js'
 import { pruneFailureDiagnostics, pruneOldMetrics } from './storage/metricsStore.js'
 import { pruneOldHistory } from './storage/sessionStore.js'
 import { logger } from './utils/logger.js'
+
+await initializeSocialPosts()
 
 const client = createClient()
 let claimPruneTimer: ReturnType<typeof setInterval> | undefined
