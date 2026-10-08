@@ -83,6 +83,7 @@ describe('config module', () => {
     vi.stubEnv('MEMORY_SPEAKER_MIN_SHARE', '')
     vi.stubEnv('MEMORY_MAX_ACTIVE_CLAIMS_PER_USER', '')
     vi.stubEnv('MEMORY_CLAIM_RETENTION_DAYS', '')
+    vi.stubEnv('MEMORY_FAILED_EXTRACTION_RETENTION_DAYS', '')
     vi.stubEnv('MEMORY_VAULT_EXPORT_DIR', '')
     vi.stubEnv('MEMORY_PRIVACY', '')
     vi.stubEnv('MEMORY_RECALL', '')
@@ -238,6 +239,7 @@ describe('config module', () => {
     expect(config.memory.maxActiveClaimsPerUser).toBe(20)
     expect(config.memory.stableClaimRetentionDays).toBe(180)
     expect(config.memory.claimRetentionDays).toBe(30)
+    expect(config.memory.failedExtractionRetentionDays).toBe(7)
     expect(config.memory.transientClaimRetentionDays).toBe(14)
     expect(config.memory.deadClaimRetentionDays).toBe(30)
     expect(config.memory.salienceHalfLifeDays).toBe(30)
@@ -989,6 +991,7 @@ describe('config module', () => {
       { path: 'memory.maxActiveClaimsPerUser', min: 1 },
       { path: 'memory.stableClaimRetentionDays', min: 1 },
       { path: 'memory.claimRetentionDays', min: 1 },
+      { path: 'memory.failedExtractionRetentionDays', min: 1 },
       { path: 'memory.transientClaimRetentionDays', min: 1 },
       { path: 'memory.deadClaimRetentionDays', min: 1 },
       { path: 'memory.salienceHalfLifeDays', min: 1 },
@@ -1051,11 +1054,13 @@ describe('config module', () => {
     clearTunableEnvVars()
     vi.stubEnv('MEMORY_PRIVACY', 'balanced')
     vi.stubEnv('MEMORY_RECALL', 'unified')
+    vi.stubEnv('MEMORY_FAILED_EXTRACTION_RETENTION_DAYS', '21')
 
     const { config } = await import('../config.js')
 
     expect(config.memory.privacy).toBe('balanced')
     expect(config.memory.recall).toBe('unified')
+    expect(config.memory.failedExtractionRetentionDays).toBe(21)
   })
 
   it('throws when the env memory privacy level is invalid and names the env key', async () => {

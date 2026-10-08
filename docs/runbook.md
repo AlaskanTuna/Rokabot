@@ -518,9 +518,12 @@ sqlite3 ~/rokabot/data/rokabot.db "SELECT guild_id, subject_kind, subject_user_i
   FROM memory_claim WHERE status='active' GROUP BY guild_id, subject_kind, subject_user_id
   ORDER BY active_claims DESC;"
 
-# Queue backlog by status; failed rows are retained for inspection
+# Queue backlog by status; failed rows are retained until the expiry window
 sqlite3 ~/rokabot/data/rokabot.db 'SELECT status, COUNT(*) AS jobs FROM extraction_queue GROUP BY status;'
 ```
+
+Failed extraction payloads are deleted at startup and during daily maintenance after they are older than
+`memory.failedExtractionRetentionDays` (7 days by default, measured from `enqueued_at`).
 
 Use the bot's `forget_user` tool to retract a claim. It sets `status='rejected'`, `ended_at`, and
 `end_reason='forgotten'`; the claim and evidence remain for `memory.deadClaimRetentionDays` (30 days) before the next

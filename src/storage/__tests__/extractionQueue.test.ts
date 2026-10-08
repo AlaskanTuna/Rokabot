@@ -11,9 +11,11 @@ import {
   MAX_EXTRACTION_QUEUE_ATTEMPTS,
   claimNextForGuild,
   enqueueEpisode,
+  getNextPendingAvailableAt,
   listGuildsWithPending,
   markDone,
   markFailed,
+  pruneFailedExtractionJobs,
   resetStuckProcessing
 } from '../extractionQueue.js'
 import type { ExtractionEpisode } from '../extractionQueue.js'
@@ -30,7 +32,9 @@ function createTestDb(path = ':memory:'): Database.Database {
       payload TEXT NOT NULL,
       status TEXT NOT NULL,
       attempts INTEGER NOT NULL DEFAULT 0,
-      enqueued_at INTEGER NOT NULL
+      enqueued_at INTEGER NOT NULL,
+      available_at INTEGER NOT NULL DEFAULT 0,
+      transient_retries INTEGER NOT NULL DEFAULT 0
     );
   `)
   return db
@@ -88,14 +92,93 @@ describe('extractionQueue', () => {
     const job = enqueueEpisode({ guildId: 'g-1', channelId: 'c-1', episode: episodeFor('retry') })
 
     claimNextForGuild('g-1')
-    expect(markFailed(job.id)).toBe('pending')
+    expect(markFailed(job.id)).toMatchObject({ status: 'pending', scheduledDelayMs: 0 })
     claimNextForGuild('g-1')
-    expect(markFailed(job.id)).toBe('failed')
+    expect(markFailed(job.id)).toMatchObject({ status: 'failed', scheduledDelayMs: 0 })
     expect(MAX_EXTRACTION_QUEUE_ATTEMPTS).toBe(2)
     expect(testDb.prepare('SELECT status, attempts FROM extraction_queue WHERE id = ?').get(job.id)).toEqual({
       status: 'failed',
       attempts: 2
     })
+  })
+
+  it('backs off transient failures without increasing ordinary attempts', () => {
+    let now = 1_000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    const job = enqueueEpisode({ guildId: 'g-1', channelId: 'c-1', episode: episodeFor('transient') })
+
+    claimNextForGuild('g-1')
+    expect(markFailed(job.id, 'transient')).toMatchObject({ status: 'pending', scheduledDelayMs: 60_000 })
+    expect(
+      testDb.prepare('SELECT attempts, transient_retries, available_at FROM extraction_queue WHERE id = ?').get(job.id)
+    ).toEqual({
+      attempts: 0,
+      transient_retries: 1,
+      available_at: 61_000
+    })
+    expect(listGuildsWithPending()).toEqual([])
+    expect(claimNextForGuild('g-1')).toBeUndefined()
+
+    now += 60_000
+    claimNextForGuild('g-1')
+    expect(markFailed(job.id, 'transient')).toMatchObject({ status: 'pending', scheduledDelayMs: 300_000 })
+    expect(
+      testDb.prepare('SELECT attempts, transient_retries, available_at FROM extraction_queue WHERE id = ?').get(job.id)
+    ).toEqual({
+      attempts: 0,
+      transient_retries: 2,
+      available_at: 361_000
+    })
+  })
+
+  it('counts transient errors as ordinary failures after four delayed retries', () => {
+    let now = 1_000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    const job = enqueueEpisode({ guildId: 'g-1', channelId: 'c-1', episode: episodeFor('exhausted') })
+    const delays = [60_000, 300_000, 1_200_000, 3_600_000]
+
+    for (const delay of delays) {
+      expect(claimNextForGuild('g-1')).toBeDefined()
+      expect(markFailed(job.id, 'transient')).toMatchObject({ status: 'pending', scheduledDelayMs: delay })
+      now += delay
+    }
+
+    expect(claimNextForGuild('g-1')).toBeDefined()
+    expect(markFailed(job.id, 'transient')).toMatchObject({ status: 'pending', scheduledDelayMs: 0 })
+    expect(
+      testDb.prepare('SELECT attempts, transient_retries, available_at FROM extraction_queue WHERE id = ?').get(job.id)
+    ).toEqual({
+      attempts: 1,
+      transient_retries: 4,
+      available_at: 0
+    })
+
+    expect(claimNextForGuild('g-1')).toBeDefined()
+    expect(markFailed(job.id, 'transient')).toMatchObject({ status: 'failed', scheduledDelayMs: 0 })
+    expect(
+      testDb.prepare('SELECT attempts, transient_retries, status FROM extraction_queue WHERE id = ?').get(job.id)
+    ).toEqual({
+      attempts: 2,
+      transient_retries: 4,
+      status: 'failed'
+    })
+  })
+
+  it('skips jobs that are not yet available while keeping ready jobs oldest-first', () => {
+    let now = 1_000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    const delayed = enqueueEpisode({ guildId: 'guild-1', channelId: 'channel-1', episode: episodeFor('delayed') })
+    const ready = enqueueEpisode({ guildId: 'guild-1', channelId: 'channel-1', episode: episodeFor('ready') })
+    testDb.prepare('UPDATE extraction_queue SET available_at = ? WHERE id = ?').run(2_000, delayed.id)
+
+    expect(listGuildsWithPending()).toEqual(['guild-1'])
+    expect(getNextPendingAvailableAt()).toBe(2_000)
+    expect(claimNextForGuild('guild-1')?.id).toBe(ready.id)
+    expect(claimNextForGuild('guild-1')).toBeUndefined()
+
+    now = 2_000
+    expect(listGuildsWithPending()).toEqual(['guild-1'])
+    expect(claimNextForGuild('guild-1')?.id).toBe(delayed.id)
   })
 
   it('does not evict older episodes when the queue grows', () => {
@@ -124,7 +207,7 @@ describe('extractionQueue', () => {
     const job = enqueueEpisode({ guildId: 'guild-1', channelId: 'channel-1', episode: episodeFor('recent') })
 
     claimNextForGuild('guild-1')
-    expect(markFailed(job.id)).toBe('pending')
+    expect(markFailed(job.id)).toMatchObject({ status: 'pending', scheduledDelayMs: 0 })
     claimNextForGuild('guild-1')
     now += 1_000
 
@@ -133,6 +216,48 @@ describe('extractionQueue', () => {
       status: 'pending',
       attempts: 1
     })
+  })
+
+  it('preserves delayed retry time and transient retries when resetting processing jobs', () => {
+    const job = enqueueEpisode({ guildId: 'guild-1', channelId: 'channel-1', episode: episodeFor('stuck retry') })
+    testDb
+      .prepare(
+        "UPDATE extraction_queue SET status = 'processing', available_at = ?, transient_retries = ? WHERE id = ?"
+      )
+      .run(10_000, 3, job.id)
+
+    expect(resetStuckProcessing()).toBe(1)
+    expect(
+      testDb.prepare('SELECT status, available_at, transient_retries FROM extraction_queue WHERE id = ?').get(job.id)
+    ).toEqual({ status: 'pending', available_at: 10_000, transient_retries: 3 })
+  })
+
+  it('expires only failed jobs older than the retention window', () => {
+    const cutoff = 10_000
+    const oldFailed = enqueueEpisode({ guildId: 'guild-1', channelId: 'channel-1', episode: episodeFor('old failed') })
+    const recentFailed = enqueueEpisode({
+      guildId: 'guild-1',
+      channelId: 'channel-1',
+      episode: episodeFor('recent failed')
+    })
+    const oldPending = enqueueEpisode({
+      guildId: 'guild-1',
+      channelId: 'channel-1',
+      episode: episodeFor('old pending')
+    })
+    testDb
+      .prepare("UPDATE extraction_queue SET status = 'failed', enqueued_at = ? WHERE id = ?")
+      .run(cutoff - 1, oldFailed.id)
+    testDb
+      .prepare("UPDATE extraction_queue SET status = 'failed', enqueued_at = ? WHERE id = ?")
+      .run(cutoff, recentFailed.id)
+    testDb.prepare('UPDATE extraction_queue SET enqueued_at = ? WHERE id = ?').run(cutoff - 100_000, oldPending.id)
+
+    expect(pruneFailedExtractionJobs(7, cutoff + 7 * 24 * 60 * 60 * 1000)).toBe(1)
+    expect(testDb.prepare('SELECT id FROM extraction_queue ORDER BY id').all()).toEqual([
+      { id: recentFailed.id },
+      { id: oldPending.id }
+    ])
   })
 
   it('preserves an episode payload across database close and reopen', () => {

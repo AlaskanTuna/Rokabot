@@ -86,6 +86,7 @@ interface YamlConfig {
     maxActiveClaimsPerUser?: number
     stableClaimRetentionDays?: number
     claimRetentionDays?: number
+    failedExtractionRetentionDays?: number
     transientClaimRetentionDays?: number
     deadClaimRetentionDays?: number
     salienceHalfLifeDays?: number
@@ -321,6 +322,8 @@ export const config = {
     maxActiveClaimsPerUser: envInt('MEMORY_MAX_ACTIVE_CLAIMS_PER_USER') ?? yaml.memory?.maxActiveClaimsPerUser ?? 20,
     stableClaimRetentionDays: yaml.memory?.stableClaimRetentionDays ?? 180,
     claimRetentionDays: envInt('MEMORY_CLAIM_RETENTION_DAYS') ?? yaml.memory?.claimRetentionDays ?? 30,
+    failedExtractionRetentionDays:
+      envInt('MEMORY_FAILED_EXTRACTION_RETENTION_DAYS') ?? yaml.memory?.failedExtractionRetentionDays ?? 7,
     transientClaimRetentionDays: yaml.memory?.transientClaimRetentionDays ?? 14,
     deadClaimRetentionDays: yaml.memory?.deadClaimRetentionDays ?? 30,
     salienceHalfLifeDays: yaml.memory?.salienceHalfLifeDays ?? 30,
@@ -486,6 +489,7 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'memory.maxActiveClaimsPerUser', value: config.memory.maxActiveClaimsPerUser, min: 1 },
   { path: 'memory.stableClaimRetentionDays', value: config.memory.stableClaimRetentionDays, min: 1 },
   { path: 'memory.claimRetentionDays', value: config.memory.claimRetentionDays, min: 1 },
+  { path: 'memory.failedExtractionRetentionDays', value: config.memory.failedExtractionRetentionDays, min: 1 },
   { path: 'memory.transientClaimRetentionDays', value: config.memory.transientClaimRetentionDays, min: 1 },
   { path: 'memory.deadClaimRetentionDays', value: config.memory.deadClaimRetentionDays, min: 1 },
   { path: 'memory.salienceHalfLifeDays', value: config.memory.salienceHalfLifeDays, min: 1 },
