@@ -10,7 +10,7 @@ import { startTurnEntryWork } from '../../agent/turnContext.js'
 import { config } from '../../config.js'
 import { type ResponseEventInput, recordResponseEvent } from '../../storage/metricsStore.js'
 import { logger } from '../../utils/logger.js'
-import { RateLimiter } from '../../utils/rateLimiter.js'
+import { type CallReservation, RateLimiter } from '../../utils/rateLimiter.js'
 import { MAX_ATTACHMENTS, attachmentOptionName, isSupportedMedia, resolveMediaUrl } from '../attachments.js'
 import { release, reservationFor, tryReserve } from '../byteBudget.js'
 import { isChannelBusy, markBusy, markFree } from '../concurrency.js'
@@ -165,83 +165,82 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
       return
     }
 
-    // Advisory, and deliberately not the reservation. A turn may issue up to `maxLlmCalls` model calls, so
-    // that is what has to be available — but holding it from here would strand the slots on every early
-    // return and on a `deferReply` that throws. Asked here to decline cheaply, taken below where a `finally`
-    // can hand it back (#167).
-    if (!rateLimiter.canAdmitCalls(config.gemini.maxLlmCalls)) {
-      cancelTurnEntryWork()
-      logger.debug(
-        { channelId, remainingRpm: rateLimiter.remainingRpm, remainingRpd: rateLimiter.remainingRpd },
-        'Rate limit hit — declining'
-      )
-
-      await interaction.reply({ content: getRandomDecline() })
-      setTimeout(() => interaction.deleteReply().catch(() => {}), 5000)
-      return
-    }
-
-    await interaction.deferReply()
-
-    let userMessage = message
-    const socialPostResult = socialPostWork ? await socialPostWork : { status: 'none' as const }
-    if (socialPostResult.status === 'found') {
-      userMessage = `${userMessage}\n${formatSocialPostLine(socialPostResult.post, config.socialPosts.maxTextChars)}`
-      if (imageAttachments.length < MAX_ATTACHMENTS) {
-        const imageAttachment = await socialPostMedia(socialPostResult.post)
-        if (imageAttachment) imageAttachments.push(imageAttachment)
-      }
-    } else if (socialPostResult.status === 'failed') {
-      userMessage = `${userMessage}\n${SOCIAL_POST_FAILURE_MARKER}`
-    }
-
-    // Bytes are not the only thing an attachment spends, and the two do not track each other: an 89-page PDF
-    // is 35 KB of the byte budget and 49,841 tokens of the minute's. `rateLimit.rpm` bounds how many turns
-    // happen, which bounded spend adequately while every turn cost about the same; it does not bound this.
-    // Asked before the reservation below so a declined turn has taken nothing it must hand back.
-    if (imageAttachments.length > 0 && !canAffordAttachments()) {
-      cancelTurnEntryWork()
-      logger.debug({ channelId }, 'Per-minute token budget too low for an attachment turn — sending busy message')
-      await interaction.editReply({ content: getRandomBusy() })
-      setTimeout(() => interaction.deleteReply().catch(() => {}), 5000)
-      return
-    }
-
-    // Reserved here rather than earlier so nothing can throw between taking the bytes and the try/finally
-    // that hands them back — a reservation that leaks becomes a permanent refusal, not a failed turn.
-    // Taken here for the same reason the bytes are, and handed back in the same `finally`. Reserving the
-    // ceiling rather than one slot is the point: the minute is spent in REQUESTS and a turn issues up to
-    // `maxLlmCalls` of them, so admitting on one slot let 15 turns become up to 60 requests (#167).
-    const callReservation = rateLimiter.reserveCalls(config.gemini.maxLlmCalls)
-    if (!callReservation) {
-      cancelTurnEntryWork()
-      logger.debug({ channelId, remainingRpm: rateLimiter.remainingRpm }, 'Lost the race for call slots')
-      await interaction.editReply({ content: getRandomBusy() })
-      setTimeout(() => interaction.deleteReply().catch(() => {}), 5000)
-      return
-    }
-
+    // Taken before the first await below rather than when generation starts: deferring the reply and the post
+    // lookup take time, and a second /ask in that window would find the channel free and run beside this one.
+    markBusy(channelId)
+    let callReservation: CallReservation | undefined
+    let reservedBytes = 0
     // Assume the whole reservation was spent unless the turn comes back and says otherwise: a turn that
     // throws has already made an unknown number of calls, and over-holding costs a minute where
     // under-holding costs the quota.
     let modelCallsUsed = config.gemini.maxLlmCalls
-
-    const reservedBytes = reservationFor(imageAttachments)
-    if (!tryReserve(reservedBytes)) {
-      cancelTurnEntryWork()
-      // Released here rather than left to the `finally` below, which this path returns above. Nothing was
-      // sent to the model, so the turn owes neither the slots nor its daily unit.
-      callReservation.release(0)
-      logger.debug({ channelId, reservedBytes }, 'In-flight attachment budget full — sending busy message')
-      await interaction.editReply({ content: getRandomBusy() })
-      setTimeout(() => interaction.deleteReply().catch(() => {}), 5000)
-      return
-    }
-
     try {
-      // Inside the try, not before it, so the reservation above cannot be stranded by anything between the
-      // two — markFree on a channel that was never marked is a no-op delete, so this costs nothing.
-      markBusy(channelId)
+      // Advisory, and deliberately not the reservation. A turn may issue up to `maxLlmCalls` model calls, so
+      // that is what has to be available — but holding it from here would keep the slots through `deferReply`
+      // and the post lookup. Asked here to decline cheaply, taken below (#167).
+      if (!rateLimiter.canAdmitCalls(config.gemini.maxLlmCalls)) {
+        cancelTurnEntryWork()
+        logger.debug(
+          { channelId, remainingRpm: rateLimiter.remainingRpm, remainingRpd: rateLimiter.remainingRpd },
+          'Rate limit hit — declining'
+        )
+
+        await interaction.reply({ content: getRandomDecline() })
+        setTimeout(() => interaction.deleteReply().catch(() => {}), 5000)
+        return
+      }
+
+      await interaction.deferReply()
+
+      let userMessage = message
+      const socialPostResult = socialPostWork ? await socialPostWork : { status: 'none' as const }
+      if (socialPostResult.status === 'found') {
+        userMessage = `${userMessage}\n${formatSocialPostLine(socialPostResult.post, config.socialPosts.maxTextChars)}`
+        if (imageAttachments.length < MAX_ATTACHMENTS) {
+          const imageAttachment = await socialPostMedia(socialPostResult.post)
+          if (imageAttachment) imageAttachments.push(imageAttachment)
+        }
+      } else if (socialPostResult.status === 'failed') {
+        userMessage = `${userMessage}\n${SOCIAL_POST_FAILURE_MARKER}`
+      }
+
+      // Bytes are not the only thing an attachment spends, and the two do not track each other: an 89-page PDF
+      // is 35 KB of the byte budget and 49,841 tokens of the minute's. `rateLimit.rpm` bounds how many turns
+      // happen, which bounded spend adequately while every turn cost about the same; it does not bound this.
+      // Asked before the reservation below so a declined turn has taken nothing it must hand back.
+      if (imageAttachments.length > 0 && !canAffordAttachments()) {
+        cancelTurnEntryWork()
+        logger.debug({ channelId }, 'Per-minute token budget too low for an attachment turn — sending busy message')
+        await interaction.editReply({ content: getRandomBusy() })
+        setTimeout(() => interaction.deleteReply().catch(() => {}), 5000)
+        return
+      }
+
+      // Slots and bytes are reserved last, so a declined turn has taken nothing it must hand back, and the
+      // `finally` below returns both. Reserving the ceiling rather than one slot is the point: the minute is spent in REQUESTS and a turn issues up to
+      // `maxLlmCalls` of them, so admitting on one slot let 15 turns become up to 60 requests (#167).
+      callReservation = rateLimiter.reserveCalls(config.gemini.maxLlmCalls)
+      if (!callReservation) {
+        cancelTurnEntryWork()
+        logger.debug({ channelId, remainingRpm: rateLimiter.remainingRpm }, 'Lost the race for call slots')
+        await interaction.editReply({ content: getRandomBusy() })
+        setTimeout(() => interaction.deleteReply().catch(() => {}), 5000)
+        return
+      }
+
+      const bytes = reservationFor(imageAttachments)
+      if (!tryReserve(bytes)) {
+        cancelTurnEntryWork()
+        // Released here with nothing spent, before the `finally` below would charge the whole reservation.
+        // Nothing was sent to the model, so the turn owes neither the slots nor its daily unit.
+        callReservation.release(0)
+        logger.debug({ channelId, reservedBytes: bytes }, 'In-flight attachment budget full — sending busy message')
+        await interaction.editReply({ content: getRandomBusy() })
+        setTimeout(() => interaction.deleteReply().catch(() => {}), 5000)
+        return
+      }
+      reservedBytes = bytes
+
       turnEntryWorkHandedOff = true
       const [
         [
@@ -336,7 +335,7 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
     } finally {
       markFree(channelId)
       release(reservedBytes)
-      callReservation.release(modelCallsUsed)
+      callReservation?.release(modelCallsUsed)
     }
   }
 }

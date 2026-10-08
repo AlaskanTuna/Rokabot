@@ -909,6 +909,9 @@ limiter that reports itself as never having been hit.
   with the existing in-character busy reply. It is dropped rather than queued or used to cancel the
   retrying turn; its content remains in the passive buffer for a later turn, and it consumes no
   rate-limiter token.
+- The guard is taken straight after the busy check, before the first await (the `/ask` `deferReply`, a linked
+  post's lookup), so a second message during those seconds gets the busy reply instead of running beside the
+  turn. The turn's `finally` frees it on every early return and on a throw.
 - The per-channel guard is now released within the turn deadline plus the pre-loop prologue (prompt
   assembly, memory retrieval, image download), rather than up to `(liveMaxRetries + 1) × gemini.timeout`
   as before — this is the blast-radius bound the deadline actually buys.
