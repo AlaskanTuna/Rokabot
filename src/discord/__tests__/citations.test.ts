@@ -40,6 +40,20 @@ describe('fitCitations', () => {
     expect(fitCitations(many, 4000)).not.toContain('example.com')
   })
 
+  // Three results from one site rendered as 'orcarouter.ai · orcarouter.ai · orcarouter.ai'.
+  it('cites each site once, the first of its pages, and fills the row from other sites', () => {
+    const sameSite = [
+      { url: 'https://www.orcarouter.ai/blog/a' },
+      { url: 'https://orcarouter.ai/blog/b' },
+      { url: 'https://www.orcarouter.ai/models' },
+      { url: 'https://vndb.org/c' }
+    ]
+
+    expect(fitCitations(sameSite, 4000)).toBe(
+      '-# 🔗 [orcarouter.ai](<https://www.orcarouter.ai/blog/a>)  ·  [vndb.org](<https://vndb.org/c>)'
+    )
+  })
+
   it('leaves a URL it cannot parse as its own label rather than throwing', () => {
     expect(fitCitations([{ url: 'not a url' }], 4000)).toBe('-# 🔗 [not a url](<not a url>)')
   })

@@ -27,7 +27,10 @@ export function clampToBudget(text: string, budget: number): string {
  * expanding into link embeds. The label is the host, which cannot contain the ']' that would break it.
  */
 export function fitCitations(sources: ReadonlyArray<{ url: string }>, budget: number): string {
-  const cites = sources.slice(0, MAX_CITATIONS).map((source) => `[${sourceHost(source.url)}](<${source.url}>)`)
+  // The label is the site, so a second page from one site would only repeat it.
+  const sites = new Map<string, string>()
+  for (const { url } of sources) if (!sites.has(sourceHost(url))) sites.set(sourceHost(url), url)
+  const cites = [...sites].slice(0, MAX_CITATIONS).map(([host, url]) => `[${host}](<${url}>)`)
   while (cites.length > 0) {
     const line = `-# 🔗 ${cites.join('  ·  ')}`
     if (line.length <= budget) return line
