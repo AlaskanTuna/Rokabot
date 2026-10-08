@@ -83,7 +83,8 @@ function buildEntryJudgmentInput(input: StartTurnEntryWorkInput): TurnJudgmentIn
           guildId: input.guildId,
           text: input.message,
           speakerId: input.userId,
-          mentionedUserIds: input.mentionedUserIds ?? []
+          mentionedUserIds: input.mentionedUserIds ?? [],
+          scope: { guildId: input.guildId, channelId: input.channelId }
         }).ambiguous.map(({ alias, candidateIds }) => ({
           alias,
           candidates: candidateIds.map((userId) => ({
@@ -286,7 +287,8 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
         guildId,
         text: userMessage,
         speakerId: userId,
-        mentionedUserIds: options.mentionedUserIds ?? []
+        mentionedUserIds: options.mentionedUserIds ?? [],
+        scope: { guildId, channelId }
       })
       if (references.resolved.length > 0 || references.ambiguous.length > 0) {
         logger.info(

@@ -839,6 +839,14 @@ describe('memory recall modes', () => {
     memoryConfig.recall = 'legacy'
   })
 
+  it('resolves references within the turn channel so private nicknames stay put', async () => {
+    await turnWith()
+
+    expect(mocks.resolveReferences).toHaveBeenCalledWith(
+      expect.objectContaining({ scope: { guildId: 'guild-1', channelId: 'channel-1' } })
+    )
+  })
+
   it('builds the legacy prompt with the four legacy blocks and no unified recall', async () => {
     mocks.retrieveForTurn.mockReturnValue({ entries: [{ person: 'Alice', facts: [] }], claims: [{}] } as never)
     mocks.buildFactsEnvelope.mockReturnValue(factsEnvelope)
