@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { MediaDigest } from '../types.js'
+import type { ImageAttachment } from '../../attachments.js'
+import type { MediaClip, MediaDigest } from '../types.js'
 
 const mocks = vi.hoisted(() => ({
   watch: true,
@@ -12,15 +13,31 @@ const mocks = vi.hoisted(() => ({
   saveMediaDigest: vi.fn(),
   recordMediaOccurrence: vi.fn(),
   setMediaDigestEmbedding: vi.fn(),
-  embedEpisodeText: vi.fn()
+  embedEpisodeText: vi.fn(),
+  streamToFiles: vi.fn(),
+  deleteFile: vi.fn(),
+  remainingTokensThisMinute: vi.fn(),
+  maxLlmCalls: 4
 }))
 
 vi.mock('../../../config.js', () => ({
   config: {
     logging: { level: 'silent' },
-    gemini: { maxAttachmentTokens: 50_000 },
+    gemini: {
+      maxAttachmentTokens: 50_000,
+      get maxLlmCalls() {
+        return mocks.maxLlmCalls
+      }
+    },
     get media() {
-      return { watch: mocks.watch, skimClips: 8, skimClipSeconds: 10, watchTimeoutMs: 20_000 }
+      return {
+        watch: mocks.watch,
+        skimClips: 8,
+        skimClipSeconds: 10,
+        watchTimeoutMs: 20_000,
+        maxStreamedUploadBytes: 52_428_800,
+        uploadTimeoutMs: 45_000
+      }
     }
   }
 }))
@@ -34,6 +51,8 @@ vi.mock('../../attachmentCost.js', () => ({ measureAttachmentTokens: mocks.measu
 
 vi.mock('../watch.js', () => ({ watchMedia: mocks.watchMedia, countUriTokens: mocks.countUriTokens }))
 
+vi.mock('../filesUpload.js', () => ({ streamToFiles: mocks.streamToFiles, deleteFile: mocks.deleteFile }))
+
 vi.mock('../../../storage/mediaDigestStore.js', () => ({
   findMediaDigest: mocks.findMediaDigest,
   saveMediaDigest: mocks.saveMediaDigest,
@@ -42,6 +61,8 @@ vi.mock('../../../storage/mediaDigestStore.js', () => ({
 }))
 
 vi.mock('../../memory/episodeEmbeddings.js', () => ({ embedEpisodeText: mocks.embedEpisodeText }))
+
+vi.mock('../../tokenBudget.js', () => ({ remainingTokensThisMinute: mocks.remainingTokensThisMinute }))
 
 import { prepareTurnMedia } from '../turnMedia.js'
 
@@ -81,6 +102,29 @@ function okWatch(digest: MediaDigest, calls = 1) {
   return { status: 'ok', digest, promptTokens: 1676, calls, watchMs: 4000 }
 }
 
+/** What a watch of one half of a long video returns: its own plan's bins, summarised by where it started. */
+function watchedHalf({
+  plan,
+  window
+}: { plan: { bins: MediaClip[]; durationSec: number; fps: number | null }; window?: MediaClip }) {
+  return okWatch(
+    digestFor({
+      mode: 'whole',
+      durationSec: plan.durationSec,
+      fps: plan.fps,
+      bins: plan.bins,
+      label: 'YouTube video',
+      observations: {
+        summary: `Watched from ${Math.round(window?.startSec ?? 0)} s.`,
+        timeline: [],
+        speech: [],
+        onScreenText: [],
+        uncertainties: []
+      }
+    })
+  )
+}
+
 function mp4WithDuration(seconds: number): Buffer {
   const mvhd = Buffer.alloc(8 + 4 + 16)
   mvhd.writeUInt32BE(mvhd.length, 0)
@@ -112,11 +156,16 @@ beforeEach(() => {
     mocks.downloadAttachment,
     mocks.measureAttachmentTokens,
     mocks.watchMedia,
-    mocks.countUriTokens
+    mocks.countUriTokens,
+    mocks.streamToFiles,
+    mocks.deleteFile,
+    mocks.remainingTokensThisMinute
   ]) {
     mock.mockReset()
   }
   mocks.prepareAttachments.mockResolvedValue(emptyPrepared)
+  mocks.remainingTokensThisMinute.mockReturnValue(125_000)
+  mocks.maxLlmCalls = 4
 })
 
 describe('prepareTurnMedia', () => {
@@ -520,6 +569,38 @@ describe('remembering watched media in a server', () => {
     })
   })
 
+  it('watches again rather than reuse a stored skim that a later share could watch in two halves', async () => {
+    mocks.findMediaDigest.mockReturnValue(
+      stored(digestFor({ mode: 'skim', durationSec: 1800, label: 'YouTube video' }))
+    )
+    mocks.watchMedia.mockImplementation(async (call) => watchedHalf(call))
+
+    const result = await prepareTurnMedia({ ...input([{ ...youtube, durationSec: 1800 }]), memoryScope: scope })
+
+    expect(mocks.watchMedia).toHaveBeenCalledTimes(2)
+    expect(result.digests[0]).toMatchObject({ mode: 'halves' })
+  })
+
+  it('reuses a stored skim of a video too long for halves at the estimated-duration budget', async () => {
+    mocks.findMediaDigest.mockReturnValue(
+      stored(digestFor({ mode: 'skim', durationSec: 2350, label: 'YouTube video' }))
+    )
+
+    await prepareTurnMedia({ ...input([{ ...youtube, durationSec: 2350 }]), memoryScope: scope })
+
+    expect(mocks.watchMedia).not.toHaveBeenCalled()
+  })
+
+  it('reuses a stored skim of a video too short for halves', async () => {
+    mocks.findMediaDigest.mockReturnValue(
+      stored(digestFor({ mode: 'skim', durationSec: 1150, label: 'YouTube video' }))
+    )
+
+    await prepareTurnMedia({ ...input([{ ...youtube, durationSec: 1150 }]), memoryScope: scope })
+
+    expect(mocks.watchMedia).not.toHaveBeenCalled()
+  })
+
   it('serves a remembered digest even while watching is unavailable', async () => {
     mocks.findMediaDigest.mockReturnValue(stored(digestFor()))
 
@@ -635,5 +716,311 @@ describe('remembering watched media in a server', () => {
     const result = await prepareTurnMedia({ ...input([youtube]), memoryScope: scope })
 
     expect(result.mediaTextParts[0].text).toContain('A man at a zoo talks about elephants.')
+  })
+})
+
+const MB = 1024 * 1024
+const bigUpload = (overrides: Partial<ImageAttachment> = {}): ImageAttachment => ({
+  url: 'https://cdn.discordapp.com/attachments/1/2/v.mp4?ex=65f&hm=abc',
+  contentType: 'video/mp4',
+  size: 20 * MB,
+  ...overrides
+})
+const uploaded = (
+  overrides: Partial<{ name: string; uri: string; mimeType: string; durationSec: number | null }> = {}
+) => ({
+  name: 'files/abc',
+  uri: 'https://generativelanguage.googleapis.com/v1beta/files/abc',
+  mimeType: 'video/mp4',
+  durationSec: 120,
+  ...overrides
+})
+
+describe('uploads too big to buffer', () => {
+  it('streams a 20 MB MP4 into Files and watches it whole', async () => {
+    mocks.streamToFiles.mockResolvedValue(uploaded())
+    mocks.watchMedia.mockResolvedValue(okWatch(digestFor()))
+
+    const result = await prepareTurnMedia(input([bigUpload()]))
+
+    expect(mocks.downloadAttachment).not.toHaveBeenCalled()
+    expect(mocks.streamToFiles).toHaveBeenCalledWith({
+      sourceUrl: bigUpload().url,
+      mimeType: 'video/mp4',
+      size: 20 * MB,
+      deadlineMs: 45_000
+    })
+    const call = mocks.watchMedia.mock.calls[0][0]
+    expect(call.source).toEqual({
+      transport: 'files',
+      kind: 'video',
+      fileUri: uploaded().uri,
+      mimeType: 'video/mp4',
+      label: 'video'
+    })
+    expect(call.plan).toMatchObject({ mode: 'whole', durationSec: 120, fps: 1 })
+    expect(call.opening).toBe(false)
+    expect(result.truncatedAttachments).toBe(0)
+    expect(result.digests).toHaveLength(1)
+    expect(mocks.deleteFile).toHaveBeenCalledWith('files/abc')
+  })
+
+  it('counts the length of a video Files cannot state, from its own URI', async () => {
+    mocks.streamToFiles.mockResolvedValue(uploaded({ durationSec: null }))
+    mocks.countUriTokens.mockResolvedValue(Math.round(120 * 35.3))
+    mocks.watchMedia.mockResolvedValue(okWatch(digestFor()))
+
+    await prepareTurnMedia(input([bigUpload()]))
+
+    expect(mocks.countUriTokens).toHaveBeenCalledWith(uploaded().uri, 0.05, 'video/mp4')
+    expect(mocks.watchMedia.mock.calls[0][0].plan).toMatchObject({ mode: 'whole' })
+  })
+
+  it('counts the length of an audio upload as audio, from its own URI', async () => {
+    mocks.streamToFiles.mockResolvedValue(uploaded({ mimeType: 'audio/mp3', durationSec: null }))
+    mocks.countUriTokens.mockResolvedValue(3200)
+    mocks.watchMedia.mockResolvedValue(okWatch(digestFor({ kind: 'audio', fps: null })))
+
+    await prepareTurnMedia(input([bigUpload({ contentType: 'audio/mpeg' })]))
+
+    expect(mocks.countUriTokens).toHaveBeenCalledWith(uploaded().uri, 0.05, 'audio/mp3')
+    expect(mocks.watchMedia.mock.calls[0][0].plan).toMatchObject({ mode: 'whole', kind: 'audio', durationSec: 100 })
+  })
+
+  it('counts an upload that fails to stream as dropped, without watching it', async () => {
+    mocks.streamToFiles.mockResolvedValue(null)
+
+    const result = await prepareTurnMedia(input([bigUpload()]))
+
+    expect(result.droppedAttachments).toBe(1)
+    expect(mocks.watchMedia).not.toHaveBeenCalled()
+    expect(mocks.deleteFile).not.toHaveBeenCalled()
+  })
+
+  it('deletes the upload when its plan declines it', async () => {
+    // Audio cannot skim, so a clip too long to watch whole is declined rather than cut down.
+    mocks.streamToFiles.mockResolvedValue(uploaded({ mimeType: 'audio/mp3', durationSec: 2700 }))
+
+    const result = await prepareTurnMedia(input([bigUpload({ contentType: 'audio/mpeg' })]))
+
+    expect(mocks.watchMedia).not.toHaveBeenCalled()
+    expect(result.mediaTextParts[0].text).toBe(
+      '[An audio clip was shared, but at about 45:00 it is too long to watch in one go.]'
+    )
+    expect(mocks.deleteFile).toHaveBeenCalledWith('files/abc')
+  })
+
+  it('deletes the upload when its watch fails', async () => {
+    mocks.streamToFiles.mockResolvedValue(uploaded())
+    mocks.watchMedia.mockResolvedValue({ status: 'failed', reason: 'timeout', calls: 1, watchMs: 20_000 })
+
+    const result = await prepareTurnMedia(input([bigUpload()]))
+
+    expect(result.mediaTextParts[0].text).toBe("[A video was shared, but it couldn't be watched right now.]")
+    expect(mocks.deleteFile).toHaveBeenCalledWith('files/abc')
+  })
+
+  it('deletes the upload even when its watch throws', async () => {
+    mocks.streamToFiles.mockResolvedValue(uploaded())
+    mocks.watchMedia.mockRejectedValue(new Error('socket hang up'))
+
+    await expect(prepareTurnMedia(input([bigUpload()]))).rejects.toThrow('socket hang up')
+    expect(mocks.deleteFile).toHaveBeenCalledWith('files/abc')
+  })
+
+  it('keeps an upload within the inline cap on the inline path', async () => {
+    mocks.downloadAttachment.mockResolvedValue({
+      data: 'b64',
+      mimeType: 'video/mp4',
+      tokens: 0,
+      truncated: false,
+      bytes: mp4WithDuration(19)
+    })
+    mocks.watchMedia.mockResolvedValue(okWatch(digestFor()))
+
+    await prepareTurnMedia(input([bigUpload({ size: 10 * MB })]))
+
+    expect(mocks.streamToFiles).not.toHaveBeenCalled()
+    expect(mocks.downloadAttachment).toHaveBeenCalled()
+  })
+
+  it('keeps an upload above the streaming limit on the inline opening path', async () => {
+    const header = mp4WithDuration(200)
+    mocks.downloadAttachment.mockResolvedValue({
+      data: 'b64',
+      mimeType: 'video/mp4',
+      tokens: 0,
+      truncated: true,
+      bytes: Buffer.concat([header, Buffer.alloc(10_000 - header.length)])
+    })
+    mocks.watchMedia.mockResolvedValue(okWatch(digestFor({ mode: 'opening' })))
+
+    await prepareTurnMedia(input([bigUpload({ size: 60 * MB })]))
+
+    expect(mocks.streamToFiles).not.toHaveBeenCalled()
+    expect(mocks.watchMedia.mock.calls[0][0].opening).toBe(true)
+  })
+})
+
+describe('remembering streamed uploads in a server', () => {
+  const scope = { guildId: 'guild-1', channelId: 'c1', messageId: 'trigger-1', userId: 'asker-1' }
+  const key = 'discord:/attachments/1/2/v.mp4'
+
+  beforeEach(() => {
+    mocks.embedEpisodeText.mockResolvedValue(new Array(768).fill(0.1))
+  })
+
+  it('keeps no memory of a streamed file from outside Discord, whose path alone names nothing', async () => {
+    mocks.streamToFiles.mockResolvedValue(uploaded())
+    mocks.watchMedia.mockResolvedValue(okWatch(digestFor()))
+
+    await prepareTurnMedia({
+      ...input([bigUpload({ url: 'https://media.example.com/attachments/1/2/v.mp4' })]),
+      memoryScope: scope
+    })
+
+    expect(mocks.findMediaDigest).not.toHaveBeenCalled()
+    expect(mocks.saveMediaDigest).not.toHaveBeenCalled()
+  })
+
+  it('reuses a remembered upload without uploading it again', async () => {
+    const digest = digestFor({ label: 'video' })
+    mocks.findMediaDigest.mockReturnValue({
+      id: 9,
+      guildId: 'guild-1',
+      contentKey: key,
+      kind: 'video',
+      label: 'video',
+      summary: digest.observations.summary,
+      digestJson: JSON.stringify(digest),
+      embedding: null,
+      createdAt: 1,
+      lastSharedAt: 1
+    })
+
+    const result = await prepareTurnMedia({ ...input([bigUpload()]), memoryScope: scope })
+
+    expect(mocks.findMediaDigest).toHaveBeenCalledWith('guild-1', key)
+    expect(mocks.streamToFiles).not.toHaveBeenCalled()
+    expect(mocks.watchMedia).not.toHaveBeenCalled()
+    expect(result.mediaTextParts[0].text).toContain('A man at a zoo talks about elephants.')
+  })
+
+  it('saves a streamed watch under its Discord path key', async () => {
+    mocks.findMediaDigest.mockReturnValue(null)
+    mocks.streamToFiles.mockResolvedValue(uploaded())
+    mocks.watchMedia.mockResolvedValue(okWatch(digestFor()))
+
+    await prepareTurnMedia({ ...input([bigUpload()]), memoryScope: scope })
+
+    expect(mocks.saveMediaDigest).toHaveBeenCalledWith(expect.objectContaining({ guildId: 'guild-1', contentKey: key }))
+    expect(mocks.deleteFile).toHaveBeenCalledWith('files/abc')
+  })
+})
+
+describe('watching a 20 to 40 minute video in two halves', () => {
+  const longLink = { url: 'https://www.youtube.com/watch?v=long', contentType: 'video/mp4', transport: 'uri' as const }
+  // Counts to 35 minutes at the 0.05 fps the duration estimate uses, so the halves get the headroom-reduced budget.
+  const countedAs35Minutes = Math.round(2100 * 35.3)
+
+  it('watches a 35 minute YouTube video whole in two parallel halves and merges them into one digest', async () => {
+    mocks.countUriTokens.mockResolvedValue(countedAs35Minutes)
+    let started = 0
+    let bothStarted!: () => void
+    const bothStartedSignal = new Promise<void>((resolve) => {
+      bothStarted = resolve
+    })
+    mocks.watchMedia.mockImplementation(async (call) => {
+      started += 1
+      if (started === 2) bothStarted()
+      await bothStartedSignal
+      return watchedHalf(call)
+    })
+
+    const result = await prepareTurnMedia(input([longLink]))
+
+    expect(mocks.watchMedia).toHaveBeenCalledTimes(2)
+    const [first, second] = mocks.watchMedia.mock.calls.map(([call]) => call)
+    expect(first.source).toMatchObject({ transport: 'uri', fileUri: longLink.url })
+    expect(first.plan).toMatchObject({ mode: 'whole', fps: 0.05 })
+    expect(first.window).toEqual({ startSec: 0, endSec: 1050 })
+    expect(second.window).toEqual({ startSec: 1050, endSec: 2100, openEnd: true })
+    expect(first.mayRetry()).toBe(false)
+    expect(second.mayRetry()).toBe(false)
+
+    expect(result.watcherCalls).toBe(2)
+    expect(result.mediaTokens).toBe(2 * 1676)
+    expect(result.digests).toHaveLength(1)
+    expect(result.digests[0]).toMatchObject({ mode: 'halves', fps: 0.05 })
+    expect(result.digests[0].bins).toHaveLength(16)
+    expect(result.digests[0].bins[8]).toEqual({ startSec: 1050, endSec: 1181 })
+    expect(result.mediaTextParts).toHaveLength(1)
+    expect(result.mediaTextParts[0].text).toContain('whole video in two halves, 35:00, a frame every 20 s, full sound]')
+  })
+
+  it('skims the same video when the minute cannot afford two halves', async () => {
+    mocks.countUriTokens.mockResolvedValue(countedAs35Minutes)
+    mocks.remainingTokensThisMinute.mockReturnValue(80_000)
+    mocks.watchMedia.mockResolvedValue(okWatch(digestFor({ mode: 'skim', label: 'YouTube video' })))
+
+    const result = await prepareTurnMedia(input([longLink]))
+
+    expect(mocks.watchMedia).toHaveBeenCalledTimes(1)
+    expect(mocks.watchMedia.mock.calls[0][0].plan).toMatchObject({ mode: 'skim' })
+    expect(result.watcherCalls).toBe(1)
+  })
+
+  it('skims instead of splitting when the turn could not leave Gemini two calls after the watches', async () => {
+    mocks.countUriTokens.mockResolvedValue(countedAs35Minutes)
+    mocks.maxLlmCalls = 3
+    mocks.watchMedia.mockResolvedValue(okWatch(digestFor({ mode: 'skim', label: 'YouTube video' })))
+
+    await prepareTurnMedia(input([longLink]))
+
+    expect(mocks.watchMedia).toHaveBeenCalledTimes(1)
+    expect(mocks.watchMedia.mock.calls[0][0].plan).toMatchObject({ mode: 'skim' })
+  })
+
+  it('keeps the half that was watched and says the other could not be watched', async () => {
+    mocks.countUriTokens.mockResolvedValue(countedAs35Minutes)
+    mocks.watchMedia.mockImplementation(async (call) =>
+      call.window.startSec === 0
+        ? { status: 'failed', reason: 'timeout', calls: 1, watchMs: 20_000 }
+        : watchedHalf(call)
+    )
+
+    const result = await prepareTurnMedia(input([longLink]))
+
+    expect(result.watcherCalls).toBe(2)
+    // The timed-out half may have been billed in full, so it is charged its planned estimate.
+    expect(result.mediaTokens).toBe(1676 + 41105)
+    expect(result.digests[0]).toMatchObject({ mode: 'halves', incomplete: true })
+    expect(result.digests[0].bins).toHaveLength(8)
+    expect(result.digests[0].observations.uncertainties).toEqual(['The other half of the video could not be watched.'])
+    expect(result.mediaTextParts).toHaveLength(1)
+  })
+
+  it('says the video could not be watched when both halves fail', async () => {
+    mocks.countUriTokens.mockResolvedValue(countedAs35Minutes)
+    mocks.watchMedia.mockResolvedValue({ status: 'failed', reason: 'overloaded', calls: 1, watchMs: 300 })
+
+    const result = await prepareTurnMedia(input([longLink]))
+
+    expect(result.watcherCalls).toBe(2)
+    expect(result.digests).toEqual([])
+    expect(result.mediaTextParts[0].text).toBe("[A YouTube video was shared, but it couldn't be watched right now.]")
+  })
+
+  it('watches a 35 minute upload in two halves and deletes the upload afterwards', async () => {
+    mocks.streamToFiles.mockResolvedValue(uploaded({ durationSec: 2100 }))
+    mocks.watchMedia.mockImplementation(async (call) => watchedHalf(call))
+
+    const result = await prepareTurnMedia(input([bigUpload()]))
+
+    expect(mocks.watchMedia).toHaveBeenCalledTimes(2)
+    expect(mocks.watchMedia.mock.calls[0][0].source).toMatchObject({ transport: 'files' })
+    expect(mocks.watchMedia.mock.calls[0][0].plan).toMatchObject({ mode: 'whole', fps: 0.1 })
+    expect(result.mediaTextParts[0].text).toContain('whole video in two halves, 35:00, a frame every 10 s, full sound]')
+    expect(mocks.deleteFile).toHaveBeenCalledWith('files/abc')
   })
 })
