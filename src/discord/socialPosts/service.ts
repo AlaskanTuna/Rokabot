@@ -6,6 +6,7 @@ import { parseBlueskyThread, parseFxTwitterResponse, parseYouTubeOEmbed, parseYt
 import { parseRedditFeedPost } from './redditFeed.js'
 import { BROWSER_USER_AGENT } from './replies/common.js'
 import { replyReader } from './replies/service.js'
+import { THREADS_PAGE_HEADERS, parseThreadsPage } from './threads.js'
 import type { SocialPost, SocialPostLookup } from './types.js'
 import { type SocialPlatform, type SocialPostTarget, findSocialPostTarget } from './urls.js'
 import { isYtDlpAvailable, runYtDlp } from './ytDlp.js'
@@ -36,7 +37,7 @@ function isAbort(error: unknown): boolean {
 }
 
 function isYtDlpPlatform(platform: SocialPlatform): boolean {
-  return platform !== 'x' && platform !== 'bluesky'
+  return platform !== 'x' && platform !== 'bluesky' && platform !== 'threads'
 }
 
 const MAX_BLUESKY_PDS_CACHE_ENTRIES = 256
@@ -225,6 +226,13 @@ export class SocialPostViewer {
       if (!response.ok) return failure('x', `http_${response.status}`)
       const payload = await response.json()
       return { status: 'found', post: parseFxTwitterResponse(payload, target, this.settings.maxTextChars) }
+    }
+
+    if (target.platform === 'threads') {
+      const response = await this.fetcher(target.canonicalUrl, { headers: THREADS_PAGE_HEADERS, signal })
+      if (!response.ok) return failure('threads', `http_${response.status}`)
+      const page = parseThreadsPage(await response.text(), target, this.settings.maxTextChars)
+      return page ? { status: 'found', post: page.post } : failure('threads', 'no_post_data')
     }
 
     if (target.platform === 'bluesky') {

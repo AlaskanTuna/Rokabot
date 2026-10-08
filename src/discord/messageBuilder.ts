@@ -37,7 +37,8 @@ const SOCIAL_POST_KINDS: Record<SocialPlatform, string> = {
   tiktok: 'TikTok video',
   reddit: 'Reddit post',
   instagram: 'Instagram post',
-  bilibili: 'Bilibili video'
+  bilibili: 'Bilibili video',
+  threads: 'Threads post'
 }
 
 // A linked post is read before the model runs, so it never appears in toolsUsed; without its own label the

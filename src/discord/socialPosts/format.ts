@@ -10,7 +10,8 @@ export const PLATFORM_NAMES = {
   tiktok: 'TikTok',
   reddit: 'Reddit',
   instagram: 'Instagram',
-  bilibili: 'Bilibili'
+  bilibili: 'Bilibili',
+  threads: 'Threads'
 } as const
 
 export function quoted(value: string, maxLength: number): string {

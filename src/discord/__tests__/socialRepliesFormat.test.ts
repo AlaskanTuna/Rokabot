@@ -30,6 +30,18 @@ describe('formatRepliesForModel', () => {
     ).toContain('[Replies on the Reddit post — top 1, ranked by votes: 1. someone: "nice"]')
   })
 
+  // Logged out, Threads renders only its first batch of about ten replies; "top 5 of 897" alone overstates it.
+  it('says Threads replies were ranked from the first batch Threads shows', () => {
+    expect(
+      formatRepliesForModel({
+        status: 'found',
+        platform: 'threads',
+        total: 897,
+        replies: [{ author: 'fan', text: 'nice', likes: 3 }]
+      })
+    ).toContain('top 1 of 897, ranked by likes among the first replies Threads shows:')
+  })
+
   it('reports no readable replies and failures distinctly', () => {
     expect(formatRepliesForModel({ status: 'found', platform: 'bluesky', total: 0, replies: [] })).toContain(
       '[Replies on the Bluesky post — none readable]'
