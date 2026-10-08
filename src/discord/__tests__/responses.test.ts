@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { escapeBackticks, getRandomDecline, getRandomError, splitResponse } from '../responses.js'
+import { getRandomDecline, getRandomError, splitResponse } from '../responses.js'
 
 describe('getRandomDecline', () => {
   it('returns a non-empty string', () => {
@@ -40,7 +40,8 @@ const SHAPES: Record<string, (n: number) => string> = {
   spaced: (n) => Array.from({ length: n }, (_, i) => (i % 6 === 5 ? ' ' : 'a')).join(''),
   newlines: (n) => Array.from({ length: n }, (_, i) => (i % 17 === 16 ? '\n' : 'a')).join(''),
   emojiRun: (n) => '🌸'.repeat(n),
-  mixedRoka: (n) => 'Fufu~ ♪ (◕‿◕✿) 🌸 '.repeat(n)
+  mixedRoka: (n) => 'Fufu~ ♪ (◕‿◕✿) 🌸 '.repeat(n),
+  codeBlock: (n) => `\`\`\`ts\n${'x = 1\n'.repeat(n)}\`\`\``
 }
 
 /** True when a chunk contains half of a surrogate pair, which Discord renders as a replacement character. */
@@ -155,45 +156,34 @@ describe('splitResponse', () => {
   })
 })
 
-/**
- * Her kaomoji carry a literal backtick — `(´・ω・`)` is the first entry in the speech layer's list — and
- * Discord pairs any two backticks in a message into an inline code span. One on its own is harmless and
- * renders as typed; a second one anywhere later swallows everything between them. That is exactly what a
- * user reported: a reply whose opening kaomoji paired with a backticked domain three paragraphs down, and
- * turned the whole opening into monospace with the bold markers showing as raw asterisks.
- *
- * Measured on the Pi over the retained window: 15 of 57 replies carry a backtick, 14 of them unpaired, and
- * 14 match the kaomoji shape. The speech prompt tries to pre-escape it, and the model reproduced that escape
- * 3 times against 12 bare ones — so the escape is a hope, not a mechanism, and the guarantee has to be here.
- */
-describe('escapeBackticks', () => {
-  it('escapes a bare backtick so Discord renders it instead of opening a code span', () => {
-    expect(escapeBackticks('(´・ω・`)')).toBe('(´・ω・\\`)')
+const codeReply = (lines: number) =>
+  `Here you go~\n\`\`\`ts\n${Array.from({ length: lines }, (_, i) => `const value${i} = ${i}`).join('\n')}\n\`\`\`\nThat should do it!`
+
+const fences = (chunk: string) => (chunk.match(/(?<!\\)```/g) ?? []).length
+
+describe('splitResponse with code blocks', () => {
+  // A cut through a code block left the rest of the reply monospaced and the next chunk's code as prose.
+  it('closes a code block at a chunk boundary and reopens it, language included, in the next chunk', () => {
+    const chunks = splitResponse(codeReply(40), 300)
+
+    expect(chunks.length).toBeGreaterThan(1)
+    for (const chunk of chunks) {
+      expect(chunk.length).toBeLessThanOrEqual(300)
+      expect(fences(chunk) % 2).toBe(0)
+    }
+    expect(chunks[1].startsWith('```ts\n')).toBe(true)
   })
 
-  it('leaves an already-escaped backtick single-escaped', () => {
-    expect(escapeBackticks('(´・ω・\\`)')).toBe('(´・ω・\\`)')
+  it('keeps every line of code across the chunks', () => {
+    const chunks = splitResponse(codeReply(40), 300)
+    for (let i = 0; i < 40; i++) expect(chunks.join('\n')).toContain(`const value${i} = ${i}`)
   })
 
-  it('is idempotent, so escaping twice cannot double up', () => {
-    const once = escapeBackticks('a ` b')
-    expect(escapeBackticks(once)).toBe(once)
-  })
+  it('reopens without a language that would not fit the room kept for it', () => {
+    const text = codeReply(40).replace('```ts', '```averyveryverylonglanguagename')
+    const chunks = splitResponse(text, 300)
 
-  it('leaves text with no backticks untouched', () => {
-    expect(escapeBackticks('Fufu~ ♪ nothing to escape here')).toBe('Fufu~ ♪ nothing to escape here')
-  })
-
-  // The reported shape: a kaomoji backtick and a backticked domain further down.
-  it('leaves no unescaped backtick in the reported reply shape', () => {
-    const reply = 'Ara~, Ikuyo? (´・ω・`) ♪ ... verification through `gonkarouter.io` with free tokens.'
-    const escaped = escapeBackticks(reply)
-
-    expect(escaped.match(/(?<!\\)`/g)).toBeNull()
-  })
-
-  it('keeps every backtick, rather than dropping the character she meant to type', () => {
-    const reply = 'Ara~ (´・ω・`) ♪ see `example.io` ne~'
-    expect(escapeBackticks(reply).match(/`/g)).toHaveLength(3)
+    expect(chunks.every((chunk) => chunk.length <= 300)).toBe(true)
+    expect(chunks[1].startsWith('```\n')).toBe(true)
   })
 })

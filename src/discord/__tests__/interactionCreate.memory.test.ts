@@ -56,7 +56,6 @@ vi.mock('../../utils/timezone.js', () => ({ getLocalHour: mocks.getLocalHour }))
 vi.mock('../concurrency.js', () => ({ isChannelBusy: () => false, markBusy: vi.fn(), markFree: vi.fn() }))
 vi.mock('../errorHandler.js', () => ({ isIgnorableDiscordError: () => false }))
 vi.mock('../responses.js', () => ({
-  escapeBackticks: (text: string) => text.replace(/\\?`/g, '\\`'),
   getRandomBusy: () => 'busy',
   getRandomDecline: () => 'decline',
   getRandomError: () => 'error',

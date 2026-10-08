@@ -818,6 +818,21 @@ describe('afterModelCallback narrated tool calls', () => {
     )
     warn.mockRestore()
   })
+
+  it('strips leading indentation from prose but keeps it inside a fenced code block', async () => {
+    const response = {
+      content: {
+        role: 'model',
+        parts: [{ text: '    Here you go~\n```py\ndef flip(s):\n    return s[::-1]\n```\n\tThat is all!' }]
+      }
+    } as LlmResponse
+
+    await callback({ response })
+
+    expect(response.content?.parts?.[0].text).toBe(
+      'Here you go~\n```py\ndef flip(s):\n    return s[::-1]\n```\nThat is all!'
+    )
+  })
 })
 
 describe('media resolution on the model request', () => {

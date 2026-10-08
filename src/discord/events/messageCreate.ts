@@ -18,6 +18,7 @@ import { release, reservationFor, tryReserve } from '../byteBudget.js'
 import { isChannelBusy, markBusy, markFree } from '../concurrency.js'
 import { shouldReact } from '../emojiReactor.js'
 import { isIgnorableDiscordError } from '../errorHandler.js'
+import { guardMarkdown } from '../markdownGuard.js'
 import { buildRokaMessage, openedPostCitation } from '../messageBuilder.js'
 import {
   extractComponentTexts,
@@ -26,7 +27,6 @@ import {
   replaceUserMentions
 } from '../messageContent.js'
 import {
-  escapeBackticks,
   getRandomBusy,
   getRandomDecline,
   getRandomError,
@@ -353,7 +353,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
       const withNudge = notes.length > 0 ? `${responseText}\n\n${notes.join('\n\n')}` : responseText
       // Escaped before the split, not after: escaping lengthens the text, so doing it downstream would let a
       // chunk sized against the raw length overrun the TextDisplay budget it was measured for.
-      const chunks = splitResponse(escapeBackticks(withNudge))
+      const chunks = splitResponse(guardMarkdown(withNudge))
       logger.debug({ channelId, chunkCount: chunks.length }, 'Response split into chunks')
       await message.reply(
         buildRokaMessage(chunks[0], tone, toolsUsed, sources, socialPostResult, replyOutcome, watchOutcome)
