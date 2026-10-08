@@ -15,8 +15,7 @@ async function playableVideo(post: SocialPost): Promise<ImageAttachment | null> 
   return {
     ...resolved,
     ...(post.durationSec ? { durationSec: post.durationSec } : {}),
-    ...(post.video.hasAudio === false ? { silent: true } : {}),
-    ...(post.imageUrl ? { fallbackImageUrl: post.imageUrl } : {})
+    ...(post.video.hasAudio === false ? { silent: true } : {})
   }
 }
 

@@ -19,8 +19,6 @@ export interface ImageAttachment {
   startSec?: number
   /** The file is known to carry no sound track. */
   silent?: boolean
-  /** A picture to show instead if the video cannot be downloaded. */
-  fallbackImageUrl?: string
 }
 
 // Bounds stalled attachment hosts as well as oversized responses.

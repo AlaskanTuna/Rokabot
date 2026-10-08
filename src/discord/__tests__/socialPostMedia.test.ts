@@ -66,8 +66,7 @@ describe('socialPostMedia', () => {
       url: xVideo.url,
       contentType: 'video/mp4',
       size: 334_617,
-      durationSec: 15.474,
-      fallbackImageUrl: 'https://pbs.twimg.com/thumb.jpg'
+      durationSec: 15.474
     })
   })
 
