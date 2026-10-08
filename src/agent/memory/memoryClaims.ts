@@ -328,7 +328,11 @@ function assertClaimInTransaction(op: ClaimAssert): UserMemoryClaim {
   if (existing) {
     const current = mapUserClaim(existing)
     const dead = current.status === 'rejected' || current.status === 'superseded'
-    const status = op.status ?? 'active'
+    // An unverified statement may stage or revive a value, but never demote or flag one that is already active.
+    const keepActive = current.status === 'active'
+    const status = keepActive ? 'active' : (op.status ?? 'active')
+    const needsReview =
+      op.needsReview === undefined || (keepActive && op.needsReview) ? current.needsReview : op.needsReview
     const activating = current.status === 'candidate' && status === 'active'
     if (dead && existing.end_reason === 'forgotten' && op.sourceKind !== 'explicit') return current
     const salience = Math.min(
@@ -349,7 +353,7 @@ function assertClaimInTransaction(op: ClaimAssert): UserMemoryClaim {
       Math.max(current.lastSeenAt, observedAt),
       salience,
       pinned,
-      op.needsReview === undefined ? (current.needsReview ? 1 : 0) : op.needsReview ? 1 : 0,
+      needsReview ? 1 : 0,
       current.id
     )
     appendEvidenceInTransaction(current.id, {
@@ -642,7 +646,10 @@ export function assertGuildClaim(
     if (existing) {
       const current = mapGuildClaim(existing)
       const dead = current.status === 'rejected' || current.status === 'superseded'
-      const status = input.status ?? 'active'
+      const keepActive = current.status === 'active'
+      const status = keepActive ? 'active' : (input.status ?? 'active')
+      const needsReview =
+        input.needsReview === undefined || (keepActive && input.needsReview) ? current.needsReview : input.needsReview
       db.prepare(
         'UPDATE memory_claim SET status = ?, superseded_by = ?, ended_at = ?, end_reason = ?, last_seen_at = ?, salience = ?, expires_at = ?, event_date = ?, needs_review = ? WHERE id = ?'
       ).run(
@@ -654,7 +661,7 @@ export function assertGuildClaim(
         Math.min(1, current.salience + 0.02),
         input.expiresAt,
         input.eventDate ?? null,
-        input.needsReview === undefined ? (current.needsReview ? 1 : 0) : input.needsReview ? 1 : 0,
+        needsReview ? 1 : 0,
         current.id
       )
       return appendEvidenceInTransaction(current.id, {

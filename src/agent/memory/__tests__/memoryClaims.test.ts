@@ -351,6 +351,51 @@ describe('memoryClaims', () => {
     expect(getActiveClaims('guild-1', 'user-1')).toEqual([expect.objectContaining({ id: pinned.id, pinned: true })])
   })
 
+  it('keeps a verified fact active when an unverified statement repeats it', () => {
+    const verified = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'general_occupation',
+      value: 'nurse',
+      sourceKind: 'passive'
+    })
+
+    const repeated = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'general_occupation',
+      value: 'nurse',
+      sourceKind: 'passive',
+      status: 'candidate',
+      needsReview: true
+    })
+
+    expect(repeated).toMatchObject({ id: verified.id, status: 'active', needsReview: false })
+    expect(getActiveClaims('guild-1', 'user-1').map(({ value }) => value)).toEqual(['nurse'])
+  })
+
+  it('keeps a verified guild fact active when an unverified statement repeats it', () => {
+    const verified = assertGuildClaim({
+      guildId: 'guild-1',
+      predicate: 'rule',
+      value: 'Movie night on Fridays',
+      expiresAt: null,
+      sourceKind: 'passive'
+    })
+
+    const repeated = assertGuildClaim({
+      guildId: 'guild-1',
+      predicate: 'rule',
+      value: 'Movie night on Fridays',
+      expiresAt: null,
+      sourceKind: 'passive',
+      status: 'candidate',
+      needsReview: true
+    })
+
+    expect(repeated).toMatchObject({ id: verified.id, status: 'active', needsReview: false })
+  })
+
   it('expires a stale candidate without activating it', () => {
     const now = 100 * DAY
     vi.spyOn(Date, 'now').mockReturnValue(now)
