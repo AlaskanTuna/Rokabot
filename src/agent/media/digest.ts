@@ -4,12 +4,20 @@ import type { MediaClip, MediaDigest, MediaObservations } from './types.js'
 
 export const MEDIA_DIGEST_HEADING = '[Watched media'
 
+// Validation keeps no more than these, and the schema says so too: a model that writes past them runs into the
+// output ceiling and returns JSON cut off mid-entry, which parses as nothing.
+const MAX_TIMELINE = 8
+const MAX_SPEECH = 12
+const MAX_ON_SCREEN_TEXT = 8
+const MAX_UNCERTAINTIES = 5
+
 export const MEDIA_OBSERVATIONS_SCHEMA: Schema = {
   type: Type.OBJECT,
   properties: {
     summary: { type: Type.STRING },
     timeline: {
       type: Type.ARRAY,
+      maxItems: String(MAX_TIMELINE),
       items: {
         type: Type.OBJECT,
         properties: { bin: { type: Type.INTEGER }, visual: { type: Type.STRING }, audio: { type: Type.STRING } },
@@ -18,6 +26,7 @@ export const MEDIA_OBSERVATIONS_SCHEMA: Schema = {
     },
     speech: {
       type: Type.ARRAY,
+      maxItems: String(MAX_SPEECH),
       items: {
         type: Type.OBJECT,
         properties: {
@@ -30,13 +39,14 @@ export const MEDIA_OBSERVATIONS_SCHEMA: Schema = {
     },
     onScreenText: {
       type: Type.ARRAY,
+      maxItems: String(MAX_ON_SCREEN_TEXT),
       items: {
         type: Type.OBJECT,
         properties: { bin: { type: Type.INTEGER }, text: { type: Type.STRING } },
         required: ['bin', 'text']
       }
     },
-    uncertainties: { type: Type.ARRAY, items: { type: Type.STRING } }
+    uncertainties: { type: Type.ARRAY, maxItems: String(MAX_UNCERTAINTIES), items: { type: Type.STRING } }
   },
   required: ['summary', 'timeline', 'speech', 'onScreenText', 'uncertainties']
 }
@@ -88,7 +98,7 @@ export function validateObservations(
         markIncomplete()
         continue
       }
-      if (timeline.length >= 8) {
+      if (timeline.length >= MAX_TIMELINE) {
         markIncomplete()
         continue
       }
@@ -118,7 +128,7 @@ export function validateObservations(
       } else {
         markIncomplete()
       }
-      if (speech.length >= 12) {
+      if (speech.length >= MAX_SPEECH) {
         markIncomplete()
         continue
       }
@@ -140,7 +150,7 @@ export function validateObservations(
         markIncomplete()
         continue
       }
-      if (onScreenText.length >= 8) {
+      if (onScreenText.length >= MAX_ON_SCREEN_TEXT) {
         markIncomplete()
         continue
       }
@@ -158,7 +168,7 @@ export function validateObservations(
         markIncomplete()
         continue
       }
-      if (uncertainties.length >= 5) {
+      if (uncertainties.length >= MAX_UNCERTAINTIES) {
         markIncomplete()
         continue
       }

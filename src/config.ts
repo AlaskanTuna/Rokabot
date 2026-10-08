@@ -219,7 +219,7 @@ export const config = {
   media: {
     watch: envBoolean('MEDIA_WATCH') ?? yaml.media?.watch ?? true,
     watchTimeoutMs: yaml.media?.watchTimeoutMs ?? 20_000,
-    digestMaxOutputTokens: yaml.media?.digestMaxOutputTokens ?? 1200,
+    digestMaxOutputTokens: yaml.media?.digestMaxOutputTokens ?? 2400,
     skimClips: yaml.media?.skimClips ?? 8,
     skimClipSeconds: yaml.media?.skimClipSeconds ?? 10,
     maxStreamedUploadBytes: yaml.media?.maxStreamedUploadBytes ?? 52_428_800,

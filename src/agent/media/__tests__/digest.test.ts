@@ -52,6 +52,14 @@ describe('MEDIA_OBSERVATIONS_SCHEMA', () => {
     ])
     expect(MEDIA_OBSERVATIONS_SCHEMA.properties?.timeline.items?.properties?.bin?.type).toBe(Type.INTEGER)
   })
+
+  it('caps each list at what validation keeps, so the answer ends before the output ceiling', () => {
+    const { properties } = MEDIA_OBSERVATIONS_SCHEMA
+    expect(properties?.timeline.maxItems).toBe('8')
+    expect(properties?.speech.maxItems).toBe('12')
+    expect(properties?.onScreenText.maxItems).toBe('8')
+    expect(properties?.uncertainties.maxItems).toBe('5')
+  })
 })
 
 describe('validateObservations', () => {

@@ -188,7 +188,7 @@ describe('config module', () => {
     expect(config.media).toEqual({
       watch: true,
       watchTimeoutMs: 20_000,
-      digestMaxOutputTokens: 1200,
+      digestMaxOutputTokens: 2400,
       skimClips: 8,
       skimClipSeconds: 10,
       maxStreamedUploadBytes: 52_428_800,
