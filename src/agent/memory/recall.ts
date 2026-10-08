@@ -259,8 +259,9 @@ export function recallForTurn(input: RecallInput): RecallResult {
 
   const ranked = [...memberRanked, ...serverRanked, ...conversationRanked, ...mediaRanked].sort(byScore)
   const selected: RecallItem[] = []
+  const names = getAllUserNames()
   const fits = (candidate: RecallItem): boolean =>
-    estimateTokens(formatRecallBlock([...selected, candidate])) <= config.memory.recallTokenBudget
+    estimateTokens(formatRecallBlock([...selected, candidate], names)) <= config.memory.recallTokenBudget
 
   for (const { item: core } of coreRanked) {
     if (fits(core)) selected.push(core)
@@ -272,7 +273,7 @@ export function recallForTurn(input: RecallInput): RecallResult {
     if (fits(candidate)) selected.push(candidate)
   }
 
-  const block = formatRecallBlock(selected)
+  const block = formatRecallBlock(selected, names)
   return {
     items: selected,
     block,
@@ -316,42 +317,45 @@ export function recallFactsForSubject(
     .map(({ item }) => item)
 }
 
+// Everything remembered came from people's messages, so it is quoted: a value cannot add lines or headings.
+const quote = (value: string): string => JSON.stringify(value)
+
 /** Sections follow the spec order; an empty section is omitted and no items give an empty string. */
-export function formatRecallBlock(items: readonly RecallItem[]): string {
+export function formatRecallBlock(
+  items: readonly RecallItem[],
+  names: ReturnType<typeof getAllUserNames> = getAllUserNames()
+): string {
   if (items.length === 0) return ''
-  const names = getAllUserNames()
 
   const people = new Map<string, { name: string; facts: string[] }>()
   for (const recalled of items) {
     if (recalled.kind !== 'fact') continue
     const userId = recalled.subjectUserId ?? ''
     const person = people.get(userId) ?? { name: names.get(userId)?.displayName ?? userId, facts: [] }
-    person.facts.push(`${recalled.label}: ${recalled.text}`)
+    person.facts.push(`${recalled.label}: ${quote(recalled.text)}`)
     people.set(userId, person)
   }
 
   const sections: string[] = []
   if (people.size > 0) {
-    const lines = [...people.values()].map(({ name, facts }) => `- ${name}: ${facts.join('; ')}`)
+    const lines = [...people.values()].map(({ name, facts }) => `- ${quote(name)}: ${facts.join('; ')}`)
     sections.push(['### People', ...lines].join('\n'))
   }
 
   const serverLines = items
     .filter((recalled) => recalled.kind === 'server_fact')
-    .map((recalled) => `- ${recalled.label}${recalled.date ? ` (${recalled.date})` : ''}: ${recalled.text}`)
+    .map((recalled) => `- ${recalled.label}${recalled.date ? ` (${recalled.date})` : ''}: ${quote(recalled.text)}`)
   if (serverLines.length > 0) sections.push(['### This Server', ...serverLines].join('\n'))
 
   const conversationLines = items
     .filter((recalled) => recalled.kind === 'conversation')
-    .map((recalled) => `- ${recalled.date ?? 'undated'}: ${recalled.text}`)
-  if (conversationLines.length > 0) {
-    sections.push(['### Past Conversations', UNTRUSTED_NOTE, ...conversationLines].join('\n'))
-  }
+    .map((recalled) => `- ${recalled.date ?? 'undated'}: ${quote(recalled.text)}`)
+  if (conversationLines.length > 0) sections.push(['### Past Conversations', ...conversationLines].join('\n'))
 
   const mediaLines = items
     .filter((recalled) => recalled.kind === 'media')
-    .map((recalled) => `- ${recalled.date ?? 'undated'}, ${recalled.label}: ${recalled.text}`)
-  if (mediaLines.length > 0) sections.push(['### Media Shared Here', UNTRUSTED_NOTE, ...mediaLines].join('\n'))
+    .map((recalled) => `- ${recalled.date ?? 'undated'}, ${recalled.label}: ${quote(recalled.text)}`)
+  if (mediaLines.length > 0) sections.push(['### Media Shared Here', ...mediaLines].join('\n'))
 
-  return ['## What You Remember', ...sections].join('\n\n')
+  return [`## What You Remember\n${UNTRUSTED_NOTE}`, ...sections].join('\n\n')
 }
