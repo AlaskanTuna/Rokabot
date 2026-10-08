@@ -401,6 +401,10 @@ async function transcribe(source: FrameSource, windows: MediaClip[]): Promise<Tr
   return transcribeSource(source, windows, { url, timeoutMs, maxSpeechSec }, { signal: AbortSignal.timeout(timeoutMs) })
 }
 
+function definitiveSilence(heard: Transcript | { reason: string }): boolean {
+  return 'reason' in heard ? heard.reason === 'no_audio' : heard.segments.length === 0
+}
+
 async function watchOne(
   attachment: ImageAttachment,
   kind: MediaKind,
@@ -644,8 +648,10 @@ async function watchWithQwen(context: WatchContext): Promise<Attempt> {
 
   present(result, watched.digest)
   noteOutcome(result, watchOutcomeFor(watched.digest))
-  // A watch that heard nothing is a stand-in; remembering it would keep later shares from one that heard the video.
-  if (scope && contentKey && watched.digest.heard !== 'none') remember(scope, attachment, contentKey, watched.digest)
+  // Keep definitive silence for reuse; retry only when transcription might succeed on a later share.
+  if (scope && contentKey && (watched.digest.heard !== 'none' || definitiveSilence(heard))) {
+    remember(scope, attachment, contentKey, watched.digest)
+  }
   return { ok: true }
 }
 

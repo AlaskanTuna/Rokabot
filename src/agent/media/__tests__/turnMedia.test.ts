@@ -1340,6 +1340,40 @@ describe('the qwen watcher', () => {
       expect(mocks.transcribeSource.mock.calls[0][1]).toEqual([{ startSec: 0, endSec: 150 }])
     })
 
+    it('remembers a watch when the video has no audio source', async () => {
+      const scope = { guildId: 'guild-1', channelId: 'c1', messageId: 'trigger-1', userId: 'asker-1' }
+      mocks.watcher = 'qwen'
+      mocks.findMediaDigest.mockReturnValue(null)
+      mocks.watchFramesWithQwen.mockResolvedValue({ status: 'ok', digest: qwenDigest(), watchMs: 6000 })
+      mocks.resolveYouTubeStreams.mockResolvedValue({
+        durationSec: 40,
+        title: '',
+        description: '',
+        video: { url: 'https://rr1.googlevideo.com/v', headers: null },
+        audio: null
+      })
+
+      await prepareTurnMedia({ ...input([youtube]), memoryScope: scope, geminiUnavailable: true })
+
+      expect(mocks.transcribeSource).not.toHaveBeenCalled()
+      expect(mocks.saveMediaDigest).toHaveBeenCalledTimes(1)
+    })
+
+    it('remembers a watch when transcription succeeds with no speech', async () => {
+      const scope = { guildId: 'guild-1', channelId: 'c1', messageId: 'trigger-1', userId: 'asker-1' }
+      mocks.findMediaDigest.mockReturnValue(null)
+      mocks.watchFramesWithQwen.mockResolvedValue({ status: 'ok', digest: qwenDigest(), watchMs: 6000 })
+      mocks.transcribeSource.mockResolvedValue({ ...speech, speechSec: 0, segments: [] })
+
+      await prepareTurnMedia({
+        ...input([{ ...upload, contentKey: 'post:x:1:0' }]),
+        memoryScope: scope,
+        geminiUnavailable: true
+      })
+
+      expect(mocks.saveMediaDigest).toHaveBeenCalledTimes(1)
+    })
+
     it('still watches the frames when transcription fails', async () => {
       mocks.transcribeSource.mockResolvedValue({ reason: 'timeout' })
       mocks.watchFramesWithQwen.mockResolvedValue({ status: 'ok', digest: qwenDigest(), watchMs: 6000 })
@@ -1362,6 +1396,25 @@ describe('the qwen watcher', () => {
 
       expect(mocks.saveMediaDigest).toHaveBeenCalledTimes(1)
     })
+
+    it.each(['timeout', 'unreachable', 'http_500', 'invalid', 'disabled', 'audio_failed'])(
+      'does not remember a watch when transcription fails with %s',
+      async (reason) => {
+        const scope = { guildId: 'guild-1', channelId: 'c1', messageId: 'trigger-1', userId: 'asker-1' }
+        mocks.findMediaDigest.mockReturnValue(null)
+        mocks.watchFramesWithQwen.mockResolvedValue({ status: 'ok', digest: qwenDigest(), watchMs: 6000 })
+        if (reason === 'disabled') mocks.transcriberUrl = ''
+        else mocks.transcribeSource.mockResolvedValue({ reason })
+
+        await prepareTurnMedia({
+          ...input([{ ...upload, contentKey: 'post:x:1:0' }]),
+          memoryScope: scope,
+          geminiUnavailable: true
+        })
+
+        expect(mocks.saveMediaDigest).not.toHaveBeenCalled()
+      }
+    )
 
     it('hears an audio clip from its transcript alone while Gemini is unavailable', async () => {
       mocks.watchFramesWithQwen.mockResolvedValue({
@@ -1392,19 +1445,5 @@ describe('the qwen watcher', () => {
       expect(mocks.watchFramesWithQwen).not.toHaveBeenCalled()
       expect(result.mediaTextParts[0].text).toBe("[A voice message was shared, but it couldn't be watched right now.]")
     })
-  })
-
-  it('does not remember a frame watch that heard nothing', async () => {
-    const scope = { guildId: 'guild-1', channelId: 'c1', messageId: 'trigger-1', userId: 'asker-1' }
-    mocks.findMediaDigest.mockReturnValue(null)
-
-    await prepareTurnMedia({
-      ...input([{ ...upload, contentKey: 'post:x:1:0' }]),
-      memoryScope: scope,
-      geminiUnavailable: true
-    })
-
-    expect(mocks.watchFramesWithQwen).toHaveBeenCalledTimes(1)
-    expect(mocks.saveMediaDigest).not.toHaveBeenCalled()
   })
 })
