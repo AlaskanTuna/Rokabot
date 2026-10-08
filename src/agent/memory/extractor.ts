@@ -4,6 +4,7 @@ import { getDb } from '../../storage/database.js'
 import type { ExtractionEpisode, ExtractionQueueJob } from '../../storage/extractionQueue.js'
 import { recordJevEvent } from '../../storage/jevEventStore.js'
 import { getClaimSourceChannels } from '../../storage/memoryRecallStore.js'
+import { logger } from '../../utils/logger.js'
 import { judgeEpisodeOperations } from '../jev/judgments.js'
 import { SAFETY_SETTINGS } from '../safetySettings.js'
 import { admitEpisode } from './admission.js'
@@ -57,11 +58,10 @@ function episodePrompt(guildId: string, channelId: string, episode: ExtractionEp
   const humanIds = [...new Set(episode.messages.filter((message) => !message.isBot).map((message) => message.userId))]
   const claims = humanIds.map((userId) => ({
     userId,
-    claims: recallableHere(getActiveClaims(guildId, userId), scope).map(({ id, predicate, value }) => ({
-      id,
-      predicate,
-      value
-    }))
+    claims: recallableHere(
+      getActiveClaims(guildId, userId).filter(({ needsReview }) => !needsReview),
+      scope
+    ).map(({ id, predicate, value }) => ({ id, predicate, value }))
   }))
   const guildClaims = recallableHere(getActiveGuildClaims(guildId), scope).map(
     ({ id, predicate, value, expiresAt }) => ({
@@ -210,7 +210,9 @@ export async function verifyAndApplyOperations(input: {
   const humanIds = new Set(input.episode.messages.filter((message) => !message.isBot).map((message) => message.userId))
   const subjectIds = new Set([...input.subjectIds].filter((userId) => humanIds.has(userId)))
   const existing = [
-    ...[...subjectIds].flatMap((userId) => getActiveClaims(input.guildId, userId)),
+    ...[...subjectIds].flatMap((userId) =>
+      getActiveClaims(input.guildId, userId).filter(({ needsReview }) => !needsReview)
+    ),
     ...getActiveGuildClaims(input.guildId)
   ]
   const planned = planVerification(writeOps, existing, Date.now(), config.timezone)
@@ -220,7 +222,7 @@ export async function verifyAndApplyOperations(input: {
     existing
   })
   const verified = hasCompleteVerification(verification, planned)
-  const results: Array<{ applied: boolean; duplicate: boolean }> = []
+  const results: Array<{ applied: boolean; duplicate: boolean; staged?: boolean }> = []
   const appliedEvidence = new Set<string>()
 
   getDb().transaction(() => {
@@ -321,11 +323,16 @@ export async function verifyAndApplyOperations(input: {
               eventDate: entry.eventDate,
               sourceKind: 'passive',
               channelId: input.channelId,
-              needsReview: !verified
+              needsReview: !verified,
+              status: verified ? 'active' : 'candidate'
             },
             { transaction: true }
           )
-          results.push({ applied: claim.status === 'active', duplicate: false })
+          results.push({
+            applied: claim.status === 'active' || claim.status === 'candidate',
+            duplicate: false,
+            staged: !verified && claim.status === 'candidate'
+          })
           continue
         }
 
@@ -338,11 +345,16 @@ export async function verifyAndApplyOperations(input: {
             objectUserId: op.objectUserId,
             sourceKind: 'passive',
             channelId: input.channelId,
-            needsReview: !verified
+            needsReview: !verified,
+            status: verified ? 'active' : 'candidate'
           },
           { transaction: true }
         )
-        results.push({ applied: claim.status === 'active', duplicate: false })
+        results.push({
+          applied: claim.status === 'active' || claim.status === 'candidate',
+          duplicate: false,
+          staged: !verified && claim.status === 'candidate'
+        })
         continue
       }
 
@@ -375,7 +387,11 @@ export async function verifyAndApplyOperations(input: {
               { transaction: true }
             )
         const duplicate = replacement?.id === op.existingId
-        results.push({ applied: Boolean(replacement) && !duplicate, duplicate })
+        results.push({
+          applied: Boolean(replacement) && !duplicate,
+          duplicate,
+          staged: !verified && Boolean(replacement)
+        })
         continue
       }
 
@@ -388,6 +404,14 @@ export async function verifyAndApplyOperations(input: {
       results.push({ applied, duplicate: false })
     }
   })()
+
+  const stagedOps = results.filter(({ staged }) => staged).length
+  if (stagedOps > 0) {
+    logger.info(
+      { guildId: input.guildId, channelId: input.channelId, stagedOps },
+      'Staged unverified memory operations'
+    )
+  }
 
   if (verified && verification) {
     for (const entry of planned) {

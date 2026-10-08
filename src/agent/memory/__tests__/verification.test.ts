@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ExtractionEpisode } from '../../../storage/extractionQueue.js'
+import { logger } from '../../../utils/logger.js'
 import type { ExtractionOp } from '../extractionSchema.js'
 
 const mocks = vi.hoisted(() => ({ judgeEpisodeOperations: vi.fn() }))
@@ -499,7 +500,8 @@ describe('verifyAndApplyOperations', () => {
     ).toEqual({ count: 1 })
   })
 
-  it.each(['timeout', 'partial answers'])('marks an add for review when verification has %s', async (failure) => {
+  it.each(['timeout', 'partial answers'])('stages an add when verification has %s', async (failure) => {
+    const info = vi.spyOn(logger, 'info')
     if (failure === 'timeout') mocks.judgeEpisodeOperations.mockResolvedValueOnce(null)
     else
       mocks.judgeEpisodeOperations.mockResolvedValueOnce({
@@ -517,10 +519,18 @@ describe('verifyAndApplyOperations', () => {
         subjectIds: new Set(['u-1'])
       })
     ).resolves.toEqual({ appliedOps: 1, droppedOps: 0, duplicateOps: 0 })
-    expect(getActiveClaims('g-1', 'u-1')).toEqual([expect.objectContaining({ value: 'tea', needsReview: true })])
+    expect(getActiveClaims('g-1', 'u-1')).toEqual([])
+    expect(getDb().prepare('SELECT status, needs_review FROM memory_claim').all()).toEqual([
+      { status: 'candidate', needs_review: 1 }
+    ])
+    expect(info).toHaveBeenCalledWith(
+      { guildId: 'g-1', channelId: 'c-1', stagedOps: 1 },
+      'Staged unverified memory operations'
+    )
+    expect(JSON.stringify(info.mock.calls)).not.toContain('I like tea')
   })
 
-  it('marks an update for review when verification fails and refuses unsafe values', async () => {
+  it('stages an unverified update without replacing its active predecessor', async () => {
     const prior = assertClaim({
       guildId: 'g-1',
       subjectUserId: 'u-1',
@@ -542,7 +552,71 @@ describe('verifyAndApplyOperations', () => {
       }),
       subjectIds: new Set(['u-1'])
     })
-    expect(getActiveClaims('g-1', 'u-1')).toEqual([expect.objectContaining({ value: 'green tea', needsReview: true })])
+    expect(getActiveClaims('g-1', 'u-1')).toEqual([expect.objectContaining({ id: prior.id, value: 'tea' })])
+    expect(getDb().prepare('SELECT status, needs_review FROM memory_claim WHERE value = ?').get('green tea')).toEqual({
+      status: 'candidate',
+      needs_review: 1
+    })
+  })
+
+  it('stages an unverified revival of a superseded value without changing the current value', async () => {
+    const prior = assertClaim({
+      guildId: 'g-1',
+      subjectUserId: 'u-1',
+      predicate: 'favorite_game',
+      value: 'old game',
+      sourceKind: 'explicit'
+    })
+    const current = assertClaim({
+      guildId: 'g-1',
+      subjectUserId: 'u-1',
+      predicate: 'favorite_game',
+      value: 'current game',
+      sourceKind: 'explicit'
+    })
+    mocks.judgeEpisodeOperations.mockResolvedValueOnce(null)
+
+    await verifyAndApplyOperations({
+      guildId: 'g-1',
+      channelId: 'c-1',
+      episode: episode(),
+      output: output({
+        op: 'add',
+        subject: { kind: 'user', userId: 'u-1' },
+        predicate: 'favorite_game',
+        value: 'old game'
+      }),
+      subjectIds: new Set(['u-1'])
+    })
+
+    expect(getActiveClaims('g-1', 'u-1')).toEqual([expect.objectContaining({ id: current.id, value: 'current game' })])
+    expect(
+      getDb().prepare('SELECT status, needs_review, superseded_by FROM memory_claim WHERE id = ?').get(prior.id)
+    ).toEqual({ status: 'candidate', needs_review: 1, superseded_by: null })
+  })
+
+  it('refuses unsafe values after an unverified update', async () => {
+    const prior = assertClaim({
+      guildId: 'g-1',
+      subjectUserId: 'u-1',
+      predicate: 'likes',
+      value: 'tea',
+      sourceKind: 'explicit'
+    })
+    mocks.judgeEpisodeOperations.mockResolvedValueOnce(null)
+    await verifyAndApplyOperations({
+      guildId: 'g-1',
+      channelId: 'c-1',
+      episode: episode(),
+      output: output({
+        op: 'update',
+        subject: { kind: 'user', userId: 'u-1' },
+        existingId: prior.id,
+        predicate: 'likes',
+        value: 'green tea'
+      }),
+      subjectIds: new Set(['u-1'])
+    })
 
     setAnswers(positiveAnswers('durable_0', 'attributed_0'))
     await expect(
@@ -554,7 +628,7 @@ describe('verifyAndApplyOperations', () => {
         subjectIds: new Set(['u-1'])
       })
     ).resolves.toEqual({ appliedOps: 0, droppedOps: 1, duplicateOps: 0 })
-    expect(getActiveClaims('g-1', 'u-1')).toHaveLength(1)
+    expect(getActiveClaims('g-1', 'u-1')).toEqual([expect.objectContaining({ id: prior.id, value: 'tea' })])
   })
 
   it('applies a guild plan with durable and guild-scope verification and records both answers', async () => {
@@ -595,7 +669,7 @@ describe('verifyAndApplyOperations', () => {
     expect(getDb().prepare('SELECT COUNT(*) AS count FROM memory_claim').get()).toEqual({ count: 0 })
   })
 
-  it.each(['timeout', 'partial answers'])('marks a valid guild plan for review when Jev has %s', async (failure) => {
+  it.each(['timeout', 'partial answers'])('stages a valid guild plan when Jev has %s', async (failure) => {
     if (failure === 'timeout') mocks.judgeEpisodeOperations.mockResolvedValueOnce(null)
     else
       mocks.judgeEpisodeOperations.mockResolvedValueOnce({
@@ -615,7 +689,7 @@ describe('verifyAndApplyOperations', () => {
     ).resolves.toEqual({ appliedOps: 1, droppedOps: 0, duplicateOps: 0 })
     expect(getDb().prepare("SELECT status, needs_review FROM memory_claim WHERE subject_kind = 'guild'").get()).toEqual(
       {
-        status: 'active',
+        status: 'candidate',
         needs_review: 1
       }
     )
@@ -701,7 +775,7 @@ describe('verifyAndApplyOperations', () => {
     expect(getDb().prepare('SELECT status FROM memory_claim WHERE id = ?').get(other.id)).toEqual({ status: 'active' })
   })
 
-  it('marks a guild update for review when Jev verification fails', async () => {
+  it('stages a guild update without replacing its active predecessor', async () => {
     const prior = assertGuildClaim({
       guildId: 'g-1',
       predicate: 'plan',
@@ -729,10 +803,13 @@ describe('verifyAndApplyOperations', () => {
     ).resolves.toEqual({ appliedOps: 1, droppedOps: 0, duplicateOps: 0 })
     expect(getDb().prepare("SELECT status, needs_review FROM memory_claim WHERE subject_kind = 'guild'").all()).toEqual(
       [
-        { status: 'superseded', needs_review: 0 },
-        { status: 'active', needs_review: 1 }
+        { status: 'active', needs_review: 0 },
+        { status: 'candidate', needs_review: 1 }
       ]
     )
+    expect(getActiveGuildClaims('g-1')).toEqual([
+      expect.objectContaining({ id: prior.id, value: 'Game night on September 25' })
+    ])
   })
 
   it('drops a guild plan whose date components cannot be resolved before writing', async () => {

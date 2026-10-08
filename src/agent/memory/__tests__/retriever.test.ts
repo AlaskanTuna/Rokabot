@@ -158,7 +158,7 @@ describe('retrieveForTurn', () => {
     expect(result.trace.candidates.map(({ id }) => id)).not.toContain(needsReview.id)
   })
 
-  it('selects a speaker needs-review claim only as an anchor', () => {
+  it('excludes a speaker needs-review claim from anchors', () => {
     const needsReview = claim('speaker', 'nickname', 'Rin', { sourceKind: 'legacy', needsReview: true })
     claim('participant-1', 'favorite_game', 'Senren Banka')
 
@@ -169,8 +169,23 @@ describe('retrieveForTurn', () => {
       message: 'Any good games?'
     })
 
-    expect(result.claims.map(({ claim: candidate }) => candidate.id)).toContain(needsReview.id)
+    expect(result.claims.map(({ claim: candidate }) => candidate.id)).not.toContain(needsReview.id)
     expect(result.trace.candidates.map(({ id }) => id)).not.toContain(needsReview.id)
+  })
+
+  it('excludes staged claims from both legacy retrieval builders', () => {
+    const staged = claim('speaker', 'nickname', 'Rin', { status: 'candidate', needsReview: true })
+
+    const turn = retrieveForTurn({
+      guildId: 'guild-a',
+      speakerId: 'speaker',
+      participantIds: [],
+      message: 'hello'
+    })
+    const subject = retrieveForSubject('guild-a', 'speaker', 'hello', 10)
+
+    expect(turn.claims.map(({ claim: candidate }) => candidate.id)).not.toContain(staged.id)
+    expect(subject.map(({ claim: candidate }) => candidate.id)).not.toContain(staged.id)
   })
 
   it('touches only selected claims without changing their evidence timestamps', () => {
