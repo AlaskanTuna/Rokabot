@@ -46,7 +46,9 @@ describe('passive memory admission', () => {
     expect(precheckEpisode(episode)).toBe('sensitive')
     await expect(admitEpisode({ guildId: 'g-1', channelId: 'c-1', episode })).resolves.toEqual({
       admitted: false,
-      reason: 'sensitive'
+      reason: 'sensitive',
+      probability: null,
+      inputTokens: 0
     })
     expect(mocks.systemOne).not.toHaveBeenCalled()
     expect(mocks.record).not.toHaveBeenCalled()
@@ -58,7 +60,9 @@ describe('passive memory admission', () => {
     expect(precheckEpisode(episode)).toBe('trivial')
     await expect(admitEpisode({ guildId: 'g-1', channelId: 'c-1', episode })).resolves.toEqual({
       admitted: false,
-      reason: 'trivial'
+      reason: 'trivial',
+      probability: null,
+      inputTokens: 0
     })
     expect(mocks.systemOne).not.toHaveBeenCalled()
   })
@@ -69,7 +73,9 @@ describe('passive memory admission', () => {
 
     await expect(admitEpisode({ guildId: 'g-1', channelId: 'c-1', episode })).resolves.toEqual({
       admitted: false,
-      reason: 'jev_unavailable'
+      reason: 'jev_unavailable',
+      probability: null,
+      inputTokens: 0
     })
     expect(mocks.record).not.toHaveBeenCalled()
   })
@@ -99,7 +105,9 @@ describe('passive memory admission', () => {
       admitEpisode({ guildId: 'g-1', channelId: 'c-1', episode: episodeWith([line(content)]) })
     ).resolves.toEqual({
       admitted: false,
-      reason: 'below_threshold'
+      reason: 'below_threshold',
+      probability: 0.49,
+      inputTokens: 18
     })
 
     expect(mocks.record).toHaveBeenCalledWith({
@@ -122,8 +130,18 @@ describe('passive memory admission', () => {
 
     await expect(
       admitEpisode({ guildId: 'g-1', channelId: 'c-1', episode: episodeWith([line('I like tea')]) })
-    ).resolves.toEqual({ admitted: true, reason: 'admitted' })
+    ).resolves.toEqual({ admitted: true, reason: 'admitted', probability: 0.5, inputTokens: 14 })
     expect(mocks.record).toHaveBeenCalledWith(expect.objectContaining({ applied: true, probability: 0.5 }))
+  })
+
+  it('links the recorded judgment to the queue job and returns its probability', async () => {
+    setJudgment(0.72, 21)
+
+    await expect(
+      admitEpisode({ guildId: 'g-1', channelId: 'c-1', jobId: 42, episode: episodeWith([line('I like tea')]) })
+    ).resolves.toMatchObject({ admitted: true, probability: 0.72, inputTokens: 21 })
+
+    expect(mocks.record).toHaveBeenCalledWith(expect.objectContaining({ kind: 'admission', jobId: 42 }))
   })
 
   it('fails closed when the Jev admission request times out', async () => {
@@ -131,7 +149,7 @@ describe('passive memory admission', () => {
 
     await expect(
       admitEpisode({ guildId: 'g-1', channelId: 'c-1', episode: episodeWith([line('I like tea')]) })
-    ).resolves.toEqual({ admitted: false, reason: 'jev_unavailable' })
+    ).resolves.toEqual({ admitted: false, reason: 'jev_unavailable', probability: null, inputTokens: 0 })
     expect(mocks.record).not.toHaveBeenCalled()
   })
 })

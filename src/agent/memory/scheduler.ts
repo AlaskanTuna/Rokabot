@@ -1,15 +1,18 @@
 import { config } from '../../config.js'
 import {
+  type ExtractionQueueJob,
   claimNextForGuild,
   getNextPendingAvailableAt,
   listGuildsWithPending,
   markDone,
   markFailed
 } from '../../storage/extractionQueue.js'
+import { recordExtractionSample } from '../../storage/extractionSampleStore.js'
 import { logger } from '../../utils/logger.js'
 import { isShuttingDown } from '../shutdownSignal.js'
 import { persistEpisodeResult } from './episodePersistence.js'
 import { classifyExtractionError } from './extractionErrors.js'
+import { type RunTrace, finishRunTrace, noteError, noteSummary, startRunTrace, timeStage } from './extractionRun.js'
 import { runEpisodePipeline } from './extractor.js'
 import { embedPendingFacts } from './factEmbeddings.js'
 
@@ -54,16 +57,38 @@ function finishJob(guildId: string): void {
   scheduleDrain()
 }
 
+// One stable choice per job, so a retried job is sampled or skipped consistently.
+export function shouldSample(jobId: number, rate: number): boolean {
+  if (rate <= 0) return false
+  return (Math.imul(jobId, 2654435761) >>> 0) % 1000 < Math.round(rate * 1000)
+}
+
+export function maybeSample(job: ExtractionQueueJob, trace: RunTrace): void {
+  if (trace.outcome !== 'trivial' && trace.outcome !== 'below_threshold') return
+  if (config.memory.privacy === 'off' || !shouldSample(job.id, config.memory.extractionSampleRate)) return
+  recordExtractionSample({
+    jobId: job.id,
+    guildId: job.guildId,
+    channelId: job.channelId,
+    outcome: trace.outcome,
+    admissionProbability: trace.admission?.probability ?? null,
+    lines: job.episode.messages.map(({ displayName, content }) => `[${displayName}]: ${content}`)
+  })
+}
+
 function runJob(job: NonNullable<ReturnType<typeof claimNextForGuild>>): void {
   inFlightGuilds.add(job.guildId)
-  const task = runEpisodePipeline(job)
+  const trace = startRunTrace(job, job.attempts + job.transientRetries + 1)
+  const task = runEpisodePipeline(job, trace)
     .then(async (result) => {
-      await persistEpisodeResult({ job, result })
+      const kept = await timeStage(trace, 'persistence', () => persistEpisodeResult({ job, result }))
+      noteSummary(trace, result.summary, kept)
       markDone(job.id)
       void embedPendingFacts({ limit: 20 })
     })
     .catch((error: unknown) => {
       const classification = classifyExtractionError(error, { shuttingDown: isShuttingDown() })
+      noteError(trace, classification, error)
       const failure = markFailed(job.id, classification)
       logger.warn(
         {
@@ -79,6 +104,8 @@ function runJob(job: NonNullable<ReturnType<typeof claimNextForGuild>>): void {
       )
     })
     .finally(() => {
+      finishRunTrace(trace)
+      maybeSample(job, trace)
       inFlightTasks.delete(task)
       finishJob(job.guildId)
     })

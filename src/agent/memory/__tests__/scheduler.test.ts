@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ExtractionEpisode } from '../../../storage/extractionQueue.js'
+import type { ExtractionEpisode, ExtractionQueueJob } from '../../../storage/extractionQueue.js'
 
-const configMock = vi.hoisted(() => ({ memory: { privacy: 'relaxed' } }))
+const configMock = vi.hoisted(() => ({
+  memory: { privacy: 'relaxed', extractionSampleRate: 0.1, embeddingModel: 'embed-test' },
+  gemini: { extractionModel: 'gemini-test' },
+  jev: { model: 'jev-test' }
+}))
 
 const mocks = vi.hoisted(() => {
   type QueuedJob = {
@@ -23,7 +27,9 @@ const mocks = vi.hoisted(() => {
     runEpisodePipeline: vi
       .fn()
       .mockResolvedValue({ status: 'completed', summary: null, appliedOps: 0, duplicateOps: 0 }),
-    persistEpisodeResult: vi.fn().mockResolvedValue(undefined),
+    persistEpisodeResult: vi.fn().mockResolvedValue(false),
+    recordMemoryEvent: vi.fn<(row: { kind: string; detail: string }) => void>(),
+    recordExtractionSample: vi.fn(),
     isShuttingDown: vi.fn(() => false),
     embedPendingFacts: vi.fn().mockResolvedValue({ embedded: 0, failed: 0 }),
     logger: { warn: vi.fn() },
@@ -106,6 +112,10 @@ vi.mock('../../../storage/extractionQueue.js', () => ({
   markFailed: mocks.markFailed
 }))
 vi.mock('../../../config.js', () => ({ config: configMock }))
+vi.mock('../../../storage/metricsStore.js', () => ({ recordMemoryEvent: mocks.recordMemoryEvent }))
+vi.mock('../../../storage/extractionSampleStore.js', () => ({
+  recordExtractionSample: mocks.recordExtractionSample
+}))
 vi.mock('../../shutdownSignal.js', () => ({ isShuttingDown: mocks.isShuttingDown }))
 vi.mock('../extractor.js', () => ({ runEpisodePipeline: mocks.runEpisodePipeline }))
 vi.mock('../episodePersistence.js', () => ({ persistEpisodeResult: mocks.persistEpisodeResult }))
@@ -113,7 +123,14 @@ vi.mock('../factEmbeddings.js', () => ({ embedPendingFacts: mocks.embedPendingFa
 vi.mock('../../../utils/logger.js', () => ({ logger: mocks.logger }))
 
 import { JevUnavailableError } from '../extractionErrors.js'
-import { resetForTest, startExtractionScheduler, stopExtractionScheduler } from '../scheduler.js'
+import { startRunTrace } from '../extractionRun.js'
+import {
+  maybeSample,
+  resetForTest,
+  shouldSample,
+  startExtractionScheduler,
+  stopExtractionScheduler
+} from '../scheduler.js'
 
 function episode(content: string): ExtractionEpisode {
   const message = {
@@ -137,6 +154,49 @@ function enqueueDelayed(guildId: string, content: string, delayMs = 60_000) {
   return job
 }
 
+function enqueueJob() {
+  const job = enqueue('A', 'hello')
+  startExtractionScheduler()
+  return job
+}
+
+function jobWithId(id: number): ExtractionQueueJob {
+  return {
+    id,
+    guildId: 'A',
+    channelId: 'channel-A',
+    episode: {
+      messages: [
+        { messageId: 'm-1', userId: 'user-1', displayName: 'Alice', content: 'hello', timestamp: 1_000, isBot: false }
+      ],
+      context: [],
+      startedAt: 1_000,
+      endedAt: 1_000
+    },
+    status: 'processing',
+    attempts: 0,
+    transientRetries: 0,
+    enqueuedAt: 1_000
+  }
+}
+
+function runEvents() {
+  return mocks.recordMemoryEvent.mock.calls.map(([row]) => row).filter((row) => row.kind === 'extraction_run')
+}
+
+function lastRunEvent() {
+  return runEvents().at(-1) as { detail: string }
+}
+
+function sampledJobId(rate = 0.1): number {
+  return Array.from({ length: 1000 }, (_, index) => index + 1).find((id) => shouldSample(id, rate)) as number
+}
+
+async function advancePastRetryDelay(): Promise<void> {
+  await vi.advanceTimersByTimeAsync(60_000)
+  await drain()
+}
+
 async function drain(): Promise<void> {
   for (let index = 0; index < 20; index++) {
     for (let settle = 0; settle < 10; settle++) await Promise.resolve()
@@ -152,7 +212,9 @@ describe('episode extraction scheduler', () => {
     mocks.resetQueue()
     mocks.runEpisodePipeline.mockReset()
     mocks.runEpisodePipeline.mockResolvedValue({ status: 'completed', summary: null, appliedOps: 0, duplicateOps: 0 })
-    mocks.persistEpisodeResult.mockReset().mockResolvedValue(undefined)
+    mocks.persistEpisodeResult.mockReset().mockResolvedValue(false)
+    mocks.recordMemoryEvent.mockReset()
+    mocks.recordExtractionSample.mockReset()
     mocks.markDone.mockClear()
     mocks.markFailed.mockClear()
     mocks.logger.warn.mockClear()
@@ -160,12 +222,14 @@ describe('episode extraction scheduler', () => {
     mocks.isShuttingDown.mockReturnValue(false)
     mocks.claimNextForGuild.mockClear()
     configMock.memory.privacy = 'relaxed'
+    configMock.memory.extractionSampleRate = 0.1
   })
 
   afterEach(() => {
     stopExtractionScheduler()
     vi.useRealTimers()
     configMock.memory.privacy = 'relaxed'
+    configMock.memory.extractionSampleRate = 0.1
   })
 
   it('drains queued guilds in deterministic round-robin order', async () => {
@@ -429,5 +493,127 @@ describe('episode extraction scheduler', () => {
 
     expect(mocks.runEpisodePipeline).toHaveBeenCalledOnce()
     expect(mocks.jobs).toHaveLength(0)
+  })
+
+  it('records a written run with its stages and ops', async () => {
+    mocks.runEpisodePipeline.mockImplementation(async (_job, trace) => {
+      trace.stage = 'applied'
+      trace.outcome = 'written'
+      trace.ops.proposed = 2
+      trace.ops.applied = 1
+      return { status: 'completed', summary: 'Alice talked about work.', appliedOps: 1, duplicateOps: 0 }
+    })
+    mocks.persistEpisodeResult.mockResolvedValue(true)
+    enqueueJob()
+    await drain()
+    const detail = JSON.parse(lastRunEvent().detail)
+    expect(detail).toMatchObject({ stage: 'applied', outcome: 'written', attempt: 1, summary: { kept: true } })
+    expect(detail.stageMs).toHaveProperty('persistence')
+  })
+
+  it('records a failed run with its error class, then the retry as the next attempt', async () => {
+    mocks.runEpisodePipeline
+      .mockRejectedValueOnce(Object.assign(new Error('overloaded'), { status: 503 }))
+      .mockImplementationOnce(async (_job, trace) => {
+        trace.stage = 'applied'
+        trace.outcome = 'noop'
+        return { status: 'completed', summary: null, appliedOps: 0, duplicateOps: 0 }
+      })
+    enqueueJob()
+    await drain()
+    await advancePastRetryDelay()
+    const details = runEvents().map((row) => JSON.parse(row.detail))
+    expect(details).toHaveLength(2)
+    expect(details[0]).toMatchObject({ outcome: 'error', errorClass: 'transient', errorStatus: 503, attempt: 1 })
+    expect(details[1]).toMatchObject({ outcome: 'noop', attempt: 2 })
+  })
+
+  it('records a run Jev could not judge as jev_unavailable and unjudged, and samples nothing', async () => {
+    configMock.memory.extractionSampleRate = 1
+    mocks.runEpisodePipeline.mockImplementation(async (_job, trace) => {
+      trace.stage = 'admission'
+      trace.outcome = 'jev_unavailable'
+      throw new JevUnavailableError()
+    })
+    enqueueJob()
+    await drain()
+    const details = runEvents().map((row) => JSON.parse(row.detail))
+    expect(details).toHaveLength(2)
+    expect(details[0]).toMatchObject({
+      stage: 'admission',
+      outcome: 'jev_unavailable',
+      errorClass: 'unjudged',
+      attempt: 1
+    })
+    expect(details[1]).toMatchObject({ outcome: 'jev_unavailable', errorClass: 'unjudged', attempt: 2 })
+    expect(mocks.recordExtractionSample).not.toHaveBeenCalled()
+  })
+
+  it('keeps the job finished and moving when the run row cannot be written', async () => {
+    mocks.recordMemoryEvent.mockImplementation(() => {
+      throw new Error('disk full')
+    })
+    enqueueJob()
+    await drain()
+    expect(mocks.markDone).toHaveBeenCalledOnce()
+    expect(mocks.jobs).toHaveLength(0)
+  })
+
+  it('samples a rejected run once it finishes, with the admission probability', async () => {
+    configMock.memory.extractionSampleRate = 1
+    mocks.runEpisodePipeline.mockImplementation(async (_job, trace) => {
+      trace.stage = 'admission'
+      trace.outcome = 'below_threshold'
+      trace.admission = { probability: 0.31, threshold: 0.5 }
+      return { status: 'dropped', summary: null, appliedOps: 0, duplicateOps: 0 }
+    })
+    const queued = enqueueJob()
+    await drain()
+    expect(mocks.recordExtractionSample).toHaveBeenCalledOnce()
+    expect(mocks.recordExtractionSample).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobId: queued.id,
+        guildId: 'A',
+        channelId: 'channel-A',
+        outcome: 'below_threshold',
+        admissionProbability: 0.31,
+        lines: ['[Mio]: hello']
+      })
+    )
+  })
+
+  it('chooses about 1 in 10 jobs, the same way every time', () => {
+    const chosen = Array.from({ length: 1000 }, (_, index) => index + 1).filter((jobId) => shouldSample(jobId, 0.1))
+    expect(chosen.length).toBeGreaterThan(70)
+    expect(chosen.length).toBeLessThan(130)
+    expect(chosen.every((jobId) => shouldSample(jobId, 0.1))).toBe(true)
+    expect(shouldSample(chosen[0], 0)).toBe(false)
+  })
+
+  it('samples a chosen below-threshold rejection but never a sensitive one', () => {
+    const jobId = sampledJobId()
+    const trace = startRunTrace(jobWithId(jobId), 1)
+    trace.outcome = 'below_threshold'
+    maybeSample(jobWithId(jobId), trace)
+    expect(mocks.recordExtractionSample).toHaveBeenCalledWith(
+      expect.objectContaining({ jobId, outcome: 'below_threshold', lines: ['[Alice]: hello'] })
+    )
+
+    mocks.recordExtractionSample.mockClear()
+    trace.outcome = 'sensitive'
+    maybeSample(jobWithId(jobId), trace)
+    expect(mocks.recordExtractionSample).not.toHaveBeenCalled()
+  })
+
+  it('takes no sample under privacy off or at rate 0', () => {
+    const jobId = sampledJobId()
+    const trace = startRunTrace(jobWithId(jobId), 1)
+    trace.outcome = 'trivial'
+    configMock.memory.privacy = 'off'
+    maybeSample(jobWithId(jobId), trace)
+    configMock.memory.privacy = 'relaxed'
+    configMock.memory.extractionSampleRate = 0
+    maybeSample(jobWithId(jobId), trace)
+    expect(mocks.recordExtractionSample).not.toHaveBeenCalled()
   })
 })

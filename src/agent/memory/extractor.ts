@@ -9,6 +9,7 @@ import { judgeEpisodeOperations } from '../jev/judgments.js'
 import { SAFETY_SETTINGS } from '../safetySettings.js'
 import { admitEpisode } from './admission.js'
 import { JevUnavailableError } from './extractionErrors.js'
+import { type RunTrace, timeStage } from './extractionRun.js'
 import {
   EXTRACTION_RESPONSE_SCHEMA,
   type ExtractionOutput as EpisodeExtractionOutput,
@@ -17,6 +18,7 @@ import {
 } from './extractionSchema.js'
 import { resolveGuildFactDate } from './guildFactDates.js'
 import {
+  type ClaimStatus,
   type MemoryClaim,
   appendEvidence,
   assertClaim,
@@ -31,6 +33,7 @@ import {
   replaceActiveGuildClaim,
   retractClaim
 } from './memoryClaims.js'
+import { normalizePredicate } from './predicates.js'
 import { type RecallScope, canRecall } from './privacy.js'
 import { sensitiveFactReason } from './privacyGuard.js'
 
@@ -96,11 +99,13 @@ function episodePrompt(guildId: string, channelId: string, episode: ExtractionEp
   ].join('\n\n')
 }
 
+export type ExtractedEpisode = EpisodeExtractionOutput & { promptTokens?: number }
+
 export async function extractEpisode(input: {
   guildId: string
   channelId: string
   episode: ExtractionEpisode
-}): Promise<EpisodeExtractionOutput> {
+}): Promise<ExtractedEpisode> {
   const response = await getClient().models.generateContent({
     model: config.gemini.extractionModel,
     contents: episodePrompt(input.guildId, input.channelId, input.episode),
@@ -114,13 +119,17 @@ export async function extractEpisode(input: {
     }
   })
   if (!response.text) throw new Error('Memory extraction returned no JSON')
-  return parseExtractionOutput(response.text)
+  const promptTokens = response.usageMetadata?.promptTokenCount
+  return { ...parseExtractionOutput(response.text), ...(promptTokens === undefined ? {} : { promptTokens }) }
 }
 
 export type OperationApplicationReport = {
   appliedOps: number
   droppedOps: number
   duplicateOps: number
+  stagedOps: number
+  changedOps: number
+  inputTokens: number
 }
 
 type EpisodeWriteOp = Exclude<EpisodeOperation, { op: 'noop' }>
@@ -206,15 +215,29 @@ function operationSafe(op: EpisodeWriteOp): boolean {
   return !sensitiveFactReason(op.predicate, op.value)
 }
 
+function priorClaimStatus(guildId: string, op: EpisodeWriteOp): ClaimStatus | undefined {
+  const [subjectUserId, predicate] =
+    op.subject.kind === 'guild' ? [null, op.predicate] : [op.subject.userId, normalizePredicate(op.predicate)]
+  const row = getDb()
+    .prepare(
+      'SELECT status FROM memory_claim WHERE guild_id = ? AND subject_kind = ? AND subject_user_id IS ? AND predicate = ? AND value = ?'
+    )
+    .get(guildId, op.subject.kind, subjectUserId, predicate, op.value) as { status: ClaimStatus } | undefined
+  return row?.status
+}
+
 export async function verifyAndApplyOperations(input: {
   guildId: string
   channelId: string
   episode: ExtractionEpisode
   output: EpisodeExtractionOutput
   subjectIds: Set<string>
+  jobId?: number
 }): Promise<OperationApplicationReport> {
   const writeOps = input.output.ops.filter((op): op is EpisodeWriteOp => op.op !== 'noop')
-  if (writeOps.length === 0) return { appliedOps: 0, droppedOps: 0, duplicateOps: 0 }
+  if (writeOps.length === 0) {
+    return { appliedOps: 0, droppedOps: 0, duplicateOps: 0, stagedOps: 0, changedOps: 0, inputTokens: 0 }
+  }
 
   const observedAt = episodeObservedAt(input.episode)
   const humanIds = new Set(input.episode.messages.filter((message) => !message.isBot).map((message) => message.userId))
@@ -233,7 +256,7 @@ export async function verifyAndApplyOperations(input: {
     existing: sameAsCandidates
   })
   const verified = hasCompleteVerification(verification, planned)
-  const results: Array<{ applied: boolean; duplicate: boolean; staged?: boolean }> = []
+  const results: Array<{ applied: boolean; duplicate: boolean; staged?: boolean; changed?: boolean }> = []
   const appliedEvidence = new Set<string>()
 
   getDb().transaction(() => {
@@ -332,6 +355,7 @@ export async function verifyAndApplyOperations(input: {
           }
         }
 
+        const priorStatus = priorClaimStatus(input.guildId, op)
         if (isGuildWriteOperation(op)) {
           const claim = assertGuildClaim(
             {
@@ -348,10 +372,12 @@ export async function verifyAndApplyOperations(input: {
             },
             { transaction: true }
           )
+          const applied = claim.status === 'active' || claim.status === 'candidate'
           results.push({
-            applied: claim.status === 'active' || claim.status === 'candidate',
+            applied,
             duplicate: false,
-            staged: !verified && claim.status === 'candidate'
+            staged: !verified && claim.status === 'candidate',
+            changed: applied && claim.status !== priorStatus
           })
           continue
         }
@@ -371,10 +397,12 @@ export async function verifyAndApplyOperations(input: {
           },
           { transaction: true }
         )
+        const applied = claim.status === 'active' || claim.status === 'candidate'
         results.push({
-          applied: claim.status === 'active' || claim.status === 'candidate',
+          applied,
           duplicate: false,
-          staged: !verified && claim.status === 'candidate'
+          staged: !verified && claim.status === 'candidate',
+          changed: applied && claim.status !== priorStatus
         })
         continue
       }
@@ -410,11 +438,8 @@ export async function verifyAndApplyOperations(input: {
               { transaction: true }
             )
         const duplicate = replacement?.id === op.existingId
-        results.push({
-          applied: Boolean(replacement) && !duplicate,
-          duplicate,
-          staged: !verified && Boolean(replacement)
-        })
+        const applied = Boolean(replacement) && !duplicate
+        results.push({ applied, duplicate, staged: !verified && Boolean(replacement), changed: applied })
         continue
       }
 
@@ -424,7 +449,7 @@ export async function verifyAndApplyOperations(input: {
             { guildId: input.guildId, subjectUserId: op.subject.userId, existingId: op.existingId },
             { transaction: true }
           )
-      results.push({ applied, duplicate: false })
+      results.push({ applied, duplicate: false, changed: applied })
     }
   })()
 
@@ -451,7 +476,8 @@ export async function verifyAndApplyOperations(input: {
           confidence: answer.confidence,
           applied: key.startsWith('same_as_') ? appliedEvidence.has(key) : result.applied || result.duplicate,
           latencyMs: verification.latencyMs,
-          inputTokens: verification.inputTokens
+          inputTokens: verification.inputTokens,
+          jobId: input.jobId
         })
       }
     }
@@ -460,7 +486,10 @@ export async function verifyAndApplyOperations(input: {
   return {
     appliedOps: results.filter(({ applied }) => applied).length,
     droppedOps: results.filter(({ applied, duplicate }) => !applied && !duplicate).length,
-    duplicateOps: results.filter(({ duplicate }) => duplicate).length
+    duplicateOps: results.filter(({ duplicate }) => duplicate).length,
+    stagedOps,
+    changedOps: results.filter(({ changed }) => changed).length,
+    inputTokens: verification?.inputTokens ?? 0
   }
 }
 
@@ -471,22 +500,50 @@ export type EpisodeRunResult = Readonly<{
   duplicateOps: number
 }>
 
-export async function runEpisodePipeline(job: ExtractionQueueJob): Promise<EpisodeRunResult> {
-  const admission = await admitEpisode({ guildId: job.guildId, channelId: job.channelId, episode: job.episode })
+export async function runEpisodePipeline(job: ExtractionQueueJob, trace: RunTrace): Promise<EpisodeRunResult> {
+  trace.stage = 'admission'
+  const admission = await timeStage(trace, 'admission', () =>
+    admitEpisode({ guildId: job.guildId, channelId: job.channelId, episode: job.episode, jobId: job.id })
+  )
+  trace.outcome = admission.reason
+  trace.tokens += admission.inputTokens
+  if (admission.probability !== null) {
+    trace.admission = { probability: admission.probability, threshold: config.memory.admitThreshold }
+  }
   if (!admission.admitted) {
+    if (admission.reason === 'trivial' || admission.reason === 'sensitive') trace.stage = 'precheck'
     if (admission.reason === 'jev_unavailable') throw new JevUnavailableError()
     return { status: 'dropped', summary: null, appliedOps: 0, duplicateOps: 0 }
   }
 
-  const output = await extractEpisode({ guildId: job.guildId, channelId: job.channelId, episode: job.episode })
+  trace.stage = 'extraction'
+  const output = await timeStage(trace, 'extraction', () =>
+    extractEpisode({ guildId: job.guildId, channelId: job.channelId, episode: job.episode })
+  )
+  trace.ops.proposed = output.ops.filter((op) => op.op !== 'noop').length
+  trace.tokens += output.promptTokens ?? 0
+
+  trace.stage = 'verification'
   const subjectIds = new Set(job.episode.messages.filter((message) => !message.isBot).map((message) => message.userId))
-  const report = await verifyAndApplyOperations({
-    guildId: job.guildId,
-    channelId: job.channelId,
-    episode: job.episode,
-    output,
-    subjectIds
-  })
+  const report = await timeStage(trace, 'verification', () =>
+    verifyAndApplyOperations({
+      guildId: job.guildId,
+      channelId: job.channelId,
+      episode: job.episode,
+      output,
+      subjectIds,
+      jobId: job.id
+    })
+  )
+  trace.ops.applied = report.appliedOps
+  trace.ops.duplicate = report.duplicateOps
+  trace.ops.staged = report.stagedOps
+  trace.ops.dropped = report.droppedOps
+  trace.ops.changed = report.changedOps
+  trace.tokens += report.inputTokens
+
+  trace.stage = 'applied'
+  trace.outcome = report.appliedOps + report.stagedOps > 0 ? 'written' : 'noop'
   return {
     status: 'completed',
     summary: output.summary,

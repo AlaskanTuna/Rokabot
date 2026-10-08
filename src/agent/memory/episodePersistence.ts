@@ -8,9 +8,9 @@ import type { EpisodeRunResult } from './extractor.js'
 export async function persistEpisodeResult(input: {
   job: { id: number; guildId: string; channelId: string; episode: ExtractionEpisode }
   result: EpisodeRunResult
-}): Promise<void> {
+}): Promise<boolean> {
   const { job, result } = input
-  if (result.status !== 'completed' || result.summary === null) return
+  if (result.status !== 'completed' || result.summary === null) return false
 
   let embedding: EpisodeEmbedding | null = null
   try {
@@ -31,4 +31,5 @@ export async function persistEpisodeResult(input: {
     summary: result.summary,
     embedding
   })
+  return true
 }

@@ -22,7 +22,8 @@ vi.mock('../../../config.js', () => ({
       safetyThreshold: 'OFF'
     },
     logging: { level: 'silent' },
-    memory: { maxActiveClaimsPerUser: 20, verifyThreshold: 0.5 },
+    jev: { model: 'jev-test' },
+    memory: { maxActiveClaimsPerUser: 20, verifyThreshold: 0.5, admitThreshold: 0.5, embeddingModel: 'embed-test' },
     rateLimit: { rpm: 15, rpd: 500 },
     timezone: 'Asia/Singapore'
   }
@@ -35,6 +36,7 @@ import { config } from '../../../config.js'
 import { closeDb, getDb } from '../../../storage/database.js'
 import type { ExtractionEpisode } from '../../../storage/extractionQueue.js'
 import { JevUnavailableError } from '../extractionErrors.js'
+import { startRunTrace } from '../extractionRun.js'
 import { extractEpisode, runEpisodePipeline, verifyAndApplyOperations } from '../extractor.js'
 import { assertClaim, assertGuildClaim, getActiveClaims } from '../memoryClaims.js'
 
@@ -45,10 +47,12 @@ beforeAll(() => {
 
 beforeEach(() => {
   mocks.admitEpisode.mockReset()
-  mocks.admitEpisode.mockResolvedValue({ admitted: true, reason: 'admitted' })
+  mocks.admitEpisode.mockResolvedValue({ admitted: true, reason: 'admitted', probability: 0.8, inputTokens: 30 })
   mocks.generateContent.mockReset()
   mocks.judgeEpisodeOperations.mockReset()
-  getDb().exec('DELETE FROM memory_events; DELETE FROM memory_evidence; DELETE FROM memory_claim;')
+  getDb().exec(
+    'DELETE FROM memory_events; DELETE FROM memory_evidence; DELETE FROM memory_claim; DELETE FROM jev_events;'
+  )
 })
 
 afterAll(() => {
@@ -78,38 +82,112 @@ describe('runEpisodePipeline', () => {
   }
 
   it('drops before Gemini when admission rejects the episode', async () => {
-    mocks.admitEpisode.mockResolvedValueOnce({ admitted: false, reason: 'below_threshold' })
+    mocks.admitEpisode.mockResolvedValueOnce({
+      admitted: false,
+      reason: 'below_threshold',
+      probability: 0.31,
+      inputTokens: 25
+    })
+    const trace = startRunTrace(queueJob, 1)
 
-    await expect(runEpisodePipeline(queueJob)).resolves.toEqual({
+    await expect(runEpisodePipeline(queueJob, trace)).resolves.toEqual({
       status: 'dropped',
       summary: null,
       appliedOps: 0,
       duplicateOps: 0
     })
     expect(mocks.generateContent).not.toHaveBeenCalled()
+    expect(trace).toMatchObject({
+      stage: 'admission',
+      outcome: 'below_threshold',
+      admission: { probability: 0.31, threshold: 0.5 },
+      tokens: 25
+    })
+    expect(trace.stageMs).toHaveProperty('admission')
   })
 
-  it('throws so the queue can retry when Jev could not judge the episode', async () => {
-    mocks.admitEpisode.mockResolvedValueOnce({ admitted: false, reason: 'jev_unavailable' })
+  it.each(['trivial', 'sensitive'] as const)(
+    'records a %s precheck rejection without a probability',
+    async (reason) => {
+      mocks.admitEpisode.mockResolvedValueOnce({ admitted: false, reason, probability: null, inputTokens: 0 })
+      const trace = startRunTrace(queueJob, 1)
 
-    await expect(runEpisodePipeline(queueJob)).rejects.toBeInstanceOf(JevUnavailableError)
+      await runEpisodePipeline(queueJob, trace)
+
+      expect(trace).toMatchObject({ stage: 'precheck', outcome: reason, tokens: 0 })
+      expect(trace.admission).toBeUndefined()
+    }
+  )
+
+  it('throws so the queue can retry when Jev could not judge the episode', async () => {
+    mocks.admitEpisode.mockResolvedValueOnce({
+      admitted: false,
+      reason: 'jev_unavailable',
+      probability: null,
+      inputTokens: 0
+    })
+    const trace = startRunTrace(queueJob, 1)
+
+    await expect(runEpisodePipeline(queueJob, trace)).rejects.toBeInstanceOf(JevUnavailableError)
     expect(mocks.generateContent).not.toHaveBeenCalled()
+    expect(trace).toMatchObject({ stage: 'admission', outcome: 'jev_unavailable' })
   })
 
   it('extracts only after admission and returns its summary and write counts', async () => {
     mocks.generateContent.mockResolvedValueOnce({
       text: JSON.stringify({ ops: [{ op: 'noop' }], summary: 'Alice likes tea.' })
     })
+    const trace = startRunTrace(queueJob, 1)
 
-    await expect(runEpisodePipeline(queueJob)).resolves.toEqual({
+    await expect(runEpisodePipeline(queueJob, trace)).resolves.toEqual({
       status: 'completed',
       summary: 'Alice likes tea.',
       appliedOps: 0,
       duplicateOps: 0
     })
-    expect(mocks.admitEpisode).toHaveBeenCalledWith({ guildId: 'guild-1', channelId: 'channel-1', episode })
+    expect(mocks.admitEpisode).toHaveBeenCalledWith({
+      guildId: 'guild-1',
+      channelId: 'channel-1',
+      jobId: 1,
+      episode
+    })
     expect(mocks.generateContent).toHaveBeenCalledOnce()
     expect(mocks.generateContent.mock.calls[0][0].contents).toContain('[bot-1|Roka (bot context only)]')
+    expect(trace).toMatchObject({ stage: 'applied', outcome: 'noop', tokens: 30 })
+    expect(trace.ops).toEqual({ proposed: 0, applied: 0, duplicate: 0, staged: 0, dropped: 0, changed: 0 })
+    expect(Object.keys(trace.stageMs).sort()).toEqual(['admission', 'extraction', 'verification'])
+  })
+
+  it('traces the written ops and sums the tokens of admission, extraction and verification', async () => {
+    mocks.generateContent.mockResolvedValueOnce({
+      text: JSON.stringify({
+        ops: [{ op: 'add', subject: { kind: 'user', userId: 'user-1' }, predicate: 'likes', value: 'tea' }],
+        summary: 'Alice likes tea.'
+      }),
+      usageMetadata: { promptTokenCount: 400 }
+    })
+    mocks.judgeEpisodeOperations.mockResolvedValueOnce({
+      answers: { durable_0: { noul: 0.9, confidence: null }, attributed_0: { noul: 0.9, confidence: null } },
+      latencyMs: 5,
+      inputTokens: 60
+    })
+    const trace = startRunTrace(queueJob, 1)
+
+    await expect(runEpisodePipeline(queueJob, trace)).resolves.toMatchObject({ status: 'completed', appliedOps: 1 })
+
+    expect(trace).toMatchObject({ stage: 'applied', outcome: 'written', tokens: 30 + 400 + 60 })
+    expect(trace.ops).toEqual({ proposed: 1, applied: 1, duplicate: 0, staged: 0, dropped: 0, changed: 1 })
+    expect(getDb().prepare('SELECT DISTINCT job_id FROM jev_events').all()).toEqual([{ job_id: 1 }])
+  })
+
+  it('stops the trace at extraction when Gemini fails', async () => {
+    mocks.generateContent.mockRejectedValueOnce(new Error('overloaded'))
+    const trace = startRunTrace(queueJob, 1)
+
+    await expect(runEpisodePipeline(queueJob, trace)).rejects.toThrow('overloaded')
+
+    expect(trace.stage).toBe('extraction')
+    expect(trace.stageMs).toHaveProperty('extraction')
   })
 })
 
