@@ -12,7 +12,7 @@ import { config } from '../../config.js'
 import { type ResponseEventInput, recordResponseEvent } from '../../storage/metricsStore.js'
 import { upsertUserName } from '../../storage/userNames.js'
 import { logger } from '../../utils/logger.js'
-import { RateLimiter } from '../../utils/rateLimiter.js'
+import { type CallReservation, RateLimiter } from '../../utils/rateLimiter.js'
 import { MAX_ATTACHMENTS } from '../attachments.js'
 import { release, reservationFor, tryReserve } from '../byteBudget.js'
 import { isChannelBusy, markBusy, markFree } from '../concurrency.js'
@@ -203,104 +203,104 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
       return
     }
 
-    // Check the full call ceiling before reserving so early exits do not hold slots.
-    if (!rateLimiter.canAdmitCalls(config.gemini.maxLlmCalls)) {
-      cancelTurnEntryWork()
-      logger.debug(
-        { channelId, remainingRpm: rateLimiter.remainingRpm, remainingRpd: rateLimiter.remainingRpd },
-        'Rate limit hit — declining'
-      )
-
-      const declineMsg = await message.reply(getRandomDecline())
-      setTimeout(() => declineMsg.delete().catch(() => {}), 5000)
-      return
-    }
-
-    if ('sendTyping' in message.channel) {
-      void message.channel.sendTyping().catch(() => {})
-    }
-    const typingInterval =
-      'sendTyping' in message.channel
-        ? setInterval(() => {
-            ;(message.channel as { sendTyping: () => Promise<void> }).sendTyping().catch(() => {})
-          }, 7000)
-        : null
-
-    const socialPostResult = socialPostWork ? await socialPostWork : { status: 'none' as const }
-    if (socialPostResult.status === 'found') {
-      const presentation = {
-        target: socialPostResult.post.target,
-        line: formatSocialPostLine(socialPostResult.post, config.socialPosts.maxTextChars)
-      }
-      let enriched = extractMessageContent(
-        message,
-        referencedMessage,
-        isReplyToBot,
-        client.user.id,
-        componentTextsForTrigger,
-        presentation
-      )
-      if (enriched.imageAttachments.length < MAX_ATTACHMENTS) {
-        const imageAttachment = await socialPostMedia(socialPostResult.post)
-        if (imageAttachment) {
-          enriched = extractMessageContent(
-            message,
-            referencedMessage,
-            isReplyToBot,
-            client.user.id,
-            componentTextsForTrigger,
-            { ...presentation, imageAttachment }
-          )
-        }
-      }
-      content = enriched.content
-      imageAttachments = enriched.imageAttachments
-      unsupportedCount = enriched.unsupportedCount
-    } else if (socialPostResult.status === 'failed') {
-      content = content ? `${content}\n${SOCIAL_POST_FAILURE_MARKER}` : SOCIAL_POST_FAILURE_MARKER
-    }
-
-    // Attachment token cost is independent of the byte and call budgets.
-    if (imageAttachments.length > 0 && !canAffordAttachments()) {
-      cancelTurnEntryWork()
-      if (typingInterval) clearInterval(typingInterval)
-      logger.debug({ channelId }, 'Per-minute token budget too low for an attachment turn — sending busy message')
-      const tokenMsg = await message.reply(getRandomBusy())
-      setTimeout(() => tokenMsg.delete().catch(() => {}), 5000)
-      return
-    }
-
-    // Reserve the call ceiling and attachment bytes immediately before the cleanup scope.
-    const callReservation = rateLimiter.reserveCalls(config.gemini.maxLlmCalls)
-    if (!callReservation) {
-      cancelTurnEntryWork()
-      if (typingInterval) clearInterval(typingInterval)
-      logger.debug({ channelId, remainingRpm: rateLimiter.remainingRpm }, 'Lost the race for call slots')
-      const rpmMsg = await message.reply(getRandomBusy())
-      setTimeout(() => rpmMsg.delete().catch(() => {}), 5000)
-      return
-    }
-
+    // Taken before the first await below rather than when generation starts: the post lookup can take
+    // seconds, and a second message in that window would find the channel free and run beside this one.
+    markBusy(channelId)
+    let typingInterval: ReturnType<typeof setInterval> | null = null
+    let callReservation: CallReservation | undefined
+    let reservedBytes = 0
     // A thrown turn may have issued an unknown number of calls, so treat the full reservation as spent.
     let modelCallsUsed = config.gemini.maxLlmCalls
-
-    const reservedBytes = reservationFor(imageAttachments)
-    if (!tryReserve(reservedBytes)) {
-      cancelTurnEntryWork()
-      if (typingInterval) clearInterval(typingInterval)
-      // Released here rather than left to the `finally` below, which this path returns above. Nothing was
-      // sent to the model, so the turn owes neither the slots nor its daily unit.
-      callReservation.release(0)
-      logger.debug({ channelId, reservedBytes }, 'In-flight attachment budget full — sending busy message')
-      const budgetMsg = await message.reply(getRandomBusy())
-      setTimeout(() => budgetMsg.delete().catch(() => {}), 5000)
-      return
-    }
-
     try {
-      // Inside the try, not before it, so the reservation above cannot be stranded by anything between the
-      // two — markFree on a channel that was never marked is a no-op delete, so this costs nothing.
-      markBusy(channelId)
+      // Check the full call ceiling before reserving so early exits do not hold slots.
+      if (!rateLimiter.canAdmitCalls(config.gemini.maxLlmCalls)) {
+        cancelTurnEntryWork()
+        logger.debug(
+          { channelId, remainingRpm: rateLimiter.remainingRpm, remainingRpd: rateLimiter.remainingRpd },
+          'Rate limit hit — declining'
+        )
+
+        const declineMsg = await message.reply(getRandomDecline())
+        setTimeout(() => declineMsg.delete().catch(() => {}), 5000)
+        return
+      }
+
+      if ('sendTyping' in message.channel) {
+        void message.channel.sendTyping().catch(() => {})
+      }
+      typingInterval =
+        'sendTyping' in message.channel
+          ? setInterval(() => {
+              ;(message.channel as { sendTyping: () => Promise<void> }).sendTyping().catch(() => {})
+            }, 7000)
+          : null
+
+      const socialPostResult = socialPostWork ? await socialPostWork : { status: 'none' as const }
+      if (socialPostResult.status === 'found') {
+        const presentation = {
+          target: socialPostResult.post.target,
+          line: formatSocialPostLine(socialPostResult.post, config.socialPosts.maxTextChars)
+        }
+        let enriched = extractMessageContent(
+          message,
+          referencedMessage,
+          isReplyToBot,
+          client.user.id,
+          componentTextsForTrigger,
+          presentation
+        )
+        if (enriched.imageAttachments.length < MAX_ATTACHMENTS) {
+          const imageAttachment = await socialPostMedia(socialPostResult.post)
+          if (imageAttachment) {
+            enriched = extractMessageContent(
+              message,
+              referencedMessage,
+              isReplyToBot,
+              client.user.id,
+              componentTextsForTrigger,
+              { ...presentation, imageAttachment }
+            )
+          }
+        }
+        content = enriched.content
+        imageAttachments = enriched.imageAttachments
+        unsupportedCount = enriched.unsupportedCount
+      } else if (socialPostResult.status === 'failed') {
+        content = content ? `${content}\n${SOCIAL_POST_FAILURE_MARKER}` : SOCIAL_POST_FAILURE_MARKER
+      }
+
+      // Attachment token cost is independent of the byte and call budgets.
+      if (imageAttachments.length > 0 && !canAffordAttachments()) {
+        cancelTurnEntryWork()
+        logger.debug({ channelId }, 'Per-minute token budget too low for an attachment turn — sending busy message')
+        const tokenMsg = await message.reply(getRandomBusy())
+        setTimeout(() => tokenMsg.delete().catch(() => {}), 5000)
+        return
+      }
+
+      // Reserve the call ceiling and attachment bytes last, so a declined turn has taken nothing it must hand back.
+      callReservation = rateLimiter.reserveCalls(config.gemini.maxLlmCalls)
+      if (!callReservation) {
+        cancelTurnEntryWork()
+        logger.debug({ channelId, remainingRpm: rateLimiter.remainingRpm }, 'Lost the race for call slots')
+        const rpmMsg = await message.reply(getRandomBusy())
+        setTimeout(() => rpmMsg.delete().catch(() => {}), 5000)
+        return
+      }
+
+      const bytes = reservationFor(imageAttachments)
+      if (!tryReserve(bytes)) {
+        cancelTurnEntryWork()
+        // Released here with nothing spent, before the `finally` below would charge the whole reservation.
+        // Nothing was sent to the model, so the turn owes neither the slots nor its daily unit.
+        callReservation.release(0)
+        logger.debug({ channelId, reservedBytes: bytes }, 'In-flight attachment budget full — sending busy message')
+        const budgetMsg = await message.reply(getRandomBusy())
+        setTimeout(() => budgetMsg.delete().catch(() => {}), 5000)
+        return
+      }
+      reservedBytes = bytes
+
       turnEntryWorkHandedOff = true
       const [
         [
@@ -398,7 +398,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
       if (typingInterval) clearInterval(typingInterval)
       markFree(channelId)
       release(reservedBytes)
-      callReservation.release(modelCallsUsed)
+      callReservation?.release(modelCallsUsed)
     }
   }
 }

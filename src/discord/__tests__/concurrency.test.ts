@@ -9,6 +9,9 @@ const mocks = vi.hoisted(() => {
   return {
     busyChannels,
     generateResponse: vi.fn(),
+    beginSocialPostLookup: vi.fn((_texts: string[], _later: Promise<string[]>) =>
+      Promise.resolve<{ status: 'none' } | { status: 'failed' }>({ status: 'none' })
+    ),
     recordResponseEvent: vi.fn(),
     isChannelBusy: vi.fn((channelId: string) => busyChannels.has(channelId)),
     markBusy: vi.fn((channelId: string) => busyChannels.add(channelId)),
@@ -22,6 +25,10 @@ vi.mock('../concurrency.js', () => ({
   isChannelBusy: mocks.isChannelBusy,
   markBusy: mocks.markBusy,
   markFree: mocks.markFree
+}))
+vi.mock('../socialPosts/service.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../socialPosts/service.js')>()),
+  beginSocialPostLookup: mocks.beginSocialPostLookup
 }))
 vi.mock('../../agent/channelMonitor.js', () => ({ isMonitored: () => false, markActive: vi.fn() }))
 vi.mock('../../agent/passiveBuffer.js', () => ({ addMessage: vi.fn() }))
@@ -287,5 +294,83 @@ describe('Discord concurrency guards', () => {
     expect(mocks.isChannelBusy).toHaveBeenCalledWith('channel-1')
     expect(rateLimiter.canAdmitCalls).toHaveBeenCalledOnce()
     expect(mocks.generateResponse).not.toHaveBeenCalled()
+    expect(mocks.busyChannels.has('channel-1')).toBe(false)
+  })
+
+  const answered = {
+    text: 'response',
+    tone: 'playful',
+    metrics: {
+      generateMs: 1,
+      llmMs: 1,
+      retryLatencyMs: 0,
+      retries: 0,
+      outcome: 'ok',
+      kind: 'ok',
+      tokensInEst: 1,
+      tokensOutEst: 1
+    }
+  }
+
+  it('holds a message channel while its linked post loads, so a second message gets the busy reply', async () => {
+    const rateLimiter = createRateLimiter()
+    let finishLookup!: (result: { status: 'none' }) => void
+    mocks.beginSocialPostLookup.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishLookup = resolve
+      })
+    )
+    mocks.generateResponse.mockResolvedValue(answered)
+    const handle = createMessageHandler({ user: { id: 'bot-1' } } as never, rateLimiter)
+    const first = createMessage()
+    Object.assign(first.message, { content: '<@bot-1> https://x.com/roka/status/1' })
+
+    const firstTurn = handle(first.message)
+    await vi.waitFor(() => expect(rateLimiter.canAdmitCalls).toHaveBeenCalledOnce())
+    const second = createMessage()
+    await handle(second.message)
+
+    expect(second.reply).toHaveBeenCalledWith('busy')
+    finishLookup({ status: 'none' })
+    await firstTurn
+    expect(mocks.generateResponse).toHaveBeenCalledOnce()
+    expect(mocks.busyChannels.has('channel-1')).toBe(false)
+  })
+
+  it('holds an /ask channel while the reply is deferred, so a second /ask gets the busy reply', async () => {
+    const rateLimiter = createRateLimiter()
+    mocks.generateResponse.mockResolvedValue(answered)
+    const handle = createInteractionHandler(rateLimiter)
+    const first = createInteraction()
+    let finishDefer!: () => void
+    first.deferReply.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        finishDefer = resolve
+      })
+    )
+
+    const firstTurn = handle(first.interaction)
+    await vi.waitFor(() => expect(first.deferReply).toHaveBeenCalledOnce())
+    const second = createInteraction()
+    await handle(second.interaction)
+
+    expect(second.reply).toHaveBeenCalledWith({ content: 'busy' })
+    finishDefer()
+    await firstTurn
+    expect(mocks.generateResponse).toHaveBeenCalledOnce()
+    expect(mocks.busyChannels.has('channel-1')).toBe(false)
+  })
+
+  it('frees a message channel when its linked post lookup throws', async () => {
+    const rateLimiter = createRateLimiter()
+    mocks.beginSocialPostLookup.mockRejectedValueOnce(new Error('lookup crashed'))
+    const { message, reply } = createMessage()
+    Object.assign(message, { content: '<@bot-1> https://x.com/roka/status/1' })
+
+    await createMessageHandler({ user: { id: 'bot-1' } } as never, rateLimiter)(message)
+
+    expect(reply).toHaveBeenCalledWith('error')
+    expect(mocks.generateResponse).not.toHaveBeenCalled()
+    expect(mocks.busyChannels.has('channel-1')).toBe(false)
   })
 })
