@@ -1,6 +1,7 @@
 import type { Attachment, Client, Interaction } from 'discord.js'
 import { DiscordAPIError, MessageFlags } from 'discord.js'
 import type { ImageAttachment } from '../../agent/attachments.js'
+import { asksAboutReplies } from '../../agent/replyIntent.js'
 import { withReplyOutcomes } from '../../agent/replyOutcomes.js'
 import { generateResponse } from '../../agent/roka.js'
 import { withSearchCitations } from '../../agent/searchCitations.js'
@@ -267,6 +268,7 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
             username: interaction.user.username,
             userId: interaction.user.id,
             memory: false,
+            asksAboutReplies: asksAboutReplies(message),
             turnEntryWork,
             imageAttachments: imageAttachments.length > 0 ? imageAttachments : undefined
           })

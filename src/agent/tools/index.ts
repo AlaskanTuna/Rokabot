@@ -134,7 +134,7 @@ export const searchWebTool = new FunctionTool({
 export const readRepliesTool = new FunctionTool({
   name: 'read_replies',
   description:
-    "Read the most-liked replies or comments on a linked social post (X, Bluesky, YouTube, TikTok, Reddit, Instagram, Bilibili). Call this — not search_web — whenever someone asks what the replies, comments, or reactions to a linked post say, including a post linked earlier in the conversation. Do not call it just because a post was linked. Pass the post's URL from the conversation. Never describe a post's replies without calling this.",
+    "Read the most-liked replies or comments on a linked social post (X, Bluesky, YouTube, TikTok, Reddit, Instagram, Bilibili). Call this only when the latest message asks what the replies, comments, or reactions to a post say (including a post linked earlier in the conversation), and then call it instead of search_web. Never call it just because a post was linked or someone asked what a post is about. Pass the post's URL from the conversation. Never describe a post's replies without calling this.",
   parameters: z.object({ url: z.string().describe("The post's URL, as it appears in the conversation") }),
   execute: async (input) => await readReplies(input)
 })

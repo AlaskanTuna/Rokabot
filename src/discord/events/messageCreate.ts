@@ -2,6 +2,7 @@ import type { Client, Message } from 'discord.js'
 import { DiscordAPIError } from 'discord.js'
 import { isMonitored, markActive } from '../../agent/channelMonitor.js'
 import { recordEpisodeMessage } from '../../agent/memory/episodeTracker.js'
+import { asksAboutReplies } from '../../agent/replyIntent.js'
 import { withReplyOutcomes } from '../../agent/replyOutcomes.js'
 import { generateResponse } from '../../agent/roka.js'
 import { withSearchCitations } from '../../agent/searchCitations.js'
@@ -324,6 +325,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
             userId: message.author.id,
             messageId: message.id,
             memory: true,
+            asksAboutReplies: asksAboutReplies(message.content),
             mentionedUserIds: [...(message.mentions.users?.keys() ?? [])].filter(
               (userId) => userId !== client.user?.id
             ),

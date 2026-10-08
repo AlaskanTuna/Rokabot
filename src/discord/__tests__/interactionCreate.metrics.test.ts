@@ -369,6 +369,17 @@ describe('interaction handler metrics', () => {
     expect(mocks.generateResponse.mock.calls[0][0].userMessage).toContain('(the linked post could not be opened)')
   })
 
+  it('tells the agent whether the /ask question asks about replies', async () => {
+    await createInteractionHandler(rateLimiterStub() as never)(
+      askWith([], undefined, 'what are people saying in the replies? https://x.com/roka/status/123') as never
+    )
+    await createInteractionHandler(rateLimiterStub() as never)(
+      askWith([], undefined, 'what is this post about? https://x.com/roka/status/123') as never
+    )
+
+    expect(mocks.generateResponse.mock.calls.map(([options]) => options.asksAboutReplies)).toEqual([true, false])
+  })
+
   it("shows in the /ask reply footer that the linked post couldn't be opened", async () => {
     mocks.beginSocialPostLookup.mockResolvedValueOnce({ status: 'failed', platform: 'x', reason: 'http_404' })
     const interaction = askWith([], undefined, 'What is this? https://x.com/roka/status/123')

@@ -60,7 +60,7 @@ describe('read_replies registration', () => {
   it('is offered to every turn, including /ask, and steers away from search_web', () => {
     expect(rokaTools).toContain(readRepliesTool)
     expect(MEMORY_TOOL_NAMES).not.toContain('read_replies')
-    expect(readRepliesTool.description).toContain('not search_web')
-    expect(readRepliesTool.description).toContain('Do not call it just because a post was linked')
+    expect(readRepliesTool.description).toContain('instead of search_web')
+    expect(readRepliesTool.description).toContain('Never call it just because a post was linked')
   })
 })

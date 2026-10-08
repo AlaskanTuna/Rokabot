@@ -28,11 +28,11 @@ function author(post: SocialPost): string {
   return `${PLATFORM_NAMES[post.platform]}${handle ? ` ${handle}` : ''}${name}`
 }
 
-function replies(count: number | null): string {
-  if (count === 0) return 'no replies'
-  if (count === 1) return '1 reply — read_replies can fetch it only if someone asks'
-  if (count === null) return 'replies — read_replies can fetch them only if someone asks'
-  return `${count} replies — read_replies can fetch the top ones only if someone asks`
+// The count alone: naming read_replies here made her fetch replies on turns that only asked about the post.
+function replies(count: number | null): string[] {
+  if (count === null) return []
+  if (count === 0) return ['no replies']
+  return [`${count} ${count === 1 ? 'reply' : 'replies'}`]
 }
 
 export function formatSocialPostLine(post: SocialPost, maxTextChars: number): string {
@@ -49,7 +49,7 @@ export function formatSocialPostLine(post: SocialPost, maxTextChars: number): st
   if (post.videoCount > 0) media.push(`${post.videoCount} ${post.videoCount === 1 ? 'video' : 'videos'}`)
   if (media.length > 0) details.push(media.join(', '))
   if (post.externalTitle) details.push(`link card: ${quoted(post.externalTitle, 120)}`)
-  details.push(`url: ${post.canonicalUrl}`, replies(post.replyCount))
+  details.push(`url: ${post.canonicalUrl}`, ...replies(post.replyCount))
 
   return `${SOCIAL_POST_UNTRUSTED_DATA_LABEL}\n[Linked post — ${details.join(' | ')}]`
 }
