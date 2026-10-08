@@ -1,6 +1,6 @@
 import type { Message } from 'discord.js'
 import type { ImageAttachment } from '../agent/attachments.js'
-import { MAX_ATTACHMENTS, isSupportedImage, isSupportedMedia } from './attachments.js'
+import { MAX_ATTACHMENTS, isSupportedMedia } from './attachments.js'
 import type { SocialPostTarget } from './socialPosts/urls.js'
 import { findSocialPostTarget } from './socialPosts/urls.js'
 
@@ -324,14 +324,14 @@ export function extractMessageContent(
       refParts.push(`(sticker: ${stickerNames})`)
     }
 
-    const refImageCandidates: ImageAttachment[] = [...referencedMessage.attachments.values()]
-      .filter(isSupportedImage)
+    const refAttachments = [...referencedMessage.attachments.values()]
+    const refMediaCandidates: ImageAttachment[] = refAttachments
+      .filter(isSupportedMedia)
       .map((a) => ({ url: a.url, contentType: a.contentType!, size: a.size }))
-    const refImagesTaken = isReplyToBot ? [] : refImageCandidates.slice(0, MAX_ATTACHMENTS - imageAttachments.length)
-    const refUnseen = refImageCandidates.length - refImagesTaken.length
-    if (refImageCandidates.length > 0) {
-      refParts.push(refUnseen > 0 ? `(attached image(s), ${refUnseen} not shown)` : '(attached image(s))')
-    }
+    const refMediaTaken = isReplyToBot ? [] : refMediaCandidates.slice(0, MAX_ATTACHMENTS - imageAttachments.length)
+    refParts.push(...mediaMarker('attached', refMediaCandidates, refMediaTaken.length))
+    const unsupportedRefCount = refAttachments.length - refAttachments.filter(isSupportedMedia).length
+    if (unsupportedRefCount > 0) refParts.push("(attached file(s) of a type that can't be opened)")
 
     if (refParts.length > 0) {
       const refContext = `[Replying to ${refAuthor}: ${refParts.join('\n')}]`
@@ -339,7 +339,7 @@ export function extractMessageContent(
     }
 
     if (!isReplyToBot) {
-      imageAttachments.push(...refImagesTaken)
+      imageAttachments.push(...refMediaTaken)
 
       if (imageAttachments.length < MAX_ATTACHMENTS) {
         for (const embed of referencedMessage.embeds) {

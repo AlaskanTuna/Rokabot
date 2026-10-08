@@ -40,8 +40,22 @@ function message({
   }
 }
 
-function extract(trigger: object) {
-  return extractMessageContent(trigger as never, null, false, 'bot', [])
+function referenceMessage(attachments: Attachment[], authorId = 'user-2') {
+  return {
+    author: { id: authorId, displayName: 'X' },
+    member: null,
+    content: 'look at this',
+    embeds: [],
+    poll: null,
+    messageSnapshots: new Collection(),
+    components: [],
+    stickers: new Collection(),
+    attachments: collection(attachments)
+  }
+}
+
+function extract(trigger: object, reference: object | null = null, isReplyToBot = false) {
+  return extractMessageContent(trigger as never, reference as never, isReplyToBot, 'bot', [])
 }
 
 describe('media message content', () => {
@@ -63,5 +77,32 @@ describe('media message content', () => {
     expect(extracted.imageAttachments).toEqual([image])
     expect(extracted.content).toContain('(forwarded image(s))')
     expect(extracted.content).toContain('(forwarded video(s), 1 not shown)')
+  })
+
+  it('takes a replied-to voice message and names its media kind', () => {
+    const audio = { url: 'https://cdn.test/voice.ogg', contentType: 'audio/ogg' }
+
+    const extracted = extract(message(), referenceMessage([audio]))
+
+    expect(extracted.imageAttachments).toEqual([audio])
+    expect(extracted.content).toContain('[Replying to X: look at this\n(attached audio clip(s))]')
+  })
+
+  it('names unsupported replied-to files without taking them', () => {
+    const zip = { url: 'https://cdn.test/archive.zip', contentType: 'application/zip' }
+
+    const extracted = extract(message(), referenceMessage([zip]))
+
+    expect(extracted.imageAttachments).toEqual([])
+    expect(extracted.content).toContain("(attached file(s) of a type that can't be opened)")
+  })
+
+  it("names video attachments on Roka's own message without taking them", () => {
+    const video = { url: 'https://cdn.test/clip.mp4', contentType: 'video/mp4' }
+
+    const extracted = extract(message(), referenceMessage([video], 'bot'), true)
+
+    expect(extracted.imageAttachments).toEqual([])
+    expect(extracted.content).toContain('(attached video(s), 1 not shown)')
   })
 })
