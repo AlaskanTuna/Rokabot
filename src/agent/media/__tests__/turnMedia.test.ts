@@ -7,7 +7,12 @@ const mocks = vi.hoisted(() => ({
   downloadAttachment: vi.fn(),
   measureAttachmentTokens: vi.fn(),
   watchMedia: vi.fn(),
-  countUriTokens: vi.fn()
+  countUriTokens: vi.fn(),
+  findMediaDigest: vi.fn(),
+  saveMediaDigest: vi.fn(),
+  recordMediaOccurrence: vi.fn(),
+  setMediaDigestEmbedding: vi.fn(),
+  embedEpisodeText: vi.fn()
 }))
 
 vi.mock('../../../config.js', () => ({
@@ -28,6 +33,15 @@ vi.mock('../../attachments.js', () => ({
 vi.mock('../../attachmentCost.js', () => ({ measureAttachmentTokens: mocks.measureAttachmentTokens }))
 
 vi.mock('../watch.js', () => ({ watchMedia: mocks.watchMedia, countUriTokens: mocks.countUriTokens }))
+
+vi.mock('../../../storage/mediaDigestStore.js', () => ({
+  findMediaDigest: mocks.findMediaDigest,
+  saveMediaDigest: mocks.saveMediaDigest,
+  recordMediaOccurrence: mocks.recordMediaOccurrence,
+  setMediaDigestEmbedding: mocks.setMediaDigestEmbedding
+}))
+
+vi.mock('../../memory/episodeEmbeddings.js', () => ({ embedEpisodeText: mocks.embedEpisodeText }))
 
 import { prepareTurnMedia } from '../turnMedia.js'
 
@@ -89,6 +103,11 @@ const input = (attachments: Parameters<typeof prepareTurnMedia>[0]['attachments'
 beforeEach(() => {
   mocks.watch = true
   for (const mock of [
+    mocks.findMediaDigest,
+    mocks.saveMediaDigest,
+    mocks.recordMediaOccurrence,
+    mocks.setMediaDigestEmbedding,
+    mocks.embedEpisodeText,
     mocks.prepareAttachments,
     mocks.downloadAttachment,
     mocks.measureAttachmentTokens,
@@ -449,5 +468,142 @@ describe('linked video details', () => {
     )
 
     expect(mocks.watchMedia.mock.calls[0][0].source).toMatchObject({ transport: 'inline', silent: true })
+  })
+})
+
+describe('remembering watched media in a server', () => {
+  const scope = { guildId: 'guild-1', channelId: 'c1', messageId: 'trigger-1', userId: 'asker-1' }
+  const youtube = {
+    url: 'https://www.youtube.com/watch?v=abc',
+    contentType: 'video/mp4',
+    transport: 'uri' as const,
+    durationSec: 60,
+    origin: 'link' as const,
+    sourceAuthorId: null,
+    contentKey: 'youtube:abc'
+  }
+  const stored = (digest: MediaDigest) => ({
+    id: 7,
+    guildId: 'guild-1',
+    contentKey: 'youtube:abc',
+    kind: 'video',
+    label: 'YouTube video',
+    summary: digest.observations.summary,
+    digestJson: JSON.stringify(digest),
+    embedding: null,
+    createdAt: 1,
+    lastSharedAt: 1
+  })
+
+  beforeEach(() => {
+    mocks.embedEpisodeText.mockResolvedValue(new Array(768).fill(0.1))
+  })
+
+  it('reuses a digest already watched in this server without watching again', async () => {
+    const digest = digestFor({ label: 'YouTube video' })
+    mocks.findMediaDigest.mockReturnValue(stored(digest))
+
+    const result = await prepareTurnMedia({ ...input([youtube]), memoryScope: scope })
+
+    expect(mocks.findMediaDigest).toHaveBeenCalledWith('guild-1', 'youtube:abc')
+    expect(mocks.watchMedia).not.toHaveBeenCalled()
+    expect(result.watcherCalls).toBe(0)
+    expect(result.mediaTextParts[0].text).toContain('A man at a zoo talks about elephants.')
+    expect(mocks.recordMediaOccurrence).toHaveBeenCalledWith({
+      digestId: 7,
+      guildId: 'guild-1',
+      channelId: 'c1',
+      messageId: 'trigger-1',
+      sharedByUserId: 'asker-1',
+      sourceAuthorId: null,
+      origin: 'link'
+    })
+  })
+
+  it('serves a remembered digest even while watching is unavailable', async () => {
+    mocks.findMediaDigest.mockReturnValue(stored(digestFor()))
+
+    const result = await prepareTurnMedia({ ...input([youtube]), memoryScope: scope, geminiUnavailable: true })
+
+    expect(result.mediaTextParts[0].text).toContain('A man at a zoo talks about elephants.')
+  })
+
+  it('saves, records and embeds a newly watched item', async () => {
+    const digest = digestFor({ label: 'YouTube video' })
+    mocks.findMediaDigest.mockReturnValue(null)
+    mocks.watchMedia.mockResolvedValue(okWatch(digest))
+    mocks.saveMediaDigest.mockReturnValue(stored(digest))
+
+    await prepareTurnMedia({ ...input([youtube]), memoryScope: scope })
+    await new Promise((resolve) => setImmediate(resolve))
+
+    expect(mocks.saveMediaDigest).toHaveBeenCalledWith({
+      guildId: 'guild-1',
+      contentKey: 'youtube:abc',
+      kind: 'video',
+      label: 'YouTube video',
+      summary: 'A man at a zoo talks about elephants.',
+      digestJson: JSON.stringify(digest)
+    })
+    expect(mocks.recordMediaOccurrence).toHaveBeenCalledWith(expect.objectContaining({ digestId: 7, origin: 'link' }))
+    expect(mocks.embedEpisodeText).toHaveBeenCalledWith({
+      text: 'A man at a zoo talks about elephants.',
+      role: 'RETRIEVAL_DOCUMENT'
+    })
+    expect(mocks.setMediaDigestEmbedding).toHaveBeenCalledWith({
+      guildId: 'guild-1',
+      id: 7,
+      embedding: expect.any(Array)
+    })
+  })
+
+  it('keys a re-uploaded file by its bytes and credits the replied-to author', async () => {
+    const voice = {
+      url: 'https://cdn.discordapp.com/v.ogg',
+      contentType: 'audio/ogg',
+      size: 300,
+      durationSec: 5,
+      origin: 'reply' as const,
+      sourceMessageId: 'reference-1',
+      sourceAuthorId: 'poster-1'
+    }
+    mocks.downloadAttachment.mockResolvedValue({
+      data: 'b64',
+      mimeType: 'audio/ogg',
+      tokens: 0,
+      truncated: false,
+      bytes: Buffer.from('same bytes')
+    })
+    mocks.findMediaDigest.mockReturnValue(stored(digestFor({ kind: 'audio', label: 'voice message' })))
+
+    await prepareTurnMedia({ ...input([voice]), memoryScope: scope })
+
+    expect(mocks.findMediaDigest.mock.calls[0][1]).toMatch(/^sha256:[0-9a-f]{64}$/)
+    expect(mocks.recordMediaOccurrence).toHaveBeenCalledWith(
+      expect.objectContaining({ messageId: 'reference-1', sourceAuthorId: 'poster-1', origin: 'reply' })
+    )
+  })
+
+  it('remembers nothing outside a server', async () => {
+    mocks.watchMedia.mockResolvedValue(okWatch(digestFor()))
+
+    await prepareTurnMedia({ ...input([youtube]), memoryScope: null })
+
+    expect(mocks.findMediaDigest).not.toHaveBeenCalled()
+    expect(mocks.saveMediaDigest).not.toHaveBeenCalled()
+  })
+
+  it('still answers from a fresh watch when the store fails', async () => {
+    mocks.findMediaDigest.mockImplementation(() => {
+      throw new Error('database is locked')
+    })
+    mocks.watchMedia.mockResolvedValue(okWatch(digestFor()))
+    mocks.saveMediaDigest.mockImplementation(() => {
+      throw new Error('database is locked')
+    })
+
+    const result = await prepareTurnMedia({ ...input([youtube]), memoryScope: scope })
+
+    expect(result.mediaTextParts[0].text).toContain('A man at a zoo talks about elephants.')
   })
 })
