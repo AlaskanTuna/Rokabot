@@ -258,11 +258,11 @@ export function extractMessageContent(
     ownParts.push(`(sticker: ${message.stickers.map((sticker) => sticker.name).join(', ')})`)
   }
 
+  const ownEmbedImages: ImageAttachment[] = []
   for (const embed of message.embeds) {
-    if (imageAttachments.length >= MAX_ATTACHMENTS) break
     if (embedMatchesSocialPost(embed, socialPost)) continue
     const embedImageUrl = embed.image?.url ?? embed.thumbnail?.url
-    if (embedImageUrl) imageAttachments.push({ url: embedImageUrl, contentType: 'image/png' })
+    if (embedImageUrl) ownEmbedImages.push({ url: embedImageUrl, contentType: 'image/png' })
   }
 
   const forwarded = describeForwardedSnapshots(
@@ -280,6 +280,7 @@ export function extractMessageContent(
   const ownAttachments = [...message.attachments.values()]
   const unsupportedCount =
     ownAttachments.length - ownAttachments.filter(isSupportedMedia).length + componentMedia.unreadable
+  const referencedEmbedImages: ImageAttachment[] = []
 
   if (referencedMessage) {
     const refAuthor = referencedMessage.member?.displayName ?? referencedMessage.author.displayName
@@ -341,18 +342,16 @@ export function extractMessageContent(
     if (!isReplyToBot) {
       imageAttachments.push(...refMediaTaken)
 
-      if (imageAttachments.length < MAX_ATTACHMENTS) {
-        for (const embed of referencedMessage.embeds) {
-          if (imageAttachments.length >= MAX_ATTACHMENTS) break
-          if (embedMatchesSocialPost(embed, socialPost)) continue
-          const embedImageUrl = embed.image?.url ?? embed.thumbnail?.url
-          if (embedImageUrl) {
-            imageAttachments.push({ url: embedImageUrl, contentType: 'image/png' })
-          }
-        }
+      for (const embed of referencedMessage.embeds) {
+        if (embedMatchesSocialPost(embed, socialPost)) continue
+        const embedImageUrl = embed.image?.url ?? embed.thumbnail?.url
+        if (embedImageUrl) referencedEmbedImages.push({ url: embedImageUrl, contentType: 'image/png' })
       }
     }
   }
+
+  imageAttachments.push(...ownEmbedImages.slice(0, MAX_ATTACHMENTS - imageAttachments.length))
+  imageAttachments.push(...referencedEmbedImages.slice(0, MAX_ATTACHMENTS - imageAttachments.length))
 
   if (socialPost && !socialPostIncluded) content = content ? `${content}\n${socialPost.line}` : socialPost.line
   if (socialPost?.imageAttachment && imageAttachments.length < MAX_ATTACHMENTS) {

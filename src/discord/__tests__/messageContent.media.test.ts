@@ -23,9 +23,11 @@ function snapshot(attachments: Attachment[]) {
 
 function message({
   attachments = [],
+  embeds = [],
   snapshots = []
 }: {
   attachments?: Attachment[]
+  embeds?: object[]
   snapshots?: ReturnType<typeof snapshot>[]
 } = {}) {
   return {
@@ -33,24 +35,38 @@ function message({
     mentions: { members: new Collection(), users: new Collection() },
     attachments: collection(attachments),
     components: [],
-    embeds: [],
+    embeds,
     messageSnapshots: collection(snapshots),
     poll: null,
     stickers: new Collection()
   }
 }
 
-function referenceMessage(attachments: Attachment[], authorId = 'user-2') {
+function referenceMessage(attachments: Attachment[], authorId = 'user-2', embeds: object[] = []) {
   return {
     author: { id: authorId, displayName: 'X' },
     member: null,
     content: 'look at this',
-    embeds: [],
+    embeds,
     poll: null,
     messageSnapshots: new Collection(),
     components: [],
     stickers: new Collection(),
     attachments: collection(attachments)
+  }
+}
+
+function thumbnailEmbed(url: string) {
+  return {
+    author: null,
+    title: null,
+    description: null,
+    fields: [],
+    footer: null,
+    video: null,
+    image: null,
+    thumbnail: { url },
+    data: { type: 'rich' }
   }
 }
 
@@ -104,5 +120,22 @@ describe('media message content', () => {
 
     expect(extracted.imageAttachments).toEqual([])
     expect(extracted.content).toContain('(attached video(s), 1 not shown)')
+  })
+
+  it('takes replied-to video before the triggering message embed thumbnail', () => {
+    const video = { url: 'https://cdn.test/clip.mp4', contentType: 'video/mp4' }
+    const thumbnail = 'https://cdn.test/own-thumb.jpg'
+
+    const extracted = extract(message({ embeds: [thumbnailEmbed(thumbnail)] }), referenceMessage([video]))
+
+    expect(extracted.imageAttachments).toEqual([video])
+  })
+
+  it('takes a replied-to embed thumbnail when no real media is available', () => {
+    const thumbnail = 'https://cdn.test/reply-thumb.jpg'
+
+    const extracted = extract(message(), referenceMessage([], 'user-2', [thumbnailEmbed(thumbnail)]))
+
+    expect(extracted.imageAttachments).toEqual([{ url: thumbnail, contentType: 'image/png' }])
   })
 })
