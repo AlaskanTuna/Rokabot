@@ -5,8 +5,10 @@ function requireId(name: string, value: string): string {
   return value
 }
 
-export function youtubeContentKey(videoId: string): string {
-  return `youtube:${requireId('video id', videoId)}`
+/** A watch around a timestamp covers different ground from a watch of the whole video, so it is kept apart. */
+export function youtubeContentKey(videoId: string, startSec?: number): string {
+  const key = `youtube:${requireId('video id', videoId)}`
+  return startSec === undefined ? key : `${key}@${startSec}`
 }
 
 export function postContentKey(platform: string, postId: string, mediaIndex: number): string {

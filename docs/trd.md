@@ -428,22 +428,27 @@ What Roka watches in a server is remembered as text, never as media. `media_dige
 `(guild_id, content_key)`: kind, label, summary, the digest JSON and a nullable 768-float embedding.
 `media_occurrence` records each time it was shared, with channel, message, `shared_by_user_id`, an optional
 `source_author_id` (the replied-to poster; null for forwards and links) and origin (`upload`, `reply`, `forward`,
-`link`). Content keys are `youtube:<id>`, `<platform>:<postId>:<mediaIndex>`, or `sha256:<hex>` of downloaded
-bytes; signed URL parameters are never part of a key.
+`link`). Content keys are `youtube:<id>` (`youtube:<id>@<startSec>` for a watch around a timestamp),
+`<platform>:<postId>:<mediaIndex>`, or `sha256:<hex>` of downloaded bytes; signed URL parameters are never part of a
+key. A Bluesky `postId` is `<profile>/<rkey>`, because a record key is unique only within its account.
 
 - **Scope:** only guild memory turns (`memory: true`, a real guild, a triggering message id) read or write it.
   DMs, group DMs and `/ask` keep the digest in the transcript only.
 - **Repost Cache:** before watching, `prepareTurnMedia` looks the content key up in the same guild. A link is
   checked before any download; an upload after its bytes are hashed. A hit reuses the stored digest with no
-  watcher call, also while turns are pinned to the fallback model, and records a new occurrence.
+  watcher call, also while turns are pinned to the fallback model, and records a new occurrence. Opening-only and
+  incomplete digests, and rows that no longer render, are not reused: the next watch replaces them.
 - **Write Path:** a fresh watch saves the digest and its occurrence, then embeds the summary with
-  `embedEpisodeText` off the reply path. A store or embedding failure is logged and never fails the turn.
+  `embedEpisodeText` off the reply path. A store or embedding failure is logged and never fails the turn. A
+  replaced summary drops the old embedding, and an embedding is stored only while its summary is still current.
 - **Recall:** guild memory turns rank media summaries against the turn's existing query embedding. Results must
   score above `memory.mediaMinSimilarity` (0.7), are limited by `memory.mediaRecallK` (2) and
   `memory.mediaTokenBudget` (400), and appear after the episode block under their own untrusted heading. They
-  are dropped at the same safety rungs.
+  are dropped at the same safety rungs. Like episode recall, it is guild-wide: a summary of media shared in a
+  private channel can surface in any channel of that guild.
 - **Retention and Forgetting:** the daily maintenance pass deletes occurrences older than
-  `memory.mediaRetentionDays` (90), deletes digests left with none, and re-embeds null vectors. `forget_user`
+  `memory.mediaRetentionDays` (90), deletes digests left with none, and re-embeds null vectors. Sharing or replying
+  to the same message again refreshes its occurrence. `forget_user`
   also matches the speaker's shared or authored media by label and summary. It removes their occurrences, then
   any digest no one else still shares.
 

@@ -5,6 +5,11 @@ import { config } from '../../config.js'
 import { resolveMediaUrl } from '../attachments.js'
 import type { SocialPost } from './types.js'
 
+// A Bluesky record key is unique only within its account, and anyone can choose one for their own post.
+function postIdentity(post: SocialPost): string {
+  return post.platform === 'bluesky' ? `${post.target.profile?.toLowerCase()}/${post.id}` : post.id
+}
+
 async function playableVideo(post: SocialPost): Promise<ImageAttachment | null> {
   if (!post.video) return null
   // A third-party file URL gets the same public-address, redirect and type checks as any linked file. No
@@ -19,7 +24,7 @@ async function playableVideo(post: SocialPost): Promise<ImageAttachment | null> 
     ...(post.video.hasAudio === false ? { silent: true } : {}),
     origin: 'link',
     sourceAuthorId: null,
-    contentKey: postContentKey(post.platform, post.id, 0)
+    contentKey: postContentKey(post.platform, postIdentity(post), 0)
   }
 }
 
@@ -34,7 +39,7 @@ export async function socialPostMedia(post: SocialPost): Promise<ImageAttachment
       ...(post.target.startSec !== undefined ? { startSec: post.target.startSec } : {}),
       origin: 'link',
       sourceAuthorId: null,
-      contentKey: youtubeContentKey(post.id)
+      contentKey: youtubeContentKey(post.id, post.target.startSec)
     }
   }
   if (config.media.watch) {

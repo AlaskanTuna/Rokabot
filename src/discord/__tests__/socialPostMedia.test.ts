@@ -117,8 +117,21 @@ describe('socialPostMedia', () => {
       startSec: 754,
       origin: 'link',
       sourceAuthorId: null,
-      contentKey: 'youtube:jNQXAC9IVRw'
+      contentKey: 'youtube:jNQXAC9IVRw@754'
     })
+  })
+
+  it('keys a Bluesky video by its account as well as its record key', async () => {
+    mocks.resolveMediaUrl.mockResolvedValue({ url: 'https://pds.example/blob', contentType: 'video/mp4', size: 1000 })
+    const video = { url: 'https://pds.example/blob', bytes: 1000, headers: null, hasAudio: true }
+
+    const victim = await socialPostMedia(post({ url: 'https://bsky.app/profile/alice.bsky.social/post/3kabc', video }))
+    const lookalike = await socialPostMedia(
+      post({ url: 'https://bsky.app/profile/mallory.bsky.social/post/3kabc', video })
+    )
+
+    expect(victim?.contentKey).toBe('bluesky:alice.bsky.social/3kabc:0')
+    expect(lookalike?.contentKey).not.toBe(victim?.contentKey)
   })
 
   it('keeps thumbnails only when watching is switched off', async () => {

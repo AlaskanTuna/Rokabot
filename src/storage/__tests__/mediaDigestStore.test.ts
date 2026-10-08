@@ -13,6 +13,7 @@ import {
   forgetMediaForUser,
   listMediaDigestsForGuild,
   listMediaGuildIds,
+  listMediaRecallCandidates,
   pruneExpiredMediaDigests,
   recordMediaOccurrence,
   saveMediaDigest,
@@ -130,14 +131,14 @@ describe('mediaDigestStore', () => {
     expect(findMediaSharedBy('guild-1', 'user-1', ['café'], 10).map(({ id }) => id)).toEqual([digest.id])
   })
 
-  it('records each digest and message pair once and reports the latest occurrence time', () => {
+  it('records each digest and message pair once and refreshes it when shared again', () => {
     const digest = saveMediaDigest(digestInput())!
     recordMediaOccurrence(occurrenceInput(digest.id, { observedAt: 2_000 }))
     recordMediaOccurrence(occurrenceInput(digest.id, { observedAt: 3_000, origin: 'upload' }))
     recordMediaOccurrence(occurrenceInput(digest.id, { messageId: 'message-2', observedAt: 2_500 }))
 
     expect(testDb.prepare('SELECT COUNT(*) AS count FROM media_occurrence').get()).toEqual({ count: 2 })
-    expect(findMediaDigest('guild-1', 'youtube:video-1')?.lastSharedAt).toBe(2_500)
+    expect(findMediaDigest('guild-1', 'youtube:video-1')?.lastSharedAt).toBe(3_000)
   })
 
   it('rejects an occurrence that names a different guild than its digest', () => {
@@ -154,14 +155,56 @@ describe('mediaDigestStore', () => {
     const digest = saveMediaDigest(digestInput({ embedding: vector }))!
 
     expect(digest.embedding).toEqual(Array.from(new Float32Array(vector)))
-    expect(setMediaDigestEmbedding({ guildId: 'guild-1', id: digest.id, embedding: vector })).toBe(true)
+    expect(
+      setMediaDigestEmbedding({ guildId: 'guild-1', id: digest.id, summary: digest.summary, embedding: vector })
+    ).toBe(true)
     expect(findMediaDigest('guild-1', 'youtube:video-1')?.embedding).toEqual(Array.from(new Float32Array(vector)))
+  })
+
+  it('drops an embedding when the summary it was made from is replaced', () => {
+    const vector = Array(768).fill(0.25)
+    saveMediaDigest(digestInput({ embedding: vector }))
+    saveMediaDigest(digestInput({ summary: 'A cat explores a night garden.' }))
+    expect(findMediaDigest('guild-1', 'youtube:video-1')?.embedding).not.toBeNull()
+
+    const rewatched = saveMediaDigest(digestInput({ summary: 'A dog digs in the snow.' }))!
+
+    expect(rewatched.embedding).toBeNull()
+    expect(
+      setMediaDigestEmbedding({
+        guildId: 'guild-1',
+        id: rewatched.id,
+        summary: 'A cat explores a night garden.',
+        embedding: vector
+      })
+    ).toBe(false)
+    expect(findMediaDigest('guild-1', 'youtube:video-1')?.embedding).toBeNull()
+  })
+
+  it('lists recall candidates with an embedding and their latest share', () => {
+    const vector = Array(768).fill(0.25)
+    const embedded = saveMediaDigest(digestInput({ embedding: vector }))!
+    saveMediaDigest(digestInput({ contentKey: 'youtube:video-2' }))
+    recordMediaOccurrence(occurrenceInput(embedded.id, { observedAt: 4_000 }))
+
+    expect(listMediaRecallCandidates('guild-1')).toEqual([
+      {
+        id: embedded.id,
+        label: 'Cat video',
+        summary: 'A cat explores a night garden.',
+        embedding: Array.from(new Float32Array(vector)),
+        lastSharedAt: 4_000
+      }
+    ])
+    expect(listMediaRecallCandidates('dm:user-1')).toEqual([])
   })
 
   it('rejects embeddings with invalid dimensions, non-finite values, or float32 overflow', () => {
     expect(() => saveMediaDigest(digestInput({ embedding: Array(767).fill(0.25) }))).toThrow()
     expect(() => saveMediaDigest(digestInput({ embedding: Array(768).fill(Number.NaN) }))).toThrow()
-    expect(() => setMediaDigestEmbedding({ guildId: 'guild-1', id: 1, embedding: [Number.MAX_VALUE] })).toThrow()
+    expect(() =>
+      setMediaDigestEmbedding({ guildId: 'guild-1', id: 1, summary: '', embedding: [Number.MAX_VALUE] })
+    ).toThrow()
   })
 
   it('treats dm guild IDs as empty or no-op for guild-scoped operations', () => {
@@ -173,7 +216,14 @@ describe('mediaDigestStore', () => {
     expect(findMediaDigest('dm:user-1', 'youtube:video-1')).toBeNull()
     expect(listMediaDigestsForGuild('dm:user-1')).toEqual([])
     expect(listMediaGuildIds()).toEqual(['guild-1'])
-    expect(setMediaDigestEmbedding({ guildId: 'dm:user-1', id: digest.id, embedding: Array(768).fill(1) })).toBe(false)
+    expect(
+      setMediaDigestEmbedding({
+        guildId: 'dm:user-1',
+        id: digest.id,
+        summary: digest.summary,
+        embedding: Array(768).fill(1)
+      })
+    ).toBe(false)
     expect(findMediaSharedBy('dm:user-1', 'user-1', ['cat'], 10)).toEqual([])
     expect(forgetMediaForUser('dm:user-1', 'user-1', [digest.id])).toBe(0)
     expect(testDb.prepare('SELECT COUNT(*) AS count FROM media_occurrence').get()).toEqual({ count: 0 })

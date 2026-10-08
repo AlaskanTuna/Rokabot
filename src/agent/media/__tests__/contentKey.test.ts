@@ -7,6 +7,11 @@ describe('content keys', () => {
     expect(youtubeContentKey('dQw4w9WgXcQ')).toBe(youtubeContentKey('dQw4w9WgXcQ'))
   })
 
+  it('keeps a watch around a timestamp apart from a watch of the whole video', () => {
+    expect(youtubeContentKey('dQw4w9WgXcQ', 754)).toBe('youtube:dQw4w9WgXcQ@754')
+    expect(youtubeContentKey('dQw4w9WgXcQ', 754)).not.toBe(youtubeContentKey('dQw4w9WgXcQ'))
+  })
+
   it('formats post keys from platform, post id and media index', () => {
     expect(postContentKey('reddit', 'abc123', 0)).toBe('reddit:abc123:0')
     expect(postContentKey('tiktok', '7312', 2)).toBe('tiktok:7312:2')

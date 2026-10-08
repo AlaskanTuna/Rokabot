@@ -81,7 +81,12 @@ function remembered(scope: MediaMemoryScope, contentKey: string): { id: number; 
     const stored = findMediaDigest(scope.guildId, contentKey)
     if (!stored) return null
     const digest = JSON.parse(stored.digestJson) as MediaDigest
-    return digest?.observations?.summary && Array.isArray(digest.bins) ? { id: stored.id, digest } : null
+    // A partial watch is worth redoing; a later share may get the whole thing.
+    if (digest.mode === 'opening' || digest.incomplete) return null
+    // Throws on a row that has drifted from the digest shape, which then counts as a miss.
+    renderDigestBlock(digest)
+    renderCompactDigest(digest)
+    return { id: stored.id, digest }
   } catch (error) {
     logger.warn({ error, contentKey }, 'Could not read remembered media')
     return null
@@ -118,7 +123,9 @@ function remember(scope: MediaMemoryScope, attachment: ImageAttachment, contentK
     recordShare(scope, attachment, saved.id)
     // Off the reply path; a failed embedding stays NULL until maintenance repairs it.
     void embedEpisodeText({ text: saved.summary, role: 'RETRIEVAL_DOCUMENT' })
-      .then((embedding) => setMediaDigestEmbedding({ guildId: scope.guildId, id: saved.id, embedding }))
+      .then((embedding) =>
+        setMediaDigestEmbedding({ guildId: scope.guildId, id: saved.id, summary: saved.summary, embedding })
+      )
       .catch((error) => logger.warn({ error, digestId: saved.id }, 'Could not embed remembered media'))
   } catch (error) {
     logger.warn({ error, contentKey }, 'Could not remember watched media')

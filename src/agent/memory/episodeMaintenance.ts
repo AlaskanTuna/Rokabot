@@ -52,7 +52,8 @@ export async function pruneEpisodesAndReembed(nowMs = Date.now()): Promise<Episo
       if (digest.embedding) continue
       try {
         const embedding = await embedEpisodeText({ text: digest.summary, role: 'RETRIEVAL_DOCUMENT' })
-        if (setMediaDigestEmbedding({ guildId, id: digest.id, embedding })) mediaReembedded += 1
+        if (setMediaDigestEmbedding({ guildId, id: digest.id, summary: digest.summary, embedding }))
+          mediaReembedded += 1
       } catch (error) {
         mediaFailed += 1
         logger.warn({ guildId, mediaDigestId: digest.id, error }, 'Failed to re-embed media digest')

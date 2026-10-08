@@ -553,8 +553,38 @@ describe('remembering watched media in a server', () => {
     expect(mocks.setMediaDigestEmbedding).toHaveBeenCalledWith({
       guildId: 'guild-1',
       id: 7,
+      summary: 'A man at a zoo talks about elephants.',
       embedding: expect.any(Array)
     })
+  })
+
+  it.each([
+    ['only its opening was watched', { mode: 'opening' as const }],
+    ['some of its notes were unreadable', { incomplete: true }]
+  ])('watches again when the remembered digest is partial because %s', async (_reason, partial) => {
+    mocks.findMediaDigest.mockReturnValue(stored(digestFor(partial)))
+    mocks.watchMedia.mockResolvedValue(
+      okWatch(digestFor({ observations: { ...digestFor().observations, summary: 'Fresh.' } }))
+    )
+
+    const result = await prepareTurnMedia({ ...input([youtube]), memoryScope: scope })
+
+    expect(mocks.watchMedia).toHaveBeenCalledTimes(1)
+    expect(result.mediaTextParts[0].text).toContain('Fresh.')
+  })
+
+  it('watches again instead of failing the turn when a remembered digest no longer renders', async () => {
+    const malformed = {
+      ...stored(digestFor()),
+      digestJson: JSON.stringify({ ...digestFor(), timeline: undefined, observations: { summary: 'Old.' } })
+    }
+    mocks.findMediaDigest.mockReturnValue(malformed)
+    mocks.watchMedia.mockResolvedValue(okWatch(digestFor()))
+
+    const result = await prepareTurnMedia({ ...input([youtube]), memoryScope: scope })
+
+    expect(mocks.watchMedia).toHaveBeenCalledTimes(1)
+    expect(result.mediaTextParts[0].text).toContain('A man at a zoo talks about elephants.')
   })
 
   it('keys a re-uploaded file by its bytes and credits the replied-to author', async () => {

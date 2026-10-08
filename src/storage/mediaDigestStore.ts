@@ -82,7 +82,11 @@ export function saveMediaDigest(input: {
        label = excluded.label,
        summary = excluded.summary,
        digest_json = excluded.digest_json,
-       embedding = CASE WHEN ? THEN excluded.embedding ELSE media_digest.embedding END,
+       embedding = CASE
+         WHEN ? THEN excluded.embedding
+         WHEN media_digest.summary = excluded.summary THEN media_digest.embedding
+         ELSE NULL
+       END,
        created_at = excluded.created_at`
   ).run(
     input.guildId,
@@ -128,9 +132,11 @@ export function recordMediaOccurrence(input: {
   if (digest.guild_id !== input.guildId) throw new Error('Media digest guild mismatch')
 
   db.prepare(
-    `INSERT OR IGNORE INTO media_occurrence
+    `INSERT INTO media_occurrence
       (digest_id, guild_id, channel_id, message_id, shared_by_user_id, source_author_id, origin, observed_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT (digest_id, message_id) DO UPDATE SET
+       observed_at = MAX(media_occurrence.observed_at, excluded.observed_at)`
   ).run(
     input.digestId,
     input.guildId,
@@ -152,6 +158,39 @@ export function listMediaDigestsForGuild(guildId: string): StoredMediaDigest[] {
   return rows.map(mapMediaDigest)
 }
 
+export type MediaRecallCandidate = Readonly<{
+  id: number
+  label: string
+  summary: string
+  embedding: readonly number[]
+  lastSharedAt: number
+}>
+
+/** The few columns recall ranks on, without the stored digest JSON. */
+export function listMediaRecallCandidates(guildId: string): MediaRecallCandidate[] {
+  if (isDirectMessageGuild(guildId)) return []
+
+  const rows = getDb()
+    .prepare(
+      `SELECT d.id, d.label, d.summary, d.embedding, d.created_at, MAX(o.observed_at) AS last_shared_at
+       FROM media_digest d
+       LEFT JOIN media_occurrence o ON o.digest_id = d.id AND o.guild_id = d.guild_id
+       WHERE d.guild_id = ? AND d.embedding IS NOT NULL
+       GROUP BY d.id
+       ORDER BY d.id`
+    )
+    .all(guildId) as Array<
+    Pick<MediaDigestRow, 'id' | 'label' | 'summary' | 'created_at' | 'last_shared_at'> & { embedding: Buffer }
+  >
+  return rows.map((row) => ({
+    id: row.id,
+    label: row.label,
+    summary: row.summary,
+    embedding: decodeFloat32Embedding(row.embedding) ?? [],
+    lastSharedAt: row.last_shared_at ?? row.created_at
+  }))
+}
+
 export function listMediaGuildIds(): string[] {
   const rows = getDb()
     .prepare("SELECT DISTINCT guild_id FROM media_digest WHERE guild_id NOT LIKE 'dm:%' ORDER BY guild_id")
@@ -159,16 +198,18 @@ export function listMediaGuildIds(): string[] {
   return rows.map(({ guild_id }) => guild_id)
 }
 
+/** Stores an embedding only while the summary it was made from is still the stored one. */
 export function setMediaDigestEmbedding(input: {
   guildId: string
   id: number
+  summary: string
   embedding: readonly number[]
 }): boolean {
   if (isDirectMessageGuild(input.guildId)) return false
 
   const result = getDb()
-    .prepare('UPDATE media_digest SET embedding = ? WHERE guild_id = ? AND id = ?')
-    .run(encodeFloat32Embedding(input.embedding, 'Media'), input.guildId, input.id)
+    .prepare('UPDATE media_digest SET embedding = ? WHERE guild_id = ? AND id = ? AND summary = ?')
+    .run(encodeFloat32Embedding(input.embedding, 'Media'), input.guildId, input.id, input.summary)
   return result.changes === 1
 }
 
