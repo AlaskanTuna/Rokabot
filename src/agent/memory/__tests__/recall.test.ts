@@ -393,6 +393,44 @@ describe('recallForTurn', () => {
 })
 
 describe('recallFactsForSubject', () => {
+  it('excludes needs-review and staged claims from unified turn and subject recall', () => {
+    const needsReview = assertClaim({
+      guildId: GUILD,
+      subjectUserId: 'speaker',
+      predicate: 'nickname',
+      value: 'unverified nickname',
+      sourceKind: 'passive',
+      channelId: 'chan-a',
+      needsReview: true
+    })
+    const staged = assertClaim({
+      guildId: GUILD,
+      subjectUserId: 'speaker',
+      predicate: 'likes',
+      value: 'unverified preference',
+      sourceKind: 'passive',
+      channelId: 'chan-a',
+      status: 'candidate',
+      needsReview: true
+    })
+
+    const turn = recallForTurn(input({ queryEmbedding: null, message: 'unverified preference' }))
+    const subject = recallFactsForSubject({
+      scope: SCOPE,
+      speakerId: 'speaker',
+      message: 'unverified preference',
+      queryEmbedding: null,
+      now: NOW,
+      subjectUserId: 'speaker',
+      limit: 10
+    })
+
+    expect(turn.items.map(({ id }) => id)).not.toContain(needsReview.id)
+    expect(turn.items.map(({ id }) => id)).not.toContain(staged.id)
+    expect(subject.map(({ id }) => id)).not.toContain(needsReview.id)
+    expect(subject.map(({ id }) => id)).not.toContain(staged.id)
+  })
+
   it('returns a named subject fact below the similarity minimum, and ranks a fact without an embedding last', () => {
     fact('participant-1', 'hobby', 'chess', axis(2), { observedAt: NOW - DAY })
     fact('participant-1', 'pet', 'cat', null, { observedAt: NOW })

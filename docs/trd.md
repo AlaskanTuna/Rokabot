@@ -327,10 +327,12 @@ shared guild scope with `guild_scoped_N`. Adds are checked against same-subject,
 `same_as_N_M`. After durability and attribution pass, an exact active value appends evidence even when its
 `same_as_N_M` answer is below `memory.verifyThreshold` (0.5); other semantic duplicate answers must meet that
 threshold. An add with incomplete verification does not refresh an active duplicate. If verification is incomplete,
-remove operations are not applied and permitted new add/update operations are marked `needs_review`. Sensitive
-operations are always rejected. For single-cardinality predicates, a successful replacement supersedes the prior
-active claim. Capacity eviction, explicit removal, retention pruning, and the daily guild-expiry prune end claims
-with a reason and timestamp. Evidence and dead claim rows remain until the dead-row retention period expires.
+remove operations are not applied and permitted new add/update operations are staged as `candidate` claims with
+`needs_review`. Staging does not retire the active predecessor. Candidates are excluded from recall, nickname
+resolution, and the extraction prompt's active-facts list, and do not count toward the user active-claim cap.
+Sensitive operations are always rejected. For single-cardinality predicates, a successful replacement supersedes
+the prior active claim. Capacity eviction, explicit removal, retention pruning, and the daily guild-expiry prune end
+claims with a reason and timestamp. Evidence and dead claim rows remain until the dead-row retention period expires.
 
 Completed admission judgments write one `jev_events` row with `kind='admission'` and question `lasting_fact`.
 Completed verification writes one row per answer key (`durable_N`, `attributed_N`, `guild_scoped_N`, or `same_as_N_M`).
@@ -339,9 +341,11 @@ These rows include the answer, probability, application outcome, latency, and in
 
 ### Claim Lifecycle And Retention
 
-Claim statuses are `candidate`, `active`, `superseded`, and `rejected`. Episode operations write active claims directly;
-single-cardinality updates move prior active claims to `superseded`, while removals, capacity eviction, and retention
-pruning move claims to `rejected`. Every transition out of `candidate` or `active` sets `ended_at` and `end_reason`:
+Claim statuses are `candidate`, `active`, `superseded`, and `rejected`. Fully verified episode operations write active
+claims; incomplete add/update operations remain candidates until a verified assertion or, for user claims, an explicit
+`activateClaim` promotes them. Single-cardinality updates move prior active claims to `superseded`, while removals,
+capacity eviction, and retention pruning move claims to `rejected`. Every transition to `superseded` or `rejected` sets
+`ended_at` and `end_reason`:
 `expired`, `evicted`, `superseded`, `removed`, `forgotten`, or `self`. Older rows upgraded by migration receive the
 migration time in `ended_at` and a NULL reason. Startup migration also raises active claims' `last_seen_at` to their
 newest evidence time.
@@ -350,24 +354,28 @@ newest evidence time.
 - `last_seen_at` records the newest observation, advances only forward, and drives expiry.
 - `last_recalled_at` changes only when the retriever selects a claim for the prompt.
 
-An assertion revives a rejected or superseded value in its existing row, clears `superseded_by`, `ended_at`, and
-`end_reason`, refreshes evidence, then applies single-value supersession and the active-claim cap. A passive assertion
-cannot revive a value ended with `forgotten`; an explicit `remember_user` assertion can revive it and pins it. Guild
-facts revive the same way and receive the newly resolved `expires_at` and `event_date`. A value can only revive in the same row while
-that row remains retained.
+An assertion revives a rejected or superseded value in its existing row and clears `superseded_by`, `ended_at`, and
+`end_reason`. A candidate revival stays a candidate and does not supersede an active value or count toward the active
+cap; an active assertion refreshes evidence, then applies single-value supersession and the cap. Writers apply an
+incoming `needs_review` value on both inserts and revivals. A passive assertion cannot revive a value ended with
+`forgotten`; an explicit `remember_user` assertion can revive it and pins it. Guild facts revive the same way and
+receive the newly resolved `expires_at` and `event_date`. A value can only revive in the same row while that row
+remains retained.
 
 The retention job expires unpinned candidate and active user claims from `last_seen_at` by predicate tier: stable
 identity and social claims at `memory.stableClaimRetentionDays` (180 days), standard lifestyle, interests, and
 personality claims at `memory.claimRetentionDays` (30 days), and transient opinions, misc, and `currently_watching`
-claims at `memory.transientClaimRetentionDays` (14 days). Pinned claims are exempt. Guild claims keep their
-date-based expiry and are not subject to these tiers. `memory.maxActiveClaimsPerUser` (20) limits active user claims
-per subject, evicting the least salient unpinned claims first. Explicitly remembered claims are pinned.
+claims at `memory.transientClaimRetentionDays` (14 days). Pinned claims are exempt. Active guild claims keep their
+date-based expiry; unexpired guild candidates are rejected after `memory.claimRetentionDays` (30 days). User and guild
+candidates do not count toward `memory.maxActiveClaimsPerUser` (20), which limits active user claims per subject and
+evicts the least salient unpinned claims first. Explicitly remembered claims are pinned.
 
 Each startup and daily prune hard-deletes `rejected` and `superseded` claims whose `ended_at` is strictly older than
-`memory.deadClaimRetentionDays` (30 days), along with their evidence. Candidate rows are not purged. The vault export,
-statistics, recall commands, and `forget_user` operate on active claims; the name resolver also treats any claim row as
-a guild-presence hint until it is purged. A dead-only user may therefore leave the resolver's member index after the
-dead row is deleted unless response events still establish guild presence.
+`memory.deadClaimRetentionDays` (30 days), along with their evidence. Stale candidates are first rejected by retention
+or expiry, then follow the same dead-row retention. The vault export, statistics, recall commands, and `forget_user`
+operate on active claims; nickname resolution excludes candidates and `needs_review` rows, while the name resolver
+still treats any claim row as a guild-presence hint until it is purged. A dead-only user may therefore leave the
+resolver's member index after the dead row is deleted unless response events still establish guild presence.
 The daily episode retention pass deletes `memory_episode` rows with `ended_at` strictly older than
 `memory.episodeRetentionDays` (90 days) and re-embeds retained rows with missing or unreadable vectors.
 
@@ -434,7 +442,8 @@ The contract below describes the legacy fact block (`memory.recall: legacy` or `
 Retrieval is tenant-scoped and bounded to at most `memory.maxClaimsPerTurn` (10) claims and approximately
 `memory.retrievalTokenBudget` (350) tokens. It reserves up to `memory.speakerMinShare` (0.5) of the selected slots
 for speaker anchors; anchors are considered before every other candidate and are never displaced by general
-selection. It considers at most `memory.recentParticipantLimit` (3) non-speaker participants and may expand one hop
+selection. Claims marked `needs_review` are excluded from both general selection and speaker anchors. It considers at
+most `memory.recentParticipantLimit` (3) non-speaker participants and may expand one hop
 through an active `relationship_to` claim to an included participant.
 
 On memory-enabled guild turns, `turnContext.ts` separately retrieves active, unexpired, same-guild facts that do not

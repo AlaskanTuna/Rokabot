@@ -53,6 +53,20 @@ const askKiki = (scope: RecallScope) => ({
 })
 
 describe('resolveName', () => {
+  it('does not resolve a needs-review nickname', () => {
+    upsertUserName('review-user', 'review-user', 'Review User')
+    assertClaim({
+      guildId: 'guild-a',
+      subjectUserId: 'review-user',
+      predicate: 'nickname',
+      value: 'Unverified Alias',
+      sourceKind: 'passive',
+      needsReview: true
+    })
+
+    expect(resolveName('Unverified Alias', 'guild-a')).toEqual([])
+  })
+
   it('does not use a legacy fact table to establish guild presence', () => {
     upsertUserName('legacy-user', 'alice', 'Alice')
     getDb().exec(`

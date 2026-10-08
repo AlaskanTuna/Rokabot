@@ -228,7 +228,9 @@ export function retrieveForTurn(input: RetrieveForTurnInput): RetrievalResult {
   const now = Date.now()
   const scoredClaims = activeClaims.map((claim) => ({ claim, score: scoreClaim(claim, ftsIds, routedPredicates, now) }))
   const candidates = scoredClaims.filter(({ claim }) => !claim.needsReview).sort(compareRetrieved)
-  const speakerCandidates = scoredClaims.filter(({ claim }) => claim.subjectUserId === input.speakerId)
+  const speakerCandidates = scoredClaims.filter(
+    ({ claim }) => claim.subjectUserId === input.speakerId && !claim.needsReview
+  )
   const speakerAnchorCount = Math.min(
     speakerCandidates.length,
     Math.ceil(config.memory.maxClaimsPerTurn * config.memory.speakerMinShare)

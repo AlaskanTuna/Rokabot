@@ -116,6 +116,23 @@ describe('extractEpisode', () => {
       value: 'context only claim',
       sourceKind: 'explicit'
     })
+    assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'favorite_game',
+      value: 'needs review only',
+      sourceKind: 'passive',
+      needsReview: true
+    })
+    assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'likes',
+      value: 'candidate only',
+      sourceKind: 'passive',
+      status: 'candidate',
+      needsReview: true
+    })
     const episode: ExtractionEpisode = {
       messages: [
         {
@@ -169,6 +186,8 @@ describe('extractEpisode', () => {
     expect(request.contents).toContain('Allowed human user IDs: user-1, user-2')
     expect(request.contents).toContain('"userId": "user-1"')
     expect(request.contents).toContain('"predicate": "likes"')
+    expect(request.contents).not.toContain('needs review only')
+    expect(request.contents).not.toContain('candidate only')
     expect(request.contents).toContain(
       'If a member restates a current durable fact, return add with the same subject, predicate, and exact value as its existing claim.'
     )

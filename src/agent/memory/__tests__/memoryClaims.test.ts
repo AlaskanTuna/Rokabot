@@ -65,11 +65,12 @@ describe('memoryClaims', () => {
       predicate: 'nickname',
       value: 'Rinnie',
       sourceKind: 'passive',
-      status: 'candidate'
+      status: 'candidate',
+      needsReview: true
     })
 
     expect(activateClaim('guild-1', candidate.id)).toEqual(
-      expect.objectContaining({ id: candidate.id, status: 'active' })
+      expect.objectContaining({ id: candidate.id, status: 'active', needsReview: false })
     )
     expect(
       getDb()
@@ -348,6 +349,121 @@ describe('memoryClaims', () => {
 
     expect(pruneStaleClaims(7)).toBe(1)
     expect(getActiveClaims('guild-1', 'user-1')).toEqual([expect.objectContaining({ id: pinned.id, pinned: true })])
+  })
+
+  it('keeps a verified fact active when an unverified statement repeats it', () => {
+    const verified = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'general_occupation',
+      value: 'nurse',
+      sourceKind: 'passive'
+    })
+
+    const repeated = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'general_occupation',
+      value: 'nurse',
+      sourceKind: 'passive',
+      status: 'candidate',
+      needsReview: true
+    })
+
+    expect(repeated).toMatchObject({ id: verified.id, status: 'active', needsReview: false })
+    expect(getActiveClaims('guild-1', 'user-1').map(({ value }) => value)).toEqual(['nurse'])
+  })
+
+  it('keeps a verified guild fact active when an unverified statement repeats it', () => {
+    const verified = assertGuildClaim({
+      guildId: 'guild-1',
+      predicate: 'rule',
+      value: 'Movie night on Fridays',
+      expiresAt: null,
+      sourceKind: 'passive'
+    })
+
+    const repeated = assertGuildClaim({
+      guildId: 'guild-1',
+      predicate: 'rule',
+      value: 'Movie night on Fridays',
+      expiresAt: null,
+      sourceKind: 'passive',
+      status: 'candidate',
+      needsReview: true
+    })
+
+    expect(repeated).toMatchObject({ id: verified.id, status: 'active', needsReview: false })
+  })
+
+  it('expires a stale candidate without activating it', () => {
+    const now = 100 * DAY
+    vi.spyOn(Date, 'now').mockReturnValue(now)
+    const candidate = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'likes',
+      value: 'unverified interest',
+      sourceKind: 'passive',
+      status: 'candidate',
+      needsReview: true,
+      observedAt: now - 8 * DAY
+    })
+
+    expect(pruneStaleClaims(7)).toBe(1)
+    expect(getDb().prepare('SELECT status, end_reason FROM memory_claim WHERE id = ?').get(candidate.id)).toEqual({
+      status: 'rejected',
+      end_reason: 'expired'
+    })
+  })
+
+  it('does not count candidates toward the active claim cap', () => {
+    const active = ['first interest', 'second interest'].map((value) =>
+      assertClaim({
+        guildId: 'guild-1',
+        subjectUserId: 'user-1',
+        predicate: 'likes',
+        value,
+        sourceKind: 'passive'
+      })
+    )
+    const candidate = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'likes',
+      value: 'staged interest',
+      sourceKind: 'passive',
+      status: 'candidate',
+      needsReview: true
+    })
+
+    const activeIds = getActiveClaims('guild-1', 'user-1').map(({ id }) => id)
+    expect(activeIds).not.toContain(candidate.id)
+    expect(activeIds).toEqual(expect.arrayContaining(active.map(({ id }) => id)))
+    expect(getDb().prepare("SELECT COUNT(*) AS count FROM memory_claim WHERE status = 'active'").get()).toEqual({
+      count: 2
+    })
+  })
+
+  it('expires an unexpired guild candidate by the standard retention window', () => {
+    const now = 100 * DAY
+    vi.spyOn(Date, 'now').mockReturnValue(now)
+    const candidate = assertGuildClaim({
+      guildId: 'guild-1',
+      predicate: 'running_joke',
+      value: 'unverified joke',
+      expiresAt: null,
+      sourceKind: 'passive',
+      needsReview: true,
+      status: 'candidate',
+      observedAt: now - 8 * DAY
+    })
+
+    expect(pruneStaleClaims(7)).toBe(1)
+    expect(getDb().prepare('SELECT status, end_reason FROM memory_claim WHERE id = ?').get(candidate.id)).toEqual({
+      status: 'rejected',
+      end_reason: 'expired'
+    })
   })
 
   it('uses stable, standard, and transient retention tiers while exempting pinned claims', () => {
