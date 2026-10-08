@@ -97,15 +97,15 @@ describe('reservationFor', () => {
     expect(reservationFor([document(20 * 1024 * 1024)])).toBe(MAX_DOCUMENT_SIZE_BYTES)
   })
 
-  // With watching off a video is sent directly and downloads as a 10 MB prefix, so it must still reserve that.
-  it('keeps the video ceiling when watching is switched off', () => {
-    const media: { watch: boolean } = config.media
-    const watch = media.watch
-    media.watch = false
+  // Without a watcher a video is sent directly and downloads as a 10 MB prefix, so it must still reserve that.
+  it('keeps the video ceiling when the watcher is direct', () => {
+    const media: { watcher: string } = config.media
+    const watcher = media.watcher
+    media.watcher = 'direct'
     try {
       expect(reservationFor([video(20 * 1024 * 1024)])).toBe(MAX_VIDEO_SIZE_BYTES)
     } finally {
-      media.watch = watch
+      media.watcher = watcher
     }
   })
 })

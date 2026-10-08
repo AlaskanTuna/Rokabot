@@ -3,7 +3,6 @@ import type { ImageAttachment } from '../../attachments.js'
 import type { MediaClip, MediaDigest } from '../types.js'
 
 const mocks = vi.hoisted(() => ({
-  watch: true,
   memoryPrivacy: 'relaxed',
   prepareAttachments: vi.fn(),
   downloadAttachment: vi.fn(),
@@ -19,7 +18,7 @@ const mocks = vi.hoisted(() => ({
   deleteFile: vi.fn(),
   remainingTokensThisMinute: vi.fn(),
   maxLlmCalls: 4,
-  watcher: 'gemini' as 'gemini' | 'qwen',
+  watcher: 'gemini' as 'gemini' | 'qwen' | 'direct' | 'off',
   qwenKey: undefined as string | undefined,
   probeDurationSec: vi.fn(),
   extractFrames: vi.fn(),
@@ -48,7 +47,6 @@ vi.mock('../../../config.js', () => ({
     },
     get media() {
       return {
-        watch: mocks.watch,
         watcher: mocks.watcher,
         qwen: {
           model: 'Qwen/test',
@@ -189,7 +187,6 @@ const input = (attachments: Parameters<typeof prepareTurnMedia>[0]['attachments'
 })
 
 beforeEach(() => {
-  mocks.watch = true
   mocks.watcher = 'gemini'
   mocks.qwenKey = undefined
   mocks.memoryPrivacy = 'relaxed'
@@ -230,8 +227,8 @@ afterEach(() => {
 })
 
 describe('prepareTurnMedia', () => {
-  it('sends everything down the direct path when watching is off', async () => {
-    mocks.watch = false
+  it('sends everything down the direct path when the watcher is direct', async () => {
+    mocks.watcher = 'direct'
     const video = { url: 'https://cdn.discordapp.com/v.mp4', contentType: 'video/mp4', size: 1000 }
     mocks.prepareAttachments.mockResolvedValue({ ...emptyPrepared, imageParts: [{ inlineData: { data: 'x' } }] })
 
@@ -240,6 +237,24 @@ describe('prepareTurnMedia', () => {
     expect(mocks.prepareAttachments).toHaveBeenCalledWith('c1', [video])
     expect(mocks.watchMedia).not.toHaveBeenCalled()
     expect(result.directParts).toHaveLength(1)
+    expect(result.watcherCalls).toBe(0)
+  })
+
+  it('neither watches nor sends audio and video when watching is off, and says so in their place', async () => {
+    mocks.watcher = 'off'
+    const video = { url: 'https://cdn.discordapp.com/v.mp4', contentType: 'video/mp4', size: 1000 }
+    const image = { url: 'https://cdn.discordapp.com/i.png', contentType: 'image/png', size: 10 }
+    mocks.prepareAttachments.mockResolvedValue({ ...emptyPrepared, imageParts: [{ inlineData: { data: 'x' } }] })
+
+    const result = await prepareTurnMedia(input([video, image]))
+
+    expect(mocks.prepareAttachments).toHaveBeenCalledWith('c1', [image])
+    expect(mocks.watchMedia).not.toHaveBeenCalled()
+    expect(mocks.watchFramesWithQwen).not.toHaveBeenCalled()
+    expect(result.mediaTextParts).toEqual([
+      { text: '[A video was shared, but watching and listening are switched off right now.]' }
+    ])
+    expect(result.watchOutcome).toEqual({ status: 'failed', kind: 'video' })
     expect(result.watcherCalls).toBe(0)
   })
 

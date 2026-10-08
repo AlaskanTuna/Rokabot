@@ -63,8 +63,7 @@ socialPosts:
   ytDlpPath: yt-dlp # yt-dlp binary for YouTube, TikTok, Reddit, Instagram and Bilibili
 
 media:
-  watch: true # Watch audio and video with one separate Gemini call that writes a digest, then let Roka reply from the digest; false sends them to her directly as before
-  watcher: gemini # Which model watches audio and video: gemini or qwen (frames + speech transcript on ModelScope); the other takes over when it fails. The Pi sets MEDIA_WATCHER=qwen
+  watcher: gemini # How Roka takes in audio and video. gemini or qwen (frames + speech transcript on ModelScope) watches it first and she replies from the notes, the other taking over when it fails; direct sends the file straight to the reply model, with no backup; off neither watches nor sends it and tells her so. The Pi sets MEDIA_WATCHER=qwen
   qwen:
     model: Qwen/Qwen3.5-35B-A3B # ModelScope vision model for the qwen watcher; 35B-A3B measured fastest and most specific (5-12 s for 16 frames)
     secondsPerFrame: 4 # One frame per this many seconds of the watched span, one per timeline bin, between minFrames and maxFrames

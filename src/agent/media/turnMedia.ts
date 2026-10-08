@@ -378,6 +378,7 @@ interface WatchContext {
 }
 
 const UNWATCHABLE = "it couldn't be watched right now"
+const SWITCHED_OFF = 'watching and listening are switched off right now'
 // Fewer than half the frames, or a single one, is too little to describe a video from.
 const MIN_FRAME_SHARE = 0.5
 const FRAME_TIMEOUT_MS = 8000
@@ -659,12 +660,13 @@ export async function prepareTurnMedia(input: {
   memoryScope?: MediaMemoryScope | null
 }): Promise<PreparedTurnMedia> {
   const attachments = input.attachments ?? []
-  const watchable = config.media.watch
-    ? attachments.flatMap((attachment) => {
-        const kind = watchableKind(attachment.contentType)
-        return kind ? [{ attachment, kind }] : []
-      })
-    : []
+  const watchable =
+    config.media.watcher === 'direct'
+      ? []
+      : attachments.flatMap((attachment) => {
+          const kind = watchableKind(attachment.contentType)
+          return kind ? [{ attachment, kind }] : []
+        })
   const direct = attachments.filter((attachment) => !watchable.some((item) => item.attachment === attachment))
 
   const prepared = await prepareAttachments(input.channelId, direct.length > 0 ? direct : undefined)
@@ -682,6 +684,13 @@ export async function prepareTurnMedia(input: {
     watchOutcome: null
   }
 
-  for (const { attachment, kind } of watchable) await watchOne(attachment, kind, input, result)
+  for (const { attachment, kind } of watchable) {
+    if (config.media.watcher === 'off') {
+      noteOutcome(result, { status: 'failed', kind })
+      result.mediaTextParts.push(notice(labelFor(attachment, kind), SWITCHED_OFF))
+    } else {
+      await watchOne(attachment, kind, input, result)
+    }
+  }
   return result
 }

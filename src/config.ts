@@ -63,7 +63,6 @@ interface YamlConfig {
     ytDlpPath?: string
   }
   media?: {
-    watch?: boolean
     watcher?: string
     watchTimeoutMs?: number
     digestMaxOutputTokens?: number
@@ -192,7 +191,7 @@ function envBoolean(key: string): boolean | undefined {
 export type JevMode = 'off' | 'shadow' | 'on'
 export type MemoryPrivacy = 'relaxed' | 'balanced' | 'strict' | 'off'
 export type MemoryRecallMode = 'legacy' | 'shadow' | 'unified'
-export type MediaWatcher = 'gemini' | 'qwen'
+export type MediaWatcher = 'gemini' | 'qwen' | 'direct' | 'off'
 
 function jevMode(key: 'tone' | 'referents' | 'prefetch', envKey: string): JevMode {
   const envValue = envString(envKey)
@@ -205,9 +204,9 @@ function jevMode(key: 'tone' | 'referents' | 'prefetch', envKey: string): JevMod
 function mediaWatcher(): MediaWatcher {
   const envValue = envString('MEDIA_WATCHER')
   const value = envValue ?? yaml.media?.watcher ?? 'gemini'
-  if (value === 'gemini' || value === 'qwen') return value
+  if (value === 'gemini' || value === 'qwen' || value === 'direct' || value === 'off') return value
   const source = envValue ? 'Environment variable MEDIA_WATCHER' : 'Config value media.watcher'
-  throw new Error(`${source} must be gemini or qwen, got: ${String(value)}`)
+  throw new Error(`${source} must be gemini, qwen, direct or off, got: ${String(value)}`)
 }
 
 function memoryEnum<T extends string>(key: 'privacy' | 'recall', envKey: string, values: readonly T[], fallback: T): T {
@@ -258,7 +257,6 @@ export const config = {
     ytDlpPath: yaml.socialPosts?.ytDlpPath ?? 'yt-dlp'
   },
   media: {
-    watch: envBoolean('MEDIA_WATCH') ?? yaml.media?.watch ?? true,
     watcher: mediaWatcher(),
     watchTimeoutMs: yaml.media?.watchTimeoutMs ?? 20_000,
     digestMaxOutputTokens: yaml.media?.digestMaxOutputTokens ?? 2400,

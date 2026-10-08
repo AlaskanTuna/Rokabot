@@ -27,7 +27,8 @@ const STREAMED_CHUNK_BYTES = 4 * 1024 * 1024
 export function reservationFor(attachments: ImageAttachment[]): number {
   return attachments.reduce((total, attachment) => {
     if (attachment.transport === 'uri') return total
-    if (config.media.watch && isStreamedUpload(attachment, config.media.maxStreamedUploadBytes)) {
+    const watched = config.media.watcher === 'gemini' || config.media.watcher === 'qwen'
+    if (watched && isStreamedUpload(attachment, config.media.maxStreamedUploadBytes)) {
       return total + STREAMED_CHUNK_BYTES
     }
     const ceiling = sizeLimitFor(attachment.contentType)

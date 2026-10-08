@@ -2,13 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SocialPost } from '../socialPosts/types.js'
 import { parseSocialPostUrl } from '../socialPosts/urls.js'
 
-const mocks = vi.hoisted(() => ({ watch: true, resolveMediaUrl: vi.fn() }))
+const mocks = vi.hoisted(() => ({ watcher: 'gemini', resolveMediaUrl: vi.fn() }))
 
 vi.mock('../../config.js', () => ({
   config: {
     logging: { level: 'silent' },
     get media() {
-      return { watch: mocks.watch, maxStreamedUploadBytes: 52_428_800 }
+      return { watcher: mocks.watcher, maxStreamedUploadBytes: 52_428_800 }
     }
   }
 }))
@@ -49,7 +49,7 @@ const xVideo = {
 }
 
 beforeEach(() => {
-  mocks.watch = true
+  mocks.watcher = 'gemini'
   mocks.resolveMediaUrl.mockReset()
 })
 
@@ -156,8 +156,8 @@ describe('socialPostMedia', () => {
     expect(lookalike?.contentKey).not.toBe(victim?.contentKey)
   })
 
-  it('keeps thumbnails only when watching is switched off', async () => {
-    mocks.watch = false
+  it.each(['direct', 'off'])('keeps thumbnails only when the watcher is %s', async (watcher) => {
+    mocks.watcher = watcher
     mocks.resolveMediaUrl.mockResolvedValueOnce({ url: 'https://pbs.twimg.com/thumb.jpg', contentType: 'image/jpeg' })
 
     await socialPostMedia(post({ url: 'https://x.com/roka/status/123', video: xVideo }))

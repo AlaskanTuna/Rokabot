@@ -32,7 +32,8 @@ async function playableVideo(post: SocialPost): Promise<ImageAttachment | null> 
 
 /** What a found post contributes to the turn's one media slot: its video to watch, else its picture. */
 export async function socialPostMedia(post: SocialPost): Promise<ImageAttachment | null> {
-  if (config.media.watch && post.platform === 'youtube') {
+  const watched = config.media.watcher === 'gemini' || config.media.watcher === 'qwen'
+  if (watched && post.platform === 'youtube') {
     return {
       url: post.canonicalUrl,
       contentType: 'video/mp4',
@@ -44,7 +45,7 @@ export async function socialPostMedia(post: SocialPost): Promise<ImageAttachment
       contentKey: youtubeContentKey(post.id, post.target.startSec)
     }
   }
-  if (config.media.watch) {
+  if (watched) {
     const video = await playableVideo(post)
     if (video) return video
   }

@@ -64,7 +64,6 @@ describe('config module', () => {
     vi.stubEnv('GEMINI_RETRY_BACKOFF_CAP_MS', '')
     vi.stubEnv('GEMINI_TURN_DEADLINE_MS', '')
     vi.stubEnv('GEMINI_SAFETY_THRESHOLD', '')
-    vi.stubEnv('MEDIA_WATCH', '')
     vi.stubEnv('MEDIA_WATCHER', '')
     vi.stubEnv('MEDIA_QWEN_MODEL', '')
     vi.stubEnv('MEDIA_TRANSCRIBER_URL', '')
@@ -194,7 +193,6 @@ describe('config module', () => {
       ytDlpPath: 'yt-dlp'
     })
     expect(config.media).toEqual({
-      watch: true,
       watcher: 'gemini',
       watchTimeoutMs: 20_000,
       digestMaxOutputTokens: 3200,
@@ -292,33 +290,23 @@ describe('config module', () => {
     expect(config.socialPosts.enabled).toBe(false)
   })
 
-  it('allows MEDIA_WATCH to disable media watching', async () => {
+  it.each(['qwen', 'direct', 'off'])('allows MEDIA_WATCHER to choose %s', async (watcher) => {
     setRequiredEnvVars()
     clearTunableEnvVars()
-    vi.stubEnv('MEDIA_WATCH', 'false')
+    vi.stubEnv('MEDIA_WATCHER', watcher)
 
     const { config } = await import('../config.js')
 
-    expect(config.media.watch).toBe(false)
+    expect(config.media.watcher).toBe(watcher)
   })
 
-  it('allows MEDIA_WATCHER to choose the Qwen watcher', async () => {
-    setRequiredEnvVars()
-    clearTunableEnvVars()
-    vi.stubEnv('MEDIA_WATCHER', 'qwen')
-
-    const { config } = await import('../config.js')
-
-    expect(config.media.watcher).toBe('qwen')
-  })
-
-  it('throws when MEDIA_WATCHER is neither gemini nor qwen and names the env key', async () => {
+  it('throws when MEDIA_WATCHER is not a known watcher and names the env key', async () => {
     setRequiredEnvVars()
     clearTunableEnvVars()
     vi.stubEnv('MEDIA_WATCHER', 'openai')
 
     await expect(() => import('../config.js')).rejects.toThrow(
-      'Environment variable MEDIA_WATCHER must be gemini or qwen, got: openai'
+      'Environment variable MEDIA_WATCHER must be gemini, qwen, direct or off, got: openai'
     )
   })
 
