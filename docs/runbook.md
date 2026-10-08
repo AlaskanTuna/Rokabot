@@ -565,9 +565,9 @@ behaves like `strict` there.
 - **Forget User:** the speaker can delete their own matching notes at every privacy level. At `relaxed`, replies still
   quote matching values; at `balanced` and `strict`, they quote only claims and media labels or summaries recallable in
   the current channel and count the rest generically. At `off`, replies report counts only.
-- **Cached Media Reuse:** `relaxed` reuses stored digests as before. At `balanced` and `strict`, a digest is reused only
-  when at least one recorded share is recallable in the current channel; otherwise the bot watches it again and records
-  the new share. A digest with no recorded share channels is treated as private.
+- **Cached Media Reuse:** a repost of the same content reuses its stored digest at every privacy level and records the
+  new share; it is never re-watched because the earlier share was in another channel. Recalling media summaries
+  unprompted is still gated by the privacy level.
 
 ```bash
 # Facts with embeddings (unified recall needs them; the daily maintenance pass fills the gaps)

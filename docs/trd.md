@@ -411,14 +411,15 @@ learned, so a level can be changed or reverted without a backfill.
   so a channel that turns private stops sharing its old memories without migration.
 - **Limit:** a server that hides every channel from `@everyone` and grants access through a member role has no public
   channels, so `balanced` behaves like `strict` there.
-- **Coverage:** the gate applies to unified and legacy recall, `recall_user`, `forget_user` reply text, cached media
-  reuse and Jev same-as candidates. DMs, group DMs and `/ask` stay memory-free at every level.
+- **Coverage:** the gate applies to unified and legacy recall, `recall_user`, `forget_user` reply text and Jev same-as
+  candidates. DMs, group DMs and `/ask` stay memory-free at every level.
 - **Forget User:** deletion of the speaker's own matching notes is available at every level. `relaxed` keeps its
   existing value-bearing replies; `balanced` and `strict` quote only claims and media labels or summaries allowed by
   `canRecall` in the current channel, counting hidden matches generically. `off` confirms by count only.
-- **Cached Media Reuse:** `relaxed` reuses a stored digest as before. At `balanced` and `strict`, reuse requires at
-  least one recorded share in a channel allowed by `canRecall` for the current channel; otherwise the bot watches the
-  content again and records the new share. A digest with no recorded share channels is private.
+- **Cached Media Reuse:** a repost of the same content reuses its stored digest at every level and records the new
+  share; it is never re-watched because an earlier share came from a channel the current one cannot see. The digest
+  describes the content the reposter is supplying again; the original sharer's message was only context for the watch
+  (owner decision 2026-10-09, #274). Recall of media summaries is still gated.
 
 ### Unified Recall
 
