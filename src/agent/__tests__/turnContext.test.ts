@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   getMessages: vi.fn(() => []),
   embedEpisodeText: vi.fn(),
   buildEpisodeRecallBlock: vi.fn(() => ''),
+  buildMediaRecallBlock: vi.fn(() => ''),
   resolveReferences: vi.fn(() => ({ resolved: [], ambiguous: [] })),
   retrieveForTurn: vi.fn(() => ({ entries: [], claims: [] })),
   retrieveGuildFacts: vi.fn(() => ({ facts: [], tokensEst: 0 })),
@@ -57,6 +58,7 @@ vi.mock('../../agent/memory/retriever.js', async (importOriginal) => ({
 }))
 vi.mock('../memory/episodeEmbeddings.js', () => ({ embedEpisodeText: mocks.embedEpisodeText }))
 vi.mock('../memory/episodeRetriever.js', () => ({ buildEpisodeRecallBlock: mocks.buildEpisodeRecallBlock }))
+vi.mock('../memory/mediaRecall.js', () => ({ buildMediaRecallBlock: mocks.buildMediaRecallBlock }))
 vi.mock('../passiveBuffer.js', () => ({ getMessages: mocks.getMessages }))
 vi.mock('../promptAssembler.js', () => ({ assembleSystemPrompt: mocks.assembleSystemPrompt }))
 vi.mock('../promptSafety.js', () => ({
@@ -135,6 +137,7 @@ describe('turn entry work', () => {
     mocks.judgeTurn.mockResolvedValue(null)
     mocks.embedEpisodeText.mockResolvedValue(Array.from({ length: 768 }, () => 0.25))
     mocks.buildEpisodeRecallBlock.mockReturnValue('')
+    mocks.buildMediaRecallBlock.mockReturnValue('')
     mocks.runPrefetchForJudgment.mockResolvedValue({ decision: { fire: false, reason: 'no_judgment' }, outcome: null })
     mocks.settlePrefetch.mockImplementation((prefetch: Promise<unknown>) => prefetch)
   })
@@ -356,6 +359,37 @@ describe('turn entry work', () => {
     expect(context.composePrompt(2)).not.toContain(block)
   })
 
+  it('adds the guild media block right after the episode block from the same query embedding', async () => {
+    const vector = Array.from({ length: 768 }, () => 0.25)
+    const episodeBlock = '## Things you remember happening here\nThe group planned a picnic.'
+    const mediaBlock = '## Media You Watched Here Before\n["the picnic clip"]'
+    mocks.embedEpisodeText.mockResolvedValue(vector)
+    mocks.buildEpisodeRecallBlock.mockReturnValue(episodeBlock)
+    mocks.buildMediaRecallBlock.mockReturnValue(mediaBlock)
+    const work = startTurnEntryWork({ ...entryWork(), includeEpisodeRecall: true })
+
+    const context = await createTurnContext(turnOptions(work))
+
+    expect(mocks.embedEpisodeText).toHaveBeenCalledOnce()
+    expect(mocks.buildMediaRecallBlock).toHaveBeenCalledWith({ guildId: 'guild-1', queryEmbedding: vector })
+    expect(context.systemPrompt).toContain(`${episodeBlock}\n\n${mediaBlock}`)
+    expect(context.composePrompt(1)).toContain(mediaBlock)
+    expect(context.composePrompt(2)).not.toContain(mediaBlock)
+    expect(context.composePrompt(3)).not.toContain(mediaBlock)
+  })
+
+  it('skips the media block for a direct message even when its query embedding is ready', async () => {
+    const mediaBlock = '## Media You Watched Here Before\n["the picnic clip"]'
+    mocks.buildMediaRecallBlock.mockReturnValue(mediaBlock)
+    const work = startTurnEntryWork({ ...entryWork(), includeEpisodeRecall: true })
+
+    const context = await createTurnContext({ ...turnOptions(work), guildId: 'dm:user-1' })
+
+    expect(mocks.buildEpisodeRecallBlock).not.toHaveBeenCalled()
+    expect(mocks.buildMediaRecallBlock).not.toHaveBeenCalled()
+    expect(context.systemPrompt).not.toContain(mediaBlock)
+  })
+
   it('omits episode context when query embedding fails', async () => {
     mocks.embedEpisodeText.mockRejectedValue(new Error('embedding unavailable'))
     const work = startTurnEntryWork({ ...entryWork(), includeEpisodeRecall: true })
@@ -363,6 +397,7 @@ describe('turn entry work', () => {
     const context = await createTurnContext(turnOptions(work))
 
     expect(mocks.buildEpisodeRecallBlock).not.toHaveBeenCalled()
+    expect(mocks.buildMediaRecallBlock).not.toHaveBeenCalled()
     expect(context.systemPrompt).not.toContain('Things you remember happening here')
   })
 
@@ -392,6 +427,7 @@ describe('turn entry work', () => {
     const context = await createTurnContext({ ...turnOptions(work), memory: false })
 
     expect(mocks.buildEpisodeRecallBlock).not.toHaveBeenCalled()
+    expect(mocks.buildMediaRecallBlock).not.toHaveBeenCalled()
     expect(mocks.retrieveForTurn).not.toHaveBeenCalled()
     expect(context.systemPrompt).not.toContain('Things you remember happening here')
   })
