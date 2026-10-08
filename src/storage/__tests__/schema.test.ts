@@ -50,9 +50,17 @@ describe('claims schema', () => {
       'expires_at',
       'event_date',
       'embedding',
-      'embedding_text'
+      'embedding_text',
+      'period'
     ])
-    expect(columns('memory_evidence')).toEqual(['id', 'claim_id', 'channel_id', 'source_kind', 'observed_at'])
+    expect(columns('memory_evidence')).toEqual([
+      'id',
+      'claim_id',
+      'channel_id',
+      'source_kind',
+      'observed_at',
+      'effective_at'
+    ])
     expect(columns('extraction_queue')).toEqual([
       'id',
       'guild_id',

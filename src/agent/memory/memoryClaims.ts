@@ -17,6 +17,7 @@ const DAY_MS = 24 * 60 * 60 * 1000
 
 export type ClaimSource = 'explicit' | 'human' | 'passive' | 'legacy'
 export type ClaimStatus = 'candidate' | 'active' | 'superseded' | 'rejected'
+export type ClaimPeriod = 'current' | 'past'
 
 type MemoryClaimBase = Readonly<{
   id: number
@@ -27,6 +28,7 @@ type MemoryClaimBase = Readonly<{
   objectUserId: string | null
   sourceKind: ClaimSource
   status: ClaimStatus
+  period: ClaimPeriod
   confidence: number
   salience: number
   pinned: boolean
@@ -88,6 +90,7 @@ type ClaimRow = {
   object_user_id: string | null
   source_kind: ClaimSource
   status: ClaimStatus
+  period: string
   confidence: number
   salience: number
   pinned: number
@@ -119,6 +122,7 @@ function mapClaim(row: ClaimRow): MemoryClaim {
     objectUserId: row.object_user_id,
     sourceKind: row.source_kind,
     status: row.status,
+    period: row.period as ClaimPeriod,
     confidence: row.confidence,
     salience: row.salience,
     pinned: row.pinned === 1,

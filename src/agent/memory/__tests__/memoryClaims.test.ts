@@ -174,6 +174,39 @@ describe('memoryClaims', () => {
     expect(older.lastSeenAt).toBe(3_000)
   })
 
+  it('reads a stored period on user and guild claims and keeps a past copy beside a current one', () => {
+    const current = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'general_occupation',
+      value: 'nurse',
+      sourceKind: 'passive'
+    })
+    const past = getDb()
+      .prepare(
+        "INSERT INTO memory_claim (guild_id, subject_user_id, predicate, value, source_kind, status, first_seen_at, last_seen_at, period) VALUES ('guild-1', 'user-1', 'general_occupation', 'nurse', 'passive', 'active', 1, 1, 'past')"
+      )
+      .run()
+    const guildFact = assertGuildClaim({
+      guildId: 'guild-1',
+      predicate: 'plan',
+      value: 'Game night tomorrow',
+      expiresAt: 10_000,
+      sourceKind: 'passive',
+      observedAt: 1_000
+    })
+
+    expect(Number(past.lastInsertRowid)).not.toBe(current.id)
+    expect(current.period).toBe('current')
+    expect(
+      getActiveClaims('guild-1', 'user-1')
+        .map(({ period }) => period)
+        .sort()
+    ).toEqual(['current', 'past'])
+    expect(guildFact.period).toBe('current')
+    expect(getActiveGuildClaims('guild-1', 5_000).map(({ period }) => period)).toEqual(['current'])
+  })
+
   it('stores guild facts without a user subject and keeps user reads scoped to users', () => {
     const assertGuildClaim = Reflect.get(memoryClaimsModule, 'assertGuildClaim') as
       | ((input: {

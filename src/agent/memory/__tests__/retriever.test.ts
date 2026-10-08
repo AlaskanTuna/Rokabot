@@ -405,6 +405,7 @@ describe('formatGuildFactDate', () => {
     objectUserId: null,
     sourceKind: 'passive' as const,
     status: 'active' as const,
+    period: 'current' as const,
     confidence: 0.5,
     salience: 0.5,
     pinned: false,

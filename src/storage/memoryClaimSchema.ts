@@ -34,9 +34,9 @@ function tableExists(database: Database.Database, name: string): boolean {
   return Boolean(database.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name))
 }
 
-function columnsOf(database: Database.Database): Set<string> {
+function columnsOf(database: Database.Database, table = 'memory_claim'): Set<string> {
   return new Set(
-    (database.prepare("PRAGMA table_info('memory_claim')").all() as Array<{ name: string }>).map(({ name }) => name)
+    (database.prepare(`PRAGMA table_info('${table}')`).all() as Array<{ name: string }>).map(({ name }) => name)
   )
 }
 
@@ -103,6 +103,15 @@ function migrateClaimTable(database: Database.Database): void {
 }
 
 function createIndexes(database: Database.Database): void {
+  const dedupSql = (name: string) =>
+    (database.prepare('SELECT sql FROM sqlite_master WHERE name = ?').get(name) as { sql: string } | undefined)?.sql ??
+    ''
+  if (!dedupSql('idx_memory_claim_user_dedup').includes('period')) {
+    database.exec('DROP INDEX IF EXISTS idx_memory_claim_user_dedup')
+  }
+  if (!dedupSql('idx_memory_claim_guild_dedup').includes('period')) {
+    database.exec('DROP INDEX IF EXISTS idx_memory_claim_guild_dedup')
+  }
   database.exec(`
     DROP INDEX IF EXISTS idx_memory_claim_dedup;
     CREATE INDEX IF NOT EXISTS idx_memory_claim_guild_subject_status
@@ -110,10 +119,10 @@ function createIndexes(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_memory_claim_guild_status_last_seen
       ON memory_claim (guild_id, status, last_seen_at);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_claim_user_dedup
-      ON memory_claim (guild_id, subject_user_id, predicate, value)
+      ON memory_claim (guild_id, subject_user_id, predicate, value, period)
       WHERE subject_kind = 'user';
     CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_claim_guild_dedup
-      ON memory_claim (guild_id, predicate, value)
+      ON memory_claim (guild_id, predicate, value, period)
       WHERE subject_kind = 'guild';
   `)
 }
@@ -133,6 +142,7 @@ function createEvidenceTable(database: Database.Database): void {
 
 function migrateClaimLifecycle(database: Database.Database): void {
   const columns = columnsOf(database)
+  const evidenceColumns = columnsOf(database, 'memory_evidence')
   const migratedAt = Date.now()
   database.transaction(() => {
     if (!columns.has('ended_at')) database.exec('ALTER TABLE memory_claim ADD COLUMN ended_at INTEGER')
@@ -140,6 +150,13 @@ function migrateClaimLifecycle(database: Database.Database): void {
     if (!columns.has('event_date')) database.exec('ALTER TABLE memory_claim ADD COLUMN event_date TEXT')
     if (!columns.has('embedding')) database.exec('ALTER TABLE memory_claim ADD COLUMN embedding BLOB')
     if (!columns.has('embedding_text')) database.exec('ALTER TABLE memory_claim ADD COLUMN embedding_text TEXT')
+    if (!columns.has('period')) {
+      database.exec(
+        "ALTER TABLE memory_claim ADD COLUMN period TEXT NOT NULL DEFAULT 'current' CHECK (period IN ('current', 'past'))"
+      )
+    }
+    if (!evidenceColumns.has('effective_at'))
+      database.exec('ALTER TABLE memory_evidence ADD COLUMN effective_at INTEGER')
     database
       .prepare("UPDATE memory_claim SET ended_at = ? WHERE status IN ('rejected', 'superseded') AND ended_at IS NULL")
       .run(migratedAt)

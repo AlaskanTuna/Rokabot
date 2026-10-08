@@ -5,7 +5,7 @@ import { recordMemoryEvent } from '../../storage/metricsStore.js'
 import { getAllUserNames } from '../../storage/userNames.js'
 import { getLocalDate } from '../../utils/timezone.js'
 import { estimateTokens } from '../../utils/tokens.js'
-import type { ClaimSource, GuildMemoryClaim, UserMemoryClaim } from './memoryClaims.js'
+import type { ClaimPeriod, ClaimSource, GuildMemoryClaim, UserMemoryClaim } from './memoryClaims.js'
 import { getActiveGuildClaims, touchRecalled } from './memoryClaims.js'
 import { PREDICATES, type PredicateId, predicateCategory, routeTopics } from './predicates.js'
 import { type RecallScope, canRecall } from './privacy.js'
@@ -21,6 +21,7 @@ type ClaimRow = {
   object_user_id: string | null
   source_kind: ClaimSource
   status: UserMemoryClaim['status']
+  period: string
   confidence: number
   salience: number
   pinned: number
@@ -77,6 +78,7 @@ function mapClaim(row: ClaimRow): UserMemoryClaim {
     objectUserId: row.object_user_id,
     sourceKind: row.source_kind,
     status: row.status,
+    period: row.period as ClaimPeriod,
     confidence: row.confidence,
     salience: row.salience,
     pinned: row.pinned === 1,
