@@ -43,7 +43,7 @@ function mediaPart(source: WatchSource, videoMetadata?: Record<string, unknown>)
   return videoMetadata ? { ...part, videoMetadata } : part
 }
 
-function instructions(bins: MediaClip[], focus: string, opening: boolean, window?: MediaClip): string {
+export function instructions(bins: MediaClip[], focus: string, opening: boolean, window?: MediaClip): string {
   return [
     'Describe the media for someone who cannot see or hear it.',
     'Fill the response schema.',

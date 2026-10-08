@@ -64,6 +64,12 @@ socialPosts:
 
 media:
   watch: true # Watch audio and video with one separate Gemini call that writes a digest, then let Roka reply from the digest; false sends them to her directly as before
+  watcher: gemini # Which model watches audio and video: gemini or qwen (frames + speech transcript on ModelScope); the other takes over when it fails. The Pi sets MEDIA_WATCHER=qwen
+  qwen:
+    model: Qwen/Qwen3.5-35B-A3B # ModelScope vision model for the qwen watcher; 35B-A3B measured fastest and most specific (5-12 s for 16 frames)
+    frames: 16 # Frames sampled evenly across the video, one per timeline bin
+    frameHeight: 360 # Frame height in pixels; Qwen reads 360p frames as well as larger ones
+    timeoutMs: 30000 # Deadline for one Qwen watch call
   watchTimeoutMs: 20000 # Deadline for one watch call; measured 2-15 s for clips up to 20 min at low frame rates
   digestMaxOutputTokens: 3200 # Output ceiling for the digest JSON; a dense 20-minute talk overran 1200 and came back cut off, and standout moments and a style line add up to ~600 more
   skimClips: 8 # Most evenly spaced clips taken from a video too long to watch whole

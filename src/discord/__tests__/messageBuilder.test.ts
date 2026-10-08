@@ -146,6 +146,8 @@ describe('tool footer budget', () => {
     ...(['video', 'audio'] as const).flatMap((kind): WatchOutcome[] => [
       { status: 'watched', kind, coverage: 'whole', durationSec: LONGEST_CLOCK },
       { status: 'watched', kind, coverage: 'part', startSec: LONGEST_CLOCK, endSec: LONGEST_CLOCK },
+      { status: 'watched', kind, coverage: 'part', startSec: LONGEST_CLOCK, endSec: LONGEST_CLOCK, heard: 'none' },
+      { status: 'watched', kind, coverage: 'whole', durationSec: LONGEST_CLOCK, heard: 'none' },
       { status: 'watched', kind, coverage: 'skim' },
       { status: 'remembered', kind },
       { status: 'failed', kind }
@@ -360,7 +362,19 @@ describe('buildRokaMessage watch outcomes', () => {
     [{ status: 'watched', kind: 'audio', coverage: 'whole', durationSec: 45 }, 'heard the whole clip (0:45)'],
     [{ status: 'remembered', kind: 'video' }, 'remembered watching this video'],
     [{ status: 'failed', kind: 'video' }, "couldn't watch the video"],
-    [{ status: 'failed', kind: 'audio' }, "couldn't hear the clip"]
+    [{ status: 'failed', kind: 'audio' }, "couldn't hear the clip"],
+    [
+      { status: 'watched', kind: 'video', coverage: 'whole', durationSec: 186, heard: 'none' },
+      'watched the whole video without sound (3:06)'
+    ],
+    [
+      { status: 'watched', kind: 'video', coverage: 'part', startSec: 600, endSec: 720, heard: 'none' },
+      'watched 10:00–12:00 of the video without sound'
+    ],
+    [
+      { status: 'watched', kind: 'video', coverage: 'whole', durationSec: 186, heard: 'speech' },
+      'watched the whole video (3:06)'
+    ]
   ])('labels %j as "%s"', (outcome, label) => {
     expect(payloadJson('Mou~', [], [], undefined, undefined, outcome)).toContain(footerWithoutTimestamp([label]))
   })
@@ -466,7 +480,7 @@ describe('buildRokaMessage', () => {
     vi.resetModules()
     const { MAX_TOOL_FOOTER_CHARS: atSecondDate } = await import('../messageBuilder.js')
 
-    expect(atFirstDate).toBe(137)
+    expect(atFirstDate).toBe(151)
     expect(atSecondDate).toBe(atFirstDate)
 
     vi.useRealTimers()

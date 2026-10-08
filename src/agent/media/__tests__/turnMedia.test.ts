@@ -17,7 +17,13 @@ const mocks = vi.hoisted(() => ({
   streamToFiles: vi.fn(),
   deleteFile: vi.fn(),
   remainingTokensThisMinute: vi.fn(),
-  maxLlmCalls: 4
+  maxLlmCalls: 4,
+  watcher: 'gemini' as 'gemini' | 'qwen',
+  qwenKey: undefined as string | undefined,
+  probeDurationSec: vi.fn(),
+  extractFrames: vi.fn(),
+  resolveYouTubeStreams: vi.fn(),
+  watchFramesWithQwen: vi.fn()
 }))
 
 vi.mock('../../../config.js', () => ({
@@ -29,9 +35,15 @@ vi.mock('../../../config.js', () => ({
         return mocks.maxLlmCalls
       }
     },
+    get fallback() {
+      return { apiKey: mocks.qwenKey, baseUrl: 'https://modelscope.test/v1' }
+    },
     get media() {
       return {
         watch: mocks.watch,
+        watcher: mocks.watcher,
+        qwen: { model: 'Qwen/test', frames: 4, frameHeight: 360, timeoutMs: 30_000 },
+        digestMaxOutputTokens: 3200,
         skimClips: 8,
         skimClipSeconds: 10,
         watchTimeoutMs: 20_000,
@@ -52,6 +64,16 @@ vi.mock('../../attachmentCost.js', () => ({ measureAttachmentTokens: mocks.measu
 vi.mock('../watch.js', () => ({ watchMedia: mocks.watchMedia, countUriTokens: mocks.countUriTokens }))
 
 vi.mock('../filesUpload.js', () => ({ streamToFiles: mocks.streamToFiles, deleteFile: mocks.deleteFile }))
+
+vi.mock('../frames.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../frames.js')>()),
+  probeDurationSec: mocks.probeDurationSec,
+  extractFrames: mocks.extractFrames
+}))
+
+vi.mock('../youtubeStreams.js', () => ({ resolveYouTubeStreams: mocks.resolveYouTubeStreams }))
+
+vi.mock('../qwenWatch.js', () => ({ watchFramesWithQwen: mocks.watchFramesWithQwen }))
 
 vi.mock('../../../storage/mediaDigestStore.js', () => ({
   findMediaDigest: mocks.findMediaDigest,
@@ -146,7 +168,13 @@ const input = (attachments: Parameters<typeof prepareTurnMedia>[0]['attachments'
 
 beforeEach(() => {
   mocks.watch = true
+  mocks.watcher = 'gemini'
+  mocks.qwenKey = undefined
   for (const mock of [
+    mocks.probeDurationSec,
+    mocks.extractFrames,
+    mocks.resolveYouTubeStreams,
+    mocks.watchFramesWithQwen,
     mocks.findMediaDigest,
     mocks.saveMediaDigest,
     mocks.recordMediaOccurrence,
@@ -1027,5 +1055,167 @@ describe('watching a 20 to 40 minute video in two halves', () => {
     expect(mocks.watchMedia.mock.calls[0][0].plan).toMatchObject({ mode: 'whole', fps: 0.1 })
     expect(result.mediaTextParts[0].text).toContain('whole video in two halves, 35:00, a frame every 10 s, full sound]')
     expect(mocks.deleteFile).toHaveBeenCalledWith('files/abc')
+  })
+})
+
+// Qwen watches from sampled frames on ModelScope; whichever of the two is not configured as the watcher is the backup.
+describe('the qwen watcher', () => {
+  const upload = { url: 'https://cdn.discordapp.com/clip.mp4', contentType: 'video/mp4', size: 300, durationSec: 40 }
+  const youtube = {
+    url: 'https://www.youtube.com/watch?v=abc',
+    contentType: 'video/mp4',
+    transport: 'uri' as const,
+    origin: 'link' as const,
+    sourceAuthorId: null,
+    contentKey: 'youtube:abc'
+  }
+  const qwenDigest = (overrides: Partial<MediaDigest> = {}): MediaDigest =>
+    digestFor({ fps: null, frames: 4, heard: 'none', durationSec: 40, ...overrides })
+
+  beforeEach(() => {
+    mocks.qwenKey = 'ms-key'
+    mocks.extractFrames.mockImplementation(async (_source: unknown, timestamps: number[]) =>
+      timestamps.map((atSec) => ({ atSec, jpeg: Buffer.from([0xff, 0xd8]) }))
+    )
+    mocks.probeDurationSec.mockResolvedValue(40)
+    mocks.watchFramesWithQwen.mockResolvedValue({ status: 'ok', digest: qwenDigest(), watchMs: 6000 })
+  })
+
+  it('falls back to Qwen frames when the Gemini watch fails', async () => {
+    mocks.downloadAttachment.mockResolvedValue({
+      data: 'b64',
+      mimeType: 'video/mp4',
+      tokens: 0,
+      truncated: false,
+      bytes: Buffer.alloc(4)
+    })
+    mocks.watchMedia.mockResolvedValue({ status: 'failed', reason: 'overloaded', calls: 1, watchMs: 2000 })
+
+    const result = await prepareTurnMedia(input([upload]))
+
+    expect(mocks.extractFrames).toHaveBeenCalledWith(
+      { input: 'https://cdn.discordapp.com/clip.mp4', headers: null },
+      [5, 15, 25, 35],
+      expect.objectContaining({ height: 360 })
+    )
+    expect(result.mediaTextParts).toHaveLength(1)
+    expect(result.mediaTextParts[0].text).toContain('4 frames, no sound heard')
+    expect(result.mediaTextParts[0].text).not.toContain("couldn't be watched")
+    expect(result.watchOutcome).toMatchObject({ status: 'watched', heard: 'none' })
+    expect(result.watcherCalls).toBe(1)
+  })
+
+  it('watches a YouTube link with Qwen first when it is the configured watcher, naming things from the title', async () => {
+    mocks.watcher = 'qwen'
+    mocks.resolveYouTubeStreams.mockResolvedValue({
+      durationSec: 186,
+      title: 'Castorice as Aeon Aha',
+      description: 'Model swap',
+      video: { url: 'https://rr1.googlevideo.com/v', headers: { 'User-Agent': 'x' } },
+      audio: null
+    })
+
+    await prepareTurnMedia(input([youtube]))
+
+    expect(mocks.watchMedia).not.toHaveBeenCalled()
+    expect(mocks.countUriTokens).not.toHaveBeenCalled()
+    expect(mocks.resolveYouTubeStreams).toHaveBeenCalledWith('https://www.youtube.com/watch?v=abc')
+    expect(mocks.extractFrames.mock.calls[0][0]).toEqual({
+      input: 'https://rr1.googlevideo.com/v',
+      headers: { 'User-Agent': 'x' }
+    })
+    expect(mocks.watchFramesWithQwen.mock.calls[0][0]).toMatchObject({
+      durationSec: 186,
+      mode: 'whole',
+      label: 'YouTube video',
+      context: 'Castorice as Aeon Aha — Model swap'
+    })
+    expect(mocks.watchFramesWithQwen.mock.calls[0][1]).toMatchObject({ apiKey: 'ms-key', model: 'Qwen/test' })
+  })
+
+  it('watches around a YouTube timestamp with Qwen', async () => {
+    mocks.watcher = 'qwen'
+    mocks.resolveYouTubeStreams.mockResolvedValue({
+      durationSec: 1800,
+      title: '',
+      description: '',
+      video: { url: 'https://rr1.googlevideo.com/v', headers: null },
+      audio: null
+    })
+
+    await prepareTurnMedia(input([{ ...youtube, startSec: 600 }]))
+
+    expect(mocks.watchFramesWithQwen.mock.calls[0][0]).toMatchObject({
+      mode: 'focus',
+      focusSec: 600,
+      bins: [
+        { startSec: 570, endSec: 600 },
+        { startSec: 600, endSec: 630 },
+        { startSec: 630, endSec: 660 },
+        { startSec: 660, endSec: 690 }
+      ]
+    })
+  })
+
+  it('falls back to Gemini when the Qwen watch fails', async () => {
+    mocks.watcher = 'qwen'
+    mocks.watchFramesWithQwen.mockResolvedValue({ status: 'failed', reason: 'overloaded', watchMs: 1000 })
+    mocks.downloadAttachment.mockResolvedValue({
+      data: 'b64',
+      mimeType: 'video/mp4',
+      tokens: 0,
+      truncated: false,
+      bytes: Buffer.alloc(4)
+    })
+    mocks.watchMedia.mockResolvedValue(okWatch(digestFor()))
+
+    const result = await prepareTurnMedia(input([upload]))
+
+    expect(mocks.watchMedia).toHaveBeenCalledTimes(1)
+    expect(result.watchOutcome).toMatchObject({ status: 'watched', coverage: 'whole' })
+    expect(result.watchOutcome).not.toHaveProperty('heard')
+  })
+
+  it('watches with Qwen while turns are pinned to the fallback model instead of skipping the video', async () => {
+    const result = await prepareTurnMedia({ ...input([upload]), geminiUnavailable: true })
+
+    expect(mocks.watchMedia).not.toHaveBeenCalled()
+    expect(mocks.watchFramesWithQwen).toHaveBeenCalledTimes(1)
+    expect(result.mediaTextParts[0].text).not.toContain("couldn't be watched")
+  })
+
+  it('gives the notice when neither can watch: an audio clip while Gemini is unavailable', async () => {
+    const voice = { url: 'https://cdn.discordapp.com/v.ogg', contentType: 'audio/ogg', size: 300, durationSec: 5 }
+
+    const result = await prepareTurnMedia({ ...input([voice]), geminiUnavailable: true })
+
+    expect(mocks.watchFramesWithQwen).not.toHaveBeenCalled()
+    expect(result.mediaTextParts[0].text).toBe("[A voice message was shared, but it couldn't be watched right now.]")
+    expect(result.watchOutcome).toEqual({ status: 'failed', kind: 'audio' })
+  })
+
+  it('fails over when too few frames could be taken', async () => {
+    mocks.extractFrames.mockImplementation(async (_source: unknown, timestamps: number[]) => [
+      { atSec: timestamps[0], jpeg: Buffer.from([0xff, 0xd8]) }
+    ])
+
+    const result = await prepareTurnMedia({ ...input([upload]), geminiUnavailable: true })
+
+    expect(mocks.watchFramesWithQwen).not.toHaveBeenCalled()
+    expect(result.mediaTextParts[0].text).toBe("[A video was shared, but it couldn't be watched right now.]")
+  })
+
+  it('does not remember a frame watch that heard nothing', async () => {
+    const scope = { guildId: 'guild-1', channelId: 'c1', messageId: 'trigger-1', userId: 'asker-1' }
+    mocks.findMediaDigest.mockReturnValue(null)
+
+    await prepareTurnMedia({
+      ...input([{ ...upload, contentKey: 'post:x:1:0' }]),
+      memoryScope: scope,
+      geminiUnavailable: true
+    })
+
+    expect(mocks.watchFramesWithQwen).toHaveBeenCalledTimes(1)
+    expect(mocks.saveMediaDigest).not.toHaveBeenCalled()
   })
 })

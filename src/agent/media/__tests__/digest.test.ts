@@ -255,6 +255,31 @@ describe('coverageLine', () => {
 })
 
 // The footer reports what she actually watched, so a reader can tell a watch from a guess (and a part from the whole).
+// The Qwen watcher sees still frames and, until speech is transcribed, hears nothing; Roka and the footer must say so.
+describe('frame-sampled watches', () => {
+  const framed = digest({ fps: null, frames: 16, heard: 'none', durationSec: 186 })
+
+  it('describes a frame watch by frame count and what was heard', () => {
+    expect(coverageLine(framed)).toBe('whole video, 3:06, 16 frames, no sound heard')
+    expect(coverageLine({ ...framed, heard: 'speech' })).toBe(
+      'whole video, 3:06, 16 frames, speech heard from a transcript but not music or other sound'
+    )
+    expect(coverageLine({ ...framed, mode: 'focus', focusSec: 754, bins: [{ startSec: 724, endSec: 844 }] })).toBe(
+      'around 12:34: watched 12:04–14:04, 16 frames, no sound heard'
+    )
+  })
+
+  it('carries what was heard into the watch outcome', () => {
+    expect(watchOutcomeFor(framed)).toEqual({
+      status: 'watched',
+      kind: 'video',
+      coverage: 'whole',
+      durationSec: 186,
+      heard: 'none'
+    })
+  })
+})
+
 describe('watchOutcomeFor', () => {
   it('reports a whole watch with its length', () => {
     expect(watchOutcomeFor(digest())).toEqual({ status: 'watched', kind: 'video', coverage: 'whole', durationSec: 75 })

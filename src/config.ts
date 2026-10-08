@@ -64,12 +64,14 @@ interface YamlConfig {
   }
   media?: {
     watch?: boolean
+    watcher?: string
     watchTimeoutMs?: number
     digestMaxOutputTokens?: number
     skimClips?: number
     skimClipSeconds?: number
     maxStreamedUploadBytes?: number
     uploadTimeoutMs?: number
+    qwen?: { model?: string; frames?: number; frameHeight?: number; timeoutMs?: number }
   }
   memory?: {
     bufferSize?: number
@@ -181,6 +183,7 @@ function envBoolean(key: string): boolean | undefined {
 export type JevMode = 'off' | 'shadow' | 'on'
 export type MemoryPrivacy = 'relaxed' | 'balanced' | 'strict' | 'off'
 export type MemoryRecallMode = 'legacy' | 'shadow' | 'unified'
+export type MediaWatcher = 'gemini' | 'qwen'
 
 function jevMode(key: 'tone' | 'referents' | 'prefetch', envKey: string): JevMode {
   const envValue = envString(envKey)
@@ -188,6 +191,14 @@ function jevMode(key: 'tone' | 'referents' | 'prefetch', envKey: string): JevMod
   if (value === 'off' || value === 'shadow' || value === 'on') return value
   const source = envValue ? `Environment variable ${envKey}` : `Config value jev.${key}`
   throw new Error(`${source} must be off, shadow or on, got: ${String(value)}`)
+}
+
+function mediaWatcher(): MediaWatcher {
+  const envValue = envString('MEDIA_WATCHER')
+  const value = envValue ?? yaml.media?.watcher ?? 'gemini'
+  if (value === 'gemini' || value === 'qwen') return value
+  const source = envValue ? 'Environment variable MEDIA_WATCHER' : 'Config value media.watcher'
+  throw new Error(`${source} must be gemini or qwen, got: ${String(value)}`)
 }
 
 function memoryEnum<T extends string>(key: 'privacy' | 'recall', envKey: string, values: readonly T[], fallback: T): T {
@@ -239,12 +250,19 @@ export const config = {
   },
   media: {
     watch: envBoolean('MEDIA_WATCH') ?? yaml.media?.watch ?? true,
+    watcher: mediaWatcher(),
     watchTimeoutMs: yaml.media?.watchTimeoutMs ?? 20_000,
     digestMaxOutputTokens: yaml.media?.digestMaxOutputTokens ?? 2400,
     skimClips: yaml.media?.skimClips ?? 8,
     skimClipSeconds: yaml.media?.skimClipSeconds ?? 10,
     maxStreamedUploadBytes: yaml.media?.maxStreamedUploadBytes ?? 52_428_800,
-    uploadTimeoutMs: yaml.media?.uploadTimeoutMs ?? 45_000
+    uploadTimeoutMs: yaml.media?.uploadTimeoutMs ?? 45_000,
+    qwen: {
+      model: envString('MEDIA_QWEN_MODEL') ?? yaml.media?.qwen?.model ?? 'Qwen/Qwen3.5-35B-A3B',
+      frames: yaml.media?.qwen?.frames ?? 16,
+      frameHeight: yaml.media?.qwen?.frameHeight ?? 360,
+      timeoutMs: yaml.media?.qwen?.timeoutMs ?? 30_000
+    }
   },
   gemini: {
     apiKey: requiredEnv('GEMINI_API_KEY'),
@@ -388,6 +406,9 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
     max: 104_857_600
   },
   { path: 'media.uploadTimeoutMs', value: config.media.uploadTimeoutMs, min: 10_000, max: 120_000 },
+  { path: 'media.qwen.frames', value: config.media.qwen.frames, min: 4, max: 32 },
+  { path: 'media.qwen.frameHeight', value: config.media.qwen.frameHeight, min: 144, max: 720 },
+  { path: 'media.qwen.timeoutMs', value: config.media.qwen.timeoutMs, min: 5000, max: 90_000 },
   { path: 'gemini.maxOutputTokens', value: config.gemini.maxOutputTokens, min: 1 },
   // Floor is a full turn of plain images, derived rather than restated: below it a maximal image turn could
   // be refused,
@@ -437,9 +458,9 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'session.windowSize', value: config.session.windowSize, min: 1 },
   { path: 'session.maxRehydrationAge', value: config.session.maxRehydrationAge, min: 0 },
   { path: 'session.historyRetentionDays', value: config.session.historyRetentionDays, min: 1 },
-  // 4000 (Components V2 shared TextDisplay budget) − MAX_TOOL_FOOTER_CHARS (137, derived in
-  // src/discord/messageBuilder.ts) = 3863; this bot never sends via content.
-  { path: 'discord.maxMessageLength', value: config.discord.maxMessageLength, min: 1, max: 3863 },
+  // 4000 (Components V2 shared TextDisplay budget) − MAX_TOOL_FOOTER_CHARS (151, derived in
+  // src/discord/messageBuilder.ts) = 3849; this bot never sends via content.
+  { path: 'discord.maxMessageLength', value: config.discord.maxMessageLength, min: 1, max: 3849 },
   // min is the largest a single turn can be (MAX_ATTACHMENTS x MAX_DOCUMENT_SIZE_BYTES): below that, a
   // full-sized turn could never be admitted even on an idle bot, so it would be refused forever rather
   // than merely delayed. Asserted from the constants themselves in the byteBudget tests.
