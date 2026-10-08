@@ -204,9 +204,7 @@ function describeForwardedSnapshots(
     }
 
     const fwdAttachments = snapshot.attachments ? [...snapshot.attachments.values()] : []
-    const fwdCandidates = fwdAttachments
-      .filter(isSupportedMedia)
-      .map(toMediaAttachment)
+    const fwdCandidates = fwdAttachments.filter(isSupportedMedia).map(toMediaAttachment)
     const fwdImages = fwdCandidates.slice(0, imageSlots - images.length)
     images.push(...fwdImages)
 
@@ -331,9 +329,7 @@ export function extractMessageContent(
     }
 
     const refAttachments = [...referencedMessage.attachments.values()]
-    const refMediaCandidates: ImageAttachment[] = refAttachments
-      .filter(isSupportedMedia)
-      .map(toMediaAttachment)
+    const refMediaCandidates: ImageAttachment[] = refAttachments.filter(isSupportedMedia).map(toMediaAttachment)
     const refMediaTaken = isReplyToBot ? [] : refMediaCandidates.slice(0, MAX_ATTACHMENTS - imageAttachments.length)
     refParts.push(...mediaMarker('attached', refMediaCandidates, refMediaTaken.length))
     const unsupportedRefCount = refAttachments.length - refAttachments.filter(isSupportedMedia).length

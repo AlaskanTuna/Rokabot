@@ -144,14 +144,10 @@ describe('media message content', () => {
 describe('voice message duration', () => {
   it('carries a replied-to voice message duration onto the attachment', () => {
     const voice = { url: 'https://cdn.discordapp.com/v.ogg', contentType: 'audio/ogg', size: 30_000, duration: 52 }
-    const result = extractMessageContent(
-      message() as never,
-      referenceMessage([voice]) as never,
-      false,
-      'bot',
-      []
-    )
-    expect(result.imageAttachments).toEqual([{ url: voice.url, contentType: 'audio/ogg', size: 30_000, durationSec: 52 }])
+    const result = extractMessageContent(message() as never, referenceMessage([voice]) as never, false, 'bot', [])
+    expect(result.imageAttachments).toEqual([
+      { url: voice.url, contentType: 'audio/ogg', size: 30_000, durationSec: 52 }
+    ])
   })
 
   it('leaves the duration off when Discord states none', () => {
