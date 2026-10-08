@@ -92,6 +92,23 @@ describe('mediaDigestStore', () => {
     expect(testDb.prepare('SELECT embedding FROM media_digest').get()).toEqual({ embedding: null })
   })
 
+  it('returns all recorded share channels and treats a digest without shares as empty', () => {
+    const digest = saveMediaDigest(digestInput())!
+
+    expect(digest.channelIds).toEqual([])
+
+    recordMediaOccurrence(occurrenceInput(digest.id, { channelId: 'private-channel' }))
+    recordMediaOccurrence(
+      occurrenceInput(digest.id, { messageId: 'message-2', channelId: 'public-channel', sharedByUserId: 'user-2' })
+    )
+
+    expect(findMediaDigest('guild-1', 'youtube:video-1')?.channelIds).toEqual(['private-channel', 'public-channel'])
+    expect(findMediaSharedBy('guild-1', 'user-1', ['cat'], 10)[0].channelIds).toEqual([
+      'private-channel',
+      'public-channel'
+    ])
+  })
+
   it('keeps the same content key independent across guilds', () => {
     const first = saveMediaDigest(digestInput())
     const second = saveMediaDigest(digestInput({ guildId: 'guild-2', label: 'Guild two cat video' }))

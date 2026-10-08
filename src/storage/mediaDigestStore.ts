@@ -12,6 +12,7 @@ export type StoredMediaDigest = Readonly<{
   summary: string
   digestJson: string
   embedding: readonly number[] | null
+  channelIds: readonly string[]
   createdAt: number
   lastSharedAt: number
 }>
@@ -25,6 +26,7 @@ type MediaDigestRow = {
   summary: string
   digest_json: string
   embedding: Buffer | null
+  channel_ids: string | null
   created_at: number
   last_shared_at: number | null
 }
@@ -43,6 +45,7 @@ function mapMediaDigest(row: MediaDigestRow): StoredMediaDigest {
     summary: row.summary,
     digestJson: row.digest_json,
     embedding: decodeFloat32Embedding(row.embedding),
+    channelIds: (row.channel_ids ?? '').split(',').filter(Boolean).sort(),
     createdAt: row.created_at,
     lastSharedAt: row.last_shared_at ?? row.created_at
   }
@@ -51,7 +54,8 @@ function mapMediaDigest(row: MediaDigestRow): StoredMediaDigest {
 function mediaDigestSelect(where: string): string {
   return `
     SELECT d.id, d.guild_id, d.content_key, d.kind, d.label, d.summary, d.digest_json,
-           d.embedding, d.created_at, MAX(o.observed_at) AS last_shared_at
+           d.embedding, d.created_at, MAX(o.observed_at) AS last_shared_at,
+           GROUP_CONCAT(DISTINCT o.channel_id) AS channel_ids
     FROM media_digest d
     LEFT JOIN media_occurrence o ON o.digest_id = d.id AND o.guild_id = d.guild_id
     ${where}

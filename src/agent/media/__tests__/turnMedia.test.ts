@@ -1,9 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ImageAttachment } from '../../attachments.js'
 import type { MediaClip, MediaDigest } from '../types.js'
 
 const mocks = vi.hoisted(() => ({
   watch: true,
+  memoryPrivacy: 'relaxed',
   prepareAttachments: vi.fn(),
   downloadAttachment: vi.fn(),
   measureAttachmentTokens: vi.fn(),
@@ -29,6 +30,11 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../../config.js', () => ({
   config: {
     logging: { level: 'silent' },
+    memory: {
+      get privacy() {
+        return mocks.memoryPrivacy
+      }
+    },
     gemini: {
       maxAttachmentTokens: 50_000,
       get maxLlmCalls() {
@@ -86,6 +92,7 @@ vi.mock('../../memory/episodeEmbeddings.js', () => ({ embedEpisodeText: mocks.em
 
 vi.mock('../../tokenBudget.js', () => ({ remainingTokensThisMinute: mocks.remainingTokensThisMinute }))
 
+import { registerChannelVisibility, resetChannelVisibilityForTest } from '../../memory/channelVisibility.js'
 import { prepareTurnMedia } from '../turnMedia.js'
 
 const emptyPrepared = {
@@ -170,6 +177,7 @@ beforeEach(() => {
   mocks.watch = true
   mocks.watcher = 'gemini'
   mocks.qwenKey = undefined
+  mocks.memoryPrivacy = 'relaxed'
   for (const mock of [
     mocks.probeDurationSec,
     mocks.extractFrames,
@@ -194,6 +202,14 @@ beforeEach(() => {
   mocks.prepareAttachments.mockResolvedValue(emptyPrepared)
   mocks.remainingTokensThisMinute.mockReturnValue(125_000)
   mocks.maxLlmCalls = 4
+  registerChannelVisibility({
+    visibility: (channelId) => (channelId === 'public-channel' || channelId === 'public-source' ? 'public' : 'private'),
+    parentOf: () => null
+  })
+})
+
+afterEach(() => {
+  resetChannelVisibilityForTest()
 })
 
 describe('prepareTurnMedia', () => {
@@ -561,7 +577,7 @@ describe('remembering watched media in a server', () => {
     sourceAuthorId: null,
     contentKey: 'youtube:abc'
   }
-  const stored = (digest: MediaDigest) => ({
+  const stored = (digest: MediaDigest, channelIds: readonly string[] = []) => ({
     id: 7,
     guildId: 'guild-1',
     contentKey: 'youtube:abc',
@@ -571,7 +587,8 @@ describe('remembering watched media in a server', () => {
     digestJson: JSON.stringify(digest),
     embedding: null,
     createdAt: 1,
-    lastSharedAt: 1
+    lastSharedAt: 1,
+    channelIds
   })
 
   beforeEach(() => {
@@ -580,7 +597,7 @@ describe('remembering watched media in a server', () => {
 
   it('reuses a digest already watched in this server without watching again', async () => {
     const digest = digestFor({ label: 'YouTube video' })
-    mocks.findMediaDigest.mockReturnValue(stored(digest))
+    mocks.findMediaDigest.mockReturnValue(stored(digest, ['private-channel']))
 
     const result = await prepareTurnMedia({ ...input([youtube]), memoryScope: scope })
 
@@ -598,6 +615,70 @@ describe('remembering watched media in a server', () => {
       origin: 'link'
     })
   })
+
+  it.each(['balanced', 'strict'] as const)(
+    'watches again when a stored digest has no recallable share at %s',
+    async (privacy) => {
+      const digest = digestFor({ label: 'YouTube video' })
+      const publicScope = { ...scope, channelId: 'public-channel' }
+      mocks.memoryPrivacy = privacy
+      mocks.findMediaDigest.mockReturnValue(stored(digest, ['private-channel']))
+      mocks.saveMediaDigest.mockReturnValue(stored(digest, ['private-channel']))
+      mocks.watchMedia.mockResolvedValue(okWatch(digest))
+
+      const result = await prepareTurnMedia({
+        ...input([youtube]),
+        channelId: 'public-channel',
+        memoryScope: publicScope
+      })
+
+      expect(mocks.watchMedia).toHaveBeenCalledOnce()
+      expect(mocks.saveMediaDigest).toHaveBeenCalledOnce()
+      expect(mocks.recordMediaOccurrence).toHaveBeenCalledWith(
+        expect.objectContaining({ digestId: 7, channelId: 'public-channel', sharedByUserId: 'asker-1' })
+      )
+      expect(result.watchOutcome).toEqual({ status: 'watched', kind: 'video', coverage: 'whole', durationSec: 19 })
+    }
+  )
+
+  it.each([
+    ['balanced', ['private-channel', 'public-source']],
+    ['strict', ['private-channel', 'public-channel']]
+  ] as const)('reuses a digest with a recallable share at %s', async (privacy, channelIds) => {
+    const digest = digestFor({ label: 'YouTube video' })
+    const publicScope = { ...scope, channelId: 'public-channel' }
+    mocks.memoryPrivacy = privacy
+    mocks.findMediaDigest.mockReturnValue(stored(digest, channelIds))
+
+    const result = await prepareTurnMedia({
+      ...input([youtube]),
+      channelId: 'public-channel',
+      memoryScope: publicScope
+    })
+
+    expect(mocks.watchMedia).not.toHaveBeenCalled()
+    expect(result.watchOutcome).toEqual({ status: 'remembered', kind: 'video' })
+  })
+
+  it.each(['balanced', 'strict'] as const)(
+    'treats a digest without share channels as private at %s',
+    async (privacy) => {
+      const digest = digestFor({ label: 'YouTube video' })
+      const publicScope = { ...scope, channelId: 'public-channel' }
+      mocks.memoryPrivacy = privacy
+      mocks.findMediaDigest.mockReturnValue(stored(digest))
+      mocks.saveMediaDigest.mockReturnValue(stored(digest))
+      mocks.watchMedia.mockResolvedValue(okWatch(digest))
+
+      await prepareTurnMedia({
+        ...input([youtube]),
+        channelId: 'public-channel',
+        memoryScope: publicScope
+      })
+
+      expect(mocks.watchMedia).toHaveBeenCalledOnce()
+    }
+  )
 
   it('watches again rather than reuse a stored skim that a later share could watch in two halves', async () => {
     mocks.findMediaDigest.mockReturnValue(

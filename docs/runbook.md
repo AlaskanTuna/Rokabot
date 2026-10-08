@@ -547,6 +547,13 @@ sqlite3 ~/rokabot/data/rokabot.db "SELECT d.guild_id, d.label, substr(d.summary,
 that shows no channel to `@everyone` and grants access through a member role has no public channels, so `balanced`
 behaves like `strict` there.
 
+- **Forget User:** the speaker can delete their own matching notes at every privacy level. At `relaxed`, replies still
+  quote matching values; at `balanced` and `strict`, they quote only claims and media labels or summaries recallable in
+  the current channel and count the rest generically. At `off`, replies report counts only.
+- **Cached Media Reuse:** `relaxed` reuses stored digests as before. At `balanced` and `strict`, a digest is reused only
+  when at least one recorded share is recallable in the current channel; otherwise the bot watches it again and records
+  the new share. A digest with no recorded share channels is treated as private.
+
 ```bash
 # Facts with embeddings (unified recall needs them; the daily maintenance pass fills the gaps)
 sqlite3 ~/rokabot/data/rokabot.db "SELECT COUNT(*) AS active, SUM(embedding IS NOT NULL) AS embedded FROM memory_claim WHERE status = 'active';"
