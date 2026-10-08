@@ -13,6 +13,7 @@ import {
 } from '../../storage/memoryEpisodeStore.js'
 import { logger } from '../../utils/logger.js'
 import { embedEpisodeText } from './episodeEmbeddings.js'
+import { embedPendingFacts } from './factEmbeddings.js'
 
 export type EpisodeMaintenanceReport = Readonly<{
   deleted: number
@@ -21,6 +22,8 @@ export type EpisodeMaintenanceReport = Readonly<{
   mediaDeleted: number
   mediaReembedded: number
   mediaFailed: number
+  factsEmbedded: number
+  factsFailed: number
 }>
 
 export async function pruneEpisodesAndReembed(nowMs = Date.now()): Promise<EpisodeMaintenanceReport> {
@@ -61,5 +64,16 @@ export async function pruneEpisodesAndReembed(nowMs = Date.now()): Promise<Episo
     }
   }
 
-  return { deleted, reembedded, failed, mediaDeleted, mediaReembedded, mediaFailed }
+  const facts = await embedPendingFacts()
+
+  return {
+    deleted,
+    reembedded,
+    failed,
+    mediaDeleted,
+    mediaReembedded,
+    mediaFailed,
+    factsEmbedded: facts.embedded,
+    factsFailed: facts.failed
+  }
 }

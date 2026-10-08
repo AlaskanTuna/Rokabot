@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => {
       .mockResolvedValue({ status: 'completed', summary: null, appliedOps: 0, duplicateOps: 0 }),
     persistEpisodeResult: vi.fn().mockResolvedValue(undefined),
     isShuttingDown: vi.fn(() => false),
+    embedPendingFacts: vi.fn().mockResolvedValue({ embedded: 0, failed: 0 }),
     logger: { warn: vi.fn() },
     resetQueue: () => {
       jobs.length = 0
@@ -66,6 +67,7 @@ vi.mock('../../../storage/extractionQueue.js', () => ({
 vi.mock('../../shutdownSignal.js', () => ({ isShuttingDown: mocks.isShuttingDown }))
 vi.mock('../extractor.js', () => ({ runEpisodePipeline: mocks.runEpisodePipeline }))
 vi.mock('../episodePersistence.js', () => ({ persistEpisodeResult: mocks.persistEpisodeResult }))
+vi.mock('../factEmbeddings.js', () => ({ embedPendingFacts: mocks.embedPendingFacts }))
 vi.mock('../../../utils/logger.js', () => ({ logger: mocks.logger }))
 
 import { resetForTest, startExtractionScheduler, stopExtractionScheduler } from '../scheduler.js'
@@ -105,6 +107,7 @@ describe('episode extraction scheduler', () => {
     mocks.markDone.mockClear()
     mocks.markFailed.mockClear()
     mocks.logger.warn.mockClear()
+    mocks.embedPendingFacts.mockClear()
     mocks.isShuttingDown.mockReturnValue(false)
   })
 
@@ -210,6 +213,25 @@ describe('episode extraction scheduler', () => {
     expect(mocks.persistEpisodeResult.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.markDone.mock.invocationCallOrder[0]
     )
+  })
+
+  it('embeds pending facts after a job is marked done, and not after a failed job', async () => {
+    enqueue('A', 'facts')
+    startExtractionScheduler()
+    await drain()
+
+    expect(mocks.markDone).toHaveBeenCalledOnce()
+    expect(mocks.embedPendingFacts).toHaveBeenCalledOnce()
+    expect(mocks.embedPendingFacts).toHaveBeenCalledWith({ limit: 20 })
+
+    mocks.embedPendingFacts.mockClear()
+    mocks.runEpisodePipeline.mockRejectedValue(new Error('schema mismatch'))
+    enqueue('A', 'failing facts')
+    startExtractionScheduler()
+    await drain()
+
+    expect(mocks.markFailed).toHaveBeenCalled()
+    expect(mocks.embedPendingFacts).not.toHaveBeenCalled()
   })
 
   it('does not start work after shutdown or leave a scheduled drain when stopped', async () => {

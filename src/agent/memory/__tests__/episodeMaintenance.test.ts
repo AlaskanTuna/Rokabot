@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const configMock = vi.hoisted(() => ({ memory: { episodeRetentionDays: 90, mediaRetentionDays: 90 } }))
 const mocks = vi.hoisted(() => ({
   embedEpisodeText: vi.fn(),
+  embedPendingFacts: vi.fn(),
   logger: { warn: vi.fn() }
 }))
 
@@ -12,6 +13,7 @@ let testDb: Database.Database
 vi.mock('../../../config.js', () => ({ config: configMock }))
 vi.mock('../../../storage/database.js', () => ({ getDb: () => testDb }))
 vi.mock('../episodeEmbeddings.js', () => ({ embedEpisodeText: mocks.embedEpisodeText }))
+vi.mock('../factEmbeddings.js', () => ({ embedPendingFacts: mocks.embedPendingFacts }))
 vi.mock('../../../utils/logger.js', () => ({ logger: mocks.logger }))
 
 import { findMediaDigest, recordMediaOccurrence, saveMediaDigest } from '../../../storage/mediaDigestStore.js'
@@ -110,6 +112,7 @@ describe('episode maintenance', () => {
     configMock.memory.episodeRetentionDays = 90
     configMock.memory.mediaRetentionDays = 90
     mocks.embedEpisodeText.mockReset()
+    mocks.embedPendingFacts.mockReset().mockResolvedValue({ embedded: 0, failed: 0 })
     mocks.logger.warn.mockClear()
   })
 
@@ -130,7 +133,9 @@ describe('episode maintenance', () => {
       failed: 1,
       mediaDeleted: 0,
       mediaReembedded: 0,
-      mediaFailed: 0
+      mediaFailed: 0,
+      factsEmbedded: 0,
+      factsFailed: 0
     })
     expect(retained).toEqual([
       expect.objectContaining({ id: 3, summary: 'retained episode B', embedding: vector768() }),
@@ -206,7 +211,9 @@ describe('episode maintenance', () => {
       failed: 0,
       mediaDeleted: 1,
       mediaReembedded: 1,
-      mediaFailed: 1
+      mediaFailed: 1,
+      factsEmbedded: 0,
+      factsFailed: 0
     })
     expect(findMediaDigest('guild-a', 'youtube:expired')).toBeNull()
     expect(findMediaDigest('guild-a', 'youtube:two-shares')?.embedding).toEqual(vector768())
@@ -219,5 +226,14 @@ describe('episode maintenance', () => {
       'Failed to re-embed media digest'
     )
     expect(JSON.stringify(mocks.logger.warn.mock.calls)).not.toContain('offline media')
+  })
+
+  it('embeds pending facts once at the end of each pass and reports their counts', async () => {
+    mocks.embedPendingFacts.mockResolvedValueOnce({ embedded: 2, failed: 1 })
+
+    const report = await pruneEpisodesAndReembed(now)
+
+    expect(mocks.embedPendingFacts).toHaveBeenCalledOnce()
+    expect(report).toEqual(expect.objectContaining({ factsEmbedded: 2, factsFailed: 1 }))
   })
 })
