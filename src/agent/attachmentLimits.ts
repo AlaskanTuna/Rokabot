@@ -36,6 +36,25 @@ export function sizeLimitFor(contentType: string): number {
   return MAX_DOCUMENT_SIZE_BYTES
 }
 
+interface UploadLike {
+  transport?: 'uri'
+  contentType: string
+  size?: number
+}
+
+/**
+ * An audio or video upload too big to download inline but small enough to stream into the Files API and watch
+ * whole. The byte budget and the watch path both ask this, so they cannot disagree about which uploads stream.
+ */
+export function isStreamedUpload<T extends UploadLike>(
+  attachment: T,
+  streamLimit: number
+): attachment is T & { size: number } {
+  if (attachment.transport === 'uri' || attachment.size === undefined) return false
+  if (!attachment.contentType.startsWith('audio/') && !attachment.contentType.startsWith('video/')) return false
+  return attachment.size > sizeLimitFor(attachment.contentType) && attachment.size <= streamLimit
+}
+
 /**
  * What to call this type when handing it to Gemini. Gemini documents `audio/mp3`, which is not a registered
  * MIME type; the registered one for an MP3 is `audio/mpeg` (RFC 3003), and that is what Discord reports.

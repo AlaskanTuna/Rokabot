@@ -1,4 +1,4 @@
-import { sizeLimitFor } from '../agent/attachmentLimits.js'
+import { isStreamedUpload, sizeLimitFor } from '../agent/attachmentLimits.js'
 import type { ImageAttachment } from '../agent/attachments.js'
 import { config } from '../config.js'
 
@@ -14,6 +14,9 @@ import { config } from '../config.js'
  */
 let inFlight = 0
 
+// A streamed upload holds one chunk in flight between Discord and Files, not the whole file.
+const STREAMED_CHUNK_BYTES = 4 * 1024 * 1024
+
 /**
  * What a turn must reserve before it starts downloading. Discord states an upload's size up front, so the
  * common path reserves what will actually arrive; an embed image or a link resolved by HEAD does not state
@@ -24,6 +27,9 @@ let inFlight = 0
 export function reservationFor(attachments: ImageAttachment[]): number {
   return attachments.reduce((total, attachment) => {
     if (attachment.transport === 'uri') return total
+    if (config.media.watch && isStreamedUpload(attachment, config.media.maxStreamedUploadBytes)) {
+      return total + STREAMED_CHUNK_BYTES
+    }
     const ceiling = sizeLimitFor(attachment.contentType)
     return total + Math.min(attachment.size ?? ceiling, ceiling)
   }, 0)

@@ -68,6 +68,8 @@ interface YamlConfig {
     digestMaxOutputTokens?: number
     skimClips?: number
     skimClipSeconds?: number
+    maxStreamedUploadBytes?: number
+    uploadTimeoutMs?: number
   }
   memory?: {
     bufferSize?: number
@@ -221,9 +223,11 @@ export const config = {
   media: {
     watch: envBoolean('MEDIA_WATCH') ?? yaml.media?.watch ?? true,
     watchTimeoutMs: yaml.media?.watchTimeoutMs ?? 20_000,
-    digestMaxOutputTokens: yaml.media?.digestMaxOutputTokens ?? 1200,
+    digestMaxOutputTokens: yaml.media?.digestMaxOutputTokens ?? 2400,
     skimClips: yaml.media?.skimClips ?? 8,
-    skimClipSeconds: yaml.media?.skimClipSeconds ?? 10
+    skimClipSeconds: yaml.media?.skimClipSeconds ?? 10,
+    maxStreamedUploadBytes: yaml.media?.maxStreamedUploadBytes ?? 52_428_800,
+    uploadTimeoutMs: yaml.media?.uploadTimeoutMs ?? 45_000
   },
   gemini: {
     apiKey: requiredEnv('GEMINI_API_KEY'),
@@ -354,6 +358,13 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'media.digestMaxOutputTokens', value: config.media.digestMaxOutputTokens, min: 400, max: 4000 },
   { path: 'media.skimClips', value: config.media.skimClips, min: 3, max: 9 },
   { path: 'media.skimClipSeconds', value: config.media.skimClipSeconds, min: 2, max: 30 },
+  {
+    path: 'media.maxStreamedUploadBytes',
+    value: config.media.maxStreamedUploadBytes,
+    min: 10_485_760,
+    max: 104_857_600
+  },
+  { path: 'media.uploadTimeoutMs', value: config.media.uploadTimeoutMs, min: 10_000, max: 120_000 },
   { path: 'gemini.maxOutputTokens', value: config.gemini.maxOutputTokens, min: 1 },
   // Floor is a full turn of plain images, derived rather than restated: below it a maximal image turn could
   // be refused,

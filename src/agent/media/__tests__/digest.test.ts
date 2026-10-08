@@ -6,11 +6,12 @@ import {
   MEDIA_OBSERVATIONS_SCHEMA,
   coverageLine,
   formatClock,
+  mergeHalves,
   renderCompactDigest,
   renderDigestBlock,
   validateObservations
 } from '../digest.js'
-import type { MediaDigest, MediaObservations } from '../types.js'
+import type { MediaClip, MediaDigest, MediaObservations } from '../types.js'
 
 function rawObservations(): MediaObservations {
   return {
@@ -51,9 +52,23 @@ describe('MEDIA_OBSERVATIONS_SCHEMA', () => {
     ])
     expect(MEDIA_OBSERVATIONS_SCHEMA.properties?.timeline.items?.properties?.bin?.type).toBe(Type.INTEGER)
   })
+
+  it('caps each list at what validation keeps, so the answer ends before the output ceiling', () => {
+    const { properties } = MEDIA_OBSERVATIONS_SCHEMA
+    expect(properties?.timeline.maxItems).toBe('8')
+    expect(properties?.speech.maxItems).toBe('12')
+    expect(properties?.onScreenText.maxItems).toBe('8')
+    expect(properties?.uncertainties.maxItems).toBe('5')
+  })
 })
 
 describe('validateObservations', () => {
+  it('does not count trimmed whitespace as cut text', () => {
+    const raw = { ...rawObservations(), summary: '  A person walks through a station.\n' }
+
+    expect(validateObservations(raw, 3)).toEqual({ observations: rawObservations(), incomplete: false })
+  })
+
   it('keeps all valid observation fields without marking them incomplete', () => {
     expect(validateObservations(rawObservations(), 3)).toEqual({ observations: rawObservations(), incomplete: false })
   })
@@ -261,6 +276,155 @@ describe('focus and silent coverage lines', () => {
   it('says a silent video had no sound', () => {
     expect(coverageLine(digest({ mode: 'whole', fps: 1, durationSec: 12, silent: true }))).toBe(
       'whole video, 0:12, a frame every second, no sound'
+    )
+  })
+})
+
+function halfOf(bins: MediaClip[], overrides: Partial<MediaDigest> = {}): MediaDigest {
+  return digest({ durationSec: 2100, mode: 'whole', fps: 0.05, bins, ...overrides })
+}
+
+const FIRST_BINS: MediaClip[] = [
+  { startSec: 0, endSec: 525 },
+  { startSec: 525, endSec: 1050 }
+]
+const SECOND_BINS: MediaClip[] = [
+  { startSec: 1050, endSec: 1575 },
+  { startSec: 1575, endSec: 2100 }
+]
+
+describe('mergeHalves', () => {
+  const first = halfOf(FIRST_BINS, {
+    observations: {
+      summary: 'Dimitri walks in.',
+      timeline: [{ bin: 1, visual: 'A hall', audio: 'Music' }],
+      speech: [{ bin: 2, speaker: 'Roka', quote: 'Hello' }],
+      onScreenText: [{ bin: 1, text: 'Title' }],
+      uncertainties: ['The sign is blurred.']
+    }
+  })
+  const second = halfOf(SECOND_BINS, {
+    observations: {
+      summary: 'He leaves.',
+      timeline: [
+        { bin: 1, visual: 'Empty hall', audio: 'Silence' },
+        { bin: 2, visual: 'Door closes', audio: 'A click' }
+      ],
+      speech: [{ bin: 1, speaker: null, quote: 'Bye' }],
+      onScreenText: [{ bin: 2, text: 'The end' }],
+      uncertainties: ['The sign is blurred.', 'Captions are unclear.']
+    }
+  })
+
+  it('joins two watched halves into one digest with the second half renumbered after the first', () => {
+    expect(mergeHalves(first, second, 2100)).toEqual({
+      kind: 'video',
+      label: 'uploaded video',
+      durationSec: 2100,
+      mode: 'halves',
+      fps: 0.05,
+      bins: [...FIRST_BINS, ...SECOND_BINS],
+      observations: {
+        summary: 'Dimitri walks in. He leaves.',
+        timeline: [
+          { bin: 1, visual: 'A hall', audio: 'Music' },
+          { bin: 3, visual: 'Empty hall', audio: 'Silence' },
+          { bin: 4, visual: 'Door closes', audio: 'A click' }
+        ],
+        speech: [
+          { bin: 2, speaker: 'Roka', quote: 'Hello' },
+          { bin: 3, speaker: null, quote: 'Bye' }
+        ],
+        onScreenText: [
+          { bin: 1, text: 'Title' },
+          { bin: 4, text: 'The end' }
+        ],
+        uncertainties: ['The sign is blurred.', 'Captions are unclear.']
+      },
+      incomplete: false
+    })
+  })
+
+  it('keeps both halves in the joined summary within 500 characters', () => {
+    const long = (word: string) =>
+      halfOf(FIRST_BINS, { observations: { ...first.observations, summary: `${word} `.repeat(83).trim() } })
+
+    const merged = mergeHalves(long('alpha'), long('omega'), 2100)
+    const summary = merged?.observations.summary ?? ''
+
+    expect(summary.length).toBeLessThanOrEqual(500)
+    expect(summary).toContain('alpha')
+    expect(summary).toContain('omega')
+    expect(summary).not.toMatch(/\b(alph|omeg)\b/)
+  })
+
+  it('caps the merged uncertainties at five', () => {
+    const many = (prefix: string, count: number) => Array.from({ length: count }, (_, i) => `${prefix} ${i}`)
+    const a = halfOf(FIRST_BINS, { observations: { ...first.observations, uncertainties: many('a', 4) } })
+    const b = halfOf(SECOND_BINS, { observations: { ...second.observations, uncertainties: many('b', 4) } })
+
+    expect(mergeHalves(a, b, 2100)?.observations.uncertainties).toEqual(['a 0', 'a 1', 'a 2', 'a 3', 'b 0'])
+  })
+
+  it('marks the merge incomplete and silent when either half was', () => {
+    const merged = mergeHalves(first, halfOf(SECOND_BINS, { incomplete: true, silent: true }), 2100)
+
+    expect(merged).toMatchObject({ incomplete: true, silent: true })
+  })
+
+  it('keeps only the watched half when the other failed, and says so', () => {
+    expect(mergeHalves(first, null, 2100)).toEqual({
+      kind: 'video',
+      label: 'uploaded video',
+      durationSec: 2100,
+      mode: 'halves',
+      fps: 0.05,
+      bins: FIRST_BINS,
+      observations: {
+        ...first.observations,
+        uncertainties: ['The sign is blurred.', 'The other half of the video could not be watched.']
+      },
+      incomplete: true
+    })
+  })
+
+  it('keeps the second half at its own bin numbers when only it was watched', () => {
+    const merged = mergeHalves(null, second, 2100)
+
+    expect(merged?.bins).toEqual(SECOND_BINS)
+    expect(merged?.observations.timeline).toEqual(second.observations.timeline)
+    expect(merged?.observations.speech).toEqual(second.observations.speech)
+    expect(merged?.incomplete).toBe(true)
+    expect(merged?.observations.uncertainties.at(-1)).toBe('The other half of the video could not be watched.')
+  })
+
+  it('returns null when neither half was watched', () => {
+    expect(mergeHalves(null, null, 2100)).toBeNull()
+  })
+})
+
+describe('coverage of two halves', () => {
+  const halves = (bins: MediaClip[], overrides: Partial<MediaDigest> = {}) =>
+    halfOf(bins, { mode: 'halves', ...overrides })
+
+  it('says a video watched in two halves covered the whole video with its frame interval', () => {
+    expect(coverageLine(halves([...FIRST_BINS, ...SECOND_BINS]))).toBe(
+      'whole video in two halves, 35:00, a frame every 20 s, full sound'
+    )
+  })
+
+  it('says a silent video watched in two halves had no sound', () => {
+    expect(coverageLine(halves([...FIRST_BINS, ...SECOND_BINS], { silent: true }))).toBe(
+      'whole video in two halves, 35:00, a frame every 20 s, no sound'
+    )
+  })
+
+  it('names the span actually watched when one half is missing', () => {
+    expect(coverageLine(halves(SECOND_BINS))).toBe(
+      'only 17:30–35:00 of 35:00 was watched, a frame every 20 s, full sound'
+    )
+    expect(coverageLine(halves(FIRST_BINS))).toBe(
+      'only 0:00–17:30 of 35:00 was watched, a frame every 20 s, full sound'
     )
   })
 })

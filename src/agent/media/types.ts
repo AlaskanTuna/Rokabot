@@ -32,7 +32,7 @@ export interface MediaDigest {
   /** Human label for the source, e.g. "YouTube video", "uploaded video", "voice message". */
   label: string
   durationSec: number
-  mode: 'whole' | 'skim' | 'focus' | 'opening'
+  mode: 'whole' | 'skim' | 'focus' | 'opening' | 'halves'
   fps: number | null
   /** The moment a focused watch was centred on. */
   focusSec?: number

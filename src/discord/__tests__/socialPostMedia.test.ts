@@ -8,7 +8,7 @@ vi.mock('../../config.js', () => ({
   config: {
     logging: { level: 'silent' },
     get media() {
-      return { watch: mocks.watch }
+      return { watch: mocks.watch, maxStreamedUploadBytes: 52_428_800 }
     }
   }
 }))
@@ -95,9 +95,17 @@ describe('socialPostMedia', () => {
     expect(media).toEqual({ url: 'https://pbs.twimg.com/thumb.jpg', contentType: 'image/jpeg' })
   })
 
+  it('streams a linked video above the inline cap through Files, not its thumbnail', async () => {
+    mocks.resolveMediaUrl.mockResolvedValueOnce({ url: xVideo.url, contentType: 'video/mp4', size: 40 * 1024 * 1024 })
+
+    const media = await socialPostMedia(post({ url: 'https://x.com/roka/status/123', video: xVideo }))
+
+    expect(media).toMatchObject({ url: xVideo.url, contentType: 'video/mp4', size: 40 * 1024 * 1024 })
+  })
+
   it('falls back to the thumbnail when the video is bigger than one watch can take', async () => {
     mocks.resolveMediaUrl
-      .mockResolvedValueOnce({ url: xVideo.url, contentType: 'video/mp4', size: 40 * 1024 * 1024 })
+      .mockResolvedValueOnce({ url: xVideo.url, contentType: 'video/mp4', size: 60 * 1024 * 1024 })
       .mockResolvedValueOnce({ url: 'https://pbs.twimg.com/thumb.jpg', contentType: 'image/jpeg' })
 
     const media = await socialPostMedia(post({ url: 'https://x.com/roka/status/123', video: xVideo }))
@@ -119,6 +127,20 @@ describe('socialPostMedia', () => {
       sourceAuthorId: null,
       contentKey: 'youtube:jNQXAC9IVRw@754'
     })
+  })
+
+  it('keeps the thumbnail when the host states no size and the post says the video is too big to download', async () => {
+    mocks.resolveMediaUrl.mockImplementation(async (url: string) =>
+      url.endsWith('.mp4')
+        ? { url, contentType: 'video/mp4' }
+        : { url: 'https://pbs.twimg.com/thumb.jpg', contentType: 'image/jpeg' }
+    )
+
+    const media = await socialPostMedia(
+      post({ url: 'https://x.com/roka/status/123', video: { ...xVideo, bytes: 30 * 1024 * 1024 } })
+    )
+
+    expect(media).toEqual({ url: 'https://pbs.twimg.com/thumb.jpg', contentType: 'image/jpeg' })
   })
 
   it('keys a Bluesky video by its account as well as its record key', async () => {
