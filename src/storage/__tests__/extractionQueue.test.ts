@@ -114,8 +114,25 @@ describe('extractionQueue', () => {
     claimNextForGuild('guild-1')
 
     expect(listGuildsWithPending()).toEqual(['guild-2'])
-    expect(resetStuckProcessing(500)).toBe(1)
+    expect(resetStuckProcessing()).toBe(1)
     expect(listGuildsWithPending()).toEqual(['guild-1', 'guild-2'])
+  })
+
+  it('recovers a job processed seconds before startup and preserves its attempts', () => {
+    let now = 1_000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    const job = enqueueEpisode({ guildId: 'guild-1', channelId: 'channel-1', episode: episodeFor('recent') })
+
+    claimNextForGuild('guild-1')
+    expect(markFailed(job.id)).toBe('pending')
+    claimNextForGuild('guild-1')
+    now += 1_000
+
+    expect(resetStuckProcessing()).toBe(1)
+    expect(testDb.prepare('SELECT status, attempts FROM extraction_queue WHERE id = ?').get(job.id)).toEqual({
+      status: 'pending',
+      attempts: 1
+    })
   })
 
   it('preserves an episode payload across database close and reopen', () => {

@@ -45,6 +45,14 @@ function formatEpisodeLine(message: ExtractionEpisode['messages'][number]): stri
   return `[${message.userId}|${message.displayName}${role}]: ${message.content}`
 }
 
+function episodeObservedAt(episode: ExtractionEpisode): number {
+  const latestTimestamp = episode.messages.reduce(
+    (latest, message) => Math.max(latest, message.timestamp),
+    Number.NEGATIVE_INFINITY
+  )
+  return Number.isFinite(latestTimestamp) ? latestTimestamp : Date.now()
+}
+
 /** Under `balanced` and `strict`, keeps only the items this channel may recall; `relaxed` and `off` skip the lookup. */
 function recallableHere<T extends { id: number }>(items: T[], scope: RecallScope): T[] {
   const level = config.memory.privacy
@@ -207,6 +215,7 @@ export async function verifyAndApplyOperations(input: {
   const writeOps = input.output.ops.filter((op): op is EpisodeWriteOp => op.op !== 'noop')
   if (writeOps.length === 0) return { appliedOps: 0, droppedOps: 0, duplicateOps: 0 }
 
+  const observedAt = episodeObservedAt(input.episode)
   const humanIds = new Set(input.episode.messages.filter((message) => !message.isBot).map((message) => message.userId))
   const subjectIds = new Set([...input.subjectIds].filter((userId) => humanIds.has(userId)))
   const existing = [
@@ -216,7 +225,7 @@ export async function verifyAndApplyOperations(input: {
     ...getActiveGuildClaims(input.guildId)
   ]
   const sameAsCandidates = recallableHere(existing, { guildId: input.guildId, channelId: input.channelId })
-  const planned = planVerification(writeOps, sameAsCandidates, Date.now(), config.timezone)
+  const planned = planVerification(writeOps, sameAsCandidates, observedAt, config.timezone)
   const verification = await judgeEpisodeOperations({
     lines: input.episode.messages.map(formatEpisodeLine),
     ops: writeOps,
@@ -282,7 +291,11 @@ export async function verifyAndApplyOperations(input: {
                 ? getActiveGuildClaimById(input.guildId, exactSameAs.id)
                 : getActiveClaimById(input.guildId, op.subject.userId, exactSameAs.id)
             if (active) {
-              appendEvidence(active.id, { channelId: input.channelId, sourceKind: 'passive' }, { transaction: true })
+              appendEvidence(
+                active.id,
+                { channelId: input.channelId, sourceKind: 'passive', observedAt },
+                { transaction: true }
+              )
               appliedEvidence.add(`same_as_${index}_${sameAsClaims.indexOf(exactSameAs)}`)
               results.push({ applied: false, duplicate: true })
             } else {
@@ -300,7 +313,11 @@ export async function verifyAndApplyOperations(input: {
                 ? getActiveGuildClaimById(input.guildId, sameAs.id)
                 : getActiveClaimById(input.guildId, op.subject.userId, sameAs.id)
             if (active) {
-              appendEvidence(active.id, { channelId: input.channelId, sourceKind: 'passive' }, { transaction: true })
+              appendEvidence(
+                active.id,
+                { channelId: input.channelId, sourceKind: 'passive', observedAt },
+                { transaction: true }
+              )
               appliedEvidence.add(`same_as_${index}_${sameAsClaims.indexOf(sameAs)}`)
               results.push({ applied: false, duplicate: true })
             } else {
@@ -324,6 +341,7 @@ export async function verifyAndApplyOperations(input: {
               eventDate: entry.eventDate,
               sourceKind: 'passive',
               channelId: input.channelId,
+              observedAt,
               needsReview: !verified,
               status: verified ? 'active' : 'candidate'
             },
@@ -346,6 +364,7 @@ export async function verifyAndApplyOperations(input: {
             objectUserId: op.objectUserId,
             sourceKind: 'passive',
             channelId: input.channelId,
+            observedAt,
             needsReview: !verified,
             status: verified ? 'active' : 'candidate'
           },
@@ -370,6 +389,7 @@ export async function verifyAndApplyOperations(input: {
                 expiresAt: entry.expiresAt,
                 eventDate: entry.eventDate,
                 channelId: input.channelId,
+                observedAt,
                 needsReview: !verified
               },
               { transaction: true }
@@ -383,6 +403,7 @@ export async function verifyAndApplyOperations(input: {
                 value: op.value,
                 objectUserId: op.objectUserId,
                 channelId: input.channelId,
+                observedAt,
                 needsReview: !verified
               },
               { transaction: true }

@@ -240,7 +240,7 @@ function evictOverflow(guildId: string, subjectUserId: string): number {
         `SELECT * FROM memory_claim
        WHERE guild_id = ? AND subject_kind = 'user' AND subject_user_id = ? AND status = 'active' AND pinned = 0
        ORDER BY salience ASC, last_seen_at ASC, id ASC
-       LIMIT MAX(0, (SELECT COUNT(*) FROM memory_claim WHERE guild_id = ? AND subject_kind = 'user' AND subject_user_id = ? AND status = 'active') - ?)`
+       LIMIT MAX(0, (SELECT COUNT(*) FROM memory_claim WHERE guild_id = ? AND subject_kind = 'user' AND subject_user_id = ? AND status = 'active' AND pinned = 0) - ?)`
       )
       .all(guildId, subjectUserId, guildId, subjectUserId, config.memory.maxActiveClaimsPerUser) as ClaimRow[]
   ).map(mapUserClaim)
@@ -489,6 +489,7 @@ export function replaceActiveClaim(
     predicate: PredicateId
     value: string
     channelId: string
+    observedAt?: number
     objectUserId?: string
     needsReview?: boolean
   },
@@ -516,6 +517,7 @@ export function replaceActiveClaim(
       objectUserId: input.objectUserId,
       sourceKind: 'passive',
       channelId: input.channelId,
+      observedAt: input.observedAt,
       needsReview: input.needsReview
     }
     if (input.needsReview && prior.value === input.value) return prior
@@ -733,6 +735,7 @@ export function replaceActiveGuildClaim(
     expiresAt: number | null
     eventDate?: string | null
     channelId: string
+    observedAt?: number
     needsReview?: boolean
   },
   options: ClaimWriteOptions = {}
@@ -750,6 +753,7 @@ export function replaceActiveGuildClaim(
       eventDate: input.eventDate ?? null,
       sourceKind: 'passive' as const,
       channelId: input.channelId,
+      observedAt: input.observedAt,
       needsReview: input.needsReview,
       status: input.needsReview ? ('candidate' as const) : ('active' as const)
     }

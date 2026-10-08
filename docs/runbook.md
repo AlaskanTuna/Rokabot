@@ -280,7 +280,9 @@ once, and passive episodes are dropped. Set `jev.memoryTimeoutMs`, `memory.admit
 
 Guild facts are scoped to their Discord server. `upcoming_event` and `plan` claims store `expires_at` as epoch
 milliseconds for the first instant of the next local day, using `config.timezone` (or the `TZ` override). A daily prune
-changes expired active guild claims to `rejected`. Startup and daily prunes hard-delete rejected and superseded claims,
+changes expired active guild claims to `rejected`. Relative dates use the local date of the latest episode message;
+passive claim and evidence timestamps use that message time, falling back to the current time only when no message
+timestamp is available. Startup and daily prunes hard-delete rejected and superseded claims,
 plus their evidence, after `memory.deadClaimRetentionDays` (30 days from `ended_at`). `/stats` includes active,
 unexpired guild facts in memory totals and growth, while its remembered-member list remains user-only. The read-only
 vault export writes each guild's active, unexpired facts to `<vault>/<guildId>/guild.md` and includes `expires_at` on

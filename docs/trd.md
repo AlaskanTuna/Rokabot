@@ -263,7 +263,7 @@ Privacy and Unified Recall).
 | Table                   | Columns                                                                                                                                                                                                                                                                                                                      | Contract                                                                                                                              |
 | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | `memory_claim`          | `id`, `guild_id`, `subject_kind`, nullable `subject_user_id`, `predicate`, `value`, `object_kind`, `object_user_id`, `source_kind`, `status`, `confidence`, `salience`, `pinned`, `needs_review`, `superseded_by`, `expires_at`, `event_date`, `first_seen_at`, `last_seen_at`, `last_recalled_at`, `ended_at`, `end_reason` | User and guild claims. User rows require a user ID; guild rows require NULL. Separate partial indexes deduplicate each subject scope. |
-| `memory_evidence`       | `id`, `claim_id`, `channel_id`, `source_kind`, `observed_at`                                                                                                                                                                                                                                                                 | Evidence observations attached to claims.                                                                                             |
+| `memory_evidence`       | `id`, `claim_id`, `channel_id`, `source_kind`, `observed_at`                                                                                                                                                                                                                                                                 | Evidence observation time; passive writes use the latest episode message timestamp.                                                   |
 | `memory_claim_fts`      | `value`, `predicate`                                                                                                                                                                                                                                                                                                         | FTS5 mirror of active claims, maintained by insert, update, and delete triggers.                                                      |
 | `memory_episode_cursor` | `channel_id`, `guild_id`, `last_message_id`, `opened_at`, `message_count`                                                                                                                                                                                                                                                    | Per-channel checkpoint for the open episode.                                                                                          |
 | `extraction_queue`      | `id`, `guild_id`, `channel_id`, `payload`, `status`, `attempts`, `enqueued_at`                                                                                                                                                                                                                                               | Closed episode payloads in `pending`, `processing`, or retained `failed` state.                                                       |
@@ -281,7 +281,9 @@ In monitored guild channels, `episodeTracker` stores delta messages in the chann
 `memory_episode_cursor`. Silence for `memory.episodeLullMs` (180 seconds) or reaching
 `memory.episodeMaxMessages` (25 deltas) closes an episode. The queue insert and cursor advance share one SQLite
 transaction. Startup converts legacy queue payloads into the episode shape while preserving every queue row and its
-status, including `failed`; processing rows older than five minutes return to `pending`.
+status, including `failed`; all `processing` rows return to `pending` because no job is owned before startup recovery.
+Passive claims and evidence use the latest delta message timestamp as their observation time, falling back to the
+current time only when the episode has no message timestamp.
 
 The per-guild round-robin scheduler runs at most one job per guild at a time. A failure is retried once; after the
 second failed attempt the job remains `failed` in `extraction_queue`. There is no per-guild delay, queue-size setting,
@@ -316,7 +318,8 @@ resolved date. Gemini's response schema has three date branches: one requiring `
 never dropped or invented; one requiring only `month` for messages that name a month but no day; and one requiring
 `relative`. `year` is asked for only when the messages state it, because the prompt carries no current date and a
 guessed year can resolve into the past. Missing, impossible, past, or contradictory dates are rejected rather than
-guessed. Resolution uses the current date in `config.timezone` (including the existing `TZ` override). Day-precision
+guessed. Resolution uses the local date of the latest episode message in `config.timezone` (including the existing
+`TZ` override), falling back to the current date only when the episode has no message timestamp. Day-precision
 dates expire at the first instant of the following local day; month-precision dates expire at the first instant of the
 following month. The expiry is stored as epoch milliseconds in `expires_at`, and the precision the messages gave is
 stored alongside it in the nullable `event_date` column as `YYYY-MM-DD` for day precision and `YYYY-MM` for month
@@ -367,8 +370,9 @@ identity and social claims at `memory.stableClaimRetentionDays` (180 days), stan
 personality claims at `memory.claimRetentionDays` (30 days), and transient opinions, misc, and `currently_watching`
 claims at `memory.transientClaimRetentionDays` (14 days). Pinned claims are exempt. Active guild claims keep their
 date-based expiry; unexpired guild candidates are rejected after `memory.claimRetentionDays` (30 days). User and guild
-candidates do not count toward `memory.maxActiveClaimsPerUser` (20), which limits active user claims per subject and
-evicts the least salient unpinned claims first. Explicitly remembered claims are pinned.
+candidates do not count toward `memory.maxActiveClaimsPerUser` (20), which caps active unpinned user claims per subject
+and evicts the least salient unpinned claims first; pinned claims neither count toward the cap nor are evicted.
+Explicitly remembered claims are pinned.
 
 Each startup and daily prune hard-deletes `rejected` and `superseded` claims whose `ended_at` is strictly older than
 `memory.deadClaimRetentionDays` (30 days), along with their evidence. Stale candidates are first rejected by retention
