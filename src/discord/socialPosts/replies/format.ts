@@ -22,6 +22,11 @@ export function formatRepliesForModel(lookup: ReplyLookup): string {
     return `${SOCIAL_REPLIES_UNTRUSTED_DATA_LABEL}\n[Replies on the ${name} post — none readable]`
 
   const total = lookup.total === null ? '' : ` of ${lookup.total}`
-  const ranking = lookup.platform === 'reddit' ? 'ranked by votes' : 'ranked by likes'
+  const ranking =
+    lookup.platform === 'reddit'
+      ? 'ranked by votes'
+      : lookup.platform === 'threads'
+        ? 'ranked by likes among the first replies Threads shows'
+        : 'ranked by likes'
   return `${SOCIAL_REPLIES_UNTRUSTED_DATA_LABEL}\n[Replies on the ${name} post — top ${lookup.replies.length}${total}, ${ranking}: ${lookup.replies.map(line).join(' | ')}]`
 }

@@ -7,6 +7,7 @@ import { fetchBlueskyReplies } from './bluesky.js'
 import { failed } from './common.js'
 import { fetchInstagramReplies } from './instagram.js'
 import { fetchRedditReplies } from './reddit.js'
+import { fetchThreadsReplies } from './threads.js'
 import { fetchTikTokReplies } from './tiktok.js'
 import type { ReplyFetcher, ReplyLookup } from './types.js'
 import { fetchXReplies } from './x.js'
@@ -38,7 +39,8 @@ const FETCHERS: Record<SocialPlatform, ReplyFetcher> = {
   tiktok: fetchTikTokReplies,
   reddit: fetchRedditReplies,
   instagram: fetchInstagramReplies,
-  bilibili: fetchBilibiliReplies
+  bilibili: fetchBilibiliReplies,
+  threads: fetchThreadsReplies
 }
 
 function isAbort(error: unknown): boolean {

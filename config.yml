@@ -52,7 +52,7 @@ discord:
   maxInFlightAttachmentBytes: 33554432 # 32 MB ceiling on attachment bytes downloading across ALL channels at once; each byte costs ~4.7x its size in RSS, so this holds worst-case residency near 20% of the container's 1g mem_limit ; at one attachment per turn the largest turn reserves 10 MB, so three channels can download concurrently rather than one holding off the rest (see docs/multimodal.md)
 
 socialPosts:
-  enabled: true # Read X, Bluesky, YouTube, TikTok, Reddit, Instagram and Bilibili links in triggered messages
+  enabled: true # Read X, Bluesky, YouTube, TikTok, Reddit, Instagram, Bilibili and Threads links in triggered messages
   maxLookupsPerTurn: 1 # Linked posts opened per turn
   timeoutMs: 6000 # Longest a turn waits for a linked post; slower lookups are skipped and noted
   maxTextChars: 1500 # Post text, description or caption kept per post
