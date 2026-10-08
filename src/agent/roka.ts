@@ -50,6 +50,8 @@ import type { TurnContextOptions, TurnEntryWork } from './turnContext.js'
 interface GenerateOptions extends TurnContextOptions {
   turnEntryWork?: TurnEntryWork
   imageAttachments?: ImageAttachment[]
+  /** The Discord message that triggered the turn, recorded with any media remembered from it. */
+  messageId?: string
 }
 
 export interface GenerateResult {

@@ -1,5 +1,6 @@
 import { MAX_VIDEO_SIZE_BYTES } from '../../agent/attachmentLimits.js'
 import type { ImageAttachment } from '../../agent/attachments.js'
+import { postContentKey, youtubeContentKey } from '../../agent/media/contentKey.js'
 import { config } from '../../config.js'
 import { resolveMediaUrl } from '../attachments.js'
 import type { SocialPost } from './types.js'
@@ -15,7 +16,10 @@ async function playableVideo(post: SocialPost): Promise<ImageAttachment | null> 
   return {
     ...resolved,
     ...(post.durationSec ? { durationSec: post.durationSec } : {}),
-    ...(post.video.hasAudio === false ? { silent: true } : {})
+    ...(post.video.hasAudio === false ? { silent: true } : {}),
+    origin: 'link',
+    sourceAuthorId: null,
+    contentKey: postContentKey(post.platform, post.id, 0)
   }
 }
 
@@ -27,7 +31,10 @@ export async function socialPostMedia(post: SocialPost): Promise<ImageAttachment
       contentType: 'video/mp4',
       transport: 'uri',
       ...(post.durationSec ? { durationSec: post.durationSec } : {}),
-      ...(post.target.startSec !== undefined ? { startSec: post.target.startSec } : {})
+      ...(post.target.startSec !== undefined ? { startSec: post.target.startSec } : {}),
+      origin: 'link',
+      sourceAuthorId: null,
+      contentKey: youtubeContentKey(post.id)
     }
   }
   if (config.media.watch) {

@@ -66,7 +66,10 @@ describe('socialPostMedia', () => {
       url: xVideo.url,
       contentType: 'video/mp4',
       size: 334_617,
-      durationSec: 15.474
+      durationSec: 15.474,
+      origin: 'link',
+      sourceAuthorId: null,
+      contentKey: 'x:123:0'
     })
   })
 
@@ -111,7 +114,10 @@ describe('socialPostMedia', () => {
       contentType: 'video/mp4',
       transport: 'uri',
       durationSec: 1200,
-      startSec: 754
+      startSec: 754,
+      origin: 'link',
+      sourceAuthorId: null,
+      contentKey: 'youtube:jNQXAC9IVRw'
     })
   })
 

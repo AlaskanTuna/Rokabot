@@ -755,7 +755,14 @@ describe('media she can take on the mention path, not only images', () => {
     const { message } = createMessage({ content: '<@bot-1> what is this?', attachments: [OGG] })
 
     expect((await handle(message)).imageAttachments).toEqual([
-      { url: 'https://cdn.test/a.ogg', contentType: 'audio/ogg', size: 1024 }
+      {
+        url: 'https://cdn.test/a.ogg',
+        contentType: 'audio/ogg',
+        size: 1024,
+        origin: 'upload',
+        sourceMessageId: 'message-1',
+        sourceAuthorId: 'user-1'
+      }
     ])
   })
 
@@ -899,7 +906,16 @@ describe("reading what the sender's own message shows", () => {
     const result = await handle(message)
 
     expect(mocks.resolveMediaUrl).not.toHaveBeenCalled()
-    expect(result.imageAttachments).toEqual([{ url: youtube.canonicalUrl, contentType: 'video/mp4', transport: 'uri' }])
+    expect(result.imageAttachments).toEqual([
+      {
+        url: youtube.canonicalUrl,
+        contentType: 'video/mp4',
+        transport: 'uri',
+        origin: 'link',
+        sourceAuthorId: null,
+        contentKey: `youtube:${youtube.id}`
+      }
+    ])
   })
 
   it('watches a linked X video instead of looking at its thumbnail', async () => {
@@ -915,7 +931,15 @@ describe("reading what the sender's own message shows", () => {
     const result = await handle(message)
 
     expect(result.imageAttachments).toEqual([
-      { url: video.url, contentType: 'video/mp4', size: 334_617, durationSec: 15.474 }
+      {
+        url: video.url,
+        contentType: 'video/mp4',
+        size: 334_617,
+        durationSec: 15.474,
+        origin: 'link',
+        sourceAuthorId: null,
+        contentKey: 'x:123:0'
+      }
     ])
   })
 
@@ -996,7 +1020,14 @@ describe("reading what the sender's own message shows", () => {
     ] as never
 
     expect((await handle(message)).imageAttachments).toEqual([
-      { url: 'https://cdn.test/clip.mp3', contentType: 'audio/mpeg', size: 2048 }
+      {
+        url: 'https://cdn.test/clip.mp3',
+        contentType: 'audio/mpeg',
+        size: 2048,
+        origin: 'upload',
+        sourceMessageId: 'message-1',
+        sourceAuthorId: 'user-1'
+      }
     ])
   })
 

@@ -317,6 +317,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
           displayName,
           username,
           userId: message.author.id,
+          messageId: message.id,
           memory: true,
           mentionedUserIds: [...(message.mentions.users?.keys() ?? [])].filter((userId) => userId !== client.user?.id),
           turnEntryWork,
