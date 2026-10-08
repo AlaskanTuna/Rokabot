@@ -8,6 +8,7 @@ import {
   type FrameSource,
   extractFrames,
   frameBins,
+  frameCount,
   frameTimestamps,
   probeDurationSec,
   runMediaTool
@@ -70,6 +71,16 @@ describe('frameBins and frameTimestamps', () => {
     expect(frameBins(0, 4)).toEqual([])
     expect(frameBins(Number.NaN, 4)).toEqual([])
     expect(frameBins(10, 0)).toEqual([])
+  })
+
+  it('takes one frame per secondsPerFrame of the watched span, between minFrames and maxFrames', () => {
+    const settings = { secondsPerFrame: 4, minFrames: 16, maxFrames: 32 }
+
+    expect(frameCount(7, settings)).toBe(16)
+    expect(frameCount(39, settings)).toBe(16)
+    expect(frameCount(90, settings)).toBe(23)
+    expect(frameCount(128, settings)).toBe(32)
+    expect(frameCount(1200, settings)).toBe(32)
   })
 
   it('places each timestamp at the midpoint of its bin', () => {

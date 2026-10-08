@@ -50,7 +50,14 @@ vi.mock('../../../config.js', () => ({
       return {
         watch: mocks.watch,
         watcher: mocks.watcher,
-        qwen: { model: 'Qwen/test', frames: 4, frameHeight: 360, timeoutMs: 30_000 },
+        qwen: {
+          model: 'Qwen/test',
+          secondsPerFrame: 10,
+          minFrames: 2,
+          maxFrames: 4,
+          frameHeight: 360,
+          timeoutMs: 30_000
+        },
         transcriber: { url: mocks.transcriberUrl, timeoutMs: 45_000, maxSpeechSec: 120, maxAudioSec: 180 },
         digestMaxOutputTokens: 3200,
         skimClips: 8,
@@ -1157,6 +1164,14 @@ describe('the qwen watcher', () => {
     expect(result.mediaTextParts[0].text).not.toContain("couldn't be watched")
     expect(result.watchOutcome).toMatchObject({ status: 'watched', heard: 'none' })
     expect(result.watcherCalls).toBe(1)
+  })
+
+  it('takes fewer frames from a shorter video', async () => {
+    mocks.watcher = 'qwen'
+
+    await prepareTurnMedia(input([{ ...upload, durationSec: 20 }]))
+
+    expect(mocks.extractFrames).toHaveBeenCalledWith(expect.anything(), [5, 15], expect.anything())
   })
 
   it('watches a YouTube link with Qwen first when it is the configured watcher, naming things from the title', async () => {
