@@ -360,6 +360,11 @@ describe('social post parsers', () => {
       'https://www.tiktok.com/@pokemonlife22/video/7059698374567611694',
       { uploader: 'pokemonlife22', uploader_id: '6820838815978423302' },
       'pokemonlife22'
+    ],
+    [
+      'https://www.instagram.com/reel/DeMQyX2BTS0/',
+      { uploader: 'Liew Zi Hin', uploader_id: '57371225913', channel: 'zihinliew' },
+      'zihinliew'
     ]
   ])('names the posting account for %s', (url, fields, handle) => {
     const target = parseSocialPostUrl(url)!

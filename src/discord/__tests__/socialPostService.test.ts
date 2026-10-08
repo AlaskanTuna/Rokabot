@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import { beginSocialPostLookup, createSocialPostViewer } from '../socialPosts/service.js'
 import { parseSocialPostUrl } from '../socialPosts/urls.js'
@@ -279,6 +280,77 @@ describe('SocialPostViewer', () => {
     const oembedUrl = new URL(String(fetcher.mock.calls[0][0]))
     expect(oembedUrl.origin + oembedUrl.pathname).toBe('https://www.youtube.com/oembed')
     expect(oembedUrl.searchParams.get('url')).toBe('https://www.youtube.com/watch?v=jNQXAC9IVRw')
+  })
+
+  // yt-dlp only extracts Reddit-hosted video and takes ~9 s to refuse anything else, past the lookup budget,
+  // while the post's comment feed answers in under a second for every kind of post.
+  it('reads a Reddit post without hosted video from its comment feed, skipping yt-dlp', async () => {
+    const feed = readFileSync(new URL('../../../tests/fixtures/social/reddit-post.rss', import.meta.url), 'utf8')
+    const fetcher = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) => new Response(feed))
+    const runExtractor = vi.fn(async (_binaryPath: string, _url: string, _timeoutMs: number) => ({ reason: 'exit_1' }))
+    const viewer = createSocialPostViewer(settings, { fetcher, runExtractor, warn: vi.fn() })
+
+    const result = await viewer.lookup(parseSocialPostUrl('https://www.reddit.com/r/osugame/comments/1x0b7lo/sample/')!)
+
+    expect(result).toMatchObject({ status: 'found', post: { platform: 'reddit', authorHandle: 'poster_one' } })
+    expect(runExtractor).not.toHaveBeenCalled()
+    const feedUrl = new URL(String(fetcher.mock.calls[0][0]))
+    expect(feedUrl.origin + feedUrl.pathname).toBe('https://www.reddit.com/comments/1x0b7lo/.rss')
+    expect(new Headers(fetcher.mock.calls[0][1]?.headers).get('user-agent')).toContain('Mozilla/5.0')
+  })
+
+  it('still asks yt-dlp for a Reddit-hosted video, keeping the feed entry if yt-dlp fails', async () => {
+    const feed = readFileSync(
+      new URL('../../../tests/fixtures/social/reddit-post.rss', import.meta.url),
+      'utf8'
+    ).replace('https://i.redd.it/sample.jpeg', 'https://v.redd.it/sample')
+    const fetcher = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) => new Response(feed))
+    const refused = vi.fn(async (_binaryPath: string, _url: string, _timeoutMs: number) => ({ reason: 'exit_1' }))
+    const extracted = vi.fn(async (_binaryPath: string, _url: string, _timeoutMs: number) => ({
+      metadata: { title: 'From yt-dlp', uploader: 'poster_one', duration: 12 }
+    }))
+
+    const fromFeed = await createSocialPostViewer(settings, { fetcher, runExtractor: refused, warn: vi.fn() }).lookup(
+      parseSocialPostUrl('https://www.reddit.com/comments/1x0b7lo/')!
+    )
+    const fromYtDlp = await createSocialPostViewer(settings, {
+      fetcher,
+      runExtractor: extracted,
+      warn: vi.fn()
+    }).lookup(parseSocialPostUrl('https://www.reddit.com/comments/1x0b7lo/')!)
+
+    expect(refused).toHaveBeenCalled()
+    expect(fromFeed).toMatchObject({ status: 'found', post: { authorHandle: 'poster_one', videoCount: 1 } })
+    expect(fromYtDlp).toMatchObject({ status: 'found', post: { text: 'From yt-dlp' } })
+  })
+
+  // Reddit refuses an IP it has flagged for both the feed and the JSON yt-dlp reads, so waiting ~9 s for yt-dlp
+  // to be refused as well would only spend the turn's lookup budget.
+  it('gives up at once when Reddit refuses the feed', async () => {
+    const fetcher = vi.fn(
+      async (_input: string | URL | Request, _init?: RequestInit) => new Response('', { status: 429 })
+    )
+    const runExtractor = vi.fn(async (_binaryPath: string, _url: string, _timeoutMs: number) => ({ reason: 'exit_1' }))
+    const viewer = createSocialPostViewer(settings, { fetcher, runExtractor, warn: vi.fn() })
+
+    expect(await viewer.lookup(parseSocialPostUrl('https://www.reddit.com/comments/1x0b7lo/')!)).toEqual({
+      status: 'failed',
+      platform: 'reddit',
+      reason: 'http_429'
+    })
+    expect(runExtractor).not.toHaveBeenCalled()
+  })
+
+  it("keeps yt-dlp's failure reason when the Reddit feed has no post either", async () => {
+    const fetcher = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) => new Response('<feed></feed>'))
+    const runExtractor = vi.fn(async (_binaryPath: string, _url: string, _timeoutMs: number) => ({ reason: 'exit_1' }))
+    const viewer = createSocialPostViewer(settings, { fetcher, runExtractor, warn: vi.fn() })
+
+    expect(await viewer.lookup(parseSocialPostUrl('https://www.reddit.com/comments/1x0b7lo/')!)).toEqual({
+      status: 'failed',
+      platform: 'reddit',
+      reason: 'exit_1'
+    })
   })
 
   it("keeps yt-dlp's failure reason when YouTube oEmbed fails too", async () => {

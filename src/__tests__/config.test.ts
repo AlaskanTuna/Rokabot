@@ -183,6 +183,8 @@ describe('config module', () => {
       maxTextChars: 1500,
       cacheTtlMs: 900_000,
       maxCacheEntries: 256,
+      maxReplies: 5,
+      maxReplyChars: 280,
       ytDlpPath: 'yt-dlp'
     })
     expect(config.media).toEqual({
@@ -827,6 +829,8 @@ describe('config module', () => {
       { path: 'socialPosts.maxTextChars', min: 1, max: 10_000 },
       { path: 'socialPosts.cacheTtlMs', min: 0 },
       { path: 'socialPosts.maxCacheEntries', min: 1, max: 10_000 },
+      { path: 'socialPosts.maxReplies', min: 1, max: 10 },
+      { path: 'socialPosts.maxReplyChars', min: 40, max: 1000 },
       { path: 'media.watchTimeoutMs', min: 5000, max: 60_000 },
       { path: 'media.digestMaxOutputTokens', min: 400, max: 4000 },
       { path: 'media.skimClips', min: 3, max: 9 },

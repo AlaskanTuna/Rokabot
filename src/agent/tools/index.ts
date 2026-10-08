@@ -11,6 +11,7 @@ import { forgetUser } from './forgetUser.js'
 import { getAnimeSchedule } from './getAnimeSchedule.js'
 import { getCurrentTime } from './getCurrentTime.js'
 import { getWeather } from './getWeather.js'
+import { readReplies } from './readReplies.js'
 import { recallUser } from './recallUser.js'
 import { rememberUser } from './rememberUser.js'
 import { rollDice } from './rollDice.js'
@@ -18,9 +19,10 @@ import { searchAnime } from './searchAnime.js'
 import { searchWeb } from './searchWeb.js'
 import { cancelReminder, listReminders, setReminder } from './setReminder.js'
 
-export { rollDice, flipCoin, getCurrentTime, searchAnime, getAnimeSchedule, getWeather, searchWeb }
+export { rollDice, flipCoin, getCurrentTime, searchAnime, getAnimeSchedule, getWeather, searchWeb, readReplies }
 export { rememberUser, recallUser, forgetUser }
 export { setReminder }
+export type { ReadRepliesParams } from './readReplies.js'
 export type { SetReminderParams } from './setReminder.js'
 export type { RollDiceParams } from './rollDice.js'
 export type { GetCurrentTimeParams } from './getCurrentTime.js'
@@ -127,6 +129,14 @@ export const searchWebTool = new FunctionTool({
     max_results: z.number().int().describe('Number of results (1-10). Defaults to 5.').optional()
   }),
   execute: async (input) => await searchWeb(input)
+})
+
+export const readRepliesTool = new FunctionTool({
+  name: 'read_replies',
+  description:
+    "Read the most-liked replies or comments on a linked social post (X, Bluesky, YouTube, TikTok, Reddit, Instagram, Bilibili). Call this only when the latest message asks what the replies, comments, or reactions to a post say (including a post linked earlier in the conversation), and then call it instead of search_web. Never call it just because a post was linked or someone asked what a post is about. Pass the post's URL from the conversation. Never describe a post's replies without calling this.",
+  parameters: z.object({ url: z.string().describe("The post's URL, as it appears in the conversation") }),
+  execute: async (input) => await readReplies(input)
 })
 
 export const rememberUserTool = new FunctionTool({
@@ -311,6 +321,7 @@ export const rokaTools = [
   searchAnimeTool,
   getAnimeScheduleTool,
   searchWebTool,
+  readRepliesTool,
   rememberUserTool,
   recallUserTool,
   forgetUserTool,

@@ -71,6 +71,7 @@ vi.mock('../responses.js', () => ({
 }))
 vi.mock('../events/gachaMention.js', () => ({ handleGachaMention: vi.fn() }))
 
+import { recordReplyOutcome } from '../../agent/replyOutcomes.js'
 import { MAX_ATTACHMENTS } from '../attachments.js'
 import { NAME_MENTION_REGEX } from '../events/messageCreate.js'
 import { createMessageHandler } from '../events/messageCreate.js'
@@ -971,6 +972,36 @@ describe("reading what the sender's own message shows", () => {
     await handle(message)
 
     expect(JSON.stringify(reply.mock.calls[0][0].components[0].toJSON())).toContain('-# 🌸 peeked at the X post')
+  })
+
+  // read_replies is offered only when the sender's own words ask about replies; a Reddit link's /comments/ path
+  // must not count as asking.
+  it.each([
+    ['<@bot-1> what do the comments say?', true],
+    ['<@bot-1> what is this? https://www.reddit.com/r/osugame/comments/1x0b7lo/sample/', false]
+  ])('tells the agent whether %s asks about replies', async (content, expected) => {
+    const { message } = createMessage({ content })
+
+    expect((await handle(message)).asksAboutReplies).toBe(expected)
+  })
+
+  it("shows in the reply footer that she heard the crowd's chatter", async () => {
+    mocks.generateResponse.mockImplementationOnce(async () => {
+      recordReplyOutcome('found')
+      return {
+        text: 'Hello~',
+        tone: 'playful',
+        toolsUsed: ['read_replies'],
+        metrics,
+        droppedAttachments: 0,
+        truncatedAttachments: 0
+      }
+    })
+    const { message, reply } = createMessage({ content: '<@bot-1> what do the comments say?' })
+
+    await handle(message)
+
+    expect(JSON.stringify(reply.mock.calls[0][0].components[0].toJSON())).toContain("heard the crowd's chatter")
   })
 
   it('never lets embed images exceed the shared attachment ceiling', async () => {

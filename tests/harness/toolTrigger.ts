@@ -2,6 +2,7 @@
  * live model call fires a given tool. Shared across future case sets (e.g. search_web, issue #19). */
 
 import { assertClaim } from '../../src/agent/memory/memoryClaims.js'
+import { asksAboutReplies } from '../../src/agent/replyIntent.js'
 import { generateResponse } from '../../src/agent/roka.js'
 import { APP_NAME, destroySession, sessionService } from '../../src/agent/session.js'
 import { config } from '../../src/config.js'
@@ -169,7 +170,9 @@ export async function runCaseSet(
               displayName: speaker.displayName,
               username: speaker.username,
               userId: speaker.id,
-              memory: true
+              memory: true,
+              // Applied as the Discord handlers apply it, so a read_replies case measures the production gate.
+              asksAboutReplies: asksAboutReplies(testCase.message)
             })
             if (result.prefetchUsed) prefetchSearchTurns++
 

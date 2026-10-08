@@ -21,7 +21,8 @@ const TRIALS = 3
 const CASE_SETS = [
   ['recall_user', 'tests/harness/tool-trigger/recall-user.jsonl'],
   ['search_web', 'tests/harness/tool-trigger/search-web.jsonl'],
-  ['remember_user', 'tests/harness/tool-trigger/remember-user.jsonl']
+  ['remember_user', 'tests/harness/tool-trigger/remember-user.jsonl'],
+  ['read_replies', 'tests/harness/tool-trigger/read-replies.jsonl']
 ] as const
 
 function assertLiveEnvironment(): void {

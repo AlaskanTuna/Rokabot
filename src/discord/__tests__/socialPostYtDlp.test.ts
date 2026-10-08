@@ -95,3 +95,12 @@ describe('yt-dlp metadata runner', () => {
     expect(post.text).toBe('Video title — Description')
   })
 })
+
+describe('buildYtDlpArgs extra arguments', () => {
+  it('inserts extra arguments just before the URL and leaves the default call unchanged', () => {
+    const plain = buildYtDlpArgs('https://www.instagram.com/p/abc/', 6000)
+    const withComments = buildYtDlpArgs('https://www.instagram.com/p/abc/', 6000, ['--write-comments'])
+
+    expect(withComments).toEqual([...plain.slice(0, -1), '--write-comments', 'https://www.instagram.com/p/abc/'])
+  })
+})

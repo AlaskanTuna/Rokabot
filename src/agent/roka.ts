@@ -43,7 +43,7 @@ import {
   suppressSessionRehydration
 } from './session.js'
 import { chargeTokens } from './tokenBudget.js'
-import { MEMORY_TOOL_NAMES, rokaTools } from './tools/index.js'
+import { MEMORY_TOOL_NAMES, readRepliesTool, rokaTools } from './tools/index.js'
 import { createTurnContext, startTurnEntryWork } from './turnContext.js'
 import type { TurnContextOptions, TurnEntryWork } from './turnContext.js'
 
@@ -52,6 +52,8 @@ interface GenerateOptions extends TurnContextOptions {
   imageAttachments?: ImageAttachment[]
   /** The Discord message that triggered the turn, recorded with any media remembered from it. */
   messageId?: string
+  /** `false` withholds read_replies: the speaker's own words did not ask about a post's replies. */
+  asksAboutReplies?: boolean
 }
 
 export interface GenerateResult {
@@ -95,7 +97,7 @@ const toolCallsForRequest = new AsyncLocalStorage<{
 // Count every ADK request so retries and tool calls are included in the reservation refund.
 const modelCallsForRequest = new AsyncLocalStorage<{ count: number }>()
 // Exported so tests can drive the beforeModelCallback ALS seam directly (task 122's only observable proof point)
-export const steeringForRequest = new AsyncLocalStorage<{ prompt?: string; memory?: boolean }>()
+export const steeringForRequest = new AsyncLocalStorage<{ prompt?: string; memory?: boolean; replies?: boolean }>()
 const SAFETY_DEFLECTION = "Ehh… let's not get into that one~"
 const RECITATION_DEFLECTION = "Ah, I don't think I should repeat that one exactly~"
 const TERMINAL_DEFLECTION = "Eep, something went wrong on my side. Let's try again later~"
@@ -167,21 +169,25 @@ export const rokaAgent = new LlmAgent({
       request.config = request.config ?? ({} as NonNullable<typeof request.config>)
       request.config!.mediaResolution = MediaResolution.MEDIA_RESOLUTION_LOW
     }
-    // A `/ask` request must not advertise the memory tools. Both halves go: the function declarations are
-    // what the model reads, but toolsDict is what ADK resolves a call against, so a declaration removed on
-    // its own would leave the model able to name a tool with nothing behind it (#207).
-    if (steeringForRequest.getStore()?.memory === false) {
+    // A `/ask` request must not advertise the memory tools, nor any turn read_replies unless the speaker asked
+    // about replies. Both halves go: the function declarations are what the model reads, but toolsDict is what
+    // ADK resolves a call against, so a declaration removed on its own would leave the model able to name a tool
+    // with nothing behind it (#207).
+    const steering = steeringForRequest.getStore()
+    const withheld = [
+      ...(steering?.memory === false ? MEMORY_TOOL_NAMES : []),
+      ...(steering?.replies === false ? [readRepliesTool.name] : [])
+    ]
+    if (withheld.length > 0) {
       for (const declaration of request.config?.tools ?? []) {
         // `ToolUnion` is `Tool | CallableTool`; only `Tool` carries declarations, and only
         // `CallableTool` has `tool()`, which is what tells them apart.
         if (typeof (declaration as { tool?: unknown }).tool === 'function') continue
         const tool = declaration as { functionDeclarations?: Array<{ name?: string }> }
         if (!tool.functionDeclarations) continue
-        tool.functionDeclarations = tool.functionDeclarations.filter(
-          ({ name }) => !MEMORY_TOOL_NAMES.includes(name ?? '')
-        )
+        tool.functionDeclarations = tool.functionDeclarations.filter(({ name }) => !withheld.includes(name ?? ''))
       }
-      for (const name of MEMORY_TOOL_NAMES) delete request.toolsDict[name]
+      for (const name of withheld) delete request.toolsDict[name]
     }
     return undefined
   },
@@ -364,7 +370,10 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   const toolCalls = { usedToolNames, geminiToolNames }
   const testRunTurn = testRunTurnFactory?.(systemPrompt)
   let sessionWasReset = false
-  const steering: { prompt?: string; memory?: boolean } = { memory }
+  const steering: { prompt?: string; memory?: boolean; replies?: boolean } = {
+    memory,
+    replies: options.asksAboutReplies
+  }
   const verdict: ModelVerdict = {}
   // The watcher spent its calls from the same reservation before ADK starts.
   const modelCalls = { count: watcherCalls }

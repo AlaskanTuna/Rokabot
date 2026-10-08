@@ -945,6 +945,27 @@ describe('beforeModelCallback memory-tool filtering', () => {
     expect(request.toolsDict.search_web).toBeDefined()
   })
 
+  // Flash Lite fetched replies on turns that only asked what a post was about, so the tool is only offered
+  // when the speaker's own words ask about the replies.
+  it('withholds read_replies when the turn does not ask about replies, and nothing else', async () => {
+    const request = requestWithEveryTool()
+
+    await steeringForRequest.run({ memory: true, replies: false }, () => callback({ context, request }))
+
+    expect(declaredNames(request)).not.toContain('read_replies')
+    expect(request.toolsDict.read_replies).toBeUndefined()
+    expect(declaredNames(request)).toHaveLength(rokaTools.length - 1)
+  })
+
+  it('offers read_replies when the turn asks about replies', async () => {
+    const request = requestWithEveryTool()
+
+    await steeringForRequest.run({ memory: true, replies: true }, () => callback({ context, request }))
+
+    expect(declaredNames(request)).toContain('read_replies')
+    expect(request.toolsDict.read_replies).toBeDefined()
+  })
+
   it('keeps every tool on a turn that does have memory', async () => {
     const request = requestWithEveryTool()
 
@@ -952,6 +973,35 @@ describe('beforeModelCallback memory-tool filtering', () => {
 
     expect(declaredNames(request)).toHaveLength(rokaTools.length)
     for (const name of MEMORY_TOOL_NAMES) expect(request.toolsDict[name]).toBeDefined()
+  })
+})
+
+describe('generateResponse reply intent', () => {
+  it('passes whether the speaker asked about replies to the tool filter', async () => {
+    const seen: Array<boolean | undefined> = []
+    __setTestRunTurnFactory(() => async () => {
+      seen.push(steeringForRequest.getStore()?.replies)
+      return { text: 'Hm~', hasText: true, hasFunctionCall: false }
+    })
+    const base = {
+      channelId: 'reply-intent-channel',
+      guildId: 'reply-intent-guild',
+      userMessage: 'what is this post about?',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id',
+      memory: false,
+      turnEntryWork: {
+        judgment: Promise.resolve(null),
+        prefetch: Promise.resolve({ decision: { fire: false, reason: 'no_judgment' as const }, outcome: null }),
+        cancel: () => {}
+      }
+    }
+
+    await generateResponse({ ...base, asksAboutReplies: false })
+    await generateResponse({ ...base, turnEntryWork: { ...base.turnEntryWork }, asksAboutReplies: true })
+
+    expect(seen).toEqual([false, true])
   })
 })
 

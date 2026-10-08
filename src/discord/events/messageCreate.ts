@@ -2,6 +2,8 @@ import type { Client, Message } from 'discord.js'
 import { DiscordAPIError } from 'discord.js'
 import { isMonitored, markActive } from '../../agent/channelMonitor.js'
 import { recordEpisodeMessage } from '../../agent/memory/episodeTracker.js'
+import { asksAboutReplies } from '../../agent/replyIntent.js'
+import { withReplyOutcomes } from '../../agent/replyOutcomes.js'
 import { generateResponse } from '../../agent/roka.js'
 import { withSearchCitations } from '../../agent/searchCitations.js'
 import { canAffordAttachments } from '../../agent/tokenBudget.js'
@@ -298,31 +300,39 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
       markBusy(channelId)
       turnEntryWorkHandedOff = true
       const [
-        {
-          text: responseText,
-          tone,
-          toolsUsed,
-          metrics,
-          droppedAttachments,
-          truncatedAttachments,
-          refusedAttachments,
-          modelCalls
-        },
-        sources
-      ] = await withSearchCitations(() =>
-        generateResponse({
-          channelId,
-          guildId,
-          userMessage: content || '(shared an image)',
-          displayName,
-          username,
-          userId: message.author.id,
-          messageId: message.id,
-          memory: true,
-          mentionedUserIds: [...(message.mentions.users?.keys() ?? [])].filter((userId) => userId !== client.user?.id),
-          turnEntryWork,
-          imageAttachments: imageAttachments.length > 0 ? imageAttachments : undefined
-        })
+        [
+          {
+            text: responseText,
+            tone,
+            toolsUsed,
+            metrics,
+            droppedAttachments,
+            truncatedAttachments,
+            refusedAttachments,
+            modelCalls
+          },
+          sources
+        ],
+        replyOutcome
+      ] = await withReplyOutcomes(() =>
+        withSearchCitations(() =>
+          generateResponse({
+            channelId,
+            guildId,
+            userMessage: content || '(shared an image)',
+            displayName,
+            username,
+            userId: message.author.id,
+            messageId: message.id,
+            memory: true,
+            asksAboutReplies: asksAboutReplies(message.content),
+            mentionedUserIds: [...(message.mentions.users?.keys() ?? [])].filter(
+              (userId) => userId !== client.user?.id
+            ),
+            turnEntryWork,
+            imageAttachments: imageAttachments.length > 0 ? imageAttachments : undefined
+          })
+        )
       )
 
       // Now that the turn is done, hand back the slots it never used. Reserved at the ceiling, released
@@ -341,7 +351,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
       // chunk sized against the raw length overrun the TextDisplay budget it was measured for.
       const chunks = splitResponse(escapeBackticks(withNudge))
       logger.debug({ channelId, chunkCount: chunks.length }, 'Response split into chunks')
-      await message.reply(buildRokaMessage(chunks[0], tone, toolsUsed, sources, socialPostResult))
+      await message.reply(buildRokaMessage(chunks[0], tone, toolsUsed, sources, socialPostResult, replyOutcome))
 
       for (let i = 1; i < chunks.length; i++) {
         if ('send' in message.channel) {

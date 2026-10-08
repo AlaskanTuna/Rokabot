@@ -72,6 +72,7 @@ vi.mock('../events/stats/statsCommand.js', () => ({ handleStatsCommand: mocks.ha
 vi.mock('../events/reportCommand.js', () => ({ handleReportCommand: mocks.handleReportCommand }))
 vi.mock('../events/toolCommands.js', () => ({ createToolCommandHandler: () => mocks.toolCommandHandler }))
 
+import { recordReplyOutcome } from '../../agent/replyOutcomes.js'
 import { recordSearchCitations } from '../../agent/searchCitations.js'
 import { config } from '../../config.js'
 import { RateLimiter } from '../../utils/rateLimiter.js'
@@ -368,6 +369,17 @@ describe('interaction handler metrics', () => {
     expect(mocks.generateResponse.mock.calls[0][0].userMessage).toContain('(the linked post could not be opened)')
   })
 
+  it('tells the agent whether the /ask question asks about replies', async () => {
+    await createInteractionHandler(rateLimiterStub() as never)(
+      askWith([], undefined, 'what are people saying in the replies? https://x.com/roka/status/123') as never
+    )
+    await createInteractionHandler(rateLimiterStub() as never)(
+      askWith([], undefined, 'what is this post about? https://x.com/roka/status/123') as never
+    )
+
+    expect(mocks.generateResponse.mock.calls.map(([options]) => options.asksAboutReplies)).toEqual([true, false])
+  })
+
   it("shows in the /ask reply footer that the linked post couldn't be opened", async () => {
     mocks.beginSocialPostLookup.mockResolvedValueOnce({ status: 'failed', platform: 'x', reason: 'http_404' })
     const interaction = askWith([], undefined, 'What is this? https://x.com/roka/status/123')
@@ -376,6 +388,27 @@ describe('interaction handler metrics', () => {
 
     expect(JSON.stringify(interaction.editReply.mock.calls[0][0].components[0].toJSON())).toContain(
       "-# 🌸 couldn't open the X post"
+    )
+  })
+
+  it("shows in the /ask reply footer that she couldn't hear the crowd", async () => {
+    mocks.generateResponse.mockImplementationOnce(async () => {
+      recordReplyOutcome('failed')
+      return {
+        text: 'Hello~',
+        tone: 'playful',
+        toolsUsed: ['read_replies'],
+        metrics,
+        droppedAttachments: 0,
+        truncatedAttachments: 0
+      }
+    })
+    const interaction = askWith([], undefined, 'what do the comments say?')
+
+    await createInteractionHandler(rateLimiterStub() as never)(interaction as never)
+
+    expect(JSON.stringify(interaction.editReply.mock.calls[0][0].components[0].toJSON())).toContain(
+      "couldn't hear the crowd"
     )
   })
 

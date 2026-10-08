@@ -5,7 +5,7 @@ import { join } from 'node:path'
 
 export const MAX_YTDLP_STDOUT_BYTES = 2 * 1024 * 1024
 
-export function buildYtDlpArgs(url: string, timeoutMs: number): string[] {
+export function buildYtDlpArgs(url: string, timeoutMs: number, extraArgs: readonly string[] = []): string[] {
   return [
     '--ignore-config',
     '--no-plugin-dirs',
@@ -22,6 +22,7 @@ export function buildYtDlpArgs(url: string, timeoutMs: number): string[] {
     'node',
     '--dump-json',
     '--skip-download',
+    ...extraArgs,
     url
   ]
 }
@@ -39,12 +40,13 @@ function isolatedEnvironment(home: string): NodeJS.ProcessEnv {
 export async function runYtDlp(
   binaryPath: string,
   url: string,
-  timeoutMs: number
+  timeoutMs: number,
+  extraArgs: readonly string[] = []
 ): Promise<{ metadata: unknown } | { reason: string }> {
   const home = await mkdtemp(join(tmpdir(), 'rokabot-social-'))
   try {
     return await new Promise((resolve) => {
-      const child = spawn(binaryPath, buildYtDlpArgs(url, timeoutMs), {
+      const child = spawn(binaryPath, buildYtDlpArgs(url, timeoutMs, extraArgs), {
         cwd: home,
         env: isolatedEnvironment(home),
         shell: false,

@@ -4,15 +4,15 @@ import { type VideoCandidate, selectPlayableVideo } from './videoVariant.js'
 
 type JsonObject = Record<string, unknown>
 
-function object(value: unknown): JsonObject {
+export function object(value: unknown): JsonObject {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as JsonObject) : {}
 }
 
-function array(value: unknown): unknown[] {
+export function array(value: unknown): unknown[] {
   return Array.isArray(value) ? value : []
 }
 
-function string(value: unknown): string {
+export function string(value: unknown): string {
   return typeof value === 'string' ? value : ''
 }
 
@@ -31,7 +31,7 @@ function capped(value: unknown, maxTextChars: number): string {
   return compact(string(value)).slice(0, maxTextChars)
 }
 
-function nonNegativeInteger(value: unknown): number | null {
+export function nonNegativeInteger(value: unknown): number | null {
   return Number.isInteger(value) && (value as number) >= 0 ? (value as number) : null
 }
 
@@ -56,7 +56,7 @@ function headers(value: unknown): Record<string, string> | null {
   return entries.length ? Object.fromEntries(entries) : null
 }
 
-function date(value: unknown): string | null {
+export function date(value: unknown): string | null {
   const input = string(value)
   const parsed = /^\d{8}$/.test(input)
     ? new Date(`${input.slice(0, 4)}-${input.slice(4, 6)}-${input.slice(6, 8)}T00:00:00Z`)
@@ -64,12 +64,12 @@ function date(value: unknown): string | null {
   return Number.isNaN(parsed.valueOf()) ? null : parsed.toISOString().slice(0, 10)
 }
 
-function imageUrl(value: unknown): string | null {
+export function imageUrl(value: unknown): string | null {
   const url = string(value)
   return /^https:\/\//i.test(url) ? url : null
 }
 
-function base(target: SocialPostTarget): SocialPost {
+export function base(target: SocialPostTarget): SocialPost {
   return {
     platform: target.platform,
     id: target.id,
@@ -238,10 +238,11 @@ export function parseYtDlpMetadata(payload: unknown, target: SocialPostTarget, m
   const post = base(target)
   const title = compact(string(data.title))
   const description = compact(string(data.description))
-  // channel_id is a subreddit or a YouTube channel key and a numeric uploader_id is a TikTok account number, so
-  // neither names the account the way a reader would.
+  // channel_id is a subreddit or a YouTube channel key and a numeric uploader_id is a TikTok or Instagram account
+  // number, so neither names the account the way a reader would. Instagram keeps the username in channel.
   const uploaderId = string(data.uploader_id).replace(/^@/, '')
-  post.authorHandle = (/^\d+$/.test(uploaderId) ? '' : uploaderId) || string(data.uploader)
+  const instagramUsername = target.platform === 'instagram' ? string(data.channel) : ''
+  post.authorHandle = instagramUsername || (/^\d+$/.test(uploaderId) ? '' : uploaderId) || string(data.uploader)
   post.authorName = string(data.uploader) || string(data.channel) || string(data.channel_id)
   post.createdAt = date(data.upload_date)
   post.text = [title, description].filter(Boolean).join(' — ').slice(0, maxTextChars)

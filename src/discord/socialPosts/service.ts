@@ -1,7 +1,11 @@
 import { config } from '../../config.js'
 import { logger } from '../../utils/logger.js'
 import { resolvesToPublicAddress } from '../attachments.js'
+import { resolveBlueskyDid } from './blueskyDid.js'
 import { parseBlueskyThread, parseFxTwitterResponse, parseYouTubeOEmbed, parseYtDlpMetadata } from './parsers.js'
+import { parseRedditFeedPost } from './redditFeed.js'
+import { BROWSER_USER_AGENT } from './replies/common.js'
+import { replyReader } from './replies/service.js'
 import type { SocialPost, SocialPostLookup } from './types.js'
 import { type SocialPlatform, type SocialPostTarget, findSocialPostTarget } from './urls.js'
 import { isYtDlpAvailable, runYtDlp } from './ytDlp.js'
@@ -198,6 +202,23 @@ export class SocialPostViewer {
     return normalized
   }
 
+  private async lookupRedditFeed(
+    target: SocialPostTarget,
+    signal: AbortSignal
+  ): Promise<SocialPost | { refused: string } | null> {
+    const feedUrl = new URL(`https://www.reddit.com/comments/${target.id}/.rss`)
+    feedUrl.searchParams.set('limit', '1')
+    try {
+      const response = await this.fetcher(feedUrl, { headers: { 'User-Agent': BROWSER_USER_AGENT }, signal })
+      // Reddit refuses a flagged IP here and on the JSON yt-dlp reads alike, so yt-dlp would only spend ~9 s failing.
+      if (response.status === 403 || response.status === 429) return { refused: `http_${response.status}` }
+      return response.ok ? parseRedditFeedPost(await response.text(), target, this.settings.maxTextChars) : null
+    } catch {
+      // A refused or failed feed still leaves yt-dlp to try.
+      return null
+    }
+  }
+
   private async lookupUncached(target: SocialPostTarget, signal: AbortSignal): Promise<SocialPostLookup> {
     if (target.platform === 'x') {
       const response = await this.fetcher(`https://api.fxtwitter.com/status/${target.id}`, { signal })
@@ -207,15 +228,9 @@ export class SocialPostViewer {
     }
 
     if (target.platform === 'bluesky') {
-      let did = target.profile ?? ''
-      if (!did.startsWith('did:')) {
-        const identityUrl = new URL('https://public.api.bsky.app/xrpc/com.atproto.identity.resolveHandle')
-        identityUrl.searchParams.set('handle', did)
-        const identity = await this.fetcher(identityUrl, { signal })
-        if (!identity.ok) return failure('bluesky', `http_${identity.status}`)
-        did = String(((await identity.json()) as { did?: unknown }).did ?? '')
-      }
-      if (!/^did:[a-z]+:[a-z0-9.:-]+$/i.test(did)) return failure('bluesky', 'invalid_did')
+      const resolved = await resolveBlueskyDid(target.profile ?? '', this.fetcher, signal)
+      if ('reason' in resolved) return failure('bluesky', resolved.reason)
+      const { did } = resolved
 
       const threadUrl = new URL('https://public.api.bsky.app/xrpc/app.bsky.feed.getPostThread')
       threadUrl.searchParams.set('uri', `at://${did}/app.bsky.feed.post/${target.id}`)
@@ -240,8 +255,16 @@ export class SocialPostViewer {
       return { status: 'found', post: parsed.post }
     }
 
+    // yt-dlp takes ~9 s to refuse a Reddit post with no hosted video, past the lookup budget; the feed answers
+    // in well under a second for every kind of post, so yt-dlp runs only for the video.
+    const redditFeed = target.platform === 'reddit' ? await this.lookupRedditFeed(target, signal) : null
+    if (redditFeed && 'refused' in redditFeed) return failure('reddit', redditFeed.refused)
+    const redditFeedPost = redditFeed
+    if (redditFeedPost && redditFeedPost.videoCount === 0) return { status: 'found', post: redditFeedPost }
+
     const result = await this.runExtractor(this.settings.ytDlpPath, target.extractorUrl, this.settings.timeoutMs)
     if ('reason' in result) {
+      if (redditFeedPost) return { status: 'found', post: redditFeedPost }
       if (target.platform !== 'youtube' || signal.aborted) return failure(target.platform, result.reason)
       // YouTube walls repeated requests from one home IP behind a bot check that oEmbed does not have.
       const oembedUrl = new URL('https://www.youtube.com/oembed')
@@ -310,6 +333,7 @@ export async function initializeSocialPosts(): Promise<void> {
 
   const available = await isYtDlpAvailable(config.socialPosts.ytDlpPath)
   socialPostViewer.setYtDlpAvailable(available)
+  replyReader.setYtDlpAvailable(available)
   if (!available) logger.warn({ platform: 'yt-dlp', reason: 'binary_missing' }, 'Social video extractors disabled')
 }
 

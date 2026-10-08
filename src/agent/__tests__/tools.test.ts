@@ -47,7 +47,7 @@ describe('utility FunctionTools', () => {
   it('registers the four implicit utilities with their input schemas', () => {
     const declarations = new Map(rokaTools.map((tool) => [tool.name, tool._getDeclaration()]))
 
-    expect(rokaTools).toHaveLength(13)
+    expect(rokaTools).toHaveLength(14)
     expect(declarations.get('roll_dice')?.parameters).toMatchObject({
       properties: { count: { type: 'INTEGER' }, sides: { type: 'INTEGER' } }
     })
