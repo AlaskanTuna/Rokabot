@@ -196,7 +196,7 @@ export const recallUserTool = new FunctionTool({
       return { facts: "I don't have any notes about this person yet.", factCount: 0 }
     }
     if (input.user_name) {
-      const userIds = resolveName(input.user_name, guildId)
+      const userIds = resolveName(input.user_name, guildId, channelId ? { guildId, channelId } : undefined)
       if (userIds.length === 0) return { facts: "I don't know anyone by that name here yet.", factCount: 0 }
       if (userIds.length > 1) {
         const displayNames = userIds.map((id) => getUserName(id)?.displayName ?? id)

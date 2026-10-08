@@ -8,6 +8,10 @@ vi.mock('../../../utils/logger.js', () => ({
 const embeddings = vi.hoisted(() => ({ embedEpisodeText: vi.fn(), embedPendingFacts: vi.fn() }))
 vi.mock('../../memory/episodeEmbeddings.js', () => ({ embedEpisodeText: embeddings.embedEpisodeText }))
 vi.mock('../../memory/factEmbeddings.js', () => ({ embedPendingFacts: embeddings.embedPendingFacts }))
+vi.mock('../../memory/identityResolver.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../memory/identityResolver.js')>()
+  return { ...actual, resolveName: vi.fn(actual.resolveName) }
+})
 
 import { config } from '../../../config.js'
 import { closeDb, getDb } from '../../../storage/database.js'
@@ -813,6 +817,20 @@ describe('memory tools across privacy levels and recall modes', () => {
     })
 
     expect(result.facts).toContain('volunteers at the animal shelter')
+  })
+
+  it('passes the channel scope from tool state into name resolution for recall_user', async () => {
+    await recallUserTool.runAsync({
+      args: { user_name: 'Mio' },
+      toolContext: toolContextWith({ _userId: 'user-1', _guildId: 'guild-1', _channelId: 'here' })
+    })
+    expect(resolveName).toHaveBeenLastCalledWith('Mio', 'guild-1', { guildId: 'guild-1', channelId: 'here' })
+
+    await recallUserTool.runAsync({
+      args: { user_name: 'Mio' },
+      toolContext: toolContextWith({ _userId: 'user-1', _guildId: 'guild-1' })
+    })
+    expect(vi.mocked(resolveName).mock.lastCall?.[2]).toBeUndefined()
   })
 
   it('passes the channel from tool state into remember_user and recall_user', async () => {

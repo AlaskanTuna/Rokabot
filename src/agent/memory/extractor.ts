@@ -3,6 +3,7 @@ import { config } from '../../config.js'
 import { getDb } from '../../storage/database.js'
 import type { ExtractionEpisode, ExtractionQueueJob } from '../../storage/extractionQueue.js'
 import { recordJevEvent } from '../../storage/jevEventStore.js'
+import { getClaimSourceChannels } from '../../storage/memoryRecallStore.js'
 import { judgeEpisodeOperations } from '../jev/judgments.js'
 import { SAFETY_SETTINGS } from '../safetySettings.js'
 import { admitEpisode } from './admission.js'
@@ -28,6 +29,7 @@ import {
   replaceActiveGuildClaim,
   retractClaim
 } from './memoryClaims.js'
+import { type RecallScope, canRecall } from './privacy.js'
 import { sensitiveFactReason } from './privacyGuard.js'
 
 let genaiClient: GoogleGenAI | undefined
@@ -42,18 +44,33 @@ function formatEpisodeLine(message: ExtractionEpisode['messages'][number]): stri
   return `[${message.userId}|${message.displayName}${role}]: ${message.content}`
 }
 
-function episodePrompt(guildId: string, episode: ExtractionEpisode): string {
+/** Under `balanced` and `strict`, keeps only the items this channel may recall; `relaxed` and `off` skip the lookup. */
+function recallableHere<T extends { id: number }>(items: T[], scope: RecallScope): T[] {
+  const level = config.memory.privacy
+  if (level !== 'balanced' && level !== 'strict') return items
+  const sources = getClaimSourceChannels(items.map(({ id }) => id))
+  return items.filter(({ id }) => canRecall(sources.get(id) ?? [null], scope, level))
+}
+
+function episodePrompt(guildId: string, channelId: string, episode: ExtractionEpisode): string {
+  const scope = { guildId, channelId }
   const humanIds = [...new Set(episode.messages.filter((message) => !message.isBot).map((message) => message.userId))]
   const claims = humanIds.map((userId) => ({
     userId,
-    claims: getActiveClaims(guildId, userId).map(({ id, predicate, value }) => ({ id, predicate, value }))
+    claims: recallableHere(getActiveClaims(guildId, userId), scope).map(({ id, predicate, value }) => ({
+      id,
+      predicate,
+      value
+    }))
   }))
-  const guildClaims = getActiveGuildClaims(guildId).map(({ id, predicate, value, expiresAt }) => ({
-    id,
-    predicate,
-    value,
-    expiresAt
-  }))
+  const guildClaims = recallableHere(getActiveGuildClaims(guildId), scope).map(
+    ({ id, predicate, value, expiresAt }) => ({
+      id,
+      predicate,
+      value,
+      expiresAt
+    })
+  )
   return [
     'You extract durable personal details about users and shared facts about this Discord server from an episode.',
     'Never extract sensitive personal information: real/legal names, age or birthday, address or specific residence, phone numbers, email addresses, social media handles, names of schools, employers, or workplaces, financial information, credentials, or medical/health details.',
@@ -77,7 +94,7 @@ export async function extractEpisode(input: {
 }): Promise<EpisodeExtractionOutput> {
   const response = await getClient().models.generateContent({
     model: config.gemini.extractionModel,
-    contents: episodePrompt(input.guildId, input.episode),
+    contents: episodePrompt(input.guildId, input.channelId, input.episode),
     config: {
       responseMimeType: 'application/json',
       responseSchema: EXTRACTION_RESPONSE_SCHEMA,
