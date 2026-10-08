@@ -422,6 +422,31 @@ visits each guild's null or unreadable embeddings sequentially and retries docum
 available for a later pass. `/stats` reports the number of episodes ended in the last 30 days, and the vault export
 writes guild-local `Episodes.md` files without embedding bytes.
 
+### Media Memory
+
+What Roka watches in a server is remembered as text, never as media. `media_digest` holds one digest per
+`(guild_id, content_key)`: kind, label, summary, the digest JSON and a nullable 768-float embedding.
+`media_occurrence` records each time it was shared, with channel, message, `shared_by_user_id`, an optional
+`source_author_id` (the replied-to poster; null for forwards and links) and origin (`upload`, `reply`, `forward`,
+`link`). Content keys are `youtube:<id>`, `<platform>:<postId>:<mediaIndex>`, or `sha256:<hex>` of downloaded
+bytes; signed URL parameters are never part of a key.
+
+- **Scope:** only guild memory turns (`memory: true`, a real guild, a triggering message id) read or write it.
+  DMs, group DMs and `/ask` keep the digest in the transcript only.
+- **Repost Cache:** before watching, `prepareTurnMedia` looks the content key up in the same guild. A link is
+  checked before any download; an upload after its bytes are hashed. A hit reuses the stored digest with no
+  watcher call, also while turns are pinned to the fallback model, and records a new occurrence.
+- **Write Path:** a fresh watch saves the digest and its occurrence, then embeds the summary with
+  `embedEpisodeText` off the reply path. A store or embedding failure is logged and never fails the turn.
+- **Recall:** guild memory turns rank media summaries against the turn's existing query embedding. Results must
+  score above `memory.mediaMinSimilarity` (0.7), are limited by `memory.mediaRecallK` (2) and
+  `memory.mediaTokenBudget` (400), and appear after the episode block under their own untrusted heading. They
+  are dropped at the same safety rungs.
+- **Retention and Forgetting:** the daily maintenance pass deletes occurrences older than
+  `memory.mediaRetentionDays` (90), deletes digests left with none, and re-embeds null vectors. `forget_user`
+  also matches the speaker's shared or authored media by label and summary. It removes their occurrences, then
+  any digest no one else still shares.
+
 ### Explicit Legacy Migration
 
 `npm run migrate:memory-v2` is an explicit offline command; startup never drops `user_memory` or invokes the migration.

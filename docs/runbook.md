@@ -519,6 +519,16 @@ embeddings.
 sqlite3 ~/rokabot/data/rokabot.db 'SELECT guild_id, COUNT(*) AS episodes FROM memory_episode GROUP BY guild_id ORDER BY guild_id;'
 ```
 
+### Media Memory
+
+Digests of media Roka watched in servers live in `media_digest`, one row per guild and content key, with an
+embedding. Each share is a `media_occurrence` row. No media files are stored.
+
+```bash
+# Remembered media by guild, with how often each was shared
+sqlite3 ~/rokabot/data/rokabot.db "SELECT d.guild_id, d.label, substr(d.summary, 1, 60), COUNT(o.id) AS shares, d.embedding IS NOT NULL AS embedded FROM media_digest d LEFT JOIN media_occurrence o ON o.digest_id = d.id GROUP BY d.id ORDER BY d.created_at DESC LIMIT 20;"
+```
+
 ### Memory V2 Migration
 
 Run this explicit migration only with the bot stopped, from a repository checkout with Node.js 24 and dependencies
