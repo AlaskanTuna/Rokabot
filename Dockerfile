@@ -21,7 +21,7 @@ ENV NODE_ENV=production
 
 WORKDIR /app
 
-RUN apk add --no-cache python3 make g++ font-dejavu fontconfig
+RUN apk add --no-cache python3 make g++ font-dejavu fontconfig ffmpeg
 
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force && apk del python3 make g++

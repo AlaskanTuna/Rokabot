@@ -74,13 +74,19 @@ export const HALVES_MAX_DURATION_SEC = 2400
 const FOCUS_BEFORE_SEC = 30
 const FOCUS_AFTER_SEC = 90
 
-export function planFocus(input: { durationSec: number; startSec: number; budgetTokens: number }): CoveragePlan {
-  const { durationSec, budgetTokens } = input
-  const centerSec = Math.min(Math.max(0, input.startSec), durationSec)
-  const clip = {
+/** The stretch watched around a linked timestamp: from 30 s before it to 90 s after. */
+export function focusWindow(durationSec: number, startSec: number): MediaClip {
+  const centerSec = Math.min(Math.max(0, startSec), durationSec)
+  return {
     startSec: Math.round(Math.max(0, centerSec - FOCUS_BEFORE_SEC)),
     endSec: Math.round(Math.min(durationSec, centerSec + FOCUS_AFTER_SEC))
   }
+}
+
+export function planFocus(input: { durationSec: number; startSec: number; budgetTokens: number }): CoveragePlan {
+  const { durationSec, budgetTokens } = input
+  const centerSec = Math.min(Math.max(0, input.startSec), durationSec)
+  const clip = focusWindow(durationSec, input.startSec)
   const length = clip.endSec - clip.startSec
   const estimate = estimateMediaTokens({ frames: Math.ceil(length), audioSec: length, parts: 1 })
   if (length <= 0 || estimate > budgetTokens) return { mode: 'decline', kind: 'video', durationSec, reason: 'too_long' }

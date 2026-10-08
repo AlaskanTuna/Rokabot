@@ -28,6 +28,10 @@ sudo docker compose -f ~/rokabot/docker-compose.yml logs -f
 # View last N lines of logs
 sudo docker compose -f ~/rokabot/docker-compose.yml logs --tail 50
 
+# Which model watches videos: gemini (default) or qwen (ModelScope frames); the other is the backup.
+# Set MEDIA_WATCHER=qwen in ~/rokabot/.env and recreate the container to switch.
+docker logs rokabot-roka-1 2>&1 | grep '"msg":"Watched media"' | grep -o '"watcher":"[a-z]*"' | sort | uniq -c
+
 # Logs from before the last deploy (each deploy archives the outgoing container's logs; kept 30 days)
 ls ~/rokabot/logs/
 zcat ~/rokabot/logs/roka-<timestamp>.log.gz | grep '"msg":"Watched media"'

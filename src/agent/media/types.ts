@@ -33,9 +33,16 @@ export interface MediaObservations {
 
 /** What the turn's first audio or video item came to, for the reply footer. */
 export type WatchOutcome =
-  | { status: 'watched'; kind: MediaKind; coverage: 'whole'; durationSec: number }
-  | { status: 'watched'; kind: MediaKind; coverage: 'part'; startSec: number; endSec: number }
-  | { status: 'watched'; kind: MediaKind; coverage: 'skim' }
+  | { status: 'watched'; kind: MediaKind; coverage: 'whole'; durationSec: number; heard?: 'speech' | 'none' }
+  | {
+      status: 'watched'
+      kind: MediaKind
+      coverage: 'part'
+      startSec: number
+      endSec: number
+      heard?: 'speech' | 'none'
+    }
+  | { status: 'watched'; kind: MediaKind; coverage: 'skim'; heard?: 'speech' | 'none' }
   | { status: 'remembered' | 'failed'; kind: MediaKind }
 
 export interface MediaDigest {
@@ -49,6 +56,10 @@ export interface MediaDigest {
   focusSec?: number
   /** The file had no sound track. */
   silent?: boolean
+  /** Set when the watcher saw single frames rather than video: how many. */
+  frames?: number
+  /** What was heard, when less than everything: 'speech' is a transcript only, 'none' is nothing at all. */
+  heard?: 'speech' | 'none'
   bins: MediaClip[]
   observations: MediaObservations
   /** True when validation dropped or truncated anything the model returned. */

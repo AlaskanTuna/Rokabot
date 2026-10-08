@@ -65,6 +65,8 @@ describe('config module', () => {
     vi.stubEnv('GEMINI_TURN_DEADLINE_MS', '')
     vi.stubEnv('GEMINI_SAFETY_THRESHOLD', '')
     vi.stubEnv('MEDIA_WATCH', '')
+    vi.stubEnv('MEDIA_WATCHER', '')
+    vi.stubEnv('MEDIA_QWEN_MODEL', '')
     vi.stubEnv('MODELSCOPE_API_KEY', '')
     vi.stubEnv('FALLBACK_MODEL', '')
     vi.stubEnv('TYPESAFE_API_KEY', '')
@@ -191,12 +193,19 @@ describe('config module', () => {
     })
     expect(config.media).toEqual({
       watch: true,
+      watcher: 'gemini',
       watchTimeoutMs: 20_000,
       digestMaxOutputTokens: 3200,
       skimClips: 8,
       skimClipSeconds: 10,
       maxStreamedUploadBytes: 52_428_800,
-      uploadTimeoutMs: 45_000
+      uploadTimeoutMs: 45_000,
+      qwen: {
+        model: 'Qwen/Qwen3.5-35B-A3B',
+        frames: 16,
+        frameHeight: 360,
+        timeoutMs: 30_000
+      }
     })
 
     expect(config.jev.apiKey).toBeUndefined()
@@ -280,6 +289,52 @@ describe('config module', () => {
     const { config } = await import('../config.js')
 
     expect(config.media.watch).toBe(false)
+  })
+
+  it('allows MEDIA_WATCHER to choose the Qwen watcher', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('MEDIA_WATCHER', 'qwen')
+
+    const { config } = await import('../config.js')
+
+    expect(config.media.watcher).toBe('qwen')
+  })
+
+  it('throws when MEDIA_WATCHER is neither gemini nor qwen and names the env key', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('MEDIA_WATCHER', 'openai')
+
+    await expect(() => import('../config.js')).rejects.toThrow(
+      'Environment variable MEDIA_WATCHER must be gemini or qwen, got: openai'
+    )
+  })
+
+  it('allows MEDIA_QWEN_MODEL to override the Qwen watcher model', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('MEDIA_QWEN_MODEL', 'Qwen/Qwen3.5-122B-A10B')
+
+    const { config } = await import('../config.js')
+
+    expect(config.media.qwen.model).toBe('Qwen/Qwen3.5-122B-A10B')
+  })
+
+  it('throws if media.qwen.frames is below its bound', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    withYamlOverride({ media: { qwen: { frames: 3 } } })
+
+    await expect(() => import('../config.js')).rejects.toThrow('Config value media.qwen.frames must be >= 4, got: 3')
+  })
+
+  it('throws if media.qwen.frames is above its bound', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    withYamlOverride({ media: { qwen: { frames: 33 } } })
+
+    await expect(() => import('../config.js')).rejects.toThrow('Config value media.qwen.frames must be <= 32, got: 33')
   })
 
   it('exposes bounded episode memory settings', async () => {
@@ -392,7 +447,7 @@ describe('config module', () => {
     vi.stubEnv('MEMORY_CLAIM_RETENTION_DAYS', '120')
     vi.stubEnv('MEMORY_VAULT_EXPORT_DIR', 'tmp/vault')
     vi.stubEnv('METRICS_RETENTION_DAYS', '120')
-    vi.stubEnv('DISCORD_MAX_MESSAGE_LENGTH', '3863')
+    vi.stubEnv('DISCORD_MAX_MESSAGE_LENGTH', '3849')
 
     const { config } = await import('../config.js')
 
@@ -436,7 +491,7 @@ describe('config module', () => {
     expect(config.memory).not.toHaveProperty('extractionBatchSize')
     expect(config.memory.vaultExportDir).toBe('tmp/vault')
     expect(config.metrics.retentionDays).toBe(120)
-    expect(config.discord.maxMessageLength).toBe(3863)
+    expect(config.discord.maxMessageLength).toBe(3849)
     expect(config.jev.apiKey).toBe('typesafe-test-key')
     expect(config.jev.model).toBe('jev-override')
     expect(config.jev.tone).toBe('on')
@@ -792,21 +847,21 @@ describe('config module', () => {
   it('throws if DISCORD_MAX_MESSAGE_LENGTH exceeds the tool-footer-adjusted maximum', async () => {
     setRequiredEnvVars()
     clearTunableEnvVars()
-    vi.stubEnv('DISCORD_MAX_MESSAGE_LENGTH', '3864')
+    vi.stubEnv('DISCORD_MAX_MESSAGE_LENGTH', '3850')
 
     await expect(() => import('../config.js')).rejects.toThrow(
-      'Config value discord.maxMessageLength must be <= 3863, got: 3864'
+      'Config value discord.maxMessageLength must be <= 3849, got: 3850'
     )
   })
 
   it('accepts DISCORD_MAX_MESSAGE_LENGTH at exactly the tool-footer-adjusted maximum', async () => {
     setRequiredEnvVars()
     clearTunableEnvVars()
-    vi.stubEnv('DISCORD_MAX_MESSAGE_LENGTH', '3863')
+    vi.stubEnv('DISCORD_MAX_MESSAGE_LENGTH', '3849')
 
     const { config } = await import('../config.js')
 
-    expect(config.discord.maxMessageLength).toBe(3863)
+    expect(config.discord.maxMessageLength).toBe(3849)
   })
 
   // config.ts derives this floor from the same two constants (attachmentLimits.ts is a zero-import leaf, so
@@ -845,6 +900,9 @@ describe('config module', () => {
       { path: 'media.skimClipSeconds', min: 2, max: 30 },
       { path: 'media.maxStreamedUploadBytes', min: 10_485_760, max: 104_857_600 },
       { path: 'media.uploadTimeoutMs', min: 10_000, max: 120_000 },
+      { path: 'media.qwen.frames', min: 4, max: 32 },
+      { path: 'media.qwen.frameHeight', min: 144, max: 720 },
+      { path: 'media.qwen.timeoutMs', min: 5000, max: 90_000 },
       { path: 'fallback.timeoutMs', min: 1 },
       { path: 'fallback.stickyMs', min: 0 },
       // Written out, not derived, and deliberately unlike its sibling test above. That one asserts the
@@ -878,7 +936,7 @@ describe('config module', () => {
       { path: 'session.windowSize', min: 1 },
       { path: 'session.maxRehydrationAge', min: 0 },
       { path: 'session.historyRetentionDays', min: 1 },
-      { path: 'discord.maxMessageLength', min: 1, max: 3863 },
+      { path: 'discord.maxMessageLength', min: 1, max: 3849 },
       { path: 'discord.maxInFlightAttachmentBytes', min: 31_457_280 },
       { path: 'memory.bufferSize', min: 1 },
       { path: 'memory.contextSize', min: 1 },

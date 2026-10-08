@@ -81,15 +81,17 @@ function watchLabel(outcome: WatchOutcome): string {
       : `remembered ${heard ? 'hearing' : 'watching'} this ${noun}`
   }
   const watched = heard ? 'heard' : 'watched'
-  if (outcome.coverage === 'skim') return `skimmed the ${noun} in clips`
+  // A frame watch that heard nothing must not read like one that heard the video.
+  const muted = outcome.heard === 'none' ? ' without sound' : ''
+  if (outcome.coverage === 'skim') return `skimmed the ${noun} in clips${muted}`
   if (outcome.coverage === 'whole') {
     return outcome.durationSec < LABEL_CLOCK_LIMIT_SEC
-      ? `${watched} the whole ${noun} (${formatClock(outcome.durationSec)})`
-      : `${watched} the whole ${noun}`
+      ? `${watched} the whole ${noun}${muted} (${formatClock(outcome.durationSec)})`
+      : `${watched} the whole ${noun}${muted}`
   }
   return outcome.endSec < LABEL_CLOCK_LIMIT_SEC
-    ? `${watched} ${formatClock(outcome.startSec)}–${formatClock(outcome.endSec)} of the ${noun}`
-    : `${watched} part of the ${noun}`
+    ? `${watched} ${formatClock(outcome.startSec)}–${formatClock(outcome.endSec)} of the ${noun}${muted}`
+    : `${watched} part of the ${noun}${muted}`
 }
 
 const MAX_VISIBLE_TOOL_LABELS = 3
@@ -132,9 +134,11 @@ const longestWatchLabel = longestFirst(
           kind,
           coverage: 'part',
           startSec: LONGEST_LABEL_CLOCK_SEC,
-          endSec: LONGEST_LABEL_CLOCK_SEC
+          endSec: LONGEST_LABEL_CLOCK_SEC,
+          heard: 'none'
         },
-        { status: 'watched', kind, coverage: 'skim' },
+        { status: 'watched', kind, coverage: 'whole', durationSec: LONGEST_LABEL_CLOCK_SEC, heard: 'none' },
+        { status: 'watched', kind, coverage: 'skim', heard: 'none' },
         { status: 'remembered', kind },
         { status: 'failed', kind }
       ] satisfies WatchOutcome[]
