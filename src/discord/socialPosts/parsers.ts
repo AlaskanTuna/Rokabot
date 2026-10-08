@@ -63,7 +63,9 @@ function base(target: SocialPostTarget): SocialPost {
     videoCount: 0,
     imageUrl: null,
     externalTitle: '',
-    replyCount: null
+    replyCount: null,
+    durationSec: null,
+    video: null
   }
 }
 
