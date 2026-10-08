@@ -137,6 +137,36 @@ interface ForwardedContent {
   hasSocialPost: boolean
 }
 
+type MediaKind = 'image' | 'video' | 'audio clip' | 'document'
+
+const MEDIA_KIND_ORDER: MediaKind[] = ['image', 'video', 'audio clip', 'document']
+
+function mediaKind(contentType: string): MediaKind {
+  if (contentType.startsWith('image/')) return 'image'
+  if (contentType.startsWith('video/')) return 'video'
+  if (contentType.startsWith('audio/')) return 'audio clip'
+  return 'document'
+}
+
+function mediaMarker(prefix: 'forwarded' | 'attached', candidates: ImageAttachment[], taken: number): string[] {
+  const counts = new Map<MediaKind, { total: number; taken: number }>()
+
+  candidates.forEach((candidate, index) => {
+    const kind = mediaKind(candidate.contentType)
+    const count = counts.get(kind) ?? { total: 0, taken: 0 }
+    count.total += 1
+    if (index < taken) count.taken += 1
+    counts.set(kind, count)
+  })
+
+  return MEDIA_KIND_ORDER.flatMap((kind) => {
+    const count = counts.get(kind)
+    if (!count) return []
+    const unseen = count.total - count.taken
+    return [unseen > 0 ? `(${prefix} ${kind}(s), ${unseen} not shown)` : `(${prefix} ${kind}(s))`]
+  })
+}
+
 function describeForwardedSnapshots(
   snapshots: Message['messageSnapshots'],
   imageSlots: number,
@@ -170,15 +200,12 @@ function describeForwardedSnapshots(
 
     const fwdAttachments = snapshot.attachments ? [...snapshot.attachments.values()] : []
     const fwdCandidates = fwdAttachments
-      .filter(isSupportedImage)
+      .filter(isSupportedMedia)
       .map((a) => ({ url: a.url, contentType: a.contentType!, size: a.size }))
     const fwdImages = fwdCandidates.slice(0, imageSlots - images.length)
     images.push(...fwdImages)
 
-    const unseen = fwdCandidates.length - fwdImages.length
-    if (fwdCandidates.length > 0) {
-      fwdParts.push(unseen > 0 ? `(forwarded image(s), ${unseen} not shown)` : '(forwarded image(s))')
-    }
+    fwdParts.push(...mediaMarker('forwarded', fwdCandidates, fwdImages.length))
 
     if (fwdParts.length > 0) parts.push(`[Forwarded: ${fwdParts.join(' | ')}]`)
   }
