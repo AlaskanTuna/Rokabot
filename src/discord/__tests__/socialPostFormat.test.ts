@@ -19,7 +19,9 @@ const post: SocialPost = {
   videoCount: 1,
   imageUrl: 'https://pbs.twimg.com/photo.jpg',
   externalTitle: '',
-  replyCount: 193
+  replyCount: 193,
+  durationSec: null,
+  video: null
 }
 
 describe('formatSocialPostLine', () => {

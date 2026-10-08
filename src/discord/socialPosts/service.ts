@@ -146,8 +146,8 @@ export class SocialPostViewer {
       threadUrl.searchParams.set('parentHeight', '0')
       const response = await this.fetcher(threadUrl, { signal })
       if (!response.ok) return failure('bluesky', `http_${response.status}`)
-      const post = parseBlueskyThread(await response.json(), target, this.settings.maxTextChars)
-      return post ? { status: 'found', post } : failure('bluesky', 'missing_post')
+      const parsed = parseBlueskyThread(await response.json(), target, this.settings.maxTextChars)
+      return parsed ? { status: 'found', post: parsed.post } : failure('bluesky', 'missing_post')
     }
 
     const result = await this.runExtractor(this.settings.ytDlpPath, target.extractorUrl, this.settings.timeoutMs)

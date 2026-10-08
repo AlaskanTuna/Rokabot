@@ -97,7 +97,9 @@ function foundSocialPost(imageUrl: string | null = null) {
       videoCount: 0,
       imageUrl,
       externalTitle: '',
-      replyCount: null
+      replyCount: null,
+      durationSec: null,
+      video: null
     }
   }
 }

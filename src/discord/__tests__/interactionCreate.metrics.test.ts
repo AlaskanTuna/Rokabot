@@ -227,7 +227,9 @@ describe('interaction handler metrics', () => {
         videoCount: 0,
         imageUrl,
         externalTitle: '',
-        replyCount: null
+        replyCount: null,
+        durationSec: null,
+        video: null
       }
     }
   }
