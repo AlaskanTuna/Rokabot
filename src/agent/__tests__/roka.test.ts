@@ -1,11 +1,17 @@
 import type { CallbackContext, LlmRequest, LlmResponse } from '@google/adk'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { config } from '../../config.js'
 
-const mocks = vi.hoisted(() => ({ judgeTurn: vi.fn(), recordJevEvent: vi.fn() }))
+const mocks = vi.hoisted(() => ({
+  judgeTurn: vi.fn(),
+  recordJevEvent: vi.fn(),
+  watchMedia: vi.fn(),
+  countUriTokens: vi.fn()
+}))
 
 vi.mock('../jev/judgments.js', () => ({ judgeTurn: mocks.judgeTurn }))
 vi.mock('../../storage/jevEventStore.js', () => ({ recordJevEvent: mocks.recordJevEvent }))
+vi.mock('../media/watch.js', () => ({ watchMedia: mocks.watchMedia, countUriTokens: mocks.countUriTokens }))
 
 const mutableGeminiConfig = config.gemini as { liveMaxRetries: number }
 const mutableJevConfig = config.jev as {
@@ -18,8 +24,11 @@ const mutableJevConfig = config.jev as {
 mutableJevConfig.tone = 'off'
 mutableJevConfig.referents = 'off'
 mutableJevConfig.prefetch = 'shadow'
+// These tests pin the direct path, where audio and video reach the model as they arrived. The watched path is
+// covered in roka.media.test.ts.
+;(config.media as { watch: boolean }).watch = false
 import { recordFailureDiagnostic, recordMemoryEvent } from '../../storage/metricsStore.js'
-import { getChannelUsers, loadHistory } from '../../storage/sessionStore.js'
+import { getChannelUsers, loadHistory, saveMessage } from '../../storage/sessionStore.js'
 import { getUserName } from '../../storage/userNames.js'
 import { GEMINI_IMAGE_TOKENS } from '../../utils/imageProcessor.js'
 import { logger } from '../../utils/logger.js'
@@ -2287,7 +2296,7 @@ describe('attachment bytes are released after the turn', () => {
     const strip = vi.spyOn(sessionService, 'stripAttachmentBytes')
     await runTurn('roka-strip-ok', false)
 
-    expect(strip).toHaveBeenCalledWith('roka-strip-ok')
+    expect(strip).toHaveBeenCalledWith('roka-strip-ok', expect.any(Map))
   })
 
   // A failed turn still appended the message, so its bytes are retained exactly as a successful one's are.
@@ -2295,7 +2304,108 @@ describe('attachment bytes are released after the turn', () => {
     const strip = vi.spyOn(sessionService, 'stripAttachmentBytes')
     await runTurn('roka-strip-fail', true)
 
-    expect(strip).toHaveBeenCalledWith('roka-strip-fail')
+    expect(strip).toHaveBeenCalledWith('roka-strip-fail', expect.any(Map))
+  })
+})
+
+describe('watched media', () => {
+  const mediaConfig = config.media as { watch: boolean }
+  const youtube = {
+    url: 'https://www.youtube.com/watch?v=jNQXAC9IVRw',
+    contentType: 'video/mp4',
+    transport: 'uri' as const,
+    durationSec: 19
+  }
+  const digest = {
+    kind: 'video' as const,
+    label: 'YouTube video',
+    durationSec: 19,
+    mode: 'whole' as const,
+    fps: 1,
+    bins: [
+      { startSec: 0, endSec: 6 },
+      { startSec: 6, endSec: 13 },
+      { startSec: 13, endSec: 19 }
+    ],
+    observations: {
+      summary: 'A man at the zoo says the elephants have really long trunks.',
+      timeline: [{ bin: 1, visual: 'A man stands by an elephant enclosure.', audio: 'He talks to the camera.' }],
+      speech: [],
+      onScreenText: [],
+      uncertainties: []
+    },
+    incomplete: false
+  }
+
+  beforeEach(() => {
+    mediaConfig.watch = true
+    mocks.watchMedia.mockReset()
+    mocks.countUriTokens.mockReset()
+    vi.mocked(saveMessage).mockClear()
+  })
+
+  afterEach(() => {
+    mediaConfig.watch = false
+    __resetTestRunTurnFactory()
+  })
+
+  async function watchedTurn(channelId: string) {
+    let captured: Parameters<TestRunTurn>[2] | undefined
+    __setTestRunTurnFactory(() => async (_attempt, _signal, request) => {
+      captured = request
+      return { text: 'Cute~', hasText: true, hasFunctionCall: false }
+    })
+    const result = await generateResponse({
+      channelId,
+      guildId: 'watch-guild',
+      memory: true,
+      userMessage: 'what happens here?',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id',
+      imageAttachments: [youtube]
+    })
+    await destroySession(channelId)
+    return { result, parts: captured?.newMessage?.parts ?? [] }
+  }
+
+  it('replies from the digest instead of handing the model the video', async () => {
+    mocks.watchMedia.mockResolvedValue({ status: 'ok', digest, promptTokens: 1676, calls: 1, watchMs: 4000 })
+
+    const { parts } = await watchedTurn('roka-watch-digest')
+
+    expect(parts.some((part) => part.inlineData || part.fileData)).toBe(false)
+    expect(parts.some((part) => part.text?.includes('really long trunks'))).toBe(true)
+  })
+
+  it('counts the watch call against the turn', async () => {
+    mocks.watchMedia.mockResolvedValue({ status: 'ok', digest, promptTokens: 1676, calls: 2, watchMs: 4000 })
+
+    const { result } = await watchedTurn('roka-watch-calls')
+
+    expect(result.modelCalls).toBe(2)
+  })
+
+  it('saves the compact digest with the user message so the transcript keeps it', async () => {
+    mocks.watchMedia.mockResolvedValue({ status: 'ok', digest, promptTokens: 1676, calls: 1, watchMs: 4000 })
+
+    await watchedTurn('roka-watch-saved')
+
+    const userRow = vi.mocked(saveMessage).mock.calls.find((call) => call[1] === 'user')
+    expect(userRow?.[3]).toContain('what happens here?')
+    expect(userRow?.[3]).toContain('[Watched media — YouTube video')
+    expect(userRow?.[3]).toContain('really long trunks')
+  })
+
+  it('tells the model plainly when the video could not be watched', async () => {
+    mocks.watchMedia.mockResolvedValue({ status: 'failed', reason: 'overloaded', calls: 2, watchMs: 3000 })
+
+    const { parts, result } = await watchedTurn('roka-watch-failed')
+
+    expect(parts.map((part) => part.text)).toContain(
+      "[A YouTube video was shared, but it couldn't be watched right now.]"
+    )
+    expect(result.modelCalls).toBe(2)
   })
 })
 

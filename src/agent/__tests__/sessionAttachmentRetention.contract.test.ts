@@ -75,7 +75,12 @@ function newConversation(channel: string) {
     }
   }
 
-  return { model, sessionService, send, strip: () => sessionService.stripAttachmentBytes(channel) }
+  return {
+    model,
+    sessionService,
+    send,
+    strip: (compactions?: ReadonlyMap<string, string>) => sessionService.stripAttachmentBytes(channel, compactions)
+  }
 }
 
 describe('attachment bytes in session history', () => {
@@ -182,5 +187,28 @@ describe('attachment bytes in session history', () => {
     await c.sessionService.deleteSession({ appName: APP_NAME, userId: 'destroyed', sessionId: 'destroyed' })
 
     expect(c.strip()).toBe(0)
+  })
+
+  it('strips a linked video Gemini fetched itself, leaving the same marker', async () => {
+    const c = newConversation('linked')
+    await c.send([{ fileData: { fileUri: 'https://www.youtube.com/watch?v=x', mimeType: 'video/mp4' } }, ...textTurn()])
+    expect(c.strip()).toBe(1)
+    await c.send(textTurn())
+
+    expect(c.model.turns[1].texts).toContain('(a video)')
+  })
+
+  // The whole watch notes are for the turn that watched; later turns carry the gist.
+  it('swaps a full media digest for its compact form', async () => {
+    const full =
+      'untrusted label\n[Watched media — video, whole video, 0:19, a frame every second, full sound]\nSummary: zoo'
+    const compact = '[Watched media — video, whole video, 0:19, a frame every second, full sound] zoo'
+    const c = newConversation('digest')
+    await c.send([{ text: full }, ...textTurn()])
+    expect(c.strip(new Map([[full, compact]]))).toBe(1)
+    await c.send(textTurn())
+
+    expect(c.model.turns[1].texts).toContain(compact)
+    expect(c.model.turns[1].texts).not.toContain(full)
   })
 })

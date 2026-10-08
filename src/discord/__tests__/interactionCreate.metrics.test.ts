@@ -307,6 +307,49 @@ describe('interaction handler metrics', () => {
     ])
   })
 
+  it('watches a YouTube link in /ask instead of looking at its thumbnail', async () => {
+    const youtube = parseSocialPostUrl('https://youtu.be/jNQXAC9IVRw')!
+    const found = foundSocialPost('https://i.ytimg.com/vi/jNQXAC9IVRw/hqdefault.jpg')
+    mocks.beginSocialPostLookup.mockResolvedValueOnce({
+      status: 'found',
+      post: { ...found.post, platform: 'youtube', id: youtube.id, canonicalUrl: youtube.canonicalUrl, target: youtube }
+    })
+    const interaction = askWith([], 'https://youtu.be/jNQXAC9IVRw')
+
+    await createInteractionHandler(rateLimiterStub() as never)(interaction as never)
+
+    expect(mocks.resolveMediaUrl).not.toHaveBeenCalled()
+    expect(mocks.generateResponse.mock.calls[0][0].imageAttachments).toEqual([
+      { url: youtube.canonicalUrl, contentType: 'video/mp4', transport: 'uri' }
+    ])
+  })
+
+  it('keeps the YouTube thumbnail when watching is switched off', async () => {
+    const media = config.media as { watch: boolean }
+    media.watch = false
+    try {
+      const youtube = parseSocialPostUrl('https://youtu.be/jNQXAC9IVRw')!
+      const found = foundSocialPost('https://i.ytimg.com/vi/jNQXAC9IVRw/hqdefault.jpg')
+      mocks.beginSocialPostLookup.mockResolvedValueOnce({
+        status: 'found',
+        post: {
+          ...found.post,
+          platform: 'youtube',
+          id: youtube.id,
+          canonicalUrl: youtube.canonicalUrl,
+          target: youtube
+        }
+      })
+      mocks.resolveMediaUrl.mockResolvedValueOnce({ url: 'https://i.ytimg.com/vi/x.jpg', contentType: 'image/jpeg' })
+
+      await createInteractionHandler(rateLimiterStub() as never)(askWith([], 'https://youtu.be/jNQXAC9IVRw') as never)
+
+      expect(mocks.resolveMediaUrl).toHaveBeenCalledWith('https://i.ytimg.com/vi/jNQXAC9IVRw/hqdefault.jpg')
+    } finally {
+      media.watch = true
+    }
+  })
+
   it('marks a supported /ask post link when it could not be opened', async () => {
     mocks.beginSocialPostLookup.mockResolvedValueOnce({ status: 'failed', platform: 'x', reason: 'http_404' })
     const interaction = askWith([], undefined, 'What is this? https://x.com/roka/status/123')

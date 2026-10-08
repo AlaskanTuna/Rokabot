@@ -33,6 +33,12 @@ describe('reservationFor', () => {
     expect(reservationFor([document()])).toBe(MAX_DOCUMENT_SIZE_BYTES)
   })
 
+  it('reserves nothing for media Gemini fetches itself', () => {
+    expect(
+      reservationFor([{ url: 'https://www.youtube.com/watch?v=x', contentType: 'video/mp4', transport: 'uri' }])
+    ).toBe(0)
+  })
+
   it('sums across the attachments of one turn', () => {
     expect(reservationFor([image(100), image(200), document(300)])).toBe(600)
   })

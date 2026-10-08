@@ -11,7 +11,7 @@ import { type ResponseEventInput, recordResponseEvent } from '../../storage/metr
 import { upsertUserName } from '../../storage/userNames.js'
 import { logger } from '../../utils/logger.js'
 import { RateLimiter } from '../../utils/rateLimiter.js'
-import { MAX_ATTACHMENTS, resolveMediaUrl } from '../attachments.js'
+import { MAX_ATTACHMENTS } from '../attachments.js'
 import { release, reservationFor, tryReserve } from '../byteBudget.js'
 import { isChannelBusy, markBusy, markFree } from '../concurrency.js'
 import { shouldReact } from '../emojiReactor.js'
@@ -34,6 +34,7 @@ import {
   splitResponse
 } from '../responses.js'
 import { SOCIAL_POST_FAILURE_MARKER, formatSocialPostLine } from '../socialPosts/format.js'
+import { socialPostMedia } from '../socialPosts/media.js'
 import { beginSocialPostLookup, socialPostSnapshotTexts, socialPostTexts } from '../socialPosts/service.js'
 import { findSocialPostTarget } from '../socialPosts/urls.js'
 import { handleGachaMention } from './gachaMention.js'
@@ -234,8 +235,8 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
         componentTextsForTrigger,
         presentation
       )
-      if (socialPostResult.post.imageUrl && enriched.imageAttachments.length < MAX_ATTACHMENTS) {
-        const imageAttachment = await resolveMediaUrl(socialPostResult.post.imageUrl).catch(() => null)
+      if (enriched.imageAttachments.length < MAX_ATTACHMENTS) {
+        const imageAttachment = await socialPostMedia(socialPostResult.post)
         if (imageAttachment) {
           enriched = extractMessageContent(
             message,

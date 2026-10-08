@@ -12,11 +12,11 @@ import { saveMessage } from '../storage/sessionStore.js'
 import { logger } from '../utils/logger.js'
 import { getSharedRateLimiter } from '../utils/rateLimiter.js'
 import { estimateTokens } from '../utils/tokens.js'
-import { prepareAttachments } from './attachments.js'
 import type { ImageAttachment } from './attachments.js'
 import type { ModelRoute } from './fallbackModel.js'
 import { modelRouteForRequest } from './fallbackModel.js'
 import { computeBackoff } from './geminiReliability.js'
+import { prepareTurnMedia } from './media/turnMedia.js'
 import { stripNarratedToolCalls } from './narratedToolCalls.js'
 import type { ToneKey } from './prompts/tones.js'
 import {
@@ -129,7 +129,7 @@ export function __resetTestRunTurnFactory(): void {
  * request-wide and would otherwise change how images are read too. */
 function requestCarriesVideo(request: { contents?: Content[] }): boolean {
   return (request.contents ?? []).some((content) =>
-    (content.parts ?? []).some((part) => part.inlineData?.mimeType?.startsWith('video/'))
+    (content.parts ?? []).some((part) => (part.inlineData?.mimeType ?? part.fileData?.mimeType)?.startsWith('video/'))
   )
 }
 const ROKA_TOOL_NAMES = rokaTools.map((tool) => tool.name)
@@ -281,6 +281,16 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
       message: userMessage,
       mentionedUserIds: options.mentionedUserIds
     })
+  // Watching runs alongside memory retrieval rather than after it.
+  const mediaWork = prepareTurnMedia({
+    channelId,
+    attachments: imageAttachments,
+    focus: userMessage,
+    mayRetry: () => getSharedRateLimiter(config.rateLimit).tryConsumeAboveFloor(config.gemini.retryRpmFloor),
+    geminiUnavailable: rokaModel.hasFallback && hasStickyFallback()
+  })
+  // Handled here so a failure in createTurnContext cannot leave it as an unhandled rejection.
+  mediaWork.catch(() => undefined)
   const context = await createTurnContext({ ...options, turnEntryWork })
   const {
     session,
@@ -297,8 +307,18 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   let dropImages = false
   let systemPrompt = context.systemPrompt
 
-  const { imageParts, imageTokens, droppedAttachments, truncatedAttachments, refusedAttachments } =
-    await prepareAttachments(channelId, imageAttachments)
+  const {
+    directParts: imageParts,
+    mediaTextParts,
+    compactions,
+    compactDigests,
+    digests,
+    watcherCalls,
+    mediaTokens,
+    droppedAttachments,
+    truncatedAttachments,
+    refusedAttachments
+  } = await mediaWork
 
   // Tell the model when files are absent or refused so it does not search for their missing contents.
   const failedAttachmentNotice = [
@@ -317,7 +337,13 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   // Keep attachment notices in both ordinary and safety-rebuilt turns.
   const buildNewMessage = (): Content => ({
     role: 'user',
-    parts: [...(dropImages ? [] : imageParts), ...failedAttachmentNotice, { text: `[${displayName}]: ${userMessage}` }]
+    parts: [
+      ...(dropImages ? [] : imageParts),
+      // Rung 3 drops what was watched along with what was seen: either may be what tripped the filter.
+      ...(dropImages ? [] : mediaTextParts),
+      ...failedAttachmentNotice,
+      { text: `[${displayName}]: ${userMessage}` }
+    ]
   })
 
   logger.debug(
@@ -333,7 +359,8 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   let sessionWasReset = false
   const steering: { prompt?: string; memory?: boolean } = { memory }
   const verdict: ModelVerdict = {}
-  const modelCalls = { count: 0 }
+  // The watcher spent its calls from the same reservation before ADK starts.
+  const modelCalls = { count: watcherCalls }
   const route: ModelRoute = {
     useFallback: rokaModel.hasFallback && hasStickyFallback(),
     hedged: false,
@@ -424,7 +451,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
                   sessionId: channelId,
                   // ADK's runtime only appends when this value is truthy; its type incorrectly requires Content otherwise.
                   newMessage: testRequest.newMessage ?? (undefined as unknown as Content),
-                  runConfig: { maxLlmCalls: config.gemini.maxLlmCalls },
+                  runConfig: { maxLlmCalls: Math.max(1, config.gemini.maxLlmCalls - watcherCalls) },
                   stateDelta: testRequest.stateDelta
                 }
 
@@ -478,7 +505,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   }
 
   // Strip after retries so they resend the original bytes; a missed strip is cleaned up on the next turn or TTL.
-  const strippedParts = sessionService.stripAttachmentBytes(channelId)
+  const strippedParts = sessionService.stripAttachmentBytes(channelId, compactions)
   if (strippedParts > 0) logger.debug({ channelId, strippedParts }, 'Attachment bytes stripped from history')
 
   if (reliability.action === 'destroy') await destroySession(channelId)
@@ -500,7 +527,8 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
 
   if (reliability.success) {
     try {
-      saveMessage(channelId, 'user', displayName, userMessage, userId, username)
+      const savedUserMessage = compactDigests.length > 0 ? `${userMessage}\n${compactDigests.join('\n')}` : userMessage
+      saveMessage(channelId, 'user', displayName, savedUserMessage, userId, username)
       saveMessage(channelId, 'assistant', 'Roka', reliability.text)
     } catch (error) {
       logger.warn({ channelId, error }, 'Failed to persist messages to SQLite')
@@ -534,7 +562,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
       safetyRungsUsed: safetyRung,
       attempts: reliability.attempts,
       tone,
-      imageCount: imageParts.length,
+      imageCount: imageParts.length + digests.length,
       imageMimes: imageAttachments?.map((img) => img.contentType).join(',') || undefined,
       overheardChars: overheardSection.length,
       historyDepth: session.events?.length ?? 0,
@@ -548,7 +576,8 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     fakeMessages.reduce((total, message) => total + estimateTokens(`[${message.displayName}]: ${message.content}`), 0) +
     toolsTok +
     estimateTokens(`[${displayName}]: ${userMessage}`) +
-    imageTokens
+    mediaTokens +
+    mediaTextParts.reduce((total, part) => total + estimateTokens(part.text ?? ''), 0)
 
   // Charge after the reliability ladder so retries and rebuilt prompts are included in actual spend.
   chargeTokens(tokensInEst)

@@ -1,4 +1,4 @@
-import type { Message } from 'discord.js'
+import type { Attachment, Message } from 'discord.js'
 import type { ImageAttachment } from '../agent/attachments.js'
 import { MAX_ATTACHMENTS, isSupportedMedia } from './attachments.js'
 import type { SocialPostTarget } from './socialPosts/urls.js'
@@ -137,6 +137,11 @@ interface ForwardedContent {
   hasSocialPost: boolean
 }
 
+function toMediaAttachment(attachment: Attachment): ImageAttachment {
+  const { url, contentType, size, duration } = attachment
+  return { url, contentType: contentType!, size, ...(duration ? { durationSec: duration } : {}) }
+}
+
 type MediaKind = 'image' | 'video' | 'audio clip' | 'document'
 
 const MEDIA_KIND_ORDER: MediaKind[] = ['image', 'video', 'audio clip', 'document']
@@ -199,9 +204,7 @@ function describeForwardedSnapshots(
     }
 
     const fwdAttachments = snapshot.attachments ? [...snapshot.attachments.values()] : []
-    const fwdCandidates = fwdAttachments
-      .filter(isSupportedMedia)
-      .map((a) => ({ url: a.url, contentType: a.contentType!, size: a.size }))
+    const fwdCandidates = fwdAttachments.filter(isSupportedMedia).map(toMediaAttachment)
     const fwdImages = fwdCandidates.slice(0, imageSlots - images.length)
     images.push(...fwdImages)
 
@@ -231,7 +234,7 @@ export function extractMessageContent(
 
   const imageAttachments: ImageAttachment[] = message.attachments
     .filter(isSupportedMedia)
-    .map((a) => ({ url: a.url, contentType: a.contentType!, size: a.size }))
+    .map(toMediaAttachment)
     .slice(0, MAX_ATTACHMENTS)
 
   const componentMedia = extractComponentMedia(message.components)
@@ -326,9 +329,7 @@ export function extractMessageContent(
     }
 
     const refAttachments = [...referencedMessage.attachments.values()]
-    const refMediaCandidates: ImageAttachment[] = refAttachments
-      .filter(isSupportedMedia)
-      .map((a) => ({ url: a.url, contentType: a.contentType!, size: a.size }))
+    const refMediaCandidates: ImageAttachment[] = refAttachments.filter(isSupportedMedia).map(toMediaAttachment)
     const refMediaTaken = isReplyToBot ? [] : refMediaCandidates.slice(0, MAX_ATTACHMENTS - imageAttachments.length)
     refParts.push(...mediaMarker('attached', refMediaCandidates, refMediaTaken.length))
     const unsupportedRefCount = refAttachments.length - refAttachments.filter(isSupportedMedia).length

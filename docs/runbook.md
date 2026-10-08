@@ -135,6 +135,19 @@ To disable social post viewing, set `SOCIAL_POSTS_ENABLED=false` in the bot cont
 
 Lookup failures are logged as `Social post lookup failed` with only `platform` and `reason`. YouTube can refuse yt-dlp from the Pi's home IP (`exit_1`; run yt-dlp by hand in the container to see `HTTP Error 429` / `Sign in to confirm you're not a bot`); those links fall back to YouTube oEmbed (title, channel, thumbnail) and only log a failure when oEmbed fails too. If yt-dlp is absent during startup, the log says `Social video extractors disabled` with reason `binary_missing`; YouTube, TikTok, Reddit, Instagram, and Bilibili lookups then receive the normal “could not be opened” marker.
 
+## Media Watching
+
+Audio, video and YouTube links are watched by one separate Gemini call before Roka replies (contract in `docs/trd.md`, Media Watching). Each watch logs one `Watched media` line:
+
+```bash
+docker logs rokabot-roka-1 2>&1 | grep '"msg":"Watched media"' | tail -20
+```
+
+- **Fields:** `kind` (audio/video), `transport` (`inline` upload or `uri` YouTube), `mode` (`whole`, `skim`, `opening`, `decline`), `durationSec`, `fps`, `estimate` (admission tokens), `promptTokens` (billed), `watchMs`, `calls`, `outcome` (`ok`, `overloaded`, `timeout`, `unavailable`, `invalid`, `error`).
+- **Expected Latency:** about 2.5-3.5 s for short clips and 8-9 s for a 12-minute YouTube video (measured from a workstation, 2026-10-08), on top of the normal reply.
+- **YouTube Limits:** Gemini fetches YouTube links itself, so the Pi's IP block on yt-dlp does not apply. The free tier allows 8 hours of YouTube video per day; past that, watches fail and Roka says she couldn't watch it.
+- **Kill Switch:** set `MEDIA_WATCH=false` in the container environment and restart. Audio and video then go to the model directly as before.
+
 ---
 
 ## Services
