@@ -14,7 +14,7 @@ vi.mock('../../../utils/logger.js', () => ({ logger: { warn: mocks.warn } }))
 vi.mock('@typesafe-ai/sdk', () => ({ noul: vi.fn((instructions) => ({ instructions })) }))
 
 import { noul } from '@typesafe-ai/sdk'
-import { judgeEpisodeAdmission, judgeEpisodeOperations } from '../judgments.js'
+import { judgeEpisodeAdmission, judgeEpisodeOperations, judgeHiddenRetractions } from '../judgments.js'
 
 describe('judgeEpisodeAdmission', () => {
   beforeEach(() => {
@@ -376,5 +376,74 @@ describe('judgeEpisodeOperations', () => {
         })
       ).resolves.toBeNull()
     })
+  })
+})
+
+describe('judgeHiddenRetractions', () => {
+  const candidates = [
+    { id: 11, sentence: "This person's hobby: chess." },
+    { id: 12, sentence: "This person's hobby: go." }
+  ]
+  const input = { lines: ['[u-1|Mio]: I quit chess'], statement: "This person's hobby: chess.", candidates }
+
+  beforeEach(() => {
+    mocks.clientAvailable = true
+    mocks.systemOne.mockReset()
+    mocks.warn.mockReset()
+    vi.mocked(noul).mockClear()
+  })
+
+  it('asks one retraction question per candidate, keyed by claim id', async () => {
+    mocks.systemOne.mockResolvedValueOnce({
+      answers: { retracts_11: { type: 'noul', noul: 0.93 }, retracts_12: { type: 'noul', noul: 0.04 } },
+      usage: { input_tokens: 12, output_tokens: 2 }
+    })
+
+    await expect(judgeHiddenRetractions(input)).resolves.toEqual({ 11: 0.93, 12: 0.04 })
+
+    expect(mocks.systemOne).toHaveBeenCalledOnce()
+    const [request, options] = mocks.systemOne.mock.calls[0]
+    expect(request.state).toEqual({ messages: input.lines, statement: input.statement, facts: candidates })
+    expect(Object.keys(request.questions)).toEqual(['retracts_11', 'retracts_12'])
+    expect(request.questions.retracts_11.instructions).toBe(
+      'Do the messages say that this fact about the speaker no longer holds: "This person\'s hobby: chess."?'
+    )
+    expect(request.questions.retracts_12.instructions).toBe(
+      'Do the messages say that this fact about the speaker no longer holds: "This person\'s hobby: go."?'
+    )
+    expect(options).toEqual({ timeout: 5_000 })
+  })
+
+  it('returns null without a configured Jev client, or without candidates', async () => {
+    mocks.clientAvailable = false
+    await expect(judgeHiddenRetractions(input)).resolves.toBeNull()
+    mocks.clientAvailable = true
+    await expect(judgeHiddenRetractions({ ...input, candidates: [] })).resolves.toBeNull()
+    expect(mocks.systemOne).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['a missing answer', { retracts_11: { type: 'noul', noul: 0.9 } }],
+    ['a non-noul answer', { retracts_11: { type: 'noul', noul: 0.9 }, retracts_12: { type: 'choice', choice: 'a' } }],
+    ['an out-of-range answer', { retracts_11: { type: 'noul', noul: 0.9 }, retracts_12: { type: 'noul', noul: 1.5 } }],
+    [
+      'a non-finite answer',
+      { retracts_11: { type: 'noul', noul: Number.NaN }, retracts_12: { type: 'noul', noul: 0.1 } }
+    ]
+  ])('returns null for %s', async (_, answers) => {
+    mocks.systemOne.mockResolvedValueOnce({ answers, usage: { input_tokens: 1, output_tokens: 1 } })
+    await expect(judgeHiddenRetractions(input)).resolves.toBeNull()
+  })
+
+  it('fails closed and does not log the facts or messages when Jev fails', async () => {
+    mocks.systemOne.mockRejectedValueOnce(new Error("This person's hobby: chess."))
+
+    await expect(judgeHiddenRetractions(input)).resolves.toBeNull()
+
+    expect(mocks.warn).toHaveBeenCalledWith(
+      { kind: 'extraction', errorName: 'Error', status: undefined },
+      'Jev judgment failed'
+    )
+    expect(JSON.stringify(mocks.warn.mock.calls)).not.toContain('chess')
   })
 })

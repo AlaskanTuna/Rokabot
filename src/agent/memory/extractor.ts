@@ -17,6 +17,7 @@ import {
   parseExtractionOutput
 } from './extractionSchema.js'
 import { resolveGuildFactDate } from './guildFactDates.js'
+import { reconcileHiddenRetractions } from './hiddenRetractions.js'
 import {
   type ClaimPeriod,
   type ClaimStatus,
@@ -35,7 +36,7 @@ import {
   retireClaim,
   retractClaim
 } from './memoryClaims.js'
-import { normalizePredicate } from './predicates.js'
+import { type PredicateId, normalizePredicate } from './predicates.js'
 import { type RecallScope, canRecall } from './privacy.js'
 import { sensitiveFactReason } from './privacyGuard.js'
 import { proposedPeriod, retractCandidates, sameAsCandidates } from './verificationCandidates.js'
@@ -282,13 +283,10 @@ export async function verifyAndApplyOperations(input: {
     ),
     ...getActiveGuildClaims(input.guildId)
   ]
-  const sameAsCandidates = recallableHere(existing, { guildId: input.guildId, channelId: input.channelId })
-  const planned = planVerification(writeOps, sameAsCandidates, observedAt, config.timezone)
-  const verification = await judgeEpisodeOperations({
-    lines: input.episode.messages.map(formatEpisodeLine),
-    ops: writeOps,
-    existing: sameAsCandidates
-  })
+  const visibleClaims = recallableHere(existing, { guildId: input.guildId, channelId: input.channelId })
+  const planned = planVerification(writeOps, visibleClaims, observedAt, config.timezone)
+  const lines = input.episode.messages.map(formatEpisodeLine)
+  const verification = await judgeEpisodeOperations({ lines, ops: writeOps, existing: visibleClaims })
   const verified = hasCompleteVerification(verification, planned)
   const holds = (key: string) => (verification?.answers[key]?.noul ?? 0) >= config.memory.verifyThreshold
   const results: Array<{
@@ -301,6 +299,7 @@ export async function verifyAndApplyOperations(input: {
     retracted?: number
   }> = []
   const appliedKeys = new Set<string>()
+  const verifiedRetracts: Array<{ subjectUserId: string; predicate: PredicateId; value: string }> = []
 
   getDb().transaction(() => {
     for (const entry of planned) {
@@ -353,6 +352,7 @@ export async function verifyAndApplyOperations(input: {
       }
 
       if (op.op === 'retract') {
+        verifiedRetracts.push({ subjectUserId: op.subject.userId, predicate: op.predicate, value: op.value })
         let retired = 0
         for (const [claimIndex, claim] of retractClaims.entries()) {
           const key = `retracts_${index}_${claimIndex}`
@@ -559,6 +559,14 @@ export async function verifyAndApplyOperations(input: {
     )
   }
 
+  const hiddenRetracted = await reconcileHiddenRetractions({
+    guildId: input.guildId,
+    channelId: input.channelId,
+    lines,
+    retracts: verifiedRetracts,
+    visibleIds: new Set(visibleClaims.map(({ id }) => id))
+  })
+
   if (verified && verification) {
     for (const entry of planned) {
       const result = results[entry.index]
@@ -589,7 +597,7 @@ export async function verifyAndApplyOperations(input: {
     changedOps: results.filter(({ changed }) => changed).length,
     pastOps: results.filter(({ past }) => past).length,
     rewordOps: results.filter(({ reword }) => reword).length,
-    retractedOps: results.reduce((total, { retracted }) => total + (retracted ?? 0), 0),
+    retractedOps: results.reduce((total, { retracted }) => total + (retracted ?? 0), hiddenRetracted),
     inputTokens: verification?.inputTokens ?? 0
   }
 }

@@ -282,3 +282,36 @@ export async function judgeEpisodeOperations(input: {
     return null
   }
 }
+
+/** Maps each candidate claim ID to the probability that the messages end it, or null on any failure. */
+export async function judgeHiddenRetractions(input: {
+  lines: string[]
+  statement: string
+  candidates: Array<{ id: number; sentence: string }>
+}): Promise<Record<number, number> | null> {
+  try {
+    const client = getJevClient()
+    if (!client || input.candidates.length === 0) return null
+
+    const questions: Questions = {}
+    for (const { id, sentence } of input.candidates) {
+      questions[`retracts_${id}`] = noul(
+        `Do the messages say that this fact about the speaker no longer holds: "${sentence}"?`
+      )
+    }
+    const result = await client.systemOne(
+      { state: { messages: input.lines, statement: input.statement, facts: input.candidates }, questions },
+      { timeout: config.jev.memoryTimeoutMs }
+    )
+    const probabilities: Record<number, number> = {}
+    for (const { id } of input.candidates) {
+      const answer = result.answers[`retracts_${id}`]
+      if (answer?.type !== 'noul' || validProbability(answer.noul) === null) return null
+      probabilities[id] = answer.noul
+    }
+    return probabilities
+  } catch (error) {
+    logger.warn(warningDetails('extraction', error), 'Jev judgment failed')
+    return null
+  }
+}
