@@ -1,6 +1,6 @@
 import { type Schema, Type } from '@google/genai'
 import { MEDIA_DIGEST_UNTRUSTED_DATA_LABEL } from '../promptSafety.js'
-import type { MediaDigest, MediaObservations } from './types.js'
+import type { MediaClip, MediaDigest, MediaObservations } from './types.js'
 
 export const MEDIA_DIGEST_HEADING = '[Watched media'
 
@@ -180,6 +180,11 @@ export function formatClock(seconds: number): string {
   return hours > 0 ? `${hours}:${pad(minute)}:${pad(second)}` : `${totalMinutes}:${pad(second)}`
 }
 
+function frameInterval(fps: number | null): string {
+  if (fps === 1) return 'a frame every second'
+  return `a frame every ${fps === null ? 'unknown' : 1 / fps} s`
+}
+
 export function coverageLine(digest: MediaDigest): string {
   if (digest.mode === 'opening')
     return `only the opening was available, about ${formatClock(digest.durationSec)} of a longer file`
@@ -195,10 +200,17 @@ export function coverageLine(digest: MediaDigest): string {
     const sound = digest.silent ? 'no sound' : 'sound only within the clips'
     return `skimmed: ${digest.bins.length} clips of ${clipLength} s spread across ${formatClock(digest.durationSec)}, ${sound}`
   }
+  if (digest.mode === 'halves') {
+    const sound = digest.silent ? 'no sound' : 'full sound'
+    const first = digest.bins[0]
+    const last = digest.bins.at(-1)
+    if (first?.startSec === 0 && last?.endSec === Math.round(digest.durationSec)) {
+      return `whole video in two halves, ${formatClock(digest.durationSec)}, ${frameInterval(digest.fps)}, ${sound}`
+    }
+    return `only ${formatClock(first?.startSec ?? 0)}–${formatClock(last?.endSec ?? 0)} of ${formatClock(digest.durationSec)} was watched, ${frameInterval(digest.fps)}, ${sound}`
+  }
   if (digest.kind === 'audio') return `whole audio, ${formatClock(digest.durationSec)}`
-  const frameInterval =
-    digest.fps === 1 ? 'a frame every second' : `a frame every ${digest.fps === null ? 'unknown' : 1 / digest.fps} s`
-  return `whole video, ${formatClock(digest.durationSec)}, ${frameInterval}, ${digest.silent ? 'no sound' : 'full sound'}`
+  return `whole video, ${formatClock(digest.durationSec)}, ${frameInterval(digest.fps)}, ${digest.silent ? 'no sound' : 'full sound'}`
 }
 
 export function renderDigestBlock(digest: MediaDigest): string {
@@ -242,4 +254,56 @@ export function renderCompactDigest(digest: MediaDigest): string {
     0,
     700
   )
+}
+
+const OTHER_HALF_MISSING = 'The other half of the video could not be watched.'
+
+function renumberBins(observations: MediaObservations, offset: number): MediaObservations {
+  return {
+    ...observations,
+    timeline: observations.timeline.map((item) => ({ ...item, bin: item.bin + offset })),
+    speech: observations.speech.map((item) => ({ ...item, bin: item.bin + offset })),
+    onScreenText: observations.onScreenText.map((item) => ({ ...item, bin: item.bin + offset }))
+  }
+}
+
+/**
+ * One digest for a video watched in two halves. A null half was not watched; with neither, there is nothing to
+ * merge. The second half's bins follow the first's, so its observations are renumbered past them.
+ */
+export function mergeHalves(
+  first: MediaDigest | null,
+  second: MediaDigest | null,
+  durationSec: number
+): MediaDigest | null {
+  const parts = [
+    ...(first ? [{ digest: first, offset: 0 }] : []),
+    ...(second ? [{ digest: second, offset: first?.bins.length ?? 0 }] : [])
+  ]
+  const lead = parts[0]?.digest
+  if (!lead) return null
+
+  const observed = parts.map(({ digest, offset }) => renumberBins(digest.observations, offset))
+  const uncertainties = [...new Set(observed.flatMap((item) => item.uncertainties))]
+  const missing = parts.length < 2
+  return {
+    kind: 'video',
+    label: lead.label,
+    durationSec,
+    mode: 'halves',
+    fps: lead.fps,
+    ...(parts.some(({ digest }) => digest.silent) ? { silent: true } : {}),
+    bins: parts.flatMap(({ digest }) => digest.bins),
+    observations: {
+      summary: observed
+        .map((item) => item.summary)
+        .join(' ')
+        .slice(0, 500),
+      timeline: observed.flatMap((item) => item.timeline),
+      speech: observed.flatMap((item) => item.speech),
+      onScreenText: observed.flatMap((item) => item.onScreenText),
+      uncertainties: missing ? [...uncertainties.slice(0, 4), OTHER_HALF_MISSING] : uncertainties.slice(0, 5)
+    },
+    incomplete: missing || parts.some(({ digest }) => digest.incomplete)
+  }
 }

@@ -42,11 +42,16 @@ function mediaPart(source: WatchSource, videoMetadata?: Record<string, unknown>)
   return videoMetadata ? { ...part, videoMetadata } : part
 }
 
-function instructions(bins: MediaClip[], focus: string, opening: boolean): string {
+function instructions(bins: MediaClip[], focus: string, opening: boolean, window?: MediaClip): string {
   return [
     'Describe the media for someone who cannot see or hear it.',
     'Fill the response schema.',
     'Do not report duration or coverage; code supplies those.',
+    ...(window
+      ? [
+          `This part covers ${formatClock(window.startSec)}–${formatClock(window.endSec)} of a longer video; the bin times below are positions in the full video.`
+        ]
+      : []),
     'The available bins are:',
     ...bins.map((bin, index) => `Bin ${index + 1}: ${formatClock(bin.startSec)}–${formatClock(bin.endSec)}`),
     'Every timeline, speech, and onScreenText entry must name one of these bins.',
@@ -63,13 +68,19 @@ function requestFor(input: {
   focus: string
   signal?: AbortSignal
   opening: boolean
+  window?: MediaClip
 }): GenerateContentParameters {
-  const { source, plan } = input
+  const { source, plan, window } = input
   const parts: Part[] = []
 
   if (plan.mode === 'whole') {
     const metadata = source.kind === 'video' && plan.fps !== null ? { fps: plan.fps } : undefined
-    parts.push(mediaPart(source, metadata))
+    parts.push(
+      mediaPart(
+        source,
+        window ? { ...metadata, startOffset: `${window.startSec}s`, endOffset: `${window.endSec}s` } : metadata
+      )
+    )
   } else {
     for (const [index, clip] of plan.clips.entries()) {
       parts.push({ text: `Clip ${index + 1}: ${formatClock(clip.startSec)}–${formatClock(clip.endSec)}` })
@@ -81,7 +92,7 @@ function requestFor(input: {
       )
     }
   }
-  parts.push({ text: instructions(plan.bins, input.focus, input.opening) })
+  parts.push({ text: instructions(plan.bins, input.focus, input.opening, window) })
 
   return {
     model: config.gemini.model,
@@ -163,6 +174,8 @@ export async function watchMedia(input: {
   /** Called before a retry; return false to forbid it (no RPM slot or no time left). */
   mayRetry?: () => boolean
   opening?: boolean
+  /** Set when the whole plan is one half of a longer video, so the part is limited to that half. */
+  window?: MediaClip
 }): Promise<WatchResult> {
   const startedAt = Date.now()
   const request = requestFor({ ...input, opening: input.opening ?? false })

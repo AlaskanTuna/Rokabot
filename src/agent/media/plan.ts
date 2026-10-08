@@ -65,6 +65,10 @@ export function planCoverage(input: {
   return { mode: 'skim', kind: 'video', durationSec, clips, estimate, bins: clips }
 }
 
+// Between these lengths a video fits whole in two halves but not in one watch; see `planHalves`.
+export const HALVES_MIN_DURATION_SEC = 1200
+export const HALVES_MAX_DURATION_SEC = 2400
+
 // A timestamp on a link points at a moment, so the watch spends its budget densely around it rather than
 // thinly across the whole video.
 const FOCUS_BEFORE_SEC = 30
@@ -81,4 +85,45 @@ export function planFocus(input: { durationSec: number; startSec: number; budget
   const estimate = estimateMediaTokens({ frames: Math.ceil(length), audioSec: length, parts: 1 })
   if (length <= 0 || estimate > budgetTokens) return { mode: 'decline', kind: 'video', durationSec, reason: 'too_long' }
   return { mode: 'focus', kind: 'video', durationSec, centerSec, clips: [clip], estimate, bins: [clip] }
+}
+
+export interface HalfWatch {
+  plan: Extract<CoveragePlan, { mode: 'whole' }>
+  /** The part of the full video this watch covers; its plan's bins are already positions in the full video. */
+  window: MediaClip
+}
+
+export interface HalvesPlan {
+  halves: [HalfWatch, HalfWatch]
+  halfEstimate: number
+}
+
+/**
+ * Two whole watches over consecutive halves of one video, each planned as a whole video of its own length. Null
+ * when a half would not fit whole, so the caller keeps its single plan.
+ */
+export function planHalves(input: { durationSec: number; budgetTokens: number }): HalvesPlan | null {
+  const durationSec = Math.round(input.durationSec)
+  const halfSec = durationSec / 2
+  const half = planCoverage({
+    kind: 'video',
+    durationSec: halfSec,
+    budgetTokens: input.budgetTokens,
+    canSkim: false,
+    skimClips: 0,
+    skimClipSeconds: 0
+  })
+  if (half.mode !== 'whole') return null
+
+  const secondBins = half.bins.map((bin, index, bins) => ({
+    startSec: Math.round(bin.startSec + halfSec),
+    endSec: index === bins.length - 1 ? durationSec : Math.round(bin.endSec + halfSec)
+  }))
+  return {
+    halves: [
+      { plan: { ...half, durationSec }, window: { startSec: 0, endSec: halfSec } },
+      { plan: { ...half, durationSec, bins: secondBins }, window: { startSec: halfSec, endSec: durationSec } }
+    ],
+    halfEstimate: half.estimate
+  }
 }

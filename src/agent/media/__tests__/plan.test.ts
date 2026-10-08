@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { estimateMediaTokens, planCoverage, planFocus } from '../plan.js'
+import { estimateMediaTokens, planCoverage, planFocus, planHalves } from '../plan.js'
 
 describe('estimateMediaTokens', () => {
   it('applies frame, audio, headroom and media-part costs', () => {
@@ -153,5 +153,53 @@ describe('planFocus', () => {
       mode: 'decline',
       reason: 'too_long'
     })
+  })
+})
+
+describe('planHalves', () => {
+  it('plans a 35 minute video as two whole halves at one frame rate, with bins in full-video positions', () => {
+    const halves = planHalves({ durationSec: 2100, budgetTokens: 43_478 })
+
+    expect(halves).not.toBeNull()
+    if (!halves) return
+    const [first, second] = halves.halves
+    const estimate = estimateMediaTokens({ frames: 53, audioSec: 1050, parts: 1 })
+    expect(halves.halfEstimate).toBe(estimate)
+    expect(first).toEqual({
+      plan: {
+        mode: 'whole',
+        kind: 'video',
+        durationSec: 2100,
+        fps: 0.05,
+        estimate,
+        bins: [
+          { startSec: 0, endSec: 131 },
+          { startSec: 131, endSec: 263 },
+          { startSec: 263, endSec: 394 },
+          { startSec: 394, endSec: 525 },
+          { startSec: 525, endSec: 656 },
+          { startSec: 656, endSec: 788 },
+          { startSec: 788, endSec: 919 },
+          { startSec: 919, endSec: 1050 }
+        ]
+      },
+      window: { startSec: 0, endSec: 1050 }
+    })
+    expect(second.plan).toMatchObject({ mode: 'whole', durationSec: 2100, fps: 0.05, estimate })
+    expect(second.plan.bins).toEqual([
+      { startSec: 1050, endSec: 1181 },
+      { startSec: 1181, endSec: 1313 },
+      { startSec: 1313, endSec: 1444 },
+      { startSec: 1444, endSec: 1575 },
+      { startSec: 1575, endSec: 1706 },
+      { startSec: 1706, endSec: 1838 },
+      { startSec: 1838, endSec: 1969 },
+      { startSec: 1969, endSec: 2100 }
+    ])
+    expect(second.window).toEqual({ startSec: 1050, endSec: 2100 })
+  })
+
+  it('returns null when either half cannot be watched whole', () => {
+    expect(planHalves({ durationSec: 2100, budgetTokens: 20_000 })).toBeNull()
   })
 })

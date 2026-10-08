@@ -11,13 +11,21 @@ import { measureAttachmentTokens } from '../attachmentCost.js'
 import { geminiMimeType, isStreamedUpload } from '../attachmentLimits.js'
 import { type ImageAttachment, downloadAttachment, prepareAttachments } from '../attachments.js'
 import { embedEpisodeText } from '../memory/episodeEmbeddings.js'
+import { remainingTokensThisMinute } from '../tokenBudget.js'
 import { bytesContentKey, discordAttachmentContentKey } from './contentKey.js'
-import { formatClock, renderCompactDigest, renderDigestBlock } from './digest.js'
+import { formatClock, mergeHalves, renderCompactDigest, renderDigestBlock } from './digest.js'
 import { durationFromTokens, mp4DurationSec } from './duration.js'
 import { type UploadedFile, deleteFile, streamToFiles } from './filesUpload.js'
-import { planCoverage, planFocus } from './plan.js'
+import {
+  HALVES_MAX_DURATION_SEC,
+  HALVES_MIN_DURATION_SEC,
+  type HalvesPlan,
+  planCoverage,
+  planFocus,
+  planHalves
+} from './plan.js'
 import type { CoveragePlan, MediaDigest, MediaKind } from './types.js'
-import { type WatchSource, countUriTokens, watchMedia } from './watch.js'
+import { type WatchResult, type WatchSource, countUriTokens, watchMedia } from './watch.js'
 
 export interface PreparedTurnMedia {
   /** Image and PDF parts for ADK, exactly as prepareAttachments returns them. */
@@ -67,7 +75,15 @@ function notice(label: string, outcome: string): Part {
 }
 
 type Prepared =
-  | { status: 'ready'; source: WatchSource; plan: CoveragePlan; opening: boolean; bytes?: Buffer; file?: UploadedFile }
+  | {
+      status: 'ready'
+      source: WatchSource
+      plan: CoveragePlan
+      opening: boolean
+      budgetTokens: number
+      bytes?: Buffer
+      file?: UploadedFile
+    }
   | { status: 'dropped' }
 
 /** A server turn whose watched media is remembered. Absent for DMs, group DMs and `/ask`. */
@@ -85,6 +101,8 @@ function remembered(scope: MediaMemoryScope, contentKey: string): { id: number; 
     const digest = JSON.parse(stored.digestJson) as MediaDigest
     // A partial watch is worth redoing; a later share may get the whole thing.
     if (digest.mode === 'opening' || digest.incomplete) return null
+    // A skim of a video that two halves could cover whole is worth redoing when a share can afford the halves.
+    if (digest.mode === 'skim' && digest.durationSec <= HALVES_MAX_DURATION_SEC) return null
     // Throws on a row that has drifted from the digest shape, which then counts as a miss.
     renderDigestBlock(digest)
     renderCompactDigest(digest)
@@ -170,7 +188,8 @@ async function prepareUri(attachment: ImageAttachment, label: string): Promise<P
             skimClips: config.media.skimClips,
             skimClipSeconds: config.media.skimClipSeconds
           }),
-    opening: false
+    opening: false,
+    budgetTokens
   }
 }
 
@@ -211,6 +230,7 @@ async function prepareInline(attachment: ImageAttachment, kind: MediaKind, label
       skimClipSeconds: config.media.skimClipSeconds
     }),
     opening: download.truncated,
+    budgetTokens: config.gemini.maxAttachmentTokens,
     bytes: download.bytes
   }
 }
@@ -256,8 +276,62 @@ async function prepareFiles(
       skimClipSeconds: config.media.skimClipSeconds
     }),
     opening: false,
+    budgetTokens: config.gemini.maxAttachmentTokens,
     file
   }
+}
+
+/**
+ * The two halves to watch in place of a skim (or a decline) of a 20 to 40 minute video, when the minute's tokens
+ * carry both and the turn's model calls still leave ADK at least two after the two watches.
+ */
+function halvesFor(source: WatchSource, plan: CoveragePlan, budgetTokens: number): HalvesPlan | null {
+  if (source.transport === 'inline' || source.kind !== 'video') return null
+  const shortened = plan.mode === 'skim' || (plan.mode === 'decline' && plan.reason === 'too_long')
+  if (!shortened || plan.durationSec === null) return null
+  if (plan.durationSec <= HALVES_MIN_DURATION_SEC || plan.durationSec > HALVES_MAX_DURATION_SEC) return null
+  if (config.gemini.maxLlmCalls - 2 < 2) return null
+
+  const halves = planHalves({ durationSec: plan.durationSec, budgetTokens })
+  if (!halves || remainingTokensThisMinute() < 2 * halves.halfEstimate) return null
+  return halves
+}
+
+/** Watches both halves at once. Calls and billed tokens count whether or not a half produced a usable digest. */
+async function watchHalves(
+  source: WatchSource,
+  halves: HalvesPlan,
+  input: { focus: string; mayRetry: () => boolean },
+  result: PreparedTurnMedia
+): Promise<{ digest: MediaDigest | null; watched: WatchResult[] }> {
+  const watched = await Promise.all(
+    halves.halves.map(({ plan, window }) => {
+      const startedAt = Date.now()
+      return watchMedia({
+        source,
+        plan,
+        window,
+        focus: input.focus,
+        // A retry is a second full watch; only worth it when the first failed fast.
+        mayRetry: () => Date.now() - startedAt < config.media.watchTimeoutMs / 2 && input.mayRetry(),
+        opening: false
+      })
+    })
+  )
+
+  for (const [index, outcome] of watched.entries()) {
+    result.watcherCalls += outcome.calls
+    if (outcome.status === 'ok') {
+      result.mediaTokens += outcome.promptTokens
+    } else {
+      // Billed even though unusable; a timed-out request may have been processed in full.
+      result.mediaTokens +=
+        outcome.promptTokens ?? (outcome.reason === 'timeout' ? halves.halves[index].plan.estimate : 0)
+    }
+  }
+
+  const [first, second] = watched.map((outcome) => (outcome.status === 'ok' ? outcome.digest : null))
+  return { digest: mergeHalves(first, second, halves.halves[0].plan.durationSec), watched }
 }
 
 async function watchOne(
@@ -310,6 +384,40 @@ async function watchOne(
       if (bytesHit) return reuse(bytesHit)
     }
     if (opening) result.truncatedAttachments += 1
+
+    const halves = halvesFor(source, plan, prepared.budgetTokens)
+    if (halves) {
+      const { digest, watched } = await watchHalves(source, halves, input, result)
+      const failures = watched.flatMap((outcome) => (outcome.status === 'failed' ? [outcome] : []))
+      if (digest) {
+        present(result, digest)
+        if (scope && contentKey) remember(scope, attachment, contentKey, digest)
+      } else {
+        result.mediaTextParts.push(
+          notice(
+            label,
+            failures[0]?.reason === 'unavailable' ? "it couldn't be opened" : "it couldn't be watched right now"
+          )
+        )
+      }
+
+      logger.info(
+        {
+          channelId: input.channelId,
+          kind,
+          transport: source.transport,
+          mode: 'halves',
+          durationSec: Math.round(halves.halves[0].plan.durationSec),
+          fps: halves.halves[0].plan.fps,
+          estimate: 2 * halves.halfEstimate,
+          watchMs: Math.max(...watched.map((outcome) => outcome.watchMs)),
+          calls: watched.reduce((total, outcome) => total + outcome.calls, 0),
+          outcome: digest ? (failures.length > 0 ? 'partial' : 'ok') : failures[0]?.reason
+        },
+        'Watched media'
+      )
+      return
+    }
 
     if (plan.mode === 'decline') {
       result.mediaTextParts.push(

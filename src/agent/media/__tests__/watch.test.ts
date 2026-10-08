@@ -450,3 +450,59 @@ describe('focused and silent watches', () => {
     expect(result).toMatchObject({ status: 'ok', digest: { silent: true } })
   })
 })
+
+describe('watchMedia over one half of a long video', () => {
+  const secondHalf: Extract<CoveragePlan, { mode: 'whole' }> = {
+    mode: 'whole',
+    kind: 'video',
+    durationSec: 2100,
+    fps: 0.05,
+    estimate: 41105,
+    bins: [
+      { startSec: 1050, endSec: 1575 },
+      { startSec: 1575, endSec: 2100 }
+    ]
+  }
+  const filesSource: WatchSource = {
+    transport: 'files',
+    kind: 'video',
+    fileUri: 'https://generativelanguage.googleapis.com/v1beta/files/abc',
+    mimeType: 'video/mp4',
+    label: 'video'
+  }
+
+  it('limits the video part to its window and keeps the bins in full-video positions', async () => {
+    mocks.generateContent.mockResolvedValueOnce(response())
+
+    const result = await watchMedia({
+      source: filesSource,
+      plan: secondHalf,
+      window: { startSec: 1050, endSec: 2100 },
+      focus: ''
+    })
+    const parts = mocks.generateContent.mock.calls[0][0].contents[0].parts
+    const text = parts.at(-1).text
+
+    expect(parts[0]).toEqual({
+      fileData: { fileUri: filesSource.fileUri, mimeType: 'video/mp4' },
+      videoMetadata: { fps: 0.05, startOffset: '1050s', endOffset: '2100s' }
+    })
+    expect(text).toContain(
+      'This part covers 17:30–35:00 of a longer video; the bin times below are positions in the full video.'
+    )
+    expect(text.indexOf('This part covers')).toBeLessThan(text.indexOf('The available bins are:'))
+    expect(text).toContain('Bin 1: 17:30–26:15')
+    expect(text).toContain('Bin 2: 26:15–35:00')
+    expect(result).toMatchObject({ status: 'ok', digest: { mode: 'whole', bins: secondHalf.bins } })
+  })
+
+  it('leaves a whole video without a window unrestricted and says nothing about a longer video', async () => {
+    mocks.generateContent.mockResolvedValueOnce(response())
+
+    await watchMedia({ source: filesSource, plan: planWholeVideo(), focus: '' })
+    const parts = mocks.generateContent.mock.calls[0][0].contents[0].parts
+
+    expect(parts[0].videoMetadata).toEqual({ fps: 1 })
+    expect(parts.at(-1).text).not.toContain('of a longer video')
+  })
+})
