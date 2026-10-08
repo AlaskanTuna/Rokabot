@@ -142,6 +142,15 @@ function requestCarriesVideo(request: { contents?: Content[] }): boolean {
 const ROKA_TOOL_NAMES = rokaTools.map((tool) => tool.name)
 
 // Exported so tests can assert the agent-level config and beforeModelCallback seam directly
+// Strip per-line leading whitespace from prose — 4+ spaces or a tab makes Discord render the line as an
+// indented code block — but not inside a fenced code block, where the indentation is the code.
+function stripProseIndentation(text: string): string {
+  return text
+    .split(/(```[^\n`]*\n[\s\S]*?```)/)
+    .map((piece, index) => (index % 2 === 1 ? piece : piece.replace(/^[ \t]+/gm, '')))
+    .join('')
+}
+
 export const rokaAgent = new LlmAgent({
   name: 'roka',
   model: rokaModel,
@@ -212,11 +221,7 @@ export const rokaAgent = new LlmAgent({
             'Stripped tool calls the model wrote as text'
           )
         }
-        // Strip per-line leading whitespace — 4+ spaces or a tab makes Discord render the line as an indented code block
-        part.text = narrated.text
-          .replace(/^\[?Roka\]?:\s*/i, '')
-          .replace(/^[ \t]+/gm, '')
-          .trim()
+        part.text = stripProseIndentation(narrated.text.replace(/^\[?Roka\]?:\s*/i, '')).trim()
       }
     }
 

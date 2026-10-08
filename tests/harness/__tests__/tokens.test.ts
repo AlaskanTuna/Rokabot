@@ -110,6 +110,14 @@ describe('harness token measurement', () => {
     expect(CORE_PROMPT).toContain("couldn't be watched or opened, say so in your first sentence")
   })
 
+  // Code arrived as unformatted prose, and her kaomoji's backtick paired with real code spans.
+  it('keeps code in code formatting and the backtick out of her kaomoji list', () => {
+    expect(SPEECH_PROMPT).toContain('put the code in a fenced code block on lines of its own')
+    expect(SPEECH_PROMPT).toContain('a command, file name, package or identifier in inline code')
+    expect(SPEECH_PROMPT).toContain('(´・ω・｀)')
+    expect(SPEECH_PROMPT).not.toMatch(/ω・\\?`\)/)
+  })
+
   it('keeps the speech quotas from adding a second paragraph on a watched turn too', () => {
     expect(SPEECH_PROMPT).toContain('On a turn where you used `search_web` or watched media')
   })

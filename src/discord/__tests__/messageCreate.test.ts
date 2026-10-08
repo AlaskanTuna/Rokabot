@@ -62,7 +62,6 @@ vi.mock('../socialPosts/service.js', () => ({
 }))
 vi.mock('../errorHandler.js', () => ({ isIgnorableDiscordError: () => false }))
 vi.mock('../responses.js', () => ({
-  escapeBackticks: (text: string) => text.replace(/\\?`/g, '\\`'),
   getRandomBusy: () => 'busy',
   getRandomDecline: () => 'decline',
   getRandomError: () => 'error',
@@ -330,7 +329,7 @@ describe('message handler metrics', () => {
 
   // Pins the mention path; /ask is pinned in interactionCreate.metrics.test.ts. Two call sites, so two
   // assertions — a single one would go green while the other surface silently stopped escaping.
-  it('escapes her kaomoji backtick on a mention so it cannot open a code span', async () => {
+  it('guards her kaomoji backtick on a mention so it cannot pair with real inline code', async () => {
     mocks.generateResponse.mockResolvedValueOnce({
       text: 'Ara~, Ikuyo? (\u00b4\u30fb\u03c9\u30fb`) \u266a ... through `gonkarouter.io` with free tokens.',
       tone: 'playful',
@@ -341,7 +340,9 @@ describe('message handler metrics', () => {
 
     await createMessageHandler({ user: { id: 'bot-1' } } as never, createRateLimiter() as never)(message as never)
 
-    expect(mocks.splitResponse.mock.calls[0][0].match(/(?<!\\)`/g)).toBeNull()
+    expect(mocks.splitResponse.mock.calls[0][0]).toBe(
+      'Ara~, Ikuyo? (\u00b4\u30fb\u03c9\u30fb\uff40) \u266a ... through `gonkarouter.io` with free tokens.'
+    )
   })
 
   it('renders a tool footer on the initial mention reply only', async () => {

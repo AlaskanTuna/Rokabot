@@ -17,7 +17,6 @@ vi.mock('../emojiReactor.js', () => ({ shouldReact: () => null }))
 vi.mock('../errorHandler.js', () => ({ isIgnorableDiscordError: () => false }))
 vi.mock('../messageBuilder.js', () => ({ buildRokaMessage: (content: string) => content }))
 vi.mock('../responses.js', () => ({
-  escapeBackticks: (text: string) => text.replace(/\\?`/g, '\\`'),
   getRandomBusy: () => 'busy',
   getRandomDecline: () => 'decline',
   getRandomError: () => 'error',
