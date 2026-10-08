@@ -53,4 +53,38 @@ describe('parseSocialPostUrl', () => {
       extractorUrl: 'https://www.youtube.com/watch?v=abc_123'
     })
   })
+
+  it.each([
+    ['plain seconds', 'https://youtu.be/abc_123?t=754', 754],
+    ['seconds with s', 'https://youtu.be/abc_123?t=754s', 754],
+    ['minutes and seconds', 'https://www.youtube.com/watch?v=abc_123&t=12m34s', 754],
+    ['hours, minutes and seconds', 'https://www.youtube.com/watch?v=abc_123&t=1h2m3s', 3723],
+    ['start parameter', 'https://www.youtube.com/watch?v=abc_123&start=754', 754],
+    ['fragment', 'https://youtu.be/abc_123#t=754', 754],
+    ['shorts link', 'https://youtube.com/shorts/abc_123?t=30', 30]
+  ])('reads the start time from a YouTube link with %s', (_name, url, startSec) => {
+    expect(parseSocialPostUrl(url)).toMatchObject({ startSec })
+  })
+
+  it.each([
+    'https://youtu.be/abc_123',
+    'https://youtu.be/abc_123?t=',
+    'https://youtu.be/abc_123?t=garbage',
+    'https://youtu.be/abc_123?t=12.5',
+    'https://youtu.be/abc_123?t=1m2s3',
+    'https://youtu.be/abc_123#t=garbage',
+    'https://x.com/roka/status/1234567890123456789?t=754'
+  ])('leaves startSec undefined for %s', (url) => {
+    expect(parseSocialPostUrl(url)?.startSec).toBeUndefined()
+  })
+
+  it('keeps the start time out of the lookup key and canonical URL', () => {
+    const plain = parseSocialPostUrl('https://youtu.be/abc_123')
+    const timed = parseSocialPostUrl('https://youtu.be/abc_123?t=754')
+    expect(timed).toMatchObject({
+      lookupKey: plain?.lookupKey,
+      canonicalUrl: plain?.canonicalUrl,
+      extractorUrl: plain?.extractorUrl
+    })
+  })
 })
