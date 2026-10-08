@@ -307,6 +307,49 @@ describe('watchMedia', () => {
   })
 })
 
+describe('streamed Files uploads', () => {
+  const filesSource: WatchSource = {
+    transport: 'files',
+    kind: 'video',
+    fileUri: 'https://generativelanguage.googleapis.com/v1beta/files/abc',
+    mimeType: 'video/mp4',
+    label: 'video'
+  }
+
+  it('sends a whole Files video as fileData at its frame rate', async () => {
+    mocks.generateContent.mockResolvedValueOnce(response())
+
+    await watchMedia({ source: filesSource, plan: planWholeVideo(), focus: '' })
+    const parts = mocks.generateContent.mock.calls[0][0].contents[0].parts
+
+    expect(parts[0]).toEqual({
+      fileData: { fileUri: filesSource.fileUri, mimeType: 'video/mp4' },
+      videoMetadata: { fps: 1 }
+    })
+  })
+
+  it('sends each skim clip of a Files video with its offsets', async () => {
+    mocks.generateContent.mockResolvedValueOnce(response())
+
+    await watchMedia({ source: filesSource, plan: planSkim(), focus: '' })
+    const parts = mocks.generateContent.mock.calls[0][0].contents[0].parts
+
+    expect(parts[1]).toEqual({
+      fileData: { fileUri: filesSource.fileUri, mimeType: 'video/mp4' },
+      videoMetadata: { startOffset: '0s', endOffset: '10s' }
+    })
+    expect(parts[3].videoMetadata).toEqual({ startOffset: '1345s', endOffset: '1355s' })
+  })
+
+  it('carries a silent Files source onto the digest', async () => {
+    mocks.generateContent.mockResolvedValueOnce(response())
+
+    const result = await watchMedia({ source: { ...filesSource, silent: true }, plan: planWholeVideo(), focus: '' })
+
+    expect(result).toMatchObject({ status: 'ok', digest: { silent: true } })
+  })
+})
+
 describe('countUriTokens', () => {
   it('counts a URI video with the requested frame rate', async () => {
     mocks.countTokens.mockResolvedValueOnce({ totalTokens: 12_300 })
@@ -327,6 +370,17 @@ describe('countUriTokens', () => {
         }
       ]
     })
+  })
+
+  it('counts a Files audio upload as audio, without video metadata', async () => {
+    mocks.countTokens.mockResolvedValueOnce({ totalTokens: 900 })
+
+    await expect(
+      countUriTokens('https://generativelanguage.googleapis.com/v1beta/files/abc', 0.05, 'audio/mp3')
+    ).resolves.toBe(900)
+    expect(mocks.countTokens.mock.calls[0][0].contents[0].parts).toEqual([
+      { fileData: { fileUri: 'https://generativelanguage.googleapis.com/v1beta/files/abc', mimeType: 'audio/mp3' } }
+    ])
   })
 
   it('returns undefined when the count is zero or counting fails', async () => {

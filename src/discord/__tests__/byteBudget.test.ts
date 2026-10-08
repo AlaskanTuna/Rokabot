@@ -63,7 +63,7 @@ describe('reservationFor', () => {
   })
 
   it('clamps an oversized audio clip to the audio ceiling, not the document one', () => {
-    expect(reservationFor([audio(MAX_DOCUMENT_SIZE_BYTES)])).toBe(MAX_AUDIO_SIZE_BYTES)
+    expect(reservationFor([audio(config.media.maxStreamedUploadBytes + 1)])).toBe(MAX_AUDIO_SIZE_BYTES)
   })
 
   // Honest limitation: MAX_VIDEO_SIZE_BYTES and MAX_DOCUMENT_SIZE_BYTES are both 10 MB today, so removing
@@ -78,6 +78,35 @@ describe('reservationFor', () => {
 
   it('reserves the video ceiling when a video states no size', () => {
     expect(reservationFor([video()])).toBe(MAX_VIDEO_SIZE_BYTES)
+  })
+
+  // A video over its ceiling is streamed to Files in 4 MiB chunks, so only the chunk in flight is held.
+  it('reserves the 4 MiB streaming chunk for a video streamed through Files', () => {
+    expect(reservationFor([video(20 * 1024 * 1024)])).toBe(4 * 1024 * 1024)
+  })
+
+  it('reserves the 4 MiB streaming chunk for an audio clip streamed through Files', () => {
+    expect(reservationFor([audio(20 * 1024 * 1024)])).toBe(4 * 1024 * 1024)
+  })
+
+  it('keeps the video ceiling for a video above the streaming limit', () => {
+    expect(reservationFor([video(config.media.maxStreamedUploadBytes + 1)])).toBe(MAX_VIDEO_SIZE_BYTES)
+  })
+
+  it('keeps the document ceiling for a document past its ceiling, since documents are never streamed', () => {
+    expect(reservationFor([document(20 * 1024 * 1024)])).toBe(MAX_DOCUMENT_SIZE_BYTES)
+  })
+
+  // With watching off a video is sent directly and downloads as a 10 MB prefix, so it must still reserve that.
+  it('keeps the video ceiling when watching is switched off', () => {
+    const media: { watch: boolean } = config.media
+    const watch = media.watch
+    media.watch = false
+    try {
+      expect(reservationFor([video(20 * 1024 * 1024)])).toBe(MAX_VIDEO_SIZE_BYTES)
+    } finally {
+      media.watch = watch
+    }
   })
 })
 

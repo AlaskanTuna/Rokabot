@@ -14,6 +14,7 @@ import type { CoveragePlan, MediaClip, MediaDigest, MediaKind } from './types.js
 export type WatchSource =
   | { transport: 'inline'; kind: MediaKind; mimeType: string; data: string; label: string; silent?: boolean }
   | { transport: 'uri'; kind: 'video'; fileUri: string; mimeType: 'video/mp4'; label: string }
+  | { transport: 'files'; kind: MediaKind; fileUri: string; mimeType: string; label: string; silent?: true }
 
 export type WatchResult =
   | { status: 'ok'; digest: MediaDigest; promptTokens: number; calls: number; watchMs: number }
@@ -203,7 +204,7 @@ export async function watchMedia(input: {
         mode: input.opening ? 'opening' : input.plan.mode,
         fps: input.plan.mode === 'whole' ? input.plan.fps : null,
         ...(input.plan.mode === 'focus' ? { focusSec: input.plan.centerSec } : {}),
-        ...(input.source.transport === 'inline' && input.source.silent ? { silent: true } : {}),
+        ...(input.source.transport !== 'uri' && input.source.silent ? { silent: true } : {}),
         bins: input.plan.bins,
         observations: validated.observations,
         incomplete: validated.incomplete
@@ -217,8 +218,15 @@ export async function watchMedia(input: {
   return { status: 'failed', reason: 'error', calls, watchMs: elapsedSince(startedAt) }
 }
 
-/** Token count for a URI video at a given fps, or undefined when the count fails or is empty. */
-export async function countUriTokens(fileUri: string, fps: number): Promise<number | undefined> {
+/**
+ * Token count for a URI or Files file at a given fps, or undefined when the count fails or is empty. Video
+ * metadata only applies to video, so audio is counted without it.
+ */
+export async function countUriTokens(
+  fileUri: string,
+  fps: number,
+  mimeType = 'video/mp4'
+): Promise<number | undefined> {
   try {
     const response = await getClient().models.countTokens({
       model: config.gemini.model,
@@ -226,7 +234,12 @@ export async function countUriTokens(fileUri: string, fps: number): Promise<numb
       contents: [
         {
           role: 'user',
-          parts: [{ fileData: { fileUri, mimeType: 'video/mp4' }, videoMetadata: { fps } }]
+          parts: [
+            {
+              fileData: { fileUri, mimeType },
+              ...(mimeType.startsWith('video/') ? { videoMetadata: { fps } } : {})
+            }
+          ]
         }
       ]
     })

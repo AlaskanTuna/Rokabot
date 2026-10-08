@@ -15,6 +15,11 @@ export function postContentKey(platform: string, postId: string, mediaIndex: num
   return `${requireId('platform', platform)}:${requireId('post id', postId)}:${mediaIndex}`
 }
 
+// The query string on a Discord attachment URL is a signed grant that changes on each fetch; the path does not.
+export function discordAttachmentContentKey(url: string): string {
+  return `discord:${new URL(url).pathname}`
+}
+
 export function bytesContentKey(bytes: Buffer): string {
   return `sha256:${createHash('sha256').update(bytes).digest('hex')}`
 }

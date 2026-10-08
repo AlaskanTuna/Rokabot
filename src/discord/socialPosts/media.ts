@@ -1,4 +1,3 @@
-import { MAX_VIDEO_SIZE_BYTES } from '../../agent/attachmentLimits.js'
 import type { ImageAttachment } from '../../agent/attachments.js'
 import { postContentKey, youtubeContentKey } from '../../agent/media/contentKey.js'
 import { config } from '../../config.js'
@@ -16,7 +15,7 @@ async function playableVideo(post: SocialPost): Promise<ImageAttachment | null> 
   // extractor headers are sent: a host that needs them fails here and the post falls back to its picture.
   const resolved = await resolveMediaUrl(post.video.url).catch(() => null)
   if (!resolved?.contentType.startsWith('video/')) return null
-  if ((resolved.size ?? post.video.bytes ?? 0) > MAX_VIDEO_SIZE_BYTES) return null
+  if ((resolved.size ?? post.video.bytes ?? 0) > config.media.maxStreamedUploadBytes) return null
 
   return {
     ...resolved,

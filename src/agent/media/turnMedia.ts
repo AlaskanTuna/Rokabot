@@ -8,11 +8,13 @@ import {
 } from '../../storage/mediaDigestStore.js'
 import { logger } from '../../utils/logger.js'
 import { measureAttachmentTokens } from '../attachmentCost.js'
+import { geminiMimeType, isStreamedUpload } from '../attachmentLimits.js'
 import { type ImageAttachment, downloadAttachment, prepareAttachments } from '../attachments.js'
 import { embedEpisodeText } from '../memory/episodeEmbeddings.js'
-import { bytesContentKey } from './contentKey.js'
+import { bytesContentKey, discordAttachmentContentKey } from './contentKey.js'
 import { formatClock, renderCompactDigest, renderDigestBlock } from './digest.js'
 import { durationFromTokens, mp4DurationSec } from './duration.js'
+import { type UploadedFile, deleteFile, streamToFiles } from './filesUpload.js'
 import { planCoverage, planFocus } from './plan.js'
 import type { CoveragePlan, MediaDigest, MediaKind } from './types.js'
 import { type WatchSource, countUriTokens, watchMedia } from './watch.js'
@@ -65,7 +67,7 @@ function notice(label: string, outcome: string): Part {
 }
 
 type Prepared =
-  | { status: 'ready'; source: WatchSource; plan: CoveragePlan; opening: boolean; bytes?: Buffer }
+  | { status: 'ready'; source: WatchSource; plan: CoveragePlan; opening: boolean; bytes?: Buffer; file?: UploadedFile }
   | { status: 'dropped' }
 
 /** A server turn whose watched media is remembered. Absent for DMs, group DMs and `/ask`. */
@@ -213,6 +215,51 @@ async function prepareInline(attachment: ImageAttachment, kind: MediaKind, label
   }
 }
 
+async function prepareFiles(
+  attachment: ImageAttachment & { size: number },
+  kind: MediaKind,
+  label: string
+): Promise<Prepared> {
+  const file = await streamToFiles({
+    sourceUrl: attachment.url,
+    mimeType: geminiMimeType(attachment.contentType),
+    size: attachment.size,
+    deadlineMs: config.media.watchTimeoutMs
+  })
+  if (!file) return { status: 'dropped' }
+
+  let durationSec = attachment.durationSec ?? file.durationSec
+  if (durationSec === null) {
+    const tokens = await countUriTokens(file.uri, DURATION_COUNT_FPS, file.mimeType)
+    durationSec =
+      tokens === undefined || tokens < MIN_URI_COUNT_TOKENS
+        ? null
+        : durationFromTokens({ tokens, kind, fps: DURATION_COUNT_FPS })
+  }
+
+  return {
+    status: 'ready',
+    source: {
+      transport: 'files',
+      kind,
+      fileUri: file.uri,
+      mimeType: file.mimeType,
+      label,
+      ...(attachment.silent ? { silent: true } : {})
+    },
+    plan: planCoverage({
+      kind,
+      durationSec,
+      budgetTokens: config.gemini.maxAttachmentTokens,
+      canSkim: kind === 'video',
+      skimClips: config.media.skimClips,
+      skimClipSeconds: config.media.skimClipSeconds
+    }),
+    opening: false,
+    file
+  }
+}
+
 async function watchOne(
   attachment: ImageAttachment,
   kind: MediaKind,
@@ -228,6 +275,10 @@ async function watchOne(
   const label = labelFor(attachment, kind)
   const scope = input.memoryScope ?? null
   let contentKey = scope ? attachment.contentKey : undefined
+  // A streamed upload has no bytes to hash until it is uploaded, so its Discord path stands in as the key.
+  if (scope && !contentKey && isStreamedUpload(attachment, config.media.maxStreamedUploadBytes)) {
+    contentKey = discordAttachmentContentKey(attachment.url)
+  }
   const reuse = (hit: { id: number; digest: MediaDigest }) => {
     present(result, hit.digest)
     recordShare(scope!, attachment, hit.id)
@@ -241,75 +292,83 @@ async function watchOne(
     return
   }
   const prepared =
-    attachment.transport === 'uri' ? await prepareUri(attachment, label) : await prepareInline(attachment, kind, label)
+    attachment.transport === 'uri'
+      ? await prepareUri(attachment, label)
+      : isStreamedUpload(attachment, config.media.maxStreamedUploadBytes)
+        ? await prepareFiles(attachment, kind, label)
+        : await prepareInline(attachment, kind, label)
 
   if (prepared.status === 'dropped') {
     result.droppedAttachments += 1
     return
   }
-  const { source, plan, opening } = prepared
-  if (scope && !contentKey && prepared.bytes) {
-    contentKey = bytesContentKey(prepared.bytes)
-    const bytesHit = remembered(scope, contentKey)
-    if (bytesHit) return reuse(bytesHit)
-  }
-  if (opening) result.truncatedAttachments += 1
+  try {
+    const { source, plan, opening } = prepared
+    if (scope && !contentKey && prepared.bytes) {
+      contentKey = bytesContentKey(prepared.bytes)
+      const bytesHit = remembered(scope, contentKey)
+      if (bytesHit) return reuse(bytesHit)
+    }
+    if (opening) result.truncatedAttachments += 1
 
-  if (plan.mode === 'decline') {
-    result.mediaTextParts.push(
-      notice(
-        label,
-        plan.reason === 'too_long' && plan.durationSec !== null
-          ? `at about ${formatClock(plan.durationSec)} it is too long to watch in one go`
-          : "it couldn't be opened"
+    if (plan.mode === 'decline') {
+      result.mediaTextParts.push(
+        notice(
+          label,
+          plan.reason === 'too_long' && plan.durationSec !== null
+            ? `at about ${formatClock(plan.durationSec)} it is too long to watch in one go`
+            : "it couldn't be opened"
+        )
       )
-    )
+      logger.info(
+        { channelId: input.channelId, kind, transport: source.transport, mode: 'decline', reason: plan.reason },
+        'Watched media'
+      )
+      return
+    }
+
+    const watchStartedAt = Date.now()
+    const watched = await watchMedia({
+      source,
+      plan,
+      focus: input.focus,
+      // A retry is a second full watch; only worth it when the first failed fast.
+      mayRetry: () => Date.now() - watchStartedAt < config.media.watchTimeoutMs / 2 && input.mayRetry(),
+      opening
+    })
+    result.watcherCalls += watched.calls
+
+    if (watched.status === 'ok') {
+      present(result, watched.digest)
+      result.mediaTokens += watched.promptTokens
+      if (scope && contentKey) remember(scope, attachment, contentKey, watched.digest)
+    } else {
+      result.mediaTextParts.push(
+        notice(label, watched.reason === 'unavailable' ? "it couldn't be opened" : "it couldn't be watched right now")
+      )
+      // Billed even though unusable; a timed-out request may have been processed in full.
+      result.mediaTokens += watched.promptTokens ?? (watched.reason === 'timeout' ? plan.estimate : 0)
+    }
+
     logger.info(
-      { channelId: input.channelId, kind, transport: source.transport, mode: 'decline', reason: plan.reason },
+      {
+        channelId: input.channelId,
+        kind,
+        transport: source.transport,
+        mode: opening ? 'opening' : plan.mode,
+        durationSec: Math.round(plan.durationSec),
+        fps: plan.mode === 'whole' ? plan.fps : null,
+        estimate: plan.estimate,
+        promptTokens: watched.status === 'ok' ? watched.promptTokens : undefined,
+        watchMs: watched.watchMs,
+        calls: watched.calls,
+        outcome: watched.status === 'ok' ? 'ok' : watched.reason
+      },
       'Watched media'
     )
-    return
+  } finally {
+    if (prepared.file) void deleteFile(prepared.file.name)
   }
-
-  const watchStartedAt = Date.now()
-  const watched = await watchMedia({
-    source,
-    plan,
-    focus: input.focus,
-    // A retry is a second full watch; only worth it when the first failed fast.
-    mayRetry: () => Date.now() - watchStartedAt < config.media.watchTimeoutMs / 2 && input.mayRetry(),
-    opening
-  })
-  result.watcherCalls += watched.calls
-
-  if (watched.status === 'ok') {
-    present(result, watched.digest)
-    result.mediaTokens += watched.promptTokens
-    if (scope && contentKey) remember(scope, attachment, contentKey, watched.digest)
-  } else {
-    result.mediaTextParts.push(
-      notice(label, watched.reason === 'unavailable' ? "it couldn't be opened" : "it couldn't be watched right now")
-    )
-    // Billed even though unusable; a timed-out request may have been processed in full.
-    result.mediaTokens += watched.promptTokens ?? (watched.reason === 'timeout' ? plan.estimate : 0)
-  }
-
-  logger.info(
-    {
-      channelId: input.channelId,
-      kind,
-      transport: source.transport,
-      mode: opening ? 'opening' : plan.mode,
-      durationSec: Math.round(plan.durationSec),
-      fps: plan.mode === 'whole' ? plan.fps : null,
-      estimate: plan.estimate,
-      promptTokens: watched.status === 'ok' ? watched.promptTokens : undefined,
-      watchMs: watched.watchMs,
-      calls: watched.calls,
-      outcome: watched.status === 'ok' ? 'ok' : watched.reason
-    },
-    'Watched media'
-  )
 }
 
 /** Turn a turn's attachments into model parts, watching audio and video into digests first. */

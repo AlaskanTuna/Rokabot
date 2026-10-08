@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { ImageAttachment } from '../../attachments.js'
 import type { MediaDigest } from '../types.js'
 
 const mocks = vi.hoisted(() => ({
@@ -12,7 +13,9 @@ const mocks = vi.hoisted(() => ({
   saveMediaDigest: vi.fn(),
   recordMediaOccurrence: vi.fn(),
   setMediaDigestEmbedding: vi.fn(),
-  embedEpisodeText: vi.fn()
+  embedEpisodeText: vi.fn(),
+  streamToFiles: vi.fn(),
+  deleteFile: vi.fn()
 }))
 
 vi.mock('../../../config.js', () => ({
@@ -20,7 +23,13 @@ vi.mock('../../../config.js', () => ({
     logging: { level: 'silent' },
     gemini: { maxAttachmentTokens: 50_000 },
     get media() {
-      return { watch: mocks.watch, skimClips: 8, skimClipSeconds: 10, watchTimeoutMs: 20_000 }
+      return {
+        watch: mocks.watch,
+        skimClips: 8,
+        skimClipSeconds: 10,
+        watchTimeoutMs: 20_000,
+        maxStreamedUploadBytes: 52_428_800
+      }
     }
   }
 }))
@@ -33,6 +42,8 @@ vi.mock('../../attachments.js', () => ({
 vi.mock('../../attachmentCost.js', () => ({ measureAttachmentTokens: mocks.measureAttachmentTokens }))
 
 vi.mock('../watch.js', () => ({ watchMedia: mocks.watchMedia, countUriTokens: mocks.countUriTokens }))
+
+vi.mock('../filesUpload.js', () => ({ streamToFiles: mocks.streamToFiles, deleteFile: mocks.deleteFile }))
 
 vi.mock('../../../storage/mediaDigestStore.js', () => ({
   findMediaDigest: mocks.findMediaDigest,
@@ -112,7 +123,9 @@ beforeEach(() => {
     mocks.downloadAttachment,
     mocks.measureAttachmentTokens,
     mocks.watchMedia,
-    mocks.countUriTokens
+    mocks.countUriTokens,
+    mocks.streamToFiles,
+    mocks.deleteFile
   ]) {
     mock.mockReset()
   }
@@ -635,5 +648,191 @@ describe('remembering watched media in a server', () => {
     const result = await prepareTurnMedia({ ...input([youtube]), memoryScope: scope })
 
     expect(result.mediaTextParts[0].text).toContain('A man at a zoo talks about elephants.')
+  })
+})
+
+const MB = 1024 * 1024
+const bigUpload = (overrides: Partial<ImageAttachment> = {}): ImageAttachment => ({
+  url: 'https://cdn.discordapp.com/attachments/1/2/v.mp4?ex=65f&hm=abc',
+  contentType: 'video/mp4',
+  size: 20 * MB,
+  ...overrides
+})
+const uploaded = (
+  overrides: Partial<{ name: string; uri: string; mimeType: string; durationSec: number | null }> = {}
+) => ({
+  name: 'files/abc',
+  uri: 'https://generativelanguage.googleapis.com/v1beta/files/abc',
+  mimeType: 'video/mp4',
+  durationSec: 120,
+  ...overrides
+})
+
+describe('uploads too big to buffer', () => {
+  it('streams a 20 MB MP4 into Files and watches it whole', async () => {
+    mocks.streamToFiles.mockResolvedValue(uploaded())
+    mocks.watchMedia.mockResolvedValue(okWatch(digestFor()))
+
+    const result = await prepareTurnMedia(input([bigUpload()]))
+
+    expect(mocks.downloadAttachment).not.toHaveBeenCalled()
+    expect(mocks.streamToFiles).toHaveBeenCalledWith({
+      sourceUrl: bigUpload().url,
+      mimeType: 'video/mp4',
+      size: 20 * MB,
+      deadlineMs: 20_000
+    })
+    const call = mocks.watchMedia.mock.calls[0][0]
+    expect(call.source).toEqual({
+      transport: 'files',
+      kind: 'video',
+      fileUri: uploaded().uri,
+      mimeType: 'video/mp4',
+      label: 'video'
+    })
+    expect(call.plan).toMatchObject({ mode: 'whole', durationSec: 120, fps: 1 })
+    expect(call.opening).toBe(false)
+    expect(result.truncatedAttachments).toBe(0)
+    expect(result.digests).toHaveLength(1)
+    expect(mocks.deleteFile).toHaveBeenCalledWith('files/abc')
+  })
+
+  it('counts the length of a video Files cannot state, from its own URI', async () => {
+    mocks.streamToFiles.mockResolvedValue(uploaded({ durationSec: null }))
+    mocks.countUriTokens.mockResolvedValue(Math.round(120 * 35.3))
+    mocks.watchMedia.mockResolvedValue(okWatch(digestFor()))
+
+    await prepareTurnMedia(input([bigUpload()]))
+
+    expect(mocks.countUriTokens).toHaveBeenCalledWith(uploaded().uri, 0.05, 'video/mp4')
+    expect(mocks.watchMedia.mock.calls[0][0].plan).toMatchObject({ mode: 'whole' })
+  })
+
+  it('counts the length of an audio upload as audio, from its own URI', async () => {
+    mocks.streamToFiles.mockResolvedValue(uploaded({ mimeType: 'audio/mp3', durationSec: null }))
+    mocks.countUriTokens.mockResolvedValue(3200)
+    mocks.watchMedia.mockResolvedValue(okWatch(digestFor({ kind: 'audio', fps: null })))
+
+    await prepareTurnMedia(input([bigUpload({ contentType: 'audio/mpeg' })]))
+
+    expect(mocks.countUriTokens).toHaveBeenCalledWith(uploaded().uri, 0.05, 'audio/mp3')
+    expect(mocks.watchMedia.mock.calls[0][0].plan).toMatchObject({ mode: 'whole', kind: 'audio', durationSec: 100 })
+  })
+
+  it('counts an upload that fails to stream as dropped, without watching it', async () => {
+    mocks.streamToFiles.mockResolvedValue(null)
+
+    const result = await prepareTurnMedia(input([bigUpload()]))
+
+    expect(result.droppedAttachments).toBe(1)
+    expect(mocks.watchMedia).not.toHaveBeenCalled()
+    expect(mocks.deleteFile).not.toHaveBeenCalled()
+  })
+
+  it('deletes the upload when its plan declines it', async () => {
+    // Audio cannot skim, so a clip too long to watch whole is declined rather than cut down.
+    mocks.streamToFiles.mockResolvedValue(uploaded({ mimeType: 'audio/mp3', durationSec: 2700 }))
+
+    const result = await prepareTurnMedia(input([bigUpload({ contentType: 'audio/mpeg' })]))
+
+    expect(mocks.watchMedia).not.toHaveBeenCalled()
+    expect(result.mediaTextParts[0].text).toBe(
+      '[An audio clip was shared, but at about 45:00 it is too long to watch in one go.]'
+    )
+    expect(mocks.deleteFile).toHaveBeenCalledWith('files/abc')
+  })
+
+  it('deletes the upload when its watch fails', async () => {
+    mocks.streamToFiles.mockResolvedValue(uploaded())
+    mocks.watchMedia.mockResolvedValue({ status: 'failed', reason: 'timeout', calls: 1, watchMs: 20_000 })
+
+    const result = await prepareTurnMedia(input([bigUpload()]))
+
+    expect(result.mediaTextParts[0].text).toBe("[A video was shared, but it couldn't be watched right now.]")
+    expect(mocks.deleteFile).toHaveBeenCalledWith('files/abc')
+  })
+
+  it('deletes the upload even when its watch throws', async () => {
+    mocks.streamToFiles.mockResolvedValue(uploaded())
+    mocks.watchMedia.mockRejectedValue(new Error('socket hang up'))
+
+    await expect(prepareTurnMedia(input([bigUpload()]))).rejects.toThrow('socket hang up')
+    expect(mocks.deleteFile).toHaveBeenCalledWith('files/abc')
+  })
+
+  it('keeps an upload within the inline cap on the inline path', async () => {
+    mocks.downloadAttachment.mockResolvedValue({
+      data: 'b64',
+      mimeType: 'video/mp4',
+      tokens: 0,
+      truncated: false,
+      bytes: mp4WithDuration(19)
+    })
+    mocks.watchMedia.mockResolvedValue(okWatch(digestFor()))
+
+    await prepareTurnMedia(input([bigUpload({ size: 10 * MB })]))
+
+    expect(mocks.streamToFiles).not.toHaveBeenCalled()
+    expect(mocks.downloadAttachment).toHaveBeenCalled()
+  })
+
+  it('keeps an upload above the streaming limit on the inline opening path', async () => {
+    const header = mp4WithDuration(200)
+    mocks.downloadAttachment.mockResolvedValue({
+      data: 'b64',
+      mimeType: 'video/mp4',
+      tokens: 0,
+      truncated: true,
+      bytes: Buffer.concat([header, Buffer.alloc(10_000 - header.length)])
+    })
+    mocks.watchMedia.mockResolvedValue(okWatch(digestFor({ mode: 'opening' })))
+
+    await prepareTurnMedia(input([bigUpload({ size: 60 * MB })]))
+
+    expect(mocks.streamToFiles).not.toHaveBeenCalled()
+    expect(mocks.watchMedia.mock.calls[0][0].opening).toBe(true)
+  })
+})
+
+describe('remembering streamed uploads in a server', () => {
+  const scope = { guildId: 'guild-1', channelId: 'c1', messageId: 'trigger-1', userId: 'asker-1' }
+  const key = 'discord:/attachments/1/2/v.mp4'
+
+  beforeEach(() => {
+    mocks.embedEpisodeText.mockResolvedValue(new Array(768).fill(0.1))
+  })
+
+  it('reuses a remembered upload without uploading it again', async () => {
+    const digest = digestFor({ label: 'video' })
+    mocks.findMediaDigest.mockReturnValue({
+      id: 9,
+      guildId: 'guild-1',
+      contentKey: key,
+      kind: 'video',
+      label: 'video',
+      summary: digest.observations.summary,
+      digestJson: JSON.stringify(digest),
+      embedding: null,
+      createdAt: 1,
+      lastSharedAt: 1
+    })
+
+    const result = await prepareTurnMedia({ ...input([bigUpload()]), memoryScope: scope })
+
+    expect(mocks.findMediaDigest).toHaveBeenCalledWith('guild-1', key)
+    expect(mocks.streamToFiles).not.toHaveBeenCalled()
+    expect(mocks.watchMedia).not.toHaveBeenCalled()
+    expect(result.mediaTextParts[0].text).toContain('A man at a zoo talks about elephants.')
+  })
+
+  it('saves a streamed watch under its Discord path key', async () => {
+    mocks.findMediaDigest.mockReturnValue(null)
+    mocks.streamToFiles.mockResolvedValue(uploaded())
+    mocks.watchMedia.mockResolvedValue(okWatch(digestFor()))
+
+    await prepareTurnMedia({ ...input([bigUpload()]), memoryScope: scope })
+
+    expect(mocks.saveMediaDigest).toHaveBeenCalledWith(expect.objectContaining({ guildId: 'guild-1', contentKey: key }))
+    expect(mocks.deleteFile).toHaveBeenCalledWith('files/abc')
   })
 })
