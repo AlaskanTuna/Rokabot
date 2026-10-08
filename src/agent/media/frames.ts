@@ -15,7 +15,7 @@ export type FrameRunner = (
 ) => Promise<{ code: number | null; stdout: Buffer; timedOut: boolean }>
 
 const MAX_MEDIA_TOOL_STDOUT_BYTES = 8 * 1024 * 1024
-const PROTOCOL_WHITELIST = 'file,https,tls,tcp,crypto'
+export const PROTOCOL_WHITELIST = 'file,https,tls,tcp,crypto'
 const EMPTY = Buffer.alloc(0)
 
 export const runMediaTool: FrameRunner = (command, args, timeoutMs) =>
@@ -72,13 +72,13 @@ export function frameTimestamps(bins: MediaClip[]): number[] {
   return bins.map((bin) => (bin.startSec + bin.endSec) / 2)
 }
 
-function isAcceptedInput(input: string): boolean {
+export function isAcceptedInput(input: string): boolean {
   if (input.includes('\0')) return false
   if (/^[a-z][a-z\d+.-]*:/i.test(input)) return input.startsWith('https://') && URL.canParse(input)
   return isAbsolute(input)
 }
 
-function headerArgs(headers: FrameSource['headers']): string[] {
+export function headerArgs(headers: FrameSource['headers']): string[] {
   const entries = Object.entries(headers ?? {})
   if (entries.length === 0) return []
   const block = entries

@@ -257,7 +257,8 @@ export function parseYtDlpMetadata(payload: unknown, target: SocialPostTarget, m
       url: string(format.url),
       container: typeof format.ext === 'string' ? format.ext : null,
       protocol: typeof format.protocol === 'string' ? format.protocol : null,
-      hasVideo: videoCodec !== '' && videoCodec !== 'none',
+      // yt-dlp names audio-only formats 'none'; a format with no codec listed (Instagram's muxed MP4s) is a video.
+      hasVideo: videoCodec !== 'none',
       hasAudio: audioCodec === '' ? null : audioCodec !== 'none',
       bytes: nonNegativeFiniteNumber(format.filesize ?? format.filesize_approx),
       bitrate: finiteNumber(format.tbr),

@@ -72,6 +72,7 @@ interface YamlConfig {
     maxStreamedUploadBytes?: number
     uploadTimeoutMs?: number
     qwen?: { model?: string; frames?: number; frameHeight?: number; timeoutMs?: number }
+    transcriber?: { url?: string; timeoutMs?: number; maxSpeechSec?: number; maxAudioSec?: number }
   }
   memory?: {
     bufferSize?: number
@@ -262,6 +263,12 @@ export const config = {
       frames: yaml.media?.qwen?.frames ?? 16,
       frameHeight: yaml.media?.qwen?.frameHeight ?? 360,
       timeoutMs: yaml.media?.qwen?.timeoutMs ?? 30_000
+    },
+    transcriber: {
+      url: envString('MEDIA_TRANSCRIBER_URL') ?? yaml.media?.transcriber?.url ?? '',
+      timeoutMs: yaml.media?.transcriber?.timeoutMs ?? 45_000,
+      maxSpeechSec: yaml.media?.transcriber?.maxSpeechSec ?? 120,
+      maxAudioSec: yaml.media?.transcriber?.maxAudioSec ?? 180
     }
   },
   gemini: {
@@ -409,6 +416,9 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'media.qwen.frames', value: config.media.qwen.frames, min: 4, max: 32 },
   { path: 'media.qwen.frameHeight', value: config.media.qwen.frameHeight, min: 144, max: 720 },
   { path: 'media.qwen.timeoutMs', value: config.media.qwen.timeoutMs, min: 5000, max: 90_000 },
+  { path: 'media.transcriber.timeoutMs', value: config.media.transcriber.timeoutMs, min: 5000, max: 120_000 },
+  { path: 'media.transcriber.maxSpeechSec', value: config.media.transcriber.maxSpeechSec, min: 10, max: 600 },
+  { path: 'media.transcriber.maxAudioSec', value: config.media.transcriber.maxAudioSec, min: 30, max: 900 },
   { path: 'gemini.maxOutputTokens', value: config.gemini.maxOutputTokens, min: 1 },
   // Floor is a full turn of plain images, derived rather than restated: below it a maximal image turn could
   // be refused,

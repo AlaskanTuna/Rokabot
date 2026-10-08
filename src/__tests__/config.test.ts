@@ -67,6 +67,7 @@ describe('config module', () => {
     vi.stubEnv('MEDIA_WATCH', '')
     vi.stubEnv('MEDIA_WATCHER', '')
     vi.stubEnv('MEDIA_QWEN_MODEL', '')
+    vi.stubEnv('MEDIA_TRANSCRIBER_URL', '')
     vi.stubEnv('MODELSCOPE_API_KEY', '')
     vi.stubEnv('FALLBACK_MODEL', '')
     vi.stubEnv('TYPESAFE_API_KEY', '')
@@ -205,6 +206,12 @@ describe('config module', () => {
         frames: 16,
         frameHeight: 360,
         timeoutMs: 30_000
+      },
+      transcriber: {
+        url: '',
+        timeoutMs: 45_000,
+        maxSpeechSec: 120,
+        maxAudioSec: 180
       }
     })
 
@@ -319,6 +326,36 @@ describe('config module', () => {
     const { config } = await import('../config.js')
 
     expect(config.media.qwen.model).toBe('Qwen/Qwen3.5-122B-A10B')
+  })
+
+  it('allows MEDIA_TRANSCRIBER_URL to point the watcher at the speech sidecar', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('MEDIA_TRANSCRIBER_URL', 'http://asr:8000')
+
+    const { config } = await import('../config.js')
+
+    expect(config.media.transcriber.url).toBe('http://asr:8000')
+  })
+
+  it('throws if media.transcriber.maxSpeechSec is below its bound', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    withYamlOverride({ media: { transcriber: { maxSpeechSec: 5 } } })
+
+    await expect(() => import('../config.js')).rejects.toThrow(
+      'Config value media.transcriber.maxSpeechSec must be >= 10, got: 5'
+    )
+  })
+
+  it('throws if media.transcriber.maxSpeechSec is above its bound', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    withYamlOverride({ media: { transcriber: { maxSpeechSec: 601 } } })
+
+    await expect(() => import('../config.js')).rejects.toThrow(
+      'Config value media.transcriber.maxSpeechSec must be <= 600, got: 601'
+    )
   })
 
   it('throws if media.qwen.frames is below its bound', async () => {
@@ -903,6 +940,9 @@ describe('config module', () => {
       { path: 'media.qwen.frames', min: 4, max: 32 },
       { path: 'media.qwen.frameHeight', min: 144, max: 720 },
       { path: 'media.qwen.timeoutMs', min: 5000, max: 90_000 },
+      { path: 'media.transcriber.timeoutMs', min: 5000, max: 120_000 },
+      { path: 'media.transcriber.maxSpeechSec', min: 10, max: 600 },
+      { path: 'media.transcriber.maxAudioSec', min: 30, max: 900 },
       { path: 'fallback.timeoutMs', min: 1 },
       { path: 'fallback.stickyMs', min: 0 },
       // Written out, not derived, and deliberately unlike its sibling test above. That one asserts the

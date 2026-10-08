@@ -396,6 +396,37 @@ describe('social post parsers', () => {
     expect(post).toMatchObject({ photoCount: 0, videoCount: 1 })
   })
 
+  // yt-dlp lists a reel's muxed MP4s with no codecs at all, beside VP9 DASH streams that carry no sound.
+  it('picks an Instagram muxed MP4 with unknown codecs over a silent video-only DASH stream', () => {
+    const target = parseSocialPostUrl('https://www.instagram.com/reel/DeMQyX2BTS0/')!
+    const post = parseYtDlpMetadata(
+      {
+        title: 'Reel',
+        formats: [
+          {
+            url: 'https://scontent.cdninstagram.com/a.m4a',
+            ext: 'm4a',
+            protocol: 'https',
+            vcodec: 'none',
+            acodec: 'mp4a.40.5'
+          },
+          { url: 'https://scontent.cdninstagram.com/1.mp4', ext: 'mp4', protocol: 'https', vcodec: null, acodec: null },
+          {
+            url: 'https://scontent.cdninstagram.com/v.mp4',
+            ext: 'mp4',
+            protocol: 'https',
+            vcodec: 'vp09.00.30.08',
+            acodec: 'none'
+          }
+        ]
+      },
+      target,
+      100
+    )
+
+    expect(post.video).toMatchObject({ url: 'https://scontent.cdninstagram.com/1.mp4', hasAudio: null })
+  })
+
   it('still counts an Instagram photo post as one photo', () => {
     const target = parseSocialPostUrl('https://www.instagram.com/p/AbCd123/')!
 

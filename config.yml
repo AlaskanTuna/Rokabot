@@ -70,6 +70,11 @@ media:
     frames: 16 # Frames sampled evenly across the video, one per timeline bin
     frameHeight: 360 # Frame height in pixels; Qwen reads 360p frames as well as larger ones
     timeoutMs: 30000 # Deadline for one Qwen watch call
+  transcriber:
+    url: '' # Speech-to-text sidecar for the qwen watcher (asr/ in docker-compose); empty disables it. The Pi sets MEDIA_TRANSCRIBER_URL=http://asr:8000
+    timeoutMs: 45000 # Deadline for transcribing one video's audio
+    maxSpeechSec: 120 # Speech transcribed per video after silence and music are skipped; longer speech is sampled across the video
+    maxAudioSec: 180 # Audio sent per video; a longer video sends four windows spread across it
   watchTimeoutMs: 20000 # Deadline for one watch call; measured 2-15 s for clips up to 20 min at low frame rates
   digestMaxOutputTokens: 3200 # Output ceiling for the digest JSON; a dense 20-minute talk overran 1200 and came back cut off, and standout moments and a style line add up to ~600 more
   skimClips: 8 # Most evenly spaced clips taken from a video too long to watch whole
