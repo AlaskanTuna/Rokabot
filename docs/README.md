@@ -80,27 +80,28 @@ She can chat with a server, remember useful context without carrying it into ano
 
 ### Tool Footer
 
-When Roka uses a tool mid-conversation, her reply ends with a small footer line (e.g. `🌸 cast the fortune dice · divined today's weather • <relative timestamp>`, rendered by Discord as "2 minutes ago") noting each tool she invoked, phrased as a little shrine ritual. Up to three labels are shown (`…and more` beyond that). When she searched the web, a second small line cites the sources the answer was built on — up to three, shown as linked domains (e.g. `🔗 crunchyroll.com · polygon.com`) so the footer says what she did and the citations say where it came from. When she opened a linked social post, its label leads the footer (e.g. `🌸 peeked at the X post · searched the wider world`) and the post is the first citation; a link she couldn't open shows as `couldn't open the X post`.
+When Roka uses a tool mid-conversation, her reply ends with a small footer line (e.g. `🌸 cast the fortune dice · divined today's weather • <relative timestamp>`, rendered by Discord as "2 minutes ago") noting each tool she invoked, phrased as a little shrine ritual. Up to three labels are shown (`…and more` beyond that). When she searched the web, a second small line cites the sources the answer was built on — up to three, shown as linked domains (e.g. `🔗 crunchyroll.com · polygon.com`) so the footer says what she did and the citations say where it came from. When she opened a linked social post, its label leads the footer (e.g. `🌸 peeked at the X post · searched the wider world`) and the post is the first citation; a link she couldn't open shows as `couldn't open the X post`. When she reads a post's replies, the footer adds `heard the crowd's chatter` (or `couldn't hear the crowd` if they could not be opened).
 
 Every tool below is available implicitly in chat — Roka decides when to call it. The **Slash Command** column names the command built around that tool: `/anime` and `/remind` invoke theirs directly, and `/ask` is listed against `search_web` because looking things up is what that command is for. The rest are reached only by talking to her.
 
 <details>
 <summary><strong>Footer Labels & Tool Availability</strong></summary>
 
-| Tool                 | Footer Label                 | Slash Command | Implicit In Chat |
-| -------------------- | ---------------------------- | ------------- | ---------------- |
-| `roll_dice`          | cast the fortune dice        | —             | ✅               |
-| `flip_coin`          | tossed a shrine coin         | —             | ✅               |
-| `get_current_time`   | peeked at the temple clock   | —             | ✅               |
-| `get_weather`        | divined today's weather      | —             | ✅               |
-| `search_web`         | searched the wider world     | `/ask`        | ✅               |
-| `search_anime`       | leafed through anime scrolls | `/anime`      | ✅               |
-| `get_anime_schedule` | checked the airing almanac   | `/anime`      | ✅               |
-| `set_reminder`       | tied a reminder charm        | `/remind`     | ✅               |
-| `list_reminders`     | counted her reminder charms  | `/remind`     | ✅               |
-| `cancel_reminder`    | untied a reminder charm      | `/remind`     | ✅               |
-| `remember_user`      | pressed a memory flower      | —             | ✅               |
-| `recall_user`        | recalled a pressed memory    | —             | ✅               |
+| Tool                 | Footer Label                                        | Slash Command | Implicit In Chat |
+| -------------------- | --------------------------------------------------- | ------------- | ---------------- |
+| `roll_dice`          | cast the fortune dice                               | —             | ✅               |
+| `flip_coin`          | tossed a shrine coin                                | —             | ✅               |
+| `get_current_time`   | peeked at the temple clock                          | —             | ✅               |
+| `get_weather`        | divined today's weather                             | —             | ✅               |
+| `search_web`         | searched the wider world                            | `/ask`        | ✅               |
+| `search_anime`       | leafed through anime scrolls                        | `/anime`      | ✅               |
+| `get_anime_schedule` | checked the airing almanac                          | `/anime`      | ✅               |
+| `set_reminder`       | tied a reminder charm                               | `/remind`     | ✅               |
+| `list_reminders`     | counted her reminder charms                         | `/remind`     | ✅               |
+| `cancel_reminder`    | untied a reminder charm                             | `/remind`     | ✅               |
+| `remember_user`      | pressed a memory flower                             | —             | ✅               |
+| `recall_user`        | recalled a pressed memory                           | —             | ✅               |
+| `read_replies`       | heard the crowd's chatter / couldn't hear the crowd | —             | ✅               |
 
 Passive memory extraction runs automatically in the background through the per-message pipeline, while `remember_user` is only invoked when someone explicitly asks Roka to remember something.
 

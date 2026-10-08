@@ -4,6 +4,7 @@ vi.mock('../expressions.js', () => ({
   getExpressionUrl: () => 'https://example.test/roka.png'
 }))
 
+import type { ReplyOutcome } from '../../agent/replyOutcomes.js'
 import { MAX_TOOL_FOOTER_CHARS, TEXT_DISPLAY_BUDGET, buildRokaMessage, buildToolFooter } from '../messageBuilder.js'
 import type { SocialPost, SocialPostLookup } from '../socialPosts/types.js'
 import { type SocialPlatform, parseSocialPostUrl } from '../socialPosts/urls.js'
@@ -12,9 +13,12 @@ function payloadJson(
   text: string,
   toolsUsed?: string[],
   sources?: Array<{ url: string }>,
-  socialPost?: SocialPostLookup
+  socialPost?: SocialPostLookup,
+  replyOutcome?: ReplyOutcome
 ) {
-  return JSON.stringify(buildRokaMessage(text, 'playful', toolsUsed, sources, socialPost).components[0].toJSON())
+  return JSON.stringify(
+    buildRokaMessage(text, 'playful', toolsUsed, sources, socialPost, replyOutcome).components[0].toJSON()
+  )
 }
 
 /** Every TextDisplay in the container — Components V2 budgets their content together, not separately. */
@@ -22,9 +26,17 @@ function renderedChars(
   text: string,
   toolsUsed?: string[],
   sources?: Array<{ url: string }>,
-  socialPost?: SocialPostLookup
+  socialPost?: SocialPostLookup,
+  replyOutcome?: ReplyOutcome
 ) {
-  const container = buildRokaMessage(text, 'playful', toolsUsed, sources, socialPost).components[0].toJSON() as {
+  const container = buildRokaMessage(
+    text,
+    'playful',
+    toolsUsed,
+    sources,
+    socialPost,
+    replyOutcome
+  ).components[0].toJSON() as {
     components: Array<{ content?: string; components?: Array<{ content?: string }> }>
   }
   return container.components
@@ -88,13 +100,14 @@ const TOOL_NAMES = [
 describe('tool footer budget', () => {
   // buildToolFooter takes labels, not tool names, so the labels are read back out of a rendered footer
   // rather than restated here — a copy would drift the moment a label is reworded.
-  function labelFor(toolName: string, socialPost?: SocialPostLookup): string {
+  function labelFor(toolName: string, socialPost?: SocialPostLookup, replyOutcome?: ReplyOutcome): string {
     const container = buildRokaMessage(
       'x',
       'playful',
       toolName ? [toolName] : [],
       [],
-      socialPost
+      socialPost,
+      replyOutcome
     ).components[0].toJSON() as {
       components: Array<{ content?: string; components?: Array<{ content?: string }> }>
     }
@@ -114,6 +127,7 @@ describe('tool footer budget', () => {
   const LABELS = TOOL_NAMES.map((toolName) => labelFor(toolName))
   // A turn opens at most one linked post, and its label leads the footer ahead of the tools.
   const POST_LABELS = SOCIAL_POST_OUTCOMES.map((socialPost) => labelFor('', socialPost))
+  const REPLY_OUTCOMES: ReplyOutcome[] = ['none', 'found', 'failed']
 
   /**
    * Longest footer over every distinct ordered selection, plus a tool selection that achieves it. Distinct
@@ -122,23 +136,37 @@ describe('tool footer budget', () => {
    * derived from it too. The names are returned so the render test can exercise the same worst case rather
    * than whichever selection happens to come first in declaration order.
    */
-  function worstDistinctFooter(): { chars: number; names: string[]; socialPost?: SocialPostLookup } {
-    let worst: { chars: number; names: string[]; socialPost?: SocialPostLookup } = { chars: 0, names: [] }
+  function worstDistinctFooter(): {
+    chars: number
+    names: string[]
+    socialPost?: SocialPostLookup
+    replyOutcome?: ReplyOutcome
+  } {
+    let worst: {
+      chars: number
+      names: string[]
+      socialPost?: SocialPostLookup
+      replyOutcome?: ReplyOutcome
+    } = { chars: 0, names: [] }
     for (let post = -1; post < POST_LABELS.length; post++) {
-      const lead = post < 0 ? [] : [POST_LABELS[post]]
-      for (let i = 0; i < LABELS.length; i++) {
-        for (let j = 0; j < LABELS.length; j++) {
-          for (let k = 0; k < LABELS.length; k++) {
-            if (i === j || j === k || i === k) continue
-            const spare = TOOL_NAMES.findIndex((_, index) => index !== i && index !== j && index !== k)
-            for (const overflow of [[], [spare]]) {
-              const picked = [i, j, k, ...overflow]
-              const chars = buildToolFooter([...lead, ...picked.map((index) => LABELS[index])], EPOCH).length
-              if (chars > worst.chars) {
-                worst = {
-                  chars,
-                  names: picked.map((index) => TOOL_NAMES[index]),
-                  socialPost: post < 0 ? undefined : SOCIAL_POST_OUTCOMES[post]
+      const postLead = post < 0 ? [] : [POST_LABELS[post]]
+      for (const outcome of REPLY_OUTCOMES) {
+        const lead = [...postLead, ...(outcome === 'none' ? [] : [labelFor('', undefined, outcome)])]
+        for (let i = 0; i < LABELS.length; i++) {
+          for (let j = 0; j < LABELS.length; j++) {
+            for (let k = 0; k < LABELS.length; k++) {
+              if (i === j || j === k || i === k) continue
+              const spare = TOOL_NAMES.findIndex((_, index) => index !== i && index !== j && index !== k)
+              for (const overflow of [[], [spare]]) {
+                const picked = [i, j, k, ...overflow]
+                const chars = buildToolFooter([...lead, ...picked.map((index) => LABELS[index])], EPOCH).length
+                if (chars > worst.chars) {
+                  worst = {
+                    chars,
+                    names: picked.map((index) => TOOL_NAMES[index]),
+                    socialPost: post < 0 ? undefined : SOCIAL_POST_OUTCOMES[post],
+                    replyOutcome: outcome === 'none' ? undefined : outcome
+                  }
                 }
               }
             }
@@ -164,12 +192,12 @@ describe('tool footer budget', () => {
   it('keeps the rendered message within the budget for the worst tool selection at the ceiling', () => {
     const ceiling = TEXT_DISPLAY_BUDGET - MAX_TOOL_FOOTER_CHARS
     const sources = [{ url: 'https://www.crunchyroll.com/news/a' }, { url: 'https://vndb.org/b' }]
-    const { names: heaviest, socialPost } = worstDistinctFooter()
+    const { names: heaviest, socialPost, replyOutcome } = worstDistinctFooter()
     const selections = [[], TOOL_NAMES.slice(0, 1), TOOL_NAMES.slice(0, 2), heaviest.slice(0, 3), heaviest]
     let worst = 0
     for (const selection of selections) {
       for (let length = ceiling - 120; length <= ceiling; length++) {
-        worst = Math.max(worst, renderedChars('x'.repeat(length), selection, sources, socialPost))
+        worst = Math.max(worst, renderedChars('x'.repeat(length), selection, sources, socialPost, replyOutcome))
       }
     }
 
@@ -259,6 +287,32 @@ describe('buildRokaMessage linked posts', () => {
     expect(payloadJson('Tea is ready~', ['roll_dice'], SOURCES, { status: 'none' })).toBe(
       payloadJson('Tea is ready~', ['roll_dice'], SOURCES)
     )
+  })
+})
+
+describe('buildRokaMessage reply outcomes', () => {
+  it("shows that she heard the crowd's chatter when the replies were read", () => {
+    expect(payloadJson('So many people agree~', ['read_replies'], [], undefined, 'found')).toContain(
+      footerWithoutTimestamp(["heard the crowd's chatter"])
+    )
+  })
+
+  it("says she couldn't hear the crowd when the replies could not be opened", () => {
+    expect(payloadJson('Hmm~', ['read_replies'], [], undefined, 'failed')).toContain(
+      footerWithoutTimestamp(["couldn't hear the crowd"])
+    )
+  })
+
+  it('orders the post label, then the replies label, then tool labels', () => {
+    expect(
+      payloadJson('Hm~', ['search_web', 'read_replies'], [], foundPost('https://x.com/roka/status/123'), 'found')
+    ).toContain(
+      footerWithoutTimestamp(['peeked at the X post', "heard the crowd's chatter", 'searched the wider world'])
+    )
+  })
+
+  it('renders byte-identically when no replies were read', () => {
+    expect(payloadJson('Tea~', ['roll_dice'], [], undefined, 'none')).toBe(payloadJson('Tea~', ['roll_dice']))
   })
 })
 

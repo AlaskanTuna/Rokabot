@@ -3,7 +3,7 @@ import type { SocialPost } from './types.js'
 
 export const SOCIAL_POST_FAILURE_MARKER = '(the linked post could not be opened)'
 
-const PLATFORM_NAMES = {
+export const PLATFORM_NAMES = {
   x: 'X',
   bluesky: 'Bluesky',
   youtube: 'YouTube',
@@ -13,7 +13,7 @@ const PLATFORM_NAMES = {
   bilibili: 'Bilibili'
 } as const
 
-function quoted(value: string, maxLength: number): string {
+export function quoted(value: string, maxLength: number): string {
   return value
     .replace(/[\r\n\t]+/g, ' ')
     .replace(/\s{2,}/g, ' ')
@@ -28,12 +28,11 @@ function author(post: SocialPost): string {
   return `${PLATFORM_NAMES[post.platform]}${handle ? ` ${handle}` : ''}${name}`
 }
 
-// Only the post itself is fetched, never its replies, so the line says as much rather than leave her to pass
-// search results off as the post's comments.
 function replies(count: number | null): string {
   if (count === 0) return 'no replies'
-  if (count === null) return 'replies not visible to you'
-  return `${count} ${count === 1 ? 'reply' : 'replies'} (text not visible to you)`
+  if (count === 1) return '1 reply — read_replies can fetch it only if someone asks'
+  if (count === null) return 'replies — read_replies can fetch them only if someone asks'
+  return `${count} replies — read_replies can fetch the top ones only if someone asks`
 }
 
 export function formatSocialPostLine(post: SocialPost, maxTextChars: number): string {
@@ -50,7 +49,7 @@ export function formatSocialPostLine(post: SocialPost, maxTextChars: number): st
   if (post.videoCount > 0) media.push(`${post.videoCount} ${post.videoCount === 1 ? 'video' : 'videos'}`)
   if (media.length > 0) details.push(media.join(', '))
   if (post.externalTitle) details.push(`link card: ${quoted(post.externalTitle, 120)}`)
-  details.push(replies(post.replyCount))
+  details.push(`url: ${post.canonicalUrl}`, replies(post.replyCount))
 
   return `${SOCIAL_POST_UNTRUSTED_DATA_LABEL}\n[Linked post — ${details.join(' | ')}]`
 }

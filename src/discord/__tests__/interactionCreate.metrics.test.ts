@@ -72,6 +72,7 @@ vi.mock('../events/stats/statsCommand.js', () => ({ handleStatsCommand: mocks.ha
 vi.mock('../events/reportCommand.js', () => ({ handleReportCommand: mocks.handleReportCommand }))
 vi.mock('../events/toolCommands.js', () => ({ createToolCommandHandler: () => mocks.toolCommandHandler }))
 
+import { recordReplyOutcome } from '../../agent/replyOutcomes.js'
 import { recordSearchCitations } from '../../agent/searchCitations.js'
 import { config } from '../../config.js'
 import { RateLimiter } from '../../utils/rateLimiter.js'
@@ -376,6 +377,27 @@ describe('interaction handler metrics', () => {
 
     expect(JSON.stringify(interaction.editReply.mock.calls[0][0].components[0].toJSON())).toContain(
       "-# 🌸 couldn't open the X post"
+    )
+  })
+
+  it("shows in the /ask reply footer that she couldn't hear the crowd", async () => {
+    mocks.generateResponse.mockImplementationOnce(async () => {
+      recordReplyOutcome('failed')
+      return {
+        text: 'Hello~',
+        tone: 'playful',
+        toolsUsed: ['read_replies'],
+        metrics,
+        droppedAttachments: 0,
+        truncatedAttachments: 0
+      }
+    })
+    const interaction = askWith([], undefined, 'what do the comments say?')
+
+    await createInteractionHandler(rateLimiterStub() as never)(interaction as never)
+
+    expect(JSON.stringify(interaction.editReply.mock.calls[0][0].components[0].toJSON())).toContain(
+      "couldn't hear the crowd"
     )
   })
 

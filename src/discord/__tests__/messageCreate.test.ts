@@ -71,6 +71,7 @@ vi.mock('../responses.js', () => ({
 }))
 vi.mock('../events/gachaMention.js', () => ({ handleGachaMention: vi.fn() }))
 
+import { recordReplyOutcome } from '../../agent/replyOutcomes.js'
 import { MAX_ATTACHMENTS } from '../attachments.js'
 import { NAME_MENTION_REGEX } from '../events/messageCreate.js'
 import { createMessageHandler } from '../events/messageCreate.js'
@@ -971,6 +972,25 @@ describe("reading what the sender's own message shows", () => {
     await handle(message)
 
     expect(JSON.stringify(reply.mock.calls[0][0].components[0].toJSON())).toContain('-# 🌸 peeked at the X post')
+  })
+
+  it("shows in the reply footer that she heard the crowd's chatter", async () => {
+    mocks.generateResponse.mockImplementationOnce(async () => {
+      recordReplyOutcome('found')
+      return {
+        text: 'Hello~',
+        tone: 'playful',
+        toolsUsed: ['read_replies'],
+        metrics,
+        droppedAttachments: 0,
+        truncatedAttachments: 0
+      }
+    })
+    const { message, reply } = createMessage({ content: '<@bot-1> what do the comments say?' })
+
+    await handle(message)
+
+    expect(JSON.stringify(reply.mock.calls[0][0].components[0].toJSON())).toContain("heard the crowd's chatter")
   })
 
   it('never lets embed images exceed the shared attachment ceiling', async () => {

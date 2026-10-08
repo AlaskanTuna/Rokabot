@@ -7,6 +7,7 @@ import {
 } from '@discordjs/builders'
 import { MessageFlags, SeparatorSpacingSize } from 'discord.js'
 import type { ToneKey } from '../agent/prompts/tones.js'
+import type { ReplyOutcome } from '../agent/replyOutcomes.js'
 import { logger } from '../utils/logger.js'
 import { fitCitations } from './citations.js'
 import { getExpressionUrl } from './expressions.js'
@@ -45,6 +46,9 @@ function socialPostLabel(outcome: 'found' | 'failed', platform: SocialPlatform):
   return `${outcome === 'found' ? 'peeked at' : "couldn't open"} the ${SOCIAL_POST_KINDS[platform]}`
 }
 
+// A post's replies are the crowd gathered around it at the festival, talking about it.
+const REPLY_OUTCOME_LABELS = { found: "heard the crowd's chatter", failed: "couldn't hear the crowd" } as const
+
 const MAX_VISIBLE_TOOL_LABELS = 3
 
 /**
@@ -73,13 +77,16 @@ const longestSocialPostLabel = longestFirst(
 )[0]
 // Math.floor(Date.now() / 1000) has 10 digits until 2286, so this keeps the measurement deterministic.
 const TOOL_FOOTER_EPOCH_SAMPLE = 1_784_808_000
-// A turn opens at most one linked post and its label leads, so it displaces a tool label rather than adding one.
+const longestReplyLabel = longestFirst(Object.values(REPLY_OUTCOME_LABELS))[0]
+const footerLeads = [[], [longestSocialPostLabel], [longestReplyLabel], [longestSocialPostLabel, longestReplyLabel]]
+// A turn opens at most one linked post and records one replies outcome, and both lead the footer, so each
+// displaces a tool label rather than adding one.
 export const MAX_TOOL_FOOTER_CHARS = Math.max(
-  buildToolFooter(toolLabelsByLength.slice(0, MAX_VISIBLE_TOOL_LABELS + 1), TOOL_FOOTER_EPOCH_SAMPLE).length,
-  buildToolFooter(
-    [longestSocialPostLabel, ...toolLabelsByLength.slice(0, MAX_VISIBLE_TOOL_LABELS)],
-    TOOL_FOOTER_EPOCH_SAMPLE
-  ).length
+  ...footerLeads.map(
+    (lead) =>
+      buildToolFooter([...lead, ...toolLabelsByLength].slice(0, MAX_VISIBLE_TOOL_LABELS + 1), TOOL_FOOTER_EPOCH_SAMPLE)
+        .length
+  )
 )
 
 /** Build a Components V2 container message with tone-appropriate styling */
@@ -88,7 +95,8 @@ export function buildRokaMessage(
   tone: ToneKey,
   toolsUsed: readonly string[] = [],
   sources: ReadonlyArray<{ url: string }> = [],
-  socialPost: SocialPostLookup = { status: 'none' }
+  socialPost: SocialPostLookup = { status: 'none' },
+  replyOutcome: ReplyOutcome = 'none'
 ) {
   const style = getToneStyle(tone)
   const imageUrl = getExpressionUrl(tone) || style.imageUrl
@@ -108,6 +116,7 @@ export function buildRokaMessage(
         : []
   const toolLabels = [
     ...postLabels,
+    ...(replyOutcome === 'none' ? [] : [REPLY_OUTCOME_LABELS[replyOutcome]]),
     ...toolsUsed.flatMap((toolName) => {
       const label = TOOL_USAGE_LABELS[toolName]
       return label ? [label] : []

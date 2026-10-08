@@ -1,7 +1,9 @@
 import { config } from '../../config.js'
 import { logger } from '../../utils/logger.js'
 import { resolvesToPublicAddress } from '../attachments.js'
+import { resolveBlueskyDid } from './blueskyDid.js'
 import { parseBlueskyThread, parseFxTwitterResponse, parseYouTubeOEmbed, parseYtDlpMetadata } from './parsers.js'
+import { replyReader } from './replies/service.js'
 import type { SocialPost, SocialPostLookup } from './types.js'
 import { type SocialPlatform, type SocialPostTarget, findSocialPostTarget } from './urls.js'
 import { isYtDlpAvailable, runYtDlp } from './ytDlp.js'
@@ -207,15 +209,9 @@ export class SocialPostViewer {
     }
 
     if (target.platform === 'bluesky') {
-      let did = target.profile ?? ''
-      if (!did.startsWith('did:')) {
-        const identityUrl = new URL('https://public.api.bsky.app/xrpc/com.atproto.identity.resolveHandle')
-        identityUrl.searchParams.set('handle', did)
-        const identity = await this.fetcher(identityUrl, { signal })
-        if (!identity.ok) return failure('bluesky', `http_${identity.status}`)
-        did = String(((await identity.json()) as { did?: unknown }).did ?? '')
-      }
-      if (!/^did:[a-z]+:[a-z0-9.:-]+$/i.test(did)) return failure('bluesky', 'invalid_did')
+      const resolved = await resolveBlueskyDid(target.profile ?? '', this.fetcher, signal)
+      if ('reason' in resolved) return failure('bluesky', resolved.reason)
+      const { did } = resolved
 
       const threadUrl = new URL('https://public.api.bsky.app/xrpc/app.bsky.feed.getPostThread')
       threadUrl.searchParams.set('uri', `at://${did}/app.bsky.feed.post/${target.id}`)
@@ -310,6 +306,7 @@ export async function initializeSocialPosts(): Promise<void> {
 
   const available = await isYtDlpAvailable(config.socialPosts.ytDlpPath)
   socialPostViewer.setYtDlpAvailable(available)
+  replyReader.setYtDlpAvailable(available)
   if (!available) logger.warn({ platform: 'yt-dlp', reason: 'binary_missing' }, 'Social video extractors disabled')
 }
 

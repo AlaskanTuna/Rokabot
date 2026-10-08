@@ -4,15 +4,15 @@ import { type VideoCandidate, selectPlayableVideo } from './videoVariant.js'
 
 type JsonObject = Record<string, unknown>
 
-function object(value: unknown): JsonObject {
+export function object(value: unknown): JsonObject {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as JsonObject) : {}
 }
 
-function array(value: unknown): unknown[] {
+export function array(value: unknown): unknown[] {
   return Array.isArray(value) ? value : []
 }
 
-function string(value: unknown): string {
+export function string(value: unknown): string {
   return typeof value === 'string' ? value : ''
 }
 
@@ -31,7 +31,7 @@ function capped(value: unknown, maxTextChars: number): string {
   return compact(string(value)).slice(0, maxTextChars)
 }
 
-function nonNegativeInteger(value: unknown): number | null {
+export function nonNegativeInteger(value: unknown): number | null {
   return Number.isInteger(value) && (value as number) >= 0 ? (value as number) : null
 }
 

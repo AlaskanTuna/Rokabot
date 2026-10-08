@@ -1,6 +1,7 @@
 import type { Attachment, Client, Interaction } from 'discord.js'
 import { DiscordAPIError, MessageFlags } from 'discord.js'
 import type { ImageAttachment } from '../../agent/attachments.js'
+import { withReplyOutcomes } from '../../agent/replyOutcomes.js'
 import { generateResponse } from '../../agent/roka.js'
 import { withSearchCitations } from '../../agent/searchCitations.js'
 import { canAffordAttachments } from '../../agent/tokenBudget.js'
@@ -242,29 +243,34 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
       markBusy(channelId)
       turnEntryWorkHandedOff = true
       const [
-        {
-          text: responseText,
-          tone,
-          toolsUsed,
-          metrics,
-          droppedAttachments,
-          truncatedAttachments,
-          refusedAttachments,
-          modelCalls
-        },
-        sources
-      ] = await withSearchCitations(() =>
-        generateResponse({
-          channelId,
-          guildId,
-          userMessage,
-          displayName,
-          username: interaction.user.username,
-          userId: interaction.user.id,
-          memory: false,
-          turnEntryWork,
-          imageAttachments: imageAttachments.length > 0 ? imageAttachments : undefined
-        })
+        [
+          {
+            text: responseText,
+            tone,
+            toolsUsed,
+            metrics,
+            droppedAttachments,
+            truncatedAttachments,
+            refusedAttachments,
+            modelCalls
+          },
+          sources
+        ],
+        replyOutcome
+      ] = await withReplyOutcomes(() =>
+        withSearchCitations(() =>
+          generateResponse({
+            channelId,
+            guildId,
+            userMessage,
+            displayName,
+            username: interaction.user.username,
+            userId: interaction.user.id,
+            memory: false,
+            turnEntryWork,
+            imageAttachments: imageAttachments.length > 0 ? imageAttachments : undefined
+          })
+        )
       )
 
       // Now that the turn is done, hand back the slots it never used. Reserved at the ceiling, released
@@ -287,7 +293,7 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
       // chunk sized against the raw length overrun the TextDisplay budget it was measured for.
       const chunks = splitResponse(escapeBackticks(withNudge))
       logger.debug({ channelId, chunkCount: chunks.length }, 'Response split into chunks')
-      await interaction.editReply(buildRokaMessage(chunks[0], tone, toolsUsed, sources, socialPostResult))
+      await interaction.editReply(buildRokaMessage(chunks[0], tone, toolsUsed, sources, socialPostResult, replyOutcome))
 
       for (let i = 1; i < chunks.length; i++) {
         await interaction.followUp(buildRokaMessage(chunks[i], tone))

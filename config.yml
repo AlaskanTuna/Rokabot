@@ -58,6 +58,8 @@ socialPosts:
   maxTextChars: 1500 # Post text, description or caption kept per post
   cacheTtlMs: 900000 # How long an opened post is reused (15 min)
   maxCacheEntries: 256 # Posts kept in the reuse cache
+  maxReplies: 5 # Replies Roka reads per read_replies call, most-liked first
+  maxReplyChars: 280 # Text kept per reply
   ytDlpPath: yt-dlp # yt-dlp binary for YouTube, TikTok, Reddit, Instagram and Bilibili
 
 media:

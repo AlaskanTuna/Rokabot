@@ -58,6 +58,8 @@ interface YamlConfig {
     maxTextChars?: number
     cacheTtlMs?: number
     maxCacheEntries?: number
+    maxReplies?: number
+    maxReplyChars?: number
     ytDlpPath?: string
   }
   media?: {
@@ -212,6 +214,8 @@ export const config = {
     maxTextChars: yaml.socialPosts?.maxTextChars ?? 1500,
     cacheTtlMs: yaml.socialPosts?.cacheTtlMs ?? 900_000,
     maxCacheEntries: yaml.socialPosts?.maxCacheEntries ?? 256,
+    maxReplies: yaml.socialPosts?.maxReplies ?? 5,
+    maxReplyChars: yaml.socialPosts?.maxReplyChars ?? 280,
     ytDlpPath: yaml.socialPosts?.ytDlpPath ?? 'yt-dlp'
   },
   media: {
@@ -344,6 +348,8 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'socialPosts.maxTextChars', value: config.socialPosts.maxTextChars, min: 1, max: 10_000 },
   { path: 'socialPosts.cacheTtlMs', value: config.socialPosts.cacheTtlMs, min: 0 },
   { path: 'socialPosts.maxCacheEntries', value: config.socialPosts.maxCacheEntries, min: 1, max: 10_000 },
+  { path: 'socialPosts.maxReplies', value: config.socialPosts.maxReplies, min: 1, max: 10 },
+  { path: 'socialPosts.maxReplyChars', value: config.socialPosts.maxReplyChars, min: 40, max: 1000 },
   { path: 'media.watchTimeoutMs', value: config.media.watchTimeoutMs, min: 5000, max: 60_000 },
   { path: 'media.digestMaxOutputTokens', value: config.media.digestMaxOutputTokens, min: 400, max: 4000 },
   { path: 'media.skimClips', value: config.media.skimClips, min: 3, max: 9 },
