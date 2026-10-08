@@ -7,9 +7,14 @@ let running: Promise<{ embedded: number; failed: number }> | null = null
 
 /** Embeds active facts that have no embedding or whose sentence changed. One sweep at a time. */
 export function embedPendingFacts(input: { limit?: number } = {}): Promise<{ embedded: number; failed: number }> {
-  running ??= sweep(input.limit).finally(() => {
-    running = null
-  })
+  running ??= sweep(input.limit)
+    .catch((error: unknown) => {
+      logger.warn({ error }, 'Failed to list memory facts for embedding')
+      return { embedded: 0, failed: 0 }
+    })
+    .finally(() => {
+      running = null
+    })
   return running
 }
 

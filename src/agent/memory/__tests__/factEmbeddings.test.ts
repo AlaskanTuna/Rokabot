@@ -93,6 +93,13 @@ describe('embedPendingFacts', () => {
     expect(mocks.setClaimEmbedding).not.toHaveBeenCalled()
   })
 
+  it('resolves instead of rejecting when the facts cannot be listed', async () => {
+    mocks.listActiveClaimsForEmbedding.mockImplementation(() => {
+      throw new Error('database is locked')
+    })
+    await expect(embedPendingFacts()).resolves.toEqual({ embedded: 0, failed: 0 })
+  })
+
   it('does not start a second sweep while one is running', async () => {
     mocks.listActiveClaimsForEmbedding.mockReturnValue([
       {
