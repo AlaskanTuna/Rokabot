@@ -31,7 +31,7 @@ mutableJevConfig.referents = 'off'
 mutableJevConfig.prefetch = 'shadow'
 // These tests pin the direct path, where audio and video reach the model as they arrived. The watched path is
 // covered in roka.media.test.ts.
-;(config.media as { watch: boolean }).watch = false
+;(config.media as { watcher: string }).watcher = 'direct'
 import { recordFailureDiagnostic, recordMemoryEvent } from '../../storage/metricsStore.js'
 import { getChannelUsers, loadHistory, saveMessage } from '../../storage/sessionStore.js'
 import { getUserName } from '../../storage/userNames.js'
@@ -2437,7 +2437,7 @@ describe('attachment bytes are released after the turn', () => {
 })
 
 describe('watched media', () => {
-  const mediaConfig = config.media as { watch: boolean }
+  const mediaConfig = config.media as { watcher: string }
   const youtube = {
     url: 'https://www.youtube.com/watch?v=jNQXAC9IVRw',
     contentType: 'video/mp4',
@@ -2466,14 +2466,14 @@ describe('watched media', () => {
   }
 
   beforeEach(() => {
-    mediaConfig.watch = true
+    mediaConfig.watcher = 'gemini'
     mocks.watchMedia.mockReset()
     mocks.countUriTokens.mockReset()
     vi.mocked(saveMessage).mockClear()
   })
 
   afterEach(() => {
-    mediaConfig.watch = false
+    mediaConfig.watcher = 'direct'
     __resetTestRunTurnFactory()
   })
 

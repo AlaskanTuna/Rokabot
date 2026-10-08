@@ -334,9 +334,9 @@ describe('interaction handler metrics', () => {
     ])
   })
 
-  it('keeps the YouTube thumbnail when watching is switched off', async () => {
-    const media = config.media as { watch: boolean }
-    media.watch = false
+  it('keeps the YouTube thumbnail when the watcher is direct', async () => {
+    const media = config.media as { watcher: string }
+    media.watcher = 'direct'
     try {
       const youtube = parseSocialPostUrl('https://youtu.be/jNQXAC9IVRw')!
       const found = foundSocialPost('https://i.ytimg.com/vi/jNQXAC9IVRw/hqdefault.jpg')
@@ -356,7 +356,7 @@ describe('interaction handler metrics', () => {
 
       expect(mocks.resolveMediaUrl).toHaveBeenCalledWith('https://i.ytimg.com/vi/jNQXAC9IVRw/hqdefault.jpg')
     } finally {
-      media.watch = true
+      media.watcher = 'gemini'
     }
   })
 

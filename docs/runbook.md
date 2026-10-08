@@ -29,7 +29,7 @@ sudo docker compose -f ~/rokabot/docker-compose.yml logs -f
 sudo docker compose -f ~/rokabot/docker-compose.yml logs --tail 50
 
 # Which model watches videos: gemini (default) or qwen (ModelScope frames); the other is the backup.
-# Set MEDIA_WATCHER=qwen in ~/rokabot/.env and recreate the container to switch.
+# Set MEDIA_WATCHER=qwen in ~/rokabot/.env and recreate the container to switch (direct and off: see Kill Switch).
 docker logs rokabot-roka-1 2>&1 | grep '"msg":"Watched media"' | grep -o '"watcher":"[a-z]*"' | sort | uniq -c
 
 # Logs from before the last deploy (each deploy archives the outgoing container's logs; kept 30 days)
@@ -166,7 +166,7 @@ docker compose -f ~/rokabot/docker-compose.yml logs --tail 20 asr   # one line p
 docker inspect --format '{{.State.Health.Status}}' rokabot-asr-1    # healthy once the models have loaded (up to 2 minutes)
 ```
 
-- **Kill Switch:** set `MEDIA_WATCH=false` in the container environment and restart. Audio and video then go to the model directly as before. To stop only the transcription, set `MEDIA_TRANSCRIBER_URL=` in `~/rokabot/.env` and recreate the bot container; the Qwen watcher then sees frames only.
+- **Kill Switch:** set `MEDIA_WATCHER=direct` in `~/rokabot/.env` and recreate the bot container to send audio and video to the reply model directly, with no watcher and no backup, or `MEDIA_WATCHER=off` to neither watch nor send them (Roka says she can't watch it right now). To stop only the transcription, set `MEDIA_TRANSCRIBER_URL=` in `~/rokabot/.env` and recreate the bot container; the Qwen watcher then sees frames only.
 
 ---
 
