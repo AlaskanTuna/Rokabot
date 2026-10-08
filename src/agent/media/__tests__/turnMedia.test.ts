@@ -28,7 +28,8 @@ vi.mock('../../../config.js', () => ({
         skimClips: 8,
         skimClipSeconds: 10,
         watchTimeoutMs: 20_000,
-        maxStreamedUploadBytes: 52_428_800
+        maxStreamedUploadBytes: 52_428_800,
+        uploadTimeoutMs: 45_000
       }
     }
   }
@@ -680,7 +681,7 @@ describe('uploads too big to buffer', () => {
       sourceUrl: bigUpload().url,
       mimeType: 'video/mp4',
       size: 20 * MB,
-      deadlineMs: 20_000
+      deadlineMs: 45_000
     })
     const call = mocks.watchMedia.mock.calls[0][0]
     expect(call.source).toEqual({

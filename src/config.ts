@@ -67,6 +67,7 @@ interface YamlConfig {
     skimClips?: number
     skimClipSeconds?: number
     maxStreamedUploadBytes?: number
+    uploadTimeoutMs?: number
   }
   memory?: {
     bufferSize?: number
@@ -221,7 +222,8 @@ export const config = {
     digestMaxOutputTokens: yaml.media?.digestMaxOutputTokens ?? 1200,
     skimClips: yaml.media?.skimClips ?? 8,
     skimClipSeconds: yaml.media?.skimClipSeconds ?? 10,
-    maxStreamedUploadBytes: yaml.media?.maxStreamedUploadBytes ?? 52_428_800
+    maxStreamedUploadBytes: yaml.media?.maxStreamedUploadBytes ?? 52_428_800,
+    uploadTimeoutMs: yaml.media?.uploadTimeoutMs ?? 45_000
   },
   gemini: {
     apiKey: requiredEnv('GEMINI_API_KEY'),
@@ -356,6 +358,7 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
     min: 10_485_760,
     max: 104_857_600
   },
+  { path: 'media.uploadTimeoutMs', value: config.media.uploadTimeoutMs, min: 10_000, max: 120_000 },
   { path: 'gemini.maxOutputTokens', value: config.gemini.maxOutputTokens, min: 1 },
   // Floor is a full turn of plain images, derived rather than restated: below it a maximal image turn could
   // be refused,

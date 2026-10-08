@@ -224,7 +224,7 @@ async function prepareFiles(
     sourceUrl: attachment.url,
     mimeType: geminiMimeType(attachment.contentType),
     size: attachment.size,
-    deadlineMs: config.media.watchTimeoutMs
+    deadlineMs: config.media.uploadTimeoutMs
   })
   if (!file) return { status: 'dropped' }
 
