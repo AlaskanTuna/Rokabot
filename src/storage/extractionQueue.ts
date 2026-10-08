@@ -2,6 +2,7 @@ import { getDb } from './database.js'
 
 export const MAX_EXTRACTION_QUEUE_ATTEMPTS = 2
 const TRANSIENT_RETRY_DELAYS = [60_000, 300_000, 1_200_000, 3_600_000]
+const UNJUDGED_RETRY_DELAY_MS = 300_000
 const DAY_MS = 24 * 60 * 60 * 1000
 
 export type EpisodeLine = Readonly<{
@@ -29,9 +30,9 @@ export type EpisodeCursor = Readonly<{
 }>
 
 export type QueueWriteOptions = Readonly<{ transaction?: boolean }>
-export type ExtractionFailureClassification = 'transient' | 'permanent'
+export type ExtractionFailureClassification = 'transient' | 'permanent' | 'unjudged'
 export type ExtractionFailureResult = Readonly<{
-  status: 'pending' | 'failed'
+  status: 'pending' | 'failed' | 'dropped'
   scheduledDelayMs: number
 }>
 
@@ -42,6 +43,7 @@ export type ExtractionQueueJob = Readonly<{
   episode: ExtractionEpisode
   status: 'pending' | 'processing'
   attempts: number
+  transientRetries: number
   enqueuedAt: number
 }>
 
@@ -65,6 +67,7 @@ function mapJob(row: ExtractionQueueRow): ExtractionQueueJob {
     episode: JSON.parse(row.payload) as ExtractionEpisode,
     status: row.status as ExtractionQueueJob['status'],
     attempts: row.attempts,
+    transientRetries: row.transient_retries,
     enqueuedAt: row.enqueued_at
   }
 }
@@ -156,6 +159,17 @@ export function markFailed(
       | undefined
     if (!row) return undefined
 
+    if (classification === 'unjudged') {
+      if (row.attempts > 0) {
+        getDb().prepare('DELETE FROM extraction_queue WHERE id = ?').run(id)
+        return { status: 'dropped', scheduledDelayMs: 0 }
+      }
+      getDb()
+        .prepare("UPDATE extraction_queue SET status = 'pending', attempts = 1, available_at = ? WHERE id = ?")
+        .run(Date.now() + UNJUDGED_RETRY_DELAY_MS, id)
+      return { status: 'pending', scheduledDelayMs: UNJUDGED_RETRY_DELAY_MS }
+    }
+
     if (classification === 'transient' && row.transient_retries < TRANSIENT_RETRY_DELAYS.length) {
       const scheduledDelayMs = TRANSIENT_RETRY_DELAYS[row.transient_retries]
       const availableAt = Date.now() + scheduledDelayMs
@@ -168,7 +182,7 @@ export function markFailed(
     }
 
     const attempts = row.attempts + 1
-    const status: ExtractionFailureResult['status'] = attempts >= MAX_EXTRACTION_QUEUE_ATTEMPTS ? 'failed' : 'pending'
+    const status = attempts >= MAX_EXTRACTION_QUEUE_ATTEMPTS ? 'failed' : 'pending'
     getDb()
       .prepare('UPDATE extraction_queue SET attempts = ?, status = ?, available_at = 0 WHERE id = ?')
       .run(attempts, status, id)

@@ -1,4 +1,12 @@
-export type ExtractionErrorClassification = 'transient' | 'permanent'
+export type ExtractionErrorClassification = 'transient' | 'permanent' | 'unjudged'
+
+/** Jev could not judge the episode at admission, so the queue gives it one delayed retry before dropping it. */
+export class JevUnavailableError extends Error {
+  constructor() {
+    super('Jev could not judge the episode')
+    this.name = 'JevUnavailableError'
+  }
+}
 
 const TRANSIENT_HTTP_STATUSES = new Set([429, 500, 502, 503, 504])
 const TRANSIENT_NETWORK_CODES = new Set([
@@ -26,6 +34,7 @@ export function classifyExtractionError(
   error: unknown,
   options: { shuttingDown?: boolean } = {}
 ): ExtractionErrorClassification {
+  if (error instanceof JevUnavailableError) return 'unjudged'
   const causes: unknown[] = []
   const seen = new Set<unknown>()
   let current = error

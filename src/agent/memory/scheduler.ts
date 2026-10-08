@@ -71,7 +71,9 @@ function runJob(job: NonNullable<ReturnType<typeof claimNextForGuild>>): void {
           channelId: job.channelId,
           jobId: job.id,
           classification,
-          scheduledDelayMs: failure?.scheduledDelayMs ?? 0
+          queueStatus: failure?.status,
+          scheduledDelayMs: failure?.scheduledDelayMs ?? 0,
+          error
         },
         'Memory episode pipeline failed'
       )

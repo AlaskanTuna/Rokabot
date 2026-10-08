@@ -69,9 +69,19 @@ const mocks = vi.hoisted(() => {
       jobs.splice(index, 1)
       return true
     }),
-    markFailed: vi.fn((id: number, classification: 'transient' | 'permanent') => {
+    markFailed: vi.fn((id: number, classification: 'transient' | 'permanent' | 'unjudged') => {
       const job = jobs.find((candidate) => candidate.id === id && candidate.status === 'processing')
       if (!job) return undefined
+      if (classification === 'unjudged') {
+        if (job.attempts > 0) {
+          jobs.splice(jobs.indexOf(job), 1)
+          return { status: 'dropped', scheduledDelayMs: 0 }
+        }
+        job.attempts = 1
+        job.availableAt = Date.now() + 300_000
+        job.status = 'pending'
+        return { status: job.status, scheduledDelayMs: 300_000 }
+      }
       const delays = [60_000, 300_000, 1_200_000, 3_600_000]
       if (classification === 'transient' && job.transientRetries < delays.length) {
         const scheduledDelayMs = delays[job.transientRetries++]
@@ -102,6 +112,7 @@ vi.mock('../episodePersistence.js', () => ({ persistEpisodeResult: mocks.persist
 vi.mock('../factEmbeddings.js', () => ({ embedPendingFacts: mocks.embedPendingFacts }))
 vi.mock('../../../utils/logger.js', () => ({ logger: mocks.logger }))
 
+import { JevUnavailableError } from '../extractionErrors.js'
 import { resetForTest, startExtractionScheduler, stopExtractionScheduler } from '../scheduler.js'
 
 function episode(content: string): ExtractionEpisode {
@@ -225,7 +236,7 @@ describe('episode extraction scheduler', () => {
       expect.objectContaining({ classification: 'transient', scheduledDelayMs: 60_000 }),
       'Memory episode pipeline failed'
     )
-    expect(mocks.logger.warn.mock.calls[0]?.[0]).not.toHaveProperty('error')
+    expect(mocks.logger.warn.mock.calls[0]?.[0]).toHaveProperty('error')
     expect(mocks.runEpisodePipeline).toHaveBeenCalledOnce()
 
     await vi.advanceTimersByTimeAsync(59_999)
@@ -233,6 +244,24 @@ describe('episode extraction scheduler', () => {
     await vi.advanceTimersByTimeAsync(1)
     await drain()
     expect(mocks.runEpisodePipeline).toHaveBeenCalledTimes(2)
+  })
+
+  it('gives an episode Jev could not judge one delayed retry, then drops it', async () => {
+    mocks.runEpisodePipeline
+      .mockRejectedValueOnce(new JevUnavailableError())
+      .mockRejectedValueOnce(new JevUnavailableError())
+    enqueue('A', 'unjudged')
+
+    startExtractionScheduler()
+    await vi.advanceTimersByTimeAsync(0)
+    for (let settle = 0; settle < 10; settle++) await Promise.resolve()
+    expect(mocks.markFailed).toHaveBeenCalledWith(1, 'unjudged')
+    expect(mocks.runEpisodePipeline).toHaveBeenCalledOnce()
+
+    await vi.advanceTimersByTimeAsync(300_000)
+    await drain()
+    expect(mocks.runEpisodePipeline).toHaveBeenCalledTimes(2)
+    expect(mocks.jobs).toHaveLength(0)
   })
 
   it('wakes for a delayed job when it becomes available', async () => {

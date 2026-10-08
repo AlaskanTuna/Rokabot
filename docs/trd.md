@@ -289,7 +289,8 @@ current time only when the episode has no message timestamp.
 The per-guild round-robin scheduler runs at most one job per guild at a time. Transient HTTP, network, timeout, and
 non-shutdown abort errors retry after 1, 5, 20, and 60 minutes without using the ordinary attempt count; the next
 transient failure then counts as an ordinary attempt. Other failures requeue immediately once, and the second ordinary
-failure leaves the job `failed` in `extraction_queue`. Delayed jobs keep their FIFO order and wake the scheduler at their
+failure leaves the job `failed` in `extraction_queue`. When Jev can't judge an episode at admission
+(`jev_unavailable`), the job gets one retry after 5 minutes and is dropped if Jev still can't judge it. Delayed jobs keep their FIFO order and wake the scheduler at their
 next availability time. Failed payloads older than `memory.failedExtractionRetentionDays` (7 days by default, measured
 from enqueue) are pruned at startup and daily. There is no queue-size setting, Gemini daily budget ratio, or separate
 extraction RPM floor. Memory work is asynchronous and does not block the reply that captured the messages.

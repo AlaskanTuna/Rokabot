@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { classifyExtractionError } from '../extractionErrors.js'
+import { JevUnavailableError, classifyExtractionError } from '../extractionErrors.js'
 
 describe('classifyExtractionError', () => {
   it.each([429, 500, 502, 503, 504])('classifies HTTP %i errors as transient', (status) => {
@@ -48,4 +48,8 @@ describe('classifyExtractionError', () => {
   it('classifies other errors as permanent', () => {
     expect(classifyExtractionError(new Error('schema mismatch'))).toBe('permanent')
   })
+})
+
+it('classifies an episode Jev could not judge as unjudged', () => {
+  expect(classifyExtractionError(new JevUnavailableError())).toBe('unjudged')
 })

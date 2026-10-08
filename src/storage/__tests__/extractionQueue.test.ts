@@ -102,6 +102,36 @@ describe('extractionQueue', () => {
     })
   })
 
+  it('gives an episode Jev could not judge one delayed retry, then drops it', () => {
+    let now = 1_000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    const job = enqueueEpisode({ guildId: 'g-1', channelId: 'c-1', episode: episodeFor('unjudged') })
+
+    claimNextForGuild('g-1')
+    expect(markFailed(job.id, 'unjudged')).toMatchObject({ status: 'pending', scheduledDelayMs: 300_000 })
+    expect(testDb.prepare('SELECT attempts, available_at FROM extraction_queue WHERE id = ?').get(job.id)).toEqual({
+      attempts: 1,
+      available_at: 301_000
+    })
+    expect(claimNextForGuild('g-1')).toBeUndefined()
+
+    now = 301_000
+    expect(claimNextForGuild('g-1')?.id).toBe(job.id)
+    expect(markFailed(job.id, 'unjudged')).toMatchObject({ status: 'dropped', scheduledDelayMs: 0 })
+    expect(testDb.prepare('SELECT COUNT(*) AS count FROM extraction_queue').get()).toEqual({ count: 0 })
+  })
+
+  it('exposes the transient retry count on a claimed job', () => {
+    let now = 1_000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    const job = enqueueEpisode({ guildId: 'g-1', channelId: 'c-1', episode: episodeFor('counted') })
+
+    expect(claimNextForGuild('g-1')?.transientRetries).toBe(0)
+    markFailed(job.id, 'transient')
+    now = 61_000
+    expect(claimNextForGuild('g-1')?.transientRetries).toBe(1)
+  })
+
   it('backs off transient failures without increasing ordinary attempts', () => {
     let now = 1_000
     vi.spyOn(Date, 'now').mockImplementation(() => now)

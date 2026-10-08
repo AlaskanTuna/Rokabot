@@ -523,7 +523,9 @@ sqlite3 ~/rokabot/data/rokabot.db 'SELECT status, COUNT(*) AS jobs FROM extracti
 ```
 
 Failed extraction payloads are deleted at startup and during daily maintenance after they are older than
-`memory.failedExtractionRetentionDays` (7 days by default, measured from `enqueued_at`).
+`memory.failedExtractionRetentionDays` (7 days by default, measured from `enqueued_at`). An episode Jev couldn't judge at
+admission is retried once after 5 minutes, then dropped; the `Memory episode pipeline failed` warning shows
+`classification: "unjudged"` and `queueStatus: "dropped"` when that happens.
 
 Use the bot's `forget_user` tool to retract a claim. It sets `status='rejected'`, `ended_at`, and
 `end_reason='forgotten'`; the claim and evidence remain for `memory.deadClaimRetentionDays` (30 days) before the next
