@@ -28,6 +28,10 @@ sudo docker compose -f ~/rokabot/docker-compose.yml logs -f
 # View last N lines of logs
 sudo docker compose -f ~/rokabot/docker-compose.yml logs --tail 50
 
+# Logs from before the last deploy (each deploy archives the outgoing container's logs; kept 30 days)
+ls ~/rokabot/logs/
+zcat ~/rokabot/logs/roka-<timestamp>.log.gz | grep '"msg":"Watched media"'
+
 # Restart the bot
 sudo docker compose -f ~/rokabot/docker-compose.yml restart
 

@@ -18,7 +18,7 @@ import { release, reservationFor, tryReserve } from '../byteBudget.js'
 import { isChannelBusy, markBusy, markFree } from '../concurrency.js'
 import { shouldReact } from '../emojiReactor.js'
 import { isIgnorableDiscordError } from '../errorHandler.js'
-import { buildRokaMessage } from '../messageBuilder.js'
+import { buildRokaMessage, openedPostCitation } from '../messageBuilder.js'
 import {
   extractComponentTexts,
   extractCurrentMessageContent,
@@ -109,6 +109,9 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
             currentSocialTexts,
             replyFetch.then((referencedMessage) => [
               ...(referencedMessage ? socialPostTexts(referencedMessage) : []),
+              ...(referencedMessage && referencedMessage.author?.id === client.user?.id
+                ? [openedPostCitation(extractComponentTexts(referencedMessage.components)) ?? '']
+                : []),
               ...socialPostSnapshotTexts(message),
               ...(referencedMessage ? socialPostSnapshotTexts(referencedMessage) : [])
             ])
@@ -309,6 +312,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
             droppedAttachments,
             truncatedAttachments,
             refusedAttachments,
+            watchOutcome,
             modelCalls
           },
           sources
@@ -351,7 +355,9 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
       // chunk sized against the raw length overrun the TextDisplay budget it was measured for.
       const chunks = splitResponse(escapeBackticks(withNudge))
       logger.debug({ channelId, chunkCount: chunks.length }, 'Response split into chunks')
-      await message.reply(buildRokaMessage(chunks[0], tone, toolsUsed, sources, socialPostResult, replyOutcome))
+      await message.reply(
+        buildRokaMessage(chunks[0], tone, toolsUsed, sources, socialPostResult, replyOutcome, watchOutcome)
+      )
 
       for (let i = 1; i < chunks.length; i++) {
         if ('send' in message.channel) {

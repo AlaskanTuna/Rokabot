@@ -371,4 +371,39 @@ describe('social post parsers', () => {
 
     expect(parseYtDlpMetadata({ title: 'Post', ...fields }, target, 100).authorHandle).toBe(handle)
   })
+
+  // yt-dlp gives an Instagram reel no duration, so Roka was told "1 photo" for a reel she could have watched.
+  it('counts an Instagram reel with a playable video as a video, not a photo', () => {
+    const target = parseSocialPostUrl('https://www.instagram.com/reel/DeMQyX2BTS0/')!
+    const post = parseYtDlpMetadata(
+      {
+        title: 'Reel',
+        thumbnail: 'https://scontent.cdninstagram.com/cover.jpg',
+        formats: [
+          {
+            url: 'https://scontent.cdninstagram.com/reel.mp4',
+            ext: 'mp4',
+            protocol: 'https',
+            vcodec: 'avc1',
+            acodec: 'mp4a'
+          }
+        ]
+      },
+      target,
+      100
+    )
+
+    expect(post).toMatchObject({ photoCount: 0, videoCount: 1 })
+  })
+
+  it('still counts an Instagram photo post as one photo', () => {
+    const target = parseSocialPostUrl('https://www.instagram.com/p/AbCd123/')!
+
+    expect(
+      parseYtDlpMetadata({ title: 'Photo', thumbnail: 'https://scontent.cdninstagram.com/p.jpg' }, target, 100)
+    ).toMatchObject({
+      photoCount: 1,
+      videoCount: 0
+    })
+  })
 })

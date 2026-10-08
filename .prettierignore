@@ -53,3 +53,6 @@ temp/
 docs/progress.md
 docs/decisions.md
 graphify-out/
+
+# Captured fixtures stay byte-exact
+tests/fixtures/

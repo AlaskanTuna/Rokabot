@@ -1,6 +1,6 @@
 import { type Schema, Type } from '@google/genai'
 import { MEDIA_DIGEST_UNTRUSTED_DATA_LABEL } from '../promptSafety.js'
-import type { MediaClip, MediaDigest, MediaObservations } from './types.js'
+import type { MediaClip, MediaDigest, MediaObservations, WatchOutcome } from './types.js'
 
 export const MEDIA_DIGEST_HEADING = '[Watched media'
 
@@ -10,6 +10,7 @@ const MAX_TIMELINE = 8
 const MAX_SPEECH = 12
 const MAX_ON_SCREEN_TEXT = 8
 const MAX_UNCERTAINTIES = 5
+const MAX_MOMENTS = 5
 
 export const MEDIA_OBSERVATIONS_SCHEMA: Schema = {
   type: Type.OBJECT,
@@ -46,9 +47,19 @@ export const MEDIA_OBSERVATIONS_SCHEMA: Schema = {
         required: ['bin', 'text']
       }
     },
+    moments: {
+      type: Type.ARRAY,
+      maxItems: String(MAX_MOMENTS),
+      items: {
+        type: Type.OBJECT,
+        properties: { bin: { type: Type.INTEGER }, note: { type: Type.STRING } },
+        required: ['bin', 'note']
+      }
+    },
+    style: { type: Type.STRING },
     uncertainties: { type: Type.ARRAY, maxItems: String(MAX_UNCERTAINTIES), items: { type: Type.STRING } }
   },
-  required: ['summary', 'timeline', 'speech', 'onScreenText', 'uncertainties']
+  required: ['summary', 'timeline', 'speech', 'onScreenText', 'moments', 'style', 'uncertainties']
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -177,7 +188,49 @@ export function validateObservations(
     }
   }
 
-  return { observations: { summary, timeline, speech, onScreenText, uncertainties }, incomplete }
+  // Optional so notes saved before these fields existed still validate; a malformed value is still flagged.
+  let moments: MediaObservations['moments']
+  if (raw.moments !== undefined) {
+    moments = []
+    if (!Array.isArray(raw.moments)) {
+      markIncomplete()
+    } else {
+      for (const value of raw.moments) {
+        if (!isRecord(value) || !validBin(value.bin, binCount)) {
+          markIncomplete()
+          continue
+        }
+        const note = boundedString(value.note, 300, markIncomplete)
+        if (note === null) {
+          markIncomplete()
+          continue
+        }
+        if (moments.length >= MAX_MOMENTS) {
+          markIncomplete()
+          continue
+        }
+        moments.push({ bin: value.bin, note })
+      }
+    }
+  }
+  let style: string | undefined
+  if (raw.style !== undefined) {
+    style = boundedString(raw.style, 300, markIncomplete) ?? undefined
+    if (style === undefined) markIncomplete()
+  }
+
+  return {
+    observations: {
+      summary,
+      timeline,
+      speech,
+      onScreenText,
+      ...(moments ? { moments } : {}),
+      ...(style ? { style } : {}),
+      uncertainties
+    },
+    incomplete
+  }
 }
 
 export function formatClock(seconds: number): string {
@@ -194,6 +247,24 @@ export function formatClock(seconds: number): string {
 function frameInterval(fps: number | null): string {
   if (fps === 1) return 'a frame every second'
   return `a frame every ${fps === null ? 'unknown' : 1 / fps} s`
+}
+
+export function watchOutcomeFor(digest: MediaDigest): WatchOutcome {
+  const { kind } = digest
+  if (digest.mode === 'skim') return { status: 'watched', kind, coverage: 'skim' }
+  const first = digest.bins[0]
+  const last = digest.bins.at(-1)
+  const coversAll = first?.startSec === 0 && last?.endSec === Math.round(digest.durationSec)
+  if (digest.mode === 'whole' || (digest.mode === 'halves' && coversAll)) {
+    return { status: 'watched', kind, coverage: 'whole', durationSec: digest.durationSec }
+  }
+  return {
+    status: 'watched',
+    kind,
+    coverage: 'part',
+    startSec: first?.startSec ?? 0,
+    endSec: last?.endSec ?? digest.durationSec
+  }
 }
 
 export function coverageLine(digest: MediaDigest): string {
@@ -241,6 +312,12 @@ export function renderDigestBlock(digest: MediaDigest): string {
   })
   if (timeline.length > 0) lines.push('Timeline:', ...timeline)
 
+  const moments = (observations.moments ?? []).flatMap(({ bin, note }) => {
+    const clip = digest.bins[bin - 1]
+    return clip ? [`- ${formatClock(clip.startSec)}–${formatClock(clip.endSec)}: ${renderSingleLine(note)}`] : []
+  })
+  if (moments.length > 0) lines.push('Standout moments:', ...moments)
+
   const quotes = observations.speech.flatMap(({ bin, speaker, quote }) => {
     const clip = digest.bins[bin - 1]
     return clip ? [`- ${formatClock(clip.startSec)}: ${speaker ?? 'someone'}: "${renderSingleLine(quote)}"`] : []
@@ -252,6 +329,7 @@ export function renderDigestBlock(digest: MediaDigest): string {
     return clip ? [`- ${formatClock(clip.startSec)}: ${renderSingleLine(text)}`] : []
   })
   if (onScreen.length > 0) lines.push('On screen:', ...onScreen)
+  if (observations.style) lines.push(`How it's made: ${renderSingleLine(observations.style)}`)
   if (observations.uncertainties.length > 0) {
     lines.push(`Unsure about: ${observations.uncertainties.map(renderSingleLine).join('; ')}`)
   }
@@ -274,7 +352,10 @@ function renumberBins(observations: MediaObservations, offset: number): MediaObs
     ...observations,
     timeline: observations.timeline.map((item) => ({ ...item, bin: item.bin + offset })),
     speech: observations.speech.map((item) => ({ ...item, bin: item.bin + offset })),
-    onScreenText: observations.onScreenText.map((item) => ({ ...item, bin: item.bin + offset }))
+    onScreenText: observations.onScreenText.map((item) => ({ ...item, bin: item.bin + offset })),
+    ...(observations.moments
+      ? { moments: observations.moments.map((item) => ({ ...item, bin: item.bin + offset })) }
+      : {})
   }
 }
 
@@ -317,6 +398,10 @@ export function mergeHalves(
       timeline: observed.flatMap((item) => item.timeline),
       speech: observed.flatMap((item) => item.speech),
       onScreenText: observed.flatMap((item) => item.onScreenText),
+      ...(observed.some((item) => item.moments) ? { moments: observed.flatMap((item) => item.moments ?? []) } : {}),
+      ...(observed.some((item) => item.style)
+        ? { style: observed.flatMap((item) => (item.style ? [item.style] : [])).join(' ') }
+        : {}),
       uncertainties: missing ? [...uncertainties.slice(0, 4), OTHER_HALF_MISSING] : uncertainties.slice(0, 5)
     },
     incomplete: missing || parts.some(({ digest }) => digest.incomplete)

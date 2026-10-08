@@ -247,8 +247,6 @@ export function parseYtDlpMetadata(payload: unknown, target: SocialPostTarget, m
   post.createdAt = date(data.upload_date)
   post.text = [title, description].filter(Boolean).join(' — ').slice(0, maxTextChars)
   post.imageUrl = imageUrl(data.thumbnail)
-  post.photoCount = target.platform === 'instagram' ? 1 : 0
-  post.videoCount = typeof data.duration === 'number' ? 1 : 0
   post.replyCount = nonNegativeInteger(data.comment_count)
   post.durationSec = positiveFiniteNumber(data.duration)
   const formats = array(data.formats).map((value): VideoCandidate => {
@@ -267,5 +265,8 @@ export function parseYtDlpMetadata(payload: unknown, target: SocialPostTarget, m
     }
   })
   post.video = selectPlayableVideo(formats)
+  // yt-dlp gives an Instagram reel no duration, so a playable format is what marks it as a video.
+  post.videoCount = typeof data.duration === 'number' || post.video ? 1 : 0
+  post.photoCount = target.platform === 'instagram' && post.videoCount === 0 ? 1 : 0
   return post
 }

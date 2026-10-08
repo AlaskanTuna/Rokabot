@@ -253,6 +253,7 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
             droppedAttachments,
             truncatedAttachments,
             refusedAttachments,
+            watchOutcome,
             modelCalls
           },
           sources
@@ -295,7 +296,9 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
       // chunk sized against the raw length overrun the TextDisplay budget it was measured for.
       const chunks = splitResponse(escapeBackticks(withNudge))
       logger.debug({ channelId, chunkCount: chunks.length }, 'Response split into chunks')
-      await interaction.editReply(buildRokaMessage(chunks[0], tone, toolsUsed, sources, socialPostResult, replyOutcome))
+      await interaction.editReply(
+        buildRokaMessage(chunks[0], tone, toolsUsed, sources, socialPostResult, replyOutcome, watchOutcome)
+      )
 
       for (let i = 1; i < chunks.length; i++) {
         await interaction.followUp(buildRokaMessage(chunks[i], tone))
