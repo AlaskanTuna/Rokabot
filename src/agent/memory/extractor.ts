@@ -215,11 +215,12 @@ export async function verifyAndApplyOperations(input: {
     ),
     ...getActiveGuildClaims(input.guildId)
   ]
-  const planned = planVerification(writeOps, existing, Date.now(), config.timezone)
+  const sameAsCandidates = recallableHere(existing, { guildId: input.guildId, channelId: input.channelId })
+  const planned = planVerification(writeOps, sameAsCandidates, Date.now(), config.timezone)
   const verification = await judgeEpisodeOperations({
     lines: input.episode.messages.map(formatEpisodeLine),
     ops: writeOps,
-    existing
+    existing: sameAsCandidates
   })
   const verified = hasCompleteVerification(verification, planned)
   const results: Array<{ applied: boolean; duplicate: boolean; staged?: boolean }> = []

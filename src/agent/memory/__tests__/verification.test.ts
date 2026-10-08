@@ -3,19 +3,26 @@ import type { ExtractionEpisode } from '../../../storage/extractionQueue.js'
 import { logger } from '../../../utils/logger.js'
 import type { ExtractionOp } from '../extractionSchema.js'
 
-const mocks = vi.hoisted(() => ({ judgeEpisodeOperations: vi.fn() }))
+const mocks = vi.hoisted(() => ({ judgeEpisodeOperations: vi.fn(), memoryPrivacy: 'relaxed' }))
 
 vi.mock('../../jev/judgments.js', () => ({ judgeEpisodeOperations: mocks.judgeEpisodeOperations }))
 vi.mock('../../../config.js', () => ({
   config: {
     gemini: { apiKey: 'test-key', extractionModel: 'test-model', safetyThreshold: 'OFF', timeout: 5000 },
     logging: { level: 'silent' },
-    memory: { maxActiveClaimsPerUser: 20, verifyThreshold: 0.5 },
+    memory: {
+      maxActiveClaimsPerUser: 20,
+      verifyThreshold: 0.5,
+      get privacy() {
+        return mocks.memoryPrivacy
+      }
+    },
     rateLimit: { rpm: 15, rpd: 500 }
   }
 }))
 
 import { closeDb, getDb } from '../../../storage/database.js'
+import { registerChannelVisibility, resetChannelVisibilityForTest } from '../channelVisibility.js'
 import { verifyAndApplyOperations } from '../extractor.js'
 import {
   assertClaim,
@@ -65,6 +72,7 @@ function positiveAnswers(...keys: string[]): Record<string, { noul: number }> {
 
 beforeEach(() => {
   process.env.ROKABOT_DB_PATH = ':memory:'
+  mocks.memoryPrivacy = 'relaxed'
   mocks.judgeEpisodeOperations.mockReset()
   getDb()
 })
@@ -72,6 +80,7 @@ beforeEach(() => {
 afterEach(() => {
   closeDb()
   process.env.ROKABOT_DB_PATH = undefined
+  resetChannelVisibilityForTest()
   vi.restoreAllMocks()
 })
 
@@ -156,7 +165,8 @@ describe('verifyAndApplyOperations', () => {
       subjectUserId: 'u-1',
       predicate: 'likes',
       value: 'tea',
-      sourceKind: 'explicit'
+      sourceKind: 'explicit',
+      channelId: 'private-channel'
     })
     setAnswers(positiveAnswers('durable_0', 'attributed_0', 'same_as_0_0'))
 
@@ -175,6 +185,74 @@ describe('verifyAndApplyOperations', () => {
     expect(
       getDb().prepare('SELECT COUNT(*) AS count FROM memory_evidence WHERE claim_id = ?').get(existing.id)
     ).toEqual({
+      count: 2
+    })
+  })
+
+  it('does not offer a hidden richer claim as a same-as candidate at balanced', async () => {
+    const hidden = assertClaim({
+      guildId: 'g-1',
+      subjectUserId: 'u-1',
+      predicate: 'likes',
+      value: 'tea with honey',
+      sourceKind: 'explicit',
+      channelId: 'private-channel'
+    })
+    mocks.memoryPrivacy = 'balanced'
+    registerChannelVisibility({
+      visibility: (channelId) => (channelId === 'c-1' ? 'public' : 'private'),
+      parentOf: () => null
+    })
+    setAnswers(positiveAnswers('durable_0', 'attributed_0'))
+
+    await expect(
+      verifyAndApplyOperations({
+        guildId: 'g-1',
+        channelId: 'c-1',
+        episode: episode(),
+        output: output(add('tea')),
+        subjectIds: new Set(['u-1'])
+      })
+    ).resolves.toEqual({ appliedOps: 1, droppedOps: 0, duplicateOps: 0 })
+
+    expect(mocks.judgeEpisodeOperations.mock.calls[0][0].existing).not.toContainEqual(
+      expect.objectContaining({ id: hidden.id })
+    )
+    expect(getActiveClaims('g-1', 'u-1')).toHaveLength(2)
+    expect(getDb().prepare('SELECT COUNT(*) AS count FROM memory_evidence WHERE claim_id = ?').get(hidden.id)).toEqual({
+      count: 1
+    })
+  })
+
+  it('keeps exact-value restatements unaffected when the existing claim is hidden', async () => {
+    const hidden = assertClaim({
+      guildId: 'g-1',
+      subjectUserId: 'u-1',
+      predicate: 'likes',
+      value: 'tea',
+      sourceKind: 'explicit',
+      channelId: 'private-channel'
+    })
+    mocks.memoryPrivacy = 'balanced'
+    registerChannelVisibility({
+      visibility: (channelId) => (channelId === 'c-1' ? 'public' : 'private'),
+      parentOf: () => null
+    })
+    setAnswers(positiveAnswers('durable_0', 'attributed_0'))
+
+    await expect(
+      verifyAndApplyOperations({
+        guildId: 'g-1',
+        channelId: 'c-1',
+        episode: episode(),
+        output: output(add()),
+        subjectIds: new Set(['u-1'])
+      })
+    ).resolves.toEqual({ appliedOps: 1, droppedOps: 0, duplicateOps: 0 })
+
+    expect(mocks.judgeEpisodeOperations.mock.calls[0][0].existing).toEqual([])
+    expect(getActiveClaims('g-1', 'u-1')).toEqual([expect.objectContaining({ id: hidden.id, value: 'tea' })])
+    expect(getDb().prepare('SELECT COUNT(*) AS count FROM memory_evidence WHERE claim_id = ?').get(hidden.id)).toEqual({
       count: 2
     })
   })

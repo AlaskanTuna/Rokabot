@@ -25,6 +25,7 @@ import { getClaimSourceChannels, setClaimEmbedding } from '../../../storage/memo
 import { recordResponseEvent } from '../../../storage/metricsStore.js'
 import { upsertUserName } from '../../../storage/userNames.js'
 import { logger } from '../../../utils/logger.js'
+import { registerChannelVisibility, resetChannelVisibilityForTest } from '../../memory/channelVisibility.js'
 
 /** A deliberately partial `ToolContext`. The tools under test read only `state.get`, and ADK does not export
  * `State` from its public surface, so a Map stands in for it. Cast once here rather than at each call site,
@@ -34,11 +35,12 @@ const toolContextWith = (entries: Record<string, unknown>) =>
 const runForget = (
   query: string,
   userId = 'user-1',
-  guildId = 'guild-1'
+  guildId = 'guild-1',
+  channelId = 'public-channel'
 ): Promise<{ success: boolean; message: string }> =>
   forgetUserTool.runAsync({
     args: { query },
-    toolContext: toolContextWith({ _userId: userId, _guildId: guildId })
+    toolContext: toolContextWith({ _userId: userId, _guildId: guildId, _channelId: channelId })
   }) as Promise<{ success: boolean; message: string }>
 import { resolveName } from '../../memory/identityResolver.js'
 import { assertClaim, assertGuildClaim, getActiveClaims, getActiveGuildClaims } from '../../memory/memoryClaims.js'
@@ -61,12 +63,17 @@ beforeEach(() => {
   process.env.ROKABOT_DB_PATH = ':memory:'
   vi.clearAllMocks()
   setMemory({ privacy: 'relaxed', recall: 'shadow' })
+  registerChannelVisibility({
+    visibility: (channelId) => (channelId === 'public-channel' || channelId === 'public-source' ? 'public' : 'private'),
+    parentOf: () => null
+  })
 })
 
 afterEach(() => {
   closeDb()
   process.env.ROKABOT_DB_PATH = undefined
   setMemory(originalMemory)
+  resetChannelVisibilityForTest()
 })
 
 const unitVector = (index: number): number[] =>
@@ -78,6 +85,7 @@ function seedMedia(input: {
   label?: string
   summary: string
   sharedBy: string[]
+  channelId?: string
 }) {
   const guildId = input.guildId ?? 'guild-1'
   const digest = saveMediaDigest({
@@ -93,7 +101,7 @@ function seedMedia(input: {
     recordMediaOccurrence({
       digestId: digest.id,
       guildId,
-      channelId: 'channel-1',
+      channelId: input.channelId ?? 'channel-1',
       messageId: `${input.contentKey}-${index}`,
       sharedByUserId,
       sourceAuthorId: null,
@@ -175,6 +183,149 @@ describe('memory tools', () => {
       superseded_by: null
     })
   })
+
+  it.each(['balanced', 'strict'] as const)(
+    'forgets hidden notes without quoting their values at %s',
+    async (privacy) => {
+      const hidden = assertClaim({
+        guildId: 'guild-1',
+        subjectUserId: 'user-1',
+        predicate: 'hobby',
+        value: 'guitar private lessons',
+        sourceKind: 'explicit',
+        channelId: 'private-channel'
+      })
+      const visible = assertClaim({
+        guildId: 'guild-1',
+        subjectUserId: 'user-1',
+        predicate: 'hobby',
+        value: 'guitar practice logs',
+        sourceKind: 'explicit',
+        channelId: privacy === 'balanced' ? 'public-source' : 'public-channel'
+      })
+      setMemory({ privacy })
+
+      const result = await runForget('guitar')
+
+      expect(result).toEqual({
+        success: true,
+        message: 'I forgot these notes: hobby "guitar practice logs", and 1 other note.'
+      })
+      expect(result.message).not.toContain('guitar private lessons')
+      expect(getActiveClaims('guild-1', 'user-1')).toEqual([])
+      expect(getDb().prepare('SELECT status FROM memory_claim WHERE id IN (?, ?)').all(hidden.id, visible.id)).toEqual([
+        { status: 'rejected' },
+        { status: 'rejected' }
+      ])
+    }
+  )
+
+  it('acknowledges hidden notes by count only at off and still forgets them', async () => {
+    const hidden = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'hobby',
+      value: 'guitar private lessons',
+      sourceKind: 'explicit',
+      channelId: 'private-channel'
+    })
+    setMemory({ privacy: 'off' })
+
+    const result = await runForget('guitar')
+
+    expect(result).toEqual({ success: true, message: 'I forgot 1 note.' })
+    expect(result.message).not.toContain('guitar private lessons')
+    expect(getActiveClaims('guild-1', 'user-1')).toEqual([])
+    expect(getDb().prepare('SELECT status FROM memory_claim WHERE id = ?').get(hidden.id)).toEqual({
+      status: 'rejected'
+    })
+  })
+
+  it.each(['balanced', 'strict'] as const)(
+    'uses a count-only confirmation when no claim is quotable at %s',
+    async (privacy) => {
+      const hidden = assertClaim({
+        guildId: 'guild-1',
+        subjectUserId: 'user-1',
+        predicate: 'hobby',
+        value: 'guitar private lessons',
+        sourceKind: 'explicit',
+        channelId: 'private-channel'
+      })
+      setMemory({ privacy })
+
+      const result = await runForget('guitar')
+
+      expect(result).toEqual({ success: true, message: 'I forgot 1 note.' })
+      expect(result.message).not.toContain('guitar private lessons')
+      expect(getActiveClaims('guild-1', 'user-1')).toEqual([])
+      expect(getDb().prepare('SELECT status FROM memory_claim WHERE id = ?').get(hidden.id)).toEqual({
+        status: 'rejected'
+      })
+    }
+  )
+
+  it.each(['balanced', 'strict', 'off'] as const)(
+    'does not quote hidden media labels or summaries at %s and still forgets the media',
+    async (privacy) => {
+      seedMedia({
+        contentKey: 'youtube:private-cat',
+        label: 'Private cat video',
+        summary: 'A private guitar-playing cat explores a garden.',
+        sharedBy: ['user-1'],
+        channelId: 'private-channel'
+      })
+      setMemory({ privacy })
+
+      const result = await runForget('cat video')
+
+      expect(result).toEqual({ success: true, message: 'I forgot 1 note.' })
+      expect(result.message).not.toContain('Private cat video')
+      expect(result.message).not.toContain('guitar-playing cat')
+      expect(findMediaDigest('guild-1', 'youtube:private-cat')).toBeNull()
+    }
+  )
+
+  it.each(['balanced', 'strict', 'off'] as const)(
+    'does not quote hidden values in the ambiguity message at %s',
+    async (privacy) => {
+      const claims = [
+        ['guitar private lessons', 'private-channel'],
+        ['guitar private practice', 'private-channel'],
+        ['guitar private collection', 'private-channel'],
+        ['guitar public covers', 'public-channel']
+      ].map(([value, channelId]) =>
+        assertClaim({
+          guildId: 'guild-1',
+          subjectUserId: 'user-1',
+          predicate: 'hobby',
+          value,
+          sourceKind: 'explicit',
+          channelId
+        })
+      )
+      setMemory({ privacy })
+
+      const result = await runForget('guitar')
+
+      expect(result.success).toBe(false)
+      expect(result.message).toContain('Which one did you mean?')
+      expect(result.message).not.toContain('guitar private lessons')
+      expect(result.message).not.toContain('guitar private practice')
+      expect(result.message).not.toContain('guitar private collection')
+      if (privacy === 'off') {
+        expect(result.message).toBe('I found 4 matching notes. Which one did you mean?')
+      } else {
+        expect(result.message).toContain('hobby "guitar public covers"')
+        expect(result.message).toContain('and 3 other notes')
+      }
+      expect(
+        getActiveClaims('guild-1', 'user-1')
+          .map(({ id }) => id)
+          .sort()
+      ).toEqual(claims.map(({ id }) => id).sort())
+    }
+  )
 
   it('requires every query keyword to match and preserves claims on no match', async () => {
     const activeClaim = assertClaim({

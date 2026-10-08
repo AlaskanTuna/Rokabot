@@ -221,6 +221,7 @@ export const forgetUserTool = new FunctionTool({
   execute: async (input, toolContext) => {
     const userId = toolContext?.state?.get<string>('_userId')
     const guildId = toolContext?.state?.get<string>('_guildId')
+    const channelId = toolContext?.state?.get<string>('_channelId')
     if (!userId || !guildId || guildId === 'global') {
       logger.warn(
         {
@@ -234,7 +235,7 @@ export const forgetUserTool = new FunctionTool({
         message: "I couldn't identify the current member or server, so I didn't forget anything."
       }
     }
-    return forgetUser({ user_id: userId, guild_id: guildId, query: input.query })
+    return forgetUser({ user_id: userId, guild_id: guildId, query: input.query, channel_id: channelId })
   }
 })
 

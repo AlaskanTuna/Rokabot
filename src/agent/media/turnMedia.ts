@@ -11,6 +11,7 @@ import { measureAttachmentTokens } from '../attachmentCost.js'
 import { geminiMimeType, isStreamedUpload } from '../attachmentLimits.js'
 import { type ImageAttachment, downloadAttachment, prepareAttachments } from '../attachments.js'
 import { embedEpisodeText } from '../memory/episodeEmbeddings.js'
+import { canRecall } from '../memory/privacy.js'
 import { remainingTokensThisMinute } from '../tokenBudget.js'
 import { bytesContentKey, discordAttachmentContentKey } from './contentKey.js'
 import { formatClock, mergeHalves, renderCompactDigest, renderDigestBlock, watchOutcomeFor } from './digest.js'
@@ -118,6 +119,16 @@ function remembered(scope: MediaMemoryScope, contentKey: string): { id: number; 
   try {
     const stored = findMediaDigest(scope.guildId, contentKey)
     if (!stored) return null
+    if (
+      (config.memory.privacy === 'balanced' || config.memory.privacy === 'strict') &&
+      !canRecall(
+        stored.channelIds.length > 0 ? stored.channelIds : [''],
+        { guildId: scope.guildId, channelId: scope.channelId },
+        config.memory.privacy
+      )
+    ) {
+      return null
+    }
     const digest = JSON.parse(stored.digestJson) as MediaDigest
     // A partial watch is worth redoing; a later share may get the whole thing.
     if (digest.mode === 'opening' || digest.incomplete) return null
