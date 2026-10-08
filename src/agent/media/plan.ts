@@ -8,7 +8,11 @@ function preferredFps(durationSec: number): number {
   return 0.1
 }
 
-export function estimateMediaTokens({ frames, audioSec, parts }: { frames: number; audioSec: number; parts: number }): number {
+export function estimateMediaTokens({
+  frames,
+  audioSec,
+  parts
+}: { frames: number; audioSec: number; parts: number }): number {
   const mediaTokens = 70 * frames + 32 * audioSec
   return Math.ceil(mediaTokens + mediaTokens / 10) + 64 * parts
 }
@@ -46,7 +50,8 @@ export function planCoverage(input: {
   for (let i = start; i <= floor; i++) {
     const fps = FPS_LADDER[i]
     const estimate = estimateMediaTokens({ frames: Math.ceil(durationSec * fps), audioSec: durationSec, parts: 1 })
-    if (estimate <= budgetTokens) return { mode: 'whole', kind, durationSec, fps, estimate, bins: equalBins(durationSec) }
+    if (estimate <= budgetTokens)
+      return { mode: 'whole', kind, durationSec, fps, estimate, bins: equalBins(durationSec) }
   }
   if (!input.canSkim) return { mode: 'decline', kind, durationSec, reason: 'too_long' }
   const count = Math.min(input.skimClips, Math.max(3, Math.ceil(durationSec / 120)))

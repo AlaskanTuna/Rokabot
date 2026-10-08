@@ -1,4 +1,4 @@
-import { Type, type Schema } from '@google/genai'
+import { type Schema, Type } from '@google/genai'
 import { MEDIA_DIGEST_UNTRUSTED_DATA_LABEL } from '../promptSafety.js'
 import type { MediaDigest, MediaObservations } from './types.js'
 
@@ -20,7 +20,11 @@ export const MEDIA_OBSERVATIONS_SCHEMA: Schema = {
       type: Type.ARRAY,
       items: {
         type: Type.OBJECT,
-        properties: { bin: { type: Type.INTEGER }, speaker: { type: Type.STRING, nullable: true }, quote: { type: Type.STRING } },
+        properties: {
+          bin: { type: Type.INTEGER },
+          speaker: { type: Type.STRING, nullable: true },
+          quote: { type: Type.STRING }
+        },
         required: ['bin', 'speaker', 'quote']
       }
     },
@@ -177,14 +181,16 @@ export function formatClock(seconds: number): string {
 }
 
 export function coverageLine(digest: MediaDigest): string {
-  if (digest.mode === 'opening') return `only the opening was available, about ${formatClock(digest.durationSec)} of a longer file`
+  if (digest.mode === 'opening')
+    return `only the opening was available, about ${formatClock(digest.durationSec)} of a longer file`
   if (digest.mode === 'skim') {
     const firstClip = digest.bins[0]
     const clipLength = firstClip ? Math.round(firstClip.endSec - firstClip.startSec) : 0
     return `skimmed: ${digest.bins.length} clips of ${clipLength} s spread across ${formatClock(digest.durationSec)}, sound only within the clips`
   }
   if (digest.kind === 'audio') return `whole audio, ${formatClock(digest.durationSec)}`
-  const frameInterval = digest.fps === 1 ? 'a frame every second' : `a frame every ${digest.fps === null ? 'unknown' : 1 / digest.fps} s`
+  const frameInterval =
+    digest.fps === 1 ? 'a frame every second' : `a frame every ${digest.fps === null ? 'unknown' : 1 / digest.fps} s`
   return `whole video, ${formatClock(digest.durationSec)}, ${frameInterval}, full sound`
 }
 
@@ -198,7 +204,9 @@ export function renderDigestBlock(digest: MediaDigest): string {
   const timeline = observations.timeline.flatMap(({ bin, visual, audio }) => {
     const clip = digest.bins[bin - 1]
     return clip
-      ? [`- ${formatClock(clip.startSec)}–${formatClock(clip.endSec)}: ${renderSingleLine(visual)} / ${renderSingleLine(audio)}`]
+      ? [
+          `- ${formatClock(clip.startSec)}–${formatClock(clip.endSec)}: ${renderSingleLine(visual)} / ${renderSingleLine(audio)}`
+        ]
       : []
   })
   if (timeline.length > 0) lines.push('Timeline:', ...timeline)

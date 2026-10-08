@@ -3,7 +3,7 @@ import { durationFromTokens, mp4DurationSec } from '../duration.js'
 
 type BoxSize = '32-bit' | '64-bit' | 'to-end'
 
-function box(type: string, payload = Buffer.alloc(0), size: BoxSize = '32-bit'): Buffer {
+function box(type: string, payload: Buffer = Buffer.alloc(0), size: BoxSize = '32-bit'): Buffer {
   const headerSize = size === '64-bit' ? 16 : 8
   const result = Buffer.alloc(headerSize + payload.length)
   result.writeUInt32BE(size === '64-bit' || size === 'to-end' ? (size === '64-bit' ? 1 : 0) : result.length, 0)

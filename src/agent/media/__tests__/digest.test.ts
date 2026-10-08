@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest'
 import { Type } from '@google/genai'
+import { describe, expect, it } from 'vitest'
+import { MEDIA_DIGEST_UNTRUSTED_DATA_LABEL } from '../../promptSafety.js'
 import {
   MEDIA_DIGEST_HEADING,
   MEDIA_OBSERVATIONS_SCHEMA,
@@ -9,7 +10,6 @@ import {
   renderDigestBlock,
   validateObservations
 } from '../digest.js'
-import { MEDIA_DIGEST_UNTRUSTED_DATA_LABEL } from '../../promptSafety.js'
 import type { MediaDigest, MediaObservations } from '../types.js'
 
 function rawObservations(): MediaObservations {
@@ -49,7 +49,7 @@ describe('MEDIA_OBSERVATIONS_SCHEMA', () => {
       'onScreenText',
       'uncertainties'
     ])
-    expect(MEDIA_OBSERVATIONS_SCHEMA.properties?.timeline.items.properties.bin.type).toBe(Type.INTEGER)
+    expect(MEDIA_OBSERVATIONS_SCHEMA.properties?.timeline.items?.properties?.bin?.type).toBe(Type.INTEGER)
   })
 })
 
@@ -91,7 +91,10 @@ describe('validateObservations', () => {
           { bin: 2, visual: 4, audio: 'sound' },
           { bin: 3, visual: 'valid', audio: 'sound' }
         ],
-        speech: [{ bin: 1, speaker: 4, quote: 'valid quote' }, { bin: 2, speaker: null, quote: 5 }],
+        speech: [
+          { bin: 1, speaker: 4, quote: 'valid quote' },
+          { bin: 2, speaker: null, quote: 5 }
+        ],
         onScreenText: [{ bin: 1, text: false }],
         uncertainties: ['clear', 10]
       },
@@ -109,8 +112,16 @@ describe('validateObservations', () => {
     const result = validateObservations(
       {
         summary: 'summary',
-        timeline: Array.from({ length: 9 }, (_, bin) => ({ bin: (bin % 3) + 1, visual: 'v'.repeat(350), audio: 'a'.repeat(350) })),
-        speech: Array.from({ length: 13 }, (_, bin) => ({ bin: (bin % 3) + 1, speaker: 's'.repeat(350), quote: 'q'.repeat(250) })),
+        timeline: Array.from({ length: 9 }, (_, bin) => ({
+          bin: (bin % 3) + 1,
+          visual: 'v'.repeat(350),
+          audio: 'a'.repeat(350)
+        })),
+        speech: Array.from({ length: 13 }, (_, bin) => ({
+          bin: (bin % 3) + 1,
+          speaker: 's'.repeat(350),
+          quote: 'q'.repeat(250)
+        })),
         onScreenText: Array.from({ length: 9 }, (_, bin) => ({ bin: (bin % 3) + 1, text: 't'.repeat(350) })),
         uncertainties: Array.from({ length: 6 }, () => 'u'.repeat(350))
       },
@@ -228,11 +239,11 @@ describe('renderDigestBlock', () => {
 
 describe('renderCompactDigest', () => {
   it('renders a single line no longer than 700 characters', () => {
-    const rendered = renderCompactDigest(
-      digest({ observations: { ...rawObservations(), summary: 'A'.repeat(1000) } })
-    )
+    const rendered = renderCompactDigest(digest({ observations: { ...rawObservations(), summary: 'A'.repeat(1000) } }))
 
-    expect(rendered).toContain(`${MEDIA_DIGEST_HEADING} — uploaded video, whole video, 1:15, a frame every second, full sound]`)
+    expect(rendered).toContain(
+      `${MEDIA_DIGEST_HEADING} — uploaded video, whole video, 1:15, a frame every second, full sound]`
+    )
     expect(rendered).toHaveLength(700)
     expect(rendered).not.toMatch(/[\r\n]/)
   })
