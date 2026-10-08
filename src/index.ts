@@ -23,6 +23,7 @@ if (process.env.ADK_QUIET) {
 
 import http from 'node:http'
 import { cleanupExpired, restoreMonitoredChannels } from './agent/channelMonitor.js'
+import { registerChannelVisibility } from './agent/memory/channelVisibility.js'
 import { pruneEpisodesAndReembed } from './agent/memory/episodeMaintenance.js'
 import { flushOpenEpisodes } from './agent/memory/episodeTracker.js'
 import { pruneStaleClaims } from './agent/memory/memoryClaims.js'
@@ -34,6 +35,7 @@ import {
 import { destroyAllSessions } from './agent/session.js'
 import { beginShutdown } from './agent/shutdownSignal.js'
 import { config } from './config.js'
+import { createChannelVisibilityResolver } from './discord/channelVisibility.js'
 import { createClient } from './discord/client.js'
 import { cleanupExpiredCooldowns } from './discord/emojiReactor.js'
 import { startReminderScheduler, stopReminderScheduler } from './discord/reminderScheduler.js'
@@ -96,6 +98,7 @@ client.once('clientReady', () => {
   pruneOldHistory(config.session.historyRetentionDays)
   pruneOldMetrics(config.metrics.retentionDays)
   pruneFailureDiagnostics(config.metrics.diagnosticsRetentionHours)
+  registerChannelVisibility(createChannelVisibilityResolver(client))
   startupMemoryTasks(client.user?.id)
 
   setInterval(() => pruneOldHistory(config.session.historyRetentionDays), 60 * 60 * 1000)
