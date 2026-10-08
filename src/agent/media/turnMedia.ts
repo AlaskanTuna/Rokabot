@@ -28,7 +28,8 @@ import {
   planHalves
 } from './plan.js'
 import { watchFramesWithQwen } from './qwenWatch.js'
-import type { CoveragePlan, MediaDigest, MediaKind, WatchOutcome } from './types.js'
+import { type Transcript, audioWindows, transcribeSource } from './transcribe.js'
+import type { CoveragePlan, MediaClip, MediaDigest, MediaKind, WatchOutcome } from './types.js'
 import { type WatchResult, type WatchSource, countUriTokens, watchMedia } from './watch.js'
 import { resolveYouTubeStreams } from './youtubeStreams.js'
 
@@ -393,12 +394,21 @@ const MIN_FRAME_SHARE = 0.5
 const FRAME_TIMEOUT_MS = 8000
 
 // Whichever watcher is not configured is the backup. Gemini is skipped while turns are pinned to the fallback
-// model, since waiting on it would only add delay; Qwen sees frames only, so it cannot take audio.
+// model, since waiting on it would only add delay; Qwen hears audio only through the transcriber.
 function watcherOrder(kind: MediaKind, geminiUnavailable?: boolean): Array<'gemini' | 'qwen'> {
   const order: Array<'gemini' | 'qwen'> = config.media.watcher === 'qwen' ? ['qwen', 'gemini'] : ['gemini', 'qwen']
   return order.filter((watcher) =>
-    watcher === 'gemini' ? !geminiUnavailable : Boolean(config.fallback.apiKey) && kind === 'video'
+    watcher === 'gemini'
+      ? !geminiUnavailable
+      : Boolean(config.fallback.apiKey) && (kind === 'video' || Boolean(config.media.transcriber.url))
   )
+}
+
+async function transcribe(source: FrameSource, windows: MediaClip[]): Promise<Transcript | { reason: string }> {
+  const { url, timeoutMs, maxSpeechSec } = config.media.transcriber
+  if (!url) return { reason: 'disabled' }
+  if (windows.length === 0) return { reason: 'no_audio' }
+  return transcribeSource(source, windows, { url, timeoutMs, maxSpeechSec }, { signal: AbortSignal.timeout(timeoutMs) })
 }
 
 async function watchOne(
@@ -563,6 +573,7 @@ async function watchWithQwen(context: WatchContext): Promise<Attempt> {
   }
 
   let source: FrameSource = { input: attachment.url, headers: null }
+  let audioSource: FrameSource | null = source
   let durationSec = attachment.durationSec ?? null
   let postContext: string | undefined
   if (attachment.transport === 'uri') {
@@ -570,6 +581,7 @@ async function watchWithQwen(context: WatchContext): Promise<Attempt> {
     if ('reason' in streams) return failed(streams.reason)
     if (!streams.video) return failed('no_stream')
     source = { input: streams.video.url, headers: streams.video.headers }
+    audioSource = streams.audio ? { input: streams.audio.url, headers: streams.audio.headers } : null
     durationSec ??= streams.durationSec
     postContext = [streams.title, streams.description].filter(Boolean).join(' — ') || undefined
   }
@@ -582,20 +594,29 @@ async function watchWithQwen(context: WatchContext): Promise<Attempt> {
       : undefined
   const bins = frameBins(durationSec, config.media.qwen.frames, window)
   const timestamps = frameTimestamps(bins)
-  const taken = await extractFrames(source, timestamps, {
-    height: config.media.qwen.frameHeight,
-    timeoutMs: FRAME_TIMEOUT_MS
-  })
+  const audio = kind === 'audio'
+  const [taken, heard] = await Promise.all([
+    audio
+      ? Promise.resolve([])
+      : extractFrames(source, timestamps, { height: config.media.qwen.frameHeight, timeoutMs: FRAME_TIMEOUT_MS }),
+    audioSource
+      ? transcribe(audioSource, audioWindows(durationSec, config.media.transcriber.maxAudioSec, window))
+      : Promise.resolve({ reason: 'no_audio' })
+  ])
+  const transcript = 'reason' in heard || heard.segments.length === 0 ? undefined : heard
   const kept = bins.flatMap((bin, index) => {
     const frame = taken.find((item) => item.atSec === timestamps[index])
     return frame ? [{ bin, frame }] : []
   })
-  if (kept.length < Math.max(2, Math.ceil(bins.length * MIN_FRAME_SHARE))) return failed('too_few_frames')
+  if (audio && !transcript) return failed('reason' in heard ? heard.reason : 'no_speech')
+  if (!audio && kept.length < Math.max(2, Math.ceil(bins.length * MIN_FRAME_SHARE))) return failed('too_few_frames')
 
   const watched = await watchFramesWithQwen(
     {
+      kind,
       frames: kept.map(({ frame }) => frame),
-      bins: kept.map(({ bin }) => bin),
+      bins: audio ? bins : kept.map(({ bin }) => bin),
+      ...(transcript ? { transcript } : {}),
       durationSec,
       label,
       focus: input.focus,
@@ -619,6 +640,7 @@ async function watchWithQwen(context: WatchContext): Promise<Attempt> {
       mode: window ? 'focus' : 'whole',
       durationSec: Math.round(durationSec),
       frames: kept.length,
+      transcript: 'reason' in heard ? heard.reason : { engine: heard.engine, speechSec: Math.round(heard.speechSec) },
       watchMs: watched.watchMs,
       outcome: watched.status === 'ok' ? 'ok' : watched.reason
     },

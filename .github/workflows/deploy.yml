@@ -54,7 +54,8 @@ jobs:
     needs: test
     if: github.event_name == 'push'
     runs-on: self-hosted
-    timeout-minutes: 10
+    # The first build after a speech-model change downloads ~500 MB of models on the Pi.
+    timeout-minutes: 25
 
     steps:
       - name: Pull latest changes

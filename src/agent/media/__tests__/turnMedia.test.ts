@@ -24,7 +24,9 @@ const mocks = vi.hoisted(() => ({
   probeDurationSec: vi.fn(),
   extractFrames: vi.fn(),
   resolveYouTubeStreams: vi.fn(),
-  watchFramesWithQwen: vi.fn()
+  watchFramesWithQwen: vi.fn(),
+  transcribeSource: vi.fn(),
+  transcriberUrl: ''
 }))
 
 vi.mock('../../../config.js', () => ({
@@ -49,6 +51,7 @@ vi.mock('../../../config.js', () => ({
         watch: mocks.watch,
         watcher: mocks.watcher,
         qwen: { model: 'Qwen/test', frames: 4, frameHeight: 360, timeoutMs: 30_000 },
+        transcriber: { url: mocks.transcriberUrl, timeoutMs: 45_000, maxSpeechSec: 120, maxAudioSec: 180 },
         digestMaxOutputTokens: 3200,
         skimClips: 8,
         skimClipSeconds: 10,
@@ -78,6 +81,11 @@ vi.mock('../frames.js', async (importOriginal) => ({
 }))
 
 vi.mock('../youtubeStreams.js', () => ({ resolveYouTubeStreams: mocks.resolveYouTubeStreams }))
+
+vi.mock('../transcribe.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../transcribe.js')>()),
+  transcribeSource: mocks.transcribeSource
+}))
 
 vi.mock('../qwenWatch.js', () => ({ watchFramesWithQwen: mocks.watchFramesWithQwen }))
 
@@ -178,7 +186,9 @@ beforeEach(() => {
   mocks.watcher = 'gemini'
   mocks.qwenKey = undefined
   mocks.memoryPrivacy = 'relaxed'
+  mocks.transcriberUrl = ''
   for (const mock of [
+    mocks.transcribeSource,
     mocks.probeDurationSec,
     mocks.extractFrames,
     mocks.resolveYouTubeStreams,
@@ -1284,6 +1294,111 @@ describe('the qwen watcher', () => {
 
     expect(mocks.watchFramesWithQwen).not.toHaveBeenCalled()
     expect(result.mediaTextParts[0].text).toBe("[A video was shared, but it couldn't be watched right now.]")
+  })
+
+  describe('with a transcriber', () => {
+    const speech = {
+      language: 'en',
+      engine: 'moonshine',
+      speechSec: 12,
+      segments: [{ startSec: 3, endSec: 6, text: 'hello there' }]
+    }
+    const voice = { url: 'https://cdn.discordapp.com/v.ogg', contentType: 'audio/ogg', size: 300, durationSec: 30 }
+
+    beforeEach(() => {
+      mocks.transcriberUrl = 'http://asr:8000'
+      mocks.transcribeSource.mockResolvedValue(speech)
+      mocks.watchFramesWithQwen.mockResolvedValue({
+        status: 'ok',
+        digest: qwenDigest({ heard: 'speech' }),
+        watchMs: 6000
+      })
+    })
+
+    it('transcribes the video alongside its frames and gives Qwen the transcript', async () => {
+      const result = await prepareTurnMedia({ ...input([upload]), geminiUnavailable: true })
+
+      expect(mocks.transcribeSource).toHaveBeenCalledWith(
+        { input: 'https://cdn.discordapp.com/clip.mp4', headers: null },
+        [{ startSec: 0, endSec: 40 }],
+        { url: 'http://asr:8000', timeoutMs: 45_000, maxSpeechSec: 120 },
+        expect.objectContaining({ signal: expect.any(AbortSignal) })
+      )
+      expect(mocks.watchFramesWithQwen.mock.calls[0][0]).toMatchObject({ kind: 'video', transcript: speech })
+      expect(result.watchOutcome).toMatchObject({ status: 'watched', heard: 'speech' })
+    })
+
+    it('transcribes a YouTube video from its audio stream', async () => {
+      mocks.watcher = 'qwen'
+      mocks.resolveYouTubeStreams.mockResolvedValue({
+        durationSec: 150,
+        title: '',
+        description: '',
+        video: { url: 'https://rr1.googlevideo.com/v', headers: null },
+        audio: { url: 'https://rr1.googlevideo.com/a', headers: { 'User-Agent': 'x' } }
+      })
+
+      await prepareTurnMedia(input([youtube]))
+
+      expect(mocks.transcribeSource.mock.calls[0][0]).toEqual({
+        input: 'https://rr1.googlevideo.com/a',
+        headers: { 'User-Agent': 'x' }
+      })
+      expect(mocks.transcribeSource.mock.calls[0][1]).toEqual([{ startSec: 0, endSec: 150 }])
+    })
+
+    it('still watches the frames when transcription fails', async () => {
+      mocks.transcribeSource.mockResolvedValue({ reason: 'timeout' })
+      mocks.watchFramesWithQwen.mockResolvedValue({ status: 'ok', digest: qwenDigest(), watchMs: 6000 })
+
+      const result = await prepareTurnMedia({ ...input([upload]), geminiUnavailable: true })
+
+      expect(mocks.watchFramesWithQwen.mock.calls[0][0]).not.toHaveProperty('transcript')
+      expect(result.watchOutcome).toMatchObject({ status: 'watched', heard: 'none' })
+    })
+
+    it('remembers a watch that heard the speech', async () => {
+      const scope = { guildId: 'guild-1', channelId: 'c1', messageId: 'trigger-1', userId: 'asker-1' }
+      mocks.findMediaDigest.mockReturnValue(null)
+
+      await prepareTurnMedia({
+        ...input([{ ...upload, contentKey: 'post:x:1:0' }]),
+        memoryScope: scope,
+        geminiUnavailable: true
+      })
+
+      expect(mocks.saveMediaDigest).toHaveBeenCalledTimes(1)
+    })
+
+    it('hears an audio clip from its transcript alone while Gemini is unavailable', async () => {
+      mocks.watchFramesWithQwen.mockResolvedValue({
+        status: 'ok',
+        digest: qwenDigest({ kind: 'audio', heard: 'speech' }),
+        watchMs: 3000
+      })
+      const result = await prepareTurnMedia({ ...input([voice]), geminiUnavailable: true })
+
+      expect(mocks.extractFrames).not.toHaveBeenCalled()
+      expect(mocks.transcribeSource.mock.calls[0][0]).toEqual({
+        input: 'https://cdn.discordapp.com/v.ogg',
+        headers: null
+      })
+      expect(mocks.watchFramesWithQwen.mock.calls[0][0]).toMatchObject({
+        kind: 'audio',
+        frames: [],
+        transcript: speech
+      })
+      expect(result.watchOutcome).toMatchObject({ status: 'watched', kind: 'audio' })
+    })
+
+    it('gives the notice for an audio clip with no speech', async () => {
+      mocks.transcribeSource.mockResolvedValue({ ...speech, speechSec: 0, segments: [] })
+
+      const result = await prepareTurnMedia({ ...input([voice]), geminiUnavailable: true })
+
+      expect(mocks.watchFramesWithQwen).not.toHaveBeenCalled()
+      expect(result.mediaTextParts[0].text).toBe("[A voice message was shared, but it couldn't be watched right now.]")
+    })
   })
 
   it('does not remember a frame watch that heard nothing', async () => {

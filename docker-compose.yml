@@ -8,6 +8,7 @@ services:
     env_file: .env
     environment:
       - ADK_QUIET=1
+      - MEDIA_TRANSCRIBER_URL=${MEDIA_TRANSCRIBER_URL-http://asr:8000} # Empty in .env turns transcription off
     labels:
       panel.type: bot
       panel.name: Maniwa Roka
@@ -19,6 +20,20 @@ services:
       - '3000:3000'
     volumes:
       - ./data:/app/data
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+  asr:
+    build:
+      context: ./asr
+    restart: unless-stopped
+    environment:
+      - ASR_THREADS=3
+    mem_limit: 2g # Both models hold ~1.2 GB resident on the Pi (measured 2026-10-08, peak 1.55 GB with cache); an overrun restarts only this container
+    memswap_limit: 2g # Equal to mem_limit, as on roka: no swap
+    cpus: 3 # Leaves one core for the bot's event loop and Discord traffic
     logging:
       driver: json-file
       options:

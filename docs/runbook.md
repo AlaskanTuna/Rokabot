@@ -158,7 +158,15 @@ docker logs rokabot-roka-1 2>&1 | grep '"msg":"Watched media"' | tail -20
 - **`invalid` Outcomes:** the watcher's JSON did not parse or validate. A run of them on long, dense videos means the answer is hitting `media.digestMaxOutputTokens`; raise it within its bounds (400-4,000).
 - **Linked Videos:** X, Bluesky, Threads, TikTok, Reddit, Instagram and Bilibili posts are watched from their smallest playable MP4 when it passes the HEAD check and fits 50 MiB (above 10 MiB it is streamed like a large upload). Otherwise the post's thumbnail is used. Reddit videos have no muxed sound, so they are watched silent and say so. Bluesky needs one extra `plc.directory` lookup per author, cached.
 - **YouTube Limits:** Gemini fetches YouTube links itself, so the Pi's IP block on yt-dlp does not apply. The free tier allows 8 hours of YouTube video per day; past that, watches fail and Roka says she couldn't watch it.
-- **Kill Switch:** set `MEDIA_WATCH=false` in the container environment and restart. Audio and video then go to the model directly as before.
+- **Qwen Watcher:** with `MEDIA_WATCHER=qwen`, or as the backup when Gemini fails, lines carry `watcher: qwen`, `frames` and `transcript` (the sidecar's `engine` and `speechSec`, or why there was none: `disabled`, `no_audio`, `timeout`, `unreachable`, `http_<status>`). It costs one ModelScope call per watch.
+- **Speech Sidecar:** the `asr` container transcribes audio for the Qwen watcher (Silero VAD, then Moonshine for English and SenseVoice for zh/ja/ko/yue). It has no published port; the bot reaches it at `http://asr:8000`. The first build downloads about 500 MB of models. It holds about 1.2 GB of RAM and is capped at 2 GB and 3 CPUs, and an out-of-memory restart takes down only it: the bot then watches from frames alone (`transcript: unreachable`).
+
+```bash
+docker compose -f ~/rokabot/docker-compose.yml logs --tail 20 asr   # one line per transcription: duration, speechSec, language, engine, elapsed
+docker inspect --format '{{.State.Health.Status}}' rokabot-asr-1    # healthy once the models have loaded (up to 2 minutes)
+```
+
+- **Kill Switch:** set `MEDIA_WATCH=false` in the container environment and restart. Audio and video then go to the model directly as before. To stop only the transcription, set `MEDIA_TRANSCRIBER_URL=` in `~/rokabot/.env` and recreate the bot container; the Qwen watcher then sees frames only.
 
 ---
 
