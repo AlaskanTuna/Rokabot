@@ -286,7 +286,8 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     channelId,
     attachments: imageAttachments,
     focus: userMessage,
-    mayRetry: () => getSharedRateLimiter(config.rateLimit).tryConsumeAboveFloor(config.gemini.retryRpmFloor)
+    mayRetry: () => getSharedRateLimiter(config.rateLimit).tryConsumeAboveFloor(config.gemini.retryRpmFloor),
+    geminiUnavailable: rokaModel.hasFallback && hasStickyFallback()
   })
   // Handled here so a failure in createTurnContext cannot leave it as an unhandled rejection.
   mediaWork.catch(() => undefined)
@@ -338,7 +339,8 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     role: 'user',
     parts: [
       ...(dropImages ? [] : imageParts),
-      ...mediaTextParts,
+      // Rung 3 drops what was watched along with what was seen: either may be what tripped the filter.
+      ...(dropImages ? [] : mediaTextParts),
       ...failedAttachmentNotice,
       { text: `[${displayName}]: ${userMessage}` }
     ]

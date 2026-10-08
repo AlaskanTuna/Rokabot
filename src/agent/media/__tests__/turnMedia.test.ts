@@ -15,7 +15,7 @@ vi.mock('../../../config.js', () => ({
     logging: { level: 'silent' },
     gemini: { maxAttachmentTokens: 50_000 },
     get media() {
-      return { watch: mocks.watch, skimClips: 8, skimClipSeconds: 10 }
+      return { watch: mocks.watch, skimClips: 8, skimClipSeconds: 10, watchTimeoutMs: 20_000 }
     }
   }
 }))
@@ -307,6 +307,56 @@ describe('prepareTurnMedia', () => {
     expect(result.mediaTextParts[0].text).toBe("[A voice message was shared, but it couldn't be watched right now.]")
     expect(result.watcherCalls).toBe(2)
     expect(result.compactDigests).toEqual([])
+  })
+
+  it('does not wait on a watch while turns are pinned to the fallback model', async () => {
+    const result = await prepareTurnMedia({
+      ...input([
+        { url: 'https://www.youtube.com/watch?v=abc', contentType: 'video/mp4', transport: 'uri', durationSec: 60 }
+      ]),
+      geminiUnavailable: true
+    })
+
+    expect(mocks.watchMedia).not.toHaveBeenCalled()
+    expect(mocks.countUriTokens).not.toHaveBeenCalled()
+    expect(result.mediaTextParts[0].text).toBe("[A YouTube video was shared, but it couldn't be watched right now.]")
+  })
+
+  it('treats a token count too small for any video as an unknown length', async () => {
+    mocks.countUriTokens.mockResolvedValue(70)
+
+    const result = await prepareTurnMedia(
+      input([{ url: 'https://www.youtube.com/watch?v=abc', contentType: 'video/mp4', transport: 'uri' }])
+    )
+
+    expect(mocks.watchMedia).not.toHaveBeenCalled()
+    expect(result.mediaTextParts[0].text).toBe("[A YouTube video was shared, but it couldn't be opened.]")
+  })
+
+  it('charges the tokens a failed watch was billed', async () => {
+    mocks.watchMedia.mockResolvedValue({
+      status: 'failed',
+      reason: 'invalid',
+      calls: 1,
+      watchMs: 900,
+      promptTokens: 4321
+    })
+
+    const result = await prepareTurnMedia(
+      input([{ url: 'https://www.youtube.com/watch?v=p', contentType: 'video/mp4', transport: 'uri', durationSec: 60 }])
+    )
+
+    expect(result.mediaTokens).toBe(4321)
+  })
+
+  it('charges the planned estimate when a watch timed out', async () => {
+    mocks.watchMedia.mockResolvedValue({ status: 'failed', reason: 'timeout', calls: 1, watchMs: 20_000 })
+
+    const result = await prepareTurnMedia(
+      input([{ url: 'https://www.youtube.com/watch?v=p', contentType: 'video/mp4', transport: 'uri', durationSec: 60 }])
+    )
+
+    expect(result.mediaTokens).toBe(mocks.watchMedia.mock.calls[0][0].plan.estimate)
   })
 
   it('says a refused source could not be opened', async () => {

@@ -31,6 +31,9 @@ export interface PreparedTurnMedia {
 // against a smaller budget rather than stretched: the timeline bins stay on the real video.
 const ESTIMATED_DURATION_HEADROOM = 1.15
 const DURATION_COUNT_FPS = 0.05
+// A count that small is the prompt without the video (Gemini omitted the media), not a few-second clip; read
+// as a duration it would wave a long video through admission at full frame rate.
+const MIN_URI_COUNT_TOKENS = 200
 const ISOBMFF_TYPES = new Set(['video/mp4', 'video/mov', 'video/quicktime', 'video/3gpp'])
 
 function watchableKind(contentType: string): MediaKind | null {
@@ -58,7 +61,10 @@ async function prepareUri(attachment: ImageAttachment, label: string): Promise<P
   let budgetTokens = config.gemini.maxAttachmentTokens
   if (durationSec === null) {
     const tokens = await countUriTokens(attachment.url, DURATION_COUNT_FPS)
-    durationSec = tokens === undefined ? null : durationFromTokens({ tokens, kind: 'video', fps: DURATION_COUNT_FPS })
+    durationSec =
+      tokens === undefined || tokens < MIN_URI_COUNT_TOKENS
+        ? null
+        : durationFromTokens({ tokens, kind: 'video', fps: DURATION_COUNT_FPS })
     budgetTokens = Math.floor(budgetTokens / ESTIMATED_DURATION_HEADROOM)
   }
 
@@ -113,10 +119,15 @@ async function prepareInline(attachment: ImageAttachment, kind: MediaKind, label
 async function watchOne(
   attachment: ImageAttachment,
   kind: MediaKind,
-  input: { channelId: string; focus: string; mayRetry: () => boolean },
+  input: { channelId: string; focus: string; mayRetry: () => boolean; geminiUnavailable?: boolean },
   result: PreparedTurnMedia
 ): Promise<void> {
   const label = labelFor(attachment, kind)
+  // Only Gemini can watch; while turns are pinned to the fallback model, waiting on it would only add delay.
+  if (input.geminiUnavailable) {
+    result.mediaTextParts.push(notice(label, "it couldn't be watched right now"))
+    return
+  }
   const prepared =
     attachment.transport === 'uri' ? await prepareUri(attachment, label) : await prepareInline(attachment, kind, label)
 
@@ -143,7 +154,15 @@ async function watchOne(
     return
   }
 
-  const watched = await watchMedia({ source, plan, focus: input.focus, mayRetry: input.mayRetry, opening })
+  const watchStartedAt = Date.now()
+  const watched = await watchMedia({
+    source,
+    plan,
+    focus: input.focus,
+    // A retry is a second full watch; only worth it when the first failed fast.
+    mayRetry: () => Date.now() - watchStartedAt < config.media.watchTimeoutMs / 2 && input.mayRetry(),
+    opening
+  })
   result.watcherCalls += watched.calls
 
   if (watched.status === 'ok') {
@@ -158,6 +177,8 @@ async function watchOne(
     result.mediaTextParts.push(
       notice(label, watched.reason === 'unavailable' ? "it couldn't be opened" : "it couldn't be watched right now")
     )
+    // Billed even though unusable; a timed-out request may have been processed in full.
+    result.mediaTokens += watched.promptTokens ?? (watched.reason === 'timeout' ? plan.estimate : 0)
   }
 
   logger.info(
@@ -184,6 +205,8 @@ export async function prepareTurnMedia(input: {
   attachments: ImageAttachment[] | undefined
   focus: string
   mayRetry: () => boolean
+  /** True while turns are pinned to the fallback model, which cannot watch. */
+  geminiUnavailable?: boolean
 }): Promise<PreparedTurnMedia> {
   const attachments = input.attachments ?? []
   const watchable = config.media.watch
