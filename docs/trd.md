@@ -269,8 +269,9 @@ Privacy and Unified Recall).
 | `memory_episode_cursor` | `channel_id`, `guild_id`, `last_message_id`, `opened_at`, `message_count`                                                                                                                                                                                                                                                    | Per-channel checkpoint for the open episode.                                                                                          |
 | `extraction_queue`      | `id`, `guild_id`, `channel_id`, `payload`, `status`, `attempts`, `enqueued_at`                                                                                                                                                                                                                                               | Closed episode payloads in `pending`, `processing`, or retained `failed` state.                                                       |
 | `memory_episode`        | `id`, `guild_id`, `channel_id`, `started_at`, `ended_at`, `summary`, `embedding`, `created_at`                                                                                                                                                                                                                               | One completed episode summary per queue ID; nullable 768-value float32 embedding.                                                     |
-| `memory_events`         | `id`, `kind`, `guild_id`, `channel_id`, `subject_user_id`, `duration_ms`, `n_candidates`, `n_selected`, `n_changed`, `tokens_est`, `op`, `created_at`                                                                                                                                                                        | Value-free retrieval and claim-change telemetry.                                                                                      |
-| `jev_events`            | `kind`, `guild_id`, `channel_id`, `question`, `answer`, `probability`, `confidence`, `applied`, `latency_ms`, `input_tokens`, `baseline`, `created_at`                                                                                                                                                                       | Value-free Jev judgment telemetry. The kind is `turn`, `admission`, or `verification`; `baseline` is optional.                        |
+| `memory_events`         | `id`, `kind`, `guild_id`, `channel_id`, `subject_user_id`, `duration_ms`, `n_candidates`, `n_selected`, `n_changed`, `tokens_est`, `op`, `created_at`, `detail`                                                                                                                                                              | Value-free retrieval, claim-change and extraction-run telemetry; nullable `detail` holds per-kind JSON.                               |
+| `jev_events`            | `kind`, `guild_id`, `channel_id`, `question`, `answer`, `probability`, `confidence`, `applied`, `latency_ms`, `input_tokens`, `baseline`, `job_id`, `created_at`                                                                                                                                                             | Value-free Jev judgment telemetry. The kind is `turn`, `admission`, or `verification`; `job_id` links the latter two to their job.    |
+| `extraction_samples`    | `id`, `job_id`, `guild_id`, `channel_id`, `outcome`, `admission_probability`, `lines`, `created_at`, `expires_at`                                                                                                                                                                                                            | Private, expiring text sample of rejected conversations for offline labelling. Never read by recall or any prompt.                    |
 
 The `extraction_queue` payload contains the episode's delta messages, up to three preceding context lines, and start
 and end timestamps. It is user content and remains in a failed queue row for inspection; success deletes the queue
@@ -344,8 +345,53 @@ claims with a reason and timestamp. Evidence and dead claim rows remain until th
 
 Completed admission judgments write one `jev_events` row with `kind='admission'` and question `lasting_fact`.
 Completed verification writes one row per answer key (`durable_N`, `attributed_N`, `guild_scoped_N`, or `same_as_N_M`).
-These rows include the answer, probability, application outcome, latency, and input-token count, but no source message text.
+These rows include the answer, probability, application outcome, latency, input-token count, and the extraction queue job
+ID in `job_id`, but no source message text. Turn judgments leave `job_id` null.
 `jev.memoryTimeoutMs` (5000 ms) bounds admission and verification calls.
+
+### Extraction Run Trace
+
+Every extraction attempt records one `memory_events` row with `kind='extraction_run'`, written from the `finally` of
+`runJob` in `scheduler.ts` and built by `extractionRun.ts`. A job that fails and is retried writes one row per attempt.
+Recording is best effort: a failure is logged at `warn` and never reaches the pipeline. The row holds counts, message
+IDs, timings, and model names only, never message text, display names, or error messages. `memory_events` rows follow
+`metrics.retentionDays`.
+
+The columns carry the headline numbers: `duration_ms` is the whole attempt, `n_candidates` the operations proposed
+(`noop` excluded), `n_selected` the operations applied (staged candidates included), `n_changed` the operations that
+changed a claim row, and `tokens_est` the estimated input tokens across admission, extraction, and verification.
+`subject_user_id` and `op` are null. The `detail` JSON holds the rest:
+
+| Field                             | Meaning                                                                                                                                                          |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `jobId`, `attempt`                | The queue job and `attempts + transientRetries + 1`, so a transient retry is its own attempt.                                                                    |
+| `firstMessageId`, `lastMessageId` | First and last delta message IDs; null for an empty episode.                                                                                                     |
+| `messageCount`, `humanCount`      | Delta messages in the episode, and how many of them came from non-bot authors.                                                                                   |
+| `stage`                           | Furthest stage reached: `precheck` (trivial or sensitive drop), `admission`, `extraction`, `verification`, or `applied`.                                         |
+| `outcome`                         | `admitted`, `trivial`, `sensitive`, `below_threshold`, `jev_unavailable`, `noop`, `written` (applied at least one, staged candidates included), or `error`.      |
+| `errorClass`, `errorStatus`       | `transient`, `permanent`, or `unjudged` from `classifyExtractionError` (`unjudged` only with `jev_unavailable`), and the HTTP status when the error carries one. |
+| `admission`                       | `{ probability, threshold }` when Jev returned a probability.                                                                                                    |
+| `ops`                             | `{ proposed, applied, duplicate, staged, dropped, changed }`; `applied` includes staged candidates and `dropped` excludes them.                                  |
+| `summary`                         | `{ kept, chars, boilerplate }`: whether the episode summary was persisted, its length, and a match on the "no new durable fact" pattern.                         |
+| `stageMs`                         | `{ admission, extraction, verification, persistence }` in milliseconds, present for the stages that ran.                                                         |
+| `models`                          | `{ extraction, jev, embedding }` model identifiers.                                                                                                              |
+
+A Jev-unavailable admission is recorded with `stage: 'admission'`, `outcome: 'jev_unavailable'`, and
+`errorClass: 'unjudged'`; the queue's one retry then writes a second row. A failure while persisting the summary is
+recorded with `stage: 'applied'` and `outcome: 'error'`, and `stageMs.persistence` shows where it failed.
+
+`extraction_samples` keeps the text of a small sample of rejected conversations so they can be labelled offline:
+
+- **Eligible:** only runs whose outcome is `trivial` or `below_threshold` (a `CHECK` constraint enforces this). A
+  `sensitive` outcome is never stored, and neither is `jev_unavailable`.
+- **Selection:** a deterministic hash of the job ID at `memory.extractionSampleRate` (0.1; 0 disables), so a retried job
+  is sampled or skipped consistently. Nothing is sampled when `memory.privacy` is `off`.
+- **Contents:** job ID, guild, channel, outcome, admission probability, and the episode's lines as
+  `[displayName]: content` in a JSON array, with no user IDs.
+- **Bounds:** rows expire after `memory.extractionSampleDays` (14) and are deleted at startup and daily; at most 200
+  rows are kept, the oldest replaced first. Both settings are bounded by `NUMERIC_BOUNDS`.
+- **Isolation:** never read by Roka, recall, Jev, or any prompt. The insert is best effort and a failure is logged at
+  `warn`.
 
 ### Claim Lifecycle And Retention
 
