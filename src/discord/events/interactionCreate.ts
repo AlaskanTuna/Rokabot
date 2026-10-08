@@ -25,6 +25,7 @@ import {
   splitResponse
 } from '../responses.js'
 import { SOCIAL_POST_FAILURE_MARKER, formatSocialPostLine } from '../socialPosts/format.js'
+import { socialPostMedia } from '../socialPosts/media.js'
 import { beginSocialPostLookup } from '../socialPosts/service.js'
 import { parseSocialPostUrl } from '../socialPosts/urls.js'
 import { createGameCommandHandler } from './gameCommands.js'
@@ -184,8 +185,8 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
     const socialPostResult = socialPostWork ? await socialPostWork : { status: 'none' as const }
     if (socialPostResult.status === 'found') {
       userMessage = `${userMessage}\n${formatSocialPostLine(socialPostResult.post, config.socialPosts.maxTextChars)}`
-      if (socialPostResult.post.imageUrl && imageAttachments.length < MAX_ATTACHMENTS) {
-        const imageAttachment = await resolveMediaUrl(socialPostResult.post.imageUrl).catch(() => null)
+      if (imageAttachments.length < MAX_ATTACHMENTS) {
+        const imageAttachment = await socialPostMedia(socialPostResult.post)
         if (imageAttachment) imageAttachments.push(imageAttachment)
       }
     } else if (socialPostResult.status === 'failed') {

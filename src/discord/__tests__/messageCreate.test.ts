@@ -885,6 +885,21 @@ describe("reading what the sender's own message shows", () => {
     expect(result.imageAttachments).toEqual([{ url: 'https://pbs.twimg.com/post.jpg', contentType: 'image/jpeg' }])
   })
 
+  it('watches a linked YouTube video instead of looking at its thumbnail', async () => {
+    const youtube = parseSocialPostUrl('https://www.youtube.com/watch?v=jNQXAC9IVRw')!
+    const found = foundSocialPost('https://i.ytimg.com/vi/jNQXAC9IVRw/hqdefault.jpg')
+    mocks.beginSocialPostLookup.mockResolvedValueOnce({
+      status: 'found',
+      post: { ...found.post, platform: 'youtube', id: youtube.id, canonicalUrl: youtube.canonicalUrl, target: youtube }
+    })
+    const { message } = createMessage({ content: '<@bot-1> what happens? https://www.youtube.com/watch?v=jNQXAC9IVRw' })
+
+    const result = await handle(message)
+
+    expect(mocks.resolveMediaUrl).not.toHaveBeenCalled()
+    expect(result.imageAttachments).toEqual([{ url: youtube.canonicalUrl, contentType: 'video/mp4', transport: 'uri' }])
+  })
+
   it('keeps a user attachment ahead of the social post image', async () => {
     mocks.beginSocialPostLookup.mockResolvedValueOnce(foundSocialPost('https://pbs.twimg.com/post.jpg'))
     const ownImage = { url: 'https://cdn.test/own.png', contentType: 'image/png' }
