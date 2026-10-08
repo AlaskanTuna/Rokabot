@@ -409,6 +409,88 @@ Admission uses the `lasting_fact` question. Verification questions are `durable_
 by its threshold or by operation rules. An exact re-sighting of an active value appends evidence after durability and
 attribution pass even when its `same_as_N_M` score is below threshold.
 
+## Memory Extraction Funnel
+
+Every extraction attempt writes one `memory_events` row with `kind = 'extraction_run'`. Its `detail` column is JSON
+holding the stage reached, the outcome, Jev's admission probability, operation counts and per-stage timings, never
+message text (field list: `docs/trd.md`, Extraction Run Trace). A job that fails and is retried leaves one row per attempt. Rows are
+pruned with the other metrics after `metrics.retentionDays`. Run the queries below with
+`sqlite3 ~/rokabot/data/rokabot.db`; `created_at` is epoch milliseconds.
+
+`stage` is the furthest stage reached (`precheck`, `admission`, `extraction`, `verification` or `applied`). `outcome`
+is how the attempt ended: `trivial` and `sensitive` are local precheck drops, `below_threshold` is a Jev admission
+rejection, `jev_unavailable` is an admission Jev couldn't judge (it is retried once), `noop` and `written` are
+completed extractions, and `error` is a failure (`errorClass` is `transient` or `permanent`). `errorClass: unjudged`
+appears only with `outcome: 'jev_unavailable'`, never with `error`.
+
+```sql
+-- Funnel by stage and outcome, last 7 days
+SELECT json_extract(detail, '$.stage') AS stage, json_extract(detail, '$.outcome') AS outcome, count(*)
+FROM memory_events WHERE kind = 'extraction_run' AND created_at > (strftime('%s','now') - 7*86400) * 1000
+GROUP BY stage, outcome ORDER BY count(*) DESC;
+
+-- Admission probability distribution (0.1 buckets)
+SELECT round(json_extract(detail, '$.admission.probability'), 1) AS bucket, count(*)
+FROM memory_events WHERE kind = 'extraction_run' AND json_extract(detail, '$.admission') IS NOT NULL
+GROUP BY bucket ORDER BY bucket;
+
+-- Operation outcomes
+SELECT sum(json_extract(detail, '$.ops.proposed')), sum(json_extract(detail, '$.ops.applied')),
+       sum(json_extract(detail, '$.ops.duplicate')), sum(json_extract(detail, '$.ops.staged')),
+       sum(json_extract(detail, '$.ops.dropped'))
+FROM memory_events WHERE kind = 'extraction_run';
+
+-- Errors and whether retries recovered them
+SELECT job, group_concat(outcome, ' > ') AS attempts
+FROM (SELECT json_extract(detail, '$.jobId') AS job, json_extract(detail, '$.outcome') AS outcome
+      FROM memory_events WHERE kind = 'extraction_run' ORDER BY id)
+GROUP BY job HAVING sum(outcome = 'error') > 0;
+
+-- Summary quality
+SELECT avg(json_extract(detail, '$.summary.kept')), avg(json_extract(detail, '$.summary.boilerplate'))
+FROM memory_events WHERE kind = 'extraction_run' AND json_extract(detail, '$.outcome') IN ('noop', 'written');
+```
+
+The first query shows where conversations stop. The second shows how close rejected conversations sat to
+`memory.admitThreshold`: a pile-up just under the threshold suggests it is too strict. A job in the fourth query
+ending in `> written` or `> noop` was recovered by a retry; one ending in `> error` was not. `ops.applied` (and
+`n_selected`) includes staged candidates, so `ops.staged` is a subset of it and active writes are `applied - staged`;
+`ops.dropped` counts operations that were neither applied nor duplicates, so it excludes staged ones.
+`summary.boilerplate` marks summaries that only say no new durable fact came up.
+
+Admission and verification judgments carry the job ID in `jev_events.job_id` (turn judgments leave it null), so one
+run's judgments are `SELECT kind, question, probability, applied FROM jev_events WHERE job_id = <jobId>;`.
+
+### Rejected-Conversation Sample
+
+To measure Jev's false negatives, about 1 in 10 `trivial` or `below_threshold` conversations is kept as text in
+`extraction_samples` (`memory.extractionSampleRate: 0.1`). Each row has the job ID, guild, channel, outcome, admission
+probability and the episode's lines as a JSON array of `[displayName]: content` strings, with no user IDs. Nothing is
+stored for `sensitive` conversations or `jev_unavailable` runs, or when `memory.privacy` is `off`. Rows expire after
+`memory.extractionSampleDays` (14 days) and are deleted at startup and daily (lowering the setting also removes stored
+rows older than the new value), and the table holds at most 200 rows (the oldest is replaced). Nothing reads it back:
+not Roka, recall, Jev or any prompt. To stop sampling, set `memory.extractionSampleRate` to 0 through a PR, or
+`MEMORY_EXTRACTION_SAMPLE_RATE=0` in `~/rokabot/.env` and recreate the container.
+
+For blind labelling, export once to the session scratchpad, never into the repo, then split the export: the judges get
+only the ID and the lines, and the key file with `outcome` and `admission_probability` stays away from them. Splitting
+one export keeps both files from the same snapshot, so the labels still join back by `id` if rows expire or are replaced
+before labelling ends:
+
+```bash
+ssh <pi-user>@<pi-ethernet-ip> 'sqlite3 -json ~/rokabot/data/rokabot.db "SELECT id, outcome, admission_probability, lines FROM extraction_samples ORDER BY id;"' \
+  > <session-scratchpad>/extraction-samples-full.json
+jq 'map({id, lines})' <session-scratchpad>/extraction-samples-full.json > <session-scratchpad>/extraction-samples.json
+jq 'map({id, outcome, admission_probability})' <session-scratchpad>/extraction-samples-full.json > <session-scratchpad>/extraction-sample-keys.json
+rm <session-scratchpad>/extraction-samples-full.json
+```
+
+Give the judges only `extraction-samples.json`, and join their labels to `extraction-sample-keys.json` by `id`
+afterwards. Have two independent judges label each sample for whether it holds a lasting personal or server fact, the
+same method as the Jev tone calibration above. The labels carry message text, so they stay local and are never
+committed. The share both judges accept is a conservative estimate of the rejected conversations that did hold a
+lasting fact.
+
 ## GitHub Actions Self-Hosted Runner
 
 The Pi runs a self-hosted GitHub Actions runner that auto-deploys on push to `main`. The workflow (`.github/workflows/deploy.yml`) pulls latest code, rebuilds Docker, and runs a health check.

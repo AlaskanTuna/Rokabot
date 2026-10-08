@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => {
     flushOpenEpisodes: vi.fn(),
     getDb: vi.fn(),
     pruneStaleClaims: vi.fn(),
+    pruneExtractionSamples: vi.fn().mockReturnValue(0),
     pruneFailedExtractionJobs: vi.fn(),
     ready: (handler: () => void) => {
       readyHandler = handler
@@ -65,6 +66,7 @@ vi.mock('../storage/extractionQueue.js', () => ({
   pruneFailedExtractionJobs: mocks.pruneFailedExtractionJobs,
   resetStuckProcessing: mocks.resetStuckProcessing
 }))
+vi.mock('../storage/extractionSampleStore.js', () => ({ pruneExtractionSamples: mocks.pruneExtractionSamples }))
 vi.mock('../storage/metricsStore.js', () => ({ pruneOldMetrics: vi.fn(), pruneFailureDiagnostics: vi.fn() }))
 vi.mock('../storage/sessionStore.js', () => ({ pruneOldHistory: vi.fn() }))
 vi.mock('../utils/logger.js', () => ({ logger: mocks.logger }))
@@ -127,6 +129,33 @@ describe('startup memory tasks', () => {
     expect(mocks.pruneEpisodesAndReembed).toHaveBeenCalledTimes(2)
     expect(mocks.pruneFailedExtractionJobs).toHaveBeenCalledTimes(2)
     vi.useRealTimers()
+  })
+
+  it('prunes expired extraction samples at startup and daily, logging only the count', async () => {
+    vi.useFakeTimers()
+    mocks.pruneExtractionSamples.mockReturnValueOnce(3).mockReturnValueOnce(0)
+    await import('../index.js')
+    mocks.triggerReady()
+
+    expect(mocks.pruneExtractionSamples).toHaveBeenCalledOnce()
+    expect(mocks.logger.info).toHaveBeenCalledWith({ removed: 3 }, 'Pruned extraction samples')
+    await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1000)
+
+    expect(mocks.pruneExtractionSamples).toHaveBeenCalledTimes(2)
+    expect(mocks.logger.info).not.toHaveBeenCalledWith({ removed: 0 }, 'Pruned extraction samples')
+    vi.useRealTimers()
+  })
+
+  it('contains extraction sample pruning failures without stopping the other startup tasks', async () => {
+    const error = new Error('sample pruning failed')
+    mocks.pruneExtractionSamples.mockImplementationOnce(() => {
+      throw error
+    })
+    await import('../index.js')
+
+    expect(() => mocks.triggerReady()).not.toThrow()
+    expect(mocks.logger.warn).toHaveBeenCalledWith({ err: error }, 'Failed to prune extraction samples')
+    expect(mocks.startExtractionScheduler).toHaveBeenCalledOnce()
   })
 
   it('catches background episode maintenance errors', async () => {

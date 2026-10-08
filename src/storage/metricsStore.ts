@@ -44,7 +44,7 @@ export interface ExtractionEventInput {
 }
 
 export interface MemoryEventInput {
-  kind: 'retrieval' | 'extraction' | 'claim_change' | 'context_build' | 'recall' | 'recall_shadow'
+  kind: 'retrieval' | 'extraction' | 'extraction_run' | 'claim_change' | 'context_build' | 'recall' | 'recall_shadow'
   guildId?: string
   channelId?: string
   subjectUserId?: string

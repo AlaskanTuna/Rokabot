@@ -7,21 +7,24 @@ import { precheckEpisode } from './episodePrecheck.js'
 export type AdmissionResult = {
   admitted: boolean
   reason: 'sensitive' | 'trivial' | 'jev_unavailable' | 'below_threshold' | 'admitted'
+  probability: number | null
+  inputTokens: number
 }
 
 export async function admitEpisode(input: {
   guildId: string
   channelId: string
   episode: ExtractionEpisode
+  jobId?: number
 }): Promise<AdmissionResult> {
   const precheck = precheckEpisode(input.episode)
-  if (precheck) return { admitted: false, reason: precheck }
+  if (precheck) return { admitted: false, reason: precheck, probability: null, inputTokens: 0 }
 
   const lines = input.episode.messages.map(
     ({ userId, displayName, content }) => `[${userId}|${displayName}]: ${content}`
   )
   const judgment = await judgeEpisodeAdmission({ lines })
-  if (!judgment) return { admitted: false, reason: 'jev_unavailable' }
+  if (!judgment) return { admitted: false, reason: 'jev_unavailable', probability: null, inputTokens: 0 }
 
   const admitted = judgment.noul >= config.memory.admitThreshold
   recordJevEvent({
@@ -34,7 +37,13 @@ export async function admitEpisode(input: {
     confidence: judgment.confidence,
     applied: admitted,
     latencyMs: judgment.latencyMs,
-    inputTokens: judgment.inputTokens
+    inputTokens: judgment.inputTokens,
+    jobId: input.jobId
   })
-  return { admitted, reason: admitted ? 'admitted' : 'below_threshold' }
+  return {
+    admitted,
+    reason: admitted ? 'admitted' : 'below_threshold',
+    probability: judgment.noul,
+    inputTokens: judgment.inputTokens
+  }
 }

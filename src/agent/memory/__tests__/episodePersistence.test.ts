@@ -75,10 +75,12 @@ describe('episode persistence', () => {
   it('stores the completed pipeline summary and embedding under the queue job ID', async () => {
     const job = enqueueEpisode({ guildId: 'guild-a', channelId: 'channel-a', episode: oneLineEpisode() })
 
-    await persistEpisodeResult({
-      job,
-      result: { status: 'completed', summary: 'The group planned a picnic.', appliedOps: 0, duplicateOps: 0 }
-    })
+    await expect(
+      persistEpisodeResult({
+        job,
+        result: { status: 'completed', summary: 'The group planned a picnic.', appliedOps: 0, duplicateOps: 0 }
+      })
+    ).resolves.toBe(true)
 
     expect(mocks.embedEpisodeText).toHaveBeenCalledWith({
       text: 'The group planned a picnic.',
@@ -100,10 +102,12 @@ describe('episode persistence', () => {
   it('does not embed or store a dropped episode', async () => {
     const job = enqueueEpisode({ guildId: 'guild-a', channelId: 'channel-a', episode: oneLineEpisode() })
 
-    await persistEpisodeResult({
-      job,
-      result: { status: 'dropped', summary: null, appliedOps: 0, duplicateOps: 0 }
-    })
+    await expect(
+      persistEpisodeResult({
+        job,
+        result: { status: 'dropped', summary: null, appliedOps: 0, duplicateOps: 0 }
+      })
+    ).resolves.toBe(false)
 
     expect(mocks.embedEpisodeText).not.toHaveBeenCalled()
     expect(listEpisodesForGuild('guild-a')).toEqual([])

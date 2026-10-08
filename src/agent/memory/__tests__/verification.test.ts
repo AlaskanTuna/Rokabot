@@ -23,7 +23,7 @@ vi.mock('../../../config.js', () => ({
 
 import { closeDb, getDb } from '../../../storage/database.js'
 import { registerChannelVisibility, resetChannelVisibilityForTest } from '../channelVisibility.js'
-import { verifyAndApplyOperations } from '../extractor.js'
+import { type OperationApplicationReport, verifyAndApplyOperations } from '../extractor.js'
 import {
   assertClaim,
   assertGuildClaim,
@@ -52,6 +52,18 @@ function guildPlan(
   date: { year: number; month: number; day: number } = { year: 2029, month: 9, day: 26 }
 ): ExtractionOp {
   return { op: 'add', subject: { kind: 'guild' }, predicate: 'plan', value, date }
+}
+
+function report(counts: Partial<OperationApplicationReport> = {}): OperationApplicationReport {
+  return {
+    appliedOps: 0,
+    droppedOps: 0,
+    duplicateOps: 0,
+    stagedOps: 0,
+    changedOps: 0,
+    inputTokens: expect.any(Number),
+    ...counts
+  }
 }
 
 function output(...ops: ExtractionOp[]) {
@@ -96,7 +108,7 @@ describe('verifyAndApplyOperations', () => {
         output: output(add(), { op: 'noop' }),
         subjectIds: new Set(['u-1'])
       })
-    ).resolves.toEqual({ appliedOps: 1, droppedOps: 0, duplicateOps: 0 })
+    ).resolves.toEqual(report({ appliedOps: 1, droppedOps: 0, duplicateOps: 0, changedOps: 1 }))
 
     expect(mocks.judgeEpisodeOperations).toHaveBeenCalledOnce()
     expect(getActiveClaims('g-1', 'u-1')).toEqual([expect.objectContaining({ value: 'tea', needsReview: false })])
@@ -121,6 +133,75 @@ describe('verifyAndApplyOperations', () => {
     expect(JSON.stringify(getDb().prepare('SELECT * FROM jev_events').all())).not.toContain('I like tea')
   })
 
+  it('links every verification judgment to the queue job', async () => {
+    setAnswers(positiveAnswers('durable_0', 'attributed_0'))
+
+    await verifyAndApplyOperations({
+      guildId: 'g-1',
+      channelId: 'c-1',
+      episode: episode(),
+      output: output(add()),
+      subjectIds: new Set(['u-1']),
+      jobId: 9
+    })
+
+    expect(getDb().prepare('SELECT job_id FROM jev_events').all()).toEqual([{ job_id: 9 }, { job_id: 9 }])
+  })
+
+  it('reports the Jev input tokens it spent', async () => {
+    setAnswers(positiveAnswers('durable_0', 'attributed_0'))
+
+    await expect(
+      verifyAndApplyOperations({
+        guildId: 'g-1',
+        channelId: 'c-1',
+        episode: episode(),
+        output: output(add()),
+        subjectIds: new Set(['u-1'])
+      })
+    ).resolves.toMatchObject({ inputTokens: 18 })
+  })
+
+  it('counts a re-staged candidate as staged but not changed', async () => {
+    const staged = { status: 'candidate', needs_review: 1 }
+    mocks.judgeEpisodeOperations.mockResolvedValue(null)
+    const run = () =>
+      verifyAndApplyOperations({
+        guildId: 'g-1',
+        channelId: 'c-1',
+        episode: episode(),
+        output: output(add()),
+        subjectIds: new Set(['u-1'])
+      })
+
+    await expect(run()).resolves.toEqual(report({ appliedOps: 1, stagedOps: 1, changedOps: 1, inputTokens: 0 }))
+    await expect(run()).resolves.toEqual(report({ appliedOps: 1, stagedOps: 1, changedOps: 0, inputTokens: 0 }))
+    expect(getDb().prepare('SELECT status, needs_review FROM memory_claim').all()).toEqual([staged])
+  })
+
+  it('counts activating a staged candidate as a change', async () => {
+    mocks.judgeEpisodeOperations.mockResolvedValueOnce(null)
+    await verifyAndApplyOperations({
+      guildId: 'g-1',
+      channelId: 'c-1',
+      episode: episode(),
+      output: output(add()),
+      subjectIds: new Set(['u-1'])
+    })
+    setAnswers(positiveAnswers('durable_0', 'attributed_0'))
+
+    await expect(
+      verifyAndApplyOperations({
+        guildId: 'g-1',
+        channelId: 'c-1',
+        episode: episode(),
+        output: output(add()),
+        subjectIds: new Set(['u-1'])
+      })
+    ).resolves.toEqual(report({ appliedOps: 1, stagedOps: 0, changedOps: 1 }))
+    expect(getActiveClaims('g-1', 'u-1')).toEqual([expect.objectContaining({ value: 'tea', needsReview: false })])
+  })
+
   it('does not request verification for noop-only output', async () => {
     await expect(
       verifyAndApplyOperations({
@@ -130,7 +211,7 @@ describe('verifyAndApplyOperations', () => {
         output: output({ op: 'noop' }),
         subjectIds: new Set(['u-1'])
       })
-    ).resolves.toEqual({ appliedOps: 0, droppedOps: 0, duplicateOps: 0 })
+    ).resolves.toEqual(report({ appliedOps: 0, droppedOps: 0, duplicateOps: 0, changedOps: 0 }))
     expect(mocks.judgeEpisodeOperations).not.toHaveBeenCalled()
   })
 
@@ -144,7 +225,7 @@ describe('verifyAndApplyOperations', () => {
         output: output(add()),
         subjectIds: new Set(['u-1'])
       })
-    ).resolves.toEqual({ appliedOps: 0, droppedOps: 1, duplicateOps: 0 })
+    ).resolves.toEqual(report({ appliedOps: 0, droppedOps: 1, duplicateOps: 0, changedOps: 0 }))
     expect(getActiveClaims('g-1', 'u-1')).toEqual([])
 
     setAnswers({ durable_0: { noul: 0.5 }, attributed_0: { noul: 0.5 } })
@@ -156,7 +237,7 @@ describe('verifyAndApplyOperations', () => {
         output: output(add('coffee')),
         subjectIds: new Set(['u-1'])
       })
-    ).resolves.toEqual({ appliedOps: 1, droppedOps: 0, duplicateOps: 0 })
+    ).resolves.toEqual(report({ appliedOps: 1, droppedOps: 0, duplicateOps: 0, changedOps: 1 }))
   })
 
   it('adds evidence to an existing same-as claim instead of inserting a duplicate', async () => {
@@ -178,7 +259,7 @@ describe('verifyAndApplyOperations', () => {
         output: output(add()),
         subjectIds: new Set(['u-1'])
       })
-    ).resolves.toEqual({ appliedOps: 0, droppedOps: 0, duplicateOps: 1 })
+    ).resolves.toEqual(report({ appliedOps: 0, droppedOps: 0, duplicateOps: 1, changedOps: 0 }))
 
     expect(getActiveClaims('g-1', 'u-1')).toEqual([expect.objectContaining({ id: existing.id })])
     expect(getDb().prepare('SELECT COUNT(*) AS count FROM memory_claim').get()).toEqual({ count: 1 })
@@ -213,7 +294,7 @@ describe('verifyAndApplyOperations', () => {
         output: output(add('tea')),
         subjectIds: new Set(['u-1'])
       })
-    ).resolves.toEqual({ appliedOps: 1, droppedOps: 0, duplicateOps: 0 })
+    ).resolves.toEqual(report({ appliedOps: 1, droppedOps: 0, duplicateOps: 0, changedOps: 1 }))
 
     expect(mocks.judgeEpisodeOperations.mock.calls[0][0].existing).not.toContainEqual(
       expect.objectContaining({ id: hidden.id })
@@ -248,7 +329,7 @@ describe('verifyAndApplyOperations', () => {
         output: output(add()),
         subjectIds: new Set(['u-1'])
       })
-    ).resolves.toEqual({ appliedOps: 1, droppedOps: 0, duplicateOps: 0 })
+    ).resolves.toEqual(report({ appliedOps: 1, droppedOps: 0, duplicateOps: 0, changedOps: 0 }))
 
     expect(mocks.judgeEpisodeOperations.mock.calls[0][0].existing).toEqual([])
     expect(getActiveClaims('g-1', 'u-1')).toEqual([expect.objectContaining({ id: hidden.id, value: 'tea' })])
@@ -277,7 +358,7 @@ describe('verifyAndApplyOperations', () => {
         output: output(add()),
         subjectIds: new Set(['u-1'])
       })
-    ).resolves.toEqual({ appliedOps: 0, droppedOps: 0, duplicateOps: 1 })
+    ).resolves.toEqual(report({ appliedOps: 0, droppedOps: 0, duplicateOps: 1, changedOps: 0 }))
 
     expect(getActiveClaims('g-1', 'u-1')).toEqual([expect.objectContaining({ id: existing.id, lastSeenAt: 1_000 })])
     expect(
@@ -307,7 +388,7 @@ describe('verifyAndApplyOperations', () => {
         output: output(add()),
         subjectIds: new Set(['u-1'])
       })
-    ).resolves.toEqual({ appliedOps: 0, droppedOps: 1, duplicateOps: 0 })
+    ).resolves.toEqual(report({ appliedOps: 0, droppedOps: 1, duplicateOps: 0, changedOps: 0 }))
 
     expect(getActiveClaims('g-1', 'u-1')).toEqual([expect.objectContaining({ id: existing.id, lastSeenAt: 1_000 })])
     expect(
@@ -340,7 +421,7 @@ describe('verifyAndApplyOperations', () => {
         }),
         subjectIds: new Set(['u-1'])
       })
-    ).resolves.toEqual({ appliedOps: 1, droppedOps: 0, duplicateOps: 0 })
+    ).resolves.toEqual(report({ appliedOps: 1, droppedOps: 0, duplicateOps: 0, changedOps: 1 }))
     const replacement = getActiveClaims('g-1', 'u-1')[0]
     expect(replacement).toMatchObject({ value: 'green tea', status: 'active' })
     expect(
@@ -366,7 +447,7 @@ describe('verifyAndApplyOperations', () => {
         }),
         subjectIds: new Set(['u-1'])
       })
-    ).resolves.toEqual({ appliedOps: 1, droppedOps: 0, duplicateOps: 0 })
+    ).resolves.toEqual(report({ appliedOps: 1, droppedOps: 0, duplicateOps: 0, changedOps: 1 }))
     expect(
       getDb().prepare('SELECT status, superseded_by, end_reason FROM memory_claim WHERE id = ?').get(replacement.id)
     ).toEqual({
@@ -401,7 +482,7 @@ describe('verifyAndApplyOperations', () => {
         }),
         subjectIds: new Set(['u-1'])
       })
-    ).resolves.toEqual({ appliedOps: 0, droppedOps: 1, duplicateOps: 0 })
+    ).resolves.toEqual(report({ appliedOps: 0, droppedOps: 1, duplicateOps: 0, changedOps: 0 }))
     expect(getActiveClaims('g-1', 'u-2')).toEqual([expect.objectContaining({ id: other.id, status: 'active' })])
   })
 
@@ -432,7 +513,7 @@ describe('verifyAndApplyOperations', () => {
         output: output({ op: 'add', subject: { kind: 'user', userId: 'u-1' }, predicate: 'nickname', value: 'Rin' }),
         subjectIds: new Set(['u-1'])
       })
-    ).resolves.toEqual({ appliedOps: 1, droppedOps: 0, duplicateOps: 0 })
+    ).resolves.toEqual(report({ appliedOps: 1, droppedOps: 0, duplicateOps: 0, changedOps: 1 }))
 
     expect(getActiveClaims('g-1', 'u-1')).toEqual([expect.objectContaining({ id: original.id, value: 'Rin' })])
     expect(
@@ -483,7 +564,7 @@ describe('verifyAndApplyOperations', () => {
         }),
         subjectIds: new Set(['u-1'])
       })
-    ).resolves.toEqual({ appliedOps: 1, droppedOps: 0, duplicateOps: 0 })
+    ).resolves.toEqual(report({ appliedOps: 1, droppedOps: 0, duplicateOps: 0, changedOps: 1 }))
 
     expect(getActiveClaims('g-1', 'u-1')).toEqual([expect.objectContaining({ id: original.id, value: 'Rin' })])
     expect(
@@ -515,7 +596,7 @@ describe('verifyAndApplyOperations', () => {
         output: output({ op: 'add', subject: { kind: 'user', userId: 'u-1' }, predicate: 'nickname', value: 'Rin' }),
         subjectIds: new Set(['u-1'])
       })
-    ).resolves.toEqual({ appliedOps: 0, droppedOps: 1, duplicateOps: 0 })
+    ).resolves.toEqual(report({ appliedOps: 0, droppedOps: 1, duplicateOps: 0, changedOps: 0 }))
     expect(
       getDb().prepare('SELECT status, last_seen_at, end_reason FROM memory_claim WHERE id = ?').get(forgotten.id)
     ).toEqual({
@@ -563,7 +644,7 @@ describe('verifyAndApplyOperations', () => {
         }),
         subjectIds: new Set(['u-1'])
       })
-    ).resolves.toEqual({ appliedOps: 0, droppedOps: 1, duplicateOps: 0 })
+    ).resolves.toEqual(report({ appliedOps: 0, droppedOps: 1, duplicateOps: 0, changedOps: 0 }))
 
     expect(getActiveClaims('g-1', 'u-1')).toEqual([expect.objectContaining({ id: active.id, value: 'tea' })])
     expect(
@@ -596,7 +677,7 @@ describe('verifyAndApplyOperations', () => {
         output: output(add()),
         subjectIds: new Set(['u-1'])
       })
-    ).resolves.toEqual({ appliedOps: 1, droppedOps: 0, duplicateOps: 0 })
+    ).resolves.toEqual(report({ appliedOps: 1, droppedOps: 0, duplicateOps: 0, stagedOps: 1, changedOps: 1 }))
     expect(getActiveClaims('g-1', 'u-1')).toEqual([])
     expect(getDb().prepare('SELECT status, needs_review FROM memory_claim').all()).toEqual([
       { status: 'candidate', needs_review: 1 }
@@ -705,7 +786,7 @@ describe('verifyAndApplyOperations', () => {
         output: output(add('alice@example.com')),
         subjectIds: new Set(['u-1'])
       })
-    ).resolves.toEqual({ appliedOps: 0, droppedOps: 1, duplicateOps: 0 })
+    ).resolves.toEqual(report({ appliedOps: 0, droppedOps: 1, duplicateOps: 0, changedOps: 0 }))
     expect(getActiveClaims('g-1', 'u-1')).toEqual([expect.objectContaining({ id: prior.id, value: 'tea' })])
   })
 
@@ -720,7 +801,7 @@ describe('verifyAndApplyOperations', () => {
         output: output(guildPlan()),
         subjectIds: new Set()
       })
-    ).resolves.toEqual({ appliedOps: 1, droppedOps: 0, duplicateOps: 0 })
+    ).resolves.toEqual(report({ appliedOps: 1, droppedOps: 0, duplicateOps: 0, changedOps: 1 }))
 
     expect(getActiveGuildClaims('g-1')).toEqual([
       expect.objectContaining({ predicate: 'plan', value: 'Game night on September 26', subjectUserId: null })
@@ -743,7 +824,7 @@ describe('verifyAndApplyOperations', () => {
         output: output(guildPlan()),
         subjectIds: new Set()
       })
-    ).resolves.toEqual({ appliedOps: 0, droppedOps: 1, duplicateOps: 0 })
+    ).resolves.toEqual(report({ appliedOps: 0, droppedOps: 1, duplicateOps: 0, changedOps: 0 }))
     expect(getDb().prepare('SELECT COUNT(*) AS count FROM memory_claim').get()).toEqual({ count: 0 })
   })
 
@@ -764,7 +845,7 @@ describe('verifyAndApplyOperations', () => {
         output: output(guildPlan()),
         subjectIds: new Set()
       })
-    ).resolves.toEqual({ appliedOps: 1, droppedOps: 0, duplicateOps: 0 })
+    ).resolves.toEqual(report({ appliedOps: 1, droppedOps: 0, duplicateOps: 0, stagedOps: 1, changedOps: 1 }))
     expect(getDb().prepare("SELECT status, needs_review FROM memory_claim WHERE subject_kind = 'guild'").get()).toEqual(
       {
         status: 'candidate',
@@ -792,7 +873,7 @@ describe('verifyAndApplyOperations', () => {
         output: output(guildPlan()),
         subjectIds: new Set()
       })
-    ).resolves.toEqual({ appliedOps: 0, droppedOps: 0, duplicateOps: 1 })
+    ).resolves.toEqual(report({ appliedOps: 0, droppedOps: 0, duplicateOps: 1, changedOps: 0 }))
 
     expect(getDb().prepare('SELECT COUNT(*) AS count FROM memory_claim').get()).toEqual({ count: 1 })
     expect(
@@ -847,7 +928,7 @@ describe('verifyAndApplyOperations', () => {
           ),
           subjectIds: new Set()
         })
-      ).resolves.toEqual({ appliedOps: 0, droppedOps: 1, duplicateOps: 0 })
+      ).resolves.toEqual(report({ appliedOps: 0, droppedOps: 1, duplicateOps: 0, changedOps: 0 }))
       setAnswers(positiveAnswers('durable_0', 'guild_scoped_0'))
     }
     expect(getDb().prepare('SELECT status FROM memory_claim WHERE id = ?').get(other.id)).toEqual({ status: 'active' })
@@ -878,7 +959,7 @@ describe('verifyAndApplyOperations', () => {
         }),
         subjectIds: new Set()
       })
-    ).resolves.toEqual({ appliedOps: 1, droppedOps: 0, duplicateOps: 0 })
+    ).resolves.toEqual(report({ appliedOps: 1, droppedOps: 0, duplicateOps: 0, stagedOps: 1, changedOps: 1 }))
     expect(getDb().prepare("SELECT status, needs_review FROM memory_claim WHERE subject_kind = 'guild'").all()).toEqual(
       [
         { status: 'active', needs_review: 0 },
@@ -907,7 +988,7 @@ describe('verifyAndApplyOperations', () => {
         }),
         subjectIds: new Set()
       })
-    ).resolves.toEqual({ appliedOps: 0, droppedOps: 1, duplicateOps: 0 })
+    ).resolves.toEqual(report({ appliedOps: 0, droppedOps: 1, duplicateOps: 0, changedOps: 0 }))
     expect(getDb().prepare('SELECT COUNT(*) AS count FROM memory_claim').get()).toEqual({ count: 0 })
   })
 })

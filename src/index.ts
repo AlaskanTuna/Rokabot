@@ -44,6 +44,7 @@ import { stopStatusCycler } from './discord/statusCycler.js'
 import { destroyAllGames as destroyAllShiritoriGames } from './games/shiritori.js'
 import { closeDb, getDb } from './storage/database.js'
 import { pruneFailedExtractionJobs, resetStuckProcessing } from './storage/extractionQueue.js'
+import { pruneExtractionSamples } from './storage/extractionSampleStore.js'
 import { pruneFailureDiagnostics, pruneOldMetrics } from './storage/metricsStore.js'
 import { pruneOldHistory } from './storage/sessionStore.js'
 import { logger } from './utils/logger.js'
@@ -84,6 +85,15 @@ function pruneExpiredFailedExtractions(): void {
   logger.info({ deleted }, 'Pruned expired failed extraction jobs')
 }
 
+function pruneExpiredExtractionSamples(): void {
+  try {
+    const removed = pruneExtractionSamples()
+    if (removed > 0) logger.info({ removed }, 'Pruned extraction samples')
+  } catch (error) {
+    logger.warn({ err: error }, 'Failed to prune extraction samples')
+  }
+}
+
 function pruneEpisodesInBackground(): void {
   void pruneEpisodesAndReembed().catch((err: unknown) => {
     logger.error({ err }, 'Failed to prune and repair memory episodes')
@@ -104,11 +114,13 @@ client.once('clientReady', () => {
   pruneOldHistory(config.session.historyRetentionDays)
   pruneOldMetrics(config.metrics.retentionDays)
   pruneFailureDiagnostics(config.metrics.diagnosticsRetentionHours)
+  pruneExpiredExtractionSamples()
   registerChannelVisibility(createChannelVisibilityResolver(client))
   startupMemoryTasks(client.user?.id)
 
   setInterval(() => pruneOldHistory(config.session.historyRetentionDays), 60 * 60 * 1000)
   setInterval(() => pruneOldMetrics(config.metrics.retentionDays), 24 * 60 * 60 * 1000)
+  setInterval(pruneExpiredExtractionSamples, 24 * 60 * 60 * 1000)
   setInterval(() => pruneFailureDiagnostics(config.metrics.diagnosticsRetentionHours), 60 * 60 * 1000)
   setInterval(() => cleanupExpired(), 60 * 60 * 1000)
   setInterval(() => cleanupExpiredCooldowns(), 60 * 60 * 1000)

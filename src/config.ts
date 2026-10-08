@@ -118,6 +118,8 @@ interface YamlConfig {
     factMinSimilarity?: number
     serverFactMinSimilarity?: number
     vaultExportDir?: string
+    extractionSampleRate?: number
+    extractionSampleDays?: number
   }
   metrics?: { retentionDays?: number; diagnosticsRetentionHours?: number }
   report?: {
@@ -355,7 +357,9 @@ export const config = {
     recallCoreFacts: yaml.memory?.recallCoreFacts ?? 3,
     factMinSimilarity: yaml.memory?.factMinSimilarity ?? 0.65,
     serverFactMinSimilarity: yaml.memory?.serverFactMinSimilarity ?? 0.65,
-    vaultExportDir: envString('MEMORY_VAULT_EXPORT_DIR') ?? yaml.memory?.vaultExportDir ?? 'data/vault'
+    vaultExportDir: envString('MEMORY_VAULT_EXPORT_DIR') ?? yaml.memory?.vaultExportDir ?? 'data/vault',
+    extractionSampleRate: envNumber('MEMORY_EXTRACTION_SAMPLE_RATE') ?? yaml.memory?.extractionSampleRate ?? 0.1,
+    extractionSampleDays: envInt('MEMORY_EXTRACTION_SAMPLE_DAYS') ?? yaml.memory?.extractionSampleDays ?? 14
   },
   metrics: {
     retentionDays: envInt('METRICS_RETENTION_DAYS') ?? yaml.metrics?.retentionDays ?? 90,
@@ -525,6 +529,8 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'memory.recallCoreFacts', value: config.memory.recallCoreFacts, min: 0, max: 5 },
   { path: 'memory.factMinSimilarity', value: config.memory.factMinSimilarity, min: 0, max: 1 },
   { path: 'memory.serverFactMinSimilarity', value: config.memory.serverFactMinSimilarity, min: 0, max: 1 },
+  { path: 'memory.extractionSampleRate', value: config.memory.extractionSampleRate, min: 0, max: 1 },
+  { path: 'memory.extractionSampleDays', value: config.memory.extractionSampleDays, min: 1, max: 90 },
   { path: 'metrics.retentionDays', value: config.metrics.retentionDays, min: 1 },
   { path: 'metrics.diagnosticsRetentionHours', value: config.metrics.diagnosticsRetentionHours, min: 1 },
   { path: 'report.maxPerUserPerHour', value: config.report.maxPerUserPerHour, min: 1 },
