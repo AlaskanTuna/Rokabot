@@ -250,6 +250,22 @@ describe('media recall', () => {
       ).toEqual(['Here cat.', 'Other cat.'])
     })
 
+    it('withholds a digest with no recorded occurrence under balanced', () => {
+      saveMediaDigest({
+        guildId: 'guild-a',
+        contentKey: 'youtube:orphan',
+        kind: 'video',
+        label: 'Orphan',
+        summary: 'Orphan cat.',
+        digestJson: '{}',
+        embedding: vector768(0.9, 0.43589),
+        createdAt: 1_000
+      })
+      configMock.memory.privacy = 'balanced'
+
+      expect(recallMedia({ guildId: 'guild-a', queryEmbedding: vector768(1), scope: here })).toEqual([])
+    })
+
     it('shares a public-channel media item and withholds a private-channel one under balanced', () => {
       seedInChannel('youtube:public', 'public-1', 'Public cat.')
       seedInChannel('youtube:private', 'private-1', 'Private cat.')

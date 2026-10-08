@@ -109,7 +109,7 @@ function getActiveClaims(guildId: string, userIds: string[]): UserMemoryClaim[] 
   return rows.map(mapClaim)
 }
 
-function searchClaimIds(guildId: string, userIds: string[], message: string): Set<number> {
+export function searchClaimIds(guildId: string, userIds: string[], message: string): Set<number> {
   const terms = [...new Set(message.toLowerCase().match(/[a-z0-9]{2,}/g) ?? [])].slice(0, 12)
   if (userIds.length === 0 || terms.length === 0) return new Set()
 

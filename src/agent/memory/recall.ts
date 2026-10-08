@@ -8,7 +8,7 @@ import { estimateTokens } from '../../utils/tokens.js'
 import { cosineSimilarity } from './episodeRetriever.js'
 import { type GuildMemoryClaim, type UserMemoryClaim, getActiveClaims, getActiveGuildClaims } from './memoryClaims.js'
 import { type RecallScope, canRecall } from './privacy.js'
-import { formatGuildFactDate } from './retriever.js'
+import { formatGuildFactDate, searchClaimIds } from './retriever.js'
 
 export type RecallItemKind = 'fact' | 'server_fact' | 'conversation' | 'media'
 export type RecallItem = Readonly<{
@@ -47,7 +47,7 @@ const UNTRUSTED_NOTE =
 
 type FactClaim = UserMemoryClaim | GuildMemoryClaim
 type Ranked = Readonly<{ item: RecallItem; at: number }>
-type Ctx = Readonly<{ speakerId: string; namedIds: ReadonlySet<string>; terms: readonly string[]; now: number }>
+type Ctx = Readonly<{ speakerId: string; namedIds: ReadonlySet<string>; keywordIds: ReadonlySet<number>; now: number }>
 
 function isLive(claim: FactClaim, now: number): boolean {
   return !claim.needsReview && (claim.expiresAt === null || claim.expiresAt > now)
@@ -56,15 +56,6 @@ function isLive(claim: FactClaim, now: number): boolean {
 // cosineSimilarity rejects wrong-size, non-finite and zero vectors, so a query it cannot score falls back to keywords.
 function isUsableQuery(query: readonly number[] | null): query is readonly number[] {
   return query !== null && cosineSimilarity(query, query) !== null
-}
-
-function messageTerms(message: string): string[] {
-  return [...new Set(message.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? [])]
-}
-
-function matchesKeyword(value: string, terms: readonly string[]): boolean {
-  const lowered = value.toLowerCase()
-  return terms.some((term) => lowered.includes(term))
 }
 
 function recencyBoost(at: number, now: number): number {
@@ -81,10 +72,14 @@ function factBoost(claim: FactClaim, ctx: Ctx): number {
   )
 }
 
-// A keyword match exempts the fact, so a memory the message asks for by name is never held back.
+// A keyword match exempts the fact, so a memory the message asks for by name is never held back. Recalls stamped at
+// or after `now` came from the legacy retriever in this same turn, so they do not count against the fact.
+// searchClaimIds only returns member facts, so server facts never get the exemption.
 function cooldownPenalty(claim: FactClaim, ctx: Ctx): number {
-  const cooling = claim.lastRecalledAt !== null && ctx.now - claim.lastRecalledAt <= config.memory.recallCooldownMs
-  return cooling && !matchesKeyword(claim.value, ctx.terms) ? COOLDOWN_PENALTY : 0
+  const { lastRecalledAt } = claim
+  const cooling =
+    lastRecalledAt !== null && lastRecalledAt < ctx.now && ctx.now - lastRecalledAt <= config.memory.recallCooldownMs
+  return cooling && !ctx.keywordIds.has(claim.id) ? COOLDOWN_PENALTY : 0
 }
 
 function coreRank(claim: UserMemoryClaim): number | null {
@@ -123,6 +118,32 @@ function rankBySimilarity(
     ranked.push({ item: factItem(claim, score, false), at: claim.lastSeenAt })
   }
   return ranked
+}
+
+// A named subject is what the user asked about, so no similarity floor applies. Facts without a usable embedding
+// trail the ranked ones, newest first.
+function rankSubjectFacts(
+  claims: readonly FactClaim[],
+  embeddings: ReadonlyMap<number, EpisodeEmbedding>,
+  query: readonly number[],
+  ctx: Ctx
+): RecallItem[] {
+  const ranked: Ranked[] = []
+  const unembedded: Ranked[] = []
+  for (const claim of claims) {
+    const embedding = embeddings.get(claim.id)
+    const similarity = embedding ? cosineSimilarity(query, embedding) : null
+    if (similarity === null) {
+      unembedded.push({ item: factItem(claim, factBoost(claim, ctx), false), at: claim.lastSeenAt })
+      continue
+    }
+    const score = similarity + factBoost(claim, ctx) - cooldownPenalty(claim, ctx)
+    ranked.push({ item: factItem(claim, score, false), at: claim.lastSeenAt })
+  }
+  return [
+    ...ranked.sort(byScore),
+    ...unembedded.sort((left, right) => right.at - left.at || left.item.id - right.item.id)
+  ].map(({ item }) => item)
 }
 
 function rankConversations(episodes: readonly MemoryEpisode[], query: readonly number[], now: number): Ranked[] {
@@ -185,10 +206,22 @@ export function recallForTurn(input: RecallInput): RecallResult {
   const now = input.now ?? Date.now()
   const { scope, speakerId } = input
   const query = isUsableQuery(input.queryEmbedding) ? input.queryEmbedding : null
-  const ctx: Ctx = { speakerId, namedIds: new Set(input.namedIds), terms: messageTerms(input.message), now }
+
+  let gated = 0
+  const admit = (channels: readonly (string | null)[]): boolean => {
+    const allowed = canRecall(channels, scope)
+    if (!allowed) gated += 1
+    return allowed
+  }
+  const admitClaims = <T extends FactClaim>(claims: readonly T[]): T[] => {
+    const sources = getClaimSourceChannels(claims.map((claim) => claim.id))
+    return claims.filter((claim) => admit(sources.get(claim.id) ?? [null]))
+  }
 
   const speakerClaims = getActiveClaims(scope.guildId, speakerId).filter((claim) => isLive(claim, now))
-  const relatedIds = speakerClaims.flatMap((claim) =>
+  const speakerAllowed = admitClaims(speakerClaims)
+  // Only relationships the gate admits here may pull in another person's facts.
+  const relatedIds = speakerAllowed.flatMap((claim) =>
     claim.predicate === 'relationship_to' && claim.objectUserId !== null ? [claim.objectUserId] : []
   )
   const otherIds = [
@@ -201,23 +234,13 @@ export function recallForTurn(input: RecallInput): RecallResult {
   const otherClaims = otherIds
     .flatMap((userId) => getActiveClaims(scope.guildId, userId))
     .filter((claim) => isLive(claim, now))
+  const otherAllowed = admitClaims(otherClaims)
+  const keywordIds = searchClaimIds(scope.guildId, [speakerId, ...otherIds], input.message)
+  const ctx: Ctx = { speakerId, namedIds: new Set(input.namedIds), keywordIds, now }
   const serverClaims = query ? getActiveGuildClaims(scope.guildId, now) : []
+  const serverAllowed = admitClaims(serverClaims)
   const episodes = query ? listEpisodesForGuild(scope.guildId) : []
   const media = query ? listMediaRecallCandidates(scope.guildId) : []
-
-  const sources = getClaimSourceChannels([...speakerClaims, ...otherClaims, ...serverClaims].map((claim) => claim.id))
-  let gated = 0
-  const admit = (channels: readonly (string | null)[]): boolean => {
-    const allowed = canRecall(channels, scope)
-    if (!allowed) gated += 1
-    return allowed
-  }
-  const admitClaims = <T extends FactClaim>(claims: readonly T[]): T[] =>
-    claims.filter((claim) => admit(sources.get(claim.id) ?? [null]))
-
-  const speakerAllowed = admitClaims(speakerClaims)
-  const otherAllowed = admitClaims(otherClaims)
-  const serverAllowed = admitClaims(serverClaims)
 
   const coreRanked: Ranked[] = speakerAllowed
     .flatMap((claim) => {
@@ -239,7 +262,7 @@ export function recallForTurn(input: RecallInput): RecallResult {
   const memberRanked = query
     ? rankBySimilarity(restMembers, embeddings, query, ctx)
     : restMembers
-        .filter((claim) => matchesKeyword(claim.value, ctx.terms))
+        .filter((claim) => ctx.keywordIds.has(claim.id))
         .map((claim) => ({ item: factItem(claim, factBoost(claim, ctx), false), at: claim.lastSeenAt }))
   const serverRanked = query ? rankBySimilarity(serverAllowed, embeddings, query, ctx) : []
   const conversationRanked = query
@@ -251,7 +274,8 @@ export function recallForTurn(input: RecallInput): RecallResult {
     : []
   const mediaRanked = query
     ? rankMedia(
-        media.filter((candidate) => admit(candidate.channelIds)),
+        // No recorded occurrence means no channel to judge, so it counts as private, not as an unknown source.
+        media.filter((candidate) => admit(candidate.channelIds.length > 0 ? candidate.channelIds : [''])),
         query,
         now
       )
@@ -291,15 +315,16 @@ export function recallFactsForSubject(
   input: Omit<RecallInput, 'participantIds' | 'namedIds'> & { subjectUserId: string; limit: number }
 ): RecallItem[] {
   const now = input.now ?? Date.now()
-  const ctx: Ctx = { speakerId: input.speakerId, namedIds: new Set(), terms: messageTerms(input.message), now }
   const claims = getActiveClaims(input.scope.guildId, input.subjectUserId).filter((claim) => isLive(claim, now))
   const sources = getClaimSourceChannels(claims.map((claim) => claim.id))
   const allowed = claims.filter((claim) => canRecall(sources.get(claim.id) ?? [null], input.scope))
 
+  const keywordIds = searchClaimIds(input.scope.guildId, [input.subjectUserId], input.message)
+  const ctx: Ctx = { speakerId: input.speakerId, namedIds: new Set(), keywordIds, now }
   const query = isUsableQuery(input.queryEmbedding) ? input.queryEmbedding : null
   if (query === null) {
     return allowed
-      .map((claim) => ({ claim, keyword: matchesKeyword(claim.value, ctx.terms) }))
+      .map((claim) => ({ claim, keyword: keywordIds.has(claim.id) }))
       .sort(
         (left, right) =>
           Number(right.keyword) - Number(left.keyword) ||
@@ -311,10 +336,7 @@ export function recallFactsForSubject(
   }
 
   const embeddings = getClaimEmbeddings(allowed.map((claim) => claim.id))
-  return rankBySimilarity(allowed, embeddings, query, ctx)
-    .sort(byScore)
-    .slice(0, input.limit)
-    .map(({ item }) => item)
+  return rankSubjectFacts(allowed, embeddings, query, ctx).slice(0, input.limit)
 }
 
 // Everything remembered came from people's messages, so it is quoted: a value cannot add lines or headings.

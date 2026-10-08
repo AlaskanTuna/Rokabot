@@ -41,7 +41,11 @@ export function recallMedia(input: {
 }): RecalledMedia[] {
   const ranked = listMediaRecallCandidates(input.guildId)
     .filter(
-      (digest) => !input.scope || config.memory.privacy === 'relaxed' || canRecall(digest.channelIds, input.scope)
+      (digest) =>
+        !input.scope ||
+        config.memory.privacy === 'relaxed' ||
+        // No recorded occurrence means no channel to judge, so it counts as private, not as an unknown source.
+        canRecall(digest.channelIds.length > 0 ? digest.channelIds : [''], input.scope)
     )
     .map((digest) => toRecalledMedia(digest, input.queryEmbedding))
     .filter((media): media is RecalledMedia => media !== null)

@@ -1693,7 +1693,8 @@ describe('generateResponse prompt safety', () => {
       guildId: 'prompt-safety-guild',
       text: 'What about Mimi and Rin?',
       speakerId: 'mio-id',
-      mentionedUserIds: []
+      mentionedUserIds: [],
+      scope: { guildId: 'prompt-safety-guild', channelId: 'roka-prompt-safety-channel' }
     })
     expect(retrieveForTurn).toHaveBeenCalledWith({
       guildId: 'prompt-safety-guild',
