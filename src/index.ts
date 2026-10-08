@@ -53,7 +53,6 @@ await initializeSocialPosts()
 const client = createClient()
 let claimPruneTimer: ReturnType<typeof setInterval> | undefined
 let loggedPassiveMemoryDisabled = false
-const EXTRACTION_QUEUE_STUCK_THRESHOLD_MS = 5 * 60 * 1000
 
 function startupMemoryTasks(botUserId?: string): void {
   if (!config.jev.apiKey && !loggedPassiveMemoryDisabled) {
@@ -70,7 +69,7 @@ function startupMemoryTasks(botUserId?: string): void {
       },
       24 * 60 * 60 * 1000
     )
-    resetStuckProcessing(EXTRACTION_QUEUE_STUCK_THRESHOLD_MS)
+    resetStuckProcessing()
     startExtractionScheduler()
     pruneEpisodesInBackground()
   } catch (err) {

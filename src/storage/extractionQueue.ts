@@ -137,10 +137,7 @@ export function markFailed(id: number): 'pending' | 'failed' | undefined {
   })()
 }
 
-/** Returns processing jobs to pending after a restart when their persisted age exceeds the threshold. */
-export function resetStuckProcessing(olderThanMs: number): number {
-  const cutoff = Date.now() - olderThanMs
-  return getDb()
-    .prepare("UPDATE extraction_queue SET status = 'pending' WHERE status = 'processing' AND enqueued_at <= ?")
-    .run(cutoff).changes
+/** Returns processing jobs to pending after a restart. */
+export function resetStuckProcessing(): number {
+  return getDb().prepare("UPDATE extraction_queue SET status = 'pending' WHERE status = 'processing'").run().changes
 }

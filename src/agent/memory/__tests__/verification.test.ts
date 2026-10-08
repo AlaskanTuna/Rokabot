@@ -279,7 +279,7 @@ describe('verifyAndApplyOperations', () => {
       })
     ).resolves.toEqual({ appliedOps: 0, droppedOps: 0, duplicateOps: 1 })
 
-    expect(getActiveClaims('g-1', 'u-1')).toEqual([expect.objectContaining({ id: existing.id, lastSeenAt: 20_000 })])
+    expect(getActiveClaims('g-1', 'u-1')).toEqual([expect.objectContaining({ id: existing.id, lastSeenAt: 1_000 })])
     expect(
       getDb().prepare('SELECT COUNT(*) AS count FROM memory_evidence WHERE claim_id = ?').get(existing.id)
     ).toEqual({

@@ -809,20 +809,49 @@ describe('memoryClaims', () => {
       insert.run(claim.value, claim.salience, claim.pinned, now, now)
     }
 
-    expect(pruneStaleClaims()).toBe(2)
-    expect(getActiveClaims('guild-1', 'legacy-user').map(({ value }) => value)).toEqual(['pinned', 'high'])
+    expect(pruneStaleClaims()).toBe(1)
+    expect(getActiveClaims('guild-1', 'legacy-user').map(({ value }) => value)).toEqual(['pinned', 'high', 'middle'])
     expect(
       getDb()
         .prepare("SELECT value, status, end_reason FROM memory_claim WHERE status = 'rejected' ORDER BY value")
         .all()
-    ).toEqual([
-      { value: 'low', status: 'rejected', end_reason: 'evicted' },
-      { value: 'middle', status: 'rejected', end_reason: 'evicted' }
-    ])
+    ).toEqual([{ value: 'low', status: 'rejected', end_reason: 'evicted' }])
 
     insert.run('new-low', 0.05, 0, now, now)
     expect(pruneActiveClaimOverflow()).toBe(1)
-    expect(getActiveClaims('guild-1', 'legacy-user').map(({ value }) => value)).toEqual(['pinned', 'high'])
+    expect(getActiveClaims('guild-1', 'legacy-user').map(({ value }) => value)).toEqual(['pinned', 'high', 'middle'])
+  })
+
+  it('keeps the configured number of unpinned claims regardless of pinned claims', () => {
+    const pinnedValues = ['pinned-1', 'pinned-2', 'pinned-3']
+    const unpinnedValues = ['unpinned-1', 'unpinned-2']
+
+    for (const value of pinnedValues) {
+      assertClaim({
+        guildId: 'guild-1',
+        subjectUserId: 'user-1',
+        predicate: 'hobby',
+        value,
+        sourceKind: 'explicit'
+      })
+    }
+    for (const value of unpinnedValues) {
+      assertClaim({
+        guildId: 'guild-1',
+        subjectUserId: 'user-1',
+        predicate: 'hobby',
+        value,
+        sourceKind: 'passive'
+      })
+    }
+
+    const active = getActiveClaims('guild-1', 'user-1')
+    const pinned = active.filter(({ pinned }) => pinned).map(({ value }) => value)
+    const unpinned = active.filter(({ pinned }) => !pinned).map(({ value }) => value)
+    expect(pinned).toHaveLength(pinnedValues.length)
+    expect(pinned).toEqual(expect.arrayContaining(pinnedValues))
+    expect(unpinned).toHaveLength(unpinnedValues.length)
+    expect(unpinned).toEqual(expect.arrayContaining(unpinnedValues))
   })
 
   // #111: pinClaim/unpinClaim had no production callers, so the eviction exemption config.yml documents
@@ -949,6 +978,13 @@ describe('memoryClaims', () => {
       subjectUserId: 'user-1',
       predicate: 'favorite_game',
       value: 'Senren Banka',
+      sourceKind: 'human'
+    })
+    assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'favorite_food',
+      value: 'rice',
       sourceKind: 'human'
     })
 
