@@ -324,6 +324,22 @@ describe('config module', () => {
     )
   })
 
+  it('loads bounded watched-media memory settings', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+
+    const { config, NUMERIC_BOUNDS } = await import('../config.js')
+
+    expect(config.memory.mediaRecallK).toBe(2)
+    expect(config.memory.mediaTokenBudget).toBe(400)
+    expect(config.memory.mediaMinSimilarity).toBe(0.7)
+    expect(config.memory.mediaRetentionDays).toBe(90)
+    expect(NUMERIC_BOUNDS.find(({ path }) => path === 'memory.mediaRecallK')).toMatchObject({ min: 0, max: 5 })
+    expect(NUMERIC_BOUNDS.find(({ path }) => path === 'memory.mediaTokenBudget')).toMatchObject({ min: 100, max: 1500 })
+    expect(NUMERIC_BOUNDS.find(({ path }) => path === 'memory.mediaMinSimilarity')).toMatchObject({ min: 0, max: 1 })
+    expect(NUMERIC_BOUNDS.find(({ path }) => path === 'memory.mediaRetentionDays')).toMatchObject({ min: 1, max: 365 })
+  })
+
   it('env vars override config.yml values', async () => {
     setRequiredEnvVars()
     vi.stubEnv('LOG_LEVEL', 'debug')
@@ -869,6 +885,10 @@ describe('config module', () => {
       { path: 'memory.episodeTokenBudget', min: 1 },
       { path: 'memory.episodeMinSimilarity', min: 0, max: 1 },
       { path: 'memory.episodeRetentionDays', min: 1 },
+      { path: 'memory.mediaRecallK', min: 0, max: 5 },
+      { path: 'memory.mediaTokenBudget', min: 100, max: 1500 },
+      { path: 'memory.mediaMinSimilarity', min: 0, max: 1 },
+      { path: 'memory.mediaRetentionDays', min: 1, max: 365 },
       { path: 'memory.embeddingTimeoutMs', min: 1 },
       { path: 'metrics.diagnosticsRetentionHours', min: 1 },
       { path: 'metrics.retentionDays', min: 1 },
