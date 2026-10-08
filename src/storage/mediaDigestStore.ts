@@ -192,7 +192,6 @@ export function findMediaSharedBy(
 ): StoredMediaDigest[] {
   if (isDirectMessageGuild(guildId) || limit <= 0) return []
 
-  const termFilters = terms.map(() => '(instr(lower(d.label), lower(?)) > 0 OR instr(lower(d.summary), lower(?)) > 0)')
   const rows = getDb()
     .prepare(
       `${mediaDigestSelect(`
@@ -203,13 +202,19 @@ export function findMediaSharedBy(
                AND matching_occurrence.guild_id = d.guild_id
                AND (matching_occurrence.shared_by_user_id = ? OR matching_occurrence.source_author_id = ?)
            )
-           ${termFilters.length ? `AND ${termFilters.join(' AND ')}` : ''}
        `)}
-       ORDER BY d.id
-       LIMIT ?`
+       ORDER BY d.id`
     )
-    .all(guildId, userId, userId, ...terms.flatMap((term) => [term, term]), Math.floor(limit)) as MediaDigestRow[]
-  return rows.map(mapMediaDigest)
+    .all(guildId, userId, userId) as MediaDigestRow[]
+  const normalizedTerms = terms.map((term) => term.toLowerCase())
+  return rows
+    .filter(({ label, summary }) => {
+      const normalizedLabel = label.toLowerCase()
+      const normalizedSummary = summary.toLowerCase()
+      return normalizedTerms.every((term) => normalizedLabel.includes(term) || normalizedSummary.includes(term))
+    })
+    .slice(0, Math.floor(limit))
+    .map(mapMediaDigest)
 }
 
 export function forgetMediaForUser(guildId: string, userId: string, digestIds: number[]): number {

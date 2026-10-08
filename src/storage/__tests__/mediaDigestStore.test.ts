@@ -123,6 +123,13 @@ describe('mediaDigestStore', () => {
     ])
   })
 
+  it('matches accented search terms without regard to case', () => {
+    const digest = saveMediaDigest(digestInput({ summary: 'CAFÉ reviews from yesterday.' }))!
+    recordMediaOccurrence(occurrenceInput(digest.id, { sharedByUserId: 'user-1' }))
+
+    expect(findMediaSharedBy('guild-1', 'user-1', ['café'], 10).map(({ id }) => id)).toEqual([digest.id])
+  })
+
   it('records each digest and message pair once and reports the latest occurrence time', () => {
     const digest = saveMediaDigest(digestInput())!
     recordMediaOccurrence(occurrenceInput(digest.id, { observedAt: 2_000 }))
