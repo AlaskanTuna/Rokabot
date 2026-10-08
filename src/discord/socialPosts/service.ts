@@ -36,6 +36,7 @@ function isYtDlpPlatform(platform: SocialPlatform): boolean {
 }
 
 const MAX_BLUESKY_PDS_CACHE_ENTRIES = 256
+const BLUESKY_PDS_TIMEOUT_MS = 1500
 
 export class SocialPostViewer {
   private readonly cache = new Map<string, { post: SocialPost; expiresAt: number }>()
@@ -149,7 +150,11 @@ export class SocialPostViewer {
 
     let response: Response
     try {
-      response = await this.fetcher(`https://plc.directory/${did}`, { signal })
+      // Its own short deadline: the post is worth returning without its video, but not worth losing to a slow
+      // directory lookup that eats the whole lookup budget.
+      response = await this.fetcher(`https://plc.directory/${did}`, {
+        signal: AbortSignal.any([signal, AbortSignal.timeout(BLUESKY_PDS_TIMEOUT_MS)])
+      })
     } catch {
       return null
     }

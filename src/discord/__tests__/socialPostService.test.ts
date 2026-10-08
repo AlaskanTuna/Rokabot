@@ -116,7 +116,7 @@ describe('SocialPostViewer', () => {
     })
     expect(fetcher).toHaveBeenCalledTimes(2)
     expect(String(fetcher.mock.calls[1][0])).toBe(`https://plc.directory/${did}`)
-    expect(fetcher.mock.calls[1][1]?.signal).toBe(fetcher.mock.calls[0][1]?.signal)
+    expect(fetcher.mock.calls[1][1]?.signal).toBeInstanceOf(AbortSignal)
   })
 
   it('keeps a Bluesky post found when PLC lookup returns 404', async () => {
@@ -133,6 +133,27 @@ describe('SocialPostViewer', () => {
 
     expect(result).toMatchObject({ status: 'found', post: { video: null } })
     expect(fetcher).toHaveBeenCalledTimes(2)
+  })
+
+  it('gives up on a slow PLC lookup without losing the post', async () => {
+    vi.useRealTimers()
+    const did = 'did:plc:abcdef123'
+    const fetcher = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      if (!String(input).startsWith('https://plc.directory/')) {
+        return jsonResponse(blueskyVideoThread(did, 'bafkreifkphpesihcwllhvyazux4ho33nf4obttkmblbj3d4fhdtkllmdpy'))
+      }
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(init.signal?.reason))
+      })
+    })
+    const viewer = createSocialPostViewer({ ...settings, timeoutMs: 10_000 }, { fetcher })
+    const target = parseSocialPostUrl(`https://bsky.app/profile/${did}/post/abc123`)!
+
+    const startedAt = Date.now()
+    const result = await viewer.lookup(target)
+
+    expect(result).toMatchObject({ status: 'found', post: { video: null } })
+    expect(Date.now() - startedAt).toBeLessThan(5_000)
   })
 
   it('keeps a Bluesky post found when PLC lookup throws', async () => {
