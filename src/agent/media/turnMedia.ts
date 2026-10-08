@@ -16,7 +16,7 @@ import { bytesContentKey, discordAttachmentContentKey } from './contentKey.js'
 import { formatClock, mergeHalves, renderCompactDigest, renderDigestBlock, watchOutcomeFor } from './digest.js'
 import { durationFromTokens, mp4DurationSec } from './duration.js'
 import { type UploadedFile, deleteFile, streamToFiles } from './filesUpload.js'
-import { type FrameSource, extractFrames, frameBins, frameTimestamps, probeDurationSec } from './frames.js'
+import { type FrameSource, extractFrames, frameBins, frameCount, frameTimestamps, probeDurationSec } from './frames.js'
 import {
   HALVES_MAX_DURATION_SEC,
   HALVES_MIN_DURATION_SEC,
@@ -581,7 +581,11 @@ async function watchWithQwen(context: WatchContext): Promise<Attempt> {
     attachment.startSec !== undefined && durationSec > FOCUS_MIN_DURATION_SEC
       ? focusWindow(durationSec, attachment.startSec)
       : undefined
-  const bins = frameBins(durationSec, config.media.qwen.frames, window)
+  const bins = frameBins(
+    durationSec,
+    frameCount(window ? window.endSec - window.startSec : durationSec, config.media.qwen),
+    window
+  )
   const timestamps = frameTimestamps(bins)
   const audio = kind === 'audio'
   const [taken, heard] = await Promise.all([

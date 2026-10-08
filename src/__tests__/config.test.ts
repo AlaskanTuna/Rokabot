@@ -204,7 +204,9 @@ describe('config module', () => {
       uploadTimeoutMs: 45_000,
       qwen: {
         model: 'Qwen/Qwen3.5-35B-A3B',
-        frames: 16,
+        secondsPerFrame: 4,
+        minFrames: 16,
+        maxFrames: 32,
         frameHeight: 360,
         timeoutMs: 30_000
       },
@@ -360,20 +362,22 @@ describe('config module', () => {
     )
   })
 
-  it('throws if media.qwen.frames is below its bound', async () => {
+  it('throws if media.qwen.minFrames is below its bound', async () => {
     setRequiredEnvVars()
     clearTunableEnvVars()
-    withYamlOverride({ media: { qwen: { frames: 3 } } })
+    withYamlOverride({ media: { qwen: { minFrames: 3 } } })
 
-    await expect(() => import('../config.js')).rejects.toThrow('Config value media.qwen.frames must be >= 4, got: 3')
+    await expect(() => import('../config.js')).rejects.toThrow('Config value media.qwen.minFrames must be >= 4, got: 3')
   })
 
-  it('throws if media.qwen.frames is above its bound', async () => {
+  it('throws if media.qwen.maxFrames is above its bound', async () => {
     setRequiredEnvVars()
     clearTunableEnvVars()
-    withYamlOverride({ media: { qwen: { frames: 33 } } })
+    withYamlOverride({ media: { qwen: { maxFrames: 33 } } })
 
-    await expect(() => import('../config.js')).rejects.toThrow('Config value media.qwen.frames must be <= 32, got: 33')
+    await expect(() => import('../config.js')).rejects.toThrow(
+      'Config value media.qwen.maxFrames must be <= 32, got: 33'
+    )
   })
 
   it('exposes bounded episode memory settings', async () => {
@@ -939,7 +943,9 @@ describe('config module', () => {
       { path: 'media.skimClipSeconds', min: 2, max: 30 },
       { path: 'media.maxStreamedUploadBytes', min: 10_485_760, max: 104_857_600 },
       { path: 'media.uploadTimeoutMs', min: 10_000, max: 120_000 },
-      { path: 'media.qwen.frames', min: 4, max: 32 },
+      { path: 'media.qwen.secondsPerFrame', min: 0.5, max: 30 },
+      { path: 'media.qwen.minFrames', min: 4, max: 32 },
+      { path: 'media.qwen.maxFrames', min: 4, max: 32 },
       { path: 'media.qwen.frameHeight', min: 144, max: 720 },
       { path: 'media.qwen.timeoutMs', min: 5000, max: 90_000 },
       { path: 'media.transcriber.timeoutMs', min: 5000, max: 120_000 },

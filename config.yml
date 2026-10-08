@@ -67,7 +67,9 @@ media:
   watcher: gemini # Which model watches audio and video: gemini or qwen (frames + speech transcript on ModelScope); the other takes over when it fails. The Pi sets MEDIA_WATCHER=qwen
   qwen:
     model: Qwen/Qwen3.5-35B-A3B # ModelScope vision model for the qwen watcher; 35B-A3B measured fastest and most specific (5-12 s for 16 frames)
-    frames: 16 # Frames sampled evenly across the video, one per timeline bin
+    secondsPerFrame: 4 # One frame per this many seconds of the watched span, one per timeline bin, between minFrames and maxFrames
+    minFrames: 16 # Floor for any video; under 16 s this is about one frame per second, since bins are whole seconds
+    maxFrames: 32 # Ceiling, reached at 128 s; on 10-minute videos 32 frames named the characters and plot where 16 gave a generic summary, at +4-6 s on the Qwen call (2026-10-09)
     frameHeight: 360 # Frame height in pixels; Qwen reads 360p frames as well as larger ones
     timeoutMs: 30000 # Deadline for one Qwen watch call
   transcriber:

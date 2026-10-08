@@ -68,6 +68,13 @@ export function frameBins(
   return bins
 }
 
+export function frameCount(
+  spanSec: number,
+  settings: { secondsPerFrame: number; minFrames: number; maxFrames: number }
+): number {
+  return Math.min(settings.maxFrames, Math.max(settings.minFrames, Math.ceil(spanSec / settings.secondsPerFrame)))
+}
+
 export function frameTimestamps(bins: MediaClip[]): number[] {
   return bins.map((bin) => (bin.startSec + bin.endSec) / 2)
 }

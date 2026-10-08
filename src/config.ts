@@ -71,7 +71,14 @@ interface YamlConfig {
     skimClipSeconds?: number
     maxStreamedUploadBytes?: number
     uploadTimeoutMs?: number
-    qwen?: { model?: string; frames?: number; frameHeight?: number; timeoutMs?: number }
+    qwen?: {
+      model?: string
+      secondsPerFrame?: number
+      minFrames?: number
+      maxFrames?: number
+      frameHeight?: number
+      timeoutMs?: number
+    }
     transcriber?: { url?: string; timeoutMs?: number; maxSpeechSec?: number; maxAudioSec?: number }
   }
   memory?: {
@@ -261,7 +268,9 @@ export const config = {
     uploadTimeoutMs: yaml.media?.uploadTimeoutMs ?? 45_000,
     qwen: {
       model: envString('MEDIA_QWEN_MODEL') ?? yaml.media?.qwen?.model ?? 'Qwen/Qwen3.5-35B-A3B',
-      frames: yaml.media?.qwen?.frames ?? 16,
+      secondsPerFrame: yaml.media?.qwen?.secondsPerFrame ?? 4,
+      minFrames: yaml.media?.qwen?.minFrames ?? 16,
+      maxFrames: yaml.media?.qwen?.maxFrames ?? 32,
       frameHeight: yaml.media?.qwen?.frameHeight ?? 360,
       timeoutMs: yaml.media?.qwen?.timeoutMs ?? 30_000
     },
@@ -416,7 +425,9 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
     max: 104_857_600
   },
   { path: 'media.uploadTimeoutMs', value: config.media.uploadTimeoutMs, min: 10_000, max: 120_000 },
-  { path: 'media.qwen.frames', value: config.media.qwen.frames, min: 4, max: 32 },
+  { path: 'media.qwen.secondsPerFrame', value: config.media.qwen.secondsPerFrame, min: 0.5, max: 30 },
+  { path: 'media.qwen.minFrames', value: config.media.qwen.minFrames, min: 4, max: 32 },
+  { path: 'media.qwen.maxFrames', value: config.media.qwen.maxFrames, min: 4, max: 32 },
   { path: 'media.qwen.frameHeight', value: config.media.qwen.frameHeight, min: 144, max: 720 },
   { path: 'media.qwen.timeoutMs', value: config.media.qwen.timeoutMs, min: 5000, max: 90_000 },
   { path: 'media.transcriber.timeoutMs', value: config.media.transcriber.timeoutMs, min: 5000, max: 120_000 },
