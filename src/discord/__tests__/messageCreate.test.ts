@@ -874,6 +874,35 @@ describe("reading what the sender's own message shows", () => {
     await expect(laterTexts).resolves.toContain('https://twitter.com/other/status/456')
   })
 
+  // Replying to a friend's link and asking Roka by name never opened it: only a reply to Roka herself counted.
+  it("opens a link in another user's message when Roka is asked about it in a reply", async () => {
+    mocks.beginSocialPostLookup.mockResolvedValueOnce(foundSocialPost())
+    const friendMessage = {
+      author: { id: 'user-2', displayName: 'Friend' },
+      member: null,
+      content: 'https://www.youtube.com/watch?v=3Bpe66wHsgI',
+      embeds: [],
+      poll: null,
+      messageSnapshots: new Collection(),
+      components: [],
+      stickers: new Collection(),
+      attachments: new Collection()
+    }
+    const { message } = createMessage({
+      mentioned: false,
+      content: 'Roka watch this video for me and give me the summary',
+      referencedMessage: friendMessage,
+      repliedUser: { id: 'user-2' }
+    })
+
+    const result = await handle(message)
+
+    await expect(mocks.beginSocialPostLookup.mock.calls[0]?.[1]).resolves.toContain(
+      'https://www.youtube.com/watch?v=3Bpe66wHsgI'
+    )
+    expect(result.userMessage).toContain('[Linked post — X @roka (Roka)')
+  })
+
   it('replaces a matching social embed and its thumbnail with the opened post', async () => {
     mocks.beginSocialPostLookup.mockResolvedValueOnce(foundSocialPost('https://pbs.twimg.com/post.jpg'))
     const { message } = createMessage({

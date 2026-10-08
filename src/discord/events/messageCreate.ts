@@ -104,7 +104,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
     const socialPostWork =
       config.socialPosts.enabled &&
       (isMentioned || isNameMention || isReplyCandidate) &&
-      (hasSocialPostUrl || isReplyCandidate)
+      (hasSocialPostUrl || Boolean(message.reference?.messageId))
         ? beginSocialPostLookup(
             currentSocialTexts,
             replyFetch.then((referencedMessage) => [
