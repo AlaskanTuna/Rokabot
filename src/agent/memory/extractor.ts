@@ -73,7 +73,9 @@ function episodePrompt(guildId: string, channelId: string, episode: ExtractionEp
     claims: recallableHere(
       getActiveClaims(guildId, userId).filter(({ needsReview }) => !needsReview),
       scope
-    ).map(({ id, predicate, value }) => ({ id, predicate, value }))
+    ).map(({ id, predicate, value, period }) =>
+      period === 'past' ? { id, predicate, value, period } : { id, predicate, value }
+    )
   }))
   const guildClaims = recallableHere(getActiveGuildClaims(guildId), scope).map(
     ({ id, predicate, value, expiresAt }) => ({
@@ -89,7 +91,13 @@ function episodePrompt(guildId: string, channelId: string, episode: ExtractionEp
     'A member\'s own job, trade or line of work is general_occupation and is never sensitive: record the role itself ("line cook", "freelance illustrator"), never the employer, workplace, or location.',
     'For user facts, use only the supplied user IDs and attribute facts only to the person who stated them, not someone quoted, addressed, or joked about. Use subject {"kind":"guild"} only for a fact established about this server or its members collectively. Context lines are background only and cannot supply a subject or fact.',
     'Use only these guild predicates: upcoming_event, plan, running_joke, place, rule, announcement. For upcoming_event and plan, date the fact from the messages: if they name a calendar day, give the month and day, plus the year only when the messages state it; if they name a month but no day, give just the month, and never invent a day; if they only say today, tomorrow, this week, next week, this month, or next month, give the relative form. Never guess a date the messages do not support, and never decide whether it is in the future.',
-    'Add a new claim only for a durable fact. If a member restates a current durable fact, return add with the same subject, predicate, and exact value as its existing claim. Never add a rewording. Use update or remove with an existing claim ID for an actual change. Return noop only when no durable fact came up.',
+    'Add a new claim only for a durable fact. Return noop only when no durable fact, change or retraction came up.',
+    'Every user add and update has a tense: current if it is true of them now, past if it was true before but not now ("back when I was a nurse", "I used to play chess"), planned if they intend it.',
+    'Use retract when a member says a fact about themselves no longer holds ("I quit chess", "I\'m not vegetarian anymore"), naming the predicate and the value that ended, even if it is not in the current active claims. A switch ("switched from chess to go") is a retract of the old value plus an add of the new one.',
+    'If a member restates a current durable fact, return add with the same subject, predicate and exact value as its existing claim. Never add a rewording. Use update with an existing claim ID only when the fact itself changed.',
+    'Use remove with an existing claim ID only for a claim that was never true or was attributed to the wrong person; use retract for a fact that has ended.',
+    'Never update or remove a claim whose "period" is "past"; to restate history, use add with tense past.',
+    'Choose the most specific predicate; use misc only when no other predicate fits. "I draw on weekends" is hobby, not misc; "my cat Mochi" is pets, not misc; "I like spicy food" is likes, not misc.',
     'Return a one-to-two sentence third-person summary.',
     `Allowed human user IDs: ${humanIds.join(', ') || '(none)'}`,
     `Current active claims:\n${JSON.stringify(claims, null, 2)}`,
@@ -263,6 +271,10 @@ export async function verifyAndApplyOperations(input: {
     for (const entry of planned) {
       const { op, index, sameAsClaims } = entry
       if (!operationAllowed(op, subjectIds) || !operationSafe(op)) {
+        results.push({ applied: false, duplicate: false })
+        continue
+      }
+      if (op.op === 'retract') {
         results.push({ applied: false, duplicate: false })
         continue
       }

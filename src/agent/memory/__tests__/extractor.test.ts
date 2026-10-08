@@ -161,7 +161,9 @@ describe('runEpisodePipeline', () => {
   it('traces the written ops and sums the tokens of admission, extraction and verification', async () => {
     mocks.generateContent.mockResolvedValueOnce({
       text: JSON.stringify({
-        ops: [{ op: 'add', subject: { kind: 'user', userId: 'user-1' }, predicate: 'likes', value: 'tea' }],
+        ops: [
+          { op: 'add', subject: { kind: 'user', userId: 'user-1' }, predicate: 'likes', value: 'tea', tense: 'current' }
+        ],
         summary: 'Alice likes tea.'
       }),
       usageMetadata: { promptTokenCount: 400 }
@@ -258,7 +260,9 @@ describe('extractEpisode', () => {
       endedAt: 3_000
     }
     const output = {
-      ops: [{ op: 'add', subject: { kind: 'user', userId: 'user-2' }, predicate: 'likes', value: 'chess' }],
+      ops: [
+        { op: 'add', subject: { kind: 'user', userId: 'user-2' }, predicate: 'likes', value: 'chess', tense: 'current' }
+      ],
       summary: 'Alex enjoys tea, and Rin plays chess.'
     }
     mocks.generateContent.mockResolvedValueOnce({ text: JSON.stringify(output) })
@@ -280,10 +284,10 @@ describe('extractEpisode', () => {
     expect(request.contents).not.toContain('needs review only')
     expect(request.contents).not.toContain('candidate only')
     expect(request.contents).toContain(
-      'If a member restates a current durable fact, return add with the same subject, predicate, and exact value as its existing claim.'
+      'If a member restates a current durable fact, return add with the same subject, predicate and exact value as its existing claim.'
     )
     expect(request.contents).toContain('Never add a rewording.')
-    expect(request.contents).toContain('Return noop only when no durable fact came up.')
+    expect(request.contents).toContain('Return noop only when no durable fact, change or retraction came up.')
     expect(request.contents).not.toContain('context only claim')
     expect(request.contents).toContain('one-to-two sentence third-person summary')
   })
@@ -305,6 +309,84 @@ describe('extractEpisode', () => {
     expect(prompt).toContain('general_occupation')
     expect(prompt).toContain('never the employer, workplace, or location')
     expect(prompt).toContain('names of schools, employers, or workplaces')
+  })
+
+  it('teaches Gemini tense, retract and the most specific predicate', async () => {
+    mocks.generateContent.mockResolvedValueOnce({ text: JSON.stringify({ ops: [{ op: 'noop' }], summary: 'A fact.' }) })
+    const episode: ExtractionEpisode = {
+      messages: [
+        { messageId: 'm-1', userId: 'user-1', displayName: 'Ari', content: 'I quit chess', timestamp: 1, isBot: false }
+      ],
+      context: [],
+      startedAt: 1,
+      endedAt: 1
+    }
+
+    await extractEpisode({ guildId: 'guild-1', channelId: 'channel-1', episode })
+
+    const prompt = mocks.generateContent.mock.calls[0][0].contents
+    expect(prompt).toContain(
+      'Every user add and update has a tense: current if it is true of them now, past if it was true before but not now ("back when I was a nurse", "I used to play chess"), planned if they intend it.'
+    )
+    expect(prompt).toContain(
+      'Use retract when a member says a fact about themselves no longer holds ("I quit chess", "I\'m not vegetarian anymore"), naming the predicate and the value that ended, even if it is not in the current active claims. A switch ("switched from chess to go") is a retract of the old value plus an add of the new one.'
+    )
+    expect(prompt).toContain(
+      'Never add a rewording. Use update with an existing claim ID only when the fact itself changed.'
+    )
+    expect(prompt).toContain(
+      'Choose the most specific predicate; use misc only when no other predicate fits. "I draw on weekends" is hobby, not misc; "my cat Mochi" is pets, not misc; "I like spicy food" is likes, not misc.'
+    )
+    expect(prompt).toContain(
+      'Use remove with an existing claim ID only for a claim that was never true or was attributed to the wrong person; use retract for a fact that has ended.'
+    )
+    expect(prompt).toContain(
+      'Never update or remove a claim whose "period" is "past"; to restate history, use add with tense past.'
+    )
+    expect(prompt).toContain('Return noop only when no durable fact, change or retraction came up.')
+    expect(prompt).not.toContain('language_spoken, not misc')
+  })
+
+  it('marks past claims as past in the active claims and leaves current ones unmarked', async () => {
+    assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'general_occupation',
+      value: 'nurse',
+      sourceKind: 'explicit',
+      period: 'past'
+    })
+    assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'likes',
+      value: 'tea',
+      sourceKind: 'explicit'
+    })
+    mocks.generateContent.mockResolvedValueOnce({ text: JSON.stringify({ ops: [{ op: 'noop' }], summary: 'A fact.' }) })
+    const episode: ExtractionEpisode = {
+      messages: [
+        { messageId: 'm-1', userId: 'user-1', displayName: 'Ari', content: 'Hello', timestamp: 1, isBot: false }
+      ],
+      context: [],
+      startedAt: 1,
+      endedAt: 1
+    }
+
+    await extractEpisode({ guildId: 'guild-1', channelId: 'channel-1', episode })
+
+    const prompt: string = mocks.generateContent.mock.calls[0][0].contents
+    const block = prompt.slice(
+      prompt.indexOf('Current active claims:\n') + 'Current active claims:\n'.length,
+      prompt.indexOf('\n\nCurrent active guild facts:')
+    )
+    const [{ claims }] = JSON.parse(block) as Array<{ claims: Array<Record<string, unknown>> }>
+    expect(claims).toContainEqual(
+      expect.objectContaining({ predicate: 'general_occupation', value: 'nurse', period: 'past' })
+    )
+    const current = claims.find(({ predicate }) => predicate === 'likes')
+    expect(current).toBeDefined()
+    expect(current).not.toHaveProperty('period')
   })
 
   it('requires the day but leaves the year to the messages', async () => {
@@ -370,7 +452,9 @@ describe('verifyAndApplyOperations', () => {
       channelId: 'channel-1',
       episode,
       output: {
-        ops: [{ op: 'add', subject: { kind: 'user', userId: 'user-1' }, predicate: 'likes', value: 'tea' }],
+        ops: [
+          { op: 'add', subject: { kind: 'user', userId: 'user-1' }, predicate: 'likes', value: 'tea', tense: 'current' }
+        ],
         summary: 'Alex likes tea.'
       },
       subjectIds: new Set(['user-1'])
@@ -478,7 +562,9 @@ describe('verifyAndApplyOperations', () => {
       channelId: 'channel-1',
       episode,
       output: {
-        ops: [{ op: 'add', subject: { kind: 'user', userId: 'user-1' }, predicate: 'likes', value: 'tea' }],
+        ops: [
+          { op: 'add', subject: { kind: 'user', userId: 'user-1' }, predicate: 'likes', value: 'tea', tense: 'current' }
+        ],
         summary: 'Alex likes tea.'
       },
       subjectIds: new Set(['user-1'])
@@ -548,7 +634,8 @@ describe('verifyAndApplyOperations', () => {
             subject: { kind: 'user', userId: 'user-1' },
             existingId: userClaim.id,
             predicate: 'nickname',
-            value: 'Rinny'
+            value: 'Rinny',
+            tense: 'current'
           },
           {
             op: 'update',

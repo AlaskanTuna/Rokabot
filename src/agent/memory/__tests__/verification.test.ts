@@ -44,7 +44,7 @@ function episode(): ExtractionEpisode {
 }
 
 function add(value = 'tea', subjectUserId = 'u-1'): ExtractionOp {
-  return { op: 'add', subject: { kind: 'user', userId: subjectUserId }, predicate: 'likes', value }
+  return { op: 'add', subject: { kind: 'user', userId: subjectUserId }, predicate: 'likes', value, tense: 'current' }
 }
 
 function guildPlan(
@@ -417,7 +417,8 @@ describe('verifyAndApplyOperations', () => {
           subject: { kind: 'user', userId: 'u-1' },
           existingId: prior.id,
           predicate: 'likes',
-          value: 'green tea'
+          value: 'green tea',
+          tense: 'current'
         }),
         subjectIds: new Set(['u-1'])
       })
@@ -499,7 +500,13 @@ describe('verifyAndApplyOperations', () => {
       guildId: 'g-1',
       channelId: 'c-1',
       episode: episode(),
-      output: output({ op: 'add', subject: { kind: 'user', userId: 'u-1' }, predicate: 'nickname', value: 'Rinnie' }),
+      output: output({
+        op: 'add',
+        subject: { kind: 'user', userId: 'u-1' },
+        predicate: 'nickname',
+        value: 'Rinnie',
+        tense: 'current'
+      }),
       subjectIds: new Set(['u-1'])
     })
     const replacement = getActiveClaims('g-1', 'u-1')[0]
@@ -510,7 +517,13 @@ describe('verifyAndApplyOperations', () => {
         guildId: 'g-1',
         channelId: 'c-1',
         episode: episode(),
-        output: output({ op: 'add', subject: { kind: 'user', userId: 'u-1' }, predicate: 'nickname', value: 'Rin' }),
+        output: output({
+          op: 'add',
+          subject: { kind: 'user', userId: 'u-1' },
+          predicate: 'nickname',
+          value: 'Rin',
+          tense: 'current'
+        }),
         subjectIds: new Set(['u-1'])
       })
     ).resolves.toEqual(report({ appliedOps: 1, droppedOps: 0, duplicateOps: 0, changedOps: 1 }))
@@ -543,7 +556,8 @@ describe('verifyAndApplyOperations', () => {
         subject: { kind: 'user', userId: 'u-1' },
         existingId: original.id,
         predicate: 'nickname',
-        value: 'Rinnie'
+        value: 'Rinnie',
+        tense: 'current'
       }),
       subjectIds: new Set(['u-1'])
     })
@@ -560,7 +574,8 @@ describe('verifyAndApplyOperations', () => {
           subject: { kind: 'user', userId: 'u-1' },
           existingId: replacement.id,
           predicate: 'nickname',
-          value: 'Rin'
+          value: 'Rin',
+          tense: 'current'
         }),
         subjectIds: new Set(['u-1'])
       })
@@ -593,7 +608,13 @@ describe('verifyAndApplyOperations', () => {
         guildId: 'g-1',
         channelId: 'c-1',
         episode: episode(),
-        output: output({ op: 'add', subject: { kind: 'user', userId: 'u-1' }, predicate: 'nickname', value: 'Rin' }),
+        output: output({
+          op: 'add',
+          subject: { kind: 'user', userId: 'u-1' },
+          predicate: 'nickname',
+          value: 'Rin',
+          tense: 'current'
+        }),
         subjectIds: new Set(['u-1'])
       })
     ).resolves.toEqual(report({ appliedOps: 0, droppedOps: 1, duplicateOps: 0, changedOps: 0 }))
@@ -640,7 +661,8 @@ describe('verifyAndApplyOperations', () => {
           subject: { kind: 'user', userId: 'u-1' },
           existingId: active.id,
           predicate: 'likes',
-          value: 'coffee'
+          value: 'coffee',
+          tense: 'current'
         }),
         subjectIds: new Set(['u-1'])
       })
@@ -707,7 +729,8 @@ describe('verifyAndApplyOperations', () => {
         subject: { kind: 'user', userId: 'u-1' },
         existingId: prior.id,
         predicate: 'likes',
-        value: 'green tea'
+        value: 'green tea',
+        tense: 'current'
       }),
       subjectIds: new Set(['u-1'])
     })
@@ -743,7 +766,8 @@ describe('verifyAndApplyOperations', () => {
         op: 'add',
         subject: { kind: 'user', userId: 'u-1' },
         predicate: 'favorite_game',
-        value: 'old game'
+        value: 'old game',
+        tense: 'current'
       }),
       subjectIds: new Set(['u-1'])
     })
@@ -772,7 +796,8 @@ describe('verifyAndApplyOperations', () => {
         subject: { kind: 'user', userId: 'u-1' },
         existingId: prior.id,
         predicate: 'likes',
-        value: 'green tea'
+        value: 'green tea',
+        tense: 'current'
       }),
       subjectIds: new Set(['u-1'])
     })

@@ -86,7 +86,7 @@ describe('judgeEpisodeOperations', () => {
       usage: { input_tokens: 24, output_tokens: 3 }
     })
     const ops = [
-      { op: 'add', subject: { kind: 'user', userId: 'u-1' }, predicate: 'likes', value: 'tea' },
+      { op: 'add', subject: { kind: 'user', userId: 'u-1' }, predicate: 'likes', value: 'tea', tense: 'current' },
       { op: 'noop' }
     ] as const
     const existing = [
@@ -128,7 +128,9 @@ describe('judgeEpisodeOperations', () => {
     await expect(
       judgeEpisodeOperations({
         lines: ['fact'],
-        ops: [{ op: 'add', subject: { kind: 'user', userId: 'u-1' }, predicate: 'likes', value: 'tea' }],
+        ops: [
+          { op: 'add', subject: { kind: 'user', userId: 'u-1' }, predicate: 'likes', value: 'tea', tense: 'current' }
+        ],
         existing: []
       })
     ).resolves.toBeNull()
