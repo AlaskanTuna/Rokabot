@@ -109,19 +109,20 @@ Audio and video are watched before Roka replies rather than handed to her raw. `
 
 ### Persistence & Storage
 
-| SQLite Table                                              | Contents                                                                                                                                                                                    |
-| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `session_history`                                         | Channel messages, including message role, display name, content, timestamp, and optional user identity fields.                                                                              |
-| `memory_claim`, `memory_evidence`, `memory_claim_fts`     | User-subject claims, their evidence, and the FTS5 mirror of active claims.                                                                                                                  |
-| `memory_episode_cursor`                                   | Per-channel episode checkpoint: tenant, last message ID, open time, and delta-message count.                                                                                                |
-| `extraction_queue`                                        | Closed episode payloads, with `pending`, `processing`, or retained `failed` status and attempt count.                                                                                       |
-| `memory_events`                                           | Value-free retrieval and claim-change telemetry.                                                                                                                                            |
-| `jev_events`                                              | TypeSafe judgment kind, question key, answer, probability/confidence, applied flag, latency, input tokens, optional baseline, and timestamp.                                                |
-| `reminders`                                               | Scheduled user reminders and delivery state.                                                                                                                                                |
-| `game_scores`, `gacha_collection`, `gacha_daily`, `buddy` | Game scores and gacha/companion data.                                                                                                                                                       |
-| `user_names`, `monitored_channels`                        | Durable user identity lookup and passive-monitoring state.                                                                                                                                  |
-| `response_events`, `extraction_events`                    | Response telemetry and retained historical extraction telemetry. `response_events.failure_marker` stores the raw `finishReason`/`errorCode` token only (e.g. `SAFETY`), never message text. |
-| `bug_reports`                                             | User-submitted issue details, Discord context, build/runtime metadata, retained snapshot JSON, and optional attachment metadata/path.                                                       |
+| SQLite Table                                              | Contents                                                                                                                                                                                             |
+| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `session_history`                                         | Channel messages, including message role, display name, content, timestamp, and optional user identity fields.                                                                                       |
+| `memory_claim`, `memory_evidence`, `memory_claim_fts`     | User-subject claims, their evidence, and the FTS5 mirror of active claims.                                                                                                                           |
+| `memory_episode_cursor`                                   | Per-channel episode checkpoint: tenant, last message ID, open time, and delta-message count.                                                                                                         |
+| `extraction_queue`                                        | Closed episode payloads, with `pending`, `processing`, or retained `failed` status and attempt count.                                                                                                |
+| `memory_events`                                           | Value-free retrieval, claim-change and recall telemetry, plus one text-free `extraction_run` event per extraction attempt.                                                                           |
+| `jev_events`                                              | TypeSafe judgment kind, question key, answer, probability/confidence, applied flag, latency, input tokens, optional baseline, optional job ID (admission and verification judgments), and timestamp. |
+| `extraction_samples`                                      | Private, text-bearing sample of rejected conversations for offline labelling: capped at 200 rows, expires after `memory.extractionSampleDays`, never read at runtime.                                |
+| `reminders`                                               | Scheduled user reminders and delivery state.                                                                                                                                                         |
+| `game_scores`, `gacha_collection`, `gacha_daily`, `buddy` | Game scores and gacha/companion data.                                                                                                                                                                |
+| `user_names`, `monitored_channels`                        | Durable user identity lookup and passive-monitoring state.                                                                                                                                           |
+| `response_events`, `extraction_events`                    | Response telemetry and retained historical extraction telemetry. `response_events.failure_marker` stores the raw `finishReason`/`errorCode` token only (e.g. `SAFETY`), never message text.          |
+| `bug_reports`                                             | User-submitted issue details, Discord context, build/runtime metadata, retained snapshot JSON, and optional attachment metadata/path.                                                                |
 
 `/report` is a global command available in guilds, bot DMs, and group DMs with user installs. It takes a required
 `type` choice (`bug`, `wrong_answer`, `unsafe`, or `other`), a required message up to 1,500 characters, and one
@@ -388,8 +389,9 @@ recorded with `stage: 'applied'` and `outcome: 'error'`, and `stageMs.persistenc
   is sampled or skipped consistently. Nothing is sampled when `memory.privacy` is `off`.
 - **Contents:** job ID, guild, channel, outcome, admission probability, and the episode's lines as
   `[displayName]: content` in a JSON array, with no user IDs.
-- **Bounds:** rows expire after `memory.extractionSampleDays` (14) and are deleted at startup and daily; at most 200
-  rows are kept, the oldest replaced first. Both settings are bounded by `NUMERIC_BOUNDS`.
+- **Bounds:** rows expire after `memory.extractionSampleDays` (14) and are deleted at startup and daily, and lowering
+  the setting also removes stored rows older than the new value; at most 200 rows are kept, the oldest replaced first.
+  Both settings are bounded by `NUMERIC_BOUNDS`.
 - **Isolation:** never read by Roka, recall, Jev, or any prompt. The insert is best effort and a failure is logged at
   `warn`.
 

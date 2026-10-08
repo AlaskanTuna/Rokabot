@@ -582,6 +582,26 @@ describe('episode extraction scheduler', () => {
     )
   })
 
+  it('still finishes the job and drains the next one when sampling throws', async () => {
+    configMock.memory.extractionSampleRate = 1
+    mocks.recordExtractionSample.mockImplementation(() => {
+      throw new Error('sample store down')
+    })
+    mocks.runEpisodePipeline.mockImplementation(async (_job, trace) => {
+      trace.stage = 'admission'
+      trace.outcome = 'below_threshold'
+      return { status: 'dropped', summary: null, appliedOps: 0, duplicateOps: 0 }
+    })
+    enqueue('A', 'first A')
+    enqueue('A', 'second A')
+    startExtractionScheduler()
+    await drain()
+
+    expect(mocks.runEpisodePipeline).toHaveBeenCalledTimes(2)
+    expect(mocks.jobs).toHaveLength(0)
+    expect(mocks.logger.warn).toHaveBeenCalled()
+  })
+
   it('chooses about 1 in 10 jobs, the same way every time', () => {
     const chosen = Array.from({ length: 1000 }, (_, index) => index + 1).filter((jobId) => shouldSample(jobId, 0.1))
     expect(chosen.length).toBeGreaterThan(70)

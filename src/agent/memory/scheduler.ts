@@ -104,10 +104,15 @@ function runJob(job: NonNullable<ReturnType<typeof claimNextForGuild>>): void {
       )
     })
     .finally(() => {
-      finishRunTrace(trace)
-      maybeSample(job, trace)
-      inFlightTasks.delete(task)
-      finishJob(job.guildId)
+      try {
+        finishRunTrace(trace)
+        maybeSample(job, trace)
+      } catch (error) {
+        logger.warn({ err: error, jobId: job.id }, 'Failed to finish extraction run telemetry')
+      } finally {
+        inFlightTasks.delete(task)
+        finishJob(job.guildId)
+      }
     })
   inFlightTasks.add(task)
 }

@@ -441,9 +441,10 @@ SELECT sum(json_extract(detail, '$.ops.proposed')), sum(json_extract(detail, '$.
 FROM memory_events WHERE kind = 'extraction_run';
 
 -- Errors and whether retries recovered them
-SELECT json_extract(detail, '$.jobId') AS job, group_concat(json_extract(detail, '$.outcome'), ' > ') AS attempts
-FROM memory_events WHERE kind = 'extraction_run' GROUP BY job
-HAVING sum(json_extract(detail, '$.outcome') = 'error') > 0;
+SELECT job, group_concat(outcome, ' > ') AS attempts
+FROM (SELECT json_extract(detail, '$.jobId') AS job, json_extract(detail, '$.outcome') AS outcome
+      FROM memory_events WHERE kind = 'extraction_run' ORDER BY id)
+GROUP BY job HAVING sum(outcome = 'error') > 0;
 
 -- Summary quality
 SELECT avg(json_extract(detail, '$.summary.kept')), avg(json_extract(detail, '$.summary.boilerplate'))
@@ -466,22 +467,29 @@ To measure Jev's false negatives, about 1 in 10 `trivial` or `below_threshold` c
 `extraction_samples` (`memory.extractionSampleRate: 0.1`). Each row has the job ID, guild, channel, outcome, admission
 probability and the episode's lines as a JSON array of `[displayName]: content` strings, with no user IDs. Nothing is
 stored for `sensitive` conversations or `jev_unavailable` runs, or when `memory.privacy` is `off`. Rows expire after
-`memory.extractionSampleDays` (14 days) and are deleted at startup and daily, and the table holds at most 200 rows (the
-oldest is replaced). Nothing reads it back: not Roka, recall, Jev or any prompt. To stop sampling, set
-`memory.extractionSampleRate` to 0 through a PR, or `MEMORY_EXTRACTION_SAMPLE_RATE=0` in `~/rokabot/.env` and recreate
-the container.
+`memory.extractionSampleDays` (14 days) and are deleted at startup and daily (lowering the setting also removes stored
+rows older than the new value), and the table holds at most 200 rows (the oldest is replaced). Nothing reads it back:
+not Roka, recall, Jev or any prompt. To stop sampling, set `memory.extractionSampleRate` to 0 through a PR, or
+`MEMORY_EXTRACTION_SAMPLE_RATE=0` in `~/rokabot/.env` and recreate the container.
 
-For blind labelling, export only the ID and the lines to the session scratchpad, never into the repo, so the judges
-don't see Jev's probability. Join the labels back to `outcome` and `admission_probability` by `id` afterwards:
+For blind labelling, export once to the session scratchpad, never into the repo, then split the export: the judges get
+only the ID and the lines, and the key file with `outcome` and `admission_probability` stays away from them. Splitting
+one export keeps both files from the same snapshot, so the labels still join back by `id` if rows expire or are replaced
+before labelling ends:
 
 ```bash
-ssh <pi-user>@<pi-ethernet-ip> 'sqlite3 -json ~/rokabot/data/rokabot.db "SELECT id, lines FROM extraction_samples ORDER BY id;"' \
-  > <session-scratchpad>/extraction-samples.json
+ssh <pi-user>@<pi-ethernet-ip> 'sqlite3 -json ~/rokabot/data/rokabot.db "SELECT id, outcome, admission_probability, lines FROM extraction_samples ORDER BY id;"' \
+  > <session-scratchpad>/extraction-samples-full.json
+jq 'map({id, lines})' <session-scratchpad>/extraction-samples-full.json > <session-scratchpad>/extraction-samples.json
+jq 'map({id, outcome, admission_probability})' <session-scratchpad>/extraction-samples-full.json > <session-scratchpad>/extraction-sample-keys.json
+rm <session-scratchpad>/extraction-samples-full.json
 ```
 
-Have two independent judges label each sample for whether it holds a lasting personal or server fact, the same method as
-the Jev tone calibration above. The labels carry message text, so they stay local and are never committed. The share
-both judges accept is a conservative estimate of the rejected conversations that did hold a lasting fact.
+Give the judges only `extraction-samples.json`, and join their labels to `extraction-sample-keys.json` by `id`
+afterwards. Have two independent judges label each sample for whether it holds a lasting personal or server fact, the
+same method as the Jev tone calibration above. The labels carry message text, so they stay local and are never
+committed. The share both judges accept is a conservative estimate of the rejected conversations that did hold a
+lasting fact.
 
 ## GitHub Actions Self-Hosted Runner
 

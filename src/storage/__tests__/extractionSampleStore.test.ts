@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('../../config.js', () => ({
-  config: { logging: { level: 'silent' }, memory: { extractionSampleDays: 14 } }
-}))
+const configMock = vi.hoisted(() => ({ logging: { level: 'silent' }, memory: { extractionSampleDays: 14 } }))
+
+vi.mock('../../config.js', () => ({ config: configMock }))
 
 import { closeDb, getDb } from '../database.js'
 import { countExtractionSamples, pruneExtractionSamples, recordExtractionSample } from '../extractionSampleStore.js'
@@ -25,6 +25,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  configMock.memory.extractionSampleDays = 14
   closeDb()
   vi.restoreAllMocks()
   process.env.ROKABOT_DB_PATH = undefined
@@ -43,6 +44,16 @@ describe('extractionSampleStore', () => {
     recordExtractionSample(sample(1))
 
     expect(pruneExtractionSamples(15 * DAY)).toBe(1)
+    expect(countExtractionSamples()).toBe(0)
+  })
+
+  it('applies a lowered retention to rows stored under the old setting', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(0)
+    recordExtractionSample(sample(1))
+    configMock.memory.extractionSampleDays = 3
+
+    expect(pruneExtractionSamples(2 * DAY)).toBe(0)
+    expect(pruneExtractionSamples(4 * DAY)).toBe(1)
     expect(countExtractionSamples()).toBe(0)
   })
 })

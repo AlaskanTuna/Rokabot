@@ -44,8 +44,11 @@ export function recordExtractionSample(input: ExtractionSampleInput): void {
   }
 }
 
+// Expiry is fixed at insert, so the age check is what makes a lowered extractionSampleDays apply to stored rows.
 export function pruneExtractionSamples(now = Date.now()): number {
-  return getDb().prepare('DELETE FROM extraction_samples WHERE expires_at <= ?').run(now).changes
+  return getDb()
+    .prepare('DELETE FROM extraction_samples WHERE expires_at <= ? OR created_at <= ?')
+    .run(now, now - config.memory.extractionSampleDays * DAY_MS).changes
 }
 
 export function countExtractionSamples(): number {

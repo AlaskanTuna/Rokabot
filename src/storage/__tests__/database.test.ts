@@ -143,6 +143,43 @@ describe('runMigrations', () => {
     expect(row).toEqual({ payload, status: 'pending', attempts: 1, available_at: 0, transient_retries: 0 })
   })
 
+  it('adds jev_events.job_id idempotently to an existing table and creates extraction_samples', () => {
+    testDb = new Database(':memory:')
+    testDb.exec(`
+      CREATE TABLE session_history (
+        channel_id TEXT NOT NULL, role TEXT NOT NULL, display_name TEXT NOT NULL, content TEXT NOT NULL,
+        timestamp INTEGER NOT NULL, user_id TEXT, username TEXT
+      );
+      CREATE TABLE gacha_daily (
+        user_id TEXT NOT NULL, last_draw_date TEXT NOT NULL, streak INTEGER NOT NULL DEFAULT 0,
+        last_hatch_at INTEGER, PRIMARY KEY (user_id)
+      );
+      CREATE TABLE jev_events (
+        kind TEXT NOT NULL CHECK (kind IN ('turn', 'admission', 'verification')),
+        guild_id TEXT NOT NULL, channel_id TEXT NOT NULL, question TEXT NOT NULL, answer TEXT NOT NULL,
+        probability REAL, confidence REAL, applied INTEGER NOT NULL CHECK (applied IN (0, 1)),
+        latency_ms INTEGER NOT NULL, input_tokens INTEGER NOT NULL, baseline TEXT, created_at INTEGER NOT NULL
+      );
+    `)
+    testDb
+      .prepare(
+        'INSERT INTO jev_events (kind, guild_id, channel_id, question, answer, probability, applied, latency_ms, input_tokens, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      )
+      .run('admission', 'guild-1', 'channel-1', 'q', 'a', 0.4, 0, 10, 20, 100)
+
+    const runMigrations = (database as unknown as DatabaseModule).runMigrations
+    runMigrations?.(testDb)
+    runMigrations?.(testDb)
+
+    const columns = testDb.prepare("PRAGMA table_info('jev_events')").all() as Array<{ name: string }>
+    const tables = testDb.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{
+      name: string
+    }>
+    expect(columns.filter((column) => column.name === 'job_id')).toHaveLength(1)
+    expect(testDb.prepare('SELECT kind, job_id FROM jev_events').all()).toEqual([{ kind: 'admission', job_id: null }])
+    expect(tables.map((table) => table.name)).toContain('extraction_samples')
+  })
+
   it('creates the guild-scoped memory episode table and indexes at startup', () => {
     process.env.ROKABOT_DB_PATH = ':memory:'
 
