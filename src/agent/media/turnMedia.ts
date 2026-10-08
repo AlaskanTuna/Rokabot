@@ -1,8 +1,16 @@
 import type { Part } from '@google/genai'
 import { config } from '../../config.js'
+import {
+  findMediaDigest,
+  recordMediaOccurrence,
+  saveMediaDigest,
+  setMediaDigestEmbedding
+} from '../../storage/mediaDigestStore.js'
 import { logger } from '../../utils/logger.js'
 import { measureAttachmentTokens } from '../attachmentCost.js'
 import { type ImageAttachment, downloadAttachment, prepareAttachments } from '../attachments.js'
+import { embedEpisodeText } from '../memory/episodeEmbeddings.js'
+import { bytesContentKey } from './contentKey.js'
 import { formatClock, renderCompactDigest, renderDigestBlock } from './digest.js'
 import { durationFromTokens, mp4DurationSec } from './duration.js'
 import { planCoverage, planFocus } from './plan.js'
@@ -56,7 +64,82 @@ function notice(label: string, outcome: string): Part {
   return { text: `[${article} ${label} was shared, but ${outcome}.]` }
 }
 
-type Prepared = { status: 'ready'; source: WatchSource; plan: CoveragePlan; opening: boolean } | { status: 'dropped' }
+type Prepared =
+  | { status: 'ready'; source: WatchSource; plan: CoveragePlan; opening: boolean; bytes?: Buffer }
+  | { status: 'dropped' }
+
+/** A server turn whose watched media is remembered. Absent for DMs, group DMs and `/ask`. */
+export interface MediaMemoryScope {
+  guildId: string
+  channelId: string
+  messageId: string
+  userId: string
+}
+
+function remembered(scope: MediaMemoryScope, contentKey: string): { id: number; digest: MediaDigest } | null {
+  try {
+    const stored = findMediaDigest(scope.guildId, contentKey)
+    if (!stored) return null
+    const digest = JSON.parse(stored.digestJson) as MediaDigest
+    // A partial watch is worth redoing; a later share may get the whole thing.
+    if (digest.mode === 'opening' || digest.incomplete) return null
+    // Throws on a row that has drifted from the digest shape, which then counts as a miss.
+    renderDigestBlock(digest)
+    renderCompactDigest(digest)
+    return { id: stored.id, digest }
+  } catch (error) {
+    logger.warn({ error, contentKey }, 'Could not read remembered media')
+    return null
+  }
+}
+
+function recordShare(scope: MediaMemoryScope, attachment: ImageAttachment, digestId: number): void {
+  try {
+    recordMediaOccurrence({
+      digestId,
+      guildId: scope.guildId,
+      channelId: scope.channelId,
+      messageId: attachment.sourceMessageId ?? scope.messageId,
+      sharedByUserId: scope.userId,
+      sourceAuthorId: attachment.sourceAuthorId ?? null,
+      origin: attachment.origin ?? 'upload'
+    })
+  } catch (error) {
+    logger.warn({ error, digestId }, 'Could not record shared media')
+  }
+}
+
+function remember(scope: MediaMemoryScope, attachment: ImageAttachment, contentKey: string, digest: MediaDigest) {
+  try {
+    const saved = saveMediaDigest({
+      guildId: scope.guildId,
+      contentKey,
+      kind: digest.kind,
+      label: digest.label,
+      summary: digest.observations.summary,
+      digestJson: JSON.stringify(digest)
+    })
+    if (!saved) return
+    recordShare(scope, attachment, saved.id)
+    // Off the reply path; a failed embedding stays NULL until maintenance repairs it.
+    void embedEpisodeText({ text: saved.summary, role: 'RETRIEVAL_DOCUMENT' })
+      .then((embedding) =>
+        setMediaDigestEmbedding({ guildId: scope.guildId, id: saved.id, summary: saved.summary, embedding })
+      )
+      .catch((error) => logger.warn({ error, digestId: saved.id }, 'Could not embed remembered media'))
+  } catch (error) {
+    logger.warn({ error, contentKey }, 'Could not remember watched media')
+  }
+}
+
+function present(result: PreparedTurnMedia, digest: MediaDigest): void {
+  const block = renderDigestBlock(digest)
+  const compact = renderCompactDigest(digest)
+  result.mediaTextParts.push({ text: block })
+  result.compactions.set(block, compact)
+  result.compactDigests.push(compact)
+  result.digests.push(digest)
+}
 
 async function prepareUri(attachment: ImageAttachment, label: string): Promise<Prepared> {
   let durationSec = attachment.durationSec ?? null
@@ -125,17 +208,33 @@ async function prepareInline(attachment: ImageAttachment, kind: MediaKind, label
       skimClips: config.media.skimClips,
       skimClipSeconds: config.media.skimClipSeconds
     }),
-    opening: download.truncated
+    opening: download.truncated,
+    bytes: download.bytes
   }
 }
 
 async function watchOne(
   attachment: ImageAttachment,
   kind: MediaKind,
-  input: { channelId: string; focus: string; mayRetry: () => boolean; geminiUnavailable?: boolean },
+  input: {
+    channelId: string
+    focus: string
+    mayRetry: () => boolean
+    geminiUnavailable?: boolean
+    memoryScope?: MediaMemoryScope | null
+  },
   result: PreparedTurnMedia
 ): Promise<void> {
   const label = labelFor(attachment, kind)
+  const scope = input.memoryScope ?? null
+  let contentKey = scope ? attachment.contentKey : undefined
+  const reuse = (hit: { id: number; digest: MediaDigest }) => {
+    present(result, hit.digest)
+    recordShare(scope!, attachment, hit.id)
+    logger.info({ channelId: input.channelId, kind, outcome: 'remembered' }, 'Watched media')
+  }
+  const linkHit = scope && contentKey ? remembered(scope, contentKey) : null
+  if (linkHit) return reuse(linkHit)
   // Only Gemini can watch; while turns are pinned to the fallback model, waiting on it would only add delay.
   if (input.geminiUnavailable) {
     result.mediaTextParts.push(notice(label, "it couldn't be watched right now"))
@@ -149,6 +248,11 @@ async function watchOne(
     return
   }
   const { source, plan, opening } = prepared
+  if (scope && !contentKey && prepared.bytes) {
+    contentKey = bytesContentKey(prepared.bytes)
+    const bytesHit = remembered(scope, contentKey)
+    if (bytesHit) return reuse(bytesHit)
+  }
   if (opening) result.truncatedAttachments += 1
 
   if (plan.mode === 'decline') {
@@ -179,13 +283,9 @@ async function watchOne(
   result.watcherCalls += watched.calls
 
   if (watched.status === 'ok') {
-    const block = renderDigestBlock(watched.digest)
-    const compact = renderCompactDigest(watched.digest)
-    result.mediaTextParts.push({ text: block })
-    result.compactions.set(block, compact)
-    result.compactDigests.push(compact)
-    result.digests.push(watched.digest)
+    present(result, watched.digest)
     result.mediaTokens += watched.promptTokens
+    if (scope && contentKey) remember(scope, attachment, contentKey, watched.digest)
   } else {
     result.mediaTextParts.push(
       notice(label, watched.reason === 'unavailable' ? "it couldn't be opened" : "it couldn't be watched right now")
@@ -220,6 +320,7 @@ export async function prepareTurnMedia(input: {
   mayRetry: () => boolean
   /** True while turns are pinned to the fallback model, which cannot watch. */
   geminiUnavailable?: boolean
+  memoryScope?: MediaMemoryScope | null
 }): Promise<PreparedTurnMedia> {
   const attachments = input.attachments ?? []
   const watchable = config.media.watch

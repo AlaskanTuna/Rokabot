@@ -11,7 +11,7 @@ export type RecalledEpisode = Readonly<{
   similarity: number
 }>
 
-function cosineSimilarity(left: EpisodeEmbedding, right: EpisodeEmbedding): number | null {
+export function cosineSimilarity(left: EpisodeEmbedding, right: EpisodeEmbedding): number | null {
   if (left.length !== 768 || right.length !== 768) return null
 
   let dot = 0

@@ -91,6 +91,10 @@ interface YamlConfig {
     episodeTokenBudget?: number
     episodeMinSimilarity?: number
     episodeRetentionDays?: number
+    mediaRecallK?: number
+    mediaTokenBudget?: number
+    mediaMinSimilarity?: number
+    mediaRetentionDays?: number
     embeddingModel?: string
     embeddingTimeoutMs?: number
     vaultExportDir?: string
@@ -279,6 +283,10 @@ export const config = {
     episodeTokenBudget: yaml.memory?.episodeTokenBudget ?? 200,
     episodeMinSimilarity: yaml.memory?.episodeMinSimilarity ?? 0.7,
     episodeRetentionDays: yaml.memory?.episodeRetentionDays ?? 90,
+    mediaRecallK: yaml.memory?.mediaRecallK ?? 2,
+    mediaTokenBudget: yaml.memory?.mediaTokenBudget ?? 400,
+    mediaMinSimilarity: yaml.memory?.mediaMinSimilarity ?? 0.7,
+    mediaRetentionDays: yaml.memory?.mediaRetentionDays ?? 90,
     embeddingModel: yaml.memory?.embeddingModel ?? 'gemini-embedding-2',
     embeddingTimeoutMs: yaml.memory?.embeddingTimeoutMs ?? 1500,
     vaultExportDir: envString('MEMORY_VAULT_EXPORT_DIR') ?? yaml.memory?.vaultExportDir ?? 'data/vault'
@@ -424,6 +432,10 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'memory.episodeTokenBudget', value: config.memory.episodeTokenBudget, min: 1 },
   { path: 'memory.episodeMinSimilarity', value: config.memory.episodeMinSimilarity, min: 0, max: 1 },
   { path: 'memory.episodeRetentionDays', value: config.memory.episodeRetentionDays, min: 1 },
+  { path: 'memory.mediaRecallK', value: config.memory.mediaRecallK, min: 0, max: 5 },
+  { path: 'memory.mediaTokenBudget', value: config.memory.mediaTokenBudget, min: 100, max: 1500 },
+  { path: 'memory.mediaMinSimilarity', value: config.memory.mediaMinSimilarity, min: 0, max: 1 },
+  { path: 'memory.mediaRetentionDays', value: config.memory.mediaRetentionDays, min: 1, max: 365 },
   { path: 'memory.embeddingTimeoutMs', value: config.memory.embeddingTimeoutMs, min: 1 },
   { path: 'metrics.retentionDays', value: config.metrics.retentionDays, min: 1 },
   { path: 'metrics.diagnosticsRetentionHours', value: config.metrics.diagnosticsRetentionHours, min: 1 },

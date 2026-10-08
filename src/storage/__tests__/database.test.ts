@@ -19,6 +19,54 @@ afterEach(() => {
   process.env.ROKABOT_DB_PATH = undefined
 })
 
+describe('database startup schema', () => {
+  it('creates guild media digest and occurrence tables with their indexes', () => {
+    process.env.ROKABOT_DB_PATH = ':memory:'
+
+    const startupDb = database.getDb()
+    const columns = (table: string) =>
+      (startupDb.prepare(`PRAGMA table_info('${table}')`).all() as Array<{ name: string }>).map(({ name }) => name)
+    const indexes = (table: string) =>
+      startupDb.prepare(`PRAGMA index_list('${table}')`).all() as Array<{ name: string; unique: number }>
+    const uniqueIndexColumns = (table: string) =>
+      indexes(table)
+        .filter(({ unique }) => unique === 1)
+        .map(({ name }) =>
+          (startupDb.prepare(`PRAGMA index_info('${name}')`).all() as Array<{ name: string }>).map(
+            ({ name: column }) => column
+          )
+        )
+
+    expect(columns('media_digest')).toEqual([
+      'id',
+      'guild_id',
+      'content_key',
+      'kind',
+      'label',
+      'summary',
+      'digest_json',
+      'embedding',
+      'created_at'
+    ])
+    expect(columns('media_occurrence')).toEqual([
+      'id',
+      'digest_id',
+      'guild_id',
+      'channel_id',
+      'message_id',
+      'shared_by_user_id',
+      'source_author_id',
+      'origin',
+      'observed_at'
+    ])
+    expect(indexes('media_occurrence').map(({ name }) => name)).toEqual(
+      expect.arrayContaining(['idx_media_occurrence_digest', 'idx_media_occurrence_guild_user'])
+    )
+    expect(uniqueIndexColumns('media_digest')).toContainEqual(['guild_id', 'content_key'])
+    expect(uniqueIndexColumns('media_occurrence')).toContainEqual(['digest_id', 'message_id'])
+  })
+})
+
 describe('runMigrations', () => {
   it('does not create the legacy fact table during startup', () => {
     process.env.ROKABOT_DB_PATH = ':memory:'

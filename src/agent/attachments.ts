@@ -19,6 +19,14 @@ export interface ImageAttachment {
   startSec?: number
   /** The file is known to carry no sound track. */
   silent?: boolean
+  /** How the item reached the turn; recorded with what was watched so a server can remember who shared it. */
+  origin?: 'upload' | 'reply' | 'forward' | 'link'
+  /** The Discord message the item was attached to. */
+  sourceMessageId?: string
+  /** Who posted the item, when known; a forward does not say. */
+  sourceAuthorId?: string | null
+  /** Stable identity of a linked item, so a repost in the same server is recognised without watching it. */
+  contentKey?: string
 }
 
 // Bounds stalled attachment hosts as well as oversized responses.

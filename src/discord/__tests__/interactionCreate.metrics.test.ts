@@ -322,7 +322,14 @@ describe('interaction handler metrics', () => {
 
     expect(mocks.resolveMediaUrl).not.toHaveBeenCalled()
     expect(mocks.generateResponse.mock.calls[0][0].imageAttachments).toEqual([
-      { url: youtube.canonicalUrl, contentType: 'video/mp4', transport: 'uri' }
+      {
+        url: youtube.canonicalUrl,
+        contentType: 'video/mp4',
+        transport: 'uri',
+        origin: 'link',
+        sourceAuthorId: null,
+        contentKey: `youtube:${youtube.id}`
+      }
     ])
   })
 

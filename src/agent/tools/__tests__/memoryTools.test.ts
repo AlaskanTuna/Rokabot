@@ -6,6 +6,12 @@ vi.mock('../../../utils/logger.js', () => ({
 }))
 
 import { closeDb, getDb } from '../../../storage/database.js'
+import {
+  findMediaDigest,
+  listMediaDigestsForGuild,
+  recordMediaOccurrence,
+  saveMediaDigest
+} from '../../../storage/mediaDigestStore.js'
 import { recordResponseEvent } from '../../../storage/metricsStore.js'
 import { upsertUserName } from '../../../storage/userNames.js'
 import { logger } from '../../../utils/logger.js'
@@ -39,6 +45,37 @@ afterEach(() => {
   closeDb()
   process.env.ROKABOT_DB_PATH = undefined
 })
+
+function seedMedia(input: {
+  guildId?: string
+  contentKey: string
+  label?: string
+  summary: string
+  sharedBy: string[]
+}) {
+  const guildId = input.guildId ?? 'guild-1'
+  const digest = saveMediaDigest({
+    guildId,
+    contentKey: input.contentKey,
+    kind: 'video',
+    label: input.label ?? 'Cat video',
+    summary: input.summary,
+    digestJson: '{}'
+  })
+  if (!digest) throw new Error('Expected a digest')
+  for (const [index, sharedByUserId] of input.sharedBy.entries()) {
+    recordMediaOccurrence({
+      digestId: digest.id,
+      guildId,
+      channelId: 'channel-1',
+      messageId: `${input.contentKey}-${index}`,
+      sharedByUserId,
+      sourceAuthorId: null,
+      origin: 'link'
+    })
+  }
+  return digest
+}
 
 describe('memory tools', () => {
   it('forgets only the speaker’s user claim and leaves guild facts intact', async () => {
@@ -185,6 +222,98 @@ describe('memory tools', () => {
       message: "I couldn't identify the current member or server, so I didn't forget anything."
     })
     expect(getActiveClaims('guild-1', 'user-1').map(({ id }) => id)).toContain(activeClaim.id)
+  })
+
+  it('forgets a remembered media item the speaker shared', async () => {
+    seedMedia({ contentKey: 'youtube:cat', summary: 'A cat explores a night garden.', sharedBy: ['user-1'] })
+
+    await expect(runForget('cat video')).resolves.toEqual({
+      success: true,
+      message: 'I forgot these notes: media "Cat video: A cat explores a night garden.".'
+    })
+    expect(findMediaDigest('guild-1', 'youtube:cat')).toBeNull()
+  })
+
+  it('keeps a remembered media item that another member still shares', async () => {
+    seedMedia({ contentKey: 'youtube:cat', summary: 'A cat explores a night garden.', sharedBy: ['user-1', 'user-2'] })
+
+    await expect(runForget('cat video')).resolves.toMatchObject({ success: true })
+
+    expect(getDb().prepare('SELECT shared_by_user_id FROM media_occurrence').all()).toEqual([
+      { shared_by_user_id: 'user-2' }
+    ])
+    expect(findMediaDigest('guild-1', 'youtube:cat')).not.toBeNull()
+  })
+
+  it('never forgets media shared by another member or in another guild', async () => {
+    seedMedia({ contentKey: 'youtube:cat', summary: 'A cat explores a night garden.', sharedBy: ['user-2'] })
+    seedMedia({
+      guildId: 'guild-2',
+      contentKey: 'youtube:cat',
+      summary: 'A cat explores a night garden.',
+      sharedBy: ['user-1']
+    })
+
+    await expect(runForget('cat video')).resolves.toEqual({
+      success: false,
+      message: "I couldn't find a matching note to forget."
+    })
+    expect(findMediaDigest('guild-1', 'youtube:cat')).not.toBeNull()
+    expect(findMediaDigest('guild-2', 'youtube:cat')).not.toBeNull()
+  })
+
+  it('forgets a claim and a media item together when they total three or fewer', async () => {
+    assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'likes',
+      value: 'cat food',
+      sourceKind: 'explicit'
+    })
+    seedMedia({ contentKey: 'youtube:cat', summary: 'A cat explores a night garden.', sharedBy: ['user-1'] })
+
+    await expect(runForget('cat')).resolves.toEqual({
+      success: true,
+      message: 'I forgot these notes: likes "cat food", media "Cat video: A cat explores a night garden.".'
+    })
+    expect(getActiveClaims('guild-1', 'user-1')).toEqual([])
+    expect(findMediaDigest('guild-1', 'youtube:cat')).toBeNull()
+  })
+
+  it('asks which to forget when claims and media together exceed three, forgetting nothing', async () => {
+    const claims = ['cat food', 'cat toys'].map((value) =>
+      assertClaim({ guildId: 'guild-1', subjectUserId: 'user-1', predicate: 'likes', value, sourceKind: 'explicit' })
+    )
+    seedMedia({ contentKey: 'youtube:video', summary: 'A cat explores a night garden.', sharedBy: ['user-1'] })
+    seedMedia({
+      contentKey: 'youtube:stream',
+      label: 'Cat stream',
+      summary: 'A cat sleeps on a keyboard.',
+      sharedBy: ['user-1']
+    })
+
+    const result = await runForget('cat')
+
+    expect(result.success).toBe(false)
+    expect(result.message).toContain('Which one did you mean?')
+    expect(result.message).toContain('likes "cat food"')
+    expect(result.message).toContain('media "Cat stream: A cat sleeps on a keyboard."')
+    expect(
+      getActiveClaims('guild-1', 'user-1')
+        .map(({ id }) => id)
+        .sort()
+    ).toEqual(claims.map(({ id }) => id).sort())
+    expect(listMediaDigestsForGuild('guild-1')).toHaveLength(2)
+  })
+
+  it('does not search media when the query has no keyword terms', async () => {
+    seedMedia({ contentKey: 'youtube:cat', summary: 'A cat explores a night garden.', sharedBy: ['user-1'] })
+
+    await expect(runForget('?!')).resolves.toEqual({
+      success: false,
+      message: "I couldn't find a matching note to forget."
+    })
+    expect(findMediaDigest('guild-1', 'youtube:cat')).not.toBeNull()
   })
 
   it('matches CJK keywords in a claim value', async () => {

@@ -50,6 +50,8 @@ import type { TurnContextOptions, TurnEntryWork } from './turnContext.js'
 interface GenerateOptions extends TurnContextOptions {
   turnEntryWork?: TurnEntryWork
   imageAttachments?: ImageAttachment[]
+  /** The Discord message that triggered the turn, recorded with any media remembered from it. */
+  messageId?: string
 }
 
 export interface GenerateResult {
@@ -287,7 +289,12 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     attachments: imageAttachments,
     focus: userMessage,
     mayRetry: () => getSharedRateLimiter(config.rateLimit).tryConsumeAboveFloor(config.gemini.retryRpmFloor),
-    geminiUnavailable: rokaModel.hasFallback && hasStickyFallback()
+    geminiUnavailable: rokaModel.hasFallback && hasStickyFallback(),
+    // Servers only: DMs, group DMs and `/ask` (memory off) keep what was watched in the transcript alone.
+    memoryScope:
+      memory && !guildId.startsWith('dm:') && options.messageId
+        ? { guildId, channelId, messageId: options.messageId, userId }
+        : null
   })
   // Handled here so a failure in createTurnContext cannot leave it as an unhandled rejection.
   mediaWork.catch(() => undefined)

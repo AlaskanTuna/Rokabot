@@ -13,6 +13,8 @@ const presentation: SocialPostPresentation = {
 
 function message({ attachments = [], embeds = [] }: { attachments?: object[]; embeds?: object[] } = {}) {
   return {
+    id: 'message-1',
+    author: { id: 'user-1' },
     content: 'what is this?',
     mentions: { members: new Collection(), users: new Collection() },
     attachments: new Collection(attachments.map((attachment, index) => [String(index), attachment])),

@@ -15,6 +15,7 @@ import type { TurnJudgment, TurnJudgmentInput } from './jev/judgments.js'
 import { embedEpisodeText } from './memory/episodeEmbeddings.js'
 import { buildEpisodeRecallBlock } from './memory/episodeRetriever.js'
 import { resolveReferences } from './memory/identityResolver.js'
+import { buildMediaRecallBlock } from './memory/mediaRecall.js'
 import { formatGuildFactDate, retrieveForTurn, retrieveGuildFacts } from './memory/retriever.js'
 import { getMessages as getBufferMessages } from './passiveBuffer.js'
 import { assembleSystemPrompt } from './promptAssembler.js'
@@ -172,15 +173,18 @@ export function startTurnEntryWork(input: StartTurnEntryWorkInput): TurnEntryWor
   }
 }
 
-async function awaitEpisodeRecallBlock(pending: Promise<EpisodeEmbedding | null>, guildId: string): Promise<string> {
+async function awaitRecallSection(
+  pending: Promise<EpisodeEmbedding | null>,
+  buildBlock: (queryEmbedding: EpisodeEmbedding) => string
+): Promise<string> {
   let timer: ReturnType<typeof setTimeout> | undefined
   const timeout = new Promise<null>((resolve) => {
     timer = setTimeout(() => resolve(null), config.memory.embeddingTimeoutMs)
   })
   try {
     const embedding = await Promise.race([pending, timeout])
-    if (!embedding) return ''
-    return buildEpisodeRecallBlock({ guildId, queryEmbedding: embedding })
+    const block = embedding ? buildBlock(embedding) : ''
+    return block ? `\n\n${block}` : ''
   } catch {
     return ''
   } finally {
@@ -395,12 +399,14 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
   const basePrompt = assembleSystemPrompt({ tone, hour, displayName, memory })
   let factsSection = ''
   let serverFactsSection = ''
-  const episodeSectionPromise =
-    memory && guildId && !guildId.startsWith('dm:') && options.turnEntryWork.queryEmbedding
-      ? awaitEpisodeRecallBlock(options.turnEntryWork.queryEmbedding, guildId).then((block) =>
-          block ? `\n\n${block}` : ''
-        )
-      : Promise.resolve('')
+  const recallEmbedding =
+    memory && guildId && !guildId.startsWith('dm:') ? options.turnEntryWork.queryEmbedding : undefined
+  const episodeSectionPromise = recallEmbedding
+    ? awaitRecallSection(recallEmbedding, (queryEmbedding) => buildEpisodeRecallBlock({ guildId, queryEmbedding }))
+    : Promise.resolve('')
+  const mediaSectionPromise = recallEmbedding
+    ? awaitRecallSection(recallEmbedding, (queryEmbedding) => buildMediaRecallBlock({ guildId, queryEmbedding }))
+    : Promise.resolve('')
   let overheardSection = ''
   let factEntryCount = 0
 
@@ -512,6 +518,7 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
 
   const prefetch = await awaitTurnPrefetch(options.turnEntryWork, channelId)
   const episodeSection = await episodeSectionPromise
+  const mediaSection = await mediaSectionPromise
   turnEvent.prefetch = prefetch
   persistTurnEventWhenReady()
   const lookedUpSection = prefetch.block ? `\n\n${prefetch.block}` : ''
@@ -526,6 +533,7 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
       safetyRung < 2 ? `${factsSection}${whoIsMentionedSection}` : '',
       safetyRung < 2 ? serverFactsSection : '',
       safetyRung < 2 ? episodeSection : '',
+      safetyRung < 2 ? mediaSection : '',
       safetyRung < 1 ? overheardSection : '',
       tailSection,
       safetyRung === 0 ? lookedUpSection : '',

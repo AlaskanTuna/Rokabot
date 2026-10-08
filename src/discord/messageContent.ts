@@ -142,6 +142,16 @@ function toMediaAttachment(attachment: Attachment): ImageAttachment {
   return { url, contentType: contentType!, size, ...(duration ? { durationSec: duration } : {}) }
 }
 
+type MediaSource = Required<Pick<ImageAttachment, 'origin' | 'sourceMessageId' | 'sourceAuthorId'>>
+
+// Only watched media (audio and video) is remembered, so only it carries where it came from.
+function fromSource(source: MediaSource): (attachment: ImageAttachment) => ImageAttachment {
+  return (attachment) =>
+    attachment.contentType.startsWith('audio/') || attachment.contentType.startsWith('video/')
+      ? { ...attachment, ...source }
+      : attachment
+}
+
 type MediaKind = 'image' | 'video' | 'audio clip' | 'document'
 
 const MEDIA_KIND_ORDER: MediaKind[] = ['image', 'video', 'audio clip', 'document']
@@ -175,6 +185,7 @@ function mediaMarker(prefix: 'forwarded' | 'attached', candidates: ImageAttachme
 function describeForwardedSnapshots(
   snapshots: Message['messageSnapshots'],
   imageSlots: number,
+  forwardedIn: string,
   socialPost?: SocialPostPresentation
 ): ForwardedContent {
   const parts: string[] = []
@@ -204,7 +215,10 @@ function describeForwardedSnapshots(
     }
 
     const fwdAttachments = snapshot.attachments ? [...snapshot.attachments.values()] : []
-    const fwdCandidates = fwdAttachments.filter(isSupportedMedia).map(toMediaAttachment)
+    const fwdCandidates = fwdAttachments
+      .filter(isSupportedMedia)
+      .map(toMediaAttachment)
+      .map(fromSource({ origin: 'forward', sourceMessageId: forwardedIn, sourceAuthorId: null }))
     const fwdImages = fwdCandidates.slice(0, imageSlots - images.length)
     images.push(...fwdImages)
 
@@ -232,13 +246,15 @@ export function extractMessageContent(
 ): ExtractedMessageContent {
   let content = replaceUserMentions(message, botId)
 
+  const ownSource = fromSource({ origin: 'upload', sourceMessageId: message.id, sourceAuthorId: message.author.id })
   const imageAttachments: ImageAttachment[] = message.attachments
     .filter(isSupportedMedia)
     .map(toMediaAttachment)
+    .map(ownSource)
     .slice(0, MAX_ATTACHMENTS)
 
   const componentMedia = extractComponentMedia(message.components)
-  imageAttachments.push(...componentMedia.media.slice(0, MAX_ATTACHMENTS - imageAttachments.length))
+  imageAttachments.push(...componentMedia.media.map(ownSource).slice(0, MAX_ATTACHMENTS - imageAttachments.length))
 
   const ownParts: string[] = []
   if (componentTextsForTrigger.length > 0) ownParts.push(`[Container: ${componentTextsForTrigger.join(' | ')}]`)
@@ -271,6 +287,7 @@ export function extractMessageContent(
   const forwarded = describeForwardedSnapshots(
     message.messageSnapshots,
     MAX_ATTACHMENTS - imageAttachments.length,
+    message.id,
     socialPost
   )
   ownParts.push(...forwarded.parts)
@@ -310,6 +327,7 @@ export function extractMessageContent(
     const forwardedRef = describeForwardedSnapshots(
       referencedMessage.messageSnapshots,
       MAX_ATTACHMENTS - imageAttachments.length,
+      referencedMessage.id,
       socialPost
     )
     refParts.push(...forwardedRef.parts)
@@ -329,7 +347,16 @@ export function extractMessageContent(
     }
 
     const refAttachments = [...referencedMessage.attachments.values()]
-    const refMediaCandidates: ImageAttachment[] = refAttachments.filter(isSupportedMedia).map(toMediaAttachment)
+    const refMediaCandidates: ImageAttachment[] = refAttachments
+      .filter(isSupportedMedia)
+      .map(toMediaAttachment)
+      .map(
+        fromSource({
+          origin: 'reply',
+          sourceMessageId: referencedMessage.id,
+          sourceAuthorId: referencedMessage.author.id
+        })
+      )
     const refMediaTaken = isReplyToBot ? [] : refMediaCandidates.slice(0, MAX_ATTACHMENTS - imageAttachments.length)
     refParts.push(...mediaMarker('attached', refMediaCandidates, refMediaTaken.length))
     const unsupportedRefCount = refAttachments.length - refAttachments.filter(isSupportedMedia).length

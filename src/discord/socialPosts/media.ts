@@ -1,8 +1,14 @@
 import { MAX_VIDEO_SIZE_BYTES } from '../../agent/attachmentLimits.js'
 import type { ImageAttachment } from '../../agent/attachments.js'
+import { postContentKey, youtubeContentKey } from '../../agent/media/contentKey.js'
 import { config } from '../../config.js'
 import { resolveMediaUrl } from '../attachments.js'
 import type { SocialPost } from './types.js'
+
+// A Bluesky record key is unique only within its account, and anyone can choose one for their own post.
+function postIdentity(post: SocialPost): string {
+  return post.platform === 'bluesky' ? `${post.target.profile?.toLowerCase()}/${post.id}` : post.id
+}
 
 async function playableVideo(post: SocialPost): Promise<ImageAttachment | null> {
   if (!post.video) return null
@@ -15,7 +21,10 @@ async function playableVideo(post: SocialPost): Promise<ImageAttachment | null> 
   return {
     ...resolved,
     ...(post.durationSec ? { durationSec: post.durationSec } : {}),
-    ...(post.video.hasAudio === false ? { silent: true } : {})
+    ...(post.video.hasAudio === false ? { silent: true } : {}),
+    origin: 'link',
+    sourceAuthorId: null,
+    contentKey: postContentKey(post.platform, postIdentity(post), 0)
   }
 }
 
@@ -27,7 +36,10 @@ export async function socialPostMedia(post: SocialPost): Promise<ImageAttachment
       contentType: 'video/mp4',
       transport: 'uri',
       ...(post.durationSec ? { durationSec: post.durationSec } : {}),
-      ...(post.target.startSec !== undefined ? { startSec: post.target.startSec } : {})
+      ...(post.target.startSec !== undefined ? { startSec: post.target.startSec } : {}),
+      origin: 'link',
+      sourceAuthorId: null,
+      contentKey: youtubeContentKey(post.id, post.target.startSec)
     }
   }
   if (config.media.watch) {
