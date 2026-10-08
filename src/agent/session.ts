@@ -5,6 +5,7 @@ import { config } from '../config.js'
 import { loadHistory } from '../storage/sessionStore.js'
 import { logger } from '../utils/logger.js'
 import { attachmentMarker } from './attachments.js'
+import { MEDIA_DIGEST_HEADING } from './media/digest.js'
 import { abortActiveTurns } from './reliability.js'
 import { beginShutdown } from './shutdownSignal.js'
 
@@ -19,6 +20,10 @@ export function clearSessionErrorCount(channelId: string): void {
 
 export function incrementSessionErrorCount(channelId: string): void {
   sessionErrorCounts.set(channelId, (sessionErrorCounts.get(channelId) ?? 0) + 1)
+}
+
+function isStrippable(part: Part): boolean {
+  return Boolean(part.inlineData || part.fileData || part.text?.includes(MEDIA_DIGEST_HEADING))
 }
 
 /** Caps history; attachment-retention tests use a real Runner because the test seam bypasses appendEvent. */
@@ -39,7 +44,7 @@ export class WindowedSessionService extends InMemorySessionService {
 
   override async appendEvent(request: Parameters<InMemorySessionService['appendEvent']>[0]): Promise<Event> {
     const appended = await super.appendEvent(request)
-    if (request.event.content?.parts?.some((part: Part) => part.inlineData)) {
+    if (request.event.content?.parts?.some(isStrippable)) {
       const pending = this.attachmentEvents.get(request.session.id) ?? []
       pending.push(request.event)
       this.attachmentEvents.set(request.session.id, pending)
@@ -47,8 +52,11 @@ export class WindowedSessionService extends InMemorySessionService {
     return appended
   }
 
-  /** Replaces bytes after retries so future turns do not resend the upload. */
-  stripAttachmentBytes(sessionId: string): number {
+  /**
+   * Replaces bytes after retries so future turns do not resend the upload, and swaps each full media digest
+   * for its compact form so later turns carry the gist rather than the whole watch notes.
+   */
+  stripAttachmentBytes(sessionId: string, compactions?: ReadonlyMap<string, string>): number {
     const events = this.attachmentEvents.get(sessionId)
     this.attachmentEvents.delete(sessionId)
     if (!events) return 0
@@ -58,10 +66,18 @@ export class WindowedSessionService extends InMemorySessionService {
       const parts = event.content?.parts
       if (!parts) continue
       for (let index = 0; index < parts.length; index++) {
-        const inline = parts[index].inlineData
-        if (!inline) continue
-        parts[index] = { text: attachmentMarker(inline.mimeType ?? '') }
-        stripped++
+        const part = parts[index]
+        const media = part.inlineData ?? part.fileData
+        if (media) {
+          parts[index] = { text: attachmentMarker(media.mimeType ?? '') }
+          stripped++
+          continue
+        }
+        const compact = part.text === undefined ? undefined : compactions?.get(part.text)
+        if (compact !== undefined) {
+          parts[index] = { text: compact }
+          stripped++
+        }
       }
     }
     return stripped
