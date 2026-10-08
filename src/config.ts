@@ -60,6 +60,13 @@ interface YamlConfig {
     maxCacheEntries?: number
     ytDlpPath?: string
   }
+  media?: {
+    watch?: boolean
+    watchTimeoutMs?: number
+    digestMaxOutputTokens?: number
+    skimClips?: number
+    skimClipSeconds?: number
+  }
   memory?: {
     bufferSize?: number
     contextSize?: number
@@ -203,6 +210,13 @@ export const config = {
     maxCacheEntries: yaml.socialPosts?.maxCacheEntries ?? 256,
     ytDlpPath: yaml.socialPosts?.ytDlpPath ?? 'yt-dlp'
   },
+  media: {
+    watch: envBoolean('MEDIA_WATCH') ?? yaml.media?.watch ?? true,
+    watchTimeoutMs: yaml.media?.watchTimeoutMs ?? 20_000,
+    digestMaxOutputTokens: yaml.media?.digestMaxOutputTokens ?? 1200,
+    skimClips: yaml.media?.skimClips ?? 8,
+    skimClipSeconds: yaml.media?.skimClipSeconds ?? 10
+  },
   gemini: {
     apiKey: requiredEnv('GEMINI_API_KEY'),
     model: geminiModel,
@@ -322,6 +336,10 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'socialPosts.maxTextChars', value: config.socialPosts.maxTextChars, min: 1, max: 10_000 },
   { path: 'socialPosts.cacheTtlMs', value: config.socialPosts.cacheTtlMs, min: 0 },
   { path: 'socialPosts.maxCacheEntries', value: config.socialPosts.maxCacheEntries, min: 1, max: 10_000 },
+  { path: 'media.watchTimeoutMs', value: config.media.watchTimeoutMs, min: 5000, max: 60_000 },
+  { path: 'media.digestMaxOutputTokens', value: config.media.digestMaxOutputTokens, min: 400, max: 4000 },
+  { path: 'media.skimClips', value: config.media.skimClips, min: 3, max: 9 },
+  { path: 'media.skimClipSeconds', value: config.media.skimClipSeconds, min: 2, max: 30 },
   { path: 'gemini.maxOutputTokens', value: config.gemini.maxOutputTokens, min: 1 },
   // Floor is a full turn of plain images, derived rather than restated: below it a maximal image turn could
   // be refused,

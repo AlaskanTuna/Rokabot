@@ -64,6 +64,7 @@ describe('config module', () => {
     vi.stubEnv('GEMINI_RETRY_BACKOFF_CAP_MS', '')
     vi.stubEnv('GEMINI_TURN_DEADLINE_MS', '')
     vi.stubEnv('GEMINI_SAFETY_THRESHOLD', '')
+    vi.stubEnv('MEDIA_WATCH', '')
     vi.stubEnv('MODELSCOPE_API_KEY', '')
     vi.stubEnv('FALLBACK_MODEL', '')
     vi.stubEnv('TYPESAFE_API_KEY', '')
@@ -184,6 +185,13 @@ describe('config module', () => {
       maxCacheEntries: 256,
       ytDlpPath: 'yt-dlp'
     })
+    expect(config.media).toEqual({
+      watch: true,
+      watchTimeoutMs: 20_000,
+      digestMaxOutputTokens: 1200,
+      skimClips: 8,
+      skimClipSeconds: 10
+    })
 
     expect(config.jev.apiKey).toBeUndefined()
     expect(config.jev.model).toBe('jev-1.13.0')
@@ -256,6 +264,16 @@ describe('config module', () => {
     const { config } = await import('../config.js')
 
     expect(config.socialPosts.enabled).toBe(false)
+  })
+
+  it('allows MEDIA_WATCH to disable media watching', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('MEDIA_WATCH', 'false')
+
+    const { config } = await import('../config.js')
+
+    expect(config.media.watch).toBe(false)
   })
 
   it('exposes bounded episode memory settings', async () => {
@@ -791,6 +809,10 @@ describe('config module', () => {
       { path: 'socialPosts.maxTextChars', min: 1, max: 10_000 },
       { path: 'socialPosts.cacheTtlMs', min: 0 },
       { path: 'socialPosts.maxCacheEntries', min: 1, max: 10_000 },
+      { path: 'media.watchTimeoutMs', min: 5000, max: 60_000 },
+      { path: 'media.digestMaxOutputTokens', min: 400, max: 4000 },
+      { path: 'media.skimClips', min: 3, max: 9 },
+      { path: 'media.skimClipSeconds', min: 2, max: 30 },
       { path: 'fallback.timeoutMs', min: 1 },
       { path: 'fallback.stickyMs', min: 0 },
       // Written out, not derived, and deliberately unlike its sibling test above. That one asserts the
