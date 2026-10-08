@@ -190,7 +190,8 @@ describe('config module', () => {
       watchTimeoutMs: 20_000,
       digestMaxOutputTokens: 1200,
       skimClips: 8,
-      skimClipSeconds: 10
+      skimClipSeconds: 10,
+      maxStreamedUploadBytes: 52_428_800
     })
 
     expect(config.jev.apiKey).toBeUndefined()
@@ -829,6 +830,7 @@ describe('config module', () => {
       { path: 'media.digestMaxOutputTokens', min: 400, max: 4000 },
       { path: 'media.skimClips', min: 3, max: 9 },
       { path: 'media.skimClipSeconds', min: 2, max: 30 },
+      { path: 'media.maxStreamedUploadBytes', min: 10_485_760, max: 104_857_600 },
       { path: 'fallback.timeoutMs', min: 1 },
       { path: 'fallback.stickyMs', min: 0 },
       // Written out, not derived, and deliberately unlike its sibling test above. That one asserts the

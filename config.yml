@@ -66,6 +66,7 @@ media:
   digestMaxOutputTokens: 1200 # Output ceiling for the digest JSON; the digest aims for 300-800 tokens
   skimClips: 8 # Most evenly spaced clips taken from a video too long to watch whole
   skimClipSeconds: 10 # Length of each skim clip
+  maxStreamedUploadBytes: 52428800 # Largest audio or video streamed to the Gemini Files API so it can be watched whole (50 MB, about 20 s on the Pi uplink)
 
 memory:
   bufferSize: 30 # Max messages in passive ring buffer per channel (in-memory)
