@@ -260,6 +260,18 @@ describe('metricsStore', () => {
     expect(rows[1].failure_marker).toBe('SAFETY')
   })
 
+  it('stores a recall event detail string alongside the counts', () => {
+    const db = getDb()
+    db.prepare('DELETE FROM memory_events').run()
+
+    recordMemoryEvent({ ...memoryEvent, kind: 'recall', detail: '{"mode":"unified","selected":2}' })
+
+    expect(db.prepare('SELECT kind, detail FROM memory_events').get()).toEqual({
+      kind: 'recall',
+      detail: '{"mode":"unified","selected":2}'
+    })
+  })
+
   it('records value-free memory events with timestamps', () => {
     const now = 1_700_000_000_000
     vi.spyOn(Date, 'now').mockReturnValue(now)
@@ -298,7 +310,8 @@ describe('metricsStore', () => {
       'n_changed',
       'tokens_est',
       'op',
-      'created_at'
+      'created_at',
+      'detail'
     ])
     expect(memory).not.toHaveProperty('value')
     expect(memory).not.toHaveProperty('key')

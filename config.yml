@@ -101,6 +101,12 @@ memory:
   mediaRetentionDays: 90 # Days after the last share before a watched-media digest and its occurrences are deleted
   embeddingModel: gemini-embedding-2 # Gemini embedding model used for episode summaries and queries
   embeddingTimeoutMs: 1500 # Maximum wait for one episode embedding before memory fails open
+  privacy: relaxed # relaxed: remembers across the whole server (default); balanced: private channels keep their memories to themselves, public ones are shared; strict: every channel keeps its own memories; off: no long-term memory, only the current chat
+  recall: shadow # legacy: today's four memory blocks; shadow: legacy prompt plus the unified recall logged only; unified: one relevance-ranked memory block
+  recallTokenBudget: 600 # Approximate token budget for the unified memory block
+  recallCoreFacts: 3 # Speaker facts always recalled whatever the topic: pinned, then nickname, then pronouns
+  factMinSimilarity: 0.6 # Minimum cosine similarity for a member fact in unified recall; calibrated before recall is switched to unified
+  serverFactMinSimilarity: 0.6 # Minimum cosine similarity for a server fact in unified recall; calibrated before recall is switched to unified
   vaultExportDir: data/vault # Directory for read-only Obsidian vault exports
 
 metrics:

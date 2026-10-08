@@ -162,7 +162,8 @@ describe('memory promotion harness evaluation', () => {
       'n_changed',
       'tokens_est',
       'op',
-      'created_at'
+      'created_at',
+      'detail'
     ])
   })
 

@@ -44,7 +44,7 @@ export interface ExtractionEventInput {
 }
 
 export interface MemoryEventInput {
-  kind: 'retrieval' | 'extraction' | 'claim_change' | 'context_build'
+  kind: 'retrieval' | 'extraction' | 'claim_change' | 'context_build' | 'recall' | 'recall_shadow'
   guildId?: string
   channelId?: string
   subjectUserId?: string
@@ -54,6 +54,8 @@ export interface MemoryEventInput {
   nChanged?: number
   tokensEst?: number
   op?: 'assert' | 'retract' | 'supersede' | 'none'
+  /** Kinds, IDs, scores, counts and flags only; never memory text */
+  detail?: string
 }
 
 export interface FailureDiagnosticInput {
@@ -163,8 +165,8 @@ function getMemoryEventStatement(): Database.Statement {
   memoryEventStatement ??= getDb().prepare(
     `INSERT INTO memory_events (
       kind, guild_id, channel_id, subject_user_id, duration_ms, n_candidates, n_selected, n_changed,
-      tokens_est, op, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      tokens_est, op, created_at, detail
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
   return memoryEventStatement
 }
@@ -229,7 +231,8 @@ export function recordMemoryEvent(row: MemoryEventInput): void {
       row.nChanged,
       row.tokensEst,
       row.op,
-      Date.now()
+      Date.now(),
+      row.detail ?? null
     )
   } catch (error) {
     logger.warn({ err: error }, 'Failed to record memory metrics event')

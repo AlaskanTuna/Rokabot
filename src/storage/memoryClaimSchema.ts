@@ -138,6 +138,8 @@ function migrateClaimLifecycle(database: Database.Database): void {
     if (!columns.has('ended_at')) database.exec('ALTER TABLE memory_claim ADD COLUMN ended_at INTEGER')
     if (!columns.has('end_reason')) database.exec('ALTER TABLE memory_claim ADD COLUMN end_reason TEXT')
     if (!columns.has('event_date')) database.exec('ALTER TABLE memory_claim ADD COLUMN event_date TEXT')
+    if (!columns.has('embedding')) database.exec('ALTER TABLE memory_claim ADD COLUMN embedding BLOB')
+    if (!columns.has('embedding_text')) database.exec('ALTER TABLE memory_claim ADD COLUMN embedding_text TEXT')
     database
       .prepare("UPDATE memory_claim SET ended_at = ? WHERE status IN ('rejected', 'superseded') AND ended_at IS NULL")
       .run(migratedAt)
