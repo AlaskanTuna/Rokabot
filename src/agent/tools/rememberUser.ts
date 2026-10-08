@@ -1,6 +1,8 @@
 /** Store a fact about a user for future reference */
 
+import { config } from '../../config.js'
 import { logger } from '../../utils/logger.js'
+import { embedPendingFacts } from '../memory/factEmbeddings.js'
 import { assertClaim, getActiveClaims } from '../memory/memoryClaims.js'
 import { sensitiveFactReason } from '../memory/privacyGuard.js'
 
@@ -9,6 +11,7 @@ export interface RememberUserParams {
   guild_id: string
   fact_key: string
   fact_value: string
+  channel_id?: string
 }
 
 export interface RememberUserResult {
@@ -19,7 +22,7 @@ export interface RememberUserResult {
 
 /** Save a fact about a user, evicting the oldest when capped */
 export function rememberUser(params: RememberUserParams): RememberUserResult {
-  const { user_id, guild_id, fact_key, fact_value } = params
+  const { user_id, guild_id, fact_key, fact_value, channel_id } = params
   const totalFacts = guild_id === 'global' ? 0 : getActiveClaims(guild_id, user_id).length
 
   if (guild_id === 'global') {
@@ -27,6 +30,14 @@ export function rememberUser(params: RememberUserParams): RememberUserResult {
       success: false,
       message: "I couldn't tell where we are right now, so I didn't save that.",
       totalFacts: 0
+    }
+  }
+
+  if (config.memory.privacy === 'off') {
+    return {
+      success: false,
+      message: 'Not saved — long-term memory is turned off here.',
+      totalFacts
     }
   }
 
@@ -46,7 +57,8 @@ export function rememberUser(params: RememberUserParams): RememberUserResult {
       subjectUserId: user_id,
       predicate: fact_key,
       value: fact_value,
-      sourceKind: 'explicit'
+      sourceKind: 'explicit',
+      channelId: channel_id
     })
   } catch {
     logger.warn({ factKey: fact_key }, 'Explicit memory fact was not written to claims')
@@ -57,6 +69,7 @@ export function rememberUser(params: RememberUserParams): RememberUserResult {
     }
   }
 
+  void embedPendingFacts({ limit: 5 })
   const total = getActiveClaims(guild_id, user_id).length
   return {
     success: true,

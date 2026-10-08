@@ -111,12 +111,12 @@ describe('recall relevance A/B (issue #25 phase 1 baseline)', () => {
     expect(count).toBe(20)
   })
 
-  it.each(CASES)('BEFORE: with no relevant message, "$id" still falls outside the top 15', (testCase) => {
+  it.each(CASES)('BEFORE: with no relevant message, "$id" still falls outside the top 15', async (testCase) => {
     const now = Date.now()
     const subjectUserId = `before-${testCase.id}`
     seedSubject(subjectUserId, testCase, now)
 
-    const result = recallUser({ user_id: subjectUserId, guild_id: GUILD, message: '' })
+    const result = await recallUser({ user_id: subjectUserId, guild_id: GUILD, message: '' })
 
     // Regression guard for the pre-Phase-1 gap: with no relevance signal, ranking collapses to
     // recency and the buried fact stays buried. Proves the fix is the message, not a general
@@ -125,12 +125,12 @@ describe('recall relevance A/B (issue #25 phase 1 baseline)', () => {
     expect(result.factCount).toBe(15)
   })
 
-  it.each(CASES)('AFTER: the query in "$id" surfaces the target fact past the recency cap', (testCase) => {
+  it.each(CASES)('AFTER: the query in "$id" surfaces the target fact past the recency cap', async (testCase) => {
     const now = Date.now()
     const subjectUserId = `after-${testCase.id}`
     seedSubject(subjectUserId, testCase, now)
 
-    const result = recallUser({ user_id: subjectUserId, guild_id: GUILD, message: testCase.query })
+    const result = await recallUser({ user_id: subjectUserId, guild_id: GUILD, message: testCase.query })
 
     expect(result.facts).toContain(testCase.targetValue)
   })
@@ -193,7 +193,7 @@ describe('recall relevance A/B (issue #25 phase 1 baseline)', () => {
     expect(score(matched.trace.candidates)).toBeGreaterThan(score(coolingDown.trace.candidates) ?? 0)
   })
 
-  it('excludes a needs_review claim even when the message matches it exactly', () => {
+  it('excludes a needs_review claim even when the message matches it exactly', async () => {
     const now = Date.now()
     const subjectUserId = 'needs-review-user'
     assertClaim({
@@ -206,7 +206,7 @@ describe('recall relevance A/B (issue #25 phase 1 baseline)', () => {
       observedAt: now
     })
 
-    const result = recallUser({
+    const result = await recallUser({
       user_id: subjectUserId,
       guild_id: GUILD,
       message: 'tell me about her unverified rumour'

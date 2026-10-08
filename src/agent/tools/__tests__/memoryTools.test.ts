@@ -5,6 +5,11 @@ vi.mock('../../../utils/logger.js', () => ({
   logger: { debug: vi.fn(), error: vi.fn(), fatal: vi.fn(), info: vi.fn(), warn: vi.fn() }
 }))
 
+const embeddings = vi.hoisted(() => ({ embedEpisodeText: vi.fn(), embedPendingFacts: vi.fn() }))
+vi.mock('../../memory/episodeEmbeddings.js', () => ({ embedEpisodeText: embeddings.embedEpisodeText }))
+vi.mock('../../memory/factEmbeddings.js', () => ({ embedPendingFacts: embeddings.embedPendingFacts }))
+
+import { config } from '../../../config.js'
 import { closeDb, getDb } from '../../../storage/database.js'
 import {
   findMediaDigest,
@@ -12,6 +17,7 @@ import {
   recordMediaOccurrence,
   saveMediaDigest
 } from '../../../storage/mediaDigestStore.js'
+import { getClaimSourceChannels, setClaimEmbedding } from '../../../storage/memoryRecallStore.js'
 import { recordResponseEvent } from '../../../storage/metricsStore.js'
 import { upsertUserName } from '../../../storage/userNames.js'
 import { logger } from '../../../utils/logger.js'
@@ -36,15 +42,31 @@ import { forgetUserTool, recallUserTool, rememberUserTool } from '../index.js'
 import { recallUser } from '../recallUser.js'
 import { rememberUser } from '../rememberUser.js'
 
+// config.memory is typed read-only, so per-test overrides go through Object.assign and are restored after each test.
+const memoryConfig = config.memory
+const originalMemory = {
+  privacy: memoryConfig.privacy,
+  recall: memoryConfig.recall,
+  embeddingTimeoutMs: memoryConfig.embeddingTimeoutMs
+}
+const setMemory = (patch: Partial<typeof originalMemory>): void => {
+  Object.assign(memoryConfig, patch)
+}
+
 beforeEach(() => {
   process.env.ROKABOT_DB_PATH = ':memory:'
   vi.clearAllMocks()
+  setMemory({ privacy: 'relaxed', recall: 'shadow' })
 })
 
 afterEach(() => {
   closeDb()
   process.env.ROKABOT_DB_PATH = undefined
+  setMemory(originalMemory)
 })
+
+const unitVector = (index: number): number[] =>
+  Array.from({ length: 768 }, (_, position) => (position === index ? 1 : 0))
 
 function seedMedia(input: {
   guildId?: string
@@ -348,7 +370,7 @@ describe('memory tools', () => {
     expect(getActiveClaims('guild-1', 'user-1').map(({ id }) => id)).not.toContain(claim.id)
   })
 
-  it('recalls and deduplicates active claims for a guild member', () => {
+  it('recalls and deduplicates active claims for a guild member', async () => {
     const claim = assertClaim({
       guildId: 'guild-1',
       subjectUserId: 'user-1',
@@ -364,7 +386,7 @@ describe('memory tools', () => {
       sourceKind: 'passive'
     })
 
-    const result = recallUser({ guild_id: 'guild-1', user_id: 'user-1', message: '' })
+    const result = await recallUser({ guild_id: 'guild-1', user_id: 'user-1', message: '' })
 
     expect(result.factCount).toBe(2)
     expect(result.facts).toContain('favorite_anime: frieren')
@@ -375,7 +397,7 @@ describe('memory tools', () => {
     })
   })
 
-  it('recalls freshest claims first and caps the list at 15', () => {
+  it('recalls freshest claims first and caps the list at 15', async () => {
     const now = Date.now()
     for (let index = 0; index < 16; index++) {
       assertClaim({
@@ -387,7 +409,7 @@ describe('memory tools', () => {
         observedAt: now - (16 - index) * 60_000
       })
     }
-    const result = recallUser({ guild_id: 'guild-1', user_id: 'user-1', message: '' })
+    const result = await recallUser({ guild_id: 'guild-1', user_id: 'user-1', message: '' })
 
     expect(result.factCount).toBe(15)
     expect(result.facts.startsWith('likes: thing-15')).toBe(true)
@@ -400,7 +422,7 @@ describe('memory tools', () => {
     expect(recalled.map(({ value }) => value)).not.toContain('thing-0')
   })
 
-  it('keeps an explicitly remembered claim in the window against fresher passive trivia', () => {
+  it('keeps an explicitly remembered claim in the window against fresher passive trivia', async () => {
     const now = Date.now()
     assertClaim({
       guildId: 'guild-1',
@@ -421,7 +443,7 @@ describe('memory tools', () => {
       })
     }
 
-    const result = recallUser({ guild_id: 'guild-1', user_id: 'user-1', message: '' })
+    const result = await recallUser({ guild_id: 'guild-1', user_id: 'user-1', message: '' })
 
     expect(result.factCount).toBe(15)
     expect(result.facts).toContain('general_occupation: shrine caretaker')
@@ -555,11 +577,11 @@ describe('memory tools', () => {
     expect(getActiveClaims('global', 'user-2')).toEqual([])
   })
 
-  it('keeps a DM fact scoped to its own channel tenant, invisible from a different DM', () => {
+  it('keeps a DM fact scoped to its own channel tenant, invisible from a different DM', async () => {
     rememberUser({ guild_id: 'dm:channel-A', user_id: 'user-A', fact_key: 'favorite_anime', fact_value: 'Frieren' })
 
-    expect(recallUser({ guild_id: 'dm:channel-B', user_id: 'user-A', message: '' }).factCount).toBe(0)
-    expect(recallUser({ guild_id: 'dm:channel-A', user_id: 'user-A', message: '' }).factCount).toBe(1)
+    expect((await recallUser({ guild_id: 'dm:channel-B', user_id: 'user-A', message: '' })).factCount).toBe(0)
+    expect((await recallUser({ guild_id: 'dm:channel-A', user_id: 'user-A', message: '' })).factCount).toBe(1)
   })
 
   it('fails closed instead of writing to the shared global tenant when the FunctionTool has no usable _guildId', async () => {
@@ -615,6 +637,205 @@ describe('memory tools', () => {
       [{ tool: 'recall_user', tenantState: 'missing' }, 'Memory tool failed closed on unusable tenant state'],
       [{ tool: 'recall_user', tenantState: 'global' }, 'Memory tool failed closed on unusable tenant state']
     ])
+  })
+})
+
+describe('memory tools across privacy levels and recall modes', () => {
+  const seedShelterFacts = () => {
+    const now = Date.now()
+    assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'misc',
+      value: 'volunteers at the animal shelter on weekends',
+      sourceKind: 'explicit',
+      observedAt: now - 40 * 24 * 60 * 60 * 1000
+    })
+    for (let index = 0; index < 19; index++) {
+      assertClaim({
+        guildId: 'guild-1',
+        subjectUserId: 'user-1',
+        predicate: 'misc',
+        value: `noise item ${index}`,
+        sourceKind: 'explicit',
+        observedAt: now - (19 - index) * 24 * 60 * 60 * 1000
+      })
+    }
+  }
+
+  it('records the channel a remembered fact came from and queues it for embedding', () => {
+    expect(
+      rememberUser({
+        guild_id: 'guild-1',
+        user_id: 'user-1',
+        fact_key: 'hobby',
+        fact_value: 'gardening',
+        channel_id: 'c1'
+      })
+    ).toEqual(expect.objectContaining({ success: true }))
+
+    const [claim] = getActiveClaims('guild-1', 'user-1')
+    expect(getClaimSourceChannels([claim.id]).get(claim.id)).toEqual(['c1'])
+    expect(embeddings.embedPendingFacts).toHaveBeenCalledTimes(1)
+    expect(embeddings.embedPendingFacts).toHaveBeenCalledWith({ limit: 5 })
+  })
+
+  it('neither saves nor queues a fact at privacy off', () => {
+    setMemory({ privacy: 'off' })
+
+    expect(
+      rememberUser({ guild_id: 'guild-1', user_id: 'user-1', fact_key: 'hobby', fact_value: 'gardening' })
+    ).toEqual(expect.objectContaining({ success: false }))
+    expect(getActiveClaims('guild-1', 'user-1')).toEqual([])
+    expect(embeddings.embedPendingFacts).not.toHaveBeenCalled()
+  })
+
+  it('omits a fact learned only in another channel under strict and recalls it at relaxed', async () => {
+    assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'hobby',
+      value: 'gardening',
+      sourceKind: 'explicit',
+      channelId: 'other'
+    })
+    assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'likes',
+      value: 'tea',
+      sourceKind: 'explicit',
+      channelId: 'here'
+    })
+
+    setMemory({ privacy: 'strict' })
+    await expect(
+      recallUser({ guild_id: 'guild-1', user_id: 'user-1', message: '', channel_id: 'here' })
+    ).resolves.toEqual({ facts: 'likes: tea', factCount: 1 })
+
+    setMemory({ privacy: 'relaxed' })
+    await expect(
+      recallUser({ guild_id: 'guild-1', user_id: 'user-1', message: '', channel_id: 'here' })
+    ).resolves.toMatchObject({ factCount: 2 })
+  })
+
+  it('recalls nothing at privacy off', async () => {
+    assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'hobby',
+      value: 'gardening',
+      sourceKind: 'explicit',
+      channelId: 'here'
+    })
+    setMemory({ privacy: 'off' })
+
+    await expect(
+      recallUser({ guild_id: 'guild-1', user_id: 'user-1', message: '', channel_id: 'here' })
+    ).resolves.toEqual({ facts: "I don't have any notes about this person yet.", factCount: 0 })
+  })
+
+  it('recalls nothing under strict when the channel is unknown', async () => {
+    assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'hobby',
+      value: 'gardening',
+      sourceKind: 'explicit',
+      channelId: 'here'
+    })
+    setMemory({ privacy: 'strict' })
+
+    await expect(recallUser({ guild_id: 'guild-1', user_id: 'user-1', message: '' })).resolves.toMatchObject({
+      factCount: 0
+    })
+  })
+
+  it('ranks by similarity in unified mode and never returns more than 15 facts', async () => {
+    setMemory({ recall: 'unified' })
+    for (let index = 0; index < 20; index++) {
+      const claim = assertClaim({
+        guildId: 'guild-1',
+        subjectUserId: 'user-1',
+        predicate: 'likes',
+        value: `thing-${index}`,
+        sourceKind: 'explicit'
+      })
+      setClaimEmbedding({ id: claim.id, embeddingText: `thing-${index}`, embedding: unitVector(0) })
+    }
+    const unrelated = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'hobby',
+      value: 'unrelated',
+      sourceKind: 'explicit'
+    })
+    setClaimEmbedding({ id: unrelated.id, embeddingText: 'unrelated', embedding: unitVector(1) })
+    embeddings.embedEpisodeText.mockResolvedValue(unitVector(0))
+
+    const result = await recallUser({
+      guild_id: 'guild-1',
+      user_id: 'user-1',
+      message: 'tell me about things'
+    })
+
+    expect(embeddings.embedEpisodeText).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'tell me about things', role: 'RETRIEVAL_QUERY' })
+    )
+    expect(result.factCount).toBe(15)
+    expect(result.facts).not.toContain('unrelated')
+  })
+
+  it('falls back to keyword ranking in unified mode when the query embedding rejects', async () => {
+    setMemory({ recall: 'unified' })
+    seedShelterFacts()
+    embeddings.embedEpisodeText.mockRejectedValue(new Error('offline'))
+
+    const result = await recallUser({
+      guild_id: 'guild-1',
+      user_id: 'user-1',
+      message: 'what does she do at the shelter?'
+    })
+
+    expect(result.facts).toContain('volunteers at the animal shelter')
+  })
+
+  it('falls back to keyword ranking in unified mode when the query embedding times out', async () => {
+    setMemory({ recall: 'unified' })
+    setMemory({ embeddingTimeoutMs: 1 })
+    seedShelterFacts()
+    embeddings.embedEpisodeText.mockReturnValue(new Promise(() => {}))
+
+    const result = await recallUser({
+      guild_id: 'guild-1',
+      user_id: 'user-1',
+      message: 'what does she do at the shelter?'
+    })
+
+    expect(result.facts).toContain('volunteers at the animal shelter')
+  })
+
+  it('passes the channel from tool state into remember_user and recall_user', async () => {
+    setMemory({ privacy: 'strict' })
+    await rememberUserTool.runAsync({
+      args: { fact_key: 'hobby', fact_value: 'gardening' },
+      toolContext: toolContextWith({ _userId: 'user-1', _guildId: 'guild-1', _channelId: 'here' })
+    })
+
+    const [claim] = getActiveClaims('guild-1', 'user-1')
+    expect(getClaimSourceChannels([claim.id]).get(claim.id)).toEqual(['here'])
+    await expect(
+      recallUserTool.runAsync({
+        args: {},
+        toolContext: toolContextWith({ _userId: 'user-1', _guildId: 'guild-1', _channelId: 'here' })
+      })
+    ).resolves.toMatchObject({ factCount: 1 })
+    await expect(
+      recallUserTool.runAsync({
+        args: {},
+        toolContext: toolContextWith({ _userId: 'user-1', _guildId: 'guild-1', _channelId: 'other' })
+      })
+    ).resolves.toMatchObject({ factCount: 0 })
   })
 })
 
