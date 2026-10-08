@@ -1,5 +1,6 @@
 import { config } from '../../config.js'
 import { getDb } from '../../storage/database.js'
+import { getClaimSourceChannels } from '../../storage/memoryRecallStore.js'
 import { recordMemoryEvent } from '../../storage/metricsStore.js'
 import { getAllUserNames } from '../../storage/userNames.js'
 import { getLocalDate } from '../../utils/timezone.js'
@@ -7,6 +8,7 @@ import { estimateTokens } from '../../utils/tokens.js'
 import type { ClaimSource, GuildMemoryClaim, UserMemoryClaim } from './memoryClaims.js'
 import { getActiveGuildClaims, touchRecalled } from './memoryClaims.js'
 import { PREDICATES, type PredicateId, predicateCategory, routeTopics } from './predicates.js'
+import { type RecallScope, canRecall } from './privacy.js'
 
 type ClaimRow = {
   id: number
@@ -36,6 +38,7 @@ export type RetrieveForTurnInput = Readonly<{
   speakerId: string
   participantIds: string[]
   message: string
+  scope?: RecallScope
 }>
 
 export type RetrievedClaim = Readonly<{
@@ -85,6 +88,13 @@ function mapClaim(row: ClaimRow): UserMemoryClaim {
     expiresAt: row.expires_at,
     eventDate: row.event_date
   }
+}
+
+/** At `relaxed` the lookup is skipped entirely so the legacy queries stay byte-identical. */
+function withinScope<T extends { id: number }>(items: T[], scope: RecallScope | undefined): T[] {
+  if (!scope || config.memory.privacy === 'relaxed') return items
+  const sources = getClaimSourceChannels(items.map(({ id }) => id))
+  return items.filter((item) => canRecall(sources.get(item.id) ?? [null], scope))
 }
 
 function getActiveClaims(guildId: string, userIds: string[]): UserMemoryClaim[] {
@@ -191,9 +201,10 @@ export function retrieveForSubject(
   guildId: string,
   subjectUserId: string,
   message: string,
-  limit: number
+  limit: number,
+  scope?: RecallScope
 ): RetrievedClaim[] {
-  const activeClaims = getActiveClaims(guildId, [subjectUserId])
+  const activeClaims = withinScope(getActiveClaims(guildId, [subjectUserId]), scope)
   const ftsIds = searchClaimIds(guildId, [subjectUserId], message)
   const routedPredicates = routedPredicatesFor(message)
   const now = Date.now()
@@ -211,7 +222,7 @@ export function retrieveForTurn(input: RetrieveForTurnInput): RetrievalResult {
     config.memory.recentParticipantLimit
   )
   const userIds = [input.speakerId, ...participantIds]
-  const activeClaims = getActiveClaims(input.guildId, userIds)
+  const activeClaims = withinScope(getActiveClaims(input.guildId, userIds), input.scope)
   const ftsIds = searchClaimIds(input.guildId, userIds, input.message)
   const routedPredicates = routedPredicatesFor(input.message)
   const now = Date.now()
@@ -313,9 +324,10 @@ function serializeGuildFact(claim: GuildMemoryClaim): string {
 
 export function retrieveGuildFacts(
   guildId: string,
-  now: number = Date.now()
+  now: number = Date.now(),
+  scope?: RecallScope
 ): { facts: GuildMemoryClaim[]; tokensEst: number } {
-  const facts = getActiveGuildClaims(guildId, now)
+  const facts = withinScope(getActiveGuildClaims(guildId, now), scope)
     .map((fact) => {
       const ageDays = Math.max(0, now - fact.lastSeenAt) / (24 * 60 * 60 * 1000)
       return { fact, score: fact.salience * 0.5 ** (ageDays / config.memory.salienceHalfLifeDays) }

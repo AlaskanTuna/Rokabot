@@ -11,7 +11,8 @@ vi.mock('../../../config.js', () => ({
       recentParticipantLimit: 3,
       speakerMinShare: 0.5,
       salienceHalfLifeDays: 30,
-      recallCooldownMs: 21_600_000
+      recallCooldownMs: 21_600_000,
+      privacy: 'relaxed'
     }
   }
 }))
@@ -21,6 +22,7 @@ import { closeDb, getDb } from '../../../storage/database.js'
 import { recordMemoryEvent } from '../../../storage/metricsStore.js'
 import { upsertUserName } from '../../../storage/userNames.js'
 import { estimateTokens } from '../../../utils/tokens.js'
+import { registerChannelVisibility, resetChannelVisibilityForTest } from '../channelVisibility.js'
 import { assertClaim, assertGuildClaim } from '../memoryClaims.js'
 import { formatGuildFactDate, retrieveForSubject, retrieveForTurn, retrieveGuildFacts } from '../retriever.js'
 
@@ -420,5 +422,104 @@ describe('formatGuildFactDate', () => {
         eventDate: null
       })
     ).toBeUndefined()
+  })
+})
+
+describe('memory privacy levels', () => {
+  const memory = config.memory as { privacy: string }
+  const here = { guildId: 'guild-a', channelId: 'here' }
+  const turn = { guildId: 'guild-a', speakerId: 'speaker', participantIds: [], message: 'hi' }
+  const visibilities: Record<string, 'public' | 'private'> = { 'public-1': 'public' }
+
+  const guildFact = (predicate: 'place' | 'rule', value: string, channelId: string) =>
+    assertGuildClaim({
+      guildId: 'guild-a',
+      predicate,
+      value,
+      expiresAt: null,
+      sourceKind: 'passive',
+      observedAt: NOW,
+      channelId
+    })
+
+  beforeEach(() => {
+    registerChannelVisibility({
+      visibility: (channelId) => visibilities[channelId] ?? 'private',
+      parentOf: () => null
+    })
+  })
+
+  afterEach(() => {
+    memory.privacy = 'relaxed'
+    resetChannelVisibilityForTest()
+  })
+
+  it('withholds turn facts learned only in another channel under strict', () => {
+    claim('speaker', 'hobby', 'chess', { channelId: 'other' })
+    claim('speaker', 'pet', 'cat', { channelId: 'here' })
+    memory.privacy = 'strict'
+    const result = retrieveForTurn({ ...turn, scope: here })
+    expect(result.claims.map(({ claim: candidate }) => candidate.value)).toEqual(['cat'])
+  })
+
+  it('changes nothing at relaxed', () => {
+    claim('speaker', 'hobby', 'chess', { channelId: 'other' })
+    const result = retrieveForTurn({ ...turn, scope: here })
+    expect(result.claims).toHaveLength(1)
+  })
+
+  it('shares a public-channel turn fact and withholds a private-channel one under balanced', () => {
+    claim('speaker', 'hobby', 'chess', { channelId: 'public-1' })
+    claim('speaker', 'pet', 'cat', { channelId: 'private-1' })
+    memory.privacy = 'balanced'
+    const result = retrieveForTurn({ ...turn, scope: here })
+    expect(result.claims.map(({ claim: candidate }) => candidate.value)).toEqual(['chess'])
+  })
+
+  it('applies no gate when a turn has no scope, even under strict', () => {
+    claim('speaker', 'hobby', 'chess', { channelId: 'other' })
+    memory.privacy = 'strict'
+    const result = retrieveForTurn(turn)
+    expect(result.claims).toHaveLength(1)
+  })
+
+  it('withholds guild facts learned only in another channel under strict', () => {
+    guildFact('place', 'Lab', 'other')
+    guildFact('rule', 'Quiet', 'here')
+    memory.privacy = 'strict'
+    expect(retrieveGuildFacts('guild-a', NOW, here).facts.map(({ value }) => value)).toEqual(['Quiet'])
+  })
+
+  it('changes nothing for guild facts at relaxed', () => {
+    guildFact('place', 'Lab', 'other')
+    expect(retrieveGuildFacts('guild-a', NOW, here).facts).toHaveLength(1)
+  })
+
+  it('shares a public-channel guild fact and withholds a private-channel one under balanced', () => {
+    guildFact('place', 'Lab', 'public-1')
+    guildFact('rule', 'Quiet', 'private-1')
+    memory.privacy = 'balanced'
+    expect(retrieveGuildFacts('guild-a', NOW, here).facts.map(({ value }) => value)).toEqual(['Lab'])
+  })
+
+  it('withholds subject facts learned only in another channel under strict', () => {
+    claim('speaker', 'hobby', 'chess', { channelId: 'other' })
+    claim('speaker', 'pet', 'cat', { channelId: 'here' })
+    memory.privacy = 'strict'
+    const result = retrieveForSubject('guild-a', 'speaker', 'hi', 10, here)
+    expect(result.map(({ claim: candidate }) => candidate.value)).toEqual(['cat'])
+  })
+
+  it('changes nothing for subject facts at relaxed', () => {
+    claim('speaker', 'hobby', 'chess', { channelId: 'other' })
+    expect(retrieveForSubject('guild-a', 'speaker', 'hi', 10, here)).toHaveLength(1)
+  })
+
+  it('shares a public-channel subject fact and withholds a private-channel one under balanced', () => {
+    claim('speaker', 'hobby', 'chess', { channelId: 'public-1' })
+    claim('speaker', 'pet', 'cat', { channelId: 'private-1' })
+    memory.privacy = 'balanced'
+    const result = retrieveForSubject('guild-a', 'speaker', 'hi', 10, here)
+    expect(result.map(({ claim: candidate }) => candidate.value)).toEqual(['chess'])
   })
 })

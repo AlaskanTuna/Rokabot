@@ -5,7 +5,8 @@ const configMock = vi.hoisted(() => ({
   memory: {
     episodeRecallK: 3,
     episodeTokenBudget: 200,
-    episodeMinSimilarity: 0.45
+    episodeMinSimilarity: 0.45,
+    privacy: 'relaxed'
   }
 }))
 
@@ -16,6 +17,7 @@ vi.mock('../../../storage/database.js', () => ({ getDb: () => testDb }))
 
 import { listEpisodesForGuild, saveMemoryEpisode } from '../../../storage/memoryEpisodeStore.js'
 import { estimateTokens } from '../../../utils/tokens.js'
+import { registerChannelVisibility, resetChannelVisibilityForTest } from '../channelVisibility.js'
 import {
   buildEpisodeRecallBlock,
   formatEpisodeRecallBlock,
@@ -163,5 +165,65 @@ describe('episode retriever', () => {
 
   it('returns no block when the guild has no episodes', () => {
     expect(buildEpisodeRecallBlock({ guildId: 'guild-a', queryEmbedding: vector768(1) })).toBe('')
+  })
+
+  describe('episode recall privacy levels', () => {
+    const here = { guildId: 'guild-a', channelId: 'here' }
+    const visibilities: Record<string, 'public' | 'private'> = { 'public-1': 'public' }
+
+    function seedInChannel(id: number, channelId: string) {
+      saveMemoryEpisode({
+        id,
+        guildId: 'guild-a',
+        channelId,
+        startedAt: id,
+        endedAt: id,
+        summary: `Episode ${id}.`,
+        embedding: vector768(1)
+      })
+    }
+
+    beforeEach(() => {
+      registerChannelVisibility({
+        visibility: (channelId) => visibilities[channelId] ?? 'private',
+        parentOf: () => null
+      })
+    })
+
+    afterEach(() => {
+      configMock.memory.privacy = 'relaxed'
+      resetChannelVisibilityForTest()
+    })
+
+    it('withholds episodes from another channel under strict', () => {
+      seedInChannel(1, 'other')
+      seedInChannel(2, 'here')
+      configMock.memory.privacy = 'strict'
+
+      expect(
+        recallEpisodes({ guildId: 'guild-a', queryEmbedding: vector768(1), scope: here }).map(({ id }) => id)
+      ).toEqual([2])
+    })
+
+    it('changes nothing at relaxed', () => {
+      seedInChannel(1, 'other')
+      seedInChannel(2, 'here')
+
+      expect(
+        recallEpisodes({ guildId: 'guild-a', queryEmbedding: vector768(1), scope: here })
+          .map(({ id }) => id)
+          .sort()
+      ).toEqual([1, 2])
+    })
+
+    it('shares a public-channel episode and withholds a private-channel one under balanced', () => {
+      seedInChannel(1, 'public-1')
+      seedInChannel(2, 'private-1')
+      configMock.memory.privacy = 'balanced'
+
+      expect(
+        recallEpisodes({ guildId: 'guild-a', queryEmbedding: vector768(1), scope: here }).map(({ id }) => id)
+      ).toEqual([1])
+    })
   })
 })
