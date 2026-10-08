@@ -497,6 +497,20 @@ describe('watchMedia over one half of a long video', () => {
     expect(result).toMatchObject({ status: 'ok', digest: { mode: 'whole', bins: secondHalf.bins } })
   })
 
+  it('leaves the end of an open-ended window to the video itself', async () => {
+    mocks.generateContent.mockResolvedValueOnce(response())
+
+    await watchMedia({
+      source: filesSource,
+      plan: secondHalf,
+      window: { startSec: 1050, endSec: 2100, openEnd: true },
+      focus: ''
+    })
+    const parts = mocks.generateContent.mock.calls[0][0].contents[0].parts
+
+    expect(parts[0].videoMetadata).toEqual({ fps: 0.05, startOffset: '1050s' })
+  })
+
   it('leaves a whole video without a window unrestricted and says nothing about a longer video', async () => {
     mocks.generateContent.mockResolvedValueOnce(response())
 

@@ -129,6 +129,20 @@ describe('socialPostMedia', () => {
     })
   })
 
+  it('keeps the thumbnail when the host states no size and the post says the video is too big to download', async () => {
+    mocks.resolveMediaUrl.mockImplementation(async (url: string) =>
+      url.endsWith('.mp4')
+        ? { url, contentType: 'video/mp4' }
+        : { url: 'https://pbs.twimg.com/thumb.jpg', contentType: 'image/jpeg' }
+    )
+
+    const media = await socialPostMedia(
+      post({ url: 'https://x.com/roka/status/123', video: { ...xVideo, bytes: 30 * 1024 * 1024 } })
+    )
+
+    expect(media).toEqual({ url: 'https://pbs.twimg.com/thumb.jpg', contentType: 'image/jpeg' })
+  })
+
   it('keys a Bluesky video by its account as well as its record key', async () => {
     mocks.resolveMediaUrl.mockResolvedValue({ url: 'https://pds.example/blob', contentType: 'video/mp4', size: 1000 })
     const video = { url: 'https://pds.example/blob', bytes: 1000, headers: null, hasAudio: true }

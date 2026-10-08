@@ -581,6 +581,16 @@ describe('remembering watched media in a server', () => {
     expect(result.digests[0]).toMatchObject({ mode: 'halves' })
   })
 
+  it('reuses a stored skim of a video too long for halves at the estimated-duration budget', async () => {
+    mocks.findMediaDigest.mockReturnValue(
+      stored(digestFor({ mode: 'skim', durationSec: 2350, label: 'YouTube video' }))
+    )
+
+    await prepareTurnMedia({ ...input([{ ...youtube, durationSec: 2350 }]), memoryScope: scope })
+
+    expect(mocks.watchMedia).not.toHaveBeenCalled()
+  })
+
   it('reuses a stored skim of a video too short for halves', async () => {
     mocks.findMediaDigest.mockReturnValue(
       stored(digestFor({ mode: 'skim', durationSec: 1150, label: 'YouTube video' }))
@@ -860,6 +870,19 @@ describe('remembering streamed uploads in a server', () => {
     mocks.embedEpisodeText.mockResolvedValue(new Array(768).fill(0.1))
   })
 
+  it('keeps no memory of a streamed file from outside Discord, whose path alone names nothing', async () => {
+    mocks.streamToFiles.mockResolvedValue(uploaded())
+    mocks.watchMedia.mockResolvedValue(okWatch(digestFor()))
+
+    await prepareTurnMedia({
+      ...input([bigUpload({ url: 'https://media.example.com/attachments/1/2/v.mp4' })]),
+      memoryScope: scope
+    })
+
+    expect(mocks.findMediaDigest).not.toHaveBeenCalled()
+    expect(mocks.saveMediaDigest).not.toHaveBeenCalled()
+  })
+
   it('reuses a remembered upload without uploading it again', async () => {
     const digest = digestFor({ label: 'video' })
     mocks.findMediaDigest.mockReturnValue({
@@ -921,7 +944,7 @@ describe('watching a 20 to 40 minute video in two halves', () => {
     expect(first.source).toMatchObject({ transport: 'uri', fileUri: longLink.url })
     expect(first.plan).toMatchObject({ mode: 'whole', fps: 0.05 })
     expect(first.window).toEqual({ startSec: 0, endSec: 1050 })
-    expect(second.window).toEqual({ startSec: 1050, endSec: 2100 })
+    expect(second.window).toEqual({ startSec: 1050, endSec: 2100, openEnd: true })
     expect(first.mayRetry()).toBe(false)
     expect(second.mayRetry()).toBe(false)
 

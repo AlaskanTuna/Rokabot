@@ -87,6 +87,8 @@ export async function streamToFiles(input: {
     return null
   } finally {
     clearTimeout(timer)
+    // Every body is read by now on success; on an early return this stops the Discord download.
+    controller.abort()
   }
 }
 

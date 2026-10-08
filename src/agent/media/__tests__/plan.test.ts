@@ -196,7 +196,7 @@ describe('planHalves', () => {
       { startSec: 1838, endSec: 1969 },
       { startSec: 1969, endSec: 2100 }
     ])
-    expect(second.window).toEqual({ startSec: 1050, endSec: 2100 })
+    expect(second.window).toEqual({ startSec: 1050, endSec: 2100, openEnd: true })
   })
 
   it('returns null when either half cannot be watched whole', () => {

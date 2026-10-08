@@ -172,6 +172,24 @@ describe('streamToFiles', () => {
     expect(calls.map((call) => call.url)).toEqual([SOURCE_URL])
   })
 
+  it('stops reading the source when the upload cannot start', async () => {
+    const { fetcher, calls } = createFetcher(async (url) => {
+      if (url === SOURCE_URL) return new Response(sourceBody(['abc', 'defg']), { status: 200 })
+      return new Response('nope', { status: 500 })
+    })
+
+    const result = await streamToFiles({
+      sourceUrl: SOURCE_URL,
+      mimeType: 'video/mp4',
+      size: 7,
+      deadlineMs: 5000,
+      fetcher
+    })
+
+    expect(result).toBeNull()
+    expect(calls[0].init.signal?.aborted).toBe(true)
+  })
+
   it('aborts the upload when the body runs past its stated size and creates nothing to delete', async () => {
     let sourceCancelled = false
     const { fetcher, calls } = createFetcher(async (url, init) => {

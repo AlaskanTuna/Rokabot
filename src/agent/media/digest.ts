@@ -57,8 +57,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function boundedString(value: unknown, limit: number, markIncomplete: () => void): string | null {
   if (typeof value !== 'string') return null
-  const bounded = value.trim().slice(0, limit)
-  if (bounded !== value) markIncomplete()
+  const trimmed = value.trim()
+  const bounded = trimmed.slice(0, limit)
+  if (bounded !== trimmed) markIncomplete()
   return bounded
 }
 
@@ -281,6 +282,12 @@ function renumberBins(observations: MediaObservations, offset: number): MediaObs
  * One digest for a video watched in two halves. A null half was not watched; with neither, there is nothing to
  * merge. The second half's bins follow the first's, so its observations are renumbered past them.
  */
+function cutAtWord(text: string, limit: number): string {
+  if (text.length <= limit) return text
+  const space = text.lastIndexOf(' ', limit)
+  return (space > 0 ? text.slice(0, space) : text.slice(0, limit)).trimEnd()
+}
+
 export function mergeHalves(
   first: MediaDigest | null,
   second: MediaDigest | null,
@@ -305,10 +312,8 @@ export function mergeHalves(
     ...(parts.some(({ digest }) => digest.silent) ? { silent: true } : {}),
     bins: parts.flatMap(({ digest }) => digest.bins),
     observations: {
-      summary: observed
-        .map((item) => item.summary)
-        .join(' ')
-        .slice(0, 500),
+      // Each half gets an equal share, so the second half survives in history and memory, which keep only this.
+      summary: observed.map((item) => cutAtWord(item.summary, Math.floor(500 / observed.length) - 1)).join(' '),
       timeline: observed.flatMap((item) => item.timeline),
       speech: observed.flatMap((item) => item.speech),
       onScreenText: observed.flatMap((item) => item.onScreenText),

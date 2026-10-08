@@ -63,6 +63,12 @@ describe('MEDIA_OBSERVATIONS_SCHEMA', () => {
 })
 
 describe('validateObservations', () => {
+  it('does not count trimmed whitespace as cut text', () => {
+    const raw = { ...rawObservations(), summary: '  A person walks through a station.\n' }
+
+    expect(validateObservations(raw, 3)).toEqual({ observations: rawObservations(), incomplete: false })
+  })
+
   it('keeps all valid observation fields without marking them incomplete', () => {
     expect(validateObservations(rawObservations(), 3)).toEqual({ observations: rawObservations(), incomplete: false })
   })
@@ -339,14 +345,17 @@ describe('mergeHalves', () => {
     })
   })
 
-  it('cuts the joined summary to 500 characters', () => {
-    const long = (letter: string) =>
-      halfOf(FIRST_BINS, { observations: { ...first.observations, summary: letter.repeat(300) } })
+  it('keeps both halves in the joined summary within 500 characters', () => {
+    const long = (word: string) =>
+      halfOf(FIRST_BINS, { observations: { ...first.observations, summary: `${word} `.repeat(83).trim() } })
 
-    const merged = mergeHalves(long('a'), long('b'), 2100)
+    const merged = mergeHalves(long('alpha'), long('omega'), 2100)
+    const summary = merged?.observations.summary ?? ''
 
-    expect(merged?.observations.summary).toHaveLength(500)
-    expect(merged?.observations.summary.startsWith(`${'a'.repeat(300)} b`)).toBe(true)
+    expect(summary.length).toBeLessThanOrEqual(500)
+    expect(summary).toContain('alpha')
+    expect(summary).toContain('omega')
+    expect(summary).not.toMatch(/\b(alph|omeg)\b/)
   })
 
   it('caps the merged uncertainties at five', () => {

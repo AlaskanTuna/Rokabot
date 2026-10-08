@@ -94,6 +94,16 @@ export interface MediaMemoryScope {
   userId: string
 }
 
+// Judged at the smaller estimated-duration budget, so a skim is only redone when any later share could do better.
+function halvesCouldCover(durationSec: number): boolean {
+  return (
+    durationSec > HALVES_MIN_DURATION_SEC &&
+    durationSec <= HALVES_MAX_DURATION_SEC &&
+    config.gemini.maxLlmCalls - 2 >= 2 &&
+    planHalves({ durationSec, budgetTokens: config.gemini.maxAttachmentTokens / ESTIMATED_DURATION_HEADROOM }) !== null
+  )
+}
+
 function remembered(scope: MediaMemoryScope, contentKey: string): { id: number; digest: MediaDigest } | null {
   try {
     const stored = findMediaDigest(scope.guildId, contentKey)
@@ -102,13 +112,7 @@ function remembered(scope: MediaMemoryScope, contentKey: string): { id: number; 
     // A partial watch is worth redoing; a later share may get the whole thing.
     if (digest.mode === 'opening' || digest.incomplete) return null
     // A skim of a video that two halves could cover whole is worth redoing when a share can afford the halves.
-    if (
-      digest.mode === 'skim' &&
-      digest.durationSec > HALVES_MIN_DURATION_SEC &&
-      digest.durationSec <= HALVES_MAX_DURATION_SEC
-    ) {
-      return null
-    }
+    if (digest.mode === 'skim' && halvesCouldCover(digest.durationSec)) return null
     // Throws on a row that has drifted from the digest shape, which then counts as a miss.
     renderDigestBlock(digest)
     renderCompactDigest(digest)
@@ -357,7 +361,7 @@ async function watchOne(
   let contentKey = scope ? attachment.contentKey : undefined
   // A streamed upload has no bytes to hash until it is uploaded, so its Discord path stands in as the key.
   if (scope && !contentKey && isStreamedUpload(attachment, config.media.maxStreamedUploadBytes)) {
-    contentKey = discordAttachmentContentKey(attachment.url)
+    contentKey = discordAttachmentContentKey(attachment.url) ?? undefined
   }
   const reuse = (hit: { id: number; digest: MediaDigest }) => {
     present(result, hit.digest)

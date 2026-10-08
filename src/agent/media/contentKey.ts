@@ -16,8 +16,12 @@ export function postContentKey(platform: string, postId: string, mediaIndex: num
 }
 
 // The query string on a Discord attachment URL is a signed grant that changes on each fetch; the path does not.
-export function discordAttachmentContentKey(url: string): string {
-  return `discord:${new URL(url).pathname}`
+const DISCORD_CDN_HOSTS = new Set(['cdn.discordapp.com', 'media.discordapp.net'])
+
+/** Null off Discord's CDN, where a path alone does not identify a file. */
+export function discordAttachmentContentKey(url: string): string | null {
+  const parsed = new URL(url)
+  return DISCORD_CDN_HOSTS.has(parsed.hostname) ? `discord:${parsed.pathname}` : null
 }
 
 export function bytesContentKey(bytes: Buffer): string {

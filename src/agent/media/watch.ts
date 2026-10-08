@@ -9,6 +9,7 @@ import {
 import { config } from '../../config.js'
 import { SAFETY_SETTINGS } from '../safetySettings.js'
 import { MEDIA_OBSERVATIONS_SCHEMA, formatClock, validateObservations } from './digest.js'
+import type { WatchWindow } from './plan.js'
 import type { CoveragePlan, MediaClip, MediaDigest, MediaKind } from './types.js'
 
 export type WatchSource =
@@ -69,7 +70,7 @@ function requestFor(input: {
   focus: string
   signal?: AbortSignal
   opening: boolean
-  window?: MediaClip
+  window?: WatchWindow
 }): GenerateContentParameters {
   const { source, plan, window } = input
   const parts: Part[] = []
@@ -79,7 +80,13 @@ function requestFor(input: {
     parts.push(
       mediaPart(
         source,
-        window ? { ...metadata, startOffset: `${window.startSec}s`, endOffset: `${window.endSec}s` } : metadata
+        window
+          ? {
+              ...metadata,
+              startOffset: `${window.startSec}s`,
+              ...(window.openEnd ? {} : { endOffset: `${window.endSec}s` })
+            }
+          : metadata
       )
     )
   } else {
@@ -176,7 +183,7 @@ export async function watchMedia(input: {
   mayRetry?: () => boolean
   opening?: boolean
   /** Set when the whole plan is one half of a longer video, so the part is limited to that half. */
-  window?: MediaClip
+  window?: WatchWindow
 }): Promise<WatchResult> {
   const startedAt = Date.now()
   const request = requestFor({ ...input, opening: input.opening ?? false })

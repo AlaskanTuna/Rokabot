@@ -1,3 +1,4 @@
+import { MAX_VIDEO_SIZE_BYTES } from '../../agent/attachmentLimits.js'
 import type { ImageAttachment } from '../../agent/attachments.js'
 import { postContentKey, youtubeContentKey } from '../../agent/media/contentKey.js'
 import { config } from '../../config.js'
@@ -16,6 +17,8 @@ async function playableVideo(post: SocialPost): Promise<ImageAttachment | null> 
   const resolved = await resolveMediaUrl(post.video.url).catch(() => null)
   if (!resolved?.contentType.startsWith('video/')) return null
   if ((resolved.size ?? post.video.bytes ?? 0) > config.media.maxStreamedUploadBytes) return null
+  // Without a stated size it cannot be streamed, and a file this big would be refused inline; keep the picture.
+  if (resolved.size === undefined && (post.video.bytes ?? 0) > MAX_VIDEO_SIZE_BYTES) return null
 
   return {
     ...resolved,

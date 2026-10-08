@@ -87,10 +87,15 @@ export function planFocus(input: { durationSec: number; startSec: number; budget
   return { mode: 'focus', kind: 'video', durationSec, centerSec, clips: [clip], estimate, bins: [clip] }
 }
 
+export type WatchWindow = MediaClip & {
+  /** The last half runs to the real end, which an estimated duration may put early or late. */
+  openEnd?: true
+}
+
 export interface HalfWatch {
   plan: Extract<CoveragePlan, { mode: 'whole' }>
   /** The part of the full video this watch covers; its plan's bins are already positions in the full video. */
-  window: MediaClip
+  window: WatchWindow
 }
 
 export interface HalvesPlan {
@@ -122,7 +127,10 @@ export function planHalves(input: { durationSec: number; budgetTokens: number })
   return {
     halves: [
       { plan: { ...half, durationSec }, window: { startSec: 0, endSec: halfSec } },
-      { plan: { ...half, durationSec, bins: secondBins }, window: { startSec: halfSec, endSec: durationSec } }
+      {
+        plan: { ...half, durationSec, bins: secondBins },
+        window: { startSec: halfSec, endSec: durationSec, openEnd: true }
+      }
     ],
     halfEstimate: half.estimate
   }
