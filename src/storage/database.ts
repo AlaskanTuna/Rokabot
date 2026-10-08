@@ -237,6 +237,38 @@ function createTables(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_memory_episode_ended
       ON memory_episode (ended_at);
 
+    CREATE TABLE IF NOT EXISTS media_digest (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      guild_id TEXT NOT NULL,
+      content_key TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      label TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      digest_json TEXT NOT NULL,
+      embedding BLOB,
+      created_at INTEGER NOT NULL,
+      UNIQUE (guild_id, content_key)
+    );
+
+    CREATE TABLE IF NOT EXISTS media_occurrence (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      digest_id INTEGER NOT NULL,
+      guild_id TEXT NOT NULL,
+      channel_id TEXT NOT NULL,
+      message_id TEXT NOT NULL,
+      shared_by_user_id TEXT NOT NULL,
+      source_author_id TEXT,
+      origin TEXT NOT NULL,
+      observed_at INTEGER NOT NULL,
+      UNIQUE (digest_id, message_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_media_occurrence_digest
+      ON media_occurrence (digest_id);
+
+    CREATE INDEX IF NOT EXISTS idx_media_occurrence_guild_user
+      ON media_occurrence (guild_id, shared_by_user_id);
+
   `)
 }
 

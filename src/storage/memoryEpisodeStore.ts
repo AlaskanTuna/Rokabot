@@ -29,12 +29,12 @@ type MemoryEpisodeRow = {
 const EMBEDDING_DIMENSIONS = 768
 const EMBEDDING_BYTES = EMBEDDING_DIMENSIONS * 4
 
-function encodeEmbedding(values: EpisodeEmbedding): Buffer {
+export function encodeFloat32Embedding(values: readonly number[], label = 'Episode'): Buffer {
   if (
     values.length !== EMBEDDING_DIMENSIONS ||
     values.some((value) => !Number.isFinite(value) || !Number.isFinite(Math.fround(value)))
   ) {
-    throw new Error('Episode embedding must contain 768 finite values')
+    throw new Error(`${label} embedding must contain 768 finite values`)
   }
 
   const bytes = Buffer.allocUnsafe(EMBEDDING_BYTES)
@@ -42,7 +42,7 @@ function encodeEmbedding(values: EpisodeEmbedding): Buffer {
   return bytes
 }
 
-function decodeEmbedding(bytes: Buffer | null): EpisodeEmbedding | null {
+export function decodeFloat32Embedding(bytes: Buffer | null): EpisodeEmbedding | null {
   if (!bytes || bytes.byteLength !== EMBEDDING_BYTES) return null
 
   const values = Array.from({ length: EMBEDDING_DIMENSIONS }, (_, index) => bytes.readFloatLE(index * 4))
@@ -58,7 +58,7 @@ function mapMemoryEpisode(row: MemoryEpisodeRow): MemoryEpisode {
     startedAt: row.started_at,
     endedAt: row.ended_at,
     summary: row.summary,
-    embedding: decodeEmbedding(row.embedding),
+    embedding: decodeFloat32Embedding(row.embedding),
     createdAt: row.created_at
   }
 }
@@ -83,7 +83,7 @@ function mapCursor(row: EpisodeCursorRow): EpisodeCursor {
 
 export function saveMemoryEpisode(input: Omit<MemoryEpisode, 'createdAt'> & { createdAt?: number }): MemoryEpisode {
   const createdAt = input.createdAt ?? Date.now()
-  const embedding = input.embedding ? encodeEmbedding(input.embedding) : null
+  const embedding = input.embedding ? encodeFloat32Embedding(input.embedding) : null
   const db = getDb()
   const existing = db
     .prepare('SELECT guild_id, channel_id, started_at, ended_at FROM memory_episode WHERE id = ?')
@@ -138,7 +138,7 @@ export function setEpisodeEmbedding(input: {
 }): boolean {
   const result = getDb()
     .prepare('UPDATE memory_episode SET embedding = ? WHERE guild_id = ? AND id = ?')
-    .run(encodeEmbedding(input.embedding), input.guildId, input.id)
+    .run(encodeFloat32Embedding(input.embedding), input.guildId, input.id)
   return result.changes === 1
 }
 
