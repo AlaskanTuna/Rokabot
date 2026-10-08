@@ -581,6 +581,16 @@ describe('remembering watched media in a server', () => {
     expect(result.digests[0]).toMatchObject({ mode: 'halves' })
   })
 
+  it('reuses a stored skim of a video too short for halves', async () => {
+    mocks.findMediaDigest.mockReturnValue(
+      stored(digestFor({ mode: 'skim', durationSec: 1150, label: 'YouTube video' }))
+    )
+
+    await prepareTurnMedia({ ...input([{ ...youtube, durationSec: 1150 }]), memoryScope: scope })
+
+    expect(mocks.watchMedia).not.toHaveBeenCalled()
+  })
+
   it('serves a remembered digest even while watching is unavailable', async () => {
     mocks.findMediaDigest.mockReturnValue(stored(digestFor()))
 
@@ -912,6 +922,8 @@ describe('watching a 20 to 40 minute video in two halves', () => {
     expect(first.plan).toMatchObject({ mode: 'whole', fps: 0.05 })
     expect(first.window).toEqual({ startSec: 0, endSec: 1050 })
     expect(second.window).toEqual({ startSec: 1050, endSec: 2100 })
+    expect(first.mayRetry()).toBe(false)
+    expect(second.mayRetry()).toBe(false)
 
     expect(result.watcherCalls).toBe(2)
     expect(result.mediaTokens).toBe(2 * 1676)

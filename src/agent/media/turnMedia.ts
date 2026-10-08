@@ -102,7 +102,13 @@ function remembered(scope: MediaMemoryScope, contentKey: string): { id: number; 
     // A partial watch is worth redoing; a later share may get the whole thing.
     if (digest.mode === 'opening' || digest.incomplete) return null
     // A skim of a video that two halves could cover whole is worth redoing when a share can afford the halves.
-    if (digest.mode === 'skim' && digest.durationSec <= HALVES_MAX_DURATION_SEC) return null
+    if (
+      digest.mode === 'skim' &&
+      digest.durationSec > HALVES_MIN_DURATION_SEC &&
+      digest.durationSec <= HALVES_MAX_DURATION_SEC
+    ) {
+      return null
+    }
     // Throws on a row that has drifted from the digest shape, which then counts as a miss.
     renderDigestBlock(digest)
     renderCompactDigest(digest)
@@ -301,22 +307,22 @@ function halvesFor(source: WatchSource, plan: CoveragePlan, budgetTokens: number
 async function watchHalves(
   source: WatchSource,
   halves: HalvesPlan,
-  input: { focus: string; mayRetry: () => boolean },
+  input: { focus: string },
   result: PreparedTurnMedia
 ): Promise<{ digest: MediaDigest | null; watched: WatchResult[] }> {
   const watched = await Promise.all(
-    halves.halves.map(({ plan, window }) => {
-      const startedAt = Date.now()
-      return watchMedia({
+    halves.halves.map(({ plan, window }) =>
+      watchMedia({
         source,
         plan,
         window,
         focus: input.focus,
-        // A retry is a second full watch; only worth it when the first failed fast.
-        mayRetry: () => Date.now() - startedAt < config.media.watchTimeoutMs / 2 && input.mayRetry(),
+        // Two halves already take two of the turn's reserved calls; a retry would eat ADK's. A failed half
+        // leaves the other as a partial digest instead.
+        mayRetry: () => false,
         opening: false
       })
-    })
+    )
   )
 
   for (const [index, outcome] of watched.entries()) {
