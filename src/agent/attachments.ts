@@ -66,9 +66,9 @@ async function readWithinLimit(
 }
 
 /** Download and normalize one attachment. */
-async function downloadAttachment(
+export async function downloadAttachment(
   attachment: ImageAttachment
-): Promise<{ data: string; mimeType: string; tokens: number; truncated: boolean } | null> {
+): Promise<{ data: string; mimeType: string; tokens: number; truncated: boolean; bytes?: Buffer } | null> {
   const { url, contentType } = attachment
   // Keep media admission in Discord to avoid an agent-to-Discord dependency.
   const isImage = contentType.startsWith('image/')
@@ -112,6 +112,7 @@ async function downloadAttachment(
     // Keep non-images byte-identical; Gemini expects MP3 under its own MIME spelling.
     if (!isImage) {
       return {
+        bytes: buffer,
         data: buffer.toString('base64'),
         mimeType: geminiMimeType(contentType),
         tokens: 0,
