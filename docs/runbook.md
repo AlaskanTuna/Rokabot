@@ -532,6 +532,21 @@ embedding. Each share is a `media_occurrence` row. No media files are stored.
 sqlite3 ~/rokabot/data/rokabot.db "SELECT d.guild_id, d.label, substr(d.summary, 1, 60), COUNT(o.id) AS shares, d.embedding IS NOT NULL AS embedded FROM media_digest d LEFT JOIN media_occurrence o ON o.digest_id = d.id GROUP BY d.id ORDER BY d.created_at DESC LIMIT 20;"
 ```
 
+### Memory Privacy and Recall
+
+`MEMORY_PRIVACY` (`relaxed`, `balanced`, `strict`, `off`) and `MEMORY_RECALL` (`legacy`, `shadow`, `unified`) override
+`memory.privacy` and `memory.recall` in `config.yml`; set them in `~/rokabot/.env` and restart the container. A server
+that shows no channel to `@everyone` and grants access through a member role has no public channels, so `balanced`
+behaves like `strict` there.
+
+```bash
+# Facts with embeddings (unified recall needs them; the daily maintenance pass fills the gaps)
+sqlite3 ~/rokabot/data/rokabot.db "SELECT COUNT(*) AS active, SUM(embedding IS NOT NULL) AS embedded FROM memory_claim WHERE status = 'active';"
+
+# Shadow comparison over the last 7 days: legacy fact retrieval vs the unified recall
+sqlite3 ~/rokabot/data/rokabot.db "SELECT kind, COUNT(*) AS turns, ROUND(AVG(n_selected), 2) AS avg_selected, ROUND(AVG(tokens_est)) AS avg_tokens FROM memory_events WHERE kind IN ('retrieval', 'recall_shadow', 'recall') AND created_at > (strftime('%s', 'now') - 7 * 86400) * 1000 GROUP BY kind;"
+```
+
 ### Memory V2 Migration
 
 Run this explicit migration only with the bot stopped, from a repository checkout with Node.js 24 and dependencies

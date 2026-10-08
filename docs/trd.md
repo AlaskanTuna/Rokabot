@@ -252,6 +252,8 @@ replied to rather than only the history.
 The shipped memory write path extracts user-subject claims and guild-subject facts from monitored guild-channel
 episodes and stores them in SQLite. `guild_id` is the Discord server scope. Guild facts are restricted to servers; DMs
 and `/ask` neither read nor write memory. Guild-scoped episode summaries are stored separately and are not claims.
+Where a memory may be recalled is set by `memory.privacy`, and how recall is built by `memory.recall` (see Memory
+Privacy and Unified Recall).
 
 ### Storage Schema
 
@@ -366,7 +368,65 @@ dead row is deleted unless response events still establish guild presence.
 The daily episode retention pass deletes `memory_episode` rows with `ended_at` strictly older than
 `memory.episodeRetentionDays` (90 days) and re-embeds retained rows with missing or unreadable vectors.
 
+### Memory Privacy
+
+`memory.privacy` (env `MEMORY_PRIVACY`) controls where long-term memory may be recalled. It never changes what is
+learned, so a level can be changed or reverted without a backfill.
+
+| Level               | Behaviour                                                                                                         |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `relaxed` (default) | Recalled anywhere in the server, as before                                                                        |
+| `balanced`          | Memories from public channels travel; memories from private channels stay in that channel                         |
+| `strict`            | Every channel keeps its own memories                                                                              |
+| `off`               | No long-term memory writes or recall; `remember_user` and `recall_user` are withheld, `forget_user` still deletes |
+
+- **Source Channels:** facts take the channel of each `memory_evidence` row (`remember_user` records its channel);
+  conversation summaries their `channel_id`; media summaries the channel of each `media_occurrence`.
+- **Gate:** `canRecall` (`src/agent/memory/privacy.ts`) is the only check. An item passes when any source passes:
+  under `strict` the source is the current channel or the current thread's parent; under `balanced` it may also be any
+  public channel. A missing source counts as public under `balanced` and never passes under `strict`.
+- **Visibility:** a channel is public when `@everyone` has View Channel and it is not NSFW. A public thread takes its
+  parent's visibility; private threads and deleted, uncached or unknown channels are private. The Discord layer
+  registers the resolver (`src/discord/channelVisibility.ts`) at `clientReady`, and visibility is read at recall time,
+  so a channel that turns private stops sharing its old memories without migration.
+- **Limit:** a server that hides every channel from `@everyone` and grants access through a member role has no public
+  channels, so `balanced` behaves like `strict` there.
+- **Coverage:** the gate applies to the unified recall, to the four legacy blocks below and to `recall_user`. DMs,
+  group DMs and `/ask` stay memory-free at every level.
+
+### Unified Recall
+
+`memory.recall` (env `MEMORY_RECALL`) selects how memory reaches the prompt: `legacy` builds the four blocks below,
+`shadow` builds them and also runs the unified recall for logging only, and `unified` replaces them with one block
+built by `recallForTurn` (`src/agent/memory/recall.ts`).
+
+- **Candidates:** non-review facts about the speaker, up to `memory.recentParticipantLimit` participants, members named
+  in the message and one `relationship_to` hop; unexpired server facts; conversation summaries; media summaries. All
+  pass the privacy gate first.
+- **Fact Embeddings:** each active fact is embedded as a subject-neutral sentence (`factSentences.ts`, e.g. "This
+  person's hobby: chess.") into `memory_claim.embedding`, with the sentence in `embedding_text`. New facts are embedded
+  after extraction jobs and `remember_user` writes, and the daily maintenance pass embeds any fact whose embedding is
+  missing or whose sentence changed.
+- **Scoring:** cosine similarity to the turn's query embedding must strictly exceed the kind's minimum
+  (`memory.factMinSimilarity`, `memory.serverFactMinSimilarity`, `memory.episodeMinSimilarity`,
+  `memory.mediaMinSimilarity`). Boosts of 0.05 each apply for the speaker, a member named in the message and pinned
+  facts, plus up to 0.03 recency halving every `memory.salienceHalfLifeDays`; a fact recalled within
+  `memory.recallCooldownMs` loses 0.1 unless the message keyword-matches it.
+- **Selection:** up to `memory.recallCoreFacts` (3) speaker facts are always included (pinned, then `nickname`, then
+  `pronouns`). The rest fill `memory.recallTokenBudget` (600) best-first, with at most `memory.episodeRecallK`
+  conversation summaries and `memory.mediaRecallK` media summaries.
+- **Fallback:** without a query embedding inside `memory.embeddingTimeoutMs`, recall uses the core facts plus facts
+  that keyword-match the message.
+- **Prompt:** one `## What You Remember` block with People, This Server, Past Conversations and Media Shared Here
+  sections, the last two under the untrusted-data sentence. The safety ladder drops it at the same rung as the legacy
+  blocks.
+- **Telemetry:** every guild memory turn records a `memory_events` row of kind `recall` (or `recall_shadow`) whose
+  `detail` JSON holds the mode, privacy level, fallback flag, gated count and the selected `[kind, id, score]` tuples,
+  never memory text.
+
 ### Bounded Retrieval Contract
+
+The contract below describes the legacy fact block (`memory.recall: legacy` or `shadow`).
 
 Retrieval is tenant-scoped and bounded to at most `memory.maxClaimsPerTurn` (10) claims and approximately
 `memory.retrievalTokenBudget` (350) tokens. It reserves up to `memory.speakerMinShare` (0.5) of the selected slots
@@ -449,8 +509,9 @@ key. A Bluesky `postId` is `<profile>/<rkey>`, because a record key is unique on
 - **Recall:** guild memory turns rank media summaries against the turn's existing query embedding. Results must
   score above `memory.mediaMinSimilarity` (0.7), are limited by `memory.mediaRecallK` (2) and
   `memory.mediaTokenBudget` (400), and appear after the episode block under their own untrusted heading. They
-  are dropped at the same safety rungs. Like episode recall, it is guild-wide: a summary of media shared in a
-  private channel can surface in any channel of that guild.
+  are dropped at the same safety rungs. At `memory.privacy: relaxed`, like episode recall, it is guild-wide: a
+  summary of media shared in a private channel can surface in any channel of that guild. Stricter levels are
+  described in Memory Privacy.
 - **Retention and Forgetting:** the daily maintenance pass deletes occurrences older than
   `memory.mediaRetentionDays` (90), deletes digests left with none, and re-embeds null vectors. Sharing or replying
   to the same message again refreshes its occurrence. `forget_user`
