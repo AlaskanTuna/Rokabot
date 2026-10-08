@@ -419,9 +419,10 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
     }
   }
 
-  const basePrompt = assembleSystemPrompt({ tone, hour, displayName, memory })
   // The prompt layer and the mention lines still follow `memory`; every long-term read follows `longTerm`.
   const longTerm = memory && config.memory.privacy !== 'off'
+  const forgetOnly = memory && !longTerm
+  const basePrompt = assembleSystemPrompt({ tone, hour, displayName, memory, forgetOnly })
   const recallMode = config.memory.recall
   const scope: RecallScope | undefined = guildId && !guildId.startsWith('dm:') ? { guildId, channelId } : undefined
   const recallEmbedding = longTerm && scope ? options.turnEntryWork.queryEmbedding : undefined
@@ -561,7 +562,7 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
 
   // The Discord ID stays either way; only the half naming the memory tools is dropped, because a
   // memory-free turn is offered none of them and cannot act on the instruction (#207).
-  const tailSection = memory
+  const tailSection = longTerm
     ? `\n\n- The current user's Discord ID is "${userId}".` +
       ' remember_user and recall_user target the current user automatically; to recall a different server member, pass their name as user_name.'
     : `\n\n- The current user's Discord ID is "${userId}".`
@@ -616,7 +617,8 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
   // so Roka answers with less surrounding context rather than refusing outright.
   const SAFETY_LADDER = ['drop_overheard', 'drop_facts', 'clear_history'] as const
   function composePrompt(safetyRung: number): string {
-    const head = safetyRung >= 3 ? assembleSystemPrompt({ tone: 'sincere', hour, displayName, memory }) : basePrompt
+    const head =
+      safetyRung >= 3 ? assembleSystemPrompt({ tone: 'sincere', hour, displayName, memory, forgetOnly }) : basePrompt
     const peopleSection = recallMode === 'unified' ? memorySection : factsSection
     return [
       head,

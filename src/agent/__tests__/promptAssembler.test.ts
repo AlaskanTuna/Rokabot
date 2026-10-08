@@ -212,4 +212,18 @@ describe('memory tool rules', () => {
     expect(CORE_PROMPT).not.toContain('\\`')
     expect(CORE_PROMPT).toContain('call `remember_user`')
   })
+
+  it('keeps only the forget guidance when long-term memory is off', () => {
+    const result = assembleSystemPrompt({
+      tone: 'playful',
+      hour: 14,
+      displayName: 'Alice',
+      memory: true,
+      forgetOnly: true
+    })
+
+    expect(result).toContain('forget_user')
+    expect(result).not.toContain('remember_user')
+    expect(result).not.toContain('recall_user')
+  })
 })

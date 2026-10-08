@@ -1023,6 +1023,9 @@ describe('memory recall modes', () => {
     expect(context.systemPrompt).not.toContain(episodeBlock)
     expect(recalledRows('recall')).toHaveLength(0)
     expect(recalledRows('recall_shadow')).toHaveLength(0)
+    expect(mocks.assembleSystemPrompt).toHaveBeenCalledWith(expect.objectContaining({ memory: true, forgetOnly: true }))
+    expect(context.systemPrompt).not.toContain('remember_user')
+    expect(context.systemPrompt).not.toContain('recall_user')
   })
 
   it.each(['shadow', 'unified'])('does no recall for a DM or a memory-free turn in %s mode', async (recall) => {

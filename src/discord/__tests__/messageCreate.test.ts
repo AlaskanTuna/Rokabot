@@ -623,6 +623,7 @@ describe('message handler episode tracking', () => {
 
       expect(mocks.recordEpisodeMessage).not.toHaveBeenCalled()
       expect(mocks.generateResponse).toHaveBeenCalled()
+      expect(mocks.startTurnEntryWork).toHaveBeenCalledWith(expect.objectContaining({ includeEpisodeRecall: false }))
     } finally {
       memoryConfig.privacy = 'relaxed'
     }

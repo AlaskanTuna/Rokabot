@@ -61,7 +61,7 @@ export function getClaimEmbeddings(claimIds: readonly number[]): Map<number, Epi
   return embeddings
 }
 
-/** A claim with no evidence rows maps to [null]: its source channel is unknown, so it counts as public. */
+/** A claim with no evidence rows maps to [null]: its source channel is unknown, which `balanced` treats as public. */
 export function getClaimSourceChannels(claimIds: readonly number[]): Map<number, Array<string | null>> {
   const channels = new Map<number, Array<string | null>>()
   if (claimIds.length === 0) return channels
