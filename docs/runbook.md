@@ -145,6 +145,7 @@ docker logs rokabot-roka-1 2>&1 | grep '"msg":"Watched media"' | tail -20
 
 - **Fields:** `kind` (audio/video), `transport` (`inline` upload or `uri` YouTube), `mode` (`whole`, `skim`, `opening`, `decline`), `durationSec`, `fps`, `estimate` (admission tokens), `promptTokens` (billed), `watchMs`, `calls`, `outcome` (`ok`, `overloaded`, `timeout`, `unavailable`, `invalid`, `error`).
 - **Expected Latency:** about 2.5-3.5 s for short clips and 8-9 s for a 12-minute YouTube video (measured from a workstation, 2026-10-08), on top of the normal reply.
+- **Linked Videos:** X, Bluesky, TikTok, Reddit, Instagram and Bilibili posts are watched from their smallest playable MP4 when it passes the HEAD check and fits 10 MiB. Otherwise the post's thumbnail is used. Reddit videos have no muxed sound, so they are watched silent and say so. Bluesky needs one extra `plc.directory` lookup per author, cached.
 - **YouTube Limits:** Gemini fetches YouTube links itself, so the Pi's IP block on yt-dlp does not apply. The free tier allows 8 hours of YouTube video per day; past that, watches fail and Roka says she couldn't watch it.
 - **Kill Switch:** set `MEDIA_WATCH=false` in the container environment and restart. Audio and video then go to the model directly as before.
 
