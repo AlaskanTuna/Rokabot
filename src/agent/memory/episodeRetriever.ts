@@ -2,6 +2,7 @@ import { config } from '../../config.js'
 import type { EpisodeEmbedding, MemoryEpisode } from '../../storage/memoryEpisodeStore.js'
 import { listEpisodesForGuild } from '../../storage/memoryEpisodeStore.js'
 import { estimateTokens } from '../../utils/tokens.js'
+import { type RecallScope, canRecall } from './privacy.js'
 
 export type RecalledEpisode = Readonly<{
   id: number
@@ -51,10 +52,17 @@ function toRecalledEpisode(episode: MemoryEpisode, queryEmbedding: EpisodeEmbedd
   }
 }
 
-export function recallEpisodes(input: { guildId: string; queryEmbedding: EpisodeEmbedding }): RecalledEpisode[] {
+export function recallEpisodes(input: {
+  guildId: string
+  queryEmbedding: EpisodeEmbedding
+  scope?: RecallScope
+}): RecalledEpisode[] {
   if (input.queryEmbedding.length !== 768 || input.queryEmbedding.some((value) => !Number.isFinite(value))) return []
 
   return listEpisodesForGuild(input.guildId)
+    .filter(
+      (episode) => !input.scope || config.memory.privacy === 'relaxed' || canRecall([episode.channelId], input.scope)
+    )
     .map((episode) => toRecalledEpisode(episode, input.queryEmbedding))
     .filter((episode): episode is RecalledEpisode => episode !== null)
     .sort((left, right) => right.similarity - left.similarity || right.endedAt - left.endedAt || left.id - right.id)
@@ -88,7 +96,11 @@ export function formatEpisodeRecallBlock(episodes: readonly RecalledEpisode[]): 
   ].join('\n')
 }
 
-export function buildEpisodeRecallBlock(input: { guildId: string; queryEmbedding: EpisodeEmbedding }): string {
+export function buildEpisodeRecallBlock(input: {
+  guildId: string
+  queryEmbedding: EpisodeEmbedding
+  scope?: RecallScope
+}): string {
   const recalled = recallEpisodes(input)
   const selected = selectEpisodesWithinBudget(recalled, config.memory.episodeRecallK, config.memory.episodeTokenBudget)
   return formatEpisodeRecallBlock(selected)

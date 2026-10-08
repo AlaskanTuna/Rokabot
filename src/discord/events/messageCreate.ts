@@ -45,7 +45,7 @@ import { handleGachaMention } from './gachaMention.js'
 export const NAME_MENTION_REGEX = /\broka\b/i
 
 function recordMonitoredEpisodeMessage(message: Message, botUserId: string): void {
-  if (!message.guild || !isMonitored(message.channelId)) return
+  if (!message.guild || !isMonitored(message.channelId) || config.memory.privacy === 'off') return
 
   try {
     const content = replaceUserMentions(message, botUserId)
@@ -125,7 +125,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
         message: currentMessage,
         lookupQuery: replaceUserMentions(message, client.user.id),
         mentionedUserIds: [...(message.mentions.users?.keys() ?? [])].filter((userId) => userId !== client.user?.id),
-        includeEpisodeRecall: Boolean(message.guildId)
+        includeEpisodeRecall: Boolean(message.guildId) && config.memory.privacy !== 'off'
       })
     }
     let turnEntryWorkHandedOff = false

@@ -1,5 +1,8 @@
+import { config } from '../../config.js'
 import { getDb } from '../../storage/database.js'
+import { getClaimSourceChannels } from '../../storage/memoryRecallStore.js'
 import { getUserName } from '../../storage/userNames.js'
+import { type RecallScope, canRecall } from './privacy.js'
 
 type MatchKind = 'display_name' | 'username' | 'nickname'
 
@@ -30,7 +33,24 @@ const GUILD_PRESENCE = `(
   OR EXISTS(SELECT 1 FROM response_events WHERE guild_id = ? AND user_id = user_names.user_id)
 )`
 
-function buildNameIndex(guildId: string): NameIndex {
+/** A nickname is an alias learned in a channel, so `balanced` and `strict` resolve it only where that channel is recallable. */
+function nicknameRows(guildId: string, scope: RecallScope | undefined): Array<{ user_id: string; value: string }> {
+  const level = config.memory.privacy
+  if (guildId === 'global' || level === 'off') return []
+  const rows = getDb()
+    .prepare(
+      `SELECT id, subject_user_id AS user_id, value FROM memory_claim
+       WHERE guild_id = ? AND subject_kind = 'user' AND status = 'active' AND predicate = 'nickname'
+       ORDER BY id`
+    )
+    .all(guildId) as Array<{ id: number; user_id: string; value: string }>
+  if (level === 'relaxed') return rows
+  if (!scope) return []
+  const sources = getClaimSourceChannels(rows.map(({ id }) => id))
+  return rows.filter(({ id }) => canRecall(sources.get(id) ?? [null], scope, level))
+}
+
+function buildNameIndex(guildId: string, scope?: RecallScope): NameIndex {
   const db = getDb()
   const global = guildId === 'global'
   const userRows = db
@@ -40,15 +60,7 @@ function buildNameIndex(guildId: string): NameIndex {
        ORDER BY rowid`
     )
     .all(...(global ? [] : [guildId, guildId])) as UserNameRow[]
-  const nicknameRows = global
-    ? []
-    : (db
-        .prepare(
-          `SELECT subject_user_id AS user_id, value FROM memory_claim
-           WHERE guild_id = ? AND subject_kind = 'user' AND status = 'active' AND predicate = 'nickname'
-           ORDER BY id`
-        )
-        .all(guildId) as Array<{ user_id: string; value: string }>)
+  const nicknames = nicknameRows(guildId, scope)
 
   const aliases = new Map<string, Map<string, NameCandidate>>()
   const users = new Map(userRows.map((row) => [row.user_id, { displayName: row.display_name }]))
@@ -66,7 +78,7 @@ function buildNameIndex(guildId: string): NameIndex {
 
   for (const row of userRows) addAlias(row.display_name, row.user_id, 'display_name')
   for (const row of userRows) addAlias(row.username, row.user_id, 'username')
-  for (const row of nicknameRows) addAlias(row.value, row.user_id, 'nickname')
+  for (const row of nicknames) addAlias(row.value, row.user_id, 'nickname')
 
   return { aliases, users }
 }
@@ -81,10 +93,10 @@ function isAscii(value: string): boolean {
   return [...value].every((character) => character.charCodeAt(0) <= 0x7f)
 }
 
-export function resolveName(name: string, guildId: string): string[] {
+export function resolveName(name: string, guildId: string, scope?: RecallScope): string[] {
   const normalized = name.trim().toLowerCase()
   if (!normalized) return []
-  const candidates = buildNameIndex(guildId).aliases.get(normalized)
+  const candidates = buildNameIndex(guildId, scope).aliases.get(normalized)
   return candidates ? orderedCandidates(candidates).map(({ userId }) => userId) : []
 }
 
@@ -93,6 +105,7 @@ export function resolveReferences(input: {
   text: string
   speakerId: string
   mentionedUserIds: string[]
+  scope?: RecallScope
 }): {
   resolved: Array<{
     userId: string
@@ -121,7 +134,7 @@ export function resolveReferences(input: {
     seenUserIds.add(userId)
   }
 
-  const nameIndex = buildNameIndex(input.guildId)
+  const nameIndex = buildNameIndex(input.guildId, input.scope)
   const occurrences: Array<{
     start: number
     order: number

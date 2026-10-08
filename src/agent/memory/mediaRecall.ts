@@ -3,6 +3,7 @@ import { type MediaRecallCandidate, listMediaRecallCandidates } from '../../stor
 import type { EpisodeEmbedding } from '../../storage/memoryEpisodeStore.js'
 import { estimateTokens } from '../../utils/tokens.js'
 import { cosineSimilarity } from './episodeRetriever.js'
+import { type RecallScope, canRecall } from './privacy.js'
 
 export type RecalledMedia = Readonly<{
   id: number
@@ -33,8 +34,19 @@ function selectMediaWithinBudget(entries: readonly RecalledMedia[], tokenBudget:
   return selected
 }
 
-export function recallMedia(input: { guildId: string; queryEmbedding: EpisodeEmbedding }): RecalledMedia[] {
+export function recallMedia(input: {
+  guildId: string
+  queryEmbedding: EpisodeEmbedding
+  scope?: RecallScope
+}): RecalledMedia[] {
   const ranked = listMediaRecallCandidates(input.guildId)
+    .filter(
+      (digest) =>
+        !input.scope ||
+        config.memory.privacy === 'relaxed' ||
+        // No recorded occurrence means no channel to judge, so it counts as private, not as an unknown source.
+        canRecall(digest.channelIds.length > 0 ? digest.channelIds : [''], input.scope)
+    )
     .map((digest) => toRecalledMedia(digest, input.queryEmbedding))
     .filter((media): media is RecalledMedia => media !== null)
     .sort(
@@ -59,6 +71,10 @@ export function formatMediaRecallBlock(items: readonly RecalledMedia[]): string 
   ].join('\n')
 }
 
-export function buildMediaRecallBlock(input: { guildId: string; queryEmbedding: EpisodeEmbedding }): string {
+export function buildMediaRecallBlock(input: {
+  guildId: string
+  queryEmbedding: EpisodeEmbedding
+  scope?: RecallScope
+}): string {
   return formatMediaRecallBlock(recallMedia(input))
 }

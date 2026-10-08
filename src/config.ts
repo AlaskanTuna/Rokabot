@@ -101,6 +101,12 @@ interface YamlConfig {
     mediaRetentionDays?: number
     embeddingModel?: string
     embeddingTimeoutMs?: number
+    privacy?: string
+    recall?: string
+    recallTokenBudget?: number
+    recallCoreFacts?: number
+    factMinSimilarity?: number
+    serverFactMinSimilarity?: number
     vaultExportDir?: string
   }
   metrics?: { retentionDays?: number; diagnosticsRetentionHours?: number }
@@ -173,6 +179,8 @@ function envBoolean(key: string): boolean | undefined {
 }
 
 export type JevMode = 'off' | 'shadow' | 'on'
+export type MemoryPrivacy = 'relaxed' | 'balanced' | 'strict' | 'off'
+export type MemoryRecallMode = 'legacy' | 'shadow' | 'unified'
 
 function jevMode(key: 'tone' | 'referents' | 'prefetch', envKey: string): JevMode {
   const envValue = envString(envKey)
@@ -180,6 +188,15 @@ function jevMode(key: 'tone' | 'referents' | 'prefetch', envKey: string): JevMod
   if (value === 'off' || value === 'shadow' || value === 'on') return value
   const source = envValue ? `Environment variable ${envKey}` : `Config value jev.${key}`
   throw new Error(`${source} must be off, shadow or on, got: ${String(value)}`)
+}
+
+function memoryEnum<T extends string>(key: 'privacy' | 'recall', envKey: string, values: readonly T[], fallback: T): T {
+  const envValue = envString(envKey)
+  const value = envValue ?? yaml.memory?.[key] ?? fallback
+  if ((values as readonly string[]).includes(String(value))) return value as T
+  const source = envValue ? `Environment variable ${envKey}` : `Config value memory.${key}`
+  const allowed = `${values.slice(0, -1).join(', ')} or ${values.at(-1)}`
+  throw new Error(`${source} must be ${allowed}, got: ${String(value)}`)
 }
 
 const geminiModel = envString('GEMINI_MODEL') ?? yaml.gemini?.model ?? 'gemini-2.0-flash-lite'
@@ -297,6 +314,12 @@ export const config = {
     mediaRetentionDays: yaml.memory?.mediaRetentionDays ?? 90,
     embeddingModel: yaml.memory?.embeddingModel ?? 'gemini-embedding-2',
     embeddingTimeoutMs: yaml.memory?.embeddingTimeoutMs ?? 1500,
+    privacy: memoryEnum('privacy', 'MEMORY_PRIVACY', ['relaxed', 'balanced', 'strict', 'off'], 'relaxed'),
+    recall: memoryEnum('recall', 'MEMORY_RECALL', ['legacy', 'shadow', 'unified'], 'shadow'),
+    recallTokenBudget: yaml.memory?.recallTokenBudget ?? 600,
+    recallCoreFacts: yaml.memory?.recallCoreFacts ?? 3,
+    factMinSimilarity: yaml.memory?.factMinSimilarity ?? 0.65,
+    serverFactMinSimilarity: yaml.memory?.serverFactMinSimilarity ?? 0.65,
     vaultExportDir: envString('MEMORY_VAULT_EXPORT_DIR') ?? yaml.memory?.vaultExportDir ?? 'data/vault'
   },
   metrics: {
@@ -454,6 +477,10 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'memory.mediaMinSimilarity', value: config.memory.mediaMinSimilarity, min: 0, max: 1 },
   { path: 'memory.mediaRetentionDays', value: config.memory.mediaRetentionDays, min: 1, max: 365 },
   { path: 'memory.embeddingTimeoutMs', value: config.memory.embeddingTimeoutMs, min: 1 },
+  { path: 'memory.recallTokenBudget', value: config.memory.recallTokenBudget, min: 200, max: 2000 },
+  { path: 'memory.recallCoreFacts', value: config.memory.recallCoreFacts, min: 0, max: 5 },
+  { path: 'memory.factMinSimilarity', value: config.memory.factMinSimilarity, min: 0, max: 1 },
+  { path: 'memory.serverFactMinSimilarity', value: config.memory.serverFactMinSimilarity, min: 0, max: 1 },
   { path: 'metrics.retentionDays', value: config.metrics.retentionDays, min: 1 },
   { path: 'metrics.diagnosticsRetentionHours', value: config.metrics.diagnosticsRetentionHours, min: 1 },
   { path: 'report.maxPerUserPerHour', value: config.report.maxPerUserPerHour, min: 1 },

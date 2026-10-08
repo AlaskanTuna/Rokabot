@@ -424,6 +424,11 @@ export function runMigrations(database: Database.Database): void {
 
   `)
 
+  const memoryEventCols = database.prepare("PRAGMA table_info('memory_events')").all() as Array<{ name: string }>
+  if (memoryEventCols.length > 0 && !memoryEventCols.some((column) => column.name === 'detail')) {
+    database.exec('ALTER TABLE memory_events ADD COLUMN detail TEXT DEFAULT NULL')
+  }
+
   ensureMemoryClaimSchema(database)
 
   const extractionQueueCols = database.prepare("PRAGMA table_info('extraction_queue')").all() as Array<{ name: string }>

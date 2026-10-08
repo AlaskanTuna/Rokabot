@@ -1,8 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { config } from '../../../config.js'
 import { closeDb, getDb } from '../../../storage/database.js'
 import { upsertUserName } from '../../../storage/userNames.js'
 import { resolveName, resolveReferences } from '../identityResolver.js'
 import { assertClaim } from '../memoryClaims.js'
+import type { RecallScope } from '../privacy.js'
+
+const originalPrivacy = config.memory.privacy
+const setPrivacy = (privacy: string) => Object.assign(config.memory, { privacy })
 
 beforeEach(() => {
   process.env.ROKABOT_DB_PATH = ':memory:'
@@ -11,6 +16,7 @@ beforeEach(() => {
 afterEach(() => {
   closeDb()
   process.env.ROKABOT_DB_PATH = undefined
+  setPrivacy(originalPrivacy)
 })
 
 function addUser(userId: string, username: string, displayName: string, guildId = 'guild-a'): void {
@@ -25,15 +31,26 @@ function addUser(userId: string, username: string, displayName: string, guildId 
     .run(guildId, userId)
 }
 
-function addNickname(userId: string, nickname: string, guildId = 'guild-a'): void {
+function addNickname(userId: string, nickname: string, guildId = 'guild-a', channelId?: string): void {
   assertClaim({
     guildId,
     subjectUserId: userId,
     predicate: 'nickname',
     value: nickname,
-    sourceKind: 'explicit'
+    sourceKind: 'explicit',
+    channelId
   })
 }
+
+const here = { guildId: 'guild-a', channelId: 'here' }
+const other = { guildId: 'guild-a', channelId: 'other' }
+const askKiki = (scope: RecallScope) => ({
+  guildId: 'guild-a',
+  text: 'Ask Kiki Alias.',
+  speakerId: 'speaker',
+  mentionedUserIds: [],
+  scope
+})
 
 describe('resolveName', () => {
   it('does not use a legacy fact table to establish guild presence', () => {
@@ -175,5 +192,60 @@ describe('resolveReferences', () => {
     addUser('user', 'someone', 'Someone')
 
     expect(resolveReferences(input('Someone', { guildId: 'global' }))).toEqual({ resolved: [], ambiguous: [] })
+  })
+})
+
+describe('nickname privacy', () => {
+  beforeEach(() => {
+    upsertUserName('nick-user', 'kiki', 'Kiki')
+    addNickname('nick-user', 'Kiki Alias', 'guild-a', 'other')
+  })
+
+  it('resolves a nickname learned in another channel at relaxed without a scope', () => {
+    setPrivacy('relaxed')
+
+    expect(resolveName('Kiki Alias', 'guild-a')).toEqual(['nick-user'])
+  })
+
+  it('hides a nickname learned in another channel from the scope channel under strict', () => {
+    setPrivacy('strict')
+
+    expect(resolveName('Kiki Alias', 'guild-a', here)).toEqual([])
+    expect(resolveReferences(askKiki(here)).resolved.map(({ matchedBy }) => matchedBy)).not.toContain('nickname')
+  })
+
+  it('resolves the same nickname from the channel it was learned in under strict', () => {
+    setPrivacy('strict')
+
+    expect(resolveName('Kiki Alias', 'guild-a', other)).toEqual(['nick-user'])
+    expect(resolveReferences(askKiki(other)).resolved).toEqual([
+      { userId: 'nick-user', alias: 'Kiki Alias', displayName: 'Kiki', matchedBy: 'nickname' }
+    ])
+  })
+
+  it('drops nicknames without a scope under strict, failing closed', () => {
+    setPrivacy('strict')
+
+    expect(resolveName('Kiki Alias', 'guild-a')).toEqual([])
+  })
+
+  it('hides a nickname learned in a private channel from a public one under balanced', () => {
+    setPrivacy('balanced')
+
+    expect(resolveName('Kiki Alias', 'guild-a', here)).toEqual([])
+  })
+
+  it('resolves no nickname under off, but still resolves display names and usernames', () => {
+    setPrivacy('off')
+
+    expect(resolveName('Kiki Alias', 'guild-a', other)).toEqual([])
+    expect(resolveName('Kiki', 'guild-a', here)).toEqual(['nick-user'])
+    expect(resolveName('kiki', 'guild-a', here)).toEqual(['nick-user'])
+  })
+
+  it('leaves display-name resolution unaffected under strict', () => {
+    setPrivacy('strict')
+
+    expect(resolveName('Kiki', 'guild-a', here)).toEqual(['nick-user'])
   })
 })

@@ -161,7 +161,13 @@ export const rememberUserTool = new FunctionTool({
         totalFacts: 0
       }
     }
-    return rememberUser({ user_id: userId, guild_id: guildId, fact_key: input.fact_key, fact_value: input.fact_value })
+    return rememberUser({
+      user_id: userId,
+      guild_id: guildId,
+      fact_key: input.fact_key,
+      fact_value: input.fact_value,
+      channel_id: toolContext?.state?.get<string>('_channelId')
+    })
   }
 })
 
@@ -179,6 +185,7 @@ export const recallUserTool = new FunctionTool({
     const userId = toolContext?.state?.get<string>('_userId') ?? 'unknown'
     const guildId = toolContext?.state?.get<string>('_guildId')
     const message = toolContext?.state?.get<string>('_userMessage') ?? ''
+    const channelId = toolContext?.state?.get<string>('_channelId')
     if (!guildId || guildId === 'global') {
       // The returned copy is byte-identical to a genuine empty recall, so the log is the only place
       // an operator can tell a broken tenant wiring apart from "nothing stored yet".
@@ -189,7 +196,7 @@ export const recallUserTool = new FunctionTool({
       return { facts: "I don't have any notes about this person yet.", factCount: 0 }
     }
     if (input.user_name) {
-      const userIds = resolveName(input.user_name, guildId)
+      const userIds = resolveName(input.user_name, guildId, channelId ? { guildId, channelId } : undefined)
       if (userIds.length === 0) return { facts: "I don't know anyone by that name here yet.", factCount: 0 }
       if (userIds.length > 1) {
         const displayNames = userIds.map((id) => getUserName(id)?.displayName ?? id)
@@ -198,9 +205,9 @@ export const recallUserTool = new FunctionTool({
           factCount: 0
         }
       }
-      return recallUser({ user_id: userIds[0], guild_id: guildId, message })
+      return recallUser({ user_id: userIds[0], guild_id: guildId, message, channel_id: channelId })
     }
-    return recallUser({ user_id: userId, guild_id: guildId, message })
+    return recallUser({ user_id: userId, guild_id: guildId, message, channel_id: channelId })
   }
 })
 

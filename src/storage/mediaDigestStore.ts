@@ -164,6 +164,7 @@ export type MediaRecallCandidate = Readonly<{
   summary: string
   embedding: readonly number[]
   lastSharedAt: number
+  channelIds: readonly string[]
 }>
 
 /** The few columns recall ranks on, without the stored digest JSON. */
@@ -172,7 +173,8 @@ export function listMediaRecallCandidates(guildId: string): MediaRecallCandidate
 
   const rows = getDb()
     .prepare(
-      `SELECT d.id, d.label, d.summary, d.embedding, d.created_at, MAX(o.observed_at) AS last_shared_at
+      `SELECT d.id, d.label, d.summary, d.embedding, d.created_at, MAX(o.observed_at) AS last_shared_at,
+              GROUP_CONCAT(DISTINCT o.channel_id) AS channel_ids
        FROM media_digest d
        LEFT JOIN media_occurrence o ON o.digest_id = d.id AND o.guild_id = d.guild_id
        WHERE d.guild_id = ? AND d.embedding IS NOT NULL
@@ -180,14 +182,18 @@ export function listMediaRecallCandidates(guildId: string): MediaRecallCandidate
        ORDER BY d.id`
     )
     .all(guildId) as Array<
-    Pick<MediaDigestRow, 'id' | 'label' | 'summary' | 'created_at' | 'last_shared_at'> & { embedding: Buffer }
+    Pick<MediaDigestRow, 'id' | 'label' | 'summary' | 'created_at' | 'last_shared_at'> & {
+      embedding: Buffer
+      channel_ids: string | null
+    }
   >
   return rows.map((row) => ({
     id: row.id,
     label: row.label,
     summary: row.summary,
     embedding: decodeFloat32Embedding(row.embedding) ?? [],
-    lastSharedAt: row.last_shared_at ?? row.created_at
+    lastSharedAt: row.last_shared_at ?? row.created_at,
+    channelIds: (row.channel_ids ?? '').split(',').filter(Boolean).sort()
   }))
 }
 

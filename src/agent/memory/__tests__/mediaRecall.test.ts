@@ -5,7 +5,8 @@ const configMock = vi.hoisted(() => ({
   memory: {
     mediaRecallK: 2,
     mediaTokenBudget: 200,
-    mediaMinSimilarity: 0.7
+    mediaMinSimilarity: 0.7,
+    privacy: 'relaxed'
   }
 }))
 
@@ -16,6 +17,7 @@ vi.mock('../../../storage/database.js', () => ({ getDb: () => testDb }))
 
 import { findMediaDigest, recordMediaOccurrence, saveMediaDigest } from '../../../storage/mediaDigestStore.js'
 import { estimateTokens } from '../../../utils/tokens.js'
+import { registerChannelVisibility, resetChannelVisibilityForTest } from '../channelVisibility.js'
 import { buildMediaRecallBlock, formatMediaRecallBlock, recallMedia } from '../mediaRecall.js'
 
 function vector768(first: number, second = 0): number[] {
@@ -36,6 +38,7 @@ function seedMedia(input: {
   summary: string
   embedding: number[] | null
   sharedAt?: number
+  channelId?: string
 }) {
   const guildId = input.guildId ?? 'guild-a'
   const digest = saveMediaDigest({
@@ -52,7 +55,7 @@ function seedMedia(input: {
   recordMediaOccurrence({
     digestId: digest.id,
     guildId,
-    channelId: 'channel-1',
+    channelId: input.channelId ?? 'channel-1',
     messageId: `message-${input.contentKey}`,
     sharedByUserId: 'user-1',
     sourceAuthorId: null,
@@ -205,5 +208,72 @@ describe('media recall', () => {
   it('returns no block when no media is recalled', () => {
     expect(formatMediaRecallBlock([])).toBe('')
     expect(buildMediaRecallBlock({ guildId: 'guild-a', queryEmbedding: vector768(1) })).toBe('')
+  })
+
+  describe('media recall privacy levels', () => {
+    const here = { guildId: 'guild-a', channelId: 'here' }
+    const visibilities: Record<string, 'public' | 'private'> = { 'public-1': 'public' }
+
+    beforeEach(() => {
+      registerChannelVisibility({
+        visibility: (channelId) => visibilities[channelId] ?? 'private',
+        parentOf: () => null
+      })
+    })
+
+    afterEach(() => {
+      configMock.memory.privacy = 'relaxed'
+      resetChannelVisibilityForTest()
+    })
+
+    const seedInChannel = (contentKey: string, channelId: string, summary: string) =>
+      seedMedia({ contentKey, channelId, summary, embedding: vector768(0.9, 0.43589) })
+
+    it('withholds media shared only in another channel under strict', () => {
+      seedInChannel('youtube:other', 'other', 'Other cat.')
+      seedInChannel('youtube:here', 'here', 'Here cat.')
+      configMock.memory.privacy = 'strict'
+
+      expect(
+        recallMedia({ guildId: 'guild-a', queryEmbedding: vector768(1), scope: here }).map(({ summary }) => summary)
+      ).toEqual(['Here cat.'])
+    })
+
+    it('changes nothing at relaxed', () => {
+      seedInChannel('youtube:other', 'other', 'Other cat.')
+      seedInChannel('youtube:here', 'here', 'Here cat.')
+
+      expect(
+        recallMedia({ guildId: 'guild-a', queryEmbedding: vector768(1), scope: here })
+          .map(({ summary }) => summary)
+          .sort()
+      ).toEqual(['Here cat.', 'Other cat.'])
+    })
+
+    it('withholds a digest with no recorded occurrence under balanced', () => {
+      saveMediaDigest({
+        guildId: 'guild-a',
+        contentKey: 'youtube:orphan',
+        kind: 'video',
+        label: 'Orphan',
+        summary: 'Orphan cat.',
+        digestJson: '{}',
+        embedding: vector768(0.9, 0.43589),
+        createdAt: 1_000
+      })
+      configMock.memory.privacy = 'balanced'
+
+      expect(recallMedia({ guildId: 'guild-a', queryEmbedding: vector768(1), scope: here })).toEqual([])
+    })
+
+    it('shares a public-channel media item and withholds a private-channel one under balanced', () => {
+      seedInChannel('youtube:public', 'public-1', 'Public cat.')
+      seedInChannel('youtube:private', 'private-1', 'Private cat.')
+      configMock.memory.privacy = 'balanced'
+
+      expect(
+        recallMedia({ guildId: 'guild-a', queryEmbedding: vector768(1), scope: here }).map(({ summary }) => summary)
+      ).toEqual(['Public cat.'])
+    })
   })
 })

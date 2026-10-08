@@ -1,8 +1,10 @@
+import { config } from '../../config.js'
 import { claimNextForGuild, listGuildsWithPending, markDone, markFailed } from '../../storage/extractionQueue.js'
 import { logger } from '../../utils/logger.js'
 import { isShuttingDown } from '../shutdownSignal.js'
 import { persistEpisodeResult } from './episodePersistence.js'
 import { runEpisodePipeline } from './extractor.js'
+import { embedPendingFacts } from './factEmbeddings.js'
 
 let timer: ReturnType<typeof setTimeout> | undefined
 let lastGuildId: string | undefined
@@ -39,6 +41,7 @@ function runJob(job: NonNullable<ReturnType<typeof claimNextForGuild>>): void {
     .then(async (result) => {
       await persistEpisodeResult({ job, result })
       markDone(job.id)
+      void embedPendingFacts({ limit: 20 })
     })
     .catch((error: unknown) => {
       markFailed(job.id)
@@ -55,7 +58,7 @@ function runJob(job: NonNullable<ReturnType<typeof claimNextForGuild>>): void {
 }
 
 function drainOnce(): void {
-  if (stopped || isShuttingDown()) return
+  if (stopped || isShuttingDown() || config.memory.privacy === 'off') return
 
   const guildId = orderedGuilds(listGuildsWithPending().filter((id) => !inFlightGuilds.has(id)))[0]
   if (!guildId) return

@@ -193,9 +193,17 @@ describe('mediaDigestStore', () => {
         label: 'Cat video',
         summary: 'A cat explores a night garden.',
         embedding: Array.from(new Float32Array(vector)),
-        lastSharedAt: 4_000
+        lastSharedAt: 4_000,
+        channelIds: ['channel-1']
       }
     ])
+    recordMediaOccurrence(
+      occurrenceInput(embedded.id, { channelId: 'channel-2', messageId: 'message-2', observedAt: 5_000 })
+    )
+    expect(listMediaRecallCandidates('guild-1')[0]).toMatchObject({
+      lastSharedAt: 5_000,
+      channelIds: ['channel-1', 'channel-2']
+    })
     expect(listMediaRecallCandidates('dm:user-1')).toEqual([])
   })
 

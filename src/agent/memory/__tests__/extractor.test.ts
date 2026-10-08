@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   admitEpisode: vi.fn(),
@@ -28,10 +28,11 @@ vi.mock('../../../config.js', () => ({
 
 vi.mock('../admission.js', () => ({ admitEpisode: mocks.admitEpisode }))
 
+import { config } from '../../../config.js'
 import { closeDb, getDb } from '../../../storage/database.js'
 import type { ExtractionEpisode } from '../../../storage/extractionQueue.js'
 import { extractEpisode, runEpisodePipeline } from '../extractor.js'
-import { assertClaim, getActiveClaims } from '../memoryClaims.js'
+import { assertClaim, assertGuildClaim, getActiveClaims } from '../memoryClaims.js'
 
 beforeAll(() => {
   process.env.ROKABOT_DB_PATH = ':memory:'
@@ -212,5 +213,92 @@ describe('extractEpisode', () => {
     expect(mocks.generateContent.mock.calls[0][0].contents).toContain(
       'give the month and day, plus the year only when the messages state it'
     )
+  })
+})
+
+describe('extractEpisode channel privacy', () => {
+  const episode: ExtractionEpisode = {
+    messages: [
+      { messageId: 'm-1', userId: 'user-1', displayName: 'Alex', content: 'I like tea', timestamp: 1_000, isBot: false }
+    ],
+    context: [],
+    startedAt: 1_000,
+    endedAt: 1_000
+  }
+  const originalPrivacy = config.memory.privacy
+  const setPrivacy = (privacy: string | undefined) => Object.assign(config.memory, { privacy })
+
+  beforeEach(() => {
+    assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'likes',
+      value: 'tea said here',
+      sourceKind: 'explicit',
+      channelId: 'channel-1'
+    })
+    assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'likes',
+      value: 'tea said elsewhere',
+      sourceKind: 'explicit',
+      channelId: 'other'
+    })
+    assertGuildClaim({
+      guildId: 'guild-1',
+      predicate: 'rule',
+      value: 'guild rule said here',
+      expiresAt: null,
+      sourceKind: 'explicit',
+      channelId: 'channel-1'
+    })
+    assertGuildClaim({
+      guildId: 'guild-1',
+      predicate: 'rule',
+      value: 'guild rule said elsewhere',
+      expiresAt: null,
+      sourceKind: 'explicit',
+      channelId: 'other'
+    })
+    mocks.generateContent.mockResolvedValue({ text: JSON.stringify({ ops: [{ op: 'noop' }], summary: 'A fact.' }) })
+  })
+
+  afterEach(() => {
+    setPrivacy(originalPrivacy)
+  })
+
+  it('keeps claims and guild facts from other channels out of the prompt under strict', async () => {
+    setPrivacy('strict')
+
+    await extractEpisode({ guildId: 'guild-1', channelId: 'channel-1', episode })
+
+    const prompt = mocks.generateContent.mock.calls[0][0].contents
+    expect(prompt).toContain('tea said here')
+    expect(prompt).toContain('guild rule said here')
+    expect(prompt).not.toContain('tea said elsewhere')
+    expect(prompt).not.toContain('guild rule said elsewhere')
+  })
+
+  it('drops claims from a private channel under balanced too', async () => {
+    setPrivacy('balanced')
+
+    await extractEpisode({ guildId: 'guild-1', channelId: 'channel-1', episode })
+
+    const prompt = mocks.generateContent.mock.calls[0][0].contents
+    expect(prompt).toContain('tea said here')
+    expect(prompt).not.toContain('tea said elsewhere')
+  })
+
+  it('sends every claim and guild fact at relaxed', async () => {
+    setPrivacy('relaxed')
+
+    await extractEpisode({ guildId: 'guild-1', channelId: 'channel-1', episode })
+
+    const prompt = mocks.generateContent.mock.calls[0][0].contents
+    expect(prompt).toContain('tea said here')
+    expect(prompt).toContain('tea said elsewhere')
+    expect(prompt).toContain('guild rule said here')
+    expect(prompt).toContain('guild rule said elsewhere')
   })
 })

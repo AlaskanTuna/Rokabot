@@ -81,6 +81,8 @@ describe('config module', () => {
     vi.stubEnv('MEMORY_MAX_ACTIVE_CLAIMS_PER_USER', '')
     vi.stubEnv('MEMORY_CLAIM_RETENTION_DAYS', '')
     vi.stubEnv('MEMORY_VAULT_EXPORT_DIR', '')
+    vi.stubEnv('MEMORY_PRIVACY', '')
+    vi.stubEnv('MEMORY_RECALL', '')
     vi.stubEnv('METRICS_RETENTION_DAYS', '')
     vi.stubEnv('DISCORD_MAX_MESSAGE_LENGTH', '')
     vi.stubEnv('SOCIAL_POSTS_ENABLED', '')
@@ -317,6 +319,12 @@ describe('config module', () => {
     expect(config.memory.episodeRetentionDays).toBe(90)
     expect(config.memory.embeddingModel).toBe('gemini-embedding-2')
     expect(config.memory.embeddingTimeoutMs).toBe(1500)
+    expect(config.memory.privacy).toBe('relaxed')
+    expect(config.memory.recall).toBe('shadow')
+    expect(config.memory.recallTokenBudget).toBe(600)
+    expect(config.memory.recallCoreFacts).toBe(3)
+    expect(config.memory.factMinSimilarity).toBe(0.65)
+    expect(config.memory.serverFactMinSimilarity).toBe(0.65)
     expect(NUMERIC_BOUNDS.map(({ path }) => path)).toEqual(
       expect.arrayContaining([
         'memory.episodeRecallK',
@@ -898,6 +906,10 @@ describe('config module', () => {
       { path: 'memory.mediaMinSimilarity', min: 0, max: 1 },
       { path: 'memory.mediaRetentionDays', min: 1, max: 365 },
       { path: 'memory.embeddingTimeoutMs', min: 1 },
+      { path: 'memory.recallTokenBudget', min: 200, max: 2000 },
+      { path: 'memory.recallCoreFacts', min: 0, max: 5 },
+      { path: 'memory.factMinSimilarity', min: 0, max: 1 },
+      { path: 'memory.serverFactMinSimilarity', min: 0, max: 1 },
       { path: 'metrics.diagnosticsRetentionHours', min: 1 },
       { path: 'metrics.retentionDays', min: 1 },
       { path: 'report.historyMaxAgeMs', min: 0 },
@@ -933,6 +945,38 @@ describe('config module', () => {
 
     await expect(() => import('../config.js')).rejects.toThrow(
       'Environment variable JEV_TONE must be off, shadow or on, got: fast'
+    )
+  })
+
+  it('reads memory privacy and recall mode from env', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('MEMORY_PRIVACY', 'balanced')
+    vi.stubEnv('MEMORY_RECALL', 'unified')
+
+    const { config } = await import('../config.js')
+
+    expect(config.memory.privacy).toBe('balanced')
+    expect(config.memory.recall).toBe('unified')
+  })
+
+  it('throws when the env memory privacy level is invalid and names the env key', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('MEMORY_PRIVACY', 'paranoid')
+
+    await expect(() => import('../config.js')).rejects.toThrow(
+      'Environment variable MEMORY_PRIVACY must be relaxed, balanced, strict or off, got: paranoid'
+    )
+  })
+
+  it('throws when the config recall mode is invalid and names the config key', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    withYamlOverride({ memory: { recall: 'fancy' } })
+
+    await expect(() => import('../config.js')).rejects.toThrow(
+      'Config value memory.recall must be legacy, shadow or unified, got: fancy'
     )
   })
 

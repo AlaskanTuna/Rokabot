@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ExtractionEpisode } from '../../../storage/extractionQueue.js'
 
+const configMock = vi.hoisted(() => ({ memory: { privacy: 'relaxed' } }))
+
 const mocks = vi.hoisted(() => {
   type QueuedJob = {
     id: number
@@ -21,6 +23,7 @@ const mocks = vi.hoisted(() => {
       .mockResolvedValue({ status: 'completed', summary: null, appliedOps: 0, duplicateOps: 0 }),
     persistEpisodeResult: vi.fn().mockResolvedValue(undefined),
     isShuttingDown: vi.fn(() => false),
+    embedPendingFacts: vi.fn().mockResolvedValue({ embedded: 0, failed: 0 }),
     logger: { warn: vi.fn() },
     resetQueue: () => {
       jobs.length = 0
@@ -63,9 +66,11 @@ vi.mock('../../../storage/extractionQueue.js', () => ({
   markDone: mocks.markDone,
   markFailed: mocks.markFailed
 }))
+vi.mock('../../../config.js', () => ({ config: configMock }))
 vi.mock('../../shutdownSignal.js', () => ({ isShuttingDown: mocks.isShuttingDown }))
 vi.mock('../extractor.js', () => ({ runEpisodePipeline: mocks.runEpisodePipeline }))
 vi.mock('../episodePersistence.js', () => ({ persistEpisodeResult: mocks.persistEpisodeResult }))
+vi.mock('../factEmbeddings.js', () => ({ embedPendingFacts: mocks.embedPendingFacts }))
 vi.mock('../../../utils/logger.js', () => ({ logger: mocks.logger }))
 
 import { resetForTest, startExtractionScheduler, stopExtractionScheduler } from '../scheduler.js'
@@ -105,12 +110,16 @@ describe('episode extraction scheduler', () => {
     mocks.markDone.mockClear()
     mocks.markFailed.mockClear()
     mocks.logger.warn.mockClear()
+    mocks.embedPendingFacts.mockClear()
     mocks.isShuttingDown.mockReturnValue(false)
+    mocks.claimNextForGuild.mockClear()
+    configMock.memory.privacy = 'relaxed'
   })
 
   afterEach(() => {
     stopExtractionScheduler()
     vi.useRealTimers()
+    configMock.memory.privacy = 'relaxed'
   })
 
   it('drains queued guilds in deterministic round-robin order', async () => {
@@ -212,6 +221,25 @@ describe('episode extraction scheduler', () => {
     )
   })
 
+  it('embeds pending facts after a job is marked done, and not after a failed job', async () => {
+    enqueue('A', 'facts')
+    startExtractionScheduler()
+    await drain()
+
+    expect(mocks.markDone).toHaveBeenCalledOnce()
+    expect(mocks.embedPendingFacts).toHaveBeenCalledOnce()
+    expect(mocks.embedPendingFacts).toHaveBeenCalledWith({ limit: 20 })
+
+    mocks.embedPendingFacts.mockClear()
+    mocks.runEpisodePipeline.mockRejectedValue(new Error('schema mismatch'))
+    enqueue('A', 'failing facts')
+    startExtractionScheduler()
+    await drain()
+
+    expect(mocks.markFailed).toHaveBeenCalled()
+    expect(mocks.embedPendingFacts).not.toHaveBeenCalled()
+  })
+
   it('does not start work after shutdown or leave a scheduled drain when stopped', async () => {
     enqueue('A', 'shutdown')
     mocks.isShuttingDown.mockReturnValue(true)
@@ -225,5 +253,26 @@ describe('episode extraction scheduler', () => {
     expect(vi.getTimerCount()).toBe(0)
     await drain()
     expect(mocks.runEpisodePipeline).not.toHaveBeenCalled()
+  })
+
+  it('claims no job and calls no extractor while memory is off, and resumes once it is back on', async () => {
+    enqueue('A', 'queued before the switch')
+    configMock.memory.privacy = 'off'
+
+    startExtractionScheduler()
+    await drain()
+
+    expect(mocks.claimNextForGuild).not.toHaveBeenCalled()
+    expect(mocks.runEpisodePipeline).not.toHaveBeenCalled()
+    expect(mocks.markFailed).not.toHaveBeenCalled()
+    expect(mocks.markDone).not.toHaveBeenCalled()
+    expect(mocks.jobs).toEqual([expect.objectContaining({ status: 'pending', attempts: 0 })])
+
+    configMock.memory.privacy = 'relaxed'
+    startExtractionScheduler()
+    await drain()
+
+    expect(mocks.runEpisodePipeline).toHaveBeenCalledOnce()
+    expect(mocks.jobs).toHaveLength(0)
   })
 })
