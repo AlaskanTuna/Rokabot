@@ -691,11 +691,15 @@ export async function prepareTurnMedia(input: {
   }
 
   for (const { attachment, kind } of watchable) {
+    const first = result.watchOutcome === null
     if (config.media.watcher === 'off') {
       noteOutcome(result, { status: 'failed', kind })
       result.mediaTextParts.push(notice(labelFor(attachment, kind), SWITCHED_OFF))
     } else {
       await watchOne(attachment, kind, input, result)
+    }
+    if (first && result.watchOutcome && attachment.origin === 'link') {
+      result.watchOutcome = { ...result.watchOutcome, fromLink: true }
     }
   }
   return result

@@ -668,7 +668,7 @@ describe('remembering watched media in a server', () => {
       })
 
       expect(mocks.watchMedia).not.toHaveBeenCalled()
-      expect(result.watchOutcome).toEqual({ status: 'remembered', kind: 'video' })
+      expect(result.watchOutcome).toEqual({ status: 'remembered', kind: 'video', fromLink: true })
       expect(mocks.recordMediaOccurrence).toHaveBeenCalledWith(
         expect.objectContaining({ digestId: 7, channelId: 'public-channel', sharedByUserId: 'asker-1' })
       )
@@ -713,7 +713,7 @@ describe('remembering watched media in a server', () => {
     const result = await prepareTurnMedia({ ...input([youtube]), memoryScope: scope, geminiUnavailable: true })
 
     expect(result.mediaTextParts[0].text).toContain('A man at a zoo talks about elephants.')
-    expect(result.watchOutcome).toEqual({ status: 'remembered', kind: 'video' })
+    expect(result.watchOutcome).toEqual({ status: 'remembered', kind: 'video', fromLink: true })
   })
 
   it('saves, records and embeds a newly watched item', async () => {
@@ -725,7 +725,13 @@ describe('remembering watched media in a server', () => {
     const result = await prepareTurnMedia({ ...input([youtube]), memoryScope: scope })
     await new Promise((resolve) => setImmediate(resolve))
 
-    expect(result.watchOutcome).toEqual({ status: 'watched', kind: 'video', coverage: 'whole', durationSec: 19 })
+    expect(result.watchOutcome).toEqual({
+      status: 'watched',
+      kind: 'video',
+      coverage: 'whole',
+      durationSec: 19,
+      fromLink: true
+    })
 
     expect(mocks.saveMediaDigest).toHaveBeenCalledWith({
       guildId: 'guild-1',
@@ -1177,7 +1183,8 @@ describe('the qwen watcher', () => {
     expect(result.mediaTextParts).toHaveLength(1)
     expect(result.mediaTextParts[0].text).toContain('4 frames, no sound heard')
     expect(result.mediaTextParts[0].text).not.toContain("couldn't be watched")
-    expect(result.watchOutcome).toMatchObject({ status: 'watched', heard: 'none' })
+    expect(result.watchOutcome).toMatchObject({ status: 'watched' })
+    expect(result.watchOutcome).not.toHaveProperty('fromLink')
     expect(result.watcherCalls).toBe(1)
   })
 
@@ -1318,7 +1325,7 @@ describe('the qwen watcher', () => {
         expect.objectContaining({ signal: expect.any(AbortSignal) })
       )
       expect(mocks.watchFramesWithQwen.mock.calls[0][0]).toMatchObject({ kind: 'video', transcript: speech })
-      expect(result.watchOutcome).toMatchObject({ status: 'watched', heard: 'speech' })
+      expect(result.watchOutcome).toMatchObject({ status: 'watched' })
     })
 
     it('transcribes a YouTube video from its audio stream', async () => {
@@ -1381,7 +1388,7 @@ describe('the qwen watcher', () => {
       const result = await prepareTurnMedia({ ...input([upload]), geminiUnavailable: true })
 
       expect(mocks.watchFramesWithQwen.mock.calls[0][0]).not.toHaveProperty('transcript')
-      expect(result.watchOutcome).toMatchObject({ status: 'watched', heard: 'none' })
+      expect(result.watchOutcome).toMatchObject({ status: 'watched' })
     })
 
     it('remembers a watch that heard the speech', async () => {

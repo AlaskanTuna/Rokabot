@@ -391,7 +391,7 @@ describe('interaction handler metrics', () => {
     )
   })
 
-  it("shows in the /ask reply footer that she couldn't hear the crowd", async () => {
+  it("shows in the /ask reply footer that she couldn't read the replies", async () => {
     mocks.generateResponse.mockImplementationOnce(async () => {
       recordReplyOutcome('failed')
       return {
@@ -408,7 +408,7 @@ describe('interaction handler metrics', () => {
     await createInteractionHandler(rateLimiterStub() as never)(interaction as never)
 
     expect(JSON.stringify(interaction.editReply.mock.calls[0][0].components[0].toJSON())).toContain(
-      "couldn't hear the crowd"
+      "couldn't read the replies"
     )
   })
 
@@ -697,7 +697,7 @@ describe('interaction handler metrics', () => {
     await createInteractionHandler(rateLimiter as never)(interaction as never)
 
     expect(JSON.stringify(interaction.editReply.mock.calls[0][0].components[0].toJSON())).toContain(
-      '-# 🌸 cast the fortune dice'
+      '-# 🌸 cast the dice'
     )
     expect(JSON.stringify(interaction.followUp.mock.calls[0][0].components[0].toJSON())).not.toContain('-# 🌸')
     expect(mocks.recordResponseEvent).toHaveBeenCalledWith(expect.objectContaining({ toolsUsed: ['roll_dice'] }))
