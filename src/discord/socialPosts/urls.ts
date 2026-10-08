@@ -9,6 +9,7 @@ export interface SocialPostTarget {
   canonicalUrl: string
   extractorUrl: string
   profile?: string
+  startSec?: number
 }
 
 const HOSTS: Record<SocialPlatform, string[]> = {
@@ -34,6 +35,18 @@ function platformForHost(host: string): SocialPlatform | null {
 
 function target(platform: SocialPlatform, id: string, canonicalUrl: string, profile?: string): SocialPostTarget {
   return { platform, id, lookupKey: `${platform}:${id}`, canonicalUrl, extractorUrl: canonicalUrl, profile }
+}
+
+const YOUTUBE_CLOCK_TIME = /^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/
+
+function youtubeStartSec(url: URL): number | undefined {
+  const raw = url.searchParams.get('t') ?? url.searchParams.get('start') ?? url.hash.match(/^#t=(.*)$/)?.[1]
+  if (raw === undefined) return undefined
+  if (/^\d+$/.test(raw)) return Number(raw)
+  const match = raw.match(YOUTUBE_CLOCK_TIME)
+  if (!match || match.slice(1).every((part) => part === undefined)) return undefined
+  const [, hours = '0', minutes = '0', seconds = '0'] = match
+  return Number(hours) * 3600 + Number(minutes) * 60 + Number(seconds)
 }
 
 export function parseSocialPostUrl(value: string): SocialPostTarget | null {
@@ -81,7 +94,7 @@ export function parseSocialPostUrl(value: string): SocialPostTarget | null {
         : url.pathname.match(/^\/shorts\/([\w-]+)\/?$/)?.[1]
     if (!id || !/^[\w-]+$/.test(id)) return null
     const canonicalUrl = `https://www.youtube.com/watch?v=${id}`
-    return target('youtube', id, canonicalUrl)
+    return { ...target('youtube', id, canonicalUrl), startSec: youtubeStartSec(url) }
   }
 
   if (platform === 'tiktok') {

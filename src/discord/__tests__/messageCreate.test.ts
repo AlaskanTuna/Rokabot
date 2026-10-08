@@ -97,7 +97,9 @@ function foundSocialPost(imageUrl: string | null = null) {
       videoCount: 0,
       imageUrl,
       externalTitle: '',
-      replyCount: null
+      replyCount: null,
+      durationSec: null,
+      video: null
     }
   }
 }
@@ -898,6 +900,23 @@ describe("reading what the sender's own message shows", () => {
 
     expect(mocks.resolveMediaUrl).not.toHaveBeenCalled()
     expect(result.imageAttachments).toEqual([{ url: youtube.canonicalUrl, contentType: 'video/mp4', transport: 'uri' }])
+  })
+
+  it('watches a linked X video instead of looking at its thumbnail', async () => {
+    const found = foundSocialPost('https://pbs.twimg.com/thumb.jpg')
+    const video = { url: 'https://video.twimg.com/vid/240x240/a.mp4', bytes: null, headers: null, hasAudio: null }
+    mocks.beginSocialPostLookup.mockResolvedValueOnce({
+      ...found,
+      post: { ...found.post, videoCount: 1, durationSec: 15.474, video }
+    })
+    mocks.resolveMediaUrl.mockResolvedValueOnce({ url: video.url, contentType: 'video/mp4', size: 334_617 })
+    const { message } = createMessage({ content: '<@bot-1> what happens? https://x.com/roka/status/123' })
+
+    const result = await handle(message)
+
+    expect(result.imageAttachments).toEqual([
+      { url: video.url, contentType: 'video/mp4', size: 334_617, durationSec: 15.474 }
+    ])
   })
 
   it('keeps a user attachment ahead of the social post image', async () => {

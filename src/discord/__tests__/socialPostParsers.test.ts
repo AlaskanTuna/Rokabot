@@ -15,6 +15,15 @@ const fxTwitterFixture = JSON.parse(
 const blueskyFixture = JSON.parse(
   readFileSync(new URL('../../../tests/fixtures/social/bluesky-thread.json', import.meta.url), 'utf8')
 )
+const fxTwitterVideoFixture = JSON.parse(
+  readFileSync(new URL('../../../tests/fixtures/social/fxtwitter-video.json', import.meta.url), 'utf8')
+)
+const redditVideoFixture = JSON.parse(
+  readFileSync(new URL('../../../tests/fixtures/social/reddit-video.json', import.meta.url), 'utf8')
+)
+const blueskyVideoFixture = JSON.parse(
+  readFileSync(new URL('../../../tests/fixtures/social/bluesky-video-thread.json', import.meta.url), 'utf8')
+)
 
 const xTarget: SocialPostTarget = {
   platform: 'x',
@@ -77,7 +86,7 @@ describe('social post parsers', () => {
   })
 
   it('normalizes a recorded Bluesky thread and external card', () => {
-    expect(parseBlueskyThread(blueskyFixture, blueskyTarget, 300)).toMatchObject({
+    expect(parseBlueskyThread(blueskyFixture, blueskyTarget, 300)?.post).toMatchObject({
       platform: 'bluesky',
       id: '3mx7uc3l6i22k',
       authorHandle: 'atproto.com',
@@ -130,8 +139,175 @@ describe('social post parsers', () => {
       100
     )
 
-    expect(images).toMatchObject({ imageUrl: 'https://cdn.bsky.app/img/one', quotedText: 'quoted bsky post' })
-    expect(video).toMatchObject({ imageUrl: 'https://cdn.bsky.app/video-cover', videoCount: 1 })
+    expect(images?.post).toMatchObject({ imageUrl: 'https://cdn.bsky.app/img/one', quotedText: 'quoted bsky post' })
+    expect(video?.post).toMatchObject({ imageUrl: 'https://cdn.bsky.app/video-cover', videoCount: 1 })
+  })
+
+  it('selects the lowest bitrate MP4 variant from FxTwitter', () => {
+    expect(parseFxTwitterResponse(fxTwitterVideoFixture, xTarget, 300)).toMatchObject({
+      durationSec: 15.474,
+      video: {
+        url: 'https://video.twimg.com/amplify_video/820082508054179840/vid/240x240/b6ImBrQddohap5-6.mp4',
+        bytes: null,
+        headers: null,
+        hasAudio: null
+      }
+    })
+  })
+
+  it('falls back from unusable FxTwitter variants to formats and then the primary URL', () => {
+    const formats = parseFxTwitterResponse(
+      {
+        tweet: {
+          media: {
+            videos: [
+              {
+                variants: [{ url: 'https://media.example/playlist.m3u8', content_type: 'application/x-mpegURL' }],
+                formats: [{ url: 'https://media.example/formats.mp4', container: 'mp4', bitrate: 10 }],
+                url: 'https://media.example/primary.mp4',
+                format: 'video/mp4'
+              }
+            ]
+          }
+        }
+      },
+      xTarget,
+      100
+    )
+    const primary = parseFxTwitterResponse(
+      {
+        tweet: {
+          media: {
+            videos: [
+              {
+                variants: [{ url: 'https://media.example/playlist.m3u8', content_type: 'application/x-mpegURL' }],
+                url: 'https://media.example/primary.mp4',
+                format: 'video/mp4'
+              }
+            ]
+          }
+        }
+      },
+      xTarget,
+      100
+    )
+
+    expect(formats.video?.url).toBe('https://media.example/formats.mp4')
+    expect(primary.video?.url).toBe('https://media.example/primary.mp4')
+  })
+
+  it('selects the smallest supported Reddit video-only MP4 by bitrate', () => {
+    const reddit = parseSocialPostUrl('https://www.reddit.com/r/videos/comments/abc123/a_post/')!
+    const post = parseYtDlpMetadata(redditVideoFixture, reddit, 300)
+
+    expect(post).toMatchObject({
+      durationSec: 12,
+      video: {
+        url: 'https://v.redd.it/zv89llsvexdz/DASH_600_K',
+        bytes: null,
+        headers: { 'User-Agent': 'Mozilla/5.0', Accept: '*/*' },
+        hasAudio: false
+      }
+    })
+    expect(post.video?.url).not.toContain('.m3u8')
+  })
+
+  it('prefers a muxed yt-dlp MP4 over a smaller video-only MP4', () => {
+    const youtube = parseSocialPostUrl('https://youtu.be/abcdefghijk')!
+    const post = parseYtDlpMetadata(
+      {
+        title: 'Video',
+        duration: 20,
+        formats: [
+          {
+            url: 'https://media.example/silent.mp4',
+            ext: 'mp4',
+            protocol: 'https',
+            vcodec: 'h264',
+            acodec: 'none',
+            filesize: 100,
+            tbr: 200
+          },
+          {
+            url: 'https://media.example/muxed.mp4',
+            ext: 'mp4',
+            protocol: 'https',
+            vcodec: 'h264',
+            acodec: 'aac',
+            filesize: 200,
+            tbr: 400
+          }
+        ]
+      },
+      youtube,
+      100
+    )
+
+    expect(post.video).toMatchObject({ url: 'https://media.example/muxed.mp4', bytes: 200, hasAudio: true })
+  })
+
+  it('keeps approximate yt-dlp sizes and unknown audio status', () => {
+    const youtube = parseSocialPostUrl('https://youtu.be/abcdefghijk')!
+    const post = parseYtDlpMetadata(
+      {
+        title: 'Video',
+        formats: [
+          {
+            url: 'https://media.example/video.mp4',
+            ext: 'mp4',
+            protocol: 'https',
+            vcodec: 'h264',
+            filesize_approx: 250,
+            tbr: 100
+          }
+        ]
+      },
+      youtube,
+      100
+    )
+
+    expect(post.video).toMatchObject({ url: 'https://media.example/video.mp4', bytes: 250, hasAudio: null })
+  })
+
+  it('leaves YouTube oEmbed duration and video unknown', () => {
+    const youtube = parseSocialPostUrl('https://youtu.be/abcdefghijk')!
+
+    expect(parseYouTubeOEmbed({ title: 'Video' }, youtube, 100)).toMatchObject({ durationSec: null, video: null })
+  })
+
+  it('returns a Bluesky video blob for PDS resolution without putting it on the post', () => {
+    const parsed = parseBlueskyThread(blueskyVideoFixture, blueskyTarget, 300)
+
+    expect(parsed).toMatchObject({
+      post: { videoCount: 1, durationSec: null, video: null },
+      blueskyBlob: {
+        did: 'did:plc:z72i7hdynmk6r22z27h6tvur',
+        cid: 'bafkreifhuv36ji7vcq3tmdjltceyrfaat6vdccn2pklxf7j7dgsobdlgbm',
+        bytes: 956983
+      }
+    })
+    expect(parsed?.post).not.toHaveProperty('blueskyBlob')
+  })
+
+  it('reads a Bluesky video blob inside a recordWithMedia embed', () => {
+    const record = blueskyVideoFixture.thread.post.record
+    const parsed = parseBlueskyThread(
+      {
+        thread: {
+          post: {
+            ...blueskyVideoFixture.thread.post,
+            record: {
+              ...record,
+              embed: { $type: 'app.bsky.embed.recordWithMedia', media: { video: record.embed.video } }
+            }
+          }
+        }
+      },
+      blueskyTarget,
+      300
+    )
+
+    expect(parsed?.blueskyBlob?.cid).toBe('bafkreifhuv36ji7vcq3tmdjltceyrfaat6vdccn2pklxf7j7dgsobdlgbm')
   })
 
   it('tolerates missing response fields and truncates post text', () => {
@@ -151,7 +327,7 @@ describe('social post parsers', () => {
     expect(parseFxTwitterResponse({ tweet: { replies: 193 } }, xTarget, 100).replyCount).toBe(193)
     expect(
       parseBlueskyThread({ thread: { post: { ...blueskyFixture.thread.post, replyCount: 4 } } }, blueskyTarget, 100)
-        ?.replyCount
+        ?.post.replyCount
     ).toBe(4)
     expect(parseYtDlpMetadata({ title: 'Video', comment_count: 0 }, youtube, 100).replyCount).toBe(0)
   })
@@ -160,7 +336,7 @@ describe('social post parsers', () => {
     const youtube = parseSocialPostUrl('https://youtu.be/abcdefghijk')!
 
     expect(parseFxTwitterResponse({ tweet: {} }, xTarget, 100).replyCount).toBeNull()
-    expect(parseBlueskyThread(blueskyFixture, blueskyTarget, 100)?.replyCount).toBeNull()
+    expect(parseBlueskyThread(blueskyFixture, blueskyTarget, 100)?.post.replyCount).toBeNull()
     expect(parseYtDlpMetadata({ title: 'Video' }, youtube, 100).replyCount).toBeNull()
     expect(parseYouTubeOEmbed({ title: 'Video' }, youtube, 100)?.replyCount).toBeNull()
   })

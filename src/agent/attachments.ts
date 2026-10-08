@@ -15,6 +15,10 @@ export interface ImageAttachment {
   transport?: 'uri'
   /** Seconds, when the source states them. Discord does for a voice message. */
   durationSec?: number
+  /** Where to start watching, from a timestamp on the link. */
+  startSec?: number
+  /** The file is known to carry no sound track. */
+  silent?: boolean
 }
 
 // Bounds stalled attachment hosts as well as oversized responses.

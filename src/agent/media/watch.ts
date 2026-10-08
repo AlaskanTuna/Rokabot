@@ -12,7 +12,7 @@ import { MEDIA_OBSERVATIONS_SCHEMA, formatClock, validateObservations } from './
 import type { CoveragePlan, MediaClip, MediaDigest, MediaKind } from './types.js'
 
 export type WatchSource =
-  | { transport: 'inline'; kind: MediaKind; mimeType: string; data: string; label: string }
+  | { transport: 'inline'; kind: MediaKind; mimeType: string; data: string; label: string; silent?: boolean }
   | { transport: 'uri'; kind: 'video'; fileUri: string; mimeType: 'video/mp4'; label: string }
 
 export type WatchResult =
@@ -58,7 +58,7 @@ function instructions(bins: MediaClip[], focus: string, opening: boolean): strin
 
 function requestFor(input: {
   source: WatchSource
-  plan: Extract<CoveragePlan, { mode: 'whole' | 'skim' }>
+  plan: Extract<CoveragePlan, { mode: 'whole' | 'skim' | 'focus' }>
   focus: string
   signal?: AbortSignal
   opening: boolean
@@ -155,7 +155,7 @@ function elapsedSince(startedAt: number): number {
 
 export async function watchMedia(input: {
   source: WatchSource
-  plan: Extract<CoveragePlan, { mode: 'whole' | 'skim' }>
+  plan: Extract<CoveragePlan, { mode: 'whole' | 'skim' | 'focus' }>
   /** The user's message, passed as untrusted focus context. */
   focus: string
   signal?: AbortSignal
@@ -202,6 +202,8 @@ export async function watchMedia(input: {
         durationSec: input.plan.durationSec,
         mode: input.opening ? 'opening' : input.plan.mode,
         fps: input.plan.mode === 'whole' ? input.plan.fps : null,
+        ...(input.plan.mode === 'focus' ? { focusSec: input.plan.centerSec } : {}),
+        ...(input.source.transport === 'inline' && input.source.silent ? { silent: true } : {}),
         bins: input.plan.bins,
         observations: validated.observations,
         incomplete: validated.incomplete

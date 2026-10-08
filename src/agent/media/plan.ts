@@ -64,3 +64,21 @@ export function planCoverage(input: {
   if (estimate > budgetTokens) return { mode: 'decline', kind, durationSec, reason: 'too_long' }
   return { mode: 'skim', kind: 'video', durationSec, clips, estimate, bins: clips }
 }
+
+// A timestamp on a link points at a moment, so the watch spends its budget densely around it rather than
+// thinly across the whole video.
+const FOCUS_BEFORE_SEC = 30
+const FOCUS_AFTER_SEC = 90
+
+export function planFocus(input: { durationSec: number; startSec: number; budgetTokens: number }): CoveragePlan {
+  const { durationSec, budgetTokens } = input
+  const centerSec = Math.min(Math.max(0, input.startSec), durationSec)
+  const clip = {
+    startSec: Math.round(Math.max(0, centerSec - FOCUS_BEFORE_SEC)),
+    endSec: Math.round(Math.min(durationSec, centerSec + FOCUS_AFTER_SEC))
+  }
+  const length = clip.endSec - clip.startSec
+  const estimate = estimateMediaTokens({ frames: Math.ceil(length), audioSec: length, parts: 1 })
+  if (length <= 0 || estimate > budgetTokens) return { mode: 'decline', kind: 'video', durationSec, reason: 'too_long' }
+  return { mode: 'focus', kind: 'video', durationSec, centerSec, clips: [clip], estimate, bins: [clip] }
+}

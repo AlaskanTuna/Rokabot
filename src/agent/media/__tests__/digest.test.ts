@@ -248,3 +248,19 @@ describe('renderCompactDigest', () => {
     expect(rendered).not.toMatch(/[\r\n]/)
   })
 })
+
+describe('focus and silent coverage lines', () => {
+  it('says where a focused watch looked', () => {
+    expect(
+      coverageLine(
+        digest({ mode: 'focus', fps: null, durationSec: 1200, focusSec: 754, bins: [{ startSec: 724, endSec: 844 }] })
+      )
+    ).toBe('around 12:34: watched 12:04–14:04')
+  })
+
+  it('says a silent video had no sound', () => {
+    expect(coverageLine(digest({ mode: 'whole', fps: 1, durationSec: 12, silent: true }))).toBe(
+      'whole video, 0:12, a frame every second, no sound'
+    )
+  })
+})

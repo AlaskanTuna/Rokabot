@@ -1,5 +1,15 @@
 import type { SocialPlatform, SocialPostTarget } from './urls.js'
 
+export interface PlayableVideo {
+  url: string
+  /** Exact or declared byte size when known. */
+  bytes: number | null
+  /** Request headers the host requires (yt-dlp `http_headers`), else null. */
+  headers: Record<string, string> | null
+  /** true = has a sound track, false = known silent/video-only, null = unknown. */
+  hasAudio: boolean | null
+}
+
 export interface SocialPost {
   platform: SocialPlatform
   id: string
@@ -16,6 +26,8 @@ export interface SocialPost {
   imageUrl: string | null
   externalTitle: string
   replyCount: number | null
+  durationSec: number | null
+  video: PlayableVideo | null
 }
 
 export type SocialPostLookup =

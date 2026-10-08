@@ -1,5 +1,6 @@
 import type { SocialPost } from './types.js'
 import type { SocialPostTarget } from './urls.js'
+import { type VideoCandidate, selectPlayableVideo } from './videoVariant.js'
 
 type JsonObject = Record<string, unknown>
 
@@ -34,6 +35,27 @@ function nonNegativeInteger(value: unknown): number | null {
   return Number.isInteger(value) && (value as number) >= 0 ? (value as number) : null
 }
 
+function finiteNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function positiveFiniteNumber(value: unknown): number | null {
+  const number = finiteNumber(value)
+  return number !== null && number > 0 ? number : null
+}
+
+function nonNegativeFiniteNumber(value: unknown): number | null {
+  const number = finiteNumber(value)
+  return number !== null && number >= 0 ? number : null
+}
+
+function headers(value: unknown): Record<string, string> | null {
+  const entries = Object.entries(object(value)).filter(
+    (entry): entry is [string, string] => typeof entry[1] === 'string'
+  )
+  return entries.length ? Object.fromEntries(entries) : null
+}
+
 function date(value: unknown): string | null {
   const input = string(value)
   const parsed = /^\d{8}$/.test(input)
@@ -63,7 +85,9 @@ function base(target: SocialPostTarget): SocialPost {
     videoCount: 0,
     imageUrl: null,
     externalTitle: '',
-    replyCount: null
+    replyCount: null,
+    durationSec: null,
+    video: null
   }
 }
 
@@ -88,6 +112,46 @@ export function parseFxTwitterResponse(payload: unknown, target: SocialPostTarge
   post.videoCount = videos.length
   post.imageUrl = imageUrl(firstPhoto.url) ?? imageUrl(firstVideo.thumbnail_url)
   post.replyCount = nonNegativeInteger(tweet.replies)
+  post.durationSec = positiveFiniteNumber(firstVideo.duration)
+
+  const variants = array(firstVideo.variants).map((value): VideoCandidate => {
+    const variant = object(value)
+    const contentType = string(variant.content_type).toLowerCase()
+    return {
+      url: string(variant.url),
+      container: contentType === 'video/mp4' ? 'mp4' : contentType === 'application/x-mpegurl' ? 'm3u8' : null,
+      protocol: null,
+      hasVideo: true,
+      hasAudio: null,
+      bytes: null,
+      bitrate: finiteNumber(variant.bitrate),
+      headers: null
+    }
+  })
+  const formats = array(firstVideo.formats).map((value): VideoCandidate => {
+    const format = object(value)
+    return {
+      url: string(format.url),
+      container: typeof format.container === 'string' ? format.container : null,
+      protocol: null,
+      hasVideo: true,
+      hasAudio: null,
+      bytes: null,
+      bitrate: finiteNumber(format.bitrate),
+      headers: null
+    }
+  })
+  const fallback: VideoCandidate = {
+    url: string(firstVideo.url),
+    container: firstVideo.format === 'video/mp4' ? 'mp4' : null,
+    protocol: null,
+    hasVideo: true,
+    hasAudio: null,
+    bytes: null,
+    bitrate: null,
+    headers: null
+  }
+  post.video = selectPlayableVideo(variants) ?? selectPlayableVideo(formats) ?? selectPlayableVideo([fallback])
   return post
 }
 
@@ -99,11 +163,30 @@ function blueskyQuote(embed: JsonObject): { text: string; author: string } {
   return { text: string(value.text), author: string(author.handle) }
 }
 
+export interface BlueskyBlob {
+  did: string
+  cid: string
+  bytes: number | null
+}
+
+export interface ParsedBlueskyThread {
+  post: SocialPost
+  blueskyBlob?: BlueskyBlob
+}
+
+function blueskyBlob(record: JsonObject, did: string): BlueskyBlob | undefined {
+  const embed = object(record.embed)
+  const video = object(embed.video ?? object(embed.media).video)
+  const cid = string(object(video.ref).$link)
+  if (string(video.mimeType) !== 'video/mp4' || !did || !cid) return undefined
+  return { did, cid, bytes: nonNegativeInteger(video.size) }
+}
+
 export function parseBlueskyThread(
   payload: unknown,
   target: SocialPostTarget,
   maxTextChars: number
-): SocialPost | null {
+): ParsedBlueskyThread | null {
   const thread = object(object(payload).thread)
   const postView = object(thread.post)
   const record = object(postView.record)
@@ -129,7 +212,8 @@ export function parseBlueskyThread(
   post.externalTitle = string(external.title)
   post.imageUrl = imageUrl(firstImage.fullsize) ?? imageUrl(videos[0]?.thumbnail) ?? imageUrl(external.thumb)
   post.replyCount = nonNegativeInteger(postView.replyCount)
-  return post
+  const blob = blueskyBlob(record, string(author.did))
+  return blob ? { post, blueskyBlob: blob } : { post }
 }
 
 export function parseYouTubeOEmbed(
@@ -165,5 +249,22 @@ export function parseYtDlpMetadata(payload: unknown, target: SocialPostTarget, m
   post.photoCount = target.platform === 'instagram' ? 1 : 0
   post.videoCount = typeof data.duration === 'number' ? 1 : 0
   post.replyCount = nonNegativeInteger(data.comment_count)
+  post.durationSec = positiveFiniteNumber(data.duration)
+  const formats = array(data.formats).map((value): VideoCandidate => {
+    const format = object(value)
+    const videoCodec = string(format.vcodec)
+    const audioCodec = string(format.acodec)
+    return {
+      url: string(format.url),
+      container: typeof format.ext === 'string' ? format.ext : null,
+      protocol: typeof format.protocol === 'string' ? format.protocol : null,
+      hasVideo: videoCodec !== '' && videoCodec !== 'none',
+      hasAudio: audioCodec === '' ? null : audioCodec !== 'none',
+      bytes: nonNegativeFiniteNumber(format.filesize ?? format.filesize_approx),
+      bitrate: finiteNumber(format.tbr),
+      headers: headers(format.http_headers)
+    }
+  })
+  post.video = selectPlayableVideo(formats)
   return post
 }
