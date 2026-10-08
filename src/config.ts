@@ -318,8 +318,8 @@ export const config = {
     recall: memoryEnum('recall', 'MEMORY_RECALL', ['legacy', 'shadow', 'unified'], 'shadow'),
     recallTokenBudget: yaml.memory?.recallTokenBudget ?? 600,
     recallCoreFacts: yaml.memory?.recallCoreFacts ?? 3,
-    factMinSimilarity: yaml.memory?.factMinSimilarity ?? 0.6,
-    serverFactMinSimilarity: yaml.memory?.serverFactMinSimilarity ?? 0.6,
+    factMinSimilarity: yaml.memory?.factMinSimilarity ?? 0.65,
+    serverFactMinSimilarity: yaml.memory?.serverFactMinSimilarity ?? 0.65,
     vaultExportDir: envString('MEMORY_VAULT_EXPORT_DIR') ?? yaml.memory?.vaultExportDir ?? 'data/vault'
   },
   metrics: {

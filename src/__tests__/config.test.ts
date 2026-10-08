@@ -323,8 +323,8 @@ describe('config module', () => {
     expect(config.memory.recall).toBe('shadow')
     expect(config.memory.recallTokenBudget).toBe(600)
     expect(config.memory.recallCoreFacts).toBe(3)
-    expect(config.memory.factMinSimilarity).toBe(0.6)
-    expect(config.memory.serverFactMinSimilarity).toBe(0.6)
+    expect(config.memory.factMinSimilarity).toBe(0.65)
+    expect(config.memory.serverFactMinSimilarity).toBe(0.65)
     expect(NUMERIC_BOUNDS.map(({ path }) => path)).toEqual(
       expect.arrayContaining([
         'memory.episodeRecallK',
