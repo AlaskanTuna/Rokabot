@@ -24,8 +24,19 @@ export interface MediaObservations {
   timeline: Array<{ bin: number; visual: string; audio: string }>
   speech: Array<{ bin: number; speaker: string | null; quote: string }>
   onScreenText: Array<{ bin: number; text: string }>
+  /** What a viewer would bring up afterwards. Absent from notes saved before it existed. */
+  moments?: Array<{ bin: number; note: string }>
+  /** How it is made: format, editing, pacing, sound, tone. Absent from notes saved before it existed. */
+  style?: string
   uncertainties: string[]
 }
+
+/** What the turn's first audio or video item came to, for the reply footer. */
+export type WatchOutcome =
+  | { status: 'watched'; kind: MediaKind; coverage: 'whole'; durationSec: number }
+  | { status: 'watched'; kind: MediaKind; coverage: 'part'; startSec: number; endSec: number }
+  | { status: 'watched'; kind: MediaKind; coverage: 'skim' }
+  | { status: 'remembered' | 'failed'; kind: MediaKind }
 
 export interface MediaDigest {
   kind: MediaKind

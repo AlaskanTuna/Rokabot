@@ -84,6 +84,21 @@ describe('harness token measurement', () => {
     )
   })
 
+  // Watched-video replies read like guesses from the title: one paraphrased line, then teasing.
+  it('keeps the watched-turn rule that opens with specific moments from the watch', () => {
+    expect(CORE_PROMPT).toContain("### When You've Watched Something")
+    expect(CORE_PROMPT).toContain('anchor at least two of them to the moment they happen')
+    expect(CORE_PROMPT).toContain('Never build the answer from the title, description or thumbnail')
+  })
+
+  it('keeps the rule that an unwatched video is admitted in the first sentence, not guessed at', () => {
+    expect(CORE_PROMPT).toContain("couldn't be watched or opened, say so in your first sentence")
+  })
+
+  it('keeps the speech quotas from adding a second paragraph on a watched turn too', () => {
+    expect(SPEECH_PROMPT).toContain('On a turn where you used `search_web` or watched media')
+  })
+
   it('keeps web search exempt from the weave-results-into-personality rule (issue #94)', () => {
     expect(CORE_PROMPT).toContain('Web search results are the exception: lead with the finding, then react.')
   })

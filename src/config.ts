@@ -437,9 +437,9 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'session.windowSize', value: config.session.windowSize, min: 1 },
   { path: 'session.maxRehydrationAge', value: config.session.maxRehydrationAge, min: 0 },
   { path: 'session.historyRetentionDays', value: config.session.historyRetentionDays, min: 1 },
-  // 4000 (Components V2 shared TextDisplay budget) − MAX_TOOL_FOOTER_CHARS (128, derived in
-  // src/discord/messageBuilder.ts) = 3872; this bot never sends via content.
-  { path: 'discord.maxMessageLength', value: config.discord.maxMessageLength, min: 1, max: 3872 },
+  // 4000 (Components V2 shared TextDisplay budget) − MAX_TOOL_FOOTER_CHARS (137, derived in
+  // src/discord/messageBuilder.ts) = 3863; this bot never sends via content.
+  { path: 'discord.maxMessageLength', value: config.discord.maxMessageLength, min: 1, max: 3863 },
   // min is the largest a single turn can be (MAX_ATTACHMENTS x MAX_DOCUMENT_SIZE_BYTES): below that, a
   // full-sized turn could never be admitted even on an idle bot, so it would be refused forever rather
   // than merely delayed. Asserted from the constants themselves in the byteBudget tests.

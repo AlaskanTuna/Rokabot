@@ -4,6 +4,7 @@ vi.mock('../expressions.js', () => ({
   getExpressionUrl: () => 'https://example.test/roka.png'
 }))
 
+import type { WatchOutcome } from '../../agent/media/types.js'
 import type { ReplyOutcome } from '../../agent/replyOutcomes.js'
 import { MAX_TOOL_FOOTER_CHARS, TEXT_DISPLAY_BUDGET, buildRokaMessage, buildToolFooter } from '../messageBuilder.js'
 import type { SocialPost, SocialPostLookup } from '../socialPosts/types.js'
@@ -14,10 +15,11 @@ function payloadJson(
   toolsUsed?: string[],
   sources?: Array<{ url: string }>,
   socialPost?: SocialPostLookup,
-  replyOutcome?: ReplyOutcome
+  replyOutcome?: ReplyOutcome,
+  watchOutcome?: WatchOutcome
 ) {
   return JSON.stringify(
-    buildRokaMessage(text, 'playful', toolsUsed, sources, socialPost, replyOutcome).components[0].toJSON()
+    buildRokaMessage(text, 'playful', toolsUsed, sources, socialPost, replyOutcome, watchOutcome).components[0].toJSON()
   )
 }
 
@@ -27,7 +29,8 @@ function renderedChars(
   toolsUsed?: string[],
   sources?: Array<{ url: string }>,
   socialPost?: SocialPostLookup,
-  replyOutcome?: ReplyOutcome
+  replyOutcome?: ReplyOutcome,
+  watchOutcome?: WatchOutcome
 ) {
   const container = buildRokaMessage(
     text,
@@ -35,7 +38,8 @@ function renderedChars(
     toolsUsed,
     sources,
     socialPost,
-    replyOutcome
+    replyOutcome,
+    watchOutcome
   ).components[0].toJSON() as {
     components: Array<{ content?: string; components?: Array<{ content?: string }> }>
   }
@@ -100,14 +104,20 @@ const TOOL_NAMES = [
 describe('tool footer budget', () => {
   // buildToolFooter takes labels, not tool names, so the labels are read back out of a rendered footer
   // rather than restated here — a copy would drift the moment a label is reworded.
-  function labelFor(toolName: string, socialPost?: SocialPostLookup, replyOutcome?: ReplyOutcome): string {
+  function labelFor(
+    toolName: string,
+    socialPost?: SocialPostLookup,
+    replyOutcome?: ReplyOutcome,
+    watchOutcome?: WatchOutcome
+  ): string {
     const container = buildRokaMessage(
       'x',
       'playful',
       toolName ? [toolName] : [],
       [],
       socialPost,
-      replyOutcome
+      replyOutcome,
+      watchOutcome
     ).components[0].toJSON() as {
       components: Array<{ content?: string; components?: Array<{ content?: string }> }>
     }
@@ -128,6 +138,19 @@ describe('tool footer budget', () => {
   // A turn opens at most one linked post, and its label leads the footer ahead of the tools.
   const POST_LABELS = SOCIAL_POST_OUTCOMES.map((socialPost) => labelFor('', socialPost))
   const REPLY_OUTCOMES: ReplyOutcome[] = ['none', 'found', 'failed']
+  // One watched item per turn leads the footer too. Clock times are the variable part, so the samples take the
+  // longest a label prints (9:59:59; later times are left out of the label) alongside every fixed wording.
+  const LONGEST_CLOCK = 35_999
+  const WATCH_OUTCOMES: Array<WatchOutcome | undefined> = [
+    undefined,
+    ...(['video', 'audio'] as const).flatMap((kind): WatchOutcome[] => [
+      { status: 'watched', kind, coverage: 'whole', durationSec: LONGEST_CLOCK },
+      { status: 'watched', kind, coverage: 'part', startSec: LONGEST_CLOCK, endSec: LONGEST_CLOCK },
+      { status: 'watched', kind, coverage: 'skim' },
+      { status: 'remembered', kind },
+      { status: 'failed', kind }
+    ])
+  ]
 
   /**
    * Longest footer over every distinct ordered selection, plus a tool selection that achieves it. Distinct
@@ -141,31 +164,37 @@ describe('tool footer budget', () => {
     names: string[]
     socialPost?: SocialPostLookup
     replyOutcome?: ReplyOutcome
+    watchOutcome?: WatchOutcome
   } {
     let worst: {
       chars: number
       names: string[]
       socialPost?: SocialPostLookup
       replyOutcome?: ReplyOutcome
+      watchOutcome?: WatchOutcome
     } = { chars: 0, names: [] }
+    const watchLeads = WATCH_OUTCOMES.map((watch) => (watch ? [labelFor('', undefined, undefined, watch)] : []))
     for (let post = -1; post < POST_LABELS.length; post++) {
       const postLead = post < 0 ? [] : [POST_LABELS[post]]
       for (const outcome of REPLY_OUTCOMES) {
-        const lead = [...postLead, ...(outcome === 'none' ? [] : [labelFor('', undefined, outcome)])]
-        for (let i = 0; i < LABELS.length; i++) {
-          for (let j = 0; j < LABELS.length; j++) {
-            for (let k = 0; k < LABELS.length; k++) {
-              if (i === j || j === k || i === k) continue
-              const spare = TOOL_NAMES.findIndex((_, index) => index !== i && index !== j && index !== k)
-              for (const overflow of [[], [spare]]) {
-                const picked = [i, j, k, ...overflow]
-                const chars = buildToolFooter([...lead, ...picked.map((index) => LABELS[index])], EPOCH).length
-                if (chars > worst.chars) {
-                  worst = {
-                    chars,
-                    names: picked.map((index) => TOOL_NAMES[index]),
-                    socialPost: post < 0 ? undefined : SOCIAL_POST_OUTCOMES[post],
-                    replyOutcome: outcome === 'none' ? undefined : outcome
+        for (const [watchIndex, watchLead] of watchLeads.entries()) {
+          const lead = [...postLead, ...watchLead, ...(outcome === 'none' ? [] : [labelFor('', undefined, outcome)])]
+          for (let i = 0; i < LABELS.length; i++) {
+            for (let j = 0; j < LABELS.length; j++) {
+              for (let k = 0; k < LABELS.length; k++) {
+                if (i === j || j === k || i === k) continue
+                const spare = TOOL_NAMES.findIndex((_, index) => index !== i && index !== j && index !== k)
+                for (const overflow of [[], [spare]]) {
+                  const picked = [i, j, k, ...overflow]
+                  const chars = buildToolFooter([...lead, ...picked.map((index) => LABELS[index])], EPOCH).length
+                  if (chars > worst.chars) {
+                    worst = {
+                      chars,
+                      names: picked.map((index) => TOOL_NAMES[index]),
+                      socialPost: post < 0 ? undefined : SOCIAL_POST_OUTCOMES[post],
+                      replyOutcome: outcome === 'none' ? undefined : outcome,
+                      watchOutcome: WATCH_OUTCOMES[watchIndex]
+                    }
                   }
                 }
               }
@@ -192,12 +221,15 @@ describe('tool footer budget', () => {
   it('keeps the rendered message within the budget for the worst tool selection at the ceiling', () => {
     const ceiling = TEXT_DISPLAY_BUDGET - MAX_TOOL_FOOTER_CHARS
     const sources = [{ url: 'https://www.crunchyroll.com/news/a' }, { url: 'https://vndb.org/b' }]
-    const { names: heaviest, socialPost, replyOutcome } = worstDistinctFooter()
+    const { names: heaviest, socialPost, replyOutcome, watchOutcome } = worstDistinctFooter()
     const selections = [[], TOOL_NAMES.slice(0, 1), TOOL_NAMES.slice(0, 2), heaviest.slice(0, 3), heaviest]
     let worst = 0
     for (const selection of selections) {
       for (let length = ceiling - 120; length <= ceiling; length++) {
-        worst = Math.max(worst, renderedChars('x'.repeat(length), selection, sources, socialPost, replyOutcome))
+        worst = Math.max(
+          worst,
+          renderedChars('x'.repeat(length), selection, sources, socialPost, replyOutcome, watchOutcome)
+        )
       }
     }
 
@@ -316,6 +348,53 @@ describe('buildRokaMessage reply outcomes', () => {
   })
 })
 
+// The footer is where a reader checks whether she really watched what she talks about, and how much of it.
+describe('buildRokaMessage watch outcomes', () => {
+  it.each<[WatchOutcome, string]>([
+    [{ status: 'watched', kind: 'video', coverage: 'whole', durationSec: 186 }, 'watched the whole video (3:06)'],
+    [
+      { status: 'watched', kind: 'video', coverage: 'part', startSec: 653, endSec: 1306 },
+      'watched 10:53–21:46 of the video'
+    ],
+    [{ status: 'watched', kind: 'video', coverage: 'skim' }, 'skimmed the video in clips'],
+    [{ status: 'watched', kind: 'audio', coverage: 'whole', durationSec: 45 }, 'heard the whole clip (0:45)'],
+    [{ status: 'remembered', kind: 'video' }, 'remembered watching this video'],
+    [{ status: 'failed', kind: 'video' }, "couldn't watch the video"],
+    [{ status: 'failed', kind: 'audio' }, "couldn't hear the clip"]
+  ])('labels %j as "%s"', (outcome, label) => {
+    expect(payloadJson('Mou~', [], [], undefined, undefined, outcome)).toContain(footerWithoutTimestamp([label]))
+  })
+
+  it('leaves times out of a label past 9:59:59 so the footer budget holds', () => {
+    expect(
+      payloadJson('Mou~', [], [], undefined, undefined, {
+        status: 'watched',
+        kind: 'video',
+        coverage: 'part',
+        startSec: 36_000,
+        endSec: 36_120
+      })
+    ).toContain(footerWithoutTimestamp(['watched part of the video']))
+  })
+
+  it('puts the watch label after the post label and before the replies label', () => {
+    expect(
+      payloadJson('Hm~', ['search_web'], [], foundPost('https://x.com/roka/status/123'), 'found', {
+        status: 'failed',
+        kind: 'video'
+      })
+    ).toContain(
+      footerWithoutTimestamp(['peeked at the X post', "couldn't watch the video", "heard the crowd's chatter"])
+    )
+  })
+
+  it('renders byte-identically when nothing was watched', () => {
+    expect(payloadJson('Tea~', ['roll_dice'], [], undefined, undefined, undefined)).toBe(
+      payloadJson('Tea~', ['roll_dice'])
+    )
+  })
+})
+
 describe('buildRokaMessage', () => {
   it.each([
     ['roll_dice', 'cast the fortune dice'],
@@ -387,7 +466,7 @@ describe('buildRokaMessage', () => {
     vi.resetModules()
     const { MAX_TOOL_FOOTER_CHARS: atSecondDate } = await import('../messageBuilder.js')
 
-    expect(atFirstDate).toBe(128)
+    expect(atFirstDate).toBe(137)
     expect(atSecondDate).toBe(atFirstDate)
 
     vi.useRealTimers()

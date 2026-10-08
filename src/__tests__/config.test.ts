@@ -192,7 +192,7 @@ describe('config module', () => {
     expect(config.media).toEqual({
       watch: true,
       watchTimeoutMs: 20_000,
-      digestMaxOutputTokens: 2400,
+      digestMaxOutputTokens: 3200,
       skimClips: 8,
       skimClipSeconds: 10,
       maxStreamedUploadBytes: 52_428_800,
@@ -392,7 +392,7 @@ describe('config module', () => {
     vi.stubEnv('MEMORY_CLAIM_RETENTION_DAYS', '120')
     vi.stubEnv('MEMORY_VAULT_EXPORT_DIR', 'tmp/vault')
     vi.stubEnv('METRICS_RETENTION_DAYS', '120')
-    vi.stubEnv('DISCORD_MAX_MESSAGE_LENGTH', '3872')
+    vi.stubEnv('DISCORD_MAX_MESSAGE_LENGTH', '3863')
 
     const { config } = await import('../config.js')
 
@@ -436,7 +436,7 @@ describe('config module', () => {
     expect(config.memory).not.toHaveProperty('extractionBatchSize')
     expect(config.memory.vaultExportDir).toBe('tmp/vault')
     expect(config.metrics.retentionDays).toBe(120)
-    expect(config.discord.maxMessageLength).toBe(3872)
+    expect(config.discord.maxMessageLength).toBe(3863)
     expect(config.jev.apiKey).toBe('typesafe-test-key')
     expect(config.jev.model).toBe('jev-override')
     expect(config.jev.tone).toBe('on')
@@ -792,21 +792,21 @@ describe('config module', () => {
   it('throws if DISCORD_MAX_MESSAGE_LENGTH exceeds the tool-footer-adjusted maximum', async () => {
     setRequiredEnvVars()
     clearTunableEnvVars()
-    vi.stubEnv('DISCORD_MAX_MESSAGE_LENGTH', '3873')
+    vi.stubEnv('DISCORD_MAX_MESSAGE_LENGTH', '3864')
 
     await expect(() => import('../config.js')).rejects.toThrow(
-      'Config value discord.maxMessageLength must be <= 3872, got: 3873'
+      'Config value discord.maxMessageLength must be <= 3863, got: 3864'
     )
   })
 
   it('accepts DISCORD_MAX_MESSAGE_LENGTH at exactly the tool-footer-adjusted maximum', async () => {
     setRequiredEnvVars()
     clearTunableEnvVars()
-    vi.stubEnv('DISCORD_MAX_MESSAGE_LENGTH', '3872')
+    vi.stubEnv('DISCORD_MAX_MESSAGE_LENGTH', '3863')
 
     const { config } = await import('../config.js')
 
-    expect(config.discord.maxMessageLength).toBe(3872)
+    expect(config.discord.maxMessageLength).toBe(3863)
   })
 
   // config.ts derives this floor from the same two constants (attachmentLimits.ts is a zero-import leaf, so
@@ -878,7 +878,7 @@ describe('config module', () => {
       { path: 'session.windowSize', min: 1 },
       { path: 'session.maxRehydrationAge', min: 0 },
       { path: 'session.historyRetentionDays', min: 1 },
-      { path: 'discord.maxMessageLength', min: 1, max: 3872 },
+      { path: 'discord.maxMessageLength', min: 1, max: 3863 },
       { path: 'discord.maxInFlightAttachmentBytes', min: 31_457_280 },
       { path: 'memory.bufferSize', min: 1 },
       { path: 'memory.contextSize', min: 1 },

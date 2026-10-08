@@ -17,6 +17,7 @@ import type { ModelRoute } from './fallbackModel.js'
 import { modelRouteForRequest } from './fallbackModel.js'
 import { computeBackoff } from './geminiReliability.js'
 import { prepareTurnMedia } from './media/turnMedia.js'
+import type { WatchOutcome } from './media/types.js'
 import { stripNarratedToolCalls } from './narratedToolCalls.js'
 import type { ToneKey } from './prompts/tones.js'
 import {
@@ -81,6 +82,8 @@ export interface GenerateResult {
    * five-minute clip she heard ninety seconds of.
    */
   truncatedAttachments: number
+  /** How much of the turn's first audio or video she actually watched, for the reply footer. */
+  watchOutcome: WatchOutcome | null
   /**
    * Model calls this turn actually issued. The Discord layer reserved `gemini.maxLlmCalls` for it and gives
    * back the difference — a turn that used one of four returns three slots to the minute rather than holding
@@ -334,7 +337,8 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     mediaTokens,
     droppedAttachments,
     truncatedAttachments,
-    refusedAttachments
+    refusedAttachments,
+    watchOutcome
   } = await mediaWork
 
   // Tell the model when files are absent or refused so it does not search for their missing contents.
@@ -627,6 +631,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     droppedAttachments,
     truncatedAttachments,
     refusedAttachments,
+    watchOutcome,
     modelCalls: modelCalls.count
   }
 }

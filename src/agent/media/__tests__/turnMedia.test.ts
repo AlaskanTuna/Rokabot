@@ -373,6 +373,7 @@ describe('prepareTurnMedia', () => {
     const result = await prepareTurnMedia(input([voice]))
 
     expect(result.mediaTextParts[0].text).toBe("[A voice message was shared, but it couldn't be watched right now.]")
+    expect(result.watchOutcome).toEqual({ status: 'failed', kind: 'audio' })
     expect(result.watcherCalls).toBe(2)
     expect(result.compactDigests).toEqual([])
   })
@@ -388,6 +389,7 @@ describe('prepareTurnMedia', () => {
     expect(mocks.watchMedia).not.toHaveBeenCalled()
     expect(mocks.countUriTokens).not.toHaveBeenCalled()
     expect(result.mediaTextParts[0].text).toBe("[A YouTube video was shared, but it couldn't be watched right now.]")
+    expect(result.watchOutcome).toEqual({ status: 'failed', kind: 'video' })
   })
 
   it('treats a token count too small for any video as an unknown length', async () => {
@@ -607,6 +609,7 @@ describe('remembering watched media in a server', () => {
     const result = await prepareTurnMedia({ ...input([youtube]), memoryScope: scope, geminiUnavailable: true })
 
     expect(result.mediaTextParts[0].text).toContain('A man at a zoo talks about elephants.')
+    expect(result.watchOutcome).toEqual({ status: 'remembered', kind: 'video' })
   })
 
   it('saves, records and embeds a newly watched item', async () => {
@@ -615,8 +618,10 @@ describe('remembering watched media in a server', () => {
     mocks.watchMedia.mockResolvedValue(okWatch(digest))
     mocks.saveMediaDigest.mockReturnValue(stored(digest))
 
-    await prepareTurnMedia({ ...input([youtube]), memoryScope: scope })
+    const result = await prepareTurnMedia({ ...input([youtube]), memoryScope: scope })
     await new Promise((resolve) => setImmediate(resolve))
+
+    expect(result.watchOutcome).toEqual({ status: 'watched', kind: 'video', coverage: 'whole', durationSec: 19 })
 
     expect(mocks.saveMediaDigest).toHaveBeenCalledWith({
       guildId: 'guild-1',

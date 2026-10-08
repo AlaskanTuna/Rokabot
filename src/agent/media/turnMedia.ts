@@ -13,7 +13,7 @@ import { type ImageAttachment, downloadAttachment, prepareAttachments } from '..
 import { embedEpisodeText } from '../memory/episodeEmbeddings.js'
 import { remainingTokensThisMinute } from '../tokenBudget.js'
 import { bytesContentKey, discordAttachmentContentKey } from './contentKey.js'
-import { formatClock, mergeHalves, renderCompactDigest, renderDigestBlock } from './digest.js'
+import { formatClock, mergeHalves, renderCompactDigest, renderDigestBlock, watchOutcomeFor } from './digest.js'
 import { durationFromTokens, mp4DurationSec } from './duration.js'
 import { type UploadedFile, deleteFile, streamToFiles } from './filesUpload.js'
 import {
@@ -24,7 +24,7 @@ import {
   planFocus,
   planHalves
 } from './plan.js'
-import type { CoveragePlan, MediaDigest, MediaKind } from './types.js'
+import type { CoveragePlan, MediaDigest, MediaKind, WatchOutcome } from './types.js'
 import { type WatchResult, type WatchSource, countUriTokens, watchMedia } from './watch.js'
 
 export interface PreparedTurnMedia {
@@ -43,6 +43,12 @@ export interface PreparedTurnMedia {
   droppedAttachments: number
   truncatedAttachments: number
   refusedAttachments: number
+  /** The first audio or video item's outcome, so the footer can say whether she really watched it. */
+  watchOutcome: WatchOutcome | null
+}
+
+function noteOutcome(result: PreparedTurnMedia, outcome: WatchOutcome): void {
+  result.watchOutcome ??= outcome
 }
 
 // countTokens on a YouTube URI is a measured estimate, not the bill, so a duration derived from it is planned
@@ -365,6 +371,7 @@ async function watchOne(
   }
   const reuse = (hit: { id: number; digest: MediaDigest }) => {
     present(result, hit.digest)
+    noteOutcome(result, { status: 'remembered', kind })
     recordShare(scope!, attachment, hit.id)
     logger.info({ channelId: input.channelId, kind, outcome: 'remembered' }, 'Watched media')
   }
@@ -373,6 +380,7 @@ async function watchOne(
   // Only Gemini can watch; while turns are pinned to the fallback model, waiting on it would only add delay.
   if (input.geminiUnavailable) {
     result.mediaTextParts.push(notice(label, "it couldn't be watched right now"))
+    noteOutcome(result, { status: 'failed', kind })
     return
   }
   const prepared =
@@ -384,6 +392,7 @@ async function watchOne(
 
   if (prepared.status === 'dropped') {
     result.droppedAttachments += 1
+    noteOutcome(result, { status: 'failed', kind })
     return
   }
   try {
@@ -401,8 +410,10 @@ async function watchOne(
       const failures = watched.flatMap((outcome) => (outcome.status === 'failed' ? [outcome] : []))
       if (digest) {
         present(result, digest)
+        noteOutcome(result, watchOutcomeFor(digest))
         if (scope && contentKey) remember(scope, attachment, contentKey, digest)
       } else {
+        noteOutcome(result, { status: 'failed', kind })
         result.mediaTextParts.push(
           notice(
             label,
@@ -430,6 +441,7 @@ async function watchOne(
     }
 
     if (plan.mode === 'decline') {
+      noteOutcome(result, { status: 'failed', kind })
       result.mediaTextParts.push(
         notice(
           label,
@@ -458,9 +470,11 @@ async function watchOne(
 
     if (watched.status === 'ok') {
       present(result, watched.digest)
+      noteOutcome(result, watchOutcomeFor(watched.digest))
       result.mediaTokens += watched.promptTokens
       if (scope && contentKey) remember(scope, attachment, contentKey, watched.digest)
     } else {
+      noteOutcome(result, { status: 'failed', kind })
       result.mediaTextParts.push(
         notice(label, watched.reason === 'unavailable' ? "it couldn't be opened" : "it couldn't be watched right now")
       )
@@ -519,7 +533,8 @@ export async function prepareTurnMedia(input: {
     mediaTokens: prepared.imageTokens,
     droppedAttachments: prepared.droppedAttachments,
     truncatedAttachments: prepared.truncatedAttachments,
-    refusedAttachments: prepared.refusedAttachments
+    refusedAttachments: prepared.refusedAttachments,
+    watchOutcome: null
   }
 
   for (const { attachment, kind } of watchable) await watchOne(attachment, kind, input, result)

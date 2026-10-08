@@ -9,7 +9,8 @@ import {
   mergeHalves,
   renderCompactDigest,
   renderDigestBlock,
-  validateObservations
+  validateObservations,
+  watchOutcomeFor
 } from '../digest.js'
 import type { MediaClip, MediaDigest, MediaObservations } from '../types.js'
 
@@ -48,6 +49,8 @@ describe('MEDIA_OBSERVATIONS_SCHEMA', () => {
       'timeline',
       'speech',
       'onScreenText',
+      'moments',
+      'style',
       'uncertainties'
     ])
     expect(MEDIA_OBSERVATIONS_SCHEMA.properties?.timeline.items?.properties?.bin?.type).toBe(Type.INTEGER)
@@ -59,6 +62,52 @@ describe('MEDIA_OBSERVATIONS_SCHEMA', () => {
     expect(properties?.speech.maxItems).toBe('12')
     expect(properties?.onScreenText.maxItems).toBe('8')
     expect(properties?.uncertainties.maxItems).toBe('5')
+    expect(properties?.moments.maxItems).toBe('5')
+  })
+})
+
+// Roka can only talk about what the notes give her; three generic timeline lines read as a guess from the title.
+describe('standout moments and style', () => {
+  it('keeps the moments with valid bins, up to five, and the style line', () => {
+    const result = validateObservations(
+      {
+        ...rawObservations(),
+        moments: [
+          { bin: 1, note: 'She pulls a rabbit out of a playing card; the crowd cheers.' },
+          { bin: 9, note: 'A bin that does not exist.' },
+          ...Array.from({ length: 6 }, (_, index) => ({ bin: 2, note: `Moment ${index}` }))
+        ],
+        style: 'A fan-made model swap: fast cuts timed to an electronic track.'
+      },
+      2
+    )
+
+    expect(result?.observations.moments).toHaveLength(5)
+    expect(result?.observations.moments?.[0]).toEqual({
+      bin: 1,
+      note: 'She pulls a rabbit out of a playing card; the crowd cheers.'
+    })
+    expect(result?.observations.style).toBe('A fan-made model swap: fast cuts timed to an electronic track.')
+    expect(result?.incomplete).toBe(true)
+  })
+
+  it('accepts notes saved before moments existed', () => {
+    expect(validateObservations(rawObservations(), 2)).toMatchObject({ incomplete: false })
+  })
+
+  it('renders the moments with their times and the style line', () => {
+    const rendered = renderDigestBlock(
+      digest({
+        observations: {
+          ...rawObservations(),
+          moments: [{ bin: 2, note: 'The train doors close on his bag.' }],
+          style: 'Handheld phone footage with no music.'
+        }
+      })
+    )
+
+    expect(rendered).toContain('Standout moments:\n- 0:40–1:15: The train doors close on his bag.')
+    expect(rendered).toContain("How it's made: Handheld phone footage with no music.")
   })
 })
 
@@ -205,6 +254,55 @@ describe('coverageLine', () => {
   })
 })
 
+// The footer reports what she actually watched, so a reader can tell a watch from a guess (and a part from the whole).
+describe('watchOutcomeFor', () => {
+  it('reports a whole watch with its length', () => {
+    expect(watchOutcomeFor(digest())).toEqual({ status: 'watched', kind: 'video', coverage: 'whole', durationSec: 75 })
+  })
+
+  it('reports two halves that cover the video as whole, and one surviving half as a part', () => {
+    const halves = digest({
+      mode: 'halves',
+      durationSec: 1305,
+      bins: [
+        { startSec: 0, endSec: 653 },
+        { startSec: 653, endSec: 1305 }
+      ]
+    })
+
+    expect(watchOutcomeFor(halves)).toEqual({ status: 'watched', kind: 'video', coverage: 'whole', durationSec: 1305 })
+    expect(watchOutcomeFor({ ...halves, bins: [{ startSec: 653, endSec: 1305 }] })).toEqual({
+      status: 'watched',
+      kind: 'video',
+      coverage: 'part',
+      startSec: 653,
+      endSec: 1305
+    })
+  })
+
+  it('reports a focused watch and an opening as the span watched, and a skim as a skim', () => {
+    expect(
+      watchOutcomeFor(digest({ mode: 'focus', focusSec: 300, bins: [{ startSec: 240, endSec: 360 }] }))
+    ).toMatchObject({
+      coverage: 'part',
+      startSec: 240,
+      endSec: 360
+    })
+    expect(
+      watchOutcomeFor(digest({ mode: 'opening', durationSec: 60, bins: [{ startSec: 0, endSec: 60 }] }))
+    ).toMatchObject({
+      coverage: 'part',
+      startSec: 0,
+      endSec: 60
+    })
+    expect(watchOutcomeFor(digest({ mode: 'skim', durationSec: 2400 }))).toEqual({
+      status: 'watched',
+      kind: 'video',
+      coverage: 'skim'
+    })
+  })
+})
+
 describe('renderDigestBlock', () => {
   it('renders the untrusted label, coverage, observations and uncertainty marker', () => {
     const rendered = renderDigestBlock(
@@ -343,6 +441,26 @@ describe('mergeHalves', () => {
       },
       incomplete: false
     })
+  })
+
+  it("keeps both halves' standout moments, renumbered, and both style lines", () => {
+    const merged = mergeHalves(
+      {
+        ...first,
+        observations: { ...first.observations, moments: [{ bin: 2, note: 'He trips.' }], style: 'Slow pans.' }
+      },
+      {
+        ...second,
+        observations: { ...second.observations, moments: [{ bin: 1, note: 'The door slams.' }], style: 'Quick cuts.' }
+      },
+      2100
+    )
+
+    expect(merged?.observations.moments).toEqual([
+      { bin: 2, note: 'He trips.' },
+      { bin: 3, note: 'The door slams.' }
+    ])
+    expect(merged?.observations.style).toBe('Slow pans. Quick cuts.')
   })
 
   it('keeps both halves in the joined summary within 500 characters', () => {

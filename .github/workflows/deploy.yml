@@ -60,6 +60,15 @@ jobs:
       - name: Pull latest changes
         run: cd ~/rokabot && git fetch origin main && git reset --hard origin/main
 
+      # Recreating the container discards its Docker logs, so keep the outgoing container's for diagnosis.
+      - name: Archive the outgoing container's logs
+        run: |
+          mkdir -p ~/rokabot/logs
+          ARCHIVE=~/rokabot/logs/roka-$(date -u +%Y%m%dT%H%M%SZ).log.gz
+          docker compose -f ~/rokabot/docker-compose.yml logs --no-color --no-log-prefix --timestamps roka 2>/dev/null | gzip > "$ARCHIVE" || true
+          [ "$(gzip -cd "$ARCHIVE" | head -c 1 | wc -c)" -gt 0 ] || rm -f "$ARCHIVE"
+          find ~/rokabot/logs -name 'roka-*.log.gz' -mtime +30 -delete
+
       - name: Build and restart
         run: cd ~/rokabot && export GIT_COMMIT=$(git rev-parse --short HEAD) && docker compose up -d --build
 

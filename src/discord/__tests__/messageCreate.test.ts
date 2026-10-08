@@ -696,6 +696,24 @@ describe('unsupported attachments on the mention path', () => {
     expect(JSON.stringify(reply.mock.calls[0][0])).toContain("I couldn't open that file~")
   })
 
+  // A reader cannot otherwise tell a watch from a guess made from the title and thumbnail.
+  it('says in the footer how much of the video she watched', async () => {
+    mocks.generateResponse.mockResolvedValue({
+      text: 'At 0:41 she pulls a rabbit out of the card~',
+      tone: 'playful',
+      toolsUsed: [],
+      metrics,
+      droppedAttachments: 0,
+      truncatedAttachments: 0,
+      watchOutcome: { status: 'watched', kind: 'video', coverage: 'whole', durationSec: 186 }
+    })
+    const { message, reply } = createMessage({ content: '<@bot-1> what is this video about?' })
+
+    await createMessageHandler({ user: { id: 'bot-1' } } as never, createRateLimiter() as never)(message as never)
+
+    expect(JSON.stringify(reply.mock.calls[0][0])).toContain('watched the whole video (3:06)')
+  })
+
   it('nudges when a supported attachment was too big to fetch', async () => {
     mocks.generateResponse.mockResolvedValue({
       text: 'Hello~',
@@ -921,6 +939,78 @@ describe("reading what the sender's own message shows", () => {
       'https://www.youtube.com/watch?v=3Bpe66wHsgI'
     )
     expect(result.userMessage).toContain('[Linked post — X @roka (Roka)')
+  })
+
+  // Roka's reply carries the post only as its first citation, inside components; "watch this video then" in reply
+  // to her never reopened it.
+  it('reopens the post Roka cited when someone replies to her message about it', async () => {
+    mocks.beginSocialPostLookup.mockResolvedValueOnce(foundSocialPost())
+    const rokaReply = {
+      author: { id: 'bot-1', displayName: 'Roka' },
+      member: null,
+      content: '',
+      embeds: [],
+      poll: null,
+      messageSnapshots: new Collection(),
+      components: [
+        {
+          toJSON: () => ({
+            type: 17,
+            components: [
+              { type: 10, content: 'It looks like a remix reel.' },
+              {
+                type: 10,
+                content:
+                  '-# 🌸 peeked at the Instagram post • <t:1791438787:R>\n-# 🔗 [instagram.com](<https://www.instagram.com/reel/DL5xefEh7Xa/>)'
+              }
+            ]
+          })
+        }
+      ],
+      stickers: new Collection(),
+      attachments: new Collection()
+    }
+    const { message } = createMessage({ content: '<@bot-1> watch this video then', referencedMessage: rokaReply })
+
+    await handle(message)
+
+    await expect(mocks.beginSocialPostLookup.mock.calls[0]?.[1]).resolves.toContain(
+      'https://www.instagram.com/reel/DL5xefEh7Xa/'
+    )
+  })
+
+  it("does not open a search citation from Roka's reply as if it were a post she viewed", async () => {
+    const rokaReply = {
+      author: { id: 'bot-1', displayName: 'Roka' },
+      member: null,
+      content: '',
+      embeds: [],
+      poll: null,
+      messageSnapshots: new Collection(),
+      components: [
+        {
+          toJSON: () => ({
+            type: 17,
+            components: [
+              { type: 10, content: 'The trailer dropped today.' },
+              {
+                type: 10,
+                content:
+                  '-# 🌸 searched the wider world • <t:1791438787:R>\n-# 🔗 [youtube.com](<https://www.youtube.com/watch?v=abc_123>)'
+              }
+            ]
+          })
+        }
+      ],
+      stickers: new Collection(),
+      attachments: new Collection()
+    }
+    const { message } = createMessage({ content: '<@bot-1> nice', referencedMessage: rokaReply })
+
+    await handle(message)
+
+    const laterTexts = (await mocks.beginSocialPostLookup.mock.calls[0]?.[1]) ?? []
+    expect(laterTexts.join('\n')).not.toContain('youtube.com/watch')
   })
 
   it('replaces a matching social embed and its thumbnail with the opened post', async () => {
