@@ -1,6 +1,6 @@
 import type { Message } from 'discord.js'
 import type { ImageAttachment } from '../agent/attachments.js'
-import { MAX_ATTACHMENTS, isSupportedImage, isSupportedMedia } from './attachments.js'
+import { MAX_ATTACHMENTS, isSupportedMedia } from './attachments.js'
 import type { SocialPostTarget } from './socialPosts/urls.js'
 import { findSocialPostTarget } from './socialPosts/urls.js'
 
@@ -137,6 +137,36 @@ interface ForwardedContent {
   hasSocialPost: boolean
 }
 
+type MediaKind = 'image' | 'video' | 'audio clip' | 'document'
+
+const MEDIA_KIND_ORDER: MediaKind[] = ['image', 'video', 'audio clip', 'document']
+
+function mediaKind(contentType: string): MediaKind {
+  if (contentType.startsWith('image/')) return 'image'
+  if (contentType.startsWith('video/')) return 'video'
+  if (contentType.startsWith('audio/')) return 'audio clip'
+  return 'document'
+}
+
+function mediaMarker(prefix: 'forwarded' | 'attached', candidates: ImageAttachment[], taken: number): string[] {
+  const counts = new Map<MediaKind, { total: number; taken: number }>()
+
+  candidates.forEach((candidate, index) => {
+    const kind = mediaKind(candidate.contentType)
+    const count = counts.get(kind) ?? { total: 0, taken: 0 }
+    count.total += 1
+    if (index < taken) count.taken += 1
+    counts.set(kind, count)
+  })
+
+  return MEDIA_KIND_ORDER.flatMap((kind) => {
+    const count = counts.get(kind)
+    if (!count) return []
+    const unseen = count.total - count.taken
+    return [unseen > 0 ? `(${prefix} ${kind}(s), ${unseen} not shown)` : `(${prefix} ${kind}(s))`]
+  })
+}
+
 function describeForwardedSnapshots(
   snapshots: Message['messageSnapshots'],
   imageSlots: number,
@@ -170,15 +200,12 @@ function describeForwardedSnapshots(
 
     const fwdAttachments = snapshot.attachments ? [...snapshot.attachments.values()] : []
     const fwdCandidates = fwdAttachments
-      .filter(isSupportedImage)
+      .filter(isSupportedMedia)
       .map((a) => ({ url: a.url, contentType: a.contentType!, size: a.size }))
     const fwdImages = fwdCandidates.slice(0, imageSlots - images.length)
     images.push(...fwdImages)
 
-    const unseen = fwdCandidates.length - fwdImages.length
-    if (fwdCandidates.length > 0) {
-      fwdParts.push(unseen > 0 ? `(forwarded image(s), ${unseen} not shown)` : '(forwarded image(s))')
-    }
+    fwdParts.push(...mediaMarker('forwarded', fwdCandidates, fwdImages.length))
 
     if (fwdParts.length > 0) parts.push(`[Forwarded: ${fwdParts.join(' | ')}]`)
   }
@@ -231,11 +258,11 @@ export function extractMessageContent(
     ownParts.push(`(sticker: ${message.stickers.map((sticker) => sticker.name).join(', ')})`)
   }
 
+  const ownEmbedImages: ImageAttachment[] = []
   for (const embed of message.embeds) {
-    if (imageAttachments.length >= MAX_ATTACHMENTS) break
     if (embedMatchesSocialPost(embed, socialPost)) continue
     const embedImageUrl = embed.image?.url ?? embed.thumbnail?.url
-    if (embedImageUrl) imageAttachments.push({ url: embedImageUrl, contentType: 'image/png' })
+    if (embedImageUrl) ownEmbedImages.push({ url: embedImageUrl, contentType: 'image/png' })
   }
 
   const forwarded = describeForwardedSnapshots(
@@ -253,6 +280,7 @@ export function extractMessageContent(
   const ownAttachments = [...message.attachments.values()]
   const unsupportedCount =
     ownAttachments.length - ownAttachments.filter(isSupportedMedia).length + componentMedia.unreadable
+  const referencedEmbedImages: ImageAttachment[] = []
 
   if (referencedMessage) {
     const refAuthor = referencedMessage.member?.displayName ?? referencedMessage.author.displayName
@@ -297,14 +325,14 @@ export function extractMessageContent(
       refParts.push(`(sticker: ${stickerNames})`)
     }
 
-    const refImageCandidates: ImageAttachment[] = [...referencedMessage.attachments.values()]
-      .filter(isSupportedImage)
+    const refAttachments = [...referencedMessage.attachments.values()]
+    const refMediaCandidates: ImageAttachment[] = refAttachments
+      .filter(isSupportedMedia)
       .map((a) => ({ url: a.url, contentType: a.contentType!, size: a.size }))
-    const refImagesTaken = isReplyToBot ? [] : refImageCandidates.slice(0, MAX_ATTACHMENTS - imageAttachments.length)
-    const refUnseen = refImageCandidates.length - refImagesTaken.length
-    if (refImageCandidates.length > 0) {
-      refParts.push(refUnseen > 0 ? `(attached image(s), ${refUnseen} not shown)` : '(attached image(s))')
-    }
+    const refMediaTaken = isReplyToBot ? [] : refMediaCandidates.slice(0, MAX_ATTACHMENTS - imageAttachments.length)
+    refParts.push(...mediaMarker('attached', refMediaCandidates, refMediaTaken.length))
+    const unsupportedRefCount = refAttachments.length - refAttachments.filter(isSupportedMedia).length
+    if (unsupportedRefCount > 0) refParts.push("(attached file(s) of a type that can't be opened)")
 
     if (refParts.length > 0) {
       const refContext = `[Replying to ${refAuthor}: ${refParts.join('\n')}]`
@@ -312,20 +340,18 @@ export function extractMessageContent(
     }
 
     if (!isReplyToBot) {
-      imageAttachments.push(...refImagesTaken)
+      imageAttachments.push(...refMediaTaken)
 
-      if (imageAttachments.length < MAX_ATTACHMENTS) {
-        for (const embed of referencedMessage.embeds) {
-          if (imageAttachments.length >= MAX_ATTACHMENTS) break
-          if (embedMatchesSocialPost(embed, socialPost)) continue
-          const embedImageUrl = embed.image?.url ?? embed.thumbnail?.url
-          if (embedImageUrl) {
-            imageAttachments.push({ url: embedImageUrl, contentType: 'image/png' })
-          }
-        }
+      for (const embed of referencedMessage.embeds) {
+        if (embedMatchesSocialPost(embed, socialPost)) continue
+        const embedImageUrl = embed.image?.url ?? embed.thumbnail?.url
+        if (embedImageUrl) referencedEmbedImages.push({ url: embedImageUrl, contentType: 'image/png' })
       }
     }
   }
+
+  imageAttachments.push(...ownEmbedImages.slice(0, MAX_ATTACHMENTS - imageAttachments.length))
+  imageAttachments.push(...referencedEmbedImages.slice(0, MAX_ATTACHMENTS - imageAttachments.length))
 
   if (socialPost && !socialPostIncluded) content = content ? `${content}\n${socialPost.line}` : socialPost.line
   if (socialPost?.imageAttachment && imageAttachments.length < MAX_ATTACHMENTS) {

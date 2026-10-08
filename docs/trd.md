@@ -875,9 +875,15 @@ byte budget cannot disagree about the same file.
 - **Audio contributes 0 to `tokensInEst`.** It is billed per second of media, and seconds are not knowable
   without decoding — the same argument `docs/research/multimodal.md` makes against enforcing duration caps. Left at
   zero deliberately rather than estimated.
-- **Both surfaces admit the same set.** `/ask` and the mention path each filter with `isSupportedMedia`.
-  The forwarded, referenced and embed sub-paths on the mention path remain images-only, because their text
-  markers describe what they carry as images.
+- **Both Surfaces Admit All Supported Types.** `/ask` and the mention path filter uploads with
+  `isSupportedMedia`.
+- **Reply and Forward Intake.** The mention path also considers supported media in forwarded snapshots and
+  replied-to messages, including video, audio and PDFs. Candidates share the one-item `MAX_ATTACHMENTS` slot
+  in this order: triggering-message uploads → Components V2 media → forwarded uploads → replied-to uploads →
+  triggering-message embed images → replied-to embed images. Replies to Roka's own messages never take the
+  referenced message's attachments or embed images. Forwarded and attached media markers name each kind in
+  image, video, audio clip, document order, adding `, N not shown` when candidates of that kind did not fit;
+  unsupported replied-to files add `(attached file(s) of a type that can't be opened)`.
 - **Components V2 media is read, and what cannot be read is still counted.** A Components V2 message keeps
   its files in `components` rather than in `attachments`, so `Thumbnail` (11), `MediaGallery` (12) and `File`
   (13) reached her as nothing at all — and as nothing _silently_, because a path that never detects a file
