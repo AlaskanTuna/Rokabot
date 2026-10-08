@@ -1,7 +1,9 @@
 import Database from 'better-sqlite3'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const configMock = vi.hoisted(() => ({ memory: { episodeRetentionDays: 90, mediaRetentionDays: 90 } }))
+const configMock = vi.hoisted(() => ({
+  memory: { episodeRetentionDays: 90, mediaRetentionDays: 90, privacy: 'relaxed' }
+}))
 const mocks = vi.hoisted(() => ({
   embedEpisodeText: vi.fn(),
   embedPendingFacts: vi.fn(),
@@ -116,7 +118,10 @@ describe('episode maintenance', () => {
     mocks.logger.warn.mockClear()
   })
 
-  afterEach(() => testDb.close())
+  afterEach(() => {
+    configMock.memory.privacy = 'relaxed'
+    testDb.close()
+  })
 
   it('removes expired episodes and repairs retained rows without failing the pass', async () => {
     seedEpisode({ id: 1, guildId: 'guild-a', endedAt: now - 91 * DAY_MS, summary: 'expired episode' })
@@ -235,5 +240,43 @@ describe('episode maintenance', () => {
 
     expect(mocks.embedPendingFacts).toHaveBeenCalledOnce()
     expect(report).toEqual(expect.objectContaining({ factsEmbedded: 2, factsFailed: 1 }))
+  })
+
+  it('under off, prunes expired rows but calls no embedding function and reports zero embedding work', async () => {
+    configMock.memory.privacy = 'off'
+    seedEpisode({ id: 1, guildId: 'guild-a', endedAt: now - 91 * DAY_MS, summary: 'expired episode' })
+    seedEpisode({ id: 2, guildId: 'guild-a', endedAt: now - DAY_MS, summary: 'retained episode' })
+    seedMedia({
+      guildId: 'guild-a',
+      contentKey: 'youtube:expired',
+      summary: 'expired media',
+      embedding: null,
+      observedAt: [now - 91 * DAY_MS]
+    })
+    seedMedia({
+      guildId: 'guild-a',
+      contentKey: 'youtube:pending',
+      summary: 'pending media',
+      embedding: null,
+      observedAt: [now - DAY_MS]
+    })
+
+    const report = await pruneEpisodesAndReembed(now)
+
+    expect(report).toEqual({
+      deleted: 1,
+      reembedded: 0,
+      failed: 0,
+      mediaDeleted: 1,
+      mediaReembedded: 0,
+      mediaFailed: 0,
+      factsEmbedded: 0,
+      factsFailed: 0
+    })
+    expect(mocks.embedEpisodeText).not.toHaveBeenCalled()
+    expect(mocks.embedPendingFacts).not.toHaveBeenCalled()
+    expect(listEpisodesForGuild('guild-a')).toEqual([expect.objectContaining({ id: 2, embedding: null })])
+    expect(findMediaDigest('guild-a', 'youtube:expired')).toBeNull()
+    expect(findMediaDigest('guild-a', 'youtube:pending')?.embedding).toBeNull()
   })
 })

@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ExtractionEpisode } from '../../../storage/extractionQueue.js'
 
+const configMock = vi.hoisted(() => ({ memory: { privacy: 'relaxed' } }))
+
 const mocks = vi.hoisted(() => {
   type QueuedJob = {
     id: number
@@ -64,6 +66,7 @@ vi.mock('../../../storage/extractionQueue.js', () => ({
   markDone: mocks.markDone,
   markFailed: mocks.markFailed
 }))
+vi.mock('../../../config.js', () => ({ config: configMock }))
 vi.mock('../../shutdownSignal.js', () => ({ isShuttingDown: mocks.isShuttingDown }))
 vi.mock('../extractor.js', () => ({ runEpisodePipeline: mocks.runEpisodePipeline }))
 vi.mock('../episodePersistence.js', () => ({ persistEpisodeResult: mocks.persistEpisodeResult }))
@@ -109,11 +112,14 @@ describe('episode extraction scheduler', () => {
     mocks.logger.warn.mockClear()
     mocks.embedPendingFacts.mockClear()
     mocks.isShuttingDown.mockReturnValue(false)
+    mocks.claimNextForGuild.mockClear()
+    configMock.memory.privacy = 'relaxed'
   })
 
   afterEach(() => {
     stopExtractionScheduler()
     vi.useRealTimers()
+    configMock.memory.privacy = 'relaxed'
   })
 
   it('drains queued guilds in deterministic round-robin order', async () => {
@@ -247,5 +253,26 @@ describe('episode extraction scheduler', () => {
     expect(vi.getTimerCount()).toBe(0)
     await drain()
     expect(mocks.runEpisodePipeline).not.toHaveBeenCalled()
+  })
+
+  it('claims no job and calls no extractor while memory is off, and resumes once it is back on', async () => {
+    enqueue('A', 'queued before the switch')
+    configMock.memory.privacy = 'off'
+
+    startExtractionScheduler()
+    await drain()
+
+    expect(mocks.claimNextForGuild).not.toHaveBeenCalled()
+    expect(mocks.runEpisodePipeline).not.toHaveBeenCalled()
+    expect(mocks.markFailed).not.toHaveBeenCalled()
+    expect(mocks.markDone).not.toHaveBeenCalled()
+    expect(mocks.jobs).toEqual([expect.objectContaining({ status: 'pending', attempts: 0 })])
+
+    configMock.memory.privacy = 'relaxed'
+    startExtractionScheduler()
+    await drain()
+
+    expect(mocks.runEpisodePipeline).toHaveBeenCalledOnce()
+    expect(mocks.jobs).toHaveLength(0)
   })
 })

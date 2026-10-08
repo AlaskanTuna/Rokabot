@@ -1,3 +1,4 @@
+import { config } from '../../config.js'
 import { claimNextForGuild, listGuildsWithPending, markDone, markFailed } from '../../storage/extractionQueue.js'
 import { logger } from '../../utils/logger.js'
 import { isShuttingDown } from '../shutdownSignal.js'
@@ -57,7 +58,7 @@ function runJob(job: NonNullable<ReturnType<typeof claimNextForGuild>>): void {
 }
 
 function drainOnce(): void {
-  if (stopped || isShuttingDown()) return
+  if (stopped || isShuttingDown() || config.memory.privacy === 'off') return
 
   const guildId = orderedGuilds(listGuildsWithPending().filter((id) => !inFlightGuilds.has(id)))[0]
   if (!guildId) return

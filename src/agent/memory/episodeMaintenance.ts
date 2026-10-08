@@ -27,12 +27,13 @@ export type EpisodeMaintenanceReport = Readonly<{
 }>
 
 export async function pruneEpisodesAndReembed(nowMs = Date.now()): Promise<EpisodeMaintenanceReport> {
+  const embedOn = config.memory.privacy !== 'off'
   const cutoff = nowMs - config.memory.episodeRetentionDays * 24 * 60 * 60 * 1000
   const deleted = pruneExpiredEpisodes(cutoff)
   let reembedded = 0
   let failed = 0
 
-  for (const guildId of listEpisodeGuildIds()) {
+  for (const guildId of embedOn ? listEpisodeGuildIds() : []) {
     for (const episode of listEpisodesForGuild(guildId)) {
       if (episode.embedding) continue
       try {
@@ -50,7 +51,7 @@ export async function pruneEpisodesAndReembed(nowMs = Date.now()): Promise<Episo
   let mediaReembedded = 0
   let mediaFailed = 0
 
-  for (const guildId of listMediaGuildIds()) {
+  for (const guildId of embedOn ? listMediaGuildIds() : []) {
     for (const digest of listMediaDigestsForGuild(guildId)) {
       if (digest.embedding) continue
       try {
@@ -64,7 +65,7 @@ export async function pruneEpisodesAndReembed(nowMs = Date.now()): Promise<Episo
     }
   }
 
-  const facts = await embedPendingFacts()
+  const facts = embedOn ? await embedPendingFacts() : { embedded: 0, failed: 0 }
 
   return {
     deleted,
