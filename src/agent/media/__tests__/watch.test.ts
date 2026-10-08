@@ -304,3 +304,20 @@ describe('countUriTokens', () => {
     await expect(countUriTokens('https://youtube.com/watch?v=video-id', 0.05)).resolves.toBeUndefined()
   })
 })
+
+describe('reading the answer', () => {
+  it('reads only the answer parts, skipping thoughts, without the SDK text getter', async () => {
+    const answer = JSON.stringify(validObservations())
+    mocks.generateContent.mockResolvedValueOnce({
+      candidates: [{ content: { parts: [{ text: 'thinking...', thought: true }, { text: answer }] } }],
+      get text(): string {
+        throw new Error('the text getter should not be used')
+      },
+      usageMetadata: { promptTokenCount: 500 }
+    })
+
+    const result = await watchMedia({ source: videoSource(), plan: planWholeVideo(), focus: 'what is this?' })
+
+    expect(result.status).toBe('ok')
+  })
+})

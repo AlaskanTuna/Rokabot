@@ -132,6 +132,14 @@ function reasonFor(error: unknown, signal?: AbortSignal): Exclude<WatchResult, {
   return 'error'
 }
 
+// Read the answer's own text parts: the SDK's `text` getter warns on every response that carries a thought
+// signature, which this model always does, and would fill the logs with one warning per watch.
+function responseText(response: GenerateContentResponse): string {
+  const parts = response.candidates?.[0]?.content?.parts
+  if (!parts) return response.text ?? ''
+  return parts.flatMap((part) => (part.text && !part.thought ? [part.text] : [])).join('')
+}
+
 function waitForRetry(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 500 + Math.random() * 1000))
 }
@@ -170,7 +178,7 @@ export async function watchMedia(input: {
 
     let raw: unknown
     try {
-      raw = JSON.parse(response.text ?? '')
+      raw = JSON.parse(responseText(response))
     } catch {
       return { status: 'failed', reason: 'invalid', calls, watchMs: elapsedSince(startedAt) }
     }
