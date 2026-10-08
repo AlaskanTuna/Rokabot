@@ -121,6 +121,8 @@ memory:
   factMinSimilarity: 0.65 # Minimum cosine similarity for a member fact in unified recall. A live check (2026-10-08) scored real matches 0.73-0.78 and small talk 0.61-0.62 against fact sentences; calibrated before recall is switched to unified
   serverFactMinSimilarity: 0.65 # Minimum cosine similarity for a server fact in unified recall; calibrated before recall is switched to unified
   vaultExportDir: data/vault # Directory for read-only Obsidian vault exports
+  extractionSampleRate: 0.1 # Share of rejected conversations (trivial or below Jev's admission threshold) kept as text for offline labelling; 0 disables, never sampled under privacy off
+  extractionSampleDays: 14 # Days a rejected-conversation sample is kept before deletion
 
 metrics:
   retentionDays: 90 # Days before response and extraction events are auto-pruned

@@ -16,6 +16,7 @@ export interface JevEventInput {
   latencyMs: number
   inputTokens: number
   baseline?: string | null
+  jobId?: number | null
 }
 
 let jevEventStatement: Database.Statement | undefined
@@ -27,7 +28,7 @@ function getJevEventStatement(): Database.Statement {
   jevEventDatabase = database
   jevEventStatement = database.prepare(
     'INSERT INTO jev_events (kind, guild_id, channel_id, question, answer, probability, confidence, applied, ' +
-      'latency_ms, input_tokens, baseline, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      'latency_ms, input_tokens, baseline, created_at, job_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   )
   return jevEventStatement
 }
@@ -46,7 +47,8 @@ export function recordJevEvent(row: JevEventInput): void {
       row.latencyMs,
       row.inputTokens,
       row.baseline ?? null,
-      Date.now()
+      Date.now(),
+      row.jobId ?? null
     )
   } catch (error) {
     logger.warn({ err: error }, 'Failed to record Jev event')

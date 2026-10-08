@@ -86,6 +86,8 @@ describe('config module', () => {
     vi.stubEnv('MEMORY_VAULT_EXPORT_DIR', '')
     vi.stubEnv('MEMORY_PRIVACY', '')
     vi.stubEnv('MEMORY_RECALL', '')
+    vi.stubEnv('MEMORY_EXTRACTION_SAMPLE_RATE', '')
+    vi.stubEnv('MEMORY_EXTRACTION_SAMPLE_DAYS', '')
     vi.stubEnv('METRICS_RETENTION_DAYS', '')
     vi.stubEnv('DISCORD_MAX_MESSAGE_LENGTH', '')
     vi.stubEnv('SOCIAL_POSTS_ENABLED', '')
@@ -436,6 +438,32 @@ describe('config module', () => {
     expect(NUMERIC_BOUNDS.find(({ path }) => path === 'memory.mediaTokenBudget')).toMatchObject({ min: 100, max: 1500 })
     expect(NUMERIC_BOUNDS.find(({ path }) => path === 'memory.mediaMinSimilarity')).toMatchObject({ min: 0, max: 1 })
     expect(NUMERIC_BOUNDS.find(({ path }) => path === 'memory.mediaRetentionDays')).toMatchObject({ min: 1, max: 365 })
+  })
+
+  it('loads bounded extraction sample settings and lets env vars override them', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+
+    const defaults = await import('../config.js')
+
+    expect(defaults.config.memory.extractionSampleRate).toBe(0.1)
+    expect(defaults.config.memory.extractionSampleDays).toBe(14)
+    expect(defaults.NUMERIC_BOUNDS.find(({ path }) => path === 'memory.extractionSampleRate')).toMatchObject({
+      min: 0,
+      max: 1
+    })
+    expect(defaults.NUMERIC_BOUNDS.find(({ path }) => path === 'memory.extractionSampleDays')).toMatchObject({
+      min: 1,
+      max: 90
+    })
+
+    vi.resetModules()
+    vi.stubEnv('MEMORY_EXTRACTION_SAMPLE_RATE', '0.25')
+    vi.stubEnv('MEMORY_EXTRACTION_SAMPLE_DAYS', '7')
+    const overridden = await import('../config.js')
+
+    expect(overridden.config.memory.extractionSampleRate).toBe(0.25)
+    expect(overridden.config.memory.extractionSampleDays).toBe(7)
   })
 
   it('env vars override config.yml values', async () => {
@@ -1005,6 +1033,8 @@ describe('config module', () => {
       { path: 'memory.recallCoreFacts', min: 0, max: 5 },
       { path: 'memory.factMinSimilarity', min: 0, max: 1 },
       { path: 'memory.serverFactMinSimilarity', min: 0, max: 1 },
+      { path: 'memory.extractionSampleRate', min: 0, max: 1 },
+      { path: 'memory.extractionSampleDays', min: 1, max: 90 },
       { path: 'metrics.diagnosticsRetentionHours', min: 1 },
       { path: 'metrics.retentionDays', min: 1 },
       { path: 'report.historyMaxAgeMs', min: 0 },

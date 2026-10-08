@@ -121,7 +121,8 @@ describe('metricsStore', () => {
       'latency_ms',
       'input_tokens',
       'baseline',
-      'created_at'
+      'created_at',
+      'job_id'
     ])
     expect(responseIndexes.map((index) => index.name)).toContain('idx_response_events_guild_ts')
     expect(extractionIndexes.map((index) => index.name)).toContain('idx_extraction_events_guild_ts')
@@ -200,7 +201,8 @@ describe('metricsStore', () => {
       latency_ms: 260,
       input_tokens: 24,
       baseline: 'playful',
-      created_at: now
+      created_at: now,
+      job_id: null
     })
     vi.restoreAllMocks()
   })

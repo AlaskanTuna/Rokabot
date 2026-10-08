@@ -431,6 +431,26 @@ export function runMigrations(database: Database.Database): void {
     database.exec('ALTER TABLE memory_events ADD COLUMN detail TEXT DEFAULT NULL')
   }
 
+  const jevEventCols = database.prepare("PRAGMA table_info('jev_events')").all() as Array<{ name: string }>
+  if (jevEventCols.length > 0 && !jevEventCols.some((column) => column.name === 'job_id')) {
+    database.exec('ALTER TABLE jev_events ADD COLUMN job_id INTEGER DEFAULT NULL')
+  }
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS extraction_samples (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id INTEGER NOT NULL,
+      guild_id TEXT NOT NULL,
+      channel_id TEXT NOT NULL,
+      outcome TEXT NOT NULL CHECK (outcome IN ('trivial', 'below_threshold')),
+      admission_probability REAL,
+      lines TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_extraction_samples_expires ON extraction_samples (expires_at);
+  `)
+
   ensureMemoryClaimSchema(database)
 
   let extractionQueueCols = database.prepare("PRAGMA table_info('extraction_queue')").all() as Array<{ name: string }>
