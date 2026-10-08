@@ -423,8 +423,11 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
   const longTerm = memory && config.memory.privacy !== 'off'
   const forgetOnly = memory && !longTerm
   const basePrompt = assembleSystemPrompt({ tone, hour, displayName, memory, forgetOnly })
-  const recallMode = config.memory.recall
   const scope: RecallScope | undefined = guildId && !guildId.startsWith('dm:') ? { guildId, channelId } : undefined
+  // DM facts live under a `dm:` tenant the unified recall does not read, so DMs keep the legacy facts block.
+  const recallMode = scope ? config.memory.recall : 'legacy'
+  // Taken before the legacy retriever marks its picks as recalled, so the shadow run does not see them as cooling.
+  const recallNow = Date.now()
   const recallEmbedding = longTerm && scope ? options.turnEntryWork.queryEmbedding : undefined
   const queryEmbedding = recallEmbedding ? awaitQueryEmbedding(recallEmbedding) : Promise.resolve(null)
   const episodeSectionPromise =
@@ -528,15 +531,55 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
       ...appliedJevReferents.map(({ userId: referenceId }) => referenceId)
     ])
   ]
-  const recallPromise =
-    longTerm && scope && recallMode !== 'legacy'
-      ? queryEmbedding.then((embedding) =>
-          runRecall(
-            { scope, speakerId: userId, participantIds, namedIds, message: userMessage, queryEmbedding: embedding },
-            channelId
-          )
-        )
+  const recallInput = (embedding: EpisodeEmbedding | null): RecallInput | null =>
+    scope
+      ? {
+          scope,
+          speakerId: userId,
+          participantIds,
+          namedIds,
+          message: userMessage,
+          queryEmbedding: embedding,
+          now: recallNow
+        }
       : null
+  const recordRecall = (recalled: TimedRecall, mode: 'shadow' | 'unified'): void => {
+    const { result, durationMs } = recalled
+    recordMemoryEvent({
+      kind: mode === 'unified' ? 'recall' : 'recall_shadow',
+      guildId,
+      channelId,
+      subjectUserId: userId,
+      durationMs,
+      nCandidates: result.trace.nCandidates,
+      nSelected: result.items.length,
+      tokensEst: result.trace.tokensEst,
+      detail: JSON.stringify({
+        mode,
+        privacy: config.memory.privacy,
+        fallback: result.trace.fallback,
+        gated: result.trace.gated,
+        selected: result.items.map((item) => [item.kind, item.id, Number(item.score.toFixed(3))])
+      })
+    })
+  }
+  const unifiedPromise =
+    longTerm && recallMode === 'unified'
+      ? queryEmbedding.then((embedding) => {
+          const input = recallInput(embedding)
+          return input ? runRecall(input, channelId) : null
+        })
+      : null
+  if (longTerm && recallMode === 'shadow') {
+    // Shadow output feeds only telemetry, so it runs after the turn's own work instead of delaying the prompt.
+    void queryEmbedding.then((embedding) =>
+      setImmediate(() => {
+        const input = recallInput(embedding)
+        const recalled = input ? runRecall(input, channelId) : null
+        if (recalled) recordRecall(recalled, 'shadow')
+      })
+    )
+  }
 
   // Names people and nothing else, so it survives a memory-free turn as the identity line the brief allows.
   let whoIsMentionedSection = ''
@@ -570,44 +613,25 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
   const prefetch = await awaitTurnPrefetch(options.turnEntryWork, channelId)
   const episodeSection = await episodeSectionPromise
   const mediaSection = await mediaSectionPromise
-  const recalled = recallPromise ? await recallPromise : null
+  const recalled = unifiedPromise ? await unifiedPromise : null
   let memorySection = ''
   if (recalled) {
-    const { result, durationMs } = recalled
-    const eventKind = recallMode === 'unified' ? 'recall' : 'recall_shadow'
-    if (recallMode === 'unified') {
-      memorySection = result.block ? `\n\n${result.block}` : ''
-      try {
-        touchRecalled(result.items.filter(({ kind }) => kind === 'fact' || kind === 'server_fact').map(({ id }) => id))
-      } catch (error) {
-        logger.warn({ channelId, error }, 'Failed to record recalled memories')
-      }
-      recordMemoryEvent({
-        kind: 'context_build',
-        guildId,
-        channelId,
-        subjectUserId: userId,
-        nSelected: result.items.length,
-        tokensEst: result.trace.tokensEst
-      })
+    const { result } = recalled
+    memorySection = result.block ? `\n\n${result.block}` : ''
+    try {
+      touchRecalled(result.items.filter(({ kind }) => kind === 'fact' || kind === 'server_fact').map(({ id }) => id))
+    } catch (error) {
+      logger.warn({ channelId, error }, 'Failed to record recalled memories')
     }
     recordMemoryEvent({
-      kind: eventKind,
+      kind: 'context_build',
       guildId,
       channelId,
       subjectUserId: userId,
-      durationMs,
-      nCandidates: result.trace.nCandidates,
       nSelected: result.items.length,
-      tokensEst: result.trace.tokensEst,
-      detail: JSON.stringify({
-        mode: recallMode,
-        privacy: config.memory.privacy,
-        fallback: result.trace.fallback,
-        gated: result.trace.gated,
-        selected: result.items.map((item) => [item.kind, item.id, Number(item.score.toFixed(3))])
-      })
+      tokensEst: result.trace.tokensEst
     })
+    recordRecall(recalled, 'unified')
   }
   turnEvent.prefetch = prefetch
   persistTurnEventWhenReady()

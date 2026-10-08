@@ -750,6 +750,10 @@ describe('turn entry work', () => {
   })
 })
 
+// Shadow recall only feeds telemetry, so it settles a macrotask after the prompt is built.
+const flushShadowRecall = () => new Promise((resolve) => setImmediate(resolve))
+afterEach(flushShadowRecall)
+
 describe('memory recall modes', () => {
   const memoryConfig = config.memory as { privacy: string; recall: string }
   const vector = Array.from({ length: 768 }, () => 0.25)
@@ -865,6 +869,7 @@ describe('memory recall modes', () => {
     const legacy = await turnWith()
     memoryConfig.recall = 'shadow'
     const shadow = await turnWith()
+    await flushShadowRecall()
 
     expect(legacy.systemPrompt).toContain(episodeBlock)
     expect(shadow.systemPrompt).toBe(legacy.systemPrompt)
@@ -885,6 +890,7 @@ describe('memory recall modes', () => {
     mocks.recallForTurn.mockImplementation(() => unifiedRecall())
 
     await turnWith()
+    await flushShadowRecall()
 
     const rows = recalledRows('recall_shadow')
     expect(rows).toHaveLength(1)
@@ -1038,5 +1044,29 @@ describe('memory recall modes', () => {
     expect(mocks.recallForTurn).not.toHaveBeenCalled()
     expect(recalledRows('recall')).toHaveLength(0)
     expect(recalledRows('recall_shadow')).toHaveLength(0)
+  })
+
+  it('keeps the legacy facts block for DMs in unified mode, whose facts live under a dm tenant', async () => {
+    memoryConfig.recall = 'unified'
+    mocks.retrieveForTurn.mockReturnValue({ entries: [{ person: 'Alice', facts: [] }], claims: [{}] } as never)
+    mocks.buildFactsEnvelope.mockReturnValue(factsEnvelope)
+
+    const context = await turnWith({ guildId: 'dm:user-1' })
+
+    expect(mocks.retrieveForTurn).toHaveBeenCalled()
+    expect(context.systemPrompt).toContain(factsEnvelope)
+    expect(mocks.recallForTurn).not.toHaveBeenCalled()
+  })
+
+  it('pins the unified recall clock to before the legacy retriever marks its picks', async () => {
+    memoryConfig.recall = 'unified'
+    const before = Date.now()
+    mocks.recallForTurn.mockImplementation(() => unifiedRecall())
+
+    await turnWith()
+
+    const [input] = mocks.recallForTurn.mock.calls[0] as unknown as [{ now?: number }]
+    expect(input.now).toBeGreaterThanOrEqual(before)
+    expect(input.now).toBeLessThanOrEqual(Date.now())
   })
 })
