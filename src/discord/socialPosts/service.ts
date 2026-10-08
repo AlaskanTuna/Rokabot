@@ -1,5 +1,6 @@
 import { config } from '../../config.js'
 import { logger } from '../../utils/logger.js'
+import { resolvesToPublicAddress } from '../attachments.js'
 import { parseBlueskyThread, parseFxTwitterResponse, parseYouTubeOEmbed, parseYtDlpMetadata } from './parsers.js'
 import type { SocialPost, SocialPostLookup } from './types.js'
 import { type SocialPlatform, type SocialPostTarget, findSocialPostTarget } from './urls.js'
@@ -34,8 +35,11 @@ function isYtDlpPlatform(platform: SocialPlatform): boolean {
   return platform !== 'x' && platform !== 'bluesky'
 }
 
+const MAX_BLUESKY_PDS_CACHE_ENTRIES = 256
+
 export class SocialPostViewer {
   private readonly cache = new Map<string, { post: SocialPost; expiresAt: number }>()
+  private readonly blueskyPdsCache = new Map<string, string>()
   private ytDlpAvailable = true
   private readonly fetcher: typeof fetch
   private readonly runExtractor: typeof runYtDlp
@@ -121,6 +125,73 @@ export class SocialPostViewer {
     }
   }
 
+  private getCachedBlueskyPds(did: string): string | null {
+    const endpoint = this.blueskyPdsCache.get(did)
+    if (!endpoint) return null
+    this.blueskyPdsCache.delete(did)
+    this.blueskyPdsCache.set(did, endpoint)
+    return endpoint
+  }
+
+  private setCachedBlueskyPds(did: string, endpoint: string): void {
+    this.blueskyPdsCache.delete(did)
+    this.blueskyPdsCache.set(did, endpoint)
+    while (this.blueskyPdsCache.size > MAX_BLUESKY_PDS_CACHE_ENTRIES) {
+      const oldest = this.blueskyPdsCache.keys().next().value
+      if (oldest === undefined) break
+      this.blueskyPdsCache.delete(oldest)
+    }
+  }
+
+  private async resolveBlueskyPds(did: string, signal: AbortSignal): Promise<string | null> {
+    const cached = this.getCachedBlueskyPds(did)
+    if (cached) return cached
+
+    let response: Response
+    try {
+      response = await this.fetcher(`https://plc.directory/${did}`, { signal })
+    } catch {
+      return null
+    }
+    if (!response.ok) return null
+
+    let document: unknown
+    try {
+      document = await response.json()
+    } catch {
+      return null
+    }
+    if (!document || typeof document !== 'object' || Array.isArray(document)) return null
+
+    const services = (document as { service?: unknown }).service
+    if (!Array.isArray(services)) return null
+    const pds = services.find(
+      (service) =>
+        service !== null &&
+        typeof service === 'object' &&
+        !Array.isArray(service) &&
+        typeof (service as { id?: unknown }).id === 'string' &&
+        (service as { id: string }).id.endsWith('#atproto_pds') &&
+        (service as { type?: unknown }).type === 'AtprotoPersonalDataServer'
+    ) as { serviceEndpoint?: unknown } | undefined
+    if (!pds || typeof pds.serviceEndpoint !== 'string') return null
+
+    let endpoint: URL
+    try {
+      endpoint = new URL(pds.serviceEndpoint)
+    } catch {
+      return null
+    }
+    if (endpoint.protocol !== 'https:' || endpoint.username || endpoint.password || endpoint.search || endpoint.hash) {
+      return null
+    }
+    if (!(await resolvesToPublicAddress(endpoint.hostname))) return null
+
+    const normalized = `${endpoint.origin}${endpoint.pathname.replace(/\/+$/, '')}`
+    this.setCachedBlueskyPds(did, normalized)
+    return normalized
+  }
+
   private async lookupUncached(target: SocialPostTarget, signal: AbortSignal): Promise<SocialPostLookup> {
     if (target.platform === 'x') {
       const response = await this.fetcher(`https://api.fxtwitter.com/status/${target.id}`, { signal })
@@ -147,7 +218,20 @@ export class SocialPostViewer {
       const response = await this.fetcher(threadUrl, { signal })
       if (!response.ok) return failure('bluesky', `http_${response.status}`)
       const parsed = parseBlueskyThread(await response.json(), target, this.settings.maxTextChars)
-      return parsed ? { status: 'found', post: parsed.post } : failure('bluesky', 'missing_post')
+      if (!parsed) return failure('bluesky', 'missing_post')
+      const blob = parsed.blueskyBlob
+      if (blob?.did.startsWith('did:plc:')) {
+        const endpoint = await this.resolveBlueskyPds(blob.did, signal)
+        if (endpoint) {
+          parsed.post.video = {
+            url: `${endpoint}/xrpc/com.atproto.sync.getBlob?did=${encodeURIComponent(blob.did)}&cid=${encodeURIComponent(blob.cid)}`,
+            bytes: blob.bytes,
+            headers: null,
+            hasAudio: null
+          }
+        }
+      }
+      return { status: 'found', post: parsed.post }
     }
 
     const result = await this.runExtractor(this.settings.ytDlpPath, target.extractorUrl, this.settings.timeoutMs)
