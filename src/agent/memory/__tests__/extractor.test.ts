@@ -154,7 +154,17 @@ describe('runEpisodePipeline', () => {
     expect(mocks.generateContent).toHaveBeenCalledOnce()
     expect(mocks.generateContent.mock.calls[0][0].contents).toContain('[bot-1|Roka (bot context only)]')
     expect(trace).toMatchObject({ stage: 'applied', outcome: 'noop', tokens: 30 })
-    expect(trace.ops).toEqual({ proposed: 0, applied: 0, duplicate: 0, staged: 0, dropped: 0, changed: 0 })
+    expect(trace.ops).toEqual({
+      proposed: 0,
+      applied: 0,
+      duplicate: 0,
+      staged: 0,
+      dropped: 0,
+      changed: 0,
+      past: 0,
+      reword: 0,
+      retracted: 0
+    })
     expect(Object.keys(trace.stageMs).sort()).toEqual(['admission', 'extraction', 'verification'])
   })
 
@@ -169,7 +179,12 @@ describe('runEpisodePipeline', () => {
       usageMetadata: { promptTokenCount: 400 }
     })
     mocks.judgeEpisodeOperations.mockResolvedValueOnce({
-      answers: { durable_0: { noul: 0.9, confidence: null }, attributed_0: { noul: 0.9, confidence: null } },
+      answers: {
+        durable_0: { noul: 0.9, confidence: null },
+        attributed_0: { noul: 0.9, confidence: null },
+        current_0: { noul: 0.9, confidence: null },
+        past_0: { noul: 0.1, confidence: null }
+      },
       latencyMs: 5,
       inputTokens: 60
     })
@@ -178,8 +193,81 @@ describe('runEpisodePipeline', () => {
     await expect(runEpisodePipeline(queueJob, trace)).resolves.toMatchObject({ status: 'completed', appliedOps: 1 })
 
     expect(trace).toMatchObject({ stage: 'applied', outcome: 'written', tokens: 30 + 400 + 60 })
-    expect(trace.ops).toEqual({ proposed: 1, applied: 1, duplicate: 0, staged: 0, dropped: 0, changed: 1 })
+    expect(trace.ops).toEqual({
+      proposed: 1,
+      applied: 1,
+      duplicate: 0,
+      staged: 0,
+      dropped: 0,
+      changed: 1,
+      past: 0,
+      reword: 0,
+      retracted: 0
+    })
     expect(getDb().prepare('SELECT DISTINCT job_id FROM jev_events').all()).toEqual([{ job_id: 1 }])
+  })
+
+  it('traces past mentions, rewordings and retractions and counts a retraction as a written run', async () => {
+    const claim = (predicate: string, value: string) =>
+      assertClaim({ guildId: 'guild-1', subjectUserId: 'user-1', predicate, value, sourceKind: 'passive' })
+    const subject = { kind: 'user', userId: 'user-1' }
+    const chess = claim('hobby', 'chess')
+    const cooking = claim('teasing_habit', 'teases friends about their cooking')
+    mocks.generateContent.mockResolvedValueOnce({
+      text: JSON.stringify({
+        ops: [
+          { op: 'retract', subject, predicate: 'hobby', value: 'chess' },
+          { op: 'add', subject, predicate: 'general_occupation', value: 'nurse', tense: 'past' },
+          {
+            op: 'update',
+            subject,
+            existingId: cooking.id,
+            predicate: 'teasing_habit',
+            value: 'jokes about how friends cook',
+            tense: 'current'
+          }
+        ],
+        summary: 'Alice quit chess.'
+      })
+    })
+    const high = { noul: 0.9, confidence: null }
+    mocks.judgeEpisodeOperations.mockResolvedValueOnce({
+      answers: {
+        durable_0: high,
+        attributed_0: high,
+        retracts_0_0: high,
+        durable_1: high,
+        attributed_1: high,
+        current_1: { noul: 0.1, confidence: null },
+        past_1: high,
+        durable_2: high,
+        attributed_2: high,
+        current_2: high,
+        past_2: high,
+        changes_2: { noul: 0.1, confidence: null }
+      },
+      latencyMs: 5,
+      inputTokens: 60
+    })
+    const trace = startRunTrace(queueJob, 1)
+
+    await runEpisodePipeline(queueJob, trace)
+
+    expect(trace.outcome).toBe('written')
+    expect(trace.ops).toEqual({
+      proposed: 3,
+      applied: 2,
+      duplicate: 1,
+      staged: 0,
+      dropped: 0,
+      changed: 2,
+      past: 1,
+      reword: 1,
+      retracted: 1
+    })
+    expect(getDb().prepare('SELECT end_reason FROM memory_claim WHERE id = ?').get(chess.id)).toEqual({
+      end_reason: 'retracted'
+    })
   })
 
   it('stops the trace at extraction when Gemini fails', async () => {
@@ -441,7 +529,9 @@ describe('verifyAndApplyOperations', () => {
     mocks.judgeEpisodeOperations.mockResolvedValueOnce({
       answers: {
         durable_0: { noul: 0.9, confidence: null },
-        attributed_0: { noul: 0.9, confidence: null }
+        attributed_0: { noul: 0.9, confidence: null },
+        current_0: { noul: 0.9, confidence: null },
+        past_0: { noul: 0.1, confidence: null }
       },
       latencyMs: 1,
       inputTokens: 1
@@ -551,6 +641,8 @@ describe('verifyAndApplyOperations', () => {
       answers: {
         durable_0: { noul: 0.9, confidence: null },
         attributed_0: { noul: 0.9, confidence: null },
+        current_0: { noul: 0.9, confidence: null },
+        past_0: { noul: 0.1, confidence: null },
         same_as_0_0: { noul: 0.9, confidence: null }
       },
       latencyMs: 1,
@@ -616,6 +708,9 @@ describe('verifyAndApplyOperations', () => {
       answers: {
         durable_0: { noul: 0.9, confidence: null },
         attributed_0: { noul: 0.9, confidence: null },
+        current_0: { noul: 0.9, confidence: null },
+        past_0: { noul: 0.1, confidence: null },
+        changes_0: { noul: 0.9, confidence: null },
         durable_1: { noul: 0.9, confidence: null },
         guild_scoped_1: { noul: 0.9, confidence: null }
       },

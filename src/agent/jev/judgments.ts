@@ -4,6 +4,7 @@ import { logger } from '../../utils/logger.js'
 import { getLocalHour } from '../../utils/timezone.js'
 import type { ExtractionOp } from '../memory/extractionSchema.js'
 import type { MemoryClaim } from '../memory/memoryClaims.js'
+import { proposedPeriod, retractCandidates, sameAsCandidates } from '../memory/verificationCandidates.js'
 import type { ToneKey } from '../prompts/tones.js'
 import { getJevClient } from './client.js'
 
@@ -205,7 +206,9 @@ export async function judgeEpisodeOperations(input: {
       questions[durableKey] = noul(
         op.subject.kind === 'guild'
           ? 'Is this a lasting shared server fact or an agreed plan/event, rather than an uncommitted suggestion, greeting, or passing mood?'
-          : 'Is this operation a lasting trait, preference, relationship or plan rather than a momentary state or an event that has already happened?'
+          : proposedPeriod(op) === 'past'
+            ? "Is this a lasting fact about the person's history, such as a former job, place or long-held habit, rather than a one-off event?"
+            : 'Is this operation a lasting trait, preference, relationship or plan rather than a momentary state or an event that has already happened?'
       )
       questions[scopeKey] = noul(
         op.subject.kind === 'guild'
@@ -214,16 +217,33 @@ export async function judgeEpisodeOperations(input: {
       )
       questionKeys.push(durableKey, scopeKey)
 
+      if ('tense' in op) {
+        questions[`current_${index}`] = noul('Is this true of the subject now, at the time of these messages?')
+        questions[`past_${index}`] = noul('Was this true of the subject at some earlier time, even if it is not now?')
+        questionKeys.push(`current_${index}`, `past_${index}`)
+        if (op.op === 'update') {
+          questions[`changes_${index}`] = noul(
+            `Does this change the existing claim #${op.existingId} into a different fact, rather than restate it in other words?`
+          )
+          questionKeys.push(`changes_${index}`)
+        }
+      }
+
       if (op.op === 'add') {
-        const claims = input.existing.filter((claim) => {
-          if (claim.subjectKind !== op.subject.kind || claim.predicate !== op.predicate) return false
-          return op.subject.kind === 'guild' || claim.subjectUserId === op.subject.userId
-        })
-        for (const [claimIndex, claim] of claims.entries()) {
+        for (const [claimIndex, claim] of sameAsCandidates(input.existing, op).entries()) {
           const key = `same_as_${index}_${claimIndex}`
           const subjectLabel = op.subject.kind === 'guild' ? 'this server' : op.subject.userId
           questions[key] = noul(
             `Do the episode messages state the same fact about ${subjectLabel} as existing claim #${claim.id}: ${claim.value}?`
+          )
+          questionKeys.push(key)
+        }
+      }
+      if (op.op === 'retract') {
+        for (const [claimIndex, claim] of retractCandidates(input.existing, op).entries()) {
+          const key = `retracts_${index}_${claimIndex}`
+          questions[key] = noul(
+            `Do the messages say that the subject's ${claim.predicate.replaceAll('_', ' ')} "${claim.value}" no longer holds?`
           )
           questionKeys.push(key)
         }

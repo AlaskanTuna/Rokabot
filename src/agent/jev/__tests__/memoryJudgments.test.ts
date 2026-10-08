@@ -76,11 +76,13 @@ describe('judgeEpisodeOperations', () => {
     vi.mocked(noul).mockClear()
   })
 
-  it('asks one batched set of durable, attribution, and same-as questions', async () => {
+  it('asks one batched set of durable, attribution, tense and same-as questions', async () => {
     mocks.systemOne.mockResolvedValueOnce({
       answers: {
         durable_0: { type: 'noul', noul: 0.9 },
         attributed_0: { type: 'noul', noul: 0.95 },
+        current_0: { type: 'noul', noul: 0.85 },
+        past_0: { type: 'noul', noul: 0.2 },
         same_as_0_0: { type: 'noul', noul: 0.8 }
       },
       usage: { input_tokens: 24, output_tokens: 3 }
@@ -90,12 +92,20 @@ describe('judgeEpisodeOperations', () => {
       { op: 'noop' }
     ] as const
     const existing = [
-      { id: 7, guildId: 'g-1', subjectKind: 'user', subjectUserId: 'u-1', predicate: 'likes', value: 'green tea' }
+      {
+        id: 7,
+        guildId: 'g-1',
+        subjectKind: 'user',
+        subjectUserId: 'u-1',
+        predicate: 'likes',
+        value: 'green tea',
+        period: 'current'
+      }
     ] as never
 
     const result = await judgeEpisodeOperations({ lines: ['[u-1|Mio]: I like tea'], ops: [ops[0]], existing })
 
-    expect(noul).toHaveBeenCalledTimes(3)
+    expect(noul).toHaveBeenCalledTimes(5)
     expect(mocks.systemOne).toHaveBeenCalledOnce()
     expect(mocks.systemOne.mock.calls[0][0]).toMatchObject({
       state: {
@@ -106,6 +116,8 @@ describe('judgeEpisodeOperations', () => {
       questions: {
         durable_0: expect.any(Object),
         attributed_0: expect.any(Object),
+        current_0: expect.any(Object),
+        past_0: expect.any(Object),
         same_as_0_0: expect.any(Object)
       }
     })
@@ -113,6 +125,8 @@ describe('judgeEpisodeOperations', () => {
       answers: {
         durable_0: { noul: 0.9, confidence: null },
         attributed_0: { noul: 0.95, confidence: null },
+        current_0: { noul: 0.85, confidence: null },
+        past_0: { noul: 0.2, confidence: null },
         same_as_0_0: { noul: 0.8, confidence: null }
       },
       inputTokens: 24
@@ -167,6 +181,200 @@ describe('judgeEpisodeOperations', () => {
     expect(result?.answers).toEqual({
       durable_0: { noul: 0.99, confidence: null },
       guild_scoped_0: { noul: 0.99, confidence: null }
+    })
+  })
+  describe('tense, change and retraction questions', () => {
+    const subject = { kind: 'user' as const, userId: 'u-1' }
+
+    function existingClaim(
+      id: number,
+      value: string,
+      options: { period?: 'current' | 'past'; predicate?: string } = {}
+    ) {
+      return {
+        id,
+        guildId: 'g-1',
+        subjectKind: 'user',
+        subjectUserId: 'u-1',
+        predicate: options.predicate ?? 'hobby',
+        value,
+        period: options.period ?? 'current'
+      }
+    }
+
+    async function ask(ops: unknown[], existing: unknown[] = []) {
+      mocks.systemOne.mockImplementationOnce(async (request: { questions: Record<string, unknown> }) => ({
+        answers: Object.fromEntries(Object.keys(request.questions).map((key) => [key, { type: 'noul', noul: 0.7 }])),
+        usage: { input_tokens: 5, output_tokens: 1 }
+      }))
+      const result = await judgeEpisodeOperations({
+        lines: ['[u-1|Mio]: hi'],
+        ops: ops as never,
+        existing: existing as never
+      })
+      const questions = (mocks.systemOne.mock.calls[0]?.[0]?.questions ?? {}) as Record<
+        string,
+        { instructions: string }
+      >
+      return { result, questions }
+    }
+
+    it('asks whether an add is true now and was true earlier', async () => {
+      const { questions } = await ask([{ op: 'add', subject, predicate: 'hobby', value: 'chess', tense: 'current' }])
+
+      expect(Object.keys(questions)).toEqual(['durable_0', 'attributed_0', 'current_0', 'past_0'])
+      expect(questions.current_0.instructions).toBe('Is this true of the subject now, at the time of these messages?')
+      expect(questions.past_0.instructions).toBe(
+        'Was this true of the subject at some earlier time, even if it is not now?'
+      )
+    })
+
+    it('also asks whether an update changes the claim it targets', async () => {
+      const { questions } = await ask(
+        [{ op: 'update', subject, existingId: 7, predicate: 'hobby', value: 'go', tense: 'current' }],
+        [existingClaim(7, 'chess')]
+      )
+
+      expect(Object.keys(questions)).toEqual(['durable_0', 'attributed_0', 'current_0', 'past_0', 'changes_0'])
+      expect(questions.changes_0.instructions).toBe(
+        'Does this change the existing claim #7 into a different fact, rather than restate it in other words?'
+      )
+    })
+
+    it('asks about the history of a past-tense operation and keeps the usual wording otherwise', async () => {
+      const { questions } = await ask([
+        { op: 'add', subject, predicate: 'hobby', value: 'chess', tense: 'past' },
+        { op: 'add', subject, predicate: 'hobby', value: 'go', tense: 'current' }
+      ])
+
+      expect(questions.durable_0.instructions).toBe(
+        "Is this a lasting fact about the person's history, such as a former job, place or long-held habit, rather than a one-off event?"
+      )
+      expect(questions.durable_0.instructions).toContain('history')
+      expect(questions.durable_1.instructions).toBe(
+        'Is this operation a lasting trait, preference, relationship or plan rather than a momentary state or an event that has already happened?'
+      )
+    })
+
+    it('asks one retraction question per matching current claim of the subject, capped at five', async () => {
+      const existing = [
+        existingClaim(1, 'chess'),
+        existingClaim(2, 'go'),
+        existingClaim(3, 'shogi', { period: 'past' }),
+        existingClaim(4, 'tea', { predicate: 'likes' }),
+        { ...existingClaim(5, 'xiangqi'), subjectUserId: 'u-2' },
+        ...[6, 7, 8, 9, 10, 11].map((id) => existingClaim(id, `hobby-${id}`))
+      ]
+      const { questions } = await ask([{ op: 'retract', subject, predicate: 'hobby', value: 'chess' }], existing)
+
+      expect(Object.keys(questions)).toEqual([
+        'durable_0',
+        'attributed_0',
+        'retracts_0_0',
+        'retracts_0_1',
+        'retracts_0_2',
+        'retracts_0_3',
+        'retracts_0_4'
+      ])
+      expect(questions.retracts_0_0.instructions).toBe(
+        'Do the messages say that the subject\'s hobby "chess" no longer holds?'
+      )
+      expect(questions.retracts_0_1.instructions).toBe(
+        'Do the messages say that the subject\'s hobby "go" no longer holds?'
+      )
+      expect(JSON.stringify(questions)).not.toContain('shogi')
+      expect(JSON.stringify(questions)).not.toContain('xiangqi')
+    })
+
+    it('asks about the retracted value first, exact matches before case-insensitive ones, even past the cap', async () => {
+      const existing = [
+        ...[1, 2, 3, 4, 5].map((id) => existingClaim(id, `hobby-${id}`)),
+        existingClaim(6, ' Chess '),
+        existingClaim(7, 'chess')
+      ]
+      const { questions } = await ask([{ op: 'retract', subject, predicate: 'hobby', value: 'chess' }], existing)
+
+      expect(Object.keys(questions).filter((key) => key.startsWith('retracts_'))).toEqual([
+        'retracts_0_0',
+        'retracts_0_1',
+        'retracts_0_2',
+        'retracts_0_3',
+        'retracts_0_4'
+      ])
+      expect(questions.retracts_0_0.instructions).toBe(
+        'Do the messages say that the subject\'s hobby "chess" no longer holds?'
+      )
+      expect(questions.retracts_0_1.instructions).toBe(
+        'Do the messages say that the subject\'s hobby " Chess " no longer holds?'
+      )
+      expect(questions.retracts_0_2.instructions).toContain('"hobby-1"')
+    })
+
+    it('words the predicate of a retraction question as a label', async () => {
+      const { questions } = await ask(
+        [{ op: 'retract', subject, predicate: 'general_occupation', value: 'nurse' }],
+        [existingClaim(1, 'nurse', { predicate: 'general_occupation' })]
+      )
+
+      expect(questions.retracts_0_0.instructions).toBe(
+        'Do the messages say that the subject\'s general occupation "nurse" no longer holds?'
+      )
+    })
+
+    it('compares an add only with existing claims of the period it writes', async () => {
+      const existing = [
+        existingClaim(1, 'chess'),
+        existingClaim(2, 'go', { period: 'past' }),
+        existingClaim(3, 'shogi')
+      ]
+      const current = await ask([{ op: 'add', subject, predicate: 'hobby', value: 'tea', tense: 'current' }], existing)
+      expect(Object.keys(current.questions).filter((key) => key.startsWith('same_as_'))).toEqual([
+        'same_as_0_0',
+        'same_as_0_1'
+      ])
+      expect(current.questions.same_as_0_0.instructions).toContain('#1')
+      expect(current.questions.same_as_0_1.instructions).toContain('#3')
+
+      mocks.systemOne.mockClear()
+      const past = await ask([{ op: 'add', subject, predicate: 'hobby', value: 'tea', tense: 'past' }], existing)
+      expect(Object.keys(past.questions).filter((key) => key.startsWith('same_as_'))).toEqual(['same_as_0_0'])
+      expect(past.questions.same_as_0_0.instructions).toContain('#2')
+    })
+
+    it('asks no tense, change or retraction question for a remove or a guild operation', async () => {
+      const removed = await ask([{ op: 'remove', subject, existingId: 7, predicate: 'hobby', value: 'chess' }])
+      expect(Object.keys(removed.questions)).toEqual(['durable_0', 'attributed_0'])
+
+      mocks.systemOne.mockClear()
+      const guild = await ask([
+        {
+          op: 'add',
+          subject: { kind: 'guild' },
+          predicate: 'plan',
+          value: 'Game night',
+          date: { relative: 'tomorrow' }
+        }
+      ])
+      expect(Object.keys(guild.questions)).toEqual(['durable_0', 'guild_scoped_0'])
+    })
+
+    it('returns null when a tense answer is missing', async () => {
+      mocks.systemOne.mockResolvedValueOnce({
+        answers: {
+          durable_0: { type: 'noul', noul: 0.9 },
+          attributed_0: { type: 'noul', noul: 0.9 },
+          current_0: { type: 'noul', noul: 0.9 }
+        },
+        usage: { input_tokens: 5, output_tokens: 1 }
+      })
+
+      await expect(
+        judgeEpisodeOperations({
+          lines: ['fact'],
+          ops: [{ op: 'add', subject, predicate: 'hobby', value: 'chess', tense: 'current' }],
+          existing: []
+        })
+      ).resolves.toBeNull()
     })
   })
 })
