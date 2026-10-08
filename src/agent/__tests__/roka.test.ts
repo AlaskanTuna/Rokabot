@@ -1,6 +1,7 @@
 import type { CallbackContext, LlmRequest, LlmResponse } from '@google/adk'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { config } from '../../config.js'
+import { prepareTurnMedia } from '../media/turnMedia.js'
 
 const mocks = vi.hoisted(() => ({
   judgeTurn: vi.fn(),
@@ -12,6 +13,10 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../jev/judgments.js', () => ({ judgeTurn: mocks.judgeTurn }))
 vi.mock('../../storage/jevEventStore.js', () => ({ recordJevEvent: mocks.recordJevEvent }))
 vi.mock('../media/watch.js', () => ({ watchMedia: mocks.watchMedia, countUriTokens: mocks.countUriTokens }))
+vi.mock('../media/turnMedia.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../media/turnMedia.js')>()
+  return { ...actual, prepareTurnMedia: vi.fn(actual.prepareTurnMedia) }
+})
 
 const mutableGeminiConfig = config.gemini as { liveMaxRetries: number }
 const mutableJevConfig = config.jev as {
@@ -56,7 +61,7 @@ import { withSearchCitations } from '../searchCitations.js'
 import { destroyAllSessions, destroySession, sessionService } from '../session.js'
 import { beginShutdown, isShuttingDown, resetForTest } from '../shutdownSignal.js'
 import { __resetTokenBudgetForTest, remainingTokensThisMinute } from '../tokenBudget.js'
-import { MEMORY_TOOL_NAMES, rokaTools } from '../tools/index.js'
+import { MEMORY_TOOL_NAMES, forgetUserTool, recallUserTool, rememberUserTool, rokaTools } from '../tools/index.js'
 import { createTurnContext } from '../turnContext.js'
 
 vi.mock('../../storage/sessionStore.js', () => ({
@@ -976,6 +981,76 @@ describe('beforeModelCallback memory-tool filtering', () => {
   })
 })
 
+describe('memory privacy off on the model request', () => {
+  const memoryConfig = config.memory as { privacy: string }
+  const context = { state: { get: () => 'a prompt' } } as unknown as CallbackContext
+  const callback = rokaAgent.beforeModelCallback as (params: {
+    context: CallbackContext
+    request: LlmRequest
+  }) => Promise<unknown>
+
+  function requestWithEveryTool() {
+    return {
+      contents: [{ role: 'user', parts: [{ text: 'hello' }] }],
+      config: {
+        tools: [{ functionDeclarations: rokaTools.map((tool) => tool._getDeclaration()) as Array<{ name?: string }> }]
+      },
+      toolsDict: Object.fromEntries(rokaTools.map((tool) => [tool.name, tool]))
+    } as unknown as LlmRequest
+  }
+
+  const declaredNames = (request: LlmRequest) =>
+    (request.config?.tools as Array<{ functionDeclarations?: Array<{ name?: string }> }>).flatMap(
+      (tool) => tool.functionDeclarations?.map(({ name }) => name ?? '') ?? []
+    )
+
+  beforeEach(() => {
+    memoryConfig.privacy = 'off'
+  })
+
+  afterEach(() => {
+    memoryConfig.privacy = 'relaxed'
+    __resetTestRunTurnFactory()
+  })
+
+  it('withholds remember_user and recall_user but keeps forget_user', async () => {
+    const request = requestWithEveryTool()
+
+    await steeringForRequest.run({ memory: true }, () => callback({ context, request }))
+
+    const names = declaredNames(request)
+    expect(names).not.toContain(rememberUserTool.name)
+    expect(names).not.toContain(recallUserTool.name)
+    expect(names).toContain(forgetUserTool.name)
+    expect(request.toolsDict[rememberUserTool.name]).toBeUndefined()
+    expect(request.toolsDict[recallUserTool.name]).toBeUndefined()
+    expect(request.toolsDict[forgetUserTool.name]).toBeDefined()
+  })
+
+  it('gives watched media no memory scope', async () => {
+    __setTestRunTurnFactory(() => async () => ({ text: 'Hm~', hasText: true, hasFunctionCall: false }))
+
+    await generateResponse({
+      channelId: 'privacy-off-media',
+      guildId: 'privacy-off-guild',
+      memory: true,
+      messageId: 'message-1',
+      userMessage: 'hi',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id',
+      turnEntryWork: {
+        judgment: Promise.resolve(null),
+        prefetch: Promise.resolve({ decision: { fire: false, reason: 'no_judgment' as const }, outcome: null }),
+        cancel: () => {}
+      }
+    })
+    await destroySession('privacy-off-media')
+
+    expect(vi.mocked(prepareTurnMedia).mock.calls.at(-1)?.[0].memoryScope).toBeNull()
+  })
+})
+
 describe('generateResponse reply intent', () => {
   it('passes whether the speaker asked about replies to the tool filter', async () => {
     const seen: Array<boolean | undefined> = []
@@ -1560,7 +1635,8 @@ describe('generateResponse prompt safety', () => {
       guildId: 'prompt-safety-guild',
       speakerId: 'mio-id',
       participantIds: [],
-      message: 'Any good games?'
+      message: 'Any good games?',
+      scope: { guildId: 'prompt-safety-guild', channelId: 'roka-prompt-safety-channel' }
     })
     expect(JSON.parse(factsEnvelope.slice(FACTS_UNTRUSTED_DATA_LABEL.length + 1))).toEqual({
       facts: [{ person: 'Mio', attributes: [{ key: 'favorite_game', value: 'Senren Banka' }] }]
@@ -1623,7 +1699,8 @@ describe('generateResponse prompt safety', () => {
       guildId: 'prompt-safety-guild',
       speakerId: 'mio-id',
       participantIds: ['referenced-id', 'recent-1', 'recent-2'],
-      message: 'What about Mimi and Rin?'
+      message: 'What about Mimi and Rin?',
+      scope: { guildId: 'prompt-safety-guild', channelId: 'roka-prompt-safety-channel' }
     })
     expect(capturedPrompt.indexOf('## What You Remember About People In This Channel')).toBeLessThan(
       capturedPrompt.indexOf('## Who Is Mentioned')
@@ -2619,7 +2696,8 @@ describe('Jev turn judgments', () => {
       guildId: 'prompt-safety-guild',
       speakerId: 'mio-id',
       participantIds: ['resolved-id', 'rin-2'],
-      message: 'What does Rin like?'
+      message: 'What does Rin like?',
+      scope: { guildId: 'prompt-safety-guild', channelId: 'roka-prompt-safety-channel' }
     })
     expect(capturedPrompt).toContain('- "Mimi" means Mio\n- "Rin" means Name rin-2')
   })
@@ -2664,7 +2742,8 @@ describe('Jev turn judgments', () => {
       guildId: 'prompt-safety-guild',
       speakerId: 'mio-id',
       participantIds: [],
-      message: 'What does Rin like?'
+      message: 'What does Rin like?',
+      scope: { guildId: 'prompt-safety-guild', channelId: 'roka-prompt-safety-channel' }
     })
     expect(capturedPrompt).not.toContain('## Who Is Mentioned')
     expect(info.mock.calls.filter(([, message]) => message === 'Jev turn judgment')).toHaveLength(1)

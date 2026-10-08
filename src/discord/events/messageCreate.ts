@@ -45,7 +45,7 @@ import { handleGachaMention } from './gachaMention.js'
 export const NAME_MENTION_REGEX = /\broka\b/i
 
 function recordMonitoredEpisodeMessage(message: Message, botUserId: string): void {
-  if (!message.guild || !isMonitored(message.channelId)) return
+  if (!message.guild || !isMonitored(message.channelId) || config.memory.privacy === 'off') return
 
   try {
     const content = replaceUserMentions(message, botUserId)

@@ -1,5 +1,6 @@
 import { Collection } from 'discord.js'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { config } from '../../config.js'
 import type { SocialPostLookup } from '../socialPosts/types.js'
 
 const mocks = vi.hoisted(() => ({
@@ -607,6 +608,24 @@ describe('message handler episode tracking', () => {
     })
     expect(mocks.generateResponse).not.toHaveBeenCalled()
     expect(mocks.startTurnEntryWork).not.toHaveBeenCalled()
+  })
+
+  it('does not track monitored guild messages when memory privacy is off', async () => {
+    const memoryConfig = config.memory as { privacy: string }
+    memoryConfig.privacy = 'off'
+    try {
+      const { message } = createMessage({ guild, content: '<@111> I love tea' })
+
+      await createMessageHandler(
+        { user: { id: '111', displayName: 'Roka', username: 'roka' } } as never,
+        createRateLimiter() as never
+      )(message as never)
+
+      expect(mocks.recordEpisodeMessage).not.toHaveBeenCalled()
+      expect(mocks.generateResponse).toHaveBeenCalled()
+    } finally {
+      memoryConfig.privacy = 'relaxed'
+    }
   })
 
   it('does not track direct messages or unmonitored guild channels', async () => {

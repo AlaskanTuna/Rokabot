@@ -16,6 +16,9 @@ import { embedEpisodeText } from './memory/episodeEmbeddings.js'
 import { buildEpisodeRecallBlock } from './memory/episodeRetriever.js'
 import { resolveReferences } from './memory/identityResolver.js'
 import { buildMediaRecallBlock } from './memory/mediaRecall.js'
+import { touchRecalled } from './memory/memoryClaims.js'
+import type { RecallScope } from './memory/privacy.js'
+import { type RecallInput, type RecallResult, recallForTurn } from './memory/recall.js'
 import { formatGuildFactDate, retrieveForTurn, retrieveGuildFacts } from './memory/retriever.js'
 import { getMessages as getBufferMessages } from './passiveBuffer.js'
 import { assembleSystemPrompt } from './promptAssembler.js'
@@ -173,22 +176,42 @@ export function startTurnEntryWork(input: StartTurnEntryWorkInput): TurnEntryWor
   }
 }
 
-async function awaitRecallSection(
-  pending: Promise<EpisodeEmbedding | null>,
-  buildBlock: (queryEmbedding: EpisodeEmbedding) => string
-): Promise<string> {
+/** The query embedding, or `null` once `embeddingTimeoutMs` passes; the one wait every recall path shares. */
+function awaitQueryEmbedding(pending: Promise<EpisodeEmbedding | null>): Promise<EpisodeEmbedding | null> {
   let timer: ReturnType<typeof setTimeout> | undefined
   const timeout = new Promise<null>((resolve) => {
     timer = setTimeout(() => resolve(null), config.memory.embeddingTimeoutMs)
   })
+  return Promise.race([pending, timeout])
+    .catch(() => null)
+    .finally(() => {
+      if (timer) clearTimeout(timer)
+    })
+}
+
+async function awaitRecallSection(
+  embedding: Promise<EpisodeEmbedding | null>,
+  buildBlock: (queryEmbedding: EpisodeEmbedding) => string
+): Promise<string> {
   try {
-    const embedding = await Promise.race([pending, timeout])
-    const block = embedding ? buildBlock(embedding) : ''
+    const queryEmbedding = await embedding
+    const block = queryEmbedding ? buildBlock(queryEmbedding) : ''
     return block ? `\n\n${block}` : ''
   } catch {
     return ''
-  } finally {
-    if (timer) clearTimeout(timer)
+  }
+}
+
+type TimedRecall = { result: RecallResult; durationMs: number }
+
+function runRecall(input: RecallInput, channelId: string): TimedRecall | null {
+  const startedAt = performance.now()
+  try {
+    const result = recallForTurn(input)
+    return { result, durationMs: Math.round(performance.now() - startedAt) }
+  } catch (error) {
+    logger.warn({ channelId, error }, 'Failed to recall memories for the turn')
+    return null
   }
 }
 
@@ -397,22 +420,33 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
   }
 
   const basePrompt = assembleSystemPrompt({ tone, hour, displayName, memory })
+  // The prompt layer and the mention lines still follow `memory`; every long-term read follows `longTerm`.
+  const longTerm = memory && config.memory.privacy !== 'off'
+  const recallMode = config.memory.recall
+  const scope: RecallScope | undefined = guildId && !guildId.startsWith('dm:') ? { guildId, channelId } : undefined
+  const recallEmbedding = longTerm && scope ? options.turnEntryWork.queryEmbedding : undefined
+  const queryEmbedding = recallEmbedding ? awaitQueryEmbedding(recallEmbedding) : Promise.resolve(null)
+  const episodeSectionPromise =
+    longTerm && recallMode !== 'unified'
+      ? awaitRecallSection(queryEmbedding, (embedding) =>
+          buildEpisodeRecallBlock({ guildId, queryEmbedding: embedding, scope })
+        )
+      : Promise.resolve('')
+  const mediaSectionPromise =
+    longTerm && recallMode !== 'unified'
+      ? awaitRecallSection(queryEmbedding, (embedding) =>
+          buildMediaRecallBlock({ guildId, queryEmbedding: embedding, scope })
+        )
+      : Promise.resolve('')
   let factsSection = ''
   let serverFactsSection = ''
-  const recallEmbedding =
-    memory && guildId && !guildId.startsWith('dm:') ? options.turnEntryWork.queryEmbedding : undefined
-  const episodeSectionPromise = recallEmbedding
-    ? awaitRecallSection(recallEmbedding, (queryEmbedding) => buildEpisodeRecallBlock({ guildId, queryEmbedding }))
-    : Promise.resolve('')
-  const mediaSectionPromise = recallEmbedding
-    ? awaitRecallSection(recallEmbedding, (queryEmbedding) => buildMediaRecallBlock({ guildId, queryEmbedding }))
-    : Promise.resolve('')
   let overheardSection = ''
   let factEntryCount = 0
+  let participantIds: string[] = []
 
   // A memory-free turn (`/ask`) reads nothing: no claims retrieval, no legacy facts, and no
   // `context_build` telemetry, because nothing was built to measure (#207).
-  if (memory) {
+  if (longTerm) {
     try {
       // Resolve user identities from persistent lookup table (survives restarts)
       const knownUsers = getAllUserNames()
@@ -428,64 +462,80 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
       // Ensure current speaker is included
       knownUsers.set(userId, { userId, username, displayName })
 
-      let factEntries: Array<{ person: string; facts: Array<{ key: string; value: string }> }>
-      let retrievalSelected = 0
-
-      const retrieval = retrieveForTurn({
-        guildId,
-        speakerId: userId,
-        participantIds: [
-          ...new Set(
-            [
-              ...references.resolved.map(({ userId: referenceId }) => referenceId),
-              ...appliedJevReferents.map(({ userId: referenceId }) => referenceId),
-              ...channelUsers.keys()
-            ].filter((participantId) => participantId !== userId)
-          )
-        ].slice(0, config.memory.recentParticipantLimit),
-        message: userMessage
-      })
-      factEntries = retrieval.entries
-      retrievalSelected = retrieval.claims.length
-
-      const factsEnvelope = buildFactsEnvelope(factEntries)
-      if (factsEnvelope) {
-        factsSection = `\n\n## What You Remember About People In This Channel\n${factsEnvelope}`
-        factEntryCount = factEntries.length
-        logger.info(
-          { channelId, usersWithFacts: factEntries.length, totalUsers: knownUsers.size },
-          'User facts injected into prompt'
+      participantIds = [
+        ...new Set(
+          [
+            ...references.resolved.map(({ userId: referenceId }) => referenceId),
+            ...appliedJevReferents.map(({ userId: referenceId }) => referenceId),
+            ...channelUsers.keys()
+          ].filter((participantId) => participantId !== userId)
         )
-      }
+      ].slice(0, config.memory.recentParticipantLimit)
 
-      if (guildId) {
-        const serverFacts = retrieveGuildFacts(guildId).facts
-        if (serverFacts.length > 0) {
-          serverFactsSection =
-            '\n\n## Things You Remember About This Server\n' + serverFacts.map(formatServerFact).join('\n')
+      // The unified recall replaces the legacy blocks, so a unified turn reads none of them.
+      if (recallMode !== 'unified') {
+        const retrieval = retrieveForTurn({ guildId, speakerId: userId, participantIds, message: userMessage, scope })
+        const factEntries = retrieval.entries
+        const retrievalSelected = retrieval.claims.length
+
+        const factsEnvelope = buildFactsEnvelope(factEntries)
+        if (factsEnvelope) {
+          factsSection = `\n\n## What You Remember About People In This Channel\n${factsEnvelope}`
+          factEntryCount = factEntries.length
+          logger.info(
+            { channelId, usersWithFacts: factEntries.length, totalUsers: knownUsers.size },
+            'User facts injected into prompt'
+          )
         }
-      }
 
-      recordMemoryEvent({
-        kind: 'context_build',
-        guildId,
-        channelId,
-        subjectUserId: userId,
-        nSelected: retrievalSelected,
-        tokensEst: factsEnvelope ? estimateTokens(factsEnvelope) : 0
-      })
+        if (guildId) {
+          const serverFacts = retrieveGuildFacts(guildId, Date.now(), scope).facts
+          if (serverFacts.length > 0) {
+            serverFactsSection =
+              '\n\n## Things You Remember About This Server\n' + serverFacts.map(formatServerFact).join('\n')
+          }
+        }
+
+        recordMemoryEvent({
+          kind: 'context_build',
+          guildId,
+          channelId,
+          subjectUserId: userId,
+          nSelected: retrievalSelected,
+          tokensEst: factsEnvelope ? estimateTokens(factsEnvelope) : 0
+        })
+      }
     } catch (error) {
-      recordMemoryEvent({
-        kind: 'context_build',
-        guildId,
-        channelId,
-        subjectUserId: userId,
-        nSelected: 0,
-        tokensEst: 0
-      })
+      if (recallMode !== 'unified') {
+        recordMemoryEvent({
+          kind: 'context_build',
+          guildId,
+          channelId,
+          subjectUserId: userId,
+          nSelected: 0,
+          tokensEst: 0
+        })
+      }
       logger.warn({ userId, error }, 'Failed to load user memory for prompt injection')
     }
   }
+
+  // Shadow and unified both run the unified recall on the query embedding the legacy sections use.
+  const namedIds = [
+    ...new Set([
+      ...references.resolved.map(({ userId: referenceId }) => referenceId),
+      ...appliedJevReferents.map(({ userId: referenceId }) => referenceId)
+    ])
+  ]
+  const recallPromise =
+    longTerm && scope && recallMode !== 'legacy'
+      ? queryEmbedding.then((embedding) =>
+          runRecall(
+            { scope, speakerId: userId, participantIds, namedIds, message: userMessage, queryEmbedding: embedding },
+            channelId
+          )
+        )
+      : null
 
   // Names people and nothing else, so it survives a memory-free turn as the identity line the brief allows.
   let whoIsMentionedSection = ''
@@ -519,6 +569,45 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
   const prefetch = await awaitTurnPrefetch(options.turnEntryWork, channelId)
   const episodeSection = await episodeSectionPromise
   const mediaSection = await mediaSectionPromise
+  const recalled = recallPromise ? await recallPromise : null
+  let memorySection = ''
+  if (recalled) {
+    const { result, durationMs } = recalled
+    const eventKind = recallMode === 'unified' ? 'recall' : 'recall_shadow'
+    if (recallMode === 'unified') {
+      memorySection = result.block ? `\n\n${result.block}` : ''
+      try {
+        touchRecalled(result.items.filter(({ kind }) => kind === 'fact' || kind === 'server_fact').map(({ id }) => id))
+      } catch (error) {
+        logger.warn({ channelId, error }, 'Failed to record recalled memories')
+      }
+      recordMemoryEvent({
+        kind: 'context_build',
+        guildId,
+        channelId,
+        subjectUserId: userId,
+        nSelected: result.items.length,
+        tokensEst: result.trace.tokensEst
+      })
+    }
+    recordMemoryEvent({
+      kind: eventKind,
+      guildId,
+      channelId,
+      subjectUserId: userId,
+      durationMs,
+      nCandidates: result.trace.nCandidates,
+      nSelected: result.items.length,
+      tokensEst: result.trace.tokensEst,
+      detail: JSON.stringify({
+        mode: recallMode,
+        privacy: config.memory.privacy,
+        fallback: result.trace.fallback,
+        gated: result.trace.gated,
+        selected: result.items.map((item) => [item.kind, item.id, Number(item.score.toFixed(3))])
+      })
+    })
+  }
   turnEvent.prefetch = prefetch
   persistTurnEventWhenReady()
   const lookedUpSection = prefetch.block ? `\n\n${prefetch.block}` : ''
@@ -528,9 +617,10 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
   const SAFETY_LADDER = ['drop_overheard', 'drop_facts', 'clear_history'] as const
   function composePrompt(safetyRung: number): string {
     const head = safetyRung >= 3 ? assembleSystemPrompt({ tone: 'sincere', hour, displayName, memory }) : basePrompt
+    const peopleSection = recallMode === 'unified' ? memorySection : factsSection
     return [
       head,
-      safetyRung < 2 ? `${factsSection}${whoIsMentionedSection}` : '',
+      safetyRung < 2 ? `${peopleSection}${whoIsMentionedSection}` : '',
       safetyRung < 2 ? serverFactsSection : '',
       safetyRung < 2 ? episodeSection : '',
       safetyRung < 2 ? mediaSection : '',

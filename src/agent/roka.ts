@@ -43,7 +43,7 @@ import {
   suppressSessionRehydration
 } from './session.js'
 import { chargeTokens } from './tokenBudget.js'
-import { MEMORY_TOOL_NAMES, readRepliesTool, rokaTools } from './tools/index.js'
+import { MEMORY_TOOL_NAMES, readRepliesTool, recallUserTool, rememberUserTool, rokaTools } from './tools/index.js'
 import { createTurnContext, startTurnEntryWork } from './turnContext.js'
 import type { TurnContextOptions, TurnEntryWork } from './turnContext.js'
 
@@ -175,7 +175,11 @@ export const rokaAgent = new LlmAgent({
     // with nothing behind it (#207).
     const steering = steeringForRequest.getStore()
     const withheld = [
-      ...(steering?.memory === false ? MEMORY_TOOL_NAMES : []),
+      ...(steering?.memory === false
+        ? MEMORY_TOOL_NAMES
+        : config.memory.privacy === 'off'
+          ? [rememberUserTool.name, recallUserTool.name]
+          : []),
       ...(steering?.replies === false ? [readRepliesTool.name] : [])
     ]
     if (withheld.length > 0) {
@@ -296,9 +300,9 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     focus: userMessage,
     mayRetry: () => getSharedRateLimiter(config.rateLimit).tryConsumeAboveFloor(config.gemini.retryRpmFloor),
     geminiUnavailable: rokaModel.hasFallback && hasStickyFallback(),
-    // Servers only: DMs, group DMs and `/ask` (memory off) keep what was watched in the transcript alone.
+    // Servers only: DMs, group DMs, `/ask` and privacy `off` keep what was watched in the transcript alone.
     memoryScope:
-      memory && !guildId.startsWith('dm:') && options.messageId
+      memory && config.memory.privacy !== 'off' && !guildId.startsWith('dm:') && options.messageId
         ? { guildId, channelId, messageId: options.messageId, userId }
         : null
   })
