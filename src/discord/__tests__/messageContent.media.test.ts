@@ -6,6 +6,7 @@ interface Attachment {
   url: string
   contentType: string | null
   size?: number
+  duration?: number | null
 }
 
 function collection<T>(items: T[]) {
@@ -137,5 +138,25 @@ describe('media message content', () => {
     const extracted = extract(message(), referenceMessage([], 'user-2', [thumbnailEmbed(thumbnail)]))
 
     expect(extracted.imageAttachments).toEqual([{ url: thumbnail, contentType: 'image/png' }])
+  })
+})
+
+describe('voice message duration', () => {
+  it('carries a replied-to voice message duration onto the attachment', () => {
+    const voice = { url: 'https://cdn.discordapp.com/v.ogg', contentType: 'audio/ogg', size: 30_000, duration: 52 }
+    const result = extractMessageContent(
+      message() as never,
+      referenceMessage([voice]) as never,
+      false,
+      'bot',
+      []
+    )
+    expect(result.imageAttachments).toEqual([{ url: voice.url, contentType: 'audio/ogg', size: 30_000, durationSec: 52 }])
+  })
+
+  it('leaves the duration off when Discord states none', () => {
+    const clip = { url: 'https://cdn.discordapp.com/c.mp4', contentType: 'video/mp4', size: 1_000, duration: null }
+    const result = extractMessageContent(message({ attachments: [clip] }) as never, null, false, 'bot', [])
+    expect(result.imageAttachments[0]).not.toHaveProperty('durationSec')
   })
 })

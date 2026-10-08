@@ -11,6 +11,10 @@ export interface ImageAttachment {
   contentType: string
   /** Bytes, when the source states them. Discord does on an upload; an embed or a resolved link does not. */
   size?: number
+  /** Gemini fetches the URL itself (a YouTube link), so the Pi never downloads it. */
+  transport?: 'uri'
+  /** Seconds, when the source states them. Discord does for a voice message. */
+  durationSec?: number
 }
 
 // Bounds stalled attachment hosts as well as oversized responses.

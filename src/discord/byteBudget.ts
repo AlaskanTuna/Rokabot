@@ -23,6 +23,7 @@ let inFlight = 0
  */
 export function reservationFor(attachments: ImageAttachment[]): number {
   return attachments.reduce((total, attachment) => {
+    if (attachment.transport === 'uri') return total
     const ceiling = sizeLimitFor(attachment.contentType)
     return total + Math.min(attachment.size ?? ceiling, ceiling)
   }, 0)
