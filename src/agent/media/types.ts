@@ -32,18 +32,15 @@ export interface MediaObservations {
 }
 
 /** What the turn's first audio or video item came to, for the reply footer. */
-export type WatchOutcome =
-  | { status: 'watched'; kind: MediaKind; coverage: 'whole'; durationSec: number; heard?: 'speech' | 'none' }
-  | {
-      status: 'watched'
-      kind: MediaKind
-      coverage: 'part'
-      startSec: number
-      endSec: number
-      heard?: 'speech' | 'none'
-    }
-  | { status: 'watched'; kind: MediaKind; coverage: 'skim'; heard?: 'speech' | 'none' }
+export type WatchOutcome = (
+  | { status: 'watched'; kind: MediaKind; coverage: 'whole'; durationSec: number }
+  | { status: 'watched'; kind: MediaKind; coverage: 'part'; startSec: number; endSec: number; durationSec: number }
+  | { status: 'watched'; kind: MediaKind; coverage: 'skim' }
   | { status: 'remembered' | 'failed'; kind: MediaKind }
+) & {
+  /** The item was a linked post's own media, so the footer can name it in one label with the post. */
+  fromLink?: boolean
+}
 
 export interface MediaDigest {
   kind: MediaKind

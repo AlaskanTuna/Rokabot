@@ -356,7 +356,7 @@ describe('message handler metrics', () => {
 
     await createMessageHandler({ user: { id: 'bot-1' } } as never, createRateLimiter() as never)(message as never)
 
-    expect(JSON.stringify(reply.mock.calls[0][0].components[0].toJSON())).toContain('-# 🌸 cast the fortune dice')
+    expect(JSON.stringify(reply.mock.calls[0][0].components[0].toJSON())).toContain('-# 🌸 cast the dice')
     expect(JSON.stringify(send.mock.calls[0][0].components[0].toJSON())).not.toContain('-# 🌸')
     expect(mocks.recordResponseEvent).toHaveBeenCalledWith(expect.objectContaining({ toolsUsed: ['roll_dice'] }))
   })
@@ -711,7 +711,7 @@ describe('unsupported attachments on the mention path', () => {
 
     await createMessageHandler({ user: { id: 'bot-1' } } as never, createRateLimiter() as never)(message as never)
 
-    expect(JSON.stringify(reply.mock.calls[0][0])).toContain('watched the whole video (3:06)')
+    expect(JSON.stringify(reply.mock.calls[0][0])).toContain('-# 🌸 watched the video')
   })
 
   it('nudges when a supported attachment was too big to fetch', async () => {
@@ -1124,7 +1124,7 @@ describe("reading what the sender's own message shows", () => {
     expect((await handle(message)).asksAboutReplies).toBe(expected)
   })
 
-  it("shows in the reply footer that she heard the crowd's chatter", async () => {
+  it('shows in the reply footer that she read the replies', async () => {
     mocks.generateResponse.mockImplementationOnce(async () => {
       recordReplyOutcome('found')
       return {
@@ -1140,7 +1140,7 @@ describe("reading what the sender's own message shows", () => {
 
     await handle(message)
 
-    expect(JSON.stringify(reply.mock.calls[0][0].components[0].toJSON())).toContain("heard the crowd's chatter")
+    expect(JSON.stringify(reply.mock.calls[0][0].components[0].toJSON())).toContain('read the replies')
   })
 
   it('never lets embed images exceed the shared attachment ceiling', async () => {

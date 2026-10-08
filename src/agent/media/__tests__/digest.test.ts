@@ -268,16 +268,6 @@ describe('frame-sampled watches', () => {
       'around 12:34: watched 12:04–14:04, 16 frames, no sound heard'
     )
   })
-
-  it('carries what was heard into the watch outcome', () => {
-    expect(watchOutcomeFor(framed)).toEqual({
-      status: 'watched',
-      kind: 'video',
-      coverage: 'whole',
-      durationSec: 186,
-      heard: 'none'
-    })
-  })
 })
 
 describe('watchOutcomeFor', () => {
@@ -301,7 +291,8 @@ describe('watchOutcomeFor', () => {
       kind: 'video',
       coverage: 'part',
       startSec: 653,
-      endSec: 1305
+      endSec: 1305,
+      durationSec: 1305
     })
   })
 

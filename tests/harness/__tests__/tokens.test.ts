@@ -80,15 +80,30 @@ describe('harness token measurement', () => {
 
   it('keeps the searched-turn rule that puts the finding before the roleplay (issue #94)', () => {
     expect(CORE_PROMPT).toContain(
-      'Open with the finding itself — the name, the number, the date, the actual answer. No greeting, no "let me check", no preamble about looking it up.'
+      'Your very first words answer what they asked: the finding, the gist, the step to take. Nothing comes before them: no greeting'
     )
   })
 
   // Watched-video replies read like guesses from the title: one paraphrased line, then teasing.
-  it('keeps the watched-turn rule that opens with specific moments from the watch', () => {
+  it('keeps the watched-turn rule that answers from specific moments of the watch', () => {
     expect(CORE_PROMPT).toContain("### When You've Watched Something")
-    expect(CORE_PROMPT).toContain('anchor at least two of them to the moment they happen')
+    expect(CORE_PROMPT).toContain('gets its answer first, with the moment it comes from')
+    expect(CORE_PROMPT).toContain('then its best moments, each anchored to when it happens')
     expect(CORE_PROMPT).toContain('Never build the answer from the title, description or thumbnail')
+  })
+
+  // Searched and watched replies ran as unformatted walls of figures, or answered a question beside a description
+  // nobody asked for.
+  it('keeps the shared split, length, paragraph and formatting rules for searched and watched turns', () => {
+    expect(CORE_PROMPT).toContain('### Presenting What You Looked Up or Watched')
+    expect(CORE_PROMPT).toContain('About 70% of the reply is the content and about 30% is your own reaction.')
+    expect(CORE_PROMPT).toContain('At most 120 words in all, a list included.')
+    expect(CORE_PROMPT).toContain('A bigger one may take two blocks, never more')
+    expect(CORE_PROMPT).toContain('**Bold** the names, numbers and key moments')
+    expect(CORE_PROMPT).toContain('a short bulleted list of at most five items')
+    expect(CORE_PROMPT).toContain('give steps as a numbered list')
+    expect(CORE_PROMPT).toContain('wrap an ending or plot twist in ||spoiler|| tags')
+    expect(CORE_PROMPT).toContain("Never fill in a name, number, command or quote your results or notes don't contain")
   })
 
   it('keeps the rule that an unwatched video is admitted in the first sentence, not guessed at', () => {
@@ -109,7 +124,7 @@ describe('harness token measurement', () => {
 
   it('keeps the speech quotas scoped off searched turns so they stop manufacturing a closing block (issue #94)', () => {
     expect(SPEECH_PROMPT).toContain(
-      'do not let the kaomoji and teasing-phrase quotas above pull you into a second paragraph'
+      'do not let the kaomoji and teasing-phrase quotas above pull you into an extra paragraph'
     )
   })
 

@@ -6,7 +6,6 @@ import {
   ThumbnailBuilder
 } from '@discordjs/builders'
 import { MessageFlags, SeparatorSpacingSize } from 'discord.js'
-import { formatClock } from '../agent/media/digest.js'
 import type { WatchOutcome } from '../agent/media/types.js'
 import type { ToneKey } from '../agent/prompts/tones.js'
 import type { ReplyOutcome } from '../agent/replyOutcomes.js'
@@ -18,18 +17,18 @@ import type { SocialPlatform } from './socialPosts/urls.js'
 import { getToneStyle } from './toneStyles.js'
 
 const TOOL_USAGE_LABELS: Record<string, string> = {
-  roll_dice: 'cast the fortune dice',
-  flip_coin: 'tossed a shrine coin',
-  get_current_time: 'peeked at the temple clock',
-  get_weather: "divined today's weather",
-  search_web: 'searched the wider world',
-  search_anime: 'leafed through anime scrolls',
-  get_anime_schedule: 'checked the airing almanac',
-  set_reminder: 'tied a reminder charm',
-  list_reminders: 'counted her reminder charms',
-  cancel_reminder: 'untied a reminder charm',
-  remember_user: 'pressed a memory flower',
-  recall_user: 'recalled a pressed memory'
+  roll_dice: 'cast the dice',
+  flip_coin: 'tossed a coin',
+  get_current_time: 'checked the clock',
+  get_weather: 'checked the weather',
+  search_web: 'searched the web',
+  search_anime: 'looked up anime',
+  get_anime_schedule: 'checked airing times',
+  set_reminder: 'set a reminder',
+  list_reminders: 'listed reminders',
+  cancel_reminder: 'cancelled a reminder',
+  remember_user: 'saved a memory',
+  recall_user: 'recalled a memory'
 }
 
 const SOCIAL_POST_KINDS: Record<SocialPlatform, string> = {
@@ -43,13 +42,68 @@ const SOCIAL_POST_KINDS: Record<SocialPlatform, string> = {
   threads: 'Threads post'
 }
 
+const SOCIAL_PLATFORM_NAMES: Record<SocialPlatform, string> = {
+  x: 'X',
+  bluesky: 'Bluesky',
+  youtube: 'YouTube',
+  tiktok: 'TikTok',
+  reddit: 'Reddit',
+  instagram: 'Instagram',
+  bilibili: 'Bilibili',
+  threads: 'Threads'
+}
+
 // A linked post is read before the model runs, so it never appears in toolsUsed; without its own label the
 // reader cannot tell whether she saw the post or only searched around it.
 function socialPostLabel(outcome: 'found' | 'failed', platform: SocialPlatform): string {
   return `${outcome === 'found' ? 'peeked at' : "couldn't open"} the ${SOCIAL_POST_KINDS[platform]}`
 }
 
-const OPENED_POST_LABELS = Object.values(SOCIAL_POST_KINDS).map((kind) => `peeked at the ${kind}`)
+const REPLY_OUTCOME_LABELS = { found: 'read the replies', failed: "couldn't read the replies" } as const
+
+// A watch runs before the model, like a post lookup, and the footer is the one place a reader can check whether
+// she really watched what she talks about. How much she watched is a word, not times: the reply cites moments.
+const WATCH_NOUNS = { video: 'video', audio: 'clip' } as const
+
+function watchLabel(outcome: WatchOutcome, noun: string = WATCH_NOUNS[outcome.kind]): string {
+  const heard = outcome.kind === 'audio'
+  if (outcome.status !== 'watched') {
+    return outcome.status === 'failed' ? `couldn't ${heard ? 'hear' : 'watch'} the ${noun}` : `remembered the ${noun}`
+  }
+  if (outcome.coverage === 'skim') return `skimmed the ${noun}`
+  const watched = heard ? 'heard' : 'watched'
+  if (outcome.coverage === 'whole') return `${watched} the ${noun}`
+  const most = outcome.endSec - outcome.startSec >= outcome.durationSec / 2
+  return `${watched} ${most ? 'most' : 'part'} of the ${noun}`
+}
+
+// A linked post's own video gets one label naming the platform rather than a post label and a watch label.
+function postMediaNoun(platform: SocialPlatform, outcome: WatchOutcome): string {
+  return `${SOCIAL_PLATFORM_NAMES[platform]} ${WATCH_NOUNS[outcome.kind]}`
+}
+
+// Every wording a watch label can take: lengths do not depend on the times, only on which wording applies.
+const WATCH_OUTCOME_SAMPLES = (['video', 'audio'] as const).flatMap(
+  (kind) =>
+    [
+      { status: 'watched', kind, coverage: 'whole', durationSec: 1 },
+      { status: 'watched', kind, coverage: 'part', startSec: 0, endSec: 1, durationSec: 1 },
+      { status: 'watched', kind, coverage: 'part', startSec: 0, endSec: 0, durationSec: 1 },
+      { status: 'watched', kind, coverage: 'skim' },
+      { status: 'remembered', kind },
+      { status: 'failed', kind }
+    ] satisfies WatchOutcome[]
+)
+
+const PLATFORMS = Object.keys(SOCIAL_POST_KINDS) as SocialPlatform[]
+const POST_MEDIA_LABELS = PLATFORMS.flatMap((platform) =>
+  WATCH_OUTCOME_SAMPLES.map((outcome) => watchLabel(outcome, postMediaNoun(platform, outcome)))
+)
+// Footers from before the post and watch labels merged say `peeked at the …` with the watch separate.
+const OPENED_POST_LABELS = [
+  ...Object.values(SOCIAL_POST_KINDS).map((kind) => `peeked at the ${kind}`),
+  ...POST_MEDIA_LABELS
+]
 
 /**
  * The post one of Roka's replies was about, read back from that reply's components: when its footer says she
@@ -62,39 +116,7 @@ export function openedPostCitation(componentTexts: readonly string[]): string | 
   return footer?.match(/-# 🔗 \[[^\]]*\]\(<([^>]+)>\)/)?.[1] ?? null
 }
 
-// A post's replies are the crowd gathered around it at the festival, talking about it.
-const REPLY_OUTCOME_LABELS = { found: "heard the crowd's chatter", failed: "couldn't hear the crowd" } as const
-
-// A watch runs before the model, like a post lookup, and the footer is the one place a reader can check whether
-// she really watched what she talks about, and how much of it.
-const WATCH_NOUNS = { video: 'video', audio: 'clip' } as const
-// A clock past 9:59:59 is a character wider than the footer budget allows for; such a watch still says it was
-// partial, just without the times.
-const LABEL_CLOCK_LIMIT_SEC = 36_000
-
-function watchLabel(outcome: WatchOutcome): string {
-  const noun = WATCH_NOUNS[outcome.kind]
-  const heard = outcome.kind === 'audio'
-  if (outcome.status !== 'watched') {
-    return outcome.status === 'failed'
-      ? `couldn't ${heard ? 'hear' : 'watch'} the ${noun}`
-      : `remembered ${heard ? 'hearing' : 'watching'} this ${noun}`
-  }
-  const watched = heard ? 'heard' : 'watched'
-  // A frame watch that heard nothing must not read like one that heard the video.
-  const muted = outcome.heard === 'none' ? ' without sound' : ''
-  if (outcome.coverage === 'skim') return `skimmed the ${noun} in clips${muted}`
-  if (outcome.coverage === 'whole') {
-    return outcome.durationSec < LABEL_CLOCK_LIMIT_SEC
-      ? `${watched} the whole ${noun}${muted} (${formatClock(outcome.durationSec)})`
-      : `${watched} the whole ${noun}${muted}`
-  }
-  return outcome.endSec < LABEL_CLOCK_LIMIT_SEC
-    ? `${watched} ${formatClock(outcome.startSec)}–${formatClock(outcome.endSec)} of the ${noun}${muted}`
-    : `${watched} part of the ${noun}${muted}`
-}
-
-const MAX_VISIBLE_TOOL_LABELS = 3
+const MAX_VISIBLE_TOOL_LABELS = 2
 
 /**
  * Components V2 budgets TextDisplay content across the whole message, not per component, so the reply text,
@@ -103,59 +125,32 @@ const MAX_VISIBLE_TOOL_LABELS = 3
  */
 export const TEXT_DISPLAY_BUDGET = 4000
 
-export function buildToolFooter(labels: readonly string[], epochSeconds = Math.floor(Date.now() / 1000)) {
+export function buildToolFooter(labels: readonly string[]) {
   const visibleLabels = labels.slice(0, MAX_VISIBLE_TOOL_LABELS)
-  const suffix = labels.length > visibleLabels.length ? ' …and more' : ''
-  return `-# 🌸 ${visibleLabels.join(' · ')}${suffix} • <t:${epochSeconds}:R>`
+  const hidden = labels.length - visibleLabels.length
+  return `-# 🌸 ${visibleLabels.join(' · ')}${hidden > 0 ? ` +${hidden}` : ''}`
 }
 
-function longestFirst(labels: string[]): string[] {
-  return [...labels].sort((left, right) => right.length - left.length)
+function longest(labels: string[]): string {
+  return labels.reduce((best, label) => (label.length > best.length ? label : best), '')
 }
 
-const toolLabelsByLength = longestFirst(Object.values(TOOL_USAGE_LABELS))
-const longestSocialPostLabel = longestFirst(
-  (Object.keys(SOCIAL_POST_KINDS) as SocialPlatform[]).flatMap((platform) => [
-    socialPostLabel('found', platform),
-    socialPostLabel('failed', platform)
-  ])
-)[0]
-// Math.floor(Date.now() / 1000) has 10 digits until 2286, so this keeps the measurement deterministic.
-const TOOL_FOOTER_EPOCH_SAMPLE = 1_784_808_000
-const longestReplyLabel = longestFirst(Object.values(REPLY_OUTCOME_LABELS))[0]
-const LONGEST_LABEL_CLOCK_SEC = LABEL_CLOCK_LIMIT_SEC - 1
-const longestWatchLabel = longestFirst(
-  (['video', 'audio'] as const).flatMap((kind) =>
-    (
-      [
-        { status: 'watched', kind, coverage: 'whole', durationSec: LONGEST_LABEL_CLOCK_SEC },
-        {
-          status: 'watched',
-          kind,
-          coverage: 'part',
-          startSec: LONGEST_LABEL_CLOCK_SEC,
-          endSec: LONGEST_LABEL_CLOCK_SEC,
-          heard: 'none'
-        },
-        { status: 'watched', kind, coverage: 'whole', durationSec: LONGEST_LABEL_CLOCK_SEC, heard: 'none' },
-        { status: 'watched', kind, coverage: 'skim', heard: 'none' },
-        { status: 'remembered', kind },
-        { status: 'failed', kind }
-      ] satisfies WatchOutcome[]
-    ).map(watchLabel)
-  )
-)[0]
-const footerLeads = [[], [longestSocialPostLabel]].flatMap((post) =>
-  [[], [longestWatchLabel]].flatMap((watch) => [[], [longestReplyLabel]].map((reply) => [...post, ...watch, ...reply]))
+const toolLabelsByLength = [...Object.values(TOOL_USAGE_LABELS)].sort((left, right) => right.length - left.length)
+const longestPostLabel = longest(
+  PLATFORMS.flatMap((platform) => [socialPostLabel('found', platform), socialPostLabel('failed', platform)])
 )
+const longestWatchLabel = longest(WATCH_OUTCOME_SAMPLES.map((outcome) => watchLabel(outcome)))
+const longestPostMediaLabel = longest(POST_MEDIA_LABELS)
+const longestReplyLabel = longest(Object.values(REPLY_OUTCOME_LABELS))
 // A turn opens at most one linked post, watches at most one item for the footer and records one replies
-// outcome, and all lead the footer, so each displaces a tool label rather than adding one.
+// outcome, and all lead the footer ahead of the tools. A post's own video takes one merged label instead of a
+// post label and a watch label. Every tool counts as reachable, since the hidden count sets the suffix width.
+const footerLeads = [
+  ...[[], [longestPostLabel]].flatMap((post) => [[], [longestWatchLabel]].map((watch) => [...post, ...watch])),
+  [longestPostMediaLabel]
+].flatMap((lead) => [lead, [...lead, longestReplyLabel]])
 export const MAX_TOOL_FOOTER_CHARS = Math.max(
-  ...footerLeads.map(
-    (lead) =>
-      buildToolFooter([...lead, ...toolLabelsByLength].slice(0, MAX_VISIBLE_TOOL_LABELS + 1), TOOL_FOOTER_EPOCH_SAMPLE)
-        .length
-  )
+  ...footerLeads.map((lead) => buildToolFooter([...lead, ...toolLabelsByLength]).length)
 )
 
 /** Build a Components V2 container message with tone-appropriate styling */
@@ -178,15 +173,21 @@ export function buildRokaMessage(
   }
 
   const container = new ContainerBuilder().setAccentColor(style.color).addSectionComponents(section)
+  const postNoun =
+    socialPost.status === 'found' && watchOutcome?.fromLink
+      ? postMediaNoun(socialPost.post.platform, watchOutcome)
+      : null
   const postLabels =
-    socialPost.status === 'found'
-      ? [socialPostLabel('found', socialPost.post.platform)]
-      : socialPost.status === 'failed'
-        ? [socialPostLabel('failed', socialPost.platform)]
-        : []
+    postNoun !== null
+      ? []
+      : socialPost.status === 'found'
+        ? [socialPostLabel('found', socialPost.post.platform)]
+        : socialPost.status === 'failed'
+          ? [socialPostLabel('failed', socialPost.platform)]
+          : []
   const toolLabels = [
     ...postLabels,
-    ...(watchOutcome ? [watchLabel(watchOutcome)] : []),
+    ...(watchOutcome ? [watchLabel(watchOutcome, postNoun ?? undefined)] : []),
     ...(replyOutcome === 'none' ? [] : [REPLY_OUTCOME_LABELS[replyOutcome]]),
     ...toolsUsed.flatMap((toolName) => {
       const label = TOOL_USAGE_LABELS[toolName]
