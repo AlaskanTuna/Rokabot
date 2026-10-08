@@ -369,3 +369,85 @@ describe('prepareTurnMedia', () => {
     expect(result.mediaTextParts[0].text).toBe("[A YouTube video was shared, but it couldn't be opened.]")
   })
 })
+
+describe('linked video details', () => {
+  it('watches around a YouTube timestamp instead of skimming the whole video', async () => {
+    mocks.watchMedia.mockResolvedValue({
+      status: 'ok',
+      digest: digestFor({ mode: 'focus' }),
+      promptTokens: 9000,
+      calls: 1,
+      watchMs: 4000
+    })
+
+    await prepareTurnMedia(
+      input([
+        {
+          url: 'https://www.youtube.com/watch?v=abc',
+          contentType: 'video/mp4',
+          transport: 'uri',
+          durationSec: 1200,
+          startSec: 754
+        }
+      ])
+    )
+
+    expect(mocks.watchMedia.mock.calls[0][0].plan).toMatchObject({ mode: 'focus', centerSec: 754 })
+  })
+
+  it('watches a short video whole even when its link has a timestamp', async () => {
+    mocks.watchMedia.mockResolvedValue({
+      status: 'ok',
+      digest: digestFor(),
+      promptTokens: 1000,
+      calls: 1,
+      watchMs: 2000
+    })
+
+    await prepareTurnMedia(
+      input([
+        {
+          url: 'https://www.youtube.com/watch?v=abc',
+          contentType: 'video/mp4',
+          transport: 'uri',
+          durationSec: 60,
+          startSec: 30
+        }
+      ])
+    )
+
+    expect(mocks.watchMedia.mock.calls[0][0].plan).toMatchObject({ mode: 'whole' })
+  })
+
+  it('tells the watcher a linked stream has no sound', async () => {
+    mocks.downloadAttachment.mockResolvedValue({
+      data: 'b64',
+      mimeType: 'video/mp4',
+      tokens: 0,
+      truncated: false,
+      bytes: Buffer.alloc(4)
+    })
+    mocks.measureAttachmentTokens.mockResolvedValue(1236)
+    mocks.watchMedia.mockResolvedValue({
+      status: 'ok',
+      digest: digestFor(),
+      promptTokens: 900,
+      calls: 1,
+      watchMs: 2000
+    })
+
+    await prepareTurnMedia(
+      input([
+        {
+          url: 'https://v.redd.it/abc/DASH_240.mp4',
+          contentType: 'video/mp4',
+          size: 892_001,
+          durationSec: 12,
+          silent: true
+        }
+      ])
+    )
+
+    expect(mocks.watchMedia.mock.calls[0][0].source).toMatchObject({ transport: 'inline', silent: true })
+  })
+})

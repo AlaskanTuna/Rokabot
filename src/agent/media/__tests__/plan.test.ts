@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { estimateMediaTokens, planCoverage } from '../plan.js'
+import { estimateMediaTokens, planCoverage, planFocus } from '../plan.js'
 
 describe('estimateMediaTokens', () => {
   it('applies frame, audio, headroom and media-part costs', () => {
@@ -117,6 +117,40 @@ describe('planCoverage', () => {
       mode: 'decline',
       kind: 'audio',
       durationSec: 2400,
+      reason: 'too_long'
+    })
+  })
+})
+
+describe('planFocus', () => {
+  it('watches from 30 s before the timestamp to 90 s after it at full density', () => {
+    expect(planFocus({ durationSec: 1200, startSec: 754, budgetTokens: 50_000 })).toEqual({
+      mode: 'focus',
+      kind: 'video',
+      durationSec: 1200,
+      centerSec: 754,
+      clips: [{ startSec: 724, endSec: 844 }],
+      estimate: estimateMediaTokens({ frames: 120, audioSec: 120, parts: 1 }),
+      bins: [{ startSec: 724, endSec: 844 }]
+    })
+  })
+
+  it('clamps the window to the start of the video', () => {
+    expect(planFocus({ durationSec: 1200, startSec: 10, budgetTokens: 50_000 })).toMatchObject({
+      clips: [{ startSec: 0, endSec: 100 }]
+    })
+  })
+
+  it('clamps a timestamp past the end to the closing stretch', () => {
+    expect(planFocus({ durationSec: 600, startSec: 900, budgetTokens: 50_000 })).toMatchObject({
+      centerSec: 600,
+      clips: [{ startSec: 570, endSec: 600 }]
+    })
+  })
+
+  it('declines when even the window does not fit the budget', () => {
+    expect(planFocus({ durationSec: 1200, startSec: 754, budgetTokens: 1000 })).toMatchObject({
+      mode: 'decline',
       reason: 'too_long'
     })
   })

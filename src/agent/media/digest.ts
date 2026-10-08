@@ -183,15 +183,22 @@ export function formatClock(seconds: number): string {
 export function coverageLine(digest: MediaDigest): string {
   if (digest.mode === 'opening')
     return `only the opening was available, about ${formatClock(digest.durationSec)} of a longer file`
+  if (digest.mode === 'focus') {
+    const window = digest.bins[0]
+    const watched = window ? `${formatClock(window.startSec)}–${formatClock(window.endSec)}` : 'around it'
+    const sound = digest.silent ? ', no sound' : ''
+    return `around ${formatClock(digest.focusSec ?? window?.startSec ?? 0)}: watched ${watched}${sound}`
+  }
   if (digest.mode === 'skim') {
     const firstClip = digest.bins[0]
     const clipLength = firstClip ? Math.round(firstClip.endSec - firstClip.startSec) : 0
-    return `skimmed: ${digest.bins.length} clips of ${clipLength} s spread across ${formatClock(digest.durationSec)}, sound only within the clips`
+    const sound = digest.silent ? 'no sound' : 'sound only within the clips'
+    return `skimmed: ${digest.bins.length} clips of ${clipLength} s spread across ${formatClock(digest.durationSec)}, ${sound}`
   }
   if (digest.kind === 'audio') return `whole audio, ${formatClock(digest.durationSec)}`
   const frameInterval =
     digest.fps === 1 ? 'a frame every second' : `a frame every ${digest.fps === null ? 'unknown' : 1 / digest.fps} s`
-  return `whole video, ${formatClock(digest.durationSec)}, ${frameInterval}, full sound`
+  return `whole video, ${formatClock(digest.durationSec)}, ${frameInterval}, ${digest.silent ? 'no sound' : 'full sound'}`
 }
 
 export function renderDigestBlock(digest: MediaDigest): string {

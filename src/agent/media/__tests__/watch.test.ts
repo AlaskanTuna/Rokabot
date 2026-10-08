@@ -353,3 +353,46 @@ describe('reading the answer', () => {
     expect(result.status).toBe('ok')
   })
 })
+
+describe('focused and silent watches', () => {
+  it('sends a focused watch as one clip with its offsets and records where it looked', async () => {
+    mocks.generateContent.mockResolvedValueOnce(response())
+    const clip = { startSec: 724, endSec: 844 }
+
+    const result = await watchMedia({
+      source: {
+        transport: 'uri',
+        kind: 'video',
+        fileUri: 'https://www.youtube.com/watch?v=x',
+        mimeType: 'video/mp4',
+        label: 'YouTube video'
+      },
+      plan: {
+        mode: 'focus',
+        kind: 'video',
+        durationSec: 1200,
+        centerSec: 754,
+        clips: [clip],
+        estimate: 13_500,
+        bins: [clip]
+      },
+      focus: ''
+    })
+
+    const parts = mocks.generateContent.mock.calls[0][0].contents[0].parts
+    expect(parts[1]).toMatchObject({ videoMetadata: { startOffset: '724s', endOffset: '844s' } })
+    expect(result).toMatchObject({ status: 'ok', digest: { mode: 'focus', focusSec: 754 } })
+  })
+
+  it('carries a silent source onto the digest', async () => {
+    mocks.generateContent.mockResolvedValueOnce(response())
+
+    const result = await watchMedia({
+      source: { ...(videoSource() as Extract<WatchSource, { transport: 'inline' }>), silent: true },
+      plan: planWholeVideo(),
+      focus: ''
+    })
+
+    expect(result).toMatchObject({ status: 'ok', digest: { silent: true } })
+  })
+})

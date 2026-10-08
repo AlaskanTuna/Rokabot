@@ -5,7 +5,7 @@ import { measureAttachmentTokens } from '../attachmentCost.js'
 import { type ImageAttachment, downloadAttachment, prepareAttachments } from '../attachments.js'
 import { formatClock, renderCompactDigest, renderDigestBlock } from './digest.js'
 import { durationFromTokens, mp4DurationSec } from './duration.js'
-import { planCoverage } from './plan.js'
+import { planCoverage, planFocus } from './plan.js'
 import type { CoveragePlan, MediaDigest, MediaKind } from './types.js'
 import { type WatchSource, countUriTokens, watchMedia } from './watch.js'
 
@@ -34,6 +34,8 @@ const DURATION_COUNT_FPS = 0.05
 // A count that small is the prompt without the video (Gemini omitted the media), not a few-second clip; read
 // as a duration it would wave a long video through admission at full frame rate.
 const MIN_URI_COUNT_TOKENS = 200
+// Up to this length the whole video already plays at one frame per second.
+const FOCUS_MIN_DURATION_SEC = 120
 const ISOBMFF_TYPES = new Set(['video/mp4', 'video/mov', 'video/quicktime', 'video/3gpp'])
 
 function watchableKind(contentType: string): MediaKind | null {
@@ -71,14 +73,18 @@ async function prepareUri(attachment: ImageAttachment, label: string): Promise<P
   return {
     status: 'ready',
     source: { transport: 'uri', kind: 'video', fileUri: attachment.url, mimeType: 'video/mp4', label },
-    plan: planCoverage({
-      kind: 'video',
-      durationSec,
-      budgetTokens,
-      canSkim: true,
-      skimClips: config.media.skimClips,
-      skimClipSeconds: config.media.skimClipSeconds
-    }),
+    // A short video is cheaper to watch whole at full density than to watch around one moment.
+    plan:
+      attachment.startSec !== undefined && durationSec !== null && durationSec > FOCUS_MIN_DURATION_SEC
+        ? planFocus({ durationSec, startSec: attachment.startSec, budgetTokens })
+        : planCoverage({
+            kind: 'video',
+            durationSec,
+            budgetTokens,
+            canSkim: true,
+            skimClips: config.media.skimClips,
+            skimClipSeconds: config.media.skimClipSeconds
+          }),
     opening: false
   }
 }
@@ -102,7 +108,14 @@ async function prepareInline(attachment: ImageAttachment, kind: MediaKind, label
 
   return {
     status: 'ready',
-    source: { transport: 'inline', kind, mimeType: download.mimeType, data: download.data, label },
+    source: {
+      transport: 'inline',
+      kind,
+      mimeType: download.mimeType,
+      data: download.data,
+      label,
+      ...(attachment.silent ? { silent: true } : {})
+    },
     plan: planCoverage({
       kind,
       durationSec,
