@@ -73,7 +73,8 @@ export class SocialPostViewer {
     }
 
     const cached = this.getCached(target.lookupKey)
-    if (cached) return { status: 'found', post: cached }
+    // The cache key ignores timestamps, so the cached post's target may carry another link's `t=`.
+    if (cached) return { status: 'found', post: { ...cached, target } }
 
     const controller = new AbortController()
     let timedOut = false

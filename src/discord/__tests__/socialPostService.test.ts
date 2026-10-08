@@ -361,4 +361,17 @@ describe('SocialPostViewer', () => {
 
     expect(fetcher).toHaveBeenCalledTimes(6)
   })
+
+  it('answers a cached post with the timestamp of the link asked about now', async () => {
+    const runExtractor = vi.fn(async (_binaryPath: string, _url: string, _timeoutMs: number) => ({
+      metadata: { title: 'A video', uploader: 'someone', duration: 1200 }
+    }))
+    const viewer = createSocialPostViewer(settings, { fetcher: vi.fn(), runExtractor })
+
+    await viewer.lookup(parseSocialPostUrl('https://youtu.be/jNQXAC9IVRw?t=10')!)
+    const second = await viewer.lookup(parseSocialPostUrl('https://youtu.be/jNQXAC9IVRw?t=754')!)
+
+    expect(runExtractor).toHaveBeenCalledOnce()
+    expect(second).toMatchObject({ status: 'found', post: { target: { startSec: 754 } } })
+  })
 })
