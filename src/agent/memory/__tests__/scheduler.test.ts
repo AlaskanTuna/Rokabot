@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => {
     episode: ExtractionEpisode
     status: 'pending' | 'processing' | 'failed'
     attempts: number
+    availableAt: number
+    transientRetries: number
   }
 
   let nextId = 1
@@ -30,13 +32,31 @@ const mocks = vi.hoisted(() => {
       nextId = 1
     },
     enqueueEpisode: vi.fn((input: { guildId: string; channelId: string; episode: ExtractionEpisode }) => {
-      const job = { ...input, id: nextId++, status: 'pending' as const, attempts: 0 }
+      const job = {
+        ...input,
+        id: nextId++,
+        status: 'pending' as const,
+        attempts: 0,
+        availableAt: 0,
+        transientRetries: 0
+      }
       jobs.push(job)
       return job
     }),
     listGuildsWithPending: vi.fn(() =>
-      [...new Set(jobs.filter((job) => job.status === 'pending').map((job) => job.guildId))].sort()
+      [
+        ...new Set(
+          jobs.filter((job) => job.status === 'pending' && job.availableAt <= Date.now()).map((job) => job.guildId)
+        )
+      ].sort()
     ),
+    getNextPendingAvailableAt: vi.fn(() => {
+      const availableAt = jobs
+        .filter((job) => job.status === 'pending' && job.availableAt > Date.now())
+        .map((job) => job.availableAt)
+        .sort((a, b) => a - b)[0]
+      return availableAt
+    }),
     claimNextForGuild: vi.fn((guildId: string) => {
       const job = jobs.find((candidate) => candidate.guildId === guildId && candidate.status === 'pending')
       if (!job) return undefined
@@ -49,12 +69,30 @@ const mocks = vi.hoisted(() => {
       jobs.splice(index, 1)
       return true
     }),
-    markFailed: vi.fn((id: number) => {
+    markFailed: vi.fn((id: number, classification: 'transient' | 'permanent' | 'unjudged') => {
       const job = jobs.find((candidate) => candidate.id === id && candidate.status === 'processing')
       if (!job) return undefined
+      if (classification === 'unjudged') {
+        if (job.attempts > 0) {
+          jobs.splice(jobs.indexOf(job), 1)
+          return { status: 'dropped', scheduledDelayMs: 0 }
+        }
+        job.attempts = 1
+        job.availableAt = Date.now() + 300_000
+        job.status = 'pending'
+        return { status: job.status, scheduledDelayMs: 300_000 }
+      }
+      const delays = [60_000, 300_000, 1_200_000, 3_600_000]
+      if (classification === 'transient' && job.transientRetries < delays.length) {
+        const scheduledDelayMs = delays[job.transientRetries++]
+        job.availableAt = Date.now() + scheduledDelayMs
+        job.status = 'pending'
+        return { status: job.status, scheduledDelayMs }
+      }
       job.attempts += 1
       job.status = job.attempts >= 2 ? 'failed' : 'pending'
-      return job.status
+      job.availableAt = 0
+      return { status: job.status, scheduledDelayMs: 0 }
     })
   }
 })
@@ -62,6 +100,7 @@ const mocks = vi.hoisted(() => {
 vi.mock('../../../storage/extractionQueue.js', () => ({
   enqueueEpisode: mocks.enqueueEpisode,
   listGuildsWithPending: mocks.listGuildsWithPending,
+  getNextPendingAvailableAt: mocks.getNextPendingAvailableAt,
   claimNextForGuild: mocks.claimNextForGuild,
   markDone: mocks.markDone,
   markFailed: mocks.markFailed
@@ -73,6 +112,7 @@ vi.mock('../episodePersistence.js', () => ({ persistEpisodeResult: mocks.persist
 vi.mock('../factEmbeddings.js', () => ({ embedPendingFacts: mocks.embedPendingFacts }))
 vi.mock('../../../utils/logger.js', () => ({ logger: mocks.logger }))
 
+import { JevUnavailableError } from '../extractionErrors.js'
 import { resetForTest, startExtractionScheduler, stopExtractionScheduler } from '../scheduler.js'
 
 function episode(content: string): ExtractionEpisode {
@@ -89,6 +129,12 @@ function episode(content: string): ExtractionEpisode {
 
 function enqueue(guildId: string, content: string) {
   return mocks.enqueueEpisode({ guildId, channelId: `channel-${guildId}`, episode: episode(content) })
+}
+
+function enqueueDelayed(guildId: string, content: string, delayMs = 60_000) {
+  const job = enqueue(guildId, content)
+  job.availableAt = Date.now() + delayMs
+  return job
 }
 
 async function drain(): Promise<void> {
@@ -175,6 +221,115 @@ describe('episode extraction scheduler', () => {
     expect(mocks.markFailed).toHaveBeenCalledTimes(2)
     expect(mocks.jobs).toEqual([expect.objectContaining({ id: queued.id, status: 'failed', attempts: 2 })])
     expect(mocks.logger.warn).toHaveBeenCalledWith(expect.any(Object), 'Memory episode pipeline failed')
+  })
+
+  it('retries transient failures after the scheduled delay and logs the classification', async () => {
+    mocks.runEpisodePipeline.mockRejectedValueOnce(Object.assign(new Error('service unavailable'), { status: 503 }))
+    enqueue('A', 'transient')
+
+    startExtractionScheduler()
+    await vi.advanceTimersByTimeAsync(0)
+    for (let settle = 0; settle < 10; settle++) await Promise.resolve()
+
+    expect(mocks.markFailed).toHaveBeenCalledWith(1, 'transient')
+    expect(mocks.logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ classification: 'transient', scheduledDelayMs: 60_000 }),
+      'Memory episode pipeline failed'
+    )
+    expect(mocks.logger.warn.mock.calls[0]?.[0]).toHaveProperty('error')
+    expect(mocks.runEpisodePipeline).toHaveBeenCalledOnce()
+
+    await vi.advanceTimersByTimeAsync(59_999)
+    expect(mocks.runEpisodePipeline).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(1)
+    await drain()
+    expect(mocks.runEpisodePipeline).toHaveBeenCalledTimes(2)
+  })
+
+  it('gives an episode Jev could not judge one delayed retry, then drops it', async () => {
+    mocks.runEpisodePipeline
+      .mockRejectedValueOnce(new JevUnavailableError())
+      .mockRejectedValueOnce(new JevUnavailableError())
+    enqueue('A', 'unjudged')
+
+    startExtractionScheduler()
+    await vi.advanceTimersByTimeAsync(0)
+    for (let settle = 0; settle < 10; settle++) await Promise.resolve()
+    expect(mocks.markFailed).toHaveBeenCalledWith(1, 'unjudged')
+    expect(mocks.runEpisodePipeline).toHaveBeenCalledOnce()
+
+    await vi.advanceTimersByTimeAsync(300_000)
+    await drain()
+    expect(mocks.runEpisodePipeline).toHaveBeenCalledTimes(2)
+    expect(mocks.jobs).toHaveLength(0)
+  })
+
+  it('wakes for a delayed job when it becomes available', async () => {
+    const now = Date.now()
+    enqueueDelayed('A', 'delayed')
+
+    startExtractionScheduler()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(mocks.runEpisodePipeline).not.toHaveBeenCalled()
+    expect(mocks.listGuildsWithPending).toHaveBeenCalledWith(now)
+    expect(mocks.getNextPendingAvailableAt).toHaveBeenCalledWith(now)
+
+    await vi.advanceTimersByTimeAsync(59_999)
+    expect(mocks.runEpisodePipeline).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+    await drain()
+
+    expect(mocks.runEpisodePipeline).toHaveBeenCalledOnce()
+  })
+
+  it('drains a new enqueue immediately while a delayed retry is waiting', async () => {
+    enqueueDelayed('A', 'delayed')
+    startExtractionScheduler()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(vi.getTimerCount()).toBe(1)
+
+    enqueue('B', 'new')
+    startExtractionScheduler()
+    await vi.advanceTimersByTimeAsync(0)
+    for (let settle = 0; settle < 10; settle++) await Promise.resolve()
+
+    expect(mocks.runEpisodePipeline.mock.calls.map(([job]) => job.guildId)).toEqual(['B'])
+  })
+
+  it('does not drain delayed jobs while privacy is off', async () => {
+    enqueueDelayed('A', 'privacy off')
+    startExtractionScheduler()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(vi.getTimerCount()).toBe(1)
+    configMock.memory.privacy = 'off'
+
+    await vi.advanceTimersByTimeAsync(60_000)
+
+    expect(mocks.runEpisodePipeline).not.toHaveBeenCalled()
+  })
+
+  it('cancels a delayed drain when stopped', async () => {
+    enqueueDelayed('A', 'stopped')
+    startExtractionScheduler()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(vi.getTimerCount()).toBe(1)
+    stopExtractionScheduler()
+
+    await vi.advanceTimersByTimeAsync(60_000)
+
+    expect(mocks.runEpisodePipeline).not.toHaveBeenCalled()
+  })
+
+  it('does not drain delayed jobs after shutdown begins', async () => {
+    enqueueDelayed('A', 'shutdown')
+    startExtractionScheduler()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(vi.getTimerCount()).toBe(1)
+    mocks.isShuttingDown.mockReturnValue(true)
+
+    await vi.advanceTimersByTimeAsync(60_000)
+
+    expect(mocks.runEpisodePipeline).not.toHaveBeenCalled()
   })
 
   it('completes a normally dropped admission and continues despite no legacy gates', async () => {

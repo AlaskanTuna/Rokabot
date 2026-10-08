@@ -387,7 +387,9 @@ export function runMigrations(database: Database.Database): void {
       payload TEXT NOT NULL,
       status TEXT NOT NULL,
       attempts INTEGER NOT NULL DEFAULT 0,
-      enqueued_at INTEGER NOT NULL
+      enqueued_at INTEGER NOT NULL,
+      available_at INTEGER NOT NULL DEFAULT 0,
+      transient_retries INTEGER NOT NULL DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS memory_episode_cursor (
@@ -431,7 +433,15 @@ export function runMigrations(database: Database.Database): void {
 
   ensureMemoryClaimSchema(database)
 
-  const extractionQueueCols = database.prepare("PRAGMA table_info('extraction_queue')").all() as Array<{ name: string }>
+  let extractionQueueCols = database.prepare("PRAGMA table_info('extraction_queue')").all() as Array<{ name: string }>
+  const extractionQueueColNames = new Set(extractionQueueCols.map((column) => column.name))
+  if (!extractionQueueColNames.has('available_at')) {
+    database.exec('ALTER TABLE extraction_queue ADD COLUMN available_at INTEGER NOT NULL DEFAULT 0')
+  }
+  if (!extractionQueueColNames.has('transient_retries')) {
+    database.exec('ALTER TABLE extraction_queue ADD COLUMN transient_retries INTEGER NOT NULL DEFAULT 0')
+  }
+  extractionQueueCols = database.prepare("PRAGMA table_info('extraction_queue')").all() as Array<{ name: string }>
   const queueRows = database.prepare('SELECT * FROM extraction_queue ORDER BY id').all() as Array<{
     id: number
     guild_id: string
@@ -440,6 +450,8 @@ export function runMigrations(database: Database.Database): void {
     status: string
     attempts: number
     enqueued_at: number
+    available_at: number
+    transient_retries: number
   }>
   const migratedQueueRows = queueRows.map((row) => {
     let payload: unknown
@@ -503,14 +515,26 @@ export function runMigrations(database: Database.Database): void {
           payload TEXT NOT NULL,
           status TEXT NOT NULL,
           attempts INTEGER NOT NULL DEFAULT 0,
-          enqueued_at INTEGER NOT NULL
+          enqueued_at INTEGER NOT NULL,
+          available_at INTEGER NOT NULL DEFAULT 0,
+          transient_retries INTEGER NOT NULL DEFAULT 0
         );
       `)
       const insert = database.prepare(
-        'INSERT INTO extraction_queue_new (id, guild_id, channel_id, payload, status, attempts, enqueued_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+        'INSERT INTO extraction_queue_new (id, guild_id, channel_id, payload, status, attempts, enqueued_at, available_at, transient_retries) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
       )
       for (const row of migratedQueueRows) {
-        insert.run(row.id, row.guild_id, row.channel_id, row.payload, row.status, row.attempts, row.enqueued_at)
+        insert.run(
+          row.id,
+          row.guild_id,
+          row.channel_id,
+          row.payload,
+          row.status,
+          row.attempts,
+          row.enqueued_at,
+          row.available_at,
+          row.transient_retries
+        )
       }
       database.exec('DROP TABLE extraction_queue; ALTER TABLE extraction_queue_new RENAME TO extraction_queue;')
     })()
@@ -519,6 +543,9 @@ export function runMigrations(database: Database.Database): void {
   database.exec(`
     CREATE INDEX IF NOT EXISTS idx_extraction_queue_guild_status_enqueued
       ON extraction_queue (guild_id, status, enqueued_at);
+
+    CREATE INDEX IF NOT EXISTS idx_extraction_queue_status_available
+      ON extraction_queue (status, available_at);
   `)
 }
 

@@ -34,6 +34,7 @@ vi.mock('../../jev/judgments.js', () => ({ judgeEpisodeOperations: mocks.judgeEp
 import { config } from '../../../config.js'
 import { closeDb, getDb } from '../../../storage/database.js'
 import type { ExtractionEpisode } from '../../../storage/extractionQueue.js'
+import { JevUnavailableError } from '../extractionErrors.js'
 import { extractEpisode, runEpisodePipeline, verifyAndApplyOperations } from '../extractor.js'
 import { assertClaim, assertGuildClaim, getActiveClaims } from '../memoryClaims.js'
 
@@ -72,6 +73,7 @@ describe('runEpisodePipeline', () => {
     episode,
     status: 'processing' as const,
     attempts: 0,
+    transientRetries: 0,
     enqueuedAt: 2
   }
 
@@ -84,6 +86,13 @@ describe('runEpisodePipeline', () => {
       appliedOps: 0,
       duplicateOps: 0
     })
+    expect(mocks.generateContent).not.toHaveBeenCalled()
+  })
+
+  it('throws so the queue can retry when Jev could not judge the episode', async () => {
+    mocks.admitEpisode.mockResolvedValueOnce({ admitted: false, reason: 'jev_unavailable' })
+
+    await expect(runEpisodePipeline(queueJob)).rejects.toBeInstanceOf(JevUnavailableError)
     expect(mocks.generateContent).not.toHaveBeenCalled()
   })
 

@@ -43,7 +43,7 @@ import { initializeSocialPosts } from './discord/socialPosts/service.js'
 import { stopStatusCycler } from './discord/statusCycler.js'
 import { destroyAllGames as destroyAllShiritoriGames } from './games/shiritori.js'
 import { closeDb, getDb } from './storage/database.js'
-import { resetStuckProcessing } from './storage/extractionQueue.js'
+import { pruneFailedExtractionJobs, resetStuckProcessing } from './storage/extractionQueue.js'
 import { pruneFailureDiagnostics, pruneOldMetrics } from './storage/metricsStore.js'
 import { pruneOldHistory } from './storage/sessionStore.js'
 import { logger } from './utils/logger.js'
@@ -62,9 +62,11 @@ function startupMemoryTasks(botUserId?: string): void {
 
   try {
     pruneStaleClaims(config.memory.claimRetentionDays, botUserId)
+    pruneExpiredFailedExtractions()
     claimPruneTimer = setInterval(
       () => {
         pruneStaleClaims(config.memory.claimRetentionDays, botUserId)
+        pruneExpiredFailedExtractions()
         pruneEpisodesInBackground()
       },
       24 * 60 * 60 * 1000
@@ -75,6 +77,11 @@ function startupMemoryTasks(botUserId?: string): void {
   } catch (err) {
     logger.error({ err }, 'Failed to start memory tasks')
   }
+}
+
+function pruneExpiredFailedExtractions(): void {
+  const deleted = pruneFailedExtractionJobs(config.memory.failedExtractionRetentionDays)
+  logger.info({ deleted }, 'Pruned expired failed extraction jobs')
 }
 
 function pruneEpisodesInBackground(): void {

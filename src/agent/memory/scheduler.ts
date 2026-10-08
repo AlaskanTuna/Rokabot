@@ -1,25 +1,44 @@
 import { config } from '../../config.js'
-import { claimNextForGuild, listGuildsWithPending, markDone, markFailed } from '../../storage/extractionQueue.js'
+import {
+  claimNextForGuild,
+  getNextPendingAvailableAt,
+  listGuildsWithPending,
+  markDone,
+  markFailed
+} from '../../storage/extractionQueue.js'
 import { logger } from '../../utils/logger.js'
 import { isShuttingDown } from '../shutdownSignal.js'
 import { persistEpisodeResult } from './episodePersistence.js'
+import { classifyExtractionError } from './extractionErrors.js'
 import { runEpisodePipeline } from './extractor.js'
 import { embedPendingFacts } from './factEmbeddings.js'
 
 let timer: ReturnType<typeof setTimeout> | undefined
+let timerDeadline: number | undefined
 let lastGuildId: string | undefined
 let stopped = false
 const inFlightGuilds = new Set<string>()
 const inFlightTasks = new Set<Promise<void>>()
 
-function scheduleDrain(): void {
-  if (timer || stopped || isShuttingDown()) return
+function scheduleDrainAt(availableAt: number): void {
+  if (stopped || isShuttingDown()) return
+  if (timer && timerDeadline !== undefined && timerDeadline <= availableAt) return
+  if (timer) clearTimeout(timer)
 
-  timer = setTimeout(() => {
-    timer = undefined
-    drainOnce()
-  }, 0)
+  timerDeadline = availableAt
+  timer = setTimeout(
+    () => {
+      timer = undefined
+      timerDeadline = undefined
+      drainOnce()
+    },
+    Math.max(0, availableAt - Date.now())
+  )
   timer.unref?.()
+}
+
+function scheduleDrain(): void {
+  scheduleDrainAt(Date.now())
 }
 
 function orderedGuilds(guildIds: string[]): string[] {
@@ -44,9 +63,18 @@ function runJob(job: NonNullable<ReturnType<typeof claimNextForGuild>>): void {
       void embedPendingFacts({ limit: 20 })
     })
     .catch((error: unknown) => {
-      markFailed(job.id)
+      const classification = classifyExtractionError(error, { shuttingDown: isShuttingDown() })
+      const failure = markFailed(job.id, classification)
       logger.warn(
-        { guildId: job.guildId, channelId: job.channelId, jobId: job.id, error },
+        {
+          guildId: job.guildId,
+          channelId: job.channelId,
+          jobId: job.id,
+          classification,
+          queueStatus: failure?.status,
+          scheduledDelayMs: failure?.scheduledDelayMs ?? 0,
+          error
+        },
         'Memory episode pipeline failed'
       )
     })
@@ -60,10 +88,15 @@ function runJob(job: NonNullable<ReturnType<typeof claimNextForGuild>>): void {
 function drainOnce(): void {
   if (stopped || isShuttingDown() || config.memory.privacy === 'off') return
 
-  const guildId = orderedGuilds(listGuildsWithPending().filter((id) => !inFlightGuilds.has(id)))[0]
-  if (!guildId) return
+  const now = Date.now()
+  const guildId = orderedGuilds(listGuildsWithPending(now).filter((id) => !inFlightGuilds.has(id)))[0]
+  if (!guildId) {
+    const nextAvailableAt = getNextPendingAvailableAt(now)
+    if (nextAvailableAt !== undefined) scheduleDrainAt(nextAvailableAt)
+    return
+  }
 
-  const job = claimNextForGuild(guildId)
+  const job = claimNextForGuild(guildId, now)
   if (!job) {
     scheduleDrain()
     return
@@ -87,6 +120,7 @@ export function stopExtractionScheduler(): void {
   if (!timer) return
   clearTimeout(timer)
   timer = undefined
+  timerDeadline = undefined
 }
 
 export async function waitForInFlightExtractions(): Promise<void> {

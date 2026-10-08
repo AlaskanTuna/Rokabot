@@ -8,6 +8,7 @@ import { logger } from '../../utils/logger.js'
 import { judgeEpisodeOperations } from '../jev/judgments.js'
 import { SAFETY_SETTINGS } from '../safetySettings.js'
 import { admitEpisode } from './admission.js'
+import { JevUnavailableError } from './extractionErrors.js'
 import {
   EXTRACTION_RESPONSE_SCHEMA,
   type ExtractionOutput as EpisodeExtractionOutput,
@@ -472,7 +473,10 @@ export type EpisodeRunResult = Readonly<{
 
 export async function runEpisodePipeline(job: ExtractionQueueJob): Promise<EpisodeRunResult> {
   const admission = await admitEpisode({ guildId: job.guildId, channelId: job.channelId, episode: job.episode })
-  if (!admission.admitted) return { status: 'dropped', summary: null, appliedOps: 0, duplicateOps: 0 }
+  if (!admission.admitted) {
+    if (admission.reason === 'jev_unavailable') throw new JevUnavailableError()
+    return { status: 'dropped', summary: null, appliedOps: 0, duplicateOps: 0 }
+  }
 
   const output = await extractEpisode({ guildId: job.guildId, channelId: job.channelId, episode: job.episode })
   const subjectIds = new Set(job.episode.messages.filter((message) => !message.isBot).map((message) => message.userId))

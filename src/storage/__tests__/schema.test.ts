@@ -60,7 +60,9 @@ describe('claims schema', () => {
       'payload',
       'status',
       'attempts',
-      'enqueued_at'
+      'enqueued_at',
+      'available_at',
+      'transient_retries'
     ])
     expect(columns('memory_events')).toEqual([
       'id',
@@ -87,6 +89,7 @@ describe('claims schema', () => {
     )
     expect(indexes('memory_evidence')).toContain('idx_memory_evidence_claim')
     expect(indexes('extraction_queue')).toContain('idx_extraction_queue_guild_status_enqueued')
+    expect(indexes('extraction_queue')).toContain('idx_extraction_queue_status_available')
     expect(indexes('memory_events')).toEqual(
       expect.arrayContaining(['idx_memory_events_kind_created', 'idx_memory_events_guild_created'])
     )

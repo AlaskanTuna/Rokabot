@@ -286,10 +286,14 @@ status, including `failed`; all `processing` rows return to `pending` because no
 Passive claims and evidence use the latest delta message timestamp as their observation time, falling back to the
 current time only when the episode has no message timestamp.
 
-The per-guild round-robin scheduler runs at most one job per guild at a time. A failure is retried once; after the
-second failed attempt the job remains `failed` in `extraction_queue`. There is no per-guild delay, queue-size setting,
-Gemini daily budget ratio, or separate extraction RPM floor. Memory work is asynchronous and does not block the reply
-that captured the messages.
+The per-guild round-robin scheduler runs at most one job per guild at a time. Transient HTTP, network, timeout, and
+non-shutdown abort errors retry after 1, 5, 20, and 60 minutes without using the ordinary attempt count; the next
+transient failure then counts as an ordinary attempt. Other failures requeue immediately once, and the second ordinary
+failure leaves the job `failed` in `extraction_queue`. When Jev can't judge an episode at admission
+(`jev_unavailable`), the job gets one retry after 5 minutes and is dropped if Jev still can't judge it. Delayed jobs keep their FIFO order and wake the scheduler at their
+next availability time. Failed payloads older than `memory.failedExtractionRetentionDays` (7 days by default, measured
+from enqueue) are pruned at startup and daily. There is no queue-size setting, Gemini daily budget ratio, or separate
+extraction RPM floor. Memory work is asynchronous and does not block the reply that captured the messages.
 
 The pipeline is **local precheck → Jev admission → Gemini typed extraction → Jev verification → claim writes**.
 Sensitive or wholly trivial episodes are dropped locally. Other episodes require a successful Jev `lasting_fact`

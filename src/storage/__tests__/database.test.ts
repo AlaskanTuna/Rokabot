@@ -107,6 +107,42 @@ describe('runMigrations', () => {
     ])
   })
 
+  it('adds extraction retry columns idempotently to an existing queue', () => {
+    testDb = new Database(':memory:')
+    testDb.exec(`
+      CREATE TABLE session_history (
+        channel_id TEXT NOT NULL, role TEXT NOT NULL, display_name TEXT NOT NULL, content TEXT NOT NULL,
+        timestamp INTEGER NOT NULL, user_id TEXT, username TEXT
+      );
+      CREATE TABLE gacha_daily (
+        user_id TEXT NOT NULL, last_draw_date TEXT NOT NULL, streak INTEGER NOT NULL DEFAULT 0,
+        last_hatch_at INTEGER, PRIMARY KEY (user_id)
+      );
+      CREATE TABLE extraction_queue (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id TEXT NOT NULL, channel_id TEXT NOT NULL,
+        payload TEXT NOT NULL, status TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, enqueued_at INTEGER NOT NULL
+      );
+    `)
+    const payload = JSON.stringify({ messages: [], context: [], startedAt: 100, endedAt: 100 })
+    testDb
+      .prepare(
+        'INSERT INTO extraction_queue (id, guild_id, channel_id, payload, status, attempts, enqueued_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      )
+      .run(1, 'guild-1', 'channel-1', payload, 'pending', 1, 100)
+
+    const runMigrations = (database as unknown as DatabaseModule).runMigrations
+    runMigrations?.(testDb)
+    runMigrations?.(testDb)
+
+    const columns = testDb.prepare("PRAGMA table_info('extraction_queue')").all() as Array<{ name: string }>
+    const row = testDb
+      .prepare('SELECT payload, status, attempts, available_at, transient_retries FROM extraction_queue WHERE id = 1')
+      .get()
+    expect(columns.map((column) => column.name)).toContain('available_at')
+    expect(columns.map((column) => column.name)).toContain('transient_retries')
+    expect(row).toEqual({ payload, status: 'pending', attempts: 1, available_at: 0, transient_retries: 0 })
+  })
+
   it('creates the guild-scoped memory episode table and indexes at startup', () => {
     process.env.ROKABOT_DB_PATH = ':memory:'
 

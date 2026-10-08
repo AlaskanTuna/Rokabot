@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => {
     flushOpenEpisodes: vi.fn(),
     getDb: vi.fn(),
     pruneStaleClaims: vi.fn(),
+    pruneFailedExtractionJobs: vi.fn(),
     ready: (handler: () => void) => {
       readyHandler = handler
     },
@@ -39,7 +40,7 @@ vi.mock('../config.js', () => ({
     discord: { token: 'token' },
     socialPosts: { enabled: false, ytDlpPath: 'yt-dlp' },
     jev: { apiKey: undefined },
-    memory: { claimRetentionDays: 90, episodeRetentionDays: 90 },
+    memory: { claimRetentionDays: 90, episodeRetentionDays: 90, failedExtractionRetentionDays: 7 },
     metrics: { retentionDays: 90 },
     session: { historyRetentionDays: 7 }
   }
@@ -60,7 +61,10 @@ vi.mock('../discord/reminderScheduler.js', () => ({ startReminderScheduler: vi.f
 vi.mock('../discord/statusCycler.js', () => ({ stopStatusCycler: vi.fn() }))
 vi.mock('../games/shiritori.js', () => ({ destroyAllGames: vi.fn() }))
 vi.mock('../storage/database.js', () => ({ closeDb: mocks.closeDb, getDb: mocks.getDb }))
-vi.mock('../storage/extractionQueue.js', () => ({ resetStuckProcessing: mocks.resetStuckProcessing }))
+vi.mock('../storage/extractionQueue.js', () => ({
+  pruneFailedExtractionJobs: mocks.pruneFailedExtractionJobs,
+  resetStuckProcessing: mocks.resetStuckProcessing
+}))
 vi.mock('../storage/metricsStore.js', () => ({ pruneOldMetrics: vi.fn(), pruneFailureDiagnostics: vi.fn() }))
 vi.mock('../storage/sessionStore.js', () => ({ pruneOldHistory: vi.fn() }))
 vi.mock('../utils/logger.js', () => ({ logger: mocks.logger }))
@@ -81,6 +85,7 @@ describe('startup memory tasks', () => {
     mocks.triggerReady()
 
     expect(mocks.resetStuckProcessing).toHaveBeenCalledOnce()
+    expect(mocks.pruneFailedExtractionJobs).toHaveBeenCalledWith(7)
     expect(mocks.pruneStaleClaims).toHaveBeenCalledWith(90, 'bot-1')
     expect(mocks.startExtractionScheduler).toHaveBeenCalledOnce()
     expect(mocks.resetStuckProcessing.mock.invocationCallOrder[0]).toBeLessThan(
@@ -116,9 +121,11 @@ describe('startup memory tasks', () => {
     mocks.triggerReady()
 
     expect(mocks.pruneEpisodesAndReembed).toHaveBeenCalledOnce()
+    expect(mocks.pruneFailedExtractionJobs).toHaveBeenCalledOnce()
     await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1000)
 
     expect(mocks.pruneEpisodesAndReembed).toHaveBeenCalledTimes(2)
+    expect(mocks.pruneFailedExtractionJobs).toHaveBeenCalledTimes(2)
     vi.useRealTimers()
   })
 

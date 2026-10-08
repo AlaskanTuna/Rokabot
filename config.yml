@@ -94,6 +94,7 @@ memory:
   maxActiveClaimsPerUser: 20 # Active claim cap per user (pinned claims are exempt)
   stableClaimRetentionDays: 180 # Days before identity and social claims expire
   claimRetentionDays: 30 # Days before lifestyle, interest, and personality claims expire
+  failedExtractionRetentionDays: 7 # Days to retain failed extraction jobs and their payloads
   transientClaimRetentionDays: 14 # Days before opinion, misc, and currently watching claims expire
   deadClaimRetentionDays: 30 # Days to retain rejected and superseded claims after they end
   salienceHalfLifeDays: 30 # Days for claim salience to halve after its last observation
