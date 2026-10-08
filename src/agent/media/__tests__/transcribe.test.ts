@@ -21,7 +21,14 @@ interface RunCall {
 
 const WAV = Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(40)])
 
-function fakeRun(respond: (call: RunCall) => RunResult = () => ({ code: 0, stdout: WAV, timedOut: false })) {
+function fakeRun(
+  respond: (call: RunCall) => RunResult = () => ({
+    code: 0,
+    stdout: WAV,
+    stderr: Buffer.alloc(0),
+    timedOut: false
+  })
+) {
   const calls: RunCall[] = []
   const run: FrameRunner = async (command, args, timeoutMs) => {
     const call = { command, args, timeoutMs }
@@ -148,19 +155,44 @@ describe('extractAudioWav', () => {
     ['relative path', 'videos/a.mp4']
   ])('rejects %s without running ffmpeg', async (_label, input) => {
     const { run, calls } = fakeRun()
-    expect(await extractAudioWav({ input }, { startSec: 0, endSec: 2 }, { run })).toBeNull()
+    expect(await extractAudioWav({ input }, { startSec: 0, endSec: 2 }, { run })).toEqual({ reason: 'audio_failed' })
     expect(calls).toHaveLength(0)
   })
 
+  it('reports no_audio only when ffmpeg says the output has no stream', async () => {
+    const { run } = fakeRun(() => ({
+      code: 234,
+      stdout: Buffer.alloc(0),
+      stderr: Buffer.from('[out#0/wav @ 0x1234] Output file does not contain any stream\n'),
+      timedOut: false
+    }))
+
+    expect(await extractAudioWav({ input: '/videos/noaudio.mp4' }, { startSec: 0, endSec: 2 }, { run })).toEqual({
+      reason: 'no_audio'
+    })
+  })
+
+  it('reports timeout when audio extraction times out', async () => {
+    const { run } = fakeRun(() => ({ code: null, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0), timedOut: true }))
+
+    expect(await extractAudioWav({ input: '/videos/a.mp4' }, { startSec: 0, endSec: 2 }, { run })).toEqual({
+      reason: 'timeout'
+    })
+  })
+
   it.each([
-    ['non-zero exit', { code: 1, stdout: WAV, timedOut: false }],
-    ['timeout', { code: null, stdout: Buffer.alloc(0), timedOut: true }],
-    ['non-RIFF output', { code: 0, stdout: Buffer.from('ID3\0\0\0\0\0\0'), timedOut: false }],
-    ['truncated output', { code: 0, stdout: Buffer.from('RIF'), timedOut: false }],
-    ['empty output', { code: 0, stdout: Buffer.alloc(0), timedOut: false }]
-  ] as const)('returns null on %s', async (_label, result) => {
+    [
+      'other non-zero exit',
+      { code: 1, stdout: WAV, stderr: Buffer.from('Error opening input files'), timedOut: false }
+    ],
+    ['non-RIFF output', { code: 0, stdout: Buffer.from('ID3\0\0\0\0\0\0'), stderr: Buffer.alloc(0), timedOut: false }],
+    ['truncated output', { code: 0, stdout: Buffer.from('RIF'), stderr: Buffer.alloc(0), timedOut: false }],
+    ['empty output', { code: 0, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0), timedOut: false }]
+  ] as const)('reports audio_failed on %s', async (_label, result) => {
     const { run } = fakeRun(() => ({ ...result, stdout: Buffer.from(result.stdout) }))
-    expect(await extractAudioWav({ input: '/videos/a.mp4' }, { startSec: 0, endSec: 2 }, { run })).toBeNull()
+    expect(await extractAudioWav({ input: '/videos/a.mp4' }, { startSec: 0, endSec: 2 }, { run })).toEqual({
+      reason: 'audio_failed'
+    })
   })
 })
 
@@ -332,8 +364,8 @@ describe('transcribeSource', () => {
   it('returns what succeeded when some windows fail', async () => {
     const { run } = fakeRun((call) =>
       ssOf(call.args) === '10.000'
-        ? { code: 1, stdout: Buffer.alloc(0), timedOut: false }
-        : { code: 0, stdout: WAV, timedOut: false }
+        ? { code: 1, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0), timedOut: false }
+        : { code: 0, stdout: WAV, stderr: Buffer.alloc(0), timedOut: false }
     )
     const { fetchImpl } = fakeFetch((_call, index) =>
       index === 0
@@ -363,8 +395,28 @@ describe('transcribeSource', () => {
     })
   })
 
+  it('returns a partial window failure when the only successful transcript has no speech', async () => {
+    const { run } = fakeRun()
+    const { fetchImpl } = fakeFetch((_call, index) =>
+      index === 0 ? json(transcriptBody({ speechSec: 0, segments: [] })) : new Response('', { status: 500 })
+    )
+    const windows = [
+      { startSec: 10, endSec: 20 },
+      { startSec: 40, endSec: 50 }
+    ]
+
+    expect(await transcribeSource({ input: '/videos/a.mp4' }, windows, settingsFor(fetchImpl), { run })).toEqual({
+      reason: 'http_500'
+    })
+  })
+
   it('reports no_audio when no window yields a WAV', async () => {
-    const { run } = fakeRun(() => ({ code: 1, stdout: Buffer.alloc(0), timedOut: false }))
+    const { run } = fakeRun(() => ({
+      code: 234,
+      stdout: Buffer.alloc(0),
+      stderr: Buffer.from('Output file does not contain any stream'),
+      timedOut: false
+    }))
     const { fetchImpl, calls } = fakeFetch(() => json(transcriptBody()))
     const windows = [
       { startSec: 10, endSec: 20 },
@@ -372,6 +424,34 @@ describe('transcribeSource', () => {
     ]
     expect(await transcribeSource({ input: '/videos/a.mp4' }, windows, settingsFor(fetchImpl), { run })).toEqual({
       reason: 'no_audio'
+    })
+    expect(calls).toHaveLength(0)
+  })
+
+  it('prefers a non-no_audio extraction failure when every window fails', async () => {
+    const { run } = fakeRun((call) =>
+      ssOf(call.args) === '10.000'
+        ? {
+            code: 234,
+            stdout: Buffer.alloc(0),
+            stderr: Buffer.from('Output file does not contain any stream'),
+            timedOut: false
+          }
+        : {
+            code: 1,
+            stdout: Buffer.alloc(0),
+            stderr: Buffer.from('Error opening input files'),
+            timedOut: false
+          }
+    )
+    const { fetchImpl, calls } = fakeFetch(() => json(transcriptBody()))
+    const windows = [
+      { startSec: 10, endSec: 20 },
+      { startSec: 40, endSec: 50 }
+    ]
+
+    expect(await transcribeSource({ input: '/videos/a.mp4' }, windows, settingsFor(fetchImpl), { run })).toEqual({
+      reason: 'audio_failed'
     })
     expect(calls).toHaveLength(0)
   })
@@ -421,7 +501,8 @@ describe('extractAudioWav with real ffmpeg', () => {
 
   it.skipIf(!hasFfmpeg)('extracts a RIFF WAV from a local clip', async () => {
     const wav = await extractAudioWav({ input: join(dir, 'a.mp4') }, { startSec: 0, endSec: 2 })
-    expect(wav).not.toBeNull()
-    expect(wav?.subarray(0, 4).toString('ascii')).toBe('RIFF')
+    expect(Buffer.isBuffer(wav)).toBe(true)
+    if (!Buffer.isBuffer(wav)) return
+    expect(wav.subarray(0, 4).toString('ascii')).toBe('RIFF')
   })
 })

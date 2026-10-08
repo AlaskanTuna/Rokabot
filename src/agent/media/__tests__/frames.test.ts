@@ -20,7 +20,7 @@ type RunCall = { command: string; args: string[]; timeoutMs: number }
 const WHITELIST = 'file,https,tls,tcp,crypto'
 const LOCAL: FrameSource = { input: '/srv/media/clip.mp4' }
 const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10])
-const ok = (stdout: Buffer = JPEG): RunResult => ({ code: 0, stdout, timedOut: false })
+const ok = (stdout: Buffer = JPEG): RunResult => ({ code: 0, stdout, stderr: Buffer.alloc(0), timedOut: false })
 
 function recorder(respond: (call: RunCall) => RunResult | Promise<RunResult>) {
   const calls: RunCall[] = []
@@ -97,7 +97,18 @@ describe('runMediaTool', () => {
   it('captures stdout and the exit code of a finished process', async () => {
     const result = await runMediaTool(process.execPath, ['-e', 'process.stdout.write("hi")'], 10_000)
 
-    expect(result).toEqual({ code: 0, stdout: Buffer.from('hi'), timedOut: false })
+    expect(result).toEqual({ code: 0, stdout: Buffer.from('hi'), stderr: Buffer.alloc(0), timedOut: false })
+  })
+
+  it('keeps only the bounded tail of stderr', async () => {
+    const result = await runMediaTool(
+      process.execPath,
+      ['-e', 'process.stderr.write("x".repeat(5000) + "tail")'],
+      10_000
+    )
+
+    expect(result.stderr).toHaveLength(4096)
+    expect(result.stderr.subarray(-4).toString()).toBe('tail')
   })
 
   it('kills a process that outlives its timeout', async () => {
@@ -121,7 +132,7 @@ describe('runMediaTool', () => {
   it('resolves with a null code instead of rejecting when the binary is missing', async () => {
     const result = await runMediaTool('/nonexistent/rokabot-frames-binary', [], 5_000)
 
-    expect(result).toEqual({ code: null, stdout: Buffer.alloc(0), timedOut: false })
+    expect(result).toEqual({ code: null, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0), timedOut: false })
   })
 })
 
@@ -155,8 +166,11 @@ describe('probeDurationSec', () => {
     ['empty output', ok(Buffer.from(''))],
     ['garbage output', ok(Buffer.from('N/A'))],
     ['a zero duration', ok(Buffer.from('0.000000\n'))],
-    ['a non-zero exit', { code: 1, stdout: Buffer.from('12.5'), timedOut: false } as RunResult],
-    ['a timeout', { code: null, stdout: Buffer.from('12.5'), timedOut: true } as RunResult]
+    [
+      'a non-zero exit',
+      { code: 1, stdout: Buffer.from('12.5'), stderr: Buffer.alloc(0), timedOut: false } as RunResult
+    ],
+    ['a timeout', { code: null, stdout: Buffer.from('12.5'), stderr: Buffer.alloc(0), timedOut: true } as RunResult]
   ])('returns null for %s', async (_label, result) => {
     const { run } = recorder(() => result)
 
@@ -271,9 +285,9 @@ describe('extractFrames', () => {
     const { run } = recorder(({ args }) => {
       switch (ssOf(args)) {
         case '1.000':
-          return { code: 1, stdout: JPEG, timedOut: false }
+          return { code: 1, stdout: JPEG, stderr: Buffer.alloc(0), timedOut: false }
         case '2.000':
-          return { code: null, stdout: Buffer.alloc(0), timedOut: true }
+          return { code: null, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0), timedOut: true }
         case '3.000':
           return ok(Buffer.from('not a jpeg'))
         case '4.000':

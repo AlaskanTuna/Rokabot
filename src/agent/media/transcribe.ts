@@ -61,8 +61,8 @@ export async function extractAudioWav(
   source: FrameSource,
   window: MediaClip,
   options: { run?: FrameRunner; timeoutMs?: number } = {}
-): Promise<Buffer | null> {
-  if (!isAcceptedInput(source.input)) return null
+): Promise<Buffer | { reason: string }> {
+  if (!isAcceptedInput(source.input)) return { reason: 'audio_failed' }
   const { run = runMediaTool, timeoutMs = 20_000 } = options
   const result = await run(
     'ffmpeg',
@@ -92,8 +92,14 @@ export async function extractAudioWav(
     ],
     timeoutMs
   )
-  if (result.code !== 0 || result.timedOut) return null
-  if (result.stdout.subarray(0, 4).toString('ascii') !== 'RIFF') return null
+  if (result.timedOut) return { reason: 'timeout' }
+  if (result.code !== 0) {
+    if (result.stderr.toString('utf8').includes('Output file does not contain any stream')) {
+      return { reason: 'no_audio' }
+    }
+    return { reason: 'audio_failed' }
+  }
+  if (result.stdout.subarray(0, 4).toString('ascii') !== 'RIFF') return { reason: 'audio_failed' }
   return result.stdout
 }
 
@@ -160,16 +166,18 @@ export async function transcribeSource(
       failures.push('timeout')
       break
     }
-    const wav = await extractAudioWav(source, window, { run: options.run })
-    if (!wav) {
-      failures.push('no_audio')
+    const extracted = await extractAudioWav(source, window, { run: options.run })
+    if (!Buffer.isBuffer(extracted)) {
+      failures.push(extracted.reason)
       continue
     }
-    const result = await postTranscription(wav, windowSettings, options.signal)
+    const result = await postTranscription(extracted, windowSettings, options.signal)
     if ('reason' in result) failures.push(result.reason)
     else transcripts.push({ window, transcript: result })
   }
-  if (transcripts.length === 0) return { reason: failures[0] ?? 'no_audio' }
+  if (transcripts.length === 0) {
+    return { reason: failures.find((reason) => reason !== 'no_audio') ?? failures[0] ?? 'no_audio' }
+  }
 
   const segments = transcripts
     .flatMap(({ window, transcript }) =>
@@ -180,6 +188,10 @@ export async function transcribeSource(
       }))
     )
     .sort((a, b) => a.startSec - b.startSec || a.endSec - b.endSec)
+  if (segments.length === 0) {
+    const failure = failures.find((reason) => reason !== 'no_audio')
+    if (failure) return { reason: failure }
+  }
   const dominant = transcripts.reduce((best, current) =>
     current.transcript.speechSec > best.transcript.speechSec ? current : best
   )

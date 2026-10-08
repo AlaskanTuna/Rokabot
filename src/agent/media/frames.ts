@@ -12,9 +12,10 @@ export type FrameRunner = (
   command: string,
   args: string[],
   timeoutMs: number
-) => Promise<{ code: number | null; stdout: Buffer; timedOut: boolean }>
+) => Promise<{ code: number | null; stdout: Buffer; stderr: Buffer; timedOut: boolean }>
 
 const MAX_MEDIA_TOOL_STDOUT_BYTES = 8 * 1024 * 1024
+const MAX_MEDIA_TOOL_STDERR_BYTES = 4 * 1024
 export const PROTOCOL_WHITELIST = 'file,https,tls,tcp,crypto'
 const EMPTY = Buffer.alloc(0)
 
@@ -23,12 +24,13 @@ export const runMediaTool: FrameRunner = (command, args, timeoutMs) =>
     const child = spawn(command, args, { shell: false, stdio: ['ignore', 'pipe', 'pipe'] })
     const chunks: Buffer[] = []
     let outputBytes = 0
+    let stderr = EMPTY
     let settled = false
-    const finish = (result: Awaited<ReturnType<FrameRunner>>) => {
+    const finish = (result: Omit<Awaited<ReturnType<FrameRunner>>, 'stderr'>) => {
       if (settled) return
       settled = true
       clearTimeout(timer)
-      resolve(result)
+      resolve({ ...result, stderr })
     }
     const timer = setTimeout(() => {
       child.kill('SIGKILL')
@@ -43,6 +45,13 @@ export const runMediaTool: FrameRunner = (command, args, timeoutMs) =>
         return
       }
       chunks.push(chunk)
+    })
+    child.stderr.on('data', (chunk: Buffer) => {
+      const combined = Buffer.concat([stderr, chunk])
+      stderr =
+        combined.length > MAX_MEDIA_TOOL_STDERR_BYTES
+          ? Buffer.from(combined.subarray(combined.length - MAX_MEDIA_TOOL_STDERR_BYTES))
+          : combined
     })
     child.once('error', () => finish({ code: null, stdout: EMPTY, timedOut: false }))
     child.once('close', (code) => finish({ code, stdout: Buffer.concat(chunks), timedOut: false }))
