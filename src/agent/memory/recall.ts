@@ -6,7 +6,14 @@ import { getAllUserNames } from '../../storage/userNames.js'
 import { getLocalDate } from '../../utils/timezone.js'
 import { estimateTokens } from '../../utils/tokens.js'
 import { cosineSimilarity } from './episodeRetriever.js'
-import { type GuildMemoryClaim, type UserMemoryClaim, getActiveClaims, getActiveGuildClaims } from './memoryClaims.js'
+import { factKey } from './factSentences.js'
+import {
+  type ClaimPeriod,
+  type GuildMemoryClaim,
+  type UserMemoryClaim,
+  getActiveClaims,
+  getActiveGuildClaims
+} from './memoryClaims.js'
 import { type RecallScope, canRecall } from './privacy.js'
 import { formatGuildFactDate, searchClaimIds } from './retriever.js'
 
@@ -20,6 +27,7 @@ export type RecallItem = Readonly<{
   label: string
   text: string
   date: string | null
+  period: ClaimPeriod
 }>
 export type RecallInput = Readonly<{
   scope: RecallScope
@@ -83,6 +91,7 @@ function cooldownPenalty(claim: FactClaim, ctx: Ctx): number {
 }
 
 function coreRank(claim: UserMemoryClaim): number | null {
+  if (claim.period === 'past') return null
   if (claim.pinned) return 0
   if (claim.predicate === 'nickname') return 1
   return claim.predicate === 'pronouns' ? 2 : null
@@ -97,7 +106,8 @@ function factItem(claim: FactClaim, score: number, core: boolean): RecallItem {
     subjectUserId: claim.subjectUserId,
     label: claim.predicate,
     text: claim.value,
-    date: claim.subjectKind === 'guild' ? (formatGuildFactDate(claim) ?? null) : null
+    date: claim.subjectKind === 'guild' ? (formatGuildFactDate(claim) ?? null) : null,
+    period: claim.period
   }
 }
 
@@ -160,7 +170,8 @@ function rankConversations(episodes: readonly MemoryEpisode[], query: readonly n
         subjectUserId: null,
         label: 'conversation',
         text: episode.summary,
-        date: getLocalDate(episode.endedAt)
+        date: getLocalDate(episode.endedAt),
+        period: 'current'
       },
       at: episode.endedAt
     })
@@ -182,7 +193,8 @@ function rankMedia(media: readonly MediaRecallCandidate[], query: readonly numbe
         subjectUserId: null,
         label: candidate.label,
         text: candidate.summary,
-        date: getLocalDate(candidate.lastSharedAt)
+        date: getLocalDate(candidate.lastSharedAt),
+        period: 'current'
       },
       at: candidate.lastSharedAt
     })
@@ -222,7 +234,9 @@ export function recallForTurn(input: RecallInput): RecallResult {
   const speakerAllowed = admitClaims(speakerClaims)
   // Only relationships the gate admits here may pull in another person's facts.
   const relatedIds = speakerAllowed.flatMap((claim) =>
-    claim.predicate === 'relationship_to' && claim.objectUserId !== null ? [claim.objectUserId] : []
+    claim.predicate === 'relationship_to' && claim.period === 'current' && claim.objectUserId !== null
+      ? [claim.objectUserId]
+      : []
   )
   const otherIds = [
     ...new Set([
@@ -354,7 +368,7 @@ export function formatRecallBlock(
     if (recalled.kind !== 'fact') continue
     const userId = recalled.subjectUserId ?? ''
     const person = people.get(userId) ?? { name: names.get(userId)?.displayName ?? userId, facts: [] }
-    person.facts.push(`${recalled.label}: ${quote(recalled.text)}`)
+    person.facts.push(`${factKey(recalled.label, recalled.period)}: ${quote(recalled.text)}`)
     people.set(userId, person)
   }
 

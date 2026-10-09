@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { EXTRACTION_RESPONSE_SCHEMA, parseExtractionOutput } from '../extractionSchema.js'
+import { PREDICATES } from '../predicates.js'
 
 const subject = { kind: 'user', userId: 'u-1' }
 
@@ -7,8 +8,8 @@ describe('parseExtractionOutput', () => {
   it('accepts add, update, remove, and noop operations', () => {
     const output = {
       ops: [
-        { op: 'add', subject, predicate: 'likes', value: 'tea', objectUserId: 'u-2' },
-        { op: 'update', subject, existingId: 1, predicate: 'likes', value: 'green tea' },
+        { op: 'add', subject, predicate: 'likes', value: 'tea', objectUserId: 'u-2', tense: 'current' },
+        { op: 'update', subject, existingId: 1, predicate: 'likes', value: 'green tea', tense: 'planned' },
         { op: 'remove', subject, existingId: 2, predicate: 'likes', value: 'coffee' },
         { op: 'noop' }
       ],
@@ -34,7 +35,7 @@ describe('parseExtractionOutput', () => {
 
     expect(parseExtractionOutput(JSON.stringify(plan))).toEqual(plan)
     for (const op of [
-      { op: 'add', subject, predicate: 'plan', value: 'Game night', date: { relative: 'tomorrow' } },
+      { op: 'add', subject, predicate: 'plan', value: 'Game night', tense: 'current', date: { relative: 'tomorrow' } },
       { op: 'add', subject: { kind: 'guild' }, predicate: 'likes', value: 'tea' },
       {
         op: 'add',
@@ -44,7 +45,14 @@ describe('parseExtractionOutput', () => {
         date: { relative: 'tomorrow' },
         objectUserId: 'u-2'
       },
-      { op: 'add', subject: { kind: 'user', userId: 'u-1' }, predicate: 'likes', value: 'tea', date: {} },
+      {
+        op: 'add',
+        subject: { kind: 'user', userId: 'u-1' },
+        predicate: 'likes',
+        value: 'tea',
+        tense: 'current',
+        date: {}
+      },
       { op: 'add', subject: { kind: 'guild' }, predicate: 'plan', value: 'Game night' }
     ]) {
       expect(() => parseExtractionOutput(JSON.stringify({ ops: [op], summary: 'A fact.' }))).toThrow()
@@ -55,7 +63,7 @@ describe('parseExtractionOutput', () => {
     expect(() =>
       parseExtractionOutput(
         JSON.stringify({
-          ops: [{ op: 'update', subject, predicate: 'likes', value: 'tea' }],
+          ops: [{ op: 'update', subject, predicate: 'likes', value: 'tea', tense: 'current' }],
           summary: 'A member shared a preference.'
         })
       )
@@ -64,7 +72,10 @@ describe('parseExtractionOutput', () => {
 
   it.each([
     ['missing summary', { ops: [{ op: 'noop' }] }],
-    ['unknown predicate', { ops: [{ op: 'add', subject, predicate: 'unlisted', value: 'tea' }], summary: 'A fact.' }],
+    [
+      'unknown predicate',
+      { ops: [{ op: 'add', subject, predicate: 'unlisted', value: 'tea', tense: 'current' }], summary: 'A fact.' }
+    ],
     [
       'remove without an existing ID',
       { ops: [{ op: 'remove', subject, predicate: 'likes', value: 'tea' }], summary: 'A fact.' }
@@ -140,5 +151,64 @@ describe('parseExtractionOutput', () => {
     }
 
     expect(parseExtractionOutput(JSON.stringify(output))).toEqual(output)
+  })
+
+  it('requires a tense on user add and update', () => {
+    const user = { kind: 'user', userId: 'u1' }
+    const parse = (op: object) => parseExtractionOutput(JSON.stringify({ ops: [op], summary: 's' }))
+
+    expect(() => parse({ op: 'add', subject: user, predicate: 'hobby', value: 'chess' })).toThrow()
+    expect(() => parse({ op: 'update', subject: user, existingId: 1, predicate: 'hobby', value: 'go' })).toThrow()
+    expect(() => parse({ op: 'add', subject: user, predicate: 'hobby', value: 'chess', tense: 'someday' })).toThrow()
+    expect(parse({ op: 'add', subject: user, predicate: 'hobby', value: 'chess', tense: 'past' }).ops[0]).toMatchObject(
+      {
+        tense: 'past'
+      }
+    )
+    expect(
+      parse({ op: 'update', subject: user, existingId: 1, predicate: 'hobby', value: 'go', tense: 'planned' }).ops[0]
+    ).toMatchObject({ tense: 'planned' })
+  })
+
+  it('accepts a retract with no claim ID', () => {
+    const user = { kind: 'user', userId: 'u1' }
+    const retract = { op: 'retract', subject: user, predicate: 'hobby', value: 'chess' }
+
+    expect(parseExtractionOutput(JSON.stringify({ ops: [retract], summary: 's' })).ops[0]).toEqual(retract)
+    for (const op of [
+      { ...retract, existingId: 1 },
+      { ...retract, tense: 'past' },
+      { ...retract, subject: { kind: 'guild' }, predicate: 'rule' },
+      { op: 'retract', subject: user, predicate: 'hobby' }
+    ]) {
+      expect(() => parseExtractionOutput(JSON.stringify({ ops: [op], summary: 's' }))).toThrow()
+    }
+  })
+
+  it('offers retract and tense in the Gemini response schema', () => {
+    type Variant = { properties: Record<string, { enum?: string[] }>; required: string[] }
+    const variants = (EXTRACTION_RESPONSE_SCHEMA.properties.ops.items as { anyOf: Variant[] }).anyOf
+    const userVariant = (op: string) =>
+      variants.find(
+        (variant) =>
+          variant.properties.op?.enum?.[0] === op &&
+          (variant.properties.subject as unknown as Variant).properties.kind.enum?.[0] === 'user'
+      )
+
+    const retract = userVariant('retract')
+    expect(retract?.required).toEqual(['op', 'subject', 'predicate', 'value'])
+    expect(retract?.properties.existingId).toBeUndefined()
+    expect(retract?.properties.predicate.enum).toEqual(Object.keys(PREDICATES))
+    for (const op of ['add', 'update']) {
+      expect(userVariant(op)?.required).toContain('tense')
+      expect(userVariant(op)?.properties.tense.enum).toEqual(['current', 'past', 'planned'])
+    }
+    expect(userVariant('remove')).toBeDefined()
+    expect(userVariant('remove')?.properties.tense).toBeUndefined()
+    const guildVariants = variants.filter(
+      (variant) => (variant.properties.subject as unknown as Variant | undefined)?.properties.kind.enum?.[0] === 'guild'
+    )
+    expect(guildVariants.length).toBeGreaterThan(0)
+    for (const variant of guildVariants) expect(variant.properties.tense).toBeUndefined()
   })
 })

@@ -31,6 +31,7 @@ import {
   rejectClaimIdsForSpeaker,
   replaceActiveClaim,
   replaceActiveGuildClaim,
+  retireClaim,
   searchClaims,
   touchRecalled
 } from '../memoryClaims.js'
@@ -172,6 +173,428 @@ describe('memoryClaims', () => {
 
     const older = appendEvidence(claim.id, { sourceKind: 'passive', observedAt: 1_500 })
     expect(older.lastSeenAt).toBe(3_000)
+  })
+
+  it('reads a stored period on user and guild claims and keeps a past copy beside a current one', () => {
+    const current = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'general_occupation',
+      value: 'nurse',
+      sourceKind: 'passive'
+    })
+    const past = getDb()
+      .prepare(
+        "INSERT INTO memory_claim (guild_id, subject_user_id, predicate, value, source_kind, status, first_seen_at, last_seen_at, period) VALUES ('guild-1', 'user-1', 'general_occupation', 'nurse', 'passive', 'active', 1, 1, 'past')"
+      )
+      .run()
+    const guildFact = assertGuildClaim({
+      guildId: 'guild-1',
+      predicate: 'plan',
+      value: 'Game night tomorrow',
+      expiresAt: 10_000,
+      sourceKind: 'passive',
+      observedAt: 1_000
+    })
+
+    expect(Number(past.lastInsertRowid)).not.toBe(current.id)
+    expect(current.period).toBe('current')
+    expect(
+      getActiveClaims('guild-1', 'user-1')
+        .map(({ period }) => period)
+        .sort()
+    ).toEqual(['current', 'past'])
+    expect(guildFact.period).toBe('current')
+    expect(getActiveGuildClaims('guild-1', 5_000).map(({ period }) => period)).toEqual(['current'])
+  })
+
+  it('never lets a past fact supersede or revive a current one', () => {
+    assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'general_occupation',
+      value: 'teacher',
+      sourceKind: 'passive'
+    })
+    const nurseNow = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'general_occupation',
+      value: 'nurse',
+      sourceKind: 'passive'
+    })
+    assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'general_occupation',
+      value: 'teacher',
+      sourceKind: 'passive'
+    })
+    assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'general_occupation',
+      value: 'nurse',
+      sourceKind: 'passive',
+      period: 'past'
+    })
+
+    const current = getActiveClaims('guild-1', 'user-1').filter(({ period }) => period === 'current')
+    expect(current.map(({ value }) => value)).toEqual(['teacher'])
+    expect(getDb().prepare('SELECT status FROM memory_claim WHERE id = ?').get(nurseNow.id)).toEqual({
+      status: 'superseded'
+    })
+  })
+
+  it('keeps a current fact active when a different value is recorded as past', () => {
+    const teacher = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'general_occupation',
+      value: 'teacher',
+      sourceKind: 'passive'
+    })
+    const nurse = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'general_occupation',
+      value: 'nurse',
+      sourceKind: 'passive',
+      period: 'past'
+    })
+
+    expect(nurse.period).toBe('past')
+    expect(getActiveClaimById('guild-1', 'user-1', teacher.id)?.status).toBe('active')
+    expect(getActiveClaimById('guild-1', 'user-1', nurse.id)?.status).toBe('active')
+  })
+
+  it('lets several past values of a single-value predicate coexist', () => {
+    for (const value of ['nurse', 'cashier']) {
+      assertClaim({
+        guildId: 'guild-1',
+        subjectUserId: 'user-1',
+        predicate: 'general_occupation',
+        value,
+        sourceKind: 'passive',
+        period: 'past'
+      })
+    }
+    expect(getActiveClaims('guild-1', 'user-1').filter(({ period }) => period === 'past')).toHaveLength(2)
+  })
+
+  it('stores a past copy of a value beside its current claim and refreshes each independently', () => {
+    const current = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'general_occupation',
+      value: 'nurse',
+      sourceKind: 'passive',
+      observedAt: 1_000
+    })
+    const past = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'general_occupation',
+      value: 'nurse',
+      sourceKind: 'passive',
+      period: 'past',
+      observedAt: 2_000
+    })
+    const refreshed = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'general_occupation',
+      value: 'nurse',
+      sourceKind: 'passive',
+      period: 'past',
+      observedAt: 3_000
+    })
+
+    expect(past.id).not.toBe(current.id)
+    expect(refreshed.id).toBe(past.id)
+    expect(getActiveClaimById('guild-1', 'user-1', current.id)).toMatchObject({ period: 'current', lastSeenAt: 1_000 })
+    expect(getActiveClaimById('guild-1', 'user-1', past.id)).toMatchObject({ period: 'past', lastSeenAt: 3_000 })
+  })
+
+  it('passes a pin to the verified replacement of a pinned single-value fact', () => {
+    const pinned = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'general_occupation',
+      value: 'nurse',
+      sourceKind: 'explicit'
+    })
+    expect(pinned.pinned).toBe(true)
+    const replacement = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'general_occupation',
+      value: 'teacher',
+      sourceKind: 'passive'
+    })
+    expect(getActiveClaimById('guild-1', 'user-1', replacement.id)?.pinned).toBe(true)
+  })
+
+  it('does not pass a pin to a staged candidate', () => {
+    assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'general_occupation',
+      value: 'nurse',
+      sourceKind: 'explicit'
+    })
+    const staged = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'general_occupation',
+      value: 'teacher',
+      sourceKind: 'passive',
+      status: 'candidate',
+      needsReview: true
+    })
+    expect(getDb().prepare('SELECT pinned FROM memory_claim WHERE id = ?').get(staged.id)).toEqual({ pinned: 0 })
+  })
+
+  it('does not pass a pin from a current fact to a past one', () => {
+    assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'general_occupation',
+      value: 'nurse',
+      sourceKind: 'explicit'
+    })
+    const past = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'general_occupation',
+      value: 'cashier',
+      sourceKind: 'passive',
+      period: 'past'
+    })
+    expect(getDb().prepare('SELECT pinned FROM memory_claim WHERE id = ?').get(past.id)).toEqual({ pinned: 0 })
+  })
+
+  it('keeps a pin when a verified update replaces a pinned fact', () => {
+    const pinned = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'general_occupation',
+      value: 'nurse',
+      sourceKind: 'explicit'
+    })
+    const replacement = replaceActiveClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      existingId: pinned.id,
+      predicate: 'general_occupation',
+      value: 'teacher',
+      channelId: 'channel-1'
+    })
+
+    expect(replacement).toMatchObject({ value: 'teacher', status: 'active', pinned: true })
+    expect(getDb().prepare('SELECT pinned FROM memory_claim WHERE id = ?').get(replacement?.id)).toEqual({ pinned: 1 })
+  })
+
+  it('does not pin a staged candidate update of a pinned fact', () => {
+    const pinned = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'general_occupation',
+      value: 'nurse',
+      sourceKind: 'explicit'
+    })
+    const staged = replaceActiveClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      existingId: pinned.id,
+      predicate: 'general_occupation',
+      value: 'teacher',
+      channelId: 'channel-1',
+      needsReview: true
+    })
+
+    expect(staged).toMatchObject({ value: 'teacher', status: 'candidate' })
+    expect(getDb().prepare('SELECT pinned FROM memory_claim WHERE id = ?').get(staged?.id)).toEqual({ pinned: 0 })
+    expect(getActiveClaimById('guild-1', 'user-1', pinned.id)?.pinned).toBe(true)
+  })
+
+  it('refuses to replace a past claim and leaves every row untouched', () => {
+    const past = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'general_occupation',
+      value: 'nurse',
+      sourceKind: 'explicit',
+      period: 'past'
+    })
+    const current = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'general_occupation',
+      value: 'teacher',
+      sourceKind: 'passive'
+    })
+    const snapshot = () =>
+      getDb()
+        .prepare('SELECT id, value, period, status, pinned, superseded_by, end_reason FROM memory_claim ORDER BY id')
+        .all()
+    const before = snapshot()
+
+    for (const value of ['cashier', 'nurse']) {
+      expect(
+        replaceActiveClaim({
+          guildId: 'guild-1',
+          subjectUserId: 'user-1',
+          existingId: past.id,
+          predicate: 'general_occupation',
+          value,
+          channelId: 'channel-1'
+        })
+      ).toBeNull()
+    }
+
+    expect(snapshot()).toEqual(before)
+    expect(before).toEqual([
+      expect.objectContaining({ id: past.id, period: 'past', status: 'active', pinned: 1 }),
+      expect.objectContaining({ id: current.id, period: 'current', status: 'active', pinned: 0 })
+    ])
+  })
+
+  it('keeps every other claim and the pinned replacement when a pinned fact is corrected at the cap', () => {
+    const nurse = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'general_occupation',
+      value: 'nurse',
+      sourceKind: 'explicit',
+      observedAt: 1_000
+    })
+    const hobbies = ['chess', 'go'].map((value, index) =>
+      assertClaim({
+        guildId: 'guild-1',
+        subjectUserId: 'user-1',
+        predicate: 'hobby',
+        value,
+        sourceKind: 'passive',
+        observedAt: 2_000 + index
+      })
+    )
+
+    const replacement = replaceActiveClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      existingId: nurse.id,
+      predicate: 'general_occupation',
+      value: 'teacher',
+      channelId: 'channel-1',
+      observedAt: 3_000
+    })
+
+    expect(replacement).toMatchObject({ value: 'teacher', status: 'active', pinned: true })
+    expect(
+      getActiveClaims('guild-1', 'user-1')
+        .map(({ value }) => value)
+        .sort()
+    ).toEqual(['chess', 'go', 'teacher'])
+    expect(hobbies.map(({ id }) => getActiveClaimById('guild-1', 'user-1', id)?.status)).toEqual(['active', 'active'])
+  })
+
+  it('does not pin a verified update of an unpinned fact', () => {
+    const prior = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'general_occupation',
+      value: 'nurse',
+      sourceKind: 'passive'
+    })
+    const replacement = replaceActiveClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      existingId: prior.id,
+      predicate: 'general_occupation',
+      value: 'teacher',
+      channelId: 'channel-1'
+    })
+
+    expect(replacement?.pinned).toBe(false)
+  })
+
+  it('retires a claim as retracted and records its effective time on evidence', () => {
+    const claim = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'hobby',
+      value: 'chess',
+      sourceKind: 'passive',
+      observedAt: 5_000
+    })
+    expect(retireClaim('guild-1', claim.id, 'retracted')).toBe(true)
+    expect(getDb().prepare('SELECT status, end_reason FROM memory_claim WHERE id = ?').get(claim.id)).toEqual({
+      status: 'rejected',
+      end_reason: 'retracted'
+    })
+    expect(getDb().prepare('SELECT effective_at FROM memory_evidence WHERE claim_id = ?').get(claim.id)).toEqual({
+      effective_at: 5_000
+    })
+  })
+
+  it('links a reclassified claim to its replacement and ignores claims that are not active in that guild', () => {
+    const old = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'misc',
+      value: 'plays chess',
+      sourceKind: 'passive'
+    })
+    const moved = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'hobby',
+      value: 'chess',
+      sourceKind: 'passive'
+    })
+
+    expect(retireClaim('guild-2', old.id, 'reclassified', moved.id)).toBe(false)
+    expect(retireClaim('guild-1', old.id, 'reclassified', moved.id)).toBe(true)
+    expect(retireClaim('guild-1', old.id, 'reclassified', moved.id)).toBe(false)
+    expect(
+      getDb().prepare('SELECT status, end_reason, superseded_by FROM memory_claim WHERE id = ?').get(old.id)
+    ).toEqual({ status: 'rejected', end_reason: 'reclassified', superseded_by: moved.id })
+
+    const retracted = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'misc',
+      value: 'likes go',
+      sourceKind: 'passive'
+    })
+    retireClaim('guild-1', retracted.id, 'retracted', moved.id)
+    expect(getDb().prepare('SELECT superseded_by FROM memory_claim WHERE id = ?').get(retracted.id)).toEqual({
+      superseded_by: null
+    })
+  })
+
+  it('stores an explicit effective time on evidence and defaults it to the observation time', () => {
+    const claim = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'hobby',
+      value: 'chess',
+      sourceKind: 'passive',
+      observedAt: 1_000
+    })
+    appendEvidence(claim.id, { sourceKind: 'passive', observedAt: 2_000, effectiveAt: 500 })
+    appendEvidence(claim.id, { sourceKind: 'passive', observedAt: 3_000 })
+
+    expect(
+      getDb()
+        .prepare('SELECT observed_at, effective_at FROM memory_evidence WHERE claim_id = ? ORDER BY id')
+        .all(claim.id)
+    ).toEqual([
+      { observed_at: 1_000, effective_at: 1_000 },
+      { observed_at: 2_000, effective_at: 500 },
+      { observed_at: 3_000, effective_at: 3_000 }
+    ])
   })
 
   it('stores guild facts without a user subject and keeps user reads scoped to users', () => {
@@ -705,6 +1128,85 @@ describe('memoryClaims', () => {
     })
   })
 
+  it('keeps a forgotten fact from returning in either period through a passive write', () => {
+    const nurse = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'general_occupation',
+      value: 'nurse',
+      sourceKind: 'passive'
+    })
+    expect(rejectClaimIdsForSpeaker('guild-1', 'user-1', [nurse.id])).toBe(true)
+
+    const past = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'general_occupation',
+      value: 'nurse',
+      sourceKind: 'passive',
+      period: 'past'
+    })
+
+    expect(past).toMatchObject({ id: nurse.id, status: 'rejected', period: 'current' })
+    expect(getDb().prepare("SELECT COUNT(*) AS count FROM memory_claim WHERE period = 'past'").get()).toEqual({
+      count: 0
+    })
+    expect(getActiveClaims('guild-1', 'user-1')).toEqual([])
+
+    const cashier = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'general_occupation',
+      value: 'cashier',
+      sourceKind: 'passive',
+      period: 'past'
+    })
+    expect(rejectClaimIdsForSpeaker('guild-1', 'user-1', [cashier.id])).toBe(true)
+    const current = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'general_occupation',
+      value: 'cashier',
+      sourceKind: 'passive'
+    })
+    expect(current).toMatchObject({ id: cashier.id, status: 'rejected', period: 'past' })
+    expect(getActiveClaims('guild-1', 'user-1')).toEqual([])
+  })
+
+  it('still lets an explicit write record a forgotten fact in the other period', () => {
+    const nurse = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'general_occupation',
+      value: 'nurse',
+      sourceKind: 'passive'
+    })
+    rejectClaimIdsForSpeaker('guild-1', 'user-1', [nurse.id])
+
+    const past = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'general_occupation',
+      value: 'nurse',
+      sourceKind: 'explicit',
+      period: 'past'
+    })
+
+    expect(past).toMatchObject({ status: 'active', period: 'past' })
+    expect(past.id).not.toBe(nurse.id)
+
+    const refreshed = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'general_occupation',
+      value: 'nurse',
+      sourceKind: 'passive',
+      period: 'past',
+      observedAt: past.lastSeenAt + 1_000
+    })
+    expect(refreshed).toMatchObject({ id: past.id, status: 'active', lastSeenAt: past.lastSeenAt + 1_000 })
+  })
+
   it('revives an expired guild event with its new expiry', () => {
     const now = 100_000
     vi.spyOn(Date, 'now').mockReturnValue(now)
@@ -852,6 +1354,47 @@ describe('memoryClaims', () => {
     expect(pinned).toEqual(expect.arrayContaining(pinnedValues))
     expect(unpinned).toHaveLength(unpinnedValues.length)
     expect(unpinned).toEqual(expect.arrayContaining(unpinnedValues))
+  })
+
+  describe('at the active-claim cap', () => {
+    function write(predicate: string, value: string, observedAt: number, period: 'current' | 'past' = 'current') {
+      return assertClaim({
+        guildId: 'guild-1',
+        subjectUserId: 'user-1',
+        predicate,
+        value,
+        sourceKind: 'passive',
+        observedAt,
+        period
+      })
+    }
+
+    function activeValues() {
+      return getActiveClaims('guild-1', 'user-1')
+        .map(({ value, period }) => `${value} (${period})`)
+        .sort()
+    }
+
+    it('evicts a past fact before an older current one when a new current fact arrives', () => {
+      write('hobby', 'chess', 1_000)
+      const nurse = write('general_occupation', 'nurse', 2_000, 'past')
+      write('likes', 'tea', 3_000)
+
+      expect(activeValues()).toEqual(['chess (current)', 'tea (current)'])
+      expect(getDb().prepare('SELECT status, end_reason FROM memory_claim WHERE id = ?').get(nurse.id)).toEqual({
+        status: 'rejected',
+        end_reason: 'evicted'
+      })
+    })
+
+    it('never lets a new past fact evict a current one', () => {
+      write('hobby', 'chess', 1_000)
+      write('likes', 'tea', 2_000)
+      const nurse = write('general_occupation', 'nurse', 3_000, 'past')
+
+      expect(activeValues()).toEqual(['chess (current)', 'tea (current)'])
+      expect(nurse).toMatchObject({ status: 'rejected' })
+    })
   })
 
   // #111: pinClaim/unpinClaim had no production callers, so the eviction exemption config.yml documents

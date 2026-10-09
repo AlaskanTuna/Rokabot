@@ -17,7 +17,9 @@ import {
   parseExtractionOutput
 } from './extractionSchema.js'
 import { resolveGuildFactDate } from './guildFactDates.js'
+import { reconcileHiddenRetractions } from './hiddenRetractions.js'
 import {
+  type ClaimPeriod,
   type ClaimStatus,
   type MemoryClaim,
   appendEvidence,
@@ -31,11 +33,13 @@ import {
   rejectActiveGuildClaimById,
   replaceActiveClaim,
   replaceActiveGuildClaim,
+  retireClaim,
   retractClaim
 } from './memoryClaims.js'
-import { normalizePredicate } from './predicates.js'
+import { type PredicateId, normalizePredicate } from './predicates.js'
 import { type RecallScope, canRecall } from './privacy.js'
 import { sensitiveFactReason } from './privacyGuard.js'
+import { proposedPeriod, retractCandidates, sameAsCandidates } from './verificationCandidates.js'
 
 let genaiClient: GoogleGenAI | undefined
 
@@ -73,7 +77,9 @@ function episodePrompt(guildId: string, channelId: string, episode: ExtractionEp
     claims: recallableHere(
       getActiveClaims(guildId, userId).filter(({ needsReview }) => !needsReview),
       scope
-    ).map(({ id, predicate, value }) => ({ id, predicate, value }))
+    ).map(({ id, predicate, value, period }) =>
+      period === 'past' ? { id, predicate, value, period } : { id, predicate, value }
+    )
   }))
   const guildClaims = recallableHere(getActiveGuildClaims(guildId), scope).map(
     ({ id, predicate, value, expiresAt }) => ({
@@ -89,7 +95,14 @@ function episodePrompt(guildId: string, channelId: string, episode: ExtractionEp
     'A member\'s own job, trade or line of work is general_occupation and is never sensitive: record the role itself ("line cook", "freelance illustrator"), never the employer, workplace, or location.',
     'For user facts, use only the supplied user IDs and attribute facts only to the person who stated them, not someone quoted, addressed, or joked about. Use subject {"kind":"guild"} only for a fact established about this server or its members collectively. Context lines are background only and cannot supply a subject or fact.',
     'Use only these guild predicates: upcoming_event, plan, running_joke, place, rule, announcement. For upcoming_event and plan, date the fact from the messages: if they name a calendar day, give the month and day, plus the year only when the messages state it; if they name a month but no day, give just the month, and never invent a day; if they only say today, tomorrow, this week, next week, this month, or next month, give the relative form. Never guess a date the messages do not support, and never decide whether it is in the future.',
-    'Add a new claim only for a durable fact. If a member restates a current durable fact, return add with the same subject, predicate, and exact value as its existing claim. Never add a rewording. Use update or remove with an existing claim ID for an actual change. Return noop only when no durable fact came up.',
+    'Add a new claim only for a durable fact. Return noop only when no durable fact, change or retraction came up.',
+    'Every user add and update has a tense: current if it is true of them now, past if it was true before but not now ("back when I was a nurse", "I used to play chess"), planned if they intend it.',
+    'Use retract when a member says a fact about themselves no longer holds ("I quit chess", "I\'m not vegetarian anymore"), naming the predicate and the value that ended, even if it is not in the current active claims. A switch ("switched from chess to go") is a retract of the old value plus an add of the new one.',
+    'When retracting a fact listed in the active claims, use its listed predicate.',
+    'If a member restates a current durable fact, return add with the same subject, predicate and exact value as its existing claim. Never add a rewording. Use update with an existing claim ID only when the fact itself changed.',
+    'Use remove with an existing claim ID only for a claim that was never true or was attributed to the wrong person; use retract for a fact that has ended.',
+    'Never update or remove a claim whose "period" is "past"; to restate history, use add with tense past.',
+    'Choose the most specific predicate; use misc only when no other predicate fits. "I draw on weekends" is hobby, not misc; "my cat Mochi" is pets, not misc; "I like spicy food" is likes, not misc. A game or sport they play is hobby, not favorite_game, unless they call it their favorite.',
     'Return a one-to-two sentence third-person summary.',
     `Allowed human user IDs: ${humanIds.join(', ') || '(none)'}`,
     `Current active claims:\n${JSON.stringify(claims, null, 2)}`,
@@ -129,6 +142,9 @@ export type OperationApplicationReport = {
   duplicateOps: number
   stagedOps: number
   changedOps: number
+  pastOps: number
+  rewordOps: number
+  retractedOps: number
   inputTokens: number
 }
 
@@ -138,6 +154,7 @@ type PlannedOperation = {
   index: number
   op: EpisodeWriteOp
   sameAsClaims: MemoryClaim[]
+  retractClaims: MemoryClaim[]
   questionKeys: string[]
   expiresAt: number | null
   eventDate: string | null
@@ -155,13 +172,8 @@ function planVerification(
   timezone: string | undefined
 ): PlannedOperation[] {
   return ops.map((op, index) => {
-    const sameAsClaims =
-      op.op === 'add'
-        ? existing.filter((claim) => {
-            if (claim.subjectKind !== op.subject.kind || claim.predicate !== op.predicate) return false
-            return op.subject.kind === 'guild' || claim.subjectUserId === op.subject.userId
-          })
-        : []
+    const sameAsClaims = op.op === 'add' ? sameAsCandidates(existing, op) : []
+    const retractClaims = op.op === 'retract' ? retractCandidates(existing, op) : []
     const expires =
       op.subject.kind === 'guild' &&
       op.op !== 'remove' &&
@@ -178,13 +190,17 @@ function planVerification(
       index,
       op,
       sameAsClaims,
+      retractClaims,
       expiresAt: expires?.expiresAt ?? null,
       eventDate: expires?.eventDate ?? null,
       dateValid: !requiresDate || expires !== null,
       questionKeys: [
         `durable_${index}`,
         `${op.subject.kind === 'guild' ? 'guild_scoped' : 'attributed'}_${index}`,
-        ...sameAsClaims.map((_, claimIndex) => `same_as_${index}_${claimIndex}`)
+        ...('tense' in op ? [`current_${index}`, `past_${index}`] : []),
+        ...('tense' in op && op.op === 'update' ? [`changes_${index}`] : []),
+        ...sameAsClaims.map((_, claimIndex) => `same_as_${index}_${claimIndex}`),
+        ...retractClaims.map((_, claimIndex) => `retracts_${index}_${claimIndex}`)
       ]
     }
   })
@@ -215,15 +231,25 @@ function operationSafe(op: EpisodeWriteOp): boolean {
   return !sensitiveFactReason(op.predicate, op.value)
 }
 
-function priorClaimStatus(guildId: string, op: EpisodeWriteOp): ClaimStatus | undefined {
+function priorClaimStatus(guildId: string, op: EpisodeWriteOp, period: ClaimPeriod): ClaimStatus | undefined {
   const [subjectUserId, predicate] =
     op.subject.kind === 'guild' ? [null, op.predicate] : [op.subject.userId, normalizePredicate(op.predicate)]
   const row = getDb()
     .prepare(
-      'SELECT status FROM memory_claim WHERE guild_id = ? AND subject_kind = ? AND subject_user_id IS ? AND predicate = ? AND value = ?'
+      'SELECT status FROM memory_claim WHERE guild_id = ? AND subject_kind = ? AND subject_user_id IS ? AND predicate = ? AND value = ? AND period = ?'
     )
-    .get(guildId, op.subject.kind, subjectUserId, predicate, op.value) as { status: ClaimStatus } | undefined
+    .get(guildId, op.subject.kind, subjectUserId, predicate, op.value, period) as { status: ClaimStatus } | undefined
   return row?.status
+}
+
+function keyApplied(
+  key: string,
+  result: { applied: boolean; duplicate: boolean },
+  appliedKeys: ReadonlySet<string>
+): boolean {
+  if (key.startsWith('same_as_') || key.startsWith('retracts_')) return appliedKeys.has(key)
+  if (key.startsWith('changes_')) return result.applied
+  return result.applied || result.duplicate
 }
 
 export async function verifyAndApplyOperations(input: {
@@ -236,7 +262,17 @@ export async function verifyAndApplyOperations(input: {
 }): Promise<OperationApplicationReport> {
   const writeOps = input.output.ops.filter((op): op is EpisodeWriteOp => op.op !== 'noop')
   if (writeOps.length === 0) {
-    return { appliedOps: 0, droppedOps: 0, duplicateOps: 0, stagedOps: 0, changedOps: 0, inputTokens: 0 }
+    return {
+      appliedOps: 0,
+      droppedOps: 0,
+      duplicateOps: 0,
+      stagedOps: 0,
+      changedOps: 0,
+      pastOps: 0,
+      rewordOps: 0,
+      retractedOps: 0,
+      inputTokens: 0
+    }
   }
 
   const observedAt = episodeObservedAt(input.episode)
@@ -248,37 +284,49 @@ export async function verifyAndApplyOperations(input: {
     ),
     ...getActiveGuildClaims(input.guildId)
   ]
-  const sameAsCandidates = recallableHere(existing, { guildId: input.guildId, channelId: input.channelId })
-  const planned = planVerification(writeOps, sameAsCandidates, observedAt, config.timezone)
-  const verification = await judgeEpisodeOperations({
-    lines: input.episode.messages.map(formatEpisodeLine),
-    ops: writeOps,
-    existing: sameAsCandidates
-  })
+  const visibleClaims = recallableHere(existing, { guildId: input.guildId, channelId: input.channelId })
+  const planned = planVerification(writeOps, visibleClaims, observedAt, config.timezone)
+  const lines = input.episode.messages.map(formatEpisodeLine)
+  const verification = await judgeEpisodeOperations({ lines, ops: writeOps, existing: visibleClaims })
   const verified = hasCompleteVerification(verification, planned)
-  const results: Array<{ applied: boolean; duplicate: boolean; staged?: boolean; changed?: boolean }> = []
-  const appliedEvidence = new Set<string>()
+  const holds = (key: string) => (verification?.answers[key]?.noul ?? 0) >= config.memory.verifyThreshold
+  const results: Array<{
+    applied: boolean
+    duplicate: boolean
+    staged?: boolean
+    changed?: boolean
+    past?: boolean
+    reword?: boolean
+    retracted?: number
+  }> = []
+  const appliedKeys = new Set<string>()
+  const verifiedRetracts: Array<{ subjectUserId: string; predicate: PredicateId; value: string }> = []
 
+  // Retractions go last, so a switch sent as retract-then-add lets the add supersede the old value and inherit its pin.
+  const applyOrder = [
+    ...planned.filter(({ op }) => op.op !== 'retract'),
+    ...planned.filter(({ op }) => op.op === 'retract')
+  ]
   getDb().transaction(() => {
-    for (const entry of planned) {
-      const { op, index, sameAsClaims } = entry
+    for (const entry of applyOrder) {
+      const { op, index, sameAsClaims, retractClaims } = entry
       if (!operationAllowed(op, subjectIds) || !operationSafe(op)) {
-        results.push({ applied: false, duplicate: false })
+        results[index] = { applied: false, duplicate: false }
         continue
       }
-      if (!entry.dateValid) {
-        results.push({ applied: false, duplicate: false })
+      if (!entry.dateValid || ('tense' in op && op.tense === 'planned')) {
+        results[index] = { applied: false, duplicate: false }
         continue
       }
 
       const target =
-        op.op === 'add'
+        op.op === 'add' || op.op === 'retract'
           ? undefined
           : op.subject.kind === 'guild'
             ? getActiveGuildClaimById(input.guildId, op.existingId)
             : getActiveClaimById(input.guildId, op.subject.userId, op.existingId)
-      if (op.op !== 'add' && (!target || target.predicate !== op.predicate)) {
-        results.push({ applied: false, duplicate: false })
+      if (op.op !== 'add' && op.op !== 'retract' && (!target || target.predicate !== op.predicate)) {
+        results[index] = { applied: false, duplicate: false }
         continue
       }
 
@@ -287,27 +335,82 @@ export async function verifyAndApplyOperations(input: {
         const scopedKey = `${op.subject.kind === 'guild' ? 'guild_scoped' : 'attributed'}_${index}`
         const scoped = verification.answers[scopedKey].noul >= config.memory.verifyThreshold
         if (!durable || !scoped) {
-          results.push({ applied: false, duplicate: false })
+          results[index] = { applied: false, duplicate: false }
           continue
         }
       } else {
-        if (op.op === 'remove') {
-          results.push({ applied: false, duplicate: false })
+        if (op.op === 'remove' || op.op === 'retract') {
+          results[index] = { applied: false, duplicate: false }
           continue
         }
         const current =
           op.subject.kind === 'guild'
             ? getActiveGuildClaims(input.guildId)
             : getActiveClaims(input.guildId, op.subject.userId)
-        const sameValue = current.find((claim) => claim.predicate === op.predicate && claim.value === op.value)
-        if (sameValue || (op.op === 'update' && target?.value === op.value)) {
-          results.push({ applied: false, duplicate: false })
+        const proposed = proposedPeriod(op)
+        const sameValue = current.find(
+          (claim) => claim.predicate === op.predicate && claim.value === op.value && claim.period === proposed
+        )
+        if (sameValue || (op.op === 'update' && target?.value === op.value && target.period === proposed)) {
+          results[index] = { applied: false, duplicate: false }
           continue
         }
       }
 
-      if (op.op === 'add') {
-        if (verified) {
+      if (op.op === 'retract') {
+        verifiedRetracts.push({ subjectUserId: op.subject.userId, predicate: op.predicate, value: op.value })
+        let retired = 0
+        for (const [claimIndex, claim] of retractClaims.entries()) {
+          const key = `retracts_${index}_${claimIndex}`
+          if (holds(key) && retireClaim(input.guildId, claim.id, 'retracted', undefined, { transaction: true })) {
+            appliedKeys.add(key)
+            retired += 1
+          }
+        }
+        results[index] = { applied: retired > 0, duplicate: false, changed: retired > 0, retracted: retired }
+        continue
+      }
+
+      let period = proposedPeriod(op)
+      if (verified && 'tense' in op) {
+        const stillHolds = holds(`current_${index}`)
+        if (op.tense === 'past' && stillHolds) {
+          // The speaker still holds it, so there is no history to record: it can only refresh the matching current fact.
+          const match = getActiveClaims(input.guildId, op.subject.userId).find(
+            (claim) => claim.period === 'current' && claim.predicate === op.predicate && claim.value === op.value
+          )
+          if (match) {
+            appendEvidence(
+              match.id,
+              { channelId: input.channelId, sourceKind: 'passive', observedAt },
+              { transaction: true }
+            )
+          }
+          results[index] = { applied: false, duplicate: Boolean(match) }
+          continue
+        }
+        const resolved = op.tense === 'current' && stillHolds ? 'current' : holds(`past_${index}`) ? 'past' : null
+        if (resolved === null) {
+          results[index] = { applied: false, duplicate: false }
+          continue
+        }
+        period = resolved
+        if (op.op === 'update' && period === 'current' && target?.period === 'current' && !holds(`changes_${index}`)) {
+          appendEvidence(
+            target.id,
+            { channelId: input.channelId, sourceKind: 'passive', observedAt },
+            { transaction: true }
+          )
+          results[index] = { applied: false, duplicate: true, reword: true }
+          continue
+        }
+      }
+
+      // A past mention is written as its own row: it never replaces the claim an update targeted. A verified current
+      // update aimed at a past claim is written the same way, as the current fact, so the history stays untouched.
+      if (op.op === 'add' || (op.op === 'update' && (period === 'past' || (verified && target?.period === 'past')))) {
+        // Same-as candidates were chosen for the proposed period, so they only apply while Jev kept it.
+        if (verified && period === proposedPeriod(op)) {
           const exactSameAs = sameAsClaims.find((claim) => claim.value === op.value)
           if (exactSameAs) {
             const active =
@@ -320,10 +423,10 @@ export async function verifyAndApplyOperations(input: {
                 { channelId: input.channelId, sourceKind: 'passive', observedAt },
                 { transaction: true }
               )
-              appliedEvidence.add(`same_as_${index}_${sameAsClaims.indexOf(exactSameAs)}`)
-              results.push({ applied: false, duplicate: true })
+              appliedKeys.add(`same_as_${index}_${sameAsClaims.indexOf(exactSameAs)}`)
+              results[index] = { applied: false, duplicate: true }
             } else {
-              results.push({ applied: false, duplicate: false })
+              results[index] = { applied: false, duplicate: false }
             }
             continue
           }
@@ -342,20 +445,20 @@ export async function verifyAndApplyOperations(input: {
                 { channelId: input.channelId, sourceKind: 'passive', observedAt },
                 { transaction: true }
               )
-              appliedEvidence.add(`same_as_${index}_${sameAsClaims.indexOf(sameAs)}`)
-              results.push({ applied: false, duplicate: true })
+              appliedKeys.add(`same_as_${index}_${sameAsClaims.indexOf(sameAs)}`)
+              results[index] = { applied: false, duplicate: true }
             } else {
-              results.push({ applied: false, duplicate: false })
+              results[index] = { applied: false, duplicate: false }
             }
             continue
           }
           if (sameAsClaims.some((claim) => claim.value === op.value)) {
-            results.push({ applied: false, duplicate: false })
+            results[index] = { applied: false, duplicate: false }
             continue
           }
         }
 
-        const priorStatus = priorClaimStatus(input.guildId, op)
+        const priorStatus = priorClaimStatus(input.guildId, op, period)
         if (isGuildWriteOperation(op)) {
           const claim = assertGuildClaim(
             {
@@ -373,12 +476,12 @@ export async function verifyAndApplyOperations(input: {
             { transaction: true }
           )
           const applied = claim.status === 'active' || claim.status === 'candidate'
-          results.push({
+          results[index] = {
             applied,
             duplicate: false,
             staged: !verified && claim.status === 'candidate',
             changed: applied && claim.status !== priorStatus
-          })
+          }
           continue
         }
 
@@ -393,17 +496,19 @@ export async function verifyAndApplyOperations(input: {
             channelId: input.channelId,
             observedAt,
             needsReview: !verified,
-            status: verified ? 'active' : 'candidate'
+            status: verified ? 'active' : 'candidate',
+            period
           },
           { transaction: true }
         )
         const applied = claim.status === 'active' || claim.status === 'candidate'
-        results.push({
+        results[index] = {
           applied,
           duplicate: false,
           staged: !verified && claim.status === 'candidate',
-          changed: applied && claim.status !== priorStatus
-        })
+          changed: applied && claim.status !== priorStatus,
+          past: applied && verified && period === 'past'
+        }
         continue
       }
 
@@ -439,7 +544,7 @@ export async function verifyAndApplyOperations(input: {
             )
         const duplicate = replacement?.id === op.existingId
         const applied = Boolean(replacement) && !duplicate
-        results.push({ applied, duplicate, staged: !verified && Boolean(replacement), changed: applied })
+        results[index] = { applied, duplicate, staged: !verified && Boolean(replacement), changed: applied }
         continue
       }
 
@@ -449,7 +554,7 @@ export async function verifyAndApplyOperations(input: {
             { guildId: input.guildId, subjectUserId: op.subject.userId, existingId: op.existingId },
             { transaction: true }
           )
-      results.push({ applied, duplicate: false, changed: applied })
+      results[index] = { applied, duplicate: false, changed: applied }
     }
   })()
 
@@ -460,6 +565,14 @@ export async function verifyAndApplyOperations(input: {
       'Staged unverified memory operations'
     )
   }
+
+  const hiddenRetracted = await reconcileHiddenRetractions({
+    guildId: input.guildId,
+    channelId: input.channelId,
+    lines,
+    retracts: verifiedRetracts,
+    visibleIds: new Set(visibleClaims.map(({ id }) => id))
+  })
 
   if (verified && verification) {
     for (const entry of planned) {
@@ -474,7 +587,7 @@ export async function verifyAndApplyOperations(input: {
           answer: String(answer.noul),
           probability: answer.noul,
           confidence: answer.confidence,
-          applied: key.startsWith('same_as_') ? appliedEvidence.has(key) : result.applied || result.duplicate,
+          applied: keyApplied(key, result, appliedKeys),
           latencyMs: verification.latencyMs,
           inputTokens: verification.inputTokens,
           jobId: input.jobId
@@ -489,6 +602,9 @@ export async function verifyAndApplyOperations(input: {
     duplicateOps: results.filter(({ duplicate }) => duplicate).length,
     stagedOps,
     changedOps: results.filter(({ changed }) => changed).length,
+    pastOps: results.filter(({ past }) => past).length,
+    rewordOps: results.filter(({ reword }) => reword).length,
+    retractedOps: results.reduce((total, { retracted }) => total + (retracted ?? 0), hiddenRetracted),
     inputTokens: verification?.inputTokens ?? 0
   }
 }
@@ -540,10 +656,13 @@ export async function runEpisodePipeline(job: ExtractionQueueJob, trace: RunTrac
   trace.ops.staged = report.stagedOps
   trace.ops.dropped = report.droppedOps
   trace.ops.changed = report.changedOps
+  trace.ops.past = report.pastOps
+  trace.ops.reword = report.rewordOps
+  trace.ops.retracted = report.retractedOps
   trace.tokens += report.inputTokens
 
   trace.stage = 'applied'
-  trace.outcome = report.appliedOps + report.stagedOps > 0 ? 'written' : 'noop'
+  trace.outcome = report.appliedOps + report.stagedOps + report.retractedOps > 0 ? 'written' : 'noop'
   return {
     status: 'completed',
     summary: output.summary,

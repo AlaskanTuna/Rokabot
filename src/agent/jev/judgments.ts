@@ -4,6 +4,7 @@ import { logger } from '../../utils/logger.js'
 import { getLocalHour } from '../../utils/timezone.js'
 import type { ExtractionOp } from '../memory/extractionSchema.js'
 import type { MemoryClaim } from '../memory/memoryClaims.js'
+import { proposedPeriod, retractCandidates, sameAsCandidates } from '../memory/verificationCandidates.js'
 import type { ToneKey } from '../prompts/tones.js'
 import { getJevClient } from './client.js'
 
@@ -205,7 +206,11 @@ export async function judgeEpisodeOperations(input: {
       questions[durableKey] = noul(
         op.subject.kind === 'guild'
           ? 'Is this a lasting shared server fact or an agreed plan/event, rather than an uncommitted suggestion, greeting, or passing mood?'
-          : 'Is this operation a lasting trait, preference, relationship or plan rather than a momentary state or an event that has already happened?'
+          : op.op === 'retract'
+            ? 'Does this say a lasting fact about the person (such as a hobby, job, diet or habit) has ended, rather than a short pause or a passing mood?'
+            : proposedPeriod(op) === 'past'
+              ? "Is this a lasting fact about the person's history, such as a former job, place or long-held habit, rather than a one-off event?"
+              : 'Is this operation a lasting trait, preference, relationship or plan rather than a momentary state or an event that has already happened?'
       )
       questions[scopeKey] = noul(
         op.subject.kind === 'guild'
@@ -214,16 +219,33 @@ export async function judgeEpisodeOperations(input: {
       )
       questionKeys.push(durableKey, scopeKey)
 
+      if ('tense' in op) {
+        questions[`current_${index}`] = noul('Is this true of the subject now, at the time of these messages?')
+        questions[`past_${index}`] = noul('Was this true of the subject at some earlier time, even if it is not now?')
+        questionKeys.push(`current_${index}`, `past_${index}`)
+        if (op.op === 'update') {
+          questions[`changes_${index}`] = noul(
+            `Does this change the existing claim #${op.existingId} into a different fact, rather than restate it in other words?`
+          )
+          questionKeys.push(`changes_${index}`)
+        }
+      }
+
       if (op.op === 'add') {
-        const claims = input.existing.filter((claim) => {
-          if (claim.subjectKind !== op.subject.kind || claim.predicate !== op.predicate) return false
-          return op.subject.kind === 'guild' || claim.subjectUserId === op.subject.userId
-        })
-        for (const [claimIndex, claim] of claims.entries()) {
+        for (const [claimIndex, claim] of sameAsCandidates(input.existing, op).entries()) {
           const key = `same_as_${index}_${claimIndex}`
           const subjectLabel = op.subject.kind === 'guild' ? 'this server' : op.subject.userId
           questions[key] = noul(
             `Do the episode messages state the same fact about ${subjectLabel} as existing claim #${claim.id}: ${claim.value}?`
+          )
+          questionKeys.push(key)
+        }
+      }
+      if (op.op === 'retract') {
+        for (const [claimIndex, claim] of retractCandidates(input.existing, op).entries()) {
+          const key = `retracts_${index}_${claimIndex}`
+          questions[key] = noul(
+            `Do the messages say that the subject's ${claim.predicate.replaceAll('_', ' ')} "${claim.value}" no longer holds?`
           )
           questionKeys.push(key)
         }
@@ -257,6 +279,39 @@ export async function judgeEpisodeOperations(input: {
       answers[key] = { noul: answer.noul, confidence: null }
     }
     return { answers, latencyMs, inputTokens: result.usage.input_tokens }
+  } catch (error) {
+    logger.warn(warningDetails('extraction', error), 'Jev judgment failed')
+    return null
+  }
+}
+
+/** Maps each candidate claim ID to the probability that the messages end it, or null on any failure. */
+export async function judgeHiddenRetractions(input: {
+  lines: string[]
+  statement: string
+  candidates: Array<{ id: number; sentence: string }>
+}): Promise<Record<number, number> | null> {
+  try {
+    const client = getJevClient()
+    if (!client || input.candidates.length === 0) return null
+
+    const questions: Questions = {}
+    for (const { id, sentence } of input.candidates) {
+      questions[`retracts_${id}`] = noul(
+        `Do the messages say that this fact about the speaker no longer holds: "${sentence}"?`
+      )
+    }
+    const result = await client.systemOne(
+      { state: { messages: input.lines, statement: input.statement, facts: input.candidates }, questions },
+      { timeout: config.jev.memoryTimeoutMs }
+    )
+    const probabilities: Record<number, number> = {}
+    for (const { id } of input.candidates) {
+      const answer = result.answers[`retracts_${id}`]
+      if (answer?.type !== 'noul' || validProbability(answer.noul) === null) return null
+      probabilities[id] = answer.noul
+    }
+    return probabilities
   } catch (error) {
     logger.warn(warningDetails('extraction', error), 'Jev judgment failed')
     return null

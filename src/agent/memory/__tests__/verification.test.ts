@@ -44,7 +44,7 @@ function episode(): ExtractionEpisode {
 }
 
 function add(value = 'tea', subjectUserId = 'u-1'): ExtractionOp {
-  return { op: 'add', subject: { kind: 'user', userId: subjectUserId }, predicate: 'likes', value }
+  return { op: 'add', subject: { kind: 'user', userId: subjectUserId }, predicate: 'likes', value, tense: 'current' }
 }
 
 function guildPlan(
@@ -61,6 +61,9 @@ function report(counts: Partial<OperationApplicationReport> = {}): OperationAppl
     duplicateOps: 0,
     stagedOps: 0,
     changedOps: 0,
+    pastOps: 0,
+    rewordOps: 0,
+    retractedOps: 0,
     inputTokens: expect.any(Number),
     ...counts
   }
@@ -82,6 +85,68 @@ function positiveAnswers(...keys: string[]): Record<string, { noul: number }> {
   return Object.fromEntries(keys.map((key) => [key, { noul: 0.9 }]))
 }
 
+const subject = { kind: 'user' as const, userId: 'u-1' }
+
+function seedClaim(input: {
+  predicate: string
+  value: string
+  period?: 'current' | 'past'
+  sourceKind?: 'explicit' | 'passive'
+  observedAt?: number
+}) {
+  return assertClaim({
+    guildId: 'g-1',
+    subjectUserId: 'u-1',
+    sourceKind: 'passive',
+    ...input
+  })
+}
+
+function apply(ops: ExtractionOp[], answers: Record<string, number>) {
+  setAnswers(Object.fromEntries(Object.entries(answers).map(([key, noul]) => [key, { noul }])))
+  return verifyAndApplyOperations({
+    guildId: 'g-1',
+    channelId: 'c-1',
+    episode: episode(),
+    output: output(...ops),
+    subjectIds: new Set([subject.userId])
+  })
+}
+
+function factsWithStatus(status: string): Array<{ value: string; period: string }> {
+  return getDb()
+    .prepare('SELECT value, period FROM memory_claim WHERE subject_kind = ? AND status = ? ORDER BY period, id')
+    .all('user', status) as Array<{ value: string; period: string }>
+}
+
+function activeFacts() {
+  return factsWithStatus('active')
+}
+
+function candidateFacts() {
+  return factsWithStatus('candidate')
+}
+
+function evidenceCount(claimId: number): number {
+  return (
+    getDb().prepare('SELECT COUNT(*) AS count FROM memory_evidence WHERE claim_id = ?').get(claimId) as {
+      count: number
+    }
+  ).count
+}
+
+function statusOf(claimId: number) {
+  return getDb().prepare('SELECT status, end_reason FROM memory_claim WHERE id = ?').get(claimId)
+}
+
+function jevApplied(question: string): number | undefined {
+  return (
+    getDb().prepare('SELECT applied FROM jev_events WHERE question = ?').get(question) as
+      | { applied: number }
+      | undefined
+  )?.applied
+}
+
 beforeEach(() => {
   process.env.ROKABOT_DB_PATH = ':memory:'
   mocks.memoryPrivacy = 'relaxed'
@@ -98,7 +163,7 @@ afterEach(() => {
 
 describe('verifyAndApplyOperations', () => {
   it('verifies all write operations in one batch and records numeric judgments only', async () => {
-    setAnswers(positiveAnswers('durable_0', 'attributed_0'))
+    setAnswers(positiveAnswers('durable_0', 'attributed_0', 'current_0', 'past_0'))
 
     await expect(
       verifyAndApplyOperations({
@@ -134,7 +199,7 @@ describe('verifyAndApplyOperations', () => {
   })
 
   it('links every verification judgment to the queue job', async () => {
-    setAnswers(positiveAnswers('durable_0', 'attributed_0'))
+    setAnswers(positiveAnswers('durable_0', 'attributed_0', 'current_0', 'past_0'))
 
     await verifyAndApplyOperations({
       guildId: 'g-1',
@@ -145,11 +210,11 @@ describe('verifyAndApplyOperations', () => {
       jobId: 9
     })
 
-    expect(getDb().prepare('SELECT job_id FROM jev_events').all()).toEqual([{ job_id: 9 }, { job_id: 9 }])
+    expect(getDb().prepare('SELECT job_id FROM jev_events').all()).toEqual(Array(4).fill({ job_id: 9 }))
   })
 
   it('reports the Jev input tokens it spent', async () => {
-    setAnswers(positiveAnswers('durable_0', 'attributed_0'))
+    setAnswers(positiveAnswers('durable_0', 'attributed_0', 'current_0', 'past_0'))
 
     await expect(
       verifyAndApplyOperations({
@@ -188,7 +253,7 @@ describe('verifyAndApplyOperations', () => {
       output: output(add()),
       subjectIds: new Set(['u-1'])
     })
-    setAnswers(positiveAnswers('durable_0', 'attributed_0'))
+    setAnswers(positiveAnswers('durable_0', 'attributed_0', 'current_0', 'past_0'))
 
     await expect(
       verifyAndApplyOperations({
@@ -216,7 +281,12 @@ describe('verifyAndApplyOperations', () => {
   })
 
   it('drops answers below threshold and accepts answers equal to threshold', async () => {
-    setAnswers({ durable_0: { noul: 0.49 }, attributed_0: { noul: 0.9 } })
+    setAnswers({
+      durable_0: { noul: 0.49 },
+      attributed_0: { noul: 0.9 },
+      current_0: { noul: 0.9 },
+      past_0: { noul: 0.9 }
+    })
     await expect(
       verifyAndApplyOperations({
         guildId: 'g-1',
@@ -228,7 +298,12 @@ describe('verifyAndApplyOperations', () => {
     ).resolves.toEqual(report({ appliedOps: 0, droppedOps: 1, duplicateOps: 0, changedOps: 0 }))
     expect(getActiveClaims('g-1', 'u-1')).toEqual([])
 
-    setAnswers({ durable_0: { noul: 0.5 }, attributed_0: { noul: 0.5 } })
+    setAnswers({
+      durable_0: { noul: 0.5 },
+      attributed_0: { noul: 0.5 },
+      current_0: { noul: 0.9 },
+      past_0: { noul: 0.9 }
+    })
     await expect(
       verifyAndApplyOperations({
         guildId: 'g-1',
@@ -249,7 +324,7 @@ describe('verifyAndApplyOperations', () => {
       sourceKind: 'explicit',
       channelId: 'private-channel'
     })
-    setAnswers(positiveAnswers('durable_0', 'attributed_0', 'same_as_0_0'))
+    setAnswers(positiveAnswers('durable_0', 'attributed_0', 'current_0', 'past_0', 'same_as_0_0'))
 
     await expect(
       verifyAndApplyOperations({
@@ -284,7 +359,7 @@ describe('verifyAndApplyOperations', () => {
       visibility: (channelId) => (channelId === 'c-1' ? 'public' : 'private'),
       parentOf: () => null
     })
-    setAnswers(positiveAnswers('durable_0', 'attributed_0'))
+    setAnswers(positiveAnswers('durable_0', 'attributed_0', 'current_0', 'past_0'))
 
     await expect(
       verifyAndApplyOperations({
@@ -319,7 +394,7 @@ describe('verifyAndApplyOperations', () => {
       visibility: (channelId) => (channelId === 'c-1' ? 'public' : 'private'),
       parentOf: () => null
     })
-    setAnswers(positiveAnswers('durable_0', 'attributed_0'))
+    setAnswers(positiveAnswers('durable_0', 'attributed_0', 'current_0', 'past_0'))
 
     await expect(
       verifyAndApplyOperations({
@@ -348,7 +423,13 @@ describe('verifyAndApplyOperations', () => {
       sourceKind: 'passive',
       observedAt: 1_000
     })
-    setAnswers({ durable_0: { noul: 0.9 }, attributed_0: { noul: 0.9 }, same_as_0_0: { noul: 0.1 } })
+    setAnswers({
+      durable_0: { noul: 0.9 },
+      attributed_0: { noul: 0.9 },
+      current_0: { noul: 0.9 },
+      past_0: { noul: 0.9 },
+      same_as_0_0: { noul: 0.1 }
+    })
 
     await expect(
       verifyAndApplyOperations({
@@ -406,7 +487,7 @@ describe('verifyAndApplyOperations', () => {
       value: 'tea',
       sourceKind: 'explicit'
     })
-    setAnswers(positiveAnswers('durable_0', 'attributed_0'))
+    setAnswers(positiveAnswers('durable_0', 'attributed_0', 'current_0', 'past_0', 'changes_0'))
     await expect(
       verifyAndApplyOperations({
         guildId: 'g-1',
@@ -417,7 +498,8 @@ describe('verifyAndApplyOperations', () => {
           subject: { kind: 'user', userId: 'u-1' },
           existingId: prior.id,
           predicate: 'likes',
-          value: 'green tea'
+          value: 'green tea',
+          tense: 'current'
         }),
         subjectIds: new Set(['u-1'])
       })
@@ -494,23 +576,47 @@ describe('verifyAndApplyOperations', () => {
       value: 'Rin',
       sourceKind: 'passive'
     })
-    setAnswers({ durable_0: { noul: 0.9 }, attributed_0: { noul: 0.9 }, same_as_0_0: { noul: 0.1 } })
+    setAnswers({
+      durable_0: { noul: 0.9 },
+      attributed_0: { noul: 0.9 },
+      current_0: { noul: 0.9 },
+      past_0: { noul: 0.9 },
+      same_as_0_0: { noul: 0.1 }
+    })
     await verifyAndApplyOperations({
       guildId: 'g-1',
       channelId: 'c-1',
       episode: episode(),
-      output: output({ op: 'add', subject: { kind: 'user', userId: 'u-1' }, predicate: 'nickname', value: 'Rinnie' }),
+      output: output({
+        op: 'add',
+        subject: { kind: 'user', userId: 'u-1' },
+        predicate: 'nickname',
+        value: 'Rinnie',
+        tense: 'current'
+      }),
       subjectIds: new Set(['u-1'])
     })
     const replacement = getActiveClaims('g-1', 'u-1')[0]
 
-    setAnswers({ durable_0: { noul: 0.9 }, attributed_0: { noul: 0.9 }, same_as_0_0: { noul: 0.1 } })
+    setAnswers({
+      durable_0: { noul: 0.9 },
+      attributed_0: { noul: 0.9 },
+      current_0: { noul: 0.9 },
+      past_0: { noul: 0.9 },
+      same_as_0_0: { noul: 0.1 }
+    })
     await expect(
       verifyAndApplyOperations({
         guildId: 'g-1',
         channelId: 'c-1',
         episode: episode(),
-        output: output({ op: 'add', subject: { kind: 'user', userId: 'u-1' }, predicate: 'nickname', value: 'Rin' }),
+        output: output({
+          op: 'add',
+          subject: { kind: 'user', userId: 'u-1' },
+          predicate: 'nickname',
+          value: 'Rin',
+          tense: 'current'
+        }),
         subjectIds: new Set(['u-1'])
       })
     ).resolves.toEqual(report({ appliedOps: 1, droppedOps: 0, duplicateOps: 0, changedOps: 1 }))
@@ -533,7 +639,7 @@ describe('verifyAndApplyOperations', () => {
       value: 'Rin',
       sourceKind: 'passive'
     })
-    setAnswers(positiveAnswers('durable_0', 'attributed_0'))
+    setAnswers(positiveAnswers('durable_0', 'attributed_0', 'current_0', 'past_0', 'changes_0'))
     await verifyAndApplyOperations({
       guildId: 'g-1',
       channelId: 'c-1',
@@ -543,13 +649,14 @@ describe('verifyAndApplyOperations', () => {
         subject: { kind: 'user', userId: 'u-1' },
         existingId: original.id,
         predicate: 'nickname',
-        value: 'Rinnie'
+        value: 'Rinnie',
+        tense: 'current'
       }),
       subjectIds: new Set(['u-1'])
     })
     const replacement = getActiveClaims('g-1', 'u-1')[0]
 
-    setAnswers(positiveAnswers('durable_0', 'attributed_0'))
+    setAnswers(positiveAnswers('durable_0', 'attributed_0', 'current_0', 'past_0', 'changes_0'))
     await expect(
       verifyAndApplyOperations({
         guildId: 'g-1',
@@ -560,7 +667,8 @@ describe('verifyAndApplyOperations', () => {
           subject: { kind: 'user', userId: 'u-1' },
           existingId: replacement.id,
           predicate: 'nickname',
-          value: 'Rin'
+          value: 'Rin',
+          tense: 'current'
         }),
         subjectIds: new Set(['u-1'])
       })
@@ -586,14 +694,20 @@ describe('verifyAndApplyOperations', () => {
       observedAt: 1_000
     })
     expect(rejectClaimIdsForSpeaker('g-1', 'u-1', [forgotten.id])).toBe(true)
-    setAnswers(positiveAnswers('durable_0', 'attributed_0'))
+    setAnswers(positiveAnswers('durable_0', 'attributed_0', 'current_0', 'past_0'))
 
     await expect(
       verifyAndApplyOperations({
         guildId: 'g-1',
         channelId: 'c-1',
         episode: episode(),
-        output: output({ op: 'add', subject: { kind: 'user', userId: 'u-1' }, predicate: 'nickname', value: 'Rin' }),
+        output: output({
+          op: 'add',
+          subject: { kind: 'user', userId: 'u-1' },
+          predicate: 'nickname',
+          value: 'Rin',
+          tense: 'current'
+        }),
         subjectIds: new Set(['u-1'])
       })
     ).resolves.toEqual(report({ appliedOps: 0, droppedOps: 1, duplicateOps: 0, changedOps: 0 }))
@@ -628,7 +742,7 @@ describe('verifyAndApplyOperations', () => {
       observedAt: 1_000
     })
     expect(rejectClaimIdsForSpeaker('g-1', 'u-1', [forgotten.id])).toBe(true)
-    setAnswers(positiveAnswers('durable_0', 'attributed_0'))
+    setAnswers(positiveAnswers('durable_0', 'attributed_0', 'current_0', 'past_0', 'changes_0'))
 
     await expect(
       verifyAndApplyOperations({
@@ -640,7 +754,8 @@ describe('verifyAndApplyOperations', () => {
           subject: { kind: 'user', userId: 'u-1' },
           existingId: active.id,
           predicate: 'likes',
-          value: 'coffee'
+          value: 'coffee',
+          tense: 'current'
         }),
         subjectIds: new Set(['u-1'])
       })
@@ -707,7 +822,8 @@ describe('verifyAndApplyOperations', () => {
         subject: { kind: 'user', userId: 'u-1' },
         existingId: prior.id,
         predicate: 'likes',
-        value: 'green tea'
+        value: 'green tea',
+        tense: 'current'
       }),
       subjectIds: new Set(['u-1'])
     })
@@ -743,7 +859,8 @@ describe('verifyAndApplyOperations', () => {
         op: 'add',
         subject: { kind: 'user', userId: 'u-1' },
         predicate: 'favorite_game',
-        value: 'old game'
+        value: 'old game',
+        tense: 'current'
       }),
       subjectIds: new Set(['u-1'])
     })
@@ -772,7 +889,8 @@ describe('verifyAndApplyOperations', () => {
         subject: { kind: 'user', userId: 'u-1' },
         existingId: prior.id,
         predicate: 'likes',
-        value: 'green tea'
+        value: 'green tea',
+        tense: 'current'
       }),
       subjectIds: new Set(['u-1'])
     })
@@ -990,5 +1108,549 @@ describe('verifyAndApplyOperations', () => {
       })
     ).resolves.toEqual(report({ appliedOps: 0, droppedOps: 1, duplicateOps: 0, changedOps: 0 }))
     expect(getDb().prepare('SELECT COUNT(*) AS count FROM memory_claim').get()).toEqual({ count: 0 })
+  })
+})
+
+describe('tense, changes and retractions', () => {
+  it('writes a past mention as a past fact and leaves the current one alone', async () => {
+    const teacher = seedClaim({ predicate: 'general_occupation', value: 'teacher' })
+    const report = await apply(
+      [{ op: 'add', subject, predicate: 'general_occupation', value: 'nurse', tense: 'past' }],
+      { durable_0: 0.9, attributed_0: 0.9, current_0: 0.1, past_0: 0.9 }
+    )
+    expect(report).toMatchObject({ appliedOps: 1, pastOps: 1, changedOps: 1 })
+    expect(activeFacts()).toEqual([
+      { value: 'teacher', period: 'current' },
+      { value: 'nurse', period: 'past' }
+    ])
+    expect(evidenceCount(teacher.id)).toBe(1)
+  })
+
+  it('refreshes the current fact when the speaker still holds it', async () => {
+    const nurse = seedClaim({ predicate: 'general_occupation', value: 'nurse' })
+    const report = await apply(
+      [{ op: 'add', subject, predicate: 'general_occupation', value: 'nurse', tense: 'current' }],
+      { durable_0: 0.9, attributed_0: 0.9, current_0: 0.9, past_0: 0.9, same_as_0_0: 0.9 }
+    )
+    expect(report).toMatchObject({ appliedOps: 0, duplicateOps: 1, pastOps: 0 })
+    expect(activeFacts()).toEqual([{ value: 'nurse', period: 'current' }])
+    expect(evidenceCount(nurse.id)).toBe(2)
+  })
+
+  it('treats a current claim Jev judges past as a past fact', async () => {
+    await apply([{ op: 'add', subject, predicate: 'hobby', value: 'chess', tense: 'current' }], {
+      durable_0: 0.9,
+      attributed_0: 0.9,
+      current_0: 0.1,
+      past_0: 0.9
+    })
+    expect(activeFacts()).toEqual([{ value: 'chess', period: 'past' }])
+  })
+
+  it('drops a claim that Jev judges neither current nor past', async () => {
+    const report = await apply([{ op: 'add', subject, predicate: 'hobby', value: 'chess', tense: 'current' }], {
+      durable_0: 0.9,
+      attributed_0: 0.9,
+      current_0: 0.1,
+      past_0: 0.1
+    })
+    expect(report).toMatchObject({ appliedOps: 0, droppedOps: 1, pastOps: 0 })
+    expect(activeFacts()).toEqual([])
+  })
+
+  it('refreshes the matching current fact and writes no past row when a past-tagged claim still holds', async () => {
+    const nurse = seedClaim({ predicate: 'general_occupation', value: 'nurse' })
+    const report = await apply(
+      [{ op: 'add', subject, predicate: 'general_occupation', value: 'nurse', tense: 'past' }],
+      { durable_0: 0.9, attributed_0: 0.9, current_0: 0.9, past_0: 0.9, same_as_0_0: 0.9 }
+    )
+    expect(report).toMatchObject({ appliedOps: 0, duplicateOps: 1, changedOps: 0, pastOps: 0, droppedOps: 0 })
+    expect(activeFacts()).toEqual([{ value: 'nurse', period: 'current' }])
+    expect(evidenceCount(nurse.id)).toBe(2)
+    expect(getDb().prepare('SELECT COUNT(*) AS count FROM memory_claim').get()).toEqual({ count: 1 })
+  })
+
+  it('drops a past-tagged claim that still holds when no current fact matches it', async () => {
+    const teacher = seedClaim({ predicate: 'general_occupation', value: 'teacher' })
+    const report = await apply(
+      [{ op: 'add', subject, predicate: 'general_occupation', value: 'nurse', tense: 'past' }],
+      { durable_0: 0.9, attributed_0: 0.9, current_0: 0.9, past_0: 0.9 }
+    )
+    expect(report).toMatchObject({ appliedOps: 0, droppedOps: 1, duplicateOps: 0, pastOps: 0 })
+    expect(activeFacts()).toEqual([{ value: 'teacher', period: 'current' }])
+    expect(evidenceCount(teacher.id)).toBe(1)
+    expect(getDb().prepare('SELECT COUNT(*) AS count FROM memory_claim').get()).toEqual({ count: 1 })
+  })
+
+  it('does not refresh a past row when a past-tagged claim still holds', async () => {
+    const past = seedClaim({ predicate: 'general_occupation', value: 'nurse', period: 'past' })
+    const report = await apply(
+      [{ op: 'add', subject, predicate: 'general_occupation', value: 'nurse', tense: 'past' }],
+      { durable_0: 0.9, attributed_0: 0.9, current_0: 0.9, past_0: 0.9, same_as_0_0: 0.9 }
+    )
+    expect(report).toMatchObject({ appliedOps: 0, droppedOps: 1, duplicateOps: 0, pastOps: 0 })
+    expect(evidenceCount(past.id)).toBe(1)
+    expect(activeFacts()).toEqual([{ value: 'nurse', period: 'past' }])
+  })
+
+  it('writes nothing for a past-tagged update that still holds and leaves its target alone', async () => {
+    const teacher = seedClaim({ predicate: 'general_occupation', value: 'teacher' })
+    const report = await apply(
+      [
+        {
+          op: 'update',
+          subject,
+          existingId: teacher.id,
+          predicate: 'general_occupation',
+          value: 'nurse',
+          tense: 'past'
+        }
+      ],
+      { durable_0: 0.9, attributed_0: 0.9, current_0: 0.9, past_0: 0.9, changes_0: 0.9 }
+    )
+    expect(report).toMatchObject({ appliedOps: 0, droppedOps: 1, pastOps: 0 })
+    expect(activeFacts()).toEqual([{ value: 'teacher', period: 'current' }])
+    expect(evidenceCount(teacher.id)).toBe(1)
+  })
+
+  it('does not let a past-tense claim become current when Jev says it is current', async () => {
+    await apply([{ op: 'add', subject, predicate: 'hobby', value: 'chess', tense: 'past' }], {
+      durable_0: 0.9,
+      attributed_0: 0.9,
+      current_0: 0.9,
+      past_0: 0.1
+    })
+    expect(activeFacts()).toEqual([])
+  })
+
+  it('writes a past-tense update as a past fact without touching the claim it targeted', async () => {
+    const teacher = seedClaim({ predicate: 'general_occupation', value: 'teacher' })
+    const report = await apply(
+      [
+        {
+          op: 'update',
+          subject,
+          existingId: teacher.id,
+          predicate: 'general_occupation',
+          value: 'nurse',
+          tense: 'past'
+        }
+      ],
+      { durable_0: 0.9, attributed_0: 0.9, current_0: 0.1, past_0: 0.9, changes_0: 0.9 }
+    )
+    expect(report).toMatchObject({ appliedOps: 1, pastOps: 1 })
+    expect(activeFacts()).toEqual([
+      { value: 'teacher', period: 'current' },
+      { value: 'nurse', period: 'past' }
+    ])
+    expect(statusOf(teacher.id)).toEqual({ status: 'active', end_reason: null })
+  })
+
+  it('keeps several past values of a single-value predicate side by side', async () => {
+    seedClaim({ predicate: 'general_occupation', value: 'cashier', period: 'past' })
+    await apply([{ op: 'add', subject, predicate: 'general_occupation', value: 'nurse', tense: 'past' }], {
+      durable_0: 0.9,
+      attributed_0: 0.9,
+      current_0: 0.1,
+      past_0: 0.9,
+      same_as_0_0: 0.1
+    })
+    expect(activeFacts()).toEqual([
+      { value: 'cashier', period: 'past' },
+      { value: 'nurse', period: 'past' }
+    ])
+  })
+
+  it('turns an update that only rewords into evidence and keeps the wording', async () => {
+    const claim = seedClaim({ predicate: 'teasing_habit', value: 'teases friends about their cooking' })
+    const report = await apply(
+      [
+        {
+          op: 'update',
+          subject,
+          existingId: claim.id,
+          predicate: 'teasing_habit',
+          value: 'jokes about how friends cook',
+          tense: 'current'
+        }
+      ],
+      { durable_0: 0.9, attributed_0: 0.9, current_0: 0.9, past_0: 0.5, changes_0: 0.1 }
+    )
+    expect(report).toMatchObject({ appliedOps: 0, duplicateOps: 1, rewordOps: 1, changedOps: 0, droppedOps: 0 })
+    expect(activeFacts()).toEqual([{ value: 'teases friends about their cooking', period: 'current' }])
+    expect(evidenceCount(claim.id)).toBe(2)
+    expect(jevApplied('changes_0')).toBe(0)
+  })
+
+  it('replaces the fact when an update really changes it', async () => {
+    const claim = seedClaim({ predicate: 'general_occupation', value: 'teacher' })
+    const report = await apply(
+      [
+        {
+          op: 'update',
+          subject,
+          existingId: claim.id,
+          predicate: 'general_occupation',
+          value: 'nurse',
+          tense: 'current'
+        }
+      ],
+      { durable_0: 0.9, attributed_0: 0.9, current_0: 0.9, past_0: 0.1, changes_0: 0.9 }
+    )
+    expect(report).toMatchObject({ appliedOps: 1, rewordOps: 0, changedOps: 1 })
+    expect(activeFacts()).toEqual([{ value: 'nurse', period: 'current' }])
+    expect(jevApplied('changes_0')).toBe(1)
+  })
+
+  it('never rewords evidence onto a past claim', async () => {
+    const past = seedClaim({ predicate: 'general_occupation', value: 'nurse', period: 'past' })
+    const report = await apply(
+      [
+        {
+          op: 'update',
+          subject,
+          existingId: past.id,
+          predicate: 'general_occupation',
+          value: 'registered nurse',
+          tense: 'current'
+        }
+      ],
+      { durable_0: 0.9, attributed_0: 0.9, current_0: 0.9, past_0: 0.1, changes_0: 0.1 }
+    )
+    expect(report).toMatchObject({ appliedOps: 1, rewordOps: 0, droppedOps: 0 })
+    expect(evidenceCount(past.id)).toBe(1)
+    expect(activeFacts()).toEqual([
+      { value: 'registered nurse', period: 'current' },
+      { value: 'nurse', period: 'past' }
+    ])
+  })
+
+  it('writes a verified current update aimed at a past claim as the current fact and leaves the past one alone', async () => {
+    const nurse = seedClaim({ predicate: 'general_occupation', value: 'nurse', period: 'past' })
+    const teacher = seedClaim({ predicate: 'general_occupation', value: 'teacher' })
+    const report = await apply(
+      [
+        {
+          op: 'update',
+          subject,
+          existingId: nurse.id,
+          predicate: 'general_occupation',
+          value: 'doctor',
+          tense: 'current'
+        }
+      ],
+      { durable_0: 0.9, attributed_0: 0.9, current_0: 0.9, past_0: 0.1, changes_0: 0.9 }
+    )
+    expect(report).toMatchObject({ appliedOps: 1, changedOps: 1, droppedOps: 0, pastOps: 0 })
+    expect(activeFacts()).toEqual([
+      { value: 'doctor', period: 'current' },
+      { value: 'nurse', period: 'past' }
+    ])
+    expect(statusOf(teacher.id)).toEqual({ status: 'superseded', end_reason: 'superseded' })
+    expect(statusOf(nurse.id)).toEqual({ status: 'active', end_reason: null })
+    expect(evidenceCount(nurse.id)).toBe(1)
+  })
+
+  it('keeps the pin when a switch arrives as a retraction followed by the new value', async () => {
+    const nurse = seedClaim({ predicate: 'general_occupation', value: 'nurse', sourceKind: 'explicit' })
+    const report = await apply(
+      [
+        { op: 'retract', subject, predicate: 'general_occupation', value: 'nurse' },
+        { op: 'add', subject, predicate: 'general_occupation', value: 'teacher', tense: 'current' }
+      ],
+      {
+        durable_0: 0.9,
+        attributed_0: 0.9,
+        retracts_0_0: 0.9,
+        durable_1: 0.9,
+        attributed_1: 0.9,
+        current_1: 0.9,
+        past_1: 0.1,
+        same_as_1_0: 0.1
+      }
+    )
+    expect(report.appliedOps).toBeGreaterThan(0)
+    expect(activeFacts()).toEqual([{ value: 'teacher', period: 'current' }])
+    expect(
+      getDb().prepare("SELECT pinned FROM memory_claim WHERE value = 'teacher' AND status = 'active'").get()
+    ).toEqual({ pinned: 1 })
+    expect(statusOf(nurse.id)).not.toMatchObject({ status: 'active' })
+  })
+
+  it('retires a visible fact the speaker retracts', async () => {
+    const claim = seedClaim({ predicate: 'hobby', value: 'chess' })
+    const report = await apply([{ op: 'retract', subject, predicate: 'hobby', value: 'chess' }], {
+      durable_0: 0.9,
+      attributed_0: 0.9,
+      retracts_0_0: 0.9
+    })
+    expect(report).toMatchObject({ appliedOps: 1, changedOps: 1, retractedOps: 1, droppedOps: 0 })
+    expect(statusOf(claim.id)).toEqual({ status: 'rejected', end_reason: 'retracted' })
+    expect(jevApplied('retracts_0_0')).toBe(1)
+  })
+
+  it('retires a visible fact filed under a sibling predicate of the retraction once Jev confirms it', async () => {
+    const legacy = seedClaim({ predicate: 'favorite_game', value: 'chess' })
+    const report = await apply([{ op: 'retract', subject, predicate: 'hobby', value: 'chess' }], {
+      durable_0: 0.9,
+      attributed_0: 0.9,
+      retracts_0_0: 0.9
+    })
+    expect(report).toMatchObject({ appliedOps: 1, changedOps: 1, retractedOps: 1, droppedOps: 0 })
+    expect(statusOf(legacy.id)).toEqual({ status: 'rejected', end_reason: 'retracted' })
+    expect(jevApplied('retracts_0_0')).toBe(1)
+  })
+
+  it('asks about the named value under a sibling predicate before another value under the same predicate', async () => {
+    const go = seedClaim({ predicate: 'hobby', value: 'go', observedAt: 2_000 })
+    const legacy = seedClaim({ predicate: 'favorite_game', value: 'chess', observedAt: 1_000 })
+    const report = await apply([{ op: 'retract', subject, predicate: 'hobby', value: 'chess' }], {
+      durable_0: 0.9,
+      attributed_0: 0.9,
+      retracts_0_0: 0.9,
+      retracts_0_1: 0.1
+    })
+    expect(report).toMatchObject({ appliedOps: 1, retractedOps: 1 })
+    expect(statusOf(legacy.id)).toEqual({ status: 'rejected', end_reason: 'retracted' })
+    expect(statusOf(go.id)).toEqual({ status: 'active', end_reason: null })
+  })
+
+  it('leaves a claim of another category alone even when its value matches', async () => {
+    const coach = seedClaim({ predicate: 'general_occupation', value: 'chess' })
+    const report = await apply([{ op: 'retract', subject, predicate: 'hobby', value: 'chess' }], {
+      durable_0: 0.9,
+      attributed_0: 0.9
+    })
+    expect(report).toMatchObject({ appliedOps: 0, droppedOps: 1, retractedOps: 0 })
+    expect(statusOf(coach.id)).toEqual({ status: 'active', end_reason: null })
+  })
+
+  it('retires only the claims whose own retraction question passes, the named value being asked first', async () => {
+    const chess = seedClaim({ predicate: 'hobby', value: 'chess', observedAt: 1_000 })
+    const go = seedClaim({ predicate: 'hobby', value: 'go', observedAt: 2_000 })
+    const report = await apply([{ op: 'retract', subject, predicate: 'hobby', value: 'chess' }], {
+      durable_0: 0.9,
+      attributed_0: 0.9,
+      retracts_0_0: 0.1,
+      retracts_0_1: 0.9
+    })
+    expect(report).toMatchObject({ appliedOps: 1, retractedOps: 1 })
+    expect(statusOf(chess.id)).toEqual({ status: 'active', end_reason: null })
+    expect(statusOf(go.id)).toEqual({ status: 'rejected', end_reason: 'retracted' })
+    expect(jevApplied('retracts_0_0')).toBe(0)
+    expect(jevApplied('retracts_0_1')).toBe(1)
+  })
+
+  it.each([
+    ['exactly', 'chess'],
+    ['with other case and spacing', ' Chess  ']
+  ])('retires a retracted value stored %s even when five newer claims share its predicate', async (_, stored) => {
+    const chess = seedClaim({ predicate: 'hobby', value: stored, observedAt: 1_000 })
+    const others = ['go', 'shogi', 'xiangqi', 'poker', 'bridge'].map((value, i) =>
+      seedClaim({ predicate: 'hobby', value, observedAt: 2_000 + i })
+    )
+    const report = await apply([{ op: 'retract', subject, predicate: 'hobby', value: 'chess' }], {
+      durable_0: 0.9,
+      attributed_0: 0.9,
+      retracts_0_0: 0.9,
+      retracts_0_1: 0.1,
+      retracts_0_2: 0.1,
+      retracts_0_3: 0.1,
+      retracts_0_4: 0.1
+    })
+    expect(report).toMatchObject({ appliedOps: 1, retractedOps: 1, droppedOps: 0 })
+    expect(statusOf(chess.id)).toEqual({ status: 'rejected', end_reason: 'retracted' })
+    for (const other of others) expect(statusOf(other.id)).toEqual({ status: 'active', end_reason: null })
+  })
+
+  it('retires nothing and drops the retraction when no retraction question passes', async () => {
+    const claim = seedClaim({ predicate: 'hobby', value: 'chess' })
+    const report = await apply([{ op: 'retract', subject, predicate: 'hobby', value: 'chess' }], {
+      durable_0: 0.9,
+      attributed_0: 0.9,
+      retracts_0_0: 0.1
+    })
+    expect(report).toMatchObject({ appliedOps: 0, droppedOps: 1, changedOps: 0, retractedOps: 0 })
+    expect(statusOf(claim.id)).toEqual({ status: 'active', end_reason: null })
+  })
+
+  it('drops a retraction that matches no visible claim without error', async () => {
+    const report = await apply([{ op: 'retract', subject, predicate: 'hobby', value: 'chess' }], {
+      durable_0: 0.9,
+      attributed_0: 0.9
+    })
+    expect(report).toMatchObject({ appliedOps: 0, droppedOps: 1, retractedOps: 0 })
+  })
+
+  it('never retires a fact when the retraction is unverified', async () => {
+    const claim = seedClaim({ predicate: 'hobby', value: 'chess' })
+    mocks.judgeEpisodeOperations.mockResolvedValueOnce(null)
+    const report = await verifyAndApplyOperations({
+      guildId: 'g-1',
+      channelId: 'c-1',
+      episode: episode(),
+      output: output({ op: 'retract', subject, predicate: 'hobby', value: 'chess' }),
+      subjectIds: new Set([subject.userId])
+    })
+    expect(report).toMatchObject({ appliedOps: 0, droppedOps: 1, stagedOps: 0, retractedOps: 0 })
+    expect(statusOf(claim.id)).toEqual({ status: 'active', end_reason: null })
+  })
+
+  it('does not retire a retraction aimed at another member', async () => {
+    const claim = seedClaim({ predicate: 'hobby', value: 'chess' })
+    const report = await apply(
+      [{ op: 'retract', subject: { kind: 'user', userId: 'u-2' }, predicate: 'hobby', value: 'chess' }],
+      { durable_0: 0.9, attributed_0: 0.9 }
+    )
+    expect(report).toMatchObject({ appliedOps: 0, droppedOps: 1 })
+    expect(statusOf(claim.id)).toEqual({ status: 'active', end_reason: null })
+  })
+
+  it('drops a planned member fact', async () => {
+    const report = await apply([{ op: 'add', subject, predicate: 'hobby', value: 'pottery', tense: 'planned' }], {
+      durable_0: 0.9,
+      attributed_0: 0.9,
+      current_0: 0.2,
+      past_0: 0.1
+    })
+    expect(report).toMatchObject({ appliedOps: 0, droppedOps: 1 })
+    expect(activeFacts()).toEqual([])
+  })
+
+  it('drops a planned member fact even when verification is unavailable', async () => {
+    mocks.judgeEpisodeOperations.mockResolvedValueOnce(null)
+    const report = await verifyAndApplyOperations({
+      guildId: 'g-1',
+      channelId: 'c-1',
+      episode: episode(),
+      output: output({ op: 'add', subject, predicate: 'hobby', value: 'pottery', tense: 'planned' }),
+      subjectIds: new Set([subject.userId])
+    })
+    expect(report).toMatchObject({ appliedOps: 0, droppedOps: 1, stagedOps: 0 })
+    expect(candidateFacts()).toEqual([])
+  })
+
+  it('stages with the proposed period when Jev leaves out the tense answers', async () => {
+    seedClaim({ predicate: 'general_occupation', value: 'teacher' })
+    const report = await apply(
+      [{ op: 'add', subject, predicate: 'general_occupation', value: 'nurse', tense: 'past' }],
+      { durable_0: 0.9, attributed_0: 0.9 }
+    )
+    expect(report).toMatchObject({ stagedOps: 1, pastOps: 0 })
+    expect(activeFacts()).toEqual([{ value: 'teacher', period: 'current' }])
+    expect(candidateFacts()).toEqual([{ value: 'nurse', period: 'past' }])
+  })
+
+  it('stages a current claim as a current candidate when Jev leaves out the tense answers', async () => {
+    seedClaim({ predicate: 'general_occupation', value: 'teacher' })
+    await apply([{ op: 'add', subject, predicate: 'general_occupation', value: 'nurse', tense: 'current' }], {
+      durable_0: 0.9,
+      attributed_0: 0.9
+    })
+    expect(activeFacts()).toEqual([{ value: 'teacher', period: 'current' }])
+    expect(candidateFacts()).toEqual([{ value: 'nurse', period: 'current' }])
+  })
+
+  it('stages a past-tense update as a past candidate and leaves its target alone', async () => {
+    const teacher = seedClaim({ predicate: 'general_occupation', value: 'teacher' })
+    await apply(
+      [
+        {
+          op: 'update',
+          subject,
+          existingId: teacher.id,
+          predicate: 'general_occupation',
+          value: 'nurse',
+          tense: 'past'
+        }
+      ],
+      { durable_0: 0.9 }
+    )
+    expect(activeFacts()).toEqual([{ value: 'teacher', period: 'current' }])
+    expect(candidateFacts()).toEqual([{ value: 'nurse', period: 'past' }])
+  })
+
+  it('stages a current mention even when the same value is already recorded as history', async () => {
+    seedClaim({ predicate: 'hobby', value: 'chess', period: 'past' })
+    mocks.judgeEpisodeOperations.mockResolvedValueOnce(null)
+    const report = await verifyAndApplyOperations({
+      guildId: 'g-1',
+      channelId: 'c-1',
+      episode: episode(),
+      output: output({ op: 'add', subject, predicate: 'hobby', value: 'chess', tense: 'current' }),
+      subjectIds: new Set([subject.userId])
+    })
+    expect(report).toMatchObject({ stagedOps: 1, droppedOps: 0 })
+    expect(activeFacts()).toEqual([{ value: 'chess', period: 'past' }])
+    expect(candidateFacts()).toEqual([{ value: 'chess', period: 'current' }])
+  })
+
+  describe('same-as candidates are scoped to the period being written', () => {
+    it('compares a current add against current claims only', async () => {
+      const past = seedClaim({ predicate: 'general_occupation', value: 'nurse', period: 'past' })
+      const report = await apply(
+        [{ op: 'add', subject, predicate: 'general_occupation', value: 'nurse', tense: 'current' }],
+        { durable_0: 0.9, attributed_0: 0.9, current_0: 0.9, past_0: 0.1 }
+      )
+      expect(report).toMatchObject({ appliedOps: 1, duplicateOps: 0, stagedOps: 0 })
+      expect(activeFacts()).toEqual([
+        { value: 'nurse', period: 'current' },
+        { value: 'nurse', period: 'past' }
+      ])
+      expect(evidenceCount(past.id)).toBe(1)
+    })
+
+    it('compares a past add against past claims only', async () => {
+      const current = seedClaim({ predicate: 'general_occupation', value: 'nurse' })
+      const report = await apply(
+        [{ op: 'add', subject, predicate: 'general_occupation', value: 'nurse', tense: 'past' }],
+        { durable_0: 0.9, attributed_0: 0.9, current_0: 0.1, past_0: 0.9 }
+      )
+      expect(report).toMatchObject({ appliedOps: 1, duplicateOps: 0, pastOps: 1, stagedOps: 0 })
+      expect(activeFacts()).toEqual([
+        { value: 'nurse', period: 'current' },
+        { value: 'nurse', period: 'past' }
+      ])
+      expect(evidenceCount(current.id)).toBe(1)
+    })
+
+    it('adds evidence to an existing past claim for a reworded past mention', async () => {
+      const past = seedClaim({ predicate: 'general_occupation', value: 'nurse', period: 'past' })
+      const report = await apply(
+        [{ op: 'add', subject, predicate: 'general_occupation', value: 'registered nurse', tense: 'past' }],
+        { durable_0: 0.9, attributed_0: 0.9, current_0: 0.1, past_0: 0.9, same_as_0_0: 0.9 }
+      )
+      expect(report).toMatchObject({ appliedOps: 0, duplicateOps: 1, pastOps: 0 })
+      expect(activeFacts()).toEqual([{ value: 'nurse', period: 'past' }])
+      expect(evidenceCount(past.id)).toBe(2)
+    })
+
+    it('does not use current claims as same-as evidence for a current add that Jev demotes to past', async () => {
+      const current = seedClaim({ predicate: 'hobby', value: 'chess' })
+      const report = await apply([{ op: 'add', subject, predicate: 'hobby', value: 'chess', tense: 'current' }], {
+        durable_0: 0.9,
+        attributed_0: 0.9,
+        current_0: 0.1,
+        past_0: 0.9,
+        same_as_0_0: 0.9
+      })
+      expect(report).toMatchObject({ appliedOps: 1, duplicateOps: 0, pastOps: 1 })
+      expect(activeFacts()).toEqual([
+        { value: 'chess', period: 'current' },
+        { value: 'chess', period: 'past' }
+      ])
+      expect(evidenceCount(current.id)).toBe(1)
+    })
+
+    it('targets only current claims with a retraction', async () => {
+      const past = seedClaim({ predicate: 'hobby', value: 'chess', period: 'past' })
+      const report = await apply([{ op: 'retract', subject, predicate: 'hobby', value: 'chess' }], {
+        durable_0: 0.9,
+        attributed_0: 0.9,
+        retracts_0_0: 0.9
+      })
+      expect(report).toMatchObject({ appliedOps: 0, droppedOps: 1, retractedOps: 0 })
+      expect(statusOf(past.id)).toEqual({ status: 'active', end_reason: null })
+    })
   })
 })

@@ -7,6 +7,7 @@ export type ClaimEmbeddingState = Readonly<{
   predicate: string
   value: string
   eventDate: string | null
+  period: 'current' | 'past'
   embeddingText: string | null
   hasEmbedding: boolean
 }>
@@ -17,6 +18,7 @@ type ClaimEmbeddingRow = {
   predicate: string
   value: string
   event_date: string | null
+  period: string
   embedding_text: string | null
   has_embedding: number
 }
@@ -24,7 +26,8 @@ type ClaimEmbeddingRow = {
 export function listActiveClaimsForEmbedding(): ClaimEmbeddingState[] {
   const rows = getDb()
     .prepare(
-      `SELECT id, subject_kind, predicate, value, event_date, embedding_text, embedding IS NOT NULL AS has_embedding
+      `SELECT id, subject_kind, predicate, value, event_date, period, embedding_text,
+              embedding IS NOT NULL AS has_embedding
        FROM memory_claim WHERE status = 'active' ORDER BY id`
     )
     .all() as ClaimEmbeddingRow[]
@@ -34,6 +37,7 @@ export function listActiveClaimsForEmbedding(): ClaimEmbeddingState[] {
     predicate: row.predicate,
     value: row.value,
     eventDate: row.event_date,
+    period: row.period as ClaimEmbeddingState['period'],
     embeddingText: row.embedding_text,
     hasEmbedding: row.has_embedding === 1
   }))

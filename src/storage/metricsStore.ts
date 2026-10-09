@@ -44,7 +44,15 @@ export interface ExtractionEventInput {
 }
 
 export interface MemoryEventInput {
-  kind: 'retrieval' | 'extraction' | 'extraction_run' | 'claim_change' | 'context_build' | 'recall' | 'recall_shadow'
+  kind:
+    | 'retrieval'
+    | 'extraction'
+    | 'extraction_run'
+    | 'claim_change'
+    | 'claim_reclassified'
+    | 'context_build'
+    | 'recall'
+    | 'recall_shadow'
   guildId?: string
   channelId?: string
   subjectUserId?: string
@@ -253,7 +261,10 @@ export function pruneOldMetrics(maxAgeDays: number): number {
     const db = getDb()
     const responseResult = db.prepare('DELETE FROM response_events WHERE created_at < ?').run(cutoff)
     const extractionResult = db.prepare('DELETE FROM extraction_events WHERE created_at < ?').run(cutoff)
-    const memoryResult = db.prepare('DELETE FROM memory_events WHERE created_at < ?').run(cutoff)
+    // Reclassification events are the audit trail that undo and the "never offer an undone fact again" rule read.
+    const memoryResult = db
+      .prepare("DELETE FROM memory_events WHERE created_at < ? AND kind != 'claim_reclassified'")
+      .run(cutoff)
     const jevResult = db.prepare('DELETE FROM jev_events WHERE created_at < ?').run(cutoff)
     const pruned = responseResult.changes + extractionResult.changes + memoryResult.changes + jevResult.changes
     if (pruned > 0) {

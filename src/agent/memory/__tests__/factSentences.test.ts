@@ -8,6 +8,42 @@ describe('renderFactSentence', () => {
     ).toBe("This person's general occupation: nurse.")
   })
 
+  it('renders a past member fact as history', () => {
+    expect(
+      renderFactSentence({
+        subjectKind: 'user',
+        predicate: 'general_occupation',
+        value: 'nurse',
+        eventDate: null,
+        period: 'past'
+      })
+    ).toBe("This person's past general occupation: nurse.")
+  })
+
+  it('renders a current member fact the same as one with no period', () => {
+    expect(
+      renderFactSentence({
+        subjectKind: 'user',
+        predicate: 'general_occupation',
+        value: 'nurse',
+        eventDate: null,
+        period: 'current'
+      })
+    ).toBe("This person's general occupation: nurse.")
+  })
+
+  it('leaves a server fact unchanged whatever its period', () => {
+    expect(
+      renderFactSentence({
+        subjectKind: 'guild',
+        predicate: 'upcoming_event',
+        value: 'movie night',
+        eventDate: null,
+        period: 'past'
+      })
+    ).toBe('Server upcoming event: movie night.')
+  })
+
   it('renders a dated server fact', () => {
     expect(
       renderFactSentence({

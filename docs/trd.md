@@ -116,7 +116,7 @@ Audio and video are watched before Roka replies rather than handed to her raw. `
 | `memory_claim`, `memory_evidence`, `memory_claim_fts`     | User-subject claims, their evidence, and the FTS5 mirror of active claims.                                                                                                                           |
 | `memory_episode_cursor`                                   | Per-channel episode checkpoint: tenant, last message ID, open time, and delta-message count.                                                                                                         |
 | `extraction_queue`                                        | Closed episode payloads, with `pending`, `processing`, or retained `failed` status and attempt count.                                                                                                |
-| `memory_events`                                           | Value-free retrieval, claim-change and recall telemetry, plus one text-free `extraction_run` event per extraction attempt.                                                                           |
+| `memory_events`                                           | Value-free retrieval, claim-change and recall telemetry, one text-free `extraction_run` event per extraction attempt, and one `claim_reclassified` audit event per automatic move.                   |
 | `jev_events`                                              | TypeSafe judgment kind, question key, answer, probability/confidence, applied flag, latency, input tokens, optional baseline, optional job ID (admission and verification judgments), and timestamp. |
 | `extraction_samples`                                      | Private, text-bearing sample of rejected conversations for offline labelling: capped at 200 rows, expires after `memory.extractionSampleDays`, never read at runtime.                                |
 | `reminders`                                               | Scheduled user reminders and delivery state.                                                                                                                                                         |
@@ -263,17 +263,17 @@ Privacy and Unified Recall).
 
 ### Storage Schema
 
-| Table                   | Columns                                                                                                                                                                                                                                                                                                                      | Contract                                                                                                                              |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `memory_claim`          | `id`, `guild_id`, `subject_kind`, nullable `subject_user_id`, `predicate`, `value`, `object_kind`, `object_user_id`, `source_kind`, `status`, `confidence`, `salience`, `pinned`, `needs_review`, `superseded_by`, `expires_at`, `event_date`, `first_seen_at`, `last_seen_at`, `last_recalled_at`, `ended_at`, `end_reason` | User and guild claims. User rows require a user ID; guild rows require NULL. Separate partial indexes deduplicate each subject scope. |
-| `memory_evidence`       | `id`, `claim_id`, `channel_id`, `source_kind`, `observed_at`                                                                                                                                                                                                                                                                 | Evidence observation time; passive writes use the latest episode message timestamp.                                                   |
-| `memory_claim_fts`      | `value`, `predicate`                                                                                                                                                                                                                                                                                                         | FTS5 mirror of active claims, maintained by insert, update, and delete triggers.                                                      |
-| `memory_episode_cursor` | `channel_id`, `guild_id`, `last_message_id`, `opened_at`, `message_count`                                                                                                                                                                                                                                                    | Per-channel checkpoint for the open episode.                                                                                          |
-| `extraction_queue`      | `id`, `guild_id`, `channel_id`, `payload`, `status`, `attempts`, `enqueued_at`                                                                                                                                                                                                                                               | Closed episode payloads in `pending`, `processing`, or retained `failed` state.                                                       |
-| `memory_episode`        | `id`, `guild_id`, `channel_id`, `started_at`, `ended_at`, `summary`, `embedding`, `created_at`                                                                                                                                                                                                                               | One completed episode summary per queue ID; nullable 768-value float32 embedding.                                                     |
-| `memory_events`         | `id`, `kind`, `guild_id`, `channel_id`, `subject_user_id`, `duration_ms`, `n_candidates`, `n_selected`, `n_changed`, `tokens_est`, `op`, `created_at`, `detail`                                                                                                                                                              | Value-free retrieval, claim-change and extraction-run telemetry; nullable `detail` holds per-kind JSON.                               |
-| `jev_events`            | `kind`, `guild_id`, `channel_id`, `question`, `answer`, `probability`, `confidence`, `applied`, `latency_ms`, `input_tokens`, `baseline`, `job_id`, `created_at`                                                                                                                                                             | Value-free Jev judgment telemetry. The kind is `turn`, `admission`, or `verification`; `job_id` links the latter two to their job.    |
-| `extraction_samples`    | `id`, `job_id`, `guild_id`, `channel_id`, `outcome`, `admission_probability`, `lines`, `created_at`, `expires_at`                                                                                                                                                                                                            | Private, expiring text sample of rejected conversations for offline labelling. Never read by recall or any prompt.                    |
+| Table                   | Columns                                                                                                                                                                                                                                                                                                                                | Contract                                                                                                                                                            |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `memory_claim`          | `id`, `guild_id`, `subject_kind`, nullable `subject_user_id`, `predicate`, `value`, `period`, `object_kind`, `object_user_id`, `source_kind`, `status`, `confidence`, `salience`, `pinned`, `needs_review`, `superseded_by`, `expires_at`, `event_date`, `first_seen_at`, `last_seen_at`, `last_recalled_at`, `ended_at`, `end_reason` | User and guild claims. User rows require a user ID; guild rows require NULL. Separate partial indexes deduplicate each subject scope, and both include `period`.    |
+| `memory_evidence`       | `id`, `claim_id`, `channel_id`, `source_kind`, `observed_at`, `effective_at`                                                                                                                                                                                                                                                           | Evidence observation time; passive writes use the latest episode message timestamp. `effective_at` is when the fact took effect and is set to the observation time. |
+| `memory_claim_fts`      | `value`, `predicate`                                                                                                                                                                                                                                                                                                                   | FTS5 mirror of active claims, maintained by insert, update, and delete triggers.                                                                                    |
+| `memory_episode_cursor` | `channel_id`, `guild_id`, `last_message_id`, `opened_at`, `message_count`                                                                                                                                                                                                                                                              | Per-channel checkpoint for the open episode.                                                                                                                        |
+| `extraction_queue`      | `id`, `guild_id`, `channel_id`, `payload`, `status`, `attempts`, `enqueued_at`                                                                                                                                                                                                                                                         | Closed episode payloads in `pending`, `processing`, or retained `failed` state.                                                                                     |
+| `memory_episode`        | `id`, `guild_id`, `channel_id`, `started_at`, `ended_at`, `summary`, `embedding`, `created_at`                                                                                                                                                                                                                                         | One completed episode summary per queue ID; nullable 768-value float32 embedding.                                                                                   |
+| `memory_events`         | `id`, `kind`, `guild_id`, `channel_id`, `subject_user_id`, `duration_ms`, `n_candidates`, `n_selected`, `n_changed`, `tokens_est`, `op`, `created_at`, `detail`                                                                                                                                                                        | Value-free retrieval, claim-change, extraction-run and `claim_reclassified` audit telemetry; nullable `detail` holds per-kind JSON.                                 |
+| `jev_events`            | `kind`, `guild_id`, `channel_id`, `question`, `answer`, `probability`, `confidence`, `applied`, `latency_ms`, `input_tokens`, `baseline`, `job_id`, `created_at`                                                                                                                                                                       | Value-free Jev judgment telemetry. The kind is `turn`, `admission`, or `verification`; `job_id` links the latter two to their job.                                  |
+| `extraction_samples`    | `id`, `job_id`, `guild_id`, `channel_id`, `outcome`, `admission_probability`, `lines`, `created_at`, `expires_at`                                                                                                                                                                                                                      | Private, expiring text sample of rejected conversations for offline labelling. Never read by recall or any prompt.                                                  |
 
 The `extraction_queue` payload contains the episode's delta messages, up to three preceding context lines, and start
 and end timestamps. It is user content and remains in a failed queue row for inspection; success deletes the queue
@@ -309,13 +309,28 @@ one-to-two-sentence summary. The summary is persisted in `memory_episode` with t
 idempotency key; its document embedding is stored in the same row when the embedding call succeeds. Operations can
 target a user subject `{ kind: 'user', userId }` or the current guild subject `{ kind: 'guild' }`:
 
-- **Add:** insert an active claim for a user or a guild and predicate.
-- **Update:** replace an existing claim for the same subject and predicate, linking the old row through `superseded_by`.
-- **Remove:** reject an existing active claim for the same subject without deleting its row.
+- **Add:** insert an active claim for a user or a guild and predicate. A user add carries a `tense`.
+- **Update:** replace an existing current claim for the same subject and predicate, linking the old row through
+  `superseded_by`. A user update carries a `tense`.
+- **Remove:** reject an existing active claim for the same subject without deleting its row. It is for a fact that was
+  never true or was attributed to the wrong person.
+- **Retract:** user subjects only. It names a predicate and a value, with no claim ID, so it can end a fact the
+  extractor never saw ("I quit chess"). It is for a fact that was true and has ended.
 - **Noop:** make no claim change.
 
 The extraction prompt asks Gemini to emit `add` with the same subject, predicate, and exact value when a member
-restates a current durable fact. It never adds a rewording and returns `noop` only when no durable fact came up.
+restates a current durable fact. It never adds a rewording and returns `noop` only when no durable fact, change or
+retraction came up. Beyond that, the prompt:
+
+- **Tense:** requires a `tense` on every user add and update: `current` (true of them now), `past` (true before but not
+  now: "back when I was a nurse", "I used to play chess") or `planned` (they intend it).
+- **Switches:** emits "switched from chess to go" as a `retract` of the old value plus an `add` of the new one.
+- **Past Claims:** marks past claims in the active-claims list with `"period": "past"` and forbids updating or removing
+  them; history is restated with an `add` of tense `past`.
+- **Listed Retractions:** a retract of a fact listed in the active claims uses its listed predicate.
+- **Predicates:** prefers the most specific predicate over `misc` ("I draw on weekends" is `hobby`, "my cat Mochi" is
+  `pets`, "I like spicy food" is `likes`), and files a game or sport they play under `hobby`, not `favorite_game`,
+  unless they call it their favorite.
 
 Guild predicates are `upcoming_event`, `plan`, `running_joke`, `place`, `rule`, and `announcement`. All claims pass
 through `privacyGuard.ts`. `upcoming_event` and `plan` require resolvable date components; other guild predicates have
@@ -334,22 +349,82 @@ stored alongside it in the nullable `event_date` column as `YYYY-MM-DD` for day 
 precision. A yearless month resolves to its next occurrence, and a month already past is rejected.
 
 Jev verifies durability for every write operation and verifies attribution for user subjects with `attributed_N` or
-shared guild scope with `guild_scoped_N`. Adds are checked against same-subject, same-predicate claims with
-`same_as_N_M`. After durability and attribution pass, an exact active value appends evidence even when its
+shared guild scope with `guild_scoped_N`. Adds are checked against same-subject, same-predicate, same-period claims
+with `same_as_N_M`. A past-tagged operation gets its own durability wording ("a lasting fact about the person's
+history, such as a former job, place or long-held habit, rather than a one-off event"), and so does a retract ("a
+lasting fact about the person (such as a hobby, job, diet or habit) has ended, rather than a short pause or a passing
+mood"), because the default wording counts an ended fact as an event that has already happened. After durability and
+attribution pass, an exact active value appends evidence even when its
 `same_as_N_M` answer is below `memory.verifyThreshold` (0.5); other semantic duplicate answers must meet that
 threshold. An add with incomplete verification does not refresh an active duplicate. If verification is incomplete,
 remove operations are not applied and permitted new add/update operations are staged as `candidate` claims with
 `needs_review`. Staging does not retire the active predecessor. Candidates are excluded from recall, nickname
 resolution, and the extraction prompt's active-facts list, and do not count toward the user active-claim cap.
 Sensitive operations are always rejected. For single-cardinality predicates, a successful replacement supersedes
-the prior active claim. Capacity eviction, explicit removal, retention pruning, and the daily guild-expiry prune end
-claims with a reason and timestamp. Evidence and dead claim rows remain until the dead-row retention period expires.
+the prior active current claim. Capacity eviction, explicit removal, retraction, reclassification, retention pruning,
+and the daily guild-expiry prune end claims with a reason and timestamp. Evidence and dead claim rows remain until the
+dead-row retention period expires.
+
+User add and update operations add the questions below to the durability and attribution ones, and retract operations
+get `retracts_N_M`. Each threshold is `memory.verifyThreshold`.
+
+| Key            | Asked For                                                                                                                    | Question                                                                                              | Below Threshold                                                |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `current_N`    | Every user add and update                                                                                                    | Is this true of the subject now, at the time of these messages?                                       | It cannot be written as a current fact                         |
+| `past_N`       | Every user add and update                                                                                                    | Was this true of the subject at some earlier time, even if it is not now?                             | With `current_N` also failing, the operation is dropped        |
+| `changes_N`    | Every user update                                                                                                            | Does this change the existing claim #ID into a different fact, rather than restate it in other words? | The update becomes evidence on the target; its wording is kept |
+| `retracts_N_M` | A retract, once per visible current claim of the same subject in the same predicate category (best matches first, at most 5) | Do the messages say that the subject's predicate "value" no longer holds?                             | That claim is not retired                                      |
+
+Verified operations are applied as follows:
+
+- **Period:** a `current` operation whose `current_N` holds is written as a current fact. Otherwise, if `past_N`
+  holds, the operation is written as a past fact; if it does not, the operation is dropped. A `planned` operation is
+  dropped for member predicates.
+- **Still True:** a past-tagged operation whose `current_N` also holds ("I was a nurse and I still am") only appends
+  evidence to the exactly matching current claim. It never writes a past copy.
+- **Past Facts:** a verified past operation writes or refreshes a row with `period = 'past'`. Past and current facts
+  never supersede, revive or replace each other, and a past update never replaces the claim it targeted. A verified
+  current update aimed at a past claim is written as the current fact, with normal single-value supersession of the
+  current one, and leaves the past claim untouched.
+- **Rewording:** an update whose `changes_N` fails appends evidence to the existing claim and keeps its wording.
+- **Retraction:** a retract needs `durable_N` and `attributed_N` like any other operation. It then retires every
+  visible current claim whose `retracts_N_M` holds, with `end_reason = 'retracted'`. The questions cover the whole
+  predicate category, because the fact may sit under a sibling of the predicate the retract names (a legacy
+  `favorite_game` row when the member now says `hobby`). They are ordered by value first (an exact match, then one that
+  differs only in case or spacing, then the rest), then the retract's own predicate before a sibling's, then the order
+  the claims were listed in, so the cap of 5 never pushes out the claim the member named. Each question names the
+  claim's own predicate, not the retract's. A retract that matches nothing retires nothing and is not an error. Facts
+  the extractor could not see are handled by Hidden-Fact Reconciliation. Retracts are applied after the batch's other
+  operations, so a switch sent as a retract followed by an add lets the add supersede the old value and inherit its
+  pin; the retract then finds nothing left to retire.
+- **Incomplete Verification:** an add or update stages as a `candidate` with its proposed period, and a retract or
+  remove is not applied. A staged candidate never retires anything and never inherits a pin.
+- **Pins:** a verified operation that supersedes a pinned current claim writes its replacement with `pinned = 1`.
 
 Completed admission judgments write one `jev_events` row with `kind='admission'` and question `lasting_fact`.
-Completed verification writes one row per answer key (`durable_N`, `attributed_N`, `guild_scoped_N`, or `same_as_N_M`).
+Completed verification writes one row per answer key (`durable_N`, `attributed_N`, `guild_scoped_N`, `current_N`,
+`past_N`, `changes_N`, `same_as_N_M`, or `retracts_N_M`).
 These rows include the answer, probability, application outcome, latency, input-token count, and the extraction queue job
 ID in `job_id`, but no source message text. Turn judgments leave `job_id` null.
 `jev.memoryTimeoutMs` (5000 ms) bounds admission and verification calls.
+
+### Hidden-Fact Reconciliation
+
+Under `balanced` and `strict`, the extraction prompt and Jev's `existing` list carry only the claims the current channel
+may recall, so a member can retract in one channel a fact learned in a channel this one cannot see. After the
+operation transaction commits, `reconcileHiddenRetractions` (`hiddenRetractions.ts`) handles each verified `retract`:
+
+1. **Candidates:** the subject's active current claims in the same predicate category that are not under review and
+   were not visible to the extractor.
+2. **Ranking:** cosine similarity between the retracted fact's sentence (for example "This person's hobby: chess.")
+   and each claim's stored embedding, keeping the top 3. A claim without an embedding is skipped.
+3. **Judgment:** one internal Jev call asks, for each candidate, whether the messages say the fact "no longer holds".
+   Candidates at or above `memory.verifyThreshold` are retired with `end_reason = 'retracted'`.
+
+Nothing hidden reaches Gemini's prompt, the reply or the logs: the pass logs only claim IDs, the predicate and counts.
+Under `relaxed` every claim is visible and under `off` nothing is written, so the pass makes no calls. It never
+throws: a failed embedding logs a warning with the predicate and error name, and a failed or incomplete Jev call
+retires nothing. The claims it retires are added to the run's `ops.retracted`.
 
 ### Extraction Run Trace
 
@@ -364,19 +439,19 @@ The columns carry the headline numbers: `duration_ms` is the whole attempt, `n_c
 changed a claim row, and `tokens_est` the estimated input tokens across admission, extraction, and verification.
 `subject_user_id` and `op` are null. The `detail` JSON holds the rest:
 
-| Field                             | Meaning                                                                                                                                                          |
-| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `jobId`, `attempt`                | The queue job and `attempts + transientRetries + 1`, so a transient retry is its own attempt.                                                                    |
-| `firstMessageId`, `lastMessageId` | First and last delta message IDs; null for an empty episode.                                                                                                     |
-| `messageCount`, `humanCount`      | Delta messages in the episode, and how many of them came from non-bot authors.                                                                                   |
-| `stage`                           | Furthest stage reached: `precheck` (trivial or sensitive drop), `admission`, `extraction`, `verification`, or `applied`.                                         |
-| `outcome`                         | `admitted`, `trivial`, `sensitive`, `below_threshold`, `jev_unavailable`, `noop`, `written` (applied at least one, staged candidates included), or `error`.      |
-| `errorClass`, `errorStatus`       | `transient`, `permanent`, or `unjudged` from `classifyExtractionError` (`unjudged` only with `jev_unavailable`), and the HTTP status when the error carries one. |
-| `admission`                       | `{ probability, threshold }` when Jev returned a probability.                                                                                                    |
-| `ops`                             | `{ proposed, applied, duplicate, staged, dropped, changed }`; `applied` includes staged candidates and `dropped` excludes them.                                  |
-| `summary`                         | `{ kept, chars, boilerplate }`: whether the episode summary was persisted, its length, and a match on the "no new durable fact" pattern.                         |
-| `stageMs`                         | `{ admission, extraction, verification, persistence }` in milliseconds, present for the stages that ran.                                                         |
-| `models`                          | `{ extraction, jev, embedding }` model identifiers.                                                                                                              |
+| Field                             | Meaning                                                                                                                                                                                                                                                                                                                                      |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `jobId`, `attempt`                | The queue job and `attempts + transientRetries + 1`, so a transient retry is its own attempt.                                                                                                                                                                                                                                                |
+| `firstMessageId`, `lastMessageId` | First and last delta message IDs; null for an empty episode.                                                                                                                                                                                                                                                                                 |
+| `messageCount`, `humanCount`      | Delta messages in the episode, and how many of them came from non-bot authors.                                                                                                                                                                                                                                                               |
+| `stage`                           | Furthest stage reached: `precheck` (trivial or sensitive drop), `admission`, `extraction`, `verification`, or `applied`.                                                                                                                                                                                                                     |
+| `outcome`                         | `admitted`, `trivial`, `sensitive`, `below_threshold`, `jev_unavailable`, `noop`, `written` (applied, staged or retracted at least one claim), or `error`.                                                                                                                                                                                   |
+| `errorClass`, `errorStatus`       | `transient`, `permanent`, or `unjudged` from `classifyExtractionError` (`unjudged` only with `jev_unavailable`), and the HTTP status when the error carries one.                                                                                                                                                                             |
+| `admission`                       | `{ probability, threshold }` when Jev returned a probability.                                                                                                                                                                                                                                                                                |
+| `ops`                             | `{ proposed, applied, duplicate, staged, dropped, changed, past, reword, retracted }`; `applied` includes staged candidates and `dropped` excludes them. `past` counts operations written as past facts, `reword` updates turned into evidence on the existing claim, and `retracted` the claims a retraction retired, hidden ones included. |
+| `summary`                         | `{ kept, chars, boilerplate }`: whether the episode summary was persisted, its length, and a match on the "no new durable fact" pattern.                                                                                                                                                                                                     |
+| `stageMs`                         | `{ admission, extraction, verification, persistence }` in milliseconds, present for the stages that ran.                                                                                                                                                                                                                                     |
+| `models`                          | `{ extraction, jev, embedding }` model identifiers.                                                                                                                                                                                                                                                                                          |
 
 A Jev-unavailable admission is recorded with `stage: 'admission'`, `outcome: 'jev_unavailable'`, and
 `errorClass: 'unjudged'`; the queue's one retry then writes a second row. A failure while persisting the summary is
@@ -400,16 +475,31 @@ recorded with `stage: 'applied'` and `outcome: 'error'`, and `stageMs.persistenc
 
 Claim statuses are `candidate`, `active`, `superseded`, and `rejected`. Fully verified episode operations write active
 claims; incomplete add/update operations remain candidates until a verified assertion or, for user claims, an explicit
-`activateClaim` promotes them. Single-cardinality updates move prior active claims to `superseded`, while removals,
-capacity eviction, and retention pruning move claims to `rejected`. Every transition to `superseded` or `rejected` sets
-`ended_at` and `end_reason`:
-`expired`, `evicted`, `superseded`, `removed`, `forgotten`, or `self`. Older rows upgraded by migration receive the
+`activateClaim` promotes them. Single-cardinality current writes move the prior active current claim to `superseded`,
+while removals, capacity eviction, retention pruning, retraction and reclassification move claims to `rejected`. Every transition to
+`superseded` or `rejected` sets `ended_at` and `end_reason`: `expired`, `evicted`, `superseded`, `removed`,
+`forgotten`, `self`, `retracted` (a confirmed retraction) or `reclassified` (moved to another predicate, with
+`superseded_by` linking the old row to its replacement). Older rows upgraded by migration receive the
 migration time in `ended_at` and a NULL reason. Startup migration also raises active claims' `last_seen_at` to their
 newest evidence time.
 
 - `first_seen_at` records the first observation.
 - `last_seen_at` records the newest observation, advances only forward, and drives expiry.
 - `last_recalled_at` changes only when the retriever selects a claim for the prompt.
+
+`memory_claim.period` is `current` (the default, and the value of every row that existed before the column) or `past`.
+The two deduplication indexes include it, so "nurse (past)" and "nurse (current)" are separate rows.
+
+- **Supersession:** single-value supersession, and the pin transfer below, apply only among current claims. Past and
+  current facts never supersede each other, and several past values of a single-value predicate coexist. A past claim
+  is a history record, so `replaceActiveClaim` refuses to update one.
+- **Revival:** matches on `period` as well, so a past mention can't revive a superseded current value and a current one
+  can't revive a past value. A value ended with `forgotten` cannot come back as a past fact either.
+- **Pins:** a verified correction of a pinned single-value current fact writes its replacement with `pinned = 1`, and
+  the pin is on the row before the active-claim cap is applied. A staged candidate never inherits one.
+- **Evidence:** every new evidence row records `effective_at`, set to the observation time.
+- **Retention and Cap:** a past fact is an active claim. It uses its predicate's retention tier measured from
+  `last_seen_at`, counts toward the active-claim cap, and is exempt only when pinned.
 
 An assertion revives a rejected or superseded value in its existing row and clears `superseded_by`, `ended_at`, and
 `end_reason`. A candidate revival stays a candidate and does not supersede an active value or count toward the active
@@ -424,18 +514,55 @@ identity and social claims at `memory.stableClaimRetentionDays` (180 days), stan
 personality claims at `memory.claimRetentionDays` (30 days), and transient opinions, misc, and `currently_watching`
 claims at `memory.transientClaimRetentionDays` (14 days). Pinned claims are exempt. Active guild claims keep their
 date-based expiry; unexpired guild candidates are rejected after `memory.claimRetentionDays` (30 days). User and guild
-candidates do not count toward `memory.maxActiveClaimsPerUser` (20), which caps active unpinned user claims per subject
-and evicts the least salient unpinned claims first; pinned claims neither count toward the cap nor are evicted.
+candidates do not count toward `memory.maxActiveClaimsPerUser` (20), which caps active unpinned user claims per subject.
+Past facts are evicted first, so history never costs a member a current fact (a new past fact at the cap is itself the
+one evicted), then the least salient unpinned claims; pinned claims neither count toward the cap nor are evicted.
 Explicitly remembered claims are pinned.
 
 Each startup and daily prune hard-deletes `rejected` and `superseded` claims whose `ended_at` is strictly older than
 `memory.deadClaimRetentionDays` (30 days), along with their evidence. Stale candidates are first rejected by retention
 or expiry, then follow the same dead-row retention. The vault export, statistics, recall commands, and `forget_user`
-operate on active claims; nickname resolution excludes candidates and `needs_review` rows, while the name resolver
-still treats any claim row as a guild-presence hint until it is purged. A dead-only user may therefore leave the
+operate on active claims; nickname resolution excludes candidates, `needs_review` rows and past nicknames, while the
+name resolver still treats any claim row as a guild-presence hint until it is purged. A dead-only user may therefore leave the
 resolver's member index after the dead row is deleted unless response events still establish guild presence.
 The daily episode retention pass deletes `memory_episode` rows with `ended_at` strictly older than
 `memory.episodeRetentionDays` (90 days) and re-embeds retained rows with missing or unreadable vectors.
+
+### Fact Reclassification
+
+`reclassifyClaims` (`reclassify.ts`, with the model calls in `reclassifyModels.ts`) moves facts filed under the wrong
+predicate. It runs in the background at startup and daily after `pruneStaleClaims`, and a failure is logged without
+affecting the prune.
+
+- **Limits:** it never runs under `memory.privacy: off`. `memory.reclassifyMaxPerRun` (env
+  `MEMORY_RECLASSIFY_MAX_PER_RUN`, default 20, bounded 0–100 by `NUMERIC_BOUNDS`) caps the moves per run, and 0 turns
+  it off.
+- **Candidates:** active current user claims under `misc`, plus the weaker side of any pair of active current claims
+  for one member with equal values (case-insensitive) under different predicates: the `misc` one, else the lower
+  salience, else the newer. They are sampled in random order, up to `min(100, 5 × cap)`, so a fact the model keeps
+  cannot crowd out the ones behind it. A fact whose move was undone (an active row with a `claim_reclassified` event of
+  its own) is never offered again.
+- **Proposal:** one Gemini call (`gemini.extractionModel`) returns, for each candidate, the best predicate from the
+  closed list or `keep`. The list leaves out `misc` and `relationship_to`, whose object must be a member a bare value
+  cannot name, and `reclassifyClaims` drops any proposal naming either.
+- **Confirmation:** one Jev call asks `fits_<id>` (`Is "<value>" this person's <predicate>?`) for at most `cap`
+  proposals. A move needs a probability of at least `memory.verifyThreshold`.
+- **Move:** one transaction retires the old row first (`end_reason = 'reclassified'`, so the cap cannot evict another
+  fact mid-move), writes the value under the new predicate as a verified, active fact (reviving a staged or ended row
+  of that value there, and clearing `needs_review`), copies the evidence rows, keeps the pin and `first_seen_at`, and
+  links the old row to the new one through `superseded_by`. A move never retires another fact: if writing the value
+  would supersede a different value of a single-valued predicate, or cost the member any other active fact, the move
+  rolls back and is logged as skipped. It is also skipped, before anything is written, when the value under the new
+  predicate was retracted or forgotten (`Target fact was retracted or forgotten`), so a copy left under another
+  predicate cannot bring back a fact the member ended.
+- **Audit:** each move writes a `memory_events` row with `kind = 'claim_reclassified'` and `detail`
+  `{ oldId, newId, from, to, probability, created }`: claim IDs, predicates and the Jev probability, never values.
+  `created` is true when the move created or revived the replacement row, false when the value was already active
+  under the new predicate. These events are exempt from the `metrics.retentionDays` prune, because undo and the
+  undone-fact exclusion read them.
+- **Undo:** `undoReclassify(oldClaimId)` reactivates the old row and, when `created` is true, ends the replacement
+  (`end_reason = 'removed'`). A dev checkout runs `npm run memory:undo-reclassify -- <old claim id>`; production
+  runs the compiled module inside the container (Runbook, Memory Reclassification).
 
 ### Memory Privacy
 
@@ -480,17 +607,20 @@ built by `recallForTurn` (`src/agent/memory/recall.ts`).
   in the message and one `relationship_to` hop; unexpired server facts; conversation summaries; media summaries. All
   pass the privacy gate first.
 - **Fact Embeddings:** each active fact is embedded as a subject-neutral sentence (`factSentences.ts`, e.g. "This
-  person's hobby: chess.") into `memory_claim.embedding`, with the sentence in `embedding_text`. New facts are embedded
-  after extraction jobs and `remember_user` writes, and the daily maintenance pass embeds any fact whose embedding is
-  missing or whose sentence changed.
+  person's hobby: chess.", or "This person's past hobby: chess." for a past fact) into `memory_claim.embedding`, with
+  the sentence in `embedding_text`. New facts are embedded after extraction jobs and `remember_user` writes, and the
+  daily maintenance pass embeds any fact whose embedding is missing or whose sentence changed.
 - **Scoring:** cosine similarity to the turn's query embedding must strictly exceed the kind's minimum
   (`memory.factMinSimilarity`, `memory.serverFactMinSimilarity`, `memory.episodeMinSimilarity`,
   `memory.mediaMinSimilarity`). Boosts of 0.05 each apply for the speaker, a member named in the message and pinned
   facts, plus up to 0.03 recency halving every `memory.salienceHalfLifeDays`; a fact recalled within
   `memory.recallCooldownMs` loses 0.1 unless the message keyword-matches it.
 - **Selection:** up to `memory.recallCoreFacts` (3) speaker facts are always included (pinned, then `nickname`, then
-  `pronouns`). The rest fill `memory.recallTokenBudget` (600) best-first, with at most `memory.episodeRecallK`
-  conversation summaries and `memory.mediaRecallK` media summaries.
+  `pronouns`; a past fact is never core). The rest fill `memory.recallTokenBudget` (600) best-first, with at most
+  `memory.episodeRecallK` conversation summaries and `memory.mediaRecallK` media summaries.
+- **Past Facts:** they are ordinary fact candidates behind the same `canRecall` gate. The prompt keys them
+  `<predicate> (past)`, so they read as history. A past relationship is not followed to the other member, and a past
+  nickname resolves no names.
 - **Fallback:** without a query embedding inside `memory.embeddingTimeoutMs`, recall uses the core facts plus facts
   that keyword-match the message.
 - **Prompt:** one `## What You Remember` block with People, This Server, Past Conversations and Media Shared Here
@@ -509,7 +639,7 @@ Retrieval is tenant-scoped and bounded to at most `memory.maxClaimsPerTurn` (10)
 for speaker anchors; anchors are considered before every other candidate and are never displaced by general
 selection. Claims marked `needs_review` are excluded from both general selection and speaker anchors. It considers at
 most `memory.recentParticipantLimit` (3) non-speaker participants and may expand one hop
-through an active `relationship_to` claim to an included participant.
+through an active current `relationship_to` claim to an included participant.
 
 On memory-enabled guild turns, `turnContext.ts` separately retrieves active, unexpired, same-guild facts that do not
 need review and appends a server-memory block under the independent `memory.guildFactsTokenBudget` (150) token
@@ -518,8 +648,9 @@ budget. A dated fact is shown at the precision the messages gave, from `event_da
 is never shown as a false day. Legacy rows with a NULL `event_date` fall back to deriving the date from `expires_at`.
 The retriever's `serializeGuildFact` applies the same rule when budgeting the block. `/ask` has no user or server memory block. `forget_user` searches and rejects only user-subject claims.
 `/stats` includes active unexpired guild facts in memory totals and growth, while remembered-member metrics remain
-user-only. The vault export writes active unexpired guild facts to `<vault>/<guildId>/guild.md`, including `expires_at`
-and `event_date` when set; member notes retain their user-only shape.
+user-only; for those members it quotes only current facts. The vault export writes active unexpired guild facts to
+`<vault>/<guildId>/guild.md`, including `expires_at` and `event_date` when set; member notes retain their user-only
+shape, with past facts marked `(past)`.
 
 Candidate score is `salience × sourceWeight × 2 + confidence + recency × 0.5`, plus the pin, FTS, and topic-route
 bonuses. At scoring time only, salience is multiplied by `0.5 ^ (ageDays / memory.salienceHalfLifeDays)`; stored
@@ -532,7 +663,8 @@ about: Discord mentions, then guild-scoped display names, usernames and active `
 (names under 3 characters are ignored). A name that maps to one member resolves; a name that maps to several stays
 ambiguous and is never guessed. Resolved members take the participant slots first, ahead of recent speakers, and a
 member named by a nickname or username gets a `## Who Is Mentioned` line mapping the alias to their display name.
-`recall_user` uses the same lookup and asks which member is meant when a name is ambiguous.
+`recall_user` uses the same lookup and asks which member is meant when a name is ambiguous. It lists current facts
+first and past ones after an "In the past:" label.
 
 `forget_user` searches the current speaker's active claims using AND semantics across up to six query keywords. It
 rejects one to three matches and returns up to four matching values when clarification is needed. It does not accept a

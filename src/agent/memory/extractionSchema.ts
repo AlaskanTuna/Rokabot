@@ -6,6 +6,7 @@ const UserSubjectSchema = z.object({ kind: z.literal('user'), userId: z.string()
 const GuildSubjectSchema = z.object({ kind: z.literal('guild') }).strict()
 const PredicateSchema = z.enum(Object.keys(PREDICATES) as [PredicateId, ...PredicateId[]])
 const GuildPredicateSchema = z.enum(Object.keys(GUILD_PREDICATES) as [GuildPredicateId, ...GuildPredicateId[]])
+const TenseSchema = z.enum(['current', 'past', 'planned'])
 const GuildFactDateSchema = z
   .object({
     year: z.number().int().min(1).max(9999).optional(),
@@ -23,6 +24,7 @@ const AddOperationSchema = z
     subject: UserSubjectSchema,
     predicate: PredicateSchema,
     value: z.string(),
+    tense: TenseSchema,
     objectUserId: z.string().optional()
   })
   .strict()
@@ -33,6 +35,7 @@ const UpdateOperationSchema = z
     existingId: z.number().int().positive(),
     predicate: PredicateSchema,
     value: z.string(),
+    tense: TenseSchema,
     objectUserId: z.string().optional()
   })
   .strict()
@@ -41,6 +44,14 @@ const RemoveOperationSchema = z
     op: z.literal('remove'),
     subject: UserSubjectSchema,
     existingId: z.number().int().positive(),
+    predicate: PredicateSchema,
+    value: z.string()
+  })
+  .strict()
+export const RetractOperationSchema = z
+  .object({
+    op: z.literal('retract'),
+    subject: UserSubjectSchema,
     predicate: PredicateSchema,
     value: z.string()
   })
@@ -94,6 +105,7 @@ export const ExtractionOutputSchema = z
         AddOperationSchema,
         UpdateOperationSchema,
         RemoveOperationSchema,
+        RetractOperationSchema,
         GuildAddOperationSchema,
         GuildUpdateOperationSchema,
         GuildRemoveOperationSchema,
@@ -176,10 +188,11 @@ const guildFactDateResponseSchema = {
 }
 
 function responseOperationSchema(input: {
-  op: 'add' | 'update' | 'remove' | 'noop'
+  op: 'add' | 'update' | 'remove' | 'retract' | 'noop'
   subject?: typeof userSubjectResponseSchema | typeof guildSubjectResponseSchema
   predicates?: string[]
   withObjectUserId?: boolean
+  withTense?: boolean
   withDate?: boolean
   dateRequired?: boolean
 }): Record<string, unknown> {
@@ -203,6 +216,10 @@ function responseOperationSchema(input: {
     required.push('existingId')
   }
   if (input.withObjectUserId) properties.objectUserId = { type: Type.STRING }
+  if (input.withTense) {
+    properties.tense = { type: Type.STRING, enum: ['current', 'past', 'planned'] }
+    required.push('tense')
+  }
   if (input.withDate) {
     properties.date = guildFactDateResponseSchema
     if (input.dateRequired) required.push('date')
@@ -226,15 +243,18 @@ export const EXTRACTION_RESPONSE_SCHEMA = {
             op: 'add',
             subject: userSubjectResponseSchema,
             predicates: userPredicates,
-            withObjectUserId: true
+            withObjectUserId: true,
+            withTense: true
           }),
           responseOperationSchema({
             op: 'update',
             subject: userSubjectResponseSchema,
             predicates: userPredicates,
-            withObjectUserId: true
+            withObjectUserId: true,
+            withTense: true
           }),
           responseOperationSchema({ op: 'remove', subject: userSubjectResponseSchema, predicates: userPredicates }),
+          responseOperationSchema({ op: 'retract', subject: userSubjectResponseSchema, predicates: userPredicates }),
           responseOperationSchema({
             op: 'add',
             subject: guildSubjectResponseSchema,

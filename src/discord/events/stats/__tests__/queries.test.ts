@@ -106,7 +106,8 @@ function insertClaim({
   status = 'active',
   salience = 0.5,
   firstSeenAt = now,
-  needsReview = 0
+  needsReview = 0,
+  period = 'current'
 }: {
   guildId?: string
   userId: string
@@ -115,12 +116,14 @@ function insertClaim({
   salience?: number
   firstSeenAt?: number
   needsReview?: number
+  period?: 'current' | 'past'
 }): void {
   getDb()
     .prepare(
       `INSERT INTO memory_claim (
-        guild_id, subject_user_id, predicate, value, source_kind, status, salience, needs_review, first_seen_at, last_seen_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        guild_id, subject_user_id, predicate, value, source_kind, status, salience, needs_review, first_seen_at, last_seen_at,
+        period
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       guildId,
@@ -132,7 +135,8 @@ function insertClaim({
       salience,
       needsReview,
       firstSeenAt,
-      firstSeenAt
+      firstSeenAt,
+      period
     )
 }
 
@@ -344,6 +348,16 @@ describe('stats queries', () => {
     insertClaim({ userId: 'mixed', predicate: 'hobby', firstSeenAt: now - DAY_MS })
     insertClaim({ userId: 'mixed', predicate: 'strong_opinion', needsReview: 1, firstSeenAt: now })
     insertClaim({ userId: 'review-only', predicate: 'strong_opinion', needsReview: 1 })
+
+    expect(statsQueries.topRememberedMembers('guild-1', monthSinceMs, 'roka-user')).toEqual([
+      { userId: 'mixed', predicate: 'hobby', value: 'private value' }
+    ])
+  })
+
+  it('quotes only current claims, so a more recent past one never wins and a member with only past claims is dropped', () => {
+    insertClaim({ userId: 'mixed', predicate: 'hobby', firstSeenAt: now - DAY_MS })
+    insertClaim({ userId: 'mixed', predicate: 'general_occupation', period: 'past', firstSeenAt: now })
+    insertClaim({ userId: 'past-only', predicate: 'general_occupation', period: 'past' })
 
     expect(statsQueries.topRememberedMembers('guild-1', monthSinceMs, 'roka-user')).toEqual([
       { userId: 'mixed', predicate: 'hobby', value: 'private value' }

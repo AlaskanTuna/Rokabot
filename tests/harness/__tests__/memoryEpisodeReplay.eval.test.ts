@@ -51,11 +51,19 @@ describe('memory episode replay', () => {
         extractedGuilds.push(context.guildId)
         if (context.episode.messages.some(({ content }) => content.includes('and manga'))) {
           return output([
-            { op: 'add', subject: { kind: 'user', userId: 'u-1' }, predicate: 'likes', value: 'tea' },
-            { op: 'add', subject: { kind: 'user', userId: 'u-1' }, predicate: 'favorite_anime', value: 'manga' }
+            { op: 'add', subject: { kind: 'user', userId: 'u-1' }, predicate: 'likes', value: 'tea', tense: 'current' },
+            {
+              op: 'add',
+              subject: { kind: 'user', userId: 'u-1' },
+              predicate: 'favorite_anime',
+              value: 'manga',
+              tense: 'current'
+            }
           ])
         }
-        return output([{ op: 'add', subject: { kind: 'user', userId: 'u-1' }, predicate: 'likes', value: 'tea' }])
+        return output([
+          { op: 'add', subject: { kind: 'user', userId: 'u-1' }, predicate: 'likes', value: 'tea', tense: 'current' }
+        ])
       },
       verification: async () => {
         verificationCount++

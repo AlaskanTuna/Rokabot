@@ -58,6 +58,20 @@ it('writes one text-free extraction_run row', () => {
   expect(row.detail).not.toContain('Alice')
 })
 
+it('starts every op counter at zero, including past, reword and retracted', () => {
+  expect(startRunTrace(job, 1).ops).toEqual({
+    proposed: 0,
+    applied: 0,
+    duplicate: 0,
+    staged: 0,
+    dropped: 0,
+    changed: 0,
+    past: 0,
+    reword: 0,
+    retracted: 0
+  })
+})
+
 it('keeps the error class and HTTP status but never the error message', () => {
   const trace = startRunTrace(job, 2)
   trace.stage = 'extraction'

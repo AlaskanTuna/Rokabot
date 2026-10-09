@@ -5,7 +5,8 @@ import { recordMemoryEvent } from '../../storage/metricsStore.js'
 import { getAllUserNames } from '../../storage/userNames.js'
 import { getLocalDate } from '../../utils/timezone.js'
 import { estimateTokens } from '../../utils/tokens.js'
-import type { ClaimSource, GuildMemoryClaim, UserMemoryClaim } from './memoryClaims.js'
+import { factKey } from './factSentences.js'
+import type { ClaimPeriod, ClaimSource, GuildMemoryClaim, UserMemoryClaim } from './memoryClaims.js'
 import { getActiveGuildClaims, touchRecalled } from './memoryClaims.js'
 import { PREDICATES, type PredicateId, predicateCategory, routeTopics } from './predicates.js'
 import { type RecallScope, canRecall } from './privacy.js'
@@ -21,6 +22,7 @@ type ClaimRow = {
   object_user_id: string | null
   source_kind: ClaimSource
   status: UserMemoryClaim['status']
+  period: string
   confidence: number
   salience: number
   pinned: number
@@ -77,6 +79,7 @@ function mapClaim(row: ClaimRow): UserMemoryClaim {
     objectUserId: row.object_user_id,
     sourceKind: row.source_kind,
     status: row.status,
+    period: row.period as ClaimPeriod,
     confidence: row.confidence,
     salience: row.salience,
     pinned: row.pinned === 1,
@@ -170,7 +173,7 @@ function toEntries(claims: RetrievedClaim[], names: ReturnType<typeof getAllUser
   for (const { claim } of claims) {
     const person = names.get(claim.subjectUserId)?.displayName ?? claim.subjectUserId
     const entry = entries.get(claim.subjectUserId) ?? { person, facts: [] }
-    entry.facts.push({ key: claim.predicate, value: claim.value })
+    entry.facts.push({ key: factKey(claim.predicate, claim.period), value: claim.value })
     entries.set(claim.subjectUserId, entry)
   }
 
@@ -249,6 +252,7 @@ export function retrieveForTurn(input: RetrieveForTurnInput): RetrievalResult {
   }
 
   const addExpansion = (claim: UserMemoryClaim): void => {
+    if (claim.period !== 'current') return
     if (claim.objectKind !== 'user' || !claim.objectUserId || !participantIds.includes(claim.objectUserId)) return
     const expansion = candidates.find(({ claim: candidate }) => candidate.subjectUserId === claim.objectUserId)
     if (expansion) add(expansion)

@@ -1,3 +1,5 @@
+import { PAST_FACT_MARKER } from './memory/factSentences.js'
+
 export const MAX_FACT_KEY_LEN = 64
 export const MAX_FACT_VALUE_LEN = 200
 export const MAX_PERSON_LABEL_LEN = 80
@@ -33,12 +35,18 @@ export function isSafeFactScalar(s: string, maxLen: number): boolean {
   return (s.match(/[.!?]\s+[A-Z]/g)?.length ?? 0) < 2
 }
 
+// The marker is ours, not a member's, and its parenthesis would trip the call-shaped check on the key.
+function isSafeFactKey(key: string): boolean {
+  const bare = key.endsWith(PAST_FACT_MARKER) ? key.slice(0, -PAST_FACT_MARKER.length) : key
+  return isSafeFactScalar(bare, MAX_FACT_KEY_LEN)
+}
+
 export function buildFactsEnvelope(
   entries: Array<{ person: string; facts: Array<{ key: string; value: string }> }>
 ): string {
   const facts = entries.flatMap(({ person, facts }) => {
     const attributes = facts.filter(
-      ({ key, value }) => isSafeFactScalar(key, MAX_FACT_KEY_LEN) && isSafeFactScalar(value, MAX_FACT_VALUE_LEN)
+      ({ key, value }) => isSafeFactKey(key) && isSafeFactScalar(value, MAX_FACT_VALUE_LEN)
     )
 
     return attributes.length > 0 ? [{ person: person.slice(0, MAX_PERSON_LABEL_LEN), attributes }] : []

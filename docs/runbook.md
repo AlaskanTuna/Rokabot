@@ -404,7 +404,8 @@ sqlite3 ~/rokabot/data/rokabot.db "SELECT kind, question, applied, COUNT(*) AS e
   ORDER BY kind, question, applied;"
 ```
 
-Admission uses the `lasting_fact` question. Verification questions are `durable_N`, `attributed_N` and `same_as_N_M`.
+Admission uses the `lasting_fact` question. Verification questions are `durable_N`, `attributed_N` (`guild_scoped_N` for
+server facts), `current_N`, `past_N`, `changes_N`, `same_as_N_M` and `retracts_N_M`.
 `applied = 0` means no corresponding operation or duplicate-evidence update was applied; an operation can be blocked
 by its threshold or by operation rules. An exact re-sighting of an active value appends evidence after durability and
 attribution pass even when its `same_as_N_M` score is below threshold.
@@ -437,7 +438,8 @@ GROUP BY bucket ORDER BY bucket;
 -- Operation outcomes
 SELECT sum(json_extract(detail, '$.ops.proposed')), sum(json_extract(detail, '$.ops.applied')),
        sum(json_extract(detail, '$.ops.duplicate')), sum(json_extract(detail, '$.ops.staged')),
-       sum(json_extract(detail, '$.ops.dropped'))
+       sum(json_extract(detail, '$.ops.dropped')), sum(json_extract(detail, '$.ops.past')),
+       sum(json_extract(detail, '$.ops.reword')), sum(json_extract(detail, '$.ops.retracted'))
 FROM memory_events WHERE kind = 'extraction_run';
 
 -- Errors and whether retries recovered them
@@ -456,6 +458,10 @@ The first query shows where conversations stop. The second shows how close rejec
 ending in `> written` or `> noop` was recovered by a retry; one ending in `> error` was not. `ops.applied` (and
 `n_selected`) includes staged candidates, so `ops.staged` is a subset of it and active writes are `applied - staged`;
 `ops.dropped` counts operations that were neither applied nor duplicates, so it excludes staged ones.
+`ops.past` counts verified operations written as past facts ("used to be a nurse"), `ops.reword` updates that only
+restated a fact and became evidence on the existing claim, and `ops.retracted` the claims a retraction retired. It
+counts claims, not operations, and includes facts the extractor could not see (hidden-fact reconciliation, under
+`balanced` and `strict` only), so a run that only retired hidden facts has `ops.applied` of 0 and is still `written`.
 `summary.boilerplate` marks summaries that only say no new durable fact came up.
 
 Admission and verification judgments carry the job ID in `jev_events.job_id` (turn judgments leave it null), so one
@@ -490,6 +496,75 @@ afterwards. Have two independent judges label each sample for whether it holds a
 same method as the Jev tone calibration above. The labels carry message text, so they stay local and are never
 committed. The share both judges accept is a conservative estimate of the rejected conversations that did hold a
 lasting fact.
+
+## Memory Reclassification
+
+A background step moves facts filed under the wrong predicate, mostly `misc`, to the right one. It runs at startup and
+then daily, right after the claim prune, in the background. Gemini (`gemini.extractionModel`) proposes a predicate for
+each candidate and Jev confirms it; a move needs a probability of at least `memory.verifyThreshold`. Candidates are
+active current `misc` facts and the weaker side of any pair of facts one member filed twice, with equal values, under
+different predicates. Past facts are never touched. Each run makes at most one Gemini call and one Jev call, and none
+when nothing is a candidate. A moved fact keeps its pin, evidence and first-seen time, and the old row stays as a
+`reclassified` record.
+
+- **Cap:** `memory.reclassifyMaxPerRun` (20) is the most moves per run, bounded 0–100. Set it to 0 to turn the step off:
+  `MEMORY_RECLASSIFY_MAX_PER_RUN=0` in `~/rokabot/.env`, then recreate the container
+  (`sudo docker compose -f ~/rokabot/docker-compose.yml up -d`). It never runs under `memory.privacy: off`.
+- **Logs:** each run logs `Reclassified misfiled memory facts` with the counts `candidates`, `proposed`, `confirmed`
+  and `moved`. Problems log `Reclassification proposal failed`, `Reclassification confirmation failed`,
+  `Memory reclassification failed` or `Skipped a reclassification`. The last is a single move that failed and was
+  rolled back. It carries the claim ID, both predicates and the reason, never the fact's value. The reason is one of
+  `Claim is not active`, `Claim is already filed there`, `Target fact was retracted or forgotten` (the member ended
+  that value under the new predicate, so the move would bring it back), `Target fact is not active` (the value under
+  the new predicate could not be made active), `Claim value is unsafe` (the value failed the safety check) or
+  `Move would retire another fact` (the member would have lost a different active fact).
+- **Audit:** every move writes a `claim_reclassified` event. It holds claim IDs, both predicates and the Jev
+  probability, never values. `created_at` is epoch milliseconds, and `old_id` is the ID the undo command takes. These
+  events are never pruned by `metrics.retentionDays`: undo and the rule that an undone fact is never offered again
+  read them.
+
+```sql
+SELECT created_at, json_extract(detail, '$.oldId') AS old_id, json_extract(detail, '$.newId') AS new_id,
+       json_extract(detail, '$.from') AS from_predicate, json_extract(detail, '$.to') AS to_predicate,
+       json_extract(detail, '$.probability') AS probability
+FROM memory_events WHERE kind = 'claim_reclassified' ORDER BY created_at DESC LIMIT 20;
+```
+
+Run it with `sqlite3 ~/rokabot/data/rokabot.db`. After the first deploy, expect a handful of moves, not dozens. To read
+a move, look at both rows (this shows values, so it stays on the Pi):
+
+```sql
+SELECT id, predicate, value, status, end_reason, superseded_by, pinned
+FROM memory_claim WHERE id IN (<old_id>, <new_id>);
+```
+
+### Undoing a Move
+
+Undo reactivates the old row, and ends the replacement when the move created or revived it. The fact is then never
+offered for reclassification again. It takes the old claim ID and prints `undone`, or `nothing to undo` when that row
+was not reclassified or is already restored. It is one transaction, so the bot keeps running.
+
+The command opens a second database connection, and opening one runs the startup migrations on the live database,
+including dropping and recreating the full-text-search triggers on `memory_claim`. A fact the bot writes in that
+instant would be left out of the search index. Run undo while the bot is idle, with no chat in its monitored channels.
+
+In production, run the compiled module inside the container. `scripts/` is not in the image and the image has no `tsx`,
+so `npm run` is not available there. Replace `OLD_ID` with the `old_id` from the query above:
+
+```bash
+sudo docker compose -f ~/rokabot/docker-compose.yml exec roka node --input-type=module -e "
+const { undoReclassify } = await import('./dist/agent/memory/reclassify.js')
+const { closeDb } = await import('./dist/storage/database.js')
+console.log(undoReclassify(OLD_ID) ? 'undone' : 'nothing to undo')
+closeDb()
+"
+```
+
+In a dev checkout, with `ROKABOT_DB_PATH` pointing at the database if it is not `data/rokabot.db`:
+
+```bash
+npm run memory:undo-reclassify -- OLD_ID
+```
 
 ## GitHub Actions Self-Hosted Runner
 
@@ -591,7 +666,7 @@ sqlite3 ~/rokabot/data/rokabot.db "SELECT id, guild_id, subject_kind, subject_us
   FROM memory_claim WHERE status='active' ORDER BY last_seen_at DESC LIMIT 100;"
 
 # Claims for a user in one guild
-sqlite3 ~/rokabot/data/rokabot.db "SELECT id, predicate, value, status, needs_review, last_seen_at, ended_at, end_reason
+sqlite3 ~/rokabot/data/rokabot.db "SELECT id, predicate, value, period, status, needs_review, last_seen_at, ended_at, end_reason
   FROM memory_claim WHERE guild_id='GUILD_ID' AND subject_kind='user' AND subject_user_id='USER_ID'
   ORDER BY last_seen_at DESC;"
 

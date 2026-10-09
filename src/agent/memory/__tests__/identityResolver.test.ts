@@ -67,6 +67,30 @@ describe('resolveName', () => {
     expect(resolveName('Unverified Alias', 'guild-a')).toEqual([])
   })
 
+  it('does not resolve a past nickname, but still resolves the current one', () => {
+    upsertUserName('renamed-user', 'renamed', 'Renamed User')
+    assertClaim({
+      guildId: 'guild-a',
+      subjectUserId: 'renamed-user',
+      predicate: 'nickname',
+      value: 'Old Alias',
+      sourceKind: 'passive',
+      period: 'past'
+    })
+    addNickname('renamed-user', 'New Alias')
+
+    expect(resolveName('Old Alias', 'guild-a')).toEqual([])
+    expect(resolveName('New Alias', 'guild-a')).toEqual(['renamed-user'])
+    expect(
+      resolveReferences({
+        guildId: 'guild-a',
+        text: 'Ask Old Alias about it.',
+        speakerId: 'speaker',
+        mentionedUserIds: []
+      }).resolved
+    ).toEqual([])
+  })
+
   it('does not use a legacy fact table to establish guild presence', () => {
     upsertUserName('legacy-user', 'alice', 'Alice')
     getDb().exec(`

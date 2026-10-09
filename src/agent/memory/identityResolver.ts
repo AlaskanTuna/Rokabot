@@ -37,10 +37,12 @@ const GUILD_PRESENCE = `(
 function nicknameRows(guildId: string, scope: RecallScope | undefined): Array<{ user_id: string; value: string }> {
   const level = config.memory.privacy
   if (guildId === 'global' || level === 'off') return []
+  // A past nickname no longer names anyone, so it never resolves.
   const rows = getDb()
     .prepare(
       `SELECT id, subject_user_id AS user_id, value FROM memory_claim
-       WHERE guild_id = ? AND subject_kind = 'user' AND status = 'active' AND needs_review = 0 AND predicate = 'nickname'
+       WHERE guild_id = ? AND subject_kind = 'user' AND status = 'active' AND needs_review = 0 AND period = 'current'
+         AND predicate = 'nickname'
        ORDER BY id`
     )
     .all(guildId) as Array<{ id: number; user_id: string; value: string }>

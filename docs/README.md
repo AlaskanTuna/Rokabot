@@ -442,7 +442,7 @@ Secrets belong in `.env`; tunables belong in [`config.yml`](../config.yml). Envi
 | `memory.guildFactsTokenBudget`       | `MEMORY_GUILD_FACTS_TOKEN_BUDGET`   | Approximate server-memory block token budget.                       |
 | `memory.recentParticipantLimit`      | `MEMORY_RECENT_PARTICIPANT_LIMIT`   | Non-speaker participants considered for retrieval.                  |
 | `memory.speakerMinShare`             | `MEMORY_SPEAKER_MIN_SHARE`          | Minimum share of selected claims reserved for the speaker.          |
-| `memory.maxActiveClaimsPerUser`      | `MEMORY_MAX_ACTIVE_CLAIMS_PER_USER` | Active claim cap per user; pinned claims are exempt.                |
+| `memory.maxActiveClaimsPerUser`      | `MEMORY_MAX_ACTIVE_CLAIMS_PER_USER` | Active claim cap per user; pinned exempt, past facts evicted first. |
 | `memory.stableClaimRetentionDays`    | —                                   | Retention for identity and social claims (180 days).                |
 | `memory.claimRetentionDays`          | `MEMORY_CLAIM_RETENTION_DAYS`       | Standard retention for lifestyle, interests, personality (30 days). |
 | `memory.transientClaimRetentionDays` | —                                   | Retention for opinions, misc, and currently watching (14 days).     |
@@ -453,6 +453,7 @@ Secrets belong in `.env`; tunables belong in [`config.yml`](../config.yml). Envi
 | `memory.episodeMaxMessages`          | —                                   | Maximum delta messages in one episode.                              |
 | `memory.admitThreshold`              | —                                   | Minimum Jev admission probability before Gemini extraction.         |
 | `memory.verifyThreshold`             | —                                   | Minimum Jev durability and attribution probability.                 |
+| `memory.reclassifyMaxPerRun`         | `MEMORY_RECLASSIFY_MAX_PER_RUN`     | Most misfiled facts moved per daily run (20); 0 turns it off.       |
 | `memory.vaultExportDir`              | `MEMORY_VAULT_EXPORT_DIR`           | Output directory for read-only Obsidian vault exports.              |
 
 </details>

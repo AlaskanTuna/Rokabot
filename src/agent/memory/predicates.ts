@@ -157,6 +157,11 @@ export function baseSalienceOf(predicateId: PredicateId): number {
   return PREDICATES[predicateId].baseSalience
 }
 
+/** Reclassification never files a fact under misc, nor under a predicate whose object must be a member. */
+export function isMoveTarget(predicateId: PredicateId): boolean {
+  return predicateId !== 'misc' && PREDICATES[predicateId].objectKind === undefined
+}
+
 export function routeTopics(message: string): Set<PredicateCategory> {
   const normalizedMessage = message.toLowerCase()
   const topics = new Set<PredicateCategory>()

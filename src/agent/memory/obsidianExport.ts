@@ -5,6 +5,7 @@ import { config } from '../../config.js'
 import { getDb } from '../../storage/database.js'
 import { listEpisodeGuildIds, listEpisodesForGuild } from '../../storage/memoryEpisodeStore.js'
 import type { MemoryEpisode } from '../../storage/memoryEpisodeStore.js'
+import { PAST_FACT_MARKER, factKey } from './factSentences.js'
 import { type GuildMemoryClaim, type UserMemoryClaim, getActiveClaims, getActiveGuildClaims } from './memoryClaims.js'
 
 type ActiveClaimSubject = Readonly<{
@@ -55,15 +56,16 @@ function listActiveGuildSubjects(now: number): ActiveGuildSubject[] {
 function formatClaimGroups(claims: UserMemoryClaim[]): Record<string, ExportedClaim[]> {
   const groups: Record<string, ExportedClaim[]> = {}
 
-  for (const { predicate, value, sourceKind, pinned, lastSeenAt } of claims) {
-    const group = groups[predicate] ?? []
+  for (const { predicate, period, value, sourceKind, pinned, lastSeenAt } of claims) {
+    const key = factKey(predicate, period)
+    const group = groups[key] ?? []
     group.push({
       value,
       source_kind: sourceKind,
       pinned,
       last_seen_at: lastSeenAt
     })
-    groups[predicate] = group
+    groups[key] = group
   }
 
   return groups
@@ -73,7 +75,7 @@ function formatRelationships(claims: UserMemoryClaim[]): string {
   const edges = claims.filter(({ predicate, objectUserId }) => predicate === 'relationship_to' && objectUserId)
   if (edges.length === 0) return ''
 
-  return `## Relationships\n\n${edges.map(({ objectUserId, value }) => `- [[${objectUserId}]] — ${value}`).join('\n')}\n`
+  return `## Relationships\n\n${edges.map(({ objectUserId, value, period }) => `- [[${objectUserId}]] — ${value}${period === 'past' ? PAST_FACT_MARKER : ''}`).join('\n')}\n`
 }
 
 function formatNote(claims: UserMemoryClaim[]): string {

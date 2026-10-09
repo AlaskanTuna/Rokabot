@@ -27,6 +27,7 @@ import { registerChannelVisibility } from './agent/memory/channelVisibility.js'
 import { pruneEpisodesAndReembed } from './agent/memory/episodeMaintenance.js'
 import { flushOpenEpisodes } from './agent/memory/episodeTracker.js'
 import { pruneStaleClaims } from './agent/memory/memoryClaims.js'
+import { reclassifyClaims } from './agent/memory/reclassify.js'
 import {
   startExtractionScheduler,
   stopExtractionScheduler,
@@ -63,10 +64,12 @@ function startupMemoryTasks(botUserId?: string): void {
 
   try {
     pruneStaleClaims(config.memory.claimRetentionDays, botUserId)
+    reclassifyInBackground()
     pruneExpiredFailedExtractions()
     claimPruneTimer = setInterval(
       () => {
         pruneStaleClaims(config.memory.claimRetentionDays, botUserId)
+        reclassifyInBackground()
         pruneExpiredFailedExtractions()
         pruneEpisodesInBackground()
       },
@@ -78,6 +81,12 @@ function startupMemoryTasks(botUserId?: string): void {
   } catch (err) {
     logger.error({ err }, 'Failed to start memory tasks')
   }
+}
+
+function reclassifyInBackground(): void {
+  void reclassifyClaims().catch((err: unknown) => {
+    logger.warn({ err }, 'Memory reclassification failed')
+  })
 }
 
 function pruneExpiredFailedExtractions(): void {

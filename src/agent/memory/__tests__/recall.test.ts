@@ -32,7 +32,7 @@ import { setClaimEmbedding } from '../../../storage/memoryRecallStore.js'
 import { upsertUserName } from '../../../storage/userNames.js'
 import { estimateTokens } from '../../../utils/tokens.js'
 import { registerChannelVisibility, resetChannelVisibilityForTest } from '../channelVisibility.js'
-import { assertClaim, pinClaim } from '../memoryClaims.js'
+import { type ClaimPeriod, assertClaim, pinClaim } from '../memoryClaims.js'
 import {
   type RecallInput,
   type RecallItem,
@@ -70,7 +70,7 @@ function fact(
   predicate: string,
   value: string,
   embedding: readonly number[] | null,
-  options: { channelId?: string; observedAt?: number; pinned?: boolean } = {}
+  options: { channelId?: string; observedAt?: number; pinned?: boolean; period?: ClaimPeriod } = {}
 ): number {
   const claim = assertClaim({
     guildId: GUILD,
@@ -79,7 +79,8 @@ function fact(
     value,
     sourceKind: 'passive',
     channelId: options.channelId ?? 'chan-a',
-    observedAt: options.observedAt ?? NOW
+    observedAt: options.observedAt ?? NOW,
+    ...(options.period ? { period: options.period } : {})
   })
   if (options.pinned) pinClaim(claim.id)
   if (embedding) setClaimEmbedding({ id: claim.id, embeddingText: `${predicate}: ${value}`, embedding })
@@ -129,7 +130,16 @@ function media(label: string, channelId: string, embedding: readonly number[]): 
 }
 
 function item(overrides: Partial<RecallItem> & Pick<RecallItem, 'kind' | 'id'>): RecallItem {
-  return { score: 0, core: false, subjectUserId: null, label: '', text: '', date: null, ...overrides }
+  return {
+    score: 0,
+    core: false,
+    subjectUserId: null,
+    label: '',
+    text: '',
+    date: null,
+    period: 'current',
+    ...overrides
+  }
 }
 
 beforeEach(() => {
@@ -169,6 +179,46 @@ describe('recallForTurn', () => {
 
     testConfig.memory.recallCoreFacts = 0
     expect(recallForTurn(input({ queryEmbedding: axis(1) })).items).toEqual([])
+  })
+
+  it('never treats a past nickname as a core fact', () => {
+    fact('speaker', 'nickname', 'Bun', axis(9), { pinned: true, period: 'past' })
+    fact('speaker', 'pronouns', 'she/her', axis(9), { period: 'past' })
+
+    const result = recallForTurn(input({ queryEmbedding: axis(1) }))
+
+    expect(result.items.filter(({ core }) => core)).toEqual([])
+    expect(result.items).toEqual([])
+  })
+
+  it('marks a past fact as history beside the current one in the block', () => {
+    fact('speaker', 'general_occupation', 'teacher', axis(1))
+    fact('speaker', 'general_occupation', 'nurse', axis(1), { period: 'past' })
+
+    const result = recallForTurn(input({ queryEmbedding: axis(1) }))
+
+    expect(result.items.map(({ text, period, core }) => ({ text, period, core }))).toEqual(
+      expect.arrayContaining([
+        { text: 'teacher', period: 'current', core: false },
+        { text: 'nurse', period: 'past', core: false }
+      ])
+    )
+    expect(result.block).toContain('- "Speaker": ')
+    expect(result.block).toContain('general_occupation: "teacher"')
+    expect(result.block).toContain('general_occupation (past): "nurse"')
+    expect(result.block).not.toContain('general_occupation: "nurse"')
+  })
+
+  it('withholds a past fact learned in a channel the gate rejects, as it does a current one', () => {
+    testConfig.memory.privacy = 'strict'
+    registerChannelVisibility({ visibility: () => 'public', parentOf: () => null })
+    fact('speaker', 'general_occupation', 'nurse', axis(1), { channelId: 'chan-other', period: 'past' })
+    const allowed = fact('speaker', 'hobby', 'chess', axis(1))
+
+    const result = recallForTurn(input({ queryEmbedding: axis(1) }))
+
+    expect(result.items.map(({ id }) => id)).toEqual([allowed])
+    expect(result.trace.gated).toBe(1)
   })
 
   it('caps core facts at recallCoreFacts in the order pinned, nickname, pronouns', () => {
@@ -323,6 +373,31 @@ describe('recallForTurn', () => {
     expect(result.items).toEqual([])
   })
 
+  it.each([
+    ['a current', 'current', ['chess']],
+    ['a past', 'past', []]
+  ] as const)(
+    "follows %s relationship to the related person's facts only when it is current",
+    (_label, period, texts) => {
+      assertClaim({
+        guildId: GUILD,
+        subjectUserId: 'speaker',
+        predicate: 'relationship_to',
+        value: 'friend',
+        objectUserId: 'participant-1',
+        sourceKind: 'passive',
+        channelId: 'chan-a',
+        observedAt: NOW,
+        period
+      })
+      fact('participant-1', 'hobby', 'chess', axis(1))
+
+      const result = recallForTurn(input({ queryEmbedding: axis(1) }))
+
+      expect(result.items.map((recalled) => recalled.text)).toEqual(texts)
+    }
+  )
+
   it('does not recall a media digest with no recorded occurrence under balanced', () => {
     testConfig.memory.privacy = 'balanced'
     registerChannelVisibility({
@@ -390,6 +465,23 @@ describe('recallForTurn', () => {
     ).toBe(`## What You Remember\n${UNTRUSTED}\n\n### People\n- "Speaker": hobby: "chess"`)
     expect(formatRecallBlock([])).toBe('')
   })
+
+  it('marks only a past member fact as history, leaving a server fact label alone', () => {
+    const block = formatRecallBlock([
+      item({
+        kind: 'fact',
+        id: 1,
+        subjectUserId: 'speaker',
+        label: 'general_occupation',
+        text: 'nurse',
+        period: 'past'
+      }),
+      item({ kind: 'server_fact', id: 2, label: 'plan', text: 'movie night', period: 'past' })
+    ])
+
+    expect(block).toContain('- "Speaker": general_occupation (past): "nurse"')
+    expect(block).toContain('- plan: "movie night"')
+  })
 })
 
 describe('recallFactsForSubject', () => {
@@ -446,5 +538,27 @@ describe('recallFactsForSubject', () => {
     })
 
     expect(items.map((recalled) => recalled.text)).toEqual(['chess', 'cat'])
+  })
+
+  it('carries each fact period so a past fact is never read as current', () => {
+    fact('participant-1', 'general_occupation', 'teacher', axis(1))
+    fact('participant-1', 'general_occupation', 'nurse', axis(1), { period: 'past' })
+
+    const items = recallFactsForSubject({
+      scope: SCOPE,
+      speakerId: 'speaker',
+      message: 'what does Participant One do',
+      queryEmbedding: axis(1),
+      now: NOW,
+      subjectUserId: 'participant-1',
+      limit: 5
+    })
+
+    expect(
+      items.map(({ label, text, period }) => ({ label, text, period })).sort((a, b) => a.text.localeCompare(b.text))
+    ).toEqual([
+      { label: 'general_occupation', text: 'nurse', period: 'past' },
+      { label: 'general_occupation', text: 'teacher', period: 'current' }
+    ])
   })
 })

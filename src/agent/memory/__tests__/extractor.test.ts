@@ -154,20 +154,37 @@ describe('runEpisodePipeline', () => {
     expect(mocks.generateContent).toHaveBeenCalledOnce()
     expect(mocks.generateContent.mock.calls[0][0].contents).toContain('[bot-1|Roka (bot context only)]')
     expect(trace).toMatchObject({ stage: 'applied', outcome: 'noop', tokens: 30 })
-    expect(trace.ops).toEqual({ proposed: 0, applied: 0, duplicate: 0, staged: 0, dropped: 0, changed: 0 })
+    expect(trace.ops).toEqual({
+      proposed: 0,
+      applied: 0,
+      duplicate: 0,
+      staged: 0,
+      dropped: 0,
+      changed: 0,
+      past: 0,
+      reword: 0,
+      retracted: 0
+    })
     expect(Object.keys(trace.stageMs).sort()).toEqual(['admission', 'extraction', 'verification'])
   })
 
   it('traces the written ops and sums the tokens of admission, extraction and verification', async () => {
     mocks.generateContent.mockResolvedValueOnce({
       text: JSON.stringify({
-        ops: [{ op: 'add', subject: { kind: 'user', userId: 'user-1' }, predicate: 'likes', value: 'tea' }],
+        ops: [
+          { op: 'add', subject: { kind: 'user', userId: 'user-1' }, predicate: 'likes', value: 'tea', tense: 'current' }
+        ],
         summary: 'Alice likes tea.'
       }),
       usageMetadata: { promptTokenCount: 400 }
     })
     mocks.judgeEpisodeOperations.mockResolvedValueOnce({
-      answers: { durable_0: { noul: 0.9, confidence: null }, attributed_0: { noul: 0.9, confidence: null } },
+      answers: {
+        durable_0: { noul: 0.9, confidence: null },
+        attributed_0: { noul: 0.9, confidence: null },
+        current_0: { noul: 0.9, confidence: null },
+        past_0: { noul: 0.1, confidence: null }
+      },
       latencyMs: 5,
       inputTokens: 60
     })
@@ -176,8 +193,81 @@ describe('runEpisodePipeline', () => {
     await expect(runEpisodePipeline(queueJob, trace)).resolves.toMatchObject({ status: 'completed', appliedOps: 1 })
 
     expect(trace).toMatchObject({ stage: 'applied', outcome: 'written', tokens: 30 + 400 + 60 })
-    expect(trace.ops).toEqual({ proposed: 1, applied: 1, duplicate: 0, staged: 0, dropped: 0, changed: 1 })
+    expect(trace.ops).toEqual({
+      proposed: 1,
+      applied: 1,
+      duplicate: 0,
+      staged: 0,
+      dropped: 0,
+      changed: 1,
+      past: 0,
+      reword: 0,
+      retracted: 0
+    })
     expect(getDb().prepare('SELECT DISTINCT job_id FROM jev_events').all()).toEqual([{ job_id: 1 }])
+  })
+
+  it('traces past mentions, rewordings and retractions and counts a retraction as a written run', async () => {
+    const claim = (predicate: string, value: string) =>
+      assertClaim({ guildId: 'guild-1', subjectUserId: 'user-1', predicate, value, sourceKind: 'passive' })
+    const subject = { kind: 'user', userId: 'user-1' }
+    const chess = claim('hobby', 'chess')
+    const cooking = claim('teasing_habit', 'teases friends about their cooking')
+    mocks.generateContent.mockResolvedValueOnce({
+      text: JSON.stringify({
+        ops: [
+          { op: 'retract', subject, predicate: 'hobby', value: 'chess' },
+          { op: 'add', subject, predicate: 'general_occupation', value: 'nurse', tense: 'past' },
+          {
+            op: 'update',
+            subject,
+            existingId: cooking.id,
+            predicate: 'teasing_habit',
+            value: 'jokes about how friends cook',
+            tense: 'current'
+          }
+        ],
+        summary: 'Alice quit chess.'
+      })
+    })
+    const high = { noul: 0.9, confidence: null }
+    mocks.judgeEpisodeOperations.mockResolvedValueOnce({
+      answers: {
+        durable_0: high,
+        attributed_0: high,
+        retracts_0_0: high,
+        durable_1: high,
+        attributed_1: high,
+        current_1: { noul: 0.1, confidence: null },
+        past_1: high,
+        durable_2: high,
+        attributed_2: high,
+        current_2: high,
+        past_2: high,
+        changes_2: { noul: 0.1, confidence: null }
+      },
+      latencyMs: 5,
+      inputTokens: 60
+    })
+    const trace = startRunTrace(queueJob, 1)
+
+    await runEpisodePipeline(queueJob, trace)
+
+    expect(trace.outcome).toBe('written')
+    expect(trace.ops).toEqual({
+      proposed: 3,
+      applied: 2,
+      duplicate: 1,
+      staged: 0,
+      dropped: 0,
+      changed: 2,
+      past: 1,
+      reword: 1,
+      retracted: 1
+    })
+    expect(getDb().prepare('SELECT end_reason FROM memory_claim WHERE id = ?').get(chess.id)).toEqual({
+      end_reason: 'retracted'
+    })
   })
 
   it('stops the trace at extraction when Gemini fails', async () => {
@@ -258,7 +348,9 @@ describe('extractEpisode', () => {
       endedAt: 3_000
     }
     const output = {
-      ops: [{ op: 'add', subject: { kind: 'user', userId: 'user-2' }, predicate: 'likes', value: 'chess' }],
+      ops: [
+        { op: 'add', subject: { kind: 'user', userId: 'user-2' }, predicate: 'likes', value: 'chess', tense: 'current' }
+      ],
       summary: 'Alex enjoys tea, and Rin plays chess.'
     }
     mocks.generateContent.mockResolvedValueOnce({ text: JSON.stringify(output) })
@@ -280,10 +372,10 @@ describe('extractEpisode', () => {
     expect(request.contents).not.toContain('needs review only')
     expect(request.contents).not.toContain('candidate only')
     expect(request.contents).toContain(
-      'If a member restates a current durable fact, return add with the same subject, predicate, and exact value as its existing claim.'
+      'If a member restates a current durable fact, return add with the same subject, predicate and exact value as its existing claim.'
     )
     expect(request.contents).toContain('Never add a rewording.')
-    expect(request.contents).toContain('Return noop only when no durable fact came up.')
+    expect(request.contents).toContain('Return noop only when no durable fact, change or retraction came up.')
     expect(request.contents).not.toContain('context only claim')
     expect(request.contents).toContain('one-to-two sentence third-person summary')
   })
@@ -305,6 +397,85 @@ describe('extractEpisode', () => {
     expect(prompt).toContain('general_occupation')
     expect(prompt).toContain('never the employer, workplace, or location')
     expect(prompt).toContain('names of schools, employers, or workplaces')
+  })
+
+  it('teaches Gemini tense, retract and the most specific predicate', async () => {
+    mocks.generateContent.mockResolvedValueOnce({ text: JSON.stringify({ ops: [{ op: 'noop' }], summary: 'A fact.' }) })
+    const episode: ExtractionEpisode = {
+      messages: [
+        { messageId: 'm-1', userId: 'user-1', displayName: 'Ari', content: 'I quit chess', timestamp: 1, isBot: false }
+      ],
+      context: [],
+      startedAt: 1,
+      endedAt: 1
+    }
+
+    await extractEpisode({ guildId: 'guild-1', channelId: 'channel-1', episode })
+
+    const prompt = mocks.generateContent.mock.calls[0][0].contents
+    expect(prompt).toContain(
+      'Every user add and update has a tense: current if it is true of them now, past if it was true before but not now ("back when I was a nurse", "I used to play chess"), planned if they intend it.'
+    )
+    expect(prompt).toContain(
+      'Use retract when a member says a fact about themselves no longer holds ("I quit chess", "I\'m not vegetarian anymore"), naming the predicate and the value that ended, even if it is not in the current active claims. A switch ("switched from chess to go") is a retract of the old value plus an add of the new one.'
+    )
+    expect(prompt).toContain('When retracting a fact listed in the active claims, use its listed predicate.')
+    expect(prompt).toContain(
+      'Never add a rewording. Use update with an existing claim ID only when the fact itself changed.'
+    )
+    expect(prompt).toContain(
+      'Choose the most specific predicate; use misc only when no other predicate fits. "I draw on weekends" is hobby, not misc; "my cat Mochi" is pets, not misc; "I like spicy food" is likes, not misc. A game or sport they play is hobby, not favorite_game, unless they call it their favorite.'
+    )
+    expect(prompt).toContain(
+      'Use remove with an existing claim ID only for a claim that was never true or was attributed to the wrong person; use retract for a fact that has ended.'
+    )
+    expect(prompt).toContain(
+      'Never update or remove a claim whose "period" is "past"; to restate history, use add with tense past.'
+    )
+    expect(prompt).toContain('Return noop only when no durable fact, change or retraction came up.')
+    expect(prompt).not.toContain('language_spoken, not misc')
+  })
+
+  it('marks past claims as past in the active claims and leaves current ones unmarked', async () => {
+    assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'general_occupation',
+      value: 'nurse',
+      sourceKind: 'explicit',
+      period: 'past'
+    })
+    assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'likes',
+      value: 'tea',
+      sourceKind: 'explicit'
+    })
+    mocks.generateContent.mockResolvedValueOnce({ text: JSON.stringify({ ops: [{ op: 'noop' }], summary: 'A fact.' }) })
+    const episode: ExtractionEpisode = {
+      messages: [
+        { messageId: 'm-1', userId: 'user-1', displayName: 'Ari', content: 'Hello', timestamp: 1, isBot: false }
+      ],
+      context: [],
+      startedAt: 1,
+      endedAt: 1
+    }
+
+    await extractEpisode({ guildId: 'guild-1', channelId: 'channel-1', episode })
+
+    const prompt: string = mocks.generateContent.mock.calls[0][0].contents
+    const block = prompt.slice(
+      prompt.indexOf('Current active claims:\n') + 'Current active claims:\n'.length,
+      prompt.indexOf('\n\nCurrent active guild facts:')
+    )
+    const [{ claims }] = JSON.parse(block) as Array<{ claims: Array<Record<string, unknown>> }>
+    expect(claims).toContainEqual(
+      expect.objectContaining({ predicate: 'general_occupation', value: 'nurse', period: 'past' })
+    )
+    const current = claims.find(({ predicate }) => predicate === 'likes')
+    expect(current).toBeDefined()
+    expect(current).not.toHaveProperty('period')
   })
 
   it('requires the day but leaves the year to the messages', async () => {
@@ -359,7 +530,9 @@ describe('verifyAndApplyOperations', () => {
     mocks.judgeEpisodeOperations.mockResolvedValueOnce({
       answers: {
         durable_0: { noul: 0.9, confidence: null },
-        attributed_0: { noul: 0.9, confidence: null }
+        attributed_0: { noul: 0.9, confidence: null },
+        current_0: { noul: 0.9, confidence: null },
+        past_0: { noul: 0.1, confidence: null }
       },
       latencyMs: 1,
       inputTokens: 1
@@ -370,7 +543,9 @@ describe('verifyAndApplyOperations', () => {
       channelId: 'channel-1',
       episode,
       output: {
-        ops: [{ op: 'add', subject: { kind: 'user', userId: 'user-1' }, predicate: 'likes', value: 'tea' }],
+        ops: [
+          { op: 'add', subject: { kind: 'user', userId: 'user-1' }, predicate: 'likes', value: 'tea', tense: 'current' }
+        ],
         summary: 'Alex likes tea.'
       },
       subjectIds: new Set(['user-1'])
@@ -467,6 +642,8 @@ describe('verifyAndApplyOperations', () => {
       answers: {
         durable_0: { noul: 0.9, confidence: null },
         attributed_0: { noul: 0.9, confidence: null },
+        current_0: { noul: 0.9, confidence: null },
+        past_0: { noul: 0.1, confidence: null },
         same_as_0_0: { noul: 0.9, confidence: null }
       },
       latencyMs: 1,
@@ -478,7 +655,9 @@ describe('verifyAndApplyOperations', () => {
       channelId: 'channel-1',
       episode,
       output: {
-        ops: [{ op: 'add', subject: { kind: 'user', userId: 'user-1' }, predicate: 'likes', value: 'tea' }],
+        ops: [
+          { op: 'add', subject: { kind: 'user', userId: 'user-1' }, predicate: 'likes', value: 'tea', tense: 'current' }
+        ],
         summary: 'Alex likes tea.'
       },
       subjectIds: new Set(['user-1'])
@@ -530,6 +709,9 @@ describe('verifyAndApplyOperations', () => {
       answers: {
         durable_0: { noul: 0.9, confidence: null },
         attributed_0: { noul: 0.9, confidence: null },
+        current_0: { noul: 0.9, confidence: null },
+        past_0: { noul: 0.1, confidence: null },
+        changes_0: { noul: 0.9, confidence: null },
         durable_1: { noul: 0.9, confidence: null },
         guild_scoped_1: { noul: 0.9, confidence: null }
       },
@@ -548,7 +730,8 @@ describe('verifyAndApplyOperations', () => {
             subject: { kind: 'user', userId: 'user-1' },
             existingId: userClaim.id,
             predicate: 'nickname',
-            value: 'Rinny'
+            value: 'Rinny',
+            tense: 'current'
           },
           {
             op: 'update',
