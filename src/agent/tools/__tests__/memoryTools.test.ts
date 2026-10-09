@@ -604,6 +604,53 @@ describe('memory tools', () => {
     expect(result.facts).toContain('general_occupation: shrine caretaker')
   })
 
+  describe.each(['shadow', 'unified'] as const)('recall_user period in %s mode', (mode) => {
+    const seed = (predicate: string, value: string, period?: 'current' | 'past') =>
+      assertClaim({
+        guildId: 'guild-1',
+        subjectUserId: 'user-1',
+        predicate,
+        value,
+        sourceKind: 'explicit',
+        ...(period ? { period } : {})
+      })
+
+    beforeEach(() => {
+      setMemory({ recall: mode })
+    })
+
+    it('lists current facts first and past facts under "In the past:"', async () => {
+      seed('general_occupation', 'teacher')
+      const past = seed('general_occupation', 'nurse', 'past')
+
+      const result = await recallUser({ guild_id: 'guild-1', user_id: 'user-1', message: '' })
+
+      expect(result.facts).toBe('general_occupation: teacher. In the past: general_occupation: nurse')
+      expect(result.factCount).toBe(2)
+      expect(getDb().prepare('SELECT last_recalled_at FROM memory_claim WHERE id = ?').get(past.id)).toEqual({
+        last_recalled_at: expect.any(Number)
+      })
+    })
+
+    it('leads with the history when a member has only past facts', async () => {
+      seed('general_occupation', 'nurse', 'past')
+
+      const result = await recallUser({ guild_id: 'guild-1', user_id: 'user-1', message: '' })
+
+      expect(result).toEqual({ facts: 'In the past: general_occupation: nurse', factCount: 1 })
+    })
+
+    it('keeps a past fact whose key and value match a current one', async () => {
+      seed('general_occupation', 'nurse')
+      seed('general_occupation', 'nurse', 'past')
+
+      const result = await recallUser({ guild_id: 'guild-1', user_id: 'user-1', message: '' })
+
+      expect(result.facts).toBe('general_occupation: nurse. In the past: general_occupation: nurse')
+      expect(result.factCount).toBe(2)
+    })
+  })
+
   it('recalls a resolved user_name through the FunctionTool', async () => {
     upsertUserName('user-2', 'mio', 'Mio')
     assertClaim({

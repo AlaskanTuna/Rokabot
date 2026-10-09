@@ -122,6 +122,23 @@ describe('retrieveForTurn', () => {
     expect(result.claims.map(({ claim: candidate }) => candidate.id)).toEqual([inGuild.id])
   })
 
+  it('marks past facts in the legacy block and leaves current ones alone', () => {
+    claim('speaker', 'general_occupation', 'teacher')
+    claim('speaker', 'general_occupation', 'nurse', { period: 'past' })
+
+    const result = retrieveForTurn({
+      guildId: 'guild-a',
+      speakerId: 'speaker',
+      participantIds: [],
+      message: 'What do I do for work?'
+    })
+
+    expect(result.entries).toHaveLength(1)
+    expect(result.entries[0]?.facts).toHaveLength(2)
+    expect(result.entries[0]?.facts).toContainEqual({ key: 'general_occupation (past)', value: 'nurse' })
+    expect(result.entries[0]?.facts).toContainEqual({ key: 'general_occupation', value: 'teacher' })
+  })
+
   it('routes game topics and expands a relationship edge to a present participant', () => {
     const favoriteGame = claim('speaker', 'favorite_game', 'Senren Banka')
     const relationship = claim('speaker', 'relationship_to', 'friend', { objectUserId: 'participant-1' })
@@ -137,6 +154,38 @@ describe('retrieveForTurn', () => {
     expect(result.claims.map(({ claim: candidate }) => candidate.id)).toEqual(
       expect.arrayContaining([favoriteGame.id, relationship.id, participantClaim.id])
     )
+  })
+
+  it.each([
+    ['a current', 'current', true],
+    ['a past', 'past', false]
+  ] as const)('expands %s relationship edge to a participant only when it is current', (_label, period, expanded) => {
+    claim('speaker', 'relationship_to', 'friend', { objectUserId: 'participant-1', period })
+    for (const [predicate, value] of [
+      ['hobby', 'painting'],
+      ['pet', 'cat'],
+      ['likes', 'tea'],
+      ['favorite_music', 'jazz']
+    ] as const) {
+      claim('speaker', predicate, value)
+    }
+    const related = claim('participant-1', 'hobby', 'speedrunning', {
+      sourceKind: 'legacy',
+      observedAt: NOW - 60 * DAY
+    })
+    for (let index = 0; index < 15; index++) {
+      claim('participant-2', 'likes', `unrelated interest ${index}`)
+    }
+
+    const result = retrieveForTurn({
+      guildId: 'guild-a',
+      speakerId: 'speaker',
+      participantIds: ['participant-1', 'participant-2'],
+      message: 'hello'
+    })
+
+    expect(result.claims).toHaveLength(10)
+    expect(result.claims.some(({ claim: candidate }) => candidate.id === related.id)).toBe(expanded)
   })
 
   it('excludes a non-speaker needs-review claim from FTS, topic, and relationship expansion', () => {
@@ -476,6 +525,18 @@ describe('memory privacy levels', () => {
     memory.privacy = 'strict'
     const result = retrieveForTurn({ ...turn, scope: here })
     expect(result.claims.map(({ claim: candidate }) => candidate.value)).toEqual(['cat'])
+  })
+
+  it('withholds a past fact learned only in another channel under strict, as it does a current one', () => {
+    claim('speaker', 'general_occupation', 'nurse', { channelId: 'other', period: 'past' })
+    claim('speaker', 'pet', 'cat', { channelId: 'here' })
+    memory.privacy = 'strict'
+    expect(retrieveForTurn({ ...turn, scope: here }).claims.map(({ claim: candidate }) => candidate.value)).toEqual([
+      'cat'
+    ])
+    expect(
+      retrieveForSubject('guild-a', 'speaker', 'hi', 10, here).map(({ claim: candidate }) => candidate.value)
+    ).toEqual(['cat'])
   })
 
   it('changes nothing at relaxed', () => {

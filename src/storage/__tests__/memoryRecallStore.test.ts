@@ -35,6 +35,7 @@ describe('memoryRecallStore', () => {
         predicate: 'hobby',
         value: 'chess',
         eventDate: null,
+        period: 'current',
         embeddingText: null,
         hasEmbedding: false
       }
@@ -47,6 +48,19 @@ describe('memoryRecallStore', () => {
       hasEmbedding: true
     })
     expect(getClaimEmbeddings([fact.id]).get(fact.id)).toHaveLength(768)
+  })
+
+  it('lists a past claim with its period so its embedding sentence can say so', () => {
+    assertClaim({
+      guildId: 'g',
+      subjectUserId: 'u',
+      predicate: 'general_occupation',
+      value: 'nurse',
+      sourceKind: 'passive',
+      period: 'past'
+    })
+
+    expect(listActiveClaimsForEmbedding()).toEqual([expect.objectContaining({ value: 'nurse', period: 'past' })])
   })
 
   it('returns every evidence channel per claim, and null for evidence without one', () => {

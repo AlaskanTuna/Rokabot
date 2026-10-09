@@ -119,7 +119,8 @@ export const MEMORY_DETAIL_SQL = {
   // Simplified 2026-08-19 (human-directed): one row per member is their single most recent presentable
   // claim, and the five members shown are whichever five had the most recent one. No salience, no count —
   // recency only. A member whose only claims need review has no presentable row and is not shown at all,
-  // rather than appearing with a blank quote as the previous ranking-by-count design allowed.
+  // rather than appearing with a blank quote as the previous ranking-by-count design allowed. A past claim is
+  // history, so it is never quoted as who they are.
   topRememberedMembers: `WITH ranked AS (
                             SELECT subject_user_id, predicate, value, last_seen_at,
                                    ROW_NUMBER() OVER (
@@ -128,7 +129,7 @@ export const MEMORY_DETAIL_SQL = {
                                    ) AS rank
                             FROM memory_claim
                             WHERE guild_id = ? AND subject_kind = 'user' AND status = 'active' AND last_seen_at >= ?
-                              AND subject_user_id != ? AND needs_review = 0
+                              AND subject_user_id != ? AND needs_review = 0 AND period = 'current'
                           )
                           SELECT subject_user_id AS userId, predicate, value
                           FROM ranked

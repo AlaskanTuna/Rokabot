@@ -72,6 +72,42 @@ describe('embedPendingFacts', () => {
     expect(mocks.setClaimEmbedding.mock.calls.map(([call]) => call.id)).toEqual([1, 2])
   })
 
+  it('re-embeds a past fact whose stored sentence still reads as current, with the past wording', async () => {
+    mocks.listActiveClaimsForEmbedding.mockReturnValue([
+      {
+        id: 1,
+        subjectKind: 'user',
+        predicate: 'general_occupation',
+        value: 'nurse',
+        eventDate: null,
+        period: 'past',
+        embeddingText: "This person's general occupation: nurse.",
+        hasEmbedding: true
+      },
+      {
+        id: 2,
+        subjectKind: 'user',
+        predicate: 'general_occupation',
+        value: 'teacher',
+        eventDate: null,
+        period: 'past',
+        embeddingText: "This person's past general occupation: teacher.",
+        hasEmbedding: true
+      }
+    ])
+    mocks.embedEpisodeText.mockResolvedValue(Array(768).fill(0.1))
+    mocks.setClaimEmbedding.mockReturnValue(true)
+
+    await expect(embedPendingFacts({ gapMs: 0 })).resolves.toEqual({ embedded: 1, failed: 0 })
+    expect(mocks.embedEpisodeText).toHaveBeenCalledWith({
+      text: "This person's past general occupation: nurse.",
+      role: 'RETRIEVAL_DOCUMENT'
+    })
+    expect(mocks.setClaimEmbedding).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 1, embeddingText: "This person's past general occupation: nurse." })
+    )
+  })
+
   it('respects the limit and counts failures without throwing', async () => {
     mocks.listActiveClaimsForEmbedding.mockReturnValue([
       {
