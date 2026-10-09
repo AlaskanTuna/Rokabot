@@ -97,7 +97,7 @@ describe('harness token measurement', () => {
   it('keeps the shared split, length, paragraph and formatting rules for searched and watched turns', () => {
     expect(CORE_PROMPT).toContain('### Presenting What You Looked Up or Watched')
     expect(CORE_PROMPT).toContain('About 70% of the reply is the content and about 30% is your own reaction.')
-    expect(CORE_PROMPT).toContain('At most 120 words in all, a list included.')
+    expect(CORE_PROMPT).toContain('At most 120 words for something you looked up and 180 for something you watched')
     expect(CORE_PROMPT).toContain('A bigger one may take two blocks, never more')
     expect(CORE_PROMPT).toContain('**Bold** the names, numbers and key moments')
     expect(CORE_PROMPT).toContain('a short bulleted list of at most five items')
@@ -108,6 +108,15 @@ describe('harness token measurement', () => {
 
   it('keeps the rule that an unwatched video is admitted in the first sentence, not guessed at', () => {
     expect(CORE_PROMPT).toContain("couldn't be watched or opened, say so in your first sentence")
+  })
+
+  // "Is this real or hype" on a watched reel got banter and no verdict, where it needed one and the evidence for it.
+  it('keeps judgement questions to a verdict first, real and hype lists, and a search of what it names', () => {
+    expect(CORE_PROMPT).toContain(
+      'When they ask you to judge it (real or hype, legit, true, worth it), your first sentence is the verdict.'
+    )
+    expect(CORE_PROMPT).toContain("**What's real:** and **What's hype:**")
+    expect(CORE_PROMPT).toContain('call `search_web` on the people, products and claims it names')
   })
 
   // Code arrived as unformatted prose, and her kaomoji's backtick paired with real code spans.
