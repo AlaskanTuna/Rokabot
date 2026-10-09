@@ -419,11 +419,12 @@ describe('extractEpisode', () => {
     expect(prompt).toContain(
       'Use retract when a member says a fact about themselves no longer holds ("I quit chess", "I\'m not vegetarian anymore"), naming the predicate and the value that ended, even if it is not in the current active claims. A switch ("switched from chess to go") is a retract of the old value plus an add of the new one.'
     )
+    expect(prompt).toContain('When retracting a fact listed in the active claims, use its listed predicate.')
     expect(prompt).toContain(
       'Never add a rewording. Use update with an existing claim ID only when the fact itself changed.'
     )
     expect(prompt).toContain(
-      'Choose the most specific predicate; use misc only when no other predicate fits. "I draw on weekends" is hobby, not misc; "my cat Mochi" is pets, not misc; "I like spicy food" is likes, not misc.'
+      'Choose the most specific predicate; use misc only when no other predicate fits. "I draw on weekends" is hobby, not misc; "my cat Mochi" is pets, not misc; "I like spicy food" is likes, not misc. A game or sport they play is hobby, not favorite_game, unless they call it their favorite.'
     )
     expect(prompt).toContain(
       'Use remove with an existing claim ID only for a claim that was never true or was attributed to the wrong person; use retract for a fact that has ended.'

@@ -453,6 +453,7 @@ Secrets belong in `.env`; tunables belong in [`config.yml`](../config.yml). Envi
 | `memory.episodeMaxMessages`          | —                                   | Maximum delta messages in one episode.                              |
 | `memory.admitThreshold`              | —                                   | Minimum Jev admission probability before Gemini extraction.         |
 | `memory.verifyThreshold`             | —                                   | Minimum Jev durability and attribution probability.                 |
+| `memory.reclassifyMaxPerRun`         | `MEMORY_RECLASSIFY_MAX_PER_RUN`     | Most misfiled facts moved per daily run (20); 0 turns it off.       |
 | `memory.vaultExportDir`              | `MEMORY_VAULT_EXPORT_DIR`           | Output directory for read-only Obsidian vault exports.              |
 
 </details>

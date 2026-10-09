@@ -1334,6 +1334,42 @@ describe('tense, changes and retractions', () => {
     expect(jevApplied('retracts_0_0')).toBe(1)
   })
 
+  it('retires a visible fact filed under a sibling predicate of the retraction once Jev confirms it', async () => {
+    const legacy = seedClaim({ predicate: 'favorite_game', value: 'chess' })
+    const report = await apply([{ op: 'retract', subject, predicate: 'hobby', value: 'chess' }], {
+      durable_0: 0.9,
+      attributed_0: 0.9,
+      retracts_0_0: 0.9
+    })
+    expect(report).toMatchObject({ appliedOps: 1, changedOps: 1, retractedOps: 1, droppedOps: 0 })
+    expect(statusOf(legacy.id)).toEqual({ status: 'rejected', end_reason: 'retracted' })
+    expect(jevApplied('retracts_0_0')).toBe(1)
+  })
+
+  it('asks about the named value under a sibling predicate before another value under the same predicate', async () => {
+    const go = seedClaim({ predicate: 'hobby', value: 'go', observedAt: 2_000 })
+    const legacy = seedClaim({ predicate: 'favorite_game', value: 'chess', observedAt: 1_000 })
+    const report = await apply([{ op: 'retract', subject, predicate: 'hobby', value: 'chess' }], {
+      durable_0: 0.9,
+      attributed_0: 0.9,
+      retracts_0_0: 0.9,
+      retracts_0_1: 0.1
+    })
+    expect(report).toMatchObject({ appliedOps: 1, retractedOps: 1 })
+    expect(statusOf(legacy.id)).toEqual({ status: 'rejected', end_reason: 'retracted' })
+    expect(statusOf(go.id)).toEqual({ status: 'active', end_reason: null })
+  })
+
+  it('leaves a claim of another category alone even when its value matches', async () => {
+    const coach = seedClaim({ predicate: 'general_occupation', value: 'chess' })
+    const report = await apply([{ op: 'retract', subject, predicate: 'hobby', value: 'chess' }], {
+      durable_0: 0.9,
+      attributed_0: 0.9
+    })
+    expect(report).toMatchObject({ appliedOps: 0, droppedOps: 1, retractedOps: 0 })
+    expect(statusOf(coach.id)).toEqual({ status: 'active', end_reason: null })
+  })
+
   it('retires only the claims whose own retraction question passes, the named value being asked first', async () => {
     const chess = seedClaim({ predicate: 'hobby', value: 'chess', observedAt: 1_000 })
     const go = seedClaim({ predicate: 'hobby', value: 'go', observedAt: 2_000 })

@@ -310,6 +310,42 @@ describe('judgeEpisodeOperations', () => {
       expect(questions.retracts_0_2.instructions).toContain('"hobby-1"')
     })
 
+    it('also asks about same-category claims under a sibling predicate, each worded with its own predicate', async () => {
+      const existing = [
+        existingClaim(1, 'go', { predicate: 'favorite_game' }),
+        existingClaim(2, 'go'),
+        existingClaim(3, ' Chess ', { predicate: 'favorite_game' }),
+        existingClaim(4, 'chess', { predicate: 'favorite_game' }),
+        existingClaim(5, 'chess'),
+        existingClaim(6, 'chess', { predicate: 'general_occupation' })
+      ]
+      const { questions } = await ask([{ op: 'retract', subject, predicate: 'hobby', value: 'chess' }], existing)
+
+      expect(Object.keys(questions).filter((key) => key.startsWith('retracts_'))).toEqual([
+        'retracts_0_0',
+        'retracts_0_1',
+        'retracts_0_2',
+        'retracts_0_3',
+        'retracts_0_4'
+      ])
+      expect(questions.retracts_0_0.instructions).toBe(
+        'Do the messages say that the subject\'s hobby "chess" no longer holds?'
+      )
+      expect(questions.retracts_0_1.instructions).toBe(
+        'Do the messages say that the subject\'s favorite game "chess" no longer holds?'
+      )
+      expect(questions.retracts_0_2.instructions).toBe(
+        'Do the messages say that the subject\'s favorite game " Chess " no longer holds?'
+      )
+      expect(questions.retracts_0_3.instructions).toBe(
+        'Do the messages say that the subject\'s hobby "go" no longer holds?'
+      )
+      expect(questions.retracts_0_4.instructions).toBe(
+        'Do the messages say that the subject\'s favorite game "go" no longer holds?'
+      )
+      expect(JSON.stringify(questions)).not.toContain('general occupation')
+    })
+
     it('words the predicate of a retraction question as a label', async () => {
       const { questions } = await ask(
         [{ op: 'retract', subject, predicate: 'general_occupation', value: 'nurse' }],
