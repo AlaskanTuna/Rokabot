@@ -3,7 +3,7 @@ import { getDb } from '../../storage/database.js'
 import { recordMemoryEvent } from '../../storage/metricsStore.js'
 import { logger } from '../../utils/logger.js'
 import { assertClaim, confidenceForEvidence, getActiveClaimById, retireClaim } from './memoryClaims.js'
-import type { PredicateId } from './predicates.js'
+import { type PredicateId, isMoveTarget } from './predicates.js'
 import { jevConfirm, proposePredicates } from './reclassifyModels.js'
 
 export type ReclassifyCandidate = {
@@ -32,9 +32,9 @@ export function findReclassifyCandidates(limit: number): ReclassifyCandidate[] {
       `SELECT c.id, c.guild_id, c.subject_user_id, c.predicate, c.value
        FROM memory_claim c
        WHERE c.subject_kind = 'user' AND c.status = 'active' AND c.period = 'current'
-         AND NOT EXISTS (
-           SELECT 1 FROM memory_events e
-           WHERE e.kind = 'claim_reclassified' AND json_extract(e.detail, '$.oldId') = c.id
+         AND c.id NOT IN (
+           SELECT json_extract(detail, '$.oldId') FROM memory_events
+           WHERE kind = 'claim_reclassified' AND json_extract(detail, '$.oldId') IS NOT NULL
          )
          AND (
            c.predicate = 'misc'
@@ -84,9 +84,19 @@ export function moveClaim(claim: ReclassifyCandidate, to: PredicateId, probabili
     const before = activeCount(original.guildId, original.subjectUserId)
     const target = db
       .prepare(
-        "SELECT status FROM memory_claim WHERE subject_kind = 'user' AND guild_id = ? AND subject_user_id = ? AND predicate = ? AND value = ? AND period = 'current'"
+        "SELECT status, end_reason FROM memory_claim WHERE subject_kind = 'user' AND guild_id = ? AND subject_user_id = ? AND predicate = ? AND value = ? AND period = 'current'"
       )
-      .get(original.guildId, original.subjectUserId, to, original.value) as { status: string } | undefined
+      .get(original.guildId, original.subjectUserId, to, original.value) as
+      | { status: string; end_reason: string | null }
+      | undefined
+    // The member ended that fact on purpose; a copy left under another predicate must not bring it back.
+    if (
+      target &&
+      target.status !== 'active' &&
+      (target.end_reason === 'retracted' || target.end_reason === 'forgotten')
+    ) {
+      throw new Error('Target fact was retracted or forgotten')
+    }
     // A target that was ended or only staged comes back to life with the move, so undoing it must end it again.
     const created = target?.status !== 'active'
 
@@ -100,7 +110,8 @@ export function moveClaim(claim: ReclassifyCandidate, to: PredicateId, probabili
         value: original.value,
         sourceKind: original.sourceKind,
         period: 'current',
-        observedAt: original.lastSeenAt
+        observedAt: original.lastSeenAt,
+        needsReview: false
       },
       { transaction: true }
     )
@@ -200,7 +211,7 @@ export async function reclassifyClaims(): Promise<number> {
   const proposed: Array<{ claim: ReclassifyCandidate; to: PredicateId }> = []
   for (const { id, predicate } of await proposePredicates(candidates)) {
     const claim = byId.get(id)
-    if (!claim || predicate === 'keep' || predicate === claim.predicate) continue
+    if (!claim || predicate === 'keep' || predicate === claim.predicate || !isMoveTarget(predicate)) continue
     proposed.push({ claim, to: predicate })
   }
 

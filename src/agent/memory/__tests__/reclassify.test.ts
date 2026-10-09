@@ -10,7 +10,10 @@ const mocks = vi.hoisted(() => ({
       deadClaimRetentionDays: 30,
       verifyThreshold: 0.5,
       privacy: 'relaxed',
-      reclassifyMaxPerRun: 20
+      reclassifyMaxPerRun: 20,
+      maxClaimsPerTurn: 5,
+      salienceHalfLifeDays: 30,
+      recallCooldownMs: 0
     }
   }
 }))
@@ -22,12 +25,14 @@ vi.mock('../reclassifyModels.js', () => ({
 }))
 
 import { closeDb, getDb } from '../../../storage/database.js'
+import { pruneOldMetrics } from '../../../storage/metricsStore.js'
 import {
   type UserMemoryClaim,
   assertClaim,
   getActiveClaims,
   pinClaim,
-  rejectClaimIdsForSpeaker
+  rejectClaimIdsForSpeaker,
+  retireClaim
 } from '../memoryClaims.js'
 import type { PredicateId } from '../predicates.js'
 import {
@@ -37,6 +42,7 @@ import {
   reclassifyClaims,
   undoReclassify
 } from '../reclassify.js'
+import { retrieveForSubject } from '../retriever.js'
 
 const GUILD = 'guild-1'
 const USER = 'user-1'
@@ -103,6 +109,12 @@ function memoryEvents(kind: string) {
     subject_user_id: string | null
     detail: string | null
   }>
+}
+
+function ageMemoryEvents(): void {
+  getDb()
+    .prepare('UPDATE memory_events SET created_at = created_at - ?')
+    .run(400 * 24 * 60 * 60 * 1000)
 }
 
 function candidateOf(claim: UserMemoryClaim): ReclassifyCandidate {
@@ -280,6 +292,37 @@ describe('reclassifyClaims', () => {
     expect(memoryEvents('claim_reclassified')).toHaveLength(0)
   })
 
+  it('never moves a fact into misc or relationship_to, whatever the model proposes', async () => {
+    const likes = seedClaim({ predicate: 'likes', value: 'tea' })
+    const hobby = seedClaim({ predicate: 'hobby', value: 'Tea' })
+    getDb().prepare('UPDATE memory_claim SET salience = 0.9 WHERE id = ?').run(hobby.id)
+    const friend = seedClaim({ predicate: 'misc', value: 'best friends with Mio' })
+    mocks.proposePredicates.mockResolvedValue([
+      { id: likes.id, predicate: 'misc' },
+      { id: friend.id, predicate: 'relationship_to' }
+    ])
+    mocks.jevConfirm.mockResolvedValue({ [likes.id]: 0.9, [friend.id]: 0.9 })
+
+    expect(await reclassifyClaims()).toBe(0)
+
+    expect(mocks.jevConfirm).not.toHaveBeenCalled()
+    expect(row(likes.id)).toMatchObject({ status: 'active' })
+    expect(row(friend.id)).toMatchObject({ status: 'active' })
+  })
+
+  it('still leaves an undone fact alone after old metrics are pruned', async () => {
+    const undone = seedClaim({ predicate: 'misc', value: 'draws on weekends' })
+    moveClaim(candidateOf(undone), 'hobby', 0.9)
+    expect(undoReclassify(undone.id)).toBe(true)
+    ageMemoryEvents()
+
+    pruneOldMetrics(90)
+
+    expect(findReclassifyCandidates(10)).toEqual([])
+    expect(await reclassifyClaims()).toBe(0)
+    expect(mocks.proposePredicates).not.toHaveBeenCalled()
+  })
+
   it('carries on after one move fails', async () => {
     const forgotten = seedClaim({ predicate: 'hobby', value: 'draws on weekends' })
     rejectClaimIdsForSpeaker(GUILD, USER, [forgotten.id])
@@ -345,6 +388,51 @@ describe('moveClaim', () => {
     })
   })
 
+  it('makes a staged candidate under the new predicate a recallable fact', () => {
+    const staged = assertClaim({
+      guildId: GUILD,
+      subjectUserId: USER,
+      predicate: 'hobby',
+      value: 'drawing',
+      sourceKind: 'passive',
+      status: 'candidate',
+      needsReview: true
+    })
+    const old = seedClaim({ predicate: 'misc', value: 'drawing' })
+
+    expect(moveClaim(candidateOf(old), 'hobby', 0.9)).toBe(staged.id)
+
+    expect(getDb().prepare('SELECT status, needs_review FROM memory_claim WHERE id = ?').get(staged.id)).toEqual({
+      status: 'active',
+      needs_review: 0
+    })
+    expect(retrieveForSubject(GUILD, USER, 'drawing', 10).map(({ claim }) => claim.id)).toContain(staged.id)
+  })
+
+  it('will not revive a fact the member retracted under the new predicate', () => {
+    const retracted = seedClaim({ predicate: 'hobby', value: 'chess' })
+    expect(retireClaim(GUILD, retracted.id, 'retracted')).toBe(true)
+    const old = seedClaim({ predicate: 'misc', value: 'chess' })
+
+    expect(() => moveClaim(candidateOf(old), 'hobby', 0.9)).toThrow('Target fact was retracted or forgotten')
+
+    expect(row(retracted.id)).toMatchObject({ status: 'rejected', end_reason: 'retracted' })
+    expect(row(old.id)).toMatchObject({ status: 'active', end_reason: null, superseded_by: null })
+    expect(memoryEvents('claim_reclassified')).toHaveLength(0)
+  })
+
+  it('will not revive a fact the member asked to forget, even for an explicitly remembered original', () => {
+    const forgotten = seedClaim({ predicate: 'hobby', value: 'chess' })
+    expect(rejectClaimIdsForSpeaker(GUILD, USER, [forgotten.id])).toBe(true)
+    const old = seedClaim({ predicate: 'misc', value: 'chess', pinned: true })
+
+    expect(() => moveClaim(candidateOf(old), 'hobby', 0.9)).toThrow('Target fact was retracted or forgotten')
+
+    expect(row(forgotten.id)).toMatchObject({ status: 'rejected', end_reason: 'forgotten' })
+    expect(row(old.id)).toMatchObject({ status: 'active', end_reason: null, superseded_by: null, pinned: 1 })
+    expect(memoryEvents('claim_reclassified')).toHaveLength(0)
+  })
+
   it('refuses a fact that is no longer active and changes nothing', () => {
     const old = seedClaim({ predicate: 'misc', value: 'draws on weekends' })
     getDb().prepare("UPDATE memory_claim SET status = 'rejected', end_reason = 'removed' WHERE id = ?").run(old.id)
@@ -398,6 +486,18 @@ describe('undoReclassify', () => {
     expect(undoReclassify(removed.id)).toBe(false)
     expect(undoReclassify(9_999)).toBe(false)
     expect(row(plain.id)).toMatchObject({ status: 'active' })
+  })
+
+  it('still ends the replacement when a move is undone after old metrics are pruned', () => {
+    const old = seedClaim({ predicate: 'misc', value: 'draws on weekends' })
+    const movedId = moveClaim(candidateOf(old), 'hobby', 0.9)
+    ageMemoryEvents()
+
+    pruneOldMetrics(90)
+
+    expect(undoReclassify(old.id)).toBe(true)
+    expect(row(old.id)).toMatchObject({ status: 'active' })
+    expect(row(movedId)).toMatchObject({ status: 'rejected', end_reason: 'removed' })
   })
 
   it('cannot undo the same move twice', () => {

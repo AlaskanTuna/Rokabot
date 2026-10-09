@@ -383,6 +383,18 @@ describe('metricsStore', () => {
     expect(db.prepare('SELECT COUNT(*) AS count FROM jev_events').get()).toEqual({ count: 1 })
   })
 
+  it('keeps claim_reclassified audit events however old they are', () => {
+    const db = getDb()
+    db.prepare('DELETE FROM memory_events').run()
+    const insert = db.prepare('INSERT INTO memory_events (kind, guild_id, detail, created_at) VALUES (?, ?, ?, ?)')
+    const old = Date.now() - 400 * ONE_DAY
+    insert.run('claim_reclassified', 'guild-1', '{"oldId":1,"newId":2,"created":true}', old)
+    insert.run('retrieval', 'guild-1', null, old)
+
+    expect(pruneOldMetrics(90)).toBe(1)
+    expect(db.prepare('SELECT kind FROM memory_events').all()).toEqual([{ kind: 'claim_reclassified' }])
+  })
+
   it('persists failure diagnostics with the block side and prunes them on the shorter window', () => {
     const db = getDb()
     db.prepare('DELETE FROM failure_diagnostics').run()

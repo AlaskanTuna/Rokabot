@@ -302,15 +302,20 @@ export async function verifyAndApplyOperations(input: {
   const appliedKeys = new Set<string>()
   const verifiedRetracts: Array<{ subjectUserId: string; predicate: PredicateId; value: string }> = []
 
+  // Retractions go last, so a switch sent as retract-then-add lets the add supersede the old value and inherit its pin.
+  const applyOrder = [
+    ...planned.filter(({ op }) => op.op !== 'retract'),
+    ...planned.filter(({ op }) => op.op === 'retract')
+  ]
   getDb().transaction(() => {
-    for (const entry of planned) {
+    for (const entry of applyOrder) {
       const { op, index, sameAsClaims, retractClaims } = entry
       if (!operationAllowed(op, subjectIds) || !operationSafe(op)) {
-        results.push({ applied: false, duplicate: false })
+        results[index] = { applied: false, duplicate: false }
         continue
       }
       if (!entry.dateValid || ('tense' in op && op.tense === 'planned')) {
-        results.push({ applied: false, duplicate: false })
+        results[index] = { applied: false, duplicate: false }
         continue
       }
 
@@ -321,7 +326,7 @@ export async function verifyAndApplyOperations(input: {
             ? getActiveGuildClaimById(input.guildId, op.existingId)
             : getActiveClaimById(input.guildId, op.subject.userId, op.existingId)
       if (op.op !== 'add' && op.op !== 'retract' && (!target || target.predicate !== op.predicate)) {
-        results.push({ applied: false, duplicate: false })
+        results[index] = { applied: false, duplicate: false }
         continue
       }
 
@@ -330,12 +335,12 @@ export async function verifyAndApplyOperations(input: {
         const scopedKey = `${op.subject.kind === 'guild' ? 'guild_scoped' : 'attributed'}_${index}`
         const scoped = verification.answers[scopedKey].noul >= config.memory.verifyThreshold
         if (!durable || !scoped) {
-          results.push({ applied: false, duplicate: false })
+          results[index] = { applied: false, duplicate: false }
           continue
         }
       } else {
         if (op.op === 'remove' || op.op === 'retract') {
-          results.push({ applied: false, duplicate: false })
+          results[index] = { applied: false, duplicate: false }
           continue
         }
         const current =
@@ -347,7 +352,7 @@ export async function verifyAndApplyOperations(input: {
           (claim) => claim.predicate === op.predicate && claim.value === op.value && claim.period === proposed
         )
         if (sameValue || (op.op === 'update' && target?.value === op.value && target.period === proposed)) {
-          results.push({ applied: false, duplicate: false })
+          results[index] = { applied: false, duplicate: false }
           continue
         }
       }
@@ -362,7 +367,7 @@ export async function verifyAndApplyOperations(input: {
             retired += 1
           }
         }
-        results.push({ applied: retired > 0, duplicate: false, changed: retired > 0, retracted: retired })
+        results[index] = { applied: retired > 0, duplicate: false, changed: retired > 0, retracted: retired }
         continue
       }
 
@@ -381,12 +386,12 @@ export async function verifyAndApplyOperations(input: {
               { transaction: true }
             )
           }
-          results.push({ applied: false, duplicate: Boolean(match) })
+          results[index] = { applied: false, duplicate: Boolean(match) }
           continue
         }
         const resolved = op.tense === 'current' && stillHolds ? 'current' : holds(`past_${index}`) ? 'past' : null
         if (resolved === null) {
-          results.push({ applied: false, duplicate: false })
+          results[index] = { applied: false, duplicate: false }
           continue
         }
         period = resolved
@@ -396,13 +401,14 @@ export async function verifyAndApplyOperations(input: {
             { channelId: input.channelId, sourceKind: 'passive', observedAt },
             { transaction: true }
           )
-          results.push({ applied: false, duplicate: true, reword: true })
+          results[index] = { applied: false, duplicate: true, reword: true }
           continue
         }
       }
 
-      // A past mention is written as its own row: it never replaces the claim an update targeted.
-      if (op.op === 'add' || (op.op === 'update' && period === 'past')) {
+      // A past mention is written as its own row: it never replaces the claim an update targeted. A verified current
+      // update aimed at a past claim is written the same way, as the current fact, so the history stays untouched.
+      if (op.op === 'add' || (op.op === 'update' && (period === 'past' || (verified && target?.period === 'past')))) {
         // Same-as candidates were chosen for the proposed period, so they only apply while Jev kept it.
         if (verified && period === proposedPeriod(op)) {
           const exactSameAs = sameAsClaims.find((claim) => claim.value === op.value)
@@ -418,9 +424,9 @@ export async function verifyAndApplyOperations(input: {
                 { transaction: true }
               )
               appliedKeys.add(`same_as_${index}_${sameAsClaims.indexOf(exactSameAs)}`)
-              results.push({ applied: false, duplicate: true })
+              results[index] = { applied: false, duplicate: true }
             } else {
-              results.push({ applied: false, duplicate: false })
+              results[index] = { applied: false, duplicate: false }
             }
             continue
           }
@@ -440,14 +446,14 @@ export async function verifyAndApplyOperations(input: {
                 { transaction: true }
               )
               appliedKeys.add(`same_as_${index}_${sameAsClaims.indexOf(sameAs)}`)
-              results.push({ applied: false, duplicate: true })
+              results[index] = { applied: false, duplicate: true }
             } else {
-              results.push({ applied: false, duplicate: false })
+              results[index] = { applied: false, duplicate: false }
             }
             continue
           }
           if (sameAsClaims.some((claim) => claim.value === op.value)) {
-            results.push({ applied: false, duplicate: false })
+            results[index] = { applied: false, duplicate: false }
             continue
           }
         }
@@ -470,12 +476,12 @@ export async function verifyAndApplyOperations(input: {
             { transaction: true }
           )
           const applied = claim.status === 'active' || claim.status === 'candidate'
-          results.push({
+          results[index] = {
             applied,
             duplicate: false,
             staged: !verified && claim.status === 'candidate',
             changed: applied && claim.status !== priorStatus
-          })
+          }
           continue
         }
 
@@ -496,13 +502,13 @@ export async function verifyAndApplyOperations(input: {
           { transaction: true }
         )
         const applied = claim.status === 'active' || claim.status === 'candidate'
-        results.push({
+        results[index] = {
           applied,
           duplicate: false,
           staged: !verified && claim.status === 'candidate',
           changed: applied && claim.status !== priorStatus,
           past: applied && verified && period === 'past'
-        })
+        }
         continue
       }
 
@@ -538,7 +544,7 @@ export async function verifyAndApplyOperations(input: {
             )
         const duplicate = replacement?.id === op.existingId
         const applied = Boolean(replacement) && !duplicate
-        results.push({ applied, duplicate, staged: !verified && Boolean(replacement), changed: applied })
+        results[index] = { applied, duplicate, staged: !verified && Boolean(replacement), changed: applied }
         continue
       }
 
@@ -548,7 +554,7 @@ export async function verifyAndApplyOperations(input: {
             { guildId: input.guildId, subjectUserId: op.subject.userId, existingId: op.existingId },
             { transaction: true }
           )
-      results.push({ applied, duplicate: false, changed: applied })
+      results[index] = { applied, duplicate: false, changed: applied }
     }
   })()
 

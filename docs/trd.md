@@ -351,7 +351,9 @@ precision. A yearless month resolves to its next occurrence, and a month already
 Jev verifies durability for every write operation and verifies attribution for user subjects with `attributed_N` or
 shared guild scope with `guild_scoped_N`. Adds are checked against same-subject, same-predicate, same-period claims
 with `same_as_N_M`. A past-tagged operation gets its own durability wording ("a lasting fact about the person's
-history, such as a former job, place or long-held habit, rather than a one-off event"). After durability and
+history, such as a former job, place or long-held habit, rather than a one-off event"), and so does a retract ("a
+lasting fact about the person (such as a hobby, job, diet or habit) has ended, rather than a short pause or a passing
+mood"), because the default wording counts an ended fact as an event that has already happened. After durability and
 attribution pass, an exact active value appends evidence even when its
 `same_as_N_M` answer is below `memory.verifyThreshold` (0.5); other semantic duplicate answers must meet that
 threshold. An add with incomplete verification does not refresh an active duplicate. If verification is incomplete,
@@ -381,7 +383,9 @@ Verified operations are applied as follows:
 - **Still True:** a past-tagged operation whose `current_N` also holds ("I was a nurse and I still am") only appends
   evidence to the exactly matching current claim. It never writes a past copy.
 - **Past Facts:** a verified past operation writes or refreshes a row with `period = 'past'`. Past and current facts
-  never supersede, revive or replace each other, and a past update never replaces the claim it targeted.
+  never supersede, revive or replace each other, and a past update never replaces the claim it targeted. A verified
+  current update aimed at a past claim is written as the current fact, with normal single-value supersession of the
+  current one, and leaves the past claim untouched.
 - **Rewording:** an update whose `changes_N` fails appends evidence to the existing claim and keeps its wording.
 - **Retraction:** a retract needs `durable_N` and `attributed_N` like any other operation. It then retires every
   visible current claim whose `retracts_N_M` holds, with `end_reason = 'retracted'`. The questions cover the whole
@@ -389,7 +393,10 @@ Verified operations are applied as follows:
   `favorite_game` row when the member now says `hobby`). They are ordered by value first (an exact match, then one that
   differs only in case or spacing, then the rest), then the retract's own predicate before a sibling's, then the order
   the claims were listed in, so the cap of 5 never pushes out the claim the member named. Each question names the
-  claim's own predicate, not the retract's. A retract that matches nothing retires nothing and is not an error. Facts the extractor could not see are handled by Hidden-Fact Reconciliation.
+  claim's own predicate, not the retract's. A retract that matches nothing retires nothing and is not an error. Facts
+  the extractor could not see are handled by Hidden-Fact Reconciliation. Retracts are applied after the batch's other
+  operations, so a switch sent as a retract followed by an add lets the add supersede the old value and inherit its
+  pin; the retract then finds nothing left to retire.
 - **Incomplete Verification:** an add or update stages as a `candidate` with its proposed period, and a retract or
   remove is not applied. A staged candidate never retires anything and never inherits a pin.
 - **Pins:** a verified operation that supersedes a pinned current claim writes its replacement with `pinned = 1`.
@@ -507,8 +514,9 @@ identity and social claims at `memory.stableClaimRetentionDays` (180 days), stan
 personality claims at `memory.claimRetentionDays` (30 days), and transient opinions, misc, and `currently_watching`
 claims at `memory.transientClaimRetentionDays` (14 days). Pinned claims are exempt. Active guild claims keep their
 date-based expiry; unexpired guild candidates are rejected after `memory.claimRetentionDays` (30 days). User and guild
-candidates do not count toward `memory.maxActiveClaimsPerUser` (20), which caps active unpinned user claims per subject
-and evicts the least salient unpinned claims first; pinned claims neither count toward the cap nor are evicted.
+candidates do not count toward `memory.maxActiveClaimsPerUser` (20), which caps active unpinned user claims per subject.
+Past facts are evicted first, so history never costs a member a current fact (a new past fact at the cap is itself the
+one evicted), then the least salient unpinned claims; pinned claims neither count toward the cap nor are evicted.
 Explicitly remembered claims are pinned.
 
 Each startup and daily prune hard-deletes `rejected` and `superseded` claims whose `ended_at` is strictly older than
@@ -535,17 +543,23 @@ affecting the prune.
   cannot crowd out the ones behind it. A fact whose move was undone (an active row with a `claim_reclassified` event of
   its own) is never offered again.
 - **Proposal:** one Gemini call (`gemini.extractionModel`) returns, for each candidate, the best predicate from the
-  closed list or `keep`.
+  closed list or `keep`. The list leaves out `misc` and `relationship_to`, whose object must be a member a bare value
+  cannot name, and `reclassifyClaims` drops any proposal naming either.
 - **Confirmation:** one Jev call asks `fits_<id>` (`Is "<value>" this person's <predicate>?`) for at most `cap`
   proposals. A move needs a probability of at least `memory.verifyThreshold`.
 - **Move:** one transaction retires the old row first (`end_reason = 'reclassified'`, so the cap cannot evict another
-  fact mid-move), writes the value under the new predicate with normal single-value supersession, copies the evidence
-  rows, keeps the pin and `first_seen_at`, and links the old row to the new one through `superseded_by`. If the move
-  would cost the member any other active fact, it rolls back and is logged as skipped.
+  fact mid-move), writes the value under the new predicate as a verified, active fact (reviving a staged or ended row
+  of that value there, and clearing `needs_review`), copies the evidence rows, keeps the pin and `first_seen_at`, and
+  links the old row to the new one through `superseded_by`. A move never retires another fact: if writing the value
+  would supersede a different value of a single-valued predicate, or cost the member any other active fact, the move
+  rolls back and is logged as skipped. It is also skipped, before anything is written, when the value under the new
+  predicate was retracted or forgotten (`Target fact was retracted or forgotten`), so a copy left under another
+  predicate cannot bring back a fact the member ended.
 - **Audit:** each move writes a `memory_events` row with `kind = 'claim_reclassified'` and `detail`
   `{ oldId, newId, from, to, probability, created }`: claim IDs, predicates and the Jev probability, never values.
   `created` is true when the move created or revived the replacement row, false when the value was already active
-  under the new predicate.
+  under the new predicate. These events are exempt from the `metrics.retentionDays` prune, because undo and the
+  undone-fact exclusion read them.
 - **Undo:** `undoReclassify(oldClaimId)` reactivates the old row and, when `created` is true, ends the replacement
   (`end_reason = 'removed'`). A dev checkout runs `npm run memory:undo-reclassify -- <old claim id>`; production
   runs the compiled module inside the container (Runbook, Memory Reclassification).

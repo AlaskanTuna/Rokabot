@@ -206,9 +206,11 @@ export async function judgeEpisodeOperations(input: {
       questions[durableKey] = noul(
         op.subject.kind === 'guild'
           ? 'Is this a lasting shared server fact or an agreed plan/event, rather than an uncommitted suggestion, greeting, or passing mood?'
-          : proposedPeriod(op) === 'past'
-            ? "Is this a lasting fact about the person's history, such as a former job, place or long-held habit, rather than a one-off event?"
-            : 'Is this operation a lasting trait, preference, relationship or plan rather than a momentary state or an event that has already happened?'
+          : op.op === 'retract'
+            ? 'Does this say a lasting fact about the person (such as a hobby, job, diet or habit) has ended, rather than a short pause or a passing mood?'
+            : proposedPeriod(op) === 'past'
+              ? "Is this a lasting fact about the person's history, such as a former job, place or long-held habit, rather than a one-off event?"
+              : 'Is this operation a lasting trait, preference, relationship or plan rather than a momentary state or an event that has already happened?'
       )
       questions[scopeKey] = noul(
         op.subject.kind === 'guild'

@@ -256,6 +256,20 @@ describe('judgeEpisodeOperations', () => {
       )
     })
 
+    it('asks whether a retraction ends a lasting fact, keeping the usual durability wording for other operations', async () => {
+      const { questions } = await ask([
+        { op: 'retract', subject, predicate: 'hobby', value: 'chess' },
+        { op: 'add', subject, predicate: 'hobby', value: 'go', tense: 'current' }
+      ])
+
+      expect(questions.durable_0.instructions).toBe(
+        'Does this say a lasting fact about the person (such as a hobby, job, diet or habit) has ended, rather than a short pause or a passing mood?'
+      )
+      expect(questions.durable_1.instructions).toBe(
+        'Is this operation a lasting trait, preference, relationship or plan rather than a momentary state or an event that has already happened?'
+      )
+    })
+
     it('asks one retraction question per matching current claim of the subject, capped at five', async () => {
       const existing = [
         existingClaim(1, 'chess'),

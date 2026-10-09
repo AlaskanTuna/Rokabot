@@ -1356,6 +1356,47 @@ describe('memoryClaims', () => {
     expect(unpinned).toEqual(expect.arrayContaining(unpinnedValues))
   })
 
+  describe('at the active-claim cap', () => {
+    function write(predicate: string, value: string, observedAt: number, period: 'current' | 'past' = 'current') {
+      return assertClaim({
+        guildId: 'guild-1',
+        subjectUserId: 'user-1',
+        predicate,
+        value,
+        sourceKind: 'passive',
+        observedAt,
+        period
+      })
+    }
+
+    function activeValues() {
+      return getActiveClaims('guild-1', 'user-1')
+        .map(({ value, period }) => `${value} (${period})`)
+        .sort()
+    }
+
+    it('evicts a past fact before an older current one when a new current fact arrives', () => {
+      write('hobby', 'chess', 1_000)
+      const nurse = write('general_occupation', 'nurse', 2_000, 'past')
+      write('likes', 'tea', 3_000)
+
+      expect(activeValues()).toEqual(['chess (current)', 'tea (current)'])
+      expect(getDb().prepare('SELECT status, end_reason FROM memory_claim WHERE id = ?').get(nurse.id)).toEqual({
+        status: 'rejected',
+        end_reason: 'evicted'
+      })
+    })
+
+    it('never lets a new past fact evict a current one', () => {
+      write('hobby', 'chess', 1_000)
+      write('likes', 'tea', 2_000)
+      const nurse = write('general_occupation', 'nurse', 3_000, 'past')
+
+      expect(activeValues()).toEqual(['chess (current)', 'tea (current)'])
+      expect(nurse).toMatchObject({ status: 'rejected' })
+    })
+  })
+
   // #111: pinClaim/unpinClaim had no production callers, so the eviction exemption config.yml documents
   // for pinned claims was unreachable and nothing was ever protected from maxActiveClaimsPerUser.
   it('pins a claim written explicitly, so the thing someone asked her to remember survives the ceiling', () => {

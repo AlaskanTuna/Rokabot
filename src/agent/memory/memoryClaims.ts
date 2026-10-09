@@ -236,13 +236,14 @@ function rejectClaims(claims: MemoryClaim[], reason: string): void {
   }
 }
 
+// Past facts go first: history must never cost the member a fact that is true now.
 function evictOverflow(guildId: string, subjectUserId: string): number {
   const overflow = (
     getDb()
       .prepare(
         `SELECT * FROM memory_claim
        WHERE guild_id = ? AND subject_kind = 'user' AND subject_user_id = ? AND status = 'active' AND pinned = 0
-       ORDER BY salience ASC, last_seen_at ASC, id ASC
+       ORDER BY (period = 'past') DESC, salience ASC, last_seen_at ASC, id ASC
        LIMIT MAX(0, (SELECT COUNT(*) FROM memory_claim WHERE guild_id = ? AND subject_kind = 'user' AND subject_user_id = ? AND status = 'active' AND pinned = 0) - ?)`
       )
       .all(guildId, subjectUserId, guildId, subjectUserId, config.memory.maxActiveClaimsPerUser) as ClaimRow[]

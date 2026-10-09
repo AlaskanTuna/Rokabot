@@ -65,6 +65,8 @@ describe('proposePredicates', () => {
     const ids = request.config.responseSchema.properties.moves.items.properties.predicate.enum
     expect(ids).toContain('hobby')
     expect(ids).toContain('keep')
+    expect(ids).not.toContain('misc')
+    expect(ids).not.toContain('relationship_to')
     expect(request.config.responseSchema.properties.moves.items.properties.id.type).toBe('INTEGER')
   })
 

@@ -5,7 +5,7 @@ import { config } from '../../config.js'
 import { logger } from '../../utils/logger.js'
 import { getJevClient } from '../jev/client.js'
 import { SAFETY_SETTINGS } from '../safetySettings.js'
-import { PREDICATES, type PredicateId, isKnownPredicate } from './predicates.js'
+import { PREDICATES, type PredicateId, isKnownPredicate, isMoveTarget } from './predicates.js'
 
 export type FactToFile = Readonly<{ id: number; predicate: PredicateId; value: string }>
 export type PredicateProposal = Readonly<{ id: number; predicate: PredicateId | 'keep' }>
@@ -26,7 +26,10 @@ const RESPONSE_SCHEMA = {
         type: Type.OBJECT,
         properties: {
           id: { type: Type.INTEGER },
-          predicate: { type: Type.STRING, enum: [...Object.keys(PREDICATES), 'keep'] }
+          predicate: {
+            type: Type.STRING,
+            enum: [...(Object.keys(PREDICATES) as PredicateId[]).filter(isMoveTarget), 'keep']
+          }
         },
         required: ['id', 'predicate']
       }

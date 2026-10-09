@@ -1317,9 +1317,64 @@ describe('tense, changes and retractions', () => {
       ],
       { durable_0: 0.9, attributed_0: 0.9, current_0: 0.9, past_0: 0.1, changes_0: 0.1 }
     )
-    expect(report).toMatchObject({ appliedOps: 0, rewordOps: 0, droppedOps: 1 })
+    expect(report).toMatchObject({ appliedOps: 1, rewordOps: 0, droppedOps: 0 })
     expect(evidenceCount(past.id)).toBe(1)
-    expect(activeFacts()).toEqual([{ value: 'nurse', period: 'past' }])
+    expect(activeFacts()).toEqual([
+      { value: 'registered nurse', period: 'current' },
+      { value: 'nurse', period: 'past' }
+    ])
+  })
+
+  it('writes a verified current update aimed at a past claim as the current fact and leaves the past one alone', async () => {
+    const nurse = seedClaim({ predicate: 'general_occupation', value: 'nurse', period: 'past' })
+    const teacher = seedClaim({ predicate: 'general_occupation', value: 'teacher' })
+    const report = await apply(
+      [
+        {
+          op: 'update',
+          subject,
+          existingId: nurse.id,
+          predicate: 'general_occupation',
+          value: 'doctor',
+          tense: 'current'
+        }
+      ],
+      { durable_0: 0.9, attributed_0: 0.9, current_0: 0.9, past_0: 0.1, changes_0: 0.9 }
+    )
+    expect(report).toMatchObject({ appliedOps: 1, changedOps: 1, droppedOps: 0, pastOps: 0 })
+    expect(activeFacts()).toEqual([
+      { value: 'doctor', period: 'current' },
+      { value: 'nurse', period: 'past' }
+    ])
+    expect(statusOf(teacher.id)).toEqual({ status: 'superseded', end_reason: 'superseded' })
+    expect(statusOf(nurse.id)).toEqual({ status: 'active', end_reason: null })
+    expect(evidenceCount(nurse.id)).toBe(1)
+  })
+
+  it('keeps the pin when a switch arrives as a retraction followed by the new value', async () => {
+    const nurse = seedClaim({ predicate: 'general_occupation', value: 'nurse', sourceKind: 'explicit' })
+    const report = await apply(
+      [
+        { op: 'retract', subject, predicate: 'general_occupation', value: 'nurse' },
+        { op: 'add', subject, predicate: 'general_occupation', value: 'teacher', tense: 'current' }
+      ],
+      {
+        durable_0: 0.9,
+        attributed_0: 0.9,
+        retracts_0_0: 0.9,
+        durable_1: 0.9,
+        attributed_1: 0.9,
+        current_1: 0.9,
+        past_1: 0.1,
+        same_as_1_0: 0.1
+      }
+    )
+    expect(report.appliedOps).toBeGreaterThan(0)
+    expect(activeFacts()).toEqual([{ value: 'teacher', period: 'current' }])
+    expect(
+      getDb().prepare("SELECT pinned FROM memory_claim WHERE value = 'teacher' AND status = 'active'").get()
+    ).toEqual({ pinned: 1 })
+    expect(statusOf(nurse.id)).not.toMatchObject({ status: 'active' })
   })
 
   it('retires a visible fact the speaker retracts', async () => {

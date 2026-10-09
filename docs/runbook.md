@@ -514,11 +514,14 @@ when nothing is a candidate. A moved fact keeps its pin, evidence and first-seen
   and `moved`. Problems log `Reclassification proposal failed`, `Reclassification confirmation failed`,
   `Memory reclassification failed` or `Skipped a reclassification`. The last is a single move that failed and was
   rolled back. It carries the claim ID, both predicates and the reason, never the fact's value. The reason is one of
-  `Claim is not active`, `Claim is already filed there`, `Target fact is not active` (the value under the new predicate
-  could not be made active), `Claim value is unsafe` (the value failed the safety check) or `Move would retire another
-fact` (the member would have lost a different active fact).
+  `Claim is not active`, `Claim is already filed there`, `Target fact was retracted or forgotten` (the member ended
+  that value under the new predicate, so the move would bring it back), `Target fact is not active` (the value under
+  the new predicate could not be made active), `Claim value is unsafe` (the value failed the safety check) or
+  `Move would retire another fact` (the member would have lost a different active fact).
 - **Audit:** every move writes a `claim_reclassified` event. It holds claim IDs, both predicates and the Jev
-  probability, never values. `created_at` is epoch milliseconds, and `old_id` is the ID the undo command takes.
+  probability, never values. `created_at` is epoch milliseconds, and `old_id` is the ID the undo command takes. These
+  events are never pruned by `metrics.retentionDays`: undo and the rule that an undone fact is never offered again
+  read them.
 
 ```sql
 SELECT created_at, json_extract(detail, '$.oldId') AS old_id, json_extract(detail, '$.newId') AS new_id,
@@ -540,6 +543,10 @@ FROM memory_claim WHERE id IN (<old_id>, <new_id>);
 Undo reactivates the old row, and ends the replacement when the move created or revived it. The fact is then never
 offered for reclassification again. It takes the old claim ID and prints `undone`, or `nothing to undo` when that row
 was not reclassified or is already restored. It is one transaction, so the bot keeps running.
+
+The command opens a second database connection, and opening one runs the startup migrations on the live database,
+including dropping and recreating the full-text-search triggers on `memory_claim`. A fact the bot writes in that
+instant would be left out of the search index. Run undo while the bot is idle, with no chat in its monitored channels.
 
 In production, run the compiled module inside the container. `scripts/` is not in the image and the image has no `tsx`,
 so `npm run` is not available there. Replace `OLD_ID` with the `old_id` from the query above:
