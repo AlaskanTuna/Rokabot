@@ -6,11 +6,12 @@ export const MEDIA_DIGEST_HEADING = '[Watched media'
 
 // Validation keeps no more than these, and the schema says so too: a model that writes past them runs into the
 // output ceiling and returns JSON cut off mid-entry, which parses as nothing.
-const MAX_TIMELINE = 8
+export const MAX_TIMELINE = 8
 const MAX_SPEECH = 12
 const MAX_ON_SCREEN_TEXT = 8
 const MAX_UNCERTAINTIES = 5
 const MAX_MOMENTS = 5
+const MAX_CLAIMS = 5
 
 export const MEDIA_OBSERVATIONS_SCHEMA: Schema = {
   type: Type.OBJECT,
@@ -56,10 +57,11 @@ export const MEDIA_OBSERVATIONS_SCHEMA: Schema = {
         required: ['bin', 'note']
       }
     },
+    claims: { type: Type.ARRAY, maxItems: String(MAX_CLAIMS), items: { type: Type.STRING } },
     style: { type: Type.STRING },
     uncertainties: { type: Type.ARRAY, maxItems: String(MAX_UNCERTAINTIES), items: { type: Type.STRING } }
   },
-  required: ['summary', 'timeline', 'speech', 'onScreenText', 'moments', 'style', 'uncertainties']
+  required: ['summary', 'timeline', 'speech', 'onScreenText', 'moments', 'claims', 'style', 'uncertainties']
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -213,6 +215,22 @@ export function validateObservations(
       }
     }
   }
+  let claims: string[] | undefined
+  if (raw.claims !== undefined) {
+    claims = []
+    if (!Array.isArray(raw.claims)) {
+      markIncomplete()
+    } else {
+      for (const value of raw.claims) {
+        const claim = boundedString(value, 300, markIncomplete)
+        if (claim === null || claims.length >= MAX_CLAIMS) {
+          markIncomplete()
+          continue
+        }
+        claims.push(claim)
+      }
+    }
+  }
   let style: string | undefined
   if (raw.style !== undefined) {
     style = boundedString(raw.style, 300, markIncomplete) ?? undefined
@@ -226,6 +244,7 @@ export function validateObservations(
       speech,
       onScreenText,
       ...(moments ? { moments } : {}),
+      ...(claims ? { claims } : {}),
       ...(style ? { style } : {}),
       uncertainties
     },
@@ -335,6 +354,8 @@ export function renderDigestBlock(digest: MediaDigest): string {
     return clip ? [`- ${formatClock(clip.startSec)}–${formatClock(clip.endSec)}: ${renderSingleLine(note)}`] : []
   })
   if (moments.length > 0) lines.push('Standout moments:', ...moments)
+  const claims = (observations.claims ?? []).map((claim) => `- ${renderSingleLine(claim)}`)
+  if (claims.length > 0) lines.push('Claims and pitch:', ...claims)
 
   const quotes = observations.speech.flatMap(({ bin, speaker, quote }) => {
     const clip = digest.bins[bin - 1]

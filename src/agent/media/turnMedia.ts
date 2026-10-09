@@ -13,7 +13,14 @@ import { type ImageAttachment, downloadAttachment, prepareAttachments } from '..
 import { embedEpisodeText } from '../memory/episodeEmbeddings.js'
 import { remainingTokensThisMinute } from '../tokenBudget.js'
 import { bytesContentKey, discordAttachmentContentKey } from './contentKey.js'
-import { formatClock, mergeHalves, renderCompactDigest, renderDigestBlock, watchOutcomeFor } from './digest.js'
+import {
+  MAX_TIMELINE,
+  formatClock,
+  mergeHalves,
+  renderCompactDigest,
+  renderDigestBlock,
+  watchOutcomeFor
+} from './digest.js'
 import { durationFromTokens, mp4DurationSec } from './duration.js'
 import { type UploadedFile, deleteFile, streamToFiles } from './filesUpload.js'
 import { type FrameSource, extractFrames, frameBins, frameCount, frameTimestamps, probeDurationSec } from './frames.js'
@@ -609,11 +616,14 @@ async function watchWithQwen(context: WatchContext): Promise<Attempt> {
   if (audio && !transcript) return failed('reason' in heard ? heard.reason : 'no_speech')
   if (!audio && kept.length < Math.max(2, Math.ceil(bins.length * MIN_FRAME_SHARE))) return failed('too_few_frames')
 
+  // The notes keep MAX_TIMELINE entries, so the timeline gets that many spans of the window rather than one per frame,
+  // which stopped the notes of a 19-frame watch a third of the way in.
+  const segments = frameBins(durationSec, Math.min(MAX_TIMELINE, bins.length), window)
   const watched = await watchFramesWithQwen(
     {
       kind,
       frames: kept.map(({ frame }) => frame),
-      bins: audio ? bins : kept.map(({ bin }) => bin),
+      bins: segments,
       ...(transcript ? { transcript } : {}),
       durationSec,
       label,

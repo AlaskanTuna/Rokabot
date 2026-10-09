@@ -4,6 +4,7 @@ import type { MediaClip, MediaDigest } from '../types.js'
 
 const mocks = vi.hoisted(() => ({
   memoryPrivacy: 'relaxed',
+  qwenMaxFrames: 4,
   prepareAttachments: vi.fn(),
   downloadAttachment: vi.fn(),
   measureAttachmentTokens: vi.fn(),
@@ -52,7 +53,7 @@ vi.mock('../../../config.js', () => ({
           model: 'Qwen/test',
           secondsPerFrame: 10,
           minFrames: 2,
-          maxFrames: 4,
+          maxFrames: mocks.qwenMaxFrames,
           frameHeight: 360,
           timeoutMs: 30_000
         },
@@ -188,6 +189,7 @@ const input = (attachments: Parameters<typeof prepareTurnMedia>[0]['attachments'
 
 beforeEach(() => {
   mocks.watcher = 'gemini'
+  mocks.qwenMaxFrames = 4
   mocks.qwenKey = undefined
   mocks.memoryPrivacy = 'relaxed'
   mocks.transcriberUrl = ''
@@ -1186,6 +1188,20 @@ describe('the qwen watcher', () => {
     expect(result.watchOutcome).toMatchObject({ status: 'watched' })
     expect(result.watchOutcome).not.toHaveProperty('fromLink')
     expect(result.watcherCalls).toBe(1)
+  })
+
+  // The notes keep at most 8 timeline entries; with one bin per frame a 19-frame watch stopped at 0:32 of 1:16.
+  it('groups many frames into at most 8 timeline bins spanning the whole video', async () => {
+    mocks.watcher = 'qwen'
+    mocks.qwenMaxFrames = 32
+
+    await prepareTurnMedia(input([{ ...upload, durationSec: 186 }]))
+
+    const watchInput = mocks.watchFramesWithQwen.mock.calls[0][0]
+    expect(watchInput.frames).toHaveLength(19)
+    expect(watchInput.bins).toHaveLength(8)
+    expect(watchInput.bins[0].startSec).toBe(0)
+    expect(watchInput.bins.at(-1).endSec).toBe(186)
   })
 
   it('takes fewer frames from a shorter video', async () => {

@@ -50,6 +50,7 @@ describe('MEDIA_OBSERVATIONS_SCHEMA', () => {
       'speech',
       'onScreenText',
       'moments',
+      'claims',
       'style',
       'uncertainties'
     ])
@@ -63,6 +64,52 @@ describe('MEDIA_OBSERVATIONS_SCHEMA', () => {
     expect(properties?.onScreenText.maxItems).toBe('8')
     expect(properties?.uncertainties.maxItems).toBe('5')
     expect(properties?.moments.maxItems).toBe('5')
+    expect(properties?.claims.maxItems).toBe('5')
+  })
+})
+
+// "Is this real or hype" was answered from notes that never said what the video promised or what it was selling.
+describe('claims and pitch', () => {
+  it('keeps up to five claims and marks the notes incomplete past that or for a non-string entry', () => {
+    const result = validateObservations(
+      {
+        ...rawObservations(),
+        claims: [
+          'Says the skill is the only one that fixes AI-looking websites.',
+          42,
+          ...Array.from({ length: 5 }, (_, index) => `Claim ${index}`)
+        ]
+      },
+      2
+    )
+
+    expect(result?.observations.claims).toEqual([
+      'Says the skill is the only one that fixes AI-looking websites.',
+      'Claim 0',
+      'Claim 1',
+      'Claim 2',
+      'Claim 3'
+    ])
+    expect(result?.incomplete).toBe(true)
+  })
+
+  it('accepts notes saved before claims existed', () => {
+    const result = validateObservations(rawObservations(), 2)
+    expect(result).toMatchObject({ incomplete: false })
+    expect(result?.observations.claims).toBeUndefined()
+  })
+
+  it('renders the claims under their own heading', () => {
+    const rendered = renderDigestBlock(
+      digest({
+        observations: {
+          ...rawObservations(),
+          claims: ['Comment SKILL to get the link: a comment-for-link pitch.']
+        }
+      })
+    )
+
+    expect(rendered).toContain('Claims and pitch:\n- Comment SKILL to get the link: a comment-for-link pitch.')
   })
 })
 
