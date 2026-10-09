@@ -123,6 +123,7 @@ memory:
   vaultExportDir: data/vault # Directory for read-only Obsidian vault exports
   extractionSampleRate: 0.1 # Share of rejected conversations (trivial or below Jev's admission threshold) kept as text for offline labelling; 0 disables, never sampled under privacy off
   extractionSampleDays: 14 # Days a rejected-conversation sample is kept before deletion
+  reclassifyMaxPerRun: 20 # Most misfiled facts moved to a better category per daily run; 0 turns automatic reclassification off
 
 metrics:
   retentionDays: 90 # Days before response and extraction events are auto-pruned

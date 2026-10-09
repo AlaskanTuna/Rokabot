@@ -120,6 +120,7 @@ interface YamlConfig {
     vaultExportDir?: string
     extractionSampleRate?: number
     extractionSampleDays?: number
+    reclassifyMaxPerRun?: number
   }
   metrics?: { retentionDays?: number; diagnosticsRetentionHours?: number }
   report?: {
@@ -359,7 +360,8 @@ export const config = {
     serverFactMinSimilarity: yaml.memory?.serverFactMinSimilarity ?? 0.65,
     vaultExportDir: envString('MEMORY_VAULT_EXPORT_DIR') ?? yaml.memory?.vaultExportDir ?? 'data/vault',
     extractionSampleRate: envNumber('MEMORY_EXTRACTION_SAMPLE_RATE') ?? yaml.memory?.extractionSampleRate ?? 0.1,
-    extractionSampleDays: envInt('MEMORY_EXTRACTION_SAMPLE_DAYS') ?? yaml.memory?.extractionSampleDays ?? 14
+    extractionSampleDays: envInt('MEMORY_EXTRACTION_SAMPLE_DAYS') ?? yaml.memory?.extractionSampleDays ?? 14,
+    reclassifyMaxPerRun: envInt('MEMORY_RECLASSIFY_MAX_PER_RUN') ?? yaml.memory?.reclassifyMaxPerRun ?? 20
   },
   metrics: {
     retentionDays: envInt('METRICS_RETENTION_DAYS') ?? yaml.metrics?.retentionDays ?? 90,
@@ -531,6 +533,7 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'memory.serverFactMinSimilarity', value: config.memory.serverFactMinSimilarity, min: 0, max: 1 },
   { path: 'memory.extractionSampleRate', value: config.memory.extractionSampleRate, min: 0, max: 1 },
   { path: 'memory.extractionSampleDays', value: config.memory.extractionSampleDays, min: 1, max: 90 },
+  { path: 'memory.reclassifyMaxPerRun', value: config.memory.reclassifyMaxPerRun, min: 0, max: 100 },
   { path: 'metrics.retentionDays', value: config.metrics.retentionDays, min: 1 },
   { path: 'metrics.diagnosticsRetentionHours', value: config.metrics.diagnosticsRetentionHours, min: 1 },
   { path: 'report.maxPerUserPerHour', value: config.report.maxPerUserPerHour, min: 1 },

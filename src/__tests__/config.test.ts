@@ -88,6 +88,7 @@ describe('config module', () => {
     vi.stubEnv('MEMORY_RECALL', '')
     vi.stubEnv('MEMORY_EXTRACTION_SAMPLE_RATE', '')
     vi.stubEnv('MEMORY_EXTRACTION_SAMPLE_DAYS', '')
+    vi.stubEnv('MEMORY_RECLASSIFY_MAX_PER_RUN', '')
     vi.stubEnv('METRICS_RETENTION_DAYS', '')
     vi.stubEnv('DISCORD_MAX_MESSAGE_LENGTH', '')
     vi.stubEnv('SOCIAL_POSTS_ENABLED', '')
@@ -464,6 +465,25 @@ describe('config module', () => {
 
     expect(overridden.config.memory.extractionSampleRate).toBe(0.25)
     expect(overridden.config.memory.extractionSampleDays).toBe(7)
+  })
+
+  it('loads the bounded reclassification cap and lets an env var override it', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+
+    const defaults = await import('../config.js')
+
+    expect(defaults.config.memory.reclassifyMaxPerRun).toBe(20)
+    expect(defaults.NUMERIC_BOUNDS.find(({ path }) => path === 'memory.reclassifyMaxPerRun')).toMatchObject({
+      min: 0,
+      max: 100
+    })
+
+    vi.resetModules()
+    vi.stubEnv('MEMORY_RECLASSIFY_MAX_PER_RUN', '5')
+    const overridden = await import('../config.js')
+
+    expect(overridden.config.memory.reclassifyMaxPerRun).toBe(5)
   })
 
   it('env vars override config.yml values', async () => {
@@ -1035,6 +1055,7 @@ describe('config module', () => {
       { path: 'memory.serverFactMinSimilarity', min: 0, max: 1 },
       { path: 'memory.extractionSampleRate', min: 0, max: 1 },
       { path: 'memory.extractionSampleDays', min: 1, max: 90 },
+      { path: 'memory.reclassifyMaxPerRun', min: 0, max: 100 },
       { path: 'metrics.diagnosticsRetentionHours', min: 1 },
       { path: 'metrics.retentionDays', min: 1 },
       { path: 'report.historyMaxAgeMs', min: 0 },

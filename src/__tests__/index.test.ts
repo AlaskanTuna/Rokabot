@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => {
     flushOpenEpisodes: vi.fn(),
     getDb: vi.fn(),
     pruneStaleClaims: vi.fn(),
+    reclassifyClaims: vi.fn().mockResolvedValue(0),
     pruneExtractionSamples: vi.fn().mockReturnValue(0),
     pruneFailedExtractionJobs: vi.fn(),
     ready: (handler: () => void) => {
@@ -48,6 +49,7 @@ vi.mock('../config.js', () => ({
 }))
 vi.mock('../agent/channelMonitor.js', () => ({ cleanupExpired: vi.fn(), restoreMonitoredChannels: vi.fn() }))
 vi.mock('../agent/memory/memoryClaims.js', () => ({ pruneStaleClaims: mocks.pruneStaleClaims }))
+vi.mock('../agent/memory/reclassify.js', () => ({ reclassifyClaims: mocks.reclassifyClaims }))
 vi.mock('../agent/memory/scheduler.js', () => ({
   startExtractionScheduler: mocks.startExtractionScheduler,
   stopExtractionScheduler: mocks.stopExtractionScheduler,
@@ -76,6 +78,7 @@ describe('startup memory tasks', () => {
     vi.resetModules()
     vi.clearAllMocks()
     mocks.pruneEpisodesAndReembed.mockResolvedValue({ deleted: 0, reembedded: 0, failed: 0 })
+    mocks.reclassifyClaims.mockResolvedValue(0)
   })
 
   afterEach(() => {
@@ -89,6 +92,10 @@ describe('startup memory tasks', () => {
     expect(mocks.resetStuckProcessing).toHaveBeenCalledOnce()
     expect(mocks.pruneFailedExtractionJobs).toHaveBeenCalledWith(7)
     expect(mocks.pruneStaleClaims).toHaveBeenCalledWith(90, 'bot-1')
+    expect(mocks.reclassifyClaims).toHaveBeenCalledOnce()
+    expect(mocks.pruneStaleClaims.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.reclassifyClaims.mock.invocationCallOrder[0]
+    )
     expect(mocks.startExtractionScheduler).toHaveBeenCalledOnce()
     expect(mocks.resetStuckProcessing.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.startExtractionScheduler.mock.invocationCallOrder[0]
@@ -117,15 +124,17 @@ describe('startup memory tasks', () => {
     finishMaintenance?.()
   })
 
-  it('runs episode maintenance from the daily claim-prune interval', async () => {
+  it('runs episode maintenance and reclassification from the daily claim-prune interval', async () => {
     vi.useFakeTimers()
     await import('../index.js')
     mocks.triggerReady()
 
     expect(mocks.pruneEpisodesAndReembed).toHaveBeenCalledOnce()
     expect(mocks.pruneFailedExtractionJobs).toHaveBeenCalledOnce()
+    expect(mocks.reclassifyClaims).toHaveBeenCalledOnce()
     await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1000)
 
+    expect(mocks.reclassifyClaims).toHaveBeenCalledTimes(2)
     expect(mocks.pruneEpisodesAndReembed).toHaveBeenCalledTimes(2)
     expect(mocks.pruneFailedExtractionJobs).toHaveBeenCalledTimes(2)
     vi.useRealTimers()
@@ -158,15 +167,21 @@ describe('startup memory tasks', () => {
     expect(mocks.startExtractionScheduler).toHaveBeenCalledOnce()
   })
 
-  it('catches background episode maintenance errors', async () => {
+  it('catches background episode maintenance and reclassification errors', async () => {
     const error = new Error('episode pruning failed')
+    const reclassifyError = new Error('reclassification failed')
     mocks.pruneEpisodesAndReembed.mockRejectedValueOnce(error)
+    mocks.reclassifyClaims.mockRejectedValueOnce(reclassifyError)
     await import('../index.js')
     mocks.triggerReady()
 
     await vi.waitFor(() =>
       expect(mocks.logger.error).toHaveBeenCalledWith({ err: error }, 'Failed to prune and repair memory episodes')
     )
+    await vi.waitFor(() =>
+      expect(mocks.logger.warn).toHaveBeenCalledWith({ err: reclassifyError }, 'Memory reclassification failed')
+    )
+    expect(mocks.startExtractionScheduler).toHaveBeenCalledOnce()
   })
 
   it('flushes open episodes and waits for active extraction before closing SQLite', async () => {
