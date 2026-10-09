@@ -600,14 +600,23 @@ async function watchWithQwen(context: WatchContext): Promise<Attempt> {
   )
   const timestamps = frameTimestamps(bins)
   const audio = kind === 'audio'
-  const [taken, heard] = await Promise.all([
-    audio
-      ? Promise.resolve([])
-      : extractFrames(source, timestamps, { height: config.media.qwen.frameHeight, timeoutMs: FRAME_TIMEOUT_MS }),
-    audioSource
-      ? transcribe(audioSource, audioWindows(durationSec, config.media.transcriber.maxAudioSec, window))
-      : Promise.resolve({ reason: 'no_audio' })
+  // watchMs times only the Qwen call; these say where the rest of the watch went.
+  const preparedAt = Date.now()
+  const elapsed = <T>(work: Promise<T>) => work.then((value) => ({ value, ms: Date.now() - preparedAt }))
+  const [framesTaken, transcribed] = await Promise.all([
+    elapsed(
+      audio
+        ? Promise.resolve([])
+        : extractFrames(source, timestamps, { height: config.media.qwen.frameHeight, timeoutMs: FRAME_TIMEOUT_MS })
+    ),
+    elapsed(
+      audioSource
+        ? transcribe(audioSource, audioWindows(durationSec, config.media.transcriber.maxAudioSec, window))
+        : Promise.resolve({ reason: 'no_audio' })
+    )
   ])
+  const taken = framesTaken.value
+  const heard = transcribed.value
   const transcript = 'reason' in heard || heard.segments.length === 0 ? undefined : heard
   const kept = bins.flatMap((bin, index) => {
     const frame = taken.find((item) => item.atSec === timestamps[index])
@@ -649,7 +658,10 @@ async function watchWithQwen(context: WatchContext): Promise<Attempt> {
       durationSec: Math.round(durationSec),
       frames: kept.length,
       transcript: 'reason' in heard ? heard.reason : { engine: heard.engine, speechSec: Math.round(heard.speechSec) },
+      framesMs: framesTaken.ms,
+      transcribeMs: transcribed.ms,
       watchMs: watched.watchMs,
+      totalMs: Date.now() - preparedAt,
       outcome: watched.status === 'ok' ? 'ok' : watched.reason
     },
     'Watched media'
