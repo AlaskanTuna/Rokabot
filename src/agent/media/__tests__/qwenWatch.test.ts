@@ -130,15 +130,33 @@ describe('watchFramesWithQwen request', () => {
     const content = requestBody(calls[0]).messages[0].content
     const images = content.filter((part) => part.type === 'image_url')
     expect(images).toHaveLength(2)
-    expect(content[0]).toEqual({ type: 'text', text: 'Frame 1 (bin 1) at 0:05' })
+    expect(content[0]).toEqual({ type: 'text', text: 'Frame 1 at 0:05 (bin 1)' })
     expect(content[1].type).toBe('image_url')
-    expect(content[2]).toEqual({ type: 'text', text: 'Frame 2 (bin 2) at 0:15' })
+    expect(content[2]).toEqual({ type: 'text', text: 'Frame 2 at 0:15 (bin 2)' })
     expect(content[3].type).toBe('image_url')
     for (const [index, image] of images.entries()) {
       const url = image.image_url?.url ?? ''
       expect(url.startsWith('data:image/jpeg;base64,')).toBe(true)
       expect(Buffer.from(url.slice('data:image/jpeg;base64,'.length), 'base64')).toEqual(frames[index].jpeg)
     }
+  })
+
+  // The timeline keeps 8 entries, so with one bin per frame the notes of a 19-frame watch stopped at 0:32 of 1:16.
+  it('labels each frame with the bin its time falls in when several frames share a bin', async () => {
+    const { fetchImpl, calls } = fakeFetch()
+    const four = [2.5, 7.5, 12.5, 17.5].map((atSec) => ({ atSec, jpeg: Buffer.from([0xff, 0xd8]) }))
+
+    await watchFramesWithQwen(input({ frames: four }), settings({ fetchImpl }))
+
+    const labels = requestBody(calls[0])
+      .messages[0].content.filter((part) => part.type === 'text' && part.text?.startsWith('Frame '))
+      .map((part) => part.text)
+    expect(labels).toEqual([
+      'Frame 1 at 0:03 (bin 1)',
+      'Frame 2 at 0:08 (bin 1)',
+      'Frame 3 at 0:13 (bin 2)',
+      'Frame 4 at 0:18 (bin 2)'
+    ])
   })
 
   it('states the shared watch instructions, the no-sound rule and the JSON shape in the closing text', async () => {
@@ -149,10 +167,10 @@ describe('watchFramesWithQwen request', () => {
     const text = promptText(calls[0])
     expect(text).toContain('Bin 1: 0:00–0:10')
     expect(text).toContain('Bin 2: 0:10–0:20')
-    expect(text).toContain('still frames, one per bin, in order')
+    expect(text).toContain('still frames in time order, not video')
     expect(text).toContain("every timeline `audio` must be '' and `speech` must be empty")
     expect(text).toContain(
-      '{"summary": string, "timeline": [{"bin": int, "visual": string, "audio": string}], "speech": [], "onScreenText": [{"bin": int, "text": string}], "moments": [{"bin": int, "note": string}], "style": string, "uncertainties": [string]}'
+      '{"summary": string, "timeline": [{"bin": int, "visual": string, "audio": string}], "speech": [], "onScreenText": [{"bin": int, "text": string}], "moments": [{"bin": int, "note": string}], "claims": [string], "style": string, "uncertainties": [string]}'
     )
     expect(text).toContain('Reply with that JSON object only.')
     expect(text).toContain('what is she cutting?')
@@ -422,6 +440,18 @@ describe('watchFramesWithQwen transcript prompt', () => {
     expect(text).toContain("or '' when nothing is")
     expect(text).toContain('Music and other sounds cannot be heard, so never describe them.')
     expect(text).not.toContain('The sound cannot be heard')
+  })
+
+  // The shape used to show `"speech": []` even with a transcript, so the quotes always came back empty.
+  it('asks for quoted speech entries in the JSON shape when there is a transcript', async () => {
+    const { fetchImpl, calls } = fakeFetch()
+
+    await watchFramesWithQwen(input({ transcript }), settings({ fetchImpl }))
+
+    const text = promptText(calls[0])
+    expect(text).toContain('"speech": [{"bin": int, "speaker": string or null, "quote": string}]')
+    expect(text).not.toContain('"speech": []')
+    expect(text).toContain('spread across the whole video')
   })
 
   it('keeps the no-sound rule and adds no transcript part when the transcript has no segments', async () => {

@@ -26,6 +26,8 @@ export interface MediaObservations {
   onScreenText: Array<{ bin: number; text: string }>
   /** What a viewer would bring up afterwards. Absent from notes saved before it existed. */
   moments?: Array<{ bin: number; note: string }>
+  /** What it asserts or promises, the evidence it shows, and any pitch. Absent from notes saved before it existed. */
+  claims?: string[]
   /** How it is made: format, editing, pacing, sound, tone. Absent from notes saved before it existed. */
   style?: string
   uncertainties: string[]

@@ -13,7 +13,14 @@ import { type ImageAttachment, downloadAttachment, prepareAttachments } from '..
 import { embedEpisodeText } from '../memory/episodeEmbeddings.js'
 import { remainingTokensThisMinute } from '../tokenBudget.js'
 import { bytesContentKey, discordAttachmentContentKey } from './contentKey.js'
-import { formatClock, mergeHalves, renderCompactDigest, renderDigestBlock, watchOutcomeFor } from './digest.js'
+import {
+  MAX_TIMELINE,
+  formatClock,
+  mergeHalves,
+  renderCompactDigest,
+  renderDigestBlock,
+  watchOutcomeFor
+} from './digest.js'
 import { durationFromTokens, mp4DurationSec } from './duration.js'
 import { type UploadedFile, deleteFile, streamToFiles } from './filesUpload.js'
 import { type FrameSource, extractFrames, frameBins, frameCount, frameTimestamps, probeDurationSec } from './frames.js'
@@ -593,14 +600,23 @@ async function watchWithQwen(context: WatchContext): Promise<Attempt> {
   )
   const timestamps = frameTimestamps(bins)
   const audio = kind === 'audio'
-  const [taken, heard] = await Promise.all([
-    audio
-      ? Promise.resolve([])
-      : extractFrames(source, timestamps, { height: config.media.qwen.frameHeight, timeoutMs: FRAME_TIMEOUT_MS }),
-    audioSource
-      ? transcribe(audioSource, audioWindows(durationSec, config.media.transcriber.maxAudioSec, window))
-      : Promise.resolve({ reason: 'no_audio' })
+  // watchMs times only the Qwen call; these say where the rest of the watch went.
+  const preparedAt = Date.now()
+  const elapsed = <T>(work: Promise<T>) => work.then((value) => ({ value, ms: Date.now() - preparedAt }))
+  const [framesTaken, transcribed] = await Promise.all([
+    elapsed(
+      audio
+        ? Promise.resolve([])
+        : extractFrames(source, timestamps, { height: config.media.qwen.frameHeight, timeoutMs: FRAME_TIMEOUT_MS })
+    ),
+    elapsed(
+      audioSource
+        ? transcribe(audioSource, audioWindows(durationSec, config.media.transcriber.maxAudioSec, window))
+        : Promise.resolve({ reason: 'no_audio' })
+    )
   ])
+  const taken = framesTaken.value
+  const heard = transcribed.value
   const transcript = 'reason' in heard || heard.segments.length === 0 ? undefined : heard
   const kept = bins.flatMap((bin, index) => {
     const frame = taken.find((item) => item.atSec === timestamps[index])
@@ -609,11 +625,14 @@ async function watchWithQwen(context: WatchContext): Promise<Attempt> {
   if (audio && !transcript) return failed('reason' in heard ? heard.reason : 'no_speech')
   if (!audio && kept.length < Math.max(2, Math.ceil(bins.length * MIN_FRAME_SHARE))) return failed('too_few_frames')
 
+  // The notes keep MAX_TIMELINE entries, so the timeline gets that many spans of the window rather than one per frame,
+  // which stopped the notes of a 19-frame watch a third of the way in.
+  const segments = frameBins(durationSec, Math.min(MAX_TIMELINE, bins.length), window)
   const watched = await watchFramesWithQwen(
     {
       kind,
       frames: kept.map(({ frame }) => frame),
-      bins: audio ? bins : kept.map(({ bin }) => bin),
+      bins: segments,
       ...(transcript ? { transcript } : {}),
       durationSec,
       label,
@@ -639,7 +658,10 @@ async function watchWithQwen(context: WatchContext): Promise<Attempt> {
       durationSec: Math.round(durationSec),
       frames: kept.length,
       transcript: 'reason' in heard ? heard.reason : { engine: heard.engine, speechSec: Math.round(heard.speechSec) },
+      framesMs: framesTaken.ms,
+      transcribeMs: transcribed.ms,
       watchMs: watched.watchMs,
+      totalMs: Date.now() - preparedAt,
       outcome: watched.status === 'ok' ? 'ok' : watched.reason
     },
     'Watched media'

@@ -2,7 +2,7 @@ import { MediaResolution } from '@google/genai'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MEDIA_OBSERVATIONS_SCHEMA } from '../digest.js'
 import type { CoveragePlan, MediaObservations } from '../types.js'
-import { countUriTokens, watchMedia } from '../watch.js'
+import { countUriTokens, instructions, watchMedia } from '../watch.js'
 import type { WatchSource } from '../watch.js'
 
 const mocks = vi.hoisted(() => ({
@@ -521,5 +521,24 @@ describe('watchMedia over one half of a long video', () => {
 
     expect(parts[0].videoMetadata).toEqual({ fps: 1 })
     expect(parts.at(-1).text).not.toContain('of a longer video')
+  })
+})
+
+describe('instructions', () => {
+  const bins = [
+    { startSec: 0, endSec: 40 },
+    { startSec: 40, endSec: 76 }
+  ]
+
+  it('asks for one timeline entry per bin so the notes reach the end of the video', () => {
+    expect(instructions(bins, 'is this real?', false)).toContain(
+      'Give the timeline one entry for each bin, in order, so it covers the whole span.'
+    )
+  })
+
+  it('asks for the claims, the evidence shown and any pitch or call to action', () => {
+    const text = instructions(bins, 'is this real?', false)
+    expect(text).toContain('In claims, list what it asserts or promises as fact and what evidence it shows')
+    expect(text).toContain('any call to action or sales pitch')
   })
 })
