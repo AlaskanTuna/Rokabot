@@ -65,6 +65,9 @@ interface JikanResponse {
   }
 }
 
+/** Jikan's largest page, so the score sort sees the most entries in the one request each handler makes */
+const JIKAN_PAGE_SIZE = 25
+
 const VALID_DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const
 
 const BROADCAST_TIMEZONES: Record<string, string> = {
@@ -213,7 +216,7 @@ async function handleDay(day: string | undefined, sortBy: string, limit: number)
     return { scope: 'day', label, entries: [], total: 0 }
   }
 
-  const url = `https://api.jikan.moe/v4/schedules?filter=${encodeURIComponent(resolved)}&sfw=true&limit=${limit}`
+  const url = `https://api.jikan.moe/v4/schedules?filter=${encodeURIComponent(resolved)}&sfw=true&limit=${JIKAN_PAGE_SIZE}`
   const body = await fetchJikan(url)
 
   if (!body?.data) {
@@ -221,12 +224,12 @@ async function handleDay(day: string | undefined, sortBy: string, limit: number)
   }
 
   const total = body.pagination?.items?.total ?? body.data.length
-  const entries = sortEntries(body.data.map(mapEntry), sortBy)
+  const entries = sortEntries(body.data.map(mapEntry), sortBy).slice(0, limit)
   return { scope: 'day', label, entries, total }
 }
 
 async function handleWeek(sortBy: string, limit: number): Promise<GetAnimeScheduleResult> {
-  const url = `https://api.jikan.moe/v4/schedules?sfw=true&limit=${limit}`
+  const url = `https://api.jikan.moe/v4/schedules?sfw=true&limit=${JIKAN_PAGE_SIZE}`
   const body = await fetchJikan(url)
 
   if (!body?.data) {
@@ -234,7 +237,7 @@ async function handleWeek(sortBy: string, limit: number): Promise<GetAnimeSchedu
   }
 
   const total = body.pagination?.items?.total ?? body.data.length
-  const entries = sortEntries(body.data.map(mapEntry), sortBy)
+  const entries = sortEntries(body.data.map(mapEntry), sortBy).slice(0, limit)
   return { scope: 'week', label: 'This Week', entries, total }
 }
 
@@ -242,7 +245,7 @@ async function handleSeason(sortBy: string, limit: number): Promise<GetAnimeSche
   const { season, year } = getCurrentSeason()
   const label = `${season.charAt(0).toUpperCase() + season.slice(1)} ${year}`
 
-  const url = `https://api.jikan.moe/v4/seasons/now?sfw=true&limit=${limit}`
+  const url = `https://api.jikan.moe/v4/seasons/now?sfw=true&limit=${JIKAN_PAGE_SIZE}`
   const body = await fetchJikan(url)
 
   if (!body?.data) {
@@ -250,7 +253,7 @@ async function handleSeason(sortBy: string, limit: number): Promise<GetAnimeSche
   }
 
   const total = body.pagination?.items?.total ?? body.data.length
-  const entries = sortEntries(body.data.map(mapEntry), sortBy)
+  const entries = sortEntries(body.data.map(mapEntry), sortBy).slice(0, limit)
   return { scope: 'season', label, entries, total }
 }
 
