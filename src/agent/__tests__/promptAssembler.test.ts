@@ -207,6 +207,12 @@ describe('docs/trd.md ToneKey table', () => {
   })
 })
 
+describe('core prompt wording', () => {
+  it('keeps the word measurements whole', () => {
+    expect(CORE_PROMPT).toContain('your measurements directly')
+  })
+})
+
 describe('memory tool rules', () => {
   it('reach the model as plain code spans, not escaped backticks', () => {
     expect(CORE_PROMPT).not.toContain('\\`')

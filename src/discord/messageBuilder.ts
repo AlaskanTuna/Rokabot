@@ -29,7 +29,8 @@ const TOOL_USAGE_LABELS: Record<string, string> = {
   list_reminders: 'listed reminders',
   cancel_reminder: 'cancelled a reminder',
   remember_user: 'saved a memory',
-  recall_user: 'recalled a memory'
+  recall_user: 'recalled a memory',
+  forget_user: 'forgot a memory'
 }
 
 const SOCIAL_POST_KINDS: Record<SocialPlatform, string> = {
