@@ -330,6 +330,11 @@ function parse(source: string, state: State): string {
   return html + textHtml(text, state)
 }
 
+/** Escape plain text such as a button label, swapping Unicode emoji for Twemoji the way the client does. */
+export function renderPlainText(text: string): string {
+  return textHtml(text, { ctx: {}, inline: true, inQuote: false, jumbo: false })
+}
+
 /** Render Discord-flavoured markdown to HTML the way the Discord client lays it out (newlines kept for pre-wrap). */
 export function renderMarkdown(source: string, ctx: MarkdownContext = {}): string {
   return parse(source, { ctx, inline: false, inQuote: false, jumbo: isJumbo(source) })

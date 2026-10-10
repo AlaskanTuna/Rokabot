@@ -1,4 +1,4 @@
-import { type MarkdownContext, escapeHtml, renderMarkdown } from './markdown.js'
+import { type MarkdownContext, escapeHtml, renderMarkdown, renderPlainText } from './markdown.js'
 import { PREVIEW_SCRIPT, PREVIEW_STYLES } from './styles.js'
 
 export interface PreviewAuthor {
@@ -101,14 +101,14 @@ function emojiHtml(emoji: unknown): string {
     const animated = object.animated === true ? '&animated=true' : ''
     return `<img class="emoji" src="https://cdn.discordapp.com/emojis/${id}.webp?size=48${animated}&quality=lossless" alt=":${escapeHtml(str(object.name) ?? '')}:" draggable="false">`
   }
-  return renderMarkdown(str(object.name) ?? '')
+  return renderPlainText(str(object.name) ?? '')
 }
 
 function mediaHtml(url: string, description: string | null): string {
   const alt = escapeHtml(description ?? '')
   return /\.(mp4|webm|mov)(\?|$)/i.test(url)
     ? `<video src="${escapeHtml(url)}" controls muted preload="metadata"></video>`
-    : `<img src="${escapeHtml(url)}" alt="${alt}" loading="lazy" draggable="false">`
+    : `<img src="${escapeHtml(url)}" alt="${alt}" draggable="false">`
 }
 
 function spoilerWrap(html: string, spoiler: unknown): string {
@@ -121,7 +121,7 @@ function renderButton(button: JsonObject): string {
   const style = BUTTON_STYLES[Number(button.style)] ?? 'secondary'
   const emoji = button.emoji ? `<span class="cv2-button-emoji">${emojiHtml(button.emoji)}</span>` : ''
   const label = str(button.label)
-    ? `<span class="cv2-button-label">${renderMarkdown(str(button.label) ?? '', {})}</span>`
+    ? `<span class="cv2-button-label">${renderPlainText(str(button.label) ?? '')}</span>`
     : ''
   if (style === 'link') {
     const href = escapeHtml(str(button.url) ?? '#')
@@ -133,7 +133,7 @@ function renderButton(button: JsonObject): string {
 function renderSelect(select: JsonObject): string {
   const chosen = asObjects(select.options).filter((option) => option.default === true)
   const shown = chosen.length
-    ? `<span class="cv2-select-value">${chosen.map((option) => escapeHtml(str(option.label) ?? '')).join(', ')}</span>`
+    ? `<span class="cv2-select-value">${chosen.map((option) => renderPlainText(str(option.label) ?? '')).join(', ')}</span>`
     : `<span class="cv2-select-placeholder">${escapeHtml(str(select.placeholder) ?? 'Make a selection')}</span>`
   return `<div class="cv2-select${select.disabled ? ' disabled' : ''}">${shown}${CHEVRON_ICON}</div>`
 }
@@ -310,12 +310,17 @@ function nameHtml(author: PreviewAuthor, className: string): string {
 
 const BOT_TAG = '<span class="bot-tag"><span class="bot-tag-text">APP</span></span>'
 
+function reactionEmoji(emoji: string): string {
+  const custom = /^<(a?):(\w+):(\d+)>$/.exec(emoji)
+  return custom ? emojiHtml({ animated: custom[1] === 'a', name: custom[2], id: custom[3] }) : renderPlainText(emoji)
+}
+
 function renderReactions(reactions: readonly PreviewReaction[] | undefined): string {
   if (!reactions?.length) return ''
   const pills = reactions
     .map(
       (reaction) =>
-        `<div class="reaction${reaction.me ? ' reacted' : ''}">${renderMarkdown(reaction.emoji).replace(' jumbo', '')}<span class="reaction-count">${reaction.count}</span></div>`
+        `<div class="reaction${reaction.me ? ' reacted' : ''}">${reactionEmoji(reaction.emoji)}<span class="reaction-count">${reaction.count}</span></div>`
     )
     .join('')
   return `<div class="reactions">${pills}</div>`

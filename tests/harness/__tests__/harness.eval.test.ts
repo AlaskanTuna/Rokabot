@@ -1,4 +1,6 @@
-import { resolve } from 'node:path'
+import { mkdtemp, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import '../env.js'
 import { assertClaim } from '../../../src/agent/memory/memoryClaims.js'
@@ -129,6 +131,25 @@ describe('harness self-tests', () => {
     expect(report.output).toContain('handler_total')
     expect(report.output).toContain('discord_overhead')
     expect(mocks.generateContent).not.toHaveBeenCalled()
+  })
+
+  it("answers with a transcript line's scripted reply and exposes the captured records", async () => {
+    const path = join(await mkdtemp(join(tmpdir(), 'roka-transcript-')), 'scripted.jsonl')
+    const line = {
+      kind: 'message',
+      guildId: 'guild-scripted',
+      channelId: 'scripted-room',
+      userId: 'mio',
+      displayName: 'Mio',
+      content: '<@roka> hello',
+      reply: 'Exactly this **scripted** reply'
+    }
+    await writeFile(path, `${JSON.stringify(line)}\n`)
+
+    const [turn] = (await runTranscript(path)).turns
+
+    expect(turn.rendered).toEqual(expect.arrayContaining([expect.stringContaining('Exactly this **scripted** reply')]))
+    expect(turn.records.map((record) => record.kind)).toContain('reply')
   })
 
   it('records self-consistent handler and fake-model timing fields', async () => {
