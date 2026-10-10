@@ -163,6 +163,27 @@ describe('startReminderScheduler', () => {
     expect(channel.send).toHaveBeenCalledTimes(1)
   })
 
+  it('does not resend a reminder while a slow delivery is still in flight', async () => {
+    const channel = sender()
+    let releaseChannel: (value: FakeSender) => void = () => {}
+    channels.set(
+      'ch-1',
+      new Promise<FakeSender>((resolve) => {
+        releaseChannel = resolve
+      })
+    )
+    createReminder('user-1', 'ch-1', 'buy milk', NOW)
+
+    startReminderScheduler(client)
+    await advanceChecks(4)
+    expect(channel.send).not.toHaveBeenCalled()
+
+    releaseChannel(channel)
+    await advanceChecks()
+
+    expect(channel.send).toHaveBeenCalledTimes(1)
+  })
+
   it('delivers a reminder that is up to five minutes overdue', async () => {
     const channel = sender()
     channels.set('ch-1', channel)
