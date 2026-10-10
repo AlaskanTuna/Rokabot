@@ -53,7 +53,7 @@ export const flipCoinTool = new FunctionTool({
 export const getCurrentTimeTool = new FunctionTool({
   name: 'get_current_time',
   description:
-    'Get the current time, date, and day of the week for a location. IMPORTANT: Always report the exact time returned by this tool — never estimate or guess the time yourself.',
+    'Get the current time, date, and day of the week for a location. IMPORTANT: Always report the exact time returned by this tool — never estimate or guess the time yourself. If ok is false, ask the user for the country or an IANA timezone instead of answering.',
   parameters: z.object({
     location: z
       .string()
