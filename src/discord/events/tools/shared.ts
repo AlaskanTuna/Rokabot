@@ -8,19 +8,6 @@ export const CURIOUS_COLOR = 0xb2ebf2
 
 // In-character flavor lines prepended to each tool response
 export const FLAVOR = {
-  roll_dice: [
-    'Fufu~ let me see what fate has in store~',
-    'Alright, rolling! \u266a',
-    'Here goes nothing~!',
-    'Let the dice decide your destiny~'
-  ],
-  flip_coin: [
-    'Heads or tails~ here we go!',
-    'Let me flip this for you~',
-    'Fufu~ I wonder which side it lands on~',
-    'Watch carefully~!'
-  ],
-  time: ['Let me check for you~', 'Hmm, what time is it over there~?', 'One moment~ let me look at the clock!'],
   anime: ['Ooh, let me look that up! \u266a', 'Anime search time~ fufu~', 'Let me see what I can find~!'],
   schedule: ["Let's see what's airing~", 'Checking the schedule for you! \u266a', "Time to see what's on today~"],
   weather: [

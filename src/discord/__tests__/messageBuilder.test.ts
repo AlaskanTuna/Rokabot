@@ -107,7 +107,8 @@ const TOOL_NAMES = [
   'list_reminders',
   'cancel_reminder',
   'remember_user',
-  'recall_user'
+  'recall_user',
+  'forget_user'
 ]
 
 // MAX_TOOL_FOOTER_CHARS is derived from the longest label of each kind plus the widest overflow count, and
@@ -466,7 +467,8 @@ describe('buildRokaMessage', () => {
     ['list_reminders', 'listed reminders'],
     ['cancel_reminder', 'cancelled a reminder'],
     ['remember_user', 'saved a memory'],
-    ['recall_user', 'recalled a memory']
+    ['recall_user', 'recalled a memory'],
+    ['forget_user', 'forgot a memory']
   ])('renders the approved label for %s', (toolName, label) => {
     expect(payloadJson('A ritual completed~', [toolName])).toContain(footerFor([label]))
   })
