@@ -98,11 +98,8 @@ describe('harness token measurement', () => {
     expect(CORE_PROMPT).toContain('### Presenting What You Looked Up or Watched')
     expect(CORE_PROMPT).toContain('About 70% of the reply is the content and about 30% is your own reaction.')
     expect(CORE_PROMPT).toContain('At most 120 words for something you looked up and 180 for something you watched')
-    expect(CORE_PROMPT).toContain('A bigger one may take two blocks, never more')
+    expect(CORE_PROMPT).toContain('a bigger one takes the shapes under Formatting Your Reply')
     expect(CORE_PROMPT).toContain('**Bold** the names, numbers and key moments')
-    expect(CORE_PROMPT).toContain('a short bulleted list of at most five items')
-    expect(CORE_PROMPT).toContain('give steps as a numbered list')
-    expect(CORE_PROMPT).toContain('wrap an ending or plot twist in ||spoiler|| tags')
     expect(CORE_PROMPT).toContain("Never fill in a name, number, command or quote your results or notes don't contain")
   })
 
@@ -111,12 +108,40 @@ describe('harness token measurement', () => {
   })
 
   // "Is this real or hype" on a watched reel got banter and no verdict, where it needed one and the evidence for it.
-  it('keeps judgement questions to a verdict first, real and hype lists, and a search of what it names', () => {
+  it('keeps judgement questions to a verdict first, its evidence, and a search of what it names', () => {
     expect(CORE_PROMPT).toContain(
-      'When they ask you to judge it (real or hype, legit, true, worth it), your first sentence is the verdict.'
+      'When they ask you to judge it (real or hype, legit, true, worth it), your first sentence is the verdict, then the evidence that decides it'
     )
-    expect(CORE_PROMPT).toContain("**What's real:** and **What's hype:**")
     expect(CORE_PROMPT).toContain('call `search_web` on the people, products and claims it names')
+  })
+
+  // A fixed real-versus-hype layout turned up wherever "true" or "worth it" did; the shape now follows the content.
+  it('no longer forces real and hype lists onto a judgement', () => {
+    expect(CORE_PROMPT).not.toContain("What's real")
+    expect(CORE_PROMPT).not.toContain("What's hype")
+  })
+
+  // Formatting was taught only for searched and watched turns, so every other reply had no guide to its shape.
+  it('teaches every reply its shape by intent, within three blocks', () => {
+    expect(SPEECH_PROMPT).toContain('### Formatting Your Reply')
+    expect(SPEECH_PROMPT).toContain(
+      'A reply has at most three blocks. A paragraph, a list, a quote and a code block each count as one; a divider counts as none.'
+    )
+    expect(SPEECH_PROMPT).toContain('Never turn chat into a list.')
+    expect(SPEECH_PROMPT).toContain('three or more parallel things')
+    expect(SPEECH_PROMPT).toContain('Up to five items')
+    expect(SPEECH_PROMPT).toContain('never a list inside a list')
+    expect(SPEECH_PROMPT).toContain('steps that must happen in order')
+    expect(SPEECH_PROMPT).toContain('Give it its own line starting with >')
+    expect(SPEECH_PROMPT).toContain('a line of just --- between two parts that do different jobs')
+    expect(SPEECH_PROMPT).toContain('wrap an ending, a plot twist or a quiz answer in ||spoiler|| tags')
+    expect(SPEECH_PROMPT).toContain('Never headers, tables, underline or strikethrough.')
+    expect(SPEECH_PROMPT).toContain('stay in one paragraph unless they asked for steps or a list')
+  })
+
+  it('keeps bold for the words that carry weight rather than a per-reply quota', () => {
+    expect(SPEECH_PROMPT).not.toContain('aim for 2-5 bold phrases per response')
+    expect(SPEECH_PROMPT).toContain('a quiet, tender moment may need none')
   })
 
   // Code arrived as unformatted prose, and her kaomoji's backtick paired with real code spans.

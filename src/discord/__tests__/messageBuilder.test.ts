@@ -578,3 +578,47 @@ describe('openedPostCitation', () => {
     expect(openedPostCitation(['Mou~', `${footer}\n${citation}`])).toBeNull()
   })
 })
+
+describe('buildRokaMessage dividers', () => {
+  const SEPARATOR = { type: 14, divider: true, spacing: 1 }
+
+  function rendered(text: string, toolsUsed: string[] = []) {
+    return buildRokaMessage(text, 'playful', toolsUsed).components[0].toJSON().components
+  }
+
+  it('draws a --- line as a separator between two text blocks', () => {
+    const [section, separator, after, ...rest] = rendered('The answer.\n\n---\n\nMy take~')
+
+    expect(section).toMatchObject({ type: 9, components: [{ type: 10, content: 'The answer.' }] })
+    expect(separator).toMatchObject(SEPARATOR)
+    expect(after).toMatchObject({ type: 10, content: 'My take~' })
+    expect(rest).toEqual([])
+  })
+
+  it('keeps the tool footer last, after the divided reply', () => {
+    const components = rendered('The answer.\n---\nMy take~', ['roll_dice'])
+
+    expect(components.at(-3)).toMatchObject({ type: 10, content: 'My take~' })
+    expect(components.at(-2)).toMatchObject(SEPARATOR)
+    expect(components.at(-1)).toMatchObject({ type: 10, content: footerFor(['cast the dice']) })
+  })
+
+  it('leaves a dash rule inside a code block as code', () => {
+    const text = 'Front matter:\n```md\n---\ntitle: x\n---\n```'
+
+    expect(rendered(text)).toEqual([expect.objectContaining({ type: 9, components: [{ type: 10, content: text }] })])
+  })
+
+  it('draws at most two dividers and keeps the rest of the reply in the last block', () => {
+    const components = rendered('A\n---\nB\n---\nC\n---\nD')
+
+    expect(components.filter((component) => component.type === 14)).toHaveLength(2)
+    expect(components.at(-1)).toMatchObject({ type: 10, content: 'C\n\nD' })
+  })
+
+  it('renders a reply without a divider as one section', () => {
+    expect(rendered('Just one paragraph~')).toEqual([
+      expect.objectContaining({ type: 9, components: [{ type: 10, content: 'Just one paragraph~' }] })
+    ])
+  })
+})
