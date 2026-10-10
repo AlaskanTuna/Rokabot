@@ -43,6 +43,23 @@ describe('getCurrentTime', () => {
     })
   })
 
+  it('resolves a mapped city written with its country', () => {
+    expect(getCurrentTime({ location: 'Tokyo, Japan' })).toMatchObject({
+      ok: true,
+      location: 'Tokyo, Japan',
+      timezone: 'Asia/Tokyo',
+      time: '13:00:00'
+    })
+  })
+
+  it('keeps an unmapped city with a country as unknown', () => {
+    expect(getCurrentTime({ location: 'Atlantis, Nowhere' })).toEqual({
+      ok: false,
+      reason: 'unknown location',
+      location: 'Atlantis, Nowhere'
+    })
+  })
+
   it('resolves an IANA timezone name', () => {
     expect(getCurrentTime({ location: 'Asia/Tokyo' })).toMatchObject({
       ok: true,
