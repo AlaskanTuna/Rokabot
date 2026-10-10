@@ -90,12 +90,19 @@ export interface FailureDiagnosticInput {
 }
 
 let responseEventStatement: Database.Statement | undefined
+let responseEventDatabase: Database.Database | undefined
 let failureDiagnosticStatement: Database.Statement | undefined
+let failureDiagnosticDatabase: Database.Database | undefined
 let extractionEventStatement: Database.Statement | undefined
+let extractionEventDatabase: Database.Database | undefined
 let memoryEventStatement: Database.Statement | undefined
+let memoryEventDatabase: Database.Database | undefined
 
 function getResponseEventStatement(): Database.Statement {
-  responseEventStatement ??= getDb().prepare(
+  const database = getDb()
+  if (responseEventDatabase === database && responseEventStatement) return responseEventStatement
+  responseEventDatabase = database
+  responseEventStatement = database.prepare(
     `INSERT INTO response_events (
       guild_id, channel_id, user_id, trigger, tone, outcome, kind, e2e_ms, generate_ms, llm_ms,
       retry_latency_ms, retries, tokens_in_est, tokens_out_est, tools_used, failure_marker, model, hedged, created_at
@@ -105,7 +112,10 @@ function getResponseEventStatement(): Database.Statement {
 }
 
 function getFailureDiagnosticStatement(): Database.Statement {
-  failureDiagnosticStatement ??= getDb().prepare(
+  const database = getDb()
+  if (failureDiagnosticDatabase === database && failureDiagnosticStatement) return failureDiagnosticStatement
+  failureDiagnosticDatabase = database
+  failureDiagnosticStatement = database.prepare(
     `INSERT INTO failure_diagnostics (
       guild_id, channel_id, user_id, outcome, kind, failure_marker, block_side, finish_reason,
       safety_ratings, error_message, safety_rungs_used, attempts, tone, image_count, image_mimes,
@@ -161,7 +171,10 @@ export function pruneFailureDiagnostics(retentionHours: number): number {
 }
 
 function getExtractionEventStatement(): Database.Statement {
-  extractionEventStatement ??= getDb().prepare(
+  const database = getDb()
+  if (extractionEventDatabase === database && extractionEventStatement) return extractionEventStatement
+  extractionEventDatabase = database
+  extractionEventStatement = database.prepare(
     `INSERT INTO extraction_events (
       guild_id, channel_id, duration_ms, outcome, facts_extracted, facts_saved, created_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?)`
@@ -170,7 +183,10 @@ function getExtractionEventStatement(): Database.Statement {
 }
 
 function getMemoryEventStatement(): Database.Statement {
-  memoryEventStatement ??= getDb().prepare(
+  const database = getDb()
+  if (memoryEventDatabase === database && memoryEventStatement) return memoryEventStatement
+  memoryEventDatabase = database
+  memoryEventStatement = database.prepare(
     `INSERT INTO memory_events (
       kind, guild_id, channel_id, subject_user_id, duration_ms, n_candidates, n_selected, n_changed,
       tokens_est, op, created_at, detail

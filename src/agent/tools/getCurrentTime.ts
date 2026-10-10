@@ -150,7 +150,10 @@ function resolveTimezone(location?: string): string {
     return location
   }
 
-  return cityToTimezone[location.toLowerCase().trim()] ?? location
+  const key = location.toLowerCase().trim()
+  const city = key.replace(/,.*$/, '').trim()
+
+  return cityToTimezone[key] ?? cityToTimezone[city] ?? location
 }
 
 /** Get the current time, date, and weekday for a location */
