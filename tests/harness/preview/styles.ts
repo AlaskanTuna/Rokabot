@@ -39,6 +39,18 @@ export const PREVIEW_STYLES = `
   --button-secondary-hover: #383940;
   --select-bg: #1e1e22;
   --header-shadow: 0 1px 0 rgba(255, 255, 255, 0.06);
+  --code-text: #ffffff;
+  --code-keyword: #ffbdb9;
+  --code-type: #ffb6ed;
+  --code-title: #bccaff;
+  --code-attribute: #abcfff;
+  --code-decorator: #ffc252;
+  --code-number: #fcc0a1;
+  --code-string: #96dda9;
+  --code-builtin: #ffc252;
+  --code-comment: #b3b3b9;
+  --code-addition: #99e0ad;
+  --code-deletion: #ffbdb9;
 }
 
 .theme-ash {
@@ -69,6 +81,18 @@ export const PREVIEW_STYLES = `
   --button-secondary-hover: #4c4d55;
   --select-bg: #2b2c31;
   --header-shadow: 0 1px 0 rgba(0, 0, 0, 0.2);
+  --code-text: #ffffff;
+  --code-keyword: #ffbdb9;
+  --code-type: #ffb6ed;
+  --code-title: #bccaff;
+  --code-attribute: #abcfff;
+  --code-decorator: #ffc252;
+  --code-number: #fcc0a1;
+  --code-string: #96dda9;
+  --code-builtin: #ffc252;
+  --code-comment: #b3b3b9;
+  --code-addition: #99e0ad;
+  --code-deletion: #ffbdb9;
 }
 
 .theme-onyx {
@@ -99,6 +123,18 @@ export const PREVIEW_STYLES = `
   --button-secondary-hover: #2b2b30;
   --select-bg: #0f0f11;
   --header-shadow: 0 1px 0 rgba(255, 255, 255, 0.05);
+  --code-text: #ffffff;
+  --code-keyword: #ffbdb9;
+  --code-type: #ffb6ed;
+  --code-title: #bccaff;
+  --code-attribute: #abcfff;
+  --code-decorator: #ffc252;
+  --code-number: #fcc0a1;
+  --code-string: #96dda9;
+  --code-builtin: #ffc252;
+  --code-comment: #b3b3b9;
+  --code-addition: #99e0ad;
+  --code-deletion: #ffbdb9;
 }
 
 .theme-light {
@@ -129,6 +165,18 @@ export const PREVIEW_STYLES = `
   --button-secondary-hover: #d7d7db;
   --select-bg: #ffffff;
   --header-shadow: 0 1px 0 rgba(0, 0, 0, 0.08);
+  --code-text: #36373e;
+  --code-keyword: #a9232e;
+  --code-type: #9b277e;
+  --code-title: #404eb1;
+  --code-attribute: #0158ab;
+  --code-decorator: #884800;
+  --code-number: #963b03;
+  --code-string: #006734;
+  --code-builtin: #884800;
+  --code-comment: #696a73;
+  --code-addition: #005f30;
+  --code-deletion: #9e1f2a;
 }
 
 * { box-sizing: border-box; }
@@ -376,13 +424,29 @@ img { display: block; }
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-subtle);
   background: var(--bg-code);
-  color: var(--text-default);
+  color: var(--code-text);
   font-size: 0.875rem;
   line-height: 1.125rem;
   overflow-x: auto;
   white-space: pre-wrap;
   text-indent: 0;
 }
+.hljs-doctag, .hljs-keyword, .hljs-meta .hljs-keyword, .hljs-template-tag, .hljs-template-variable, .hljs-variable.language_ { color: var(--code-keyword); }
+.hljs-type, .hljs-built_in { color: var(--code-type); }
+.hljs-title, .hljs-title.class_, .hljs-title.function_ { color: var(--code-title); }
+.hljs-literal, .hljs-params, .hljs-selector-attr, .hljs-selector-class, .hljs-selector-id, .hljs-variable { color: var(--code-text); }
+.hljs-attr, .hljs-attribute, .hljs-bullet, .hljs-link { color: var(--code-attribute); }
+.hljs-meta, .hljs-symbol { color: var(--code-decorator); }
+.hljs-number { color: var(--code-number); }
+.hljs-string, .hljs-meta .hljs-string { color: var(--code-string); }
+.hljs-code, .hljs-comment, .hljs-formula { color: var(--code-comment); }
+.hljs-name, .hljs-quote, .hljs-selector-pseudo, .hljs-selector-tag { color: var(--code-type); }
+.hljs-section { color: var(--code-keyword); font-weight: 700; }
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: 700; }
+.hljs-link { text-decoration: underline; }
+.hljs-addition { color: var(--code-addition); }
+.hljs-deletion { color: var(--code-deletion); }
 .markup .mention {
   border-radius: var(--radius-xs);
   padding: 0 2px;
@@ -644,6 +708,15 @@ if (picker) {
     document.documentElement.className = 'theme-' + picker.value
   })
 }
+window.addEventListener('DOMContentLoaded', () => {
+  if (!window.hljs) return
+  for (const block of document.querySelectorAll('pre.codeblock code[data-lang]')) {
+    const language = block.dataset.lang
+    if (window.hljs.getLanguage(language)) {
+      block.innerHTML = window.hljs.highlight(block.textContent, { language }).value
+    }
+  }
+})
 const log = document.querySelector('.messages')
 if (log) log.scrollTop = log.scrollHeight
 `

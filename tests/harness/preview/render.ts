@@ -367,6 +367,7 @@ export function renderPreviewPage(messages: readonly PreviewMessage[], options: 
 ${refresh}<title>${escapeHtml(options.title ?? `#${channel} · Discord preview`)}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=Source+Code+Pro:wght@400;600&display=swap">
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <style>${PREVIEW_STYLES}</style>
 </head>
 <body>
