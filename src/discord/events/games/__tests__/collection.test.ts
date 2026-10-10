@@ -4,6 +4,10 @@ import { SPECIES } from '../../../../games/data/buddySpecies.js'
 
 const { getBuddyCollection } = vi.hoisted(() => ({ getBuddyCollection: vi.fn() }))
 
+vi.mock('../../../../config.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../config.js')>()
+  return { ...actual, config: { ...actual.config, timezone: 'Asia/Singapore' } }
+})
 vi.mock('../../../../games/buddy.js', () => ({ getBuddyCollection }))
 vi.mock('../../../../games/hangman.js', () => ({ setTimeoutCallback: vi.fn() }))
 vi.mock('../../../../games/shiritori.js', () => ({ getGame: vi.fn(), setTimeoutCallback: vi.fn() }))
@@ -71,6 +75,16 @@ describe('collection pagination helpers', () => {
     expect(content).not.toContain('Mochimaru')
     expect(content).not.toContain('Foxchan')
     expect(content).toContain(SPECIES.find(({ id }) => id === 'oni')!.spriteUrl)
+  })
+
+  it('dates a buddy in the configured timezone, not the process zone', () => {
+    // 02:00 on 20 Jul in Singapore is still 19 Jul in UTC.
+    const buddies = [createBuddy('Oniro', 'oni', 'legendary', Date.UTC(2026, 6, 19, 18))]
+
+    const content = JSON.stringify(buildCollectionPage(buddies, 0, 2).components[0].toJSON())
+
+    expect(content).toContain('20/07/2026')
+    expect(content).not.toContain('19/07/2026')
   })
 
   it('renders a friendly empty state without buttons', () => {

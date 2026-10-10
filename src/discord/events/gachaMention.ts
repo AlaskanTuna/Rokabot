@@ -12,6 +12,7 @@ import {
 } from '@discordjs/builders'
 import type { Message } from 'discord.js'
 import { MessageFlags } from 'discord.js'
+import { config } from '../../config.js'
 import { getBuddy, getBuddyCount, getSpeciesInfo } from '../../games/buddy.js'
 import { RARITY_COLORS, RARITY_EMOJI, STAT_NAMES } from '../../games/data/buddySpecies.js'
 import { logger } from '../../utils/logger.js'
@@ -59,6 +60,7 @@ export async function handleGachaMention(message: Message): Promise<boolean> {
     }
 
     const body = lines.join('\n')
+    const hatchedDate = new Date(buddy.hatchedAt).toLocaleDateString('en-GB', { timeZone: config.timezone })
 
     const section = new SectionBuilder()
       .addTextDisplayComponents(new TextDisplayBuilder().setContent(`### ${buddy.name}\n\n${body}`))
@@ -69,9 +71,7 @@ export async function handleGachaMention(message: Message): Promise<boolean> {
       .addSectionComponents(section)
       .addSeparatorComponents(new SeparatorBuilder())
       .addTextDisplayComponents(
-        new TextDisplayBuilder().setContent(
-          `-# Companion 1 of ${getBuddyCount(userId)} | Hatched on ${new Date(buddy.hatchedAt).toLocaleDateString('en-GB')}`
-        )
+        new TextDisplayBuilder().setContent(`-# Companion 1 of ${getBuddyCount(userId)} | Hatched on ${hatchedDate}`)
       )
 
     await message.reply({
