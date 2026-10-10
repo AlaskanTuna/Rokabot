@@ -10,6 +10,7 @@ import {
 } from '@discordjs/builders'
 import type { ChatInputCommandInteraction } from 'discord.js'
 import { ButtonStyle, ComponentType, MessageFlags } from 'discord.js'
+import { config } from '../../../config.js'
 import { type BuddyData, getBuddyCollection } from '../../../games/buddy.js'
 import { RARITY_EMOJI } from '../../../games/data/buddySpecies.js'
 import { buddySprite } from './shared.js'
@@ -38,7 +39,7 @@ export function buildCollectionPage(buddies: BuddyData[], page: number, pageSize
 
     for (const buddy of buddies.slice(currentPage * pageSize, (currentPage + 1) * pageSize)) {
       const rarity = `${RARITY_EMOJI[buddy.rarity]} ${buddy.rarity.toUpperCase()}`
-      const hatchedDate = new Date(buddy.hatchedAt).toLocaleDateString('en-GB')
+      const hatchedDate = new Date(buddy.hatchedAt).toLocaleDateString('en-GB', { timeZone: config.timezone })
       const section = new SectionBuilder()
         .addTextDisplayComponents(
           new TextDisplayBuilder().setContent(`**${buddy.name ?? 'Unknown'}** — ${rarity}\nHatched on ${hatchedDate}`)

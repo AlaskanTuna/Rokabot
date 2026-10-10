@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { warn } = vi.hoisted(() => ({ warn: vi.fn() }))
 
@@ -61,6 +61,12 @@ const memoryEvent: MemoryEventInput = {
 beforeAll(() => {
   process.env.ROKABOT_DB_PATH = ':memory:'
   getDb()
+})
+
+beforeEach(() => {
+  for (const table of ['response_events', 'extraction_events', 'memory_events', 'jev_events', 'failure_diagnostics']) {
+    getDb().prepare(`DELETE FROM ${table}`).run()
+  }
 })
 
 afterAll(() => {
