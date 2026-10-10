@@ -38,6 +38,7 @@ export interface PreviewPageOptions {
 type JsonObject = Record<string, unknown>
 
 const GROUP_WINDOW_MS = 7 * 60_000
+const IS_COMPONENTS_V2 = 1 << 15
 const DEFAULT_AVATARS = 6
 const BUTTON_STYLES: Record<number, string> = {
   1: 'primary',
@@ -86,6 +87,8 @@ const hex = (color: number) => `#${color.toString(16).padStart(6, '0')}`
 interface RenderContext {
   files: ReadonlyMap<string, string>
   mentions: MarkdownContext
+  /** Text displays inside a Container render at the client's reduced size (14px instead of 16px). */
+  reduced?: boolean
 }
 
 function mediaUrl(media: unknown, ctx: RenderContext): string {
@@ -138,16 +141,27 @@ function renderSelect(select: JsonObject): string {
   return `<div class="cv2-select${select.disabled ? ' disabled' : ''}">${shown}${CHEVRON_ICON}</div>`
 }
 
+// The client's mosaic: 1 natural, 2 side by side, 3 as one large tile beside a stack of two, 4 as 2×2, and 5–10 as
+// a top row holding the remainder after threes (one wide tile or two) above rows of three square tiles.
 function renderGallery(items: JsonObject[], ctx: RenderContext): string {
-  const count = Math.min(items.length, 10)
   const cells = items
     .slice(0, 10)
     .map(
       (item) =>
         `<div class="cv2-gallery-item">${spoilerWrap(mediaHtml(mediaUrl(item.media, ctx), str(item.description)), item.spoiler)}</div>`
     )
-    .join('')
-  return `<div class="cv2-gallery count-${count}">${cells}</div>`
+  const count = cells.length
+  const row = (kind: string, tiles: string[]) => `<div class="gallery-row ${kind}">${tiles.join('')}</div>`
+  let body = cells.join('')
+  if (count === 2) body = row('two', cells)
+  if (count === 3) body = row('three', [cells[0], `<div class="gallery-column">${cells[1]}${cells[2]}</div>`])
+  if (count === 4) body = `<div class="gallery-grid two">${body}</div>`
+  if (count >= 5) {
+    const lead = count % 3
+    const top = lead === 1 ? row('one', cells.slice(0, 1)) : lead === 2 ? row('two', cells.slice(0, 2)) : ''
+    body = `${top}<div class="gallery-grid three">${cells.slice(lead).join('')}</div>`
+  }
+  return `<div class="cv2-gallery count-${count}">${body}</div>`
 }
 
 function formatBytes(size: unknown): string {
@@ -172,10 +186,11 @@ function renderComponent(component: JsonObject, ctx: RenderContext): string {
       return renderButton(component)
     case 9: {
       const accessory = asObject(component.accessory)
-      return `<div class="cv2-section"><div class="cv2-section-content">${renderList(component.components, ctx)}</div><div class="cv2-section-accessory">${accessory ? renderComponent(accessory, ctx) : ''}</div></div>`
+      const centred = accessory?.type === 2 ? ' center' : ''
+      return `<div class="cv2-section${centred}"><div class="cv2-section-content">${renderList(component.components, ctx)}</div><div class="cv2-section-accessory">${accessory ? renderComponent(accessory, ctx) : ''}</div></div>`
     }
     case 10:
-      return `<div class="cv2-text markup">${renderMarkdown(str(component.content) ?? '', ctx.mentions)}</div>`
+      return `<div class="cv2-text markup${ctx.reduced ? ' reduced' : ''}">${renderMarkdown(str(component.content) ?? '', ctx.mentions)}</div>`
     case 11:
       return `<div class="cv2-thumbnail">${spoilerWrap(mediaHtml(mediaUrl(component.media, ctx), str(component.description)), component.spoiler)}</div>`
     case 12:
@@ -196,7 +211,7 @@ function renderComponent(component: JsonObject, ctx: RenderContext): string {
       const accent = typeof component.accent_color === 'number' ? component.accent_color : null
       const classes = `cv2-container${accent === null ? '' : ' has-accent'}${component.spoiler ? ' spoiler-container' : ''}`
       const style = accent === null ? '' : ` style="--accent-color: ${hex(accent)}"`
-      return `<div class="${classes}"${style}>${renderList(component.components, ctx)}</div>`
+      return `<div class="${classes}"${style}>${renderList(component.components, { ...ctx, reduced: true })}</div>`
     }
     default:
       return SELECT_TYPES.has(Number(component.type)) ? renderSelect(component) : ''
@@ -284,9 +299,15 @@ function shortTime(date: Date, timeZone?: string): string {
 function headerTime(date: Date, options: PreviewPageOptions): string {
   const now = options.now ?? new Date()
   const time = shortTime(date, options.timeZone)
-  if (sameDay(date, now, options.timeZone)) return `Today at ${time}`
+  if (sameDay(date, now, options.timeZone)) return time
   if (sameDay(date, new Date(now.getTime() - 86_400_000), options.timeZone)) return `Yesterday at ${time}`
-  return `${date.toLocaleDateString('en-US', { timeZone: options.timeZone })} ${time}`
+  const day = date.toLocaleDateString('en-US', {
+    month: '2-digit',
+    day: '2-digit',
+    year: 'numeric',
+    timeZone: options.timeZone
+  })
+  return `${day} ${time}`
 }
 
 function authorKey(author: PreviewAuthor): string {
@@ -339,11 +360,13 @@ function renderMessage(message: PreviewMessage, groupStart: boolean, options: Pr
       : ''
 
   const header = groupStart
-    ? `<img class="avatar" src="${escapeHtml(avatarUrl(message.author))}" alt=""><h3 class="message-header">${nameHtml(message.author, 'username')}${message.author.bot ? BOT_TAG : ''}<time class="message-timestamp" datetime="${iso}">${escapeHtml(headerTime(message.timestamp, options))}</time></h3>`
+    ? `<img class="avatar" src="${escapeHtml(avatarUrl(message.author))}" alt=""><h3 class="message-header"><span class="header-text">${nameHtml(message.author, 'username')}${message.author.bot ? BOT_TAG : ''}</span><time class="message-timestamp" datetime="${iso}">${escapeHtml(headerTime(message.timestamp, options))}</time></h3>`
     : `<time class="message-gutter-time" datetime="${iso}">${escapeHtml(shortTime(message.timestamp, options.timeZone))}</time>`
 
+  const components = renderComponents(payload.components, ctx.files, ctx.mentions)
+  const isV2 = (Number(payload.flags) & IS_COMPONENTS_V2) !== 0
   const accessories = [
-    renderComponents(payload.components, ctx.files, ctx.mentions),
+    components ? `<div class="components${isV2 ? ' is-v2' : ''}">${components}</div>` : '',
     ...asObjects(payload.embeds).map((embed) => renderEmbed(embed, ctx)),
     renderReactions(message.reactions)
   ].join('')

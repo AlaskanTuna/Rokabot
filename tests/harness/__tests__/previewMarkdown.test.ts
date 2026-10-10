@@ -77,12 +77,14 @@ describe('renderMarkdown blocks', () => {
 
   it('renders single-line quotes and stops at the first unquoted line', () => {
     expect(renderMarkdown('> quoted **bold**\n> second\nplain')).toBe(
-      '<blockquote>quoted <strong>bold</strong>\nsecond</blockquote>plain'
+      '<div class="blockquote"><div class="blockquote-bar"></div><blockquote>quoted <strong>bold</strong>\nsecond</blockquote></div>plain'
     )
   })
 
   it('renders >>> as a quote of everything after it', () => {
-    expect(renderMarkdown('before\n>>> all\nof this')).toBe('before\n<blockquote>all\nof this</blockquote>')
+    expect(renderMarkdown('before\n>>> all\nof this')).toBe(
+      'before\n<div class="blockquote"><div class="blockquote-bar"></div><blockquote>all\nof this</blockquote></div>'
+    )
   })
 
   it('only starts quotes and headings at the start of a line', () => {
@@ -91,7 +93,7 @@ describe('renderMarkdown blocks', () => {
 
   it('renders bullet and numbered lists with nesting', () => {
     expect(renderMarkdown('- a\n  - nested\n- b\n1. x\n2. y')).toBe(
-      '<ul><li>a<ul><li>nested</li></ul></li><li>b</li></ul><ol start="1"><li>x</li><li>y</li></ol>'
+      '<ul><li>a<ul><li>nested</li></ul></li><li>b</li></ul><ol start="1" style="--totalCharacters: 1"><li>x</li><li>y</li></ol>'
     )
   })
 })
@@ -103,10 +105,8 @@ describe('renderMarkdown Discord entities', () => {
       roles: { '3': 'Mods' },
       channels: { '4': 'general' }
     })
-    expect(html).toBe(
-      '<span class="mention">@Tester</span> <span class="mention">@unknown-user</span> ' +
-        '<span class="mention">@Mods</span> <span class="mention channel">#general</span> ' +
-        '<span class="mention">@everyone</span>'
+    expect(html).toMatch(
+      /^<span class="mention">@Tester<\/span> <span class="mention">@unknown-user<\/span> <span class="mention">@Mods<\/span> <span class="mention channel"><svg class="mention-icon"[\s\S]*?<\/svg>general<\/span> <span class="mention">@everyone<\/span>$/
     )
   })
 

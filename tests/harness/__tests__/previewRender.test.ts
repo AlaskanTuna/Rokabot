@@ -13,7 +13,7 @@ describe('renderComponents', () => {
   it('draws a container with its accent colour', () => {
     const html = renderComponents([{ type: 17, accent_color: 0xff8800, components: [{ type: 10, content: 'hi' }] }])
     expect(html).toContain('class="cv2-container has-accent" style="--accent-color: #ff8800"')
-    expect(html).toContain('<div class="cv2-text markup">hi</div>')
+    expect(html).toContain('<div class="cv2-text markup reduced">hi</div>')
   })
 
   it('places a section thumbnail beside its text', () => {
@@ -27,6 +27,19 @@ describe('renderComponents', () => {
     expect(html).toMatch(
       /<div class="cv2-section"><div class="cv2-section-content"><div class="cv2-text markup"><strong>bold<\/strong><\/div><\/div><div class="cv2-section-accessory"><div class="cv2-thumbnail"><img src="https:\/\/example.com\/a.webp" alt="Roka smiling"/
     )
+  })
+
+  it('keeps top-level text at full size and centres a section beside a button', () => {
+    const html = renderComponents([
+      { type: 10, content: 'top' },
+      {
+        type: 9,
+        components: [{ type: 10, content: 'row' }],
+        accessory: { type: 2, style: 2, label: 'Open', custom_id: 'o' }
+      }
+    ])
+    expect(html).toContain('<div class="cv2-text markup">top</div>')
+    expect(html).toContain('<div class="cv2-section center">')
   })
 
   it('renders separator spacing and divider flags', () => {
@@ -110,8 +123,8 @@ describe('renderPreviewPage', () => {
     const html = renderPreviewPage(messages)
     const color = getToneStyle('playful').color.toString(16).padStart(6, '0')
     expect(html).toContain(`--accent-color: #${color}`)
-    expect(html).toContain('<div class="cv2-text markup">Hi there</div>')
-    expect(html).toContain('<div class="cv2-text markup">Second block</div>')
+    expect(html).toContain('<div class="cv2-text markup reduced">Hi there</div>')
+    expect(html).toContain('<div class="cv2-text markup reduced">Second block</div>')
     expect(html).toContain('<small class="subtext">')
     expect(html).toContain('searched the web</small>')
   })
@@ -126,6 +139,17 @@ describe('renderPreviewPage', () => {
       }
     ])
     expect(html).toContain('src="data:image/png;base64,AQID"')
+  })
+
+  it('stamps today with the time alone and earlier days the way the client does', () => {
+    const now = new Date(Date.UTC(2026, 9, 11, 9, 0))
+    const stamp = (timestamp: Date) =>
+      renderPreviewPage([{ author: tester, timestamp, payload: 'x' }], { now, timeZone: 'UTC' }).match(
+        /<time class="message-timestamp"[^>]*>([^<]*)</
+      )?.[1]
+    expect(stamp(new Date(Date.UTC(2026, 9, 11, 7, 42)))).toBe('7:42 AM')
+    expect(stamp(new Date(Date.UTC(2026, 9, 10, 15, 5)))).toBe('Yesterday at 3:05 PM')
+    expect(stamp(new Date(Date.UTC(2026, 9, 8, 15, 5)))).toBe('10/08/2026 3:05 PM')
   })
 
   it('shows a reply reference and a slash command header', () => {

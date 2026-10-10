@@ -26,6 +26,8 @@ const UNICODE_SETS: string = 'gv'
 const EMOJI = new RegExp('\\p{RGI_Emoji}', UNICODE_SETS)
 const CUSTOM_EMOJI = /<a?:\w+:\d+>/g
 const MAX_JUMBO_EMOJI = 30
+const CHANNEL_ICON =
+  '<svg class="mention-icon" aria-hidden="true" viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M10.99 3.16A1 1 0 1 0 9 2.84L8.15 8H4a1 1 0 0 0 0 2h3.82l-.67 4H3a1 1 0 1 0 0 2h3.82l-.8 4.84a1 1 0 0 0 1.97.32L8.85 16h4.97l-.8 4.84a1 1 0 0 0 1.97.32l.86-5.16H20a1 1 0 1 0 0-2h-3.82l.67-4H21a1 1 0 1 0 0-2h-3.82l.8-4.84a1 1 0 1 0-1.97-.32L15.15 8h-4.97l.8-4.84ZM14.15 14l.67-4H9.85l-.67 4h4.97Z" clip-rule="evenodd"/></svg>'
 
 export function escapeHtml(text: string): string {
   return text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;')
@@ -131,7 +133,10 @@ const blockQuote: Rule = (source, state) => {
   const match = multi ?? single
   if (!match) return null
   const body = multi ? multi[1] : match[0].replace(/\n$/, '').replace(/^> /gm, '')
-  return { length: match[0].length, html: `<blockquote>${parse(body, { ...state, inQuote: true })}</blockquote>` }
+  return {
+    length: match[0].length,
+    html: `<div class="blockquote"><div class="blockquote-bar"></div><blockquote>${parse(body, { ...state, inQuote: true })}</blockquote></div>`
+  }
 }
 
 const heading = rule(
@@ -155,7 +160,9 @@ const LIST_LINE = /^( *)([*-]|\d{1,9}\.) +([^\n]*)/
 
 function buildList(items: ListItem[], from: number, state: State): [string, number] {
   const first = items[from]
-  let html = first.ordered ? `<ol start="${first.start}">` : '<ul>'
+  // Discord widens an ordered list's gutter by the digits of its largest number.
+  const digits = String(first.start + items.length - 1).length
+  let html = first.ordered ? `<ol start="${first.start}" style="--totalCharacters: ${digits}">` : '<ul>'
   let index = from
   while (index < items.length && items[index].indent === first.indent && items[index].ordered === first.ordered) {
     const item = items[index]
@@ -210,7 +217,8 @@ const MENTION_RULES: Rule[] = [
   ),
   rule(
     /^<#(\d+)>/,
-    (match, state) => `<span class="mention channel">#${escapeHtml(state.ctx.channels?.[match[1]] ?? 'unknown')}</span>`
+    (match, state) =>
+      `<span class="mention channel">${CHANNEL_ICON}${escapeHtml(state.ctx.channels?.[match[1]] ?? 'unknown')}</span>`
   ),
   rule(/^<\/([\w -]+):\d+>/, (match) => `<span class="mention command">/${escapeHtml(match[1])}</span>`),
   rule(/^<(a?):(\w+):(\d+)>/, (match, state) => {
