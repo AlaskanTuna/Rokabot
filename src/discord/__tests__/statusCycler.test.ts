@@ -253,7 +253,7 @@ describe('stopStatusCycler', () => {
   it('does nothing and logs nothing when the cycler was never started', () => {
     expect(() => stopStatusCycler()).not.toThrow()
 
-    expect(logger.info).not.toHaveBeenCalledWith('Status cycler stopped')
+    expect(logger.info).not.toHaveBeenCalled()
   })
 
   it('resumes rotating after a stop followed by a new start', () => {
