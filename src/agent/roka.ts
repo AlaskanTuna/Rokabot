@@ -31,6 +31,7 @@ import {
   setFallbackUntilMs
 } from './reliability.js'
 import type { ModelVerdict, TurnOutcome } from './reliability.js'
+import { MAX_REPLY_BLOCKS, capReplyBlocks } from './replyBlocks.js'
 import { SAFETY_SETTINGS } from './safetySettings.js'
 import { PREFETCH_TOOL_NAME } from './searchPrefetch.js'
 import {
@@ -221,7 +222,17 @@ export const rokaAgent = new LlmAgent({
             'Stripped tool calls the model wrote as text'
           )
         }
-        part.text = stripProseIndentation(narrated.text.replace(/^\[?Roka\]?:\s*/i, '')).trim()
+        const capped = capReplyBlocks(stripProseIndentation(narrated.text.replace(/^\[?Roka\]?:\s*/i, '')).trim())
+        if (capped.merged > 0) {
+          logger.info(
+            { model: modelNameForCurrentRequest(), merged: capped.merged, blocks: capped.blocks },
+            'Joined reply paragraphs past the block cap'
+          )
+        }
+        if (capped.blocks > MAX_REPLY_BLOCKS) {
+          logger.warn({ model: modelNameForCurrentRequest(), blocks: capped.blocks }, 'Reply is over the block cap')
+        }
+        part.text = capped.text
       }
     }
 

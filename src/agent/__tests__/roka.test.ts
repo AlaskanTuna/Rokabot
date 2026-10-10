@@ -835,6 +835,38 @@ describe('afterModelCallback narrated tool calls', () => {
   })
 })
 
+describe('afterModelCallback reply blocks', () => {
+  const callback = rokaAgent.afterModelCallback as (params: { response: LlmResponse }) => Promise<unknown>
+
+  it('joins paragraphs past three before the reply reaches Discord or session history', async () => {
+    const info = vi.spyOn(logger, 'info').mockImplementation(() => undefined as never)
+    const response = {
+      content: { role: 'model', parts: [{ text: 'Ara~\n\nThe answer.\n\nMore.\n\nBye~ (´・ω・｀)' }] }
+    } as LlmResponse
+
+    await callback({ response })
+
+    expect(response.content?.parts?.[0].text).toBe('Ara~\n\nThe answer.\n\nMore. Bye~ (´・ω・｀)')
+    expect(info).toHaveBeenCalledWith(
+      expect.objectContaining({ merged: 1, blocks: 3 }),
+      'Joined reply paragraphs past the block cap'
+    )
+    info.mockRestore()
+  })
+
+  it('reports a reply it cannot bring within the cap without joining paragraphs', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never)
+    const text = 'Lead.\n\n- a\n- b\n\n> quoted\n\n```sh\nls\n```\n\nBye~'
+    const response = { content: { role: 'model', parts: [{ text }] } } as LlmResponse
+
+    await callback({ response })
+
+    expect(response.content?.parts?.[0].text).toBe(text)
+    expect(warn).toHaveBeenCalledWith(expect.objectContaining({ blocks: 5 }), 'Reply is over the block cap')
+    warn.mockRestore()
+  })
+})
+
 describe('media resolution on the model request', () => {
   const context = { state: { get: () => 'a prompt' } } as unknown as CallbackContext
   const callback = rokaAgent.beforeModelCallback as (params: {

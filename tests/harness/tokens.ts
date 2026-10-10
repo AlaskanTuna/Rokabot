@@ -17,7 +17,7 @@ export { estimateTokens }
  * catastrophe rail against a runaway prompt, not a fine-grained detector of a small
  * regression. See AGENTS.md and docs/trd.md for where this fits in the request budget.
  */
-export const MAX_SYSTEM_PROMPT_TOKENS = 5000
+export const MAX_SYSTEM_PROMPT_TOKENS = 5500
 
 export interface TokenHistoryMessage {
   role: 'user' | 'assistant'

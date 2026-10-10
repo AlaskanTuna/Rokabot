@@ -8,6 +8,7 @@ import {
 import { MessageFlags, SeparatorSpacingSize } from 'discord.js'
 import type { WatchOutcome } from '../agent/media/types.js'
 import type { ToneKey } from '../agent/prompts/tones.js'
+import { splitAtDividers } from '../agent/replyBlocks.js'
 import type { ReplyOutcome } from '../agent/replyOutcomes.js'
 import { logger } from '../utils/logger.js'
 import { fitCitations } from './citations.js'
@@ -166,13 +167,21 @@ export function buildRokaMessage(
   const style = getToneStyle(tone)
   const imageUrl = getExpressionUrl(tone) || style.imageUrl
 
-  const section = new SectionBuilder().addTextDisplayComponents(new TextDisplayBuilder().setContent(text))
+  // Discord markdown has no horizontal rule, so her `---` lines become separators. A reply holds at most three
+  // blocks, so anything past a second divider stays in the last part rather than adding components.
+  const divided = splitAtDividers(text)
+  const parts = divided.length > 1 ? [divided[0], divided[1], divided.slice(2).join('\n\n')].filter(Boolean) : [text]
+  const section = new SectionBuilder().addTextDisplayComponents(new TextDisplayBuilder().setContent(parts[0]))
 
   if (imageUrl) {
     section.setThumbnailAccessory(new ThumbnailBuilder({ media: { url: imageUrl } }))
   }
 
   const container = new ContainerBuilder().setAccentColor(style.color).addSectionComponents(section)
+  for (const part of parts.slice(1)) {
+    container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(part))
+  }
   const postNoun =
     socialPost.status === 'found' && watchOutcome?.fromLink
       ? postMediaNoun(socialPost.post.platform, watchOutcome)
