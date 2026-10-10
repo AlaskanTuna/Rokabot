@@ -1,4 +1,5 @@
 import { PAST_FACT_MARKER } from './memory/factSentences.js'
+import { ROKA_TOOL_NAMES } from './tools/toolNames.js'
 
 export const MAX_FACT_KEY_LEN = 64
 export const MAX_FACT_VALUE_LEN = 200
@@ -23,7 +24,7 @@ export const MEDIA_DIGEST_UNTRUSTED_DATA_LABEL =
 
 const INSTRUCTION_PHRASE =
   /\b(?:ignore (?:all )?previous|disregard (?:the )?(?:above|previous)|system prompt|you are now|new instructions|forget everything|override your)\b/i
-const TOOL_NAME = /\b(?:remember_user|recall_user|set_reminder|search_web|draw_anime|function_call)\b/i
+const TOOL_NAME = new RegExp(`\\b(?:${[...ROKA_TOOL_NAMES, 'function_call'].join('|')})\\b`, 'i')
 
 export function isSafeFactScalar(s: string, maxLen: number): boolean {
   if (!s.trim() || s.length > maxLen || /[\r\n]/.test(s)) return false
