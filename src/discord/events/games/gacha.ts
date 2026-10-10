@@ -1,6 +1,7 @@
 /** Gacha / buddy companion command handlers */
 
 import type { ChatInputCommandInteraction } from 'discord.js'
+import { config } from '../../../config.js'
 import {
   type BuddyData,
   getBuddy,
@@ -167,7 +168,8 @@ export function handleBuddyView(interaction: ChatInputCommandInteraction) {
   }
 
   const count = getBuddyCount(userId)
-  const footerParts = [`Companion 1 of ${count}`, `Hatched on ${new Date(buddy.hatchedAt).toLocaleDateString('en-GB')}`]
+  const hatchedDate = new Date(buddy.hatchedAt).toLocaleDateString('en-GB', { timeZone: config.timezone })
+  const footerParts = [`Companion 1 of ${count}`, `Hatched on ${hatchedDate}`]
   const sprite = buddySprite(buddy.species)
 
   return buildBuddyContainer({
