@@ -3,7 +3,7 @@ import { resolve } from 'node:path'
 import './env.js'
 import { detectTone } from '../../src/agent/toneDetector.js'
 import { clearHistory } from '../../src/storage/sessionStore.js'
-import { createCaptureSink } from './captureSink.js'
+import { type CaptureRecord, createCaptureSink } from './captureSink.js'
 import { makeClient, makeGuild, makeInteraction, makeMessage } from './discordDoubles.js'
 import { renderPayload } from './renderPayload.js'
 import {
@@ -30,10 +30,13 @@ export interface TranscriptLine {
   content: string
   replyToId?: string
   attachments?: TranscriptAttachment[]
+  /** The offline model's reply for this turn, so a preview can show exact text through the real handlers. */
+  reply?: string
 }
 
 export interface TranscriptTurn {
   line: TranscriptLine
+  records: readonly CaptureRecord[]
   rendered: string[]
   timing: TurnTiming
   tokens: RequestTokenBreakdown
@@ -75,6 +78,9 @@ function parseTranscriptLine(raw: string, lineNumber: number): TranscriptLine {
 
   if (line.replyToId !== undefined && typeof line.replyToId !== 'string') {
     throw new Error(`Transcript line ${lineNumber} has an invalid replyToId`)
+  }
+  if (line.reply !== undefined && typeof line.reply !== 'string') {
+    throw new Error(`Transcript line ${lineNumber} has an invalid reply`)
   }
   if (line.attachments !== undefined && !Array.isArray(line.attachments)) {
     throw new Error(`Transcript line ${lineNumber} has invalid attachments`)
@@ -168,7 +174,7 @@ export async function runTranscript(path: string, options: RunTranscriptOptions 
     for (const [index, line] of lines.entries()) {
       const sink = createCaptureSink()
       const guild = makeGuild({ me: { displayName: client.user?.displayName } })
-      scriptedReply = `Harness reply ${index + 1}: ${line.content}`
+      scriptedReply = line.reply ?? `Harness reply ${index + 1}: ${line.content}`
       const userMessage = requestMessageContent(line)
       const channelHistory = measurementHistory.get(line.channelId) ?? []
       const tone = detectTone(
@@ -234,7 +240,7 @@ export async function runTranscript(path: string, options: RunTranscriptOptions 
       const records = sink.all()
       const timing = finishTurnTiming(activeTiming, records)
       const rendered = records.map((record, recordIndex) => renderPayload(record, recordIndex, records))
-      turns.push({ line, rendered, timing, tokens })
+      turns.push({ line, records, rendered, timing, tokens })
 
       // The fake factory skips Runner.runAsync, so rehydrate persisted events before the next turn.
       if (!live) await session.destroySession(line.channelId)

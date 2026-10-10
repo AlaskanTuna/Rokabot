@@ -3,13 +3,17 @@
  * Uses the full prompt pipeline: tone detection -> prompt assembly -> Gemini API.
  *
  * Usage:
- *   npm run test:chat -- [displayName] [--live]
+ *   npm run test:chat -- [displayName] [--live] [--html <path>]
  *
  * Uses the harness fake key by default. Pass --live to use
- * GRAPHIFY_GEMINI_API_KEY from .env.
+ * GRAPHIFY_GEMINI_API_KEY from .env. Pass --html to keep a Discord-style
+ * preview of the conversation at <path>; the page reloads itself every 2s.
  */
 
+import { mkdir, writeFile } from 'node:fs/promises'
+import { dirname, resolve } from 'node:path'
 import * as readline from 'node:readline'
+import type { PreviewMessage } from '../tests/harness/preview/render.js'
 
 await import('../tests/harness/env.js')
 
@@ -17,8 +21,18 @@ const { generateResponse } = await import('../src/agent/roka.js')
 const { buildRokaMessage } = await import('../src/discord/messageBuilder.js')
 const { config } = await import('../src/config.js')
 const { renderPayload } = await import('../tests/harness/renderPayload.js')
+const { renderPreviewPage } = await import('../tests/harness/preview/render.js')
+const { rokaAuthor } = await import('../tests/harness/preview/conversation.js')
 
-const displayName = process.argv.slice(2).find((argument) => argument !== '--live') ?? 'Tester'
+const args = process.argv.slice(2)
+const htmlIndex = args.indexOf('--html')
+const htmlPath = htmlIndex >= 0 ? resolve(args[htmlIndex + 1] ?? 'preview-out/chat.html') : null
+const displayName =
+  args.find(
+    (argument, index) => argument !== '--live' && (htmlIndex < 0 || index < htmlIndex || index > htmlIndex + 1)
+  ) ?? 'Tester'
+const previewMessages: PreviewMessage[] = []
+const roka = await rokaAuthor()
 const username = displayName.toLowerCase().replaceAll(/\s+/g, '-')
 const channelId = 'cli-test-channel'
 const guildId = 'cli-test-guild'
@@ -47,14 +61,19 @@ async function handleInput(line: string, rl: readline.Interface): Promise<void> 
       userId
     })
 
-    console.log(
-      `${renderPayload({
-        kind: 'reply',
-        payload: buildRokaMessage(response.text, response.tone),
-        channelId,
-        ts: Date.now()
-      })}\n`
-    )
+    const payload = buildRokaMessage(response.text, response.tone)
+    console.log(`${renderPayload({ kind: 'reply', payload, channelId, ts: Date.now() })}\n`)
+
+    if (htmlPath) {
+      const now = new Date()
+      const user = { name: displayName }
+      previewMessages.push(
+        { author: user, timestamp: now, payload: trimmed },
+        { author: roka, timestamp: now, payload, replyTo: { author: user, text: trimmed } }
+      )
+      await mkdir(dirname(htmlPath), { recursive: true })
+      await writeFile(htmlPath, renderPreviewPage(previewMessages, { channelName: 'test-chat', refreshSeconds: 2 }))
+    }
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error)
     console.error(`  [error: ${msg}]\n`)
@@ -70,6 +89,7 @@ function main(): void {
   console.log(`  Display name: ${displayName}`)
   console.log(`  History window: ${config.session.windowSize} messages`)
   console.log(`  Log level: ${config.logging.level} (set LOG_LEVEL in .env to change)`)
+  if (htmlPath) console.log(`  Discord preview: ${htmlPath}`)
   console.log('  Type "quit" or "exit" to end. Ctrl+C also works.')
   console.log('='.repeat(60))
   console.log()
