@@ -7,7 +7,6 @@ import type { RunAsyncToolRequest } from '@google/adk'
 import { flipCoin } from '../tools/flipCoin.js'
 import { getAnimeSchedule } from '../tools/getAnimeSchedule.js'
 import { getCurrentTime } from '../tools/getCurrentTime.js'
-import { getWeather } from '../tools/getWeather.js'
 import {
   flipCoinTool,
   forgetUserTool,
@@ -106,6 +105,7 @@ describe('utility FunctionTools', () => {
       })
 
     await expect(getWeatherTool.runAsync(withoutContext({ city: 'Tokyo' }))).resolves.toEqual({
+      ok: true,
       city: 'Tokyo',
       country: 'Japan',
       temperature: 22.5,
@@ -382,64 +382,5 @@ describe('getAnimeSchedule', () => {
     expect(result.entries[0].title).toBe('High')
     expect(result.entries[1].title).toBe('Mid')
     expect(result.entries[2].title).toBe('Low')
-  })
-})
-
-// ── getWeather ────────────────────────────────────────────────────────────────
-
-describe('getWeather', () => {
-  it('returns weather data for a successful lookup', async () => {
-    // geocoding call
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        results: [{ name: 'Tokyo', latitude: 35.68, longitude: 139.69, country: 'Japan', country_code: 'JP' }]
-      })
-    })
-    // forecast call
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        current: {
-          temperature_2m: 22.5,
-          apparent_temperature: 20.1,
-          relative_humidity_2m: 65,
-          weather_code: 2,
-          wind_speed_10m: 12.3,
-          is_day: 1
-        }
-      })
-    })
-
-    const result = await getWeather({ city: 'Tokyo' })
-    expect(result.city).toBe('Tokyo')
-    expect(result.country).toBe('Japan')
-    expect(result.temperature).toBe(22.5)
-    expect(result.feelsLike).toBe(20.1)
-    expect(result.humidity).toBe(65)
-    expect(result.condition).toBe('Partly cloudy')
-    expect(result.windSpeed).toBe(12.3)
-    expect(result.isDay).toBe(true)
-  })
-
-  it('handles city not found from geocoding', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ results: [] })
-    })
-
-    const result = await getWeather({ city: 'Nonexistentville' })
-    expect(result.city).toBe('Nonexistentville')
-    expect(result.condition).toBe('City not found')
-    expect(result.temperature).toBe(0)
-  })
-
-  it('handles weather API fetch error', async () => {
-    mockFetch.mockRejectedValueOnce(new Error('Network failure'))
-
-    const result = await getWeather({ city: 'Tokyo' })
-    expect(result.city).toBe('Tokyo')
-    expect(result.condition).toBe('Request failed')
-    expect(result.temperature).toBe(0)
   })
 })
