@@ -177,5 +177,8 @@ settings.local.json
 roka-expressions/
 node-compile-cache/
 
+# Vitest coverage reports
+coverage/
+
 # Discord preview output
 preview-out/
