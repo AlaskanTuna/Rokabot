@@ -1377,6 +1377,114 @@ describe('tense, changes and retractions', () => {
     expect(statusOf(nurse.id)).not.toMatchObject({ status: 'active' })
   })
 
+  it('frees the slot of a multi-value retraction before the cap is enforced, so no unrelated fact is evicted', async () => {
+    const pets = Array.from({ length: 19 }, (_, i) =>
+      seedClaim({ predicate: 'pets', value: `pet ${i + 1}`, observedAt: 500 })
+    )
+    const chess = seedClaim({ predicate: 'hobby', value: 'chess' })
+    const report = await apply(
+      [
+        { op: 'retract', subject, predicate: 'hobby', value: 'chess' },
+        { op: 'add', subject, predicate: 'hobby', value: 'go', tense: 'current' }
+      ],
+      {
+        durable_0: 0.9,
+        attributed_0: 0.9,
+        retracts_0_0: 0.9,
+        durable_1: 0.9,
+        attributed_1: 0.9,
+        current_1: 0.9,
+        past_1: 0.1,
+        same_as_1_0: 0.1
+      }
+    )
+    expect(report).toMatchObject({ appliedOps: 2, retractedOps: 1, droppedOps: 0 })
+    expect(statusOf(chess.id)).toEqual({ status: 'rejected', end_reason: 'retracted' })
+    expect(activeFacts()).toContainEqual({ value: 'go', period: 'current' })
+    for (const pet of pets) expect(statusOf(pet.id)).toEqual({ status: 'active', end_reason: null })
+  })
+
+  it('carries the pin of a single-value switch made at the cap', async () => {
+    const nurse = seedClaim({ predicate: 'general_occupation', value: 'nurse', sourceKind: 'explicit' })
+    const pets = Array.from({ length: 20 }, (_, i) => seedClaim({ predicate: 'pets', value: `pet ${i + 1}` }))
+    const report = await apply(
+      [
+        { op: 'retract', subject, predicate: 'general_occupation', value: 'nurse' },
+        { op: 'add', subject, predicate: 'general_occupation', value: 'teacher', tense: 'current' }
+      ],
+      {
+        durable_0: 0.9,
+        attributed_0: 0.9,
+        retracts_0_0: 0.9,
+        retracts_0_1: 0.1,
+        retracts_0_2: 0.1,
+        retracts_0_3: 0.1,
+        retracts_0_4: 0.1,
+        durable_1: 0.9,
+        attributed_1: 0.9,
+        current_1: 0.9,
+        past_1: 0.1,
+        same_as_1_0: 0.1
+      }
+    )
+    expect(report.appliedOps).toBeGreaterThan(0)
+    expect(
+      getDb().prepare("SELECT pinned FROM memory_claim WHERE value = 'teacher' AND status = 'active'").get()
+    ).toEqual({ pinned: 1 })
+    expect(statusOf(nurse.id)).not.toMatchObject({ status: 'active' })
+    for (const pet of pets) expect(statusOf(pet.id)).toEqual({ status: 'active', end_reason: null })
+  })
+
+  it('keeps each Jev verdict on its own operation when the batch is add then retract', async () => {
+    const chess = seedClaim({ predicate: 'hobby', value: 'chess', observedAt: 1_000 })
+    const report = await apply(
+      [
+        { op: 'add', subject, predicate: 'hobby', value: 'go', tense: 'current' },
+        { op: 'retract', subject, predicate: 'hobby', value: 'chess' }
+      ],
+      {
+        durable_0: 0.1,
+        attributed_0: 0.9,
+        current_0: 0.9,
+        past_0: 0.1,
+        same_as_0_0: 0.1,
+        durable_1: 0.9,
+        attributed_1: 0.9,
+        retracts_1_0: 0.9
+      }
+    )
+    expect(report).toMatchObject({ appliedOps: 1, droppedOps: 1, retractedOps: 1 })
+    expect(statusOf(chess.id)).toEqual({ status: 'rejected', end_reason: 'retracted' })
+    expect(activeFacts()).toEqual([])
+    expect(jevApplied('durable_0')).toBe(0)
+    expect(jevApplied('retracts_1_0')).toBe(1)
+  })
+
+  it('keeps each Jev verdict on its own operation when the batch is retract then add', async () => {
+    const chess = seedClaim({ predicate: 'hobby', value: 'chess', observedAt: 1_000 })
+    const report = await apply(
+      [
+        { op: 'retract', subject, predicate: 'hobby', value: 'chess' },
+        { op: 'add', subject, predicate: 'hobby', value: 'go', tense: 'current' }
+      ],
+      {
+        durable_0: 0.9,
+        attributed_0: 0.9,
+        retracts_0_0: 0.9,
+        durable_1: 0.1,
+        attributed_1: 0.9,
+        current_1: 0.9,
+        past_1: 0.1,
+        same_as_1_0: 0.1
+      }
+    )
+    expect(report).toMatchObject({ appliedOps: 1, droppedOps: 1, retractedOps: 1 })
+    expect(statusOf(chess.id)).toEqual({ status: 'rejected', end_reason: 'retracted' })
+    expect(activeFacts()).toEqual([])
+    expect(jevApplied('durable_1')).toBe(0)
+    expect(jevApplied('retracts_0_0')).toBe(1)
+  })
+
   it('retires a visible fact the speaker retracts', async () => {
     const claim = seedClaim({ predicate: 'hobby', value: 'chess' })
     const report = await apply([{ op: 'retract', subject, predicate: 'hobby', value: 'chess' }], {

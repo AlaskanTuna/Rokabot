@@ -36,7 +36,7 @@ import {
   retireClaim,
   retractClaim
 } from './memoryClaims.js'
-import { type PredicateId, normalizePredicate } from './predicates.js'
+import { type PredicateId, cardinalityOf, normalizePredicate } from './predicates.js'
 import { type RecallScope, canRecall } from './privacy.js'
 import { sensitiveFactReason } from './privacyGuard.js'
 import { proposedPeriod, retractCandidates, sameAsCandidates } from './verificationCandidates.js'
@@ -302,10 +302,14 @@ export async function verifyAndApplyOperations(input: {
   const appliedKeys = new Set<string>()
   const verifiedRetracts: Array<{ subjectUserId: string; predicate: PredicateId; value: string }> = []
 
-  // Retractions go last, so a switch sent as retract-then-add lets the add supersede the old value and inherit its pin.
+  // A multi-value retraction frees its cap slot before the adds, or the cap evicts an unrelated fact. A single-value
+  // retraction goes last, so a switch sent as retract-then-add lets the add supersede the old value and inherit its pin.
+  const retractsFirst = ({ op }: PlannedOperation) =>
+    op.op === 'retract' && op.subject.kind === 'user' && cardinalityOf(op.predicate) === 'multi'
   const applyOrder = [
+    ...planned.filter(retractsFirst),
     ...planned.filter(({ op }) => op.op !== 'retract'),
-    ...planned.filter(({ op }) => op.op === 'retract')
+    ...planned.filter((entry) => entry.op.op === 'retract' && !retractsFirst(entry))
   ]
   getDb().transaction(() => {
     for (const entry of applyOrder) {
