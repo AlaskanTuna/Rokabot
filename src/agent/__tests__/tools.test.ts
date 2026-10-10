@@ -184,28 +184,33 @@ describe('flipCoin', () => {
 describe('getCurrentTime', () => {
   it('returns correct timezone name for explicit IANA timezone', () => {
     const result = getCurrentTime({ location: 'Asia/Tokyo' })
-    expect(result.timezone).toBe('Asia/Tokyo')
-    expect(result.time).toBeDefined()
-    expect(result.date).toBeDefined()
-    expect(result.day).toBeDefined()
+    expect(result).toMatchObject({ ok: true, timezone: 'Asia/Tokyo' })
+    expect(result).toEqual(
+      expect.objectContaining({ time: expect.any(String), date: expect.any(String), day: expect.any(String) })
+    )
   })
 
   it('returns a result with time/date/day fields when no params given', () => {
     const result = getCurrentTime({})
-    expect(result.time).toBeTruthy()
-    expect(result.date).toBeTruthy()
-    expect(result.day).toBeTruthy()
-    expect(result.timezone).toBeTruthy()
+    expect(result).toEqual(
+      expect.objectContaining({
+        ok: true,
+        time: expect.any(String),
+        date: expect.any(String),
+        day: expect.any(String),
+        timezone: expect.any(String)
+      })
+    )
   })
 
   it('includes AM or PM when using 12h format', () => {
     const result = getCurrentTime({ format: '12h', location: 'America/New_York' })
-    expect(result.time).toMatch(/AM|PM/)
+    expect(result).toMatchObject({ ok: true, time: expect.stringMatching(/AM|PM/) })
   })
 
   it('does not include AM/PM when using 24h format', () => {
     const result = getCurrentTime({ format: '24h', location: 'America/New_York' })
-    expect(result.time).not.toMatch(/AM|PM/)
+    expect(result).toMatchObject({ ok: true, time: expect.not.stringMatching(/AM|PM/) })
   })
 })
 
