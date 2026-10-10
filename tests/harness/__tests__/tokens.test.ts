@@ -133,10 +133,22 @@ describe('harness token measurement', () => {
     expect(SPEECH_PROMPT).toContain('never a list inside a list')
     expect(SPEECH_PROMPT).toContain('steps that must happen in order')
     expect(SPEECH_PROMPT).toContain('Give it its own line starting with >')
-    expect(SPEECH_PROMPT).toContain('a line of just --- between two parts that do different jobs')
     expect(SPEECH_PROMPT).toContain('wrap an ending, a plot twist or a quiz answer in ||spoiler|| tags')
     expect(SPEECH_PROMPT).toContain('Never headers, tables, underline or strikethrough.')
     expect(SPEECH_PROMPT).toContain('stay in one paragraph unless they asked for steps or a list')
+  })
+
+  // A divider after a verdict or before her own take turned up wherever she judged something; it is kept for the
+  // one message shape that needs it.
+  it('keeps the divider rare: only between answers to unrelated questions in one message', () => {
+    expect(SPEECH_PROMPT).toContain(
+      '**Divider:** rare. Only when one message asks two or more unrelated things, put a line of just --- between the answers.'
+    )
+    expect(SPEECH_PROMPT).toContain(
+      'Never for a verdict, an opinion, a list, code or chat; nearly every reply has none.'
+    )
+    expect(SPEECH_PROMPT).not.toContain('then your own take')
+    expect(SPEECH_PROMPT.match(/^---$/gm)).toBeNull()
   })
 
   it('keeps bold for the words that carry weight rather than a per-reply quota', () => {
