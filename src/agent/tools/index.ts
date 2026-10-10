@@ -112,7 +112,7 @@ export const getAnimeScheduleTool = new FunctionTool({
 export const getWeatherTool = new FunctionTool({
   name: 'get_weather',
   description:
-    "Get the current weather for a city. Defaults to the bot's configured timezone location if no city is specified. Use when someone asks about the weather, temperature, or conditions in a location.",
+    "Get the current weather for a city. Defaults to the bot's configured timezone location if no city is specified. Use when someone asks about the weather, temperature, or conditions in a location. If ok is false, say the weather could not be read and do not guess a temperature.",
   parameters: z.object({
     city: z.string().describe('City name to get weather for. Omit to use the default location.').optional()
   }),

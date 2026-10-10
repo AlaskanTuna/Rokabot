@@ -7,16 +7,24 @@ export interface GetWeatherParams {
   city?: string
 }
 
-export interface GetWeatherResult {
+export interface WeatherReading {
+  ok: true
   city: string
   country: string
-  temperature: number
-  feelsLike: number
-  humidity: number
+  temperature: number | null
+  feelsLike: number | null
+  humidity: number | null
   condition: string
-  windSpeed: number
-  isDay: boolean
+  windSpeed: number | null
+  isDay: boolean | null
 }
+
+export interface WeatherFailure {
+  ok: false
+  reason: string
+}
+
+export type GetWeatherResult = WeatherReading | WeatherFailure
 
 interface GeocodingResult {
   results?: Array<{
@@ -80,16 +88,7 @@ export async function getWeather(params: GetWeatherParams): Promise<GetWeatherRe
     city = config.timezone?.split('/').pop()?.replace(/_/g, ' ') ?? ''
   }
   if (!city) {
-    return {
-      city: '',
-      country: '',
-      temperature: 0,
-      feelsLike: 0,
-      humidity: 0,
-      condition: 'No city provided',
-      windSpeed: 0,
-      isDay: true
-    }
+    return weatherFailure('No city provided')
   }
 
   try {
@@ -98,14 +97,14 @@ export async function getWeather(params: GetWeatherParams): Promise<GetWeatherRe
 
     if (!geoResponse.ok) {
       logger.warn({ status: geoResponse.status }, 'Geocoding API error')
-      return emptyResult(city, 'Geocoding failed')
+      return weatherFailure('Geocoding failed')
     }
 
     const geoBody = (await geoResponse.json()) as GeocodingResult
     const location = geoBody.results?.[0]
 
     if (!location?.latitude || !location?.longitude) {
-      return emptyResult(city, 'City not found')
+      return weatherFailure('City not found')
     }
 
     const lat = location.latitude
@@ -121,41 +120,33 @@ export async function getWeather(params: GetWeatherParams): Promise<GetWeatherRe
 
     if (!weatherResponse.ok) {
       logger.warn({ status: weatherResponse.status }, 'Weather API error')
-      return emptyResult(resolvedCity, 'Weather fetch failed')
+      return weatherFailure('Weather fetch failed')
     }
 
     const weatherBody = (await weatherResponse.json()) as OpenMeteoWeather
     const current = weatherBody.current
 
     if (!current) {
-      return emptyResult(resolvedCity, 'No weather data')
+      return weatherFailure('No weather data')
     }
 
     return {
+      ok: true,
       city: resolvedCity,
       country,
-      temperature: current.temperature_2m ?? 0,
-      feelsLike: current.apparent_temperature ?? 0,
-      humidity: current.relative_humidity_2m ?? 0,
+      temperature: current.temperature_2m ?? null,
+      feelsLike: current.apparent_temperature ?? null,
+      humidity: current.relative_humidity_2m ?? null,
       condition: weatherCodeToCondition(current.weather_code ?? -1),
-      windSpeed: current.wind_speed_10m ?? 0,
-      isDay: (current.is_day ?? 1) === 1
+      windSpeed: current.wind_speed_10m ?? null,
+      isDay: typeof current.is_day === 'number' ? current.is_day === 1 : null
     }
   } catch (error) {
     logger.error({ error, city }, 'Failed to fetch weather')
-    return emptyResult(city, 'Request failed')
+    return weatherFailure('Request failed')
   }
 }
 
-function emptyResult(city: string, condition: string): GetWeatherResult {
-  return {
-    city,
-    country: '',
-    temperature: 0,
-    feelsLike: 0,
-    humidity: 0,
-    condition,
-    windSpeed: 0,
-    isDay: true
-  }
+function weatherFailure(reason: string): WeatherFailure {
+  return { ok: false, reason }
 }
