@@ -176,3 +176,6 @@ graphify-out/*
 settings.local.json
 roka-expressions/
 node-compile-cache/
+
+# Discord preview output
+preview-out/

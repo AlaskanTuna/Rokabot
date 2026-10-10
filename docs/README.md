@@ -347,6 +347,18 @@ docker compose up -d
 
 Quick checks: `npm run lint`, `npm run format:check`, and `npm run typecheck` — the last of these is the only gate that type-checks the `tests/` tree ([#151](https://github.com/AlaskanTuna/Rokabot/pull/151)); `npm run build` type-checks `src/` only. Full test verification is `npm test && npm run test:perf`; `npm run test:perf` is a separate performance-evaluation gate. `npm run test:live` is a third, opt-in gate: `ROKABOT_HARNESS_KEY` names which `.env` key funds a run (default `GRAPHIFY_GEMINI_API_KEY`); `DEV_GEMINI_API_KEY` is a documented second key so an exhausted daily quota can redirect a run rather than stall it. It is excluded from both `npm test` and full verification. `npm run measure -- <path>` prints an attachment's measured token cost and which ceilings it meets, and costs nothing against the generate quota.
 
+`npm run preview` shows a reply the way the Discord client draws it, without posting to Discord. It writes a standalone HTML page (default `preview-out/preview.html`, git-ignored) that reproduces the desktop chat view: avatars, the APP tag, reply and slash-command headers, Discord markdown, Twemoji, and every Components V2 type Roka sends (container accent, section thumbnail, text display, separator, media gallery, buttons, selects). The page has a theme picker for Dark, Ash, Onyx and Light.
+
+```bash
+npm run preview -- "Ehehe~ **sunny** today!" --tone playful --tools search_web --sources https://example.com --open
+npm run preview -- --file reply.md --all-tones          # one reply per tone, to compare accents and expressions
+npm run preview -- --payload payload.json               # any raw Discord message payload (object or array)
+npm run preview -- --transcript tests/harness/transcripts/mention.jsonl   # real handlers, offline model
+npm run test:chat -- Tester --live --html preview-out/chat.html          # live chat; the page reloads every 2s
+```
+
+A transcript line may carry a `reply` field to script the offline model's answer, so exact text runs through the real Discord handlers. Only `--live` spends Gemini calls.
+
 `npm run test:live` benchmarks whether the live model fires a tool on a labelled should-fire/shouldn't-fire dialogue set, scored separately across three case sets under `tests/harness/tool-trigger/` — `recall-user.jsonl`, `search-web.jsonl`, and `remember-user.jsonl`. It is the pre-ship acceptance gate for prompt and tool-description changes. Each case set's verdict rests on a precision floor and a per-tool recall floor, not an accuracy floor or a zero-systematic-failures rule; `systematicFailures` is a diagnostic and does not gate the verdict. `remember_user` is judged against its own lower recall floor because the shared floor false-fails it at its measured rate, so a green `remember_user` is a collapse detector rather than a regression detector — it is not evidence that nothing else regressed. One run costs roughly half of one Gemini key's daily request allowance and about an hour of wall clock, so budget for two runs per key per day. Each run prints its own per-case report; no verdict is quoted here, because one is only true of the prompt and the day it was measured on.
 
 <p align="right"><a href="#readme-top">↑</a></p>
