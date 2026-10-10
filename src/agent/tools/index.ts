@@ -53,7 +53,7 @@ export const flipCoinTool = new FunctionTool({
 export const getCurrentTimeTool = new FunctionTool({
   name: 'get_current_time',
   description:
-    'Get the current time, date, and day of the week for a location. IMPORTANT: Always report the exact time returned by this tool — never estimate or guess the time yourself.',
+    'Get the current time, date, and day of the week for a location. IMPORTANT: Always report the exact time returned by this tool — never estimate or guess the time yourself. If ok is false, ask the user for the country or an IANA timezone instead of answering.',
   parameters: z.object({
     location: z
       .string()
@@ -112,7 +112,7 @@ export const getAnimeScheduleTool = new FunctionTool({
 export const getWeatherTool = new FunctionTool({
   name: 'get_weather',
   description:
-    "Get the current weather for a city. Defaults to the bot's configured timezone location if no city is specified. Use when someone asks about the weather, temperature, or conditions in a location.",
+    "Get the current weather for a city. Defaults to the bot's configured timezone location if no city is specified. Use when someone asks about the weather, temperature, or conditions in a location. If ok is false, say the weather could not be read and do not guess a temperature.",
   parameters: z.object({
     city: z.string().describe('City name to get weather for. Omit to use the default location.').optional()
   }),

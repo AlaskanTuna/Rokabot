@@ -5,13 +5,22 @@ export interface GetCurrentTimeParams {
   format?: '12h' | '24h'
 }
 
-export interface GetCurrentTimeResult {
+export interface GetCurrentTimeFound {
+  ok: true
   location: string
   time: string
   date: string
   day: string
   timezone: string
 }
+
+export interface GetCurrentTimeUnknown {
+  ok: false
+  reason: 'unknown location'
+  location: string
+}
+
+export type GetCurrentTimeResult = GetCurrentTimeFound | GetCurrentTimeUnknown
 
 const cityToTimezone: Record<string, string> = {
   // UTC / GMT
@@ -132,27 +141,21 @@ const cityToTimezone: Record<string, string> = {
 }
 
 /** Resolve a location string to an IANA timezone */
-function resolveTimezone(location?: string): { timezone: string; resolved: boolean } {
+function resolveTimezone(location?: string): string {
   if (!location) {
-    return { timezone: config.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone, resolved: true }
+    return config.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
   }
 
   if (location.includes('/')) {
-    return { timezone: location, resolved: true }
+    return location
   }
 
-  const key = location.toLowerCase().trim()
-  const mapped = cityToTimezone[key]
-  if (mapped) {
-    return { timezone: mapped, resolved: true }
-  }
-
-  return { timezone: location, resolved: false }
+  return cityToTimezone[location.toLowerCase().trim()] ?? location
 }
 
 /** Get the current time, date, and weekday for a location */
 export function getCurrentTime(params: GetCurrentTimeParams): GetCurrentTimeResult {
-  const { timezone, resolved } = resolveTimezone(params.location)
+  const timezone = resolveTimezone(params.location)
   const use12h = params.format === '12h'
   const now = new Date()
 
@@ -179,10 +182,10 @@ export function getCurrentTime(params: GetCurrentTimeParams): GetCurrentTimeResu
 
     const location = params.location ?? 'local'
 
-    return { location, time, date, day, timezone }
+    return { ok: true, location, time, date, day, timezone }
   } catch {
-    if (!resolved) {
-      return getCurrentTime({ ...params, location: undefined })
+    if (params.location) {
+      return { ok: false, reason: 'unknown location', location: params.location }
     }
     throw new Error(`Invalid timezone: ${timezone}`)
   }
