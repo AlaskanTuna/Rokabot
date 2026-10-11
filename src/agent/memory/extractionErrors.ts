@@ -50,6 +50,8 @@ export function classifyExtractionError(
   for (const cause of causes) {
     if (!(cause instanceof ProviderError)) continue
     if (cause.kind === 'transient_http' || cause.kind === 'quota_exhausted') return 'transient'
+    // Anthropic's timeout and abort errors carry no name, code or cause the checks below recognise.
+    if (cause.kind === 'network' && !options.shuttingDown) return 'transient'
     // A spent balance or a refusal does not change on a retry, whatever status carried it.
     if (cause.kind === 'billing_exhausted' || cause.kind === 'refusal') return 'permanent'
   }

@@ -65,6 +65,17 @@ describe('classifyExtractionError', () => {
     ).toBe('permanent')
   })
 
+  it('classifies a network provider failure as transient unless shutdown caused it', () => {
+    const error = new ProviderError({ provider: 'anthropic', kind: 'network', message: 'Anthropic Request timed out.' })
+    expect(classifyExtractionError(error)).toBe('transient')
+    expect(classifyExtractionError(error, { shuttingDown: true })).toBe('permanent')
+  })
+
+  it('finds a provider failure through the cause chain', () => {
+    const cause = new ProviderError({ provider: 'anthropic', kind: 'transient_http', message: 'busy', status: 529 })
+    expect(classifyExtractionError(new Error('extraction failed', { cause }))).toBe('transient')
+  })
+
   it('still classifies a structured-output failure as permanent', async () => {
     const { StructuredOutputError } = await import('../../llm/generateObject.js')
     expect(classifyExtractionError(new StructuredOutputError('invalid_object', 'anthropic'))).toBe('permanent')
