@@ -28,7 +28,7 @@ function geminiUsage(
 /** ADK's Gemini with request shaping, a budget reservation and usage recording around each call. */
 class GeminiLlm extends Gemini {
   constructor(private readonly resolved: ResolvedModel) {
-    super({ model: resolved.model })
+    super({ model: resolved.model, apiKey: resolved.apiKey })
   }
 
   override async *generateContentAsync(

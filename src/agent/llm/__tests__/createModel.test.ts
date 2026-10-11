@@ -128,6 +128,10 @@ describe('createRokaModel', () => {
 })
 
 describe('createLlm', () => {
+  it("authenticates Gemini with the resolved model's own key, not whichever Google key the environment holds", () => {
+    expect((createLlm(legacyGemini) as unknown as { apiKey?: string }).apiKey).toBe('vitest-gemini-token')
+  })
+
   it('has no adapter for openai until the Chat Completions phase', () => {
     expect(() => createLlm({ ...haiku, provider: 'openai', model: 'gpt-6-luna' })).toThrow(
       'No adapter serves openai yet'
