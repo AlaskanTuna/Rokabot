@@ -1883,6 +1883,18 @@ describe('config module', () => {
     await expect(() => import('../config.js')).rejects.toThrow('Missing required environment variable: GEMINI_API_KEY')
   })
 
+  it('requires GEMINI_API_KEY for the legacy Gemini main alone', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('GEMINI_API_KEY', '')
+    vi.stubEnv('EMBEDDINGS_PROVIDER', 'local')
+    vi.stubEnv('MEDIA_WATCHER', 'off')
+
+    await expect(() => import('../config.js')).rejects.toThrow(
+      /^Missing required environment variable: GEMINI_API_KEY$/
+    )
+  })
+
   it('judges memory with Jev on the legacy config whenever its key is set', async () => {
     setRequiredEnvVars()
     clearTunableEnvVars()

@@ -251,6 +251,83 @@ describe('parseExtractionOutput', () => {
     expect(EXTRACTION_RESPONSE_SCHEMA).toEqual(LEGACY_GEMINI_EXTRACTION_SCHEMA)
   })
 
+  it('accepts a reply for every operation shape the legacy Gemini schema allows', () => {
+    const user = { kind: 'user', userId: 'u-1' }
+    const guild = { kind: 'guild' }
+    const dates = [
+      { year: 2026, month: 10, day: 31 },
+      { month: 10, day: 31 },
+      { year: 2026, month: 11 },
+      { month: 11 },
+      { relative: 'next_week', weekday: 'friday' },
+      { relative: 'tomorrow' }
+    ]
+    const replies: Array<{ variant: number; op: object }> = [
+      { variant: 0, op: { op: 'add', subject: user, predicate: 'likes', value: 'tea', tense: 'current' } },
+      {
+        variant: 0,
+        op: {
+          op: 'add',
+          subject: user,
+          predicate: 'relationship_to',
+          value: 'sibling',
+          tense: 'past',
+          objectUserId: 'u-2'
+        }
+      },
+      {
+        variant: 1,
+        op: { op: 'update', subject: user, existingId: 1, predicate: 'hobby', value: 'go', tense: 'planned' }
+      },
+      {
+        variant: 1,
+        op: {
+          op: 'update',
+          subject: user,
+          existingId: 2,
+          predicate: 'friend_group',
+          value: 'raid squad',
+          tense: 'current',
+          objectUserId: 'u-3'
+        }
+      },
+      { variant: 2, op: { op: 'remove', subject: user, existingId: 3, predicate: 'pets', value: 'a cat' } },
+      { variant: 3, op: { op: 'retract', subject: user, predicate: 'diet', value: 'vegan' } },
+      ...dates.map((date) => ({
+        variant: 4,
+        op: { op: 'add', subject: guild, predicate: 'upcoming_event', value: 'Server tournament', date }
+      })),
+      ...dates.map((date) => ({
+        variant: 5,
+        op: { op: 'update', subject: guild, existingId: 4, predicate: 'plan', value: 'Game night', date }
+      })),
+      { variant: 6, op: { op: 'remove', subject: guild, existingId: 5, predicate: 'plan', value: 'Game night' } },
+      { variant: 6, op: { op: 'remove', subject: guild, existingId: 6, predicate: 'rule', value: 'No spoilers' } },
+      { variant: 7, op: { op: 'add', subject: guild, predicate: 'running_joke', value: 'The cursed potato' } },
+      {
+        variant: 7,
+        op: { op: 'add', subject: guild, predicate: 'announcement', value: 'New channel', date: dates[1] }
+      },
+      { variant: 8, op: { op: 'update', subject: guild, existingId: 7, predicate: 'place', value: 'The lobby' } },
+      {
+        variant: 8,
+        op: { op: 'update', subject: guild, existingId: 8, predicate: 'rule', value: 'No pings', date: dates[5] }
+      },
+      { variant: 9, op: { op: 'noop' } }
+    ]
+    const legacyVariants = LEGACY_GEMINI_EXTRACTION_SCHEMA.properties.ops.items.anyOf
+
+    expect(new Set(replies.map((reply) => reply.variant)).size).toBe(legacyVariants.length)
+    for (const { op } of replies) {
+      expect(ExtractionOutputSchema.safeParse({ ops: [op], summary: 'The members talked.' }).success).toBe(true)
+    }
+    expect(
+      ExtractionOutputSchema.safeParse({ ops: replies.map((reply) => reply.op), summary: 'The members talked.' })
+        .success
+    ).toBe(true)
+    expect(ExtractionOutputSchema.safeParse({ ops: [], summary: 'Nothing durable was said.' }).success).toBe(true)
+  })
+
   it('keeps the existing-claim ID floor the legacy schema sent', () => {
     type Variant = { properties: Record<string, unknown> }
     const variants = ((GEMINI_SCHEMA.properties as { ops: { items: unknown } }).ops.items as { anyOf: Variant[] }).anyOf

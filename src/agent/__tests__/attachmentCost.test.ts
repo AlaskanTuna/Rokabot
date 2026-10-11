@@ -70,9 +70,22 @@ describe('needsMeasuring', () => {
 describe('measureAttachmentTokens', () => {
   it('reports what the API charges', async () => {
     countTokens.mockResolvedValueOnce({ totalTokens: 28_001 })
-    await expect(measureAttachmentTokens([{ inlineData: { mimeType: 'application/pdf', data: 'x' } }])).resolves.toBe(
-      28_001
-    )
+    const parts = [{ inlineData: { mimeType: 'application/pdf', data: 'x' } }]
+
+    await expect(measureAttachmentTokens(parts)).resolves.toBe(28_001)
+    expect(countTokens.mock.calls.at(-1)).toStrictEqual([{ model: 'm', contents: [{ role: 'user', parts }] }])
+  })
+
+  it('counts on the main model for the main target and on gemini.model for the Gemini target', async () => {
+    mocks.config.llm.main = { ...geminiMain, model: 'main-gemini' }
+    const parts = [{ inlineData: { mimeType: 'application/pdf', data: 'x' } }]
+
+    countTokens.mockResolvedValueOnce({ totalTokens: 1 })
+    await measureAttachmentTokens(parts)
+    expect(countTokens.mock.calls.at(-1)?.[0].model).toBe('main-gemini')
+    countTokens.mockResolvedValueOnce({ totalTokens: 1 })
+    await measureAttachmentTokens(parts, 'gemini')
+    expect(countTokens.mock.calls.at(-1)?.[0].model).toBe('m')
   })
 
   // Every type comes back exactly as priced. Video used to be inflated by an allowance for the soundtrack

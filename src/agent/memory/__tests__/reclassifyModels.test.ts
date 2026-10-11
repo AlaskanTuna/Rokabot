@@ -175,6 +175,7 @@ describe('jevConfirm', () => {
     mocks.clientAvailable = true
     await expect(jevConfirm([])).resolves.toEqual({})
     expect(mocks.systemOne).not.toHaveBeenCalled()
+    expect(mocks.judgeWithModel).not.toHaveBeenCalled()
 
     mocks.systemOne.mockRejectedValueOnce(new Error('draws on weekends'))
     await expect(jevConfirm(moves)).resolves.toEqual({})

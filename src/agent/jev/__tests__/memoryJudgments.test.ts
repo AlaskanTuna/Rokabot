@@ -62,6 +62,7 @@ describe('judgeEpisodeAdmission', () => {
 
     await expect(judgeEpisodeAdmission({ lines: ['fact'] })).resolves.toBeNull()
     expect(mocks.systemOne).not.toHaveBeenCalled()
+    expect(mocks.judgeWithModel).not.toHaveBeenCalled()
   })
 
   it('fails closed and does not log episode content when Jev fails', async () => {
@@ -159,6 +160,22 @@ describe('judgeEpisodeOperations', () => {
     ).resolves.toBeNull()
     await expect(judgeEpisodeOperations({ lines: [], ops: [], existing: [] })).resolves.toBeNull()
     expect(mocks.systemOne).toHaveBeenCalledOnce()
+  })
+
+  it('returns null without a configured Jev client', async () => {
+    mocks.clientAvailable = false
+
+    await expect(
+      judgeEpisodeOperations({
+        lines: ['fact'],
+        ops: [
+          { op: 'add', subject: { kind: 'user', userId: 'u-1' }, predicate: 'likes', value: 'tea', tense: 'current' }
+        ],
+        existing: []
+      })
+    ).resolves.toBeNull()
+    expect(mocks.systemOne).not.toHaveBeenCalled()
+    expect(mocks.judgeWithModel).not.toHaveBeenCalled()
   })
 
   it('uses guild scope questions in place of user attribution questions', async () => {
@@ -479,6 +496,7 @@ describe('judgeHiddenRetractions', () => {
     mocks.clientAvailable = true
     await expect(judgeHiddenRetractions({ ...input, candidates: [] })).resolves.toBeNull()
     expect(mocks.systemOne).not.toHaveBeenCalled()
+    expect(mocks.judgeWithModel).not.toHaveBeenCalled()
   })
 
   it.each([
