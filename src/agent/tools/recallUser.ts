@@ -43,7 +43,9 @@ async function embedQuery(message: string): Promise<readonly number[] | null> {
     text: message,
     role: 'RETRIEVAL_QUERY',
     signal: controller.signal
-  }).catch(() => null)
+  })
+    .then(({ values }) => values)
+    .catch(() => null)
   try {
     return await Promise.race([embedded, timedOut])
   } finally {

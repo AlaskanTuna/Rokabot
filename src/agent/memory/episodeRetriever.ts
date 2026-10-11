@@ -13,12 +13,13 @@ export type RecalledEpisode = Readonly<{
 }>
 
 export function cosineSimilarity(left: EpisodeEmbedding, right: EpisodeEmbedding): number | null {
-  if (left.length !== 768 || right.length !== 768) return null
+  const dimensions = config.embeddings.dim
+  if (left.length !== dimensions || right.length !== dimensions) return null
 
   let dot = 0
   let leftSquaredNorm = 0
   let rightSquaredNorm = 0
-  for (let index = 0; index < 768; index += 1) {
+  for (let index = 0; index < dimensions; index += 1) {
     const leftValue = left[index]
     const rightValue = right[index]
     if (
@@ -57,7 +58,11 @@ export function recallEpisodes(input: {
   queryEmbedding: EpisodeEmbedding
   scope?: RecallScope
 }): RecalledEpisode[] {
-  if (input.queryEmbedding.length !== 768 || input.queryEmbedding.some((value) => !Number.isFinite(value))) return []
+  if (
+    input.queryEmbedding.length !== config.embeddings.dim ||
+    input.queryEmbedding.some((value) => !Number.isFinite(value))
+  )
+    return []
 
   return listEpisodesForGuild(input.guildId)
     .filter(

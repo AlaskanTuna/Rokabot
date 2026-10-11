@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   config: {
     gemini: { apiKey: 'test-key', extractionModel: 'test-model', safetyThreshold: 'OFF', timeout: 5000 },
     logging: { level: 'silent' },
+    embeddings: { provider: 'gemini', dim: 768, fingerprint: 'gemini:gemini-embedding-2:768:gemini-task-prefix' },
     memory: { maxActiveClaimsPerUser: 20, verifyThreshold: 0.5, privacy: 'strict' },
     rateLimit: { rpm: 15, rpd: 500 }
   }
@@ -24,21 +25,24 @@ vi.mock('../../../config.js', () => ({ config: mocks.config }))
 import { closeDb, getDb } from '../../../storage/database.js'
 import { setClaimEmbedding } from '../../../storage/memoryRecallStore.js'
 import { registerChannelVisibility, resetChannelVisibilityForTest } from '../channelVisibility.js'
+import { geminiVector } from '../embeddings/__tests__/vectors.js'
 import { verifyAndApplyOperations } from '../extractor.js'
 import { renderFactSentence } from '../factSentences.js'
 import { reconcileHiddenRetractions } from '../hiddenRetractions.js'
 import { assertClaim } from '../memoryClaims.js'
 import type { PredicateId } from '../predicates.js'
 
-function unit(angle: number): number[] {
-  return Array.from({ length: 768 }, (_, index) => (index === 0 ? Math.cos(angle) : index === 1 ? Math.sin(angle) : 0))
+function unit(angle: number) {
+  return geminiVector(
+    Array.from({ length: 768 }, (_, index) => (index === 0 ? Math.cos(angle) : index === 1 ? Math.sin(angle) : 0))
+  )
 }
 
 function seedClaim(input: {
   predicate: PredicateId
   value: string
   channelId: string
-  embedding?: number[] | null
+  embedding?: ReturnType<typeof unit> | null
   subjectUserId?: string
   period?: 'current' | 'past'
 }) {

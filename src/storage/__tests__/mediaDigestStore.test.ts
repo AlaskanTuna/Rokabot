@@ -7,6 +7,7 @@ vi.mock('../database.js', () => ({
   getDb: () => testDb
 }))
 
+import { GEMINI_FINGERPRINT, geminiVector } from '../../agent/memory/embeddings/__tests__/vectors.js'
 import {
   findMediaDigest,
   findMediaSharedBy,
@@ -19,6 +20,7 @@ import {
   saveMediaDigest,
   setMediaDigestEmbedding
 } from '../mediaDigestStore.js'
+import { ensureVectorProvenanceColumns } from '../vectorProvenance.js'
 
 function digestInput(overrides: Partial<Parameters<typeof saveMediaDigest>[0]> = {}) {
   return {
@@ -78,6 +80,7 @@ describe('mediaDigestStore', () => {
       CREATE INDEX idx_media_occurrence_digest ON media_occurrence (digest_id);
       CREATE INDEX idx_media_occurrence_guild_user ON media_occurrence (guild_id, shared_by_user_id);
     `)
+    ensureVectorProvenanceColumns(testDb, 'media_digest')
   })
 
   afterEach(() => testDb.close())
@@ -169,18 +172,23 @@ describe('mediaDigestStore', () => {
 
   it('round-trips embeddings as float32 values and supports maintenance updates', () => {
     const vector = Array.from({ length: 768 }, (_, index) => (index + 1) / 768)
-    const digest = saveMediaDigest(digestInput({ embedding: vector }))!
+    const digest = saveMediaDigest(digestInput({ embedding: geminiVector(vector) }))!
 
     expect(digest.embedding).toEqual(Array.from(new Float32Array(vector)))
     expect(
-      setMediaDigestEmbedding({ guildId: 'guild-1', id: digest.id, summary: digest.summary, embedding: vector })
+      setMediaDigestEmbedding({
+        guildId: 'guild-1',
+        id: digest.id,
+        summary: digest.summary,
+        embedding: geminiVector(vector)
+      })
     ).toBe(true)
     expect(findMediaDigest('guild-1', 'youtube:video-1')?.embedding).toEqual(Array.from(new Float32Array(vector)))
   })
 
   it('drops an embedding when the summary it was made from is replaced', () => {
     const vector = Array(768).fill(0.25)
-    saveMediaDigest(digestInput({ embedding: vector }))
+    saveMediaDigest(digestInput({ embedding: geminiVector(vector) }))
     saveMediaDigest(digestInput({ summary: 'A cat explores a night garden.' }))
     expect(findMediaDigest('guild-1', 'youtube:video-1')?.embedding).not.toBeNull()
 
@@ -192,7 +200,7 @@ describe('mediaDigestStore', () => {
         guildId: 'guild-1',
         id: rewatched.id,
         summary: 'A cat explores a night garden.',
-        embedding: vector
+        embedding: geminiVector(vector)
       })
     ).toBe(false)
     expect(findMediaDigest('guild-1', 'youtube:video-1')?.embedding).toBeNull()
@@ -200,7 +208,7 @@ describe('mediaDigestStore', () => {
 
   it('lists recall candidates with an embedding and their latest share', () => {
     const vector = Array(768).fill(0.25)
-    const embedded = saveMediaDigest(digestInput({ embedding: vector }))!
+    const embedded = saveMediaDigest(digestInput({ embedding: geminiVector(vector) }))!
     saveMediaDigest(digestInput({ contentKey: 'youtube:video-2' }))
     recordMediaOccurrence(occurrenceInput(embedded.id, { observedAt: 4_000 }))
 
@@ -225,10 +233,10 @@ describe('mediaDigestStore', () => {
   })
 
   it('rejects embeddings with invalid dimensions, non-finite values, or float32 overflow', () => {
-    expect(() => saveMediaDigest(digestInput({ embedding: Array(767).fill(0.25) }))).toThrow()
-    expect(() => saveMediaDigest(digestInput({ embedding: Array(768).fill(Number.NaN) }))).toThrow()
+    expect(() => saveMediaDigest(digestInput({ embedding: geminiVector(Array(767).fill(0.25)) }))).toThrow()
+    expect(() => saveMediaDigest(digestInput({ embedding: geminiVector(Array(768).fill(Number.NaN)) }))).toThrow()
     expect(() =>
-      setMediaDigestEmbedding({ guildId: 'guild-1', id: 1, summary: '', embedding: [Number.MAX_VALUE] })
+      setMediaDigestEmbedding({ guildId: 'guild-1', id: 1, summary: '', embedding: geminiVector([Number.MAX_VALUE]) })
     ).toThrow()
   })
 
@@ -246,7 +254,7 @@ describe('mediaDigestStore', () => {
         guildId: 'dm:user-1',
         id: digest.id,
         summary: digest.summary,
-        embedding: Array(768).fill(1)
+        embedding: geminiVector(Array(768).fill(1))
       })
     ).toBe(false)
     expect(findMediaSharedBy('dm:user-1', 'user-1', ['cat'], 10)).toEqual([])
@@ -289,5 +297,22 @@ describe('mediaDigestStore', () => {
       { message_id: 'shared-by-user-2' }
     ])
     expect(findMediaDigest('guild-1', 'youtube:authored')).toBeNull()
+  })
+
+  it('keeps or drops the provenance columns together with the vector', () => {
+    const provenance = () =>
+      testDb.prepare('SELECT embedding_model_id, embedding_dim, embedding_fingerprint FROM media_digest').get()
+    saveMediaDigest(digestInput({ embedding: geminiVector(Array(768).fill(0.25)) }))
+    saveMediaDigest(digestInput())
+
+    expect(provenance()).toEqual({
+      embedding_model_id: 'gemini-embedding-2',
+      embedding_dim: 768,
+      embedding_fingerprint: GEMINI_FINGERPRINT
+    })
+
+    saveMediaDigest(digestInput({ summary: 'A dog digs in the snow.' }))
+
+    expect(provenance()).toEqual({ embedding_model_id: null, embedding_dim: null, embedding_fingerprint: null })
   })
 })

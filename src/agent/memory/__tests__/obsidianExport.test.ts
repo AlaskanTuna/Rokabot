@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('../../../config.js', () => ({
   config: {
     logging: { level: 'silent' },
+    embeddings: { provider: 'gemini', dim: 768, fingerprint: 'gemini:gemini-embedding-2:768:gemini-task-prefix' },
     memory: {
       maxActiveClaimsPerUser: 20,
       vaultExportDir: 'data/vault'
@@ -16,6 +17,7 @@ vi.mock('../../../config.js', () => ({
 
 import { closeDb, getDb } from '../../../storage/database.js'
 import { saveMemoryEpisode } from '../../../storage/memoryEpisodeStore.js'
+import { geminiVector } from '../embeddings/__tests__/vectors.js'
 import { assertClaim, assertGuildClaim, pinClaim } from '../memoryClaims.js'
 
 let vaultDir: string
@@ -178,7 +180,7 @@ describe('exportVault', () => {
       startedAt: Date.UTC(2026, 8, 20, 10, 30),
       endedAt: Date.UTC(2026, 8, 20, 11, 5),
       summary,
-      embedding: Array.from({ length: 768 }, () => 0.125)
+      embedding: geminiVector(Array.from({ length: 768 }, () => 0.125))
     })
     saveMemoryEpisode({
       id: 2,

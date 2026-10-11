@@ -37,7 +37,7 @@ async function reconcileOne(input: {
 
   const embeddings = getClaimEmbeddings(hidden.map(({ id }) => id))
   const statement = userFactSentence(retract.predicate, retract.value)
-  const queryEmbedding = await embedEpisodeText({ text: statement, role: 'RETRIEVAL_QUERY' })
+  const { values: queryEmbedding } = await embedEpisodeText({ text: statement, role: 'RETRIEVAL_QUERY' })
   const candidates = hidden
     .flatMap((claim) => {
       const embedding = embeddings.get(claim.id)

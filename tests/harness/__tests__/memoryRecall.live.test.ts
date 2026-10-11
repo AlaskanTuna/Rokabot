@@ -23,7 +23,7 @@ const facts = [
 ] as const
 
 async function recall(message: string, channelId: string) {
-  const queryEmbedding = await embedEpisodeText({ text: message, role: 'RETRIEVAL_QUERY' })
+  const { values: queryEmbedding } = await embedEpisodeText({ text: message, role: 'RETRIEVAL_QUERY' })
   return recallForTurn({
     scope: { guildId: GUILD, channelId },
     speakerId: 'speaker',

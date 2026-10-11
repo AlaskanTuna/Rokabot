@@ -1,6 +1,6 @@
 import type { ExtractionEpisode } from '../../storage/extractionQueue.js'
 import { saveMemoryEpisode } from '../../storage/memoryEpisodeStore.js'
-import type { EpisodeEmbedding } from '../../storage/memoryEpisodeStore.js'
+import type { EmbeddingVector } from '../../storage/memoryEpisodeStore.js'
 import { logger } from '../../utils/logger.js'
 import { embedEpisodeText } from './episodeEmbeddings.js'
 import type { EpisodeRunResult } from './extractor.js'
@@ -12,7 +12,7 @@ export async function persistEpisodeResult(input: {
   const { job, result } = input
   if (result.status !== 'completed' || result.summary === null) return false
 
-  let embedding: EpisodeEmbedding | null = null
+  let embedding: EmbeddingVector | null = null
   try {
     embedding = await embedEpisodeText({ text: result.summary, role: 'RETRIEVAL_DOCUMENT' })
   } catch (error) {

@@ -10,6 +10,8 @@ describe('Vitest environment', () => {
     expect(process.env.MODELSCOPE_API_KEY).toBe('')
     expect(process.env.TYPESAFE_API_KEY).toBe('')
     expect(process.env.TAVILY_API_KEY).toBe('')
+    expect(process.env.EMBEDDINGS_PROVIDER).toBe('')
+    expect(config.embeddings.provider).toBe('gemini')
     expect(config.fallback.apiKey).toBeUndefined()
     expect(config.jev.apiKey).toBeUndefined()
   })

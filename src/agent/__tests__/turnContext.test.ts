@@ -91,6 +91,7 @@ vi.mock('../searchPrefetch.js', () => ({
 
 import { config } from '../../config.js'
 import type { TurnJudgment } from '../jev/judgments.js'
+import { geminiVector } from '../memory/embeddings/__tests__/vectors.js'
 import { withSearchCitations } from '../searchCitations.js'
 import { applyJevTone, awaitTurnPrefetch, createTurnContext, startTurnEntryWork } from '../turnContext.js'
 
@@ -149,7 +150,7 @@ describe('turn entry work', () => {
     mocks.ensureSession.mockResolvedValue({ events: [] })
     mocks.retrieveGuildFacts.mockReturnValue({ facts: [], tokensEst: 0 })
     mocks.judgeTurn.mockResolvedValue(null)
-    mocks.embedEpisodeText.mockResolvedValue(Array.from({ length: 768 }, () => 0.25))
+    mocks.embedEpisodeText.mockResolvedValue(geminiVector(Array.from({ length: 768 }, () => 0.25)))
     mocks.buildEpisodeRecallBlock.mockReturnValue('')
     mocks.buildMediaRecallBlock.mockReturnValue('')
     mocks.runPrefetchForJudgment.mockResolvedValue({ decision: { fire: false, reason: 'no_judgment' }, outcome: null })
@@ -178,7 +179,7 @@ describe('turn entry work', () => {
     const pendingJudgment = deferred<TurnJudgment | null>()
     const vector = Array.from({ length: 768 }, () => 0.25)
     mocks.judgeTurn.mockReturnValue(pendingJudgment.promise)
-    mocks.embedEpisodeText.mockResolvedValue(vector)
+    mocks.embedEpisodeText.mockResolvedValue(geminiVector(vector))
 
     const work = startTurnEntryWork({ ...entryWork(), includeEpisodeRecall: true })
 
@@ -362,7 +363,7 @@ describe('turn entry work', () => {
   it('adds the guild episode block after its query embedding is ready', async () => {
     const vector = Array.from({ length: 768 }, () => 0.25)
     const block = '## Things you remember happening here\nThe group planned a picnic.'
-    mocks.embedEpisodeText.mockResolvedValue(vector)
+    mocks.embedEpisodeText.mockResolvedValue(geminiVector(vector))
     mocks.buildEpisodeRecallBlock.mockReturnValue(block)
     const work = startTurnEntryWork({ ...entryWork(), includeEpisodeRecall: true })
 
@@ -381,7 +382,7 @@ describe('turn entry work', () => {
     const vector = Array.from({ length: 768 }, () => 0.25)
     const episodeBlock = '## Things you remember happening here\nThe group planned a picnic.'
     const mediaBlock = '## Media You Watched Here Before\n["the picnic clip"]'
-    mocks.embedEpisodeText.mockResolvedValue(vector)
+    mocks.embedEpisodeText.mockResolvedValue(geminiVector(vector))
     mocks.buildEpisodeRecallBlock.mockReturnValue(episodeBlock)
     mocks.buildMediaRecallBlock.mockReturnValue(mediaBlock)
     const work = startTurnEntryWork({ ...entryWork(), includeEpisodeRecall: true })
@@ -824,7 +825,7 @@ describe('memory recall modes', () => {
     memoryConfig.recall = 'legacy'
     mocks.ensureSession.mockResolvedValue({ events: [] })
     mocks.loadHistory.mockReturnValue([])
-    mocks.embedEpisodeText.mockResolvedValue(vector)
+    mocks.embedEpisodeText.mockResolvedValue(geminiVector(vector))
     mocks.buildEpisodeRecallBlock.mockReturnValue('')
     mocks.buildMediaRecallBlock.mockReturnValue('')
     mocks.buildFactsEnvelope.mockReturnValue('')
