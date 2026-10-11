@@ -425,8 +425,10 @@ operation transaction commits, `reconcileHiddenRetractions` (`hiddenRetractions.
    were not visible to the extractor.
 2. **Ranking:** cosine similarity between the retracted fact's sentence (for example "This person's hobby: chess.")
    and each claim's stored embedding, keeping the top 3. A claim without an embedding is skipped.
-3. **Judgment:** one internal Jev call asks, for each candidate, whether the messages say the fact "no longer holds".
-   Candidates at or above `memory.verifyThreshold` are retired with `end_reason = 'retracted'`.
+3. **Judgment:** one call to the judge that `memory.judge` picks (Jev, or the main model under `model`; see
+   Main-Model Judgments) asks, for each candidate, whether the messages say the fact "no longer holds". Candidates at
+   or above `memory.verifyThreshold` (or `memory.modelVerifyThreshold` when the main model judged) are retired with
+   `end_reason = 'retracted'`.
 
 Nothing hidden reaches Gemini's prompt, the reply or the logs: the pass logs only claim IDs, the predicate and counts.
 Under `relaxed` every claim is visible and under `off` nothing is written, so the pass makes no calls. It never
@@ -1052,8 +1054,9 @@ block; a switch takes a restart.
   `gemini.timeout` and no fallback. Extraction and reclassification send their hand-written Gemini `responseSchema`
   unchanged, in place of `responseJsonSchema`, with the same temperature, output cap and safety settings as before.
 - **Background Failures:** the extraction queue retries a `ProviderError` of kind `transient_http`,
-  `quota_exhausted` or `network` (a `network` failure only when the bot is not shutting down). It drops
-  `billing_exhausted` and `refusal` failures as permanent. Other kinds and errors go through the status, code and
+  `quota_exhausted` or `network` (a `network` failure only when the bot is not shutting down). It treats
+  `billing_exhausted` and `refusal` failures as permanent: one immediate retry, then the row stays `failed`. Other
+  kinds and errors go through the status, code and
   name checks `classifyExtractionError` applies to Gemini errors.
 - **Gemini Key:** `GEMINI_API_KEY` is required only when the main or fallback model is Gemini, embeddings resolve to
   `gemini`, or `media.watcher` is `gemini`. The legacy config's main model is always Gemini, so it always needs the
