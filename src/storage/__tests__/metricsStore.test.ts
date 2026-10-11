@@ -42,6 +42,9 @@ const responseEvent: Parameters<typeof recordResponseEvent>[0] = {
   tokensOutEst: 24,
   toolsUsed: ['roll_dice'],
   model: 'gemini',
+  routeRole: 'main',
+  provider: 'gemini',
+  modelId: 'gemini-3.5-flash-lite',
   hedged: 0
 } as const
 
@@ -103,6 +106,10 @@ describe('metricsStore', () => {
       'failure_marker',
       'model',
       'hedged',
+      'provider',
+      'model_id',
+      'route_role',
+      'workload',
       'created_at'
     ])
     expect(extractionColumns.map((column) => column.name)).toEqual([
@@ -254,6 +261,28 @@ describe('metricsStore', () => {
 
     expect(rows[0]).toEqual({ model: null, hedged: 0 })
     expect(rows[1]).toEqual({ model: 'fallback', hedged: 1 })
+  })
+
+  it('persists the answering provider, model id and route role, and marks the row as a reply', () => {
+    recordResponseEvent({
+      ...responseEvent,
+      routeRole: 'fallback',
+      provider: 'modelscope',
+      modelId: 'Qwen/Qwen3.5-122B-A10B'
+    })
+    recordResponseEvent({ ...responseEvent, routeRole: undefined, provider: undefined, modelId: undefined })
+
+    const rows = getDb()
+      .prepare('SELECT provider, model_id, route_role, workload FROM response_events ORDER BY id DESC LIMIT 2')
+      .all()
+
+    expect(rows[0]).toEqual({ provider: null, model_id: null, route_role: null, workload: 'reply' })
+    expect(rows[1]).toEqual({
+      provider: 'modelscope',
+      model_id: 'Qwen/Qwen3.5-122B-A10B',
+      route_role: 'fallback',
+      workload: 'reply'
+    })
   })
 
   it('persists a supplied failure marker verbatim and stores NULL when omitted', () => {

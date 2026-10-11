@@ -535,4 +535,73 @@ describe('runMigrations', () => {
     ).not.toThrow()
     expect(testDb.prepare('SELECT COUNT(*) AS count FROM buddy WHERE user_id = ?').get('user-1')).toEqual({ count: 2 })
   })
+
+  it('adds provider columns to a legacy response_events table without losing rows', () => {
+    testDb = new Database(':memory:')
+    testDb.exec(`
+      CREATE TABLE session_history (
+        channel_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        display_name TEXT NOT NULL,
+        content TEXT NOT NULL,
+        timestamp INTEGER NOT NULL,
+        user_id TEXT DEFAULT NULL,
+        username TEXT DEFAULT NULL
+      );
+
+      CREATE TABLE gacha_daily (
+        user_id TEXT NOT NULL,
+        PRIMARY KEY (user_id)
+      );
+
+      CREATE TABLE response_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        guild_id TEXT NOT NULL,
+        channel_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        trigger TEXT NOT NULL,
+        tone TEXT NOT NULL,
+        outcome TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        e2e_ms INTEGER NOT NULL,
+        generate_ms INTEGER NOT NULL,
+        llm_ms INTEGER NOT NULL,
+        retry_latency_ms INTEGER NOT NULL,
+        retries INTEGER NOT NULL,
+        tokens_in_est INTEGER NOT NULL,
+        tokens_out_est INTEGER NOT NULL,
+        tools_used TEXT DEFAULT NULL,
+        failure_marker TEXT DEFAULT NULL,
+        model TEXT DEFAULT NULL,
+        hedged INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL
+      );
+    `)
+    testDb
+      .prepare(
+        `INSERT INTO response_events (guild_id, channel_id, user_id, trigger, tone, outcome, kind, e2e_ms, generate_ms,
+          llm_ms, retry_latency_ms, retries, tokens_in_est, tokens_out_est, model, hedged, created_at)
+         VALUES ('g', 'c', 'u', 'mention', 'playful', 'ok', 'ok', 1, 1, 1, 0, 0, 1, 1, 'fallback', 1, 1)`
+      )
+      .run()
+
+    const runMigrations = (database as unknown as DatabaseModule).runMigrations
+    runMigrations?.(testDb)
+    runMigrations?.(testDb)
+
+    const columns = (testDb.prepare("PRAGMA table_info('response_events')").all() as Array<{ name: string }>).map(
+      (column) => column.name
+    )
+    expect(columns).toEqual(expect.arrayContaining(['provider', 'model_id', 'route_role', 'workload']))
+    expect(
+      testDb.prepare('SELECT model, hedged, provider, model_id, route_role, workload FROM response_events').get()
+    ).toEqual({
+      model: 'fallback',
+      hedged: 1,
+      provider: null,
+      model_id: null,
+      route_role: null,
+      workload: null
+    })
+  })
 })
