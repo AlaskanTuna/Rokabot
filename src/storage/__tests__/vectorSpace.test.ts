@@ -19,6 +19,17 @@ import type { EmbeddingResult } from '../../agent/memory/embeddings/client.js'
 import { listEpisodesForGuild, saveMemoryEpisode } from '../memoryEpisodeStore.js'
 import { ensureVectorProvenanceColumns } from '../vectorProvenance.js'
 
+const GEMINI_001_FINGERPRINT = 'gemini:gemini-embedding-001:768:gemini-task-prefix'
+const OPENAI_768_FINGERPRINT = 'openai:some-768-model:768:raw'
+
+function gemini001Vector(): EmbeddingResult {
+  return {
+    ...geminiVector(Array(768).fill(0.25)),
+    modelId: 'gemini-embedding-001',
+    fingerprint: GEMINI_001_FINGERPRINT
+  }
+}
+
 function seed(id: number, embedding: EmbeddingResult | null): void {
   saveMemoryEpisode({
     id,
@@ -74,6 +85,43 @@ describe('active embedding space', () => {
       [1, 768],
       [2, 768],
       [3, null]
+    ])
+  })
+
+  it('does not read unknown-provenance vectors in a Gemini space on another model', () => {
+    configMock.embeddings = { provider: 'gemini', dim: 768, fingerprint: GEMINI_001_FINGERPRINT }
+    seed(1, gemini001Vector())
+    seedUnknown(2)
+
+    expect(readable()).toEqual([
+      [1, 768],
+      [2, null]
+    ])
+  })
+
+  it('does not read vectors from another Gemini model in the gemini-embedding-2 space', () => {
+    seed(1, geminiVector(Array(768).fill(0.25)))
+    seed(2, gemini001Vector())
+
+    expect(readable()).toEqual([
+      [1, 768],
+      [2, null]
+    ])
+  })
+
+  it('does not read unknown-provenance vectors in a non-Gemini space of the same dimension', () => {
+    configMock.embeddings = { provider: 'openai', dim: 768, fingerprint: OPENAI_768_FINGERPRINT }
+    seed(1, {
+      values: Array(768).fill(0.25),
+      modelId: 'some-768-model',
+      dim: 768,
+      fingerprint: OPENAI_768_FINGERPRINT
+    })
+    seedUnknown(2)
+
+    expect(readable()).toEqual([
+      [1, 768],
+      [2, null]
     ])
   })
 

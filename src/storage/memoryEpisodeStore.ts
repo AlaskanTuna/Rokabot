@@ -1,8 +1,11 @@
+import { embeddingFingerprint } from '../agent/memory/embeddings/fingerprint.js'
 import { config } from '../config.js'
 import { getDb } from './database.js'
 import { enqueueEpisode } from './extractionQueue.js'
 import type { EpisodeCursor, ExtractionEpisode, ExtractionQueueJob } from './extractionQueue.js'
 import { UNKNOWN_FINGERPRINT } from './vectorProvenance.js'
+
+const LEGACY_GEMINI_FINGERPRINT = embeddingFingerprint('gemini', 'gemini-embedding-2', 768)
 
 export type EpisodeEmbedding = readonly number[]
 
@@ -61,12 +64,15 @@ export function vectorParams(
     : [null, null, null, null]
 }
 
-// Every vector stored before provenance was recorded came from the one Gemini 768-dimension recipe (#223), so a
-// Gemini space may still read those.
+// Every vector stored before provenance was recorded came from gemini-embedding-2 at 768 dimensions (#223), so only
+// that exact space may still read those.
 export function isActiveVector(fingerprint: string | null, dim: number | null, byteLength: number): boolean {
   const active = config.embeddings
   if (dim === null || dim !== active.dim || byteLength !== dim * 4) return false
-  return fingerprint === active.fingerprint || (fingerprint === UNKNOWN_FINGERPRINT && active.provider === 'gemini')
+  return (
+    fingerprint === active.fingerprint ||
+    (fingerprint === UNKNOWN_FINGERPRINT && active.fingerprint === LEGACY_GEMINI_FINGERPRINT)
+  )
 }
 
 export function decodeFloat32Embedding(row: StoredVector): EpisodeEmbedding | null {

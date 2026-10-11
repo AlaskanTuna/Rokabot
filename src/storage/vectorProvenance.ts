@@ -11,8 +11,9 @@ const PROVENANCE_COLUMNS = [
 ] as const
 
 /**
- * A vector with no recorded provenance predates these columns, so it is marked unknown rather than guessed; its
- * dimension is still knowable from its bytes. Idempotent, and a no-op for a table that does not exist yet.
+ * Runs at every startup, so a vector with no recorded provenance was stored without it (by pre-1C code or after a
+ * rollback); it is marked unknown rather than guessed, and its dimension is still knowable from its bytes. Idempotent,
+ * and a no-op for a table that does not exist yet.
  */
 export function ensureVectorProvenanceColumns(database: Database.Database, table: VectorTable): void {
   const columns = new Set(
