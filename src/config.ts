@@ -4,10 +4,18 @@ import 'dotenv/config'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { load } from 'js-yaml'
-// Both are pure leaves — attachmentLimits.ts imports nothing and attachments.ts only node built-ins — so
-// reading them here derives the floor instead of restating it, and cannot close a cycle back into config.
+// All four are pure leaves — attachmentLimits.ts, llm/profiles.ts and embeddings/fingerprint.ts import nothing,
+// attachments.ts only node built-ins — so reading them here derives values instead of restating them, and cannot
+// close a cycle back into config.
 import { GEMINI_IMAGE_TOKENS } from './agent/attachmentLimits.js'
 import { MODEL_PROFILES, type ModelProfile, type ProviderId, profileFor } from './agent/llm/profiles.js'
+import {
+  DEFAULT_EMBEDDING_MODELS,
+  type EmbeddingProvider,
+  defaultEmbeddingProvider,
+  embeddingDimensions,
+  embeddingFingerprint
+} from './agent/memory/embeddings/fingerprint.js'
 import { MAX_ATTACHMENTS } from './discord/attachments.js'
 
 function requiredEnv(key: string): string {
@@ -141,6 +149,15 @@ interface YamlConfig {
     extractionSampleRate?: number
     extractionSampleDays?: number
     reclassifyMaxPerRun?: number
+  }
+  embeddings?: {
+    provider?: string
+    model?: string
+    timeoutMs?: number
+    sidecarUrl?: string
+    backfillBatchSize?: number
+    backfillGapMs?: number
+    minSimilarity?: Record<string, { episode?: number; media?: number; fact?: number; serverFact?: number }>
   }
   metrics?: { retentionDays?: number; diagnosticsRetentionHours?: number }
   report?: {
@@ -395,6 +412,52 @@ const memoryBufferSize = envInt('MEMORY_BUFFER_SIZE') ?? yaml.memory?.bufferSize
 const requestedEpisodeMaxMessages = yaml.memory?.episodeMaxMessages ?? 25
 const episodeMaxMessages = Math.min(requestedEpisodeMaxMessages, memoryBufferSize - 3)
 
+function embeddingProvider(): EmbeddingProvider {
+  const envValue = envString('EMBEDDINGS_PROVIDER')
+  const value =
+    envValue ??
+    yaml.embeddings?.provider ??
+    defaultEmbeddingProvider({
+      hasBlock: Boolean(yaml.embeddings),
+      hasGeminiKey: envString('GEMINI_API_KEY') !== undefined
+    })
+  if (value === 'local' || value === 'gemini' || value === 'openai') return value
+  const source = envValue ? 'Environment variable EMBEDDINGS_PROVIDER' : 'Config value embeddings.provider'
+  throw new Error(`${source} must be local, gemini or openai, got: ${String(value)}`)
+}
+
+const EMBEDDING_KEYS: Readonly<Record<EmbeddingProvider, string | undefined>> = {
+  gemini: 'GEMINI_API_KEY',
+  openai: 'OPENAI_API_KEY',
+  local: undefined
+}
+
+function resolveEmbeddings() {
+  const provider = embeddingProvider()
+  // memory.embeddingModel is deprecated and only ever named a Gemini model.
+  const legacyModel = provider === 'gemini' ? yaml.memory?.embeddingModel : undefined
+  const model = yaml.embeddings?.model ?? legacyModel ?? DEFAULT_EMBEDDING_MODELS[provider]
+  const dim = embeddingDimensions(provider, model)
+  if (dim === undefined) {
+    throw new Error(`Config value embeddings.model is not a tested ${provider} embedding model, got: ${model}`)
+  }
+  const apiKeyName = EMBEDDING_KEYS[provider]
+  return {
+    provider,
+    model,
+    dim,
+    fingerprint: embeddingFingerprint(provider, model, dim),
+    timeoutMs: yaml.embeddings?.timeoutMs ?? yaml.memory?.embeddingTimeoutMs ?? 1500,
+    sidecarUrl: yaml.embeddings?.sidecarUrl ?? 'http://embeddings:8080',
+    apiKey: apiKeyName ? requiredEnv(apiKeyName) : undefined,
+    backfillBatchSize: yaml.embeddings?.backfillBatchSize ?? 3600,
+    backfillGapMs: yaml.embeddings?.backfillGapMs ?? 1000
+  }
+}
+
+const embeddings = resolveEmbeddings()
+const similarityFloors = yaml.embeddings?.minSimilarity?.[embeddings.fingerprint]
+
 const baseConfig = {
   jev: {
     apiKey: envString('TYPESAFE_API_KEY'),
@@ -512,25 +575,26 @@ const baseConfig = {
     verifyThreshold: yaml.memory?.verifyThreshold ?? 0.5,
     episodeRecallK: yaml.memory?.episodeRecallK ?? 3,
     episodeTokenBudget: yaml.memory?.episodeTokenBudget ?? 200,
-    episodeMinSimilarity: yaml.memory?.episodeMinSimilarity ?? 0.7,
+    episodeMinSimilarity: similarityFloors?.episode ?? yaml.memory?.episodeMinSimilarity ?? 0.7,
     episodeRetentionDays: yaml.memory?.episodeRetentionDays ?? 90,
     mediaRecallK: yaml.memory?.mediaRecallK ?? 2,
     mediaTokenBudget: yaml.memory?.mediaTokenBudget ?? 400,
-    mediaMinSimilarity: yaml.memory?.mediaMinSimilarity ?? 0.7,
+    mediaMinSimilarity: similarityFloors?.media ?? yaml.memory?.mediaMinSimilarity ?? 0.7,
     mediaRetentionDays: yaml.memory?.mediaRetentionDays ?? 90,
-    embeddingModel: yaml.memory?.embeddingModel ?? 'gemini-embedding-2',
-    embeddingTimeoutMs: yaml.memory?.embeddingTimeoutMs ?? 1500,
+    embeddingModel: embeddings.model,
+    embeddingTimeoutMs: embeddings.timeoutMs,
     privacy: memoryEnum('privacy', 'MEMORY_PRIVACY', ['relaxed', 'balanced', 'strict', 'off'], 'relaxed'),
     recall: memoryEnum('recall', 'MEMORY_RECALL', ['legacy', 'shadow', 'unified'], 'shadow'),
     recallTokenBudget: yaml.memory?.recallTokenBudget ?? 600,
     recallCoreFacts: yaml.memory?.recallCoreFacts ?? 3,
-    factMinSimilarity: yaml.memory?.factMinSimilarity ?? 0.65,
-    serverFactMinSimilarity: yaml.memory?.serverFactMinSimilarity ?? 0.65,
+    factMinSimilarity: similarityFloors?.fact ?? yaml.memory?.factMinSimilarity ?? 0.65,
+    serverFactMinSimilarity: similarityFloors?.serverFact ?? yaml.memory?.serverFactMinSimilarity ?? 0.65,
     vaultExportDir: envString('MEMORY_VAULT_EXPORT_DIR') ?? yaml.memory?.vaultExportDir ?? 'data/vault',
     extractionSampleRate: envNumber('MEMORY_EXTRACTION_SAMPLE_RATE') ?? yaml.memory?.extractionSampleRate ?? 0.1,
     extractionSampleDays: envInt('MEMORY_EXTRACTION_SAMPLE_DAYS') ?? yaml.memory?.extractionSampleDays ?? 14,
     reclassifyMaxPerRun: envInt('MEMORY_RECLASSIFY_MAX_PER_RUN') ?? yaml.memory?.reclassifyMaxPerRun ?? 20
   },
+  embeddings,
   metrics: {
     retentionDays: envInt('METRICS_RETENTION_DAYS') ?? yaml.metrics?.retentionDays ?? 90,
     diagnosticsRetentionHours:
@@ -672,6 +736,9 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   // full-sized turn could never be admitted even on an idle bot, so it would be refused forever rather
   // than merely delayed. Asserted from the constants themselves in the byteBudget tests.
   { path: 'discord.maxInFlightAttachmentBytes', value: config.discord.maxInFlightAttachmentBytes, min: 31_457_280 },
+  { path: 'embeddings.timeoutMs', value: config.embeddings.timeoutMs, min: 1 },
+  { path: 'embeddings.backfillBatchSize', value: config.embeddings.backfillBatchSize, min: 1, max: 100_000 },
+  { path: 'embeddings.backfillGapMs', value: config.embeddings.backfillGapMs, min: 0, max: 60_000 },
   { path: 'memory.bufferSize', value: config.memory.bufferSize, min: 1 },
   { path: 'memory.contextSize', value: config.memory.contextSize, min: 1 },
   { path: 'memory.channelMonitorTtlMs', value: config.memory.channelMonitorTtlMs, min: 1 },
@@ -759,6 +826,16 @@ for (const { path, value, min, max } of NUMERIC_BOUNDS) {
   if (max !== undefined && value > max) {
     throw new Error(`Config value ${path} must be <= ${max}, got: ${value}`)
   }
+}
+
+if (config.embeddings.provider !== 'gemini' && !similarityFloors) {
+  // logger.ts imports this module, so awaiting the import here would deadlock startup.
+  void import('./utils/logger.js').then(({ logger }) =>
+    logger.warn(
+      { fingerprint: config.embeddings.fingerprint },
+      'No embeddings.minSimilarity entry for this fingerprint, so recall uses the Gemini floors in memory.*MinSimilarity'
+    )
+  )
 }
 
 export function deriveAchievableRetries(

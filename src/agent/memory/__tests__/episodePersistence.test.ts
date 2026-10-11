@@ -17,6 +17,8 @@ vi.mock('../../../utils/rateLimiter.js', () => ({ getSharedRateLimiter: mocks.ge
 
 import { enqueueEpisode } from '../../../storage/extractionQueue.js'
 import { listEpisodesForGuild } from '../../../storage/memoryEpisodeStore.js'
+import { ensureVectorProvenanceColumns } from '../../../storage/vectorProvenance.js'
+import { geminiVector } from '../embeddings/__tests__/vectors.js'
 import { persistEpisodeResult } from '../episodePersistence.js'
 
 function oneLineEpisode(): ExtractionEpisode {
@@ -65,7 +67,8 @@ describe('episode persistence', () => {
         created_at INTEGER NOT NULL
       );
     `)
-    mocks.embedEpisodeText.mockReset().mockResolvedValue(vector768())
+    ensureVectorProvenanceColumns(testDb, 'memory_episode')
+    mocks.embedEpisodeText.mockReset().mockResolvedValue(geminiVector(vector768()))
     mocks.getSharedRateLimiter.mockReset()
     mocks.logger.warn.mockReset()
   })

@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { geminiVector } from '../../agent/memory/embeddings/__tests__/vectors.js'
 import type { ExtractionEpisode } from '../extractionQueue.js'
 
 let testDb: Database.Database
@@ -15,8 +16,10 @@ import {
   listEpisodesForGuild,
   pruneExpiredEpisodes,
   recordOpenEpisodeMessage,
-  saveMemoryEpisode
+  saveMemoryEpisode,
+  setEpisodeEmbedding
 } from '../memoryEpisodeStore.js'
+import { ensureVectorProvenanceColumns } from '../vectorProvenance.js'
 
 function episode(): ExtractionEpisode {
   return {
@@ -68,6 +71,7 @@ describe('memoryEpisodeStore', () => {
         admitted_by TEXT DEFAULT NULL
       );
     `)
+    ensureVectorProvenanceColumns(testDb, 'memory_episode')
   })
 
   afterEach(() => testDb.close())
@@ -128,7 +132,7 @@ describe('memoryEpisodeStore', () => {
       startedAt: 10_000,
       endedAt: 12_000,
       summary: 'The group planned a picnic.',
-      embedding: vector
+      embedding: geminiVector(vector)
     }
 
     saveMemoryEpisode(input)
@@ -208,6 +212,7 @@ describe('memoryEpisodeStore', () => {
     const nonFinite = Buffer.alloc(3072)
     nonFinite.writeFloatLE(Number.POSITIVE_INFINITY, 0)
     testDb.prepare('UPDATE memory_episode SET embedding = ? WHERE id = 3').run(nonFinite)
+    ensureVectorProvenanceColumns(testDb, 'memory_episode')
 
     expect(listEpisodesForGuild('guild-a').map(({ embedding }) => embedding)).toEqual([null, null, null])
   })
@@ -238,11 +243,28 @@ describe('memoryEpisodeStore', () => {
       summary: 'The group planned a picnic.'
     }
 
-    expect(() => saveMemoryEpisode({ ...input, embedding: Array(767).fill(0.25) })).toThrow(
+    expect(() => saveMemoryEpisode({ ...input, embedding: geminiVector(Array(767).fill(0.25)) })).toThrow(
       'Episode embedding must contain 768 finite values'
     )
-    expect(() => saveMemoryEpisode({ ...input, embedding: Array(768).fill(Number.NaN) })).toThrow(
+    expect(() => saveMemoryEpisode({ ...input, embedding: geminiVector(Array(768).fill(Number.NaN)) })).toThrow(
       'Episode embedding must contain 768 finite values'
     )
+  })
+
+  it('stores a re-embedded vector only while its summary is still the stored one', () => {
+    saveMemoryEpisode({
+      id: 9,
+      guildId: 'guild-a',
+      channelId: 'channel-a',
+      startedAt: 1,
+      endedAt: 2,
+      summary: 'Picnic.',
+      embedding: null
+    })
+    const vector = geminiVector(Array(768).fill(0.25))
+
+    expect(setEpisodeEmbedding({ guildId: 'guild-a', id: 9, summary: 'Old picnic.', embedding: vector })).toBe(false)
+    expect(setEpisodeEmbedding({ guildId: 'guild-a', id: 9, summary: 'Picnic.', embedding: vector })).toBe(true)
+    expect(listEpisodesForGuild('guild-a')[0]?.embedding).toHaveLength(768)
   })
 })

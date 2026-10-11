@@ -123,8 +123,6 @@ memory:
   mediaTokenBudget: 400 # Approximate token budget for the watched-media block
   mediaMinSimilarity: 0.7 # Minimum cosine similarity required for watched-media recall
   mediaRetentionDays: 90 # Days after the last share before a watched-media digest and its occurrences are deleted
-  embeddingModel: gemini-embedding-2 # Gemini embedding model used for episode summaries and queries
-  embeddingTimeoutMs: 1500 # Maximum wait for one episode embedding before memory fails open
   privacy: relaxed # relaxed: remembers across the whole server (default); balanced: private channels keep their memories to themselves, public ones are shared; strict: every channel keeps its own memories; off: no long-term memory, only the current chat
   recall: shadow # legacy: today's four memory blocks; shadow: legacy prompt plus the unified recall logged only; unified: one relevance-ranked memory block
   recallTokenBudget: 600 # Approximate token budget for the unified memory block
@@ -135,6 +133,21 @@ memory:
   extractionSampleRate: 0.1 # Share of rejected conversations (trivial or below Jev's admission threshold) kept as text for offline labelling; 0 disables, never sampled under privacy off
   extractionSampleDays: 14 # Days a rejected-conversation sample is kept before deletion
   reclassifyMaxPerRun: 20 # Most misfiled facts moved to a better category per daily run; 0 turns automatic reclassification off
+
+embeddings:
+  provider: gemini # Who turns memory text into vectors: local (the sidecar in sidecar/embeddings, compose profile local-embeddings), gemini or openai (needs OPENAI_API_KEY). A block that leaves this out uses local; this file pins gemini so the Pi keeps its vectors until the sidecar passes its Pi memory check (docs/runbook.md). EMBEDDINGS_PROVIDER overrides it
+  # model: gemini-embedding-2 # Optional; each provider defaults to its tested model: gemini-embedding-2 (768 dimensions), Xenova/multilingual-e5-small@761b726d-q8 (384), text-embedding-3-small (1536)
+  timeoutMs: 1500 # Maximum wait for one embedding before memory fails open to keyword recall (replaces memory.embeddingTimeoutMs)
+  sidecarUrl: http://embeddings:8080 # Where the bot reaches the local sidecar; the compose service name resolves on the compose network
+  backfillBatchSize: 3600 # Most documents one maintenance pass embeds after a provider switch, an hour at the gap below; the next pass resumes from what each row records
+  backfillGapMs: 1000 # Pause between backfill documents, about one a second, so a turn's query never waits behind a long run on the sidecar's single thread
+  minSimilarity: # Recall floors per embedding fingerprint (provider:model:dimensions:recipe); a fingerprint not listed uses memory.*MinSimilarity, the gemini-embedding-2 calibration
+    # NEEDS CALIBRATION before local goes live: E5 scores cluster between 0.7 and 1.0, so these are placeholders above that band (#296 phase 3)
+    'local:Xenova/multilingual-e5-small@761b726d-q8:384:e5-prefix-mean-l2':
+      episode: 0.86
+      media: 0.86
+      fact: 0.84
+      serverFact: 0.84
 
 metrics:
   retentionDays: 90 # Days before response and extraction events are auto-pruned
