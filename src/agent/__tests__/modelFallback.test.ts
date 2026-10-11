@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { config } from '../../config.js'
+import type { ResolvedModel } from '../../config.js'
 
 const mocks = vi.hoisted(() => ({ hasFallback: true, tryConsumeRetry: vi.fn(() => true) }))
 
@@ -59,15 +60,25 @@ vi.mock('../../utils/timezone.js', () => ({ getLocalHour: () => 12 }))
 
 import { RoutedLlm, modelRouteForRequest } from '../fallbackModel.js'
 import type { FailureKind } from '../geminiReliability.js'
+import { profileFor } from '../llm/profiles.js'
 import { STICKY_KINDS, SWITCH_KINDS, __resetModelFallbackForTest, runTurnWithReliability } from '../reliability.js'
 import type { TurnOutcome } from '../reliability.js'
 import { __resetTestRunTurnFactory, __setTestRunTurnFactory, generateResponse, rokaAgent } from '../roka.js'
 import { destroySession } from '../session.js'
 import { resetForTest } from '../shutdownSignal.js'
 
-const mutableFallbackConfig = config.fallback as unknown as { timeoutMs: number; stickyMs: number }
+const mutableLlm = config.llm as unknown as { main: ResolvedModel; fallback: ResolvedModel | null; stickyMs: number }
+const testFallback: ResolvedModel = {
+  key: 'test-fallback',
+  provider: 'modelscope',
+  model: 'fallback-test',
+  profile: profileFor('modelscope', 'Qwen/Qwen3.5-122B-A10B')!,
+  apiKey: 'test-modelscope-key',
+  baseUrl: 'https://fallback.test/v1',
+  timeoutMs: 15_000,
+  maxOutputTokens: 500
+}
 const mutableGeminiConfig = config.gemini as unknown as {
-  timeout: number
   liveMaxRetries: number
   retryBackoffBaseMs: number
   retryBackoffCapMs: number
@@ -77,9 +88,9 @@ const mutableJevConfig = config.jev as unknown as { tone: 'off' | 'shadow' | 'on
 const channelId = 'model-fallback-test'
 
 const originalConfig = {
-  fallbackTimeoutMs: mutableFallbackConfig.timeoutMs,
-  stickyMs: mutableFallbackConfig.stickyMs,
-  geminiTimeout: mutableGeminiConfig.timeout,
+  llmMain: mutableLlm.main,
+  llmFallback: mutableLlm.fallback,
+  llmStickyMs: mutableLlm.stickyMs,
   liveMaxRetries: mutableGeminiConfig.liveMaxRetries,
   retryBackoffBaseMs: mutableGeminiConfig.retryBackoffBaseMs,
   retryBackoffCapMs: mutableGeminiConfig.retryBackoffCapMs,
@@ -132,9 +143,9 @@ beforeEach(() => {
   resetForTest()
   __resetModelFallbackForTest()
   mocks.hasFallback = true
-  mutableFallbackConfig.timeoutMs = originalConfig.fallbackTimeoutMs
-  mutableFallbackConfig.stickyMs = originalConfig.stickyMs
-  mutableGeminiConfig.timeout = originalConfig.geminiTimeout
+  mutableLlm.main = { ...originalConfig.llmMain }
+  mutableLlm.fallback = { ...testFallback }
+  mutableLlm.stickyMs = originalConfig.llmStickyMs
   mutableGeminiConfig.liveMaxRetries = originalConfig.liveMaxRetries
   mutableGeminiConfig.retryBackoffBaseMs = 0
   mutableGeminiConfig.retryBackoffCapMs = 0
@@ -149,9 +160,9 @@ afterEach(async () => {
   __resetModelFallbackForTest()
   await destroySession(channelId)
   resetForTest()
-  mutableFallbackConfig.timeoutMs = originalConfig.fallbackTimeoutMs
-  mutableFallbackConfig.stickyMs = originalConfig.stickyMs
-  mutableGeminiConfig.timeout = originalConfig.geminiTimeout
+  mutableLlm.main = originalConfig.llmMain
+  mutableLlm.fallback = originalConfig.llmFallback
+  mutableLlm.stickyMs = originalConfig.llmStickyMs
   mutableGeminiConfig.liveMaxRetries = originalConfig.liveMaxRetries
   mutableGeminiConfig.retryBackoffBaseMs = originalConfig.retryBackoffBaseMs
   mutableGeminiConfig.retryBackoffCapMs = originalConfig.retryBackoffCapMs
@@ -386,9 +397,9 @@ describe('generateResponse model fallback', () => {
   })
 
   it('uses the fallback timeout in the window and clears the window after Gemini recovers', async () => {
-    mutableFallbackConfig.timeoutMs = 12
-    mutableFallbackConfig.stickyMs = 10_000
-    mutableGeminiConfig.timeout = 1_000
+    mutableLlm.fallback!.timeoutMs = 12
+    mutableLlm.stickyMs = 10_000
+    mutableLlm.main.timeoutMs = 1_000
     const routes: Array<boolean | undefined> = []
     __setTestRunTurnFactory(() => async (attempt) => {
       routes.push(modelRouteForRequest.getStore()?.useFallback)
@@ -435,7 +446,7 @@ describe('generateResponse model fallback', () => {
   })
 
   it('does not arm a sticky window when stickyMs is zero', async () => {
-    mutableFallbackConfig.stickyMs = 0
+    mutableLlm.stickyMs = 0
     const firstRoutes: Array<boolean | undefined> = []
     __setTestRunTurnFactory(() => async (attempt) => {
       firstRoutes.push(modelRouteForRequest.getStore()?.useFallback)
@@ -456,8 +467,53 @@ describe('generateResponse model fallback', () => {
     expect(nextRoutes).toEqual([false])
   })
 
+  it('does not arm the sticky window when a refusal moved the turn to the fallback', async () => {
+    mutableLlm.stickyMs = 10_000
+    const routes: Array<boolean | undefined> = []
+    __setTestRunTurnFactory(() => async (attempt) => {
+      routes.push(modelRouteForRequest.getStore()?.useFallback)
+      return attempt === 0
+        ? {
+            errorCode: 'ProviderError',
+            errorMessage: 'Anthropic refused the request (cyber)',
+            customMetadata: { reliabilityKind: 'refusal' },
+            hasText: false,
+            hasFunctionCall: false
+          }
+        : { text: 'Fallback answer~', hasText: true, hasFunctionCall: false }
+    })
+
+    expect((await generateResponse(responseOptions())).text).toBe('Fallback answer~')
+
+    const nextRoutes: Array<boolean | undefined> = []
+    __setTestRunTurnFactory(() => async () => {
+      nextRoutes.push(modelRouteForRequest.getStore()?.useFallback)
+      return { text: 'Main again~', hasText: true, hasFunctionCall: false }
+    })
+    await generateResponse(responseOptions('Next turn.'))
+
+    expect(routes).toEqual([false, true])
+    expect(nextRoutes).toEqual([false])
+  })
+
+  it('starts the other side unpinned after the ladder switches', async () => {
+    const pins: Array<string | null | undefined> = []
+    __setTestRunTurnFactory(() => async (attempt) => {
+      const route = modelRouteForRequest.getStore()
+      pins.push(route?.pinned)
+      if (route && attempt === 0) route.pinned = 'main'
+      return attempt === 0
+        ? { errorCode: '503', hasText: false, hasFunctionCall: false }
+        : { text: 'Fallback answer~', hasText: true, hasFunctionCall: false }
+    })
+
+    await generateResponse(responseOptions())
+
+    expect(pins).toEqual([null, null])
+  })
+
   it('records the answering model on every answered turn, and never arms the sticky window for a hedge', async () => {
-    mutableFallbackConfig.stickyMs = 10_000
+    mutableLlm.stickyMs = 10_000
     const answeredBy: Array<string | null | undefined> = []
     __setTestRunTurnFactory(() => async () => {
       const route = modelRouteForRequest.getStore()
