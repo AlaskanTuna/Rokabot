@@ -89,7 +89,13 @@ export function createHandler(
   }
 
   return async (request, response) => {
-    const reply = await route(request)
+    let reply: Reply
+    try {
+      reply = await route(request)
+    } catch (error) {
+      log('error', 'Request failed', { error: error instanceof Error ? error.message : String(error) })
+      reply = { status: 400, body: { error: 'bad request' } }
+    }
     response.writeHead(reply.status, { 'content-type': 'application/json' })
     response.end(JSON.stringify(reply.body))
   }

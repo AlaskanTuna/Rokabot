@@ -166,6 +166,17 @@ describe('embedding sidecar handler', () => {
     expect((await post(url, { texts: ['x'], role: 'query' })).status).toBe(500)
   })
 
+  it('answers 400 to a request it cannot route, then keeps serving', async () => {
+    const { url, log } = await start(fixedEmbedder())
+
+    const response = await fetch(`${url}//`)
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({ error: 'bad request' })
+    expect((await fetch(`${url}/health`)).status).toBe(200)
+    expect(log).toHaveBeenCalledWith('error', 'Request failed', expect.anything())
+  })
+
   it('answers 404 for anything else', async () => {
     const { url } = await start(fixedEmbedder())
 
