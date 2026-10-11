@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { requestSchema } from '../../llm/objectSchema.js'
-import { EXTRACTION_RESPONSE_SCHEMA, ExtractionOutputSchema, parseExtractionOutput } from '../extractionSchema.js'
+import { EXTRACTION_RESPONSE_SCHEMA, ExtractionOutputSchema } from '../extractionSchema.js'
 import { PREDICATES } from '../predicates.js'
 import { LEGACY_GEMINI_EXTRACTION_SCHEMA } from './legacyGeminiExtractionSchema.js'
+
+const parseExtractionOutput = (text: string) => ExtractionOutputSchema.parse(JSON.parse(text))
 
 const GEMINI_SCHEMA = requestSchema(ExtractionOutputSchema, 'response_json_schema')
 

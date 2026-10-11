@@ -336,15 +336,3 @@ export const EXTRACTION_RESPONSE_SCHEMA = {
   },
   required: ['ops', 'summary']
 }
-
-export function parseExtractionOutput(text: string): ExtractionOutput {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(text)
-  } catch {
-    throw new Error('Memory extraction returned invalid JSON')
-  }
-  const result = ExtractionOutputSchema.safeParse(parsed)
-  if (!result.success) throw new Error('Memory extraction output failed schema validation')
-  return result.data
-}

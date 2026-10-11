@@ -1,4 +1,3 @@
-import { GoogleGenAI } from '@google/genai'
 import { config } from '../../config.js'
 import { getDb } from '../../storage/database.js'
 import type { ExtractionEpisode, ExtractionQueueJob } from '../../storage/extractionQueue.js'
@@ -6,7 +5,8 @@ import { recordJevEvent } from '../../storage/jevEventStore.js'
 import { getClaimSourceChannels } from '../../storage/memoryRecallStore.js'
 import { logger } from '../../utils/logger.js'
 import { judgeEpisodeOperations } from '../jev/judgments.js'
-import { SAFETY_SETTINGS } from '../safetySettings.js'
+import { generateObject } from '../llm/generateObject.js'
+import { promptTokenTotal } from '../llm/usage.js'
 import { admitEpisode } from './admission.js'
 import { JevUnavailableError } from './extractionErrors.js'
 import { type RunTrace, timeStage } from './extractionRun.js'
@@ -14,7 +14,7 @@ import {
   EXTRACTION_RESPONSE_SCHEMA,
   type ExtractionOutput as EpisodeExtractionOutput,
   type ExtractionOp as EpisodeOperation,
-  parseExtractionOutput
+  ExtractionOutputSchema
 } from './extractionSchema.js'
 import { resolveGuildFactDate } from './guildFactDates.js'
 import { reconcileHiddenRetractions } from './hiddenRetractions.js'
@@ -40,13 +40,6 @@ import { type PredicateId, cardinalityOf, normalizePredicate } from './predicate
 import { type RecallScope, canRecall } from './privacy.js'
 import { sensitiveFactReason } from './privacyGuard.js'
 import { proposedPeriod, retractCandidates, sameAsCandidates } from './verificationCandidates.js'
-
-let genaiClient: GoogleGenAI | undefined
-
-function getClient(): GoogleGenAI {
-  genaiClient ??= new GoogleGenAI({ apiKey: config.gemini.apiKey })
-  return genaiClient
-}
 
 function formatEpisodeLine(message: ExtractionEpisode['messages'][number]): string {
   const role = message.isBot ? ' (bot context only)' : ''
@@ -119,21 +112,14 @@ export async function extractEpisode(input: {
   channelId: string
   episode: ExtractionEpisode
 }): Promise<ExtractedEpisode> {
-  const response = await getClient().models.generateContent({
-    model: config.gemini.extractionModel,
-    contents: episodePrompt(input.guildId, input.channelId, input.episode),
-    config: {
-      responseMimeType: 'application/json',
-      responseSchema: EXTRACTION_RESPONSE_SCHEMA,
-      temperature: 0.3,
-      maxOutputTokens: 700,
-      safetySettings: SAFETY_SETTINGS,
-      httpOptions: { timeout: config.gemini.timeout }
-    }
+  const { value, usage } = await generateObject({
+    schema: ExtractionOutputSchema,
+    prompt: episodePrompt(input.guildId, input.channelId, input.episode),
+    workload: 'extraction',
+    maxOutputTokens: 700,
+    legacyResponseSchema: EXTRACTION_RESPONSE_SCHEMA
   })
-  if (!response.text) throw new Error('Memory extraction returned no JSON')
-  const promptTokens = response.usageMetadata?.promptTokenCount
-  return { ...parseExtractionOutput(response.text), ...(promptTokens === undefined ? {} : { promptTokens }) }
+  return { ...value, promptTokens: promptTokenTotal(usage) }
 }
 
 export type OperationApplicationReport = {
