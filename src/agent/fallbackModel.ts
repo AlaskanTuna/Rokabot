@@ -5,6 +5,9 @@ import { FinishReason } from '@google/genai'
 import type { Part } from '@google/genai'
 import { config } from '../config.js'
 import { logger } from '../utils/logger.js'
+import { requestTokenEstimate, startCall } from './llm/budget.js'
+import { attachmentKind, attachmentMarker, functionDeclarations, isRecord, systemText } from './llm/requestShape.js'
+import { type CallUsage, recordUsage, workloadOf } from './llm/usage.js'
 
 export type AnswerModel = 'gemini' | 'fallback'
 
@@ -50,74 +53,13 @@ interface MessageEntry {
   group?: MessageGroup
 }
 
-function isRecord(value: unknown): value is JsonObject {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function attachmentKind(mimeType: string | undefined): string {
-  if (mimeType?.startsWith('audio/')) return 'audio'
-  if (mimeType?.startsWith('video/')) return 'video'
-  if (mimeType === 'application/pdf') return 'PDF'
-  return 'file'
-}
-
-function attachmentMarker(kind: string): string {
-  return `(a ${kind} attachment that can't be opened right now)`
-}
-
-function systemText(instruction: unknown): string | undefined {
-  if (typeof instruction === 'string') return instruction
-  if (!isRecord(instruction)) return undefined
-  if (typeof instruction.text === 'string') return instruction.text
-  const parts = Array.isArray(instruction.parts) ? instruction.parts : []
-  const text = parts
-    .filter(isRecord)
-    .map((part) => (typeof part.text === 'string' ? part.text : undefined))
-    .filter((part): part is string => part !== undefined)
-    .join('\n')
-  return text || undefined
-}
-
-function toJsonSchema(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(toJsonSchema)
-  if (!isRecord(value)) return value
-
-  const schema: JsonObject = {}
-  for (const [key, child] of Object.entries(value)) {
-    if (key === 'propertyOrdering') continue
-    if (key === 'type' && typeof child === 'string') {
-      schema[key] = child.toLowerCase()
-    } else if (key === 'type' && Array.isArray(child)) {
-      schema[key] = child.map((type) => (typeof type === 'string' ? type.toLowerCase() : type))
-    } else {
-      schema[key] = toJsonSchema(child)
-    }
-  }
-  return schema
-}
-
 function openAiTools(llmRequest: LlmRequest): ChatMessage[] {
-  const declarations = (llmRequest.config?.tools ?? []).flatMap((tool) => {
-    const declarationTool = tool as unknown as {
-      functionDeclarations?: Array<{
-        name?: string
-        description?: string
-        parameters?: unknown
-        parametersJsonSchema?: unknown
-      }>
-    }
-    return declarationTool.functionDeclarations ?? []
-  })
-  return declarations.map((declaration) => ({
+  return functionDeclarations(llmRequest).map((declaration) => ({
     type: 'function',
     function: {
-      name: declaration.name ?? '',
+      name: declaration.name,
       ...(declaration.description === undefined ? {} : { description: declaration.description }),
-      ...(declaration.parametersJsonSchema !== undefined
-        ? { parameters: declaration.parametersJsonSchema }
-        : declaration.parameters !== undefined
-          ? { parameters: toJsonSchema(declaration.parameters) }
-          : {})
+      ...(declaration.parameters === undefined ? {} : { parameters: declaration.parameters })
     }
   }))
 }
@@ -295,23 +237,48 @@ export class ModelScopeLlm extends BaseLlm {
     const tools = openAiTools(llmRequest)
     if (tools.length) requestBody.tools = tools
 
-    const response = await this.fetchImpl(`${this.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(requestBody),
+    const workload = workloadOf(llmRequest)
+    const reservation = await startCall({
+      provider: 'modelscope',
+      model: this.model,
+      workload,
+      estTokens: requestTokenEstimate([llmRequest.config?.systemInstruction, llmRequest.contents]),
       signal: externalSignal
-        ? AbortSignal.any([externalSignal, AbortSignal.timeout(this.timeoutMs)])
-        : AbortSignal.timeout(this.timeoutMs)
     })
-    if (!response.ok) {
-      const bodyText = await response.text()
-      throw new Error(`ModelScope ${response.status}: ${bodyText.slice(0, 300)}`)
-    }
 
-    const result = (await response.json()) as ModelScopeResponse
+    let result: ModelScopeResponse
+    try {
+      const response = await this.fetchImpl(`${this.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestBody),
+        signal: externalSignal
+          ? AbortSignal.any([externalSignal, AbortSignal.timeout(this.timeoutMs)])
+          : AbortSignal.timeout(this.timeoutMs)
+      })
+      if (!response.ok) {
+        const bodyText = await response.text()
+        throw new Error(`ModelScope ${response.status}: ${bodyText.slice(0, 300)}`)
+      }
+
+      result = (await response.json()) as ModelScopeResponse
+    } catch (error) {
+      reservation.release()
+      throw error
+    }
+    const usage: CallUsage = {
+      provider: 'modelscope',
+      model: this.model,
+      workload,
+      inputTokens: result.usage?.prompt_tokens ?? 0,
+      outputTokens: result.usage?.completion_tokens ?? 0
+    }
+    recordUsage(usage)
+    reservation.release(usage)
+
     const choice = result.choices?.[0]
     const message = choice?.message
     const text = typeof message?.content === 'string' ? message.content.trim() : ''

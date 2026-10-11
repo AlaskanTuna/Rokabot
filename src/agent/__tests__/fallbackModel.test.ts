@@ -1,7 +1,7 @@
 import { BaseLlm } from '@google/adk'
 import type { BaseLlmConnection, LlmRequest, LlmResponse } from '@google/adk'
 import { FinishReason } from '@google/genai'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const configState = vi.hoisted(() => ({
   gemini: { model: 'gemini-test', hedgeAfterMs: 0 },
@@ -20,7 +20,26 @@ const configState = vi.hoisted(() => ({
 vi.mock('../../config.js', () => ({ config: configState }))
 vi.mock('../src/agent/../config.js', () => ({ config: configState }))
 
+const budgetState = vi.hoisted(() => ({ release: vi.fn(), startCall: vi.fn() }))
+
+vi.mock('../llm/budget.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../llm/budget.js')>()),
+  startCall: budgetState.startCall
+}))
+
 import { ModelScopeLlm, RoutedLlm, createRokaModel, modelRouteForRequest } from '../fallbackModel.js'
+import { type CallUsage, onUsage } from '../llm/usage.js'
+
+beforeEach(() => {
+  budgetState.release.mockReset()
+  budgetState.startCall.mockReset()
+  budgetState.startCall.mockResolvedValue({ release: budgetState.release })
+})
+
+afterEach(() => {
+  budgetState.release.mockReset()
+  budgetState.startCall.mockReset()
+})
 
 type RequestCall = { input: unknown; init?: RequestInit }
 
@@ -377,6 +396,53 @@ describe('ModelScopeLlm response translation', () => {
     await expect(
       responses(adapter(fetchImpl), request([{ role: 'user', parts: [{ text: 'hello' }] }]))
     ).rejects.toThrow('ModelScope 503:')
+  })
+
+  it('records the usage of each call once', async () => {
+    const { fetchImpl } = createFetch({
+      choices: [{ message: { content: 'hi' }, finish_reason: 'stop' }],
+      usage: { prompt_tokens: 120, completion_tokens: 8, total_tokens: 128 }
+    })
+    const seen: CallUsage[] = []
+    const stop = onUsage((usage) => seen.push(usage))
+
+    await responses(adapter(fetchImpl), request([{ role: 'user', parts: [{ text: 'hello' }] }]))
+    stop()
+
+    expect(seen).toEqual([
+      { provider: 'modelscope', model: 'Qwen/test-model', workload: 'reply', inputTokens: 120, outputTokens: 8 }
+    ])
+  })
+
+  it('reserves one budget call and releases it with the usage it recorded', async () => {
+    const { fetchImpl } = createFetch({
+      choices: [{ message: { content: 'hi' }, finish_reason: 'stop' }],
+      usage: { prompt_tokens: 120, completion_tokens: 8, total_tokens: 128 }
+    })
+    const seen: CallUsage[] = []
+    const stop = onUsage((usage) => seen.push(usage))
+
+    await responses(adapter(fetchImpl), request([{ role: 'user', parts: [{ text: 'hello' }] }]))
+    stop()
+
+    expect(budgetState.startCall).toHaveBeenCalledTimes(1)
+    expect(budgetState.startCall).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'modelscope', model: 'Qwen/test-model', workload: 'reply' })
+    )
+    expect(budgetState.release).toHaveBeenCalledTimes(1)
+    expect(budgetState.release).toHaveBeenCalledWith(seen[0])
+    expect(budgetState.release.mock.calls[0]?.[0]).toBe(seen[0])
+  })
+
+  it("releases the reservation with no usage when the response is not OK, and still throws today's error", async () => {
+    const { fetchImpl } = createFetch({ error: 'busy' }, 503)
+
+    await expect(
+      responses(adapter(fetchImpl), request([{ role: 'user', parts: [{ text: 'hello' }] }]))
+    ).rejects.toThrow('ModelScope 503: {"error":"busy"}')
+
+    expect(budgetState.release).toHaveBeenCalledTimes(1)
+    expect(budgetState.release).toHaveBeenCalledWith()
   })
 
   it('propagates a fetch rejection unchanged', async () => {
