@@ -1,6 +1,35 @@
 import { describe, expect, it } from 'vitest'
-import { EXTRACTION_RESPONSE_SCHEMA, parseExtractionOutput } from '../extractionSchema.js'
+import { requestSchema } from '../../llm/objectSchema.js'
+import { EXTRACTION_RESPONSE_SCHEMA, ExtractionOutputSchema, parseExtractionOutput } from '../extractionSchema.js'
 import { PREDICATES } from '../predicates.js'
+import { LEGACY_GEMINI_EXTRACTION_SCHEMA } from './legacyGeminiExtractionSchema.js'
+
+const GEMINI_SCHEMA = requestSchema(ExtractionOutputSchema, 'response_json_schema')
+
+/** The legacy schema spelled types in capitals and set no bounds or additionalProperties; compare the rest. */
+function comparable(node: unknown): unknown {
+  if (Array.isArray(node)) return node.map(comparable)
+  if (!node || typeof node !== 'object') return node
+  const out: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(node)) {
+    if (key === 'additionalProperties' || key === 'minimum' || key === 'maximum') continue
+    if (key === 'type' && typeof value === 'string') out.type = value.toLowerCase()
+    else if (key === 'required') out.required = [...(value as string[])].sort()
+    else out[key] = comparable(value)
+  }
+  return out
+}
+
+function keysIn(node: unknown, found = new Set<string>()): Set<string> {
+  if (Array.isArray(node)) for (const item of node) keysIn(item, found)
+  else if (node && typeof node === 'object') {
+    for (const [key, value] of Object.entries(node)) {
+      found.add(key)
+      keysIn(value, found)
+    }
+  }
+  return found
+}
 
 const subject = { kind: 'user', userId: 'u-1' }
 
@@ -105,7 +134,7 @@ describe('parseExtractionOutput', () => {
       }
     }
     const date = (
-      EXTRACTION_RESPONSE_SCHEMA as unknown as {
+      GEMINI_SCHEMA as unknown as {
         properties: {
           ops: {
             items: { anyOf: Array<{ properties: { date?: { anyOf: DateVariant[] } } }> }
@@ -187,7 +216,7 @@ describe('parseExtractionOutput', () => {
 
   it('offers retract and tense in the Gemini response schema', () => {
     type Variant = { properties: Record<string, { enum?: string[] }>; required: string[] }
-    const variants = (EXTRACTION_RESPONSE_SCHEMA.properties.ops.items as { anyOf: Variant[] }).anyOf
+    const variants = ((GEMINI_SCHEMA.properties as { ops: { items: unknown } }).ops.items as { anyOf: Variant[] }).anyOf
     const userVariant = (op: string) =>
       variants.find(
         (variant) =>
@@ -210,5 +239,30 @@ describe('parseExtractionOutput', () => {
     )
     expect(guildVariants.length).toBeGreaterThan(0)
     for (const variant of guildVariants) expect(variant.properties.tense).toBeUndefined()
+  })
+
+  it('generates the Gemini schema the extractor sent before #296, bounds aside', () => {
+    expect(comparable(GEMINI_SCHEMA)).toEqual(comparable(LEGACY_GEMINI_EXTRACTION_SCHEMA))
+  })
+
+  it('keeps sending the frozen legacy Gemini schema on the legacy config', () => {
+    expect(EXTRACTION_RESPONSE_SCHEMA).toEqual(LEGACY_GEMINI_EXTRACTION_SCHEMA)
+  })
+
+  it('keeps the existing-claim ID floor the legacy schema sent', () => {
+    type Variant = { properties: Record<string, unknown> }
+    const variants = ((GEMINI_SCHEMA.properties as { ops: { items: unknown } }).ops.items as { anyOf: Variant[] }).anyOf
+    for (const variant of variants.filter((candidate) => 'existingId' in candidate.properties)) {
+      expect(variant.properties.existingId).toEqual({ type: 'integer', minimum: 1 })
+    }
+  })
+
+  it('encodes the extraction schema for Anthropic without bounds and for OpenAI strict mode', () => {
+    const anthropic = requestSchema(ExtractionOutputSchema, 'forced_tool')
+    for (const key of ['minimum', 'maximum', 'minLength']) expect(keysIn(anthropic).has(key)).toBe(false)
+    const strict = requestSchema(ExtractionOutputSchema, 'json_schema_strict')
+    const strictJson = JSON.stringify(strict)
+    expect(strictJson).toContain('"objectUserId":{"anyOf":[{"type":"string"},{"type":"null"}]}')
+    expect(strictJson).not.toContain('minLength')
   })
 })
