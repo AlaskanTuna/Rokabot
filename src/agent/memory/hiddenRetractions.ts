@@ -5,6 +5,7 @@ import { judgeHiddenRetractions } from '../jev/judgments.js'
 import { embedEpisodeText } from './episodeEmbeddings.js'
 import { cosineSimilarity } from './episodeRetriever.js'
 import { renderFactSentence } from './factSentences.js'
+import { verifyThreshold } from './judgeThresholds.js'
 import { getActiveClaims, retireClaim } from './memoryClaims.js'
 import { PREDICATES, type PredicateId } from './predicates.js'
 
@@ -59,10 +60,7 @@ async function reconcileOne(input: {
 
   const retired: number[] = []
   for (const { claim } of candidates) {
-    if (
-      (probabilities[claim.id] ?? 0) >= config.memory.verifyThreshold &&
-      retireClaim(input.guildId, claim.id, 'retracted')
-    ) {
+    if ((probabilities[claim.id] ?? 0) >= verifyThreshold() && retireClaim(input.guildId, claim.id, 'retracted')) {
       retired.push(claim.id)
     }
   }

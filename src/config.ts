@@ -121,6 +121,8 @@ interface YamlConfig {
     episodeMaxMessages?: number
     admitThreshold?: number
     verifyThreshold?: number
+    modelAdmitThreshold?: number
+    modelVerifyThreshold?: number
     episodeRecallK?: number
     episodeTokenBudget?: number
     episodeMinSimilarity?: number
@@ -215,6 +217,14 @@ export type JevMode = 'off' | 'shadow' | 'on'
 export type MemoryPrivacy = 'relaxed' | 'balanced' | 'strict' | 'off'
 export type MemoryRecallMode = 'legacy' | 'shadow' | 'unified'
 export type MediaWatcher = 'gemini' | 'qwen' | 'direct' | 'off'
+export type MemoryJudge = 'jev' | 'model' | 'none'
+
+// Jev judges whenever its key is set. Without it the main model judges, except on the legacy config (no `llm:`
+// block), which keeps today's behaviour of judging nothing.
+function memoryJudge(): MemoryJudge {
+  if (envString('TYPESAFE_API_KEY')) return 'jev'
+  return yaml.llm ? 'model' : 'none'
+}
 
 function jevMode(key: 'tone' | 'referents' | 'prefetch', envKey: string): JevMode {
   const envValue = envString(envKey)
@@ -510,6 +520,9 @@ const baseConfig = {
     episodeMaxMessages,
     admitThreshold: yaml.memory?.admitThreshold ?? 0.5,
     verifyThreshold: yaml.memory?.verifyThreshold ?? 0.5,
+    modelAdmitThreshold: yaml.memory?.modelAdmitThreshold ?? 0.7,
+    modelVerifyThreshold: yaml.memory?.modelVerifyThreshold ?? 0.7,
+    judge: memoryJudge(),
     episodeRecallK: yaml.memory?.episodeRecallK ?? 3,
     episodeTokenBudget: yaml.memory?.episodeTokenBudget ?? 200,
     episodeMinSimilarity: yaml.memory?.episodeMinSimilarity ?? 0.7,
@@ -697,6 +710,8 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   },
   { path: 'memory.admitThreshold', value: config.memory.admitThreshold, min: 0, max: 1 },
   { path: 'memory.verifyThreshold', value: config.memory.verifyThreshold, min: 0, max: 1 },
+  { path: 'memory.modelAdmitThreshold', value: config.memory.modelAdmitThreshold, min: 0, max: 1 },
+  { path: 'memory.modelVerifyThreshold', value: config.memory.modelVerifyThreshold, min: 0, max: 1 },
   { path: 'memory.episodeRecallK', value: config.memory.episodeRecallK, min: 1, max: 10 },
   { path: 'memory.episodeTokenBudget', value: config.memory.episodeTokenBudget, min: 1 },
   { path: 'memory.episodeMinSimilarity', value: config.memory.episodeMinSimilarity, min: 0, max: 1 },

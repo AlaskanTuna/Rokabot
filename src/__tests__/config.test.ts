@@ -401,6 +401,64 @@ describe('config module', () => {
     )
   })
 
+  it('loads separate main-model judge thresholds next to the Jev ones', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+
+    const { config } = await import('../config.js')
+
+    expect(config.memory.admitThreshold).toBe(0.5)
+    expect(config.memory.verifyThreshold).toBe(0.5)
+    expect(config.memory.modelAdmitThreshold).toBe(0.7)
+    expect(config.memory.modelVerifyThreshold).toBe(0.7)
+  })
+
+  it('throws if memory.modelVerifyThreshold exceeds 1 in config.yml', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    withYamlOverride({ memory: { modelVerifyThreshold: 1.5 } })
+
+    await expect(() => import('../config.js')).rejects.toThrow(
+      'Config value memory.modelVerifyThreshold must be <= 1, got: 1.5'
+    )
+  })
+
+  it('judges memory with nothing on the legacy config without a TypeSafe key', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+
+    const { config } = await import('../config.js')
+
+    expect(config.memory.judge).toBe('none')
+  })
+
+  it('judges memory with Jev whenever its key is set', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('TYPESAFE_API_KEY', 'test-typesafe-key')
+    withYamlOverride({
+      llm: { main: 'flash', models: { flash: { provider: 'gemini', model: 'gemini-3.5-flash-lite' } } }
+    })
+
+    const { config } = await import('../config.js')
+
+    expect(config.memory.judge).toBe('jev')
+  })
+
+  it('judges memory with the main model on an llm block without a TypeSafe key', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('LLM_MAIN', '')
+    vi.stubEnv('LLM_FALLBACK', '')
+    withYamlOverride({
+      llm: { main: 'flash', models: { flash: { provider: 'gemini', model: 'gemini-3.5-flash-lite' } } }
+    })
+
+    const { config } = await import('../config.js')
+
+    expect(config.memory.judge).toBe('model')
+  })
+
   it('loads bounded episodic memory settings', async () => {
     setRequiredEnvVars()
     clearTunableEnvVars()
@@ -1011,6 +1069,8 @@ describe('config module', () => {
       { path: 'jev.referentMinConfidence', min: 0, max: 1 },
       { path: 'memory.admitThreshold', min: 0, max: 1 },
       { path: 'memory.verifyThreshold', min: 0, max: 1 },
+      { path: 'memory.modelAdmitThreshold', min: 0, max: 1 },
+      { path: 'memory.modelVerifyThreshold', min: 0, max: 1 },
       { path: 'gemini.turnDeadlineMs', min: 1 },
       { path: 'gemini.retryBackoffCapMs', min: 1 },
       { path: 'gemini.maxRetries', min: 0 },

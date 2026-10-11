@@ -18,6 +18,7 @@ import {
 } from './extractionSchema.js'
 import { resolveGuildFactDate } from './guildFactDates.js'
 import { reconcileHiddenRetractions } from './hiddenRetractions.js'
+import { admitThreshold, verifyThreshold } from './judgeThresholds.js'
 import {
   type ClaimPeriod,
   type ClaimStatus,
@@ -275,7 +276,8 @@ export async function verifyAndApplyOperations(input: {
   const lines = input.episode.messages.map(formatEpisodeLine)
   const verification = await judgeEpisodeOperations({ lines, ops: writeOps, existing: visibleClaims })
   const verified = hasCompleteVerification(verification, planned)
-  const holds = (key: string) => (verification?.answers[key]?.noul ?? 0) >= config.memory.verifyThreshold
+  const threshold = verifyThreshold()
+  const holds = (key: string) => (verification?.answers[key]?.noul ?? 0) >= threshold
   const results: Array<{
     applied: boolean
     duplicate: boolean
@@ -321,9 +323,9 @@ export async function verifyAndApplyOperations(input: {
       }
 
       if (verified) {
-        const durable = verification.answers[`durable_${index}`].noul >= config.memory.verifyThreshold
+        const durable = verification.answers[`durable_${index}`].noul >= threshold
         const scopedKey = `${op.subject.kind === 'guild' ? 'guild_scoped' : 'attributed'}_${index}`
-        const scoped = verification.answers[scopedKey].noul >= config.memory.verifyThreshold
+        const scoped = verification.answers[scopedKey].noul >= threshold
         if (!durable || !scoped) {
           results[index] = { applied: false, duplicate: false }
           continue
@@ -422,7 +424,7 @@ export async function verifyAndApplyOperations(input: {
           }
           const sameAs = sameAsClaims.find((claim, claimIndex) => {
             const answer = verification.answers[`same_as_${index}_${claimIndex}`]
-            return answer.noul >= config.memory.verifyThreshold
+            return answer.noul >= threshold
           })
           if (sameAs) {
             const active =
@@ -614,7 +616,7 @@ export async function runEpisodePipeline(job: ExtractionQueueJob, trace: RunTrac
   trace.outcome = admission.reason
   trace.tokens += admission.inputTokens
   if (admission.probability !== null) {
-    trace.admission = { probability: admission.probability, threshold: config.memory.admitThreshold }
+    trace.admission = { probability: admission.probability, threshold: admitThreshold() }
   }
   if (!admission.admitted) {
     if (admission.reason === 'trivial' || admission.reason === 'sensitive') trace.stage = 'precheck'
