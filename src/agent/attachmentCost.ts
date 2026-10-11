@@ -3,6 +3,7 @@ import { GoogleGenAI, type Part } from '@google/genai'
 import sharp from 'sharp'
 import { config } from '../config.js'
 import { logger } from '../utils/logger.js'
+import { IMAGE_TYPES } from './llm/anthropicLlm.js'
 
 let client: GoogleGenAI | undefined
 let anthropic: Anthropic | undefined
@@ -80,7 +81,7 @@ export async function measureAttachmentTokens(
 function anthropicBlock(part: Part): Anthropic.ContentBlockParam {
   const mimeType = part.inlineData?.mimeType ?? ''
   const data = part.inlineData?.data ?? ''
-  if (mimeType.startsWith('image/')) {
+  if (IMAGE_TYPES.has(mimeType)) {
     return {
       type: 'image',
       source: { type: 'base64', media_type: mimeType as Anthropic.Base64ImageSource['media_type'], data }

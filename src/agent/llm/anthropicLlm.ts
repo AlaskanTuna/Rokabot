@@ -29,7 +29,7 @@ export const STRUCTURED_OUTPUT_TOOL = 'emit_result'
 // Thinking counts toward max_tokens on Claude, so a cap sized for the visible reply alone can be spent before any
 // text is written, and the turn then ends empty.
 const THINKING_HEADROOM_TOKENS = 2048
-const IMAGE_TYPES = new Set<string>(['image/jpeg', 'image/png', 'image/gif', 'image/webp'])
+export const IMAGE_TYPES = new Set<string>(['image/jpeg', 'image/png', 'image/gif', 'image/webp'])
 const BILLING_PATTERN = /credit balance|billing/i
 const CONTEXT_PATTERN = /prompt is too long|context window|too many (?:input )?tokens/i
 

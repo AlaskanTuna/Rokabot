@@ -164,6 +164,16 @@ describe('measureAttachmentTokens per main model', () => {
     expect(countTokens).not.toHaveBeenCalled()
   })
 
+  it('counts an image type Claude does not take as a text marker, as the adapter sends it', async () => {
+    mocks.config.llm.main = anthropicMain
+    anthropicCountTokens.mockResolvedValueOnce({ input_tokens: 12 })
+
+    await expect(measureAttachmentTokens([{ inlineData: { mimeType: 'image/heic', data: 'aW1n' } }])).resolves.toBe(12)
+    expect(anthropicCountTokens.mock.calls.at(-1)?.[0].messages[0].content).toEqual([
+      { type: 'text', text: expect.any(String) }
+    ])
+  })
+
   it('admits the turn unmeasured when Anthropic counting fails', async () => {
     mocks.config.llm.main = anthropicMain
     anthropicCountTokens.mockRejectedValueOnce(new Error('network'))
