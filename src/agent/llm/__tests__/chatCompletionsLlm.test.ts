@@ -1,4 +1,7 @@
+import type { LlmRequest } from '@google/adk'
 import { describe, expect, it } from 'vitest'
+import { ModelScopeLlm as ReexportedModelScopeLlm } from '../../fallbackModel.js'
+import { ChatCompletionsLlm, ModelScopeLlm } from '../chatCompletionsLlm.js'
 import { MODEL_PROFILES, profileFor } from '../profiles.js'
 
 describe('Chat Completions profiles', () => {
@@ -48,5 +51,21 @@ describe('Chat Completions profiles', () => {
     for (const model of ['gpt-6-luna', 'Qwen/Qwen3.5-35B-A3B', 'deepseek-ai/DeepSeek-V4.1-Flash']) {
       expect(MODEL_PROFILES.filter((profile) => profile.model === model)).toHaveLength(1)
     }
+  })
+})
+
+describe('ModelScopeLlm', () => {
+  it('is a modelscope ChatCompletionsLlm, still exported from fallbackModel', () => {
+    const legacy = new ReexportedModelScopeLlm({
+      model: 'Qwen/test-model',
+      apiKey: 'test-key',
+      baseUrl: 'https://modelscope.test/v1',
+      timeoutMs: 1000
+    })
+
+    expect(ReexportedModelScopeLlm).toBe(ModelScopeLlm)
+    expect(legacy).toBeInstanceOf(ChatCompletionsLlm)
+    expect(legacy.provider).toBe('modelscope')
+    expect(() => legacy.connect({} as LlmRequest)).toThrow('ModelScopeLlm does not support live connections')
   })
 })
