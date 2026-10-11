@@ -337,7 +337,7 @@ describe('ModelScope', () => {
       return reservation
     })
 
-    await Promise.resolve()
+    await vi.advanceTimersByTimeAsync(0)
     expect(secondGranted).toBe(false)
 
     first.release()

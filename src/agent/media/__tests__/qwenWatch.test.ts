@@ -318,7 +318,23 @@ describe('watchFramesWithQwen failures', () => {
     const hangs = fakeFetch(
       (init) =>
         new Promise<Response>((_resolve, reject) => {
-          init.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+          if (init.signal?.aborted) reject(init.signal.reason)
+          init.signal?.addEventListener('abort', () => reject(init.signal?.reason))
+        })
+    )
+    const controller = new AbortController()
+    const pending = watchFramesWithQwen(input({ signal: controller.signal }), settings({ fetchImpl: hangs.fetchImpl }))
+    controller.abort()
+
+    expect(await pending).toMatchObject({ status: 'failed', reason: 'timeout' })
+  })
+
+  it('maps a caller abort during the request to timeout', async () => {
+    const hangs = fakeFetch(
+      (init) =>
+        new Promise<Response>((_resolve, reject) => {
+          if (init.signal?.aborted) reject(init.signal.reason)
+          init.signal?.addEventListener('abort', () => reject(init.signal?.reason))
         })
     )
     const controller = new AbortController()
