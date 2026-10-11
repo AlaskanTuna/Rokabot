@@ -3,7 +3,15 @@ import type { BaseLlmConnection, LlmRequest, LlmResponse } from '@google/adk'
 import { FinishReason } from '@google/genai'
 import type { Part } from '@google/genai'
 import { requestTokenEstimate, startCall } from './budget.js'
-import { attachmentKind, attachmentMarker, functionDeclarations, isRecord, systemText } from './requestShape.js'
+import type { ModelProfile } from './profiles.js'
+import {
+  attachmentKind,
+  attachmentMarker,
+  functionDeclarations,
+  isRecord,
+  shapeRequest,
+  systemText
+} from './requestShape.js'
 import { type CallUsage, recordUsage, workloadOf } from './usage.js'
 
 type JsonObject = Record<string, unknown>
@@ -13,11 +21,18 @@ interface ChatCompletionsResponse {
   choices?: Array<{
     message?: {
       content?: string | null
-      tool_calls?: Array<{ function?: { name?: string; arguments?: string } }>
+      refusal?: string | null
+      tool_calls?: Array<{ id?: string; function?: { name?: string; arguments?: string } }>
     }
     finish_reason?: string | null
-  }>
-  usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
+  }> | null
+  usage?: {
+    prompt_tokens?: number
+    completion_tokens?: number
+    total_tokens?: number
+    prompt_tokens_details?: { cached_tokens?: number }
+    completion_tokens_details?: { reasoning_tokens?: number }
+  } | null
 }
 
 interface GeneratedCall {
@@ -36,6 +51,14 @@ interface MessageGroup {
 interface MessageEntry {
   message: ChatMessage
   group?: MessageGroup
+}
+
+function parseJson(text: string): unknown {
+  try {
+    return JSON.parse(text)
+  } catch {
+    return undefined
+  }
 }
 
 function openAiTools(llmRequest: LlmRequest): ChatMessage[] {
@@ -59,7 +82,7 @@ function textContent(
     .join('\n')
 }
 
-function openAiMessages(llmRequest: LlmRequest): ChatMessage[] {
+function openAiMessages(llmRequest: LlmRequest, acceptsImages: boolean): ChatMessage[] {
   const messages: ChatMessage[] = []
   const instruction = systemText(llmRequest.config?.systemInstruction)
   if (instruction) messages.push({ role: 'system', content: instruction })
@@ -150,7 +173,7 @@ function openAiMessages(llmRequest: LlmRequest): ChatMessage[] {
       if (part.inlineData || part.fileData) {
         const inlineData = part.inlineData
         const mimeType = inlineData?.mimeType
-        if (inlineData && mimeType?.startsWith('image/')) {
+        if (acceptsImages && inlineData && mimeType?.startsWith('image/')) {
           userParts.push({
             type: 'image_url',
             image_url: { url: `data:${mimeType};base64,${inlineData.data}` }
@@ -184,12 +207,22 @@ const PROVIDER_LABELS: Readonly<Record<ChatCompletionsProvider, string>> = {
   modelscope: 'ModelScope'
 }
 
+export const CHAT_COMPLETIONS_BASE_URLS: Readonly<Record<ChatCompletionsProvider, string>> = {
+  openai: 'https://api.openai.com/v1',
+  modelscope: 'https://api-inference.modelscope.ai/v1'
+}
+
 export interface ChatCompletionsOptions {
   provider: ChatCompletionsProvider
   model: string
   apiKey: string
-  baseUrl: string
+  baseUrl?: string
   timeoutMs: number
+  /** Absent on today's legacy fallback route, which then sends the request unshaped. */
+  profile?: ModelProfile
+  effort?: string
+  /** The resolved output cap (`ResolvedModel.maxOutputTokens`); the profile's own cap when absent. */
+  maxOutputTokens?: number
   fetchImpl?: typeof fetch
 }
 
@@ -198,64 +231,61 @@ export class ChatCompletionsLlm extends BaseLlm {
   private readonly apiKey: string
   private readonly baseUrl: string
   private readonly timeoutMs: number
+  private readonly profile: ModelProfile | undefined
+  private readonly effort: string | undefined
+  private readonly maxOutputTokens: number | undefined
   private readonly fetchImpl: typeof fetch
 
   constructor(options: ChatCompletionsOptions) {
     super({ model: options.model })
     this.provider = options.provider
     this.apiKey = options.apiKey
-    this.baseUrl = options.baseUrl
+    this.baseUrl = (options.baseUrl ?? CHAT_COMPLETIONS_BASE_URLS[options.provider]).replace(/\/+$/, '')
     this.timeoutMs = options.timeoutMs
+    this.profile = options.profile
+    this.effort = options.effort ?? options.profile?.thinking.defaultEffort
+    this.maxOutputTokens = options.maxOutputTokens
     this.fetchImpl = options.fetchImpl ?? fetch
   }
 
-  async *generateContentAsync(llmRequest: LlmRequest, _stream?: boolean): AsyncGenerator<LlmResponse, void> {
+  /** True only on the legacy ModelScope fallback, which keeps today's request and reply translation exactly. */
+  protected get legacyTranslation(): boolean {
+    return false
+  }
+
+  private get label(): string {
+    return PROVIDER_LABELS[this.provider]
+  }
+
+  async *generateContentAsync(
+    llmRequest: LlmRequest,
+    _stream?: boolean,
+    abortSignal?: AbortSignal
+  ): AsyncGenerator<LlmResponse, void> {
     this.maybeAppendUserContent(llmRequest)
+    const profile = this.profile
+    const shaped = profile
+      ? shapeRequest(llmRequest, {
+          provider: this.provider,
+          profile,
+          maxOutputTokens: this.maxOutputTokens ?? profile.maxOutputTokens
+        })
+      : llmRequest
 
-    const externalSignal = llmRequest.config?.abortSignal
-    const requestBody: Record<string, unknown> = {
-      model: this.model,
-      messages: openAiMessages(llmRequest),
-      enable_thinking: false,
-      stream: false
-    }
-    const temperature = llmRequest.config?.temperature
-    const topP = llmRequest.config?.topP
-    const maxTokens = llmRequest.config?.maxOutputTokens
-    if (temperature !== undefined) requestBody.temperature = temperature
-    if (topP !== undefined) requestBody.top_p = topP
-    if (maxTokens !== undefined) requestBody.max_tokens = maxTokens
-    const tools = openAiTools(llmRequest)
-    if (tools.length) requestBody.tools = tools
-
-    const workload = workloadOf(llmRequest)
+    const signal = abortSignal ?? shaped.config?.abortSignal
+    const requestBody = this.requestBody(shaped)
+    const workload = workloadOf(shaped)
     const reservation = await startCall({
       provider: this.provider,
       model: this.model,
       workload,
-      estTokens: requestTokenEstimate([llmRequest.config?.systemInstruction, llmRequest.contents]),
-      signal: externalSignal
+      estTokens: requestTokenEstimate([shaped.config?.systemInstruction, shaped.contents]),
+      signal
     })
 
     let result: ChatCompletionsResponse
     try {
-      const response = await this.fetchImpl(`${this.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(requestBody),
-        signal: externalSignal
-          ? AbortSignal.any([externalSignal, AbortSignal.timeout(this.timeoutMs)])
-          : AbortSignal.timeout(this.timeoutMs)
-      })
-      if (!response.ok) {
-        const bodyText = await response.text()
-        throw new Error(`${PROVIDER_LABELS[this.provider]} ${response.status}: ${bodyText.slice(0, 300)}`)
-      }
-
-      result = (await response.json()) as ChatCompletionsResponse
+      result = await this.post(JSON.stringify(requestBody), signal)
     } catch (error) {
       reservation.release()
       throw error
@@ -270,23 +300,66 @@ export class ChatCompletionsLlm extends BaseLlm {
     recordUsage(usage)
     reservation.release(usage)
 
+    yield this.toResponse(result)
+  }
+
+  private requestBody(llmRequest: LlmRequest): JsonObject {
+    // The legacy route always sent image bytes; a FALLBACK_MODEL override to an imageless profile must not stop that.
+    const acceptsImages = this.legacyTranslation || (this.profile?.input.image ?? true)
+    const body: JsonObject = {
+      model: this.model,
+      messages: openAiMessages(llmRequest, acceptsImages),
+      // ModelScope serves Qwen and DeepSeek with thinking on unless told otherwise; OpenAI rejects the field.
+      ...(this.provider === 'modelscope' ? { enable_thinking: false } : {}),
+      stream: false
+    }
+    if (this.effort !== undefined) body.reasoning_effort = this.effort
+    const temperature = llmRequest.config?.temperature
+    const topP = llmRequest.config?.topP
+    const maxTokens = llmRequest.config?.maxOutputTokens
+    if (temperature !== undefined) body.temperature = temperature
+    if (topP !== undefined) body.top_p = topP
+    // GPT-6 models refuse max_tokens and take max_completion_tokens instead.
+    if (maxTokens !== undefined) body[this.provider === 'openai' ? 'max_completion_tokens' : 'max_tokens'] = maxTokens
+    const tools = openAiTools(llmRequest)
+    if (tools.length) body.tools = tools
+    return body
+  }
+
+  private async post(body: string, signal: AbortSignal | undefined): Promise<ChatCompletionsResponse> {
+    const response = await this.fetchImpl(`${this.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body,
+      signal: signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(this.timeoutMs)])
+        : AbortSignal.timeout(this.timeoutMs)
+    })
+    if (!response.ok) {
+      const bodyText = await response.text()
+      throw new Error(`${this.label} ${response.status}: ${bodyText.slice(0, 300)}`)
+    }
+    return (await response.json()) as ChatCompletionsResponse
+  }
+
+  private toResponse(result: ChatCompletionsResponse): LlmResponse {
     const choice = result.choices?.[0]
     const message = choice?.message
     const text = typeof message?.content === 'string' ? message.content.trim() : ''
     const functionCalls: Array<{ name: string; args: JsonObject }> = []
     for (const toolCall of message?.tool_calls ?? []) {
-      try {
-        const args: unknown = JSON.parse(toolCall.function?.arguments ?? '')
-        if (!isRecord(args)) throw new Error('Tool arguments must be a JSON object')
-        functionCalls.push({ name: toolCall.function?.name ?? '', args })
-      } catch {
-        yield {
+      const args = parseJson(toolCall.function?.arguments ?? '')
+      if (!isRecord(args)) {
+        return {
           errorCode: 'MALFORMED_FUNCTION_CALL',
-          errorMessage: `${PROVIDER_LABELS[this.provider]} returned malformed tool arguments`,
+          errorMessage: `${this.label} returned malformed tool arguments`,
           finishReason: FinishReason.MALFORMED_FUNCTION_CALL
         }
-        return
       }
+      functionCalls.push({ name: toolCall.function?.name ?? '', args })
     }
 
     const parts: Part[] = []
@@ -305,18 +378,19 @@ export class ChatCompletionsLlm extends BaseLlm {
         : choice?.finish_reason === 'content_filter'
           ? FinishReason.SAFETY
           : FinishReason.STOP
-    const usageMetadata = result.usage
-      ? {
-          promptTokenCount: result.usage.prompt_tokens,
-          candidatesTokenCount: result.usage.completion_tokens,
-          totalTokenCount: result.usage.total_tokens
-        }
-      : undefined
-
-    yield {
+    const usage = result.usage
+    return {
       content: { role: 'model', parts },
       finishReason,
-      ...(usageMetadata === undefined ? {} : { usageMetadata })
+      ...(usage
+        ? {
+            usageMetadata: {
+              promptTokenCount: usage.prompt_tokens,
+              candidatesTokenCount: usage.completion_tokens,
+              totalTokenCount: usage.total_tokens
+            }
+          }
+        : {})
     }
   }
 
@@ -329,5 +403,9 @@ export class ChatCompletionsLlm extends BaseLlm {
 export class ModelScopeLlm extends ChatCompletionsLlm {
   constructor(options: Omit<ChatCompletionsOptions, 'provider'>) {
     super({ ...options, provider: 'modelscope' })
+  }
+
+  protected override get legacyTranslation(): boolean {
+    return true
   }
 }
