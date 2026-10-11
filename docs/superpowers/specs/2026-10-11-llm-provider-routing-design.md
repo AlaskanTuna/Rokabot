@@ -1,180 +1,182 @@
-# LLM Provider Routing Design (#296)
+# Modular LLM Providers Design (#296)
 
-Status: **draft for owner review**. Nothing here is implemented. Items marked **Pending** use the recommended answer until the owner says otherwise.
+Status: **draft for owner review**. Every open decision below is answered by the owner (2026-10-11); nothing is implemented yet. Inputs: two systems-engineering consults (`codex exec`, gpt-6-astra, xhigh) and a primary-source model survey.
 
 ## Goal
 
-Rokabot becomes a modular chatbot that runs on any major LLM API: the user swaps Roka's "brain" to match the APIs they have. `config.yml` chooses the model that writes Roka's replies (**main**, required) and an optional model that takes over when it fails (**fallback**). Five providers can fill either role: Gemini, Anthropic, OpenAI, Qwen and DeepSeek.
+Rokabot becomes a modular chatbot that runs on any major LLM API: the owner or a self-hoster swaps Roka's "brain" to match taste and the API keys at hand. One provider key is enough to run the whole bot, memory included. Gemini stays the default.
 
-### What the Owner Said
+## Owner Decisions
 
-- A `config.yml` setting selects the main and the fallback LLM; any of the five providers can be either.
-- The main model is mandatory and must work with every provider; the fallback is always optional.
-- Purpose: freedom to swap Roka's brain based on taste and on the APIs at hand.
-- Embeddings and memory extraction must no longer depend on Gemini alone. Memory extraction is just another LLM call, so it uses the main model.
-- The one exception is the media watcher: when on, its provider is Gemini or Qwen.
-- Consult a systems engineer first (done: `codex exec`, gpt-6-astra, xhigh, 2026-10-11).
+| #   | Decision                                                                                                                                                                                                               |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D1  | `config.yml` selects a **main** model (required) and a **fallback** model (always optional). Any of the five providers can be either: Gemini, Anthropic, OpenAI, Qwen, DeepSeek.                                       |
+| D2  | Every provider's default model is its **budget tier**, the equivalent of `gemini-3.5-flash-lite`.                                                                                                                      |
+| D3  | Keys: `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `MODELSCOPE_API_KEY`. Qwen **and** DeepSeek both go through ModelScope API-Inference. A key is required only when a configured role uses that provider. |
+| D4  | Memory extraction and reclassification are ordinary LLM calls and run on the main model (fallback when it fails).                                                                                                      |
+| D5  | Embeddings get their own setting: `local` (default), `gemini` or `openai`.                                                                                                                                             |
+| D6  | `local` embeddings run in a sidecar container capped at 1 GiB. Inputs past 512 tokens are truncated and the truncation is logged.                                                                                      |
+| D7  | Jev stays when `TYPESAFE_API_KEY` is set. Without it, the main model makes the admit and verify judgments as structured output, calibrated separately.                                                                 |
+| D8  | The media watcher keeps its own setting: `off`, `gemini` or `qwen`. It is the only workload that stays tied to those two providers.                                                                                    |
+| D9  | Delivery order: Gemini and Anthropic first, then the Chat Completions family (Qwen, DeepSeek, OpenAI). OpenAI uses Chat Completions first; the Responses API only if reasoning-with-tools becomes necessary.           |
+| D10 | Thinking is carried only inside one turn's tool loop, never between Discord turns.                                                                                                                                     |
+| D11 | Paid routes start with hedging off and a local monthly cap of $5 per paid provider; Anthropic Console auto-reload stays off.                                                                                           |
+| D12 | Only tested model profiles are accepted; an unknown model ID fails validation at startup.                                                                                                                              |
+| D13 | Switching models is a `config.yml` edit (or env override) plus a restart.                                                                                                                                              |
 
-### Assumptions (Pending)
+## Default Model Profiles
 
-| #   | Assumption        | Recommended Answer                                                                                                                                                                                                                            |
-| --- | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A2  | Scope             | Replies, memory extraction and reclassification run on the main model (with the fallback when it fails). Attachment token counting uses the main provider's counter or an estimate. Only the media watcher keeps its own Gemini/Qwen setting. |
-| A2a | Embeddings        | **Open question to the owner.** Recommended: a separate `embeddings:` setting (Gemini, OpenAI, Qwen or `local`), defaulting to `local` when the main provider has no embeddings API (Anthropic, DeepSeek).                                    |
-| A2b | Keys              | One provider's key is enough to run the bot. `GEMINI_API_KEY` stops being required; it is needed only when Gemini is used for a role or for the watcher.                                                                                      |
-| A3  | Fallback depth    | One fallback, not a chain.                                                                                                                                                                                                                    |
-| A4  | Switching         | Edit `config.yml` (or an env override) and restart. No live switching.                                                                                                                                                                        |
-| A5  | Endpoints         | Qwen through ModelScope (today's endpoint). DeepSeek, OpenAI and Anthropic through their official APIs. Keys in `.env`.                                                                                                                       |
-| A6  | OpenAI protocol   | Chat Completions first, shared with Qwen and DeepSeek. Add the Responses API only if the chosen OpenAI model needs reasoning carried across tool calls.                                                                                       |
-| A7  | Spend control     | Paid routes start with hedging off and a local monthly cap (default $5 per provider); Anthropic Console auto-reload stays off.                                                                                                                |
-| A8  | Thinking          | Carried only inside one turn's tool loop, never between Discord turns. This corrects #296's "never send thinking back": Claude rejects tool results without its own thinking blocks.                                                          |
-| A9  | Model choice      | Only model profiles that have been tested are accepted; an unknown model ID fails validation at startup.                                                                                                                                      |
-| A10 | Unsupported media | Audio and video reach a model that can't read them as media-watcher notes, never silently dropped.                                                                                                                                            |
+From the provider docs on 2026-10-11 (budget-model survey). ModelScope rows are candidates until an endpoint test passes (D12).
 
-### Gemini-Only Call Sites Today
+| Provider              | Model ID                          | Setting                                                                                   | Notes                                                                                                                                                                                                           |
+| --------------------- | --------------------------------- | ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Gemini (default)      | `gemini-3.5-flash-lite`           | Today's settings                                                                          | 1M context, 65K output                                                                                                                                                                                          |
+| Anthropic             | `claude-haiku-5-5`                | `effort: low`, thinking on (D10); no `temperature`, `top_p`, `top_k` or assistant prefill | #296's benchmark: thinking off missed `recall_user` and drifted from the persona. Earlier-turn thinking blocks are never sent back, which avoids Haiku's 400 on changed history. Fallback setting: thinking off |
+| OpenAI                | `gpt-6-luna`                      | `reasoning_effort: none` on Chat Completions                                              | Chat Completions accepts tools only at effort `none`; higher efforts need the Responses API (D9)                                                                                                                |
+| Qwen (ModelScope)     | `Qwen/Qwen3.5-35B-A3B`            | `enable_thinking: false`                                                                  | Hosted twin of Qwen3.5-Flash; already used by the watcher. `Qwen/Qwen3.8-Flash-Next` is a later candidate                                                                                                       |
+| DeepSeek (ModelScope) | `deepseek-ai/DeepSeek-V4.1-Flash` | Thinking off                                                                              | Tool calling and JSON mode on ModelScope are undocumented: verify first. DeepSeek's own API needs every earlier `reasoning_content` sent back with thinking plus tools, another reason for thinking off         |
 
-| Workload                  | Where                                             | Target                                                                                                                                                                                                           |
-| ------------------------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Replies                   | `src/agent/fallbackModel.ts`, `src/agent/roka.ts` | Main model (+ fallback)                                                                                                                                                                                          |
-| Memory extraction         | `src/agent/memory/extractor.ts`                   | Main model; structured output per provider (Gemini response schema, OpenAI `json_schema`, Anthropic forced tool use, DeepSeek/Qwen JSON mode), always re-validated with the zod schemas in `extractionSchema.ts` |
-| Reclassification          | `src/agent/memory/reclassifyModels.ts`            | Main model, same structured-output path                                                                                                                                                                          |
-| Episode embeddings        | `src/agent/memory/episodeEmbeddings.ts`           | `embeddings:` setting (A2a); each vector records its model, recall ignores vectors from another model, and a background job re-embeds after a switch                                                             |
-| Attachment token counting | `src/agent/attachmentCost.ts`                     | Main provider's counter (Anthropic `count_tokens`) or a byte/page estimate                                                                                                                                       |
-| Safety settings           | `src/agent/safetySettings.ts`                     | Sent only to Gemini                                                                                                                                                                                              |
-| Media watcher             | `src/agent/media/watch.ts`, `turnMedia.ts`        | Unchanged: Gemini or Qwen                                                                                                                                                                                        |
+ModelScope bills in Magicubes, not tokens: about 250 a day, 0.5–2 per call by model size, one shared balance for Qwen and DeepSeek, and guaranteed concurrency of one request. ModelScope serves no embedding models.
 
-## Current State
+## Workloads
 
-- One ADK `LlmAgent` (`src/agent/roka.ts:155`) uses `RoutedLlm` (`src/agent/fallbackModel.ts:463`), which wraps ADK's `Gemini` as primary and an optional `ModelScopeLlm` (`fallbackModel.ts:253`, OpenAI Chat Completions shape) as fallback, built in `createRokaModel` (`fallbackModel.ts:524`).
-- `RoutedLlm` hedges after `gemini.hedgeAfterMs` and records the answering side in `modelRouteForRequest` (`fallbackModel.ts:19`). The turn ladder switches models on `transient_http`, `network` and `quota_exhausted` (`src/agent/reliability.ts:260`) and keeps a sticky fallback window (`fallback.stickyMs`).
-- Generation settings are Gemini's: `temperature 0.9`, `topP 0.95`, safety settings, `gemini.maxOutputTokens` (`roka.ts:163`).
-- The rate limiter takes one daily unit per turn, not per call (`src/utils/rateLimiter.ts:128`), with Gemini free-tier numbers.
-- `response_events.model` holds only `gemini | fallback` (`src/storage/metricsStore.ts:22`).
-- ADK 2.2.1 registers only Gemini, Apigee and Chrome models; it has no Claude or LiteLLM adapter.
+| Workload                   | Today (Gemini Only)                                                | After                                                                                                           |
+| -------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| Replies                    | `src/agent/fallbackModel.ts:524`, `src/agent/roka.ts:155`          | Main model, optional fallback, through `RoutedLlm`                                                              |
+| Memory extraction          | `src/agent/memory/extractor.ts:122`                                | `generateObject` on the main model                                                                              |
+| Reclassification           | `src/agent/memory/reclassifyModels.ts:64`                          | `generateObject` on the main model                                                                              |
+| Admission and verification | Jev (`src/agent/memory/admission.ts:27`), needs `TYPESAFE_API_KEY` | Jev when set; otherwise main-model judgments through `generateObject` (D7)                                      |
+| Episode embeddings         | `src/agent/memory/episodeEmbeddings.ts:23`                         | `EmbeddingClient`: `local` sidecar, Gemini or OpenAI (D5)                                                       |
+| Attachment token counting  | `src/agent/attachmentCost.ts:50`                                   | The main profile's counter (Anthropic `count_tokens`) or an estimate from text tokens, image size and PDF pages |
+| Safety settings            | `src/agent/safetySettings.ts:32`                                   | Sent only with Gemini requests                                                                                  |
+| Media watcher              | `src/agent/media/watch.ts:200`, `filesUpload.ts`, `turnMedia.ts`   | Unchanged providers (D8); stops borrowing `config.fallback` credentials (`turnMedia.ts:645`)                    |
+| Harness diagnostics        | `tests/harness/quotaDiagnostic.ts:50`, `measure.ts:151`            | Follow the selected profile; keep explicit Gemini diagnostics                                                   |
 
-## Approaches
+## Architecture
 
-| Approach                                        | Summary                                                                                                                          | Verdict                                                                                                                                                                |
-| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **A. Protocol adapters behind `RoutedLlm`**     | Reuse ADK `Gemini`; add `AnthropicLlm`; generalise `ModelScopeLlm` into one Chat Completions adapter with per-provider profiles. | **Recommended.** Smallest change to a design that already works, no new service on the Pi, every provider feature reachable.                                           |
-| B. One proxy (CLIProxyAPI, LiteLLM, OpenRouter) | One OpenAI-shaped adapter; the proxy talks to every provider.                                                                    | Rejected. #296 measured that CLIProxyAPI's OpenAI path drops `cache_control` and PDFs and maps effort its own way; it adds a service to run and another failure point. |
-| C. Vercel AI SDK inside one adapter             | ADK request → AI SDK → provider.                                                                                                 | Rejected. A second translation boundary, a second zod/JSON-schema dialect, and more install size on the Pi for three wire formats we can write directly.               |
+```text
+LlmAgent (roka.ts)
+  RoutedLlm (fallbackModel.ts)            main / optional fallback, hedging, pinning
+    Gemini (ADK)                          gemini
+    AnthropicLlm                          anthropic, @anthropic-ai/sdk, SDK retries off
+    ChatCompletionsLlm                    openai (api.openai.com), modelscope (qwen, deepseek profiles)
+generateObject(schema, prompt)            background jobs; same adapters, no ADK runner or tools
+EmbeddingClient.embed(text, role)         local sidecar | gemini | openai
+profiles.ts                               tested model capabilities and prices
+```
 
-## Design
+- **One seam for generation.** Replies, extraction, reclassification and fallback judgments all use the same adapters. A separate general-purpose client would duplicate routing, deadlines, usage accounting and failure classification.
+- **Provider pinning.** Once a provider answers in a turn, it handles the rest of that turn's tool loop. Executed tools are never replayed to switch providers. Each background job routes on its own.
+- **Profiles live in code** (`src/agent/llm/profiles.ts`): image, PDF, audio/video, tools, parallel tools, thinking and effort values, accepted sampling parameters, max output, context window, caching, price. Config can lower a limit; it cannot add an ability.
+- **Request shaping.** Each adapter drops what its target rejects: Claude gets no sampling parameters; only Gemini gets safety settings.
 
-### Config
-
-A new optional `llm:` block. Without it, the bot behaves exactly as today (synthesised from `gemini:` and `fallback:`), so the Pi's config keeps working.
+## Config
 
 ```yaml
 llm:
-  main: flash # a key under llm.models
-  fallback: qwen # a key under llm.models, or null
-  hedgeAfterMs: 5000 # 0 disables; paid routes start at 0
+  main: flash # required; a key under llm.models
+  fallback: null # optional; a key under llm.models
+  hedgeAfterMs: 0 # paid routes start at 0 (D11)
   stickyMs: 300000
+  monthlyBudgetUsd:
+    anthropic: 5
+    openai: 5
   models:
-    flash:
-      provider: gemini
-      model: gemini-3.5-flash-lite
-    haiku:
-      provider: anthropic
-      model: claude-haiku-5-5
-      effort: low # fixed: changing it between requests breaks prompt caching
-      maxOutputTokens: 2000 # thinking counts against this
-      monthlyBudgetUsd: 5
-    qwen:
-      provider: modelscope
-      model: Qwen/Qwen3.5-122B-A10B
-    deepseek:
-      provider: deepseek
-      model: deepseek-chat
-      monthlyBudgetUsd: 5
-    gpt:
-      provider: openai
-      model: gpt-4.1-mini
-      monthlyBudgetUsd: 5
+    flash: { provider: gemini, model: gemini-3.5-flash-lite }
+    haiku: { provider: anthropic, model: claude-haiku-5-5, effort: low }
+    luna: { provider: openai, model: gpt-6-luna, effort: none }
+    qwen: { provider: modelscope, model: Qwen/Qwen3.5-35B-A3B }
+    deepseek: { provider: modelscope, model: deepseek-ai/DeepSeek-V4.1-Flash }
+
+embeddings:
+  provider: local # local | gemini | openai
+  timeoutMs: 1500
+
+media:
+  watcher: gemini # off | gemini | qwen
 ```
 
-- Env overrides `LLM_MAIN` and `LLM_FALLBACK` pick keys, so the Pi can switch without editing the file.
-- `src/config.ts` validates at load: `main` and `fallback` name existing entries, the provider is known, the model has a profile, the provider's key is present, and numbers sit inside `NUMERIC_BOUNDS`. A bad config stops startup with one clear message.
-- New secrets, names only in `.env.example`: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`. `GEMINI_API_KEY` and `MODELSCOPE_API_KEY` stay.
+- **Back-compat.** With no `llm:` block, the bot synthesises today's setup: Gemini main, Qwen fallback when `MODELSCOPE_API_KEY` is set, current hedge and sticky values, Gemini embeddings and the current watcher. The Pi's config works unchanged at every phase. `gemini.extractionModel` is deprecated; the main model is authoritative.
+- **Overrides.** `LLM_MAIN`, `LLM_FALLBACK` (`none` allowed), `EMBEDDINGS_PROVIDER`, plus the existing media overrides. New settings outrank deprecated ones.
+- **Startup validation.** `main` and `fallback` name entries with a known provider and a tested profile; the key for each used provider is present (`requiredEnv('GEMINI_API_KEY')` at `src/config.ts:286` becomes conditional); numeric bounds hold; the local embedding model's files exist. A bad config stops startup with one clear message.
 
-### Capability Profiles (Code, Not Config)
+## Structured Output
 
-`src/agent/llm/profiles.ts` holds what each tested model can do: images, PDF, audio/video, tool calling, parallel tool calls, thinking and allowed effort values, which sampling parameters it accepts, max output and context window, prompt caching. Config can lower a limit; it cannot claim an ability the profile lacks.
+`extractionSchema.ts` keeps two schema definitions today: zod (`:101`) and a hand-written Gemini schema (`:235`). The zod schema becomes the single source; each provider's request schema is generated from it, then adjusted for that provider.
 
-### Components
+| Provider          | Encoding                                                                                                                                                         |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Gemini            | `responseJsonSchema` from the generated JSON Schema                                                                                                              |
+| OpenAI            | `response_format.json_schema` with `strict: true`; optional fields sent as required-nullable, normalised back                                                    |
+| Anthropic         | One forced output tool with `strict: true`; its input is the result                                                                                              |
+| Qwen and DeepSeek | `json_object`, the schema in the prompt, and local validation. ModelScope returned HTTP 200 with `choices: null` for `json_schema` on DeepSeek (modelscope#1801) |
 
-| Unit                                  | Responsibility                                                                                                                                                             | Depends On                 |
-| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
-| `src/agent/llm/profiles.ts`           | Tested model capabilities                                                                                                                                                  | none                       |
-| `src/agent/llm/anthropicLlm.ts`       | `BaseLlm` over `@anthropic-ai/sdk` Messages: system blocks with `cache_control`, `tool_use`/`tool_result` by id, image/PDF blocks, thinking kept per turn, SDK retries off | profiles                   |
-| `src/agent/llm/chatCompletionsLlm.ts` | `ModelScopeLlm` generalised for ModelScope, DeepSeek and OpenAI: base URL, key, profile; tool call ids kept, not matched by name                                           | profiles                   |
-| `src/agent/llm/createModel.ts`        | Builds main and fallback from `config.llm`                                                                                                                                 | the adapters, ADK `Gemini` |
-| `src/agent/fallbackModel.ts`          | `RoutedLlm` unchanged in shape; sides become `main`/`fallback`; hedging eligibility asks the profile, not "is it an image"                                                 | profiles                   |
-| `src/agent/llm/requestShape.ts`       | Drops settings the target rejects (Claude: no `temperature`/`topP`; safety settings only for Gemini)                                                                       | profiles                   |
+Every result is re-validated with the original zod schema, including the date refinements. Unsupported bounds are removed only from the transmitted schema. Reclassification's predicate becomes an enum from the predicate registry. Refusals, truncation and invalid objects are rejected before any write; the fallback is tried once; no partial operation is ever applied.
 
-### Data Flow
+## Local Embeddings
 
-1. A turn starts; `RoutedLlm` picks main, or fallback when the sticky window is open.
-2. The adapter turns ADK's `LlmRequest` into the provider's request and back into `LlmResponse`.
-3. **The provider is pinned for the rest of the turn's tool loop.** The first call that answers decides it. A switch mid-loop would lose thinking blocks and could run a tool twice.
-4. The answer, its provider, model ID and usage are recorded.
+- **Stack.** A sidecar on a Debian Node 24 image running Transformers.js with `onnxruntime-node`. The bot image is Alpine (`Dockerfile:16`), and the native ONNX runtime targets glibc.
+- **Model.** `Xenova/multilingual-e5-small`, q8 quantised. It is MIT-licensed, multilingual, 384 dimensions, 512-token input limit, about 140 MB with tokenizer. It uses `query:`/`passage:` prefixes, mean pooling and L2 normalisation.
+- **Footprint (estimate, not measured on the Pi).** 300–650 MiB RSS; 0.2–1 s per 64–128-token text; 2–10 s cold start. Release gate: peak RSS under 800 MiB while speech recognition and attachments run concurrently.
+- **Limits.** One inference thread and one request at a time under a 1 GiB cap (D6). Queries get priority, and backfill pauses during media work. Containers total about 4 GiB: bot 1, speech 2, embeddings 1.
+- **Offline.** Pinned, checksummed model files are baked into the image and remote downloads are disabled. The sidecar warms up before it reports ready.
+- **Quality.** Today's `gemini-embedding-2` (768 dimensions here, 8K-token input) is stronger. The loss on Rokabot's own recall is unknown until measured.
 
-### Prompt Caching (Anthropic)
+## Vector Migration
 
-The system prompt is 4 layers: core, speech, tone, context (`src/agent/promptAssembler.ts:17`). The first two are stable; tone and context change per turn. `promptAssembler` exports the stable prefix so `AnthropicLlm` can send it as the first system block with `cache_control`, and the rest uncached. Tool order and effort stay fixed. Cache reads and writes are logged to measure hits.
+- Episodes, media digests and claims store vectors (`src/storage/database.ts:223`, `:240`, `src/storage/memoryClaimSchema.ts:151`). The encoder and cosine hard-code 768 (`memoryEpisodeStore.ts:29`, `episodeRetriever.ts:15`).
+- Each vector gains `embedding_model_id`, `embedding_dim` and `embedding_fingerprint` (provider, revision, quantisation, preprocessing). Recall compares only matching fingerprints and checks `bytes = dim × 4` and a nonzero norm.
+- Legacy vectors stay "unknown provenance" until re-embedded. Text recall and privacy filtering keep working throughout.
+- A backfill job extends `episodeMaintenance.ts:29`: bounded batches at one document per second, resumable from stored metadata, replacing a vector only if its source text is unchanged. Paid backfill draws on that provider's monthly cap.
+- Recall thresholds (`config.yml:109`, `:122`) are recalibrated per fingerprint. E5 scores cluster between 0.7 and 1.0, so Gemini's thresholds don't carry over.
 
-### Failures
+## Failures
 
-Each adapter classifies its own errors into shared kinds; the ladder in `reliability.ts` decides what to do.
+Each adapter classifies its own errors; the ladder in `src/agent/reliability.ts:260` decides recovery.
 
-| Kind                        | Examples                                                                              | Action                                                             |
-| --------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| `transient_http`, `network` | 5xx, Anthropic 529, timeout                                                           | Switch to fallback this turn (today's policy); short sticky window |
-| `quota_exhausted`           | 429 / RESOURCE_EXHAUSTED                                                              | Switch; sticky until the provider's reset                          |
-| `billing_exhausted` (new)   | Anthropic credit used up (400/402/429 with a billing code), local monthly cap reached | Switch; disable that route until the month resets                  |
-| `refusal` (new)             | Claude `stop_reason: refusal`, a safety stop                                          | Switch once this turn; no sticky state                             |
-| `malformed_tool_args`       | Bad JSON arguments                                                                    | Run nothing; switch once; no sticky state                          |
-| `context_length`            | Request too large                                                                     | Trim history once, then switch; no sticky state                    |
+| Kind                        | Examples                                                                      | Action                                            |
+| --------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------- |
+| `transient_http`, `network` | 5xx, Anthropic 529, timeout                                                   | Fallback this turn; short sticky window           |
+| `quota_exhausted`           | 429, Gemini RESOURCE_EXHAUSTED, Magicubes spent                               | Fallback; sticky until the provider resets        |
+| `billing_exhausted` (new)   | Anthropic credit used up (400/402/429 with a billing code), local cap reached | Fallback; route disabled until the month resets   |
+| `refusal` (new)             | Claude `stop_reason: refusal`, a safety stop                                  | Fallback once this turn; no sticky state          |
+| `malformed_tool_args`       | Unparseable arguments                                                         | Run nothing; fallback once; no sticky state       |
+| `context_length`            | Request too large                                                             | Trim history once, then fallback; no sticky state |
 
-### Budgets and Rate Limits
+With no fallback configured, the ladder retries what is retryable and then sends today's in-character failure reply.
 
-- Optional `limits: { rpm, rpd }` per model entry. The Gemini entry keeps today's numbers. An exhausted Gemini quota no longer blocks a Claude turn.
-- `monthlyBudgetUsd` uses a local estimate from returned usage and a price table in the profile. When reached, the route is treated as `billing_exhausted`. The provider's own bill remains the source of truth.
-- The daily unit becomes per model call rather than per turn (`rateLimiter.ts:128`), so tool chains and hedges are counted.
+## Budgets and Limits
 
-### Observability
+- Per-call reservations of RPM, TPM and estimated spend, across every workload, replace today's per-turn daily unit (`src/utils/rateLimiter.ts:128`) and the Gemini-only token budget (`src/agent/tokenBudget.ts:26`). Replies outrank background jobs.
+- Each profile carries its own limits. ModelScope gets one in-flight request and a daily Magicube estimate shared by Qwen and DeepSeek.
+- Monthly spend is estimated from returned usage and profile prices, persisted, and counts cache writes, reasoning tokens, retries and losing hedge calls. The provider's bill stays the source of truth.
 
-`response_events` gains `provider`, `model_id` and `route_role` (`main`/`fallback`). Old rows keep `model = gemini | fallback`. Per call: latency, failure kind, input/output/reasoning tokens, cache reads/writes, estimated cost. Losing hedge calls are recorded too.
+## Observability
+
+`response_events` gains `provider`, `model_id`, `route_role` and `workload`; old rows keep `model = gemini | fallback`. Each call records latency, failure kind, input/output/reasoning tokens, cache reads and writes, and estimated cost.
 
 ## Testing
 
-- **Adapters:** recorded, sanitised request/response fixtures per adapter: text, a tool call, parallel and repeated tool calls, images, PDF, refusal, billing error, 529, truncation, cancellation, usage.
-- **Routing:** every ordered (main, fallback) pair of the five providers, offline, through `RoutedLlm` and the reliability ladder. Extends `src/agent/__tests__/fallbackModel.test.ts` and `modelHedge.test.ts`.
-- **Config:** legacy config (no `llm:`) produces today's behaviour; each validation error has a test.
-- **Live (owner-run, costs money):** `npm run test:live` with a provider selector, per provider: persona turns, tool triggers, a multi-step tool chain, an image, warm-cache hit rate, and a forced fallback. Each run asserts which provider answered, so a silent fallback cannot pass for the main model.
+- **Adapters.** Recorded, sanitised fixtures per adapter: text, single, parallel and repeated tool calls, images, PDF, refusal, billing error, 529, truncation, cancellation and usage.
+- **Routing.** Every ordered main/fallback pair, plus "no fallback", offline through `RoutedLlm` and the ladder. This extends `src/agent/__tests__/fallbackModel.test.ts` and `modelHedge.test.ts`.
+- **Structured output.** The extraction and reclassification schemas are encoded for each provider and valid and invalid replies decoded, including nullable normalisation.
+- **Embeddings.** Golden vectors for the sidecar, fingerprint mismatch handling, and backfill resumption.
+- **Config.** A legacy config (no `llm:`) behaves exactly as today. Each single-key setup starts. Every validation error has a test.
+- **Live (owner-run, paid).** `npm run test:live` with a provider selector covering persona turns, tool triggers, a multi-step chain, an image, extraction, warm-cache hits and a forced fallback. Each run asserts which provider answered.
 
 ## Phases
 
-| Phase | Delivers                                                                                                                         | Size     | Done When                                                                                                                                       |
-| ----- | -------------------------------------------------------------------------------------------------------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1     | `llm:` config with back-compat, profiles, `AnthropicLlm`, provider pinning, new failure kinds, per-model limits, metrics columns | 4–6 days | Legacy config unchanged; Haiku main → Gemini fallback recovers in the same turn on 529, refusal and billing errors; `test:live` passes on Haiku |
-| 2     | `ChatCompletionsLlm` for ModelScope and DeepSeek in either role                                                                  | 2–3 days | Every pair among Gemini, Haiku, Qwen and DeepSeek passes offline; DeepSeek live check passes                                                    |
-| 3     | OpenAI on Chat Completions (Responses API only if A6 says so), cost calibration                                                  | 2–4 days | OpenAI live check passes; cost estimates within 10% of the invoice                                                                              |
+| Phase | Size      | Delivers                                                                                                                                                                                                                                                 | Gate                                                                                              |
+| ----- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| 1     | 8–12 days | `llm:` and `embeddings:` config with back-compat, profiles, `AnthropicLlm`, `generateObject` for extraction, reclassification and fallback judgments, pinning, new failure kinds, per-call budgets, metrics, local sidecar, vector metadata and backfill | Legacy config unchanged; an Anthropic-only key runs replies, tools, memory and local embeddings   |
+| 2     | 4–6 days  | `ChatCompletionsLlm` for OpenAI and ModelScope (Qwen, DeepSeek profiles)                                                                                                                                                                                 | Every ordered pair and "no fallback" pass offline; ModelScope tool and JSON support verified live |
+| 3     | 2–4 days  | OpenAI embedding profile (`text-embedding-3-small`), paid-backfill accounting, recall threshold calibration per fingerprint                                                                                                                              | Recall on a labelled set at least matches today's before thresholds go live                       |
 
 ## Risks
 
-- **Persona drift:** each model voices Roka differently. Mitigation: the persona live check per model before it can be `main`.
-- **Tool-call shape:** a provider's arguments can drift from the zod schema. Mitigation: validate arguments locally before running any tool.
-- **Prompt cache misses:** a reordered tool list or an effort change breaks the cache. Mitigation: fixed order and effort, plus a logged hit rate.
-- **Cost surprise:** paid hedging doubles calls. Mitigation: hedging off on paid routes until measured; local monthly cap.
-- **Pi footprint:** two more SDKs. Mitigation: Anthropic SDK only; the other three use `fetch`, as `ModelScopeLlm` does today.
-
-## Owner Decisions Needed
-
-1. Embeddings when the main provider has none (A2a): `local`, no semantic recall, or always require an embeddings-capable key? Recommended: a separate `embeddings:` setting with `local` as the default.
-2. Phase 1 as Anthropic beside Gemini, then the Chat Completions family, with OpenAI on Chat Completions first (A6)? Recommended: yes. The phases above get re-cut once decision 1 is made, because moving extraction and embeddings off Gemini joins phase 1.
-3. Claude's thinking kept only inside one turn's tool loop (A8)? Recommended: yes.
-4. Paid hedging off and a $5 monthly cap per paid provider (A7)? Recommended: yes.
-5. Only tested model profiles accepted (A9)? Recommended: yes.
+- **Self-verification.** Without Jev, the main model checks its own extraction, so errors can correlate. Mitigation: separate calibration and a metric on admitted versus later-retracted facts.
+- **Embedding drift.** Smaller local vectors recall differently. Mitigation: per-fingerprint thresholds and a labelled recall check before cut-over.
+- **Pi load.** The sidecar competes with speech recognition for CPU. Mitigation: one thread, query priority, backfill pausing.
+- **Shared ModelScope quota.** Qwen and DeepSeek drain one Magicube balance with a concurrency of one. Mitigation: per-provider limiter and a daily estimate.
+- **Unverified ModelScope features.** DeepSeek tool calling, JSON mode and thinking control, context caps, and whether an API-key-only account gets the daily Magicube grant. Mitigation: endpoint tests before those profiles are accepted (D12).
+- **Persona drift.** Each brain voices Roka differently. Mitigation: a persona live check per profile before it can be `main`.
