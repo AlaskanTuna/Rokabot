@@ -999,10 +999,12 @@ block; a switch takes a restart.
 - **Thinking Within a Turn:** Claude's thinking blocks are held per turn route and sent back only inside that
   turn's tool loop, and only while everything before them is byte-identical; ADK session history never holds them.
 - **Pinning:** when either side replays thinking, the first answer of a turn pins its later calls to that side.
-  Gemini and ModelScope routes never pin, so they keep hedging every call.
-- **Failures:** adapters throw `ProviderError`; `classifyGeminiFailure` returns its kind unchanged. The ladder
-  switches once for `transient_http`, `network`, `quota_exhausted`, `billing_exhausted`, `refusal`,
-  `malformed_tool_args` and `context_length`; only the first three arm the sticky window.
+  Gemini, OpenAI and ModelScope routes never pin (no Gemini or Chat Completions profile replays thinking), so they
+  keep hedging every call.
+- **Failures:** adapters throw `ProviderError`, except that the legacy fallback (`ModelScopeLlm`) keeps today's plain
+  errors for everything but malformed tool arguments (see The Fallback Model); `classifyGeminiFailure` returns its
+  kind unchanged. The ladder switches once for `transient_http`, `network`, `quota_exhausted`, `billing_exhausted`,
+  `refusal`, `malformed_tool_args` and `context_length`; only the first three arm the sticky window.
 - **Recording:** every provider call reports its tokens through `recordUsage` (`onUsage` listeners).
   `response_events` gains `provider`, `model_id`, `route_role` (`main`/`fallback`) and `workload`; rows written
   before keep `model`, which new rows leave `NULL`. Every adapter calls `startCall` (`src/agent/llm/budget.ts`)
