@@ -14,6 +14,7 @@ const configMock = vi.hoisted(() => ({
 const mocks = vi.hoisted(() => ({
   embedEpisodeText: vi.fn(),
   embedPendingFacts: vi.fn(),
+  isShuttingDown: vi.fn(() => false),
   logger: { warn: vi.fn() }
 }))
 
@@ -24,13 +25,22 @@ vi.mock('../../../storage/database.js', () => ({ getDb: () => testDb }))
 vi.mock('../episodeEmbeddings.js', () => ({ embedEpisodeText: mocks.embedEpisodeText }))
 vi.mock('../factEmbeddings.js', () => ({ embedPendingFacts: mocks.embedPendingFacts }))
 vi.mock('../../../utils/logger.js', () => ({ logger: mocks.logger }))
+vi.mock('../../shutdownSignal.js', () => ({ isShuttingDown: mocks.isShuttingDown }))
 
 import { findMediaDigest, recordMediaOccurrence, saveMediaDigest } from '../../../storage/mediaDigestStore.js'
 import * as episodeStore from '../../../storage/memoryEpisodeStore.js'
 import { listEpisodesForGuild, saveMemoryEpisode } from '../../../storage/memoryEpisodeStore.js'
 import { ensureVectorProvenanceColumns } from '../../../storage/vectorProvenance.js'
-import { geminiVector } from '../embeddings/__tests__/vectors.js'
+import { GEMINI_FINGERPRINT, LOCAL_FINGERPRINT, geminiVector, localVector } from '../embeddings/__tests__/vectors.js'
 import { pruneEpisodesAndReembed } from '../episodeMaintenance.js'
+
+const geminiSpace = () => ({
+  provider: 'gemini',
+  dim: 768,
+  fingerprint: GEMINI_FINGERPRINT,
+  backfillBatchSize: 100,
+  backfillGapMs: 0
+})
 
 const DAY_MS = 86_400_000
 const now = Date.UTC(2026, 8, 25)
@@ -124,6 +134,8 @@ describe('episode maintenance', () => {
     ensureVectorProvenanceColumns(testDb, 'media_digest')
     configMock.memory.episodeRetentionDays = 90
     configMock.memory.mediaRetentionDays = 90
+    configMock.embeddings = geminiSpace()
+    mocks.isShuttingDown.mockReset().mockReturnValue(false)
     mocks.embedEpisodeText.mockReset()
     mocks.embedPendingFacts.mockReset().mockResolvedValue({ embedded: 0, failed: 0 })
     mocks.logger.warn.mockClear()
@@ -289,5 +301,159 @@ describe('episode maintenance', () => {
     expect(listEpisodesForGuild('guild-a')).toEqual([expect.objectContaining({ id: 2, embedding: null })])
     expect(findMediaDigest('guild-a', 'youtube:expired')).toBeNull()
     expect(findMediaDigest('guild-a', 'youtube:pending')?.embedding).toBeNull()
+  })
+
+  describe('backfill', () => {
+    const vector384 = () => Array.from({ length: 384 }, () => 0.5)
+
+    // A vector stored before provenance existed; the migration marks it unknown.
+    function storeLegacyVector(id: number): void {
+      testDb
+        .prepare('UPDATE memory_episode SET embedding = ? WHERE id = ?')
+        .run(Buffer.from(new Float32Array(vector768()).buffer), id)
+      ensureVectorProvenanceColumns(testDb, 'memory_episode')
+    }
+
+    it('under Gemini, keeps unknown-provenance vectors and re-embeds nothing', async () => {
+      seedEpisode({ id: 1, guildId: 'guild-a', endedAt: now - DAY_MS, summary: 'old episode' })
+      storeLegacyVector(1)
+
+      const report = await pruneEpisodesAndReembed(now)
+
+      expect(mocks.embedEpisodeText).not.toHaveBeenCalled()
+      expect(report.reembedded).toBe(0)
+      expect(listEpisodesForGuild('guild-a')[0]?.embedding).toHaveLength(768)
+    })
+
+    it('after a switch to local, re-embeds every vector from another space and keeps local ones', async () => {
+      configMock.embeddings = { ...geminiSpace(), provider: 'local', dim: 384, fingerprint: LOCAL_FINGERPRINT }
+      seedEpisode({ id: 1, guildId: 'guild-a', endedAt: now - DAY_MS, summary: 'unknown provenance' })
+      storeLegacyVector(1)
+      saveMemoryEpisode({
+        id: 2,
+        guildId: 'guild-a',
+        channelId: 'channel-guild-a',
+        startedAt: now - DAY_MS - 1000,
+        endedAt: now - DAY_MS,
+        summary: 'gemini episode',
+        embedding: geminiVector(vector768())
+      })
+      saveMemoryEpisode({
+        id: 3,
+        guildId: 'guild-a',
+        channelId: 'channel-guild-a',
+        startedAt: now - DAY_MS - 1000,
+        endedAt: now - DAY_MS,
+        summary: 'local episode',
+        embedding: localVector(vector384())
+      })
+      mocks.embedEpisodeText.mockResolvedValue(localVector(vector384()))
+
+      const report = await pruneEpisodesAndReembed(now)
+
+      expect(mocks.embedEpisodeText.mock.calls.map(([call]) => call.text)).toEqual([
+        'gemini episode',
+        'unknown provenance'
+      ])
+      expect(report.reembedded).toBe(2)
+      expect(listEpisodesForGuild('guild-a').map(({ embedding }) => embedding?.length)).toEqual([384, 384, 384])
+    })
+
+    it('stops at the batch size and resumes from stored provenance on the next pass', async () => {
+      configMock.embeddings.backfillBatchSize = 1
+      seedEpisode({ id: 1, guildId: 'guild-a', endedAt: now - DAY_MS, summary: 'first' })
+      seedEpisode({ id: 2, guildId: 'guild-a', endedAt: now - DAY_MS, summary: 'second' })
+      mocks.embedEpisodeText.mockResolvedValue(geminiVector(vector768()))
+
+      expect((await pruneEpisodesAndReembed(now)).reembedded).toBe(1)
+      expect((await pruneEpisodesAndReembed(now)).reembedded).toBe(1)
+      expect((await pruneEpisodesAndReembed(now)).reembedded).toBe(0)
+      expect(mocks.embedEpisodeText).toHaveBeenCalledTimes(2)
+    })
+
+    it('hands the facts sweep what is left of the batch, at the backfill gap', async () => {
+      configMock.embeddings.backfillBatchSize = 3
+      seedEpisode({ id: 1, guildId: 'guild-a', endedAt: now - DAY_MS, summary: 'only episode' })
+      mocks.embedEpisodeText.mockResolvedValue(geminiVector(vector768()))
+
+      await pruneEpisodesAndReembed(now)
+
+      expect(mocks.embedPendingFacts).toHaveBeenCalledWith({ limit: 2, gapMs: 0 })
+    })
+
+    it('spaces documents backfillGapMs apart', async () => {
+      configMock.embeddings.backfillGapMs = 40
+      seedEpisode({ id: 1, guildId: 'guild-a', endedAt: now - DAY_MS, summary: 'first' })
+      seedEpisode({ id: 2, guildId: 'guild-a', endedAt: now - DAY_MS, summary: 'second' })
+      const startedAt: number[] = []
+      mocks.embedEpisodeText.mockImplementation(async () => {
+        startedAt.push(performance.now())
+        return geminiVector(vector768())
+      })
+
+      await pruneEpisodesAndReembed(now)
+
+      expect(startedAt).toHaveLength(2)
+      expect((startedAt[1] ?? 0) - (startedAt[0] ?? 0)).toBeGreaterThanOrEqual(35)
+    })
+
+    it('ends a pass after five failures in a row and leaves the rest for the next pass', async () => {
+      for (const id of [1, 2, 3, 4, 5, 6, 7]) {
+        seedEpisode({ id, guildId: 'guild-a', endedAt: now - DAY_MS, summary: `episode ${id}` })
+      }
+      mocks.embedEpisodeText.mockRejectedValue(new Error('sidecar down'))
+
+      const report = await pruneEpisodesAndReembed(now)
+
+      expect(report.failed).toBe(5)
+      expect(mocks.embedEpisodeText).toHaveBeenCalledTimes(5)
+      expect(mocks.embedPendingFacts).not.toHaveBeenCalled()
+    })
+
+    it('never replaces a vector whose summary changed while it was being embedded', async () => {
+      seedEpisode({ id: 1, guildId: 'guild-a', endedAt: now - DAY_MS, summary: 'first summary' })
+      mocks.embedEpisodeText.mockImplementation(async () => {
+        saveMemoryEpisode({
+          id: 1,
+          guildId: 'guild-a',
+          channelId: 'channel-guild-a',
+          startedAt: now - DAY_MS - 1000,
+          endedAt: now - DAY_MS,
+          summary: 'rewritten summary',
+          embedding: null
+        })
+        return geminiVector(vector768())
+      })
+
+      const report = await pruneEpisodesAndReembed(now)
+
+      expect(report.reembedded).toBe(0)
+      expect(listEpisodesForGuild('guild-a')).toEqual([
+        expect.objectContaining({ summary: 'rewritten summary', embedding: null })
+      ])
+    })
+
+    it('runs one pass at a time', async () => {
+      seedEpisode({ id: 1, guildId: 'guild-a', endedAt: now - DAY_MS, summary: 'only episode' })
+      mocks.embedEpisodeText.mockResolvedValue(geminiVector(vector768()))
+
+      const first = pruneEpisodesAndReembed(now)
+      const second = pruneEpisodesAndReembed(now)
+
+      expect(second).toBe(first)
+      await first
+      expect(mocks.embedEpisodeText).toHaveBeenCalledTimes(1)
+    })
+
+    it('stops embedding once the bot begins shutting down', async () => {
+      seedEpisode({ id: 1, guildId: 'guild-a', endedAt: now - DAY_MS, summary: 'first' })
+      seedEpisode({ id: 2, guildId: 'guild-a', endedAt: now - DAY_MS, summary: 'second' })
+      mocks.embedEpisodeText.mockImplementation(async () => {
+        mocks.isShuttingDown.mockReturnValue(true)
+        return geminiVector(vector768())
+      })
+
+      expect((await pruneEpisodesAndReembed(now)).reembedded).toBe(1)
+    })
   })
 })

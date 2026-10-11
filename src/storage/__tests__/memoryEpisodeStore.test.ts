@@ -16,7 +16,8 @@ import {
   listEpisodesForGuild,
   pruneExpiredEpisodes,
   recordOpenEpisodeMessage,
-  saveMemoryEpisode
+  saveMemoryEpisode,
+  setEpisodeEmbedding
 } from '../memoryEpisodeStore.js'
 import { ensureVectorProvenanceColumns } from '../vectorProvenance.js'
 
@@ -248,5 +249,22 @@ describe('memoryEpisodeStore', () => {
     expect(() => saveMemoryEpisode({ ...input, embedding: geminiVector(Array(768).fill(Number.NaN)) })).toThrow(
       'Episode embedding must contain 768 finite values'
     )
+  })
+
+  it('stores a re-embedded vector only while its summary is still the stored one', () => {
+    saveMemoryEpisode({
+      id: 9,
+      guildId: 'guild-a',
+      channelId: 'channel-a',
+      startedAt: 1,
+      endedAt: 2,
+      summary: 'Picnic.',
+      embedding: null
+    })
+    const vector = geminiVector(Array(768).fill(0.25))
+
+    expect(setEpisodeEmbedding({ guildId: 'guild-a', id: 9, summary: 'Old picnic.', embedding: vector })).toBe(false)
+    expect(setEpisodeEmbedding({ guildId: 'guild-a', id: 9, summary: 'Picnic.', embedding: vector })).toBe(true)
+    expect(listEpisodesForGuild('guild-a')[0]?.embedding).toHaveLength(768)
   })
 })

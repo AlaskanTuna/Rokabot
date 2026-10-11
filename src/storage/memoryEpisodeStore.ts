@@ -165,13 +165,19 @@ export function pruneExpiredEpisodes(cutoffMs: number): number {
   return getDb().prepare('DELETE FROM memory_episode WHERE ended_at < ?').run(cutoffMs).changes
 }
 
-export function setEpisodeEmbedding(input: { guildId: string; id: number; embedding: EmbeddingVector }): boolean {
+/** Stores a vector only while the summary it was made from is still the stored one. */
+export function setEpisodeEmbedding(input: {
+  guildId: string
+  id: number
+  summary: string
+  embedding: EmbeddingVector
+}): boolean {
   const result = getDb()
     .prepare(
       `UPDATE memory_episode SET embedding = ?, embedding_model_id = ?, embedding_dim = ?, embedding_fingerprint = ?
-       WHERE guild_id = ? AND id = ?`
+       WHERE guild_id = ? AND id = ? AND summary = ?`
     )
-    .run(...vectorParams(input.embedding), input.guildId, input.id)
+    .run(...vectorParams(input.embedding), input.guildId, input.id, input.summary)
   return result.changes === 1
 }
 
