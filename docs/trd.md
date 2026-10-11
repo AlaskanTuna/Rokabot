@@ -1489,8 +1489,9 @@ jobs, both watchers, and both sides of a hedge.
   for each call that takes its own slot.
 - **Replies Outrank Background Work:** a background call (any workload other than reply and watcher) is refused
   unless a whole reply turn still fits after it: `maxLlmCalls` requests, `maxLlmCalls` daily units, `maxLlmCalls`
-  Magicubes (ModelScope only) and `maxAttachmentTokens` tokens. Reply and watcher calls are never refused on tokens,
-  only charged. Nothing in flight is preempted.
+  Magicubes (ModelScope only) and `maxAttachmentTokens` tokens. Reply and watcher calls are never refused on tokens;
+  on the main model the turn's charge covers them, and on any other model each is charged at its estimate. Nothing in
+  flight is preempted.
 - **ModelScope:** one request in flight per account. Later calls wait for the slot rather than being refused,
   because a refusal would open a sticky window on a healthy provider; reply and watcher calls go ahead of background
   calls and behind replies already waiting, and a call waits for as long as its own signal allows. Every ModelScope
@@ -1503,8 +1504,9 @@ jobs, both watchers, and both sides of a hedge.
   month turns, across restarts. A block without `monthlyBudgetUsd` caps `anthropic` and `openai` at 5 USD; a block
   that sets it replaces those defaults, and a provider it does not list is uncapped. A provider's own billing error
   (the Anthropic adapter classifies it) disables the provider the same way but in memory, so a restart after a
-  top-up re-enables it. A failed read of `llm_spend` counts the month as unspent and a failed write loses that one
-  estimate; neither fails the call. The provider's bill stays the source of truth.
+  top-up re-enables it. A failed read of `llm_spend` counts the month as unspent. A failed write keeps that one
+  estimate in the running process's month total but loses it from the stored total, so the cap forgets it after a
+  restart; neither fails the call. A provider without a cap is priced and stored but its total is never read back. The provider's bill stays the source of truth.
 - **Refusals:** `billing_exhausted` keeps the route off until the UTC month turns and carries no wait hint; a spent
   minute or token budget is `quota_exhausted` with a 60-second wait; a spent day or Magicube estimate is
   `quota_exhausted` until UTC midnight. Each refusal logs `Budget declined a model call` with the budget that

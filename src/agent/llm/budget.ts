@@ -75,11 +75,15 @@ function recordSpend(usage: CallUsage): void {
   const usd = estimateCostUsd(usage)
   if (usd <= 0) return
   const month = monthKey()
+  const cap = config.llm.monthlyBudgetUsd[usage.provider]
+  if (cap === undefined) {
+    addSpend(month, usage.provider, usd)
+    return
+  }
   const before = spentThisMonth(usage.provider, month)
   if (spendCache.get(usage.provider)?.month === month) spendCache.set(usage.provider, { month, usd: before + usd })
   addSpend(month, usage.provider, usd)
-  const cap = config.llm.monthlyBudgetUsd[usage.provider]
-  if (cap !== undefined && before < cap && before + usd >= cap) {
+  if (before < cap && before + usd >= cap) {
     logger.warn({ provider: usage.provider, cap }, 'Monthly budget reached; route disabled until the month resets')
   }
 }

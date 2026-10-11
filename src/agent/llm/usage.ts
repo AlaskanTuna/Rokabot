@@ -54,7 +54,7 @@ export function workloadOf(llmRequest: LlmRequest): Workload {
   return WORKLOADS.find((workload) => workload === label) ?? 'reply'
 }
 
-// A profile without its own write price bills a cache write at 1.25x input: Anthropic's 5-minute cache and OpenAI's.
+// A profile without its own `price.cacheWrite` bills a cache write at 1.25x input, Anthropic's 5-minute cache-write rate.
 const CACHE_WRITE_PRICE_MULTIPLIER = 1.25
 
 /**

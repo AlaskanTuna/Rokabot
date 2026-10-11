@@ -24,6 +24,11 @@ vi.mock('../profiles.js', async (importOriginal) => ({
     model === 'test-paid' ? { price: { input: 1, output: 1 } } : undefined
 }))
 
+vi.mock('../../../storage/spendStore.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../storage/spendStore.js')>()
+  return { ...actual, readSpend: vi.fn(actual.readSpend) }
+})
+
 import { closeDb, getDb } from '../../../storage/database.js'
 import { addSpend, readSpend } from '../../../storage/spendStore.js'
 import { getSharedRateLimiter } from '../../../utils/rateLimiter.js'
@@ -456,11 +461,21 @@ describe('monthly spend', () => {
   const paid = { provider: 'anthropic', model: 'test-paid', workload: 'reply', estTokens: 100 } as const
   const paidUsage = (inputTokens: number): CallUsage => ({ ...paid, inputTokens, outputTokens: 0 })
 
-  it('adds every recorded call to the month, a retry or a losing hedge counting as its own call', () => {
+  it('adds every recorded call to the month', () => {
     recordUsage(paidUsage(1_000_000))
     recordUsage(paidUsage(1_000_000))
 
     expect(readSpend('2026-10', 'anthropic')).toBe(2)
+  })
+
+  it('adds the spend of an uncapped provider without reading its month', () => {
+    const uncapped = { ...paidUsage(1_000_000), provider: 'openai' } as const
+    vi.mocked(readSpend).mockClear()
+
+    recordUsage(uncapped)
+
+    expect(readSpend).not.toHaveBeenCalled()
+    expect(readSpend('2026-10', 'openai')).toBe(1)
   })
 
   it('refuses a provider once its month reaches the cap, and only that provider', () => {

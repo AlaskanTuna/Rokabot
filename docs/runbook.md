@@ -297,7 +297,7 @@ cannot read those — so those turns only ever wait out `gemini.timeout`.
 Per-call budgets apply only with an `llm:` block in `config.yml`, except the spend query below, which also shows the
 legacy Gemini estimates.
 
-Every model call passes the per-call budget. A refused call logs `Budget declined a model call` with the budget that
+With an `llm:` block, every model call except embeddings passes the per-call budget. A refused call logs `Budget declined a model call` with the budget that
 refused it (`rpm`, `rpd`, `tpm` or `monthly`).
 
 ```bash
@@ -305,7 +305,7 @@ refused it (`rpm`, `rpd`, `tpm` or `monthly`).
 sudo docker logs rokabot-roka-1 2>&1 | grep '"msg":"Budget declined a model call"'
 
 # Estimated spend this month, per provider (USD)
-sqlite3 data/rokabot.db "SELECT month, provider, ROUND(usd, 4) FROM llm_spend ORDER BY month DESC"
+sqlite3 data/rokabot.db "SELECT provider, ROUND(usd, 4) FROM llm_spend WHERE month = strftime('%Y-%m', 'now')"
 ```
 
 A provider that reaches `llm.monthlyBudgetUsd` is disabled until the UTC month turns, and stays disabled across
