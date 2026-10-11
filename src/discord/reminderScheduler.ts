@@ -6,20 +6,42 @@ import { getDueReminders, markDelivered } from '../storage/reminderStore.js'
 import { logger } from '../utils/logger.js'
 
 let intervalId: ReturnType<typeof setInterval> | null = null
+let checkInFlight = false
 
 export function startReminderScheduler(client: Client): void {
   intervalId = setInterval(async () => {
-    const dueReminders = getDueReminders()
-    for (const reminder of dueReminders) {
-      try {
-        const channel = await client.channels.fetch(reminder.channelId)
-        if (channel && 'send' in channel) {
-          await (channel as { send: (msg: string) => Promise<unknown> }).send(
-            `Hey <@${reminder.userId}>~ you asked me to remind you: "${reminder.reminder}" \u266a`
-          )
-          markDelivered(reminder.id)
-          logger.info({ reminderId: reminder.id, userId: reminder.userId }, 'Reminder delivered')
-        } else {
+    // A slow fetch or send can outlast the interval; skip the tick so the row is not sent twice
+    if (checkInFlight) return
+    checkInFlight = true
+    try {
+      const dueReminders = getDueReminders()
+      for (const reminder of dueReminders) {
+        try {
+          const channel = await client.channels.fetch(reminder.channelId)
+          if (channel && 'send' in channel) {
+            await (channel as { send: (msg: string) => Promise<unknown> }).send(
+              `Hey <@${reminder.userId}>~ you asked me to remind you: "${reminder.reminder}" \u266a`
+            )
+            markDelivered(reminder.id)
+            logger.info({ reminderId: reminder.id, userId: reminder.userId }, 'Reminder delivered')
+          } else {
+            try {
+              const user = await client.users.fetch(reminder.userId)
+              await user.send(
+                `Hey~ you asked me to remind you: "${reminder.reminder}" \u266a\n\n-# (Sent as DM because I couldn't reach the original channel)`
+              )
+              markDelivered(reminder.id)
+              logger.info(
+                { reminderId: reminder.id, userId: reminder.userId },
+                'Reminder delivered via DM (channel fallback)'
+              )
+            } catch {
+              markDelivered(reminder.id)
+              logger.warn({ reminderId: reminder.id }, 'Reminder channel and DM both inaccessible, marking delivered')
+            }
+          }
+        } catch (error) {
+          logger.warn({ reminderId: reminder.id, error }, 'Channel delivery failed, attempting DM fallback')
           try {
             const user = await client.users.fetch(reminder.userId)
             await user.send(
@@ -32,26 +54,12 @@ export function startReminderScheduler(client: Client): void {
             )
           } catch {
             markDelivered(reminder.id)
-            logger.warn({ reminderId: reminder.id }, 'Reminder channel and DM both inaccessible, marking delivered')
+            logger.warn({ reminderId: reminder.id }, 'Both channel and DM delivery failed, marking delivered')
           }
         }
-      } catch (error) {
-        logger.warn({ reminderId: reminder.id, error }, 'Channel delivery failed, attempting DM fallback')
-        try {
-          const user = await client.users.fetch(reminder.userId)
-          await user.send(
-            `Hey~ you asked me to remind you: "${reminder.reminder}" \u266a\n\n-# (Sent as DM because I couldn't reach the original channel)`
-          )
-          markDelivered(reminder.id)
-          logger.info(
-            { reminderId: reminder.id, userId: reminder.userId },
-            'Reminder delivered via DM (channel fallback)'
-          )
-        } catch {
-          markDelivered(reminder.id)
-          logger.warn({ reminderId: reminder.id }, 'Both channel and DM delivery failed, marking delivered')
-        }
       }
+    } finally {
+      checkInFlight = false
     }
   }, config.reminders.checkIntervalMs)
 
