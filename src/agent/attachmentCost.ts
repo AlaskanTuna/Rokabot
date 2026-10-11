@@ -1,8 +1,19 @@
+import Anthropic from '@anthropic-ai/sdk'
 import { GoogleGenAI, type Part } from '@google/genai'
+import sharp from 'sharp'
 import { config } from '../config.js'
 import { logger } from '../utils/logger.js'
 
 let client: GoogleGenAI | undefined
+let anthropic: Anthropic | undefined
+
+/** Anthropic's published image cost; Chat Completions vision models land near it for the ≤1024 px images sent here. */
+const PIXELS_PER_IMAGE_TOKEN = 750
+const UNREADABLE_IMAGE_TOKENS = Math.ceil((1024 * 1024) / PIXELS_PER_IMAGE_TOKEN)
+/** A page's text plus its rendered image: an estimate, not a measurement. */
+const PDF_PAGE_TOKENS = 1500
+const CHARS_PER_TOKEN = 4
+const UNSENT_MEDIA_MARKER = '(an attachment this model cannot take)'
 
 /**
  * What Gemini will charge for these attachment parts, or undefined if it could not be measured.
@@ -42,23 +53,89 @@ let client: GoogleGenAI | undefined
  * setting, because only that file can observe it. The test below pins this module's half only: that the probe
  * cannot ask for a resolution even if it wanted to.
  */
-export async function measureAttachmentTokens(parts: Part[]): Promise<number | undefined> {
+export async function measureAttachmentTokens(
+  parts: Part[],
+  target: 'main' | 'gemini' = 'main'
+): Promise<number | undefined> {
   if (parts.length === 0) return 0
-  client ??= new GoogleGenAI({ apiKey: config.gemini.apiKey })
-
+  const counter = target === 'gemini' ? 'gemini' : config.llm.main.profile.tokenCounter
   try {
+    if (counter === 'anthropic') return await countWithAnthropic(parts)
+    if (counter === 'estimate') return await estimateTokens(parts)
+    client ??= new GoogleGenAI({ apiKey: config.gemini.apiKey })
     const response = await client.models.countTokens({
-      model: config.gemini.model,
+      model: target === 'main' ? config.llm.main.model : config.gemini.model,
       contents: [{ role: 'user', parts }]
     })
     return response.totalTokens ?? undefined
   } catch (error) {
-    // Fails open on purpose. A probe that blocked the turn when it could not answer would convert a Gemini
+    // Fails open on purpose. A probe that blocked the turn when it could not answer would convert a provider
     // hiccup into a total attachment outage — strictly worse than the over-budget turn it exists to prevent,
     // which merely fails one request.
     logger.warn({ error }, 'Could not measure attachment token cost, admitting the turn unmeasured')
     return undefined
   }
+}
+
+function anthropicBlock(part: Part): Anthropic.ContentBlockParam {
+  const mimeType = part.inlineData?.mimeType ?? ''
+  const data = part.inlineData?.data ?? ''
+  if (mimeType.startsWith('image/')) {
+    return {
+      type: 'image',
+      source: { type: 'base64', media_type: mimeType as Anthropic.Base64ImageSource['media_type'], data }
+    }
+  }
+  if (mimeType === 'application/pdf') {
+    return { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data } }
+  }
+  return { type: 'text', text: part.text ?? UNSENT_MEDIA_MARKER }
+}
+
+async function countWithAnthropic(parts: Part[]): Promise<number> {
+  const { apiKey, model, timeoutMs } = config.llm.main
+  anthropic ??= new Anthropic({ apiKey, maxRetries: 0, timeout: timeoutMs })
+  const response = await anthropic.messages.countTokens({
+    model,
+    messages: [{ role: 'user', content: parts.map(anthropicBlock) }]
+  })
+  return response.input_tokens
+}
+
+async function imageTokens(bytes: Buffer): Promise<number> {
+  try {
+    const { width, height } = await sharp(bytes).metadata()
+    return width && height ? Math.ceil((width * height) / PIXELS_PER_IMAGE_TOKEN) : UNREADABLE_IMAGE_TOKENS
+  } catch {
+    return UNREADABLE_IMAGE_TOKENS
+  }
+}
+
+function pdfPages(bytes: Buffer): number {
+  const text = bytes.toString('latin1')
+  // Page objects can hide in compressed object streams, so the page tree's /Count stands in for them. Outlines
+  // also carry a /Count, which can only overstate the cost.
+  const pageObjects = text.match(/\/Type\s*\/Page(?![A-Za-z])/g)?.length ?? 0
+  const counts = [...text.matchAll(/\/Count\s+(\d+)/g)].map(([, count]) => Number(count))
+  return Math.max(1, pageObjects, ...counts)
+}
+
+async function estimateTokens(parts: Part[]): Promise<number | undefined> {
+  const { input } = config.llm.main.profile
+  let total = 0
+  for (const part of parts) {
+    const mimeType = part.inlineData?.mimeType ?? ''
+    const data = part.inlineData?.data
+    if (part.text !== undefined) total += Math.ceil(part.text.length / CHARS_PER_TOKEN)
+    else if (!data) continue
+    else if (mimeType.startsWith('image/')) total += await imageTokens(Buffer.from(data, 'base64'))
+    else if (mimeType === 'application/pdf') total += pdfPages(Buffer.from(data, 'base64')) * PDF_PAGE_TOKENS
+    // Duration is not known here, so a profile that would hear or watch the file gets no estimate, not a wrong one.
+    else if ((mimeType.startsWith('audio/') && input.audio) || (mimeType.startsWith('video/') && input.video)) {
+      return undefined
+    } else total += Math.ceil(UNSENT_MEDIA_MARKER.length / CHARS_PER_TOKEN)
+  }
+  return total
 }
 
 /** Whether these parts can be priced from what is already known, without spending a round trip. */
