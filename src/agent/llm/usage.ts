@@ -18,6 +18,11 @@ export interface CallUsage {
   cacheWriteTokens?: number
 }
 
+/** Every input token the call was billed for, cached or not: what a single prompt-size figure means. */
+export function promptTokenTotal(usage: CallUsage): number {
+  return usage.inputTokens + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0)
+}
+
 /** Background jobs put their workload in `config.labels` under this key; ADK reply requests carry none. */
 export const WORKLOAD_LABEL = 'rokabot_workload'
 

@@ -226,7 +226,7 @@ flowchart LR
 - User claims and guild facts stay within their Discord server. Guild facts describe shared server details. Passive episode capture runs in monitored guild channels.
 - A fact the user asks her outright to remember is pinned and survives the active-claim ceiling.
 - `recall_user` ranks by relevance to the current message rather than by recency.
-- Episode writes run asynchronously; user retrieval and the separately budgeted guild-fact block stay bounded before a response is generated. Jev admission runs before Gemini extraction and Jev verification runs before claim updates. Without `TYPESAFE_API_KEY`, passive episodes are dropped.
+- Episode writes run asynchronously; user retrieval and the separately budgeted guild-fact block stay bounded before a response is generated. Jev admission runs before Gemini extraction and Jev verification runs before claim updates. Without `TYPESAFE_API_KEY`, the main model judges instead when `config.yml` has an `llm:` block; otherwise passive episodes are dropped.
 - Queue jobs retry once after an extraction failure; jobs that fail again remain in `failed` for inspection.
 - `upcoming_event` and `plan` facts expire at the next midnight in `config.timezone`; a daily prune marks expired facts rejected. Rejected and superseded claims and their evidence are purged after `memory.deadClaimRetentionDays`. `/ask` has no memory block, and `forget_user` only searches user claims.
 - `/stats` includes active, unexpired guild facts in memory totals and growth while remembered-member metrics stay user-only. The vault export writes guild facts to `<vault>/<guildId>/guild.md` with expiry metadata.
@@ -311,15 +311,15 @@ cp .env.example .env
 
 ### `.env` Secrets
 
-| Variable              | Required | Purpose                                                                |
-| --------------------- | -------- | ---------------------------------------------------------------------- |
-| `DISCORD_TOKEN`       | Yes      | Discord bot token.                                                     |
-| `DISCORD_CLIENT_ID`   | Yes      | Discord application client ID.                                         |
-| `GEMINI_API_KEY`      | Yes      | Gemini API key for response generation and extraction.                 |
-| `TYPESAFE_API_KEY`    | No       | Jev judgments; required for passive memory admission and verification. |
-| `TAVILY_API_KEY`      | No       | Tavily API key for web search.                                         |
-| `DEV_GEMINI_API_KEY`  | No       | Second Gemini key, harness-only, for `npm run test:live`.              |
-| `ROKABOT_HARNESS_KEY` | No       | Names which `.env` key funds a `npm run test:live` run, harness-only.  |
+| Variable              | Required  | Purpose                                                                       |
+| --------------------- | --------- | ----------------------------------------------------------------------------- |
+| `DISCORD_TOKEN`       | Yes       | Discord bot token.                                                            |
+| `DISCORD_CLIENT_ID`   | Yes       | Discord application client ID.                                                |
+| `GEMINI_API_KEY`      | If Gemini | Gemini API key; required when a role uses Gemini, as on the legacy config.    |
+| `TYPESAFE_API_KEY`    | No        | Jev memory judgments; without it, only an `llm:` config keeps passive memory. |
+| `TAVILY_API_KEY`      | No        | Tavily API key for web search.                                                |
+| `DEV_GEMINI_API_KEY`  | No        | Second Gemini key, harness-only, for `npm run test:live`.                     |
+| `ROKABOT_HARNESS_KEY` | No        | Names which `.env` key funds a `npm run test:live` run, harness-only.         |
 
 ```env
 DISCORD_TOKEN=your_discord_bot_token
@@ -465,6 +465,8 @@ Secrets belong in `.env`; tunables belong in [`config.yml`](../config.yml). Envi
 | `memory.episodeMaxMessages`          | —                                   | Maximum delta messages in one episode.                              |
 | `memory.admitThreshold`              | —                                   | Minimum Jev admission probability before Gemini extraction.         |
 | `memory.verifyThreshold`             | —                                   | Minimum Jev durability and attribution probability.                 |
+| `memory.modelAdmitThreshold`         | —                                   | Main-model admission minimum (0.7) without a TypeSafe key.          |
+| `memory.modelVerifyThreshold`        | —                                   | Main-model verification minimum (0.7) without a TypeSafe key.       |
 | `memory.reclassifyMaxPerRun`         | `MEMORY_RECLASSIFY_MAX_PER_RUN`     | Most misfiled facts moved per daily run (20); 0 turns it off.       |
 | `memory.vaultExportDir`              | `MEMORY_VAULT_EXPORT_DIR`           | Output directory for read-only Obsidian vault exports.              |
 

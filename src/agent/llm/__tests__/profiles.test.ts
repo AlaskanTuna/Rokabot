@@ -2,11 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { MODEL_PROFILES, profileFor } from '../profiles.js'
 
 describe('model profiles', () => {
-  it('ships the three tested profiles this phase needs', () => {
+  it('ships the tested profiles and the Chat Completions models', () => {
     expect(MODEL_PROFILES.map(({ provider, model, verified }) => ({ provider, model, verified }))).toEqual([
       { provider: 'gemini', model: 'gemini-3.5-flash-lite', verified: true },
       { provider: 'anthropic', model: 'claude-haiku-5-5', verified: true },
-      { provider: 'modelscope', model: 'Qwen/Qwen3.5-122B-A10B', verified: true }
+      { provider: 'modelscope', model: 'Qwen/Qwen3.5-122B-A10B', verified: true },
+      { provider: 'openai', model: 'gpt-6-luna', verified: true },
+      { provider: 'modelscope', model: 'Qwen/Qwen3.5-35B-A3B', verified: false },
+      { provider: 'modelscope', model: 'deepseek-ai/DeepSeek-V4.1-Flash', verified: false }
     ])
   })
 

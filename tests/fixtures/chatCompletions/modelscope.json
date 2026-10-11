@@ -1,0 +1,70 @@
+{
+  "qwenText": {
+    "status": 200,
+    "body": {
+      "id": "fixture-qwen-text",
+      "object": "chat.completion",
+      "model": "Qwen/Qwen3.5-35B-A3B",
+      "choices": [{ "index": 0, "message": { "role": "assistant", "content": "Mm, hello~" }, "finish_reason": "stop" }],
+      "usage": { "prompt_tokens": 98, "completion_tokens": 6, "total_tokens": 104 }
+    }
+  },
+  "qwenToolCall": {
+    "status": 200,
+    "body": {
+      "id": "fixture-qwen-tool",
+      "object": "chat.completion",
+      "model": "Qwen/Qwen3.5-35B-A3B",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_ms_fixture",
+                "type": "function",
+                "function": { "name": "get_current_time", "arguments": "{\"timezone\":\"Asia/Tokyo\"}" }
+              }
+            ]
+          },
+          "finish_reason": "tool_calls"
+        }
+      ],
+      "usage": { "prompt_tokens": 150, "completion_tokens": 20, "total_tokens": 170 }
+    }
+  },
+  "qwenJsonObject": {
+    "status": 200,
+    "body": {
+      "id": "fixture-qwen-json",
+      "object": "chat.completion",
+      "model": "Qwen/Qwen3.5-35B-A3B",
+      "choices": [
+        {
+          "index": 0,
+          "message": { "role": "assistant", "content": "```json\n{\"city\":\"Kyoto\",\"population\":1460000}\n```" },
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": { "prompt_tokens": 120, "completion_tokens": 14, "total_tokens": 134 }
+    }
+  },
+  "deepseekChoicesNull": {
+    "status": 200,
+    "body": {
+      "id": "fixture-deepseek-null",
+      "object": "chat.completion",
+      "model": "deepseek-ai/DeepSeek-V4.1-Flash",
+      "choices": null,
+      "usage": null
+    }
+  },
+  "magicubeExhausted": {
+    "status": 429,
+    "body": { "errors": { "message": "Magicube balance exhausted for today; try again after it resets." } }
+  },
+  "overloaded": { "status": 503, "body": { "errors": { "message": "Service is busy, please retry later." } } },
+  "unauthorized": { "status": 401, "body": { "errors": { "message": "Invalid token." } } }
+}

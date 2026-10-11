@@ -49,6 +49,9 @@ fallback:
 #   models: # Only tested profiles start (src/agent/llm/profiles.ts); optional per model: timeoutMs, maxOutputTokens, baseUrl
 #     flash: { provider: gemini, model: gemini-3.5-flash-lite }
 #     haiku: { provider: anthropic, model: claude-haiku-5-5, effort: low } # Needs ANTHROPIC_API_KEY; effort none turns thinking off (for a Haiku fallback)
+#     luna: { provider: openai, model: gpt-6-luna, effort: none } # Needs OPENAI_API_KEY; Chat Completions takes tools only at effort none
+#     qwen: { provider: modelscope, model: Qwen/Qwen3.5-35B-A3B } # Candidate, refused until scripts/probe-llm-profile.ts verifies it; needs MODELSCOPE_API_KEY
+#     deepseek: { provider: modelscope, model: deepseek-ai/DeepSeek-V4.1-Flash } # Candidate, refused until the probe verifies it; shares qwen's Magicube balance
 
 rateLimit:
   rpm: 15 # Requests per minute (Gemini free tier: 15)
@@ -117,6 +120,8 @@ memory:
   episodeMaxMessages: 25 # Close an episode at this many delta messages; leave room for three context lines
   admitThreshold: 0.5 # Minimum Jev lasting_fact probability; unavailable or lower judgments drop the episode
   verifyThreshold: 0.5 # Minimum Jev probability for durable and attributed operations
+  modelAdmitThreshold: 0.7 # Without TYPESAFE_API_KEY (and with an llm block), the minimum main-model lasting_fact probability. Uncalibrated: self-reported model probabilities run high, so calibrate on labelled episodes (jev_events rows with a judge) before trusting it
+  modelVerifyThreshold: 0.7 # Without TYPESAFE_API_KEY (and with an llm block), the minimum main-model probability for durable and attributed operations, reclassification moves and hidden retractions. Uncalibrated, like modelAdmitThreshold
   episodeRecallK: 3 # Maximum episode summaries recalled for one guild turn
   episodeTokenBudget: 200 # Approximate token budget for the dated episode block
   episodeMinSimilarity: 0.7 # Minimum cosine similarity required for episode recall. A 648-pair calibration (2026-09-25) admitted 0 of 624 unrelated query-summary pairs at 0.7 and kept 20 of 24 related ones; 0.45 admitted 622 unrelated

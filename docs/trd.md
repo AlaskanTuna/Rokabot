@@ -103,7 +103,7 @@ Audio and video are watched before Roka replies rather than handed to her raw. `
 - **Accounting:** watcher calls come out of the turn's reserved `gemini.maxLlmCalls`. ADK gets the remainder, `GenerateResult.modelCalls` includes them, and the watcher's billed prompt tokens are charged to the token bucket.
 - **Turn Input:** the digest reaches ADK as an untrusted-data text block headed `[Watched media — <label>, <coverage>]`. With no raw audio or video in the request, the fallback hedge is eligible and Qwen can answer from the digest. A watch that fails or is declined becomes a one-line notice (`[A YouTube video was shared, but it couldn't be watched right now.]`) so she never claims to have seen it.
 - **Transcript:** after the turn, `stripAttachmentBytes` swaps each full digest for its compact one-line form (and any `inlineData` or `fileData` part for its marker), and the compact digest is appended to the saved user message so session rehydration keeps it.
-- **Watchers:** `media.watcher` (`MEDIA_WATCHER`) picks `gemini` (default) or `qwen` to watch, and the other is the automatic backup (`direct` and `off` are under Kill Switch below): `watchOne` tries them in order and gives the notice only when both fail. Gemini is skipped while turns are pinned to the fallback model. The Qwen watcher (`src/agent/media/qwenWatch.ts`) needs `MODELSCOPE_API_KEY`, and takes audio only when a transcriber is configured (see Speech below): it samples single JPEG frames at the midpoints of equal bins, one per `media.qwen.secondsPerFrame` (4 s) of the watched span between `media.qwen.minFrames` (16) and `media.qwen.maxFrames` (32) with ffmpeg (`src/agent/media/frames.ts`: one seek per frame, `-protocol_whitelist file,https,tls,tcp,crypto`, `media.qwen.frameHeight` 360p, 8 s per frame, needs at least half the frames), around a linked timestamp the same 30 s before / 90 s after window as Gemini (`focusWindow`), groups the frames into at most 8 equal timeline bins of the watched window (one bin per frame let the 8 timeline entries stop a third of the way into a 19-frame watch), and sends them labelled with their times and bins to `media.qwen.model` (`Qwen/Qwen3.5-35B-A3B`, thinking off, `response_format: json_object`) on the fallback's ModelScope endpoint. A YouTube link is read through yt-dlp's lowest video-only stream of at least 240p (`src/agent/media/youtubeStreams.ts`), and its title and description go in as untrusted context to help name things; uploads and linked post videos are read from their URL. The reply is validated by `validateObservations` into the same `MediaDigest`, with `fps: null`, `frames` and `heard: 'none'`: the coverage line reads `whole video, 3:06, 32 frames, no sound heard`, and the footer `watched the video`. Watches with no audio track or a successful transcript with no speech are saved to guild memory; transcription failures are retried on a later share. Measured 11 s per watch for 16 frames on 74 s and 3-minute videos; on 10–11 minute videos 32 frames named the characters and plot where 16 gave a generic summary, with the Qwen call at 13 s against 8–9 s; ModelScope bills per call (Magic Cubes), not per frame.
+- **Watchers:** `media.watcher` (`MEDIA_WATCHER`) picks `gemini` (default) or `qwen` to watch, and the other is the automatic backup (`direct` and `off` are under Kill Switch below): `watchOne` tries them in order and gives the notice only when both fail. Gemini is skipped while turns are pinned to the fallback model. The Qwen watcher (`src/agent/media/qwenWatch.ts`) needs `MODELSCOPE_API_KEY`, and takes audio only when a transcriber is configured (see Speech below): it samples single JPEG frames at the midpoints of equal bins, one per `media.qwen.secondsPerFrame` (4 s) of the watched span between `media.qwen.minFrames` (16) and `media.qwen.maxFrames` (32) with ffmpeg (`src/agent/media/frames.ts`: one seek per frame, `-protocol_whitelist file,https,tls,tcp,crypto`, `media.qwen.frameHeight` 360p, 8 s per frame, needs at least half the frames), around a linked timestamp the same 30 s before / 90 s after window as Gemini (`focusWindow`), groups the frames into at most 8 equal timeline bins of the watched window (one bin per frame let the 8 timeline entries stop a third of the way into a 19-frame watch), and sends them labelled with their times and bins to `media.qwen.model` (`Qwen/Qwen3.5-35B-A3B`, thinking off, `response_format: json_object`) on ModelScope (the endpoint in `fallback.baseUrl`) with its own `MODELSCOPE_API_KEY` (`media.qwen.apiKey`), whatever the fallback model is. The Gemini watcher likewise needs `GEMINI_API_KEY`, and a watcher without its key is skipped. A YouTube link is read through yt-dlp's lowest video-only stream of at least 240p (`src/agent/media/youtubeStreams.ts`), and its title and description go in as untrusted context to help name things; uploads and linked post videos are read from their URL. The reply is validated by `validateObservations` into the same `MediaDigest`, with `fps: null`, `frames` and `heard: 'none'`: the coverage line reads `whole video, 3:06, 32 frames, no sound heard`, and the footer `watched the video`. Watches with no audio track or a successful transcript with no speech are saved to guild memory; transcription failures are retried on a later share. Measured 11 s per watch for 16 frames on 74 s and 3-minute videos; on 10–11 minute videos 32 frames named the characters and plot where 16 gave a generic summary, with the Qwen call at 13 s against 8–9 s; ModelScope bills per call (Magic Cubes), not per frame.
 - **Speech:** with `media.transcriber.url` set (`MEDIA_TRANSCRIBER_URL`; `docker-compose.yml` points the bot at `http://asr:8000`), the Qwen watcher transcribes the audio in parallel with taking frames (`src/agent/media/transcribe.ts`). ffmpeg cuts 16 kHz mono WAV windows from the same source (a YouTube link's audio-only stream): the whole clip up to `media.transcriber.maxAudioSec` (180 s), otherwise four windows centred in the video's quarters, or the focus window around a timestamp. They are posted one at a time to the `asr` sidecar (`asr/server.py`, Python and sherpa-onnx, no exposed port), which runs Silero VAD, identifies the language with SenseVoice-Small, and transcribes English with Moonshine-base and every other language (zh, ja, ko, yue) with SenseVoice, keeping at most `media.transcriber.maxSpeechSec` (120 s) of speech per video spread across it. The whole transcription is bounded by `media.transcriber.timeoutMs` (45 s); windows not reached by then are skipped. The segments go to Qwen as a separate untrusted text part with their times and bins, and the digest is marked `heard: 'speech'`: the coverage line reads `16 frames, speech heard from a transcript but not music or other sound`, and the watch is saved to guild memory. If transcription fails or finds no speech, the video is still watched from its frames as `heard: 'none'`. A voice message or audio clip is heard from its transcript alone (no frames) and fails with the usual notice when there is no speech. Music, sound effects and tone are never heard; sung lyrics come through as low-quality speech.
 - **Replying:** a turn carrying `[Watched media]` notes and a turn that used `search_web` share the core prompt's "Presenting What You Looked Up or Watched" rules: the first words answer what was asked (no greeting or preamble); about 70% content and 30% her own reaction; at most 120 words for a searched answer and 180 for a watched one, in one short paragraph or, for a bigger request, the shapes of the speech layer's "Formatting Your Reply"; a judgement question (real or hype, legit, worth it) gets the verdict first, then the evidence that decides it, after a `search_web` on the people, products and claims named; bold names and numbers; nothing filled in that the notes or results don't contain; one closing sentence of her own. "When You've Watched Something" adds the media specifics: a specific question is answered first with the moment it comes from, a plain share opens with the gist and then its best moments with their times, her take is about the video itself, and the answer is never built from the title, description or thumbnail. "When You Couldn't Watch It" makes a failure notice the first thing she says, instead of a description guessed from metadata.
 - **Footer:** the first audio or video item's outcome (`PreparedTurnMedia.watchOutcome`, returned on `GenerateResult.watchOutcome`) adds one word-sized label, with no times and nothing about sound, since the reply cites its own moments: `watched the video`, `watched most of the video` (at least half of it) or `watched part of the video`, `skimmed the video`, `remembered the video`, or `couldn't watch the video` (`heard`/`clip` for audio). When the item is a linked post's own media (`WatchOutcome.fromLink`), that label replaces the post label and names the platform: `watched the X video`, `couldn't watch the YouTube video`. An upload keeps the post label beside a plain watch label. The footer shows two labels and then `+N`, and carries no timestamp, which keeps `MAX_TOOL_FOOTER_CHARS` at 73.
@@ -118,7 +118,7 @@ Audio and video are watched before Roka replies rather than handed to her raw. `
 | `memory_episode_cursor`                                   | Per-channel episode checkpoint: tenant, last message ID, open time, and delta-message count.                                                                                                         |
 | `extraction_queue`                                        | Closed episode payloads, with `pending`, `processing`, or retained `failed` status and attempt count.                                                                                                |
 | `memory_events`                                           | Value-free retrieval, claim-change and recall telemetry, one text-free `extraction_run` event per extraction attempt, and one `claim_reclassified` audit event per automatic move.                   |
-| `jev_events`                                              | TypeSafe judgment kind, question key, answer, probability/confidence, applied flag, latency, input tokens, optional baseline, optional job ID (admission and verification judgments), and timestamp. |
+| `jev_events`                                              | Judgment kind, question key, answer, probability/confidence, applied flag, latency, input tokens, optional baseline and job ID, judge (`provider:model` when the main model judged) and a timestamp. |
 | `extraction_samples`                                      | Private, text-bearing sample of rejected conversations for offline labelling: capped at 200 rows, expires after `memory.extractionSampleDays`, never read at runtime.                                |
 | `reminders`                                               | Scheduled user reminders and delivery state.                                                                                                                                                         |
 | `game_scores`, `gacha_collection`, `gacha_daily`, `buddy` | Game scores and gacha/companion data.                                                                                                                                                                |
@@ -274,12 +274,13 @@ Privacy and Unified Recall).
 | `extraction_queue`      | `id`, `guild_id`, `channel_id`, `payload`, `status`, `attempts`, `enqueued_at`                                                                                                                                                                                                                                                         | Closed episode payloads in `pending`, `processing`, or retained `failed` state.                                                                                     |
 | `memory_episode`        | `id`, `guild_id`, `channel_id`, `started_at`, `ended_at`, `summary`, `embedding`, `embedding_model_id`, `embedding_dim`, `embedding_fingerprint`, `created_at`                                                                                                                                                                         | One completed episode summary per queue ID; nullable float32 embedding with its provenance.                                                                         |
 | `memory_events`         | `id`, `kind`, `guild_id`, `channel_id`, `subject_user_id`, `duration_ms`, `n_candidates`, `n_selected`, `n_changed`, `tokens_est`, `op`, `created_at`, `detail`                                                                                                                                                                        | Value-free retrieval, claim-change, extraction-run and `claim_reclassified` audit telemetry; nullable `detail` holds per-kind JSON.                                 |
-| `jev_events`            | `kind`, `guild_id`, `channel_id`, `question`, `answer`, `probability`, `confidence`, `applied`, `latency_ms`, `input_tokens`, `baseline`, `job_id`, `created_at`                                                                                                                                                                       | Value-free Jev judgment telemetry. The kind is `turn`, `admission`, or `verification`; `job_id` links the latter two to their job.                                  |
+| `jev_events`            | `kind`, `guild_id`, `channel_id`, `question`, `answer`, `probability`, `confidence`, `applied`, `latency_ms`, `input_tokens`, `baseline`, `job_id`, `created_at`, `judge`                                                                                                                                                              | Value-free judgment telemetry. The kind is `turn`, `admission`, or `verification`; `job_id` links the latter two to their job.                                      |
 | `extraction_samples`    | `id`, `job_id`, `guild_id`, `channel_id`, `outcome`, `admission_probability`, `lines`, `created_at`, `expires_at`                                                                                                                                                                                                                      | Private, expiring text sample of rejected conversations for offline labelling. Never read by recall or any prompt.                                                  |
 
 The `extraction_queue` payload contains the episode's delta messages, up to three preceding context lines, and start
 and end timestamps. It is user content and remains in a failed queue row for inspection; success deletes the queue
-row. `jev_events` stores question keys and judgment results, not episode or message text.
+row. `jev_events` stores question keys and judgment results, not episode or message text; its `judge` is
+`provider:model` when the main model judged and NULL for Jev.
 
 ### Episode Capture And Write Path
 
@@ -300,16 +301,19 @@ next availability time. Failed payloads older than `memory.failedExtractionReten
 from enqueue) are pruned at startup and daily. There is no queue-size setting, Gemini daily budget ratio, or separate
 extraction RPM floor. Memory work is asynchronous and does not block the reply that captured the messages.
 
-The pipeline is **local precheck → Jev admission → Gemini typed extraction → Jev verification → claim writes**.
-Sensitive or wholly trivial episodes are dropped locally. Other episodes require a successful Jev `lasting_fact`
-judgment with probability at least `memory.admitThreshold` (0.5); if Jev is unavailable, times out, or returns no
-usable answer, the episode is dropped without a Gemini extraction request. `TYPESAFE_API_KEY` is therefore required
-for passive memory, and startup warns once when it is absent.
+The pipeline is **local precheck → admission judgment → typed extraction → verification judgment → claim writes**.
+Sensitive or wholly trivial episodes are dropped locally. Other episodes require a successful `lasting_fact` judgment
+with probability at least the judge's admission threshold; if the judge is unavailable, times out, or returns no usable
+answer, the episode is dropped without an extraction request. The derived `memory.judge` picks the judge (see Jev
+Judgments): Jev when `TYPESAFE_API_KEY` is set; the main model when it is not and `config.yml` has an `llm:` block; and
+nothing on the legacy config without the key, where every episode is dropped and startup warns once.
 
-Gemini uses `gemini.extractionModel` (defaulting to `gemini.model`) and returns a strict operation list plus a
-one-to-two-sentence summary. The summary is persisted in `memory_episode` with the extraction queue ID as its
-idempotency key; its document embedding is stored in the same row when the embedding call succeeds. Operations can
-target a user subject `{ kind: 'user', userId }` or the current guild subject `{ kind: 'guild' }`:
+On the legacy config (no `llm:` block), extraction runs on `gemini.extractionModel` (defaulting to `gemini.model`) with
+no fallback; with an `llm:` block it runs on the main model and tries the fallback once (see Model Providers). The
+model returns a strict operation list plus a one-to-two-sentence summary. The summary is persisted in `memory_episode`
+with the extraction queue ID as its idempotency key; its document embedding is stored in the same row when the
+embedding call succeeds. Operations can target a user subject `{ kind: 'user', userId }` or the current guild subject
+`{ kind: 'guild' }`:
 
 - **Add:** insert an active claim for a user or a guild and predicate. A user add carries a `tense`.
 - **Update:** replace an existing current claim for the same subject and predicate, linking the old row through
@@ -407,8 +411,10 @@ Completed admission judgments write one `jev_events` row with `kind='admission'`
 Completed verification writes one row per answer key (`durable_N`, `attributed_N`, `guild_scoped_N`, `current_N`,
 `past_N`, `changes_N`, `same_as_N_M`, or `retracts_N_M`).
 These rows include the answer, probability, application outcome, latency, input-token count, and the extraction queue job
-ID in `job_id`, but no source message text. Turn judgments leave `job_id` null.
-`jev.memoryTimeoutMs` (5000 ms) bounds admission and verification calls.
+ID in `job_id`, but no source message text. Turn judgments leave `job_id` null. Rows the main model judged carry
+`judge` (`provider:model`); Jev rows leave it null.
+`jev.memoryTimeoutMs` (5000 ms) bounds Jev admission and verification calls; a main-model judgment is bounded by its
+route's timeout.
 
 ### Hidden-Fact Reconciliation
 
@@ -420,8 +426,10 @@ operation transaction commits, `reconcileHiddenRetractions` (`hiddenRetractions.
    were not visible to the extractor.
 2. **Ranking:** cosine similarity between the retracted fact's sentence (for example "This person's hobby: chess.")
    and each claim's stored embedding, keeping the top 3. A claim without an embedding is skipped.
-3. **Judgment:** one internal Jev call asks, for each candidate, whether the messages say the fact "no longer holds".
-   Candidates at or above `memory.verifyThreshold` are retired with `end_reason = 'retracted'`.
+3. **Judgment:** one call to the judge that `memory.judge` picks (Jev, or the main model under `model`; see
+   Main-Model Judgments) asks, for each candidate, whether the messages say the fact "no longer holds". Candidates at
+   or above `memory.verifyThreshold` (or `memory.modelVerifyThreshold` when the main model judged) are retired with
+   `end_reason = 'retracted'`.
 
 Nothing hidden reaches Gemini's prompt, the reply or the logs: the pass logs only claim IDs, the predicate and counts.
 Under `relaxed` every claim is visible and under `off` nothing is written, so the pass makes no calls. It never
@@ -544,11 +552,13 @@ affecting the prune.
   salience, else the newer. They are sampled in random order, up to `min(100, 5 × cap)`, so a fact the model keeps
   cannot crowd out the ones behind it. A fact whose move was undone (an active row with a `claim_reclassified` event of
   its own) is never offered again.
-- **Proposal:** one Gemini call (`gemini.extractionModel`) returns, for each candidate, the best predicate from the
-  closed list or `keep`. The list leaves out `misc` and `relationship_to`, whose object must be a member a bare value
-  cannot name, and `reclassifyClaims` drops any proposal naming either.
+- **Proposal:** one model call returns, for each candidate, the best predicate from the closed list or `keep`. The
+  legacy config makes it on `gemini.extractionModel`; an `llm:` block makes it on the main model, then the fallback
+  once. The list leaves out `misc` and `relationship_to`, whose object must be a member a bare value cannot name, and
+  `reclassifyClaims` drops any proposal naming either.
 - **Confirmation:** one Jev call asks `fits_<id>` (`Is "<value>" this person's <predicate>?`) for at most `cap`
-  proposals. A move needs a probability of at least `memory.verifyThreshold`.
+  proposals; under `memory.judge: model` the main model answers the same questions. A move needs a probability of at
+  least `memory.verifyThreshold`, or `memory.modelVerifyThreshold` when the main model judged.
 - **Move:** one transaction retires the old row first (`end_reason = 'reclassified'`, so the cap cannot evict another
   fact mid-move), writes the value under the new predicate as a verified, active fact (reviving a staged or ended row
   of that value there, and clearing `needs_review`), copies the evidence rows, keeps the pin and `first_seen_at`, and
@@ -782,7 +792,7 @@ export directory. Export performs no store writes and no network requests.
 
 ## Jev Judgments
 
-Jev (TypeSafe's typed decision model, `@typesafe-ai/sdk`) answers pick-from-a-list questions; Gemini generates every
+Jev (TypeSafe's typed decision model, `@typesafe-ai/sdk`) answers pick-from-a-list questions; the LLM generates every
 reply, tool call and memory operation. The client (`src/agent/jev/client.ts`) exists only when `TYPESAFE_API_KEY` is
 set, is pinned to `jev.model` (`jev-1.13.0`), and makes one attempt with no retries. Message and `/ask` handlers
 start one `TurnEntryWork` before reply fetching, deferral or ADK session loading. Generation receives that same handle
@@ -814,18 +824,30 @@ controlled with `JEV_PREFETCH`:
   decision labels, probability, confidence, whether tone was applied, rounded latency and input tokens. The `question`
   JSON records the `prefetch` mode; the `answer` JSON records `needsLookup` and `prefetchStatus`. It stores no message
   text, alias or user ID. `metrics.retentionDays` prunes these rows with the other metrics tables.
-- **Memory Admission And Verification:** Jev is a hard dependency for passive memory. After the local sensitive/trivial
-  precheck, admission asks whether an episode contains a lasting fact and requires `memory.admitThreshold` (0.5).
-  Verification checks operation durability and attribution against `memory.verifyThreshold` (0.5), and checks additions
-  against same-predicate claims. Both are bounded by `jev.memoryTimeoutMs` (5000 ms). A missing key, timeout, or unusable
-  admission answer drops the episode before Gemini extraction; incomplete verification blocks removals and marks
-  allowed additions or updates for review.
+- **Memory Judge:** passive memory needs a judge. `config.memory.judge` is derived at startup and cannot be set:
+  `jev` when `TYPESAFE_API_KEY` is set, whatever the config; `model` when the key is unset and `config.yml` has an
+  `llm:` block; `none` otherwise. `none` is the legacy config without the key: it makes no judgment call, drops every
+  episode, and startup warns once.
+- **Memory Admission And Verification:** after the local sensitive/trivial precheck, admission asks whether an episode
+  contains a lasting fact and requires `memory.admitThreshold` (0.5). Verification checks operation durability and
+  attribution against `memory.verifyThreshold` (0.5), and checks additions against same-predicate claims. Jev calls are
+  bounded by `jev.memoryTimeoutMs` (5000 ms). A missing judge, timeout, or unusable admission answer drops the episode
+  before extraction; incomplete verification blocks removals and marks allowed additions or updates for review.
+- **Main-Model Judgments:** under `memory.judge: model`, `judgeWithModel` (`src/agent/jev/modelJudge.ts`) asks the main
+  model the question keys Jev would get, over the same state, in one `generateObject` call (workload `admission` or
+  `verification`) that returns a probability from 0 to 1 per key. It covers admission, verification, hidden
+  retractions and reclassification confirmation, and any failure returns null, as Jev fails closed. Self-reported
+  probabilities run high, so these judgments use `memory.modelAdmitThreshold` (0.7) and `memory.modelVerifyThreshold`
+  (0.7) in place of Jev's two thresholds. Both are uncalibrated, have no environment override, and are bounded 0–1 by
+  `NUMERIC_BOUNDS`; calibrate them on labelled episodes before trusting them.
 - **Replay Comparator:** `npm run replay:jev -- data/rokabot.db --max-turns 100` compares Jev tone labels with the
   regex tone on retained history and transcript fixtures, including CJK turns. Regex agreement is a comparator, not
   accuracy; the tone threshold is chosen against blind labels of which moods fit each production turn.
 - **Event Recording:** admission and verification judgments are recorded in `jev_events` with question key, answer,
-  probability, confidence, `applied`, latency and input-token count. Source messages are not stored in this table.
-  `memory.admitThreshold` and `memory.verifyThreshold` are the memory thresholds; there is no Jev extraction mode.
+  probability, confidence, `applied`, latency, input-token count and `judge` (`provider:model` for a main-model
+  judgment, null for Jev). Source messages are not stored in this table. `memory.admitThreshold` and
+  `memory.verifyThreshold` are Jev's memory thresholds, and `memory.modelAdmitThreshold` and
+  `memory.modelVerifyThreshold` the main model's; there is no Jev extraction mode.
 
 ### Search Prefetch
 
@@ -1000,7 +1022,8 @@ block; a switch takes a restart.
   does not take, an output cap above the profile's, or a provider whose key is unset stops startup with one
   message.
 - **Adapters:** `createLlm` builds `GeminiLlm` (ADK's Gemini plus shaping and usage), `AnthropicLlm`
-  (`@anthropic-ai/sdk` Messages API, SDK retries off) or `ModelScopeLlm`. `shapeRequest` drops sampling
+  (`@anthropic-ai/sdk` Messages API, SDK retries off) or, for `openai` and `modelscope` models, `ChatCompletionsLlm`.
+  `ModelScopeLlm` (its legacy subclass) serves only the synthesised legacy fallback. `shapeRequest` drops sampling
   parameters a profile rejects and safety settings for non-Gemini targets, and clamps the output cap.
 - **Claude Requests:** the core and speech layers go as one cached system block (`cache_control`), the per-turn
   layers after it uncached. Tool calls and results pair by id; images and PDFs go as content blocks, other media
@@ -1009,10 +1032,12 @@ block; a switch takes a restart.
 - **Thinking Within a Turn:** Claude's thinking blocks are held per turn route and sent back only inside that
   turn's tool loop, and only while everything before them is byte-identical; ADK session history never holds them.
 - **Pinning:** when either side replays thinking, the first answer of a turn pins its later calls to that side.
-  Gemini and ModelScope routes never pin, so they keep hedging every call.
-- **Failures:** adapters throw `ProviderError`; `classifyGeminiFailure` returns its kind unchanged. The ladder
-  switches once for `transient_http`, `network`, `quota_exhausted`, `billing_exhausted`, `refusal`,
-  `malformed_tool_args` and `context_length`; only the first three arm the sticky window.
+  Gemini, OpenAI and ModelScope routes never pin (no Gemini or Chat Completions profile replays thinking), so they
+  keep hedging every call.
+- **Failures:** adapters throw `ProviderError`, except that the legacy fallback (`ModelScopeLlm`) keeps today's plain
+  errors for everything but malformed tool arguments (see The Fallback Model); `classifyGeminiFailure` returns its
+  kind unchanged. The ladder switches once for `transient_http`, `network`, `quota_exhausted`, `billing_exhausted`,
+  `refusal`, `malformed_tool_args` and `context_length`; only the first three arm the sticky window.
 - **Recording:** every provider call reports its tokens through `recordUsage` (`onUsage` listeners).
   `response_events` gains `provider`, `model_id`, `route_role` (`main`/`fallback`) and `workload`; rows written
   before keep `model`, which new rows leave `NULL`. Every adapter calls `startCall` (`src/agent/llm/budget.ts`)
@@ -1021,6 +1046,25 @@ block; a switch takes a restart.
   are disjoint: `inputTokens` excludes cache reads and writes, and `outputTokens` excludes `reasoningTokens` when
   the provider reports reasoning separately (Gemini); Anthropic reports no separate reasoning, so its
   `outputTokens` is the billed output.
+- **Background Jobs:** extraction, reclassification and main-model judgments call `generateObject`
+  (`src/agent/llm/generateObject.ts`). It sends one JSON request whose `responseJsonSchema` comes from the job's zod
+  schema, adjusted per profile (`objectSchema.ts`; Claude receives it as the forced output tool). It tries the main
+  model, then the fallback once, re-validates the reply against the zod schema, and never returns a partial object: a
+  blocked, truncated, empty or invalid reply throws `StructuredOutputError`. Each request carries its workload
+  (`extraction`, `reclassify`, `admission` or `verification`) in `labels.rokabot_workload` (`WORKLOAD_LABEL`), which
+  adapters read for usage and ADK strips before calling Gemini. The adapter's output cap is the job's own cap, limited
+  by the profile's.
+- **Legacy Background Route:** without an `llm:` block, background jobs run on `gemini.extractionModel` with
+  `gemini.timeout` and no fallback. Extraction and reclassification send their hand-written Gemini `responseSchema`
+  unchanged, in place of `responseJsonSchema`, with the same temperature, output cap and safety settings as before.
+- **Background Failures:** the extraction queue retries a `ProviderError` of kind `transient_http`,
+  `quota_exhausted` or `network` (a `network` failure only when the bot is not shutting down). It treats
+  `billing_exhausted` and `refusal` failures as permanent: one immediate retry, then the row stays `failed`. Other
+  kinds and errors go through the status, code and
+  name checks `classifyExtractionError` applies to Gemini errors.
+- **Gemini Key:** `GEMINI_API_KEY` is required only when the main or fallback model is Gemini, embeddings resolve to
+  `gemini`, or `media.watcher` is `gemini`. The legacy config's main model is always Gemini, so it always needs the
+  key. The `qwen` watcher does not require the key, but it still falls back to Gemini when Qwen fails.
 
 ### The Fallback Model
 
@@ -1044,13 +1088,40 @@ When `MODELSCOPE_API_KEY` is set, a turn that Gemini cannot serve is answered by
   start on the fallback, so an outage costs one slow reply per window rather than one per turn. A turn that only
   started on the fallback does not extend the window; if it fails in an outage-shaped way it switches back to
   Gemini, and any Gemini success clears the window. `stickyMs: 0` disables it.
-- **Translation:** Gemini-shaped requests become OpenAI Chat Completions with `enable_thinking: false` (thinking
-  on measured 9–15 s a call). Images pass through as data URLs; audio, video and PDFs become a text marker.
-  Tool calls the fallback returns carry `thoughtSignature: 'skip_thought_signature_validator'`, because Gemini
-  rejects an unsigned function call in the current turn (400) but accepts the tagged one, so it can read the
-  fallback's history when it recovers.
+- **Translation:** `ChatCompletionsLlm` (`src/agent/llm/chatCompletionsLlm.ts`) turns Gemini-shaped requests into
+  OpenAI Chat Completions for `openai` (`https://api.openai.com/v1` by default) and `modelscope`
+  (`https://api-inference.modelscope.ai/v1` by default). `ModelScopeLlm` is its legacy `modelscope` subclass. Requests
+  are shaped (`shapeRequest`) and clamped to the resolved `maxOutputTokens` first. ModelScope gets
+  `enable_thinking: false` (thinking on measured 9–15 s a call) and `max_tokens`. OpenAI gets `max_completion_tokens`
+  and `reasoning_effort` from the entry's `effort`, else the profile's default (`none` for `gpt-6-luna`, the only
+  effort that allows tools on Chat Completions). Image bytes pass through as data URLs when the profile reads images
+  (the legacy fallback always sends them); audio, video, PDFs and any other attachment become a text marker.
+- **Tool Calls:** on `ChatCompletionsLlm`, the provider's call id is kept on the returned call and results pair by
+  id. A result without an id pairs with the earliest unanswered id-less call of the same name in the preceding model
+  turn, because ADK strips its own `adk-` ids before each call, so only a call that came without a provider id comes
+  back without one. A call with no result is left out, because Chat Completions rejects it. The legacy fallback
+  (`ModelScopeLlm`) keeps today's translation: it drops the provider's ids, numbers calls `call_1`, `call_2`, … per
+  request, pairs results first-in-first-out by name, and keeps every call. Returned calls carry
+  `thoughtSignature: 'skip_thought_signature_validator'`, because Gemini rejects an unsigned function call in the
+  current turn (400) but accepts the tagged one, so it can read the fallback's history when it recovers.
+- **Structured Output:** with `responseJsonSchema` set, a `json_schema_strict` profile sends
+  `response_format.json_schema` with `strict: true` (optional fields become required-nullable, `oneOf` becomes
+  `anyOf`, objects are closed with `additionalProperties: false`, unsupported keywords are dropped from the sent
+  schema) and strips those nulls from the reply. A `json_object` profile sends `response_format: json_object` with
+  the schema in the system prompt and unwraps a fenced reply.
+- **Failures:** on `ChatCompletionsLlm` every error is a `ProviderError`. A 429 is `quota_exhausted`, as is any other
+  4xx whose body names Magicubes (ModelScope does not document which status a spent balance returns); OpenAI's
+  `insufficient_quota` is `billing_exhausted`, which also calls `markBillingExhausted`. 5xx and an HTTP 200 with no
+  choices are `transient_http`. A 413 or an over-long prompt is `context_length`, and any other 4xx is `terminal`.
+  Tool arguments that do not parse to a JSON object are `malformed_tool_args`, and no tool runs. An OpenAI refusal is
+  `refusal`, and a transport failure, its timeout included, is `network`. The caller's own abort passes through
+  untouched. The legacy fallback keeps today's plain `ModelScope <status>: …` errors, passes transport failures through
+  unchanged and answers an HTTP 200 with no choices with an empty reply, so the ladder classifies them as before; only
+  unparseable tool arguments changed there, and they now throw `malformed_tool_args` on both. Every 2xx reply records
+  usage once (disjoint buckets), and every call awaits `startCall` first.
 - **Accounting:** fallback calls still take the turn's reserved Gemini RPM slots, which only makes the limiter
-  more conservative during an outage. Background memory extraction has no fallback; it waits for Gemini.
+  more conservative during an outage. On the legacy config, background memory jobs have no fallback and wait for
+  Gemini; with an `llm:` block they try the fallback once (see Model Providers).
 - **Logs:** `Gemini unavailable, answering this turn with the fallback model` and `Fallback model answered`.
 
 #### Hedging Slow Gemini Calls

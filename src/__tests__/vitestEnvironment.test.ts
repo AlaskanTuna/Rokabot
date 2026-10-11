@@ -8,6 +8,7 @@ describe('Vitest environment', () => {
     expect(process.env.GEMINI_API_KEY).toBe('vitest-gemini-token')
     expect(process.env.ROKABOT_DB_PATH).toBe(':memory:')
     expect(process.env.MODELSCOPE_API_KEY).toBe('')
+    expect(process.env.OPENAI_API_KEY).toBe('')
     expect(process.env.TYPESAFE_API_KEY).toBe('')
     expect(process.env.TAVILY_API_KEY).toBe('')
     expect(process.env.EMBEDDINGS_PROVIDER).toBe('')

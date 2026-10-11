@@ -262,7 +262,8 @@ The reply model is `llm.main` in `config.yml`; `LLM_MAIN` in `.env` overrides it
 runs Gemini with the ModelScope fallback above.
 
 1. Uncomment the `llm:` example in `config.yml` and set `main` to a key under `llm.models` (for example `haiku`).
-2. Put the provider's key in `.env` (`ANTHROPIC_API_KEY` for `haiku`); a missing key stops startup with its name.
+2. Put the provider's key in `.env` (`ANTHROPIC_API_KEY` for `haiku`, `OPENAI_API_KEY` for `luna`); a missing key stops
+   startup with its name.
 3. Rebuild and restart the bot, with the owner's authorization.
 4. Check which provider answered:
 
@@ -271,6 +272,27 @@ sudo docker logs rokabot-roka-1 2>&1 | grep '"msg":"Response completed"' | grep 
 ```
 
 `LLM_FALLBACK=none` turns the fallback off without editing `config.yml`.
+
+## Verifying a Model Profile
+
+`Qwen/Qwen3.5-35B-A3B` and `deepseek-ai/DeepSeek-V4.1-Flash` ship as candidates (`verified: false` in
+`src/agent/llm/profiles.ts`), so startup refuses them as `llm.main` or `llm.fallback` until a live probe passes. The
+probe makes four calls per model (a text reply, one tool call, a reply to that tool's result, one JSON object). On
+ModelScope each call spends Magicubes from the daily allowance; on OpenAI it bills the account. It refuses to run
+without `--live`, and when `CI` is set.
+
+```bash
+npx tsx scripts/probe-llm-profile.ts --live --model Qwen/Qwen3.5-35B-A3B --model deepseek-ai/DeepSeek-V4.1-Flash
+```
+
+It reads `MODELSCOPE_API_KEY`, or `OPENAI_API_KEY` for an `openai` model, from `.env`. A model with no `openai` or
+`modelscope` profile, or with its key unset, is reported and fails the run. A model is ready only when all four checks
+pass and no reply showed thinking: a non-empty `reasoning_content` or `reasoning` field, a `<think>` tag in the text,
+or `reasoning_tokens` above zero in the usage. The tool check also needs a real IANA timezone in the tool call. The
+tool result check sends a `get_current_time` call and its result back as a `tool` message, and needs a non-empty text
+reply with no second tool call. The probe prints `ready` or `not ready` per model, and exits 0 only when every model is
+ready. It never edits the profile. Set `verified: true` on that profile yourself and open a PR with the probe output in
+its description. Merging the PR rebuilds and restarts the bot, so it needs the owner's authorization.
 
 ## Hedging Slow Gemini Calls
 
@@ -360,11 +382,13 @@ about 1,000 Gemini requests in a day; avoid restarts until the re-embed finishes
 
 ## Jev Judgments and Passive Memory
 
-Jev tone and referent judgments can run in `off`, `shadow` or `on` mode. Passive memory uses Jev admission and
-verification as hard gates: an unavailable client, timeout, or low admission score drops the episode before Gemini
-extraction. Without `TYPESAFE_API_KEY`, startup logs `Passive memory extraction is disabled: no TypeSafe API key`
-once, and passive episodes are dropped. Set `jev.memoryTimeoutMs`, `memory.admitThreshold` and
-`memory.verifyThreshold` in `config.yml` through a PR.
+Jev tone and referent judgments can run in `off`, `shadow` or `on` mode. Passive memory uses admission and
+verification judgments as hard gates: an unavailable judge, timeout, or low admission score drops the episode before
+extraction. Jev judges when `TYPESAFE_API_KEY` is set. Without the key, the main model judges when `config.yml` has an
+`llm:` block. With neither (`memory.judge: none`, which is the legacy config without the key), startup logs
+`Passive memory extraction is disabled: no TypeSafe API key` once, and passive episodes are dropped. Set
+`jev.memoryTimeoutMs`, `memory.admitThreshold` and `memory.verifyThreshold` (Jev), or `memory.modelAdmitThreshold` and
+`memory.modelVerifyThreshold` (main model), in `config.yml` through a PR.
 
 Guild facts are scoped to their Discord server. `upcoming_event` and `plan` claims store `expires_at` as epoch
 milliseconds for the first instant of the next local day, using `config.timezone` (or the `TZ` override). A daily prune
@@ -580,12 +604,14 @@ lasting fact.
 ## Memory Reclassification
 
 A background step moves facts filed under the wrong predicate, mostly `misc`, to the right one. It runs at startup and
-then daily, right after the claim prune, in the background. Gemini (`gemini.extractionModel`) proposes a predicate for
-each candidate and Jev confirms it; a move needs a probability of at least `memory.verifyThreshold`. Candidates are
-active current `misc` facts and the weaker side of any pair of facts one member filed twice, with equal values, under
-different predicates. Past facts are never touched. Each run makes at most one Gemini call and one Jev call, and none
-when nothing is a candidate. A moved fact keeps its pin, evidence and first-seen time, and the old row stays as a
-`reclassified` record.
+then daily, right after the claim prune, in the background. Gemini (`gemini.extractionModel`; the main model when
+`config.yml` has an `llm:` block) proposes a predicate for each candidate and Jev (or the main model under
+`memory.judge: model`) confirms it; a move needs a probability of at least `memory.verifyThreshold`
+(`memory.modelVerifyThreshold` for the main model). Candidates are active current `misc` facts and the weaker side of
+any pair of facts one member filed twice, with equal values, under different predicates. Past facts are never touched.
+Each run makes at most one proposal request and one confirmation request, and none when nothing is a candidate; with
+an `llm:` block, a request the main model fails is tried once on the fallback. A moved fact keeps its pin, evidence and
+first-seen time, and the old row stays as a `reclassified` record.
 
 - **Cap:** `memory.reclassifyMaxPerRun` (20) is the most moves per run, bounded 0–100. Set it to 0 to turn the step off:
   `MEMORY_RECLASSIFY_MAX_PER_RUN=0` in `~/rokabot/.env`, then recreate the container
