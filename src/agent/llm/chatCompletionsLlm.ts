@@ -2,8 +2,10 @@ import { BaseLlm } from '@google/adk'
 import type { BaseLlmConnection, LlmRequest, LlmResponse } from '@google/adk'
 import { FinishReason } from '@google/genai'
 import type { Part } from '@google/genai'
+import type { FailureKind } from '../geminiReliability.js'
 import { requestTokenEstimate, startCall } from './budget.js'
 import type { ModelProfile } from './profiles.js'
+import { ProviderError } from './providerError.js'
 import {
   attachmentKind,
   attachmentMarker,
@@ -54,6 +56,29 @@ function parseJson(text: string): unknown {
   } catch {
     return undefined
   }
+}
+
+const CONTEXT_LENGTH_PATTERN =
+  /context_length_exceeded|context length|too many tokens|input is too long|prompt is too long/i
+// ModelScope does not document which status a spent Magicube balance returns, so its wording counts too.
+const MAGICUBE_PATTERN = /magicube/i
+
+function httpFailureKind(status: number, body: string): FailureKind {
+  // OpenAI's insufficient_quota is a spent balance, not a busy minute, and stays spent until billing changes.
+  if (status === 429) return /insufficient_quota/.test(body) ? 'billing_exhausted' : 'quota_exhausted'
+  if (status >= 500) return 'transient_http'
+  if (MAGICUBE_PATTERN.test(body)) return 'quota_exhausted'
+  if (status === 413 || CONTEXT_LENGTH_PATTERN.test(body)) return 'context_length'
+  return 'terminal'
+}
+
+function retryAfterMs(response: Response): number | undefined {
+  const seconds = Number(response.headers.get('retry-after'))
+  return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : undefined
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }
 
 const JSON_OBJECT_INSTRUCTION = 'Reply with only a JSON object that matches this JSON Schema:'
@@ -362,6 +387,14 @@ export class ChatCompletionsLlm extends BaseLlm {
     return PROVIDER_LABELS[this.provider]
   }
 
+  private fail(
+    kind: FailureKind,
+    message: string,
+    details: { status?: number; retryAfterMs?: number; cause?: unknown } = {}
+  ): ProviderError {
+    return new ProviderError({ provider: this.provider, kind, message, ...details })
+  }
+
   async *generateContentAsync(
     llmRequest: LlmRequest,
     _stream?: boolean,
@@ -391,13 +424,14 @@ export class ChatCompletionsLlm extends BaseLlm {
       signal
     })
 
-    let result: ChatCompletionsResponse
+    let reply: { status: number; result: ChatCompletionsResponse }
     try {
-      result = await this.post(JSON.stringify(requestBody), signal)
+      reply = await this.post(JSON.stringify(requestBody), signal)
     } catch (error) {
       reservation.release()
       throw error
     }
+    const { status, result } = reply
     const usage: CallUsage = {
       provider: this.provider,
       model: this.model,
@@ -408,7 +442,7 @@ export class ChatCompletionsLlm extends BaseLlm {
     recordUsage(usage)
     reservation.release(usage)
 
-    yield this.toResponse(result, schema, strict)
+    yield this.toResponse(result, status, schema, strict)
   }
 
   private requestBody(llmRequest: LlmRequest, schema: JsonObject | undefined, strict: boolean): JsonObject {
@@ -441,52 +475,75 @@ export class ChatCompletionsLlm extends BaseLlm {
     return body
   }
 
-  private async post(body: string, signal: AbortSignal | undefined): Promise<ChatCompletionsResponse> {
-    const response = await this.fetchImpl(`${this.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body,
-      signal: signal
-        ? AbortSignal.any([signal, AbortSignal.timeout(this.timeoutMs)])
-        : AbortSignal.timeout(this.timeoutMs)
-    })
-    if (!response.ok) {
-      const bodyText = await response.text()
-      throw new Error(`${this.label} ${response.status}: ${bodyText.slice(0, 300)}`)
-    }
-    return (await response.json()) as ChatCompletionsResponse
-  }
-
-  private toResponse(result: ChatCompletionsResponse, schema: JsonObject | undefined, strict: boolean): LlmResponse {
-    const choice = result.choices?.[0]
-    const message = choice?.message
-    const content = typeof message?.content === 'string' ? message.content.trim() : ''
-    const text = schema ? structuredText(content, strict ? schema : undefined) : content
-    const functionCalls: Array<{ id?: string; name: string; args: JsonObject }> = []
-    for (const toolCall of message?.tool_calls ?? []) {
-      const args = parseJson(toolCall.function?.arguments ?? '')
-      if (!isRecord(args)) {
-        return {
-          errorCode: 'MALFORMED_FUNCTION_CALL',
-          errorMessage: `${this.label} returned malformed tool arguments`,
-          finishReason: FinishReason.MALFORMED_FUNCTION_CALL
-        }
+  private async post(
+    body: string,
+    signal: AbortSignal | undefined
+  ): Promise<{ status: number; result: ChatCompletionsResponse }> {
+    let response: Response
+    let text: string
+    try {
+      response = await this.fetchImpl(`${this.baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body,
+        signal: signal
+          ? AbortSignal.any([signal, AbortSignal.timeout(this.timeoutMs)])
+          : AbortSignal.timeout(this.timeoutMs)
+      })
+      // The legacy route keeps today's failures, which the ladder already classifies and retries: plain HTTP errors,
+      // transport rejections as they came, and the parse error of a 2xx body that is not JSON.
+      if (this.legacyTranslation && response.ok) {
+        return { status: response.status, result: (await response.json()) as ChatCompletionsResponse }
       }
-      functionCalls.push({
-        id: this.legacyTranslation ? undefined : toolCall.id,
-        name: toolCall.function?.name ?? '',
-        args
+      text = await response.text()
+    } catch (error) {
+      // A cancelled hedge loser or turn is the caller's own decision, not a provider failure.
+      if (this.legacyTranslation || signal?.aborted) throw error
+      throw this.fail('network', `${this.label} request failed: ${errorText(error)}`, { cause: error })
+    }
+    if (!response.ok) {
+      const message = `${this.label} ${response.status}: ${text.slice(0, 300)}`
+      if (this.legacyTranslation) throw new Error(message)
+      throw this.fail(httpFailureKind(response.status, text), message, {
+        status: response.status,
+        retryAfterMs: retryAfterMs(response)
       })
     }
+    const parsed = parseJson(text)
+    return { status: response.status, result: isRecord(parsed) ? (parsed as ChatCompletionsResponse) : {} }
+  }
+
+  private toResponse(
+    result: ChatCompletionsResponse,
+    status: number,
+    schema: JsonObject | undefined,
+    strict: boolean
+  ): LlmResponse {
+    const choice = result.choices?.[0]
+    // ModelScope answers json_schema on DeepSeek with HTTP 200 and choices: null (modelscope#1801); the legacy route
+    // keeps answering it, and a refusal, with today's empty reply.
+    if (!choice && !this.legacyTranslation) {
+      throw this.fail('transient_http', `${this.label} returned HTTP ${status} with no choices`, { status })
+    }
+    const message = choice?.message
+    if (!this.legacyTranslation && typeof message?.refusal === 'string' && message.refusal.trim()) {
+      throw this.fail('refusal', `${this.label} refused the request: ${message.refusal.slice(0, 300)}`)
+    }
+    const content = typeof message?.content === 'string' ? message.content.trim() : ''
+    const text = schema ? structuredText(content, strict ? schema : undefined) : content
 
     const parts: Part[] = []
     if (text) parts.push({ text })
-    for (const call of functionCalls) {
+    for (const toolCall of message?.tool_calls ?? []) {
+      const args = parseJson(toolCall.function?.arguments ?? '')
+      // Thrown, not answered, so no tool runs and a malformed hedge reply cannot win the race.
+      if (!isRecord(args)) throw this.fail('malformed_tool_args', `${this.label} returned malformed tool arguments`)
+      const id = this.legacyTranslation ? undefined : toolCall.id
       parts.push({
-        functionCall: { ...(call.id ? { id: call.id } : {}), name: call.name, args: call.args },
+        functionCall: { ...(id ? { id } : {}), name: toolCall.function?.name ?? '', args },
         thoughtSignature: 'skip_thought_signature_validator'
       })
     }

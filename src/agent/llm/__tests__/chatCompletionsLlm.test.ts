@@ -6,6 +6,8 @@ import { describe, expect, it } from 'vitest'
 import { ModelScopeLlm as ReexportedModelScopeLlm } from '../../fallbackModel.js'
 import { ChatCompletionsLlm, ModelScopeLlm } from '../chatCompletionsLlm.js'
 import { MODEL_PROFILES, profileFor } from '../profiles.js'
+import { ProviderError } from '../providerError.js'
+import { type CallUsage, onUsage } from '../usage.js'
 
 interface Fixture {
   status: number
@@ -794,6 +796,140 @@ describe('ChatCompletionsLlm structured output', () => {
     expect(bodyOf(calls[0]).messages).toEqual([
       { role: 'system', content: 'Be Roka.' },
       { role: 'user', content: 'hi' }
+    ])
+  })
+})
+
+describe('ChatCompletionsLlm failures', () => {
+  it.each<[string, string, string, number]>([
+    ['openai', 'insufficientQuota', 'billing_exhausted', 429],
+    ['openai', 'rateLimited', 'quota_exhausted', 429],
+    ['openai', 'contextLength', 'context_length', 400],
+    ['openai', 'serverError', 'transient_http', 500],
+    ['modelscope', 'magicubeExhausted', 'quota_exhausted', 429],
+    ['modelscope', 'overloaded', 'transient_http', 503],
+    ['modelscope', 'unauthorized', 'terminal', 401]
+  ])('classifies the %s %s reply as %s', async (provider, name, kind, status) => {
+    const { fetchImpl } = replay(provider === 'openai' ? openai[name] : modelscope[name])
+    const llm = provider === 'openai' ? luna(fetchImpl) : onModelScope('Qwen/Qwen3.5-35B-A3B', fetchImpl)
+
+    const failure = responses(llm, hello())
+
+    await expect(failure).rejects.toBeInstanceOf(ProviderError)
+    await expect(failure).rejects.toMatchObject({ provider, kind, status })
+  })
+
+  it('carries Retry-After as retryAfterMs', async () => {
+    await expect(responses(luna(replay(openai.rateLimited).fetchImpl), hello())).rejects.toMatchObject({
+      retryAfterMs: 7000
+    })
+  })
+
+  it('treats an HTTP 200 with choices: null as transient_http with a clear message', async () => {
+    const llm = onModelScope('deepseek-ai/DeepSeek-V4.1-Flash', replay(modelscope.deepseekChoicesNull).fetchImpl)
+
+    await expect(responses(llm, hello())).rejects.toMatchObject({
+      kind: 'transient_http',
+      status: 200,
+      message: 'ModelScope returned HTTP 200 with no choices'
+    })
+  })
+
+  it('turns an OpenAI refusal into a refusal failure', async () => {
+    await expect(responses(luna(replay(openai.refusal).fetchImpl), hello())).rejects.toMatchObject({ kind: 'refusal' })
+  })
+
+  it('throws malformed_tool_args for arguments that do not parse, so no tool runs', async () => {
+    await expect(responses(luna(replay(openai.malformedToolArgs).fetchImpl), hello())).rejects.toMatchObject({
+      kind: 'malformed_tool_args',
+      message: 'OpenAI returned malformed tool arguments'
+    })
+  })
+
+  it('still records the usage of an HTTP 200 reply it rejects', async () => {
+    const seen: CallUsage[] = []
+    const stop = onUsage((usage) => seen.push(usage))
+
+    await responses(luna(replay(openai.refusal).fetchImpl), hello()).catch(() => undefined)
+    stop()
+
+    expect(seen).toEqual([
+      { provider: 'openai', model: 'gpt-6-luna', workload: 'reply', inputTokens: 80, outputTokens: 8 }
+    ])
+  })
+
+  it("passes the caller's own abort through untouched", async () => {
+    const controller = new AbortController()
+    controller.abort()
+    const fetchImpl: typeof fetch = async (_input, init) => {
+      throw init?.signal?.reason
+    }
+
+    const error = await responses(
+      luna(fetchImpl),
+      request([{ role: 'user', parts: [{ text: 'hello' }] }], { abortSignal: controller.signal })
+    ).catch((caught: unknown) => caught)
+
+    expect(error).toBe(controller.signal.reason)
+  })
+
+  it('wraps any other transport failure as network, keeping the cause', async () => {
+    const cause = new TypeError('fetch failed')
+    const fetchImpl: typeof fetch = async () => {
+      throw cause
+    }
+
+    await expect(responses(luna(fetchImpl), hello())).rejects.toMatchObject({
+      kind: 'network',
+      message: 'OpenAI request failed: fetch failed',
+      cause
+    })
+  })
+})
+
+describe('ModelScopeLlm legacy failures', () => {
+  const legacy = (fetchImpl: typeof fetch) =>
+    new ModelScopeLlm({
+      model: 'Qwen/Qwen3.5-122B-A10B',
+      apiKey: 'modelscope-key',
+      timeoutMs: 2000,
+      profile: profileFor('modelscope', 'Qwen/Qwen3.5-122B-A10B'),
+      fetchImpl
+    })
+
+  it("keeps today's plain error for a 429", async () => {
+    const error = await responses(legacy(replay(modelscope.magicubeExhausted).fetchImpl), hello()).catch(
+      (caught: unknown) => caught
+    )
+
+    expect(error).toBeInstanceOf(Error)
+    expect(error).not.toBeInstanceOf(ProviderError)
+    expect((error as Error).message).toMatch(/^ModelScope 429: /)
+  })
+
+  it("keeps today's empty reply for an HTTP 200 with choices: null", async () => {
+    const result = await responses(legacy(replay(modelscope.deepseekChoicesNull).fetchImpl), hello())
+
+    expect(result).toEqual([{ content: { role: 'model', parts: [{ text: '' }] }, finishReason: FinishReason.STOP }])
+  })
+
+  it('ignores a refusal, as it always has', async () => {
+    const reply = {
+      status: 200,
+      body: {
+        choices: [{ message: { content: null, refusal: 'No.' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 80, completion_tokens: 8, total_tokens: 88 }
+      }
+    }
+
+    const result = await responses(legacy(replay(reply).fetchImpl), hello())
+
+    expect(result).toEqual([
+      {
+        content: { role: 'model', parts: [{ text: '' }] },
+        finishReason: FinishReason.STOP,
+        usageMetadata: { promptTokenCount: 80, candidatesTokenCount: 8, totalTokenCount: 88 }
+      }
     ])
   })
 })
