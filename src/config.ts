@@ -259,6 +259,21 @@ function mediaWatcher(): MediaWatcher {
   throw new Error(`${source} must be gemini, qwen, direct or off, got: ${String(value)}`)
 }
 
+// Only the watcher's `gemini` mode needs the key: the qwen watcher's Gemini backup is a plan-2 follow-up.
+export function geminiKeyRequired(roles: {
+  main: ProviderId
+  fallback: ProviderId | null
+  embeddings: EmbeddingProvider
+  watcher: MediaWatcher
+}): boolean {
+  return (
+    roles.main === 'gemini' ||
+    roles.fallback === 'gemini' ||
+    roles.embeddings === 'gemini' ||
+    roles.watcher === 'gemini'
+  )
+}
+
 function memoryEnum<T extends string>(key: 'privacy' | 'recall', envKey: string, values: readonly T[], fallback: T): T {
   const envValue = envString(envKey)
   const value = envValue ?? yaml.memory?.[key] ?? fallback
@@ -524,7 +539,7 @@ const baseConfig = {
     }
   },
   gemini: {
-    apiKey: requiredEnv('GEMINI_API_KEY'),
+    apiKey: envString('GEMINI_API_KEY') ?? '',
     model: geminiModel,
     extractionModel: envString('GEMINI_EXTRACTION_MODEL') ?? yaml.gemini?.extractionModel ?? geminiModel,
     timeout: envInt('GEMINI_TIMEOUT') ?? yaml.gemini?.timeout ?? 15_000,
@@ -638,8 +653,22 @@ const baseConfig = {
   timezone: (envString('TZ') ?? yaml.timezone) as string | undefined
 } as const
 
+const llm = resolveLlm(baseConfig)
+
+// A legacy config (no llm: block) has a Gemini main, so the key stays required there with this same message.
+if (
+  geminiKeyRequired({
+    main: llm.main.provider,
+    fallback: llm.fallback?.provider ?? null,
+    embeddings: embeddings.provider,
+    watcher: baseConfig.media.watcher
+  })
+) {
+  requiredEnv('GEMINI_API_KEY')
+}
+
 /** Merged config: env overrides > config.yml > hardcoded defaults */
-export const config = { ...baseConfig, llm: resolveLlm(baseConfig) } as const
+export const config = { ...baseConfig, llm } as const
 
 function modelBounds(role: 'main' | 'fallback', model: ResolvedModel) {
   return [

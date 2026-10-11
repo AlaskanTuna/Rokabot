@@ -1831,4 +1831,65 @@ describe('config module', () => {
       'Config value llm.models.cand.model claude-candidate is an untested candidate and cannot be llm.main'
     )
   })
+
+  const ANTHROPIC_ONLY = {
+    llm: {
+      main: 'haiku',
+      fallback: null,
+      models: { haiku: { provider: 'anthropic', model: 'claude-haiku-5-5', effort: 'low' } }
+    },
+    media: { watcher: 'off' }
+  }
+
+  function setAnthropicOnlyEnv() {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('GEMINI_API_KEY', '')
+    vi.stubEnv('ANTHROPIC_API_KEY', 'test-anthropic-key')
+    vi.stubEnv('LLM_MAIN', '')
+    vi.stubEnv('LLM_FALLBACK', '')
+  }
+
+  it('needs GEMINI_API_KEY only when a role calls Gemini', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    const { geminiKeyRequired } = await import('../config.js')
+    const none = { main: 'anthropic', fallback: null, embeddings: 'local', watcher: 'off' } as const
+
+    expect(geminiKeyRequired(none)).toBe(false)
+    expect(geminiKeyRequired({ ...none, main: 'gemini' })).toBe(true)
+    expect(geminiKeyRequired({ ...none, fallback: 'gemini' })).toBe(true)
+    expect(geminiKeyRequired({ ...none, embeddings: 'gemini' })).toBe(true)
+    expect(geminiKeyRequired({ ...none, watcher: 'gemini' })).toBe(true)
+    expect(geminiKeyRequired({ ...none, watcher: 'qwen' })).toBe(false)
+    expect(geminiKeyRequired({ ...none, watcher: 'direct' })).toBe(false)
+  })
+
+  it('starts an Anthropic-only config without GEMINI_API_KEY', async () => {
+    setAnthropicOnlyEnv()
+    vi.stubEnv('EMBEDDINGS_PROVIDER', 'local')
+    withYamlOverride(ANTHROPIC_ONLY)
+
+    const { config } = await import('../config.js')
+
+    expect(config.gemini.apiKey).toBe('')
+  })
+
+  it('requires GEMINI_API_KEY when only the media watcher uses Gemini', async () => {
+    setAnthropicOnlyEnv()
+    vi.stubEnv('EMBEDDINGS_PROVIDER', 'local')
+    withYamlOverride({ ...ANTHROPIC_ONLY, media: { watcher: 'gemini' } })
+
+    await expect(() => import('../config.js')).rejects.toThrow('Missing required environment variable: GEMINI_API_KEY')
+  })
+
+  it('judges memory with Jev on the legacy config whenever its key is set', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('TYPESAFE_API_KEY', 'test-typesafe-key')
+
+    const { config } = await import('../config.js')
+
+    expect(config.memory.judge).toBe('jev')
+  })
 })
