@@ -176,6 +176,14 @@ describe('createLlm', () => {
     expect(createLlm(legacyFallback)).toBeInstanceOf(ModelScopeLlm)
   })
 
+  it('keeps an openai entry named legacy-fallback on OpenAI, not the legacy ModelScope adapter', () => {
+    const llm = createLlm({ ...luna, key: 'legacy-fallback' })
+
+    expect(llm).toBeInstanceOf(ChatCompletionsLlm)
+    expect(llm).not.toBeInstanceOf(ModelScopeLlm)
+    expect(llm).toMatchObject({ provider: 'openai', baseUrl: 'https://api.openai.com/v1', apiKey: 'openai-key' })
+  })
+
   it('sends Gemini requests unchanged and records Gemini usage', async () => {
     const seen: LlmRequest[] = []
     vi.spyOn(Gemini.prototype, 'generateContentAsync').mockImplementation(async function* (llmRequest: LlmRequest) {

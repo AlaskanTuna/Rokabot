@@ -82,8 +82,11 @@ export function createLlm(resolved: ResolvedModel): BaseLlm {
         effort: resolved.effort,
         maxOutputTokens: resolved.maxOutputTokens
       }
-      // The synthesised legacy fallback keeps today's request and reply translation.
-      return resolved.key === 'legacy-fallback' ? new ModelScopeLlm(options) : new ChatCompletionsLlm(options)
+      // The synthesised legacy fallback keeps today's request and reply translation. The provider check stops an
+      // llm.models entry that happens to be named legacy-fallback from posting another provider's key to ModelScope.
+      return resolved.key === 'legacy-fallback' && resolved.provider === 'modelscope'
+        ? new ModelScopeLlm(options)
+        : new ChatCompletionsLlm(options)
     }
   }
 }
