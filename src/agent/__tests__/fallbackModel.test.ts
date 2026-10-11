@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const configState = vi.hoisted(() => ({
   gemini: { model: 'gemini-test', hedgeAfterMs: 0 },
+  llm: { hedgeAfterMs: 0 },
   logging: { level: 'silent' },
   fallback: {
     apiKey: undefined as string | undefined,
@@ -27,7 +28,7 @@ vi.mock('../llm/budget.js', async (importOriginal) => ({
   startCall: budgetState.startCall
 }))
 
-import { ModelScopeLlm, RoutedLlm, createRokaModel, modelRouteForRequest } from '../fallbackModel.js'
+import { ModelScopeLlm, RoutedLlm, modelRouteForRequest } from '../fallbackModel.js'
 import { type CallUsage, onUsage } from '../llm/usage.js'
 
 beforeEach(() => {
@@ -535,34 +536,5 @@ describe('RoutedLlm', () => {
     await routed.connect(request([]))
 
     expect(primary.connections).toBe(1)
-  })
-})
-
-describe('createRokaModel', () => {
-  beforeEach(() => {
-    configState.gemini.model = 'gemini-test'
-    configState.fallback.apiKey = undefined
-    configState.fallback.model = 'Qwen/Qwen3.5-122B-A10B'
-    configState.fallback.baseUrl = 'https://api-inference.modelscope.ai/v1'
-    configState.fallback.timeoutMs = 15_000
-  })
-
-  it('creates Gemini as primary and disables fallback without an API key', () => {
-    const model = createRokaModel()
-
-    expect(model.model).toBe('gemini-test')
-    expect(model.hasFallback).toBe(false)
-    expect(model.fallbackModelName).toBeUndefined()
-  })
-
-  it('creates the configured fallback when an API key is available', () => {
-    configState.fallback.apiKey = 'modelscope-key'
-    configState.fallback.model = 'Qwen/configured-fallback'
-
-    const model = createRokaModel()
-
-    expect(model.model).toBe('gemini-test')
-    expect(model.hasFallback).toBe(true)
-    expect(model.fallbackModelName).toBe('Qwen/configured-fallback')
   })
 })

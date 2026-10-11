@@ -3,14 +3,15 @@ import { config } from '../../config.js'
 
 const mocks = vi.hoisted(() => ({ hasFallback: true, tryConsumeRetry: vi.fn(() => true) }))
 
-vi.mock('../fallbackModel.js', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../fallbackModel.js')>()
+vi.mock('../llm/createModel.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../llm/createModel.js')>()
   const { Gemini } = await import('@google/adk')
+  const { RoutedLlm } = await import('../fallbackModel.js')
 
   return {
     ...original,
     createRokaModel: () => {
-      const model = new original.RoutedLlm(new Gemini({ model: 'gemini-test' }), new Gemini({ model: 'fallback-test' }))
+      const model = new RoutedLlm(new Gemini({ model: 'gemini-test' }), new Gemini({ model: 'fallback-test' }))
       Object.defineProperty(model, 'hasFallback', { get: () => mocks.hasFallback })
       return model
     }

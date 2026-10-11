@@ -11,8 +11,8 @@ vi.mock('../../utils/logger.js', () => ({ logger: loggerMock }))
 // The module under test pulls the real config, which requires secrets this worktree has none of. Under
 // this tsconfig vitest loads tests as CJS, and the RelativePath.keys tsc emits for this file do not collide
 // with the literal key the source keeps, so both forms are registered.
-vi.mock('../../config.js', () => ({ config: { gemini: { model: 'gemini-test' } } }))
-vi.mock('../src/agent/../config.js', () => ({ config: { gemini: { model: 'gemini-test' } } }))
+vi.mock('../../config.js', () => ({ config: { gemini: { model: 'gemini-test' }, llm: { hedgeAfterMs: 0 } } }))
+vi.mock('../src/agent/../config.js', () => ({ config: { gemini: { model: 'gemini-test' }, llm: { hedgeAfterMs: 0 } } }))
 
 import { RoutedLlm, modelRouteForRequest } from '../fallbackModel.js'
 import type { ModelRoute } from '../fallbackModel.js'
@@ -358,5 +358,58 @@ describe('RoutedLlm provider pinning', () => {
     fallback.resolve(0, { text: 'hedged second call' })
 
     expect((await second)[0]?.content?.parts?.[0]?.text).toBe('hedged second call')
+  })
+
+  it('pins the main model after a direct call on a turn that starts on main', async () => {
+    const primary = new DeferredLlm('primary')
+    const routed = new RoutedLlm(primary, new DeferredLlm('fallback'), 0, { pinTurns: true })
+    const turn = route()
+
+    const pending = modelRouteForRequest.run(turn, () => responses(routed, request()))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    primary.resolve(0, { text: 'main answer' })
+    await pending
+
+    expect(turn.pinned).toBe('main')
+  })
+
+  it('pins the fallback after a direct call on a turn already moved to the fallback', async () => {
+    const fallback = new DeferredLlm('fallback')
+    const routed = new RoutedLlm(new DeferredLlm('primary'), fallback, 0, { pinTurns: true })
+    const turn = route({ useFallback: true })
+
+    const pending = modelRouteForRequest.run(turn, () => responses(routed, request()))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    fallback.resolve(0, { text: 'fallback answer' })
+    await pending
+
+    expect(turn.pinned).toBe('fallback')
+  })
+
+  it('leaves the turn unpinned when the direct call fails', async () => {
+    const primary = new DeferredLlm('primary')
+    const routed = new RoutedLlm(primary, new DeferredLlm('fallback'), 0, { pinTurns: true })
+    const turn = route()
+
+    const pending = modelRouteForRequest.run(turn, () => responses(routed, request()))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    primary.resolve(0, { error: new Error('503 UNAVAILABLE') })
+
+    await expect(pending).rejects.toThrow('503 UNAVAILABLE')
+    expect(turn.pinned).toBeNull()
+  })
+
+  it('ignores a pin already on the turn when the route does not pin', async () => {
+    const primary = new DeferredLlm('primary')
+    const fallback = new DeferredLlm('fallback')
+    const routed = new RoutedLlm(primary, fallback, 0)
+    const turn = route({ pinned: 'fallback' })
+
+    const pending = modelRouteForRequest.run(turn, () => responses(routed, request()))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(fallback.calls).toBe(0)
+    primary.resolve(0, { text: 'main answer' })
+
+    expect((await pending)[0]?.content?.parts?.[0]?.text).toBe('main answer')
   })
 })

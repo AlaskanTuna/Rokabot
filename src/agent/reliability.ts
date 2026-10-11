@@ -1,11 +1,11 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { BasePlugin } from '@google/adk'
 import type { LlmResponse } from '@google/adk'
-import { config } from '../config.js'
 import { logger } from '../utils/logger.js'
-import { createRokaModel, modelRouteForRequest } from './fallbackModel.js'
+import { modelRouteForRequest } from './fallbackModel.js'
 import { classifyGeminiFailure, extractGeminiStatus } from './geminiReliability.js'
 import type { FailureKind } from './geminiReliability.js'
+import { createRokaModel } from './llm/createModel.js'
 import { isShuttingDown } from './shutdownSignal.js'
 
 export interface ModelVerdict {
@@ -43,8 +43,8 @@ export function __resetModelFallbackForTest(): void {
 
 export function modelNameForCurrentRequest(): string {
   return modelRouteForRequest.getStore()?.useFallback && rokaModel.hasFallback
-    ? (rokaModel.fallbackModelName ?? config.gemini.model)
-    : config.gemini.model
+    ? (rokaModel.fallbackModelName ?? rokaModel.model)
+    : rokaModel.model
 }
 
 export interface TurnOutcome {

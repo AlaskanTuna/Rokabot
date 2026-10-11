@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { BaseLlm, Gemini } from '@google/adk'
+import { BaseLlm } from '@google/adk'
 import type { BaseLlmConnection, LlmRequest, LlmResponse } from '@google/adk'
 import { FinishReason } from '@google/genai'
 import type { Part } from '@google/genai'
@@ -437,7 +437,7 @@ export class RoutedLlm extends BaseLlm {
   constructor(
     private readonly primary: BaseLlm,
     private readonly fallback: BaseLlm | null,
-    hedgeAfterMs: number = config.gemini.hedgeAfterMs,
+    hedgeAfterMs: number = config.llm.hedgeAfterMs,
     { pinTurns = false }: { pinTurns?: boolean } = {}
   ) {
     super({ model: primary.model })
@@ -453,7 +453,7 @@ export class RoutedLlm extends BaseLlm {
   async *generateContentAsync(llmRequest: LlmRequest, stream?: boolean): AsyncGenerator<LlmResponse, void> {
     const route = modelRouteForRequest.getStore()
     const fallback = this.fallback
-    const pinned = fallback ? (route?.pinned ?? null) : null
+    const pinned = fallback && this.pinTurns ? (route?.pinned ?? null) : null
     const onFallback = fallback !== null && (pinned ? pinned === 'fallback' : Boolean(route?.useFallback))
     const side: AnswerModel = onFallback ? 'fallback' : 'main'
     if (pinned || onFallback || !fallback || !route || this.hedgeAfterMs <= 0 || !isHedgeEligible(llmRequest)) {
@@ -495,18 +495,4 @@ export class RoutedLlm extends BaseLlm {
   connect(llmRequest: LlmRequest): Promise<BaseLlmConnection> {
     return this.primary.connect(llmRequest)
   }
-}
-
-export function createRokaModel(): RoutedLlm {
-  const primary = new Gemini({ model: config.gemini.model })
-  const apiKey = config.fallback.apiKey
-  const fallback = apiKey
-    ? new ModelScopeLlm({
-        model: config.fallback.model,
-        apiKey,
-        baseUrl: config.fallback.baseUrl,
-        timeoutMs: config.fallback.timeoutMs
-      })
-    : null
-  return new RoutedLlm(primary, fallback)
 }
