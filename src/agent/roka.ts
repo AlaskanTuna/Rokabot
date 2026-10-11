@@ -323,7 +323,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     channelId,
     attachments: imageAttachments,
     focus: userMessage,
-    mayRetry: () => getSharedRateLimiter(config.rateLimit).tryConsumeAboveFloor(config.gemini.retryRpmFloor),
+    mayRetry: () => getSharedRateLimiter().tryConsumeAboveFloor(config.gemini.retryRpmFloor),
     geminiUnavailable: rokaModel.hasFallback && hasStickyFallback(),
     // Servers only: DMs, group DMs, `/ask` and privacy `off` keep what was watched in the transcript alone.
     memoryScope:
@@ -445,8 +445,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
 
                 return requestTimeoutFor(false)
               },
-              tryConsumeRetry: () =>
-                getSharedRateLimiter(config.rateLimit).tryConsumeAboveFloor(config.gemini.retryRpmFloor),
+              tryConsumeRetry: () => getSharedRateLimiter().tryConsumeAboveFloor(config.gemini.retryRpmFloor),
               // Bound each advertised backoff by the configured total retry ceiling.
               computeBackoff: (attempt) =>
                 computeBackoff(attempt, config.gemini.retryBackoffBaseMs, { maxMs: config.gemini.retryBackoffCapMs }),

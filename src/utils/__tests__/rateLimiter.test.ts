@@ -3,17 +3,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('../../config.js', () => ({
   config: {
     logging: { level: 'silent' },
-    rateLimit: { rpm: 15, rpd: 500 },
+    llm: { main: { provider: 'gemini', model: 'gemini-test', limits: { rpm: 15, rpd: 500 } } },
     session: { ttlMs: 300_000, windowSize: 10 }
   }
 }))
 
-import { config } from '../../config.js'
-import { RateLimiter, getSharedRateLimiter } from '../rateLimiter.js'
+import { RateLimiter, __resetRateLimitersForTest, getSharedRateLimiter, rateLimiterFor } from '../rateLimiter.js'
 
 describe('RateLimiter', () => {
   beforeEach(() => {
     vi.useFakeTimers()
+    __resetRateLimitersForTest()
   })
 
   afterEach(() => {
@@ -245,10 +245,45 @@ describe('RateLimiter', () => {
   })
 
   it('returns a shared limiter whose consumption is observable across calls', () => {
-    const limiter = getSharedRateLimiter(config.rateLimit)
+    const limiter = getSharedRateLimiter()
 
-    expect(getSharedRateLimiter(config.rateLimit)).toBe(limiter)
+    expect(getSharedRateLimiter()).toBe(limiter)
     expect(limiter.tryConsume()).toBe(true)
-    expect(getSharedRateLimiter(config.rateLimit).remainingRpm).toBe(14)
+    expect(getSharedRateLimiter().remainingRpm).toBe(14)
+  })
+
+  describe('daily units per turn', () => {
+    it('still admits a turn on the last unit of the day, then refuses the next', () => {
+      const limiter = new RateLimiter({ rpm: 100, rpd: 1 })
+
+      expect(limiter.canAdmitCalls(4)).toBe(true)
+      limiter.reserveCalls(4)?.release(2)
+
+      expect(limiter.canAdmitCalls(4)).toBe(false)
+    })
+  })
+
+  describe('one limiter per model', () => {
+    it('returns the same limiter for the same provider and model', () => {
+      const first = rateLimiterFor({ provider: 'anthropic', model: 'claude-test', limits: { rpm: 5 } })
+
+      expect(rateLimiterFor({ provider: 'anthropic', model: 'claude-test', limits: { rpm: 5 } })).toBe(first)
+      expect(rateLimiterFor({ provider: 'anthropic', model: 'other', limits: { rpm: 5 } })).not.toBe(first)
+    })
+
+    it('never refuses a model whose entry sets no limits', () => {
+      const limiter = rateLimiterFor({ provider: 'anthropic', model: 'claude-test' })
+
+      for (let call = 0; call < 1_000; call += 1) expect(limiter.tryConsume()).toBe(true)
+      expect(limiter.canAdmitCalls(4)).toBe(true)
+    })
+
+    it('is the main model limiter that the Discord turn guard shares', () => {
+      const shared = getSharedRateLimiter()
+
+      expect(rateLimiterFor({ provider: 'gemini', model: 'gemini-test', limits: { rpm: 15, rpd: 500 } })).toBe(shared)
+      expect(shared.remainingRpm).toBe(15)
+      expect(shared.remainingRpd).toBe(500)
+    })
   })
 })

@@ -11,7 +11,6 @@ vi.mock('../tools/anime.js', () => ({ handleAnime: mocks.handleAnime }))
 vi.mock('../tools/schedule.js', () => ({ handleSchedule: mocks.handleSchedule }))
 vi.mock('../../../utils/logger.js', () => ({ logger: { info: mocks.info, error: mocks.error, debug: vi.fn() } }))
 
-import { config } from '../../../config.js'
 import { getSharedRateLimiter } from '../../../utils/rateLimiter.js'
 import { createToolCommandHandler } from '../toolCommands.js'
 
@@ -46,7 +45,7 @@ describe('tool command routing', () => {
   // pass against any implementation, including one that re-added the guard. `getSharedRateLimiter` is what
   // a re-added guard would reach for, which is what makes this check able to fail.
   it('leaves the model limiter untouched, because it never reaches the model', async () => {
-    const limiter = getSharedRateLimiter(config.rateLimit)
+    const limiter = getSharedRateLimiter()
     const before = { rpm: limiter.remainingRpm, rpd: limiter.remainingRpd }
     const interaction = {
       commandName: 'anime',

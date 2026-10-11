@@ -1,11 +1,10 @@
+import { config } from '../config.js'
 import { logger } from './logger.js'
 
 export interface RateLimiterConfig {
   rpm: number
   rpd: number
 }
-
-let sharedRateLimiter: RateLimiter | undefined
 
 /**
  * Slots held for one turn, handed back when it turns out not to have needed them.
@@ -183,7 +182,35 @@ export class RateLimiter {
   }
 }
 
-export function getSharedRateLimiter(config: RateLimiterConfig): RateLimiter {
-  sharedRateLimiter ??= new RateLimiter(config)
-  return sharedRateLimiter
+const limiters = new Map<string, RateLimiter>()
+
+/**
+ * One limiter per provider and model, made on first use. Limits are read once, from config, which never changes at
+ * runtime. A limit the model's entry does not set never refuses.
+ */
+export function rateLimiterFor(model: {
+  provider: string
+  model: string
+  limits?: { rpm?: number; rpd?: number }
+}): RateLimiter {
+  const key = `${model.provider}/${model.model}`
+  let limiter = limiters.get(key)
+  if (!limiter) {
+    limiter = new RateLimiter({
+      rpm: model.limits?.rpm ?? Number.POSITIVE_INFINITY,
+      rpd: model.limits?.rpd ?? Number.POSITIVE_INFINITY
+    })
+    limiters.set(key, limiter)
+  }
+  return limiter
+}
+
+/** The main model's limiter: the Discord turn guard, the retry gate and per-call budgets all count on this one. */
+export function getSharedRateLimiter(): RateLimiter {
+  return rateLimiterFor(config.llm.main)
+}
+
+/** Test seam: limiters are module state, and one test's spent minute would refuse the next test's calls. */
+export function __resetRateLimitersForTest(): void {
+  limiters.clear()
 }
