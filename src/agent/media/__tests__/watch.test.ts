@@ -1,5 +1,6 @@
 import { MediaResolution } from '@google/genai'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { ProviderError } from '../../llm/providerError.js'
 import { MEDIA_OBSERVATIONS_SCHEMA } from '../digest.js'
 import type { CoveragePlan, MediaObservations } from '../types.js'
 import { countUriTokens, instructions, watchMedia } from '../watch.js'
@@ -8,7 +9,10 @@ import type { WatchSource } from '../watch.js'
 const mocks = vi.hoisted(() => ({
   generateContent: vi.fn(),
   countTokens: vi.fn(),
-  clientOptions: [] as Array<{ apiKey: string }>
+  clientOptions: [] as Array<{ apiKey: string }>,
+  startCall: vi.fn(),
+  release: vi.fn(),
+  recordUsage: vi.fn()
 }))
 
 vi.mock('../../../config.js', () => ({
@@ -31,6 +35,9 @@ vi.mock('@google/genai', async (importOriginal) => {
     }
   }
 })
+
+vi.mock('../../llm/budget.js', () => ({ startCall: mocks.startCall }))
+vi.mock('../../llm/usage.js', () => ({ recordUsage: mocks.recordUsage }))
 
 function validObservations(): MediaObservations {
   return {
@@ -95,6 +102,7 @@ function response(text = JSON.stringify(validObservations())) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  mocks.startCall.mockResolvedValue({ release: mocks.release })
   vi.useRealTimers()
 })
 
@@ -540,5 +548,47 @@ describe('instructions', () => {
     const text = instructions(bins, 'is this real?', false)
     expect(text).toContain('In claims, list what it asserts or promises as fact and what evidence it shows')
     expect(text).toContain('any call to action or sales pitch')
+  })
+})
+
+describe('watch budget', () => {
+  it('reserves each watch against the Gemini budget at the plan estimate', async () => {
+    mocks.generateContent.mockResolvedValueOnce(response())
+
+    await watchMedia({ source: videoSource(), plan: planWholeVideo(), focus: 'What happens?' })
+
+    expect(mocks.startCall).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'gemini', model: 'test-model', workload: 'watcher', estTokens: 2196 })
+    )
+  })
+
+  it('records the billed tokens and settles the reservation with them', async () => {
+    mocks.generateContent.mockResolvedValueOnce(response())
+
+    await watchMedia({ source: videoSource(), plan: planWholeVideo(), focus: 'What happens?' })
+
+    const usage = expect.objectContaining({ provider: 'gemini', workload: 'watcher', inputTokens: 321 })
+    expect(mocks.recordUsage).toHaveBeenCalledWith(usage)
+    expect(mocks.release).toHaveBeenCalledWith(usage)
+  })
+
+  it('sends nothing and fails as overloaded when the budget refuses the watch', async () => {
+    mocks.startCall.mockRejectedValueOnce(
+      new ProviderError({ provider: 'gemini', kind: 'quota_exhausted', message: 'local rpm budget' })
+    )
+
+    const result = await watchMedia({ source: videoSource(), plan: planWholeVideo(), focus: 'What happens?' })
+
+    expect(result).toMatchObject({ status: 'failed', reason: 'overloaded', calls: 0 })
+    expect(mocks.generateContent).not.toHaveBeenCalled()
+  })
+
+  it('releases without usage when Gemini throws', async () => {
+    mocks.generateContent.mockRejectedValueOnce(Object.assign(new Error('boom'), { status: 500 }))
+
+    await watchMedia({ source: videoSource(), plan: planWholeVideo(), focus: 'What happens?' })
+
+    expect(mocks.release).toHaveBeenCalledWith()
+    expect(mocks.recordUsage).not.toHaveBeenCalled()
   })
 })

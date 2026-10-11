@@ -2,15 +2,17 @@
  * Per-call budgets in front of every provider call, counted per model.
  *
  * A reply turn already reserves its whole ceiling of requests on the main model's shared limiter, in the Discord
- * layer (#167), so reply and watcher calls on the main model are not counted again here. Every other call takes its
- * own slot. A background call only gets capacity that still leaves one whole reply turn behind it: that is how
- * replies outrank background work without preempting anything already in flight.
+ * layer (#167), and roka.ts charges the turn's tokens, so reply and watcher calls on the main model are not counted
+ * again here. Every other call takes its own slot and charges its own model's minute at its estimate, settled to the
+ * provider's reported prompt tokens on release. A background call only gets capacity that still leaves one whole
+ * reply turn behind it: that is how replies outrank background work without preempting anything already in flight.
  */
 
 import { config } from '../../config.js'
 import { logger } from '../../utils/logger.js'
 import { __resetRateLimitersForTest, rateLimiterFor } from '../../utils/rateLimiter.js'
 import { estimateTokens } from '../../utils/tokens.js'
+import { __resetTokenBudgetForTest, tokenBucketFor } from '../tokenBudget.js'
 import type { ProviderId } from './profiles.js'
 import { ProviderError } from './providerError.js'
 import type { CallUsage, Workload } from './usage.js'
@@ -48,26 +50,41 @@ export function reserveCall(input: CallInput): CallReservation | BudgetDenial {
   // background work and cap a fallback that has never been capped.
   if (config.llm.main.key === 'legacy-gemini') return { release: () => {} }
 
-  const { provider, model, workload } = input
+  const { provider, model, workload, estTokens } = input
   const replySide = REPLY_SIDE.has(workload)
   const main = config.llm.main
-  // The Discord layer reserved this turn's whole ceiling on the main model's limiter (#167); counting each of its
-  // calls here as well would charge every reply twice.
+  // The Discord layer reserved this turn's whole ceiling on the main model's limiter (#167) and roka.ts charges its
+  // tokens once; counting each of its calls here as well would charge every reply twice.
   const coveredByTurn = replySide && main.provider === provider && main.model === model
   // A background call leaves one whole reply turn behind it, so the next reply is admitted rather than declined.
   const headroom = replySide ? 0 : config.gemini.maxLlmCalls
-  const limiter = rateLimiterFor({ provider, model, limits: routeLimits(provider, model) })
+  const limits = routeLimits(provider, model)
+  const limiter = rateLimiterFor({ provider, model, limits })
+  const tokens = coveredByTurn ? null : tokenBucketFor({ provider, model, limits })
 
   let denied: BudgetDenial['denied'] | null = null
   if (!coveredByTurn && limiter.remainingRpd < 1 + headroom) denied = 'rpd'
   else if (!coveredByTurn && limiter.remainingRpm < 1 + headroom) denied = 'rpm'
+  // Text replies are never refused on tokens: `rpm` bounds them, and attachment turns were gated before they began.
+  else if (!replySide && tokens && tokens.remaining() < estTokens + config.gemini.maxAttachmentTokens) denied = 'tpm'
   if (denied) {
     logger.info({ provider, model, workload, denied }, 'Budget declined a model call')
     return { denied }
   }
 
   if (!coveredByTurn) limiter.tryConsume()
-  return { release: () => {} }
+  tokens?.charge(estTokens)
+
+  let settled = false
+  return {
+    release: (usage) => {
+      if (settled) return
+      settled = true
+      if (!usage || !tokens) return
+      tokens.refund(estTokens)
+      tokens.charge(usage.inputTokens + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0))
+    }
+  }
 }
 
 /** Every adapter awaits this before each provider request; 1D gives it a body that can wait for a window to open. */
@@ -103,4 +120,5 @@ export function requestTokenEstimate(value: unknown): number {
 /** Test seam: every budget is module state, and one test's spent minute would refuse the next test's calls. */
 export function __resetBudgetsForTest(): void {
   __resetRateLimitersForTest()
+  __resetTokenBudgetForTest()
 }

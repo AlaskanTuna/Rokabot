@@ -26,6 +26,7 @@ vi.mock('../profiles.js', async (importOriginal) => ({
 
 import { closeDb } from '../../../storage/database.js'
 import { getSharedRateLimiter } from '../../../utils/rateLimiter.js'
+import { canAffordAttachments, chargeTokens, remainingTokensThisMinute, tokenBucketFor } from '../../tokenBudget.js'
 import {
   type BudgetReservation,
   type CallInput,
@@ -79,15 +80,36 @@ afterEach(() => {
 })
 
 describe('requests per model', () => {
-  it('counts a reply call on the main model against its turn reservation, not a second time', () => {
-    const limiter = getSharedRateLimiter()
-    const turn = limiter.reserveCalls(4)
+  it.each(['reply', 'watcher'] as const)(
+    'counts a %s call on the main model against its turn reservation, not a second time',
+    (workload) => {
+      const limiter = getSharedRateLimiter()
+      const turn = limiter.reserveCalls(4)
 
+      for (let call = 0; call < 4; call += 1) granted(reserveCall({ ...reply, workload }))
+      expect(limiter.remainingRpm).toBe(11)
+
+      turn?.release(4)
+      expect(limiter.remainingRpm).toBe(11)
+    }
+  )
+
+  it("grants a turn's reply calls on the main model after the turn took the minute's last slots", () => {
+    configState.llm.main.limits = { rpm: 4, rpd: 500, tpm: 125_000 }
+    __resetBudgetsForTest()
+    getSharedRateLimiter().reserveCalls(4)
+
+    expect(getSharedRateLimiter().remainingRpm).toBe(0)
     for (let call = 0; call < 4; call += 1) granted(reserveCall(reply))
-    expect(limiter.remainingRpm).toBe(11)
+  })
 
-    turn?.release(4)
-    expect(limiter.remainingRpm).toBe(11)
+  it("grants a turn's reply calls on the main model after the turn took the day's last unit", () => {
+    configState.llm.main.limits = { rpm: 1_000, rpd: 1, tpm: 125_000 }
+    __resetBudgetsForTest()
+    getSharedRateLimiter().reserveCalls(4)
+
+    expect(getSharedRateLimiter().remainingRpd).toBe(0)
+    for (let call = 0; call < 4; call += 1) granted(reserveCall(reply))
   })
 
   it('takes a slot of its own for a reply on the fallback model', () => {
@@ -125,6 +147,67 @@ describe('requests per model', () => {
     useRoutes(undefined)
 
     for (let call = 0; call < 500; call += 1) granted(reserveCall({ ...fallbackReply, workload: 'extraction' }))
+  })
+})
+
+describe('tokens per minute', () => {
+  it('never refuses a text reply on tokens', () => {
+    useRoutes({ tpm: 1_000 })
+
+    granted(reserveCall({ ...fallbackReply, estTokens: 200_000 }))
+    granted(reserveCall({ ...fallbackReply, estTokens: 200_000 }))
+
+    expect(tokenBucketFor({ provider: 'anthropic', model: 'test-paid', limits: { tpm: 1_000 } })?.remaining()).toBe(0)
+  })
+
+  it.each(['reply', 'watcher'] as const)(
+    'charges nothing per call for a %s on the main model, which its turn pays for',
+    (workload) => {
+      granted(reserveCall({ ...reply, workload, estTokens: 200_000 }))
+
+      expect(remainingTokensThisMinute()).toBe(125_000)
+    }
+  )
+
+  it('keeps a whole attachment turn of the minute free of background calls', () => {
+    chargeTokens(70_000)
+    granted(reserveCall({ ...extraction, estTokens: 5_000 }))
+
+    expect(reserveCall({ ...extraction, estTokens: 1 })).toEqual({ denied: 'tpm' })
+    expect(canAffordAttachments()).toBe(true)
+  })
+
+  it('settles the minute at what the provider reported', () => {
+    const call = granted(reserveCall({ ...extraction, estTokens: 10_000 }))
+
+    call.release({ ...extraction, inputTokens: 1_500, outputTokens: 40, cacheReadTokens: 500 })
+
+    expect(remainingTokensThisMinute()).toBe(125_000 - 2_000)
+  })
+
+  it('keeps the estimate when the call reported nothing', () => {
+    granted(reserveCall({ ...extraction, estTokens: 10_000 })).release()
+
+    expect(remainingTokensThisMinute()).toBe(125_000 - 10_000)
+  })
+
+  it('settles only once', () => {
+    const call = granted(reserveCall({ ...extraction, estTokens: 10_000 }))
+    const usage = { ...extraction, inputTokens: 2_000, outputTokens: 0 }
+
+    call.release(usage)
+    call.release(usage)
+
+    expect(remainingTokensThisMinute()).toBe(125_000 - 2_000)
+  })
+
+  it('never declines attachments for a main model with no tpm', () => {
+    configState.llm.main = { key: 'haiku', provider: 'anthropic', model: 'test-paid' }
+    __resetBudgetsForTest()
+
+    granted(reserveCall({ ...fallbackReply, estTokens: 1_000_000 }))
+
+    expect(canAffordAttachments()).toBe(true)
   })
 })
 

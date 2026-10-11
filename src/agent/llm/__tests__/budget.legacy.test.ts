@@ -7,7 +7,12 @@ vi.mock('../../../utils/logger.js', () => ({
 import { config } from '../../../config.js'
 import { closeDb } from '../../../storage/database.js'
 import { __resetRateLimitersForTest, getSharedRateLimiter } from '../../../utils/rateLimiter.js'
-import { __resetTokenBudgetForTest, remainingTokensThisMinute } from '../../tokenBudget.js'
+import {
+  __resetTokenBudgetForTest,
+  canAffordAttachments,
+  chargeTokens,
+  remainingTokensThisMinute
+} from '../../tokenBudget.js'
 import { __resetBudgetsForTest, reserveCall, startCall } from '../budget.js'
 
 /**
@@ -115,5 +120,25 @@ describe('legacy config under per-call budgets', () => {
     getSharedRateLimiter().reserveCalls(config.gemini.maxLlmCalls)?.release(0)
 
     expect(getSharedRateLimiter().remainingRpd).toBe(500)
+  })
+
+  it('charges no tokens per call on the legacy main, whatever the workload', () => {
+    const { provider, model } = config.llm.main
+    for (const workload of ['reply', 'watcher', 'extraction'] as const) {
+      reserveCall({ provider, model, workload, estTokens: 200_000 })
+    }
+
+    expect(remainingTokensThisMinute()).toBe(config.gemini.maxTokensPerMinute)
+  })
+
+  it('declines an attachment turn at the same token threshold as before', () => {
+    chargeTokens(config.gemini.maxTokensPerMinute - config.gemini.maxAttachmentTokens)
+    expect(canAffordAttachments()).toBe(true)
+
+    reserveCall({ provider: 'gemini', model: config.gemini.model, workload: 'reply', estTokens: 1_000 })
+    expect(canAffordAttachments()).toBe(true)
+
+    chargeTokens(1)
+    expect(canAffordAttachments()).toBe(false)
   })
 })

@@ -4,6 +4,7 @@ import type { MediaClip, MediaObservations } from '../types.js'
 
 vi.mock('../../../config.js', () => ({
   config: {
+    logging: { level: 'silent' },
     gemini: { apiKey: 'test-key', model: 'test-model', safetyThreshold: 'OFF' },
     media: { digestMaxOutputTokens: 1200, watchTimeoutMs: 20_000 }
   }

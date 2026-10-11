@@ -7,6 +7,8 @@ import {
   type Part
 } from '@google/genai'
 import { config } from '../../config.js'
+import { type BudgetReservation, startCall } from '../llm/budget.js'
+import { type CallUsage, recordUsage } from '../llm/usage.js'
 import { SAFETY_SETTINGS } from '../safetySettings.js'
 import { MEDIA_OBSERVATIONS_SCHEMA, formatClock, validateObservations } from './digest.js'
 import type { WatchWindow } from './plan.js'
@@ -177,6 +179,21 @@ function elapsedSince(startedAt: number): number {
   return Math.max(0, Date.now() - startedAt)
 }
 
+/** Gemini's prompt count includes cached tokens and excludes thoughts; the budget's buckets are disjoint. */
+function watchUsage(response: GenerateContentResponse): CallUsage {
+  const usage = response.usageMetadata
+  const cached = usage?.cachedContentTokenCount ?? 0
+  return {
+    provider: 'gemini',
+    model: config.gemini.model,
+    workload: 'watcher',
+    inputTokens: Math.max(0, (usage?.promptTokenCount ?? 0) - cached),
+    outputTokens: usage?.candidatesTokenCount ?? 0,
+    ...(usage?.thoughtsTokenCount ? { reasoningTokens: usage.thoughtsTokenCount } : {}),
+    ...(cached > 0 ? { cacheReadTokens: cached } : {})
+  }
+}
+
 export async function watchMedia(input: {
   source: WatchSource
   plan: Extract<CoveragePlan, { mode: 'whole' | 'skim' | 'focus' }>
@@ -194,11 +211,26 @@ export async function watchMedia(input: {
   let calls = 0
 
   for (let attempt = 0; attempt < 2; attempt++) {
+    let reservation: BudgetReservation
+    try {
+      reservation = await startCall({
+        provider: 'gemini',
+        model: config.gemini.model,
+        workload: 'watcher',
+        estTokens: input.plan.estimate,
+        signal: input.signal
+      })
+    } catch {
+      // Refused before anything was sent, so nothing was billed, and the turn's other watcher may still take it.
+      const reason = input.signal?.aborted ? 'timeout' : 'overloaded'
+      return { status: 'failed', reason, calls, watchMs: elapsedSince(startedAt) }
+    }
     let response: GenerateContentResponse
     try {
       calls++
       response = await getClient().models.generateContent(request)
     } catch (error) {
+      reservation.release()
       const reason = reasonFor(error, input.signal)
       // A 429 is Google's quota answer (including YouTube's daily limit), so only a 503 is worth a retry.
       if (reason === 'overloaded' && statusCode(error) === 503 && attempt === 0 && input.mayRetry?.() !== false) {
@@ -207,6 +239,9 @@ export async function watchMedia(input: {
       }
       return { status: 'failed', reason, calls, watchMs: elapsedSince(startedAt) }
     }
+    const usage = watchUsage(response)
+    recordUsage(usage)
+    reservation.release(usage)
 
     const billed = response.usageMetadata?.promptTokenCount
     let raw: unknown
