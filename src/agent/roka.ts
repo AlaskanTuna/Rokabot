@@ -390,7 +390,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   })
 
   logger.debug(
-    { model: config.gemini.model, sessionEvents: session.events?.length ?? 0, hasImages: imageParts.length > 0 },
+    { model: config.llm.main.model, sessionEvents: session.events?.length ?? 0, hasImages: imageParts.length > 0 },
     'Sending ADK request'
   )
 
