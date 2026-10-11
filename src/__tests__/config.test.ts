@@ -92,6 +92,10 @@ describe('config module', () => {
     vi.stubEnv('METRICS_RETENTION_DAYS', '')
     vi.stubEnv('DISCORD_MAX_MESSAGE_LENGTH', '')
     vi.stubEnv('SOCIAL_POSTS_ENABLED', '')
+    vi.stubEnv('ANTHROPIC_API_KEY', '')
+    vi.stubEnv('LLM_MAIN', '')
+    vi.stubEnv('LLM_FALLBACK', '')
+    vi.stubEnv('GEMINI_HEDGE_AFTER_MS', '')
   }
 
   it('throws if DISCORD_TOKEN is missing', async () => {
@@ -1071,7 +1075,9 @@ describe('config module', () => {
       { path: 'games.hangmanTimeoutMs', min: 1 },
       { path: 'games.shiritoriTimeoutMs', min: 1 },
       { path: 'games.shinyChance', min: 0, max: 1 },
-      { path: 'statusCycleMs', min: 1 }
+      { path: 'statusCycleMs', min: 1 },
+      { path: 'llm.hedgeAfterMs', min: 0 },
+      { path: 'llm.stickyMs', min: 0 }
     ]
 
     const { NUMERIC_BOUNDS } = await import('../config.js')
@@ -1250,5 +1256,83 @@ describe('config module', () => {
     await expect(() => import('../config.js')).rejects.toThrow(
       'Config value statusCycleMs must be a finite number, got: NaN (number)'
     )
+  })
+
+  it('synthesises the Gemini main and no fallback when config.yml has no llm block', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+
+    const { config } = await import('../config.js')
+
+    expect(config.llm).toMatchObject({
+      main: {
+        key: 'legacy-gemini',
+        provider: 'gemini',
+        model: 'gemini-3.5-flash-lite',
+        apiKey: 'test-api-key',
+        timeoutMs: 20_000,
+        maxOutputTokens: 500
+      },
+      fallback: null,
+      hedgeAfterMs: 5000,
+      stickyMs: 300_000,
+      monthlyBudgetUsd: {}
+    })
+    expect(config.llm.main.profile).toMatchObject({
+      provider: 'gemini',
+      model: 'gemini-3.5-flash-lite',
+      verified: true
+    })
+    expect(config.llm.main.effort).toBeUndefined()
+  })
+
+  it('synthesises the ModelScope fallback when MODELSCOPE_API_KEY is set', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('MODELSCOPE_API_KEY', 'test-modelscope-key')
+
+    const { config } = await import('../config.js')
+
+    expect(config.llm.fallback).toMatchObject({
+      key: 'legacy-fallback',
+      provider: 'modelscope',
+      model: 'Qwen/Qwen3.5-122B-A10B',
+      apiKey: 'test-modelscope-key',
+      baseUrl: 'https://api-inference.modelscope.ai/v1',
+      timeoutMs: 15_000
+    })
+    expect(config.llm.fallback?.profile.verified).toBe(true)
+  })
+
+  it('carries the existing env overrides into the legacy route, untested model ids included', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('MODELSCOPE_API_KEY', 'test-modelscope-key')
+    vi.stubEnv('GEMINI_MODEL', 'gemini-legacy-test')
+    vi.stubEnv('FALLBACK_MODEL', 'Qwen/legacy-test')
+    vi.stubEnv('GEMINI_TIMEOUT', '12345')
+    vi.stubEnv('GEMINI_HEDGE_AFTER_MS', '0')
+    withYamlOverride({ fallback: { stickyMs: 0, timeoutMs: 9000 } })
+
+    const { config } = await import('../config.js')
+
+    expect(config.llm.main).toMatchObject({
+      model: 'gemini-legacy-test',
+      timeoutMs: 12_345,
+      profile: { provider: 'gemini', model: 'gemini-legacy-test' }
+    })
+    expect(config.llm.fallback).toMatchObject({
+      model: 'Qwen/legacy-test',
+      timeoutMs: 9000,
+      profile: { provider: 'modelscope', model: 'Qwen/legacy-test' }
+    })
+    expect(config.llm).toMatchObject({ hedgeAfterMs: 0, stickyMs: 0 })
+  })
+
+  it('ships config.yml without an active llm block, so the Pi keeps the synthesised route', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { load } = await import('js-yaml')
+
+    expect(load(readFileSync('config.yml', 'utf8'))).not.toHaveProperty('llm')
   })
 })

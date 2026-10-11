@@ -7,6 +7,7 @@ import { load } from 'js-yaml'
 // Both are pure leaves — attachmentLimits.ts imports nothing and attachments.ts only node built-ins — so
 // reading them here derives the floor instead of restating it, and cannot close a cycle back into config.
 import { GEMINI_IMAGE_TOKENS } from './agent/attachmentLimits.js'
+import { MODEL_PROFILES, type ModelProfile, type ProviderId, profileFor } from './agent/llm/profiles.js'
 import { MAX_ATTACHMENTS } from './discord/attachments.js'
 
 function requiredEnv(key: string): string {
@@ -221,13 +222,76 @@ function memoryEnum<T extends string>(key: 'privacy' | 'recall', envKey: string,
   throw new Error(`${source} must be ${allowed}, got: ${String(value)}`)
 }
 
+export interface ResolvedModel {
+  /** The llm.models key, e.g. 'haiku'; 'legacy-gemini' / 'legacy-fallback' when synthesised. */
+  key: string
+  provider: ProviderId
+  model: string
+  profile: ModelProfile
+  apiKey: string
+  baseUrl?: string
+  timeoutMs: number
+  maxOutputTokens: number
+  effort?: string
+  limits?: { rpm?: number; rpd?: number; tpm?: number }
+}
+
+export interface LlmConfig {
+  main: ResolvedModel
+  fallback: ResolvedModel | null
+  hedgeAfterMs: number
+  stickyMs: number
+  monthlyBudgetUsd: Partial<Record<ProviderId, number>>
+}
+
+interface LegacyModelSettings {
+  gemini: { apiKey: string; model: string; timeout: number; maxOutputTokens: number; hedgeAfterMs: number }
+  fallback: { apiKey: string | undefined; model: string; baseUrl: string; timeoutMs: number; stickyMs: number }
+}
+
+// Inherits the family's tested capabilities so a GEMINI_MODEL or FALLBACK_MODEL override keeps working as it
+// does today; D12's tested-profile rule applies to llm.models entries only.
+function legacyProfile(provider: ProviderId, model: string): ModelProfile {
+  const family = MODEL_PROFILES.find((profile) => profile.provider === provider)
+  if (!family) throw new Error(`No ${provider} profile to synthesise the legacy route from`)
+  return profileFor(provider, model) ?? { ...family, model }
+}
+
+function legacyLlm(settings: LegacyModelSettings): LlmConfig {
+  return {
+    main: {
+      key: 'legacy-gemini',
+      provider: 'gemini',
+      model: settings.gemini.model,
+      profile: legacyProfile('gemini', settings.gemini.model),
+      apiKey: settings.gemini.apiKey,
+      timeoutMs: settings.gemini.timeout,
+      maxOutputTokens: settings.gemini.maxOutputTokens
+    },
+    fallback: settings.fallback.apiKey
+      ? {
+          key: 'legacy-fallback',
+          provider: 'modelscope',
+          model: settings.fallback.model,
+          profile: legacyProfile('modelscope', settings.fallback.model),
+          apiKey: settings.fallback.apiKey,
+          baseUrl: settings.fallback.baseUrl,
+          timeoutMs: settings.fallback.timeoutMs,
+          maxOutputTokens: settings.gemini.maxOutputTokens
+        }
+      : null,
+    hedgeAfterMs: settings.gemini.hedgeAfterMs,
+    stickyMs: settings.fallback.stickyMs,
+    monthlyBudgetUsd: {}
+  }
+}
+
 const geminiModel = envString('GEMINI_MODEL') ?? yaml.gemini?.model ?? 'gemini-2.0-flash-lite'
 const memoryBufferSize = envInt('MEMORY_BUFFER_SIZE') ?? yaml.memory?.bufferSize ?? 30
 const requestedEpisodeMaxMessages = yaml.memory?.episodeMaxMessages ?? 25
 const episodeMaxMessages = Math.min(requestedEpisodeMaxMessages, memoryBufferSize - 3)
 
-/** Merged config: env overrides > config.yml > hardcoded defaults */
-export const config = {
+const baseConfig = {
   jev: {
     apiKey: envString('TYPESAFE_API_KEY'),
     model: envString('JEV_MODEL') ?? yaml.jev?.model ?? 'jev-1.13.0',
@@ -393,6 +457,9 @@ export const config = {
   timezone: (envString('TZ') ?? yaml.timezone) as string | undefined
 } as const
 
+/** Merged config: env overrides > config.yml > hardcoded defaults */
+export const config = { ...baseConfig, llm: legacyLlm(baseConfig) } as const
+
 /**
  * Bounds for every numeric tunable, env-overridable or yaml-only, re-derived from resolved config
  * values so a dropped or mis-wired row shows up in `NUMERIC_BOUNDS`, not just at runtime. min: 1
@@ -549,7 +616,9 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'games.hangmanTimeoutMs', value: config.games.hangmanTimeoutMs, min: 1 },
   { path: 'games.shiritoriTimeoutMs', value: config.games.shiritoriTimeoutMs, min: 1 },
   { path: 'games.shinyChance', value: config.games.shinyChance, min: 0, max: 1 },
-  { path: 'statusCycleMs', value: config.statusCycleMs, min: 1 }
+  { path: 'statusCycleMs', value: config.statusCycleMs, min: 1 },
+  { path: 'llm.hedgeAfterMs', value: config.llm.hedgeAfterMs, min: 0 },
+  { path: 'llm.stickyMs', value: config.llm.stickyMs, min: 0 }
 ]
 
 for (const { path, value, min, max } of NUMERIC_BOUNDS) {
