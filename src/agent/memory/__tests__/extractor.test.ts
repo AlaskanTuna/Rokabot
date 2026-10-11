@@ -2,15 +2,9 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 const mocks = vi.hoisted(() => ({
   admitEpisode: vi.fn(),
-  generateContent: vi.fn(),
+  modelReply: vi.fn(),
+  generateObject: vi.fn(),
   judgeEpisodeOperations: vi.fn()
-}))
-
-vi.mock('@google/genai', async (importOriginal) => ({
-  ...(await importOriginal<object>()),
-  GoogleGenAI: class {
-    models = { generateContent: mocks.generateContent }
-  }
 }))
 
 vi.mock('../../../config.js', () => ({
@@ -31,12 +25,14 @@ vi.mock('../../../config.js', () => ({
 
 vi.mock('../admission.js', () => ({ admitEpisode: mocks.admitEpisode }))
 vi.mock('../../jev/judgments.js', () => ({ judgeEpisodeOperations: mocks.judgeEpisodeOperations }))
+vi.mock('../../llm/generateObject.js', () => ({ generateObject: mocks.generateObject }))
 
 import { config } from '../../../config.js'
 import { closeDb, getDb } from '../../../storage/database.js'
 import type { ExtractionEpisode } from '../../../storage/extractionQueue.js'
 import { JevUnavailableError } from '../extractionErrors.js'
 import { startRunTrace } from '../extractionRun.js'
+import { EXTRACTION_RESPONSE_SCHEMA, ExtractionOutputSchema } from '../extractionSchema.js'
 import { extractEpisode, runEpisodePipeline, verifyAndApplyOperations } from '../extractor.js'
 import { assertClaim, assertGuildClaim, getActiveClaims } from '../memoryClaims.js'
 
@@ -48,7 +44,23 @@ beforeAll(() => {
 beforeEach(() => {
   mocks.admitEpisode.mockReset()
   mocks.admitEpisode.mockResolvedValue({ admitted: true, reason: 'admitted', probability: 0.8, inputTokens: 30 })
-  mocks.generateContent.mockReset()
+  mocks.modelReply.mockReset()
+  mocks.generateObject.mockReset()
+  mocks.generateObject.mockImplementation(async (request: { workload: string }) => {
+    const answer = (await mocks.modelReply(request)) as { text: string; usageMetadata?: { promptTokenCount?: number } }
+    return {
+      value: JSON.parse(answer.text),
+      provider: 'gemini',
+      model: 'gemini-extraction-test',
+      usage: {
+        provider: 'gemini',
+        model: 'gemini-extraction-test',
+        workload: request.workload,
+        inputTokens: answer.usageMetadata?.promptTokenCount ?? 0,
+        outputTokens: 0
+      }
+    }
+  })
   mocks.judgeEpisodeOperations.mockReset()
   getDb().exec(
     'DELETE FROM memory_events; DELETE FROM memory_evidence; DELETE FROM memory_claim; DELETE FROM jev_events;'
@@ -96,7 +108,7 @@ describe('runEpisodePipeline', () => {
       appliedOps: 0,
       duplicateOps: 0
     })
-    expect(mocks.generateContent).not.toHaveBeenCalled()
+    expect(mocks.modelReply).not.toHaveBeenCalled()
     expect(trace).toMatchObject({
       stage: 'admission',
       outcome: 'below_threshold',
@@ -129,12 +141,12 @@ describe('runEpisodePipeline', () => {
     const trace = startRunTrace(queueJob, 1)
 
     await expect(runEpisodePipeline(queueJob, trace)).rejects.toBeInstanceOf(JevUnavailableError)
-    expect(mocks.generateContent).not.toHaveBeenCalled()
+    expect(mocks.modelReply).not.toHaveBeenCalled()
     expect(trace).toMatchObject({ stage: 'admission', outcome: 'jev_unavailable' })
   })
 
   it('extracts only after admission and returns its summary and write counts', async () => {
-    mocks.generateContent.mockResolvedValueOnce({
+    mocks.modelReply.mockResolvedValueOnce({
       text: JSON.stringify({ ops: [{ op: 'noop' }], summary: 'Alice likes tea.' })
     })
     const trace = startRunTrace(queueJob, 1)
@@ -151,8 +163,8 @@ describe('runEpisodePipeline', () => {
       jobId: 1,
       episode
     })
-    expect(mocks.generateContent).toHaveBeenCalledOnce()
-    expect(mocks.generateContent.mock.calls[0][0].contents).toContain('[bot-1|Roka (bot context only)]')
+    expect(mocks.modelReply).toHaveBeenCalledOnce()
+    expect(mocks.modelReply.mock.calls[0][0].prompt).toContain('[bot-1|Roka (bot context only)]')
     expect(trace).toMatchObject({ stage: 'applied', outcome: 'noop', tokens: 30 })
     expect(trace.ops).toEqual({
       proposed: 0,
@@ -169,7 +181,7 @@ describe('runEpisodePipeline', () => {
   })
 
   it('traces the written ops and sums the tokens of admission, extraction and verification', async () => {
-    mocks.generateContent.mockResolvedValueOnce({
+    mocks.modelReply.mockResolvedValueOnce({
       text: JSON.stringify({
         ops: [
           { op: 'add', subject: { kind: 'user', userId: 'user-1' }, predicate: 'likes', value: 'tea', tense: 'current' }
@@ -213,7 +225,7 @@ describe('runEpisodePipeline', () => {
     const subject = { kind: 'user', userId: 'user-1' }
     const chess = claim('hobby', 'chess')
     const cooking = claim('teasing_habit', 'teases friends about their cooking')
-    mocks.generateContent.mockResolvedValueOnce({
+    mocks.modelReply.mockResolvedValueOnce({
       text: JSON.stringify({
         ops: [
           { op: 'retract', subject, predicate: 'hobby', value: 'chess' },
@@ -271,7 +283,7 @@ describe('runEpisodePipeline', () => {
   })
 
   it('stops the trace at extraction when Gemini fails', async () => {
-    mocks.generateContent.mockRejectedValueOnce(new Error('overloaded'))
+    mocks.modelReply.mockRejectedValueOnce(new Error('overloaded'))
     const trace = startRunTrace(queueJob, 1)
 
     await expect(runEpisodePipeline(queueJob, trace)).rejects.toThrow('overloaded')
@@ -282,7 +294,7 @@ describe('runEpisodePipeline', () => {
 })
 
 describe('extractEpisode', () => {
-  it('uses one typed Gemini request with delta-only subjects, active claims, context, and returns the summary', async () => {
+  it('asks generateObject for one extraction with delta-only subjects, active claims and context', async () => {
     assertClaim({
       guildId: 'guild-1',
       subjectUserId: 'user-1',
@@ -353,35 +365,69 @@ describe('extractEpisode', () => {
       ],
       summary: 'Alex enjoys tea, and Rin plays chess.'
     }
-    mocks.generateContent.mockResolvedValueOnce({ text: JSON.stringify(output) })
+    mocks.modelReply.mockResolvedValueOnce({ text: JSON.stringify(output) })
 
-    await expect(extractEpisode({ guildId: 'guild-1', channelId: 'channel-1', episode })).resolves.toEqual(output)
+    await expect(extractEpisode({ guildId: 'guild-1', channelId: 'channel-1', episode })).resolves.toEqual({
+      ...output,
+      promptTokens: 0
+    })
 
-    expect(mocks.generateContent).toHaveBeenCalledOnce()
-    const request = mocks.generateContent.mock.calls[0][0]
-    expect(request.model).toBe('gemini-extraction-test')
-    expect(request.config).toMatchObject({ responseMimeType: 'application/json', responseSchema: expect.any(Object) })
-    expect(request.contents).toContain('Delta messages:')
-    expect(request.contents).toContain('[user-1|Alex]: I like tea')
-    expect(request.contents).toContain('[bot-1|Roka (bot context only)]: Nice!')
-    expect(request.contents).toContain('Context (background only, never a subject):')
-    expect(request.contents).toContain('[context-user|Context User]: I like running')
-    expect(request.contents).toContain('Allowed human user IDs: user-1, user-2')
-    expect(request.contents).toContain('"userId": "user-1"')
-    expect(request.contents).toContain('"predicate": "likes"')
-    expect(request.contents).not.toContain('needs review only')
-    expect(request.contents).not.toContain('candidate only')
-    expect(request.contents).toContain(
+    expect(mocks.modelReply).toHaveBeenCalledOnce()
+    const request = mocks.modelReply.mock.calls[0][0]
+    expect(request.schema).toBe(ExtractionOutputSchema)
+    expect(request.legacyResponseSchema).toBe(EXTRACTION_RESPONSE_SCHEMA)
+    expect(request).toMatchObject({ workload: 'extraction', maxOutputTokens: 700 })
+    expect(request.prompt).toContain('Delta messages:')
+    expect(request.prompt).toContain('[user-1|Alex]: I like tea')
+    expect(request.prompt).toContain('[bot-1|Roka (bot context only)]: Nice!')
+    expect(request.prompt).toContain('Context (background only, never a subject):')
+    expect(request.prompt).toContain('[context-user|Context User]: I like running')
+    expect(request.prompt).toContain('Allowed human user IDs: user-1, user-2')
+    expect(request.prompt).toContain('"userId": "user-1"')
+    expect(request.prompt).toContain('"predicate": "likes"')
+    expect(request.prompt).not.toContain('needs review only')
+    expect(request.prompt).not.toContain('candidate only')
+    expect(request.prompt).toContain(
       'If a member restates a current durable fact, return add with the same subject, predicate and exact value as its existing claim.'
     )
-    expect(request.contents).toContain('Never add a rewording.')
-    expect(request.contents).toContain('Return noop only when no durable fact, change or retraction came up.')
-    expect(request.contents).not.toContain('context only claim')
-    expect(request.contents).toContain('one-to-two sentence third-person summary')
+    expect(request.prompt).toContain('Never add a rewording.')
+    expect(request.prompt).toContain('Return noop only when no durable fact, change or retraction came up.')
+    expect(request.prompt).not.toContain('context only claim')
+    expect(request.prompt).toContain('one-to-two sentence third-person summary')
+  })
+
+  it('counts cached prompt tokens in the prompt tokens it reports', async () => {
+    const output = { ops: [{ op: 'noop' }], summary: 'A fact.' }
+    mocks.generateObject.mockResolvedValueOnce({
+      value: output,
+      provider: 'gemini',
+      model: 'gemini-extraction-test',
+      usage: {
+        provider: 'gemini',
+        model: 'gemini-extraction-test',
+        workload: 'extraction',
+        inputTokens: 20,
+        outputTokens: 5,
+        cacheReadTokens: 100
+      }
+    })
+    const episode: ExtractionEpisode = {
+      messages: [
+        { messageId: 'm-1', userId: 'user-1', displayName: 'Alex', content: 'I like tea', timestamp: 1, isBot: false }
+      ],
+      context: [],
+      startedAt: 1,
+      endedAt: 1
+    }
+
+    await expect(extractEpisode({ guildId: 'guild-1', channelId: 'channel-1', episode })).resolves.toEqual({
+      ...output,
+      promptTokens: 120
+    })
   })
 
   it('asks for a member’s own occupation and keeps employer, workplace, and school names forbidden', async () => {
-    mocks.generateContent.mockResolvedValueOnce({ text: JSON.stringify({ ops: [{ op: 'noop' }], summary: 'A fact.' }) })
+    mocks.modelReply.mockResolvedValueOnce({ text: JSON.stringify({ ops: [{ op: 'noop' }], summary: 'A fact.' }) })
     const episode: ExtractionEpisode = {
       messages: [
         { messageId: 'm-1', userId: 'user-1', displayName: 'Bea', content: 'I work nights', timestamp: 1, isBot: false }
@@ -393,14 +439,14 @@ describe('extractEpisode', () => {
 
     await extractEpisode({ guildId: 'guild-1', channelId: 'channel-1', episode })
 
-    const prompt = mocks.generateContent.mock.calls[0][0].contents
+    const prompt = mocks.modelReply.mock.calls[0][0].prompt
     expect(prompt).toContain('general_occupation')
     expect(prompt).toContain('never the employer, workplace, or location')
     expect(prompt).toContain('names of schools, employers, or workplaces')
   })
 
   it('teaches Gemini tense, retract and the most specific predicate', async () => {
-    mocks.generateContent.mockResolvedValueOnce({ text: JSON.stringify({ ops: [{ op: 'noop' }], summary: 'A fact.' }) })
+    mocks.modelReply.mockResolvedValueOnce({ text: JSON.stringify({ ops: [{ op: 'noop' }], summary: 'A fact.' }) })
     const episode: ExtractionEpisode = {
       messages: [
         { messageId: 'm-1', userId: 'user-1', displayName: 'Ari', content: 'I quit chess', timestamp: 1, isBot: false }
@@ -412,7 +458,7 @@ describe('extractEpisode', () => {
 
     await extractEpisode({ guildId: 'guild-1', channelId: 'channel-1', episode })
 
-    const prompt = mocks.generateContent.mock.calls[0][0].contents
+    const prompt = mocks.modelReply.mock.calls[0][0].prompt
     expect(prompt).toContain(
       'Every user add and update has a tense: current if it is true of them now, past if it was true before but not now ("back when I was a nurse", "I used to play chess"), planned if they intend it.'
     )
@@ -452,7 +498,7 @@ describe('extractEpisode', () => {
       value: 'tea',
       sourceKind: 'explicit'
     })
-    mocks.generateContent.mockResolvedValueOnce({ text: JSON.stringify({ ops: [{ op: 'noop' }], summary: 'A fact.' }) })
+    mocks.modelReply.mockResolvedValueOnce({ text: JSON.stringify({ ops: [{ op: 'noop' }], summary: 'A fact.' }) })
     const episode: ExtractionEpisode = {
       messages: [
         { messageId: 'm-1', userId: 'user-1', displayName: 'Ari', content: 'Hello', timestamp: 1, isBot: false }
@@ -464,7 +510,7 @@ describe('extractEpisode', () => {
 
     await extractEpisode({ guildId: 'guild-1', channelId: 'channel-1', episode })
 
-    const prompt: string = mocks.generateContent.mock.calls[0][0].contents
+    const prompt: string = mocks.modelReply.mock.calls[0][0].prompt
     const block = prompt.slice(
       prompt.indexOf('Current active claims:\n') + 'Current active claims:\n'.length,
       prompt.indexOf('\n\nCurrent active guild facts:')
@@ -479,7 +525,7 @@ describe('extractEpisode', () => {
   })
 
   it('requires the day but leaves the year to the messages', async () => {
-    mocks.generateContent.mockResolvedValueOnce({ text: JSON.stringify({ ops: [{ op: 'noop' }], summary: 'A fact.' }) })
+    mocks.modelReply.mockResolvedValueOnce({ text: JSON.stringify({ ops: [{ op: 'noop' }], summary: 'A fact.' }) })
     const episode: ExtractionEpisode = {
       messages: [
         { messageId: 'm-1', userId: 'user-1', displayName: 'Ari', content: 'Movie night', timestamp: 1, isBot: false }
@@ -491,7 +537,7 @@ describe('extractEpisode', () => {
 
     await extractEpisode({ guildId: 'guild-1', channelId: 'channel-1', episode })
 
-    expect(mocks.generateContent.mock.calls[0][0].contents).toContain(
+    expect(mocks.modelReply.mock.calls[0][0].prompt).toContain(
       'give the month and day, plus the year only when the messages state it'
     )
   })
@@ -805,7 +851,7 @@ describe('extractEpisode channel privacy', () => {
       sourceKind: 'explicit',
       channelId: 'other'
     })
-    mocks.generateContent.mockResolvedValue({ text: JSON.stringify({ ops: [{ op: 'noop' }], summary: 'A fact.' }) })
+    mocks.modelReply.mockResolvedValue({ text: JSON.stringify({ ops: [{ op: 'noop' }], summary: 'A fact.' }) })
   })
 
   afterEach(() => {
@@ -817,7 +863,7 @@ describe('extractEpisode channel privacy', () => {
 
     await extractEpisode({ guildId: 'guild-1', channelId: 'channel-1', episode })
 
-    const prompt = mocks.generateContent.mock.calls[0][0].contents
+    const prompt = mocks.modelReply.mock.calls[0][0].prompt
     expect(prompt).toContain('tea said here')
     expect(prompt).toContain('guild rule said here')
     expect(prompt).not.toContain('tea said elsewhere')
@@ -829,7 +875,7 @@ describe('extractEpisode channel privacy', () => {
 
     await extractEpisode({ guildId: 'guild-1', channelId: 'channel-1', episode })
 
-    const prompt = mocks.generateContent.mock.calls[0][0].contents
+    const prompt = mocks.modelReply.mock.calls[0][0].prompt
     expect(prompt).toContain('tea said here')
     expect(prompt).not.toContain('tea said elsewhere')
   })
@@ -839,7 +885,7 @@ describe('extractEpisode channel privacy', () => {
 
     await extractEpisode({ guildId: 'guild-1', channelId: 'channel-1', episode })
 
-    const prompt = mocks.generateContent.mock.calls[0][0].contents
+    const prompt = mocks.modelReply.mock.calls[0][0].prompt
     expect(prompt).toContain('tea said here')
     expect(prompt).toContain('tea said elsewhere')
     expect(prompt).toContain('guild rule said here')

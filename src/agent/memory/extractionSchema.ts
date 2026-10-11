@@ -2,21 +2,58 @@ import { Type } from '@google/genai'
 import { z } from 'zod'
 import { GUILD_PREDICATES, type GuildPredicateId, PREDICATES, type PredicateId } from './predicates.js'
 
+type DatedGuildPredicateId = 'upcoming_event' | 'plan'
+type UndatedGuildPredicateId = Exclude<GuildPredicateId, DatedGuildPredicateId>
+
+const DATED_GUILD_PREDICATES: readonly DatedGuildPredicateId[] = ['upcoming_event', 'plan']
+const UNDATED_GUILD_PREDICATES = (Object.keys(GUILD_PREDICATES) as GuildPredicateId[]).filter(
+  (predicate): predicate is UndatedGuildPredicateId =>
+    !(DATED_GUILD_PREDICATES as readonly string[]).includes(predicate)
+)
+
 const UserSubjectSchema = z.object({ kind: z.literal('user'), userId: z.string().min(1) }).strict()
 const GuildSubjectSchema = z.object({ kind: z.literal('guild') }).strict()
 const PredicateSchema = z.enum(Object.keys(PREDICATES) as [PredicateId, ...PredicateId[]])
 const GuildPredicateSchema = z.enum(Object.keys(GUILD_PREDICATES) as [GuildPredicateId, ...GuildPredicateId[]])
+const DatedGuildPredicateSchema = z.enum(DATED_GUILD_PREDICATES as [DatedGuildPredicateId, ...DatedGuildPredicateId[]])
+const UndatedGuildPredicateSchema = z.enum(
+  UNDATED_GUILD_PREDICATES as [UndatedGuildPredicateId, ...UndatedGuildPredicateId[]]
+)
 const TenseSchema = z.enum(['current', 'past', 'planned'])
-const GuildFactDateSchema = z
-  .object({
-    year: z.number().int().min(1).max(9999).optional(),
-    month: z.number().int().min(1).max(12).optional(),
-    day: z.number().int().min(1).max(31).optional(),
-    weekday: z.enum(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']).optional(),
-    relative: z.enum(['today', 'tomorrow', 'this_week', 'next_week', 'this_month', 'next_month']).optional()
-  })
-  .strict()
-  .refine((date) => Object.values(date).some((value) => value !== undefined))
+const ExistingIdSchema = z.number().int().min(1)
+
+const YearSchema = z
+  .number()
+  .int()
+  .min(1)
+  .max(9999)
+  .describe('The year, only when the messages state one. Omit it otherwise.')
+const MonthSchema = z.number().int().min(1).max(12).describe('The month, 1-12.')
+// One shape per way the messages can name a date, so a constrained decoder cannot invent a day for a month.
+const GuildFactDateSchema = z.union([
+  z
+    .object({
+      year: YearSchema.optional(),
+      month: MonthSchema,
+      day: z.number().int().min(1).max(31).describe('The day of the month, 1-31.')
+    })
+    .strict()
+    .describe('A calendar date named by the messages. Give the month and day whenever the messages name a day.'),
+  z
+    .object({ year: YearSchema.optional(), month: MonthSchema })
+    .strict()
+    .describe('Use this only when the messages name a month but no day. Never invent a day to fill this shape in.'),
+  z
+    .object({
+      relative: z.enum(['today', 'tomorrow', 'this_week', 'next_week', 'this_month', 'next_month']),
+      weekday: z
+        .enum(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'])
+        .optional()
+        .describe('The day of the week, only with this_week or next_week.')
+    })
+    .strict()
+    .describe('A date given only relative to today. Use this when the messages give no calendar date or month.')
+])
 
 const AddOperationSchema = z
   .object({
@@ -32,7 +69,7 @@ const UpdateOperationSchema = z
   .object({
     op: z.literal('update'),
     subject: UserSubjectSchema,
-    existingId: z.number().int().positive(),
+    existingId: ExistingIdSchema,
     predicate: PredicateSchema,
     value: z.string(),
     tense: TenseSchema,
@@ -43,7 +80,7 @@ const RemoveOperationSchema = z
   .object({
     op: z.literal('remove'),
     subject: UserSubjectSchema,
-    existingId: z.number().int().positive(),
+    existingId: ExistingIdSchema,
     predicate: PredicateSchema,
     value: z.string()
   })
@@ -56,44 +93,51 @@ export const RetractOperationSchema = z
     value: z.string()
   })
   .strict()
-
-function requireEventDate(
-  operation: { predicate: GuildPredicateId; date?: GuildFactDate },
-  context: z.RefinementCtx
-): void {
-  if ((operation.predicate === 'upcoming_event' || operation.predicate === 'plan') && !operation.date) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: 'Guild events and plans require a date' })
-  }
-}
-
-const GuildAddOperationSchema = z
+const DatedGuildAddOperationSchema = z
   .object({
     op: z.literal('add'),
     subject: GuildSubjectSchema,
-    predicate: GuildPredicateSchema,
+    predicate: DatedGuildPredicateSchema,
     value: z.string(),
-    date: GuildFactDateSchema.optional()
+    date: GuildFactDateSchema
   })
   .strict()
-  .superRefine(requireEventDate)
-const GuildUpdateOperationSchema = z
+const DatedGuildUpdateOperationSchema = z
   .object({
     op: z.literal('update'),
     subject: GuildSubjectSchema,
-    existingId: z.number().int().positive(),
-    predicate: GuildPredicateSchema,
+    existingId: ExistingIdSchema,
+    predicate: DatedGuildPredicateSchema,
     value: z.string(),
-    date: GuildFactDateSchema.optional()
+    date: GuildFactDateSchema
   })
   .strict()
-  .superRefine(requireEventDate)
 const GuildRemoveOperationSchema = z
   .object({
     op: z.literal('remove'),
     subject: GuildSubjectSchema,
-    existingId: z.number().int().positive(),
+    existingId: ExistingIdSchema,
     predicate: GuildPredicateSchema,
     value: z.string()
+  })
+  .strict()
+const UndatedGuildAddOperationSchema = z
+  .object({
+    op: z.literal('add'),
+    subject: GuildSubjectSchema,
+    predicate: UndatedGuildPredicateSchema,
+    value: z.string(),
+    date: GuildFactDateSchema.optional()
+  })
+  .strict()
+const UndatedGuildUpdateOperationSchema = z
+  .object({
+    op: z.literal('update'),
+    subject: GuildSubjectSchema,
+    existingId: ExistingIdSchema,
+    predicate: UndatedGuildPredicateSchema,
+    value: z.string(),
+    date: GuildFactDateSchema.optional()
   })
   .strict()
 const NoopOperationSchema = z.object({ op: z.literal('noop') }).strict()
@@ -106,9 +150,11 @@ export const ExtractionOutputSchema = z
         UpdateOperationSchema,
         RemoveOperationSchema,
         RetractOperationSchema,
-        GuildAddOperationSchema,
-        GuildUpdateOperationSchema,
+        DatedGuildAddOperationSchema,
+        DatedGuildUpdateOperationSchema,
         GuildRemoveOperationSchema,
+        UndatedGuildAddOperationSchema,
+        UndatedGuildUpdateOperationSchema,
         NoopOperationSchema
       ])
     ),
@@ -289,16 +335,4 @@ export const EXTRACTION_RESPONSE_SCHEMA = {
     summary: { type: Type.STRING }
   },
   required: ['ops', 'summary']
-}
-
-export function parseExtractionOutput(text: string): ExtractionOutput {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(text)
-  } catch {
-    throw new Error('Memory extraction returned invalid JSON')
-  }
-  const result = ExtractionOutputSchema.safeParse(parsed)
-  if (!result.success) throw new Error('Memory extraction output failed schema validation')
-  return result.data
 }

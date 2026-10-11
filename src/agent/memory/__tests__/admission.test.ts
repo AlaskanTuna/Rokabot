@@ -6,13 +6,18 @@ const mocks = vi.hoisted(() => ({
   systemOne: vi.fn(),
   record: vi.fn(),
   warn: vi.fn(),
-  config: { memory: { admitThreshold: 0.5 }, jev: { memoryTimeoutMs: 5_000 } }
+  judgeWithModel: vi.fn(),
+  config: {
+    memory: { admitThreshold: 0.5, modelAdmitThreshold: 0.7, judge: 'jev' as string },
+    jev: { memoryTimeoutMs: 5_000 }
+  }
 }))
 
 vi.mock('../../jev/client.js', () => ({ getJevClient: () => mocks.client }))
 vi.mock('../../../storage/jevEventStore.js', () => ({ recordJevEvent: mocks.record }))
 vi.mock('../../../utils/logger.js', () => ({ logger: { warn: mocks.warn } }))
 vi.mock('../../../config.js', () => ({ config: mocks.config }))
+vi.mock('../../jev/modelJudge.js', () => ({ judgeWithModel: mocks.judgeWithModel }))
 
 import { admitEpisode } from '../admission.js'
 import { precheckEpisode } from '../episodePrecheck.js'
@@ -35,6 +40,8 @@ function setJudgment(noul: number, inputTokens = 14) {
 describe('passive memory admission', () => {
   beforeEach(() => {
     mocks.client = { systemOne: mocks.systemOne }
+    mocks.config.memory.judge = 'jev'
+    mocks.judgeWithModel.mockReset()
     mocks.systemOne.mockReset()
     mocks.record.mockReset()
     mocks.warn.mockReset()
@@ -151,5 +158,32 @@ describe('passive memory admission', () => {
       admitEpisode({ guildId: 'g-1', channelId: 'c-1', episode: episodeWith([line('I like tea')]) })
     ).resolves.toEqual({ admitted: false, reason: 'jev_unavailable', probability: null, inputTokens: 0 })
     expect(mocks.record).not.toHaveBeenCalled()
+  })
+
+  it('holds a main-model judgment to its own threshold and records who judged it', async () => {
+    mocks.client = null
+    mocks.config.memory.judge = 'model'
+    mocks.judgeWithModel.mockResolvedValueOnce({
+      answers: { lasting_fact: 0.6 },
+      latencyMs: 9,
+      inputTokens: 80,
+      judge: 'anthropic:claude-haiku-5-5'
+    })
+    const episode = episodeWith([line('I have been learning the cello for a year now')])
+
+    await expect(admitEpisode({ guildId: 'g-1', channelId: 'c-1', episode })).resolves.toEqual({
+      admitted: false,
+      reason: 'below_threshold',
+      probability: 0.6,
+      inputTokens: 80
+    })
+    expect(mocks.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'admission',
+        probability: 0.6,
+        applied: false,
+        judge: 'anthropic:claude-haiku-5-5'
+      })
+    )
   })
 })

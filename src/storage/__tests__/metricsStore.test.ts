@@ -134,7 +134,8 @@ describe('metricsStore', () => {
       'input_tokens',
       'baseline',
       'created_at',
-      'job_id'
+      'job_id',
+      'judge'
     ])
     expect(responseIndexes.map((index) => index.name)).toContain('idx_response_events_guild_ts')
     expect(extractionIndexes.map((index) => index.name)).toContain('idx_extraction_events_guild_ts')
@@ -214,7 +215,8 @@ describe('metricsStore', () => {
       input_tokens: 24,
       baseline: 'playful',
       created_at: now,
-      job_id: null
+      job_id: null,
+      judge: null
     })
     vi.restoreAllMocks()
   })

@@ -1,6 +1,6 @@
 import type { LlmRequest } from '@google/adk'
 import { describe, expect, it, vi } from 'vitest'
-import { type CallUsage, WORKLOAD_LABEL, onUsage, recordUsage, workloadOf } from '../usage.js'
+import { type CallUsage, WORKLOAD_LABEL, onUsage, promptTokenTotal, recordUsage, workloadOf } from '../usage.js'
 
 const call: CallUsage = {
   provider: 'anthropic',
@@ -47,5 +47,11 @@ describe('usage', () => {
     expect(workloadOf(labelled)).toBe('extraction')
     expect(workloadOf(unknown)).toBe('reply')
     expect(workloadOf({ contents: [] } as unknown as LlmRequest)).toBe('reply')
+  })
+
+  it('totals uncached, cache-read and cache-write input tokens into one prompt size', () => {
+    expect(promptTokenTotal(call)).toBe(10)
+    expect(promptTokenTotal({ ...call, cacheReadTokens: 100 })).toBe(110)
+    expect(promptTokenTotal({ ...call, cacheReadTokens: 100, cacheWriteTokens: 40 })).toBe(150)
   })
 })
