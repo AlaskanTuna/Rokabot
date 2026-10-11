@@ -4,28 +4,44 @@ Status: **draft for owner review**. Nothing here is implemented. Items marked **
 
 ## Goal
 
-`config.yml` chooses which model writes Roka's replies (**main**) and which one takes over when it fails (**fallback**). Five providers can fill either role: Gemini, Anthropic, OpenAI, Qwen and DeepSeek.
+Rokabot becomes a modular chatbot that runs on any major LLM API: the user swaps Roka's "brain" to match the APIs they have. `config.yml` chooses the model that writes Roka's replies (**main**, required) and an optional model that takes over when it fails (**fallback**). Five providers can fill either role: Gemini, Anthropic, OpenAI, Qwen and DeepSeek.
 
 ### What the Owner Said
 
-- A `config.yml` setting selects the main and the fallback LLM.
-- Supported now: Gemini, Anthropic, OpenAI, Qwen, DeepSeek.
+- A `config.yml` setting selects the main and the fallback LLM; any of the five providers can be either.
+- The main model is mandatory and must work with every provider; the fallback is always optional.
+- Purpose: freedom to swap Roka's brain based on taste and on the APIs at hand.
+- Embeddings and memory extraction must no longer depend on Gemini alone. Memory extraction is just another LLM call, so it uses the main model.
+- The one exception is the media watcher: when on, its provider is Gemini or Qwen.
 - Consult a systems engineer first (done: `codex exec`, gpt-6-astra, xhigh, 2026-10-11).
 
 ### Assumptions (Pending)
 
-| #   | Assumption        | Recommended Answer                                                                                                                                                                   |
-| --- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| A1  | Main purpose      | Try models on Roka's persona and keep the best (quality), then spend free or cheap credit first (cost). Resilience stays at today's level.                                           |
-| A2  | Scope             | Chat replies only. Embeddings, memory extraction, reclassification, attachment token counting and the media watcher stay on their current providers.                                 |
-| A3  | Fallback depth    | One fallback, not a chain.                                                                                                                                                           |
-| A4  | Switching         | Edit `config.yml` (or an env override) and restart. No live switching.                                                                                                               |
-| A5  | Endpoints         | Qwen through ModelScope (today's endpoint). DeepSeek, OpenAI and Anthropic through their official APIs. Keys in `.env`.                                                              |
-| A6  | OpenAI protocol   | Chat Completions first, shared with Qwen and DeepSeek. Add the Responses API only if the chosen OpenAI model needs reasoning carried across tool calls.                              |
-| A7  | Spend control     | Paid routes start with hedging off and a local monthly cap (default $5 per provider); Anthropic Console auto-reload stays off.                                                       |
-| A8  | Thinking          | Carried only inside one turn's tool loop, never between Discord turns. This corrects #296's "never send thinking back": Claude rejects tool results without its own thinking blocks. |
-| A9  | Model choice      | Only model profiles that have been tested are accepted; an unknown model ID fails validation at startup.                                                                             |
-| A10 | Unsupported media | Audio and video reach a model that can't read them as media-watcher notes, never silently dropped.                                                                                   |
+| #   | Assumption        | Recommended Answer                                                                                                                                                                                                                            |
+| --- | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A2  | Scope             | Replies, memory extraction and reclassification run on the main model (with the fallback when it fails). Attachment token counting uses the main provider's counter or an estimate. Only the media watcher keeps its own Gemini/Qwen setting. |
+| A2a | Embeddings        | **Open question to the owner.** Recommended: a separate `embeddings:` setting (Gemini, OpenAI, Qwen or `local`), defaulting to `local` when the main provider has no embeddings API (Anthropic, DeepSeek).                                    |
+| A2b | Keys              | One provider's key is enough to run the bot. `GEMINI_API_KEY` stops being required; it is needed only when Gemini is used for a role or for the watcher.                                                                                      |
+| A3  | Fallback depth    | One fallback, not a chain.                                                                                                                                                                                                                    |
+| A4  | Switching         | Edit `config.yml` (or an env override) and restart. No live switching.                                                                                                                                                                        |
+| A5  | Endpoints         | Qwen through ModelScope (today's endpoint). DeepSeek, OpenAI and Anthropic through their official APIs. Keys in `.env`.                                                                                                                       |
+| A6  | OpenAI protocol   | Chat Completions first, shared with Qwen and DeepSeek. Add the Responses API only if the chosen OpenAI model needs reasoning carried across tool calls.                                                                                       |
+| A7  | Spend control     | Paid routes start with hedging off and a local monthly cap (default $5 per provider); Anthropic Console auto-reload stays off.                                                                                                                |
+| A8  | Thinking          | Carried only inside one turn's tool loop, never between Discord turns. This corrects #296's "never send thinking back": Claude rejects tool results without its own thinking blocks.                                                          |
+| A9  | Model choice      | Only model profiles that have been tested are accepted; an unknown model ID fails validation at startup.                                                                                                                                      |
+| A10 | Unsupported media | Audio and video reach a model that can't read them as media-watcher notes, never silently dropped.                                                                                                                                            |
+
+### Gemini-Only Call Sites Today
+
+| Workload                  | Where                                             | Target                                                                                                                                                                                                           |
+| ------------------------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Replies                   | `src/agent/fallbackModel.ts`, `src/agent/roka.ts` | Main model (+ fallback)                                                                                                                                                                                          |
+| Memory extraction         | `src/agent/memory/extractor.ts`                   | Main model; structured output per provider (Gemini response schema, OpenAI `json_schema`, Anthropic forced tool use, DeepSeek/Qwen JSON mode), always re-validated with the zod schemas in `extractionSchema.ts` |
+| Reclassification          | `src/agent/memory/reclassifyModels.ts`            | Main model, same structured-output path                                                                                                                                                                          |
+| Episode embeddings        | `src/agent/memory/episodeEmbeddings.ts`           | `embeddings:` setting (A2a); each vector records its model, recall ignores vectors from another model, and a background job re-embeds after a switch                                                             |
+| Attachment token counting | `src/agent/attachmentCost.ts`                     | Main provider's counter (Anthropic `count_tokens`) or a byte/page estimate                                                                                                                                       |
+| Safety settings           | `src/agent/safetySettings.ts`                     | Sent only to Gemini                                                                                                                                                                                              |
+| Media watcher             | `src/agent/media/watch.ts`, `turnMedia.ts`        | Unchanged: Gemini or Qwen                                                                                                                                                                                        |
 
 ## Current State
 
@@ -157,8 +173,8 @@ Each adapter classifies its own errors into shared kinds; the ladder in `reliabi
 
 ## Owner Decisions Needed
 
-1. Is A1 right: quality first, then cost?
-2. Phase 1 as Haiku main with Gemini fallback, then the Chat Completions family (A6)?
-3. Thinking kept only inside one turn's tool loop (A8)?
-4. Paid hedging off and a $5 monthly cap per paid provider (A7)?
-5. Only tested model profiles accepted (A9)?
+1. Embeddings when the main provider has none (A2a): `local`, no semantic recall, or always require an embeddings-capable key? Recommended: a separate `embeddings:` setting with `local` as the default.
+2. Phase 1 as Anthropic beside Gemini, then the Chat Completions family, with OpenAI on Chat Completions first (A6)? Recommended: yes. The phases above get re-cut once decision 1 is made, because moving extraction and embeddings off Gemini joins phase 1.
+3. Claude's thinking kept only inside one turn's tool loop (A8)? Recommended: yes.
+4. Paid hedging off and a $5 monthly cap per paid provider (A7)? Recommended: yes.
+5. Only tested model profiles accepted (A9)? Recommended: yes.
