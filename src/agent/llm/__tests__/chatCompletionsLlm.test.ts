@@ -619,3 +619,143 @@ describe('ModelScopeLlm legacy tool calls', () => {
     expect(response?.content?.parts?.[0]?.functionCall).not.toHaveProperty('id')
   })
 })
+
+const MEMORY_SCHEMA = {
+  $schema: 'https://json-schema.org/draft/2020-12/schema',
+  type: 'object',
+  properties: {
+    city: { type: 'string', minLength: 1 },
+    note: { type: 'string' },
+    ops: {
+      type: 'array',
+      items: {
+        oneOf: [
+          {
+            type: 'object',
+            properties: { op: { type: 'string', const: 'add' }, value: { type: 'string' }, reason: { type: 'string' } },
+            required: ['op', 'value'],
+            additionalProperties: false
+          },
+          {
+            type: 'object',
+            properties: { op: { type: 'string', const: 'drop' }, id: { type: 'integer' } },
+            required: ['op', 'id'],
+            additionalProperties: false
+          }
+        ]
+      }
+    }
+  },
+  required: ['city', 'ops'],
+  additionalProperties: false
+}
+
+const STRICT_MEMORY_SCHEMA = {
+  type: 'object',
+  properties: {
+    city: { type: 'string' },
+    note: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+    ops: {
+      type: 'array',
+      items: {
+        anyOf: [
+          {
+            type: 'object',
+            properties: {
+              op: { type: 'string', const: 'add' },
+              value: { type: 'string' },
+              reason: { anyOf: [{ type: 'string' }, { type: 'null' }] }
+            },
+            required: ['op', 'value', 'reason'],
+            additionalProperties: false
+          },
+          {
+            type: 'object',
+            properties: { op: { type: 'string', const: 'drop' }, id: { type: 'integer' } },
+            required: ['op', 'id'],
+            additionalProperties: false
+          }
+        ]
+      }
+    }
+  },
+  required: ['city', 'note', 'ops'],
+  additionalProperties: false
+}
+
+describe('ChatCompletionsLlm structured output', () => {
+  it('asks gpt-6-luna for a strict json_schema and drops the nulls strict mode puts in optional fields', async () => {
+    const { fetchImpl, calls } = replay(openai.jsonSchema)
+
+    const [response] = await responses(
+      luna(fetchImpl),
+      request([{ role: 'user', parts: [{ text: 'Remember Kyoto.' }] }], { responseJsonSchema: MEMORY_SCHEMA })
+    )
+
+    expect(bodyOf(calls[0]).response_format).toEqual({
+      type: 'json_schema',
+      json_schema: { name: 'response', strict: true, schema: STRICT_MEMORY_SCHEMA }
+    })
+    expect(bodyOf(calls[0]).messages).toEqual([{ role: 'user', content: 'Remember Kyoto.' }])
+    expect(JSON.parse(response?.content?.parts?.[0]?.text ?? '')).toEqual({
+      city: 'Kyoto',
+      ops: [
+        { op: 'add', value: 'likes tea' },
+        { op: 'drop', id: 3 }
+      ]
+    })
+  })
+
+  it('sends an already strict schema unchanged', async () => {
+    const { fetchImpl, calls } = replay(openai.jsonSchema)
+
+    await responses(
+      luna(fetchImpl),
+      request([{ role: 'user', parts: [{ text: 'x' }] }], { responseJsonSchema: STRICT_MEMORY_SCHEMA })
+    )
+
+    expect(bodyOf(calls[0]).response_format).toMatchObject({ json_schema: { schema: STRICT_MEMORY_SCHEMA } })
+  })
+
+  it('asks ModelScope for json_object with the schema in the system prompt and unwraps a fenced reply', async () => {
+    const { fetchImpl, calls } = replay(modelscope.qwenJsonObject)
+    const schema = {
+      type: 'object',
+      properties: { city: { type: 'string' }, population: { type: 'integer' } },
+      required: ['city', 'population']
+    }
+
+    const [response] = await responses(
+      onModelScope('Qwen/Qwen3.5-35B-A3B', fetchImpl),
+      request([{ role: 'user', parts: [{ text: 'Kyoto?' }] }], {
+        systemInstruction: 'Extract facts.',
+        responseJsonSchema: schema
+      })
+    )
+
+    expect(bodyOf(calls[0]).response_format).toEqual({ type: 'json_object' })
+    expect(bodyOf(calls[0]).messages).toEqual([
+      {
+        role: 'system',
+        content: `Extract facts.\n\nReply with only a JSON object that matches this JSON Schema:\n${JSON.stringify(schema)}`
+      },
+      { role: 'user', content: 'Kyoto?' }
+    ])
+    expect(response?.content?.parts).toEqual([{ text: '{"city":"Kyoto","population":1460000}' }])
+  })
+
+  it('adds no response_format and no system text to a legacy request without a schema', async () => {
+    const { fetchImpl, calls } = replay(modelscope.qwenText)
+
+    await responses(
+      new ModelScopeLlm({ model: 'Qwen/Qwen3.5-122B-A10B', apiKey: 'modelscope-key', timeoutMs: 2000, fetchImpl }),
+      request([{ role: 'user', parts: [{ text: 'hi' }] }], { systemInstruction: 'Be Roka.' })
+    )
+
+    expect(bodyOf(calls[0])).not.toHaveProperty('response_format')
+    expect(bodyOf(calls[0]).messages).toEqual([
+      { role: 'system', content: 'Be Roka.' },
+      { role: 'user', content: 'hi' }
+    ])
+  })
+})

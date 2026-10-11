@@ -56,6 +56,99 @@ function parseJson(text: string): unknown {
   }
 }
 
+const JSON_OBJECT_INSTRUCTION = 'Reply with only a JSON object that matches this JSON Schema:'
+// OpenAI strict mode rejects these keywords; the caller's own validation still enforces them on the reply.
+const STRICT_UNSUPPORTED_KEYWORDS = new Set([
+  '$schema',
+  'default',
+  'minLength',
+  'maxLength',
+  'minProperties',
+  'maxProperties',
+  'patternProperties',
+  'propertyNames',
+  'unevaluatedProperties',
+  'uniqueItems',
+  'contains',
+  'minContains',
+  'maxContains',
+  'unevaluatedItems'
+])
+
+function arrayOf(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : []
+}
+
+function withSystemText(messages: ChatMessage[], text: string): void {
+  const first = messages[0]
+  if (first?.role === 'system') first.content = `${String(first.content)}\n\n${text}`
+  else messages.unshift({ role: 'system', content: text })
+}
+
+function strictSchemas(value: unknown): unknown {
+  return isRecord(value)
+    ? Object.fromEntries(Object.entries(value).map(([name, child]) => [name, strictSchema(child)]))
+    : value
+}
+
+/** OpenAI strict mode: every property required, an optional one nullable instead, no extra keys, anyOf for oneOf. */
+function strictSchema(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(strictSchema)
+  if (!isRecord(value)) return value
+  const schema: JsonObject = {}
+  for (const [key, child] of Object.entries(value)) {
+    if (STRICT_UNSUPPORTED_KEYWORDS.has(key)) continue
+    schema[key === 'oneOf' ? 'anyOf' : key] =
+      key === 'properties' || key === '$defs' ? strictSchemas(child) : strictSchema(child)
+  }
+  if (isRecord(schema.properties)) {
+    const required = new Set(arrayOf(value.required))
+    const properties = Object.fromEntries(
+      Object.entries(schema.properties).map(([name, child]) => [
+        name,
+        required.has(name) ? child : { anyOf: [child, { type: 'null' }] }
+      ])
+    )
+    schema.properties = properties
+    schema.required = Object.keys(properties)
+    schema.additionalProperties = false
+  }
+  return schema
+}
+
+function constsMatch(value: JsonObject, branch: unknown): boolean {
+  const properties = isRecord(branch) && isRecord(branch.properties) ? branch.properties : {}
+  return Object.entries(properties).every(
+    ([name, property]) => !isRecord(property) || !('const' in property) || value[name] === property.const
+  )
+}
+
+/** Strict mode answers an omitted optional field with null, where the caller's own schema expects no key at all. */
+function withoutOptionalNulls(value: unknown, schema: unknown): unknown {
+  if (!isRecord(schema)) return value
+  if (Array.isArray(value)) return value.map((item) => withoutOptionalNulls(item, schema.items))
+  if (!isRecord(value)) return value
+  let result: JsonObject = value
+  for (const branch of [...arrayOf(schema.anyOf), ...arrayOf(schema.oneOf)]) {
+    if (constsMatch(result, branch)) result = withoutOptionalNulls(result, branch) as JsonObject
+  }
+  if (!isRecord(schema.properties)) return result
+  const properties = schema.properties
+  const required = new Set(arrayOf(schema.required))
+  return Object.fromEntries(
+    Object.entries(result)
+      .filter(([name, child]) => !(child === null && name in properties && !required.has(name)))
+      .map(([name, child]) => [name, name in properties ? withoutOptionalNulls(child, properties[name]) : child])
+  )
+}
+
+function structuredText(text: string, strictOriginal: JsonObject | undefined): string {
+  const unfenced = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')
+  if (!strictOriginal) return unfenced
+  const parsed = parseJson(unfenced)
+  return parsed === undefined ? unfenced : JSON.stringify(withoutOptionalNulls(parsed, strictOriginal))
+}
+
 function openAiTools(llmRequest: LlmRequest): ChatMessage[] {
   return functionDeclarations(llmRequest).map((declaration) => ({
     type: 'function',
@@ -278,9 +371,12 @@ export class ChatCompletionsLlm extends BaseLlm {
           maxOutputTokens: this.maxOutputTokens ?? profile.maxOutputTokens
         })
       : llmRequest
+    const requested = shaped.config?.responseJsonSchema
+    const schema = isRecord(requested) ? requested : undefined
+    const strict = schema !== undefined && profile?.structuredOutput === 'json_schema_strict'
 
     const signal = abortSignal ?? shaped.config?.abortSignal
-    const requestBody = this.requestBody(shaped)
+    const requestBody = this.requestBody(shaped, schema, strict)
     const workload = workloadOf(shaped)
     const reservation = await startCall({
       provider: this.provider,
@@ -307,15 +403,17 @@ export class ChatCompletionsLlm extends BaseLlm {
     recordUsage(usage)
     reservation.release(usage)
 
-    yield this.toResponse(result)
+    yield this.toResponse(result, schema, strict)
   }
 
-  private requestBody(llmRequest: LlmRequest): JsonObject {
+  private requestBody(llmRequest: LlmRequest, schema: JsonObject | undefined, strict: boolean): JsonObject {
     // The legacy route always sent image bytes; a FALLBACK_MODEL override to an imageless profile must not stop that.
     const acceptsImages = this.legacyTranslation || (this.profile?.input.image ?? true)
+    const messages = openAiMessages(llmRequest, acceptsImages, this.legacyTranslation)
+    if (schema && !strict) withSystemText(messages, `${JSON_OBJECT_INSTRUCTION}\n${JSON.stringify(schema)}`)
     const body: JsonObject = {
       model: this.model,
-      messages: openAiMessages(llmRequest, acceptsImages, this.legacyTranslation),
+      messages,
       // ModelScope serves Qwen and DeepSeek with thinking on unless told otherwise; OpenAI rejects the field.
       ...(this.provider === 'modelscope' ? { enable_thinking: false } : {}),
       stream: false
@@ -330,6 +428,11 @@ export class ChatCompletionsLlm extends BaseLlm {
     if (maxTokens !== undefined) body[this.provider === 'openai' ? 'max_completion_tokens' : 'max_tokens'] = maxTokens
     const tools = openAiTools(llmRequest)
     if (tools.length) body.tools = tools
+    if (schema) {
+      body.response_format = strict
+        ? { type: 'json_schema', json_schema: { name: 'response', strict: true, schema: strictSchema(schema) } }
+        : { type: 'json_object' }
+    }
     return body
   }
 
@@ -352,10 +455,11 @@ export class ChatCompletionsLlm extends BaseLlm {
     return (await response.json()) as ChatCompletionsResponse
   }
 
-  private toResponse(result: ChatCompletionsResponse): LlmResponse {
+  private toResponse(result: ChatCompletionsResponse, schema: JsonObject | undefined, strict: boolean): LlmResponse {
     const choice = result.choices?.[0]
     const message = choice?.message
-    const text = typeof message?.content === 'string' ? message.content.trim() : ''
+    const content = typeof message?.content === 'string' ? message.content.trim() : ''
+    const text = schema ? structuredText(content, strict ? schema : undefined) : content
     const functionCalls: Array<{ id?: string; name: string; args: JsonObject }> = []
     for (const toolCall of message?.tool_calls ?? []) {
       const args = parseJson(toolCall.function?.arguments ?? '')
