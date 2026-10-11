@@ -2,6 +2,7 @@ import Database from 'better-sqlite3'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const configMock = vi.hoisted(() => ({
+  embeddings: { provider: 'gemini', dim: 768, fingerprint: 'gemini:gemini-embedding-2:768:gemini-task-prefix' },
   memory: {
     mediaRecallK: 2,
     mediaTokenBudget: 200,
@@ -16,8 +17,10 @@ vi.mock('../../../config.js', () => ({ config: configMock }))
 vi.mock('../../../storage/database.js', () => ({ getDb: () => testDb }))
 
 import { findMediaDigest, recordMediaOccurrence, saveMediaDigest } from '../../../storage/mediaDigestStore.js'
+import { ensureVectorProvenanceColumns } from '../../../storage/vectorProvenance.js'
 import { estimateTokens } from '../../../utils/tokens.js'
 import { registerChannelVisibility, resetChannelVisibilityForTest } from '../channelVisibility.js'
+import { geminiVector } from '../embeddings/__tests__/vectors.js'
 import { buildMediaRecallBlock, formatMediaRecallBlock, recallMedia } from '../mediaRecall.js'
 
 function vector768(first: number, second = 0): number[] {
@@ -48,7 +51,7 @@ function seedMedia(input: {
     label: input.label ?? 'Cat video',
     summary: input.summary,
     digestJson: '{}',
-    embedding: input.embedding,
+    embedding: input.embedding ? geminiVector(input.embedding) : null,
     createdAt: 1_000
   })
   if (!digest) throw new Error('Expected a digest')
@@ -94,6 +97,7 @@ describe('media recall', () => {
         UNIQUE (digest_id, message_id)
       );
     `)
+    ensureVectorProvenanceColumns(testDb, 'media_digest')
     configMock.memory.mediaRecallK = 2
     configMock.memory.mediaTokenBudget = 200
     configMock.memory.mediaMinSimilarity = 0.7
@@ -258,7 +262,7 @@ describe('media recall', () => {
         label: 'Orphan',
         summary: 'Orphan cat.',
         digestJson: '{}',
-        embedding: vector768(0.9, 0.43589),
+        embedding: geminiVector(vector768(0.9, 0.43589)),
         createdAt: 1_000
       })
       configMock.memory.privacy = 'balanced'

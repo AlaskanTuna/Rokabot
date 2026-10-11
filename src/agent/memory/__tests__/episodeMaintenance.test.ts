@@ -2,6 +2,13 @@ import Database from 'better-sqlite3'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const configMock = vi.hoisted(() => ({
+  embeddings: {
+    provider: 'gemini',
+    dim: 768,
+    fingerprint: 'gemini:gemini-embedding-2:768:gemini-task-prefix',
+    backfillBatchSize: 100,
+    backfillGapMs: 0
+  },
   memory: { episodeRetentionDays: 90, mediaRetentionDays: 90, privacy: 'relaxed' }
 }))
 const mocks = vi.hoisted(() => ({
@@ -21,6 +28,8 @@ vi.mock('../../../utils/logger.js', () => ({ logger: mocks.logger }))
 import { findMediaDigest, recordMediaOccurrence, saveMediaDigest } from '../../../storage/mediaDigestStore.js'
 import * as episodeStore from '../../../storage/memoryEpisodeStore.js'
 import { listEpisodesForGuild, saveMemoryEpisode } from '../../../storage/memoryEpisodeStore.js'
+import { ensureVectorProvenanceColumns } from '../../../storage/vectorProvenance.js'
+import { geminiVector } from '../embeddings/__tests__/vectors.js'
 import { pruneEpisodesAndReembed } from '../episodeMaintenance.js'
 
 const DAY_MS = 86_400_000
@@ -53,7 +62,7 @@ function seedMedia(input: {
     label: 'Cat video',
     summary: input.summary,
     digestJson: '{}',
-    embedding: input.embedding,
+    embedding: input.embedding ? geminiVector(input.embedding) : null,
     createdAt: now
   })
   if (!digest) throw new Error('Expected a digest')
@@ -111,6 +120,8 @@ describe('episode maintenance', () => {
         UNIQUE (digest_id, message_id)
       );
     `)
+    ensureVectorProvenanceColumns(testDb, 'memory_episode')
+    ensureVectorProvenanceColumns(testDb, 'media_digest')
     configMock.memory.episodeRetentionDays = 90
     configMock.memory.mediaRetentionDays = 90
     mocks.embedEpisodeText.mockReset()
@@ -127,7 +138,7 @@ describe('episode maintenance', () => {
     seedEpisode({ id: 1, guildId: 'guild-a', endedAt: now - 91 * DAY_MS, summary: 'expired episode' })
     seedEpisode({ id: 2, guildId: 'guild-a', endedAt: now - DAY_MS, summary: 'retained episode A' })
     seedEpisode({ id: 3, guildId: 'guild-a', endedAt: now - DAY_MS, summary: 'retained episode B' })
-    mocks.embedEpisodeText.mockResolvedValueOnce(vector768()).mockRejectedValueOnce(new Error('offline'))
+    mocks.embedEpisodeText.mockResolvedValueOnce(geminiVector(vector768())).mockRejectedValueOnce(new Error('offline'))
 
     const report = await pruneEpisodesAndReembed(now)
     const retained = listEpisodesForGuild('guild-a')
@@ -165,7 +176,7 @@ describe('episode maintenance', () => {
     seedEpisode({ id: 1, guildId: 'guild-a', endedAt: now - DAY_MS, summary: 'Guild A episode.' })
     seedEpisode({ id: 2, guildId: 'guild-b', endedAt: now - DAY_MS, summary: 'Guild B episode.' })
     testDb.prepare("UPDATE memory_episode SET embedding = X'0102' WHERE id = 2").run()
-    mocks.embedEpisodeText.mockResolvedValue(vector768())
+    mocks.embedEpisodeText.mockResolvedValue(geminiVector(vector768()))
     const listByGuild = vi.spyOn(episodeStore, 'listEpisodesForGuild')
 
     await pruneEpisodesAndReembed(now)
@@ -206,7 +217,7 @@ describe('episode maintenance', () => {
       embedding: null,
       observedAt: [now - DAY_MS]
     })
-    mocks.embedEpisodeText.mockResolvedValueOnce(vector768()).mockRejectedValueOnce(new Error('offline'))
+    mocks.embedEpisodeText.mockResolvedValueOnce(geminiVector(vector768())).mockRejectedValueOnce(new Error('offline'))
 
     const report = await pruneEpisodesAndReembed(now)
 

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { geminiVector, localVector } from '../../agent/memory/embeddings/__tests__/vectors.js'
 import { appendEvidence, assertClaim, rejectActiveClaimById } from '../../agent/memory/memoryClaims.js'
 import { closeDb } from '../database.js'
 import {
@@ -41,7 +42,11 @@ describe('memoryRecallStore', () => {
       }
     ])
     expect(
-      setClaimEmbedding({ id: fact.id, embeddingText: "This person's hobby: chess.", embedding: Array(768).fill(0.1) })
+      setClaimEmbedding({
+        id: fact.id,
+        embeddingText: "This person's hobby: chess.",
+        embedding: geminiVector(Array(768).fill(0.1))
+      })
     ).toBe(true)
     expect(listActiveClaimsForEmbedding()[0]).toMatchObject({
       embeddingText: "This person's hobby: chess.",
@@ -88,6 +93,26 @@ describe('memoryRecallStore', () => {
     })
     rejectActiveClaimById({ guildId: 'g', subjectUserId: 'u', existingId: fact.id })
 
-    expect(setClaimEmbedding({ id: fact.id, embeddingText: 'x', embedding: Array(768).fill(0.1) })).toBe(false)
+    expect(setClaimEmbedding({ id: fact.id, embeddingText: 'x', embedding: geminiVector(Array(768).fill(0.1)) })).toBe(
+      false
+    )
+  })
+
+  it('treats a vector from another embedding space as missing, so the next sweep re-embeds it', () => {
+    const fact = assertClaim({
+      guildId: 'g',
+      subjectUserId: 'u',
+      predicate: 'hobby',
+      value: 'chess',
+      sourceKind: 'explicit'
+    })
+    setClaimEmbedding({
+      id: fact.id,
+      embeddingText: "This person's hobby: chess.",
+      embedding: localVector(Array(384).fill(0.1))
+    })
+
+    expect(listActiveClaimsForEmbedding()[0]).toMatchObject({ hasEmbedding: false })
+    expect(getClaimEmbeddings([fact.id]).has(fact.id)).toBe(false)
   })
 })
