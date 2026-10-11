@@ -3,7 +3,7 @@ import type { BaseLlmConnection, LlmRequest, LlmResponse } from '@google/adk'
 import { FinishReason } from '@google/genai'
 import type { Part } from '@google/genai'
 import type { FailureKind } from '../geminiReliability.js'
-import { requestTokenEstimate, startCall } from './budget.js'
+import { markBillingExhausted, requestTokenEstimate, startCall } from './budget.js'
 import type { ModelProfile } from './profiles.js'
 import { ProviderError } from './providerError.js'
 import {
@@ -14,7 +14,7 @@ import {
   shapeRequest,
   systemText
 } from './requestShape.js'
-import { type CallUsage, recordUsage, workloadOf } from './usage.js'
+import { type CallUsage, type Workload, recordUsage, workloadOf } from './usage.js'
 
 type JsonObject = Record<string, unknown>
 type ChatMessage = Record<string, unknown>
@@ -332,6 +332,26 @@ function openAiMessages(llmRequest: LlmRequest, acceptsImages: boolean, legacy: 
 
 export type ChatCompletionsProvider = 'openai' | 'modelscope'
 
+// Chat Completions counts cached tokens inside prompt_tokens and reasoning inside completion_tokens.
+function callUsage(
+  provider: ChatCompletionsProvider,
+  model: string,
+  workload: Workload,
+  usage: ChatCompletionsResponse['usage']
+): CallUsage {
+  const cacheReadTokens = usage?.prompt_tokens_details?.cached_tokens ?? 0
+  const reasoningTokens = usage?.completion_tokens_details?.reasoning_tokens ?? 0
+  return {
+    provider,
+    model,
+    workload,
+    inputTokens: Math.max(0, (usage?.prompt_tokens ?? 0) - cacheReadTokens),
+    outputTokens: Math.max(0, (usage?.completion_tokens ?? 0) - reasoningTokens),
+    ...(reasoningTokens > 0 ? { reasoningTokens } : {}),
+    ...(cacheReadTokens > 0 ? { cacheReadTokens } : {})
+  }
+}
+
 const PROVIDER_LABELS: Readonly<Record<ChatCompletionsProvider, string>> = {
   openai: 'OpenAI',
   modelscope: 'ModelScope'
@@ -432,13 +452,7 @@ export class ChatCompletionsLlm extends BaseLlm {
       throw error
     }
     const { status, result } = reply
-    const usage: CallUsage = {
-      provider: this.provider,
-      model: this.model,
-      workload,
-      inputTokens: result.usage?.prompt_tokens ?? 0,
-      outputTokens: result.usage?.completion_tokens ?? 0
-    }
+    const usage = callUsage(this.provider, this.model, workload, result.usage)
     recordUsage(usage)
     reservation.release(usage)
 
@@ -507,7 +521,9 @@ export class ChatCompletionsLlm extends BaseLlm {
     if (!response.ok) {
       const message = `${this.label} ${response.status}: ${text.slice(0, 300)}`
       if (this.legacyTranslation) throw new Error(message)
-      throw this.fail(httpFailureKind(response.status, text), message, {
+      const kind = httpFailureKind(response.status, text)
+      if (kind === 'billing_exhausted') markBillingExhausted(this.provider)
+      throw this.fail(kind, message, {
         status: response.status,
         retryAfterMs: retryAfterMs(response)
       })

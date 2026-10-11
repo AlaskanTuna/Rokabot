@@ -2,12 +2,28 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { BaseLlm, LlmRequest, LlmResponse } from '@google/adk'
 import { FinishReason } from '@google/genai'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ModelScopeLlm as ReexportedModelScopeLlm } from '../../fallbackModel.js'
+import { type BudgetDenial, grantOrThrow } from '../budget.js'
 import { ChatCompletionsLlm, ModelScopeLlm } from '../chatCompletionsLlm.js'
-import { MODEL_PROFILES, profileFor } from '../profiles.js'
+import { MODEL_PROFILES, type ProviderId, profileFor } from '../profiles.js'
 import { ProviderError } from '../providerError.js'
-import { type CallUsage, onUsage } from '../usage.js'
+import { type CallUsage, WORKLOAD_LABEL, onUsage } from '../usage.js'
+
+const budget = vi.hoisted(() => ({ release: vi.fn(), startCall: vi.fn(), markBillingExhausted: vi.fn() }))
+
+vi.mock('../budget.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../budget.js')>()),
+  startCall: budget.startCall,
+  markBillingExhausted: budget.markBillingExhausted
+}))
+
+beforeEach(() => {
+  budget.release.mockReset()
+  budget.startCall.mockReset()
+  budget.markBillingExhausted.mockReset()
+  budget.startCall.mockResolvedValue({ release: budget.release })
+})
 
 interface Fixture {
   status: number
@@ -885,6 +901,29 @@ describe('ChatCompletionsLlm failures', () => {
       cause
     })
   })
+
+  it("treats the adapter's own timeout as network while the caller's signal stays live", async () => {
+    const caller = new AbortController()
+    const fetchImpl: typeof fetch = (_input, init) =>
+      new Promise((_resolve, reject) => {
+        const signal = init?.signal
+        if (signal?.aborted) reject(signal.reason)
+        signal?.addEventListener('abort', () => reject(signal.reason), { once: true })
+      })
+    const llm = new ChatCompletionsLlm({
+      provider: 'openai',
+      model: 'gpt-6-luna',
+      apiKey: 'openai-key',
+      timeoutMs: 1,
+      profile: profileFor('openai', 'gpt-6-luna'),
+      fetchImpl
+    })
+
+    await expect(
+      responses(llm, request([{ role: 'user', parts: [{ text: 'hello' }] }], { abortSignal: caller.signal }))
+    ).rejects.toMatchObject({ kind: 'network' })
+    expect(caller.signal.aborted).toBe(false)
+  })
 })
 
 describe('ModelScopeLlm legacy failures', () => {
@@ -931,5 +970,190 @@ describe('ModelScopeLlm legacy failures', () => {
         usageMetadata: { promptTokenCount: 80, candidatesTokenCount: 8, totalTokenCount: 88 }
       }
     ])
+  })
+})
+
+describe('ChatCompletionsLlm usage and budget', () => {
+  async function usageOf(run: () => Promise<unknown>): Promise<CallUsage[]> {
+    const seen: CallUsage[] = []
+    const stop = onUsage((usage) => seen.push(usage))
+    try {
+      await run().catch(() => undefined)
+    } finally {
+      stop()
+    }
+    return seen
+  }
+
+  const withUsage = (usage: Record<string, unknown>): Fixture => ({
+    status: 200,
+    body: { choices: [{ message: { content: 'hm' }, finish_reason: 'stop' }], usage }
+  })
+
+  it('records the usage block once per call, with cache reads out of the input', async () => {
+    const seen = await usageOf(() => responses(luna(replay(openai.text).fetchImpl), hello()))
+
+    expect(seen).toEqual([
+      {
+        provider: 'openai',
+        model: 'gpt-6-luna',
+        workload: 'reply',
+        inputTokens: 56,
+        outputTokens: 9,
+        cacheReadTokens: 64
+      }
+    ])
+  })
+
+  it('records reported reasoning tokens apart from the output', async () => {
+    const reply = withUsage({
+      prompt_tokens: 50,
+      completion_tokens: 30,
+      total_tokens: 80,
+      completion_tokens_details: { reasoning_tokens: 12 }
+    })
+
+    const seen = await usageOf(() => responses(luna(replay(reply).fetchImpl), hello()))
+
+    expect(seen).toEqual([
+      {
+        provider: 'openai',
+        model: 'gpt-6-luna',
+        workload: 'reply',
+        inputTokens: 50,
+        outputTokens: 18,
+        reasoningTokens: 12
+      }
+    ])
+  })
+
+  it('floors a bucket at zero when a detail exceeds its total', async () => {
+    const reply = withUsage({
+      prompt_tokens: 10,
+      completion_tokens: 5,
+      prompt_tokens_details: { cached_tokens: 20 },
+      completion_tokens_details: { reasoning_tokens: 9 }
+    })
+
+    const seen = await usageOf(() => responses(luna(replay(reply).fetchImpl), hello()))
+
+    expect(seen).toEqual([
+      {
+        provider: 'openai',
+        model: 'gpt-6-luna',
+        workload: 'reply',
+        inputTokens: 0,
+        outputTokens: 0,
+        reasoningTokens: 9,
+        cacheReadTokens: 20
+      }
+    ])
+  })
+
+  it('still counts a 200 that brought no choices, and nothing for a call that failed before answering', async () => {
+    const deepseek = onModelScope('deepseek-ai/DeepSeek-V4.1-Flash', replay(modelscope.deepseekChoicesNull).fetchImpl)
+
+    expect(await usageOf(() => responses(deepseek, hello()))).toEqual([
+      {
+        provider: 'modelscope',
+        model: 'deepseek-ai/DeepSeek-V4.1-Flash',
+        workload: 'reply',
+        inputTokens: 0,
+        outputTokens: 0
+      }
+    ])
+    expect(await usageOf(() => responses(luna(replay(openai.serverError).fetchImpl), hello()))).toEqual([])
+  })
+
+  it('reserves before calling and releases with the recorded usage before yielding the reply', async () => {
+    const fetchImpl = vi.fn(replay(openai.text).fetchImpl)
+
+    const seen = await usageOf(() => luna(fetchImpl).generateContentAsync(hello()).next())
+
+    expect(budget.startCall).toHaveBeenCalledTimes(1)
+    expect(budget.startCall).toHaveBeenCalledWith({
+      provider: 'openai',
+      model: 'gpt-6-luna',
+      workload: 'reply',
+      estTokens: expect.any(Number),
+      signal: undefined
+    })
+    expect(budget.startCall.mock.invocationCallOrder[0]).toBeLessThan(fetchImpl.mock.invocationCallOrder[0] ?? 0)
+    expect(seen).toHaveLength(1)
+    expect(budget.release).toHaveBeenCalledTimes(1)
+    expect(budget.release.mock.calls[0]?.[0]).toBe(seen[0])
+  })
+
+  it('records and reserves a labelled background call under its own workload', async () => {
+    const labelled = request([{ role: 'user', parts: [{ text: 'hello' }] }], {
+      labels: { [WORKLOAD_LABEL]: 'extraction' }
+    })
+
+    const seen = await usageOf(() => responses(luna(replay(openai.text).fetchImpl), labelled))
+
+    expect(budget.startCall).toHaveBeenCalledWith(expect.objectContaining({ workload: 'extraction' }))
+    expect(seen).toEqual([expect.objectContaining({ workload: 'extraction' })])
+  })
+
+  it.each<[BudgetDenial['denied'], string]>([
+    ['monthly', 'billing_exhausted'],
+    ['rpm', 'quota_exhausted']
+  ])('turns a %s denial into %s without calling the provider', async (denied, kind) => {
+    budget.startCall.mockImplementation(async (input: { provider: ProviderId }) =>
+      grantOrThrow(input.provider, { denied })
+    )
+    const { fetchImpl, calls } = replay(openai.text)
+
+    await expect(responses(luna(fetchImpl), hello())).rejects.toMatchObject({ provider: 'openai', kind })
+    expect(calls).toHaveLength(0)
+    expect(budget.release).not.toHaveBeenCalled()
+  })
+
+  it('marks OpenAI billing spent on insufficient_quota, and not on a busy minute', async () => {
+    await expect(responses(luna(replay(openai.insufficientQuota).fetchImpl), hello())).rejects.toMatchObject({
+      kind: 'billing_exhausted'
+    })
+    expect(budget.markBillingExhausted).toHaveBeenCalledTimes(1)
+    expect(budget.markBillingExhausted).toHaveBeenCalledWith('openai')
+
+    budget.markBillingExhausted.mockClear()
+    await expect(responses(luna(replay(openai.rateLimited).fetchImpl), hello())).rejects.toMatchObject({
+      kind: 'quota_exhausted'
+    })
+    expect(budget.markBillingExhausted).not.toHaveBeenCalled()
+  })
+
+  it.each<[string, () => ChatCompletionsLlm]>([
+    ['a 503', () => onModelScope('Qwen/Qwen3.5-35B-A3B', replay(modelscope.overloaded).fetchImpl)],
+    [
+      'a transport failure',
+      () =>
+        luna(async () => {
+          throw new TypeError('fetch failed')
+        })
+    ]
+  ])('releases with nothing after %s', async (_failure, llm) => {
+    await expect(responses(llm(), hello())).rejects.toBeInstanceOf(ProviderError)
+
+    expect(budget.release.mock.calls).toStrictEqual([[]])
+  })
+
+  it.each<[string, (fetchImpl: typeof fetch) => ChatCompletionsLlm]>([
+    ['ChatCompletionsLlm', luna],
+    [
+      'ModelScopeLlm',
+      (fetchImpl) =>
+        new ModelScopeLlm({ model: 'Qwen/Qwen3.5-122B-A10B', apiKey: 'modelscope-key', timeoutMs: 2000, fetchImpl })
+    ]
+  ])('%s releases a malformed-arguments 2xx with the usage it recorded', async (_adapter, llm) => {
+    const seen = await usageOf(async () => {
+      await expect(responses(llm(replay(openai.malformedToolArgs).fetchImpl), hello())).rejects.toMatchObject({
+        kind: 'malformed_tool_args'
+      })
+    })
+
+    expect(seen).toEqual([expect.objectContaining({ inputTokens: 90, outputTokens: 7 })])
+    expect(budget.release).toHaveBeenCalledTimes(1)
+    expect(budget.release.mock.calls[0]?.[0]).toBe(seen[0])
   })
 })
