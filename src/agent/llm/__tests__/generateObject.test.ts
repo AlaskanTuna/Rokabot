@@ -156,6 +156,18 @@ describe('generateObject on the legacy config', () => {
     expect(mocks.createLlm).toHaveBeenCalledOnce()
   })
 
+  it('builds one adapter per output cap, so each batch size keeps its own cap', async () => {
+    const main = fakeLlm(reply({ answer: 'a' }), reply({ answer: 'b' }))
+    useLlms({ 'legacy-gemini': main })
+
+    await generateObject({ schema: Answer, prompt: 'Two.', workload: 'reclassify', maxOutputTokens: 180 })
+    await generateObject({ schema: Answer, prompt: 'Ten.', workload: 'reclassify', maxOutputTokens: 500 })
+
+    expect(mocks.createLlm).toHaveBeenCalledTimes(2)
+    expect(mocks.createLlm.mock.calls.map(([resolved]) => resolved.maxOutputTokens)).toEqual([180, 500])
+    expect(main.requests.map((request) => request.config?.maxOutputTokens)).toEqual([180, 500])
+  })
+
   it('never tries the fallback and rethrows the Gemini error unchanged', async () => {
     const failure = Object.assign(new Error('overloaded'), { status: 503 })
     useLlms({ 'legacy-gemini': fakeLlm(failure) })

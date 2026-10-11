@@ -1,21 +1,14 @@
-import { GoogleGenAI, Type } from '@google/genai'
+import { Type } from '@google/genai'
 import { type Questions, noul } from '@typesafe-ai/sdk'
 import { z } from 'zod'
 import { config } from '../../config.js'
 import { logger } from '../../utils/logger.js'
 import { getJevClient } from '../jev/client.js'
-import { SAFETY_SETTINGS } from '../safetySettings.js'
-import { PREDICATES, type PredicateId, isKnownPredicate, isMoveTarget } from './predicates.js'
+import { generateObject } from '../llm/generateObject.js'
+import { PREDICATES, type PredicateId, isMoveTarget } from './predicates.js'
 
 export type FactToFile = Readonly<{ id: number; predicate: PredicateId; value: string }>
 export type PredicateProposal = Readonly<{ id: number; predicate: PredicateId | 'keep' }>
-
-let genaiClient: GoogleGenAI | undefined
-
-function getClient(): GoogleGenAI {
-  genaiClient ??= new GoogleGenAI({ apiKey: config.gemini.apiKey })
-  return genaiClient
-}
 
 const RESPONSE_SCHEMA = {
   type: Type.OBJECT,
@@ -38,7 +31,13 @@ const RESPONSE_SCHEMA = {
   required: ['moves']
 }
 
-const ProposalOutputSchema = z.object({ moves: z.array(z.object({ id: z.number().int(), predicate: z.string() })) })
+const MOVE_PREDICATES = [...(Object.keys(PREDICATES) as PredicateId[]).filter(isMoveTarget), 'keep'] as unknown as [
+  PredicateId | 'keep',
+  ...Array<PredicateId | 'keep'>
+]
+const ProposalOutputSchema = z.object({
+  moves: z.array(z.object({ id: z.number().int(), predicate: z.enum(MOVE_PREDICATES) }))
+})
 
 function proposalPrompt(batch: readonly FactToFile[]): string {
   const predicates = Object.entries(PREDICATES)
@@ -57,30 +56,23 @@ function errorName(error: unknown): string {
   return (Object(error) as { constructor?: { name?: string } }).constructor?.name ?? 'Error'
 }
 
-/** One Gemini call for the batch; only facts and predicates in the batch survive. Never throws. */
+/** One main-model call for the batch; only facts and predicates in the batch survive. Never throws. */
 export async function proposePredicates(batch: readonly FactToFile[]): Promise<PredicateProposal[]> {
   if (batch.length === 0) return []
   try {
-    const response = await getClient().models.generateContent({
-      model: config.gemini.extractionModel,
-      contents: proposalPrompt(batch),
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: RESPONSE_SCHEMA,
-        temperature: 0,
-        maxOutputTokens: 100 + batch.length * 40,
-        safetySettings: SAFETY_SETTINGS,
-        httpOptions: { timeout: config.gemini.timeout }
-      }
+    const { value } = await generateObject({
+      schema: ProposalOutputSchema,
+      prompt: proposalPrompt(batch),
+      workload: 'reclassify',
+      maxOutputTokens: 100 + batch.length * 40,
+      legacyResponseSchema: RESPONSE_SCHEMA
     })
-    if (!response.text) throw new Error('Reclassification returned no JSON')
 
     const offered = new Set(batch.map(({ id }) => id))
     const seen = new Set<number>()
     const proposals: PredicateProposal[] = []
-    for (const { id, predicate } of ProposalOutputSchema.parse(JSON.parse(response.text)).moves) {
+    for (const { id, predicate } of value.moves) {
       if (!offered.has(id) || seen.has(id)) continue
-      if (predicate !== 'keep' && !isKnownPredicate(predicate)) continue
       seen.add(id)
       proposals.push({ id, predicate })
     }
