@@ -287,9 +287,11 @@ npx tsx scripts/probe-llm-profile.ts --live --model Qwen/Qwen3.5-35B-A3B --model
 
 It reads `MODELSCOPE_API_KEY`, or `OPENAI_API_KEY` for an `openai` model, from `.env`. A model with no `openai` or
 `modelscope` profile, or with its key unset, is reported and fails the run. A model is ready only when all three checks
-pass and no reply carried `reasoning_content`; the probe prints `ready` or `not ready` per model, and exits 0 only when
-every model is ready. It never edits the profile. Set `verified: true` on that profile yourself and open a PR with the
-probe output in its description. Merging the PR rebuilds and restarts the bot, so it needs the owner's authorization.
+pass and no reply showed thinking: a non-empty `reasoning_content` or `reasoning` field, a `<think>` tag in the text,
+or `reasoning_tokens` above zero in the usage. The tool check also needs a real IANA timezone in the tool call. The
+probe prints `ready` or `not ready` per model, and exits 0 only when every model is ready. It never edits the profile.
+Set `verified: true` on that profile yourself and open a PR with the probe output in its description. Merging the PR
+rebuilds and restarts the bot, so it needs the owner's authorization.
 
 ## Hedging Slow Gemini Calls
 

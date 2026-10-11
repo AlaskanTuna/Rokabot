@@ -14,7 +14,7 @@ export interface ProbeCheck {
   check: 'text' | 'tool' | 'json'
   ok: boolean
   detail: string
-  /** The reply carried reasoning_content, so the profile's thinking-off setting did not hold. */
+  /** The reply showed thinking (see thinkingIn), so the profile's thinking-off setting did not hold. */
   thinkingSeen: boolean
 }
 
@@ -72,10 +72,36 @@ function textOf(response: LlmResponse): string {
   return (response.content?.parts ?? []).map((part) => part.text ?? '').join('')
 }
 
+function isFilled(value: unknown): boolean {
+  return typeof value === 'string' && value.trim().length > 0
+}
+
+/** Servers signal thinking differently: a reasoning field, a think tag left in the text, or billed reasoning tokens. */
 function thinkingIn(body: unknown): boolean {
-  const reasoning = (body as { choices?: Array<{ message?: { reasoning_content?: unknown } }> } | undefined)
-    ?.choices?.[0]?.message?.reasoning_content
-  return typeof reasoning === 'string' && reasoning.trim().length > 0
+  const reply = body as
+    | {
+        choices?: Array<{ message?: Record<string, unknown> }>
+        usage?: { completion_tokens_details?: { reasoning_tokens?: unknown } }
+      }
+    | undefined
+  const message = reply?.choices?.[0]?.message
+  const reasoningTokens = reply?.usage?.completion_tokens_details?.reasoning_tokens
+  return (
+    isFilled(message?.reasoning_content) ||
+    isFilled(message?.reasoning) ||
+    (typeof message?.content === 'string' && /<\/?think>/i.test(message.content)) ||
+    (typeof reasoningTokens === 'number' && reasoningTokens > 0)
+  )
+}
+
+function isTimeZone(value: unknown): boolean {
+  if (!isFilled(value)) return false
+  try {
+    new Intl.DateTimeFormat('en', { timeZone: value as string })
+    return true
+  } catch {
+    return false
+  }
 }
 
 function judgeText(response: LlmResponse): string | null {
@@ -85,7 +111,7 @@ function judgeText(response: LlmResponse): string | null {
 function judgeTool(response: LlmResponse): string | null {
   const call = response.content?.parts?.find((part) => part.functionCall)?.functionCall
   if (!call) return `no tool call; replied "${textOf(response).slice(0, 120)}"`
-  if (call.name !== 'get_current_time' || typeof call.args?.timezone !== 'string') {
+  if (call.name !== 'get_current_time' || !isTimeZone(call.args?.timezone)) {
     return `unexpected call ${JSON.stringify(call).slice(0, 200)}`
   }
   return null
