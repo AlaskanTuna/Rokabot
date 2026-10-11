@@ -32,6 +32,37 @@ describe('stripNarratedToolCalls', () => {
     expect(stripNarratedToolCalls(leaked, TOOL_NAMES).text).toBe('Here you go~')
   })
 
+  it('removes a fence of any language whose whole body is one bare tool call', () => {
+    for (const leaked of [
+      '```python\nprint(search_web(query="Senren Banka"))\n```\nHere you go~',
+      '```\nsearch_web("Senren Banka")\n```\nHere you go~',
+      '```py\nprint(default_api.recall_user(user_name="Mio"))\n```\nHere you go~'
+    ]) {
+      expect(stripNarratedToolCalls(leaked, TOOL_NAMES)).toEqual({ text: 'Here you go~', stripped: 1 })
+    }
+  })
+
+  it('keeps a code example that defines or calls a tool-named function among other lines', () => {
+    const reply = [
+      'Here is a tiny bot~',
+      '```python',
+      'def search_web(query):',
+      '    return requests.get(API, params={"q": query}).json()',
+      '',
+      'set_reminder(minutes=5)',
+      '```',
+      'Try it!'
+    ].join('\n')
+
+    expect(stripNarratedToolCalls(reply, TOOL_NAMES)).toEqual({ text: reply, stripped: 0 })
+  })
+
+  it('keeps a two-line snippet even when both lines call tools', () => {
+    const reply = '```js\nawait set_reminder({ minutes: 5 })\nawait search_web("tea")\n```'
+
+    expect(stripNarratedToolCalls(reply, TOOL_NAMES)).toEqual({ text: reply, stripped: 0 })
+  })
+
   it("removes Qwen's tool_call block", () => {
     const leaked = 'Hmm~\n<tool_call>\n{"name": "set_reminder", "arguments": {"minutes": 5}}\n</tool_call>\nOkay!'
 

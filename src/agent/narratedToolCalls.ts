@@ -4,15 +4,20 @@ function escapeRegExp(value: string): string {
 
 /**
  * Removes tool calls the model wrote into its reply instead of making them — `*(recall_user: Mio)*` from Gemini,
- * a `tool_code` fence, or Qwen's `<tool_call>` block. Only spans naming a real tool are removed, so an ordinary
- * `*(sighs)*` survives.
+ * a `tool_code` fence or a fence holding one bare call, or Qwen's `<tool_call>` block. Only spans naming a real
+ * tool are removed, so an ordinary `*(sighs)*` survives.
  */
 export function stripNarratedToolCalls(text: string, toolNames: readonly string[]): { text: string; stripped: number } {
   if (toolNames.length === 0) return { text, stripped: 0 }
   const names = toolNames.map(escapeRegExp).join('|')
   const patterns = [
     new RegExp(`[*_\`]*[(\\[]\\s*(?:${names})\\s*:[^)\\]\\n]*[)\\]][*_\`]*[ \\t]*\\n?`, 'g'),
-    new RegExp(`\`\`\`[a-z_]*\\n[^\`]*?\\b(?:${names})\\s*\\([^\`]*?\`\`\`[ \\t]*\\n?`, 'g'),
+    // Only a tool_code fence, or a fence that holds nothing but one call: a code example she wrote keeps its lines.
+    new RegExp(`\`\`\`tool_code\\n[^\`]*?\\b(?:${names})\\s*\\([^\`]*?\`\`\`[ \\t]*\\n?`, 'g'),
+    new RegExp(
+      `\`\`\`[a-z_]*\\n[ \\t]*(?:print\\(\\s*)?(?:default_api\\.)?(?:${names})\\s*\\([^\\n\`]*\\)[ \\t]*\\n?\`\`\`[ \\t]*\\n?`,
+      'g'
+    ),
     /<tool_call>[\s\S]*?<\/tool_call>[ \t]*\n?/g
   ]
   let stripped = 0
