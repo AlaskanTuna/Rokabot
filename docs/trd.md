@@ -1023,7 +1023,9 @@ When `MODELSCOPE_API_KEY` is set, a turn that Gemini cannot serve is answered by
 - **When It Switches:** after a `transient_http`, `network` or `quota_exhausted` failure the loop moves the rest
   of the turn to the other model at once, with no backoff and no RPM-floor check, and grants that attempt on top
   of the retry budget. At most one switch per turn; `safety`, `recitation`, `terminal`, `session_corrupt` and
-  `empty_text` never switch. With a fallback configured, a spent Gemini day is answered rather than deflected.
+  `empty_text` never switch. A `ProviderError` of kind `billing_exhausted`, `refusal`, `malformed_tool_args` or
+  `context_length` also switches once but arms no sticky window (see Model Providers). With a fallback configured, a
+  spent Gemini day is answered rather than deflected.
 - **Per-Attempt Timeout:** the attempt timer and the deadline check follow the model serving the attempt:
   `gemini.timeout` (20 s) or `fallback.timeoutMs` (15 s). A Gemini timeout therefore costs about 20 s before the
   fallback answers in 1–3 s, inside `gemini.turnDeadlineMs`.
