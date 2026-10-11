@@ -47,6 +47,9 @@ fallback:
 #   models: # Only tested profiles start (src/agent/llm/profiles.ts); optional per model: timeoutMs, maxOutputTokens, baseUrl
 #     flash: { provider: gemini, model: gemini-3.5-flash-lite }
 #     haiku: { provider: anthropic, model: claude-haiku-5-5, effort: low } # Needs ANTHROPIC_API_KEY; effort none turns thinking off (for a Haiku fallback)
+#     luna: { provider: openai, model: gpt-6-luna, effort: none } # Needs OPENAI_API_KEY; Chat Completions takes tools only at effort none
+#     qwen: { provider: modelscope, model: Qwen/Qwen3.5-35B-A3B } # Candidate, refused until scripts/probe-llm-profile.ts verifies it; needs MODELSCOPE_API_KEY
+#     deepseek: { provider: modelscope, model: deepseek-ai/DeepSeek-V4.1-Flash } # Candidate, refused until the probe verifies it; shares qwen's Magicube balance
 
 rateLimit:
   rpm: 15 # Requests per minute (Gemini free tier: 15)
