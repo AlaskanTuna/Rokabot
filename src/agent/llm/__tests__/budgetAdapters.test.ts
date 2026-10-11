@@ -12,7 +12,8 @@ vi.mock('../../../config.js', async (importOriginal) => {
 
 import type { ResolvedModel } from '../../../config.js'
 import { closeDb } from '../../../storage/database.js'
-import { __resetBudgetsForTest } from '../budget.js'
+import { classifyGeminiFailure } from '../../geminiReliability.js'
+import { __resetBudgetsForTest, markBillingExhausted } from '../budget.js'
 import { createLlm } from '../createModel.js'
 import { type ProviderId, profileFor } from '../profiles.js'
 
@@ -84,5 +85,37 @@ describe('budgets through the adapters', () => {
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
     pending[1]?.()
     await second
+  })
+
+  it('refuses a provider with a spent month locally, before any request', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    markBillingExhausted('anthropic')
+
+    const failure = await collect(createLlm(haiku).generateContentAsync(request())).catch((error: unknown) => error)
+
+    expect(failure).toMatchObject({ kind: 'billing_exhausted', provider: 'anthropic' })
+    expect(classifyGeminiFailure(failure).kind).toBe('billing_exhausted')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('disables Anthropic for the month once it reports its credit spent', async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            type: 'error',
+            error: { type: 'billing_error', message: 'Your credit balance is too low to access the Anthropic API.' }
+          }),
+          { status: 402, headers: { 'content-type': 'application/json' } }
+        )
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const llm = createLlm(haiku)
+
+    await expect(collect(llm.generateContentAsync(request()))).rejects.toMatchObject({ kind: 'billing_exhausted' })
+    await expect(collect(llm.generateContentAsync(request()))).rejects.toMatchObject({ kind: 'billing_exhausted' })
+
+    expect(fetchMock).toHaveBeenCalledOnce()
   })
 })

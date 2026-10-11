@@ -24,7 +24,8 @@ vi.mock('../profiles.js', async (importOriginal) => ({
     model === 'test-paid' ? { price: { input: 1, output: 1 } } : undefined
 }))
 
-import { closeDb } from '../../../storage/database.js'
+import { closeDb, getDb } from '../../../storage/database.js'
+import { addSpend, readSpend } from '../../../storage/spendStore.js'
 import { getSharedRateLimiter } from '../../../utils/rateLimiter.js'
 import { canAffordAttachments, chargeTokens, remainingTokensThisMinute, tokenBucketFor } from '../../tokenBudget.js'
 import {
@@ -32,11 +33,14 @@ import {
   type CallInput,
   __resetBudgetsForTest,
   grantOrThrow,
+  isMonthlyExhausted,
+  markBillingExhausted,
   requestTokenEstimate,
   reserveCall,
   startCall
 } from '../budget.js'
 import { ProviderError } from '../providerError.js'
+import { type CallUsage, recordUsage } from '../usage.js'
 
 const reply = { provider: 'gemini', model: 'gemini-test', workload: 'reply', estTokens: 1_000 } as const
 const extraction = { ...reply, workload: 'extraction' } as const
@@ -386,11 +390,138 @@ describe('ModelScope', () => {
     ;(await startCall(qwen)).release()
   })
 
+  it('frees the slot and spends no Magicube for a call aborted as it was granted', async () => {
+    configState.llm.modelscopeDailyMagicubes = 2
+    __resetBudgetsForTest()
+    const holder = await startCall(qwen)
+    const controller = new AbortController()
+    const aborted = startCall({ ...qwen, signal: controller.signal })
+    const next = startCall(qwen)
+
+    holder.release()
+    controller.abort()
+
+    await expect(aborted).rejects.toMatchObject({ name: 'AbortError' })
+    ;(await next).release()
+  })
+
+  it('frees the slot once when a call is released twice', async () => {
+    const holder = await startCall(qwen)
+    const second = startCall(qwen)
+    let thirdGranted = false
+    const third = startCall(qwen).then((reservation) => {
+      thirdGranted = true
+      return reservation
+    })
+
+    holder.release()
+    holder.release()
+    const secondCall = await second
+    await vi.advanceTimersByTimeAsync(0)
+    expect(thirdGranted).toBe(false)
+
+    secondCall.release()
+    ;(await third).release()
+  })
+
+  it("keeps the holder's slot when a waiting call is cancelled", async () => {
+    const holder = await startCall(qwen)
+    const controller = new AbortController()
+    const cancelled = startCall({ ...qwen, signal: controller.signal })
+    controller.abort()
+    await expect(cancelled).rejects.toMatchObject({ name: 'AbortError' })
+
+    let nextGranted = false
+    const next = startCall(qwen).then((reservation) => {
+      nextGranted = true
+      return reservation
+    })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(nextGranted).toBe(false)
+
+    holder.release()
+    ;(await next).release()
+  })
+
   it('does not queue providers without a concurrency limit', async () => {
     const first = await startCall(reply)
     const second = await startCall(reply)
 
     first.release()
     second.release()
+  })
+})
+
+describe('monthly spend', () => {
+  const paid = { provider: 'anthropic', model: 'test-paid', workload: 'reply', estTokens: 100 } as const
+  const paidUsage = (inputTokens: number): CallUsage => ({ ...paid, inputTokens, outputTokens: 0 })
+
+  it('adds every recorded call to the month, a retry or a losing hedge counting as its own call', () => {
+    recordUsage(paidUsage(1_000_000))
+    recordUsage(paidUsage(1_000_000))
+
+    expect(readSpend('2026-10', 'anthropic')).toBe(2)
+  })
+
+  it('refuses a provider once its month reaches the cap, and only that provider', () => {
+    recordUsage(paidUsage(5_000_000))
+
+    expect(reserveCall(paid)).toEqual({ denied: 'monthly' })
+    expect(isMonthlyExhausted('anthropic')).toBe(true)
+    expect('denied' in reserveCall(reply)).toBe(false)
+  })
+
+  it('keeps the route disabled across a restart', () => {
+    recordUsage(paidUsage(5_000_000))
+    __resetBudgetsForTest()
+
+    expect(reserveCall(paid)).toEqual({ denied: 'monthly' })
+  })
+
+  it('re-enables the route when the UTC month turns', () => {
+    vi.setSystemTime(new Date('2026-10-31T23:59:59Z'))
+    recordUsage(paidUsage(5_000_000))
+    expect(reserveCall(paid)).toEqual({ denied: 'monthly' })
+
+    vi.advanceTimersByTime(1_000)
+
+    expect('denied' in reserveCall(paid)).toBe(false)
+  })
+
+  it('records no spend for a provider whose model has no price', () => {
+    recordUsage({ ...reply, inputTokens: 1_000_000, outputTokens: 1_000_000 })
+
+    expect(readSpend('2026-10', 'gemini')).toBe(0)
+  })
+
+  it('disables a provider that reported its credit spent until the month turns', () => {
+    markBillingExhausted('anthropic')
+    expect(reserveCall(paid)).toEqual({ denied: 'monthly' })
+
+    vi.setSystemTime(new Date('2026-11-01T00:00:00Z'))
+
+    expect('denied' in reserveCall(paid)).toBe(false)
+  })
+
+  it('throws billing_exhausted once the month is spent', async () => {
+    recordUsage(paidUsage(5_000_000))
+
+    const failure = await startCall(paid).catch((error: unknown) => error)
+
+    expect(failure).toBeInstanceOf(ProviderError)
+    expect(failure).toMatchObject({ provider: 'anthropic', kind: 'billing_exhausted' })
+  })
+
+  it('grants a capped provider while its spend cannot be read, and reads it again once it can', () => {
+    __resetBudgetsForTest()
+    getDb().exec('DROP TABLE llm_spend')
+    recordUsage(paidUsage(1_000_000))
+
+    expect('denied' in reserveCall(paid)).toBe(false)
+
+    closeDb()
+    addSpend('2026-10', 'anthropic', 5)
+
+    expect(reserveCall(paid)).toEqual({ denied: 'monthly' })
   })
 })

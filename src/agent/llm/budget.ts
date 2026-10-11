@@ -9,13 +9,14 @@
  */
 
 import { config } from '../../config.js'
+import { addSpend, monthKey, readSpend } from '../../storage/spendStore.js'
 import { logger } from '../../utils/logger.js'
 import { __resetRateLimitersForTest, rateLimiterFor } from '../../utils/rateLimiter.js'
 import { estimateTokens } from '../../utils/tokens.js'
 import { __resetTokenBudgetForTest, tokenBucketFor } from '../tokenBudget.js'
 import type { ProviderId } from './profiles.js'
 import { ProviderError } from './providerError.js'
-import type { CallUsage, Workload } from './usage.js'
+import { type CallUsage, type Workload, estimateCostUsd, onUsage } from './usage.js'
 
 export interface CallReservation {
   release(usage?: CallUsage): void
@@ -45,6 +46,45 @@ const CONCURRENCY: Partial<Record<ProviderId, number>> = { modelscope: 1 }
 let magicubes = { day: '', used: 0 }
 const inFlight = new Map<ProviderId, number>()
 const waiting = new Map<ProviderId, Array<{ reply: boolean; grant: () => void }>>()
+const spendCache = new Map<ProviderId, { month: string; usd: number }>()
+const billingExhaustedIn = new Map<ProviderId, string>()
+
+/** A failed read caches nothing, so the next call reads the database again; a spend estimate never fails a call. */
+function spentThisMonth(provider: ProviderId, month: string): number {
+  const cached = spendCache.get(provider)
+  if (cached?.month === month) return cached.usd
+  try {
+    const usd = readSpend(month, provider)
+    spendCache.set(provider, { month, usd })
+    return usd
+  } catch (error) {
+    logger.warn({ err: error, provider, month }, 'Failed to read LLM spend; treating the month as unspent')
+    return 0
+  }
+}
+
+/** Whether `provider` may take no more calls this month: its local cap is spent, or it reported its credit gone. */
+export function isMonthlyExhausted(provider: ProviderId): boolean {
+  const month = monthKey()
+  if (billingExhaustedIn.get(provider) === month) return true
+  const cap = config.llm.monthlyBudgetUsd[provider]
+  return cap !== undefined && spentThisMonth(provider, month) >= cap
+}
+
+function recordSpend(usage: CallUsage): void {
+  const usd = estimateCostUsd(usage)
+  if (usd <= 0) return
+  const month = monthKey()
+  const before = spentThisMonth(usage.provider, month)
+  if (spendCache.get(usage.provider)?.month === month) spendCache.set(usage.provider, { month, usd: before + usd })
+  addSpend(month, usage.provider, usd)
+  const cap = config.llm.monthlyBudgetUsd[usage.provider]
+  if (cap !== undefined && before < cap && before + usd >= cap) {
+    logger.warn({ provider: usage.provider, cap }, 'Monthly budget reached; route disabled until the month resets')
+  }
+}
+
+onUsage(recordSpend)
 
 /**
  * The legacy config keeps exactly the accounting it had before per-call budgets: the Discord turn guard, the retry
@@ -128,7 +168,8 @@ export function reserveCall(input: CallInput): CallReservation | BudgetDenial {
   const tokens = coveredByTurn ? null : tokenBucketFor({ provider, model, limits })
 
   let denied: BudgetDenial['denied'] | null = null
-  if (!coveredByTurn && limiter.remainingRpd < 1 + headroom) denied = 'rpd'
+  if (isMonthlyExhausted(provider)) denied = 'monthly'
+  else if (!coveredByTurn && limiter.remainingRpd < 1 + headroom) denied = 'rpd'
   else if (!coveredByTurn && limiter.remainingRpm < 1 + headroom) denied = 'rpm'
   // Text replies are never refused on tokens: `rpm` bounds them, and attachment turns were gated before they began.
   else if (!replySide && tokens && tokens.remaining() < estTokens + config.gemini.maxAttachmentTokens) denied = 'tpm'
@@ -156,11 +197,12 @@ export function reserveCall(input: CallInput): CallReservation | BudgetDenial {
 
 /** Wait for the provider's slot, then reserve the call; a refusal throws the ProviderError the router acts on. */
 export async function startCall(input: CallInput & { signal?: AbortSignal }): Promise<CallReservation> {
-  const leave = legacyAccounting()
-    ? () => {}
-    : await acquireSlot(input.provider, REPLY_SIDE.has(input.workload), input.signal)
+  if (legacyAccounting()) return grantOrThrow(input.provider, reserveCall(input))
+  const leave = await acquireSlot(input.provider, REPLY_SIDE.has(input.workload), input.signal)
   let reservation: CallReservation
   try {
+    // The slot can be granted after the caller gave up; refusing here hands it on without spending a Magicube.
+    input.signal?.throwIfAborted()
     reservation = grantOrThrow(input.provider, reserveCall(input))
   } catch (error) {
     leave()
@@ -174,8 +216,14 @@ export async function startCall(input: CallInput & { signal?: AbortSignal }): Pr
   }
 }
 
-/** Adapters call this when they classify a provider's own billing error as `billing_exhausted`; 1D gives it a body. */
-export function markBillingExhausted(_provider: ProviderId): void {}
+/**
+ * For an adapter that classified the provider's own billing error. Held in memory until the month turns, so a restart
+ * after topping up the account is how the owner re-enables the route early.
+ */
+export function markBillingExhausted(provider: ProviderId): void {
+  billingExhaustedIn.set(provider, monthKey())
+  logger.warn({ provider }, 'Provider reported its credit spent; route disabled until the month resets')
+}
 
 function msUntilNextUtcMidnight(): number {
   const now = new Date()
@@ -206,4 +254,6 @@ export function __resetBudgetsForTest(): void {
   magicubes = { day: '', used: 0 }
   inFlight.clear()
   waiting.clear()
+  spendCache.clear()
+  billingExhaustedIn.clear()
 }

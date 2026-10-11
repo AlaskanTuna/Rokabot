@@ -7,6 +7,7 @@ vi.mock('../../../utils/logger.js', () => ({
 
 import { config } from '../../../config.js'
 import { closeDb } from '../../../storage/database.js'
+import { monthKey, readSpend } from '../../../storage/spendStore.js'
 import { __resetRateLimitersForTest, getSharedRateLimiter } from '../../../utils/rateLimiter.js'
 import {
   __resetTokenBudgetForTest,
@@ -14,9 +15,10 @@ import {
   chargeTokens,
   remainingTokensThisMinute
 } from '../../tokenBudget.js'
-import { __resetBudgetsForTest, reserveCall, startCall } from '../budget.js'
+import { __resetBudgetsForTest, isMonthlyExhausted, reserveCall, startCall } from '../budget.js'
 import { createLlm } from '../createModel.js'
 import { profileFor } from '../profiles.js'
+import { recordUsage } from '../usage.js'
 
 /**
  * The Pi runs the legacy config, with no `llm:` block. These pin that per-call budgets left every limit it had, and
@@ -191,6 +193,24 @@ describe('legacy config under per-call budgets', () => {
     }
 
     expect(remainingTokensThisMinute()).toBe(config.gemini.maxTokensPerMinute)
+  })
+
+  it('records spend on the legacy main and never refuses it for the month', async () => {
+    const { provider, model } = config.llm.main
+    recordUsage({ provider, model, workload: 'reply', inputTokens: 100_000_000, outputTokens: 0 })
+
+    expect(readSpend(monthKey(), 'gemini')).toBeGreaterThan(0)
+    expect(isMonthlyExhausted('gemini')).toBe(false)
+    expect(reserveCall({ provider, model, workload: 'extraction', estTokens: 1_000 })).not.toHaveProperty('denied')
+    await expect(startCall({ provider, model, workload: 'reply', estTokens: 1_000 })).resolves.toHaveProperty('release')
+  })
+
+  it('grants a legacy call whose signal already aborted, leaving the abort to the adapter as before', async () => {
+    const routes = [config.llm.main, { provider: 'modelscope', model: config.fallback.model }] as const
+    for (const { provider, model } of routes) {
+      const call = { provider, model, workload: 'reply', estTokens: 1_000, signal: AbortSignal.abort() } as const
+      await expect(startCall(call)).resolves.toHaveProperty('release')
+    }
   })
 
   it('declines an attachment turn at the same token threshold as before', () => {
