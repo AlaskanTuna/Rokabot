@@ -180,16 +180,15 @@ function elapsedSince(startedAt: number): number {
 }
 
 /** Gemini's prompt count includes cached tokens and excludes thoughts; the budget's buckets are disjoint. */
-function watchUsage(response: GenerateContentResponse): CallUsage {
-  const usage = response.usageMetadata
-  const cached = usage?.cachedContentTokenCount ?? 0
+function watchUsage(metadata: NonNullable<GenerateContentResponse['usageMetadata']>): CallUsage {
+  const cached = metadata.cachedContentTokenCount ?? 0
   return {
     provider: 'gemini',
     model: config.gemini.model,
     workload: 'watcher',
-    inputTokens: Math.max(0, (usage?.promptTokenCount ?? 0) - cached),
-    outputTokens: usage?.candidatesTokenCount ?? 0,
-    ...(usage?.thoughtsTokenCount ? { reasoningTokens: usage.thoughtsTokenCount } : {}),
+    inputTokens: Math.max(0, (metadata.promptTokenCount ?? 0) - cached),
+    outputTokens: metadata.candidatesTokenCount ?? 0,
+    ...(metadata.thoughtsTokenCount ? { reasoningTokens: metadata.thoughtsTokenCount } : {}),
     ...(cached > 0 ? { cacheReadTokens: cached } : {})
   }
 }
@@ -239,9 +238,13 @@ export async function watchMedia(input: {
       }
       return { status: 'failed', reason, calls, watchMs: elapsedSince(startedAt) }
     }
-    const usage = watchUsage(response)
-    recordUsage(usage)
-    reservation.release(usage)
+    if (response.usageMetadata) {
+      const usage = watchUsage(response.usageMetadata)
+      recordUsage(usage)
+      reservation.release(usage)
+    } else {
+      reservation.release()
+    }
 
     const billed = response.usageMetadata?.promptTokenCount
     let raw: unknown

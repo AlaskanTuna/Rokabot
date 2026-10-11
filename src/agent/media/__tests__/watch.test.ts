@@ -572,6 +572,15 @@ describe('watch budget', () => {
     expect(mocks.release).toHaveBeenCalledWith(usage)
   })
 
+  it('keeps the estimate and records nothing when Gemini reports no usage', async () => {
+    mocks.generateContent.mockResolvedValueOnce({ text: JSON.stringify(validObservations()) })
+
+    await watchMedia({ source: videoSource(), plan: planWholeVideo(), focus: 'What happens?' })
+
+    expect(mocks.release).toHaveBeenCalledWith()
+    expect(mocks.recordUsage).not.toHaveBeenCalled()
+  })
+
   it('sends nothing and fails as overloaded when the budget refuses the watch', async () => {
     mocks.startCall.mockRejectedValueOnce(
       new ProviderError({ provider: 'gemini', kind: 'quota_exhausted', message: 'local rpm budget' })

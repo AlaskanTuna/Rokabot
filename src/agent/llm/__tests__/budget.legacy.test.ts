@@ -124,8 +124,13 @@ describe('legacy config under per-call budgets', () => {
 
   it('charges no tokens per call on the legacy main, whatever the workload', () => {
     const { provider, model } = config.llm.main
-    for (const workload of ['reply', 'watcher', 'extraction'] as const) {
-      reserveCall({ provider, model, workload, estTokens: 200_000 })
+    const calls = [
+      { workload: 'reply', estTokens: 200_000 },
+      { workload: 'watcher', estTokens: 200_000 },
+      { workload: 'extraction', estTokens: 1_000 }
+    ] as const
+    for (const { workload, estTokens } of calls) {
+      expect(reserveCall({ provider, model, workload, estTokens })).not.toHaveProperty('denied')
     }
 
     expect(remainingTokensThisMinute()).toBe(config.gemini.maxTokensPerMinute)
