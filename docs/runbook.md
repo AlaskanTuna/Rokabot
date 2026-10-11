@@ -256,6 +256,22 @@ After a fallback answer, turns go straight to the fallback for `fallback.stickyM
 tried again. ModelScope's daily Magicube allowance is spent per call (1 Magicube each for this model); usage is at
 modelscope.ai/magicube/usage.
 
+## Switching the Reply Model
+
+The reply model is `llm.main` in `config.yml`; `LLM_MAIN` in `.env` overrides it. Without an `llm:` block the bot
+runs Gemini with the ModelScope fallback above.
+
+1. Uncomment the `llm:` example in `config.yml` and set `main` to a key under `llm.models` (for example `haiku`).
+2. Put the provider's key in `.env` (`ANTHROPIC_API_KEY` for `haiku`); a missing key stops startup with its name.
+3. Rebuild and restart the bot, with the owner's authorization.
+4. Check which provider answered:
+
+```bash
+sudo docker logs rokabot-roka-1 2>&1 | grep '"msg":"Response completed"' | grep -o '"provider":"[a-z]*"' | sort | uniq -c
+```
+
+`LLM_FALLBACK=none` turns the fallback off without editing `config.yml`.
+
 ## Hedging Slow Gemini Calls
 
 When a fallback is configured, a Gemini call that has not answered within `gemini.hedgeAfterMs` (5 s, `0` disables)
@@ -265,11 +281,11 @@ both sides fail, the turn fails with Gemini's own error, as it would without hed
 the sticky window, so the next turn still tries Gemini. Each hedged call costs one extra ModelScope call.
 
 ```bash
-# Hedged calls, and which model won each one
+# Hedged calls, and which side (main or fallback) won each one
 sudo docker logs rokabot-roka-1 2>&1 | grep '"msg":"Hedged slow Gemini call; kept the faster answer"'
 
 # How often the hedge is winning, against how many turns it fired on
-sqlite3 data/rokabot.db "SELECT model, COUNT(*) FROM response_events WHERE hedged = 1 GROUP BY model"
+sqlite3 data/rokabot.db "SELECT COALESCE(route_role, model) AS side, COUNT(*) FROM response_events WHERE hedged = 1 GROUP BY side"
 ```
 
 Tuning: raise `hedgeAfterMs` to hedge fewer calls (cheaper, but a longer tail), lower it to hedge more (a shorter

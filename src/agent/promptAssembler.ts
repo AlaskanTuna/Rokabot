@@ -24,3 +24,13 @@ export function assembleSystemPrompt(input: AssemblerInput): string {
 
   return layers.join('\n\n')
 }
+
+const STABLE_PREFIXES = [CORE_PROMPT, CORE_PROMPT_FORGET_ONLY, CORE_PROMPT_MEMORY_FREE].map(
+  (core) => `${core}\n\n${SPEECH_PROMPT}`
+)
+
+/** Splits off the core and speech layers, which never change between turns, so a provider can cache them. */
+export function splitStablePrefix(prompt: string): { stable: string; rest: string } | undefined {
+  const stable = STABLE_PREFIXES.find((prefix) => prompt.startsWith(prefix))
+  return stable === undefined ? undefined : { stable, rest: prompt.slice(stable.length) }
+}

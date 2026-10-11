@@ -16,12 +16,14 @@ import type { ImageAttachment } from './attachments.js'
 import type { ModelRoute } from './fallbackModel.js'
 import { modelRouteForRequest } from './fallbackModel.js'
 import { computeBackoff } from './geminiReliability.js'
+import type { FailureKind } from './geminiReliability.js'
 import { prepareTurnMedia } from './media/turnMedia.js'
 import type { WatchOutcome } from './media/types.js'
 import { stripNarratedToolCalls } from './narratedToolCalls.js'
 import type { ToneKey } from './prompts/tones.js'
 import {
   ErrorRecoveryPlugin,
+  STICKY_KINDS,
   abortActiveTurns,
   hasStickyFallback,
   modelNameForCurrentRequest,
@@ -294,6 +296,10 @@ function getRandomFallback(): string {
   return fallbacks[Math.floor(Math.random() * fallbacks.length)]
 }
 
+function requestTimeoutFor(useFallback: boolean): number {
+  return useFallback && config.llm.fallback ? config.llm.fallback.timeoutMs : config.llm.main.timeoutMs
+}
+
 /** Generate an in-character response using the ADK agent pipeline
  * @param options - Channel ID, user message, display name, and optional image attachments
  * @returns Response text and detected tone
@@ -384,7 +390,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   })
 
   logger.debug(
-    { model: config.gemini.model, sessionEvents: session.events?.length ?? 0, hasImages: imageParts.length > 0 },
+    { model: config.llm.main.model, sessionEvents: session.events?.length ?? 0, hasImages: imageParts.length > 0 },
     'Sending ADK request'
   )
 
@@ -404,9 +410,11 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   const route: ModelRoute = {
     useFallback: rokaModel.hasFallback && hasStickyFallback(),
     hedged: false,
-    answeredBy: null
+    answeredBy: null,
+    pinned: null
   }
   let movedAwayFromGemini = false
+  let switchKind: FailureKind | undefined
   const reliability = await modelRouteForRequest.run(route, () =>
     modelCallsForRequest.run(modelCalls, () =>
       toolCallsForRequest.run(toolCalls, () =>
@@ -415,22 +423,27 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
             runTurnWithReliability({
               maxRetries: config.gemini.liveMaxRetries,
               retryBackoffCapMs: config.gemini.retryBackoffCapMs,
-              requestTimeoutMs: route.useFallback ? config.fallback.timeoutMs : config.gemini.timeout,
+              requestTimeoutMs: requestTimeoutFor(route.useFallback),
               turnDeadlineMs: config.gemini.turnDeadlineMs,
               switchModel: (kind) => {
                 if (!rokaModel.hasFallback) return undefined
 
-                route.useFallback = !route.useFallback
+                // A hedge can pin the fallback while useFallback is still false, so the pin names the failed side.
+                const failedOnFallback = route.pinned ? route.pinned === 'fallback' : route.useFallback
+                route.useFallback = !failedOnFallback
+                // A ladder switch is a new attempt on the other side, so that side's first answer sets the pin.
+                route.pinned = null
+                switchKind = kind
                 if (route.useFallback) {
                   movedAwayFromGemini = true
                   logger.warn(
                     { channelId, kind, model: rokaModel.fallbackModelName },
                     'Gemini unavailable, answering this turn with the fallback model'
                   )
-                  return config.fallback.timeoutMs
+                  return requestTimeoutFor(true)
                 }
 
-                return config.gemini.timeout
+                return requestTimeoutFor(false)
               },
               tryConsumeRetry: () =>
                 getSharedRateLimiter(config.rateLimit).tryConsumeAboveFloor(config.gemini.retryRpmFloor),
@@ -536,8 +549,8 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
         { channelId, model: rokaModel.fallbackModelName, attempts: reliability.attempts },
         'Fallback model answered'
       )
-      if (movedAwayFromGemini) {
-        setFallbackUntilMs(config.fallback.stickyMs > 0 ? Date.now() + config.fallback.stickyMs : 0)
+      if (movedAwayFromGemini && switchKind !== undefined && STICKY_KINDS.has(switchKind)) {
+        setFallbackUntilMs(config.llm.stickyMs > 0 ? Date.now() + config.llm.stickyMs : 0)
       }
     } else {
       setFallbackUntilMs(0)
@@ -622,6 +635,8 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   // Charge after the reliability ladder so retries and rebuilt prompts are included in actual spend.
   chargeTokens(tokensInEst)
 
+  const answeredModel =
+    route.answeredBy === 'fallback' ? config.llm.fallback : route.answeredBy === 'main' ? config.llm.main : null
   const metrics: ResponseMetrics = {
     generateMs: Math.round(performance.now() - generateStartMs),
     llmMs,
@@ -632,7 +647,9 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     failureMarker: reliability.failureMarker,
     tokensInEst,
     tokensOutEst: estimateTokens(reliability.text),
-    model: route.answeredBy ?? undefined,
+    routeRole: route.answeredBy ?? undefined,
+    provider: answeredModel?.provider,
+    modelId: answeredModel?.model,
     hedged: route.hedged ? 1 : 0
   }
 

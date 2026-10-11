@@ -7,7 +7,8 @@ vi.mock('../../../config.js', () => ({
   config: {
     report: { maxPerUserPerHour: 5, maxAttachmentBytes: 8, historyMessages: 20, historyMaxAgeMs: 7_200_000 },
     gemini: { model: 'gemini-test' },
-    fallback: { model: 'fallback-test' }
+    fallback: { model: 'fallback-test' },
+    llm: { main: { model: 'gemini-test' }, fallback: null }
   }
 }))
 vi.mock('../../../utils/logger.js', () => ({ logger: { info: mocks.info, warn: mocks.warn } }))

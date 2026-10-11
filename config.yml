@@ -36,6 +36,17 @@ fallback:
   baseUrl: https://api-inference.modelscope.ai/v1 # OpenAI-compatible ModelScope endpoint
   timeoutMs: 15000 # Per-request deadline for the fallback model (measured median ~1.3s with thinking off)
   stickyMs: 300000 # After Gemini fails and the fallback answers, later turns go straight to the fallback for this long; 0 disables
+# llm: # Main and fallback model selection; without this block the bot runs gemini.model with the fallback model above
+#   main: flash # Required; a key under llm.models (LLM_MAIN overrides)
+#   fallback: null # Optional; a key under llm.models (LLM_FALLBACK overrides; LLM_FALLBACK=none disables)
+#   hedgeAfterMs: 0 # Start the same call on the fallback after this many ms; paid routes start at 0 (off)
+#   stickyMs: 300000 # After the main model fails and the fallback answers, later turns start on the fallback this long
+#   monthlyBudgetUsd: # Local monthly spend cap per paid provider (enforced once per-call budgets land)
+#     anthropic: 5
+#     openai: 5
+#   models: # Only tested profiles start (src/agent/llm/profiles.ts); optional per model: timeoutMs, maxOutputTokens, baseUrl
+#     flash: { provider: gemini, model: gemini-3.5-flash-lite }
+#     haiku: { provider: anthropic, model: claude-haiku-5-5, effort: low } # Needs ANTHROPIC_API_KEY; effort none turns thinking off (for a Haiku fallback)
 
 rateLimit:
   rpm: 15 # Requests per minute (Gemini free tier: 15)

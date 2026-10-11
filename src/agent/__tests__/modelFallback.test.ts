@@ -1,16 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { config } from '../../config.js'
+import type { ResolvedModel } from '../../config.js'
 
 const mocks = vi.hoisted(() => ({ hasFallback: true, tryConsumeRetry: vi.fn(() => true) }))
 
-vi.mock('../fallbackModel.js', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../fallbackModel.js')>()
+vi.mock('../llm/createModel.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../llm/createModel.js')>()
   const { Gemini } = await import('@google/adk')
+  const { RoutedLlm } = await import('../fallbackModel.js')
 
   return {
     ...original,
     createRokaModel: () => {
-      const model = new original.RoutedLlm(new Gemini({ model: 'gemini-test' }), new Gemini({ model: 'fallback-test' }))
+      const model = new RoutedLlm(new Gemini({ model: 'gemini-test' }), new Gemini({ model: 'fallback-test' }))
       Object.defineProperty(model, 'hasFallback', { get: () => mocks.hasFallback })
       return model
     }
@@ -57,15 +59,26 @@ vi.mock('../../utils/rateLimiter.js', () => ({
 vi.mock('../../utils/timezone.js', () => ({ getLocalHour: () => 12 }))
 
 import { RoutedLlm, modelRouteForRequest } from '../fallbackModel.js'
-import { __resetModelFallbackForTest, runTurnWithReliability } from '../reliability.js'
+import type { FailureKind } from '../geminiReliability.js'
+import { profileFor } from '../llm/profiles.js'
+import { STICKY_KINDS, SWITCH_KINDS, __resetModelFallbackForTest, runTurnWithReliability } from '../reliability.js'
 import type { TurnOutcome } from '../reliability.js'
 import { __resetTestRunTurnFactory, __setTestRunTurnFactory, generateResponse, rokaAgent } from '../roka.js'
 import { destroySession } from '../session.js'
 import { resetForTest } from '../shutdownSignal.js'
 
-const mutableFallbackConfig = config.fallback as unknown as { timeoutMs: number; stickyMs: number }
+const mutableLlm = config.llm as unknown as { main: ResolvedModel; fallback: ResolvedModel | null; stickyMs: number }
+const testFallback: ResolvedModel = {
+  key: 'test-fallback',
+  provider: 'modelscope',
+  model: 'fallback-test',
+  profile: profileFor('modelscope', 'Qwen/Qwen3.5-122B-A10B')!,
+  apiKey: 'test-modelscope-key',
+  baseUrl: 'https://fallback.test/v1',
+  timeoutMs: 15_000,
+  maxOutputTokens: 500
+}
 const mutableGeminiConfig = config.gemini as unknown as {
-  timeout: number
   liveMaxRetries: number
   retryBackoffBaseMs: number
   retryBackoffCapMs: number
@@ -75,9 +88,9 @@ const mutableJevConfig = config.jev as unknown as { tone: 'off' | 'shadow' | 'on
 const channelId = 'model-fallback-test'
 
 const originalConfig = {
-  fallbackTimeoutMs: mutableFallbackConfig.timeoutMs,
-  stickyMs: mutableFallbackConfig.stickyMs,
-  geminiTimeout: mutableGeminiConfig.timeout,
+  llmMain: mutableLlm.main,
+  llmFallback: mutableLlm.fallback,
+  llmStickyMs: mutableLlm.stickyMs,
   liveMaxRetries: mutableGeminiConfig.liveMaxRetries,
   retryBackoffBaseMs: mutableGeminiConfig.retryBackoffBaseMs,
   retryBackoffCapMs: mutableGeminiConfig.retryBackoffCapMs,
@@ -130,9 +143,9 @@ beforeEach(() => {
   resetForTest()
   __resetModelFallbackForTest()
   mocks.hasFallback = true
-  mutableFallbackConfig.timeoutMs = originalConfig.fallbackTimeoutMs
-  mutableFallbackConfig.stickyMs = originalConfig.stickyMs
-  mutableGeminiConfig.timeout = originalConfig.geminiTimeout
+  mutableLlm.main = { ...originalConfig.llmMain }
+  mutableLlm.fallback = { ...testFallback }
+  mutableLlm.stickyMs = originalConfig.llmStickyMs
   mutableGeminiConfig.liveMaxRetries = originalConfig.liveMaxRetries
   mutableGeminiConfig.retryBackoffBaseMs = 0
   mutableGeminiConfig.retryBackoffCapMs = 0
@@ -147,9 +160,9 @@ afterEach(async () => {
   __resetModelFallbackForTest()
   await destroySession(channelId)
   resetForTest()
-  mutableFallbackConfig.timeoutMs = originalConfig.fallbackTimeoutMs
-  mutableFallbackConfig.stickyMs = originalConfig.stickyMs
-  mutableGeminiConfig.timeout = originalConfig.geminiTimeout
+  mutableLlm.main = originalConfig.llmMain
+  mutableLlm.fallback = originalConfig.llmFallback
+  mutableLlm.stickyMs = originalConfig.llmStickyMs
   mutableGeminiConfig.liveMaxRetries = originalConfig.liveMaxRetries
   mutableGeminiConfig.retryBackoffBaseMs = originalConfig.retryBackoffBaseMs
   mutableGeminiConfig.retryBackoffCapMs = originalConfig.retryBackoffCapMs
@@ -291,6 +304,72 @@ describe('retry model switching', () => {
   })
 })
 
+describe('provider failure switching', () => {
+  const providerOutcome = (kind: FailureKind) => ({
+    errorCode: 'ProviderError',
+    errorMessage: `Anthropic ${kind}`,
+    customMetadata: { reliabilityKind: kind },
+    hasText: false,
+    hasFunctionCall: false
+  })
+
+  it.each(['billing_exhausted', 'refusal', 'malformed_tool_args', 'context_length'] as const)(
+    'switches once on %s without sleeping',
+    async (kind) => {
+      const runTurn = vi
+        .fn()
+        .mockResolvedValueOnce(providerOutcome(kind))
+        .mockResolvedValueOnce({ text: 'Recovered~', hasText: true, hasFunctionCall: false })
+      const switchModel = vi.fn(() => 40)
+      const testOptions = reliabilityOptions({ runTurn, switchModel, maxRetries: 0 })
+
+      const result = await runTurnWithReliability(testOptions)
+
+      expect(result).toMatchObject({ success: true, text: 'Recovered~', attempts: 2 })
+      expect(switchModel).toHaveBeenCalledWith(kind)
+      expect(testOptions.sleep).not.toHaveBeenCalled()
+    }
+  )
+
+  it('opens the sticky window only for outage-shaped kinds', () => {
+    expect([...SWITCH_KINDS].sort()).toEqual([
+      'billing_exhausted',
+      'context_length',
+      'malformed_tool_args',
+      'network',
+      'quota_exhausted',
+      'refusal',
+      'transient_http'
+    ])
+    expect([...STICKY_KINDS].sort()).toEqual(['network', 'quota_exhausted', 'transient_http'])
+  })
+
+  it.each([
+    ['refusal', safetyDeflection],
+    ['billing_exhausted', genericFallback],
+    ['context_length', terminalDeflection]
+  ] as const)('answers %s in character without a retry when there is no fallback', async (kind, text) => {
+    const runTurn = vi.fn().mockResolvedValue(providerOutcome(kind))
+    const testOptions = reliabilityOptions({ runTurn })
+
+    const result = await runTurnWithReliability(testOptions)
+
+    expect(result).toMatchObject({ success: false, kind, text, attempts: 1 })
+    expect(testOptions.tryConsumeRetry).not.toHaveBeenCalled()
+  })
+
+  it('retries malformed tool arguments on the same model when there is no fallback', async () => {
+    const runTurn = vi
+      .fn()
+      .mockResolvedValueOnce(providerOutcome('malformed_tool_args'))
+      .mockResolvedValueOnce({ text: 'Second try~', hasText: true, hasFunctionCall: false })
+
+    const result = await runTurnWithReliability(reliabilityOptions({ runTurn }))
+
+    expect(result).toMatchObject({ success: true, text: 'Second try~', attempts: 2 })
+  })
+})
+
 describe('generateResponse model fallback', () => {
   it('uses the fallback for the retry and sends the next turn there within the sticky window', async () => {
     expect(rokaAgent.model).toBeInstanceOf(RoutedLlm)
@@ -318,9 +397,9 @@ describe('generateResponse model fallback', () => {
   })
 
   it('uses the fallback timeout in the window and clears the window after Gemini recovers', async () => {
-    mutableFallbackConfig.timeoutMs = 12
-    mutableFallbackConfig.stickyMs = 10_000
-    mutableGeminiConfig.timeout = 1_000
+    mutableLlm.fallback!.timeoutMs = 12
+    mutableLlm.stickyMs = 10_000
+    mutableLlm.main.timeoutMs = 1_000
     const routes: Array<boolean | undefined> = []
     __setTestRunTurnFactory(() => async (attempt) => {
       routes.push(modelRouteForRequest.getStore()?.useFallback)
@@ -367,7 +446,7 @@ describe('generateResponse model fallback', () => {
   })
 
   it('does not arm a sticky window when stickyMs is zero', async () => {
-    mutableFallbackConfig.stickyMs = 0
+    mutableLlm.stickyMs = 0
     const firstRoutes: Array<boolean | undefined> = []
     __setTestRunTurnFactory(() => async (attempt) => {
       firstRoutes.push(modelRouteForRequest.getStore()?.useFallback)
@@ -388,8 +467,82 @@ describe('generateResponse model fallback', () => {
     expect(nextRoutes).toEqual([false])
   })
 
+  it('does not arm the sticky window when a refusal moved the turn to the fallback', async () => {
+    mutableLlm.stickyMs = 10_000
+    const routes: Array<boolean | undefined> = []
+    __setTestRunTurnFactory(() => async (attempt) => {
+      routes.push(modelRouteForRequest.getStore()?.useFallback)
+      return attempt === 0
+        ? {
+            errorCode: 'ProviderError',
+            errorMessage: 'Anthropic refused the request (cyber)',
+            customMetadata: { reliabilityKind: 'refusal' },
+            hasText: false,
+            hasFunctionCall: false
+          }
+        : { text: 'Fallback answer~', hasText: true, hasFunctionCall: false }
+    })
+
+    expect((await generateResponse(responseOptions())).text).toBe('Fallback answer~')
+
+    const nextRoutes: Array<boolean | undefined> = []
+    __setTestRunTurnFactory(() => async () => {
+      nextRoutes.push(modelRouteForRequest.getStore()?.useFallback)
+      return { text: 'Main again~', hasText: true, hasFunctionCall: false }
+    })
+    await generateResponse(responseOptions('Next turn.'))
+
+    expect(routes).toEqual([false, true])
+    expect(nextRoutes).toEqual([false])
+  })
+
+  it('starts the other side unpinned after the ladder switches', async () => {
+    const pins: Array<string | null | undefined> = []
+    __setTestRunTurnFactory(() => async (attempt) => {
+      const route = modelRouteForRequest.getStore()
+      pins.push(route?.pinned)
+      if (route && attempt === 0) route.pinned = 'main'
+      return attempt === 0
+        ? { errorCode: '503', hasText: false, hasFunctionCall: false }
+        : { text: 'Fallback answer~', hasText: true, hasFunctionCall: false }
+    })
+
+    await generateResponse(responseOptions())
+
+    expect(pins).toEqual([null, null])
+  })
+
+  it('retries the healthy side when a hedge-pinned fallback fails, and arms no sticky window', async () => {
+    mutableLlm.stickyMs = 10_000
+    const attempts: Array<{ useFallback: boolean | undefined; pinned: string | null | undefined }> = []
+    __setTestRunTurnFactory(() => async (attempt) => {
+      const route = modelRouteForRequest.getStore()
+      attempts.push({ useFallback: route?.useFallback, pinned: route?.pinned })
+      // The hedge handed the turn to the fallback while the route still says main.
+      if (route && attempt === 0) route.pinned = 'fallback'
+      return attempt === 0
+        ? { errorCode: '503', hasText: false, hasFunctionCall: false }
+        : { text: 'Main answer~', hasText: true, hasFunctionCall: false }
+    })
+
+    expect((await generateResponse(responseOptions())).text).toBe('Main answer~')
+
+    const nextRoutes: Array<boolean | undefined> = []
+    __setTestRunTurnFactory(() => async () => {
+      nextRoutes.push(modelRouteForRequest.getStore()?.useFallback)
+      return { text: 'Main again~', hasText: true, hasFunctionCall: false }
+    })
+    await generateResponse(responseOptions('Next turn.'))
+
+    expect(attempts).toEqual([
+      { useFallback: false, pinned: null },
+      { useFallback: false, pinned: null }
+    ])
+    expect(nextRoutes).toEqual([false])
+  })
+
   it('records the answering model on every answered turn, and never arms the sticky window for a hedge', async () => {
-    mutableFallbackConfig.stickyMs = 10_000
+    mutableLlm.stickyMs = 10_000
     const answeredBy: Array<string | null | undefined> = []
     __setTestRunTurnFactory(() => async () => {
       const route = modelRouteForRequest.getStore()
@@ -404,22 +557,27 @@ describe('generateResponse model fallback', () => {
     const first = await generateResponse(responseOptions())
     const second = await generateResponse(responseOptions('A slow one.'))
 
-    expect(first.metrics).toMatchObject({ model: 'fallback', hedged: 1 })
-    expect(second.metrics).toMatchObject({ model: 'fallback', hedged: 1 })
+    expect(first.metrics).toMatchObject({ routeRole: 'fallback', hedged: 1 })
+    expect(second.metrics).toMatchObject({ routeRole: 'fallback', hedged: 1 })
     expect(answeredBy).toEqual(['fallback', 'fallback'])
 
     const nextRoutes: Array<boolean | undefined> = []
     __setTestRunTurnFactory(() => async () => {
       const route = modelRouteForRequest.getStore()
       // An unhedged Gemini call still records who answered.
-      if (route) route.answeredBy = 'gemini'
+      if (route) route.answeredBy = 'main'
       nextRoutes.push(route?.useFallback)
       return { text: 'Gemini next~', hasText: true, hasFunctionCall: false }
     })
     const next = await generateResponse(responseOptions('And now?'))
 
     expect(nextRoutes).toEqual([false])
-    expect(next.metrics).toMatchObject({ model: 'gemini', hedged: 0 })
+    expect(next.metrics).toMatchObject({
+      routeRole: 'main',
+      provider: 'gemini',
+      modelId: config.llm.main.model,
+      hedged: 0
+    })
   })
 
   it('keeps the existing fallback reply when no fallback model is configured', async () => {
