@@ -126,10 +126,15 @@ function constsMatch(value: JsonObject, branch: unknown): boolean {
 /** Strict mode answers an omitted optional field with null, where the caller's own schema expects no key at all. */
 function withoutOptionalNulls(value: unknown, schema: unknown): unknown {
   if (!isRecord(schema)) return value
-  if (Array.isArray(value)) return value.map((item) => withoutOptionalNulls(item, schema.items))
+  const branches = [...arrayOf(schema.anyOf), ...arrayOf(schema.oneOf)]
+  if (Array.isArray(value)) {
+    let items: unknown = value.map((item) => withoutOptionalNulls(item, schema.items))
+    for (const branch of branches) items = withoutOptionalNulls(items, branch)
+    return items
+  }
   if (!isRecord(value)) return value
   let result: JsonObject = value
-  for (const branch of [...arrayOf(schema.anyOf), ...arrayOf(schema.oneOf)]) {
+  for (const branch of branches) {
     if (constsMatch(result, branch)) result = withoutOptionalNulls(result, branch) as JsonObject
   }
   if (!isRecord(schema.properties)) return result

@@ -706,6 +706,44 @@ describe('ChatCompletionsLlm structured output', () => {
     })
   })
 
+  it('drops strict-mode nulls inside a nullable array of objects and keeps a required-nullable null', async () => {
+    const reply = {
+      status: 200,
+      body: {
+        choices: [{ message: { content: '{"tags":[{"a":"x","b":null}],"label":null}' }, finish_reason: 'stop' }]
+      }
+    }
+    const schema = {
+      type: 'object',
+      properties: {
+        tags: {
+          anyOf: [
+            {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: { a: { type: 'string' }, b: { type: 'string' } },
+                required: ['a'],
+                additionalProperties: false
+              }
+            },
+            { type: 'null' }
+          ]
+        },
+        label: { anyOf: [{ type: 'string' }, { type: 'null' }] }
+      },
+      required: ['tags', 'label'],
+      additionalProperties: false
+    }
+
+    const [response] = await responses(
+      luna(replay(reply).fetchImpl),
+      request([{ role: 'user', parts: [{ text: 'Tag it.' }] }], { responseJsonSchema: schema })
+    )
+
+    expect(JSON.parse(response?.content?.parts?.[0]?.text ?? '')).toEqual({ tags: [{ a: 'x' }], label: null })
+  })
+
   it('sends an already strict schema unchanged', async () => {
     const { fetchImpl, calls } = replay(openai.jsonSchema)
 
