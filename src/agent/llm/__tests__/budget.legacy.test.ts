@@ -7,6 +7,7 @@ vi.mock('../../../utils/logger.js', () => ({
 import { config } from '../../../config.js'
 import { closeDb } from '../../../storage/database.js'
 import { __resetRateLimitersForTest, getSharedRateLimiter } from '../../../utils/rateLimiter.js'
+import { __resetTokenBudgetForTest, remainingTokensThisMinute } from '../../tokenBudget.js'
 
 /**
  * The Pi runs the legacy config, with no `llm:` block. These pin that per-call budgets left every limit it had, and
@@ -17,6 +18,7 @@ beforeEach(() => {
   vi.setSystemTime(new Date('2026-10-11T12:00:00Z'))
   closeDb()
   __resetRateLimitersForTest()
+  __resetTokenBudgetForTest()
 })
 
 afterEach(() => {
@@ -50,5 +52,9 @@ describe('legacy config under per-call budgets', () => {
     vi.advanceTimersByTime(60_001)
 
     expect(limiter.canAdmitCalls(config.gemini.maxLlmCalls)).toBe(true)
+  })
+
+  it('reads the attachment guard from the Gemini route bucket at the old budget', () => {
+    expect(remainingTokensThisMinute()).toBe(125_000)
   })
 })
