@@ -20,7 +20,7 @@ import { listEpisodesForGuild, saveMemoryEpisode } from '../../../storage/memory
 import { ensureVectorProvenanceColumns } from '../../../storage/vectorProvenance.js'
 import { estimateTokens } from '../../../utils/tokens.js'
 import { registerChannelVisibility, resetChannelVisibilityForTest } from '../channelVisibility.js'
-import { geminiVector } from '../embeddings/__tests__/vectors.js'
+import { GEMINI_FINGERPRINT, LOCAL_FINGERPRINT, geminiVector, localVector } from '../embeddings/__tests__/vectors.js'
 import {
   buildEpisodeRecallBlock,
   formatEpisodeRecallBlock,
@@ -73,6 +73,7 @@ describe('episode retriever', () => {
       );
     `)
     ensureVectorProvenanceColumns(testDb, 'memory_episode')
+    configMock.embeddings = { provider: 'gemini', dim: 768, fingerprint: GEMINI_FINGERPRINT }
     configMock.memory.episodeRecallK = 3
     configMock.memory.episodeTokenBudget = 200
     configMock.memory.episodeMinSimilarity = 0.45
@@ -229,5 +230,23 @@ describe('episode retriever', () => {
         recallEpisodes({ guildId: 'guild-a', queryEmbedding: vector768(1), scope: here }).map(({ id }) => id)
       ).toEqual([1])
     })
+  })
+
+  it('recalls in the configured embedding dimension and refuses any other', () => {
+    configMock.embeddings = { provider: 'local', dim: 384, fingerprint: LOCAL_FINGERPRINT }
+    const vector384 = (first: number, second = 0) =>
+      Array.from({ length: 384 }, (_, index) => (index === 0 ? first : index === 1 ? second : 0))
+    saveMemoryEpisode({
+      id: 1,
+      guildId: 'guild-a',
+      channelId: 'channel-a',
+      startedAt: 0,
+      endedAt: 100,
+      summary: 'Local match.',
+      embedding: localVector(vector384(0.9, 0.43589))
+    })
+
+    expect(recallEpisodes({ guildId: 'guild-a', queryEmbedding: vector384(1) }).map(({ id }) => id)).toEqual([1])
+    expect(recallEpisodes({ guildId: 'guild-a', queryEmbedding: vector768(1) })).toEqual([])
   })
 })
