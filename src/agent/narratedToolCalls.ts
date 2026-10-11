@@ -16,7 +16,7 @@ export function stripNarratedToolCalls(text: string, toolNames: readonly string[
     new RegExp(`\`\`\`tool_code\\n[^\`]*?\\b(?:${names})\\s*\\([^\`]*?\`\`\`[ \\t]*\\n?`, 'g'),
     new RegExp(
       `\`\`\`[a-z_]*\\n[ \\t]*(?:print\\(\\s*)?(?:default_api\\.)?(?:${names})` +
-        `\\s*\\([^\\n\`]*\\)[ \\t]*\\n?\`\`\`[ \\t]*\\n?`,
+        '\\s*\\([^\\n`]*\\)[ \\t]*\\n?```[ \\t]*\\n?',
       'g'
     ),
     /<tool_call>[\s\S]*?<\/tool_call>[ \t]*\n?/g
