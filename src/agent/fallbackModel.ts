@@ -1,19 +1,24 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { BaseLlm, Gemini } from '@google/adk'
+import { BaseLlm } from '@google/adk'
 import type { BaseLlmConnection, LlmRequest, LlmResponse } from '@google/adk'
 import { FinishReason } from '@google/genai'
 import type { Part } from '@google/genai'
 import { config } from '../config.js'
 import { logger } from '../utils/logger.js'
+import { requestTokenEstimate, startCall } from './llm/budget.js'
+import { attachmentKind, attachmentMarker, functionDeclarations, isRecord, systemText } from './llm/requestShape.js'
+import { type CallUsage, recordUsage, workloadOf } from './llm/usage.js'
 
-export type AnswerModel = 'gemini' | 'fallback'
+export type AnswerModel = 'main' | 'fallback'
 
 export interface ModelRoute {
   useFallback: boolean
   /** 1 once any model call of the turn has fired a hedge. */
   hedged: boolean
-  /** Which provider produced the turn's answer; null until a call answers, and on a turn that produced none. */
+  /** Which side produced the turn's answer; null until a call answers, and on a turn that produced none. */
   answeredBy: AnswerModel | null
+  /** Set by the first answer of the turn; later calls in the turn use the same side (provider pinning). */
+  pinned: AnswerModel | null
 }
 
 export const modelRouteForRequest = new AsyncLocalStorage<ModelRoute>()
@@ -50,74 +55,13 @@ interface MessageEntry {
   group?: MessageGroup
 }
 
-function isRecord(value: unknown): value is JsonObject {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function attachmentKind(mimeType: string | undefined): string {
-  if (mimeType?.startsWith('audio/')) return 'audio'
-  if (mimeType?.startsWith('video/')) return 'video'
-  if (mimeType === 'application/pdf') return 'PDF'
-  return 'file'
-}
-
-function attachmentMarker(kind: string): string {
-  return `(a ${kind} attachment that can't be opened right now)`
-}
-
-function systemText(instruction: unknown): string | undefined {
-  if (typeof instruction === 'string') return instruction
-  if (!isRecord(instruction)) return undefined
-  if (typeof instruction.text === 'string') return instruction.text
-  const parts = Array.isArray(instruction.parts) ? instruction.parts : []
-  const text = parts
-    .filter(isRecord)
-    .map((part) => (typeof part.text === 'string' ? part.text : undefined))
-    .filter((part): part is string => part !== undefined)
-    .join('\n')
-  return text || undefined
-}
-
-function toJsonSchema(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(toJsonSchema)
-  if (!isRecord(value)) return value
-
-  const schema: JsonObject = {}
-  for (const [key, child] of Object.entries(value)) {
-    if (key === 'propertyOrdering') continue
-    if (key === 'type' && typeof child === 'string') {
-      schema[key] = child.toLowerCase()
-    } else if (key === 'type' && Array.isArray(child)) {
-      schema[key] = child.map((type) => (typeof type === 'string' ? type.toLowerCase() : type))
-    } else {
-      schema[key] = toJsonSchema(child)
-    }
-  }
-  return schema
-}
-
 function openAiTools(llmRequest: LlmRequest): ChatMessage[] {
-  const declarations = (llmRequest.config?.tools ?? []).flatMap((tool) => {
-    const declarationTool = tool as unknown as {
-      functionDeclarations?: Array<{
-        name?: string
-        description?: string
-        parameters?: unknown
-        parametersJsonSchema?: unknown
-      }>
-    }
-    return declarationTool.functionDeclarations ?? []
-  })
-  return declarations.map((declaration) => ({
+  return functionDeclarations(llmRequest).map((declaration) => ({
     type: 'function',
     function: {
-      name: declaration.name ?? '',
+      name: declaration.name,
       ...(declaration.description === undefined ? {} : { description: declaration.description }),
-      ...(declaration.parametersJsonSchema !== undefined
-        ? { parameters: declaration.parametersJsonSchema }
-        : declaration.parameters !== undefined
-          ? { parameters: toJsonSchema(declaration.parameters) }
-          : {})
+      ...(declaration.parameters === undefined ? {} : { parameters: declaration.parameters })
     }
   }))
 }
@@ -295,23 +239,48 @@ export class ModelScopeLlm extends BaseLlm {
     const tools = openAiTools(llmRequest)
     if (tools.length) requestBody.tools = tools
 
-    const response = await this.fetchImpl(`${this.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(requestBody),
+    const workload = workloadOf(llmRequest)
+    const reservation = await startCall({
+      provider: 'modelscope',
+      model: this.model,
+      workload,
+      estTokens: requestTokenEstimate([llmRequest.config?.systemInstruction, llmRequest.contents]),
       signal: externalSignal
-        ? AbortSignal.any([externalSignal, AbortSignal.timeout(this.timeoutMs)])
-        : AbortSignal.timeout(this.timeoutMs)
     })
-    if (!response.ok) {
-      const bodyText = await response.text()
-      throw new Error(`ModelScope ${response.status}: ${bodyText.slice(0, 300)}`)
-    }
 
-    const result = (await response.json()) as ModelScopeResponse
+    let result: ModelScopeResponse
+    try {
+      const response = await this.fetchImpl(`${this.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestBody),
+        signal: externalSignal
+          ? AbortSignal.any([externalSignal, AbortSignal.timeout(this.timeoutMs)])
+          : AbortSignal.timeout(this.timeoutMs)
+      })
+      if (!response.ok) {
+        const bodyText = await response.text()
+        throw new Error(`ModelScope ${response.status}: ${bodyText.slice(0, 300)}`)
+      }
+
+      result = (await response.json()) as ModelScopeResponse
+    } catch (error) {
+      reservation.release()
+      throw error
+    }
+    const usage: CallUsage = {
+      provider: 'modelscope',
+      model: this.model,
+      workload,
+      inputTokens: result.usage?.prompt_tokens ?? 0,
+      outputTokens: result.usage?.completion_tokens ?? 0
+    }
+    recordUsage(usage)
+    reservation.release(usage)
+
     const choice = result.choices?.[0]
     const message = choice?.message
     const text = typeof message?.content === 'string' ? message.content.trim() : ''
@@ -367,7 +336,7 @@ export class ModelScopeLlm extends BaseLlm {
   }
 }
 
-type RaceSide = 'gemini' | 'fallback'
+type RaceSide = AnswerModel
 
 type RaceOutcome =
   | { winner: RaceSide; responses: LlmResponse[]; errors: [] }
@@ -433,7 +402,7 @@ async function raceForWinner(
       errors.push({ side, error })
       // Nothing is racing yet, so Gemini's failure is the turn's own: waiting out the timer to start a
       // fallback call would delay a failure the ladder already knows how to handle.
-      if (side === 'gemini' && !hedgeStarted) {
+      if (side === 'main' && !hedgeStarted) {
         clearTimeout(timer)
         decide({ winner: null, responses: null, errors })
         return
@@ -453,7 +422,7 @@ async function raceForWinner(
     void run('fallback', fallback, withAbort(llmRequest, fallbackAbort.signal))
   }, hedgeAfterMs)
 
-  void run('gemini', primary, withAbort(llmRequest, primaryAbort.signal))
+  void run('main', primary, withAbort(llmRequest, primaryAbort.signal))
 
   const outcome = await settled
   clearTimeout(timer)
@@ -463,15 +432,18 @@ async function raceForWinner(
 export class RoutedLlm extends BaseLlm {
   readonly fallbackModelName: string | undefined
   readonly hedgeAfterMs: number
+  private readonly pinTurns: boolean
 
   constructor(
     private readonly primary: BaseLlm,
     private readonly fallback: BaseLlm | null,
-    hedgeAfterMs: number = config.gemini.hedgeAfterMs
+    hedgeAfterMs: number = config.llm.hedgeAfterMs,
+    { pinTurns = false }: { pinTurns?: boolean } = {}
   ) {
     super({ model: primary.model })
     this.fallbackModelName = fallback?.model
     this.hedgeAfterMs = hedgeAfterMs
+    this.pinTurns = pinTurns
   }
 
   get hasFallback(): boolean {
@@ -480,17 +452,20 @@ export class RoutedLlm extends BaseLlm {
 
   async *generateContentAsync(llmRequest: LlmRequest, stream?: boolean): AsyncGenerator<LlmResponse, void> {
     const route = modelRouteForRequest.getStore()
-    const onFallback = route?.useFallback && this.fallback
-    const side: AnswerModel = onFallback ? 'fallback' : 'gemini'
-    if (onFallback || !this.fallback || !route || this.hedgeAfterMs <= 0 || !isHedgeEligible(llmRequest)) {
+    const fallback = this.fallback
+    const pinned = fallback && this.pinTurns ? (route?.pinned ?? null) : null
+    const onFallback = fallback !== null && (pinned ? pinned === 'fallback' : Boolean(route?.useFallback))
+    const side: AnswerModel = onFallback ? 'fallback' : 'main'
+    if (pinned || onFallback || !fallback || !route || this.hedgeAfterMs <= 0 || !isHedgeEligible(llmRequest)) {
       if (route) route.answeredBy = side
-      yield* (onFallback ? this.fallback : this.primary).generateContentAsync(llmRequest, stream)
+      yield* (onFallback && fallback ? fallback : this.primary).generateContentAsync(llmRequest, stream)
+      if (route && this.pinTurns) route.pinned = side
       return
     }
 
     // route.hedged is turn-wide, so a later call in a turn that already hedged cannot tell whether it hedged itself.
     let hedgeFired = false
-    const outcome = await raceForWinner(llmRequest, this.primary, this.fallback, this.hedgeAfterMs, () => {
+    const outcome = await raceForWinner(llmRequest, this.primary, fallback, this.hedgeAfterMs, () => {
       hedgeFired = true
       route.hedged = true
     })
@@ -502,11 +477,12 @@ export class RoutedLlm extends BaseLlm {
           logger.warn({ err: failure.error }, 'Hedged fallback call failed while Gemini was still running')
         }
       }
-      const geminiError = outcome.errors.find((failure) => failure.side === 'gemini')?.error
-      throw geminiError ?? new Error(`Both models failed (${errorText(outcome.errors[0]?.error)})`)
+      const mainError = outcome.errors.find((failure) => failure.side === 'main')?.error
+      throw mainError ?? new Error(`Both models failed (${errorText(outcome.errors[0]?.error)})`)
     }
 
     route.answeredBy = outcome.winner
+    if (this.pinTurns) route.pinned = outcome.winner
     if (hedgeFired) {
       logger.warn(
         { winner: outcome.winner, hedgeAfterMs: this.hedgeAfterMs },
@@ -519,18 +495,4 @@ export class RoutedLlm extends BaseLlm {
   connect(llmRequest: LlmRequest): Promise<BaseLlmConnection> {
     return this.primary.connect(llmRequest)
   }
-}
-
-export function createRokaModel(): RoutedLlm {
-  const primary = new Gemini({ model: config.gemini.model })
-  const apiKey = config.fallback.apiKey
-  const fallback = apiKey
-    ? new ModelScopeLlm({
-        model: config.fallback.model,
-        apiKey,
-        baseUrl: config.fallback.baseUrl,
-        timeoutMs: config.fallback.timeoutMs
-      })
-    : null
-  return new RoutedLlm(primary, fallback)
 }

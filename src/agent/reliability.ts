@@ -1,11 +1,11 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { BasePlugin } from '@google/adk'
 import type { LlmResponse } from '@google/adk'
-import { config } from '../config.js'
 import { logger } from '../utils/logger.js'
-import { createRokaModel, modelRouteForRequest } from './fallbackModel.js'
+import { modelRouteForRequest } from './fallbackModel.js'
 import { classifyGeminiFailure, extractGeminiStatus } from './geminiReliability.js'
 import type { FailureKind } from './geminiReliability.js'
+import { createRokaModel } from './llm/createModel.js'
 import { isShuttingDown } from './shutdownSignal.js'
 
 export interface ModelVerdict {
@@ -20,14 +20,31 @@ const activeAbortControllers = new Set<AbortController>()
 export const rokaModel = createRokaModel()
 let fallbackUntilMs = 0
 
+/** Kinds after which the turn moves to the other model once. Only the outage-shaped ones also open the sticky
+ * window: a refusal or a bad tool call says nothing about the next turn, and a spent month is 1D's to disable. */
+export const SWITCH_KINDS: ReadonlySet<FailureKind> = new Set<FailureKind>([
+  'transient_http',
+  'network',
+  'quota_exhausted',
+  'billing_exhausted',
+  'refusal',
+  'malformed_tool_args',
+  'context_length'
+])
+export const STICKY_KINDS: ReadonlySet<FailureKind> = new Set<FailureKind>([
+  'transient_http',
+  'network',
+  'quota_exhausted'
+])
+
 export function __resetModelFallbackForTest(): void {
   fallbackUntilMs = 0
 }
 
 export function modelNameForCurrentRequest(): string {
   return modelRouteForRequest.getStore()?.useFallback && rokaModel.hasFallback
-    ? (rokaModel.fallbackModelName ?? config.gemini.model)
-    : config.gemini.model
+    ? (rokaModel.fallbackModelName ?? rokaModel.model)
+    : rokaModel.model
 }
 
 export interface TurnOutcome {
@@ -110,11 +127,11 @@ function fallbackResult(
   failureMarker?: string
 ): ReliabilityResult {
   const text =
-    kind === 'safety'
+    kind === 'safety' || kind === 'refusal'
       ? options.safetyDeflection
       : kind === 'recitation'
         ? options.recitationDeflection
-        : kind === 'terminal' || kind === 'session_corrupt'
+        : kind === 'terminal' || kind === 'session_corrupt' || kind === 'context_length'
           ? options.terminalDeflection
           : options.genericFallback
 
@@ -256,12 +273,7 @@ export async function runTurnWithReliability(options: RunTurnWithReliabilityOpti
       }
     }
 
-    if (
-      options.switchModel &&
-      !switchModelConsulted &&
-      (failure.kind === 'transient_http' || failure.kind === 'network' || failure.kind === 'quota_exhausted') &&
-      !shouldStop()
-    ) {
+    if (options.switchModel && !switchModelConsulted && SWITCH_KINDS.has(failure.kind) && !shouldStop()) {
       switchModelConsulted = true
       const nextTimeoutMs = options.switchModel(failure.kind)
       if (nextTimeoutMs !== undefined) {

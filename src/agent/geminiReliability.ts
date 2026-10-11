@@ -1,3 +1,5 @@
+import { ProviderError } from './llm/providerError.js'
+
 export type FailureKind =
   | 'transient_http'
   | 'network'
@@ -7,6 +9,11 @@ export type FailureKind =
   | 'session_corrupt'
   /** The key is out of requests for the day. A 429 like every other, and the only one that cannot recover. */
   | 'quota_exhausted'
+  /** Provider credit or a local monthly cap is spent; only a ProviderError carries the four kinds below. */
+  | 'billing_exhausted'
+  | 'refusal'
+  | 'malformed_tool_args'
+  | 'context_length'
   | 'terminal'
   | 'ok'
 
@@ -62,13 +69,17 @@ function result(kind: FailureKind): GeminiFailureResult {
       kind === 'network' ||
       kind === 'empty_text' ||
       kind === 'recitation' ||
-      kind === 'session_corrupt',
+      kind === 'session_corrupt' ||
+      kind === 'malformed_tool_args',
     deflect:
       kind === 'safety' ||
       kind === 'recitation' ||
       kind === 'session_corrupt' ||
       kind === 'terminal' ||
-      kind === 'quota_exhausted'
+      kind === 'quota_exhausted' ||
+      kind === 'billing_exhausted' ||
+      kind === 'refusal' ||
+      kind === 'context_length'
   }
 }
 
@@ -97,6 +108,8 @@ function classifyMarker(marker: string | undefined): FailureKind | undefined {
 }
 
 export function classifyGeminiFailure(input: unknown): GeminiFailureResult {
+  if (input instanceof ProviderError) return result(input.kind)
+
   if (typeof input === 'string') {
     return result(classifyMarker(input) ?? 'terminal')
   }
@@ -107,6 +120,8 @@ export function classifyGeminiFailure(input: unknown): GeminiFailureResult {
   const finishReason = stringValue(input.finishReason)
   const errorMessage = stringValue(input.errorMessage ?? input.message) ?? ''
   const name = stringValue(input.name) ?? ''
+  const carried = isRecord(input.customMetadata) ? input.customMetadata.reliabilityKind : undefined
+  if (errorCode === 'ProviderError' && typeof carried === 'string') return result(carried as FailureKind)
 
   if (SESSION_CORRUPT_PATTERN.test(`${name} ${errorMessage}`)) return result('session_corrupt')
 

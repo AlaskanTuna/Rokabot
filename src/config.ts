@@ -7,6 +7,7 @@ import { load } from 'js-yaml'
 // Both are pure leaves — attachmentLimits.ts imports nothing and attachments.ts only node built-ins — so
 // reading them here derives the floor instead of restating it, and cannot close a cycle back into config.
 import { GEMINI_IMAGE_TOKENS } from './agent/attachmentLimits.js'
+import { MODEL_PROFILES, type ModelProfile, type ProviderId, profileFor } from './agent/llm/profiles.js'
 import { MAX_ATTACHMENTS } from './discord/attachments.js'
 
 function requiredEnv(key: string): string {
@@ -48,6 +49,25 @@ interface YamlConfig {
     turnDeadlineMs?: number
   }
   fallback?: { model?: string; baseUrl?: string; timeoutMs?: number; stickyMs?: number }
+  llm?: {
+    main?: string
+    fallback?: string | null
+    hedgeAfterMs?: number
+    stickyMs?: number
+    monthlyBudgetUsd?: Record<string, number>
+    models?: Record<
+      string,
+      {
+        provider?: string
+        model?: string
+        effort?: string
+        timeoutMs?: number
+        maxOutputTokens?: number
+        baseUrl?: string
+        limits?: { rpm?: number; rpd?: number; tpm?: number }
+      }
+    >
+  }
   rateLimit?: { rpm?: number; rpd?: number }
   session?: { ttl?: number; windowSize?: number; maxRehydrationAge?: number; historyRetentionDays?: number }
   discord?: { maxMessageLength?: number; maxInFlightAttachmentBytes?: number }
@@ -221,13 +241,161 @@ function memoryEnum<T extends string>(key: 'privacy' | 'recall', envKey: string,
   throw new Error(`${source} must be ${allowed}, got: ${String(value)}`)
 }
 
+export interface ResolvedModel {
+  /** The llm.models key, e.g. 'haiku'; 'legacy-gemini' / 'legacy-fallback' when synthesised. */
+  key: string
+  provider: ProviderId
+  model: string
+  profile: ModelProfile
+  apiKey: string
+  baseUrl?: string
+  timeoutMs: number
+  maxOutputTokens: number
+  effort?: string
+  limits?: { rpm?: number; rpd?: number; tpm?: number }
+}
+
+export interface LlmConfig {
+  main: ResolvedModel
+  fallback: ResolvedModel | null
+  hedgeAfterMs: number
+  stickyMs: number
+  monthlyBudgetUsd: Partial<Record<ProviderId, number>>
+}
+
+interface LegacyModelSettings {
+  gemini: { apiKey: string; model: string; timeout: number; maxOutputTokens: number; hedgeAfterMs: number }
+  fallback: { apiKey: string | undefined; model: string; baseUrl: string; timeoutMs: number; stickyMs: number }
+}
+
+// Inherits the family's tested capabilities so a GEMINI_MODEL or FALLBACK_MODEL override keeps working as it
+// does today; D12's tested-profile rule applies to llm.models entries only.
+function legacyProfile(provider: ProviderId, model: string): ModelProfile {
+  const family = MODEL_PROFILES.find((profile) => profile.provider === provider)
+  if (!family) throw new Error(`No ${provider} profile to synthesise the legacy route from`)
+  return profileFor(provider, model) ?? { ...family, model }
+}
+
+function legacyLlm(settings: LegacyModelSettings): LlmConfig {
+  return {
+    main: {
+      key: 'legacy-gemini',
+      provider: 'gemini',
+      model: settings.gemini.model,
+      profile: legacyProfile('gemini', settings.gemini.model),
+      apiKey: settings.gemini.apiKey,
+      timeoutMs: settings.gemini.timeout,
+      maxOutputTokens: settings.gemini.maxOutputTokens
+    },
+    fallback: settings.fallback.apiKey
+      ? {
+          key: 'legacy-fallback',
+          provider: 'modelscope',
+          model: settings.fallback.model,
+          profile: legacyProfile('modelscope', settings.fallback.model),
+          apiKey: settings.fallback.apiKey,
+          baseUrl: settings.fallback.baseUrl,
+          timeoutMs: settings.fallback.timeoutMs,
+          maxOutputTokens: settings.gemini.maxOutputTokens
+        }
+      : null,
+    hedgeAfterMs: settings.gemini.hedgeAfterMs,
+    stickyMs: settings.fallback.stickyMs,
+    monthlyBudgetUsd: {}
+  }
+}
+
+const PROVIDER_KEY_ENV: Record<ProviderId, string> = {
+  gemini: 'GEMINI_API_KEY',
+  anthropic: 'ANTHROPIC_API_KEY',
+  openai: 'OPENAI_API_KEY',
+  modelscope: 'MODELSCOPE_API_KEY'
+}
+const DEFAULT_MONTHLY_BUDGET_USD: Partial<Record<ProviderId, number>> = { anthropic: 5, openai: 5 }
+
+type YamlModels = NonNullable<NonNullable<YamlConfig['llm']>['models']>
+
+function isProviderId(value: unknown): value is ProviderId {
+  return typeof value === 'string' && Object.hasOwn(PROVIDER_KEY_ENV, value)
+}
+
+function resolveRole(
+  models: YamlModels | undefined,
+  settings: LegacyModelSettings,
+  role: 'main' | 'fallback',
+  key: string,
+  fromEnv: boolean
+): ResolvedModel {
+  const source = fromEnv ? `Environment variable LLM_${role.toUpperCase()}` : `Config value llm.${role}`
+  const entry = models?.[key]
+  if (!entry) throw new Error(`${source} must name a key under llm.models, got: ${key}`)
+  const at = `Config value llm.models.${key}`
+  if (!isProviderId(entry.provider)) {
+    throw new Error(`${at}.provider must be gemini, anthropic, openai or modelscope, got: ${String(entry.provider)}`)
+  }
+  const profile = profileFor(entry.provider, String(entry.model))
+  if (!profile) throw new Error(`${at}.model has no tested ${entry.provider} profile, got: ${String(entry.model)}`)
+  if (!profile.verified)
+    throw new Error(`${at}.model ${profile.model} is an untested candidate and cannot be llm.${role}`)
+  const efforts = profile.thinking.efforts
+  if (entry.effort !== undefined && !efforts.includes(entry.effort)) {
+    throw new Error(
+      efforts.length === 0
+        ? `${at}.effort is not accepted by ${profile.model}, got: ${entry.effort}`
+        : `${at}.effort must be one of ${efforts.join(', ')}, got: ${entry.effort}`
+    )
+  }
+  const keyEnv = PROVIDER_KEY_ENV[entry.provider]
+  const apiKey = entry.provider === 'gemini' ? settings.gemini.apiKey : envString(keyEnv)
+  if (!apiKey) throw new Error(`Missing required environment variable: ${keyEnv} (llm.${role} uses ${entry.provider})`)
+  return {
+    key,
+    provider: entry.provider,
+    model: profile.model,
+    profile,
+    apiKey,
+    baseUrl: entry.baseUrl ?? (entry.provider === 'modelscope' ? settings.fallback.baseUrl : undefined),
+    timeoutMs: entry.timeoutMs ?? settings.gemini.timeout,
+    maxOutputTokens: entry.maxOutputTokens ?? settings.gemini.maxOutputTokens,
+    effort: entry.effort ?? profile.thinking.defaultEffort,
+    ...(entry.limits ? { limits: entry.limits } : {})
+  }
+}
+
+function resolveLlm(settings: LegacyModelSettings): LlmConfig {
+  const block = yaml.llm
+  const envMain = envString('LLM_MAIN')
+  const envFallback = envString('LLM_FALLBACK')
+  if (!block) {
+    if (envMain) throw new Error(`Environment variable LLM_MAIN needs an llm: block in config.yml, got: ${envMain}`)
+    if (envFallback && envFallback !== 'none') {
+      throw new Error(`Environment variable LLM_FALLBACK needs an llm: block in config.yml, got: ${envFallback}`)
+    }
+    const legacy = legacyLlm(settings)
+    return envFallback === 'none' ? { ...legacy, fallback: null } : legacy
+  }
+
+  const mainKey = envMain ?? block.main
+  if (!mainKey) throw new Error('Config value llm.main is required when config.yml has an llm: block')
+  const fallbackKey = envFallback === 'none' ? null : (envFallback ?? block.fallback ?? null)
+  return {
+    main: resolveRole(block.models, settings, 'main', mainKey, envMain !== undefined),
+    fallback:
+      fallbackKey === null
+        ? null
+        : resolveRole(block.models, settings, 'fallback', fallbackKey, envFallback !== undefined),
+    hedgeAfterMs: block.hedgeAfterMs ?? 0,
+    stickyMs: block.stickyMs ?? 300_000,
+    monthlyBudgetUsd: block.monthlyBudgetUsd ?? DEFAULT_MONTHLY_BUDGET_USD
+  }
+}
+
 const geminiModel = envString('GEMINI_MODEL') ?? yaml.gemini?.model ?? 'gemini-2.0-flash-lite'
 const memoryBufferSize = envInt('MEMORY_BUFFER_SIZE') ?? yaml.memory?.bufferSize ?? 30
 const requestedEpisodeMaxMessages = yaml.memory?.episodeMaxMessages ?? 25
 const episodeMaxMessages = Math.min(requestedEpisodeMaxMessages, memoryBufferSize - 3)
 
-/** Merged config: env overrides > config.yml > hardcoded defaults */
-export const config = {
+const baseConfig = {
   jev: {
     apiKey: envString('TYPESAFE_API_KEY'),
     model: envString('JEV_MODEL') ?? yaml.jev?.model ?? 'jev-1.13.0',
@@ -393,6 +561,17 @@ export const config = {
   timezone: (envString('TZ') ?? yaml.timezone) as string | undefined
 } as const
 
+/** Merged config: env overrides > config.yml > hardcoded defaults */
+export const config = { ...baseConfig, llm: resolveLlm(baseConfig) } as const
+
+function modelBounds(role: 'main' | 'fallback', model: ResolvedModel) {
+  return [
+    { path: `llm.${role}.timeoutMs`, value: model.timeoutMs, min: 1 },
+    // Config can lower a profile's limit; it cannot raise it.
+    { path: `llm.${role}.maxOutputTokens`, value: model.maxOutputTokens, min: 1, max: model.profile.maxOutputTokens }
+  ]
+}
+
 /**
  * Bounds for every numeric tunable, env-overridable or yaml-only, re-derived from resolved config
  * values so a dropped or mis-wired row shows up in `NUMERIC_BOUNDS`, not just at runtime. min: 1
@@ -549,7 +728,21 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'games.hangmanTimeoutMs', value: config.games.hangmanTimeoutMs, min: 1 },
   { path: 'games.shiritoriTimeoutMs', value: config.games.shiritoriTimeoutMs, min: 1 },
   { path: 'games.shinyChance', value: config.games.shinyChance, min: 0, max: 1 },
-  { path: 'statusCycleMs', value: config.statusCycleMs, min: 1 }
+  { path: 'statusCycleMs', value: config.statusCycleMs, min: 1 },
+  { path: 'llm.hedgeAfterMs', value: config.llm.hedgeAfterMs, min: 0 },
+  { path: 'llm.stickyMs', value: config.llm.stickyMs, min: 0 },
+  // Synthesised legacy values are already bounded as gemini.* and fallback.*, so only a block adds rows.
+  ...(yaml.llm
+    ? [
+        ...modelBounds('main', config.llm.main),
+        ...(config.llm.fallback ? modelBounds('fallback', config.llm.fallback) : []),
+        ...Object.entries(config.llm.monthlyBudgetUsd).map(([provider, value]) => ({
+          path: `llm.monthlyBudgetUsd.${provider}`,
+          value: value as number,
+          min: 0
+        }))
+      ]
+    : [])
 ]
 
 for (const { path, value, min, max } of NUMERIC_BOUNDS) {

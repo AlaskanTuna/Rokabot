@@ -18,8 +18,11 @@ export interface ResponseMetrics {
   tokensInEst: number
   tokensOutEst: number
   failureMarker?: string
-  /** Which provider produced the turn's answer; absent on turns that produced none. */
-  model?: 'gemini' | 'fallback'
+  /** Which side of the route answered; absent on turns that produced none. */
+  routeRole?: 'main' | 'fallback'
+  /** The answering side's provider and API model id. */
+  provider?: string
+  modelId?: string
   /** 1 once any model call of the turn has fired a hedge. */
   hedged: number
 }
@@ -105,8 +108,9 @@ function getResponseEventStatement(): Database.Statement {
   responseEventStatement = database.prepare(
     `INSERT INTO response_events (
       guild_id, channel_id, user_id, trigger, tone, outcome, kind, e2e_ms, generate_ms, llm_ms,
-      retry_latency_ms, retries, tokens_in_est, tokens_out_est, tools_used, failure_marker, model, hedged, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      retry_latency_ms, retries, tokens_in_est, tokens_out_est, tools_used, failure_marker, hedged,
+      provider, model_id, route_role, workload, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
   return responseEventStatement
 }
@@ -215,8 +219,11 @@ export function recordResponseEvent(row: ResponseEventInput): void {
       row.tokensOutEst,
       JSON.stringify(row.toolsUsed),
       row.failureMarker ?? null,
-      row.model ?? null,
       row.hedged,
+      row.provider ?? null,
+      row.modelId ?? null,
+      row.routeRole ?? null,
+      'reply',
       Date.now()
     )
   } catch (error) {
