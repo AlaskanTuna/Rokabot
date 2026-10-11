@@ -352,6 +352,21 @@ function callUsage(
   }
 }
 
+// Gemini's buckets, as ADK consumers read them: the prompt includes cached tokens and the candidates exclude thoughts.
+function usageMetadata(
+  usage: NonNullable<ChatCompletionsResponse['usage']>
+): NonNullable<LlmResponse['usageMetadata']> {
+  const cached = usage.prompt_tokens_details?.cached_tokens ?? 0
+  const reasoning = usage.completion_tokens_details?.reasoning_tokens ?? 0
+  return {
+    promptTokenCount: usage.prompt_tokens,
+    candidatesTokenCount: Math.max(0, (usage.completion_tokens ?? 0) - reasoning),
+    totalTokenCount: usage.total_tokens,
+    ...(cached > 0 ? { cachedContentTokenCount: cached } : {}),
+    ...(reasoning > 0 ? { thoughtsTokenCount: reasoning } : {})
+  }
+}
+
 const PROVIDER_LABELS: Readonly<Record<ChatCompletionsProvider, string>> = {
   openai: 'OpenAI',
   modelscope: 'ModelScope'
@@ -577,11 +592,13 @@ export class ChatCompletionsLlm extends BaseLlm {
       finishReason,
       ...(usage
         ? {
-            usageMetadata: {
-              promptTokenCount: usage.prompt_tokens,
-              candidatesTokenCount: usage.completion_tokens,
-              totalTokenCount: usage.total_tokens
-            }
+            usageMetadata: this.legacyTranslation
+              ? {
+                  promptTokenCount: usage.prompt_tokens,
+                  candidatesTokenCount: usage.completion_tokens,
+                  totalTokenCount: usage.total_tokens
+                }
+              : usageMetadata(usage)
           }
         : {})
     }

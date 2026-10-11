@@ -239,9 +239,38 @@ describe('ChatCompletionsLlm requests', () => {
       {
         content: { role: 'model', parts: [{ text: 'Hello there~' }] },
         finishReason: FinishReason.STOP,
-        usageMetadata: { promptTokenCount: 120, candidatesTokenCount: 9, totalTokenCount: 129 }
+        usageMetadata: {
+          promptTokenCount: 120,
+          cachedContentTokenCount: 64,
+          candidatesTokenCount: 9,
+          totalTokenCount: 129
+        }
       }
     ])
+  })
+
+  it("reports reasoning tokens in Gemini's thoughts bucket, out of the candidates", async () => {
+    const reply = {
+      status: 200,
+      body: {
+        choices: [{ message: { content: 'hm' }, finish_reason: 'stop' }],
+        usage: {
+          prompt_tokens: 50,
+          completion_tokens: 30,
+          total_tokens: 80,
+          completion_tokens_details: { reasoning_tokens: 12 }
+        }
+      }
+    }
+
+    const [response] = await responses(luna(replay(reply).fetchImpl), hello())
+
+    expect(response?.usageMetadata).toEqual({
+      promptTokenCount: 50,
+      candidatesTokenCount: 18,
+      thoughtsTokenCount: 12,
+      totalTokenCount: 80
+    })
   })
 })
 
