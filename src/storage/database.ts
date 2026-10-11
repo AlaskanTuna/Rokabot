@@ -444,6 +444,9 @@ export function runMigrations(database: Database.Database): void {
   if (jevEventCols.length > 0 && !jevEventCols.some((column) => column.name === 'job_id')) {
     database.exec('ALTER TABLE jev_events ADD COLUMN job_id INTEGER DEFAULT NULL')
   }
+  if (jevEventCols.length > 0 && !jevEventCols.some((column) => column.name === 'judge')) {
+    database.exec('ALTER TABLE jev_events ADD COLUMN judge TEXT DEFAULT NULL')
+  }
 
   database.exec(`
     CREATE TABLE IF NOT EXISTS extraction_samples (

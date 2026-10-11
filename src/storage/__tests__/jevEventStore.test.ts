@@ -37,4 +37,14 @@ describe('jevEventStore', () => {
       { kind: 'turn', job_id: null }
     ])
   })
+
+  it('records who judged a main-model judgment and NULL for Jev', () => {
+    recordJevEvent({ ...base, kind: 'admission', judge: 'anthropic:claude-haiku-5-5' })
+    recordJevEvent({ ...base, kind: 'verification' })
+
+    expect(getDb().prepare('SELECT kind, judge FROM jev_events ORDER BY rowid').all()).toEqual([
+      { kind: 'admission', judge: 'anthropic:claude-haiku-5-5' },
+      { kind: 'verification', judge: null }
+    ])
+  })
 })
