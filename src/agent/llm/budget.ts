@@ -1,3 +1,15 @@
+/**
+ * Per-call budgets in front of every provider call, counted per model.
+ *
+ * A reply turn already reserves its whole ceiling of requests on the main model's shared limiter, in the Discord
+ * layer (#167), so reply and watcher calls on the main model are not counted again here. Every other call takes its
+ * own slot. A background call only gets capacity that still leaves one whole reply turn behind it: that is how
+ * replies outrank background work without preempting anything already in flight.
+ */
+
+import { config } from '../../config.js'
+import { logger } from '../../utils/logger.js'
+import { __resetRateLimitersForTest, rateLimiterFor } from '../../utils/rateLimiter.js'
 import { estimateTokens } from '../../utils/tokens.js'
 import type { ProviderId } from './profiles.js'
 import { ProviderError } from './providerError.js'
@@ -7,19 +19,54 @@ export interface CallReservation {
   release(usage?: CallUsage): void
 }
 
+export type BudgetReservation = CallReservation
+
 export interface BudgetDenial {
   denied: 'rpm' | 'rpd' | 'tpm' | 'monthly'
 }
 
-interface CallInput {
+export interface CallInput {
   provider: ProviderId
   model: string
   workload: Workload
   estTokens: number
 }
 
-/** 1A stub that always grants; 1D replaces it with per-call RPM, TPM and monthly-spend reservations. */
-export function reserveCall(_input: CallInput): CallReservation | BudgetDenial {
+const REPLY_SIDE: ReadonlySet<Workload> = new Set<Workload>(['reply', 'watcher'])
+
+function routeLimits(provider: ProviderId, model: string) {
+  const route = [config.llm.main, config.llm.fallback].find(
+    (entry) => entry?.provider === provider && entry.model === model
+  )
+  return route?.limits
+}
+
+/** Reserve one provider call, or name the budget that refused it. Adapters call `startCall`, which wraps this. */
+export function reserveCall(input: CallInput): CallReservation | BudgetDenial {
+  // The legacy config keeps exactly the accounting it had before per-call budgets: the Discord turn guard, the retry
+  // gate and roka's per-turn token charge. Counting its calls here as well would hand the Pi's reply slots to
+  // background work and cap a fallback that has never been capped.
+  if (config.llm.main.key === 'legacy-gemini') return { release: () => {} }
+
+  const { provider, model, workload } = input
+  const replySide = REPLY_SIDE.has(workload)
+  const main = config.llm.main
+  // The Discord layer reserved this turn's whole ceiling on the main model's limiter (#167); counting each of its
+  // calls here as well would charge every reply twice.
+  const coveredByTurn = replySide && main.provider === provider && main.model === model
+  // A background call leaves one whole reply turn behind it, so the next reply is admitted rather than declined.
+  const headroom = replySide ? 0 : config.gemini.maxLlmCalls
+  const limiter = rateLimiterFor({ provider, model, limits: routeLimits(provider, model) })
+
+  let denied: BudgetDenial['denied'] | null = null
+  if (!coveredByTurn && limiter.remainingRpd < 1 + headroom) denied = 'rpd'
+  else if (!coveredByTurn && limiter.remainingRpm < 1 + headroom) denied = 'rpm'
+  if (denied) {
+    logger.info({ provider, model, workload, denied }, 'Budget declined a model call')
+    return { denied }
+  }
+
+  if (!coveredByTurn) limiter.tryConsume()
   return { release: () => {} }
 }
 
@@ -51,4 +98,9 @@ export function grantOrThrow(provider: ProviderId, reservation: CallReservation 
 /** Inline media is left out: its base64 length says nothing about what an image or PDF costs in tokens. */
 export function requestTokenEstimate(value: unknown): number {
   return estimateTokens(JSON.stringify(value, (key, child) => (key === 'data' ? undefined : child)) ?? '')
+}
+
+/** Test seam: every budget is module state, and one test's spent minute would refuse the next test's calls. */
+export function __resetBudgetsForTest(): void {
+  __resetRateLimitersForTest()
 }

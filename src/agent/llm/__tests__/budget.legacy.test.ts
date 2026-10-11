@@ -8,6 +8,7 @@ import { config } from '../../../config.js'
 import { closeDb } from '../../../storage/database.js'
 import { __resetRateLimitersForTest, getSharedRateLimiter } from '../../../utils/rateLimiter.js'
 import { __resetTokenBudgetForTest, remainingTokensThisMinute } from '../../tokenBudget.js'
+import { __resetBudgetsForTest, reserveCall, startCall } from '../budget.js'
 
 /**
  * The Pi runs the legacy config, with no `llm:` block. These pin that per-call budgets left every limit it had, and
@@ -19,6 +20,7 @@ beforeEach(() => {
   closeDb()
   __resetRateLimitersForTest()
   __resetTokenBudgetForTest()
+  __resetBudgetsForTest()
 })
 
 afterEach(() => {
@@ -56,5 +58,62 @@ describe('legacy config under per-call budgets', () => {
 
   it('reads the attachment guard from the Gemini route bucket at the old budget', () => {
     expect(remainingTokensThisMinute()).toBe(125_000)
+  })
+
+  it('adds nothing to the minute for the reply calls a turn reserved', () => {
+    const limiter = getSharedRateLimiter()
+    limiter.reserveCalls(config.gemini.maxLlmCalls)
+
+    for (let call = 0; call < config.gemini.maxLlmCalls; call += 1) {
+      reserveCall({ provider: 'gemini', model: config.gemini.model, workload: 'reply', estTokens: 1_000 })
+    }
+
+    expect(limiter.remainingRpm).toBe(15 - config.gemini.maxLlmCalls)
+  })
+
+  it('still settles single-call turns at rpm - maxLlmCalls + 1 a minute (#167)', () => {
+    const limiter = getSharedRateLimiter()
+    let admitted = 0
+    for (let turn = 0; turn < 15; turn += 1) {
+      const reservation = limiter.reserveCalls(config.gemini.maxLlmCalls)
+      if (!reservation) break
+      admitted += 1
+      reserveCall({ provider: 'gemini', model: config.gemini.model, workload: 'reply', estTokens: 1_000 })
+      reservation.release(1)
+    }
+
+    expect(admitted).toBe(12)
+  })
+
+  it('grants every background call on the legacy main without taking a slot or a daily unit', () => {
+    const { provider, model } = config.llm.main
+    for (let call = 0; call < 100; call += 1) {
+      expect(reserveCall({ provider, model, workload: 'extraction', estTokens: 1_000 })).not.toHaveProperty('denied')
+    }
+
+    const limiter = getSharedRateLimiter()
+    expect(limiter.remainingRpm).toBe(15)
+    expect(limiter.remainingRpd).toBe(500)
+    expect(limiter.canAdmitCalls(config.gemini.maxLlmCalls)).toBe(true)
+  })
+
+  it.each(['reply', 'extraction'] as const)('never refuses a legacy ModelScope %s call', async (workload) => {
+    for (let call = 0; call < 300; call += 1) {
+      await expect(
+        startCall({ provider: 'modelscope', model: config.fallback.model, workload, estTokens: 1_000 })
+      ).resolves.toHaveProperty('release')
+    }
+  })
+
+  it('charges a turn that reached the model one daily unit, whatever it spent of its ladder', () => {
+    getSharedRateLimiter().reserveCalls(config.gemini.maxLlmCalls)?.release(3)
+
+    expect(getSharedRateLimiter().remainingRpd).toBe(499)
+  })
+
+  it('hands the daily unit back for a turn that made no call', () => {
+    getSharedRateLimiter().reserveCalls(config.gemini.maxLlmCalls)?.release(0)
+
+    expect(getSharedRateLimiter().remainingRpd).toBe(500)
   })
 })

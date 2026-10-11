@@ -1,36 +1,186 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { grantOrThrow, markBillingExhausted, requestTokenEstimate, reserveCall, startCall } from '../budget.js'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const input = { provider: 'anthropic', model: 'claude-haiku-5-5', workload: 'reply', estTokens: 100 } as const
-const usage = {
-  provider: 'anthropic',
-  model: 'claude-haiku-5-5',
-  workload: 'reply',
-  inputTokens: 1,
-  outputTokens: 1
-} as const
+type Limits = { rpm?: number; rpd?: number; tpm?: number }
+type Route = { key: string; provider: string; model: string; limits?: Limits }
 
-function denialOf(denied: 'rpm' | 'rpd' | 'tpm' | 'monthly'): unknown {
-  try {
-    grantOrThrow('anthropic', { denied })
-  } catch (error) {
-    return error
+const configState = vi.hoisted(() => ({
+  logging: { level: 'silent' },
+  gemini: { model: 'gemini-test', maxLlmCalls: 4, maxAttachmentTokens: 50_000 },
+  llm: {
+    main: {} as Route,
+    fallback: null as Route | null,
+    monthlyBudgetUsd: {} as Record<string, number>,
+    modelscopeDailyMagicubes: 250
   }
-  return undefined
+}))
+
+vi.mock('../../../config.js', () => ({ config: configState }))
+vi.mock('../../../utils/logger.js', () => ({
+  logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }
+}))
+vi.mock('../profiles.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../profiles.js')>()),
+  profileFor: (_provider: string, model: string) =>
+    model === 'test-paid' ? { price: { input: 1, output: 1 } } : undefined
+}))
+
+import { closeDb } from '../../../storage/database.js'
+import { getSharedRateLimiter } from '../../../utils/rateLimiter.js'
+import {
+  type BudgetReservation,
+  type CallInput,
+  __resetBudgetsForTest,
+  grantOrThrow,
+  requestTokenEstimate,
+  reserveCall,
+  startCall
+} from '../budget.js'
+import { ProviderError } from '../providerError.js'
+
+const reply = { provider: 'gemini', model: 'gemini-test', workload: 'reply', estTokens: 1_000 } as const
+const extraction = { ...reply, workload: 'extraction' } as const
+const fallbackReply = { provider: 'anthropic', model: 'test-paid', workload: 'reply', estTokens: 1_000 } as const
+
+function granted(result: ReturnType<typeof reserveCall>): BudgetReservation {
+  if ('denied' in result) throw new Error(`refused: ${result.denied}`)
+  return result
 }
 
-describe('budget stub', () => {
-  afterEach(() => {
-    vi.useRealTimers()
+/** How many calls are granted before the first refusal, capped so an unlimited budget cannot hang the test. */
+function admitAll(input: CallInput): number {
+  for (let admitted = 0; admitted < 10_000; admitted += 1) {
+    if ('denied' in reserveCall(input)) return admitted
+  }
+  return Number.POSITIVE_INFINITY
+}
+
+function useRoutes(fallbackLimits?: Limits): void {
+  configState.llm.main = {
+    key: 'flash',
+    provider: 'gemini',
+    model: 'gemini-test',
+    limits: { rpm: 15, rpd: 500, tpm: 125_000 }
+  }
+  configState.llm.fallback = { key: 'haiku', provider: 'anthropic', model: 'test-paid', limits: fallbackLimits }
+  __resetBudgetsForTest()
+}
+
+beforeEach(() => {
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date('2026-10-11T12:00:00Z'))
+  closeDb()
+  configState.llm.monthlyBudgetUsd = { anthropic: 5 }
+  configState.llm.modelscopeDailyMagicubes = 250
+  useRoutes()
+})
+
+afterEach(() => {
+  vi.useRealTimers()
+})
+
+describe('requests per model', () => {
+  it('counts a reply call on the main model against its turn reservation, not a second time', () => {
+    const limiter = getSharedRateLimiter()
+    const turn = limiter.reserveCalls(4)
+
+    for (let call = 0; call < 4; call += 1) granted(reserveCall(reply))
+    expect(limiter.remainingRpm).toBe(11)
+
+    turn?.release(4)
+    expect(limiter.remainingRpm).toBe(11)
   })
 
-  it('always grants, and the grant accepts the call usage on release', () => {
-    const reservation = reserveCall(input)
+  it('takes a slot of its own for a reply on the fallback model', () => {
+    useRoutes({ rpm: 2 })
 
-    expect('denied' in reservation).toBe(false)
-    const grant = grantOrThrow('anthropic', reservation)
+    granted(reserveCall(fallbackReply))
+    granted(reserveCall(fallbackReply))
+
+    expect(reserveCall(fallbackReply)).toEqual({ denied: 'rpm' })
+  })
+
+  it('leaves a whole reply turn of requests behind every background call', () => {
+    expect(admitAll(extraction)).toBe(11)
+    expect(reserveCall(extraction)).toEqual({ denied: 'rpm' })
+    expect(getSharedRateLimiter().canAdmitCalls(4)).toBe(true)
+  })
+
+  it('gives background work its slots back as the minute rolls on', () => {
+    admitAll(extraction)
+    vi.advanceTimersByTime(60_001)
+
+    expect('denied' in reserveCall(extraction)).toBe(false)
+  })
+
+  it('leaves a whole reply turn of the day behind every background call', () => {
+    configState.llm.main.limits = { rpm: 1_000, rpd: 10, tpm: 125_000 }
+    __resetBudgetsForTest()
+
+    expect(admitAll(extraction)).toBe(6)
+    expect(reserveCall(extraction)).toEqual({ denied: 'rpd' })
+    expect(getSharedRateLimiter().remainingRpd).toBe(4)
+  })
+
+  it('never limits a model with no limits of its own', () => {
+    useRoutes(undefined)
+
+    for (let call = 0; call < 500; call += 1) granted(reserveCall({ ...fallbackReply, workload: 'extraction' }))
+  })
+})
+
+describe('startCall', () => {
+  it('throws quota_exhausted with a one-minute wait when the minute is spent', async () => {
+    useRoutes({ rpm: 1 })
+    ;(await startCall(fallbackReply)).release()
+
+    await expect(startCall(fallbackReply)).rejects.toMatchObject({
+      provider: 'anthropic',
+      kind: 'quota_exhausted',
+      retryAfterMs: 60_000
+    })
+  })
+
+  it('throws quota_exhausted with the wait until UTC midnight when the day is spent', async () => {
+    useRoutes({ rpd: 1 })
+    ;(await startCall(fallbackReply)).release()
+
+    await expect(startCall(fallbackReply)).rejects.toMatchObject({
+      kind: 'quota_exhausted',
+      retryAfterMs: Date.UTC(2026, 9, 12) - Date.UTC(2026, 9, 11, 12)
+    })
+  })
+
+  it('throws a ProviderError the reliability ladder can classify', async () => {
+    useRoutes({ rpm: 1 })
+    ;(await startCall(fallbackReply)).release()
+
+    await expect(startCall(fallbackReply)).rejects.toBeInstanceOf(ProviderError)
+  })
+
+  it('starts a call whose grant releases with usage or without', async () => {
+    const grant = await startCall(fallbackReply)
+    const usage = {
+      provider: 'anthropic',
+      model: 'test-paid',
+      workload: 'reply',
+      inputTokens: 1,
+      outputTokens: 1
+    } as const
+
     expect(() => grant.release(usage)).not.toThrow()
+    expect(() => grant.release()).not.toThrow()
   })
+})
+
+describe('denials and estimates', () => {
+  function denialOf(denied: 'rpm' | 'rpd' | 'tpm' | 'monthly'): unknown {
+    try {
+      grantOrThrow('anthropic', { denied })
+    } catch (error) {
+      return error
+    }
+    return undefined
+  }
 
   it.each([
     ['monthly', 'billing_exhausted', undefined],
@@ -53,19 +203,6 @@ describe('budget stub', () => {
       kind: 'quota_exhausted',
       retryAfterMs: 90 * 60_000
     })
-  })
-
-  it('starts a call whose grant releases with usage or without', async () => {
-    const grant = await startCall(input)
-
-    expect(() => grant.release(usage)).not.toThrow()
-    expect(() => grant.release()).not.toThrow()
-  })
-
-  it('stays a no-op until 1D: marking billing exhausted does not stop a later call', async () => {
-    expect(() => markBillingExhausted('anthropic')).not.toThrow()
-
-    await expect(startCall(input)).resolves.toHaveProperty('release')
   })
 
   it('estimates tokens without counting inline media bytes', () => {
