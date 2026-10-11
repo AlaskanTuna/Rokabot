@@ -125,6 +125,7 @@ Audio and video are watched before Roka replies rather than handed to her raw. `
 | `user_names`, `monitored_channels`                        | Durable user identity lookup and passive-monitoring state.                                                                                                                                           |
 | `response_events`, `extraction_events`                    | Response telemetry and retained historical extraction telemetry. `response_events.failure_marker` stores the raw `finishReason`/`errorCode` token only (e.g. `SAFETY`), never message text.          |
 | `bug_reports`                                             | User-submitted issue details, Discord context, build/runtime metadata, retained snapshot JSON, and optional attachment metadata/path.                                                                |
+| `llm_spend`                                               | Estimated LLM spend in USD per UTC month and provider, summed from each call's reported usage and its profile's prices, and read against `llm.monthlyBudgetUsd`.                                     |
 
 `/report` is a global command available in guilds, bot DMs, and group DMs with user installs. It takes a required
 `type` choice (`bug`, `wrong_answer`, `unsafe`, or `other`), a required message up to 1,500 characters, and one
@@ -1040,8 +1041,8 @@ block; a switch takes a restart.
 - **Recording:** every provider call reports its tokens through `recordUsage` (`onUsage` listeners).
   `response_events` gains `provider`, `model_id`, `route_role` (`main`/`fallback`) and `workload`; rows written
   before keep `model`, which new rows leave `NULL`. Every adapter calls `startCall` (`src/agent/llm/budget.ts`)
-  before each provider request and releases the reservation with the call's usage; in this phase the budget is a
-  stub that always grants, and `markBillingExhausted` is a no-op until per-call budgets land. `CallUsage` buckets
+  before each provider request and releases the reservation with the call's usage; what it counts and refuses is
+  described in "Per-Call Budgets (#296)". `CallUsage` buckets
   are disjoint: `inputTokens` excludes cache reads and writes, and `outputTokens` excludes `reasoningTokens` when
   the provider reports reasoning separately (Gemini); Anthropic reports no separate reasoning, so its
   `outputTokens` is the billed output.
@@ -1430,16 +1431,18 @@ bound tokens — a generated 89-page PDF measured 49,841 tokens in 35 KB, which 
 reserves 0.107% of the byte budget. Fifteen of those a minute is 299% of TPM while the byte budget reads 1.6%
 used. `gemini.maxAttachmentTokens` bounds one turn and says nothing about their rate.
 
-`src/agent/tokenBudget.ts` is a global account of tokens spent per rolling minute, draining continuously
-rather than resetting on a boundary, mirroring the RPM bucket. Global rather than per-channel because TPM is
-a project quota: the harm from overspending lands on every other channel, not on the sender.
+`src/agent/tokenBudget.ts` keeps one bucket per model with a `tpm` limit, draining continuously rather than resetting
+on a boundary, mirroring the RPM bucket (#296; it was Gemini-only). The main model's bucket is the one the attachment
+guard reads. Per model rather than per channel because TPM is the provider's quota on the model: the harm from
+overspending lands on every other channel, not on the sender.
 
 - **Admission and accounting are separate decisions, taken in different places.** Exact cost is only knowable
   after a file has been downloaded and measured, which is far too late to decline politely. Admission
   therefore asks the answerable question in the Discord handlers, before the turn: for a turn carrying
   attachments, is there room for the worst turn `gemini.maxAttachmentTokens` admits? That is the same floor
   idiom as `retryRpmFloor`. Accounting happens afterwards in `src/agent/roka.ts`, charging
-  what was actually sent.
+  what was actually sent. That is the turn's one charge, on the main model's minute; calls the turn does not cover
+  are charged per call where they are sent (`src/agent/llm/budget.ts`).
 - **Over-budget takes the existing in-character busy reply,** exactly as `byteBudget` does, and is asked
   before the byte reservation so a declined turn has taken nothing it must hand back. No new counter, notice,
   or message pool: the condition is transient and "she is swamped" is what it means.
@@ -1533,6 +1536,53 @@ admitted **389,382** (#148).
 
 The rule the two share: **exact where exactness is cheap, halved where it is not.** Converging them would
 mean either retaining unbounded charge history or halving `rpm` to 7 and giving up half the request budget.
+
+### Per-Call Budgets (#296)
+
+Every provider call passes `startCall` in `src/agent/llm/budget.ts` before it is sent: replies, background memory
+jobs, both watchers, and both sides of a hedge.
+
+- **Legacy Config:** without an `llm:` block (`config.llm.main.key` is `legacy-gemini`) the per-call gate counts
+  nothing: it takes no request slot, no daily unit, no tokens and no Magicube, and `startCall` neither waits for a
+  ModelScope slot nor refuses. The turn guard, the retry gate and roka's per-turn token charge are the whole budget,
+  as they were before #296, and ModelScope is neither serialised nor capped. Spend is still recorded to `llm_spend`,
+  with no cap.
+- **Limits Per Model:** a `llm.models` entry may set `limits: { rpm, rpd, tpm }`. A Gemini entry inherits `rateLimit`
+  and `gemini.maxTokensPerMinute`, so a Gemini route keeps the limits it has always had; other providers are
+  unlimited unless set. A main route's `rpm` has a floor of `gemini.maxLlmCalls` and its `tpm` a floor of
+  `gemini.maxAttachmentTokens`; a lower value stops startup. A model that is neither the main nor the fallback route
+  has no limits.
+- **Turns Keep Their Reservation:** the Discord guard still reserves a whole turn on the main model's limiter, so its
+  decline and busy replies are unchanged. Reply and watcher calls on the main model are counted by that reservation
+  and by roka's turn charge, not again. Every other call takes its own request slot (one `rpm` slot and one `rpd`
+  unit) and charges its own model's minute at its estimate; on release it settles to the prompt tokens the provider
+  reported, and with no report the estimate stands. On the main model `rpd` still counts one unit per turn, plus one
+  for each call that takes its own slot.
+- **Replies Outrank Background Work:** a background call (any workload other than reply and watcher) is refused
+  unless a whole reply turn still fits after it: `maxLlmCalls` requests, `maxLlmCalls` daily units, `maxLlmCalls`
+  Magicubes (ModelScope only) and `maxAttachmentTokens` tokens. Reply and watcher calls are never refused on tokens;
+  on the main model the turn's charge covers them, and on any other model each is charged at its estimate. Nothing in
+  flight is preempted.
+- **ModelScope:** one request in flight per account. Later calls wait for the slot rather than being refused,
+  because a refusal would open a sticky window on a healthy provider; reply and watcher calls go ahead of background
+  calls and behind replies already waiting, and a call waits for as long as its own signal allows. Every ModelScope
+  model, the qwen watcher included, draws on one daily estimate, `llm.modelscopeDailyMagicubes` (250): one per call,
+  counted when the call starts, reset at UTC midnight, and held in memory, so a restart resets it too.
+- **Monthly Spend:** each `recordUsage` event is priced from the model profile (cache reads at the cached rate, cache
+  writes at the profile's write price or 1.25x input, reasoning at the output rate) and added to `llm_spend`. Retries
+  and losing hedge calls that completed count; an aborted call reports no usage, so it adds none. At
+  `llm.monthlyBudgetUsd[provider]` every call to that provider is refused with `billing_exhausted` until the UTC
+  month turns, across restarts. A block without `monthlyBudgetUsd` caps `anthropic` and `openai` at 5 USD; a block
+  that sets it replaces those defaults, and a provider it does not list is uncapped. A provider's own billing error
+  (the Anthropic adapter classifies it) disables the provider the same way but in memory, so a restart after a
+  top-up re-enables it. A failed read of `llm_spend` counts the month as unspent. A failed write keeps that one
+  estimate in the running process's month total but loses it from the stored total, so the cap forgets it after a
+  restart; neither fails the call. A provider without a cap is priced and stored but its total is never read back. The provider's bill stays the source of truth.
+- **Refusals:** `billing_exhausted` keeps the route off until the UTC month turns and carries no wait hint; a spent
+  minute or token budget is `quota_exhausted` with a 60-second wait; a spent day or Magicube estimate is
+  `quota_exhausted` until UTC midnight. Each refusal logs `Budget declined a model call` with the budget that
+  refused it (`rpm`, `rpd`, `tpm` or `monthly`).
+- **Not Metered:** embeddings (paid embedding accounting is phase 3 of #296).
 
 ### Attachment Bytes Do Not Live in History
 

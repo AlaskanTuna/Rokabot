@@ -583,6 +583,15 @@ export function runMigrations(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_extraction_queue_status_available
       ON extraction_queue (status, available_at);
   `)
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS llm_spend (
+      month TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      usd REAL NOT NULL DEFAULT 0,
+      PRIMARY KEY (month, provider)
+    );
+  `)
 }
 
 /** Close the database connection. Safe to call multiple times. */

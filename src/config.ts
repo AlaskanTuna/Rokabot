@@ -63,6 +63,7 @@ interface YamlConfig {
     hedgeAfterMs?: number
     stickyMs?: number
     monthlyBudgetUsd?: Record<string, number>
+    modelscopeDailyMagicubes?: number
     models?: Record<
       string,
       {
@@ -303,6 +304,7 @@ export interface LlmConfig {
   hedgeAfterMs: number
   stickyMs: number
   monthlyBudgetUsd: Partial<Record<ProviderId, number>>
+  modelscopeDailyMagicubes: number
 }
 
 interface LegacyModelSettings {
@@ -327,7 +329,8 @@ function legacyLlm(settings: LegacyModelSettings): LlmConfig {
       profile: legacyProfile('gemini', settings.gemini.model),
       apiKey: settings.gemini.apiKey,
       timeoutMs: settings.gemini.timeout,
-      maxOutputTokens: settings.gemini.maxOutputTokens
+      maxOutputTokens: settings.gemini.maxOutputTokens,
+      limits: resolveLimits('gemini', undefined)
     },
     fallback: settings.fallback.apiKey
       ? {
@@ -338,12 +341,14 @@ function legacyLlm(settings: LegacyModelSettings): LlmConfig {
           apiKey: settings.fallback.apiKey,
           baseUrl: settings.fallback.baseUrl,
           timeoutMs: settings.fallback.timeoutMs,
-          maxOutputTokens: settings.gemini.maxOutputTokens
+          maxOutputTokens: settings.gemini.maxOutputTokens,
+          limits: resolveLimits('modelscope', undefined)
         }
       : null,
     hedgeAfterMs: settings.gemini.hedgeAfterMs,
     stickyMs: settings.fallback.stickyMs,
-    monthlyBudgetUsd: {}
+    monthlyBudgetUsd: {},
+    modelscopeDailyMagicubes: yaml.llm?.modelscopeDailyMagicubes ?? 250
   }
 }
 
@@ -400,7 +405,7 @@ function resolveRole(
     timeoutMs: entry.timeoutMs ?? settings.gemini.timeout,
     maxOutputTokens: entry.maxOutputTokens ?? settings.gemini.maxOutputTokens,
     effort: entry.effort ?? profile.thinking.defaultEffort,
-    ...(entry.limits ? { limits: entry.limits } : {})
+    limits: resolveLimits(entry.provider, entry.limits)
   }
 }
 
@@ -428,12 +433,33 @@ function resolveLlm(settings: LegacyModelSettings): LlmConfig {
         : resolveRole(block.models, settings, 'fallback', fallbackKey, envFallback !== undefined),
     hedgeAfterMs: block.hedgeAfterMs ?? 0,
     stickyMs: block.stickyMs ?? 300_000,
-    monthlyBudgetUsd: block.monthlyBudgetUsd ?? DEFAULT_MONTHLY_BUDGET_USD
+    monthlyBudgetUsd: block.monthlyBudgetUsd ?? DEFAULT_MONTHLY_BUDGET_USD,
+    modelscopeDailyMagicubes: block.modelscopeDailyMagicubes ?? 250
   }
 }
 
 const geminiModel = envString('GEMINI_MODEL') ?? yaml.gemini?.model ?? 'gemini-2.0-flash-lite'
 const memoryBufferSize = envInt('MEMORY_BUFFER_SIZE') ?? yaml.memory?.bufferSize ?? 30
+const rateLimit = {
+  rpm: envInt('RATE_LIMIT_RPM') ?? yaml.rateLimit?.rpm ?? 15,
+  rpd: envInt('RATE_LIMIT_RPD') ?? yaml.rateLimit?.rpd ?? 500
+}
+const geminiMaxTokensPerMinute = envInt('GEMINI_MAX_TOKENS_PER_MINUTE') ?? yaml.gemini?.maxTokensPerMinute ?? 125_000
+
+type ModelLimits = NonNullable<ResolvedModel['limits']>
+
+/**
+ * A Gemini entry inherits `rateLimit` and `gemini.maxTokensPerMinute`, so the synthesised legacy route keeps exactly
+ * the limits it has always had. Other providers are limited only where their entry says so.
+ */
+function resolveLimits(provider: ProviderId, own: ModelLimits | undefined): ModelLimits | undefined {
+  const limits: ModelLimits = {
+    ...(provider === 'gemini' ? { rpm: rateLimit.rpm, rpd: rateLimit.rpd, tpm: geminiMaxTokensPerMinute } : {}),
+    ...own
+  }
+  return Object.keys(limits).length > 0 ? limits : undefined
+}
+
 const requestedEpisodeMaxMessages = yaml.memory?.episodeMaxMessages ?? 25
 const episodeMaxMessages = Math.min(requestedEpisodeMaxMessages, memoryBufferSize - 3)
 
@@ -549,7 +575,7 @@ const baseConfig = {
     maxRetries: envInt('GEMINI_MAX_RETRIES') ?? yaml.gemini?.maxRetries ?? 1,
     maxOutputTokens: envInt('GEMINI_MAX_OUTPUT_TOKENS') ?? yaml.gemini?.maxOutputTokens ?? 300,
     maxAttachmentTokens: envInt('GEMINI_MAX_ATTACHMENT_TOKENS') ?? yaml.gemini?.maxAttachmentTokens ?? 50_000,
-    maxTokensPerMinute: envInt('GEMINI_MAX_TOKENS_PER_MINUTE') ?? yaml.gemini?.maxTokensPerMinute ?? 125_000,
+    maxTokensPerMinute: geminiMaxTokensPerMinute,
     safetyThreshold: envString('GEMINI_SAFETY_THRESHOLD') ?? yaml.gemini?.safetyThreshold ?? 'OFF',
     maxLlmCalls: yaml.gemini?.maxLlmCalls ?? 4,
     hedgeAfterMs: envInt('GEMINI_HEDGE_AFTER_MS') ?? yaml.gemini?.hedgeAfterMs ?? 5_000,
@@ -569,10 +595,7 @@ const baseConfig = {
   logging: {
     level: envString('LOG_LEVEL') ?? yaml.logging?.level ?? 'info'
   },
-  rateLimit: {
-    rpm: envInt('RATE_LIMIT_RPM') ?? yaml.rateLimit?.rpm ?? 15,
-    rpd: envInt('RATE_LIMIT_RPD') ?? yaml.rateLimit?.rpd ?? 500
-  },
+  rateLimit,
   session: {
     ttlMs: envInt('SESSION_TTL_MS') ?? yaml.session?.ttl ?? 300_000,
     windowSize: envInt('SESSION_WINDOW_SIZE') ?? yaml.session?.windowSize ?? 20,
@@ -682,6 +705,28 @@ function modelBounds(role: 'main' | 'fallback', model: ResolvedModel) {
 }
 
 /**
+ * Rows for the limits a configured route carries. The synthesised legacy routes get none: their limits are the
+ * `rateLimit` and `gemini.maxTokensPerMinute` values already bounded here, and a row would name a path nobody wrote.
+ * A main route must fund one whole reply turn, because the Discord guard reserves `maxLlmCalls` requests and admits an
+ * attachment turn only when a whole `maxAttachmentTokens` fits in the minute.
+ */
+function routeLimitBounds(
+  route: ResolvedModel | null,
+  isMain: boolean
+): Array<{ path: string; value: number; min: number }> {
+  if (!route?.limits || route.key.startsWith('legacy-')) return []
+  const path = `llm.models.${route.key}.limits`
+  const { rpm, rpd, tpm } = route.limits
+  return [
+    ...(rpm === undefined ? [] : [{ path: `${path}.rpm`, value: rpm, min: isMain ? config.gemini.maxLlmCalls : 1 }]),
+    ...(rpd === undefined ? [] : [{ path: `${path}.rpd`, value: rpd, min: 1 }]),
+    ...(tpm === undefined
+      ? []
+      : [{ path: `${path}.tpm`, value: tpm, min: isMain ? config.gemini.maxAttachmentTokens : 1 }])
+  ]
+}
+
+/**
  * Bounds for every numeric tunable, env-overridable or yaml-only, re-derived from resolved config
  * values so a dropped or mis-wired row shows up in `NUMERIC_BOUNDS`, not just at runtime. min: 1
  * keys silently break the behaviour they gate at zero or below (e.g. gemini.timeout: 0 aborts
@@ -770,6 +815,9 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   // rate-limited. Found by a harness fixture at `rpm: 2` going silent the moment reservations landed (#167).
   { path: 'rateLimit.rpm', value: config.rateLimit.rpm, min: config.gemini.maxLlmCalls },
   { path: 'rateLimit.rpd', value: config.rateLimit.rpd, min: 1 },
+  ...routeLimitBounds(config.llm.main, true),
+  ...routeLimitBounds(config.llm.fallback, false),
+  { path: 'llm.modelscopeDailyMagicubes', value: config.llm.modelscopeDailyMagicubes, min: 1 },
   { path: 'session.ttlMs', value: config.session.ttlMs, min: 1 },
   { path: 'session.windowSize', value: config.session.windowSize, min: 1 },
   { path: 'session.maxRehydrationAge', value: config.session.maxRehydrationAge, min: 0 },

@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 vi.mock('../../config.js', () => ({
   config: {
     discord: { token: 'test-token' },
-    rateLimit: { rpm: 15, rpd: 500 }
+    llm: { main: { provider: 'gemini', model: 'gemini-test', limits: { rpm: 15, rpd: 500 } } }
   }
 }))
 vi.mock('../events/interactionCreate.js', () => ({ createInteractionHandler: () => vi.fn() }))

@@ -314,6 +314,27 @@ Tuning: raise `hedgeAfterMs` to hedge fewer calls (cheaper, but a longer tail), 
 tail, more ModelScope spend). If a turn carried an audio clip, a video or a PDF, no hedge is possible — the fallback
 cannot read those — so those turns only ever wait out `gemini.timeout`.
 
+## Budgets and Monthly Spend
+
+Per-call budgets apply only with an `llm:` block in `config.yml`, except the spend query below, which also shows the
+legacy Gemini estimates.
+
+With an `llm:` block, every model call except embeddings passes the per-call budget. A refused call logs `Budget declined a model call` with the budget that
+refused it (`rpm`, `rpd`, `tpm` or `monthly`).
+
+```bash
+# Refused calls, and which budget refused them
+sudo docker logs rokabot-roka-1 2>&1 | grep '"msg":"Budget declined a model call"'
+
+# Estimated spend this month, per provider (USD)
+sqlite3 data/rokabot.db "SELECT provider, ROUND(usd, 4) FROM llm_spend WHERE month = strftime('%Y-%m', 'now')"
+```
+
+A provider that reaches `llm.monthlyBudgetUsd` is disabled until the UTC month turns, and stays disabled across
+restarts. To re-enable it early, raise its cap in `config.yml` and restart. A provider that reported its own credit
+spent is disabled in memory only: top up the account, then restart. ModelScope's daily estimate
+(`llm.modelscopeDailyMagicubes`) resets at UTC midnight and on restart.
+
 ---
 
 ## Local Embeddings
