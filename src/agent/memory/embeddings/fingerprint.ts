@@ -34,3 +34,9 @@ export function isEmbeddingVector(value: unknown, dim: number): value is number[
     value.every((item) => typeof item === 'number' && Number.isFinite(item))
   )
 }
+
+// A config from before the embeddings block keeps today's Gemini vectors while it has a Gemini key; a block that
+// leaves out the provider, or a setup without a Gemini key, uses the local sidecar.
+export function defaultEmbeddingProvider(input: { hasBlock: boolean; hasGeminiKey: boolean }): EmbeddingProvider {
+  return !input.hasBlock && input.hasGeminiKey ? 'gemini' : 'local'
+}
