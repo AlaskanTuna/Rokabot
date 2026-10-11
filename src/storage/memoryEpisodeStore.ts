@@ -1,8 +1,22 @@
+import { embeddingFingerprint } from '../agent/memory/embeddings/fingerprint.js'
+import { config } from '../config.js'
 import { getDb } from './database.js'
 import { enqueueEpisode } from './extractionQueue.js'
 import type { EpisodeCursor, ExtractionEpisode, ExtractionQueueJob } from './extractionQueue.js'
+import { UNKNOWN_FINGERPRINT } from './vectorProvenance.js'
+
+const LEGACY_GEMINI_FINGERPRINT = embeddingFingerprint('gemini', 'gemini-embedding-2', 768)
 
 export type EpisodeEmbedding = readonly number[]
+
+/** A vector and the embedding space it was made in. Every stored vector carries one. */
+export type EmbeddingVector = Readonly<{ values: readonly number[]; modelId: string; dim: number; fingerprint: string }>
+
+export type StoredVector = {
+  embedding: Buffer | null
+  embedding_dim: number | null
+  embedding_fingerprint: string | null
+}
 
 export type MemoryEpisode = Readonly<{
   id: number
@@ -15,37 +29,57 @@ export type MemoryEpisode = Readonly<{
   createdAt: number
 }>
 
-type MemoryEpisodeRow = {
+type MemoryEpisodeRow = StoredVector & {
   id: number
   guild_id: string
   channel_id: string
   started_at: number
   ended_at: number
   summary: string
-  embedding: Buffer | null
   created_at: number
 }
 
-const EMBEDDING_DIMENSIONS = 768
-const EMBEDDING_BYTES = EMBEDDING_DIMENSIONS * 4
-
-export function encodeFloat32Embedding(values: readonly number[], label = 'Episode'): Buffer {
+export function encodeFloat32Embedding(vector: EmbeddingVector, label = 'Episode'): Buffer {
+  const { values, dim } = vector
   if (
-    values.length !== EMBEDDING_DIMENSIONS ||
+    !Number.isInteger(dim) ||
+    dim <= 0 ||
+    values.length !== dim ||
     values.some((value) => !Number.isFinite(value) || !Number.isFinite(Math.fround(value)))
   ) {
-    throw new Error(`${label} embedding must contain 768 finite values`)
+    throw new Error(`${label} embedding must contain ${dim} finite values`)
   }
 
-  const bytes = Buffer.allocUnsafe(EMBEDDING_BYTES)
+  const bytes = Buffer.allocUnsafe(dim * 4)
   values.forEach((value, index) => bytes.writeFloatLE(value, index * 4))
   return bytes
 }
 
-export function decodeFloat32Embedding(bytes: Buffer | null): EpisodeEmbedding | null {
-  if (!bytes || bytes.byteLength !== EMBEDDING_BYTES) return null
+export function vectorParams(
+  vector: EmbeddingVector | null | undefined,
+  label?: string
+): [Buffer | null, string | null, number | null, string | null] {
+  return vector
+    ? [encodeFloat32Embedding(vector, label), vector.modelId, vector.dim, vector.fingerprint]
+    : [null, null, null, null]
+}
 
-  const values = Array.from({ length: EMBEDDING_DIMENSIONS }, (_, index) => bytes.readFloatLE(index * 4))
+// Every vector stored before provenance was recorded came from gemini-embedding-2 at 768 dimensions (#223), so only
+// that exact space may still read those.
+export function isActiveVector(fingerprint: string | null, dim: number | null, byteLength: number): boolean {
+  const active = config.embeddings
+  if (dim === null || dim !== active.dim || byteLength !== dim * 4) return false
+  return (
+    fingerprint === active.fingerprint ||
+    (fingerprint === UNKNOWN_FINGERPRINT && active.fingerprint === LEGACY_GEMINI_FINGERPRINT)
+  )
+}
+
+export function decodeFloat32Embedding(row: StoredVector): EpisodeEmbedding | null {
+  const bytes = row.embedding
+  if (!bytes || !isActiveVector(row.embedding_fingerprint, row.embedding_dim, bytes.byteLength)) return null
+
+  const values = Array.from({ length: bytes.byteLength / 4 }, (_, index) => bytes.readFloatLE(index * 4))
   const squaredNorm = values.reduce((sum, value) => sum + value * value, 0)
   return values.every(Number.isFinite) && squaredNorm > 0 ? values : null
 }
@@ -58,7 +92,7 @@ function mapMemoryEpisode(row: MemoryEpisodeRow): MemoryEpisode {
     startedAt: row.started_at,
     endedAt: row.ended_at,
     summary: row.summary,
-    embedding: decodeFloat32Embedding(row.embedding),
+    embedding: decodeFloat32Embedding(row),
     createdAt: row.created_at
   }
 }
@@ -81,9 +115,11 @@ function mapCursor(row: EpisodeCursorRow): EpisodeCursor {
   }
 }
 
-export function saveMemoryEpisode(input: Omit<MemoryEpisode, 'createdAt'> & { createdAt?: number }): MemoryEpisode {
+export function saveMemoryEpisode(
+  input: Omit<MemoryEpisode, 'createdAt' | 'embedding'> & { embedding: EmbeddingVector | null; createdAt?: number }
+): MemoryEpisode {
   const createdAt = input.createdAt ?? Date.now()
-  const embedding = input.embedding ? encodeFloat32Embedding(input.embedding) : null
+  const vector = vectorParams(input.embedding)
   const db = getDb()
   const existing = db
     .prepare('SELECT guild_id, channel_id, started_at, ended_at FROM memory_episode WHERE id = ?')
@@ -100,18 +136,22 @@ export function saveMemoryEpisode(input: Omit<MemoryEpisode, 'createdAt'> & { cr
   }
 
   db.prepare(
-    `INSERT INTO memory_episode (id, guild_id, channel_id, started_at, ended_at, summary, embedding, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(id) DO UPDATE SET summary = excluded.summary, embedding = excluded.embedding, created_at = excluded.created_at`
-  ).run(input.id, input.guildId, input.channelId, input.startedAt, input.endedAt, input.summary, embedding, createdAt)
+    `INSERT INTO memory_episode (id, guild_id, channel_id, started_at, ended_at, summary, embedding, embedding_model_id,
+       embedding_dim, embedding_fingerprint, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET summary = excluded.summary, embedding = excluded.embedding,
+       embedding_model_id = excluded.embedding_model_id, embedding_dim = excluded.embedding_dim,
+       embedding_fingerprint = excluded.embedding_fingerprint, created_at = excluded.created_at`
+  ).run(input.id, input.guildId, input.channelId, input.startedAt, input.endedAt, input.summary, ...vector, createdAt)
 
-  return { ...input, embedding: input.embedding ?? null, createdAt }
+  return { ...input, embedding: input.embedding?.values ?? null, createdAt }
 }
 
 export function listEpisodesForGuild(guildId: string): MemoryEpisode[] {
   const rows = getDb()
     .prepare(
-      `SELECT id, guild_id, channel_id, started_at, ended_at, summary, embedding, created_at
+      `SELECT id, guild_id, channel_id, started_at, ended_at, summary, embedding, embedding_dim, embedding_fingerprint,
+              created_at
        FROM memory_episode
        WHERE guild_id = ?
        ORDER BY ended_at DESC, id DESC`
@@ -131,14 +171,19 @@ export function pruneExpiredEpisodes(cutoffMs: number): number {
   return getDb().prepare('DELETE FROM memory_episode WHERE ended_at < ?').run(cutoffMs).changes
 }
 
+/** Stores a vector only while the summary it was made from is still the stored one. */
 export function setEpisodeEmbedding(input: {
   guildId: string
   id: number
-  embedding: EpisodeEmbedding
+  summary: string
+  embedding: EmbeddingVector
 }): boolean {
   const result = getDb()
-    .prepare('UPDATE memory_episode SET embedding = ? WHERE guild_id = ? AND id = ?')
-    .run(encodeFloat32Embedding(input.embedding), input.guildId, input.id)
+    .prepare(
+      `UPDATE memory_episode SET embedding = ?, embedding_model_id = ?, embedding_dim = ?, embedding_fingerprint = ?
+       WHERE guild_id = ? AND id = ? AND summary = ?`
+    )
+    .run(...vectorParams(input.embedding), input.guildId, input.id, input.summary)
   return result.changes === 1
 }
 

@@ -19,7 +19,12 @@ const { memoryDefaults, testConfig } = vi.hoisted(() => {
   }
   return {
     memoryDefaults,
-    testConfig: { logging: { level: 'silent' }, timezone: 'UTC', memory: { ...memoryDefaults } }
+    testConfig: {
+      logging: { level: 'silent' },
+      timezone: 'UTC',
+      embeddings: { provider: 'gemini', dim: 768, fingerprint: 'gemini:gemini-embedding-2:768:gemini-task-prefix' },
+      memory: { ...memoryDefaults }
+    }
   }
 })
 
@@ -32,6 +37,7 @@ import { setClaimEmbedding } from '../../../storage/memoryRecallStore.js'
 import { upsertUserName } from '../../../storage/userNames.js'
 import { estimateTokens } from '../../../utils/tokens.js'
 import { registerChannelVisibility, resetChannelVisibilityForTest } from '../channelVisibility.js'
+import { geminiVector } from '../embeddings/__tests__/vectors.js'
 import { type ClaimPeriod, assertClaim, pinClaim } from '../memoryClaims.js'
 import {
   type RecallInput,
@@ -83,7 +89,8 @@ function fact(
     ...(options.period ? { period: options.period } : {})
   })
   if (options.pinned) pinClaim(claim.id)
-  if (embedding) setClaimEmbedding({ id: claim.id, embeddingText: `${predicate}: ${value}`, embedding })
+  if (embedding)
+    setClaimEmbedding({ id: claim.id, embeddingText: `${predicate}: ${value}`, embedding: geminiVector(embedding) })
   return claim.id
 }
 
@@ -101,7 +108,7 @@ function episode(id: number, channelId: string, embedding: readonly number[], en
     startedAt: endedAt - 1000,
     endedAt,
     summary: `summary ${id}`,
-    embedding
+    embedding: geminiVector(embedding)
   })
 }
 
@@ -113,7 +120,7 @@ function media(label: string, channelId: string, embedding: readonly number[]): 
     label,
     summary: `${label} summary`,
     digestJson: '{}',
-    embedding,
+    embedding: geminiVector(embedding),
     createdAt: NOW
   })
   if (!digest) throw new Error('media digest was not saved')
@@ -411,7 +418,7 @@ describe('recallForTurn', () => {
       label: 'orphan',
       summary: 'orphan summary',
       digestJson: '{}',
-      embedding: axis(3),
+      embedding: geminiVector(axis(3)),
       createdAt: NOW
     })
 

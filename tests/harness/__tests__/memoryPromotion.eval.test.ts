@@ -142,6 +142,10 @@ describe('memory promotion harness evaluation', () => {
       'failure_marker',
       'model',
       'hedged',
+      'provider',
+      'model_id',
+      'route_role',
+      'workload',
       'created_at'
     ])
 

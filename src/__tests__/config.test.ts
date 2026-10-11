@@ -1,3 +1,4 @@
+import type { LlmRequest } from '@google/adk'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 describe('config module', () => {
@@ -13,6 +14,7 @@ describe('config module', () => {
     vi.unstubAllEnvs()
     vi.doUnmock('../utils/logger.js')
     vi.doUnmock('js-yaml')
+    vi.doUnmock('../agent/llm/profiles.js')
   })
 
   /** Shallow-recursive merge used only to layer a test override onto the real parsed config.yml */
@@ -68,6 +70,8 @@ describe('config module', () => {
     vi.stubEnv('MEDIA_QWEN_MODEL', '')
     vi.stubEnv('MEDIA_TRANSCRIBER_URL', '')
     vi.stubEnv('MODELSCOPE_API_KEY', '')
+    vi.stubEnv('EMBEDDINGS_PROVIDER', '')
+    vi.stubEnv('OPENAI_API_KEY', '')
     vi.stubEnv('FALLBACK_MODEL', '')
     vi.stubEnv('TYPESAFE_API_KEY', '')
     vi.stubEnv('JEV_MODEL', '')
@@ -92,6 +96,10 @@ describe('config module', () => {
     vi.stubEnv('METRICS_RETENTION_DAYS', '')
     vi.stubEnv('DISCORD_MAX_MESSAGE_LENGTH', '')
     vi.stubEnv('SOCIAL_POSTS_ENABLED', '')
+    vi.stubEnv('ANTHROPIC_API_KEY', '')
+    vi.stubEnv('LLM_MAIN', '')
+    vi.stubEnv('LLM_FALLBACK', '')
+    vi.stubEnv('GEMINI_HEDGE_AFTER_MS', '')
   }
 
   it('throws if DISCORD_TOKEN is missing', async () => {
@@ -204,6 +212,8 @@ describe('config module', () => {
       maxStreamedUploadBytes: 52_428_800,
       uploadTimeoutMs: 45_000,
       qwen: {
+        apiKey: undefined,
+        baseUrl: 'https://api-inference.modelscope.ai/v1',
         model: 'Qwen/Qwen3.5-35B-A3B',
         secondsPerFrame: 4,
         minFrames: 16,
@@ -396,6 +406,64 @@ describe('config module', () => {
     )
   })
 
+  it('loads separate main-model judge thresholds next to the Jev ones', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+
+    const { config } = await import('../config.js')
+
+    expect(config.memory.admitThreshold).toBe(0.5)
+    expect(config.memory.verifyThreshold).toBe(0.5)
+    expect(config.memory.modelAdmitThreshold).toBe(0.7)
+    expect(config.memory.modelVerifyThreshold).toBe(0.7)
+  })
+
+  it('throws if memory.modelVerifyThreshold exceeds 1 in config.yml', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    withYamlOverride({ memory: { modelVerifyThreshold: 1.5 } })
+
+    await expect(() => import('../config.js')).rejects.toThrow(
+      'Config value memory.modelVerifyThreshold must be <= 1, got: 1.5'
+    )
+  })
+
+  it('judges memory with nothing on the legacy config without a TypeSafe key', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+
+    const { config } = await import('../config.js')
+
+    expect(config.memory.judge).toBe('none')
+  })
+
+  it('judges memory with Jev whenever its key is set', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('TYPESAFE_API_KEY', 'test-typesafe-key')
+    withYamlOverride({
+      llm: { main: 'flash', models: { flash: { provider: 'gemini', model: 'gemini-3.5-flash-lite' } } }
+    })
+
+    const { config } = await import('../config.js')
+
+    expect(config.memory.judge).toBe('jev')
+  })
+
+  it('judges memory with the main model on an llm block without a TypeSafe key', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('LLM_MAIN', '')
+    vi.stubEnv('LLM_FALLBACK', '')
+    withYamlOverride({
+      llm: { main: 'flash', models: { flash: { provider: 'gemini', model: 'gemini-3.5-flash-lite' } } }
+    })
+
+    const { config } = await import('../config.js')
+
+    expect(config.memory.judge).toBe('model')
+  })
+
   it('loads bounded episodic memory settings', async () => {
     setRequiredEnvVars()
     clearTunableEnvVars()
@@ -575,6 +643,122 @@ describe('config module', () => {
     expect(config.jev.model).toBe('jev-override')
     expect(config.jev.tone).toBe('on')
     expect(config.jev.prefetch).toBe('on')
+  })
+
+  describe('per-model limits', () => {
+    it("gives the legacy Gemini route today's rateLimit and per-minute token budget", async () => {
+      setRequiredEnvVars()
+      clearTunableEnvVars()
+      const { config } = await import('../config.js')
+
+      expect(config.llm.main.key).toBe('legacy-gemini')
+      expect(config.llm.main.limits).toEqual({ rpm: 15, rpd: 500, tpm: 125_000 })
+    })
+
+    it('carries the rateLimit and token budget env overrides into the Gemini route', async () => {
+      setRequiredEnvVars()
+      clearTunableEnvVars()
+      vi.stubEnv('RATE_LIMIT_RPM', '30')
+      vi.stubEnv('RATE_LIMIT_RPD', '1000')
+      vi.stubEnv('GEMINI_MAX_TOKENS_PER_MINUTE', '100000')
+      const { config } = await import('../config.js')
+
+      expect(config.llm.main.limits).toEqual({ rpm: 30, rpd: 1000, tpm: 100_000 })
+      expect(config.rateLimit).toEqual({ rpm: 30, rpd: 1000 })
+      expect(config.gemini.maxTokensPerMinute).toBe(100_000)
+    })
+
+    it('gives the legacy ModelScope fallback no request or token limits', async () => {
+      setRequiredEnvVars()
+      clearTunableEnvVars()
+      vi.stubEnv('MODELSCOPE_API_KEY', 'test-modelscope')
+      const { config } = await import('../config.js')
+
+      expect(config.llm.fallback?.key).toBe('legacy-fallback')
+      expect(config.llm.fallback?.limits).toBeUndefined()
+    })
+
+    it('lets a Gemini entry set one limit and inherit the others', async () => {
+      setRequiredEnvVars()
+      clearTunableEnvVars()
+      withYamlOverride({
+        llm: {
+          main: 'flash',
+          models: { flash: { provider: 'gemini', model: 'gemini-3.5-flash-lite', limits: { rpm: 10 } } }
+        }
+      })
+      const { config } = await import('../config.js')
+
+      expect(config.llm.main.limits).toEqual({ rpm: 10, rpd: 500, tpm: 125_000 })
+    })
+
+    it('limits a non-Gemini entry only where it says so', async () => {
+      setRequiredEnvVars()
+      clearTunableEnvVars()
+      vi.stubEnv('ANTHROPIC_API_KEY', 'test-anthropic')
+      withYamlOverride({
+        llm: {
+          main: 'flash',
+          fallback: 'haiku',
+          models: {
+            flash: { provider: 'gemini', model: 'gemini-3.5-flash-lite' },
+            haiku: { provider: 'anthropic', model: 'claude-haiku-5-5', effort: 'low', limits: { rpm: 50 } }
+          }
+        }
+      })
+      const { config } = await import('../config.js')
+
+      expect(config.llm.fallback?.limits).toEqual({ rpm: 50 })
+    })
+
+    it('rejects a main-model rpm that cannot fund one whole turn', async () => {
+      setRequiredEnvVars()
+      clearTunableEnvVars()
+      withYamlOverride({
+        llm: {
+          main: 'flash',
+          models: { flash: { provider: 'gemini', model: 'gemini-3.5-flash-lite', limits: { rpm: 3 } } }
+        }
+      })
+
+      await expect(() => import('../config.js')).rejects.toThrow(
+        'Config value llm.models.flash.limits.rpm must be >= 4, got: 3'
+      )
+    })
+
+    it('rejects a main-model tpm below one attachment turn', async () => {
+      setRequiredEnvVars()
+      clearTunableEnvVars()
+      withYamlOverride({
+        llm: {
+          main: 'flash',
+          models: { flash: { provider: 'gemini', model: 'gemini-3.5-flash-lite', limits: { tpm: 40_000 } } }
+        }
+      })
+
+      await expect(() => import('../config.js')).rejects.toThrow(
+        'Config value llm.models.flash.limits.tpm must be >= 50000, got: 40000'
+      )
+    })
+
+    it('estimates 250 shared ModelScope Magicubes a day and rejects zero', async () => {
+      setRequiredEnvVars()
+      clearTunableEnvVars()
+      const defaults = await import('../config.js')
+      expect(defaults.config.llm.modelscopeDailyMagicubes).toBe(250)
+
+      vi.resetModules()
+      withYamlOverride({
+        llm: {
+          main: 'flash',
+          modelscopeDailyMagicubes: 0,
+          models: { flash: { provider: 'gemini', model: 'gemini-3.5-flash-lite' } }
+        }
+      })
+      await expect(() => import('../config.js')).rejects.toThrow(
+        'Config value llm.modelscopeDailyMagicubes must be >= 1, got: 0'
+      )
+    })
   })
 
   it('warns when the session TTL is shorter than the maximum live retry window', async () => {
@@ -1006,6 +1190,8 @@ describe('config module', () => {
       { path: 'jev.referentMinConfidence', min: 0, max: 1 },
       { path: 'memory.admitThreshold', min: 0, max: 1 },
       { path: 'memory.verifyThreshold', min: 0, max: 1 },
+      { path: 'memory.modelAdmitThreshold', min: 0, max: 1 },
+      { path: 'memory.modelVerifyThreshold', min: 0, max: 1 },
       { path: 'gemini.turnDeadlineMs', min: 1 },
       { path: 'gemini.retryBackoffCapMs', min: 1 },
       { path: 'gemini.maxRetries', min: 0 },
@@ -1016,12 +1202,16 @@ describe('config module', () => {
       { path: 'gemini.hedgeAfterMs', min: 0 },
       { path: 'rateLimit.rpm', min: 4 },
       { path: 'rateLimit.rpd', min: 1 },
+      { path: 'llm.modelscopeDailyMagicubes', min: 1 },
       { path: 'session.ttlMs', min: 1 },
       { path: 'session.windowSize', min: 1 },
       { path: 'session.maxRehydrationAge', min: 0 },
       { path: 'session.historyRetentionDays', min: 1 },
       { path: 'discord.maxMessageLength', min: 1, max: 3927 },
       { path: 'discord.maxInFlightAttachmentBytes', min: 31_457_280 },
+      { path: 'embeddings.timeoutMs', min: 1 },
+      { path: 'embeddings.backfillBatchSize', min: 1, max: 100_000 },
+      { path: 'embeddings.backfillGapMs', min: 0, max: 60_000 },
       { path: 'memory.bufferSize', min: 1 },
       { path: 'memory.contextSize', min: 1 },
       { path: 'memory.channelMonitorTtlMs', min: 1 },
@@ -1071,7 +1261,9 @@ describe('config module', () => {
       { path: 'games.hangmanTimeoutMs', min: 1 },
       { path: 'games.shiritoriTimeoutMs', min: 1 },
       { path: 'games.shinyChance', min: 0, max: 1 },
-      { path: 'statusCycleMs', min: 1 }
+      { path: 'statusCycleMs', min: 1 },
+      { path: 'llm.hedgeAfterMs', min: 0 },
+      { path: 'llm.stickyMs', min: 0 }
     ]
 
     const { NUMERIC_BOUNDS } = await import('../config.js')
@@ -1250,5 +1442,729 @@ describe('config module', () => {
     await expect(() => import('../config.js')).rejects.toThrow(
       'Config value statusCycleMs must be a finite number, got: NaN (number)'
     )
+  })
+
+  describe('embeddings', () => {
+    const GEMINI_FINGERPRINT = 'gemini:gemini-embedding-2:768:gemini-task-prefix'
+    const LOCAL_MODEL = 'Xenova/multilingual-e5-small@761b726d-q8'
+    const LOCAL_FINGERPRINT = `local:${LOCAL_MODEL}:384:e5-prefix-mean-l2`
+    const NO_FLOORS_WARNING =
+      'No embeddings.minSimilarity entry for this fingerprint, so recall uses the Gemini floors in memory.*MinSimilarity'
+
+    async function loadFloors() {
+      const { config } = await import('../config.js')
+      return {
+        config,
+        floors: [
+          config.memory.episodeMinSimilarity,
+          config.memory.mediaMinSimilarity,
+          config.memory.factMinSimilarity,
+          config.memory.serverFactMinSimilarity
+        ]
+      }
+    }
+
+    it("keeps a config without an embeddings block on today's Gemini embeddings", async () => {
+      setRequiredEnvVars()
+      clearTunableEnvVars()
+      withYamlOverride({
+        embeddings: undefined,
+        memory: { embeddingModel: 'gemini-embedding-2', embeddingTimeoutMs: 1500 }
+      })
+
+      const { config, floors } = await loadFloors()
+      await vi.dynamicImportSettled()
+
+      expect(config.embeddings).toEqual({
+        provider: 'gemini',
+        model: 'gemini-embedding-2',
+        dim: 768,
+        fingerprint: GEMINI_FINGERPRINT,
+        timeoutMs: 1500,
+        sidecarUrl: 'http://embeddings:8080',
+        apiKey: 'test-api-key',
+        backfillBatchSize: 3600,
+        backfillGapMs: 1000
+      })
+      expect(config.memory.embeddingModel).toBe('gemini-embedding-2')
+      expect(config.memory.embeddingTimeoutMs).toBe(1500)
+      expect(floors).toEqual([0.7, 0.7, 0.65, 0.65])
+      expect(warn).not.toHaveBeenCalledWith(expect.anything(), NO_FLOORS_WARNING)
+    })
+
+    it('defaults a config without an embeddings block to gemini only while GEMINI_API_KEY is set', async () => {
+      const { defaultEmbeddingProvider } = await import('../agent/memory/embeddings/fingerprint.js')
+
+      expect(defaultEmbeddingProvider({ hasBlock: false, hasGeminiKey: true })).toBe('gemini')
+      expect(defaultEmbeddingProvider({ hasBlock: false, hasGeminiKey: false })).toBe('local')
+      expect(defaultEmbeddingProvider({ hasBlock: true, hasGeminiKey: true })).toBe('local')
+    })
+
+    it('honours a legacy memory.embeddingModel at 768 dimensions', async () => {
+      setRequiredEnvVars()
+      clearTunableEnvVars()
+      withYamlOverride({
+        embeddings: undefined,
+        memory: { embeddingModel: 'gemini-embedding-001', embeddingTimeoutMs: 900 }
+      })
+
+      const { config } = await import('../config.js')
+
+      expect(config.embeddings).toMatchObject({
+        provider: 'gemini',
+        model: 'gemini-embedding-001',
+        dim: 768,
+        fingerprint: 'gemini:gemini-embedding-001:768:gemini-task-prefix',
+        timeoutMs: 900
+      })
+      expect(config.memory.embeddingTimeoutMs).toBe(900)
+    })
+
+    it('ships config.yml on Gemini so the Pi keeps its vectors', async () => {
+      setRequiredEnvVars()
+      clearTunableEnvVars()
+
+      const { config, floors } = await loadFloors()
+
+      expect(config.embeddings).toMatchObject({
+        provider: 'gemini',
+        model: 'gemini-embedding-2',
+        dim: 768,
+        fingerprint: GEMINI_FINGERPRINT,
+        timeoutMs: 1500
+      })
+      expect(floors).toEqual([0.7, 0.7, 0.65, 0.65])
+    })
+
+    it('defaults an embeddings block without a provider to the local sidecar and its own floors', async () => {
+      setRequiredEnvVars()
+      clearTunableEnvVars()
+      withYamlOverride({ embeddings: { provider: undefined } })
+
+      const { config, floors } = await loadFloors()
+      await vi.dynamicImportSettled()
+
+      expect(config.embeddings).toMatchObject({
+        provider: 'local',
+        model: LOCAL_MODEL,
+        dim: 384,
+        fingerprint: LOCAL_FINGERPRINT,
+        sidecarUrl: 'http://embeddings:8080',
+        apiKey: undefined
+      })
+      expect(floors).toEqual([0.86, 0.86, 0.84, 0.84])
+      expect(warn).not.toHaveBeenCalledWith(expect.anything(), NO_FLOORS_WARNING)
+    })
+
+    it("lets EMBEDDINGS_PROVIDER pick OpenAI and warns that its floors are Gemini's", async () => {
+      setRequiredEnvVars()
+      clearTunableEnvVars()
+      vi.stubEnv('EMBEDDINGS_PROVIDER', 'openai')
+      vi.stubEnv('OPENAI_API_KEY', 'sk-test')
+
+      const { config, floors } = await loadFloors()
+      await vi.dynamicImportSettled()
+
+      expect(config.embeddings).toMatchObject({
+        provider: 'openai',
+        model: 'text-embedding-3-small',
+        dim: 1536,
+        fingerprint: 'openai:text-embedding-3-small:1536:raw',
+        apiKey: 'sk-test'
+      })
+      expect(floors).toEqual([0.7, 0.7, 0.65, 0.65])
+      expect(warn).toHaveBeenCalledWith({ fingerprint: 'openai:text-embedding-3-small:1536:raw' }, NO_FLOORS_WARNING)
+    })
+
+    it('requires OPENAI_API_KEY only when OpenAI embeds', async () => {
+      setRequiredEnvVars()
+      clearTunableEnvVars()
+      vi.stubEnv('EMBEDDINGS_PROVIDER', 'openai')
+
+      await expect(() => import('../config.js')).rejects.toThrow(
+        'Missing required environment variable: OPENAI_API_KEY'
+      )
+    })
+
+    it('names the env key of an unknown provider', async () => {
+      setRequiredEnvVars()
+      clearTunableEnvVars()
+      vi.stubEnv('EMBEDDINGS_PROVIDER', 'cohere')
+
+      await expect(() => import('../config.js')).rejects.toThrow(
+        'Environment variable EMBEDDINGS_PROVIDER must be local, gemini or openai, got: cohere'
+      )
+    })
+
+    it('names the config key of an unknown provider', async () => {
+      setRequiredEnvVars()
+      clearTunableEnvVars()
+      withYamlOverride({ embeddings: { provider: 'cohere' } })
+
+      await expect(() => import('../config.js')).rejects.toThrow(
+        'Config value embeddings.provider must be local, gemini or openai, got: cohere'
+      )
+    })
+
+    it('rejects an untested embedding model', async () => {
+      setRequiredEnvVars()
+      clearTunableEnvVars()
+      withYamlOverride({ embeddings: { provider: 'local', model: 'Xenova/all-MiniLM-L6-v2' } })
+
+      await expect(() => import('../config.js')).rejects.toThrow(
+        'Config value embeddings.model is not a tested local embedding model, got: Xenova/all-MiniLM-L6-v2'
+      )
+    })
+
+    it('rejects a zero backfill batch', async () => {
+      setRequiredEnvVars()
+      clearTunableEnvVars()
+      withYamlOverride({ embeddings: { backfillBatchSize: 0 } })
+
+      await expect(() => import('../config.js')).rejects.toThrow(
+        'Config value embeddings.backfillBatchSize must be >= 1, got: 0'
+      )
+    })
+
+    it('accepts a zero backfill gap', async () => {
+      setRequiredEnvVars()
+      clearTunableEnvVars()
+      withYamlOverride({ embeddings: { backfillGapMs: 0 } })
+
+      const { config } = await import('../config.js')
+
+      expect(config.embeddings.backfillGapMs).toBe(0)
+    })
+  })
+
+  it('synthesises the Gemini main and no fallback when config.yml has no llm block', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+
+    const { config } = await import('../config.js')
+
+    expect(config.llm).toMatchObject({
+      main: {
+        key: 'legacy-gemini',
+        provider: 'gemini',
+        model: 'gemini-3.5-flash-lite',
+        apiKey: 'test-api-key',
+        timeoutMs: 20_000,
+        maxOutputTokens: 500
+      },
+      fallback: null,
+      hedgeAfterMs: 5000,
+      stickyMs: 300_000,
+      monthlyBudgetUsd: {}
+    })
+    expect(config.llm.main.profile).toMatchObject({
+      provider: 'gemini',
+      model: 'gemini-3.5-flash-lite',
+      verified: true
+    })
+    expect(config.llm.main.effort).toBeUndefined()
+  })
+
+  it('synthesises the ModelScope fallback when MODELSCOPE_API_KEY is set', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('MODELSCOPE_API_KEY', 'test-modelscope-key')
+
+    const { config } = await import('../config.js')
+
+    expect(config.llm.fallback).toMatchObject({
+      key: 'legacy-fallback',
+      provider: 'modelscope',
+      model: 'Qwen/Qwen3.5-122B-A10B',
+      apiKey: 'test-modelscope-key',
+      baseUrl: 'https://api-inference.modelscope.ai/v1',
+      timeoutMs: 15_000
+    })
+    expect(config.llm.fallback?.profile.verified).toBe(true)
+  })
+
+  it('carries the existing env overrides into the legacy route, untested model ids included', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('MODELSCOPE_API_KEY', 'test-modelscope-key')
+    vi.stubEnv('GEMINI_MODEL', 'gemini-legacy-test')
+    vi.stubEnv('FALLBACK_MODEL', 'Qwen/legacy-test')
+    vi.stubEnv('GEMINI_TIMEOUT', '12345')
+    vi.stubEnv('GEMINI_HEDGE_AFTER_MS', '0')
+    withYamlOverride({ fallback: { stickyMs: 0, timeoutMs: 9000 } })
+
+    const { config } = await import('../config.js')
+
+    expect(config.llm.main).toMatchObject({
+      model: 'gemini-legacy-test',
+      timeoutMs: 12_345,
+      profile: { provider: 'gemini', model: 'gemini-legacy-test' }
+    })
+    expect(config.llm.fallback).toMatchObject({
+      model: 'Qwen/legacy-test',
+      timeoutMs: 9000,
+      profile: { provider: 'modelscope', model: 'Qwen/legacy-test' }
+    })
+    expect(config.llm).toMatchObject({ hedgeAfterMs: 0, stickyMs: 0 })
+  })
+
+  it('ships config.yml without an active llm block, so the Pi keeps the synthesised route', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { load } = await import('js-yaml')
+
+    expect(load(readFileSync('config.yml', 'utf8'))).not.toHaveProperty('llm')
+  })
+
+  const HAIKU_LLM = {
+    main: 'haiku',
+    models: {
+      flash: { provider: 'gemini', model: 'gemini-3.5-flash-lite' },
+      haiku: { provider: 'anthropic', model: 'claude-haiku-5-5', effort: 'low' }
+    }
+  }
+
+  it('resolves an anthropic main from the llm block with the paid-route defaults', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('ANTHROPIC_API_KEY', 'test-anthropic-key')
+    withYamlOverride({ llm: HAIKU_LLM })
+
+    const { config } = await import('../config.js')
+
+    expect(config.llm).toMatchObject({
+      main: {
+        key: 'haiku',
+        provider: 'anthropic',
+        model: 'claude-haiku-5-5',
+        apiKey: 'test-anthropic-key',
+        effort: 'low',
+        timeoutMs: 20_000,
+        maxOutputTokens: 500
+      },
+      fallback: null,
+      hedgeAfterMs: 0,
+      stickyMs: 300_000
+    })
+    expect(config.llm.monthlyBudgetUsd).toEqual({ anthropic: 5, openai: 5 })
+  })
+
+  it('resolves a fallback, per-model settings and block tunables', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('ANTHROPIC_API_KEY', 'test-anthropic-key')
+    withYamlOverride({
+      llm: {
+        ...HAIKU_LLM,
+        fallback: 'flash',
+        hedgeAfterMs: 2500,
+        stickyMs: 60_000,
+        monthlyBudgetUsd: { anthropic: 2 },
+        models: {
+          ...HAIKU_LLM.models,
+          haiku: { ...HAIKU_LLM.models.haiku, timeoutMs: 9000, maxOutputTokens: 800, limits: { rpm: 50 } }
+        }
+      }
+    })
+
+    const { config } = await import('../config.js')
+
+    expect(config.llm.main).toMatchObject({ timeoutMs: 9000, maxOutputTokens: 800, limits: { rpm: 50 } })
+    expect(config.llm.fallback).toMatchObject({
+      key: 'flash',
+      provider: 'gemini',
+      apiKey: 'test-api-key',
+      timeoutMs: 20_000
+    })
+    expect(config.llm).toMatchObject({ hedgeAfterMs: 2500, stickyMs: 60_000 })
+    expect(config.llm.monthlyBudgetUsd).toEqual({ anthropic: 2 })
+  })
+
+  it('lets LLM_MAIN and LLM_FALLBACK override the block', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('ANTHROPIC_API_KEY', 'test-anthropic-key')
+    vi.stubEnv('LLM_MAIN', 'flash')
+    vi.stubEnv('LLM_FALLBACK', 'haiku')
+    withYamlOverride({ llm: HAIKU_LLM })
+
+    const { config } = await import('../config.js')
+
+    expect(config.llm.main.key).toBe('flash')
+    expect(config.llm.fallback?.key).toBe('haiku')
+  })
+
+  it('disables a block fallback with LLM_FALLBACK=none', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('ANTHROPIC_API_KEY', 'test-anthropic-key')
+    vi.stubEnv('LLM_FALLBACK', 'none')
+    withYamlOverride({ llm: { ...HAIKU_LLM, fallback: 'flash' } })
+
+    const { config } = await import('../config.js')
+
+    expect(config.llm.fallback).toBeNull()
+  })
+
+  it('disables the synthesised fallback with LLM_FALLBACK=none and no llm block', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('MODELSCOPE_API_KEY', 'test-modelscope-key')
+    vi.stubEnv('LLM_FALLBACK', 'none')
+
+    const { config } = await import('../config.js')
+
+    expect(config.llm.main.key).toBe('legacy-gemini')
+    expect(config.llm.fallback).toBeNull()
+  })
+
+  it.each([
+    ['LLM_MAIN', 'Environment variable LLM_MAIN needs an llm: block in config.yml, got: haiku'],
+    ['LLM_FALLBACK', 'Environment variable LLM_FALLBACK needs an llm: block in config.yml, got: haiku']
+  ] as const)('rejects %s without an llm block', async (key, message) => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv(key, 'haiku')
+
+    await expect(() => import('../config.js')).rejects.toThrow(message)
+  })
+
+  it.each([
+    [
+      'an llm block without main',
+      { models: HAIKU_LLM.models },
+      {},
+      'Config value llm.main is required when config.yml has an llm: block'
+    ],
+    [
+      'a main that names no model',
+      { ...HAIKU_LLM, main: 'nope' },
+      {},
+      'Config value llm.main must name a key under llm.models, got: nope'
+    ],
+    [
+      'an LLM_MAIN that names no model',
+      HAIKU_LLM,
+      { LLM_MAIN: 'nope' },
+      'Environment variable LLM_MAIN must name a key under llm.models, got: nope'
+    ],
+    [
+      'a fallback that names no model',
+      { ...HAIKU_LLM, fallback: 'nope' },
+      {},
+      'Config value llm.fallback must name a key under llm.models, got: nope'
+    ],
+    [
+      'an unknown provider',
+      { main: 'haiku', models: { haiku: { provider: 'mistral', model: 'x' } } },
+      {},
+      'Config value llm.models.haiku.provider must be gemini, anthropic, openai or modelscope, got: mistral'
+    ],
+    [
+      'a model with no tested profile',
+      { main: 'haiku', models: { haiku: { provider: 'anthropic', model: 'claude-haiku-4-5' } } },
+      {},
+      'Config value llm.models.haiku.model has no tested anthropic profile, got: claude-haiku-4-5'
+    ],
+    [
+      'an effort the profile does not take',
+      { main: 'haiku', models: { haiku: { provider: 'anthropic', model: 'claude-haiku-5-5', effort: 'turbo' } } },
+      {},
+      'Config value llm.models.haiku.effort must be one of none, low, medium, high, xhigh, max, got: turbo'
+    ],
+    [
+      'an effort on a model that takes none',
+      { main: 'flash', models: { flash: { provider: 'gemini', model: 'gemini-3.5-flash-lite', effort: 'low' } } },
+      {},
+      'Config value llm.models.flash.effort is not accepted by gemini-3.5-flash-lite, got: low'
+    ],
+    [
+      'a missing Anthropic key',
+      HAIKU_LLM,
+      { ANTHROPIC_API_KEY: '' },
+      'Missing required environment variable: ANTHROPIC_API_KEY (llm.main uses anthropic)'
+    ],
+    [
+      'a missing ModelScope key for the fallback',
+      {
+        ...HAIKU_LLM,
+        fallback: 'qwen',
+        models: { ...HAIKU_LLM.models, qwen: { provider: 'modelscope', model: 'Qwen/Qwen3.5-122B-A10B' } }
+      },
+      { MODELSCOPE_API_KEY: '' },
+      'Missing required environment variable: MODELSCOPE_API_KEY (llm.fallback uses modelscope)'
+    ],
+    [
+      'a timeout below one',
+      { main: 'haiku', models: { haiku: { ...HAIKU_LLM.models.haiku, timeoutMs: 0 } } },
+      {},
+      'Config value llm.main.timeoutMs must be >= 1, got: 0'
+    ],
+    [
+      'an output cap above the profile',
+      { main: 'haiku', models: { haiku: { ...HAIKU_LLM.models.haiku, maxOutputTokens: 200_000 } } },
+      {},
+      'Config value llm.main.maxOutputTokens must be <= 128000, got: 200000'
+    ],
+    [
+      'a negative monthly budget',
+      { ...HAIKU_LLM, monthlyBudgetUsd: { anthropic: -1 } },
+      {},
+      'Config value llm.monthlyBudgetUsd.anthropic must be >= 0, got: -1'
+    ],
+    [
+      'a negative hedge delay',
+      { ...HAIKU_LLM, hedgeAfterMs: -5 },
+      {},
+      'Config value llm.hedgeAfterMs must be >= 0, got: -5'
+    ]
+  ] as const)('stops startup with one clear message for %s', async (_name, llm, env, message) => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('ANTHROPIC_API_KEY', 'test-anthropic-key')
+    for (const [key, value] of Object.entries(env)) vi.stubEnv(key, value)
+    withYamlOverride({ llm })
+
+    await expect(() => import('../config.js')).rejects.toThrow(message)
+  })
+
+  it('rejects an untested candidate profile as main', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('ANTHROPIC_API_KEY', 'test-anthropic-key')
+    vi.doMock('../agent/llm/profiles.js', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('../agent/llm/profiles.js')>()
+      const candidate = {
+        ...actual.profileFor('anthropic', 'claude-haiku-5-5')!,
+        model: 'claude-candidate',
+        verified: false
+      }
+      return {
+        ...actual,
+        MODEL_PROFILES: [...actual.MODEL_PROFILES, candidate],
+        profileFor: (provider: Parameters<typeof actual.profileFor>[0], model: string) =>
+          provider === 'anthropic' && model === 'claude-candidate' ? candidate : actual.profileFor(provider, model)
+      }
+    })
+    withYamlOverride({ llm: { main: 'cand', models: { cand: { provider: 'anthropic', model: 'claude-candidate' } } } })
+
+    await expect(() => import('../config.js')).rejects.toThrow(
+      'Config value llm.models.cand.model claude-candidate is an untested candidate and cannot be llm.main'
+    )
+  })
+
+  describe('Chat Completions models', () => {
+    const LUNA = { provider: 'openai', model: 'gpt-6-luna', effort: 'none' }
+
+    beforeEach(() => {
+      setRequiredEnvVars()
+      clearTunableEnvVars()
+      vi.stubEnv('OPENAI_API_KEY', '')
+      vi.stubEnv('MODELSCOPE_API_KEY', '')
+    })
+
+    afterEach(() => {
+      vi.unstubAllGlobals()
+    })
+
+    it('resolves gpt-6-luna from OPENAI_API_KEY and builds it on the Chat Completions adapter', async () => {
+      vi.stubEnv('OPENAI_API_KEY', 'openai-test-key')
+      withYamlOverride({ llm: { main: 'luna', fallback: null, models: { luna: LUNA } } })
+
+      const { config } = await import('../config.js')
+      const { createLlm } = await import('../agent/llm/createModel.js')
+      const { ChatCompletionsLlm, ModelScopeLlm } = await import('../agent/llm/chatCompletionsLlm.js')
+
+      expect(config.llm.main).toMatchObject({
+        key: 'luna',
+        provider: 'openai',
+        model: 'gpt-6-luna',
+        apiKey: 'openai-test-key',
+        effort: 'none'
+      })
+      expect(config.llm.fallback).toBeNull()
+      const main = createLlm(config.llm.main)
+      expect(main).toBeInstanceOf(ChatCompletionsLlm)
+      expect(main).not.toBeInstanceOf(ModelScopeLlm)
+      expect(main.model).toBe('gpt-6-luna')
+    })
+
+    it('stops startup when an openai model has no OPENAI_API_KEY', async () => {
+      withYamlOverride({ llm: { main: 'luna', fallback: null, models: { luna: LUNA } } })
+
+      await expect(() => import('../config.js')).rejects.toThrow(
+        'Missing required environment variable: OPENAI_API_KEY (llm.main uses openai)'
+      )
+    })
+
+    it.each([
+      ['qwen', 'Qwen/Qwen3.5-35B-A3B'],
+      ['deepseek', 'deepseek-ai/DeepSeek-V4.1-Flash']
+    ])('refuses the unverified %s candidate as main until the probe passes', async (key, model) => {
+      vi.stubEnv('MODELSCOPE_API_KEY', 'modelscope-test-key')
+      withYamlOverride({ llm: { main: key, fallback: null, models: { [key]: { provider: 'modelscope', model } } } })
+
+      await expect(() => import('../config.js')).rejects.toThrow(
+        `Config value llm.models.${key}.model ${model} is an untested candidate and cannot be llm.main`
+      )
+    })
+
+    it('keeps the legacy fallback and its exact ModelScope request when there is no llm block', async () => {
+      vi.stubEnv('MODELSCOPE_API_KEY', 'modelscope-test-key')
+      withYamlOverride({ llm: undefined })
+      const calls: Array<{ input: unknown; init?: RequestInit }> = []
+      vi.stubGlobal('fetch', async (input: unknown, init?: RequestInit) => {
+        calls.push({ input, init })
+        return new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }))
+      })
+
+      const { config } = await import('../config.js')
+      const { createLlm } = await import('../agent/llm/createModel.js')
+      const { ChatCompletionsLlm, ModelScopeLlm } = await import('../agent/llm/chatCompletionsLlm.js')
+
+      expect(config.llm.main).toMatchObject({ provider: 'gemini' })
+      expect(config.llm.fallback).toMatchObject({
+        key: 'legacy-fallback',
+        provider: 'modelscope',
+        model: 'Qwen/Qwen3.5-122B-A10B'
+      })
+      const fallback = createLlm(config.llm.fallback!)
+      expect(fallback).toBeInstanceOf(ChatCompletionsLlm)
+      expect(fallback).toBeInstanceOf(ModelScopeLlm)
+      const maxOutputTokens = config.gemini.maxOutputTokens
+      const llmRequest = {
+        model: 'roka',
+        contents: [{ role: 'user', parts: [{ text: 'hi' }, { inlineData: { mimeType: 'image/png', data: 'AA==' } }] }],
+        config: { maxOutputTokens },
+        toolsDict: {},
+        liveConnectConfig: undefined
+      } as unknown as LlmRequest
+      const texts: string[] = []
+      for await (const response of fallback.generateContentAsync(llmRequest))
+        texts.push(response.content?.parts?.[0]?.text ?? '')
+
+      expect(texts).toEqual(['ok'])
+      expect(calls[0]?.input).toBe('https://api-inference.modelscope.ai/v1/chat/completions')
+      expect(new Headers(calls[0]?.init?.headers).get('authorization')).toBe('Bearer modelscope-test-key')
+      expect(calls[0]?.init?.body).toBe(
+        JSON.stringify({
+          model: 'Qwen/Qwen3.5-122B-A10B',
+          messages: [
+            {
+              role: 'user',
+              content: [
+                { type: 'text', text: 'hi' },
+                { type: 'image_url', image_url: { url: 'data:image/png;base64,AA==' } }
+              ]
+            }
+          ],
+          enable_thinking: false,
+          stream: false,
+          max_tokens: maxOutputTokens
+        })
+      )
+    })
+
+    it('sends a custom fallback base URL to the legacy fallback and the qwen watcher', async () => {
+      vi.stubEnv('MODELSCOPE_API_KEY', 'modelscope-test-key')
+      withYamlOverride({ llm: undefined, fallback: { baseUrl: 'https://ms.example/v1' } })
+
+      const { config } = await import('../config.js')
+
+      expect(config.fallback.baseUrl).toBe('https://ms.example/v1')
+      expect(config.llm.fallback?.baseUrl).toBe(config.fallback.baseUrl)
+      expect(config.media.qwen.baseUrl).toBe(config.fallback.baseUrl)
+    })
+
+    it('gives the qwen watcher its own ModelScope key, whatever the fallback model is', async () => {
+      vi.stubEnv('MODELSCOPE_API_KEY', 'modelscope-test-key')
+      withYamlOverride({
+        llm: {
+          main: 'flash',
+          fallback: null,
+          models: { flash: { provider: 'gemini', model: 'gemini-3.5-flash-lite' } }
+        }
+      })
+
+      const { config } = await import('../config.js')
+
+      expect(config.llm.fallback).toBeNull()
+      expect(config.media.qwen).toMatchObject({
+        apiKey: 'modelscope-test-key',
+        baseUrl: 'https://api-inference.modelscope.ai/v1'
+      })
+    })
+  })
+
+  const ANTHROPIC_ONLY = {
+    llm: {
+      main: 'haiku',
+      fallback: null,
+      models: { haiku: { provider: 'anthropic', model: 'claude-haiku-5-5', effort: 'low' } }
+    },
+    media: { watcher: 'off' }
+  }
+
+  function setAnthropicOnlyEnv() {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('GEMINI_API_KEY', '')
+    vi.stubEnv('ANTHROPIC_API_KEY', 'test-anthropic-key')
+    vi.stubEnv('LLM_MAIN', '')
+    vi.stubEnv('LLM_FALLBACK', '')
+  }
+
+  it('needs GEMINI_API_KEY only when a role calls Gemini', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    const { geminiKeyRequired } = await import('../config.js')
+    const none = { main: 'anthropic', fallback: null, embeddings: 'local', watcher: 'off' } as const
+
+    expect(geminiKeyRequired(none)).toBe(false)
+    expect(geminiKeyRequired({ ...none, main: 'gemini' })).toBe(true)
+    expect(geminiKeyRequired({ ...none, fallback: 'gemini' })).toBe(true)
+    expect(geminiKeyRequired({ ...none, embeddings: 'gemini' })).toBe(true)
+    expect(geminiKeyRequired({ ...none, watcher: 'gemini' })).toBe(true)
+    expect(geminiKeyRequired({ ...none, watcher: 'qwen' })).toBe(false)
+    expect(geminiKeyRequired({ ...none, watcher: 'direct' })).toBe(false)
+  })
+
+  it('starts an Anthropic-only config without GEMINI_API_KEY', async () => {
+    setAnthropicOnlyEnv()
+    vi.stubEnv('EMBEDDINGS_PROVIDER', 'local')
+    withYamlOverride(ANTHROPIC_ONLY)
+
+    const { config } = await import('../config.js')
+
+    expect(config.gemini.apiKey).toBe('')
+  })
+
+  it('requires GEMINI_API_KEY when only the media watcher uses Gemini', async () => {
+    setAnthropicOnlyEnv()
+    vi.stubEnv('EMBEDDINGS_PROVIDER', 'local')
+    withYamlOverride({ ...ANTHROPIC_ONLY, media: { watcher: 'gemini' } })
+
+    await expect(() => import('../config.js')).rejects.toThrow('Missing required environment variable: GEMINI_API_KEY')
+  })
+
+  it('requires GEMINI_API_KEY for the legacy Gemini main alone', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('GEMINI_API_KEY', '')
+    vi.stubEnv('EMBEDDINGS_PROVIDER', 'local')
+    vi.stubEnv('MEDIA_WATCHER', 'off')
+
+    await expect(() => import('../config.js')).rejects.toThrow(
+      /^Missing required environment variable: GEMINI_API_KEY$/
+    )
+  })
+
+  it('judges memory with Jev on the legacy config whenever its key is set', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('TYPESAFE_API_KEY', 'test-typesafe-key')
+
+    const { config } = await import('../config.js')
+
+    expect(config.memory.judge).toBe('jev')
   })
 })

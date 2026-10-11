@@ -1,0 +1,150 @@
+{
+  "text": {
+    "status": 200,
+    "body": {
+      "id": "chatcmpl-fixture-text",
+      "object": "chat.completion",
+      "model": "gpt-6-luna",
+      "choices": [
+        {
+          "index": 0,
+          "message": { "role": "assistant", "content": "Hello there~", "refusal": null },
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 120,
+        "completion_tokens": 9,
+        "total_tokens": 129,
+        "prompt_tokens_details": { "cached_tokens": 64 },
+        "completion_tokens_details": { "reasoning_tokens": 0 }
+      }
+    }
+  },
+  "parallelToolCalls": {
+    "status": 200,
+    "body": {
+      "id": "chatcmpl-fixture-tools",
+      "object": "chat.completion",
+      "model": "gpt-6-luna",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": null,
+            "refusal": null,
+            "tool_calls": [
+              {
+                "id": "call_fixture_a",
+                "type": "function",
+                "function": { "name": "roll_dice", "arguments": "{\"sides\":6}" }
+              },
+              { "id": "call_fixture_b", "type": "function", "function": { "name": "flip_coin", "arguments": "{}" } }
+            ]
+          },
+          "finish_reason": "tool_calls"
+        }
+      ],
+      "usage": { "prompt_tokens": 210, "completion_tokens": 31, "total_tokens": 241 }
+    }
+  },
+  "malformedToolArgs": {
+    "status": 200,
+    "body": {
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": null,
+            "tool_calls": [
+              {
+                "id": "call_fixture_c",
+                "type": "function",
+                "function": { "name": "roll_dice", "arguments": "{\"sides\":" }
+              }
+            ]
+          },
+          "finish_reason": "tool_calls"
+        }
+      ],
+      "usage": { "prompt_tokens": 90, "completion_tokens": 7, "total_tokens": 97 }
+    }
+  },
+  "jsonSchema": {
+    "status": 200,
+    "body": {
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\"city\":\"Kyoto\",\"note\":null,\"ops\":[{\"op\":\"add\",\"value\":\"likes tea\",\"reason\":null},{\"op\":\"drop\",\"id\":3}]}",
+            "refusal": null
+          },
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": { "prompt_tokens": 300, "completion_tokens": 40, "total_tokens": 340 }
+    }
+  },
+  "refusal": {
+    "status": 200,
+    "body": {
+      "choices": [
+        {
+          "index": 0,
+          "message": { "role": "assistant", "content": null, "refusal": "I can't help with that request." },
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": { "prompt_tokens": 80, "completion_tokens": 8, "total_tokens": 88 }
+    }
+  },
+  "insufficientQuota": {
+    "status": 429,
+    "body": {
+      "error": {
+        "message": "You exceeded your current quota, please check your plan and billing details.",
+        "type": "insufficient_quota",
+        "param": null,
+        "code": "insufficient_quota"
+      }
+    }
+  },
+  "rateLimited": {
+    "status": 429,
+    "headers": { "retry-after": "7" },
+    "body": {
+      "error": {
+        "message": "Rate limit reached for gpt-6-luna on requests per min (RPM): Limit 5000, Used 5000, Requested 1.",
+        "type": "requests",
+        "param": null,
+        "code": "rate_limit_exceeded"
+      }
+    }
+  },
+  "contextLength": {
+    "status": 400,
+    "body": {
+      "error": {
+        "message": "This model's maximum context length is 922000 tokens. However, your messages resulted in 930112 tokens.",
+        "type": "invalid_request_error",
+        "param": "messages",
+        "code": "context_length_exceeded"
+      }
+    }
+  },
+  "serverError": {
+    "status": 500,
+    "body": {
+      "error": {
+        "message": "The server had an error while processing your request. Sorry about that!",
+        "type": "server_error",
+        "param": null,
+        "code": null
+      }
+    }
+  }
+}

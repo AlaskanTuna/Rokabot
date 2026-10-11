@@ -9,6 +9,7 @@ import { resolve } from 'node:path'
 import Database from 'better-sqlite3'
 import { logger } from '../utils/logger.js'
 import { ensureMemoryClaimSchema } from './memoryClaimSchema.js'
+import { ensureVectorProvenanceColumns } from './vectorProvenance.js'
 
 let db: Database.Database | null = null
 
@@ -123,6 +124,10 @@ function createTables(database: Database.Database): void {
       failure_marker TEXT DEFAULT NULL,
       model TEXT DEFAULT NULL,
       hedged INTEGER NOT NULL DEFAULT 0,
+      provider TEXT DEFAULT NULL,
+      model_id TEXT DEFAULT NULL,
+      route_role TEXT DEFAULT NULL,
+      workload TEXT DEFAULT NULL,
       created_at INTEGER NOT NULL
     );
 
@@ -327,6 +332,11 @@ export function runMigrations(database: Database.Database): void {
   if (responseEventCols.length > 0 && !responseEventCols.some((column) => column.name === 'hedged')) {
     database.exec('ALTER TABLE response_events ADD COLUMN hedged INTEGER NOT NULL DEFAULT 0')
   }
+  for (const column of ['provider', 'model_id', 'route_role', 'workload']) {
+    if (responseEventCols.length > 0 && !responseEventCols.some(({ name }) => name === column)) {
+      database.exec(`ALTER TABLE response_events ADD COLUMN ${column} TEXT DEFAULT NULL`)
+    }
+  }
 
   const buddyIndexes = database.prepare("PRAGMA index_list('buddy')").all() as Array<{ name: string; unique: number }>
   const hasLegacyBuddyUserUnique = buddyIndexes.some((index) => {
@@ -435,6 +445,9 @@ export function runMigrations(database: Database.Database): void {
   if (jevEventCols.length > 0 && !jevEventCols.some((column) => column.name === 'job_id')) {
     database.exec('ALTER TABLE jev_events ADD COLUMN job_id INTEGER DEFAULT NULL')
   }
+  if (jevEventCols.length > 0 && !jevEventCols.some((column) => column.name === 'judge')) {
+    database.exec('ALTER TABLE jev_events ADD COLUMN judge TEXT DEFAULT NULL')
+  }
 
   database.exec(`
     CREATE TABLE IF NOT EXISTS extraction_samples (
@@ -452,6 +465,9 @@ export function runMigrations(database: Database.Database): void {
   `)
 
   ensureMemoryClaimSchema(database)
+  for (const table of ['memory_episode', 'media_digest', 'memory_claim'] as const) {
+    ensureVectorProvenanceColumns(database, table)
+  }
 
   let extractionQueueCols = database.prepare("PRAGMA table_info('extraction_queue')").all() as Array<{ name: string }>
   const extractionQueueColNames = new Set(extractionQueueCols.map((column) => column.name))
@@ -566,6 +582,15 @@ export function runMigrations(database: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_extraction_queue_status_available
       ON extraction_queue (status, available_at);
+  `)
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS llm_spend (
+      month TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      usd REAL NOT NULL DEFAULT 0,
+      PRIMARY KEY (month, provider)
+    );
   `)
 }
 

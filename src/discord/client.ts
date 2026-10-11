@@ -1,5 +1,4 @@
 import { Client, GatewayIntentBits, Partials } from 'discord.js'
-import { config } from '../config.js'
 import { logger } from '../utils/logger.js'
 import { getSharedRateLimiter } from '../utils/rateLimiter.js'
 import { createInteractionHandler } from './events/interactionCreate.js'
@@ -13,7 +12,7 @@ export function createClient(): Client {
     partials: [Partials.Channel, Partials.Message]
   })
 
-  const rateLimiter = getSharedRateLimiter(config.rateLimit)
+  const rateLimiter = getSharedRateLimiter()
 
   client.once('clientReady', () => handleReady(client))
   client.on('interactionCreate', createInteractionHandler(rateLimiter, client))

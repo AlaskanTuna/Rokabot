@@ -42,7 +42,7 @@ vi.mock('../config.js', () => ({
     discord: { token: 'token' },
     socialPosts: { enabled: false, ytDlpPath: 'yt-dlp' },
     jev: { apiKey: undefined },
-    memory: { claimRetentionDays: 90, episodeRetentionDays: 90, failedExtractionRetentionDays: 7 },
+    memory: { judge: 'none', claimRetentionDays: 90, episodeRetentionDays: 90, failedExtractionRetentionDays: 7 },
     metrics: { retentionDays: 90 },
     session: { historyRetentionDays: 7 }
   }
@@ -108,6 +108,16 @@ describe('startup memory tasks', () => {
 
     expect(mocks.logger.warn).toHaveBeenCalledOnce()
     expect(mocks.logger.warn).toHaveBeenCalledWith('Passive memory extraction is disabled: no TypeSafe API key')
+  })
+
+  it('does not warn about passive memory when the main model judges it', async () => {
+    const { config } = await import('../config.js')
+    Object.assign(config.memory, { judge: 'model' })
+
+    await import('../index.js')
+    mocks.triggerReady()
+
+    expect(mocks.logger.warn).not.toHaveBeenCalledWith('Passive memory extraction is disabled: no TypeSafe API key')
   })
 
   it('starts episode maintenance without waiting for the pass to finish', async () => {

@@ -1,5 +1,12 @@
 import { getDb } from './database.js'
-import { type EpisodeEmbedding, decodeFloat32Embedding, encodeFloat32Embedding } from './memoryEpisodeStore.js'
+import {
+  type EmbeddingVector,
+  type EpisodeEmbedding,
+  type StoredVector,
+  decodeFloat32Embedding,
+  isActiveVector,
+  vectorParams
+} from './memoryEpisodeStore.js'
 
 export type ClaimEmbeddingState = Readonly<{
   id: number
@@ -20,14 +27,16 @@ type ClaimEmbeddingRow = {
   event_date: string | null
   period: string
   embedding_text: string | null
-  has_embedding: number
+  embedding_bytes: number | null
+  embedding_dim: number | null
+  embedding_fingerprint: string | null
 }
 
 export function listActiveClaimsForEmbedding(): ClaimEmbeddingState[] {
   const rows = getDb()
     .prepare(
       `SELECT id, subject_kind, predicate, value, event_date, period, embedding_text,
-              embedding IS NOT NULL AS has_embedding
+              length(embedding) AS embedding_bytes, embedding_dim, embedding_fingerprint
        FROM memory_claim WHERE status = 'active' ORDER BY id`
     )
     .all() as ClaimEmbeddingRow[]
@@ -39,14 +48,20 @@ export function listActiveClaimsForEmbedding(): ClaimEmbeddingState[] {
     eventDate: row.event_date,
     period: row.period as ClaimEmbeddingState['period'],
     embeddingText: row.embedding_text,
-    hasEmbedding: row.has_embedding === 1
+    // A vector from another embedding space counts as missing, so the next sweep re-embeds it.
+    hasEmbedding:
+      row.embedding_bytes !== null && isActiveVector(row.embedding_fingerprint, row.embedding_dim, row.embedding_bytes)
   }))
 }
 
-export function setClaimEmbedding(input: { id: number; embeddingText: string; embedding: readonly number[] }): boolean {
+export function setClaimEmbedding(input: { id: number; embeddingText: string; embedding: EmbeddingVector }): boolean {
   const result = getDb()
-    .prepare("UPDATE memory_claim SET embedding = ?, embedding_text = ? WHERE id = ? AND status = 'active'")
-    .run(encodeFloat32Embedding(input.embedding, 'Fact'), input.embeddingText, input.id)
+    .prepare(
+      `UPDATE memory_claim SET embedding = ?, embedding_model_id = ?, embedding_dim = ?, embedding_fingerprint = ?,
+         embedding_text = ?
+       WHERE id = ? AND status = 'active'`
+    )
+    .run(...vectorParams(input.embedding, 'Fact'), input.embeddingText, input.id)
   return result.changes === 1
 }
 
@@ -56,10 +71,12 @@ export function getClaimEmbeddings(claimIds: readonly number[]): Map<number, Epi
 
   const placeholders = claimIds.map(() => '?').join(', ')
   const rows = getDb()
-    .prepare(`SELECT id, embedding FROM memory_claim WHERE id IN (${placeholders})`)
-    .all(...claimIds) as Array<{ id: number; embedding: Buffer | null }>
+    .prepare(
+      `SELECT id, embedding, embedding_dim, embedding_fingerprint FROM memory_claim WHERE id IN (${placeholders})`
+    )
+    .all(...claimIds) as Array<StoredVector & { id: number }>
   for (const row of rows) {
-    const embedding = decodeFloat32Embedding(row.embedding)
+    const embedding = decodeFloat32Embedding(row)
     if (embedding) embeddings.set(row.id, embedding)
   }
   return embeddings

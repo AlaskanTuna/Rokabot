@@ -41,7 +41,9 @@ const responseEvent: Parameters<typeof recordResponseEvent>[0] = {
   tokensInEst: 42,
   tokensOutEst: 24,
   toolsUsed: ['roll_dice'],
-  model: 'gemini',
+  routeRole: 'main',
+  provider: 'gemini',
+  modelId: 'gemini-3.5-flash-lite',
   hedged: 0
 } as const
 
@@ -103,6 +105,10 @@ describe('metricsStore', () => {
       'failure_marker',
       'model',
       'hedged',
+      'provider',
+      'model_id',
+      'route_role',
+      'workload',
       'created_at'
     ])
     expect(extractionColumns.map((column) => column.name)).toEqual([
@@ -128,7 +134,8 @@ describe('metricsStore', () => {
       'input_tokens',
       'baseline',
       'created_at',
-      'job_id'
+      'job_id',
+      'judge'
     ])
     expect(responseIndexes.map((index) => index.name)).toContain('idx_response_events_guild_ts')
     expect(extractionIndexes.map((index) => index.name)).toContain('idx_extraction_events_guild_ts')
@@ -208,7 +215,8 @@ describe('metricsStore', () => {
       input_tokens: 24,
       baseline: 'playful',
       created_at: now,
-      job_id: null
+      job_id: null,
+      judge: null
     })
     vi.restoreAllMocks()
   })
@@ -243,17 +251,34 @@ describe('metricsStore', () => {
     expect(warn).toHaveBeenCalledWith(expect.objectContaining({ err: expect.any(Error) }), 'Failed to record Jev event')
   })
 
-  it('persists which model answered and whether a hedge fired, and NULLs the model when there was no answer', () => {
-    recordResponseEvent({ ...responseEvent, model: 'fallback', hedged: 1 })
-    recordResponseEvent({ ...responseEvent, model: undefined, hedged: 0 })
+  it('persists whether a hedge fired, and leaves the legacy model column NULL on new rows', () => {
+    recordResponseEvent({ ...responseEvent, routeRole: 'fallback', hedged: 1 })
 
-    const rows = getDb().prepare('SELECT model, hedged FROM response_events ORDER BY id DESC LIMIT 2').all() as Array<{
-      model: string | null
-      hedged: number
-    }>
+    const row = getDb().prepare('SELECT model, route_role, hedged FROM response_events ORDER BY id DESC LIMIT 1').get()
 
-    expect(rows[0]).toEqual({ model: null, hedged: 0 })
-    expect(rows[1]).toEqual({ model: 'fallback', hedged: 1 })
+    expect(row).toEqual({ model: null, route_role: 'fallback', hedged: 1 })
+  })
+
+  it('persists the answering provider, model id and route role, and marks the row as a reply', () => {
+    recordResponseEvent({
+      ...responseEvent,
+      routeRole: 'fallback',
+      provider: 'modelscope',
+      modelId: 'Qwen/Qwen3.5-122B-A10B'
+    })
+    recordResponseEvent({ ...responseEvent, routeRole: undefined, provider: undefined, modelId: undefined })
+
+    const rows = getDb()
+      .prepare('SELECT provider, model_id, route_role, workload FROM response_events ORDER BY id DESC LIMIT 2')
+      .all()
+
+    expect(rows[0]).toEqual({ provider: null, model_id: null, route_role: null, workload: 'reply' })
+    expect(rows[1]).toEqual({
+      provider: 'modelscope',
+      model_id: 'Qwen/Qwen3.5-122B-A10B',
+      route_role: 'fallback',
+      workload: 'reply'
+    })
   })
 
   it('persists a supplied failure marker verbatim and stores NULL when omitted', () => {

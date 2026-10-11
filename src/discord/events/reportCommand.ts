@@ -129,8 +129,8 @@ export async function handleReportCommand(interaction: ChatInputCommandInteracti
         : null,
       botVersion: packageMetadata.version,
       gitCommit: process.env.GIT_COMMIT ?? null,
-      geminiModel: config.gemini.model,
-      fallbackModel: config.fallback.model,
+      geminiModel: config.llm.main.model,
+      fallbackModel: config.llm.fallback?.model ?? config.fallback.model,
       uptimeS: Math.floor(process.uptime())
     },
     config.report

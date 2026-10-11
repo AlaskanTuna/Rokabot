@@ -5,6 +5,15 @@
     "rootDir": ".",
     "types": ["vitest/globals", "node"]
   },
-  "include": ["src/**/*", "tests/**/*", "scripts/measure-prefetch.ts"],
+  "include": [
+    "src/**/*",
+    "tests/**/*",
+    "scripts/measure-prefetch.ts",
+    "scripts/probe-llm-profile.ts",
+    "sidecar/embeddings/src/embedder.ts",
+    "sidecar/embeddings/src/handler.ts",
+    "sidecar/embeddings/src/__tests__/**/*",
+    "sidecar/embeddings/scripts/**/*"
+  ],
   "exclude": ["node_modules", "dist"]
 }

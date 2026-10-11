@@ -1,3 +1,6 @@
+import { estimateTokens } from '../../utils/tokens.js'
+import { GEMINI_IMAGE_TOKENS } from '../attachmentLimits.js'
+import { type BudgetReservation, startCall } from '../llm/budget.js'
 import { formatClock, validateObservations } from './digest.js'
 import type { MediaClip, MediaDigest } from './types.js'
 import { instructions } from './watch.js'
@@ -139,35 +142,58 @@ export async function watchFramesWithQwen(
     { type: 'text', text: promptFor(input, transcript) }
   ]
 
-  let response: Response
+  const estTokens = content.reduce(
+    (total, part) => total + (part.type === 'text' ? estimateTokens(part.text) : GEMINI_IMAGE_TOKENS),
+    0
+  )
+  let reservation: BudgetReservation
   try {
-    response = await (settings.fetchImpl ?? fetch)(`${settings.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${settings.apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: settings.model,
-        messages: [{ role: 'user', content }],
-        temperature: 0,
-        max_tokens: settings.maxOutputTokens,
-        enable_thinking: false,
-        stream: false,
-        response_format: { type: 'json_object' }
-      }),
+    reservation = await startCall({
+      provider: 'modelscope',
+      model: settings.model,
+      workload: 'watcher',
+      estTokens,
       signal
     })
   } catch {
-    return failed(signal.aborted ? 'timeout' : 'error')
+    // Refused before anything was sent: the shared Magicube estimate is spent, or the watch was cancelled waiting.
+    return failed(signal.aborted ? 'timeout' : 'overloaded')
   }
-
-  if (response.status === 401 || response.status === 403 || response.status === 404) return failed('unavailable')
-  if (response.status === 429 || response.status >= 500) return failed('overloaded')
-  if (!response.ok) return failed('error')
 
   let text: string
   try {
-    text = await response.text()
-  } catch {
-    return failed(signal.aborted ? 'timeout' : 'error')
+    let response: Response
+    try {
+      response = await (settings.fetchImpl ?? fetch)(`${settings.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${settings.apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: settings.model,
+          messages: [{ role: 'user', content }],
+          temperature: 0,
+          max_tokens: settings.maxOutputTokens,
+          enable_thinking: false,
+          stream: false,
+          response_format: { type: 'json_object' }
+        }),
+        signal
+      })
+    } catch {
+      return failed(signal.aborted ? 'timeout' : 'error')
+    }
+
+    if (response.status === 401 || response.status === 403 || response.status === 404) return failed('unavailable')
+    if (response.status === 429 || response.status >= 500) return failed('overloaded')
+    if (!response.ok) return failed('error')
+
+    try {
+      text = await response.text()
+    } catch {
+      return failed(signal.aborted ? 'timeout' : 'error')
+    }
+  } finally {
+    // Held until the body is read: ModelScope serves one request at a time, and this one is not done before then.
+    reservation.release()
   }
   let completion: ChatCompletion | null
   try {

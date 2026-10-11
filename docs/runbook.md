@@ -256,6 +256,44 @@ After a fallback answer, turns go straight to the fallback for `fallback.stickyM
 tried again. ModelScope's daily Magicube allowance is spent per call (1 Magicube each for this model); usage is at
 modelscope.ai/magicube/usage.
 
+## Switching the Reply Model
+
+The reply model is `llm.main` in `config.yml`; `LLM_MAIN` in `.env` overrides it. Without an `llm:` block the bot
+runs Gemini with the ModelScope fallback above.
+
+1. Uncomment the `llm:` example in `config.yml` and set `main` to a key under `llm.models` (for example `haiku`).
+2. Put the provider's key in `.env` (`ANTHROPIC_API_KEY` for `haiku`, `OPENAI_API_KEY` for `luna`); a missing key stops
+   startup with its name.
+3. Rebuild and restart the bot, with the owner's authorization.
+4. Check which provider answered:
+
+```bash
+sudo docker logs rokabot-roka-1 2>&1 | grep '"msg":"Response completed"' | grep -o '"provider":"[a-z]*"' | sort | uniq -c
+```
+
+`LLM_FALLBACK=none` turns the fallback off without editing `config.yml`.
+
+## Verifying a Model Profile
+
+`Qwen/Qwen3.5-35B-A3B` and `deepseek-ai/DeepSeek-V4.1-Flash` ship as candidates (`verified: false` in
+`src/agent/llm/profiles.ts`), so startup refuses them as `llm.main` or `llm.fallback` until a live probe passes. The
+probe makes four calls per model (a text reply, one tool call, a reply to that tool's result, one JSON object). On
+ModelScope each call spends Magicubes from the daily allowance; on OpenAI it bills the account. It refuses to run
+without `--live`, and when `CI` is set.
+
+```bash
+npx tsx scripts/probe-llm-profile.ts --live --model Qwen/Qwen3.5-35B-A3B --model deepseek-ai/DeepSeek-V4.1-Flash
+```
+
+It reads `MODELSCOPE_API_KEY`, or `OPENAI_API_KEY` for an `openai` model, from `.env`. A model with no `openai` or
+`modelscope` profile, or with its key unset, is reported and fails the run. A model is ready only when all four checks
+pass and no reply showed thinking: a non-empty `reasoning_content` or `reasoning` field, a `<think>` tag in the text,
+or `reasoning_tokens` above zero in the usage. The tool check also needs a real IANA timezone in the tool call. The
+tool result check sends a `get_current_time` call and its result back as a `tool` message, and needs a non-empty text
+reply with no second tool call. The probe prints `ready` or `not ready` per model, and exits 0 only when every model is
+ready. It never edits the profile. Set `verified: true` on that profile yourself and open a PR with the probe output in
+its description. Merging the PR rebuilds and restarts the bot, so it needs the owner's authorization.
+
 ## Hedging Slow Gemini Calls
 
 When a fallback is configured, a Gemini call that has not answered within `gemini.hedgeAfterMs` (5 s, `0` disables)
@@ -265,26 +303,92 @@ both sides fail, the turn fails with Gemini's own error, as it would without hed
 the sticky window, so the next turn still tries Gemini. Each hedged call costs one extra ModelScope call.
 
 ```bash
-# Hedged calls, and which model won each one
+# Hedged calls, and which side (main or fallback) won each one
 sudo docker logs rokabot-roka-1 2>&1 | grep '"msg":"Hedged slow Gemini call; kept the faster answer"'
 
 # How often the hedge is winning, against how many turns it fired on
-sqlite3 data/rokabot.db "SELECT model, COUNT(*) FROM response_events WHERE hedged = 1 GROUP BY model"
+sqlite3 data/rokabot.db "SELECT COALESCE(route_role, model) AS side, COUNT(*) FROM response_events WHERE hedged = 1 GROUP BY side"
 ```
 
 Tuning: raise `hedgeAfterMs` to hedge fewer calls (cheaper, but a longer tail), lower it to hedge more (a shorter
 tail, more ModelScope spend). If a turn carried an audio clip, a video or a PDF, no hedge is possible — the fallback
 cannot read those — so those turns only ever wait out `gemini.timeout`.
 
+## Budgets and Monthly Spend
+
+Per-call budgets apply only with an `llm:` block in `config.yml`, except the spend query below, which also shows the
+legacy Gemini estimates.
+
+With an `llm:` block, every model call except embeddings passes the per-call budget. A refused call logs `Budget declined a model call` with the budget that
+refused it (`rpm`, `rpd`, `tpm` or `monthly`).
+
+```bash
+# Refused calls, and which budget refused them
+sudo docker logs rokabot-roka-1 2>&1 | grep '"msg":"Budget declined a model call"'
+
+# Estimated spend this month, per provider (USD)
+sqlite3 data/rokabot.db "SELECT provider, ROUND(usd, 4) FROM llm_spend WHERE month = strftime('%Y-%m', 'now')"
+```
+
+A provider that reaches `llm.monthlyBudgetUsd` is disabled until the UTC month turns, and stays disabled across
+restarts. To re-enable it early, raise its cap in `config.yml` and restart. A provider that reported its own credit
+spent is disabled in memory only: top up the account, then restart. ModelScope's daily estimate
+(`llm.modelscopeDailyMagicubes`) resets at UTC midnight and on restart.
+
 ---
+
+## Local Embeddings
+
+Memory recall turns episode summaries, watched-media summaries, fact sentences and each turn's message into vectors.
+`embeddings.provider` in `config.yml` picks who makes them: `gemini` (`gemini-embedding-2`, 768 dimensions), `local`
+(the `sidecar/embeddings/` container, `Xenova/multilingual-e5-small`, 384 dimensions) or `openai`
+(`text-embedding-3-small`, which needs `OPENAI_API_KEY`). `EMBEDDINGS_PROVIDER` overrides it. A `config.yml` without an
+`embeddings:` block uses `gemini` while `GEMINI_API_KEY` is set and `local` otherwise; a block that leaves out
+`provider` uses `local`. The Pi stays on `gemini`.
+
+Every stored vector records `embedding_model_id`, `embedding_dim` and `embedding_fingerprint`. Recall reads only
+vectors in the configured provider's space. Vectors stored before #296 are marked `unknown`, and only the
+`gemini-embedding-2` space reads them. After a switch, the maintenance pass (at startup, then every 24 hours)
+re-embeds the other vectors at about one document a second, up to `embeddings.backfillBatchSize` per pass. Keyword
+recall keeps working meanwhile.
+
+```bash
+# Vectors per embedding space; NULL means no vector yet
+sqlite3 ~/rokabot/data/rokabot.db "SELECT 'episode', embedding_fingerprint, COUNT(*) FROM memory_episode GROUP BY 2 UNION ALL SELECT 'media', embedding_fingerprint, COUNT(*) FROM media_digest GROUP BY 2 UNION ALL SELECT 'fact', embedding_fingerprint, COUNT(*) FROM memory_claim WHERE status = 'active' GROUP BY 2;"
+```
+
+### Before Switching the Pi to Local
+
+1. Owner follow-up: measure the sidecar on the Pi. Start only it with `docker compose --profile local-embeddings up -d --build embeddings`. While it embeds, run a voice-note transcription and an attachment turn, and watch `docker stats --no-stream`. The release gate is peak RSS under 800 MiB inside the 1 GiB cap. On amd64 the sidecar used about 710 MiB after the smoke test (2026-10-11), so the gate is close; measure before switching.
+2. Calibrate `embeddings.minSimilarity` for the local fingerprint on a labelled recall set. The shipped values are placeholders.
+3. Confirm health: `docker compose exec embeddings node -e "fetch('http://127.0.0.1:8080/health').then((r) => r.text()).then(console.log)"`.
+
+### Switching
+
+1. Add `COMPOSE_PROFILES=local-embeddings` and `EMBEDDINGS_PROVIDER=local` to `~/rokabot/.env`.
+2. Before restarting the bot, confirm the sidecar is healthy with the health command in step 3 of [Before Switching the Pi to Local](#before-switching-the-pi-to-local). If it is not running, start it alone first with `docker compose --profile local-embeddings up -d --build embeddings`.
+3. Run `cd ~/rokabot && docker compose up -d --build`. This restarts the bot, so it needs the owner's approval.
+4. Watch the backfill with the query above. Once the counts settle, the local fingerprint should hold every row.
+5. If the counts stop moving for more than a few minutes while other fingerprints still hold rows, the pass may have ended after five connection failures in a row; otherwise it resumes only at the next 24-hour pass. This happens when the bot starts before the sidecar listens, or the sidecar restarts mid-pass. Confirm the sidecar is healthy, then restart the bot with `cd ~/rokabot && docker compose restart roka`. This needs the owner's approval.
+
+### Rolling Back
+
+Remove `EMBEDDINGS_PROVIDER` and the profile from `.env`, stop the running sidecar with
+`docker compose --profile local-embeddings stop embeddings`, then restart. Gemini cannot read local vectors, so the
+pass re-embeds them with Gemini. Gemini's free tier allows about 1,000 embedding requests a day, so first set
+`embeddings.backfillBatchSize: 900`. That is a `config.yml` change, so it goes through a PR and a deploy. The re-embed
+then spreads over several days. Every bot restart starts another maintenance pass, so a same-day restart can push past
+about 1,000 Gemini requests in a day; avoid restarts until the re-embed finishes.
 
 ## Jev Judgments and Passive Memory
 
-Jev tone and referent judgments can run in `off`, `shadow` or `on` mode. Passive memory uses Jev admission and
-verification as hard gates: an unavailable client, timeout, or low admission score drops the episode before Gemini
-extraction. Without `TYPESAFE_API_KEY`, startup logs `Passive memory extraction is disabled: no TypeSafe API key`
-once, and passive episodes are dropped. Set `jev.memoryTimeoutMs`, `memory.admitThreshold` and
-`memory.verifyThreshold` in `config.yml` through a PR.
+Jev tone and referent judgments can run in `off`, `shadow` or `on` mode. Passive memory uses admission and
+verification judgments as hard gates: an unavailable judge, timeout, or low admission score drops the episode before
+extraction. Jev judges when `TYPESAFE_API_KEY` is set. Without the key, the main model judges when `config.yml` has an
+`llm:` block. With neither (`memory.judge: none`, which is the legacy config without the key), startup logs
+`Passive memory extraction is disabled: no TypeSafe API key` once, and passive episodes are dropped. Set
+`jev.memoryTimeoutMs`, `memory.admitThreshold` and `memory.verifyThreshold` (Jev), or `memory.modelAdmitThreshold` and
+`memory.modelVerifyThreshold` (main model), in `config.yml` through a PR.
 
 Guild facts are scoped to their Discord server. `upcoming_event` and `plan` claims store `expires_at` as epoch
 milliseconds for the first instant of the next local day, using `config.timezone` (or the `TZ` override). A daily prune
@@ -500,12 +604,14 @@ lasting fact.
 ## Memory Reclassification
 
 A background step moves facts filed under the wrong predicate, mostly `misc`, to the right one. It runs at startup and
-then daily, right after the claim prune, in the background. Gemini (`gemini.extractionModel`) proposes a predicate for
-each candidate and Jev confirms it; a move needs a probability of at least `memory.verifyThreshold`. Candidates are
-active current `misc` facts and the weaker side of any pair of facts one member filed twice, with equal values, under
-different predicates. Past facts are never touched. Each run makes at most one Gemini call and one Jev call, and none
-when nothing is a candidate. A moved fact keeps its pin, evidence and first-seen time, and the old row stays as a
-`reclassified` record.
+then daily, right after the claim prune, in the background. Gemini (`gemini.extractionModel`; the main model when
+`config.yml` has an `llm:` block) proposes a predicate for each candidate and Jev (or the main model under
+`memory.judge: model`) confirms it; a move needs a probability of at least `memory.verifyThreshold`
+(`memory.modelVerifyThreshold` for the main model). Candidates are active current `misc` facts and the weaker side of
+any pair of facts one member filed twice, with equal values, under different predicates. Past facts are never touched.
+Each run makes at most one proposal request and one confirmation request, and none when nothing is a candidate; with
+an `llm:` block, a request the main model fails is tried once on the fallback. A moved fact keeps its pin, evidence and
+first-seen time, and the old row stays as a `reclassified` record.
 
 - **Cap:** `memory.reclassifyMaxPerRun` (20) is the most moves per run, bounded 0–100. Set it to 0 to turn the step off:
   `MEMORY_RECLASSIFY_MAX_PER_RUN=0` in `~/rokabot/.env`, then recreate the container
@@ -690,12 +796,12 @@ prune deletes them. A passive sighting cannot restore a forgotten value; `rememb
 
 ### Episodic Memory
 
-Episode summaries and 768-dimensional embeddings are stored by guild in `memory_episode`. Embedding requests use
-`GEMINI_API_KEY` and `memory.embeddingModel` (`gemini-embedding-2`); they consume a separate project quota from text
-generation. For planning only, the spec's free-tier estimate is 100 RPM, 30 K TPM, and 1 K RPD; check AI Studio for
-your project's current limits. Embedding requests do not debit the bot's generation rate limiter. The daily
-maintenance pass deletes episodes past `memory.episodeRetentionDays` and retries rows with missing or unreadable
-embeddings.
+Episode summaries and their embeddings are stored by guild in `memory_episode`. With
+`embeddings.provider: gemini` (the Pi's setting), embedding requests use `GEMINI_API_KEY` and `gemini-embedding-2`; they
+consume a separate project quota from text generation. For planning only, the spec's free-tier estimate is 100 RPM, 30 K
+TPM, and 1 K RPD; check AI Studio for your project's current limits. Embedding requests do not debit the bot's
+generation rate limiter. The maintenance pass (at startup, then every 24 hours) deletes episodes past
+`memory.episodeRetentionDays` and retries rows with missing or unreadable embeddings.
 
 ```bash
 # Episode counts by guild
@@ -727,7 +833,9 @@ behaves like `strict` there.
   unprompted is still gated by the privacy level.
 
 ```bash
-# Facts with embeddings (unified recall needs them; the daily maintenance pass fills the gaps)
+# Active facts and how many store a vector in any embedding space (unified recall needs them; the maintenance pass
+# fills the gaps). This is not the count readable in the configured space: after a switch, use the per-fingerprint
+# query in Local Embeddings
 sqlite3 ~/rokabot/data/rokabot.db "SELECT COUNT(*) AS active, SUM(embedding IS NOT NULL) AS embedded FROM memory_claim WHERE status = 'active';"
 
 # Shadow comparison over the last 7 days: legacy fact retrieval vs the unified recall

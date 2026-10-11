@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   maxLlmCalls: 4,
   watcher: 'gemini' as 'gemini' | 'qwen' | 'direct' | 'off',
   qwenKey: undefined as string | undefined,
+  geminiKey: 'gemini-test-key' as string | undefined,
   probeDurationSec: vi.fn(),
   extractFrames: vi.fn(),
   resolveYouTubeStreams: vi.fn(),
@@ -39,17 +40,19 @@ vi.mock('../../../config.js', () => ({
     },
     gemini: {
       maxAttachmentTokens: 50_000,
+      get apiKey() {
+        return mocks.geminiKey
+      },
       get maxLlmCalls() {
         return mocks.maxLlmCalls
       }
-    },
-    get fallback() {
-      return { apiKey: mocks.qwenKey, baseUrl: 'https://modelscope.test/v1' }
     },
     get media() {
       return {
         watcher: mocks.watcher,
         qwen: {
+          apiKey: mocks.qwenKey,
+          baseUrl: 'https://modelscope.test/v1',
           model: 'Qwen/test',
           secondsPerFrame: 10,
           minFrames: 2,
@@ -191,6 +194,7 @@ beforeEach(() => {
   mocks.watcher = 'gemini'
   mocks.qwenMaxFrames = 4
   mocks.qwenKey = undefined
+  mocks.geminiKey = 'gemini-test-key'
   mocks.memoryPrivacy = 'relaxed'
   mocks.transcriberUrl = ''
   for (const mock of [
@@ -339,6 +343,7 @@ describe('prepareTurnMedia', () => {
 
     await prepareTurnMedia(input([clip]))
 
+    expect(mocks.measureAttachmentTokens).toHaveBeenCalledWith(expect.any(Array), 'gemini')
     expect(mocks.watchMedia.mock.calls[0][0].plan).toMatchObject({ mode: 'whole', durationSec: 100 })
   })
 
@@ -1289,6 +1294,31 @@ describe('the qwen watcher', () => {
     expect(mocks.watchMedia).not.toHaveBeenCalled()
     expect(mocks.watchFramesWithQwen).toHaveBeenCalledTimes(1)
     expect(result.mediaTextParts[0].text).not.toContain("couldn't be watched")
+  })
+
+  it('watches with Qwen on its own ModelScope key when there is no Gemini key', async () => {
+    mocks.geminiKey = undefined
+
+    const result = await prepareTurnMedia(input([upload]))
+
+    expect(mocks.watchMedia).not.toHaveBeenCalled()
+    expect(mocks.watchFramesWithQwen).toHaveBeenCalledTimes(1)
+    expect(mocks.watchFramesWithQwen.mock.calls[0][1]).toMatchObject({
+      apiKey: 'ms-key',
+      baseUrl: 'https://modelscope.test/v1'
+    })
+    expect(result.watchOutcome).toMatchObject({ status: 'watched' })
+  })
+
+  it('gives the notice when neither watcher has a key', async () => {
+    mocks.geminiKey = undefined
+    mocks.qwenKey = undefined
+
+    const result = await prepareTurnMedia(input([upload]))
+
+    expect(mocks.watchMedia).not.toHaveBeenCalled()
+    expect(mocks.watchFramesWithQwen).not.toHaveBeenCalled()
+    expect(result.mediaTextParts[0].text).toContain("couldn't be watched right now")
   })
 
   it('gives the notice when neither can watch: an audio clip while Gemini is unavailable', async () => {

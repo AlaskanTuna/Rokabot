@@ -4,9 +4,18 @@ import 'dotenv/config'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { load } from 'js-yaml'
-// Both are pure leaves — attachmentLimits.ts imports nothing and attachments.ts only node built-ins — so
-// reading them here derives the floor instead of restating it, and cannot close a cycle back into config.
+// All four are pure leaves — attachmentLimits.ts, llm/profiles.ts and embeddings/fingerprint.ts import nothing,
+// attachments.ts only node built-ins — so reading them here derives values instead of restating them, and cannot
+// close a cycle back into config.
 import { GEMINI_IMAGE_TOKENS } from './agent/attachmentLimits.js'
+import { MODEL_PROFILES, type ModelProfile, type ProviderId, profileFor } from './agent/llm/profiles.js'
+import {
+  DEFAULT_EMBEDDING_MODELS,
+  type EmbeddingProvider,
+  defaultEmbeddingProvider,
+  embeddingDimensions,
+  embeddingFingerprint
+} from './agent/memory/embeddings/fingerprint.js'
 import { MAX_ATTACHMENTS } from './discord/attachments.js'
 
 function requiredEnv(key: string): string {
@@ -48,6 +57,26 @@ interface YamlConfig {
     turnDeadlineMs?: number
   }
   fallback?: { model?: string; baseUrl?: string; timeoutMs?: number; stickyMs?: number }
+  llm?: {
+    main?: string
+    fallback?: string | null
+    hedgeAfterMs?: number
+    stickyMs?: number
+    monthlyBudgetUsd?: Record<string, number>
+    modelscopeDailyMagicubes?: number
+    models?: Record<
+      string,
+      {
+        provider?: string
+        model?: string
+        effort?: string
+        timeoutMs?: number
+        maxOutputTokens?: number
+        baseUrl?: string
+        limits?: { rpm?: number; rpd?: number; tpm?: number }
+      }
+    >
+  }
   rateLimit?: { rpm?: number; rpd?: number }
   session?: { ttl?: number; windowSize?: number; maxRehydrationAge?: number; historyRetentionDays?: number }
   discord?: { maxMessageLength?: number; maxInFlightAttachmentBytes?: number }
@@ -101,6 +130,8 @@ interface YamlConfig {
     episodeMaxMessages?: number
     admitThreshold?: number
     verifyThreshold?: number
+    modelAdmitThreshold?: number
+    modelVerifyThreshold?: number
     episodeRecallK?: number
     episodeTokenBudget?: number
     episodeMinSimilarity?: number
@@ -121,6 +152,15 @@ interface YamlConfig {
     extractionSampleRate?: number
     extractionSampleDays?: number
     reclassifyMaxPerRun?: number
+  }
+  embeddings?: {
+    provider?: string
+    model?: string
+    timeoutMs?: number
+    sidecarUrl?: string
+    backfillBatchSize?: number
+    backfillGapMs?: number
+    minSimilarity?: Record<string, { episode?: number; media?: number; fact?: number; serverFact?: number }>
   }
   metrics?: { retentionDays?: number; diagnosticsRetentionHours?: number }
   report?: {
@@ -195,6 +235,14 @@ export type JevMode = 'off' | 'shadow' | 'on'
 export type MemoryPrivacy = 'relaxed' | 'balanced' | 'strict' | 'off'
 export type MemoryRecallMode = 'legacy' | 'shadow' | 'unified'
 export type MediaWatcher = 'gemini' | 'qwen' | 'direct' | 'off'
+export type MemoryJudge = 'jev' | 'model' | 'none'
+
+// Jev judges whenever its key is set. Without it the main model judges, except on the legacy config (no `llm:`
+// block), which keeps today's behaviour of judging nothing.
+function memoryJudge(): MemoryJudge {
+  if (envString('TYPESAFE_API_KEY')) return 'jev'
+  return yaml.llm ? 'model' : 'none'
+}
 
 function jevMode(key: 'tone' | 'referents' | 'prefetch', envKey: string): JevMode {
   const envValue = envString(envKey)
@@ -212,6 +260,21 @@ function mediaWatcher(): MediaWatcher {
   throw new Error(`${source} must be gemini, qwen, direct or off, got: ${String(value)}`)
 }
 
+// Only the watcher's `gemini` mode requires the key, though the qwen watcher still falls back to Gemini on failure.
+export function geminiKeyRequired(roles: {
+  main: ProviderId
+  fallback: ProviderId | null
+  embeddings: EmbeddingProvider
+  watcher: MediaWatcher
+}): boolean {
+  return (
+    roles.main === 'gemini' ||
+    roles.fallback === 'gemini' ||
+    roles.embeddings === 'gemini' ||
+    roles.watcher === 'gemini'
+  )
+}
+
 function memoryEnum<T extends string>(key: 'privacy' | 'recall', envKey: string, values: readonly T[], fallback: T): T {
   const envValue = envString(envKey)
   const value = envValue ?? yaml.memory?.[key] ?? fallback
@@ -221,13 +284,232 @@ function memoryEnum<T extends string>(key: 'privacy' | 'recall', envKey: string,
   throw new Error(`${source} must be ${allowed}, got: ${String(value)}`)
 }
 
+export interface ResolvedModel {
+  /** The llm.models key, e.g. 'haiku'; 'legacy-gemini' / 'legacy-fallback' when synthesised. */
+  key: string
+  provider: ProviderId
+  model: string
+  profile: ModelProfile
+  apiKey: string
+  baseUrl?: string
+  timeoutMs: number
+  maxOutputTokens: number
+  effort?: string
+  limits?: { rpm?: number; rpd?: number; tpm?: number }
+}
+
+export interface LlmConfig {
+  main: ResolvedModel
+  fallback: ResolvedModel | null
+  hedgeAfterMs: number
+  stickyMs: number
+  monthlyBudgetUsd: Partial<Record<ProviderId, number>>
+  modelscopeDailyMagicubes: number
+}
+
+interface LegacyModelSettings {
+  gemini: { apiKey: string; model: string; timeout: number; maxOutputTokens: number; hedgeAfterMs: number }
+  fallback: { apiKey: string | undefined; model: string; baseUrl: string; timeoutMs: number; stickyMs: number }
+}
+
+// Inherits the family's tested capabilities so a GEMINI_MODEL or FALLBACK_MODEL override keeps working as it
+// does today; D12's tested-profile rule applies to llm.models entries only.
+function legacyProfile(provider: ProviderId, model: string): ModelProfile {
+  const family = MODEL_PROFILES.find((profile) => profile.provider === provider)
+  if (!family) throw new Error(`No ${provider} profile to synthesise the legacy route from`)
+  return profileFor(provider, model) ?? { ...family, model }
+}
+
+function legacyLlm(settings: LegacyModelSettings): LlmConfig {
+  return {
+    main: {
+      key: 'legacy-gemini',
+      provider: 'gemini',
+      model: settings.gemini.model,
+      profile: legacyProfile('gemini', settings.gemini.model),
+      apiKey: settings.gemini.apiKey,
+      timeoutMs: settings.gemini.timeout,
+      maxOutputTokens: settings.gemini.maxOutputTokens,
+      limits: resolveLimits('gemini', undefined)
+    },
+    fallback: settings.fallback.apiKey
+      ? {
+          key: 'legacy-fallback',
+          provider: 'modelscope',
+          model: settings.fallback.model,
+          profile: legacyProfile('modelscope', settings.fallback.model),
+          apiKey: settings.fallback.apiKey,
+          baseUrl: settings.fallback.baseUrl,
+          timeoutMs: settings.fallback.timeoutMs,
+          maxOutputTokens: settings.gemini.maxOutputTokens,
+          limits: resolveLimits('modelscope', undefined)
+        }
+      : null,
+    hedgeAfterMs: settings.gemini.hedgeAfterMs,
+    stickyMs: settings.fallback.stickyMs,
+    monthlyBudgetUsd: {},
+    modelscopeDailyMagicubes: yaml.llm?.modelscopeDailyMagicubes ?? 250
+  }
+}
+
+const PROVIDER_KEY_ENV: Record<ProviderId, string> = {
+  gemini: 'GEMINI_API_KEY',
+  anthropic: 'ANTHROPIC_API_KEY',
+  openai: 'OPENAI_API_KEY',
+  modelscope: 'MODELSCOPE_API_KEY'
+}
+const DEFAULT_MONTHLY_BUDGET_USD: Partial<Record<ProviderId, number>> = { anthropic: 5, openai: 5 }
+
+type YamlModels = NonNullable<NonNullable<YamlConfig['llm']>['models']>
+
+function isProviderId(value: unknown): value is ProviderId {
+  return typeof value === 'string' && Object.hasOwn(PROVIDER_KEY_ENV, value)
+}
+
+function resolveRole(
+  models: YamlModels | undefined,
+  settings: LegacyModelSettings,
+  role: 'main' | 'fallback',
+  key: string,
+  fromEnv: boolean
+): ResolvedModel {
+  const source = fromEnv ? `Environment variable LLM_${role.toUpperCase()}` : `Config value llm.${role}`
+  const entry = models?.[key]
+  if (!entry) throw new Error(`${source} must name a key under llm.models, got: ${key}`)
+  const at = `Config value llm.models.${key}`
+  if (!isProviderId(entry.provider)) {
+    throw new Error(`${at}.provider must be gemini, anthropic, openai or modelscope, got: ${String(entry.provider)}`)
+  }
+  const profile = profileFor(entry.provider, String(entry.model))
+  if (!profile) throw new Error(`${at}.model has no tested ${entry.provider} profile, got: ${String(entry.model)}`)
+  if (!profile.verified)
+    throw new Error(`${at}.model ${profile.model} is an untested candidate and cannot be llm.${role}`)
+  const efforts = profile.thinking.efforts
+  if (entry.effort !== undefined && !efforts.includes(entry.effort)) {
+    throw new Error(
+      efforts.length === 0
+        ? `${at}.effort is not accepted by ${profile.model}, got: ${entry.effort}`
+        : `${at}.effort must be one of ${efforts.join(', ')}, got: ${entry.effort}`
+    )
+  }
+  const keyEnv = PROVIDER_KEY_ENV[entry.provider]
+  const apiKey = entry.provider === 'gemini' ? settings.gemini.apiKey : envString(keyEnv)
+  if (!apiKey) throw new Error(`Missing required environment variable: ${keyEnv} (llm.${role} uses ${entry.provider})`)
+  return {
+    key,
+    provider: entry.provider,
+    model: profile.model,
+    profile,
+    apiKey,
+    baseUrl: entry.baseUrl ?? (entry.provider === 'modelscope' ? settings.fallback.baseUrl : undefined),
+    timeoutMs: entry.timeoutMs ?? settings.gemini.timeout,
+    maxOutputTokens: entry.maxOutputTokens ?? settings.gemini.maxOutputTokens,
+    effort: entry.effort ?? profile.thinking.defaultEffort,
+    limits: resolveLimits(entry.provider, entry.limits)
+  }
+}
+
+function resolveLlm(settings: LegacyModelSettings): LlmConfig {
+  const block = yaml.llm
+  const envMain = envString('LLM_MAIN')
+  const envFallback = envString('LLM_FALLBACK')
+  if (!block) {
+    if (envMain) throw new Error(`Environment variable LLM_MAIN needs an llm: block in config.yml, got: ${envMain}`)
+    if (envFallback && envFallback !== 'none') {
+      throw new Error(`Environment variable LLM_FALLBACK needs an llm: block in config.yml, got: ${envFallback}`)
+    }
+    const legacy = legacyLlm(settings)
+    return envFallback === 'none' ? { ...legacy, fallback: null } : legacy
+  }
+
+  const mainKey = envMain ?? block.main
+  if (!mainKey) throw new Error('Config value llm.main is required when config.yml has an llm: block')
+  const fallbackKey = envFallback === 'none' ? null : (envFallback ?? block.fallback ?? null)
+  return {
+    main: resolveRole(block.models, settings, 'main', mainKey, envMain !== undefined),
+    fallback:
+      fallbackKey === null
+        ? null
+        : resolveRole(block.models, settings, 'fallback', fallbackKey, envFallback !== undefined),
+    hedgeAfterMs: block.hedgeAfterMs ?? 0,
+    stickyMs: block.stickyMs ?? 300_000,
+    monthlyBudgetUsd: block.monthlyBudgetUsd ?? DEFAULT_MONTHLY_BUDGET_USD,
+    modelscopeDailyMagicubes: block.modelscopeDailyMagicubes ?? 250
+  }
+}
+
 const geminiModel = envString('GEMINI_MODEL') ?? yaml.gemini?.model ?? 'gemini-2.0-flash-lite'
 const memoryBufferSize = envInt('MEMORY_BUFFER_SIZE') ?? yaml.memory?.bufferSize ?? 30
+const rateLimit = {
+  rpm: envInt('RATE_LIMIT_RPM') ?? yaml.rateLimit?.rpm ?? 15,
+  rpd: envInt('RATE_LIMIT_RPD') ?? yaml.rateLimit?.rpd ?? 500
+}
+const geminiMaxTokensPerMinute = envInt('GEMINI_MAX_TOKENS_PER_MINUTE') ?? yaml.gemini?.maxTokensPerMinute ?? 125_000
+
+type ModelLimits = NonNullable<ResolvedModel['limits']>
+
+/**
+ * A Gemini entry inherits `rateLimit` and `gemini.maxTokensPerMinute`, so the synthesised legacy route keeps exactly
+ * the limits it has always had. Other providers are limited only where their entry says so.
+ */
+function resolveLimits(provider: ProviderId, own: ModelLimits | undefined): ModelLimits | undefined {
+  const limits: ModelLimits = {
+    ...(provider === 'gemini' ? { rpm: rateLimit.rpm, rpd: rateLimit.rpd, tpm: geminiMaxTokensPerMinute } : {}),
+    ...own
+  }
+  return Object.keys(limits).length > 0 ? limits : undefined
+}
+
 const requestedEpisodeMaxMessages = yaml.memory?.episodeMaxMessages ?? 25
 const episodeMaxMessages = Math.min(requestedEpisodeMaxMessages, memoryBufferSize - 3)
 
-/** Merged config: env overrides > config.yml > hardcoded defaults */
-export const config = {
+function embeddingProvider(): EmbeddingProvider {
+  const envValue = envString('EMBEDDINGS_PROVIDER')
+  const value =
+    envValue ??
+    yaml.embeddings?.provider ??
+    defaultEmbeddingProvider({
+      hasBlock: Boolean(yaml.embeddings),
+      hasGeminiKey: envString('GEMINI_API_KEY') !== undefined
+    })
+  if (value === 'local' || value === 'gemini' || value === 'openai') return value
+  const source = envValue ? 'Environment variable EMBEDDINGS_PROVIDER' : 'Config value embeddings.provider'
+  throw new Error(`${source} must be local, gemini or openai, got: ${String(value)}`)
+}
+
+const EMBEDDING_KEYS: Readonly<Record<EmbeddingProvider, string | undefined>> = {
+  gemini: 'GEMINI_API_KEY',
+  openai: 'OPENAI_API_KEY',
+  local: undefined
+}
+
+function resolveEmbeddings() {
+  const provider = embeddingProvider()
+  // memory.embeddingModel is deprecated and only ever named a Gemini model.
+  const legacyModel = provider === 'gemini' ? yaml.memory?.embeddingModel : undefined
+  const model = yaml.embeddings?.model ?? legacyModel ?? DEFAULT_EMBEDDING_MODELS[provider]
+  const dim = embeddingDimensions(provider, model)
+  if (dim === undefined) {
+    throw new Error(`Config value embeddings.model is not a tested ${provider} embedding model, got: ${model}`)
+  }
+  const apiKeyName = EMBEDDING_KEYS[provider]
+  return {
+    provider,
+    model,
+    dim,
+    fingerprint: embeddingFingerprint(provider, model, dim),
+    timeoutMs: yaml.embeddings?.timeoutMs ?? yaml.memory?.embeddingTimeoutMs ?? 1500,
+    sidecarUrl: yaml.embeddings?.sidecarUrl ?? 'http://embeddings:8080',
+    apiKey: apiKeyName ? requiredEnv(apiKeyName) : undefined,
+    backfillBatchSize: yaml.embeddings?.backfillBatchSize ?? 3600,
+    backfillGapMs: yaml.embeddings?.backfillGapMs ?? 1000
+  }
+}
+
+const embeddings = resolveEmbeddings()
+const similarityFloors = yaml.embeddings?.minSimilarity?.[embeddings.fingerprint]
+
+const baseConfig = {
   jev: {
     apiKey: envString('TYPESAFE_API_KEY'),
     model: envString('JEV_MODEL') ?? yaml.jev?.model ?? 'jev-1.13.0',
@@ -268,6 +550,9 @@ export const config = {
     maxStreamedUploadBytes: yaml.media?.maxStreamedUploadBytes ?? 52_428_800,
     uploadTimeoutMs: yaml.media?.uploadTimeoutMs ?? 45_000,
     qwen: {
+      apiKey: envString('MODELSCOPE_API_KEY'),
+      // Read from the legacy fallback block so a custom ModelScope endpoint still reaches the watcher.
+      baseUrl: yaml.fallback?.baseUrl ?? 'https://api-inference.modelscope.ai/v1',
       model: envString('MEDIA_QWEN_MODEL') ?? yaml.media?.qwen?.model ?? 'Qwen/Qwen3.5-35B-A3B',
       secondsPerFrame: yaml.media?.qwen?.secondsPerFrame ?? 4,
       minFrames: yaml.media?.qwen?.minFrames ?? 16,
@@ -283,14 +568,14 @@ export const config = {
     }
   },
   gemini: {
-    apiKey: requiredEnv('GEMINI_API_KEY'),
+    apiKey: envString('GEMINI_API_KEY') ?? '',
     model: geminiModel,
     extractionModel: envString('GEMINI_EXTRACTION_MODEL') ?? yaml.gemini?.extractionModel ?? geminiModel,
     timeout: envInt('GEMINI_TIMEOUT') ?? yaml.gemini?.timeout ?? 15_000,
     maxRetries: envInt('GEMINI_MAX_RETRIES') ?? yaml.gemini?.maxRetries ?? 1,
     maxOutputTokens: envInt('GEMINI_MAX_OUTPUT_TOKENS') ?? yaml.gemini?.maxOutputTokens ?? 300,
     maxAttachmentTokens: envInt('GEMINI_MAX_ATTACHMENT_TOKENS') ?? yaml.gemini?.maxAttachmentTokens ?? 50_000,
-    maxTokensPerMinute: envInt('GEMINI_MAX_TOKENS_PER_MINUTE') ?? yaml.gemini?.maxTokensPerMinute ?? 125_000,
+    maxTokensPerMinute: geminiMaxTokensPerMinute,
     safetyThreshold: envString('GEMINI_SAFETY_THRESHOLD') ?? yaml.gemini?.safetyThreshold ?? 'OFF',
     maxLlmCalls: yaml.gemini?.maxLlmCalls ?? 4,
     hedgeAfterMs: envInt('GEMINI_HEDGE_AFTER_MS') ?? yaml.gemini?.hedgeAfterMs ?? 5_000,
@@ -310,10 +595,7 @@ export const config = {
   logging: {
     level: envString('LOG_LEVEL') ?? yaml.logging?.level ?? 'info'
   },
-  rateLimit: {
-    rpm: envInt('RATE_LIMIT_RPM') ?? yaml.rateLimit?.rpm ?? 15,
-    rpd: envInt('RATE_LIMIT_RPD') ?? yaml.rateLimit?.rpd ?? 500
-  },
+  rateLimit,
   session: {
     ttlMs: envInt('SESSION_TTL_MS') ?? yaml.session?.ttl ?? 300_000,
     windowSize: envInt('SESSION_WINDOW_SIZE') ?? yaml.session?.windowSize ?? 20,
@@ -342,27 +624,31 @@ export const config = {
     episodeMaxMessages,
     admitThreshold: yaml.memory?.admitThreshold ?? 0.5,
     verifyThreshold: yaml.memory?.verifyThreshold ?? 0.5,
+    modelAdmitThreshold: yaml.memory?.modelAdmitThreshold ?? 0.7,
+    modelVerifyThreshold: yaml.memory?.modelVerifyThreshold ?? 0.7,
+    judge: memoryJudge(),
     episodeRecallK: yaml.memory?.episodeRecallK ?? 3,
     episodeTokenBudget: yaml.memory?.episodeTokenBudget ?? 200,
-    episodeMinSimilarity: yaml.memory?.episodeMinSimilarity ?? 0.7,
+    episodeMinSimilarity: similarityFloors?.episode ?? yaml.memory?.episodeMinSimilarity ?? 0.7,
     episodeRetentionDays: yaml.memory?.episodeRetentionDays ?? 90,
     mediaRecallK: yaml.memory?.mediaRecallK ?? 2,
     mediaTokenBudget: yaml.memory?.mediaTokenBudget ?? 400,
-    mediaMinSimilarity: yaml.memory?.mediaMinSimilarity ?? 0.7,
+    mediaMinSimilarity: similarityFloors?.media ?? yaml.memory?.mediaMinSimilarity ?? 0.7,
     mediaRetentionDays: yaml.memory?.mediaRetentionDays ?? 90,
-    embeddingModel: yaml.memory?.embeddingModel ?? 'gemini-embedding-2',
-    embeddingTimeoutMs: yaml.memory?.embeddingTimeoutMs ?? 1500,
+    embeddingModel: embeddings.model,
+    embeddingTimeoutMs: embeddings.timeoutMs,
     privacy: memoryEnum('privacy', 'MEMORY_PRIVACY', ['relaxed', 'balanced', 'strict', 'off'], 'relaxed'),
     recall: memoryEnum('recall', 'MEMORY_RECALL', ['legacy', 'shadow', 'unified'], 'shadow'),
     recallTokenBudget: yaml.memory?.recallTokenBudget ?? 600,
     recallCoreFacts: yaml.memory?.recallCoreFacts ?? 3,
-    factMinSimilarity: yaml.memory?.factMinSimilarity ?? 0.65,
-    serverFactMinSimilarity: yaml.memory?.serverFactMinSimilarity ?? 0.65,
+    factMinSimilarity: similarityFloors?.fact ?? yaml.memory?.factMinSimilarity ?? 0.65,
+    serverFactMinSimilarity: similarityFloors?.serverFact ?? yaml.memory?.serverFactMinSimilarity ?? 0.65,
     vaultExportDir: envString('MEMORY_VAULT_EXPORT_DIR') ?? yaml.memory?.vaultExportDir ?? 'data/vault',
     extractionSampleRate: envNumber('MEMORY_EXTRACTION_SAMPLE_RATE') ?? yaml.memory?.extractionSampleRate ?? 0.1,
     extractionSampleDays: envInt('MEMORY_EXTRACTION_SAMPLE_DAYS') ?? yaml.memory?.extractionSampleDays ?? 14,
     reclassifyMaxPerRun: envInt('MEMORY_RECLASSIFY_MAX_PER_RUN') ?? yaml.memory?.reclassifyMaxPerRun ?? 20
   },
+  embeddings,
   metrics: {
     retentionDays: envInt('METRICS_RETENTION_DAYS') ?? yaml.metrics?.retentionDays ?? 90,
     diagnosticsRetentionHours:
@@ -392,6 +678,53 @@ export const config = {
   statusCycleMs: yaml.statusCycleMs ?? 900_000,
   timezone: (envString('TZ') ?? yaml.timezone) as string | undefined
 } as const
+
+const llm = resolveLlm(baseConfig)
+
+// A legacy config (no llm: block) has a Gemini main, so the key stays required there with this same message.
+if (
+  geminiKeyRequired({
+    main: llm.main.provider,
+    fallback: llm.fallback?.provider ?? null,
+    embeddings: embeddings.provider,
+    watcher: baseConfig.media.watcher
+  })
+) {
+  requiredEnv('GEMINI_API_KEY')
+}
+
+/** Merged config: env overrides > config.yml > hardcoded defaults */
+export const config = { ...baseConfig, llm } as const
+
+function modelBounds(role: 'main' | 'fallback', model: ResolvedModel) {
+  return [
+    { path: `llm.${role}.timeoutMs`, value: model.timeoutMs, min: 1 },
+    // Config can lower a profile's limit; it cannot raise it.
+    { path: `llm.${role}.maxOutputTokens`, value: model.maxOutputTokens, min: 1, max: model.profile.maxOutputTokens }
+  ]
+}
+
+/**
+ * Rows for the limits a configured route carries. The synthesised legacy routes get none: their limits are the
+ * `rateLimit` and `gemini.maxTokensPerMinute` values already bounded here, and a row would name a path nobody wrote.
+ * A main route must fund one whole reply turn, because the Discord guard reserves `maxLlmCalls` requests and admits an
+ * attachment turn only when a whole `maxAttachmentTokens` fits in the minute.
+ */
+function routeLimitBounds(
+  route: ResolvedModel | null,
+  isMain: boolean
+): Array<{ path: string; value: number; min: number }> {
+  if (!route?.limits || route.key.startsWith('legacy-')) return []
+  const path = `llm.models.${route.key}.limits`
+  const { rpm, rpd, tpm } = route.limits
+  return [
+    ...(rpm === undefined ? [] : [{ path: `${path}.rpm`, value: rpm, min: isMain ? config.gemini.maxLlmCalls : 1 }]),
+    ...(rpd === undefined ? [] : [{ path: `${path}.rpd`, value: rpd, min: 1 }]),
+    ...(tpm === undefined
+      ? []
+      : [{ path: `${path}.tpm`, value: tpm, min: isMain ? config.gemini.maxAttachmentTokens : 1 }])
+  ]
+}
 
 /**
  * Bounds for every numeric tunable, env-overridable or yaml-only, re-derived from resolved config
@@ -482,6 +815,9 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   // rate-limited. Found by a harness fixture at `rpm: 2` going silent the moment reservations landed (#167).
   { path: 'rateLimit.rpm', value: config.rateLimit.rpm, min: config.gemini.maxLlmCalls },
   { path: 'rateLimit.rpd', value: config.rateLimit.rpd, min: 1 },
+  ...routeLimitBounds(config.llm.main, true),
+  ...routeLimitBounds(config.llm.fallback, false),
+  { path: 'llm.modelscopeDailyMagicubes', value: config.llm.modelscopeDailyMagicubes, min: 1 },
   { path: 'session.ttlMs', value: config.session.ttlMs, min: 1 },
   { path: 'session.windowSize', value: config.session.windowSize, min: 1 },
   { path: 'session.maxRehydrationAge', value: config.session.maxRehydrationAge, min: 0 },
@@ -493,6 +829,9 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   // full-sized turn could never be admitted even on an idle bot, so it would be refused forever rather
   // than merely delayed. Asserted from the constants themselves in the byteBudget tests.
   { path: 'discord.maxInFlightAttachmentBytes', value: config.discord.maxInFlightAttachmentBytes, min: 31_457_280 },
+  { path: 'embeddings.timeoutMs', value: config.embeddings.timeoutMs, min: 1 },
+  { path: 'embeddings.backfillBatchSize', value: config.embeddings.backfillBatchSize, min: 1, max: 100_000 },
+  { path: 'embeddings.backfillGapMs', value: config.embeddings.backfillGapMs, min: 0, max: 60_000 },
   { path: 'memory.bufferSize', value: config.memory.bufferSize, min: 1 },
   { path: 'memory.contextSize', value: config.memory.contextSize, min: 1 },
   { path: 'memory.channelMonitorTtlMs', value: config.memory.channelMonitorTtlMs, min: 1 },
@@ -518,6 +857,8 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   },
   { path: 'memory.admitThreshold', value: config.memory.admitThreshold, min: 0, max: 1 },
   { path: 'memory.verifyThreshold', value: config.memory.verifyThreshold, min: 0, max: 1 },
+  { path: 'memory.modelAdmitThreshold', value: config.memory.modelAdmitThreshold, min: 0, max: 1 },
+  { path: 'memory.modelVerifyThreshold', value: config.memory.modelVerifyThreshold, min: 0, max: 1 },
   { path: 'memory.episodeRecallK', value: config.memory.episodeRecallK, min: 1, max: 10 },
   { path: 'memory.episodeTokenBudget', value: config.memory.episodeTokenBudget, min: 1 },
   { path: 'memory.episodeMinSimilarity', value: config.memory.episodeMinSimilarity, min: 0, max: 1 },
@@ -549,7 +890,21 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'games.hangmanTimeoutMs', value: config.games.hangmanTimeoutMs, min: 1 },
   { path: 'games.shiritoriTimeoutMs', value: config.games.shiritoriTimeoutMs, min: 1 },
   { path: 'games.shinyChance', value: config.games.shinyChance, min: 0, max: 1 },
-  { path: 'statusCycleMs', value: config.statusCycleMs, min: 1 }
+  { path: 'statusCycleMs', value: config.statusCycleMs, min: 1 },
+  { path: 'llm.hedgeAfterMs', value: config.llm.hedgeAfterMs, min: 0 },
+  { path: 'llm.stickyMs', value: config.llm.stickyMs, min: 0 },
+  // Synthesised legacy values are already bounded as gemini.* and fallback.*, so only a block adds rows.
+  ...(yaml.llm
+    ? [
+        ...modelBounds('main', config.llm.main),
+        ...(config.llm.fallback ? modelBounds('fallback', config.llm.fallback) : []),
+        ...Object.entries(config.llm.monthlyBudgetUsd).map(([provider, value]) => ({
+          path: `llm.monthlyBudgetUsd.${provider}`,
+          value: value as number,
+          min: 0
+        }))
+      ]
+    : [])
 ]
 
 for (const { path, value, min, max } of NUMERIC_BOUNDS) {
@@ -566,6 +921,16 @@ for (const { path, value, min, max } of NUMERIC_BOUNDS) {
   if (max !== undefined && value > max) {
     throw new Error(`Config value ${path} must be <= ${max}, got: ${value}`)
   }
+}
+
+if (config.embeddings.provider !== 'gemini' && !similarityFloors) {
+  // logger.ts imports this module, so awaiting the import here would deadlock startup.
+  void import('./utils/logger.js').then(({ logger }) =>
+    logger.warn(
+      { fingerprint: config.embeddings.fingerprint },
+      'No embeddings.minSimilarity entry for this fingerprint, so recall uses the Gemini floors in memory.*MinSimilarity'
+    )
+  )
 }
 
 export function deriveAchievableRetries(

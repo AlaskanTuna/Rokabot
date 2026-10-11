@@ -36,6 +36,22 @@ fallback:
   baseUrl: https://api-inference.modelscope.ai/v1 # OpenAI-compatible ModelScope endpoint
   timeoutMs: 15000 # Per-request deadline for the fallback model (measured median ~1.3s with thinking off)
   stickyMs: 300000 # After Gemini fails and the fallback answers, later turns go straight to the fallback for this long; 0 disables
+# llm: # Main and fallback model selection; without this block the bot runs gemini.model with the fallback model above
+#   main: flash # Required; a key under llm.models (LLM_MAIN overrides)
+#   fallback: null # Optional; a key under llm.models (LLM_FALLBACK overrides; LLM_FALLBACK=none disables)
+#   hedgeAfterMs: 0 # Start the same call on the fallback after this many ms; paid routes start at 0 (off)
+#   stickyMs: 300000 # After the main model fails and the fallback answers, later turns start on the fallback this long
+#   monthlyBudgetUsd: # Local monthly spend cap per paid provider
+#     anthropic: 5
+#     openai: 5
+#   modelscopeDailyMagicubes: 250 # Magicubes one ModelScope key is expected to get a day (200 on login + 50 with Alibaba Cloud linked). Qwen and DeepSeek share it, the qwen watcher included; each call counts as one, and background jobs stop while a whole reply turn is left
+#   # Any entry may set limits: { rpm, rpd, tpm }; per-call budgets apply only with this block. A gemini entry inherits rateLimit and gemini.maxTokensPerMinute; other providers are unlimited unless set. Set tpm to half the provider's real TPM: the bucket drains continuously and can admit twice its value in the worst minute
+#   models: # Only tested profiles start (src/agent/llm/profiles.ts); optional per model: timeoutMs, maxOutputTokens, baseUrl
+#     flash: { provider: gemini, model: gemini-3.5-flash-lite }
+#     haiku: { provider: anthropic, model: claude-haiku-5-5, effort: low } # Needs ANTHROPIC_API_KEY; effort none turns thinking off (for a Haiku fallback)
+#     luna: { provider: openai, model: gpt-6-luna, effort: none } # Needs OPENAI_API_KEY; Chat Completions takes tools only at effort none
+#     qwen: { provider: modelscope, model: Qwen/Qwen3.5-35B-A3B } # Candidate, refused until scripts/probe-llm-profile.ts verifies it; needs MODELSCOPE_API_KEY
+#     deepseek: { provider: modelscope, model: deepseek-ai/DeepSeek-V4.1-Flash } # Candidate, refused until the probe verifies it; shares qwen's Magicube balance
 
 rateLimit:
   rpm: 15 # Requests per minute (Gemini free tier: 15)
@@ -104,6 +120,8 @@ memory:
   episodeMaxMessages: 25 # Close an episode at this many delta messages; leave room for three context lines
   admitThreshold: 0.5 # Minimum Jev lasting_fact probability; unavailable or lower judgments drop the episode
   verifyThreshold: 0.5 # Minimum Jev probability for durable and attributed operations
+  modelAdmitThreshold: 0.7 # Without TYPESAFE_API_KEY (and with an llm block), the minimum main-model lasting_fact probability. Uncalibrated: self-reported model probabilities run high, so calibrate on labelled episodes (jev_events rows with a judge) before trusting it
+  modelVerifyThreshold: 0.7 # Without TYPESAFE_API_KEY (and with an llm block), the minimum main-model probability for durable and attributed operations, reclassification moves and hidden retractions. Uncalibrated, like modelAdmitThreshold
   episodeRecallK: 3 # Maximum episode summaries recalled for one guild turn
   episodeTokenBudget: 200 # Approximate token budget for the dated episode block
   episodeMinSimilarity: 0.7 # Minimum cosine similarity required for episode recall. A 648-pair calibration (2026-09-25) admitted 0 of 624 unrelated query-summary pairs at 0.7 and kept 20 of 24 related ones; 0.45 admitted 622 unrelated
@@ -112,8 +130,6 @@ memory:
   mediaTokenBudget: 400 # Approximate token budget for the watched-media block
   mediaMinSimilarity: 0.7 # Minimum cosine similarity required for watched-media recall
   mediaRetentionDays: 90 # Days after the last share before a watched-media digest and its occurrences are deleted
-  embeddingModel: gemini-embedding-2 # Gemini embedding model used for episode summaries and queries
-  embeddingTimeoutMs: 1500 # Maximum wait for one episode embedding before memory fails open
   privacy: relaxed # relaxed: remembers across the whole server (default); balanced: private channels keep their memories to themselves, public ones are shared; strict: every channel keeps its own memories; off: no long-term memory, only the current chat
   recall: shadow # legacy: today's four memory blocks; shadow: legacy prompt plus the unified recall logged only; unified: one relevance-ranked memory block
   recallTokenBudget: 600 # Approximate token budget for the unified memory block
@@ -124,6 +140,21 @@ memory:
   extractionSampleRate: 0.1 # Share of rejected conversations (trivial or below Jev's admission threshold) kept as text for offline labelling; 0 disables, never sampled under privacy off
   extractionSampleDays: 14 # Days a rejected-conversation sample is kept before deletion
   reclassifyMaxPerRun: 20 # Most misfiled facts moved to a better category per daily run; 0 turns automatic reclassification off
+
+embeddings:
+  provider: gemini # Who turns memory text into vectors: local (the sidecar in sidecar/embeddings, compose profile local-embeddings), gemini or openai (needs OPENAI_API_KEY). A block that leaves this out uses local; this file pins gemini so the Pi keeps its vectors until the sidecar passes its Pi memory check (docs/runbook.md). EMBEDDINGS_PROVIDER overrides it
+  # model: gemini-embedding-2 # Optional; each provider defaults to its tested model: gemini-embedding-2 (768 dimensions), Xenova/multilingual-e5-small@761b726d-q8 (384), text-embedding-3-small (1536)
+  timeoutMs: 1500 # Maximum wait for one embedding before memory fails open to keyword recall (replaces memory.embeddingTimeoutMs)
+  sidecarUrl: http://embeddings:8080 # Where the bot reaches the local sidecar; the compose service name resolves on the compose network
+  backfillBatchSize: 3600 # Most documents one maintenance pass embeds after a provider switch, an hour at the gap below; the next pass resumes from what each row records
+  backfillGapMs: 1000 # Pause between backfill documents, about one a second, so a turn's query never waits behind a long run on the sidecar's single thread
+  minSimilarity: # Recall floors per embedding fingerprint (provider:model:dimensions:recipe); a fingerprint not listed uses memory.*MinSimilarity, the gemini-embedding-2 calibration
+    # NEEDS CALIBRATION before local goes live: E5 scores cluster between 0.7 and 1.0, so these are placeholders above that band (#296 phase 3)
+    'local:Xenova/multilingual-e5-small@761b726d-q8:384:e5-prefix-mean-l2':
+      episode: 0.86
+      media: 0.86
+      fact: 0.84
+      serverFact: 0.84
 
 metrics:
   retentionDays: 90 # Days before response and extraction events are auto-pruned

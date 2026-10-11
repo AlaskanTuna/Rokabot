@@ -10,8 +10,8 @@ vi.mock('../../config.js', () => ({
   }
 }))
 
-import { type AssemblerInput, assembleSystemPrompt } from '../promptAssembler.js'
-import { CORE_PROMPT } from '../prompts/core.js'
+import { type AssemblerInput, assembleSystemPrompt, splitStablePrefix } from '../promptAssembler.js'
+import { CORE_PROMPT, CORE_PROMPT_FORGET_ONLY, CORE_PROMPT_MEMORY_FREE } from '../prompts/core.js'
 import { SPEECH_PROMPT } from '../prompts/speech.js'
 import { TONE_PROMPTS, type ToneKey } from '../prompts/tones.js'
 
@@ -231,5 +231,27 @@ describe('memory tool rules', () => {
     expect(result).toContain('forget_user')
     expect(result).not.toContain('remember_user')
     expect(result).not.toContain('recall_user')
+  })
+})
+
+describe('splitStablePrefix', () => {
+  const input: AssemblerInput = { tone: 'playful', hour: 14, displayName: 'Alice', memory: true }
+
+  it.each([
+    ['memory', { memory: true }, CORE_PROMPT],
+    ['forget-only', { memory: true, forgetOnly: true }, CORE_PROMPT_FORGET_ONLY],
+    ['memory-free', { memory: false }, CORE_PROMPT_MEMORY_FREE]
+  ] as const)('splits the %s core and speech layers from the per-turn layers', (_name, flags, core) => {
+    const prompt = `${assembleSystemPrompt({ ...input, ...flags })}\n\n## Memory\n- Alice likes tea`
+
+    const split = splitStablePrefix(prompt)
+
+    expect(split?.stable).toBe(`${core}\n\n${SPEECH_PROMPT}`)
+    expect(`${split?.stable}${split?.rest}`).toBe(prompt)
+    expect(split?.rest).toContain(TONE_PROMPTS.playful)
+  })
+
+  it('returns undefined for a prompt that does not start with the Roka layers', () => {
+    expect(splitStablePrefix('You extract facts from a chat.')).toBeUndefined()
   })
 })

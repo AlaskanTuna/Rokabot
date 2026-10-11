@@ -115,7 +115,11 @@ export function startTurnEntryWork(input: StartTurnEntryWorkInput): TurnEntryWor
         .then(() =>
           embeddingController.signal.aborted
             ? null
-            : embedEpisodeText({ text: input.message, role: 'RETRIEVAL_QUERY', signal: embeddingController.signal })
+            : embedEpisodeText({
+                text: input.message,
+                role: 'RETRIEVAL_QUERY',
+                signal: embeddingController.signal
+              }).then(({ values }) => values)
         )
         .catch(() => null)
     : undefined

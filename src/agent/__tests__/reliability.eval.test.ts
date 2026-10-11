@@ -18,44 +18,62 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('../../config.js', () => ({
-  config: {
-    discord: { token: 'test-token', clientId: 'test-client', maxMessageLength: 2000 },
-    gemini: {
-      apiKey: 'test-key',
-      model: 'gemini-test',
-      timeout: 100,
-      maxRetries: 1,
-      maxOutputTokens: 300,
-      maxLlmCalls: 4,
-      liveMaxRetries: 2,
-      retryRpmFloor: 2,
-      retryBackoffBaseMs: 0,
-      retryBackoffCapMs: 12_000,
-      safetyThreshold: 'OFF'
-    },
-    fallback: {
-      apiKey: '',
-      model: 'fallback-test',
-      baseUrl: 'https://fallback.test/v1',
-      timeoutMs: 100,
-      stickyMs: 300_000
-    },
-    logging: { level: 'silent' },
-    rateLimit: { rpm: 15, rpd: 500 },
-    session: { ttlMs: 300_000, windowSize: 10, maxRehydrationAge: 7_200_000, historyRetentionDays: 7 },
-    memory: {
-      bufferSize: 20,
-      contextSize: 10,
-      channelMonitorTtlMs: 86_400_000
-    },
-    emoji: { probability: 0.33, cooldownMs: 180_000 },
-    reminders: { checkIntervalMs: 5_000, maxPerUser: 5, staleThresholdMs: 300_000 },
-    games: { hangmanLives: 6, hangmanTimeoutMs: 60_000, shiritoriTimeoutMs: 60_000, shinyChance: 0.01 },
-    statusCycleMs: 900_000,
-    timezone: undefined
+vi.mock('../../config.js', async () => {
+  const { profileFor } = await import('../llm/profiles.js')
+  return {
+    config: {
+      discord: { token: 'test-token', clientId: 'test-client', maxMessageLength: 2000 },
+      gemini: {
+        apiKey: 'test-key',
+        model: 'gemini-test',
+        timeout: 100,
+        maxRetries: 1,
+        maxOutputTokens: 300,
+        maxLlmCalls: 4,
+        liveMaxRetries: 2,
+        retryRpmFloor: 2,
+        retryBackoffBaseMs: 0,
+        retryBackoffCapMs: 12_000,
+        safetyThreshold: 'OFF'
+      },
+      fallback: {
+        apiKey: '',
+        model: 'fallback-test',
+        baseUrl: 'https://fallback.test/v1',
+        timeoutMs: 100,
+        stickyMs: 300_000
+      },
+      logging: { level: 'silent' },
+      rateLimit: { rpm: 15, rpd: 500 },
+      session: { ttlMs: 300_000, windowSize: 10, maxRehydrationAge: 7_200_000, historyRetentionDays: 7 },
+      memory: {
+        bufferSize: 20,
+        contextSize: 10,
+        channelMonitorTtlMs: 86_400_000
+      },
+      emoji: { probability: 0.33, cooldownMs: 180_000 },
+      reminders: { checkIntervalMs: 5_000, maxPerUser: 5, staleThresholdMs: 300_000 },
+      games: { hangmanLives: 6, hangmanTimeoutMs: 60_000, shiritoriTimeoutMs: 60_000, shinyChance: 0.01 },
+      statusCycleMs: 900_000,
+      timezone: undefined,
+      llm: {
+        main: {
+          key: 'legacy-gemini',
+          provider: 'gemini',
+          model: 'gemini-test',
+          profile: { ...profileFor('gemini', 'gemini-3.5-flash-lite')!, model: 'gemini-test' },
+          apiKey: 'test-key',
+          timeoutMs: 100,
+          maxOutputTokens: 300
+        },
+        fallback: null,
+        hedgeAfterMs: 0,
+        stickyMs: 300_000,
+        monthlyBudgetUsd: {}
+      }
+    }
   }
-}))
+})
 
 import { isChannelBusy, markBusy, markFree } from '../../discord/concurrency.js'
 import { runTurnWithReliability } from '../reliability.js'

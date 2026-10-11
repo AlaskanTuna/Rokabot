@@ -46,7 +46,10 @@ describe('database startup schema', () => {
       'summary',
       'digest_json',
       'embedding',
-      'created_at'
+      'created_at',
+      'embedding_model_id',
+      'embedding_dim',
+      'embedding_fingerprint'
     ])
     expect(columns('media_occurrence')).toEqual([
       'id',
@@ -195,7 +198,10 @@ describe('runMigrations', () => {
       'ended_at',
       'summary',
       'embedding',
-      'created_at'
+      'created_at',
+      'embedding_model_id',
+      'embedding_dim',
+      'embedding_fingerprint'
     ])
     expect(indexes.map((index) => index.name)).toEqual(
       expect.arrayContaining(['idx_memory_episode_guild_ended', 'idx_memory_episode_ended'])
@@ -534,5 +540,110 @@ describe('runMigrations', () => {
         .run('user-1', 'tanuki', 'common', 0, 'sleepy', 'cap', 'Yume', 'Mischievous', '{"luck":4}', 2)
     ).not.toThrow()
     expect(testDb.prepare('SELECT COUNT(*) AS count FROM buddy WHERE user_id = ?').get('user-1')).toEqual({ count: 2 })
+  })
+
+  it('adds vector provenance to an existing database and marks its vectors as unknown provenance', () => {
+    testDb = new Database(':memory:')
+    testDb.exec(`
+      CREATE TABLE session_history (
+        channel_id TEXT NOT NULL, role TEXT NOT NULL, display_name TEXT NOT NULL, content TEXT NOT NULL,
+        timestamp INTEGER NOT NULL, user_id TEXT, username TEXT
+      );
+      CREATE TABLE gacha_daily (
+        user_id TEXT NOT NULL, last_draw_date TEXT NOT NULL, streak INTEGER NOT NULL DEFAULT 0,
+        last_hatch_at INTEGER, PRIMARY KEY (user_id)
+      );
+      CREATE TABLE extraction_queue (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id TEXT NOT NULL, channel_id TEXT NOT NULL,
+        payload TEXT NOT NULL, status TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, enqueued_at INTEGER NOT NULL
+      );
+      CREATE TABLE memory_episode (
+        id INTEGER PRIMARY KEY, guild_id TEXT NOT NULL, channel_id TEXT NOT NULL, started_at INTEGER NOT NULL,
+        ended_at INTEGER NOT NULL, summary TEXT NOT NULL, embedding BLOB, created_at INTEGER NOT NULL
+      );
+    `)
+    testDb.prepare("INSERT INTO memory_episode VALUES (1, 'g', 'c', 1, 2, 'Picnic.', ?, 3)").run(Buffer.alloc(3072))
+
+    database.runMigrations(testDb)
+    database.runMigrations(testDb)
+
+    expect(
+      testDb.prepare('SELECT embedding_model_id, embedding_dim, embedding_fingerprint FROM memory_episode').get()
+    ).toEqual({ embedding_model_id: null, embedding_dim: 768, embedding_fingerprint: 'unknown' })
+    const claimColumns = (testDb.prepare("PRAGMA table_info('memory_claim')").all() as Array<{ name: string }>).map(
+      ({ name }) => name
+    )
+    expect(claimColumns).toEqual(
+      expect.arrayContaining(['embedding_model_id', 'embedding_dim', 'embedding_fingerprint'])
+    )
+  })
+
+  it('adds provider columns to a legacy response_events table without losing rows', () => {
+    testDb = new Database(':memory:')
+    testDb.exec(`
+      CREATE TABLE session_history (
+        channel_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        display_name TEXT NOT NULL,
+        content TEXT NOT NULL,
+        timestamp INTEGER NOT NULL,
+        user_id TEXT DEFAULT NULL,
+        username TEXT DEFAULT NULL
+      );
+
+      CREATE TABLE gacha_daily (
+        user_id TEXT NOT NULL,
+        PRIMARY KEY (user_id)
+      );
+
+      CREATE TABLE response_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        guild_id TEXT NOT NULL,
+        channel_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        trigger TEXT NOT NULL,
+        tone TEXT NOT NULL,
+        outcome TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        e2e_ms INTEGER NOT NULL,
+        generate_ms INTEGER NOT NULL,
+        llm_ms INTEGER NOT NULL,
+        retry_latency_ms INTEGER NOT NULL,
+        retries INTEGER NOT NULL,
+        tokens_in_est INTEGER NOT NULL,
+        tokens_out_est INTEGER NOT NULL,
+        tools_used TEXT DEFAULT NULL,
+        failure_marker TEXT DEFAULT NULL,
+        model TEXT DEFAULT NULL,
+        hedged INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL
+      );
+    `)
+    testDb
+      .prepare(
+        `INSERT INTO response_events (guild_id, channel_id, user_id, trigger, tone, outcome, kind, e2e_ms, generate_ms,
+          llm_ms, retry_latency_ms, retries, tokens_in_est, tokens_out_est, model, hedged, created_at)
+         VALUES ('g', 'c', 'u', 'mention', 'playful', 'ok', 'ok', 1, 1, 1, 0, 0, 1, 1, 'fallback', 1, 1)`
+      )
+      .run()
+
+    const runMigrations = (database as unknown as DatabaseModule).runMigrations
+    runMigrations?.(testDb)
+    runMigrations?.(testDb)
+
+    const columns = (testDb.prepare("PRAGMA table_info('response_events')").all() as Array<{ name: string }>).map(
+      (column) => column.name
+    )
+    expect(columns).toEqual(expect.arrayContaining(['provider', 'model_id', 'route_role', 'workload']))
+    expect(
+      testDb.prepare('SELECT model, hedged, provider, model_id, route_role, workload FROM response_events').get()
+    ).toEqual({
+      model: 'fallback',
+      hedged: 1,
+      provider: null,
+      model_id: null,
+      route_role: null,
+      workload: null
+    })
   })
 })
