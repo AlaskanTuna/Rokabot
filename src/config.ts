@@ -436,6 +436,9 @@ const baseConfig = {
     maxStreamedUploadBytes: yaml.media?.maxStreamedUploadBytes ?? 52_428_800,
     uploadTimeoutMs: yaml.media?.uploadTimeoutMs ?? 45_000,
     qwen: {
+      apiKey: envString('MODELSCOPE_API_KEY'),
+      // Read from the legacy fallback block so a custom ModelScope endpoint still reaches the watcher.
+      baseUrl: yaml.fallback?.baseUrl ?? 'https://api-inference.modelscope.ai/v1',
       model: envString('MEDIA_QWEN_MODEL') ?? yaml.media?.qwen?.model ?? 'Qwen/Qwen3.5-35B-A3B',
       secondsPerFrame: yaml.media?.qwen?.secondsPerFrame ?? 4,
       minFrames: yaml.media?.qwen?.minFrames ?? 16,

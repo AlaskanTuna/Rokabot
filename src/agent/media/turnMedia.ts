@@ -390,14 +390,15 @@ const SWITCHED_OFF = 'watching and listening are switched off right now'
 const MIN_FRAME_SHARE = 0.5
 const FRAME_TIMEOUT_MS = 8000
 
-// Whichever watcher is not configured is the backup. Gemini is skipped while turns are pinned to the fallback
-// model, since waiting on it would only add delay; Qwen hears audio only through the transcriber.
+// Whichever watcher is not configured is the backup, and each runs only on its own key. Gemini is skipped while turns
+// are pinned to the fallback model, since waiting on it would only add delay; Qwen hears audio only through the
+// transcriber.
 function watcherOrder(kind: MediaKind, geminiUnavailable?: boolean): Array<'gemini' | 'qwen'> {
   const order: Array<'gemini' | 'qwen'> = config.media.watcher === 'qwen' ? ['qwen', 'gemini'] : ['gemini', 'qwen']
   return order.filter((watcher) =>
     watcher === 'gemini'
-      ? !geminiUnavailable
-      : Boolean(config.fallback.apiKey) && (kind === 'video' || Boolean(config.media.transcriber.url))
+      ? Boolean(config.gemini.apiKey) && !geminiUnavailable
+      : Boolean(config.media.qwen.apiKey) && (kind === 'video' || Boolean(config.media.transcriber.url))
   )
 }
 
@@ -642,8 +643,8 @@ async function watchWithQwen(context: WatchContext): Promise<Attempt> {
       ...(postContext ? { context: postContext } : {})
     },
     {
-      apiKey: config.fallback.apiKey,
-      baseUrl: config.fallback.baseUrl,
+      apiKey: config.media.qwen.apiKey,
+      baseUrl: config.media.qwen.baseUrl,
       model: config.media.qwen.model,
       timeoutMs: config.media.qwen.timeoutMs,
       maxOutputTokens: config.media.digestMaxOutputTokens

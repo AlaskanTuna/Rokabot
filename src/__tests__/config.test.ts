@@ -210,6 +210,8 @@ describe('config module', () => {
       maxStreamedUploadBytes: 52_428_800,
       uploadTimeoutMs: 45_000,
       qwen: {
+        apiKey: undefined,
+        baseUrl: 'https://api-inference.modelscope.ai/v1',
         model: 'Qwen/Qwen3.5-35B-A3B',
         secondsPerFrame: 4,
         minFrames: 16,
@@ -1685,6 +1687,25 @@ describe('config module', () => {
           max_tokens: maxOutputTokens
         })
       )
+    })
+
+    it('gives the qwen watcher its own ModelScope key, whatever the fallback model is', async () => {
+      vi.stubEnv('MODELSCOPE_API_KEY', 'modelscope-test-key')
+      withYamlOverride({
+        llm: {
+          main: 'flash',
+          fallback: null,
+          models: { flash: { provider: 'gemini', model: 'gemini-3.5-flash-lite' } }
+        }
+      })
+
+      const { config } = await import('../config.js')
+
+      expect(config.llm.fallback).toBeNull()
+      expect(config.media.qwen).toMatchObject({
+        apiKey: 'modelscope-test-key',
+        baseUrl: 'https://api-inference.modelscope.ai/v1'
+      })
     })
   })
 })
