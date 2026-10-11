@@ -39,6 +39,7 @@ vi.mock('../budget.js', async (importOriginal) => {
 
 import { APIConnectionTimeoutError, APIError, APIUserAbortError } from '@anthropic-ai/sdk'
 import type { ResolvedModel } from '../../../config.js'
+import { type ModelRoute, modelRouteForRequest } from '../../fallbackModel.js'
 import { assembleSystemPrompt } from '../../promptAssembler.js'
 import { CORE_PROMPT } from '../../prompts/core.js'
 import { SPEECH_PROMPT } from '../../prompts/speech.js'
@@ -633,5 +634,89 @@ describe('Anthropic error classification', () => {
     await failureOf(run(new AnthropicLlm({ resolved: HAIKU, client }), request([hi])))
 
     expect(budget.markBillingExhausted.mock.calls).toEqual(calls)
+  })
+})
+
+describe('AnthropicLlm thinking within a turn', () => {
+  const route = (): ModelRoute => ({ useFallback: false, hedged: false, answeredBy: null, pinned: null })
+  const toolResult: Content = {
+    role: 'user',
+    parts: [{ functionResponse: { id: 'toolu_01Fixture', name: 'recall_user', response: { facts: ['likes oolong'] } } }]
+  }
+  const replayed = {
+    role: 'assistant',
+    content: [
+      { type: 'thinking', thinking: '', signature: 'sig-tool' },
+      { type: 'text', text: 'Let me check what I remember.' },
+      { type: 'tool_use', id: 'toolu_01Fixture', name: 'recall_user', input: { query: 'favourite tea' } }
+    ]
+  }
+  const withoutThinking = {
+    role: 'assistant',
+    content: [
+      { type: 'text', text: 'Let me check what I remember.' },
+      { type: 'tool_use', id: 'toolu_01Fixture', name: 'recall_user', input: { query: 'favourite tea' } }
+    ]
+  }
+
+  /** Runs a tool call and its follow-up, as ADK would, and returns the follow-up's assistant message. */
+  async function followUp(options: {
+    firstTurn?: ModelRoute
+    secondTurn?: ModelRoute
+    firstContents?: Content[]
+    secondPrefix?: Content[]
+    secondSystem?: string
+  }) {
+    const { client, create } = fakeClient()
+    create.mockResolvedValueOnce(fixtures.toolUse).mockResolvedValueOnce(fixtures.text)
+    const llm = new AnthropicLlm({ resolved: HAIKU, client })
+    const inTurn = <T>(turn: ModelRoute | undefined, work: () => Promise<T>) =>
+      turn ? modelRouteForRequest.run(turn, work) : work()
+
+    const [first] = await inTurn(options.firstTurn, () =>
+      run(llm, request(options.firstContents ?? [hi], { systemInstruction: 'You are Roka.' }))
+    )
+    const prefix = options.secondPrefix ?? options.firstContents ?? [hi]
+    await inTurn(options.secondTurn, () =>
+      run(
+        llm,
+        request([...prefix, first!.content!, toolResult], {
+          systemInstruction: options.secondSystem ?? 'You are Roka.'
+        })
+      )
+    )
+    const messages = create.mock.calls[1]?.[0].messages ?? []
+    return messages[prefix.length === 0 ? 0 : 1]
+  }
+
+  it('sends the thinking back with its tool result, exactly as Claude produced it', async () => {
+    const turn = route()
+
+    expect(await followUp({ firstTurn: turn, secondTurn: turn })).toEqual(replayed)
+  })
+
+  it('never carries thinking into the next turn', async () => {
+    expect(await followUp({ firstTurn: route(), secondTurn: route() })).toEqual(withoutThinking)
+  })
+
+  it('drops the thinking when the system prompt changed inside the turn', async () => {
+    const turn = route()
+
+    expect(await followUp({ firstTurn: turn, secondTurn: turn, secondSystem: 'You are Roka. Be brief.' })).toEqual(
+      withoutThinking
+    )
+  })
+
+  it('drops the thinking when earlier history changed inside the turn', async () => {
+    const turn = route()
+    const earlier: Content = { role: 'user', parts: [{ text: '[Ren]: morning all' }] }
+
+    expect(
+      await followUp({ firstTurn: turn, secondTurn: turn, firstContents: [earlier, hi], secondPrefix: [hi] })
+    ).toEqual(withoutThinking)
+  })
+
+  it('keeps nothing for calls made outside a turn', async () => {
+    expect(await followUp({})).toEqual(withoutThinking)
   })
 })

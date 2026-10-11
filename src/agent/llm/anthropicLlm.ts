@@ -1,9 +1,11 @@
+import { createHash } from 'node:crypto'
 import Anthropic, { APIConnectionError, APIError, APIUserAbortError } from '@anthropic-ai/sdk'
 import { BaseLlm } from '@google/adk'
 import type { BaseLlmConnection, LlmRequest, LlmResponse } from '@google/adk'
 import { FinishReason } from '@google/genai'
 import type { Content, Part } from '@google/genai'
 import type { ResolvedModel } from '../../config.js'
+import { type ModelRoute, modelRouteForRequest } from '../fallbackModel.js'
 import { splitStablePrefix } from '../promptAssembler.js'
 import { markBillingExhausted, requestTokenEstimate, startCall } from './budget.js'
 import type { ModelProfile } from './profiles.js'
@@ -47,6 +49,77 @@ interface PendingCall {
   name: string
   hasProviderId: boolean
   answered: boolean
+}
+
+interface ThinkingReplay {
+  prefixHash: string
+  toolUseIds: string[]
+  content: Block[]
+}
+
+// Keyed by the turn's route, so a turn's thinking is dropped with the turn and never reaches the next (D10).
+const thinkingByTurn = new WeakMap<ModelRoute, Map<string, ThinkingReplay>>()
+
+function prefixHash(system: unknown, tools: unknown, messages: Rendered[]): string {
+  return createHash('sha256').update(JSON.stringify({ system, tools, messages })).digest('hex')
+}
+
+function toolUseIds(content: Block[]): string[] {
+  return content.flatMap((block) => (block.type === 'tool_use' ? [block.id] : []))
+}
+
+function toParam(block: Anthropic.ContentBlock): Block[] {
+  switch (block.type) {
+    case 'thinking':
+      return [{ type: 'thinking', thinking: block.thinking, signature: block.signature }]
+    case 'redacted_thinking':
+      return [{ type: 'redacted_thinking', data: block.data }]
+    case 'text':
+      return block.text.trim() ? [{ type: 'text', text: block.text }] : []
+    case 'tool_use':
+      return [{ type: 'tool_use', id: block.id, name: block.name, input: block.input }]
+    default:
+      return []
+  }
+}
+
+/** Claude rejects a thinking block whose prefix (system, tools, earlier messages) changed, so a block goes back
+ * only when the prefix hash taken when it was produced still matches; otherwise the plain ADK rendering is sent. */
+function replayThinking(
+  rendered: Rendered[],
+  system: unknown,
+  tools: unknown,
+  route: ModelRoute | undefined
+): Rendered[] {
+  const turn = route ? thinkingByTurn.get(route) : undefined
+  if (!turn) return rendered
+  const replayed: Rendered[] = []
+  for (const message of rendered) {
+    const ids = message.role === 'assistant' ? toolUseIds(message.content) : []
+    const record = ids.length > 0 ? turn.get(ids[0]) : undefined
+    const intact =
+      record !== undefined &&
+      record.toolUseIds.join() === ids.join() &&
+      record.prefixHash === prefixHash(system, tools, replayed)
+    replayed.push(intact && record ? { role: 'assistant', content: record.content } : message)
+  }
+  return replayed
+}
+
+function rememberThinking(
+  route: ModelRoute | undefined,
+  message: Anthropic.Message,
+  replayWithinTurn: boolean,
+  prefix: string
+): void {
+  if (!route || !replayWithinTurn || message.stop_reason !== 'tool_use') return
+  const content = message.content.flatMap(toParam)
+  const ids = toolUseIds(content)
+  if (ids.length === 0 || !content.some((block) => block.type === 'thinking' || block.type === 'redacted_thinking'))
+    return
+  const turn = thinkingByTurn.get(route) ?? new Map<string, ThinkingReplay>()
+  turn.set(ids[0], { prefixHash: prefix, toolUseIds: ids, content })
+  thinkingByTurn.set(route, turn)
 }
 
 function markerBlock(mimeType: string | undefined): Block {
@@ -324,7 +397,8 @@ export class AnthropicLlm extends BaseLlm {
     this.maybeAppendUserContent(working)
     const system = systemBlocks(working.config?.systemInstruction)
     const tools = toolList(working)
-    const rendered = renderContents(working.contents, this.resolved.profile.input)
+    const route = modelRouteForRequest.getStore()
+    const rendered = replayThinking(renderContents(working.contents, this.resolved.profile.input), system, tools, route)
     const structured = working.config?.responseJsonSchema !== undefined
     const params = this.params(working, system, tools, rendered)
     const workload = workloadOf(working)
@@ -348,6 +422,12 @@ export class AnthropicLlm extends BaseLlm {
     const usage = callUsage(this.model, workload, message.usage)
     recordUsage(usage)
     reservation.release(usage)
+    rememberThinking(
+      route,
+      message,
+      this.resolved.profile.thinking.replayWithinTurn,
+      prefixHash(system, tools, rendered)
+    )
     yield toLlmResponse(message, structured)
   }
 
