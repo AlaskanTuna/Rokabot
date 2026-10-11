@@ -1,5 +1,5 @@
 import type { LlmRequest } from '@google/adk'
-import type { ProviderId } from './profiles.js'
+import { type ProviderId, profileFor } from './profiles.js'
 
 export type Workload = 'reply' | 'extraction' | 'reclassify' | 'admission' | 'verification' | 'embedding' | 'watcher'
 
@@ -52,4 +52,21 @@ export function onUsage(listener: (usage: CallUsage) => void): () => void {
 export function workloadOf(llmRequest: LlmRequest): Workload {
   const label = llmRequest.config?.labels?.[WORKLOAD_LABEL]
   return WORKLOADS.find((workload) => workload === label) ?? 'reply'
+}
+
+// A profile without its own write price bills a cache write at 1.25x input: Anthropic's 5-minute cache and OpenAI's.
+const CACHE_WRITE_PRICE_MULTIPLIER = 1.25
+
+/**
+ * Estimated USD for one call, from its profile's prices per million tokens. The usage buckets are disjoint:
+ * `inputTokens` excludes cache reads and writes, and `outputTokens` excludes `reasoningTokens`, which bill as output.
+ * The provider's bill stays the source of truth.
+ */
+export function estimateCostUsd(usage: CallUsage): number {
+  const price = profileFor(usage.provider, usage.model)?.price
+  if (!price) return 0
+  const cacheRead = (usage.cacheReadTokens ?? 0) * (price.cachedInput ?? price.input)
+  const cacheWrite = (usage.cacheWriteTokens ?? 0) * (price.cacheWrite ?? price.input * CACHE_WRITE_PRICE_MULTIPLIER)
+  const output = (usage.outputTokens + (usage.reasoningTokens ?? 0)) * price.output
+  return (usage.inputTokens * price.input + cacheRead + cacheWrite + output) / 1_000_000
 }
