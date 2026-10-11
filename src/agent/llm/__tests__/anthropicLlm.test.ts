@@ -2,7 +2,7 @@ import type Anthropic from '@anthropic-ai/sdk'
 import type { LlmRequest, LlmResponse } from '@google/adk'
 import { FinishReason } from '@google/genai'
 import type { Content } from '@google/genai'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const sdk = vi.hoisted(() => ({ options: [] as unknown[] }))
 
@@ -22,12 +22,30 @@ vi.mock('@anthropic-ai/sdk', async (importOriginal) => {
   return { ...actual, default: FakeAnthropic }
 })
 
+const budget = vi.hoisted(() => ({
+  denied: undefined as 'rpm' | 'rpd' | 'tpm' | 'monthly' | undefined,
+  release: vi.fn(),
+  startCall: vi.fn(),
+  markBillingExhausted: vi.fn()
+}))
+
+vi.mock('../budget.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../budget.js')>()
+  budget.startCall.mockImplementation(async (input: Parameters<typeof actual.startCall>[0]) =>
+    budget.denied ? actual.grantOrThrow(input.provider, { denied: budget.denied }) : { release: budget.release }
+  )
+  return { ...actual, startCall: budget.startCall, markBillingExhausted: budget.markBillingExhausted }
+})
+
+import { APIConnectionTimeoutError, APIError, APIUserAbortError } from '@anthropic-ai/sdk'
 import type { ResolvedModel } from '../../../config.js'
 import { assembleSystemPrompt } from '../../promptAssembler.js'
 import { CORE_PROMPT } from '../../prompts/core.js'
 import { SPEECH_PROMPT } from '../../prompts/speech.js'
 import { AnthropicLlm, STRUCTURED_OUTPUT_TOOL } from '../anthropicLlm.js'
 import { profileFor } from '../profiles.js'
+import { ProviderError } from '../providerError.js'
+import { type CallUsage, WORKLOAD_LABEL, onUsage } from '../usage.js'
 import { fixtures } from './anthropicFixtures.js'
 
 type CreateOptions = { signal?: AbortSignal; timeout?: number }
@@ -330,5 +348,290 @@ describe('AnthropicLlm requests', () => {
 
     expect(response?.content).toEqual({ role: 'model', parts: [{ text: 'Ehehe, good morning to you too~' }] })
     expect(response?.finishReason).toBe(FinishReason.STOP)
+  })
+})
+
+afterEach(() => {
+  budget.denied = undefined
+  budget.release.mockClear()
+  budget.startCall.mockClear()
+  budget.markBillingExhausted.mockClear()
+})
+
+async function answer(message: Anthropic.Message, config: Record<string, unknown> = {}) {
+  const { client, create } = fakeClient()
+  create.mockResolvedValueOnce(message)
+  return run(new AnthropicLlm({ resolved: HAIKU, client }), request([hi], config))
+}
+
+async function failureOf(promise: Promise<unknown>): Promise<unknown> {
+  return promise.then(
+    () => undefined,
+    (caught: unknown) => caught
+  )
+}
+
+describe('AnthropicLlm responses', () => {
+  it('returns tool calls with their provider ids and the tag Gemini needs to read them later', async () => {
+    const [response] = await answer(fixtures.toolUse)
+
+    expect(response?.content?.parts).toEqual([
+      { text: 'Let me check what I remember.' },
+      {
+        functionCall: { id: 'toolu_01Fixture', name: 'recall_user', args: { query: 'favourite tea' } },
+        thoughtSignature: 'skip_thought_signature_validator'
+      }
+    ])
+    expect(response?.content?.parts?.some((part) => part.thought)).toBe(false)
+  })
+
+  it('returns parallel tool calls in the order Claude made them', async () => {
+    const [response] = await answer(fixtures.parallelToolUse)
+
+    expect(response?.content?.parts?.map((part) => part.functionCall?.id)).toEqual(['toolu_a', 'toolu_b'])
+  })
+
+  it('maps a max_tokens stop to MAX_TOKENS and keeps the partial text', async () => {
+    const [response] = await answer(fixtures.maxTokens)
+
+    expect(response?.finishReason).toBe(FinishReason.MAX_TOKENS)
+    expect(response?.content?.parts).toEqual([{ text: 'I was about to say' }])
+  })
+
+  it('returns the empty-text shape when thinking used every token', async () => {
+    const [response] = await answer(fixtures.thinkingOnly)
+
+    expect(response?.content?.parts).toEqual([{ text: '' }])
+    expect(response?.finishReason).toBe(FinishReason.MAX_TOKENS)
+  })
+
+  it('returns the forced tool input as the JSON text of the first part for a structured request', async () => {
+    const [response] = await answer(fixtures.structured, { responseJsonSchema: { type: 'object' } })
+
+    expect(response?.content?.parts).toEqual([{ text: '{"ok":true,"facts":[]}' }])
+  })
+
+  it('throws a refusal ProviderError and still records the billed call', async () => {
+    const seen: CallUsage[] = []
+    const stop = onUsage((usage) => seen.push(usage))
+
+    const failure = await failureOf(answer(fixtures.refusal))
+    stop()
+
+    expect(failure).toBeInstanceOf(ProviderError)
+    expect(failure).toMatchObject({ provider: 'anthropic', kind: 'refusal' })
+    expect(seen).toHaveLength(1)
+  })
+
+  it('throws malformed_tool_args when tool input is not an object, so nothing runs', async () => {
+    const failure = await failureOf(answer(fixtures.malformedToolUse))
+
+    expect(failure).toMatchObject({ name: 'ProviderError', kind: 'malformed_tool_args' })
+  })
+
+  it('records usage once per call and reports it on the response', async () => {
+    const seen: CallUsage[] = []
+    const stop = onUsage((usage) => seen.push(usage))
+
+    const [response] = await answer(fixtures.text)
+    stop()
+
+    expect(seen).toEqual([
+      {
+        provider: 'anthropic',
+        model: 'claude-haiku-5-5',
+        workload: 'reply',
+        inputTokens: 412,
+        outputTokens: 96,
+        cacheReadTokens: 3880
+      }
+    ])
+    expect(budget.release).toHaveBeenCalledTimes(1)
+    expect(budget.release).toHaveBeenCalledWith(seen[0])
+    expect(response?.usageMetadata).toEqual({
+      promptTokenCount: 4292,
+      candidatesTokenCount: 96,
+      totalTokenCount: 4388,
+      cachedContentTokenCount: 3880,
+      thoughtsTokenCount: 64
+    })
+  })
+
+  it('keeps uncached input, cache reads, cache writes and output in disjoint buckets', async () => {
+    const seen: CallUsage[] = []
+    const stop = onUsage((usage) => seen.push(usage))
+
+    await answer({
+      ...fixtures.text,
+      usage: {
+        ...fixtures.text.usage,
+        input_tokens: 120,
+        output_tokens: 150,
+        cache_read_input_tokens: 3000,
+        cache_creation_input_tokens: 900,
+        output_tokens_details: { thinking_tokens: 100 }
+      }
+    })
+    stop()
+
+    expect(seen).toEqual([
+      {
+        provider: 'anthropic',
+        model: 'claude-haiku-5-5',
+        workload: 'reply',
+        inputTokens: 120,
+        outputTokens: 150,
+        cacheReadTokens: 3000,
+        cacheWriteTokens: 900
+      }
+    ])
+    expect(seen[0]).not.toHaveProperty('reasoningTokens')
+  })
+
+  it('attributes a labelled background workload', async () => {
+    const seen: CallUsage[] = []
+    const stop = onUsage((usage) => seen.push(usage))
+
+    await answer(fixtures.structured, {
+      responseJsonSchema: { type: 'object' },
+      labels: { [WORKLOAD_LABEL]: 'extraction' }
+    })
+    stop()
+
+    expect(seen[0]?.workload).toBe('extraction')
+  })
+
+  it('gives the budget the same abort signal it gives the SDK', async () => {
+    const controller = new AbortController()
+
+    const { options } = await sent([hi], { abortSignal: controller.signal })
+
+    expect(budget.startCall).toHaveBeenCalledWith({
+      provider: 'anthropic',
+      model: 'claude-haiku-5-5',
+      workload: 'reply',
+      estTokens: expect.any(Number),
+      signal: controller.signal
+    })
+    expect(options?.signal).toBe(controller.signal)
+  })
+
+  it('asks the budget before calling, and makes no call when it is denied', async () => {
+    budget.denied = 'monthly'
+    const { client, create } = fakeClient()
+
+    const failure = await failureOf(run(new AnthropicLlm({ resolved: HAIKU, client }), request([hi])))
+
+    expect(failure).toMatchObject({ name: 'ProviderError', kind: 'billing_exhausted' })
+    expect(create).not.toHaveBeenCalled()
+    expect(budget.markBillingExhausted).not.toHaveBeenCalled()
+  })
+
+  it('releases the reservation with no usage when the SDK rejects', async () => {
+    const { client, create } = fakeClient()
+    create.mockRejectedValueOnce(new APIConnectionTimeoutError())
+
+    await failureOf(run(new AnthropicLlm({ resolved: HAIKU, client }), request([hi])))
+
+    expect(budget.release).toHaveBeenCalledTimes(1)
+    expect(budget.release).toHaveBeenCalledWith()
+  })
+})
+
+describe('Anthropic error classification', () => {
+  const body = (type: string, message: string) => ({ type: 'error', error: { type, message } })
+
+  it.each([
+    [
+      '529 overloaded',
+      APIError.generate(529, body('overloaded_error', 'Overloaded'), undefined, new Headers()),
+      { kind: 'transient_http', status: 529 }
+    ],
+    [
+      '500 api error',
+      APIError.generate(500, body('api_error', 'Internal server error'), undefined, new Headers()),
+      { kind: 'transient_http', status: 500 }
+    ],
+    [
+      '429 rate limit',
+      APIError.generate(429, body('rate_limit_error', 'Rate limited'), undefined, new Headers({ 'retry-after': '7' })),
+      { kind: 'transient_http', status: 429, retryAfterMs: 7000 }
+    ],
+    [
+      '402 billing',
+      APIError.generate(402, body('billing_error', 'Out of credit'), undefined, new Headers()),
+      { kind: 'billing_exhausted', status: 402 }
+    ],
+    [
+      '400 low credit balance',
+      APIError.generate(
+        400,
+        body('invalid_request_error', 'Your credit balance is too low to access the Anthropic API.'),
+        undefined,
+        new Headers()
+      ),
+      { kind: 'billing_exhausted', status: 400 }
+    ],
+    [
+      '400 prompt too long',
+      APIError.generate(
+        400,
+        body('invalid_request_error', 'prompt is too long: 1048577 tokens > 1000000 maximum'),
+        undefined,
+        new Headers()
+      ),
+      { kind: 'context_length', status: 400 }
+    ],
+    [
+      '413 request too large',
+      APIError.generate(413, body('request_too_large', 'Request too large'), undefined, new Headers()),
+      { kind: 'context_length', status: 413 }
+    ],
+    [
+      '401 authentication',
+      APIError.generate(401, body('authentication_error', 'invalid x-api-key'), undefined, new Headers()),
+      { kind: 'terminal', status: 401 }
+    ],
+    [
+      '400 invalid request',
+      APIError.generate(400, body('invalid_request_error', 'messages: roles must alternate'), undefined, new Headers()),
+      { kind: 'terminal', status: 400 }
+    ],
+    ['a connection timeout', new APIConnectionTimeoutError(), { kind: 'network' }],
+    ['an aborted request', new APIUserAbortError(), { kind: 'network' }]
+  ])('classifies %s', async (_name, error, expected) => {
+    const { client, create } = fakeClient()
+    create.mockRejectedValueOnce(error)
+
+    const failure = await failureOf(run(new AnthropicLlm({ resolved: HAIKU, client }), request([hi])))
+
+    expect(failure).toBeInstanceOf(ProviderError)
+    expect(failure).toMatchObject({ provider: 'anthropic', ...expected })
+  })
+
+  it.each([
+    [
+      '402 billing',
+      APIError.generate(402, body('billing_error', 'Out of credit'), undefined, new Headers()),
+      [['anthropic']]
+    ],
+    [
+      '400 low credit balance',
+      APIError.generate(
+        400,
+        body('invalid_request_error', 'Your credit balance is too low to access the Anthropic API.'),
+        undefined,
+        new Headers()
+      ),
+      [['anthropic']]
+    ],
+    ['529 overloaded', APIError.generate(529, body('overloaded_error', 'Overloaded'), undefined, new Headers()), []]
+  ])('marks Anthropic billing as exhausted only for its own billing errors: %s', async (_name, error, calls) => {
+    const { client, create } = fakeClient()
+    create.mockRejectedValueOnce(error)
+
+    await failureOf(run(new AnthropicLlm({ resolved: HAIKU, client }), request([hi])))
+
+    expect(budget.markBillingExhausted.mock.calls).toEqual(calls)
   })
 })

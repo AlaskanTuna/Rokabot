@@ -1,12 +1,22 @@
-import Anthropic from '@anthropic-ai/sdk'
+import Anthropic, { APIConnectionError, APIError, APIUserAbortError } from '@anthropic-ai/sdk'
 import { BaseLlm } from '@google/adk'
 import type { BaseLlmConnection, LlmRequest, LlmResponse } from '@google/adk'
 import { FinishReason } from '@google/genai'
 import type { Content, Part } from '@google/genai'
 import type { ResolvedModel } from '../../config.js'
 import { splitStablePrefix } from '../promptAssembler.js'
+import { markBillingExhausted, requestTokenEstimate, startCall } from './budget.js'
 import type { ModelProfile } from './profiles.js'
-import { attachmentKind, attachmentMarker, functionDeclarations, shapeRequest, systemText } from './requestShape.js'
+import { ProviderError } from './providerError.js'
+import {
+  attachmentKind,
+  attachmentMarker,
+  functionDeclarations,
+  isRecord,
+  shapeRequest,
+  systemText
+} from './requestShape.js'
+import { type CallUsage, type Workload, recordUsage, workloadOf } from './usage.js'
 
 type Params = Anthropic.MessageCreateParamsNonStreaming
 type Block = Anthropic.ContentBlockParam
@@ -18,6 +28,8 @@ export const STRUCTURED_OUTPUT_TOOL = 'emit_result'
 // text is written, and the turn then ends empty.
 const THINKING_HEADROOM_TOKENS = 2048
 const IMAGE_TYPES = new Set<string>(['image/jpeg', 'image/png', 'image/gif', 'image/webp'])
+const BILLING_PATTERN = /credit balance|billing/i
+const CONTEXT_PATTERN = /prompt is too long|context window|too many (?:input )?tokens/i
 
 export interface AnthropicMessagesClient {
   messages: {
@@ -174,14 +186,115 @@ function thinkingParams(resolved: ResolvedModel): Pick<Params, 'thinking' | 'out
   return { thinking: { type: 'adaptive' }, output_config: { effort: effort as Effort } }
 }
 
-function toLlmResponse(message: Anthropic.Message): LlmResponse {
-  const parts: Part[] = message.content.flatMap((block) =>
-    block.type === 'text' && block.text.trim() ? [{ text: block.text }] : []
-  )
+function replyParts(message: Anthropic.Message): Part[] {
+  return message.content.flatMap((block): Part[] => {
+    if (block.type === 'text') return block.text.trim() ? [{ text: block.text }] : []
+    if (block.type !== 'tool_use') return []
+    if (!isRecord(block.input)) {
+      throw new ProviderError({
+        provider: 'anthropic',
+        kind: 'malformed_tool_args',
+        message: `Anthropic returned non-object arguments for ${block.name}`
+      })
+    }
+    // Gemini rejects an unsigned function call in the current turn; the tag lets it continue a turn Claude began.
+    return [
+      {
+        functionCall: { id: block.id, name: block.name, args: block.input },
+        thoughtSignature: 'skip_thought_signature_validator'
+      }
+    ]
+  })
+}
+
+function structuredParts(message: Anthropic.Message): Part[] {
+  const result = message.content.find((block) => block.type === 'tool_use' && block.name === STRUCTURED_OUTPUT_TOOL)
+  return result?.type === 'tool_use' ? [{ text: JSON.stringify(result.input) }] : []
+}
+
+// Thinking tokens are part of output_tokens and billed at the output rate, so they get no bucket of their own.
+function callUsage(model: string, workload: Workload, usage: Anthropic.Usage): CallUsage {
+  return {
+    provider: 'anthropic',
+    model,
+    workload,
+    inputTokens: usage.input_tokens,
+    outputTokens: usage.output_tokens,
+    ...(usage.cache_read_input_tokens ? { cacheReadTokens: usage.cache_read_input_tokens } : {}),
+    ...(usage.cache_creation_input_tokens ? { cacheWriteTokens: usage.cache_creation_input_tokens } : {})
+  }
+}
+
+function usageMetadata(usage: Anthropic.Usage): NonNullable<LlmResponse['usageMetadata']> {
+  const cacheRead = usage.cache_read_input_tokens ?? 0
+  const prompt = usage.input_tokens + cacheRead + (usage.cache_creation_input_tokens ?? 0)
+  const reasoning = usage.output_tokens_details?.thinking_tokens
+  return {
+    promptTokenCount: prompt,
+    candidatesTokenCount: usage.output_tokens,
+    totalTokenCount: prompt + usage.output_tokens,
+    ...(cacheRead ? { cachedContentTokenCount: cacheRead } : {}),
+    ...(reasoning ? { thoughtsTokenCount: reasoning } : {})
+  }
+}
+
+function toLlmResponse(message: Anthropic.Message, structured: boolean): LlmResponse {
+  if (message.stop_reason === 'refusal') {
+    throw new ProviderError({
+      provider: 'anthropic',
+      kind: 'refusal',
+      message: `Anthropic refused the request (${message.stop_details?.category ?? 'no category'})`
+    })
+  }
+  const parts = structured ? structuredParts(message) : replyParts(message)
+  const truncated = message.stop_reason === 'max_tokens' || message.stop_reason === 'model_context_window_exceeded'
   return {
     content: { role: 'model', parts: parts.length > 0 ? parts : [{ text: '' }] },
-    finishReason: FinishReason.STOP
+    finishReason: truncated ? FinishReason.MAX_TOKENS : FinishReason.STOP,
+    usageMetadata: usageMetadata(message.usage)
   }
+}
+
+function retryAfterMs(headers: Headers | undefined): number | undefined {
+  const value = headers?.get('retry-after')
+  const seconds = value ? Number(value) : Number.NaN
+  return Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : undefined
+}
+
+export function classifyAnthropicError(error: unknown): ProviderError {
+  if (error instanceof ProviderError) return error
+  if (error instanceof APIUserAbortError || error instanceof APIConnectionError) {
+    return new ProviderError({
+      provider: 'anthropic',
+      kind: 'network',
+      message: `Anthropic ${error.message}`,
+      cause: error
+    })
+  }
+  if (!(error instanceof APIError)) {
+    const message = error instanceof Error ? error.message : String(error)
+    return new ProviderError({ provider: 'anthropic', kind: 'terminal', message, cause: error })
+  }
+  const { status } = error
+  const failure = {
+    provider: 'anthropic' as const,
+    message: `Anthropic ${status ?? ''} ${error.type ?? 'error'}: ${error.message}`.slice(0, 300),
+    status,
+    cause: error
+  }
+  if (status === 402 || error.type === 'billing_error' || BILLING_PATTERN.test(error.message)) {
+    return new ProviderError({ ...failure, kind: 'billing_exhausted' })
+  }
+  if (status === 413 || (status === 400 && CONTEXT_PATTERN.test(error.message))) {
+    return new ProviderError({ ...failure, kind: 'context_length' })
+  }
+  if (status === 429) {
+    return new ProviderError({ ...failure, kind: 'transient_http', retryAfterMs: retryAfterMs(error.headers) })
+  }
+  if (error.type === 'overloaded_error' || (status !== undefined && status >= 500)) {
+    return new ProviderError({ ...failure, kind: 'transient_http' })
+  }
+  return new ProviderError({ ...failure, kind: 'terminal' })
 }
 
 export class AnthropicLlm extends BaseLlm {
@@ -212,12 +325,30 @@ export class AnthropicLlm extends BaseLlm {
     const system = systemBlocks(working.config?.systemInstruction)
     const tools = toolList(working)
     const rendered = renderContents(working.contents, this.resolved.profile.input)
+    const structured = working.config?.responseJsonSchema !== undefined
     const params = this.params(working, system, tools, rendered)
-    const message = await this.client.messages.create(params, {
-      signal: abortSignal ?? working.config?.abortSignal,
-      timeout: this.resolved.timeoutMs
+    const workload = workloadOf(working)
+    const signal = abortSignal ?? working.config?.abortSignal
+    const reservation = await startCall({
+      provider: 'anthropic',
+      model: this.model,
+      workload,
+      estTokens: requestTokenEstimate(params),
+      signal
     })
-    yield toLlmResponse(message)
+    let message: Anthropic.Message
+    try {
+      message = await this.client.messages.create(params, { signal, timeout: this.resolved.timeoutMs })
+    } catch (error) {
+      reservation.release()
+      const failure = classifyAnthropicError(error)
+      if (failure.kind === 'billing_exhausted') markBillingExhausted('anthropic')
+      throw failure
+    }
+    const usage = callUsage(this.model, workload, message.usage)
+    recordUsage(usage)
+    reservation.release(usage)
+    yield toLlmResponse(message, structured)
   }
 
   connect(_llmRequest: LlmRequest): Promise<BaseLlmConnection> {
