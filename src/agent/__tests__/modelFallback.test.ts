@@ -512,6 +512,35 @@ describe('generateResponse model fallback', () => {
     expect(pins).toEqual([null, null])
   })
 
+  it('retries the healthy side when a hedge-pinned fallback fails, and arms no sticky window', async () => {
+    mutableLlm.stickyMs = 10_000
+    const attempts: Array<{ useFallback: boolean | undefined; pinned: string | null | undefined }> = []
+    __setTestRunTurnFactory(() => async (attempt) => {
+      const route = modelRouteForRequest.getStore()
+      attempts.push({ useFallback: route?.useFallback, pinned: route?.pinned })
+      // The hedge handed the turn to the fallback while the route still says main.
+      if (route && attempt === 0) route.pinned = 'fallback'
+      return attempt === 0
+        ? { errorCode: '503', hasText: false, hasFunctionCall: false }
+        : { text: 'Main answer~', hasText: true, hasFunctionCall: false }
+    })
+
+    expect((await generateResponse(responseOptions())).text).toBe('Main answer~')
+
+    const nextRoutes: Array<boolean | undefined> = []
+    __setTestRunTurnFactory(() => async () => {
+      nextRoutes.push(modelRouteForRequest.getStore()?.useFallback)
+      return { text: 'Main again~', hasText: true, hasFunctionCall: false }
+    })
+    await generateResponse(responseOptions('Next turn.'))
+
+    expect(attempts).toEqual([
+      { useFallback: false, pinned: null },
+      { useFallback: false, pinned: null }
+    ])
+    expect(nextRoutes).toEqual([false])
+  })
+
   it('records the answering model on every answered turn, and never arms the sticky window for a hedge', async () => {
     mutableLlm.stickyMs = 10_000
     const answeredBy: Array<string | null | undefined> = []

@@ -428,7 +428,9 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
               switchModel: (kind) => {
                 if (!rokaModel.hasFallback) return undefined
 
-                route.useFallback = !route.useFallback
+                // A hedge can pin the fallback while useFallback is still false, so the pin names the failed side.
+                const failedOnFallback = route.pinned ? route.pinned === 'fallback' : route.useFallback
+                route.useFallback = !failedOnFallback
                 // A ladder switch is a new attempt on the other side, so that side's first answer sets the pin.
                 route.pinned = null
                 switchKind = kind
