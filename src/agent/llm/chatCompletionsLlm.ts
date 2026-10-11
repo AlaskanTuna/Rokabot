@@ -16,6 +16,7 @@ import { type CallUsage, recordUsage, workloadOf } from './usage.js'
 
 type JsonObject = Record<string, unknown>
 type ChatMessage = Record<string, unknown>
+type ContentPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }
 
 interface ChatCompletionsResponse {
   choices?: Array<{
@@ -39,18 +40,12 @@ interface GeneratedCall {
   id: string
   name: string
   args: unknown
-  sequence: number
   answered?: ChatMessage
-}
-
-interface MessageGroup {
-  message: ChatMessage
-  calls: GeneratedCall[]
 }
 
 interface MessageEntry {
   message: ChatMessage
-  group?: MessageGroup
+  calls?: GeneratedCall[]
 }
 
 function parseJson(text: string): unknown {
@@ -72,9 +67,7 @@ function openAiTools(llmRequest: LlmRequest): ChatMessage[] {
   }))
 }
 
-function textContent(
-  parts: Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }>
-): string | Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }> {
+function textContent(parts: ContentPart[]): string | ContentPart[] {
   if (parts.some((part) => part.type === 'image_url')) return parts
   return parts
     .map((part) => (part.type === 'text' ? part.text : ''))
@@ -82,17 +75,31 @@ function textContent(
     .join('\n')
 }
 
-function openAiMessages(llmRequest: LlmRequest, acceptsImages: boolean): ChatMessage[] {
+function openAiMessages(llmRequest: LlmRequest, acceptsImages: boolean, legacy: boolean): ChatMessage[] {
   const messages: ChatMessage[] = []
   const instruction = systemText(llmRequest.config?.systemInstruction)
   if (instruction) messages.push({ role: 'system', content: instruction })
 
   const pendingCalls = new Map<string, GeneratedCall[]>()
+  const callsById = new Map<string, GeneratedCall>()
+  let precedingTurnIdlessCalls: GeneratedCall[] = []
   const entries: MessageEntry[] = []
   let callSequence = 0
-  const addFunctionResponse = (name: string, response: unknown, onUnmatched: (text: string) => void) => {
-    const call = pendingCalls.get(name)?.find((candidate) => candidate.answered === undefined)
-    if (!call) {
+  const matchingCall = (id: string | undefined, name: string): GeneratedCall | undefined => {
+    if (legacy) return pendingCalls.get(name)?.find((candidate) => candidate.answered === undefined)
+    if (id) return callsById.get(id)
+    // ADK strips its own `adk-` ids before every call, so a call that came without a provider id comes back without
+    // one; only those pair by name, with the earliest unanswered one in the preceding model turn.
+    return precedingTurnIdlessCalls.find((candidate) => candidate.name === name && candidate.answered === undefined)
+  }
+  const addFunctionResponse = (
+    functionResponse: { id?: string; name?: string; response?: unknown },
+    onUnmatched: (text: string) => void
+  ) => {
+    const name = functionResponse.name ?? ''
+    const response = functionResponse.response
+    const call = matchingCall(functionResponse.id, name)
+    if (!call || call.answered) {
       onUnmatched(`(result of ${name}: ${JSON.stringify(response ?? {})})`)
       return
     }
@@ -111,62 +118,45 @@ function openAiMessages(llmRequest: LlmRequest, acceptsImages: boolean): ChatMes
       const textParts: string[] = []
       const unmatchedResponses: string[] = []
       const calls: GeneratedCall[] = []
+      const idlessCalls: GeneratedCall[] = []
       for (const part of parts) {
         if (part.thought) continue
         if (part.functionResponse) {
-          addFunctionResponse(part.functionResponse.name ?? '', part.functionResponse.response, (text) =>
-            unmatchedResponses.push(text)
-          )
+          addFunctionResponse(part.functionResponse, (text) => unmatchedResponses.push(text))
           continue
         }
         if (part.text !== undefined) textParts.push(part.text)
         if (part.functionCall) {
+          const providerId = legacy ? undefined : part.functionCall.id
           const call: GeneratedCall = {
-            id: `call_${++callSequence}`,
+            id: providerId || `call_${++callSequence}`,
             name: part.functionCall.name ?? '',
-            args: part.functionCall.args ?? {},
-            sequence: callSequence
+            args: part.functionCall.args ?? {}
           }
           calls.push(call)
           const sameName = pendingCalls.get(call.name) ?? []
           sameName.push(call)
           pendingCalls.set(call.name, sameName)
+          if (providerId) callsById.set(providerId, call)
+          else idlessCalls.push(call)
         }
         if (part.inlineData || part.fileData) {
           textParts.push(attachmentMarker(attachmentKind(part.inlineData?.mimeType ?? part.fileData?.mimeType)))
         }
       }
-      const group: MessageGroup = {
-        message: {
-          role: 'assistant',
-          content: textParts.length ? textParts.join('\n') : null,
-          ...(calls.length
-            ? {
-                tool_calls: calls.map((call) => ({
-                  id: call.id,
-                  type: 'function',
-                  function: {
-                    name: call.name,
-                    arguments: JSON.stringify(call.args)
-                  }
-                }))
-              }
-            : {})
-        },
-        calls
+      precedingTurnIdlessCalls = idlessCalls
+      if (textParts.length || calls.length) {
+        entries.push({ message: { role: 'assistant', content: textParts.length ? textParts.join('\n') : null }, calls })
       }
-      if (textParts.length || calls.length) entries.push({ message: group.message, group })
       if (unmatchedResponses.length) entries.push({ message: { role: 'user', content: unmatchedResponses.join('\n') } })
       continue
     }
 
-    const userParts: Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }> = []
+    const userParts: ContentPart[] = []
     for (const part of parts) {
       if (part.thought) continue
       if (part.functionResponse) {
-        addFunctionResponse(part.functionResponse.name ?? '', part.functionResponse.response, (text) =>
-          userParts.push({ type: 'text', text })
-        )
+        addFunctionResponse(part.functionResponse, (text) => userParts.push({ type: 'text', text }))
         continue
       }
       if (part.text !== undefined) userParts.push({ type: 'text', text: part.text })
@@ -190,11 +180,28 @@ function openAiMessages(llmRequest: LlmRequest, acceptsImages: boolean): ChatMes
   }
 
   for (const entry of entries) {
-    messages.push(entry.message)
-    if (entry.group) {
-      for (const call of entry.group.calls.sort((left, right) => left.sequence - right.sequence)) {
-        if (call.answered) messages.push(call.answered)
-      }
+    const calls = entry.calls ?? []
+    // Chat Completions rejects a tool call with no tool message after it, so an unanswered call is left out; the
+    // legacy route keeps sending today's shape.
+    const sentCalls = legacy ? calls : calls.filter((call) => call.answered !== undefined)
+    if (calls.length && !sentCalls.length && entry.message.content === null) continue
+    messages.push(
+      sentCalls.length
+        ? {
+            ...entry.message,
+            tool_calls: sentCalls.map((call) => ({
+              id: call.id,
+              type: 'function',
+              function: {
+                name: call.name,
+                arguments: JSON.stringify(call.args)
+              }
+            }))
+          }
+        : entry.message
+    )
+    for (const call of calls) {
+      if (call.answered) messages.push(call.answered)
     }
   }
   return messages
@@ -308,7 +315,7 @@ export class ChatCompletionsLlm extends BaseLlm {
     const acceptsImages = this.legacyTranslation || (this.profile?.input.image ?? true)
     const body: JsonObject = {
       model: this.model,
-      messages: openAiMessages(llmRequest, acceptsImages),
+      messages: openAiMessages(llmRequest, acceptsImages, this.legacyTranslation),
       // ModelScope serves Qwen and DeepSeek with thinking on unless told otherwise; OpenAI rejects the field.
       ...(this.provider === 'modelscope' ? { enable_thinking: false } : {}),
       stream: false
@@ -349,7 +356,7 @@ export class ChatCompletionsLlm extends BaseLlm {
     const choice = result.choices?.[0]
     const message = choice?.message
     const text = typeof message?.content === 'string' ? message.content.trim() : ''
-    const functionCalls: Array<{ name: string; args: JsonObject }> = []
+    const functionCalls: Array<{ id?: string; name: string; args: JsonObject }> = []
     for (const toolCall of message?.tool_calls ?? []) {
       const args = parseJson(toolCall.function?.arguments ?? '')
       if (!isRecord(args)) {
@@ -359,14 +366,18 @@ export class ChatCompletionsLlm extends BaseLlm {
           finishReason: FinishReason.MALFORMED_FUNCTION_CALL
         }
       }
-      functionCalls.push({ name: toolCall.function?.name ?? '', args })
+      functionCalls.push({
+        id: this.legacyTranslation ? undefined : toolCall.id,
+        name: toolCall.function?.name ?? '',
+        args
+      })
     }
 
     const parts: Part[] = []
     if (text) parts.push({ text })
     for (const call of functionCalls) {
       parts.push({
-        functionCall: { name: call.name, args: call.args },
+        functionCall: { ...(call.id ? { id: call.id } : {}), name: call.name, args: call.args },
         thoughtSignature: 'skip_thought_signature_validator'
       })
     }

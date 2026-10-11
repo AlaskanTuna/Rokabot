@@ -376,3 +376,246 @@ describe('ModelScopeLlm legacy translation', () => {
     })
   })
 })
+
+describe('ChatCompletionsLlm tool calls', () => {
+  it('pairs tool results with their calls by id, whatever order the results arrive in', async () => {
+    const { fetchImpl, calls } = replay(openai.text)
+
+    await responses(
+      luna(fetchImpl),
+      request([
+        { role: 'user', parts: [{ text: 'roll twice' }] },
+        {
+          role: 'model',
+          parts: [
+            { functionCall: { id: 'call_first', name: 'roll_dice', args: { sides: 6 } } },
+            { functionCall: { id: 'call_second', name: 'roll_dice', args: { sides: 20 } } }
+          ]
+        },
+        {
+          role: 'user',
+          parts: [
+            { functionResponse: { id: 'call_second', name: 'roll_dice', response: { result: 17 } } },
+            { functionResponse: { id: 'call_first', name: 'roll_dice', response: { result: 4 } } }
+          ]
+        }
+      ])
+    )
+
+    expect(bodyOf(calls[0]).messages).toEqual([
+      { role: 'user', content: 'roll twice' },
+      {
+        role: 'assistant',
+        content: null,
+        tool_calls: [
+          { id: 'call_first', type: 'function', function: { name: 'roll_dice', arguments: '{"sides":6}' } },
+          { id: 'call_second', type: 'function', function: { name: 'roll_dice', arguments: '{"sides":20}' } }
+        ]
+      },
+      { role: 'tool', tool_call_id: 'call_first', content: '{"result":4}' },
+      { role: 'tool', tool_call_id: 'call_second', content: '{"result":17}' }
+    ])
+  })
+
+  it('leaves out a tool call that never got a result', async () => {
+    const { fetchImpl, calls } = replay(openai.text)
+
+    await responses(
+      luna(fetchImpl),
+      request([
+        {
+          role: 'model',
+          parts: [{ text: 'Let me check.' }, { functionCall: { id: 'call_lost', name: 'get_current_time', args: {} } }]
+        },
+        { role: 'model', parts: [{ functionCall: { id: 'call_gone', name: 'flip_coin', args: {} } }] },
+        { role: 'user', parts: [{ text: 'well?' }] }
+      ])
+    )
+
+    expect(bodyOf(calls[0]).messages).toEqual([
+      { role: 'assistant', content: 'Let me check.' },
+      { role: 'user', content: 'well?' }
+    ])
+  })
+
+  it('returns each provider call id on its function call', async () => {
+    const [response] = await responses(luna(replay(openai.parallelToolCalls).fetchImpl), hello())
+
+    expect(response?.content?.parts).toEqual([
+      {
+        functionCall: { id: 'call_fixture_a', name: 'roll_dice', args: { sides: 6 } },
+        thoughtSignature: 'skip_thought_signature_validator'
+      },
+      {
+        functionCall: { id: 'call_fixture_b', name: 'flip_coin', args: {} },
+        thoughtSignature: 'skip_thought_signature_validator'
+      }
+    ])
+  })
+
+  it('leaves the call id unset when the provider sends none, so ADK assigns its own', async () => {
+    const reply = {
+      status: 200,
+      body: {
+        choices: [
+          {
+            message: { tool_calls: [{ function: { name: 'flip_coin', arguments: '{}' } }] },
+            finish_reason: 'tool_calls'
+          }
+        ]
+      }
+    }
+
+    const [response] = await responses(luna(replay(reply).fetchImpl), hello())
+
+    expect(response?.content?.parts?.[0]?.functionCall).toEqual({ name: 'flip_coin', args: {} })
+    expect(response?.content?.parts?.[0]?.functionCall).not.toHaveProperty('id')
+  })
+
+  it('pairs an id-less result with an id-less call in the preceding model turn only', async () => {
+    const { fetchImpl, calls } = replay(openai.text)
+
+    await responses(
+      luna(fetchImpl),
+      request([
+        { role: 'model', parts: [{ functionCall: { name: 'lookup', args: { index: 1 } } }] },
+        { role: 'user', parts: [{ text: 'never mind' }] },
+        { role: 'model', parts: [{ functionCall: { name: 'lookup', args: { index: 2 } } }] },
+        { role: 'user', parts: [{ functionResponse: { name: 'lookup', response: { result: 'second' } } }] }
+      ])
+    )
+
+    expect(bodyOf(calls[0]).messages).toEqual([
+      { role: 'user', content: 'never mind' },
+      {
+        role: 'assistant',
+        content: null,
+        tool_calls: [{ id: 'call_2', type: 'function', function: { name: 'lookup', arguments: '{"index":2}' } }]
+      },
+      { role: 'tool', tool_call_id: 'call_2', content: '{"result":"second"}' }
+    ])
+  })
+
+  it('turns a result whose id matches no call into user text', async () => {
+    const { fetchImpl, calls } = replay(openai.text)
+
+    await responses(
+      luna(fetchImpl),
+      request([
+        {
+          role: 'model',
+          parts: [
+            { functionCall: { id: 'call_a', name: 'roll_dice', args: { sides: 6 } } },
+            { functionCall: { id: 'call_b', name: 'roll_dice', args: { sides: 20 } } }
+          ]
+        },
+        {
+          role: 'user',
+          parts: [
+            { functionResponse: { id: 'call_a', name: 'roll_dice', response: { result: 4 } } },
+            { functionResponse: { id: 'call_stray', name: 'roll_dice', response: { result: 17 } } }
+          ]
+        }
+      ])
+    )
+
+    expect(bodyOf(calls[0]).messages).toEqual([
+      {
+        role: 'assistant',
+        content: null,
+        tool_calls: [{ id: 'call_a', type: 'function', function: { name: 'roll_dice', arguments: '{"sides":6}' } }]
+      },
+      { role: 'tool', tool_call_id: 'call_a', content: '{"result":4}' },
+      { role: 'user', content: '(result of roll_dice: {"result":17})' }
+    ])
+  })
+})
+
+describe('ModelScopeLlm legacy tool calls', () => {
+  const legacy = (fetchImpl: typeof fetch) =>
+    new ModelScopeLlm({
+      model: 'Qwen/Qwen3.5-122B-A10B',
+      apiKey: 'modelscope-key',
+      timeoutMs: 2000,
+      profile: profileFor('modelscope', 'Qwen/Qwen3.5-122B-A10B'),
+      fetchImpl
+    })
+
+  it('ignores incoming ids, numbers every call and pairs results FIFO by name, keeping unanswered calls', async () => {
+    const { fetchImpl, calls } = replay(modelscope.qwenText)
+
+    await responses(
+      legacy(fetchImpl),
+      request([
+        {
+          role: 'model',
+          parts: [
+            { functionCall: { id: 'call_x', name: 'lookup', args: { index: 1 } } },
+            { functionCall: { id: 'call_y', name: 'lookup', args: { index: 2 } } },
+            { functionCall: { id: 'call_z', name: 'flip_coin', args: {} } }
+          ]
+        },
+        {
+          role: 'user',
+          parts: [
+            { functionResponse: { id: 'call_y', name: 'lookup', response: { result: 'first' } } },
+            { functionResponse: { id: 'call_x', name: 'lookup', response: { result: 'second' } } }
+          ]
+        }
+      ])
+    )
+
+    expect(bodyOf(calls[0]).messages).toEqual([
+      {
+        role: 'assistant',
+        content: null,
+        tool_calls: [
+          { id: 'call_1', type: 'function', function: { name: 'lookup', arguments: '{"index":1}' } },
+          { id: 'call_2', type: 'function', function: { name: 'lookup', arguments: '{"index":2}' } },
+          { id: 'call_3', type: 'function', function: { name: 'flip_coin', arguments: '{}' } }
+        ]
+      },
+      { role: 'tool', tool_call_id: 'call_1', content: '{"result":"first"}' },
+      { role: 'tool', tool_call_id: 'call_2', content: '{"result":"second"}' }
+    ])
+  })
+
+  it('pairs an id-less result with the earliest unanswered call of its name in any earlier turn', async () => {
+    const { fetchImpl, calls } = replay(modelscope.qwenText)
+
+    await responses(
+      legacy(fetchImpl),
+      request([
+        { role: 'model', parts: [{ functionCall: { name: 'lookup', args: { index: 1 } } }] },
+        { role: 'user', parts: [{ text: 'never mind' }] },
+        { role: 'model', parts: [{ functionCall: { name: 'lookup', args: { index: 2 } } }] },
+        { role: 'user', parts: [{ functionResponse: { name: 'lookup', response: { result: 'second' } } }] }
+      ])
+    )
+
+    expect(bodyOf(calls[0]).messages).toEqual([
+      {
+        role: 'assistant',
+        content: null,
+        tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'lookup', arguments: '{"index":1}' } }]
+      },
+      { role: 'tool', tool_call_id: 'call_1', content: '{"result":"second"}' },
+      { role: 'user', content: 'never mind' },
+      {
+        role: 'assistant',
+        content: null,
+        tool_calls: [{ id: 'call_2', type: 'function', function: { name: 'lookup', arguments: '{"index":2}' } }]
+      }
+    ])
+  })
+
+  it('returns a function call with no id even when the provider sends one', async () => {
+    const [response] = await responses(legacy(replay(modelscope.qwenToolCall).fetchImpl), hello())
+
+    expect(response?.content?.parts?.[0]?.functionCall).toEqual({
+      name: 'get_current_time',
+      args: { timezone: 'Asia/Tokyo' }
+    })
+    expect(response?.content?.parts?.[0]?.functionCall).not.toHaveProperty('id')
+  })
+})
