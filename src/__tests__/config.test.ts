@@ -1286,6 +1286,7 @@ describe('config module', () => {
       })
 
       const { config, floors } = await loadFloors()
+      await vi.dynamicImportSettled()
 
       expect(config.embeddings).toEqual({
         provider: 'gemini',
@@ -1354,6 +1355,7 @@ describe('config module', () => {
       withYamlOverride({ embeddings: { provider: undefined } })
 
       const { config, floors } = await loadFloors()
+      await vi.dynamicImportSettled()
 
       expect(config.embeddings).toMatchObject({
         provider: 'local',
@@ -1374,6 +1376,7 @@ describe('config module', () => {
       vi.stubEnv('OPENAI_API_KEY', 'sk-test')
 
       const { config, floors } = await loadFloors()
+      await vi.dynamicImportSettled()
 
       expect(config.embeddings).toMatchObject({
         provider: 'openai',

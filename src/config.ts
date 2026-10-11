@@ -636,10 +636,12 @@ for (const { path, value, min, max } of NUMERIC_BOUNDS) {
 }
 
 if (config.embeddings.provider !== 'gemini' && !similarityFloors) {
-  const { logger } = await import('./utils/logger.js')
-  logger.warn(
-    { fingerprint: config.embeddings.fingerprint },
-    'No embeddings.minSimilarity entry for this fingerprint, so recall uses the Gemini floors in memory.*MinSimilarity'
+  // logger.ts imports this module, so awaiting the import here would deadlock startup.
+  void import('./utils/logger.js').then(({ logger }) =>
+    logger.warn(
+      { fingerprint: config.embeddings.fingerprint },
+      'No embeddings.minSimilarity entry for this fingerprint, so recall uses the Gemini floors in memory.*MinSimilarity'
+    )
   )
 }
 
