@@ -278,6 +278,44 @@ cannot read those — so those turns only ever wait out `gemini.timeout`.
 
 ---
 
+## Local Embeddings
+
+Memory recall turns episode summaries, watched-media summaries, fact sentences and each turn's message into vectors.
+`embeddings.provider` in `config.yml` picks who makes them: `gemini` (`gemini-embedding-2`, 768 dimensions), `local`
+(the `sidecar/embeddings/` container, `Xenova/multilingual-e5-small`, 384 dimensions) or `openai`
+(`text-embedding-3-small`, which needs `OPENAI_API_KEY`). `EMBEDDINGS_PROVIDER` overrides it. A `config.yml` without an
+`embeddings:` block uses `gemini` while `GEMINI_API_KEY` is set and `local` otherwise; a block that leaves out
+`provider` uses `local`. The Pi stays on `gemini`.
+
+Every stored vector records `embedding_model_id`, `embedding_dim` and `embedding_fingerprint`. Recall reads only
+vectors in the configured provider's space. Vectors stored before #296 are marked `unknown`, and only the Gemini
+provider reads them. After a switch, the maintenance pass (at startup, then every 24 hours) re-embeds the other
+vectors at about one document a second, up to `embeddings.backfillBatchSize` per pass. Keyword recall keeps working
+meanwhile.
+
+```bash
+# Vectors per embedding space; NULL means no vector yet
+sqlite3 ~/rokabot/data/rokabot.db "SELECT 'episode', embedding_fingerprint, COUNT(*) FROM memory_episode GROUP BY 2 UNION ALL SELECT 'media', embedding_fingerprint, COUNT(*) FROM media_digest GROUP BY 2 UNION ALL SELECT 'fact', embedding_fingerprint, COUNT(*) FROM memory_claim WHERE status = 'active' GROUP BY 2;"
+```
+
+### Before Switching the Pi to Local
+
+1. Owner follow-up: measure the sidecar on the Pi. Start only it with `docker compose --profile local-embeddings up -d --build embeddings`. While it embeds, run a voice-note transcription and an attachment turn, and watch `docker stats --no-stream`. The release gate is peak RSS under 800 MiB inside the 1 GiB cap. On amd64 the sidecar used about 710 MiB after the smoke test (2026-10-11), so the gate is close; measure before switching.
+2. Calibrate `embeddings.minSimilarity` for the local fingerprint on a labelled recall set. The shipped values are placeholders.
+3. Confirm health: `docker compose exec embeddings node -e "fetch('http://127.0.0.1:8080/health').then((r) => r.text()).then(console.log)"`.
+
+### Switching
+
+1. Add `COMPOSE_PROFILES=local-embeddings` and `EMBEDDINGS_PROVIDER=local` to `~/rokabot/.env`.
+2. Run `cd ~/rokabot && docker compose up -d --build`. This restarts the bot, so it needs the owner's approval.
+3. Watch the backfill with the query above. Once the counts settle, the local fingerprint should hold every row.
+
+### Rolling Back
+
+Remove `EMBEDDINGS_PROVIDER` and the profile from `.env`, then restart. Gemini cannot read local vectors, so the pass
+re-embeds them with Gemini. Gemini's free tier allows about 1,000 embedding requests a day, so first set
+`embeddings.backfillBatchSize: 900`; the re-embed then spreads over several days.
+
 ## Jev Judgments and Passive Memory
 
 Jev tone and referent judgments can run in `off`, `shadow` or `on` mode. Passive memory uses Jev admission and
@@ -690,12 +728,12 @@ prune deletes them. A passive sighting cannot restore a forgotten value; `rememb
 
 ### Episodic Memory
 
-Episode summaries and 768-dimensional embeddings are stored by guild in `memory_episode`. Embedding requests use
-`GEMINI_API_KEY` and `memory.embeddingModel` (`gemini-embedding-2`); they consume a separate project quota from text
-generation. For planning only, the spec's free-tier estimate is 100 RPM, 30 K TPM, and 1 K RPD; check AI Studio for
-your project's current limits. Embedding requests do not debit the bot's generation rate limiter. The daily
-maintenance pass deletes episodes past `memory.episodeRetentionDays` and retries rows with missing or unreadable
-embeddings.
+Episode summaries and 768-dimensional embeddings are stored by guild in `memory_episode`. With
+`embeddings.provider: gemini` (the Pi's setting), embedding requests use `GEMINI_API_KEY` and `gemini-embedding-2`; they
+consume a separate project quota from text generation. For planning only, the spec's free-tier estimate is 100 RPM, 30 K
+TPM, and 1 K RPD; check AI Studio for your project's current limits. Embedding requests do not debit the bot's
+generation rate limiter. The daily maintenance pass deletes episodes past `memory.episodeRetentionDays` and retries rows
+with missing or unreadable embeddings.
 
 ```bash
 # Episode counts by guild
