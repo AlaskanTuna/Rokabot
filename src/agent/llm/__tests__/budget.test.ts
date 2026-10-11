@@ -297,3 +297,100 @@ describe('denials and estimates', () => {
     expect(withImage).toBeLessThan(50)
   })
 })
+
+describe('ModelScope', () => {
+  const qwen = { provider: 'modelscope', model: 'Qwen/Qwen3.5-122B-A10B', workload: 'reply', estTokens: 500 } as const
+  const deepseek = { ...qwen, model: 'deepseek-ai/DeepSeek-V4.1-Flash' } as const
+
+  it('shares one daily Magicube estimate across every ModelScope model', () => {
+    for (let call = 0; call < 125; call += 1) {
+      granted(reserveCall(qwen))
+      granted(reserveCall(deepseek))
+    }
+
+    expect(reserveCall(qwen)).toEqual({ denied: 'rpd' })
+    expect(reserveCall(deepseek)).toEqual({ denied: 'rpd' })
+  })
+
+  it('leaves a whole reply turn of Magicubes behind background calls', () => {
+    expect(admitAll({ ...qwen, workload: 'extraction' })).toBe(246)
+
+    for (let call = 0; call < 4; call += 1) granted(reserveCall(qwen))
+    expect(reserveCall(qwen)).toEqual({ denied: 'rpd' })
+  })
+
+  it('starts a fresh estimate at UTC midnight', () => {
+    vi.setSystemTime(new Date('2026-10-11T23:59:30Z'))
+    for (let call = 0; call < 250; call += 1) granted(reserveCall(qwen))
+    expect(reserveCall(qwen)).toEqual({ denied: 'rpd' })
+
+    vi.advanceTimersByTime(31_000)
+
+    expect('denied' in reserveCall(qwen)).toBe(false)
+  })
+
+  it('sends one ModelScope call at a time', async () => {
+    const first = await startCall(qwen)
+    let secondGranted = false
+    const second = startCall(qwen).then((reservation) => {
+      secondGranted = true
+      return reservation
+    })
+
+    await Promise.resolve()
+    expect(secondGranted).toBe(false)
+
+    first.release()
+    ;(await second).release()
+    expect(secondGranted).toBe(true)
+  })
+
+  it('lets a waiting reply go ahead of waiting background calls', async () => {
+    const holder = await startCall({ ...qwen, workload: 'extraction' })
+    const order: string[] = []
+    const background = startCall({ ...qwen, workload: 'reclassify' }).then((reservation) => {
+      order.push('background')
+      return reservation
+    })
+    const replyCall = startCall(qwen).then((reservation) => {
+      order.push('reply')
+      return reservation
+    })
+
+    holder.release()
+    ;(await replyCall).release()
+    ;(await background).release()
+
+    expect(order).toEqual(['reply', 'background'])
+  })
+
+  it('drops a waiter whose call was cancelled', async () => {
+    const holder = await startCall(qwen)
+    const controller = new AbortController()
+    const cancelled = startCall({ ...qwen, signal: controller.signal })
+
+    controller.abort()
+    await expect(cancelled).rejects.toMatchObject({ name: 'AbortError' })
+
+    holder.release()
+    ;(await startCall(qwen)).release()
+  })
+
+  it('counts a refused ModelScope call against no slot', async () => {
+    configState.llm.modelscopeDailyMagicubes = 1
+    __resetBudgetsForTest()
+    ;(await startCall(qwen)).release()
+
+    await expect(startCall(qwen)).rejects.toMatchObject({ kind: 'quota_exhausted' })
+    configState.llm.modelscopeDailyMagicubes = 2
+    ;(await startCall(qwen)).release()
+  })
+
+  it('does not queue providers without a concurrency limit', async () => {
+    const first = await startCall(reply)
+    const second = await startCall(reply)
+
+    first.release()
+    second.release()
+  })
+})

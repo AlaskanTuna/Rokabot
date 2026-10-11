@@ -1,3 +1,4 @@
+import type { LlmRequest, LlmResponse } from '@google/adk'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../../utils/logger.js', () => ({
@@ -14,6 +15,8 @@ import {
   remainingTokensThisMinute
 } from '../../tokenBudget.js'
 import { __resetBudgetsForTest, reserveCall, startCall } from '../budget.js'
+import { createLlm } from '../createModel.js'
+import { profileFor } from '../profiles.js'
 
 /**
  * The Pi runs the legacy config, with no `llm:` block. These pin that per-call budgets left every limit it had, and
@@ -30,7 +33,24 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers()
+  vi.unstubAllGlobals()
 })
+
+function request(): LlmRequest {
+  return {
+    model: 'unused',
+    contents: [{ role: 'user', parts: [{ text: 'hi' }] }],
+    config: {},
+    toolsDict: {},
+    liveConnectConfig: undefined
+  } as unknown as LlmRequest
+}
+
+async function collect(responses: AsyncGenerator<LlmResponse, void>): Promise<LlmResponse[]> {
+  const result: LlmResponse[] = []
+  for await (const response of responses) result.push(response)
+  return result
+}
 
 describe('legacy config under per-call budgets', () => {
   it("keeps today's limits on the synthesised Gemini route", () => {
@@ -108,6 +128,43 @@ describe('legacy config under per-call budgets', () => {
         startCall({ provider: 'modelscope', model: config.fallback.model, workload, estTokens: 1_000 })
       ).resolves.toHaveProperty('release')
     }
+  })
+
+  it('lets two legacy ModelScope calls hold their grants at once', async () => {
+    const call = { provider: 'modelscope', model: config.fallback.model, workload: 'reply', estTokens: 1_000 } as const
+
+    await expect(Promise.all([startCall(call), startCall(call)])).resolves.toHaveLength(2)
+  })
+
+  it('sends two legacy ModelScope requests at once through the adapter', async () => {
+    const profile =
+      profileFor('modelscope', config.fallback.model) ?? profileFor('modelscope', 'Qwen/Qwen3.5-122B-A10B')
+    if (!profile) throw new Error('no ModelScope profile')
+    const pending: Array<() => void> = []
+    const fetchMock = vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          pending.push(() => resolve(new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }))))
+        })
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const llm = createLlm({
+      key: 'legacy-fallback',
+      provider: 'modelscope',
+      model: config.fallback.model,
+      profile,
+      apiKey: 'test-key',
+      baseUrl: 'https://modelscope.test/v1',
+      timeoutMs: 5_000,
+      maxOutputTokens: 300
+    })
+
+    const first = collect(llm.generateContentAsync(request()))
+    const second = collect(llm.generateContentAsync(request()))
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+
+    for (const resolve of pending) resolve()
+    await Promise.all([first, second])
   })
 
   it('charges a turn that reached the model one daily unit, whatever it spent of its ladder', () => {

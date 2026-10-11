@@ -36,6 +36,74 @@ export interface CallInput {
 
 const REPLY_SIDE: ReadonlySet<Workload> = new Set<Workload>(['reply', 'watcher'])
 
+// Per-model Magicube tiers are shown only to a logged-in account, so every call is counted at the standard tier.
+const MAGICUBES_PER_CALL = 1
+
+// ModelScope guarantees one concurrent request per account and promises nothing past it.
+const CONCURRENCY: Partial<Record<ProviderId, number>> = { modelscope: 1 }
+
+let magicubes = { day: '', used: 0 }
+const inFlight = new Map<ProviderId, number>()
+const waiting = new Map<ProviderId, Array<{ reply: boolean; grant: () => void }>>()
+
+/**
+ * The legacy config keeps exactly the accounting it had before per-call budgets: the Discord turn guard, the retry
+ * gate and roka's per-turn token charge. Counting its calls here as well would hand the Pi's reply slots to background
+ * work, and serialising or capping ModelScope would change a fallback and a qwen watcher that never waited or stopped.
+ */
+function legacyAccounting(): boolean {
+  return config.llm.main.key === 'legacy-gemini'
+}
+
+/** Magicubes left in the shared ModelScope estimate; it resets with the UTC day, like the request limiter's. */
+function magicubesLeft(): number {
+  const day = new Date().toISOString().slice(0, 10)
+  if (magicubes.day !== day) magicubes = { day, used: 0 }
+  return config.llm.modelscopeDailyMagicubes - magicubes.used
+}
+
+/**
+ * Waits for one of the provider's in-flight slots. A refusal here would surface as quota exhaustion on a healthy
+ * provider and open a sticky window, so the call waits instead, for as long as its own signal allows. Replies wait
+ * behind replies already waiting and ahead of every background call.
+ */
+function acquireSlot(provider: ProviderId, reply: boolean, signal?: AbortSignal): Promise<() => void> {
+  const limit = CONCURRENCY[provider]
+  if (limit === undefined) return Promise.resolve(() => {})
+  signal?.throwIfAborted()
+
+  let held = true
+  const leave = () => {
+    if (!held) return
+    held = false
+    inFlight.set(provider, (inFlight.get(provider) ?? 1) - 1)
+    waiting.get(provider)?.shift()?.grant()
+  }
+  const queue = waiting.get(provider) ?? []
+  waiting.set(provider, queue)
+  if ((inFlight.get(provider) ?? 0) < limit && queue.length === 0) {
+    inFlight.set(provider, (inFlight.get(provider) ?? 0) + 1)
+    return Promise.resolve(leave)
+  }
+
+  return new Promise((resolve, reject) => {
+    const waiter = { reply, grant: () => {} }
+    const onAbort = () => {
+      queue.splice(queue.indexOf(waiter), 1)
+      reject(signal?.reason)
+    }
+    waiter.grant = () => {
+      signal?.removeEventListener('abort', onAbort)
+      inFlight.set(provider, (inFlight.get(provider) ?? 0) + 1)
+      resolve(leave)
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
+    const firstBackground = reply ? queue.findIndex((entry) => !entry.reply) : -1
+    if (firstBackground === -1) queue.push(waiter)
+    else queue.splice(firstBackground, 0, waiter)
+  })
+}
+
 function routeLimits(provider: ProviderId, model: string) {
   const route = [config.llm.main, config.llm.fallback].find(
     (entry) => entry?.provider === provider && entry.model === model
@@ -45,10 +113,7 @@ function routeLimits(provider: ProviderId, model: string) {
 
 /** Reserve one provider call, or name the budget that refused it. Adapters call `startCall`, which wraps this. */
 export function reserveCall(input: CallInput): CallReservation | BudgetDenial {
-  // The legacy config keeps exactly the accounting it had before per-call budgets: the Discord turn guard, the retry
-  // gate and roka's per-turn token charge. Counting its calls here as well would hand the Pi's reply slots to
-  // background work and cap a fallback that has never been capped.
-  if (config.llm.main.key === 'legacy-gemini') return { release: () => {} }
+  if (legacyAccounting()) return { release: () => {} }
 
   const { provider, model, workload, estTokens } = input
   const replySide = REPLY_SIDE.has(workload)
@@ -67,6 +132,7 @@ export function reserveCall(input: CallInput): CallReservation | BudgetDenial {
   else if (!coveredByTurn && limiter.remainingRpm < 1 + headroom) denied = 'rpm'
   // Text replies are never refused on tokens: `rpm` bounds them, and attachment turns were gated before they began.
   else if (!replySide && tokens && tokens.remaining() < estTokens + config.gemini.maxAttachmentTokens) denied = 'tpm'
+  else if (provider === 'modelscope' && magicubesLeft() < MAGICUBES_PER_CALL * (1 + headroom)) denied = 'rpd'
   if (denied) {
     logger.info({ provider, model, workload, denied }, 'Budget declined a model call')
     return { denied }
@@ -74,6 +140,7 @@ export function reserveCall(input: CallInput): CallReservation | BudgetDenial {
 
   if (!coveredByTurn) limiter.tryConsume()
   tokens?.charge(estTokens)
+  if (provider === 'modelscope') magicubes.used += MAGICUBES_PER_CALL
 
   let settled = false
   return {
@@ -87,9 +154,24 @@ export function reserveCall(input: CallInput): CallReservation | BudgetDenial {
   }
 }
 
-/** Every adapter awaits this before each provider request; 1D gives it a body that can wait for a window to open. */
+/** Wait for the provider's slot, then reserve the call; a refusal throws the ProviderError the router acts on. */
 export async function startCall(input: CallInput & { signal?: AbortSignal }): Promise<CallReservation> {
-  return grantOrThrow(input.provider, reserveCall(input))
+  const leave = legacyAccounting()
+    ? () => {}
+    : await acquireSlot(input.provider, REPLY_SIDE.has(input.workload), input.signal)
+  let reservation: CallReservation
+  try {
+    reservation = grantOrThrow(input.provider, reserveCall(input))
+  } catch (error) {
+    leave()
+    throw error
+  }
+  return {
+    release: (usage) => {
+      leave()
+      reservation.release(usage)
+    }
+  }
 }
 
 /** Adapters call this when they classify a provider's own billing error as `billing_exhausted`; 1D gives it a body. */
@@ -121,4 +203,7 @@ export function requestTokenEstimate(value: unknown): number {
 export function __resetBudgetsForTest(): void {
   __resetRateLimitersForTest()
   __resetTokenBudgetForTest()
+  magicubes = { day: '', used: 0 }
+  inFlight.clear()
+  waiting.clear()
 }

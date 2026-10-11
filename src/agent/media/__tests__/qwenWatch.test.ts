@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { ProviderError } from '../../llm/providerError.js'
 import { type QwenFrame, type QwenWatchInput, type QwenWatchSettings, watchFramesWithQwen } from '../qwenWatch.js'
 import type { MediaClip, MediaObservations } from '../types.js'
 
@@ -9,6 +10,16 @@ vi.mock('../../../config.js', () => ({
     media: { digestMaxOutputTokens: 1200, watchTimeoutMs: 20_000 }
   }
 }))
+
+const budget = vi.hoisted(() => ({ startCall: vi.fn(), release: vi.fn() }))
+
+vi.mock('../../llm/budget.js', () => ({ startCall: budget.startCall }))
+
+beforeEach(() => {
+  budget.startCall.mockReset()
+  budget.release.mockReset()
+  budget.startCall.mockResolvedValue({ release: budget.release })
+})
 
 interface RecordedCall {
   url: string
@@ -312,6 +323,7 @@ describe('watchFramesWithQwen failures', () => {
     )
     const controller = new AbortController()
     const pending = watchFramesWithQwen(input({ signal: controller.signal }), settings({ fetchImpl: hangs.fetchImpl }))
+    await vi.waitFor(() => expect(hangs.calls).toHaveLength(1))
     controller.abort()
 
     expect(await pending).toMatchObject({ status: 'failed', reason: 'timeout' })
@@ -527,5 +539,38 @@ describe('watchFramesWithQwen heard and frames', () => {
 
     expect(result).toMatchObject({ status: 'failed', reason: 'unavailable' })
     expect(calls).toHaveLength(0)
+  })
+})
+
+describe('qwen watch budget', () => {
+  it('reserves each watch against the shared ModelScope budget', async () => {
+    const { fetchImpl } = fakeFetch()
+
+    await watchFramesWithQwen(input(), settings({ fetchImpl }))
+
+    expect(budget.startCall).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'modelscope', model: settings().model, workload: 'watcher' })
+    )
+    expect(budget.release).toHaveBeenCalledOnce()
+  })
+
+  it('sends nothing and fails as overloaded when the budget refuses the watch', async () => {
+    budget.startCall.mockRejectedValueOnce(
+      new ProviderError({ provider: 'modelscope', kind: 'quota_exhausted', message: 'Magicubes spent' })
+    )
+    const { fetchImpl, calls } = fakeFetch()
+
+    const result = await watchFramesWithQwen(input(), settings({ fetchImpl }))
+
+    expect(result).toMatchObject({ status: 'failed', reason: 'overloaded' })
+    expect(calls).toHaveLength(0)
+  })
+
+  it('frees the slot even when ModelScope fails', async () => {
+    const { fetchImpl } = fakeFetch(() => new Response('busy', { status: 503 }))
+
+    await watchFramesWithQwen(input(), settings({ fetchImpl }))
+
+    expect(budget.release).toHaveBeenCalledOnce()
   })
 })
