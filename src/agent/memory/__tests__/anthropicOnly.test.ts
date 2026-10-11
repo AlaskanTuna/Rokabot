@@ -3,6 +3,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 type SentParams = { model?: string; temperature?: unknown; tools?: Array<{ name: string; input_schema: unknown }> }
 
 const mocks = vi.hoisted(() => {
+  vi.stubEnv('GEMINI_API_KEY', '')
+  vi.stubEnv('EMBEDDINGS_PROVIDER', 'local')
   vi.stubEnv('ANTHROPIC_API_KEY', 'test-anthropic-key')
   vi.stubEnv('TYPESAFE_API_KEY', '')
   vi.stubEnv('LLM_MAIN', '')
@@ -133,6 +135,7 @@ describe('an Anthropic-only config', () => {
     expect(config.llm.main).toMatchObject({ provider: 'anthropic', model: 'claude-haiku-5-5' })
     expect(config.llm.fallback).toBeNull()
     expect(config.memory.judge).toBe('model')
+    expect(config.gemini.apiKey).toBe('')
   })
 
   it('admits, extracts and verifies a fact on Claude alone', async () => {
