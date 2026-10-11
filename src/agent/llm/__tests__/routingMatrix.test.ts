@@ -3,7 +3,7 @@ import type { BaseLlmConnection, LlmRequest, LlmResponse } from '@google/adk'
 import { describe, expect, it } from 'vitest'
 import { RoutedLlm, modelRouteForRequest } from '../../fallbackModel.js'
 import type { ModelRoute } from '../../fallbackModel.js'
-import { runTurnWithReliability } from '../../reliability.js'
+import { ErrorRecoveryPlugin, runTurnWithReliability } from '../../reliability.js'
 import { ChatCompletionsLlm } from '../chatCompletionsLlm.js'
 import type { ChatCompletionsProvider } from '../chatCompletionsLlm.js'
 import { profileFor } from '../profiles.js'
@@ -87,15 +87,33 @@ function hello(signal: AbortSignal): LlmRequest {
   } as unknown as LlmRequest
 }
 
-/** One turn as roka.ts runs it: the ladder retries, and switchModel moves the rest of the turn to the fallback. */
+/**
+ * One turn as roka.ts feeds the ladder: the ladder retries, switchModel moves the rest of the turn to the fallback,
+ * and a thrown model error reaches it as the typed outcome the error plugin builds, not as message text.
+ */
 async function runTurn(routed: RoutedLlm) {
   const route: ModelRoute = { useFallback: false, hedged: false, answeredBy: null, pinned: null }
   const result = await modelRouteForRequest.run(route, () =>
     runTurnWithReliability({
       runTurn: async (_attempt, signal) => {
         let text = ''
-        for await (const response of routed.generateContentAsync(hello(signal))) {
-          text += (response.content?.parts ?? []).map((part) => part.text ?? '').join('')
+        try {
+          for await (const response of routed.generateContentAsync(hello(signal))) {
+            text += (response.content?.parts ?? []).map((part) => part.text ?? '').join('')
+          }
+        } catch (error) {
+          const failure = await new ErrorRecoveryPlugin('error-recovery').onModelErrorCallback({
+            callbackContext: {},
+            llmRequest: {},
+            error: error as Error
+          })
+          return {
+            errorCode: failure?.errorCode,
+            errorMessage: failure?.errorMessage,
+            customMetadata: failure?.customMetadata,
+            hasText: false,
+            hasFunctionCall: false
+          }
         }
         return { text, hasText: text.length > 0, hasFunctionCall: false }
       },
@@ -150,10 +168,13 @@ describe('routing across every provider', () => {
 
   describe.each(BRAINS)('main %s with no fallback', (main) => {
     it('answers from the main model', async () => {
-      const { result, route } = await runTurn(new RoutedLlm(side(main, true).llm, null, 0))
+      const primary = side(main, true)
 
-      expect(result).toMatchObject({ success: true, text: `${main} answer` })
+      const { result, route } = await runTurn(new RoutedLlm(primary.llm, null, 0))
+
+      expect(result).toMatchObject({ success: true, text: `${main} answer`, attempts: 1 })
       expect(route.answeredBy).toBe('main')
+      expect(primary.calls()).toBe(1)
     })
 
     it('retries the outage once, then sends the in-character failure reply', async () => {
