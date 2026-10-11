@@ -471,22 +471,27 @@ describe('generateResponse model fallback', () => {
     const first = await generateResponse(responseOptions())
     const second = await generateResponse(responseOptions('A slow one.'))
 
-    expect(first.metrics).toMatchObject({ model: 'fallback', hedged: 1 })
-    expect(second.metrics).toMatchObject({ model: 'fallback', hedged: 1 })
+    expect(first.metrics).toMatchObject({ routeRole: 'fallback', hedged: 1 })
+    expect(second.metrics).toMatchObject({ routeRole: 'fallback', hedged: 1 })
     expect(answeredBy).toEqual(['fallback', 'fallback'])
 
     const nextRoutes: Array<boolean | undefined> = []
     __setTestRunTurnFactory(() => async () => {
       const route = modelRouteForRequest.getStore()
       // An unhedged Gemini call still records who answered.
-      if (route) route.answeredBy = 'gemini'
+      if (route) route.answeredBy = 'main'
       nextRoutes.push(route?.useFallback)
       return { text: 'Gemini next~', hasText: true, hasFunctionCall: false }
     })
     const next = await generateResponse(responseOptions('And now?'))
 
     expect(nextRoutes).toEqual([false])
-    expect(next.metrics).toMatchObject({ model: 'gemini', hedged: 0 })
+    expect(next.metrics).toMatchObject({
+      routeRole: 'main',
+      provider: 'gemini',
+      modelId: config.llm.main.model,
+      hedged: 0
+    })
   })
 
   it('keeps the existing fallback reply when no fallback model is configured', async () => {

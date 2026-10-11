@@ -404,7 +404,8 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   const route: ModelRoute = {
     useFallback: rokaModel.hasFallback && hasStickyFallback(),
     hedged: false,
-    answeredBy: null
+    answeredBy: null,
+    pinned: null
   }
   let movedAwayFromGemini = false
   const reliability = await modelRouteForRequest.run(route, () =>
@@ -622,6 +623,8 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   // Charge after the reliability ladder so retries and rebuilt prompts are included in actual spend.
   chargeTokens(tokensInEst)
 
+  const answeredModel =
+    route.answeredBy === 'fallback' ? config.llm.fallback : route.answeredBy === 'main' ? config.llm.main : null
   const metrics: ResponseMetrics = {
     generateMs: Math.round(performance.now() - generateStartMs),
     llmMs,
@@ -632,7 +635,9 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     failureMarker: reliability.failureMarker,
     tokensInEst,
     tokensOutEst: estimateTokens(reliability.text),
-    model: route.answeredBy ?? undefined,
+    routeRole: route.answeredBy ?? undefined,
+    provider: answeredModel?.provider,
+    modelId: answeredModel?.model,
     hedged: route.hedged ? 1 : 0
   }
 

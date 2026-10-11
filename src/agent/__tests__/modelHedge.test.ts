@@ -65,7 +65,7 @@ async function responses(model: BaseLlm, llmRequest: LlmRequest): Promise<LlmRes
 }
 
 function route(overrides: Partial<ModelRoute> = {}): ModelRoute {
-  return { useFallback: false, hedged: false, answeredBy: null, ...overrides }
+  return { useFallback: false, hedged: false, answeredBy: null, pinned: null, ...overrides }
 }
 
 /** The hedge timer is real, so a test waits out the threshold rather than moving a fake clock. */
@@ -92,7 +92,7 @@ describe('RoutedLlm hedging', () => {
     expect((await pending)[0]?.content?.parts?.[0]?.text).toBe('gemini answer')
     expect(fallback.calls).toBe(0)
     expect(turn.hedged).toBe(false)
-    expect(turn.answeredBy).toBe('gemini')
+    expect(turn.answeredBy).toBe('main')
     expect(loggerMock.warn).not.toHaveBeenCalled()
   })
 
@@ -128,7 +128,7 @@ describe('RoutedLlm hedging', () => {
 
     expect((await pending)[0]?.content?.parts?.[0]?.text).toBe('slow gemini answer')
     expect(turn.hedged).toBe(true)
-    expect(turn.answeredBy).toBe('gemini')
+    expect(turn.answeredBy).toBe('main')
     expect(fallback.signals[0]?.aborted).toBe(true)
   })
 
@@ -149,10 +149,10 @@ describe('RoutedLlm hedging', () => {
     primary.resolve(0, { text: 'gemini answer' })
     expect((await pending)[0]?.content?.parts?.[0]?.text).toBe('gemini answer')
     expect(turn.hedged).toBe(true)
-    expect(turn.answeredBy).toBe('gemini')
+    expect(turn.answeredBy).toBe('main')
     // The rescued turn is an ordinary success, so the fallback's loss is not reported as a failure.
     expect(loggerMock.warn.mock.calls).toEqual([
-      [{ winner: 'gemini', hedgeAfterMs: HEDGE_MS }, 'Hedged slow Gemini call; kept the faster answer']
+      [{ winner: 'main', hedgeAfterMs: HEDGE_MS }, 'Hedged slow Gemini call; kept the faster answer']
     ])
   })
 
@@ -296,5 +296,67 @@ describe('RoutedLlm hedging', () => {
 
     expect((await pending)[0]?.content?.parts?.[0]?.text).toBe('gemini answer')
     expect(llmRequest.config?.abortSignal).toBeUndefined()
+  })
+})
+
+describe('RoutedLlm provider pinning', () => {
+  it('sends later calls of a turn straight to the side that won the first hedge', async () => {
+    const primary = new DeferredLlm('primary')
+    const fallback = new DeferredLlm('fallback')
+    const routed = new RoutedLlm(primary, fallback, HEDGE_MS, { pinTurns: true })
+    const turn = route()
+
+    const first = modelRouteForRequest.run(turn, () => responses(routed, request()))
+    await afterHedge(fallback)
+    fallback.resolve(0, { text: 'fallback answer' })
+    await first
+    expect(turn.pinned).toBe('fallback')
+
+    const second = modelRouteForRequest.run(turn, () => responses(routed, request()))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    fallback.resolve(1, { text: 'pinned answer' })
+
+    expect((await second)[0]?.content?.parts?.[0]?.text).toBe('pinned answer')
+    expect(primary.calls).toBe(1)
+  })
+
+  it('stops hedging later calls once the main model answered first', async () => {
+    const primary = new DeferredLlm('primary')
+    const fallback = new DeferredLlm('fallback')
+    const routed = new RoutedLlm(primary, fallback, HEDGE_MS, { pinTurns: true })
+    const turn = route()
+
+    const first = modelRouteForRequest.run(turn, () => responses(routed, request()))
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    primary.resolve(0, { text: 'main answer' })
+    await first
+    expect(turn.pinned).toBe('main')
+
+    const second = modelRouteForRequest.run(turn, () => responses(routed, request()))
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    expect(fallback.calls).toBe(0)
+    primary.resolve(1, { text: 'still main' })
+
+    expect((await second)[0]?.content?.parts?.[0]?.text).toBe('still main')
+    expect(turn.hedged).toBe(false)
+  })
+
+  it('keeps hedging every call of a turn when pinning is off, as the legacy route does', async () => {
+    const primary = new DeferredLlm('primary')
+    const fallback = new DeferredLlm('fallback')
+    const routed = new RoutedLlm(primary, fallback, HEDGE_MS)
+    const turn = route()
+
+    const first = modelRouteForRequest.run(turn, () => responses(routed, request()))
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    primary.resolve(0, { text: 'main answer' })
+    await first
+    expect(turn.pinned).toBeNull()
+
+    const second = modelRouteForRequest.run(turn, () => responses(routed, request()))
+    await afterHedge(fallback)
+    fallback.resolve(0, { text: 'hedged second call' })
+
+    expect((await second)[0]?.content?.parts?.[0]?.text).toBe('hedged second call')
   })
 })

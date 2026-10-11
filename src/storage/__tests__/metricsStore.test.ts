@@ -41,7 +41,6 @@ const responseEvent: Parameters<typeof recordResponseEvent>[0] = {
   tokensInEst: 42,
   tokensOutEst: 24,
   toolsUsed: ['roll_dice'],
-  model: 'gemini',
   routeRole: 'main',
   provider: 'gemini',
   modelId: 'gemini-3.5-flash-lite',
@@ -250,17 +249,12 @@ describe('metricsStore', () => {
     expect(warn).toHaveBeenCalledWith(expect.objectContaining({ err: expect.any(Error) }), 'Failed to record Jev event')
   })
 
-  it('persists which model answered and whether a hedge fired, and NULLs the model when there was no answer', () => {
-    recordResponseEvent({ ...responseEvent, model: 'fallback', hedged: 1 })
-    recordResponseEvent({ ...responseEvent, model: undefined, hedged: 0 })
+  it('persists whether a hedge fired, and leaves the legacy model column NULL on new rows', () => {
+    recordResponseEvent({ ...responseEvent, routeRole: 'fallback', hedged: 1 })
 
-    const rows = getDb().prepare('SELECT model, hedged FROM response_events ORDER BY id DESC LIMIT 2').all() as Array<{
-      model: string | null
-      hedged: number
-    }>
+    const row = getDb().prepare('SELECT model, route_role, hedged FROM response_events ORDER BY id DESC LIMIT 1').get()
 
-    expect(rows[0]).toEqual({ model: null, hedged: 0 })
-    expect(rows[1]).toEqual({ model: 'fallback', hedged: 1 })
+    expect(row).toEqual({ model: null, route_role: 'fallback', hedged: 1 })
   })
 
   it('persists the answering provider, model id and route role, and marks the row as a reply', () => {

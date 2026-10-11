@@ -9,14 +9,16 @@ import { requestTokenEstimate, startCall } from './llm/budget.js'
 import { attachmentKind, attachmentMarker, functionDeclarations, isRecord, systemText } from './llm/requestShape.js'
 import { type CallUsage, recordUsage, workloadOf } from './llm/usage.js'
 
-export type AnswerModel = 'gemini' | 'fallback'
+export type AnswerModel = 'main' | 'fallback'
 
 export interface ModelRoute {
   useFallback: boolean
   /** 1 once any model call of the turn has fired a hedge. */
   hedged: boolean
-  /** Which provider produced the turn's answer; null until a call answers, and on a turn that produced none. */
+  /** Which side produced the turn's answer; null until a call answers, and on a turn that produced none. */
   answeredBy: AnswerModel | null
+  /** Set by the first answer of the turn; later calls in the turn use the same side (provider pinning). */
+  pinned: AnswerModel | null
 }
 
 export const modelRouteForRequest = new AsyncLocalStorage<ModelRoute>()
@@ -334,7 +336,7 @@ export class ModelScopeLlm extends BaseLlm {
   }
 }
 
-type RaceSide = 'gemini' | 'fallback'
+type RaceSide = AnswerModel
 
 type RaceOutcome =
   | { winner: RaceSide; responses: LlmResponse[]; errors: [] }
@@ -400,7 +402,7 @@ async function raceForWinner(
       errors.push({ side, error })
       // Nothing is racing yet, so Gemini's failure is the turn's own: waiting out the timer to start a
       // fallback call would delay a failure the ladder already knows how to handle.
-      if (side === 'gemini' && !hedgeStarted) {
+      if (side === 'main' && !hedgeStarted) {
         clearTimeout(timer)
         decide({ winner: null, responses: null, errors })
         return
@@ -420,7 +422,7 @@ async function raceForWinner(
     void run('fallback', fallback, withAbort(llmRequest, fallbackAbort.signal))
   }, hedgeAfterMs)
 
-  void run('gemini', primary, withAbort(llmRequest, primaryAbort.signal))
+  void run('main', primary, withAbort(llmRequest, primaryAbort.signal))
 
   const outcome = await settled
   clearTimeout(timer)
@@ -430,15 +432,18 @@ async function raceForWinner(
 export class RoutedLlm extends BaseLlm {
   readonly fallbackModelName: string | undefined
   readonly hedgeAfterMs: number
+  private readonly pinTurns: boolean
 
   constructor(
     private readonly primary: BaseLlm,
     private readonly fallback: BaseLlm | null,
-    hedgeAfterMs: number = config.gemini.hedgeAfterMs
+    hedgeAfterMs: number = config.gemini.hedgeAfterMs,
+    { pinTurns = false }: { pinTurns?: boolean } = {}
   ) {
     super({ model: primary.model })
     this.fallbackModelName = fallback?.model
     this.hedgeAfterMs = hedgeAfterMs
+    this.pinTurns = pinTurns
   }
 
   get hasFallback(): boolean {
@@ -447,17 +452,20 @@ export class RoutedLlm extends BaseLlm {
 
   async *generateContentAsync(llmRequest: LlmRequest, stream?: boolean): AsyncGenerator<LlmResponse, void> {
     const route = modelRouteForRequest.getStore()
-    const onFallback = route?.useFallback && this.fallback
-    const side: AnswerModel = onFallback ? 'fallback' : 'gemini'
-    if (onFallback || !this.fallback || !route || this.hedgeAfterMs <= 0 || !isHedgeEligible(llmRequest)) {
+    const fallback = this.fallback
+    const pinned = fallback ? (route?.pinned ?? null) : null
+    const onFallback = fallback !== null && (pinned ? pinned === 'fallback' : Boolean(route?.useFallback))
+    const side: AnswerModel = onFallback ? 'fallback' : 'main'
+    if (pinned || onFallback || !fallback || !route || this.hedgeAfterMs <= 0 || !isHedgeEligible(llmRequest)) {
       if (route) route.answeredBy = side
-      yield* (onFallback ? this.fallback : this.primary).generateContentAsync(llmRequest, stream)
+      yield* (onFallback && fallback ? fallback : this.primary).generateContentAsync(llmRequest, stream)
+      if (route && this.pinTurns) route.pinned = side
       return
     }
 
     // route.hedged is turn-wide, so a later call in a turn that already hedged cannot tell whether it hedged itself.
     let hedgeFired = false
-    const outcome = await raceForWinner(llmRequest, this.primary, this.fallback, this.hedgeAfterMs, () => {
+    const outcome = await raceForWinner(llmRequest, this.primary, fallback, this.hedgeAfterMs, () => {
       hedgeFired = true
       route.hedged = true
     })
@@ -469,11 +477,12 @@ export class RoutedLlm extends BaseLlm {
           logger.warn({ err: failure.error }, 'Hedged fallback call failed while Gemini was still running')
         }
       }
-      const geminiError = outcome.errors.find((failure) => failure.side === 'gemini')?.error
-      throw geminiError ?? new Error(`Both models failed (${errorText(outcome.errors[0]?.error)})`)
+      const mainError = outcome.errors.find((failure) => failure.side === 'main')?.error
+      throw mainError ?? new Error(`Both models failed (${errorText(outcome.errors[0]?.error)})`)
     }
 
     route.answeredBy = outcome.winner
+    if (this.pinTurns) route.pinned = outcome.winner
     if (hedgeFired) {
       logger.warn(
         { winner: outcome.winner, hedgeAfterMs: this.hedgeAfterMs },
