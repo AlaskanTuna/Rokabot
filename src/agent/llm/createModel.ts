@@ -37,7 +37,8 @@ class GeminiLlm extends Gemini {
     abortSignal?: AbortSignal
   ): AsyncGenerator<LlmResponse, void> {
     const workload = workloadOf(llmRequest)
-    const shaped = shapeRequest(llmRequest, this.resolved)
+    // ADK stamps the route's primary model on the request, which names another provider's model on a fallback side
+    const shaped = { ...shapeRequest(llmRequest, this.resolved), model: this.model }
     const reservation = await startCall({
       provider: 'gemini',
       model: this.model,

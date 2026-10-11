@@ -192,6 +192,23 @@ describe('createLlm', () => {
     expect(budget.release).toHaveBeenCalledWith(usages[0])
   })
 
+  it('sends its own model id when the route was built around another provider', async () => {
+    const seen: LlmRequest[] = []
+    vi.spyOn(Gemini.prototype, 'generateContentAsync').mockImplementation(async function* (llmRequest: LlmRequest) {
+      seen.push(llmRequest)
+      yield { content: { role: 'model', parts: [{ text: 'hi' }] } }
+    })
+    const llmRequest = { ...geminiRequest(), model: 'claude-haiku-5-5' } as LlmRequest
+
+    for await (const _response of createLlm(legacyGemini).generateContentAsync(llmRequest)) {
+      // drain
+    }
+
+    expect(seen[0]?.model).toBe('gemini-3.5-flash-lite')
+    expect(seen[0]?.contents).toBe(llmRequest.contents)
+    expect(llmRequest.model).toBe('claude-haiku-5-5')
+  })
+
   it('passes a Gemini failure through unchanged and releases the reservation with no usage', async () => {
     const failure = new Error('{"error":{"code":503,"status":"UNAVAILABLE"}}')
     // biome-ignore lint/correctness/useYield: the call fails before Gemini answers anything
