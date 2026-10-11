@@ -68,6 +68,56 @@ export const MODEL_PROFILES: readonly ModelProfile[] = [
     tokenCounter: 'estimate',
     price: { input: 0, output: 0 },
     verified: true
+  },
+  {
+    provider: 'openai',
+    model: 'gpt-6-luna',
+    input: { image: true, pdf: false, audio: false, video: false },
+    tools: { supported: true, parallel: true },
+    // Chat Completions accepts tools only at effort none; higher efforts need the Responses API (D9).
+    thinking: { efforts: ['none'], defaultEffort: 'none', replayWithinTurn: false },
+    sampling: { temperature: true, topP: true },
+    structuredOutput: 'json_schema_strict',
+    maxOutputTokens: 128_000,
+    // The documented maximum input; the 1.05M window also holds the output.
+    contextWindow: 922_000,
+    promptCaching: 'implicit',
+    tokenCounter: 'estimate',
+    price: { input: 0.1, output: 0.5, cachedInput: 0.01 },
+    verified: true
+  },
+  {
+    provider: 'modelscope',
+    model: 'Qwen/Qwen3.5-35B-A3B',
+    input: { image: true, pdf: false, audio: false, video: false },
+    tools: { supported: true, parallel: true },
+    thinking: { efforts: [], replayWithinTurn: false },
+    sampling: { temperature: true, topP: true },
+    structuredOutput: 'json_object',
+    // ModelScope does not publish its serving caps, so both limits stay well under the model's own.
+    maxOutputTokens: 32_768,
+    contextWindow: 131_072,
+    promptCaching: 'none',
+    tokenCounter: 'estimate',
+    price: { input: 0, output: 0 },
+    // D12: a candidate until scripts/probe-llm-profile.ts passes against the live endpoint.
+    verified: false
+  },
+  {
+    provider: 'modelscope',
+    model: 'deepseek-ai/DeepSeek-V4.1-Flash',
+    // The model reads images, but image input on ModelScope is unverified.
+    input: { image: false, pdf: false, audio: false, video: false },
+    tools: { supported: true, parallel: true },
+    thinking: { efforts: [], replayWithinTurn: false },
+    sampling: { temperature: true, topP: true },
+    structuredOutput: 'json_object',
+    maxOutputTokens: 32_768,
+    contextWindow: 131_072,
+    promptCaching: 'none',
+    tokenCounter: 'estimate',
+    price: { input: 0, output: 0 },
+    verified: false
   }
 ]
 

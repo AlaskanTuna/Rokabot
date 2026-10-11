@@ -349,7 +349,7 @@ describe('ModelScopeLlm response translation', () => {
     expect(result[0]?.content?.parts?.[1]).not.toHaveProperty('id')
   })
 
-  it.each(['{bad json', '[]'])('returns a malformed-call response for invalid object arguments: %s', async (args) => {
+  it.each(['{bad json', '[]'])('throws malformed_tool_args for invalid object arguments: %s', async (args) => {
     const { fetchImpl } = createFetch({
       choices: [
         {
@@ -359,15 +359,9 @@ describe('ModelScopeLlm response translation', () => {
       ]
     })
 
-    const result = await responses(adapter(fetchImpl), request([{ role: 'user', parts: [{ text: 'search' }] }]))
-
-    expect(result).toEqual([
-      {
-        errorCode: 'MALFORMED_FUNCTION_CALL',
-        errorMessage: 'ModelScope returned malformed tool arguments',
-        finishReason: FinishReason.MALFORMED_FUNCTION_CALL
-      }
-    ])
+    await expect(
+      responses(adapter(fetchImpl), request([{ role: 'user', parts: [{ text: 'search' }] }]))
+    ).rejects.toMatchObject({ kind: 'malformed_tool_args', message: 'ModelScope returned malformed tool arguments' })
   })
 
   it('returns the empty-text STOP shape when the model supplies no text or tools', async () => {

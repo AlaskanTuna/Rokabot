@@ -27,6 +27,7 @@ vi.mock('../budget.js', async (importOriginal) => ({
 import type { ResolvedModel } from '../../../config.js'
 import { ModelScopeLlm, RoutedLlm } from '../../fallbackModel.js'
 import { AnthropicLlm } from '../anthropicLlm.js'
+import { ChatCompletionsLlm } from '../chatCompletionsLlm.js'
 import { createLlm, createRokaModel } from '../createModel.js'
 import { profileFor } from '../profiles.js'
 import { type CallUsage, onUsage } from '../usage.js'
@@ -61,6 +62,22 @@ const haiku: ResolvedModel = {
   effort: 'low'
 }
 
+const luna: ResolvedModel = {
+  key: 'luna',
+  provider: 'openai',
+  model: 'gpt-6-luna',
+  profile: profileFor('openai', 'gpt-6-luna')!,
+  apiKey: 'openai-key',
+  timeoutMs: 20_000,
+  maxOutputTokens: 500,
+  effort: 'none'
+}
+const qwen122: ResolvedModel = {
+  ...legacyFallback,
+  key: 'qwen122',
+  timeoutMs: 12_000
+}
+
 function geminiRequest(): LlmRequest {
   return {
     model: 'gemini-3.5-flash-lite',
@@ -82,6 +99,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
 })
 
 describe('createRokaModel', () => {
@@ -132,10 +150,63 @@ describe('createLlm', () => {
     expect((createLlm(legacyGemini) as unknown as { apiKey?: string }).apiKey).toBe('vitest-gemini-token')
   })
 
-  it('has no adapter for openai until the Chat Completions phase', () => {
-    expect(() => createLlm({ ...haiku, provider: 'openai', model: 'gpt-6-luna' })).toThrow(
-      'No adapter serves openai yet'
-    )
+  it('builds the Chat Completions adapter for an openai model, not the legacy ModelScope one', () => {
+    const llm = createLlm(luna)
+
+    expect(llm).toBeInstanceOf(ChatCompletionsLlm)
+    expect(llm).not.toBeInstanceOf(ModelScopeLlm)
+    expect(llm).toMatchObject({
+      provider: 'openai',
+      model: 'gpt-6-luna',
+      apiKey: 'openai-key',
+      baseUrl: 'https://api.openai.com/v1',
+      timeoutMs: 20_000,
+      maxOutputTokens: 500,
+      effort: 'none'
+    })
+  })
+
+  it('builds the Chat Completions adapter for a block modelscope entry, keeping ModelScopeLlm for the legacy key only', () => {
+    const llm = createLlm(qwen122)
+
+    expect(llm).toBeInstanceOf(ChatCompletionsLlm)
+    expect(llm).not.toBeInstanceOf(ModelScopeLlm)
+    expect(llm).toMatchObject({
+      provider: 'modelscope',
+      model: 'Qwen/Qwen3.5-122B-A10B',
+      apiKey: 'modelscope-key',
+      baseUrl: 'https://api-inference.modelscope.ai/v1',
+      timeoutMs: 12_000
+    })
+    expect(createLlm(legacyFallback)).toBeInstanceOf(ModelScopeLlm)
+  })
+
+  it('keeps an openai entry named legacy-fallback on OpenAI, not the legacy ModelScope adapter', () => {
+    const llm = createLlm({ ...luna, key: 'legacy-fallback' })
+
+    expect(llm).toBeInstanceOf(ChatCompletionsLlm)
+    expect(llm).not.toBeInstanceOf(ModelScopeLlm)
+    expect(llm).toMatchObject({ provider: 'openai', baseUrl: 'https://api.openai.com/v1', apiKey: 'openai-key' })
+  })
+
+  it.each<[string, ResolvedModel, typeof ChatCompletionsLlm]>([
+    ['the legacy fallback', { ...legacyFallback, baseUrl: 'https://ms.example/v1' }, ModelScopeLlm],
+    ['a block modelscope entry', { ...qwen122, baseUrl: 'https://ms.example/v1' }, ChatCompletionsLlm],
+    ['an openai entry', { ...luna, baseUrl: 'https://oa.example/v1' }, ChatCompletionsLlm]
+  ])('posts %s to its configured base URL', async (_entry, resolved, adapter) => {
+    const posted: unknown[] = []
+    vi.stubGlobal('fetch', async (input: unknown) => {
+      posted.push(input)
+      return Response.json({ choices: [{ message: { content: 'ok' } }] })
+    })
+    const llm = createLlm(resolved)
+
+    for await (const _response of llm.generateContentAsync(geminiRequest())) {
+      // drain
+    }
+
+    expect(llm.constructor).toBe(adapter)
+    expect(posted).toEqual([`${resolved.baseUrl}/chat/completions`])
   })
 
   it('sends Gemini requests unchanged and records Gemini usage', async () => {

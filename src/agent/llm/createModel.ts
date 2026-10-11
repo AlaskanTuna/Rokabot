@@ -2,9 +2,10 @@ import { Gemini } from '@google/adk'
 import type { BaseLlm, LlmRequest, LlmResponse } from '@google/adk'
 import { config } from '../../config.js'
 import type { ResolvedModel } from '../../config.js'
-import { ModelScopeLlm, RoutedLlm } from '../fallbackModel.js'
+import { RoutedLlm } from '../fallbackModel.js'
 import { AnthropicLlm } from './anthropicLlm.js'
 import { requestTokenEstimate, startCall } from './budget.js'
+import { ChatCompletionsLlm, ModelScopeLlm } from './chatCompletionsLlm.js'
 import { shapeRequest } from './requestShape.js'
 import { type CallUsage, type Workload, recordUsage, workloadOf } from './usage.js'
 
@@ -69,15 +70,24 @@ export function createLlm(resolved: ResolvedModel): BaseLlm {
       return new GeminiLlm(resolved)
     case 'anthropic':
       return new AnthropicLlm({ resolved })
-    case 'modelscope':
-      return new ModelScopeLlm({
+    case 'openai':
+    case 'modelscope': {
+      const options = {
+        provider: resolved.provider,
         model: resolved.model,
         apiKey: resolved.apiKey,
-        baseUrl: resolved.baseUrl ?? config.fallback.baseUrl,
-        timeoutMs: resolved.timeoutMs
-      })
-    case 'openai':
-      throw new Error('No adapter serves openai yet; the Chat Completions adapter lands in a later phase')
+        baseUrl: resolved.baseUrl,
+        timeoutMs: resolved.timeoutMs,
+        profile: resolved.profile,
+        effort: resolved.effort,
+        maxOutputTokens: resolved.maxOutputTokens
+      }
+      // The synthesised legacy fallback keeps today's request and reply translation. The provider check stops an
+      // llm.models entry that happens to be named legacy-fallback from posting another provider's key to ModelScope.
+      return resolved.key === 'legacy-fallback' && resolved.provider === 'modelscope'
+        ? new ModelScopeLlm(options)
+        : new ChatCompletionsLlm(options)
+    }
   }
 }
 
