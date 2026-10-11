@@ -610,7 +610,8 @@ built by `recallForTurn` (`src/agent/memory/recall.ts`).
 - **Fact Embeddings:** each active fact is embedded as a subject-neutral sentence (`factSentences.ts`, e.g. "This
   person's hobby: chess.", or "This person's past hobby: chess." for a past fact) into `memory_claim.embedding`, with
   the sentence in `embedding_text`. New facts are embedded after extraction jobs and `remember_user` writes, and the
-  daily maintenance pass embeds any fact whose embedding is missing or whose sentence changed.
+  maintenance pass (at startup, then every 24 hours) embeds any fact whose embedding is missing or whose sentence
+  changed.
 - **Scoring:** cosine similarity to the turn's query embedding must strictly exceed the kind's minimum
   (`memory.factMinSimilarity`, `memory.serverFactMinSimilarity`, `memory.episodeMinSimilarity`,
   `memory.mediaMinSimilarity`). Boosts of 0.05 each apply for the speaker, a member named in the message and pinned
@@ -687,8 +688,8 @@ block uses `gemini` when `GEMINI_API_KEY` is set, with `memory.embeddingModel` a
 (1500 ms), and `local` otherwise. Vectors are little-endian float32 BLOBs. Every row also stores `embedding_model_id`,
 `embedding_dim` and `embedding_fingerprint` (`<provider>:<model>:<dim>:<recipe>`). A store decodes a vector only when
 its fingerprint and dimension match the configured space, its byte length is `dim × 4` and its norm is nonzero. Vectors
-stored before provenance existed are `unknown`, and only the Gemini space reads them. A failed embedding leaves a null
-vector for maintenance to repair.
+stored before provenance existed are `unknown`, and only the `gemini-embedding-2` space reads them. A failed embedding
+leaves a null vector for maintenance to repair.
 
 Message handlers start the query embedding inside `TurnEntryWork` at the same point as Jev entry work. Only guild
 message turns request it; `/ask` and DMs do not. Recall reads episodes with `WHERE guild_id = ?` and computes cosine
@@ -709,7 +710,7 @@ the last 30 days, and the vault export writes guild-local `Episodes.md` files wi
 ### Media Memory
 
 What Roka watches in a server is remembered as text, never as media. `media_digest` holds one digest per
-`(guild_id, content_key)`: kind, label, summary, the digest JSON and a nullable 768-float embedding.
+`(guild_id, content_key)`: kind, label, summary, the digest JSON and a nullable float32 embedding with its provenance.
 `media_occurrence` records each time it was shared, with channel, message, `shared_by_user_id`, an optional
 `source_author_id` (the replied-to poster; null for forwards and links) and origin (`upload`, `reply`, `forward`,
 `link`). Content keys are `youtube:<id>` (`youtube:<id>@<startSec>` for a watch around a timestamp),

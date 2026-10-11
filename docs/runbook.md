@@ -288,10 +288,10 @@ Memory recall turns episode summaries, watched-media summaries, fact sentences a
 `provider` uses `local`. The Pi stays on `gemini`.
 
 Every stored vector records `embedding_model_id`, `embedding_dim` and `embedding_fingerprint`. Recall reads only
-vectors in the configured provider's space. Vectors stored before #296 are marked `unknown`, and only the Gemini
-provider reads them. After a switch, the maintenance pass (at startup, then every 24 hours) re-embeds the other
-vectors at about one document a second, up to `embeddings.backfillBatchSize` per pass. Keyword recall keeps working
-meanwhile.
+vectors in the configured provider's space. Vectors stored before #296 are marked `unknown`, and only the
+`gemini-embedding-2` space reads them. After a switch, the maintenance pass (at startup, then every 24 hours)
+re-embeds the other vectors at about one document a second, up to `embeddings.backfillBatchSize` per pass. Keyword
+recall keeps working meanwhile.
 
 ```bash
 # Vectors per embedding space; NULL means no vector yet
@@ -307,14 +307,19 @@ sqlite3 ~/rokabot/data/rokabot.db "SELECT 'episode', embedding_fingerprint, COUN
 ### Switching
 
 1. Add `COMPOSE_PROFILES=local-embeddings` and `EMBEDDINGS_PROVIDER=local` to `~/rokabot/.env`.
-2. Run `cd ~/rokabot && docker compose up -d --build`. This restarts the bot, so it needs the owner's approval.
-3. Watch the backfill with the query above. Once the counts settle, the local fingerprint should hold every row.
+2. Before restarting the bot, confirm the sidecar is healthy with the health command in step 3 of [Before Switching the Pi to Local](#before-switching-the-pi-to-local). If it is not running, start it alone first with `docker compose --profile local-embeddings up -d --build embeddings`.
+3. Run `cd ~/rokabot && docker compose up -d --build`. This restarts the bot, so it needs the owner's approval.
+4. Watch the backfill with the query above. Once the counts settle, the local fingerprint should hold every row.
+5. If the counts stop moving for more than a few minutes while other fingerprints still hold rows, the pass may have ended after five connection failures in a row; otherwise it resumes only at the next 24-hour pass. This happens when the bot starts before the sidecar listens, or the sidecar restarts mid-pass. Confirm the sidecar is healthy, then restart the bot with `cd ~/rokabot && docker compose restart roka`. This needs the owner's approval.
 
 ### Rolling Back
 
-Remove `EMBEDDINGS_PROVIDER` and the profile from `.env`, then restart. Gemini cannot read local vectors, so the pass
-re-embeds them with Gemini. Gemini's free tier allows about 1,000 embedding requests a day, so first set
-`embeddings.backfillBatchSize: 900`; the re-embed then spreads over several days.
+Remove `EMBEDDINGS_PROVIDER` and the profile from `.env`, stop the running sidecar with
+`docker compose --profile local-embeddings stop embeddings`, then restart. Gemini cannot read local vectors, so the
+pass re-embeds them with Gemini. Gemini's free tier allows about 1,000 embedding requests a day, so first set
+`embeddings.backfillBatchSize: 900`. That is a `config.yml` change, so it goes through a PR and a deploy. The re-embed
+then spreads over several days. Every bot restart starts another maintenance pass, so a same-day restart can push past
+about 1,000 Gemini requests in a day; avoid restarts until the re-embed finishes.
 
 ## Jev Judgments and Passive Memory
 
@@ -728,12 +733,12 @@ prune deletes them. A passive sighting cannot restore a forgotten value; `rememb
 
 ### Episodic Memory
 
-Episode summaries and 768-dimensional embeddings are stored by guild in `memory_episode`. With
+Episode summaries and their embeddings are stored by guild in `memory_episode`. With
 `embeddings.provider: gemini` (the Pi's setting), embedding requests use `GEMINI_API_KEY` and `gemini-embedding-2`; they
 consume a separate project quota from text generation. For planning only, the spec's free-tier estimate is 100 RPM, 30 K
 TPM, and 1 K RPD; check AI Studio for your project's current limits. Embedding requests do not debit the bot's
-generation rate limiter. The daily maintenance pass deletes episodes past `memory.episodeRetentionDays` and retries rows
-with missing or unreadable embeddings.
+generation rate limiter. The maintenance pass (at startup, then every 24 hours) deletes episodes past
+`memory.episodeRetentionDays` and retries rows with missing or unreadable embeddings.
 
 ```bash
 # Episode counts by guild
@@ -765,7 +770,9 @@ behaves like `strict` there.
   unprompted is still gated by the privacy level.
 
 ```bash
-# Facts with embeddings (unified recall needs them; the daily maintenance pass fills the gaps)
+# Active facts and how many store a vector in any embedding space (unified recall needs them; the maintenance pass
+# fills the gaps). This is not the count readable in the configured space: after a switch, use the per-fingerprint
+# query in Local Embeddings
 sqlite3 ~/rokabot/data/rokabot.db "SELECT COUNT(*) AS active, SUM(embedding IS NOT NULL) AS embedded FROM memory_claim WHERE status = 'active';"
 
 # Shadow comparison over the last 7 days: legacy fact retrieval vs the unified recall
