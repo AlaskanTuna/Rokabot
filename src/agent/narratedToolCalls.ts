@@ -15,7 +15,8 @@ export function stripNarratedToolCalls(text: string, toolNames: readonly string[
     // Only a tool_code fence, or a fence that holds nothing but one call: a code example she wrote keeps its lines.
     new RegExp(`\`\`\`tool_code\\n[^\`]*?\\b(?:${names})\\s*\\([^\`]*?\`\`\`[ \\t]*\\n?`, 'g'),
     new RegExp(
-      `\`\`\`[a-z_]*\\n[ \\t]*(?:print\\(\\s*)?(?:default_api\\.)?(?:${names})\\s*\\([^\\n\`]*\\)[ \\t]*\\n?\`\`\`[ \\t]*\\n?`,
+      `\`\`\`[a-z_]*\\n[ \\t]*(?:print\\(\\s*)?(?:default_api\\.)?(?:${names})` +
+        `\\s*\\([^\\n\`]*\\)[ \\t]*\\n?\`\`\`[ \\t]*\\n?`,
       'g'
     ),
     /<tool_call>[\s\S]*?<\/tool_call>[ \t]*\n?/g

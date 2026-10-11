@@ -32,6 +32,12 @@ describe('stripNarratedToolCalls', () => {
     expect(stripNarratedToolCalls(leaked, TOOL_NAMES).text).toBe('Here you go~')
   })
 
+  it('removes a multi-line tool_code fence once', () => {
+    const leaked = '```tool_code\nquery = "Senren Banka"\nprint(default_api.search_web(query=query))\n```\nHere you go~'
+
+    expect(stripNarratedToolCalls(leaked, TOOL_NAMES)).toEqual({ text: 'Here you go~', stripped: 1 })
+  })
+
   it('removes a fence of any language whose whole body is one bare tool call', () => {
     for (const leaked of [
       '```python\nprint(search_web(query="Senren Banka"))\n```\nHere you go~',
