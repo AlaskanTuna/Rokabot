@@ -37,6 +37,7 @@
     "replay:jev": "tsx scripts/replay-jev.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.133.0",
     "@google/adk": "^2.2.1",
     "@google/genai": "^2.28.0",
     "@napi-rs/canvas": "^1.0.2",
