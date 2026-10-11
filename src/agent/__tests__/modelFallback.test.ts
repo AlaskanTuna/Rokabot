@@ -57,7 +57,8 @@ vi.mock('../../utils/rateLimiter.js', () => ({
 vi.mock('../../utils/timezone.js', () => ({ getLocalHour: () => 12 }))
 
 import { RoutedLlm, modelRouteForRequest } from '../fallbackModel.js'
-import { __resetModelFallbackForTest, runTurnWithReliability } from '../reliability.js'
+import type { FailureKind } from '../geminiReliability.js'
+import { STICKY_KINDS, SWITCH_KINDS, __resetModelFallbackForTest, runTurnWithReliability } from '../reliability.js'
 import type { TurnOutcome } from '../reliability.js'
 import { __resetTestRunTurnFactory, __setTestRunTurnFactory, generateResponse, rokaAgent } from '../roka.js'
 import { destroySession } from '../session.js'
@@ -288,6 +289,72 @@ describe('retry model switching', () => {
 
     expect(result).toMatchObject({ success: false, attempts: 1 })
     expect(runTurn).toHaveBeenCalledOnce()
+  })
+})
+
+describe('provider failure switching', () => {
+  const providerOutcome = (kind: FailureKind) => ({
+    errorCode: 'ProviderError',
+    errorMessage: `Anthropic ${kind}`,
+    customMetadata: { reliabilityKind: kind },
+    hasText: false,
+    hasFunctionCall: false
+  })
+
+  it.each(['billing_exhausted', 'refusal', 'malformed_tool_args', 'context_length'] as const)(
+    'switches once on %s without sleeping',
+    async (kind) => {
+      const runTurn = vi
+        .fn()
+        .mockResolvedValueOnce(providerOutcome(kind))
+        .mockResolvedValueOnce({ text: 'Recovered~', hasText: true, hasFunctionCall: false })
+      const switchModel = vi.fn(() => 40)
+      const testOptions = reliabilityOptions({ runTurn, switchModel, maxRetries: 0 })
+
+      const result = await runTurnWithReliability(testOptions)
+
+      expect(result).toMatchObject({ success: true, text: 'Recovered~', attempts: 2 })
+      expect(switchModel).toHaveBeenCalledWith(kind)
+      expect(testOptions.sleep).not.toHaveBeenCalled()
+    }
+  )
+
+  it('opens the sticky window only for outage-shaped kinds', () => {
+    expect([...SWITCH_KINDS].sort()).toEqual([
+      'billing_exhausted',
+      'context_length',
+      'malformed_tool_args',
+      'network',
+      'quota_exhausted',
+      'refusal',
+      'transient_http'
+    ])
+    expect([...STICKY_KINDS].sort()).toEqual(['network', 'quota_exhausted', 'transient_http'])
+  })
+
+  it.each([
+    ['refusal', safetyDeflection],
+    ['billing_exhausted', genericFallback],
+    ['context_length', terminalDeflection]
+  ] as const)('answers %s in character without a retry when there is no fallback', async (kind, text) => {
+    const runTurn = vi.fn().mockResolvedValue(providerOutcome(kind))
+    const testOptions = reliabilityOptions({ runTurn })
+
+    const result = await runTurnWithReliability(testOptions)
+
+    expect(result).toMatchObject({ success: false, kind, text, attempts: 1 })
+    expect(testOptions.tryConsumeRetry).not.toHaveBeenCalled()
+  })
+
+  it('retries malformed tool arguments on the same model when there is no fallback', async () => {
+    const runTurn = vi
+      .fn()
+      .mockResolvedValueOnce(providerOutcome('malformed_tool_args'))
+      .mockResolvedValueOnce({ text: 'Second try~', hasText: true, hasFunctionCall: false })
+
+    const result = await runTurnWithReliability(reliabilityOptions({ runTurn }))
+
+    expect(result).toMatchObject({ success: true, text: 'Second try~', attempts: 2 })
   })
 })
 
