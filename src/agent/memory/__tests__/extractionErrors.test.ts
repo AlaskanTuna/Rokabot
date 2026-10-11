@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { ProviderError } from '../../llm/providerError.js'
 import { JevUnavailableError, classifyExtractionError } from '../extractionErrors.js'
 
 describe('classifyExtractionError', () => {
@@ -47,6 +48,26 @@ describe('classifyExtractionError', () => {
 
   it('classifies other errors as permanent', () => {
     expect(classifyExtractionError(new Error('schema mismatch'))).toBe('permanent')
+  })
+
+  it.each(['transient_http', 'quota_exhausted'] as const)(
+    'classifies a %s provider failure as transient whatever its status',
+    (kind) => {
+      expect(
+        classifyExtractionError(new ProviderError({ provider: 'anthropic', kind, message: 'busy', status: 529 }))
+      ).toBe('transient')
+    }
+  )
+
+  it.each(['billing_exhausted', 'refusal'] as const)('classifies a %s provider failure as permanent', (kind) => {
+    expect(
+      classifyExtractionError(new ProviderError({ provider: 'anthropic', kind, message: 'no', status: 429 }))
+    ).toBe('permanent')
+  })
+
+  it('still classifies a structured-output failure as permanent', async () => {
+    const { StructuredOutputError } = await import('../../llm/generateObject.js')
+    expect(classifyExtractionError(new StructuredOutputError('invalid_object', 'anthropic'))).toBe('permanent')
   })
 })
 

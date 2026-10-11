@@ -1,3 +1,5 @@
+import { ProviderError } from '../llm/providerError.js'
+
 export type ExtractionErrorClassification = 'transient' | 'permanent' | 'unjudged'
 
 /** Jev could not judge the episode at admission, so the queue gives it one delayed retry before dropping it. */
@@ -43,6 +45,13 @@ export function classifyExtractionError(
     seen.add(current)
     causes.push(current)
     current = typeof current === 'object' ? (current as { cause?: unknown }).cause : undefined
+  }
+
+  for (const cause of causes) {
+    if (!(cause instanceof ProviderError)) continue
+    if (cause.kind === 'transient_http' || cause.kind === 'quota_exhausted') return 'transient'
+    // A spent balance or a refusal does not change on a retry, whatever status carried it.
+    if (cause.kind === 'billing_exhausted' || cause.kind === 'refusal') return 'permanent'
   }
 
   for (const cause of causes) {
