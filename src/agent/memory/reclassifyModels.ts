@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { config } from '../../config.js'
 import { logger } from '../../utils/logger.js'
 import { getJevClient } from '../jev/client.js'
+import { judgeWithModel } from '../jev/modelJudge.js'
 import { generateObject } from '../llm/generateObject.js'
 import { PREDICATES, type PredicateId, isMoveTarget } from './predicates.js'
 
@@ -87,16 +88,21 @@ export async function proposePredicates(batch: readonly FactToFile[]): Promise<P
 export async function jevConfirm(moves: readonly FactToFile[]): Promise<Record<number, number>> {
   try {
     const client = getJevClient()
-    if (!client || moves.length === 0) return {}
+    if ((!client && config.memory.judge !== 'model') || moves.length === 0) return {}
+
+    const prompts: Record<string, string> = {}
+    for (const { id, value, predicate } of moves) {
+      prompts[`fits_${id}`] = `Is "${value}" this person's ${predicate.replaceAll('_', ' ')}?`
+    }
+    const state = { facts: moves.map(({ id, predicate, value }) => ({ id, predicate, value })) }
+    if (!client) {
+      const judgment = await judgeWithModel({ workload: 'verification', state, questions: prompts })
+      return judgment ? Object.fromEntries(moves.map(({ id }) => [id, judgment.answers[`fits_${id}`]])) : {}
+    }
 
     const questions: Questions = {}
-    for (const { id, value, predicate } of moves) {
-      questions[`fits_${id}`] = noul(`Is "${value}" this person's ${predicate.replaceAll('_', ' ')}?`)
-    }
-    const result = await client.systemOne(
-      { state: { facts: moves.map(({ id, predicate, value }) => ({ id, predicate, value })) }, questions },
-      { timeout: config.jev.memoryTimeoutMs }
-    )
+    for (const [key, text] of Object.entries(prompts)) questions[key] = noul(text)
+    const result = await client.systemOne({ state, questions }, { timeout: config.jev.memoryTimeoutMs })
 
     const probabilities: Record<number, number> = {}
     for (const { id } of moves) {

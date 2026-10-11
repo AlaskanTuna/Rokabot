@@ -38,7 +38,8 @@ export async function admitEpisode(input: {
     applied: admitted,
     latencyMs: judgment.latencyMs,
     inputTokens: judgment.inputTokens,
-    jobId: input.jobId
+    jobId: input.jobId,
+    judge: judgment.judge
   })
   return {
     admitted,

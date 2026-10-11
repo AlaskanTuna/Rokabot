@@ -4,7 +4,13 @@ const mocks = vi.hoisted(() => ({
   clientAvailable: true,
   generateObject: vi.fn(),
   systemOne: vi.fn(),
-  warn: vi.fn()
+  warn: vi.fn(),
+  judgeWithModel: vi.fn(),
+  config: {
+    gemini: { apiKey: 'test-key', timeout: 15_000, extractionModel: 'gemini-extraction-test', safetyThreshold: 'OFF' },
+    jev: { memoryTimeoutMs: 5_000 },
+    memory: { judge: 'none' as string }
+  }
 }))
 
 vi.mock('../../llm/generateObject.js', () => ({ generateObject: mocks.generateObject }))
@@ -13,12 +19,8 @@ vi.mock('../../jev/client.js', () => ({
   getJevClient: vi.fn(() => (mocks.clientAvailable ? { systemOne: mocks.systemOne } : null))
 }))
 vi.mock('../../../utils/logger.js', () => ({ logger: { warn: mocks.warn } }))
-vi.mock('../../../config.js', () => ({
-  config: {
-    gemini: { apiKey: 'test-key', timeout: 15_000, extractionModel: 'gemini-extraction-test', safetyThreshold: 'OFF' },
-    jev: { memoryTimeoutMs: 5_000 }
-  }
-}))
+vi.mock('../../../config.js', () => ({ config: mocks.config }))
+vi.mock('../../jev/modelJudge.js', () => ({ judgeWithModel: mocks.judgeWithModel }))
 
 import { noul } from '@typesafe-ai/sdk'
 import { z } from 'zod'
@@ -32,6 +34,8 @@ const batch = [
 
 beforeEach(() => {
   mocks.clientAvailable = true
+  mocks.config.memory.judge = 'none'
+  mocks.judgeWithModel.mockReset()
   mocks.generateObject.mockReset()
   mocks.systemOne.mockReset()
   mocks.warn.mockReset()
@@ -176,5 +180,26 @@ describe('jevConfirm', () => {
     await expect(jevConfirm(moves)).resolves.toEqual({})
     expect(mocks.warn).toHaveBeenCalledOnce()
     expect(JSON.stringify(mocks.warn.mock.calls)).not.toContain('draws')
+  })
+
+  it('confirms moves with the main model when there is no Jev key', async () => {
+    mocks.clientAvailable = false
+    mocks.config.memory.judge = 'model'
+    mocks.judgeWithModel.mockResolvedValueOnce({
+      answers: { fits_7: 0.91, fits_9: 0.12 },
+      latencyMs: 10,
+      inputTokens: 60,
+      judge: 'anthropic:claude-haiku-5-5'
+    })
+
+    await expect(jevConfirm(moves)).resolves.toEqual({ 7: 0.91, 9: 0.12 })
+    expect(mocks.judgeWithModel).toHaveBeenCalledWith({
+      workload: 'verification',
+      state: { facts: moves.map(({ id, predicate, value }) => ({ id, predicate, value })) },
+      questions: {
+        fits_7: 'Is "draws on weekends" this person\'s hobby?',
+        fits_9: 'Is "plays piano" this person\'s general occupation?'
+      }
+    })
   })
 })

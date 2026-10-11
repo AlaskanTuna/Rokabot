@@ -582,7 +582,8 @@ export async function verifyAndApplyOperations(input: {
           applied: keyApplied(key, result, appliedKeys),
           latencyMs: verification.latencyMs,
           inputTokens: verification.inputTokens,
-          jobId: input.jobId
+          jobId: input.jobId,
+          judge: verification.judge
         })
       }
     }

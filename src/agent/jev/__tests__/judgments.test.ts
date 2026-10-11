@@ -14,6 +14,7 @@ vi.mock('../client.js', () => ({
 vi.mock('../../../config.js', () => ({ config: { jev: { timeoutMs: 1200, memoryTimeoutMs: 5000 } } }))
 vi.mock('../../../utils/logger.js', () => ({ logger: { warn: mocks.warn } }))
 vi.mock('../../../utils/timezone.js', () => ({ getLocalHour: mocks.localHour }))
+vi.mock('../modelJudge.js', () => ({ judgeWithModel: vi.fn() }))
 vi.mock('@typesafe-ai/sdk', () => ({
   choice: vi.fn((instructions, criteria) => ({ instructions, criteria })),
   noul: vi.fn((instructions) => ({ instructions }))

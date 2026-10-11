@@ -3,18 +3,27 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   clientAvailable: true,
   systemOne: vi.fn(),
-  warn: vi.fn()
+  warn: vi.fn(),
+  judgeWithModel: vi.fn(),
+  config: { jev: { memoryTimeoutMs: 5_000 }, memory: { judge: 'none' as string } }
 }))
 
 vi.mock('../client.js', () => ({
   getJevClient: vi.fn(() => (mocks.clientAvailable ? { systemOne: mocks.systemOne } : null))
 }))
-vi.mock('../../../config.js', () => ({ config: { jev: { memoryTimeoutMs: 5_000 } } }))
+vi.mock('../../../config.js', () => ({ config: mocks.config }))
 vi.mock('../../../utils/logger.js', () => ({ logger: { warn: mocks.warn } }))
 vi.mock('@typesafe-ai/sdk', () => ({ noul: vi.fn((instructions) => ({ instructions })) }))
+vi.mock('../modelJudge.js', () => ({ judgeWithModel: mocks.judgeWithModel }))
 
 import { noul } from '@typesafe-ai/sdk'
+import type { ExtractionOp } from '../../memory/extractionSchema.js'
 import { judgeEpisodeAdmission, judgeEpisodeOperations, judgeHiddenRetractions } from '../judgments.js'
+
+beforeEach(() => {
+  mocks.config.memory.judge = 'none'
+  mocks.judgeWithModel.mockReset()
+})
 
 describe('judgeEpisodeAdmission', () => {
   beforeEach(() => {
@@ -495,5 +504,89 @@ describe('judgeHiddenRetractions', () => {
       'Jev judgment failed'
     )
     expect(JSON.stringify(mocks.warn.mock.calls)).not.toContain('chess')
+  })
+})
+
+describe('main-model memory judgments without a Jev key', () => {
+  const judge = 'anthropic:claude-haiku-5-5'
+
+  beforeEach(() => {
+    mocks.clientAvailable = false
+    mocks.config.memory.judge = 'model'
+    mocks.systemOne.mockReset()
+  })
+
+  it('judges admission with the same lasting-fact question', async () => {
+    mocks.judgeWithModel.mockResolvedValueOnce({
+      answers: { lasting_fact: 0.81 },
+      latencyMs: 12,
+      inputTokens: 90,
+      judge
+    })
+
+    await expect(judgeEpisodeAdmission({ lines: ['[u-1|Mio]: I like tea'] })).resolves.toEqual({
+      noul: 0.81,
+      confidence: null,
+      latencyMs: 12,
+      inputTokens: 90,
+      judge
+    })
+    expect(mocks.judgeWithModel).toHaveBeenCalledWith({
+      workload: 'admission',
+      state: { messages: ['[u-1|Mio]: I like tea'] },
+      questions: { lasting_fact: expect.stringContaining('lasting fact about a member') }
+    })
+    expect(mocks.systemOne).not.toHaveBeenCalled()
+  })
+
+  it('verifies operations with the question keys Jev would get', async () => {
+    const op: ExtractionOp = {
+      op: 'add',
+      subject: { kind: 'user', userId: 'u-1' },
+      predicate: 'likes',
+      value: 'tea',
+      tense: 'current'
+    }
+    mocks.judgeWithModel.mockResolvedValueOnce({
+      answers: { durable_0: 0.9, attributed_0: 0.8, current_0: 0.9, past_0: 0.1 },
+      latencyMs: 20,
+      inputTokens: 150,
+      judge
+    })
+
+    await expect(
+      judgeEpisodeOperations({ lines: ['[u-1|Mio]: I like tea'], ops: [op], existing: [] })
+    ).resolves.toEqual({
+      answers: {
+        durable_0: { noul: 0.9, confidence: null },
+        attributed_0: { noul: 0.8, confidence: null },
+        current_0: { noul: 0.9, confidence: null },
+        past_0: { noul: 0.1, confidence: null }
+      },
+      latencyMs: 20,
+      inputTokens: 150,
+      judge
+    })
+    const request = mocks.judgeWithModel.mock.calls[0][0]
+    expect(request.workload).toBe('verification')
+    expect(Object.keys(request.questions)).toEqual(['durable_0', 'attributed_0', 'current_0', 'past_0'])
+  })
+
+  it('judges hidden retractions per candidate', async () => {
+    mocks.judgeWithModel.mockResolvedValueOnce({ answers: { retracts_5: 0.88 }, latencyMs: 9, inputTokens: 70, judge })
+
+    await expect(
+      judgeHiddenRetractions({
+        lines: ['[u-1|Mio]: I quit chess'],
+        statement: 'Mio plays chess.',
+        candidates: [{ id: 5, sentence: 'Mio plays chess.' }]
+      })
+    ).resolves.toEqual({ 5: 0.88 })
+  })
+
+  it('fails closed when the model judgment fails', async () => {
+    mocks.judgeWithModel.mockResolvedValueOnce(null)
+
+    await expect(judgeEpisodeAdmission({ lines: ['[u-1|Mio]: I like tea'] })).resolves.toBeNull()
   })
 })
