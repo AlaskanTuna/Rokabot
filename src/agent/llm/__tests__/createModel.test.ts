@@ -99,6 +99,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
 })
 
 describe('createRokaModel', () => {
@@ -182,6 +183,26 @@ describe('createLlm', () => {
     expect(llm).toBeInstanceOf(ChatCompletionsLlm)
     expect(llm).not.toBeInstanceOf(ModelScopeLlm)
     expect(llm).toMatchObject({ provider: 'openai', baseUrl: 'https://api.openai.com/v1', apiKey: 'openai-key' })
+  })
+
+  it.each<[string, ResolvedModel, typeof ChatCompletionsLlm]>([
+    ['the legacy fallback', { ...legacyFallback, baseUrl: 'https://ms.example/v1' }, ModelScopeLlm],
+    ['a block modelscope entry', { ...qwen122, baseUrl: 'https://ms.example/v1' }, ChatCompletionsLlm],
+    ['an openai entry', { ...luna, baseUrl: 'https://oa.example/v1' }, ChatCompletionsLlm]
+  ])('posts %s to its configured base URL', async (_entry, resolved, adapter) => {
+    const posted: unknown[] = []
+    vi.stubGlobal('fetch', async (input: unknown) => {
+      posted.push(input)
+      return Response.json({ choices: [{ message: { content: 'ok' } }] })
+    })
+    const llm = createLlm(resolved)
+
+    for await (const _response of llm.generateContentAsync(geminiRequest())) {
+      // drain
+    }
+
+    expect(llm.constructor).toBe(adapter)
+    expect(posted).toEqual([`${resolved.baseUrl}/chat/completions`])
   })
 
   it('sends Gemini requests unchanged and records Gemini usage', async () => {
