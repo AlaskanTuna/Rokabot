@@ -118,7 +118,7 @@ Audio and video are watched before Roka replies rather than handed to her raw. `
 | `memory_episode_cursor`                                   | Per-channel episode checkpoint: tenant, last message ID, open time, and delta-message count.                                                                                                         |
 | `extraction_queue`                                        | Closed episode payloads, with `pending`, `processing`, or retained `failed` status and attempt count.                                                                                                |
 | `memory_events`                                           | Value-free retrieval, claim-change and recall telemetry, one text-free `extraction_run` event per extraction attempt, and one `claim_reclassified` audit event per automatic move.                   |
-| `jev_events`                                              | TypeSafe judgment kind, question key, answer, probability/confidence, applied flag, latency, input tokens, optional baseline, optional job ID (admission and verification judgments), and timestamp. |
+| `jev_events`                                              | Judgment kind, question key, answer, probability/confidence, applied flag, latency, input tokens, optional baseline and job ID, judge (`provider:model` when the main model judged) and a timestamp. |
 | `extraction_samples`                                      | Private, text-bearing sample of rejected conversations for offline labelling: capped at 200 rows, expires after `memory.extractionSampleDays`, never read at runtime.                                |
 | `reminders`                                               | Scheduled user reminders and delivery state.                                                                                                                                                         |
 | `game_scores`, `gacha_collection`, `gacha_daily`, `buddy` | Game scores and gacha/companion data.                                                                                                                                                                |
@@ -273,12 +273,13 @@ Privacy and Unified Recall).
 | `extraction_queue`      | `id`, `guild_id`, `channel_id`, `payload`, `status`, `attempts`, `enqueued_at`                                                                                                                                                                                                                                                         | Closed episode payloads in `pending`, `processing`, or retained `failed` state.                                                                                     |
 | `memory_episode`        | `id`, `guild_id`, `channel_id`, `started_at`, `ended_at`, `summary`, `embedding`, `embedding_model_id`, `embedding_dim`, `embedding_fingerprint`, `created_at`                                                                                                                                                                         | One completed episode summary per queue ID; nullable float32 embedding with its provenance.                                                                         |
 | `memory_events`         | `id`, `kind`, `guild_id`, `channel_id`, `subject_user_id`, `duration_ms`, `n_candidates`, `n_selected`, `n_changed`, `tokens_est`, `op`, `created_at`, `detail`                                                                                                                                                                        | Value-free retrieval, claim-change, extraction-run and `claim_reclassified` audit telemetry; nullable `detail` holds per-kind JSON.                                 |
-| `jev_events`            | `kind`, `guild_id`, `channel_id`, `question`, `answer`, `probability`, `confidence`, `applied`, `latency_ms`, `input_tokens`, `baseline`, `job_id`, `created_at`                                                                                                                                                                       | Value-free Jev judgment telemetry. The kind is `turn`, `admission`, or `verification`; `job_id` links the latter two to their job.                                  |
+| `jev_events`            | `kind`, `guild_id`, `channel_id`, `question`, `answer`, `probability`, `confidence`, `applied`, `latency_ms`, `input_tokens`, `baseline`, `job_id`, `created_at`, `judge`                                                                                                                                                              | Value-free judgment telemetry. The kind is `turn`, `admission`, or `verification`; `job_id` links the latter two to their job.                                      |
 | `extraction_samples`    | `id`, `job_id`, `guild_id`, `channel_id`, `outcome`, `admission_probability`, `lines`, `created_at`, `expires_at`                                                                                                                                                                                                                      | Private, expiring text sample of rejected conversations for offline labelling. Never read by recall or any prompt.                                                  |
 
 The `extraction_queue` payload contains the episode's delta messages, up to three preceding context lines, and start
 and end timestamps. It is user content and remains in a failed queue row for inspection; success deletes the queue
-row. `jev_events` stores question keys and judgment results, not episode or message text.
+row. `jev_events` stores question keys and judgment results, not episode or message text; its `judge` is
+`provider:model` when the main model judged and NULL for Jev.
 
 ### Episode Capture And Write Path
 
@@ -299,16 +300,19 @@ next availability time. Failed payloads older than `memory.failedExtractionReten
 from enqueue) are pruned at startup and daily. There is no queue-size setting, Gemini daily budget ratio, or separate
 extraction RPM floor. Memory work is asynchronous and does not block the reply that captured the messages.
 
-The pipeline is **local precheck → Jev admission → Gemini typed extraction → Jev verification → claim writes**.
-Sensitive or wholly trivial episodes are dropped locally. Other episodes require a successful Jev `lasting_fact`
-judgment with probability at least `memory.admitThreshold` (0.5); if Jev is unavailable, times out, or returns no
-usable answer, the episode is dropped without a Gemini extraction request. `TYPESAFE_API_KEY` is therefore required
-for passive memory, and startup warns once when it is absent.
+The pipeline is **local precheck → admission judgment → typed extraction → verification judgment → claim writes**.
+Sensitive or wholly trivial episodes are dropped locally. Other episodes require a successful `lasting_fact` judgment
+with probability at least the judge's admission threshold; if the judge is unavailable, times out, or returns no usable
+answer, the episode is dropped without an extraction request. The derived `memory.judge` picks the judge (see Jev
+Judgments): Jev when `TYPESAFE_API_KEY` is set; the main model when it is not and `config.yml` has an `llm:` block; and
+nothing on the legacy config without the key, where every episode is dropped and startup warns once.
 
-Gemini uses `gemini.extractionModel` (defaulting to `gemini.model`) and returns a strict operation list plus a
-one-to-two-sentence summary. The summary is persisted in `memory_episode` with the extraction queue ID as its
-idempotency key; its document embedding is stored in the same row when the embedding call succeeds. Operations can
-target a user subject `{ kind: 'user', userId }` or the current guild subject `{ kind: 'guild' }`:
+On the legacy config (no `llm:` block), extraction runs on `gemini.extractionModel` (defaulting to `gemini.model`) with
+no fallback; with an `llm:` block it runs on the main model and tries the fallback once (see Model Providers). The
+model returns a strict operation list plus a one-to-two-sentence summary. The summary is persisted in `memory_episode`
+with the extraction queue ID as its idempotency key; its document embedding is stored in the same row when the
+embedding call succeeds. Operations can target a user subject `{ kind: 'user', userId }` or the current guild subject
+`{ kind: 'guild' }`:
 
 - **Add:** insert an active claim for a user or a guild and predicate. A user add carries a `tense`.
 - **Update:** replace an existing current claim for the same subject and predicate, linking the old row through
@@ -406,8 +410,10 @@ Completed admission judgments write one `jev_events` row with `kind='admission'`
 Completed verification writes one row per answer key (`durable_N`, `attributed_N`, `guild_scoped_N`, `current_N`,
 `past_N`, `changes_N`, `same_as_N_M`, or `retracts_N_M`).
 These rows include the answer, probability, application outcome, latency, input-token count, and the extraction queue job
-ID in `job_id`, but no source message text. Turn judgments leave `job_id` null.
-`jev.memoryTimeoutMs` (5000 ms) bounds admission and verification calls.
+ID in `job_id`, but no source message text. Turn judgments leave `job_id` null. Rows the main model judged carry
+`judge` (`provider:model`); Jev rows leave it null.
+`jev.memoryTimeoutMs` (5000 ms) bounds Jev admission and verification calls; a main-model judgment is bounded by its
+route's timeout.
 
 ### Hidden-Fact Reconciliation
 
@@ -419,8 +425,10 @@ operation transaction commits, `reconcileHiddenRetractions` (`hiddenRetractions.
    were not visible to the extractor.
 2. **Ranking:** cosine similarity between the retracted fact's sentence (for example "This person's hobby: chess.")
    and each claim's stored embedding, keeping the top 3. A claim without an embedding is skipped.
-3. **Judgment:** one internal Jev call asks, for each candidate, whether the messages say the fact "no longer holds".
-   Candidates at or above `memory.verifyThreshold` are retired with `end_reason = 'retracted'`.
+3. **Judgment:** one call to the judge that `memory.judge` picks (Jev, or the main model under `model`; see
+   Main-Model Judgments) asks, for each candidate, whether the messages say the fact "no longer holds". Candidates at
+   or above `memory.verifyThreshold` (or `memory.modelVerifyThreshold` when the main model judged) are retired with
+   `end_reason = 'retracted'`.
 
 Nothing hidden reaches Gemini's prompt, the reply or the logs: the pass logs only claim IDs, the predicate and counts.
 Under `relaxed` every claim is visible and under `off` nothing is written, so the pass makes no calls. It never
@@ -543,11 +551,13 @@ affecting the prune.
   salience, else the newer. They are sampled in random order, up to `min(100, 5 × cap)`, so a fact the model keeps
   cannot crowd out the ones behind it. A fact whose move was undone (an active row with a `claim_reclassified` event of
   its own) is never offered again.
-- **Proposal:** one Gemini call (`gemini.extractionModel`) returns, for each candidate, the best predicate from the
-  closed list or `keep`. The list leaves out `misc` and `relationship_to`, whose object must be a member a bare value
-  cannot name, and `reclassifyClaims` drops any proposal naming either.
+- **Proposal:** one model call returns, for each candidate, the best predicate from the closed list or `keep`. The
+  legacy config makes it on `gemini.extractionModel`; an `llm:` block makes it on the main model, then the fallback
+  once. The list leaves out `misc` and `relationship_to`, whose object must be a member a bare value cannot name, and
+  `reclassifyClaims` drops any proposal naming either.
 - **Confirmation:** one Jev call asks `fits_<id>` (`Is "<value>" this person's <predicate>?`) for at most `cap`
-  proposals. A move needs a probability of at least `memory.verifyThreshold`.
+  proposals; under `memory.judge: model` the main model answers the same questions. A move needs a probability of at
+  least `memory.verifyThreshold`, or `memory.modelVerifyThreshold` when the main model judged.
 - **Move:** one transaction retires the old row first (`end_reason = 'reclassified'`, so the cap cannot evict another
   fact mid-move), writes the value under the new predicate as a verified, active fact (reviving a staged or ended row
   of that value there, and clearing `needs_review`), copies the evidence rows, keeps the pin and `first_seen_at`, and
@@ -781,7 +791,7 @@ export directory. Export performs no store writes and no network requests.
 
 ## Jev Judgments
 
-Jev (TypeSafe's typed decision model, `@typesafe-ai/sdk`) answers pick-from-a-list questions; Gemini generates every
+Jev (TypeSafe's typed decision model, `@typesafe-ai/sdk`) answers pick-from-a-list questions; the LLM generates every
 reply, tool call and memory operation. The client (`src/agent/jev/client.ts`) exists only when `TYPESAFE_API_KEY` is
 set, is pinned to `jev.model` (`jev-1.13.0`), and makes one attempt with no retries. Message and `/ask` handlers
 start one `TurnEntryWork` before reply fetching, deferral or ADK session loading. Generation receives that same handle
@@ -813,18 +823,30 @@ controlled with `JEV_PREFETCH`:
   decision labels, probability, confidence, whether tone was applied, rounded latency and input tokens. The `question`
   JSON records the `prefetch` mode; the `answer` JSON records `needsLookup` and `prefetchStatus`. It stores no message
   text, alias or user ID. `metrics.retentionDays` prunes these rows with the other metrics tables.
-- **Memory Admission And Verification:** Jev is a hard dependency for passive memory. After the local sensitive/trivial
-  precheck, admission asks whether an episode contains a lasting fact and requires `memory.admitThreshold` (0.5).
-  Verification checks operation durability and attribution against `memory.verifyThreshold` (0.5), and checks additions
-  against same-predicate claims. Both are bounded by `jev.memoryTimeoutMs` (5000 ms). A missing key, timeout, or unusable
-  admission answer drops the episode before Gemini extraction; incomplete verification blocks removals and marks
-  allowed additions or updates for review.
+- **Memory Judge:** passive memory needs a judge. `config.memory.judge` is derived at startup and cannot be set:
+  `jev` when `TYPESAFE_API_KEY` is set, whatever the config; `model` when the key is unset and `config.yml` has an
+  `llm:` block; `none` otherwise. `none` is the legacy config without the key: it makes no judgment call, drops every
+  episode, and startup warns once.
+- **Memory Admission And Verification:** after the local sensitive/trivial precheck, admission asks whether an episode
+  contains a lasting fact and requires `memory.admitThreshold` (0.5). Verification checks operation durability and
+  attribution against `memory.verifyThreshold` (0.5), and checks additions against same-predicate claims. Jev calls are
+  bounded by `jev.memoryTimeoutMs` (5000 ms). A missing judge, timeout, or unusable admission answer drops the episode
+  before extraction; incomplete verification blocks removals and marks allowed additions or updates for review.
+- **Main-Model Judgments:** under `memory.judge: model`, `judgeWithModel` (`src/agent/jev/modelJudge.ts`) asks the main
+  model the question keys Jev would get, over the same state, in one `generateObject` call (workload `admission` or
+  `verification`) that returns a probability from 0 to 1 per key. It covers admission, verification, hidden
+  retractions and reclassification confirmation, and any failure returns null, as Jev fails closed. Self-reported
+  probabilities run high, so these judgments use `memory.modelAdmitThreshold` (0.7) and `memory.modelVerifyThreshold`
+  (0.7) in place of Jev's two thresholds. Both are uncalibrated, have no environment override, and are bounded 0–1 by
+  `NUMERIC_BOUNDS`; calibrate them on labelled episodes before trusting them.
 - **Replay Comparator:** `npm run replay:jev -- data/rokabot.db --max-turns 100` compares Jev tone labels with the
   regex tone on retained history and transcript fixtures, including CJK turns. Regex agreement is a comparator, not
   accuracy; the tone threshold is chosen against blind labels of which moods fit each production turn.
 - **Event Recording:** admission and verification judgments are recorded in `jev_events` with question key, answer,
-  probability, confidence, `applied`, latency and input-token count. Source messages are not stored in this table.
-  `memory.admitThreshold` and `memory.verifyThreshold` are the memory thresholds; there is no Jev extraction mode.
+  probability, confidence, `applied`, latency, input-token count and `judge` (`provider:model` for a main-model
+  judgment, null for Jev). Source messages are not stored in this table. `memory.admitThreshold` and
+  `memory.verifyThreshold` are Jev's memory thresholds, and `memory.modelAdmitThreshold` and
+  `memory.modelVerifyThreshold` the main model's; there is no Jev extraction mode.
 
 ### Search Prefetch
 
@@ -1023,6 +1045,25 @@ block; a switch takes a restart.
   are disjoint: `inputTokens` excludes cache reads and writes, and `outputTokens` excludes `reasoningTokens` when
   the provider reports reasoning separately (Gemini); Anthropic reports no separate reasoning, so its
   `outputTokens` is the billed output.
+- **Background Jobs:** extraction, reclassification and main-model judgments call `generateObject`
+  (`src/agent/llm/generateObject.ts`). It sends one JSON request whose `responseJsonSchema` comes from the job's zod
+  schema, adjusted per profile (`objectSchema.ts`; Claude receives it as the forced output tool). It tries the main
+  model, then the fallback once, re-validates the reply against the zod schema, and never returns a partial object: a
+  blocked, truncated, empty or invalid reply throws `StructuredOutputError`. Each request carries its workload
+  (`extraction`, `reclassify`, `admission` or `verification`) in `labels.rokabot_workload` (`WORKLOAD_LABEL`), which
+  adapters read for usage and ADK strips before calling Gemini. The adapter's output cap is the job's own cap, limited
+  by the profile's.
+- **Legacy Background Route:** without an `llm:` block, background jobs run on `gemini.extractionModel` with
+  `gemini.timeout` and no fallback. Extraction and reclassification send their hand-written Gemini `responseSchema`
+  unchanged, in place of `responseJsonSchema`, with the same temperature, output cap and safety settings as before.
+- **Background Failures:** the extraction queue retries a `ProviderError` of kind `transient_http`,
+  `quota_exhausted` or `network` (a `network` failure only when the bot is not shutting down). It treats
+  `billing_exhausted` and `refusal` failures as permanent: one immediate retry, then the row stays `failed`. Other
+  kinds and errors go through the status, code and
+  name checks `classifyExtractionError` applies to Gemini errors.
+- **Gemini Key:** `GEMINI_API_KEY` is required only when the main or fallback model is Gemini, embeddings resolve to
+  `gemini`, or `media.watcher` is `gemini`. The legacy config's main model is always Gemini, so it always needs the
+  key. The `qwen` watcher does not require the key, but it still falls back to Gemini when Qwen fails.
 
 ### The Fallback Model
 
@@ -1078,7 +1119,8 @@ When `MODELSCOPE_API_KEY` is set, a turn that Gemini cannot serve is answered by
   unparseable tool arguments changed there, and they now throw `malformed_tool_args` on both. Every 2xx reply records
   usage once (disjoint buckets), and every call awaits `startCall` first.
 - **Accounting:** fallback calls still take the turn's reserved Gemini RPM slots, which only makes the limiter
-  more conservative during an outage. Background memory extraction has no fallback; it waits for Gemini.
+  more conservative during an outage. On the legacy config, background memory jobs have no fallback and wait for
+  Gemini; with an `llm:` block they try the fallback once (see Model Providers).
 - **Logs:** `Gemini unavailable, answering this turn with the fallback model` and `Fallback model answered`.
 
 #### Hedging Slow Gemini Calls

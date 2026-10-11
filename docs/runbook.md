@@ -361,11 +361,13 @@ about 1,000 Gemini requests in a day; avoid restarts until the re-embed finishes
 
 ## Jev Judgments and Passive Memory
 
-Jev tone and referent judgments can run in `off`, `shadow` or `on` mode. Passive memory uses Jev admission and
-verification as hard gates: an unavailable client, timeout, or low admission score drops the episode before Gemini
-extraction. Without `TYPESAFE_API_KEY`, startup logs `Passive memory extraction is disabled: no TypeSafe API key`
-once, and passive episodes are dropped. Set `jev.memoryTimeoutMs`, `memory.admitThreshold` and
-`memory.verifyThreshold` in `config.yml` through a PR.
+Jev tone and referent judgments can run in `off`, `shadow` or `on` mode. Passive memory uses admission and
+verification judgments as hard gates: an unavailable judge, timeout, or low admission score drops the episode before
+extraction. Jev judges when `TYPESAFE_API_KEY` is set. Without the key, the main model judges when `config.yml` has an
+`llm:` block. With neither (`memory.judge: none`, which is the legacy config without the key), startup logs
+`Passive memory extraction is disabled: no TypeSafe API key` once, and passive episodes are dropped. Set
+`jev.memoryTimeoutMs`, `memory.admitThreshold` and `memory.verifyThreshold` (Jev), or `memory.modelAdmitThreshold` and
+`memory.modelVerifyThreshold` (main model), in `config.yml` through a PR.
 
 Guild facts are scoped to their Discord server. `upcoming_event` and `plan` claims store `expires_at` as epoch
 milliseconds for the first instant of the next local day, using `config.timezone` (or the `TZ` override). A daily prune
@@ -581,12 +583,14 @@ lasting fact.
 ## Memory Reclassification
 
 A background step moves facts filed under the wrong predicate, mostly `misc`, to the right one. It runs at startup and
-then daily, right after the claim prune, in the background. Gemini (`gemini.extractionModel`) proposes a predicate for
-each candidate and Jev confirms it; a move needs a probability of at least `memory.verifyThreshold`. Candidates are
-active current `misc` facts and the weaker side of any pair of facts one member filed twice, with equal values, under
-different predicates. Past facts are never touched. Each run makes at most one Gemini call and one Jev call, and none
-when nothing is a candidate. A moved fact keeps its pin, evidence and first-seen time, and the old row stays as a
-`reclassified` record.
+then daily, right after the claim prune, in the background. Gemini (`gemini.extractionModel`; the main model when
+`config.yml` has an `llm:` block) proposes a predicate for each candidate and Jev (or the main model under
+`memory.judge: model`) confirms it; a move needs a probability of at least `memory.verifyThreshold`
+(`memory.modelVerifyThreshold` for the main model). Candidates are active current `misc` facts and the weaker side of
+any pair of facts one member filed twice, with equal values, under different predicates. Past facts are never touched.
+Each run makes at most one proposal request and one confirmation request, and none when nothing is a candidate; with
+an `llm:` block, a request the main model fails is tried once on the fallback. A moved fact keeps its pin, evidence and
+first-seen time, and the old row stays as a `reclassified` record.
 
 - **Cap:** `memory.reclassifyMaxPerRun` (20) is the most moves per run, bounded 0–100. Set it to 0 to turn the step off:
   `MEMORY_RECLASSIFY_MAX_PER_RUN=0` in `~/rokabot/.env`, then recreate the container

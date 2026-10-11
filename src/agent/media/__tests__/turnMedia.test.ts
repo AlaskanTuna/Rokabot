@@ -343,6 +343,7 @@ describe('prepareTurnMedia', () => {
 
     await prepareTurnMedia(input([clip]))
 
+    expect(mocks.measureAttachmentTokens).toHaveBeenCalledWith(expect.any(Array), 'gemini')
     expect(mocks.watchMedia.mock.calls[0][0].plan).toMatchObject({ mode: 'whole', durationSec: 100 })
   })
 

@@ -7,6 +7,7 @@ import type { MemoryClaim } from '../memory/memoryClaims.js'
 import { proposedPeriod, retractCandidates, sameAsCandidates } from '../memory/verificationCandidates.js'
 import type { ToneKey } from '../prompts/tones.js'
 import { getJevClient } from './client.js'
+import { judgeWithModel } from './modelJudge.js'
 
 export type TurnJudgmentInput = {
   speakerName: string
@@ -153,23 +154,35 @@ export async function judgeTurn(
   }
 }
 
+const LASTING_FACT_QUESTION =
+  'Do `messages` state a lasting fact about a member — their likes, life, work, relationships, plans or nickname — or a fact about the group such as an event, a plan, a place or a running joke, or correct something said earlier? Jokes, questions, greetings and passing moods do not count.'
+
 export async function judgeEpisodeAdmission(input: {
   lines: string[]
-}): Promise<{ noul: number; confidence: null; latencyMs: number; inputTokens: number } | null> {
+}): Promise<{ noul: number; confidence: null; latencyMs: number; inputTokens: number; judge?: string } | null> {
   try {
     const client = getJevClient()
-    if (!client) return null
+    if (!client) {
+      if (config.memory.judge !== 'model') return null
+      const judgment = await judgeWithModel({
+        workload: 'admission',
+        state: { messages: input.lines },
+        questions: { lasting_fact: LASTING_FACT_QUESTION }
+      })
+      return judgment
+        ? {
+            noul: judgment.answers.lasting_fact,
+            confidence: null,
+            latencyMs: judgment.latencyMs,
+            inputTokens: judgment.inputTokens,
+            judge: judgment.judge
+          }
+        : null
+    }
 
     const startedAt = performance.now()
     const result = await client.systemOne(
-      {
-        state: { messages: input.lines },
-        questions: {
-          lasting_fact: noul(
-            'Do `messages` state a lasting fact about a member — their likes, life, work, relationships, plans or nickname — or a fact about the group such as an event, a plan, a place or a running joke, or correct something said earlier? Jokes, questions, greetings and passing moods do not count.'
-          )
-        }
-      },
+      { state: { messages: input.lines }, questions: { lasting_fact: noul(LASTING_FACT_QUESTION) } },
       { timeout: config.jev.memoryTimeoutMs }
     )
     const latencyMs = performance.now() - startedAt
@@ -186,6 +199,7 @@ export type MemoryVerification = {
   answers: Record<string, { noul: number; confidence: null }>
   latencyMs: number
   inputTokens: number
+  judge?: string
 }
 
 export async function judgeEpisodeOperations(input: {
@@ -195,15 +209,12 @@ export async function judgeEpisodeOperations(input: {
 }): Promise<MemoryVerification | null> {
   try {
     const client = getJevClient()
-    if (!client) return null
+    if (!client && config.memory.judge !== 'model') return null
 
-    const questions: Questions = {}
-    const questionKeys: string[] = []
+    const prompts: Record<string, string> = {}
     for (const [index, op] of input.ops.entries()) {
       if (op.op === 'noop') continue
-      const durableKey = `durable_${index}`
-      const scopeKey = `${op.subject.kind === 'guild' ? 'guild_scoped' : 'attributed'}_${index}`
-      questions[durableKey] = noul(
+      prompts[`durable_${index}`] =
         op.subject.kind === 'guild'
           ? 'Is this a lasting shared server fact or an agreed plan/event, rather than an uncommitted suggestion, greeting, or passing mood?'
           : op.op === 'retract'
@@ -211,68 +222,59 @@ export async function judgeEpisodeOperations(input: {
             : proposedPeriod(op) === 'past'
               ? "Is this a lasting fact about the person's history, such as a former job, place or long-held habit, rather than a one-off event?"
               : 'Is this operation a lasting trait, preference, relationship or plan rather than a momentary state or an event that has already happened?'
-      )
-      questions[scopeKey] = noul(
+      prompts[`${op.subject.kind === 'guild' ? 'guild_scoped' : 'attributed'}_${index}`] =
         op.subject.kind === 'guild'
           ? 'Do the episode messages establish this fact as about this Discord server or its members collectively, rather than one person, a quoted person, or another group?'
           : 'Do the episode messages attribute this fact to the named user, rather than quoting, addressing or joking about them?'
-      )
-      questionKeys.push(durableKey, scopeKey)
-
       if ('tense' in op) {
-        questions[`current_${index}`] = noul('Is this true of the subject now, at the time of these messages?')
-        questions[`past_${index}`] = noul('Was this true of the subject at some earlier time, even if it is not now?')
-        questionKeys.push(`current_${index}`, `past_${index}`)
+        prompts[`current_${index}`] = 'Is this true of the subject now, at the time of these messages?'
+        prompts[`past_${index}`] = 'Was this true of the subject at some earlier time, even if it is not now?'
         if (op.op === 'update') {
-          questions[`changes_${index}`] = noul(
+          prompts[`changes_${index}`] =
             `Does this change the existing claim #${op.existingId} into a different fact, rather than restate it in other words?`
-          )
-          questionKeys.push(`changes_${index}`)
         }
       }
-
       if (op.op === 'add') {
+        const subjectLabel = op.subject.kind === 'guild' ? 'this server' : op.subject.userId
         for (const [claimIndex, claim] of sameAsCandidates(input.existing, op).entries()) {
-          const key = `same_as_${index}_${claimIndex}`
-          const subjectLabel = op.subject.kind === 'guild' ? 'this server' : op.subject.userId
-          questions[key] = noul(
+          prompts[`same_as_${index}_${claimIndex}`] =
             `Do the episode messages state the same fact about ${subjectLabel} as existing claim #${claim.id}: ${claim.value}?`
-          )
-          questionKeys.push(key)
         }
       }
       if (op.op === 'retract') {
         for (const [claimIndex, claim] of retractCandidates(input.existing, op).entries()) {
-          const key = `retracts_${index}_${claimIndex}`
-          questions[key] = noul(
+          prompts[`retracts_${index}_${claimIndex}`] =
             `Do the messages say that the subject's ${claim.predicate.replaceAll('_', ' ')} "${claim.value}" no longer holds?`
-          )
-          questionKeys.push(key)
         }
       }
     }
+    const questionKeys = Object.keys(prompts)
     if (questionKeys.length === 0) return null
 
-    const startedAt = performance.now()
-    const result = await client.systemOne(
-      {
-        state: {
-          messages: input.lines,
-          operations: input.ops.map((op) => (op.op === 'noop' ? { ...op } : { ...op, subject: { ...op.subject } })),
-          existing: input.existing.map(({ id, subjectKind, subjectUserId, predicate, value }) => ({
-            id,
-            subjectKind,
-            subjectUserId,
-            predicate,
-            value
-          }))
-        },
-        questions
-      },
-      { timeout: config.jev.memoryTimeoutMs }
-    )
-    const latencyMs = performance.now() - startedAt
+    const state = {
+      messages: input.lines,
+      operations: input.ops.map((op) => (op.op === 'noop' ? { ...op } : { ...op, subject: { ...op.subject } })),
+      existing: input.existing.map(({ id, subjectKind, subjectUserId, predicate, value }) => ({
+        id,
+        subjectKind,
+        subjectUserId,
+        predicate,
+        value
+      }))
+    }
     const answers: MemoryVerification['answers'] = {}
+    if (!client) {
+      const judgment = await judgeWithModel({ workload: 'verification', state, questions: prompts })
+      if (!judgment) return null
+      for (const key of questionKeys) answers[key] = { noul: judgment.answers[key], confidence: null }
+      return { answers, latencyMs: judgment.latencyMs, inputTokens: judgment.inputTokens, judge: judgment.judge }
+    }
+
+    const questions: Questions = {}
+    for (const key of questionKeys) questions[key] = noul(prompts[key])
+    const startedAt = performance.now()
+    const result = await client.systemOne({ state, questions }, { timeout: config.jev.memoryTimeoutMs })
+    const latencyMs = performance.now() - startedAt
     for (const key of questionKeys) {
       const answer = result.answers[key]
       if (answer?.type !== 'noul' || !Number.isFinite(answer.noul) || answer.noul < 0 || answer.noul > 1) return null
@@ -293,18 +295,23 @@ export async function judgeHiddenRetractions(input: {
 }): Promise<Record<number, number> | null> {
   try {
     const client = getJevClient()
-    if (!client || input.candidates.length === 0) return null
+    if ((!client && config.memory.judge !== 'model') || input.candidates.length === 0) return null
+
+    const prompts: Record<string, string> = {}
+    for (const { id, sentence } of input.candidates) {
+      prompts[`retracts_${id}`] = `Do the messages say that this fact about the speaker no longer holds: "${sentence}"?`
+    }
+    const state = { messages: input.lines, statement: input.statement, facts: input.candidates }
+    if (!client) {
+      const judgment = await judgeWithModel({ workload: 'verification', state, questions: prompts })
+      return judgment
+        ? Object.fromEntries(input.candidates.map(({ id }) => [id, judgment.answers[`retracts_${id}`]]))
+        : null
+    }
 
     const questions: Questions = {}
-    for (const { id, sentence } of input.candidates) {
-      questions[`retracts_${id}`] = noul(
-        `Do the messages say that this fact about the speaker no longer holds: "${sentence}"?`
-      )
-    }
-    const result = await client.systemOne(
-      { state: { messages: input.lines, statement: input.statement, facts: input.candidates }, questions },
-      { timeout: config.jev.memoryTimeoutMs }
-    )
+    for (const [key, text] of Object.entries(prompts)) questions[key] = noul(text)
+    const result = await client.systemOne({ state, questions }, { timeout: config.jev.memoryTimeoutMs })
     const probabilities: Record<number, number> = {}
     for (const { id } of input.candidates) {
       const answer = result.answers[`retracts_${id}`]

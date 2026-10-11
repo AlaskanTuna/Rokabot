@@ -1,8 +1,8 @@
-import { config } from '../../config.js'
 import type { ExtractionEpisode } from '../../storage/extractionQueue.js'
 import { recordJevEvent } from '../../storage/jevEventStore.js'
 import { judgeEpisodeAdmission } from '../jev/judgments.js'
 import { precheckEpisode } from './episodePrecheck.js'
+import { admitThreshold } from './judgeThresholds.js'
 
 export type AdmissionResult = {
   admitted: boolean
@@ -26,7 +26,7 @@ export async function admitEpisode(input: {
   const judgment = await judgeEpisodeAdmission({ lines })
   if (!judgment) return { admitted: false, reason: 'jev_unavailable', probability: null, inputTokens: 0 }
 
-  const admitted = judgment.noul >= config.memory.admitThreshold
+  const admitted = judgment.noul >= admitThreshold()
   recordJevEvent({
     kind: 'admission',
     guildId: input.guildId,
@@ -38,7 +38,8 @@ export async function admitEpisode(input: {
     applied: admitted,
     latencyMs: judgment.latencyMs,
     inputTokens: judgment.inputTokens,
-    jobId: input.jobId
+    jobId: input.jobId,
+    judge: judgment.judge
   })
   return {
     admitted,

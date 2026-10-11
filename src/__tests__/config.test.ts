@@ -406,6 +406,64 @@ describe('config module', () => {
     )
   })
 
+  it('loads separate main-model judge thresholds next to the Jev ones', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+
+    const { config } = await import('../config.js')
+
+    expect(config.memory.admitThreshold).toBe(0.5)
+    expect(config.memory.verifyThreshold).toBe(0.5)
+    expect(config.memory.modelAdmitThreshold).toBe(0.7)
+    expect(config.memory.modelVerifyThreshold).toBe(0.7)
+  })
+
+  it('throws if memory.modelVerifyThreshold exceeds 1 in config.yml', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    withYamlOverride({ memory: { modelVerifyThreshold: 1.5 } })
+
+    await expect(() => import('../config.js')).rejects.toThrow(
+      'Config value memory.modelVerifyThreshold must be <= 1, got: 1.5'
+    )
+  })
+
+  it('judges memory with nothing on the legacy config without a TypeSafe key', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+
+    const { config } = await import('../config.js')
+
+    expect(config.memory.judge).toBe('none')
+  })
+
+  it('judges memory with Jev whenever its key is set', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('TYPESAFE_API_KEY', 'test-typesafe-key')
+    withYamlOverride({
+      llm: { main: 'flash', models: { flash: { provider: 'gemini', model: 'gemini-3.5-flash-lite' } } }
+    })
+
+    const { config } = await import('../config.js')
+
+    expect(config.memory.judge).toBe('jev')
+  })
+
+  it('judges memory with the main model on an llm block without a TypeSafe key', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('LLM_MAIN', '')
+    vi.stubEnv('LLM_FALLBACK', '')
+    withYamlOverride({
+      llm: { main: 'flash', models: { flash: { provider: 'gemini', model: 'gemini-3.5-flash-lite' } } }
+    })
+
+    const { config } = await import('../config.js')
+
+    expect(config.memory.judge).toBe('model')
+  })
+
   it('loads bounded episodic memory settings', async () => {
     setRequiredEnvVars()
     clearTunableEnvVars()
@@ -1016,6 +1074,8 @@ describe('config module', () => {
       { path: 'jev.referentMinConfidence', min: 0, max: 1 },
       { path: 'memory.admitThreshold', min: 0, max: 1 },
       { path: 'memory.verifyThreshold', min: 0, max: 1 },
+      { path: 'memory.modelAdmitThreshold', min: 0, max: 1 },
+      { path: 'memory.modelVerifyThreshold', min: 0, max: 1 },
       { path: 'gemini.turnDeadlineMs', min: 1 },
       { path: 'gemini.retryBackoffCapMs', min: 1 },
       { path: 'gemini.maxRetries', min: 0 },
@@ -1916,5 +1976,78 @@ describe('config module', () => {
         baseUrl: 'https://api-inference.modelscope.ai/v1'
       })
     })
+  })
+
+  const ANTHROPIC_ONLY = {
+    llm: {
+      main: 'haiku',
+      fallback: null,
+      models: { haiku: { provider: 'anthropic', model: 'claude-haiku-5-5', effort: 'low' } }
+    },
+    media: { watcher: 'off' }
+  }
+
+  function setAnthropicOnlyEnv() {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('GEMINI_API_KEY', '')
+    vi.stubEnv('ANTHROPIC_API_KEY', 'test-anthropic-key')
+    vi.stubEnv('LLM_MAIN', '')
+    vi.stubEnv('LLM_FALLBACK', '')
+  }
+
+  it('needs GEMINI_API_KEY only when a role calls Gemini', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    const { geminiKeyRequired } = await import('../config.js')
+    const none = { main: 'anthropic', fallback: null, embeddings: 'local', watcher: 'off' } as const
+
+    expect(geminiKeyRequired(none)).toBe(false)
+    expect(geminiKeyRequired({ ...none, main: 'gemini' })).toBe(true)
+    expect(geminiKeyRequired({ ...none, fallback: 'gemini' })).toBe(true)
+    expect(geminiKeyRequired({ ...none, embeddings: 'gemini' })).toBe(true)
+    expect(geminiKeyRequired({ ...none, watcher: 'gemini' })).toBe(true)
+    expect(geminiKeyRequired({ ...none, watcher: 'qwen' })).toBe(false)
+    expect(geminiKeyRequired({ ...none, watcher: 'direct' })).toBe(false)
+  })
+
+  it('starts an Anthropic-only config without GEMINI_API_KEY', async () => {
+    setAnthropicOnlyEnv()
+    vi.stubEnv('EMBEDDINGS_PROVIDER', 'local')
+    withYamlOverride(ANTHROPIC_ONLY)
+
+    const { config } = await import('../config.js')
+
+    expect(config.gemini.apiKey).toBe('')
+  })
+
+  it('requires GEMINI_API_KEY when only the media watcher uses Gemini', async () => {
+    setAnthropicOnlyEnv()
+    vi.stubEnv('EMBEDDINGS_PROVIDER', 'local')
+    withYamlOverride({ ...ANTHROPIC_ONLY, media: { watcher: 'gemini' } })
+
+    await expect(() => import('../config.js')).rejects.toThrow('Missing required environment variable: GEMINI_API_KEY')
+  })
+
+  it('requires GEMINI_API_KEY for the legacy Gemini main alone', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('GEMINI_API_KEY', '')
+    vi.stubEnv('EMBEDDINGS_PROVIDER', 'local')
+    vi.stubEnv('MEDIA_WATCHER', 'off')
+
+    await expect(() => import('../config.js')).rejects.toThrow(
+      /^Missing required environment variable: GEMINI_API_KEY$/
+    )
+  })
+
+  it('judges memory with Jev on the legacy config whenever its key is set', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('TYPESAFE_API_KEY', 'test-typesafe-key')
+
+    const { config } = await import('../config.js')
+
+    expect(config.memory.judge).toBe('jev')
   })
 })

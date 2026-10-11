@@ -1,8 +1,14 @@
-import { describe, expect, it, vi } from 'vitest'
+import sharp from 'sharp'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('../../config.js', () => ({
-  config: { logging: { level: 'silent' }, gemini: { apiKey: 'k', model: 'm', maxAttachmentTokens: 50_000 } }
+const mocks = vi.hoisted(() => ({
+  config: {
+    logging: { level: 'silent' },
+    gemini: { apiKey: 'k', model: 'm', maxAttachmentTokens: 50_000 },
+    llm: { main: {} as Record<string, unknown> }
+  }
 }))
+vi.mock('../../config.js', () => ({ config: mocks.config }))
 
 const countTokens = vi.fn()
 vi.mock('@google/genai', () => ({
@@ -11,7 +17,41 @@ vi.mock('@google/genai', () => ({
   }
 }))
 
+const anthropicCountTokens = vi.fn()
+vi.mock('@anthropic-ai/sdk', () => ({
+  default: class {
+    messages = { countTokens: anthropicCountTokens }
+  }
+}))
+
 import { measureAttachmentTokens, needsMeasuring } from '../attachmentCost.js'
+
+const input = { image: true, pdf: true, audio: false, video: false }
+const geminiMain = {
+  provider: 'gemini',
+  model: 'm',
+  apiKey: 'k',
+  timeoutMs: 20_000,
+  profile: { tokenCounter: 'gemini', input: { ...input, audio: true, video: true } }
+}
+const anthropicMain = {
+  provider: 'anthropic',
+  model: 'claude-haiku-5-5',
+  apiKey: 'a',
+  timeoutMs: 15_000,
+  profile: { tokenCounter: 'anthropic', input }
+}
+const estimateMain = {
+  provider: 'openai',
+  model: 'estimate-test',
+  apiKey: 'o',
+  timeoutMs: 15_000,
+  profile: { tokenCounter: 'estimate', input }
+}
+
+beforeEach(() => {
+  mocks.config.llm.main = geminiMain
+})
 
 describe('needsMeasuring', () => {
   // Images are a flat 1,089 whatever their resolution, so a full turn of them is bounded at ~3,267 and
@@ -30,9 +70,22 @@ describe('needsMeasuring', () => {
 describe('measureAttachmentTokens', () => {
   it('reports what the API charges', async () => {
     countTokens.mockResolvedValueOnce({ totalTokens: 28_001 })
-    await expect(measureAttachmentTokens([{ inlineData: { mimeType: 'application/pdf', data: 'x' } }])).resolves.toBe(
-      28_001
-    )
+    const parts = [{ inlineData: { mimeType: 'application/pdf', data: 'x' } }]
+
+    await expect(measureAttachmentTokens(parts)).resolves.toBe(28_001)
+    expect(countTokens.mock.calls.at(-1)).toStrictEqual([{ model: 'm', contents: [{ role: 'user', parts }] }])
+  })
+
+  it('counts on the main model for the main target and on gemini.model for the Gemini target', async () => {
+    mocks.config.llm.main = { ...geminiMain, model: 'main-gemini' }
+    const parts = [{ inlineData: { mimeType: 'application/pdf', data: 'x' } }]
+
+    countTokens.mockResolvedValueOnce({ totalTokens: 1 })
+    await measureAttachmentTokens(parts)
+    expect(countTokens.mock.calls.at(-1)?.[0].model).toBe('main-gemini')
+    countTokens.mockResolvedValueOnce({ totalTokens: 1 })
+    await measureAttachmentTokens(parts, 'gemini')
+    expect(countTokens.mock.calls.at(-1)?.[0].model).toBe('m')
   })
 
   // Every type comes back exactly as priced. Video used to be inflated by an allowance for the soundtrack
@@ -79,5 +132,113 @@ describe('measureAttachmentTokens', () => {
     countTokens.mockClear()
     await expect(measureAttachmentTokens([])).resolves.toBe(0)
     expect(countTokens).not.toHaveBeenCalled()
+  })
+})
+
+describe('measureAttachmentTokens per main model', () => {
+  const pdf = (text: string) => Buffer.from(`%PDF-1.4\n${text}\n%%EOF`).toString('base64')
+
+  it('asks Anthropic count_tokens with image and PDF blocks when Anthropic is the main model', async () => {
+    mocks.config.llm.main = anthropicMain
+    anthropicCountTokens.mockResolvedValueOnce({ input_tokens: 2_940 })
+    countTokens.mockClear()
+
+    await expect(
+      measureAttachmentTokens([
+        { inlineData: { mimeType: 'image/jpeg', data: 'aW1n' } },
+        { inlineData: { mimeType: 'application/pdf', data: 'cGRm' } }
+      ])
+    ).resolves.toBe(2_940)
+    expect(anthropicCountTokens).toHaveBeenCalledWith({
+      model: 'claude-haiku-5-5',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: 'aW1n' } },
+            { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: 'cGRm' } }
+          ]
+        }
+      ]
+    })
+    expect(countTokens).not.toHaveBeenCalled()
+  })
+
+  it('counts an image type Claude does not take as a text marker, as the adapter sends it', async () => {
+    mocks.config.llm.main = anthropicMain
+    anthropicCountTokens.mockResolvedValueOnce({ input_tokens: 12 })
+
+    await expect(measureAttachmentTokens([{ inlineData: { mimeType: 'image/heic', data: 'aW1n' } }])).resolves.toBe(12)
+    expect(anthropicCountTokens.mock.calls.at(-1)?.[0].messages[0].content).toEqual([
+      { type: 'text', text: expect.any(String) }
+    ])
+  })
+
+  it('admits the turn unmeasured when Anthropic counting fails', async () => {
+    mocks.config.llm.main = anthropicMain
+    anthropicCountTokens.mockRejectedValueOnce(new Error('network'))
+
+    await expect(
+      measureAttachmentTokens([{ inlineData: { mimeType: 'application/pdf', data: 'x' } }])
+    ).resolves.toBeUndefined()
+  })
+
+  it('keeps Gemini countTokens for the Gemini watcher whatever the main model', async () => {
+    mocks.config.llm.main = anthropicMain
+    anthropicCountTokens.mockClear()
+    countTokens.mockResolvedValueOnce({ totalTokens: 640 })
+
+    await expect(
+      measureAttachmentTokens([{ inlineData: { mimeType: 'audio/mp3', data: 'x' } }], 'gemini')
+    ).resolves.toBe(640)
+    expect(countTokens.mock.calls.at(-1)?.[0].model).toBe('m')
+    expect(anthropicCountTokens).not.toHaveBeenCalled()
+  })
+
+  it('estimates an image from its dimensions', async () => {
+    mocks.config.llm.main = estimateMain
+    const image = await sharp({ create: { width: 800, height: 600, channels: 3, background: '#ffffff' } })
+      .jpeg()
+      .toBuffer()
+
+    await expect(
+      measureAttachmentTokens([{ inlineData: { mimeType: 'image/jpeg', data: image.toString('base64') } }])
+    ).resolves.toBe(640)
+  })
+
+  it('estimates a PDF from its page objects', async () => {
+    mocks.config.llm.main = estimateMain
+    const pages =
+      '1 0 obj << /Type /Pages /Count 3 >> endobj\n2 0 obj << /Type /Page >>\n3 0 obj << /Type /Page >>\n4 0 obj << /Type /Page >>'
+
+    await expect(
+      measureAttachmentTokens([{ inlineData: { mimeType: 'application/pdf', data: pdf(pages) } }])
+    ).resolves.toBe(4_500)
+  })
+
+  it('reads the page tree count when page objects are compressed', async () => {
+    mocks.config.llm.main = estimateMain
+
+    await expect(
+      measureAttachmentTokens([
+        { inlineData: { mimeType: 'application/pdf', data: pdf('<< /Type /Pages /Count 12 >>') } }
+      ])
+    ).resolves.toBe(18_000)
+  })
+
+  it('prices media the model cannot take as its text marker', async () => {
+    mocks.config.llm.main = estimateMain
+
+    const tokens = await measureAttachmentTokens([{ inlineData: { mimeType: 'audio/mp3', data: 'x' } }])
+    expect(tokens).toBeGreaterThan(0)
+    expect(tokens).toBeLessThan(20)
+  })
+
+  it('gives no estimate for audio a profile would hear, rather than a wrong one', async () => {
+    mocks.config.llm.main = { ...estimateMain, profile: { tokenCounter: 'estimate', input: { ...input, audio: true } } }
+
+    await expect(
+      measureAttachmentTokens([{ inlineData: { mimeType: 'audio/mp3', data: 'x' } }])
+    ).resolves.toBeUndefined()
   })
 })

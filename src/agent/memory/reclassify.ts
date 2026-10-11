@@ -2,6 +2,7 @@ import { config } from '../../config.js'
 import { getDb } from '../../storage/database.js'
 import { recordMemoryEvent } from '../../storage/metricsStore.js'
 import { logger } from '../../utils/logger.js'
+import { verifyThreshold } from './judgeThresholds.js'
 import { assertClaim, confidenceForEvidence, getActiveClaimById, retireClaim } from './memoryClaims.js'
 import { type PredicateId, isMoveTarget } from './predicates.js'
 import { jevConfirm, proposePredicates } from './reclassifyModels.js'
@@ -221,7 +222,7 @@ export async function reclassifyClaims(): Promise<number> {
     toConfirm.length > 0
       ? await jevConfirm(toConfirm.map(({ claim, to }) => ({ id: claim.id, value: claim.value, predicate: to })))
       : {}
-  const confirmed = toConfirm.filter(({ claim }) => (probabilities[claim.id] ?? 0) >= config.memory.verifyThreshold)
+  const confirmed = toConfirm.filter(({ claim }) => (probabilities[claim.id] ?? 0) >= verifyThreshold())
 
   let moved = 0
   for (const { claim, to } of confirmed) {

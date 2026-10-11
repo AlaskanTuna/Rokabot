@@ -234,7 +234,10 @@ async function prepareInline(attachment: ImageAttachment, kind: MediaKind, label
     durationSec = (durationSec * download.bytes.length) / attachment.size
   }
   if (durationSec === null) {
-    const tokens = await measureAttachmentTokens([{ inlineData: { data: download.data, mimeType: download.mimeType } }])
+    const tokens = await measureAttachmentTokens(
+      [{ inlineData: { data: download.data, mimeType: download.mimeType } }],
+      'gemini'
+    )
     durationSec = tokens === undefined ? null : durationFromTokens({ tokens, kind })
   }
 

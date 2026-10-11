@@ -57,7 +57,7 @@ let claimPruneTimer: ReturnType<typeof setInterval> | undefined
 let loggedPassiveMemoryDisabled = false
 
 function startupMemoryTasks(botUserId?: string): void {
-  if (!config.jev.apiKey && !loggedPassiveMemoryDisabled) {
+  if (config.memory.judge === 'none' && !loggedPassiveMemoryDisabled) {
     logger.warn('Passive memory extraction is disabled: no TypeSafe API key')
     loggedPassiveMemoryDisabled = true
   }

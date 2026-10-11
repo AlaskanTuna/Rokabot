@@ -146,6 +146,10 @@ describe('createRokaModel', () => {
 })
 
 describe('createLlm', () => {
+  it("authenticates Gemini with the resolved model's own key, not whichever Google key the environment holds", () => {
+    expect((createLlm(legacyGemini) as unknown as { apiKey?: string }).apiKey).toBe('vitest-gemini-token')
+  })
+
   it('builds the Chat Completions adapter for an openai model, not the legacy ModelScope one', () => {
     const llm = createLlm(luna)
 
