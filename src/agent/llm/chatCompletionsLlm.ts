@@ -63,9 +63,11 @@ const CONTEXT_LENGTH_PATTERN =
 // ModelScope does not document which status a spent Magicube balance returns, so its wording counts too.
 const MAGICUBE_PATTERN = /magicube/i
 
-function httpFailureKind(status: number, body: string): FailureKind {
+function httpFailureKind(provider: ChatCompletionsProvider, status: number, body: string): FailureKind {
   // OpenAI's insufficient_quota is a spent balance, not a busy minute, and stays spent until billing changes.
-  if (status === 429) return /insufficient_quota/.test(body) ? 'billing_exhausted' : 'quota_exhausted'
+  if (status === 429) {
+    return provider === 'openai' && /insufficient_quota/.test(body) ? 'billing_exhausted' : 'quota_exhausted'
+  }
   if (status >= 500) return 'transient_http'
   if (MAGICUBE_PATTERN.test(body)) return 'quota_exhausted'
   if (status === 413 || CONTEXT_LENGTH_PATTERN.test(body)) return 'context_length'
@@ -536,7 +538,7 @@ export class ChatCompletionsLlm extends BaseLlm {
     if (!response.ok) {
       const message = `${this.label} ${response.status}: ${text.slice(0, 300)}`
       if (this.legacyTranslation) throw new Error(message)
-      const kind = httpFailureKind(response.status, text)
+      const kind = httpFailureKind(this.provider, response.status, text)
       if (kind === 'billing_exhausted') markBillingExhausted(this.provider)
       throw this.fail(kind, message, {
         status: response.status,

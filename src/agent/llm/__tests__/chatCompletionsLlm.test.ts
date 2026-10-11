@@ -1152,6 +1152,17 @@ describe('ChatCompletionsLlm usage and budget', () => {
     expect(budget.markBillingExhausted).not.toHaveBeenCalled()
   })
 
+  it('keeps a ModelScope 429 that mentions insufficient_quota a busy minute, not spent billing', async () => {
+    const llm = onModelScope('Qwen/Qwen3.5-35B-A3B', replay(openai.insufficientQuota).fetchImpl)
+
+    await expect(responses(llm, hello())).rejects.toMatchObject({
+      provider: 'modelscope',
+      kind: 'quota_exhausted',
+      status: 429
+    })
+    expect(budget.markBillingExhausted).not.toHaveBeenCalled()
+  })
+
   it.each<[string, () => ChatCompletionsLlm]>([
     ['a 503', () => onModelScope('Qwen/Qwen3.5-35B-A3B', replay(modelscope.overloaded).fetchImpl)],
     [
