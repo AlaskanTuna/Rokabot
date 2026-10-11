@@ -277,21 +277,22 @@ sudo docker logs rokabot-roka-1 2>&1 | grep '"msg":"Response completed"' | grep 
 
 `Qwen/Qwen3.5-35B-A3B` and `deepseek-ai/DeepSeek-V4.1-Flash` ship as candidates (`verified: false` in
 `src/agent/llm/profiles.ts`), so startup refuses them as `llm.main` or `llm.fallback` until a live probe passes. The
-probe makes three calls per model (a text reply, one tool call, one JSON object). On ModelScope each call spends
-Magicubes from the daily allowance; on OpenAI it bills the account. It refuses to run without `--live`, and when `CI` is
-set.
+probe makes four calls per model (a text reply, one tool call, a reply to that tool's result, one JSON object). On
+ModelScope each call spends Magicubes from the daily allowance; on OpenAI it bills the account. It refuses to run
+without `--live`, and when `CI` is set.
 
 ```bash
 npx tsx scripts/probe-llm-profile.ts --live --model Qwen/Qwen3.5-35B-A3B --model deepseek-ai/DeepSeek-V4.1-Flash
 ```
 
 It reads `MODELSCOPE_API_KEY`, or `OPENAI_API_KEY` for an `openai` model, from `.env`. A model with no `openai` or
-`modelscope` profile, or with its key unset, is reported and fails the run. A model is ready only when all three checks
+`modelscope` profile, or with its key unset, is reported and fails the run. A model is ready only when all four checks
 pass and no reply showed thinking: a non-empty `reasoning_content` or `reasoning` field, a `<think>` tag in the text,
 or `reasoning_tokens` above zero in the usage. The tool check also needs a real IANA timezone in the tool call. The
-probe prints `ready` or `not ready` per model, and exits 0 only when every model is ready. It never edits the profile.
-Set `verified: true` on that profile yourself and open a PR with the probe output in its description. Merging the PR
-rebuilds and restarts the bot, so it needs the owner's authorization.
+tool result check sends a `get_current_time` call and its result back as a `tool` message, and needs a non-empty text
+reply with no second tool call. The probe prints `ready` or `not ready` per model, and exits 0 only when every model is
+ready. It never edits the profile. Set `verified: true` on that profile yourself and open a PR with the probe output in
+its description. Merging the PR rebuilds and restarts the bot, so it needs the owner's authorization.
 
 ## Hedging Slow Gemini Calls
 

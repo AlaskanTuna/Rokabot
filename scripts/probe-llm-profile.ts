@@ -1,17 +1,19 @@
 /**
- * Live check of a Chat Completions model profile (D12): one text reply, one tool call and one JSON object, plus whether
- * thinking stayed off. It spends real quota (Magicubes on ModelScope, dollars on OpenAI), so it needs --live and
- * refuses to run under CI. When every check passes, set `verified: true` on the profile in src/agent/llm/profiles.ts.
+ * Live check of a Chat Completions model profile (D12): one text reply, one tool call, one answer to a tool result and
+ * one JSON object, plus whether thinking stayed off. It spends real quota (Magicubes on ModelScope, dollars on OpenAI),
+ * so it needs --live and refuses to run under CI. When every check passes, set `verified: true` on the profile in
+ * src/agent/llm/profiles.ts.
  *
  * Usage: npx tsx scripts/probe-llm-profile.ts --live --model Qwen/Qwen3.5-35B-A3B [--model <model id> ...]
  */
 import { pathToFileURL } from 'node:url'
 import type { BaseLlm, LlmRequest, LlmResponse } from '@google/adk'
+import type { Content } from '@google/genai'
 import type { ChatCompletionsProvider } from '../src/agent/llm/chatCompletionsLlm.js'
 import type { ModelProfile } from '../src/agent/llm/profiles.js'
 
 export interface ProbeCheck {
-  check: 'text' | 'tool' | 'json'
+  check: 'text' | 'tool' | 'toolResult' | 'json'
   ok: boolean
   detail: string
   /** The reply showed thinking (see thinkingIn), so the profile's thinking-off setting did not hold. */
@@ -58,10 +60,18 @@ const CITY_SCHEMA = {
   additionalProperties: false
 }
 
-function probeRequest(text: string, config: Record<string, unknown> = {}): LlmRequest {
+const TIME_QUESTION = 'What time is it in Tokyo right now? Use the tool.'
+const TIME_CALL = { id: 'call_probe', name: 'get_current_time' }
+// The turn as ADK hands it back after running the tool, so the result goes through the adapter's own pairing.
+const TIME_ROUND_TRIP: Content[] = [
+  { role: 'model', parts: [{ functionCall: { ...TIME_CALL, args: { timezone: 'Asia/Tokyo' } } }] },
+  { role: 'user', parts: [{ functionResponse: { ...TIME_CALL, response: { time: '2026-10-11T21:00:00+09:00' } } }] }
+]
+
+function probeRequest(text: string, config: Record<string, unknown> = {}, turn: Content[] = []): LlmRequest {
   return {
     model: 'probe',
-    contents: [{ role: 'user', parts: [{ text }] }],
+    contents: [{ role: 'user', parts: [{ text }] }, ...turn],
     config: { maxOutputTokens: 200, ...config },
     toolsDict: {},
     liveConnectConfig: undefined
@@ -117,6 +127,11 @@ function judgeTool(response: LlmResponse): string | null {
   return null
 }
 
+function judgeToolResult(response: LlmResponse): string | null {
+  const call = response.content?.parts?.find((part) => part.functionCall)?.functionCall
+  return call ? `called the tool again: ${JSON.stringify(call).slice(0, 200)}` : judgeText(response)
+}
+
 function judgeJson(response: LlmResponse): string | null {
   const text = textOf(response)
   let value: unknown
@@ -135,7 +150,8 @@ function judgeJson(response: LlmResponse): string | null {
 export async function probeProfile(llm: BaseLlm, takeBody: () => unknown): Promise<ProbeCheck[]> {
   const cases: Array<[ProbeCheck['check'], LlmRequest, (response: LlmResponse) => string | null]> = [
     ['text', probeRequest('Reply with the single word: pong'), judgeText],
-    ['tool', probeRequest('What time is it in Tokyo right now? Use the tool.', { tools: [TIME_TOOL] }), judgeTool],
+    ['tool', probeRequest(TIME_QUESTION, { tools: [TIME_TOOL] }), judgeTool],
+    ['toolResult', probeRequest(TIME_QUESTION, { tools: [TIME_TOOL] }, TIME_ROUND_TRIP), judgeToolResult],
     [
       'json',
       probeRequest('Give the city Kyoto and its population as a JSON object.', { responseJsonSchema: CITY_SCHEMA }),
@@ -156,12 +172,12 @@ export async function probeProfile(llm: BaseLlm, takeBody: () => unknown): Promi
 }
 
 export function renderProbeReport(model: string, checks: ProbeCheck[]): { text: string; ready: boolean } {
-  const ready = checks.length === 3 && checks.every((check) => check.ok && !check.thinkingSeen)
+  const ready = checks.length === 4 && checks.every((check) => check.ok && !check.thinkingSeen)
   const lines = [
     model,
     ...checks.map(
       (check) =>
-        `  ${check.check.padEnd(4)}  ${check.ok ? 'ok  ' : 'FAIL'}  ${check.thinkingSeen ? 'thinking ON ' : 'thinking off'}  ${check.detail}`
+        `  ${check.check.padEnd(10)}  ${check.ok ? 'ok  ' : 'FAIL'}  ${check.thinkingSeen ? 'thinking ON ' : 'thinking off'}  ${check.detail}`
     ),
     ready
       ? '  ready: set verified: true on this profile in src/agent/llm/profiles.ts'
