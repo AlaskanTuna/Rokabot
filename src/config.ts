@@ -259,7 +259,7 @@ function mediaWatcher(): MediaWatcher {
   throw new Error(`${source} must be gemini, qwen, direct or off, got: ${String(value)}`)
 }
 
-// Only the watcher's `gemini` mode needs the key: the qwen watcher's Gemini backup is a plan-2 follow-up.
+// Only the watcher's `gemini` mode requires the key, though the qwen watcher still falls back to Gemini on failure.
 export function geminiKeyRequired(roles: {
   main: ProviderId
   fallback: ProviderId | null
