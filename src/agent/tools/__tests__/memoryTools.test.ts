@@ -42,6 +42,7 @@ const runForget = (
     args: { query },
     toolContext: toolContextWith({ _userId: userId, _guildId: guildId, _channelId: channelId })
   }) as Promise<{ success: boolean; message: string }>
+import { geminiVector } from '../../memory/embeddings/__tests__/vectors.js'
 import { resolveName } from '../../memory/identityResolver.js'
 import { assertClaim, assertGuildClaim, getActiveClaims, getActiveGuildClaims } from '../../memory/memoryClaims.js'
 import { forgetUserTool, recallUserTool, rememberUserTool } from '../index.js'
@@ -76,8 +77,8 @@ afterEach(() => {
   resetChannelVisibilityForTest()
 })
 
-const unitVector = (index: number): number[] =>
-  Array.from({ length: 768 }, (_, position) => (position === index ? 1 : 0))
+const unitVector = (index: number) =>
+  geminiVector(Array.from({ length: 768 }, (_, position) => (position === index ? 1 : 0)))
 
 function seedMedia(input: {
   guildId?: string

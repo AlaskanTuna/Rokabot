@@ -250,7 +250,17 @@ describe('ensureMemoryClaimSchema', () => {
     expect(indexSql('idx_memory_claim_guild_dedup')).toContain('guild_id, predicate, value, period')
     expect(db.prepare('SELECT DISTINCT period FROM memory_claim').all()).toEqual([{ period: 'current' }])
     const after = db.prepare('SELECT * FROM memory_claim ORDER BY id').all() as Array<Record<string, unknown>>
-    expect(after.map(({ period: _period, ...row }) => row)).toEqual(before)
+    expect(
+      after.map(
+        ({
+          period: _period,
+          embedding_model_id: _modelId,
+          embedding_dim: _dim,
+          embedding_fingerprint: _fingerprint,
+          ...row
+        }) => row
+      )
+    ).toEqual(before)
     expect(db.prepare('SELECT claim_id, effective_at FROM memory_evidence ORDER BY id').all()).toEqual([
       { claim_id: 1, effective_at: null },
       { claim_id: 2, effective_at: null }

@@ -46,7 +46,10 @@ describe('database startup schema', () => {
       'summary',
       'digest_json',
       'embedding',
-      'created_at'
+      'created_at',
+      'embedding_model_id',
+      'embedding_dim',
+      'embedding_fingerprint'
     ])
     expect(columns('media_occurrence')).toEqual([
       'id',
@@ -195,7 +198,10 @@ describe('runMigrations', () => {
       'ended_at',
       'summary',
       'embedding',
-      'created_at'
+      'created_at',
+      'embedding_model_id',
+      'embedding_dim',
+      'embedding_fingerprint'
     ])
     expect(indexes.map((index) => index.name)).toEqual(
       expect.arrayContaining(['idx_memory_episode_guild_ended', 'idx_memory_episode_ended'])
@@ -534,6 +540,42 @@ describe('runMigrations', () => {
         .run('user-1', 'tanuki', 'common', 0, 'sleepy', 'cap', 'Yume', 'Mischievous', '{"luck":4}', 2)
     ).not.toThrow()
     expect(testDb.prepare('SELECT COUNT(*) AS count FROM buddy WHERE user_id = ?').get('user-1')).toEqual({ count: 2 })
+  })
+
+  it('adds vector provenance to an existing database and marks its vectors as unknown provenance', () => {
+    testDb = new Database(':memory:')
+    testDb.exec(`
+      CREATE TABLE session_history (
+        channel_id TEXT NOT NULL, role TEXT NOT NULL, display_name TEXT NOT NULL, content TEXT NOT NULL,
+        timestamp INTEGER NOT NULL, user_id TEXT, username TEXT
+      );
+      CREATE TABLE gacha_daily (
+        user_id TEXT NOT NULL, last_draw_date TEXT NOT NULL, streak INTEGER NOT NULL DEFAULT 0,
+        last_hatch_at INTEGER, PRIMARY KEY (user_id)
+      );
+      CREATE TABLE extraction_queue (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id TEXT NOT NULL, channel_id TEXT NOT NULL,
+        payload TEXT NOT NULL, status TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, enqueued_at INTEGER NOT NULL
+      );
+      CREATE TABLE memory_episode (
+        id INTEGER PRIMARY KEY, guild_id TEXT NOT NULL, channel_id TEXT NOT NULL, started_at INTEGER NOT NULL,
+        ended_at INTEGER NOT NULL, summary TEXT NOT NULL, embedding BLOB, created_at INTEGER NOT NULL
+      );
+    `)
+    testDb.prepare("INSERT INTO memory_episode VALUES (1, 'g', 'c', 1, 2, 'Picnic.', ?, 3)").run(Buffer.alloc(3072))
+
+    database.runMigrations(testDb)
+    database.runMigrations(testDb)
+
+    expect(
+      testDb.prepare('SELECT embedding_model_id, embedding_dim, embedding_fingerprint FROM memory_episode').get()
+    ).toEqual({ embedding_model_id: null, embedding_dim: 768, embedding_fingerprint: 'unknown' })
+    const claimColumns = (testDb.prepare("PRAGMA table_info('memory_claim')").all() as Array<{ name: string }>).map(
+      ({ name }) => name
+    )
+    expect(claimColumns).toEqual(
+      expect.arrayContaining(['embedding_model_id', 'embedding_dim', 'embedding_fingerprint'])
+    )
   })
 
   it('adds provider columns to a legacy response_events table without losing rows', () => {

@@ -271,7 +271,7 @@ Privacy and Unified Recall).
 | `memory_claim_fts`      | `value`, `predicate`                                                                                                                                                                                                                                                                                                                   | FTS5 mirror of active claims, maintained by insert, update, and delete triggers.                                                                                    |
 | `memory_episode_cursor` | `channel_id`, `guild_id`, `last_message_id`, `opened_at`, `message_count`                                                                                                                                                                                                                                                              | Per-channel checkpoint for the open episode.                                                                                                                        |
 | `extraction_queue`      | `id`, `guild_id`, `channel_id`, `payload`, `status`, `attempts`, `enqueued_at`                                                                                                                                                                                                                                                         | Closed episode payloads in `pending`, `processing`, or retained `failed` state.                                                                                     |
-| `memory_episode`        | `id`, `guild_id`, `channel_id`, `started_at`, `ended_at`, `summary`, `embedding`, `created_at`                                                                                                                                                                                                                                         | One completed episode summary per queue ID; nullable 768-value float32 embedding.                                                                                   |
+| `memory_episode`        | `id`, `guild_id`, `channel_id`, `started_at`, `ended_at`, `summary`, `embedding`, `embedding_model_id`, `embedding_dim`, `embedding_fingerprint`, `created_at`                                                                                                                                                                         | One completed episode summary per queue ID; nullable float32 embedding with its provenance.                                                                         |
 | `memory_events`         | `id`, `kind`, `guild_id`, `channel_id`, `subject_user_id`, `duration_ms`, `n_candidates`, `n_selected`, `n_changed`, `tokens_est`, `op`, `created_at`, `detail`                                                                                                                                                                        | Value-free retrieval, claim-change, extraction-run and `claim_reclassified` audit telemetry; nullable `detail` holds per-kind JSON.                                 |
 | `jev_events`            | `kind`, `guild_id`, `channel_id`, `question`, `answer`, `probability`, `confidence`, `applied`, `latency_ms`, `input_tokens`, `baseline`, `job_id`, `created_at`                                                                                                                                                                       | Value-free Jev judgment telemetry. The kind is `turn`, `admission`, or `verification`; `job_id` links the latter two to their job.                                  |
 | `extraction_samples`    | `id`, `job_id`, `guild_id`, `channel_id`, `outcome`, `admission_probability`, `lines`, `created_at`, `expires_at`                                                                                                                                                                                                                      | Private, expiring text sample of rejected conversations for offline labelling. Never read by recall or any prompt.                                                  |
@@ -610,7 +610,8 @@ built by `recallForTurn` (`src/agent/memory/recall.ts`).
 - **Fact Embeddings:** each active fact is embedded as a subject-neutral sentence (`factSentences.ts`, e.g. "This
   person's hobby: chess.", or "This person's past hobby: chess." for a past fact) into `memory_claim.embedding`, with
   the sentence in `embedding_text`. New facts are embedded after extraction jobs and `remember_user` writes, and the
-  daily maintenance pass embeds any fact whose embedding is missing or whose sentence changed.
+  maintenance pass (at startup, then every 24 hours) embeds any fact whose embedding is missing or whose sentence
+  changed.
 - **Scoring:** cosine similarity to the turn's query embedding must strictly exceed the kind's minimum
   (`memory.factMinSimilarity`, `memory.serverFactMinSimilarity`, `memory.episodeMinSimilarity`,
   `memory.mediaMinSimilarity`). Boosts of 0.05 each apply for the speaker, a member named in the message and pinned
@@ -677,30 +678,39 @@ Selected claims use the shared `buildFactsEnvelope` untrusted-data envelope.
 
 ### Episodic Recall
 
-Completed episode summaries are embedded with `memory.embeddingModel` (`gemini-embedding-2`) at 768 dimensions and
-stored as 3072-byte little-endian float32 BLOBs in `memory_episode.embedding`. Document input is prefixed with
-`title: none | text: `; query input is prefixed with `task: search result | query: `. The role prefixes are required
-by `gemini-embedding-2`; requests set `outputDimensionality: 768` and omit `taskType`. The embedding client uses
-`GEMINI_API_KEY` and `memory.embeddingTimeoutMs` (1500 ms). A failed summary embedding leaves a null vector for
-maintenance to repair.
+Episode summaries, watched-media summaries and fact sentences are embedded through `getEmbeddingClient()`
+(`src/agent/memory/embeddings/`), chosen by `embeddings.provider`. `gemini` uses `gemini-embedding-2` at 768
+dimensions: document input is prefixed with `title: none | text: `, query input with `task: search result | query: `,
+requests set `outputDimensionality: 768` and omit `taskType`. `local` calls the `sidecar/embeddings/` service:
+`Xenova/multilingual-e5-small` q8 at 384 dimensions, with `passage: `/`query: ` prefixes, mean pooling, L2 normalisation
+and 512-token truncation. `openai` uses `text-embedding-3-small` at 1536 dimensions. A config without an `embeddings:`
+block uses `gemini` when `GEMINI_API_KEY` is set, with `memory.embeddingModel` and `memory.embeddingTimeoutMs`
+(1500 ms), and `local` otherwise. Vectors are little-endian float32 BLOBs. Every row also stores `embedding_model_id`,
+`embedding_dim` and `embedding_fingerprint` (`<provider>:<model>:<dim>:<recipe>`). A store decodes a vector only when
+its fingerprint and dimension match the configured space, its byte length is `dim × 4` and its norm is nonzero. Vectors
+stored before provenance existed are `unknown`, and only the `gemini-embedding-2` space reads them. A failed embedding
+leaves a null vector for maintenance to repair.
 
 Message handlers start the query embedding inside `TurnEntryWork` at the same point as Jev entry work. Only guild
 message turns request it; `/ask` and DMs do not. Recall reads episodes with `WHERE guild_id = ?` and computes cosine
-similarity in JavaScript. Results must score strictly above `memory.episodeMinSimilarity` (0.7), are ordered by score,
-then `ended_at` descending and ID ascending, and are limited by `memory.episodeRecallK` (3) and the rendered
-`memory.episodeTokenBudget` (200). The prompt uses the UTC end date and JSON-escaped summaries under an explicit
-untrusted-data heading. If query embedding or retrieval fails or reaches its timeout, context assembly continues
-without episode context.
+similarity in JavaScript. Results must score strictly above `memory.episodeMinSimilarity` (0.7, or the configured
+fingerprint's `embeddings.minSimilarity` entry), are ordered by score, then `ended_at` descending and ID ascending, and
+are limited by `memory.episodeRecallK` (3) and the rendered `memory.episodeTokenBudget` (200). The prompt uses the UTC
+end date and JSON-escaped summaries under an explicit untrusted-data heading. If query embedding or retrieval fails or
+reaches its timeout, context assembly continues without episode context.
 
-The daily maintenance pass deletes rows whose `ended_at` is older than `memory.episodeRetentionDays` (90 days), then
-visits each guild's null or unreadable embeddings sequentially and retries document embedding. A failed row remains
-available for a later pass. `/stats` reports the number of episodes ended in the last 30 days, and the vault export
-writes guild-local `Episodes.md` files without embedding bytes.
+The maintenance pass (at startup, then every 24 hours) deletes rows whose `ended_at` is older than
+`memory.episodeRetentionDays` (90 days). It then visits each guild's episodes and media digests and embeds every
+document with no vector readable in the configured space, and the facts sweep does the same for facts. One pass runs at
+a time. Documents are spaced `embeddings.backfillGapMs` (1000 ms) apart, a pass stops after
+`embeddings.backfillBatchSize` (3600) documents or five failures in a row, and a vector is written only while its source
+text is unchanged. The next pass resumes from what each row records. `/stats` reports the number of episodes ended in
+the last 30 days, and the vault export writes guild-local `Episodes.md` files without embedding bytes.
 
 ### Media Memory
 
 What Roka watches in a server is remembered as text, never as media. `media_digest` holds one digest per
-`(guild_id, content_key)`: kind, label, summary, the digest JSON and a nullable 768-float embedding.
+`(guild_id, content_key)`: kind, label, summary, the digest JSON and a nullable float32 embedding with its provenance.
 `media_occurrence` records each time it was shared, with channel, message, `shared_by_user_id`, an optional
 `source_author_id` (the replied-to poster; null for forwards and links) and origin (`upload`, `reply`, `forward`,
 `link`). Content keys are `youtube:<id>` (`youtube:<id>@<startSec>` for a watch around a timestamp),

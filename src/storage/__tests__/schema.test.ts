@@ -51,7 +51,10 @@ describe('claims schema', () => {
       'event_date',
       'embedding',
       'embedding_text',
-      'period'
+      'period',
+      'embedding_model_id',
+      'embedding_dim',
+      'embedding_fingerprint'
     ])
     expect(columns('memory_evidence')).toEqual([
       'id',

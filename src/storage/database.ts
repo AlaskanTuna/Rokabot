@@ -9,6 +9,7 @@ import { resolve } from 'node:path'
 import Database from 'better-sqlite3'
 import { logger } from '../utils/logger.js'
 import { ensureMemoryClaimSchema } from './memoryClaimSchema.js'
+import { ensureVectorProvenanceColumns } from './vectorProvenance.js'
 
 let db: Database.Database | null = null
 
@@ -461,6 +462,9 @@ export function runMigrations(database: Database.Database): void {
   `)
 
   ensureMemoryClaimSchema(database)
+  for (const table of ['memory_episode', 'media_digest', 'memory_claim'] as const) {
+    ensureVectorProvenanceColumns(database, table)
+  }
 
   let extractionQueueCols = database.prepare("PRAGMA table_info('extraction_queue')").all() as Array<{ name: string }>
   const extractionQueueColNames = new Set(extractionQueueCols.map((column) => column.name))

@@ -1,5 +1,5 @@
 import { getDb } from './database.js'
-import { decodeFloat32Embedding, encodeFloat32Embedding } from './memoryEpisodeStore.js'
+import { type EmbeddingVector, type StoredVector, decodeFloat32Embedding, vectorParams } from './memoryEpisodeStore.js'
 
 export type MediaOrigin = 'upload' | 'reply' | 'forward' | 'link'
 
@@ -17,7 +17,7 @@ export type StoredMediaDigest = Readonly<{
   lastSharedAt: number
 }>
 
-type MediaDigestRow = {
+type MediaDigestRow = StoredVector & {
   id: number
   guild_id: string
   content_key: string
@@ -25,7 +25,6 @@ type MediaDigestRow = {
   label: string
   summary: string
   digest_json: string
-  embedding: Buffer | null
   channel_ids: string | null
   created_at: number
   last_shared_at: number | null
@@ -44,7 +43,7 @@ function mapMediaDigest(row: MediaDigestRow): StoredMediaDigest {
     label: row.label,
     summary: row.summary,
     digestJson: row.digest_json,
-    embedding: decodeFloat32Embedding(row.embedding),
+    embedding: decodeFloat32Embedding(row),
     channelIds: (row.channel_ids ?? '').split(',').filter(Boolean).sort(),
     createdAt: row.created_at,
     lastSharedAt: row.last_shared_at ?? row.created_at
@@ -54,7 +53,7 @@ function mapMediaDigest(row: MediaDigestRow): StoredMediaDigest {
 function mediaDigestSelect(where: string): string {
   return `
     SELECT d.id, d.guild_id, d.content_key, d.kind, d.label, d.summary, d.digest_json,
-           d.embedding, d.created_at, MAX(o.observed_at) AS last_shared_at,
+           d.embedding, d.embedding_dim, d.embedding_fingerprint, d.created_at, MAX(o.observed_at) AS last_shared_at,
            GROUP_CONCAT(DISTINCT o.channel_id) AS channel_ids
     FROM media_digest d
     LEFT JOIN media_occurrence o ON o.digest_id = d.id AND o.guild_id = d.guild_id
@@ -70,39 +69,59 @@ export function saveMediaDigest(input: {
   label: string
   summary: string
   digestJson: string
-  embedding?: readonly number[] | null
+  embedding?: EmbeddingVector | null
   createdAt?: number
 }): StoredMediaDigest | null {
   if (isDirectMessageGuild(input.guildId)) return null
 
-  const db = getDb()
-  const createdAt = input.createdAt ?? Date.now()
-  const embedding = input.embedding == null ? null : encodeFloat32Embedding(input.embedding, 'Media')
-  db.prepare(
-    `INSERT INTO media_digest (guild_id, content_key, kind, label, summary, digest_json, embedding, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT (guild_id, content_key) DO UPDATE SET
-       kind = excluded.kind,
-       label = excluded.label,
-       summary = excluded.summary,
-       digest_json = excluded.digest_json,
-       embedding = CASE
-         WHEN ? THEN excluded.embedding
-         WHEN media_digest.summary = excluded.summary THEN media_digest.embedding
-         ELSE NULL
-       END,
-       created_at = excluded.created_at`
-  ).run(
-    input.guildId,
-    input.contentKey,
-    input.kind,
-    input.label,
-    input.summary,
-    input.digestJson,
-    embedding,
-    createdAt,
-    input.embedding !== undefined ? 1 : 0
-  )
+  const [embedding, embeddingModelId, embeddingDim, embeddingFingerprint] = vectorParams(input.embedding, 'Media')
+  getDb()
+    .prepare(
+      `INSERT INTO media_digest (guild_id, content_key, kind, label, summary, digest_json, embedding,
+         embedding_model_id, embedding_dim, embedding_fingerprint, created_at)
+       VALUES (@guildId, @contentKey, @kind, @label, @summary, @digestJson, @embedding, @embeddingModelId,
+         @embeddingDim, @embeddingFingerprint, @createdAt)
+       ON CONFLICT (guild_id, content_key) DO UPDATE SET
+         kind = excluded.kind,
+         label = excluded.label,
+         summary = excluded.summary,
+         digest_json = excluded.digest_json,
+         embedding = CASE
+           WHEN @replace THEN excluded.embedding
+           WHEN media_digest.summary = excluded.summary THEN media_digest.embedding
+           ELSE NULL
+         END,
+         embedding_model_id = CASE
+           WHEN @replace THEN excluded.embedding_model_id
+           WHEN media_digest.summary = excluded.summary THEN media_digest.embedding_model_id
+           ELSE NULL
+         END,
+         embedding_dim = CASE
+           WHEN @replace THEN excluded.embedding_dim
+           WHEN media_digest.summary = excluded.summary THEN media_digest.embedding_dim
+           ELSE NULL
+         END,
+         embedding_fingerprint = CASE
+           WHEN @replace THEN excluded.embedding_fingerprint
+           WHEN media_digest.summary = excluded.summary THEN media_digest.embedding_fingerprint
+           ELSE NULL
+         END,
+         created_at = excluded.created_at`
+    )
+    .run({
+      guildId: input.guildId,
+      contentKey: input.contentKey,
+      kind: input.kind,
+      label: input.label,
+      summary: input.summary,
+      digestJson: input.digestJson,
+      embedding,
+      embeddingModelId,
+      embeddingDim,
+      embeddingFingerprint,
+      createdAt: input.createdAt ?? Date.now(),
+      replace: input.embedding !== undefined ? 1 : 0
+    })
 
   return findMediaDigest(input.guildId, input.contentKey)
 }
@@ -177,8 +196,8 @@ export function listMediaRecallCandidates(guildId: string): MediaRecallCandidate
 
   const rows = getDb()
     .prepare(
-      `SELECT d.id, d.label, d.summary, d.embedding, d.created_at, MAX(o.observed_at) AS last_shared_at,
-              GROUP_CONCAT(DISTINCT o.channel_id) AS channel_ids
+      `SELECT d.id, d.label, d.summary, d.embedding, d.embedding_dim, d.embedding_fingerprint, d.created_at,
+              MAX(o.observed_at) AS last_shared_at, GROUP_CONCAT(DISTINCT o.channel_id) AS channel_ids
        FROM media_digest d
        LEFT JOIN media_occurrence o ON o.digest_id = d.id AND o.guild_id = d.guild_id
        WHERE d.guild_id = ? AND d.embedding IS NOT NULL
@@ -186,16 +205,14 @@ export function listMediaRecallCandidates(guildId: string): MediaRecallCandidate
        ORDER BY d.id`
     )
     .all(guildId) as Array<
-    Pick<MediaDigestRow, 'id' | 'label' | 'summary' | 'created_at' | 'last_shared_at'> & {
-      embedding: Buffer
-      channel_ids: string | null
-    }
+    Pick<MediaDigestRow, 'id' | 'label' | 'summary' | 'created_at' | 'last_shared_at'> &
+      StoredVector & { channel_ids: string | null }
   >
   return rows.map((row) => ({
     id: row.id,
     label: row.label,
     summary: row.summary,
-    embedding: decodeFloat32Embedding(row.embedding) ?? [],
+    embedding: decodeFloat32Embedding(row) ?? [],
     lastSharedAt: row.last_shared_at ?? row.created_at,
     channelIds: (row.channel_ids ?? '').split(',').filter(Boolean).sort()
   }))
@@ -213,13 +230,16 @@ export function setMediaDigestEmbedding(input: {
   guildId: string
   id: number
   summary: string
-  embedding: readonly number[]
+  embedding: EmbeddingVector
 }): boolean {
   if (isDirectMessageGuild(input.guildId)) return false
 
   const result = getDb()
-    .prepare('UPDATE media_digest SET embedding = ? WHERE guild_id = ? AND id = ? AND summary = ?')
-    .run(encodeFloat32Embedding(input.embedding, 'Media'), input.guildId, input.id, input.summary)
+    .prepare(
+      `UPDATE media_digest SET embedding = ?, embedding_model_id = ?, embedding_dim = ?, embedding_fingerprint = ?
+       WHERE guild_id = ? AND id = ? AND summary = ?`
+    )
+    .run(...vectorParams(input.embedding, 'Media'), input.guildId, input.id, input.summary)
   return result.changes === 1
 }
 
