@@ -331,9 +331,10 @@ sqlite3 data/rokabot.db "SELECT provider, ROUND(usd, 4) FROM llm_spend WHERE mon
 ```
 
 A provider that reaches `llm.monthlyBudgetUsd` is disabled until the UTC month turns, and stays disabled across
-restarts. To re-enable it early, raise its cap in `config.yml` and restart. A provider that reported its own credit
-spent is disabled in memory only: top up the account, then restart. ModelScope's daily estimate
-(`llm.modelscopeDailyMagicubes`) resets at UTC midnight and on restart.
+restarts. Background jobs stop earlier, at 80% of the cap, so replies keep the last fifth; that stop disables nothing,
+and replies run on to the full cap. To re-enable a provider early, raise its cap in `config.yml` and restart. A
+provider that reported its own credit spent is disabled in memory only: top up the account, then restart.
+ModelScope's daily estimate (`llm.modelscopeDailyMagicubes`) resets at UTC midnight and on restart.
 
 ---
 

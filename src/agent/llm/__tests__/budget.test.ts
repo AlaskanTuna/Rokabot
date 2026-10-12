@@ -539,4 +539,72 @@ describe('monthly spend', () => {
 
     expect(reserveCall(paid)).toEqual({ denied: 'monthly' })
   })
+
+  describe('background share of the cap', () => {
+    const paidExtraction = { ...paid, workload: 'extraction' } as const
+
+    it('grants a background call at 79% of the cap', () => {
+      recordUsage(paidUsage(3_950_000))
+
+      granted(reserveCall(paidExtraction))
+    })
+
+    it('refuses a background call at 80% of the cap as billing_exhausted without disabling the provider', async () => {
+      recordUsage(paidUsage(4_000_000))
+
+      expect(reserveCall(paidExtraction)).toEqual({ denied: 'monthly' })
+      const failure = await startCall(paidExtraction).catch((error: unknown) => error)
+      expect(failure).toBeInstanceOf(ProviderError)
+      expect(failure).toMatchObject({ provider: 'anthropic', kind: 'billing_exhausted' })
+      expect(isMonthlyExhausted('anthropic')).toBe(false)
+    })
+
+    it.each(['reply', 'watcher'] as const)('keeps granting %s calls from 80% to 99% of the cap', (workload) => {
+      recordUsage(paidUsage(4_000_000))
+      granted(reserveCall({ ...paid, workload }))
+
+      recordUsage(paidUsage(990_000))
+      granted(reserveCall({ ...paid, workload }))
+    })
+
+    it('refuses replies at the full cap and lets every workload back in when the UTC month turns', () => {
+      vi.setSystemTime(new Date('2026-10-31T23:59:59Z'))
+      recordUsage(paidUsage(5_000_000))
+
+      expect(reserveCall(paid)).toEqual({ denied: 'monthly' })
+      expect(isMonthlyExhausted('anthropic')).toBe(true)
+
+      vi.advanceTimersByTime(1_000)
+
+      granted(reserveCall(paid))
+      granted(reserveCall(paidExtraction))
+    })
+
+    it('gives background work the new month when the UTC month turns', () => {
+      vi.setSystemTime(new Date('2026-10-31T23:59:59Z'))
+      recordUsage(paidUsage(4_000_000))
+      expect(reserveCall(paidExtraction)).toEqual({ denied: 'monthly' })
+
+      vi.advanceTimersByTime(1_000)
+
+      granted(reserveCall(paidExtraction))
+    })
+
+    it('grants background calls on an uncapped provider whatever it spent', () => {
+      configState.llm.monthlyBudgetUsd = {}
+      recordUsage(paidUsage(100_000_000))
+
+      granted(reserveCall(paidExtraction))
+    })
+
+    it('counts nothing on the legacy config, a capped provider past 80% included', () => {
+      configState.llm.main = { ...configState.llm.main, key: 'legacy-gemini' }
+      __resetBudgetsForTest()
+      recordUsage(paidUsage(4_500_000))
+
+      granted(reserveCall(paidExtraction))
+      granted(reserveCall(extraction))
+      expect(getSharedRateLimiter().remainingRpm).toBe(15)
+    })
+  })
 })

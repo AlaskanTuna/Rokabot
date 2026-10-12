@@ -1572,7 +1572,8 @@ jobs, both watchers, and both sides of a hedge.
   writes at the profile's write price or 1.25x input, reasoning at the output rate) and added to `llm_spend`. Retries
   and losing hedge calls that completed count; an aborted call reports no usage, so it adds none. At
   `llm.monthlyBudgetUsd[provider]` every call to that provider is refused with `billing_exhausted` until the UTC
-  month turns, across restarts. A block without `monthlyBudgetUsd` caps `anthropic` and `openai` at 5 USD; a block
+  month turns, across restarts. Background calls are refused the same way from 80% of the cap, so reply and watcher
+  calls keep the last fifth; that refusal does not disable the provider. A block without `monthlyBudgetUsd` caps `anthropic` and `openai` at 5 USD; a block
   that sets it replaces those defaults, and a provider it does not list is uncapped. A provider's own billing error
   (the Anthropic adapter classifies it) disables the provider the same way but in memory, so a restart after a
   top-up re-enables it. A failed read of `llm_spend` counts the month as unspent. A failed write keeps that one
