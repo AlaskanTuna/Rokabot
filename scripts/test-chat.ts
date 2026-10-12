@@ -18,7 +18,11 @@ import type { PreviewMessage } from '../tests/harness/preview/render.js'
 await import('../tests/harness/env.js')
 
 const { generateResponse } = await import('../src/agent/roka.js')
+const { withReplyOutcomes } = await import('../src/agent/replyOutcomes.js')
+const { withSearchCitations } = await import('../src/agent/searchCitations.js')
+const { guardMarkdown } = await import('../src/discord/markdownGuard.js')
 const { buildRokaMessage } = await import('../src/discord/messageBuilder.js')
+const { splitResponse } = await import('../src/discord/responses.js')
 const { config } = await import('../src/config.js')
 const { renderPayload } = await import('../tests/harness/renderPayload.js')
 const { renderPreviewPage } = await import('../tests/harness/preview/render.js')
@@ -52,24 +56,48 @@ async function handleInput(line: string, rl: readline.Interface): Promise<void> 
   }
 
   try {
-    const response = await generateResponse({
-      channelId,
-      guildId,
-      userMessage: trimmed,
-      displayName,
-      username,
-      userId
-    })
-
-    const payload = buildRokaMessage(response.text, response.tone)
-    console.log(`${renderPayload({ kind: 'reply', payload, channelId, ts: Date.now() })}\n`)
+    // Built the way messageCreate builds a reply, so the footer and any follow-up chunks match Discord
+    const [[response, sources], replyOutcome] = await withReplyOutcomes(() =>
+      withSearchCitations(() =>
+        generateResponse({
+          channelId,
+          guildId,
+          userMessage: trimmed,
+          displayName,
+          username,
+          userId,
+          memory: true
+        })
+      )
+    )
+    const [first = '', ...rest] = splitResponse(guardMarkdown(response.text))
+    const payloads = [
+      buildRokaMessage(
+        first,
+        response.tone,
+        response.toolsUsed,
+        sources,
+        { status: 'none' },
+        replyOutcome,
+        response.watchOutcome
+      ),
+      ...rest.map((chunk) => buildRokaMessage(chunk, response.tone))
+    ]
+    for (const payload of payloads) {
+      console.log(`${renderPayload({ kind: 'reply', payload, channelId, ts: Date.now() })}\n`)
+    }
 
     if (htmlPath) {
       const now = new Date()
       const user = { name: displayName }
       previewMessages.push(
         { author: user, timestamp: now, payload: trimmed },
-        { author: roka, timestamp: now, payload, replyTo: { author: user, text: trimmed } }
+        ...payloads.map((payload, index) => ({
+          author: roka,
+          timestamp: now,
+          payload,
+          ...(index === 0 ? { replyTo: { author: user, text: trimmed } } : {})
+        }))
       )
       await mkdir(dirname(htmlPath), { recursive: true })
       await writeFile(htmlPath, renderPreviewPage(previewMessages, { channelName: 'test-chat', refreshSeconds: 2 }))
