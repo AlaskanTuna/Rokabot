@@ -100,8 +100,7 @@ export const MODEL_PROFILES: readonly ModelProfile[] = [
     promptCaching: 'none',
     tokenCounter: 'estimate',
     price: { input: 0, output: 0 },
-    // D12: a candidate until scripts/probe-llm-profile.ts passes against the live endpoint.
-    verified: false
+    verified: true
   },
   {
     provider: 'modelscope',
@@ -117,7 +116,7 @@ export const MODEL_PROFILES: readonly ModelProfile[] = [
     promptCaching: 'none',
     tokenCounter: 'estimate',
     price: { input: 0, output: 0 },
-    verified: false
+    verified: true
   }
 ]
 
