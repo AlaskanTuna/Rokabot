@@ -8,8 +8,8 @@ describe('model profiles', () => {
       { provider: 'anthropic', model: 'claude-haiku-5-5', verified: true },
       { provider: 'modelscope', model: 'Qwen/Qwen3.5-122B-A10B', verified: true },
       { provider: 'openai', model: 'gpt-6-luna', verified: true },
-      { provider: 'modelscope', model: 'Qwen/Qwen3.5-35B-A3B', verified: false },
-      { provider: 'modelscope', model: 'deepseek-ai/DeepSeek-V4.1-Flash', verified: false }
+      { provider: 'modelscope', model: 'Qwen/Qwen3.5-35B-A3B', verified: true },
+      { provider: 'modelscope', model: 'deepseek-ai/DeepSeek-V4.1-Flash', verified: true }
     ])
   })
 

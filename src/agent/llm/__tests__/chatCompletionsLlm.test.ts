@@ -108,7 +108,7 @@ describe('Chat Completions profiles', () => {
   })
 
   it.each(['Qwen/Qwen3.5-35B-A3B', 'deepseek-ai/DeepSeek-V4.1-Flash'])(
-    'keeps %s a json_object candidate with thinking off until the probe passes',
+    'describes %s as a verified json_object model with thinking off',
     (model) => {
       expect(profileFor('modelscope', model)).toMatchObject({
         provider: 'modelscope',
@@ -118,7 +118,7 @@ describe('Chat Completions profiles', () => {
         promptCaching: 'none',
         tokenCounter: 'estimate',
         price: { input: 0, output: 0 },
-        verified: false
+        verified: true
       })
     }
   )
