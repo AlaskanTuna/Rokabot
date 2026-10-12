@@ -40,6 +40,9 @@ const REPLY_SIDE: ReadonlySet<Workload> = new Set<Workload>(['reply', 'watcher']
 // Per-model Magicube tiers are shown only to a logged-in account, so every call is counted at the standard tier.
 const MAGICUBES_PER_CALL = 1
 
+// Background calls stop at this share of a provider's monthly cap, so replies keep the last fifth of it.
+const BACKGROUND_SHARE_OF_MONTHLY_CAP = 0.8
+
 // ModelScope guarantees one concurrent request per account and promises nothing past it.
 const CONCURRENCY: Partial<Record<ProviderId, number>> = { modelscope: 1 }
 
@@ -69,6 +72,11 @@ export function isMonthlyExhausted(provider: ProviderId): boolean {
   if (billingExhaustedIn.get(provider) === month) return true
   const cap = config.llm.monthlyBudgetUsd[provider]
   return cap !== undefined && spentThisMonth(provider, month) >= cap
+}
+
+function backgroundShareSpent(provider: ProviderId): boolean {
+  const cap = config.llm.monthlyBudgetUsd[provider]
+  return cap !== undefined && spentThisMonth(provider, monthKey()) >= cap * BACKGROUND_SHARE_OF_MONTHLY_CAP
 }
 
 function recordSpend(usage: CallUsage): void {
@@ -172,7 +180,7 @@ export function reserveCall(input: CallInput): CallReservation | BudgetDenial {
   const tokens = coveredByTurn ? null : tokenBucketFor({ provider, model, limits })
 
   let denied: BudgetDenial['denied'] | null = null
-  if (isMonthlyExhausted(provider)) denied = 'monthly'
+  if (isMonthlyExhausted(provider) || (!replySide && backgroundShareSpent(provider))) denied = 'monthly'
   else if (!coveredByTurn && limiter.remainingRpd < 1 + headroom) denied = 'rpd'
   else if (!coveredByTurn && limiter.remainingRpm < 1 + headroom) denied = 'rpm'
   // Text replies are never refused on tokens: `rpm` bounds them, and attachment turns were gated before they began.
