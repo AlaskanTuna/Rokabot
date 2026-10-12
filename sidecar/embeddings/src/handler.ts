@@ -2,7 +2,9 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Embedder } from './embedder.js'
 
 export const MAX_TOKENS = 512
-export const MAX_TEXTS = 16
+// The ONNX arena grows with the batch and never shrinks: on a Pi 5, 4 × 512 tokens peaked at 797 MiB and 16 × 512 was
+// OOM-killed at the 1 GiB cap (2026-10-12). The bot sends one text per request.
+export const MAX_TEXTS = 4
 export const MAX_BODY_BYTES = 1_048_576
 
 const PREFIXES = { query: 'query: ', document: 'passage: ' } as const

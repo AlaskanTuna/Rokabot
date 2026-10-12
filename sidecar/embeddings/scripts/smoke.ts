@@ -48,10 +48,11 @@ if (record) {
 } else {
   const saved = JSON.parse(await readFile(goldenPath, 'utf8')) as typeof golden
   assert.equal(saved.model, golden.model)
+  // q8 kernels differ by up to 6.5e-3 per value between amd64 and a Pi 5 (2026-10-12); a model change moves far more
   for (const key of ['picnic', 'question'] as const) {
     saved[key].forEach((value, index) => {
       assert.ok(
-        Math.abs(value - (golden[key][index] ?? Number.NaN)) < 1e-4,
+        Math.abs(value - (golden[key][index] ?? Number.NaN)) < 1e-2,
         `${key}[${index}] drifted from golden.json`
       )
     })

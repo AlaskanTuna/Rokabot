@@ -14,7 +14,7 @@ one warm-up request, so the endpoint is unreachable before that.
 
 ### `POST /embed`
 
-- Body: `{"texts": string[], "role": "document" | "query"}`, with 1 to 16 texts and at most 1 MiB. Other bodies get `400`; larger ones get `413`.
+- Body: `{"texts": string[], "role": "document" | "query"}`, with 1 to 4 texts and at most 1 MiB. Other bodies get `400`; larger ones get `413`.
 - Each text gets the E5 prefix for its role (`passage: ` or `query: `), then mean pooling and L2 normalisation.
 - Texts past 512 tokens are truncated. `truncated` reports which ones, and the sidecar logs the token count, never the text.
 - Requests run one at a time on one inference thread.
