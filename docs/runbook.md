@@ -275,11 +275,11 @@ sudo docker logs rokabot-roka-1 2>&1 | grep '"msg":"Response completed"' | grep 
 
 ## Verifying a Model Profile
 
-`Qwen/Qwen3.5-35B-A3B` and `deepseek-ai/DeepSeek-V4.1-Flash` ship as candidates (`verified: false` in
-`src/agent/llm/profiles.ts`), so startup refuses them as `llm.main` or `llm.fallback` until a live probe passes. The
-probe makes four calls per model (a text reply, one tool call, a reply to that tool's result, one JSON object). On
-ModelScope each call spends Magicubes from the daily allowance; on OpenAI it bills the account. It refuses to run
-without `--live`, and when `CI` is set.
+`Qwen/Qwen3.5-35B-A3B`, `deepseek-ai/DeepSeek-V4.1-Flash` and `gpt-6-luna` passed the live probe on 2026-10-12 and
+are `verified: true` in `src/agent/llm/profiles.ts`. A profile added later ships as a candidate (`verified: false`), so
+startup refuses it as `llm.main` or `llm.fallback` until a live probe passes. The probe makes four calls per model (a
+text reply, one tool call, a reply to that tool's result, one JSON object). On ModelScope each call spends Magicubes
+from the daily allowance; on OpenAI it bills the account. It refuses to run without `--live`, and when `CI` is set.
 
 ```bash
 npx tsx scripts/probe-llm-profile.ts --live --model Qwen/Qwen3.5-35B-A3B --model deepseek-ai/DeepSeek-V4.1-Flash
@@ -331,9 +331,10 @@ sqlite3 data/rokabot.db "SELECT provider, ROUND(usd, 4) FROM llm_spend WHERE mon
 ```
 
 A provider that reaches `llm.monthlyBudgetUsd` is disabled until the UTC month turns, and stays disabled across
-restarts. To re-enable it early, raise its cap in `config.yml` and restart. A provider that reported its own credit
-spent is disabled in memory only: top up the account, then restart. ModelScope's daily estimate
-(`llm.modelscopeDailyMagicubes`) resets at UTC midnight and on restart.
+restarts. Background jobs stop earlier, at 80% of the cap, so replies keep the last fifth; that stop disables nothing,
+and replies run on to the full cap. To re-enable a provider early, raise its cap in `config.yml` and restart. A
+provider that reported its own credit spent is disabled in memory only: top up the account, then restart.
+ModelScope's daily estimate (`llm.modelscopeDailyMagicubes`) resets at UTC midnight and on restart.
 
 ---
 

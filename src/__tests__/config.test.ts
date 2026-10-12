@@ -1999,13 +1999,14 @@ describe('config module', () => {
     it.each([
       ['qwen', 'Qwen/Qwen3.5-35B-A3B'],
       ['deepseek', 'deepseek-ai/DeepSeek-V4.1-Flash']
-    ])('refuses the unverified %s candidate as main until the probe passes', async (key, model) => {
+    ])('accepts the verified %s profile as main', async (key, model) => {
       vi.stubEnv('MODELSCOPE_API_KEY', 'modelscope-test-key')
       withYamlOverride({ llm: { main: key, fallback: null, models: { [key]: { provider: 'modelscope', model } } } })
 
-      await expect(() => import('../config.js')).rejects.toThrow(
-        `Config value llm.models.${key}.model ${model} is an untested candidate and cannot be llm.main`
-      )
+      const { config } = await import('../config.js')
+
+      expect(config.llm.main).toMatchObject({ key, provider: 'modelscope', model, apiKey: 'modelscope-test-key' })
+      expect(config.llm.main.profile.verified).toBe(true)
     })
 
     it('keeps the legacy fallback and its exact ModelScope request when there is no llm block', async () => {
