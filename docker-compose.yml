@@ -44,7 +44,7 @@ services:
       context: ./sidecar/embeddings
     profiles: ['local-embeddings'] # Not started unless COMPOSE_PROFILES=local-embeddings or --profile local-embeddings; the bot reaches it at http://embeddings:8080 (embeddings.sidecarUrl)
     restart: unless-stopped
-    mem_limit: 1g # D6 cap; about 710 MiB measured on amd64 after the smoke test (2026-10-11), not yet measured on the Pi (docs/runbook.md)
+    mem_limit: 1g # D6 cap; on a Pi 5: 464 MiB idle, 714 MiB peak at one text per request, 797 MiB at the largest batch (4 x 512 tokens) (2026-10-12, docs/runbook.md)
     memswap_limit: 1g # Equal to mem_limit, as on roka: no swap
     cpus: 1 # One inference thread; leaves the other cores to the bot and speech recognition
     logging:

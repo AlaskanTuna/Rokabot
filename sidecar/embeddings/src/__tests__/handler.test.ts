@@ -109,6 +109,18 @@ describe('embedding sidecar handler', () => {
     expect(embedder.calls).toEqual([])
   })
 
+  it('caps a request at four texts, the largest batch that stayed under 800 MiB on a Pi 5', async () => {
+    const embedder = fixedEmbedder()
+    const { url } = await start(embedder)
+
+    const four = await post(url, { texts: Array(4).fill('x'), role: 'document' })
+    const five = await post(url, { texts: Array(5).fill('x'), role: 'document' })
+
+    expect(four.status).toBe(200)
+    expect(five.status).toBe(400)
+    await expect(five.json()).resolves.toEqual({ error: 'texts must be 1 to 4 strings' })
+  })
+
   it('rejects a body over the size cap with 413', async () => {
     const { url } = await start(fixedEmbedder())
 

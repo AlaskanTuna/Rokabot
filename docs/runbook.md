@@ -360,7 +360,7 @@ sqlite3 ~/rokabot/data/rokabot.db "SELECT 'episode', embedding_fingerprint, COUN
 
 ### Before Switching the Pi to Local
 
-1. Owner follow-up: measure the sidecar on the Pi. Start only it with `docker compose --profile local-embeddings up -d --build embeddings`. While it embeds, run a voice-note transcription and an attachment turn, and watch `docker stats --no-stream`. The release gate is peak RSS under 800 MiB inside the 1 GiB cap. On amd64 the sidecar used about 710 MiB after the smoke test (2026-10-11), so the gate is close; measure before switching.
+1. Measured on the Pi 5 (2026-10-12), started alone with `docker compose --profile local-embeddings up -d --build embeddings`: the build takes about 5.5 minutes and the image is 1.22 GB; it is healthy in 10 s; it idles at 464 MiB and peaks at 714 MiB under the bot's one-text traffic, against a release gate of 800 MiB inside the 1 GiB cap. Its ONNX arena grows with the batch and never shrinks, so the sidecar takes at most 4 texts per request: 4 × 512 tokens peaked at 797 MiB, and 16 × 512 was OOM-killed. A one-text query takes 29 ms at p50 and 42 ms at p95. Still open: the same measurement while a voice note and an attachment turn run.
 2. Calibrate `embeddings.minSimilarity` for the local fingerprint on a labelled recall set. The shipped values are placeholders.
 3. Confirm health: `docker compose exec embeddings node -e "fetch('http://127.0.0.1:8080/health').then((r) => r.text()).then(console.log)"`.
 
