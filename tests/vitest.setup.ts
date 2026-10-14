@@ -1,4 +1,14 @@
-import { resolve } from 'node:path'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
+import { threadId } from 'node:worker_threads'
+import { dump, load } from 'js-yaml'
+
+// Tests pin the legacy route on the shipped settings, so they read config.yml without the deployer's llm: block
+const { llm: _deployerLlm, ...shipped } = load(readFileSync('config.yml', 'utf8')) as Record<string, unknown>
+const testConfigPath = join(tmpdir(), `rokabot-vitest-config-${process.pid}-${threadId}.yml`)
+writeFileSync(testConfigPath, dump(shipped))
+process.env.ROKABOT_CONFIG_PATH = testConfigPath
 
 process.env.DOTENV_CONFIG_PATH = resolve('tests/vitest-empty.env')
 process.env.DISCORD_TOKEN = 'vitest-discord-token'
