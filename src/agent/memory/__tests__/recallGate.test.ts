@@ -40,7 +40,7 @@ import * as userNames from '../../../storage/userNames.js'
 import { upsertUserName } from '../../../storage/userNames.js'
 import { resetChannelVisibilityForTest } from '../channelVisibility.js'
 import { geminiVector } from '../embeddings/__tests__/vectors.js'
-import { type ClaimPeriod, assertClaim, pinClaim } from '../memoryClaims.js'
+import { type ClaimPeriod, assertClaim, assertGuildClaim, pinClaim } from '../memoryClaims.js'
 import {
   type GatePool,
   type RecallInput,
@@ -180,6 +180,49 @@ describe('recallGatePool', () => {
     const gatePool = recallGatePool(input())
     expect(gatePool.entries.map(({ item }) => item.id).sort()).toEqual([near, far].sort())
     expect(gatePool.entries.find(({ item }) => item.id === far)).toMatchObject({ keptByFloor: false })
+  })
+
+  it('appends facts with no embedding after the ranked entries, newest first, none of them floor-kept', () => {
+    const near = fact('speaker', 'hobby', 'chess', axis(1))
+    const far = fact('speaker', 'hobby', 'go', mix(1, 2, 0.95))
+    const older = fact('speaker', 'food', 'ramen', null, { observedAt: NOW - 5000 })
+    const newer = fact('speaker', 'pet', 'cat', null, { observedAt: NOW - 10 })
+    const server = assertGuildClaim({
+      guildId: GUILD,
+      predicate: 'place',
+      value: 'The group meets in voice chat',
+      expiresAt: null,
+      sourceKind: 'passive',
+      channelId: 'chan-a',
+      observedAt: NOW - 1
+    })
+
+    const { entries } = recallGatePool(input())
+
+    expect(
+      entries.map(({ item, similarity, keptByFloor }) => [item.kind, item.id, similarity !== null, keptByFloor])
+    ).toEqual([
+      ['fact', near, true, true],
+      ['fact', far, true, false],
+      ['server_fact', server.id, false, false],
+      ['fact', newer, false, false],
+      ['fact', older, false, false]
+    ])
+  })
+
+  it('does not select a fact with no embedding in recallForTurn, whose floors it cannot clear', () => {
+    fact('speaker', 'hobby', 'chess', axis(1))
+    const unembedded = fact('speaker', 'food', 'ramen', null)
+
+    expect(recallForTurn(input()).items.map(({ id }) => id)).not.toContain(unembedded)
+  })
+
+  it('still treats the keyword-only path as floor-free', () => {
+    const chess = fact('speaker', 'hobby', 'chess', null)
+    const { entries } = recallGatePool(input({ queryEmbedding: null, message: 'do you still play chess' }))
+    expect(entries.map(({ item, similarity, keptByFloor }) => [item.id, similarity, keptByFloor])).toEqual([
+      [chess, null, true]
+    ])
   })
 
   it('returns core facts separately and never as entries', () => {

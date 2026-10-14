@@ -123,29 +123,34 @@ function factItem(claim: FactClaim, score: number, core: boolean): RecallItem {
   }
 }
 
+// With the floors lifted, a fact with no usable embedding is kept apart (unembedded) instead of dropped, since the
+// Jev gate can judge it on its text; with them on it is dropped, as it has no similarity to clear a floor with.
 function rankBySimilarity(
   claims: readonly FactClaim[],
   embeddings: ReadonlyMap<number, EpisodeEmbedding>,
   query: readonly number[],
   ctx: Ctx,
   floors = true
-): Ranked[] {
+): { ranked: Ranked[]; unembedded: Ranked[] } {
   const ranked: Ranked[] = []
+  const unembedded: Ranked[] = []
   for (const claim of claims) {
     const embedding = embeddings.get(claim.id)
     const similarity = embedding ? cosineSimilarity(query, embedding) : null
+    const keyword = ctx.keywordIds.has(claim.id)
+    if (similarity === null) {
+      if (!floors) {
+        unembedded.push({ item: factItem(claim, factBoost(claim, ctx), false), at: claim.lastSeenAt, keyword })
+      }
+      continue
+    }
     const minimum =
       claim.subjectKind === 'guild' ? config.memory.serverFactMinSimilarity : config.memory.factMinSimilarity
-    if (similarity === null || (floors && similarity <= minimum)) continue
+    if (floors && similarity <= minimum) continue
     const score = similarity + factBoost(claim, ctx) - cooldownPenalty(claim, ctx)
-    ranked.push({
-      item: factItem(claim, score, false),
-      at: claim.lastSeenAt,
-      similarity,
-      keyword: ctx.keywordIds.has(claim.id)
-    })
+    ranked.push({ item: factItem(claim, score, false), at: claim.lastSeenAt, similarity, keyword })
   }
-  return ranked
+  return { ranked, unembedded }
 }
 
 // A named subject is what the user asked about, so no similarity floor applies. Facts without a usable embedding
@@ -316,7 +321,8 @@ export function recallGatePool(input: RecallInput): GatePool {
       at,
       similarity: similarity ?? null,
       keyword: keyword ?? false,
-      keptByFloor: similarity === undefined ? true : similarity > floorFor(item.kind)
+      // Without a similarity, only the keyword path (no query) is exempt from the floors; an unembedded fact is not.
+      keptByFloor: similarity === undefined ? trace.fallback : similarity > floorFor(item.kind)
     })),
     fallback: trace.fallback,
     gated: trace.gated
@@ -382,16 +388,21 @@ function recallTurn(input: RecallInput, floors: boolean): RecallResult & { ranke
   const embeddings = query
     ? getClaimEmbeddings([...restMembers, ...serverAllowed].map((claim) => claim.id))
     : new Map<number, EpisodeEmbedding>()
-  const memberRanked = query
+  const memberRank = query
     ? rankBySimilarity(restMembers, embeddings, query, ctx, floors)
-    : restMembers
-        .filter((claim) => ctx.keywordIds.has(claim.id))
-        .map((claim) => ({
-          item: factItem(claim, factBoost(claim, ctx), false),
-          at: claim.lastSeenAt,
-          keyword: ctx.keywordIds.has(claim.id)
-        }))
-  const serverRanked = query ? rankBySimilarity(serverAllowed, embeddings, query, ctx, floors) : []
+    : {
+        ranked: restMembers
+          .filter((claim) => ctx.keywordIds.has(claim.id))
+          .map((claim) => ({
+            item: factItem(claim, factBoost(claim, ctx), false),
+            at: claim.lastSeenAt,
+            keyword: ctx.keywordIds.has(claim.id)
+          })),
+        unembedded: []
+      }
+  const serverRank = query
+    ? rankBySimilarity(serverAllowed, embeddings, query, ctx, floors)
+    : { ranked: [], unembedded: [] }
   const conversationRanked = query
     ? rankConversations(
         episodes.filter((episode) => admit([episode.channelId])),
@@ -410,7 +421,13 @@ function recallTurn(input: RecallInput, floors: boolean): RecallResult & { ranke
       )
     : []
 
-  const ranked = [...memberRanked, ...serverRanked, ...conversationRanked, ...mediaRanked].sort(byScore)
+  const unembedded = [...memberRank.unembedded, ...serverRank.unembedded].sort(
+    (left, right) => right.at - left.at || left.item.id - right.item.id
+  )
+  const ranked = [
+    ...[...memberRank.ranked, ...serverRank.ranked, ...conversationRanked, ...mediaRanked].sort(byScore),
+    ...unembedded
+  ]
   const core = coreRanked.map(({ item }) => item)
   const selected = packRecallItems(
     core,

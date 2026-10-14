@@ -423,6 +423,21 @@ describe('recallCandidates', () => {
     expect(selected.length).toBeLessThan(candidates.length)
   })
 
+  it('leaves out a fact with no embedding, which has no similarity to calibrate', () => {
+    fact(1, 'hobby', 'chess', axis(1))
+    assertClaim({
+      guildId: GUILD,
+      subjectUserId: 'alice',
+      predicate: 'pet',
+      value: 'a cat',
+      sourceKind: 'passive',
+      channelId: CHANNEL,
+      observedAt: NOW
+    })
+
+    expect(recallCandidates(input(axis(1))).map(({ id }) => id)).toEqual([1])
+  })
+
   it('carries the turn text, and returns nothing without a usable query', () => {
     fact(1, 'hobby', 'chess', axis(1))
 
