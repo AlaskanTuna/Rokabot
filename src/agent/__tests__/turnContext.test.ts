@@ -41,7 +41,8 @@ const mocks = vi.hoisted(() => ({
     block: '',
     trace: { nCandidates: 0, gated: 0, fallback: false, tokensEst: 0 }
   })),
-  touchRecalled: vi.fn()
+  touchRecalled: vi.fn(),
+  runRecallGate: vi.fn()
 }))
 
 vi.mock('../jev/judgments.js', () => ({ judgeTurn: mocks.judgeTurn }))
@@ -69,6 +70,7 @@ vi.mock('../memory/recall.js', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   recallForTurn: mocks.recallForTurn
 }))
+vi.mock('../memory/recallGateRun.js', () => ({ runRecallGate: mocks.runRecallGate }))
 vi.mock('../memory/memoryClaims.js', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   touchRecalled: mocks.touchRecalled
@@ -832,6 +834,7 @@ describe('memory recall modes', () => {
     mocks.retrieveForTurn.mockReturnValue({ entries: [], claims: [] } as never)
     mocks.resolveReferences.mockReturnValue({ resolved: [], ambiguous: [] } as never)
     mocks.recallForTurn.mockImplementation(() => emptyRecall() as never)
+    mocks.runRecallGate.mockResolvedValue({ items: [], detail: { v: 1, status: 'skipped', settledAtMs: 0 } })
     mocks.runPrefetchForJudgment.mockResolvedValue({ decision: { fire: false, reason: 'no_judgment' }, outcome: null })
   })
 
@@ -899,10 +902,9 @@ describe('memory recall modes', () => {
     mocks.recallForTurn.mockImplementation(() => unifiedRecall())
 
     await turnWith()
-    await flushShadowRecall()
+    await vi.waitFor(() => expect(recalledRows('recall_shadow')).toHaveLength(1))
 
     const rows = recalledRows('recall_shadow')
-    expect(rows).toHaveLength(1)
     expect(rows[0]).toMatchObject({
       guildId: 'guild-1',
       channelId: 'channel-1',
@@ -921,10 +923,62 @@ describe('memory recall modes', () => {
         ['fact', 7, 0.812],
         ['conversation', 3, 0.5],
         ['server_fact', 9, 0.4]
-      ]
+      ],
+      gate: { v: 1, status: 'skipped', settledAtMs: 0, projectedAddedMs: 0 }
     })
     expect(rows[0].detail).not.toContain('chess')
     expect(recalledRows('recall')).toHaveLength(0)
+  })
+
+  it('runs the Jev gate in shadow without changing the prompt, and logs it in the same shadow row', async () => {
+    mocks.recallForTurn.mockImplementation(() => unifiedRecall())
+    mocks.runRecallGate.mockResolvedValue({
+      items: [],
+      detail: {
+        v: 1,
+        status: 'ok',
+        latencyMs: 380,
+        shortlist: [['fact', 7, 0.95]],
+        selected: [['fact', 7]],
+        settledAtMs: performance.now() + 50
+      }
+    })
+
+    memoryConfig.recall = 'legacy'
+    const legacy = await turnWith()
+    memoryConfig.recall = 'shadow'
+    const shadow = await turnWith()
+    await vi.waitFor(() => expect(recalledRows('recall_shadow')).toHaveLength(1))
+
+    expect(shadow.systemPrompt).toBe(legacy.systemPrompt)
+    const detail = JSON.parse(recalledRows('recall_shadow')[0].detail)
+    expect(detail.selected).toEqual([
+      ['fact', 7, 0.812],
+      ['conversation', 3, 0.5],
+      ['server_fact', 9, 0.4]
+    ])
+    expect(detail.gate).toMatchObject({ status: 'ok', shortlist: [['fact', 7, 0.95]] })
+    expect(detail.gate.projectedAddedMs).toBeGreaterThanOrEqual(0)
+    expect(mocks.runRecallGate.mock.calls[0][0]).toMatchObject({
+      mode: 'shadow',
+      channelId: 'channel-1',
+      guildId: 'guild-1'
+    })
+  })
+
+  it('still writes the shadow row when the gate throws', async () => {
+    mocks.recallForTurn.mockImplementation(() => unifiedRecall())
+    mocks.runRecallGate.mockRejectedValue(new Error('boom'))
+    memoryConfig.recall = 'shadow'
+    await turnWith()
+    await vi.waitFor(() => expect(recalledRows('recall_shadow')).toHaveLength(1))
+    expect(JSON.parse(recalledRows('recall_shadow')[0].detail).gate).toEqual({ status: 'error' })
+  })
+
+  it('does not run the gate in legacy mode', async () => {
+    memoryConfig.recall = 'legacy'
+    await turnWith()
+    expect(mocks.runRecallGate).not.toHaveBeenCalled()
   })
 
   it('shows only the unified block, touches the selected facts and records one recall event', async () => {
