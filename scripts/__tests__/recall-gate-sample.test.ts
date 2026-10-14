@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import Database from 'better-sqlite3'
@@ -15,7 +15,14 @@ import { closeDb, getDb } from '../../src/storage/database.js'
 import { recordMediaOccurrence, saveMediaDigest } from '../../src/storage/mediaDigestStore.js'
 import { saveMemoryEpisode } from '../../src/storage/memoryEpisodeStore.js'
 import { turnRef } from '../recall-calibration-sample.js'
-import { type GatePair, loadGatePairs, matchGateMessage, writeGateSample } from '../recall-gate-sample.js'
+import {
+  type GatePair,
+  formatSkips,
+  loadGatePairs,
+  loadGateSample,
+  matchGateMessage,
+  writeGateSample
+} from '../recall-gate-sample.js'
 
 const NOW = 1_800_000_000_000
 const GUILD = 'guild-gate'
@@ -32,18 +39,28 @@ let dbPath = ''
 let previousDbPath: string | undefined
 let previousTimezone: string | undefined
 
-function okGate(message: string, shortlist: Array<[string, number, number | null]>): Record<string, unknown> {
-  return { v: 1, status: 'ok', messageHash: hash(message), shortlist }
+function okGate(
+  message: string,
+  shortlist: Array<[string, number, number | null]>,
+  version: { rubric?: string; model?: string } = {}
+): Record<string, unknown> {
+  return { v: 1, status: 'ok', messageHash: hash(message), shortlist, ...version }
 }
 
-function shadowRow(id: number, createdAt: number, gate: unknown, channelId: string | null = CHANNEL): void {
+function shadowRow(
+  id: number,
+  createdAt: number,
+  gate: unknown,
+  channelId: string | null = CHANNEL,
+  subjectUserId: string | null = 'alice'
+): void {
   const detail = typeof gate === 'string' ? gate : JSON.stringify({ mode: 'shadow', fallback: false, gate })
   getDb()
     .prepare(
       `INSERT INTO memory_events (id, kind, guild_id, channel_id, subject_user_id, detail, created_at)
-       VALUES (?, 'recall_shadow', ?, ?, 'alice', ?, ?)`
+       VALUES (?, 'recall_shadow', ?, ?, ?, ?, ?)`
     )
-    .run(id, GUILD, channelId, detail, createdAt)
+    .run(id, GUILD, channelId, subjectUserId, detail, createdAt)
 }
 
 function history(
@@ -51,11 +68,14 @@ function history(
   timestamp: number,
   role: 'user' | 'assistant' = 'user',
   channelId = CHANNEL,
-  displayName = role === 'user' ? 'Alice' : 'Roka'
+  displayName = role === 'user' ? 'Alice' : 'Roka',
+  userId: string | null = null
 ): void {
   getDb()
-    .prepare('INSERT INTO session_history (channel_id, role, display_name, content, timestamp) VALUES (?, ?, ?, ?, ?)')
-    .run(channelId, role, displayName, content, timestamp)
+    .prepare(
+      'INSERT INTO session_history (channel_id, role, display_name, content, timestamp, user_id) VALUES (?, ?, ?, ?, ?, ?)'
+    )
+    .run(channelId, role, displayName, content, timestamp, userId)
 }
 
 function guildClaim(
@@ -170,7 +190,7 @@ describe('loading gate pairs', () => {
     expect(pairs[0]).toMatchObject({ message: MESSAGE, memoryText: 'likes: a Yamaha guitar' })
     expect(pairs[1].memoryText).toBe('Aki and Alice compared guitar shops')
     expect(pairs[2].memoryText).toBe('announcement: the club meets on Friday')
-    expect(pairs[3].memoryText).toBe('A short clip of someone strumming a Yamaha')
+    expect(pairs[3].memoryText).toBe('Guitar demo: A short clip of someone strumming a Yamaha')
     expect(new Set(pairs.map(({ turnRef: ref }) => ref))).toEqual(new Set([turnRef(CHANNEL, NOW)]))
     expect(pairs[0].pairId).toBe(`${turnRef(CHANNEL, NOW)}-fact-${claimId}`)
 
@@ -299,6 +319,16 @@ describe('loading gate pairs', () => {
     expect(pairs.map(({ message }) => message)).toEqual(['(shared an image) of my cat'])
   })
 
+  it('skips a turn that only pinged the bot, which carries no text a judge could read', () => {
+    const { claimId } = seedMemories()
+    history('(pinged you without saying anything)', NOW + SECOND)
+    shadowRow(1, NOW, okGate('(pinged you without saying anything)', [['fact', claimId, 0.9]]))
+    history('(pinged you without saying anything) hi', NOW + 800 * SECOND)
+    shadowRow(2, NOW + 800 * SECOND, okGate('(pinged you without saying anything) hi', [['fact', claimId, 0.7]]))
+
+    expect(loadGatePairs(finish()).map(({ message }) => message)).toEqual(['(pinged you without saying anything) hi'])
+  })
+
   it('does not write to the database copy', () => {
     const { claimId } = seedMemories()
     history(MESSAGE, NOW + SECOND)
@@ -341,6 +371,45 @@ describe('the context Jev saw', () => {
     ])
   })
 
+  it('shows only lines Jev could load: not older than the rehydration age before the shadow row, edge included', () => {
+    const { claimId } = seedMemories()
+    const age = config.session.maxRehydrationAge
+    history('ancient', NOW - age - 60 * SECOND, 'user', CHANNEL, 'Bob')
+    history('one millisecond too old', NOW - age - 1, 'user', CHANNEL, 'Bob')
+    history('exactly at the edge', NOW - age, 'user', CHANNEL, 'Carol')
+    history('well inside', NOW - 1000 * SECOND, 'user', CHANNEL, 'Bob')
+    history(MESSAGE, NOW + SECOND)
+    shadowRow(1, NOW, okGate(MESSAGE, [['fact', claimId, 0.9]]))
+
+    expect(pairsOf()[0].recentMessages).toEqual(['[Carol]: exactly at the edge', '[Bob]: well inside'])
+  })
+
+  it('still keeps only the three newest lines inside the window, oldest first', () => {
+    const { claimId } = seedMemories()
+    for (const [index, name] of ['a', 'b', 'c', 'd'].entries()) {
+      history(`line ${name}`, NOW - (400 - index * 100) * SECOND, 'user', CHANNEL, 'Bob')
+    }
+    history(MESSAGE, NOW + SECOND)
+    shadowRow(1, NOW, okGate(MESSAGE, [['fact', claimId, 0.9]]))
+
+    expect(pairsOf()[0].recentMessages).toEqual(['[Bob]: line b', '[Bob]: line c', '[Bob]: line d'])
+  })
+
+  it('applies no age bound when the rehydration age is zero, as loadHistory does', () => {
+    const { claimId } = seedMemories()
+    const previous = config.session.maxRehydrationAge
+    ;(config.session as { maxRehydrationAge: number }).maxRehydrationAge = 0
+    try {
+      history('from last week', NOW - 7 * 24 * 3600 * 1000, 'user', CHANNEL, 'Bob')
+      history(MESSAGE, NOW + SECOND)
+      shadowRow(1, NOW, okGate(MESSAGE, [['fact', claimId, 0.9]]))
+
+      expect(pairsOf()[0].recentMessages).toEqual(['[Bob]: from last week'])
+    } finally {
+      ;(config.session as { maxRehydrationAge: number }).maxRehydrationAge = previous
+    }
+  })
+
   it('gives fewer lines when the channel has fewer, and none when it has none', () => {
     const { claimId } = seedMemories()
     history('only one before', NOW - 100 * SECOND, 'user', CHANNEL, 'Bob')
@@ -355,7 +424,7 @@ describe('the context Jev saw', () => {
     expect(pairs[1].recentMessages).toEqual(['[Bob]: only one before', '[Alice]: what guitar did Aki want?'])
   })
 
-  it('names the subject of a member fact from the copy, and only for member facts', () => {
+  it("names the speaker's own facts by the speaker's chat name, other members from the copy, and only member facts", () => {
     const bob = assertClaim({
       guildId: GUILD,
       subjectUserId: 'bob',
@@ -369,6 +438,9 @@ describe('the context Jev saw', () => {
     getDb()
       .prepare('INSERT INTO user_names (user_id, username, display_name, updated_at) VALUES (?, ?, ?, ?)')
       .run('alice', 'alice_9', 'Alice A.', NOW)
+    getDb()
+      .prepare('INSERT INTO user_names (user_id, username, display_name, updated_at) VALUES (?, ?, ?, ?)')
+      .run('bob', 'bob_3', 'Bobby', NOW)
     const serverFactId = guildClaim('announcement', 'the club meets on Friday')
     history(MESSAGE, NOW + SECOND)
     shadowRow(
@@ -382,24 +454,52 @@ describe('the context Jev saw', () => {
       ])
     )
 
+    // Jev saw the speaker under the name in the chat, which can differ from the name stored for the user.
     expect(pairsOf().map(({ kind, subject }) => [kind, subject])).toEqual([
-      ['fact', 'Alice A.'],
-      ['fact', null],
+      ['fact', 'Alice'],
+      ['fact', 'Bobby'],
       ['server_fact', null],
       ['conversation', null]
     ])
   })
 
-  it('leaves the subject null when the copy has no user-names table', () => {
+  it('leaves a fact about another member unnamed when the shadow row has no speaker', () => {
     const { claimId } = seedMemories()
-    getDb().exec('DROP TABLE user_names')
+    getDb()
+      .prepare('INSERT INTO user_names (user_id, username, display_name, updated_at) VALUES (?, ?, ?, ?)')
+      .run('alice', 'alice_9', 'Alice A.', NOW)
     history(MESSAGE, NOW + SECOND)
-    shadowRow(1, NOW, okGate(MESSAGE, [['fact', claimId, 0.9]]))
+    shadowRow(1, NOW, okGate(MESSAGE, [['fact', claimId, 0.9]]), CHANNEL, null)
 
-    expect(pairsOf().map(({ subject }) => subject)).toEqual([null])
+    expect(pairsOf().map(({ subject }) => subject)).toEqual(['Alice A.'])
   })
 
-  it('gives the period of a fact or server fact, and null for conversations and media', () => {
+  it('leaves another member unnamed when the copy has no user-names table, but still names the speaker', () => {
+    const { claimId } = seedMemories()
+    const bob = assertClaim({
+      guildId: GUILD,
+      subjectUserId: 'bob',
+      predicate: 'likes',
+      value: 'chess',
+      sourceKind: 'passive',
+      channelId: CHANNEL,
+      observedAt: NOW
+    })
+    getDb().exec('DROP TABLE user_names')
+    history(MESSAGE, NOW + SECOND)
+    shadowRow(
+      1,
+      NOW,
+      okGate(MESSAGE, [
+        ['fact', claimId, 0.9],
+        ['fact', bob.id, 0.8]
+      ])
+    )
+
+    expect(pairsOf().map(({ subject }) => subject)).toEqual(['Alice', null])
+  })
+
+  it("gives the period Jev saw: the claim's for facts and server facts, current for conversations and media", () => {
     const past = assertClaim({
       guildId: GUILD,
       subjectUserId: 'alice',
@@ -437,8 +537,8 @@ describe('the context Jev saw', () => {
       ['fact', 'current'],
       ['fact', 'past'],
       ['server_fact', 'past'],
-      ['conversation', null],
-      ['media', null]
+      ['conversation', 'current'],
+      ['media', 'current']
     ])
   })
 
@@ -591,7 +691,7 @@ describe('the context Jev saw', () => {
       memoryText: 'likes: a Yamaha guitar',
       speaker: 'Alice',
       recentMessages: ['[Bob]: an earlier line'],
-      subject: 'Alice A.',
+      subject: 'Alice',
       period: 'current',
       date: null,
       turnDate: '2027-01-15'
@@ -600,6 +700,21 @@ describe('the context Jev saw', () => {
     expect(readFileSync(join(outDir, 'key.jsonl'), 'utf8')).toBe(
       `${JSON.stringify({ pairId: `${turnRef(CHANNEL, NOW)}-fact-${claimId}`, turnRef: turnRef(CHANNEL, NOW), kind: 'fact', probability: 0.91 })}\n`
     )
+  })
+})
+
+describe('who spoke', () => {
+  it('takes the speaker from the row the shadow row’s user wrote, not a nearer identical message from someone else', () => {
+    const { claimId } = seedMemories()
+    history('lol', NOW + 200 * SECOND, 'user', CHANNEL, 'Alice the Guitarist', 'alice')
+    history('lol', NOW + 10 * SECOND, 'user', CHANNEL, 'Bob', 'bob')
+    shadowRow(1, NOW, okGate('lol', [['fact', claimId, 0.9]]))
+
+    const [pair] = loadGatePairs(finish())
+
+    expect(pair.speaker).toBe('Alice the Guitarist')
+    expect(pair.recentMessages).toEqual(['[Bob]: lol'])
+    expect(pair.subject).toBe('Alice the Guitarist')
   })
 })
 
@@ -660,10 +775,10 @@ describe('claims a member removed', () => {
 })
 
 describe('matching a turn to its history row', () => {
-  function match(createdAt: number, text: string): ReturnType<typeof matchGateMessage> {
+  function match(createdAt: number, text: string, speakerId?: string | null): ReturnType<typeof matchGateMessage> {
     const database = new Database(finish(), { readonly: true })
     try {
-      return matchGateMessage(database, CHANNEL, createdAt, hash(text))
+      return matchGateMessage(database, CHANNEL, createdAt, hash(text), speakerId)
     } finally {
       database.close()
     }
@@ -684,11 +799,172 @@ describe('matching a turn to its history row', () => {
     expect(match(NOW, MESSAGE)).toEqual({ message: MESSAGE, timestamp: NOW - 10 * SECOND, speaker: 'Alice' })
   })
 
+  it('prefers the speaker’s own row over a nearer identical message from another member', () => {
+    history(MESSAGE, NOW + 10 * SECOND, 'user', CHANNEL, 'Bob', 'bob')
+    history(MESSAGE, NOW + 200 * SECOND, 'user', CHANNEL, 'Alice', 'alice')
+
+    expect(match(NOW, MESSAGE, 'alice')).toEqual({ message: MESSAGE, timestamp: NOW + 200 * SECOND, speaker: 'Alice' })
+  })
+
+  it('uses the nearest of the speaker’s own rows when there are several', () => {
+    history(MESSAGE, NOW - 300 * SECOND, 'user', CHANNEL, 'Alice', 'alice')
+    history(MESSAGE, NOW + 40 * SECOND, 'user', CHANNEL, 'Alice', 'alice')
+    history(MESSAGE, NOW + 5 * SECOND, 'user', CHANNEL, 'Bob', 'bob')
+
+    expect(match(NOW, MESSAGE, 'alice')).toEqual({ message: MESSAGE, timestamp: NOW + 40 * SECOND, speaker: 'Alice' })
+  })
+
+  it('falls back to the nearest row of anyone when the speaker has none, or when no speaker is known', () => {
+    history(MESSAGE, NOW + 10 * SECOND, 'user', CHANNEL, 'Bob', 'bob')
+    history(MESSAGE, NOW + 200 * SECOND, 'user', CHANNEL, 'Carol', 'carol')
+
+    expect(match(NOW, MESSAGE, 'alice')).toEqual({ message: MESSAGE, timestamp: NOW + 10 * SECOND, speaker: 'Bob' })
+    expect(match(NOW, MESSAGE, null)).toEqual({ message: MESSAGE, timestamp: NOW + 10 * SECOND, speaker: 'Bob' })
+  })
+
   it('takes the earlier row on an exact tie', () => {
     history(MESSAGE, NOW + 20 * SECOND)
     history(MESSAGE, NOW - 20 * SECOND)
 
     expect(match(NOW, MESSAGE)).toEqual({ message: MESSAGE, timestamp: NOW - 20 * SECOND, speaker: 'Alice' })
+  })
+})
+
+describe('what the sampler skipped', () => {
+  it('counts each reason once, and unusable memories by candidate', () => {
+    const { claimId, episodeId } = seedMemories()
+    const removed = assertClaim({
+      guildId: GUILD,
+      subjectUserId: 'alice',
+      predicate: 'likes',
+      value: 'coffee',
+      sourceKind: 'explicit',
+      channelId: CHANNEL,
+      observedAt: NOW
+    }).id
+    retractClaim({ guildId: GUILD, subjectUserId: 'alice', predicate: 'likes', value: 'coffee' })
+    history(MESSAGE, NOW + SECOND)
+    history('(shared an image)', NOW + 10 * SECOND)
+    history('(pinged you without saying anything)', NOW + 20 * SECOND)
+    shadowRow(1, NOW, { v: 1, status: 'deadline', messageHash: hash(MESSAGE), shortlist: [] })
+    shadowRow(2, NOW, { v: 1, status: 'gate_error' })
+    shadowRow(3, NOW, 'not json')
+    shadowRow(4, NOW + 30 * SECOND, okGate('said where nobody recorded it', [['fact', claimId, 0.9]]))
+    shadowRow(5, NOW + 10 * SECOND, okGate('(shared an image)', [['fact', claimId, 0.9]]))
+    shadowRow(6, NOW + 20 * SECOND, okGate('(pinged you without saying anything)', [['fact', claimId, 0.9]]))
+    shadowRow(
+      7,
+      NOW,
+      okGate(MESSAGE, [
+        ['fact', claimId, 0.9],
+        ['fact', 999, 0.8],
+        ['fact', removed, 0.7],
+        ['mystery', 1, 0.6],
+        ['conversation', episodeId, 0.5],
+        ['fact', claimId, null]
+      ])
+    )
+
+    const sample = loadGateSample(finish())
+
+    expect(sample.pairs.map(({ kind }) => kind)).toEqual(['fact', 'conversation'])
+    expect(sample.rows).toBe(7)
+    expect(sample.skips).toEqual({
+      gateNotOk: 3,
+      otherSelection: 0,
+      noHistoryMatch: 1,
+      placeholder: 2,
+      memoryUnavailable: 3
+    })
+  })
+
+  it('prints every reason with its count', () => {
+    const line = formatSkips({
+      gateNotOk: 3,
+      otherSelection: 4,
+      noHistoryMatch: 5,
+      placeholder: 6,
+      memoryUnavailable: 7
+    })
+
+    expect(line).toBe(
+      'skipped: 3 turns with a gate that was not ok, 4 turns on another rubric or model, 5 turns with no history match, ' +
+        '6 placeholder messages, 7 candidates whose memory is missing or excluded'
+    )
+  })
+
+  it('returns the same pairs from loadGatePairs as from the sample', () => {
+    const { claimId } = seedMemories()
+    history(MESSAGE, NOW + SECOND)
+    shadowRow(1, NOW, okGate(MESSAGE, [['fact', claimId, 0.9]]))
+    const copy = finish()
+
+    expect(loadGatePairs(copy)).toEqual(loadGateSample(copy).pairs)
+  })
+})
+
+describe('mixed rubrics and models', () => {
+  function seedMixed(): void {
+    const { claimId } = seedMemories()
+    const rows: Array<[string, { rubric?: string; model?: string }]> = [
+      ['first', { rubric: 'r1', model: 'model-a' }],
+      ['second', { rubric: 'r1', model: 'model-a' }],
+      ['third', { rubric: 'r2', model: 'model-a' }],
+      ['fourth', { rubric: 'r1', model: 'model-b' }]
+    ]
+    for (const [index, [message, version]] of rows.entries()) {
+      history(message, NOW + (index * 700 + 1) * SECOND)
+      shadowRow(index + 1, NOW + index * 700 * SECOND, okGate(message, [['fact', claimId, 0.9]], version))
+    }
+  }
+
+  it('refuses to mix them and says how many turns each has', () => {
+    seedMixed()
+    const copy = finish()
+
+    expect(() => loadGatePairs(copy)).toThrow('r1 / model-a = 2; r1 / model-b = 1; r2 / model-a = 1')
+    expect(() => loadGatePairs(copy)).toThrow('--rubric and --model')
+  })
+
+  it('uses only the rows of the rubric and model it is given, and counts the rest as skipped', () => {
+    seedMixed()
+
+    const sample = loadGateSample(finish(), { rubric: 'r1', model: 'model-a' })
+
+    expect(sample.pairs.map(({ message }) => message)).toEqual(['first', 'second'])
+    expect(sample.skips.otherSelection).toBe(2)
+  })
+
+  it('accepts a rubric alone when it leaves one model, and still refuses when it leaves two', () => {
+    seedMixed()
+    const copy = finish()
+
+    expect(loadGatePairs(copy, { rubric: 'r2' }).map(({ message }) => message)).toEqual(['third'])
+    expect(() => loadGatePairs(copy, { rubric: 'r1' })).toThrow('r1 / model-a = 2; r1 / model-b = 1')
+    expect(loadGatePairs(copy, { model: 'model-b' }).map(({ message }) => message)).toEqual(['fourth'])
+  })
+
+  it('does not count rows that could not make a pair', () => {
+    const { claimId } = seedMemories()
+    history(MESSAGE, NOW + SECOND)
+    shadowRow(1, NOW, okGate(MESSAGE, [['fact', claimId, 0.9]], { rubric: 'r2', model: 'model-a' }))
+    shadowRow(
+      2,
+      NOW + 3000 * SECOND,
+      okGate('aged out of the history', [['fact', claimId, 0.9]], { rubric: 'r1', model: 'model-a' })
+    )
+    shadowRow(3, NOW + 4000 * SECOND, { v: 1, status: 'deadline', rubric: 'r0', model: 'model-z' })
+
+    expect(loadGatePairs(finish()).map(({ message }) => message)).toEqual([MESSAGE])
+  })
+
+  it('selects nothing, without refusing, when the given rubric matches no row', () => {
+    seedMixed()
+
+    const sample = loadGateSample(finish(), { rubric: 'r9', model: 'model-a' })
+
+    expect(sample.pairs).toEqual([])
+    expect(sample.skips.otherSelection).toBe(4)
   })
 })
 
@@ -727,6 +1003,19 @@ describe('writing the sample', () => {
       .map((line) => JSON.parse(line).pairId as string)
     expect([...ids].sort()).toEqual(pairs.map(({ pairId }) => pairId).sort())
     expect(ids).not.toEqual(pairs.map(({ pairId }) => pairId))
+  })
+
+  it('writes into a private directory, and tightens one that already exists', () => {
+    const fresh = join(directory, 'fresh')
+    const existing = join(directory, 'existing')
+    mkdirSync(existing, { mode: 0o755 })
+    chmodSync(existing, 0o755)
+
+    writeGateSample(pairs, fresh)
+    writeGateSample(pairs, existing)
+
+    expect(statSync(fresh).mode & 0o777).toBe(0o700)
+    expect(statSync(existing).mode & 0o777).toBe(0o700)
   })
 
   it('writes empty files for an empty sample', () => {
