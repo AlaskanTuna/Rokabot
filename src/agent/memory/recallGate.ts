@@ -1,4 +1,5 @@
 import { config } from '../../config.js'
+import { getAllUserNames } from '../../storage/userNames.js'
 import { estimateTokens } from '../../utils/tokens.js'
 import {
   type GatePool,
@@ -17,8 +18,9 @@ export const gateKey = (item: Pick<RecallItem, 'kind' | 'id'>): string => `${ite
 
 /** Per-kind lanes, interleaved fact → server → conversation → media; slots a lane cannot use go to the best rest. */
 export function buildRecallShortlist(pool: GatePool, lanes: Record<RecallItemKind, number>): ShortlistEntry[] {
+  const names = getAllUserNames()
   const fitsAlone = (entry: GatePoolEntry): boolean =>
-    estimateTokens(formatRecallBlock([entry.item])) <= config.memory.recallTokenBudget
+    estimateTokens(formatRecallBlock([entry.item], names)) <= config.memory.recallTokenBudget
   const usable = pool.entries.filter(fitsAlone)
   const byKind = new Map<RecallItemKind, GatePoolEntry[]>(LANE_ORDER.map((kind) => [kind, []]))
   for (const entry of usable) byKind.get(entry.item.kind)?.push(entry)

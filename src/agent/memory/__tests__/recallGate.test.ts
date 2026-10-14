@@ -36,6 +36,7 @@ import { closeDb } from '../../../storage/database.js'
 import { recordMediaOccurrence, saveMediaDigest } from '../../../storage/mediaDigestStore.js'
 import { saveMemoryEpisode } from '../../../storage/memoryEpisodeStore.js'
 import { setClaimEmbedding } from '../../../storage/memoryRecallStore.js'
+import * as userNames from '../../../storage/userNames.js'
 import { upsertUserName } from '../../../storage/userNames.js'
 import { resetChannelVisibilityForTest } from '../channelVisibility.js'
 import { geminiVector } from '../embeddings/__tests__/vectors.js'
@@ -249,6 +250,12 @@ describe('buildRecallShortlist', () => {
       'fact:2',
       'conversation:6'
     ])
+  })
+
+  it('reads member names once however many candidates it checks', () => {
+    const readNames = vi.spyOn(userNames, 'getAllUserNames')
+    buildRecallShortlist(pool([entry('fact', 1), entry('fact', 2), entry('conversation', 3), entry('media', 4)]), LANES)
+    expect(readNames).toHaveBeenCalledTimes(1)
   })
 
   it('drops a candidate that cannot fit the block on its own', () => {
