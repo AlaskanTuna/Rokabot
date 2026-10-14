@@ -5,6 +5,9 @@
  *
  * pairs.jsonl goes to the judges and carries no probability; key.jsonl stays with the operator. Both hold chat text:
  * they are written owner-only (0600), and <out-dir> must be a private scratch directory, never inside the repository.
+ *
+ * A pair carries what Jev saw for the turn (the speaker, up to three earlier channel lines, the memory's subject,
+ * period and date) so a judge answers the question Jev answered. Claims a member removed are never sampled.
  */
 import { createHash } from 'node:crypto'
 import { chmodSync, mkdirSync, writeFileSync } from 'node:fs'
@@ -19,8 +22,15 @@ export type GatePair = Readonly<{
   kind: string
   message: string
   memoryText: string
+  speaker: string
+  recentMessages: string[]
+  subject: string | null
+  period: string | null
+  date: string | null
   probability: number
 }>
+
+type Memory = Readonly<{ text: string; subject: string | null; period: string | null; date: string | null }>
 
 type Shortlisted = Array<[string, number, number | null]>
 
@@ -30,6 +40,10 @@ const HISTORY_AFTER_MS = 300_000
 
 /** What messageCreate stores for an attachment-only message; there is no text for a judge to read. */
 const IMAGE_ONLY = '(shared an image)'
+
+/** Every way a member ends a fact: the claim is theirs to take back, so it must not reach a judge afterwards. */
+const REMOVED_BY_MEMBER = "('removed', 'forgotten', 'retracted')"
+const RECENT_LINES = 3
 
 const hash = (text: string): string => createHash('sha256').update(text).digest('hex').slice(0, 16)
 
@@ -49,26 +63,29 @@ export function matchGateMessage(
   channelId: string,
   createdAt: number,
   messageHash: string
-): { message: string; timestamp: number } | undefined {
+): { message: string; timestamp: number; speaker: string } | undefined {
   const candidates = database
     .prepare(
-      `SELECT content, timestamp FROM session_history WHERE channel_id = ? AND role = 'user'
+      `SELECT content, timestamp, display_name AS speaker FROM session_history WHERE channel_id = ? AND role = 'user'
        AND timestamp BETWEEN ? AND ? ORDER BY timestamp, rowid`
     )
     .all(channelId, createdAt - HISTORY_BEFORE_MS, createdAt + HISTORY_AFTER_MS) as Array<{
     content: string
     timestamp: number
+    speaker: string
   }>
-  let nearest: { message: string; timestamp: number } | undefined
-  for (const { content, timestamp } of candidates) {
+  let nearest: { message: string; timestamp: number; speaker: string } | undefined
+  for (const { content, timestamp, speaker } of candidates) {
     const message = messageOf(content, messageHash)
     if (message === undefined) continue
     if (!nearest || Math.abs(timestamp - createdAt) < Math.abs(nearest.timestamp - createdAt)) {
-      nearest = { message, timestamp }
+      nearest = { message, timestamp, speaker }
     }
   }
   return nearest
 }
+
+const utcDay = (ms: number): string => new Date(ms).toISOString().slice(0, 10)
 
 function parseGate(detail: string): { messageHash: string; shortlist: Shortlisted } | null {
   let parsed: unknown
@@ -99,29 +116,75 @@ export function loadGatePairs(dbPath: string): GatePair[] {
          WHERE kind = 'recall_shadow' AND detail IS NOT NULL AND channel_id IS NOT NULL ORDER BY created_at, id`
       )
       .all() as Array<{ channelId: string; createdAt: number; detail: string }>
-    const claim = database.prepare('SELECT predicate, value FROM memory_claim WHERE id = ?')
-    const episode = database.prepare('SELECT summary FROM memory_episode WHERE id = ?')
-    const media = database.prepare('SELECT summary FROM media_digest WHERE id = ?')
-    const memoryText = (kind: string, id: number): string | undefined => {
-      if (kind === 'conversation') return (episode.get(id) as { summary: string } | undefined)?.summary
-      if (kind === 'media') return (media.get(id) as { summary: string } | undefined)?.summary
+    const recent = database.prepare(
+      `SELECT role, display_name AS name, content FROM session_history WHERE channel_id = ? AND timestamp < ?
+       ORDER BY timestamp DESC, rowid DESC LIMIT ${RECENT_LINES}`
+    )
+    const hasUserNames = Boolean(
+      database.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'user_names'").get()
+    )
+    const userName = hasUserNames
+      ? database.prepare('SELECT display_name AS name FROM user_names WHERE user_id = ?')
+      : null
+    const claim = database.prepare(
+      `SELECT predicate, value, subject_user_id AS subjectUserId, period, last_seen_at AS seenAt FROM memory_claim
+       WHERE id = ? AND (end_reason IS NULL OR end_reason NOT IN ${REMOVED_BY_MEMBER})`
+    )
+    const episode = database.prepare('SELECT summary, ended_at AS endedAt FROM memory_episode WHERE id = ?')
+    const media = database.prepare(
+      `SELECT d.summary, COALESCE(MAX(o.observed_at), d.created_at) AS sharedAt FROM media_digest d
+       LEFT JOIN media_occurrence o ON o.digest_id = d.id AND o.guild_id = d.guild_id WHERE d.id = ? GROUP BY d.id`
+    )
+    const memoryOf = (kind: string, id: number): Memory | undefined => {
+      if (kind === 'conversation') {
+        const found = episode.get(id) as { summary: string; endedAt: number } | undefined
+        return found && { text: found.summary, subject: null, period: null, date: utcDay(found.endedAt) }
+      }
+      if (kind === 'media') {
+        const found = media.get(id) as { summary: string; sharedAt: number } | undefined
+        return found && { text: found.summary, subject: null, period: null, date: utcDay(found.sharedAt) }
+      }
       if (kind !== 'fact' && kind !== 'server_fact') return undefined
-      const found = claim.get(id) as { predicate: string; value: string } | undefined
-      return found ? `${found.predicate}: ${found.value}` : undefined
+      const found = claim.get(id) as
+        | { predicate: string; value: string; subjectUserId: string | null; period: string; seenAt: number }
+        | undefined
+      if (!found) return undefined
+      const subject =
+        found.subjectUserId === null
+          ? null
+          : ((userName?.get(found.subjectUserId) as { name: string } | undefined)?.name ?? null)
+      return { text: `${found.predicate}: ${found.value}`, subject, period: found.period, date: utcDay(found.seenAt) }
     }
 
     const pairs: GatePair[] = []
     for (const row of rows) {
       const gate = parseGate(row.detail)
       if (!gate) continue
-      const message = matchGateMessage(database, row.channelId, row.createdAt, gate.messageHash)?.message
-      if (message === undefined || message === IMAGE_ONLY) continue
+      const matched = matchGateMessage(database, row.channelId, row.createdAt, gate.messageHash)
+      if (matched === undefined || matched.message === IMAGE_ONLY) continue
+      const recentMessages = (
+        recent.all(row.channelId, matched.timestamp) as Array<{ role: string; name: string; content: string }>
+      )
+        .reverse()
+        .map(({ role, name, content }) => `[${role === 'assistant' ? 'Roka' : name}]: ${content}`)
       const ref = turnRef(row.channelId, row.createdAt)
       for (const [kind, id, probability] of gate.shortlist) {
         if (probability === null) continue
-        const text = memoryText(kind, id)
-        if (text === undefined) continue
-        pairs.push({ pairId: `${ref}-${kind}-${id}`, turnRef: ref, kind, message, memoryText: text, probability })
+        const memory = memoryOf(kind, id)
+        if (memory === undefined) continue
+        pairs.push({
+          pairId: `${ref}-${kind}-${id}`,
+          turnRef: ref,
+          kind,
+          message: matched.message,
+          memoryText: memory.text,
+          speaker: matched.speaker,
+          recentMessages,
+          subject: memory.subject,
+          period: memory.period,
+          date: memory.date,
+          probability
+        })
       }
     }
     return pairs
@@ -151,7 +214,17 @@ export function writeGateSample(pairs: readonly GatePair[], outDir: string, seed
   const order = shuffled(pairs, seed)
   writePrivate(
     join(outDir, 'pairs.jsonl'),
-    order.map(({ pairId, kind, message, memoryText }) => ({ pairId, kind, message, memoryText }))
+    order.map(({ pairId, kind, message, memoryText, speaker, recentMessages, subject, period, date }) => ({
+      pairId,
+      kind,
+      message,
+      memoryText,
+      speaker,
+      recentMessages,
+      subject,
+      period,
+      date
+    }))
   )
   writePrivate(
     join(outDir, 'key.jsonl'),
