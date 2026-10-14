@@ -8,7 +8,11 @@
  * The cutoff is chosen on the development half (last turnRef hex digit even) and the untouched holdout half
  * (odd) is scored once at that cutoff, so the holdout never steers the choice.
  *
- * Usage: npx tsx scripts/recall-gate-thresholds.ts <key.jsonl> <labels-a.jsonl> <labels-b.jsonl>
+ * Pairs the two judges split on are settled by the optional adjudicated-labels file (same {pairId, relevant} shape as
+ * the judges' labels). A disagreed pair nobody adjudicated counts as not relevant: scoring only the agreed pairs would
+ * overstate precision (spec line 152), so the conservative reading is the default.
+ *
+ * Usage: npx tsx scripts/recall-gate-thresholds.ts <key.jsonl> <labels-a.jsonl> <labels-b.jsonl> [adjudicated.jsonl]
  */
 import { readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
@@ -23,6 +27,12 @@ export type ScoredPair = Readonly<{
   relevant: boolean
 }>
 type Status = 'confirmed' | 'provisional' | 'disabled'
+type Basis = 'agreed' | 'adjudicated' | 'missed'
+export type KeyRow = Pick<ScoredPair, 'pairId' | 'turnRef' | 'kind' | 'probability'>
+export type SettledPair = ScoredPair & Readonly<{ basis: Basis }>
+type Labels = ReadonlyMap<string, Readonly<{ relevant: boolean }>>
+
+const KINDS = ['fact', 'server_fact', 'conversation', 'media']
 
 const BOOTSTRAP_RESAMPLES = 2000
 
@@ -105,8 +115,14 @@ export function recommend(rows: readonly ScoredPair[], rng: () => number): Recom
 
 export const formatKappa = (kappa: number | null): string => (kappa === null ? 'n/a' : kappa.toFixed(3))
 
-export function reportKind(kind: string, agreed: number, disagreed: number, pick: Recommendation): string {
-  const head = `${kind}: ${agreed} agreed, ${disagreed} disagreed;`
+export function reportKind(
+  kind: string,
+  agreed: number,
+  disagreed: number,
+  pick: Recommendation,
+  adjudicated = 0
+): string {
+  const head = `${kind}: ${agreed} agreed, ${disagreed} disagreed (${adjudicated} adjudicated, ${disagreed - adjudicated} counted as misses);`
   if (pick.developmentCutoff === null)
     return `${head} no cutoff, no development cutoff qualifies (best development status ${pick.developmentStatus})`
   const tail = `development ${pick.developmentStatus}; holdout ${JSON.stringify(pick.holdout)}`
@@ -115,33 +131,82 @@ export function reportKind(kind: string, agreed: number, disagreed: number, pick
     : `${head} recommend ${pick.cutoff} (${pick.status}); ${tail}`
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const [keyPath, labelsA, labelsB] = process.argv.slice(2)
-  if (!keyPath || !labelsA || !labelsB)
-    throw new Error('Usage: recall-gate-thresholds <key.jsonl> <labels-a> <labels-b>')
-  const keys = parseRows(readFileSync(keyPath, 'utf8'), keyPath) as Array<{
-    pairId: string
-    turnRef: string
-    kind: string
-    probability: number
-  }>
-  const a = parseLabels(readFileSync(labelsA, 'utf8'), labelsA)
-  const b = parseLabels(readFileSync(labelsB, 'utf8'), labelsB)
-  const both = keys.filter(({ pairId }) => a.has(pairId) && b.has(pairId))
-  console.log(
-    `pairs ${keys.length}; both judges ${both.length}; kappa ${formatKappa(
-      cohensKappa(
-        both.map(({ pairId }) => a.get(pairId)?.relevant ?? false),
-        both.map(({ pairId }) => b.get(pairId)?.relevant ?? false)
-      )
-    )}`
-  )
-  const agreed: ScoredPair[] = both
-    .filter(({ pairId }) => a.get(pairId)?.relevant === b.get(pairId)?.relevant)
-    .map((row) => ({ ...row, relevant: a.get(row.pairId)?.relevant ?? false }))
-  for (const kind of ['fact', 'server_fact', 'conversation', 'media']) {
-    const rows = agreed.filter((row) => row.kind === kind)
-    const disagreed = both.filter((row) => row.kind === kind).length - rows.length
-    console.log(reportKind(kind, rows.length, disagreed, recommend(rows, seededRandom(262))))
+export function dedupeKeys<T extends { pairId: string }>(keys: readonly T[]): T[] {
+  const seen = new Set<string>()
+  const unique: T[] = []
+  for (const row of keys) {
+    if (seen.has(row.pairId)) continue
+    seen.add(row.pairId)
+    unique.push(row)
   }
+  return unique
+}
+
+export function tally(rows: readonly SettledPair[]): Record<Basis, number> {
+  const counts: Record<Basis, number> = { agreed: 0, adjudicated: 0, missed: 0 }
+  for (const { basis } of rows) counts[basis] += 1
+  return counts
+}
+
+/**
+ * The relevance each labelled pair is scored on: the shared label when the judges agree, the adjudicator's label when
+ * they split and one exists, otherwise not relevant. An adjudicator never overrides an agreed pair.
+ */
+export function settleLabels(keys: readonly KeyRow[], a: Labels, b: Labels, adjudicated: Labels = new Map()) {
+  const rows: SettledPair[] = []
+  for (const row of keys) {
+    const first = a.get(row.pairId)
+    const second = b.get(row.pairId)
+    if (!first || !second) continue
+    if (first.relevant === second.relevant) {
+      rows.push({ ...row, relevant: first.relevant, basis: 'agreed' })
+      continue
+    }
+    const ruling = adjudicated.get(row.pairId)
+    rows.push(
+      ruling
+        ? { ...row, relevant: ruling.relevant, basis: 'adjudicated' }
+        : { ...row, relevant: false, basis: 'missed' }
+    )
+  }
+  return { rows, judged: rows.length, ...tally(rows) }
+}
+
+export function thresholdLines(keys: readonly KeyRow[], a: Labels, b: Labels, adjudicated?: Labels): string[] {
+  const unique = dedupeKeys(keys)
+  const settled = settleLabels(unique, a, b, adjudicated)
+  const labelled = (labels: Labels) => settled.rows.map(({ pairId }) => labels.get(pairId)?.relevant === true)
+  const lines = [
+    `pairs ${unique.length}; both judges ${settled.judged}; kappa ${formatKappa(cohensKappa(labelled(a), labelled(b)))}; ` +
+      `disagreed ${settled.adjudicated + settled.missed}: ${settled.adjudicated} adjudicated, ${settled.missed} counted as not relevant`
+  ]
+  for (const kind of KINDS) {
+    const rows = settled.rows.filter((row) => row.kind === kind)
+    const counts = tally(rows)
+    lines.push(
+      reportKind(
+        kind,
+        counts.agreed,
+        counts.adjudicated + counts.missed,
+        recommend(rows, seededRandom(262)),
+        counts.adjudicated
+      )
+    )
+  }
+  return lines
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const [keyPath, labelsA, labelsB, adjudicatedPath] = process.argv.slice(2)
+  if (!keyPath || !labelsA || !labelsB)
+    throw new Error('Usage: recall-gate-thresholds <key.jsonl> <labels-a> <labels-b> [adjudicated]')
+  const keys = parseRows(readFileSync(keyPath, 'utf8'), keyPath) as KeyRow[]
+  const adjudicated = adjudicatedPath ? parseLabels(readFileSync(adjudicatedPath, 'utf8'), adjudicatedPath) : undefined
+  const lines = thresholdLines(
+    keys,
+    parseLabels(readFileSync(labelsA, 'utf8'), labelsA),
+    parseLabels(readFileSync(labelsB, 'utf8'), labelsB),
+    adjudicated
+  )
+  for (const line of lines) console.log(line)
 }

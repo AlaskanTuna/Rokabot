@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { seededRandom } from '../recall-calibration-sample.js'
-import { formatKappa, kindStatus, recommend, reportKind } from '../recall-gate-thresholds.js'
+import {
+  dedupeKeys,
+  formatKappa,
+  kindStatus,
+  recommend,
+  reportKind,
+  settleLabels,
+  thresholdLines
+} from '../recall-gate-thresholds.js'
 
 const pair = (turn: number, probability: number, relevant: boolean) => ({
   pairId: `t${turn}-${probability}`,
@@ -149,5 +157,116 @@ describe('report', () => {
   it('prints a null kappa as n/a', () => {
     expect(formatKappa(null)).toBe('n/a')
     expect(formatKappa(0.5)).toBe('0.500')
+  })
+})
+
+describe('settling two judges and an adjudicator', () => {
+  const key = (pairId: string, kind = 'fact', probability = 0.9) => ({
+    pairId,
+    turnRef: `turn-${pairId}`,
+    kind,
+    probability
+  })
+  const labelsOf = (entries: Record<string, boolean>) =>
+    new Map(Object.entries(entries).map(([pairId, relevant]) => [pairId, { pairId, relevant, reason: '' }]))
+
+  // 25 pairs both judges call the same way (24 relevant) and 5 they split on, one pair per turn.
+  const agreed = Array.from({ length: 25 }, (_, index) => `agreed-${index}`)
+  const split = Array.from({ length: 5 }, (_, index) => `split-${index}`)
+  const keys = [...agreed, ...split].map((pairId) => key(pairId))
+  const judgeA = labelsOf({
+    ...Object.fromEntries(agreed.map((pairId, index) => [pairId, index >= 1])),
+    ...Object.fromEntries(split.map((pairId) => [pairId, true]))
+  })
+  const judgeB = labelsOf({
+    ...Object.fromEntries(agreed.map((pairId, index) => [pairId, index >= 1])),
+    ...Object.fromEntries(split.map((pairId) => [pairId, false]))
+  })
+
+  it('counts a disagreed pair as not relevant when nobody adjudicated it, so precision is not inflated', () => {
+    const settled = settleLabels(keys, judgeA, judgeB)
+
+    expect(settled.rows).toHaveLength(30)
+    expect(settled.rows.filter(({ relevant }) => relevant)).toHaveLength(24)
+    expect(kindStatus(settled.rows, 0.9, seededRandom(1))).toMatchObject({ selected: 30, status: 'disabled' })
+    // Scoring only the agreed pairs would read 24 of 25 and enable the kind.
+    const agreementOnly = settled.rows.filter(({ pairId }) => pairId.startsWith('agreed'))
+    expect(kindStatus(agreementOnly, 0.9, seededRandom(1))).toMatchObject({ selected: 25, status: 'provisional' })
+    expect(settled).toMatchObject({ judged: 30, agreed: 25, adjudicated: 0, missed: 5 })
+  })
+
+  it('lets the adjudicator settle a disagreed pair either way, and counts the rest as misses', () => {
+    const adjudicated = labelsOf({ 'split-0': true, 'split-1': true, 'split-2': true, 'split-3': false })
+
+    const settled = settleLabels(keys, judgeA, judgeB, adjudicated)
+
+    const relevantOf = (pairId: string) => settled.rows.find((row) => row.pairId === pairId)?.relevant
+    expect(['split-0', 'split-1', 'split-2', 'split-3', 'split-4'].map(relevantOf)).toEqual([
+      true,
+      true,
+      true,
+      false,
+      false
+    ])
+    expect(settled).toMatchObject({ judged: 30, agreed: 25, adjudicated: 4, missed: 1 })
+    expect(kindStatus(settled.rows, 0.9, seededRandom(1))).toMatchObject({ selected: 30, status: 'provisional' })
+  })
+
+  it('keeps the shared label of an agreed pair even when the adjudicator disagrees with both judges', () => {
+    const adjudicated = labelsOf({ 'agreed-0': true, 'agreed-10': false })
+
+    const settled = settleLabels(keys, judgeA, judgeB, adjudicated)
+
+    const relevantOf = (pairId: string) => settled.rows.find((row) => row.pairId === pairId)?.relevant
+    expect(relevantOf('agreed-0')).toBe(false)
+    expect(relevantOf('agreed-10')).toBe(true)
+    expect(settled).toMatchObject({ agreed: 25, adjudicated: 0, missed: 5 })
+  })
+
+  it('leaves out pairs that either judge did not label', () => {
+    const onlyA = labelsOf({ 'agreed-0': true, 'agreed-1': true })
+    const onlyB = labelsOf({ 'agreed-0': true })
+
+    const settled = settleLabels([key('agreed-0'), key('agreed-1'), key('agreed-2')], onlyA, onlyB)
+
+    expect(settled.rows.map(({ pairId }) => pairId)).toEqual(['agreed-0'])
+    expect(settled.judged).toBe(1)
+  })
+
+  it('keeps the first of two key rows with one pair id', () => {
+    const deduped = dedupeKeys([key('p', 'fact', 0.9), key('q', 'media', 0.4), key('p', 'server_fact', 0.2)])
+
+    expect(deduped).toEqual([key('p', 'fact', 0.9), key('q', 'media', 0.4)])
+    const both = labelsOf({ p: true, q: true })
+    const lines = thresholdLines(
+      [key('p', 'fact', 0.9), key('q', 'media', 0.4), key('p', 'server_fact', 0.2)],
+      both,
+      both
+    )
+    expect(lines[0]).toContain('pairs 2; both judges 2')
+    expect(lines.find((line) => line.startsWith('server_fact:'))).toContain('server_fact: 0 agreed')
+  })
+
+  it('reports each kind with its adjudicated and missed disagreements', () => {
+    const mixedKeys = [key('a1', 'fact'), key('a2', 'fact'), key('a3', 'media'), key('a4', 'media')]
+    const a = labelsOf({ a1: true, a2: true, a3: true, a4: true })
+    const b = labelsOf({ a1: true, a2: false, a3: false, a4: true })
+
+    const lines = thresholdLines(mixedKeys, a, b, labelsOf({ a2: true }))
+
+    expect(lines[0]).toContain('pairs 4; both judges 4')
+    expect(lines[0]).toContain('disagreed 2: 1 adjudicated, 1 counted as not relevant')
+    expect(lines.find((line) => line.startsWith('fact:'))).toContain(
+      'fact: 1 agreed, 1 disagreed (1 adjudicated, 0 counted as misses);'
+    )
+    expect(lines.find((line) => line.startsWith('media:'))).toContain(
+      'media: 1 agreed, 1 disagreed (0 adjudicated, 1 counted as misses);'
+    )
+  })
+
+  it('says so when no adjudicated labels were given', () => {
+    const lines = thresholdLines([key('a1')], labelsOf({ a1: true }), labelsOf({ a1: false }))
+
+    expect(lines[0]).toContain('disagreed 1: 0 adjudicated, 1 counted as not relevant')
   })
 })
