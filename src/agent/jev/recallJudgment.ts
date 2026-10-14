@@ -24,6 +24,8 @@ export type RecallJudgment = Readonly<{
   latencyMs: number
   inputTokens: number
   usageUnknown: boolean
+  /** The model that answered, null when no response arrived. */
+  model: string | null
 }>
 export type RecallJudgmentInput = Readonly<{
   speakerId: string
@@ -41,7 +43,8 @@ const settled = (status: RecallJudgmentStatus, latencyMs = 0, usageUnknown = fal
   judgedKeys: [],
   latencyMs,
   inputTokens: 0,
-  usageUnknown
+  usageUnknown,
+  model: null
 })
 
 function buildRequest(input: RecallJudgmentInput) {
@@ -131,7 +134,7 @@ export async function judgeRecallCandidates(
     for (const [index, key] of request.judgedKeys.entries()) {
       const answer = outcome.answers[`recall_${index}`]
       if (answer?.type !== 'noul' || !Number.isFinite(answer.noul) || answer.noul < 0 || answer.noul > 1) {
-        return { ...settled('invalid', latencyMs), inputTokens: outcome.usage.input_tokens }
+        return { ...settled('invalid', latencyMs), inputTokens: outcome.usage.input_tokens, model: outcome.model }
       }
       probabilities.set(key, answer.noul)
     }
@@ -141,7 +144,8 @@ export async function judgeRecallCandidates(
       judgedKeys: request.judgedKeys,
       latencyMs,
       inputTokens: outcome.usage.input_tokens,
-      usageUnknown: false
+      usageUnknown: false,
+      model: outcome.model
     }
   } catch (error) {
     const details = Object(error) as { constructor?: { name?: string }; status?: number }

@@ -121,7 +121,8 @@ it('records one recall jev_events row for an attempted request, with no text, an
     judgedKeys: [`fact:${chess}`],
     latencyMs: 410,
     inputTokens: 1800,
-    usageUnknown: false
+    usageUnknown: false,
+    model: 'jev-2026-10'
   })
 
   const { items, detail } = await runRecallGate(args({ message: 'any chess plans?' }))
@@ -192,6 +193,7 @@ const settled = (overrides: Record<string, unknown> = {}) => ({
   latencyMs: 0,
   inputTokens: 0,
   usageUnknown: false,
+  model: null,
   ...overrides
 })
 
@@ -252,7 +254,7 @@ it('stores the judged keys with rounded probabilities and a text-free message ha
   const chess = fact('speaker', 'hobby', 'chess', axis(1))
   mocks.judge.mockResolvedValueOnce(
     settled({
-      probabilities: new Map([[`fact:${chess}`, 0.95123]]),
+      probabilities: new Map([[`fact:${chess}`, 0.95126]]),
       judgedKeys: [`fact:${chess}`],
       latencyMs: 12.6,
       inputTokens: 40
@@ -264,13 +266,49 @@ it('stores the judged keys with rounded probabilities and a text-free message ha
   const row = mocks.recordJevEvent.mock.calls[0][0]
   expect(JSON.parse(row.answer)).toEqual({
     status: 'ok',
-    decisions: [[`fact:${chess}`, 0.951]],
+    decisions: [[`fact:${chess}`, 0.9513]],
     usage_unknown: false
   })
   expect(row.latencyMs).toBe(13)
-  expect(detail.shortlist).toEqual([['fact', chess, 0.951]])
+  expect(detail.shortlist).toEqual([['fact', chess, 0.9513]])
   expect(detail.messageHash).toMatch(/^[0-9a-f]{16}$/)
   expect(detail.messageHash).toBe(createHash('sha256').update('any chess plans?').digest('hex').slice(0, 16))
+})
+
+it('records which model answered and which embeddings the pool was ranked with, without rejecting a mismatch', async () => {
+  const chess = fact('speaker', 'hobby', 'chess', axis(1))
+  mocks.judge.mockResolvedValueOnce(
+    settled({
+      probabilities: new Map([[`fact:${chess}`, 0.99]]),
+      judgedKeys: [`fact:${chess}`],
+      model: 'jev-2026-11'
+    })
+  )
+
+  const { detail, items } = await runRecallGate(args())
+
+  expect(detail).toMatchObject({ model: 'jev-2026-11', embedding: testConfig.embeddings.fingerprint })
+  expect(items.map(({ id }) => id)).toEqual([chess])
+})
+
+it('records no model when no response arrived', async () => {
+  fact('speaker', 'hobby', 'chess', axis(1))
+  mocks.judge.mockResolvedValueOnce(settled({ status: 'error', usageUnknown: true }))
+
+  const { detail } = await runRecallGate(args())
+
+  expect(detail.model).toBeNull()
+})
+
+it('records whether the pool fell back to keywords for want of a usable query embedding', async () => {
+  fact('speaker', 'hobby', 'chess', axis(1))
+  mocks.judge.mockResolvedValue(settled())
+
+  const ranked = await runRecallGate(args())
+  const keywordOnly = await runRecallGate({ ...args(), input: input({ queryEmbedding: null }) })
+
+  expect(ranked.detail.fallback).toBe(false)
+  expect(keywordOnly.detail.fallback).toBe(true)
 })
 
 it('records an error with unknown usage and zero tokens', async () => {

@@ -50,7 +50,8 @@ describe('judgeRecallCandidates', () => {
   it('asks one isolated noul per candidate with request-local identities and parses probabilities', async () => {
     mocks.systemOne.mockResolvedValueOnce({
       answers: { recall_0: { type: 'noul', noul: 0.93 }, recall_1: { type: 'noul', noul: 0.04 } },
-      usage: { input_tokens: 2100 }
+      usage: { input_tokens: 2100 },
+      model: 'jev-2026-10'
     })
 
     const judged = await judgeRecallCandidates(input(), { timeoutMs: 1000 })
@@ -68,7 +69,12 @@ describe('judgeRecallCandidates', () => {
       candidate: { kind: 'fact', subject: 'u1', text: 'wants a Yamaha guitar' }
     })
     expect(JSON.stringify(request)).not.toContain('user-2')
-    expect(judged).toMatchObject({ status: 'ok', inputTokens: 2100, judgedKeys: ['fact:1', 'conversation:2'] })
+    expect(judged).toMatchObject({
+      status: 'ok',
+      inputTokens: 2100,
+      judgedKeys: ['fact:1', 'conversation:2'],
+      model: 'jev-2026-10'
+    })
     expect([...(judged.probabilities ?? [])]).toEqual([
       ['fact:1', 0.93],
       ['conversation:2', 0.04]
@@ -87,12 +93,14 @@ describe('judgeRecallCandidates', () => {
 
     mocks.systemOne.mockResolvedValueOnce({
       answers: { recall_0: { type: 'noul', noul: 0.5 } },
-      usage: { input_tokens: 9 }
+      usage: { input_tokens: 9 },
+      model: 'jev-2026-10'
     })
     expect(await judgeRecallCandidates(input(), { timeoutMs: 1000 })).toMatchObject({
       status: 'invalid',
       probabilities: null,
-      inputTokens: 9
+      inputTokens: 9,
+      model: 'jev-2026-10'
     })
   })
 
@@ -104,7 +112,7 @@ describe('judgeRecallCandidates', () => {
       settled = judged
     })
     await vi.advanceTimersByTimeAsync(301)
-    expect(settled).toMatchObject({ status: 'deadline', probabilities: null, usageUnknown: true })
+    expect(settled).toMatchObject({ status: 'deadline', probabilities: null, usageUnknown: true, model: null })
   })
 
   it('makes no call when the caller has already cancelled the turn', async () => {
@@ -164,7 +172,7 @@ describe('judgeRecallCandidates', () => {
 
   it('logs a failure without text and reports error', async () => {
     mocks.systemOne.mockRejectedValueOnce(Object.assign(new Error('secret message text'), { status: 529 }))
-    expect((await judgeRecallCandidates(input(), { timeoutMs: 1000 })).status).toBe('error')
+    expect(await judgeRecallCandidates(input(), { timeoutMs: 1000 })).toMatchObject({ status: 'error', model: null })
     expect(JSON.stringify(mocks.warn.mock.calls)).not.toContain('secret message text')
   })
 })

@@ -18,6 +18,9 @@ export type GateDetail = Readonly<{
   core: Array<[string, number]>
   selected: Array<[string, number]>
   messageHash: string
+  fallback: boolean
+  model: string | null
+  embedding: string
   setupMs: number
   deadlineMissed: boolean
 }>
@@ -30,7 +33,7 @@ export type GateRun = Readonly<{
 }>
 
 const ATTEMPTED: ReadonlySet<RecallJudgmentStatus> = new Set(['ok', 'deadline', 'error', 'invalid'])
-const round = (value: number): number => Number(value.toFixed(3))
+const round = (value: number): number => Number(value.toFixed(4))
 
 export async function runRecallGate(args: {
   input: RecallInput
@@ -104,6 +107,9 @@ export async function runRecallGate(args: {
       core: pool.core.map((item) => [item.kind, item.id]),
       selected: items.map((item) => [item.kind, item.id]),
       messageHash: createHash('sha256').update(args.input.message).digest('hex').slice(0, 16),
+      fallback: pool.fallback,
+      model: judged.model,
+      embedding: config.embeddings.fingerprint,
       setupMs,
       deadlineMissed: settledAt > args.deadlineAt
     }
