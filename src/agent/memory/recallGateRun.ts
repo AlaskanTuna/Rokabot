@@ -17,8 +17,16 @@ export type GateDetail = Readonly<{
   shortlist: Array<[string, number, number | null]>
   core: Array<[string, number]>
   selected: Array<[string, number]>
-  settledAtMs: number
   messageHash: string
+  setupMs: number
+  deadlineMissed: boolean
+}>
+export type GateRun = Readonly<{
+  items: RecallItem[]
+  detail: GateDetail
+  /** performance.now() readings, for the caller to turn into offsets from its own clock. */
+  startedAt: number
+  settledAt: number
 }>
 
 const ATTEMPTED: ReadonlySet<RecallJudgmentStatus> = new Set(['ok', 'deadline', 'error', 'invalid'])
@@ -29,14 +37,19 @@ export async function runRecallGate(args: {
   speakerName: string
   recentLines: readonly string[]
   nameOf: (userId: string) => string
+  /** The reply deadline: a gate that settles after it is a Jev outage as far as the reply is concerned. */
   deadlineAt: number
+  /** When the Jev request stops being waited on; defaults to deadlineAt, which unified mode relies on. */
+  collectUntil?: number
   mode: 'shadow' | 'unified'
   channelId: string
   guildId: string
-}): Promise<{ items: RecallItem[]; detail: GateDetail }> {
+}): Promise<GateRun> {
+  const startedAt = performance.now()
   const pool = recallGatePool(args.input)
   const shortlist = buildRecallShortlist(pool, config.memory.recallGateShortlist)
-  const timeoutMs = Math.floor(args.deadlineAt - performance.now())
+  const setupMs = Math.round(performance.now() - startedAt)
+  const timeoutMs = Math.floor((args.collectUntil ?? args.deadlineAt) - performance.now())
   const judged = await judgeRecallCandidates(
     {
       speakerId: args.input.speakerId,
@@ -50,6 +63,7 @@ export async function runRecallGate(args: {
     { timeoutMs }
   )
   const items = selectGatedItems(pool, shortlist, judged.probabilities, config.memory.recallGateMinNoul)
+  const settledAt = performance.now()
   const ref = randomUUID().slice(0, 8)
   const coreKeys = new Set(pool.core.map(gateKey))
   // An already-expired deadline settles as 'deadline' without sending a request, so there is nothing to record.
@@ -73,6 +87,8 @@ export async function runRecallGate(args: {
   }
   return {
     items,
+    startedAt,
+    settledAt,
     detail: {
       v: 1,
       rubric: RECALL_RUBRIC_VERSION,
@@ -87,8 +103,9 @@ export async function runRecallGate(args: {
       }),
       core: pool.core.map((item) => [item.kind, item.id]),
       selected: items.map((item) => [item.kind, item.id]),
-      settledAtMs: performance.now(),
-      messageHash: createHash('sha256').update(args.input.message).digest('hex').slice(0, 16)
+      messageHash: createHash('sha256').update(args.input.message).digest('hex').slice(0, 16),
+      setupMs,
+      deadlineMissed: settledAt > args.deadlineAt
     }
   }
 }

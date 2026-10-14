@@ -834,7 +834,12 @@ describe('memory recall modes', () => {
     mocks.retrieveForTurn.mockReturnValue({ entries: [], claims: [] } as never)
     mocks.resolveReferences.mockReturnValue({ resolved: [], ambiguous: [] } as never)
     mocks.recallForTurn.mockImplementation(() => emptyRecall() as never)
-    mocks.runRecallGate.mockResolvedValue({ items: [], detail: { v: 1, status: 'skipped', settledAtMs: 0 } })
+    mocks.runRecallGate.mockImplementation(async () => ({
+      items: [],
+      detail: { v: 1, status: 'skipped' },
+      startedAt: performance.now(),
+      settledAt: 0
+    }))
     mocks.runPrefetchForJudgment.mockResolvedValue({ decision: { fire: false, reason: 'no_judgment' }, outcome: null })
   })
 
@@ -924,7 +929,7 @@ describe('memory recall modes', () => {
         ['conversation', 3, 0.5],
         ['server_fact', 9, 0.4]
       ],
-      gate: { v: 1, status: 'skipped', settledAtMs: 0, projectedAddedMs: 0 }
+      gate: { v: 1, status: 'skipped', startMs: expect.any(Number), contextReadyMs: null, projectedAddedMs: 0 }
     })
     expect(rows[0].detail).not.toContain('chess')
     expect(recalledRows('recall')).toHaveLength(0)
@@ -940,8 +945,11 @@ describe('memory recall modes', () => {
         latencyMs: 380,
         shortlist: [['fact', 7, 0.95]],
         selected: [['fact', 7]],
-        settledAtMs: performance.now() + 10_000
-      }
+        setupMs: 4,
+        deadlineMissed: true
+      },
+      startedAt: performance.now(),
+      settledAt: performance.now() + 10_000
     })
 
     memoryConfig.recall = 'legacy'
@@ -957,9 +965,15 @@ describe('memory recall modes', () => {
       ['conversation', 3, 0.5],
       ['server_fact', 9, 0.4]
     ])
-    expect(detail.gate).toMatchObject({ status: 'ok', shortlist: [['fact', 7, 0.95]] })
+    expect(detail.gate).toMatchObject({
+      status: 'ok',
+      shortlist: [['fact', 7, 0.95]],
+      setupMs: 4,
+      deadlineMissed: true
+    })
     expect(detail.gate.projectedAddedMs).toBeGreaterThan(9_000)
     expect(detail.gate.projectedAddedMs).toBeLessThanOrEqual(10_000)
+    expect(detail.gate).not.toHaveProperty('settledAtMs')
     expect(mocks.runRecallGate.mock.calls[0][0]).toMatchObject({
       mode: 'shadow',
       channelId: 'channel-1',
@@ -1010,6 +1024,81 @@ describe('memory recall modes', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('lets the shadow gate collect Jev for the usual memory timeout instead of the reply deadline', async () => {
+    vi.useFakeTimers()
+    try {
+      memoryConfig.recall = 'shadow'
+      let calledAt = -1
+      mocks.runRecallGate.mockImplementation(async () => {
+        calledAt = performance.now()
+        return { items: [], detail: { v: 1, status: 'ok' }, startedAt: calledAt, settledAt: calledAt }
+      })
+
+      await turnWith()
+      await vi.advanceTimersByTimeAsync(1)
+
+      expect(calledAt).toBeGreaterThanOrEqual(0)
+      expect(mocks.runRecallGate.mock.calls[0][0].collectUntil).toBe(calledAt + config.jev.memoryTimeoutMs)
+      expect(config.jev.memoryTimeoutMs).toBeGreaterThan(config.memory.recallGateDeadlineMs)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  describe('shadow gate timing offsets', () => {
+    async function shadowTurn(gateTakesMs: number, promptWaitsMs: number) {
+      vi.useFakeTimers()
+      memoryConfig.recall = 'shadow'
+      mocks.ensureSession.mockImplementation(
+        () => new Promise((resolve) => setTimeout(() => resolve({ events: [] }), 300))
+      )
+      if (promptWaitsMs > 0) {
+        jevConfig.prefetch = 'on'
+        mocks.settlePrefetch.mockImplementation(
+          () => new Promise((resolve) => setTimeout(() => resolve(null), promptWaitsMs))
+        )
+      }
+      const turnStartedAt = performance.now()
+      let gateStartedAt = -1
+      mocks.runRecallGate.mockImplementation(async () => {
+        gateStartedAt = performance.now()
+        await new Promise((resolve) => setTimeout(resolve, gateTakesMs))
+        return {
+          items: [],
+          detail: { v: 1, status: 'ok', setupMs: 3, deadlineMissed: false },
+          startedAt: gateStartedAt,
+          settledAt: performance.now()
+        }
+      })
+      const pending = turnWith()
+      await vi.advanceTimersByTimeAsync(300 + promptWaitsMs)
+      await pending
+      await vi.advanceTimersByTimeAsync(gateTakesMs + 10)
+      return { turnStartedAt, gateStartedAt, gate: JSON.parse(recalledRows('recall_shadow')[0].detail).gate }
+    }
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('measures the gate start and the prompt-ready time from the turn start, and what the gate would have added', async () => {
+      const { turnStartedAt, gateStartedAt, gate } = await shadowTurn(500, 0)
+
+      expect(gate.startMs).toBe(Math.round(gateStartedAt - turnStartedAt))
+      expect(gate.contextReadyMs).toBe(300)
+      expect(gate.projectedAddedMs).toBe(gateStartedAt + 500 - (turnStartedAt + 300))
+      expect(gate).toMatchObject({ setupMs: 3, deadlineMissed: false })
+      expect(gate).not.toHaveProperty('settledAtMs')
+    })
+
+    it('has no ready time and adds nothing when the gate settles before the prompt is ready', async () => {
+      const { gate } = await shadowTurn(5, 400)
+
+      expect(gate.contextReadyMs).toBeNull()
+      expect(gate.projectedAddedMs).toBe(0)
+    })
   })
 
   it('stops waiting for the query embedding at the gate wait, before the legacy sections give up', async () => {

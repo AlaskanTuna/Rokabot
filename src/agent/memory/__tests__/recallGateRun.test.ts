@@ -96,13 +96,16 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-function args(overrides: { message?: string; mode?: 'shadow' | 'unified'; deadlineAt?: number } = {}) {
+function args(
+  overrides: { message?: string; mode?: 'shadow' | 'unified'; deadlineAt?: number; collectUntil?: number } = {}
+) {
   return {
     input: input(overrides.message ? { message: overrides.message } : {}),
     speakerName: 'Mika',
     recentLines: [],
     nameOf: () => 'someone',
     deadlineAt: overrides.deadlineAt ?? performance.now() + 1000,
+    ...(overrides.collectUntil === undefined ? {} : { collectUntil: overrides.collectUntil }),
     mode: overrides.mode ?? 'shadow',
     channelId: 'chan-a',
     guildId: GUILD
@@ -190,6 +193,59 @@ const settled = (overrides: Record<string, unknown> = {}) => ({
   inputTokens: 0,
   usageUnknown: false,
   ...overrides
+})
+
+it('waits for Jev until collectUntil when given, however early the reply deadline falls', async () => {
+  const chess = fact('speaker', 'hobby', 'chess', axis(1))
+  mocks.judge.mockResolvedValueOnce({
+    status: 'ok',
+    probabilities: new Map([[`fact:${chess}`, 0.99]]),
+    judgedKeys: [`fact:${chess}`],
+    latencyMs: 5,
+    inputTokens: 5,
+    usageUnknown: false
+  })
+
+  await runRecallGate(args({ deadlineAt: performance.now() + 100, collectUntil: performance.now() + 5000 }))
+
+  const { timeoutMs } = mocks.judge.mock.calls[0][1]
+  expect(timeoutMs).toBeGreaterThan(4000)
+  expect(timeoutMs).toBeLessThanOrEqual(5000)
+})
+
+it('still sends the request when only the collection time is left, and records it', async () => {
+  fact('speaker', 'hobby', 'chess', axis(1))
+  mocks.judge.mockResolvedValueOnce(settled({ status: 'error', latencyMs: 12, usageUnknown: true }))
+
+  await runRecallGate(args({ deadlineAt: performance.now() - 5, collectUntil: performance.now() + 5000 }))
+
+  expect(mocks.judge.mock.calls[0][1].timeoutMs).toBeGreaterThan(0)
+  expect(mocks.recordJevEvent).toHaveBeenCalledTimes(1)
+})
+
+it('reports a gate that settles after the reply deadline as a missed deadline, and one before it as met', async () => {
+  fact('speaker', 'hobby', 'chess', axis(1))
+  mocks.judge.mockResolvedValue(settled({ status: 'ok' }))
+
+  const late = await runRecallGate(args({ deadlineAt: performance.now() - 1, collectUntil: performance.now() + 5000 }))
+  const early = await runRecallGate(args({ deadlineAt: performance.now() + 5000 }))
+
+  expect(late.detail.deadlineMissed).toBe(true)
+  expect(early.detail.deadlineMissed).toBe(false)
+})
+
+it('returns its start and settle readings and the time spent building the pool and shortlist', async () => {
+  fact('speaker', 'hobby', 'chess', axis(1))
+  mocks.judge.mockResolvedValueOnce(settled({ status: 'ok' }))
+  const before = performance.now()
+
+  const run = await runRecallGate(args())
+
+  expect(run.startedAt).toBeGreaterThanOrEqual(before)
+  expect(run.settledAt).toBeGreaterThanOrEqual(run.startedAt)
+  expect(run.detail.setupMs).toBeGreaterThanOrEqual(0)
+  expect(run.detail.setupMs).toBeLessThanOrEqual(Math.ceil(run.settledAt - run.startedAt))
+  expect(run.detail).not.toHaveProperty('settledAtMs')
 })
 
 it('stores the judged keys with rounded probabilities and a text-free message hash', async () => {

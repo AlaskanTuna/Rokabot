@@ -19,7 +19,7 @@ import { buildMediaRecallBlock } from './memory/mediaRecall.js'
 import { touchRecalled } from './memory/memoryClaims.js'
 import type { RecallScope } from './memory/privacy.js'
 import { type RecallInput, type RecallResult, recallForTurn } from './memory/recall.js'
-import { runRecallGate } from './memory/recallGateRun.js'
+import { type GateRun, runRecallGate } from './memory/recallGateRun.js'
 import { formatGuildFactDate, retrieveForTurn, retrieveGuildFacts } from './memory/retriever.js'
 import { getMessages as getBufferMessages } from './passiveBuffer.js'
 import { assembleSystemPrompt } from './promptAssembler.js'
@@ -235,6 +235,18 @@ function runRecall(input: RecallInput, channelId: string): TimedRecall | null {
   } catch (error) {
     logger.warn({ channelId, error }, 'Failed to recall memories for the turn')
     return null
+  }
+}
+
+// Stored as offsets from the turn's start, never as raw performance.now() readings. A gate that settled before the
+// prompt was ready would have added nothing, so it has no ready time.
+function shadowGateDetail(gated: GateRun, turnStartedAt: number, contextReadyAt: number | null) {
+  const readyAt = contextReadyAt !== null && contextReadyAt <= gated.settledAt ? contextReadyAt : null
+  return {
+    ...gated.detail,
+    startMs: Math.round(gated.startedAt - turnStartedAt),
+    contextReadyMs: readyAt === null ? null : Math.round(readyAt - turnStartedAt),
+    projectedAddedMs: readyAt === null ? 0 : Math.round(gated.settledAt - readyAt)
   }
 }
 
@@ -617,6 +629,8 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
         ),
         nameOf: (memberId) => getUserName(memberId)?.displayName ?? 'someone',
         deadlineAt,
+        // Shadow only measures, so Jev gets its usual collection time instead of being cut at the reply deadline.
+        collectUntil: performance.now() + config.jev.memoryTimeoutMs,
         mode: 'shadow',
         channelId,
         guildId
@@ -640,13 +654,7 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
         gated === 'error'
           ? { status: 'error' }
           : gated
-            ? {
-                ...gated.detail,
-                projectedAddedMs: Math.max(
-                  0,
-                  Math.round(gated.detail.settledAtMs - (contextReadyAt ?? gated.detail.settledAtMs))
-                )
-              }
+            ? shadowGateDetail(gated, turnStartedAt, contextReadyAt)
             : undefined
       recordRecall(recalled, 'shadow', gate)
     })
