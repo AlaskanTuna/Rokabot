@@ -84,6 +84,16 @@ describe('judgeRecallCandidates', () => {
       status: 'invalid',
       probabilities: null
     })
+
+    mocks.systemOne.mockResolvedValueOnce({
+      answers: { recall_0: { type: 'noul', noul: 0.5 } },
+      usage: { input_tokens: 9 }
+    })
+    expect(await judgeRecallCandidates(input(), { timeoutMs: 1000 })).toMatchObject({
+      status: 'invalid',
+      probabilities: null,
+      inputTokens: 9
+    })
   })
 
   it('settles as deadline even when the SDK call never resolves', async () => {
@@ -95,6 +105,41 @@ describe('judgeRecallCandidates', () => {
     })
     await vi.advanceTimersByTimeAsync(301)
     expect(settled).toMatchObject({ status: 'deadline', probabilities: null, usageUnknown: true })
+  })
+
+  it('makes no call when the caller has already cancelled the turn', async () => {
+    const caller = new AbortController()
+    caller.abort()
+    expect((await judgeRecallCandidates(input(), { timeoutMs: 1000, signal: caller.signal })).status).toBe('skipped')
+    expect(mocks.systemOne).not.toHaveBeenCalled()
+  })
+
+  it('settles as deadline without a warning when the caller cancels mid-flight', async () => {
+    vi.useFakeTimers()
+    mocks.systemOne.mockReturnValueOnce(new Promise(() => {}))
+    const caller = new AbortController()
+    let settled: Awaited<ReturnType<typeof judgeRecallCandidates>> | undefined
+    void judgeRecallCandidates(input(), { timeoutMs: 60_000, signal: caller.signal }).then((judged) => {
+      settled = judged
+    })
+    caller.abort()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(settled).toMatchObject({ status: 'deadline', probabilities: null, usageUnknown: true })
+    expect(mocks.systemOne.mock.calls[0][1].signal.aborted).toBe(true)
+    expect(mocks.warn).not.toHaveBeenCalled()
+  })
+
+  it('does not leave its abort listener on the caller signal', async () => {
+    mocks.systemOne.mockResolvedValueOnce({
+      answers: { recall_0: { type: 'noul', noul: 0.5 }, recall_1: { type: 'noul', noul: 0.5 } },
+      usage: { input_tokens: 1 }
+    })
+    const caller = new AbortController()
+    const add = vi.spyOn(caller.signal, 'addEventListener')
+    const remove = vi.spyOn(caller.signal, 'removeEventListener')
+    await judgeRecallCandidates(input(), { timeoutMs: 1000, signal: caller.signal })
+    expect(add).toHaveBeenCalledTimes(1)
+    expect(remove).toHaveBeenCalledWith('abort', add.mock.calls[0][1])
   })
 
   it('makes no call with an empty shortlist, no client, or no time left', async () => {

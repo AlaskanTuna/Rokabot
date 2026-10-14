@@ -97,16 +97,22 @@ export async function judgeRecallCandidates(
   const client = getJevClient()
   if (!client) return settled('no_client')
   if (options.timeoutMs <= 0) return settled('deadline')
+  if (options.signal?.aborted) return settled('skipped')
   const request = buildRequest(input)
   if (!request) return settled('skipped')
 
   const controller = new AbortController()
-  options.signal?.addEventListener('abort', () => controller.abort(), { once: true })
   const startedAt = performance.now()
-  let timer: ReturnType<typeof setTimeout> | undefined
-  // The SDK's own abort can stall, so a plain timer is what guarantees the caller settles on time.
+  let stopWaiting = (): void => {}
+  // The SDK's own abort can stall, so this race guarantees the caller settles on time or as soon as it cancels.
   const deadline = new Promise<'deadline'>((resolve) => {
-    timer = setTimeout(() => resolve('deadline'), options.timeoutMs)
+    const timer = setTimeout(() => resolve('deadline'), options.timeoutMs)
+    const onAbort = (): void => resolve('deadline')
+    options.signal?.addEventListener('abort', onAbort, { once: true })
+    stopWaiting = () => {
+      clearTimeout(timer)
+      options.signal?.removeEventListener('abort', onAbort)
+    }
   })
   try {
     const outcome = await Promise.race([
@@ -145,6 +151,6 @@ export async function judgeRecallCandidates(
     )
     return settled('error', performance.now() - startedAt, true)
   } finally {
-    if (timer) clearTimeout(timer)
+    stopWaiting()
   }
 }
