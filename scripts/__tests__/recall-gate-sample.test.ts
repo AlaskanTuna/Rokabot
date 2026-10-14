@@ -69,7 +69,7 @@ function history(
   role: 'user' | 'assistant' = 'user',
   channelId = CHANNEL,
   displayName = role === 'user' ? 'Alice' : 'Roka',
-  userId: string | null = null
+  userId: string | null = role === 'user' && displayName === 'Alice' ? 'alice' : null
 ): void {
   getDb()
     .prepare(
@@ -356,7 +356,7 @@ describe('the context Jev saw', () => {
     history('a reply', NOW - 300 * SECOND, 'assistant', CHANNEL, 'Old Bot Name')
     history('earlier b\nwith a second line', NOW - 200 * SECOND, 'user', CHANNEL, 'Carol')
     history('another channel', NOW - 100 * SECOND, 'user', 'another-channel', 'Dave')
-    history(MESSAGE, NOW + 4 * SECOND, 'user', CHANNEL, 'Alice the Guitarist')
+    history(MESSAGE, NOW + 4 * SECOND, 'user', CHANNEL, 'Alice the Guitarist', 'alice')
     history('same moment', NOW + 4 * SECOND, 'user', CHANNEL, 'Bob')
     history('afterwards', NOW + 10 * SECOND, 'user', CHANNEL, 'Bob')
     shadowRow(1, NOW, okGate(MESSAGE, [['fact', claimId, 0.9]]))
@@ -716,6 +716,29 @@ describe('who spoke', () => {
     expect(pair.recentMessages).toEqual(['[Bob]: lol'])
     expect(pair.subject).toBe('Alice the Guitarist')
   })
+
+  it('skips the turn, and counts it, when only another member said that text', () => {
+    const { claimId } = seedMemories()
+    history('lol', NOW + 10 * SECOND, 'user', CHANNEL, 'Bob', 'bob')
+    shadowRow(1, NOW, okGate('lol', [['fact', claimId, 0.9]]))
+
+    const sample = loadGateSample(finish())
+
+    expect(sample.pairs).toEqual([])
+    expect(sample.skips).toMatchObject({ noHistoryMatch: 1, placeholder: 0, gateNotOk: 0 })
+  })
+
+  it('takes the nearest row of anyone when the shadow row names no speaker', () => {
+    const { claimId } = seedMemories()
+    history('lol', NOW + 200 * SECOND, 'user', CHANNEL, 'Alice', 'alice')
+    history('lol', NOW + 10 * SECOND, 'user', CHANNEL, 'Bob', 'bob')
+    shadowRow(1, NOW, okGate('lol', [['fact', claimId, 0.9]]), CHANNEL, null)
+
+    const sample = loadGateSample(finish())
+
+    expect(sample.pairs.map(({ speaker }) => speaker)).toEqual(['Bob'])
+    expect(sample.skips.noHistoryMatch).toBe(0)
+  })
 })
 
 describe('claims a member removed', () => {
@@ -814,11 +837,19 @@ describe('matching a turn to its history row', () => {
     expect(match(NOW, MESSAGE, 'alice')).toEqual({ message: MESSAGE, timestamp: NOW + 40 * SECOND, speaker: 'Alice' })
   })
 
-  it('falls back to the nearest row of anyone when the speaker has none, or when no speaker is known', () => {
+  it('matches nothing when the speaker has no row, whatever other members or legacy rows said', () => {
     history(MESSAGE, NOW + 10 * SECOND, 'user', CHANNEL, 'Bob', 'bob')
-    history(MESSAGE, NOW + 200 * SECOND, 'user', CHANNEL, 'Carol', 'carol')
+    history(MESSAGE, NOW + 20 * SECOND, 'user', CHANNEL, 'Carol', 'carol')
+    history(MESSAGE, NOW + 30 * SECOND, 'user', CHANNEL, 'Old Row', null)
 
-    expect(match(NOW, MESSAGE, 'alice')).toEqual({ message: MESSAGE, timestamp: NOW + 10 * SECOND, speaker: 'Bob' })
+    expect(match(NOW, MESSAGE, 'alice')).toBeUndefined()
+  })
+
+  it('takes the nearest row of anyone when the shadow row names no speaker', () => {
+    history(MESSAGE, NOW + 200 * SECOND, 'user', CHANNEL, 'Carol', 'carol')
+    history(MESSAGE, NOW + 10 * SECOND, 'user', CHANNEL, 'Bob', 'bob')
+    history(MESSAGE, NOW + 50 * SECOND, 'user', CHANNEL, 'Old Row', null)
+
     expect(match(NOW, MESSAGE, null)).toEqual({ message: MESSAGE, timestamp: NOW + 10 * SECOND, speaker: 'Bob' })
   })
 

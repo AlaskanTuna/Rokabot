@@ -88,8 +88,9 @@ function messageOf(content: string, messageHash: string): string | undefined {
 type Matched = { message: string; timestamp: number; speaker: string }
 
 /**
- * The history row whose text the gate judged. Rows the shadow row's own user wrote come first, so a short message two
- * members both sent cannot take the other's name; within that, the nearest to the shadow row wins.
+ * The history row whose text the gate judged, nearest the shadow row. When the shadow row names its user, only that
+ * user's rows can match: a short message two members both sent must not take the other's name, and a turn whose own
+ * row is missing is skipped instead. With no user named, any member's row can match.
  */
 export function matchGateMessage(
   database: Database.Database,
@@ -109,15 +110,16 @@ export function matchGateMessage(
     speaker: string
     userId: string | null
   }>
-  let best: (Matched & { own: boolean }) | undefined
+  let nearest: Matched | undefined
   for (const { content, timestamp, speaker, userId } of candidates) {
+    if (speakerId !== null && userId !== speakerId) continue
     const message = messageOf(content, messageHash)
     if (message === undefined) continue
-    const own = speakerId !== null && userId === speakerId
-    const closer = best && Math.abs(timestamp - createdAt) < Math.abs(best.timestamp - createdAt)
-    if (!best || (own && !best.own) || (own === best.own && closer)) best = { message, timestamp, speaker, own }
+    if (!nearest || Math.abs(timestamp - createdAt) < Math.abs(nearest.timestamp - createdAt)) {
+      nearest = { message, timestamp, speaker }
+    }
   }
-  return best && { message: best.message, timestamp: best.timestamp, speaker: best.speaker }
+  return nearest
 }
 
 function parseGate(
