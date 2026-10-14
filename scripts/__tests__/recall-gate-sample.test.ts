@@ -10,6 +10,7 @@ import {
   retireClaim,
   retractClaim
 } from '../../src/agent/memory/memoryClaims.js'
+import { config } from '../../src/config.js'
 import { closeDb, getDb } from '../../src/storage/database.js'
 import { recordMediaOccurrence, saveMediaDigest } from '../../src/storage/mediaDigestStore.js'
 import { saveMemoryEpisode } from '../../src/storage/memoryEpisodeStore.js'
@@ -21,12 +22,15 @@ const GUILD = 'guild-gate'
 const CHANNEL = 'chan-gate'
 const MESSAGE = 'what guitar did Aki want?'
 const SECOND = 1000
+// The configured timezone sets which local day a timestamp falls on, so each test pins it.
+const settings = config as { timezone: string | undefined }
 
 const hash = (text: string): string => createHash('sha256').update(text).digest('hex').slice(0, 16)
 
 let directory = ''
 let dbPath = ''
 let previousDbPath: string | undefined
+let previousTimezone: string | undefined
 
 function okGate(message: string, shortlist: Array<[string, number, number | null]>): Record<string, unknown> {
   return { v: 1, status: 'ok', messageHash: hash(message), shortlist }
@@ -57,24 +61,25 @@ function history(
 function guildClaim(
   predicate: string,
   value: string,
-  extra: { period?: string; seenAt?: number; endReason?: string } = {}
+  extra: { period?: string; endReason?: string; eventDate?: string; expiresAt?: number } = {}
 ): number {
-  const seenAt = extra.seenAt ?? NOW
   const result = getDb()
     .prepare(
       `INSERT INTO memory_claim (guild_id, subject_kind, subject_user_id, predicate, value, source_kind, status,
-         first_seen_at, last_seen_at, period, end_reason)
-       VALUES (?, 'guild', NULL, ?, ?, 'passive', ?, ?, ?, ?, ?)`
+         first_seen_at, last_seen_at, period, end_reason, event_date, expires_at)
+       VALUES (?, 'guild', NULL, ?, ?, 'passive', ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       GUILD,
       predicate,
       value,
       extra.endReason ? 'rejected' : 'active',
-      seenAt - 1000,
-      seenAt,
+      NOW - 1000,
+      NOW,
       extra.period ?? 'current',
-      extra.endReason ?? null
+      extra.endReason ?? null,
+      extra.eventDate ?? null,
+      extra.expiresAt ?? null
     )
   return Number(result.lastInsertRowid)
 }
@@ -110,6 +115,8 @@ function finish(): string {
 beforeEach(() => {
   directory = mkdtempSync(join(tmpdir(), 'recall-gate-'))
   previousDbPath = process.env.ROKABOT_DB_PATH
+  previousTimezone = config.timezone
+  settings.timezone = 'Asia/Singapore'
   dbPath = join(directory, 'copy.db')
   process.env.ROKABOT_DB_PATH = dbPath
   getDb()
@@ -118,6 +125,7 @@ beforeEach(() => {
 afterEach(() => {
   closeDb()
   process.env.ROKABOT_DB_PATH = previousDbPath
+  settings.timezone = previousTimezone
   rmSync(directory, { recursive: true, force: true })
 })
 
@@ -187,7 +195,8 @@ describe('loading gate pairs', () => {
         'period',
         'recentMessages',
         'speaker',
-        'subject'
+        'subject',
+        'turnDate'
       ])
     )
     expect(
@@ -433,24 +442,23 @@ describe('the context Jev saw', () => {
     ])
   })
 
-  it('dates each memory by its own clock, as a UTC calendar day', () => {
-    const fact = assertClaim({
-      guildId: GUILD,
-      subjectUserId: 'alice',
-      predicate: 'likes',
-      value: 'night owls',
-      sourceKind: 'passive',
-      channelId: CHANNEL,
-      observedAt: day(2026, 8, 3, 23, 59, 59)
-    })
-    const serverFact = guildClaim('announcement', 'a new rule', { seenAt: day(2026, 8, 4, 0, 0, 0) })
+  it('dates a conversation and a media digest by the configured timezone, as Jev saw them', () => {
     saveMemoryEpisode({
       id: 3,
       guildId: GUILD,
       channelId: CHANNEL,
-      startedAt: day(2026, 0, 31, 22),
-      endedAt: day(2026, 0, 31, 23, 30),
+      startedAt: day(2026, 0, 31, 16),
+      endedAt: day(2026, 0, 31, 17, 30),
       summary: 'a late chat',
+      embedding: null
+    })
+    saveMemoryEpisode({
+      id: 4,
+      guildId: GUILD,
+      channelId: CHANNEL,
+      startedAt: day(2026, 0, 30, 10),
+      endedAt: day(2026, 0, 30, 15, 59, 59),
+      summary: 'an afternoon chat',
       embedding: null
     })
     const shared = saveMediaDigest({
@@ -472,7 +480,7 @@ describe('the context Jev saw', () => {
       createdAt: day(2026, 2, 5, 12)
     })
     for (const [messageId, observedAt] of [
-      ['m1', day(2026, 1, 20, 12)],
+      ['m1', day(2026, 1, 20, 23, 59)],
       ['m2', day(2026, 1, 10, 12)]
     ] as const) {
       recordMediaOccurrence({
@@ -491,20 +499,75 @@ describe('the context Jev saw', () => {
       1,
       NOW,
       okGate(MESSAGE, [
-        ['fact', fact.id, 0.9],
-        ['server_fact', serverFact, 0.9],
         ['conversation', 3, 0.9],
+        ['conversation', 4, 0.9],
         ['media', shared?.id ?? 0, 0.9],
         ['media', unshared?.id ?? 0, 0.9]
       ])
     )
 
     expect(pairsOf().map(({ kind, date }) => [kind, date])).toEqual([
-      ['fact', '2026-09-03'],
-      ['server_fact', '2026-09-04'],
-      ['conversation', '2026-01-31'],
-      ['media', '2026-02-20'],
+      ['conversation', '2026-02-01'],
+      ['conversation', '2026-01-30'],
+      ['media', '2026-02-21'],
       ['media', '2026-03-05']
+    ])
+  })
+
+  it('gives a member fact no date, because Jev saw none', () => {
+    const fact = assertClaim({
+      guildId: GUILD,
+      subjectUserId: 'alice',
+      predicate: 'likes',
+      value: 'night owls',
+      sourceKind: 'passive',
+      channelId: CHANNEL,
+      observedAt: day(2026, 8, 3, 17)
+    })
+    history(MESSAGE, NOW + SECOND)
+    shadowRow(1, NOW, okGate(MESSAGE, [['fact', fact.id, 0.9]]))
+
+    expect(pairsOf().map(({ date }) => date)).toEqual([null])
+  })
+
+  it('gives a server fact the date Jev saw: the event date at the precision it was said, else none', () => {
+    const fullDate = guildClaim('upcoming_event', 'the club meetup', {
+      eventDate: '2026-10-31',
+      expiresAt: day(2026, 9, 31, 16)
+    })
+    const monthOnly = guildClaim('plan', 'a trip to Kyoto', { eventDate: '2026-11', expiresAt: day(2026, 10, 30, 16) })
+    const legacy = guildClaim('plan', 'a legacy plan', { expiresAt: day(2026, 11, 5, 16) })
+    const other = guildClaim('announcement', 'a new rule')
+    history(MESSAGE, NOW + SECOND)
+    shadowRow(
+      1,
+      NOW,
+      okGate(
+        MESSAGE,
+        [fullDate, monthOnly, legacy, other].map((id): [string, number, number] => ['server_fact', id, 0.5])
+      )
+    )
+
+    expect(pairsOf().map(({ memoryText, date }) => [memoryText, date])).toEqual([
+      ['upcoming_event: the club meetup', '2026-10-31'],
+      ['plan: a trip to Kyoto', 'November 2026'],
+      ['plan: a legacy plan', '2026-12-05'],
+      ['announcement: a new rule', null]
+    ])
+  })
+
+  it('dates the turn itself by its history row, in the configured timezone', () => {
+    const { claimId } = seedMemories()
+    const lastSecondOfTheDay = day(2026, 8, 3, 15, 59, 59)
+    const firstSecondOfTheNext = day(2026, 8, 3, 16, 0, 0)
+    history('an afternoon message', lastSecondOfTheDay)
+    history('an evening message', firstSecondOfTheNext)
+    shadowRow(1, lastSecondOfTheDay - 2 * SECOND, okGate('an afternoon message', [['fact', claimId, 0.9]]))
+    shadowRow(2, firstSecondOfTheNext - 2 * SECOND, okGate('an evening message', [['fact', claimId, 0.9]]))
+
+    expect(pairsOf().map(({ message, turnDate }) => [message, turnDate])).toEqual([
+      ['an afternoon message', '2026-09-03'],
+      ['an evening message', '2026-09-04']
     ])
   })
 
@@ -530,7 +593,8 @@ describe('the context Jev saw', () => {
       recentMessages: ['[Bob]: an earlier line'],
       subject: 'Alice A.',
       period: 'current',
-      date: '2027-01-15'
+      date: null,
+      turnDate: '2027-01-15'
     })
     expect(blind).not.toMatch(/0\.91|probability|"alice"|guild-gate|chan-gate/)
     expect(readFileSync(join(outDir, 'key.jsonl'), 'utf8')).toBe(
@@ -640,6 +704,7 @@ describe('writing the sample', () => {
     subject: null,
     period: null,
     date: null,
+    turnDate: '2027-01-15',
     probability: 0.5 + index / 100
   }))
 

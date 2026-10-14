@@ -6,14 +6,18 @@
  * pairs.jsonl goes to the judges and carries no probability; key.jsonl stays with the operator. Both hold chat text:
  * they are written owner-only (0600), and <out-dir> must be a private scratch directory, never inside the repository.
  *
- * A pair carries what Jev saw for the turn (the speaker, up to three earlier channel lines, the memory's subject,
- * period and date) so a judge answers the question Jev answered. Claims a member removed are never sampled.
+ * A pair carries what Jev saw for the turn (the speaker, up to three earlier channel lines, the turn's date, and the
+ * memory's subject, period and date) so a judge answers the question Jev answered. Dates are local days in the
+ * configured timezone, and a memory's `date` is only the one Jev was shown. Claims a member removed are never sampled.
  */
 import { createHash } from 'node:crypto'
 import { chmodSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import Database from 'better-sqlite3'
+import type { GuildMemoryClaim } from '../src/agent/memory/memoryClaims.js'
+import { formatGuildFactDate } from '../src/agent/memory/retriever.js'
+import { getLocalDate } from '../src/utils/timezone.js'
 import { seededRandom, turnRef } from './recall-calibration-sample.js'
 
 export type GatePair = Readonly<{
@@ -27,6 +31,7 @@ export type GatePair = Readonly<{
   subject: string | null
   period: string | null
   date: string | null
+  turnDate: string
   probability: number
 }>
 
@@ -85,8 +90,6 @@ export function matchGateMessage(
   return nearest
 }
 
-const utcDay = (ms: number): string => new Date(ms).toISOString().slice(0, 10)
-
 function parseGate(detail: string): { messageHash: string; shortlist: Shortlisted } | null {
   let parsed: unknown
   try {
@@ -127,7 +130,8 @@ export function loadGatePairs(dbPath: string): GatePair[] {
       ? database.prepare('SELECT display_name AS name FROM user_names WHERE user_id = ?')
       : null
     const claim = database.prepare(
-      `SELECT predicate, value, subject_user_id AS subjectUserId, period, last_seen_at AS seenAt FROM memory_claim
+      `SELECT predicate, value, subject_user_id AS subjectUserId, period, event_date AS eventDate, expires_at AS expiresAt
+       FROM memory_claim
        WHERE id = ? AND (end_reason IS NULL OR end_reason NOT IN ${REMOVED_BY_MEMBER})`
     )
     const episode = database.prepare('SELECT summary, ended_at AS endedAt FROM memory_episode WHERE id = ?')
@@ -138,22 +142,31 @@ export function loadGatePairs(dbPath: string): GatePair[] {
     const memoryOf = (kind: string, id: number): Memory | undefined => {
       if (kind === 'conversation') {
         const found = episode.get(id) as { summary: string; endedAt: number } | undefined
-        return found && { text: found.summary, subject: null, period: null, date: utcDay(found.endedAt) }
+        return found && { text: found.summary, subject: null, period: null, date: getLocalDate(found.endedAt) }
       }
       if (kind === 'media') {
         const found = media.get(id) as { summary: string; sharedAt: number } | undefined
-        return found && { text: found.summary, subject: null, period: null, date: utcDay(found.sharedAt) }
+        return found && { text: found.summary, subject: null, period: null, date: getLocalDate(found.sharedAt) }
       }
       if (kind !== 'fact' && kind !== 'server_fact') return undefined
       const found = claim.get(id) as
-        | { predicate: string; value: string; subjectUserId: string | null; period: string; seenAt: number }
+        | {
+            predicate: string
+            value: string
+            subjectUserId: string | null
+            period: string
+            eventDate: string | null
+            expiresAt: number | null
+          }
         | undefined
       if (!found) return undefined
       const subject =
         found.subjectUserId === null
           ? null
           : ((userName?.get(found.subjectUserId) as { name: string } | undefined)?.name ?? null)
-      return { text: `${found.predicate}: ${found.value}`, subject, period: found.period, date: utcDay(found.seenAt) }
+      // Jev saw a date for server events and plans only; formatGuildFactDate reads just these three fields.
+      const date = kind === 'server_fact' ? (formatGuildFactDate(found as unknown as GuildMemoryClaim) ?? null) : null
+      return { text: `${found.predicate}: ${found.value}`, subject, period: found.period, date }
     }
 
     const pairs: GatePair[] = []
@@ -183,6 +196,7 @@ export function loadGatePairs(dbPath: string): GatePair[] {
           subject: memory.subject,
           period: memory.period,
           date: memory.date,
+          turnDate: getLocalDate(matched.timestamp),
           probability
         })
       }
@@ -214,7 +228,7 @@ export function writeGateSample(pairs: readonly GatePair[], outDir: string, seed
   const order = shuffled(pairs, seed)
   writePrivate(
     join(outDir, 'pairs.jsonl'),
-    order.map(({ pairId, kind, message, memoryText, speaker, recentMessages, subject, period, date }) => ({
+    order.map(({ pairId, kind, message, memoryText, speaker, recentMessages, subject, period, date, turnDate }) => ({
       pairId,
       kind,
       message,
@@ -223,7 +237,8 @@ export function writeGateSample(pairs: readonly GatePair[], outDir: string, seed
       recentMessages,
       subject,
       period,
-      date
+      date,
+      turnDate
     }))
   )
   writePrivate(
