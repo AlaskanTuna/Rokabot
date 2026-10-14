@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 const { memoryDefaults, testConfig } = vi.hoisted(() => {
@@ -144,7 +145,8 @@ it('records one recall jev_events row for an attempted request, with no text, an
     inputTokens: 1800
   })
   expect(row.question).toBe(`recall:r1:${detail.ref}`)
-  expect(JSON.stringify(row)).not.toMatch(/chess|Ali/)
+  expect(JSON.stringify(row)).not.toMatch(/chess|Ali|Mika|someone|any chess plans/)
+  expect(JSON.stringify(detail)).not.toMatch(/chess|Ali|Mika|someone|any chess plans/)
 })
 
 it('writes no jev_events row when no request was attempted, and keeps core facts', async () => {
@@ -174,6 +176,111 @@ it('passes the time left before the deadline and marks applied only in unified m
     usageUnknown: false
   })
   await runRecallGate(args({ mode: 'unified', deadlineAt: performance.now() + 700 }))
-  expect(mocks.judge.mock.calls[0][1].timeoutMs).toBeGreaterThan(600)
+  const { timeoutMs } = mocks.judge.mock.calls[0][1]
+  expect(timeoutMs).toBeGreaterThan(600)
+  expect(timeoutMs).toBeLessThanOrEqual(700)
   expect(mocks.recordJevEvent.mock.calls[0][0].applied).toBe(true)
+})
+
+const settled = (overrides: Record<string, unknown> = {}) => ({
+  status: 'ok',
+  probabilities: null,
+  judgedKeys: [],
+  latencyMs: 0,
+  inputTokens: 0,
+  usageUnknown: false,
+  ...overrides
+})
+
+it('stores the judged keys with rounded probabilities and a text-free message hash', async () => {
+  const chess = fact('speaker', 'hobby', 'chess', axis(1))
+  mocks.judge.mockResolvedValueOnce(
+    settled({
+      probabilities: new Map([[`fact:${chess}`, 0.95123]]),
+      judgedKeys: [`fact:${chess}`],
+      latencyMs: 12.6,
+      inputTokens: 40
+    })
+  )
+
+  const { detail } = await runRecallGate(args({ message: 'any chess plans?' }))
+
+  const row = mocks.recordJevEvent.mock.calls[0][0]
+  expect(JSON.parse(row.answer)).toEqual({
+    status: 'ok',
+    decisions: [[`fact:${chess}`, 0.951]],
+    usage_unknown: false
+  })
+  expect(row.latencyMs).toBe(13)
+  expect(detail.shortlist).toEqual([['fact', chess, 0.951]])
+  expect(detail.messageHash).toMatch(/^[0-9a-f]{16}$/)
+  expect(detail.messageHash).toBe(createHash('sha256').update('any chess plans?').digest('hex').slice(0, 16))
+})
+
+it('records an error with unknown usage and zero tokens', async () => {
+  fact('speaker', 'hobby', 'chess', axis(1))
+  mocks.judge.mockResolvedValueOnce(settled({ status: 'error', latencyMs: 30, usageUnknown: true }))
+
+  const { detail } = await runRecallGate(args())
+
+  expect(detail).toMatchObject({ status: 'error', usageUnknown: true, selected: [] })
+  expect(mocks.recordJevEvent).toHaveBeenCalledTimes(1)
+  const row = mocks.recordJevEvent.mock.calls[0][0]
+  expect(JSON.parse(row.answer)).toEqual({ status: 'error', decisions: [], usage_unknown: true })
+  expect(row).toMatchObject({ latencyMs: 30, inputTokens: 0, applied: false })
+})
+
+it('records a deadline that fired while waiting, with unknown usage', async () => {
+  fact('speaker', 'hobby', 'chess', axis(1))
+  mocks.judge.mockResolvedValueOnce(settled({ status: 'deadline', latencyMs: 900, usageUnknown: true }))
+
+  await runRecallGate(args())
+
+  expect(mocks.recordJevEvent).toHaveBeenCalledTimes(1)
+  expect(JSON.parse(mocks.recordJevEvent.mock.calls[0][0].answer)).toMatchObject({
+    status: 'deadline',
+    usage_unknown: true
+  })
+})
+
+it('writes no row when the deadline had already passed, yet reports the deadline status', async () => {
+  const nickname = fact('speaker', 'nickname', 'Ali', axis(1))
+  fact('speaker', 'hobby', 'chess', axis(1))
+  mocks.judge.mockResolvedValueOnce(settled({ status: 'deadline' }))
+
+  const { items, detail } = await runRecallGate(args({ deadlineAt: performance.now() - 5 }))
+
+  expect(mocks.judge.mock.calls[0][1].timeoutMs).toBeLessThanOrEqual(0)
+  expect(detail.status).toBe('deadline')
+  expect(items.map(({ id }) => id)).toEqual([nickname])
+  expect(mocks.recordJevEvent).not.toHaveBeenCalled()
+})
+
+it('writes no row without a Jev client, and keeps core facts', async () => {
+  const nickname = fact('speaker', 'nickname', 'Ali', axis(1))
+  mocks.judge.mockResolvedValueOnce(settled({ status: 'no_client' }))
+
+  const { items, detail } = await runRecallGate(args())
+
+  expect(items.map(({ id }) => id)).toEqual([nickname])
+  expect(detail.status).toBe('no_client')
+  expect(mocks.recordJevEvent).not.toHaveBeenCalled()
+})
+
+it('does not mark applied in unified mode when only core facts were selected', async () => {
+  const nickname = fact('speaker', 'nickname', 'Ali', axis(1))
+  const chess = fact('speaker', 'hobby', 'chess', axis(1))
+  mocks.judge.mockResolvedValueOnce(
+    settled({
+      probabilities: new Map([[`fact:${chess}`, 0.2]]),
+      judgedKeys: [`fact:${chess}`],
+      latencyMs: 5,
+      inputTokens: 5
+    })
+  )
+
+  const { items } = await runRecallGate(args({ mode: 'unified' }))
+
+  expect(items.map(({ id }) => id)).toEqual([nickname])
+  expect(mocks.recordJevEvent.mock.calls[0][0].applied).toBe(false)
 })

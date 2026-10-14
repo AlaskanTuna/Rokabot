@@ -36,6 +36,7 @@ export async function runRecallGate(args: {
 }): Promise<{ items: RecallItem[]; detail: GateDetail }> {
   const pool = recallGatePool(args.input)
   const shortlist = buildRecallShortlist(pool, config.memory.recallGateShortlist)
+  const timeoutMs = Math.floor(args.deadlineAt - performance.now())
   const judged = await judgeRecallCandidates(
     {
       speakerId: args.input.speakerId,
@@ -46,12 +47,13 @@ export async function runRecallGate(args: {
       shortlist,
       nameOf: args.nameOf
     },
-    { timeoutMs: Math.floor(args.deadlineAt - performance.now()) }
+    { timeoutMs }
   )
   const items = selectGatedItems(pool, shortlist, judged.probabilities, config.memory.recallGateMinNoul)
   const ref = randomUUID().slice(0, 8)
   const coreKeys = new Set(pool.core.map(gateKey))
-  if (ATTEMPTED.has(judged.status)) {
+  // An already-expired deadline settles as 'deadline' without sending a request, so there is nothing to record.
+  if (ATTEMPTED.has(judged.status) && !(judged.status === 'deadline' && timeoutMs <= 0)) {
     recordJevEvent({
       kind: 'recall',
       guildId: args.guildId,
