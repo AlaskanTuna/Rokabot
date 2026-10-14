@@ -74,7 +74,7 @@ function isLive(claim: FactClaim, now: number): boolean {
 }
 
 // cosineSimilarity rejects wrong-size, non-finite and zero vectors, so a query it cannot score falls back to keywords.
-function isUsableQuery(query: readonly number[] | null): query is readonly number[] {
+export function isUsableQuery(query: readonly number[] | null): query is readonly number[] {
   return query !== null && cosineSimilarity(query, query) !== null
 }
 
@@ -329,6 +329,29 @@ export function recallGatePool(input: RecallInput): GatePool {
   }
 }
 
+/** Only the speaker's core facts, for a gate with no Jev client to judge anything else (#262). */
+export function recallCoreFacts(input: RecallInput): RecallItem[] {
+  const now = input.now ?? Date.now()
+  const claims = getActiveClaims(input.scope.guildId, input.speakerId).filter((claim) => isLive(claim, now))
+  const sources = getClaimSourceChannels(claims.map((claim) => claim.id))
+  const allowed = claims.filter((claim) => canRecall(sources.get(claim.id) ?? [null], input.scope))
+  return selectCoreFacts(allowed).map(({ item }) => item)
+}
+
+function selectCoreFacts(speakerAllowed: readonly UserMemoryClaim[]): Ranked[] {
+  return speakerAllowed
+    .flatMap((claim) => {
+      const rank = coreRank(claim)
+      return rank === null ? [] : [{ claim, rank }]
+    })
+    .sort(
+      (left, right) =>
+        left.rank - right.rank || right.claim.lastSeenAt - left.claim.lastSeenAt || left.claim.id - right.claim.id
+    )
+    .slice(0, config.memory.recallCoreFacts)
+    .map(({ claim }) => ({ item: factItem(claim, 1, true), at: claim.lastSeenAt }))
+}
+
 function recallTurn(input: RecallInput, floors: boolean): RecallResult & { ranked: Ranked[]; core: RecallItem[] } {
   const now = input.now ?? Date.now()
   const { scope, speakerId } = input
@@ -371,17 +394,7 @@ function recallTurn(input: RecallInput, floors: boolean): RecallResult & { ranke
   const episodes = query ? listEpisodesForGuild(scope.guildId) : []
   const media = query ? listMediaRecallCandidates(scope.guildId) : []
 
-  const coreRanked: Ranked[] = speakerAllowed
-    .flatMap((claim) => {
-      const rank = coreRank(claim)
-      return rank === null ? [] : [{ claim, rank }]
-    })
-    .sort(
-      (left, right) =>
-        left.rank - right.rank || right.claim.lastSeenAt - left.claim.lastSeenAt || left.claim.id - right.claim.id
-    )
-    .slice(0, config.memory.recallCoreFacts)
-    .map(({ claim }) => ({ item: factItem(claim, 1, true), at: claim.lastSeenAt }))
+  const coreRanked = selectCoreFacts(speakerAllowed)
   const coreIds = new Set(coreRanked.map(({ item: core }) => core.id))
 
   const restMembers = [...speakerAllowed, ...otherAllowed].filter((claim) => !coreIds.has(claim.id))

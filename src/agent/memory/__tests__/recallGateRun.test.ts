@@ -31,11 +31,23 @@ const { memoryDefaults, testConfig } = vi.hoisted(() => {
   }
 })
 
-const mocks = vi.hoisted(() => ({ judge: vi.fn(), recordJevEvent: vi.fn() }))
+const mocks = vi.hoisted(() => ({
+  judge: vi.fn(),
+  recordJevEvent: vi.fn(),
+  getClient: vi.fn(),
+  gatePool: vi.fn(),
+  realGatePool: undefined as ((input: unknown) => unknown) | undefined
+}))
 
 vi.mock('../../../config.js', () => ({ config: testConfig }))
 vi.mock('../../jev/recallJudgment.js', () => ({ RECALL_RUBRIC_VERSION: 'r1', judgeRecallCandidates: mocks.judge }))
 vi.mock('../../../storage/jevEventStore.js', () => ({ recordJevEvent: mocks.recordJevEvent }))
+vi.mock('../../jev/client.js', () => ({ getJevClient: mocks.getClient }))
+vi.mock('../recall.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../recall.js')>()
+  mocks.realGatePool = actual.recallGatePool as (input: unknown) => unknown
+  return { ...actual, recallGatePool: mocks.gatePool }
+})
 
 import { closeDb } from '../../../storage/database.js'
 import { setClaimEmbedding } from '../../../storage/memoryRecallStore.js'
@@ -86,6 +98,10 @@ beforeEach(() => {
   Object.assign(testConfig.memory, memoryDefaults)
   mocks.judge.mockReset()
   mocks.recordJevEvent.mockReset()
+  mocks.gatePool.mockReset()
+  mocks.gatePool.mockImplementation((poolInput) => mocks.realGatePool?.(poolInput))
+  mocks.getClient.mockReset()
+  mocks.getClient.mockReturnValue({})
   upsertUserName('speaker', 'speaker', 'Speaker')
 })
 
@@ -350,15 +366,38 @@ it('writes no row when the deadline had already passed, yet reports the deadline
   expect(mocks.recordJevEvent).not.toHaveBeenCalled()
 })
 
-it('writes no row without a Jev client, and keeps core facts', async () => {
+it('without a Jev client builds no pool, asks nothing, writes no row, and keeps the core facts', async () => {
   const nickname = fact('speaker', 'nickname', 'Ali', axis(1))
-  mocks.judge.mockResolvedValueOnce(settled({ status: 'no_client' }))
+  fact('speaker', 'hobby', 'chess', axis(1))
+  mocks.getClient.mockReturnValue(null)
 
-  const { items, detail } = await runRecallGate(args())
+  const { items, detail } = await runRecallGate(args({ mode: 'unified' }))
 
-  expect(items.map(({ id }) => id)).toEqual([nickname])
-  expect(detail.status).toBe('no_client')
+  expect(mocks.gatePool).not.toHaveBeenCalled()
+  expect(mocks.judge).not.toHaveBeenCalled()
   expect(mocks.recordJevEvent).not.toHaveBeenCalled()
+  expect(items.map(({ id }) => id)).toEqual([nickname])
+  expect(detail).toMatchObject({
+    status: 'no_client',
+    shortlist: [],
+    core: [['fact', nickname]],
+    selected: [['fact', nickname]],
+    latencyMs: 0,
+    inputTokens: 0,
+    usageUnknown: false,
+    model: null,
+    fallback: false,
+    embedding: testConfig.embeddings.fingerprint
+  })
+})
+
+it('reports the keyword fallback for a gate with no client and no usable query embedding', async () => {
+  fact('speaker', 'nickname', 'Ali', null)
+  mocks.getClient.mockReturnValue(null)
+
+  const { detail } = await runRecallGate({ ...args(), input: input({ queryEmbedding: null }) })
+
+  expect(detail.fallback).toBe(true)
 })
 
 it('does not mark applied in unified mode when only core facts were selected', async () => {

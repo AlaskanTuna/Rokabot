@@ -2,8 +2,21 @@ import { createHash, randomUUID } from 'node:crypto'
 import { config } from '../../config.js'
 import { recordJevEvent } from '../../storage/jevEventStore.js'
 import { getLocalDate } from '../../utils/timezone.js'
-import { RECALL_RUBRIC_VERSION, type RecallJudgmentStatus, judgeRecallCandidates } from '../jev/recallJudgment.js'
-import { type RecallInput, type RecallItem, recallGatePool } from './recall.js'
+import { getJevClient } from '../jev/client.js'
+import {
+  RECALL_RUBRIC_VERSION,
+  type RecallJudgment,
+  type RecallJudgmentStatus,
+  judgeRecallCandidates
+} from '../jev/recallJudgment.js'
+import {
+  type GatePool,
+  type RecallInput,
+  type RecallItem,
+  isUsableQuery,
+  recallCoreFacts,
+  recallGatePool
+} from './recall.js'
 import { buildRecallShortlist, gateKey, selectGatedItems } from './recallGate.js'
 
 export type GateDetail = Readonly<{
@@ -34,6 +47,15 @@ export type GateRun = Readonly<{
 
 const ATTEMPTED: ReadonlySet<RecallJudgmentStatus> = new Set(['ok', 'deadline', 'error', 'invalid'])
 const round = (value: number): number => Number(value.toFixed(4))
+const NO_CLIENT: RecallJudgment = {
+  status: 'no_client',
+  probabilities: null,
+  judgedKeys: [],
+  latencyMs: 0,
+  inputTokens: 0,
+  usageUnknown: false,
+  model: null
+}
 
 export async function runRecallGate(args: {
   input: RecallInput
@@ -49,22 +71,28 @@ export async function runRecallGate(args: {
   guildId: string
 }): Promise<GateRun> {
   const startedAt = performance.now()
-  const pool = recallGatePool(args.input)
-  const shortlist = buildRecallShortlist(pool, config.memory.recallGateShortlist)
+  // With no client nothing is judged, so only the core facts are read and the rest of the pool is never built.
+  const judging = getJevClient() !== null
+  const pool: GatePool = judging
+    ? recallGatePool(args.input)
+    : { core: recallCoreFacts(args.input), entries: [], fallback: !isUsableQuery(args.input.queryEmbedding), gated: 0 }
+  const shortlist = judging ? buildRecallShortlist(pool, config.memory.recallGateShortlist) : []
   const setupMs = Math.round(performance.now() - startedAt)
   const timeoutMs = Math.floor((args.collectUntil ?? args.deadlineAt) - performance.now())
-  const judged = await judgeRecallCandidates(
-    {
-      speakerId: args.input.speakerId,
-      speakerName: args.speakerName,
-      message: args.input.message,
-      recentLines: args.recentLines,
-      date: getLocalDate(args.input.now ?? Date.now()),
-      shortlist,
-      nameOf: args.nameOf
-    },
-    { timeoutMs }
-  )
+  const judged = judging
+    ? await judgeRecallCandidates(
+        {
+          speakerId: args.input.speakerId,
+          speakerName: args.speakerName,
+          message: args.input.message,
+          recentLines: args.recentLines,
+          date: getLocalDate(args.input.now ?? Date.now()),
+          shortlist,
+          nameOf: args.nameOf
+        },
+        { timeoutMs }
+      )
+    : NO_CLIENT
   const items = selectGatedItems(pool, shortlist, judged.probabilities, config.memory.recallGateMinNoul)
   const settledAt = performance.now()
   const ref = randomUUID().slice(0, 8)
