@@ -940,7 +940,7 @@ describe('memory recall modes', () => {
         latencyMs: 380,
         shortlist: [['fact', 7, 0.95]],
         selected: [['fact', 7]],
-        settledAtMs: performance.now() + 50
+        settledAtMs: performance.now() + 10_000
       }
     })
 
@@ -958,7 +958,8 @@ describe('memory recall modes', () => {
       ['server_fact', 9, 0.4]
     ])
     expect(detail.gate).toMatchObject({ status: 'ok', shortlist: [['fact', 7, 0.95]] })
-    expect(detail.gate.projectedAddedMs).toBeGreaterThanOrEqual(0)
+    expect(detail.gate.projectedAddedMs).toBeGreaterThan(9_000)
+    expect(detail.gate.projectedAddedMs).toBeLessThanOrEqual(10_000)
     expect(mocks.runRecallGate.mock.calls[0][0]).toMatchObject({
       mode: 'shadow',
       channelId: 'channel-1',
@@ -979,6 +980,64 @@ describe('memory recall modes', () => {
     memoryConfig.recall = 'legacy'
     await turnWith()
     expect(mocks.runRecallGate).not.toHaveBeenCalled()
+  })
+
+  it('starts the gate only after the turn context is returned', async () => {
+    memoryConfig.recall = 'shadow'
+
+    await turnWith()
+    expect(mocks.runRecallGate).not.toHaveBeenCalled()
+
+    await vi.waitFor(() => expect(mocks.runRecallGate).toHaveBeenCalledTimes(1))
+  })
+
+  it('gives the gate a deadline counted from the start of the turn', async () => {
+    vi.useFakeTimers()
+    try {
+      memoryConfig.recall = 'shadow'
+      mocks.ensureSession.mockImplementation(
+        () => new Promise((resolve) => setTimeout(() => resolve({ events: [] }), 300))
+      )
+      const turnStartedAt = performance.now()
+
+      const pending = turnWith()
+      await vi.advanceTimersByTimeAsync(300)
+      await pending
+      await vi.advanceTimersByTimeAsync(1)
+
+      expect(mocks.runRecallGate).toHaveBeenCalledTimes(1)
+      expect(mocks.runRecallGate.mock.calls[0][0].deadlineAt).toBe(turnStartedAt + config.memory.recallGateDeadlineMs)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('stops waiting for the query embedding at the gate wait, before the legacy sections give up', async () => {
+    vi.useFakeTimers()
+    try {
+      memoryConfig.recall = 'shadow'
+      const gateWaitMs = config.memory.recallGateEmbeddingWaitMs
+      expect(gateWaitMs).toBeLessThan(config.memory.embeddingTimeoutMs)
+      mocks.embedEpisodeText.mockImplementation(() => new Promise(() => undefined))
+      let turnReturned = false
+
+      const pending = turnWith().then(() => {
+        turnReturned = true
+      })
+      await vi.advanceTimersByTimeAsync(gateWaitMs - 1)
+      expect(mocks.runRecallGate).not.toHaveBeenCalled()
+
+      // The gate then yields one macrotask before it starts, which fake timers count as 1 ms.
+      await vi.advanceTimersByTimeAsync(2)
+      expect(mocks.runRecallGate).toHaveBeenCalledTimes(1)
+      expect(mocks.runRecallGate.mock.calls[0][0].input.queryEmbedding).toBeNull()
+      expect(turnReturned).toBe(false)
+
+      await vi.advanceTimersByTimeAsync(config.memory.embeddingTimeoutMs)
+      await pending
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('shows only the unified block, touches the selected facts and records one recall event', async () => {
