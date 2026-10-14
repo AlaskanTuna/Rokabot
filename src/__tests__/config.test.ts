@@ -535,7 +535,7 @@ describe('config module', () => {
     await expect(import('../config.js')).rejects.toThrow('memory.recallGateMinNoul.fact')
 
     vi.resetModules()
-    withYamlOverride({ memory: { recallGateContextTokens: 8000, recallGateInputTokens: 8000 } })
+    withYamlOverride({ memory: { recallGateContextTokens: 2000, recallGateInputTokens: 2000 } })
     await expect(import('../config.js')).rejects.toThrow('memory.recallGateContextTokens')
   })
 
