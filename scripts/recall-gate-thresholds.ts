@@ -61,6 +61,19 @@ export function kindStatus(rows: readonly ScoredPair[], cutoff: number, rng: () 
   return { selected: selected.length, turns, precision, lowerBound, status }
 }
 
+export type KindResult = ReturnType<typeof kindStatus>
+
+export type Recommendation = {
+  cutoff: number | null
+  status: Status
+  /** The cutoff development chose, kept when the holdout rejects it; null when no development cutoff qualifies. */
+  developmentCutoff: number | null
+  /** Development's status at that cutoff, or its best status (disabled) when none qualifies. */
+  developmentStatus: Status
+  /** The holdout result scored at the development cutoff; null when none was scored. */
+  holdout: KindResult | null
+}
+
 const isHoldout = ({ turnRef }: ScoredPair): boolean => Number.parseInt(turnRef.at(-1) ?? '0', 16) % 2 === 1
 const RANK: Record<Status, number> = { confirmed: 2, provisional: 1, disabled: 0 }
 
@@ -68,18 +81,38 @@ const RANK: Record<Status, number> = { confirmed: 2, provisional: 1, disabled: 0
  * The lowest development cutoff with the best development status, scored once on the holdout.
  * Null when no development cutoff rises above disabled, or when the holdout is disabled at the chosen one.
  */
-export function recommend(rows: readonly ScoredPair[], rng: () => number): { cutoff: number | null; status: Status } {
+export function recommend(rows: readonly ScoredPair[], rng: () => number): Recommendation {
   const development = rows.filter((row) => !isHoldout(row))
   const holdout = rows.filter(isHoldout)
   const cutoffs = [...new Set(development.map(({ probability }) => probability))].sort((left, right) => left - right)
-  let best: { cutoff: number; rank: number } | null = null
+  let best: { cutoff: number; status: Status } | null = null
   for (const cutoff of cutoffs) {
-    const rank = RANK[kindStatus(development, cutoff, rng).status]
-    if (rank > (best?.rank ?? 0)) best = { cutoff, rank }
+    const { status } = kindStatus(development, cutoff, rng)
+    if (RANK[status] > RANK[best?.status ?? 'disabled']) best = { cutoff, status }
   }
-  if (!best) return { cutoff: null, status: 'disabled' }
-  const { status } = kindStatus(holdout, best.cutoff, rng)
-  return status === 'disabled' ? { cutoff: null, status } : { cutoff: best.cutoff, status }
+  if (!best)
+    return { cutoff: null, status: 'disabled', developmentCutoff: null, developmentStatus: 'disabled', holdout: null }
+  const result = kindStatus(holdout, best.cutoff, rng)
+  const { cutoff: developmentCutoff, status: developmentStatus } = best
+  return {
+    cutoff: result.status === 'disabled' ? null : developmentCutoff,
+    status: result.status,
+    developmentCutoff,
+    developmentStatus,
+    holdout: result
+  }
+}
+
+export const formatKappa = (kappa: number | null): string => (kappa === null ? 'n/a' : kappa.toFixed(3))
+
+export function reportKind(kind: string, agreed: number, disagreed: number, pick: Recommendation): string {
+  const head = `${kind}: ${agreed} agreed, ${disagreed} disagreed;`
+  if (pick.developmentCutoff === null)
+    return `${head} no cutoff, no development cutoff qualifies (best development status ${pick.developmentStatus})`
+  const tail = `development ${pick.developmentStatus}; holdout ${JSON.stringify(pick.holdout)}`
+  return pick.cutoff === null
+    ? `${head} no cutoff, holdout rejected cutoff ${pick.developmentCutoff}; ${tail}`
+    : `${head} recommend ${pick.cutoff} (${pick.status}); ${tail}`
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
@@ -96,21 +129,19 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const b = parseLabels(readFileSync(labelsB, 'utf8'), labelsB)
   const both = keys.filter(({ pairId }) => a.has(pairId) && b.has(pairId))
   console.log(
-    `pairs ${keys.length}; both judges ${both.length}; kappa ${cohensKappa(
-      both.map(({ pairId }) => a.get(pairId)?.relevant ?? false),
-      both.map(({ pairId }) => b.get(pairId)?.relevant ?? false)
-    )?.toFixed(3)}`
+    `pairs ${keys.length}; both judges ${both.length}; kappa ${formatKappa(
+      cohensKappa(
+        both.map(({ pairId }) => a.get(pairId)?.relevant ?? false),
+        both.map(({ pairId }) => b.get(pairId)?.relevant ?? false)
+      )
+    )}`
   )
   const agreed: ScoredPair[] = both
     .filter(({ pairId }) => a.get(pairId)?.relevant === b.get(pairId)?.relevant)
     .map((row) => ({ ...row, relevant: a.get(row.pairId)?.relevant ?? false }))
   for (const kind of ['fact', 'server_fact', 'conversation', 'media']) {
     const rows = agreed.filter((row) => row.kind === kind)
-    const pick = recommend(rows, seededRandom(262))
-    const detail =
-      pick.cutoff === null
-        ? ''
-        : ` ${JSON.stringify(kindStatus(rows.filter(isHoldout), pick.cutoff, seededRandom(262)))}`
-    console.log(`${kind}: ${rows.length} agreed; recommend ${pick.cutoff ?? 'null'} (${pick.status})${detail}`)
+    const disagreed = both.filter((row) => row.kind === kind).length - rows.length
+    console.log(reportKind(kind, rows.length, disagreed, recommend(rows, seededRandom(262))))
   }
 }
