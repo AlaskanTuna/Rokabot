@@ -92,6 +92,7 @@ vi.mock('../searchPrefetch.js', () => ({
 }))
 
 import { config } from '../../config.js'
+import { logger } from '../../utils/logger.js'
 import type { TurnJudgment } from '../jev/judgments.js'
 import { geminiVector } from '../memory/embeddings/__tests__/vectors.js'
 import { withSearchCitations } from '../searchCitations.js'
@@ -981,13 +982,17 @@ describe('memory recall modes', () => {
     })
   })
 
-  it('still writes the shadow row when the gate throws', async () => {
+  it('still writes the shadow row when the gate throws, and logs the failure', async () => {
     mocks.recallForTurn.mockImplementation(() => unifiedRecall())
-    mocks.runRecallGate.mockRejectedValue(new Error('boom'))
+    const failure = new Error('boom')
+    mocks.runRecallGate.mockRejectedValue(failure)
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined)
     memoryConfig.recall = 'shadow'
     await turnWith()
     await vi.waitFor(() => expect(recalledRows('recall_shadow')).toHaveLength(1))
-    expect(JSON.parse(recalledRows('recall_shadow')[0].detail).gate).toEqual({ status: 'error' })
+    expect(JSON.parse(recalledRows('recall_shadow')[0].detail).gate).toEqual({ v: 1, status: 'gate_error' })
+    expect(warn).toHaveBeenCalledWith({ channelId: 'channel-1', error: failure }, 'Jev recall gate failed')
+    warn.mockRestore()
   })
 
   it('does not run the gate in legacy mode', async () => {

@@ -647,12 +647,15 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
             })
           )
       ),
-      gatePromise.catch(() => 'error' as const)
+      gatePromise.catch((error) => {
+        logger.warn({ channelId, error }, 'Jev recall gate failed')
+        return 'failed' as const
+      })
     ]).then(([recalled, gated]) => {
       if (!recalled) return
       const gate =
-        gated === 'error'
-          ? { status: 'error' }
+        gated === 'failed'
+          ? { v: 1, status: 'gate_error' }
           : gated
             ? shadowGateDetail(gated, turnStartedAt, contextReadyAt)
             : undefined
