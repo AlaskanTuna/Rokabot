@@ -509,6 +509,36 @@ describe('config module', () => {
     expect(NUMERIC_BOUNDS.find(({ path }) => path === 'memory.mediaRetentionDays')).toMatchObject({ min: 1, max: 365 })
   })
 
+  it('loads the bounded Jev recall gate settings', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+
+    const { config, NUMERIC_BOUNDS } = await import('../config.js')
+
+    expect(config.memory.recallGateDeadlineMs).toBe(1200)
+    expect(config.memory.recallGateEmbeddingWaitMs).toBe(400)
+    expect(config.memory.recallGateContextTokens).toBe(1000)
+    expect(config.memory.recallGateInputTokens).toBe(8000)
+    expect(config.memory.recallGateShortlist).toEqual({ fact: 8, server_fact: 4, conversation: 8, media: 4 })
+    expect(config.memory.recallGateMinNoul).toEqual({ fact: 0.9, server_fact: null, conversation: 0.9, media: 0.9 })
+    expect(NUMERIC_BOUNDS.find(({ path }) => path === 'memory.recallGateDeadlineMs')).toMatchObject({
+      min: 100,
+      max: 1200
+    })
+    expect(NUMERIC_BOUNDS.some(({ path }) => path === 'memory.recallGateMinNoul.server_fact')).toBe(false)
+  })
+
+  it('rejects a recall gate cutoff above 1 and a context cap at or above the input cap', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    withYamlOverride({ memory: { recallGateMinNoul: { fact: 1.5 } } })
+    await expect(import('../config.js')).rejects.toThrow('memory.recallGateMinNoul.fact')
+
+    vi.resetModules()
+    withYamlOverride({ memory: { recallGateContextTokens: 8000, recallGateInputTokens: 8000 } })
+    await expect(import('../config.js')).rejects.toThrow('memory.recallGateContextTokens')
+  })
+
   it('loads bounded extraction sample settings and lets env vars override them', async () => {
     setRequiredEnvVars()
     clearTunableEnvVars()
@@ -1241,6 +1271,18 @@ describe('config module', () => {
       { path: 'memory.embeddingTimeoutMs', min: 1 },
       { path: 'memory.recallTokenBudget', min: 200, max: 2000 },
       { path: 'memory.recallCoreFacts', min: 0, max: 5 },
+      { path: 'memory.recallGateDeadlineMs', min: 100, max: 1200 },
+      { path: 'memory.recallGateEmbeddingWaitMs', min: 0, max: 1200 },
+      { path: 'memory.recallGateContextTokens', min: 128, max: 4000 },
+      { path: 'memory.recallGateInputTokens', min: 1000, max: 16000 },
+      { path: 'memory.recallGateShortlist.fact', min: 0, max: 64 },
+      { path: 'memory.recallGateShortlist.server_fact', min: 0, max: 64 },
+      { path: 'memory.recallGateShortlist.conversation', min: 0, max: 64 },
+      { path: 'memory.recallGateShortlist.media', min: 0, max: 64 },
+      { path: 'memory.recallGateShortlist (total)', min: 1, max: 64 },
+      { path: 'memory.recallGateMinNoul.fact', min: 0, max: 1 },
+      { path: 'memory.recallGateMinNoul.conversation', min: 0, max: 1 },
+      { path: 'memory.recallGateMinNoul.media', min: 0, max: 1 },
       { path: 'memory.factMinSimilarity', min: 0, max: 1 },
       { path: 'memory.serverFactMinSimilarity', min: 0, max: 1 },
       { path: 'memory.extractionSampleRate', min: 0, max: 1 },

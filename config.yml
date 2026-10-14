@@ -137,6 +137,20 @@ memory:
   recall: shadow # legacy: today's four memory blocks; shadow: legacy prompt plus the unified recall logged only; unified: one relevance-ranked memory block
   recallTokenBudget: 600 # Approximate token budget for the unified memory block
   recallCoreFacts: 3 # Speaker facts always recalled whatever the topic: pinned, then nickname, then pronouns
+  recallGateDeadlineMs: 1200 # Jev recall gate: longest time from turn start until the gate must settle; a late gate counts as a Jev outage (core facts only)
+  recallGateEmbeddingWaitMs: 400 # Jev recall gate: longest wait for the turn's query embedding before the gate falls back to keyword-matched facts
+  recallGateContextTokens: 1000 # Jev recall gate: estimated token cap for the shared turn state (message, three recent lines, people); over it the gate abstains
+  recallGateInputTokens: 8000 # Jev recall gate: estimated token cap for state plus every candidate question in one request
+  recallGateShortlist: # Jev recall gate: candidates offered per kind before Jev judges them; unused slots go to the next-best candidates
+    fact: 8 # Member facts; keyword matches first, then similarity order
+    server_fact: 4 # Server facts
+    conversation: 8 # Conversation summaries
+    media: 4 # Watched-media summaries
+  recallGateMinNoul: # Jev recall gate: minimum Jev probability per kind (inclusive); null keeps a kind out of the prompt while shadow keeps judging it. Provisional until calibrated (#262)
+    fact: 0.9 # Member facts
+    server_fact: null # Server facts; no positive evidence yet
+    conversation: 0.9 # Conversation summaries
+    media: 0.9 # Watched-media summaries
   factMinSimilarity: 0.65 # Minimum cosine similarity for a member fact in unified recall. A live check (2026-10-08) scored real matches 0.73-0.78 and small talk 0.61-0.62 against fact sentences; calibrated before recall is switched to unified
   serverFactMinSimilarity: 0.65 # Minimum cosine similarity for a server fact in unified recall; calibrated before recall is switched to unified
   vaultExportDir: data/vault # Directory for read-only Obsidian vault exports
