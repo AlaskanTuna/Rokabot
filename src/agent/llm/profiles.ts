@@ -5,7 +5,13 @@ export interface ModelProfile {
   model: string
   input: { image: boolean; pdf: boolean; audio: boolean; video: boolean }
   tools: { supported: boolean; parallel: boolean }
-  thinking: { efforts: readonly string[]; defaultEffort?: string; replayWithinTurn: boolean }
+  thinking: {
+    efforts: readonly string[]
+    defaultEffort?: string
+    /** How to spell thinking-off in the request; 'disabled' when absent. Sonnet only accepts 'between_tools'. */
+    offMode?: 'disabled' | 'between_tools'
+    replayWithinTurn: boolean
+  }
   sampling: { temperature: boolean; topP: boolean }
   structuredOutput: 'response_json_schema' | 'json_schema_strict' | 'forced_tool' | 'json_object'
   maxOutputTokens: number
@@ -52,6 +58,29 @@ export const MODEL_PROFILES: readonly ModelProfile[] = [
     promptCaching: 'explicit',
     tokenCounter: 'anthropic',
     price: { input: 0.1, output: 0.5, cachedInput: 0.01, cacheWrite: 0.125 },
+    verified: true
+  },
+  {
+    provider: 'anthropic',
+    model: 'claude-sonnet-5-5',
+    input: { image: true, pdf: true, audio: false, video: false },
+    tools: { supported: true, parallel: true },
+    // Sonnet treats `thinking: {type: 'disabled'}` as an error; effort none must send 'between_tools' instead, which
+    // it accepts only at effort high or below. Forced tool use and non-default sampling are errors too, so
+    // structured output goes through output_config.format and sampling stays off.
+    thinking: {
+      efforts: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+      defaultEffort: 'low',
+      offMode: 'between_tools',
+      replayWithinTurn: true
+    },
+    sampling: { temperature: false, topP: false },
+    structuredOutput: 'json_schema_strict',
+    maxOutputTokens: 128_000,
+    contextWindow: 1_000_000,
+    promptCaching: 'explicit',
+    tokenCounter: 'anthropic',
+    price: { input: 2.0, output: 10.0, cachedInput: 0.2, cacheWrite: 2.5 },
     verified: true
   },
   {
@@ -117,6 +146,68 @@ export const MODEL_PROFILES: readonly ModelProfile[] = [
     tokenCounter: 'estimate',
     price: { input: 0, output: 0 },
     verified: true
+  },
+  {
+    provider: 'gemini',
+    model: 'gemini-3.8-flash',
+    input: { image: true, pdf: true, audio: true, video: true },
+    tools: { supported: true, parallel: true },
+    thinking: { efforts: [], replayWithinTurn: false },
+    // Google deprecated temperature and top_p on 3.8 Flash.
+    sampling: { temperature: false, topP: false },
+    structuredOutput: 'response_json_schema',
+    maxOutputTokens: 65_536,
+    contextWindow: 1_048_576,
+    promptCaching: 'implicit',
+    tokenCounter: 'gemini',
+    price: { input: 0.75, output: 3.75, cachedInput: 0.075 },
+    verified: false
+  },
+  {
+    provider: 'gemini',
+    model: 'gemini-3.1-flash-lite',
+    input: { image: true, pdf: true, audio: true, video: true },
+    tools: { supported: true, parallel: true },
+    thinking: { efforts: [], replayWithinTurn: false },
+    sampling: { temperature: true, topP: true },
+    structuredOutput: 'response_json_schema',
+    maxOutputTokens: 65_536,
+    contextWindow: 1_048_576,
+    promptCaching: 'implicit',
+    tokenCounter: 'gemini',
+    price: { input: 0.25, output: 1.5, cachedInput: 0.025 },
+    verified: false
+  },
+  {
+    provider: 'openai',
+    model: 'gpt-6-sol',
+    input: { image: true, pdf: false, audio: false, video: false },
+    tools: { supported: true, parallel: true },
+    // Chat Completions accepts tools only at effort none, as on gpt-6-luna.
+    thinking: { efforts: ['none'], defaultEffort: 'none', replayWithinTurn: false },
+    sampling: { temperature: true, topP: true },
+    structuredOutput: 'json_schema_strict',
+    maxOutputTokens: 128_000,
+    contextWindow: 922_000,
+    promptCaching: 'implicit',
+    tokenCounter: 'estimate',
+    price: { input: 2, output: 10, cachedInput: 0.2 },
+    verified: true
+  },
+  {
+    provider: 'modelscope',
+    model: 'Qwen/Qwen3.5-27B',
+    input: { image: true, pdf: false, audio: false, video: false },
+    tools: { supported: true, parallel: true },
+    thinking: { efforts: [], replayWithinTurn: false },
+    sampling: { temperature: true, topP: true },
+    structuredOutput: 'json_object',
+    maxOutputTokens: 32_768,
+    contextWindow: 131_072,
+    promptCaching: 'none',
+    tokenCounter: 'estimate',
+    price: { input: 0, output: 0 },
+    verified: false
   }
 ]
 

@@ -1,26 +1,28 @@
 /**
- * Live check of a Chat Completions model profile (D12): one text reply, one tool call, one answer to a tool result and
- * one JSON object, plus whether thinking stayed off. It spends real quota (Magicubes on ModelScope, dollars on OpenAI),
- * so it needs --live and refuses to run under CI. When every check passes, set `verified: true` on the profile in
- * src/agent/llm/profiles.ts.
+ * Live check of a model profile (D12): one text reply, one tool call, one answer to a tool result and one JSON
+ * object, plus whether thinking stayed off (or within tags). Supported providers: openai (OPENAI_API_KEY),
+ * modelscope (MODELSCOPE_API_KEY), anthropic (ANTHROPIC_API_KEY), and gemini (GRAPHIFY_GEMINI_API_KEY or
+ * DEV_GEMINI_API_KEY, never GEMINI_API_KEY). It spends real quota (Magicubes on ModelScope, dollars on OpenAI and
+ * Anthropic, requests on Gemini), so it needs --live and refuses to run under CI. When every check passes, set
+ * `verified: true` on the profile in src/agent/llm/profiles.ts.
  *
- * Usage: npx tsx scripts/probe-llm-profile.ts --live --model Qwen/Qwen3.5-35B-A3B [--model <model id> ...]
+ * Usage: npx tsx scripts/probe-llm-profile.ts --live --model <model id> [--model <model id> ...]
  */
 import { pathToFileURL } from 'node:url'
 import type { BaseLlm, LlmRequest, LlmResponse } from '@google/adk'
 import type { Content } from '@google/genai'
-import type { ChatCompletionsProvider } from '../src/agent/llm/chatCompletionsLlm.js'
-import type { ModelProfile } from '../src/agent/llm/profiles.js'
+import type { ModelProfile, ProviderId } from '../src/agent/llm/profiles.js'
+import type { ResolvedModel } from '../src/config.js'
 
 export interface ProbeCheck {
   check: 'text' | 'tool' | 'toolResult' | 'json'
   ok: boolean
   detail: string
-  /** The reply showed thinking (see thinkingIn), so the profile's thinking-off setting did not hold. */
+  /** openai/modelscope: the reply showed thinking. anthropic/gemini: a think tag leaked into the visible text. */
   thinkingSeen: boolean
 }
 
-const USAGE = 'Usage: npx tsx scripts/probe-llm-profile.ts --live --model <model id> [--model <model id>]'
+const USAGE = 'Usage: npx tsx scripts/probe-llm-profile.ts --live --model <model id> [--model <model id> ...]'
 
 export function parseProbeArgs(argv: string[], env: Record<string, string | undefined>): { models: string[] } {
   if (env.CI) throw new Error('probe-llm-profile spends real provider quota and never runs in CI')
@@ -68,6 +70,20 @@ const TIME_ROUND_TRIP: Content[] = [
   { role: 'user', parts: [{ functionResponse: { ...TIME_CALL, response: { time: '2026-10-11T21:00:00+09:00' } } }] }
 ]
 
+// Gemini 3 rejects a replayed function call that lacks the thought signature it issued, so a Gemini probe answers the
+// model's own call from the tool check instead of TIME_ROUND_TRIP's hand-built one.
+function roundTripFrom(turn: Content): Content[] {
+  const first = turn.parts?.findIndex((part) => part.functionCall) ?? -1
+  const call = turn.parts?.[first]?.functionCall
+  return [
+    { role: 'model', parts: (turn.parts ?? []).filter((part, index) => !part.functionCall || index === first) },
+    {
+      role: 'user',
+      parts: [{ functionResponse: { id: call?.id, name: call?.name, response: { time: '2026-10-11T21:00:00+09:00' } } }]
+    }
+  ]
+}
+
 function probeRequest(text: string, config: Record<string, unknown> = {}, turn: Content[] = []): LlmRequest {
   return {
     model: 'probe',
@@ -87,7 +103,7 @@ function isFilled(value: unknown): boolean {
 }
 
 /** Servers signal thinking differently: a reasoning field, a think tag left in the text, or billed reasoning tokens. */
-function thinkingIn(body: unknown): boolean {
+export function thinkingIn(body: unknown): boolean {
   const reply = body as
     | {
         choices?: Array<{ message?: Record<string, unknown> }>
@@ -102,6 +118,17 @@ function thinkingIn(body: unknown): boolean {
     (typeof message?.content === 'string' && /<\/?think>/i.test(message.content)) ||
     (typeof reasoningTokens === 'number' && reasoningTokens > 0)
   )
+}
+
+export function hasThinkingTag(text: string): boolean {
+  return /<\/?think(?:ing)?\b/i.test(text)
+}
+
+export function thinkingSeenFor(provider: ProviderId, visibleText: string, rawBody: unknown): boolean {
+  if (provider === 'anthropic' || provider === 'gemini') {
+    return hasThinkingTag(visibleText)
+  }
+  return thinkingIn(rawBody)
 }
 
 function isTimeZone(value: unknown): boolean {
@@ -147,7 +174,11 @@ function judgeJson(response: LlmResponse): string | null {
 }
 
 /** `takeBody` returns the last raw reply body and forgets it, so a failed call never reports an earlier one. */
-export async function probeProfile(llm: BaseLlm, takeBody: () => unknown): Promise<ProbeCheck[]> {
+export async function probeProfile(
+  llm: BaseLlm,
+  provider: ProviderId,
+  takeBody: () => unknown = () => undefined
+): Promise<ProbeCheck[]> {
   const cases: Array<[ProbeCheck['check'], LlmRequest, (response: LlmResponse) => string | null]> = [
     ['text', probeRequest('Reply with the single word: pong'), judgeText],
     ['tool', probeRequest(TIME_QUESTION, { tools: [TIME_TOOL] }), judgeTool],
@@ -159,14 +190,29 @@ export async function probeProfile(llm: BaseLlm, takeBody: () => unknown): Promi
     ]
   ]
   const checks: ProbeCheck[] = []
+  let toolTurn: Content | undefined
   for (const [check, llmRequest, judge] of cases) {
     let problem: string | null = 'no response'
+    let visibleText = ''
+    const request =
+      check === 'toolResult' && provider === 'gemini' && toolTurn
+        ? probeRequest(TIME_QUESTION, { tools: [TIME_TOOL] }, roundTripFrom(toolTurn))
+        : llmRequest
     try {
-      for await (const response of llm.generateContentAsync(llmRequest)) problem = judge(response)
+      for await (const response of llm.generateContentAsync(request)) {
+        visibleText += textOf(response)
+        if (check === 'tool' && response.content?.parts?.some((part) => part.functionCall)) toolTurn = response.content
+        problem = judge(response)
+      }
     } catch (error) {
       problem = error instanceof Error ? error.message : String(error)
     }
-    checks.push({ check, ok: problem === null, detail: problem ?? 'ok', thinkingSeen: thinkingIn(takeBody()) })
+    checks.push({
+      check,
+      ok: problem === null,
+      detail: problem ?? 'ok',
+      thinkingSeen: thinkingSeenFor(provider, visibleText, takeBody())
+    })
   }
   return checks
 }
@@ -186,15 +232,33 @@ export function renderProbeReport(model: string, checks: ProbeCheck[]): { text: 
   return { text: lines.join('\n'), ready }
 }
 
-const KEY_NAMES: Record<ChatCompletionsProvider, string> = {
-  openai: 'OPENAI_API_KEY',
-  modelscope: 'MODELSCOPE_API_KEY'
+export const SUPPORTED_PROVIDERS: readonly ProviderId[] = ['gemini', 'anthropic', 'openai', 'modelscope']
+
+export function isSupportedProfile(profile: ModelProfile): boolean {
+  return (SUPPORTED_PROVIDERS as readonly string[]).includes(profile.provider)
 }
 
-function isChatCompletionsProfile(
-  profile: ModelProfile
-): profile is ModelProfile & { provider: ChatCompletionsProvider } {
-  return profile.provider === 'openai' || profile.provider === 'modelscope'
+export function resolveProbeKey(
+  provider: ProviderId,
+  env: Record<string, string | undefined>
+): { apiKey?: string; keyName: string } {
+  switch (provider) {
+    case 'openai':
+      return { apiKey: env.OPENAI_API_KEY, keyName: 'OPENAI_API_KEY' }
+    case 'modelscope':
+      return { apiKey: env.MODELSCOPE_API_KEY, keyName: 'MODELSCOPE_API_KEY' }
+    case 'anthropic':
+      return { apiKey: env.ANTHROPIC_API_KEY, keyName: 'ANTHROPIC_API_KEY' }
+    case 'gemini': {
+      if (env.GRAPHIFY_GEMINI_API_KEY) {
+        return { apiKey: env.GRAPHIFY_GEMINI_API_KEY, keyName: 'GRAPHIFY_GEMINI_API_KEY' }
+      }
+      if (env.DEV_GEMINI_API_KEY) {
+        return { apiKey: env.DEV_GEMINI_API_KEY, keyName: 'DEV_GEMINI_API_KEY' }
+      }
+      return { apiKey: undefined, keyName: 'GRAPHIFY_GEMINI_API_KEY or DEV_GEMINI_API_KEY' }
+    }
+  }
 }
 
 async function main(): Promise<number> {
@@ -205,51 +269,58 @@ async function main(): Promise<number> {
   process.env.GEMINI_API_KEY ||= 'probe-unused'
   process.env.ROKABOT_DB_PATH = ':memory:'
   process.env.LOG_LEVEL = 'error'
-  const [{ ChatCompletionsLlm }, { MODEL_PROFILES }] = await Promise.all([
-    import('../src/agent/llm/chatCompletionsLlm.js'),
+  const [{ createLlm }, { MODEL_PROFILES }] = await Promise.all([
+    import('../src/agent/llm/createModel.js'),
     import('../src/agent/llm/profiles.js')
   ])
 
   let allReady = true
   for (const model of models) {
     const profile = MODEL_PROFILES.find((candidate) => candidate.model === model)
-    if (!profile || !isChatCompletionsProfile(profile)) {
-      process.stderr.write(`${model}: no openai or modelscope profile in src/agent/llm/profiles.ts\n`)
+    if (!profile || !isSupportedProfile(profile)) {
+      process.stderr.write(`${model}: no supported profile in src/agent/llm/profiles.ts\n`)
       allReady = false
       continue
     }
-    const keyName = KEY_NAMES[profile.provider]
-    const apiKey = process.env[keyName]
+    const { apiKey, keyName } = resolveProbeKey(profile.provider, process.env)
     if (!apiKey) {
       process.stderr.write(`${model}: ${keyName} is not set\n`)
       allReady = false
       continue
     }
     let lastBody: unknown
-    const fetchImpl: typeof fetch = async (input, init) => {
-      const response = await fetch(input, init)
-      lastBody = await response
-        .clone()
-        .json()
-        .catch(() => undefined)
-      return response
+    const originalFetch = globalThis.fetch
+    try {
+      globalThis.fetch = async (input, init) => {
+        const response = await originalFetch(input, init)
+        lastBody = await response
+          .clone()
+          .json()
+          .catch(() => undefined)
+        return response
+      }
+      const takeBody = () => {
+        const body = lastBody
+        lastBody = undefined
+        return body
+      }
+      const resolved: ResolvedModel = {
+        key: 'probe',
+        provider: profile.provider,
+        model: profile.model,
+        profile,
+        apiKey,
+        timeoutMs: 60_000,
+        maxOutputTokens: profile.maxOutputTokens,
+        effort: profile.thinking.defaultEffort
+      }
+      const llm = createLlm(resolved)
+      const report = renderProbeReport(model, await probeProfile(llm, profile.provider, takeBody))
+      process.stdout.write(`${report.text}\n`)
+      allReady &&= report.ready
+    } finally {
+      globalThis.fetch = originalFetch
     }
-    const takeBody = () => {
-      const body = lastBody
-      lastBody = undefined
-      return body
-    }
-    const llm = new ChatCompletionsLlm({
-      provider: profile.provider,
-      model,
-      apiKey,
-      timeoutMs: 60_000,
-      profile,
-      fetchImpl
-    })
-    const report = renderProbeReport(model, await probeProfile(llm, takeBody))
-    process.stdout.write(`${report.text}\n`)
-    allReady &&= report.ready
   }
   return allReady ? 0 : 1
 }

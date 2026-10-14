@@ -8,7 +8,7 @@
 
 **Rokabot** — a server-wide Discord character chatbot embodying Maniwa Roka (馬庭 芦花) from Senren\*Banka.
 
-It runs on Gemini via Google ADK TypeScript, deployed on a Raspberry Pi 5 (8GB, reachable over Tailscale) using Docker Compose. The bot responds to slash commands (`/ask`) and mention/reply/name-keyword triggers, maintaining per-channel conversational memory with a FIFO window and idle TTL configured by `session.windowSize` and `session.ttl` in `config.yml`.
+It runs on Google ADK TypeScript with the model the `llm:` block in `config.yml` selects (Gemini, Anthropic, OpenAI or ModelScope), deployed on a Raspberry Pi 5 (8GB, reachable over Tailscale) using Docker Compose. The bot responds to slash commands (`/ask`) and mention/reply/name-keyword triggers, maintaining per-channel conversational memory with a FIFO window and idle TTL configured by `session.windowSize` and `session.ttl` in `config.yml`.
 
 ---
 
@@ -33,11 +33,11 @@ WindowedSessionService (ADK)
 Roka Agent (ADK)
   - 4-layer prompt system (core → speech → tone → context)
   - Rule-based tone detection (zero LLM cost)
-  - Passive memory: episode tracker → durable queue → Jev admission → Gemini typed extraction → Jev verification → user and guild claims; completed summaries are embedded for guild-scoped recall
-  - Gemini Flash Lite backend, with a ModelScope Qwen fallback when Gemini is unavailable
+  - Passive memory: episode tracker → durable queue → Jev admission → main-model typed extraction → Jev verification → user and guild claims; completed summaries are embedded for guild-scoped recall
+  - Main model and optional fallback from `llm.main` / `llm.fallback`; without an `llm:` block, Gemini Flash Lite with a ModelScope Qwen fallback
     │
     ▼
-Gemini API (rate limits configured in `config.yml`)
+Provider APIs (per-model limits and monthly spend caps configured in `config.yml`)
 ```
 
 **Key Constraints:**
@@ -58,7 +58,7 @@ See `docs/trd.md` (canonical) for contracts and data models. Do not create `docs
 
 - **Runtime:** TypeScript (compiler options in `tsconfig.json`), Node.js (version pinned in `package.json` `engines` and the `Dockerfile`)
 - **Discord:** discord.js (Guilds, GuildMessages, MessageContent intents)
-- **AI/Agent:** @google/adk (TypeScript ADK), Gemini Flash Lite (model name set in `config.yml` → `gemini.model`)
+- **AI/Agent:** @google/adk (TypeScript ADK); model profiles in `src/agent/llm/profiles.ts`, selected by `llm.main` / `llm.fallback` in `config.yml`
 - **Utilities:** pino (structured JSON logging), dotenv (secrets), js-yaml (YAML config)
 - **Testing:** vitest
 - **Deployment:** Docker Compose (multi-stage build) on Raspberry Pi 5

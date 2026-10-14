@@ -234,14 +234,15 @@ function systemBlocks(instruction: unknown): Anthropic.TextBlockParam[] | undefi
   ]
 }
 
-function toolList(llmRequest: LlmRequest): Anthropic.Tool[] {
+function toolList(llmRequest: LlmRequest, profile: ModelProfile): Anthropic.Tool[] {
   const tools: Anthropic.Tool[] = functionDeclarations(llmRequest).map((declaration) => ({
     name: declaration.name,
     ...(declaration.description === undefined ? {} : { description: declaration.description }),
     input_schema: (declaration.parameters ?? { type: 'object', properties: {} }) as Anthropic.Tool['input_schema']
   }))
   const schema = llmRequest.config?.responseJsonSchema
-  if (schema !== undefined) {
+  // Sonnet 400s on forced tool use, so json_schema_strict profiles carry the schema in output_config.format instead.
+  if (schema !== undefined && structuredVia(profile) !== 'json_schema_strict') {
     tools.push({
       name: STRUCTURED_OUTPUT_TOOL,
       description: 'Return the requested JSON object as the input of this tool.',
@@ -252,11 +253,28 @@ function toolList(llmRequest: LlmRequest): Anthropic.Tool[] {
   return tools
 }
 
-function thinkingParams(resolved: ResolvedModel): Pick<Params, 'thinking' | 'output_config'> {
+/** How a structured request is carried: the forced emit_result tool, or output_config.format for models that 400
+ * on forced tool use (Sonnet). */
+function structuredVia(profile: ModelProfile): 'forced_tool' | 'json_schema_strict' | undefined {
+  return profile.structuredOutput === 'forced_tool' || profile.structuredOutput === 'json_schema_strict'
+    ? profile.structuredOutput
+    : undefined
+}
+
+function thinkingParams(resolved: ResolvedModel, schema: unknown): Pick<Params, 'thinking' | 'output_config'> {
   const effort = resolved.effort ?? resolved.profile.thinking.defaultEffort
-  if (!effort) return {}
-  if (effort === 'none') return { thinking: { type: 'disabled' } }
-  return { thinking: { type: 'adaptive' }, output_config: { effort: effort as Effort } }
+  const strict = schema !== undefined && structuredVia(resolved.profile) === 'json_schema_strict'
+  const format = strict
+    ? { type: 'json_schema' as const, schema: schema as Anthropic.JSONOutputFormat['schema'] }
+    : undefined
+  if (!effort) return format ? { output_config: { format } } : {}
+  if (effort === 'none') {
+    return {
+      thinking: { type: resolved.profile.thinking.offMode ?? 'disabled' },
+      ...(format ? { output_config: { format } } : {})
+    }
+  }
+  return { thinking: { type: 'adaptive' }, output_config: { effort: effort as Effort, ...(format ? { format } : {}) } }
 }
 
 function replyParts(message: Anthropic.Message): Part[] {
@@ -396,10 +414,13 @@ export class AnthropicLlm extends BaseLlm {
     const working: LlmRequest = { ...shaped, contents: [...shaped.contents] }
     this.maybeAppendUserContent(working)
     const system = systemBlocks(working.config?.systemInstruction)
-    const tools = toolList(working)
+    const tools = toolList(working, this.resolved.profile)
     const route = modelRouteForRequest.getStore()
     const rendered = replayThinking(renderContents(working.contents, this.resolved.profile.input), system, tools, route)
-    const structured = working.config?.responseJsonSchema !== undefined
+    // Only a forced_tool profile with a schema reads tool_use input back as the JSON; a json_schema_strict one
+    // (Sonnet) answers a structured request in the plain text.
+    const structured =
+      structuredVia(this.resolved.profile) === 'forced_tool' && working.config?.responseJsonSchema !== undefined
     const params = this.params(working, system, tools, rendered)
     const workload = workloadOf(working)
     const signal = abortSignal ?? working.config?.abortSignal
@@ -442,15 +463,17 @@ export class AnthropicLlm extends BaseLlm {
     rendered: Rendered[]
   ): Params {
     const config = llmRequest.config
-    const thinking = thinkingParams(this.resolved)
+    const thinking = thinkingParams(this.resolved, config?.responseJsonSchema)
     const headroom = thinking.thinking?.type === 'adaptive' ? THINKING_HEADROOM_TOKENS : 0
+    const via = structuredVia(this.resolved.profile)
     return {
       model: this.model,
       max_tokens: (config?.maxOutputTokens ?? this.resolved.maxOutputTokens) + headroom,
       messages: mergeTurns(rendered),
       ...(system ? { system } : {}),
       ...(tools.length > 0 ? { tools } : {}),
-      ...(config?.responseJsonSchema === undefined
+      // Sonnet 400s on any forced tool_choice, so only forced_tool profiles may send it.
+      ...(config?.responseJsonSchema === undefined || via !== 'forced_tool'
         ? {}
         : { tool_choice: { type: 'tool' as const, name: STRUCTURED_OUTPUT_TOOL } }),
       ...(config?.temperature === undefined ? {} : { temperature: config.temperature }),

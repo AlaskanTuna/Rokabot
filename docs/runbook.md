@@ -275,24 +275,32 @@ sudo docker logs rokabot-roka-1 2>&1 | grep '"msg":"Response completed"' | grep 
 
 ## Verifying a Model Profile
 
-`Qwen/Qwen3.5-35B-A3B`, `deepseek-ai/DeepSeek-V4.1-Flash` and `gpt-6-luna` passed the live probe on 2026-10-12 and
-are `verified: true` in `src/agent/llm/profiles.ts`. A profile added later ships as a candidate (`verified: false`), so
+`Qwen/Qwen3.5-35B-A3B`, `deepseek-ai/DeepSeek-V4.1-Flash` and `gpt-6-luna` passed the live probe on 2026-10-12, and
+`claude-haiku-5-5`, `claude-sonnet-5-5` and `gpt-6-sol` on 2026-10-14. All are `verified: true` in
+`src/agent/llm/profiles.ts`. `gemini-3.8-flash`, `gemini-3.1-flash-lite` and `Qwen/Qwen3.5-27B` are candidates: the two
+Gemini models met 503 overload on 2026-10-14, and Qwen 3.5 27B returned a bare number for the JSON check. A profile
+added later ships as a candidate (`verified: false`), so
 startup refuses it as `llm.main` or `llm.fallback` until a live probe passes. The probe makes four calls per model (a
 text reply, one tool call, a reply to that tool's result, one JSON object). On ModelScope each call spends Magicubes
-from the daily allowance; on OpenAI it bills the account. It refuses to run without `--live`, and when `CI` is set.
+from the daily allowance; on OpenAI and Anthropic it bills the account; on Gemini it spends API quota. It refuses to
+run without `--live`, and when `CI` is set.
 
 ```bash
 npx tsx scripts/probe-llm-profile.ts --live --model Qwen/Qwen3.5-35B-A3B --model deepseek-ai/DeepSeek-V4.1-Flash
 ```
 
-It reads `MODELSCOPE_API_KEY`, or `OPENAI_API_KEY` for an `openai` model, from `.env`. A model with no `openai` or
-`modelscope` profile, or with its key unset, is reported and fails the run. A model is ready only when all four checks
-pass and no reply showed thinking: a non-empty `reasoning_content` or `reasoning` field, a `<think>` tag in the text,
-or `reasoning_tokens` above zero in the usage. The tool check also needs a real IANA timezone in the tool call. The
-tool result check sends a `get_current_time` call and its result back as a `tool` message, and needs a non-empty text
-reply with no second tool call. The probe prints `ready` or `not ready` per model, and exits 0 only when every model is
-ready. It never edits the profile. Set `verified: true` on that profile yourself and open a PR with the probe output in
-its description. Merging the PR rebuilds and restarts the bot, so it needs the owner's authorization.
+It reads `MODELSCOPE_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GRAPHIFY_GEMINI_API_KEY` (else
+`DEV_GEMINI_API_KEY`) for a `gemini` model (never `GEMINI_API_KEY`), from `.env`. A model with no supported profile, or
+with its key unset, is reported and fails the run. A model is ready only when all four checks pass and thinking rules
+hold: for `openai` and `modelscope`, no reply may show thinking (a non-empty `reasoning_content` or `reasoning` field,
+a `<think>` tag in the text, or `reasoning_tokens` above zero in the usage); for `anthropic` and `gemini`, thinking is
+allowed and fails only if visible reply text contains a `<think` or `<thinking` tag. The tool check also needs a real
+IANA timezone in the tool call. The tool result check sends a `get_current_time` call and its result back as a `tool`
+message, and needs a non-empty text reply with no second tool call. A `gemini` model replays its own call from the tool
+check, since Gemini 3 rejects a function call without the thought signature it issued. The probe prints `ready` or `not ready` per model,
+and exits 0 only when every model is ready. It never edits the profile. Set `verified: true` on that profile yourself
+and open a PR with the probe output in its description. Merging the PR rebuilds and restarts the bot, so it needs the
+owner's authorization.
 
 ## Hedging Slow Gemini Calls
 

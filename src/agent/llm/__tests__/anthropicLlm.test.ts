@@ -63,6 +63,17 @@ const HAIKU: ResolvedModel = {
 }
 const hi: Content = { role: 'user', parts: [{ text: '[Mio]: hi' }] }
 
+const SONNET: ResolvedModel = {
+  key: 'sonnet',
+  provider: 'anthropic',
+  model: 'claude-sonnet-5-5',
+  profile: profileFor('anthropic', 'claude-sonnet-5-5')!,
+  apiKey: 'test-anthropic-key',
+  timeoutMs: 20_000,
+  maxOutputTokens: 500,
+  effort: 'low'
+}
+
 function fakeClient() {
   const create =
     vi.fn<(body: Anthropic.MessageCreateParamsNonStreaming, options?: CreateOptions) => Promise<Anthropic.Message>>()
@@ -339,6 +350,84 @@ describe('AnthropicLlm requests', () => {
       }
     ])
     expect(body.tool_choice).toEqual({ type: 'tool', name: STRUCTURED_OUTPUT_TOOL })
+  })
+
+  it('keeps the Haiku structured request on the forced tool path', async () => {
+    const schema = { type: 'object', properties: { ok: { type: 'boolean' } } }
+
+    const { body } = await sent([hi], { responseJsonSchema: schema }, HAIKU)
+
+    expect(body.tools).toEqual([expect.objectContaining({ name: STRUCTURED_OUTPUT_TOOL, strict: true })])
+    expect(body.tool_choice).toEqual({ type: 'tool', name: STRUCTURED_OUTPUT_TOOL })
+    expect(body).not.toHaveProperty('output_config.format')
+  })
+
+  describe('with the Sonnet 5.5 profile', () => {
+    it('carries a structured request in output_config.format and never forces tool_choice', async () => {
+      const schema = { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'] }
+
+      const { body } = await sent([hi], { responseJsonSchema: schema }, SONNET)
+
+      expect(body.output_config).toEqual({ effort: 'low', format: { type: 'json_schema', schema } })
+      expect(body).not.toHaveProperty('tool_choice')
+      expect(body).not.toHaveProperty('tools')
+    })
+
+    it('spells effort none as thinking between_tools with the format kept and no headroom', async () => {
+      const schema = { type: 'object', properties: { ok: { type: 'boolean' } } }
+
+      const { body } = await sent([hi], { responseJsonSchema: schema }, { ...SONNET, effort: 'none' })
+
+      expect(body).toMatchObject({
+        max_tokens: 500,
+        thinking: { type: 'between_tools' },
+        output_config: { format: { type: 'json_schema', schema } }
+      })
+      expect(body).not.toHaveProperty('tool_choice')
+    })
+
+    it('sends effort none without a schema as only thinking between_tools', async () => {
+      const { body } = await sent([hi], {}, { ...SONNET, effort: 'none' })
+
+      expect(body.thinking).toEqual({ type: 'between_tools' })
+      expect(body).not.toHaveProperty('output_config')
+      expect(body).not.toHaveProperty('tool_choice')
+    })
+
+    it('drops sampling parameters the profile forbids', async () => {
+      const { body } = await sent([hi], { temperature: 0.9, topP: 0.95 }, SONNET)
+
+      expect(body).not.toHaveProperty('temperature')
+      expect(body).not.toHaveProperty('top_p')
+      expect(body.output_config).toEqual({ effort: 'low' })
+    })
+
+    it('reads a structured reply from the plain text, not a tool input', async () => {
+      const { client, create } = fakeClient()
+      create.mockResolvedValueOnce({
+        ...fixtures.text,
+        content: [{ type: 'text', text: '{"ok":true}', citations: null }]
+      } as Anthropic.Message)
+
+      const [response] = await run(
+        new AnthropicLlm({ resolved: SONNET, client }),
+        request([hi], { responseJsonSchema: { type: 'object' } })
+      )
+
+      expect(response?.content?.parts).toEqual([{ text: '{"ok":true}' }])
+    })
+
+    it('still returns tool calls for unstructured Sonnet replies', async () => {
+      const [response] = await answer(fixtures.toolUse)
+
+      expect(response?.content?.parts).toEqual([
+        { text: 'Let me check what I remember.' },
+        {
+          functionCall: { id: 'toolu_01Fixture', name: 'recall_user', args: { query: 'favourite tea' } },
+          thoughtSignature: 'skip_thought_signature_validator'
+        }
+      ])
+    })
   })
 
   it('answers with the text of a recorded end_turn message and keeps thinking out of the parts', async () => {
