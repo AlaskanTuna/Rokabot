@@ -21,8 +21,8 @@ import { profileFor } from '../profiles.js'
 import { recordUsage } from '../usage.js'
 
 /**
- * The Pi runs the legacy config, with no `llm:` block. These pin that per-call budgets left every limit it had, and
- * every decision its Discord guards make on reply traffic, exactly where they were.
+ * A deployment without an `llm:` block runs the legacy config. These pin that per-call budgets left every limit it
+ * had, and every decision its Discord guards make on reply traffic, exactly where they were.
  */
 beforeEach(() => {
   vi.useFakeTimers()

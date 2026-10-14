@@ -36,22 +36,23 @@ fallback:
   baseUrl: https://api-inference.modelscope.ai/v1 # OpenAI-compatible ModelScope endpoint
   timeoutMs: 15000 # Per-request deadline for the fallback model (measured median ~1.3s with thinking off)
   stickyMs: 300000 # After Gemini fails and the fallback answers, later turns go straight to the fallback for this long; 0 disables
-# llm: # Main and fallback model selection; without this block the bot runs gemini.model with the fallback model above
-#   main: flash # Required; a key under llm.models (LLM_MAIN overrides)
-#   fallback: null # Optional; a key under llm.models (LLM_FALLBACK overrides; LLM_FALLBACK=none disables)
-#   hedgeAfterMs: 0 # Start the same call on the fallback after this many ms; paid routes start at 0 (off)
-#   stickyMs: 300000 # After the main model fails and the fallback answers, later turns start on the fallback this long
-#   monthlyBudgetUsd: # Local monthly spend cap per paid provider; background jobs stop at 80% of it, replies at 100%
-#     anthropic: 5
-#     openai: 5
-#   modelscopeDailyMagicubes: 250 # Magicubes one ModelScope key is expected to get a day (200 on login + 50 with Alibaba Cloud linked). Qwen and DeepSeek share it, the qwen watcher included; each call counts as one, and background jobs stop while a whole reply turn is left
-#   # Any entry may set limits: { rpm, rpd, tpm }; per-call budgets apply only with this block. A gemini entry inherits rateLimit and gemini.maxTokensPerMinute; other providers are unlimited unless set. Set tpm to half the provider's real TPM: the bucket drains continuously and can admit twice its value in the worst minute
-#   models: # Only tested profiles start (src/agent/llm/profiles.ts); optional per model: timeoutMs, maxOutputTokens, baseUrl
-#     flash: { provider: gemini, model: gemini-3.5-flash-lite }
-#     haiku: { provider: anthropic, model: claude-haiku-5-5, effort: low } # Needs ANTHROPIC_API_KEY; effort none turns thinking off (for a Haiku fallback)
-#     luna: { provider: openai, model: gpt-6-luna, effort: none } # Needs OPENAI_API_KEY; Chat Completions takes tools only at effort none
-#     qwen: { provider: modelscope, model: Qwen/Qwen3.5-35B-A3B } # Needs MODELSCOPE_API_KEY
-#     deepseek: { provider: modelscope, model: deepseek-ai/DeepSeek-V4.1-Flash } # Shares qwen's Magicube balance
+llm: # Main and fallback model selection; without this block the bot runs gemini.model with the fallback model above
+  main: haiku # Required; a key under llm.models (LLM_MAIN overrides)
+  fallback: qwen122 # Optional; a key under llm.models (LLM_FALLBACK overrides; LLM_FALLBACK=none disables)
+  hedgeAfterMs: 0 # Start the same call on the fallback after this many ms; paid routes start at 0 (off)
+  stickyMs: 300000 # After the main model fails and the fallback answers, later turns start on the fallback this long
+  monthlyBudgetUsd: # Local monthly spend cap per paid provider; background jobs stop at 80% of it, replies at 100%
+    anthropic: 5
+    openai: 5
+  modelscopeDailyMagicubes: 250 # Magicubes one ModelScope key is expected to get a day (200 on login + 50 with Alibaba Cloud linked). Qwen and DeepSeek share it, the qwen watcher included; each call counts as one, and background jobs stop while a whole reply turn is left
+  # Any entry may set limits: { rpm, rpd, tpm }; per-call budgets apply only with this block. A gemini entry inherits rateLimit and gemini.maxTokensPerMinute; other providers are unlimited unless set. Set tpm to half the provider's real TPM: the bucket drains continuously and can admit twice its value in the worst minute
+  models: # Only tested profiles start (src/agent/llm/profiles.ts); optional per model: timeoutMs, maxOutputTokens, baseUrl
+    flash: { provider: gemini, model: gemini-3.5-flash-lite }
+    haiku: { provider: anthropic, model: claude-haiku-5-5, effort: low } # Needs ANTHROPIC_API_KEY; effort none turns thinking off (for a Haiku fallback)
+    luna: { provider: openai, model: gpt-6-luna, effort: none } # Needs OPENAI_API_KEY; Chat Completions takes tools only at effort none
+    qwen122: { provider: modelscope, model: Qwen/Qwen3.5-122B-A10B } # Needs MODELSCOPE_API_KEY; the legacy fallback model
+    qwen: { provider: modelscope, model: Qwen/Qwen3.5-35B-A3B } # Needs MODELSCOPE_API_KEY
+    deepseek: { provider: modelscope, model: deepseek-ai/DeepSeek-V4.1-Flash } # Shares qwen's Magicube balance
 
 rateLimit:
   rpm: 15 # Requests per minute (Gemini free tier: 15)

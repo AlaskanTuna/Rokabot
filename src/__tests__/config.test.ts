@@ -1708,11 +1708,21 @@ describe('config module', () => {
     expect(config.llm).toMatchObject({ hedgeAfterMs: 0, stickyMs: 0 })
   })
 
-  it('ships config.yml without an active llm block, so the Pi keeps the synthesised route', async () => {
+  it('starts on the shipped config.yml, llm block included, once its providers have keys', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('ROKABOT_CONFIG_PATH', '')
+    vi.stubEnv('ANTHROPIC_API_KEY', 'test-anthropic-key')
+    vi.stubEnv('MODELSCOPE_API_KEY', 'test-modelscope-key')
+    vi.stubEnv('OPENAI_API_KEY', 'test-openai-key')
     const { readFileSync } = await import('node:fs')
     const { load } = await import('js-yaml')
+    const shipped = load(readFileSync('config.yml', 'utf8')) as { llm?: { main: string; fallback?: string | null } }
 
-    expect(load(readFileSync('config.yml', 'utf8'))).not.toHaveProperty('llm')
+    const { config } = await import('../config.js')
+
+    expect(config.llm.main.key).toBe(shipped.llm?.main ?? 'legacy-gemini')
+    expect(config.llm.fallback?.key ?? null).toBe(shipped.llm ? (shipped.llm.fallback ?? null) : 'legacy-fallback')
   })
 
   const HAIKU_LLM = {

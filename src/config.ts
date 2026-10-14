@@ -178,7 +178,7 @@ interface YamlConfig {
 }
 
 function loadYamlConfig(): YamlConfig {
-  const configPath = resolve(import.meta.dirname ?? '.', '..', 'config.yml')
+  const configPath = process.env.ROKABOT_CONFIG_PATH || resolve(import.meta.dirname ?? '.', '..', 'config.yml')
   let raw: string
   try {
     raw = readFileSync(configPath, 'utf-8')
