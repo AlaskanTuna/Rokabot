@@ -71,7 +71,7 @@ services:
     environment:
       - WATCHTOWER_LABEL_ENABLE=true # Only roka and asr carry the label
       - WATCHTOWER_CLEANUP=true # Remove the replaced image
-      - WATCHTOWER_SCHEDULE=0 0 4 * * * # Daily at 04:00 container time (6-field cron)
+      - WATCHTOWER_SCHEDULE=0 7 4 * * * # Daily at 04:07 container time (UTC unless TZ is set; 6-field cron)
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     logging:

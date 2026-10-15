@@ -32,11 +32,17 @@ app = "your-rokabot"
 
 The bot answers every path on port 3000. `/` returns 200 with `"status":"ok"` once Discord is connected, and 503 before that. The `[checks]` section is for apps without a public service.
 
+Give the app about 1 GB of memory. The compose file caps the bot at `mem_limit: 1g`.
+
+The bot does not start without the volume described under [Data](#data). If the first deploy fails, create the volume and deploy again.
+
 The image carries a built-in `config.yml`, so the bot starts with its defaults. An environment variable overrides a single value where `src/config.ts` wires one (for example `LLM_MAIN`, `LLM_FALLBACK` and `MEDIA_WATCHER`). Put non-sensitive ones in an `[env]` section of `fly.toml`. To use your own file instead, mount it and set `ROKABOT_CONFIG_PATH` to its path. How Fly mounts a file is not covered here.
 
 ## Speech Recognition
 
 Speech recognition is off until you set `MEDIA_TRANSCRIBER_URL`, because the built-in `config.yml` leaves the address empty. It serves the qwen media watcher.
+
+Speech recognition runs only on the qwen watcher path, which needs `MODELSCOPE_API_KEY`. That path is the main watcher when `media.watcher` is `qwen`, and the backup when it is `gemini`. Without that key, the second app is never used, so you can skip it.
 
 To turn it on:
 
@@ -60,7 +66,7 @@ Example workflow. It is untested. It is adapted from Fly's GitHub Actions page f
 name: Redeploy On Fly
 on:
   schedule:
-    - cron: '23 */6 * * *'
+    - cron: '23 4 * * *'
   workflow_dispatch:
 jobs:
   deploy:
@@ -78,11 +84,16 @@ To update the speech recognition app too, add the same step with `ghcr.io/alaska
 Notes:
 
 - The `fly deploy` reference does not say where `--image` pulls from. The `ghcr.io` case rests on the `[build]` page, which says an existing public image deploys with no build process. It is not documented explicitly for GHCR.
-- It is not documented what a run does when the digest has not changed since the last deploy. A run may restart the bot, so lower the schedule if restarts matter. For example, `23 4 * * *` runs once a day.
+- It is not documented what a run does when the digest has not changed since the last deploy. A run may restart the bot, so keep the schedule slow. This one runs once a day.
+- GitHub turns off scheduled workflows in a public repository after 60 days without repository activity, so a quiet fork stops redeploying. To turn one back on, open the Actions tab, select the workflow and choose Enable workflow, or run `gh workflow enable`. Source: [Disabling and enabling a workflow](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/disable-and-enable-workflows).
 - The default deploy strategy is `rolling`.
 
 Sources: [`fly deploy`](https://docs.fly.io/flyctl/deploy), [GitHub Actions](https://docs.fly.io/launch/continuous-deployment-with-github-actions), [Prebuilt images](https://docs.fly.io/blueprints/working-with-docker).
 
 ## Data
 
-The bot keeps its SQLite database in `/app/data`. The `[mounts]` section above mounts a Fly volume there. A volume with that name must exist in some region for the app to deploy: create it with `fly volume create`, or let `fly deploy` create it (the `initial_size` key sets its size). The bot runs as user `node` (UID 1000), so the volume must be writable by that user. Fly's ownership rules for volumes are not covered here.
+The bot needs a persistent volume mounted at `/app/data` that user `node` (UID 1000) can write to. Without one, it does not start. `/app` belongs to root, so with no volume at that path startup fails with `EACCES: permission denied, mkdir '/app/data'`. With a volume that UID 1000 cannot write to, it fails with `SqliteError: unable to open database file`. The bot keeps its SQLite database, `rokabot.db`, in that folder.
+
+The `[mounts]` section above mounts a Fly volume at `/app/data`. A volume with that name must exist in some region for the app to deploy. Create it with `fly volume create`, or let `fly deploy` create it (the `initial_size` key sets its size).
+
+Fly's ownership rules for volumes are not covered here. Whatever you use, the volume must be writable by UID 1000.

@@ -525,7 +525,7 @@ flowchart LR
 
 ### Running Your Own Copy
 
-Every release publishes the `rokabot` and `rokabot-asr` images to GHCR with the tags `vX.Y.Z`, `vX.Y` and `stable`, so you can run your own copy without cloning or building. A Docker host needs three downloaded files and one command. Railway, Render, Fly.io and Coolify run the same image, each with its own way of updating it.
+Every release publishes the `rokabot` and `rokabot-asr` images to GHCR with the tags `vX.Y.Z`, `vX.Y` and `stable`, so you can run your own copy without cloning or building. On a Docker host, you download three files, fill in `.env`, create a `data` folder and start Compose. Railway, Render, Fly.io and Coolify run the same image, each with its own way of updating it.
 
 - Docker hosts: [Docker](deploy/docker.md)
 - [Railway](deploy/railway.md)

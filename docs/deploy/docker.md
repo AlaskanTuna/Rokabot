@@ -4,6 +4,8 @@ Run Rokabot from the published images on any host with Docker Compose. You need 
 
 Each release publishes two images to GHCR: `ghcr.io/alaskantuna/rokabot` and `ghcr.io/alaskantuna/rokabot-asr` (speech recognition). Both carry the tags `vX.Y.Z`, `vX.Y` and `stable`.
 
+The bot needs about 1 GB of memory (the compose file sets `mem_limit: 1g`). The `asr` service needs about 2 GB more.
+
 ## Quick Start
 
 1. Find the newest version on the [latest release](https://github.com/AlaskanTuna/Rokabot/releases/latest) page. Below, `vX.Y.Z` stands for it.
@@ -18,8 +20,8 @@ Each release publishes two images to GHCR: `ghcr.io/alaskantuna/rokabot` and `gh
 
 3. Copy the example environment file: `cp .env.example .env`.
 4. Edit `.env`. Set `DISCORD_TOKEN` and `DISCORD_CLIENT_ID`. Then set the model keys your `config.yml` needs. The comment on each model in `config.yml` names its key, and `.env.example` explains every key.
-5. Create the data folder: `mkdir data`. Compose mounts it at `/app/data`, where the bot keeps its SQLite database. The bot runs as user `node` (UID 1000). A folder that Compose creates belongs to root, and the bot cannot write to it. If your login is not UID 1000, run `sudo chown 1000:1000 data`.
-6. Start it: `docker compose pull && docker compose up -d`.
+5. Create the data folder: `mkdir data`. Compose mounts it at `/app/data`, where the bot keeps its SQLite database. The bot runs as user `node` (UID 1000). A folder that Compose creates belongs to root, and the bot then fails at startup with `SqliteError: unable to open database file`. If your login is not UID 1000, run `sudo chown 1000:1000 data`.
+6. Start it: `docker compose pull && docker compose up -d`. This also starts `asr`. To skip it, read [Speech Recognition Off](#speech-recognition-off) first.
 7. Check it: `curl http://localhost:3000/`. The answer contains `"status":"ok"` once the bot is connected to Discord.
 
 If `config.yml` is missing, `roka` refuses to start with `bind source path does not exist`. Compose mounts the file read-only and does not create it. Download it again (step 2).
@@ -41,7 +43,7 @@ To let Watchtower update for you:
 1. Add `COMPOSE_PROFILES=autoupdate` to `.env` (or set it in your shell).
 2. Run `docker compose up -d`.
 
-Watchtower then checks once a day at 04:00 UTC. The compose service sets no `TZ`, so container time is UTC.
+Watchtower then checks once a day at 04:07 UTC. The compose service sets no `TZ`, so container time is UTC.
 
 - It updates only `roka` and `asr`, the two containers labelled `com.centurylinklabs.watchtower.enable=true`. It removes the replaced image.
 - It watches the exact image reference. On `stable`, it updates only when a release moves `stable`.
@@ -71,7 +73,11 @@ Your `config.yml` and `data` folder stay as they are.
 
 ## Speech Recognition Off
 
-The `asr` service turns the audio of videos into text for the qwen media watcher. It needs about 2 GB of memory. To run without it:
+The `asr` service turns the audio of videos into text for the qwen media watcher. It needs about 2 GB of memory.
+
+Speech recognition runs only on the qwen watcher path, which needs `MODELSCOPE_API_KEY`. That path is the main watcher when `media.watcher` is `qwen`, and the backup when it is `gemini`. Without that key, the `asr` service is never used, so you can skip it.
+
+To run without it:
 
 1. Add `MEDIA_TRANSCRIBER_URL=` (empty) to `.env`.
 2. Run `docker compose pull roka && docker compose up -d roka`.

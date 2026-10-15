@@ -51,7 +51,7 @@ Checked: 2026-10-15.
 name: Redeploy On Fly
 on:
   schedule:
-    - cron: '23 */6 * * *'
+    - cron: '23 4 * * *'
   workflow_dispatch:
 jobs:
   deploy:

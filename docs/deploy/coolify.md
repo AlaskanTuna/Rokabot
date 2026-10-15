@@ -5,11 +5,15 @@ Run Rokabot on Coolify from the published image. Coolify documents no automatic 
 ## Deploy
 
 1. Open a project and an environment, select New, then select Docker Image.
-2. Under Image Name, enter `ghcr.io/alaskantuna/rokabot:stable`. Coolify splits the tag into the Tag field. The image is public, so it needs no registry credentials.
+2. Under Image Name, enter `ghcr.io/alaskantuna/rokabot:stable`. Coolify separates a pasted tag or digest into the matching field. The image is public, so it needs no registry credentials.
 3. Select Save to create the application.
 4. Under General, set Ports Exposes to `3000`. The page says Docker Image applications start with port 80.
 5. Add the runtime environment variables `DISCORD_TOKEN` and `DISCORD_CLIENT_ID`, plus the model keys the built-in `config.yml` needs. [`.env.example`](../../.env.example) explains every key.
 6. Select Deploy and open Deployment Logs to check the result.
+
+Give the application about 1 GB of memory. The compose file caps the bot at `mem_limit: 1g`.
+
+The bot does not start without the volume described under [Data](#data). If the first deploy fails, add the storage and deploy again.
 
 The bot answers every path on port 3000. `/` returns 200 with `"status":"ok"` once Discord is connected, and 503 before that. The Coolify page lists a health check among the settings but gives no details, so how to set one is not covered here.
 
@@ -20,6 +24,8 @@ Source: [Docker Image](https://coolify.io/docs/applications/deployments/docker-i
 ## Speech Recognition
 
 Speech recognition is off until you set `MEDIA_TRANSCRIBER_URL`, because the built-in `config.yml` leaves the address empty. It serves the qwen media watcher.
+
+Speech recognition runs only on the qwen watcher path, which needs `MODELSCOPE_API_KEY`. That path is the main watcher when `media.watcher` is `qwen`, and the backup when it is `gemini`. Without that key, the second application is never used, so you can skip it.
 
 To turn it on:
 
@@ -76,11 +82,14 @@ Notes:
 - Whether the deploy API pulls a `stable` that has moved is not documented. The `force` option is documented as rebuilding an application without its build cache, which concerns builds, not pulls. Coolify's tracker has an open report, [coollabsio/coolify#5318](https://github.com/coollabsio/coolify/issues/5318), that `force=true` did not pull the latest image on one older version. Current behavior is not verified. After the first release, test it once by hand before you rely on it.
 - A digest saved in the tag field, as `sha256-<64-character-digest>`, always points to the same content.
 - Each deploy restarts the bot, so keep the schedule slow.
+- GitHub turns off scheduled workflows in a public repository after 60 days without repository activity, so a quiet fork stops redeploying. To turn one back on, open the Actions tab, select the workflow and choose Enable workflow, or run `gh workflow enable`. Source: [Disabling and enabling a workflow](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/disable-and-enable-workflows).
 
 Sources: [Automatic Deployments](https://coolify.io/docs/applications/deployments/automatic-deployments), [Deployments Overview](https://coolify.io/docs/applications/deployments/overview), [Deploy API](https://coolify.io/docs/api-reference/api/operations/deploy-by-tag-or-uuid).
 
 ## Data
 
-The bot keeps its SQLite database in `/app/data`. Add persistent storage to the application and mount it at `/app/data`, or the data lives only in the container and is lost on redeploy. The bot runs as user `node` (UID 1000), so the storage must be writable by that user.
+The bot needs a persistent volume mounted at `/app/data` that user `node` (UID 1000) can write to. Without one, it does not start. `/app` belongs to root, so with no volume at that path startup fails with `EACCES: permission denied, mkdir '/app/data'`. With a volume that UID 1000 cannot write to, it fails with `SqliteError: unable to open database file`. The bot keeps its SQLite database, `rokabot.db`, in that folder.
 
-The Coolify Docker Image page lists persistent storage among the settings but gives no mount steps, so they are not covered here.
+Add persistent storage to the application and mount it at `/app/data`.
+
+The Coolify Docker Image page lists persistent storage among the settings but gives no mount steps or ownership rules, so they are not covered here. Whatever you use, the storage must be writable by UID 1000.

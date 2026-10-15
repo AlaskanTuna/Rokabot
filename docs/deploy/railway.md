@@ -12,11 +12,17 @@ Run Rokabot on Railway from the published image. Railway can redeploy it by itse
 
 The image carries a built-in `config.yml`, so the bot starts with its defaults. An environment variable overrides a single value where `src/config.ts` wires one (for example `LLM_MAIN`, `LLM_FALLBACK` and `MEDIA_WATCHER`). To use your own file instead, mount it and set `ROKABOT_CONFIG_PATH` to its path.
 
+Give the service about 1 GB of memory. The compose file caps the bot at `mem_limit: 1g`.
+
+The bot does not start without the volume described under [Data](#data). If the first deploy fails, add the volume and deploy again.
+
 Not covered here: where Railway takes variables, how it mounts a file and how it sets a health check. See Railway's own documentation.
 
 ## Speech Recognition
 
 Speech recognition is off until you set `MEDIA_TRANSCRIBER_URL`, because the built-in `config.yml` leaves the address empty. It serves the qwen media watcher.
+
+Speech recognition runs only on the qwen watcher path, which needs `MODELSCOPE_API_KEY`. That path is the main watcher when `media.watcher` is `qwen`, and the backup when it is `gemini`. Without that key, the second service is never used, so you can skip it.
 
 To turn it on:
 
@@ -44,6 +50,8 @@ Sources: [Image Auto Updates](https://docs.railway.com/deployments/image-auto-up
 
 ## Data
 
-The bot keeps its SQLite database in `/app/data`. Add a volume to the service and mount it at `/app/data`. The Railway services page says files outside a volume do not persist across deployments. The bot runs as user `node` (UID 1000), so the volume must be writable by that user.
+The bot needs a persistent volume mounted at `/app/data` that user `node` (UID 1000) can write to. Without one, it does not start. `/app` belongs to root, so with no volume at that path startup fails with `EACCES: permission denied, mkdir '/app/data'`. With a volume that UID 1000 cannot write to, it fails with `SqliteError: unable to open database file`. The bot keeps its SQLite database, `rokabot.db`, in that folder.
 
-Railway's mount steps and volume ownership rules are not covered here.
+Add a volume to the service and mount it at `/app/data`. The Railway services page says to add a volume for data that must persist between deployments.
+
+Railway's mount steps and volume ownership rules are not covered here. Whatever you use, the volume must be writable by UID 1000.
