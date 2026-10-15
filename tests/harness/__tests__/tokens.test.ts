@@ -52,7 +52,7 @@ describe('harness token measurement', () => {
     expect(CORE_PROMPT).toContain('Maniwa Roka')
     expect(CORE_PROMPT).toContain('big-sister')
     expect(CORE_PROMPT).toContain(
-      'Keep responses between 50-70 words. 1-3 sentences for casual chat, up to 4 for complex topics. Always finish your thought — end naturally, never trail off mid-sentence.'
+      'Keep responses between 50-70 words, split into two short paragraphs: your reaction or answer first, then a tease, a fuss over them or a question back. Always finish your thought — end naturally, never trail off mid-sentence.'
     )
     expect(CORE_PROMPT).toContain('## Hard Boundaries')
   })
@@ -135,7 +135,7 @@ describe('harness token measurement', () => {
     expect(SPEECH_PROMPT).toContain('Give it its own line starting with >')
     expect(SPEECH_PROMPT).toContain('wrap an ending, a plot twist or a quiz answer in ||spoiler|| tags')
     expect(SPEECH_PROMPT).toContain('Never headers, tables, underline or strikethrough.')
-    expect(SPEECH_PROMPT).toContain('stay in one paragraph unless they asked for steps or a list')
+    expect(SPEECH_PROMPT).toContain('keep to plain paragraphs unless they asked for steps or a list')
   })
 
   // A divider after a verdict or before her own take turned up wherever she judged something; it is kept for the
@@ -190,6 +190,39 @@ describe('harness token measurement', () => {
     expect(SPEECH_PROMPT).toContain(
       'Never add a closing paragraph of roleplay just to give those flourishes somewhere to live.'
     )
+  })
+
+  // Haiku 5.5 took "Most chat is one paragraph" literally and answered in one paragraph 80% of the time.
+  it('makes two short paragraphs the default shape for chat and simple looked-up answers', () => {
+    expect(SPEECH_PROMPT).toContain('Most chat is two short paragraphs.')
+    expect(CORE_PROMPT).toContain('A simple request gets two short paragraphs')
+  })
+
+  // Haiku 5.5 picked the first face of a flat list, a dejected (´・ω・｀), for 45% of replies, cheerful ones included.
+  it('groups kaomoji by feeling with the dejected face under sad rather than leading the list', () => {
+    expect(SPEECH_PROMPT).toContain('Pick the face that matches the feeling')
+    expect(SPEECH_PROMPT).toContain('Sad, sulky or let down: (´・ω・｀)')
+    expect(SPEECH_PROMPT).not.toContain('Pick from: (´・ω・｀)')
+  })
+
+  // Haiku 5.5 put an exclamation mark in 9% of replies against Flash Lite's 84%, and opened most with "Ara~".
+  it('asks for a bubbly voice that reacts out loud without one fixed opener', () => {
+    expect(CORE_PROMPT).toContain('Your tone is warm, bubbly and expressive')
+    expect(CORE_PROMPT).toContain("Mix them up, and don't open every reply with one.")
+    expect(SPEECH_PROMPT).toContain('only as a genuine surprise reaction, not as your usual opener')
+    expect(CORE_PROMPT).toContain('A tease, a scold, a gasp or a laugh ends in ! or !?, not a full stop.')
+  })
+
+  // Haiku 5.5 answered teasing with polite, moderator-style redirects where Flash Lite hit back in character.
+  it('asks for in-character comebacks rather than polite redirects when she is teased', () => {
+    expect(CORE_PROMPT).toContain('Be funny, not polite.')
+    expect(CORE_PROMPT).toContain('never answer like a moderator or an assistant')
+  })
+
+  // Haiku 5.5 ended half its replies on 🍵, the first emoji in the list, against a fifth on Flash Lite.
+  it('keeps tea from leading the emoji list and from becoming a sign-off', () => {
+    expect(SPEECH_PROMPT).toContain('never as a sign-off on every reply')
+    expect(SPEECH_PROMPT).not.toContain('Food/sweets: 🍵')
   })
 
   it('keeps the frozen baseline structurally consistent without re-deriving it', async () => {
