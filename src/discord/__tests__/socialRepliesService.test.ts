@@ -32,13 +32,32 @@ function readerWith(x: ReplyFetcher, overrides: Partial<typeof SETTINGS> = {}, n
 describe('ReplyReader', () => {
   it('dispatches to the platform fetcher with the configured limits', async () => {
     const x = vi.fn(async () => FOUND)
-    const { reader } = readerWith(x)
+    const { reader } = readerWith(x, { maxReplies: 7 })
 
     expect(await reader.read(xTarget)).toEqual(FOUND)
     expect(x).toHaveBeenCalledWith(
       xTarget,
-      expect.objectContaining({ maxReplies: 5, maxReplyChars: 280, timeoutMs: 50, youtubeApiKey: 'key-from-env' })
+      expect.objectContaining({ maxReplies: 7, maxReplyChars: 280, timeoutMs: 50, youtubeApiKey: 'key-from-env' })
     )
+  })
+
+  it('passes a requested reply count to the platform fetcher', async () => {
+    const x = vi.fn(async () => FOUND)
+    const { reader } = readerWith(x)
+
+    await reader.read(xTarget, 20)
+
+    expect(x).toHaveBeenCalledWith(xTarget, expect.objectContaining({ maxReplies: 20 }))
+  })
+
+  it('fetches again when the requested reply count differs from the cached count', async () => {
+    const x = vi.fn(async () => FOUND)
+    const { reader } = readerWith(x)
+
+    await reader.read(xTarget)
+    await reader.read(xTarget, 20)
+
+    expect(x).toHaveBeenCalledTimes(2)
   })
 
   it('reuses a found result until it expires, and never caches a failure', async () => {

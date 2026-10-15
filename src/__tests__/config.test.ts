@@ -128,6 +128,17 @@ describe('config module', () => {
     await expect(() => import('../config.js')).rejects.toThrow('Missing required environment variable: GEMINI_API_KEY')
   })
 
+  it.each([
+    [0, 'Config value socialPosts.maxRepliesOnRequest must be >= 1, got: 0'],
+    [51, 'Config value socialPosts.maxRepliesOnRequest must be <= 50, got: 51']
+  ])('rejects maxRepliesOnRequest outside 1..50 (%s)', async (value, message) => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    withYamlOverride({ socialPosts: { maxRepliesOnRequest: value } })
+
+    await expect(() => import('../config.js')).rejects.toThrow(message)
+  })
+
   it('rejects a zero fallback timeout', async () => {
     setRequiredEnvVars()
     clearTunableEnvVars()
@@ -200,6 +211,7 @@ describe('config module', () => {
       cacheTtlMs: 900_000,
       maxCacheEntries: 256,
       maxReplies: 5,
+      maxRepliesOnRequest: 50,
       maxReplyChars: 280,
       ytDlpPath: 'yt-dlp'
     })
@@ -1156,6 +1168,7 @@ describe('config module', () => {
       { path: 'socialPosts.cacheTtlMs', min: 0 },
       { path: 'socialPosts.maxCacheEntries', min: 1, max: 10_000 },
       { path: 'socialPosts.maxReplies', min: 1, max: 10 },
+      { path: 'socialPosts.maxRepliesOnRequest', min: 1, max: 50 },
       { path: 'socialPosts.maxReplyChars', min: 40, max: 1000 },
       { path: 'media.watchTimeoutMs', min: 5000, max: 60_000 },
       { path: 'media.digestMaxOutputTokens', min: 400, max: 4000 },
