@@ -65,12 +65,29 @@ jobs:
           docker compose config -q
           COMPOSE_PROFILES=autoupdate docker compose config -q
 
-      # A plain bind of a missing file makes Docker create a directory named config.yml in its place.
-      - name: Config mount refuses a missing file
+      - name: Config mount is read-only
         run: |
           touch .env
           docker compose config --format json \
-            | jq -e '.services.roka.volumes[] | select(.target == "/app/config.yml") | .bind.create_host_path == false and .read_only == true'
+            | jq -e '.services.roka.volumes[] | select(.target == "/app/config.yml") | .read_only == true'
+
+      # A plain bind of a missing file makes Docker create a directory named config.yml in its place.
+      - name: Config mount refuses a missing file
+        run: |
+          dir=$(mktemp -d)
+          cp docker-compose.yml "$dir/"
+          touch "$dir/.env"
+          docker pull busybox:1.36
+          docker tag busybox:1.36 local/rokabot:t
+          docker tag busybox:1.36 local/rokabot-asr:t
+          cd "$dir"
+          status=0
+          out=$(ROKA_REGISTRY=local ROKA_TAG=t docker compose create --no-build --pull never roka 2>&1) || status=$?
+          echo "$out"
+          [ "$status" -ne 0 ] || { echo "::error::compose create succeeded with no config.yml"; exit 1; }
+          grep -q 'bind source path does not exist' <<< "$out" \
+            || { echo "::error::compose create failed, but not on the missing config.yml bind source"; exit 1; }
+          [ ! -e config.yml ] || { echo "::error::Docker created config.yml in place of the missing file"; exit 1; }
 
       - name: Lint workflows
         run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7
@@ -197,21 +214,24 @@ jobs:
             exit 1
           fi
 
-  # One stable check name for the main-pr-ci-gate ruleset. A skipped job counts as passing for a required check,
-  # so it runs even when `images` is skipped or fails and then fails itself.
+  # One stable check name for the main-pr-ci-gate ruleset, covering the image builds and the compose checks. A skipped
+  # job counts as passing for a required check, so it runs even when `images` or `compose` is skipped or fails and then
+  # fails itself.
   images-ok:
-    needs: images
+    needs: [images, compose]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 2
 
     steps:
-      - name: All image builds passed
+      - name: All image builds and compose checks passed
         env:
           IMAGES_RESULT: ${{ needs.images.result }}
+          COMPOSE_RESULT: ${{ needs.compose.result }}
         run: |
           [ "$IMAGES_RESULT" = success ] || { echo "::error::Image builds finished as $IMAGES_RESULT"; exit 1; }
-          echo "All image builds passed"
+          [ "$COMPOSE_RESULT" = success ] || { echo "::error::Compose checks finished as $COMPOSE_RESULT"; exit 1; }
+          echo "All image builds and compose checks passed"
 
   notify-images-failure:
     needs: [images, manifest]

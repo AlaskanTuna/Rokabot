@@ -739,15 +739,16 @@ cd ~/actions-runner && sudo ./svc.sh stop && sudo ./svc.sh uninstall
 - Deploys run one at a time (`pi-deploy` concurrency group), and each one resets the checkout to the commit whose image it runs
 - Results visible at https://github.com/AlaskanTuna/rokabot/actions
 - If the pull fails, the old container keeps running (no automatic rollback)
-- Make `images-ok` a required status check in the `main-pr-ci-gate` ruleset, beside `test`, so a failed image build blocks the merge
+- Make `images-ok` a required status check in the `main-pr-ci-gate` ruleset, beside `test`, so a failed image build or compose check blocks the merge
 
 ### Rolling Back a Deploy
 
 Each deploy runs the image tagged `sha-<first 7 of the commit>`, and the Pi keeps the previous tag too.
 
 1. Find the previous tag: `docker image ls ghcr.io/alaskantuna/rokabot`, or pick any published `sha-<7>` tag from GHCR.
-2. Run it: `cd ~/rokabot && sed -i 's/^ROKA_TAG=.*/ROKA_TAG=sha-<previous>/' .env && docker compose up -d --no-build`. A tag that is not on the Pi is pulled by `up -d --no-build`.
-3. The next merge to `main` deploys forward again.
+2. Restore that commit's config: `git -C ~/rokabot checkout <previous sha> -- config.yml`. The container mounts `config.yml` from the host, so changing only the tag keeps the newer config in place.
+3. Run it: `cd ~/rokabot && sed -i 's/^ROKA_TAG=.*/ROKA_TAG=sha-<previous>/' .env && docker compose up -d --no-build`. A tag that is not on the Pi is pulled by `up -d --no-build`.
+4. The next merge to `main` deploys forward again.
 
 A `ROKA_TAG=...` prefix before `sudo docker compose` is dropped by `sudo`, so the `.env` route is the reliable one.
 
