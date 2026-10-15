@@ -7,7 +7,7 @@ import { load } from 'js-yaml'
 // All four are pure leaves — attachmentLimits.ts, llm/profiles.ts and embeddings/fingerprint.ts import nothing,
 // attachments.ts only node built-ins — so reading them here derives values instead of restating them, and cannot
 // close a cycle back into config.
-import { GEMINI_IMAGE_TOKENS } from './agent/attachmentLimits.js'
+import { GEMINI_IMAGE_TOKENS, MAX_DOCUMENT_SIZE_BYTES } from './agent/attachmentLimits.js'
 import { MODEL_PROFILES, type ModelProfile, type ProviderId, profileFor } from './agent/llm/profiles.js'
 import {
   DEFAULT_EMBEDDING_MODELS,
@@ -79,7 +79,11 @@ interface YamlConfig {
   }
   rateLimit?: { rpm?: number; rpd?: number }
   session?: { ttl?: number; windowSize?: number; maxRehydrationAge?: number; historyRetentionDays?: number }
-  discord?: { maxMessageLength?: number; maxInFlightAttachmentBytes?: number }
+  discord?: {
+    maxMessageLength?: number
+    maxAttachmentBytesPerTurn?: number
+    maxInFlightAttachmentBytes?: number
+  }
   socialPosts?: {
     enabled?: boolean
     maxLookupsPerTurn?: number
@@ -527,6 +531,8 @@ const baseConfig = {
     token: requiredEnv('DISCORD_TOKEN'),
     clientId: requiredEnv('DISCORD_CLIENT_ID'),
     maxMessageLength: envInt('DISCORD_MAX_MESSAGE_LENGTH') ?? yaml.discord?.maxMessageLength ?? 2000,
+    maxAttachmentBytesPerTurn:
+      envInt('DISCORD_MAX_ATTACHMENT_BYTES_PER_TURN') ?? yaml.discord?.maxAttachmentBytesPerTurn ?? 10_485_760,
     maxInFlightAttachmentBytes:
       envInt('DISCORD_MAX_INFLIGHT_ATTACHMENT_BYTES') ?? yaml.discord?.maxInFlightAttachmentBytes ?? 33_554_432
   },
@@ -574,7 +580,7 @@ const baseConfig = {
     timeout: envInt('GEMINI_TIMEOUT') ?? yaml.gemini?.timeout ?? 15_000,
     maxRetries: envInt('GEMINI_MAX_RETRIES') ?? yaml.gemini?.maxRetries ?? 1,
     maxOutputTokens: envInt('GEMINI_MAX_OUTPUT_TOKENS') ?? yaml.gemini?.maxOutputTokens ?? 300,
-    maxAttachmentTokens: envInt('GEMINI_MAX_ATTACHMENT_TOKENS') ?? yaml.gemini?.maxAttachmentTokens ?? 50_000,
+    maxAttachmentTokens: envInt('GEMINI_MAX_ATTACHMENT_TOKENS') ?? yaml.gemini?.maxAttachmentTokens ?? 125_000,
     maxTokensPerMinute: geminiMaxTokensPerMinute,
     safetyThreshold: envString('GEMINI_SAFETY_THRESHOLD') ?? yaml.gemini?.safetyThreshold ?? 'OFF',
     maxLlmCalls: yaml.gemini?.maxLlmCalls ?? 4,
@@ -825,9 +831,13 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   // 4000 (Components V2 shared TextDisplay budget) − MAX_TOOL_FOOTER_CHARS (73, derived in
   // src/discord/messageBuilder.ts) = 3927; this bot never sends via content.
   { path: 'discord.maxMessageLength', value: config.discord.maxMessageLength, min: 1, max: 3927 },
-  // min is the largest a single turn can be (MAX_ATTACHMENTS x MAX_DOCUMENT_SIZE_BYTES): below that, a
-  // full-sized turn could never be admitted even on an idle bot, so it would be refused forever rather
-  // than merely delayed. Asserted from the constants themselves in the byteBudget tests.
+  {
+    path: 'discord.maxAttachmentBytesPerTurn',
+    value: config.discord.maxAttachmentBytesPerTurn,
+    min: MAX_DOCUMENT_SIZE_BYTES,
+    max: 31_457_280
+  },
+  // This floor matches the maximum value for maxAttachmentBytesPerTurn, so an idle bot can admit a maximal turn.
   { path: 'discord.maxInFlightAttachmentBytes', value: config.discord.maxInFlightAttachmentBytes, min: 31_457_280 },
   { path: 'embeddings.timeoutMs', value: config.embeddings.timeoutMs, min: 1 },
   { path: 'embeddings.backfillBatchSize', value: config.embeddings.backfillBatchSize, min: 1, max: 100_000 },

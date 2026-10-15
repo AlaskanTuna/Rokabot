@@ -14,7 +14,7 @@ import { upsertUserName } from '../../storage/userNames.js'
 import { logger } from '../../utils/logger.js'
 import { type CallReservation, RateLimiter } from '../../utils/rateLimiter.js'
 import { MAX_ATTACHMENTS } from '../attachments.js'
-import { release, reservationFor, tryReserve } from '../byteBudget.js'
+import { fitAttachmentsToTurn, release, reservationFor, tryReserve } from '../byteBudget.js'
 import { isChannelBusy, markBusy, markFree } from '../concurrency.js'
 import { shouldReact } from '../emojiReactor.js'
 import { isIgnorableDiscordError } from '../errorHandler.js'
@@ -32,6 +32,7 @@ import {
   getRandomError,
   getRandomOversizedAttachment,
   getRandomPartialAttachment,
+  getRandomSkippedAttachments,
   getRandomUnsupportedAttachment,
   splitResponse
 } from '../responses.js'
@@ -269,6 +270,9 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
         content = content ? `${content}\n${SOCIAL_POST_FAILURE_MARKER}` : SOCIAL_POST_FAILURE_MARKER
       }
 
+      const { kept, skipped: skippedAttachments } = fitAttachmentsToTurn(imageAttachments)
+      imageAttachments = kept
+
       // Attachment token cost is independent of the byte and call budgets.
       if (imageAttachments.length > 0 && !canAffordAttachments()) {
         cancelTurnEntryWork()
@@ -334,6 +338,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
               (userId) => userId !== client.user?.id
             ),
             turnEntryWork,
+            skippedAttachments,
             imageAttachments: imageAttachments.length > 0 ? imageAttachments : undefined
           })
         )
@@ -350,6 +355,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
       if (unsupportedCount > 0 || droppedAttachments > 0) notes.push(getRandomUnsupportedAttachment())
       if (truncatedAttachments > 0) notes.push(getRandomPartialAttachment())
       if (refusedAttachments > 0) notes.push(getRandomOversizedAttachment())
+      if (skippedAttachments > 0) notes.push(getRandomSkippedAttachments())
       const withNudge = notes.length > 0 ? `${responseText}\n\n${notes.join('\n\n')}` : responseText
       // Escaped before the split, not after: escaping lengthens the text, so doing it downstream would let a
       // chunk sized against the raw length overrun the TextDisplay budget it was measured for.

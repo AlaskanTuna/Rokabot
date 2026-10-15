@@ -1,6 +1,6 @@
 import { ApplicationIntegrationType, InteractionContextType } from 'discord.js'
 import { describe, expect, it } from 'vitest'
-import { MAX_ATTACHMENTS, attachmentOptionName } from '../../attachments.js'
+import { ASK_ATTACHMENT_SLOTS, attachmentOptionName } from '../../attachments.js'
 import { buildCommandBody } from '../index.js'
 
 // /ask replaced both /chat and /search (#19). Retiring two names and adding one moves this list, and the
@@ -51,12 +51,12 @@ describe('buildCommandBody', () => {
     expect(names).toEqual(expectedNames)
   })
 
-  // Discord has no multi-attachment option type, so /ask exposes one slot per file the mention path accepts.
-  it('offers one attachment slot per file the mention path would accept', () => {
+  // Discord has no multi-attachment option type, so /ask has one option for each of its attachment slots.
+  it('offers exactly the /ask attachment slots', () => {
     const ask = buildCommandBody().find((command) => command.name === 'ask')
 
     expect((ask?.options ?? []).filter((option) => option.type === 11).map((option) => option.name)).toEqual(
-      Array.from({ length: MAX_ATTACHMENTS }, (_, index) => attachmentOptionName(index))
+      Array.from({ length: ASK_ATTACHMENT_SLOTS }, (_, index) => attachmentOptionName(index))
     )
   })
 
@@ -69,7 +69,7 @@ describe('buildCommandBody', () => {
 
     expect(optionNames).toEqual([
       'question',
-      ...Array.from({ length: MAX_ATTACHMENTS }, (_, index) => attachmentOptionName(index)),
+      ...Array.from({ length: ASK_ATTACHMENT_SLOTS }, (_, index) => attachmentOptionName(index)),
       'attachment_url'
     ])
   })

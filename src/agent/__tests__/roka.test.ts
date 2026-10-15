@@ -2348,22 +2348,58 @@ describe('attachment intake', () => {
   // condition #137 fixed — file gone, request unchanged, and the model reaching for search_web to fill the
   // hole. A refusal has to say so for the same reason a failed download does.
   //
-  // Two attachments rather than one, because with one the notice reads correctly whatever number the code
-  // put in it. The peer probed this: `refusedAttachments = 1` in place of `imageParts.length` failed nothing
-  // at all. Refusal is all-or-nothing, so the count is the whole set and the assertion has to be able to
-  // tell the whole set from one of it.
-  it('tells the model when attachments were refused on cost, and how many went with them', async () => {
-    let captured: { newMessage?: { parts?: Array<{ text?: string }> } } | undefined
+  it('admits measured files in order up to the token ceiling and tells the model what was refused', async () => {
+    let captured: { newMessage?: { parts?: Array<{ text?: string; inlineData?: unknown }> } } | undefined
     vi.mocked(needsMeasuring).mockReturnValueOnce(true)
-    vi.mocked(measureAttachmentTokens).mockResolvedValueOnce(config.gemini.maxAttachmentTokens + 1)
+    vi.mocked(measureAttachmentTokens)
+      .mockResolvedValueOnce(30_000)
+      .mockResolvedValueOnce(60_000)
+      .mockResolvedValueOnce(50_000)
     serve(PDF_BYTES)
     __setTestRunTurnFactory(() => async (_a, _s, request) => {
       captured = request
       return { text: 'Mm~', hasText: true, hasFunctionCall: false }
     })
 
-    await generateResponse({
+    const result = await generateResponse({
       channelId: 'refuse-notice',
+      guildId: 'attachment-guild',
+      memory: true,
+      userMessage: 'read this',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id',
+      imageAttachments: [
+        { url: 'https://cdn.test/file', contentType: 'application/pdf' },
+        { url: 'https://cdn.test/file', contentType: 'application/pdf' },
+        { url: 'https://cdn.test/file', contentType: 'application/pdf' }
+      ]
+    })
+    await destroySession('refuse-notice')
+
+    const texts = (captured?.newMessage?.parts ?? []).flatMap((part) => (part.text ? [part.text] : []))
+    expect(result.refusedAttachments).toBe(1)
+    expect((captured?.newMessage?.parts ?? []).filter((part) => part.inlineData)).toHaveLength(2)
+    expect(texts).toContain(
+      '[1 of the files shared with this message were too long to read in one turn, so they were not opened.]'
+    )
+  })
+
+  it('falls back to the whole-set measurement when a single file cannot be measured', async () => {
+    let captured: { newMessage?: { parts?: Array<{ inlineData?: unknown }> } } | undefined
+    vi.mocked(needsMeasuring).mockReturnValueOnce(true)
+    vi.mocked(measureAttachmentTokens)
+      .mockResolvedValueOnce(30_000)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(config.gemini.maxAttachmentTokens + 1)
+    serve(PDF_BYTES)
+    __setTestRunTurnFactory(() => async (_a, _s, request) => {
+      captured = request
+      return { text: 'Mm~', hasText: true, hasFunctionCall: false }
+    })
+
+    const result = await generateResponse({
+      channelId: 'fallback-measurement',
       guildId: 'attachment-guild',
       memory: true,
       userMessage: 'read this',
@@ -2375,10 +2411,38 @@ describe('attachment intake', () => {
         { url: 'https://cdn.test/file', contentType: 'application/pdf' }
       ]
     })
-    await destroySession('refuse-notice')
+    await destroySession('fallback-measurement')
+
+    expect(result.refusedAttachments).toBe(2)
+    expect((captured?.newMessage?.parts ?? []).some((part) => part.inlineData)).toBe(false)
+    expect(vi.mocked(measureAttachmentTokens)).toHaveBeenCalledTimes(3)
+    expect(vi.mocked(measureAttachmentTokens).mock.calls[0][0]).toHaveLength(1)
+    expect(vi.mocked(measureAttachmentTokens).mock.calls[1][0]).toHaveLength(1)
+  })
+
+  it('tells the model when files were skipped before download', async () => {
+    let captured: { newMessage?: { parts?: Array<{ text?: string }> } } | undefined
+    __setTestRunTurnFactory(() => async (_a, _s, request) => {
+      captured = request
+      return { text: 'Mm~', hasText: true, hasFunctionCall: false }
+    })
+
+    await generateResponse({
+      channelId: 'skipped-notice',
+      guildId: 'attachment-guild',
+      memory: true,
+      userMessage: 'read this',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id',
+      skippedAttachments: 2
+    })
+    await destroySession('skipped-notice')
 
     const texts = (captured?.newMessage?.parts ?? []).flatMap((part) => (part.text ? [part.text] : []))
-    expect(texts.some((text) => text.includes('2 file(s)') && text.includes('together they are too long'))).toBe(true)
+    expect(texts).toContain(
+      '[2 more file(s) were shared with this message but left out, because one turn can only take so much; only the first ones were opened.]'
+    )
   })
 
   it('admits attachments that fit the ceiling', async () => {

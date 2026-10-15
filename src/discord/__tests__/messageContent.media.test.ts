@@ -1,5 +1,6 @@
 import { Collection } from 'discord.js'
 import { describe, expect, it } from 'vitest'
+import { MAX_ATTACHMENTS } from '../attachments.js'
 import { extractMessageContent } from '../messageContent.js'
 
 interface Attachment {
@@ -94,11 +95,15 @@ describe('media message content', () => {
   it('names each forwarded media kind and how many did not fit', () => {
     const image = { url: 'https://cdn.test/photo.png', contentType: 'image/png' }
     const video = { url: 'https://cdn.test/clip.mp4', contentType: 'video/mp4' }
+    const ownImages = Array.from({ length: MAX_ATTACHMENTS }, (_, index) => ({
+      url: `https://cdn.test/own-${index}.png`,
+      contentType: 'image/png'
+    }))
 
-    const extracted = extract(message({ snapshots: [snapshot([image, video])] }))
+    const extracted = extract(message({ attachments: ownImages, snapshots: [snapshot([image, video])] }))
 
-    expect(extracted.imageAttachments).toEqual([image])
-    expect(extracted.content).toContain('(forwarded image(s))')
+    expect(extracted.imageAttachments.map((attachment) => attachment.url)).toEqual(ownImages.map(({ url }) => url))
+    expect(extracted.content).toContain('(forwarded image(s), 1 not shown)')
     expect(extracted.content).toContain('(forwarded video(s), 1 not shown)')
   })
 
@@ -135,7 +140,10 @@ describe('media message content', () => {
 
     const extracted = extract(message({ embeds: [thumbnailEmbed(thumbnail)] }), referenceMessage([video]))
 
-    expect(extracted.imageAttachments).toEqual([{ ...video, ...repliedTo }])
+    expect(extracted.imageAttachments).toEqual([
+      { ...video, ...repliedTo },
+      { url: thumbnail, contentType: 'image/png' }
+    ])
   })
 
   it('takes a replied-to embed thumbnail when no real media is available', () => {

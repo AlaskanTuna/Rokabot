@@ -50,8 +50,19 @@ const OVERSIZED_ATTACHMENT_MESSAGES = [
   "That's a bit much for one sitting, ne? Give me a shorter one and I'll go through it properly."
 ]
 
+const SKIPPED_ATTACHMENT_MESSAGES = [
+  'Ara~ that is more than I can peek at in one go! I looked at the first ones; send the rest separately, ne~',
+  'Mou~ I can only look through so many at once! I opened the first ones, so send the others in another message.',
+  'Fufu, that was a lot to browse in one sitting~ I checked the first ones; bring me the rest separately, okay?',
+  'Ehh~ too many for one look! I took the first ones, so send the rest in a separate message, okay?'
+]
+
 export function getRandomOversizedAttachment(): string {
   return OVERSIZED_ATTACHMENT_MESSAGES[Math.floor(Math.random() * OVERSIZED_ATTACHMENT_MESSAGES.length)]
+}
+
+export function getRandomSkippedAttachments(): string {
+  return SKIPPED_ATTACHMENT_MESSAGES[Math.floor(Math.random() * SKIPPED_ATTACHMENT_MESSAGES.length)]
 }
 
 export function getRandomPartialAttachment(): string {

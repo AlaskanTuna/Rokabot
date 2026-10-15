@@ -78,34 +78,26 @@ export function isSupportedMedia(attachment: { contentType: string | null }): bo
 }
 
 /**
- * Per-turn ceiling across every kind of attachment. Both the mention path and /ask derive their limit from
- * this, so the two surfaces cannot drift apart.
- *
- * One, not three. The binding argument is not quota but fairness: `byteBudget` is global, a reservation is
- * held for the whole turn rather than just the download, and at three a single message of three 10 MB files
- * reserved 30 of the 32 MB — holding off every other channel on every other server until it finished. At one
- * the worst turn reserves 10 MB, so three channels proceed concurrently where one used to.
- *
- * It also makes the rule the same everywhere. Three-for-images-one-for-video would have been cheaper for the
- * common case and would have needed a per-kind count, a per-kind message, and a per-kind explanation; one
- * number needs none of those and is what someone can be told in a sentence.
+ * Discord's per-message file ceiling. The per-turn bounds are `discord.maxAttachmentBytesPerTurn` and
+ * `gemini.maxAttachmentTokens`.
  */
-export const MAX_ATTACHMENTS = 1
+export const MAX_ATTACHMENTS = 10
+
+// Discord has no multi-attachment option; ten picker slots would bury /ask's message option.
+export const ASK_ATTACHMENT_SLOTS = 3
 
 export function isSupportedImage(attachment: { contentType: string | null }): boolean {
   return attachment.contentType !== null && ALLOWED_IMAGE_TYPES.has(attachment.contentType)
 }
 
 /**
- * Discord has no multi-attachment option type, so /ask exposes one option per slot. Named for attachments
- * rather than images because the slots take PDFs, audio and video too — see ALLOWED_MEDIA_TYPES.
+ * Discord has no multi-attachment option type, so /ask exposes one option per picker slot. Named for
+ * attachments rather than images because the slots take PDFs, audio and video too — see ALLOWED_MEDIA_TYPES.
  *
- * A single slot is `attachment`, with no number: `attachment_1` reads as a promise of an `attachment_2` that
- * does not exist. The numbering returns unchanged if MAX_ATTACHMENTS ever rises again, which is why this
- * stays a function of the index rather than a constant.
+ * A lone slot is `attachment`; multiple slots are numbered, independently of the ten-file per-turn ceiling.
  */
 export function attachmentOptionName(index: number): string {
-  return MAX_ATTACHMENTS === 1 ? 'attachment' : `attachment_${index + 1}`
+  return ASK_ATTACHMENT_SLOTS > 1 ? `attachment_${index + 1}` : 'attachment'
 }
 
 export function isAllowedDiscordCdnUrl(value: string): boolean {

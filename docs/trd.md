@@ -1243,13 +1243,10 @@ The container is SIGKILLed instead. `src/discord/byteBudget.ts` is the admission
 - **Reserved before the download starts**, not after. A check that runs once the bytes have landed is a
   measurement, not a guard.
 - `discord.maxInFlightAttachmentBytes` (32 MB) is the ceiling across every channel at once. Its `min` bound
-  is `MAX_ATTACHMENTS × MAX_DOCUMENT_SIZE_BYTES`: below that a maximal turn could never be admitted even on
-  an idle bot, so it would be refused permanently rather than delayed. **At `MAX_ATTACHMENTS = 1` that floor
-  is 10 MB**, so the 32 MB default sits at a little over three times it and three channels can download
-  concurrently. That headroom is the point of the one-attachment ceiling rather than a side effect: at three
-  attachments the floor was 30 MB, the default sat 2 MB above it, and a single maximal turn held off every
-  other channel on every other server until it completed. `discord.maxInFlightAttachmentBytes` remains the
-  knob to loosen it further.
+  is the largest value `discord.maxAttachmentBytesPerTurn` allows, so an idle bot can always admit one maximal
+  turn. The per-turn cap defaults to 10 MB, so the 32 MB default lets three channels download concurrently.
+  Raising the per-turn cap to its 30 MB maximum also raises this floor to 30 MB. `discord.maxInFlightAttachmentBytes`
+  remains the knob to loosen it further.
 - A turn is reserved its attachments' **stated** sizes where Discord gives them, and its type's ceiling where
   it does not — an embed image or a link resolved by HEAD states no size, and an unknown must cost the most
   it could. A stated size above the ceiling is clamped to it, since the download refuses on `Content-Length`
@@ -1326,10 +1323,11 @@ byte budget cannot disagree about the same file.
 - **Both Surfaces Admit All Supported Types.** `/ask` and the mention path filter uploads with
   `isSupportedMedia`.
 - **Reply and Forward Intake.** The mention path also considers supported media in forwarded snapshots and
-  replied-to messages, including video, audio and PDFs. Candidates share the one-item `MAX_ATTACHMENTS` slot
+  replied-to messages, including video, audio and PDFs. Candidates share the ten-file `MAX_ATTACHMENTS` ceiling
   in this order: triggering-message uploads → Components V2 media → forwarded uploads → replied-to uploads →
-  triggering-message embed images → replied-to embed images. Replies to Roka's own messages never take the
-  referenced message's attachments or embed images. Forwarded and attached media markers name each kind in
+  triggering-message embed images → replied-to embed images. Admission continues after a candidate exceeds
+  `discord.maxAttachmentBytesPerTurn` or the one-audio/video limit. Replies to Roka's own messages never take
+  the referenced message's attachments or embed images. Forwarded and attached media markers name each kind in
   image, video, audio clip, document order, adding `, N not shown` when candidates of that kind did not fit;
   unsupported replied-to files add `(attached file(s) of a type that can't be opened)`.
 - **Components V2 media is read, and what cannot be read is still counted.** A Components V2 message keeps
@@ -1397,11 +1395,9 @@ wall and spend the minute's budget for every other channel.
   `attachmentCost`'s tests, and a roka test named for this consequence rather than for the setting.
 
 - **Images are skipped, and that skip is model-specific.** `needsMeasuring` returns false when every part is
-  an image, because an image is a flat 1,089 tokens regardless of dimensions and `MAX_ATTACHMENTS` of them
-  cannot reach any legal ceiling. That number is _this_ model's; `gemini.model` is configurable, and a model
-  that priced images by size would make the skip wrong rather than merely stale. The floor on
-  `maxAttachmentTokens` is derived from the same constant (`MAX_ATTACHMENTS * GEMINI_IMAGE_TOKENS`) so the
-  two cannot drift apart silently.
+  an image. Claude Haiku 5.5 counts images resized to 1,024 pixels at about 1,400 tokens each, so ten stay near
+  14,000 tokens, far below the 125,000-token default ceiling. The floor on `maxAttachmentTokens` remains derived
+  from Gemini's flat charge (`MAX_ATTACHMENTS * GEMINI_IMAGE_TOKENS`), so its image floor tracks the ten-file cap.
 - **`countTokens` does not draw on the generate quota.** Verified twice against a key at its RPD limit: the
   call succeeds where `generateContent` 429s. Pricing is therefore free in quota, but not in transfer.
 - **It costs a second upload.** `countTokens` sends the same base64 payload the message will send, so a
@@ -1414,10 +1410,9 @@ wall and spend the minute's budget for every other channel.
 - **A refusal is told to the model.** The same `failedAttachmentNotice` that covers a failed download covers
   a cost refusal, in its own wording. Without it a refused turn looks identical to a question about a file
   that was never attached — the exact condition that produced the `search_web` fabrications described above.
-- **Refusal is all-or-nothing, and the wording says so.** One cheap image beside one 500-page PDF refuses
-  both, so the notice blames the set (`together they are too long to read`) rather than each file — otherwise
-  she tells the sender their 1,089-token picture was too long to read. Refusing only the expensive member
-  would need a `countTokens` per attachment, and each of those re-uploads the file.
+- **Measured Files Are Admitted in Order.** `prepareAttachments` measures each part on its own and keeps it
+  when adding its cost stays within `gemini.maxAttachmentTokens`; later parts can still fit after an earlier
+  refusal. If any single-part measurement returns `undefined`, it falls back to the existing whole-set check.
 
 ### The Per-Minute Token Budget
 

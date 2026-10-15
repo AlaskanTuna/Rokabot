@@ -42,6 +42,7 @@ vi.mock('../../utils/logger.js', () => ({
 }))
 vi.mock('../concurrency.js', () => ({ isChannelBusy: mocks.isChannelBusy, markBusy: vi.fn(), markFree: vi.fn() }))
 vi.mock('../byteBudget.js', () => ({
+  fitAttachmentsToTurn: vi.fn((attachments: unknown[]) => ({ kept: attachments, skipped: 0 })),
   release: mocks.release,
   reservationFor: vi.fn(() => 0),
   tryReserve: mocks.tryReserve
@@ -67,6 +68,7 @@ vi.mock('../responses.js', () => ({
   getRandomError: () => 'error',
   getRandomUnsupportedAttachment: () => "I couldn't open that file~",
   getRandomPartialAttachment: () => 'I only got through the beginning of that~',
+  getRandomSkippedAttachments: () => 'I looked at the first ones; send the rest separately~',
   splitResponse: mocks.splitResponse
 }))
 vi.mock('../events/gachaMention.js', () => ({ handleGachaMention: vi.fn() }))
@@ -1084,7 +1086,7 @@ describe("reading what the sender's own message shows", () => {
     ])
   })
 
-  it('keeps a user attachment ahead of the social post image', async () => {
+  it('keeps a user attachment ahead of the social post image when both fit', async () => {
     mocks.beginSocialPostLookup.mockResolvedValueOnce(foundSocialPost('https://pbs.twimg.com/post.jpg'))
     const ownImage = { url: 'https://cdn.test/own.png', contentType: 'image/png' }
     const { message } = createMessage({
@@ -1094,8 +1096,11 @@ describe("reading what the sender's own message shows", () => {
 
     const result = await handle(message)
 
-    expect(result.imageAttachments).toEqual([ownImage])
-    expect(mocks.resolveMediaUrl).not.toHaveBeenCalled()
+    expect(result.imageAttachments).toEqual([
+      ownImage,
+      { url: 'https://pbs.twimg.com/post.jpg', contentType: 'image/jpeg' }
+    ])
+    expect(mocks.resolveMediaUrl).toHaveBeenCalledWith('https://pbs.twimg.com/post.jpg')
   })
 
   it('marks a linked post that could not be opened', async () => {
@@ -1145,7 +1150,7 @@ describe("reading what the sender's own message shows", () => {
   })
 
   it('never lets embed images exceed the shared attachment ceiling', async () => {
-    const embeds = Array.from({ length: 6 }, (_, index) => ({
+    const embeds = Array.from({ length: MAX_ATTACHMENTS + 1 }, (_, index) => ({
       ...LINK_PREVIEW,
       image: { url: `https://cdn.test/${index}.png` }
     }))
@@ -1410,14 +1415,17 @@ describe('reading a message forwarded straight to her', () => {
     })
 
     // Priority, not count: the sender's own attachments fill the slots first and the forward takes what is
-    // left. Sliced to the ceiling so the ordering claim survives whatever MAX_ATTACHMENTS is.
+    // left.
     expect((await handle(message)).imageAttachments).toEqual(
-      [PNG('own-a'), PNG('own-b'), PNG('fwd-a')].slice(0, MAX_ATTACHMENTS)
+      [PNG('own-a'), PNG('own-b'), PNG('fwd-a'), PNG('fwd-b')].slice(0, MAX_ATTACHMENTS)
     )
   })
 
   it('never lets forwarded images exceed the shared attachment ceiling', async () => {
-    const many = Array.from({ length: 5 }, (_, index) => [String(index), PNG(`fwd-${index}`)] as const)
+    const many = Array.from(
+      { length: MAX_ATTACHMENTS + 1 },
+      (_, index) => [String(index), PNG(`fwd-${index}`)] as const
+    )
     const { message } = createMessage({
       content: '<@bot-1> what are these?',
       snapshots: [snapshot({ attachments: new Collection(many) })]

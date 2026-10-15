@@ -22,6 +22,7 @@ vi.mock('../responses.js', () => ({
   getRandomError: () => 'error',
   getRandomUnsupportedAttachment: () => "I couldn't open that file~",
   getRandomPartialAttachment: () => 'I only got through the beginning of that~',
+  getRandomSkippedAttachments: () => 'Roka looked at the first files~',
   splitResponse: (response: string) => [response]
 }))
 vi.mock('../events/gachaMention.js', () => ({ handleGachaMention: vi.fn() }))
@@ -30,7 +31,7 @@ vi.mock('../events/toolCommands.js', () => ({ createToolCommandHandler: () => vi
 vi.mock('../../utils/logger.js', () => ({ logger: { debug: vi.fn(), error: vi.fn(), info: vi.fn(), warn: vi.fn() } }))
 
 import { config } from '../../config.js'
-import { MAX_ATTACHMENTS, attachmentOptionName } from '../attachments.js'
+import { attachmentOptionName } from '../attachments.js'
 import { inFlightBytes, release, tryReserve } from '../byteBudget.js'
 import { createInteractionHandler } from '../events/interactionCreate.js'
 import { createMessageHandler } from '../events/messageCreate.js'
@@ -151,6 +152,23 @@ describe('global in-flight byte budget, at the handlers', () => {
     expect(inFlightBytes()).toBe(0)
   })
 
+  it('passes skipped files to the model and adds one skipped-files nudge', async () => {
+    const { message, reply } = createMessage('channel-3', [
+      upload(FOUR_MB),
+      upload(FOUR_MB),
+      upload(FOUR_MB),
+      upload(1024 * 1024)
+    ])
+
+    await createMessageHandler(client, rateLimiter())(message)
+
+    expect(mocks.generateResponse.mock.calls[0][0]).toMatchObject({
+      imageAttachments: [upload(FOUR_MB), upload(FOUR_MB), upload(1024 * 1024)],
+      skippedAttachments: 1
+    })
+    expect(reply).toHaveBeenCalledWith('hi\n\nRoka looked at the first files~')
+  })
+
   // Refusing after the typing indicator has started means the interval is inherited and has to be cleared,
   // or she is left visibly typing in that channel forever.
   it('stops the typing indicator when it refuses a mention turn', async () => {
@@ -204,14 +222,14 @@ describe('global in-flight byte budget, at the handlers', () => {
         })
     )
 
-    // A maximal turn, expressed in terms of the ceiling rather than a fixed count: this test is about two
-    // channels sharing one global budget, and it should keep saying that whatever MAX_ATTACHMENTS becomes.
-    const maximalTurn = Array.from({ length: MAX_ATTACHMENTS }, () => upload(FOUR_MB))
+    // Three 4 MB slots would exceed the per-turn byte ceiling, so this fills it exactly with two 4 MB images
+    // and the remaining 2 MB.
+    const maximalTurn = [upload(FOUR_MB), upload(FOUR_MB), upload(2 * 1024 * 1024)]
     const first = createInteraction('channel-1', maximalTurn)
     const firstTurn = createInteractionHandler(rateLimiter())(first.interaction)
-    await vi.waitFor(() => expect(inFlightBytes()).toBe(MAX_ATTACHMENTS * FOUR_MB))
+    await vi.waitFor(() => expect(inFlightBytes()).toBe(config.discord.maxAttachmentBytesPerTurn))
 
-    tryReserve(BUDGET - MAX_ATTACHMENTS * FOUR_MB - 1)
+    tryReserve(BUDGET - config.discord.maxAttachmentBytesPerTurn - 1)
     const second = createInteraction('channel-2', [upload(FOUR_MB)])
     await createInteractionHandler(rateLimiter())(second.interaction)
     expect(second.editReply).toHaveBeenCalledWith({ content: 'busy' })

@@ -7,7 +7,7 @@ import {
 } from '../../agent/attachmentLimits.js'
 import { config } from '../../config.js'
 import { MAX_ATTACHMENTS } from '../attachments.js'
-import { inFlightBytes, release, reservationFor, tryReserve } from '../byteBudget.js'
+import { fitAttachmentsToTurn, inFlightBytes, release, reservationFor, tryReserve } from '../byteBudget.js'
 
 const BUDGET = config.discord.maxInFlightAttachmentBytes
 
@@ -110,6 +110,41 @@ describe('reservationFor', () => {
   })
 })
 
+describe('fitAttachmentsToTurn', () => {
+  it('keeps five 1 MB images', () => {
+    const attachments = Array.from({ length: 5 }, () => image(1024 * 1024))
+
+    expect(fitAttachmentsToTurn(attachments)).toEqual({ kept: attachments, skipped: 0 })
+  })
+
+  it('continues after a file does not fit the remaining byte budget', () => {
+    const attachments = [document(9 * 1024 * 1024), image(2 * 1024 * 1024), image(1024 * 1024)]
+
+    expect(fitAttachmentsToTurn(attachments)).toEqual({ kept: [attachments[0], attachments[2]], skipped: 1 })
+  })
+
+  it('keeps at most one audio or video file', () => {
+    const attachments = [video(1024), video(1024)]
+
+    expect(fitAttachmentsToTurn(attachments)).toEqual({ kept: [attachments[0]], skipped: 1 })
+  })
+
+  it('keeps at most ten attachments', () => {
+    const attachments = Array.from({ length: MAX_ATTACHMENTS + 1 }, () => image(1))
+
+    expect(fitAttachmentsToTurn(attachments)).toEqual({
+      kept: attachments.slice(0, MAX_ATTACHMENTS),
+      skipped: 1
+    })
+  })
+
+  it('uses the image ceiling when embed images have no stated size', () => {
+    const attachments = [image(), image(), image()]
+
+    expect(fitAttachmentsToTurn(attachments)).toEqual({ kept: attachments.slice(0, 2), skipped: 1 })
+  })
+})
+
 describe('tryReserve', () => {
   it('admits a turn that fits', () => {
     expect(tryReserve(1024)).toBe(true)
@@ -182,9 +217,8 @@ describe('budget sizing', () => {
     expect(BUDGET).toBe(33_554_432)
   })
 
-  // Below this a maximal turn could never be admitted even on a wholly idle bot, so it would be refused
-  // forever rather than merely delayed. Raising MAX_ATTACHMENTS without raising the budget breaks this.
-  it('admits the largest single turn the per-turn caps allow', () => {
-    expect(MAX_ATTACHMENTS * MAX_DOCUMENT_SIZE_BYTES).toBeLessThanOrEqual(BUDGET)
+  // The global ceiling must admit the largest turn allowed by the configurable per-turn byte cap.
+  it('admits the largest single turn the per-turn byte cap allows', () => {
+    expect(config.discord.maxAttachmentBytesPerTurn).toBeLessThanOrEqual(BUDGET)
   })
 })
