@@ -197,6 +197,8 @@ jobs:
           export ROKA_TAG="sha-${GITHUB_SHA::7}" GIT_COMMIT="${GITHUB_SHA::7}"
           docker compose pull roka asr
           docker compose up -d --no-build
+          # Recorded only after a successful start, so manual compose commands on the Pi keep this image rather than :stable.
+          sed -i '/^ROKA_TAG=/d' .env && echo "ROKA_TAG=$ROKA_TAG" >> .env
 
       - name: Health check
         run: |
