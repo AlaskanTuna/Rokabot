@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest'
 const SCRIPT = resolve('scripts/prune-images.sh')
 
 /** A fake `docker` that lists images newest-first and records every `rmi`. */
-function fakeDocker(tags: string[]): { dir: string; removed: () => string[] } {
+function fakeDocker(tags: string[], rmiExit = 0): { dir: string; removed: () => string[] } {
   const dir = mkdtempSync(join(tmpdir(), 'prune-'))
   const log = join(dir, 'rmi.log')
   writeFileSync(log, '')
@@ -15,7 +15,7 @@ function fakeDocker(tags: string[]): { dir: string; removed: () => string[] } {
     join(dir, 'docker'),
     `#!/usr/bin/env bash
 if [ "$1" = "image" ] && [ "$2" = "ls" ]; then printf '%s\\n' ${tags.map((t) => `'${t}'`).join(' ')}; exit 0; fi
-if [ "$1" = "rmi" ]; then shift; printf '%s\\n' "$@" >> '${log}'; exit 0; fi
+if [ "$1" = "rmi" ]; then shift; printf '%s\\n' "$@" >> '${log}'; exit ${rmiExit}; fi
 exit 1
 `
   )
@@ -23,8 +23,11 @@ exit 1
   return { dir, removed: () => readFileSync(log, 'utf8').split('\n').filter(Boolean) }
 }
 
-function run(dir: string, ...args: string[]) {
-  execFileSync('bash', [SCRIPT, ...args], { env: { ...process.env, PATH: `${dir}:${process.env.PATH}` } })
+function run(dir: string, ...args: string[]): string {
+  return execFileSync('bash', [SCRIPT, ...args], {
+    encoding: 'utf8',
+    env: { ...process.env, PATH: `${dir}:${process.env.PATH}` }
+  })
 }
 
 describe('prune-images.sh', () => {
@@ -62,5 +65,15 @@ describe('prune-images.sh', () => {
     run(docker.dir, repo, 'sha-bbbbbbb')
 
     expect(docker.removed()).toEqual([])
+  })
+
+  it('still exits 0 and reports the image when docker rmi fails', () => {
+    const repo = 'ghcr.io/alaskantuna/rokabot'
+    const docker = fakeDocker([`${repo}:sha-ccccccc`, `${repo}:sha-bbbbbbb`, `${repo}:sha-aaaaaaa`], 1)
+
+    const output = run(docker.dir, repo, 'sha-ccccccc')
+
+    expect(docker.removed()).toEqual([`${repo}:sha-aaaaaaa`])
+    expect(output).toContain(`Kept ${repo}:sha-aaaaaaa`)
   })
 })

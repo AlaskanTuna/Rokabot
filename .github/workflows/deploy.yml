@@ -171,16 +171,51 @@ jobs:
             exit 1
           fi
 
+  # One stable check name for the main-pr-ci-gate ruleset. A skipped job counts as passing for a required check,
+  # so it runs even when `images` is skipped or fails and then fails itself.
+  images-ok:
+    needs: images
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+
+    steps:
+      - name: All image builds passed
+        env:
+          IMAGES_RESULT: ${{ needs.images.result }}
+        run: |
+          [ "$IMAGES_RESULT" = success ] || { echo "::error::Image builds finished as $IMAGES_RESULT"; exit 1; }
+          echo "All image builds passed"
+
+  notify-images-failure:
+    needs: [images, manifest]
+    if: failure() && github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+
+    steps:
+      - name: Notify Discord (failure)
+        env:
+          WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          [ -z "$WEBHOOK_URL" ] && exit 0
+          curl -sf -H "Content-Type: application/json" \
+            -d "{\"content\":\"**Image build failed** \u274c\n\`${GITHUB_SHA::7}\`\nCheck: https://github.com/AlaskanTuna/rokabot/actions\"}" \
+            "$WEBHOOK_URL" > /dev/null
+
   deploy:
     needs: [test, manifest]
     if: github.event_name == 'push'
     runs-on: self-hosted
-    # The first build after a speech-model change downloads ~500 MB of models on the Pi.
+    # The first pull after a speech-model change downloads about 1 GB of image layers.
     timeout-minutes: 25
+    concurrency:
+      group: pi-deploy
+      cancel-in-progress: false
 
     steps:
       - name: Pull latest changes
-        run: cd ~/rokabot && git fetch origin main && git reset --hard origin/main
+        run: cd ~/rokabot && git fetch origin main && git reset --hard "$GITHUB_SHA"
 
       # Recreating the container discards its Docker logs, so keep the outgoing container's for diagnosis.
       - name: Archive the outgoing container's logs
@@ -196,9 +231,10 @@ jobs:
           cd ~/rokabot
           export ROKA_TAG="sha-${GITHUB_SHA::7}" GIT_COMMIT="${GITHUB_SHA::7}"
           docker compose pull roka asr
-          docker compose up -d --no-build
-          # Recorded only after a successful start, so manual compose commands on the Pi keep this image rather than :stable.
+          # Recorded after a successful pull, so .env only names an image that is on disk.
+          # A manual compose command on the Pi then keeps this image rather than :stable.
           sed -i '/^ROKA_TAG=/d' .env && { [ -z "$(tail -c1 .env)" ] || echo >> .env; } && echo "ROKA_TAG=$ROKA_TAG" >> .env
+          docker compose up -d --no-build
 
       - name: Health check
         run: |
@@ -220,7 +256,7 @@ jobs:
         run: |
           cd ~/rokabot
           for repo in ghcr.io/alaskantuna/rokabot ghcr.io/alaskantuna/rokabot-asr; do
-            bash scripts/prune-images.sh "$repo" "sha-${GITHUB_SHA::7}"
+            bash scripts/prune-images.sh "$repo" "sha-${GITHUB_SHA::7}" || echo "::warning::prune failed for $repo"
           done
           docker image prune -f > /dev/null
 

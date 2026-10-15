@@ -45,9 +45,11 @@ sudo docker compose -f ~/rokabot/docker-compose.yml down
 # Start the bot (if stopped)
 sudo docker compose -f ~/rokabot/docker-compose.yml up -d
 
-# Deploy latest changes from GitHub: re-run the latest "Deploy to Pi" run from a dev machine
+# Deploy latest changes from GitHub: re-run the failed jobs of the latest "Deploy to Pi" run from a dev machine
 # (pulls the image for that commit and records its tag in .env)
-gh run rerun <run-id>
+gh run rerun <run-id> --failed
+# Or re-run only the deploy job of a run that already succeeded (<job-id> from `gh run view <run-id> --json jobs`)
+gh run rerun <run-id> --job <job-id>
 
 # Check container status
 sudo docker compose -f ~/rokabot/docker-compose.yml ps
@@ -57,8 +59,9 @@ sudo docker stats --no-stream
 ```
 
 Each deploy records the running image tag as `ROKA_TAG=sha-<commit>` in `~/rokabot/.env`. Plain `docker compose up -d` and
-`docker compose restart` keep that image. `docker compose up -d --build` builds locally under the same tag and replaces
-the published image, so use it for emergencies only.
+`docker compose restart` keep that image. Any local build (`up -d --build` or `build --no-cache`) replaces the published
+image under the recorded tag, so use it for emergencies only. Re-running an older run deploys that older commit, and
+re-running its whole run (not only `--failed` or the deploy job) also moves the `edge` tag back to it.
 
 ---
 
@@ -732,21 +735,29 @@ cd ~/actions-runner && sudo ./svc.sh stop && sudo ./svc.sh uninstall
 
 - The runner polls GitHub outbound (works through any NAT/WiFi)
 - On push to `main`, GitHub assigns the deploy job to the runner
-- Runner executes: `git reset --hard origin/main` → `docker compose pull` → `docker compose up -d --no-build` → record `ROKA_TAG` in `.env` → health check → image prune
+- Runner executes: `git reset --hard <deployed commit>` → `docker compose pull` → record `ROKA_TAG` in `.env` → `docker compose up -d --no-build` → health check → image prune
+- Deploys run one at a time (`pi-deploy` concurrency group), and each one resets the checkout to the commit whose image it runs
 - Results visible at https://github.com/AlaskanTuna/rokabot/actions
 - If the pull fails, the old container keeps running (no automatic rollback)
+- Make `images-ok` a required status check in the `main-pr-ci-gate` ruleset, beside `test`, so a failed image build blocks the merge
 
 ### Rolling Back a Deploy
 
 Each deploy runs the image tagged `sha-<first 7 of the commit>`, and the Pi keeps the previous tag too.
 
-1. Find the previous tag: `docker image ls ghcr.io/alaskantuna/rokabot`.
-2. Run it: `cd ~/rokabot && sed -i 's/^ROKA_TAG=.*/ROKA_TAG=sha-<previous>/' .env && docker compose up -d --no-build`.
+1. Find the previous tag: `docker image ls ghcr.io/alaskantuna/rokabot`, or pick any published `sha-<7>` tag from GHCR.
+2. Run it: `cd ~/rokabot && sed -i 's/^ROKA_TAG=.*/ROKA_TAG=sha-<previous>/' .env && docker compose up -d --no-build`. A tag that is not on the Pi is pulled by `up -d --no-build`.
 3. The next merge to `main` deploys forward again.
 
 A `ROKA_TAG=...` prefix before `sudo docker compose` is dropped by `sudo`, so the `.env` route is the reliable one.
 
 GHCR packages must be public for the Pi and users to pull them. If the `manifest` job's "Check anonymous pulls work" step fails, set each package to Public under GitHub > Packages > Package settings > Change visibility.
+
+### First Merge After the Switch to Pulled Images
+
+1. The new packages start private, so the first `manifest` job fails at "Check anonymous pulls work". Set both `rokabot` and `rokabot-asr` to Public (steps above).
+2. Run `gh run rerun <run-id> --failed` within a day. The digest artifacts expire after one day, and after that the whole run must be re-run.
+3. After the first successful pull deploy, remove the old locally built images and the build cache once: `docker image rm rokabot-roka rokabot-asr && docker builder prune -af`.
 
 ---
 
