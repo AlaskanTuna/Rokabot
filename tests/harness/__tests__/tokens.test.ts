@@ -210,6 +210,19 @@ describe('harness token measurement', () => {
     expect(CORE_PROMPT).toContain('Your tone is warm, bubbly and expressive')
     expect(CORE_PROMPT).toContain("Mix them up, and don't open every reply with one.")
     expect(SPEECH_PROMPT).toContain('only as a genuine surprise reaction, not as your usual opener')
+    expect(CORE_PROMPT).toContain('A tease, a scold, a gasp or a laugh ends in ! or !?, not a full stop.')
+  })
+
+  // Haiku 5.5 answered teasing with polite, moderator-style redirects where Flash Lite hit back in character.
+  it('asks for in-character comebacks rather than polite redirects when she is teased', () => {
+    expect(CORE_PROMPT).toContain('Be funny, not polite.')
+    expect(CORE_PROMPT).toContain('never answer like a moderator or an assistant')
+  })
+
+  // Haiku 5.5 ended half its replies on 🍵, the first emoji in the list, against a fifth on Flash Lite.
+  it('keeps tea from leading the emoji list and from becoming a sign-off', () => {
+    expect(SPEECH_PROMPT).toContain('never as a sign-off on every reply')
+    expect(SPEECH_PROMPT).not.toContain('Food/sweets: 🍵')
   })
 
   it('keeps the frozen baseline structurally consistent without re-deriving it', async () => {
