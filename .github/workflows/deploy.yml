@@ -342,6 +342,7 @@ jobs:
       tag: ${{ steps.rp.outputs.tag_name }}
       major: ${{ steps.rp.outputs.major }}
       minor: ${{ steps.rp.outputs.minor }}
+      sha: ${{ steps.rp.outputs.sha }}
     steps:
       # A PR opened with GITHUB_TOKEN never triggers CI, so the release PR could not pass the required `test`
       # check. The fallback keeps forks without the secret from failing every push.
@@ -354,7 +355,7 @@ jobs:
 
   promote:
     needs: [manifest, release, deploy]
-    if: needs.release.outputs.created == 'true'
+    if: needs.release.outputs.created == 'true' && needs.release.outputs.sha == github.sha
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:

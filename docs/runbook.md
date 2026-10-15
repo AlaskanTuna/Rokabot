@@ -760,12 +760,12 @@ Users run `:stable`, which moves only when a release PR merges.
 
 1. **One-Time Setup:** create a fine-grained personal access token for this repository only, with Contents and Pull requests set to read and write, and store it as the repository secret `RELEASE_PLEASE_TOKEN`. Without it, release-please still opens its PR, but CI never runs on it, so the required `test` check never passes.
 2. **Release:** after the Pi has run the merged changes well, merge the open "chore(main): release X.Y.Z" PR. That push deploys the Pi as usual, creates the tag and GitHub Release, and the `promote` job points `vX.Y.Z`, `vX.Y` and `stable` at the image the Pi now runs.
-3. **Check:** `docker buildx imagetools inspect ghcr.io/alaskantuna/rokabot:stable` shows the same digest as `:sha-<release commit>`.
+3. **Check:** `docker buildx imagetools inspect ghcr.io/alaskantuna/rokabot:stable` shows the same digest as `:sha-<first 7 of the release commit>`.
 
 `promote` runs only after the Pi deploy of the release commit succeeds.
 
 - If that deploy failed or never ran (for example, the runner was offline), `stable` stays on the previous release. Once the Pi is healthy, re-run only the failed jobs of that release run: `gh run rerun <run-id> --failed`.
-- If a newer push superseded that deploy, re-tag by hand for both images: `docker buildx imagetools create -t ghcr.io/alaskantuna/<name>:stable ghcr.io/alaskantuna/<name>:sha-<release commit>`.
+- If a newer push superseded that deploy, or raced the release so that `promote` skipped, re-tag by hand with the release commit, for both images: `docker buildx imagetools create -t ghcr.io/alaskantuna/<name>:stable -t ghcr.io/alaskantuna/<name>:vX.Y.Z -t ghcr.io/alaskantuna/<name>:vX.Y ghcr.io/alaskantuna/<name>:sha-<first 7 of the release commit>`.
 - Re-running `deploy` for an older run resets the Pi to that older commit.
 
 ### First Merge After the Switch to Pulled Images

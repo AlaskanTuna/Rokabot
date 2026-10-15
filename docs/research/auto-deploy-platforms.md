@@ -30,7 +30,7 @@ Checked: 2026-10-15.
 
 - **No Auto Redeploy:** "Image-backed services do not automatically redeploy whenever a new image is associated with their assigned tag." The pages show no polling and no auto-deploy toggle for images.
 - **Dashboard:** Manual Deploy > Deploy latest reference "kicks off a deploy that pulls the image that's currently associated with the service's assigned tag".
-- **Deploy Hook:** Each service has a secret deploy hook URL (Settings tab) that accepts `GET` or `POST`. The `key` query parameter authenticates. For image-backed services the optional `imgURL` parameter deploys a specific tag or digest. Every part of `imgURL` except the tag or digest must match the service's image URL, or Render answers 400. A hook call with `imgURL` does not change the service's saved tag or digest.
+- **Deploy Hook:** Each service has a secret deploy hook URL (Settings tab) that accepts `GET` or `POST`. The `key` query parameter authenticates. For image-backed services the optional `imgURL` parameter deploys a specific tag or digest. Every part of `imgURL` except the tag or digest must match the service's image URL, or Render rejects the request; the status code for a mismatch is not documented. Whether a hook call with `imgURL` changes the service's saved tag or digest is not documented.
 - **Hook Responses:** 200 deploy started, 202 queued behind a running deploy (workspaces set to Wait), 400, 401 or 404 for bad input, 405 for another method, 409 when the service is suspended or deploys are blocked.
 - **Secret Handling:** The hook URL "is a secret". Regenerate Hook in the dashboard replaces it, and old callers then get 401.
 - **Public GHCR Image:** No credential is needed. Render does not keep previously pulled images and pulls on every deploy.
