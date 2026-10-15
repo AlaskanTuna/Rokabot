@@ -761,6 +761,12 @@ Users run `:stable`, which moves only when a release PR merges.
 2. **Release:** after the Pi has run the merged changes well, merge the open "chore(main): release X.Y.Z" PR. That push deploys the Pi as usual, creates the tag and GitHub Release, and the `promote` job points `vX.Y.Z`, `vX.Y` and `stable` at the image the Pi now runs.
 3. **Check:** `docker buildx imagetools inspect ghcr.io/alaskantuna/rokabot:stable` shows the same digest as `:sha-<release commit>`.
 
+`promote` runs only after the Pi deploy of the release commit succeeds.
+
+- If that deploy failed or never ran (for example, the runner was offline), `stable` stays on the previous release. Once the Pi is healthy, re-run only the failed jobs of that release run: `gh run rerun <run-id> --failed`.
+- If a newer push superseded that deploy, re-tag by hand for both images: `docker buildx imagetools create -t ghcr.io/alaskantuna/<name>:stable ghcr.io/alaskantuna/<name>:sha-<release commit>`.
+- Re-running `deploy` for an older run resets the Pi to that older commit.
+
 ### First Merge After the Switch to Pulled Images
 
 1. The new packages start private, so the first `manifest` job fails at "Check anonymous pulls work". Set both `rokabot` and `rokabot-asr` to Public (steps above).

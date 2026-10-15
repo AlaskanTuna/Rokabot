@@ -307,7 +307,7 @@ jobs:
           manifest-file: .release-please-manifest.json
 
   promote:
-    needs: [manifest, release]
+    needs: [manifest, release, deploy]
     if: needs.release.outputs.created == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 5

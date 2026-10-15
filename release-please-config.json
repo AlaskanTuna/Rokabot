@@ -1,8 +1,10 @@
 {
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "bootstrap-sha": "72009610ba2e5fac25bc4b5e1e3656778e9f270a",
   "packages": {
     ".": {
       "release-type": "node",
+      "bump-minor-pre-major": true,
       "package-name": "rokabot",
       "include-component-in-tag": false,
       "changelog-path": "CHANGELOG.md"
