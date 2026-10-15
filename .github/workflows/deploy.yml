@@ -172,7 +172,7 @@ jobs:
           fi
 
   deploy:
-    needs: test
+    needs: [test, manifest]
     if: github.event_name == 'push'
     runs-on: self-hosted
     # The first build after a speech-model change downloads ~500 MB of models on the Pi.
@@ -191,8 +191,12 @@ jobs:
           [ "$(gzip -cd "$ARCHIVE" | head -c 1 | wc -c)" -gt 0 ] || rm -f "$ARCHIVE"
           find ~/rokabot/logs -name 'roka-*.log.gz' -mtime +30 -delete
 
-      - name: Build and restart
-        run: cd ~/rokabot && export GIT_COMMIT=$(git rev-parse --short HEAD) && docker compose up -d --build
+      - name: Pull and restart
+        run: |
+          cd ~/rokabot
+          export ROKA_TAG="sha-${GITHUB_SHA::7}" GIT_COMMIT="${GITHUB_SHA::7}"
+          docker compose pull roka asr
+          docker compose up -d --no-build
 
       - name: Health check
         run: |
@@ -209,6 +213,14 @@ jobs:
           echo "Health check failed after 10 attempts"
           docker compose -f ~/rokabot/docker-compose.yml logs --tail 20
           exit 1
+
+      - name: Prune old images
+        run: |
+          cd ~/rokabot
+          for repo in ghcr.io/alaskantuna/rokabot ghcr.io/alaskantuna/rokabot-asr; do
+            bash scripts/prune-images.sh "$repo" "sha-${GITHUB_SHA::7}"
+          done
+          docker image prune -f > /dev/null
 
       - name: Notify Discord (success)
         if: success()

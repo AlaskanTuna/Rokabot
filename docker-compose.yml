@@ -1,5 +1,6 @@
 services:
   roka:
+    image: ${ROKA_REGISTRY:-ghcr.io/alaskantuna}/rokabot:${ROKA_TAG:-stable}
     build:
       context: .
       args:
@@ -26,6 +27,7 @@ services:
         max-size: '10m'
         max-file: '3'
   asr:
+    image: ${ROKA_REGISTRY:-ghcr.io/alaskantuna}/rokabot-asr:${ROKA_TAG:-stable}
     build:
       context: ./asr
     restart: unless-stopped

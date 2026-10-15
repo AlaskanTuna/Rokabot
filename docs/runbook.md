@@ -683,7 +683,7 @@ npm run memory:undo-reclassify -- OLD_ID
 
 ## GitHub Actions Self-Hosted Runner
 
-The Pi runs a self-hosted GitHub Actions runner that auto-deploys on push to `main`. The workflow (`.github/workflows/deploy.yml`) pulls latest code, rebuilds Docker, and runs a health check.
+The Pi runs a self-hosted GitHub Actions runner that auto-deploys on push to `main`. The workflow (`.github/workflows/deploy.yml`) pulls latest code, pulls the image CI published for that commit, and runs a health check.
 
 ### Setting Up the Runner on a New Device
 
@@ -727,9 +727,19 @@ cd ~/actions-runner && sudo ./svc.sh stop && sudo ./svc.sh uninstall
 
 - The runner polls GitHub outbound (works through any NAT/WiFi)
 - On push to `main`, GitHub assigns the deploy job to the runner
-- Runner executes: `git pull` → `docker compose up -d --build` → health check
+- Runner executes: `git reset --hard origin/main` → `docker compose pull` → `docker compose up -d --no-build` → health check → image prune
 - Results visible at https://github.com/AlaskanTuna/rokabot/actions
-- If the build fails, the old container keeps running (no automatic rollback)
+- If the pull fails, the old container keeps running (no automatic rollback)
+
+### Rolling Back a Deploy
+
+Each deploy runs the image tagged `sha-<first 7 of the commit>`, and the Pi keeps the previous tag too.
+
+1. Find the previous tag: `docker image ls ghcr.io/alaskantuna/rokabot`.
+2. Run it: `cd ~/rokabot && ROKA_TAG=sha-<previous> docker compose up -d --no-build`.
+3. The next merge to `main` deploys forward again.
+
+GHCR packages must be public for the Pi and users to pull them. If the `manifest` job's "Check anonymous pulls work" step fails, set each package to Public under GitHub > Packages > Package settings > Change visibility.
 
 ---
 
