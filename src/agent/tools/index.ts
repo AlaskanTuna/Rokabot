@@ -11,7 +11,7 @@ import { forgetUser } from './forgetUser.js'
 import { getAnimeSchedule } from './getAnimeSchedule.js'
 import { getCurrentTime } from './getCurrentTime.js'
 import { getWeather } from './getWeather.js'
-import { readReplies } from './readReplies.js'
+import { MAX_REQUESTED_REPLIES, readReplies } from './readReplies.js'
 import { recallUser } from './recallUser.js'
 import { rememberUser } from './rememberUser.js'
 import { rollDice } from './rollDice.js'
@@ -135,7 +135,17 @@ export const readRepliesTool = new FunctionTool({
   name: 'read_replies',
   description:
     "Read the most-liked replies or comments on a linked social post (X, Bluesky, YouTube, TikTok, Reddit, Instagram, Bilibili, Threads). Call this only when the latest message asks what the replies, comments, or reactions to a post say (including a post linked earlier in the conversation), and then call it instead of search_web. Never call it just because a post was linked or someone asked what a post is about. Pass the post's URL from the conversation. Never describe a post's replies without calling this.",
-  parameters: z.object({ url: z.string().describe("The post's URL, as it appears in the conversation") }),
+  parameters: z.object({
+    url: z.string().describe("The post's URL, as it appears in the conversation"),
+    count: z
+      .number()
+      .int()
+      .describe(
+        `How many replies to read. Leave it out for the default (${config.socialPosts.maxReplies}); ` +
+          `set it only when the latest message asks for more replies or a specific number of them, up to ${MAX_REQUESTED_REPLIES}.`
+      )
+      .optional()
+  }),
   execute: async (input) => await readReplies(input)
 })
 

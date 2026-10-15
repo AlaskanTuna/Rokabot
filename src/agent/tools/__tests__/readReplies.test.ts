@@ -31,7 +31,20 @@ describe('readReplies', () => {
 
     await readReplies({ url }, reader)
 
-    expect(reader.read).toHaveBeenCalledWith(expect.objectContaining({ platform: 'x', id: '123' }))
+    expect(reader.read).toHaveBeenCalledWith(expect.objectContaining({ platform: 'x', id: '123' }), undefined)
+  })
+
+  it.each([
+    [20, 20],
+    [500, 50],
+    [0, 1],
+    [20.9, 20]
+  ])('reads the requested reply count %s as %s', async (count, expectedCount) => {
+    const reader = { read: vi.fn(async () => FOUND) }
+
+    await readReplies({ url: 'https://x.com/roka/status/123', count }, reader)
+
+    expect(reader.read).toHaveBeenCalledWith(expect.objectContaining({ platform: 'x', id: '123' }), expectedCount)
   })
 
   it('returns the formatted replies and records the outcome for the footer', async () => {
@@ -62,5 +75,17 @@ describe('read_replies registration', () => {
     expect(MEMORY_TOOL_NAMES).not.toContain('read_replies')
     expect(readRepliesTool.description).toContain('instead of search_web')
     expect(readRepliesTool.description).toContain('Never call it just because a post was linked')
+  })
+
+  it('offers an optional integer count within the configured reply limits', () => {
+    const declaration = readRepliesTool._getDeclaration()
+    const count = declaration.parameters?.properties?.count
+
+    expect(count).toMatchObject({
+      type: 'INTEGER',
+      description:
+        'How many replies to read. Leave it out for the default (5); set it only when the latest message asks for more replies or a specific number of them, up to 50.'
+    })
+    expect(declaration.parameters?.required ?? []).not.toContain('count')
   })
 })

@@ -75,11 +75,12 @@ export class ReplyReader {
     this.ytDlpAvailable = available
   }
 
-  async read(target: SocialPostTarget): Promise<ReplyLookup> {
+  async read(target: SocialPostTarget, maxReplies = this.settings.maxReplies): Promise<ReplyLookup> {
     if (!this.settings.enabled) return failed(target.platform, 'disabled')
     if (target.platform === 'instagram' && !this.ytDlpAvailable) return this.report(target.platform, 'binary_missing')
 
-    const cached = this.getCached(target.lookupKey)
+    const cacheKey = `${target.lookupKey}:${maxReplies}`
+    const cached = this.getCached(cacheKey)
     if (cached) return cached
 
     const controller = new AbortController()
@@ -100,7 +101,7 @@ export class ReplyReader {
           runExtractor: this.runExtractor,
           ytDlpPath: this.settings.ytDlpPath,
           signal: controller.signal,
-          maxReplies: this.settings.maxReplies,
+          maxReplies,
           maxReplyChars: this.settings.maxReplyChars,
           youtubeApiKey: this.youtubeApiKey(),
           timeoutMs: this.settings.timeoutMs
@@ -108,7 +109,7 @@ export class ReplyReader {
         timeout
       ])
       if (lookup.status === 'failed') return this.report(target.platform, timedOut ? 'timeout' : lookup.reason)
-      this.setCached(target.lookupKey, lookup)
+      this.setCached(cacheKey, lookup)
       return lookup
     } catch (error) {
       return this.report(target.platform, timedOut || isAbort(error) ? 'timeout' : 'network_error')
