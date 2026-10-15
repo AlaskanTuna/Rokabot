@@ -175,7 +175,7 @@ jobs:
   # so it runs even when `images` is skipped or fails and then fails itself.
   images-ok:
     needs: images
-    if: ${{ !cancelled() }}
+    if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 2
 
@@ -189,7 +189,7 @@ jobs:
 
   notify-images-failure:
     needs: [images, manifest]
-    if: failure() && github.event_name == 'push'
+    if: ${{ always() && github.event_name == 'push' && (needs.images.result == 'failure' || needs.manifest.result == 'failure') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 2
 
