@@ -50,6 +50,31 @@ jobs:
       - name: Run perf tests
         run: npm run test:perf
 
+  compose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Validate both profiles
+        run: |
+          touch .env
+          docker compose config -q
+          COMPOSE_PROFILES=autoupdate docker compose config -q
+
+      # A plain bind of a missing file makes Docker create a directory named config.yml in its place.
+      - name: Config mount refuses a missing file
+        run: |
+          touch .env
+          docker compose config --format json \
+            | jq -e '.services.roka.volumes[] | select(.target == "/app/config.yml") | .bind.create_host_path == false and .read_only == true'
+
+      - name: Lint workflows
+        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7
+
   images:
     needs: test
     strategy:
@@ -157,8 +182,9 @@ jobs:
         working-directory: /tmp/digests
         run: |
           IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${{ matrix.name }}"
-          docker buildx imagetools create -t "$IMAGE:sha-${GITHUB_SHA::7}" -t "$IMAGE:edge" \
-            $(printf "$IMAGE@sha256:%s " *)
+          refs=()
+          for d in *; do refs+=("$IMAGE@sha256:$d"); done
+          docker buildx imagetools create -t "$IMAGE:sha-${GITHUB_SHA::7}" -t "$IMAGE:edge" "${refs[@]}"
           docker buildx imagetools inspect "$IMAGE:sha-${GITHUB_SHA::7}"
 
       # The Pi and every user pull without logging in, so a private package would break every deploy silently.
