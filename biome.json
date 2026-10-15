@@ -55,6 +55,6 @@
     "useIgnoreFile": true
   },
   "files": {
-    "ignore": ["graphify-out/**", "dist/**", "data/**"]
+    "ignore": ["graphify-out/**", "dist/**", "data/**", "CHANGELOG.md", ".release-please-manifest.json"]
   }
 }

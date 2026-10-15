@@ -753,6 +753,14 @@ A `ROKA_TAG=...` prefix before `sudo docker compose` is dropped by `sudo`, so th
 
 GHCR packages must be public for the Pi and users to pull them. If the `manifest` job's "Check anonymous pulls work" step fails, set each package to Public under GitHub > Packages > Package settings > Change visibility.
 
+### Releasing
+
+Users run `:stable`, which moves only when a release PR merges.
+
+1. **One-Time Setup:** create a fine-grained personal access token for this repository only, with Contents and Pull requests set to read and write, and store it as the repository secret `RELEASE_PLEASE_TOKEN`. Without it, release-please still opens its PR, but CI never runs on it, so the required `test` check never passes.
+2. **Release:** after the Pi has run the merged changes well, merge the open "chore(main): release X.Y.Z" PR. That push deploys the Pi as usual, creates the tag and GitHub Release, and the `promote` job points `vX.Y.Z`, `vX.Y` and `stable` at the image the Pi now runs.
+3. **Check:** `docker buildx imagetools inspect ghcr.io/alaskantuna/rokabot:stable` shows the same digest as `:sha-<release commit>`.
+
 ### First Merge After the Switch to Pulled Images
 
 1. The new packages start private, so the first `manifest` job fails at "Check anonymous pulls work". Set both `rokabot` and `rokabot-asr` to Public (steps above).
