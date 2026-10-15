@@ -4,6 +4,9 @@ const mocks = vi.hoisted(() => ({ lookup: vi.fn() }))
 vi.mock('node:dns/promises', () => ({ lookup: mocks.lookup }))
 
 import {
+  ASK_ATTACHMENT_SLOTS,
+  MAX_ATTACHMENTS,
+  attachmentOptionName,
   isPrivateAddress,
   isSupportedAudio,
   isSupportedDocument,
@@ -30,6 +33,21 @@ function headResponse({
 }
 
 const PUBLIC_ANSWER = [{ address: '93.184.216.34', family: 4 }]
+
+describe('attachment limits', () => {
+  it('uses Discord’s per-message attachment ceiling', () => {
+    expect(MAX_ATTACHMENTS).toBe(10)
+  })
+
+  it('names the three /ask attachment slots', () => {
+    expect(ASK_ATTACHMENT_SLOTS).toBe(3)
+    expect(Array.from({ length: ASK_ATTACHMENT_SLOTS }, (_, index) => attachmentOptionName(index))).toEqual([
+      'attachment_1',
+      'attachment_2',
+      'attachment_3'
+    ])
+  })
+})
 
 describe('isPrivateAddress', () => {
   it.each([

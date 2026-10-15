@@ -1,6 +1,7 @@
 import { isStreamedUpload, sizeLimitFor } from '../agent/attachmentLimits.js'
 import type { ImageAttachment } from '../agent/attachments.js'
 import { config } from '../config.js'
+import { MAX_ATTACHMENTS, isSupportedAudio, isSupportedVideo } from './attachments.js'
 
 /**
  * Global ceiling on attachment bytes in flight across every channel at once.
@@ -34,6 +35,36 @@ export function reservationFor(attachments: ImageAttachment[]): number {
     const ceiling = sizeLimitFor(attachment.contentType)
     return total + Math.min(attachment.size ?? ceiling, ceiling)
   }, 0)
+}
+
+/** Admit attachments in intake order under the per-turn byte, count and timed-media limits. */
+export function fitAttachmentsToTurn(attachments: ImageAttachment[]): { kept: ImageAttachment[]; skipped: number } {
+  const kept: ImageAttachment[] = []
+  let skipped = 0
+  let hasTimedMedia = false
+
+  for (const attachment of attachments) {
+    if (kept.length >= MAX_ATTACHMENTS) {
+      skipped++
+      continue
+    }
+
+    const isTimedMedia = isSupportedAudio(attachment) || isSupportedVideo(attachment)
+    if (isTimedMedia && hasTimedMedia) {
+      skipped++
+      continue
+    }
+
+    if (reservationFor([...kept, attachment]) > config.discord.maxAttachmentBytesPerTurn) {
+      skipped++
+      continue
+    }
+
+    kept.push(attachment)
+    if (isTimedMedia) hasTimedMedia = true
+  }
+
+  return { kept, skipped }
 }
 
 /** Take `bytes` from the budget, or refuse the turn outright. Reserving nothing always succeeds. */

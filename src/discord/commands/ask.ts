@@ -1,7 +1,7 @@
 /** /ask slash command definition — single-turn chat that searches the web on its own when it needs to */
 
 import { ApplicationIntegrationType, InteractionContextType, SlashCommandBuilder } from 'discord.js'
-import { MAX_ATTACHMENTS, attachmentOptionName } from '../attachments.js'
+import { ASK_ATTACHMENT_SLOTS, attachmentOptionName } from '../attachments.js'
 
 const command = new SlashCommandBuilder()
   .setName('ask')
@@ -19,16 +19,12 @@ const command = new SlashCommandBuilder()
 // A test asserts every admitted type is named here, so adding one to the sets fails until this is updated.
 const READABLE_FORMATS = 'PNG JPEG GIF WebP | PDF | MP3 WAV OGG FLAC AAC AIFF | MP4 MOV WebM AVI MPEG FLV WMV 3GP'
 
-// One option per attachment slot, driven by the same ceiling the mention path uses, so the two surfaces
-// cannot drift apart and the count is stated once. The "n of m" suffix is dropped at a single slot, where it
-// would read as a promise of more slots that are not there.
-for (let index = 0; index < MAX_ATTACHMENTS; index++) {
+// One option per picker slot, numbered so people can match each field to its file.
+for (let index = 0; index < ASK_ATTACHMENT_SLOTS; index++) {
   command.addAttachmentOption((option) =>
     option
       .setName(attachmentOptionName(index))
-      .setDescription(
-        MAX_ATTACHMENTS === 1 ? READABLE_FORMATS : `${READABLE_FORMATS} (${index + 1} of ${MAX_ATTACHMENTS})`
-      )
+      .setDescription(`${READABLE_FORMATS} (${index + 1} of ${ASK_ATTACHMENT_SLOTS})`)
       .setRequired(false)
   )
 }

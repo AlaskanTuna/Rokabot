@@ -54,6 +54,7 @@ import type { TurnContextOptions, TurnEntryWork } from './turnContext.js'
 interface GenerateOptions extends TurnContextOptions {
   turnEntryWork?: TurnEntryWork
   imageAttachments?: ImageAttachment[]
+  skippedAttachments?: number
   /** The Discord message that triggered the turn, recorded with any media remembered from it. */
   messageId?: string
   /** `false` withholds read_replies: the speaker's own words did not ask about a post's replies. */
@@ -368,10 +369,21 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     ...(droppedAttachments > 0
       ? [{ text: `[${droppedAttachments} file(s) were shared with this message but could not be retrieved.]` }]
       : []),
+    ...(options.skippedAttachments && options.skippedAttachments > 0
+      ? [
+          {
+            text:
+              `[${options.skippedAttachments} more file(s) were shared with this message but left out, because ` +
+              'one turn can only take so much; only the first ones were opened.]'
+          }
+        ]
+      : []),
     ...(refusedAttachments > 0
       ? [
           {
-            text: `[${refusedAttachments} file(s) were shared with this message; together they are too long to read in one turn, so none of them were opened.]`
+            text:
+              `[${refusedAttachments} of the files shared with this message were too long to read in one turn, ` +
+              'so they were not opened.]'
           }
         ]
       : [])

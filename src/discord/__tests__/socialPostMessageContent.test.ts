@@ -50,7 +50,7 @@ describe('social post message content', () => {
     expect(extracted.imageAttachments).toEqual([presentation.imageAttachment])
   })
 
-  it('keeps the current user attachment in the only media slot', () => {
+  it('keeps the current user attachment before the linked post image', () => {
     const ownImage = { url: 'https://cdn.discordapp.com/user-upload.png', contentType: 'image/png', size: 100 }
     const extracted = extractMessageContent(
       message({ attachments: [ownImage], embeds: [postEmbed()] }),
@@ -61,7 +61,7 @@ describe('social post message content', () => {
       presentation
     )
 
-    expect(extracted.imageAttachments).toEqual([ownImage])
+    expect(extracted.imageAttachments).toEqual([ownImage, presentation.imageAttachment])
     expect(extracted.content).toContain(presentation.line)
   })
 

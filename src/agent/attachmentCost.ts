@@ -141,12 +141,11 @@ async function estimateTokens(parts: Part[]): Promise<number | undefined> {
 
 /** Whether these parts can be priced from what is already known, without spending a round trip. */
 export function needsMeasuring(parts: Array<{ inlineData?: { mimeType?: string } }>): boolean {
-  // An image costs a flat 1,089 regardless of pixels, so MAX_ATTACHMENTS of them is bounded at ~3,267 and
-  // cannot approach any sane ceiling. Only the types whose cost tracks duration or page count need asking.
+  // Claude Haiku 5.5 counts a 1,024-pixel image at about 1,400 tokens; ten stay near 14,000, far under the
+  // 125,000-token default ceiling. Only types whose cost tracks duration or page count need asking.
   //
-  // That 1,089 is *this* model's number, and `gemini.model` is configurable. A model that priced images by
-  // resolution would not make this stale, it would make it wrong — the skip would wave through the one case
-  // it was built to bound. The floor on `gemini.maxAttachmentTokens` derives from the same constant, so the
-  // ceiling moves with it; nothing else does.
+  // This estimate is model-specific. A model that prices images by resolution would make the skip wrong — it
+  // would wave through the one case it was built to bound. The floor on `gemini.maxAttachmentTokens` still
+  // derives from Gemini's flat image charge; the maximum count and the main model's image cost are separate.
   return parts.some((part) => !part.inlineData?.mimeType?.startsWith('image/'))
 }

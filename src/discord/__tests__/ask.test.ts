@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ALLOWED_MEDIA_TYPES, MAX_ATTACHMENTS } from '../attachments.js'
+import { ALLOWED_MEDIA_TYPES, ASK_ATTACHMENT_SLOTS } from '../attachments.js'
 import { askCommand } from '../commands/ask.js'
 
 const options = askCommand.toJSON().options ?? []
@@ -38,17 +38,12 @@ const LABELS: Record<string, string> = {
 const admitted = [...ALLOWED_MEDIA_TYPES]
 
 describe('/ask option descriptions', () => {
-  it('exposes one slot per attachment the turn admits', () => {
-    expect(slots).toHaveLength(MAX_ATTACHMENTS)
+  it('exposes the three attachment slots Discord lets /ask provide', () => {
+    expect(slots).toHaveLength(ASK_ATTACHMENT_SLOTS)
   })
 
-  // The one place the concrete name is stated. Everything else derives from attachmentOptionName, which is
-  // right for keeping the surfaces in step and useless as a record of what users actually type: reverting
-  // the single slot to `attachment_1` broke nothing until this existed. Guarded on the ceiling so it
-  // documents the rule rather than blocking a future change to it.
-  it('calls a lone slot `attachment`, with no number promising a second one', () => {
-    if (MAX_ATTACHMENTS !== 1) return
-    expect(slots.map((slot) => slot.name)).toEqual(['attachment'])
+  it('names each attachment slot in order', () => {
+    expect(slots.map((slot) => slot.name)).toEqual(['attachment_1', 'attachment_2', 'attachment_3'])
   })
 
   // No test asserts the 100-character description limit on purpose: SlashCommandBuilder.setDescription throws

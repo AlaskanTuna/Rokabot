@@ -176,21 +176,59 @@ export async function prepareAttachments(
     }
   }
 
-  // Images have a fixed cost below the ceiling, so only measure other media.
+  // Images have a fixed cost; only measure turns containing media with a variable cost.
   let refusedAttachments = 0
   if (imageParts.length > 0 && needsMeasuring(imageParts)) {
-    const measured = await measureAttachmentTokens(imageParts)
-    if (measured !== undefined && measured > config.gemini.maxAttachmentTokens) {
-      logger.info(
-        { channelId, measured, ceiling: config.gemini.maxAttachmentTokens, count: imageParts.length },
-        'Attachments cost more than one turn may spend, refusing them'
-      )
-      refusedAttachments = imageParts.length
-      imageParts.length = 0
-      imageTokens = 0
-    } else if (measured !== undefined) {
-      // Prefer the paid probe to the per-type estimate.
-      imageTokens = measured
+    const individualCosts: Array<{ part: Part; tokens: number }> = []
+    let needsWholeSetFallback = false
+    for (const part of imageParts) {
+      const measured = await measureAttachmentTokens([part])
+      if (measured === undefined) {
+        needsWholeSetFallback = true
+        break
+      }
+      individualCosts.push({ part, tokens: measured })
+    }
+
+    if (needsWholeSetFallback) {
+      const measured = await measureAttachmentTokens(imageParts)
+      if (measured !== undefined && measured > config.gemini.maxAttachmentTokens) {
+        logger.info(
+          { channelId, measured, ceiling: config.gemini.maxAttachmentTokens, count: imageParts.length },
+          'Attachments cost more than one turn may spend, refusing them'
+        )
+        refusedAttachments = imageParts.length
+        imageParts.length = 0
+        imageTokens = 0
+      } else if (measured !== undefined) {
+        imageTokens = measured
+      }
+    } else {
+      let measuredTotal = 0
+      const kept: Part[] = []
+      for (const { part, tokens } of individualCosts) {
+        if (measuredTotal + tokens > config.gemini.maxAttachmentTokens) {
+          refusedAttachments++
+          continue
+        }
+        kept.push(part)
+        measuredTotal += tokens
+      }
+
+      if (refusedAttachments > 0) {
+        logger.info(
+          {
+            channelId,
+            measured: individualCosts.reduce((total, cost) => total + cost.tokens, 0),
+            keptTokens: measuredTotal,
+            ceiling: config.gemini.maxAttachmentTokens,
+            refused: refusedAttachments
+          },
+          'Attachments cost more than one turn may spend, refusing some'
+        )
+      }
+      imageParts.splice(0, imageParts.length, ...kept)
+      imageTokens = measuredTotal
     }
   }
 

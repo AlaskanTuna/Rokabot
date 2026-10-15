@@ -11,8 +11,14 @@ import { config } from '../../config.js'
 import { type ResponseEventInput, recordResponseEvent } from '../../storage/metricsStore.js'
 import { logger } from '../../utils/logger.js'
 import { type CallReservation, RateLimiter } from '../../utils/rateLimiter.js'
-import { MAX_ATTACHMENTS, attachmentOptionName, isSupportedMedia, resolveMediaUrl } from '../attachments.js'
-import { release, reservationFor, tryReserve } from '../byteBudget.js'
+import {
+  ASK_ATTACHMENT_SLOTS,
+  MAX_ATTACHMENTS,
+  attachmentOptionName,
+  isSupportedMedia,
+  resolveMediaUrl
+} from '../attachments.js'
+import { fitAttachmentsToTurn, release, reservationFor, tryReserve } from '../byteBudget.js'
 import { isChannelBusy, markBusy, markFree } from '../concurrency.js'
 import { isIgnorableDiscordError } from '../errorHandler.js'
 import { guardMarkdown } from '../markdownGuard.js'
@@ -23,6 +29,7 @@ import {
   getRandomError,
   getRandomOversizedAttachment,
   getRandomPartialAttachment,
+  getRandomSkippedAttachments,
   getRandomUnsupportedAttachment,
   splitResponse
 } from '../responses.js'
@@ -135,13 +142,13 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
     }
 
     // Truthiness rather than a null check: an unfilled option is absent, and callers spell that both ways.
-    const attached = Array.from({ length: MAX_ATTACHMENTS }, (_, index) =>
+    const attached = Array.from({ length: ASK_ATTACHMENT_SLOTS }, (_, index) =>
       interaction.options.getAttachment(attachmentOptionName(index))
     ).filter((candidate): candidate is Attachment => Boolean(candidate))
 
     // Documents ride the existing attachment slots rather than getting their own option: Discord's attachment
     // options accept any file already, so admitting the type is the whole change.
-    const imageAttachments: ImageAttachment[] = attached
+    let imageAttachments: ImageAttachment[] = attached
       .filter(isSupportedMedia)
       .map((supported) => ({ url: supported.url, contentType: supported.contentType as string, size: supported.size }))
     let unsupportedCount = attached.length - imageAttachments.length
@@ -203,6 +210,9 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
       } else if (socialPostResult.status === 'failed') {
         userMessage = `${userMessage}\n${SOCIAL_POST_FAILURE_MARKER}`
       }
+
+      const { kept, skipped: skippedAttachments } = fitAttachmentsToTurn(imageAttachments)
+      imageAttachments = kept
 
       // Bytes are not the only thing an attachment spends, and the two do not track each other: an 89-page PDF
       // is 35 KB of the byte budget and 49,841 tokens of the minute's. `rateLimit.rpm` bounds how many turns
@@ -270,6 +280,7 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
             memory: false,
             asksAboutReplies: asksAboutReplies(message),
             turnEntryWork,
+            skippedAttachments,
             imageAttachments: imageAttachments.length > 0 ? imageAttachments : undefined
           })
         )
@@ -290,6 +301,7 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
       if (unsupportedCount > 0 || droppedAttachments > 0) notes.push(getRandomUnsupportedAttachment())
       if (truncatedAttachments > 0) notes.push(getRandomPartialAttachment())
       if (refusedAttachments > 0) notes.push(getRandomOversizedAttachment())
+      if (skippedAttachments > 0) notes.push(getRandomSkippedAttachments())
       const withNudge = notes.length > 0 ? `${responseText}\n\n${notes.join('\n\n')}` : responseText
       // Escaped before the split, not after: escaping lengthens the text, so doing it downstream would let a
       // chunk sized against the raw length overrun the TextDisplay budget it was measured for.

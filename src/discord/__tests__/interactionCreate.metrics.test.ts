@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   canAffordAttachments: vi.fn(() => true),
   tryReserve: vi.fn(() => true),
   release: vi.fn(),
+  fitAttachmentsToTurn: vi.fn((attachments: unknown[]) => ({ kept: attachments, skipped: 0 })),
   beginSocialPostLookup: vi.fn((_texts: string[], _later: Promise<string[]>) =>
     Promise.resolve({ status: 'none' } as SocialPostLookup)
   ),
@@ -48,6 +49,7 @@ vi.mock('../concurrency.js', () => ({
 }))
 vi.mock('../byteBudget.js', () => ({
   release: mocks.release,
+  fitAttachmentsToTurn: mocks.fitAttachmentsToTurn,
   reservationFor: vi.fn(() => 0),
   tryReserve: mocks.tryReserve
 }))
@@ -75,7 +77,7 @@ import { recordReplyOutcome } from '../../agent/replyOutcomes.js'
 import { recordSearchCitations } from '../../agent/searchCitations.js'
 import { config } from '../../config.js'
 import { RateLimiter } from '../../utils/rateLimiter.js'
-import { MAX_ATTACHMENTS, attachmentOptionName } from '../attachments.js'
+import { ASK_ATTACHMENT_SLOTS, attachmentOptionName } from '../attachments.js'
 import { createInteractionHandler } from '../events/interactionCreate.js'
 import { parseSocialPostUrl } from '../socialPosts/urls.js'
 import { assertTurnEntryRejections } from './turnEntryRejections.js'
@@ -411,11 +413,9 @@ describe('interaction handler metrics', () => {
     )
   })
 
-  // Offers one more than the ceiling admits, so the assertion is non-vacuous at any MAX_ATTACHMENTS: it
-  // fails if the handler stops short of the ceiling AND if it reads past it. The original pinned the
-  // literal 3, which said nothing once the ceiling moved.
-  it('reads every slot the ceiling admits, and no more', async () => {
-    const offered = Array.from({ length: MAX_ATTACHMENTS + 1 }, (_, index) => ({
+  // Offers one more than the slash command's three options; it must read each actual option and no more.
+  it('reads every /ask attachment slot, and no more', async () => {
+    const offered = Array.from({ length: ASK_ATTACHMENT_SLOTS + 1 }, (_, index) => ({
       ...PNG,
       url: `https://cdn.test/${index}.png`
     }))
@@ -424,8 +424,10 @@ describe('interaction handler metrics', () => {
     await createInteractionHandler(rateLimiterStub() as never)(interaction as never)
 
     const forwarded = mocks.generateResponse.mock.calls[0][0].imageAttachments
-    expect(forwarded).toHaveLength(MAX_ATTACHMENTS)
-    expect(forwarded.map((a: { url: string }) => a.url)).toEqual(offered.slice(0, MAX_ATTACHMENTS).map((a) => a.url))
+    expect(forwarded).toHaveLength(ASK_ATTACHMENT_SLOTS)
+    expect(forwarded.map((a: { url: string }) => a.url)).toEqual(
+      offered.slice(0, ASK_ATTACHMENT_SLOTS).map((a) => a.url)
+    )
   })
 
   it('drops an unsupported attachment instead of forwarding it', async () => {
@@ -602,20 +604,17 @@ describe('interaction handler metrics', () => {
     vi.unstubAllGlobals()
   })
 
-  // One visual budget per turn whatever the source: three uploads already fill it, so the link gets no slot
-  // and is never even requested.
-  it('does not let a link exceed a ceiling the uploads already filled', async () => {
+  // Three /ask upload slots do not fill the ten-file per-turn ceiling, so a linked file can still fit.
+  it('counts a linked file with uploads against the per-turn count ceiling', async () => {
     const fetchMock = headOk('image/png')
     vi.stubGlobal('fetch', fetchMock)
-    const full = Array.from({ length: MAX_ATTACHMENTS }, () => PNG)
-    const interaction = askWith(full, 'https://cdn.test/linked.png')
+    const uploads = Array.from({ length: ASK_ATTACHMENT_SLOTS }, () => PNG)
+    const interaction = askWith(uploads, 'https://cdn.test/linked.png')
 
     await createInteractionHandler(rateLimiterStub() as never)(interaction as never)
 
-    expect(mocks.generateResponse.mock.calls[0][0].imageAttachments).toHaveLength(MAX_ATTACHMENTS)
-    // Not fetched at all, rather than fetched and discarded: resolveMediaUrl makes the Pi call a host the
-    // user named, so a slot that is already full must not reach the network.
-    expect(fetchMock).not.toHaveBeenCalled()
+    expect(mocks.generateResponse.mock.calls[0][0].imageAttachments).toHaveLength(ASK_ATTACHMENT_SLOTS + 1)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
     vi.unstubAllGlobals()
   })
 

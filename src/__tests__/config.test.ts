@@ -95,6 +95,7 @@ describe('config module', () => {
     vi.stubEnv('MEMORY_RECLASSIFY_MAX_PER_RUN', '')
     vi.stubEnv('METRICS_RETENTION_DAYS', '')
     vi.stubEnv('DISCORD_MAX_MESSAGE_LENGTH', '')
+    vi.stubEnv('DISCORD_MAX_ATTACHMENT_BYTES_PER_TURN', '')
     vi.stubEnv('SOCIAL_POSTS_ENABLED', '')
     vi.stubEnv('ANTHROPIC_API_KEY', '')
     vi.stubEnv('LLM_MAIN', '')
@@ -176,6 +177,7 @@ describe('config module', () => {
     expect(config.gemini.timeout).toBe(20_000)
     expect(config.gemini.maxRetries).toBe(3)
     expect(config.gemini.maxOutputTokens).toBe(500)
+    expect(config.gemini.maxAttachmentTokens).toBe(125_000)
     expect(config.gemini.safetyThreshold).toBe('OFF')
     expect(config.gemini.maxLlmCalls).toBe(4)
     expect(config.gemini.liveMaxRetries).toBe(2)
@@ -191,6 +193,7 @@ describe('config module', () => {
     expect(config.logging.level).toBe('info')
     expect(config.rateLimit.rpm).toBe(15)
     expect(config.rateLimit.rpd).toBe(500)
+    expect(config.discord.maxAttachmentBytesPerTurn).toBe(10_485_760)
     expect(config.session.ttlMs).toBe(500_000)
     expect(config.session.windowSize).toBe(20)
     expect(config.session.maxRehydrationAge).toBe(7_200_000)
@@ -589,6 +592,7 @@ describe('config module', () => {
     vi.stubEnv('JEV_TONE', 'on')
     vi.stubEnv('JEV_PREFETCH', 'on')
     vi.stubEnv('TYPESAFE_API_KEY', 'typesafe-test-key')
+    vi.stubEnv('DISCORD_MAX_ATTACHMENT_BYTES_PER_TURN', '15728640')
     vi.stubEnv('MEMORY_BUFFER_SIZE', '40')
     vi.stubEnv('GEMINI_EXTRACTION_RPM_FLOOR', '6')
     vi.stubEnv('GEMINI_EXTRACTION_MAX_RETRIES', '2')
@@ -627,6 +631,7 @@ describe('config module', () => {
     expect(config.gemini.retryBackoffCapMs).toBe(9000)
     expect(config.gemini.turnDeadlineMs).toBe(90_000)
     expect(config.gemini.safetyThreshold).toBe('BLOCK_ONLY_HIGH')
+    expect(config.discord.maxAttachmentBytesPerTurn).toBe(15_728_640)
     expect(config.memory.bufferSize).toBe(40)
     expect(config.memory.maxClaimsPerTurn).toBe(8)
     expect(config.memory.retrievalTokenBudget).toBe(300)
@@ -673,6 +678,7 @@ describe('config module', () => {
       vi.stubEnv('RATE_LIMIT_RPM', '30')
       vi.stubEnv('RATE_LIMIT_RPD', '1000')
       vi.stubEnv('GEMINI_MAX_TOKENS_PER_MINUTE', '100000')
+      vi.stubEnv('GEMINI_MAX_ATTACHMENT_TOKENS', '50000')
       const { config } = await import('../config.js')
 
       expect(config.llm.main.limits).toEqual({ rpm: 30, rpd: 1000, tpm: 100_000 })
@@ -749,7 +755,7 @@ describe('config module', () => {
       })
 
       await expect(() => import('../config.js')).rejects.toThrow(
-        'Config value llm.models.flash.limits.tpm must be >= 50000, got: 40000'
+        'Config value llm.models.flash.limits.tpm must be >= 125000, got: 40000'
       )
     })
 
@@ -1139,10 +1145,7 @@ describe('config module', () => {
     expect(config.discord.maxMessageLength).toBe(3927)
   })
 
-  // config.ts derives this floor from the same two constants (attachmentLimits.ts is a zero-import leaf, so
-  // there is no cycle to close). The pin stays because the derivation is the thing worth asserting: a floor
-  // that stopped tracking MAX_ATTACHMENTS would silently start refusing whole turns of plain images, the one
-  // type whose cost is already known to be bounded and safe.
+  // The minimum stays derived from the known per-image Gemini charge and the ten-file turn count.
   it('floors the attachment ceiling at a full turn of images', async () => {
     setRequiredEnvVars()
     clearTunableEnvVars()
@@ -1154,6 +1157,19 @@ describe('config module', () => {
     expect(NUMERIC_BOUNDS.find((entry) => entry.path === 'gemini.maxAttachmentTokens')?.min).toBe(
       MAX_ATTACHMENTS * GEMINI_IMAGE_TOKENS
     )
+  })
+
+  it('bounds a turn by one file minimum and lets the global budget admit its configured maximum', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+
+    const { MAX_DOCUMENT_SIZE_BYTES } = await import('../agent/attachmentLimits.js')
+    const { NUMERIC_BOUNDS } = await import('../config.js')
+    const perTurn = NUMERIC_BOUNDS.find((entry) => entry.path === 'discord.maxAttachmentBytesPerTurn')
+    const inFlight = NUMERIC_BOUNDS.find((entry) => entry.path === 'discord.maxInFlightAttachmentBytes')
+
+    expect(perTurn).toMatchObject({ min: MAX_DOCUMENT_SIZE_BYTES, max: 31_457_280 })
+    expect(inFlight?.min).toBe(perTurn?.max)
   })
 
   it('bounds every numeric tunable, env-overridable or yaml-only', async () => {
@@ -1186,14 +1202,9 @@ describe('config module', () => {
       { path: 'media.transcriber.maxAudioSec', min: 30, max: 900 },
       { path: 'fallback.timeoutMs', min: 1 },
       { path: 'fallback.stickyMs', min: 0 },
-      // Written out, not derived, and deliberately unlike its sibling test above. That one asserts the
-      // *rule* — the floor tracks a full turn of images — and derives both sides, which is right for a rule.
-      // This list is the drift guard, and its job is to make a *change* impossible to land without someone
-      // looking at it. Derived, both sides move together and the guard goes quiet: changing MAX_ATTACHMENTS
-      // from 1 to 3 produced zero failures here, measured. 1089 is MAX_ATTACHMENTS x GEMINI_IMAGE_TOKENS at
-      // the current ceiling; if you are updating this number, that is the check working.
-      { path: 'gemini.maxAttachmentTokens', min: 1089, max: 125_000 },
-      { path: 'gemini.maxTokensPerMinute', min: 50_000, max: 125_000 },
+      // Kept literal as a drift guard alongside the derived assertion above: ten images cost 10,890 Gemini tokens.
+      { path: 'gemini.maxAttachmentTokens', min: 10_890, max: 125_000 },
+      { path: 'gemini.maxTokensPerMinute', min: 125_000, max: 125_000 },
       { path: 'gemini.maxOutputTokens', min: 1 },
       { path: 'jev.timeoutMs', min: 1 },
       { path: 'jev.memoryTimeoutMs', min: 1 },
@@ -1221,6 +1232,7 @@ describe('config module', () => {
       { path: 'session.maxRehydrationAge', min: 0 },
       { path: 'session.historyRetentionDays', min: 1 },
       { path: 'discord.maxMessageLength', min: 1, max: 3927 },
+      { path: 'discord.maxAttachmentBytesPerTurn', min: 10_485_760, max: 31_457_280 },
       { path: 'discord.maxInFlightAttachmentBytes', min: 31_457_280 },
       { path: 'embeddings.timeoutMs', min: 1 },
       { path: 'embeddings.backfillBatchSize', min: 1, max: 100_000 },
