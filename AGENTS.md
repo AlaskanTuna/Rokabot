@@ -31,7 +31,7 @@ WindowedSessionService (ADK)
     │
     ▼
 Roka Agent (ADK)
-  - 4-layer prompt system (core → speech → tone → context)
+  - 4-layer prompt system (core → speech → tone → context), closed each turn by a reply shape chosen in code (length, opener, ending, kaomoji)
   - Rule-based tone detection (zero LLM cost)
   - Passive memory: episode tracker → durable queue → Jev admission → main-model typed extraction → Jev verification → user and guild claims; completed summaries are embedded for guild-scoped recall
   - Main model and optional fallback from `llm.main` / `llm.fallback`; without an `llm:` block, Gemini Flash Lite with a ModelScope Qwen fallback

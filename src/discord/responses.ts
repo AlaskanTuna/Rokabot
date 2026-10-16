@@ -5,7 +5,7 @@ import { config } from '../config.js'
 const DECLINE_MESSAGES = [
   'ちょっと待ってね~ Give me a moment.',
   "Mou~ I'm a bit busy right now. Hold on, okay?",
-  'Ara ara~ so impatient. Just a little bit longer~',
+  'Ara~ so impatient. Just a little bit longer~',
   "Fufu~ everyone's talking at once. Let me catch my breath.",
   "Ah, sorry — I'm in the middle of something. I'll be right back!"
 ]
@@ -54,7 +54,7 @@ const SKIPPED_ATTACHMENT_MESSAGES = [
   'Ara~ that is more than I can peek at in one go! I looked at the first ones; send the rest separately, ne~',
   'Mou~ I can only look through so many at once! I opened the first ones, so send the others in another message.',
   'Fufu, that was a lot to browse in one sitting~ I checked the first ones; bring me the rest separately, okay?',
-  'Ehh~ too many for one look! I took the first ones, so send the rest in a separate message, okay?'
+  'Whoa, too many for one look! I took the first ones, so send the rest in a separate message, okay?'
 ]
 
 export function getRandomOversizedAttachment(): string {

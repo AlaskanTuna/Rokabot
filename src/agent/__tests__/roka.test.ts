@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('../jev/judgments.js', () => ({ judgeTurn: mocks.judgeTurn }))
+// The reply shape is drawn at random each turn; a fixed one keeps the token counts below comparable.
+vi.mock('../replyShape.js', () => ({ buildReplyShapePrompt: () => '## Reply Shape\n- Length: two short paragraphs.' }))
 vi.mock('../../storage/jevEventStore.js', () => ({ recordJevEvent: mocks.recordJevEvent }))
 vi.mock('../media/watch.js', () => ({ watchMedia: mocks.watchMedia, countUriTokens: mocks.countUriTokens }))
 vi.mock('../media/turnMedia.js', async (importOriginal) => {
@@ -1373,7 +1375,7 @@ describe('generateResponse metrics', () => {
 
     const expectedTokensIn =
       estimateTokens(
-        `${assembleSystemPrompt({ tone: result.tone, hour: 12, displayName: 'Mio', memory: true })}\n\n- The current user's Discord ID is "mio-id". remember_user and recall_user target the current user automatically; to recall a different server member, pass their name as user_name.`
+        `${assembleSystemPrompt({ tone: result.tone, hour: 12, displayName: 'Mio', memory: true })}\n\n- The current user's Discord ID is "mio-id". remember_user and recall_user target the current user automatically; to recall a different server member, pass their name as user_name.\n\n## Reply Shape\n- Length: two short paragraphs.`
       ) +
       estimateTokens(JSON.stringify(rokaTools)) +
       estimateTokens('[Mio]: Hello metrics.')

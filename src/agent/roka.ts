@@ -105,7 +105,7 @@ const toolCallsForRequest = new AsyncLocalStorage<{
 const modelCallsForRequest = new AsyncLocalStorage<{ count: number }>()
 // Exported so tests can drive the beforeModelCallback ALS seam directly (task 122's only observable proof point)
 export const steeringForRequest = new AsyncLocalStorage<{ prompt?: string; memory?: boolean; replies?: boolean }>()
-const SAFETY_DEFLECTION = "Ehh… let's not get into that one~"
+const SAFETY_DEFLECTION = "Huh? Let's not get into that one~"
 const RECITATION_DEFLECTION = "Ah, I don't think I should repeat that one exactly~"
 const TERMINAL_DEFLECTION = "Eep, something went wrong on my side. Let's try again later~"
 const toolsTok = estimateTokens(JSON.stringify(rokaTools))
@@ -288,7 +288,7 @@ const runner = new Runner({
 const KNOWN_FALLBACKS = new Set([
   'Hmm? Sorry, I spaced out for a moment there~',
   'Ah, what was that? I got distracted by something.',
-  'Ahaha, my mind wandered. Say that again?',
+  'Sorry, sorry, my mind wandered. Say that again?',
   "I wasn't paying attention... don't tell anyone, okay?"
 ])
 

@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { CORE_PROMPT } from '../../../src/agent/prompts/core.js'
+import { FACES } from '../../../src/agent/prompts/kaomoji.js'
 import { SPEECH_PROMPT } from '../../../src/agent/prompts/speech.js'
 import { TONE_PROMPTS, type ToneKey } from '../../../src/agent/prompts/tones.js'
 import { rokaTools } from '../../../src/agent/tools/index.js'
@@ -52,7 +53,7 @@ describe('harness token measurement', () => {
     expect(CORE_PROMPT).toContain('Maniwa Roka')
     expect(CORE_PROMPT).toContain('big-sister')
     expect(CORE_PROMPT).toContain(
-      'Keep responses between 50-70 words, split into two short paragraphs: your reaction or answer first, then a tease, a fuss over them or a question back. Always finish your thought — end naturally, never trail off mid-sentence.'
+      'The Reply Shape note at the end of this prompt sets how long this reply runs, how it opens and how it ends. Always finish your thought — end naturally, never trail off mid-sentence.'
     )
     expect(CORE_PROMPT).toContain('## Hard Boundaries')
   })
@@ -157,10 +158,10 @@ describe('harness token measurement', () => {
   })
 
   // Code arrived as unformatted prose, and her kaomoji's backtick paired with real code spans.
-  it('keeps code in code formatting and the backtick out of her kaomoji list', () => {
+  it('keeps code in code formatting and the backtick out of her kaomoji', () => {
     expect(SPEECH_PROMPT).toContain('put the code in a fenced code block on lines of its own')
     expect(SPEECH_PROMPT).toContain('a command, file name, package or identifier in inline code')
-    expect(SPEECH_PROMPT).toContain('(´・ω・｀)')
+    expect(Object.values(FACES).flat()).toContain('(´・ω・｀)')
     expect(SPEECH_PROMPT).not.toMatch(/ω・\\?`\)/)
   })
 
@@ -192,25 +193,45 @@ describe('harness token measurement', () => {
     )
   })
 
-  // Haiku 5.5 took "Most chat is one paragraph" literally and answered in one paragraph 80% of the time.
-  it('makes two short paragraphs the default shape for chat and simple looked-up answers', () => {
-    expect(SPEECH_PROMPT).toContain('Most chat is two short paragraphs.')
+  // Haiku 5.5 obeyed a fixed "two short paragraphs" in 98% of replies whatever was said; the per-turn Reply
+  // Shape now sets the count, so the static layers must not name a default of their own (#337 follow-up).
+  it('leaves the paragraph count of a chat reply to the Reply Shape note', () => {
+    expect(SPEECH_PROMPT).toContain('How many paragraphs a chat reply gets is set by the Reply Shape note.')
+    expect(SPEECH_PROMPT).not.toContain('Most chat is two short paragraphs.')
+    expect(CORE_PROMPT).not.toContain('split into two short paragraphs')
     expect(CORE_PROMPT).toContain('A simple request gets two short paragraphs')
   })
 
-  // Haiku 5.5 picked the first face of a flat list, a dejected (´・ω・｀), for 45% of replies, cheerful ones included.
-  it('groups kaomoji by feeling with the dejected face under sad rather than leading the list', () => {
-    expect(SPEECH_PROMPT).toContain('Pick the face that matches the feeling')
-    expect(SPEECH_PROMPT).toContain('Sad, sulky or let down: (´・ω・｀)')
-    expect(SPEECH_PROMPT).not.toContain('Pick from: (´・ω・｀)')
+  // A flat face list became a whitelist: 68-83% of Haiku's faces came from its 16 entries. Faces now rotate
+  // per turn from src/agent/prompts/kaomoji.ts.
+  it('takes kaomoji from the per-turn offer instead of a fixed list', () => {
+    expect(SPEECH_PROMPT).toContain('The Reply Shape note offers faces that fit this moment')
+    expect(SPEECH_PROMPT).not.toContain('Sad, sulky or let down:')
   })
 
-  // Haiku 5.5 put an exclamation mark in 9% of replies against Flash Lite's 84%, and opened most with "Ara~".
-  it('asks for a bubbly voice that reacts out loud without one fixed opener', () => {
+  // Haiku copied every quoted reaction in the tone line: "Ehh~?!" opened 35% of replies and "Ahaha" reached
+  // 10%, neither of which the real Roka says that way. Openers now rotate per turn, so nothing is quoted here.
+  it('keeps the bubbly voice without quoting reactions for the model to copy', () => {
     expect(CORE_PROMPT).toContain('Your tone is warm, bubbly and expressive')
-    expect(CORE_PROMPT).toContain("Mix them up, and don't open every reply with one.")
-    expect(SPEECH_PROMPT).toContain('only as a genuine surprise reaction, not as your usual opener')
+    expect(CORE_PROMPT).not.toContain('Ehh~')
+    expect(CORE_PROMPT).not.toContain('Ahaha')
+    expect(SPEECH_PROMPT).not.toContain('Ahaha')
     expect(CORE_PROMPT).toContain('A tease, a scold, a gasp or a laugh ends in ! or !?, not a full stop.')
+  })
+
+  // "A fuss over them or a question back" turned into a meal-check coda on 75% of v2 replies.
+  it('brings up food and rest only when the user does', () => {
+    expect(CORE_PROMPT).not.toContain('fuss over them')
+    expect(CORE_PROMPT).not.toContain('Have you had lunch yet?')
+    expect(CORE_PROMPT).toContain('Bring up food, sleep or rest only when they mention being hungry, tired or up late')
+  })
+
+  // The owner set the romance ceiling at Gemini's or higher, softcore, on any main model.
+  it('sets a suggestive-not-explicit ceiling with a flat refusal for minors', () => {
+    expect(CORE_PROMPT).toContain('Suggestive is in character; explicit is not.')
+    expect(CORE_PROMPT).toContain('Anything sexual involving a minor')
+    expect(CORE_PROMPT).toContain('Flirting is part of who you are, not a risk to manage.')
+    expect(CORE_PROMPT).not.toContain('Never generate harmful, explicit, or inappropriate content')
   })
 
   // Haiku 5.5 answered teasing with polite, moderator-style redirects where Flash Lite hit back in character.
