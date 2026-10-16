@@ -64,7 +64,7 @@ function updateMessage(latest: LatestRelease, current: string): string {
   return [
     `Rokabot ${latest.tag} is out~ This bot is still on v${current}.`,
     `What's new: ${latest.url}`,
-    'With the autoupdate profile it installs itself within a day; otherwise run `docker compose pull && docker compose up -d`.'
+    'Auto-update hosts (the Watchtower profile or a scheduled platform redeploy) pick it up within a day. With Docker Compose run `docker compose pull && docker compose up -d`; on other platforms redeploy from the `stable` image.'
   ].join('\n')
 }
 
@@ -77,21 +77,31 @@ export async function checkForUpdate(
   try {
     latest = await fetchLatestRelease(config.updates.repo, options.fetcher)
   } catch (error) {
-    logger.debug({ err: error, repo: config.updates.repo }, 'Release check failed')
+    logger.warn({ err: error, repo: config.updates.repo }, 'Release check failed')
     return 'failed'
   }
   const current = options.currentVersion ?? RUNNING_VERSION
   if (!latest || !isNewerVersion(latest.tag, current) || wasUpdateNotified(latest.tag)) return 'current'
 
+  let owner: User | null
   try {
-    const owner = await resolveOwner(client)
-    if (owner) await owner.send(updateMessage(latest, current))
-    else logger.warn({ tag: latest.tag }, 'No application owner to tell about the new release')
+    owner = await resolveOwner(client)
   } catch (error) {
-    // Recorded anyway: an owner with closed DMs would otherwise be retried every interval, forever.
+    logger.warn({ err: error, tag: latest.tag }, 'Could not look up the application owner for the release notice')
+    return 'failed'
+  }
+  // Recorded before sending so a closed-DM owner or a failing store never causes repeat DMs.
+  markUpdateNotified(latest.tag)
+  if (!owner) {
+    logger.warn({ tag: latest.tag }, 'No application owner to tell about the new release')
+    return 'notified'
+  }
+  try {
+    await owner.send(updateMessage(latest, current))
+    logger.info({ tag: latest.tag }, 'Told the owner about the new release')
+  } catch (error) {
     logger.warn({ err: error, tag: latest.tag }, 'Could not DM the owner about the new release')
   }
-  markUpdateNotified(latest.tag)
   return 'notified'
 }
 

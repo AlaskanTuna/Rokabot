@@ -2,13 +2,16 @@ import type { Client } from 'discord.js'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const cfg = vi.hoisted(() => ({ updates: { notify: true, repo: 'AlaskanTuna/Rokabot', checkIntervalHours: 24 } }))
-const store = vi.hoisted(() => ({ notified: new Set<string>() }))
+const store = vi.hoisted(() => ({ notified: new Set<string>(), failMark: false }))
 
 vi.mock('../../config.js', () => ({ config: cfg }))
 vi.mock('../../utils/logger.js', () => ({ logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 vi.mock('../../storage/updateNoticeStore.js', () => ({
   wasUpdateNotified: (tag: string) => store.notified.has(tag),
-  markUpdateNotified: (tag: string) => store.notified.add(tag)
+  markUpdateNotified: (tag: string) => {
+    if (store.failMark) throw new Error('database is locked')
+    store.notified.add(tag)
+  }
 }))
 
 import { checkForUpdate, isNewerVersion } from '../updateNotifier.js'
@@ -29,6 +32,7 @@ const LATEST = { tag_name: 'v0.3.0', html_url: 'https://github.com/AlaskanTuna/R
 
 beforeEach(() => {
   store.notified.clear()
+  store.failMark = false
   cfg.updates.notify = true
 })
 
@@ -119,5 +123,28 @@ describe('checkForUpdate', () => {
     const { client } = clientWithOwner(null)
 
     expect(await checkForUpdate(client, { fetcher: release(200, LATEST), currentVersion: '0.2.0' })).toBe('notified')
+    expect(await checkForUpdate(client, { fetcher: release(200, LATEST), currentVersion: '0.2.0' })).toBe('current')
+  })
+
+  it('retries the next interval when the owner lookup fails, without marking the tag', async () => {
+    const { client, send } = clientWithOwner('user')
+    const fetchApplication = client.application?.fetch as ReturnType<typeof vi.fn>
+    fetchApplication.mockRejectedValueOnce(new Error('Discord unavailable'))
+
+    expect(await checkForUpdate(client, { fetcher: release(200, LATEST), currentVersion: '0.2.0' })).toBe('failed')
+    expect(send).not.toHaveBeenCalled()
+
+    expect(await checkForUpdate(client, { fetcher: release(200, LATEST), currentVersion: '0.2.0' })).toBe('notified')
+    expect(send).toHaveBeenCalledTimes(1)
+  })
+
+  it('sends no DM when the store cannot record the tag, so a failing store never repeats DMs', async () => {
+    const { client, send } = clientWithOwner('user')
+    store.failMark = true
+
+    await expect(checkForUpdate(client, { fetcher: release(200, LATEST), currentVersion: '0.2.0' })).rejects.toThrow(
+      'database is locked'
+    )
+    expect(send).not.toHaveBeenCalled()
   })
 })

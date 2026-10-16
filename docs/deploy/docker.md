@@ -50,9 +50,9 @@ Watchtower then checks once a day at 04:07 UTC. The compose service sets no `TZ`
 - It mounts `/var/run/docker.sock`, which gives it root-equivalent control of Docker on the host.
 - The image is `nickfedor/watchtower:1.23.1`. It is the maintained fork: `containrrr/watchtower` was archived on 2025-12-17. The fork's README does not recommend Watchtower for production use.
 
-Sources: [Watchtower fork](https://github.com/nicholas-fedor/watchtower), [archive notice](https://github.com/containrrr/watchtower/discussions/2135).
+The bot also DMs its Discord application owner once when a newer release is published. To turn the DM off, set `UPDATES_NOTIFY=false` in `.env` and run `docker compose up -d`, or set `updates.notify: false` in `config.yml` and run `docker compose restart roka`.
 
-The bot also DMs its Discord application owner once when a newer release is published. Set `UPDATES_NOTIFY=false` in `.env`, or `updates.notify: false` in `config.yml`, to turn the DM off.
+Sources: [Watchtower fork](https://github.com/nicholas-fedor/watchtower), [archive notice](https://github.com/containrrr/watchtower/discussions/2135).
 
 ## Pinning a Version
 
