@@ -6,6 +6,7 @@ import { modelRouteForRequest } from './fallbackModel.js'
 import { classifyGeminiFailure, extractGeminiStatus } from './geminiReliability.js'
 import type { FailureKind } from './geminiReliability.js'
 import { createRokaModel } from './llm/createModel.js'
+import type { ReplyDiagnostic } from './llm/replyDiagnostic.js'
 import { isShuttingDown } from './shutdownSignal.js'
 
 export interface ModelVerdict {
@@ -53,6 +54,7 @@ export interface TurnOutcome {
   errorMessage?: string
   finishReason?: LlmResponse['finishReason']
   customMetadata?: LlmResponse['customMetadata']
+  replyDiagnostic?: ReplyDiagnostic
   hasText: boolean
   hasFunctionCall: boolean
   sessionMissing?: boolean
@@ -92,6 +94,7 @@ export interface RunTurnWithReliabilityOptions {
   escalateSafety?: () => Promise<string | undefined>
   /** Number of rungs escalateSafety can yield. Lets the loop stop before spending a retry token it cannot use. */
   safetyLadderLength?: number
+  onEmptyReply?: (diagnostic: ReplyDiagnostic) => void
 }
 
 function sleepUntil(delayMs: number, signal: AbortSignal): Promise<void> {
@@ -226,6 +229,20 @@ export async function runTurnWithReliability(options: RunTurnWithReliabilityOpti
         },
         'Live turn attempt failed'
       )
+    }
+    if (failure.kind === 'empty_text') {
+      const diagnostic = outcome.replyDiagnostic ?? {
+        provider: 'google',
+        modelId: modelNameForCurrentRequest(),
+        finishReason: outcome.finishReason === undefined ? null : String(outcome.finishReason),
+        textPartCount: outcome.hasText ? 1 : 0,
+        reasoningPartCount: 0,
+        functionCallPartCount: outcome.hasFunctionCall ? 1 : 0,
+        reasoningTextLength: 0,
+        historyEndedOnToolResult: false
+      }
+      options.onEmptyReply?.(diagnostic)
+      logger.warn({ ...diagnostic, attempt }, 'Empty reply from the model')
     }
     if (failure.kind === 'ok' && outcome.text) {
       return {

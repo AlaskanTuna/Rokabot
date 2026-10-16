@@ -1477,6 +1477,57 @@ describe('generateResponse metrics', () => {
     })
   })
 
+  it('stores the empty provider reply shape without its reasoning text', async () => {
+    const secret = 'PRIVATE_REASONING_SENTINEL'
+    const originalRetries = mutableGeminiConfig.liveMaxRetries
+    mutableGeminiConfig.liveMaxRetries = 0
+    __setTestRunTurnFactory(() => async () => ({
+      finishReason: 'STOP' as TurnOutcome['finishReason'],
+      hasText: false,
+      hasFunctionCall: false,
+      replyDiagnostic: {
+        provider: 'modelscope',
+        modelId: 'Qwen/Qwen3.5-122B-A10B',
+        finishReason: 'STOP',
+        outputTokens: 100,
+        reasoningTokens: 96,
+        textPartCount: 0,
+        reasoningPartCount: 1,
+        functionCallPartCount: 0,
+        reasoningTextLength: secret.length,
+        historyEndedOnToolResult: true
+      }
+    }))
+
+    await generateResponse({
+      channelId: 'roka-empty-diagnostic-channel',
+      guildId: 'diagnostic-guild',
+      memory: true,
+      userMessage: 'empty response request',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id'
+    })
+
+    const diagnostic = vi.mocked(recordFailureDiagnostic).mock.calls.at(-1)?.[0]
+    expect(diagnostic?.kind).toBe('empty_text')
+    expect(JSON.parse(diagnostic?.errorMessage ?? '{}')).toEqual({
+      provider: 'modelscope',
+      modelId: 'Qwen/Qwen3.5-122B-A10B',
+      finishReason: 'STOP',
+      outputTokens: 100,
+      reasoningTokens: 96,
+      textPartCount: 0,
+      reasoningPartCount: 1,
+      functionCallPartCount: 0,
+      reasoningTextLength: secret.length,
+      historyEndedOnToolResult: true
+    })
+    expect(diagnostic?.errorMessage).not.toContain(secret)
+    mutableGeminiConfig.liveMaxRetries = originalRetries
+    __resetTestRunTurnFactory()
+  })
+
   it('returns retry and outcome metrics without changing reliability behavior', async () => {
     const gemini = config.gemini as { retryBackoffBaseMs: number; retryBackoffCapMs: number }
     const originalBackoffBaseMs = gemini.retryBackoffBaseMs
