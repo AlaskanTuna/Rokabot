@@ -15,12 +15,20 @@ services:
       panel.name: Maniwa Roka
       panel.icon: "\U0001F361"
       panel.db: /home/adam/rokabot/data/rokabot.db
+      com.centurylinklabs.watchtower.enable: 'true'
     mem_limit: 1g # Host has 8 GB and nothing else competes; 512m left no margin once an attachment is in flight
     memswap_limit: 1g # Must equal mem_limit — this is memory+swap combined, so equal values mean no swap at all
     ports:
       - '3000:3000'
     volumes:
       - ./data:/app/data
+      # A plain bind of a missing file makes Docker create a directory named config.yml in its place.
+      - type: bind
+        source: ./config.yml
+        target: /app/config.yml
+        read_only: true
+        bind:
+          create_host_path: false
     logging:
       driver: json-file
       options:
@@ -31,6 +39,8 @@ services:
     build:
       context: ./asr
     restart: unless-stopped
+    labels:
+      com.centurylinklabs.watchtower.enable: 'true'
     environment:
       - ASR_THREADS=3
     mem_limit: 2g # Both models hold ~1.2 GB resident on the Pi (measured 2026-10-08, peak 1.55 GB with cache); an overrun restarts only this container
@@ -49,6 +59,21 @@ services:
     mem_limit: 1g # D6 cap; on a Pi 5: 464 MiB idle, 714 MiB peak at one text per request, 797 MiB at the largest batch (4 x 512 tokens) (2026-10-12, docs/runbook.md)
     memswap_limit: 1g # Equal to mem_limit, as on roka: no swap
     cpus: 1 # One inference thread; leaves the other cores to the bot and speech recognition
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+  watchtower:
+    image: nickfedor/watchtower:1.23.1
+    profiles: ['autoupdate'] # Opt-in: COMPOSE_PROFILES=autoupdate. Needs the Docker socket, so it is never on by default
+    restart: unless-stopped
+    environment:
+      - WATCHTOWER_LABEL_ENABLE=true # Only roka and asr carry the label
+      - WATCHTOWER_CLEANUP=true # Remove the replaced image
+      - WATCHTOWER_SCHEDULE=0 7 4 * * * # Daily at 04:07 container time (UTC unless TZ is set; 6-field cron)
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
     logging:
       driver: json-file
       options:

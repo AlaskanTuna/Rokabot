@@ -341,9 +341,11 @@ npm run dev
 npm run build
 npm start
 
-# Docker
-docker compose up -d
+# Docker (runs the published image, no build)
+docker compose pull && docker compose up -d
 ```
+
+The Docker command runs the published image. [Docker](deploy/docker.md) covers running it without a clone, updating and rolling back.
 
 Quick checks: `npm run lint`, `npm run format:check`, and `npm run typecheck` — the last of these is the only gate that type-checks the `tests/` tree ([#151](https://github.com/AlaskanTuna/Rokabot/pull/151)); `npm run build` type-checks `src/` only. Full test verification is `npm test && npm run test:perf`; `npm run test:perf` is a separate performance-evaluation gate. `npm run test:live` is a third, opt-in gate: `ROKABOT_HARNESS_KEY` names which `.env` key funds a run (default `GRAPHIFY_GEMINI_API_KEY`); `DEV_GEMINI_API_KEY` is a documented second key so an exhausted daily quota can redirect a run rather than stall it. It is excluded from both `npm test` and full verification. `npm run measure -- <path>` prints an attachment's measured token cost and which ceilings it meets, and costs nothing against the generate quota.
 
@@ -505,10 +507,10 @@ For defaults and the full behavior behind these settings, see [`config.yml`](../
 
 ```mermaid
 flowchart LR
-    Push[Push to main] --> Runner[Self-hosted GitHub Actions runner on Pi]
-    Runner --> Pull[Fetch target branch]
-    Pull --> Build[docker compose up -d --build]
-    Build --> Health[Health check]
+    Push[Push to main] --> CI[CI builds multi-arch images and pushes them to GHCR]
+    CI --> Runner[Self-hosted GitHub Actions runner on Pi]
+    Runner --> Pull[Pull the sha-tagged image for the commit]
+    Pull --> Health[Health check]
 
     Database[(Pi SQLite DB)] --> Export[npm run export:vault]
     Export --> Vault[data/vault]
@@ -518,8 +520,20 @@ flowchart LR
 ```
 
 - Docker Compose runs Rokabot on a Raspberry Pi 5 with `mem_limit: 1g`, `memswap_limit: 1g` (equal values disable swap entirely — Docker otherwise defaults swap to twice the cap and pages onto the SD card), and `restart: unless-stopped`.
-- The self-hosted GitHub Actions runner builds and health-checks code changes pushed to `main`; the workflow's `paths-ignore` applies to pushes (deploys) only, skipping `*.md`, `docs/**`, `.claude/**`, and `graphify-out/**`, while every pull request runs the `test` job.
+- CI builds `rokabot` and `rokabot-asr` for amd64 and arm64 on each push to `main` and pushes them to GHCR as `sha-<7>`, the first 7 characters of the commit. The self-hosted GitHub Actions runner on the Pi pulls that image, restarts the containers and health-checks them; the workflow's `paths-ignore` applies to pushes (deploys) only, skipping `*.md`, `docs/**`, `.claude/**`, and `graphify-out/**`, while every pull request runs the `test` job.
 - Use the [operations runbook](./runbook.md) for Pi commands, runner setup, troubleshooting, and database operations.
+
+### Running Your Own Copy
+
+Every release publishes the `rokabot` and `rokabot-asr` images to GHCR with the tags `vX.Y.Z`, `vX.Y` and `stable`, so you can run your own copy without cloning or building. On a Docker host, you download three files, fill in `.env`, create a `data` folder and start Compose. Railway, Render, Fly.io and Coolify run the same image, each with its own way of updating it.
+
+- Docker hosts: [Docker](deploy/docker.md)
+- [Railway](deploy/railway.md)
+- [Render](deploy/render.md)
+- [Fly.io](deploy/fly.md)
+- [Coolify](deploy/coolify.md)
+
+Installs on `:stable` update only when a release is published.
 
 ### Browsing Memory in Obsidian
 

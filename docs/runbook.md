@@ -739,19 +739,34 @@ cd ~/actions-runner && sudo ./svc.sh stop && sudo ./svc.sh uninstall
 - Deploys run one at a time (`pi-deploy` concurrency group), and each one resets the checkout to the commit whose image it runs
 - Results visible at https://github.com/AlaskanTuna/rokabot/actions
 - If the pull fails, the old container keeps running (no automatic rollback)
-- Make `images-ok` a required status check in the `main-pr-ci-gate` ruleset, beside `test`, so a failed image build blocks the merge
+- Make `images-ok` a required status check in the `main-pr-ci-gate` ruleset, beside `test`, so a failed image build or compose check blocks the merge
 
 ### Rolling Back a Deploy
 
 Each deploy runs the image tagged `sha-<first 7 of the commit>`, and the Pi keeps the previous tag too.
 
 1. Find the previous tag: `docker image ls ghcr.io/alaskantuna/rokabot`, or pick any published `sha-<7>` tag from GHCR.
-2. Run it: `cd ~/rokabot && sed -i 's/^ROKA_TAG=.*/ROKA_TAG=sha-<previous>/' .env && docker compose up -d --no-build`. A tag that is not on the Pi is pulled by `up -d --no-build`.
-3. The next merge to `main` deploys forward again.
+2. Restore that commit's config: `git -C ~/rokabot checkout <previous sha> -- config.yml`. The container mounts `config.yml` from the host, so changing only the tag keeps the newer config in place.
+3. Run it: `cd ~/rokabot && sed -i 's/^ROKA_TAG=.*/ROKA_TAG=sha-<previous>/' .env && docker compose up -d --no-build`. A tag that is not on the Pi is pulled by `up -d --no-build`.
+4. The next merge to `main` deploys forward again.
 
 A `ROKA_TAG=...` prefix before `sudo docker compose` is dropped by `sudo`, so the `.env` route is the reliable one.
 
 GHCR packages must be public for the Pi and users to pull them. If the `manifest` job's "Check anonymous pulls work" step fails, set each package to Public under GitHub > Packages > Package settings > Change visibility.
+
+### Releasing
+
+Users run `:stable`, which moves only when a release PR merges.
+
+1. **One-Time Setup:** create a fine-grained personal access token for this repository only, with Contents and Pull requests set to read and write, and store it as the repository secret `RELEASE_PLEASE_TOKEN`. Without it, release-please still opens its PR, but CI never runs on it, so the required `test` check never passes.
+2. **Release:** after the Pi has run the merged changes well, merge the open "chore(main): release X.Y.Z" PR. That push deploys the Pi as usual, creates the tag and GitHub Release, and the `promote` job points `vX.Y.Z`, `vX.Y` and `stable` at the image the Pi now runs.
+3. **Check:** `docker buildx imagetools inspect ghcr.io/alaskantuna/rokabot:stable` shows the same digest as `:sha-<first 7 of the release commit>`.
+
+`promote` runs only after the Pi deploy of the release commit succeeds.
+
+- If that deploy failed or never ran (for example, the runner was offline), `stable` stays on the previous release. Once the Pi is healthy, re-run only the failed jobs of that release run: `gh run rerun <run-id> --failed`.
+- If a newer push superseded that deploy, or raced the release so that `promote` skipped, re-tag by hand with the release commit, for both images: `docker buildx imagetools create -t ghcr.io/alaskantuna/<name>:stable -t ghcr.io/alaskantuna/<name>:vX.Y.Z -t ghcr.io/alaskantuna/<name>:vX.Y ghcr.io/alaskantuna/<name>:sha-<first 7 of the release commit>`.
+- Re-running `deploy` for an older run resets the Pi to that older commit.
 
 ### First Merge After the Switch to Pulled Images
 
