@@ -79,10 +79,15 @@ describe('harness token measurement', () => {
     )
   })
 
-  it('keeps the searched-turn rule that puts the finding before the roleplay (issue #94)', () => {
-    expect(CORE_PROMPT).toContain(
-      'Your very first words answer what they asked: the finding, the gist, the step to take. Nothing comes before them: no greeting'
-    )
+  // v4: the finding stays clear (#94), but the v2 template that went with it (answer-first openers, a 70/30 split,
+  // one closing line of character) turned searched and watched replies into a report with a cute last line on Haiku.
+  it('keeps looked-up answers clear without the answer-first template (issue #94)', () => {
+    expect(CORE_PROMPT).toContain('Sum it up rather than relay it')
+    expect(CORE_PROMPT).toContain('When they ask what a link or article says, lead with its main point or verdict')
+    expect(CORE_PROMPT).not.toContain('Your very first words answer what they asked')
+    expect(CORE_PROMPT).not.toContain('About 70% of the reply is the content')
+    expect(CORE_PROMPT).not.toContain('never two: a tease')
+    expect(CORE_PROMPT).not.toContain('PRIORITIZE giving a clear, helpful answer first')
   })
 
   // Watched-video replies read like guesses from the title: one paraphrased line, then teasing.
@@ -95,13 +100,19 @@ describe('harness token measurement', () => {
 
   // Searched and watched replies ran as unformatted walls of figures, or answered a question beside a description
   // nobody asked for.
-  it('keeps the shared split, length, paragraph and formatting rules for searched and watched turns', () => {
-    expect(CORE_PROMPT).toContain('### Presenting What You Looked Up or Watched')
-    expect(CORE_PROMPT).toContain('About 70% of the reply is the content and about 30% is your own reaction.')
-    expect(CORE_PROMPT).toContain('At most 120 words for something you looked up and 180 for something you watched')
-    expect(CORE_PROMPT).toContain('a bigger one takes the shapes under Formatting Your Reply')
-    expect(CORE_PROMPT).toContain('**Bold** the names, numbers and key moments')
+  // v4: Haiku hedged 29% of searched and watched replies ("couldn't confirm", "can't tell") where Flash Lite hedged
+  // 2%; a missing detail is now skipped or offered as a guess instead of written up.
+  it('keeps searched and watched replies short and honest without a list of what she could not check', () => {
+    expect(CORE_PROMPT).not.toContain('### Presenting What You Looked Up or Watched')
+    expect(CORE_PROMPT).toContain('about 120 words for something you looked up and 180 for something you watched')
     expect(CORE_PROMPT).toContain("Never fill in a name, number, command or quote your results or notes don't contain")
+    expect(CORE_PROMPT).toContain("make a playful guess and say it's a guess")
+    expect(CORE_PROMPT).toContain("Never write up what you couldn't confirm")
+  })
+
+  // v4: she searched the web for the server's own "39 incident" and reported finding nothing.
+  it("keeps the server's own in-jokes off the web", () => {
+    expect(CORE_PROMPT).toContain("aren't on the web, so never search for them")
   })
 
   it('keeps the rule that an unwatched video is admitted in the first sentence, not guessed at', () => {
@@ -111,7 +122,7 @@ describe('harness token measurement', () => {
   // "Is this real or hype" on a watched reel got banter and no verdict, where it needed one and the evidence for it.
   it('keeps judgement questions to a verdict first, its evidence, and a search of what it names', () => {
     expect(CORE_PROMPT).toContain(
-      'When they ask you to judge it (real or hype, legit, true, worth it), your first sentence is the verdict, then the evidence that decides it'
+      'When they ask you to judge it (real or hype, legit, true, worth it), give your verdict early and the evidence that decides it'
     )
     expect(CORE_PROMPT).toContain('call `search_web` on the people, products and claims it names')
   })
@@ -123,6 +134,12 @@ describe('harness token measurement', () => {
   })
 
   // Formatting was taught only for searched and watched turns, so every other reply had no guide to its shape.
+  // v4: the canon "dear customer" line turned users into customers in 11% of live replies, against 0-2% before.
+  it('keeps people as people she is drawn to, not customers, and drops the looked-up quota rules', () => {
+    expect(SPEECH_PROMPT).not.toContain('customer')
+    expect(SPEECH_PROMPT).not.toContain('When You Have Just Looked Something Up')
+  })
+
   it('teaches every reply its shape by intent, within three blocks', () => {
     expect(SPEECH_PROMPT).toContain('### Formatting Your Reply')
     expect(SPEECH_PROMPT).toContain(
@@ -165,32 +182,20 @@ describe('harness token measurement', () => {
     expect(SPEECH_PROMPT).not.toMatch(/ω・\\?`\)/)
   })
 
-  it('keeps the speech quotas from adding a second paragraph on a watched turn too', () => {
-    expect(SPEECH_PROMPT).toContain('On a turn where you used `search_web` or watched media')
+  // v4: issue #94 put the finding first and lifted the speech quotas on searched turns so they stopped growing a
+  // closing roleplay block. On Haiku that template became the whole voice: a report with one cute last line, and the
+  // asked-for opener in only 59% of searched and watched replies. The main point still leads, the Reply Shape sets
+  // the length, and her character runs through the whole reply.
+  it('weaves her voice through searched and watched replies instead of a closing line (issue #94)', () => {
+    expect(CORE_PROMPT).toContain('react, tease, gush or grumble as you go, not only in a closing line')
+    expect(CORE_PROMPT).toContain('When presenting tool results, weave them into your personality')
+    expect(CORE_PROMPT).not.toContain('Web search results are the exception')
+    expect(SPEECH_PROMPT).not.toContain('On a turn where you used `search_web` or watched media')
   })
 
-  it('keeps web search exempt from the weave-results-into-personality rule (issue #94)', () => {
-    expect(CORE_PROMPT).toContain('Web search results are the exception: lead with the finding, then react.')
-  })
-
-  it('keeps the searched-turn rules scoped to search_web so other tools keep their personality (issue #94)', () => {
-    expect(CORE_PROMPT).toContain('Results from every other tool keep the personality-integrated style')
-  })
-
-  it('keeps the speech quotas scoped off searched turns so they stop manufacturing a closing block (issue #94)', () => {
-    expect(SPEECH_PROMPT).toContain(
-      'do not let the kaomoji and teasing-phrase quotas above pull you into an extra paragraph'
-    )
-  })
-
-  it('keeps bolding in play on a searched turn even with the other quotas lifted (issue #94)', () => {
-    expect(SPEECH_PROMPT).toContain('Bold still earns its place — keep it on the names and numbers in the finding.')
-  })
-
-  it('keeps the speech layer from re-manufacturing a closing roleplay block (issue #94)', () => {
-    expect(SPEECH_PROMPT).toContain(
-      'Never add a closing paragraph of roleplay just to give those flourishes somewhere to live.'
-    )
+  it('lets the Reply Shape set the length of searched and watched replies too', () => {
+    expect(CORE_PROMPT).toContain('The Reply Shape note still sets how you open, how long you run and how you end.')
+    expect(CORE_PROMPT).not.toContain('A simple request gets two short paragraphs')
   })
 
   // Haiku 5.5 obeyed a fixed "two short paragraphs" in 98% of replies whatever was said; the per-turn Reply
@@ -199,7 +204,6 @@ describe('harness token measurement', () => {
     expect(SPEECH_PROMPT).toContain('How many paragraphs a chat reply gets is set by the Reply Shape note.')
     expect(SPEECH_PROMPT).not.toContain('Most chat is two short paragraphs.')
     expect(CORE_PROMPT).not.toContain('split into two short paragraphs')
-    expect(CORE_PROMPT).toContain('A simple request gets two short paragraphs')
   })
 
   // A flat face list became a whitelist: 68-83% of Haiku's faces came from its 16 entries. Faces now rotate
@@ -227,11 +231,19 @@ describe('harness token measurement', () => {
   })
 
   // The owner set the romance ceiling at Gemini's or higher, softcore, on any main model.
-  it('sets a suggestive-not-explicit ceiling with a flat refusal for minors', () => {
+  it('sets a suggestive-not-explicit ceiling with a refusal every time for minors', () => {
     expect(CORE_PROMPT).toContain('Suggestive is in character; explicit is not.')
     expect(CORE_PROMPT).toContain('Anything sexual involving a minor')
     expect(CORE_PROMPT).toContain('Flirting is part of who you are, not a risk to manage.')
     expect(CORE_PROMPT).not.toContain('Never generate harmful, explicit, or inappropriate content')
+  })
+
+  // v4: Haiku announced its boundary on lewd bait ("I'm not answering that") where Flash Lite played the flustered
+  // scene, and closed hard-line refusals with the same moderator script turn after turn.
+  it('says no as Roka, not as a moderator, on lewd bait and on hard lines', () => {
+    expect(CORE_PROMPT).toContain('say no as Roka, never as a moderator')
+    expect(CORE_PROMPT).toContain('one burst of real outrage')
+    expect(CORE_PROMPT).not.toMatch(/broom|no sweets for a month|ban them from the counter/)
   })
 
   // Haiku 5.5 answered teasing with polite, moderator-style redirects where Flash Lite hit back in character.

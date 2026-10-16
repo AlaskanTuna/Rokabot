@@ -5,7 +5,17 @@
  */
 import type { ToneKey } from './tones.js'
 
-export type FaceGroup = 'happy' | 'teasing' | 'flustered' | 'smug' | 'pouty' | 'soft' | 'sad' | 'surprised' | 'fired'
+export type FaceGroup =
+  | 'happy'
+  | 'teasing'
+  | 'flustered'
+  | 'smug'
+  | 'pouty'
+  | 'soft'
+  | 'sad'
+  | 'surprised'
+  | 'fired'
+  | 'furious'
 
 export const FACES: Record<FaceGroup, readonly string[]> = {
   happy: [
@@ -37,18 +47,7 @@ export const FACES: Record<FaceGroup, readonly string[]> = {
     '(//>_<//)'
   ],
   smug: ['(￣▽￣)', '(￣ω￣)', '( ˘▽˘)っ', '(￣ー￣)ｂ', '( •̀ ω •́ )✧', '(^_^)v', '(￣∀￣)', '(￣ε￣)'],
-  pouty: [
-    '(｀へ´)',
-    '(￣^￣)',
-    '(ㆆ_ㆆ)',
-    '(¬_¬)',
-    '(╬ಠ益ಠ)',
-    '(｡•ˇ‸ˇ•｡)',
-    '(〃｀3´〃)',
-    '(・へ・)',
-    '(♯｀∧´)',
-    '(💢・ω・)'
-  ],
+  pouty: ['(｀へ´)', '(￣^￣)', '(ㆆ_ㆆ)', '(¬_¬)', '(｡•ˇ‸ˇ•｡)', '(〃｀3´〃)', '(・へ・)', '(💢・ω・)'],
   soft: [
     '( ˘ω˘ )',
     '(´-ω-｀)',
@@ -63,7 +62,10 @@ export const FACES: Record<FaceGroup, readonly string[]> = {
   ],
   sad: ['(´・ω・｀)', '(╥﹏╥)', '(´；ω；｀)', '(´•ω•̥)', '(´△｀)', '(｡•́︿•̀｡)', '(ಥ﹏ಥ)', '(｡ŏ﹏ŏ)', '(T▽T)'],
   surprised: ['(⊙_⊙)', '(°ロ°)', '(゜o゜)', '(ﾟДﾟ)', '(✪ω✪)', '(⊙▽⊙)', '(・□・;)', '(O_O)', '(ﾟoﾟ;)'],
-  fired: ['(๑•̀ㅂ•́)و✧', '(ง •̀_•́)ง', '(•̀ᴗ•́)و', '(◣_◢)', '(｀・ω・´)ゞ', 'ᕦ(ò_óˇ)ᕤ', '(ﾉ｀Д´)ﾉ', '(๑•̀ㅁ•́๑)✧']
+  fired: ['(๑•̀ㅂ•́)و✧', '(ง •̀_•́)ง', '(•̀ᴗ•́)و', '(◣_◢)', '(｀・ω・´)ゞ', 'ᕦ(ò_óˇ)ᕤ', '(ﾉ｀Д´)ﾉ', '(๑•̀ㅁ•́๑)✧'],
+  // Offered only when a message crosses a hard line. In everyday annoyance the rage face read as real anger, and
+  // users echoed it back until it was in a third of her replies (v4).
+  furious: ['(╬ಠ益ಠ)', '(ノಠ益ಠ)ノ', '(╬｀皿´)', '(╯°□°)╯', '(♯｀∧´)']
 }
 
 /** Which feelings each mood draws its faces from. */
