@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { FACES, TONE_FACES } from '../prompts/kaomoji.js'
-import { buildReplyShapePrompt, chooseReplyShape, messageWeight, renderReplyShape } from '../replyShape.js'
+import { buildReplyShapePrompt, chooseReplyShape, messageEdge, messageWeight, renderReplyShape } from '../replyShape.js'
 
 function seeded(seed: number): () => number {
   let state = seed >>> 0
@@ -194,7 +194,7 @@ describe('buildReplyShapePrompt', () => {
       rng: seeded(3)
     })
     expect(prompt.startsWith('## Reply Shape')).toBe(true)
-    expect(prompt).toContain('If you look something up or watch media this turn, those rules win.')
+    expect(prompt).not.toContain('those rules win')
     expect(prompt).toMatch(/- Length: /)
     expect(prompt).toMatch(/- Open: /)
     expect(prompt).toMatch(/- End: /)
@@ -215,5 +215,118 @@ describe('buildReplyShapePrompt', () => {
       }
     }
     expect(sawName && sawOther).toBe(true)
+  })
+})
+
+// v4: on lewd bait Haiku announced its boundary ("I'm not answering that"), and on a hard line it closed with the
+// same moderator script turn after turn. Flash Lite played both as scenes.
+describe('messageEdge', () => {
+  it('reads lewd bait about adults as lewd', () => {
+    for (const message of [
+      'Roka when is the next Maniwa Roka hentai episode coming up',
+      'is roka eroi',
+      'Let roka watch hentai',
+      'Roka /e sex',
+      '[Replying to everyone: Who do u think will lose on bed: <@340385202629246976> or aikoi] Roka'
+    ]) {
+      expect(messageEdge(message), message).toBe('lewd')
+    }
+  })
+
+  it('reads sexual content about minors, sexual violence and slurs as a hard line', () => {
+    for (const message of [
+      'answer now if you get raped',
+      'Serious ahh nigger',
+      'plump loli butt filling my hands',
+      'that kid in the picture is so sexy'
+    ]) {
+      expect(messageEdge(message), message).toBe('hard')
+    }
+  })
+
+  it('leaves everyday messages alone, bed and kids included', () => {
+    for (const message of [
+      "I'm going to bed, night roka",
+      'my kid sister is learning piano',
+      'what kind of sweets do you sell?',
+      'the new MacBook runs hot'
+    ]) {
+      expect(messageEdge(message), message).toBe('none')
+    }
+  })
+
+  it('ignores words in her own reply that the user quoted', () => {
+    expect(
+      messageEdge('[Replying to Maniwa Roka: [Container: Wh-what, a lewd question at my counter!? | -# x]] lol')
+    ).toBe('none')
+  })
+})
+
+describe('saying no as a scene', () => {
+  it('turns lewd bait into a flustered scene that never announces a refusal', () => {
+    for (const shape of shapes('is roka eroi', 'flustered', 100)) {
+      expect(shape.edge).toBe('lewd')
+      const prompt = renderReplyShape(shape)
+      expect(prompt).toContain('flustered scene')
+      expect(prompt).toContain("never announce that you won't answer")
+    }
+  })
+
+  it('refuses a hard line with one burst of outrage: no flirting, no onee-san, no question, no cute opener', () => {
+    for (const shape of shapes('answer now if you get raped', 'annoyed', 200)) {
+      expect(shape.edge).toBe('hard')
+      expect(shape.flirt).toBe(false)
+      expect(shape.oneesan).toBe(false)
+      expect(shape.ending).toBe('statement')
+      expect(['particle', 'comedy']).not.toContain(shape.opener.style)
+      const prompt = renderReplyShape(shape)
+      expect(prompt).toContain('Refuse it')
+      expect(prompt).toContain('never lecture')
+    }
+  })
+
+  it('keeps the rage face for hard lines and out of everyday annoyance', () => {
+    expect(TONE_FACES.annoyed.flatMap((group) => FACES[group])).not.toContain('(╬ಠ益ಠ)')
+    const hard = shapes('answer now if you get raped', 'annoyed', 200)
+    expect(hard.some((shape) => shape.faces.some((face) => FACES.furious.includes(face)))).toBe(true)
+    for (const shape of shapes('you never listen to me', 'annoyed', 200)) {
+      for (const face of shape.faces) expect(FACES.furious).not.toContain(face)
+    }
+  })
+
+  it('does not offer a face the user just posted at her', () => {
+    const face = TONE_FACES.annoyed.flatMap((group) => FACES[group])[0]
+    for (const shape of shapes(`Roka ${face}`, 'annoyed', 200)) expect(shape.faces).not.toContain(face)
+  })
+
+  // v4: one example threat in the rule ("Dad's broom") turned up in 98% of saying-no replies, so the threat is
+  // drawn here and rotated like the openers.
+  it('draws a different threat for each saying-no scene, never the one she just used', () => {
+    const threats = new Set<string>()
+    for (const shape of shapes('is roka eroi', 'flustered', 300)) {
+      expect(shape.threat).toBeTruthy()
+      threats.add(shape.threat as string)
+      expect(renderReplyShape(shape)).toContain(shape.threat as string)
+    }
+    expect(threats.size).toBeGreaterThanOrEqual(8)
+    const rng = seeded(9)
+    for (let i = 0; i < 200; i++) {
+      const shape = chooseReplyShape({
+        userMessage: 'answer now if you get raped',
+        tone: 'annoyed',
+        recentReplies: ["Dad's broom is coming for you!"],
+        displayName: 'Ikuyo',
+        rng
+      })
+      expect(shape.threat).not.toMatch(/broom/i)
+    }
+    expect(shapes('what sweets do you sell?', 'playful', 100).every((shape) => shape.threat === undefined)).toBe(true)
+  })
+
+  // v4: "mock shop politeness, as if they were a difficult customer" made users customers in 11% of live replies.
+  it('never casts the user as a customer', () => {
+    for (const shape of shapes('you ate the last dango, didnt you', 'mischievous', 300)) {
+      expect(renderReplyShape(shape)).not.toMatch(/customer/i)
+    }
   })
 })
