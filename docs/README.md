@@ -479,21 +479,24 @@ Secrets belong in `.env`; tunables belong in [`config.yml`](../config.yml). Envi
 <details>
 <summary>View Tunables</summary>
 
-| YAML Path                    | Env Override             | Purpose                                       |
-| ---------------------------- | ------------------------ | --------------------------------------------- |
-| `metrics.retentionDays`      | `METRICS_RETENTION_DAYS` | Days before metrics events are pruned.        |
-| `emoji.probability`          | —                        | Chance of a keyword-matched emoji reaction.   |
-| `emoji.cooldownMs`           | —                        | Per-channel cooldown between emoji reactions. |
-| `reminders.checkIntervalMs`  | —                        | Reminder scheduler polling interval.          |
-| `reminders.maxPerUser`       | —                        | Maximum active reminders per user.            |
-| `reminders.staleThresholdMs` | —                        | Lateness threshold for dropping a reminder.   |
-| `games.hangmanLives`         | —                        | Wrong guesses allowed in Hangman.             |
-| `games.hangmanTimeoutMs`     | —                        | Hangman inactivity timeout.                   |
-| `games.shiritoriTimeoutMs`   | —                        | Shiritori turn inactivity timeout.            |
-| `games.shinyChance`          | —                        | Probability of hatching a shiny Buddy Pet.    |
-| `statusCycleMs`              | —                        | Discord status rotation interval.             |
-| `timezone`                   | `TZ`                     | IANA timezone for time-of-day features.       |
-| `logging.level`              | `LOG_LEVEL`              | Pino log verbosity.                           |
+| YAML Path                    | Env Override             | Purpose                                                            |
+| ---------------------------- | ------------------------ | ------------------------------------------------------------------ |
+| `metrics.retentionDays`      | `METRICS_RETENTION_DAYS` | Days before metrics events are pruned.                             |
+| `emoji.probability`          | —                        | Chance of a keyword-matched emoji reaction.                        |
+| `emoji.cooldownMs`           | —                        | Per-channel cooldown between emoji reactions.                      |
+| `reminders.checkIntervalMs`  | —                        | Reminder scheduler polling interval.                               |
+| `reminders.maxPerUser`       | —                        | Maximum active reminders per user.                                 |
+| `reminders.staleThresholdMs` | —                        | Lateness threshold for dropping a reminder.                        |
+| `games.hangmanLives`         | —                        | Wrong guesses allowed in Hangman.                                  |
+| `games.hangmanTimeoutMs`     | —                        | Hangman inactivity timeout.                                        |
+| `games.shiritoriTimeoutMs`   | —                        | Shiritori turn inactivity timeout.                                 |
+| `games.shinyChance`          | —                        | Probability of hatching a shiny Buddy Pet.                         |
+| `statusCycleMs`              | —                        | Discord status rotation interval.                                  |
+| `updates.notify`             | `UPDATES_NOTIFY`         | DM the bot owner once per new GitHub release.                      |
+| `updates.repo`               | —                        | Repository whose releases are checked; a fork can point at itself. |
+| `updates.checkIntervalHours` | —                        | Hours between release checks.                                      |
+| `timezone`                   | `TZ`                     | IANA timezone for time-of-day features.                            |
+| `logging.level`              | `LOG_LEVEL`              | Pino log verbosity.                                                |
 
 </details>
 

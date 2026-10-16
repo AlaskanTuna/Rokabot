@@ -42,6 +42,7 @@ import { cleanupExpiredCooldowns } from './discord/emojiReactor.js'
 import { startReminderScheduler, stopReminderScheduler } from './discord/reminderScheduler.js'
 import { initializeSocialPosts } from './discord/socialPosts/service.js'
 import { stopStatusCycler } from './discord/statusCycler.js'
+import { stopUpdateNotifier } from './discord/updateNotifier.js'
 import { destroyAllGames as destroyAllShiritoriGames } from './games/shiritori.js'
 import { closeDb, getDb } from './storage/database.js'
 import { pruneFailedExtractionJobs, resetStuckProcessing } from './storage/extractionQueue.js'
@@ -156,6 +157,7 @@ async function shutdown(signal: string): Promise<void> {
   beginShutdown()
   flushOpenEpisodes()
   stopStatusCycler()
+  stopUpdateNotifier()
   stopReminderScheduler()
   stopMemoryTasks()
   destroyAllShiritoriGames()

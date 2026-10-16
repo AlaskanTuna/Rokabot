@@ -97,6 +97,7 @@ describe('config module', () => {
     vi.stubEnv('DISCORD_MAX_MESSAGE_LENGTH', '')
     vi.stubEnv('DISCORD_MAX_ATTACHMENT_BYTES_PER_TURN', '')
     vi.stubEnv('SOCIAL_POSTS_ENABLED', '')
+    vi.stubEnv('UPDATES_NOTIFY', '')
     vi.stubEnv('ANTHROPIC_API_KEY', '')
     vi.stubEnv('LLM_MAIN', '')
     vi.stubEnv('LLM_FALLBACK', '')
@@ -305,7 +306,27 @@ describe('config module', () => {
 
     // Status cycle
     expect(config.statusCycleMs).toBe(900_000)
+    expect(config.updates).toEqual({ notify: true, repo: 'AlaskanTuna/Rokabot', checkIntervalHours: 24 })
     expect(warn).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    [0, 'Config value updates.checkIntervalHours must be >= 1, got: 0'],
+    [169, 'Config value updates.checkIntervalHours must be <= 168, got: 169']
+  ])('rejects updates.checkIntervalHours outside 1..168 (%s)', async (value, message) => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    withYamlOverride({ updates: { checkIntervalHours: value } })
+
+    await expect(() => import('../config.js')).rejects.toThrow(message)
+  })
+
+  it('rejects an updates.repo that is not owner/name', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    withYamlOverride({ updates: { repo: 'https://github.com/AlaskanTuna/Rokabot' } })
+
+    await expect(() => import('../config.js')).rejects.toThrow('updates.repo must be "owner/name"')
   })
 
   it('allows SOCIAL_POSTS_ENABLED to disable the feature', async () => {
@@ -1287,6 +1308,7 @@ describe('config module', () => {
       { path: 'games.shiritoriTimeoutMs', min: 1 },
       { path: 'games.shinyChance', min: 0, max: 1 },
       { path: 'statusCycleMs', min: 1 },
+      { path: 'updates.checkIntervalHours', min: 1, max: 168 },
       { path: 'llm.hedgeAfterMs', min: 0 },
       { path: 'llm.stickyMs', min: 0 }
     ]

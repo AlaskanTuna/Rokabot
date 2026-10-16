@@ -592,6 +592,13 @@ export function runMigrations(database: Database.Database): void {
       PRIMARY KEY (month, provider)
     );
   `)
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS update_notices (
+      tag TEXT PRIMARY KEY,
+      notified_at INTEGER NOT NULL
+    );
+  `)
 }
 
 /** Close the database connection. Safe to call multiple times. */
