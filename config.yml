@@ -192,6 +192,11 @@ games:
 
 statusCycleMs: 900000 # Bot status rotation interval in ms (15 min)
 
+updates:
+  notify: true # DM the bot owner once per new GitHub release
+  repo: AlaskanTuna/Rokabot # Repository whose releases are checked; a fork can point at itself
+  checkIntervalHours: 24 # Hours between release checks
+
 timezone: Asia/Singapore # IANA timezone for time-of-day features (override with TZ env var)
 
 logging:

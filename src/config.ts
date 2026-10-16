@@ -178,6 +178,7 @@ interface YamlConfig {
   reminders?: { checkIntervalMs?: number; maxPerUser?: number; staleThresholdMs?: number }
   games?: { hangmanLives?: number; hangmanTimeoutMs?: number; shiritoriTimeoutMs?: number; shinyChance?: number }
   statusCycleMs?: number
+  updates?: { notify?: boolean; repo?: string; checkIntervalHours?: number }
   timezone?: string
   logging?: { level?: string }
 }
@@ -684,6 +685,11 @@ const baseConfig = {
     shinyChance: yaml.games?.shinyChance ?? 0.01
   },
   statusCycleMs: yaml.statusCycleMs ?? 900_000,
+  updates: {
+    notify: envBoolean('UPDATES_NOTIFY') ?? yaml.updates?.notify ?? true,
+    repo: yaml.updates?.repo ?? 'AlaskanTuna/Rokabot',
+    checkIntervalHours: yaml.updates?.checkIntervalHours ?? 24
+  },
   timezone: (envString('TZ') ?? yaml.timezone) as string | undefined
 } as const
 
@@ -904,6 +910,7 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'games.shiritoriTimeoutMs', value: config.games.shiritoriTimeoutMs, min: 1 },
   { path: 'games.shinyChance', value: config.games.shinyChance, min: 0, max: 1 },
   { path: 'statusCycleMs', value: config.statusCycleMs, min: 1 },
+  { path: 'updates.checkIntervalHours', value: config.updates.checkIntervalHours, min: 1, max: 168 },
   { path: 'llm.hedgeAfterMs', value: config.llm.hedgeAfterMs, min: 0 },
   { path: 'llm.stickyMs', value: config.llm.stickyMs, min: 0 },
   // Synthesised legacy values are already bounded as gemini.* and fallback.*, so only a block adds rows.
@@ -934,6 +941,10 @@ for (const { path, value, min, max } of NUMERIC_BOUNDS) {
   if (max !== undefined && value > max) {
     throw new Error(`Config value ${path} must be <= ${max}, got: ${value}`)
   }
+}
+
+if (!/^[\w.-]+\/[\w.-]+$/.test(config.updates.repo)) {
+  throw new Error(`Config value updates.repo must be "owner/name", got: ${config.updates.repo}`)
 }
 
 if (config.embeddings.provider !== 'gemini' && !similarityFloors) {
