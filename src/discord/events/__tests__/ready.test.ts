@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   put: vi.fn(),
   setToken: vi.fn(),
   startStatusCycler: vi.fn(),
+  startUpdateNotifier: vi.fn(),
   info: vi.fn(),
   error: vi.fn(),
   config: {
@@ -35,6 +36,7 @@ vi.mock('../../commands/index.js', () => ({
   buildCommandBody: () => [{ name: 'chat' }, { name: 'tool' }, { name: 'game' }, { name: 'stats' }]
 }))
 vi.mock('../../statusCycler.js', () => ({ startStatusCycler: mocks.startStatusCycler }))
+vi.mock('../../updateNotifier.js', () => ({ startUpdateNotifier: mocks.startUpdateNotifier }))
 
 import { handleReady } from '../ready.js'
 
@@ -45,6 +47,7 @@ describe('handleReady', () => {
     mocks.put.mockClear()
     mocks.setToken.mockClear()
     mocks.startStatusCycler.mockClear()
+    mocks.startUpdateNotifier.mockClear()
     mocks.info.mockClear()
     mocks.error.mockClear()
   })
@@ -56,5 +59,13 @@ describe('handleReady', () => {
     expect(mocks.put).toHaveBeenCalledWith('/applications/test-client-id/commands', {
       body: [{ name: 'chat' }, { name: 'tool' }, { name: 'game' }, { name: 'stats' }]
     })
+  })
+
+  it('starts the release check once Roka is online', async () => {
+    const client = { user: { tag: 'Roka#0001' } } as unknown as Parameters<typeof handleReady>[0]
+
+    await handleReady(client)
+
+    expect(mocks.startUpdateNotifier).toHaveBeenCalledWith(client)
   })
 })

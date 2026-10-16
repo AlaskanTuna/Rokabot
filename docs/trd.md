@@ -126,6 +126,7 @@ Audio and video are watched before Roka replies rather than handed to her raw. `
 | `response_events`, `extraction_events`                    | Response telemetry and retained historical extraction telemetry. `response_events.failure_marker` stores the raw `finishReason`/`errorCode` token only (e.g. `SAFETY`), never message text.          |
 | `bug_reports`                                             | User-submitted issue details, Discord context, build/runtime metadata, retained snapshot JSON, and optional attachment metadata/path.                                                                |
 | `llm_spend`                                               | Estimated LLM spend in USD per UTC month and provider, summed from each call's reported usage and its profile's prices, and read against `llm.monthlyBudgetUsd`.                                     |
+| `update_notices`                                          | GitHub release tags the owner was already told about, so each release is announced once.                                                                                                             |
 
 `/report` is a global command available in guilds, bot DMs, and group DMs with user installs. It takes a required
 `type` choice (`bug`, `wrong_answer`, `unsafe`, or `other`), a required message up to 1,500 characters, and one

@@ -52,6 +52,8 @@ Watchtower then checks once a day at 04:07 UTC. The compose service sets no `TZ`
 
 Sources: [Watchtower fork](https://github.com/nicholas-fedor/watchtower), [archive notice](https://github.com/containrrr/watchtower/discussions/2135).
 
+The bot also DMs its Discord application owner once when a newer release is published. Set `UPDATES_NOTIFY=false` in `.env`, or `updates.notify: false` in `config.yml`, to turn the DM off.
+
 ## Pinning a Version
 
 1. Add `ROKA_TAG=vX.Y.Z` to `.env`.
