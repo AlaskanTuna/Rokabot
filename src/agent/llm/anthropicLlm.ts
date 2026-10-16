@@ -10,6 +10,7 @@ import { splitStablePrefix } from '../promptAssembler.js'
 import { markBillingExhausted, requestTokenEstimate, startCall } from './budget.js'
 import type { ModelProfile } from './profiles.js'
 import { ProviderError } from './providerError.js'
+import { historyEndedOnToolResult } from './replyDiagnostic.js'
 import {
   attachmentKind,
   attachmentMarker,
@@ -329,7 +330,12 @@ function usageMetadata(usage: Anthropic.Usage): NonNullable<LlmResponse['usageMe
   }
 }
 
-function toLlmResponse(message: Anthropic.Message, structured: boolean): LlmResponse {
+function toLlmResponse(
+  message: Anthropic.Message,
+  structured: boolean,
+  model: string,
+  requestContents: unknown
+): LlmResponse {
   if (message.stop_reason === 'refusal') {
     throw new ProviderError({
       provider: 'anthropic',
@@ -339,10 +345,35 @@ function toLlmResponse(message: Anthropic.Message, structured: boolean): LlmResp
   }
   const parts = structured ? structuredParts(message) : replyParts(message)
   const truncated = message.stop_reason === 'max_tokens' || message.stop_reason === 'model_context_window_exceeded'
+  const textPartCount = message.content.filter((block) => block.type === 'text' && block.text.trim()).length
+  const thinkingBlocks = message.content.filter(
+    (block) => block.type === 'thinking' || block.type === 'redacted_thinking'
+  )
+  const toolUseCount = message.content.filter((block) => block.type === 'tool_use').length
+  const reasoningTextLength = message.content.reduce(
+    (length, block) => length + (block.type === 'thinking' ? block.thinking.length : 0),
+    0
+  )
+  const outputTokens = message.usage.output_tokens
+  const reasoningTokens = message.usage.output_tokens_details?.thinking_tokens
+  const hasVisibleText = parts.some((part) => part.text?.trim())
+  const replyDiagnostic = {
+    provider: 'anthropic',
+    modelId: model,
+    finishReason: message.stop_reason,
+    ...(outputTokens !== undefined ? { outputTokens } : {}),
+    ...(reasoningTokens !== undefined ? { reasoningTokens } : {}),
+    textPartCount,
+    reasoningPartCount: thinkingBlocks.length,
+    functionCallPartCount: toolUseCount,
+    reasoningTextLength,
+    historyEndedOnToolResult: historyEndedOnToolResult(requestContents)
+  }
   return {
     content: { role: 'model', parts: parts.length > 0 ? parts : [{ text: '' }] },
     finishReason: truncated ? FinishReason.MAX_TOKENS : FinishReason.STOP,
-    usageMetadata: usageMetadata(message.usage)
+    usageMetadata: usageMetadata(message.usage),
+    ...(!hasVisibleText || thinkingBlocks.length > 0 || toolUseCount > 0 ? { customMetadata: { replyDiagnostic } } : {})
   }
 }
 
@@ -449,7 +480,7 @@ export class AnthropicLlm extends BaseLlm {
       this.resolved.profile.thinking.replayWithinTurn,
       prefixHash(system, tools, rendered)
     )
-    yield toLlmResponse(message, structured)
+    yield toLlmResponse(message, structured, this.resolved.model, llmRequest.contents)
   }
 
   connect(_llmRequest: LlmRequest): Promise<BaseLlmConnection> {

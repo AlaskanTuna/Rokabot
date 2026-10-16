@@ -489,10 +489,29 @@ describe('AnthropicLlm responses', () => {
   })
 
   it('returns the empty-text shape when thinking used every token', async () => {
-    const [response] = await answer(fixtures.thinkingOnly)
+    const secret = 'PRIVATE_THINKING_SENTINEL'
+    const onlyThinking = {
+      ...fixtures.thinkingOnly,
+      content: [{ type: 'thinking', thinking: secret, signature: 'sig-only' }]
+    } as Anthropic.Message
+    const [response] = await answer(onlyThinking)
 
     expect(response?.content?.parts).toEqual([{ text: '' }])
     expect(response?.finishReason).toBe(FinishReason.MAX_TOKENS)
+    const diagnostic = response?.customMetadata?.replyDiagnostic
+    expect(diagnostic).toMatchObject({
+      provider: 'anthropic',
+      modelId: 'claude-haiku-5-5',
+      finishReason: 'max_tokens',
+      outputTokens: 2548,
+      reasoningTokens: 2548,
+      textPartCount: 0,
+      reasoningPartCount: 1,
+      functionCallPartCount: 0,
+      reasoningTextLength: secret.length,
+      historyEndedOnToolResult: false
+    })
+    expect(JSON.stringify(diagnostic)).not.toContain(secret)
   })
 
   it('returns the forced tool input as the JSON text of the first part for a structured request', async () => {

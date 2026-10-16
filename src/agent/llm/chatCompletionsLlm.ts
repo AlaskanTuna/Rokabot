@@ -6,6 +6,7 @@ import type { FailureKind } from '../geminiReliability.js'
 import { markBillingExhausted, requestTokenEstimate, startCall } from './budget.js'
 import type { ModelProfile } from './profiles.js'
 import { ProviderError } from './providerError.js'
+import { historyEndedOnToolResult } from './replyDiagnostic.js'
 import {
   attachmentKind,
   attachmentMarker,
@@ -24,6 +25,8 @@ interface ChatCompletionsResponse {
   choices?: Array<{
     message?: {
       content?: string | null
+      reasoning_content?: string | null
+      reasoning?: string | null
       refusal?: string | null
       tool_calls?: Array<{ id?: string; function?: { name?: string; arguments?: string } }>
     }
@@ -473,7 +476,7 @@ export class ChatCompletionsLlm extends BaseLlm {
     recordUsage(usage)
     reservation.release(usage)
 
-    yield this.toResponse(result, status, schema, strict)
+    yield this.toResponse(result, status, schema, strict, shaped.contents)
   }
 
   private requestBody(llmRequest: LlmRequest, schema: JsonObject | undefined, strict: boolean): JsonObject {
@@ -553,7 +556,8 @@ export class ChatCompletionsLlm extends BaseLlm {
     result: ChatCompletionsResponse,
     status: number,
     schema: JsonObject | undefined,
-    strict: boolean
+    strict: boolean,
+    requestContents: unknown
   ): LlmResponse {
     const choice = result.choices?.[0]
     // ModelScope answers json_schema on DeepSeek with HTTP 200 and choices: null (modelscope#1801); the legacy route
@@ -566,6 +570,12 @@ export class ChatCompletionsLlm extends BaseLlm {
       throw this.fail('refusal', `${this.label} refused the request: ${message.refusal.slice(0, 300)}`)
     }
     const content = typeof message?.content === 'string' ? message.content.trim() : ''
+    const reasoning =
+      typeof message?.reasoning_content === 'string'
+        ? message.reasoning_content
+        : typeof message?.reasoning === 'string'
+          ? message.reasoning
+          : ''
     const text = schema ? structuredText(content, strict ? schema : undefined) : content
 
     const parts: Part[] = []
@@ -589,9 +599,26 @@ export class ChatCompletionsLlm extends BaseLlm {
           ? FinishReason.SAFETY
           : FinishReason.STOP
     const usage = result.usage
+    const diagnostic = {
+      provider: this.provider,
+      modelId: this.model,
+      finishReason: choice?.finish_reason ?? null,
+      ...(usage?.completion_tokens !== undefined ? { outputTokens: usage.completion_tokens } : {}),
+      ...(usage?.completion_tokens_details?.reasoning_tokens !== undefined
+        ? { reasoningTokens: usage.completion_tokens_details.reasoning_tokens }
+        : {}),
+      textPartCount: text ? 1 : 0,
+      reasoningPartCount: reasoning ? 1 : 0,
+      functionCallPartCount: message?.tool_calls?.length ?? 0,
+      reasoningTextLength: reasoning.length,
+      historyEndedOnToolResult: historyEndedOnToolResult(requestContents)
+    }
     return {
       content: { role: 'model', parts },
       finishReason,
+      ...(!text || reasoning || (message?.tool_calls?.length ?? 0) > 0
+        ? { customMetadata: { replyDiagnostic: diagnostic } }
+        : {}),
       ...(usage
         ? {
             usageMetadata: this.legacyTranslation

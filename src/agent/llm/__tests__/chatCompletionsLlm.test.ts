@@ -978,7 +978,101 @@ describe('ModelScopeLlm legacy failures', () => {
   it("keeps today's empty reply for an HTTP 200 with choices: null", async () => {
     const result = await responses(legacy(replay(modelscope.deepseekChoicesNull).fetchImpl), hello())
 
-    expect(result).toEqual([{ content: { role: 'model', parts: [{ text: '' }] }, finishReason: FinishReason.STOP }])
+    expect(result[0]).toMatchObject({
+      content: { role: 'model', parts: [{ text: '' }] },
+      finishReason: FinishReason.STOP,
+      customMetadata: {
+        replyDiagnostic: {
+          provider: 'modelscope',
+          modelId: 'Qwen/Qwen3.5-122B-A10B',
+          finishReason: null,
+          textPartCount: 0,
+          reasoningPartCount: 0,
+          functionCallPartCount: 0,
+          reasoningTextLength: 0,
+          historyEndedOnToolResult: false
+        }
+      }
+    })
+  })
+
+  it('captures reasoning-only replies without retaining reasoning text', async () => {
+    const secret = 'PRIVATE_REASONING_SENTINEL'
+    const result = await responses(
+      legacy(
+        replay({
+          status: 200,
+          body: {
+            choices: [{ message: { content: null, reasoning_content: secret }, finish_reason: 'stop' }],
+            usage: {
+              prompt_tokens: 20,
+              completion_tokens: 14,
+              total_tokens: 34,
+              completion_tokens_details: { reasoning_tokens: 12 }
+            }
+          }
+        }).fetchImpl
+      ),
+      hello()
+    )
+    const diagnostic = result[0]?.customMetadata?.replyDiagnostic
+
+    expect(diagnostic).toMatchObject({
+      provider: 'modelscope',
+      modelId: 'Qwen/Qwen3.5-122B-A10B',
+      finishReason: 'stop',
+      outputTokens: 14,
+      reasoningTokens: 12,
+      textPartCount: 0,
+      reasoningPartCount: 1,
+      functionCallPartCount: 0,
+      reasoningTextLength: secret.length,
+      historyEndedOnToolResult: false
+    })
+    expect(JSON.stringify(diagnostic)).not.toContain(secret)
+  })
+
+  it('captures function-call counts without retaining tool arguments', async () => {
+    const secret = 'PRIVATE_TOOL_ARGUMENT_SENTINEL'
+    const result = await responses(
+      legacy(
+        replay({
+          status: 200,
+          body: {
+            choices: [
+              {
+                message: {
+                  content: null,
+                  tool_calls: [
+                    { id: 'call-1', function: { name: 'search_web', arguments: JSON.stringify({ query: secret }) } }
+                  ]
+                },
+                finish_reason: 'tool_calls'
+              }
+            ]
+          }
+        }).fetchImpl
+      ),
+      request([
+        {
+          role: 'user',
+          parts: [{ functionResponse: { name: 'search_web', response: { result: secret } } }]
+        }
+      ])
+    )
+    const diagnostic = result[0]?.customMetadata?.replyDiagnostic
+
+    expect(diagnostic).toMatchObject({
+      provider: 'modelscope',
+      modelId: 'Qwen/Qwen3.5-122B-A10B',
+      finishReason: 'tool_calls',
+      textPartCount: 0,
+      reasoningPartCount: 0,
+      functionCallPartCount: 1,
+      reasoningTextLength: 0,
+      historyEndedOnToolResult: true
+    })
+    expect(JSON.stringify(diagnostic)).not.toContain(secret)
   })
 
   it('ignores a refusal, as it always has', async () => {
@@ -992,13 +1086,24 @@ describe('ModelScopeLlm legacy failures', () => {
 
     const result = await responses(legacy(replay(reply).fetchImpl), hello())
 
-    expect(result).toEqual([
-      {
-        content: { role: 'model', parts: [{ text: '' }] },
-        finishReason: FinishReason.STOP,
-        usageMetadata: { promptTokenCount: 80, candidatesTokenCount: 8, totalTokenCount: 88 }
+    expect(result[0]).toMatchObject({
+      content: { role: 'model', parts: [{ text: '' }] },
+      finishReason: FinishReason.STOP,
+      usageMetadata: { promptTokenCount: 80, candidatesTokenCount: 8, totalTokenCount: 88 },
+      customMetadata: {
+        replyDiagnostic: {
+          provider: 'modelscope',
+          modelId: 'Qwen/Qwen3.5-122B-A10B',
+          finishReason: 'stop',
+          outputTokens: 8,
+          textPartCount: 0,
+          reasoningPartCount: 0,
+          functionCallPartCount: 0,
+          reasoningTextLength: 0,
+          historyEndedOnToolResult: false
+        }
       }
-    ])
+    })
   })
 })
 

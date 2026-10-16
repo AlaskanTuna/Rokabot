@@ -17,6 +17,8 @@ import type { ModelRoute } from './fallbackModel.js'
 import { modelRouteForRequest } from './fallbackModel.js'
 import { computeBackoff } from './geminiReliability.js'
 import type { FailureKind } from './geminiReliability.js'
+import { historyEndedOnToolResult } from './llm/replyDiagnostic.js'
+import type { ReplyDiagnostic } from './llm/replyDiagnostic.js'
 import { prepareTurnMedia } from './media/turnMedia.js'
 import type { WatchOutcome } from './media/types.js'
 import { stripNarratedToolCalls } from './narratedToolCalls.js'
@@ -103,6 +105,7 @@ const toolCallsForRequest = new AsyncLocalStorage<{
 
 // Count every ADK request so retries and tool calls are included in the reservation refund.
 const modelCallsForRequest = new AsyncLocalStorage<{ count: number }>()
+const requestHistoryForRequest = new AsyncLocalStorage<{ historyEndedOnToolResult: boolean }>()
 // Exported so tests can drive the beforeModelCallback ALS seam directly (task 122's only observable proof point)
 export const steeringForRequest = new AsyncLocalStorage<{ prompt?: string; memory?: boolean; replies?: boolean }>()
 const SAFETY_DEFLECTION = "Huh? Let's not get into that one~"
@@ -174,6 +177,8 @@ export const rokaAgent = new LlmAgent({
     // could count them and nothing upstream knows how many a turn will need.
     const calls = modelCallsForRequest.getStore()
     if (calls) calls.count += 1
+    const requestHistory = requestHistoryForRequest.getStore()
+    if (requestHistory) requestHistory.historyEndedOnToolResult = historyEndedOnToolResult(request.contents)
 
     const prompt = steeringForRequest.getStore()?.prompt ?? context.state.get<string>('_systemPrompt')
     if (prompt) {
@@ -427,6 +432,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   }
   let movedAwayFromGemini = false
   let switchKind: FailureKind | undefined
+  let emptyReplyDiagnostic: ReplyDiagnostic | undefined
   const reliability = await modelRouteForRequest.run(route, () =>
     modelCallsForRequest.run(modelCalls, () =>
       toolCallsForRequest.run(toolCalls, () =>
@@ -472,6 +478,9 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
                 sessionWasReset = true
               },
               safetyLadderLength: safetyLadder.length,
+              onEmptyReply: (diagnostic) => {
+                emptyReplyDiagnostic = diagnostic
+              },
               escalateSafety: async () => {
                 if (safetyRung >= safetyLadder.length) return undefined
                 safetyRung++
@@ -509,6 +518,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
                 let responseText = ''
                 let hasFunctionCall = false
                 let finishReason: LlmResponse['finishReason']
+                let replyDiagnostic: ReplyDiagnostic | undefined
 
                 const request: Parameters<typeof runner.runAsync>[0] = {
                   userId: channelId,
@@ -519,7 +529,13 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
                   stateDelta: testRequest.stateDelta
                 }
 
-                for await (const event of runner.runAsync(request)) {
+                const requestHistory = { historyEndedOnToolResult: false }
+                const eventStream = runner.runAsync(request)[Symbol.asyncIterator]()
+                while (true) {
+                  const { value: event, done } = await requestHistoryForRequest.run(requestHistory, () =>
+                    eventStream.next()
+                  )
+                  if (done) break
                   if (signal.aborted) break
                   if (event.errorCode) {
                     return {
@@ -533,6 +549,30 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
                   }
                   if (isFinalResponse(event) && event.content?.parts) {
                     finishReason = event.finishReason
+                    const parts = event.content.parts
+                    const suppliedDiagnostic = (
+                      event.customMetadata as { replyDiagnostic?: ReplyDiagnostic } | undefined
+                    )?.replyDiagnostic
+                    replyDiagnostic = suppliedDiagnostic ?? {
+                      provider: route.useFallback ? (config.llm.fallback?.provider ?? 'unknown') : 'google',
+                      modelId: modelNameForCurrentRequest(),
+                      finishReason: event.finishReason === undefined ? null : String(event.finishReason),
+                      ...(event.usageMetadata?.candidatesTokenCount !== undefined
+                        ? { outputTokens: event.usageMetadata.candidatesTokenCount }
+                        : {}),
+                      ...(event.usageMetadata?.thoughtsTokenCount !== undefined
+                        ? { reasoningTokens: event.usageMetadata.thoughtsTokenCount }
+                        : {}),
+                      textPartCount: parts.filter((part: Part) => part.text?.trim() && !part.thought).length,
+                      reasoningPartCount: parts.filter((part: Part) => part.thought).length,
+                      functionCallPartCount: parts.filter((part: Part) => 'functionCall' in part && part.functionCall)
+                        .length,
+                      reasoningTextLength: parts.reduce(
+                        (length, part: Part) => length + (part.thought && part.text ? part.text.length : 0),
+                        0
+                      ),
+                      historyEndedOnToolResult: requestHistory.historyEndedOnToolResult
+                    }
                     responseText = event.content.parts
                       .filter((part: Part) => part.text && !part.thought)
                       .map((part: Part) => part.text)
@@ -544,7 +584,13 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
                   }
                 }
 
-                return { text: responseText, finishReason, hasText: Boolean(responseText), hasFunctionCall }
+                return {
+                  text: responseText,
+                  finishReason,
+                  hasText: Boolean(responseText),
+                  hasFunctionCall,
+                  replyDiagnostic
+                }
               }
             })
           )
@@ -623,6 +669,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
       blockSide: verdict.blockSide,
       finishReason: verdict.finishReason,
       safetyRatings: verdict.safetyRatings,
+      errorMessage: emptyReplyDiagnostic ? JSON.stringify(emptyReplyDiagnostic) : undefined,
       safetyRungsUsed: safetyRung,
       attempts: reliability.attempts,
       tone,

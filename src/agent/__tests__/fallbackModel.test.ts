@@ -369,7 +369,19 @@ describe('ModelScopeLlm response translation', () => {
 
     const result = await responses(adapter(fetchImpl), request([{ role: 'user', parts: [{ text: 'hello' }] }]))
 
-    expect(result).toEqual([{ content: { role: 'model', parts: [{ text: '' }] }, finishReason: FinishReason.STOP }])
+    expect(result).toHaveLength(1)
+    expect(result[0]).toMatchObject({
+      content: { role: 'model', parts: [{ text: '' }] },
+      finishReason: FinishReason.STOP
+    })
+    // An empty reply carries a content-free diagnostic so a production empty_text can be traced.
+    expect(result[0]?.customMetadata?.replyDiagnostic).toMatchObject({
+      finishReason: 'stop',
+      textPartCount: 0,
+      reasoningPartCount: 0,
+      functionCallPartCount: 0,
+      historyEndedOnToolResult: false
+    })
   })
 
   it('maps content_filter to SAFETY and other finish reasons to STOP', async () => {
