@@ -1,6 +1,6 @@
 {
   "name": "rokabot",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Server-wide Discord character chatbot embodying Maniwa Roka, powered by Gemini 3.5 Flash Lite via Google ADK",
   "type": "module",
   "main": "dist/index.js",
