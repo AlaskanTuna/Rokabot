@@ -370,7 +370,10 @@ describe('ModelScopeLlm response translation', () => {
     const result = await responses(adapter(fetchImpl), request([{ role: 'user', parts: [{ text: 'hello' }] }]))
 
     expect(result).toHaveLength(1)
-    expect(result[0]).toMatchObject({ content: { role: 'model', parts: [{ text: '' }] }, finishReason: FinishReason.STOP })
+    expect(result[0]).toMatchObject({
+      content: { role: 'model', parts: [{ text: '' }] },
+      finishReason: FinishReason.STOP
+    })
     // An empty reply carries a content-free diagnostic so a production empty_text can be traced.
     expect(result[0]?.customMetadata?.replyDiagnostic).toMatchObject({
       finishReason: 'stop',
