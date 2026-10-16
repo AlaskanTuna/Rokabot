@@ -17,8 +17,19 @@ describe('getExpressionUrl', () => {
 
   it('uses an injected RNG for deterministic selection', () => {
     expect(getExpressionUrl('playful', { rng: () => 0.9 })).toBe(
-      'https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/expressions/v1/cheerful.webp'
+      'https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/expressions/v1/gentle_smile.webp'
     )
+  })
+
+  // Playful is picked for about half of all replies, so two portraits meant one of two images every other reply.
+  it('gives the playful mood four portraits to rotate through', () => {
+    const urls = new Set(
+      [0, 0.3, 0.6, 0.9].map((roll) => {
+        __resetExpressionState()
+        return getExpressionUrl('playful', { rng: () => roll })
+      })
+    )
+    expect(urls.size).toBe(4)
   })
 
   it('does not repeat the previous expression from a multi-expression pool', () => {

@@ -3,7 +3,7 @@ import { logger } from '../utils/logger.js'
 
 /** Tone-to-expression mapping for character portraits */
 const TONE_EXPRESSIONS: Record<ToneKey, string[]> = {
-  playful: ['smile', 'cheerful'],
+  playful: ['smile', 'cheerful', 'delighted', 'gentle_smile'],
   sincere: ['sad', 'pained', 'sorrowful'],
   domestic: ['content', 'gentle_smile', 'relieved'],
   flustered: ['flustered', 'nervous', 'awkward'],

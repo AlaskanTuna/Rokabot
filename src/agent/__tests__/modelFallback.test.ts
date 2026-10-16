@@ -104,7 +104,7 @@ const terminalDeflection = 'terminal deflection'
 const existingFallbackReplies = [
   'Hmm? Sorry, I spaced out for a moment there~',
   'Ah, what was that? I got distracted by something.',
-  'Ahaha, my mind wandered. Say that again?',
+  'Sorry, sorry, my mind wandered. Say that again?',
   "I wasn't paying attention... don't tell anyone, okay?"
 ]
 

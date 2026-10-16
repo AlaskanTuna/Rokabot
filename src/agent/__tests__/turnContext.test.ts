@@ -346,6 +346,13 @@ describe('turn entry work', () => {
     expect(citations).toEqual([{ title: 'C', url: 'https://c.test' }])
   })
 
+  it("ends the prompt with this reply's shape at rung zero and drops it on the safety rungs", async () => {
+    const context = await createTurnContext(turnOptions(startTurnEntryWork(entryWork())))
+
+    expect(context.systemPrompt).toMatch(/\n\n## Reply Shape\n[\s\S]*- Faces that fit: [^\n]+(\n- [^\n]+)*$/)
+    expect(context.composePrompt(1)).not.toContain('## Reply Shape')
+  })
+
   it('injects the looked-up block at rung zero and drops it on the safety rung', async () => {
     jevConfig.prefetch = 'on'
     mocks.judgeTurn.mockResolvedValue({ tone: null, referents: [], needsLookup: 0.95, latencyMs: 1, inputTokens: 5 })
@@ -880,8 +887,10 @@ describe('memory recall modes', () => {
     const shadow = await turnWith()
     await flushShadowRecall()
 
+    // The reply shape is drawn fresh for every reply, so it is the one part two builds may not share.
+    const withoutShape = (prompt: string) => prompt.replace(/\n\n## Reply Shape\n[\s\S]*$/, '')
     expect(legacy.systemPrompt).toContain(episodeBlock)
-    expect(shadow.systemPrompt).toBe(legacy.systemPrompt)
+    expect(withoutShape(shadow.systemPrompt)).toBe(withoutShape(legacy.systemPrompt))
     expect(mocks.recallForTurn).toHaveBeenCalledTimes(1)
     expect(mocks.recallForTurn).toHaveBeenCalledWith(
       expect.objectContaining({

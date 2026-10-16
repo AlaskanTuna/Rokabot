@@ -24,6 +24,7 @@ import { getMessages as getBufferMessages } from './passiveBuffer.js'
 import { assembleSystemPrompt } from './promptAssembler.js'
 import { buildFactsEnvelope, buildOverheardBlock } from './promptSafety.js'
 import type { ToneKey } from './prompts/tones.js'
+import { buildReplyShapePrompt } from './replyShape.js'
 import { recordSearchCitations } from './searchCitations.js'
 import { buildLookedUpBlock, decidePrefetch, runPrefetchForJudgment, settlePrefetch } from './searchPrefetch.js'
 import type { PrefetchResult } from './searchPrefetch.js'
@@ -642,6 +643,12 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
   turnEvent.prefetch = prefetch
   persistTurnEventWhenReady()
   const lookedUpSection = prefetch.block ? `\n\n${prefetch.block}` : ''
+  const replyShapeSection = `\n\n${buildReplyShapePrompt({
+    userMessage,
+    tone,
+    recentReplies: fakeMessages.filter((message) => message.role === 'assistant').map((message) => message.content),
+    displayName
+  })}`
 
   // Safety de-escalation ladder. Each rung strictly removes carried context — never the current message —
   // so Roka answers with less surrounding context rather than refusing outright.
@@ -659,7 +666,8 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
       safetyRung < 1 ? overheardSection : '',
       tailSection,
       safetyRung === 0 ? lookedUpSection : '',
-      safetyRung > 0 ? `\n\n${SAFETY_STEER_ADDENDUM}` : ''
+      safetyRung > 0 ? `\n\n${SAFETY_STEER_ADDENDUM}` : '',
+      safetyRung === 0 ? replyShapeSection : ''
     ].join('')
   }
 
