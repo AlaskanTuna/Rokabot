@@ -137,7 +137,19 @@ Plain chat, the v3 80-turn set with a fresh window, two runs each, to check v4 d
 
 ## Rerunning the Check
 
-Before changing the persona again, replay all four turn kinds, not only chat: plain chat, searched and watched
-turns, replies to Roka, and edgy turns with hard-line controls. A hard line must be refused in every reply, and
-no reply may repeat a slur. Measure openers, paragraph counts, exclamation marks, flirting, disclaimers, faces and
-the moderator phrases above against production's Gemini-era replies to the same turns.
+Use the reusable harness against a copy of the production database. Include all four turn kinds and compare production history with a fresh window when history may be reinforcing an old pattern.
+
+```bash
+npx tsx scripts/persona-replay.ts \
+  --db /path/to/copy.sqlite \
+  --out /tmp/roka-v4.jsonl \
+  --trials 2 \
+  --kinds chat,tool,reply,edgy \
+  --window baseline=2026-10-09T00:00:00Z..2026-10-16T00:00:00Z \
+  --history prod \
+  v4=worktree@haiku:low
+
+npx tsx scripts/persona-report.ts /tmp/roka-v4.jsonl --by arm,kinds
+```
+
+Use another arm such as `candidate=ref:main@haiku:low` to compare a Git source. The report expands a multi-kind turn into each applicable kind group. Review edgy turns for refusal, moderator wording and the numeric slur-repetition count; do not print or publish the source terms or the private replay data.
