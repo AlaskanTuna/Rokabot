@@ -1,23 +1,39 @@
+<a id="readme-top"></a>
+
 <div align="center">
-  <img src="../assets/banner.png" alt="Maniwa Roka banner" />
+  <img src="../assets/app-icon.jpg" alt="Rokabot" width="128" height="128" style="border-radius: 50%;" />
 
   <h1>Rokabot</h1>
 
   <p>
-    A conversation-first Discord character agent.<br />
-    It ships as <strong>Maniwa Roka</strong> from <em>Senren*Banka</em> and loads any character from a folder.<br />
-    It runs any OpenAI-compatible model as main and fallback, on a Raspberry Pi 5 or any Docker host.
+    A server-wide Discord character chatbot embodying <strong>Maniwa Roka</strong> from <em>Senren*Banka</em>.<br />
+    In-character conversation, useful tools, and small games—self-hosted on a Raspberry Pi.
   </p>
 
   <p>
     <img src="https://img.shields.io/badge/TypeScript-ES2022-3178C6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript" />
     <img src="https://img.shields.io/badge/Node.js-24-5FA04E?style=for-the-badge&logo=node.js&logoColor=white" alt="Node.js 24" />
     <img src="https://img.shields.io/badge/discord.js-v14-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="discord.js v14" />
+    <img src="https://img.shields.io/badge/LLM-Any_OpenAI--compatible-412991?style=for-the-badge&logo=openai&logoColor=white" alt="Any OpenAI-compatible LLM" />
     <img src="https://img.shields.io/badge/Docker-Compose-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker Compose" />
     <img src="https://img.shields.io/badge/Raspberry_Pi-5_ARM64-C51A4E?style=for-the-badge&logo=raspberrypi&logoColor=white" alt="Raspberry Pi 5" />
-    <img src="https://img.shields.io/badge/License-MIT-lightgrey?style=for-the-badge" alt="MIT License" />
   </p>
 </div>
+
+<details>
+  <summary><strong>Table of Contents</strong></summary>
+  <ol>
+    <li><a href="#highlights">Highlights</a></li>
+    <li><a href="#how-it-fits-together">How It Fits Together</a></li>
+    <li><a href="#tech-stack">Tech Stack</a></li>
+    <li><a href="#quick-start">Quick Start</a></li>
+    <li><a href="#documentation">Documentation</a></li>
+    <li><a href="#who-is-maniwa-roka">Who Is Maniwa Roka</a></li>
+    <li><a href="#privacy">Privacy</a></li>
+    <li><a href="#contributing">Contributing</a></li>
+    <li><a href="#license">License</a></li>
+  </ol>
+</details>
 
 ---
 
@@ -120,6 +136,8 @@ _The bot and its speech sidecar in Docker Compose, between Discord and the remot
 <img align="right" src="../assets/roka-sticker-1.png" alt="Roka serving drinks" width="100" />
 
 **Maniwa Roka** (馬庭 芦花) is a warm, gently teasing onee-san side character from [Senren\*Banka](https://vndb.org/v19073) (千恋＊万花). Rokabot brings her observant, affectionate energy to a Discord server through in-character conversation. She chats with the server, remembers useful context without carrying it into another server or a DM, helps with everyday requests and makes downtime more playful. She is the shipped character pack, `characters/roka`.
+
+<img src="../assets/banner.png" alt="Maniwa Roka banner" />
 
 ## Privacy
 
