@@ -43,8 +43,10 @@ import {
   type RecallInput,
   type RecallItem,
   formatRecallBlock,
+  recallCoreFacts,
   recallFactsForSubject,
-  recallForTurn
+  recallForTurn,
+  recallGatePool
 } from '../recall.js'
 
 const NOW = 1_000_000
@@ -488,6 +490,31 @@ describe('recallForTurn', () => {
 
     expect(block).toContain('- "Speaker": general_occupation (past): "nurse"')
     expect(block).toContain('- plan: "movie night"')
+  })
+})
+
+describe('recallCoreFacts', () => {
+  it('returns the same core facts as the gate pool, in the same order and within the same cap', () => {
+    fact('speaker', 'hobby', 'older pin', axis(9), { pinned: true, observedAt: NOW - DAY })
+    fact('speaker', 'favorite_game', 'newer pin', axis(9), { pinned: true, observedAt: NOW })
+    fact('speaker', 'nickname', 'Ali', axis(9))
+    fact('speaker', 'pronouns', 'she/her', axis(9))
+    fact('speaker', 'food', 'ramen', axis(1))
+    fact('participant-1', 'nickname', 'Pat', axis(1))
+
+    const core = recallCoreFacts(input({ participantIds: ['participant-1'] }))
+
+    expect(core.map(({ text }) => text)).toEqual(['newer pin', 'older pin', 'Ali'])
+    expect(core).toEqual(recallGatePool(input({ participantIds: ['participant-1'] })).core)
+  })
+
+  it('withholds a core fact learned in a channel the privacy gate rejects, and a past nickname', () => {
+    testConfig.memory.privacy = 'strict'
+    registerChannelVisibility({ visibility: () => 'public', parentOf: () => null })
+    fact('speaker', 'nickname', 'Hidden', axis(9), { channelId: 'chan-other' })
+    fact('speaker', 'hobby', 'Old pin', axis(9), { pinned: true, period: 'past' })
+
+    expect(recallCoreFacts(input())).toEqual([])
   })
 })
 

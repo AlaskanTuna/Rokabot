@@ -151,6 +151,12 @@ interface YamlConfig {
     recall?: string
     recallTokenBudget?: number
     recallCoreFacts?: number
+    recallGateDeadlineMs?: number
+    recallGateEmbeddingWaitMs?: number
+    recallGateContextTokens?: number
+    recallGateInputTokens?: number
+    recallGateShortlist?: Partial<Record<'fact' | 'server_fact' | 'conversation' | 'media', number>>
+    recallGateMinNoul?: Partial<Record<'fact' | 'server_fact' | 'conversation' | 'media', number | null>>
     factMinSimilarity?: number
     serverFactMinSimilarity?: number
     vaultExportDir?: string
@@ -288,6 +294,15 @@ function memoryEnum<T extends string>(key: 'privacy' | 'recall', envKey: string,
   const source = envValue ? `Environment variable ${envKey}` : `Config value memory.${key}`
   const allowed = `${values.slice(0, -1).join(', ')} or ${values.at(-1)}`
   throw new Error(`${source} must be ${allowed}, got: ${String(value)}`)
+}
+
+// An explicit null disables a kind, so a missing key and a null key must stay different.
+function gateCutoff(
+  table: Partial<Record<string, number | null>> | undefined,
+  kind: string,
+  fallback: number | null
+): number | null {
+  return table && kind in table ? (table[kind] ?? null) : fallback
 }
 
 export interface ResolvedModel {
@@ -650,6 +665,22 @@ const baseConfig = {
     recall: memoryEnum('recall', 'MEMORY_RECALL', ['legacy', 'shadow', 'unified'], 'shadow'),
     recallTokenBudget: yaml.memory?.recallTokenBudget ?? 600,
     recallCoreFacts: yaml.memory?.recallCoreFacts ?? 3,
+    recallGateDeadlineMs: yaml.memory?.recallGateDeadlineMs ?? 1200,
+    recallGateEmbeddingWaitMs: yaml.memory?.recallGateEmbeddingWaitMs ?? 400,
+    recallGateContextTokens: yaml.memory?.recallGateContextTokens ?? 1000,
+    recallGateInputTokens: yaml.memory?.recallGateInputTokens ?? 8000,
+    recallGateShortlist: {
+      fact: yaml.memory?.recallGateShortlist?.fact ?? 8,
+      server_fact: yaml.memory?.recallGateShortlist?.server_fact ?? 4,
+      conversation: yaml.memory?.recallGateShortlist?.conversation ?? 8,
+      media: yaml.memory?.recallGateShortlist?.media ?? 4
+    },
+    recallGateMinNoul: {
+      fact: gateCutoff(yaml.memory?.recallGateMinNoul, 'fact', 0.9),
+      server_fact: gateCutoff(yaml.memory?.recallGateMinNoul, 'server_fact', null),
+      conversation: gateCutoff(yaml.memory?.recallGateMinNoul, 'conversation', 0.9),
+      media: gateCutoff(yaml.memory?.recallGateMinNoul, 'media', 0.9)
+    },
     factMinSimilarity: similarityFloors?.fact ?? yaml.memory?.factMinSimilarity ?? 0.65,
     serverFactMinSimilarity: similarityFloors?.serverFact ?? yaml.memory?.serverFactMinSimilarity ?? 0.65,
     vaultExportDir: envString('MEMORY_VAULT_EXPORT_DIR') ?? yaml.memory?.vaultExportDir ?? 'data/vault',
@@ -889,6 +920,35 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'memory.embeddingTimeoutMs', value: config.memory.embeddingTimeoutMs, min: 1 },
   { path: 'memory.recallTokenBudget', value: config.memory.recallTokenBudget, min: 200, max: 2000 },
   { path: 'memory.recallCoreFacts', value: config.memory.recallCoreFacts, min: 0, max: 5 },
+  { path: 'memory.recallGateDeadlineMs', value: config.memory.recallGateDeadlineMs, min: 100, max: 1200 },
+  {
+    path: 'memory.recallGateEmbeddingWaitMs',
+    value: config.memory.recallGateEmbeddingWaitMs,
+    min: 0,
+    max: config.memory.recallGateDeadlineMs
+  },
+  { path: 'memory.recallGateInputTokens', value: config.memory.recallGateInputTokens, min: 1000, max: 16000 },
+  {
+    path: 'memory.recallGateContextTokens',
+    value: config.memory.recallGateContextTokens,
+    min: 128,
+    max: Math.min(4000, config.memory.recallGateInputTokens - 1)
+  },
+  ...Object.entries(config.memory.recallGateShortlist).map(([kind, value]) => ({
+    path: `memory.recallGateShortlist.${kind}`,
+    value,
+    min: 0,
+    max: 64
+  })),
+  {
+    path: 'memory.recallGateShortlist (total)',
+    value: Object.values(config.memory.recallGateShortlist).reduce((sum, slots) => sum + slots, 0),
+    min: 1,
+    max: 64
+  },
+  ...Object.entries(config.memory.recallGateMinNoul).flatMap(([kind, value]) =>
+    value === null ? [] : [{ path: `memory.recallGateMinNoul.${kind}`, value, min: 0, max: 1 }]
+  ),
   { path: 'memory.factMinSimilarity', value: config.memory.factMinSimilarity, min: 0, max: 1 },
   { path: 'memory.serverFactMinSimilarity', value: config.memory.serverFactMinSimilarity, min: 0, max: 1 },
   { path: 'memory.extractionSampleRate', value: config.memory.extractionSampleRate, min: 0, max: 1 },

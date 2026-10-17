@@ -41,7 +41,8 @@ const mocks = vi.hoisted(() => ({
     block: '',
     trace: { nCandidates: 0, gated: 0, fallback: false, tokensEst: 0 }
   })),
-  touchRecalled: vi.fn()
+  touchRecalled: vi.fn(),
+  runRecallGate: vi.fn()
 }))
 
 vi.mock('../jev/judgments.js', () => ({ judgeTurn: mocks.judgeTurn }))
@@ -69,6 +70,7 @@ vi.mock('../memory/recall.js', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   recallForTurn: mocks.recallForTurn
 }))
+vi.mock('../memory/recallGateRun.js', () => ({ runRecallGate: mocks.runRecallGate }))
 vi.mock('../memory/memoryClaims.js', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   touchRecalled: mocks.touchRecalled
@@ -90,6 +92,7 @@ vi.mock('../searchPrefetch.js', () => ({
 }))
 
 import { config } from '../../config.js'
+import { logger } from '../../utils/logger.js'
 import type { TurnJudgment } from '../jev/judgments.js'
 import { geminiVector } from '../memory/embeddings/__tests__/vectors.js'
 import { withSearchCitations } from '../searchCitations.js'
@@ -839,6 +842,12 @@ describe('memory recall modes', () => {
     mocks.retrieveForTurn.mockReturnValue({ entries: [], claims: [] } as never)
     mocks.resolveReferences.mockReturnValue({ resolved: [], ambiguous: [] } as never)
     mocks.recallForTurn.mockImplementation(() => emptyRecall() as never)
+    mocks.runRecallGate.mockImplementation(async () => ({
+      items: [],
+      detail: { v: 1, status: 'skipped' },
+      startedAt: performance.now(),
+      settledAt: 0
+    }))
     mocks.runPrefetchForJudgment.mockResolvedValue({ decision: { fire: false, reason: 'no_judgment' }, outcome: null })
   })
 
@@ -908,10 +917,9 @@ describe('memory recall modes', () => {
     mocks.recallForTurn.mockImplementation(() => unifiedRecall())
 
     await turnWith()
-    await flushShadowRecall()
+    await vi.waitFor(() => expect(recalledRows('recall_shadow')).toHaveLength(1))
 
     const rows = recalledRows('recall_shadow')
-    expect(rows).toHaveLength(1)
     expect(rows[0]).toMatchObject({
       guildId: 'guild-1',
       channelId: 'channel-1',
@@ -930,10 +938,209 @@ describe('memory recall modes', () => {
         ['fact', 7, 0.812],
         ['conversation', 3, 0.5],
         ['server_fact', 9, 0.4]
-      ]
+      ],
+      gate: { v: 1, status: 'skipped', startMs: expect.any(Number), contextReadyMs: null, projectedAddedMs: 0 }
     })
     expect(rows[0].detail).not.toContain('chess')
     expect(recalledRows('recall')).toHaveLength(0)
+  })
+
+  it('runs the Jev gate in shadow without changing the prompt, and logs it in the same shadow row', async () => {
+    mocks.recallForTurn.mockImplementation(() => unifiedRecall())
+    mocks.runRecallGate.mockResolvedValue({
+      items: [],
+      detail: {
+        v: 1,
+        status: 'ok',
+        latencyMs: 380,
+        shortlist: [['fact', 7, 0.95]],
+        selected: [['fact', 7]],
+        setupMs: 4,
+        deadlineMissed: true
+      },
+      startedAt: performance.now(),
+      settledAt: performance.now() + 10_000
+    })
+
+    memoryConfig.recall = 'legacy'
+    const legacy = await turnWith()
+    memoryConfig.recall = 'shadow'
+    const shadow = await turnWith()
+    await vi.waitFor(() => expect(recalledRows('recall_shadow')).toHaveLength(1))
+
+    expect(shadow.systemPrompt).toBe(legacy.systemPrompt)
+    const detail = JSON.parse(recalledRows('recall_shadow')[0].detail)
+    expect(detail.selected).toEqual([
+      ['fact', 7, 0.812],
+      ['conversation', 3, 0.5],
+      ['server_fact', 9, 0.4]
+    ])
+    expect(detail.gate).toMatchObject({
+      status: 'ok',
+      shortlist: [['fact', 7, 0.95]],
+      setupMs: 4,
+      deadlineMissed: true
+    })
+    expect(detail.gate.projectedAddedMs).toBeGreaterThan(9_000)
+    expect(detail.gate.projectedAddedMs).toBeLessThanOrEqual(10_000)
+    expect(detail.gate).not.toHaveProperty('settledAtMs')
+    expect(mocks.runRecallGate.mock.calls[0][0]).toMatchObject({
+      mode: 'shadow',
+      channelId: 'channel-1',
+      guildId: 'guild-1'
+    })
+  })
+
+  it('still writes the shadow row when the gate throws, and logs the failure', async () => {
+    mocks.recallForTurn.mockImplementation(() => unifiedRecall())
+    const failure = new Error('boom')
+    mocks.runRecallGate.mockRejectedValue(failure)
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined)
+    memoryConfig.recall = 'shadow'
+    await turnWith()
+    await vi.waitFor(() => expect(recalledRows('recall_shadow')).toHaveLength(1))
+    expect(JSON.parse(recalledRows('recall_shadow')[0].detail).gate).toEqual({ v: 1, status: 'gate_error' })
+    expect(warn).toHaveBeenCalledWith({ channelId: 'channel-1', error: failure }, 'Jev recall gate failed')
+    warn.mockRestore()
+  })
+
+  it('does not run the gate in legacy mode', async () => {
+    memoryConfig.recall = 'legacy'
+    await turnWith()
+    expect(mocks.runRecallGate).not.toHaveBeenCalled()
+  })
+
+  it('starts the gate only after the turn context is returned', async () => {
+    memoryConfig.recall = 'shadow'
+
+    await turnWith()
+    expect(mocks.runRecallGate).not.toHaveBeenCalled()
+
+    await vi.waitFor(() => expect(mocks.runRecallGate).toHaveBeenCalledTimes(1))
+  })
+
+  it('gives the gate a deadline counted from the start of the turn', async () => {
+    vi.useFakeTimers()
+    try {
+      memoryConfig.recall = 'shadow'
+      mocks.ensureSession.mockImplementation(
+        () => new Promise((resolve) => setTimeout(() => resolve({ events: [] }), 300))
+      )
+      const turnStartedAt = performance.now()
+
+      const pending = turnWith()
+      await vi.advanceTimersByTimeAsync(300)
+      await pending
+      await vi.advanceTimersByTimeAsync(1)
+
+      expect(mocks.runRecallGate).toHaveBeenCalledTimes(1)
+      expect(mocks.runRecallGate.mock.calls[0][0].deadlineAt).toBe(turnStartedAt + config.memory.recallGateDeadlineMs)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('lets the shadow gate collect Jev for the usual memory timeout instead of the reply deadline', async () => {
+    vi.useFakeTimers()
+    try {
+      memoryConfig.recall = 'shadow'
+      let calledAt = -1
+      mocks.runRecallGate.mockImplementation(async () => {
+        calledAt = performance.now()
+        return { items: [], detail: { v: 1, status: 'ok' }, startedAt: calledAt, settledAt: calledAt }
+      })
+
+      await turnWith()
+      await vi.advanceTimersByTimeAsync(1)
+
+      expect(calledAt).toBeGreaterThanOrEqual(0)
+      expect(mocks.runRecallGate.mock.calls[0][0].collectUntil).toBe(calledAt + config.jev.memoryTimeoutMs)
+      expect(config.jev.memoryTimeoutMs).toBeGreaterThan(config.memory.recallGateDeadlineMs)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  describe('shadow gate timing offsets', () => {
+    async function shadowTurn(gateTakesMs: number, promptWaitsMs: number) {
+      vi.useFakeTimers()
+      memoryConfig.recall = 'shadow'
+      mocks.ensureSession.mockImplementation(
+        () => new Promise((resolve) => setTimeout(() => resolve({ events: [] }), 300))
+      )
+      if (promptWaitsMs > 0) {
+        jevConfig.prefetch = 'on'
+        mocks.settlePrefetch.mockImplementation(
+          () => new Promise((resolve) => setTimeout(() => resolve(null), promptWaitsMs))
+        )
+      }
+      const turnStartedAt = performance.now()
+      let gateStartedAt = -1
+      mocks.runRecallGate.mockImplementation(async () => {
+        gateStartedAt = performance.now()
+        await new Promise((resolve) => setTimeout(resolve, gateTakesMs))
+        return {
+          items: [],
+          detail: { v: 1, status: 'ok', setupMs: 3, deadlineMissed: false },
+          startedAt: gateStartedAt,
+          settledAt: performance.now()
+        }
+      })
+      const pending = turnWith()
+      await vi.advanceTimersByTimeAsync(300 + promptWaitsMs)
+      await pending
+      await vi.advanceTimersByTimeAsync(gateTakesMs + 10)
+      return { turnStartedAt, gateStartedAt, gate: JSON.parse(recalledRows('recall_shadow')[0].detail).gate }
+    }
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('measures the gate start and the prompt-ready time from the turn start, and what the gate would have added', async () => {
+      const { turnStartedAt, gateStartedAt, gate } = await shadowTurn(500, 0)
+
+      expect(gate.startMs).toBe(Math.round(gateStartedAt - turnStartedAt))
+      expect(gate.contextReadyMs).toBe(300)
+      expect(gate.projectedAddedMs).toBe(gateStartedAt + 500 - (turnStartedAt + 300))
+      expect(gate).toMatchObject({ setupMs: 3, deadlineMissed: false })
+      expect(gate).not.toHaveProperty('settledAtMs')
+    })
+
+    it('has no ready time and adds nothing when the gate settles before the prompt is ready', async () => {
+      const { gate } = await shadowTurn(5, 400)
+
+      expect(gate.contextReadyMs).toBeNull()
+      expect(gate.projectedAddedMs).toBe(0)
+    })
+  })
+
+  it('stops waiting for the query embedding at the gate wait, before the legacy sections give up', async () => {
+    vi.useFakeTimers()
+    try {
+      memoryConfig.recall = 'shadow'
+      const gateWaitMs = config.memory.recallGateEmbeddingWaitMs
+      expect(gateWaitMs).toBeLessThan(config.memory.embeddingTimeoutMs)
+      mocks.embedEpisodeText.mockImplementation(() => new Promise(() => undefined))
+      let turnReturned = false
+
+      const pending = turnWith().then(() => {
+        turnReturned = true
+      })
+      await vi.advanceTimersByTimeAsync(gateWaitMs - 1)
+      expect(mocks.runRecallGate).not.toHaveBeenCalled()
+
+      // The gate then yields one macrotask before it starts, which fake timers count as 1 ms.
+      await vi.advanceTimersByTimeAsync(2)
+      expect(mocks.runRecallGate).toHaveBeenCalledTimes(1)
+      expect(mocks.runRecallGate.mock.calls[0][0].input.queryEmbedding).toBeNull()
+      expect(turnReturned).toBe(false)
+
+      await vi.advanceTimersByTimeAsync(config.memory.embeddingTimeoutMs)
+      await pending
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('shows only the unified block, touches the selected facts and records one recall event', async () => {

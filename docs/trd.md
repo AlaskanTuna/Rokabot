@@ -276,7 +276,7 @@ Privacy and Unified Recall).
 | `extraction_queue`      | `id`, `guild_id`, `channel_id`, `payload`, `status`, `attempts`, `enqueued_at`                                                                                                                                                                                                                                                         | Closed episode payloads in `pending`, `processing`, or retained `failed` state.                                                                                     |
 | `memory_episode`        | `id`, `guild_id`, `channel_id`, `started_at`, `ended_at`, `summary`, `embedding`, `embedding_model_id`, `embedding_dim`, `embedding_fingerprint`, `created_at`                                                                                                                                                                         | One completed episode summary per queue ID; nullable float32 embedding with its provenance.                                                                         |
 | `memory_events`         | `id`, `kind`, `guild_id`, `channel_id`, `subject_user_id`, `duration_ms`, `n_candidates`, `n_selected`, `n_changed`, `tokens_est`, `op`, `created_at`, `detail`                                                                                                                                                                        | Value-free retrieval, claim-change, extraction-run and `claim_reclassified` audit telemetry; nullable `detail` holds per-kind JSON.                                 |
-| `jev_events`            | `kind`, `guild_id`, `channel_id`, `question`, `answer`, `probability`, `confidence`, `applied`, `latency_ms`, `input_tokens`, `baseline`, `job_id`, `created_at`, `judge`                                                                                                                                                              | Value-free judgment telemetry. The kind is `turn`, `admission`, or `verification`; `job_id` links the latter two to their job.                                      |
+| `jev_events`            | `kind`, `guild_id`, `channel_id`, `question`, `answer`, `probability`, `confidence`, `applied`, `latency_ms`, `input_tokens`, `baseline`, `job_id`, `created_at`, `judge`                                                                                                                                                              | Value-free judgment telemetry. The kind is `turn`, `admission`, `verification`, or `recall`; `job_id` links `admission` and `verification` to their job.            |
 | `extraction_samples`    | `id`, `job_id`, `guild_id`, `channel_id`, `outcome`, `admission_probability`, `lines`, `created_at`, `expires_at`                                                                                                                                                                                                                      | Private, expiring text sample of rejected conversations for offline labelling. Never read by recall or any prompt.                                                  |
 
 The `extraction_queue` payload contains the episode's delta messages, up to three preceding context lines, and start
@@ -643,7 +643,37 @@ built by `recallForTurn` (`src/agent/memory/recall.ts`).
   blocks.
 - **Telemetry:** every guild memory turn records a `memory_events` row of kind `recall` (or `recall_shadow`) whose
   `detail` JSON holds the mode, privacy level, fallback flag, gated count and the selected `[kind, id, score]` tuples,
-  never memory text.
+  never memory text. A `shadow` row also carries a `gate` object, described next.
+- **Jev Gate Detail:** in `shadow` mode a Jev relevance gate (`src/agent/memory/recallGateRun.ts`) judges the
+  candidates after the turn context is returned, so it never delays the reply or changes the prompt. Its `gate` object
+  holds only ids, probabilities, counts and offsets, never memory text:
+  - `v`, `rubric`, `ref`: the detail version (1), the rubric version (`r1`) and an 8-character reference. The
+    `jev_events` row of kind `recall` has the question `recall:<rubric>:<ref>`.
+  - `status`: `ok`, `skipped` (empty shortlist or a request over the context cap), `no_client` (no
+    Jev key), `deadline`, `error` or `invalid` (a missing or out-of-range answer). `{ v: 1, status: 'gate_error' }`
+    alone means the gate threw.
+  - `latencyMs`, `inputTokens`, `usageUnknown`: the Jev call's latency, its input tokens, and true when the call
+    settled without a usage figure (`deadline` or `error`).
+  - `shortlist`: one `[kind, id, p]` per shortlisted candidate, `p` being Jev's probability to four decimals, or
+    `null` when that candidate was not judged.
+  - `core`, `selected`: `[kind, id]` tuples for the core facts that bypass the gate and for what the gate would have
+    selected (the core facts plus every candidate at or above its kind's `memory.recallGateMinNoul` cutoff).
+  - `messageHash`: the first 16 hex characters of the SHA-256 of the message, to group runs without storing text.
+  - `fallback`: true when the pool had no usable query embedding and held keyword matches only.
+  - `model`, `embedding`: the model Jev reported answering (`null` when no response arrived) and the
+    `embeddings.fingerprint` that ranked the pool. Neither is checked against anything; they only record versions.
+  - `startMs`, `setupMs`: when the gate started, counted from the start of the turn, and how long it took to build the
+    pool and shortlist.
+  - `contextReadyMs`, `deadlineMissed`, `projectedAddedMs`: when the prompt was ready, counted from the start of the
+    turn (`null` when the gate settled first); true when the gate settled later than `memory.recallGateDeadlineMs`
+    after the turn started; and how long the reply would have waited for the gate (0 when it settled first).
+  - In `shadow` mode the Jev request is waited on for up to `jev.memoryTimeoutMs` from the gate start rather than
+    cut at the reply deadline, so `status` shows what Jev would do and `deadlineMissed` shows what that would cost.
+    Unified mode will wait only to the reply deadline.
+- **Jev Recall Events:** each attempted Jev request writes one `jev_events` row of kind `recall`, with the question
+  `recall:<rubric>:<ref>`, the answer `{ status, decisions: [[key, p]], usage_unknown }` and NULL `probability` and
+  `confidence`. `applied` is true only in unified mode when the gate added a non-core item. A request that was never
+  sent (no client, an empty shortlist, or a deadline already past) writes no row.
 
 ### Bounded Retrieval Contract
 
