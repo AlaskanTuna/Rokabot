@@ -29,7 +29,7 @@ import { ModelScopeLlm, RoutedLlm } from '../../fallbackModel.js'
 import { AnthropicLlm } from '../anthropicLlm.js'
 import { ChatCompletionsLlm } from '../chatCompletionsLlm.js'
 import { createLlm, createRokaModel } from '../createModel.js'
-import { profileFor } from '../profiles.js'
+import { COMPATIBLE_DEFAULTS, compatibleProfile, profileFor } from '../profiles.js'
 import { type CallUsage, onUsage } from '../usage.js'
 
 const legacyGemini: ResolvedModel = {
@@ -76,6 +76,28 @@ const qwen122: ResolvedModel = {
   ...legacyFallback,
   key: 'qwen122',
   timeoutMs: 12_000
+}
+const local: ResolvedModel = {
+  key: 'local',
+  provider: 'openai-compatible',
+  model: 'qwen3:32b',
+  profile: compatibleProfile('qwen3:32b', COMPATIBLE_DEFAULTS),
+  apiKey: '',
+  baseUrl: 'http://localhost:11434/v1',
+  timeoutMs: 30_000,
+  maxOutputTokens: 500,
+  maxTokensParam: 'max_tokens',
+  extraBody: { think: false }
+}
+const router: ResolvedModel = {
+  ...local,
+  key: 'router',
+  model: 'vendor/model-x',
+  profile: compatibleProfile('vendor/model-x', COMPATIBLE_DEFAULTS),
+  apiKey: 'router-key',
+  baseUrl: 'https://router.example/api/v1',
+  maxTokensParam: 'max_completion_tokens',
+  extraBody: undefined
 }
 
 function geminiRequest(): LlmRequest {
@@ -143,6 +165,18 @@ describe('createRokaModel', () => {
     expect(model.hedgeAfterMs).toBe(0)
     expect(Reflect.get(model, 'pinTurns')).toBe(true)
   })
+
+  it('runs main and fallback on two openai-compatible endpoints, hedging rather than pinning', () => {
+    configState.llm.main = router
+    configState.llm.fallback = local
+
+    const model = createRokaModel()
+
+    expect(Reflect.get(model, 'primary')).toMatchObject({ baseUrl: 'https://router.example/api/v1', label: 'router' })
+    expect(Reflect.get(model, 'fallback')).toMatchObject({ baseUrl: 'http://localhost:11434/v1', label: 'local' })
+    expect(model.fallbackModelName).toBe('qwen3:32b')
+    expect(Reflect.get(model, 'pinTurns')).toBe(false)
+  })
 })
 
 describe('createLlm', () => {
@@ -181,6 +215,25 @@ describe('createLlm', () => {
     expect(createLlm(legacyFallback)).toBeInstanceOf(ModelScopeLlm)
   })
 
+  it('builds the Chat Completions adapter for an openai-compatible entry with its own request options', () => {
+    const llm = createLlm(local)
+
+    expect(llm).toBeInstanceOf(ChatCompletionsLlm)
+    expect(llm).not.toBeInstanceOf(ModelScopeLlm)
+    expect(llm).toMatchObject({
+      provider: 'openai-compatible',
+      model: 'qwen3:32b',
+      apiKey: '',
+      baseUrl: 'http://localhost:11434/v1',
+      label: 'local',
+      timeoutMs: 30_000,
+      maxOutputTokens: 500,
+      maxTokensParam: 'max_tokens',
+      extraBody: { think: false }
+    })
+    expect(createLlm(router)).toMatchObject({ maxTokensParam: 'max_completion_tokens', extraBody: {} })
+  })
+
   it('keeps an openai entry named legacy-fallback on OpenAI, not the legacy ModelScope adapter', () => {
     const llm = createLlm({ ...luna, key: 'legacy-fallback' })
 
@@ -192,7 +245,8 @@ describe('createLlm', () => {
   it.each<[string, ResolvedModel, typeof ChatCompletionsLlm]>([
     ['the legacy fallback', { ...legacyFallback, baseUrl: 'https://ms.example/v1' }, ModelScopeLlm],
     ['a block modelscope entry', { ...qwen122, baseUrl: 'https://ms.example/v1' }, ChatCompletionsLlm],
-    ['an openai entry', { ...luna, baseUrl: 'https://oa.example/v1' }, ChatCompletionsLlm]
+    ['an openai entry', { ...luna, baseUrl: 'https://oa.example/v1' }, ChatCompletionsLlm],
+    ['an openai-compatible entry', local, ChatCompletionsLlm]
   ])('posts %s to its configured base URL', async (_entry, resolved, adapter) => {
     const posted: unknown[] = []
     vi.stubGlobal('fetch', async (input: unknown) => {

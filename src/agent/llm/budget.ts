@@ -8,7 +8,7 @@
  * reply turn behind it: that is how replies outrank background work without preempting anything already in flight.
  */
 
-import { config } from '../../config.js'
+import { type ResolvedModel, config } from '../../config.js'
 import { addSpend, monthKey, readSpend } from '../../storage/spendStore.js'
 import { logger } from '../../utils/logger.js'
 import { __resetRateLimitersForTest, rateLimiterFor } from '../../utils/rateLimiter.js'
@@ -80,7 +80,9 @@ function backgroundShareSpent(provider: ProviderId): boolean {
 }
 
 function recordSpend(usage: CallUsage): void {
-  const usd = estimateCostUsd(usage)
+  // An openai-compatible model has no tested profile; the route that declared it carries its price.
+  const declared = usage.provider === 'openai-compatible' ? routeFor(usage.provider, usage.model) : undefined
+  const usd = estimateCostUsd(usage, declared?.profile.price)
   if (usd <= 0) return
   const month = monthKey()
   const cap = config.llm.monthlyBudgetUsd[usage.provider]
@@ -156,11 +158,11 @@ function acquireSlot(provider: ProviderId, reply: boolean, signal?: AbortSignal)
   })
 }
 
-function routeLimits(provider: ProviderId, model: string) {
-  const route = [config.llm.main, config.llm.fallback].find(
-    (entry) => entry?.provider === provider && entry.model === model
+function routeFor(provider: ProviderId, model: string): ResolvedModel | undefined {
+  return (
+    [config.llm.main, config.llm.fallback].find((entry) => entry?.provider === provider && entry.model === model) ??
+    undefined
   )
-  return route?.limits
 }
 
 /** Reserve one provider call, or name the budget that refused it. Adapters call `startCall`, which wraps this. */
@@ -175,7 +177,7 @@ export function reserveCall(input: CallInput): CallReservation | BudgetDenial {
   const coveredByTurn = replySide && main.provider === provider && main.model === model
   // A background call leaves one whole reply turn behind it, so the next reply is admitted rather than declined.
   const headroom = replySide ? 0 : config.gemini.maxLlmCalls
-  const limits = routeLimits(provider, model)
+  const limits = routeFor(provider, model)?.limits
   const limiter = rateLimiterFor({ provider, model, limits })
   const tokens = coveredByTurn ? null : tokenBucketFor({ provider, model, limits })
 

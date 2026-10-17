@@ -71,7 +71,8 @@ export function createLlm(resolved: ResolvedModel): BaseLlm {
     case 'anthropic':
       return new AnthropicLlm({ resolved })
     case 'openai':
-    case 'modelscope': {
+    case 'modelscope':
+    case 'openai-compatible': {
       const options = {
         provider: resolved.provider,
         model: resolved.model,
@@ -80,7 +81,10 @@ export function createLlm(resolved: ResolvedModel): BaseLlm {
         timeoutMs: resolved.timeoutMs,
         profile: resolved.profile,
         effort: resolved.effort,
-        maxOutputTokens: resolved.maxOutputTokens
+        maxOutputTokens: resolved.maxOutputTokens,
+        maxTokensParam: resolved.maxTokensParam,
+        extraBody: resolved.extraBody,
+        ...(resolved.provider === 'openai-compatible' ? { label: resolved.key } : {})
       }
       // The synthesised legacy fallback keeps today's request and reply translation. The provider check stops an
       // llm.models entry that happens to be named legacy-fallback from posting another provider's key to ModelScope.

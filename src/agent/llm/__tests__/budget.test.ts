@@ -1,7 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 type Limits = { rpm?: number; rpd?: number; tpm?: number }
-type Route = { key: string; provider: string; model: string; limits?: Limits }
+type Route = {
+  key: string
+  provider: string
+  model: string
+  limits?: Limits
+  profile?: { price: { input: number; output: number } }
+}
 
 const configState = vi.hoisted(() => ({
   logging: { level: 'silent' },
@@ -606,5 +612,46 @@ describe('monthly spend', () => {
       granted(reserveCall(extraction))
       expect(getSharedRateLimiter().remainingRpm).toBe(15)
     })
+  })
+})
+
+describe('openai-compatible routes', () => {
+  const router = { provider: 'openai-compatible', model: 'vendor/model-x', workload: 'reply', estTokens: 100 } as const
+  const local = { ...router, model: 'qwen3:32b' } as const
+  const usageOn = (input: CallInput, inputTokens: number): CallUsage => ({ ...input, inputTokens, outputTokens: 0 })
+
+  beforeEach(() => {
+    configState.llm.main = { key: 'router', ...router, profile: { price: { input: 1, output: 1 } } }
+    configState.llm.fallback = { key: 'local', ...local, profile: { price: { input: 0, output: 0 } } }
+    configState.llm.monthlyBudgetUsd = { 'openai-compatible': 3 }
+    __resetBudgetsForTest()
+  })
+
+  it('prices a call at the price its own route declares', () => {
+    recordUsage(usageOn(router, 2_000_000))
+
+    expect(readSpend('2026-10', 'openai-compatible')).toBe(2)
+  })
+
+  it('records nothing for a free model, so its spend never reaches the cap', () => {
+    recordUsage(usageOn(local, 50_000_000))
+
+    expect(readSpend('2026-10', 'openai-compatible')).toBe(0)
+    granted(reserveCall(local))
+  })
+
+  it('caps every openai-compatible route together once their shared month is spent', () => {
+    recordUsage(usageOn(router, 3_000_000))
+
+    expect(reserveCall(router)).toEqual({ denied: 'monthly' })
+    expect(reserveCall(local)).toEqual({ denied: 'monthly' })
+  })
+
+  it('does not queue openai-compatible calls', async () => {
+    const first = await startCall(local)
+    const second = await startCall(local)
+
+    first.release()
+    second.release()
   })
 })

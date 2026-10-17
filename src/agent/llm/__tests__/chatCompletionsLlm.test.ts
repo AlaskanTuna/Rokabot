@@ -5,8 +5,15 @@ import { FinishReason } from '@google/genai'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ModelScopeLlm as ReexportedModelScopeLlm } from '../../fallbackModel.js'
 import { type BudgetDenial, grantOrThrow } from '../budget.js'
-import { ChatCompletionsLlm, ModelScopeLlm } from '../chatCompletionsLlm.js'
-import { MODEL_PROFILES, type ProviderId, profileFor } from '../profiles.js'
+import { ChatCompletionsLlm, type ChatCompletionsOptions, ModelScopeLlm } from '../chatCompletionsLlm.js'
+import {
+  COMPATIBLE_DEFAULTS,
+  type CompatibleCapabilities,
+  MODEL_PROFILES,
+  type ProviderId,
+  compatibleProfile,
+  profileFor
+} from '../profiles.js'
 import { ProviderError } from '../providerError.js'
 import { type CallUsage, WORKLOAD_LABEL, onUsage } from '../usage.js'
 
@@ -1300,5 +1307,200 @@ describe('ChatCompletionsLlm usage and budget', () => {
     expect(seen).toEqual([expect.objectContaining({ inputTokens: 90, outputTokens: 7 })])
     expect(budget.release).toHaveBeenCalledTimes(1)
     expect(budget.release.mock.calls[0]?.[0]).toBe(seen[0])
+  })
+})
+
+describe('openai-compatible requests', () => {
+  function onCompatible(
+    fetchImpl: typeof fetch,
+    capabilities: Partial<CompatibleCapabilities> = {},
+    options: Partial<ChatCompletionsOptions> = {}
+  ): ChatCompletionsLlm {
+    return new ChatCompletionsLlm({
+      provider: 'openai-compatible',
+      model: 'qwen3:32b',
+      apiKey: '',
+      baseUrl: 'http://localhost:11434/v1/',
+      label: 'local',
+      timeoutMs: 2000,
+      profile: compatibleProfile('qwen3:32b', { ...COMPATIBLE_DEFAULTS, ...capabilities }),
+      fetchImpl,
+      ...options
+    })
+  }
+
+  const sampled = () =>
+    request([{ role: 'user', parts: [{ text: 'hi' }] }], { temperature: 0.9, topP: 0.95, maxOutputTokens: 300 })
+
+  it('posts to its own base URL with no Authorization header and no provider extras when keyless', async () => {
+    const { fetchImpl, calls } = replay(openai.text)
+
+    await responses(onCompatible(fetchImpl), sampled())
+
+    expect(calls[0]?.input).toBe('http://localhost:11434/v1/chat/completions')
+    expect(new Headers(calls[0]?.init?.headers).has('authorization')).toBe(false)
+    expect(calls[0]?.init?.body).toBe(
+      JSON.stringify({
+        model: 'qwen3:32b',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: false,
+        temperature: 0.9,
+        top_p: 0.95,
+        max_tokens: 300
+      })
+    )
+  })
+
+  it('sends the key from apiKeyEnv as a bearer token', async () => {
+    const { fetchImpl, calls } = replay(openai.text)
+
+    await responses(onCompatible(fetchImpl, {}, { apiKey: 'router-key' }), hello())
+
+    expect(new Headers(calls[0]?.init?.headers).get('authorization')).toBe('Bearer router-key')
+  })
+
+  it('names the output cap with the configured max-tokens parameter', async () => {
+    const { fetchImpl, calls } = replay(openai.text)
+
+    await responses(onCompatible(fetchImpl, {}, { maxTokensParam: 'max_completion_tokens' }), sampled())
+
+    expect(bodyOf(calls[0])).toMatchObject({ max_completion_tokens: 300 })
+    expect(bodyOf(calls[0])).not.toHaveProperty('max_tokens')
+  })
+
+  it('merges the extra body into every request but keeps the reply non-streaming', async () => {
+    const { fetchImpl, calls } = replay(openai.text)
+    const extraBody = { enable_thinking: false, provider: { sort: 'price' }, stream: true }
+
+    await responses(onCompatible(fetchImpl, {}, { extraBody }), sampled())
+
+    expect(bodyOf(calls[0])).toEqual({
+      model: 'qwen3:32b',
+      messages: [{ role: 'user', content: 'hi' }],
+      enable_thinking: false,
+      provider: { sort: 'price' },
+      stream: false,
+      temperature: 0.9,
+      top_p: 0.95,
+      max_tokens: 300
+    })
+  })
+
+  it('sends reasoning_effort only when the effort is one the entry lists', async () => {
+    const allowed = replay(openai.text)
+    const unlisted = replay(openai.text)
+
+    await responses(onCompatible(allowed.fetchImpl, { efforts: ['low', 'high'] }, { effort: 'low' }), hello())
+    await responses(onCompatible(unlisted.fetchImpl, {}, { effort: 'low' }), hello())
+
+    expect(bodyOf(allowed.calls[0]).reasoning_effort).toBe('low')
+    expect(bodyOf(unlisted.calls[0])).not.toHaveProperty('reasoning_effort')
+  })
+
+  it('drops sampling parameters the entry says the model rejects', async () => {
+    const { fetchImpl, calls } = replay(openai.text)
+
+    await responses(onCompatible(fetchImpl, { temperature: false, topP: false }), sampled())
+
+    expect(bodyOf(calls[0])).not.toHaveProperty('temperature')
+    expect(bodyOf(calls[0])).not.toHaveProperty('top_p')
+  })
+
+  it('sends image bytes only when the entry declares vision', async () => {
+    const contents = [
+      { role: 'user', parts: [{ text: 'look' }, { inlineData: { mimeType: 'image/png', data: 'AA==' } }] }
+    ]
+    const blind = replay(openai.text)
+    const seeing = replay(openai.text)
+
+    await responses(onCompatible(blind.fetchImpl), request(contents))
+    await responses(onCompatible(seeing.fetchImpl, { vision: true }), request(contents))
+
+    expect(bodyOf(blind.calls[0]).messages).toEqual([
+      { role: 'user', content: "look\n(a file attachment that can't be opened right now)" }
+    ])
+    expect(bodyOf(seeing.calls[0]).messages).toEqual([
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'look' },
+          { type: 'image_url', image_url: { url: 'data:image/png;base64,AA==' } }
+        ]
+      }
+    ])
+  })
+
+  it('asks for json_object with the schema in the system message by default, and strict json_schema when declared', async () => {
+    const schema = { type: 'object', properties: { city: { type: 'string' } }, required: ['city'] }
+    const structured = () =>
+      request([{ role: 'user', parts: [{ text: 'Kyoto?' }] }], {
+        systemInstruction: 'Extract facts.',
+        responseJsonSchema: schema
+      })
+    const object = replay(modelscope.qwenJsonObject)
+    const strict = replay(openai.jsonSchema)
+
+    await responses(onCompatible(object.fetchImpl), structured())
+    await responses(onCompatible(strict.fetchImpl, { structuredOutput: 'json_schema' }), structured())
+
+    expect(bodyOf(object.calls[0]).response_format).toEqual({ type: 'json_object' })
+    expect(bodyOf(object.calls[0]).messages).toEqual([
+      {
+        role: 'system',
+        content: `Extract facts.\n\nReply with only a JSON object that matches this JSON Schema:\n${JSON.stringify(schema)}`
+      },
+      { role: 'user', content: 'Kyoto?' }
+    ])
+    expect(bodyOf(strict.calls[0]).response_format).toMatchObject({
+      type: 'json_schema',
+      json_schema: { strict: true }
+    })
+    expect(bodyOf(strict.calls[0]).messages).toEqual([
+      { role: 'system', content: 'Extract facts.' },
+      { role: 'user', content: 'Kyoto?' }
+    ])
+  })
+
+  it('leaves tools out for a model without tool support, and asks for one call at a time when declared', async () => {
+    const withTools = () =>
+      request([{ role: 'user', parts: [{ text: 'roll' }] }], {
+        tools: [{ functionDeclarations: [{ name: 'roll_dice', parametersJsonSchema: { type: 'object' } }] }]
+      })
+    const toolless = replay(openai.text)
+    const serial = replay(openai.text)
+
+    await responses(onCompatible(toolless.fetchImpl, { tools: false }), withTools())
+    await responses(onCompatible(serial.fetchImpl, { parallelToolCalls: false }), withTools())
+
+    expect(bodyOf(toolless.calls[0])).not.toHaveProperty('tools')
+    expect(bodyOf(serial.calls[0])).toMatchObject({
+      tools: [{ type: 'function', function: { name: 'roll_dice' } }],
+      parallel_tool_calls: false
+    })
+  })
+
+  it('labels failures with its llm.models key and records usage under openai-compatible', async () => {
+    const seen: CallUsage[] = []
+    const stop = onUsage((usage) => seen.push(usage))
+
+    await responses(onCompatible(replay(openai.text).fetchImpl), hello())
+    await expect(responses(onCompatible(replay(modelscope.overloaded).fetchImpl), hello())).rejects.toMatchObject({
+      provider: 'openai-compatible',
+      kind: 'transient_http',
+      status: 503,
+      message: expect.stringMatching(/^local 503: /)
+    })
+    stop()
+
+    expect(seen[0]).toMatchObject({ provider: 'openai-compatible', model: 'qwen3:32b', workload: 'reply' })
+    expect(budget.startCall).toHaveBeenCalledWith(expect.objectContaining({ provider: 'openai-compatible' }))
+  })
+
+  it('reads insufficient_quota as spent billing without disabling every openai-compatible endpoint', async () => {
+    await expect(responses(onCompatible(replay(openai.insufficientQuota).fetchImpl), hello())).rejects.toMatchObject({
+      provider: 'openai-compatible',
+      kind: 'billing_exhausted'
+    })
+    expect(budget.markBillingExhausted).not.toHaveBeenCalled()
   })
 })

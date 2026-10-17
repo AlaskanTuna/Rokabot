@@ -1023,8 +1023,16 @@ block; a switch takes a restart.
   sampling, output cap, caching and price. An `llm.models` entry naming an untested model, an effort its profile
   does not take, an output cap above the profile's, or a provider whose key is unset stops startup with one
   message.
+- **OpenAI-Compatible Models:** an `llm.models` entry with `provider: openai-compatible` names any Chat Completions
+  server (`baseUrl`, required) and declares its own `capabilities`; `compatibleProfile` turns them into a profile
+  with `verified: true`, since the deployer vouches for it. `apiKeyEnv` names the variable holding its key (none sends
+  no `Authorization` header), `extraBody` is merged into every request, and `price` (default 0) feeds the
+  `openai-compatible` monthly budget that every such entry shares. A spent-credit reply switches the turn but does not
+  disable the other `openai-compatible` endpoints. Unknown capabilities, bad values and an unset `apiKeyEnv` stop
+  startup with one message.
 - **Adapters:** `createLlm` builds `GeminiLlm` (ADK's Gemini plus shaping and usage), `AnthropicLlm`
-  (`@anthropic-ai/sdk` Messages API, SDK retries off) or, for `openai` and `modelscope` models, `ChatCompletionsLlm`.
+  (`@anthropic-ai/sdk` Messages API, SDK retries off) or, for `openai`, `modelscope` and `openai-compatible` models,
+  `ChatCompletionsLlm`, which takes its output-cap field, extra body fields and labels from the resolved model.
   `ModelScopeLlm` (its legacy subclass) serves only the synthesised legacy fallback. `shapeRequest` drops sampling
   parameters a profile rejects and safety settings for non-Gemini targets, and clamps the output cap.
 - **Claude Requests:** the core and speech layers go as one cached system block (`cache_control`), the per-turn
@@ -1034,8 +1042,8 @@ block; a switch takes a restart.
 - **Thinking Within a Turn:** Claude's thinking blocks are held per turn route and sent back only inside that
   turn's tool loop, and only while everything before them is byte-identical; ADK session history never holds them.
 - **Pinning:** when either side replays thinking, the first answer of a turn pins its later calls to that side.
-  Gemini, OpenAI and ModelScope routes never pin (no Gemini or Chat Completions profile replays thinking), so they
-  keep hedging every call.
+  Gemini, OpenAI, ModelScope and OpenAI-compatible routes never pin (no Gemini or Chat Completions profile replays
+  thinking), so they keep hedging every call.
 - **Failures:** adapters throw `ProviderError`, except that the legacy fallback (`ModelScopeLlm`) keeps today's plain
   errors for everything but malformed tool arguments (see The Fallback Model); `classifyGeminiFailure` returns its
   kind unchanged. The ladder switches once for `transient_http`, `network`, `quota_exhausted`, `billing_exhausted`,

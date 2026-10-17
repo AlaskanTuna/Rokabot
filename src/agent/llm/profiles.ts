@@ -1,4 +1,4 @@
-export type ProviderId = 'gemini' | 'anthropic' | 'openai' | 'modelscope'
+export type ProviderId = 'gemini' | 'anthropic' | 'openai' | 'modelscope' | 'openai-compatible'
 
 export interface ModelProfile {
   provider: ProviderId
@@ -213,4 +213,53 @@ export const MODEL_PROFILES: readonly ModelProfile[] = [
 
 export function profileFor(provider: ProviderId, model: string): ModelProfile | undefined {
   return MODEL_PROFILES.find((profile) => profile.provider === provider && profile.model === model)
+}
+
+/** What an `openai-compatible` entry in config.yml declares about its model; the deployer vouches for it. */
+export interface CompatibleCapabilities {
+  tools: boolean
+  parallelToolCalls: boolean
+  vision: boolean
+  structuredOutput: 'json_schema' | 'json_object'
+  maxTokensParam: 'max_tokens' | 'max_completion_tokens'
+  temperature: boolean
+  topP: boolean
+  efforts: readonly string[]
+  contextWindow: number
+  maxOutputTokens: number
+}
+
+export const COMPATIBLE_DEFAULTS: Readonly<CompatibleCapabilities> = {
+  tools: true,
+  parallelToolCalls: true,
+  vision: false,
+  structuredOutput: 'json_object',
+  maxTokensParam: 'max_tokens',
+  temperature: true,
+  topP: true,
+  efforts: [],
+  contextWindow: 131_072,
+  maxOutputTokens: 8192
+}
+
+export function compatibleProfile(
+  model: string,
+  capabilities: CompatibleCapabilities,
+  price: ModelProfile['price'] = { input: 0, output: 0 }
+): ModelProfile {
+  return {
+    provider: 'openai-compatible',
+    model,
+    input: { image: capabilities.vision, pdf: false, audio: false, video: false },
+    tools: { supported: capabilities.tools, parallel: capabilities.parallelToolCalls },
+    thinking: { efforts: capabilities.efforts, replayWithinTurn: false },
+    sampling: { temperature: capabilities.temperature, topP: capabilities.topP },
+    structuredOutput: capabilities.structuredOutput === 'json_schema' ? 'json_schema_strict' : 'json_object',
+    maxOutputTokens: capabilities.maxOutputTokens,
+    contextWindow: capabilities.contextWindow,
+    promptCaching: 'none',
+    tokenCounter: 'estimate',
+    price,
+    verified: true
+  }
 }

@@ -67,9 +67,10 @@ const CONTEXT_LENGTH_PATTERN =
 const MAGICUBE_PATTERN = /magicube/i
 
 function httpFailureKind(provider: ChatCompletionsProvider, status: number, body: string): FailureKind {
-  // OpenAI's insufficient_quota is a spent balance, not a busy minute, and stays spent until billing changes.
+  // OpenAI's insufficient_quota is a spent balance, not a busy minute, and stays spent until billing changes. A
+  // ModelScope balance is counted in Magicubes, so the same words there still mean a busy minute.
   if (status === 429) {
-    return provider === 'openai' && /insufficient_quota/.test(body) ? 'billing_exhausted' : 'quota_exhausted'
+    return provider !== 'modelscope' && /insufficient_quota/.test(body) ? 'billing_exhausted' : 'quota_exhausted'
   }
   if (status >= 500) return 'transient_http'
   if (MAGICUBE_PATTERN.test(body)) return 'quota_exhausted'
@@ -335,7 +336,8 @@ function openAiMessages(llmRequest: LlmRequest, acceptsImages: boolean, legacy: 
   return messages
 }
 
-export type ChatCompletionsProvider = 'openai' | 'modelscope'
+export type ChatCompletionsProvider = 'openai' | 'modelscope' | 'openai-compatible'
+export type MaxTokensParam = 'max_tokens' | 'max_completion_tokens'
 
 // Chat Completions counts cached tokens inside prompt_tokens and reasoning inside completion_tokens.
 function callUsage(
@@ -374,25 +376,41 @@ function usageMetadata(
 
 const PROVIDER_LABELS: Readonly<Record<ChatCompletionsProvider, string>> = {
   openai: 'OpenAI',
-  modelscope: 'ModelScope'
+  modelscope: 'ModelScope',
+  'openai-compatible': 'OpenAI-compatible'
 }
 
-export const CHAT_COMPLETIONS_BASE_URLS: Readonly<Record<ChatCompletionsProvider, string>> = {
+export const CHAT_COMPLETIONS_BASE_URLS: Readonly<Partial<Record<ChatCompletionsProvider, string>>> = {
   openai: 'https://api.openai.com/v1',
   modelscope: 'https://api-inference.modelscope.ai/v1'
+}
+
+// ModelScope serves Qwen and DeepSeek with thinking on unless told otherwise; OpenAI rejects the field.
+const DEFAULT_EXTRA_BODY: Readonly<Partial<Record<ChatCompletionsProvider, JsonObject>>> = {
+  modelscope: { enable_thinking: false }
+}
+// GPT-6 models refuse max_tokens and take max_completion_tokens instead.
+const DEFAULT_MAX_TOKENS_PARAM: Readonly<Partial<Record<ChatCompletionsProvider, MaxTokensParam>>> = {
+  openai: 'max_completion_tokens'
 }
 
 export interface ChatCompletionsOptions {
   provider: ChatCompletionsProvider
   model: string
+  /** Empty sends no Authorization header, for a keyless local server. */
   apiKey: string
   baseUrl?: string
+  /** Names the endpoint in errors; the provider's own name when absent. */
+  label?: string
   timeoutMs: number
   /** Absent on today's legacy fallback route, which then sends the request unshaped. */
   profile?: ModelProfile
   effort?: string
   /** The resolved output cap (`ResolvedModel.maxOutputTokens`); the profile's own cap when absent. */
   maxOutputTokens?: number
+  /** Overrides the provider's built-in request options, which an openai-compatible entry declares in config.yml. */
+  maxTokensParam?: MaxTokensParam
+  extraBody?: JsonObject
   fetchImpl?: typeof fetch
 }
 
@@ -400,31 +418,37 @@ export class ChatCompletionsLlm extends BaseLlm {
   readonly provider: ChatCompletionsProvider
   private readonly apiKey: string
   private readonly baseUrl: string
+  private readonly label: string
   private readonly timeoutMs: number
   private readonly profile: ModelProfile | undefined
   private readonly effort: string | undefined
   private readonly maxOutputTokens: number | undefined
+  private readonly maxTokensParam: MaxTokensParam
+  private readonly extraBody: JsonObject
   private readonly fetchImpl: typeof fetch
 
   constructor(options: ChatCompletionsOptions) {
     super({ model: options.model })
+    const baseUrl = options.baseUrl ?? CHAT_COMPLETIONS_BASE_URLS[options.provider]
+    if (baseUrl === undefined) throw new Error(`${options.provider} model ${options.model} needs a baseUrl`)
     this.provider = options.provider
     this.apiKey = options.apiKey
-    this.baseUrl = (options.baseUrl ?? CHAT_COMPLETIONS_BASE_URLS[options.provider]).replace(/\/+$/, '')
+    this.baseUrl = baseUrl.replace(/\/+$/, '')
+    this.label = options.label ?? PROVIDER_LABELS[options.provider]
     this.timeoutMs = options.timeoutMs
     this.profile = options.profile
-    this.effort = options.effort ?? options.profile?.thinking.defaultEffort
+    const effort = options.effort ?? options.profile?.thinking.defaultEffort
+    this.effort =
+      effort === undefined || options.profile?.thinking.efforts.includes(effort) === false ? undefined : effort
     this.maxOutputTokens = options.maxOutputTokens
+    this.maxTokensParam = options.maxTokensParam ?? DEFAULT_MAX_TOKENS_PARAM[options.provider] ?? 'max_tokens'
+    this.extraBody = options.extraBody ?? DEFAULT_EXTRA_BODY[options.provider] ?? {}
     this.fetchImpl = options.fetchImpl ?? fetch
   }
 
   /** True only on the legacy ModelScope fallback, which keeps today's request and reply translation exactly. */
   protected get legacyTranslation(): boolean {
     return false
-  }
-
-  private get label(): string {
-    return PROVIDER_LABELS[this.provider]
   }
 
   private fail(
@@ -484,23 +508,17 @@ export class ChatCompletionsLlm extends BaseLlm {
     const acceptsImages = this.legacyTranslation || (this.profile?.input.image ?? true)
     const messages = openAiMessages(llmRequest, acceptsImages, this.legacyTranslation)
     if (schema && !strict) withSystemText(messages, `${JSON_OBJECT_INSTRUCTION}\n${JSON.stringify(schema)}`)
-    const body: JsonObject = {
-      model: this.model,
-      messages,
-      // ModelScope serves Qwen and DeepSeek with thinking on unless told otherwise; OpenAI rejects the field.
-      ...(this.provider === 'modelscope' ? { enable_thinking: false } : {}),
-      stream: false
-    }
+    const body: JsonObject = { model: this.model, messages, ...this.extraBody, stream: false }
     if (this.effort !== undefined) body.reasoning_effort = this.effort
     const temperature = llmRequest.config?.temperature
     const topP = llmRequest.config?.topP
     const maxTokens = llmRequest.config?.maxOutputTokens
     if (temperature !== undefined) body.temperature = temperature
     if (topP !== undefined) body.top_p = topP
-    // GPT-6 models refuse max_tokens and take max_completion_tokens instead.
-    if (maxTokens !== undefined) body[this.provider === 'openai' ? 'max_completion_tokens' : 'max_tokens'] = maxTokens
-    const tools = openAiTools(llmRequest)
+    if (maxTokens !== undefined) body[this.maxTokensParam] = maxTokens
+    const tools = this.profile?.tools.supported === false ? [] : openAiTools(llmRequest)
     if (tools.length) body.tools = tools
+    if (tools.length && this.profile?.tools.parallel === false) body.parallel_tool_calls = false
     if (schema) {
       body.response_format = strict
         ? { type: 'json_schema', json_schema: { name: 'response', strict: true, schema: strictSchema(schema) } }
@@ -519,7 +537,7 @@ export class ChatCompletionsLlm extends BaseLlm {
       response = await this.fetchImpl(`${this.baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${this.apiKey}`,
+          ...(this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {}),
           'Content-Type': 'application/json'
         },
         body,
@@ -542,7 +560,8 @@ export class ChatCompletionsLlm extends BaseLlm {
       const message = `${this.label} ${response.status}: ${text.slice(0, 300)}`
       if (this.legacyTranslation) throw new Error(message)
       const kind = httpFailureKind(this.provider, response.status, text)
-      if (kind === 'billing_exhausted') markBillingExhausted(this.provider)
+      // Every openai-compatible endpoint shares one provider id, so one spent account must not disable the others.
+      if (kind === 'billing_exhausted' && this.provider !== 'openai-compatible') markBillingExhausted(this.provider)
       throw this.fail(kind, message, {
         status: response.status,
         retryAfterMs: retryAfterMs(response)

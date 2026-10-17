@@ -6,7 +6,7 @@ import type { ModelRoute } from '../../fallbackModel.js'
 import { ErrorRecoveryPlugin, runTurnWithReliability } from '../../reliability.js'
 import { ChatCompletionsLlm } from '../chatCompletionsLlm.js'
 import type { ChatCompletionsProvider } from '../chatCompletionsLlm.js'
-import { profileFor } from '../profiles.js'
+import { COMPATIBLE_DEFAULTS, compatibleProfile, profileFor } from '../profiles.js'
 import { ProviderError } from '../providerError.js'
 
 type Brain = 'gemini' | 'anthropic' | 'openai' | 'qwen' | 'deepseek'
@@ -185,5 +185,55 @@ describe('routing across every provider', () => {
       expect(result).toMatchObject({ success: false, kind: 'transient_http', text: FAILURE_REPLY, attempts: 2 })
       expect(primary.calls()).toBe(2)
     })
+  })
+})
+
+describe('routing across two openai-compatible endpoints', () => {
+  function endpoint(key: string, baseUrl: string, reply: 'answer' | 'overloaded' | 'slow') {
+    const posted: unknown[] = []
+    const fetchImpl: typeof fetch = async (input, init) => {
+      posted.push(input)
+      if (reply === 'slow') {
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(init.signal?.reason))
+        })
+      }
+      return reply === 'overloaded'
+        ? Response.json({ error: { message: 'busy' } }, { status: 503 })
+        : Response.json({ choices: [{ message: { content: `${key} answer` }, finish_reason: 'stop' }] })
+    }
+    const llm = new ChatCompletionsLlm({
+      provider: 'openai-compatible',
+      model: `${key}-model`,
+      apiKey: '',
+      baseUrl,
+      label: key,
+      timeoutMs: 2000,
+      profile: compatibleProfile(`${key}-model`, COMPATIBLE_DEFAULTS),
+      fetchImpl
+    })
+    return { llm, posted }
+  }
+
+  it('moves the turn to the fallback endpoint after a 503 from the main one', async () => {
+    const main = endpoint('router', 'https://router.example/v1', 'overloaded')
+    const fallback = endpoint('local', 'http://localhost:11434/v1', 'answer')
+
+    const { result, route } = await runTurn(new RoutedLlm(main.llm, fallback.llm, 0))
+
+    expect(result).toMatchObject({ success: true, text: 'local answer', attempts: 2 })
+    expect(route.answeredBy).toBe('fallback')
+    expect(main.posted).toEqual(['https://router.example/v1/chat/completions'])
+    expect(fallback.posted).toEqual(['http://localhost:11434/v1/chat/completions'])
+  })
+
+  it('answers from the hedged fallback endpoint while the main one is still running', async () => {
+    const main = endpoint('router', 'https://router.example/v1', 'slow')
+    const fallback = endpoint('local', 'http://localhost:11434/v1', 'answer')
+
+    const { result, route } = await runTurn(new RoutedLlm(main.llm, fallback.llm, 10))
+
+    expect(result).toMatchObject({ success: true, text: 'local answer', attempts: 1 })
+    expect(route).toMatchObject({ answeredBy: 'fallback', hedged: true, pinned: null })
   })
 })
