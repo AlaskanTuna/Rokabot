@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.4.0](https://github.com/AlaskanTuna/Rokabot/compare/v0.3.0...v0.4.0) (2026-10-17)
+
+
+### Features
+
+* add the Persona Studio dashboard for the pack, config.yml and .env ([#359](https://github.com/AlaskanTuna/Rokabot/issues/359)) ([9553ec4](https://github.com/AlaskanTuna/Rokabot/commit/9553ec4b53416572777dd7ffb5c1da16134ee196))
+* add the Persona Studio local API that validates pack, config and secret edits before saving ([#355](https://github.com/AlaskanTuna/Rokabot/issues/355)) ([35216d5](https://github.com/AlaskanTuna/Rokabot/commit/35216d516ce84d50adaad50fb8524713ef9ee218))
+* **agent:** run main and fallback models on any OpenAI-compatible endpoint declared in config.yml ([#349](https://github.com/AlaskanTuna/Rokabot/issues/349)) ([b3a90dc](https://github.com/AlaskanTuna/Rokabot/commit/b3a90dcdd65968daa486b6dac30869d40e8e0600))
+
+
+### Bug Fixes
+
+* **agent:** reject a command description that Discord's limit refuses once its macros are filled ([#357](https://github.com/AlaskanTuna/Rokabot/issues/357)) ([ae49e70](https://github.com/AlaskanTuna/Rokabot/commit/ae49e700fdde77ebab52967d78c20bba5e33c6df))
+* **config:** log startup warnings without deadlocking the config and logger imports ([#358](https://github.com/AlaskanTuna/Rokabot/issues/358)) ([a02ae44](https://github.com/AlaskanTuna/Rokabot/commit/a02ae445f7a5631c61aa519c6610e0f0fe0d519d))
+
 ## [0.3.0](https://github.com/AlaskanTuna/Rokabot/compare/v0.2.0...v0.3.0) (2026-10-16)
 
 
