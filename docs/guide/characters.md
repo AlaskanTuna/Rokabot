@@ -19,8 +19,8 @@ The prompt contract (block order, mood detection, reply shape, safety ladder) is
 [Prompt Engine](../trd/prompt-engine.md). Every line the bot posts outside the model's replies (busy and error
 replies, status text, command copy, `/stats` labels) lives in the pack's `lines.yml`.
 
-`npm run studio` starts [Persona Studio](../../studio/README.md), a local API that edits a pack and checks every save
-with this same validation.
+`npm run studio` opens [Persona Studio](../../studio/README.md), a local dashboard that edits every pack file with
+forms, previews the exact prompt for a mood and hour, and checks every save with this same validation.
 
 ## How the Bot Picks a Pack
 
