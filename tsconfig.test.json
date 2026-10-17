@@ -15,7 +15,8 @@
     "sidecar/embeddings/src/embedder.ts",
     "sidecar/embeddings/src/handler.ts",
     "sidecar/embeddings/src/__tests__/**/*",
-    "sidecar/embeddings/scripts/**/*"
+    "sidecar/embeddings/scripts/**/*",
+    "studio/server/**/*"
   ],
   "exclude": ["node_modules", "dist"]
 }

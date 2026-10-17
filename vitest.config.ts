@@ -5,7 +5,13 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     setupFiles: ['./tests/vitest.setup.ts'],
-    include: ['src/**/*.test.ts', 'tests/**/*.test.ts', 'scripts/**/*.test.ts', 'sidecar/**/*.test.ts'],
+    include: [
+      'src/**/*.test.ts',
+      'tests/**/*.test.ts',
+      'scripts/**/*.test.ts',
+      'sidecar/**/*.test.ts',
+      'studio/**/*.test.ts'
+    ],
     exclude: [
       ...configDefaults.exclude,
       'tests/harness/__tests__/memoryShadow.eval.test.ts',
