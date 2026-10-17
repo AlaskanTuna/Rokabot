@@ -115,8 +115,9 @@ export const moodsFileSchema = z.strictObject({
 })
 
 const pool = z.array(text).min(1)
-// Discord rejects a slash command whose description is longer.
-const command = text.max(100)
+/** Discord rejects a slash command whose description is longer, and the loader checks it again once macros are filled. */
+export const COMMAND_DESCRIPTION_LIMIT = 100
+const command = text.max(COMMAND_DESCRIPTION_LIMIT)
 const watchLines = z.strictObject({ whole: text, most: text, part: text, skim: text, remembered: text, failed: text })
 
 export const linesFileSchema = z.strictObject({
