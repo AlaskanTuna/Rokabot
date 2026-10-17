@@ -77,7 +77,7 @@ discord:
   maxAttachmentBytesPerTurn: 10485760 # Bytes one turn may reserve; default 10 MB lets three channels download at once
   # Each byte costs ~4.7x its size in RSS, holding worst-case residency near 20% of the 1g container limit.
   # maxAttachmentBytesPerTurn keeps the default worst turn at 10 MB, so three channels can download at once.
-  maxInFlightAttachmentBytes: 33554432 # 32 MB ceiling across all channels at once (see docs/multimodal.md)
+  maxInFlightAttachmentBytes: 33554432 # 32 MB ceiling across all channels at once (see docs/research/multimodal.md)
 
 socialPosts:
   enabled: true # Read X, Bluesky, YouTube, TikTok, Reddit, Instagram, Bilibili and Threads links in triggered messages
