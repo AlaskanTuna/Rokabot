@@ -1063,13 +1063,15 @@ if (!/^[\w.-]+\/[\w.-]+$/.test(config.updates.repo)) {
   throw new Error(`Config value updates.repo must be "owner/name", got: ${config.updates.repo}`)
 }
 
+// logger.ts imports this module, so awaiting the import here would deadlock startup.
+function warnAfterStartup(fields: Record<string, unknown>, message: string) {
+  void import('./utils/logger.js').then(({ logger }) => logger.warn(fields, message))
+}
+
 if (config.embeddings.provider !== 'gemini' && !similarityFloors) {
-  // logger.ts imports this module, so awaiting the import here would deadlock startup.
-  void import('./utils/logger.js').then(({ logger }) =>
-    logger.warn(
-      { fingerprint: config.embeddings.fingerprint },
-      'No embeddings.minSimilarity entry for this fingerprint, so recall uses the Gemini floors in memory.*MinSimilarity'
-    )
+  warnAfterStartup(
+    { fingerprint: config.embeddings.fingerprint },
+    'No embeddings.minSimilarity entry for this fingerprint, so recall uses the Gemini floors in memory.*MinSimilarity'
   )
 }
 
@@ -1097,8 +1099,7 @@ export function deriveAchievableRetries(
 const maxLiveRetryWindow = config.gemini.liveMaxRetries * (config.gemini.timeout + config.gemini.retryBackoffCapMs)
 
 if (config.session.ttlMs <= maxLiveRetryWindow) {
-  const { logger } = await import('./utils/logger.js')
-  logger.warn(
+  warnAfterStartup(
     { sessionTtlMs: config.session.ttlMs, maxLiveRetryWindow },
     'Session idle TTL may expire before the maximum live retry window'
   )
@@ -1108,8 +1109,7 @@ if (config.session.ttlMs <= maxLiveRetryWindow) {
 // first tick after a restart has no predecessor and sweeps (reminderStore.ts:84) whatever fell due during
 // downtime, and setInterval drift means the real gap is >= checkIntervalMs, not ==.
 if (config.reminders.staleThresholdMs <= config.reminders.checkIntervalMs) {
-  const { logger } = await import('./utils/logger.js')
-  logger.warn(
+  warnAfterStartup(
     {
       staleThresholdMs: config.reminders.staleThresholdMs,
       checkIntervalMs: config.reminders.checkIntervalMs
@@ -1119,8 +1119,7 @@ if (config.reminders.staleThresholdMs <= config.reminders.checkIntervalMs) {
 }
 
 if (config.memory.contextSize > config.memory.bufferSize) {
-  const { logger } = await import('./utils/logger.js')
-  logger.warn(
+  warnAfterStartup(
     { contextSize: config.memory.contextSize, bufferSize: config.memory.bufferSize },
     'Memory context size above passive buffer size is silently ineffective'
   )
@@ -1152,8 +1151,7 @@ const requiredMs =
   )
 
 if (config.gemini.liveMaxRetries > minJitterAchievableRetries) {
-  const { logger } = await import('./utils/logger.js')
-  logger.warn(
+  warnAfterStartup(
     {
       liveMaxRetries: config.gemini.liveMaxRetries,
       achievableRetries: minJitterAchievableRetries,
@@ -1167,8 +1165,7 @@ if (config.gemini.liveMaxRetries > minJitterAchievableRetries) {
 // Last-attempt reachability tail, checked against the turn deadline; necessary but not sufficient because attempts are modeled
 // at timeout and requestTimeoutMs cannot interrupt hung attempts.
 if (config.gemini.turnDeadlineMs < requiredMs) {
-  const { logger } = await import('./utils/logger.js')
-  logger.warn(
+  warnAfterStartup(
     {
       turnDeadlineMs: config.gemini.turnDeadlineMs,
       timeout: config.gemini.timeout,
