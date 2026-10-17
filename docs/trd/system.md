@@ -238,11 +238,13 @@ _One @mention from Discord to reply, with admission guards and media work folded
 
 ### Prompt Engine Summary
 
-The system prompt has four layers: core identity, speech patterns, a tone variant and channel context
+The system prompt starts with the character pack's static sections (`prompt.system` in
+`characters/<id>/character.yml`, cached as one prefix), then the mood's prompt and the situation block
 (`assembleSystemPrompt` in `src/agent/promptAssembler.ts`). `createTurnContext` appends the turn's sections:
 memory, who is mentioned, overheard channel activity, the speaker's Discord ID, any looked-up results, and a
-`## Reply Shape` note chosen in code. The detector picks one of 12 tones by rule, with no model call. The full
-contract is in [Prompt Engine](prompt-engine.md).
+`## Reply Shape` note chosen in code. The mood comes from the pack's detection rules, with no model call, unless Jev
+overrides it. The full contract is in [Prompt Engine](prompt-engine.md); the pack format is in
+[Characters](../guide/characters.md).
 
 ### Models Summary
 

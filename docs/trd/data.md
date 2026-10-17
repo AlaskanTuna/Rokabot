@@ -121,23 +121,23 @@ Claim lifetimes depend on the predicate. See [Memory](./memory.md).
 
 Every reply turn runs the ADK `LlmAgent` named `roka` on the model that `llm.main` selects. [Models](./models.md) covers profiles, fallback and hedging.
 
-| Part               | Contract                                                                                                             |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------- |
-| System Instruction | The composed system prompt: four layers from `assembleSystemPrompt`, the turn context blocks, then `## Reply Shape`. |
-| History            | Rehydrated `session_history`. User lines read `[displayName]: content`. Assistant lines are plain content.           |
-| Current Message    | `[displayName]: message`.                                                                                            |
-| Generation Config  | `temperature` 0.9, `topP` 0.95, `maxOutputTokens` from `gemini.maxOutputTokens` (500), timeout `gemini.timeout`.     |
-| Safety Settings    | Harassment, hate speech, sexually explicit and dangerous content, all at `gemini.safetyThreshold` (default `OFF`).   |
-| Call Budget        | `runConfig.maxLlmCalls` is `gemini.maxLlmCalls` (4) minus the turn's media watcher calls, and at least 1.            |
+| Part               | Contract                                                                                                                                                |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| System Instruction | The composed system prompt: the pack's static sections, mood and situation from `assembleSystemPrompt`, the turn context blocks, then `## Reply Shape`. |
+| History            | Rehydrated `session_history`. User lines read `[displayName]: content`. Assistant lines are plain content.                                              |
+| Current Message    | `[displayName]: message`.                                                                                                                               |
+| Generation Config  | `temperature` 0.9, `topP` 0.95, `maxOutputTokens` from `gemini.maxOutputTokens` (500), timeout `gemini.timeout`.                                        |
+| Safety Settings    | Harassment, hate speech, sexually explicit and dangerous content, all at `gemini.safetyThreshold` (default `OFF`).                                      |
+| Call Budget        | `runConfig.maxLlmCalls` is `gemini.maxLlmCalls` (4) minus the turn's media watcher calls, and at least 1.                                               |
 
-- **Prompt Size:** `MAX_SYSTEM_PROMPT_TOKENS` in `tests/harness/tokens.ts` caps the four layers. `tests/harness/__tests__/tokens.test.ts` enforces it. The cap exists to detect prompt growth.
+- **Prompt Size:** `MAX_SYSTEM_PROMPT_TOKENS` in `tests/harness/tokens.ts` caps the assembled static prompt plus mood and situation. `tests/harness/__tests__/tokens.test.ts` enforces it. The cap exists to detect prompt growth.
 - **Other Bounds:** `memory.retrievalTokenBudget`, `session.windowSize` and `memory.contextSize` size their own blocks. `createTurnContext` in `src/agent/turnContext.ts` shows what each request holds.
 
 ## Source Files
 
 - `src/session/types.ts`
 - `src/utils/rateLimiter.ts`
-- `src/agent/promptAssembler.ts`, `src/agent/prompts/tones.ts`
+- `src/agent/promptAssembler.ts`, `src/character/`, `characters/roka/moods.yml`
 - `src/storage/database.ts`, `src/storage/memoryClaimSchema.ts`, `src/storage/vectorProvenance.ts`
 - `src/storage/sessionStore.ts`, `src/storage/metricsStore.ts`, `src/storage/reportStore.ts`
 - `src/agent/session.ts`, `src/agent/roka.ts`, `src/agent/safetySettings.ts`

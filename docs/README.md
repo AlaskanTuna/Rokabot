@@ -1,584 +1,143 @@
-<a id="readme-top"></a>
-
 <div align="center">
-  <img src="../assets/app-icon.jpg" alt="Rokabot" width="128" height="128" style="border-radius: 50%;" />
+  <img src="../assets/banner.png" alt="Maniwa Roka banner" />
 
   <h1>Rokabot</h1>
 
   <p>
-    A server-wide Discord character chatbot embodying <strong>Maniwa Roka</strong> from <em>Senren*Banka</em>.<br />
-    In-character conversation, useful tools, and small games—self-hosted on a Raspberry Pi.
+    A conversation-first Discord character agent.<br />
+    It ships as <strong>Maniwa Roka</strong> from <em>Senren*Banka</em> and loads any character from a folder.<br />
+    It runs any OpenAI-compatible model as main and fallback, on a Raspberry Pi 5 or any Docker host.
   </p>
 
   <p>
     <img src="https://img.shields.io/badge/TypeScript-ES2022-3178C6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript" />
     <img src="https://img.shields.io/badge/Node.js-24-5FA04E?style=for-the-badge&logo=node.js&logoColor=white" alt="Node.js 24" />
     <img src="https://img.shields.io/badge/discord.js-v14-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="discord.js v14" />
-    <img src="https://img.shields.io/badge/Gemini-3.5_Flash_Lite-4285F4?style=for-the-badge&logo=google&logoColor=white" alt="Gemini 3.5 Flash Lite" />
     <img src="https://img.shields.io/badge/Docker-Compose-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker Compose" />
     <img src="https://img.shields.io/badge/Raspberry_Pi-5_ARM64-C51A4E?style=for-the-badge&logo=raspberrypi&logoColor=white" alt="Raspberry Pi 5" />
+    <img src="https://img.shields.io/badge/License-MIT-lightgrey?style=for-the-badge" alt="MIT License" />
   </p>
 </div>
 
-<details>
-  <summary><strong>Table of Contents</strong></summary>
-  <ol>
-    <li><a href="#who-is-maniwa-roka">Who Is Maniwa Roka?</a></li>
-    <li><a href="#features">Features</a></li>
-    <li><a href="#architecture">Architecture</a></li>
-    <li><a href="#prompt-system">Prompt System</a></li>
-    <li><a href="#memory">Memory</a></li>
-    <li><a href="#expressions--tones">Expressions &amp; Tones</a></li>
-    <li><a href="#tech-stack">Tech Stack</a></li>
-    <li><a href="#getting-started">Getting Started</a></li>
-    <li><a href="#configuration">Configuration</a></li>
-    <li><a href="#deployment--operations">Deployment &amp; Operations</a></li>
-    <li><a href="#documentation">Documentation</a></li>
-    <li><a href="#privacy">Privacy</a></li>
-    <li><a href="#license">License</a></li>
-  </ol>
-</details>
-
 ---
 
-## Who is Maniwa Roka and Rokabot?
+## Highlights
 
-<img align="left" src="../assets/roka-sticker-1.png" alt="Roka serving drinks" width="100" />
+| Area                   | What You Get                                                                                                                                                                                                                             |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Conversation First** | She answers @mentions, replies to her, her name and `/ask`. Each channel keeps its own window of recent messages, rebuilt from SQLite after a restart.                                                                                   |
+| **Any Character**      | Persona, voice and moods live in a pack folder. `characters/roka` ships. Point `character:` or `CHARACTER_DIR` at another folder, and check it with `npm run character -- check`.                                                        |
+| **Any Model**          | `llm.main` writes the replies. `llm.fallback` takes over when it fails. Tested profiles cover Gemini, Anthropic, OpenAI and ModelScope. `provider: openai-compatible` runs any `/chat/completions` server, such as Ollama or OpenRouter. |
+| **Memory**             | She learns member and server facts in channels where someone talked to her, and brings a bounded set back into later replies. Memory never leaves its server. `memory.privacy` limits recall further.                                    |
+| **Eyes and Ears**      | She reads images and PDFs, watches audio and video into notes before she replies, and opens X, Bluesky, Threads, YouTube, TikTok, Reddit, Instagram and Bilibili links.                                                                  |
+| **Tools and Games**    | Web search, weather, time, dice, anime lookups and reminders in chat. `/gacha`, `/hangman`, `/shiritori` and `/stats` as commands.                                                                                                       |
+| **Spend Guards**       | One turn per channel, request and token limits per model, and a monthly USD cap per paid provider.                                                                                                                                       |
+| **Runs Anywhere**      | One Docker Compose stack. Published amd64 and arm64 images run on a Pi 5, any Docker host, Railway, Render, Fly.io or Coolify.                                                                                                           |
 
-**Maniwa Roka** (馬庭 芦花) is a warm, gently teasing onee-san side character from [Senren\*Banka](https://vndb.org/v19073) (千恋＊万花). **Rokabot** brings her observant, affectionate energy to a Discord server through in-character conversation.
+## How It Fits Together
 
-<img align="right" src="../assets/roka-sticker-2.png" alt="Roka in casual outfit" width="80" />
+![System Overview](diagrams/system-overview.svg)
 
-She can chat with a server, remember useful context without carrying it into another server or DM, help with everyday requests, and make downtime more playful.
+_The bot and its speech sidecar in Docker Compose, between Discord and the remote model and Jev APIs. SQLite holds all durable state._
 
-<img src="../assets/banner.png" alt="Yuzucook" />
-
-<p align="right"><a href="#readme-top">↑</a></p>
-
----
-
-## Features
-
-- **Conversation & Perception:** `/ask`, mentions, replies, and supported name-keyword triggers; she takes images, PDFs, audio and video, on both the `/ask` and mention surfaces, plus by link, and reads recent channel context.
-- **Memory:** Passive context monitoring and claims-based user and guild facts, scoped to monitored servers and surfaced through bounded prompt blocks. DMs and `/ask` do not read or write memory.
-- **Tools:** In chat, Roka can roll dice, flip coins, check the time and weather, search the web, discover anime and airing schedules, and manage reminders; a small footer notes what she did.
-- **Stats:** Fun server analytics with a mood ring, charts, and a peek at who she's remembered lately, across four Last 30 Days views.
-- **Games:** Buddy Pets, Hangman, and Shiritori, with SQLite-backed progress and leaderboards.
-- **Interaction & UX:** Rule-based tone detection, expression thumbnails, Components V2 replies, emoji reactions, rate limits, and per-channel concurrency protection.
-- **Files & Media:** Image, PDF, audio, and video attachments on `/ask` and the mention path, each held to its own size ceiling, with graceful in-character notices when a file can't be read — see [Handing Her a File](#handing-her-a-file) below.
-
-| Command or Capability  | Use                                                                                                                                                                                                                                                                                                   |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/ask`                 | Ask Roka anything or just talk; she searches the web herself when she needs to. Optionally attach a file, or link one — see [Handing Her a File](#handing-her-a-file).                                                                                                                                |
-| `/gacha`               | Hatch, view, pet, inspect stats, browse collection, read the guide, or view the leaderboard.                                                                                                                                                                                                          |
-| `/hangman`             | Start and play a word-guessing game.                                                                                                                                                                                                                                                                  |
-| `/shiritori`           | Start, join, and score a word-chain game.                                                                                                                                                                                                                                                             |
-| `/anime`               | Search or browse anime, or search or browse airing schedules.                                                                                                                                                                                                                                         |
-| `/remind`              | Create, list, and cancel reminders.                                                                                                                                                                                                                                                                   |
-| `/stats`               | Explore four fixed, non-overlapping Last 30 Days views with no window selector: Overview (activity, heatmap, channel histogram); Mood (label, donut); Memory (active user and guild fact totals and growth, plus the 5 most recently-remembered members); Nerd (latency, reliability, volume, trend). |
-| In-Conversation Memory | Recall or save useful user facts during memory-enabled server conversations.                                                                                                                                                                                                                          |
-
-### Tool Footer
-
-When Roka uses a tool mid-conversation, her reply ends with a small one-row footer (e.g. `🌸 cast the dice · checked the weather`) noting what she did. Up to two labels are shown, then a count of the rest (`+2`). When she searched the web, a second small line cites the sources the answer was built on — up to three sites, each shown once as a linked domain (e.g. `🔗 crunchyroll.com · polygon.com`) so the footer says what she did and the citations say where it came from. When she opened a linked social post, its label leads the footer (e.g. `🌸 peeked at the X post · searched the web`) and the post is the first citation; a link she couldn't open shows as `couldn't open the X post`. When she watched the post's video, one label says both (`🌸 watched the X video · searched the web`), and audio or video she watched adds a label such as `watched most of the video` or `couldn't watch the video`. When she reads a post's replies, the footer adds `read the replies` (or `couldn't read the replies` if they could not be opened).
-
-Every tool below is available implicitly in chat — Roka decides when to call it. The **Slash Command** column names the command built around that tool: `/anime` and `/remind` invoke theirs directly, and `/ask` is listed against `search_web` because looking things up is what that command is for. The rest are reached only by talking to her.
-
-<details>
-<summary><strong>Footer Labels & Tool Availability</strong></summary>
-
-| Tool                 | Footer Label                                 | Slash Command | Implicit In Chat |
-| -------------------- | -------------------------------------------- | ------------- | ---------------- |
-| `roll_dice`          | cast the dice                                | —             | ✅               |
-| `flip_coin`          | tossed a coin                                | —             | ✅               |
-| `get_current_time`   | checked the clock                            | —             | ✅               |
-| `get_weather`        | checked the weather                          | —             | ✅               |
-| `search_web`         | searched the web                             | `/ask`        | ✅               |
-| `search_anime`       | looked up anime                              | `/anime`      | ✅               |
-| `get_anime_schedule` | checked airing times                         | `/anime`      | ✅               |
-| `set_reminder`       | set a reminder                               | `/remind`     | ✅               |
-| `list_reminders`     | listed reminders                             | `/remind`     | ✅               |
-| `cancel_reminder`    | cancelled a reminder                         | `/remind`     | ✅               |
-| `remember_user`      | saved a memory                               | —             | ✅               |
-| `recall_user`        | recalled a memory                            | —             | ✅               |
-| `read_replies`       | read the replies / couldn't read the replies | —             | ✅               |
-
-Passive memory extraction runs automatically in the background through the per-message pipeline, while `remember_user` is only invoked when someone explicitly asks Roka to remember something.
-
-</details>
-
-### Handing Her a File
-
-Roka reads four kinds of attachment — image, PDF, audio, and video — on both `/ask` (upload or link) and the mention path, each held to its own size ceiling: 4 MB for an image, 10 MB for a PDF, 8 MB for audio, and 10 MB for video. The ceilings come from how long an upload takes to reach the Pi against `gemini.timeout`, not from memory.
-
-- **One attachment per turn, on every surface.** The reason is fairness rather than quota: the in-flight byte budget is shared across every channel, so a turn allowed several attachments would reserve most of that budget and hold off everyone else.
-- **Oversized media is truncated, not dropped.** The file is fetched down to its ceiling and sent as its opening — but only for container formats that survive being cut short; some formats are refused instead.
-- **She says so when a file couldn't be read**, with a different notice for a file that could not be retrieved than for one too long to read in one turn. Without that distinction she would search the web on the user's own phrasing and report the results as the file's contents.
-- **`attachment_url`** reads the file's type from a HEAD request rather than trusting the link's path, and checks the host against the addresses it actually resolves to — re-checked on whatever host a redirect chain lands on.
-- Beyond attachments, she also reads forwarded messages, embeds, polls, stickers, and files carried inside Components V2 messages.
-
-`docs/trd.md` is the canonical contract for the behavior above; `docs/research/multimodal.md` is its derivation.
-
-<p align="right"><a href="#readme-top">↑</a></p>
-
----
-
-## System Architecture
-
-### High-Level Overview
-
-<details>
-<summary>View Diagram</summary>
-
-```mermaid
-flowchart LR
-    Discord[Discord] <--> Gateway[discord.js Gateway]
-    Gateway <--> Sessions[Session Manager]
-    Sessions <--> Agent[Roka Agent]
-    Agent <--> Gemini[Gemini API]
-    Agent <--> SQLite[(SQLite)]
-    Agent <--> Tools[Tools and Games]
-    Gateway --> Metrics[Metrics]
-```
-
-</details>
-
-- One Node.js service handles Discord events, response generation, and local storage.
-- SQLite is the durable store; the active session window is rehydrated for a live conversation.
-- Tools and games remain available to the agent while its responses stay in character.
-
-### Message Pipeline
-
-<details>
-<summary>View Diagram</summary>
-
-```mermaid
-flowchart LR
-    Trigger[Slash command, mention, reply, or name keyword] --> Guards[Rate and concurrency guards]
-    Guards --> Session[SQLite-backed session window]
-    Session --> Tone[Rule-based tone detection]
-    Tone --> Prompt[Layered prompt assembly and bounded memory retrieval]
-    Prompt --> ADK[Google ADK]
-    ADK <--> Tools[Tools]
-    ADK --> Gemini[Gemini]
-    Gemini --> Reply[Components V2 reply]
-```
-
-</details>
-
-- The concurrency guard permits one active response per channel.
-- An attachment turn passes four admission guards in order — an advisory rate-limit check, a per-minute token-budget check, an authoritative call-slot reservation, and a global in-flight byte-budget reservation — each declining in character rather than silently.
-- `/anime` and `/remind` no longer take a Gemini call slot they never use.
-- A spent daily quota and a transient rate limit both arrive as an HTTP 429, but are now classified apart so the bot can respond to each appropriately.
-- Tone detection examines recent conversation without an extra model call.
-- Read the [technical reference](./trd.md) for request contracts, data models, and failure behavior.
-
-### Prompt System
-
-<details>
-<summary>View Diagram</summary>
-
-```mermaid
-flowchart TD
-    Recent[Recent messages] --> Detector[Rule-based tone detector]
-    Detector --> Tone[Tone variant]
-    Core[Core identity] --> Assembly[System prompt]
-    Speech[Speech patterns] --> Assembly
-    Tone --> Assembly
-    Context[Channel context: participants, time of day, and memory claims in a safety envelope] --> Assembly
-```
-
-</details>
-
-- The four layers are core identity, speech patterns, a tone variant, and channel context.
-- The detector selects from 12 tones using recent messages; it adds no LLM cost.
-- The assembled system prompt is size-capped for change detection, not tuned for a target size. See the [technical reference](./trd.md) for the deeper contract.
-
-### Memory
-
-<details>
-<summary>View Diagram</summary>
-
-```mermaid
-flowchart LR
-    Passive[Monitored guild messages] --> Tracker[Episode tracker and cursor]
-    Tracker --> Queue[Durable extraction_queue]
-    Queue --> Scheduler[Per-guild scheduler]
-    Scheduler --> Precheck[Sensitive and trivial precheck]
-    Precheck --> Admission[Jev admission required]
-    Admission --> Extractor[Gemini typed extraction]
-    Extractor --> Verification[Jev verification]
-    Verification --> Claims[(User and guild memory_claim)]
-    Claims --> UserRetriever[Bounded user retriever]
-    UserRetriever --> Envelope[Prompt safety envelope]
-    Claims --> GuildRetriever[Same-guild unexpired facts]
-    GuildRetriever --> ServerBlock[Separate server-memory block]
-    ServerBlock --> Envelope
-
-    subgraph Lifecycle[Claim Lifecycle]
-        Active[active] --> Superseded[superseded]
-        Active --> Rejected[rejected]
-    end
-```
-
-</details>
-
-- User claims and guild facts stay within their Discord server. Guild facts describe shared server details. Passive episode capture runs in monitored guild channels.
-- A fact the user asks her outright to remember is pinned and survives the active-claim ceiling.
-- `recall_user` ranks by relevance to the current message rather than by recency.
-- Episode writes run asynchronously; user retrieval and the separately budgeted guild-fact block stay bounded before a response is generated. Jev admission runs before Gemini extraction and Jev verification runs before claim updates. Without `TYPESAFE_API_KEY`, the main model judges instead when `config.yml` has an `llm:` block; otherwise passive episodes are dropped.
-- Queue jobs retry once after an extraction failure; jobs that fail again remain in `failed` for inspection.
-- `upcoming_event` and `plan` facts expire at the next midnight in `config.timezone`; a daily prune marks expired facts rejected. Rejected and superseded claims and their evidence are purged after `memory.deadClaimRetentionDays`. `/ask` has no memory block, and `forget_user` only searches user claims.
-- `/stats` includes active, unexpired guild facts in memory totals and growth while remembered-member metrics stay user-only. The vault export writes guild facts to `<vault>/<guildId>/guild.md` with expiry metadata.
-- Durable episodic recall is a separate feature; the current pipeline does not store an episode summary or a `memory_episode` record.
-- The exported memory graph is browseable in Obsidian; see [Browsing Memory in Obsidian](#browsing-memory-in-obsidian).
-- For schema, lifecycle, and retrieval details, see [Memory Architecture (Guild and User Claims)](./trd.md#memory-architecture-guild-and-user-claims).
-
-### Expressions & Tones
-
-<details>
-<summary>View Diagram</summary>
-
-```mermaid
-flowchart LR
-    Tone[Detected tone] --> Prompt[Tone prompt variant]
-    Tone --> Style[Accent color]
-    Tone --> Expression[Expression thumbnail]
-    Prompt --> Message[Components V2 reply]
-    Style --> Message
-    Expression --> Message
-```
-
-</details>
-
-Each detected tone selects a prompt variant, an accent color, and one of its mapped expression thumbnails before Roka's Components V2 reply is built.
-
-| Tone        | Accent Color | Expression Pool                           |
-| ----------- | ------------ | ----------------------------------------- |
-| playful     | `#FFB3D9`    | smile, cheerful                           |
-| sincere     | `#A8D8FF`    | sad, pained, sorrowful                    |
-| domestic    | `#FFD4B5`    | content, gentle_smile, relieved           |
-| flustered   | `#FFB3B3`    | flustered, nervous, awkward               |
-| curious     | `#B2EBF2`    | thinking, surprised, blank_stare          |
-| annoyed     | `#F8B4B8`    | exasperated, dissatisfied, dissatisfied_2 |
-| tender      | `#E1BEE7`    | worried, troubled, anxious                |
-| confident   | `#C8E6C9`    | composed, base, explaining                |
-| nostalgic   | `#D4A574`    | melancholy, downcast, somber              |
-| mischievous | `#FFD700`    | delighted, attentive                      |
-| sleepy      | `#B0C4DE`    | serene, resigned                          |
-| competitive | `#FF6B6B`    | frustrated, dissatisfied_3, uncertain     |
-
-<p align="right"><a href="#readme-top">↑</a></p>
-
----
+| Path                  | Holds                                                                    |
+| --------------------- | ------------------------------------------------------------------------ |
+| `config.yml`          | Every tunable, each with an inline comment                               |
+| `.env.example`        | The secrets the bot reads, with empty values                             |
+| `characters/roka/`    | The shipped character pack: persona prompts, voice and moods             |
+| `prompts/`            | Harness prompts that every pack shares, including the locked safety ones |
+| `src/discord/`        | Gateway events, slash commands, admission guards, reply rendering        |
+| `src/agent/`          | The ADK agent, prompt assembly, models, memory, media, Jev, tools        |
+| `src/storage/`        | The SQLite schema and table helpers                                      |
+| `asr/`                | The speech recognition sidecar                                           |
+| `sidecar/embeddings/` | The optional local embeddings sidecar                                    |
+| `tests/`              | The test harness, fixtures and the prompt size cap                       |
 
 ## Tech Stack
 
-| Area                 | Technology                                                                                                |
-| -------------------- | --------------------------------------------------------------------------------------------------------- |
-| Language and Runtime | TypeScript (ES2022), Node.js 24                                                                           |
-| Discord              | discord.js v14                                                                                            |
-| Agent and Model      | Google ADK, Gemini 3.5 Flash Lite (`gemini-3.5-flash-lite`); ModelScope `Qwen/Qwen3.5-122B-A10B` fallback |
-| Storage              | SQLite via better-sqlite3                                                                                 |
-| Media and Validation | sharp, @napi-rs/canvas, @google/genai, Zod                                                                |
-| Quality              | Vitest, Biome, Prettier, commitlint                                                                       |
-| Deployment           | Docker Compose on Raspberry Pi 5 (ARM64)                                                                  |
-
-<p align="right"><a href="#readme-top">↑</a></p>
-
----
-
-## Getting Started
-
-### Prerequisites
-
-- Node.js 24.13.0 or newer.
-- A Discord bot token and client ID, with the Message Content privileged intent enabled.
-- A Gemini API key.
-- Docker and Docker Compose for containerized deployment.
-- Optional: a Tavily API key for web search.
-- Optional: a ModelScope API-Inference key, so a Qwen fallback model answers when Gemini is overloaded or out of quota.
-- Optional: a TypeSafe API key for Jev tone and ambiguous-name judgments. A key is required for passive memory admission and verification; without it, passive episodes are dropped.
-
-### Install & Configure
-
-```bash
-git clone https://github.com/AlaskanTuna/rokabot.git
-cd rokabot
-npm ci
-cp .env.example .env
-```
-
-### `.env` Secrets
-
-| Variable              | Required  | Purpose                                                                       |
-| --------------------- | --------- | ----------------------------------------------------------------------------- |
-| `DISCORD_TOKEN`       | Yes       | Discord bot token.                                                            |
-| `DISCORD_CLIENT_ID`   | Yes       | Discord application client ID.                                                |
-| `GEMINI_API_KEY`      | If Gemini | Gemini API key; required when a role uses Gemini, as on the legacy config.    |
-| `TYPESAFE_API_KEY`    | No        | Jev memory judgments; without it, only an `llm:` config keeps passive memory. |
-| `TAVILY_API_KEY`      | No        | Tavily API key for web search.                                                |
-| `DEV_GEMINI_API_KEY`  | No        | Second Gemini key, harness-only, for `npm run test:live`.                     |
-| `ROKABOT_HARNESS_KEY` | No        | Names which `.env` key funds a `npm run test:live` run, harness-only.         |
-
-```env
-DISCORD_TOKEN=your_discord_bot_token
-DISCORD_CLIENT_ID=your_discord_client_id
-GEMINI_API_KEY=your_gemini_api_key
-TYPESAFE_API_KEY=your_typesafe_api_key
-TAVILY_API_KEY=your_tavily_api_key
-```
-
-Other optional environment values, including `GRAPHIFY_GEMINI_API_KEY` and `ROKABOT_DB_PATH`, are documented in [`.env.example`](../.env.example).
-
-### Run
-
-```bash
-# Development
-npm run dev
-
-# Production
-npm run build
-npm start
-
-# Docker (runs the published image, no build)
-docker compose pull && docker compose up -d
-```
-
-The Docker command runs the published image. [Docker](deploy/docker.md) covers running it without a clone, updating and rolling back.
-
-Quick checks: `npm run lint`, `npm run format:check`, and `npm run typecheck` — the last of these is the only gate that type-checks the `tests/` tree ([#151](https://github.com/AlaskanTuna/Rokabot/pull/151)); `npm run build` type-checks `src/` only. Full test verification is `npm test && npm run test:perf`; `npm run test:perf` is a separate performance-evaluation gate. `npm run test:live` is a third, opt-in gate: `ROKABOT_HARNESS_KEY` names which `.env` key funds a run (default `GRAPHIFY_GEMINI_API_KEY`); `DEV_GEMINI_API_KEY` is a documented second key so an exhausted daily quota can redirect a run rather than stall it. It is excluded from both `npm test` and full verification. `npm run measure -- <path>` prints an attachment's measured token cost and which ceilings it meets, and costs nothing against the generate quota.
-
-`npm run preview` shows a reply the way the Discord client draws it, without posting to Discord. It writes a standalone HTML page (default `preview-out/preview.html`, git-ignored) that reproduces the desktop chat view: avatars, the APP tag, reply and slash-command headers, Discord markdown, Twemoji, and every Components V2 type Roka sends (container accent, section thumbnail, text display, separator, media gallery, buttons, selects). The page has a theme picker for Dark, Ash, Onyx and Light.
-
-```bash
-npm run preview -- "Ehehe~ **sunny** today!" --tone playful --tools search_web --sources https://example.com --open
-npm run preview -- --file reply.md --all-tones          # one reply per tone, to compare accents and expressions
-npm run preview -- --payload payload.json               # any raw Discord message payload (object or array)
-npm run preview -- --transcript tests/harness/transcripts/mention.jsonl   # real handlers, offline model
-npm run test:chat -- Tester --live --html preview-out/chat.html          # live chat; the page reloads every 2s
-```
-
-A transcript line may carry a `reply` field to script the offline model's answer, so exact text runs through the real Discord handlers. Only `--live` spends Gemini calls.
-
-`npm run test:live` benchmarks whether the live model fires a tool on a labelled should-fire/shouldn't-fire dialogue set, scored separately across three case sets under `tests/harness/tool-trigger/` — `recall-user.jsonl`, `search-web.jsonl`, and `remember-user.jsonl`. It is the pre-ship acceptance gate for prompt and tool-description changes. Each case set's verdict rests on a precision floor and a per-tool recall floor, not an accuracy floor or a zero-systematic-failures rule; `systematicFailures` is a diagnostic and does not gate the verdict. `remember_user` is judged against its own lower recall floor because the shared floor false-fails it at its measured rate, so a green `remember_user` is a collapse detector rather than a regression detector — it is not evidence that nothing else regressed. One run costs roughly half of one Gemini key's daily request allowance and about an hour of wall clock, so budget for two runs per key per day. Each run prints its own per-case report; no verdict is quoted here, because one is only true of the prompt and the day it was measured on.
-
-<p align="right"><a href="#readme-top">↑</a></p>
-
----
-
-## Configuration
-
-Secrets belong in `.env`; tunables belong in [`config.yml`](../config.yml). Environment variables override the values listed below when the loader supports them.
-
-### Gemini
-
-<details>
-<summary>View Tunables</summary>
-
-| YAML Path                   | Env Override                   | Purpose                                                                                                                                                                                       |
-| --------------------------- | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `gemini.model`              | `GEMINI_MODEL`                 | Live Gemini model ID.                                                                                                                                                                         |
-| `gemini.extractionModel`    | `GEMINI_EXTRACTION_MODEL`      | Optional background extraction model; defaults to the live model.                                                                                                                             |
-| `gemini.timeout`            | `GEMINI_TIMEOUT`               | Request timeout in milliseconds.                                                                                                                                                              |
-| `gemini.maxRetries`         | `GEMINI_MAX_RETRIES`           | Maximum retries for transient failures.                                                                                                                                                       |
-| `gemini.maxOutputTokens`    | `GEMINI_MAX_OUTPUT_TOKENS`     | Response token safety cap.                                                                                                                                                                    |
-| `gemini.safetyThreshold`    | `GEMINI_SAFETY_THRESHOLD`      | Harm block threshold — one of `OFF`, `BLOCK_NONE`, `BLOCK_ONLY_HIGH`, `BLOCK_MEDIUM_AND_ABOVE`, `BLOCK_LOW_AND_ABOVE` — applied uniformly to all four Gemini-API-supported safety categories. |
-| `gemini.maxLlmCalls`        | —                              | Maximum chained tool calls per request.                                                                                                                                                       |
-| `gemini.liveMaxRetries`     | `GEMINI_LIVE_MAX_RETRIES`      | Retry attempts after a failed live response.                                                                                                                                                  |
-| `gemini.retryRpmFloor`      | `GEMINI_RETRY_RPM_FLOOR`       | Minimum remaining RPM required for a live retry.                                                                                                                                              |
-| `gemini.retryBackoffBaseMs` | `GEMINI_RETRY_BACKOFF_BASE_MS` | Initial full-jitter retry backoff in milliseconds.                                                                                                                                            |
-| `gemini.retryBackoffCapMs`  | `GEMINI_RETRY_BACKOFF_CAP_MS`  | Maximum full-jitter retry backoff in milliseconds.                                                                                                                                            |
-| `gemini.turnDeadlineMs`     | `GEMINI_TURN_DEADLINE_MS`      | Wall-clock budget for the live retry loop; a retry starts only if a full `gemini.timeout` still fits, and the first attempt is never gated.                                                   |
-
-</details>
-
-### Jev
-
-<details>
-<summary>View Tunables</summary>
-
-| YAML Path                   | Env Override    | Purpose                                                             |
-| --------------------------- | --------------- | ------------------------------------------------------------------- |
-| `jev.model`                 | `JEV_MODEL`     | Pinned TypeSafe judgment model.                                     |
-| `jev.timeoutMs`             | —               | Deadline for in-reply tone and referent judgments.                  |
-| `jev.memoryTimeoutMs`       | —               | Deadline for passive memory admission and verification judgments.   |
-| `jev.tone`                  | `JEV_TONE`      | `off`, `shadow`, or `on` mode for in-reply tone decisions.          |
-| `jev.referents`             | `JEV_REFERENTS` | `off`, `shadow`, or `on` mode for resolving ambiguous member names. |
-| `jev.toneMinConfidence`     | —               | Minimum confidence required to apply a Jev tone.                    |
-| `jev.referentMinConfidence` | —               | Minimum confidence required to apply a Jev referent.                |
-
-</details>
-
-### Rate Limit, Session, and Discord
-
-<details>
-<summary>View Tunables</summary>
-
-| YAML Path                      | Env Override                 | Purpose                                                                                                                                                                                                                                                                                                                                                                        |
-| ------------------------------ | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `rateLimit.rpm`                | `RATE_LIMIT_RPM`             | Exact sliding-window cap on requests (not turns) per minute, enforced in [`src/utils/rateLimiter.ts`](../src/utils/rateLimiter.ts); each turn reserves `gemini.maxLlmCalls` slots up front, so the sustained turn ceiling sits below the nominal `rpm` ([#149](https://github.com/AlaskanTuna/Rokabot/issues/149), [#167](https://github.com/AlaskanTuna/Rokabot/issues/167)). |
-| `rateLimit.rpd`                | `RATE_LIMIT_RPD`             | Requests per day cap.                                                                                                                                                                                                                                                                                                                                                          |
-| `session.ttl`                  | `SESSION_TTL_MS`             | Idle session lifetime in milliseconds.                                                                                                                                                                                                                                                                                                                                         |
-| `session.windowSize`           | `SESSION_WINDOW_SIZE`        | Maximum messages rehydrated into the ADK session.                                                                                                                                                                                                                                                                                                                              |
-| `session.maxRehydrationAge`    | —                            | Maximum age of a message rehydrated from SQLite.                                                                                                                                                                                                                                                                                                                               |
-| `session.historyRetentionDays` | —                            | Days before session history is pruned.                                                                                                                                                                                                                                                                                                                                         |
-| `discord.maxMessageLength`     | `DISCORD_MAX_MESSAGE_LENGTH` | Character cap for a bot reply.                                                                                                                                                                                                                                                                                                                                                 |
-
-</details>
-
-### Attachments and Budgets
-
-<details>
-<summary>View Tunables</summary>
-
-| YAML Path                            | Env Override                            | Purpose                                                                                                                                                                             |
-| ------------------------------------ | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `gemini.maxAttachmentTokens`         | `GEMINI_MAX_ATTACHMENT_TOKENS`          | Max measured token cost of one turn's attachments before they are refused. Size does not bound this — a small PDF can cost tens of thousands of tokens because the driver is pages. |
-| `gemini.maxTokensPerMinute`          | `GEMINI_MAX_TOKENS_PER_MINUTE`          | Tokens per rolling minute before new attachment turns are declined.                                                                                                                 |
-| `discord.maxInFlightAttachmentBytes` | `DISCORD_MAX_INFLIGHT_ATTACHMENT_BYTES` | Ceiling on attachment bytes downloading across all channels at once, reserved before download.                                                                                      |
-| `metrics.diagnosticsRetentionHours`  | `METRICS_DIAGNOSTICS_RETENTION_HOURS`   | Retention for stored failure diagnostics.                                                                                                                                           |
-
-</details>
-
-### Memory
-
-<details>
-<summary>View Tunables</summary>
-
-| YAML Path                            | Env Override                        | Purpose                                                             |
-| ------------------------------------ | ----------------------------------- | ------------------------------------------------------------------- |
-| `memory.bufferSize`                  | `MEMORY_BUFFER_SIZE`                | Passive in-memory buffer size per channel.                          |
-| `memory.contextSize`                 | —                                   | Overheard messages injected into one prompt.                        |
-| `memory.channelMonitorTtlMs`         | —                                   | Monitoring lifetime after the latest mention.                       |
-| `memory.maxClaimsPerTurn`            | `MEMORY_MAX_CLAIMS_PER_TURN`        | Maximum claims included in one response.                            |
-| `memory.retrievalTokenBudget`        | `MEMORY_RETRIEVAL_TOKEN_BUDGET`     | Approximate claims-envelope token budget.                           |
-| `memory.guildFactsTokenBudget`       | `MEMORY_GUILD_FACTS_TOKEN_BUDGET`   | Approximate server-memory block token budget.                       |
-| `memory.recentParticipantLimit`      | `MEMORY_RECENT_PARTICIPANT_LIMIT`   | Non-speaker participants considered for retrieval.                  |
-| `memory.speakerMinShare`             | `MEMORY_SPEAKER_MIN_SHARE`          | Minimum share of selected claims reserved for the speaker.          |
-| `memory.maxActiveClaimsPerUser`      | `MEMORY_MAX_ACTIVE_CLAIMS_PER_USER` | Active claim cap per user; pinned exempt, past facts evicted first. |
-| `memory.stableClaimRetentionDays`    | —                                   | Retention for identity and social claims (180 days).                |
-| `memory.claimRetentionDays`          | `MEMORY_CLAIM_RETENTION_DAYS`       | Standard retention for lifestyle, interests, personality (30 days). |
-| `memory.transientClaimRetentionDays` | —                                   | Retention for opinions, misc, and currently watching (14 days).     |
-| `memory.deadClaimRetentionDays`      | —                                   | Retention for rejected and superseded rows and evidence (30 days).  |
-| `memory.salienceHalfLifeDays`        | `MEMORY_SALIENCE_HALF_LIFE_DAYS`    | Days for salience to halve during retrieval scoring.                |
-| `memory.recallCooldownMs`            | `MEMORY_RECALL_COOLDOWN_MS`         | Time a recalled claim is damped unless it matches the turn.         |
-| `memory.episodeLullMs`               | —                                   | Silence interval that closes an open episode.                       |
-| `memory.episodeMaxMessages`          | —                                   | Maximum delta messages in one episode.                              |
-| `memory.admitThreshold`              | —                                   | Minimum Jev admission probability before Gemini extraction.         |
-| `memory.verifyThreshold`             | —                                   | Minimum Jev durability and attribution probability.                 |
-| `memory.modelAdmitThreshold`         | —                                   | Main-model admission minimum (0.7) without a TypeSafe key.          |
-| `memory.modelVerifyThreshold`        | —                                   | Main-model verification minimum (0.7) without a TypeSafe key.       |
-| `memory.reclassifyMaxPerRun`         | `MEMORY_RECLASSIFY_MAX_PER_RUN`     | Most misfiled facts moved per daily run (20); 0 turns it off.       |
-| `memory.vaultExportDir`              | `MEMORY_VAULT_EXPORT_DIR`           | Output directory for read-only Obsidian vault exports.              |
-
-</details>
-
-### Metrics, Emoji, Reminders, Games, and Runtime
-
-<details>
-<summary>View Tunables</summary>
-
-| YAML Path                    | Env Override             | Purpose                                                            |
-| ---------------------------- | ------------------------ | ------------------------------------------------------------------ |
-| `metrics.retentionDays`      | `METRICS_RETENTION_DAYS` | Days before metrics events are pruned.                             |
-| `emoji.probability`          | —                        | Chance of a keyword-matched emoji reaction.                        |
-| `emoji.cooldownMs`           | —                        | Per-channel cooldown between emoji reactions.                      |
-| `reminders.checkIntervalMs`  | —                        | Reminder scheduler polling interval.                               |
-| `reminders.maxPerUser`       | —                        | Maximum active reminders per user.                                 |
-| `reminders.staleThresholdMs` | —                        | Lateness threshold for dropping a reminder.                        |
-| `games.hangmanLives`         | —                        | Wrong guesses allowed in Hangman.                                  |
-| `games.hangmanTimeoutMs`     | —                        | Hangman inactivity timeout.                                        |
-| `games.shiritoriTimeoutMs`   | —                        | Shiritori turn inactivity timeout.                                 |
-| `games.shinyChance`          | —                        | Probability of hatching a shiny Buddy Pet.                         |
-| `statusCycleMs`              | —                        | Discord status rotation interval.                                  |
-| `updates.notify`             | `UPDATES_NOTIFY`         | DM the bot owner once per new GitHub release.                      |
-| `updates.repo`               | —                        | Repository whose releases are checked; a fork can point at itself. |
-| `updates.checkIntervalHours` | —                        | Hours between release checks.                                      |
-| `timezone`                   | `TZ`                     | IANA timezone for time-of-day features.                            |
-| `logging.level`              | `LOG_LEVEL`              | Pino log verbosity.                                                |
-
-</details>
-
-For defaults and the full behavior behind these settings, see [`config.yml`](../config.yml) and the [technical reference](./trd.md).
-
-<p align="right"><a href="#readme-top">↑</a></p>
-
----
-
-## Deployment & Operations
-
-```mermaid
-flowchart LR
-    Push[Push to main] --> CI[CI builds multi-arch images and pushes them to GHCR]
-    CI --> Runner[Self-hosted GitHub Actions runner on Pi]
-    Runner --> Pull[Pull the sha-tagged image for the commit]
-    Pull --> Health[Health check]
-
-    Database[(Pi SQLite DB)] --> Export[npm run export:vault]
-    Export --> Vault[data/vault]
-    Vault --> Transfer[Copy to your desktop]
-    Transfer --> Desktop[Desktop]
-    Desktop --> Obsidian[Obsidian]
-```
-
-- Docker Compose runs Rokabot on a Raspberry Pi 5 with `mem_limit: 1g`, `memswap_limit: 1g` (equal values disable swap entirely — Docker otherwise defaults swap to twice the cap and pages onto the SD card), and `restart: unless-stopped`.
-- CI builds `rokabot` and `rokabot-asr` for amd64 and arm64 on each push to `main` and pushes them to GHCR as `sha-<7>`, the first 7 characters of the commit. The self-hosted GitHub Actions runner on the Pi pulls that image, restarts the containers and health-checks them; the workflow's `paths-ignore` applies to pushes (deploys) only, skipping `*.md`, `docs/**`, `.claude/**`, and `graphify-out/**`, while every pull request runs the `test` job.
-- Use the [operations runbook](./runbook.md) for Pi commands, runner setup, troubleshooting, and database operations.
-
-### Running Your Own Copy
-
-Every release publishes the `rokabot` and `rokabot-asr` images to GHCR with the tags `vX.Y.Z`, `vX.Y` and `stable`, so you can run your own copy without cloning or building. On a Docker host, you download three files, fill in `.env`, create a `data` folder and start Compose. Railway, Render, Fly.io and Coolify run the same image, each with its own way of updating it.
-
-- Docker hosts: [Docker](deploy/docker.md)
-- [Railway](deploy/railway.md)
-- [Render](deploy/render.md)
-- [Fly.io](deploy/fly.md)
-- [Coolify](deploy/coolify.md)
-
-Installs on `:stable` update only when a release is published.
-
-### Browsing Memory in Obsidian
-
-1. On the Pi, run the export against the live SQLite database.
-2. The default destination is `data/vault/`; set `MEMORY_VAULT_EXPORT_DIR` to write a different destination.
-3. Treat the result as a read-only static snapshot. Re-run the export whenever you want it refreshed.
-4. Copy it to a desktop machine, then open the copied folder as an Obsidian vault to browse member notes and each guild's `guild.md` facts note.
-
-```bash
-cd /path/to/rokabot
-npm run export:vault
-rsync -av data/vault/ desktop-user@desktop-host:~/Rokabot-vault/
-```
-
-Obsidian belongs on the desktop, not the Pi: it is a graphical desktop application, while the Pi is kept focused on the bot as a headless server.
-
-<p align="right"><a href="#readme-top">↑</a></p>
-
----
+| Area                 | Technology                                                             |
+| -------------------- | ---------------------------------------------------------------------- |
+| Language and Runtime | TypeScript (ES2022), Node.js 24                                        |
+| Discord              | discord.js v14                                                         |
+| Agent                | Google ADK                                                             |
+| Models               | Gemini, Anthropic, OpenAI, ModelScope, or any OpenAI-compatible server |
+| Judgments            | TypeSafe Jev (optional)                                                |
+| Storage              | SQLite via better-sqlite3                                              |
+| Media                | sharp, ffmpeg, yt-dlp, and a sherpa-onnx speech sidecar                |
+| Quality              | Vitest, Biome, Prettier, commitlint                                    |
+| Deployment           | Docker Compose; images on GHCR, built for amd64 and arm64              |
+
+## Quick Start
+
+1. Create a Discord application. Turn on **Message Content Intent**. Install it with the `bot` and `applications.commands` scopes.
+2. Get the code and the secrets file:
+
+   ```bash
+   git clone https://github.com/AlaskanTuna/Rokabot.git && cd Rokabot
+   cp .env.example .env
+   ```
+
+3. Fill in `.env`: `DISCORD_TOKEN`, `DISCORD_CLIENT_ID` and the model keys. The shipped `config.yml` needs `ANTHROPIC_API_KEY`, `MODELSCOPE_API_KEY` and `GEMINI_API_KEY`. To run on one Gemini key, add `LLM_MAIN=flash` and `LLM_FALLBACK=none`.
+4. Start the stack:
+
+   ```bash
+   mkdir -p data
+   docker compose pull && docker compose up -d
+   ```
+
+5. Check it. `curl http://localhost:3000/` returns HTTP 200 once she is online. Then mention the bot in a channel.
+
+[Getting Started](guide/getting-started.md) has the full steps, local development, tests and startup errors. To run without a clone, follow [Docker](deploy/docker.md).
 
 ## Documentation
 
-- [Product Requirements](./prd.md)
-- [Technical Reference](./trd.md)
-- [Multimodal Attachments](./research/multimodal.md)
-- [Jev Integration](./research/jev-integration.md)
-- [Deployment and Operations Runbook](./runbook.md)
+| For               | Read                                                                                                                                                                                                     | What You Get                                                                         |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Deployers         | [Getting Started](guide/getting-started.md)                                                                                                                                                              | Discord app setup, keys, first run with npm or Docker                                |
+| Deployers         | [Configuration](guide/configuration.md)                                                                                                                                                                  | Every `config.yml` key with its default, env override and bounds; every secret       |
+| Deployers         | [Models](guide/models.md)                                                                                                                                                                                | How to pick the main and fallback models, add an OpenAI-compatible server, cap spend |
+| Deployers         | [Features](guide/features.md)                                                                                                                                                                            | Triggers, commands, tools, media, games and stats, as members see them               |
+| Deployers         | [Memory](guide/memory.md)                                                                                                                                                                                | What she remembers, privacy levels, forgetting, maintenance scripts                  |
+| Deployers         | [Docker](deploy/docker.md), [Railway](deploy/railway.md), [Render](deploy/render.md), [Fly.io](deploy/fly.md), [Coolify](deploy/coolify.md)                                                              | The published image on each platform, with updates and rollback                      |
+| Character Writers | [Characters](guide/characters.md)                                                                                                                                                                        | How to build a character pack: layout, prompts, voice, moods, checks                 |
+| Character Writers | [Prompt Engine](trd/prompt-engine.md)                                                                                                                                                                    | How a pack becomes the system prompt each turn: blocks, mood detection, reply shape  |
+| Character Writers | [Character Harness](research/character-harness-2026.md), [Roka Voice v3](research/roka-voice-v3.md), [Roka Voice v4](research/roka-voice-v4.md)                                                          | The research behind the harness and Roka's voice                                     |
+| Operators         | [Runbook](runbook.md)                                                                                                                                                                                    | Pi access, deploy and rollback, config switches, database work, troubleshooting      |
+| Operators         | [Deployment](trd/deployment.md)                                                                                                                                                                          | CI jobs, image tags, compose services, the release flow                              |
+| Contributors      | [TRD Index](trd.md)                                                                                                                                                                                      | The module list and the rules every module follows                                   |
+| Contributors      | [System](trd/system.md)                                                                                                                                                                                  | The process, Discord events, one turn from message to reply                          |
+| Contributors      | [Memory](trd/memory.md)                                                                                                                                                                                  | Write path, claim lifecycle, privacy gate, recall                                    |
+| Contributors      | [Models](trd/models.md)                                                                                                                                                                                  | Providers, profiles, routing, hedging, spend                                         |
+| Contributors      | [Media](trd/media.md)                                                                                                                                                                                    | Attachments, audio and video watching, social posts                                  |
+| Contributors      | [Jev Judgments](trd/jev.md)                                                                                                                                                                              | Turn judgments, search prefetch, the memory judge                                    |
+| Contributors      | [Reliability](trd/reliability.md)                                                                                                                                                                        | Turn admission, retries, the safety ladder, rate and token budgets                   |
+| Contributors      | [Data](trd/data.md)                                                                                                                                                                                      | Shared data shapes, SQLite tables, retention                                         |
+| Contributors      | [Product Requirements](prd.md)                                                                                                                                                                           | Goals, users, requirements and how far each has shipped                              |
+| Contributors      | [Multimodal](research/multimodal.md), [Jev Integration](research/jev-integration.md), [Social Post Viewing](research/social-post-viewing.md), [Auto-Deploy Platforms](research/auto-deploy-platforms.md) | The research behind media limits, Jev, post links and platform updates               |
 
-<p align="right"><a href="#readme-top">↑</a></p>
+## Who Is Maniwa Roka
 
----
+<img align="right" src="../assets/roka-sticker-1.png" alt="Roka serving drinks" width="100" />
+
+**Maniwa Roka** (馬庭 芦花) is a warm, gently teasing onee-san side character from [Senren\*Banka](https://vndb.org/v19073) (千恋＊万花). Rokabot brings her observant, affectionate energy to a Discord server through in-character conversation. She chats with the server, remembers useful context without carrying it into another server or a DM, helps with everyday requests and makes downtime more playful. She is the shipped character pack, `characters/roka`.
 
 ## Privacy
 
-Rokabot is self-hosted and stores session history, memory claims, reminders, game data, metrics, and failure diagnostics (which retain the triggering message verbatim for a bounded window, configured by `metrics.diagnosticsRetentionHours`), and a small sample of conversations memory rejected, kept verbatim for offline evaluation (up to 200, for `memory.extractionSampleDays`, 14 days by default), in local SQLite. Claims are scoped to their Discord server and never cross between servers. DMs and `/ask` do not read or write memory. Messages used to generate responses and extract memory are sent to Gemini; passive episode content and candidate claims are also sent to TypeSafe Jev for admission and verification. Attachments are never written to disk or to SQLite — only text content is persisted, so a restart drops them entirely. Server operators should disclose passive monitoring in channels where Roka has been mentioned.
+- **Self-Hosted:** all state sits in local SQLite (`data/rokabot.db`): session history, memory, reminders, game data, metrics, failure diagnostics and bug reports.
+- **Retained Text:** failure diagnostics keep the triggering message verbatim for `metrics.diagnosticsRetentionHours` (72 h). A sample of rejected conversations (at most 200, for `memory.extractionSampleDays`, 14 days) is kept for offline review. `memory.extractionSampleRate: 0` stops it.
+- **Scope:** memory stays in its Discord server. DMs and `/ask` never read or write it. `memory.privacy` can keep memories inside one channel.
+- **What Leaves the Host:** messages go to the configured model providers, and web searches go to Tavily. With `TYPESAFE_API_KEY`, conversation text and candidate facts go to TypeSafe Jev. Memory text and the message she answers go to the embedding provider, unless it is `local`.
+- **Attachments:** chat files are never written to disk or SQLite. Only text is kept, including notes on watched media. A file attached to `/report` is the exception: a bounded copy goes to `data/reports/`.
+- **Disclosure:** tell your members that Roka reads channels where she was mentioned.
 
-<p align="right"><a href="#readme-top">↑</a></p>
+## Contributing
 
----
+1. Branch from `main`. Every change, small ones included, lands through a pull request.
+2. Run the gates: `npm test && npm run test:perf`, then `npm run lint`, `npm run format:check` and `npm run typecheck`.
+3. Write commits as [Conventional Commits](https://www.conventionalcommits.org/). A commit hook checks them.
+4. Open the pull request. It can merge only after the `test` check passes.
+5. When a change alters a contract, update its [TRD](trd.md) module in the same pull request.
 
 ## License
 
-MIT. 2026.
-
-<p align="right"><a href="#readme-top">↑</a></p>
+[MIT](../LICENSE).

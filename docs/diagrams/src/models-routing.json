@@ -1,0 +1,320 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Model Routing for One Reply Turn",
+    "visual_preset": "editorial",
+    "quality_profile": "showcase",
+    "output": ".archify/models-routing/models-routing.html",
+    "repository": {
+      "url": "https://github.com/AlaskanTuna/Rokabot",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "1947e573ceb458468bbfe2e06d5cd50b1d567dbf"
+    },
+    "legend": {
+      "entries": {
+        "frontend": {
+          "label": "Answer"
+        },
+        "backend": {
+          "label": "Model call"
+        },
+        "security": {
+          "label": "Decision"
+        },
+        "messagebus": {
+          "label": "Hedge"
+        },
+        "database": {
+          "label": "In-memory state"
+        },
+        "external": {
+          "label": "Retry ladder"
+        }
+      }
+    }
+  },
+  "lanes": [
+    {
+      "id": "hedge",
+      "label": "Hedge (optional)"
+    },
+    {
+      "id": "route",
+      "label": "Reply turn"
+    },
+    {
+      "id": "failure",
+      "label": "Failure path",
+      "variant": "exception"
+    }
+  ],
+  "mainPath": ["side", "call", "answer", "window"],
+  "nodes": [
+    {
+      "id": "side",
+      "lane": "route",
+      "col": 0,
+      "type": "security",
+      "label": "Turn Start Side",
+      "sublabel": "reads the sticky window",
+      "sources": [
+        {
+          "path": "src/agent/roka.ts",
+          "line": 427,
+          "end_line": 432
+        },
+        {
+          "path": "src/agent/reliability.ts",
+          "line": 436,
+          "end_line": 438
+        }
+      ],
+      "width": 124
+    },
+    {
+      "id": "call",
+      "lane": "route",
+      "col": 1,
+      "type": "backend",
+      "label": "Model Call",
+      "sublabel": "pinned side first",
+      "tag": "hedge timer",
+      "sources": [
+        {
+          "path": "src/agent/fallbackModel.ts",
+          "line": 136,
+          "end_line": 176
+        },
+        {
+          "path": "src/agent/llm/createModel.ts",
+          "line": 98,
+          "end_line": 104
+        }
+      ],
+      "width": 124
+    },
+    {
+      "id": "race",
+      "lane": "hedge",
+      "col": 3,
+      "type": "messagebus",
+      "label": "Hedge Race",
+      "sublabel": "starts after hedgeAfterMs",
+      "tag": "first answer wins",
+      "sources": [
+        {
+          "path": "src/agent/fallbackModel.ts",
+          "line": 33,
+          "end_line": 41
+        },
+        {
+          "path": "src/agent/fallbackModel.ts",
+          "line": 53,
+          "end_line": 113
+        }
+      ],
+      "width": 124
+    },
+    {
+      "id": "answer",
+      "lane": "route",
+      "col": 3,
+      "type": "frontend",
+      "label": "Answer",
+      "sublabel": "main or fallback",
+      "sources": [
+        {
+          "path": "src/agent/fallbackModel.ts",
+          "line": 142,
+          "end_line": 175
+        },
+        {
+          "path": "src/agent/roka.ts",
+          "line": 603,
+          "end_line": 614
+        }
+      ],
+      "width": 124
+    },
+    {
+      "id": "window",
+      "lane": "route",
+      "col": 4,
+      "type": "database",
+      "label": "Sticky Window",
+      "sublabel": "next turns read it",
+      "sources": [
+        {
+          "path": "src/agent/roka.ts",
+          "line": 603,
+          "end_line": 614
+        },
+        {
+          "path": "src/agent/reliability.ts",
+          "line": 436,
+          "end_line": 442
+        }
+      ],
+      "width": 124
+    },
+    {
+      "id": "kind",
+      "lane": "failure",
+      "col": 1,
+      "type": "security",
+      "label": "Failure Kind",
+      "sublabel": "switch kind?",
+      "sources": [
+        {
+          "path": "src/agent/reliability.ts",
+          "line": 24,
+          "end_line": 39
+        },
+        {
+          "path": "src/agent/reliability.ts",
+          "line": 293,
+          "end_line": 302
+        }
+      ],
+      "width": 124
+    },
+    {
+      "id": "switch",
+      "lane": "failure",
+      "col": 3,
+      "type": "backend",
+      "label": "Switch Side",
+      "sublabel": "once per turn",
+      "sources": [
+        {
+          "path": "src/agent/roka.ts",
+          "line": 446,
+          "end_line": 465
+        }
+      ],
+      "width": 124
+    },
+    {
+      "id": "ladder",
+      "lane": "failure",
+      "col": 0,
+      "type": "external",
+      "label": "Retry or Deflect",
+      "sublabel": "reliability ladder",
+      "sources": [
+        {
+          "path": "src/agent/reliability.ts",
+          "line": 304,
+          "end_line": 330
+        }
+      ],
+      "width": 124
+    }
+  ],
+  "edges": [
+    {
+      "id": "side-call",
+      "from": "side",
+      "to": "call",
+      "label": "start side",
+      "role": "main"
+    },
+    {
+      "id": "call-answer",
+      "from": "call",
+      "to": "answer",
+      "label": "answered",
+      "role": "main",
+      "variant": "emphasis"
+    },
+    {
+      "id": "answer-window",
+      "from": "answer",
+      "to": "window",
+      "label": "open or close",
+      "role": "main"
+    },
+    {
+      "id": "call-race",
+      "from": "call",
+      "to": "race",
+      "label": "main slow",
+      "role": "branch",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "left"
+    },
+    {
+      "id": "race-answer",
+      "from": "race",
+      "to": "answer",
+      "label": "first answer",
+      "role": "branch",
+      "variant": "dashed"
+    },
+    {
+      "id": "call-kind",
+      "from": "call",
+      "to": "kind",
+      "label": "error",
+      "role": "error",
+      "variant": "security",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "kind-switch",
+      "from": "kind",
+      "to": "switch",
+      "label": "switch kind",
+      "role": "error",
+      "variant": "security"
+    },
+    {
+      "id": "kind-ladder",
+      "from": "kind",
+      "to": "ladder",
+      "label": "other kind",
+      "role": "error",
+      "variant": "security"
+    },
+    {
+      "id": "switch-answer",
+      "from": "switch",
+      "to": "answer",
+      "label": "other side answers",
+      "role": "branch"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "Switch and Sticky Kinds",
+      "items": [
+        "Switch: transient_http, network, quota_exhausted, billing_exhausted, refusal, malformed_tool_args, context_length",
+        "Open the window: only the first three, once the fallback answers",
+        "A main-side answer closes the window"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Hedge Rules",
+      "items": [
+        "Off while llm.hedgeAfterMs is 0, the shipped value",
+        "Skipped when pinned, already on the fallback, or with non-image media",
+        "The loser is aborted; if both fail, the main error goes on"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Pinning",
+      "items": [
+        "On when either side is Claude, which replays thinking",
+        "The first answer pins the turn's later calls",
+        "A switch clears the pin"
+      ]
+    }
+  ]
+}

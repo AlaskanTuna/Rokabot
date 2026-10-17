@@ -1,0 +1,339 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "From a Config Entry to a Model Adapter",
+    "visual_preset": "editorial",
+    "quality_profile": "showcase",
+    "output": ".archify/models-config/models-config.html",
+    "repository": {
+      "url": "https://github.com/AlaskanTuna/Rokabot",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "1947e573ceb458468bbfe2e06d5cd50b1d567dbf"
+    },
+    "legend": {
+      "entries": {
+        "emphasis": {
+          "label": "Shipped main"
+        },
+        "security": {
+          "label": "Secrets"
+        }
+      }
+    },
+    "viewBox": [1080, 540]
+  },
+  "stages": [
+    {
+      "label": "Inputs"
+    },
+    {
+      "label": "Resolve"
+    },
+    {
+      "label": "Resolved"
+    },
+    {
+      "label": "Adapter"
+    },
+    {
+      "label": "Router"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "entry",
+      "type": "database",
+      "label": "llm.models Entry",
+      "sublabel": "provider, model, effort",
+      "stage": 0,
+      "row": 1,
+      "width": 132,
+      "sources": [
+        {
+          "path": "config.yml",
+          "line": 41,
+          "end_line": 63
+        }
+      ]
+    },
+    {
+      "id": "env",
+      "type": "security",
+      "label": ".env",
+      "sublabel": "LLM_MAIN, API keys",
+      "stage": 0,
+      "row": 0,
+      "width": 132,
+      "sources": [
+        {
+          "path": ".env.example",
+          "line": 28,
+          "end_line": 43
+        },
+        {
+          "path": "src/config.ts",
+          "line": 534,
+          "end_line": 551
+        }
+      ]
+    },
+    {
+      "id": "profiles",
+      "type": "database",
+      "label": "Profiles",
+      "sublabel": "tested, or declared",
+      "stage": 0,
+      "row": 2,
+      "width": 132,
+      "sources": [
+        {
+          "path": "src/agent/llm/profiles.ts",
+          "line": 27,
+          "end_line": 216
+        },
+        {
+          "path": "src/agent/llm/profiles.ts",
+          "line": 245,
+          "end_line": 265
+        },
+        {
+          "path": "src/config.ts",
+          "line": 455,
+          "end_line": 486
+        }
+      ]
+    },
+    {
+      "id": "resolve",
+      "type": "backend",
+      "label": "resolveRole",
+      "sublabel": "validate, fill defaults",
+      "stage": 1,
+      "row": 1,
+      "width": 132,
+      "sources": [
+        {
+          "path": "src/config.ts",
+          "line": 488,
+          "end_line": 532
+        },
+        {
+          "path": "src/config.ts",
+          "line": 480,
+          "end_line": 486
+        }
+      ]
+    },
+    {
+      "id": "resolved",
+      "type": "database",
+      "label": "ResolvedModel",
+      "sublabel": "config.llm main, fallback",
+      "stage": 2,
+      "row": 1,
+      "width": 132,
+      "sources": [
+        {
+          "path": "src/config.ts",
+          "line": 305,
+          "end_line": 330
+        },
+        {
+          "path": "src/config.ts",
+          "line": 548,
+          "end_line": 561
+        }
+      ]
+    },
+    {
+      "id": "gemini",
+      "type": "cloud",
+      "label": "GeminiLlm",
+      "sublabel": "ADK Gemini",
+      "stage": 3,
+      "row": 0,
+      "width": 132,
+      "sources": [
+        {
+          "path": "src/agent/llm/createModel.ts",
+          "line": 30,
+          "end_line": 65
+        }
+      ]
+    },
+    {
+      "id": "anthropic",
+      "type": "cloud",
+      "label": "AnthropicLlm",
+      "sublabel": "Messages API",
+      "stage": 3,
+      "row": 1,
+      "width": 132,
+      "sources": [
+        {
+          "path": "src/agent/llm/anthropicLlm.ts",
+          "line": 422,
+          "end_line": 438
+        },
+        {
+          "path": "src/agent/llm/createModel.ts",
+          "line": 67,
+          "end_line": 72
+        }
+      ]
+    },
+    {
+      "id": "chat",
+      "type": "cloud",
+      "label": "ChatCompletionsLlm",
+      "sublabel": "/chat/completions",
+      "stage": 3,
+      "row": 2,
+      "width": 140,
+      "sources": [
+        {
+          "path": "src/agent/llm/chatCompletionsLlm.ts",
+          "line": 417,
+          "end_line": 446
+        },
+        {
+          "path": "src/agent/llm/createModel.ts",
+          "line": 73,
+          "end_line": 95
+        }
+      ]
+    },
+    {
+      "id": "router",
+      "type": "messagebus",
+      "label": "RoutedLlm",
+      "sublabel": "rokaModel",
+      "stage": 4,
+      "row": 1,
+      "width": 132,
+      "sources": [
+        {
+          "path": "src/agent/llm/createModel.ts",
+          "line": 98,
+          "end_line": 104
+        },
+        {
+          "path": "src/agent/fallbackModel.ts",
+          "line": 115,
+          "end_line": 134
+        }
+      ]
+    }
+  ],
+  "flows": [
+    {
+      "id": "env-resolve",
+      "from": "env",
+      "to": "resolve",
+      "label": "keys, LLM_MAIN",
+      "variant": "security",
+      "fromSide": "right",
+      "toSide": "top",
+      "via": [[315, 157]]
+    },
+    {
+      "id": "entry-resolve",
+      "from": "entry",
+      "to": "resolve",
+      "label": "entry",
+      "route": "straight"
+    },
+    {
+      "id": "profiles-resolve",
+      "from": "profiles",
+      "to": "resolve",
+      "label": "profile",
+      "fromSide": "right",
+      "toSide": "bottom",
+      "via": [[315, 385]]
+    },
+    {
+      "id": "resolve-resolved",
+      "from": "resolve",
+      "to": "resolved",
+      "label": "per role",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "id": "resolved-gemini",
+      "from": "resolved",
+      "to": "gemini",
+      "label": "gemini",
+      "fromSide": "top",
+      "toSide": "left",
+      "via": [[530, 157]]
+    },
+    {
+      "id": "resolved-anthropic",
+      "from": "resolved",
+      "to": "anthropic",
+      "label": "anthropic",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "id": "resolved-chat",
+      "from": "resolved",
+      "to": "chat",
+      "label": "openai, modelscope, compatible",
+      "fromSide": "bottom",
+      "toSide": "left",
+      "via": [[530, 385]],
+      "labelAt": [595, 405]
+    },
+    {
+      "id": "gemini-router",
+      "from": "gemini",
+      "to": "router",
+      "label": "side",
+      "fromSide": "right",
+      "toSide": "top",
+      "via": [[960, 157]]
+    },
+    {
+      "id": "anthropic-router",
+      "from": "anthropic",
+      "to": "router",
+      "label": "side",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "id": "chat-router",
+      "from": "chat",
+      "to": "router",
+      "label": "side",
+      "fromSide": "right",
+      "toSide": "bottom",
+      "via": [[960, 385]]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "Startup Stops When",
+      "items": [
+        "The role key is not under llm.models",
+        "A tested provider has no verified profile for the model",
+        "The effort, a capability or the key variable is wrong or unset"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Adapter Choice",
+      "items": [
+        "createLlm picks the adapter by provider",
+        "The legacy ModelScope fallback gets ModelScopeLlm",
+        "generateObject builds its own adapters the same way"
+      ]
+    }
+  ]
+}
