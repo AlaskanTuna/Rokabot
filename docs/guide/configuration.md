@@ -9,6 +9,7 @@ Reference for every `config.yml` key, its default, its environment override and 
 - **Precedence:** environment override, then `config.yml`, then the code default in `src/config.ts`.
 - **Validation:** runs once at startup. A bad value stops the bot with an error that names the key.
 - **Apply a Change:** restart the bot. With Docker, run `docker compose restart roka` after a `config.yml` edit, and `docker compose up -d` after a `.env` edit.
+- **Persona Studio:** `npm run studio` edits `config.yml` and `.env` through a local API that runs this validation before it saves. See [Persona Studio](../../studio/README.md).
 
 ![Config Layers](../diagrams/config-layers.svg)
 
