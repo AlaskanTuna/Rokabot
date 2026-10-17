@@ -3,6 +3,7 @@ import { isAbsolute, join, relative, resolve } from 'node:path'
 import yaml from 'js-yaml'
 import type { z } from 'zod'
 import {
+  COMMAND_DESCRIPTION_LIMIT,
   LINE_SLOTS,
   type LinesFile,
   type VoiceFile,
@@ -352,6 +353,15 @@ export function loadCharacter(dir: string, harnessDir: string): Character {
     return value
   }
   const lines = expandLines(linesFile, '') as LinesFile
+  for (const [key, description] of Object.entries(lines.commands)) {
+    if (description.length > COMMAND_DESCRIPTION_LIMIT) {
+      report(
+        linesPath,
+        `commands.${key}`,
+        `${description.length} characters once its macros are filled; Discord allows ${COMMAND_DESCRIPTION_LIMIT}, so shorten it`
+      )
+    }
+  }
   const silent = uncoveredHours(lines.status)
   if (silent.length > 0) report(linesPath, 'status', `no band covers hour ${silent.join(', ')}`)
 

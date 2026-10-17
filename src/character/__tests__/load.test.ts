@@ -226,6 +226,23 @@ describe('loadCharacter', () => {
     expect(loadError(dir)).toContain(message)
   })
 
+  it('rejects a command description that passes as written but grows past 100 characters once {{char}} is filled', () => {
+    const dir = copyOf(MINIMAL)
+    edit(dir, 'character.yml', 'name: Mina', 'name: Mina Mirai')
+    edit(dir, 'lines.yml', 'ask: Ask {{char}} anything', `ask: Ask {{char}} ${'a'.repeat(87)}`)
+    expect(loadError(dir)).toContain(
+      'lines.yml: commands.ask: 102 characters once its macros are filled; Discord allows 100, so shorten it'
+    )
+  })
+
+  it('accepts a command description that is exactly 100 characters once {{char}} is filled', () => {
+    const dir = copyOf(MINIMAL)
+    edit(dir, 'character.yml', 'name: Mina', 'name: Mina Mirai')
+    edit(dir, 'lines.yml', 'ask: Ask {{char}} anything', `ask: Ask {{char}} ${'a'.repeat(85)}`)
+    expect(loadCharacter(dir, HARNESS).lines.commands.ask).toBe(`Ask Mina Mirai ${'a'.repeat(85)}`)
+    expect(loadCharacter(dir, HARNESS).lines.commands.ask).toHaveLength(100)
+  })
+
   it('loads a second character that uses only the harness prompts and one mood', () => {
     const mina = loadCharacter(MINIMAL, HARNESS)
     expect(mina.moodKeys).toEqual(['calm'])
