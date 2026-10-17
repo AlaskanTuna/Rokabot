@@ -1,0 +1,158 @@
+# Every line the bot posts in the character's voice outside the model's own replies. A list is a pool: each post
+# draws one line at random. {{char}}, {{char_full}} and {{world}} work in every line; any other {{slot}} works only in
+# a key whose comment names it, and code fills it when the line is posted.
+replies:
+  decline: # The rate limiter turned a message away
+    - Give me a moment, everyone is talking at once.
+    - One second, I will be right with you.
+  busy: # The channel's previous reply is still being written
+    - Still thinking, one moment.
+    - Hold on, I have not finished my last thought yet.
+  error: # A turn or a /stats view failed outright
+    - Something went wrong on my side. Try again in a bit?
+attachments: # Added to a reply when an attachment was not read whole, so a partial answer is not taken as a full one
+  unsupported: [I could not open that kind of file.] # A file type the model cannot open
+  partial: [That was long, so I only read the start of it.] # Only the opening of a long file was sent
+  oversized: [That file is too big for me to read in one go.] # The file would cost too many tokens to read in one turn
+  skipped: [That was a lot of files, so I only looked at the first few.] # More attachments arrived than one turn takes
+reliability: # Sent in place of the model's reply when a turn goes wrong
+  safety: "Let's talk about something else." # The provider blocked the reply on safety grounds
+  recitation: I should not repeat that one word for word. # The provider blocked the reply as a recitation
+  terminal: Something broke on my side. Let's try again later. # Every retry and fallback failed
+  empty: [Sorry, I lost my train of thought. Say that again?] # The model returned nothing usable
+tools: # The /anime and /remind commands
+  error: [That did not work. Try again?] # A tool command failed
+  flavor: # Opens each reply of that command
+    anime: [Let me look that up.]
+    schedule: [Checking the schedule.]
+    remind: [Noted.]
+  notYours: Those buttons are not yours. # Someone else pressed a result's page button
+  noAnime: I could not find anything for {{search}}. # {{search}}: the quoted title, or "those filters"
+  noSchedule: Nothing found for that. # /anime schedule found nothing
+reminders: # The /remind command and the reminders it delivers
+  unknown: I do not know that subcommand. # An unknown /remind subcommand
+  refused: '{{reason}}' # The reminder was not saved; {{reason}} says why
+  setIn: '⏰ **Reminder set!** I will remind you {{when}} ({{time}} {{timezone}}).' # /remind in; {{when}} is relative, {{time}} the clock time
+  setAt: '⏰ **Reminder set for {{time}} {{timezone}}!** I will remind you {{when}}.' # /remind at; same slots as setIn
+  none: No active reminders. # /remind list with nothing pending
+  notFound: I could not find that reminder. Maybe it already went off? # /remind cancel with an unknown id
+  notYours: That reminder is not yours to cancel. # /remind cancel on someone else's
+  cancelled: 'Cancelled reminder **#{{id}}**: "{{task}}"' # /remind cancel; {{id}} and {{task}}
+  delivered: 'Hey {{mention}}, you asked me to remind you: "{{task}}"' # Posted in the channel; {{mention}} pings the user
+  deliveredByDm: "Hey, you asked me to remind you: \"{{task}}\"\n\n-# (Sent as a DM because I could not reach the original channel)" # Sent by DM when the channel is gone
+games: # Game lines that are not part of a game's own rules
+  error: Something went wrong. Try again later? # A game command failed
+  hangmanTimeout: "Time's up! The word was **{{word}}**." # Hangman ran out of time; {{word}}
+  shiritoriWinner: '**{{player}}** ran out of time. **{{winner}}** wins!' # The last player standing wins
+  shiritoriNext: '**{{player}}** ran out of time. Your turn, **{{next}}**!' # The game goes on with {{next}}
+status: # The bot's Discord status by hour, [from, to) in config.yml's timezone; the bands must cover all 24 hours
+  - from: 5
+    to: 12
+    lines: [Watching the morning tide, Making breakfast]
+  - from: 12
+    to: 17
+    lines: [Walking along the harbor, Reading by the window]
+  - from: 17
+    to: 22
+    lines: [Watching the sunset, Chatting with friends]
+  - from: 22
+    to: 5
+    lines: [Up too late, Listening to the waves]
+commands: # Slash command descriptions, registered on every start; Discord allows 100 characters
+  ask: Ask {{char}} anything # /ask
+  remind: Ask {{char}} to remind you about something # /remind
+  hangman: Play Hangman with {{char}} # /hangman
+  shiritori: Play Shiritori (word chain) with {{char}} # /shiritori
+  stats: See {{char}}'s server activity notebook # /stats
+  report: File a bug report for {{char}} # /report
+stats: # The /stats notebook
+  notInDms: Stats work only in a server. # /stats run outside a server
+  notYours: These tabs belong to whoever opened them. # Someone else picked a view
+  reachedBy: How People Reach {{char}} # Overview label for how people start a chat
+  knownBest: Who {{char}} Knows Best # Memory heading over the members the character remembers most
+  quietMood: A Quiet Pause # The server mood before any mood is recorded
+  emptyMood: The server mood is waiting for its first chat. # Mood caption before any mood is recorded
+  footers: # The closing line of each view
+    overview: Thanks for keeping this place lively.
+    memory: A peek at what I remember; the rest stays between us.
+    nerd: Everything is running smoothly.
+  remembers: # A remembered member's line, by memory predicate; misc also stands in when the memory has no predicate
+    nickname: I remember what they like to be called.
+    language_spoken: I remember the languages they speak.
+    nationality: I remember where they are from.
+    pronouns: I remember their pronouns.
+    pets: I remember their pets.
+    daily_routine: I remember their daily routine.
+    diet: I remember how they like to eat.
+    general_occupation: I remember what keeps them busy.
+    likes: I remember what they like.
+    dislikes: I remember what they dislike.
+    favorite_anime: I remember their favorite anime.
+    favorite_game: I remember their favorite game.
+    favorite_music: I remember their favorite music.
+    hobby: I remember their hobbies.
+    currently_watching: I remember what they are watching.
+    relationship_to: I remember who they hold dear.
+    friend_group: I remember who they spend time with.
+    communication_style: I remember how they like to talk.
+    humor_style: I remember what makes them laugh.
+    catchphrase: I remember the things they always say.
+    teasing_habit: I remember how they tease.
+    recommends: I remember what they recommend.
+    complains_about: I remember what gets on their nerves.
+    strong_opinion: I remember what they feel strongly about.
+    misc: I remember a little something about them.
+  remembersOther: I remember their {{label}}. # A predicate missing above; {{label}} is its name in lower case
+  chartColors: # The chart images
+    background: '#14181f'
+    text: '#eef2f7'
+    mutedText: '#a9b4c2'
+    secondaryText: '#cfd8e3'
+    grid: '#2a3340'
+    heatmapEmpty: '#1d2430'
+    heatmapLow: '#1f3b4d'
+    heatmapMedium: '#2f6b86'
+    heatmapHigh: '#4fa3c7'
+    heatmapPeak: '#8ecae6'
+    growthStroke: '#8ecae6'
+    latencyLine: '#ffd166'
+    latencyLow: '#5c4a1f'
+    latencyMedium: '#8f7330'
+    latencyHigh: '#c9a043'
+    latencyPeak: '#ffd166'
+footers: # Labels in the line under a reply that says what the character did
+  tools: # By tool name
+    roll_dice: rolled the dice
+    flip_coin: flipped a coin
+    get_current_time: checked the time
+    get_weather: checked the weather
+    search_web: searched the web
+    search_anime: looked up anime
+    get_anime_schedule: checked airing times
+    set_reminder: set a reminder
+    list_reminders: listed reminders
+    cancel_reminder: cancelled a reminder
+    remember_user: saved a memory
+    recall_user: recalled a memory
+    forget_user: forgot a memory
+  post: # A linked post read before the reply; {{post}} is the kind, like "X post"
+    found: read the {{post}}
+    failed: could not open the {{post}}
+  replies: # A linked post's replies
+    found: read the replies
+    failed: could not read the replies
+  watch: # How much of a video or audio clip the character took in; {{media}} is "video", "clip" or a platform's, like "X video"
+    video:
+      whole: watched the {{media}}
+      most: watched most of the {{media}}
+      part: watched part of the {{media}}
+      skim: skimmed the {{media}}
+      remembered: remembered the {{media}}
+      failed: could not watch the {{media}}
+    audio:
+      whole: heard the {{media}}
+      most: heard most of the {{media}}
+      part: heard part of the {{media}}
+      skim: skimmed the {{media}}
+      remembered: remembered the {{media}}
+      failed: could not hear the {{media}}

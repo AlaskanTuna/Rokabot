@@ -1,0 +1,36 @@
+default: cheerful # The mood when no detection rule fires
+safe: calm # Forced on the last rung of the safety ladder
+# The first rule with at least minMatches patterns matching the last three messages wins, so order matters.
+# Patterns are regular expressions, matched case-insensitively.
+detection:
+  - mood: calm
+    minMatches: 1
+    patterns:
+      - '\bsad\b'
+      - '\bworried\b'
+      - '\bstress'
+      - '\btired\b'
+      - '\bhelp me\b'
+# Listed in the order Jev and /stats show them. prompt defaults to prompts/moods/<mood>.md; faces are voice.yml groups;
+# beats are the odds of each voice.yml beat (omitted = never); judge is Jev's description of when the mood fits;
+# color, placeholder, portraits, emoji, adjective and season dress the reply embed and /stats.
+moods:
+  cheerful:
+    faces: [happy, playful]
+    judge: casual banter, jokes or light small talk; the default when nothing else fits
+    color: '#ffd166'
+    placeholder: https://placehold.co/80x80/FFD166/white?text=A
+    emoji: ☀️
+    adjective: bright
+    season: A Sunny Stretch
+  calm:
+    faces: [soft]
+    judge: a real worry, a serious topic, or a request for honest advice
+    color: '#8ecae6'
+    placeholder: https://placehold.co/80x80/8ECAE6/white?text=A
+    emoji: 🌊
+    adjective: steady
+    season: Quiet Waters
+moodPairs: # /stats season title for a dominant:runner-up pair; a mood's season covers every other pair
+  'cheerful:calm': Sun on Still Water
+portraitUrls: {} # Image for each portrait a mood names in its portraits list
