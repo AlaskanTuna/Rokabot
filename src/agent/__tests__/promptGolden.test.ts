@@ -77,7 +77,9 @@ function computeGolden(): Record<string, string> {
     }
     golden[`replyShape.${tone}`] = digest(shapes)
   }
-  golden['replyShape.classifiers'] = digest(MESSAGES.flatMap((message) => [messageEdge(message), messageWeight(message)]))
+  golden['replyShape.classifiers'] = digest(
+    MESSAGES.flatMap((message) => [messageEdge(message), messageWeight(message)])
+  )
   const window = (content: string): WindowMessage[] => [{ role: 'user', displayName: 'Ikuyo', content, timestamp: 0 }]
   golden.tones = digest(
     MESSAGES.flatMap((message) =>
