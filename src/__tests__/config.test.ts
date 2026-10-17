@@ -172,6 +172,7 @@ describe('config module', () => {
     clearTunableEnvVars()
 
     const { config } = await import('../config.js')
+    await vi.dynamicImportSettled()
 
     expect(config.gemini.model).toBe('gemini-3.5-flash-lite')
     expect(config.gemini.extractionModel).toBe(config.gemini.model)
@@ -806,6 +807,7 @@ describe('config module', () => {
     vi.stubEnv('SESSION_TTL_MS', '50000')
 
     await import('../config.js')
+    await vi.dynamicImportSettled()
 
     expect(warn).toHaveBeenCalledOnce()
   })
@@ -816,6 +818,7 @@ describe('config module', () => {
     vi.stubEnv('GEMINI_TURN_DEADLINE_MS', '10000')
 
     await import('../config.js')
+    await vi.dynamicImportSettled()
 
     expect(warn).toHaveBeenCalledWith(
       expect.objectContaining({ turnDeadlineMs: 10_000, timeout: 20_000 }),
@@ -829,6 +832,7 @@ describe('config module', () => {
     vi.stubEnv('GEMINI_TURN_DEADLINE_MS', '39999')
 
     await import('../config.js')
+    await vi.dynamicImportSettled()
 
     expect(warn).toHaveBeenCalledWith(
       expect.objectContaining({ turnDeadlineMs: 39_999, timeout: 20_000 }),
@@ -842,6 +846,7 @@ describe('config module', () => {
     vi.stubEnv('GEMINI_TURN_DEADLINE_MS', '40000')
 
     await import('../config.js')
+    await vi.dynamicImportSettled()
 
     expect(warn).toHaveBeenCalledWith(
       expect.objectContaining({ turnDeadlineMs: 40_000, timeout: 20_000 }),
@@ -855,6 +860,7 @@ describe('config module', () => {
     vi.stubEnv('GEMINI_TURN_DEADLINE_MS', '62999')
 
     await import('../config.js')
+    await vi.dynamicImportSettled()
 
     expect(warn).toHaveBeenCalledWith(
       {
@@ -875,6 +881,7 @@ describe('config module', () => {
     vi.stubEnv('GEMINI_TURN_DEADLINE_MS', '63000')
 
     await import('../config.js')
+    await vi.dynamicImportSettled()
 
     expect(warn).not.toHaveBeenCalled()
   })
@@ -886,6 +893,7 @@ describe('config module', () => {
     vi.stubEnv('GEMINI_TURN_DEADLINE_MS', '150000')
 
     await import('../config.js')
+    await vi.dynamicImportSettled()
 
     expect(warn).not.toHaveBeenCalledWith(
       expect.any(Object),
@@ -900,6 +908,7 @@ describe('config module', () => {
     vi.stubEnv('GEMINI_TURN_DEADLINE_MS', '150000')
 
     await import('../config.js')
+    await vi.dynamicImportSettled()
 
     expect(warn).toHaveBeenCalledWith(
       {
@@ -919,6 +928,7 @@ describe('config module', () => {
     vi.stubEnv('GEMINI_TURN_DEADLINE_MS', '112000')
 
     await import('../config.js')
+    await vi.dynamicImportSettled()
 
     expect(warn).not.toHaveBeenCalled()
   })
@@ -928,6 +938,7 @@ describe('config module', () => {
     clearTunableEnvVars()
 
     await import('../config.js')
+    await vi.dynamicImportSettled()
 
     expect(warn).not.toHaveBeenCalled()
   })
@@ -938,6 +949,7 @@ describe('config module', () => {
     vi.stubEnv('GEMINI_TURN_DEADLINE_MS', '50000')
 
     await import('../config.js')
+    await vi.dynamicImportSettled()
 
     expect(warn).toHaveBeenCalledWith(
       {
@@ -958,6 +970,7 @@ describe('config module', () => {
     vi.stubEnv('GEMINI_TURN_DEADLINE_MS', '61000')
 
     await import('../config.js')
+    await vi.dynamicImportSettled()
 
     expect(warn).toHaveBeenCalledWith(
       {
@@ -978,6 +991,7 @@ describe('config module', () => {
     vi.stubEnv('SESSION_TTL_MS', '120000')
 
     await import('../config.js')
+    await vi.dynamicImportSettled()
 
     expect(warn).not.toHaveBeenCalled()
   })
@@ -988,6 +1002,7 @@ describe('config module', () => {
     withYamlOverride({ reminders: { staleThresholdMs: 4000 } })
 
     await import('../config.js')
+    await vi.dynamicImportSettled()
 
     expect(warn).toHaveBeenCalledWith(
       { staleThresholdMs: 4000, checkIntervalMs: 5000 },
@@ -1001,6 +1016,7 @@ describe('config module', () => {
     withYamlOverride({ reminders: { staleThresholdMs: 5000 } })
 
     await import('../config.js')
+    await vi.dynamicImportSettled()
 
     expect(warn).toHaveBeenCalledWith(
       { staleThresholdMs: 5000, checkIntervalMs: 5000 },
@@ -1014,6 +1030,7 @@ describe('config module', () => {
     withYamlOverride({ reminders: { staleThresholdMs: 5001 } })
 
     await import('../config.js')
+    await vi.dynamicImportSettled()
 
     expect(warn).not.toHaveBeenCalled()
   })
@@ -1024,6 +1041,7 @@ describe('config module', () => {
     withYamlOverride({ memory: { contextSize: 31 } })
 
     await import('../config.js')
+    await vi.dynamicImportSettled()
 
     expect(warn).toHaveBeenCalledWith(
       { contextSize: 31, bufferSize: 30 },
@@ -1037,6 +1055,7 @@ describe('config module', () => {
     withYamlOverride({ memory: { contextSize: 30 } })
 
     await import('../config.js')
+    await vi.dynamicImportSettled()
 
     expect(warn).not.toHaveBeenCalled()
   })
