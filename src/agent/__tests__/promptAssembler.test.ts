@@ -173,13 +173,13 @@ describe('assembleSystemPrompt', () => {
   })
 })
 
-describe('docs/trd.md ToneKey table', () => {
+describe('docs/trd/data.md ToneKey table', () => {
   it('documents exactly the current TONE_PROMPTS keys (change-detection gate)', async () => {
-    const trd = await readFile(resolve('docs/trd.md'), 'utf8')
+    const trd = await readFile(resolve('docs/trd/data.md'), 'utf8')
     const lines = trd.split('\n')
 
     const headingIndex = lines.findIndex((line) => line.trim() === '### ToneKey')
-    if (headingIndex === -1) throw new Error('docs/trd.md is missing its "### ToneKey" section')
+    if (headingIndex === -1) throw new Error('docs/trd/data.md is missing its "### ToneKey" section')
 
     const nextHeadingOffset = lines.slice(headingIndex + 1).findIndex((line) => line.trim().startsWith('#'))
     const sectionEnd = nextHeadingOffset === -1 ? lines.length : headingIndex + 1 + nextHeadingOffset
@@ -199,10 +199,10 @@ describe('docs/trd.md ToneKey table', () => {
     const missing = [...actual].filter((tone) => !documented.has(tone))
     const extra = [...documented].filter((tone) => !actual.has(tone))
 
-    expect(missing, `docs/trd.md ToneKey table is missing tone(s): ${missing.join(', ')}`).toEqual([])
+    expect(missing, `docs/trd/data.md ToneKey table is missing tone(s): ${missing.join(', ')}`).toEqual([])
     expect(
       extra,
-      `docs/trd.md ToneKey table documents tone(s) that no longer exist in TONE_PROMPTS: ${extra.join(', ')}`
+      `docs/trd/data.md ToneKey table documents tone(s) that no longer exist in TONE_PROMPTS: ${extra.join(', ')}`
     ).toEqual([])
   })
 })

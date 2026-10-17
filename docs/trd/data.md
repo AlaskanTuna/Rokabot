@@ -50,7 +50,25 @@ Input to `assembleSystemPrompt` (`src/agent/promptAssembler.ts`), which joins th
 
 ### ToneKey
 
-The detected mood that selects the tone layer. The mood list comes from the character pack. For Roka it has 12 values: `playful` (the default), `sincere`, `domestic`, `flustered`, `curious`, `annoyed`, `tender`, `confident`, `nostalgic`, `mischievous`, `sleepy` and `competitive`. [Prompt Engine](./prompt-engine.md) covers detection order and triggers; [Jev Judgments](./jev.md) covers the Jev override.
+The detected mood that selects the mood prompt. The list comes from the character pack's `moods.yml`; Roka's 12 are
+below, with the criterion Jev uses for each (`moods.<mood>.judge`). `playful` is the default.
+[Prompt Engine](./prompt-engine.md) covers detection order and triggers; [Jev Judgments](./jev.md) covers the
+override. `src/agent/__tests__/promptAssembler.test.ts` fails when this table and the pack disagree.
+
+| Value           | When It Fits                                                                                |
+| --------------- | ------------------------------------------------------------------------------------------- |
+| `'playful'`     | casual banter, jokes or light small talk; the default when nothing else fits                |
+| `'sincere'`     | a real worry, a serious topic, or a request for honest advice                               |
+| `'domestic'`    | food, cooking, meals, chores, home life, or looking after someone                           |
+| `'flustered'`   | a compliment, flirting, romance, or an embarrassing remark aimed at Roka                    |
+| `'curious'`     | something new or interesting is shared, or a topic worth exploring                          |
+| `'annoyed'`     | Roka is being teased, ignored, or treated rudely, or someone repeats something she dislikes |
+| `'tender'`      | someone is sad, lonely or hurting, or says something heartfelt and affectionate             |
+| `'confident'`   | someone asks Roka for help or guidance, or for her to take charge                           |
+| `'nostalgic'`   | memories, the past, old times, or how things have changed                                   |
+| `'mischievous'` | pranks, schemes, dares, or playful plotting                                                 |
+| `'sleepy'`      | late-night chat, tiredness, or going to bed                                                 |
+| `'competitive'` | games, challenges, contests, bets or rivalry                                                |
 
 ## Persistence and Storage
 
