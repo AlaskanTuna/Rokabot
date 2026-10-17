@@ -23,7 +23,8 @@ type Handler = (req: IncomingMessage, url: URL) => unknown
 
 /** Routes one request; every /api request must carry the session token and come from no origin or the studio's own. */
 export function createApp(options: StudioOptions): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
-  const origins = new Set([`http://127.0.0.1:${options.port}`, `http://localhost:${options.port}`])
+  const hosts = new Set([`127.0.0.1:${options.port}`, `localhost:${options.port}`])
+  const origins = new Set([...hosts].map((host) => `http://${host}`))
   const routes: Record<string, Record<string, Handler>> = {
     '/api/pack': { GET: () => readPack(options) },
     '/api/pack/file': {
@@ -70,7 +71,9 @@ export function createApp(options: StudioOptions): (req: IncomingMessage, res: S
     try {
       const url = new URL(req.url ?? '/', 'http://127.0.0.1')
       if (!url.pathname.startsWith('/api/')) throw fail(404, 'the Persona Studio UI ships after its design is approved')
-      const { origin } = req.headers
+      const { host, origin } = req.headers
+      // A DNS-rebound page reaches 127.0.0.1 under its own host name, so only the studio's own names are served.
+      if (!hosts.has(host ?? '')) throw fail(403, 'requests for another host name are refused')
       if (origin !== undefined && !origins.has(origin)) throw fail(403, 'requests from another origin are refused')
       if (!sameToken(req.headers['x-studio-token'], options.token)) {
         throw fail(401, 'send the session token printed at startup in the X-Studio-Token header')

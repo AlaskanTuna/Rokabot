@@ -1,5 +1,5 @@
 import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
-import { type Server, createServer } from 'node:http'
+import { type Server, createServer, request } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
@@ -109,6 +109,24 @@ describe('Persona Studio security', () => {
     for (const origin of [`http://127.0.0.1:${studio.port}`, `http://localhost:${studio.port}`]) {
       expect((await studio.call('/api/schema', { headers: { origin } })).status).toBe(200)
     }
+  })
+
+  it('refuses a request addressed to another host name, even with the token', async () => {
+    const studio = await start()
+    const status = (host: string) =>
+      new Promise<number>((done, reject) => {
+        request(
+          { host: '127.0.0.1', port: studio.port, path: '/api/schema', headers: { host, 'x-studio-token': TOKEN } },
+          (res) => {
+            res.resume()
+            done(res.statusCode ?? 0)
+          }
+        )
+          .on('error', reject)
+          .end()
+      })
+    expect(await status(`rebind.evil.example:${studio.port}`)).toBe(403)
+    expect(await status(`localhost:${studio.port}`)).toBe(200)
   })
 
   it('refuses a JSON body over 1 MB and writes nothing', async () => {
