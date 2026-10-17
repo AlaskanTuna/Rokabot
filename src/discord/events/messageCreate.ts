@@ -8,6 +8,7 @@ import { generateResponse } from '../../agent/roka.js'
 import { withSearchCitations } from '../../agent/searchCitations.js'
 import { canAffordAttachments } from '../../agent/tokenBudget.js'
 import { startTurnEntryWork } from '../../agent/turnContext.js'
+import { character } from '../../character/index.js'
 import { config } from '../../config.js'
 import { type ResponseEventInput, recordResponseEvent } from '../../storage/metricsStore.js'
 import { upsertUserName } from '../../storage/userNames.js'
@@ -43,7 +44,7 @@ import { findSocialPostTarget } from '../socialPosts/urls.js'
 import { handleGachaMention } from './gachaMention.js'
 
 /** Whole-word, case-insensitive match for the bot's name as a trigger keyword */
-export const NAME_MENTION_REGEX = /\broka\b/i
+export const NAME_MENTION_REGEX = character.nameTrigger
 
 function recordMonitoredEpisodeMessage(message: Message, botUserId: string): void {
   if (!message.guild || !isMonitored(message.channelId) || config.memory.privacy === 'off') return

@@ -32,9 +32,8 @@ import type { PrefetchResult } from './searchPrefetch.js'
 import { ensureSession, resetIdleTimer } from './session.js'
 import { detectTone } from './toneDetector.js'
 
-const SAFETY_STEER_ADDENDUM =
-  '## Redirect This One\n' +
-  'Do not answer the previous message on its own terms, and never repeat, quote, or hint at what it was about. Stay completely in character: respond to the person, not the topic — a light dodge, a tease, or a small change of subject in your own voice. Never mention rules, filters, errors, or that anything went wrong. Every other instruction above still applies exactly as written.'
+const SAFETY_STEER_ADDENDUM = character.prompts.safetySteer
+
 export interface TurnContextOptions {
   channelId: string
   guildId: string
@@ -100,7 +99,7 @@ function buildEntryJudgmentInput(input: StartTurnEntryWorkInput): TurnJudgmentIn
     speakerName: input.speakerName,
     message: input.message,
     recentLines: history.map(({ role, displayName, content }) => {
-      const speaker = role === 'assistant' ? 'Roka' : displayName || input.speakerName
+      const speaker = role === 'assistant' ? character.name : displayName || input.speakerName
       return '[' + speaker + ']: ' + content
     }),
     ambiguous,

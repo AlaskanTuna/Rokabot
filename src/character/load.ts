@@ -36,6 +36,10 @@ export interface Character {
   world: string
   dir: string
   triggers: { names: readonly string[] }
+  /** Matches any trigger name as a whole word, case-insensitively. */
+  nameTrigger: RegExp
+  /** A leading "[Name]:" tag the model sometimes writes before its reply. */
+  nameTag: RegExp
   model: { temperature: number; topP: number }
   prompts: {
     /** Each `prompt.system` section in order, with `{{memory_tools}}` filled for that memory mode. */
@@ -72,6 +76,10 @@ const SLOT_HOMES: Record<string, string> = {
 /** Whether `hour` falls in [from, to); a range whose `to` is not after `from` wraps past midnight. */
 export function inHours(hour: number, from: number, to: number): boolean {
   return from < to ? hour >= from && hour < to : hour >= from || hour < to
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 function shown(path: string): string {
@@ -323,6 +331,8 @@ export function loadCharacter(dir: string, harnessDir: string): Character {
     world: file.world,
     dir: root,
     triggers: file.triggers,
+    nameTrigger: new RegExp(`\\b(?:${file.triggers.names.map(escapeRegExp).join('|')})\\b`, 'i'),
+    nameTag: new RegExp(`^\\[?${escapeRegExp(file.name)}\\]?:\\s*`, 'i'),
     model: file.model,
     prompts: { system, stable, memoryTools, situation, safetySteer },
     timeOfDay,

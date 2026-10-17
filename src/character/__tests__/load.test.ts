@@ -51,6 +51,7 @@ describe('loadCharacter', () => {
     expect(roka.prompts.stable.none).not.toMatch(/remember_user|forget_user|\{\{/)
     expect(roka.detection[0].patterns[0]).toBeInstanceOf(RegExp)
     expect(Object.isFrozen(roka.moods.playful.faces)).toBe(true)
+    expect('[Roka]: hi'.replace(roka.nameTag, '')).toBe('hi')
   })
 
   it('strips exactly one trailing newline from a prompt file and trims nothing else', () => {
@@ -188,6 +189,8 @@ describe('loadCharacter', () => {
   it('loads a second character that uses only the harness prompts and one mood', () => {
     const mina = loadCharacter(MINIMAL, HARNESS)
     expect(mina.moodKeys).toEqual(['calm'])
+    expect(mina.nameTrigger.test('hey MINA, you there?')).toBe(true)
+    expect(mina.nameTrigger.test('Minami said hi')).toBe(false)
     expect(mina.judge.moodQuestion).toBe('Which mood should Mina reply to `message` in?')
     const prompt = assembleSystemPrompt(mina, { mood: 'calm', hour: 10, displayName: 'Ikuyo', memory: 'none' })
     expect(prompt).toContain('You are Mina, not an AI assistant.')

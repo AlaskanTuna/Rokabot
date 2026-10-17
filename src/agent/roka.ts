@@ -5,6 +5,7 @@ import { LlmAgent, Runner, isFinalResponse } from '@google/adk'
 import type { LlmResponse } from '@google/adk'
 import { MediaResolution } from '@google/genai'
 import type { Content, Part } from '@google/genai'
+import { character } from '../character/index.js'
 import { config } from '../config.js'
 import { recordFailureDiagnostic } from '../storage/metricsStore.js'
 import type { ResponseMetrics } from '../storage/metricsStore.js'
@@ -166,8 +167,8 @@ export const rokaAgent = new LlmAgent({
   disallowTransferToParent: true,
   disallowTransferToPeers: true,
   generateContentConfig: {
-    temperature: 0.9,
-    topP: 0.95,
+    temperature: character.model.temperature,
+    topP: character.model.topP,
     maxOutputTokens: config.gemini.maxOutputTokens,
     safetySettings: SAFETY_SETTINGS,
     httpOptions: { timeout: config.gemini.timeout }
@@ -230,7 +231,7 @@ export const rokaAgent = new LlmAgent({
             'Stripped tool calls the model wrote as text'
           )
         }
-        const capped = capReplyBlocks(stripProseIndentation(narrated.text.replace(/^\[?Roka\]?:\s*/i, '')).trim())
+        const capped = capReplyBlocks(stripProseIndentation(narrated.text.replace(character.nameTag, '')).trim())
         if (capped.merged > 0) {
           logger.info(
             { model: modelNameForCurrentRequest(), merged: capped.merged, blocks: capped.blocks },
@@ -639,7 +640,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     try {
       const savedUserMessage = compactDigests.length > 0 ? `${userMessage}\n${compactDigests.join('\n')}` : userMessage
       saveMessage(channelId, 'user', displayName, savedUserMessage, userId, username)
-      saveMessage(channelId, 'assistant', 'Roka', reliability.text)
+      saveMessage(channelId, 'assistant', character.name, reliability.text)
     } catch (error) {
       logger.warn({ channelId, error }, 'Failed to persist messages to SQLite')
     }
