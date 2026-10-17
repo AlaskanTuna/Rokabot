@@ -47,7 +47,7 @@ test.describe('Voice', () => {
     await name.fill('sleepy')
     await name.press('Enter')
     const sleepy = at(page, 'faces.sleepy')
-    await expect(sleepy.getByRole('heading', { name: /^Sleepy/ })).toBeVisible()
+    await expect(sleepy.getByRole('heading', { name: 'sleepy', exact: true })).toBeVisible()
     // An empty face group is a pool with nothing to draw, so the bot refuses it until it has a face.
     await expect(sleepy.getByRole('alert')).toHaveText('Add at least one item.')
     await expect(banner(page)).toContainText('voice.yml › faces › sleepy: Add at least one item.')
@@ -58,7 +58,7 @@ test.describe('Voice', () => {
     const furious = before.split('\n').find((line) => line.startsWith('  furious: ')) as string
     expect(studio.disk(FILE)).toBe(before.replace(furious, `${furious}\n  sleepy: [(-_-)zzz]`))
 
-    await sleepy.getByRole('button', { name: 'Remove Sleepy' }).click()
+    await sleepy.getByRole('button', { name: 'Remove sleepy' }).click()
     await expect(sleepy).toHaveCount(0)
     await studio.saveAll()
     expect(studio.disk(FILE)).toBe(before)

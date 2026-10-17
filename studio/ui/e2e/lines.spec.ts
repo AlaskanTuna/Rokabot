@@ -150,20 +150,16 @@ test.describe('Lines', () => {
     )
   })
 
-  test('a record of pools adds and removes an entry', async ({ page, studio }) => {
+  test('a fixed group of pools offers no add or remove, since the bot accepts only its own keys', async ({
+    page,
+    studio
+  }) => {
     await studio.open('/lines')
-    const before = studio.disk(FILE)
     const flavor = at(page, 'tools.flavor')
-    await flavor.getByRole('button', { name: 'Add flavor entry' }).click()
-    await flavor.getByRole('textbox', { name: 'New entry name' }).fill('remind')
-    await expect(flavor.getByText('That name is taken.')).toBeVisible()
-    await flavor.getByRole('textbox', { name: 'New entry name' }).fill('games')
-    await flavor.getByRole('button', { name: 'Add', exact: true }).click()
-    await expect(at(page, 'tools.flavor.games').getByRole('heading', { name: /^Games/ })).toBeVisible()
-    await at(page, 'tools.flavor.games').getByRole('button', { name: 'Remove Games' }).click()
-    await expect(at(page, 'tools.flavor.games')).toHaveCount(0)
-    await expect(page.locator('main header').getByText('unsaved')).toHaveCount(0)
-    expect(studio.disk(FILE)).toBe(before)
+    await expect(flavor.getByRole('heading', { name: /Flavor/ })).toBeVisible()
+    await expect(flavor.getByRole('button', { name: /^Add flavor entry/ })).toHaveCount(0)
+    await expect(flavor.getByRole('button', { name: /^Remove (anime|schedule|remind)$/i })).toHaveCount(0)
+    await expect(flavor.getByRole('button', { name: 'Add value' }).first()).toBeVisible()
   })
 
   test('the Diff tab shows the unsaved lines', async ({ page, studio }) => {
