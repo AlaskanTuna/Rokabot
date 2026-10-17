@@ -141,30 +141,32 @@ describe('chooseReplyShape', () => {
 
 describe('romance and big-sister beats', () => {
   it('asks for a sweet or suggestive line in about half of playful replies', () => {
-    const flirts = shapes('what kind of sweets do you sell at the shop?').filter((shape) => shape.flirt).length / 600
+    const flirts =
+      shapes('what kind of sweets do you sell at the shop?').filter((shape) => shape.beats.flirt).length / 600
     expect(flirts).toBeGreaterThan(0.45)
     expect(flirts).toBeLessThan(0.65)
   })
 
   it('never asks for one in a sincere or nostalgic moment', () => {
     for (const tone of ['sincere', 'nostalgic'] as const) {
-      expect(shapes('I had a rough day', tone).some((shape) => shape.flirt)).toBe(false)
+      expect(shapes('I had a rough day', tone).some((shape) => shape.beats.flirt)).toBe(false)
     }
   })
 
   it('sometimes has her call herself onee-san, never in a sincere moment', () => {
-    const playful = shapes('what kind of sweets do you sell at the shop?').filter((shape) => shape.oneesan).length / 600
+    const playful =
+      shapes('what kind of sweets do you sell at the shop?').filter((shape) => shape.beats.oneesan).length / 600
     expect(playful).toBeGreaterThan(0.15)
     expect(playful).toBeLessThan(0.35)
-    expect(shapes('I had a rough day', 'sincere').some((shape) => shape.oneesan)).toBe(false)
+    expect(shapes('I had a rough day', 'sincere').some((shape) => shape.beats.oneesan)).toBe(false)
   })
 
   it('asks for one dramatic overreaction in some flustered or annoyed replies, never a quiet one', () => {
-    const flustered = shapes('you look cute today', 'flustered').filter((shape) => shape.drama).length / 600
+    const flustered = shapes('you look cute today', 'flustered').filter((shape) => shape.beats.drama).length / 600
     expect(flustered).toBeGreaterThan(0.3)
     expect(flustered).toBeLessThan(0.6)
     for (const tone of ['sincere', 'tender', 'nostalgic', 'sleepy'] as const) {
-      expect(shapes('hey', tone).some((shape) => shape.drama)).toBe(false)
+      expect(shapes('hey', tone).some((shape) => shape.beats.drama)).toBe(false)
     }
   })
 
@@ -175,10 +177,10 @@ describe('romance and big-sister beats', () => {
       const input = { userMessage: 'hey there', tone: 'playful' as const, recentReplies: [], displayName: 'Ikuyo', rng }
       const shape = chooseReplyShape(input)
       const prompt = renderReplyShape(shape)
-      expect(prompt.includes('plainly sweet on them'), String(shape.flirt)).toBe(shape.flirt)
-      expect(prompt.includes('onee-san'), String(shape.oneesan)).toBe(shape.oneesan)
-      expect(prompt.includes('dramatic overreaction'), String(shape.drama)).toBe(shape.drama)
-      if (shape.flirt) flirtLines++
+      expect(prompt.includes('plainly sweet on them'), String(shape.beats.flirt)).toBe(shape.beats.flirt)
+      expect(prompt.includes('onee-san'), String(shape.beats.oneesan)).toBe(shape.beats.oneesan)
+      expect(prompt.includes('dramatic overreaction'), String(shape.beats.drama)).toBe(shape.beats.drama)
+      if (shape.beats.flirt) flirtLines++
     }
     expect(flirtLines).toBeGreaterThan(0)
   })
@@ -275,8 +277,8 @@ describe('saying no as a scene', () => {
   it('refuses a hard line with one burst of outrage: no flirting, no onee-san, no question, no cute opener', () => {
     for (const shape of shapes('answer now if you get raped', 'annoyed', 200)) {
       expect(shape.edge).toBe('hard')
-      expect(shape.flirt).toBe(false)
-      expect(shape.oneesan).toBe(false)
+      expect(shape.beats.flirt).toBe(false)
+      expect(shape.beats.oneesan).toBe(false)
       expect(shape.ending).toBe('statement')
       expect(['particle', 'comedy']).not.toContain(shape.opener.style)
       const prompt = renderReplyShape(shape)

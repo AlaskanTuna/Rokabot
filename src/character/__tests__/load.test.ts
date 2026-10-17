@@ -100,8 +100,8 @@ describe('loadCharacter', () => {
     ],
     [
       'voice.yml',
-      '{ sleepy: [Nn...] }',
-      '{ dozy: [Nn...] }',
+      "{ sleepy: ['Nn...'] }",
+      "{ dozy: ['Nn...'] }",
       'voice.yml: openers.soft.moodWords.dozy: unknown mood "dozy"'
     ],
     [

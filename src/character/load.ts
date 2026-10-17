@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { isAbsolute, join, relative, resolve } from 'node:path'
-import { load as parseYaml } from 'js-yaml'
+import yaml from 'js-yaml'
 import type { z } from 'zod'
 import { type VoiceFile, characterFileSchema, moodsFileSchema, voiceFileSchema } from './schema.js'
 
@@ -113,7 +113,7 @@ export function loadCharacter(dir: string, harnessDir: string): Character {
     }
     let raw: unknown
     try {
-      raw = parseYaml(readFileSync(file, 'utf8'))
+      raw = yaml.load(readFileSync(file, 'utf8'))
     } catch (error) {
       report(file, '', (error as Error).message)
       return undefined
