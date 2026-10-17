@@ -217,12 +217,22 @@ To switch the reply model:
 
 ```bash
 # Step 4: count answers per provider
-sudo docker logs rokabot-roka-1 2>&1 | grep '"msg":"Response completed"' | grep -o '"provider":"[a-z]*"' | sort | uniq -c
+sudo docker logs rokabot-roka-1 2>&1 | grep '"msg":"Response completed"' | grep -o '"provider":"[a-z-]*"' | sort | uniq -c
 # Turns the main model could not serve, and the fallback answers that followed
 sudo docker logs rokabot-roka-1 2>&1 | grep -E '"msg":"(Gemini unavailable, answering this turn with the fallback model|Fallback model answered)"'
 # Fallback failures: ordinary failed attempts that name the fallback model
 sudo docker logs rokabot-roka-1 2>&1 | grep '"msg":"Live turn attempt failed"' | grep Qwen
 ```
+
+### Any OpenAI-Compatible Model
+
+Any `/chat/completions` server (OpenRouter, DeepSeek, Groq, Ollama, vLLM, LM Studio) can be `llm.main` or
+`llm.fallback` without a code change. Full field reference: [Models](guide/models.md).
+
+1. Uncomment or copy a `provider: openai-compatible` example under `llm.models` in `config.yml`; set `model` and `baseUrl`.
+2. If the server needs a key, put it in `.env` under the name its `apiKeyEnv` gives. A missing key stops startup and names it. Leave `apiKeyEnv` out for a keyless local server.
+3. Declare what the model can do under `capabilities` (vision, `json_schema`, efforts, output cap). Set `price` to count its spend against `llm.monthlyBudgetUsd.openai-compatible`.
+4. Set `main` or `fallback` to the entry's key, then deploy or recreate the container with the owner's approval. Its turns log `"provider":"openai-compatible"` and its failures name the entry's key.
 
 ### Verify a Model Profile
 

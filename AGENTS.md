@@ -31,10 +31,10 @@ WindowedSessionService (ADK)
     │
     ▼
 Roka Agent (ADK)
-  - 4-layer prompt system (core → speech → tone → context), closed each turn by a reply shape chosen in code (length, opener, ending, kaomoji, and an in-character saying-no scene for lewd bait or a hard line)
+  - Persona from a character pack (`characters/<id>/` plus shared `prompts/`): static sections → mood → situation, closed each turn by a reply shape chosen in code (length, opener, ending, kaomoji, and an in-character saying-no scene for lewd bait or a hard line)
   - Rule-based tone detection (zero LLM cost)
   - Passive memory: episode tracker → durable queue → Jev admission → main-model typed extraction → Jev verification → user and guild claims; completed summaries are embedded for guild-scoped recall
-  - Main model and optional fallback from `llm.main` / `llm.fallback`; without an `llm:` block, Gemini Flash Lite with a ModelScope Qwen fallback
+  - Main model and optional fallback from `llm.main` / `llm.fallback`, each a tested profile or any `provider: openai-compatible` endpoint; without an `llm:` block, Gemini Flash Lite with a ModelScope Qwen fallback
     │
     ▼
 Provider APIs (per-model limits and monthly spend caps configured in `config.yml`)
@@ -47,10 +47,10 @@ Provider APIs (per-model limits and monthly spend caps configured in `config.yml
 - Passive memory writes user-subject claims and guild-scoped episode summaries. The episode cursor checkpoints monitored guild messages, closed episodes enter the durable queue, and Jev admission and verification gate Gemini's typed operations. Episode summaries are retained according to `memory.episodeRetentionDays` and recalled only within their guild.
 - Memory-enabled guild turns add a separate, same-guild server-fact prompt block bounded by `memory.guildFactsTokenBudget`; `/ask` reads no memory, and `forget_user` targets user subjects only.
 - RPM, rather than RPD, is the binding rate limit; its value is configured in `config.yml`.
-- System prompt (4 assembled layers) is size-capped; the cap is `MAX_SYSTEM_PROMPT_TOKENS` in `tests/harness/tokens.ts`, enforced by `tests/harness/__tests__/tokens.test.ts`. It exists for change detection, not latency.
+- System prompt (the pack's static sections, mood and situation) is size-capped; the cap is `MAX_SYSTEM_PROMPT_TOKENS` in `tests/harness/tokens.ts`, enforced by `tests/harness/__tests__/tokens.test.ts`. It exists for change detection, not latency.
 - Docker container memory is capped by `docker-compose.yml`.
 
-See `docs/trd.md` (canonical) for contracts and data models. Do not create `docs/architecture.md`.
+See `docs/trd.md` (canonical index) and its modules in `docs/trd/` for contracts and data models. Do not create `docs/architecture.md`.
 
 ---
 
@@ -58,7 +58,7 @@ See `docs/trd.md` (canonical) for contracts and data models. Do not create `docs
 
 - **Runtime:** TypeScript (compiler options in `tsconfig.json`), Node.js (version pinned in `package.json` `engines` and the `Dockerfile`)
 - **Discord:** discord.js (Guilds, GuildMessages, MessageContent intents)
-- **AI/Agent:** @google/adk (TypeScript ADK); model profiles in `src/agent/llm/profiles.ts`, selected by `llm.main` / `llm.fallback` in `config.yml`
+- **AI/Agent:** @google/adk (TypeScript ADK); model profiles in `src/agent/llm/profiles.ts` (or declared per `openai-compatible` entry), selected by `llm.main` / `llm.fallback` in `config.yml`
 - **Utilities:** pino (structured JSON logging), dotenv (secrets), js-yaml (YAML config)
 - **Testing:** vitest
 - **Deployment:** Docker Compose (multi-stage build) on Raspberry Pi 5
@@ -74,6 +74,7 @@ npm run lint      # Check all files with Biome; npm run format:check also checks
 npm run typecheck # Type-check src/ AND tests/ (tsconfig.test.json). npm run build type-checks src/ only, and its `include` leaves the whole tests/ tree outside the project — vitest strips types without checking them, so this is the only gate that sees a test file
 npm test          # Run Vitest — main gate
 npm run test:perf    # Separate performance-evaluation gate; full verification remains npm test && npm run test:perf
+npm run character -- check   # Validate the character pack and print its prompt token estimates; `-- preview` prints an assembled prompt
 npm run test:live    # Opt-in live-model gate; needs GRAPHIFY_GEMINI_API_KEY, spends real Gemini calls; not part of full verification
 ```
 
@@ -86,6 +87,8 @@ See `package.json` for all other scripts.
 Secrets are enumerated in `.env.example`; `requiredEnv` in `src/config.ts` validates the variables it guards.
 
 Every tunable lives in `config.yml` with an inline comment; environment overrides are wired in `src/config.ts`, and numeric tunables are bounded by `NUMERIC_BOUNDS`.
+
+Everything the model is told about the character lives in the pack that `character:` names (`characters/roka`), loaded and validated by `src/character/`. Change persona text there, never in TypeScript; `tests/fixtures/prompt-golden.json` pins Roka's prompts byte for byte, so an intended prompt change regenerates it with `UPDATE_PROMPT_GOLDEN=1`.
 
 ---
 
@@ -125,7 +128,7 @@ All Markdown documentation in this repo (`README.md`, `AGENTS.md`, `CLAUDE.md`, 
 
 - **Do not** `git push --force`, rewrite published history, or delete branches.
 - **Do not** commit or push without explicit human authorization.
-- **Do not** create `docs/architecture.md` — architecture lives in `docs/trd.md`.
+- **Do not** create `docs/architecture.md` — architecture lives in `docs/trd.md` and `docs/trd/`.
 - **Do not** commit anything in `graphify-out/` except the current graph (`graph.json`, `graph.html`, `GRAPH_REPORT.md`, `manifest.json`, `.graphify_labels.json`, `.graphify_labels.json.sig`, `.graphify_analysis.json`) — dated backups, `cache/` and `.graphify_python` stay local.
 - **Do not** restart or redeploy the production bot on the Pi without explicit human authorization.
 
@@ -133,7 +136,7 @@ All Markdown documentation in this repo (`README.md`, `AGENTS.md`, `CLAUDE.md`, 
 
 ## Reference Docs
 
-Reference `docs/prd.md` (requirements) and `docs/trd.md` (architecture/contracts). `docs/runbook.md` covers Pi deployment/operations. Research write-ups live in `docs/research/`.
+Reference `docs/prd.md` (requirements) and `docs/trd.md` (architecture/contracts index; modules in `docs/trd/`). `docs/guide/` holds deployer guides (configuration, characters, models). `docs/runbook.md` covers Pi deployment/operations. Research write-ups live in `docs/research/`.
 
 ---
 
