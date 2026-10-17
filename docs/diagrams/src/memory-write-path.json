@@ -1,0 +1,388 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Passive Memory Write Path",
+    "locale": "en",
+    "visual_preset": "editorial",
+    "quality_profile": "showcase",
+    "output": ".archify/memory-write-path/memory-write-path.html",
+    "repository": {
+      "url": "https://github.com/AlaskanTuna/Rokabot",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "3720c3d3155636bb76075d223c1ae3cad0ce068a"
+    },
+    "viewBox": [1080, 500]
+  },
+  "stages": [
+    {
+      "label": "Capture"
+    },
+    {
+      "label": "Queue"
+    },
+    {
+      "label": "Admit and Extract"
+    },
+    {
+      "label": "Verify and Embed"
+    },
+    {
+      "label": "Store"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "message",
+      "type": "frontend",
+      "label": "Guild Message",
+      "sublabel": "monitored channel",
+      "stage": 0,
+      "row": 0,
+      "sources": [
+        {
+          "path": "src/discord/events/messageCreate.ts",
+          "line": 48,
+          "end_line": 72,
+          "label": "passive capture gate"
+        },
+        {
+          "path": "src/agent/channelMonitor.ts",
+          "line": 32,
+          "end_line": 61,
+          "label": "24 h monitoring"
+        }
+      ]
+    },
+    {
+      "id": "tracker",
+      "type": "backend",
+      "label": "Episode Tracker",
+      "sublabel": "lull or 25 deltas",
+      "stage": 0,
+      "row": 1,
+      "sources": [
+        {
+          "path": "src/agent/memory/episodeTracker.ts",
+          "line": 46,
+          "end_line": 104
+        }
+      ]
+    },
+    {
+      "id": "scheduler",
+      "type": "backend",
+      "label": "Guild Scheduler",
+      "sublabel": "one job per guild",
+      "stage": 1,
+      "row": 0,
+      "sources": [
+        {
+          "path": "src/agent/memory/scheduler.ts",
+          "line": 79,
+          "end_line": 140
+        }
+      ]
+    },
+    {
+      "id": "queue",
+      "type": "database",
+      "label": "extraction_queue",
+      "sublabel": "durable jobs",
+      "stage": 1,
+      "row": 1,
+      "sources": [
+        {
+          "path": "src/storage/memoryEpisodeStore.ts",
+          "line": 216,
+          "end_line": 235,
+          "label": "enqueue + cursor"
+        },
+        {
+          "path": "src/storage/extractionQueue.ts",
+          "line": 152,
+          "end_line": 191,
+          "label": "retry policy"
+        }
+      ]
+    },
+    {
+      "id": "admission",
+      "type": "security",
+      "label": "Admission Gate",
+      "sublabel": "precheck + judge",
+      "stage": 2,
+      "row": 0,
+      "sources": [
+        {
+          "path": "src/agent/memory/admission.ts",
+          "line": 14,
+          "end_line": 50
+        },
+        {
+          "path": "src/agent/memory/episodePrecheck.ts",
+          "line": 28,
+          "end_line": 33
+        }
+      ]
+    },
+    {
+      "id": "extractor",
+      "type": "backend",
+      "label": "Typed Extraction",
+      "sublabel": "ops + summary",
+      "stage": 2,
+      "row": 1,
+      "sources": [
+        {
+          "path": "src/agent/memory/extractor.ts",
+          "line": 111,
+          "end_line": 124
+        },
+        {
+          "path": "src/agent/llm/generateObject.ts",
+          "line": 47,
+          "end_line": 58,
+          "label": "model route"
+        }
+      ]
+    },
+    {
+      "id": "hidden",
+      "type": "backend",
+      "label": "Hidden Retractions",
+      "sublabel": "balanced, strict",
+      "stage": 3,
+      "row": 0,
+      "sources": [
+        {
+          "path": "src/agent/memory/hiddenRetractions.ts",
+          "line": 74,
+          "end_line": 114
+        }
+      ]
+    },
+    {
+      "id": "verify",
+      "type": "security",
+      "label": "Verification Judge",
+      "sublabel": "per-op judgments",
+      "stage": 3,
+      "row": 1,
+      "sources": [
+        {
+          "path": "src/agent/memory/extractor.ts",
+          "line": 242,
+          "end_line": 290
+        },
+        {
+          "path": "src/agent/jev/judgments.ts",
+          "line": 205,
+          "end_line": 289
+        }
+      ]
+    },
+    {
+      "id": "embedder",
+      "type": "cloud",
+      "label": "Embedding Client",
+      "sublabel": "document vectors",
+      "stage": 3,
+      "row": 2,
+      "sources": [
+        {
+          "path": "src/agent/memory/embeddings/client.ts",
+          "line": 29,
+          "end_line": 32
+        },
+        {
+          "path": "src/agent/memory/episodePersistence.ts",
+          "line": 8,
+          "end_line": 35
+        },
+        {
+          "path": "src/agent/memory/factEmbeddings.ts",
+          "line": 13,
+          "end_line": 50
+        }
+      ]
+    },
+    {
+      "id": "claims",
+      "type": "database",
+      "label": "memory_claim",
+      "sublabel": "user + guild facts",
+      "stage": 4,
+      "row": 1,
+      "sources": [
+        {
+          "path": "src/storage/memoryClaimSchema.ts",
+          "line": 3,
+          "end_line": 30
+        },
+        {
+          "path": "src/agent/memory/memoryClaims.ts",
+          "line": 325,
+          "end_line": 434
+        }
+      ]
+    },
+    {
+      "id": "episodes",
+      "type": "database",
+      "label": "memory_episode",
+      "sublabel": "summary + vector",
+      "stage": 4,
+      "row": 2,
+      "sources": [
+        {
+          "path": "src/storage/memoryEpisodeStore.ts",
+          "line": 118,
+          "end_line": 148
+        }
+      ]
+    }
+  ],
+  "flows": [
+    {
+      "id": "capture-lines",
+      "from": "message",
+      "to": "tracker",
+      "label": "delta lines",
+      "route": "straight",
+      "labelAt": [100, 214]
+    },
+    {
+      "id": "close-episode",
+      "from": "tracker",
+      "to": "queue",
+      "label": "episode",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "id": "claim-job",
+      "from": "queue",
+      "to": "scheduler",
+      "label": "next job",
+      "route": "straight",
+      "labelAt": [315, 214]
+    },
+    {
+      "id": "run-job",
+      "from": "scheduler",
+      "to": "admission",
+      "label": "job payload",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "id": "admit",
+      "from": "admission",
+      "to": "extractor",
+      "label": "admitted",
+      "variant": "security",
+      "route": "straight",
+      "labelAt": [530, 214]
+    },
+    {
+      "id": "ops",
+      "from": "extractor",
+      "to": "verify",
+      "label": "typed ops",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "id": "summary",
+      "from": "extractor",
+      "to": "embedder",
+      "label": "summary",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "left",
+      "via": [[530, 385]],
+      "labelAt": [610, 385]
+    },
+    {
+      "id": "write-claims",
+      "from": "verify",
+      "to": "claims",
+      "label": "writes",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "id": "retracts",
+      "from": "verify",
+      "to": "hidden",
+      "label": "retracts",
+      "variant": "security",
+      "route": "straight",
+      "labelAt": [745, 214]
+    },
+    {
+      "id": "retire-hidden",
+      "from": "hidden",
+      "to": "claims",
+      "label": "retire",
+      "variant": "security",
+      "fromSide": "right",
+      "toSide": "top",
+      "via": [[960, 157]],
+      "labelAt": [852.5, 157]
+    },
+    {
+      "id": "summary-store",
+      "from": "embedder",
+      "to": "episodes",
+      "label": "vector",
+      "variant": "dashed",
+      "route": "straight"
+    },
+    {
+      "id": "fact-vectors",
+      "from": "embedder",
+      "to": "claims",
+      "label": "fact vectors",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "via": [
+        [745, 328],
+        [960, 328]
+      ],
+      "labelAt": [852.5, 328]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Main Path",
+      "items": [
+        "Monitored guild messages form episodes; a 180 s lull or 25 deltas closes one",
+        "The queue insert and cursor advance share one SQLite transaction",
+        "Verified operations write active claims; incomplete verification stages candidates"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Drops and Retries",
+      "items": [
+        "Precheck drops sensitive or wholly trivial episodes locally",
+        "No judge, a timeout or a probability below threshold drops the episode",
+        "Transient errors retry after 1, 5, 20 and 60 minutes; jev_unavailable retries once after 5 minutes"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Judge",
+      "items": [
+        "Jev when TYPESAFE_API_KEY is set",
+        "Main model when an llm: block exists and the key is not set",
+        "Neither: every episode is dropped"
+      ]
+    }
+  ]
+}

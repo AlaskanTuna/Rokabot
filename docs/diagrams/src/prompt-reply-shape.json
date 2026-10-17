@@ -1,0 +1,372 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Reply Shape Dice",
+    "locale": "en",
+    "visual_preset": "editorial",
+    "quality_profile": "showcase",
+    "output": ".archify/prompt-reply-shape/prompt-reply-shape.html",
+    "repository": {
+      "url": "https://github.com/AlaskanTuna/Rokabot",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "d50dddf4899ca09b5bc1217d79c6211071c293c4"
+    }
+  },
+  "lanes": [
+    {
+      "id": "read",
+      "label": "Read the Message"
+    },
+    {
+      "id": "roll",
+      "label": "Roll in Fixed Order"
+    },
+    {
+      "id": "out",
+      "label": "Edge Branch and Note"
+    }
+  ],
+  "mainPath": ["message", "weight", "paragraphs", "opener", "ending", "faces", "beats", "note"],
+  "nodes": [
+    {
+      "id": "message",
+      "lane": "read",
+      "col": 0,
+      "type": "frontend",
+      "label": "Message",
+      "sublabel": "text + her last replies",
+      "width": 140,
+      "sources": [
+        {
+          "path": "src/agent/turnContext.ts",
+          "line": 646,
+          "end_line": 651
+        }
+      ]
+    },
+    {
+      "id": "weight",
+      "lane": "read",
+      "col": 1,
+      "type": "backend",
+      "label": "Message Weight",
+      "sublabel": "quick, ordinary, rich",
+      "width": 140,
+      "sources": [
+        {
+          "path": "src/agent/replyShape.ts",
+          "line": 98,
+          "end_line": 105
+        },
+        {
+          "path": "src/agent/replyShape.ts",
+          "line": 71,
+          "end_line": 77,
+          "label": "own words only"
+        }
+      ]
+    },
+    {
+      "id": "mood",
+      "lane": "read",
+      "col": 4,
+      "type": "database",
+      "label": "Mood Tables",
+      "sublabel": "face groups, beat odds",
+      "width": 140,
+      "sources": [
+        {
+          "path": "characters/roka/moods.yml",
+          "line": 200,
+          "end_line": 214
+        }
+      ]
+    },
+    {
+      "id": "paragraphs",
+      "lane": "roll",
+      "col": 1,
+      "type": "backend",
+      "label": "Paragraphs",
+      "sublabel": "1 to 3, weighted",
+      "width": 140,
+      "sources": [
+        {
+          "path": "src/agent/replyShape.ts",
+          "line": 192,
+          "end_line": 192
+        },
+        {
+          "path": "characters/roka/voice.yml",
+          "line": 3,
+          "end_line": 10
+        }
+      ]
+    },
+    {
+      "id": "opener",
+      "lane": "roll",
+      "col": 2,
+      "type": "backend",
+      "label": "Opener",
+      "sublabel": "not her last style",
+      "width": 140,
+      "sources": [
+        {
+          "path": "src/agent/replyShape.ts",
+          "line": 144,
+          "end_line": 168
+        },
+        {
+          "path": "characters/roka/voice.yml",
+          "line": 11,
+          "end_line": 37
+        }
+      ]
+    },
+    {
+      "id": "ending",
+      "lane": "roll",
+      "col": 3,
+      "type": "backend",
+      "label": "Ending",
+      "sublabel": "statement, question, aside",
+      "width": 150,
+      "sources": [
+        {
+          "path": "src/agent/replyShape.ts",
+          "line": 195,
+          "end_line": 203
+        }
+      ]
+    },
+    {
+      "id": "faces",
+      "lane": "roll",
+      "col": 4,
+      "type": "backend",
+      "label": "Faces",
+      "sublabel": "4, shuffled",
+      "width": 140,
+      "sources": [
+        {
+          "path": "src/agent/replyShape.ts",
+          "line": 170,
+          "end_line": 182
+        }
+      ]
+    },
+    {
+      "id": "beats",
+      "lane": "roll",
+      "col": 5,
+      "type": "backend",
+      "label": "Beats",
+      "sublabel": "one roll per beat",
+      "width": 140,
+      "sources": [
+        {
+          "path": "src/agent/replyShape.ts",
+          "line": 205,
+          "end_line": 208
+        }
+      ]
+    },
+    {
+      "id": "edge",
+      "lane": "out",
+      "col": 1,
+      "type": "security",
+      "label": "Edge",
+      "sublabel": "none, lewd, hard",
+      "width": 140,
+      "sources": [
+        {
+          "path": "src/agent/replyShape.ts",
+          "line": 79,
+          "end_line": 96
+        },
+        {
+          "path": "src/agent/replyShape.ts",
+          "line": 193,
+          "end_line": 193
+        }
+      ]
+    },
+    {
+      "id": "threat",
+      "lane": "out",
+      "col": 4,
+      "type": "security",
+      "label": "Threat",
+      "sublabel": "lewd or hard only",
+      "width": 140,
+      "sources": [
+        {
+          "path": "src/agent/replyShape.ts",
+          "line": 184,
+          "end_line": 188
+        },
+        {
+          "path": "characters/roka/voice.yml",
+          "line": 93,
+          "end_line": 105
+        }
+      ]
+    },
+    {
+      "id": "note",
+      "lane": "out",
+      "col": 5,
+      "type": "frontend",
+      "label": "Reply Shape Note",
+      "sublabel": "last prompt block",
+      "width": 140,
+      "sources": [
+        {
+          "path": "src/agent/replyShape.ts",
+          "line": 213,
+          "end_line": 228
+        },
+        {
+          "path": "characters/roka/voice.yml",
+          "line": 106,
+          "end_line": 115
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "own-words",
+      "from": "message",
+      "to": "weight",
+      "label": "own words",
+      "variant": "emphasis",
+      "role": "main"
+    },
+    {
+      "id": "pick-count",
+      "from": "weight",
+      "to": "paragraphs",
+      "label": "weight",
+      "variant": "emphasis",
+      "role": "main"
+    },
+    {
+      "id": "to-opener",
+      "from": "paragraphs",
+      "to": "opener",
+      "variant": "emphasis",
+      "role": "main"
+    },
+    {
+      "id": "to-ending",
+      "from": "opener",
+      "to": "ending",
+      "variant": "emphasis",
+      "role": "main"
+    },
+    {
+      "id": "to-faces",
+      "from": "ending",
+      "to": "faces",
+      "variant": "emphasis",
+      "role": "main"
+    },
+    {
+      "id": "to-beats",
+      "from": "faces",
+      "to": "beats",
+      "variant": "emphasis",
+      "role": "main"
+    },
+    {
+      "id": "render",
+      "from": "beats",
+      "to": "note",
+      "label": "render",
+      "variant": "emphasis",
+      "role": "main"
+    },
+    {
+      "id": "read-edge",
+      "from": "message",
+      "to": "edge",
+      "label": "whole text",
+      "variant": "security",
+      "role": "branch"
+    },
+    {
+      "id": "hard-styles",
+      "from": "edge",
+      "to": "opener",
+      "label": "hard: fewer styles",
+      "variant": "security",
+      "role": "branch"
+    },
+    {
+      "id": "need-threat",
+      "from": "edge",
+      "to": "threat",
+      "label": "lewd or hard",
+      "variant": "security",
+      "role": "branch"
+    },
+    {
+      "id": "threat-line",
+      "from": "threat",
+      "to": "note",
+      "label": "scene line",
+      "variant": "security",
+      "role": "branch"
+    },
+    {
+      "id": "face-groups",
+      "from": "mood",
+      "to": "faces",
+      "label": "face groups",
+      "variant": "dashed",
+      "role": "async"
+    },
+    {
+      "id": "beat-odds",
+      "from": "mood",
+      "to": "beats",
+      "label": "beat odds",
+      "variant": "dashed",
+      "role": "async"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "orange",
+      "title": "Fixed Roll Order",
+      "items": [
+        "Paragraphs, opener style, opener word or bit, ending, face shuffle, beats, threat",
+        "A hard line skips the ending roll: the ending is always a statement",
+        "Every beat the edge allows rolls, even at zero odds"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Edge",
+      "items": [
+        "Hard: a hard-line word, or a minor word with a sexual word",
+        "Lewd: a lewd word or phrase",
+        "Her own quoted reply is not read"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "No Repeats",
+      "items": [
+        "Opener words skip her last 3 first words",
+        "Faces skip her last 5 replies and the user's message",
+        "Threats skip her last 3 replies"
+      ]
+    }
+  ]
+}

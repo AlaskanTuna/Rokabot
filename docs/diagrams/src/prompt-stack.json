@@ -1,0 +1,374 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Prompt Stack",
+    "locale": "en",
+    "visual_preset": "editorial",
+    "quality_profile": "showcase",
+    "output": ".archify/prompt-stack/prompt-stack.html",
+    "repository": {
+      "url": "https://github.com/AlaskanTuna/Rokabot",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "d50dddf4899ca09b5bc1217d79c6211071c293c4"
+    },
+    "viewBox": [1080, 560],
+    "legend": {
+      "mode": "auto",
+      "entries": {
+        "emphasis": {
+          "label": "prompt text"
+        },
+        "security": {
+          "label": "harness fallback"
+        },
+        "dashed": {
+          "label": "per turn"
+        },
+        "default": {
+          "label": "other data"
+        },
+        "database": {
+          "label": "files"
+        }
+      }
+    }
+  },
+  "stages": [
+    {
+      "label": "Files"
+    },
+    {
+      "label": "Load Once"
+    },
+    {
+      "label": "Build per Turn"
+    },
+    {
+      "label": "Compose"
+    },
+    {
+      "label": "Send"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "harness",
+      "type": "database",
+      "label": "Harness Prompts",
+      "sublabel": "prompts/, two locked",
+      "stage": 0,
+      "row": 0,
+      "sources": [
+        {
+          "path": "prompts/boundaries.md",
+          "line": 1,
+          "end_line": 9,
+          "label": "locked"
+        },
+        {
+          "path": "prompts/situation.md",
+          "line": 1,
+          "end_line": 3
+        }
+      ]
+    },
+    {
+      "id": "pack",
+      "type": "database",
+      "label": "Character Pack",
+      "sublabel": "characters/<id>/",
+      "tag": "yml + prompts",
+      "stage": 0,
+      "row": 1,
+      "sources": [
+        {
+          "path": "characters/roka/character.yml",
+          "line": 10,
+          "end_line": 21,
+          "label": "section order"
+        },
+        {
+          "path": "characters/roka/voice.yml",
+          "line": 3,
+          "end_line": 115,
+          "label": "dice"
+        },
+        {
+          "path": "characters/roka/moods.yml",
+          "line": 1,
+          "end_line": 210,
+          "label": "moods"
+        }
+      ]
+    },
+    {
+      "id": "loader",
+      "type": "backend",
+      "label": "loadCharacter",
+      "sublabel": "validate, fill macros",
+      "tag": "startup",
+      "stage": 1,
+      "row": 1,
+      "sources": [
+        {
+          "path": "src/character/load.ts",
+          "line": 110,
+          "end_line": 205,
+          "label": "read, resolve, join"
+        },
+        {
+          "path": "src/character/paths.ts",
+          "line": 14,
+          "end_line": 25,
+          "label": "pick the pack"
+        },
+        {
+          "path": "src/character/index.ts",
+          "line": 7,
+          "end_line": 7
+        }
+      ]
+    },
+    {
+      "id": "turnblocks",
+      "type": "cloud",
+      "label": "Turn Blocks",
+      "sublabel": "memory, overheard, lookup",
+      "stage": 2,
+      "row": 0,
+      "sources": [
+        {
+          "path": "src/agent/turnContext.ts",
+          "line": 429,
+          "end_line": 645
+        }
+      ],
+      "width": 140
+    },
+    {
+      "id": "head",
+      "type": "backend",
+      "label": "Prompt Head",
+      "sublabel": "prefix, mood, situation",
+      "tag": "prefix cached",
+      "stage": 2,
+      "row": 1,
+      "sources": [
+        {
+          "path": "src/character/prompt.ts",
+          "line": 22,
+          "end_line": 28
+        },
+        {
+          "path": "src/character/load.ts",
+          "line": 192,
+          "end_line": 205,
+          "label": "stable prefix per mode"
+        },
+        {
+          "path": "src/agent/toneDetector.ts",
+          "line": 17,
+          "end_line": 34,
+          "label": "mood rules"
+        }
+      ]
+    },
+    {
+      "id": "replyshape",
+      "type": "backend",
+      "label": "Reply Shape",
+      "sublabel": "dice rolled in code",
+      "stage": 2,
+      "row": 2,
+      "sources": [
+        {
+          "path": "src/agent/replyShape.ts",
+          "line": 190,
+          "end_line": 232
+        }
+      ]
+    },
+    {
+      "id": "compose",
+      "type": "security",
+      "label": "composePrompt",
+      "sublabel": "safety rung 0 to 3",
+      "stage": 3,
+      "row": 1,
+      "sources": [
+        {
+          "path": "src/agent/turnContext.ts",
+          "line": 653,
+          "end_line": 676
+        }
+      ]
+    },
+    {
+      "id": "sysinstr",
+      "type": "frontend",
+      "label": "System Instruction",
+      "sublabel": "set on every call",
+      "stage": 4,
+      "row": 1,
+      "sources": [
+        {
+          "path": "src/agent/roka.ts",
+          "line": 183,
+          "end_line": 188
+        }
+      ]
+    },
+    {
+      "id": "anthropic",
+      "type": "external",
+      "label": "Anthropic Adapter",
+      "sublabel": "prefix block cached",
+      "stage": 4,
+      "row": 0,
+      "sources": [
+        {
+          "path": "src/agent/llm/anthropicLlm.ts",
+          "line": 227,
+          "end_line": 236
+        }
+      ]
+    },
+    {
+      "id": "otherproviders",
+      "type": "external",
+      "label": "Other Providers",
+      "sublabel": "one system string",
+      "stage": 4,
+      "row": 2,
+      "sources": [
+        {
+          "path": "src/agent/roka.ts",
+          "line": 183,
+          "end_line": 188
+        }
+      ]
+    }
+  ],
+  "flows": [
+    {
+      "id": "fallback",
+      "from": "harness",
+      "to": "loader",
+      "label": "else harness",
+      "variant": "security",
+      "fromSide": "right",
+      "toSide": "top",
+      "via": [[315, 157]]
+    },
+    {
+      "id": "own",
+      "from": "pack",
+      "to": "loader",
+      "label": "own files first",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "id": "headflow",
+      "from": "loader",
+      "to": "head",
+      "label": "sections, moods",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "id": "voice",
+      "from": "loader",
+      "to": "replyshape",
+      "label": "voice tables",
+      "variant": "default",
+      "fromSide": "bottom",
+      "toSide": "left",
+      "via": [[315, 385]]
+    },
+    {
+      "id": "turn",
+      "from": "turnblocks",
+      "to": "compose",
+      "label": "blocks 5-12",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "top",
+      "via": [[745, 157]]
+    },
+    {
+      "id": "head14",
+      "from": "head",
+      "to": "compose",
+      "label": "blocks 1-4",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "id": "shape",
+      "from": "replyshape",
+      "to": "compose",
+      "label": "block 14",
+      "variant": "default",
+      "fromSide": "right",
+      "toSide": "bottom",
+      "via": [[745, 385]]
+    },
+    {
+      "id": "prompt",
+      "from": "compose",
+      "to": "sysinstr",
+      "label": "one string",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "id": "split",
+      "from": "sysinstr",
+      "to": "anthropic",
+      "label": "split prefix",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "id": "whole",
+      "from": "sysinstr",
+      "to": "otherproviders",
+      "label": "as is",
+      "variant": "default",
+      "route": "straight",
+      "labelAt": [960, 328]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Static Prefix",
+      "items": [
+        "prompt.system sections from the pack, else prompts/ by file name",
+        "Joined with a blank line; one string for each memory mode",
+        "The Anthropic adapter marks it cache_control: ephemeral"
+      ]
+    },
+    {
+      "dot": "orange",
+      "title": "Per Turn",
+      "items": [
+        "Mood prompt, then situation, then memory and channel blocks",
+        "Discord ID tail and Looked It Up block after them",
+        "The Reply Shape note closes the prompt at rung 0"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Safety Ladder",
+      "items": [
+        "Rung 1 drops overheard, lookup and reply shape, adds the steer",
+        "Rung 2 also drops the memory blocks",
+        "Rung 3 clears history and images and forces the safe mood"
+      ]
+    }
+  ]
+}

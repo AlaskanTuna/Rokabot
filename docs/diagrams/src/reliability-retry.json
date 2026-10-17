@@ -1,0 +1,177 @@
+{
+  "schema_version": 2,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "Live Turn Retry Loop",
+    "visual_preset": "editorial",
+    "quality_profile": "showcase",
+    "output": ".archify/reliability-retry/reliability-retry.html",
+    "repository": {
+      "url": "https://github.com/AlaskanTuna/Rokabot",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "3720c3d3155636bb76075d223c1ae3cad0ce068a"
+    }
+  },
+  "lanes": [
+    { "id": "main", "label": "Attempt loop" },
+    { "id": "safety", "label": "Safety ladder" },
+    { "id": "model", "label": "Model switch" },
+    { "id": "terminal", "label": "Outcomes" }
+  ],
+  "states": [
+    {
+      "id": "attempt",
+      "type": "start",
+      "label": "Attempt",
+      "sublabel": "one model run, own timeout",
+      "lane": "main",
+      "col": 0,
+      "step": "01",
+      "sources": [
+        { "path": "src/agent/reliability.ts", "line": 181, "end_line": 207 },
+        { "path": "src/agent/roka.ts", "line": 502, "end_line": 515 }
+      ]
+    },
+    {
+      "id": "classify",
+      "type": "decision",
+      "label": "Classify",
+      "sublabel": "failure kind",
+      "lane": "main",
+      "col": 1,
+      "step": "02",
+      "sources": [
+        { "path": "src/agent/geminiReliability.ts", "line": 110, "end_line": 138 },
+        { "path": "src/agent/reliability.ts", "line": 214, "end_line": 220 }
+      ]
+    },
+    {
+      "id": "gate",
+      "type": "decision",
+      "label": "Retry Gate",
+      "sublabel": "limit, cap, deadline, slot",
+      "lane": "main",
+      "col": 2,
+      "step": "03",
+      "sources": [{ "path": "src/agent/reliability.ts", "line": 304, "end_line": 378 }]
+    },
+    {
+      "id": "backoff",
+      "type": "waiting",
+      "label": "Backoff",
+      "sublabel": "doubles, 12 s in total",
+      "lane": "main",
+      "col": 3,
+      "step": "04",
+      "sources": [
+        { "path": "src/agent/reliability.ts", "line": 380, "end_line": 393 },
+        { "path": "src/agent/geminiReliability.ts", "line": 140, "end_line": 149 }
+      ]
+    },
+    {
+      "id": "rung",
+      "type": "active",
+      "label": "Shed Context",
+      "sublabel": "rung 1, 2, then 3",
+      "tag": "takes a slot",
+      "lane": "safety",
+      "col": 0,
+      "sources": [
+        { "path": "src/agent/reliability.ts", "line": 259, "end_line": 291 },
+        { "path": "src/agent/turnContext.ts", "line": 653, "end_line": 672 },
+        { "path": "src/agent/roka.ts", "line": 484, "end_line": 501 }
+      ]
+    },
+    {
+      "id": "switch",
+      "type": "active",
+      "label": "Other Model",
+      "sublabel": "once per turn",
+      "tag": "no slot",
+      "lane": "model",
+      "col": 0,
+      "sources": [
+        { "path": "src/agent/reliability.ts", "line": 293, "end_line": 302 },
+        { "path": "src/agent/roka.ts", "line": 446, "end_line": 465 }
+      ]
+    },
+    {
+      "id": "answer",
+      "type": "success",
+      "label": "Answer",
+      "sublabel": "reply text, session kept",
+      "lane": "terminal",
+      "col": 1,
+      "sources": [{ "path": "src/agent/reliability.ts", "line": 247, "end_line": 257 }]
+    },
+    {
+      "id": "deflect",
+      "type": "failure",
+      "label": "Fallback Line",
+      "sublabel": "line chosen by kind",
+      "lane": "terminal",
+      "col": 2,
+      "sources": [
+        { "path": "src/agent/reliability.ts", "line": 124, "end_line": 142 },
+        { "path": "src/agent/roka.ts", "line": 111, "end_line": 113 }
+      ]
+    }
+  ],
+  "transitions": [
+    { "id": "t_attempt_classify", "from": "attempt", "to": "classify" },
+    { "id": "t_classify_gate", "from": "classify", "to": "gate", "label": "other" },
+    { "id": "t_gate_backoff", "from": "gate", "to": "backoff", "label": "go" },
+    {
+      "id": "t_backoff_attempt",
+      "from": "backoff",
+      "to": "attempt",
+      "label": "next attempt",
+      "route": "top-channel",
+      "variant": "dashed"
+    },
+    { "id": "t_classify_rung", "from": "classify", "to": "rung", "label": "safety", "variant": "security" },
+    { "id": "t_rung_attempt", "from": "rung", "to": "attempt", "label": "rebuilt prompt", "variant": "dashed" },
+    { "id": "t_classify_switch", "from": "classify", "to": "switch", "label": "outage", "variant": "security" },
+    {
+      "id": "t_switch_attempt",
+      "from": "switch",
+      "to": "attempt",
+      "label": "new timeout",
+      "route": "left-channel",
+      "variant": "dashed"
+    },
+    { "id": "t_classify_answer", "from": "classify", "to": "answer", "label": "ok", "variant": "emphasis" },
+    { "id": "t_gate_deflect", "from": "gate", "to": "deflect", "label": "stop", "variant": "security" }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "Safety Rungs",
+      "items": [
+        "1 drop_overheard: overheard, looked-up and reply-shape blocks go; a redirect note is added",
+        "2 drop_facts: memory, server facts, episodes and media memory go",
+        "3 clear_history: sincere tone, empty session, no images or watched media"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Which Line",
+      "items": [
+        "safety, refusal: the safety line",
+        "recitation: the recitation line",
+        "terminal, session_corrupt, context_length: the terminal line",
+        "every other kind: a random generic line"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "Session Actions",
+      "items": [
+        "terminal destroys the session",
+        "session_corrupt resets it before its one retry",
+        "shutdown ends the loop with the last kind's line"
+      ]
+    }
+  ]
+}

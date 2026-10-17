@@ -1,0 +1,412 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Media Watching Flow",
+    "visual_preset": "editorial",
+    "quality_profile": "showcase",
+    "locale": "en",
+    "output": ".archify/media-watch/media-watch.html",
+    "repository": {
+      "url": "https://github.com/AlaskanTuna/Rokabot",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "3720c3d3155636bb76075d223c1ae3cad0ce068a"
+    }
+  },
+  "lanes": [
+    {
+      "id": "turn",
+      "label": "Turn Intake"
+    },
+    {
+      "id": "links",
+      "label": "Linked Posts"
+    },
+    {
+      "id": "watch",
+      "label": "Watchers"
+    },
+    {
+      "id": "backup",
+      "label": "Backup and Speech",
+      "variant": "exception"
+    }
+  ],
+  "mainPath": ["upload", "admit", "split", "order", "gemini", "digest", "prompt"],
+  "nodes": [
+    {
+      "id": "upload",
+      "lane": "turn",
+      "col": 0,
+      "type": "external",
+      "label": "Attachment",
+      "sublabel": "upload, reply, forward",
+      "width": 140,
+      "sources": [
+        {
+          "path": "src/discord/messageContent.ts",
+          "line": 239,
+          "label": "extractMessageContent"
+        }
+      ]
+    },
+    {
+      "id": "admit",
+      "lane": "turn",
+      "col": 1,
+      "type": "security",
+      "label": "Turn Admission",
+      "sublabel": "files, bytes, tokens",
+      "width": 140,
+      "sources": [
+        {
+          "path": "src/discord/byteBudget.ts",
+          "line": 41,
+          "end_line": 75,
+          "label": "fit and reserve"
+        },
+        {
+          "path": "src/discord/events/messageCreate.ts",
+          "line": 273,
+          "end_line": 300,
+          "label": "admission order"
+        }
+      ]
+    },
+    {
+      "id": "post",
+      "lane": "links",
+      "col": 0,
+      "type": "external",
+      "label": "Post Link",
+      "sublabel": "X, YouTube, Reddit, ...",
+      "width": 140,
+      "sources": [
+        {
+          "path": "src/discord/socialPosts/service.ts",
+          "line": 74,
+          "end_line": 108,
+          "label": "lookup"
+        }
+      ]
+    },
+    {
+      "id": "postmedia",
+      "lane": "links",
+      "col": 1,
+      "type": "backend",
+      "label": "Post Media",
+      "sublabel": "video, else picture",
+      "width": 140,
+      "sources": [
+        {
+          "path": "src/discord/socialPosts/media.ts",
+          "line": 34,
+          "end_line": 54,
+          "label": "socialPostMedia"
+        }
+      ]
+    },
+    {
+      "id": "split",
+      "lane": "turn",
+      "col": 2,
+      "type": "backend",
+      "label": "prepareTurnMedia",
+      "sublabel": "split by type",
+      "width": 140,
+      "sources": [
+        {
+          "path": "src/agent/media/turnMedia.ts",
+          "line": 685,
+          "end_line": 732
+        }
+      ]
+    },
+    {
+      "id": "direct",
+      "lane": "turn",
+      "col": 3,
+      "type": "backend",
+      "label": "Images and PDFs",
+      "sublabel": "priced, sent inline",
+      "width": 140,
+      "sources": [
+        {
+          "path": "src/agent/attachments.ts",
+          "line": 156,
+          "end_line": 236,
+          "label": "prepareAttachments"
+        }
+      ]
+    },
+    {
+      "id": "prompt",
+      "lane": "turn",
+      "col": 5,
+      "type": "backend",
+      "label": "Reply Turn",
+      "sublabel": "user message parts",
+      "width": 140,
+      "sources": [
+        {
+          "path": "src/agent/roka.ts",
+          "line": 398,
+          "end_line": 407,
+          "label": "buildNewMessage"
+        }
+      ]
+    },
+    {
+      "id": "order",
+      "lane": "watch",
+      "col": 2,
+      "type": "messagebus",
+      "label": "Watcher Choice",
+      "sublabel": "media.watcher",
+      "width": 140,
+      "sources": [
+        {
+          "path": "src/agent/media/turnMedia.ts",
+          "line": 399,
+          "end_line": 407,
+          "label": "watcherOrder"
+        }
+      ]
+    },
+    {
+      "id": "gemini",
+      "lane": "watch",
+      "col": 3,
+      "type": "cloud",
+      "label": "Gemini Watcher",
+      "sublabel": "inline, Files, YouTube",
+      "width": 140,
+      "sources": [
+        {
+          "path": "src/agent/media/turnMedia.ts",
+          "line": 454,
+          "end_line": 571,
+          "label": "watchWithGemini"
+        },
+        {
+          "path": "src/agent/media/watch.ts",
+          "line": 196,
+          "end_line": 282,
+          "label": "watchMedia"
+        }
+      ]
+    },
+    {
+      "id": "digest",
+      "lane": "watch",
+      "col": 4,
+      "type": "database",
+      "label": "Media Digest",
+      "sublabel": "untrusted notes",
+      "width": 140,
+      "sources": [
+        {
+          "path": "src/agent/media/digest.ts",
+          "line": 335,
+          "end_line": 385,
+          "label": "renderDigestBlock"
+        }
+      ]
+    },
+    {
+      "id": "qwen",
+      "lane": "backup",
+      "col": 3,
+      "type": "cloud",
+      "label": "Qwen Watcher",
+      "sublabel": "frames + transcript",
+      "width": 140,
+      "sources": [
+        {
+          "path": "src/agent/media/turnMedia.ts",
+          "line": 573,
+          "end_line": 683,
+          "label": "watchWithQwen"
+        },
+        {
+          "path": "src/agent/media/qwenWatch.ts",
+          "line": 109,
+          "end_line": 238
+        }
+      ]
+    },
+    {
+      "id": "notice",
+      "lane": "watch",
+      "col": 5,
+      "type": "security",
+      "label": "Failure Notice",
+      "sublabel": "never claims a watch",
+      "width": 140,
+      "sources": [
+        {
+          "path": "src/agent/media/turnMedia.ts",
+          "line": 419,
+          "end_line": 452,
+          "label": "watchOne"
+        }
+      ]
+    },
+    {
+      "id": "asr",
+      "lane": "backup",
+      "col": 2,
+      "type": "backend",
+      "label": "asr Sidecar",
+      "sublabel": "VAD + speech to text",
+      "width": 140,
+      "sources": [
+        {
+          "path": "src/agent/media/transcribe.ts",
+          "line": 152,
+          "end_line": 204,
+          "label": "transcribeSource"
+        },
+        {
+          "path": "asr/server.py",
+          "line": 184,
+          "end_line": 220,
+          "label": "transcribe"
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "upload-admit",
+      "from": "upload",
+      "to": "admit",
+      "label": "candidates",
+      "variant": "emphasis"
+    },
+    {
+      "id": "post-media",
+      "from": "post",
+      "to": "postmedia",
+      "label": "found",
+      "variant": "default"
+    },
+    {
+      "id": "media-admit",
+      "from": "postmedia",
+      "to": "admit",
+      "label": "last slot",
+      "variant": "default"
+    },
+    {
+      "id": "admit-split",
+      "from": "admit",
+      "to": "split",
+      "label": "kept files",
+      "variant": "emphasis"
+    },
+    {
+      "id": "split-direct",
+      "from": "split",
+      "to": "direct",
+      "label": "image, PDF",
+      "variant": "default"
+    },
+    {
+      "id": "split-order",
+      "from": "split",
+      "to": "order",
+      "label": "audio, video",
+      "variant": "emphasis"
+    },
+    {
+      "id": "order-gemini",
+      "from": "order",
+      "to": "gemini",
+      "label": "default first",
+      "variant": "emphasis"
+    },
+    {
+      "id": "gemini-digest",
+      "from": "gemini",
+      "to": "digest",
+      "label": "JSON notes",
+      "variant": "emphasis"
+    },
+    {
+      "id": "gemini-qwen",
+      "from": "gemini",
+      "to": "qwen",
+      "label": "fails",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "id": "qwen-asr",
+      "from": "qwen",
+      "to": "asr",
+      "label": "WAV windows",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "id": "qwen-digest",
+      "from": "qwen",
+      "to": "digest",
+      "label": "JSON notes",
+      "variant": "default"
+    },
+    {
+      "id": "qwen-notice",
+      "from": "qwen",
+      "to": "notice",
+      "label": "both fail",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "digest-prompt",
+      "from": "digest",
+      "to": "prompt",
+      "label": "notes block",
+      "variant": "emphasis"
+    },
+    {
+      "id": "notice-prompt",
+      "from": "notice",
+      "to": "prompt",
+      "label": "one line",
+      "variant": "dashed"
+    },
+    {
+      "id": "direct-prompt",
+      "from": "direct",
+      "to": "prompt",
+      "label": "inline parts",
+      "variant": "default"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Watcher Modes",
+      "items": [
+        "gemini (default) or qwen watches first; the other is the backup",
+        "direct sends audio and video to the reply model as they arrived",
+        "off turns each audio or video item into a notice",
+        "Images and PDFs skip the watchers in every mode"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Admission Limits",
+      "items": [
+        "Up to 10 files and one audio or video item per turn",
+        "Bytes are reserved before any download starts",
+        "A watch plan must fit gemini.maxAttachmentTokens"
+      ]
+    }
+  ]
+}

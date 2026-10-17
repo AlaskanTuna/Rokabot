@@ -182,3 +182,6 @@ coverage/
 
 # Discord preview output
 preview-out/
+
+# Archify scratch output (diagram sources live in docs/diagrams/src)
+.archify/

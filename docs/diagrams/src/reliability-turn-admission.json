@@ -1,0 +1,393 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Reply Turn Admission",
+    "visual_preset": "editorial",
+    "quality_profile": "showcase",
+    "output": ".archify/reliability-turn-admission/reliability-turn-admission.html",
+    "repository": {
+      "url": "https://github.com/AlaskanTuna/Rokabot",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "3720c3d3155636bb76075d223c1ae3cad0ce068a"
+    }
+  },
+  "lanes": [
+    {
+      "id": "handler",
+      "label": "Discord handler"
+    },
+    {
+      "id": "guards",
+      "label": "Main-model budgets"
+    },
+    {
+      "id": "declined",
+      "label": "Declined (reply deleted after 5 s)",
+      "variant": "exception"
+    },
+    {
+      "id": "turn",
+      "label": "Turn"
+    }
+  ],
+  "mainPath": ["trigger", "busy", "mark", "peek", "tokens", "reserve", "bytes", "run"],
+  "nodes": [
+    {
+      "id": "trigger",
+      "lane": "handler",
+      "col": 0,
+      "type": "external",
+      "label": "Trigger",
+      "sublabel": "mention, reply, name, /ask",
+      "width": 150,
+      "sources": [
+        {
+          "path": "src/discord/events/messageCreate.ts",
+          "line": 75,
+          "label": "message handler"
+        }
+      ]
+    },
+    {
+      "id": "busy",
+      "lane": "handler",
+      "col": 1,
+      "type": "security",
+      "label": "Busy Check",
+      "sublabel": "one turn per channel",
+      "width": 150,
+      "sources": [
+        {
+          "path": "src/discord/events/messageCreate.ts",
+          "line": 199,
+          "end_line": 205
+        },
+        {
+          "path": "src/discord/concurrency.ts",
+          "line": 1,
+          "end_line": 16
+        }
+      ]
+    },
+    {
+      "id": "mark",
+      "lane": "handler",
+      "col": 2,
+      "type": "backend",
+      "label": "Mark Busy",
+      "sublabel": "before the next await",
+      "width": 150,
+      "sources": [
+        {
+          "path": "src/discord/events/messageCreate.ts",
+          "line": 207,
+          "end_line": 209
+        }
+      ]
+    },
+    {
+      "id": "peek",
+      "lane": "guards",
+      "col": 2,
+      "type": "security",
+      "label": "Call Peek",
+      "sublabel": "canAdmitCalls(maxLlmCalls)",
+      "width": 150,
+      "sources": [
+        {
+          "path": "src/discord/events/messageCreate.ts",
+          "line": 216,
+          "end_line": 227
+        },
+        {
+          "path": "src/utils/rateLimiter.ts",
+          "line": 84,
+          "end_line": 88
+        }
+      ]
+    },
+    {
+      "id": "tokens",
+      "lane": "guards",
+      "col": 3,
+      "type": "security",
+      "label": "Token Floor",
+      "sublabel": "attachment turns only",
+      "width": 150,
+      "sources": [
+        {
+          "path": "src/discord/events/messageCreate.ts",
+          "line": 276,
+          "end_line": 283
+        },
+        {
+          "path": "src/agent/tokenBudget.ts",
+          "line": 100,
+          "end_line": 112
+        }
+      ]
+    },
+    {
+      "id": "reserve",
+      "lane": "guards",
+      "col": 4,
+      "type": "security",
+      "label": "Reserve Calls",
+      "sublabel": "reserveCalls(maxLlmCalls)",
+      "width": 150,
+      "sources": [
+        {
+          "path": "src/discord/events/messageCreate.ts",
+          "line": 285,
+          "end_line": 293
+        },
+        {
+          "path": "src/utils/rateLimiter.ts",
+          "line": 94,
+          "end_line": 117
+        }
+      ]
+    },
+    {
+      "id": "bytes",
+      "lane": "guards",
+      "col": 5,
+      "type": "security",
+      "label": "Reserve Bytes",
+      "sublabel": "in-flight attachment bytes",
+      "width": 150,
+      "sources": [
+        {
+          "path": "src/discord/events/messageCreate.ts",
+          "line": 295,
+          "end_line": 306
+        },
+        {
+          "path": "src/discord/byteBudget.ts",
+          "line": 71,
+          "end_line": 75
+        }
+      ]
+    },
+    {
+      "id": "busy_reply",
+      "lane": "declined",
+      "col": 1,
+      "type": "frontend",
+      "label": "Busy Reply",
+      "sublabel": "turn already running",
+      "width": 150,
+      "sources": [
+        {
+          "path": "src/discord/responses.ts",
+          "line": 13,
+          "end_line": 19
+        }
+      ]
+    },
+    {
+      "id": "decline_reply",
+      "lane": "declined",
+      "col": 2,
+      "type": "frontend",
+      "label": "Decline Reply",
+      "sublabel": "rpm or rpd short",
+      "width": 150,
+      "sources": [
+        {
+          "path": "src/discord/responses.ts",
+          "line": 5,
+          "end_line": 11
+        }
+      ]
+    },
+    {
+      "id": "token_reply",
+      "lane": "declined",
+      "col": 3,
+      "type": "frontend",
+      "label": "Busy Reply",
+      "sublabel": "minute's tokens short",
+      "width": 150,
+      "sources": [
+        {
+          "path": "src/discord/events/messageCreate.ts",
+          "line": 276,
+          "end_line": 283
+        }
+      ]
+    },
+    {
+      "id": "slot_reply",
+      "lane": "declined",
+      "col": 4,
+      "type": "frontend",
+      "label": "Busy Reply",
+      "sublabel": "slots or bytes short",
+      "width": 150,
+      "sources": [
+        {
+          "path": "src/discord/events/messageCreate.ts",
+          "line": 285,
+          "end_line": 306
+        }
+      ]
+    },
+    {
+      "id": "run",
+      "lane": "turn",
+      "col": 5,
+      "type": "backend",
+      "label": "Run Turn",
+      "sublabel": "generateResponse",
+      "width": 150,
+      "sources": [
+        {
+          "path": "src/discord/events/messageCreate.ts",
+          "line": 326,
+          "end_line": 348
+        }
+      ]
+    },
+    {
+      "id": "release",
+      "lane": "turn",
+      "col": 4,
+      "type": "backend",
+      "label": "Finally",
+      "sublabel": "free channel and budgets",
+      "width": 150,
+      "sources": [
+        {
+          "path": "src/discord/events/messageCreate.ts",
+          "line": 403,
+          "end_line": 408
+        },
+        {
+          "path": "src/utils/rateLimiter.ts",
+          "line": 120,
+          "end_line": 139
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "e_trigger_busy",
+      "from": "trigger",
+      "to": "busy"
+    },
+    {
+      "id": "e_busy_mark",
+      "from": "busy",
+      "to": "mark",
+      "label": "free",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e_busy_reply",
+      "from": "busy",
+      "to": "busy_reply",
+      "label": "busy",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "e_mark_peek",
+      "from": "mark",
+      "to": "peek",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e_peek_decline",
+      "from": "peek",
+      "to": "decline_reply",
+      "label": "no room",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "e_peek_tokens",
+      "from": "peek",
+      "to": "tokens",
+      "label": "post lookup",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e_tokens_reply",
+      "from": "tokens",
+      "to": "token_reply",
+      "label": "short",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "e_tokens_reserve",
+      "from": "tokens",
+      "to": "reserve",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e_reserve_reply",
+      "from": "reserve",
+      "to": "slot_reply",
+      "label": "lost race",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "e_reserve_bytes",
+      "from": "reserve",
+      "to": "bytes",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e_bytes_reply",
+      "from": "bytes",
+      "to": "slot_reply",
+      "label": "full: release(0)",
+      "variant": "security",
+      "role": "error",
+      "fromSide": "bottom",
+      "toSide": "right"
+    },
+    {
+      "id": "e_bytes_run",
+      "from": "bytes",
+      "to": "run",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e_run_release",
+      "from": "run",
+      "to": "release",
+      "label": "finally",
+      "variant": "emphasis",
+      "role": "return"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Order Matters",
+      "items": [
+        "The peek is advisory; reserveCalls is authoritative",
+        "Declines before reserveCalls hold nothing",
+        "A byte refusal hands the slots and daily unit back with release(0)"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Release to the Truth",
+      "items": [
+        "release(used) keeps the calls the turn made and frees the rest",
+        "A thrown turn keeps its whole reservation",
+        "Text turns skip the token floor"
+      ]
+    }
+  ]
+}

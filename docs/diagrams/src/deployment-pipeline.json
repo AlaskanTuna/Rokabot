@@ -1,0 +1,282 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Deployment Pipeline",
+    "locale": "en",
+    "visual_preset": "editorial",
+    "quality_profile": "showcase",
+    "output": ".archify/deployment-pipeline/deployment-pipeline.html",
+    "repository": {
+      "url": "https://github.com/AlaskanTuna/Rokabot",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "3720c3d3155636bb76075d223c1ae3cad0ce068a"
+    }
+  },
+  "lanes": [
+    {
+      "id": "dev",
+      "label": "Developer"
+    },
+    {
+      "id": "ci",
+      "label": "GitHub Actions"
+    },
+    {
+      "id": "pi",
+      "label": "Raspberry Pi 5"
+    }
+  ],
+  "phases": [
+    {
+      "id": "review",
+      "label": "Pull request",
+      "fromCol": 0,
+      "toCol": 2
+    },
+    {
+      "id": "publish",
+      "label": "Build + publish",
+      "fromCol": 3,
+      "toCol": 4,
+      "variant": "emphasis"
+    },
+    {
+      "id": "run",
+      "label": "Deploy + release",
+      "fromCol": 5,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "mainPath": ["pr", "checks", "merge", "images", "manifest", "deploy"],
+  "nodes": [
+    {
+      "id": "pr",
+      "lane": "dev",
+      "col": 0,
+      "type": "frontend",
+      "label": "Pull Request",
+      "sublabel": "to main",
+      "width": 150,
+      "sources": [
+        {
+          "path": ".github/workflows/deploy.yml",
+          "line": 3,
+          "end_line": 12,
+          "label": "triggers"
+        }
+      ]
+    },
+    {
+      "id": "checks",
+      "lane": "ci",
+      "col": 1,
+      "type": "security",
+      "label": "PR Checks",
+      "sublabel": "test, compose, images",
+      "tag": "images-ok",
+      "width": 150,
+      "sources": [
+        {
+          "path": ".github/workflows/deploy.yml",
+          "line": 18,
+          "end_line": 51,
+          "label": "test"
+        },
+        {
+          "path": ".github/workflows/deploy.yml",
+          "line": 53,
+          "end_line": 93,
+          "label": "compose"
+        },
+        {
+          "path": ".github/workflows/deploy.yml",
+          "line": 220,
+          "end_line": 234,
+          "label": "images-ok"
+        }
+      ]
+    },
+    {
+      "id": "merge",
+      "lane": "dev",
+      "col": 2,
+      "type": "frontend",
+      "label": "Squash Merge",
+      "sublabel": "push to main",
+      "tag": "human authorizes",
+      "width": 150,
+      "sources": [
+        {
+          "path": ".github/workflows/deploy.yml",
+          "line": 4,
+          "end_line": 10,
+          "label": "push + paths-ignore"
+        }
+      ]
+    },
+    {
+      "id": "images",
+      "lane": "ci",
+      "col": 3,
+      "type": "backend",
+      "label": "Build Images",
+      "sublabel": "amd64 + arm64",
+      "tag": "push by digest",
+      "width": 150,
+      "sources": [
+        {
+          "path": ".github/workflows/deploy.yml",
+          "line": 95,
+          "end_line": 161,
+          "label": "images matrix"
+        },
+        {
+          "path": "Dockerfile",
+          "line": 1,
+          "end_line": 61,
+          "label": "multi-stage build"
+        }
+      ]
+    },
+    {
+      "id": "manifest",
+      "lane": "ci",
+      "col": 4,
+      "type": "backend",
+      "label": "GHCR Manifest",
+      "sublabel": "tags sha-*, edge",
+      "width": 150,
+      "sources": [
+        {
+          "path": ".github/workflows/deploy.yml",
+          "line": 163,
+          "end_line": 200,
+          "label": "tag sha and edge"
+        },
+        {
+          "path": ".github/workflows/deploy.yml",
+          "line": 208,
+          "end_line": 216,
+          "label": "anonymous pull check"
+        }
+      ],
+      "tag": "public pull"
+    },
+    {
+      "id": "deploy",
+      "lane": "pi",
+      "col": 5,
+      "type": "cloud",
+      "label": "Deploy Job",
+      "sublabel": "pull, up -d, health",
+      "tag": "self-hosted runner",
+      "width": 150,
+      "sources": [
+        {
+          "path": ".github/workflows/deploy.yml",
+          "line": 252,
+          "end_line": 329,
+          "label": "deploy"
+        },
+        {
+          "path": "docker-compose.yml",
+          "line": 1,
+          "end_line": 3,
+          "label": "image reference"
+        }
+      ]
+    },
+    {
+      "id": "promote",
+      "lane": "ci",
+      "col": 5,
+      "type": "backend",
+      "label": "Release + Promote",
+      "sublabel": "stable, vX.Y, vX.Y.Z",
+      "tag": "release commit only",
+      "width": 150,
+      "sources": [
+        {
+          "path": ".github/workflows/deploy.yml",
+          "line": 331,
+          "end_line": 354,
+          "label": "release-please"
+        },
+        {
+          "path": ".github/workflows/deploy.yml",
+          "line": 356,
+          "end_line": 387,
+          "label": "promote"
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "pr-checks",
+      "from": "pr",
+      "to": "checks",
+      "label": "pull_request",
+      "variant": "emphasis"
+    },
+    {
+      "id": "checks-merge",
+      "from": "checks",
+      "to": "merge",
+      "label": "checks pass",
+      "variant": "security"
+    },
+    {
+      "id": "merge-images",
+      "from": "merge",
+      "to": "images",
+      "label": "after test",
+      "variant": "emphasis"
+    },
+    {
+      "id": "images-manifest",
+      "from": "images",
+      "to": "manifest",
+      "label": "digests",
+      "variant": "emphasis"
+    },
+    {
+      "id": "manifest-deploy",
+      "from": "manifest",
+      "to": "deploy",
+      "label": "compose pull",
+      "variant": "emphasis"
+    },
+    {
+      "id": "deploy-promote",
+      "from": "deploy",
+      "to": "promote",
+      "label": "healthy",
+      "role": "branch",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Gates",
+      "items": [
+        "main is PR-only; test must pass to merge",
+        "images-ok fails unless images and compose both succeed",
+        "A push that changes only paths-ignore files runs nothing"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "On the Pi",
+      "items": [
+        "One deploy at a time (pi-deploy group)",
+        "Health: localhost:3000 says ok, 10 tries, 5 s apart",
+        "A failed pull leaves the old container running"
+      ]
+    }
+  ]
+}

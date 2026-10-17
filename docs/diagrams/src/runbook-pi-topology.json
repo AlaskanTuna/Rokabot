@@ -1,0 +1,208 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Rokabot Pi Deployment Topology",
+    "output": ".archify/runbook-pi-topology/runbook-pi-topology.html",
+    "locale": "en",
+    "visual_preset": "editorial",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/AlaskanTuna/Rokabot",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "3720c3d3155636bb76075d223c1ae3cad0ce068a"
+    }
+  },
+  "components": [
+    {
+      "id": "gha",
+      "type": "cloud",
+      "label": "GitHub Actions",
+      "sublabel": "test, images, manifest",
+      "pos": [260, 110],
+      "size": [170, 64],
+      "sources": [
+        { "path": ".github/workflows/deploy.yml", "line": 95, "end_line": 161, "label": "images job" },
+        { "path": ".github/workflows/deploy.yml", "line": 163, "end_line": 218, "label": "manifest job" }
+      ]
+    },
+    {
+      "id": "ghcr",
+      "type": "cloud",
+      "label": "GHCR",
+      "sublabel": "rokabot, rokabot-asr",
+      "pos": [260, 300],
+      "size": [170, 64],
+      "sources": [
+        { "path": ".github/workflows/deploy.yml", "line": 198, "end_line": 218, "label": "sha-<7> and edge tags" },
+        { "path": ".github/workflows/deploy.yml", "line": 356, "end_line": 389, "label": "release tags" }
+      ]
+    },
+    {
+      "id": "runner",
+      "type": "backend",
+      "label": "Self-Hosted Runner",
+      "sublabel": "deploy job, pi-deploy",
+      "pos": [540, 300],
+      "size": [170, 64],
+      "sources": [{ "path": ".github/workflows/deploy.yml", "line": 252, "end_line": 330, "label": "deploy job" }]
+    },
+    {
+      "id": "roka",
+      "type": "backend",
+      "label": "roka Container",
+      "sublabel": "1 GB, no swap, :3000",
+      "pos": [840, 300],
+      "size": [190, 66],
+      "sources": [
+        { "path": "docker-compose.yml", "line": 2, "end_line": 36, "label": "roka service" },
+        { "path": "src/index.ts", "line": 139, "end_line": 151, "label": "health server" }
+      ]
+    },
+    {
+      "id": "asr",
+      "type": "backend",
+      "label": "asr Container",
+      "sublabel": "2 GB, 3 CPUs",
+      "pos": [760, 110],
+      "size": [160, 64],
+      "sources": [
+        { "path": "docker-compose.yml", "line": 37, "end_line": 53, "label": "asr service" },
+        { "path": "asr/Dockerfile", "line": 46, "end_line": 50, "label": "health check" }
+      ]
+    },
+    {
+      "id": "embeddings",
+      "type": "backend",
+      "label": "embeddings Sidecar",
+      "sublabel": "opt-in profile",
+      "pos": [960, 110],
+      "size": [170, 64],
+      "sources": [{ "path": "docker-compose.yml", "line": 54, "end_line": 66, "label": "embeddings service" }]
+    },
+    {
+      "id": "data",
+      "type": "database",
+      "label": "./data Volume",
+      "sublabel": "rokabot.db",
+      "pos": [800, 520],
+      "size": [150, 64],
+      "sources": [
+        { "path": "docker-compose.yml", "line": 23, "end_line": 24, "label": "data bind" },
+        { "path": "src/storage/database.ts", "line": 4, "end_line": 20, "label": "db path" }
+      ]
+    },
+    {
+      "id": "config",
+      "type": "database",
+      "label": "config.yml",
+      "sublabel": "read-only bind",
+      "pos": [990, 520],
+      "size": [150, 64],
+      "sources": [{ "path": "docker-compose.yml", "line": 25, "end_line": 31, "label": "config bind" }]
+    },
+    {
+      "id": "host",
+      "type": "backend",
+      "label": "Pi Host Shell",
+      "sublabel": "~/rokabot, compose",
+      "pos": [540, 520],
+      "size": [170, 64],
+      "sources": [{ "path": "docs/runbook.md", "line": 22, "end_line": 59, "label": "bot management" }]
+    },
+    {
+      "id": "tailscale",
+      "type": "security",
+      "label": "Tailscale",
+      "sublabel": "tailnet",
+      "pos": [300, 520],
+      "size": [140, 64],
+      "sources": [{ "path": "AGENTS.md", "line": 11, "label": "Pi reachable over Tailscale" }]
+    },
+    {
+      "id": "operator",
+      "type": "external",
+      "label": "Operator",
+      "sublabel": "dev machine",
+      "pos": [60, 520],
+      "size": [140, 64],
+      "sources": [{ "path": "docs/runbook.md", "line": 7, "end_line": 15, "label": "SSH access" }]
+    },
+    {
+      "id": "discord",
+      "type": "external",
+      "label": "Discord",
+      "sublabel": "gateway + REST",
+      "pos": [1230, 230],
+      "size": [160, 64],
+      "sources": [{ "path": "src/discord/client.ts", "line": 1, "end_line": 12, "label": "client intents" }]
+    },
+    {
+      "id": "providers",
+      "type": "external",
+      "label": "Provider APIs",
+      "sublabel": "Gemini, Anthropic, OpenAI, ModelScope",
+      "pos": [1230, 400],
+      "size": [220, 64],
+      "sources": [
+        { "path": "src/agent/llm/profiles.ts", "line": 24, "end_line": 40, "label": "model profiles" },
+        { "path": "config.yml", "line": 41, "end_line": 60, "label": "llm block" }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Raspberry Pi 5 / Docker Compose",
+      "wraps": ["runner", "roka", "asr", "embeddings", "data", "config", "host"],
+      "pad": 22
+    }
+  ],
+  "connections": [
+    { "from": "gha", "to": "ghcr", "label": "push sha-<7>, edge", "variant": "emphasis" },
+    { "from": "gha", "to": "runner", "label": "deploy job", "variant": "dashed" },
+    { "from": "ghcr", "to": "runner", "label": "pull sha-<7>", "variant": "emphasis" },
+    { "from": "runner", "to": "roka", "label": "up -d --no-build", "variant": "emphasis" },
+    { "from": "roka", "to": "asr", "label": "asr:8000" },
+    { "from": "roka", "to": "embeddings", "label": "embeddings:8080", "variant": "dashed" },
+    { "from": "roka", "to": "data", "label": "SQLite" },
+    { "from": "config", "to": "roka", "label": "read" },
+    { "from": "roka", "to": "discord", "label": "gateway" },
+    { "from": "roka", "to": "providers", "label": "model calls" },
+    { "from": "operator", "to": "tailscale", "label": "SSH", "variant": "security" },
+    { "from": "tailscale", "to": "host", "label": "tailnet", "variant": "security" },
+    { "from": "host", "to": "roka", "label": "compose" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Deploy Path",
+      "items": [
+        "CI builds amd64 and arm64 images and tags sha-<7> and edge",
+        "The runner pulls sha-<7>, writes ROKA_TAG to .env, then runs up -d --no-build",
+        "Health check: GET :3000 must return status ok within 10 tries",
+        "A release merge points vX.Y.Z, vX.Y and stable at the deployed image"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Host Paths",
+      "items": [
+        "~/rokabot/.env holds secrets and ROKA_TAG",
+        "~/rokabot/config.yml mounts read-only at /app/config.yml",
+        "~/rokabot/data mounts at /app/data",
+        "~/rokabot/logs keeps archived roka logs for 30 days"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Sidecars",
+      "items": [
+        "asr has no published port; the bot calls http://asr:8000",
+        "embeddings starts only with the local-embeddings profile",
+        "SSH also works over Ethernet or WiFi on the LAN"
+      ]
+    }
+  ]
+}

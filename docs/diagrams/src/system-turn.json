@@ -1,0 +1,369 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "One Mention Turn",
+    "output": ".archify/system-turn/system-turn.html",
+    "locale": "en",
+    "visual_preset": "editorial",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "viewBox": [1080, 690],
+    "repository": {
+      "url": "https://github.com/AlaskanTuna/Rokabot.git",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "3720c3d3155636bb76075d223c1ae3cad0ce068a"
+    }
+  },
+  "participants": [
+    {
+      "id": "user",
+      "type": "external",
+      "label": "Discord User",
+      "sublabel": "guild channel",
+      "sources": [
+        {
+          "path": "src/discord/client.ts",
+          "line": 10,
+          "end_line": 19,
+          "label": "gateway client"
+        }
+      ]
+    },
+    {
+      "id": "gateway",
+      "type": "frontend",
+      "label": "messageCreate",
+      "sublabel": "trigger + guards",
+      "sources": [
+        {
+          "path": "src/discord/events/messageCreate.ts",
+          "line": 75,
+          "end_line": 160,
+          "label": "trigger detection"
+        },
+        {
+          "path": "src/discord/events/messageCreate.ts",
+          "line": 199,
+          "end_line": 307,
+          "label": "admission guards"
+        }
+      ]
+    },
+    {
+      "id": "turnctx",
+      "type": "backend",
+      "label": "Turn Context",
+      "sublabel": "turnContext.ts",
+      "sources": [
+        {
+          "path": "src/agent/turnContext.ts",
+          "line": 111,
+          "end_line": 191,
+          "label": "startTurnEntryWork"
+        },
+        {
+          "path": "src/agent/turnContext.ts",
+          "line": 275,
+          "end_line": 688,
+          "label": "createTurnContext"
+        }
+      ]
+    },
+    {
+      "id": "jev",
+      "type": "cloud",
+      "label": "Jev",
+      "sublabel": "turn judgment",
+      "sources": [
+        {
+          "path": "src/agent/jev/judgments.ts",
+          "line": 83,
+          "end_line": 130,
+          "label": "judgeTurn"
+        }
+      ]
+    },
+    {
+      "id": "agent",
+      "type": "backend",
+      "label": "Roka Agent",
+      "sublabel": "roka.ts",
+      "sources": [
+        {
+          "path": "src/agent/roka.ts",
+          "line": 313,
+          "end_line": 727,
+          "label": "generateResponse"
+        }
+      ]
+    },
+    {
+      "id": "session",
+      "type": "backend",
+      "label": "ADK Session",
+      "sublabel": "session.ts",
+      "sources": [
+        {
+          "path": "src/agent/session.ts",
+          "line": 117,
+          "end_line": 168,
+          "label": "ensureSession"
+        }
+      ]
+    },
+    {
+      "id": "sqlite",
+      "type": "database",
+      "label": "SQLite",
+      "sublabel": "rokabot.db",
+      "sources": [
+        {
+          "path": "src/storage/sessionStore.ts",
+          "line": 18,
+          "end_line": 77,
+          "label": "save and load history"
+        },
+        {
+          "path": "src/agent/memory/retriever.ts",
+          "line": 221,
+          "label": "retrieveForTurn"
+        }
+      ]
+    },
+    {
+      "id": "provider",
+      "type": "cloud",
+      "label": "Main Model",
+      "sublabel": "llm.main",
+      "sources": [
+        {
+          "path": "src/agent/roka.ts",
+          "line": 441,
+          "end_line": 600,
+          "label": "runTurnWithReliability"
+        },
+        {
+          "path": "src/agent/reliability.ts",
+          "line": 21,
+          "label": "rokaModel"
+        }
+      ]
+    }
+  ],
+  "segments": [
+    {
+      "from": 155,
+      "to": 236,
+      "label": "Admit"
+    },
+    {
+      "from": 246,
+      "to": 434,
+      "label": "Build Context"
+    },
+    {
+      "from": 444,
+      "to": 492,
+      "label": "Generate"
+    },
+    {
+      "from": 502,
+      "to": 578,
+      "label": "Reply"
+    }
+  ],
+  "messages": [
+    {
+      "id": "mention",
+      "from": "user",
+      "to": "gateway",
+      "y": 170,
+      "label": "@Roka message",
+      "variant": "emphasis"
+    },
+    {
+      "id": "entry-work",
+      "from": "gateway",
+      "to": "turnctx",
+      "y": 198,
+      "label": "startTurnEntryWork",
+      "variant": "dashed"
+    },
+    {
+      "id": "judge-turn",
+      "from": "turnctx",
+      "to": "jev",
+      "y": 226,
+      "label": "judgeTurn",
+      "variant": "dashed"
+    },
+    {
+      "id": "generate",
+      "from": "gateway",
+      "to": "agent",
+      "y": 256,
+      "label": "generateResponse",
+      "variant": "emphasis",
+      "note": "after admission guards"
+    },
+    {
+      "id": "build-context",
+      "from": "agent",
+      "to": "turnctx",
+      "y": 284,
+      "label": "createTurnContext"
+    },
+    {
+      "id": "ensure-session",
+      "from": "turnctx",
+      "to": "session",
+      "y": 312,
+      "label": "ensureSession"
+    },
+    {
+      "id": "load-history",
+      "from": "session",
+      "to": "sqlite",
+      "y": 340,
+      "label": "loadHistory ≤ windowSize"
+    },
+    {
+      "id": "jev-verdict",
+      "from": "jev",
+      "to": "turnctx",
+      "y": 368,
+      "label": "tone, needsLookup",
+      "variant": "return"
+    },
+    {
+      "id": "recall",
+      "from": "turnctx",
+      "to": "sqlite",
+      "y": 396,
+      "label": "retrieve memory"
+    },
+    {
+      "id": "prompt",
+      "from": "turnctx",
+      "to": "agent",
+      "y": 424,
+      "label": "system prompt",
+      "variant": "return"
+    },
+    {
+      "id": "model-call",
+      "from": "agent",
+      "to": "provider",
+      "y": 454,
+      "label": "runner.runAsync",
+      "variant": "emphasis",
+      "note": "retry + fallback"
+    },
+    {
+      "id": "model-reply",
+      "from": "provider",
+      "to": "agent",
+      "y": 482,
+      "label": "final text",
+      "variant": "return"
+    },
+    {
+      "id": "save-turn",
+      "from": "agent",
+      "to": "sqlite",
+      "y": 512,
+      "label": "saveMessage ×2",
+      "variant": "dashed"
+    },
+    {
+      "id": "result",
+      "from": "agent",
+      "to": "gateway",
+      "y": 540,
+      "label": "GenerateResult",
+      "variant": "return"
+    },
+    {
+      "id": "reply",
+      "from": "gateway",
+      "to": "user",
+      "y": 568,
+      "label": "Components V2 reply",
+      "variant": "return",
+      "note": "then a response_events row"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "gateway",
+      "from": 165,
+      "to": 574,
+      "type": "frontend"
+    },
+    {
+      "participant": "turnctx",
+      "from": 193,
+      "to": 430,
+      "type": "backend"
+    },
+    {
+      "participant": "jev",
+      "from": 221,
+      "to": 374,
+      "type": "cloud"
+    },
+    {
+      "participant": "agent",
+      "from": 251,
+      "to": 546,
+      "type": "backend"
+    },
+    {
+      "participant": "session",
+      "from": 307,
+      "to": 346,
+      "type": "backend"
+    },
+    {
+      "participant": "sqlite",
+      "from": 335,
+      "to": 346,
+      "type": "database"
+    },
+    {
+      "participant": "sqlite",
+      "from": 391,
+      "to": 402,
+      "type": "database"
+    },
+    {
+      "participant": "sqlite",
+      "from": 507,
+      "to": 518,
+      "type": "database"
+    },
+    {
+      "participant": "provider",
+      "from": 449,
+      "to": 488,
+      "type": "cloud"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Parallel Work",
+      "items": [
+        "Jev, the post lookup and the reply fetch start at handler entry",
+        "prepareTurnMedia runs beside createTurnContext"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Declines",
+      "items": ["A busy channel or a full budget gets an in-character note", "The note is deleted after 5 s"]
+    }
+  ]
+}

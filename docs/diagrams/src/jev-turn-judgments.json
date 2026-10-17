@@ -1,0 +1,329 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Jev Turn Judgments",
+    "locale": "en",
+    "visual_preset": "editorial",
+    "quality_profile": "showcase",
+    "output": ".archify/jev-turn-judgments/jev-turn-judgments.html",
+    "repository": {
+      "url": "https://github.com/AlaskanTuna/Rokabot",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "3720c3d3155636bb76075d223c1ae3cad0ce068a"
+    }
+  },
+  "lanes": [
+    {
+      "id": "turn",
+      "label": "Rokabot Turn"
+    },
+    {
+      "id": "apis",
+      "label": "External APIs"
+    },
+    {
+      "id": "local",
+      "label": "Prefetch Gate + SQLite"
+    }
+  ],
+  "phases": [
+    {
+      "id": "entry",
+      "label": "Handler entry",
+      "fromCol": 0,
+      "toCol": 1
+    },
+    {
+      "id": "decide_phase",
+      "label": "Apply + decide",
+      "fromCol": 2,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "answer",
+      "label": "Prompt + answer",
+      "fromCol": 4,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "mainPath": ["entry", "judge", "tone", "prompt", "model"],
+  "nodes": [
+    {
+      "id": "entry",
+      "lane": "turn",
+      "col": 0,
+      "type": "frontend",
+      "label": "Message or /ask",
+      "sublabel": "startTurnEntryWork",
+      "width": 132,
+      "sources": [
+        {
+          "path": "src/discord/events/messageCreate.ts",
+          "line": 121,
+          "end_line": 134,
+          "label": "mention or reply"
+        },
+        {
+          "path": "src/discord/events/interactionCreate.ts",
+          "line": 127,
+          "end_line": 134,
+          "label": "/ask"
+        },
+        {
+          "path": "src/agent/turnContext.ts",
+          "line": 111,
+          "end_line": 180,
+          "label": "TurnEntryWork"
+        }
+      ]
+    },
+    {
+      "id": "judge",
+      "lane": "apis",
+      "col": 1,
+      "type": "external",
+      "label": "judgeTurn",
+      "sublabel": "one Jev request",
+      "tag": "jev.timeoutMs",
+      "width": 132,
+      "sources": [
+        {
+          "path": "src/agent/jev/judgments.ts",
+          "line": 83,
+          "end_line": 155,
+          "label": "tone, referents, lookup"
+        },
+        {
+          "path": "src/agent/jev/client.ts",
+          "line": 19,
+          "end_line": 30,
+          "label": "one attempt, no retry"
+        }
+      ]
+    },
+    {
+      "id": "tone",
+      "lane": "turn",
+      "col": 2,
+      "type": "backend",
+      "label": "Apply Judgment",
+      "sublabel": "tone + referents",
+      "tag": "on mode only",
+      "width": 132,
+      "sources": [
+        {
+          "path": "src/agent/turnContext.ts",
+          "line": 353,
+          "end_line": 427,
+          "label": "settleJudgment"
+        },
+        {
+          "path": "src/agent/turnContext.ts",
+          "line": 249,
+          "end_line": 257,
+          "label": "applyJevTone"
+        }
+      ]
+    },
+    {
+      "id": "decide",
+      "lane": "local",
+      "col": 2,
+      "type": "backend",
+      "label": "decidePrefetch",
+      "sublabel": "needs_lookup score",
+      "width": 132,
+      "sources": [
+        {
+          "path": "src/agent/searchPrefetch.ts",
+          "line": 37,
+          "end_line": 47,
+          "label": "decision"
+        }
+      ]
+    },
+    {
+      "id": "tavily",
+      "lane": "apis",
+      "col": 3,
+      "type": "cloud",
+      "label": "Tavily Search",
+      "sublabel": "search_web query",
+      "width": 132,
+      "sources": [
+        {
+          "path": "src/agent/searchPrefetch.ts",
+          "line": 49,
+          "end_line": 72,
+          "label": "startSearchPrefetch"
+        },
+        {
+          "path": "src/agent/tools/searchWeb.ts",
+          "line": 1,
+          "end_line": 30,
+          "label": "Tavily API"
+        }
+      ]
+    },
+    {
+      "id": "prompt",
+      "lane": "turn",
+      "col": 4,
+      "type": "backend",
+      "label": "System Prompt",
+      "sublabel": "Looked It Up block",
+      "tag": "jev.prefetchWaitMs",
+      "width": 132,
+      "sources": [
+        {
+          "path": "src/agent/turnContext.ts",
+          "line": 232,
+          "end_line": 247,
+          "label": "awaitTurnPrefetch"
+        },
+        {
+          "path": "src/agent/turnContext.ts",
+          "line": 620,
+          "end_line": 670,
+          "label": "composePrompt"
+        },
+        {
+          "path": "src/agent/searchPrefetch.ts",
+          "line": 78,
+          "end_line": 90,
+          "label": "2000-char block"
+        }
+      ]
+    },
+    {
+      "id": "model",
+      "lane": "turn",
+      "col": 5,
+      "type": "cloud",
+      "label": "Main Model",
+      "sublabel": "first model call",
+      "width": 132,
+      "sources": [
+        {
+          "path": "src/agent/roka.ts",
+          "line": 342,
+          "end_line": 360,
+          "label": "createTurnContext"
+        }
+      ]
+    },
+    {
+      "id": "events",
+      "lane": "local",
+      "col": 4,
+      "type": "database",
+      "label": "jev_events",
+      "sublabel": "kind = turn",
+      "width": 132,
+      "sources": [
+        {
+          "path": "src/agent/turnContext.ts",
+          "line": 321,
+          "end_line": 350,
+          "label": "persist turn row"
+        },
+        {
+          "path": "src/storage/database.ts",
+          "line": 180,
+          "end_line": 196,
+          "label": "table"
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "entry-judge",
+      "from": "entry",
+      "to": "judge",
+      "label": "before reply fetch",
+      "variant": "emphasis"
+    },
+    {
+      "id": "judge-tone",
+      "from": "judge",
+      "to": "tone",
+      "label": "tone, referents",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "bottom"
+    },
+    {
+      "id": "judge-decide",
+      "from": "judge",
+      "to": "decide",
+      "label": "needs_lookup",
+      "role": "branch",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "left"
+    },
+    {
+      "id": "decide-tavily",
+      "from": "decide",
+      "to": "tavily",
+      "label": "on, score ≥ 0.7",
+      "variant": "default",
+      "fromSide": "right",
+      "toSide": "bottom"
+    },
+    {
+      "id": "tavily-prompt",
+      "from": "tavily",
+      "to": "prompt",
+      "label": "results",
+      "role": "async",
+      "variant": "dashed"
+    },
+    {
+      "id": "tone-prompt",
+      "from": "tone",
+      "to": "prompt",
+      "label": "tone",
+      "variant": "emphasis"
+    },
+    {
+      "id": "prompt-model",
+      "from": "prompt",
+      "to": "model",
+      "variant": "emphasis"
+    },
+    {
+      "id": "prompt-events",
+      "from": "prompt",
+      "to": "events",
+      "label": "one row",
+      "role": "branch",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Modes",
+      "items": [
+        "off: the feature asks Jev nothing",
+        "shadow: ask and log; the reply does not change",
+        "on: apply when the feature threshold passes"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Failure Keeps the Rules",
+      "items": [
+        "No TYPESAFE_API_KEY: no client, no judgment",
+        "Timeout or error: the judgment is null and the rule tone stays",
+        "A declined turn aborts the judgment and any search"
+      ]
+    }
+  ]
+}
