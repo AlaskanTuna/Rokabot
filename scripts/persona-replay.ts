@@ -1,6 +1,6 @@
 /** Replay sampled production turns against prompt arms without writing user messages into results. */
 import { execFileSync } from 'node:child_process'
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -93,14 +93,30 @@ type LoadedArm = Arm & {
   }) => string
 }
 
+// Since the character pack, the prompt modules read src/character and the pack folders; older refs have only src/agent.
+// package.json keeps the export an ES module, which the pack loader needs for import.meta.dirname.
+const PROMPT_PATHS = ['package.json', 'src/agent', 'src/character', 'characters', 'prompts'] as const
+
+export function refPromptPaths(ref: string, cwd: string): string[] {
+  return PROMPT_PATHS.filter((path) => {
+    try {
+      execFileSync('git', ['cat-file', '-e', `${ref}:${path}`], { cwd, stdio: 'ignore' })
+      return true
+    } catch {
+      return false
+    }
+  })
+}
+
 function promptDirectory(source: PromptSource, cwd: string): string {
   if (source.kind === 'worktree') return promptSourcePath(source, cwd)
   const destination = join(tmpdir(), `persona-replay-${process.pid}-${Date.now()}`)
   mkdirSync(destination, { recursive: true })
   // Through a file: src/agent's tarball is larger than execFileSync's default output buffer.
   const archive = join(destination, 'src-agent.tar')
-  execFileSync('git', ['archive', '-o', archive, source.ref, 'src/agent'], { cwd })
+  execFileSync('git', ['archive', '-o', archive, source.ref, ...refPromptPaths(source.ref, cwd)], { cwd })
   execFileSync('tar', ['-xf', archive, '-C', destination])
+  symlinkSync(join(cwd, 'node_modules'), join(destination, 'node_modules'), 'dir')
   return promptSourcePath(source, cwd, destination)
 }
 

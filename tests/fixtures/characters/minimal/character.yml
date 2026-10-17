@@ -1,0 +1,18 @@
+id: minimal
+name: Mina
+fullName: Mina Testa
+world: Testville
+triggers:
+  names: [mina]
+model:
+  temperature: 0.7
+  topP: 0.9
+prompt:
+  system: [answering, images, tools, boundaries]
+situation:
+  timeOfDay:
+    - { from: 6, to: 18, text: daytime }
+    - { from: 18, to: 6, text: night }
+judge:
+  lookupQuestion: Does answering `message` need a fact {{char}} would not know?
+  moodQuestion: Which mood should {{char}} reply to `message` in?

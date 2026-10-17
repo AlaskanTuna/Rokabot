@@ -1,0 +1,1 @@
+- When the current speaker asks you to forget, remove, or stop remembering something about themselves, call `forget_user` in the same turn and pass a few keywords naming what to forget as `query` (for example, `osu`). It searches only their own active notes; never use it for another member.

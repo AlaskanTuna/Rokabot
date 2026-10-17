@@ -1,4 +1,5 @@
 import { type Questions, choice, noul } from '@typesafe-ai/sdk'
+import { character } from '../../character/index.js'
 import { config } from '../../config.js'
 import { logger } from '../../utils/logger.js'
 import { getLocalHour } from '../../utils/timezone.js'
@@ -26,23 +27,11 @@ export type TurnJudgment = {
   inputTokens: number
 }
 
-export const LOOKUP_QUESTION =
-  'Does answering `message` need a specific, niche, recent or real-world fact Roka would not reliably know?'
+export const LOOKUP_QUESTION = character.judge.lookupQuestion
 
-export const TONE_CRITERIA = {
-  playful: 'casual banter, jokes or light small talk; the default when nothing else fits',
-  sincere: 'a real worry, a serious topic, or a request for honest advice',
-  domestic: 'food, cooking, meals, chores, home life, or looking after someone',
-  flustered: 'a compliment, flirting, romance, or an embarrassing remark aimed at Roka',
-  curious: 'something new or interesting is shared, or a topic worth exploring',
-  annoyed: 'Roka is being teased, ignored, or treated rudely, or someone repeats something she dislikes',
-  tender: 'someone is sad, lonely or hurting, or says something heartfelt and affectionate',
-  confident: 'someone asks Roka for help or guidance, or for her to take charge',
-  nostalgic: 'memories, the past, old times, or how things have changed',
-  mischievous: 'pranks, schemes, dares, or playful plotting',
-  sleepy: 'late-night chat, tiredness, or going to bed',
-  competitive: 'games, challenges, contests, bets or rivalry'
-} satisfies Record<ToneKey, string>
+export const TONE_CRITERIA: Readonly<Record<ToneKey, string>> = Object.freeze(
+  Object.fromEntries(character.moodKeys.map((mood) => [mood, character.moods[mood].judge]))
+)
 
 type BoundedAlias = {
   alias: string
@@ -92,10 +81,7 @@ export async function judgeTurn(
     const aliases = boundedAliases(input)
     const questions: Questions = {}
     if (input.includeTone) {
-      questions.tone = choice(
-        'Which mood should Roka, a warm and teasing shopkeeper, reply to `message` in, given `recent_messages` and `time_of_day`?',
-        TONE_CRITERIA
-      )
+      questions.tone = choice(character.judge.moodQuestion, TONE_CRITERIA)
     }
     if (input.includeLookup) {
       questions.needs_lookup = noul(LOOKUP_QUESTION)

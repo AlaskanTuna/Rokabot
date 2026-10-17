@@ -1,4 +1,5 @@
 import type { ToneKey } from '../../../agent/prompts/tones.js'
+import { character } from '../../../character/index.js'
 import { logger } from '../../../utils/logger.js'
 import { getToneStyle } from '../../toneStyles.js'
 
@@ -175,20 +176,9 @@ export async function renderChannelHistogram(channels: { label: string; count: n
   }
 }
 
-export const TONE_EMOJI: Record<ToneKey, string> = {
-  playful: '🎈',
-  sincere: '✨',
-  domestic: '🫖',
-  flustered: '💗',
-  curious: '🔎',
-  annoyed: '⚡',
-  tender: '🌷',
-  confident: '🏆',
-  nostalgic: '📖',
-  mischievous: '🦊',
-  sleepy: '🌙',
-  competitive: '🥇'
-}
+export const TONE_EMOJI: Readonly<Record<ToneKey, string>> = Object.fromEntries(
+  character.moodKeys.map((mood) => [mood, character.moods[mood].emoji])
+)
 
 function titleCase(value: string): string {
   return value.replace(/\b\w/g, (letter) => letter.toUpperCase())
