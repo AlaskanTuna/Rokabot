@@ -5,6 +5,7 @@ import {
   parseArm,
   parsePromptSource,
   promptSourcePath,
+  refPromptPaths,
   resumeKey
 } from '../persona-replay.js'
 
@@ -28,6 +29,12 @@ describe('parsePromptSource', () => {
     expect(parsePromptSource('worktree')).toEqual({ kind: 'worktree' })
     expect(parsePromptSource('ref:main')).toEqual({ kind: 'ref', ref: 'main' })
     expect(() => parsePromptSource('ref:')).toThrow('prompt source')
+  })
+})
+
+describe('refPromptPaths', () => {
+  it('exports the character pack folders a ref has, with its prompt modules', () => {
+    expect(refPromptPaths('HEAD', process.cwd())).toEqual(['package.json', 'src/agent', 'src/character', 'characters', 'prompts'])
   })
 })
 
