@@ -4,6 +4,8 @@
  */
 
 import type { ChatInputCommandInteraction, Client, TextBasedChannel } from 'discord.js'
+import { character } from '../../character/index.js'
+import { fillLine } from '../../character/lines.js'
 import { setTimeoutCallback } from '../../games/hangman.js'
 import {
   getGame as getShiritoriGame,
@@ -44,7 +46,7 @@ export function createGameCommandHandler(client?: Client) {
         const payload = buildTimeoutContainer(
           HANGMAN_COLORS.lose,
           'Hangman',
-          `Time's up~ The word was **${word}**. You took too long! \u{1F4A4}`
+          fillLine(character.lines.games.hangmanTimeout, { word })
         )
         ;(channel as Extract<TextBasedChannel, { send: unknown }>)
           .send(payload)
@@ -66,7 +68,7 @@ export function createGameCommandHandler(client?: Client) {
           const payload = buildTimeoutContainer(
             SHIRITORI_COLORS.info,
             'Shiritori',
-            `**${playerName}** took too long... they're out! \u{1F4A4}\n\n**${winner}** wins the game! Congratulations~ \u266A`
+            fillLine(character.lines.games.shiritoriWinner, { player: playerName, winner })
           )
           sendable
             .send(payload)
@@ -78,7 +80,7 @@ export function createGameCommandHandler(client?: Client) {
           const payload = buildTimeoutContainer(
             SHIRITORI_COLORS.info,
             'Shiritori',
-            `**${playerName}** took too long... they're out! \u{1F4A4} Your turn, **${nextPlayer}**!`
+            fillLine(character.lines.games.shiritoriNext, { player: playerName, next: nextPlayer })
           )
           sendable
             .send(payload)
@@ -212,7 +214,7 @@ export function createGameCommandHandler(client?: Client) {
         error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : error
       logger.error({ error: errDetail, channelId: interaction.channelId, command: commandName }, 'Game command error')
 
-      const errorText = 'Nn... something went wrong. Maybe try again later?'
+      const errorText = character.lines.games.error
 
       try {
         if (interaction.deferred) {

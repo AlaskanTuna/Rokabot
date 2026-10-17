@@ -1,6 +1,8 @@
 /** Periodic scheduler that delivers due reminders to Discord channels */
 
 import type { Client } from 'discord.js'
+import { character } from '../character/index.js'
+import { fillLine } from '../character/lines.js'
 import { config } from '../config.js'
 import { getDueReminders, markDelivered } from '../storage/reminderStore.js'
 import { logger } from '../utils/logger.js'
@@ -20,16 +22,17 @@ export function startReminderScheduler(client: Client): void {
           const channel = await client.channels.fetch(reminder.channelId)
           if (channel && 'send' in channel) {
             await (channel as { send: (msg: string) => Promise<unknown> }).send(
-              `Hey <@${reminder.userId}>~ you asked me to remind you: "${reminder.reminder}" \u266a`
+              fillLine(character.lines.reminders.delivered, {
+                mention: `<@${reminder.userId}>`,
+                task: reminder.reminder
+              })
             )
             markDelivered(reminder.id)
             logger.info({ reminderId: reminder.id, userId: reminder.userId }, 'Reminder delivered')
           } else {
             try {
               const user = await client.users.fetch(reminder.userId)
-              await user.send(
-                `Hey~ you asked me to remind you: "${reminder.reminder}" \u266a\n\n-# (Sent as DM because I couldn't reach the original channel)`
-              )
+              await user.send(fillLine(character.lines.reminders.deliveredByDm, { task: reminder.reminder }))
               markDelivered(reminder.id)
               logger.info(
                 { reminderId: reminder.id, userId: reminder.userId },
@@ -44,9 +47,7 @@ export function startReminderScheduler(client: Client): void {
           logger.warn({ reminderId: reminder.id, error }, 'Channel delivery failed, attempting DM fallback')
           try {
             const user = await client.users.fetch(reminder.userId)
-            await user.send(
-              `Hey~ you asked me to remind you: "${reminder.reminder}" \u266a\n\n-# (Sent as DM because I couldn't reach the original channel)`
-            )
+            await user.send(fillLine(character.lines.reminders.deliveredByDm, { task: reminder.reminder }))
             markDelivered(reminder.id)
             logger.info(
               { reminderId: reminder.id, userId: reminder.userId },

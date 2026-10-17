@@ -10,6 +10,8 @@ import type { WatchOutcome } from '../agent/media/types.js'
 import type { ToneKey } from '../agent/prompts/tones.js'
 import { splitAtDividers } from '../agent/replyBlocks.js'
 import type { ReplyOutcome } from '../agent/replyOutcomes.js'
+import { character } from '../character/index.js'
+import { fillLine } from '../character/lines.js'
 import { logger } from '../utils/logger.js'
 import { fitCitations } from './citations.js'
 import { getExpressionUrl } from './expressions.js'
@@ -17,21 +19,8 @@ import type { SocialPostLookup } from './socialPosts/types.js'
 import type { SocialPlatform } from './socialPosts/urls.js'
 import { getToneStyle } from './toneStyles.js'
 
-const TOOL_USAGE_LABELS: Record<string, string> = {
-  roll_dice: 'cast the dice',
-  flip_coin: 'tossed a coin',
-  get_current_time: 'checked the clock',
-  get_weather: 'checked the weather',
-  search_web: 'searched the web',
-  search_anime: 'looked up anime',
-  get_anime_schedule: 'checked airing times',
-  set_reminder: 'set a reminder',
-  list_reminders: 'listed reminders',
-  cancel_reminder: 'cancelled a reminder',
-  remember_user: 'saved a memory',
-  recall_user: 'recalled a memory',
-  forget_user: 'forgot a memory'
-}
+const FOOTER_LINES = character.lines.footers
+const TOOL_USAGE_LABELS: Readonly<Record<string, string>> = FOOTER_LINES.tools
 
 const SOCIAL_POST_KINDS: Record<SocialPlatform, string> = {
   x: 'X post',
@@ -58,25 +47,26 @@ const SOCIAL_PLATFORM_NAMES: Record<SocialPlatform, string> = {
 // A linked post is read before the model runs, so it never appears in toolsUsed; without its own label the
 // reader cannot tell whether she saw the post or only searched around it.
 function socialPostLabel(outcome: 'found' | 'failed', platform: SocialPlatform): string {
-  return `${outcome === 'found' ? 'peeked at' : "couldn't open"} the ${SOCIAL_POST_KINDS[platform]}`
+  return fillLine(FOOTER_LINES.post[outcome], { post: SOCIAL_POST_KINDS[platform] })
 }
 
-const REPLY_OUTCOME_LABELS = { found: 'read the replies', failed: "couldn't read the replies" } as const
+const REPLY_OUTCOME_LABELS = FOOTER_LINES.replies
 
 // A watch runs before the model, like a post lookup, and the footer is the one place a reader can check whether
 // she really watched what she talks about. How much she watched is a word, not times: the reply cites moments.
 const WATCH_NOUNS = { video: 'video', audio: 'clip' } as const
 
 function watchLabel(outcome: WatchOutcome, noun: string = WATCH_NOUNS[outcome.kind]): string {
-  const heard = outcome.kind === 'audio'
-  if (outcome.status !== 'watched') {
-    return outcome.status === 'failed' ? `couldn't ${heard ? 'hear' : 'watch'} the ${noun}` : `remembered the ${noun}`
-  }
-  if (outcome.coverage === 'skim') return `skimmed the ${noun}`
-  const watched = heard ? 'heard' : 'watched'
-  if (outcome.coverage === 'whole') return `${watched} the ${noun}`
-  const most = outcome.endSec - outcome.startSec >= outcome.durationSec / 2
-  return `${watched} ${most ? 'most' : 'part'} of the ${noun}`
+  const lines = FOOTER_LINES.watch[outcome.kind]
+  const label =
+    outcome.status !== 'watched'
+      ? lines[outcome.status]
+      : outcome.coverage !== 'part'
+        ? lines[outcome.coverage]
+        : outcome.endSec - outcome.startSec >= outcome.durationSec / 2
+          ? lines.most
+          : lines.part
+  return fillLine(label, { media: noun })
 }
 
 // A linked post's own video gets one label naming the platform rather than a post label and a watch label.
@@ -103,7 +93,7 @@ const POST_MEDIA_LABELS = PLATFORMS.flatMap((platform) =>
 )
 // Footers from before the post and watch labels merged say `peeked at the …` with the watch separate.
 const OPENED_POST_LABELS = [
-  ...Object.values(SOCIAL_POST_KINDS).map((kind) => `peeked at the ${kind}`),
+  ...Object.values(SOCIAL_POST_KINDS).map((kind) => fillLine(FOOTER_LINES.post.found, { post: kind })),
   ...POST_MEDIA_LABELS
 ]
 

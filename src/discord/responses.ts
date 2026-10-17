@@ -1,61 +1,24 @@
+import { character } from '../character/index.js'
 import { config } from '../config.js'
 
 /** In-character response pools for rate limiting and error handling */
 
-const DECLINE_MESSAGES = [
-  'ちょっと待ってね~ Give me a moment.',
-  "Mou~ I'm a bit busy right now. Hold on, okay?",
-  'Ara~ so impatient. Just a little bit longer~',
-  "Fufu~ everyone's talking at once. Let me catch my breath.",
-  "Ah, sorry — I'm in the middle of something. I'll be right back!"
-]
-
-const BUSY_MESSAGES = [
-  "I'm still thinking~ just a moment, okay?",
-  "Mou~ hold on, I haven't finished my thought yet!",
-  "Ah, wait wait — I'm still working on my answer~",
-  'Fufu~ so eager. Let me finish what I was saying first!',
-  "One thing at a time~ I'm almost done, I promise!"
-]
-
-const ERROR_MESSAGES = [
-  'Nn... something feels off. Let me try again in a bit, okay?',
-  "Ah, that's strange... my thoughts got all jumbled up. Give me a moment.",
-  'Mou, I lost my train of thought... sorry about that.'
-]
+const DECLINE_MESSAGES = character.lines.replies.decline
+const BUSY_MESSAGES = character.lines.replies.busy
+const ERROR_MESSAGES = character.lines.replies.error
 
 // Appended to a normal reply when someone attaches something she cannot open. Silence reads as
 // hallucination or evasion — she answers the question and says plainly that the file was not one of them.
-const UNSUPPORTED_ATTACHMENT_MESSAGES = [
-  "Ah — I couldn't open that file, sorry~ Could you tell me what's in it?",
-  "Mou~ that kind of file is beyond me. Describe it for me and I'll help!",
-  "Nn... I can't peek inside that one. Images I can see, but not that~",
-  "Sorry, that attachment isn't something I can look at — but I'm listening!"
-]
+const UNSUPPORTED_ATTACHMENT_MESSAGES = character.lines.attachments.unsupported
 
 // A file too big to take whole is sent as its opening minutes instead. Saying so is the difference between
 // a partial answer and a confident wrong one — she genuinely did not hear the end.
-const PARTIAL_ATTACHMENT_MESSAGES = [
-  'That one was rather long, so I only got through the beginning of it~',
-  'Mm, too big to take all at once — I only saw the first part, so ask me again if the rest matters!',
-  "Nn... that's a big one. I stopped partway through, so I might have missed the ending~",
-  'I could only manage the opening of that — it was much too long for me to take in one go!'
-]
+const PARTIAL_ATTACHMENT_MESSAGES = character.lines.attachments.partial
 
 /** Attachments refused on measured cost: intact and readable, just too expensive to spend one turn on. */
-const OVERSIZED_ATTACHMENT_MESSAGES = [
-  "That's far too much for me to take in all at once~ Send me a smaller piece and I'll look properly.",
-  'Mou, that would take me all afternoon to get through! Something shorter, please?',
-  "Ara, you've given me enough to read for a week. Trim it down a little for me?",
-  "That's a bit much for one sitting, ne? Give me a shorter one and I'll go through it properly."
-]
+const OVERSIZED_ATTACHMENT_MESSAGES = character.lines.attachments.oversized
 
-const SKIPPED_ATTACHMENT_MESSAGES = [
-  'Ara~ that is more than I can peek at in one go! I looked at the first ones; send the rest separately, ne~',
-  'Mou~ I can only look through so many at once! I opened the first ones, so send the others in another message.',
-  'Fufu, that was a lot to browse in one sitting~ I checked the first ones; bring me the rest separately, okay?',
-  'Whoa, too many for one look! I took the first ones, so send the rest in a separate message, okay?'
-]
+const SKIPPED_ATTACHMENT_MESSAGES = character.lines.attachments.skipped
 
 export function getRandomOversizedAttachment(): string {
   return OVERSIZED_ATTACHMENT_MESSAGES[Math.floor(Math.random() * OVERSIZED_ATTACHMENT_MESSAGES.length)]

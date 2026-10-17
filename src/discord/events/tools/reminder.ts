@@ -3,10 +3,14 @@
 import { ContainerBuilder, TextDisplayBuilder } from '@discordjs/builders'
 import type { ChatInputCommandInteraction } from 'discord.js'
 import { MessageFlags } from 'discord.js'
+import { character } from '../../../character/index.js'
+import { fillLine } from '../../../character/lines.js'
 import { config } from '../../../config.js'
 import { createReminder, deleteReminder, getActiveReminders, getReminderById } from '../../../storage/reminderStore.js'
 import { getTimezoneLabel } from '../../../utils/timezone.js'
 import { FLAVOR, PLAYFUL_COLOR, buildToolMessage, randomFrom } from './shared.js'
+
+const LINES = character.lines.reminders
 
 export function handleRemind(interaction: ChatInputCommandInteraction) {
   const subcommand = interaction.options.getSubcommand()
@@ -23,8 +27,13 @@ export function handleRemind(interaction: ChatInputCommandInteraction) {
     case 'cancel':
       return handleRemindCancel(interaction, userId)
     default:
-      return buildToolMessage("Hmm, I don't know that subcommand~", PLAYFUL_COLOR)
+      return buildToolMessage(LINES.unknown, PLAYFUL_COLOR)
   }
+}
+
+function dueSlots(dueAt: number) {
+  const dueTimestamp = Math.floor(dueAt / 1000)
+  return { when: `<t:${dueTimestamp}:R>`, time: `<t:${dueTimestamp}:t>`, timezone: getTimezoneLabel() }
 }
 
 function handleRemindIn(interaction: ChatInputCommandInteraction, userId: string, channelId: string) {
@@ -35,13 +44,11 @@ function handleRemindIn(interaction: ChatInputCommandInteraction, userId: string
   const result = createReminder(userId, channelId, task, dueAt)
 
   if (!result.success) {
-    return buildToolMessage(`Mou~ ${result.message}`, PLAYFUL_COLOR)
+    return buildToolMessage(fillLine(LINES.refused, { reason: result.message }), PLAYFUL_COLOR)
   }
 
   const flavor = randomFrom(FLAVOR.remind)
-  const dueTimestamp = Math.floor(dueAt / 1000)
-  const tzLabel = getTimezoneLabel()
-  const text = `${flavor}\n\n\u23F0 **Reminder set!** I'll remind you <t:${dueTimestamp}:R> (<t:${dueTimestamp}:t> ${tzLabel})`
+  const text = `${flavor}\n\n${fillLine(LINES.setIn, dueSlots(dueAt))}`
   return buildToolMessage(text, PLAYFUL_COLOR)
 }
 
@@ -80,13 +87,11 @@ function handleRemindAt(interaction: ChatInputCommandInteraction, userId: string
   const result = createReminder(userId, channelId, task, dueAt)
 
   if (!result.success) {
-    return buildToolMessage(`Mou~ ${result.message}`, PLAYFUL_COLOR)
+    return buildToolMessage(fillLine(LINES.refused, { reason: result.message }), PLAYFUL_COLOR)
   }
 
   const flavor = randomFrom(FLAVOR.remind)
-  const dueTimestamp = Math.floor(dueAt / 1000)
-  const tzLabel = getTimezoneLabel()
-  const text = `${flavor}\n\n\u23F0 **Reminder set for <t:${dueTimestamp}:t> ${tzLabel}!** I'll remind you <t:${dueTimestamp}:R>`
+  const text = `${flavor}\n\n${fillLine(LINES.setAt, dueSlots(dueAt))}`
   return buildToolMessage(text, PLAYFUL_COLOR)
 }
 
@@ -94,7 +99,7 @@ function handleRemindList(userId: string) {
   const reminders = getActiveReminders(userId)
 
   if (reminders.length === 0) {
-    return buildToolMessage('No active reminders~', PLAYFUL_COLOR)
+    return buildToolMessage(LINES.none, PLAYFUL_COLOR)
   }
 
   const lines = reminders.map((r) => {
@@ -118,16 +123,13 @@ function handleRemindCancel(interaction: ChatInputCommandInteraction, userId: st
   const reminder = getReminderById(id)
 
   if (!reminder) {
-    return buildToolMessage("Hmm, I couldn't find that reminder~ Maybe it already went off?", PLAYFUL_COLOR)
+    return buildToolMessage(LINES.notFound, PLAYFUL_COLOR)
   }
 
   if (reminder.userId !== userId) {
-    return buildToolMessage(
-      "That reminder doesn't belong to you~ You can only cancel your own reminders!",
-      PLAYFUL_COLOR
-    )
+    return buildToolMessage(LINES.notYours, PLAYFUL_COLOR)
   }
 
   deleteReminder(id)
-  return buildToolMessage(`Got it~ Cancelled reminder **#${id}**: "${reminder.reminder}"`, PLAYFUL_COLOR)
+  return buildToolMessage(fillLine(LINES.cancelled, { id, task: reminder.reminder }), PLAYFUL_COLOR)
 }

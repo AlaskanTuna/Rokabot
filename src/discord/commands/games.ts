@@ -1,6 +1,7 @@
 /** Slash command definitions for game features */
 
 import { ApplicationIntegrationType, InteractionContextType, SlashCommandBuilder } from 'discord.js'
+import { character } from '../../character/index.js'
 
 export const gachaCommand = new SlashCommandBuilder()
   .setName('gacha')
@@ -17,7 +18,7 @@ export const gachaCommand = new SlashCommandBuilder()
 
 export const hangmanCommand = new SlashCommandBuilder()
   .setName('hangman')
-  .setDescription('Play Hangman with Roka!')
+  .setDescription(character.lines.commands.hangman)
   .setIntegrationTypes(ApplicationIntegrationType.GuildInstall)
   .setContexts(InteractionContextType.Guild)
   .addSubcommand((sub) => sub.setName('start').setDescription('Start a new game'))
@@ -34,7 +35,7 @@ export const hangmanCommand = new SlashCommandBuilder()
 
 export const shiritoriCommand = new SlashCommandBuilder()
   .setName('shiritori')
-  .setDescription('Play Shiritori (word chain) with Roka!')
+  .setDescription(character.lines.commands.shiritori)
   .setIntegrationTypes(ApplicationIntegrationType.GuildInstall)
   .setContexts(InteractionContextType.Guild)
   .addSubcommand((sub) => sub.setName('start').setDescription('Start a new game'))

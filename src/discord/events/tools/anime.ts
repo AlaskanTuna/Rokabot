@@ -4,6 +4,8 @@ import { ActionRowBuilder, ButtonBuilder, ContainerBuilder, TextDisplayBuilder }
 import type { ChatInputCommandInteraction } from 'discord.js'
 import { ButtonStyle, ComponentType, MessageFlags } from 'discord.js'
 import { type SearchAnimeParams, searchAnime } from '../../../agent/tools/searchAnime.js'
+import { character } from '../../../character/index.js'
+import { fillLine } from '../../../character/lines.js'
 import { CURIOUS_COLOR, FLAVOR, buildToolMessage, randomFrom } from './shared.js'
 
 export async function handleAnime(interaction: ChatInputCommandInteraction) {
@@ -28,7 +30,7 @@ export async function handleAnime(interaction: ChatInputCommandInteraction) {
 
   if (result.results.length === 0) {
     const label = query ? `"${query}"` : 'those filters'
-    const text = `${flavor}\n\nHmm, I couldn't find anything for ${label}... Maybe try something different?`
+    const text = `${flavor}\n\n${fillLine(character.lines.tools.noAnime, { search: label })}`
     return buildToolMessage(text, CURIOUS_COLOR)
   }
 
@@ -96,7 +98,7 @@ export async function handleAnime(interaction: ChatInputCommandInteraction) {
 
   collector.on('collect', async (btnInteraction) => {
     if (btnInteraction.user.id !== interaction.user.id) {
-      await btnInteraction.reply({ content: "Those buttons aren't for you~", flags: MessageFlags.Ephemeral })
+      await btnInteraction.reply({ content: character.lines.tools.notYours, flags: MessageFlags.Ephemeral })
       return
     }
 

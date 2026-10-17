@@ -1,6 +1,7 @@
 /** Hangman game command handlers */
 
 import type { ChatInputCommandInteraction } from 'discord.js'
+import { character } from '../../../character/index.js'
 import {
   getGame,
   getHangmanArt,
@@ -186,7 +187,7 @@ export function handleHangmanGuide() {
     accentColor: 0xb0c4de,
     title: '\uD83C\uDFAF How to Play Hangman',
     body: [
-      'Roka picks a secret word from her collection of anime, food, and Japanese culture terms. Your job is to guess it!',
+      `${character.name} picks a secret word from her collection of anime, food, and Japanese culture terms. Your job is to guess it!`,
       '',
       '**Commands:**',
       '\u2022 `/hangman start` \u2014 Start a new game',

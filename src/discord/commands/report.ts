@@ -1,10 +1,11 @@
 /** /report slash command definition for filing a bug report with Roka */
 
 import { ApplicationIntegrationType, InteractionContextType, SlashCommandBuilder } from 'discord.js'
+import { character } from '../../character/index.js'
 
 export const reportCommand = new SlashCommandBuilder()
   .setName('report')
-  .setDescription('File a bug report for Roka')
+  .setDescription(character.lines.commands.report)
   .setIntegrationTypes(ApplicationIntegrationType.GuildInstall, ApplicationIntegrationType.UserInstall)
   .setContexts(InteractionContextType.Guild, InteractionContextType.BotDM, InteractionContextType.PrivateChannel)
   .addStringOption((option) =>
