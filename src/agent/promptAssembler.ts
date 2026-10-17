@@ -1,7 +1,6 @@
-import { buildContextPrompt } from './prompts/context.js'
-import { CORE_PROMPT, CORE_PROMPT_FORGET_ONLY, CORE_PROMPT_MEMORY_FREE } from './prompts/core.js'
-import { SPEECH_PROMPT } from './prompts/speech.js'
-import { TONE_PROMPTS, type ToneKey } from './prompts/tones.js'
+import { character } from '../character/index.js'
+import { assembleSystemPrompt as assembleForCharacter } from '../character/prompt.js'
+import type { ToneKey } from './prompts/tones.js'
 
 export interface AssemblerInput {
   tone: ToneKey
@@ -15,19 +14,15 @@ export interface AssemblerInput {
 
 /** Assemble the full system prompt from all 4 layers */
 export function assembleSystemPrompt(input: AssemblerInput): string {
-  const layers = [
-    input.memory ? (input.forgetOnly ? CORE_PROMPT_FORGET_ONLY : CORE_PROMPT) : CORE_PROMPT_MEMORY_FREE,
-    SPEECH_PROMPT,
-    TONE_PROMPTS[input.tone],
-    buildContextPrompt(input.hour, input.displayName)
-  ]
-
-  return layers.join('\n\n')
+  return assembleForCharacter(character, {
+    mood: input.tone,
+    hour: input.hour,
+    displayName: input.displayName,
+    memory: input.memory ? (input.forgetOnly ? 'forget' : 'full') : 'none'
+  })
 }
 
-const STABLE_PREFIXES = [CORE_PROMPT, CORE_PROMPT_FORGET_ONLY, CORE_PROMPT_MEMORY_FREE].map(
-  (core) => `${core}\n\n${SPEECH_PROMPT}`
-)
+const STABLE_PREFIXES = [character.prompts.stable.full, character.prompts.stable.forget, character.prompts.stable.none]
 
 /** Splits off the core and speech layers, which never change between turns, so a provider can cache them. */
 export function splitStablePrefix(prompt: string): { stable: string; rest: string } | undefined {

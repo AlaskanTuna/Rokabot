@@ -1,0 +1,44 @@
+paragraphs:
+  quick: [{ count: 1, weight: 1 }]
+  ordinary: [{ count: 1, weight: 1 }, { count: 2, weight: 1 }]
+  rich: [{ count: 2, weight: 1 }]
+lengths:
+  1: one short paragraph.
+  2: two short paragraphs.
+  3: three short paragraphs.
+openers:
+  content:
+    instruction: Open with your answer.
+  soft:
+    words: ['Well,']
+    instruction: Open with "{{word}}".
+  particle:
+    words: [Hm~]
+    instruction: Open with "{{word}}".
+  gasp:
+    words: [Oh!]
+    instruction: Open with "{{word}}".
+  comedy:
+    bits: [a dry joke]
+    instruction: Open with {{bit}}.
+  name:
+    instruction: Open with "{{user}}".
+endings:
+  statement: { weight: 1, line: on a statement. }
+  question: { weight: 1, line: with a question. }
+  aside: { weight: 1, line: on an aside. }
+faces:
+  calm: ['(^_^)', '(-_-)']
+hardLineFaces: [calm]
+threats:
+  - { text: a stern look, seen: 'stern' }
+note:
+  header: '## Reply Shape'
+  intro: For this reply only.
+  length: '- Length: {{length}}'
+  open: '- Open: {{opener}}'
+  end: '- End: {{ending}}'
+  faces: '- Faces: {{faces}}.'
+  lewd: '- Dodge it with {{threat}}.'
+  hard: '- Refuse it as {{char}}, with {{threat}}.'
+  nameOnce: '- Use their name at most once.'

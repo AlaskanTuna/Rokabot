@@ -1,0 +1,11 @@
+default: calm
+safe: calm
+moods:
+  calm:
+    faces: [calm]
+    judge: anything at all
+    color: '#88aacc'
+    placeholder: https://placehold.co/80x80/88AACC/white?text=M
+    emoji: 🍃
+    adjective: calm
+    season: A Calm Season

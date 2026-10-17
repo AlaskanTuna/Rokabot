@@ -1,0 +1,375 @@
+default: playful
+safe: sincere
+lateNight: { mood: sleepy, from: 22, to: 5 }
+detection:
+  - mood: flustered
+    minMatches: 2
+    patterns:
+      - '\blove\b'
+      - '\bcrush\b'
+      - '\bdate\b'
+      - '\bkiss\b'
+      - '\bcute\b'
+      - '\bhandsome\b'
+      - '\bpretty\b'
+      - '\bbeautiful\b'
+      - '\bheart\b'
+      - '\bblush\b'
+      - '\bflirt'
+      - '\bromantic'
+      - '\bmarry'
+      - '\bgirlfriend\b'
+      - '\bboyfriend\b'
+      - '\bconfess'
+      - '\bwife\b'
+      - '\bhusband\b'
+      - '❤|💕|💗|😘|😍|🥰'
+  - mood: tender
+    minMatches: 2
+    patterns:
+      - '\bmiss\b'
+      - '\bworried\b'
+      - '\bscared\b'
+      - '\balone\b'
+      - '\bthank you\b'
+      - '\bgrateful\b'
+      - '\bmean.* a lot\b'
+      - '\bimportant to me\b'
+      - '\bgoodnight\b'
+      - '\bsweet dreams\b'
+      - '\btake care\b'
+      - '\bstay safe\b'
+      - '\balways\b'
+      - '\bpromise\b'
+      - '\btogether\b'
+  - mood: curious
+    minMatches: 2
+    patterns:
+      - '\bwhat\b'
+      - '\bhow\b'
+      - '\bwhy\b'
+      - '\bexplain\b'
+      - '\btell me about\b'
+      - '\binteresting\b'
+      - '\bwonder\b'
+      - '\bcurious\b'
+      - '\blearn\b'
+      - '\bthink about\b'
+      - '\btheory\b'
+  - mood: annoyed
+    minMatches: 2
+    patterns:
+      - '\bwon''t\b'
+      - '\brefuse\b'
+      - '\bdon''t want to\b'
+      - '\bno way\b'
+      - '\bnot fair\b'
+      - '\bskipped? (?:lunch|dinner|breakfast|meal)'
+      - '\bdidn''t eat\b'
+      - '\bstayed up\b'
+      - '\ball.?nighter\b'
+      - '\bold\b'
+      - '\bobaa?san\b'
+      - '\bgranny\b'
+      - '\bboring\b'
+      - '\bwhatever\b'
+      - '\bdon''t care\b'
+  - mood: sleepy
+    minMatches: 2
+    patterns:
+      - '\bsleepy\b'
+      - '\btired\b'
+      - '\byawn\b'
+      - '\bbed\b'
+      - '\bcan''t sleep\b'
+      - '\bdrowsy\b'
+      - '\bnap\b'
+      - '\bexhausted\b'
+      - '\brest\b'
+      - '\bzzz\b'
+      - '💤'
+      - '😴'
+  - mood: sincere
+    minMatches: 2
+    patterns:
+      - '\bsad\b'
+      - '\blonely\b'
+      - '\btired\b'
+      - '\bstress'
+      - '\banxious'
+      - '\bsorry\b'
+      - '\bhurt\b'
+      - '\bcrying\b'
+      - '\bdepressed'
+      - '\bfail'
+      - '\bfrustrat'
+      - '\boverwel'
+      - '\bafraid'
+      - '\bexhaust'
+      - '😢|😭|🥺|💔'
+  - mood: nostalgic
+    minMatches: 2
+    patterns:
+      - '\bremember\b'
+      - '\bmemories\b'
+      - '\bback then\b'
+      - '\bpast\b'
+      - '\bchildhood\b'
+      - '\bnostalgia\b'
+      - '\bused to\b'
+      - '\bold days\b'
+      - '\bthose days\b'
+      - '\blong ago\b'
+      - '\bwhen I was\b'
+      - '\bmiss those\b'
+  - mood: domestic
+    minMatches: 2
+    patterns:
+      - '\bfood\b'
+      - '\bcook'
+      - '\brecipe'
+      - '\btea\b'
+      - '\bbreakfast\b'
+      - '\blunch\b'
+      - '\bdinner\b'
+      - '\bsleep'
+      - '\bmorning\b'
+      - '\bweather\b'
+      - '\brain\b'
+      - '\bcold\b'
+      - '\bwarm\b'
+      - '\bhungry'
+      - '\bhome\b'
+      - '\bsnack'
+      - '\bcoffee\b'
+      - '\bclean'
+      - '🍵|🍳|🏠|☔|🌸'
+  - mood: mischievous
+    minMatches: 2
+    patterns:
+      - '\bdare\b'
+      - '\bprank\b'
+      - '\bsecret\b'
+      - '\bbet\b'
+      - '\bsneak\b'
+      - '\bscheme\b'
+      - '\btrick\b'
+      - '\bsurprise\b'
+      - '\bplot\b'
+      - '\bplan something\b'
+      - '\blet''s do something\b'
+      - '\bidea\b'
+  - mood: competitive
+    minMatches: 2
+    patterns:
+      - '\bgame\b'
+      - '\bwin\b'
+      - '\blose\b'
+      - '\bscore\b'
+      - '\bmatch\b'
+      - '\bversus\b'
+      - '\bchallenge\b'
+      - '\bbeat\b'
+      - '\blet''s play\b'
+      - '\bcompete\b'
+      - '\btournament\b'
+      - '\brematch\b'
+      - '🏆'
+      - '🎮'
+  - mood: confident
+    minMatches: 2
+    patterns:
+      - '\bleave it to me\b'
+      - '\bdon''t worry\b'
+      - '\bi''ve got this\b'
+      - '\btrust me\b'
+      - '\badvice\b'
+      - '\bhelp me with\b'
+      - '\bwhat should I\b'
+      - '\brecommend\b'
+      - '\bhow do I\b'
+      - '\bteach me\b'
+      - '\bshow me\b'
+      - '\bneed your help\b'
+      - '\bcan you help\b'
+moods:
+  playful:
+    prompt: moods/playful
+    faces: [happy, teasing, smug]
+    beats: { flirt: 0.55, oneesan: 0.25, drama: 0.3 }
+    judge: casual banter, jokes or light small talk; the default when nothing else fits
+    color: '#ffb3d9'
+    placeholder: https://placehold.co/80x80/FFB3D9/white?text=%E2%99%AA
+    portraits: [smile, cheerful, delighted, gentle_smile]
+    emoji: 🎈
+    adjective: lively
+    season: A Playful Little Season
+  sincere:
+    prompt: moods/sincere
+    faces: [soft, sad]
+    judge: a real worry, a serious topic, or a request for honest advice
+    color: '#a8d8ff'
+    placeholder: https://placehold.co/80x80/A8D8FF/white?text=%E2%98%86
+    portraits: [sad, pained, sorrowful]
+    emoji: ✨
+    adjective: heartfelt
+    season: Heartfelt Hours
+  domestic:
+    prompt: moods/domestic
+    faces: [soft, happy]
+    beats: { flirt: 0.55, oneesan: 0.25, drama: 0.15 }
+    judge: food, cooking, meals, chores, home life, or looking after someone
+    color: '#ffd4b5'
+    placeholder: https://placehold.co/80x80/FFD4B5/white?text=%E2%98%95
+    portraits: [content, gentle_smile, relieved]
+    emoji: 🫖
+    adjective: cozy
+    season: A Cozy Little Corner
+  flustered:
+    prompt: moods/flustered
+    faces: [flustered, surprised]
+    beats: { flirt: 0.55, drama: 0.45 }
+    judge: a compliment, flirting, romance, or an embarrassing remark aimed at Roka
+    color: '#ffb3b3'
+    placeholder: https://placehold.co/80x80/FFB3B3/white?text=%2F%2F
+    portraits: [flustered, nervous, awkward]
+    emoji: 💗
+    adjective: easily flustered
+    season: A Flustered Little Moment
+  curious:
+    prompt: moods/curious
+    faces: [surprised, happy]
+    beats: { flirt: 0.25, oneesan: 0.15, drama: 0.2 }
+    judge: something new or interesting is shared, or a topic worth exploring
+    color: '#b2ebf2'
+    placeholder: https://placehold.co/80x80/B2EBF2/white?text=%3F
+    portraits: [thinking, surprised, blank_stare]
+    emoji: 🔎
+    adjective: inquisitive
+    season: Curiosity Is Calling
+  annoyed:
+    prompt: moods/annoyed
+    faces: [pouty, teasing]
+    beats: { flirt: 0.4, oneesan: 0.25, drama: 0.4 }
+    judge: Roka is being teased, ignored, or treated rudely, or someone repeats something she dislikes
+    color: '#f8b4b8'
+    placeholder: https://placehold.co/80x80/F8B4B8/white?text=%E2%80%BC
+    portraits: [exasperated, dissatisfied, dissatisfied_2]
+    emoji: ⚡
+    adjective: feisty
+    season: A Fond Little Fuss
+  tender:
+    prompt: moods/tender
+    faces: [soft, flustered]
+    beats: { flirt: 0.35 }
+    judge: someone is sad, lonely or hurting, or says something heartfelt and affectionate
+    color: '#e1bee7'
+    placeholder: https://placehold.co/80x80/E1BEE7/white?text=%E2%99%A5
+    portraits: [worried, troubled, anxious]
+    emoji: 🌷
+    adjective: gentle
+    season: A Gentle Little Glow
+  confident:
+    prompt: moods/confident
+    faces: [smug, happy]
+    beats: { flirt: 0.55, oneesan: 0.25, drama: 0.2 }
+    judge: someone asks Roka for help or guidance, or for her to take charge
+    color: '#c8e6c9'
+    placeholder: https://placehold.co/80x80/C8E6C9/white?text=%E2%9C%93
+    portraits: [composed, base, explaining]
+    emoji: 🏆
+    adjective: bold
+    season: Quietly In Command
+  nostalgic:
+    prompt: moods/nostalgic
+    faces: [soft, sad]
+    judge: memories, the past, old times, or how things have changed
+    color: '#d4a574'
+    placeholder: https://placehold.co/80x80/D4A574/white?text=%E2%98%86
+    portraits: [melancholy, downcast, somber]
+    emoji: 📖
+    adjective: sentimental
+    season: Pages of Yesterday
+  mischievous:
+    prompt: moods/mischievous
+    faces: [smug, teasing]
+    beats: { flirt: 0.55, oneesan: 0.25, drama: 0.35 }
+    judge: pranks, schemes, dares, or playful plotting
+    color: '#ffd700'
+    placeholder: https://placehold.co/80x80/FFD700/white?text=%E2%9C%A7
+    portraits: [delighted, attentive]
+    emoji: 🦊
+    adjective: cheeky
+    season: Mischief Is Afoot
+  sleepy:
+    prompt: moods/sleepy
+    faces: [soft, sad]
+    beats: { flirt: 0.35 }
+    judge: late-night chat, tiredness, or going to bed
+    color: '#b0c4de'
+    placeholder: https://placehold.co/80x80/B0C4DE/white?text=%E2%98%BD
+    portraits: [serene, resigned]
+    emoji: 🌙
+    adjective: drowsy
+    season: A Sleepy Little Hush
+  competitive:
+    prompt: moods/competitive
+    faces: [fired, smug, pouty]
+    beats: { flirt: 0.4, oneesan: 0.2, drama: 0.45 }
+    judge: games, challenges, contests, bets or rivalry
+    color: '#ff6b6b'
+    placeholder: https://placehold.co/80x80/FF6B6B/white?text=%E2%9A%94
+    portraits: [frustrated, dissatisfied_3, uncertain]
+    emoji: 🥇
+    adjective: spirited
+    season: Game Faces On
+moodPairs:
+  'domestic:flustered': A Cozy Little Panic
+  'playful:mischievous': Full Teasing Season
+  'sincere:tender': Soft Hearts, Open Doors
+  'curious:playful': Curious Little Sparks
+  'confident:competitive': A Proper Challenge
+  'nostalgic:tender': Warm Pages Turning
+  'sleepy:domestic': Tea Before Bedtime
+  'annoyed:flustered': A Blushing Little Fuss
+  'playful:flustered': Teasing With a Pink Cheek
+  'mischievous:competitive': Mischief Meets Its Match
+  'sincere:domestic': A Gentle Everyday
+  'curious:nostalgic': Old Stories, New Questions
+  'confident:playful': Bright and Unbothered
+  'tender:flustered': A Shy Little Heart
+  'annoyed:playful': Fondly Exasperated
+portraitUrls:
+  anxious: https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/expressions/v1/anxious.webp
+  attentive: https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/expressions/v1/attentive.webp
+  awkward: https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/expressions/v1/awkward.webp
+  base: https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/expressions/v1/base.webp
+  blank_stare: https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/expressions/v1/blank_stare.webp
+  cheerful: https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/expressions/v1/cheerful.webp
+  composed: https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/expressions/v1/composed.webp
+  content: https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/expressions/v1/content.webp
+  delighted: https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/expressions/v1/delighted.webp
+  dissatisfied: https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/expressions/v1/dissatisfied.webp
+  dissatisfied_2: https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/expressions/v1/dissatisfied_2.webp
+  dissatisfied_3: https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/expressions/v1/dissatisfied_3.webp
+  downcast: https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/expressions/v1/downcast.webp
+  exasperated: https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/expressions/v1/exasperated.webp
+  explaining: https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/expressions/v1/explaining.webp
+  flustered: https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/expressions/v1/flustered.webp
+  frustrated: https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/expressions/v1/frustrated.webp
+  gentle_smile: https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/expressions/v1/gentle_smile.webp
+  melancholy: https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/expressions/v1/melancholy.webp
+  nervous: https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/expressions/v1/nervous.webp
+  pained: https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/expressions/v1/pained.webp
+  relieved: https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/expressions/v1/relieved.webp
+  resigned: https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/expressions/v1/resigned.webp
+  sad: https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/expressions/v1/sad.webp
+  serene: https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/expressions/v1/serene.webp
+  smile: https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/expressions/v1/smile.webp
+  somber: https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/expressions/v1/somber.webp
+  sorrowful: https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/expressions/v1/sorrowful.webp
+  surprised: https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/expressions/v1/surprised.webp
+  thinking: https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/expressions/v1/thinking.webp
+  troubled: https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/expressions/v1/troubled.webp
+  uncertain: https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/expressions/v1/uncertain.webp
+  worried: https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/expressions/v1/worried.webp
