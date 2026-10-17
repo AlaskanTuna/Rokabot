@@ -10,6 +10,8 @@
     "tests/**/*",
     "scripts/measure-prefetch.ts",
     "scripts/probe-llm-profile.ts",
+    "scripts/character.ts",
+    "scripts/__tests__/character.test.ts",
     "sidecar/embeddings/src/embedder.ts",
     "sidecar/embeddings/src/handler.ts",
     "sidecar/embeddings/src/__tests__/**/*",

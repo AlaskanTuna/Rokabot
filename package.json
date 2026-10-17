@@ -34,7 +34,8 @@
     "reports": "tsx scripts/reports.ts",
     "memory:replay": "tsx scripts/replay-memory-v2.ts",
     "memory:replay:live": "ROKABOT_MEMORY_REPLAY_LIVE=1 tsx scripts/replay-memory-v2.ts --live",
-    "replay:jev": "tsx scripts/replay-jev.ts"
+    "replay:jev": "tsx scripts/replay-jev.ts",
+    "character": "tsx scripts/character.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.133.0",
