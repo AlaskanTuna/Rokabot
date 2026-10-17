@@ -1,0 +1,136 @@
+replies:
+  decline: [One moment please.]
+  busy: [Still thinking.]
+  error: [Something went wrong.]
+attachments:
+  unsupported: [I could not open that file.]
+  partial: [I only read the start of that.]
+  oversized: [That file is too large to read.]
+  skipped: [I only looked at the first few.]
+reliability:
+  safety: Let us talk about something else.
+  recitation: I should not repeat that.
+  terminal: Something broke. Try again later.
+  empty: [Sorry. Say that again?]
+tools:
+  error: [That did not work.]
+  flavor:
+    anime: [Searching.]
+    schedule: [Checking the schedule.]
+    remind: [Noted.]
+  notYours: Those buttons are not yours.
+  noAnime: Nothing found for {{search}}.
+  noSchedule: Nothing found.
+reminders:
+  unknown: I do not know that one.
+  refused: '{{reason}}'
+  setIn: Reminder set for {{when}} ({{time}} {{timezone}}).
+  setAt: Reminder set for {{time}} {{timezone}}, {{when}}.
+  none: No reminders.
+  notFound: No such reminder.
+  notYours: That reminder is not yours.
+  cancelled: 'Cancelled #{{id}}: {{task}}'
+  delivered: '{{mention}}, a reminder: {{task}}'
+  deliveredByDm: 'A reminder: {{task}}'
+games:
+  error: Something went wrong.
+  hangmanTimeout: Time is up. The word was {{word}}.
+  shiritoriWinner: '{{player}} ran out of time. {{winner}} wins!'
+  shiritoriNext: '{{player}} ran out of time. Your turn, {{next}}.'
+status:
+  - { from: 6, to: 18, lines: [Reading.] }
+  - { from: 18, to: 6, lines: [Resting.] }
+commands:
+  ask: Ask {{char}} anything
+  remind: Ask {{char}} to remind you
+  hangman: Play Hangman with {{char}}
+  shiritori: Play Shiritori with {{char}}
+  stats: See the server notebook
+  report: File a bug report for {{char}}
+stats:
+  notInDms: Stats work only in a server.
+  notYours: These tabs belong to someone else.
+  reachedBy: How People Reach {{char}}
+  knownBest: Who {{char}} Knows Best
+  quietMood: Quiet
+  emptyMood: No mood yet.
+  footers:
+    overview: Thanks for chatting.
+    memory: That is all for now.
+    nerd: All systems normal.
+  remembers:
+    nickname: I know their nickname.
+    language_spoken: I know their languages.
+    nationality: I know where they are from.
+    pronouns: I know their pronouns.
+    pets: I know their pets.
+    daily_routine: I know their routine.
+    diet: I know their diet.
+    general_occupation: I know their work.
+    likes: I know what they like.
+    dislikes: I know what they dislike.
+    favorite_anime: I know their favorite anime.
+    favorite_game: I know their favorite game.
+    favorite_music: I know their favorite music.
+    hobby: I know their hobbies.
+    currently_watching: I know what they watch.
+    relationship_to: I know who they love.
+    friend_group: I know their friends.
+    communication_style: I know how they talk.
+    humor_style: I know their humor.
+    catchphrase: I know their catchphrases.
+    teasing_habit: I know how they tease.
+    recommends: I know what they recommend.
+    complains_about: I know their pet peeves.
+    strong_opinion: I know their opinions.
+    misc: I know something about them.
+  remembersOther: I know their {{label}}.
+  chartColors:
+    background: '#101010'
+    text: '#f0f0f0'
+    mutedText: '#b0b0b0'
+    secondaryText: '#d0d0d0'
+    grid: '#303030'
+    heatmapEmpty: '#202020'
+    heatmapLow: '#203040'
+    heatmapMedium: '#305070'
+    heatmapHigh: '#4070a0'
+    heatmapPeak: '#88aacc'
+    growthStroke: '#88aacc'
+    latencyLine: '#88aacc'
+    latencyLow: '#203040'
+    latencyMedium: '#305070'
+    latencyHigh: '#4070a0'
+    latencyPeak: '#88aacc'
+footers:
+  tools:
+    roll_dice: rolled dice
+    flip_coin: flipped a coin
+    get_current_time: checked the time
+    get_weather: checked the weather
+    search_web: searched the web
+    search_anime: searched anime
+    get_anime_schedule: checked the schedule
+    set_reminder: set a reminder
+    list_reminders: listed reminders
+    cancel_reminder: cancelled a reminder
+    remember_user: saved a memory
+    recall_user: recalled a memory
+    forget_user: forgot a memory
+  post: { found: 'read the {{post}}', failed: 'could not open the {{post}}' }
+  replies: { found: read the replies, failed: could not read the replies }
+  watch:
+    video:
+      whole: watched the {{media}}
+      most: watched most of the {{media}}
+      part: watched part of the {{media}}
+      skim: skimmed the {{media}}
+      remembered: remembered the {{media}}
+      failed: could not watch the {{media}}
+    audio:
+      whole: heard the {{media}}
+      most: heard most of the {{media}}
+      part: heard part of the {{media}}
+      skim: skimmed the {{media}}
+      remembered: remembered the {{media}}
+      failed: could not hear the {{media}}
