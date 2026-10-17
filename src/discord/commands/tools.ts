@@ -1,6 +1,7 @@
 /** Slash command definitions for direct tool invocations */
 
 import { ApplicationIntegrationType, InteractionContextType, SlashCommandBuilder } from 'discord.js'
+import { character } from '../../character/index.js'
 
 export const animeCommand = new SlashCommandBuilder()
   .setName('anime')
@@ -96,7 +97,7 @@ export const animeCommand = new SlashCommandBuilder()
 
 export const remindCommand = new SlashCommandBuilder()
   .setName('remind')
-  .setDescription('Ask Roka to remind you about something!')
+  .setDescription(character.lines.commands.remind)
   .setIntegrationTypes(ApplicationIntegrationType.GuildInstall, ApplicationIntegrationType.UserInstall)
   .setContexts(InteractionContextType.Guild, InteractionContextType.BotDM, InteractionContextType.PrivateChannel)
   .addSubcommand((sub) =>

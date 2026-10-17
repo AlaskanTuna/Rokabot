@@ -3,24 +3,7 @@ import { character } from '../../../character/index.js'
 import { logger } from '../../../utils/logger.js'
 import { getToneStyle } from '../../toneStyles.js'
 
-export const ROKA_CHART_PALETTE = {
-  background: '#17141f',
-  text: '#f6efff',
-  mutedText: '#bfb4ca',
-  secondaryText: '#d9cfdf',
-  grid: '#332b40',
-  heatmapEmpty: '#241f2e',
-  heatmapLow: '#4d2b3d',
-  heatmapMedium: '#8a4a66',
-  heatmapHigh: '#cf6d97',
-  heatmapPeak: '#f7a6c6',
-  growthStroke: '#f7a6c6',
-  latencyLine: '#c4a7e7',
-  latencyLow: '#6f5a94',
-  latencyMedium: '#8f78b8',
-  latencyHigh: '#b295d9',
-  latencyPeak: '#dcc8f7'
-} as const
+export const ROKA_CHART_PALETTE = character.lines.stats.chartColors
 
 function degreeColor(value: number, maximum: number, degrees: readonly [string, string, string, string]): string {
   const ratio = value / Math.max(1, maximum)

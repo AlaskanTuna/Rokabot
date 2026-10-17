@@ -1,6 +1,8 @@
 import { z } from 'zod'
+import { PREDICATES, type PredicateId } from '../agent/memory/predicates.js'
 
 const text = z.string().min(1)
+const color = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'expected a colour like "#ffb3d9"')
 const hour = z.number().int().min(0).max(23)
 const odds = z.number().min(0).max(1)
 const weight = z.number().min(0)
@@ -87,7 +89,7 @@ const moodSchema = z.strictObject({
   faces: z.array(z.string()).min(1),
   beats: z.record(z.string(), odds).default({}),
   judge: text,
-  color: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'expected a colour like "#ffb3d9"'),
+  color,
   placeholder: z.url(),
   portraits: z.array(z.string()).default([]),
   emoji: text,
@@ -112,6 +114,116 @@ export const moodsFileSchema = z.strictObject({
   portraitUrls: z.record(z.string(), z.url()).default({})
 })
 
+const pool = z.array(text).min(1)
+// Discord rejects a slash command whose description is longer.
+const command = text.max(100)
+const watchLines = z.strictObject({ whole: text, most: text, part: text, skim: text, remembered: text, failed: text })
+
+export const linesFileSchema = z.strictObject({
+  replies: z.strictObject({ decline: pool, busy: pool, error: pool }),
+  attachments: z.strictObject({ unsupported: pool, partial: pool, oversized: pool, skipped: pool }),
+  reliability: z.strictObject({ safety: text, recitation: text, terminal: text, empty: pool }),
+  tools: z.strictObject({
+    error: pool,
+    flavor: z.strictObject({ anime: pool, schedule: pool, remind: pool }),
+    notYours: text,
+    noAnime: text,
+    noSchedule: text
+  }),
+  reminders: z.strictObject({
+    unknown: text,
+    refused: text,
+    setIn: text,
+    setAt: text,
+    none: text,
+    notFound: text,
+    notYours: text,
+    cancelled: text,
+    delivered: text,
+    deliveredByDm: text
+  }),
+  games: z.strictObject({ error: text, hangmanTimeout: text, shiritoriWinner: text, shiritoriNext: text }),
+  status: z.array(z.strictObject({ from: hour, to: hour, lines: pool }).refine(...differ)).min(1),
+  commands: z.strictObject({
+    ask: command,
+    remind: command,
+    hangman: command,
+    shiritori: command,
+    stats: command,
+    report: command
+  }),
+  stats: z.strictObject({
+    notInDms: text,
+    notYours: text,
+    reachedBy: text,
+    knownBest: text,
+    quietMood: text,
+    emptyMood: text,
+    footers: z.strictObject({ overview: text, memory: text, nerd: text }),
+    remembers: z.record(z.enum(Object.keys(PREDICATES) as [PredicateId, ...PredicateId[]]), text),
+    remembersOther: text,
+    chartColors: z.strictObject({
+      background: color,
+      text: color,
+      mutedText: color,
+      secondaryText: color,
+      grid: color,
+      heatmapEmpty: color,
+      heatmapLow: color,
+      heatmapMedium: color,
+      heatmapHigh: color,
+      heatmapPeak: color,
+      growthStroke: color,
+      latencyLine: color,
+      latencyLow: color,
+      latencyMedium: color,
+      latencyHigh: color,
+      latencyPeak: color
+    })
+  }),
+  footers: z.strictObject({
+    tools: z.strictObject({
+      roll_dice: text,
+      flip_coin: text,
+      get_current_time: text,
+      get_weather: text,
+      search_web: text,
+      search_anime: text,
+      get_anime_schedule: text,
+      set_reminder: text,
+      list_reminders: text,
+      cancel_reminder: text,
+      remember_user: text,
+      recall_user: text,
+      forget_user: text
+    }),
+    post: z.strictObject({ found: text, failed: text }),
+    replies: z.strictObject({ found: text, failed: text }),
+    watch: z.strictObject({ video: watchLines, audio: watchLines })
+  })
+})
+
+/**
+ * The runtime slots each line may use, by its YAML path; a path covers every line beneath it. Code fills them when
+ * the line is posted, and any other `{{…}}` in lines.yml is a load error.
+ */
+export const LINE_SLOTS: Readonly<Record<string, readonly string[]>> = {
+  'tools.noAnime': ['search'],
+  'reminders.refused': ['reason'],
+  'reminders.setIn': ['when', 'time', 'timezone'],
+  'reminders.setAt': ['when', 'time', 'timezone'],
+  'reminders.cancelled': ['id', 'task'],
+  'reminders.delivered': ['mention', 'task'],
+  'reminders.deliveredByDm': ['task'],
+  'games.hangmanTimeout': ['word'],
+  'games.shiritoriWinner': ['player', 'winner'],
+  'games.shiritoriNext': ['player', 'next'],
+  'stats.remembersOther': ['label'],
+  'footers.post': ['post'],
+  'footers.watch': ['media']
+}
+
 export type CharacterFile = z.output<typeof characterFileSchema>
 export type VoiceFile = z.output<typeof voiceFileSchema>
 export type MoodsFile = z.output<typeof moodsFileSchema>
+export type LinesFile = z.output<typeof linesFileSchema>

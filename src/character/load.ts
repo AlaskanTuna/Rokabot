@@ -2,7 +2,15 @@ import { existsSync, readFileSync } from 'node:fs'
 import { isAbsolute, join, relative, resolve } from 'node:path'
 import yaml from 'js-yaml'
 import type { z } from 'zod'
-import { type VoiceFile, characterFileSchema, moodsFileSchema, voiceFileSchema } from './schema.js'
+import {
+  LINE_SLOTS,
+  type LinesFile,
+  type VoiceFile,
+  characterFileSchema,
+  linesFileSchema,
+  moodsFileSchema,
+  voiceFileSchema
+} from './schema.js'
 
 export type MemoryMode = 'full' | 'forget' | 'none'
 
@@ -63,6 +71,8 @@ export interface Character {
   moodPairs: Readonly<Record<string, string>>
   portraitUrls: Readonly<Record<string, string>>
   voice: Voice
+  /** What the bot posts in the character's voice outside the model's replies; slots in `LINE_SLOTS` stay unfilled. */
+  lines: LinesFile
 }
 
 const MACRO = /\{\{([^{}]*)\}\}/g
@@ -76,6 +86,12 @@ const SLOT_HOMES: Record<string, string> = {
 /** Whether `hour` falls in [from, to); a range whose `to` is not after `from` wraps past midnight. */
 export function inHours(hour: number, from: number, to: number): boolean {
   return from < to ? hour >= from && hour < to : hour >= from || hour < to
+}
+
+function uncoveredHours(bands: ReadonlyArray<{ from: number; to: number }>): number[] {
+  return Array.from({ length: 24 }, (_, hour) => hour).filter(
+    (hour) => !bands.some(({ from, to }) => inHours(hour, from, to))
+  )
 }
 
 function escapeRegExp(text: string): string {
@@ -103,9 +119,9 @@ function deepFreeze<T>(value: T): T {
 }
 
 /**
- * Reads a character pack (`character.yml`, `voice.yml`, `moods.yml` and `prompts/`) plus the shared harness prompts,
- * validates every value and cross-reference, and returns it frozen with its prompt text ready to send. Every problem
- * found is reported at once, each naming its file and YAML path.
+ * Reads a character pack (`character.yml`, `voice.yml`, `moods.yml`, `lines.yml` and `prompts/`) plus the shared
+ * harness prompts, validates every value and cross-reference, and returns it frozen with its prompt text ready to
+ * send. Every problem found is reported at once, each naming its file and YAML path.
  */
 export function loadCharacter(dir: string, harnessDir: string): Character {
   const root = resolve(dir)
@@ -135,10 +151,12 @@ export function loadCharacter(dir: string, harnessDir: string): Character {
   const characterPath = join(root, 'character.yml')
   const voicePath = join(root, 'voice.yml')
   const moodsPath = join(root, 'moods.yml')
+  const linesPath = join(root, 'lines.yml')
   const file = readYaml(characterPath, characterFileSchema)
   const voiceFile = readYaml(voicePath, voiceFileSchema)
   const moodsFile = readYaml(moodsPath, moodsFileSchema)
-  if (!file || !voiceFile || !moodsFile) throw new Error(problems.join('\n'))
+  const linesFile = readYaml(linesPath, linesFileSchema)
+  if (!file || !voiceFile || !moodsFile || !linesFile) throw new Error(problems.join('\n'))
 
   const statics: Record<string, string> = { char: file.name, char_full: file.fullName, world: file.world }
   function expand(text: string, file: string, path: string, slots: readonly string[] = []): string {
@@ -203,9 +221,7 @@ export function loadCharacter(dir: string, harnessDir: string): Character {
     stable[mode] = system[mode].map(({ text }) => text).join('\n\n')
   }
 
-  const uncovered = Array.from({ length: 24 }, (_, hour) => hour).filter(
-    (hour) => !file.situation.timeOfDay.some(({ from, to }) => inHours(hour, from, to))
-  )
+  const uncovered = uncoveredHours(file.situation.timeOfDay)
   if (uncovered.length > 0) report(characterPath, 'situation.timeOfDay', `no band covers hour ${uncovered.join(', ')}`)
   const timeOfDay = file.situation.timeOfDay.map((band, index) => ({
     ...band,
@@ -320,6 +336,25 @@ export function loadCharacter(dir: string, harnessDir: string): Character {
     })
   }
 
+  const slotsAt = (path: string): readonly string[] => {
+    const key = path.replace(/\[\d+\]/g, '')
+    const covering = Object.keys(LINE_SLOTS).find((slotPath) => key === slotPath || key.startsWith(`${slotPath}.`))
+    return covering ? LINE_SLOTS[covering] : []
+  }
+  const expandLines = (value: unknown, path: string): unknown => {
+    if (typeof value === 'string') return expand(value, linesPath, path, slotsAt(path))
+    if (Array.isArray(value)) return value.map((item, index) => expandLines(item, `${path}[${index}]`))
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(
+        Object.entries(value).map(([key, item]) => [key, expandLines(item, path ? `${path}.${key}` : key)])
+      )
+    }
+    return value
+  }
+  const lines = expandLines(linesFile, '') as LinesFile
+  const silent = uncoveredHours(lines.status)
+  if (silent.length > 0) report(linesPath, 'status', `no band covers hour ${silent.join(', ')}`)
+
   const situation = prompt('situation', characterPath, 'situation')
   const safetySteer = prompt('safety-steer', characterPath, 'safety-steer')
   if (problems.length > 0) throw new Error(problems.join('\n'))
@@ -349,6 +384,7 @@ export function loadCharacter(dir: string, harnessDir: string): Character {
     })),
     moodPairs: moodsFile.moodPairs,
     portraitUrls: moodsFile.portraitUrls,
-    voice
+    voice,
+    lines
   })
 }

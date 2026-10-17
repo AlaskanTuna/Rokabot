@@ -4,6 +4,7 @@ import { ActionRowBuilder, ButtonBuilder, ContainerBuilder, TextDisplayBuilder }
 import type { ChatInputCommandInteraction } from 'discord.js'
 import { ButtonStyle, ComponentType, MessageFlags } from 'discord.js'
 import { getAnimeSchedule } from '../../../agent/tools/getAnimeSchedule.js'
+import { character } from '../../../character/index.js'
 import { CURIOUS_COLOR, FLAVOR, buildToolMessage, randomFrom } from './shared.js'
 
 function capitalize(str: string): string {
@@ -48,7 +49,7 @@ export async function handleSchedule(interaction: ChatInputCommandInteraction) {
   const result = await getAnimeSchedule({ scope, sort_by: sortBy, limit: 25, anime })
 
   if (result.entries.length === 0) {
-    const text = `${flavor}\n\nHmm, nothing found for that~ Maybe try something else?`
+    const text = `${flavor}\n\n${character.lines.tools.noSchedule}`
     return buildToolMessage(text, CURIOUS_COLOR)
   }
 
@@ -145,7 +146,7 @@ export async function handleSchedule(interaction: ChatInputCommandInteraction) {
 
   collector.on('collect', async (btnInteraction) => {
     if (btnInteraction.user.id !== interaction.user.id) {
-      await btnInteraction.reply({ content: "Those buttons aren't for you~", flags: MessageFlags.Ephemeral })
+      await btnInteraction.reply({ content: character.lines.tools.notYours, flags: MessageFlags.Ephemeral })
       return
     }
 

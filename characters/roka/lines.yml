@@ -1,0 +1,219 @@
+# Every line the bot posts in Roka's voice outside the model's own replies. A list is a pool: each post draws one
+# line at random. {{char}}, {{char_full}} and {{world}} work in every line; any other {{slot}} works only in a key
+# whose comment names it, and code fills it when the line is posted.
+replies:
+  decline: # The rate limiter turned a message away
+    - ちょっと待ってね~ Give me a moment.
+    - "Mou~ I'm a bit busy right now. Hold on, okay?"
+    - Ara~ so impatient. Just a little bit longer~
+    - "Fufu~ everyone's talking at once. Let me catch my breath."
+    - "Ah, sorry — I'm in the middle of something. I'll be right back!"
+  busy: # The channel's previous reply is still being written
+    - "I'm still thinking~ just a moment, okay?"
+    - "Mou~ hold on, I haven't finished my thought yet!"
+    - "Ah, wait wait — I'm still working on my answer~"
+    - Fufu~ so eager. Let me finish what I was saying first!
+    - "One thing at a time~ I'm almost done, I promise!"
+  error: # A turn or a /stats view failed outright
+    - Nn... something feels off. Let me try again in a bit, okay?
+    - "Ah, that's strange... my thoughts got all jumbled up. Give me a moment."
+    - Mou, I lost my train of thought... sorry about that.
+attachments: # Added to a reply when an attachment was not read whole, so a partial answer is not taken as a full one
+  unsupported: # A file type the model cannot open
+    - "Ah — I couldn't open that file, sorry~ Could you tell me what's in it?"
+    - "Mou~ that kind of file is beyond me. Describe it for me and I'll help!"
+    - "Nn... I can't peek inside that one. Images I can see, but not that~"
+    - "Sorry, that attachment isn't something I can look at — but I'm listening!"
+  partial: # Only the opening of a long file was sent
+    - That one was rather long, so I only got through the beginning of it~
+    - 'Mm, too big to take all at once — I only saw the first part, so ask me again if the rest matters!'
+    - "Nn... that's a big one. I stopped partway through, so I might have missed the ending~"
+    - 'I could only manage the opening of that — it was much too long for me to take in one go!'
+  oversized: # The file would cost too many tokens to read in one turn
+    - "That's far too much for me to take in all at once~ Send me a smaller piece and I'll look properly."
+    - Mou, that would take me all afternoon to get through! Something shorter, please?
+    - "Ara, you've given me enough to read for a week. Trim it down a little for me?"
+    - "That's a bit much for one sitting, ne? Give me a shorter one and I'll go through it properly."
+  skipped: # More attachments arrived than one turn takes
+    - Ara~ that is more than I can peek at in one go! I looked at the first ones; send the rest separately, ne~
+    - Mou~ I can only look through so many at once! I opened the first ones, so send the others in another message.
+    - Fufu, that was a lot to browse in one sitting~ I checked the first ones; bring me the rest separately, okay?
+    - Whoa, too many for one look! I took the first ones, so send the rest in a separate message, okay?
+reliability: # Sent in place of the model's reply when a turn goes wrong
+  safety: "Huh? Let's not get into that one~" # The provider blocked the reply on safety grounds
+  recitation: "Ah, I don't think I should repeat that one exactly~" # The provider blocked the reply as a recitation
+  terminal: "Eep, something went wrong on my side. Let's try again later~" # Every retry and fallback failed
+  empty: # The model returned nothing usable
+    - Hmm? Sorry, I spaced out for a moment there~
+    - Ah, what was that? I got distracted by something.
+    - Sorry, sorry, my mind wandered. Say that again?
+    - "I wasn't paying attention... don't tell anyone, okay?"
+tools: # The /anime and /remind commands
+  error: # A tool command failed
+    - Nn... something went wrong. Maybe try again later?
+    - "Ah, that didn't work... sorry about that~"
+    - Mou, I ran into a little trouble. Give me another chance?
+  flavor: # Opens each reply of that command
+    anime: ['Ooh, let me look that up! ♪', 'Anime search time~ fufu~', 'Let me see what I can find~!']
+    schedule: ["Let's see what's airing~", 'Checking the schedule for you! ♪', "Time to see what's on today~"]
+    remind: ["I'll remember for you~", 'Leave it to me! ♪', "I'll make sure you don't forget~"]
+  notYours: "Those buttons aren't for you~" # Someone else pressed a result's page button
+  noAnime: "Hmm, I couldn't find anything for {{search}}... Maybe try something different?" # {{search}}: the quoted title, or "those filters"
+  noSchedule: Hmm, nothing found for that~ Maybe try something else? # /anime schedule found nothing
+reminders: # The /remind command and the reminders it delivers
+  unknown: "Hmm, I don't know that subcommand~" # An unknown /remind subcommand
+  refused: Mou~ {{reason}} # The reminder was not saved; {{reason}} says why
+  setIn: "⏰ **Reminder set!** I'll remind you {{when}} ({{time}} {{timezone}})" # /remind in; {{when}} is relative, {{time}} the clock time
+  setAt: "⏰ **Reminder set for {{time}} {{timezone}}!** I'll remind you {{when}}" # /remind at; same slots as setIn
+  none: No active reminders~ # /remind list with nothing pending
+  notFound: "Hmm, I couldn't find that reminder~ Maybe it already went off?" # /remind cancel with an unknown id
+  notYours: "That reminder doesn't belong to you~ You can only cancel your own reminders!" # /remind cancel on someone else's
+  cancelled: 'Got it~ Cancelled reminder **#{{id}}**: "{{task}}"' # /remind cancel; {{id}} and {{task}}
+  delivered: 'Hey {{mention}}~ you asked me to remind you: "{{task}}" ♪' # Posted in the channel; {{mention}} pings the user
+  deliveredByDm: "Hey~ you asked me to remind you: \"{{task}}\" ♪\n\n-# (Sent as DM because I couldn't reach the original channel)" # Sent by DM when the channel is gone
+games: # Game lines that are not part of a game's own rules
+  error: Nn... something went wrong. Maybe try again later? # A game command failed
+  hangmanTimeout: "Time's up~ The word was **{{word}}**. You took too long! 💤" # Hangman ran out of time; {{word}}
+  shiritoriWinner: "**{{player}}** took too long... they're out! 💤\n\n**{{winner}}** wins the game! Congratulations~ ♪" # The last player standing wins
+  shiritoriNext: "**{{player}}** took too long... they're out! 💤 Your turn, **{{next}}**!" # The game goes on with {{next}}
+status: # The bot's Discord status by hour, [from, to) in config.yml's timezone; the bands must cover all 24 hours
+  - from: 5
+    to: 9
+    lines:
+      - Opening up the shop~ ☀️
+      - Preparing the morning sweets~ 🍡
+      - Brewing tea before customers arrive~ 🍵
+  - from: 9
+    to: 12
+    lines:
+      - Managing the sweets shop~ 🍡
+      - Serving customers with a smile~ ♪
+      - Arranging wagashi on the display~ 🌸
+  - from: 12
+    to: 14
+    lines:
+      - Taking a lunch break~ 🍙
+      - "Taste-testing today's specials~ 🍳"
+      - Eating onigiri behind the counter~ 🍙
+  - from: 14
+    to: 17
+    lines:
+      - Quiet afternoon at the shop~ 🍵
+      - Restocking shelves between customers~ ♪
+      - Enjoying afternoon tea time~ ☕
+  - from: 17
+    to: 20
+    lines:
+      - Closing up shop for the day~ 🌅
+      - "Counting today's sales~ ♪"
+      - Preparing dinner~ 🍳
+  - from: 20
+    to: 23
+    lines:
+      - Relaxing after a long day~ 🌙
+      - Watching anime before bed~ ✨
+      - Reading by the lamp light~ 📖
+  - from: 23
+    to: 5
+    lines:
+      - Should be sleeping... 💤
+      - "Couldn't sleep... 🌙"
+      - Late night snack time~ 🍡
+commands: # Slash command descriptions, registered on every start; Discord allows 100 characters
+  ask: Ask {{char}} anything — she looks things up when she needs to # /ask
+  remind: Ask {{char}} to remind you about something! # /remind
+  hangman: Play Hangman with {{char}}! # /hangman
+  shiritori: Play Shiritori (word chain) with {{char}}! # /shiritori
+  stats: See {{char}}’s server activity notebook # /stats
+  report: File a bug report for {{char}} # /report
+stats: # The /stats notebook
+  notInDms: Ara~ stats are for the shop floor, not letters, ne~ # /stats run outside a server
+  notYours: Ara~ these little ledger tabs are for the one who opened them, ne~ # Someone else picked a view
+  reachedBy: How People Reach Her # Overview label for how people start a chat
+  knownBest: Who She Knows Best # Memory heading over the members she remembers most
+  quietMood: A Quiet Little Pause # The server mood before any mood is recorded
+  emptyMood: The server mood is waiting for its first little chat # Mood caption before any mood is recorded
+  footers: # The closing line of each view
+    overview: Every little chat helps this place feel more like home.
+    memory: 'A little peek at what I treasure — the rest stays between us, ne~'
+    nerd: The gears are humming along nicely behind the counter.
+  remembers: # A remembered member's line, by memory predicate; misc also stands in when the memory has no predicate
+    nickname: I remember what they like to be called~
+    language_spoken: I remember which words feel like home to them~
+    nationality: I remember where their story begins~
+    pronouns: I remember how they like to be addressed~
+    pets: I remember their adorable little companions~
+    daily_routine: I remember the rhythm of their day~
+    diet: I remember what keeps them happily fed~
+    general_occupation: I remember what keeps their days busy~
+    likes: I remember the things they like~
+    dislikes: I remember the things they are not fond of~
+    favorite_anime: I remember their favorite anime~
+    favorite_game: I remember their favorite game~
+    favorite_music: I remember the music they hold close~
+    hobby: I remember what they enjoy doing~
+    currently_watching: I remember what they have been watching~
+    relationship_to: I remember who they hold dear~
+    friend_group: I remember who they spend time with~
+    communication_style: I remember how they like to talk~
+    humor_style: I remember what makes them laugh~
+    catchphrase: I remember the words they always say~
+    teasing_habit: I remember the way they tease~
+    recommends: I remember their little recommendations~
+    complains_about: I remember what gets under their skin~
+    strong_opinion: I remember what they feel strongly about~
+    misc: I remember a little something about them~
+  remembersOther: I remember their {{label}}~ # A predicate missing above; {{label}} is its name in lower case
+  chartColors: # The chart images
+    background: '#17141f'
+    text: '#f6efff'
+    mutedText: '#bfb4ca'
+    secondaryText: '#d9cfdf'
+    grid: '#332b40'
+    heatmapEmpty: '#241f2e'
+    heatmapLow: '#4d2b3d'
+    heatmapMedium: '#8a4a66'
+    heatmapHigh: '#cf6d97'
+    heatmapPeak: '#f7a6c6'
+    growthStroke: '#f7a6c6'
+    latencyLine: '#c4a7e7'
+    latencyLow: '#6f5a94'
+    latencyMedium: '#8f78b8'
+    latencyHigh: '#b295d9'
+    latencyPeak: '#dcc8f7'
+footers: # Labels in the line under a reply that says what she did; code adds the leading "-# 🌸"
+  tools: # By tool name
+    roll_dice: cast the dice
+    flip_coin: tossed a coin
+    get_current_time: checked the clock
+    get_weather: checked the weather
+    search_web: searched the web
+    search_anime: looked up anime
+    get_anime_schedule: checked airing times
+    set_reminder: set a reminder
+    list_reminders: listed reminders
+    cancel_reminder: cancelled a reminder
+    remember_user: saved a memory
+    recall_user: recalled a memory
+    forget_user: forgot a memory
+  post: # A linked post read before the reply; {{post}} is the kind, like "X post"
+    found: peeked at the {{post}}
+    failed: "couldn't open the {{post}}"
+  replies: # A linked post's replies
+    found: read the replies
+    failed: "couldn't read the replies"
+  watch: # How much of a video or audio clip she took in; {{media}} is "video", "clip" or a platform's, like "X video"
+    video:
+      whole: watched the {{media}}
+      most: watched most of the {{media}}
+      part: watched part of the {{media}}
+      skim: skimmed the {{media}}
+      remembered: remembered the {{media}}
+      failed: "couldn't watch the {{media}}"
+    audio:
+      whole: heard the {{media}}
+      most: heard most of the {{media}}
+      part: heard part of the {{media}}
+      skim: skimmed the {{media}}
+      remembered: remembered the {{media}}
+      failed: "couldn't hear the {{media}}"

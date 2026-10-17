@@ -12,6 +12,7 @@ import {
 import { AttachmentBuilder, type Guild, MessageFlags, SeparatorSpacingSize } from 'discord.js'
 import type { ToneKey } from '../../../agent/prompts/tones.js'
 import { character } from '../../../character/index.js'
+import { fillLine } from '../../../character/lines.js'
 import { getToneStyle } from '../../toneStyles.js'
 import {
   TONE_EMOJI,
@@ -58,38 +59,13 @@ const VIEW_DETAILS: Record<StatsView, { label: string; emoji: string }> = {
 }
 
 const MOOD_PAIR_LABELS = character.moodPairs
+const LINES = character.lines.stats
 
 const MOOD_FALLBACKS: Readonly<Record<ToneKey, string>> = Object.fromEntries(
   character.moodKeys.map((mood) => [mood, character.moods[mood].season])
 )
 
-export const PREDICATE_PHRASES: Record<string, string> = {
-  nickname: 'I remember what they like to be called~',
-  language_spoken: 'I remember which words feel like home to them~',
-  nationality: 'I remember where their story begins~',
-  pronouns: 'I remember how they like to be addressed~',
-  pets: 'I remember their adorable little companions~',
-  daily_routine: 'I remember the rhythm of their day~',
-  diet: 'I remember what keeps them happily fed~',
-  general_occupation: 'I remember what keeps their days busy~',
-  likes: 'I remember the things they like~',
-  dislikes: 'I remember the things they are not fond of~',
-  favorite_anime: 'I remember their favorite anime~',
-  favorite_game: 'I remember their favorite game~',
-  favorite_music: 'I remember the music they hold close~',
-  hobby: 'I remember what they enjoy doing~',
-  currently_watching: 'I remember what they have been watching~',
-  relationship_to: 'I remember who they hold dear~',
-  friend_group: 'I remember who they spend time with~',
-  communication_style: 'I remember how they like to talk~',
-  humor_style: 'I remember what makes them laugh~',
-  catchphrase: 'I remember the words they always say~',
-  teasing_habit: 'I remember the way they tease~',
-  recommends: 'I remember their little recommendations~',
-  complains_about: 'I remember what gets under their skin~',
-  strong_opinion: 'I remember what they feel strongly about~',
-  misc: 'I remember a little something about them~'
-}
+export const PREDICATE_PHRASES: Readonly<Record<string, string>> = character.lines.stats.remembers
 
 export const HUMANIZED_LABEL: Record<string, string> = {
   nickname: 'Nickname',
@@ -173,20 +149,22 @@ function predicateLabel(predicate: string): string {
 }
 
 function predicatePhrase(predicate: string): string {
-  return PREDICATE_PHRASES[predicate] ?? `I remember their ${predicateLabel(predicate).toLowerCase()}~`
+  return (
+    PREDICATE_PHRASES[predicate] ?? fillLine(LINES.remembersOther, { label: predicateLabel(predicate).toLowerCase() })
+  )
 }
 
 /** Quote the member's most memorable memory: coy phrase plus the actual fact value (guild-scoped by query) */
 function memoryQuote(predicate: string | null, value: string | null): string {
-  if (!predicate) return 'I remember a little something about them~'
+  if (!predicate) return PREDICATE_PHRASES.misc
+  if (!value) return predicatePhrase(predicate)
   const phrase = predicatePhrase(predicate).replace(/~$/, '')
-  if (!value) return `${phrase}~`
   const trimmed = value.length > 60 ? `${value.slice(0, 57)}…` : value
   return `${phrase} — “${trimmed}”~`
 }
 
 export function getMoodLabel(dominant: ToneKey | null, runnerUp: ToneKey | null): string {
-  if (!dominant) return 'A Quiet Little Pause'
+  if (!dominant) return LINES.quietMood
   return (runnerUp && MOOD_PAIR_LABELS[`${dominant}:${runnerUp}`]) ?? MOOD_FALLBACKS[dominant]
 }
 
@@ -250,11 +228,11 @@ function buildOverview(guildId: string, guild: Guild, sinceMs: number, container
             'Most Used Tool',
             tool ? `${titleCase(tool.tool)} · ${formatNumber(tool.count)} uses` : 'No tool calls recorded yet'
           ),
-          ...(reachHer ? [stat('How People Reach Her', reachHer)] : [])
+          ...(reachHer ? [stat(LINES.reachedBy, reachHer)] : [])
         ].join('\n')
       )
     )
-    .addTextDisplayComponents(text('-# Every little chat helps this place feel more like home.'))
+    .addTextDisplayComponents(text(`-# ${LINES.footers.overview}`))
 }
 
 function buildMood(guildId: string, sinceMs: number, container: ContainerBuilder) {
@@ -263,7 +241,7 @@ function buildMood(guildId: string, sinceMs: number, container: ContainerBuilder
   const [dominant, runnerUp, third] = tones
   const summary = dominant
     ? `Mostly ${dominant.tone} (\`${Math.round((dominant.count / total) * 100)}%\`), with ${runnerUp?.tone ?? 'no runner-up'} (\`${runnerUp ? Math.round((runnerUp.count / total) * 100) : 0}%\`) and ${third?.tone ?? 'no third mood'} (\`${third ? Math.round((third.count / total) * 100) : 0}%\`) close behind. This is a ${DOMINANT_TONE_ADJECTIVES[dominant.tone]} server!`
-    : 'The server mood is waiting for its first little chat'
+    : LINES.emptyMood
   const moodLines = tones
     .slice(0, 3)
     .map(({ tone, count }) =>
@@ -311,7 +289,7 @@ async function buildMemory(guildId: string, guild: Guild, sinceMs: number, conta
       )
     )
     .addSeparatorComponents(separator())
-    .addTextDisplayComponents(text('### 🌸 Who She Knows Best'))
+    .addTextDisplayComponents(text(`### 🌸 ${LINES.knownBest}`))
 
   const members = await Promise.all(
     topRememberedMembers(guildId, sinceMs, botUserId).map(async (entry) => {
@@ -333,7 +311,7 @@ async function buildMemory(guildId: string, guild: Guild, sinceMs: number, conta
         .setThumbnailAccessory(new ThumbnailBuilder({ media: { url: entry.member.displayAvatarURL() } }))
     )
   }
-  container.addTextDisplayComponents(text('-# A little peek at what I treasure — the rest stays between us, ne~'))
+  container.addTextDisplayComponents(text(`-# ${LINES.footers.memory}`))
   return renderMemoryGrowth(memoryGrowthSeries(guildId, sinceMs, botUserId))
 }
 
@@ -372,7 +350,7 @@ function buildNerd(guildId: string, sinceMs: number, container: ContainerBuilder
         ].join('\n')
       )
     )
-    .addTextDisplayComponents(text('-# The gears are humming along nicely behind the counter.'))
+    .addTextDisplayComponents(text(`-# ${LINES.footers.nerd}`))
   return renderLatencyTrend(p95ByDay(guildId, sinceMs))
 }
 

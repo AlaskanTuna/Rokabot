@@ -186,12 +186,53 @@ describe('loadCharacter', () => {
     expect(loadCharacter(dir, HARNESS).voice.note.header).toBe('## Roka Reply Shape')
   })
 
+  it('loads her lines with the character macros filled and the slots left for code to fill', () => {
+    const roka = loadCharacter(ROKA, HARNESS)
+    expect(roka.lines.commands.ask).toBe('Ask Roka anything — she looks things up when she needs to')
+    expect(roka.lines.reminders.delivered).toBe('Hey {{mention}}~ you asked me to remind you: "{{task}}" ♪')
+    expect(roka.lines.replies.decline).toHaveLength(5)
+    expect(Object.isFrozen(roka.lines.status[0].lines)).toBe(true)
+  })
+
+  it('refuses a pack without lines.yml rather than posting default English lines', () => {
+    const dir = copyOf(MINIMAL)
+    rmSync(join(dir, 'lines.yml'))
+    expect(loadError(dir)).toContain('lines.yml: file is missing')
+  })
+
+  it.each([
+    ['decline: [One moment please.]', 'decline: []', 'lines.yml: replies.decline: Too small'],
+    [
+      'busy: [Still thinking.]',
+      "busy: ['Still thinking about {{task}}.']",
+      'lines.yml: replies.busy[0]: unknown macro {{task}}'
+    ],
+    [
+      'noSchedule: Nothing found.',
+      'noSchedule: Nothing found for {{search}}.',
+      'lines.yml: tools.noSchedule: unknown macro {{search}}'
+    ],
+    ['{ from: 18, to: 6,', '{ from: 18, to: 5,', 'lines.yml: status: no band covers hour 5'],
+    ['ask: Ask {{char}} anything', `ask: ${'Ask '.repeat(30)}`, 'lines.yml: commands.ask: Too big'],
+    ['    misc: ', '    miscellany: ', 'lines.yml: stats.remembers.misc:'],
+    [
+      '  notYours: Those buttons are not yours.',
+      '  notYour: Those buttons are not yours.',
+      'Unrecognized key: "notYour"'
+    ]
+  ])('rejects a broken lines.yml: %s', (from, to, message) => {
+    const dir = copyOf(MINIMAL)
+    edit(dir, 'lines.yml', from, to)
+    expect(loadError(dir)).toContain(message)
+  })
+
   it('loads a second character that uses only the harness prompts and one mood', () => {
     const mina = loadCharacter(MINIMAL, HARNESS)
     expect(mina.moodKeys).toEqual(['calm'])
     expect(mina.nameTrigger.test('hey MINA, you there?')).toBe(true)
     expect(mina.nameTrigger.test('Minami said hi')).toBe(false)
     expect(mina.judge.moodQuestion).toBe('Which mood should Mina reply to `message` in?')
+    expect(mina.lines.commands.ask).toBe('Ask Mina anything')
     const prompt = assembleSystemPrompt(mina, { mood: 'calm', hour: 10, displayName: 'Ikuyo', memory: 'none' })
     expect(prompt).toContain('You are Mina, not an AI assistant.')
     expect(prompt).toContain('as anything about Testville')

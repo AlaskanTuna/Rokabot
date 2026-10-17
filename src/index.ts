@@ -35,6 +35,7 @@ import {
 } from './agent/memory/scheduler.js'
 import { destroyAllSessions } from './agent/session.js'
 import { beginShutdown } from './agent/shutdownSignal.js'
+import { character } from './character/index.js'
 import { config } from './config.js'
 import { createChannelVisibilityResolver } from './discord/channelVisibility.js'
 import { createClient } from './discord/client.js'
@@ -166,7 +167,7 @@ async function shutdown(signal: string): Promise<void> {
   closeDb()
   client.destroy()
 
-  logger.info('Roka is going to sleep. Oyasumi~')
+  logger.info(`${character.name} is going to sleep. Oyasumi~`)
 
   const timeout = setTimeout(() => {
     logger.warn('Graceful shutdown timed out, forcing exit')

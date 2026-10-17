@@ -298,6 +298,9 @@ prompt on every model call, from the rung's rebuilt prompt or the turn's `_syste
 | `faces`                  | The face groups and each mood's groups                                                                             |
 | `jevToneCriteria`        | Each mood's `judge` text                                                                                           |
 
+`src/discord/__tests__/linesGolden.test.ts` does the same for every line the bot posts from the pack's `lines.yml`
+(`tests/fixtures/lines-golden.json`).
+
 A prompt change that is intended regenerates the fixture with `UPDATE_PROMPT_GOLDEN=1 npm test`. Any other diff is
 a regression. The test pins the shipped Roka pack.
 

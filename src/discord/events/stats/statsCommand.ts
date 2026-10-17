@@ -1,5 +1,6 @@
 import { ComponentType, DiscordAPIError, MessageFlags } from 'discord.js'
 import type { ChatInputCommandInteraction, RepliableInteraction } from 'discord.js'
+import { character } from '../../../character/index.js'
 import { logger } from '../../../utils/logger.js'
 import { isIgnorableDiscordError } from '../../errorHandler.js'
 import { getRandomError } from '../../responses.js'
@@ -38,7 +39,7 @@ export async function handleStatsCommand(interaction: ChatInputCommandInteractio
   if (!interaction.guildId) {
     try {
       await interaction.reply({
-        content: 'Ara~ stats are for the shop floor, not letters, ne~',
+        content: character.lines.stats.notInDms,
         flags: MessageFlags.Ephemeral
       })
     } catch (error) {
@@ -65,7 +66,7 @@ export async function handleStatsCommand(interaction: ChatInputCommandInteractio
       try {
         if (selectInteraction.user.id !== interaction.user.id) {
           await selectInteraction.reply({
-            content: 'Ara~ these little ledger tabs are for the one who opened them, ne~',
+            content: character.lines.stats.notYours,
             flags: MessageFlags.Ephemeral
           })
           return
