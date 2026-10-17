@@ -16,8 +16,8 @@ How to run Rokabot as Roka or as a character of your own, and how to write a cha
 | Applying a Change | Restart the bot. The pack loads once at startup.                                                 |
 
 The prompt contract (block order, mood detection, reply shape, safety ladder) is in
-[Prompt Engine](../trd/prompt-engine.md). User-facing lines (busy and error replies, status text, command copy) move
-into a pack file, `lines.yml`, next.
+[Prompt Engine](../trd/prompt-engine.md). Every line the bot posts outside the model's replies (busy and error
+replies, status text, command copy, `/stats` labels) lives in the pack's `lines.yml`.
 
 ## How the Bot Picks a Pack
 
@@ -35,6 +35,7 @@ characters/<id>/
   character.yml       identity, name triggers, sampling, prompt order, time-of-day phrases, Jev questions
   voice.yml           reply-shape tables: paragraphs, openers, endings, faces, beats, threats, note lines
   moods.yml           moods, mood detection rules and every table keyed by mood
+  lines.yml           every line posted outside the model's replies, grouped by surface
   prompts/            your Markdown sections; prompts/moods/<mood>.md holds each mood's prompt
 prompts/              harness prompts every pack shares (repo root)
 ```
@@ -107,6 +108,28 @@ Each mood takes these keys:
 | `emoji`       | The mood's label in `/stats` charts.                                                            |
 | `adjective`   | The mood's adjective in `/stats` text.                                                          |
 | `season`      | The `/stats` season title when this mood leads.                                                 |
+
+## lines.yml
+
+Every line the bot posts in the character's voice outside the model's own replies. A list is a pool: each post draws
+one line at random. A pack without `lines.yml` fails to load; there are no built-in English defaults.
+
+| Group         | Holds                                                                         |
+| ------------- | ----------------------------------------------------------------------------- |
+| `replies`     | Rate-limit, busy and error replies                                            |
+| `attachments` | Notes added when a file was unsupported, cut short, too large or skipped      |
+| `reliability` | Lines sent in place of a reply when a turn goes wrong                         |
+| `tools`       | `/anime` and tool-command lines                                               |
+| `reminders`   | `/remind` replies and the reminder she delivers                               |
+| `games`       | Game lines outside each game's own rules                                      |
+| `status`      | Discord status text by hour; the bands must cover all 24 hours                |
+| `commands`    | Slash command descriptions (Discord's limit: 100 characters; checked at load) |
+| `stats`       | `/stats` notebook copy, including one label per memory predicate              |
+| `footers`     | Labels in the line under a reply that says what she did (one per footer tool) |
+
+`{{char}}`, `{{char_full}}` and `{{world}}` work in every line. A runtime slot such as `{{task}}` or `{{mention}}` works
+only in the key that declares it (`LINE_SLOTS` in `src/character/schema.ts`); the comment on each key names its slots.
+Adding a footer tool or a memory predicate in code means adding its label to every pack.
 
 ## Prompt Files and Macros
 
