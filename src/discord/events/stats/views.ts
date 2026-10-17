@@ -11,6 +11,7 @@ import {
 } from '@discordjs/builders'
 import { AttachmentBuilder, type Guild, MessageFlags, SeparatorSpacingSize } from 'discord.js'
 import type { ToneKey } from '../../../agent/prompts/tones.js'
+import { character } from '../../../character/index.js'
 import { getToneStyle } from '../../toneStyles.js'
 import {
   TONE_EMOJI,
@@ -49,21 +50,6 @@ import {
 export const STATS_VIEWS = ['overview', 'mood', 'memory', 'nerd'] as const
 export type StatsView = (typeof STATS_VIEWS)[number]
 
-const TONE_KEYS: readonly ToneKey[] = [
-  'playful',
-  'sincere',
-  'domestic',
-  'flustered',
-  'curious',
-  'annoyed',
-  'tender',
-  'confident',
-  'nostalgic',
-  'mischievous',
-  'sleepy',
-  'competitive'
-]
-
 const VIEW_DETAILS: Record<StatsView, { label: string; emoji: string }> = {
   overview: { label: 'Overview', emoji: '📊' },
   mood: { label: 'Mood', emoji: '🎭' },
@@ -71,38 +57,11 @@ const VIEW_DETAILS: Record<StatsView, { label: string; emoji: string }> = {
   nerd: { label: 'Nerd', emoji: '🔧' }
 }
 
-const MOOD_PAIR_LABELS: Record<string, string> = {
-  'domestic:flustered': 'A Cozy Little Panic',
-  'playful:mischievous': 'Full Teasing Season',
-  'sincere:tender': 'Soft Hearts, Open Doors',
-  'curious:playful': 'Curious Little Sparks',
-  'confident:competitive': 'A Proper Challenge',
-  'nostalgic:tender': 'Warm Pages Turning',
-  'sleepy:domestic': 'Tea Before Bedtime',
-  'annoyed:flustered': 'A Blushing Little Fuss',
-  'playful:flustered': 'Teasing With a Pink Cheek',
-  'mischievous:competitive': 'Mischief Meets Its Match',
-  'sincere:domestic': 'A Gentle Everyday',
-  'curious:nostalgic': 'Old Stories, New Questions',
-  'confident:playful': 'Bright and Unbothered',
-  'tender:flustered': 'A Shy Little Heart',
-  'annoyed:playful': 'Fondly Exasperated'
-}
+const MOOD_PAIR_LABELS = character.moodPairs
 
-const MOOD_FALLBACKS: Record<ToneKey, string> = {
-  playful: 'A Playful Little Season',
-  sincere: 'Heartfelt Hours',
-  domestic: 'A Cozy Little Corner',
-  flustered: 'A Flustered Little Moment',
-  curious: 'Curiosity Is Calling',
-  annoyed: 'A Fond Little Fuss',
-  tender: 'A Gentle Little Glow',
-  confident: 'Quietly In Command',
-  nostalgic: 'Pages of Yesterday',
-  mischievous: 'Mischief Is Afoot',
-  sleepy: 'A Sleepy Little Hush',
-  competitive: 'Game Faces On'
-}
+const MOOD_FALLBACKS: Readonly<Record<ToneKey, string>> = Object.fromEntries(
+  character.moodKeys.map((mood) => [mood, character.moods[mood].season])
+)
 
 export const PREDICATE_PHRASES: Record<string, string> = {
   nickname: 'I remember what they like to be called~',
@@ -160,20 +119,9 @@ export const HUMANIZED_LABEL: Record<string, string> = {
   misc: 'Misc'
 }
 
-export const DOMINANT_TONE_ADJECTIVES: Record<ToneKey, string> = {
-  domestic: 'cozy',
-  playful: 'lively',
-  flustered: 'easily flustered',
-  sincere: 'heartfelt',
-  curious: 'inquisitive',
-  annoyed: 'feisty',
-  tender: 'gentle',
-  confident: 'bold',
-  nostalgic: 'sentimental',
-  mischievous: 'cheeky',
-  sleepy: 'drowsy',
-  competitive: 'spirited'
-}
+export const DOMINANT_TONE_ADJECTIVES: Readonly<Record<ToneKey, string>> = Object.fromEntries(
+  character.moodKeys.map((mood) => [mood, character.moods[mood].adjective])
+)
 
 function sinceFor(days: number): number {
   return Date.now() - days * 24 * 60 * 60 * 1000
@@ -211,7 +159,7 @@ function separator(): SeparatorBuilder {
 }
 
 function isToneKey(value: string): value is ToneKey {
-  return TONE_KEYS.includes(value as ToneKey)
+  return character.moodKeys.includes(value)
 }
 
 function toneCounts(guildId: string, sinceMs: number): { tone: ToneKey; count: number }[] {

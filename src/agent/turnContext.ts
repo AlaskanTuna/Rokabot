@@ -1,5 +1,6 @@
 import type { Event, Session } from '@google/adk'
 import type { Part } from '@google/genai'
+import { character } from '../character/index.js'
 import { config } from '../config.js'
 import type { WindowMessage } from '../session/types.js'
 import { recordJevEvent } from '../storage/jevEventStore.js'
@@ -655,7 +656,9 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
   const SAFETY_LADDER = ['drop_overheard', 'drop_facts', 'clear_history'] as const
   function composePrompt(safetyRung: number): string {
     const head =
-      safetyRung >= 3 ? assembleSystemPrompt({ tone: 'sincere', hour, displayName, memory, forgetOnly }) : basePrompt
+      safetyRung >= 3
+        ? assembleSystemPrompt({ tone: character.safeMood, hour, displayName, memory, forgetOnly })
+        : basePrompt
     const peopleSection = recallMode === 'unified' ? memorySection : factsSection
     return [
       head,

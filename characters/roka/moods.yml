@@ -1,6 +1,8 @@
-default: playful
-safe: sincere
-lateNight: { mood: sleepy, from: 22, to: 5 }
+default: playful # The mood when no detection rule fires
+safe: sincere # Forced on the last rung of the safety ladder
+lateNight: { mood: sleepy, from: 22, to: 5 } # One keyword hit is enough for this mood in hours [from, to)
+# The first rule with at least minMatches patterns matching the last three messages wins, so order matters.
+# Patterns are regular expressions, matched case-insensitively.
 detection:
   - mood: flustered
     minMatches: 2
@@ -192,6 +194,9 @@ detection:
       - '\bshow me\b'
       - '\bneed your help\b'
       - '\bcan you help\b'
+# Listed in the order Jev and /stats show them. prompt defaults to prompts/moods/<mood>.md; faces are voice.yml groups;
+# beats are the odds of each voice.yml beat (omitted = never); judge is Jev's description of when the mood fits;
+# color, placeholder, portraits, emoji, adjective and season dress the reply embed and /stats.
 moods:
   playful:
     prompt: moods/playful
@@ -323,7 +328,7 @@ moods:
     emoji: 🥇
     adjective: spirited
     season: Game Faces On
-moodPairs:
+moodPairs: # /stats season title for a dominant:runner-up pair; a mood's season covers every other pair
   'domestic:flustered': A Cozy Little Panic
   'playful:mischievous': Full Teasing Season
   'sincere:tender': Soft Hearts, Open Doors
@@ -339,7 +344,7 @@ moodPairs:
   'confident:playful': Bright and Unbothered
   'tender:flustered': A Shy Little Heart
   'annoyed:playful': Fondly Exasperated
-portraitUrls:
+portraitUrls: # Image for each portrait a mood names
   anxious: https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/expressions/v1/anxious.webp
   attentive: https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/expressions/v1/attentive.webp
   awkward: https://pub-86e06f51812b4cd9a7562bf00fd8739c.r2.dev/expressions/v1/awkward.webp
