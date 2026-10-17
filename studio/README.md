@@ -4,6 +4,8 @@ Persona Studio is a local console for configuring the bot end to end: the charac
 secrets in `.env`. It checks every edit with the bot's own validation before it saves anything, so a saved
 configuration is one the bot will start with. [PRODUCT.md](PRODUCT.md) is the product brief.
 
+![Persona Studio editing a prompt, with the live preview on the right](screenshot.png)
+
 This folder holds a local server with a JSON API under `/api`, the React UI in `studio/ui/` that it serves at every
 other path, and `studio/template/`, the starter pack a new character is copied from.
 
