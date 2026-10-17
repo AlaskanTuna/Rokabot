@@ -276,10 +276,25 @@ runs Gemini with the ModelScope fallback above.
 4. Check which provider answered:
 
 ```bash
-sudo docker logs rokabot-roka-1 2>&1 | grep '"msg":"Response completed"' | grep -o '"provider":"[a-z]*"' | sort | uniq -c
+sudo docker logs rokabot-roka-1 2>&1 | grep '"msg":"Response completed"' | grep -o '"provider":"[a-z-]*"' | sort | uniq -c
 ```
 
 `LLM_FALLBACK=none` turns the fallback off without editing `config.yml`.
+
+### Any OpenAI-Compatible Model
+
+Any server with a `/chat/completions` endpoint (OpenRouter, DeepSeek, Groq, Ollama, vLLM, LM Studio and others) can be
+`llm.main` or `llm.fallback` without a code change.
+
+1. Uncomment one of the `provider: openai-compatible` examples under `llm.models` in `config.yml`, or copy one, and set
+   its `model` and `baseUrl`.
+2. If the server needs a key, put it in `.env` under the name its `apiKeyEnv` gives; a missing key stops startup with
+   its name. Leave `apiKeyEnv` out for a keyless local server.
+3. Declare what the model can do under `capabilities` (vision, `json_schema`, efforts, output cap); the defaults are
+   listed in the comment above the examples. Set `price` to count its spend against
+   `llm.monthlyBudgetUsd.openai-compatible`.
+4. Set `main` or `fallback` to the entry's key, then rebuild and restart with the owner's authorization. Its failures
+   log under the entry's key, and its turns record `"provider":"openai-compatible"`.
 
 ## Verifying a Model Profile
 

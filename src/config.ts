@@ -8,7 +8,15 @@ import { load } from 'js-yaml'
 // attachments.ts only node built-ins — so reading them here derives values instead of restating them, and cannot
 // close a cycle back into config.
 import { GEMINI_IMAGE_TOKENS, MAX_DOCUMENT_SIZE_BYTES } from './agent/attachmentLimits.js'
-import { MODEL_PROFILES, type ModelProfile, type ProviderId, profileFor } from './agent/llm/profiles.js'
+import {
+  COMPATIBLE_DEFAULTS,
+  type CompatibleCapabilities,
+  MODEL_PROFILES,
+  type ModelProfile,
+  type ProviderId,
+  compatibleProfile,
+  profileFor
+} from './agent/llm/profiles.js'
 import {
   DEFAULT_EMBEDDING_MODELS,
   type EmbeddingProvider,
@@ -74,6 +82,10 @@ interface YamlConfig {
         maxOutputTokens?: number
         baseUrl?: string
         limits?: { rpm?: number; rpd?: number; tpm?: number }
+        apiKeyEnv?: string
+        extraBody?: Record<string, unknown>
+        price?: { input?: number; output?: number }
+        capabilities?: Partial<CompatibleCapabilities>
       }
     >
   }
@@ -296,12 +308,16 @@ export interface ResolvedModel {
   provider: ProviderId
   model: string
   profile: ModelProfile
+  /** Empty for a keyless openai-compatible server, which is then sent no Authorization header. */
   apiKey: string
   baseUrl?: string
   timeoutMs: number
   maxOutputTokens: number
   effort?: string
   limits?: { rpm?: number; rpd?: number; tpm?: number }
+  /** Declared by an openai-compatible entry; the named Chat Completions providers keep their built-in ones. */
+  maxTokensParam?: CompatibleCapabilities['maxTokensParam']
+  extraBody?: Record<string, unknown>
 }
 
 export interface LlmConfig {
@@ -358,18 +374,115 @@ function legacyLlm(settings: LegacyModelSettings): LlmConfig {
   }
 }
 
-const PROVIDER_KEY_ENV: Record<ProviderId, string> = {
+// An openai-compatible entry names its own key variable, or none for a keyless server.
+const PROVIDER_KEY_ENV: Record<Exclude<ProviderId, 'openai-compatible'>, string> = {
   gemini: 'GEMINI_API_KEY',
   anthropic: 'ANTHROPIC_API_KEY',
   openai: 'OPENAI_API_KEY',
   modelscope: 'MODELSCOPE_API_KEY'
 }
+const PROVIDERS: readonly ProviderId[] = [...(Object.keys(PROVIDER_KEY_ENV) as ProviderId[]), 'openai-compatible']
 const DEFAULT_MONTHLY_BUDGET_USD: Partial<Record<ProviderId, number>> = { anthropic: 5, openai: 5 }
 
 type YamlModels = NonNullable<NonNullable<YamlConfig['llm']>['models']>
+type YamlModel = YamlModels[string]
 
 function isProviderId(value: unknown): value is ProviderId {
-  return typeof value === 'string' && Object.hasOwn(PROVIDER_KEY_ENV, value)
+  return PROVIDERS.includes(value as ProviderId)
+}
+
+function isMapping(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+const CAPABILITY_CHOICES: Partial<Record<keyof CompatibleCapabilities, readonly string[]>> = {
+  structuredOutput: ['json_schema', 'json_object'],
+  maxTokensParam: ['max_tokens', 'max_completion_tokens']
+}
+
+/** What is wrong with one declared capability, judged by the type of its default; undefined when nothing is. */
+function capabilityProblem(field: keyof CompatibleCapabilities, value: unknown): string | undefined {
+  const choices = CAPABILITY_CHOICES[field]
+  if (choices) return choices.includes(value as string) ? undefined : `must be ${choices.join(' or ')}`
+  const fallback = COMPATIBLE_DEFAULTS[field]
+  if (typeof fallback === 'boolean') return typeof value === 'boolean' ? undefined : 'must be true or false'
+  if (typeof fallback === 'number') {
+    return Number.isInteger(value) && (value as number) >= 1 ? undefined : 'must be a positive integer'
+  }
+  return Array.isArray(value) && value.every((effort) => typeof effort === 'string' && effort !== '')
+    ? undefined
+    : 'must be a list of effort names'
+}
+
+function compatibleCapabilities(at: string, raw: unknown): CompatibleCapabilities {
+  if (raw === undefined) return COMPATIBLE_DEFAULTS
+  if (!isMapping(raw)) throw new Error(`${at}.capabilities must be a mapping, got: ${String(raw)}`)
+  for (const [field, value] of Object.entries(raw)) {
+    const path = `${at}.capabilities.${field}`
+    if (!Object.hasOwn(COMPATIBLE_DEFAULTS, field)) {
+      throw new Error(`${path} is not a known capability; use ${Object.keys(COMPATIBLE_DEFAULTS).join(', ')}`)
+    }
+    const problem = capabilityProblem(field as keyof CompatibleCapabilities, value)
+    if (problem) throw new Error(`${path} ${problem}, got: ${String(value)}`)
+  }
+  return { ...COMPATIBLE_DEFAULTS, ...raw }
+}
+
+function compatiblePrice(at: string, raw: unknown): ModelProfile['price'] {
+  const price = { input: 0, output: 0 }
+  if (raw === undefined) return price
+  if (!isMapping(raw)) throw new Error(`${at}.price must be a mapping, got: ${String(raw)}`)
+  for (const [field, value] of Object.entries(raw)) {
+    if (field !== 'input' && field !== 'output') {
+      throw new Error(`${at}.price.${field} is not a known price; use input or output`)
+    }
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+      throw new Error(`${at}.price.${field} must be a number >= 0, got: ${String(value)}`)
+    }
+    price[field] = value
+  }
+  return price
+}
+
+interface CompatibleEntry {
+  profile: ModelProfile
+  apiKeyEnv?: string
+  maxTokensParam: CompatibleCapabilities['maxTokensParam']
+  extraBody?: Record<string, unknown>
+}
+
+/** An openai-compatible entry is its own profile: the deployer declares what the model can do instead of D12's probe. */
+function compatibleEntry(at: string, entry: YamlModel): CompatibleEntry {
+  const { model, baseUrl, apiKeyEnv, extraBody } = entry
+  if (typeof model !== 'string' || !model.trim()) {
+    throw new Error(`${at}.model must be a non-empty string, got: ${String(model)}`)
+  }
+  if (baseUrl === undefined) throw new Error(`${at}.baseUrl is required for provider openai-compatible`)
+  const protocol = typeof baseUrl === 'string' ? URL.parse(baseUrl)?.protocol : undefined
+  if (protocol !== 'http:' && protocol !== 'https:') {
+    throw new Error(`${at}.baseUrl must be an http or https URL, got: ${String(baseUrl)}`)
+  }
+  if (apiKeyEnv !== undefined && (typeof apiKeyEnv !== 'string' || !apiKeyEnv)) {
+    throw new Error(`${at}.apiKeyEnv must name an environment variable, got: ${String(apiKeyEnv)}`)
+  }
+  if (extraBody !== undefined && !isMapping(extraBody)) {
+    throw new Error(`${at}.extraBody must be a mapping, got: ${String(extraBody)}`)
+  }
+  const capabilities = compatibleCapabilities(at, entry.capabilities)
+  return {
+    profile: compatibleProfile(model, capabilities, compatiblePrice(at, entry.price)),
+    ...(apiKeyEnv === undefined ? {} : { apiKeyEnv }),
+    maxTokensParam: capabilities.maxTokensParam,
+    ...(extraBody === undefined ? {} : { extraBody })
+  }
+}
+
+function testedProfile(at: string, role: 'main' | 'fallback', provider: ProviderId, model: unknown): ModelProfile {
+  const profile = profileFor(provider, String(model))
+  if (!profile) throw new Error(`${at}.model has no tested ${provider} profile, got: ${String(model)}`)
+  if (!profile.verified)
+    throw new Error(`${at}.model ${profile.model} is an untested candidate and cannot be llm.${role}`)
+  return profile
 }
 
 function resolveRole(
@@ -384,12 +497,11 @@ function resolveRole(
   if (!entry) throw new Error(`${source} must name a key under llm.models, got: ${key}`)
   const at = `Config value llm.models.${key}`
   if (!isProviderId(entry.provider)) {
-    throw new Error(`${at}.provider must be gemini, anthropic, openai or modelscope, got: ${String(entry.provider)}`)
+    const allowed = `${PROVIDERS.slice(0, -1).join(', ')} or ${PROVIDERS.at(-1)}`
+    throw new Error(`${at}.provider must be ${allowed}, got: ${String(entry.provider)}`)
   }
-  const profile = profileFor(entry.provider, String(entry.model))
-  if (!profile) throw new Error(`${at}.model has no tested ${entry.provider} profile, got: ${String(entry.model)}`)
-  if (!profile.verified)
-    throw new Error(`${at}.model ${profile.model} is an untested candidate and cannot be llm.${role}`)
+  const compatible = entry.provider === 'openai-compatible' ? compatibleEntry(at, entry) : undefined
+  const profile = compatible?.profile ?? testedProfile(at, role, entry.provider, entry.model)
   const efforts = profile.thinking.efforts
   if (entry.effort !== undefined && !efforts.includes(entry.effort)) {
     throw new Error(
@@ -398,9 +510,11 @@ function resolveRole(
         : `${at}.effort must be one of ${efforts.join(', ')}, got: ${entry.effort}`
     )
   }
-  const keyEnv = PROVIDER_KEY_ENV[entry.provider]
-  const apiKey = entry.provider === 'gemini' ? settings.gemini.apiKey : envString(keyEnv)
-  if (!apiKey) throw new Error(`Missing required environment variable: ${keyEnv} (llm.${role} uses ${entry.provider})`)
+  const keyEnv = entry.provider === 'openai-compatible' ? compatible?.apiKeyEnv : PROVIDER_KEY_ENV[entry.provider]
+  const apiKey = (entry.provider === 'gemini' ? settings.gemini.apiKey : keyEnv && envString(keyEnv)) ?? ''
+  if (keyEnv && !apiKey) {
+    throw new Error(`Missing required environment variable: ${keyEnv} (llm.${role} uses ${entry.provider})`)
+  }
   return {
     key,
     provider: entry.provider,
@@ -411,7 +525,9 @@ function resolveRole(
     timeoutMs: entry.timeoutMs ?? settings.gemini.timeout,
     maxOutputTokens: entry.maxOutputTokens ?? settings.gemini.maxOutputTokens,
     effort: entry.effort ?? profile.thinking.defaultEffort,
-    limits: resolveLimits(entry.provider, entry.limits)
+    limits: resolveLimits(entry.provider, entry.limits),
+    ...(compatible ? { maxTokensParam: compatible.maxTokensParam } : {}),
+    ...(compatible?.extraBody ? { extraBody: compatible.extraBody } : {})
   }
 }
 

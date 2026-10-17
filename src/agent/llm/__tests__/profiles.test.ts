@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MODEL_PROFILES, profileFor } from '../profiles.js'
+import { COMPATIBLE_DEFAULTS, MODEL_PROFILES, compatibleProfile, profileFor } from '../profiles.js'
 
 describe('model profiles', () => {
   it('ships the tested profiles and the Chat Completions models', () => {
@@ -66,5 +66,60 @@ describe('model profiles', () => {
       expect(profile?.sampling).toEqual({ temperature: true, topP: true })
       expect(profile?.thinking).toEqual({ efforts: [], replayWithinTurn: false })
     }
+  })
+})
+
+describe('openai-compatible profiles', () => {
+  it('builds a conservative, deployer-verified profile from the default capabilities', () => {
+    expect(compatibleProfile('qwen3:32b', COMPATIBLE_DEFAULTS)).toEqual({
+      provider: 'openai-compatible',
+      model: 'qwen3:32b',
+      input: { image: false, pdf: false, audio: false, video: false },
+      tools: { supported: true, parallel: true },
+      thinking: { efforts: [], replayWithinTurn: false },
+      sampling: { temperature: true, topP: true },
+      structuredOutput: 'json_object',
+      maxOutputTokens: 8192,
+      contextWindow: 131_072,
+      promptCaching: 'none',
+      tokenCounter: 'estimate',
+      price: { input: 0, output: 0 },
+      verified: true
+    })
+  })
+
+  it('maps each declared capability and the price onto the profile', () => {
+    const profile = compatibleProfile(
+      'deepseek-chat',
+      {
+        ...COMPATIBLE_DEFAULTS,
+        tools: false,
+        parallelToolCalls: false,
+        vision: true,
+        structuredOutput: 'json_schema',
+        temperature: false,
+        topP: false,
+        efforts: ['low', 'high'],
+        contextWindow: 64_000,
+        maxOutputTokens: 4096
+      },
+      { input: 0.3, output: 1.2 }
+    )
+
+    expect(profile).toMatchObject({
+      input: { image: true, pdf: false, audio: false, video: false },
+      tools: { supported: false, parallel: false },
+      thinking: { efforts: ['low', 'high'], replayWithinTurn: false },
+      sampling: { temperature: false, topP: false },
+      structuredOutput: 'json_schema_strict',
+      maxOutputTokens: 4096,
+      contextWindow: 64_000,
+      price: { input: 0.3, output: 1.2 }
+    })
+    expect(profile.thinking.defaultEffort).toBeUndefined()
+  })
+
+  it('never lists an openai-compatible profile among the tested ones', () => {
+    expect(MODEL_PROFILES.some((profile) => profile.provider === 'openai-compatible')).toBe(false)
   })
 })

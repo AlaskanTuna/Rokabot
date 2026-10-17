@@ -232,14 +232,17 @@ export function renderProbeReport(model: string, checks: ProbeCheck[]): { text: 
   return { text: lines.join('\n'), ready }
 }
 
-export const SUPPORTED_PROVIDERS: readonly ProviderId[] = ['gemini', 'anthropic', 'openai', 'modelscope']
+// An openai-compatible model is declared in config.yml and vouched for by its deployer, so it has no profile here.
+type ProbedProvider = Exclude<ProviderId, 'openai-compatible'>
 
-export function isSupportedProfile(profile: ModelProfile): boolean {
+export const SUPPORTED_PROVIDERS: readonly ProbedProvider[] = ['gemini', 'anthropic', 'openai', 'modelscope']
+
+export function isSupportedProfile(profile: ModelProfile): profile is ModelProfile & { provider: ProbedProvider } {
   return (SUPPORTED_PROVIDERS as readonly string[]).includes(profile.provider)
 }
 
 export function resolveProbeKey(
-  provider: ProviderId,
+  provider: ProbedProvider,
   env: Record<string, string | undefined>
 ): { apiKey?: string; keyName: string } {
   switch (provider) {

@@ -1,5 +1,5 @@
 import type { LlmRequest } from '@google/adk'
-import { type ProviderId, profileFor } from './profiles.js'
+import { type ModelProfile, type ProviderId, profileFor } from './profiles.js'
 
 export type Workload = 'reply' | 'extraction' | 'reclassify' | 'admission' | 'verification' | 'embedding' | 'watcher'
 
@@ -65,10 +65,12 @@ const CACHE_WRITE_PRICE_MULTIPLIER = 1.25
 /**
  * Estimated USD for one call, from its profile's prices per million tokens. The usage buckets are disjoint:
  * `inputTokens` excludes cache reads and writes, and `outputTokens` excludes `reasoningTokens`, which bill as output.
- * The provider's bill stays the source of truth.
+ * The provider's bill stays the source of truth. `price` defaults to the tested profile's.
  */
-export function estimateCostUsd(usage: CallUsage): number {
-  const price = profileFor(usage.provider, usage.model)?.price
+export function estimateCostUsd(
+  usage: CallUsage,
+  price: ModelProfile['price'] | undefined = profileFor(usage.provider, usage.model)?.price
+): number {
   if (!price) return 0
   const cacheRead = (usage.cacheReadTokens ?? 0) * (price.cachedInput ?? price.input)
   const cacheWrite = (usage.cacheWriteTokens ?? 0) * (price.cacheWrite ?? price.input * CACHE_WRITE_PRICE_MULTIPLIER)

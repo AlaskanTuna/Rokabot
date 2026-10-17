@@ -20,7 +20,8 @@ vi.mock('../../../config.js', () => ({ config: mocks.config }))
 
 import { SAFETY_SETTINGS } from '../../safetySettings.js'
 import { StructuredOutputError, generateObject, resetGenerateObjectForTest } from '../generateObject.js'
-import { type ModelProfile, profileFor } from '../profiles.js'
+import { COMPATIBLE_DEFAULTS, type ModelProfile, compatibleProfile, profileFor } from '../profiles.js'
+import { ProviderError } from '../providerError.js'
 
 const gemini = profileFor('gemini', 'gemini-3.5-flash-lite') as ModelProfile
 const haiku = profileFor('anthropic', 'claude-haiku-5-5') as ModelProfile
@@ -369,5 +370,28 @@ describe('generateObject on a configured llm block', () => {
     const outcome = generateObject({ schema: Answer, prompt: 'Extract.', workload: 'extraction' })
     await expect(outcome).rejects.toBeInstanceOf(StructuredOutputError)
     await expect(outcome).rejects.toMatchObject({ reason })
+  })
+
+  it('moves a background job from one openai-compatible endpoint to the other, each with its own adapter', async () => {
+    const router = compatibleProfile('vendor/model-x', COMPATIBLE_DEFAULTS)
+    const local = compatibleProfile('qwen3:32b', COMPATIBLE_DEFAULTS)
+    mocks.config.llm = {
+      main: route('router', router, { baseUrl: 'https://router.example/v1' }),
+      fallback: route('local', local, { baseUrl: 'http://localhost:11434/v1', apiKey: '' })
+    }
+    const outage = new ProviderError({ provider: 'openai-compatible', kind: 'transient_http', message: 'router 503' })
+    const main = fakeLlm(outage)
+    const fallback = fakeLlm(reply({ answer: 'tea' }))
+    useLlms({ router: main, local: fallback })
+
+    await expect(generateObject({ schema: Answer, prompt: 'Extract.', workload: 'extraction' })).resolves.toMatchObject(
+      { value: { answer: 'tea' }, provider: 'openai-compatible', model: 'qwen3:32b' }
+    )
+    expect(mocks.createLlm.mock.calls.map(([resolved]) => (resolved as ResolvedModel).baseUrl)).toEqual([
+      'https://router.example/v1',
+      'http://localhost:11434/v1'
+    ])
+    expect(fallback.requests[0]?.config).toMatchObject({ temperature: 0.3, maxOutputTokens: 1024 })
+    expect(fallback.requests[0]?.config).not.toHaveProperty('safetySettings')
   })
 })
