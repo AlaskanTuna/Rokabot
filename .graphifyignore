@@ -2,6 +2,8 @@
 docs/*
 !docs/prd.md
 !docs/trd.md
+!docs/trd/
+!docs/guide/
 !docs/README.md
 !docs/runbook.md
 !docs/research/
