@@ -1,0 +1,319 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Config Layers",
+    "output": ".archify/config-layers/config-layers.html",
+    "locale": "en",
+    "visual_preset": "editorial",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/AlaskanTuna/Rokabot",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "3720c3d3155636bb76075d223c1ae3cad0ce068a"
+    },
+    "viewBox": [1072, 540],
+    "legend": {
+      "entries": {
+        "emphasis": {
+          "label": "main path"
+        },
+        "security": {
+          "label": "secret or stop"
+        },
+        "dashed": {
+          "label": "soft check"
+        },
+        "database": {
+          "label": "config file"
+        },
+        "default": {
+          "label": "input"
+        }
+      }
+    }
+  },
+  "stages": [
+    {
+      "label": "Sources"
+    },
+    {
+      "label": "Load"
+    },
+    {
+      "label": "Merge"
+    },
+    {
+      "label": "Validate"
+    },
+    {
+      "label": "Outcome"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "envfile",
+      "type": "security",
+      "label": ".env",
+      "sublabel": "secrets and keys",
+      "stage": 0,
+      "row": 0,
+      "sources": [
+        {
+          "path": ".env.example",
+          "line": 1,
+          "end_line": 41,
+          "label": "secret list"
+        }
+      ]
+    },
+    {
+      "id": "configyml",
+      "type": "database",
+      "label": "config.yml",
+      "sublabel": "every tunable",
+      "stage": 0,
+      "row": 1,
+      "sources": [
+        {
+          "path": "config.yml",
+          "line": 1,
+          "end_line": 3,
+          "label": "file header"
+        }
+      ]
+    },
+    {
+      "id": "procenv",
+      "type": "cloud",
+      "label": "Process env",
+      "sublabel": "shell or compose",
+      "stage": 0,
+      "row": 2,
+      "sources": [
+        {
+          "path": "docker-compose.yml",
+          "line": 9,
+          "end_line": 12,
+          "label": "compose environment"
+        }
+      ]
+    },
+    {
+      "id": "dotenv",
+      "type": "backend",
+      "label": "dotenv/config",
+      "sublabel": "fills process.env",
+      "stage": 1,
+      "row": 0,
+      "sources": [
+        {
+          "path": "src/config.ts",
+          "line": 3,
+          "label": "dotenv import"
+        }
+      ]
+    },
+    {
+      "id": "yamlload",
+      "type": "backend",
+      "label": "loadYamlConfig",
+      "sublabel": "js-yaml parse",
+      "stage": 1,
+      "row": 1,
+      "sources": [
+        {
+          "path": "src/config.ts",
+          "line": 186,
+          "end_line": 202,
+          "label": "YAML loader"
+        }
+      ]
+    },
+    {
+      "id": "merge",
+      "type": "backend",
+      "label": "Merge",
+      "sublabel": "env > yaml > default",
+      "stage": 2,
+      "row": 1,
+      "sources": [
+        {
+          "path": "src/config.ts",
+          "line": 204,
+          "end_line": 238,
+          "label": "env readers"
+        },
+        {
+          "path": "src/config.ts",
+          "line": 518,
+          "end_line": 694,
+          "label": "baseConfig"
+        },
+        {
+          "path": "src/config.ts",
+          "line": 418,
+          "end_line": 445,
+          "label": "llm roles"
+        }
+      ]
+    },
+    {
+      "id": "validate",
+      "type": "security",
+      "label": "Validate",
+      "sublabel": "keys, bounds, enums",
+      "stage": 3,
+      "row": 1,
+      "sources": [
+        {
+          "path": "src/config.ts",
+          "line": 21,
+          "end_line": 27,
+          "label": "requiredEnv"
+        },
+        {
+          "path": "src/config.ts",
+          "line": 699,
+          "end_line": 708,
+          "label": "Gemini key check"
+        },
+        {
+          "path": "src/config.ts",
+          "line": 751,
+          "end_line": 948,
+          "label": "NUMERIC_BOUNDS"
+        }
+      ]
+    },
+    {
+      "id": "failstop",
+      "type": "external",
+      "icon": "failure",
+      "label": "Startup stops",
+      "sublabel": "error names the key",
+      "stage": 4,
+      "row": 0,
+      "sources": [
+        {
+          "path": "src/config.ts",
+          "line": 930,
+          "end_line": 944,
+          "label": "bounds errors"
+        }
+      ]
+    },
+    {
+      "id": "runtime",
+      "type": "backend",
+      "icon": "success",
+      "label": "config",
+      "sublabel": "runtime settings",
+      "stage": 4,
+      "row": 1,
+      "sources": [
+        {
+          "path": "src/config.ts",
+          "line": 710,
+          "end_line": 711,
+          "label": "merged export"
+        }
+      ]
+    },
+    {
+      "id": "warnings",
+      "type": "backend",
+      "icon": "waiting",
+      "label": "Warnings",
+      "sublabel": "bot still starts",
+      "stage": 4,
+      "row": 2,
+      "sources": [
+        {
+          "path": "src/config.ts",
+          "line": 980,
+          "end_line": 1066,
+          "label": "soft checks"
+        }
+      ]
+    }
+  ],
+  "flows": [
+    {
+      "id": "f-secrets",
+      "from": "envfile",
+      "to": "dotenv",
+      "label": "secrets",
+      "variant": "security"
+    },
+    {
+      "id": "f-yaml",
+      "from": "configyml",
+      "to": "yamlload",
+      "label": "YAML text",
+      "variant": "default"
+    },
+    {
+      "id": "f-procenv",
+      "from": "dotenv",
+      "to": "merge",
+      "label": "process.env",
+      "variant": "default",
+      "fromSide": "right",
+      "toSide": "top",
+      "via": [[530, 157]]
+    },
+    {
+      "id": "f-yamlconfig",
+      "from": "yamlload",
+      "to": "merge",
+      "label": "YamlConfig",
+      "variant": "emphasis"
+    },
+    {
+      "id": "f-overrides",
+      "from": "procenv",
+      "to": "merge",
+      "label": "env overrides",
+      "variant": "default",
+      "fromSide": "right",
+      "toSide": "bottom",
+      "via": [[530, 385]]
+    },
+    {
+      "id": "f-merged",
+      "from": "merge",
+      "to": "validate",
+      "label": "merged values",
+      "variant": "emphasis"
+    },
+    {
+      "id": "f-pass",
+      "from": "validate",
+      "to": "runtime",
+      "label": "all pass",
+      "variant": "emphasis"
+    },
+    {
+      "id": "f-fail",
+      "from": "validate",
+      "to": "failstop",
+      "label": "hard check fails",
+      "variant": "security",
+      "fromSide": "top",
+      "toSide": "left",
+      "via": [[745, 157]]
+    },
+    {
+      "id": "f-soft",
+      "from": "validate",
+      "to": "warnings",
+      "label": "soft check fails",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "left",
+      "via": [[745, 385]]
+    }
+  ]
+}

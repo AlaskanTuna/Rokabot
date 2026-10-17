@@ -1,189 +1,82 @@
-# Product Requirements Document
+# Product Requirements
 
-> References: [`docs/trd.md`](./trd.md) for technical details.
+What Rokabot must do, for whom, and how far each requirement has shipped. Contracts live in [`trd.md`](./trd.md).
 
----
+## At a Glance
 
-## Problem Statement
+| Item     | Value                                                                               |
+| -------- | ----------------------------------------------------------------------------------- |
+| Product  | A server-wide Discord chatbot that plays Maniwa Roka (馬庭 芦花) from Senren\*Banka |
+| Users    | Server members who chat with her, and the operator who self-hosts her               |
+| Surfaces | @mention, reply, the word "Roka", `/ask`, and seven other slash commands            |
+| Host     | Docker Compose on a Raspberry Pi 5 (8 GB)                                           |
+| Status   | 24 requirements: 21 Shipped, 3 Partial                                              |
 
-Fans of visual novel characters like Maniwa Roka (Senren\*Banka) want to interact with their favorite characters in a natural, conversational way. Existing chatbots lack the depth of personality, speech patterns, and emotional nuance needed to feel authentic. There is no easy way for a small Discord community to have a character bot that maintains conversational context and responds in-character across group conversations.
+## Problem
 
-## Project Objectives
+Fans of a visual novel character want to talk with her in a natural way. Most chatbots lack her personality, speech
+patterns and emotional range. A small Discord community has no simple way to run a character bot that keeps context
+and stays in character across a group conversation.
 
-1. **Authentic character interaction** — Roka's personality, speech patterns, emotional responses, and behavioral quirks are faithfully represented through a layered prompt system derived from a comprehensive character bible.
-2. **Natural conversation flow** — Users can interact via slash commands or natural mention/reply, with Roka maintaining per-channel context for coherent multi-turn conversations.
-3. **Resource efficiency** — The bot runs on a Raspberry Pi 5 (8GB) within Gemini Flash Lite's free-tier rate limits (15 RPM, 250K TPM, 500 RPD).
-4. **Graceful degradation** — When rate-limited or encountering errors, Roka responds in-character rather than showing raw errors.
-5. **Future extensibility** — Architecture supports adding utility features via Google ADK tool integrations post-MVP.
+## Objectives
+
+1. **Authentic Character:** a layered prompt keeps Roka's personality, speech, tone and quirks.
+2. **Natural Conversation:** members reach her by mention, reply, name or `/ask`. She keeps per-channel context.
+3. **Useful and Playful:** she uses tools, reads media, remembers the server, and runs small games.
+4. **Resource Efficiency:** she runs on a Raspberry Pi 5 inside the configured rate limits and monthly spend caps.
+5. **Graceful Degradation:** limits and errors produce in-character replies instead of raw error text.
 
 ## Target Users
 
-| User Type         | Description                             | Primary Need                     |
-| ----------------- | --------------------------------------- | -------------------------------- |
-| Server Members    | Anime/VN fans in a Discord server       | Chat with Roka in-character      |
-| Server Owner (ZJ) | Bot operator, deploys on RPi 5          | Easy deployment, low maintenance |
-| Casual Chatters   | Users who @mention Roka in conversation | Natural, context-aware responses |
+| User Type       | Description                                     | Primary Need                                 |
+| --------------- | ----------------------------------------------- | -------------------------------------------- |
+| Server Members  | Anime and visual novel fans in a Discord server | Chat with Roka in character; games and tools |
+| Casual Chatters | Members who mention her mid-conversation        | Natural replies that fit the channel context |
+| Bot Operator    | Self-hosts the bot, for example on a Pi 5       | Easy deployment, low upkeep, bounded cost    |
 
-## User Workflow Overview
+## User Workflow
 
-```
-User types /ask "question"     User @mentions Roka
-        │                              │
-        ▼                              ▼
-  Discord delivers             Discord delivers
-  interaction event            message event
-        │                              │
-        └──────────┬───────────────────┘
-                   │
-                   ▼
-         Rate limit check
-        ┌──────────┴──────────┐
-        │                     │
-     Allowed              Rate limited
-        │                     │
-        ▼                     ▼
-   Show typing         Send in-character
-   indicator            decline message
-        │
-        ▼
-   Build session context
-   (FIFO window + tone detection)
-        │
-        ▼
-   Assemble layered prompt
-   (core + speech + tone + context)
-        │
-        ▼
-   Call Gemini via ADK
-        │
-        ▼
-   Send Roka's response
-   (split past the length cap)
-        │
-        ▼
-   Update session window
-```
+1. A member mentions Roka, replies to her, writes "roka", or runs `/ask`.
+2. If the channel already has a turn in progress, she sends a busy line that deletes itself after 5 seconds.
+3. If the rate limiter cannot admit `gemini.maxLlmCalls` (4) model calls, she declines in character.
+4. She shows typing, opens a linked social post, and admits attachments under the byte and token budgets.
+5. The turn builds the channel's session window, detected tone, memory blocks (not on `/ask`) and a reply shape.
+6. The main model answers through Google ADK and may call tools. Retries and the fallback model cover failures.
+7. She sends a reply card with a tool footer. The session window updates. Passive memory continues in the background.
 
 ## Functional Requirements
 
-### FR-1: Slash Command Interaction
+| ID    | Requirement                                                                                                                                                                                                                                                                                | Status  |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------- |
+| FR-1  | Reply to an @mention, a reply to her message, or the whole word `roka` in any case. Bots can trigger her only by name.                                                                                                                                                                     | Shipped |
+| FR-2  | `/ask` takes a required `question`, 3 attachment slots and `attachment_url`. It works in servers, DMs and user installs. It reads no memory, offers no memory tools and writes no memory.                                                                                                  | Shipped |
+| FR-3  | Register every slash command globally on each startup.                                                                                                                                                                                                                                     | Shipped |
+| FR-4  | Keep one session per channel: the last `session.windowSize` (20) messages, closed after `session.ttl` idle, rebuilt from SQLite up to `session.maxRehydrationAge` (2 hours) old.                                                                                                           | Shipped |
+| FR-5  | Assemble the system prompt from 4 layers (core, speech, tone, context) and close it with a reply shape picked in code, including an in-character saying-no scene for lewd bait or a hard line.                                                                                             | Shipped |
+| FR-6  | Keep the system prompt under `MAX_SYSTEM_PROMPT_TOKENS` (6,500) in `tests/harness/tokens.ts`, enforced by `tests/harness/__tests__/tokens.test.ts`.                                                                                                                                        | Shipped |
+| FR-7  | Detect one of 12 tones with rules at zero model cost. With `jev.tone: on`, Jev picks the tone at or above `jev.toneMinProbability`.                                                                                                                                                        | Shipped |
+| FR-8  | Limit model calls with a sliding-window RPM (`rateLimit.rpm`, 15) and a daily RPD (`rateLimit.rpd`, 500) that resets at midnight UTC. Decline in character; the decline deletes itself after 5 seconds.                                                                                    | Shipped |
+| FR-9  | Allow one active turn per channel.                                                                                                                                                                                                                                                         | Shipped |
+| FR-10 | Retry transient model errors with backoff, up to `gemini.liveMaxRetries` times, inside `gemini.turnDeadlineMs`. Answer from `llm.fallback` when the main model fails, and stay on it for `llm.stickyMs`.                                                                                   | Shipped |
+| FR-11 | Cap paid providers at `llm.monthlyBudgetUsd`: background jobs stop at 80% of the cap, replies at 100%.                                                                                                                                                                                     | Shipped |
+| FR-12 | Show every error as an in-character line. Log and skip Discord permission and unknown-message errors (codes 50013, 10008). Replace an empty model reply with an in-character fallback.                                                                                                     | Shipped |
+| FR-13 | Send replies as Components V2 cards with a tone-matched expression. Split long text at a newline, else a word, else a hard cut, under `discord.maxMessageLength`, and reopen cut code blocks.                                                                                              | Shipped |
+| FR-14 | Offer 14 tools (dice, coin, time, weather, web search, anime, schedule, replies, reminders, memory) and show a footer of tools used plus up to 3 search citations.                                                                                                                         | Shipped |
+| FR-15 | Read images, PDFs, audio and video by upload or link, under per-type size ceilings and per-turn byte and token budgets. Say so when a file cannot be read.                                                                                                                                 | Shipped |
+| FR-16 | Open linked posts from X, Bluesky, YouTube, TikTok, Reddit, Instagram, Bilibili and Threads, and read their most-liked replies on request.                                                                                                                                                 | Shipped |
+| FR-17 | Write passive memory from monitored server channels: user claims, guild facts and episode summaries, gated by Jev or the main model. Honor `memory.privacy` (`relaxed`, `balanced`, `strict`, `off`).                                                                                      | Shipped |
+| FR-18 | Recall memory as one relevance-ranked block (`memory.recall: unified`). The default `shadow` mode logs the unified recall and keeps the legacy blocks.                                                                                                                                     | Partial |
+| FR-19 | Start a web search before the first model call when Jev predicts a lookup (`jev.prefetch: on`). It runs in `shadow` mode by default.                                                                                                                                                       | Partial |
+| FR-20 | Embed memory with a local sidecar (`embeddings.provider: local`). `config.yml` pins `gemini` until the sidecar passes its Pi memory check, and its recall floors still need calibration.                                                                                                   | Partial |
+| FR-21 | Run games with SQLite progress: `/gacha` companions, `/hangman` and `/shiritori`, each with a top-10 leaderboard.                                                                                                                                                                          | Shipped |
+| FR-22 | Provide `/remind`, `/anime`, `/stats` (four 30-day views) and `/report` (rate-limited bug reports).                                                                                                                                                                                        | Shipped |
+| FR-23 | Add ambient touches: keyword emoji reactions, a time-of-day status every `statusCycleMs`, and one owner DM per new GitHub release.                                                                                                                                                         | Shipped |
+| FR-24 | Deploy with Docker Compose: multi-stage `node:24-alpine` build, non-root `node` user, `mem_limit: 1g`, `restart: unless-stopped`, logs rotated at 10 MB x 3, health endpoint on port 3000. On SIGTERM or SIGINT, close sessions, the database and Discord, and force exit after 5 seconds. | Shipped |
 
-The bot registers an `/ask` slash command globally, with a required `question` string option; availability is set per command. It replaced the separate `/chat` and `/search` commands, so a single surface answers both conversation and lookups.
+## Source Files
 
-**Acceptance Criteria:**
-
-- [ ] `/ask` command appears in Discord command picker
-- [ ] Command accepts a `question` string parameter
-- [ ] Bot defers reply (shows "thinking...") while processing
-- [ ] Bot edits deferred reply with Roka's response
-- [ ] Commands are re-registered on every bot startup
-- [ ] `/ask` is memory-free: it retrieves no stored facts, offers no memory tools, and writes no memory rows — which is what makes it the one surface that works in a DM, where Roka has no memory of anyone
-
-### FR-2: Mention/Reply Interaction
-
-The bot responds when directly @mentioned or when a user replies to one of the bot's messages.
-
-**Acceptance Criteria:**
-
-- [ ] Bot detects @mention and strips the mention tag from message content
-- [ ] Bot detects replies to its own messages
-- [ ] Bot ignores its own messages and other bots
-- [ ] Bot shows typing indicator while processing
-- [ ] Bot replies in the same channel
-
-### FR-3: Per-Channel Conversational Memory
-
-Each channel maintains an independent conversation session with a sliding message window.
-
-**Acceptance Criteria:**
-
-- [ ] Session created on first interaction per channel
-- [ ] Last 10 messages stored in FIFO order (oldest evicted)
-- [ ] Both user and assistant messages tracked with display name, content, timestamp
-- [ ] Session destroyed after 5 minutes of inactivity
-- [ ] Session state is in-memory only (no persistence)
-
-### FR-4: Layered Personality Prompts
-
-Roka's system prompt is assembled from 4 layers derived from the character bible.
-
-**Acceptance Criteria:**
-
-- [ ] Layer 0 (Core Identity) always included — personality, behavioral rules
-- [ ] Layer 1 (Speech Patterns) always included — verbal style, response length
-- [ ] Layer 2 (Conversation Tone) dynamically selected by detected tone (see `docs/trd.md` for the canonical tone list)
-- [ ] Layer 3 (Channel Awareness) dynamically built — participant names, time of day
-- [ ] System prompt (4 assembled layers) stays within `MAX_SYSTEM_PROMPT_TOKENS` (`tests/harness/tokens.ts`), enforced by `tests/harness/__tests__/tokens.test.ts`
-
-### FR-5: Tone Detection
-
-A rule-based detector selects the appropriate tone layer based on recent messages.
-
-**Acceptance Criteria:**
-
-- [ ] Detects romantic/flirty keywords → flustered tone
-- [ ] Detects emotional/supportive keywords → sincere tone
-- [ ] Detects food/daily life keywords → domestic tone
-- [ ] Defaults to playful tone when no pattern matches
-- [ ] Zero LLM cost (keyword matching only)
-
-### FR-6: Rate Limiting
-
-Dual rate limiter prevents exceeding Gemini API quotas.
-
-**Acceptance Criteria:**
-
-- [ ] Sliding window for RPM (no more than `rpm` admissions in any rolling minute, configurable)
-- [ ] Daily counter for RPD (resets at midnight, configurable timezone)
-- [ ] Rate limit checked before any Gemini API call
-- [ ] When limited, bot sends an in-character decline message
-- [ ] Decline messages do not consume session window slots or reset idle timer
-
-### FR-7: Error Handling
-
-All errors surface as in-character messages, never raw errors.
-
-**Acceptance Criteria:**
-
-- [ ] Gemini 429 → respect Retry-After, in-character decline
-- [ ] Gemini 500/503 → single retry after 2s, then in-character decline
-- [ ] Gemini timeout (>15s) → cancel, in-character decline
-- [ ] Discord permission errors → log warning, skip silently
-- [ ] Empty Gemini response → send fallback in-character message
-
-### FR-8: Response Formatting
-
-Responses respect Discord's message length limits.
-
-**Acceptance Criteria:**
-
-- [ ] Long responses split at a newline, else a word boundary, else a hard cut (`splitResponse` in
-      `src/discord/responses.ts`), each chunk under the cap bounded on `discord.maxMessageLength` in
-      `src/config.ts` — the Components V2 `TextDisplay` budget minus the tool footer, pinned by
-      `src/discord/__tests__/messageBuilder.test.ts`
-- [ ] Split chunks sent sequentially with ~500ms delay
-- [ ] Empty/whitespace responses replaced with in-character fallback
-
-### FR-9: Docker Deployment
-
-The bot runs as a Docker Compose service on Raspberry Pi 5.
-
-**Acceptance Criteria:**
-
-- [ ] Multi-stage Dockerfile (build + slim runtime)
-- [ ] ARM64 compatible (node:24-alpine)
-- [ ] Non-root container user
-- [ ] Memory capped at 512MB
-- [ ] Auto-restart on crash/reboot (`unless-stopped`)
-- [ ] Log rotation configured (10MB max, 3 files)
-
-### FR-10: Graceful Shutdown
-
-The bot cleans up resources on shutdown signals.
-
-**Acceptance Criteria:**
-
-- [ ] Handles SIGTERM and SIGINT
-- [ ] Clears all session idle timers
-- [ ] Destroys Discord client connection
-- [ ] 5-second forced exit timeout
+- `src/discord/events/messageCreate.ts`, `src/discord/events/interactionCreate.ts`, `src/discord/commands/`
+- `src/agent/roka.ts`, `src/agent/session.ts`, `src/agent/replyShape.ts`, `src/agent/reliability.ts`, `src/agent/llm/budget.ts`
+- `src/agent/tools/index.ts`, `src/discord/messageBuilder.ts`, `src/discord/responses.ts`
+- `src/utils/rateLimiter.ts`, `src/discord/concurrency.ts`, `src/discord/errorHandler.ts`
+- `src/index.ts`, `Dockerfile`, `docker-compose.yml`, `config.yml`

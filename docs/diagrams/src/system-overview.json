@@ -1,0 +1,356 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Rokabot System Overview",
+    "output": ".archify/system-overview/system-overview.html",
+    "locale": "en",
+    "visual_preset": "editorial",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/AlaskanTuna/Rokabot.git",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "3720c3d3155636bb76075d223c1ae3cad0ce068a"
+    }
+  },
+  "components": [
+    {
+      "id": "discord",
+      "type": "external",
+      "label": "Discord",
+      "sublabel": "gateway + REST",
+      "pos": [30, 220],
+      "size": [150, 64],
+      "sources": [
+        {
+          "path": "src/discord/client.ts",
+          "line": 10,
+          "end_line": 19,
+          "label": "intents and handlers"
+        }
+      ]
+    },
+    {
+      "id": "gateway",
+      "type": "frontend",
+      "label": "Discord Gateway Layer",
+      "sublabel": "triggers, guards, replies",
+      "pos": [300, 220],
+      "size": [170, 64],
+      "sources": [
+        {
+          "path": "src/discord/events/messageCreate.ts",
+          "line": 75,
+          "end_line": 409,
+          "label": "mention, reply, name"
+        },
+        {
+          "path": "src/discord/events/interactionCreate.ts",
+          "line": 46,
+          "end_line": 352,
+          "label": "slash commands"
+        }
+      ]
+    },
+    {
+      "id": "turnctx",
+      "type": "backend",
+      "label": "Turn Context",
+      "sublabel": "tone, memory, prompt",
+      "pos": [610, 30],
+      "size": [170, 64],
+      "sources": [
+        {
+          "path": "src/agent/turnContext.ts",
+          "line": 111,
+          "end_line": 191,
+          "label": "startTurnEntryWork"
+        },
+        {
+          "path": "src/agent/turnContext.ts",
+          "line": 275,
+          "end_line": 688,
+          "label": "createTurnContext"
+        }
+      ]
+    },
+    {
+      "id": "agent",
+      "type": "backend",
+      "label": "Roka Agent",
+      "sublabel": "ADK LlmAgent + Runner",
+      "pos": [610, 220],
+      "size": [170, 72],
+      "sources": [
+        {
+          "path": "src/agent/roka.ts",
+          "line": 161,
+          "end_line": 291,
+          "label": "agent and runner"
+        },
+        {
+          "path": "src/agent/roka.ts",
+          "line": 313,
+          "end_line": 727,
+          "label": "generateResponse"
+        }
+      ]
+    },
+    {
+      "id": "session",
+      "type": "backend",
+      "label": "WindowedSessionService",
+      "sublabel": "per-channel window",
+      "pos": [610, 390],
+      "size": [170, 64],
+      "sources": [
+        {
+          "path": "src/agent/session.ts",
+          "line": 30,
+          "end_line": 176,
+          "label": "window and rehydration"
+        }
+      ]
+    },
+    {
+      "id": "memory",
+      "type": "backend",
+      "label": "Passive Memory",
+      "sublabel": "episodes, queue, scheduler",
+      "pos": [300, 390],
+      "size": [170, 64],
+      "sources": [
+        {
+          "path": "src/agent/memory/episodeTracker.ts",
+          "line": 47,
+          "end_line": 103,
+          "label": "episode capture"
+        },
+        {
+          "path": "src/agent/memory/scheduler.ts",
+          "line": 79,
+          "end_line": 161,
+          "label": "queue drain"
+        }
+      ]
+    },
+    {
+      "id": "sqlite",
+      "type": "database",
+      "label": "SQLite",
+      "sublabel": "data/rokabot.db, WAL",
+      "pos": [300, 560],
+      "size": [480, 64],
+      "sources": [
+        {
+          "path": "src/storage/database.ts",
+          "line": 1,
+          "end_line": 30,
+          "label": "database file"
+        },
+        {
+          "path": "src/storage/database.ts",
+          "line": 284,
+          "end_line": 296,
+          "label": "getDb"
+        }
+      ]
+    },
+    {
+      "id": "media",
+      "type": "backend",
+      "label": "Media Watcher",
+      "sublabel": "audio and video digests",
+      "pos": [850, 390],
+      "size": [160, 64],
+      "sources": [
+        {
+          "path": "src/agent/media/turnMedia.ts",
+          "line": 685,
+          "label": "prepareTurnMedia"
+        }
+      ]
+    },
+    {
+      "id": "asr",
+      "type": "backend",
+      "label": "asr Sidecar",
+      "sublabel": "sherpa-onnx, :8000",
+      "pos": [850, 560],
+      "size": [160, 64],
+      "sources": [
+        {
+          "path": "docker-compose.yml",
+          "line": 37,
+          "end_line": 53,
+          "label": "asr service"
+        },
+        {
+          "path": "src/agent/media/transcribe.ts",
+          "line": 133,
+          "end_line": 152,
+          "label": "HTTP client"
+        }
+      ]
+    },
+    {
+      "id": "providers",
+      "type": "cloud",
+      "label": "Model Providers",
+      "sublabel": "llm.main + llm.fallback",
+      "pos": [1100, 220],
+      "size": [170, 64],
+      "sources": [
+        {
+          "path": "src/agent/reliability.ts",
+          "line": 21,
+          "label": "rokaModel"
+        },
+        {
+          "path": "src/agent/llm/createModel.ts",
+          "line": 94,
+          "label": "createRokaModel"
+        }
+      ]
+    },
+    {
+      "id": "jev",
+      "type": "cloud",
+      "label": "Jev",
+      "sublabel": "TypeSafe judgments",
+      "pos": [1100, 30],
+      "size": [170, 64],
+      "sources": [
+        {
+          "path": "src/agent/jev/judgments.ts",
+          "line": 83,
+          "end_line": 130,
+          "label": "judgeTurn"
+        },
+        {
+          "path": "src/agent/jev/client.ts",
+          "line": 19,
+          "label": "client"
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Raspberry Pi 5 \u00b7 Docker Compose",
+      "wraps": ["gateway", "turnctx", "agent", "session", "memory", "sqlite", "media", "asr"]
+    }
+  ],
+  "connections": [
+    {
+      "id": "discord-to-gateway",
+      "from": "discord",
+      "to": "gateway",
+      "label": "gateway events",
+      "variant": "emphasis"
+    },
+    {
+      "id": "gateway-to-agent",
+      "from": "gateway",
+      "to": "agent",
+      "label": "generateResponse",
+      "variant": "emphasis"
+    },
+    {
+      "id": "agent-to-providers",
+      "from": "agent",
+      "to": "providers",
+      "label": "LLM calls",
+      "variant": "emphasis"
+    },
+    {
+      "id": "gateway-entry-work",
+      "from": "gateway",
+      "to": "turnctx",
+      "label": "start entry work",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "left"
+    },
+    {
+      "id": "agent-builds-context",
+      "from": "agent",
+      "to": "turnctx",
+      "label": "build context"
+    },
+    {
+      "id": "turnctx-to-jev",
+      "from": "turnctx",
+      "to": "jev",
+      "label": "turn judgment",
+      "variant": "dashed"
+    },
+    {
+      "id": "agent-to-session",
+      "from": "agent",
+      "to": "session",
+      "label": "Runner events"
+    },
+    {
+      "id": "session-rehydrate",
+      "from": "session",
+      "to": "sqlite",
+      "label": "rehydrate history"
+    },
+    {
+      "id": "gateway-to-memory",
+      "from": "gateway",
+      "to": "memory",
+      "label": "monitored messages",
+      "variant": "dashed"
+    },
+    {
+      "id": "memory-to-sqlite",
+      "from": "memory",
+      "to": "sqlite",
+      "label": "queue + claims"
+    },
+    {
+      "id": "agent-to-media",
+      "from": "agent",
+      "to": "media",
+      "label": "watch A/V",
+      "fromSide": "right",
+      "toSide": "top"
+    },
+    {
+      "id": "media-to-asr",
+      "from": "media",
+      "to": "asr",
+      "label": "speech windows",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Durable State",
+      "items": [
+        "SQLite is canonical; the ADK window is a hot cache",
+        "roka.ts saves both sides of a good turn to session_history",
+        "Turn context reads memory claims from SQLite"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Background Memory",
+      "items": [
+        "Closed episodes enter extraction_queue",
+        "Jev admits and verifies; the main model extracts",
+        "Runs off the reply path"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Optional Sidecars",
+      "items": ["embeddings: compose profile local-embeddings", "watchtower: compose profile autoupdate"]
+    }
+  ]
+}
