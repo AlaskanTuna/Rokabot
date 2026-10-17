@@ -9,6 +9,9 @@
   "organizeImports": {
     "enabled": true
   },
+  "css": {
+    "formatter": { "enabled": false }
+  },
   "javascript": {
     "formatter": {
       "quoteStyle": "single",

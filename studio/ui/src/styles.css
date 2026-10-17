@@ -1,8 +1,8 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 /* Tokens mirror the Figma variables (studio/DESIGN.md); each theme redefines the same names. */
 :root,
-:root[data-theme="light"] {
+:root[data-theme='light'] {
   color-scheme: light;
   --canvas: #ffffff;
   --sidebar: #f6f7f9;
@@ -35,7 +35,7 @@
   --glow-3: 0.07;
 }
 
-:root[data-theme="dark"] {
+:root[data-theme='dark'] {
   color-scheme: dark;
   --canvas: #0e0f12;
   --sidebar: #121417;
@@ -93,8 +93,8 @@
 }
 
 @theme {
-  --font-sans: "Geist Variable", "Geist", system-ui, sans-serif;
-  --font-mono: "Geist Mono Variable", "Geist Mono", ui-monospace, monospace;
+  --font-sans: 'Geist Variable', 'Geist', system-ui, sans-serif;
+  --font-mono: 'Geist Mono Variable', 'Geist Mono', ui-monospace, monospace;
 
   --text-title: 1.5rem;
   --text-title--line-height: 2rem;
@@ -169,7 +169,9 @@
   background-color: var(--glass-raised);
   border: 1px solid var(--glass-edge);
   backdrop-filter: blur(40px) saturate(140%);
-  box-shadow: 0 24px 48px -12px #0d0f1a47, 0 4px 12px -4px #0d0f1a1a;
+  box-shadow:
+    0 24px 48px -12px #0d0f1a47,
+    0 4px 12px -4px #0d0f1a1a;
 }
 
 @utility glass-cta {
