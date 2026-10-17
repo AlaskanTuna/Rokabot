@@ -2,6 +2,8 @@
 # Secrets (DISCORD_TOKEN, DISCORD_CLIENT_ID, GEMINI_API_KEY) stay in .env
 # Environment variables override values only where `src/config.ts` wires them.
 
+character: characters/roka # Character pack folder (CHARACTER_DIR overrides); see characters/README.md
+
 jev:
   model: jev-1.13.0 # Pinned Jev version; thresholds are tuned against one version, and the jev-latest alias moves
   timeoutMs: 1200 # Deadline for the in-reply judgment (Pi median ~0.5s); one attempt, no retries

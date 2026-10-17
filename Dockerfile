@@ -51,6 +51,8 @@ RUN set -eu; \
 
 COPY --from=build /app/dist/ dist/
 COPY config.yml ./
+COPY characters/ characters/
+COPY prompts/ prompts/
 
 # Last, because it changes on every commit: above the installs it made each deploy reinstall ffmpeg and every
 # npm package from the network.
