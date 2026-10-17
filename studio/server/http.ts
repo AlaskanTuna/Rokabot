@@ -24,12 +24,30 @@ export function fail(status: number, message: string, extra?: Record<string, unk
   return new StudioError(status, { file: null, path: null, message }, extra)
 }
 
+/** Sent with every response: the UI runs only its own scripts, and no other page can frame it or read its address. */
+export const SECURITY_HEADERS: Readonly<Record<string, string>> = {
+  'content-security-policy': [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data:",
+    "font-src 'self' data:",
+    "connect-src 'self'",
+    "frame-ancestors 'none'",
+    "base-uri 'none'",
+    "form-action 'none'"
+  ].join('; '),
+  'x-frame-options': 'DENY',
+  'referrer-policy': 'no-referrer',
+  'x-content-type-options': 'nosniff'
+}
+
 export function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res
     .writeHead(status, {
+      ...SECURITY_HEADERS,
       'content-type': 'application/json; charset=utf-8',
-      'cache-control': 'no-store',
-      'x-content-type-options': 'nosniff'
+      'cache-control': 'no-store'
     })
     .end(JSON.stringify(body))
 }

@@ -76,6 +76,8 @@ npm test          # Run Vitest — main gate
 npm run test:perf    # Separate performance-evaluation gate; full verification remains npm test && npm run test:perf
 npm run character -- check   # Validate the character pack and print its prompt token estimates; `-- preview` prints an assembled prompt
 npm run test:live    # Opt-in live-model gate; needs GRAPHIFY_GEMINI_API_KEY, spends real Gemini calls; not part of full verification
+npm run studio       # Persona Studio: build the dashboard UI and open it on 127.0.0.1 (studio/README.md)
+npm run test:e2e     # Opt-in Playwright suite for Persona Studio on a sandbox copy; needs `npx playwright install chromium`; not part of full verification
 ```
 
 See `package.json` for all other scripts.

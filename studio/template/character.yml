@@ -1,0 +1,23 @@
+# A starter pack: replace the name, the prompts and the lines with your character's own. characters/README.md lists
+# every field.
+id: aster # Folder-style id for this pack; Persona Studio sets it to the new folder's name
+name: Aster # Short name: {{char}} in prompts, the saved speaker name and the leading-name strip
+fullName: Aster # {{char_full}} in prompts
+world: a quiet seaside town # {{world}} in harness prompts: the place the character calls home
+triggers:
+  names: [aster] # Whole-word, case-insensitive names that wake the bot in a channel
+model: # Sampling hints; providers that do not accept them drop them
+  temperature: 0.8
+  topP: 0.95
+prompt:
+  # The cached system prompt, top to bottom: each name is prompts/<name>.md in this pack, else the harness prompts/
+  system: [intro, who-you-are, how-you-speak, answering, images, audio-video, tools, boundaries]
+situation:
+  timeOfDay: # Hours [from, to) in config.yml's timezone; the bands must cover all 24 hours and may wrap past midnight
+    - { from: 5, to: 12, text: morning }
+    - { from: 12, to: 17, text: afternoon }
+    - { from: 17, to: 22, text: evening }
+    - { from: 22, to: 5, text: late at night }
+judge: # Questions Jev answers each turn; name the character so the judge reads the message from its side
+  lookupQuestion: Does answering `message` need a specific, niche, recent or real-world fact {{char}} would not reliably know?
+  moodQuestion: Which mood should {{char}}, a friendly regular in this server, reply to `message` in, given `recent_messages` and `time_of_day`?

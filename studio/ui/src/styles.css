@@ -1,0 +1,332 @@
+@import 'tailwindcss';
+
+/* Tokens mirror the Figma variables (studio/DESIGN.md); each theme redefines the same names. */
+:root,
+:root[data-theme='light'] {
+  color-scheme: light;
+  --canvas: #ffffff;
+  --sidebar: #f6f7f9;
+  --surface: #ffffff;
+  --raised: #ffffff;
+  --subtle: #eff0f3;
+  --selected: #ffe7ef;
+  --accent: #bb086f;
+  --accent-hover: #9c005a;
+  --line: #e3e4e8;
+  --line-strong: #d2d4d8;
+  --focus: #f84b9f;
+  --ink: #0e0f12;
+  --ink-2: #55585f;
+  --ink-3: #646870;
+  --on-accent: #ffffff;
+  --accent-ink: #bb086f;
+  --success: #007a43;
+  --warning: #946000;
+  --danger: #d01c29;
+  --info: #006bb4;
+  --danger-fill: #d01c29;
+  --glass: #ffffff9e;
+  --glass-raised: #ffffffcc;
+  --glass-edge: #ffffffb2;
+  --glass-accent: #bb086fdb;
+  --scrim: #0e0f123d;
+  --glow-1: 0.12;
+  --glow-2: 0.09;
+  --glow-3: 0.07;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --canvas: #0e0f12;
+  --sidebar: #121417;
+  --surface: #16171a;
+  --raised: #1c1e22;
+  --subtle: #1c1e22;
+  --selected: #511130;
+  --line: #24262b;
+  --line-strong: #3a3d43;
+  --focus: #ff74b0;
+  --ink: #f6f7f9;
+  --ink-2: #b5b7bd;
+  --ink-3: #8f9299;
+  --accent-ink: #ff74b0;
+  --success: #3bb974;
+  --warning: #f5ae39;
+  --danger: #f4514f;
+  --info: #3f9fe8;
+  --glass: #16171a8f;
+  --glass-raised: #1c1e22b8;
+  --glass-edge: #ffffff1a;
+  --scrim: #06070970;
+  --glow-1: 0.22;
+  --glow-2: 0.17;
+  --glow-3: 0.12;
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-sidebar: var(--sidebar);
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-subtle: var(--subtle);
+  --color-selected: var(--selected);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-focus: var(--focus);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-on-accent: var(--on-accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-info: var(--info);
+  --color-danger-fill: var(--danger-fill);
+  --color-glass: var(--glass);
+  --color-glass-raised: var(--glass-raised);
+  --color-glass-edge: var(--glass-edge);
+  --color-glass-accent: var(--glass-accent);
+  --color-scrim: var(--scrim);
+}
+
+@theme {
+  --font-sans: 'Geist Variable', 'Geist', system-ui, sans-serif;
+  --font-mono: 'Geist Mono Variable', 'Geist Mono', ui-monospace, monospace;
+
+  --text-title: 1.5rem;
+  --text-title--line-height: 2rem;
+  --text-title--letter-spacing: -0.01em;
+  --text-title--font-weight: 600;
+  --text-headline: 1.125rem;
+  --text-headline--line-height: 1.625rem;
+  --text-headline--letter-spacing: -0.005em;
+  --text-headline--font-weight: 600;
+  --text-section: 0.9375rem;
+  --text-section--line-height: 1.375rem;
+  --text-section--letter-spacing: -0.002em;
+  --text-section--font-weight: 600;
+  --text-body: 0.875rem;
+  --text-body--line-height: 1.25rem;
+  --text-small: 0.8125rem;
+  --text-small--line-height: 1.125rem;
+  --text-label: 0.75rem;
+  --text-label--line-height: 1rem;
+  --text-label--letter-spacing: 0.002em;
+  --text-label--font-weight: 500;
+  --text-code: 0.8125rem;
+  --text-code--line-height: 1.25rem;
+  --text-code-sm: 0.75rem;
+  --text-code-sm--line-height: 1.125rem;
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-panel: 14px;
+  --radius-xl: 16px;
+
+  --shadow-hairline: 0 1px 2px #0d0f1a0f;
+  --shadow-card: 0 8px 24px -4px #0d0f1a29, 0 2px 6px -2px #0d0f1a14;
+  --shadow-lifted: 0 24px 48px -12px #0d0f1a42, 0 4px 12px -4px #0d0f1a1a;
+
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --animate-pop-in: pop-in 160ms var(--ease-out-quart);
+  --animate-toast-in: toast-in 200ms var(--ease-out-quart);
+  --animate-shimmer: shimmer 1.6s ease-in-out infinite;
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@keyframes shimmer {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+/* Glass belongs to chrome layers only (DESIGN.md, The Glass Is Chrome Rule). */
+@utility glass-panel {
+  background-color: var(--glass);
+  border: 1px solid var(--glass-edge);
+  backdrop-filter: blur(24px) saturate(140%);
+  box-shadow: 0 8px 24px -8px #0d0f1a24;
+}
+
+@utility glass-overlay {
+  background-color: var(--glass-raised);
+  border: 1px solid var(--glass-edge);
+  backdrop-filter: blur(40px) saturate(140%);
+  box-shadow:
+    0 24px 48px -12px #0d0f1a47,
+    0 4px 12px -4px #0d0f1a1a;
+}
+
+@utility glass-cta {
+  background-color: var(--glass);
+  border: 1px solid var(--glass-edge);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 4px 12px -4px #0d0f1a38;
+}
+
+@utility focus-ring {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    background-color: var(--canvas);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 1px;
+  }
+
+  ::selection {
+    background-color: color-mix(in srgb, var(--accent) 28%, transparent);
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+}
+
+/* Three soft glows drift on a 48 s loop; transform only, so the compositor moves them without repainting. */
+.ambient {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.ambient span {
+  position: absolute;
+  border-radius: 9999px;
+  will-change: transform;
+  animation: 48s ease-in-out infinite;
+}
+
+.ambient .glow-1 {
+  width: 780px;
+  height: 780px;
+  left: -220px;
+  top: -260px;
+  opacity: var(--glow-1);
+  background: radial-gradient(circle, #3f9fe8 0%, transparent 68%);
+  animation-name: drift-1;
+}
+
+.ambient .glow-2 {
+  width: 860px;
+  height: 860px;
+  right: -260px;
+  bottom: -320px;
+  opacity: var(--glow-2);
+  background: radial-gradient(circle, #0077c7 0%, transparent 68%);
+  animation-name: drift-2;
+}
+
+.ambient .glow-3 {
+  width: 420px;
+  height: 420px;
+  left: 42%;
+  bottom: -180px;
+  opacity: var(--glow-3);
+  background: radial-gradient(circle, #f84b9f 0%, transparent 68%);
+  animation-name: drift-3;
+}
+
+@keyframes drift-1 {
+  25% {
+    transform: translate(140px, 90px) scale(1.12);
+  }
+  50% {
+    transform: translate(60px, 200px) scale(0.94);
+  }
+  75% {
+    transform: translate(-80px, 110px) scale(1.08);
+  }
+}
+
+@keyframes drift-2 {
+  25% {
+    transform: translate(-160px, -60px) scale(0.92);
+  }
+  50% {
+    transform: translate(-60px, -180px) scale(1.1);
+  }
+  75% {
+    transform: translate(90px, -90px) scale(0.96);
+  }
+}
+
+@keyframes drift-3 {
+  25% {
+    transform: translate(100px, -120px) scale(1.15);
+  }
+  50% {
+    transform: translate(-120px, -40px) scale(1);
+  }
+  75% {
+    transform: translate(-40px, 80px) scale(0.9);
+  }
+}
+
+/* Paused while the tab is hidden or the window is in the background, so an idle studio costs nothing. */
+:root[data-idle] .ambient span {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ambient span {
+    animation: none;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .glass-panel,
+  .glass-cta {
+    background-color: var(--sidebar);
+  }
+
+  .glass-overlay {
+    background-color: var(--raised);
+  }
+}

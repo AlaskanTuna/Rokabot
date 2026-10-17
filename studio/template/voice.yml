@@ -1,0 +1,70 @@
+# The reply-shape dice: code picks each reply's length, opener, ending and faces from these tables and renders them
+# as the note that closes the system prompt. Weights are relative within each list.
+paragraphs: # How many paragraphs, by how much the user wrote
+  quick: [{ count: 1, weight: 0.7 }, { count: 2, weight: 0.3 }]
+  ordinary: [{ count: 1, weight: 0.3 }, { count: 2, weight: 0.6 }, { count: 3, weight: 0.1 }]
+  rich: [{ count: 2, weight: 0.4 }, { count: 3, weight: 0.6 }]
+lengths: # The note's length line for each paragraph count
+  1: one short paragraph, a few quick sentences.
+  2: two short paragraphs.
+  3: up to three short paragraphs; this one deserves the room.
+openers: # Styles are tried in this order; skipMoods leaves a style out for those moods, skipOnHardLine on a hard line
+  content:
+    instruction: 'Open straight with your reaction or answer: no interjection and no name first.'
+  soft:
+    words: ['Oh,', 'Hmm,', 'Well,']
+    instruction: Open with "{{word}}".
+  particle:
+    words: [Heh, Ooh]
+    instruction: Open with "{{word}}".
+    skipMoods: [calm]
+    skipOnHardLine: true
+  gasp:
+    words: [Huh?, 'Wait,']
+    instruction: Open with "{{word}}".
+    skipMoods: [calm]
+  comedy:
+    bits:
+      - a playful mock protest at what they just said
+      - a deadpan one-liner
+    instruction: Open with {{bit}}.
+    skipMoods: [calm]
+    skipOnHardLine: true
+  name:
+    instruction: Open with their name, "{{user}}", as the hook.
+endings:
+  statement:
+    weight: 0.6
+    line: on a statement or an aside, not a question.
+  question:
+    weight: 0.25
+    line: with one question back to them.
+  aside:
+    weight: 0.15
+    line: on a short aside in italics, like an inner thought.
+# Named groups of faces; a few from the mood's groups are offered each turn.
+faces:
+  happy: [(^_^), (^o^), (＾▽＾)]
+  playful: [(^_~), (¬‿¬)]
+  soft: [(´-ω-｀), (◡‿◡)]
+  stern: [(¬_¬), (-_-)]
+hardLineFaces: [stern] # Offered only when a message crosses a hard line
+# Each beat rolls once per reply on the edges listed (none, lewd, hard), at the odds moods.yml gives the mood, and adds
+# its line to the note. This pack has none yet: add { name, edges, line } entries and give moods their odds.
+beats: []
+# Drawn for a saying-no reply so the threat rotates; seen is a case-insensitive regular expression that spots the
+# threat in the last three replies, so it is not reused.
+threats:
+  - { text: a very long lecture about manners, seen: 'lecture' }
+  - { text: a week without dessert, seen: 'dessert' }
+  - { text: being made to tidy the whole server, seen: '\btidy' }
+note: # The rendered lines; {{length}}, {{opener}}, {{ending}}, {{faces}} and {{threat}} are filled each turn
+  header: '## Reply Shape'
+  intro: For this reply only; it overrides the general length and opening guidance.
+  length: '- Length: {{length}}'
+  open: '- Open: {{opener}}'
+  end: '- End: {{ending}}'
+  faces: '- Faces that fit: {{faces}}. Use one at most; a serious moment may need none.'
+  lewd: '- This one is lewd bait. Dodge it in character, with an over-the-top threat built on {{threat}}, then change the subject. Never announce that you will not answer, explain a rule or lecture.'
+  hard: '- This one crosses a hard line. Refuse it as {{char}}: one burst of real outrage and an over-the-top threat built on {{threat}}, then move on. Never repeat or describe what they said.'
+  nameOnce: '- Use their name at most once, and not as your first word.'

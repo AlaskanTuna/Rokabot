@@ -1,5 +1,13 @@
 export type ProviderId = 'gemini' | 'anthropic' | 'openai' | 'modelscope' | 'openai-compatible'
 
+// An openai-compatible entry names its own key variable, or none for a keyless server.
+export const PROVIDER_KEY_ENV: Readonly<Record<Exclude<ProviderId, 'openai-compatible'>, string>> = {
+  gemini: 'GEMINI_API_KEY',
+  anthropic: 'ANTHROPIC_API_KEY',
+  openai: 'OPENAI_API_KEY',
+  modelscope: 'MODELSCOPE_API_KEY'
+}
+
 export interface ModelProfile {
   provider: ProviderId
   model: string

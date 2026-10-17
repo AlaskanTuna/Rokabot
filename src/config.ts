@@ -13,6 +13,7 @@ import {
   type CompatibleCapabilities,
   MODEL_PROFILES,
   type ModelProfile,
+  PROVIDER_KEY_ENV,
   type ProviderId,
   compatibleProfile,
   profileFor
@@ -374,13 +375,6 @@ function legacyLlm(settings: LegacyModelSettings): LlmConfig {
   }
 }
 
-// An openai-compatible entry names its own key variable, or none for a keyless server.
-const PROVIDER_KEY_ENV: Record<Exclude<ProviderId, 'openai-compatible'>, string> = {
-  gemini: 'GEMINI_API_KEY',
-  anthropic: 'ANTHROPIC_API_KEY',
-  openai: 'OPENAI_API_KEY',
-  modelscope: 'MODELSCOPE_API_KEY'
-}
 const PROVIDERS: readonly ProviderId[] = [...(Object.keys(PROVIDER_KEY_ENV) as ProviderId[]), 'openai-compatible']
 const DEFAULT_MONTHLY_BUDGET_USD: Partial<Record<ProviderId, number>> = { anthropic: 5, openai: 5 }
 
