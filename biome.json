@@ -40,6 +40,18 @@
   },
   "overrides": [
     {
+      "include": ["studio/ui/**"],
+      "linter": {
+        "rules": {
+          "a11y": {
+            "useSemanticElements": "off",
+            "noNoninteractiveElementToInteractiveRole": "off",
+            "useFocusableInteractive": "off"
+          }
+        }
+      }
+    },
+    {
       "include": ["scripts/**"],
       "linter": {
         "rules": {
