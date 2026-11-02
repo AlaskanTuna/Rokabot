@@ -5,6 +5,7 @@ import { config } from '../../../config.js'
 import { logger } from '../../../utils/logger.js'
 import type { ProviderId } from '../../llm/profiles.js'
 import { currentSearchAttempt, nativeSearchTimeMs } from './attemptBudget.js'
+import { anthropicNativeSearch } from './nativeAnthropic.js'
 import { type BackendOutcome, SEARCH_TEXT, type SearchBackend, failedSearch } from './types.js'
 
 export interface NativeCall {
@@ -66,7 +67,8 @@ export function createNativeSearch(callers: Partial<Record<ProviderId, NativeCal
         caller(route, {
           query: params.query,
           topic: params.topic ?? 'general',
-          maxResults: params.max_results ?? 5,
+          // The tool's schema states 1-10 without enforcing it, and a native provider bills per search or per result.
+          maxResults: Math.min(10, Math.max(1, Math.trunc(params.max_results ?? 5))),
           signal
         }),
         signal
@@ -86,4 +88,4 @@ export function createNativeSearch(callers: Partial<Record<ProviderId, NativeCal
   }
 }
 
-export const nativeSearch: SearchBackend = createNativeSearch({})
+export const nativeSearch: SearchBackend = createNativeSearch({ anthropic: anthropicNativeSearch })

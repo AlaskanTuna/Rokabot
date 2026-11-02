@@ -211,6 +211,23 @@ describe('createNativeSearch', () => {
     expect(call.mock.calls[1][1]).toMatchObject({ query: 'frieren', topic: 'news', maxResults: 3 })
   })
 
+  // The tool's schema states 1-10 without enforcing it, and a native search that asked for 50 results would be
+  // billed for 50 on the providers that bill per search or per result.
+  it.each([
+    [0, 1],
+    [-3, 1],
+    [2.5, 2],
+    [10, 10],
+    [50, 10]
+  ])('clamps max_results %s to %s for every native caller', async (requested, expected) => {
+    const call = caller()
+    const search = createNativeSearch({ [MAIN_ROUTE.provider]: call })
+
+    await search({ query: 'q', max_results: requested })
+
+    expect(call.mock.calls[0][1]).toMatchObject({ maxResults: expected })
+  })
+
   it('logs a warning and returns the failure text when the caller throws', async () => {
     const search = createNativeSearch({
       [MAIN_ROUTE.provider]: vi.fn(async () => {
