@@ -9,7 +9,9 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../tools/anime.js', () => ({ handleAnime: mocks.handleAnime }))
 vi.mock('../tools/schedule.js', () => ({ handleSchedule: mocks.handleSchedule }))
-vi.mock('../../../utils/logger.js', () => ({ logger: { info: mocks.info, error: mocks.error, debug: vi.fn() } }))
+vi.mock('../../../utils/logger.js', () => ({
+  logger: { info: mocks.info, error: mocks.error, debug: vi.fn(), warn: vi.fn() }
+}))
 
 import { getSharedRateLimiter } from '../../../utils/rateLimiter.js'
 import { createToolCommandHandler } from '../toolCommands.js'

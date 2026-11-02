@@ -44,6 +44,7 @@ describe('config module', () => {
     vi.stubEnv('DISCORD_TOKEN', 'test-token')
     vi.stubEnv('DISCORD_CLIENT_ID', 'test-client-id')
     vi.stubEnv('GEMINI_API_KEY', 'test-api-key')
+    vi.stubEnv('TAVILY_API_KEY', 'test-tavily-key')
   }
 
   /** Clear any env overrides that dotenv may have loaded from .env */
@@ -102,6 +103,8 @@ describe('config module', () => {
     vi.stubEnv('LLM_MAIN', '')
     vi.stubEnv('LLM_FALLBACK', '')
     vi.stubEnv('GEMINI_HEDGE_AFTER_MS', '')
+    vi.stubEnv('SEARCH_PROVIDER', '')
+    vi.stubEnv('EXA_API_KEY', '')
   }
 
   it('throws if DISCORD_TOKEN is missing', async () => {
@@ -682,6 +685,147 @@ describe('config module', () => {
     expect(config.jev.model).toBe('jev-override')
     expect(config.jev.tone).toBe('on')
     expect(config.jev.prefetch).toBe('on')
+  })
+
+  describe('search provider', () => {
+    it('defaults search.provider to tavily while no native backend exists', async () => {
+      setRequiredEnvVars()
+      clearTunableEnvVars()
+      withYamlOverride({ search: undefined })
+
+      const { config } = await import('../config.js')
+
+      expect(config.search).toEqual({ provider: 'tavily', available: true })
+    })
+
+    it('reads search.provider from config.yml, and SEARCH_PROVIDER overrides it', async () => {
+      setRequiredEnvVars()
+      clearTunableEnvVars()
+      vi.stubEnv('EXA_API_KEY', 'test-exa-key')
+      withYamlOverride({ search: { provider: 'exa' } })
+
+      const fromYaml = await import('../config.js')
+      expect(fromYaml.config.search.provider).toBe('exa')
+
+      vi.resetModules()
+      vi.stubEnv('SEARCH_PROVIDER', 'off')
+      const fromEnv = await import('../config.js')
+      expect(fromEnv.config.search.provider).toBe('off')
+    })
+
+    it.each(['Exa', 'brave'])('rejects the unknown search provider %s', async (provider) => {
+      setRequiredEnvVars()
+      clearTunableEnvVars()
+      vi.stubEnv('SEARCH_PROVIDER', provider)
+
+      await expect(() => import('../config.js')).rejects.toThrow(
+        `Environment variable SEARCH_PROVIDER must be off, native, tavily or exa, got: ${provider}`
+      )
+    })
+
+    it('rejects an unknown value in config.yml', async () => {
+      setRequiredEnvVars()
+      clearTunableEnvVars()
+      withYamlOverride({ search: { provider: 'brave' } })
+
+      await expect(() => import('../config.js')).rejects.toThrow(
+        'Config value search.provider must be off, native, tavily or exa, got: brave'
+      )
+    })
+
+    it('marks a native provider unavailable and warns, naming the model and the fix', async () => {
+      setRequiredEnvVars()
+      clearTunableEnvVars()
+      vi.stubEnv('SEARCH_PROVIDER', 'native')
+
+      const { config } = await import('../config.js')
+      await vi.dynamicImportSettled()
+
+      expect(config.search).toEqual({ provider: 'native', available: false })
+      expect(warn).toHaveBeenCalledWith(
+        { provider: 'native' },
+        `search.provider is native, but ${config.llm.main.model} has no web search, so Roka runs without it. Set search.provider to tavily or exa to search with an API key.`
+      )
+    })
+
+    it('marks off unavailable without warning', async () => {
+      setRequiredEnvVars()
+      clearTunableEnvVars()
+      withYamlOverride({ search: { provider: 'off' } })
+
+      const { config } = await import('../config.js')
+      await vi.dynamicImportSettled()
+
+      expect(config.search).toEqual({ provider: 'off', available: false })
+      expect(warn).not.toHaveBeenCalled()
+    })
+
+    it.each([
+      ['tavily', 'TAVILY_API_KEY'],
+      ['exa', 'EXA_API_KEY']
+    ])('warns when %s has no %s, and stays available', async (provider, key) => {
+      setRequiredEnvVars()
+      clearTunableEnvVars()
+      vi.stubEnv('SEARCH_PROVIDER', provider)
+      vi.stubEnv(key, '')
+
+      const { config } = await import('../config.js')
+      await vi.dynamicImportSettled()
+
+      expect(config.search).toEqual({ provider, available: true })
+      expect(warn).toHaveBeenCalledWith(
+        { provider },
+        `search.provider is ${provider}, but ${key} is not set, so search_web will report that search is not configured.`
+      )
+    })
+
+    // One load reaches warnAfterStartup's logger only once, so a provider that fires two warnings is split
+    // across two tests: each asserts the single warning its own condition produces.
+    it('runs jev.prefetch on as shadow under off, and warns', async () => {
+      setRequiredEnvVars()
+      clearTunableEnvVars()
+      vi.stubEnv('SEARCH_PROVIDER', 'off')
+      vi.stubEnv('JEV_PREFETCH', 'on')
+
+      const { config } = await import('../config.js')
+      await vi.dynamicImportSettled()
+
+      expect(config.jev.prefetch).toBe('shadow')
+      expect(config.search.available).toBe(false)
+      expect(warn).toHaveBeenCalledWith(
+        { provider: 'off' },
+        'jev.prefetch is on, but search.provider is off, so prefetch runs as shadow.'
+      )
+    })
+
+    it('runs jev.prefetch on as shadow under native', async () => {
+      setRequiredEnvVars()
+      clearTunableEnvVars()
+      vi.stubEnv('SEARCH_PROVIDER', 'native')
+      vi.stubEnv('JEV_PREFETCH', 'on')
+      // Two warnings cannot both reach the mock in one load, so the second escapes to the real logger.
+      vi.stubEnv('LOG_LEVEL', 'error')
+
+      const { config } = await import('../config.js')
+      await vi.dynamicImportSettled()
+
+      expect(config.jev.prefetch).toBe('shadow')
+      expect(config.search.available).toBe(false)
+    })
+
+    it('leaves jev.prefetch on under tavily and exa', async () => {
+      setRequiredEnvVars()
+      clearTunableEnvVars()
+      vi.stubEnv('EXA_API_KEY', 'test-exa-key')
+      vi.stubEnv('JEV_PREFETCH', 'on')
+      vi.stubEnv('SEARCH_PROVIDER', 'exa')
+
+      const { config } = await import('../config.js')
+      await vi.dynamicImportSettled()
+
+      expect(config.jev.prefetch).toBe('on')
+      expect(warn).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('prefetch runs as shadow'))
+    })
   })
 
   describe('per-model limits', () => {

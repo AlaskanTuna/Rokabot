@@ -442,7 +442,7 @@ describe('Persona Studio secrets metadata', () => {
     })
     expect(byKey.get('GEMINI_API_KEY')?.description).toMatch(/^Required only when a role uses Gemini: .* always needs/)
     expect(byKey.get('TAVILY_API_KEY')?.description).toBe(
-      'Optional: Tavily API key for web search (free: 1000 queries/month) Sign up at https://tavily.com to get a key'
+      'Optional: Tavily API key, used when search.provider is tavily (free: 1,000 credits/month; each search spends 2) Sign up at https://tavily.com to get a key'
     )
     expect(byKey.get('DEEPSEEK_API_KEY')?.description).toBe(byKey.get('OPENROUTER_API_KEY')?.description)
     expect(byKey.get('DEEPSEEK_API_KEY')?.description).toMatch(/^Optional: keys for llm\.models entries/)

@@ -639,6 +639,7 @@ const OPTIONAL_BLOCKS = [
   'rateLimit',
   'session',
   'socialPosts',
+  'search',
   'media',
   'memory',
   'embeddings',

@@ -1,4 +1,5 @@
 /** Replay sampled production turns against prompt arms without writing user messages into results. */
+import '../tests/harness/searchPin.js'
 import { execFileSync } from 'node:child_process'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'

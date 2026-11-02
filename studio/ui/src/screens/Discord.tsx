@@ -4,6 +4,7 @@ import { CardHeading, ConfigForm, FormPage, humanize, isBlock, presentKeys, useC
 const OWN = [
   'discord',
   'socialPosts',
+  'search',
   'media',
   'emoji',
   'reminders',
