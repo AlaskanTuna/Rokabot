@@ -90,6 +90,25 @@ describe('searchWeb dispatch', () => {
     expect(mocks.recordSearchCitations).not.toHaveBeenCalled()
   })
 
+  it('logs only the message of an error a backend throws, and returns the failure text', async () => {
+    mocks.tavilySearch.mockRejectedValue(new Error('boom'))
+
+    await expect(searchWeb({ query: 'q' })).resolves.toMatchObject({ answer: 'Search request failed.' })
+    expect(mocks.warn).toHaveBeenCalledExactlyOnceWith(
+      { provider: 'tavily', error: 'boom' },
+      'Web search backend threw'
+    )
+
+    mocks.warn.mockClear()
+    mocks.tavilySearch.mockRejectedValue('plain string')
+
+    await expect(searchWeb({ query: 'q' })).resolves.toMatchObject({ answer: 'Search request failed.' })
+    expect(mocks.warn).toHaveBeenCalledExactlyOnceWith(
+      { provider: 'tavily', error: 'plain string' },
+      'Web search backend threw'
+    )
+  })
+
   it('logs the provider, elapsed time and result count at info, without the query', async () => {
     await searchWeb({ query: 'the secret query' })
 

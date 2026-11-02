@@ -39,7 +39,9 @@ export async function searchWeb(params: SearchWebParams): Promise<SearchResult> 
   try {
     outcome = await BACKENDS[provider](params)
   } catch (error) {
-    logger.warn({ error, provider }, 'Web search backend threw')
+    // Only the message: a thrown error can carry a URL or response text, and the info line below keeps
+    // request details out of the logs.
+    logger.warn({ error: error instanceof Error ? error.message : String(error), provider }, 'Web search backend threw')
     outcome = failedSearch(SEARCH_TEXT.failed)
   }
 
