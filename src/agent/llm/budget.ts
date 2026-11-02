@@ -35,7 +35,8 @@ export interface CallInput {
   estTokens: number
 }
 
-const REPLY_SIDE: ReadonlySet<Workload> = new Set<Workload>(['reply', 'watcher'])
+// A search spends the reply budget it runs inside, on a provider whose searches bill separately from its tokens.
+const REPLY_SIDE: ReadonlySet<Workload> = new Set<Workload>(['reply', 'watcher', 'search'])
 
 // Per-model Magicube tiers are shown only to a logged-in account, so every call is counted at the standard tier.
 const MAGICUBES_PER_CALL = 1
@@ -104,9 +105,11 @@ onUsage(recordSpend)
  * The legacy config keeps exactly the accounting it had before per-call budgets: the Discord turn guard, the retry
  * gate and roka's per-turn token charge. Counting its calls here as well would hand the Pi's reply slots to background
  * work, and serialising or capping ModelScope would change a fallback and a qwen watcher that never waited or stopped.
+ * A legacy config on a native-searching model is the exception: its searches are billed per call and must fit the
+ * minute like any other reply-side call.
  */
-function legacyAccounting(): boolean {
-  return config.llm.main.key === 'legacy-gemini'
+function legacyAccounting(workload: Workload): boolean {
+  return config.llm.main.key === 'legacy-gemini' && workload !== 'search'
 }
 
 /** Magicubes left in the shared ModelScope estimate; it resets with the UTC day, like the request limiter's. */
@@ -167,14 +170,14 @@ function routeFor(provider: ProviderId, model: string): ResolvedModel | undefine
 
 /** Reserve one provider call, or name the budget that refused it. Adapters call `startCall`, which wraps this. */
 export function reserveCall(input: CallInput): CallReservation | BudgetDenial {
-  if (legacyAccounting()) return { release: () => {} }
-
   const { provider, model, workload, estTokens } = input
+  if (legacyAccounting(workload)) return { release: () => {} }
   const replySide = REPLY_SIDE.has(workload)
   const main = config.llm.main
   // The Discord layer reserved this turn's whole ceiling on the main model's limiter (#167) and roka.ts charges its
-  // tokens once; counting each of its calls here as well would charge every reply twice.
-  const coveredByTurn = replySide && main.provider === provider && main.model === model
+  // tokens once; counting each of its calls here as well would charge every reply twice. A search is not one of those
+  // reserved calls, so it takes a slot of its own.
+  const coveredByTurn = replySide && workload !== 'search' && main.provider === provider && main.model === model
   // A background call leaves one whole reply turn behind it, so the next reply is admitted rather than declined.
   const headroom = replySide ? 0 : config.gemini.maxLlmCalls
   const limits = routeFor(provider, model)?.limits
@@ -211,7 +214,7 @@ export function reserveCall(input: CallInput): CallReservation | BudgetDenial {
 
 /** Wait for the provider's slot, then reserve the call; a refusal throws the ProviderError the router acts on. */
 export async function startCall(input: CallInput & { signal?: AbortSignal }): Promise<CallReservation> {
-  if (legacyAccounting()) return grantOrThrow(input.provider, reserveCall(input))
+  if (legacyAccounting(input.workload)) return grantOrThrow(input.provider, reserveCall(input))
   const leave = await acquireSlot(input.provider, REPLY_SIDE.has(input.workload), input.signal)
   let reservation: CallReservation
   try {

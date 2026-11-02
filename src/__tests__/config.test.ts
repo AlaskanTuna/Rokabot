@@ -733,10 +733,45 @@ describe('config module', () => {
       )
     })
 
-    it('marks a native provider unavailable and warns, naming the model and the fix', async () => {
+    it('names exactly the four models that support native search', async () => {
+      const { MODEL_PROFILES } = await import('../agent/llm/profiles.js')
+
+      const native: Array<{ model: string; tool: string; usdPerSearch: number }> = []
+      for (const profile of MODEL_PROFILES) {
+        if (profile.nativeSearch) native.push({ model: profile.model, ...profile.nativeSearch })
+      }
+
+      expect(native).toEqual([
+        { model: 'gemini-3.5-flash-lite', tool: 'google_search', usdPerSearch: 0.014 },
+        { model: 'claude-haiku-5-5', tool: 'web_search_20250305', usdPerSearch: 0.01 },
+        { model: 'claude-sonnet-5-5', tool: 'web_search_20250305', usdPerSearch: 0.01 },
+        { model: 'gemini-3.8-flash', tool: 'google_search', usdPerSearch: 0.014 }
+      ])
+    })
+
+    it('makes native available on a supporting main model', async () => {
+      setRequiredEnvVars()
+      clearTunableEnvVars()
+      vi.stubEnv('ANTHROPIC_API_KEY', 'test-anthropic-key')
+      vi.stubEnv('SEARCH_PROVIDER', 'native')
+      withYamlOverride({
+        llm: { main: 'haiku', models: { haiku: { provider: 'anthropic', model: 'claude-haiku-5-5' } } }
+      })
+
+      const { config } = await import('../config.js')
+      await vi.dynamicImportSettled()
+
+      expect(config.search).toEqual({ provider: 'native', available: true })
+      expect(warn).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('has no web search'))
+    })
+
+    // The legacy route copies its family's profile for an untested `gemini.model`, so the copy's capabilities
+    // must not make native available there.
+    it('treats native on a legacy Gemini model with no tested profile as unsupported', async () => {
       setRequiredEnvVars()
       clearTunableEnvVars()
       vi.stubEnv('SEARCH_PROVIDER', 'native')
+      vi.stubEnv('GEMINI_MODEL', 'gemini-2.0-flash-lite')
 
       const { config } = await import('../config.js')
       await vi.dynamicImportSettled()
@@ -744,7 +779,7 @@ describe('config module', () => {
       expect(config.search).toEqual({ provider: 'native', available: false })
       expect(warn).toHaveBeenCalledWith(
         { provider: 'native' },
-        `search.provider is native, but ${config.llm.main.model} has no web search, so Roka runs without it. Set search.provider to tavily or exa to search with an API key.`
+        'search.provider is native, but gemini-2.0-flash-lite has no web search, so Roka runs without it. Set search.provider to tavily or exa to search with an API key.'
       )
     })
 
@@ -809,8 +844,10 @@ describe('config module', () => {
       const { config } = await import('../config.js')
       await vi.dynamicImportSettled()
 
+      // The legacy route runs a model that now supports native, so search is available; prefetch stays shadow
+      // anyway, because only a keyed backend can answer inside `jev.prefetchWaitMs`.
+      expect(config.search.available).toBe(true)
       expect(config.jev.prefetch).toBe('shadow')
-      expect(config.search.available).toBe(false)
     })
 
     it('leaves jev.prefetch on under tavily and exa', async () => {

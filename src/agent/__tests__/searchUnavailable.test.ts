@@ -14,6 +14,9 @@ describe.each(['off', 'native'] as const)('a deployment whose search provider is
   it(`offers no search under ${provider}`, async () => {
     vi.resetModules()
     vi.stubEnv('SEARCH_PROVIDER', provider)
+    // These tests run the legacy Gemini route, which now supports native; its own unsupported model keeps the
+    // deployment searchless, as a Pi without an llm: block and a native provider would be.
+    if (provider === 'native') vi.stubEnv('GEMINI_MODEL', 'gemini-2.0-flash-lite')
 
     const { rokaTools } = await import('../tools/index.js')
     const { character } = await import('../../character/index.js')
@@ -35,6 +38,7 @@ describe.each(['off', 'native'] as const)('a deployment whose search provider is
   it(`still strips a search_web call the model narrates under ${provider}`, async () => {
     vi.resetModules()
     vi.stubEnv('SEARCH_PROVIDER', provider)
+    if (provider === 'native') vi.stubEnv('GEMINI_MODEL', 'gemini-2.0-flash-lite')
 
     expect(stripNarratedToolCalls('*(search_web: x)* hi', ROKA_TOOL_NAMES)).toEqual({ text: 'hi', stripped: 1 })
   })

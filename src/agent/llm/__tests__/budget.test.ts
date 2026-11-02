@@ -26,8 +26,12 @@ vi.mock('../../../utils/logger.js', () => ({
 }))
 vi.mock('../profiles.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../profiles.js')>()),
-  profileFor: (_provider: string, model: string) =>
-    model === 'test-paid' ? { price: { input: 1, output: 1 } } : undefined
+  profileFor: (_provider: string, model: string) => {
+    if (model === 'test-paid') return { price: { input: 1, output: 1 } }
+    // The searched model prices only its searches, so a search call's spend is its fee and nothing else.
+    if (model === 'test-searched') return { price: { input: 0, output: 0 }, nativeSearch: { usdPerSearch: 0.01 } }
+    return undefined
+  }
 }))
 
 vi.mock('../../../storage/spendStore.js', async (importOriginal) => {
@@ -56,6 +60,8 @@ import { type CallUsage, recordUsage } from '../usage.js'
 const reply = { provider: 'gemini', model: 'gemini-test', workload: 'reply', estTokens: 1_000 } as const
 const extraction = { ...reply, workload: 'extraction' } as const
 const fallbackReply = { provider: 'anthropic', model: 'test-paid', workload: 'reply', estTokens: 1_000 } as const
+const searchedReply = { provider: 'anthropic', model: 'test-searched', workload: 'reply', estTokens: 1_000 } as const
+const searched = { ...searchedReply, workload: 'search', inputTokens: 0, outputTokens: 0 } as const
 
 function granted(result: ReturnType<typeof reserveCall>): BudgetReservation {
   if ('denied' in result) throw new Error(`refused: ${result.denied}`)
@@ -162,6 +168,53 @@ describe('requests per model', () => {
     useRoutes(undefined)
 
     for (let call = 0; call < 500; call += 1) granted(reserveCall({ ...fallbackReply, workload: 'extraction' }))
+  })
+})
+
+describe('searches', () => {
+  const paid = { provider: 'anthropic', model: 'test-paid', workload: 'reply', estTokens: 100 } as const
+  const paidUsage = (inputTokens: number): CallUsage => ({ ...paid, inputTokens, outputTokens: 0 })
+
+  it('adds the search fee to the estimated cost', () => {
+    recordUsage({ ...searched, searchRequests: 1 })
+    recordUsage({ ...searched, searchRequests: 3 })
+
+    expect(readSpend('2026-10', 'anthropic')).toBeCloseTo(0.04)
+  })
+
+  it('records the search fee as monthly spend', () => {
+    configState.llm.monthlyBudgetUsd = { anthropic: 0.03 }
+    recordUsage({ ...searched, searchRequests: 3 })
+
+    expect(isMonthlyExhausted('anthropic')).toBe(true)
+  })
+
+  it('takes a search call its own RPM slot on the main model', () => {
+    granted(reserveCall(reply))
+    expect(getSharedRateLimiter().remainingRpm).toBe(15)
+
+    granted(reserveCall({ ...reply, workload: 'search' }))
+    expect(getSharedRateLimiter().remainingRpm).toBe(14)
+  })
+
+  it('lets a search call use the last fifth of the monthly cap', () => {
+    recordUsage(paidUsage(4_500_000))
+
+    expect(reserveCall({ ...paid, workload: 'extraction' })).toEqual({ denied: 'monthly' })
+    expect(reserveCall({ ...paid, workload: 'search' })).not.toHaveProperty('denied')
+
+    recordUsage(paidUsage(500_000))
+    expect(reserveCall({ ...paid, workload: 'search' })).toEqual({ denied: 'monthly' })
+  })
+
+  it('takes an RPM slot for a search call on the legacy config', () => {
+    configState.llm.main = { ...configState.llm.main, key: 'legacy-gemini' }
+    __resetBudgetsForTest()
+
+    granted(reserveCall({ ...reply, workload: 'search' }))
+    expect(getSharedRateLimiter().remainingRpm).toBe(14)
+    for (let call = 0; call < 14; call += 1) granted(reserveCall({ ...reply, workload: 'search' }))
+    expect(reserveCall({ ...reply, workload: 'search' })).toEqual({ denied: 'rpm' })
   })
 })
 

@@ -819,11 +819,15 @@ const baseConfig = {
 
 const llm = resolveLlm(baseConfig)
 const searchProviderId = baseConfig.search.provider
-// `native` needs a model that supports it, which no profile declares yet, so only the two keyed backends can run.
-const searchAvailable = searchProviderId === 'tavily' || searchProviderId === 'exa'
+const keyedSearch = searchProviderId === 'tavily' || searchProviderId === 'exa'
+// `native` searches with the main model itself, which needs a profile declaring web search. Read the route's own
+// provider and model, never `main.profile`: a legacy route synthesises its profile by copying one of the family's,
+// so that copy's capabilities say nothing about the model `gemini.model` names (Review Focus 4).
+const nativeSearchSupported = profileFor(llm.main.provider, llm.main.model)?.nativeSearch !== undefined
+const searchAvailable = searchProviderId === 'native' ? nativeSearchSupported : keyedSearch
 const searchKeys: Readonly<Record<string, string>> = { tavily: 'TAVILY_API_KEY', exa: 'EXA_API_KEY' }
-// A `native` or `off` deployment has no backend prefetch can call inside `jev.prefetchWaitMs`.
-const jevPrefetch: JevMode = searchAvailable || baseConfig.jev.prefetch !== 'on' ? baseConfig.jev.prefetch : 'shadow'
+// Prefetch calls a keyed backend inside `jev.prefetchWaitMs`; `native` and `off` have none to call.
+const jevPrefetch: JevMode = keyedSearch || baseConfig.jev.prefetch !== 'on' ? baseConfig.jev.prefetch : 'shadow'
 
 // A legacy config (no llm: block) has a Gemini main, so the key stays required there with this same message.
 if (
@@ -1099,12 +1103,12 @@ if (config.embeddings.provider !== 'gemini' && !similarityFloors) {
 
 // A native-unsupported deployment can last the life of an install, so it warns once here rather than spending a
 // model round per lookup; a missing key is an operator mistake and only degrades the tool's answer.
-if (searchProviderId === 'native') {
+if (searchProviderId === 'native' && !nativeSearchSupported) {
   warnAfterStartup(
     { provider: searchProviderId },
     `search.provider is native, but ${llm.main.model} has no web search, so Roka runs without it. Set search.provider to tavily or exa to search with an API key.`
   )
-} else if (searchAvailable && !envString(searchKeys[searchProviderId])) {
+} else if (searchProviderId !== 'native' && searchAvailable && !envString(searchKeys[searchProviderId])) {
   warnAfterStartup(
     { provider: searchProviderId },
     `search.provider is ${searchProviderId}, but ${searchKeys[searchProviderId]} is not set, so search_web will report that search is not configured.`

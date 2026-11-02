@@ -28,6 +28,8 @@ export interface ModelProfile {
   tokenCounter: 'gemini' | 'anthropic' | 'estimate'
   /** USD per 1M tokens; 0 for free or quota-billed (ModelScope Magicubes). */
   price: { input: number; output: number; cachedInput?: number; cacheWrite?: number }
+  /** The provider's own web-search tool; absent on a model with no native search. `usdPerSearch` is billed per call. */
+  nativeSearch?: { tool: 'web_search_20250305' | 'google_search'; usdPerSearch: number }
   /** D12: false means "candidate"; startup rejects it as main or fallback. */
   verified: boolean
 }
@@ -46,6 +48,7 @@ export const MODEL_PROFILES: readonly ModelProfile[] = [
     promptCaching: 'implicit',
     tokenCounter: 'gemini',
     price: { input: 0.3, output: 2.5, cachedInput: 0.03 },
+    nativeSearch: { tool: 'google_search', usdPerSearch: 0.014 },
     verified: true
   },
   {
@@ -66,6 +69,7 @@ export const MODEL_PROFILES: readonly ModelProfile[] = [
     promptCaching: 'explicit',
     tokenCounter: 'anthropic',
     price: { input: 0.1, output: 0.5, cachedInput: 0.01, cacheWrite: 0.125 },
+    nativeSearch: { tool: 'web_search_20250305', usdPerSearch: 0.01 },
     verified: true
   },
   {
@@ -89,6 +93,7 @@ export const MODEL_PROFILES: readonly ModelProfile[] = [
     promptCaching: 'explicit',
     tokenCounter: 'anthropic',
     price: { input: 2.0, output: 10.0, cachedInput: 0.2, cacheWrite: 2.5 },
+    nativeSearch: { tool: 'web_search_20250305', usdPerSearch: 0.01 },
     verified: true
   },
   {
@@ -169,6 +174,7 @@ export const MODEL_PROFILES: readonly ModelProfile[] = [
     promptCaching: 'implicit',
     tokenCounter: 'gemini',
     price: { input: 0.75, output: 3.75, cachedInput: 0.075 },
+    nativeSearch: { tool: 'google_search', usdPerSearch: 0.014 },
     verified: false
   },
   {
