@@ -64,15 +64,20 @@ function resultBlocks(message: Anthropic.Message): { index: number; block: Anthr
 
 /**
  * Reads one response. The answer is the text written after the last search result, because the text before it is
- * the model narrating the search it was about to run. A search-error block is a failure even inside HTTP 200.
+ * the model narrating the search it was about to run.
  */
 function readResponse(message: Anthropic.Message, maxResults: number): BackendOutcome | { searched: SearchOutcome } {
   const blocks = resultBlocks(message)
-  const failed = blocks.find(({ block }) => isErrorContent(block.content))
-  if (failed) {
-    const code = (failed.block.content as Anthropic.WebSearchToolResultError).error_code
-    logger.warn({ errorCode: code }, 'Anthropic web search reported an error')
-    return failedSearch(code === 'too_many_requests' ? SEARCH_TEXT.quota : SEARCH_TEXT.failed)
+  const good = blocks.filter(({ block }) => !isErrorContent(block.content))
+  if (good.length === 0) {
+    // Only a response with nothing to show for it is a failure: with `max_uses: 1` a second attempt the model makes
+    // comes back as a `max_uses_exceeded` error block beside a search that already succeeded and was already paid for.
+    const failed = blocks.find(({ block }) => isErrorContent(block.content))
+    if (failed) {
+      const code = (failed.block.content as Anthropic.WebSearchToolResultError).error_code
+      logger.warn({ errorCode: code }, 'Anthropic web search reported an error')
+      return failedSearch(code === 'too_many_requests' ? SEARCH_TEXT.quota : SEARCH_TEXT.failed)
+    }
   }
 
   if (message.usage.server_tool_use?.web_search_requests === 0 || blocks.length === 0) {
@@ -83,7 +88,7 @@ function readResponse(message: Anthropic.Message, maxResults: number): BackendOu
   const cited = citedText(message)
   const seen = new Set<string>()
   const results: { title: string; url: string; snippet: string }[] = []
-  for (const { block } of blocks) {
+  for (const { block } of good) {
     for (const result of searchResults(block.content)) {
       if (seen.has(result.url)) continue
       seen.add(result.url)
@@ -163,6 +168,9 @@ export async function anthropicNativeSearch(
   try {
     for (let pauses = 0; ; pauses += 1) {
       const { message, outcome } = await request(route, call, messagesClient, messages)
+      // A pause whose search already failed has nothing left to resume: resending would pay for the same failure.
+      // Only a failed outcome counts here, because a pause with no result block reads as a succeeded no-summary.
+      if ('succeeded' in outcome && !outcome.succeeded) return outcome
       // A paused turn has not finished searching, so it is resumed before anything is read as an answer.
       if (message.stop_reason === 'pause_turn') {
         // Partial text is never returned as an answer, so a second pause is a failure rather than a thin summary.

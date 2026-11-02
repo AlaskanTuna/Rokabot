@@ -102,12 +102,12 @@ function searchBlock(results: Array<{ title: string; url: string }>, id = 'srvto
   ]
 }
 
-function errorBlock(code: string): ContentBlock[] {
+function errorBlock(code: string, id = 'srvtoolu_1'): ContentBlock[] {
   return [
-    { type: 'server_tool_use', id: 'srvtoolu_1', name: 'web_search', input: { query: 'q' } },
+    { type: 'server_tool_use', id, name: 'web_search', input: { query: 'q' } },
     {
       type: 'web_search_tool_result',
-      tool_use_id: 'srvtoolu_1',
+      tool_use_id: id,
       content: { type: 'web_search_tool_result_error', error_code: code }
     }
   ]
@@ -238,6 +238,36 @@ describe('anthropicNativeSearch', () => {
     expect(String(fetchMock.mock.calls[0][0])).toBe('https://proxy.test/anthropic/v1/messages')
   })
 
+  // The SDK retries a 500 on its own by default, and every retry is a request the budget never reserved.
+  it('makes one request for a provider 500', async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ type: 'error', error: { type: 'api_error', message: 'boom' } }), {
+          status: 500,
+          headers: { 'content-type': 'application/json' }
+        })
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const outcome = await anthropicNativeSearch(HAIKU, call())
+    vi.unstubAllGlobals()
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(outcome).toMatchObject({ answer: SEARCH_TEXT.failed, succeeded: false })
+  })
+
+  it('treats a response that reports no search as no search', async () => {
+    const { client } = replies(
+      message([...searchBlock([{ title: 'A', url: 'https://a.test' }]), { type: 'text', text: 'Guess.' }], {
+        usage: searched(0)
+      })
+    )
+
+    const outcome = await anthropicNativeSearch(HAIKU, call(), client)
+
+    expect(outcome).toMatchObject({ answer: SEARCH_TEXT.noSummary, results: [], resultCount: 0, succeeded: true })
+  })
+
   it('maps results with the cited text as snippet, cited results first, capped at maxResults, without duplicates', async () => {
     const { client } = replies(
       message([
@@ -331,6 +361,25 @@ describe('anthropicNativeSearch', () => {
     }
   )
 
+  it('keeps a good search when a second attempt reports max_uses_exceeded', async () => {
+    const { client } = replies(
+      message([
+        ...searchBlock([{ title: 'A', url: 'https://a.test' }], 'srvtoolu_1'),
+        ...errorBlock('max_uses_exceeded', 'srvtoolu_2'),
+        { ...cited('https://a.test', 'the fact'), text: 'It premiered in January.' }
+      ])
+    )
+
+    const outcome = await anthropicNativeSearch(HAIKU, call(), client)
+
+    expect(outcome).toMatchObject({
+      answer: 'It premiered in January.',
+      results: [{ title: 'A', url: 'https://a.test', snippet: 'the fact' }],
+      resultCount: 1,
+      succeeded: true
+    })
+  })
+
   it('resends a paused turn once with the assistant content', async () => {
     const paused = message([{ type: 'text', text: 'Searching.' }], { stop_reason: 'pause_turn' })
     const { client, create } = replies(
@@ -372,6 +421,17 @@ describe('anthropicNativeSearch', () => {
     expect(outcome).toMatchObject({ answer: SEARCH_TEXT.failed, succeeded: false })
   })
 
+  it('returns the failure of a paused response without resending', async () => {
+    const { client, create } = replies(
+      message([...errorBlock('unavailable')], { stop_reason: 'pause_turn', usage: searched(1) })
+    )
+
+    const outcome = await anthropicNativeSearch(HAIKU, call(), client)
+
+    expect(create).toHaveBeenCalledTimes(1)
+    expect(outcome).toMatchObject({ answer: SEARCH_TEXT.failed, succeeded: false })
+  })
+
   it('maps a refusal to the failure text', async () => {
     const { client } = replies(message([{ type: 'text', text: '' }], { stop_reason: 'refusal' }))
 
@@ -394,6 +454,21 @@ describe('anthropicNativeSearch', () => {
       answer: SEARCH_TEXT.failed,
       succeeded: false
     })
+  })
+
+  it('stops before the resend when the signal aborts during a pause', async () => {
+    const controller = new AbortController()
+    const create = vi.fn((_body: unknown, options: { signal?: AbortSignal }) => {
+      options.signal?.addEventListener('abort', () => controller.abort(), { once: true })
+      controller.abort()
+      return Promise.resolve(message([{ type: 'text', text: '' }], { stop_reason: 'pause_turn' }))
+    })
+    const client = { messages: { create } } as unknown as AnthropicMessagesClient
+
+    const outcome = await anthropicNativeSearch(HAIKU, call({ signal: controller.signal }), client)
+
+    expect(create).toHaveBeenCalledTimes(1)
+    expect(outcome).toMatchObject({ answer: SEARCH_TEXT.failed, succeeded: false })
   })
 
   it.each([
