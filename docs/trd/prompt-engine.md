@@ -80,6 +80,17 @@ Sizes are `estimateTokens` (characters / 4) from `npm run character -- check`. T
 same rule: `/ask` withholds the memory tools, and `memory.privacy: off` withholds `remember_user` and
 `recall_user`.
 
+## Search State
+
+`{{search_tools}}` in `tools.md` and `{{search_before_judging}}` in `answering.md` follow `search.provider`, which is
+read once at startup. With `tavily` or `exa` they fill with `search-tools.md` and `search-before-judging.md`. With
+`off`, or with `native`, which no model profile supports yet, the first fills with `no-search-tools.md` and the second
+is removed, so no prompt or tool description names `search_web`. A missing backend key changes neither: it only makes
+the registered tool answer that search is not configured.
+
+The state never changes within a process, so `STABLE_PREFIXES` still holds three entries: the three memory-mode
+prefixes, each built for that one search state. A deployment that changes `search.provider` rebuilds them on restart.
+
 ## Stable Prefix and Caching
 
 - **What Is Stable:** `character.prompts.stable[mode]`, built once at startup. Mood, hour, speaker and safety rung

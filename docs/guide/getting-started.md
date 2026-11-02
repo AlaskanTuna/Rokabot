@@ -39,7 +39,8 @@ To run on one Gemini key only, add `LLM_MAIN=flash` and `LLM_FALLBACK=none` to `
 
 Optional keys:
 
-- **`TAVILY_API_KEY`:** turns on web search.
+- **`TAVILY_API_KEY`:** turns on web search when `search.provider` is `tavily` (the default).
+- **`EXA_API_KEY`:** turns on web search when `search.provider` is `exa`.
 - **`TYPESAFE_API_KEY`:** turns on Jev judgments for tone, names and passive memory.
 - **`YOUTUBE_API_KEY`:** lets Roka read top comments on YouTube links.
 

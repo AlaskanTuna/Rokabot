@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../../../utils/logger.js', () => ({
-  logger: { info: vi.fn() }
+  logger: { info: vi.fn(), warn: vi.fn() }
 }))
 
 import { closeDb, getDb } from '../../../../storage/database.js'

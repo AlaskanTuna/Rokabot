@@ -1,3 +1,4 @@
+import './searchPin.js'
 import { existsSync, readFileSync } from 'node:fs'
 import * as dotenv from 'dotenv'
 

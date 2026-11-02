@@ -25,7 +25,8 @@ describe('config startup with the real logger', () => {
       ['--import', 'tsx', '--input-type=module', '-e', "await import('./src/config.ts')"],
       {
         encoding: 'utf8',
-        env: { ...process.env, ROKABOT_CONFIG_PATH: configPath, NODE_ENV: 'production' },
+        // The suite sets LOG_LEVEL=error to quiet startup warnings; these cases assert on the warnings themselves.
+        env: { ...process.env, ROKABOT_CONFIG_PATH: configPath, NODE_ENV: 'production', LOG_LEVEL: 'warn' },
         timeout: 10_000
       }
     )

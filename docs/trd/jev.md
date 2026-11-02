@@ -77,11 +77,15 @@ The row stores no message text, alias or user ID. `metrics.retentionDays` prunes
 
 `jev.prefetch` ships as `shadow`. A live A/B on the search tool-trigger cases lost recall and latency in `on` mode.
 
-| Mode     | Behavior                                                                                                          |
-| -------- | ----------------------------------------------------------------------------------------------------------------- |
-| `off`    | The request has no lookup question.                                                                               |
-| `shadow` | Jev answers. The log records whether the score crossed the threshold. No search runs.                             |
-| `on`     | When `needsLookup` is at least `jev.prefetchMinNoul` (0.7), one Tavily search starts before the first model call. |
+| Mode     | Behavior                                                                                                   |
+| -------- | ---------------------------------------------------------------------------------------------------------- |
+| `off`    | The request has no lookup question.                                                                        |
+| `shadow` | Jev answers. The log records whether the score crossed the threshold. No search runs.                      |
+| `on`     | When `needsLookup` is at least `jev.prefetchMinNoul` (0.7), one search starts before the first model call. |
+
+`on` needs a backend it can call directly: `search.provider: tavily` or `exa`. With `off`, or with `native`, prefetch
+runs as `shadow` and startup warns. A native search is a separate model call, so it offers neither the wait nor the
+RPM saving that prefetch exists for.
 
 In `on` mode:
 
@@ -93,7 +97,7 @@ In `on` mode:
 
 - **Citations:** the search footer uses the prefetched URLs. A later `search_web` call by the model replaces the list.
 - **Tool Count:** a used prefetch counts `search_web` once in `toolsUsed`, even if the model also calls the tool.
-- **Tool Registration:** `search_web` stays registered in every mode.
+- **Tool Registration:** `search_web` stays registered in every prefetch mode.
 - **No Result:** an empty, failed, aborted, canceled or timed-out search adds no block. The turn answers normally.
 - **Safety Ladder:** any safety rung above 0 drops the block.
 

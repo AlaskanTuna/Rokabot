@@ -195,11 +195,36 @@ Set these in `~/rokabot/.env`, then run `sudo docker compose -f ~/rokabot/docker
 | `EMBEDDINGS_PROVIDER`                       | `gemini`, `local`, `openai`            | Who makes memory vectors                                |
 | `COMPOSE_PROFILES`                          | `local-embeddings`                     | Starts the embeddings sidecar                           |
 | `JEV_TONE`, `JEV_REFERENTS`, `JEV_PREFETCH` | `off`, `shadow`, `on`                  | Jev in-reply judgments                                  |
+| `SEARCH_PROVIDER`                           | `off`, `native`, `tavily`, `exa`       | Web search backend (`search.provider`)                  |
 | `MEMORY_PRIVACY`                            | `relaxed`, `balanced`, `strict`, `off` | `memory.privacy`                                        |
 | `MEMORY_RECALL`                             | `legacy`, `shadow`, `unified`          | `memory.recall`                                         |
 | `MEMORY_EXTRACTION_SAMPLE_RATE`             | `0` to `1`                             | `0` stops rejected-conversation samples                 |
 | `MEMORY_RECLASSIFY_MAX_PER_RUN`             | `0` to `100`                           | `0` turns reclassification off                          |
 | `TYPESAFE_API_KEY`                          | key                                    | Jev judges when it is set                               |
+
+### Web Search Provider
+
+`search.provider` picks how `search_web` looks things up. To switch it, set the key in `~/rokabot/config.yml` through a PR, or set `SEARCH_PROVIDER` in `.env` and recreate the container.
+
+| Value    | Backend                                      | Key              |
+| -------- | -------------------------------------------- | ---------------- |
+| `off`    | None. `search_web` is not registered         | None             |
+| `native` | One separate request to the `llm.main` model | The main model's |
+| `tavily` | Tavily, today's request unchanged            | `TAVILY_API_KEY` |
+| `exa`    | Exa `/search` with highlights                | `EXA_API_KEY`    |
+
+- **`off` Removes the Tool:** she registers 13 tools instead of 14, and every prompt and tool description drops its mention of `search_web`. A prompt that names a tool she does not have invites "let me look that up", so the text changes with the tool list.
+- **`native` Is Not Supported Yet:** no model profile carries native search. With `native`, startup warns naming the model and `search_web` is not registered, so the deployment behaves as `off`. Set `tavily` or `exa` to search.
+- **A Missing Key Keeps the Tool:** with `tavily` or `exa` and no key, startup warns and the tool stays registered. She answers `Web search is not configured.` when she calls it. This is the same behaviour a missing Tavily key had before.
+- **Prefetch:** `jev.prefetch: on` needs `tavily` or `exa`. With `native` or `off` it runs as `shadow` and startup warns `jev.prefetch is on, but search.provider is ...`.
+- **Production:** the committed `config.yml` keeps `search.provider: tavily`. Changing it is a separate config change.
+
+```bash
+# One line per search: provider, elapsed ms and result count. The query is not logged
+sudo docker logs rokabot-roka-1 2>&1 | grep '"msg":"Web search finished"'
+# A backend that threw, with only the error message
+sudo docker logs rokabot-roka-1 2>&1 | grep '"msg":"Web search backend threw"'
+```
 
 ### Reply Model and Fallback
 
@@ -285,7 +310,7 @@ sqlite3 ~/rokabot/data/rokabot.db "SELECT provider, ROUND(usd, 4) FROM llm_spend
 - **Memory Gates:** admission and verification are hard gates. An unavailable judge, a timeout or a low admission score drops the episode. They have no shadow mode and stop only with passive extraction.
 - **Thresholds:** `jev.memoryTimeoutMs`, `memory.admitThreshold` and `memory.verifyThreshold` (Jev), or `memory.modelAdmitThreshold` and `memory.modelVerifyThreshold` (main model). Change them through a PR.
 - **Tone:** `jev.tone` is `on` with `jev.toneMinProbability: 0.3`. No probability, a timeout or an error keeps the regex tone. Watch `sleepy`: Jev picks it for late-night turns more often than human labelers accept.
-- **Prefetch:** `jev.prefetch` stays `shadow`. Jev asks whether a turn needs lookup; Tavily is not called. `on` lost a live A/B on search recall and latency, so re-run the A/B before you switch.
+- **Prefetch:** `jev.prefetch` stays `shadow`. Jev asks whether a turn needs lookup; no search runs. `on` lost a live A/B on search recall and latency, so re-run the A/B before you switch. `on` also needs `search.provider: tavily` or `exa`; with `native` or `off` it runs as `shadow` and startup warns.
 
 ```bash
 # Compare Jev tone with the regex tone on stored turns (needs TYPESAFE_API_KEY)
@@ -318,7 +343,7 @@ FROM jev_events WHERE kind = 'turn' ORDER BY created_at DESC LIMIT 20;
 | `off`, `below_threshold`, `no_noul`, `no_judgment`  | Why no prefetch started                                                           |
 | `failed`, `empty`, `aborted`, `canceled`, `gave_up` | A prefetch started but supplied no result                                         |
 
-At most one automatic Tavily search starts per turn. It uses no Gemini RPM slot. The first Gemini call waits `jev.prefetchWaitMs` (4 s) for it, and the model can still call `search_web`.
+At most one automatic search starts per turn, through `tavily` or `exa`. It uses no Gemini RPM slot. The first Gemini call waits `jev.prefetchWaitMs` (4 s) for it, and the model can still call `search_web`.
 
 ```bash
 # Memory admission and verification totals

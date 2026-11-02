@@ -36,8 +36,8 @@ describe('refPromptPaths', () => {
   it('exports the character pack folders a ref has, with its prompt modules', () => {
     expect(refPromptPaths('HEAD', process.cwd())).toEqual([
       'package.json',
-      'src/agent',
-      'src/character',
+      'src',
+      'config.yml',
       'characters',
       'prompts'
     ])

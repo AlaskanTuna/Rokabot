@@ -58,6 +58,20 @@ describe('searchWeb', () => {
     expect(sentBody().query).toBe('Frieren season 2 release date')
   })
 
+  it("sends Tavily exactly today's request body", async () => {
+    tavilyReplies({ answer: 'a', results: [], response_time: 1 })
+
+    await searchWeb({ query: 'q' })
+
+    expect(sentBody()).toEqual({
+      query: 'q',
+      topic: 'general',
+      max_results: 5,
+      search_depth: 'advanced',
+      include_answer: 'advanced'
+    })
+  })
+
   it('passes an optional abort signal through to Tavily', async () => {
     tavilyReplies({ answer: 'a', results: [], response_time: 1 })
     const signal = new AbortController().signal

@@ -109,6 +109,7 @@ interface YamlConfig {
     maxReplyChars?: number
     ytDlpPath?: string
   }
+  search?: { provider?: string }
   media?: {
     watcher?: string
     watchTimeoutMs?: number
@@ -255,6 +256,7 @@ export type MemoryPrivacy = 'relaxed' | 'balanced' | 'strict' | 'off'
 export type MemoryRecallMode = 'legacy' | 'shadow' | 'unified'
 export type MediaWatcher = 'gemini' | 'qwen' | 'direct' | 'off'
 export type MemoryJudge = 'jev' | 'model' | 'none'
+export type SearchProvider = 'off' | 'native' | 'tavily' | 'exa'
 
 // Jev judges whenever its key is set. Without it the main model judges, except on the legacy config (no `llm:`
 // block), which keeps today's behaviour of judging nothing.
@@ -277,6 +279,15 @@ function mediaWatcher(): MediaWatcher {
   if (value === 'gemini' || value === 'qwen' || value === 'direct' || value === 'off') return value
   const source = envValue ? 'Environment variable MEDIA_WATCHER' : 'Config value media.watcher'
   throw new Error(`${source} must be gemini, qwen, direct or off, got: ${String(value)}`)
+}
+
+// Unset means tavily until the native backend exists; PR 2 flips this default to native.
+function searchProvider(): SearchProvider {
+  const envValue = envString('SEARCH_PROVIDER')
+  const value = envValue ?? yaml.search?.provider ?? 'tavily'
+  if (value === 'off' || value === 'native' || value === 'tavily' || value === 'exa') return value
+  const source = envValue ? 'Environment variable SEARCH_PROVIDER' : 'Config value search.provider'
+  throw new Error(`${source} must be off, native, tavily or exa, got: ${String(value)}`)
 }
 
 // Only the watcher's `gemini` mode requires the key, though the qwen watcher still falls back to Gemini on failure.
@@ -660,6 +671,9 @@ const baseConfig = {
     maxReplyChars: yaml.socialPosts?.maxReplyChars ?? 280,
     ytDlpPath: yaml.socialPosts?.ytDlpPath ?? 'yt-dlp'
   },
+  search: {
+    provider: searchProvider()
+  },
   media: {
     watcher: mediaWatcher(),
     watchTimeoutMs: yaml.media?.watchTimeoutMs ?? 20_000,
@@ -804,6 +818,12 @@ const baseConfig = {
 } as const
 
 const llm = resolveLlm(baseConfig)
+const searchProviderId = baseConfig.search.provider
+// `native` needs a model that supports it, which no profile declares yet, so only the two keyed backends can run.
+const searchAvailable = searchProviderId === 'tavily' || searchProviderId === 'exa'
+const searchKeys: Readonly<Record<string, string>> = { tavily: 'TAVILY_API_KEY', exa: 'EXA_API_KEY' }
+// A `native` or `off` deployment has no backend prefetch can call inside `jev.prefetchWaitMs`.
+const jevPrefetch: JevMode = searchAvailable || baseConfig.jev.prefetch !== 'on' ? baseConfig.jev.prefetch : 'shadow'
 
 // A legacy config (no llm: block) has a Gemini main, so the key stays required there with this same message.
 if (
@@ -818,7 +838,12 @@ if (
 }
 
 /** Merged config: env overrides > config.yml > hardcoded defaults */
-export const config = { ...baseConfig, llm } as const
+export const config = {
+  ...baseConfig,
+  search: { ...baseConfig.search, available: searchAvailable },
+  jev: { ...baseConfig.jev, prefetch: jevPrefetch },
+  llm
+} as const
 
 function modelBounds(role: 'main' | 'fallback', model: ResolvedModel) {
   return [
@@ -1057,15 +1082,39 @@ if (!/^[\w.-]+\/[\w.-]+$/.test(config.updates.repo)) {
   throw new Error(`Config value updates.repo must be "owner/name", got: ${config.updates.repo}`)
 }
 
-// logger.ts imports this module, so awaiting the import here would deadlock startup.
+// logger.ts imports this module, so awaiting the import here would deadlock startup. Under Vitest's module
+// runner the import can also resolve with `logger` still undefined mid-cycle — a live binding, not Node's
+// would-wait-or-throw cycle — so the call is guarded against `TypeError: Cannot read properties of undefined`.
+// A test's logger mock may also resolve without a `warn` at all, hence the second guard.
 function warnAfterStartup(fields: Record<string, unknown>, message: string) {
-  void import('./utils/logger.js').then(({ logger }) => logger.warn(fields, message))
+  void import('./utils/logger.js').then(({ logger }) => logger?.warn?.(fields, message))
 }
 
 if (config.embeddings.provider !== 'gemini' && !similarityFloors) {
   warnAfterStartup(
     { fingerprint: config.embeddings.fingerprint },
     'No embeddings.minSimilarity entry for this fingerprint, so recall uses the Gemini floors in memory.*MinSimilarity'
+  )
+}
+
+// A native-unsupported deployment can last the life of an install, so it warns once here rather than spending a
+// model round per lookup; a missing key is an operator mistake and only degrades the tool's answer.
+if (searchProviderId === 'native') {
+  warnAfterStartup(
+    { provider: searchProviderId },
+    `search.provider is native, but ${llm.main.model} has no web search, so Roka runs without it. Set search.provider to tavily or exa to search with an API key.`
+  )
+} else if (searchAvailable && !envString(searchKeys[searchProviderId])) {
+  warnAfterStartup(
+    { provider: searchProviderId },
+    `search.provider is ${searchProviderId}, but ${searchKeys[searchProviderId]} is not set, so search_web will report that search is not configured.`
+  )
+}
+
+if (baseConfig.jev.prefetch === 'on' && jevPrefetch !== 'on') {
+  warnAfterStartup(
+    { provider: searchProviderId },
+    `jev.prefetch is on, but search.provider is ${searchProviderId}, so prefetch runs as shadow.`
   )
 }
 
