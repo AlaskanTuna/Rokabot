@@ -230,6 +230,21 @@ describe('geminiNativeSearch', () => {
     ])
   })
 
+  it('falls back to the URI when a chunk has an empty title', async () => {
+    const { client } = replies(
+      response(
+        grounding({
+          webSearchQueries: ['q'],
+          groundingChunks: [{ web: { uri: 'https://a.test', title: '' } }]
+        })
+      )
+    )
+
+    const outcome = await geminiNativeSearch(FLASH_LITE, call(), client)
+
+    expect(outcome.results).toEqual([{ title: 'https://a.test', url: 'https://a.test', snippet: '' }])
+  })
+
   it('clips a snippet longer than the bound', async () => {
     const long = 'x'.repeat(300)
     const { client } = replies(
@@ -320,6 +335,38 @@ describe('geminiNativeSearch', () => {
       outputTokens: 20,
       searchRequests: 2
     })
+  })
+
+  // The retrieved page text is billed in its own bucket, and geminiUsage only reads the prompt and candidate ones.
+  it('counts the retrieved text as input tokens', async () => {
+    const { client } = replies(
+      response(grounding({ webSearchQueries: ['q'] }), {
+        usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 20, toolUsePromptTokenCount: 4000 }
+      })
+    )
+
+    await geminiNativeSearch(FLASH_LITE, call(), client)
+
+    expect(usageRecords).toHaveLength(1)
+    expect(usageRecords[0]).toMatchObject({ inputTokens: 4100, outputTokens: 20, searchRequests: 1 })
+  })
+
+  it('leaves cached tokens out of the input tokens', async () => {
+    const { client } = replies(
+      response(grounding({ webSearchQueries: ['q'] }), {
+        usageMetadata: {
+          promptTokenCount: 100,
+          cachedContentTokenCount: 40,
+          candidatesTokenCount: 20,
+          toolUsePromptTokenCount: 4000
+        }
+      })
+    )
+
+    await geminiNativeSearch(FLASH_LITE, call(), client)
+
+    expect(usageRecords).toHaveLength(1)
+    expect(usageRecords[0]).toMatchObject({ inputTokens: 4060, outputTokens: 20, searchRequests: 1 })
   })
 
   it('leaves searchRequests out when no search ran', async () => {

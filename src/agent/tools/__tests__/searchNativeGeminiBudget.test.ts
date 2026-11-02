@@ -29,6 +29,8 @@ vi.mock('../../../config.js', async (importOriginal) => {
           provider: 'gemini' as const,
           model: 'gemini-3.5-flash-lite',
           profile,
+          // The default caller builds a real client from this, so it must not be blank.
+          apiKey: 'test-key',
           limits: { rpm: 0 }
         }
       }
@@ -41,6 +43,7 @@ import { closeDb } from '../../../storage/database.js'
 import { __resetBudgetsForTest } from '../../llm/budget.js'
 import { tokenBucketFor } from '../../tokenBudget.js'
 import type { NativeCall } from '../search/native.js'
+import { nativeSearch } from '../search/native.js'
 import { geminiNativeSearch } from '../search/nativeGemini.js'
 import { SEARCH_TEXT } from '../search/types.js'
 
@@ -106,6 +109,40 @@ describe('a budget refusal on the main route', () => {
       )
     } finally {
       config.llm.main.limits = previous
+    }
+  })
+
+  // Decision 9: without the registration the whole outer path answers "not configured" and never reaches this caller.
+  it('reaches this caller through nativeSearch on a Gemini main route', async () => {
+    const limits = { rpm: 100 }
+    const previous = config.llm.main.limits
+    config.llm.main.limits = limits
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          candidates: [
+            {
+              content: { parts: [{ text: 'Grounded answer.' }] },
+              groundingMetadata: {
+                webSearchQueries: ['q'],
+                groundingChunks: [{ web: { uri: 'https://a.test', title: 'A' } }]
+              }
+            }
+          ]
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } }
+      )
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    try {
+      const outcome = await nativeSearch({ query: 'q' })
+
+      expect(outcome).toMatchObject({ answer: 'Grounded answer.', succeeded: true })
+      expect(fetchMock).toHaveBeenCalledOnce()
+    } finally {
+      config.llm.main.limits = previous
+      vi.unstubAllGlobals()
     }
   })
 

@@ -47,7 +47,7 @@ function supportTexts(metadata: NonNullable<GenerateContentResponse['candidates'
     const text = support.segment?.text
     if (!text) continue
     for (const index of support.groundingChunkIndices ?? []) {
-      // The first support that names a chunk wins: a later one only repeats the same claim's text.
+      // One snippet per chunk, so the first support that names a chunk keeps it.
       if (!snippets.has(index)) snippets.set(index, text)
     }
   }
@@ -102,9 +102,12 @@ async function request(route: ResolvedModel, call: NativeCall, client: GeminiGen
       (query) => query.trim() !== ''
     ).length
     const outcome = readResponse(response, call.maxResults, searches > 0)
-    // A search that ran is billed even when the provider reports no metadata for it.
+    // A search that ran is billed even when the provider reports no metadata for it. The retrieved page text sits in
+    // its own usage bucket, which geminiUsage does not read.
+    const billed = geminiUsage(route.model, 'search', response.usageMetadata ?? {})
     const usage = {
-      ...geminiUsage(route.model, 'search', response.usageMetadata ?? {}),
+      ...billed,
+      inputTokens: billed.inputTokens + (response.usageMetadata?.toolUsePromptTokenCount ?? 0),
       ...(searches > 0 ? { searchRequests: searches } : {})
     }
     recordUsage(usage)
