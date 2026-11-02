@@ -206,17 +206,17 @@ Set these in `~/rokabot/.env`, then run `sudo docker compose -f ~/rokabot/docker
 
 `search.provider` picks how `search_web` looks things up. To switch it, set the key in `~/rokabot/config.yml` through a PR, or set `SEARCH_PROVIDER` in `.env` and recreate the container.
 
-| Value    | Backend                              | Key              |
-| -------- | ------------------------------------ | ---------------- |
-| `off`    | None. `search_web` is not registered | None             |
-| `native` | The main model's own search          | The main model's |
-| `tavily` | Tavily, today's request unchanged    | `TAVILY_API_KEY` |
-| `exa`    | Exa `/search` with highlights        | `EXA_API_KEY`    |
+| Value    | Backend                                      | Key              |
+| -------- | -------------------------------------------- | ---------------- |
+| `off`    | None. `search_web` is not registered         | None             |
+| `native` | One separate request to the `llm.main` model | The main model's |
+| `tavily` | Tavily, today's request unchanged            | `TAVILY_API_KEY` |
+| `exa`    | Exa `/search` with highlights                | `EXA_API_KEY`    |
 
 - **`off` Removes the Tool:** she registers 13 tools instead of 14, and every prompt and tool description drops its mention of `search_web`. A prompt that names a tool she does not have invites "let me look that up", so the text changes with the tool list.
-- **`native` Is Not Supported Yet:** no model profile carries native search in PR 1. With `native`, startup warns naming the model and `search_web` is not registered, so the deployment behaves as `off`. Set `tavily` or `exa` to search.
+- **`native` Is Not Supported Yet:** no model profile carries native search. With `native`, startup warns naming the model and `search_web` is not registered, so the deployment behaves as `off`. Set `tavily` or `exa` to search.
 - **A Missing Key Keeps the Tool:** with `tavily` or `exa` and no key, startup warns and the tool stays registered. She answers `Web search is not configured.` when she calls it. This is the same behaviour a missing Tavily key had before.
-- **Prefetch:** `jev.prefetch: on` needs `tavily` or `exa`. With `native` or `off` it runs as `shadow` and startup warns.
+- **Prefetch:** `jev.prefetch: on` needs `tavily` or `exa`. With `native` or `off` it runs as `shadow` and startup warns `jev.prefetch is on, but search.provider is ...`.
 - **Production:** the committed `config.yml` keeps `search.provider: tavily`. Changing it is a separate config change.
 
 ```bash
