@@ -27,13 +27,6 @@ export function nativeSearchPrompt(topic: 'general' | 'news'): string {
 function raceAgainstAbort<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const onAbort = () => reject(new Error('Native search aborted'))
-    // An abort that already happened never fires the listener, so a spent attempt would otherwise wait out the
-    // whole call.
-    if (signal.aborted) {
-      onAbort()
-      work.catch(() => undefined)
-      return
-    }
     signal.addEventListener('abort', onAbort, { once: true })
     // A settled race holds nothing: a listener left on the attempt's signal would outlive the search.
     const settle =

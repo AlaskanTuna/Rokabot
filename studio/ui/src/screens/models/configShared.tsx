@@ -173,7 +173,7 @@ const BOUNDS: Bound[] = [
   { path: 'llm.hedgeAfterMs', min: 0 },
   { path: 'llm.stickyMs', min: 0 },
   { path: 'llm.monthlyBudgetUsd.*', min: 0 },
-  { path: 'search.nativeTimeoutMs', min: 1, max: 60_000 },
+  { path: 'search.nativeTimeoutMs', min: 2000, max: 60_000 },
   { path: 'search.nativeReserveMs', min: 0, max: 60_000 }
 ]
 

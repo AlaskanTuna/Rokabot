@@ -894,7 +894,7 @@ describe('config module', () => {
       expect(config.search.nativeReserveMs).toBe(5000)
       expect(NUMERIC_BOUNDS.find(({ path }) => path === 'search.nativeTimeoutMs')).toMatchObject({
         value: 8000,
-        min: 1,
+        min: 2000,
         max: 60_000
       })
       expect(NUMERIC_BOUNDS.find(({ path }) => path === 'search.nativeReserveMs')).toMatchObject({
@@ -1551,7 +1551,7 @@ describe('config module', () => {
       { path: 'updates.checkIntervalHours', min: 1, max: 168 },
       { path: 'llm.hedgeAfterMs', min: 0 },
       { path: 'llm.stickyMs', min: 0 },
-      { path: 'search.nativeTimeoutMs', min: 1, max: 60_000 },
+      { path: 'search.nativeTimeoutMs', min: 2000, max: 60_000 },
       { path: 'search.nativeReserveMs', min: 0, max: 60_000 }
     ]
 

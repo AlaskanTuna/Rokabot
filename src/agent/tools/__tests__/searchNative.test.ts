@@ -132,6 +132,37 @@ describe('createNativeSearch', () => {
     await expect(pending).resolves.toMatchObject({ answer: SEARCH_TEXT.failed, succeeded: false })
   })
 
+  // A caller that never looks at its signal is the case the whole budget exists for: without the race it would
+  // hold the turn open until the attempt's own timer fired, which is what costs the turn a fallback.
+  it('returns the failure text when a caller ignores its signal', async () => {
+    const search = createNativeSearch({
+      [MAIN_ROUTE.provider]: vi.fn(() => new Promise<never>(() => {}))
+    })
+
+    const pending = search({ query: 'q' })
+    await vi.advanceTimersByTimeAsync(8000)
+
+    await expect(pending).resolves.toMatchObject({ answer: SEARCH_TEXT.failed, succeeded: false })
+  })
+
+  it('ignores a caller that resolves after its time ran out', async () => {
+    const late = vi.fn(
+      () =>
+        new Promise<{ answer: string; results: never[]; resultCount: number; succeeded: boolean }>((resolve) => {
+          setTimeout(() => resolve({ answer: 'too late', results: [], resultCount: 0, succeeded: true }), 9000)
+        })
+    )
+    const search = createNativeSearch({ [MAIN_ROUTE.provider]: late })
+
+    const pending = search({ query: 'q' })
+    await vi.advanceTimersByTimeAsync(8000)
+    await expect(pending).resolves.toMatchObject({ answer: SEARCH_TEXT.failed, succeeded: false })
+
+    // The late answer must not surface as an unhandled rejection, nor change the outcome already returned.
+    await vi.advanceTimersByTimeAsync(2000)
+    await expect(pending).resolves.toMatchObject({ answer: SEARCH_TEXT.failed, succeeded: false })
+  })
+
   it('returns the failure text without calling the provider when the attempt is already aborted', async () => {
     const call = caller()
     const search = createNativeSearch({ [MAIN_ROUTE.provider]: call })

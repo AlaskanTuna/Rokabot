@@ -1054,7 +1054,8 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'updates.checkIntervalHours', value: config.updates.checkIntervalHours, min: 1, max: 168 },
   { path: 'llm.hedgeAfterMs', value: config.llm.hedgeAfterMs, min: 0 },
   { path: 'llm.stickyMs', value: config.llm.stickyMs, min: 0 },
-  { path: 'search.nativeTimeoutMs', value: config.search.nativeTimeoutMs, min: 1, max: 60_000 },
+  // Below 2 s no native search could ever start: MIN_NATIVE_SEARCH_MS refuses it.
+  { path: 'search.nativeTimeoutMs', value: config.search.nativeTimeoutMs, min: 2000, max: 60_000 },
   // min: 0 because a reserve of zero is a deliberate choice to let a search spend the whole attempt.
   { path: 'search.nativeReserveMs', value: config.search.nativeReserveMs, min: 0, max: 60_000 },
   // Synthesised legacy values are already bounded as gemini.* and fallback.*, so only a block adds rows.

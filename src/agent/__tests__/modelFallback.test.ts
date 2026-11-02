@@ -66,6 +66,7 @@ import type { TurnOutcome } from '../reliability.js'
 import { __resetTestRunTurnFactory, __setTestRunTurnFactory, generateResponse, rokaAgent } from '../roka.js'
 import { destroySession } from '../session.js'
 import { resetForTest } from '../shutdownSignal.js'
+import { currentSearchAttempt } from '../tools/search/attemptBudget.js'
 
 const mutableLlm = config.llm as unknown as { main: ResolvedModel; fallback: ResolvedModel | null; stickyMs: number }
 const testFallback: ResolvedModel = {
@@ -371,6 +372,31 @@ describe('provider failure switching', () => {
 })
 
 describe('generateResponse model fallback', () => {
+  it('gives each attempt a search deadline from the timeout of the side answering it', async () => {
+    mutableLlm.main.timeoutMs = 30_000
+    mutableLlm.fallback!.timeoutMs = 40_000
+    const seen: Array<{ remainingMs: number; sameSignal: boolean }> = []
+    __setTestRunTurnFactory(() => async (attempt, signal) => {
+      const searchAttempt = currentSearchAttempt()
+      seen.push({
+        remainingMs: (searchAttempt?.deadlineAtMs ?? 0) - performance.now(),
+        sameSignal: searchAttempt?.signal === signal
+      })
+      return attempt === 0
+        ? { errorCode: '503', hasText: false, hasFunctionCall: false }
+        : { text: 'Fallback answer~', hasText: true, hasFunctionCall: false }
+    })
+
+    await generateResponse(responseOptions())
+
+    expect(seen).toHaveLength(2)
+    expect(seen[0].remainingMs).toBeGreaterThan(29_000)
+    expect(seen[0].remainingMs).toBeLessThanOrEqual(30_000)
+    expect(seen[1].remainingMs).toBeGreaterThan(39_000)
+    expect(seen[1].remainingMs).toBeLessThanOrEqual(40_000)
+    expect(seen.map(({ sameSignal }) => sameSignal)).toEqual([true, true])
+  })
+
   it('uses the fallback for the retry and sends the next turn there within the sticky window', async () => {
     expect(rokaAgent.model).toBeInstanceOf(RoutedLlm)
     const routes: Array<boolean | undefined> = []
