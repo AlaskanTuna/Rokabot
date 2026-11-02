@@ -4,6 +4,7 @@ import type { SearchProvider } from '../../config.js'
 import { searchIsAvailable, searchProviderSetting } from '../../searchSettings.js'
 import { logger } from '../../utils/logger.js'
 import { recordSearchCitations } from '../searchCitations.js'
+import { exaSearch } from './search/exa.js'
 import { tavilySearch } from './search/tavily.js'
 import {
   type BackendOutcome,
@@ -16,14 +17,14 @@ import {
 
 export type { SearchWebParams } from './search/types.js'
 
-/** Placeholders until Task 3 (exa) and Task 7 (native) fill them in. */
+/** Placeholder until the native backend fills it in. */
 const noBackend: SearchBackend = async () => failedSearch(SEARCH_TEXT.notConfigured)
 
 const BACKENDS: Record<SearchProvider, SearchBackend> = {
   off: noBackend,
   native: noBackend,
   tavily: tavilySearch,
-  exa: noBackend
+  exa: exaSearch
 }
 
 /** Search the web through the configured backend and return a summary plus top results */

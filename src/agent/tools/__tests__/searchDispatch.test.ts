@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   warn: vi.fn(),
   debug: vi.fn(),
   tavilySearch: vi.fn(),
+  exaSearch: vi.fn(),
   recordSearchCitations: vi.fn(),
   provider: 'tavily' as 'off' | 'native' | 'tavily' | 'exa',
   available: true
@@ -14,6 +15,7 @@ vi.mock('../../../utils/logger.js', () => ({
   logger: { debug: mocks.debug, info: mocks.info, warn: mocks.warn }
 }))
 vi.mock('../search/tavily.js', () => ({ tavilySearch: mocks.tavilySearch }))
+vi.mock('../search/exa.js', () => ({ exaSearch: mocks.exaSearch }))
 vi.mock('../../searchCitations.js', () => ({ recordSearchCitations: mocks.recordSearchCitations }))
 vi.mock('../../../searchSettings.js', () => ({
   searchProviderSetting: () => mocks.provider,
@@ -35,6 +37,15 @@ describe('searchWeb dispatch', () => {
     mocks.provider = 'tavily'
     mocks.available = true
     mocks.tavilySearch.mockResolvedValue(OUTCOME)
+  })
+
+  it('routes exa to the Exa backend', async () => {
+    mocks.provider = 'exa'
+    mocks.exaSearch.mockResolvedValue(OUTCOME)
+
+    await expect(searchWeb({ query: 'q' })).resolves.toMatchObject({ answer: OUTCOME.answer })
+    expect(mocks.exaSearch).toHaveBeenCalledOnce()
+    expect(mocks.tavilySearch).not.toHaveBeenCalled()
   })
 
   it('returns the not-configured text without calling a backend when search is unavailable', async () => {
