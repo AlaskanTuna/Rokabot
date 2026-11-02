@@ -1082,8 +1082,9 @@ if (!/^[\w.-]+\/[\w.-]+$/.test(config.updates.repo)) {
   throw new Error(`Config value updates.repo must be "owner/name", got: ${config.updates.repo}`)
 }
 
-// logger.ts imports this module, so awaiting the import here would deadlock startup. The import can also resolve
-// to this module's own partially-evaluated graph, where `logger` is not defined yet, so the call is guarded.
+// logger.ts imports this module, so awaiting the import here would deadlock startup. Under Vitest's module
+// runner the import can also resolve with `logger` still undefined mid-cycle — a live binding, not Node's
+// would-wait-or-throw cycle — so the call is guarded against `TypeError: Cannot read properties of undefined`.
 function warnAfterStartup(fields: Record<string, unknown>, message: string) {
   void import('./utils/logger.js').then(({ logger }) => logger?.warn(fields, message))
 }
