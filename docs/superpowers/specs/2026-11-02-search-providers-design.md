@@ -1,6 +1,6 @@
 # Selectable Web Search Providers Design
 
-> Brainstormed with the owner on 2026-11-02. Status: awaiting owner review of this spec.
+> Brainstormed with the owner on 2026-11-02. Status: approved by the owner on 2026-11-02.
 
 ## Intent
 
@@ -112,7 +112,7 @@ Add one `info` log per search with the provider, elapsed milliseconds and result
 - **Query:** sent verbatim, matching the issue #19 rule.
 - **Topic:** `topic` is ignored. Exa's guidance says that mapping a news task to `category: news` is a mistake, and adding recency words would break the verbatim rule.
 - **Result Count:** `max_results` becomes `numResults`, clamped to 10. Exa bills per result above 10, and the tool's schema states 1-10 without enforcing it.
-- **Answer:** Exa `/search` returns no generated answer, and prefetch rejects an empty `answer`. The backend fills `answer` with the top results' highlights, joined and bounded so that the tool result stays near today's size. It uses `No summary available.` only when no result has a highlight.
+- **Answer:** Exa `/search` returns no generated answer, and prefetch rejects an empty `answer`. The backend fills `answer` with the top results' highlights, joined and bounded at 1,500 characters. The top result gets half of that, later results share the rest, and unused share rolls forward. A live replay showed equal shares lose facts deep in the top result. The page text carries an untrusted-data label, as other third-party text does. It uses `No summary available.` only when no result has a highlight.
 - **Snippet:** the first highlight, clipped as Tavily's content is clipped today.
 
 ### Native Backend
