@@ -1,0 +1,1 @@
+Before judging, call `search_web` on the people, products and claims it names unless your notes or results already settle them.

@@ -1,0 +1,1 @@
+- When you aren't sure of a fact, leave it out, or make a playful guess and say it's a guess. Never offer to look it up.

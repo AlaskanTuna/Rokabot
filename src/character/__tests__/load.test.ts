@@ -159,6 +159,33 @@ describe('loadCharacter', () => {
     )
   })
 
+  it('fills the search macros when search is available', () => {
+    const roka = loadCharacter(ROKA, HARNESS)
+    expect(roka.prompts.stable.full).toContain('quietly call `search_web` first')
+    expect(roka.prompts.stable.full).toContain('Before judging, call `search_web` on the people')
+    expect(roka.prompts.stable.full).not.toContain('{{search')
+  })
+
+  it.each(['full', 'forget', 'none'])('uses the no-search rule in the %s prompt when search is unavailable', (mode) => {
+    const roka = loadCharacter(ROKA, HARNESS, { search: false })
+    const prompt = roka.prompts.stable[mode as 'full' | 'forget' | 'none']
+    expect(prompt).not.toContain('search_web')
+    expect(prompt).toContain('Never offer to look it up.')
+    expect(prompt).toContain('as a pitch.\n')
+  })
+
+  it('rejects a prompt that names search_web outside the search prompts', () => {
+    const dir = copyOf()
+    writeFileSync(join(dir, 'prompts/images.md'), '## Images\n- Look closely, then search_web it.\n')
+    expect(loadError(dir)).toContain('names search_web')
+  })
+
+  it('lets a pack override search-tools.md', () => {
+    const dir = copyOf()
+    writeFileSync(join(dir, 'prompts/search-tools.md'), '- Search only when asked.\n')
+    expect(loadCharacter(dir, HARNESS).prompts.stable.full).toContain('- Search only when asked.')
+  })
+
   it.each([
     ['prompts/intro.md', 'Hi {{nope}}\n', 'prompts/intro.md: unknown macro {{nope}}'],
     ['prompts/intro.md', 'Hi {{user}}\n', 'prompts/intro.md: unknown macro {{user}}; it works only in situation.md'],
@@ -168,9 +195,24 @@ describe('loadCharacter', () => {
       'prompts/tools.md: {{memory_tools}} must be on a line of its own'
     ],
     [
+      'prompts/tools.md',
+      '## Using Tools\n- {{search_tools}}\n',
+      'prompts/tools.md: {{search_tools}} must be on a line of its own'
+    ],
+    [
       'prompts/images.md',
       '{{memory_tools}}\n',
       'prompts/images.md: unknown macro {{memory_tools}}; it works only in tools.md'
+    ],
+    [
+      'prompts/images.md',
+      '{{search_tools}}\n',
+      'prompts/images.md: unknown macro {{search_tools}}; it works only in tools.md'
+    ],
+    [
+      'prompts/images.md',
+      '{{search_before_judging}}\n',
+      'prompts/images.md: unknown macro {{search_before_judging}}; it works only in answering.md'
     ]
   ])('rejects a misplaced macro in %s', (file, text, message) => {
     const dir = copyOf()

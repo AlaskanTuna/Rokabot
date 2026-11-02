@@ -1085,8 +1085,9 @@ if (!/^[\w.-]+\/[\w.-]+$/.test(config.updates.repo)) {
 // logger.ts imports this module, so awaiting the import here would deadlock startup. Under Vitest's module
 // runner the import can also resolve with `logger` still undefined mid-cycle — a live binding, not Node's
 // would-wait-or-throw cycle — so the call is guarded against `TypeError: Cannot read properties of undefined`.
+// A test's logger mock may also resolve without a `warn` at all, hence the second guard.
 function warnAfterStartup(fields: Record<string, unknown>, message: string) {
-  void import('./utils/logger.js').then(({ logger }) => logger?.warn(fields, message))
+  void import('./utils/logger.js').then(({ logger }) => logger?.warn?.(fields, message))
 }
 
 if (config.embeddings.provider !== 'gemini' && !similarityFloors) {

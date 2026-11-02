@@ -51,6 +51,7 @@ import {
 } from './session.js'
 import { chargeTokens } from './tokenBudget.js'
 import { MEMORY_TOOL_NAMES, readRepliesTool, recallUserTool, rememberUserTool, rokaTools } from './tools/index.js'
+import { ROKA_TOOL_NAMES } from './tools/toolNames.js'
 import { createTurnContext, startTurnEntryWork } from './turnContext.js'
 import type { TurnContextOptions, TurnEntryWork } from './turnContext.js'
 
@@ -147,8 +148,6 @@ function requestCarriesVideo(request: { contents?: Content[] }): boolean {
     (content.parts ?? []).some((part) => (part.inlineData?.mimeType ?? part.fileData?.mimeType)?.startsWith('video/'))
   )
 }
-const ROKA_TOOL_NAMES = rokaTools.map((tool) => tool.name)
-
 // Exported so tests can assert the agent-level config and beforeModelCallback seam directly
 // Strip per-line leading whitespace from prose — 4+ spaces or a tab makes Discord render the line as an
 // indented code block — but not inside a fenced code block, where the indentation is the code.

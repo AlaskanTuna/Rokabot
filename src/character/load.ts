@@ -23,6 +23,11 @@ export interface PromptSection {
   text: string
 }
 
+export interface LoadOptions {
+  /** Whether a search backend can run: false drops `search_web` from the tools prompt and the judging rule. */
+  search?: boolean
+}
+
 export interface Mood {
   prompt: string
   faces: readonly string[]
@@ -78,10 +83,16 @@ export interface Character {
 
 const MACRO = /\{\{([^{}]*)\}\}/g
 const MEMORY_LINE = '{{memory_tools}}'
+const SEARCH_TOOLS_LINE = '{{search_tools}}'
+const SEARCH_BEFORE_JUDGING = '{{search_before_judging}}'
+/** Prompts whose text is allowed to name `search_web`, since only a searching deployment loads them. */
+const SEARCH_PROMPTS: readonly string[] = ['search-tools', 'search-before-judging']
 const SLOT_HOMES: Record<string, string> = {
   user: 'situation.md',
   time_of_day: 'situation.md',
-  memory_tools: 'tools.md, on a line of its own'
+  memory_tools: 'tools.md, on a line of its own',
+  search_tools: 'tools.md, on a line of its own',
+  search_before_judging: 'answering.md'
 }
 
 /** Whether `hour` falls in [from, to); a range whose `to` is not after `from` wraps past midnight. */
@@ -124,9 +135,10 @@ function deepFreeze<T>(value: T): T {
  * harness prompts, validates every value and cross-reference, and returns it frozen with its prompt text ready to
  * send. Every problem found is reported at once, each naming its file and YAML path.
  */
-export function loadCharacter(dir: string, harnessDir: string): Character {
+export function loadCharacter(dir: string, harnessDir: string, options: LoadOptions = {}): Character {
   const root = resolve(dir)
   const harness = resolve(harnessDir)
+  const settings = { search: options.search ?? true }
   const problems: string[] = []
   const report = (file: string, path: string, message: string) =>
     problems.push(`${shown(file)}: ${path ? `${path}: ` : ''}${message}`)
@@ -190,10 +202,29 @@ export function loadCharacter(dir: string, harnessDir: string): Character {
       return ''
     }
     const raw = readFileSync(source, 'utf8')
-    const slots = name === 'situation' ? ['user', 'time_of_day'] : name === 'tools' ? ['memory_tools'] : []
+    const slots =
+      name === 'situation'
+        ? ['user', 'time_of_day']
+        : name === 'tools'
+          ? ['memory_tools', 'search_tools']
+          : name === 'answering'
+            ? ['search_before_judging']
+            : []
     const text = expand(raw.endsWith('\n') ? raw.slice(0, -1) : raw, source, '', slots)
-    if (text.split('\n').some((line) => line !== MEMORY_LINE && line.includes(MEMORY_LINE))) {
-      report(source, '', `${MEMORY_LINE} must be on a line of its own`)
+    for (const [whole, label] of [
+      [MEMORY_LINE, MEMORY_LINE],
+      [SEARCH_TOOLS_LINE, SEARCH_TOOLS_LINE]
+    ] as const) {
+      if (text.split('\n').some((line) => line !== whole && line.includes(whole))) {
+        report(source, '', `${label} must be on a line of its own`)
+      }
+    }
+    if (!SEARCH_PROMPTS.includes(name) && text.includes('search_web')) {
+      report(
+        source,
+        '',
+        `${name}.md names search_web, which a deployment without search does not have; move that line to search-tools.md`
+      )
     }
     prompts.set(name, text)
     return text
@@ -208,6 +239,12 @@ export function loadCharacter(dir: string, harnessDir: string): Character {
   const memoryTools = usesMemoryTools
     ? [prompt('memory-tools', characterPath, 'prompt.system'), forgetTool].filter(Boolean).join('\n')
     : ''
+  const searchTools = () =>
+    settings.search
+      ? prompt('search-tools', characterPath, 'prompt.system')
+      : prompt('no-search-tools', characterPath, 'prompt.system')
+  const searchBeforeJudging = () =>
+    settings.search ? ` ${prompt('search-before-judging', characterPath, 'prompt.system')}` : ''
   const fills: Record<MemoryMode, string> = { full: memoryTools, forget: forgetTool, none: '' }
   const system = {} as Record<MemoryMode, PromptSection[]>
   const stable = {} as Record<MemoryMode, string>
@@ -216,7 +253,17 @@ export function loadCharacter(dir: string, harnessDir: string): Character {
       name,
       text: text
         .split('\n')
-        .flatMap((line) => (line !== MEMORY_LINE ? [line] : fills[mode] ? [fills[mode]] : []))
+        .flatMap((line) =>
+          line === MEMORY_LINE
+            ? fills[mode]
+              ? [fills[mode]]
+              : []
+            : line === SEARCH_TOOLS_LINE
+              ? [searchTools()]
+              : line.includes(SEARCH_BEFORE_JUDGING)
+                ? [line.replace(SEARCH_BEFORE_JUDGING, searchBeforeJudging())]
+                : [line]
+        )
         .join('\n')
     }))
     stable[mode] = system[mode].map(({ text }) => text).join('\n\n')

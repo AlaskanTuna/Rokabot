@@ -3,6 +3,7 @@
 import { FunctionTool } from '@google/adk'
 import { z } from 'zod'
 import { config } from '../../config.js'
+import { searchIsAvailable } from '../../searchSettings.js'
 import { getUserName } from '../../storage/userNames.js'
 import { logger } from '../../utils/logger.js'
 import { resolveName } from '../memory/identityResolver.js'
@@ -33,6 +34,9 @@ export type { SearchWebParams } from './searchWeb.js'
 export type { RememberUserParams } from './rememberUser.js'
 export type { RecallUserParams } from './recallUser.js'
 export type { ForgetUserParams } from './forgetUser.js'
+
+/** Read once: a deployment that cannot search must not offer the tool, nor describe one it does not have. */
+const searchAvailable = searchIsAvailable()
 
 export const rollDiceTool = new FunctionTool({
   name: 'roll_dice',
@@ -66,8 +70,9 @@ export const getCurrentTimeTool = new FunctionTool({
 
 export const searchAnimeTool = new FunctionTool({
   name: 'search_anime',
-  description:
-    'Search for anime by title or keyword. ALWAYS use this first for anime questions before trying search_web.',
+  description: searchAvailable
+    ? 'Search for anime by title or keyword. ALWAYS use this first for anime questions before trying search_web.'
+    : 'Search for anime by title or keyword.',
   parameters: z.object({
     query: z.string().describe('Anime title or search keyword'),
     limit: z.number().int().describe('Number of results to return (1-25). Defaults to 5.').optional(),
@@ -83,8 +88,9 @@ export const searchAnimeTool = new FunctionTool({
 
 export const getAnimeScheduleTool = new FunctionTool({
   name: 'get_anime_schedule',
-  description:
-    'Get anime airing schedule. ALWAYS use this first for schedule/airing questions before trying search_web. Can check a specific day, the full week, or current season.',
+  description: searchAvailable
+    ? 'Get anime airing schedule. ALWAYS use this first for schedule/airing questions before trying search_web. Can check a specific day, the full week, or current season.'
+    : 'Get anime airing schedule. Can check a specific day, the full week, or current season.',
   parameters: z.object({
     scope: z
       .enum(['day', 'week', 'season'])
@@ -133,8 +139,9 @@ export const searchWebTool = new FunctionTool({
 
 export const readRepliesTool = new FunctionTool({
   name: 'read_replies',
-  description:
-    "Read the most-liked replies or comments on a linked social post (X, Bluesky, YouTube, TikTok, Reddit, Instagram, Bilibili, Threads). Call this only when the latest message asks what the replies, comments, or reactions to a post say (including a post linked earlier in the conversation), and then call it instead of search_web. Never call it just because a post was linked or someone asked what a post is about. Pass the post's URL from the conversation. Never describe a post's replies without calling this.",
+  description: `Read the most-liked replies or comments on a linked social post (X, Bluesky, YouTube, TikTok, Reddit, Instagram, Bilibili, Threads). Call this only when the latest message asks what the replies, comments, or reactions to a post say (including a post linked earlier in the conversation), and then call it${
+    searchAvailable ? ' instead of search_web' : ''
+  }. Never call it just because a post was linked or someone asked what a post is about. Pass the post's URL from the conversation. Never describe a post's replies without calling this.`,
   parameters: z.object({
     url: z.string().describe("The post's URL, as it appears in the conversation"),
     count: z
@@ -338,7 +345,7 @@ export const cancelReminderTool = new FunctionTool({
 export const rokaTools = [
   searchAnimeTool,
   getAnimeScheduleTool,
-  searchWebTool,
+  ...(searchAvailable ? [searchWebTool] : []),
   readRepliesTool,
   rememberUserTool,
   recallUserTool,

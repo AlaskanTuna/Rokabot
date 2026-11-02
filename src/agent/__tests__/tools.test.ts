@@ -62,6 +62,21 @@ describe('utility FunctionTools', () => {
     expect(rokaTools).toContain(forgetUserTool)
   })
 
+  it('keeps the descriptions that name search_web byte-identical while search is available', () => {
+    const declarations = new Map(rokaTools.map((tool) => [tool.name, tool._getDeclaration()]))
+
+    expect(rokaTools).toHaveLength(14)
+    expect(declarations.get('search_anime')?.description).toBe(
+      'Search for anime by title or keyword. ALWAYS use this first for anime questions before trying search_web.'
+    )
+    expect(declarations.get('get_anime_schedule')?.description).toBe(
+      'Get anime airing schedule. ALWAYS use this first for schedule/airing questions before trying search_web. Can check a specific day, the full week, or current season.'
+    )
+    expect(declarations.get('read_replies')?.description).toContain(
+      'and then call it instead of search_web. Never call it just because'
+    )
+  })
+
   it('delegates roll_dice to rollDice', async () => {
     vi.spyOn(Math, 'random').mockReturnValue(0)
 
