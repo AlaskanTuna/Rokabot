@@ -95,6 +95,8 @@ socialPosts:
 
 search:
   provider: tavily # off | native | tavily | exa; unset means tavily. tavily needs TAVILY_API_KEY, exa needs EXA_API_KEY; no model supports native yet
+  nativeTimeoutMs: 8000 # Longest one native search may take
+  nativeReserveMs: 5000 # Attempt time a native search must leave for the chat model's next call
 
 media:
   watcher: gemini # How Roka takes in audio and video. gemini or qwen (frames + speech transcript on ModelScope) watches it first and she replies from the notes, the other taking over when it fails; direct sends the file straight to the reply model, with no backup; off neither watches nor sends it and tells her so. The Pi sets MEDIA_WATCHER=qwen

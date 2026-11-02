@@ -3,6 +3,8 @@ import type { BaseLlmConnection, LlmResponse } from '@google/adk'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { withSearchCitations } from '../searchCitations.js'
 import { searchWebTool } from '../tools/index.js'
+import { currentSearchAttempt, withSearchAttempt } from '../tools/search/attemptBudget.js'
+import type { SearchAttempt } from '../tools/search/attemptBudget.js'
 
 // The citation sink is an AsyncLocalStorage store opened in the Discord layer and written from inside
 // searchWeb, which ADK calls several async frames deeper. This drives the real Runner into the real tool to
@@ -39,7 +41,7 @@ const TAVILY_RESULTS = [
   { title: 'Polygon', url: 'https://www.polygon.com/b', content: 'c', score: 1 }
 ]
 
-async function runSearchTurn() {
+async function runSearchTurn(attempt?: SearchAttempt) {
   const agent = new LlmAgent({
     name: 'citations',
     model: new ScriptedLlm(SEARCH_TURN),
@@ -52,16 +54,19 @@ async function runSearchTurn() {
   const runner = new Runner({ appName: APP_NAME, agent, sessionService })
   await sessionService.createSession({ appName: APP_NAME, userId: CHANNEL, sessionId: CHANNEL })
 
-  return withSearchCitations(async () => {
-    for await (const _event of runner.runAsync({
-      userId: CHANNEL,
-      sessionId: CHANNEL,
-      newMessage: { role: 'user', parts: [{ text: 'when did frieren season 2 air?' }] },
-      runConfig: { maxLlmCalls: 4 }
-    })) {
-      // draining the turn is the point; the events themselves are not under test
-    }
-  })
+  const turn = () =>
+    withSearchCitations(async () => {
+      for await (const _event of runner.runAsync({
+        userId: CHANNEL,
+        sessionId: CHANNEL,
+        newMessage: { role: 'user', parts: [{ text: 'when did frieren season 2 air?' }] },
+        runConfig: { maxLlmCalls: 4 }
+      })) {
+        // draining the turn is the point; the events themselves are not under test
+      }
+    })
+
+  return attempt ? withSearchAttempt(attempt, turn) : turn()
 }
 
 const originalFetch = globalThis.fetch
@@ -98,5 +103,24 @@ describe('search citation capture', () => {
     const [, citations] = await withSearchCitations(async () => undefined)
 
     expect(citations).toEqual([])
+  })
+
+  it("runs search_web inside the attempt's search budget", async () => {
+    const seen: SearchAttempt[] = []
+    globalThis.fetch = vi.fn(async () => {
+      const attempt = currentSearchAttempt()
+      if (attempt) seen.push(attempt)
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ answer: 'a', results: TAVILY_RESULTS, response_time: 1 })
+      }
+    }) as never
+    const attempt: SearchAttempt = { deadlineAtMs: performance.now() + 20_000, signal: new AbortController().signal }
+
+    await runSearchTurn(attempt)
+
+    expect(seen).toEqual([attempt])
+    expect(seen[0].deadlineAtMs).toBeGreaterThan(performance.now())
   })
 })

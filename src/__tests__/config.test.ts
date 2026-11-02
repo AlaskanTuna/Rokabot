@@ -695,7 +695,12 @@ describe('config module', () => {
 
       const { config } = await import('../config.js')
 
-      expect(config.search).toEqual({ provider: 'tavily', available: true })
+      expect(config.search).toEqual({
+        provider: 'tavily',
+        available: true,
+        nativeTimeoutMs: 8000,
+        nativeReserveMs: 5000
+      })
     })
 
     it('reads search.provider from config.yml, and SEARCH_PROVIDER overrides it', async () => {
@@ -761,7 +766,12 @@ describe('config module', () => {
       const { config } = await import('../config.js')
       await vi.dynamicImportSettled()
 
-      expect(config.search).toEqual({ provider: 'native', available: true })
+      expect(config.search).toEqual({
+        provider: 'native',
+        available: true,
+        nativeTimeoutMs: 8000,
+        nativeReserveMs: 5000
+      })
       expect(warn).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('has no web search'))
     })
 
@@ -776,7 +786,12 @@ describe('config module', () => {
       const { config } = await import('../config.js')
       await vi.dynamicImportSettled()
 
-      expect(config.search).toEqual({ provider: 'native', available: false })
+      expect(config.search).toEqual({
+        provider: 'native',
+        available: false,
+        nativeTimeoutMs: 8000,
+        nativeReserveMs: 5000
+      })
       expect(warn).toHaveBeenCalledWith(
         { provider: 'native' },
         'search.provider is native, but gemini-2.0-flash-lite has no web search, so Roka runs without it. Set search.provider to tavily or exa to search with an API key.'
@@ -791,7 +806,12 @@ describe('config module', () => {
       const { config } = await import('../config.js')
       await vi.dynamicImportSettled()
 
-      expect(config.search).toEqual({ provider: 'off', available: false })
+      expect(config.search).toEqual({
+        provider: 'off',
+        available: false,
+        nativeTimeoutMs: 8000,
+        nativeReserveMs: 5000
+      })
       expect(warn).not.toHaveBeenCalled()
     })
 
@@ -807,7 +827,7 @@ describe('config module', () => {
       const { config } = await import('../config.js')
       await vi.dynamicImportSettled()
 
-      expect(config.search).toEqual({ provider, available: true })
+      expect(config.search).toEqual({ provider, available: true, nativeTimeoutMs: 8000, nativeReserveMs: 5000 })
       expect(warn).toHaveBeenCalledWith(
         { provider },
         `search.provider is ${provider}, but ${key} is not set, so search_web will report that search is not configured.`
@@ -862,6 +882,26 @@ describe('config module', () => {
 
       expect(config.jev.prefetch).toBe('on')
       expect(warn).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('prefetch runs as shadow'))
+    })
+
+    it('bounds the native search time and its reserve', async () => {
+      setRequiredEnvVars()
+      clearTunableEnvVars()
+
+      const { config, NUMERIC_BOUNDS } = await import('../config.js')
+
+      expect(config.search.nativeTimeoutMs).toBe(8000)
+      expect(config.search.nativeReserveMs).toBe(5000)
+      expect(NUMERIC_BOUNDS.find(({ path }) => path === 'search.nativeTimeoutMs')).toMatchObject({
+        value: 8000,
+        min: 1,
+        max: 60_000
+      })
+      expect(NUMERIC_BOUNDS.find(({ path }) => path === 'search.nativeReserveMs')).toMatchObject({
+        value: 5000,
+        min: 0,
+        max: 60_000
+      })
     })
   })
 
@@ -1510,7 +1550,9 @@ describe('config module', () => {
       { path: 'statusCycleMs', min: 1 },
       { path: 'updates.checkIntervalHours', min: 1, max: 168 },
       { path: 'llm.hedgeAfterMs', min: 0 },
-      { path: 'llm.stickyMs', min: 0 }
+      { path: 'llm.stickyMs', min: 0 },
+      { path: 'search.nativeTimeoutMs', min: 1, max: 60_000 },
+      { path: 'search.nativeReserveMs', min: 0, max: 60_000 }
     ]
 
     const { NUMERIC_BOUNDS } = await import('../config.js')

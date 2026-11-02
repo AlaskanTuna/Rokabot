@@ -5,6 +5,7 @@ import { searchIsAvailable, searchProviderSetting } from '../../searchSettings.j
 import { logger } from '../../utils/logger.js'
 import { recordSearchCitations } from '../searchCitations.js'
 import { exaSearch } from './search/exa.js'
+import { nativeSearch } from './search/native.js'
 import { tavilySearch } from './search/tavily.js'
 import {
   type BackendOutcome,
@@ -17,12 +18,11 @@ import {
 
 export type { SearchWebParams } from './search/types.js'
 
-/** Placeholder until the native backend fills it in. */
 const noBackend: SearchBackend = async () => failedSearch(SEARCH_TEXT.notConfigured)
 
 const BACKENDS: Record<SearchProvider, SearchBackend> = {
   off: noBackend,
-  native: noBackend,
+  native: nativeSearch,
   tavily: tavilySearch,
   exa: exaSearch
 }
