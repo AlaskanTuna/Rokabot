@@ -4,6 +4,7 @@ vi.mock('../../../utils/logger.js', () => ({
   logger: { debug: vi.fn(), error: vi.fn(), fatal: vi.fn(), info: vi.fn(), warn: vi.fn() }
 }))
 
+import { logger } from '../../../utils/logger.js'
 import { SEARCH_EXCERPTS_UNTRUSTED_DATA_LABEL } from '../../promptSafety.js'
 import { startSearchPrefetch } from '../../searchPrefetch.js'
 import { exaSearch } from '../search/exa.js'
@@ -179,6 +180,27 @@ describe('exaSearch', () => {
     expect(labelStripped(result.answer).length).toBeLessThanOrEqual(1500)
   })
 
+  // A Japanese page often carries one early space and no other, so backing off to the last whitespace threw away
+  // nearly the whole share. The cut only backs off when that whitespace sits near the end of the allowance.
+  it('keeps a long run with no spaces instead of backing off to an early one', async () => {
+    exaReplies({
+      results: [{ title: 'A', url: 'https://a.test', highlights: [`葬送のフリーレン 第2期 ${'あ'.repeat(2000)}`] }]
+    })
+
+    const result = await exaSearch({ query: 'q' })
+
+    expect(labelStripped(result.answer).length).toBeGreaterThan(1400)
+  })
+
+  it('ends on a whole word when a space is near the cut', async () => {
+    exaReplies({ results: [{ title: 'A', url: 'https://a.test', highlights: ['word '.repeat(400)] }] })
+
+    const result = await exaSearch({ query: 'q' })
+
+    const pageText = labelStripped(result.answer)
+    expect(pageText.endsWith('word')).toBe(true)
+  })
+
   // One off-target top page used to decide the whole answer, so a fact in a later result's highlight never reached
   // the model — and the snippet clips at 200, so it was nowhere at all. A share per result keeps later ones in.
   it('gives later results a share when the first highlight is very long', async () => {
@@ -232,20 +254,17 @@ describe('exaSearch', () => {
     expect(labelStripped(result.answer).length).toBeLessThanOrEqual(1500)
   })
 
-  // A cut inside an emoji leaves half a surrogate pair, which the model APIs reject.
+  // A cut inside an emoji leaves half a surrogate pair, which the model APIs reject. Both cuts must straddle the
+  // pair: the answer's 1,500-character cap and the snippet's 200-character clip.
   it('never leaves a lone surrogate at a cut', async () => {
     exaReplies({
-      results: [
-        { title: 'A', url: 'https://a.test', highlights: [`${'e'.repeat(1499)}😀${'t'.repeat(50)}`] },
-        { title: 'B', url: 'https://b.test', highlights: [`${'f'.repeat(50)}😀${'g'.repeat(50)}`] },
-        { title: 'C', url: 'https://c.test', highlights: ['c fact'] }
-      ]
+      results: [{ title: 'A', url: 'https://a.test', highlights: [`${'e'.repeat(1499)}😀${'t'.repeat(50)}`] }]
     })
 
     const result = await exaSearch({ query: 'q' })
 
     expect(hasLoneSurrogate(result.answer)).toBe(false)
-    expect(hasLoneSurrogate(clipSnippet(`x${'e'.repeat(199)}😀tail`))).toBe(false)
+    expect(hasLoneSurrogate(clipSnippet(`${'e'.repeat(199)}😀`))).toBe(false)
   })
 
   // A result with no title still carries a usable link, and the citation footer needs the URL regardless.
@@ -324,6 +343,15 @@ describe('exaSearch', () => {
 
     exaReplies({ results: null })
     await expect(exaSearch({ query: 'q' })).resolves.toMatchObject({ answer: 'Search request failed.' })
+  })
+
+  // Pino prints a plain `error` key as `{}`, so only the message is logged — the object itself must stay a string.
+  it('logs only the message when the request throws', async () => {
+    fetchMock.mockRejectedValue(new Error('socket hang up'))
+
+    await exaSearch({ query: 'q' })
+
+    expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({ error: 'socket hang up' }), 'Exa search error')
   })
 
   it('produces a ready prefetch', async () => {

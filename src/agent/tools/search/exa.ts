@@ -111,10 +111,15 @@ function buildAnswer(results: readonly ExaResult[]): string {
   return `${SEARCH_EXCERPTS_UNTRUSTED_DATA_LABEL}\n${shares.join('\n')}`
 }
 
-/** Cuts a share inside its allowance, at the last whitespace so a number is not halved, and never mid-surrogate. */
+/**
+ * Cuts a share inside its allowance, at the last whitespace so a number is not halved, and never mid-surrogate.
+ *
+ * The whitespace cut only applies when that whitespace sits in the last fifth of the allowance. Japanese text
+ * often carries one early space, and backing off to it threw away nearly the whole share.
+ */
 function cut(text: string, allowance: number): string {
   if (text.length <= allowance) return text
   const head = wellFormed(text.slice(0, allowance))
   const whitespace = head.search(/\s\S*$/)
-  return whitespace > 0 ? head.slice(0, whitespace) : head
+  return whitespace >= head.length * 0.8 ? head.slice(0, whitespace) : head
 }
