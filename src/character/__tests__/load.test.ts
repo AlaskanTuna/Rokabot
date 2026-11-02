@@ -186,6 +186,14 @@ describe('loadCharacter', () => {
     expect(loadCharacter(dir, HARNESS).prompts.stable.full).toContain('- Search only when asked.')
   })
 
+  // check loads with search on, so a broken no-search prompt would otherwise pass here and stop the bot from
+  // starting the moment the operator sets `search.provider: off`.
+  it('validates the no-search prompt even with search on', () => {
+    const dir = copyOf()
+    writeFileSync(join(dir, 'prompts/no-search-tools.md'), '- Never offer to look it up. {{nope}}\n')
+    expect(loadError(dir)).toContain('prompts/no-search-tools.md: unknown macro {{nope}}')
+  })
+
   it.each([
     ['prompts/intro.md', 'Hi {{nope}}\n', 'prompts/intro.md: unknown macro {{nope}}'],
     ['prompts/intro.md', 'Hi {{user}}\n', 'prompts/intro.md: unknown macro {{user}}; it works only in situation.md'],

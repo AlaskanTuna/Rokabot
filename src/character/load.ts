@@ -211,12 +211,9 @@ export function loadCharacter(dir: string, harnessDir: string, options: LoadOpti
             ? ['search_before_judging']
             : []
     const text = expand(raw.endsWith('\n') ? raw.slice(0, -1) : raw, source, '', slots)
-    for (const [whole, label] of [
-      [MEMORY_LINE, MEMORY_LINE],
-      [SEARCH_TOOLS_LINE, SEARCH_TOOLS_LINE]
-    ] as const) {
-      if (text.split('\n').some((line) => line !== whole && line.includes(whole))) {
-        report(source, '', `${label} must be on a line of its own`)
+    for (const macro of [MEMORY_LINE, SEARCH_TOOLS_LINE]) {
+      if (text.split('\n').some((line) => line !== macro && line.includes(macro))) {
+        report(source, '', `${macro} must be on a line of its own`)
       }
     }
     if (!SEARCH_PROMPTS.includes(name) && text.includes('search_web')) {
@@ -239,12 +236,21 @@ export function loadCharacter(dir: string, harnessDir: string, options: LoadOpti
   const memoryTools = usesMemoryTools
     ? [prompt('memory-tools', characterPath, 'prompt.system'), forgetTool].filter(Boolean).join('\n')
     : ''
-  const searchTools = () =>
-    settings.search
-      ? prompt('search-tools', characterPath, 'prompt.system')
-      : prompt('no-search-tools', characterPath, 'prompt.system')
-  const searchBeforeJudging = () =>
-    settings.search ? ` ${prompt('search-before-judging', characterPath, 'prompt.system')}` : ''
+  const usesSearchTools = sections.some(({ text }) => text.split('\n').includes(SEARCH_TOOLS_LINE))
+  const usesSearchBeforeJudging = sections.some(({ text }) => text.includes(SEARCH_BEFORE_JUDGING))
+  // Both states load when the macro is present, as the memory macro does: a no-search prompt with a bad macro
+  // has to fail the check here, or the bot would refuse to start the moment search is switched off.
+  const searchPrompts = usesSearchTools
+    ? [
+        prompt('search-tools', characterPath, 'prompt.system'),
+        prompt('no-search-tools', characterPath, 'prompt.system')
+      ]
+    : []
+  const judgingPrompts = usesSearchBeforeJudging
+    ? [prompt('search-before-judging', characterPath, 'prompt.system')]
+    : []
+  const searchTools = () => (settings.search ? searchPrompts[0] : searchPrompts[1])
+  const searchBeforeJudging = () => (settings.search && judgingPrompts[0] ? ` ${judgingPrompts[0]}` : '')
   const fills: Record<MemoryMode, string> = { full: memoryTools, forget: forgetTool, none: '' }
   const system = {} as Record<MemoryMode, PromptSection[]>
   const stable = {} as Record<MemoryMode, string>

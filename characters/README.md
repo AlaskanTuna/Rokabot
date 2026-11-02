@@ -69,7 +69,9 @@ Three harness prompts follow `search.provider`. `search-tools.md` and `no-search
 
 A prompt whose text names `search_web` is allowed only in `search-tools.md` and `search-before-judging.md`. Any other
 prompt that names it fails to load with `… names search_web, which a deployment without search does not have`. To
-name the tool in your own prompt, move that line to a pack `search-tools.md`, or put it behind `{{search_tools}}`.
+name the tool in your own prompt, move that line to a pack `search-tools.md`, or a judging sentence to a pack
+`search-before-judging.md`. Neither macro wraps text: `{{search_tools}}` and `{{search_before_judging}}` take no
+content, so the text lives in the prompt file the macro resolves to.
 
 ## Field Reference
 

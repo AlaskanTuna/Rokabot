@@ -94,9 +94,9 @@ type LoadedArm = Arm & {
   }) => string
 }
 
-// Since the character pack, the prompt modules read src/character and the pack folders; older refs have only src/agent.
-// package.json keeps the export an ES module, which the pack loader needs for import.meta.dirname.
-const PROMPT_PATHS = ['package.json', 'src/agent', 'src/character', 'characters', 'prompts'] as const
+// The prompt modules reach the pack folders and, through src/character, the config and search settings; the whole
+// of src/ ships so no future import breaks the export. package.json keeps it an ES module for import.meta.dirname.
+const PROMPT_PATHS = ['package.json', 'src', 'config.yml', 'characters', 'prompts'] as const
 
 export function refPromptPaths(ref: string, cwd: string): string[] {
   return PROMPT_PATHS.filter((path) => {

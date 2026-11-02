@@ -4,13 +4,26 @@ vi.mock('../../../utils/logger.js', () => ({
   logger: { debug: vi.fn(), error: vi.fn(), fatal: vi.fn(), info: vi.fn(), warn: vi.fn() }
 }))
 
+import { SEARCH_EXCERPTS_UNTRUSTED_DATA_LABEL } from '../../promptSafety.js'
 import { startSearchPrefetch } from '../../searchPrefetch.js'
 import { exaSearch } from '../search/exa.js'
+import { clipSnippet } from '../search/types.js'
 
 const originalFetch = globalThis.fetch
 const originalKey = process.env.EXA_API_KEY
 
 const NO_SUMMARY = 'No summary available.'
+const LABEL = SEARCH_EXCERPTS_UNTRUSTED_DATA_LABEL
+
+/** The cap covers the page text, not the label, so the label comes off before measuring. */
+function labelStripped(answer: string): string {
+  return answer.startsWith(`${LABEL}\n`) ? answer.slice(LABEL.length + 1) : answer
+}
+
+/** True when a string holds half a surrogate pair, which the model APIs reject. */
+function hasLoneSurrogate(text: string): boolean {
+  return /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(text)
+}
 
 let fetchMock: ReturnType<typeof vi.fn>
 
@@ -125,8 +138,8 @@ describe('exaSearch', () => {
     const result = await exaSearch({ query: 'q' })
 
     // Every highlight joins in rank order; the whole joined text stays inside the cap.
-    expect(result.answer).toBe(`first fact\n${'x'.repeat(200)}\nunused second highlight\nthird fact`)
-    expect(result.answer.length).toBeLessThanOrEqual(1500)
+    expect(result.answer).toBe(`${LABEL}\nfirst fact\n${'x'.repeat(200)}\nunused second highlight\nthird fact`)
+    expect(labelStripped(result.answer).length).toBeLessThanOrEqual(1500)
   })
 
   // Exa's highlights hold the answer sentence, and on a real page the fact often sits well past character 200:
@@ -152,7 +165,7 @@ describe('exaSearch', () => {
 
     const result = await exaSearch({ query: 'q' })
 
-    expect(result.answer).toBe('a1\na2\nb1\nb2')
+    expect(result.answer).toBe(`${LABEL}\na1\na2\nb1\nb2`)
   })
 
   // Exa returns highlights over 1,500 characters; dropping the whole one would leave no answer at all.
@@ -161,27 +174,78 @@ describe('exaSearch', () => {
 
     const result = await exaSearch({ query: 'q' })
 
-    expect(result.answer).toBe('h'.repeat(1500))
+    expect(result.answer).toBe(`${LABEL}\n${'h'.repeat(1500)}`)
     expect(result.answer).not.toBe(NO_SUMMARY)
+    expect(labelStripped(result.answer).length).toBeLessThanOrEqual(1500)
   })
 
-  it('drops a highlight that would push the answer past 1,500 characters', async () => {
+  // One off-target top page used to decide the whole answer, so a fact in a later result's highlight never reached
+  // the model — and the snippet clips at 200, so it was nowhere at all. A share per result keeps later ones in.
+  it('gives later results a share when the first highlight is very long', async () => {
     exaReplies({
       results: [
-        { title: 'A', url: 'https://a.test', highlights: ['x'.repeat(200)] },
-        ...Array.from({ length: 8 }, (_, index) => ({
+        { title: 'A', url: 'https://a.test', highlights: ['x'.repeat(1800)] },
+        { title: 'B', url: 'https://b.test', highlights: [`${'y'.repeat(190)}NEEDLE`] }
+      ]
+    })
+
+    const result = await exaSearch({ query: 'q' })
+
+    expect(result.answer).toContain('NEEDLE')
+    expect(labelStripped(result.answer).length).toBeLessThanOrEqual(1500)
+  })
+
+  // A replay of 20 real Exa responses showed equal shares cutting real answers: the fact sits about character 450
+  // into the top result, so the fair share of ~300 a page of five results left threw it away. The top result takes
+  // half the allowance instead, and later results still get their share of what is left.
+  it('keeps a fact deep in the top result while later results still get text', async () => {
+    exaReplies({
+      results: [
+        { title: 'A', url: 'https://a.test', highlights: [`${'x'.repeat(450)}NEEDLE${'x'.repeat(1544)}`] },
+        ...Array.from({ length: 4 }, (_, index) => ({
           title: `T${index}`,
           url: `https://t${index}.test`,
-          highlights: ['y'.repeat(200)]
+          highlights: [`${'y'.repeat(100)}OTHER${'y'.repeat(893)}`]
         }))
       ]
     })
 
     const result = await exaSearch({ query: 'q' })
 
-    // Nine 200-character highlights cannot all fit, so the answer stops at the cap instead of overshooting.
-    expect(result.answer.length).toBe(1500)
-    expect(result.answer.startsWith('x'.repeat(200))).toBe(true)
+    expect(result.answer).toContain('NEEDLE')
+    expect(result.answer).toContain('OTHER')
+    expect(labelStripped(result.answer).length).toBeLessThanOrEqual(1500)
+  })
+
+  it('rolls unused share forward', async () => {
+    exaReplies({
+      results: [
+        { title: 'A', url: 'https://a.test', highlights: ['short first fact'] },
+        { title: 'B', url: 'https://b.test', highlights: ['y'.repeat(1400)] }
+      ]
+    })
+
+    const result = await exaSearch({ query: 'q' })
+
+    expect(result.answer).toContain('short first fact')
+    expect(result.answer).toContain('y'.repeat(751))
+    expect(labelStripped(result.answer).length).toBeLessThanOrEqual(1500)
+  })
+
+  // A cut inside an emoji leaves half a surrogate pair, which the model APIs reject.
+  it('never leaves a lone surrogate at a cut', async () => {
+    exaReplies({
+      results: [
+        { title: 'A', url: 'https://a.test', highlights: [`${'e'.repeat(1499)}😀${'t'.repeat(50)}`] },
+        { title: 'B', url: 'https://b.test', highlights: [`${'f'.repeat(50)}😀${'g'.repeat(50)}`] },
+        { title: 'C', url: 'https://c.test', highlights: ['c fact'] }
+      ]
+    })
+
+    const result = await exaSearch({ query: 'q' })
+
+    expect(hasLoneSurrogate(result.answer)).toBe(false)
+    expect(hasLoneSurrogate(clipSnippet(`x${'e'.repeat(199)}😀tail`))).toBe(false)
   })
 
   // A result with no title still carries a usable link, and the citation footer needs the URL regardless.
@@ -273,11 +337,30 @@ describe('exaSearch', () => {
 
     await expect(startSearchPrefetch({ query: 'q', signal, search: exaSearch })).resolves.toEqual({
       status: 'ready',
-      text: 'It premiered in January.\nA second fact.',
+      text: `${LABEL}\nIt premiered in January.\nA second fact.`,
       sources: [
         { title: 'Crunchyroll', url: 'https://www.crunchyroll.com/a' },
         { title: 'Polygon', url: 'https://www.polygon.com/b' }
       ]
     })
+  })
+
+  it('labels page text as untrusted, and leaves the no-summary text alone', async () => {
+    exaReplies({ results: [{ title: 'A', url: 'https://a.test', highlights: ['a fact'] }] })
+    await expect(exaSearch({ query: 'q' })).resolves.toMatchObject({
+      answer: `${LABEL}\na fact`
+    })
+
+    exaReplies({ results: [{ title: 'A', url: 'https://a.test' }] })
+    await expect(exaSearch({ query: 'q' })).resolves.toMatchObject({ answer: NO_SUMMARY })
+  })
+
+  // The label is not page text, so it does not eat into the 1,500 characters of excerpts.
+  it('measures the cap against the page text, not the label', async () => {
+    exaReplies({ results: [{ title: 'A', url: 'https://a.test', highlights: ['h'.repeat(2000)] }] })
+
+    const result = await exaSearch({ query: 'q' })
+
+    expect(result.answer).toBe(`${LABEL}\n${'h'.repeat(1500)}`)
   })
 })

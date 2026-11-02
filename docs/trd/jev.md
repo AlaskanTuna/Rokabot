@@ -97,7 +97,7 @@ In `on` mode:
 
 - **Citations:** the search footer uses the prefetched URLs. A later `search_web` call by the model replaces the list.
 - **Tool Count:** a used prefetch counts `search_web` once in `toolsUsed`, even if the model also calls the tool.
-- **Tool Registration:** `search_web` stays registered in every mode.
+- **Tool Registration:** `search_web` stays registered in every prefetch mode.
 - **No Result:** an empty, failed, aborted, canceled or timed-out search adds no block. The turn answers normally.
 - **Safety Ladder:** any safety rung above 0 drops the block.
 

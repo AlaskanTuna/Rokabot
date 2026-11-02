@@ -252,7 +252,7 @@ schema errors (a missing file, bad YAML, an unknown key, a wrong type) come firs
 | `unknown macro {{x}}`                                                 | Use a macro from the table. The message names the file where it works. |
 | `{{memory_tools}} must be on a line of its own`                       | Move it to its own line in `tools.md`.                                 |
 | `{{search_tools}} must be on a line of its own`                       | Move it to its own line in `tools.md`.                                 |
-| `… names search_web, which a deployment without search does not have` | Move that line to `search-tools.md`, or wrap it in `{{search_tools}}`. |
+| `… names search_web, which a deployment without search does not have` | Move that line to a pack `search-tools.md`.                            |
 | `… is a locked harness prompt`                                        | Delete the file from the pack. Edit the harness copy instead.          |
 | `unknown mood "x"`                                                    | Add the mood to `moods`, or fix the name.                              |
 | `unknown face group "x"`                                              | Add the group to `voice.yml` `faces`.                                  |

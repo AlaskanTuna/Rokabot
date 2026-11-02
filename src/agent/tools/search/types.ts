@@ -13,7 +13,7 @@ export interface SearchResult {
   resultCount: number
 }
 
-/** `succeeded` stays off SearchResult: the model is never told apart a failure from an empty result. */
+/** `succeeded` stays off SearchResult: it gates citation recording, while the model reads the answer text. */
 export interface BackendOutcome extends SearchResult {
   succeeded: boolean
 }
@@ -31,7 +31,12 @@ export function failedSearch(answer: string): BackendOutcome {
   return { answer, results: [], resultCount: 0, succeeded: false }
 }
 
-/** Bounds one result's snippet, so a long page cannot flood the model context. */
+/** Drops a high surrogate left at the end of a cut, so a half-straddled emoji never reaches the model. */
+export function wellFormed(text: string): string {
+  return /[\uD800-\uDBFF]$/.test(text) ? text.slice(0, -1) : text
+}
+
+/** Bounds one result's snippet, so a long page cannot flood the model context. Text inside the bound is untouched. */
 export function clipSnippet(text: string): string {
-  return text.length > 200 ? `${text.substring(0, 200)}...` : text
+  return text.length > 200 ? `${wellFormed(text.substring(0, 200))}...` : text
 }

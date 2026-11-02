@@ -1,7 +1,8 @@
 /** Web search via the Exa API */
 
 import { logger } from '../../../utils/logger.js'
-import { SEARCH_TEXT, type SearchBackend, clipSnippet, failedSearch } from './types.js'
+import { SEARCH_EXCERPTS_UNTRUSTED_DATA_LABEL } from '../../promptSafety.js'
+import { SEARCH_TEXT, type SearchBackend, clipSnippet, failedSearch, wellFormed } from './types.js'
 
 interface ExaResult {
   title?: string | null
@@ -77,21 +78,43 @@ export const exaSearch: SearchBackend = async (params) => {
       succeeded: true
     }
   } catch (error) {
-    logger.warn({ error, query }, 'Exa search error')
+    // Only the message: pino prints a plain `error` key as `{}`, so an operator could not see the cause.
+    logger.warn({ error: error instanceof Error ? error.message : String(error), query }, 'Exa search error')
     return failedSearch(SEARCH_TEXT.failed)
   }
 }
 
 /**
  * Exa generates no answer, so the highlights stand in, joined in rank order and bounded. The raw highlights are
- * used, not the clipped snippets: the fact often sits past character 200 on a real page, and a highlight longer
- * than the cap is trimmed rather than dropped, so a single long one still yields an answer.
+ * used, not the clipped snippets: the fact often sits past character 200 on a real page.
+ *
+ * The top result takes the larger of half the allowance and its fair share, because the answer sentence sits
+ * deep inside a real highlight — about character 450 on the GPT-5.6 page that first exposed this — so an equal
+ * share of roughly 300 across a page of results cut the fact away. Later results keep their fair share of what
+ * is left, so one long top page cannot crowd them out entirely, and unused share rolls forward to them. A lone
+ * result still gets the whole cap.
  */
 function buildAnswer(results: readonly ExaResult[]): string {
-  const joined = results
-    .flatMap((r) => r.highlights ?? [])
-    .filter((highlight) => highlight)
-    .join('\n')
+  // One text per result, not per highlight: a share belongs to a result, so its own highlights stay together.
+  const texts = results.map((r) => (r.highlights ?? []).filter(Boolean).join('\n')).filter(Boolean)
+  if (texts.length === 0) return SEARCH_TEXT.noSummary
 
-  return joined ? joined.slice(0, MAX_ANSWER_CHARS) : SEARCH_TEXT.noSummary
+  // Each separator between shares is one character of the cap, so the shares plus the newlines total the cap.
+  let left = MAX_ANSWER_CHARS - (texts.length - 1)
+  const shares = texts.map((text, index) => {
+    const fair = Math.ceil(left / (texts.length - index))
+    const kept = cut(text, index === 0 ? Math.max(Math.ceil(left / 2), fair) : fair)
+    left -= kept.length
+    return kept
+  })
+
+  return `${SEARCH_EXCERPTS_UNTRUSTED_DATA_LABEL}\n${shares.join('\n')}`
+}
+
+/** Cuts a share inside its allowance, at the last whitespace so a number is not halved, and never mid-surrogate. */
+function cut(text: string, allowance: number): string {
+  if (text.length <= allowance) return text
+  const head = wellFormed(text.slice(0, allowance))
+  const whitespace = head.search(/\s\S*$/)
+  return whitespace > 0 ? head.slice(0, whitespace) : head
 }
