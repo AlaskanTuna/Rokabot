@@ -147,28 +147,36 @@ Adding a footer tool or a memory predicate in code means adding its label to eve
 | `{{user}}`                                                          | `situation.md`, `openers.name`          | The speaker's display name                   |
 | `{{time_of_day}}`                                                   | `situation.md`                          | The `situation.timeOfDay` text for the hour  |
 | `{{memory_tools}}`                                                  | `tools.md`, on a line of its own        | The memory-tool rules for the turn           |
+| `{{search_tools}}`                                                  | `tools.md`, on a line of its own        | The search rules for this deployment         |
+| `{{search_before_judging}}`                                         | `answering.md`, mid-line                | The extra search rule for judging a claim    |
 | `{{word}}`, `{{bit}}`                                               | `openers.*.instruction` in `voice.yml`  | The opener word or comedy bit that was drawn |
 | `{{length}}`, `{{opener}}`, `{{ending}}`, `{{faces}}`, `{{threat}}` | The matching `note` line in `voice.yml` | The value that was drawn                     |
 
 Any other `{{…}}` is a load error that names the file. `{{memory_tools}}` becomes `memory-tools.md` and
 `forget-tool.md` on a normal turn, `forget-tool.md` alone with `memory.privacy: off`, and nothing on `/ask`.
+`{{search_tools}}` becomes `search-tools.md` when `search.provider` is `tavily` or `exa`, and `no-search-tools.md`
+with `off` or `native`. A missing key does not change it: the prompts still name `search_web`, and the tool reports
+that search is not configured. The search state is fixed at startup, so both macros fill the same way on every turn.
 
 ## Harness Prompts and Overrides
 
 A prompt name such as `intro` or `moods/playful` resolves to `characters/<id>/prompts/<name>.md` first, then to
 `prompts/<name>.md`. A pack overrides a harness prompt by shipping a file with the same name.
 
-| Harness Prompt    | Used When                          | Override |
-| ----------------- | ---------------------------------- | -------- |
-| `answering.md`    | Named in `prompt.system`           | Allowed  |
-| `audio-video.md`  | Named in `prompt.system`           | Allowed  |
-| `images.md`       | Named in `prompt.system`           | Allowed  |
-| `tools.md`        | Named in `prompt.system`           | Allowed  |
-| `memory-tools.md` | A section holds `{{memory_tools}}` | Allowed  |
-| `forget-tool.md`  | A section holds `{{memory_tools}}` | Allowed  |
-| `situation.md`    | Every turn                         | Allowed  |
-| `boundaries.md`   | Named in `prompt.system`           | Locked   |
-| `safety-steer.md` | Safety ladder rungs 1-3            | Locked   |
+| Harness Prompt             | Used When                          | Override |
+| -------------------------- | ---------------------------------- | -------- |
+| `answering.md`             | Named in `prompt.system`           | Allowed  |
+| `audio-video.md`           | Named in `prompt.system`           | Allowed  |
+| `images.md`                | Named in `prompt.system`           | Allowed  |
+| `tools.md`                 | Named in `prompt.system`           | Allowed  |
+| `memory-tools.md`          | A section holds `{{memory_tools}}` | Allowed  |
+| `forget-tool.md`           | A section holds `{{memory_tools}}` | Allowed  |
+| `search-tools.md`          | `{{search_tools}}`, search on      | Allowed  |
+| `no-search-tools.md`       | `{{search_tools}}`, search off     | Allowed  |
+| `search-before-judging.md` | `{{search_before_judging}}`        | Allowed  |
+| `situation.md`             | Every turn                         | Allowed  |
+| `boundaries.md`            | Named in `prompt.system`           | Locked   |
+| `safety-steer.md`          | Safety ladder rungs 1-3            | Locked   |
 
 Locked prompts hold the hard limits and the safety redirect, so every character keeps them. Edit them in `prompts/`.
 The list is `LOCKED_PROMPTS` in `src/character/load.ts`. A lock stops a pack from replacing `boundaries.md`. It does
@@ -236,20 +244,22 @@ Each line is `<file>: <YAML path>: <problem>`. The YAML path is left out when th
 schema errors (a missing file, bad YAML, an unknown key, a wrong type) come first, on their own. Fix those, then run
 `check` again to see the cross-reference problems.
 
-| Message                                         | Fix                                                                    |
-| ----------------------------------------------- | ---------------------------------------------------------------------- |
-| `Unrecognized key: "…"`                         | Remove or rename the key. Unknown keys are errors.                     |
-| `file is missing`                               | Add `character.yml`, `voice.yml` or `moods.yml`.                       |
-| `no prompt file "x.md" in … or …`               | Add `prompts/x.md`, or fix the name in `prompt.system` or the mood.    |
-| `unknown macro {{x}}`                           | Use a macro from the table. The message names the file where it works. |
-| `{{memory_tools}} must be on a line of its own` | Move it to its own line in `tools.md`.                                 |
-| `… is a locked harness prompt`                  | Delete the file from the pack. Edit the harness copy instead.          |
-| `unknown mood "x"`                              | Add the mood to `moods`, or fix the name.                              |
-| `unknown face group "x"`                        | Add the group to `voice.yml` `faces`.                                  |
-| `unknown beat "x"`                              | Add the beat to `voice.yml` `beats`.                                   |
-| `no URL for portrait "x" in portraitUrls`       | Add the portrait to `portraitUrls`.                                    |
-| `no band covers hour n`                         | Add or widen a `situation.timeOfDay` band.                             |
-| `"x" has no detection rule to relax`            | Add a `detection` rule for the `lateNight` mood.                       |
+| Message                                                               | Fix                                                                    |
+| --------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `Unrecognized key: "…"`                                               | Remove or rename the key. Unknown keys are errors.                     |
+| `file is missing`                                                     | Add `character.yml`, `voice.yml` or `moods.yml`.                       |
+| `no prompt file "x.md" in … or …`                                     | Add `prompts/x.md`, or fix the name in `prompt.system` or the mood.    |
+| `unknown macro {{x}}`                                                 | Use a macro from the table. The message names the file where it works. |
+| `{{memory_tools}} must be on a line of its own`                       | Move it to its own line in `tools.md`.                                 |
+| `{{search_tools}} must be on a line of its own`                       | Move it to its own line in `tools.md`.                                 |
+| `… names search_web, which a deployment without search does not have` | Move that line to `search-tools.md`, or wrap it in `{{search_tools}}`. |
+| `… is a locked harness prompt`                                        | Delete the file from the pack. Edit the harness copy instead.          |
+| `unknown mood "x"`                                                    | Add the mood to `moods`, or fix the name.                              |
+| `unknown face group "x"`                                              | Add the group to `voice.yml` `faces`.                                  |
+| `unknown beat "x"`                                                    | Add the beat to `voice.yml` `beats`.                                   |
+| `no URL for portrait "x" in portraitUrls`                             | Add the portrait to `portraitUrls`.                                    |
+| `no band covers hour n`                                               | Add or widen a `situation.timeOfDay` band.                             |
+| `"x" has no detection rule to relax`                                  | Add a `detection` rule for the `lateNight` mood.                       |
 
 ## Writing Tips
 

@@ -85,7 +85,7 @@ Roka decides when to call a tool. Each reply ends with a one-line footer that na
 | `flip_coin`          | Heads or tails                                     | tossed a coin        | none              |
 | `get_current_time`   | Time and date for a city or IANA timezone          | checked the clock    | none              |
 | `get_weather`        | Current weather for a city (Open-Meteo)            | checked the weather  | none              |
-| `search_web`         | Web search (Tavily, needs `TAVILY_API_KEY`)        | searched the web     | `/ask`            |
+| `search_web`         | Web search (Tavily or Exa, by `search.provider`)   | searched the web     | `/ask`            |
 | `search_anime`       | Anime search (Jikan)                               | looked up anime      | `/anime`          |
 | `get_anime_schedule` | Airing schedule by day, week or season (Jikan)     | checked airing times | `/anime schedule` |
 | `read_replies`       | Most-liked replies on a linked social post         | read the replies     | none              |
@@ -96,7 +96,7 @@ Roka decides when to call a tool. Each reply ends with a one-line footer that na
 | `recall_user`        | Look up what she knows about a member              | recalled a memory    | none              |
 | `forget_user`        | Forget the speaker's own notes that match keywords | forgot a memory      | none              |
 
-- **Withheld Tools:** `/ask` turns never get `remember_user`, `recall_user` or `forget_user`. With `memory.privacy: off` she keeps only `forget_user`. She gets `read_replies` only when the message asks about a post's replies.
+- **Withheld Tools:** `/ask` turns never get `remember_user`, `recall_user` or `forget_user`. With `memory.privacy: off` she keeps only `forget_user`. She gets `read_replies` only when the message asks about a post's replies. With `search.provider: off` she has no `search_web`, and the prompt stops offering one.
 - **Social Footer Labels:** an opened post leads the footer, for example `peeked at the X post`, and becomes the first citation. A post she could not open shows as `couldn't open the X post`.
 - **Watch Labels:** watched media adds a label such as `watched the video`, `watched most of the video`, `skimmed the video` or `couldn't watch the video`.
 

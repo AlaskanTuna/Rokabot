@@ -77,11 +77,15 @@ The row stores no message text, alias or user ID. `metrics.retentionDays` prunes
 
 `jev.prefetch` ships as `shadow`. A live A/B on the search tool-trigger cases lost recall and latency in `on` mode.
 
-| Mode     | Behavior                                                                                                          |
-| -------- | ----------------------------------------------------------------------------------------------------------------- |
-| `off`    | The request has no lookup question.                                                                               |
-| `shadow` | Jev answers. The log records whether the score crossed the threshold. No search runs.                             |
-| `on`     | When `needsLookup` is at least `jev.prefetchMinNoul` (0.7), one Tavily search starts before the first model call. |
+| Mode     | Behavior                                                                                                   |
+| -------- | ---------------------------------------------------------------------------------------------------------- |
+| `off`    | The request has no lookup question.                                                                        |
+| `shadow` | Jev answers. The log records whether the score crossed the threshold. No search runs.                      |
+| `on`     | When `needsLookup` is at least `jev.prefetchMinNoul` (0.7), one search starts before the first model call. |
+
+`on` needs a backend it can call directly: `search.provider: tavily` or `exa`. With `off`, or with `native`, prefetch
+runs as `shadow` and startup warns. A native search rides the main model's own request, so it offers neither the wait
+nor the RPM saving that prefetch exists for.
 
 In `on` mode:
 

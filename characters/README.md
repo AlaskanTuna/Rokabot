@@ -47,6 +47,8 @@ limits and the safety redirect, so every character keeps them. Edit them in `pro
 | `{{user}}`                                                          | `situation.md`, `openers.name`          | The speaker's display name                       |
 | `{{time_of_day}}`                                                   | `situation.md`                          | The `situation.timeOfDay` phrase for the hour    |
 | `{{memory_tools}}`                                                  | `tools.md`, on a line of its own        | The memory-tool rules for the turn's memory mode |
+| `{{search_tools}}`                                                  | `tools.md`, on a line of its own        | The search rules for this deployment             |
+| `{{search_before_judging}}`                                         | `answering.md`, mid-line                | The extra search rule for judging a claim        |
 | `{{word}}`, `{{bit}}`                                               | `openers.*.instruction` in `voice.yml`  | The drawn opener word or comedy bit              |
 | `{{length}}`, `{{opener}}`, `{{ending}}`, `{{faces}}`, `{{threat}}` | The matching `note` line in `voice.yml` | The drawn value                                  |
 
@@ -56,6 +58,18 @@ uses a named slot, such as `{{task}}` or `{{mention}}`; the comment on each key 
 
 Any other `{{…}}` is a load error that names the file. With full memory `{{memory_tools}}` becomes
 `memory-tools.md` and `forget-tool.md`; with memory off it becomes `forget-tool.md`; on `/ask` the line is removed.
+`{{search_tools}}` becomes `search-tools.md` when `search.provider` is `tavily` or `exa`, and `no-search-tools.md`
+with `off` or `native`. A missing key does not change it: the prompts still name `search_web`, and the tool reports
+that search is not configured. The search state is fixed at startup, so both macros fill the same way on every turn.
+
+## Search Prompts
+
+Three harness prompts follow `search.provider`. `search-tools.md` and `no-search-tools.md` are the two fillings of
+`{{search_tools}}`, and `search-before-judging.md` fills `{{search_before_judging}}` on a searching deployment.
+
+A prompt whose text names `search_web` is allowed only in `search-tools.md` and `search-before-judging.md`. Any other
+prompt that names it fails to load with `… names search_web, which a deployment without search does not have`. To
+name the tool in your own prompt, move that line to a pack `search-tools.md`, or put it behind `{{search_tools}}`.
 
 ## Field Reference
 

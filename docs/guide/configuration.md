@@ -34,7 +34,8 @@ Secrets, `config.yml` and environment overrides merge in `src/config.ts`, which 
 | `OPENAI_API_KEY`     | When `llm.main` or `llm.fallback` uses `provider: openai`, or `embeddings.provider` is `openai`                      | OpenAI API key.                                                                                                                                       |
 | `MODELSCOPE_API_KEY` | When `llm.main` or `llm.fallback` uses `provider: modelscope`                                                        | ModelScope token. Without an `llm:` block it turns on the Qwen fallback. It also funds the qwen media watcher.                                        |
 | `TYPESAFE_API_KEY`   | No                                                                                                                   | Jev judgments. Without it, the main model judges passive memory when an `llm:` block exists, and passive memory drops every episode when it does not. |
-| `TAVILY_API_KEY`     | No                                                                                                                   | Web search. Without it, the search tool answers that web search is not configured.                                                                    |
+| `TAVILY_API_KEY`     | No                                                                                                                   | Web search when `search.provider` is `tavily`. Without it, the search tool answers that web search is not configured.                                 |
+| `EXA_API_KEY`        | No                                                                                                                   | Web search when `search.provider` is `exa`. Without it, the search tool answers that web search is not configured.                                    |
 | `YOUTUBE_API_KEY`    | No                                                                                                                   | Top comments on linked YouTube videos. Without it, YouTube replies report as unavailable.                                                             |
 
 Other environment variables:
@@ -50,22 +51,31 @@ Other environment variables:
 | `ROKA_REGISTRY`           | Compose image registry. The default is `ghcr.io/alaskantuna`.                              |
 | `COMPOSE_PROFILES`        | `autoupdate` starts Watchtower. `local-embeddings` starts the embeddings sidecar.          |
 
+## `search`
+
+| Key               | Default  | Env Override      | What It Does                                                                                                                                          |
+| ----------------- | -------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `search.provider` | `tavily` | `SEARCH_PROVIDER` | How `search_web` looks things up: `off` removes the tool, `tavily` needs `TAVILY_API_KEY`, `exa` needs `EXA_API_KEY`. An unknown value stops the bot. |
+
+`native` is a valid value, but no model profile supports it yet, so the bot starts without `search_web` and logs a
+warning. See [Runbook](../runbook.md#web-search-provider).
+
 ## `jev`
 
 Jev runs only when `TYPESAFE_API_KEY` is set.
 
-| Key                         | Default                | Env Override    | What It Does                                                                               |
-| --------------------------- | ---------------------- | --------------- | ------------------------------------------------------------------------------------------ |
-| `jev.model`                 | `jev-1.13.0`           | `JEV_MODEL`     | Pinned Jev version. Thresholds are tuned against one version.                              |
-| `jev.timeoutMs`             | `1200`                 | —               | Deadline for the in-reply judgment. One attempt, no retry. Bounds `>= 1`.                  |
-| `jev.memoryTimeoutMs`       | `5000`                 | —               | Deadline for memory admission and verification judgments. Bounds `>= 1`.                   |
-| `jev.tone`                  | `shadow`; shipped `on` | `JEV_TONE`      | `off`, `shadow` (ask Jev and log only) or `on` (Jev picks the tone).                       |
-| `jev.referents`             | `shadow`               | `JEV_REFERENTS` | `off`, `shadow` or `on`. In `on`, Jev settles member names the resolver found ambiguous.   |
-| `jev.prefetch`              | `shadow`               | `JEV_PREFETCH`  | `off`, `shadow` (log what it would prefetch) or `on` (search before the first model call). |
-| `jev.toneMinProbability`    | `0.3`                  | —               | Below this probability, the regex tone stays. Bounds `0..1`.                               |
-| `jev.prefetchMinNoul`       | `0.7`                  | —               | In `on` mode, the `needs_lookup` probability that starts a Tavily search. Bounds `0..1`.   |
-| `jev.prefetchWaitMs`        | `4000`                 | —               | How long the first model call waits for a started prefetch. Bounds `>= 0`.                 |
-| `jev.referentMinConfidence` | `0.8`                  | —               | In `on` mode, below this confidence an ambiguous name stays unresolved. Bounds `0..1`.     |
+| Key                         | Default                | Env Override    | What It Does                                                                                                                                                               |
+| --------------------------- | ---------------------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `jev.model`                 | `jev-1.13.0`           | `JEV_MODEL`     | Pinned Jev version. Thresholds are tuned against one version.                                                                                                              |
+| `jev.timeoutMs`             | `1200`                 | —               | Deadline for the in-reply judgment. One attempt, no retry. Bounds `>= 1`.                                                                                                  |
+| `jev.memoryTimeoutMs`       | `5000`                 | —               | Deadline for memory admission and verification judgments. Bounds `>= 1`.                                                                                                   |
+| `jev.tone`                  | `shadow`; shipped `on` | `JEV_TONE`      | `off`, `shadow` (ask Jev and log only) or `on` (Jev picks the tone).                                                                                                       |
+| `jev.referents`             | `shadow`               | `JEV_REFERENTS` | `off`, `shadow` or `on`. In `on`, Jev settles member names the resolver found ambiguous.                                                                                   |
+| `jev.prefetch`              | `shadow`               | `JEV_PREFETCH`  | `off`, `shadow` (log what it would prefetch) or `on` (search before the first model call). `on` needs `search.provider` `tavily` or `exa`, and otherwise runs as `shadow`. |
+| `jev.toneMinProbability`    | `0.3`                  | —               | Below this probability, the regex tone stays. Bounds `0..1`.                                                                                                               |
+| `jev.prefetchMinNoul`       | `0.7`                  | —               | In `on` mode, the `needs_lookup` probability that starts a search. Bounds `0..1`.                                                                                          |
+| `jev.prefetchWaitMs`        | `4000`                 | —               | How long the first model call waits for a started prefetch. Bounds `>= 0`.                                                                                                 |
+| `jev.referentMinConfidence` | `0.8`                  | —               | In `on` mode, below this confidence an ambiguous name stays unresolved. Bounds `0..1`.                                                                                     |
 
 ## `gemini`
 
@@ -352,6 +362,9 @@ The bot starts but logs a warning when:
 - `reminders.staleThresholdMs` is at or below `reminders.checkIntervalMs`.
 - `memory.contextSize` is above `memory.bufferSize`.
 - A non-Gemini embedding provider has no `embeddings.minSimilarity` entry.
+- `search.provider` is `native`, and the main model has no web search.
+- `search.provider` is `tavily` or `exa`, and its key is empty.
+- `jev.prefetch` is `on`, and `search.provider` is `off` or `native`.
 
 ## Source Files
 
