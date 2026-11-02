@@ -124,9 +124,45 @@ describe('exaSearch', () => {
 
     const result = await exaSearch({ query: 'q' })
 
-    // Each results' first highlight is read at most once, and the ones that fit stay in rank order.
-    expect(result.answer).toBe(`first fact ${'x'.repeat(200)} third fact`)
-    expect(result.answer).not.toContain('unused second highlight')
+    // Every highlight joins in rank order; the whole joined text stays inside the cap.
+    expect(result.answer).toBe(`first fact\n${'x'.repeat(200)}\nunused second highlight\nthird fact`)
+    expect(result.answer.length).toBeLessThanOrEqual(1500)
+  })
+
+  // Exa's highlights hold the answer sentence, and on a real page the fact often sits well past character 200:
+  // GPT-5.6's context window lands around character 450. The snippet may clip, the answer must not.
+  it('keeps full highlight text in the answer, past the snippet clip', async () => {
+    const long = `${'y'.repeat(450)}NEEDLE${'z'.repeat(100)}`
+    exaReplies({ results: [{ title: 'A', url: 'https://a.test', highlights: [long] }] })
+
+    const result = await exaSearch({ query: 'q' })
+
+    expect(result.answer).toContain('NEEDLE')
+    expect(result.results[0].snippet).not.toContain('NEEDLE')
+    expect(result.results[0].snippet).toBe(`${'y'.repeat(200)}...`)
+  })
+
+  it('includes every highlight of a result, in rank order', async () => {
+    exaReplies({
+      results: [
+        { title: 'A', url: 'https://a.test', highlights: ['a1', 'a2'] },
+        { title: 'B', url: 'https://b.test', highlights: ['b1', 'b2'] }
+      ]
+    })
+
+    const result = await exaSearch({ query: 'q' })
+
+    expect(result.answer).toBe('a1\na2\nb1\nb2')
+  })
+
+  // Exa returns highlights over 1,500 characters; dropping the whole one would leave no answer at all.
+  it('clips rather than drops a highlight past the cap', async () => {
+    exaReplies({ results: [{ title: 'A', url: 'https://a.test', highlights: ['h'.repeat(2000)] }] })
+
+    const result = await exaSearch({ query: 'q' })
+
+    expect(result.answer).toBe('h'.repeat(1500))
+    expect(result.answer).not.toBe(NO_SUMMARY)
   })
 
   it('drops a highlight that would push the answer past 1,500 characters', async () => {
@@ -143,9 +179,8 @@ describe('exaSearch', () => {
 
     const result = await exaSearch({ query: 'q' })
 
-    // 200-character snippets joined with a space: seven fit inside 1,500, the eighth would overshoot.
-    expect(result.answer.length).toBeLessThanOrEqual(1500)
-    expect(result.answer.split(' ')).toHaveLength(7)
+    // Nine 200-character highlights cannot all fit, so the answer stops at the cap instead of overshooting.
+    expect(result.answer.length).toBe(1500)
     expect(result.answer.startsWith('x'.repeat(200))).toBe(true)
   })
 
@@ -154,7 +189,8 @@ describe('exaSearch', () => {
     exaReplies({
       results: [
         { title: null, url: 'https://untitled.test/a', highlights: ['a fact'] },
-        { title: 'No highlights', url: 'https://empty.test/b' }
+        { title: 'No highlights', url: 'https://empty.test/b' },
+        { title: '', url: 'https://whitespace.test/c', highlights: ['c fact'] }
       ]
     })
 
@@ -162,7 +198,9 @@ describe('exaSearch', () => {
 
     expect(result.results).toEqual([
       { title: 'https://untitled.test/a', url: 'https://untitled.test/a', snippet: 'a fact' },
-      { title: 'No highlights', url: 'https://empty.test/b', snippet: '' }
+      { title: 'No highlights', url: 'https://empty.test/b', snippet: '' },
+      // An empty title is no title either.
+      { title: 'https://whitespace.test/c', url: 'https://whitespace.test/c', snippet: 'c fact' }
     ])
     expect(result.succeeded).toBe(true)
   })
@@ -235,7 +273,7 @@ describe('exaSearch', () => {
 
     await expect(startSearchPrefetch({ query: 'q', signal, search: exaSearch })).resolves.toEqual({
       status: 'ready',
-      text: 'It premiered in January. A second fact.',
+      text: 'It premiered in January.\nA second fact.',
       sources: [
         { title: 'Crunchyroll', url: 'https://www.crunchyroll.com/a' },
         { title: 'Polygon', url: 'https://www.polygon.com/b' }

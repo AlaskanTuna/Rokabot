@@ -62,8 +62,8 @@ export const exaSearch: SearchBackend = async (params) => {
     }
 
     const results = data.results.map((r) => ({
-      // A result with no title still carries the link the reply cites.
-      title: r.title ?? r.url,
+      // An empty title is no title, and the reply still has to cite the link it used.
+      title: r.title || r.url,
       url: r.url,
       snippet: clipSnippet(r.highlights?.[0] ?? '')
     }))
@@ -71,7 +71,7 @@ export const exaSearch: SearchBackend = async (params) => {
     logger.debug({ query, resultCount: results.length }, 'Exa search completed')
 
     return {
-      answer: buildAnswer(results),
+      answer: buildAnswer(data.results),
       results,
       resultCount: results.length,
       succeeded: true
@@ -82,17 +82,16 @@ export const exaSearch: SearchBackend = async (params) => {
   }
 }
 
-/** Exa generates no answer, so the highlights stand in, joined in rank order and bounded. */
-function buildAnswer(results: readonly { snippet: string }[]): string {
-  const joined: string[] = []
-  let length = 0
-  for (const { snippet } of results) {
-    if (!snippet) continue
-    const next = length + snippet.length + (joined.length === 0 ? 0 : 1)
-    if (next > MAX_ANSWER_CHARS) break
-    joined.push(snippet)
-    length = next
-  }
+/**
+ * Exa generates no answer, so the highlights stand in, joined in rank order and bounded. The raw highlights are
+ * used, not the clipped snippets: the fact often sits past character 200 on a real page, and a highlight longer
+ * than the cap is trimmed rather than dropped, so a single long one still yields an answer.
+ */
+function buildAnswer(results: readonly ExaResult[]): string {
+  const joined = results
+    .flatMap((r) => r.highlights ?? [])
+    .filter((highlight) => highlight)
+    .join('\n')
 
-  return joined.length === 0 ? SEARCH_TEXT.noSummary : joined.join(' ')
+  return joined ? joined.slice(0, MAX_ANSWER_CHARS) : SEARCH_TEXT.noSummary
 }
