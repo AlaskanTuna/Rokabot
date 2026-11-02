@@ -1,4 +1,4 @@
-import type { LlmRequest } from '@google/adk'
+import type { LlmRequest, LlmResponse } from '@google/adk'
 import { type ModelProfile, type ProviderId, profileFor } from './profiles.js'
 
 export type Workload =
@@ -31,6 +31,24 @@ export interface CallUsage {
 /** Every input token the call was billed for, cached or not: what a single prompt-size figure means. */
 export function promptTokenTotal(usage: CallUsage): number {
   return usage.inputTokens + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0)
+}
+
+/** Gemini's own usage metadata as a `CallUsage`. `usageMetadata` is absent on a response with nothing to bill. */
+export function geminiUsage(
+  model: string,
+  workload: Workload,
+  metadata: NonNullable<LlmResponse['usageMetadata']>
+): CallUsage {
+  const cached = metadata.cachedContentTokenCount ?? 0
+  return {
+    provider: 'gemini',
+    model,
+    workload,
+    inputTokens: Math.max(0, (metadata.promptTokenCount ?? 0) - cached),
+    outputTokens: metadata.candidatesTokenCount ?? 0,
+    ...(metadata.thoughtsTokenCount ? { reasoningTokens: metadata.thoughtsTokenCount } : {}),
+    ...(cached ? { cacheReadTokens: cached } : {})
+  }
 }
 
 /** Background jobs put their workload in `config.labels` under this key; ADK reply requests carry none. */

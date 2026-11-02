@@ -7,24 +7,7 @@ import { AnthropicLlm } from './anthropicLlm.js'
 import { requestTokenEstimate, startCall } from './budget.js'
 import { ChatCompletionsLlm, ModelScopeLlm } from './chatCompletionsLlm.js'
 import { shapeRequest } from './requestShape.js'
-import { type CallUsage, type Workload, recordUsage, workloadOf } from './usage.js'
-
-function geminiUsage(
-  model: string,
-  workload: Workload,
-  metadata: NonNullable<LlmResponse['usageMetadata']>
-): CallUsage {
-  const cached = metadata.cachedContentTokenCount ?? 0
-  return {
-    provider: 'gemini',
-    model,
-    workload,
-    inputTokens: Math.max(0, (metadata.promptTokenCount ?? 0) - cached),
-    outputTokens: metadata.candidatesTokenCount ?? 0,
-    ...(metadata.thoughtsTokenCount ? { reasoningTokens: metadata.thoughtsTokenCount } : {}),
-    ...(cached ? { cacheReadTokens: cached } : {})
-  }
-}
+import { type CallUsage, geminiUsage, recordUsage, workloadOf } from './usage.js'
 
 /** ADK's Gemini with request shaping, a budget reservation and usage recording around each call. */
 class GeminiLlm extends Gemini {

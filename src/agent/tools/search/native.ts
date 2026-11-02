@@ -6,6 +6,7 @@ import { logger } from '../../../utils/logger.js'
 import type { ProviderId } from '../../llm/profiles.js'
 import { currentSearchAttempt, nativeSearchTimeMs } from './attemptBudget.js'
 import { anthropicNativeSearch } from './nativeAnthropic.js'
+import { geminiNativeSearch } from './nativeGemini.js'
 import { type BackendOutcome, SEARCH_TEXT, type SearchBackend, failedSearch } from './types.js'
 
 export interface NativeCall {
@@ -88,4 +89,7 @@ export function createNativeSearch(callers: Partial<Record<ProviderId, NativeCal
   }
 }
 
-export const nativeSearch: SearchBackend = createNativeSearch({ anthropic: anthropicNativeSearch })
+export const nativeSearch: SearchBackend = createNativeSearch({
+  anthropic: anthropicNativeSearch,
+  gemini: geminiNativeSearch
+})
