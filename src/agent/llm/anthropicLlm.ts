@@ -12,6 +12,7 @@ import type { ModelProfile } from './profiles.js'
 import { ProviderError } from './providerError.js'
 import { historyEndedOnToolResult } from './replyDiagnostic.js'
 import {
+  IMAGE_TYPES,
   attachmentKind,
   attachmentMarker,
   functionDeclarations,
@@ -32,7 +33,6 @@ export const STRUCTURED_OUTPUT_TOOL = 'emit_result'
 // Thinking counts toward max_tokens on Claude, so a cap sized for the visible reply alone can be spent before any
 // text is written, and the turn then ends empty.
 const THINKING_HEADROOM_TOKENS = 2048
-export const IMAGE_TYPES = new Set<string>(['image/jpeg', 'image/png', 'image/gif', 'image/webp'])
 const BILLING_PATTERN = /credit balance|billing/i
 const CONTEXT_PATTERN = /prompt is too long|context window|too many (?:input )?tokens/i
 
@@ -216,12 +216,6 @@ function mergeTurns(rendered: Rendered[]): Anthropic.MessageParam[] {
     const last = messages.at(-1)
     if (last?.role === message.role) last.content.push(...message.content)
     else messages.push({ role: message.role, content: [...message.content] })
-  }
-  for (const message of messages) {
-    // Claude requires a user turn's tool results ahead of anything else in it; sort is stable, so order holds.
-    if (message.role === 'user') {
-      message.content.sort((left, right) => Number(right.type === 'tool_result') - Number(left.type === 'tool_result'))
-    }
   }
   return messages
 }
@@ -413,7 +407,7 @@ export function classifyAnthropicError(error: unknown): ProviderError {
     return new ProviderError({
       ...failure,
       kind: 'transient_http',
-      retryAfterMs: parseRetryAfterMs(error.headers?.get('retry-after'), { zeroMeansNow: true })
+      retryAfterMs: parseRetryAfterMs(error.headers?.get('retry-after'))
     })
   }
   if (error.type === 'overloaded_error' || (status !== undefined && status >= 500)) {

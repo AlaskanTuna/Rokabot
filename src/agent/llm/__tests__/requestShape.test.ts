@@ -1,7 +1,7 @@
 import type { LlmRequest } from '@google/adk'
 import { describe, expect, it } from 'vitest'
 import { profileFor } from '../profiles.js'
-import { functionDeclarations, shapeRequest, systemText } from '../requestShape.js'
+import { IMAGE_TYPES, functionDeclarations, shapeRequest, systemText } from '../requestShape.js'
 import { orphanResultText, parseRetryAfterMs } from '../requestShape.js'
 
 const GEMINI = {
@@ -93,30 +93,32 @@ describe('request readers', () => {
 })
 
 describe('retry-after parsing', () => {
-  it.each([true, false])('gives 7000 for a 7-second header when zeroMeansNow is %s', (zeroMeansNow) => {
-    expect(parseRetryAfterMs('7', { zeroMeansNow })).toBe(7000)
+  it('gives 7000 for a 7-second header', () => {
+    expect(parseRetryAfterMs('7')).toBe(7000)
   })
 
-  it('gives 0 for a 0-second header only when zeroMeansNow is true', () => {
-    expect(parseRetryAfterMs('0', { zeroMeansNow: true })).toBe(0)
-    expect(parseRetryAfterMs('0', { zeroMeansNow: false })).toBeUndefined()
+  it('gives 0 for a 0-second header', () => {
+    expect(parseRetryAfterMs('0')).toBe(0)
   })
 
-  it.each([true, false])(
-    'gives undefined for a missing or unreadable header when zeroMeansNow is %s',
-    (zeroMeansNow) => {
-      expect(parseRetryAfterMs(null, { zeroMeansNow })).toBeUndefined()
-      expect(parseRetryAfterMs('', { zeroMeansNow })).toBeUndefined()
-      expect(parseRetryAfterMs('soon', { zeroMeansNow })).toBeUndefined()
-      expect(parseRetryAfterMs('-1', { zeroMeansNow })).toBeUndefined()
-      expect(parseRetryAfterMs('Infinity', { zeroMeansNow })).toBeUndefined()
-      expect(parseRetryAfterMs('Wed, 21 Oct 2026 07:28:00 GMT', { zeroMeansNow })).toBeUndefined()
-    }
-  )
+  it('gives undefined for a missing or unreadable header', () => {
+    expect(parseRetryAfterMs(null)).toBeUndefined()
+    expect(parseRetryAfterMs('')).toBeUndefined()
+    expect(parseRetryAfterMs('soon')).toBeUndefined()
+    expect(parseRetryAfterMs('-1')).toBeUndefined()
+    expect(parseRetryAfterMs('Infinity')).toBeUndefined()
+    expect(parseRetryAfterMs('Wed, 21 Oct 2026 07:28:00 GMT')).toBeUndefined()
+  })
 })
 
 describe('orphan results', () => {
   it('reads an unmatched result inline with its name and body', () => {
     expect(orphanResultText('x', '{}')).toBe('(result of x: {})')
+  })
+})
+
+describe('image types', () => {
+  it('holds exactly jpeg, png, gif and webp', () => {
+    expect([...IMAGE_TYPES].sort()).toEqual(['image/gif', 'image/jpeg', 'image/png', 'image/webp'])
   })
 })
