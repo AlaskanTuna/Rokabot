@@ -736,7 +736,7 @@ The `asr` container transcribes audio for the Qwen watcher: Silero VAD, then Moo
 
 - It has no published port. The bot reaches it at `http://asr:8000`.
 - It holds about 1.2 GB of RAM and is capped at 2 GB and 3 CPUs. An out-of-memory restart takes down only `asr`; the bot then watches from frames alone (`transcript: unreachable`).
-- `asr/Dockerfile` pins `python:3.12-slim` by digest, so an upstream base update cannot force the model download (about 500 MB) on an unrelated build.
+- `sidecar/asr/Dockerfile` pins `python:3.12-slim` by digest, so an upstream base update cannot force the model download (about 500 MB) on an unrelated build.
 - To update the base, run `docker buildx imagetools inspect python:3.12-slim` and put the index `Digest` in both `FROM` lines. CI then rebuilds the image, and the next Pi pull downloads about 1 GB of layers.
 
 ```bash
@@ -937,7 +937,7 @@ curl -s "https://generativelanguage.googleapis.com/v1beta/files" -H "x-goog-api-
 
 ## Source Files
 
-- `docker-compose.yml`, `Dockerfile`, `asr/Dockerfile`, `sidecar/embeddings/`
+- `docker-compose.yml`, `Dockerfile`, `sidecar/asr/Dockerfile`, `sidecar/embeddings/`
 - `.github/workflows/deploy.yml`, `scripts/prune-images.sh`
 - `config.yml`, `src/config.ts`, `src/agent/llm/profiles.ts`, `src/agent/llm/budget.ts`, `src/agent/llm/fallbackModel.ts`
 - `src/agent/media/`, `src/agent/social/`, `src/agent/memory/reclassify.ts`, `src/storage/database.ts`

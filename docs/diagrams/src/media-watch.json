@@ -270,7 +270,7 @@
           "label": "transcribeSource"
         },
         {
-          "path": "asr/server.py",
+          "path": "sidecar/asr/server.py",
           "line": 184,
           "end_line": 220,
           "label": "transcribe"

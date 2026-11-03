@@ -108,7 +108,7 @@ media:
     frameHeight: 360 # Frame height in pixels; Qwen reads 360p frames as well as larger ones
     timeoutMs: 30000 # Deadline for one Qwen watch call
   transcriber:
-    url: '' # Speech-to-text sidecar for the qwen watcher (asr/ in docker-compose); empty disables it. The Pi sets MEDIA_TRANSCRIBER_URL=http://asr:8000
+    url: '' # Speech-to-text sidecar for the qwen watcher (sidecar/asr/ in docker-compose); empty disables it. The Pi sets MEDIA_TRANSCRIBER_URL=http://asr:8000
     timeoutMs: 45000 # Deadline for transcribing one video's audio
     maxSpeechSec: 120 # Speech transcribed per video after silence and music are skipped; longer speech is sampled across the video
     maxAudioSec: 180 # Audio sent per video; a longer video sends four windows spread across it
