@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.5.0](https://github.com/AlaskanTuna/Rokabot/compare/v0.4.0...v0.5.0) (2026-11-03)
+
+
+### Features
+
+* **agent:** default web search to the main model, so set search.provider: tavily to keep Tavily ([#364](https://github.com/AlaskanTuna/Rokabot/issues/364)) ([4f194f6](https://github.com/AlaskanTuna/Rokabot/commit/4f194f6abd8992ed222aaf9fd4399856c9deae84))
+* **agent:** let config.yml choose off, tavily or exa for web search ([#362](https://github.com/AlaskanTuna/Rokabot/issues/362)) ([cd06bc5](https://github.com/AlaskanTuna/Rokabot/commit/cd06bc5f4cec93f4111c8bf1e1e1fe952038ebf1))
+
+
+### Bug Fixes
+
+* **agent:** keep /ask nickname lookups away from the Jev judge ([#439](https://github.com/AlaskanTuna/Rokabot/issues/439)) ([6d516a6](https://github.com/AlaskanTuna/Rokabot/commit/6d516a69e9d19763e7c317b45c1431af390a2850))
+* **agent:** make retries and the fallback reach a model again ([#365](https://github.com/AlaskanTuna/Rokabot/issues/365)) ([7412692](https://github.com/AlaskanTuna/Rokabot/commit/7412692dfc462d9c62121af63ec9098a30c400ff))
+* **discord:** send the /ask error before defer and ignore emoji names in the replies check ([#421](https://github.com/AlaskanTuna/Rokabot/issues/421)) ([ac52ee4](https://github.com/AlaskanTuna/Rokabot/commit/ac52ee46e1d10c367186937237266fe7181ea9bb))
+* **games:** keep Shiritori scores and fix three smaller failures ([#408](https://github.com/AlaskanTuna/Rokabot/issues/408)) ([724ec3f](https://github.com/AlaskanTuna/Rokabot/commit/724ec3f458a8707e885cc4ea6b69f5b29f2a0f00))
+* **media:** refuse private addresses written in hex v4-mapped form ([#445](https://github.com/AlaskanTuna/Rokabot/issues/445)) ([b521c94](https://github.com/AlaskanTuna/Rokabot/commit/b521c944f171fc2ee3f04df12a7d25b3b0f6b716))
+* **media:** stop re-watching a video because one note ran long ([#420](https://github.com/AlaskanTuna/Rokabot/issues/420)) ([87914b4](https://github.com/AlaskanTuna/Rokabot/commit/87914b4c23858fc41320828aa8bc96734027067b))
+* **media:** watch a playable video from a Discord embed ([#443](https://github.com/AlaskanTuna/Rokabot/issues/443)) ([8596978](https://github.com/AlaskanTuna/Rokabot/commit/8596978b455ac816a994f8cfde308b00456d6acd))
+
 ## [0.4.0](https://github.com/AlaskanTuna/Rokabot/compare/v0.3.0...v0.4.0) (2026-10-17)
 
 
