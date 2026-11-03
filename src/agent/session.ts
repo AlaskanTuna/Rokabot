@@ -26,6 +26,12 @@ function isStrippable(part: Part): boolean {
   return Boolean(part.inlineData || part.fileData || part.text?.includes(MEDIA_DIGEST_HEADING))
 }
 
+/**
+ * On a retry's message: ADK only runs the agent when it is handed a message, but this turn's message is already in the
+ * session from the first attempt, so the service keeps it out rather than storing it twice.
+ */
+export const RETRY_OF_STORED_TURN = 'rokaRetryOfStoredTurn'
+
 /** Caps history; attachment-retention tests use a real Runner because the test seam bypasses appendEvent. */
 export class WindowedSessionService extends InMemorySessionService {
   // Keep original event references because getSession returns deep clones.
@@ -43,6 +49,7 @@ export class WindowedSessionService extends InMemorySessionService {
   }
 
   override async appendEvent(request: Parameters<InMemorySessionService['appendEvent']>[0]): Promise<Event> {
+    if (request.event.customMetadata?.[RETRY_OF_STORED_TURN]) return request.event
     const appended = await super.appendEvent(request)
     if (request.event.content?.parts?.some(isStrippable)) {
       const pending = this.attachmentEvents.get(request.session.id) ?? []

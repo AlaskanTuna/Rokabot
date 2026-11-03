@@ -41,6 +41,7 @@ import { SAFETY_SETTINGS } from './safetySettings.js'
 import { PREFETCH_TOOL_NAME } from './searchPrefetch.js'
 import {
   APP_NAME,
+  RETRY_OF_STORED_TURN,
   clearSessionErrorCount,
   destroySession,
   ensureSession,
@@ -522,8 +523,8 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
                 const request: Parameters<typeof runner.runAsync>[0] = {
                   userId: channelId,
                   sessionId: channelId,
-                  // ADK's runtime only appends when this value is truthy; its type incorrectly requires Content otherwise.
-                  newMessage: testRequest.newMessage ?? (undefined as unknown as Content),
+                  newMessage: buildNewMessage(),
+                  customMetadata: includeCurrentTurn ? undefined : { [RETRY_OF_STORED_TURN]: true },
                   runConfig: { maxLlmCalls: Math.max(1, config.gemini.maxLlmCalls - watcherCalls) },
                   stateDelta: testRequest.stateDelta
                 }
