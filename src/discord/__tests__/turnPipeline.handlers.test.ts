@@ -316,7 +316,7 @@ describe('shared turn pipeline, at the handlers', () => {
     await createInteractionHandler(rateLimiter())(interaction)
 
     expect(mocks.generateResponse).toHaveBeenCalledTimes(1)
-    expect(mocks.generateResponse.mock.calls[0][0].imageAttachments).toHaveLength(2)
+    expect(mocks.generateResponse.mock.calls[0][0].mediaAttachments).toHaveLength(2)
   })
 
   // Same turn as above: one file is skipped, so the count reaching the model must be 1 rather than 0.

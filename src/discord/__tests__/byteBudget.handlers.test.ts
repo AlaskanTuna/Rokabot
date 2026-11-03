@@ -163,7 +163,7 @@ describe('global in-flight byte budget, at the handlers', () => {
     await createMessageHandler(client, rateLimiter())(message)
 
     expect(mocks.generateResponse.mock.calls[0][0]).toMatchObject({
-      imageAttachments: [upload(FOUR_MB), upload(FOUR_MB), upload(1024 * 1024)],
+      mediaAttachments: [upload(FOUR_MB), upload(FOUR_MB), upload(1024 * 1024)],
       skippedAttachments: 1
     })
     expect(reply).toHaveBeenCalledWith('hi\n\nRoka looked at the first files~')

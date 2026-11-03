@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ImageAttachment } from '../attachments.js'
+import type { MediaAttachment } from '../attachments.js'
 import type { MediaClip, MediaDigest } from '../types.js'
 
 const mocks = vi.hoisted(() => ({
@@ -114,7 +114,7 @@ import { validateObservations } from '../digest.js'
 import { prepareTurnMedia } from '../turnMedia.js'
 
 const emptyPrepared = {
-  imageParts: [],
+  mediaParts: [],
   imageTokens: 0,
   droppedAttachments: 0,
   truncatedAttachments: 0,
@@ -237,7 +237,7 @@ describe('prepareTurnMedia', () => {
   it('sends everything down the direct path when the watcher is direct', async () => {
     mocks.watcher = 'direct'
     const video = { url: 'https://cdn.discordapp.com/v.mp4', contentType: 'video/mp4', size: 1000 }
-    mocks.prepareAttachments.mockResolvedValue({ ...emptyPrepared, imageParts: [{ inlineData: { data: 'x' } }] })
+    mocks.prepareAttachments.mockResolvedValue({ ...emptyPrepared, mediaParts: [{ inlineData: { data: 'x' } }] })
 
     const result = await prepareTurnMedia(input([video]))
 
@@ -251,7 +251,7 @@ describe('prepareTurnMedia', () => {
     mocks.watcher = 'off'
     const video = { url: 'https://cdn.discordapp.com/v.mp4', contentType: 'video/mp4', size: 1000 }
     const image = { url: 'https://cdn.discordapp.com/i.png', contentType: 'image/png', size: 10 }
-    mocks.prepareAttachments.mockResolvedValue({ ...emptyPrepared, imageParts: [{ inlineData: { data: 'x' } }] })
+    mocks.prepareAttachments.mockResolvedValue({ ...emptyPrepared, mediaParts: [{ inlineData: { data: 'x' } }] })
 
     const result = await prepareTurnMedia(input([video, image]))
 
@@ -269,7 +269,7 @@ describe('prepareTurnMedia', () => {
     const image = { url: 'https://cdn.discordapp.com/i.png', contentType: 'image/png', size: 10 }
     mocks.prepareAttachments.mockResolvedValue({
       ...emptyPrepared,
-      imageParts: [{ inlineData: {} }],
+      mediaParts: [{ inlineData: {} }],
       imageTokens: 1089
     })
 
@@ -868,7 +868,7 @@ describe('remembering watched media in a server', () => {
 })
 
 const MB = 1024 * 1024
-const bigUpload = (overrides: Partial<ImageAttachment> = {}): ImageAttachment => ({
+const bigUpload = (overrides: Partial<MediaAttachment> = {}): MediaAttachment => ({
   url: 'https://cdn.discordapp.com/attachments/1/2/v.mp4?ex=65f&hm=abc',
   contentType: 'video/mp4',
   size: 20 * MB,

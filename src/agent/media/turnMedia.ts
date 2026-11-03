@@ -4,7 +4,7 @@ import { logger } from '../../utils/logger.js'
 import { remainingTokensThisMinute } from '../llm/tokenBudget.js'
 import { measureAttachmentTokens } from './attachmentCost.js'
 import { geminiMimeType, isStreamedUpload } from './attachmentLimits.js'
-import { type ImageAttachment, downloadAttachment, prepareAttachments } from './attachments.js'
+import { type MediaAttachment, downloadAttachment, prepareAttachments } from './attachments.js'
 import { bytesContentKey, discordAttachmentContentKey } from './contentKey.js'
 import {
   MAX_TIMELINE,
@@ -71,7 +71,7 @@ function watchableKind(contentType: string): MediaKind | null {
   return null
 }
 
-function labelFor(attachment: ImageAttachment, kind: MediaKind): string {
+function labelFor(attachment: MediaAttachment, kind: MediaKind): string {
   if (attachment.transport === 'uri') return 'YouTube video'
   // Discord states a duration only for voice messages.
   if (kind === 'audio') return attachment.durationSec !== undefined ? 'voice message' : 'audio clip'
@@ -104,7 +104,7 @@ function present(result: PreparedTurnMedia, digest: MediaDigest): void {
   result.digests.push(digest)
 }
 
-async function prepareUri(attachment: ImageAttachment, label: string): Promise<Prepared> {
+async function prepareUri(attachment: MediaAttachment, label: string): Promise<Prepared> {
   let durationSec = attachment.durationSec ?? null
   let budgetTokens = config.gemini.maxAttachmentTokens
   if (durationSec === null) {
@@ -136,7 +136,7 @@ async function prepareUri(attachment: ImageAttachment, label: string): Promise<P
   }
 }
 
-async function prepareInline(attachment: ImageAttachment, kind: MediaKind, label: string): Promise<Prepared> {
+async function prepareInline(attachment: MediaAttachment, kind: MediaKind, label: string): Promise<Prepared> {
   const download = await downloadAttachment(attachment)
   if (!download) return { status: 'dropped' }
 
@@ -182,7 +182,7 @@ async function prepareInline(attachment: ImageAttachment, kind: MediaKind, label
 }
 
 async function prepareFiles(
-  attachment: ImageAttachment & { size: number },
+  attachment: MediaAttachment & { size: number },
   kind: MediaKind,
   label: string
 ): Promise<Prepared> {
@@ -292,7 +292,7 @@ interface WatchInput {
 type Attempt = { ok: true } | { ok: false; notice: string | null }
 
 interface WatchContext {
-  attachment: ImageAttachment
+  attachment: MediaAttachment
   kind: MediaKind
   label: string
   input: WatchInput
@@ -332,7 +332,7 @@ function definitiveSilence(heard: Transcript | { reason: string }): boolean {
 }
 
 async function watchOne(
-  attachment: ImageAttachment,
+  attachment: MediaAttachment,
   kind: MediaKind,
   input: WatchInput,
   result: PreparedTurnMedia
@@ -607,7 +607,7 @@ async function watchWithQwen(context: WatchContext): Promise<Attempt> {
 /** Turn a turn's attachments into model parts, watching audio and video into digests first. */
 export async function prepareTurnMedia(input: {
   channelId: string
-  attachments: ImageAttachment[] | undefined
+  attachments: MediaAttachment[] | undefined
   focus: string
   mayRetry: () => boolean
   /** True while turns are pinned to the fallback model, which cannot watch. */
@@ -626,7 +626,7 @@ export async function prepareTurnMedia(input: {
 
   const prepared = await prepareAttachments(input.channelId, direct.length > 0 ? direct : undefined)
   const result: PreparedTurnMedia = {
-    directParts: prepared.imageParts,
+    directParts: prepared.mediaParts,
     mediaTextParts: [],
     compactions: new Map(),
     compactDigests: [],

@@ -88,7 +88,7 @@ describe('media message content', () => {
 
     const extracted = extract(message({ snapshots: [snapshot([video])] }))
 
-    expect(extracted.imageAttachments).toEqual([{ ...video, ...forwardedIn }])
+    expect(extracted.mediaAttachments).toEqual([{ ...video, ...forwardedIn }])
     expect(extracted.content).toContain('(forwarded video(s))')
   })
 
@@ -102,7 +102,7 @@ describe('media message content', () => {
 
     const extracted = extract(message({ attachments: ownImages, snapshots: [snapshot([image, video])] }))
 
-    expect(extracted.imageAttachments.map((attachment) => attachment.url)).toEqual(ownImages.map(({ url }) => url))
+    expect(extracted.mediaAttachments.map((attachment) => attachment.url)).toEqual(ownImages.map(({ url }) => url))
     expect(extracted.content).toContain('(forwarded image(s), 1 not shown)')
     expect(extracted.content).toContain('(forwarded video(s), 1 not shown)')
   })
@@ -112,7 +112,7 @@ describe('media message content', () => {
 
     const extracted = extract(message(), referenceMessage([audio]))
 
-    expect(extracted.imageAttachments).toEqual([{ ...audio, ...repliedTo }])
+    expect(extracted.mediaAttachments).toEqual([{ ...audio, ...repliedTo }])
     expect(extracted.content).toContain('[Replying to X: look at this\n(attached audio clip(s))]')
   })
 
@@ -121,7 +121,7 @@ describe('media message content', () => {
 
     const extracted = extract(message(), referenceMessage([zip]))
 
-    expect(extracted.imageAttachments).toEqual([])
+    expect(extracted.mediaAttachments).toEqual([])
     expect(extracted.content).toContain("(attached file(s) of a type that can't be opened)")
   })
 
@@ -130,7 +130,7 @@ describe('media message content', () => {
 
     const extracted = extract(message(), referenceMessage([video], 'bot'), true)
 
-    expect(extracted.imageAttachments).toEqual([])
+    expect(extracted.mediaAttachments).toEqual([])
     expect(extracted.content).toContain('(attached video(s), 1 not shown)')
   })
 
@@ -140,7 +140,7 @@ describe('media message content', () => {
 
     const extracted = extract(message({ embeds: [thumbnailEmbed(thumbnail)] }), referenceMessage([video]))
 
-    expect(extracted.imageAttachments).toEqual([
+    expect(extracted.mediaAttachments).toEqual([
       { ...video, ...repliedTo },
       { url: thumbnail, contentType: 'image/png' }
     ])
@@ -151,7 +151,7 @@ describe('media message content', () => {
 
     const extracted = extract(message(), referenceMessage([], 'user-2', [thumbnailEmbed(thumbnail)]))
 
-    expect(extracted.imageAttachments).toEqual([{ url: thumbnail, contentType: 'image/png' }])
+    expect(extracted.mediaAttachments).toEqual([{ url: thumbnail, contentType: 'image/png' }])
   })
 })
 
@@ -159,7 +159,7 @@ describe('voice message duration', () => {
   it('carries a replied-to voice message duration onto the attachment', () => {
     const voice = { url: 'https://cdn.discordapp.com/v.ogg', contentType: 'audio/ogg', size: 30_000, duration: 52 }
     const result = extractMessageContent(message() as never, referenceMessage([voice]) as never, false, 'bot', [])
-    expect(result.imageAttachments).toEqual([
+    expect(result.mediaAttachments).toEqual([
       {
         url: voice.url,
         contentType: 'audio/ogg',
@@ -175,7 +175,7 @@ describe('voice message duration', () => {
   it('leaves the duration off when Discord states none', () => {
     const clip = { url: 'https://cdn.discordapp.com/c.mp4', contentType: 'video/mp4', size: 1_000, duration: null }
     const result = extractMessageContent(message({ attachments: [clip] }) as never, null, false, 'bot', [])
-    expect(result.imageAttachments[0]).not.toHaveProperty('durationSec')
+    expect(result.mediaAttachments[0]).not.toHaveProperty('durationSec')
   })
 })
 
@@ -185,7 +185,7 @@ describe('where watched media came from', () => {
   it("marks the asker's own upload with their message and id", () => {
     const result = extract(message({ attachments: [clip] }))
 
-    expect(result.imageAttachments[0]).toMatchObject({
+    expect(result.mediaAttachments[0]).toMatchObject({
       origin: 'upload',
       sourceMessageId: 'trigger-1',
       sourceAuthorId: 'asker-1'
@@ -195,7 +195,7 @@ describe('where watched media came from', () => {
   it('marks a forwarded clip as forwarded, with no author it can vouch for', () => {
     const result = extract(message({ snapshots: [snapshot([clip])] }))
 
-    expect(result.imageAttachments[0]).toMatchObject({
+    expect(result.mediaAttachments[0]).toMatchObject({
       origin: 'forward',
       sourceMessageId: 'trigger-1',
       sourceAuthorId: null
@@ -205,6 +205,6 @@ describe('where watched media came from', () => {
   it('leaves images without provenance, since only audio and video are remembered', () => {
     const image = { url: 'https://cdn.discordapp.com/i.png', contentType: 'image/png', size: 10 }
 
-    expect(extract(message({ attachments: [image] })).imageAttachments[0]).not.toHaveProperty('origin')
+    expect(extract(message({ attachments: [image] })).mediaAttachments[0]).not.toHaveProperty('origin')
   })
 })

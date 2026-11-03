@@ -799,7 +799,7 @@ describe('media she can take on the mention path, not only images', () => {
     const OGG = { url: 'https://cdn.test/a.ogg', contentType: 'audio/ogg', size: 1024 }
     const { message } = createMessage({ content: '<@bot-1> what is this?', attachments: [OGG] })
 
-    expect((await handle(message)).imageAttachments).toEqual([
+    expect((await handle(message)).mediaAttachments).toEqual([
       {
         url: 'https://cdn.test/a.ogg',
         contentType: 'audio/ogg',
@@ -817,7 +817,7 @@ describe('media she can take on the mention path, not only images', () => {
     const MP3 = { url: 'https://cdn.test/a.mp3', contentType: 'audio/mpeg', size: 2048 }
     const { message } = createMessage({ content: '<@bot-1> what is this?', attachments: [MP3] })
 
-    expect((await handle(message)).imageAttachments).toHaveLength(1)
+    expect((await handle(message)).mediaAttachments).toHaveLength(1)
   })
 
   // #119 shipped PDFs to /ask only, with the mention path left until messageCreate.ts was clear. It is.
@@ -825,7 +825,7 @@ describe('media she can take on the mention path, not only images', () => {
     const PDF = { url: 'https://cdn.test/a.pdf', contentType: 'application/pdf', size: 4096 }
     const { message } = createMessage({ content: '<@bot-1> what is this?', attachments: [PDF] })
 
-    expect((await handle(message)).imageAttachments).toHaveLength(1)
+    expect((await handle(message)).mediaAttachments).toHaveLength(1)
   })
 })
 
@@ -871,7 +871,7 @@ describe("reading what the sender's own message shows", () => {
   it('sends an embed image to the vision slots', async () => {
     const { message } = createMessage({ content: '<@bot-1> what is this?', embeds: [LINK_PREVIEW] })
 
-    expect((await handle(message)).imageAttachments).toEqual([
+    expect((await handle(message)).mediaAttachments).toEqual([
       { url: 'https://cdn.test/preview.png', contentType: 'image/png' }
     ])
   })
@@ -1037,7 +1037,7 @@ describe("reading what the sender's own message shows", () => {
 
     expect(result.userMessage).toContain('[Linked post — X @roka (Roka), 2026-10-06: "The linked post text"')
     expect(result.userMessage).not.toContain('Discord embed description')
-    expect(result.imageAttachments).toEqual([{ url: 'https://pbs.twimg.com/post.jpg', contentType: 'image/jpeg' }])
+    expect(result.mediaAttachments).toEqual([{ url: 'https://pbs.twimg.com/post.jpg', contentType: 'image/jpeg' }])
   })
 
   it('watches a linked YouTube video instead of looking at its thumbnail', async () => {
@@ -1052,7 +1052,7 @@ describe("reading what the sender's own message shows", () => {
     const result = await handle(message)
 
     expect(mocks.resolveMediaUrl).not.toHaveBeenCalled()
-    expect(result.imageAttachments).toEqual([
+    expect(result.mediaAttachments).toEqual([
       {
         url: youtube.canonicalUrl,
         contentType: 'video/mp4',
@@ -1076,7 +1076,7 @@ describe("reading what the sender's own message shows", () => {
 
     const result = await handle(message)
 
-    expect(result.imageAttachments).toEqual([
+    expect(result.mediaAttachments).toEqual([
       {
         url: video.url,
         contentType: 'video/mp4',
@@ -1099,7 +1099,7 @@ describe("reading what the sender's own message shows", () => {
 
     const result = await handle(message)
 
-    expect(result.imageAttachments).toEqual([
+    expect(result.mediaAttachments).toEqual([
       ownImage,
       { url: 'https://pbs.twimg.com/post.jpg', contentType: 'image/jpeg' }
     ])
@@ -1159,7 +1159,7 @@ describe("reading what the sender's own message shows", () => {
     }))
     const { message } = createMessage({ content: '<@bot-1> what are these?', embeds })
 
-    expect((await handle(message)).imageAttachments).toHaveLength(MAX_ATTACHMENTS)
+    expect((await handle(message)).mediaAttachments).toHaveLength(MAX_ATTACHMENTS)
   })
 
   // Components V2 keeps a message's files in components rather than in `attachments`, so none of the
@@ -1181,7 +1181,7 @@ describe("reading what the sender's own message shows", () => {
       }
     ] as never
 
-    expect((await handle(message)).imageAttachments).toEqual([
+    expect((await handle(message)).mediaAttachments).toEqual([
       { url: 'https://cdn.test/gallery.png', contentType: 'image/png', size: undefined }
     ])
   })
@@ -1198,7 +1198,7 @@ describe("reading what the sender's own message shows", () => {
       }
     ] as never
 
-    expect((await handle(message)).imageAttachments).toEqual([
+    expect((await handle(message)).mediaAttachments).toEqual([
       {
         url: 'https://cdn.test/clip.mp3',
         contentType: 'audio/mpeg',
@@ -1222,7 +1222,7 @@ describe("reading what the sender's own message shows", () => {
 
     const result = await handle(message)
 
-    expect(result.imageAttachments).toBeUndefined()
+    expect(result.mediaAttachments).toBeUndefined()
     expect(JSON.stringify(reply.mock.calls[0][0])).toContain("I couldn't open that file~")
   })
 
@@ -1232,7 +1232,7 @@ describe("reading what the sender's own message shows", () => {
 
     const result = await handle(message)
 
-    expect(result.imageAttachments).toBeUndefined()
+    expect(result.mediaAttachments).toBeUndefined()
     expect(JSON.stringify(reply.mock.calls[0][0])).toContain("I couldn't open that file~")
   })
 
@@ -1287,7 +1287,7 @@ describe("reading what the sender's own message shows", () => {
   it('never sends an embed video URL to the vision slots', async () => {
     const { message } = createMessage({ content: '<@bot-1> reaction?', embeds: [TENOR_GIF] })
 
-    expect((await handle(message)).imageAttachments).toBeUndefined()
+    expect((await handle(message)).mediaAttachments).toBeUndefined()
   })
 
   it('still sends the still frame when a GIF embed carries a thumbnail', async () => {
@@ -1295,7 +1295,7 @@ describe("reading what the sender's own message shows", () => {
     const { message } = createMessage({ content: '<@bot-1> reaction?', embeds: [withStill] })
 
     const result = await handle(message)
-    expect(result.imageAttachments).toEqual([
+    expect(result.mediaAttachments).toEqual([
       { url: 'https://media.tenor.com/abc/still.png', contentType: 'image/png' }
     ])
     expect(result.userMessage).toContain('animated GIF')
@@ -1398,7 +1398,7 @@ describe('reading a message forwarded straight to her', () => {
       snapshots: [snapshot({ attachments: new Collection([['0', PNG('fwd')]]) })]
     })
 
-    expect((await handle(message)).imageAttachments).toEqual([PNG('fwd')])
+    expect((await handle(message)).mediaAttachments).toEqual([PNG('fwd')])
   })
 
   // A forward is someone else's post: it draws on the same ceiling as the sender's own files, and only
@@ -1419,7 +1419,7 @@ describe('reading a message forwarded straight to her', () => {
 
     // Priority, not count: the sender's own attachments fill the slots first and the forward takes what is
     // left.
-    expect((await handle(message)).imageAttachments).toEqual(
+    expect((await handle(message)).mediaAttachments).toEqual(
       [PNG('own-a'), PNG('own-b'), PNG('fwd-a'), PNG('fwd-b')].slice(0, MAX_ATTACHMENTS)
     )
   })
@@ -1434,7 +1434,7 @@ describe('reading a message forwarded straight to her', () => {
       snapshots: [snapshot({ attachments: new Collection(many) })]
     })
 
-    expect((await handle(message)).imageAttachments).toHaveLength(MAX_ATTACHMENTS)
+    expect((await handle(message)).mediaAttachments).toHaveLength(MAX_ATTACHMENTS)
   })
 
   // Both paths share one describer now; the replied-to path had no test over its forwarded output before.
@@ -1470,7 +1470,7 @@ describe('reading a message forwarded straight to her', () => {
 
     const result = await handle(message)
 
-    expect(result.imageAttachments).toHaveLength(MAX_ATTACHMENTS)
+    expect(result.mediaAttachments).toHaveLength(MAX_ATTACHMENTS)
     expect(result.userMessage).toContain('forwarded image(s)')
   })
 
@@ -1573,7 +1573,7 @@ describe('naming a replied-to image she cannot see', () => {
 
     const result = await handle(message)
 
-    expect(result.imageAttachments).toHaveLength(1)
+    expect(result.mediaAttachments).toHaveLength(1)
     expect(result.userMessage).toContain('(attached image(s))')
   })
 
@@ -1588,7 +1588,7 @@ describe('naming a replied-to image she cannot see', () => {
 
     const result = await handle(message)
 
-    expect(result.imageAttachments).toHaveLength(MAX_ATTACHMENTS)
+    expect(result.mediaAttachments).toHaveLength(MAX_ATTACHMENTS)
     expect(result.userMessage).toContain('(attached image(s), 2 not shown)')
   })
 
@@ -1603,7 +1603,7 @@ describe('naming a replied-to image she cannot see', () => {
     const result = await handle(message)
 
     // The handler passes undefined rather than an empty array when nothing was taken (messageCreate.ts:415).
-    expect(result.imageAttachments).toBeUndefined()
+    expect(result.mediaAttachments).toBeUndefined()
     expect(result.userMessage).toContain('(attached image(s), 1 not shown)')
   })
 })

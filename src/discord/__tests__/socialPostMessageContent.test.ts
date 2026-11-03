@@ -8,7 +8,7 @@ const target = parseSocialPostUrl('https://x.com/roka/status/123')!
 const presentation: SocialPostPresentation = {
   target,
   line: '[Linked post — X @roka (Roka), 2026-10-06: "text"]',
-  imageAttachment: { url: 'https://pbs.twimg.com/post-photo.jpg', contentType: 'image/jpeg' }
+  mediaAttachment: { url: 'https://pbs.twimg.com/post-photo.jpg', contentType: 'image/jpeg' }
 }
 
 function message({ attachments = [], embeds = [] }: { attachments?: object[]; embeds?: object[] } = {}) {
@@ -47,7 +47,7 @@ describe('social post message content', () => {
 
     expect(extracted.content).toContain(presentation.line)
     expect(extracted.content).not.toContain('raw embed description')
-    expect(extracted.imageAttachments).toEqual([presentation.imageAttachment])
+    expect(extracted.mediaAttachments).toEqual([presentation.mediaAttachment])
   })
 
   it('keeps the current user attachment before the linked post image', () => {
@@ -61,7 +61,7 @@ describe('social post message content', () => {
       presentation
     )
 
-    expect(extracted.imageAttachments).toEqual([ownImage, presentation.imageAttachment])
+    expect(extracted.mediaAttachments).toEqual([ownImage, presentation.mediaAttachment])
     expect(extracted.content).toContain(presentation.line)
   })
 
@@ -69,6 +69,6 @@ describe('social post message content', () => {
     const extracted = extractMessageContent(message(), null, false, 'bot', [], presentation)
 
     expect(extracted.content).toContain(presentation.line)
-    expect(extracted.imageAttachments).toEqual([presentation.imageAttachment])
+    expect(extracted.mediaAttachments).toEqual([presentation.mediaAttachment])
   })
 })

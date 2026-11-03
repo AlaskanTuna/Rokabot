@@ -1,5 +1,5 @@
 import { isStreamedUpload, sizeLimitFor } from '../agent/media/attachmentLimits.js'
-import type { ImageAttachment } from '../agent/media/attachments.js'
+import type { MediaAttachment } from '../agent/media/attachments.js'
 import { MAX_ATTACHMENTS, isSupportedAudio, isSupportedVideo } from '../agent/media/mediaRules.js'
 import { config } from '../config.js'
 
@@ -25,7 +25,7 @@ const STREAMED_CHUNK_BYTES = 4 * 1024 * 1024
  * bounds nothing. A stated size above that ceiling is clamped to it, because the download refuses on
  * Content-Length before buffering, so the oversized bytes are never actually held.
  */
-export function reservationFor(attachments: ImageAttachment[]): number {
+export function reservationFor(attachments: MediaAttachment[]): number {
   return attachments.reduce((total, attachment) => {
     if (attachment.transport === 'uri') return total
     const watched = config.media.watcher === 'gemini' || config.media.watcher === 'qwen'
@@ -38,8 +38,8 @@ export function reservationFor(attachments: ImageAttachment[]): number {
 }
 
 /** Admit attachments in intake order under the per-turn byte, count and timed-media limits. */
-export function fitAttachmentsToTurn(attachments: ImageAttachment[]): { kept: ImageAttachment[]; skipped: number } {
-  const kept: ImageAttachment[] = []
+export function fitAttachmentsToTurn(attachments: MediaAttachment[]): { kept: MediaAttachment[]; skipped: number } {
+  const kept: MediaAttachment[] = []
   let skipped = 0
   let hasTimedMedia = false
 
