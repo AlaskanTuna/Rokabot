@@ -32,13 +32,12 @@ export function attachmentMarker(kind: string): string {
   return `(a ${kind} attachment that can't be opened right now)`
 }
 
-export function parseRetryAfterMs(
-  value: string | null | undefined,
-  options: { zeroMeansNow: boolean }
-): number | undefined {
+/** Image types either model adapter sends; both history loops share the one set. */
+export const IMAGE_TYPES = new Set<string>(['image/jpeg', 'image/png', 'image/gif', 'image/webp'])
+
+export function parseRetryAfterMs(value: string | null | undefined): number | undefined {
   const seconds = value ? Number(value) : Number.NaN
-  const usable = options.zeroMeansNow ? seconds >= 0 : seconds > 0
-  return Number.isFinite(seconds) && usable ? seconds * 1000 : undefined
+  return Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : undefined
 }
 
 export function orphanResultText(name: string, body: string): string {

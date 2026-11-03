@@ -429,6 +429,33 @@ describe('ModelScopeLlm legacy translation', () => {
       ]
     })
   })
+
+  it('keeps whitespace text, leaves a nameless orphan blank, and marks svg as a file', async () => {
+    const { fetchImpl, calls } = replay(modelscope.qwenText)
+
+    await responses(
+      new ModelScopeLlm({
+        model: 'Qwen/Qwen3.5-122B-A10B',
+        apiKey: 'modelscope-key',
+        timeoutMs: 2000,
+        profile: profileFor('modelscope', 'Qwen/Qwen3.5-122B-A10B'),
+        fetchImpl
+      }),
+      request([
+        { role: 'user', parts: [{ text: '   ' }] },
+        { role: 'model', parts: [{ text: '  ' }] },
+        { role: 'user', parts: [{ functionResponse: { response: { ok: 1 } } }] },
+        { role: 'user', parts: [{ inlineData: { mimeType: 'image/svg+xml', data: 'AA==' } }] }
+      ])
+    )
+
+    expect(bodyOf(calls[0]).messages).toEqual([
+      { role: 'user', content: '   ' },
+      { role: 'assistant', content: '  ' },
+      { role: 'user', content: '(result of : {"ok":1})' },
+      { role: 'user', content: "(a file attachment that can't be opened right now)" }
+    ])
+  })
 })
 
 describe('ChatCompletionsLlm tool calls', () => {
@@ -1535,18 +1562,14 @@ describe('history rules pinned for shared helpers', () => {
       { role: 'user', content: 'z' }
     ])
   })
-  it('keeps whitespace-only text', async () => {
+  it('drops whitespace-only text', async () => {
     expect(
       await send([
         { role: 'user', parts: [{ text: '   ' }] },
         { role: 'model', parts: [{ text: '  ' }] },
         { role: 'user', parts: [{ text: 'z' }] }
       ])
-    ).toEqual([
-      { role: 'user', content: '   ' },
-      { role: 'assistant', content: '  ' },
-      { role: 'user', content: 'z' }
-    ])
+    ).toEqual([{ role: 'user', content: 'z' }])
   })
   it('keeps text, drops unanswered call', async () => {
     expect(
@@ -1559,18 +1582,18 @@ describe('history rules pinned for shared helpers', () => {
       { role: 'user', content: 'z' }
     ])
   })
-  it('retry-after 0 leaves retryAfterMs undefined', async () => {
+  it('retry-after 0 means retry now', async () => {
     const fetchImpl: typeof fetch = async () => new Response('{}', { status: 429, headers: { 'retry-after': '0' } })
     const err = await responses(luna(fetchImpl), hello()).catch((e) => e)
     expect(err).toBeInstanceOf(ProviderError)
-    expect(err.retryAfterMs).toBeUndefined()
+    expect(err.retryAfterMs).toBe(0)
   })
-  it('nameless orphan', async () => {
+  it('names a nameless orphan result a tool', async () => {
     expect(await send([{ role: 'user', parts: [{ functionResponse: { response: { a: 1 } } }] }])).toEqual([
-      { role: 'user', content: '(result of : {"a":1})' }
+      { role: 'user', content: '(result of a tool: {"a":1})' }
     ])
   })
-  it('id-less result pairs across an intervening user turn (anthropic would orphan it)', async () => {
+  it('orphans an id-less result across an intervening user turn', async () => {
     expect(
       await send([
         { role: 'model', parts: [{ functionCall: { name: 'x', args: {} } }] },
@@ -1578,13 +1601,62 @@ describe('history rules pinned for shared helpers', () => {
         { role: 'user', parts: [{ functionResponse: { name: 'x', response: { ok: 1 } } }] }
       ])
     ).toEqual([
-      {
-        role: 'assistant',
-        content: null,
-        tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'x', arguments: '{}' } }]
-      },
-      { role: 'tool', tool_call_id: 'call_1', content: '{"ok":1}' },
-      { role: 'user', content: 'wait' }
+      { role: 'user', content: 'wait' },
+      { role: 'user', content: '(result of x: {"ok":1})' }
     ])
+  })
+  it('pairs a result by id only with the preceding model turn', async () => {
+    expect(
+      await send([
+        { role: 'model', parts: [{ functionCall: { id: 'c1', name: 'x', args: {} } }] },
+        { role: 'user', parts: [{ text: 'wait' }] },
+        { role: 'user', parts: [{ functionResponse: { id: 'c1', name: 'x', response: { ok: 1 } } }] }
+      ])
+    ).toEqual([
+      { role: 'user', content: 'wait' },
+      { role: 'user', content: '(result of x: {"ok":1})' }
+    ])
+  })
+  it('orphans a result when a model turn sits between the call and the result, with or without ids', async () => {
+    const withIds = replay(openai.text)
+    const withoutIds = replay(openai.text)
+
+    await responses(
+      luna(withIds.fetchImpl),
+      request([
+        { role: 'model', parts: [{ functionCall: { id: 'c1', name: 'x', args: {} } }] },
+        { role: 'model', parts: [{ text: 'thinking' }] },
+        { role: 'user', parts: [{ functionResponse: { id: 'c1', name: 'x', response: { ok: 1 } } }] }
+      ])
+    )
+    await responses(
+      luna(withoutIds.fetchImpl),
+      request([
+        { role: 'model', parts: [{ functionCall: { name: 'x', args: {} } }] },
+        { role: 'model', parts: [{ text: 'thinking' }] },
+        { role: 'user', parts: [{ functionResponse: { name: 'x', response: { ok: 1 } } }] }
+      ])
+    )
+
+    const expected = [
+      { role: 'assistant', content: 'thinking' },
+      { role: 'user', content: '(result of x: {"ok":1})' }
+    ]
+    expect(bodyOf(withIds.calls[0]).messages).toEqual(expected)
+    expect(bodyOf(withoutIds.calls[0]).messages).toEqual(expected)
+  })
+
+  it('never pairs a result id with the id generated for an id-less call', async () => {
+    expect(
+      await send([
+        { role: 'model', parts: [{ functionCall: { name: 'x', args: {} } }] },
+        { role: 'user', parts: [{ functionResponse: { id: 'call_1', name: 'x', response: { ok: 1 } } }] }
+      ])
+    ).toEqual([{ role: 'user', content: '(result of x: {"ok":1})' }])
+  })
+  it('marks an image type outside the four Claude reads as unreadable', async () => {
+    expect(
+      await send([{ role: 'user', parts: [{ inlineData: { mimeType: 'image/svg+xml', data: 'AA==' } }] }])
+    ).toEqual([{ role: 'user', content: "(a file attachment that can't be opened right now)" }])
   })
 })

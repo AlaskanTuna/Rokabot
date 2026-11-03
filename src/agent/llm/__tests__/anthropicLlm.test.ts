@@ -867,6 +867,22 @@ describe('history rules pinned for shared helpers', () => {
     ])
     expect(types(body.messages)).toEqual([['text'], ['tool_use'], ['tool_result', 'text', 'text']])
   })
+  it('orders tool results before text from the render spread, not the merge sort', async () => {
+    const { body } = await sent([
+      hi,
+      { role: 'model', parts: [{ functionCall: { id: 'a', name: 'x', args: {} } }] },
+      { role: 'user', parts: [{ text: 'note' }, { functionResponse: { id: 'a', name: 'x', response: { ok: 1 } } }] },
+      { role: 'user', parts: [{ text: 'later' }] }
+    ])
+    expect(body.messages[2]).toEqual({
+      role: 'user',
+      content: [
+        { type: 'tool_result', tool_use_id: 'a', content: '{"ok":1}' },
+        { type: 'text', text: 'note' },
+        { type: 'text', text: 'later' }
+      ]
+    })
+  })
   it('merges the next user turn after a paired result', async () => {
     const { body } = await sent([
       hi,

@@ -3,7 +3,7 @@ import { GoogleGenAI, type Part } from '@google/genai'
 import sharp from 'sharp'
 import { config } from '../../config.js'
 import { logger } from '../../utils/logger.js'
-import { IMAGE_TYPES } from '../llm/anthropicLlm.js'
+import { IMAGE_TYPES } from '../llm/requestShape.js'
 
 let client: GoogleGenAI | undefined
 let anthropic: Anthropic | undefined

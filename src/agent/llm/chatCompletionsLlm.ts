@@ -8,6 +8,7 @@ import type { ModelProfile } from './profiles.js'
 import { ProviderError } from './providerError.js'
 import { historyEndedOnToolResult } from './replyDiagnostic.js'
 import {
+  IMAGE_TYPES,
   attachmentKind,
   attachmentMarker,
   functionDeclarations,
@@ -207,13 +208,13 @@ function openAiMessages(llmRequest: LlmRequest, acceptsImages: boolean, legacy: 
   if (instruction) messages.push({ role: 'system', content: instruction })
 
   const pendingCalls = new Map<string, GeneratedCall[]>()
-  const callsById = new Map<string, GeneratedCall>()
+  let precedingTurnIdCalls: GeneratedCall[] = []
   let precedingTurnIdlessCalls: GeneratedCall[] = []
   const entries: MessageEntry[] = []
   let callSequence = 0
   const matchingCall = (id: string | undefined, name: string): GeneratedCall | undefined => {
     if (legacy) return pendingCalls.get(name)?.find((candidate) => candidate.answered === undefined)
-    if (id) return callsById.get(id)
+    if (id) return precedingTurnIdCalls.find((candidate) => candidate.id === id)
     // ADK strips its own `adk-` ids before every call, so a call that came without a provider id comes back without
     // one; only those pair by name, with the earliest unanswered one in the preceding model turn.
     return precedingTurnIdlessCalls.find((candidate) => candidate.name === name && candidate.answered === undefined)
@@ -226,7 +227,9 @@ function openAiMessages(llmRequest: LlmRequest, acceptsImages: boolean, legacy: 
     const response = functionResponse.response
     const call = matchingCall(functionResponse.id, name)
     if (!call || call.answered) {
-      onUnmatched(orphanResultText(name, JSON.stringify(response ?? {})))
+      // The modern adapters name a nameless result `a tool`, like Anthropic; the legacy route keeps today's text.
+      const display = legacy ? name : (functionResponse.name ?? 'a tool')
+      onUnmatched(orphanResultText(display, JSON.stringify(response ?? {})))
       return
     }
     call.answered = {
@@ -244,6 +247,7 @@ function openAiMessages(llmRequest: LlmRequest, acceptsImages: boolean, legacy: 
       const textParts: string[] = []
       const unmatchedResponses: string[] = []
       const calls: GeneratedCall[] = []
+      const idCalls: GeneratedCall[] = []
       const idlessCalls: GeneratedCall[] = []
       for (const part of parts) {
         if (part.thought) continue
@@ -251,7 +255,7 @@ function openAiMessages(llmRequest: LlmRequest, acceptsImages: boolean, legacy: 
           addFunctionResponse(part.functionResponse, (text) => unmatchedResponses.push(text))
           continue
         }
-        if (part.text !== undefined) textParts.push(part.text)
+        if (part.text !== undefined && (legacy || part.text.trim())) textParts.push(part.text)
         if (part.functionCall) {
           const providerId = legacy ? undefined : part.functionCall.id
           const call: GeneratedCall = {
@@ -263,13 +267,14 @@ function openAiMessages(llmRequest: LlmRequest, acceptsImages: boolean, legacy: 
           const sameName = pendingCalls.get(call.name) ?? []
           sameName.push(call)
           pendingCalls.set(call.name, sameName)
-          if (providerId) callsById.set(providerId, call)
+          if (providerId) idCalls.push(call)
           else idlessCalls.push(call)
         }
         if (part.inlineData || part.fileData) {
           textParts.push(attachmentMarker(attachmentKind(part.inlineData?.mimeType ?? part.fileData?.mimeType)))
         }
       }
+      precedingTurnIdCalls = idCalls
       precedingTurnIdlessCalls = idlessCalls
       if (textParts.length || calls.length) {
         entries.push({ message: { role: 'assistant', content: textParts.length ? textParts.join('\n') : null }, calls })
@@ -285,11 +290,11 @@ function openAiMessages(llmRequest: LlmRequest, acceptsImages: boolean, legacy: 
         addFunctionResponse(part.functionResponse, (text) => userParts.push({ type: 'text', text }))
         continue
       }
-      if (part.text !== undefined) userParts.push({ type: 'text', text: part.text })
+      if (part.text !== undefined && (legacy || part.text.trim())) userParts.push({ type: 'text', text: part.text })
       if (part.inlineData || part.fileData) {
         const inlineData = part.inlineData
         const mimeType = inlineData?.mimeType
-        if (acceptsImages && inlineData && mimeType?.startsWith('image/')) {
+        if (acceptsImages && inlineData && mimeType && IMAGE_TYPES.has(mimeType)) {
           userParts.push({
             type: 'image_url',
             image_url: { url: `data:${mimeType};base64,${inlineData.data}` }
@@ -303,6 +308,9 @@ function openAiMessages(llmRequest: LlmRequest, acceptsImages: boolean, legacy: 
       }
     }
     if (userParts.length) entries.push({ message: { role: 'user', content: textContent(userParts) } })
+    // A result only pairs with the model turn right before it, like Anthropic; an intervening user turn orphans it.
+    precedingTurnIdCalls = []
+    precedingTurnIdlessCalls = []
   }
 
   for (const entry of entries) {
@@ -560,7 +568,7 @@ export class ChatCompletionsLlm extends BaseLlm {
       if (kind === 'billing_exhausted' && this.provider !== 'openai-compatible') markBillingExhausted(this.provider)
       throw this.fail(kind, message, {
         status: response.status,
-        retryAfterMs: parseRetryAfterMs(response.headers.get('retry-after'), { zeroMeansNow: false })
+        retryAfterMs: parseRetryAfterMs(response.headers.get('retry-after'))
       })
     }
     const parsed = parseJson(text)
