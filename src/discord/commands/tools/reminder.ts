@@ -7,7 +7,7 @@ import { character } from '../../../character/index.js'
 import { fillLine } from '../../../character/lines.js'
 import { config } from '../../../config.js'
 import { createReminder, deleteReminder, getActiveReminders, getReminderById } from '../../../storage/reminderStore.js'
-import { getTimezoneLabel } from '../../../utils/timezone.js'
+import { getTimezoneLabel, minutesUntilClockTime } from '../../../utils/timezone.js'
 import { FLAVOR, PLAYFUL_COLOR, buildToolMessage, randomFrom } from './shared.js'
 
 const LINES = character.lines.reminders
@@ -57,31 +57,7 @@ function handleRemindAt(interaction: ChatInputCommandInteraction, userId: string
   const hour = interaction.options.getInteger('hour', true)
   const minute = interaction.options.getInteger('minute') ?? 0
 
-  const tz = config.timezone ?? undefined
-
-  // Get current time in configured timezone
-  const now = new Date()
-  let currentHours: number, currentMins: number
-  try {
-    const formatter = new Intl.DateTimeFormat('en-US', {
-      hour: 'numeric',
-      minute: 'numeric',
-      hour12: false,
-      timeZone: tz
-    })
-    const parts = formatter.format(now).split(':')
-    currentHours = parseInt(parts[0], 10)
-    currentMins = parseInt(parts[1], 10)
-  } catch {
-    currentHours = now.getHours()
-    currentMins = now.getMinutes()
-  }
-
-  const targetMinutes = hour * 60 + minute
-  const currentMinutes = currentHours * 60 + currentMins
-  let diff = targetMinutes - currentMinutes
-
-  if (diff <= 0) diff += 24 * 60 // next day
+  const diff = minutesUntilClockTime(hour, minute, config.timezone ?? undefined)
 
   const dueAt = Date.now() + diff * 60 * 1000
   const result = createReminder(userId, channelId, task, dueAt)

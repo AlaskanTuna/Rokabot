@@ -1,4 +1,6 @@
+import { MessageFlags } from 'discord.js'
 import { describe, expect, it, vi } from 'vitest'
+import { character } from '../../../../character/index.js'
 import type { BuddyData } from '../../../../games/buddy.js'
 import { SPECIES } from '../../../../games/data/buddySpecies.js'
 
@@ -158,6 +160,42 @@ describe('collection pagination helpers', () => {
 
     const endedPage = editReply.mock.calls.at(-1)![0].components[0].toJSON()
     expect(endedPage.components).not.toEqual(expect.arrayContaining([expect.objectContaining({ type: 1 })]))
+  })
+
+  it('refuses a stranger with the notYours line', async () => {
+    const buddies = Array.from({ length: 6 }, (_, index) =>
+      createBuddy(`Buddy ${index + 1}`, 'mochi', 'common', Date.UTC(2026, 6, 22 - index))
+    )
+    const handlers: Record<string, (interaction?: never) => Promise<void>> = {}
+    const collector = {
+      on: vi.fn((event: string, handler: (interaction?: never) => Promise<void>) => {
+        handlers[event] = handler
+        return collector
+      })
+    }
+    const reply = { createMessageComponentCollector: vi.fn(() => collector) }
+    const editReply = vi.fn().mockResolvedValue(reply)
+    const interaction = {
+      id: 'interaction-1',
+      user: { id: 'user-1' },
+      editReply
+    } as never
+
+    getBuddyCollection.mockReturnValueOnce(buddies)
+
+    await expect(handleBuddyCollection(interaction)).resolves.toBeUndefined()
+
+    const reject = vi.fn().mockResolvedValue(undefined)
+    await handlers.collect({
+      user: { id: 'other-user' },
+      customId: 'collection_next_interaction-1',
+      reply: reject
+    } as never)
+
+    expect(reject).toHaveBeenCalledWith({
+      content: character.lines.tools.notYours,
+      flags: MessageFlags.Ephemeral
+    })
   })
 
   it('routes the collection subcommand through a deferred reply', async () => {

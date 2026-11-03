@@ -75,6 +75,36 @@ describe('getLocalHour under the harness pin', () => {
   })
 })
 
+describe('minutesUntilClockTime', () => {
+  it('returns the minutes until a later clock time', async () => {
+    const { minutesUntilClockTime } = await loadTimezoneModule()
+    const now = new Date(Date.UTC(2026, 5, 15, 10, 0, 0))
+
+    expect(minutesUntilClockTime(10, 30, 'UTC', now)).toBe(30)
+  })
+
+  it('wraps a past clock time to the next day', async () => {
+    const { minutesUntilClockTime } = await loadTimezoneModule()
+    const now = new Date(Date.UTC(2026, 5, 15, 10, 0, 0))
+
+    expect(minutesUntilClockTime(9, 30, 'UTC', now)).toBe(1410)
+  })
+
+  it('wraps an exact match to a full day out', async () => {
+    const { minutesUntilClockTime } = await loadTimezoneModule()
+    const now = new Date(Date.UTC(2026, 5, 15, 10, 0, 0))
+
+    expect(minutesUntilClockTime(10, 0, 'UTC', now)).toBe(1440)
+  })
+
+  it('falls back to local time for a bad timezone', async () => {
+    const { minutesUntilClockTime } = await loadTimezoneModule()
+    const now = new Date(2026, 5, 15, 10, 0, 0)
+
+    expect(minutesUntilClockTime(10, 30, 'Bogus/Zone', now)).toBe(30)
+  })
+})
+
 describe('local date helpers', () => {
   it('formats a timestamp in the configured timezone and finds the local day start', async () => {
     vi.stubEnv('TZ', 'Asia/Singapore')

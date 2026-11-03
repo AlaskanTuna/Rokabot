@@ -141,6 +141,30 @@ export function getYesterdayDate(): string {
   }
 }
 
+/** Minutes from now until the next clock time, wrapping past times to the next day */
+export function minutesUntilClockTime(hour: number, minute: number, timezone?: string, now: Date = new Date()): number {
+  let currentHours: number
+  let currentMins: number
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      hour: 'numeric',
+      minute: 'numeric',
+      hour12: false,
+      timeZone: timezone
+    })
+    const parts = formatter.format(now).split(':')
+    currentHours = parseInt(parts[0], 10)
+    currentMins = parseInt(parts[1], 10)
+  } catch {
+    currentHours = now.getHours()
+    currentMins = now.getMinutes()
+  }
+
+  let diff = hour * 60 + minute - (currentHours * 60 + currentMins)
+  if (diff <= 0) diff += 24 * 60
+  return diff
+}
+
 /** Get the UTC offset label (e.g., "GMT+8") for the configured timezone */
 export function getTimezoneLabel(): string {
   const tz = config.timezone

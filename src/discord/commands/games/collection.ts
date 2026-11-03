@@ -9,10 +9,11 @@ import {
   ThumbnailBuilder
 } from '@discordjs/builders'
 import type { ChatInputCommandInteraction } from 'discord.js'
-import { ButtonStyle, ComponentType, MessageFlags } from 'discord.js'
+import { ButtonStyle, MessageFlags } from 'discord.js'
 import { config } from '../../../config.js'
 import { type BuddyData, getBuddyCollection } from '../../../games/buddy.js'
 import { RARITY_EMOJI } from '../../../games/data/buddySpecies.js'
+import { collectPageButtons } from '../../pagination.js'
 import { buddySprite } from './shared.js'
 
 export const COLLECTION_PAGE_SIZE = 5
@@ -90,29 +91,19 @@ export async function handleBuddyCollection(interaction: ChatInputCommandInterac
 
   if (pageCount <= 1) return buildCollectionPage(buddies, 0)
 
-  let currentPage = 0
-  const reply = await interaction.editReply(buildPaginatedCollectionPage(buddies, currentPage, interaction.id, true))
-  const collector = reply.createMessageComponentCollector({ componentType: ComponentType.Button, time: 60_000 })
+  const reply = await interaction.editReply(buildPaginatedCollectionPage(buddies, 0, interaction.id, true))
 
-  collector.on('collect', async (buttonInteraction) => {
-    if (buttonInteraction.user.id !== interaction.user.id) {
-      await buttonInteraction.reply({ content: "Those buttons aren't for you~", flags: MessageFlags.Ephemeral })
-      return
+  collectPageButtons({
+    reply,
+    ownerId: interaction.user.id,
+    prefix: 'collection',
+    pageCount,
+    update: async (button, page) => {
+      await button.update(buildPaginatedCollectionPage(buddies, page, interaction.id, true))
+    },
+    finish: async (page) => {
+      await interaction.editReply(buildPaginatedCollectionPage(buddies, page, interaction.id, false)).catch(() => {})
     }
-
-    if (buttonInteraction.customId.startsWith('collection_next') && currentPage < pageCount - 1) {
-      currentPage++
-    } else if (buttonInteraction.customId.startsWith('collection_prev') && currentPage > 0) {
-      currentPage--
-    }
-
-    await buttonInteraction.update(buildPaginatedCollectionPage(buddies, currentPage, interaction.id, true))
-  })
-
-  collector.on('end', async () => {
-    await interaction
-      .editReply(buildPaginatedCollectionPage(buddies, currentPage, interaction.id, false))
-      .catch(() => {})
   })
 
   return undefined
