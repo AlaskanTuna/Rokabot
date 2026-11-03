@@ -34,7 +34,32 @@ reminders:
   deliveredByDm: 'A reminder: {{task}}'
 games:
   error: Something went wrong.
+  hangmanAlreadyRunning: There is already a game running in this channel.
+  hangmanStart: Let us play hangman.
+  hangmanNoGame: No active game in this channel.
+  hangmanDuplicate: 'You already tried {{letter}}.'
+  hangmanCorrect: '{{letter}} is in the word.'
+  hangmanWrong: '{{letter}} is not in the word.'
+  hangmanWinLetter: 'You got it! The word was {{word}}!'
+  hangmanWinWord: 'You figured it out! The word was {{word}}!'
+  hangmanWrongWord: That is not it, and that costs you a life.
+  hangmanLose: 'Oh no. The word was {{word}}.'
   hangmanTimeout: Time is up. The word was {{word}}.
+  shiritoriAlreadyActive: There is already an active game in this channel.
+  shiritoriStart: 'Game started! The starting word is {{word}}. Next letter: {{letter}}.'
+  shiritoriNoGame: There is no active game in this channel.
+  shiritoriAlreadyStarted: The game has already started.
+  shiritoriAlreadyIn: You are already in the game.
+  shiritoriJoined: '{{name}} joined the game! ({{count}} players)'
+  shiritoriInvalid: Words must be 2+ letters and contain only letters.
+  shiritoriNeedPlayers: Need at least 2 players.
+  shiritoriWrongTurn: 'It is not your turn! It is {{current}}''s turn.'
+  shiritoriWrongLetter: 'That word does not start with {{letter}}!'
+  shiritoriAlreadyUsed: '{{word}} was already used!'
+  shiritoriNotWord: 'I do not think {{word}} is a real word.'
+  shiritoriCorrect: '{{word}} is correct! Next letter: {{letter}}. Your turn, {{next}}!'
+  shiritoriGameOver: 'Game over! {{board}}'
+  shiritoriScores: 'Current scores: {{board}}. Current word: {{word}}. Next letter: {{letter}}. Turn: {{turn}}.'
   shiritoriWinner: '{{player}} ran out of time. {{winner}} wins!'
   shiritoriNext: '{{player}} ran out of time. Your turn, {{next}}.'
 status:

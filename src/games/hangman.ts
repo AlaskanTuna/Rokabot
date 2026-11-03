@@ -3,6 +3,8 @@
  * One active game per channel, 6 lives, 120-second idle timeout.
  */
 
+import { character } from '../character/index.js'
+import { fillLine } from '../character/lines.js'
 import { config } from '../config.js'
 import { HANGMAN_WORDS } from './data/hangmanWords.js'
 
@@ -47,6 +49,7 @@ export interface GuessWordResult {
 
 const INITIAL_LIVES = config.games.hangmanLives
 const TIMEOUT_MS = config.games.hangmanTimeoutMs
+const LINES = character.lines.games
 
 /** Active games keyed by channel ID. */
 const activeGames = new Map<string, HangmanGame>()
@@ -117,7 +120,7 @@ export function startGame(channelId: string, playerId: string): StartGameResult 
   if (activeGames.has(channelId)) {
     return {
       success: false,
-      message: "There's already a game running in this channel~ Finish it first!"
+      message: LINES.hangmanAlreadyRunning
     }
   }
 
@@ -139,7 +142,7 @@ export function startGame(channelId: string, playerId: string): StartGameResult 
 
   return {
     success: true,
-    message: "Let's play hangman~ \u266A",
+    message: LINES.hangmanStart,
     display: getDisplayWord(game),
     hint
   }
@@ -151,7 +154,7 @@ export function guessLetter(channelId: string, letter: string): GuessLetterResul
   if (!game || !game.active) {
     return {
       success: false,
-      message: 'No active game in this channel~ Use `/hangman start` to begin!',
+      message: LINES.hangmanNoGame,
       display: '',
       correct: false,
       gameOver: false,
@@ -165,7 +168,7 @@ export function guessLetter(channelId: string, letter: string): GuessLetterResul
   if (game.guessedLetters.has(normalizedLetter)) {
     return {
       success: false,
-      message: `You already tried **${normalizedLetter}**~ Pay attention!`,
+      message: fillLine(LINES.hangmanDuplicate, { letter: normalizedLetter }),
       display: getDisplayWord(game),
       correct: false,
       gameOver: false,
@@ -198,7 +201,7 @@ export function guessLetter(channelId: string, letter: string): GuessLetterResul
   if (won) {
     return {
       success: true,
-      message: `You got it! The word was **${game.word}**! \u{1F389} As expected~`,
+      message: fillLine(LINES.hangmanWinLetter, { word: game.word }),
       display,
       correct: true,
       gameOver: true,
@@ -211,7 +214,7 @@ export function guessLetter(channelId: string, letter: string): GuessLetterResul
   if (lost) {
     return {
       success: true,
-      message: `Oh no... the word was **${game.word}**. Better luck next time~ \u{1F495}`,
+      message: fillLine(LINES.hangmanLose, { word: game.word }),
       display,
       correct: false,
       gameOver: true,
@@ -224,8 +227,8 @@ export function guessLetter(channelId: string, letter: string): GuessLetterResul
   return {
     success: true,
     message: correct
-      ? `Nice~ **${normalizedLetter}** is in there! \u266A`
-      : `Mou~ **${normalizedLetter}** isn't in the word!`,
+      ? fillLine(LINES.hangmanCorrect, { letter: normalizedLetter })
+      : fillLine(LINES.hangmanWrong, { letter: normalizedLetter }),
     display,
     correct,
     gameOver: false,
@@ -240,7 +243,7 @@ export function guessWord(channelId: string, word: string): GuessWordResult {
   if (!game || !game.active) {
     return {
       success: false,
-      message: 'No active game in this channel~ Use `/hangman start` to begin!',
+      message: LINES.hangmanNoGame,
       display: '',
       gameOver: false,
       won: false,
@@ -262,7 +265,7 @@ export function guessWord(channelId: string, word: string): GuessWordResult {
 
     return {
       success: true,
-      message: `Wow, you figured it out! The word was **${game.word}**! \u2728`,
+      message: fillLine(LINES.hangmanWinWord, { word: game.word }),
       display,
       gameOver: true,
       won: true,
@@ -283,7 +286,7 @@ export function guessWord(channelId: string, word: string): GuessWordResult {
 
     return {
       success: true,
-      message: `Oh no... the word was **${game.word}**. Better luck next time~ \u{1F495}`,
+      message: fillLine(LINES.hangmanLose, { word: game.word }),
       display,
       gameOver: true,
       won: false,
@@ -295,7 +298,7 @@ export function guessWord(channelId: string, word: string): GuessWordResult {
 
   return {
     success: true,
-    message: "Nope, that's not it~ And that costs you a life!",
+    message: LINES.hangmanWrongWord,
     display,
     gameOver: false,
     won: false,
