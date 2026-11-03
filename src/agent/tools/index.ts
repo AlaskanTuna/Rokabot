@@ -4,10 +4,8 @@ import { FunctionTool } from '@google/adk'
 import { z } from 'zod'
 import { config } from '../../config.js'
 import { searchIsAvailable } from '../../searchSettings.js'
-import { getUserName } from '../../storage/userNames.js'
 import { logger } from '../../utils/logger.js'
 import { minutesUntilClockTime } from '../../utils/timezone.js'
-import { resolveName } from '../memory/identityResolver.js'
 import { flipCoin } from './flipCoin.js'
 import { forgetUser } from './forgetUser.js'
 import { getAnimeSchedule } from './getAnimeSchedule.js'
@@ -199,16 +197,13 @@ export const recallUserTool = new FunctionTool({
       return { facts: "I don't have any notes about this person yet.", factCount: 0 }
     }
     if (input.user_name) {
-      const userIds = resolveName(input.user_name, guildId, channelId ? { guildId, channelId } : undefined)
-      if (userIds.length === 0) return { facts: "I don't know anyone by that name here yet.", factCount: 0 }
-      if (userIds.length > 1) {
-        const displayNames = userIds.map((id) => getUserName(id)?.displayName ?? id)
-        return {
-          facts: `Several people here go by "${input.user_name}": ${displayNames.join(', ')}. Ask which one they mean.`,
-          factCount: 0
-        }
-      }
-      return recallUser({ user_id: userIds[0], guild_id: guildId, message, channel_id: channelId })
+      return recallUser({
+        user_id: userId,
+        guild_id: guildId,
+        message,
+        channel_id: channelId,
+        user_name: input.user_name
+      })
     }
     return recallUser({ user_id: userId, guild_id: guildId, message, channel_id: channelId })
   }

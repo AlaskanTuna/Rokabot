@@ -1,7 +1,9 @@
 /** Recall all stored facts about a user */
 
 import { config } from '../../config.js'
+import { getUserName } from '../../storage/userNames.js'
 import { embedEpisodeText } from '../memory/episodeEmbeddings.js'
+import { resolveName } from '../memory/identityResolver.js'
 import { type ClaimPeriod, touchRecalled } from '../memory/memoryClaims.js'
 import { type RecallScope } from '../memory/privacy.js'
 import { recallFactsForSubject } from '../memory/recall.js'
@@ -12,6 +14,7 @@ export interface RecallUserParams {
   guild_id: string
   message: string
   channel_id?: string
+  user_name?: string
 }
 
 export interface RecallUserResult {
@@ -77,8 +80,26 @@ async function selectFacts(params: RecallUserParams): Promise<SelectedFact[]> {
 }
 
 export async function recallUser(params: RecallUserParams): Promise<RecallUserResult> {
-  const { guild_id } = params
-  const selected = guild_id === 'global' || config.memory.privacy === 'off' ? [] : await selectFacts(params)
+  const { guild_id, channel_id, user_name } = params
+  let userId = params.user_id
+  if (user_name) {
+    const userIds = resolveName(
+      user_name,
+      guild_id,
+      channel_id ? { guildId: guild_id, channelId: channel_id } : undefined
+    )
+    if (userIds.length === 0) return { facts: "I don't know anyone by that name here yet.", factCount: 0 }
+    if (userIds.length > 1) {
+      const displayNames = userIds.map((id) => getUserName(id)?.displayName ?? id)
+      return {
+        facts: `Several people here go by "${user_name}": ${displayNames.join(', ')}. Ask which one they mean.`,
+        factCount: 0
+      }
+    }
+    userId = userIds[0]
+  }
+  const selected =
+    guild_id === 'global' || config.memory.privacy === 'off' ? [] : await selectFacts({ ...params, user_id: userId })
   const uniqueFacts = selected
     .filter((fact, index) => {
       const identity = identityOf(fact)
