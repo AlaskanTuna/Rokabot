@@ -7,7 +7,7 @@ vi.mock('../database.js', () => ({
   getDb: () => testDb
 }))
 
-import { GEMINI_FINGERPRINT, geminiVector } from '../../agent/memory/embeddings/__tests__/vectors.js'
+import { GEMINI_FINGERPRINT, geminiVector } from '../../../tests/harness/vectors.js'
 import {
   findMediaDigest,
   findMediaSharedBy,

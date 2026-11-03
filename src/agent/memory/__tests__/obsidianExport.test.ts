@@ -15,9 +15,9 @@ vi.mock('../../../config.js', () => ({
   }
 }))
 
+import { geminiVector } from '../../../../tests/harness/vectors.js'
 import { closeDb, getDb } from '../../../storage/database.js'
 import { saveMemoryEpisode } from '../../../storage/memoryEpisodeStore.js'
-import { geminiVector } from '../embeddings/__tests__/vectors.js'
 import { assertClaim, assertGuildClaim, pinClaim } from '../memoryClaims.js'
 
 let vaultDir: string

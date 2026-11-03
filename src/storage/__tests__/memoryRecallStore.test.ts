@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { geminiVector, localVector } from '../../agent/memory/embeddings/__tests__/vectors.js'
+import { geminiVector, localVector } from '../../../tests/harness/vectors.js'
 import { appendEvidence, assertClaim, rejectActiveClaimById } from '../../agent/memory/memoryClaims.js'
 import { closeDb } from '../database.js'
 import {

@@ -1,16 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { config } from '../../../src/config.js'
+import { GATE1_FLOOR_MS } from '../limits.js'
 
 // Written out, not derived from config the way toolTrigger.ts derives it. A test that recomputed
 // `60000 * maxLlmCalls / rpm` would move in lockstep with the code and go silent on exactly the event it
 // exists to force someone to look at — a changed `maxLlmCalls` or `rpm` re-pricing every live gate run
 // (#160). 16000 is the value at maxLlmCalls 4 and rpm 15.
 const DERIVED_FLOOR_MS = 16000
-
-// The human's Gate-1 amendment (2026-07-29), which the derived floor sits above today and must not fall
-// below if either knob moves.
-const GATE1_FLOOR_MS = 12000
 
 async function pacingWith(override: string | undefined): Promise<number> {
   vi.resetModules()
@@ -72,5 +69,12 @@ describe('live-gate trial pacing', { timeout: 30_000 }, () => {
 
   it('falls back to the floor when the override is not a number', async () => {
     await expect(pacingWith('soon')).resolves.toBe(DERIVED_FLOOR_MS)
+  })
+})
+
+describe('the Gate-1 floor', () => {
+  // Written out on purpose: the human set this value (2026-07-29), so moving it must fail a test.
+  it('stays at the amended 12 seconds', () => {
+    expect(GATE1_FLOOR_MS).toBe(12000)
   })
 })

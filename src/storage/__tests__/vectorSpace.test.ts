@@ -9,12 +9,7 @@ let testDb: Database.Database
 vi.mock('../../config.js', () => ({ config: configMock }))
 vi.mock('../database.js', () => ({ getDb: () => testDb }))
 
-import {
-  GEMINI_FINGERPRINT,
-  LOCAL_FINGERPRINT,
-  geminiVector,
-  localVector
-} from '../../agent/memory/embeddings/__tests__/vectors.js'
+import { GEMINI_FINGERPRINT, LOCAL_FINGERPRINT, geminiVector, localVector } from '../../../tests/harness/vectors.js'
 import type { EmbeddingResult } from '../../agent/memory/embeddings/client.js'
 import { listEpisodesForGuild, saveMemoryEpisode } from '../memoryEpisodeStore.js'
 import { ensureVectorProvenanceColumns } from '../vectorProvenance.js'

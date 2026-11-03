@@ -89,9 +89,9 @@ vi.mock('../searchPrefetch.js', () => ({
   buildLookedUpBlock: mocks.buildLookedUpBlock
 }))
 
+import { geminiVector } from '../../../tests/harness/vectors.js'
 import { config } from '../../config.js'
 import type { TurnJudgment } from '../jev/judgments.js'
-import { geminiVector } from '../memory/embeddings/__tests__/vectors.js'
 import { withSearchCitations } from '../searchCitations.js'
 import { applyJevTone, awaitTurnPrefetch, createTurnContext, startTurnEntryWork } from '../turnContext.js'
 

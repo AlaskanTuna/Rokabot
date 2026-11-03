@@ -16,11 +16,11 @@ let testDb: Database.Database
 vi.mock('../../../config.js', () => ({ config: configMock }))
 vi.mock('../../../storage/database.js', () => ({ getDb: () => testDb }))
 
+import { GEMINI_FINGERPRINT, LOCAL_FINGERPRINT, geminiVector, localVector } from '../../../../tests/harness/vectors.js'
 import { listEpisodesForGuild, saveMemoryEpisode } from '../../../storage/memoryEpisodeStore.js'
 import { ensureVectorProvenanceColumns } from '../../../storage/vectorProvenance.js'
 import { estimateTokens } from '../../../utils/tokens.js'
 import { registerChannelVisibility, resetChannelVisibilityForTest } from '../channelVisibility.js'
-import { GEMINI_FINGERPRINT, LOCAL_FINGERPRINT, geminiVector, localVector } from '../embeddings/__tests__/vectors.js'
 import {
   buildEpisodeRecallBlock,
   formatEpisodeRecallBlock,

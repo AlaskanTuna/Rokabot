@@ -27,11 +27,11 @@ vi.mock('../factEmbeddings.js', () => ({ embedPendingFacts: mocks.embedPendingFa
 vi.mock('../../../utils/logger.js', () => ({ logger: mocks.logger }))
 vi.mock('../../shutdownSignal.js', () => ({ isShuttingDown: mocks.isShuttingDown }))
 
+import { GEMINI_FINGERPRINT, LOCAL_FINGERPRINT, geminiVector, localVector } from '../../../../tests/harness/vectors.js'
 import { findMediaDigest, recordMediaOccurrence, saveMediaDigest } from '../../../storage/mediaDigestStore.js'
 import * as episodeStore from '../../../storage/memoryEpisodeStore.js'
 import { listEpisodesForGuild, saveMemoryEpisode } from '../../../storage/memoryEpisodeStore.js'
 import { ensureVectorProvenanceColumns } from '../../../storage/vectorProvenance.js'
-import { GEMINI_FINGERPRINT, LOCAL_FINGERPRINT, geminiVector, localVector } from '../embeddings/__tests__/vectors.js'
 import { pruneEpisodesAndReembed } from '../episodeMaintenance.js'
 
 const geminiSpace = () => ({
