@@ -43,6 +43,7 @@ import { assembleSystemPrompt } from '../../promptAssembler.js'
 import { CORE_PROMPT } from '../../prompts/core.js'
 import { SPEECH_PROMPT } from '../../prompts/speech.js'
 import { AnthropicLlm, STRUCTURED_OUTPUT_TOOL } from '../anthropicLlm.js'
+import { callUsage as anthropicCallUsage, classifyAnthropicError } from '../anthropicLlm.js'
 import { type ModelRoute, modelRouteForRequest } from '../fallbackModel.js'
 import { profileFor } from '../profiles.js'
 import { ProviderError } from '../providerError.js'
@@ -826,5 +827,92 @@ describe('AnthropicLlm thinking within a turn', () => {
 
   it('keeps nothing for calls made outside a turn', async () => {
     expect(await followUp({})).toEqual(withoutThinking)
+  })
+})
+
+describe('history rules pinned for shared helpers', () => {
+  const types = (messages: { content: string | { type: string }[] }[]) =>
+    messages.map((message) =>
+      typeof message.content === 'string' ? [message.content] : message.content.map((block) => block.type)
+    )
+  it('merges consecutive same-role contents', async () => {
+    const { body } = await sent([hi, { role: 'user', parts: [{ text: 'again' }] }])
+    expect(body.messages).toEqual([
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: '[Mio]: hi' },
+          { type: 'text', text: 'again' }
+        ]
+      }
+    ])
+  })
+  it('puts tool_result first in a user turn', async () => {
+    const { body } = await sent([
+      hi,
+      { role: 'model', parts: [{ functionCall: { id: 'a', name: 'x', args: {} } }] },
+      { role: 'user', parts: [{ text: 'note' }, { functionResponse: { id: 'a', name: 'x', response: { ok: 1 } } }] },
+      { role: 'user', parts: [{ text: 'later' }] }
+    ])
+    expect(types(body.messages)).toEqual([['text'], ['tool_use'], ['tool_result', 'text', 'text']])
+  })
+  it('puts a result ahead of text in the same turn', async () => {
+    const { body } = await sent([
+      hi,
+      { role: 'model', parts: [{ functionCall: { id: 'a', name: 'x', args: {} } }] },
+      {
+        role: 'user',
+        parts: [{ text: 'note' }, { functionResponse: { id: 'a', name: 'x', response: { ok: 1 } } }, { text: 'after' }]
+      }
+    ])
+    expect(types(body.messages)).toEqual([['text'], ['tool_use'], ['tool_result', 'text', 'text']])
+  })
+  it('merges the next user turn after a paired result', async () => {
+    const { body } = await sent([
+      hi,
+      { role: 'model', parts: [{ functionCall: { id: 'a', name: 'x', args: {} } }] },
+      { role: 'user', parts: [{ functionResponse: { id: 'a', name: 'x', response: { ok: 1 } } }] },
+      { role: 'user', parts: [{ text: 'later' }] }
+    ])
+    expect(types(body.messages)).toEqual([['text'], ['tool_use'], ['tool_result', 'text']])
+  })
+  it('drops whitespace-only text', async () => {
+    const { body } = await sent([
+      hi,
+      { role: 'model', parts: [{ text: '   ' }] },
+      { role: 'user', parts: [{ text: '  \n ' }, { text: 'ok' }] }
+    ])
+    expect(body.messages).toEqual([
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: '[Mio]: hi' },
+          { type: 'text', text: 'ok' }
+        ]
+      }
+    ])
+  })
+  it('retry-after 0 gives 0 ms', () => {
+    const e = classifyAnthropicError(
+      APIError.generate(
+        429,
+        { type: 'error', error: { type: 'rate_limit_error', message: 'x' } },
+        undefined,
+        new Headers({ 'retry-after': '0' })
+      )
+    )
+    expect(e.retryAfterMs).toBe(0)
+  })
+  it('names a nameless orphan result a tool', async () => {
+    const { body } = await sent([{ role: 'user', parts: [{ functionResponse: { response: { a: 1 } } }] } as Content])
+    expect(body.messages).toEqual([{ role: 'user', content: [{ type: 'text', text: '(result of a tool: {"a":1})' }] }])
+  })
+  it('records web_search_requests as searchRequests', () => {
+    const u = anthropicCallUsage('m', 'reply', {
+      input_tokens: 1,
+      output_tokens: 1,
+      server_tool_use: { web_search_requests: 3 }
+    } as never)
+    expect(u.searchRequests).toBe(3)
   })
 })

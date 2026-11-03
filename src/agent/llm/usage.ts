@@ -33,22 +33,41 @@ export function promptTokenTotal(usage: CallUsage): number {
   return usage.inputTokens + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0)
 }
 
+export function usageFromCachedPrompt(input: {
+  provider: CallUsage['provider']
+  model: string
+  workload: Workload
+  promptTokens: number
+  cachedTokens: number
+  outputTokens: number
+  reasoningTokens: number
+}): CallUsage {
+  return {
+    provider: input.provider,
+    model: input.model,
+    workload: input.workload,
+    inputTokens: Math.max(0, input.promptTokens - input.cachedTokens),
+    outputTokens: input.outputTokens,
+    ...(input.reasoningTokens > 0 ? { reasoningTokens: input.reasoningTokens } : {}),
+    ...(input.cachedTokens > 0 ? { cacheReadTokens: input.cachedTokens } : {})
+  }
+}
+
 /** Gemini's own usage metadata as a `CallUsage`. `usageMetadata` is absent on a response with nothing to bill. */
 export function geminiUsage(
   model: string,
   workload: Workload,
   metadata: NonNullable<LlmResponse['usageMetadata']>
 ): CallUsage {
-  const cached = metadata.cachedContentTokenCount ?? 0
-  return {
+  return usageFromCachedPrompt({
     provider: 'gemini',
     model,
     workload,
-    inputTokens: Math.max(0, (metadata.promptTokenCount ?? 0) - cached),
+    promptTokens: metadata.promptTokenCount ?? 0,
+    cachedTokens: metadata.cachedContentTokenCount ?? 0,
     outputTokens: metadata.candidatesTokenCount ?? 0,
-    ...(metadata.thoughtsTokenCount ? { reasoningTokens: metadata.thoughtsTokenCount } : {}),
-    ...(cached ? { cacheReadTokens: cached } : {})
-  }
+    reasoningTokens: metadata.thoughtsTokenCount ?? 0
+  })
 }
 
 /** Background jobs put their workload in `config.labels` under this key; ADK reply requests carry none. */

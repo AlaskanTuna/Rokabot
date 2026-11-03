@@ -1504,3 +1504,87 @@ describe('openai-compatible requests', () => {
     expect(budget.markBillingExhausted).not.toHaveBeenCalled()
   })
 })
+
+describe('history rules pinned for shared helpers', () => {
+  const send = async (contents: unknown[]) => {
+    const { fetchImpl, calls } = replay(openai.text)
+    await responses(luna(fetchImpl), request(contents))
+    return bodyOf(calls[0]).messages
+  }
+  it('skips thought parts in both roles', async () => {
+    expect(
+      await send([
+        { role: 'user', parts: [{ text: 'a', thought: true }, { text: 'u' }] },
+        { role: 'model', parts: [{ text: 'b', thought: true }, { text: 'm' }] },
+        { role: 'user', parts: [{ text: 'z' }] }
+      ])
+    ).toEqual([
+      { role: 'user', content: 'u' },
+      { role: 'assistant', content: 'm' },
+      { role: 'user', content: 'z' }
+    ])
+  })
+  it('keeps a leading model turn', async () => {
+    expect(
+      await send([
+        { role: 'model', parts: [{ text: 'first' }] },
+        { role: 'user', parts: [{ text: 'z' }] }
+      ])
+    ).toEqual([
+      { role: 'assistant', content: 'first' },
+      { role: 'user', content: 'z' }
+    ])
+  })
+  it('keeps whitespace-only text', async () => {
+    expect(
+      await send([
+        { role: 'user', parts: [{ text: '   ' }] },
+        { role: 'model', parts: [{ text: '  ' }] },
+        { role: 'user', parts: [{ text: 'z' }] }
+      ])
+    ).toEqual([
+      { role: 'user', content: '   ' },
+      { role: 'assistant', content: '  ' },
+      { role: 'user', content: 'z' }
+    ])
+  })
+  it('keeps text, drops unanswered call', async () => {
+    expect(
+      await send([
+        { role: 'model', parts: [{ text: 'hm' }, { functionCall: { id: 'c', name: 'x', args: {} } }] },
+        { role: 'user', parts: [{ text: 'z' }] }
+      ])
+    ).toEqual([
+      { role: 'assistant', content: 'hm' },
+      { role: 'user', content: 'z' }
+    ])
+  })
+  it('retry-after 0 leaves retryAfterMs undefined', async () => {
+    const fetchImpl: typeof fetch = async () => new Response('{}', { status: 429, headers: { 'retry-after': '0' } })
+    const err = await responses(luna(fetchImpl), hello()).catch((e) => e)
+    expect(err).toBeInstanceOf(ProviderError)
+    expect(err.retryAfterMs).toBeUndefined()
+  })
+  it('nameless orphan', async () => {
+    expect(await send([{ role: 'user', parts: [{ functionResponse: { response: { a: 1 } } }] }])).toEqual([
+      { role: 'user', content: '(result of : {"a":1})' }
+    ])
+  })
+  it('id-less result pairs across an intervening user turn (anthropic would orphan it)', async () => {
+    expect(
+      await send([
+        { role: 'model', parts: [{ functionCall: { name: 'x', args: {} } }] },
+        { role: 'user', parts: [{ text: 'wait' }] },
+        { role: 'user', parts: [{ functionResponse: { name: 'x', response: { ok: 1 } } }] }
+      ])
+    ).toEqual([
+      {
+        role: 'assistant',
+        content: null,
+        tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'x', arguments: '{}' } }]
+      },
+      { role: 'tool', tool_call_id: 'call_1', content: '{"ok":1}' },
+      { role: 'user', content: 'wait' }
+    ])
+  })
+})

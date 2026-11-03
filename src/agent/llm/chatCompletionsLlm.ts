@@ -12,10 +12,12 @@ import {
   attachmentMarker,
   functionDeclarations,
   isRecord,
+  orphanResultText,
+  parseRetryAfterMs,
   shapeRequest,
   systemText
 } from './requestShape.js'
-import { type CallUsage, type Workload, recordUsage, workloadOf } from './usage.js'
+import { type CallUsage, type Workload, recordUsage, usageFromCachedPrompt, workloadOf } from './usage.js'
 
 type JsonObject = Record<string, unknown>
 type ChatMessage = Record<string, unknown>
@@ -76,11 +78,6 @@ function httpFailureKind(provider: ChatCompletionsProvider, status: number, body
   if (MAGICUBE_PATTERN.test(body)) return 'quota_exhausted'
   if (status === 413 || CONTEXT_LENGTH_PATTERN.test(body)) return 'context_length'
   return 'terminal'
-}
-
-function retryAfterMs(response: Response): number | undefined {
-  const seconds = Number(response.headers.get('retry-after'))
-  return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : undefined
 }
 
 function errorText(error: unknown): string {
@@ -229,7 +226,7 @@ function openAiMessages(llmRequest: LlmRequest, acceptsImages: boolean, legacy: 
     const response = functionResponse.response
     const call = matchingCall(functionResponse.id, name)
     if (!call || call.answered) {
-      onUnmatched(`(result of ${name}: ${JSON.stringify(response ?? {})})`)
+      onUnmatched(orphanResultText(name, JSON.stringify(response ?? {})))
       return
     }
     call.answered = {
@@ -346,17 +343,16 @@ function callUsage(
   workload: Workload,
   usage: ChatCompletionsResponse['usage']
 ): CallUsage {
-  const cacheReadTokens = usage?.prompt_tokens_details?.cached_tokens ?? 0
   const reasoningTokens = usage?.completion_tokens_details?.reasoning_tokens ?? 0
-  return {
+  return usageFromCachedPrompt({
     provider,
     model,
     workload,
-    inputTokens: Math.max(0, (usage?.prompt_tokens ?? 0) - cacheReadTokens),
+    promptTokens: usage?.prompt_tokens ?? 0,
+    cachedTokens: usage?.prompt_tokens_details?.cached_tokens ?? 0,
     outputTokens: Math.max(0, (usage?.completion_tokens ?? 0) - reasoningTokens),
-    ...(reasoningTokens > 0 ? { reasoningTokens } : {}),
-    ...(cacheReadTokens > 0 ? { cacheReadTokens } : {})
-  }
+    reasoningTokens
+  })
 }
 
 // Gemini's buckets, as ADK consumers read them: the prompt includes cached tokens and the candidates exclude thoughts.
@@ -564,7 +560,7 @@ export class ChatCompletionsLlm extends BaseLlm {
       if (kind === 'billing_exhausted' && this.provider !== 'openai-compatible') markBillingExhausted(this.provider)
       throw this.fail(kind, message, {
         status: response.status,
-        retryAfterMs: retryAfterMs(response)
+        retryAfterMs: parseRetryAfterMs(response.headers.get('retry-after'), { zeroMeansNow: false })
       })
     }
     const parsed = parseJson(text)

@@ -2,6 +2,7 @@ import type { LlmRequest } from '@google/adk'
 import { describe, expect, it } from 'vitest'
 import { profileFor } from '../profiles.js'
 import { functionDeclarations, shapeRequest, systemText } from '../requestShape.js'
+import { orphanResultText, parseRetryAfterMs } from '../requestShape.js'
 
 const GEMINI = {
   provider: 'gemini',
@@ -88,5 +89,34 @@ describe('request readers', () => {
       { name: 'recall_user', parameters: { type: 'object', properties: {} } },
       { name: 'flip_coin' }
     ])
+  })
+})
+
+describe('retry-after parsing', () => {
+  it.each([true, false])('gives 7000 for a 7-second header when zeroMeansNow is %s', (zeroMeansNow) => {
+    expect(parseRetryAfterMs('7', { zeroMeansNow })).toBe(7000)
+  })
+
+  it('gives 0 for a 0-second header only when zeroMeansNow is true', () => {
+    expect(parseRetryAfterMs('0', { zeroMeansNow: true })).toBe(0)
+    expect(parseRetryAfterMs('0', { zeroMeansNow: false })).toBeUndefined()
+  })
+
+  it.each([true, false])(
+    'gives undefined for a missing or unreadable header when zeroMeansNow is %s',
+    (zeroMeansNow) => {
+      expect(parseRetryAfterMs(null, { zeroMeansNow })).toBeUndefined()
+      expect(parseRetryAfterMs('', { zeroMeansNow })).toBeUndefined()
+      expect(parseRetryAfterMs('soon', { zeroMeansNow })).toBeUndefined()
+      expect(parseRetryAfterMs('-1', { zeroMeansNow })).toBeUndefined()
+      expect(parseRetryAfterMs('Infinity', { zeroMeansNow })).toBeUndefined()
+      expect(parseRetryAfterMs('Wed, 21 Oct 2026 07:28:00 GMT', { zeroMeansNow })).toBeUndefined()
+    }
+  )
+})
+
+describe('orphan results', () => {
+  it('reads an unmatched result inline with its name and body', () => {
+    expect(orphanResultText('x', '{}')).toBe('(result of x: {})')
   })
 })
