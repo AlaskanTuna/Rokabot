@@ -1,66 +1,33 @@
-export interface Problem {
-  file: string | null
-  path: string | null
-  message: string
-}
+import type {
+  FileEdit,
+  ModelProfile,
+  ModelTest,
+  Pack,
+  Preview,
+  PreviewParams,
+  Problem,
+  Secret,
+  TestModelRequest,
+  Validation
+} from '../../../shared/contract'
 
-export type MemoryMode = 'full' | 'forget' | 'none'
-
-export interface PackSummary {
-  id: string
-  name: string
-  moods: string[]
-  defaultMood: string
-  stableTokens: Record<MemoryMode, number>
-}
-
-export type Validation = { ok: true; summary: PackSummary } | { ok: false; problems: Problem[] }
-
-export interface PackFile {
-  path: string
-  kind: 'pack' | 'harness'
-  locked: boolean
-  text: string
-}
-
-export interface Pack {
-  dir: string
-  harnessDir: string
-  files: PackFile[]
-  validation: Validation
-  candidates?: string[]
-}
-
-export interface Preview {
-  prompt: string
-  tokens: number
-  stableTokens: number
-}
-
-export interface Secret {
-  key: string
-  set: boolean
-  masked: string | null
-  inExample: boolean
-  description?: string
-  required?: boolean
-}
-
-export interface ModelProfile {
-  provider: string
-  model: string
-  envVar: string | null
-  capabilities?: Record<string, unknown>
-  price?: { input: number; output: number }
-}
-
-export interface ModelTest {
-  ok: boolean
-  status: number | null
-  latencyMs: number | null
-  message: string
-  modelListed: boolean | null
-}
+export type {
+  FileEdit,
+  MemoryMode,
+  ModelCapabilities,
+  ModelPrice,
+  ModelProfile,
+  ModelTest,
+  Pack,
+  PackFile,
+  PackSummary,
+  Preview,
+  PreviewParams,
+  Problem,
+  Secret,
+  TestModelRequest,
+  Validation
+} from '../../../shared/contract'
 
 /** A refused or failed API call, carrying the server's `{ error: { file, path, message } }` and any extra fields. */
 export class ApiError extends Error {
@@ -151,27 +118,23 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
   return data as T
 }
 
-const query = (params: Record<string, string | number | undefined>) =>
+const query = (params: PreviewParams) =>
   new URLSearchParams(
     Object.entries(params).flatMap(([key, value]) => (value === undefined ? [] : [[key, String(value)]]))
   ).toString()
 
 export const api = {
   pack: () => call<Pack>('GET', '/api/pack'),
-  savePackFiles: (files: { path: string; text: string | null }[]) =>
+  savePackFiles: (files: FileEdit[]) =>
     call<{ files: string[]; validation: Validation }>('PUT', '/api/pack/files', { files }),
-  validatePack: (files: { path: string; text: string | null }[]) =>
-    call<{ validation: Validation }>('POST', '/api/pack/validate', { files }),
+  validatePack: (files: FileEdit[]) => call<{ validation: Validation }>('POST', '/api/pack/validate', { files }),
   validateConfig: (text: string) =>
     call<{ ok: true } | { ok: false; problem: Problem }>('POST', '/api/config/validate', { text }),
-  selectPack: (dir: string) => call<unknown>('POST', '/api/pack/select', { dir }),
-  createPack: (id: string) => call<unknown>('POST', '/api/pack/create', { id }),
-  preview: (params: { mood?: string; hour?: number; memory?: MemoryMode; user?: string }) =>
-    call<Preview>('GET', `/api/preview?${query(params)}`),
-  previewDrafts: (
-    files: { path: string; text: string | null }[],
-    params: { mood?: string; hour?: number; memory?: MemoryMode; user?: string }
-  ) => call<Preview>('POST', '/api/preview', { files, ...params }),
+  selectPack: (dir: string) => call<Pack>('POST', '/api/pack/select', { dir }),
+  createPack: (id: string) => call<Pack>('POST', '/api/pack/create', { id }),
+  preview: (params: PreviewParams) => call<Preview>('GET', `/api/preview?${query(params)}`),
+  previewDrafts: (files: FileEdit[], params: PreviewParams) =>
+    call<Preview>('POST', '/api/preview', { files, ...params }),
   schema: () => call<Record<string, unknown>>('GET', '/api/schema'),
   config: () => call<{ path: string; text: string }>('GET', '/api/config'),
   saveConfig: (text: string) => call<{ path: string; ok: true }>('PUT', '/api/config', { text }),
@@ -179,6 +142,5 @@ export const api = {
   setSecret: (key: string, value: string) => call<Secret>('PUT', `/api/secrets/${encodeURIComponent(key)}`, { value }),
   deleteSecret: (key: string) => call<Secret>('DELETE', `/api/secrets/${encodeURIComponent(key)}`),
   modelProfiles: () => call<ModelProfile[]>('GET', '/api/models/profiles'),
-  testModel: (entry: { provider: string; model: string; baseUrl?: string; apiKeyEnv?: string }) =>
-    call<ModelTest>('POST', '/api/models/test', entry)
+  testModel: (entry: TestModelRequest) => call<ModelTest>('POST', '/api/models/test', entry)
 }

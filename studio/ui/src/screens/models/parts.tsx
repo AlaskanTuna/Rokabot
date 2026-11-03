@@ -4,10 +4,10 @@ import { Badge } from '../../components/ui/Badge'
 import { Field, Select, TextInput, Toggle } from '../../components/ui/Field'
 import { type ModelProfile, type ModelTest, type Secret, api } from '../../lib/api'
 import { href, navigate } from '../../lib/router'
+import { putScalar, setFallback } from '../../lib/yamlEdit'
 import { notifications } from '../../state/notifications'
 import { setConfigDraft } from '../../state/workspace'
-import type { ConfigData, ModelEntry } from './configShared'
-import { putScalar, setFallback } from './textEdit'
+import type { ConfigData, ModelEntry } from '../config/configShared'
 
 export interface ModelEnv {
   secrets: Secret[] | null

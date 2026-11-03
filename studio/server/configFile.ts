@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { isScalar, parseDocument, stringify } from 'yaml'
 import { REPO_ROOT } from '../../src/character/paths.js'
+import type { Problem } from '../shared/contract.js'
 import { apiPath, readText, writeAtomic } from './files.js'
 import { type ErrorBody, StudioError } from './http.js'
 
@@ -48,17 +49,20 @@ function configProblem(file: string, message: string): ErrorBody {
   return { file, path: /^Config value (\S+?)[,.:;]?(?:\s|$)/.exec(message)?.[1] ?? null, message }
 }
 
-export function readConfig(paths: ConfigPaths) {
+export function readConfig(paths: ConfigPaths): { path: string; text: string } {
   return { path: apiPath(paths.root, paths.configPath), text: readText(paths.configPath) }
 }
 
-export async function validateConfig(paths: ConfigPaths, text: string) {
+export async function validateConfig(
+  paths: ConfigPaths,
+  text: string
+): Promise<{ ok: true } | { ok: false; problem: Problem }> {
   const problem = await checkConfig(text, paths)
   if (problem === undefined) return { ok: true }
   return { ok: false, problem: configProblem(apiPath(paths.root, paths.configPath), problem) }
 }
 
-export async function writeConfig(paths: ConfigPaths, text: string) {
+export async function writeConfig(paths: ConfigPaths, text: string): Promise<{ path: string; ok: true }> {
   const path = apiPath(paths.root, paths.configPath)
   const problem = await checkConfig(text, paths)
   if (problem !== undefined) throw new StudioError(422, configProblem(path, problem))

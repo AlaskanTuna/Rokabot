@@ -1,7 +1,7 @@
 import { ArrowRight } from 'lucide-react'
 import { href, navigate } from '../lib/router'
 import { fileName } from '../state/workspace'
-import { CardHeading, ConfigForm, FormPage, helpAt, useConfig } from './models/configShared'
+import { CardHeading, ConfigForm, FormPage, helpAt, useConfig } from './config/configShared'
 
 export default function LimitsScreen() {
   const { text, data, path } = useConfig()

@@ -127,6 +127,7 @@ test.describe('Memory, Limits and Discord', () => {
     const names = [
       'Discord',
       'Social posts',
+      'Search',
       'Media',
       'Emoji',
       'Reminders',

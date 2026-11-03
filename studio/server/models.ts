@@ -1,4 +1,5 @@
 import { MODEL_PROFILES, PROVIDER_KEY_ENV, type ProviderId } from '../../src/agent/llm/profiles.js'
+import type { ModelProfile, ModelTest } from '../shared/contract.js'
 import { fail, stringField } from './http.js'
 import { envValue } from './secrets.js'
 
@@ -23,16 +24,8 @@ const KEY_NAME = /^[A-Z][A-Z0-9_]*$/
 const TIMEOUT_MS = 10_000
 const DETAIL_CHARS = 200
 
-export interface ModelTest {
-  ok: boolean
-  status: number | null
-  latencyMs: number | null
-  message: string
-  modelListed: boolean | null
-}
-
 /** The built-in profiles startup accepts, with the variable each one's key is read from. */
-export function modelProfiles() {
+export function modelProfiles(): ModelProfile[] {
   return MODEL_PROFILES.filter((profile) => profile.verified).map((profile) => ({
     provider: profile.provider,
     model: profile.model,

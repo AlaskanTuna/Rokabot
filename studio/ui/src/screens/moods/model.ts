@@ -1,8 +1,8 @@
 import type { Location } from '../../lib/router'
 import { readYaml } from '../../lib/yaml'
+import { appendEntry, removeKey, removeListItem } from '../../lib/yamlEdit'
 import { type WorkspaceState, fileName } from '../../state/workspace'
 import { exists } from '../prompts/model'
-import { appendEntry, removeKey, removeListItem } from '../prompts/yamlText'
 
 export interface MoodYaml {
   prompt?: string

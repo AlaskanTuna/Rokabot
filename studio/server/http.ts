@@ -1,13 +1,11 @@
 import { createHash, timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import type { Problem } from '../shared/contract.js'
 
 const MAX_BODY_BYTES = 1024 * 1024
 
-export interface ErrorBody {
-  file: string | null
-  path: string | null
-  message: string
-}
+/** The UI names this shape `Problem`; the server keeps its own name for the same contract. */
+export type ErrorBody = Problem
 
 /** A failure the API reports as `{ error: { file, path, message } }` plus any `extra` fields. */
 export class StudioError extends Error {

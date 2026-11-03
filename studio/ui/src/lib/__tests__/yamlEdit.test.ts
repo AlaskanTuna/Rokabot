@@ -3,7 +3,28 @@ import { join } from 'node:path'
 import { diffLines } from 'diff'
 import { describe, expect, it } from 'vitest'
 import { parseDocument } from 'yaml'
-import { addItem, deleteNode, removeItem, setNode, setScalar, spellFlow } from '../yamlEdit'
+import {
+  addItem,
+  appendEntry,
+  deleteNode,
+  flowMap,
+  insertPair,
+  lineEnd,
+  lineStart,
+  putScalar,
+  readDoc,
+  removeItem,
+  removeKey,
+  removeListItem,
+  removePair,
+  setFallback,
+  setNode,
+  setScalar,
+  setStringList,
+  spellFlow,
+  spellScalar,
+  yamlScalar
+} from '../yamlEdit'
 
 const repo = join(import.meta.dirname, '..', '..', '..', '..', '..')
 const voice = readFileSync(join(repo, 'characters/roka/voice.yml'), 'utf8')
@@ -107,5 +128,94 @@ describe('yamlEdit keeps every byte it does not change', () => {
   it('spellFlow quotes only what needs it', () => {
     expect(spellFlow(['Oh,', 'Ara~', 'true', 3])).toBe("['Oh,', Ara~, 'true', 3]")
     expect(spellFlow({ a: '', b: [] })).toBe("{ a: '', b: [] }")
+  })
+})
+
+describe('yamlEdit keeps the merged screen helpers in place', () => {
+  const cfg = '# a comment\nllm:\n  main: haiku # Required\n  fallback: flash # spare\n'
+  const moods = 'default: happy\nmoods:\n  happy:\n    faces: [a]\n    color: red\ndetection:\n  - mood: happy\n'
+
+  it('lineStart and lineEnd bracket one line', () => {
+    const text = 'ab\ncd\n'
+    expect(lineStart(text, 4)).toBe(3)
+    expect(lineEnd(text, 4)).toBe(5)
+    expect(text.slice(lineStart(text, 4), lineEnd(text, 4))).toBe('cd')
+  })
+
+  it('readDoc parses or returns null', () => {
+    expect(readDoc('a: 1')?.toJS()).toEqual({ a: 1 })
+    expect(readDoc('a: [unclosed')).toBeNull()
+  })
+
+  it('yamlScalar leaves config keys plain and quotes the rest', () => {
+    expect(yamlScalar('haiku')).toBe('haiku')
+    expect(yamlScalar('a b')).toBe("'a b'")
+    expect(yamlScalar('true')).toBe("'true'")
+    expect(yamlScalar(3)).toBe('3')
+  })
+
+  it('flowMap spells a nested map in one line', () => {
+    expect(flowMap({ provider: 'openai-compatible', model: 'qwen3:32b' })).toBe(
+      "{ provider: openai-compatible, model: 'qwen3:32b' }"
+    )
+  })
+
+  it('spellScalar quotes only what would not read back', () => {
+    expect(spellScalar('intro')).toBe('intro')
+    expect(spellScalar('a, b')).toBe('a, b')
+    expect(spellScalar('a, b', true)).toBe("'a, b'")
+    expect(spellScalar('true')).toBe("'true'")
+  })
+
+  it('setStringList rewrites a flow list in place', () => {
+    expect(setStringList('names: [roka] # keep\n', ['names'], ['roka', 'rokachan'])).toBe(
+      'names: [roka, rokachan] # keep\n'
+    )
+  })
+
+  it('setStringList keeps a block list through the document', () => {
+    const next = setStringList('names:\n  - roka\n', ['names'], ['roka', 'x'])
+    expect(parseDocument(next).toJS()).toEqual({ names: ['roka', 'x'] })
+  })
+
+  it('insertPair adds one line after the named key', () => {
+    const next = insertPair(cfg, ['llm'], 'extra', 'x', ['main'])
+    expect(js(next).llm.extra).toBe('x')
+    expect(changed(cfg, next)).toEqual(['+  extra: x\n'])
+  })
+
+  it('putScalar sets a scalar in place and adds a missing one', () => {
+    expect(putScalar(cfg, ['llm', 'main'], 'flash')).toBe(cfg.replace('main: haiku', 'main: flash'))
+    const added = putScalar('llm:\n  main: haiku\n', ['llm', 'extra'], 'x', ['main'])
+    expect(js(added)).toEqual({ llm: { main: 'haiku', extra: 'x' } })
+  })
+
+  it('removePair cuts one entry and nothing else', () => {
+    const next = removePair(cfg, ['llm'], 'fallback')
+    expect(js(next)).toEqual({ llm: { main: 'haiku' } })
+    expect(changed(cfg, next)).toEqual(['-  fallback: flash # spare\n'])
+  })
+
+  it('setFallback removes and restores the commented line', () => {
+    const removed = setFallback(cfg, null)
+    expect(js(removed).llm.fallback).toBeUndefined()
+    expect(setFallback(removed, 'flash')).toBe(cfg)
+  })
+
+  it('appendEntry adds a mood after its neighbours', () => {
+    const next = appendEntry(moods, ['moods'], 'sad', { faces: ['b'], color: 'blue' })
+    expect(js(next).moods.sad).toEqual({ faces: ['b'], color: 'blue' })
+    expect(next).toContain('  sad:\n    faces: [b]\n    color: blue\n')
+  })
+
+  it('removeKey cuts one key keeping the rest', () => {
+    const next = removeKey(moods, ['moods'], 'happy')
+    expect(js(next).moods.happy).toBeUndefined()
+    expect(js(next).detection).toEqual(js(moods).detection)
+  })
+
+  it('removeListItem cuts one detection rule', () => {
+    const next = removeListItem(moods, ['detection'], 0)
+    expect(js(next)).toEqual({ default: 'happy', moods: js(moods).moods, detection: [] })
   })
 })

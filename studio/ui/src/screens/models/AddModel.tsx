@@ -2,11 +2,11 @@ import { Eye, Plus } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '../../components/ui/Button'
 import { Field, Select, TextInput, Toggle } from '../../components/ui/Field'
+import { type Flow, insertPair } from '../../lib/yamlEdit'
 import { notifications } from '../../state/notifications'
 import { setConfigDraft } from '../../state/workspace'
-import { CardHeading, type ConfigData } from './configShared'
+import { CardHeading, type ConfigData } from '../config/configShared'
 import { type ModelEnv, TestResult, notifyMissingKey, useConnectionTest } from './parts'
-import { type Flow, insertPair } from './textEdit'
 
 interface Form {
   key: string

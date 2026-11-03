@@ -10,7 +10,7 @@ import { useLocation } from '../lib/router'
 import { readYaml } from '../lib/yaml'
 import { copyText, notifications } from '../state/notifications'
 import { useWorkspace } from '../state/workspace'
-import { FLASH, scrollWithin } from './models/configShared'
+import { FLASH, scrollWithin } from './config/configShared'
 import { middleEllipsis, middleSplit } from './prompts/truncate'
 
 const RECREATE_COMMAND = 'docker compose up -d roka'
