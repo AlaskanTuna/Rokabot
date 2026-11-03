@@ -122,6 +122,19 @@ describe('createNativeSearch', () => {
     expect(call).not.toHaveBeenCalled()
   })
 
+  // The result text alone cannot tell an operator why nothing was searched, and a shortened budget is the cause.
+  it('warns that the attempt had too little time left', async () => {
+    const search = createNativeSearch({ [MAIN_ROUTE.provider]: caller() })
+    const attempt = { deadlineAtMs: performance.now() + 6000, signal: new AbortController().signal }
+
+    await withSearchAttempt(attempt, () => search({ query: 'q' }))
+
+    expect(mocks.warn).toHaveBeenCalledWith(
+      { provider: MAIN_ROUTE.provider },
+      'Native search skipped: too little attempt time left'
+    )
+  })
+
   it('returns the failure text when a provider call outlives its time', async () => {
     const call = waitsForAbort()
     const search = createNativeSearch({ [MAIN_ROUTE.provider]: call })

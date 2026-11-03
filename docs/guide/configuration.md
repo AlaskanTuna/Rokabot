@@ -59,10 +59,12 @@ Other environment variables:
 | `search.nativeTimeoutMs` | `8000`   | —                 | Longest one native search may take, in ms. Bounds `2000..60000`.                                                                                                                                                                                                                                        |
 | `search.nativeReserveMs` | `5000`   | —                 | Attempt time a native search must leave for the chat model's next call, in ms. Bounds `0..60000`.                                                                                                                                                                                                       |
 
-`native` needs a model that carries a tested search tool. Only four do, and `llm.main` must name one of them:
-`gemini-3.5-flash-lite`, `gemini-3.8-flash`, `claude-haiku-5-5` and `claude-sonnet-5-5`. On any other model the bot
-starts without `search_web` and logs a warning naming the model and the fix. See
-[Runbook](../runbook.md#web-search-provider).
+`native` needs a model that carries a tested search tool. Only four profiles declare one:
+`gemini-3.5-flash-lite`, `gemini-3.8-flash`, `claude-haiku-5-5` and `claude-sonnet-5-5`. `llm.main` may name only a
+tested profile, so `gemini-3.8-flash` is a candidate and startup refuses it as `llm.main`; it reaches native search
+only through a legacy `gemini.model`. On any other model the bot starts without `search_web` and logs a warning naming
+the model and the fix. The two Gemini models are mock-tested only: their native search has never run against the live
+API, because the available keys are free tier. See [Runbook](../runbook.md#web-search-provider).
 
 ## `jev`
 

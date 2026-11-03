@@ -140,19 +140,35 @@ async function request(
     estTokens: requestTokenEstimate([body.system, call.query]),
     signal: call.signal
   })
+  let message: Anthropic.Message
   try {
-    const message = await client.messages.create(body, { signal: call.signal })
-    const usage = callUsage(route.model, 'search', message.usage)
-    recordUsage(usage)
-    reservation.release(usage)
-    if (message.stop_reason === 'refusal') {
-      throw new ProviderError({ provider: 'anthropic', kind: 'refusal', message: 'Anthropic refused the search' })
-    }
-    return { message, outcome: readResponse(message, call.maxResults) }
+    message = await client.messages.create(body, { signal: call.signal })
   } catch (error) {
-    reservation.release()
+    // A search cut off after it reached the provider may still be billed, and a call that recorded nothing is
+    // invisible to the monthly cap.
+    if (call.signal.aborted) {
+      const aborted = {
+        provider: 'anthropic' as const,
+        model: route.model,
+        workload: 'search' as const,
+        inputTokens: 0,
+        outputTokens: 0,
+        searchRequests: 1
+      }
+      recordUsage(aborted)
+      reservation.release(aborted)
+    } else {
+      reservation.release()
+    }
     throw error
   }
+  const usage = callUsage(route.model, 'search', message.usage)
+  recordUsage(usage)
+  reservation.release(usage)
+  if (message.stop_reason === 'refusal') {
+    throw new ProviderError({ provider: 'anthropic', kind: 'refusal', message: 'Anthropic refused the search' })
+  }
+  return { message, outcome: readResponse(message, call.maxResults) }
 }
 
 export async function anthropicNativeSearch(

@@ -884,6 +884,46 @@ describe('config module', () => {
       expect(warn).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('prefetch runs as shadow'))
     })
 
+    // Neither setting names a provider, so search runs on the main model and bills that provider. The
+    // warning is the only signal an operator gets before the bill.
+    it('warns when neither SEARCH_PROVIDER nor search.provider is set, naming the model', async () => {
+      setRequiredEnvVars()
+      clearTunableEnvVars()
+      vi.stubEnv('ANTHROPIC_API_KEY', 'test-anthropic-key')
+      withYamlOverride({
+        search: { provider: undefined },
+        llm: { main: 'haiku', models: { haiku: { provider: 'anthropic', model: 'claude-haiku-5-5' } } }
+      })
+
+      const { config } = await import('../config.js')
+      await vi.dynamicImportSettled()
+
+      expect(config.search.provider).toBe('native')
+      expect(warn).toHaveBeenCalledWith(
+        { provider: 'native', model: 'claude-haiku-5-5' },
+        'search.provider is unset, so web search runs on claude-haiku-5-5 and bills that provider. A free-tier Gemini key cannot search. Set search.provider to tavily, exa or off to choose another.'
+      )
+    })
+
+    it.each([
+      ['SEARCH_PROVIDER set', { search: { provider: undefined } }, 'SEARCH_PROVIDER'],
+      ['search.provider set', { search: { provider: 'tavily' } }, undefined]
+    ])('does not warn when %s', async (_name, override, env) => {
+      setRequiredEnvVars()
+      clearTunableEnvVars()
+      vi.stubEnv('ANTHROPIC_API_KEY', 'test-anthropic-key')
+      if (env) vi.stubEnv(env, 'native')
+      withYamlOverride({
+        ...override,
+        llm: { main: 'haiku', models: { haiku: { provider: 'anthropic', model: 'claude-haiku-5-5' } } }
+      })
+
+      await import('../config.js')
+      await vi.dynamicImportSettled()
+
+      expect(warn).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('search.provider is unset'))
+    })
+
     it('bounds the native search time and its reserve', async () => {
       setRequiredEnvVars()
       clearTunableEnvVars()

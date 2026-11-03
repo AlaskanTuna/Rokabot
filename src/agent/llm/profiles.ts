@@ -28,7 +28,8 @@ export interface ModelProfile {
   tokenCounter: 'gemini' | 'anthropic' | 'estimate'
   /** USD per 1M tokens; 0 for free or quota-billed (ModelScope Magicubes). */
   price: { input: number; output: number; cachedInput?: number; cacheWrite?: number }
-  /** The provider's own web-search tool; absent on a model with no native search. `usdPerSearch` is billed per call. */
+  /** The provider's own web-search tool; absent on a model with no native search. `usdPerSearch` bills once per
+   * search on Anthropic, and once per query on Gemini, which one call can bill several times. */
   nativeSearch?: { tool: 'web_search_20250305' | 'google_search'; usdPerSearch: number }
   /** D12: false means "candidate"; startup rejects it as main or fallback. */
   verified: boolean

@@ -399,6 +399,54 @@ describe('geminiNativeSearch', () => {
     })
   })
 
+  // A search cut off after it reached the provider may still be billed, and the monthly cap cannot see a call
+  // that never recorded anything.
+  it('counts a search aborted after it was sent', async () => {
+    const controller = new AbortController()
+    const generate = vi.fn(() => {
+      controller.abort()
+      return Promise.reject(new ApiError({ message: 'aborted', status: 499 }))
+    })
+    const client = { models: { generateContent: generate } } as unknown as GeminiClient
+
+    await geminiNativeSearch(FLASH_LITE, call({ signal: controller.signal }), client)
+
+    expect(usageRecords).toHaveLength(1)
+    expect(usageRecords[0]).toMatchObject({
+      provider: 'gemini',
+      model: 'gemini-3.5-flash-lite',
+      workload: 'search',
+      inputTokens: 0,
+      outputTokens: 0,
+      searchRequests: 1
+    })
+  })
+
+  it('counts nothing for a failed search that was not aborted', async () => {
+    const { client } = rejected(new ApiError({ message: 'boom', status: 500 }))
+
+    await geminiNativeSearch(FLASH_LITE, call(), client)
+
+    expect(usageRecords).toHaveLength(0)
+  })
+
+  // The search was sent and billed whatever the response body holds, so a 200 the reader cannot parse must not
+  // cost the cap its record.
+  it('records the search when the response cannot be read', async () => {
+    const { client } = replies(
+      response({
+        content: { parts: [{ text: 'It premiered in January.' }] },
+        groundingMetadata: { webSearchQueries: ['q'], groundingChunks: [null] }
+      })
+    )
+
+    const outcome = await geminiNativeSearch(FLASH_LITE, call(), client)
+
+    expect(outcome).toMatchObject({ answer: SEARCH_TEXT.failed, succeeded: false })
+    expect(usageRecords).toHaveLength(1)
+    expect(usageRecords[0].searchRequests).toBe(1)
+  })
+
   it('maps a 429 or a budget refusal to the quota text', async () => {
     const apiError = rejected(new ApiError({ message: 'rate limited', status: 429 }))
     const budgetRefusal = rejected(

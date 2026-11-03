@@ -49,7 +49,7 @@ llm: # Main and fallback model selection; without this block the bot runs gemini
     anthropic: 5
     openai: 5
   modelscopeDailyMagicubes: 250 # Magicubes one ModelScope key is expected to get a day (200 on login + 50 with Alibaba Cloud linked). Qwen and DeepSeek share it, the qwen watcher included; each call counts as one, and background jobs stop while a whole reply turn is left
-  # Any entry may set limits: { rpm, rpd, tpm }; per-call budgets apply only with this block. A gemini entry inherits rateLimit and gemini.maxTokensPerMinute; other providers are unlimited unless set. Set tpm to half the provider's real TPM: the bucket drains continuously and can admit twice its value in the worst minute
+  # Any entry may set limits: { rpm, rpd, tpm }; a per-call budget comes from this block, except for a native search, which takes one slot on the shared limiter even without an llm: block. A gemini entry inherits rateLimit and gemini.maxTokensPerMinute; other providers are unlimited unless set. Set tpm to half the provider's real TPM: the bucket drains continuously and can admit twice its value in the worst minute
   models: # Only tested profiles start (src/agent/llm/profiles.ts), except provider openai-compatible, which declares its own; optional per model: timeoutMs, maxOutputTokens, baseUrl
     flash: { provider: gemini, model: gemini-3.5-flash-lite }
     haiku: { provider: anthropic, model: claude-haiku-5-5, effort: low } # Needs ANTHROPIC_API_KEY; effort none turns thinking off (for a Haiku fallback)

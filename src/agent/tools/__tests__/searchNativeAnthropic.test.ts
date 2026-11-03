@@ -456,6 +456,37 @@ describe('anthropicNativeSearch', () => {
     })
   })
 
+  // A search cut off after it reached the provider may still be billed, and the monthly cap cannot see a call
+  // that never recorded anything.
+  it('counts a search aborted after it was sent', async () => {
+    const controller = new AbortController()
+    const create = vi.fn(() => {
+      controller.abort()
+      return Promise.reject(new APIUserAbortError({ message: 'Request was aborted.' }))
+    })
+    const client = { messages: { create } } as unknown as AnthropicMessagesClient
+
+    await anthropicNativeSearch(HAIKU, call({ signal: controller.signal }), client)
+
+    expect(usageRecords).toHaveLength(1)
+    expect(usageRecords[0]).toMatchObject({
+      provider: 'anthropic',
+      model: 'claude-haiku-5-5',
+      workload: 'search',
+      inputTokens: 0,
+      outputTokens: 0,
+      searchRequests: 1
+    })
+  })
+
+  it('counts nothing for a failed search that was not aborted', async () => {
+    const { client } = rejected(APIError.generate(500, {}, 'boom 500', new Headers()))
+
+    await anthropicNativeSearch(HAIKU, call(), client)
+
+    expect(usageRecords).toHaveLength(0)
+  })
+
   it('stops before the resend when the signal aborts during a pause', async () => {
     const controller = new AbortController()
     const create = vi.fn((_body: unknown, options: { signal?: AbortSignal }) => {

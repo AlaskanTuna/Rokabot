@@ -2,6 +2,10 @@
 
 const MAX_CITATIONS = 3
 
+/** Gemini returns every grounded source behind this redirector, which hides the site each result came from. */
+const GEMINI_REDIRECT_HOST = 'vertexaisearch.cloud.google.com'
+const DOMAIN_SHAPED = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/i
+
 /** Cites the domain rather than the page title: it is far shorter, and it is what signals source authority. */
 function sourceHost(url: string): string {
   try {
@@ -9,6 +13,13 @@ function sourceHost(url: string): string {
   } catch {
     return url
   }
+}
+
+/** The label and dedupe key for one source: the host, or a Gemini redirect's own domain-shaped title. */
+function sourceLabel(url: string, title: string | undefined): string {
+  const host = sourceHost(url)
+  if (host !== GEMINI_REDIRECT_HOST) return host
+  return title !== undefined && DOMAIN_SHAPED.test(title) ? title : host
 }
 
 export function clampToBudget(text: string, budget: number): string {
@@ -26,10 +37,13 @@ export function clampToBudget(text: string, budget: number): string {
  * form would render a link to '…/Frieren_(character' with a stray ')' after it. It also keeps the row from
  * expanding into link embeds. The label is the host, which cannot contain the ']' that would break it.
  */
-export function fitCitations(sources: ReadonlyArray<{ url: string }>, budget: number): string {
+export function fitCitations(sources: ReadonlyArray<{ url: string; title?: string }>, budget: number): string {
   // The label is the site, so a second page from one site would only repeat it.
   const sites = new Map<string, string>()
-  for (const { url } of sources) if (!sites.has(sourceHost(url))) sites.set(sourceHost(url), url)
+  for (const { url, title } of sources) {
+    const label = sourceLabel(url, title)
+    if (!sites.has(label)) sites.set(label, url)
+  }
   const cites = [...sites].slice(0, MAX_CITATIONS).map(([host, url]) => `[${host}](<${url}>)`)
   while (cites.length > 0) {
     const line = `-# 🔗 ${cites.join('  ·  ')}`

@@ -50,7 +50,11 @@ export function createNativeSearch(callers: Partial<Record<ProviderId, NativeCal
     if (!caller) return failedSearch(SEARCH_TEXT.notConfigured)
 
     const timeMs = nativeSearchTimeMs()
-    if (timeMs === null) return failedSearch(SEARCH_TEXT.failed)
+    if (timeMs === null) {
+      // The result text alone cannot tell an operator why nothing was searched, and a shortened budget is the cause.
+      logger.warn({ provider: route.provider }, 'Native search skipped: too little attempt time left')
+      return failedSearch(SEARCH_TEXT.failed)
+    }
 
     const timer = new AbortController()
     const timeoutId = setTimeout(() => timer.abort(), timeMs)

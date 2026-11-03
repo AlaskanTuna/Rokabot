@@ -218,12 +218,16 @@ Native runs always on `config.llm.main`, whichever side answers the turn. A turn
 on the main model, and the main model's key and quota pay for it. The chat model can call `search_web` more than once
 in a turn when the results are thin.
 
-| Model                   | Tool                    | Cost per Search | Free Allowance                                                                                  |
+| Model                   | Tool                    | Cost Per Search | Free Allowance                                                                                  |
 | ----------------------- | ----------------------- | --------------- | ----------------------------------------------------------------------------------------------- |
 | `claude-haiku-5-5`      | Anthropic web search    | $0.01           | None; billed from the first search                                                              |
 | `claude-sonnet-5-5`     | Anthropic web search    | $0.01           | None; billed from the first search                                                              |
 | `gemini-3.5-flash-lite` | Google Search grounding | $0.014          | Paid keys: 5,000 a month, shared across Gemini 3 and newer. Free-tier keys cannot use grounding |
 | `gemini-3.8-flash`      | Google Search grounding | $0.014          | Paid keys: 5,000 a month, shared across Gemini 3 and newer. Free-tier keys cannot use grounding |
+
+`gemini-3.8-flash` is an untested candidate, so startup refuses it as `llm.main` or `llm.fallback`. It reaches native
+search only through a legacy `gemini.model`, which copies its family's profile. The two Gemini rows above are
+mock-tested only: their native search has never run against the live API, because the available keys are free tier.
 
 Token cost comes on top of the per-search fee, and the fee is recorded as `searchRequests` on the call's usage event. A Claude search read about 14,000 input tokens in the live check, so one search costs about $0.012 on Haiku and $0.042 on Sonnet in total.
 Gemini reports no per-call query cap, so one `search_web` call can bill several queries; the record counts the queries
@@ -231,10 +235,10 @@ Gemini reports. The record prices every Gemini query at the list rate, so it can
 allowance and cannot understate it.
 
 - **`off` Removes the Tool:** she registers 13 tools instead of 14, and every prompt and tool description drops its mention of `search_web`. A prompt that names a tool she does not have invites "let me look that up", so the text changes with the tool list.
-- **`native` Needs a Tested Model:** only the four models in the table above carry a search tool. On any other `llm.main`, startup warns naming the model and `search_web` is not registered, so the deployment behaves as `off`. Set `search.provider: tavily` to search with an API key instead.
+- **`native` Needs a Tested Model:** only the four models in the table above carry a search tool, and only the two Claude ones have run one live. The two Gemini models are mock-tested only, because the available keys are free tier. On any other `llm.main`, startup warns naming the model and `search_web` is not registered, so the deployment behaves as `off`. Set `search.provider: tavily` to search with an API key instead.
 - **A Missing Key Keeps the Tool:** with `tavily` or `exa` and no key, startup warns and the tool stays registered. She answers `Web search is not configured.` when she calls it. This is the same behaviour a missing Tavily key had before.
 - **Prefetch:** `jev.prefetch: on` needs `tavily` or `exa`. With `native` or `off` it runs as `shadow` and startup warns `jev.prefetch is on, but search.provider is ...`.
-- **Self-Hosters:** a `config.yml` with no `search:` block moves to `native` on upgrade. What that means depends on the main model.
+- **Self-Hosters:** a `config.yml` with no `search:` block moves to `native` on upgrade. The committed `search.provider: tavily` protects only fresh clones and this Pi: Compose mounts each install's own `config.yml`, and a `config.yml` from `0.4.0` has no `search:` block. What the move means depends on the main model.
 
 | Main Model                    | What Changes on Upgrade                                                                                                                                          |
 | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -246,6 +250,13 @@ allowance and cannot understate it.
 
 - **Production:** production runs Exa, through `SEARCH_PROVIDER=exa` in the Pi's `~/rokabot/.env`. The committed `config.yml` keeps `search.provider: tavily`, so a checkout without that variable runs Tavily. Changing either is a separate config change.
 
+```bash
+# One line per search: provider, elapsed ms and result count. The query is not logged
+sudo docker logs rokabot-roka-1 2>&1 | grep '"msg":"Web search finished"'
+# A backend that threw, with only the error message
+sudo docker logs rokabot-roka-1 2>&1 | grep '"msg":"Web search backend threw"'
+```
+
 #### Gemini Terms
 
 The owner chose to include Gemini and accepts the terms risk. The Gemini API terms say the app "will not modify, or
@@ -254,13 +265,6 @@ Search Suggestions with the result. Roka rewrites results in character, and Disc
 this deployment meets neither condition. The terms also limit storing result text to two years, in limited cases such
 as end-user chat history. A self-hoster on Gemini can choose `tavily`, `exa` or `off` instead, through
 `SEARCH_PROVIDER` or `search.provider`.
-
-```bash
-# One line per search: provider, elapsed ms and result count. The query is not logged
-sudo docker logs rokabot-roka-1 2>&1 | grep '"msg":"Web search finished"'
-# A backend that threw, with only the error message
-sudo docker logs rokabot-roka-1 2>&1 | grep '"msg":"Web search backend threw"'
-```
 
 ### Reply Model and Fallback
 

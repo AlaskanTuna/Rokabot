@@ -99,11 +99,11 @@ async function request(route: ResolvedModel, call: NativeCall, client: GeminiGen
     const response = await client.models.generateContent(body)
     // Each query the provider reports is one billed search; a blank entry is not a query.
     const searches = (response.candidates?.[0]?.groundingMetadata?.webSearchQueries ?? []).filter(
-      (query) => query.trim() !== ''
+      (query) => typeof query === 'string' && query.trim() !== ''
     ).length
-    const outcome = readResponse(response, call.maxResults, searches > 0)
     // A search that ran is billed even when the provider reports no metadata for it. The retrieved page text sits in
-    // its own usage bucket, which geminiUsage does not read.
+    // its own usage bucket, which geminiUsage does not read. Recorded before the response is read, so a body the
+    // reader cannot parse still leaves the cap its record.
     const billed = geminiUsage(route.model, 'search', response.usageMetadata ?? {})
     const usage = {
       ...billed,
@@ -112,9 +112,24 @@ async function request(route: ResolvedModel, call: NativeCall, client: GeminiGen
     }
     recordUsage(usage)
     reservation.release(usage)
-    return outcome
+    return readResponse(response, call.maxResults, searches > 0)
   } catch (error) {
-    reservation.release()
+    // A search cut off after it reached the provider may still be billed, and a call that recorded nothing is
+    // invisible to the monthly cap.
+    if (call.signal.aborted) {
+      const aborted = {
+        provider: 'gemini' as const,
+        model: route.model,
+        workload: 'search' as const,
+        inputTokens: 0,
+        outputTokens: 0,
+        searchRequests: 1
+      }
+      recordUsage(aborted)
+      reservation.release(aborted)
+    } else {
+      reservation.release()
+    }
     throw error
   }
 }

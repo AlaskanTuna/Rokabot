@@ -1119,6 +1119,12 @@ if (searchProviderId === 'native' && !nativeSearchSupported) {
     { provider: searchProviderId },
     `search.provider is ${searchProviderId}, but ${searchKeys[searchProviderId]} is not set, so search_web will report that search is not configured.`
   )
+} else if (envString('SEARCH_PROVIDER') === undefined && yaml.search?.provider === undefined && nativeSearchSupported) {
+  // Neither setting names a provider, so search silently started billing `llm.main`'s provider.
+  warnAfterStartup(
+    { provider: searchProviderId, model: llm.main.model },
+    `search.provider is unset, so web search runs on ${llm.main.model} and bills that provider. A free-tier Gemini key cannot search. Set search.provider to tavily, exa or off to choose another.`
+  )
 }
 
 if (baseConfig.jev.prefetch === 'on' && jevPrefetch !== 'on') {
