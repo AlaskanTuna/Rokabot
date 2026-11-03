@@ -8,11 +8,8 @@ const loggerMock = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.f
 
 vi.mock('../../utils/logger.js', () => ({ logger: loggerMock }))
 
-// The module under test pulls the real config, which requires secrets this worktree has none of. Under
-// this tsconfig vitest loads tests as CJS, and the RelativePath.keys tsc emits for this file do not collide
-// with the literal key the source keeps, so both forms are registered.
+// The module under test defaults its hedge threshold from config, so this pins that value for the suite.
 vi.mock('../../config.js', () => ({ config: { gemini: { model: 'gemini-test' }, llm: { hedgeAfterMs: 0 } } }))
-vi.mock('../src/agent/../config.js', () => ({ config: { gemini: { model: 'gemini-test' }, llm: { hedgeAfterMs: 0 } } }))
 
 import { RoutedLlm, modelRouteForRequest } from '../llm/fallbackModel.js'
 import type { ModelRoute } from '../llm/fallbackModel.js'
