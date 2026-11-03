@@ -20,21 +20,6 @@ import { searchAnime } from './searchAnime.js'
 import { searchWeb } from './searchWeb.js'
 import { cancelReminder, listReminders, setReminder } from './setReminder.js'
 
-export { rollDice, flipCoin, getCurrentTime, searchAnime, getAnimeSchedule, getWeather, searchWeb, readReplies }
-export { rememberUser, recallUser, forgetUser }
-export { setReminder }
-export type { ReadRepliesParams } from './readReplies.js'
-export type { SetReminderParams } from './setReminder.js'
-export type { RollDiceParams } from './rollDice.js'
-export type { GetCurrentTimeParams } from './getCurrentTime.js'
-export type { SearchAnimeParams } from './searchAnime.js'
-export type { GetAnimeScheduleParams } from './getAnimeSchedule.js'
-export type { GetWeatherParams } from './getWeather.js'
-export type { SearchWebParams } from './searchWeb.js'
-export type { RememberUserParams } from './rememberUser.js'
-export type { RecallUserParams } from './recallUser.js'
-export type { ForgetUserParams } from './forgetUser.js'
-
 /** Read once: a deployment that cannot search must not offer the tool, nor describe one it does not have. */
 const searchAvailable = searchIsAvailable()
 

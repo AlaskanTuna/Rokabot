@@ -162,7 +162,6 @@ temp/
 # ===========
 
 /data/
-assets/sprites/
 docs/archive/
 graphify-out/*
 !graphify-out/graph.json

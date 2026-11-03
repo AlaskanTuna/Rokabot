@@ -70,21 +70,6 @@ export function getUserMap(channelId: string): Map<string, string> {
   return buffers.get(channelId)?.userMap ?? new Map()
 }
 
-export function getUsernameMap(channelId: string): Map<string, string> {
-  return buffers.get(channelId)?.usernameMap ?? new Map()
-}
-
-export function clearBuffer(channelId: string): void {
-  const buf = buffers.get(channelId)
-  if (buf) {
-    buf.messages = []
-  }
-}
-
-export function getMessageCount(channelId: string): number {
-  return buffers.get(channelId)?.messages.length ?? 0
-}
-
 /** Reset all buffers for testing */
 export function resetAllBuffers(): void {
   buffers.clear()

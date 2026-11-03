@@ -9,6 +9,7 @@ vi.mock('../../config.js', () => ({
   }
 }))
 
+import { HANGMAN_WORDS } from '../data/hangmanWords.js'
 import {
   type HangmanGame,
   destroyAllGames,
@@ -392,5 +393,11 @@ describe('game lifecycle', () => {
     expect(isGameActive('ch1')).toBe(false)
     const result = startGame('ch1', 'player1')
     expect(result.success).toBe(true)
+  })
+})
+
+describe('word bank', () => {
+  it('holds at least 100 words', () => {
+    expect(HANGMAN_WORDS.length).toBeGreaterThanOrEqual(100)
   })
 })

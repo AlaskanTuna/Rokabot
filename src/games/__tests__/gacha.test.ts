@@ -31,7 +31,15 @@ import {
   mulberry32,
   saveBuddy
 } from '../buddy.js'
-import { type BuddyRarity, RARITY_STAT_RANGE, SPECIES, STAT_NAMES } from '../data/buddySpecies.js'
+import {
+  type BuddyRarity,
+  EYE_STYLES,
+  HAT_STYLES,
+  RARITY_STAT_RANGE,
+  RARITY_WEIGHTS,
+  SPECIES,
+  STAT_NAMES
+} from '../data/buddySpecies.js'
 
 function createTestDb(): Database.Database {
   const db = new Database(':memory:')
@@ -603,6 +611,19 @@ describe('buddy pet system', () => {
         expect(['common', 'uncommon', 'rare', 'epic', 'legendary']).toContain(s.rarity)
         expect(s.description).toBeTruthy()
       }
+    })
+
+    it('has 6 eye styles and 8 hat styles', () => {
+      expect(EYE_STYLES).toHaveLength(6)
+      expect(HAT_STYLES).toHaveLength(8)
+    })
+
+    it('rarity weights sum to 100 with common at 60 and legendary at 1', () => {
+      const total = Object.values(RARITY_WEIGHTS).reduce((a, b) => a + b, 0)
+
+      expect(total).toBe(100)
+      expect(RARITY_WEIGHTS.common).toBe(60)
+      expect(RARITY_WEIGHTS.legendary).toBe(1)
     })
   })
 })
