@@ -1,41 +1,33 @@
 import type { Attachment, Client, Interaction } from 'discord.js'
 import { DiscordAPIError, MessageFlags } from 'discord.js'
-import { canAffordAttachments } from '../../agent/llm/tokenBudget.js'
 import type { ImageAttachment } from '../../agent/media/attachments.js'
 import { MAX_ATTACHMENTS, isSupportedMedia, resolveMediaUrl } from '../../agent/media/mediaRules.js'
 import { asksAboutReplies } from '../../agent/replyIntent.js'
-import { withReplyOutcomes } from '../../agent/replyOutcomes.js'
-import { generateResponse } from '../../agent/roka.js'
-import { withSearchCitations } from '../../agent/searchCitations.js'
 import { SOCIAL_POST_FAILURE_MARKER, formatSocialPostLine } from '../../agent/social/format.js'
 import { socialPostMedia } from '../../agent/social/media.js'
 import { beginSocialPostLookup } from '../../agent/social/service.js'
 import { parseSocialPostUrl } from '../../agent/social/urls.js'
 import { startTurnEntryWork } from '../../agent/turnContext.js'
 import { config } from '../../config.js'
-import { type ResponseEventInput, recordResponseEvent } from '../../storage/metricsStore.js'
 import { logger } from '../../utils/logger.js'
 import { type CallReservation, RateLimiter } from '../../utils/rateLimiter.js'
-import { fitAttachmentsToTurn, release, reservationFor, tryReserve } from '../byteBudget.js'
 import { ASK_ATTACHMENT_SLOTS, attachmentOptionName } from '../commands/askOptions.js'
 import { createGameCommandHandler } from '../commands/games/router.js'
 import { handleReportCommand } from '../commands/reportHandler.js'
 import { handleStatsCommand } from '../commands/stats/statsCommand.js'
 import { createToolCommandHandler } from '../commands/tools/router.js'
-import { isChannelBusy, markBusy, markFree } from '../concurrency.js'
+import { isChannelBusy, markBusy } from '../concurrency.js'
 import { isIgnorableDiscordError } from '../errorHandler.js'
-import { guardMarkdown } from '../markdownGuard.js'
-import { buildRokaMessage } from '../messageBuilder.js'
+import { getRandomBusy, getRandomDecline, getRandomError } from '../responses.js'
 import {
-  getRandomBusy,
-  getRandomDecline,
-  getRandomError,
-  getRandomOversizedAttachment,
-  getRandomPartialAttachment,
-  getRandomSkippedAttachments,
-  getRandomUnsupportedAttachment,
-  splitResponse
-} from '../responses.js'
+  type VanishingReply,
+  deliverTurn,
+  recordTurnEvent,
+  releaseTurn,
+  replyToFailedTurn,
+  reserveTurnBudget,
+  runModelTurn
+} from '../turnPipeline.js'
 
 /** Create a handler for all slash command interactions */
 export function createInteractionHandler(rateLimiter: RateLimiter, client?: Client) {
@@ -159,11 +151,20 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
     logger.debug({ channelId, command: 'ask' }, 'Slash command received')
     logger.debug({ channelId, message, imageCount: imageAttachments.length, unsupportedCount }, 'Slash command details')
 
+    const vanish = () => setTimeout(() => interaction.deleteReply().catch(() => {}), 5000)
+    const sayBeforeDefer: VanishingReply = async (text) => {
+      await interaction.reply({ content: text })
+      vanish()
+    }
+    const sayAfterDefer: VanishingReply = async (text) => {
+      await interaction.editReply({ content: text })
+      vanish()
+    }
+
     if (isChannelBusy(channelId)) {
       cancelTurnEntryWork()
       logger.debug({ channelId }, 'Channel busy — sending busy message')
-      await interaction.reply({ content: getRandomBusy() })
-      setTimeout(() => interaction.deleteReply().catch(() => {}), 5000)
+      await sayBeforeDefer(getRandomBusy())
       return
     }
 
@@ -187,8 +188,7 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
           'Rate limit hit — declining'
         )
 
-        await interaction.reply({ content: getRandomDecline() })
-        setTimeout(() => interaction.deleteReply().catch(() => {}), 5000)
+        await sayBeforeDefer(getRandomDecline())
         return
       }
 
@@ -206,143 +206,60 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
         userMessage = `${userMessage}\n${SOCIAL_POST_FAILURE_MARKER}`
       }
 
-      const { kept, skipped: skippedAttachments } = fitAttachmentsToTurn(imageAttachments)
-      imageAttachments = kept
-
-      // Bytes are not the only thing an attachment spends, and the two do not track each other: an 89-page PDF
-      // is 35 KB of the byte budget and 49,841 tokens of the minute's. `rateLimit.rpm` bounds how many turns
-      // happen, which bounded spend adequately while every turn cost about the same; it does not bound this.
-      // Asked before the reservation below so a declined turn has taken nothing it must hand back.
-      if (imageAttachments.length > 0 && !canAffordAttachments()) {
-        cancelTurnEntryWork()
-        logger.debug({ channelId }, 'Per-minute token budget too low for an attachment turn — sending busy message')
-        await interaction.editReply({ content: getRandomBusy() })
-        setTimeout(() => interaction.deleteReply().catch(() => {}), 5000)
+      const budget = reserveTurnBudget({
+        channelId,
+        attachments: imageAttachments,
+        rateLimiter,
+        onDeclined: cancelTurnEntryWork
+      })
+      if (!budget) {
+        await sayAfterDefer(getRandomBusy())
         return
       }
-
-      // Slots and bytes are reserved last, so a declined turn has taken nothing it must hand back, and the
-      // `finally` below returns both. Reserving the ceiling rather than one slot is the point: the minute is spent in REQUESTS and a turn issues up to
-      // `maxLlmCalls` of them, so admitting on one slot let 15 turns become up to 60 requests (#167).
-      callReservation = rateLimiter.reserveCalls(config.gemini.maxLlmCalls)
-      if (!callReservation) {
-        cancelTurnEntryWork()
-        logger.debug({ channelId, remainingRpm: rateLimiter.remainingRpm }, 'Lost the race for call slots')
-        await interaction.editReply({ content: getRandomBusy() })
-        setTimeout(() => interaction.deleteReply().catch(() => {}), 5000)
-        return
-      }
-
-      const bytes = reservationFor(imageAttachments)
-      if (!tryReserve(bytes)) {
-        cancelTurnEntryWork()
-        // Released here with nothing spent, before the `finally` below would charge the whole reservation.
-        // Nothing was sent to the model, so the turn owes neither the slots nor its daily unit.
-        callReservation.release(0)
-        logger.debug({ channelId, reservedBytes: bytes }, 'In-flight attachment budget full — sending busy message')
-        await interaction.editReply({ content: getRandomBusy() })
-        setTimeout(() => interaction.deleteReply().catch(() => {}), 5000)
-        return
-      }
-      reservedBytes = bytes
+      const { skippedAttachments } = budget
+      imageAttachments = budget.attachments
+      callReservation = budget.callReservation
+      reservedBytes = budget.reservedBytes
 
       turnEntryWorkHandedOff = true
-      const [
-        [
-          {
-            text: responseText,
-            tone,
-            toolsUsed,
-            metrics,
-            droppedAttachments,
-            truncatedAttachments,
-            refusedAttachments,
-            watchOutcome,
-            modelCalls
-          },
-          sources
-        ],
-        replyOutcome
-      ] = await withReplyOutcomes(() =>
-        withSearchCitations(() =>
-          generateResponse({
-            channelId,
-            guildId,
-            userMessage,
-            displayName,
-            username: interaction.user.username,
-            userId: interaction.user.id,
-            memory: false,
-            asksAboutReplies: asksAboutReplies(message),
-            turnEntryWork,
-            skippedAttachments,
-            imageAttachments: imageAttachments.length > 0 ? imageAttachments : undefined
-          })
-        )
-      )
+      const turn = await runModelTurn({
+        channelId,
+        guildId,
+        userMessage,
+        displayName,
+        username: interaction.user.username,
+        userId: interaction.user.id,
+        memory: false,
+        asksAboutReplies: asksAboutReplies(message),
+        turnEntryWork,
+        skippedAttachments,
+        imageAttachments: imageAttachments.length > 0 ? imageAttachments : undefined
+      })
 
       // Now that the turn is done, hand back the slots it never used. Reserved at the ceiling, released
       // to the truth.
-      modelCallsUsed = modelCalls
+      modelCallsUsed = turn.modelCalls
 
-      logger.debug({ channelId, tone, responseLength: responseText.length }, 'ADK response received')
+      logger.debug({ channelId, tone: turn.tone, responseLength: turn.text.length }, 'ADK response received')
 
-      // She answers the question either way; the nudge only tells them the file was not something she can open.
-      // droppedAttachments covers the other way that fails: a type she takes, but bytes she could not — an
-      // oversized clip is admitted here and refused at the download, and silence there reads as her ignoring it.
-      // Two different things to say, and they are not alternatives: a turn can carry one file she could not
-      // open and another she could only take the opening of.
-      const notes: string[] = []
-      if (unsupportedCount > 0 || droppedAttachments > 0) notes.push(getRandomUnsupportedAttachment())
-      if (truncatedAttachments > 0) notes.push(getRandomPartialAttachment())
-      if (refusedAttachments > 0) notes.push(getRandomOversizedAttachment())
-      if (skippedAttachments > 0) notes.push(getRandomSkippedAttachments())
-      const withNudge = notes.length > 0 ? `${responseText}\n\n${notes.join('\n\n')}` : responseText
-      // Escaped before the split, not after: escaping lengthens the text, so doing it downstream would let a
-      // chunk sized against the raw length overrun the TextDisplay budget it was measured for.
-      const chunks = splitResponse(guardMarkdown(withNudge))
-      logger.debug({ channelId, chunkCount: chunks.length }, 'Response split into chunks')
-      await interaction.editReply(
-        buildRokaMessage(chunks[0], tone, toolsUsed, sources, socialPostResult, replyOutcome, watchOutcome)
+      await deliverTurn(
+        { turn, socialPostResult, unsupported: unsupportedCount, skipped: skippedAttachments },
+        channelId,
+        {
+          sendFirst: (payload) => interaction.editReply(payload),
+          sendRest: (payload) => interaction.followUp(payload)
+        }
       )
 
-      for (let i = 1; i < chunks.length; i++) {
-        await interaction.followUp(buildRokaMessage(chunks[i], tone))
-      }
-
-      const responseEvent: ResponseEventInput = {
-        guildId,
-        channelId,
-        userId: interaction.user.id,
-        trigger: 'slash',
-        tone,
-        toolsUsed,
-        e2eMs: Math.max(1, Math.round(performance.now() - handlerStartMs)),
-        ...metrics
-      }
-      logger.info(responseEvent, 'Response completed')
-      recordResponseEvent(responseEvent)
+      recordTurnEvent({ guildId, channelId, userId: interaction.user.id, trigger: 'slash' }, turn, handlerStartMs)
     } catch (error) {
-      if (isIgnorableDiscordError(error)) {
-        logger.warn({ error, channelId, code: (error as DiscordAPIError).code }, 'Discord API error (ignored)')
-        return
-      }
-      const errDetail =
-        error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : error
-      logger.error({ error: errDetail, channelId }, 'Error handling /ask command')
-      try {
-        await interaction.editReply({ content: getRandomError() })
-      } catch (replyError) {
-        if (isIgnorableDiscordError(replyError)) {
-          logger.warn({ error: replyError, channelId }, 'Could not send error reply (ignored)')
-        } else {
-          logger.error({ error: replyError, channelId }, 'Failed to send error reply')
-        }
-      }
+      await replyToFailedTurn(error, {
+        channelId,
+        label: 'Error handling /ask command',
+        send: (text) => interaction.editReply({ content: text })
+      })
     } finally {
-      markFree(channelId)
-      release(reservedBytes)
-      callReservation?.release(modelCallsUsed)
+      releaseTurn({ channelId, reservedBytes, callReservation, modelCallsUsed })
     }
   }
 }
