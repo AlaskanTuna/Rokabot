@@ -113,14 +113,22 @@ const PRIVATE_ADDRESS_PATTERNS = [
   /^172\.(1[6-9]|2\d|3[01])\./,
   /^169\.254\./,
   /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./, // 100.64.0.0/10 — CGNAT, which is Tailscale's range
-  /^::1$/,
+  /^::1?$/,
   /^f[cd][0-9a-f]{2}:/i, // unique local
   /^fe80:/i // link local
 ]
 
+// `new URL` rewrites `[::ffff:127.0.0.1]` to hex, so the dotted patterns would never see the mapped address.
+function unmapIpv4(address: string): string {
+  const hex = address.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i)
+  if (!hex) return address.replace(/^::ffff:/i, '')
+  const [high, low] = [Number.parseInt(hex[1], 16), Number.parseInt(hex[2], 16)]
+  return `${high >> 8}.${high & 255}.${low >> 8}.${low & 255}`
+}
+
 /** Does this IP address sit in a range that is not publicly routable? Takes an address, never a hostname. */
 export function isPrivateAddress(address: string): boolean {
-  const bare = address.replace(/^\[|\]$/g, '').replace(/^::ffff:/i, '')
+  const bare = unmapIpv4(address.replace(/^\[|\]$/g, ''))
   return PRIVATE_ADDRESS_PATTERNS.some((pattern) => pattern.test(bare))
 }
 
