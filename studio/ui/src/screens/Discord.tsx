@@ -1,5 +1,5 @@
 import { fileName } from '../state/workspace'
-import { CardHeading, ConfigForm, FormPage, humanize, isBlock, presentKeys, useConfig } from './models/configShared'
+import { CardHeading, ConfigForm, FormPage, humanize, isBlock, presentKeys, useConfig } from './config/configShared'
 
 const OWN = [
   'discord',

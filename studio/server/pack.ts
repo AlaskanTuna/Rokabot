@@ -4,6 +4,7 @@ import { basename, dirname, join, relative } from 'node:path'
 import { type Character, LOCKED_PROMPTS, type MemoryMode, loadCharacter } from '../../src/character/load.js'
 import { assembleSystemPrompt } from '../../src/character/prompt.js'
 import { estimateTokens } from '../../src/utils/tokens.js'
+import type { FileEdit, Pack, Preview, Validation } from '../shared/contract.js'
 import { apiPath, readText, writeAtomic } from './files.js'
 import { type ErrorBody, StudioError, fail } from './http.js'
 
@@ -25,13 +26,6 @@ interface PackChange {
   file: PackFile
   text: string | null
 }
-
-export interface FileEdit {
-  path: string
-  text: string | null
-}
-
-export type Validation = { ok: true; summary: ReturnType<typeof summarize> } | { ok: false; problems: ErrorBody[] }
 
 const PACK_YAML = ['character.yml', 'voice.yml', 'moods.yml', 'lines.yml'] as const
 const MEMORY_MODES: readonly MemoryMode[] = ['full', 'forget', 'none']
@@ -177,7 +171,7 @@ export function invalid(problems: ErrorBody[]): StudioError {
   return new StudioError(422, problems[0], { problems })
 }
 
-export function readPack(paths: PackPaths) {
+export function readPack(paths: PackPaths): Pack {
   return {
     dir: apiPath(paths.root, paths.packDir),
     harnessDir: apiPath(paths.root, paths.harnessDir),
@@ -274,7 +268,7 @@ export function writePackFiles(paths: PackPaths, edits: readonly FileEdit[]) {
   return { files: changes.map(({ file }) => file.path), validation }
 }
 
-export function preview(paths: PackPaths, query: URLSearchParams) {
+export function preview(paths: PackPaths, query: URLSearchParams): Preview {
   let character: Character
   try {
     character = loadCharacter(paths.packDir, paths.harnessDir)
@@ -287,7 +281,7 @@ export function preview(paths: PackPaths, query: URLSearchParams) {
 }
 
 /** The preview for a draft: the pack loaded from a scratch copy with `edits` applied, under the same allow-list. */
-export function previewDraft(paths: PackPaths, edits: readonly FileEdit[], query: URLSearchParams) {
+export function previewDraft(paths: PackPaths, edits: readonly FileEdit[], query: URLSearchParams): Preview {
   const loaded = loadScratch(paths, packChanges(paths, edits))
   if (!loaded.ok) throw invalid(loaded.problems)
   return assemble(loaded.character, query)

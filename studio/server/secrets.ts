@@ -1,20 +1,11 @@
 import { parse } from 'dotenv'
+import type { Secret } from '../shared/contract.js'
 import { readText, writeAtomic } from './files.js'
 import { fail } from './http.js'
 
 export interface SecretPaths {
   envPath: string
   envExamplePath: string
-}
-
-export interface SecretEntry {
-  key: string
-  set: boolean
-  masked: string | null
-  inExample: boolean
-  /** The comment lines above the key's group in .env.example, joined. */
-  description: string
-  required: boolean
 }
 
 interface ExampleKey {
@@ -71,7 +62,7 @@ function exampleKeys(paths: SecretPaths): Map<string, ExampleKey> {
   return keys
 }
 
-function entry(key: string, value: string, example: ReadonlyMap<string, ExampleKey>): SecretEntry {
+function entry(key: string, value: string, example: ReadonlyMap<string, ExampleKey>): Secret {
   return {
     key,
     set: value !== '',
@@ -92,7 +83,7 @@ function checkKey(key: string): void {
 }
 
 /** Every key .env.example or .env names, and the always-required ones even when neither file does. */
-export function listSecrets(paths: SecretPaths): SecretEntry[] {
+export function listSecrets(paths: SecretPaths): Secret[] {
   const example = exampleKeys(paths)
   const text = readText(paths.envPath)
   const values = parse(text)
@@ -113,7 +104,7 @@ function envLine(key: string, value: string): string {
 }
 
 /** Sets `key` in .env, replacing its line in place or appending one; every other line and comment stays as it was. */
-export function setSecret(paths: SecretPaths, key: string, value: string): SecretEntry {
+export function setSecret(paths: SecretPaths, key: string, value: string): Secret {
   checkKey(key)
   if (/[\r\n\0]/.test(value)) throw fail(400, `${key} must be a single line`)
   const line = envLine(key, value)
@@ -132,7 +123,7 @@ export function setSecret(paths: SecretPaths, key: string, value: string): Secre
   return entry(key, value, exampleKeys(paths))
 }
 
-export function deleteSecret(paths: SecretPaths, key: string): SecretEntry {
+export function deleteSecret(paths: SecretPaths, key: string): Secret {
   checkKey(key)
   const lines = readText(paths.envPath).split('\n')
   const kept = lines.filter((line) => ENTRY.exec(line)?.[1] !== key)

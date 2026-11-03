@@ -1,5 +1,5 @@
 import { PreviewPanel } from '../components/editor/PreviewPanel'
-import { PackFileScreen } from './identity/PackFileScreen'
+import { PackFileScreen } from './pack/PackFileScreen'
 
 // Faces are a few characters long, so each face group packs into a denser grid; comedy bits are sentences.
 const LAYOUT =

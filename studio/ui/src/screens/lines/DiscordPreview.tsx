@@ -3,7 +3,7 @@ import { Badge } from '../../components/ui/Badge'
 import type { Problem } from '../../lib/api'
 import { readYaml, splitPath } from '../../lib/yaml'
 import { type Path, pathString } from '../../lib/yamlEdit'
-import { commentsAlong } from '../identity/outline'
+import { commentsAlong } from '../pack/outline'
 import { type Slot, slotsFor, slotsIn } from './slots'
 
 export interface Persona {

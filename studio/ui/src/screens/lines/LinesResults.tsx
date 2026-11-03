@@ -1,7 +1,7 @@
 import { YamlForm, humanize } from '../../components/form/YamlForm'
 import type { Problem } from '../../lib/api'
 import type { JsonSchema } from '../../lib/schema'
-import { commentsAlong } from '../identity/outline'
+import { commentsAlong } from '../pack/outline'
 import type { Match } from './search'
 
 interface LinesResultsProps {

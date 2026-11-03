@@ -4,11 +4,11 @@ import { Badge } from '../../components/ui/Badge'
 import { Button, IconButton } from '../../components/ui/Button'
 import { Dialog } from '../../components/ui/Overlay'
 import type { Problem } from '../../lib/api'
+import { removePair } from '../../lib/yamlEdit'
 import { notifications } from '../../state/notifications'
 import { setConfigDraft } from '../../state/workspace'
-import { CardHeading, type ConfigData, ConfigForm, type ModelEntry } from './configShared'
+import { CardHeading, type ConfigData, ConfigForm, type ModelEntry } from '../config/configShared'
 import { KeyBadge, type ModelEnv, TestResult, keyStatus, notifyMissingKey, useConnectionTest } from './parts'
-import { removePair } from './textEdit'
 
 interface RowProps {
   name: string

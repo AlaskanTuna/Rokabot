@@ -1,4 +1,4 @@
-import { TriangleAlert } from 'lucide-react'
+import { BannerShell } from '../../components/ui/BannerShell'
 import { Button } from '../../components/ui/Button'
 import type { Problem } from '../../lib/api'
 import type { Route } from '../../lib/router'
@@ -26,43 +26,37 @@ export function ProblemBanner({ screen, here: isHere, onGo }: ProblemBannerProps
   const shown = here.length > 0 ? here.slice(0, 3) : problems.slice(0, 1)
   const rest = problems.length - shown.length
   const packFails = workspace.validation !== null && !workspace.validation.ok
-  const title = packFails
-    ? 'The pack would not load'
-    : `${fileName(workspace.config?.path ?? 'config.yml')} would not load`
   const target = shown[0]
   const fixedIn = target.file ? routeFor(target.file, target.path).route : null
   const other = fixedIn && fixedIn !== screen ? `${fixedIn.charAt(0).toUpperCase()}${fixedIn.slice(1)}` : null
   return (
-    <div
-      role="alert"
-      className="flex items-center gap-3 rounded-[10px] border border-danger bg-glass-raised px-4 py-3 backdrop-blur-md"
+    <BannerShell
+      title={
+        packFails ? 'The pack would not load' : `${fileName(workspace.config?.path ?? 'config.yml')} would not load`
+      }
+      count={problems.length}
+      actions={
+        <Button
+          onClick={() => {
+            if (!onGo?.(target)) goToProblem(target)
+          }}
+        >
+          Go to field
+        </Button>
+      }
     >
-      <TriangleAlert aria-hidden className="size-[18px] shrink-0 text-danger" />
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <p className="text-body font-medium text-ink">
-          {title}
-          {problems.length > 1 ? `: ${problems.length} errors` : ''}
+      {shown.map((problem, index) => (
+        <p key={`${problem.file}:${problem.path}:${index}`} className="text-small break-words text-ink-2">
+          {where(problem) ? `${where(problem)}: ` : ''}
+          {problem.message}
+          {index === 0 && other ? `. Fix it in ${other}.` : ''}
         </p>
-        {shown.map((problem, index) => (
-          <p key={`${problem.file}:${problem.path}:${index}`} className="text-small break-words text-ink-2">
-            {where(problem) ? `${where(problem)}: ` : ''}
-            {problem.message}
-            {index === 0 && other ? `. Fix it in ${other}.` : ''}
-          </p>
-        ))}
-        {rest > 0 && (
-          <p className="text-small text-ink-3">
-            And {rest} more {rest === 1 ? 'problem' : 'problems'}.
-          </p>
-        )}
-      </div>
-      <Button
-        onClick={() => {
-          if (!onGo?.(target)) goToProblem(target)
-        }}
-      >
-        Go to field
-      </Button>
-    </div>
+      ))}
+      {rest > 0 && (
+        <p className="text-small text-ink-3">
+          And {rest} more {rest === 1 ? 'problem' : 'problems'}.
+        </p>
+      )}
+    </BannerShell>
   )
 }

@@ -2,8 +2,6 @@ import { ChevronRight } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { Page } from '../components/shell/Page'
 import { fileName } from '../state/workspace'
-import { AddModel } from './models/AddModel'
-import { ModelList } from './models/ModelList'
 import {
   CardHeading,
   ConfigDiff,
@@ -12,7 +10,9 @@ import {
   ProblemBanner,
   useConfig,
   useFocusTarget
-} from './models/configShared'
+} from './config/configShared'
+import { AddModel } from './models/AddModel'
+import { ModelList } from './models/ModelList'
 import { RoleCard, RoutingCard, useModelEnv } from './models/parts'
 
 /** llm keys this screen edits with its own controls; Limits owns the two budgets. */

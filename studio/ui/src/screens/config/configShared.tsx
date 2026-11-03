@@ -1,17 +1,18 @@
 import { diffLines } from 'diff'
-import { ChevronRight, KeyRound, TriangleAlert } from 'lucide-react'
+import { ChevronRight, KeyRound } from 'lucide-react'
 import { type ReactNode, type RefObject, useEffect, useMemo, useRef, useState } from 'react'
 import { type Node, type Pair, type Scalar, isMap } from 'yaml'
 import { DiffView } from '../../components/editor/DiffView'
 import { FOCUS_ORDER, YamlForm } from '../../components/form/YamlForm'
 import { Page } from '../../components/shell/Page'
+import { BannerShell } from '../../components/ui/BannerShell'
 import { Button } from '../../components/ui/Button'
 import type { Problem } from '../../lib/api'
 import { type Route, href, navigate, useLocation } from '../../lib/router'
 import { readYaml, splitPath } from '../../lib/yaml'
 import type { Path } from '../../lib/yamlEdit'
+import { readDoc } from '../../lib/yamlEdit'
 import { configRoute, fileName, setConfigDraft, useWorkspace } from '../../state/workspace'
-import { readDoc } from './textEdit'
 
 export interface ModelEntry {
   provider?: string
@@ -368,35 +369,35 @@ export function ProblemBanner({ route, onReveal }: { route: Route; onReveal: (pa
   const message = /[.!?]$/.test(text) ? text : `${text}.`
   const secret = /Missing required environment variable: ([A-Z][A-Z0-9_]*)/.exec(problem.message)?.[1]
   return (
-    <div role="alert" className="flex flex-wrap items-start gap-3 rounded-lg border border-danger bg-surface px-5 py-4">
-      <TriangleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-danger" />
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <p className="text-body font-medium text-ink">{fileName(path)} would not load</p>
-        <p className="text-small break-words text-ink-2">
-          {message}
-          {elsewhere && ` Fix it in ${SCREEN_TITLES[target] ?? target}, then save again.`}
-        </p>
-      </div>
-      <div className="flex shrink-0 gap-2">
-        {secret && (
-          <Button icon={KeyRound} onClick={() => navigate(`${href('secrets')}?focus=${encodeURIComponent(secret)}`)}>
-            Open Secrets
-          </Button>
-        )}
-        {problem.path && target && (
-          <Button
-            onClick={() => {
-              const focus = problem.path as string
-              if (elsewhere)
-                navigate(`${href(target)}?focus=${encodeURIComponent(focus)}&file=${encodeURIComponent(path)}`)
-              else onReveal(focus)
-            }}
-          >
-            Go to field
-          </Button>
-        )}
-      </div>
-    </div>
+    <BannerShell
+      title={`${fileName(path)} would not load`}
+      actions={
+        <>
+          {secret && (
+            <Button icon={KeyRound} onClick={() => navigate(`${href('secrets')}?focus=${encodeURIComponent(secret)}`)}>
+              Open Secrets
+            </Button>
+          )}
+          {problem.path && target && (
+            <Button
+              onClick={() => {
+                const focus = problem.path as string
+                if (elsewhere)
+                  navigate(`${href(target)}?focus=${encodeURIComponent(focus)}&file=${encodeURIComponent(path)}`)
+                else onReveal(focus)
+              }}
+            >
+              Go to field
+            </Button>
+          )}
+        </>
+      }
+    >
+      <p className="text-small break-words text-ink-2">
+        {message}
+        {elsewhere && ` Fix it in ${SCREEN_TITLES[target] ?? target}, then save again.`}
+      </p>
+    </BannerShell>
   )
 }
 

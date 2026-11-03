@@ -4,11 +4,11 @@ import { YamlForm } from '../components/form/YamlForm'
 import { fieldClass } from '../components/ui/Field'
 import { readYaml } from '../lib/yaml'
 import { useWorkspace } from '../state/workspace'
-import { type FormArgs, PackFileScreen } from './identity/PackFileScreen'
-import type { Section } from './identity/outline'
 import { LinesAside } from './lines/LinesAside'
 import { LinesResults } from './lines/LinesResults'
 import { searchLines } from './lines/search'
+import { type FormArgs, PackFileScreen } from './pack/PackFileScreen'
+import type { Section } from './pack/outline'
 
 // Lines are sentences, so each one gets the full width instead of YamlForm's two columns or grid of short values.
 const FULL_WIDTH = '[&_.grid]:grid-cols-1 [&_[data-path^=status]>.grid]:grid-cols-2'

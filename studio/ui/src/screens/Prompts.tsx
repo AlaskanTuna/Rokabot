@@ -6,6 +6,7 @@ import { Page } from '../components/shell/Page'
 import { Button } from '../components/ui/Button'
 import type { Problem } from '../lib/api'
 import { href, navigate, useLocation } from '../lib/router'
+import { setStringList } from '../lib/yamlEdit'
 import { currentProblems, fileName, isDirty, setDraft, useWorkspace } from '../state/workspace'
 import { Columns } from './prompts/Columns'
 import { ProblemBanner } from './prompts/ProblemBanner'
@@ -23,7 +24,6 @@ import {
   systemOrder,
   titleFor
 } from './prompts/model'
-import { setStringList } from './prompts/yamlText'
 
 const SYSTEM: (string | number)[] = ['prompt', 'system']
 

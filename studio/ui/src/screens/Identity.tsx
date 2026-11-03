@@ -1,6 +1,6 @@
 import { PreviewPanel } from '../components/editor/PreviewPanel'
 import { href, navigate } from '../lib/router'
-import { PackFileScreen } from './identity/PackFileScreen'
+import { PackFileScreen } from './pack/PackFileScreen'
 
 const EXCLUDE = ['prompt']
 // Each hour band reads as one row: the two hours side by side, its text across the full width below.

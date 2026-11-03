@@ -1,5 +1,5 @@
 import { fileName } from '../state/workspace'
-import { ConfigForm, FormPage, humanize, useConfig } from './models/configShared'
+import { ConfigForm, FormPage, humanize, useConfig } from './config/configShared'
 
 const BLOCKS = ['memory', 'embeddings', 'session']
 
