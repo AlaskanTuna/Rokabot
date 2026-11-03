@@ -1,0 +1,78 @@
+- name: 'type:feat'
+  color: 0e8a16
+  description: New feature
+- name: 'type:fix'
+  color: d73a4a
+  description: Bug fix
+- name: 'type:refactor'
+  color: 5319e7
+  description: Code restructuring
+- name: 'type:docs'
+  color: 0075ca
+  description: Documentation
+- name: 'type:test'
+  color: fbca04
+  description: Tests
+- name: 'type:chore'
+  color: cccccc
+  description: Routine upkeep
+- name: 'type:style'
+  color: d4c5f9
+  description: Formatting or styling
+- name: 'type:perf'
+  color: 1d76db
+  description: Performance improvement
+- name: 'area:agent'
+  color: 0366d6
+  description: Agent behaviour
+- name: 'area:memory'
+  color: 1d76db
+  description: Memory system
+- name: 'area:media'
+  color: 2188ff
+  description: Media handling
+- name: 'area:discord'
+  color: 5865f2
+  description: Discord layer
+- name: 'area:games'
+  color: 6f42c1
+  description: Games and gacha
+- name: 'area:studio'
+  color: 8a63d2
+  description: Persona Studio
+- name: 'area:config'
+  color: 0a3069
+  description: Configuration
+- name: 'area:storage'
+  color: 009688
+  description: Storage backends
+- name: 'area:deploy'
+  color: f66a0a
+  description: Deployment
+- name: 'area:harness'
+  color: 6e7681
+  description: Test harness
+- name: 'area:repo'
+  color: 24292f
+  description: Repository-wide change
+- name: needs-triage
+  color: d876e3
+  description: Needs triage
+- name: good first issue
+  color: 7057ff
+  description: Good for newcomers
+- name: help wanted
+  color: 008672
+  description: Extra attention is needed
+- name: duplicate
+  color: cfd3d7
+  description: Already reported elsewhere
+- name: wontfix
+  color: ffffff
+  description: Will not be worked on
+- name: 'autorelease: pending'
+  color: fbca04
+  description: Release pending
+- name: 'autorelease: tagged'
+  color: 0e8a16
+  description: Release tagged
