@@ -38,10 +38,11 @@ The mention path collects candidates in this order, up to `MAX_ATTACHMENTS` (10)
 2. Components V2 media (`Thumbnail`, `MediaGallery`, `File`) on the triggering message.
 3. Uploads in forwarded snapshots.
 4. Uploads on the replied-to message. A reply to one of Roka's own messages never takes its files or embed images.
-5. Embed images on the triggering message.
-6. Embed images on the replied-to message.
+5. Embed video on the triggering message, the replied-to message and forwarded snapshots (see [Embed Video](#embed-video)).
+6. Embed images on the triggering message and the replied-to message, skipped when their video is watched.
 7. A linked post's video or picture (see [Post Media](#post-media)).
 
+- **Embed Video:** when addressed, a playable video in an embed is watched on any host through `resolveMediaUrl` (public address, redirect, `video/*` type and size checks, same limits as a post video), with `origin: 'link'` and no author. `gifv` embeds stay as text. An embed her own lookup already fetched stays on that path; when the lookup found no video or failed, the embed's video is the fallback. Discord adds a link's embed just after the message, so a linked message with no embed yet waits up to `media.embedWaitMs` for it; a message with no link does not wait.
 - **Unreadable Components:** a component whose `content_type` is unsupported or missing adds to `unsupportedCount`. The type is never guessed from the URL.
 - **Markers:** forwarded and replied-to media add a marker per kind (image, video, audio clip, document), with `, N not shown` when some did not fit. Unsupported replied-to files add `(attached file(s) of a type that can't be opened)`.
 - **`/ask`:** has three upload slots (`attachment_1` to `attachment_3`, `ASK_ATTACHMENT_SLOTS`) and an `attachment_url` option. Both surfaces filter with `isSupportedMedia`.

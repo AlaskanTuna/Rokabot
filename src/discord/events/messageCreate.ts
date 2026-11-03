@@ -1,11 +1,12 @@
 import type { Client, Message } from 'discord.js'
+import type { MediaAttachment } from '../../agent/media/attachments.js'
 import { MAX_ATTACHMENTS } from '../../agent/media/mediaRules.js'
 import { isMonitored, markActive } from '../../agent/memory/channelMonitor.js'
 import { recordEpisodeMessage } from '../../agent/memory/episodeTracker.js'
 import { resolveMemoryScope } from '../../agent/memory/memoryScope.js'
 import { asksAboutReplies } from '../../agent/replyIntent.js'
 import { SOCIAL_POST_FAILURE_MARKER, formatSocialPostLine } from '../../agent/social/format.js'
-import { socialPostMedia } from '../../agent/social/media.js'
+import { embedVideoMedia, socialPostMedia } from '../../agent/social/media.js'
 import { beginSocialPostLookup, socialPostSnapshotTexts, socialPostTexts } from '../../agent/social/service.js'
 import { findSocialPostTarget } from '../../agent/social/urls.js'
 import { startTurnEntryWork } from '../../agent/turnContext.js'
@@ -19,6 +20,8 @@ import { isChannelBusy, markBusy } from '../concurrency.js'
 import { shouldReact } from '../emojiReactor.js'
 import { openedPostCitation } from '../messageBuilder.js'
 import {
+  type SocialPostPresentation,
+  collectEmbedVideoUrls,
   extractComponentTexts,
   extractCurrentMessageContent,
   extractMessageContent,
@@ -62,6 +65,14 @@ function recordMonitoredEpisodeMessage(message: Message, botUserId: string): voi
     if (!message.author.bot) upsertUserName(message.author.id, message.author.username, displayName)
   } catch (error) {
     logger.warn({ channelId: message.channelId, error }, 'Passive memory episode tracking failed')
+  }
+}
+
+/** Discord adds a link's embed just after the message and patches this cached object in place. */
+async function waitForLateEmbeds(message: Message): Promise<void> {
+  const deadline = performance.now() + config.media.embedWaitMs
+  while (message.embeds.length === 0 && performance.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 250))
   }
 }
 
@@ -237,6 +248,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
           : null
 
       const socialPostResult = socialPostWork ? await socialPostWork : { status: 'none' as const }
+      let socialPresentation: SocialPostPresentation | undefined
       if (socialPostResult.status === 'found') {
         const presentation = {
           target: socialPostResult.post.target,
@@ -261,13 +273,65 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
               componentTextsForTrigger,
               { ...presentation, mediaAttachment }
             )
+            socialPresentation = { ...presentation, mediaAttachment }
+          } else {
+            socialPresentation = presentation
           }
+        } else {
+          socialPresentation = presentation
         }
         content = enriched.content
         mediaAttachments = enriched.mediaAttachments
         unsupportedCount = enriched.unsupportedCount
       } else if (socialPostResult.status === 'failed') {
         content = content ? `${content}\n${SOCIAL_POST_FAILURE_MARKER}` : SOCIAL_POST_FAILURE_MARKER
+      }
+
+      // A playable video in an embed, on any host. Skipped when the turn already carries timed media
+      // (an upload or the post's own video wins the one timed slot) and when the post's own video won.
+      const hasTimedMedia = mediaAttachments.some(
+        (attachment) => attachment.contentType.startsWith('video/') || attachment.contentType.startsWith('audio/')
+      )
+      const socialVideoWon =
+        socialPresentation?.mediaAttachment &&
+        (socialPresentation.mediaAttachment.contentType.startsWith('video/') ||
+          socialPresentation.mediaAttachment.transport === 'uri')
+      const lookupFailed = socialPostResult.status === 'failed'
+      const withFailureMarker = (text: string) =>
+        lookupFailed && !text.includes(SOCIAL_POST_FAILURE_MARKER)
+          ? text
+            ? `${text}\n${SOCIAL_POST_FAILURE_MARKER}`
+            : SOCIAL_POST_FAILURE_MARKER
+          : text
+      if (!hasTimedMedia && !socialVideoWon && mediaAttachments.length < MAX_ATTACHMENTS) {
+        // A message with no link pays no wait, so the typing acknowledgement keeps its order for it.
+        const embedsMayArrive = message.embeds.length === 0 && /https?:\/\//i.test(message.content ?? '')
+        if (embedsMayArrive) await waitForLateEmbeds(message)
+        let embedVideo: MediaAttachment | null = null
+        let embedVideoUrl: string | undefined
+        for (const url of collectEmbedVideoUrls(message, referencedMessage, isReplyToBot)) {
+          embedVideo = await embedVideoMedia(url)
+          if (embedVideo) {
+            embedVideoUrl = url
+            break
+          }
+        }
+        if (embedVideo || (embedsMayArrive && message.embeds.length > 0)) {
+          const reExtracted = extractMessageContent(
+            message,
+            referencedMessage,
+            isReplyToBot,
+            client.user.id,
+            componentTextsForTrigger,
+            socialPresentation,
+            embedVideoUrl ? new Set([embedVideoUrl]) : undefined
+          )
+          content = withFailureMarker(reExtracted.content)
+          // The re-extract drops the watched thumbnail, then the video takes its slot.
+          if (embedVideo) reExtracted.mediaAttachments.push(embedVideo)
+          mediaAttachments = reExtracted.mediaAttachments.slice(0, MAX_ATTACHMENTS)
+          unsupportedCount = reExtracted.unsupportedCount
+        }
       }
 
       const budget = reserveTurnBudget({
