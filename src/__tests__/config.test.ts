@@ -129,7 +129,7 @@ describe('config module', () => {
     })
     expect(config.media).toEqual({
       watcher: 'gemini',
-      watchTimeoutMs: 20_000,
+      watchTimeoutMs: 30_000,
       digestMaxOutputTokens: 3200,
       skimClips: 8,
       skimClipSeconds: 10,
