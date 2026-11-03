@@ -1,4 +1,4 @@
-import { Collection } from 'discord.js'
+import { Collection, MessageFlags } from 'discord.js'
 import type { Interaction, Message } from 'discord.js'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { RateLimiter } from '../../utils/rateLimiter.js'
@@ -73,8 +73,12 @@ function createInteraction(
     member: null,
     user: { displayName: 'Alice', username: 'alice', id: 'user-1' },
     guildId: null,
+    deferred: false,
+    replied: false,
     reply: vi.fn().mockResolvedValue(undefined),
-    deferReply: vi.fn().mockResolvedValue(undefined),
+    deferReply: vi.fn().mockImplementation(async () => {
+      interaction.deferred = true
+    }),
     editReply: vi.fn(async function (this: unknown) {
       seenEditReplyThis.push(this)
     }),
@@ -86,6 +90,7 @@ function createInteraction(
   return {
     interaction: interaction as unknown as Interaction,
     editReply: interaction.editReply,
+    deferReply: interaction.deferReply,
     followUp: interaction.followUp,
     reply: interaction.reply,
     deleteReply: interaction.deleteReply,
@@ -327,6 +332,18 @@ describe('shared turn pipeline, at the handlers', () => {
 
     expect(mocks.generateResponse).toHaveBeenCalledTimes(1)
     expect(mocks.generateResponse.mock.calls[0][0].skippedAttachments).toBe(1)
+  })
+
+  // The turn throws before defer, so the interaction was never acknowledged: the error must go through
+  // reply, since editReply there throws InteractionNotReplied and the user sees nothing.
+  it('sends a pre-defer failure through reply on /ask', async () => {
+    const { interaction, deferReply, editReply, reply } = createInteraction('channel-fail-0')
+    deferReply.mockRejectedValueOnce(new Error('defer down'))
+
+    await createInteractionHandler(rateLimiter())(interaction)
+
+    expect(reply).toHaveBeenCalledWith({ content: 'error', flags: MessageFlags.Ephemeral })
+    expect(editReply).not.toHaveBeenCalled()
   })
 
   // The model throws after defer, so the error reply must go through editReply: a reply on an
