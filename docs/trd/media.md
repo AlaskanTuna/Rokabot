@@ -364,7 +364,7 @@ Derivations: [Multimodal Intake Research](../research/multimodal.md) and [Social
 
 - `src/agent/media/mediaRules.ts`, `src/discord/byteBudget.ts`, `src/discord/messageContent.ts`
 - `src/agent/media/attachments.ts`, `src/agent/media/attachmentCost.ts`, `src/agent/media/attachmentLimits.ts`, `src/agent/media/mediaPrefix.ts`
-- `src/agent/media/` (`turnMedia.ts`, `plan.ts`, `watch.ts`, `qwenWatch.ts`, `frames.ts`, `transcribe.ts`, `filesUpload.ts`, `digest.ts`, `contentKey.ts`, `youtubeStreams.ts`)
+- `src/agent/media/` (`turnMedia.ts`, `mediaCache.ts`, `plan.ts`, `watch.ts`, `qwenWatch.ts`, `frames.ts`, `transcribe.ts`, `filesUpload.ts`, `digest.ts`, `contentKey.ts`, `youtubeStreams.ts`)
 - `src/agent/session.ts` (`stripAttachmentBytes`), `src/agent/roka.ts` (turn wiring)
 - `src/agent/social/` (`service.ts`, `urls.ts`, `ytDlp.ts`, `media.ts`, `format.ts`, `threads.ts`, `replies/`)
 - `src/agent/tools/readReplies.ts`, `src/agent/replyIntent.ts`, `src/agent/promptSafety.ts`
