@@ -60,7 +60,6 @@ export interface Character {
     system: Readonly<Record<MemoryMode, readonly PromptSection[]>>
     /** The sections joined: the part of every system prompt that never changes between turns. */
     stable: Readonly<Record<MemoryMode, string>>
-    memoryTools: string
     /** Still holds `{{user}}` and `{{time_of_day}}`, filled each turn. */
     situation: string
     safetySteer: string
@@ -432,7 +431,7 @@ export function loadCharacter(dir: string, harnessDir: string, options: LoadOpti
     nameTrigger: new RegExp(`\\b(?:${file.triggers.names.map(escapeRegExp).join('|')})\\b`, 'i'),
     nameTag: new RegExp(`^\\[?${escapeRegExp(file.name)}\\]?:\\s*`, 'i'),
     model: file.model,
-    prompts: { system, stable, memoryTools, situation, safetySteer },
+    prompts: { system, stable, situation, safetySteer },
     timeOfDay,
     judge,
     moodKeys: Object.keys(moods),
