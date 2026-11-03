@@ -176,13 +176,13 @@
       "size": [200, 70],
       "sources": [
         {
-          "path": "src/discord/attachments.ts",
+          "path": "src/agent/media/mediaRules.ts",
           "line": 5,
           "end_line": 87,
           "label": "accepted media"
         },
         {
-          "path": "src/discord/socialPosts/urls.ts",
+          "path": "src/agent/social/urls.ts",
           "line": 15,
           "end_line": 24,
           "label": "social hosts"
@@ -204,7 +204,7 @@
           "label": "rokaTools"
         },
         {
-          "path": "src/discord/events/tools/anime.ts",
+          "path": "src/discord/commands/tools/anime.ts",
           "line": 6,
           "label": "/anime reuses searchAnime"
         }
@@ -235,7 +235,7 @@
       "size": [200, 64],
       "sources": [
         {
-          "path": "src/discord/events/stats/views.ts",
+          "path": "src/discord/commands/stats/views.ts",
           "line": 431,
           "end_line": 480,
           "label": "buildStatsView"

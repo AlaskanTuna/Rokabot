@@ -1,8 +1,8 @@
 import { config } from '../../config.js'
-import { formatRepliesForModel } from '../../discord/socialPosts/replies/format.js'
-import { type ReplyReader, replyReader } from '../../discord/socialPosts/replies/service.js'
-import { parseSocialPostUrl } from '../../discord/socialPosts/urls.js'
 import { recordReplyOutcome } from '../replyOutcomes.js'
+import { formatRepliesForModel } from '../social/replies/format.js'
+import { type ReplyReader, replyReader } from '../social/replies/service.js'
+import { parseSocialPostUrl } from '../social/urls.js'
 
 export const MAX_REQUESTED_REPLIES = Math.max(config.socialPosts.maxReplies, config.socialPosts.maxRepliesOnRequest)
 

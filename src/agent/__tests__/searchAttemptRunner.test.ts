@@ -100,12 +100,12 @@ vi.mock('../memory/identityResolver.js', () => ({
   resolveReferences: vi.fn(() => ({ resolved: [], ambiguous: [] }))
 }))
 
-vi.mock('../attachmentCost.js', () => ({
+vi.mock('../media/attachmentCost.js', () => ({
   measureAttachmentTokens: vi.fn(async () => 100),
   needsMeasuring: vi.fn(() => false)
 }))
 
-vi.mock('../passiveBuffer.js', () => ({ getMessages: vi.fn(() => []) }))
+vi.mock('../memory/passiveBuffer.js', () => ({ getMessages: vi.fn(() => []) }))
 
 vi.mock('../../utils/rateLimiter.js', () => ({
   getSharedRateLimiter: () => ({ tryConsumeAboveFloor: vi.fn(() => true) })

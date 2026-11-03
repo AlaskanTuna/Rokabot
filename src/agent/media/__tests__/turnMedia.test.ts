@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ImageAttachment } from '../../attachments.js'
+import type { ImageAttachment } from '../attachments.js'
 import type { MediaClip, MediaDigest } from '../types.js'
 
 const mocks = vi.hoisted(() => ({
@@ -72,12 +72,12 @@ vi.mock('../../../config.js', () => ({
   }
 }))
 
-vi.mock('../../attachments.js', () => ({
+vi.mock('../attachments.js', () => ({
   prepareAttachments: mocks.prepareAttachments,
   downloadAttachment: mocks.downloadAttachment
 }))
 
-vi.mock('../../attachmentCost.js', () => ({ measureAttachmentTokens: mocks.measureAttachmentTokens }))
+vi.mock('../attachmentCost.js', () => ({ measureAttachmentTokens: mocks.measureAttachmentTokens }))
 
 vi.mock('../watch.js', () => ({ watchMedia: mocks.watchMedia, countUriTokens: mocks.countUriTokens }))
 
@@ -107,7 +107,7 @@ vi.mock('../../../storage/mediaDigestStore.js', () => ({
 
 vi.mock('../../memory/episodeEmbeddings.js', () => ({ embedEpisodeText: mocks.embedEpisodeText }))
 
-vi.mock('../../tokenBudget.js', () => ({ remainingTokensThisMinute: mocks.remainingTokensThisMinute }))
+vi.mock('../../llm/tokenBudget.js', () => ({ remainingTokensThisMinute: mocks.remainingTokensThisMinute }))
 
 import { registerChannelVisibility, resetChannelVisibilityForTest } from '../../memory/channelVisibility.js'
 import { prepareTurnMedia } from '../turnMedia.js'

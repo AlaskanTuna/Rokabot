@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { vi } from 'vitest'
-import type { ReplyFetchContext } from '../socialPosts/replies/types.js'
+import type { ReplyFetchContext } from '../../agent/social/replies/types.js'
 
 export function replyFixture(name: string): string {
   return readFileSync(new URL(`../../../tests/fixtures/social/replies/${name}`, import.meta.url), 'utf8')

@@ -4,10 +4,10 @@ import type { GenerateContentConfig } from '@google/genai'
 import type { z } from 'zod'
 import { type ResolvedModel, config } from '../../config.js'
 import { logger } from '../../utils/logger.js'
-import { SAFETY_SETTINGS } from '../safetySettings.js'
 import { createLlm } from './createModel.js'
 import { normalizeReply, requestSchema } from './objectSchema.js'
 import type { ProviderId } from './profiles.js'
+import { SAFETY_SETTINGS } from './safetySettings.js'
 import { type CallUsage, WORKLOAD_LABEL, type Workload } from './usage.js'
 
 export type BackgroundWorkload = Exclude<Workload, 'reply' | 'embedding' | 'watcher' | 'search'>

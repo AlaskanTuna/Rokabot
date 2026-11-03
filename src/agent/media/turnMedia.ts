@@ -7,11 +7,11 @@ import {
   setMediaDigestEmbedding
 } from '../../storage/mediaDigestStore.js'
 import { logger } from '../../utils/logger.js'
-import { measureAttachmentTokens } from '../attachmentCost.js'
-import { geminiMimeType, isStreamedUpload } from '../attachmentLimits.js'
-import { type ImageAttachment, downloadAttachment, prepareAttachments } from '../attachments.js'
+import { remainingTokensThisMinute } from '../llm/tokenBudget.js'
 import { embedEpisodeText } from '../memory/episodeEmbeddings.js'
-import { remainingTokensThisMinute } from '../tokenBudget.js'
+import { measureAttachmentTokens } from './attachmentCost.js'
+import { geminiMimeType, isStreamedUpload } from './attachmentLimits.js'
+import { type ImageAttachment, downloadAttachment, prepareAttachments } from './attachments.js'
 import { bytesContentKey, discordAttachmentContentKey } from './contentKey.js'
 import {
   MAX_TIMELINE,

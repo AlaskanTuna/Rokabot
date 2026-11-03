@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({ hasFallback: true, tryConsumeRetry: vi.fn(() =
 vi.mock('../llm/createModel.js', async (importOriginal) => {
   const original = await importOriginal<typeof import('../llm/createModel.js')>()
   const { Gemini } = await import('@google/adk')
-  const { RoutedLlm } = await import('../fallbackModel.js')
+  const { RoutedLlm } = await import('../llm/fallbackModel.js')
 
   return {
     ...original,
@@ -45,12 +45,12 @@ vi.mock('../memory/identityResolver.js', () => ({
   resolveReferences: vi.fn(() => ({ resolved: [], ambiguous: [] }))
 }))
 
-vi.mock('../attachmentCost.js', () => ({
+vi.mock('../media/attachmentCost.js', () => ({
   measureAttachmentTokens: vi.fn(async () => 100),
   needsMeasuring: vi.fn(() => false)
 }))
 
-vi.mock('../passiveBuffer.js', () => ({ getMessages: vi.fn(() => []) }))
+vi.mock('../memory/passiveBuffer.js', () => ({ getMessages: vi.fn(() => []) }))
 
 vi.mock('../../utils/rateLimiter.js', () => ({
   getSharedRateLimiter: () => ({ tryConsumeAboveFloor: mocks.tryConsumeRetry })
@@ -58,8 +58,8 @@ vi.mock('../../utils/rateLimiter.js', () => ({
 
 vi.mock('../../utils/timezone.js', () => ({ getLocalHour: () => 12 }))
 
-import { RoutedLlm, modelRouteForRequest } from '../fallbackModel.js'
-import type { FailureKind } from '../geminiReliability.js'
+import { RoutedLlm, modelRouteForRequest } from '../llm/fallbackModel.js'
+import type { FailureKind } from '../llm/geminiReliability.js'
 import { profileFor } from '../llm/profiles.js'
 import { STICKY_KINDS, SWITCH_KINDS, __resetModelFallbackForTest, runTurnWithReliability } from '../reliability.js'
 import type { TurnOutcome } from '../reliability.js'

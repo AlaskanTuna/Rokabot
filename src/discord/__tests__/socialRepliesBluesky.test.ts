@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { fetchBlueskyReplies } from '../socialPosts/replies/bluesky.js'
-import { parseSocialPostUrl } from '../socialPosts/urls.js'
+import { fetchBlueskyReplies } from '../../agent/social/replies/bluesky.js'
+import { parseSocialPostUrl } from '../../agent/social/urls.js'
 import { jsonResponse, replyContext, replyFixture, requestedUrl } from './replyFetchTestContext.js'
 
 const target = parseSocialPostUrl('https://bsky.app/profile/atproto.com/post/3mx7uc3l6i22k')!

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { __resetTokenBudgetForTest, canAffordAttachments, chargeTokens } from '../agent/tokenBudget.js'
+import { __resetTokenBudgetForTest, canAffordAttachments, chargeTokens } from '../agent/llm/tokenBudget.js'
 import { config } from '../config.js'
 import { RateLimiter } from '../utils/rateLimiter.js'
 

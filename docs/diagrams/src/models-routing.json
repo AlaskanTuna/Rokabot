@@ -83,7 +83,7 @@
       "tag": "hedge timer",
       "sources": [
         {
-          "path": "src/agent/fallbackModel.ts",
+          "path": "src/agent/llm/fallbackModel.ts",
           "line": 136,
           "end_line": 176
         },
@@ -105,12 +105,12 @@
       "tag": "first answer wins",
       "sources": [
         {
-          "path": "src/agent/fallbackModel.ts",
+          "path": "src/agent/llm/fallbackModel.ts",
           "line": 33,
           "end_line": 41
         },
         {
-          "path": "src/agent/fallbackModel.ts",
+          "path": "src/agent/llm/fallbackModel.ts",
           "line": 53,
           "end_line": 113
         }
@@ -126,7 +126,7 @@
       "sublabel": "main or fallback",
       "sources": [
         {
-          "path": "src/agent/fallbackModel.ts",
+          "path": "src/agent/llm/fallbackModel.ts",
           "line": 142,
           "end_line": 175
         },

@@ -1,0 +1,197 @@
+import { lookup } from 'node:dns/promises'
+import { isIP } from 'node:net'
+/** Shared image-attachment policy for both surfaces Roka can be handed a file on. */
+
+/** Types Gemini accepts and this bot forwards; anything else is unsupported and earns a nudge. */
+export const ALLOWED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp'])
+
+/**
+ * Documents Gemini reads natively, at 560 tokens a page — measured, and page content makes no difference: a
+ * dense page and a blank one cost the same, so cost tracks page count alone and byte size does not bound it
+ * at all. An earlier 258-a-page figure here came from Google's documentation rather than the API, along with
+ * a claim that a text-layer document is close to free; both were wrong. Kept separate from the image set because
+ * the two take different paths — an image is re-encoded by sharp, a document must reach the model untouched.
+ */
+export const ALLOWED_DOCUMENT_TYPES = new Set(['application/pdf'])
+
+export function isSupportedDocument(attachment: { contentType: string | null }): boolean {
+  return attachment.contentType !== null && ALLOWED_DOCUMENT_TYPES.has(attachment.contentType)
+}
+
+/**
+ * Audio Gemini hears natively, at 32 tokens a second. `audio/mpeg` is admitted alongside `audio/mp3` because
+ * it is the registered type for an MP3 and the name Discord actually reports; it is renamed for the API at
+ * the download boundary, in `geminiMimeType`.
+ */
+export const ALLOWED_AUDIO_TYPES = new Set([
+  'audio/wav',
+  'audio/mp3',
+  'audio/mpeg',
+  'audio/aiff',
+  'audio/aac',
+  'audio/ogg',
+  'audio/flac'
+])
+
+export function isSupportedAudio(attachment: { contentType: string | null }): boolean {
+  return attachment.contentType !== null && ALLOWED_AUDIO_TYPES.has(attachment.contentType)
+}
+
+/**
+ * Video Gemini watches, at 100 tokens a second once media resolution is pinned to low. `video/quicktime` is
+ * admitted alongside `video/mov` for the same reason `audio/mpeg` is: it is the registered type for a .mov
+ * and the name Discord reports, and it is renamed for the API at the download boundary.
+ */
+export const ALLOWED_VIDEO_TYPES = new Set([
+  'video/mp4',
+  'video/mpeg',
+  'video/mov',
+  'video/quicktime',
+  'video/avi',
+  'video/x-flv',
+  'video/mpg',
+  'video/webm',
+  'video/wmv',
+  'video/3gpp'
+])
+
+export function isSupportedVideo(attachment: { contentType: string | null }): boolean {
+  return attachment.contentType !== null && ALLOWED_VIDEO_TYPES.has(attachment.contentType)
+}
+
+/**
+ * Every type she can be handed and actually read. Declared as the union rather than as an OR of the four
+ * predicates so that one list answers both "does she take this?" and "is this named in the /ask picker?" —
+ * a drift guard that enumerates the sets by hand goes stale the moment a fifth one is added, which is
+ * exactly how a type ends up admitted and never mentioned to anyone.
+ */
+export const ALLOWED_MEDIA_TYPES = new Set([
+  ...ALLOWED_IMAGE_TYPES,
+  ...ALLOWED_DOCUMENT_TYPES,
+  ...ALLOWED_AUDIO_TYPES,
+  ...ALLOWED_VIDEO_TYPES
+])
+
+/** Anything she can be handed and actually read, whichever path it takes once inside. */
+export function isSupportedMedia(attachment: { contentType: string | null }): boolean {
+  return attachment.contentType !== null && ALLOWED_MEDIA_TYPES.has(attachment.contentType)
+}
+
+/**
+ * Discord's per-message file ceiling. The per-turn bounds are `discord.maxAttachmentBytesPerTurn` and
+ * `gemini.maxAttachmentTokens`.
+ */
+export const MAX_ATTACHMENTS = 10
+
+export function isSupportedImage(attachment: { contentType: string | null }): boolean {
+  return attachment.contentType !== null && ALLOWED_IMAGE_TYPES.has(attachment.contentType)
+}
+
+export function isAllowedDiscordCdnUrl(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return (
+      url.protocol === 'https:' &&
+      (url.hostname === 'cdn.discordapp.com' || url.hostname === 'media.discordapp.net') &&
+      !url.username &&
+      !url.password
+    )
+  } catch {
+    return false
+  }
+}
+
+// The Pi fetches these itself and sits on a private Tailnet, so a user-supplied URL is an SSRF vector: a
+// pasted link would have the bot probe the tailnet on the poster's behalf. Checked against the addresses a
+// hostname RESOLVES to, never the hostname text — `localtest.me` is a real registered name that answers
+// ::1, and a name pointing at 100.64.0.0/10 needs nothing but a DNS record, so a string test guards nothing.
+const PRIVATE_ADDRESS_PATTERNS = [
+  /^0\./,
+  /^127\./,
+  /^10\./,
+  /^192\.168\./,
+  /^172\.(1[6-9]|2\d|3[01])\./,
+  /^169\.254\./,
+  /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./, // 100.64.0.0/10 — CGNAT, which is Tailscale's range
+  /^::1$/,
+  /^f[cd][0-9a-f]{2}:/i, // unique local
+  /^fe80:/i // link local
+]
+
+/** Does this IP address sit in a range that is not publicly routable? Takes an address, never a hostname. */
+export function isPrivateAddress(address: string): boolean {
+  const bare = address.replace(/^\[|\]$/g, '').replace(/^::ffff:/i, '')
+  return PRIVATE_ADDRESS_PATTERNS.some((pattern) => pattern.test(bare))
+}
+
+/**
+ * Resolve a hostname and refuse it if ANY answer is private — a name with several A records could be
+ * connected to either. Fails closed when resolution fails, and rejects `localhost` by name because it need
+ * not appear in DNS at all.
+ */
+export async function resolvesToPublicAddress(hostname: string): Promise<boolean> {
+  if (/^localhost$/i.test(hostname) || /\.localhost$/i.test(hostname)) return false
+
+  const bare = hostname.replace(/^\[|\]$/g, '')
+  if (isIP(bare)) return !isPrivateAddress(bare)
+
+  const answers = await lookup(hostname, { all: true }).catch(() => [])
+  return answers.length > 0 && answers.every(({ address }) => !isPrivateAddress(address))
+}
+
+/**
+ * How long the HEAD may take. This runs against a host the *sender* named, before `deferReply`, and Discord
+ * discards an interaction that is not acknowledged within 3 seconds — so an unbounded wait here does not make
+ * the command slow, it makes the command fail with Discord's own "did not respond" and none of her replies.
+ * A host that accepts the connection and then stalls is enough; undici's default headers timeout is 300s.
+ * Two seconds is generous for a HEAD and leaves a second of the window spare.
+ */
+const LINK_HEAD_TIMEOUT_MS = 2000
+
+/**
+ * Turn a user-supplied URL into something she can be handed, or null. The Content-Type is read from a HEAD
+ * rather than guessed from the path, because an extension proves nothing about what a server returns.
+ *
+ * Admits the same set an upload does. It used to be images alone, on the reasoning that this is the one path
+ * where the Pi fetches a host the *sender* named — but the SSRF guard below checks the host, not the payload,
+ * so the narrower type set never protected anything the wider one does not. What genuinely differs is that
+ * only images are re-encoded by sharp on the way through, and that time-based media lets the sender choose
+ * the token cost per byte; both are bounded downstream by the per-turn ceiling and by #157's timeouts.
+ * Redirects are followed here so the *resolved* URL is what gets handed on and re-checked — the later GET in
+ * roka.ts follows redirects of its own, so validating only the typed hostname would guard nothing.
+ */
+export async function resolveMediaUrl(
+  raw: string
+): Promise<{ url: string; contentType: string; size?: number } | null> {
+  let parsed: URL
+  try {
+    parsed = new URL(raw.trim())
+  } catch {
+    return null
+  }
+
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null
+  if (!(await resolvesToPublicAddress(parsed.hostname))) return null
+
+  const response = await fetch(parsed, {
+    method: 'HEAD',
+    redirect: 'follow',
+    signal: AbortSignal.timeout(LINK_HEAD_TIMEOUT_MS)
+  }).catch(() => null)
+  if (!response?.ok) return null
+
+  const landed = new URL(response.url || parsed.toString())
+  if (landed.hostname !== parsed.hostname && !(await resolvesToPublicAddress(landed.hostname))) return null
+
+  const contentType = response.headers.get('content-type')?.split(';')[0].trim().toLowerCase()
+  if (!contentType || !ALLOWED_MEDIA_TYPES.has(contentType)) return null
+
+  // Taken from the HEAD so a linked file reaches the same decision an uploaded one does: Discord states an
+  // upload's size, and without a size here an oversized link would be refused where an identical upload is
+  // truncated to its opening. A hostile host can of course lie, which costs nothing — the policy it feeds
+  // only chooses between "prefix" and "refuse", and readWithinLimit bounds the actual transfer either way.
+  const declared = Number(response.headers.get('content-length'))
+  const size = Number.isFinite(declared) && declared > 0 ? declared : undefined
+
+  return { url: landed.toString(), contentType, size }
+}

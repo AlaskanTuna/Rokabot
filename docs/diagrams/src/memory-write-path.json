@@ -48,7 +48,7 @@
           "label": "passive capture gate"
         },
         {
-          "path": "src/agent/channelMonitor.ts",
+          "path": "src/agent/memory/channelMonitor.ts",
           "line": 32,
           "end_line": 61,
           "label": "24 h monitoring"

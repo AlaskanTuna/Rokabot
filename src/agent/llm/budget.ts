@@ -13,9 +13,9 @@ import { addSpend, monthKey, readSpend } from '../../storage/spendStore.js'
 import { logger } from '../../utils/logger.js'
 import { __resetRateLimitersForTest, rateLimiterFor } from '../../utils/rateLimiter.js'
 import { estimateTokens } from '../../utils/tokens.js'
-import { __resetTokenBudgetForTest, tokenBucketFor } from '../tokenBudget.js'
 import type { ProviderId } from './profiles.js'
 import { ProviderError } from './providerError.js'
+import { __resetTokenBudgetForTest, tokenBucketFor } from './tokenBudget.js'
 import { type CallUsage, type Workload, estimateCostUsd, onUsage } from './usage.js'
 
 export interface CallReservation {

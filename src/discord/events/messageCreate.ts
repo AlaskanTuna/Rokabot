@@ -1,12 +1,17 @@
 import type { Client, Message } from 'discord.js'
 import { DiscordAPIError } from 'discord.js'
-import { isMonitored, markActive } from '../../agent/channelMonitor.js'
+import { canAffordAttachments } from '../../agent/llm/tokenBudget.js'
+import { MAX_ATTACHMENTS } from '../../agent/media/mediaRules.js'
+import { isMonitored, markActive } from '../../agent/memory/channelMonitor.js'
 import { recordEpisodeMessage } from '../../agent/memory/episodeTracker.js'
 import { asksAboutReplies } from '../../agent/replyIntent.js'
 import { withReplyOutcomes } from '../../agent/replyOutcomes.js'
 import { generateResponse } from '../../agent/roka.js'
 import { withSearchCitations } from '../../agent/searchCitations.js'
-import { canAffordAttachments } from '../../agent/tokenBudget.js'
+import { SOCIAL_POST_FAILURE_MARKER, formatSocialPostLine } from '../../agent/social/format.js'
+import { socialPostMedia } from '../../agent/social/media.js'
+import { beginSocialPostLookup, socialPostSnapshotTexts, socialPostTexts } from '../../agent/social/service.js'
+import { findSocialPostTarget } from '../../agent/social/urls.js'
 import { startTurnEntryWork } from '../../agent/turnContext.js'
 import { character } from '../../character/index.js'
 import { config } from '../../config.js'
@@ -14,7 +19,6 @@ import { type ResponseEventInput, recordResponseEvent } from '../../storage/metr
 import { upsertUserName } from '../../storage/userNames.js'
 import { logger } from '../../utils/logger.js'
 import { type CallReservation, RateLimiter } from '../../utils/rateLimiter.js'
-import { MAX_ATTACHMENTS } from '../attachments.js'
 import { fitAttachmentsToTurn, release, reservationFor, tryReserve } from '../byteBudget.js'
 import { isChannelBusy, markBusy, markFree } from '../concurrency.js'
 import { shouldReact } from '../emojiReactor.js'
@@ -37,10 +41,6 @@ import {
   getRandomUnsupportedAttachment,
   splitResponse
 } from '../responses.js'
-import { SOCIAL_POST_FAILURE_MARKER, formatSocialPostLine } from '../socialPosts/format.js'
-import { socialPostMedia } from '../socialPosts/media.js'
-import { beginSocialPostLookup, socialPostSnapshotTexts, socialPostTexts } from '../socialPosts/service.js'
-import { findSocialPostTarget } from '../socialPosts/urls.js'
 import { handleGachaMention } from './gachaMention.js'
 
 /** Whole-word, case-insensitive match for the bot's name as a trigger keyword */

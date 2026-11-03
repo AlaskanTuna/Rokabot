@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { ReplyFetchContext } from '../socialPosts/replies/types.js'
-import { fetchYouTubeReplies } from '../socialPosts/replies/youtube.js'
-import { parseSocialPostUrl } from '../socialPosts/urls.js'
+import type { ReplyFetchContext } from '../../agent/social/replies/types.js'
+import { fetchYouTubeReplies } from '../../agent/social/replies/youtube.js'
+import { parseSocialPostUrl } from '../../agent/social/urls.js'
 import { jsonResponse, replyContext, replyFixture, requestedUrl } from './replyFetchTestContext.js'
 
 const target = parseSocialPostUrl('https://www.youtube.com/watch?v=jNQXAC9IVRw')!

@@ -16,7 +16,7 @@ import { config } from '../../config.js'
 import { getBuddy, getBuddyCount, getSpeciesInfo } from '../../games/buddy.js'
 import { RARITY_COLORS, RARITY_EMOJI, STAT_NAMES } from '../../games/data/buddySpecies.js'
 import { logger } from '../../utils/logger.js'
-import { buddySprite } from './games/shared.js'
+import { buddySprite } from '../commands/games/shared.js'
 
 function statBar(value: number, max: number = 10): string {
   const filled = '\u2588'.repeat(value)

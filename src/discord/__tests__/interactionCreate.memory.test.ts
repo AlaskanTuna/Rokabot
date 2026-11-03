@@ -63,9 +63,9 @@ vi.mock('../responses.js', () => ({
   getRandomPartialAttachment: () => 'I only got through the beginning of that~',
   splitResponse: mocks.splitResponse
 }))
-vi.mock('../events/gameCommands.js', () => ({ createGameCommandHandler: () => mocks.gameCommandHandler }))
-vi.mock('../events/stats/statsCommand.js', () => ({ handleStatsCommand: mocks.handleStatsCommand }))
-vi.mock('../events/toolCommands.js', () => ({ createToolCommandHandler: () => mocks.toolCommandHandler }))
+vi.mock('../commands/games/router.js', () => ({ createGameCommandHandler: () => mocks.gameCommandHandler }))
+vi.mock('../commands/stats/statsCommand.js', () => ({ handleStatsCommand: mocks.handleStatsCommand }))
+vi.mock('../commands/tools/router.js', () => ({ createToolCommandHandler: () => mocks.toolCommandHandler }))
 
 import { destroySession } from '../../agent/session.js'
 import { MEMORY_TOOL_NAMES } from '../../agent/tools/index.js'

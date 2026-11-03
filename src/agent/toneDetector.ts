@@ -1,6 +1,6 @@
 import { character } from '../character/index.js'
 import { inHours } from '../character/load.js'
-import type { WindowMessage } from '../session/types.js'
+import type { WindowMessage } from '../storage/sessionStore.js'
 import type { ToneKey } from './prompts/tones.js'
 
 /** Rule-based tone detection via the character pack's keyword patterns */

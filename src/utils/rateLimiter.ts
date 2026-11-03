@@ -32,7 +32,7 @@ const RPM_WINDOW_MS = 60 * 1000
  * bit after idle, which is why it never showed up: under sustained load the bucket runs empty and settles at
  * exactly the configured rate. The reachable case was a quiet channel suddenly getting busy.
  *
- * `src/agent/tokenBudget.ts` has the same shape and is NOT being converted, deliberately. It meters a
+ * `src/agent/llm/tokenBudget.ts` has the same shape and is NOT being converted, deliberately. It meters a
  * continuous quantity, so an exact window would mean retaining every charge rather than a bounded count, and
  * it was resolved instead by halving its knob so that 2x is the real ceiling (#148). Here the count is
  * `rpm` — fifteen timestamps — so exactness is nearly free and costs no throughput, where halving `rpm` to 7

@@ -1,24 +1,27 @@
 import type { Attachment, Client, Interaction } from 'discord.js'
 import { DiscordAPIError, MessageFlags } from 'discord.js'
-import type { ImageAttachment } from '../../agent/attachments.js'
+import { canAffordAttachments } from '../../agent/llm/tokenBudget.js'
+import type { ImageAttachment } from '../../agent/media/attachments.js'
+import { MAX_ATTACHMENTS, isSupportedMedia, resolveMediaUrl } from '../../agent/media/mediaRules.js'
 import { asksAboutReplies } from '../../agent/replyIntent.js'
 import { withReplyOutcomes } from '../../agent/replyOutcomes.js'
 import { generateResponse } from '../../agent/roka.js'
 import { withSearchCitations } from '../../agent/searchCitations.js'
-import { canAffordAttachments } from '../../agent/tokenBudget.js'
+import { SOCIAL_POST_FAILURE_MARKER, formatSocialPostLine } from '../../agent/social/format.js'
+import { socialPostMedia } from '../../agent/social/media.js'
+import { beginSocialPostLookup } from '../../agent/social/service.js'
+import { parseSocialPostUrl } from '../../agent/social/urls.js'
 import { startTurnEntryWork } from '../../agent/turnContext.js'
 import { config } from '../../config.js'
 import { type ResponseEventInput, recordResponseEvent } from '../../storage/metricsStore.js'
 import { logger } from '../../utils/logger.js'
 import { type CallReservation, RateLimiter } from '../../utils/rateLimiter.js'
-import {
-  ASK_ATTACHMENT_SLOTS,
-  MAX_ATTACHMENTS,
-  attachmentOptionName,
-  isSupportedMedia,
-  resolveMediaUrl
-} from '../attachments.js'
 import { fitAttachmentsToTurn, release, reservationFor, tryReserve } from '../byteBudget.js'
+import { ASK_ATTACHMENT_SLOTS, attachmentOptionName } from '../commands/askOptions.js'
+import { createGameCommandHandler } from '../commands/games/router.js'
+import { handleReportCommand } from '../commands/reportHandler.js'
+import { handleStatsCommand } from '../commands/stats/statsCommand.js'
+import { createToolCommandHandler } from '../commands/tools/router.js'
 import { isChannelBusy, markBusy, markFree } from '../concurrency.js'
 import { isIgnorableDiscordError } from '../errorHandler.js'
 import { guardMarkdown } from '../markdownGuard.js'
@@ -33,14 +36,6 @@ import {
   getRandomUnsupportedAttachment,
   splitResponse
 } from '../responses.js'
-import { SOCIAL_POST_FAILURE_MARKER, formatSocialPostLine } from '../socialPosts/format.js'
-import { socialPostMedia } from '../socialPosts/media.js'
-import { beginSocialPostLookup } from '../socialPosts/service.js'
-import { parseSocialPostUrl } from '../socialPosts/urls.js'
-import { createGameCommandHandler } from './gameCommands.js'
-import { handleReportCommand } from './reportCommand.js'
-import { handleStatsCommand } from './stats/statsCommand.js'
-import { createToolCommandHandler } from './toolCommands.js'
 
 /** Create a handler for all slash command interactions */
 export function createInteractionHandler(rateLimiter: RateLimiter, client?: Client) {

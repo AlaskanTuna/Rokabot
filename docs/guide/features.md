@@ -175,6 +175,6 @@ All views cover the last 30 days, except the Overview heatmap. `/stats` works in
 - `src/discord/events/messageCreate.ts`, `src/discord/events/interactionCreate.ts`
 - `src/discord/commands/`
 - `src/agent/tools/index.ts`, `src/discord/messageBuilder.ts`
-- `src/discord/attachments.ts`, `src/agent/attachmentLimits.ts`, `src/discord/byteBudget.ts`
-- `src/games/`, `src/discord/events/games/`, `src/discord/events/stats/`
+- `src/agent/media/mediaRules.ts`, `src/agent/media/attachmentLimits.ts`, `src/discord/byteBudget.ts`
+- `src/games/`, `src/discord/commands/games/`, `src/discord/commands/stats/`
 - `src/discord/emojiReactor.ts`, `src/discord/statusCycler.ts`, `src/discord/updateNotifier.ts`, `src/discord/reminderScheduler.ts`

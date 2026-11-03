@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { config } from '../../../config.js'
-import type { runYtDlp } from '../../../discord/socialPosts/ytDlp.js'
+import type { runYtDlp } from '../../social/ytDlp.js'
 import { resolveYouTubeStreams, selectYouTubeStreams, youtubeVideoId } from '../youtubeStreams.js'
 
 const CANONICAL = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'

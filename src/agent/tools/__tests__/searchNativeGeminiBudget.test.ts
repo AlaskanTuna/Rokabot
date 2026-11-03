@@ -41,7 +41,7 @@ vi.mock('../../../config.js', async (importOriginal) => {
 import { config } from '../../../config.js'
 import { closeDb } from '../../../storage/database.js'
 import { __resetBudgetsForTest } from '../../llm/budget.js'
-import { tokenBucketFor } from '../../tokenBudget.js'
+import { tokenBucketFor } from '../../llm/tokenBudget.js'
 import type { NativeCall } from '../search/native.js'
 import { nativeSearch } from '../search/native.js'
 import { geminiNativeSearch } from '../search/nativeGemini.js'

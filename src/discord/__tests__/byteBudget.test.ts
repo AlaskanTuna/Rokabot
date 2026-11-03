@@ -4,9 +4,9 @@ import {
   MAX_DOCUMENT_SIZE_BYTES,
   MAX_IMAGE_SIZE_BYTES,
   MAX_VIDEO_SIZE_BYTES
-} from '../../agent/attachmentLimits.js'
+} from '../../agent/media/attachmentLimits.js'
+import { MAX_ATTACHMENTS } from '../../agent/media/mediaRules.js'
 import { config } from '../../config.js'
-import { MAX_ATTACHMENTS } from '../attachments.js'
 import { fitAttachmentsToTurn, inFlightBytes, release, reservationFor, tryReserve } from '../byteBudget.js'
 
 const BUDGET = config.discord.maxInFlightAttachmentBytes

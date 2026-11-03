@@ -6,6 +6,8 @@ vi.mock('../expressions.js', () => ({
 
 import type { WatchOutcome } from '../../agent/media/types.js'
 import type { ReplyOutcome } from '../../agent/replyOutcomes.js'
+import type { SocialPost, SocialPostLookup } from '../../agent/social/types.js'
+import { type SocialPlatform, parseSocialPostUrl } from '../../agent/social/urls.js'
 import {
   MAX_TOOL_FOOTER_CHARS,
   TEXT_DISPLAY_BUDGET,
@@ -13,8 +15,6 @@ import {
   buildToolFooter,
   openedPostCitation
 } from '../messageBuilder.js'
-import type { SocialPost, SocialPostLookup } from '../socialPosts/types.js'
-import { type SocialPlatform, parseSocialPostUrl } from '../socialPosts/urls.js'
 
 function payloadJson(
   text: string,

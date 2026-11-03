@@ -4,8 +4,8 @@ vi.mock('../../../utils/logger.js', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() }
 }))
 
-import { classifyGeminiFailure } from '../../geminiReliability.js'
 import { ErrorRecoveryPlugin } from '../../reliability.js'
+import { classifyGeminiFailure } from '../geminiReliability.js'
 import { ProviderError } from '../providerError.js'
 
 describe('ProviderError', () => {

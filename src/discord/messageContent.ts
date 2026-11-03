@@ -1,8 +1,8 @@
 import type { Attachment, Message } from 'discord.js'
-import type { ImageAttachment } from '../agent/attachments.js'
-import { MAX_ATTACHMENTS, isSupportedMedia } from './attachments.js'
-import type { SocialPostTarget } from './socialPosts/urls.js'
-import { findSocialPostTarget } from './socialPosts/urls.js'
+import type { ImageAttachment } from '../agent/media/attachments.js'
+import { MAX_ATTACHMENTS, isSupportedMedia } from '../agent/media/mediaRules.js'
+import type { SocialPostTarget } from '../agent/social/urls.js'
+import { findSocialPostTarget } from '../agent/social/urls.js'
 
 export function replaceUserMentions(message: Message, botId: string | undefined): string {
   return message.content

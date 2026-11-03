@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { addMessage, getMessages, resetAllBuffers } from '../passiveBuffer.js'
+import { addMessage, getMessages, resetAllBuffers } from '../memory/passiveBuffer.js'
 
 describe('overheard context (passive buffer persistence)', () => {
   beforeEach(() => {

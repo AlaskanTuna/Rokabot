@@ -5,7 +5,12 @@ vi.mock('../../utils/logger.js', () => ({
 }))
 
 import { config } from '../../config.js'
-import { TokenBucket, __resetTokenBudgetForTest, remainingTokensThisMinute, tokenBucketFor } from '../tokenBudget.js'
+import {
+  TokenBucket,
+  __resetTokenBudgetForTest,
+  remainingTokensThisMinute,
+  tokenBucketFor
+} from '../llm/tokenBudget.js'
 
 describe('per-model token buckets', () => {
   beforeEach(() => {

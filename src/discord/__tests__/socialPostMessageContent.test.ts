@@ -1,8 +1,8 @@
 import { Collection } from 'discord.js'
 import { describe, expect, it } from 'vitest'
+import { parseSocialPostUrl } from '../../agent/social/urls.js'
 import { extractMessageContent } from '../messageContent.js'
 import type { SocialPostPresentation } from '../messageContent.js'
-import { parseSocialPostUrl } from '../socialPosts/urls.js'
 
 const target = parseSocialPostUrl('https://x.com/roka/status/123')!
 const presentation: SocialPostPresentation = {

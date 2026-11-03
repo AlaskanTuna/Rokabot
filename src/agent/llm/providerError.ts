@@ -1,4 +1,4 @@
-import type { FailureKind } from '../geminiReliability.js'
+import type { FailureKind } from './geminiReliability.js'
 import type { ProviderId } from './profiles.js'
 
 export class ProviderError extends Error {

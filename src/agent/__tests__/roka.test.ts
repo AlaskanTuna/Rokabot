@@ -37,15 +37,17 @@ mutableJevConfig.prefetch = 'shadow'
 import { recordFailureDiagnostic, recordMemoryEvent } from '../../storage/metricsStore.js'
 import { getChannelUsers, loadHistory, saveMessage } from '../../storage/sessionStore.js'
 import { getUserName } from '../../storage/userNames.js'
-import { GEMINI_IMAGE_TOKENS } from '../../utils/imageProcessor.js'
 import { logger } from '../../utils/logger.js'
 import { estimateTokens } from '../../utils/tokens.js'
-import { measureAttachmentTokens, needsMeasuring } from '../attachmentCost.js'
-import { computeBackoff as computeRetryBackoff } from '../geminiReliability.js'
 import { judgeTurn } from '../jev/judgments.js'
+import { computeBackoff as computeRetryBackoff } from '../llm/geminiReliability.js'
+import { buildSafetySettings } from '../llm/safetySettings.js'
+import { __resetTokenBudgetForTest, remainingTokensThisMinute } from '../llm/tokenBudget.js'
+import { measureAttachmentTokens, needsMeasuring } from '../media/attachmentCost.js'
+import { GEMINI_IMAGE_TOKENS } from '../media/imageProcessor.js'
 import { resolveReferences } from '../memory/identityResolver.js'
+import { getMessages } from '../memory/passiveBuffer.js'
 import { retrieveForTurn } from '../memory/retriever.js'
-import { getMessages } from '../passiveBuffer.js'
 import { assembleSystemPrompt } from '../promptAssembler.js'
 import { FACTS_UNTRUSTED_DATA_LABEL, OVERHEARD_UNTRUSTED_DATA_LABEL, buildFactsEnvelope } from '../promptSafety.js'
 import type { TurnOutcome } from '../reliability.js'
@@ -58,11 +60,9 @@ import {
   rokaAgent,
   steeringForRequest
 } from '../roka.js'
-import { buildSafetySettings } from '../safetySettings.js'
 import { withSearchCitations } from '../searchCitations.js'
 import { destroyAllSessions, destroySession, sessionService } from '../session.js'
 import { beginShutdown, isShuttingDown, resetForTest } from '../shutdownSignal.js'
-import { __resetTokenBudgetForTest, remainingTokensThisMinute } from '../tokenBudget.js'
 import { MEMORY_TOOL_NAMES, forgetUserTool, recallUserTool, rememberUserTool, rokaTools } from '../tools/index.js'
 import { createTurnContext } from '../turnContext.js'
 
@@ -93,12 +93,12 @@ vi.mock('../memory/identityResolver.js', () => ({
 
 // Pricing an attachment is a network call. Mocked to a cheap value so the download tests below can keep
 // counting fetches; a real countTokens would add one per non-image turn and break their arithmetic.
-vi.mock('../attachmentCost.js', () => ({
+vi.mock('../media/attachmentCost.js', () => ({
   measureAttachmentTokens: vi.fn(async () => 100),
   needsMeasuring: vi.fn(() => false)
 }))
 
-vi.mock('../passiveBuffer.js', () => ({
+vi.mock('../memory/passiveBuffer.js', () => ({
   getMessages: vi.fn(() => [])
 }))
 

@@ -1470,8 +1470,8 @@ describe('config module', () => {
     setRequiredEnvVars()
     clearTunableEnvVars()
 
-    const { MAX_ATTACHMENTS } = await import('../discord/attachments.js')
-    const { GEMINI_IMAGE_TOKENS } = await import('../utils/imageProcessor.js')
+    const { MAX_ATTACHMENTS } = await import('../agent/media/mediaRules.js')
+    const { GEMINI_IMAGE_TOKENS } = await import('../agent/media/imageProcessor.js')
     const { NUMERIC_BOUNDS } = await import('../config.js')
 
     expect(NUMERIC_BOUNDS.find((entry) => entry.path === 'gemini.maxAttachmentTokens')?.min).toBe(
@@ -1483,7 +1483,7 @@ describe('config module', () => {
     setRequiredEnvVars()
     clearTunableEnvVars()
 
-    const { MAX_DOCUMENT_SIZE_BYTES } = await import('../agent/attachmentLimits.js')
+    const { MAX_DOCUMENT_SIZE_BYTES } = await import('../agent/media/attachmentLimits.js')
     const { NUMERIC_BOUNDS } = await import('../config.js')
     const perTurn = NUMERIC_BOUNDS.find((entry) => entry.path === 'discord.maxAttachmentBytesPerTurn')
     const inFlight = NUMERIC_BOUNDS.find((entry) => entry.path === 'discord.maxInFlightAttachmentBytes')

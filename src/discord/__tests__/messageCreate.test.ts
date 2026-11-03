@@ -1,7 +1,7 @@
 import { Collection } from 'discord.js'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { SocialPostLookup } from '../../agent/social/types.js'
 import { config } from '../../config.js'
-import type { SocialPostLookup } from '../socialPosts/types.js'
 
 const mocks = vi.hoisted(() => ({
   generateResponse: vi.fn(),
@@ -31,10 +31,13 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('../../agent/roka.js', () => ({ generateResponse: mocks.generateResponse }))
-vi.mock('../../agent/channelMonitor.js', () => ({ isMonitored: mocks.isMonitored, markActive: mocks.markActive }))
+vi.mock('../../agent/memory/channelMonitor.js', () => ({
+  isMonitored: mocks.isMonitored,
+  markActive: mocks.markActive
+}))
 vi.mock('../../agent/memory/episodeTracker.js', () => ({ recordEpisodeMessage: mocks.recordEpisodeMessage }))
 vi.mock('../../agent/turnContext.js', () => ({ startTurnEntryWork: mocks.startTurnEntryWork }))
-vi.mock('../../agent/tokenBudget.js', () => ({ canAffordAttachments: mocks.canAffordAttachments }))
+vi.mock('../../agent/llm/tokenBudget.js', () => ({ canAffordAttachments: mocks.canAffordAttachments }))
 vi.mock('../../storage/metricsStore.js', () => ({ recordResponseEvent: mocks.recordResponseEvent }))
 vi.mock('../../storage/userNames.js', () => ({ upsertUserName: vi.fn() }))
 vi.mock('../../utils/logger.js', () => ({
@@ -48,11 +51,11 @@ vi.mock('../byteBudget.js', () => ({
   tryReserve: mocks.tryReserve
 }))
 vi.mock('../emojiReactor.js', () => ({ shouldReact: () => null }))
-vi.mock('../attachments.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../attachments.js')>()
+vi.mock('../../agent/media/mediaRules.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../agent/media/mediaRules.js')>()
   return { ...actual, resolveMediaUrl: mocks.resolveMediaUrl }
 })
-vi.mock('../socialPosts/service.js', () => ({
+vi.mock('../../agent/social/service.js', () => ({
   beginSocialPostLookup: mocks.beginSocialPostLookup,
   socialPostTexts: (message: { content?: string; embeds?: Array<{ url?: string; description?: string }> }) => [
     message.content ?? '',
@@ -73,11 +76,11 @@ vi.mock('../responses.js', () => ({
 }))
 vi.mock('../events/gachaMention.js', () => ({ handleGachaMention: vi.fn() }))
 
+import { MAX_ATTACHMENTS } from '../../agent/media/mediaRules.js'
 import { recordReplyOutcome } from '../../agent/replyOutcomes.js'
-import { MAX_ATTACHMENTS } from '../attachments.js'
+import { parseSocialPostUrl } from '../../agent/social/urls.js'
 import { NAME_MENTION_REGEX } from '../events/messageCreate.js'
 import { createMessageHandler } from '../events/messageCreate.js'
-import { parseSocialPostUrl } from '../socialPosts/urls.js'
 import { assertTurnEntryRejections } from './turnEntryRejections.js'
 
 const socialTarget = parseSocialPostUrl('https://x.com/roka/status/123')!

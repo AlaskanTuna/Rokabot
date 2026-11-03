@@ -1,11 +1,11 @@
 import { BaseLlm } from '@google/adk'
 import type { BaseLlmConnection, LlmRequest, LlmResponse } from '@google/adk'
 import { describe, expect, it } from 'vitest'
-import { RoutedLlm, modelRouteForRequest } from '../../fallbackModel.js'
-import type { ModelRoute } from '../../fallbackModel.js'
 import { ErrorRecoveryPlugin, runTurnWithReliability } from '../../reliability.js'
 import { ChatCompletionsLlm } from '../chatCompletionsLlm.js'
 import type { ChatCompletionsProvider } from '../chatCompletionsLlm.js'
+import { RoutedLlm, modelRouteForRequest } from '../fallbackModel.js'
+import type { ModelRoute } from '../fallbackModel.js'
 import { COMPATIBLE_DEFAULTS, compatibleProfile, profileFor } from '../profiles.js'
 import { ProviderError } from '../providerError.js'
 

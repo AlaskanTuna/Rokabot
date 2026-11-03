@@ -15,7 +15,7 @@ vi.mock('../../storage/database.js', () => ({
   getDb: () => testDb
 }))
 
-import { handleHatch } from '../../discord/events/games/gacha.js'
+import { handleHatch } from '../../discord/commands/games/gacha.js'
 import {
   generateBuddy,
   getBuddy,

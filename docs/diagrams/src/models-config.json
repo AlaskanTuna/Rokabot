@@ -220,7 +220,7 @@
           "end_line": 104
         },
         {
-          "path": "src/agent/fallbackModel.ts",
+          "path": "src/agent/llm/fallbackModel.ts",
           "line": 115,
           "end_line": 134
         }

@@ -12,9 +12,9 @@ vi.mock('../../../config.js', async (importOriginal) => {
 
 import type { ResolvedModel } from '../../../config.js'
 import { closeDb } from '../../../storage/database.js'
-import { classifyGeminiFailure } from '../../geminiReliability.js'
 import { __resetBudgetsForTest, markBillingExhausted } from '../budget.js'
 import { createLlm } from '../createModel.js'
+import { classifyGeminiFailure } from '../geminiReliability.js'
 import { type ProviderId, profileFor } from '../profiles.js'
 
 function route(provider: ProviderId, model: string, extra: Partial<ResolvedModel> = {}): ResolvedModel {

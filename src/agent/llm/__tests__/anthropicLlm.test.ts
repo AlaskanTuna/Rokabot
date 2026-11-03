@@ -39,11 +39,11 @@ vi.mock('../budget.js', async (importOriginal) => {
 
 import { APIConnectionTimeoutError, APIError, APIUserAbortError } from '@anthropic-ai/sdk'
 import type { ResolvedModel } from '../../../config.js'
-import { type ModelRoute, modelRouteForRequest } from '../../fallbackModel.js'
 import { assembleSystemPrompt } from '../../promptAssembler.js'
 import { CORE_PROMPT } from '../../prompts/core.js'
 import { SPEECH_PROMPT } from '../../prompts/speech.js'
 import { AnthropicLlm, STRUCTURED_OUTPUT_TOOL } from '../anthropicLlm.js'
+import { type ModelRoute, modelRouteForRequest } from '../fallbackModel.js'
 import { profileFor } from '../profiles.js'
 import { ProviderError } from '../providerError.js'
 import { type CallUsage, WORKLOAD_LABEL, onUsage } from '../usage.js'

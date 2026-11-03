@@ -25,10 +25,10 @@ vi.mock('../budget.js', async (importOriginal) => ({
 }))
 
 import type { ResolvedModel } from '../../../config.js'
-import { ModelScopeLlm, RoutedLlm } from '../../fallbackModel.js'
 import { AnthropicLlm } from '../anthropicLlm.js'
 import { ChatCompletionsLlm } from '../chatCompletionsLlm.js'
 import { createLlm, createRokaModel } from '../createModel.js'
+import { ModelScopeLlm, RoutedLlm } from '../fallbackModel.js'
 import { COMPATIBLE_DEFAULTS, compatibleProfile, profileFor } from '../profiles.js'
 import { type CallUsage, onUsage } from '../usage.js'
 

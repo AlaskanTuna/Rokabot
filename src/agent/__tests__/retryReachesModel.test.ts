@@ -22,7 +22,7 @@ const mocks = vi.hoisted(() => {
 vi.mock('../llm/createModel.js', async (importOriginal) => {
   const original = await importOriginal<typeof import('../llm/createModel.js')>()
   const { BaseLlm } = await import('@google/adk')
-  const { RoutedLlm } = await import('../fallbackModel.js')
+  const { RoutedLlm } = await import('../llm/fallbackModel.js')
 
   class ScriptedLlm extends BaseLlm {
     constructor(
@@ -72,11 +72,11 @@ vi.mock('../../storage/metricsStore.js', () => ({
 }))
 vi.mock('../memory/retriever.js', () => ({ retrieveForTurn: vi.fn(() => ({ entries: [], claims: [] })) }))
 vi.mock('../memory/identityResolver.js', () => ({ resolveReferences: vi.fn(() => ({ resolved: [], ambiguous: [] })) }))
-vi.mock('../attachmentCost.js', () => ({
+vi.mock('../media/attachmentCost.js', () => ({
   measureAttachmentTokens: vi.fn(async () => 100),
   needsMeasuring: vi.fn(() => false)
 }))
-vi.mock('../passiveBuffer.js', () => ({ getMessages: vi.fn(() => []) }))
+vi.mock('../memory/passiveBuffer.js', () => ({ getMessages: vi.fn(() => []) }))
 vi.mock('../../utils/rateLimiter.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../utils/rateLimiter.js')>()),
   getSharedRateLimiter: () => ({ tryConsumeAboveFloor: () => true })

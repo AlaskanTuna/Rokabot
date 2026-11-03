@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { bilibiliAid, fetchBilibiliReplies } from '../socialPosts/replies/bilibili.js'
-import { parseSocialPostUrl } from '../socialPosts/urls.js'
+import { bilibiliAid, fetchBilibiliReplies } from '../../agent/social/replies/bilibili.js'
+import { parseSocialPostUrl } from '../../agent/social/urls.js'
 import { jsonResponse, replyContext, replyFixture, requestedHeaders, requestedUrl } from './replyFetchTestContext.js'
 
 const target = parseSocialPostUrl('https://www.bilibili.com/video/BV1GJ411x7h7')!

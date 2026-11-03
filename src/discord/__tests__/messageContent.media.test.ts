@@ -1,6 +1,6 @@
 import { Collection } from 'discord.js'
 import { describe, expect, it } from 'vitest'
-import { MAX_ATTACHMENTS } from '../attachments.js'
+import { MAX_ATTACHMENTS } from '../../agent/media/mediaRules.js'
 import { extractMessageContent } from '../messageContent.js'
 
 interface Attachment {

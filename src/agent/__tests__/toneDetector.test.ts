@@ -8,7 +8,7 @@ vi.mock('../../config.js', () => ({
   }
 }))
 
-import type { WindowMessage } from '../../session/types.js'
+import type { WindowMessage } from '../../storage/sessionStore.js'
 import { detectTone, detectToneWithSource } from '../toneDetector.js'
 
 function makeMessage(content: string): WindowMessage {
