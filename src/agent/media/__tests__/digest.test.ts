@@ -175,12 +175,38 @@ describe('validateObservations', () => {
     }
   })
 
-  it('trims summary to 500 characters and marks the result incomplete', () => {
+  it('clips notes to their limits without marking the digest incomplete', () => {
+    const result = validateObservations(
+      {
+        summary: `${'s'.repeat(510)}  `,
+        timeline: [{ bin: 1, visual: 'v'.repeat(350), audio: 'a'.repeat(350) }],
+        speech: [{ bin: 1, speaker: 's'.repeat(350), quote: 'q'.repeat(250) }],
+        onScreenText: [{ bin: 1, text: 't'.repeat(350) }],
+        moments: [{ bin: 1, note: 'm'.repeat(350) }],
+        claims: ['c'.repeat(350)],
+        style: 'y'.repeat(350),
+        uncertainties: ['u'.repeat(350)]
+      },
+      3
+    )
+
+    expect(result?.observations.summary).toBe('s'.repeat(500))
+    expect(result?.observations.timeline[0]).toEqual({ bin: 1, visual: 'v'.repeat(300), audio: 'a'.repeat(300) })
+    expect(result?.observations.speech[0]).toEqual({ bin: 1, speaker: 's'.repeat(300), quote: 'q'.repeat(200) })
+    expect(result?.observations.onScreenText[0]).toEqual({ bin: 1, text: 't'.repeat(300) })
+    expect(result?.observations.moments).toEqual([{ bin: 1, note: 'm'.repeat(300) }])
+    expect(result?.observations.claims).toEqual(['c'.repeat(300)])
+    expect(result?.observations.style).toBe('y'.repeat(300))
+    expect(result?.observations.uncertainties).toEqual(['u'.repeat(300)])
+    expect(result?.incomplete).toBe(false)
+  })
+
+  it('trims summary to 500 characters without marking the result incomplete', () => {
     const summary = `  ${'s'.repeat(510)}  `
     const result = validateObservations({ ...rawObservations(), summary }, 3)
 
     expect(result?.observations.summary).toBe('s'.repeat(500))
-    expect(result?.incomplete).toBe(true)
+    expect(result?.incomplete).toBe(false)
   })
 
   it('drops entries outside the available bin range', () => {

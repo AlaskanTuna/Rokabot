@@ -191,7 +191,7 @@ The digest header states the coverage, for example `whole video in two halves, 3
 
 - **Request:** no tools, no persona, `temperature` 0, a JSON response schema, `media.digestMaxOutputTokens` and `media.watchTimeoutMs`. Video uses `MEDIA_RESOLUTION_LOW`. The user's message is untrusted focus only (500 characters).
 - **Notes:** `summary`, `timeline` (one entry per bin), `speech`, `onScreenText`, `moments`, `claims`, `style` and `uncertainties`. The schema caps lists at 8 timeline entries, 12 quotes, 8 on-screen texts and 5 each of the rest.
-- **Validation:** `validateObservations` drops invalid entries and marks the digest incomplete, with no repair call. Unparseable JSON fails as `invalid`.
+- **Validation:** `validateObservations` drops invalid entries and entries past the count limit, and marks the digest incomplete, with no repair call. Clipping a note to its length limit keeps the text and leaves the digest complete. Unparseable JSON fails as `invalid`.
 - **Retry:** only a 503 is retried, once, and only when the first try failed within half of `media.watchTimeoutMs` and the shared limiter's `tryConsumeAboveFloor(gemini.retryRpmFloor)` allows it. A 429 is a quota answer and is not retried.
 - **Failure Reasons:** `overloaded`, `timeout`, `unavailable` (fails with `it couldn't be opened`), `invalid`, `error`.
 
