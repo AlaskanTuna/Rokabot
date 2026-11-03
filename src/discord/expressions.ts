@@ -1,5 +1,4 @@
-import type { ToneKey } from '../agent/prompts/tones.js'
-import { character } from '../character/index.js'
+import { type ToneKey, character } from '../character/index.js'
 import { logger } from '../utils/logger.js'
 
 /** Tone-to-expression mapping for character portraits */

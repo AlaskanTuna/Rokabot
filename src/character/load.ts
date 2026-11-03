@@ -41,6 +41,9 @@ export interface Mood {
   season: string
 }
 
+/** A mood named in the character pack's moods.yml. */
+export type ToneKey = string
+
 export type Voice = Omit<VoiceFile, 'threats'> & { threats: ReadonlyArray<{ text: string; seen: RegExp }> }
 
 export interface Character {
