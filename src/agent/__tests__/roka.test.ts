@@ -68,7 +68,7 @@ import {
   steeringForRequest
 } from '../roka.js'
 import { withSearchCitations } from '../searchCitations.js'
-import { destroyAllSessions, destroySession, sessionService } from '../session.js'
+import { APP_NAME, destroyAllSessions, destroySession, sessionService } from '../session.js'
 import { beginShutdown, isShuttingDown, resetForTest } from '../shutdownSignal.js'
 import { MEMORY_TOOL_NAMES, forgetUserTool, recallUserTool, rememberUserTool, rokaTools } from '../tools/index.js'
 import { createTurnContext } from '../turnContext.js'
@@ -1484,6 +1484,85 @@ describe('generateResponse metrics', () => {
     })
   })
 
+  it('resends the current turn once the deepest rung rebuilds the session', async () => {
+    const requests: Array<Parameters<TestRunTurn>[2]> = []
+    __setTestRunTurnFactory(() => async (_attempt, _signal, request) => {
+      requests.push(request)
+      return { finishReason: 'SAFETY' as TurnOutcome['finishReason'], hasText: false, hasFunctionCall: false }
+    })
+
+    const result = await generateResponse({
+      channelId: 'roka-rung3-resend-channel',
+      guildId: 'diagnostic-guild',
+      memory: true,
+      userMessage: 'the message that got blocked',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id'
+    })
+    await destroySession('roka-rung3-resend-channel')
+
+    expect(result.metrics).toMatchObject({ outcome: 'deflection', kind: 'safety' })
+    expect(requests).toHaveLength(SAFETY_RUNGS.length + 1)
+    expect(requests[0]?.newMessage).toBeDefined()
+    expect(requests[1]?.newMessage).toBeUndefined()
+    expect(requests[2]?.newMessage).toBeUndefined()
+    // The rung-3 rebuild empties the window, so the next attempt carries the current turn again.
+    expect(requests[3]?.newMessage).toBeDefined()
+    expect(requests[3]?.stateDelta?._systemPrompt).toBeDefined()
+    expect(requests[3]?.stateDelta?._systemPrompt).not.toBe(requests[0]?.stateDelta?._systemPrompt)
+  })
+
+  it('clears carried history on the deepest rung and keeps SQLite history out', async () => {
+    const channelId = 'roka-rung3-history-channel'
+    const sentinel = 'CARRIED-HISTORY-SENTINEL old secret'
+    const sqliteHistory = [
+      { role: 'user' as const, displayName: 'Mio', content: sentinel, timestamp: 1 },
+      { role: 'assistant' as const, displayName: 'Roka', content: 'old reply', timestamp: 2 }
+    ]
+    vi.mocked(loadHistory).mockImplementation((cid: string) => (cid === channelId ? sqliteHistory : []))
+    await destroySession(channelId)
+
+    try {
+      let attempt3EventCount = -1
+      let attempt3EventTexts: string[] = []
+      __setTestRunTurnFactory(() => async (attempt) => {
+        if (attempt === 3) {
+          const fresh = await sessionService.getSession({
+            appName: APP_NAME,
+            userId: channelId,
+            sessionId: channelId
+          })
+          attempt3EventCount = fresh?.events?.length ?? -1
+          attempt3EventTexts = (fresh?.events ?? []).flatMap((event) =>
+            (event.content?.parts ?? []).map((part) => part.text ?? '')
+          )
+        }
+        return { finishReason: 'SAFETY' as TurnOutcome['finishReason'], hasText: false, hasFunctionCall: false }
+      })
+
+      const result = await generateResponse({
+        channelId,
+        guildId: 'diagnostic-guild',
+        memory: true,
+        userMessage: 'the message that got blocked',
+        displayName: 'Mio',
+        username: 'mio',
+        userId: 'mio-id'
+      })
+
+      expect(result.metrics).toMatchObject({ outcome: 'deflection', kind: 'safety' })
+      // Rung 3 rebuild emptied the window: the carried SQLite history is gone from the live session.
+      expect(attempt3EventCount).toBe(0)
+      expect(attempt3EventTexts.join('\n')).not.toContain(sentinel)
+      // The SQLite source still holds it, so only suppression keeps it out of the rebuilt session.
+      expect(vi.mocked(loadHistory)(channelId, 10)).toEqual(sqliteHistory)
+    } finally {
+      vi.mocked(loadHistory).mockImplementation(() => [])
+      await destroySession(channelId)
+    }
+  })
+
   it('stores the empty provider reply shape without its reasoning text', async () => {
     const secret = 'PRIVATE_REASONING_SENTINEL'
     const originalRetries = mutableGeminiConfig.liveMaxRetries
@@ -1957,6 +2036,38 @@ describe('attachment intake', () => {
 
   it('sends a PDF to the model as a PDF', async () => {
     expect((await inlineFor('application/pdf', PDF_BYTES)).map((part) => part.mimeType)).toEqual(['application/pdf'])
+  })
+
+  // Rung 3 is the only escalation that rebuilds the session, so it is the only one that may drop what the
+  // turn already admitted: either the carried history or the images could be what tripped the filter.
+  it('drops the admitted image once the deepest rung rebuilds the session', async () => {
+    serve(PNG_BYTES)
+    const requests: Array<Parameters<TestRunTurn>[2]> = []
+    __setTestRunTurnFactory(() => async (_attempt, _signal, request) => {
+      requests.push(request)
+      return requests.length <= SAFETY_RUNGS.length
+        ? { finishReason: 'SAFETY' as TurnOutcome['finishReason'], hasText: false, hasFunctionCall: false }
+        : { text: 'Answered without the pictures~', hasText: true, hasFunctionCall: false }
+    })
+
+    const result = await generateResponse({
+      channelId: 'roka-rung3-images-channel',
+      guildId: 'attachment-guild',
+      memory: true,
+      userMessage: 'look at this',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id',
+      mediaAttachments: [{ url: 'https://cdn.test/file', contentType: 'image/png' }]
+    })
+    await destroySession('roka-rung3-images-channel')
+
+    const hasInlineImage = (request: Parameters<TestRunTurn>[2]) =>
+      (request?.newMessage?.parts ?? []).some((part) => part.inlineData)
+    expect(result.text).toBe('Answered without the pictures~')
+    expect(requests).toHaveLength(SAFETY_RUNGS.length + 1)
+    expect(hasInlineImage(requests[0])).toBe(true)
+    expect(hasInlineImage(requests[3])).toBe(false)
   })
 
   // Asserted as a pair on purpose. sharp handed a PDF throws, and its catch returns the *undecoded* bytes

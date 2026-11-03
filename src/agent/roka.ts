@@ -302,6 +302,102 @@ function requestTimeoutFor(useFallback: boolean): number {
   return useFallback && config.llm.fallback ? config.llm.fallback.timeoutMs : config.llm.main.timeoutMs
 }
 
+interface TurnAttemptInit {
+  systemPrompt: string
+  channelId: string
+  memory: boolean
+  asksAboutReplies?: boolean
+  useFallback: boolean
+  safetyLadder: readonly string[]
+  composePrompt: (safetyRung: number) => string
+}
+
+/** Per-turn mutable state threaded through the reliability loop. One home for what attempt N sends, so a
+ * retry, a fallback switch and a session reset all read and write the same object at the same points. */
+class TurnAttempt {
+  safetyRung = 0
+  dropMedia = false
+  systemPrompt: string
+  sessionWasReset = false
+  movedAwayFromGemini = false
+  switchKind: FailureKind | undefined = undefined
+  emptyReplyDiagnostic: ReplyDiagnostic | undefined = undefined
+  readonly steering: { prompt?: string; memory?: boolean; replies?: boolean }
+  readonly route: ModelRoute
+
+  private readonly channelId: string
+  private readonly safetyLadder: readonly string[]
+  private readonly composePrompt: (safetyRung: number) => string
+
+  constructor(init: TurnAttemptInit) {
+    this.systemPrompt = init.systemPrompt
+    this.channelId = init.channelId
+    this.safetyLadder = init.safetyLadder
+    this.composePrompt = init.composePrompt
+    this.steering = { memory: init.memory, replies: init.asksAboutReplies }
+    this.route = { useFallback: init.useFallback, hedged: false, answeredBy: null, pinned: null }
+  }
+
+  /** Retries resend the stored turn; only the first attempt and a reset session carry the current one. */
+  shouldIncludeCurrentTurn(attempt: number): boolean {
+    return attempt === 0 || this.sessionWasReset
+  }
+
+  async resetSession(): Promise<void> {
+    await destroySession(this.channelId)
+    await ensureSession(this.channelId)
+    resetIdleTimer(this.channelId)
+    this.sessionWasReset = true
+  }
+
+  noteEmptyReply(diagnostic: ReplyDiagnostic): void {
+    this.emptyReplyDiagnostic = diagnostic
+  }
+
+  async escalateSafety(): Promise<string | undefined> {
+    if (this.safetyRung >= this.safetyLadder.length) return undefined
+    this.safetyRung++
+
+    if (this.safetyRung === 3) {
+      // Carried history is the only remaining suspect: rebuild the window empty and drop images.
+      this.dropMedia = true
+      await destroySession(this.channelId)
+      suppressSessionRehydration(this.channelId)
+      await ensureSession(this.channelId)
+      resetIdleTimer(this.channelId)
+      this.sessionWasReset = true
+    }
+
+    this.systemPrompt = this.composePrompt(this.safetyRung)
+    this.steering.prompt = this.systemPrompt
+    return this.safetyLadder[this.safetyRung - 1]
+  }
+
+  /** Moves the rest of the turn to the other model after an outage-shaped failure. Returns that model's
+   * per-request timeout, or undefined when there is nothing to switch to.
+   */
+  switchModel(kind: FailureKind): number | undefined {
+    if (!rokaModel.hasFallback) return undefined
+
+    // A hedge can pin the fallback while useFallback is still false, so the pin names the failed side.
+    const failedOnFallback = this.route.pinned ? this.route.pinned === 'fallback' : this.route.useFallback
+    this.route.useFallback = !failedOnFallback
+    // A ladder switch is a new attempt on the other side, so that side's first answer sets the pin.
+    this.route.pinned = null
+    this.switchKind = kind
+    if (this.route.useFallback) {
+      this.movedAwayFromGemini = true
+      logger.warn(
+        { channelId: this.channelId, kind, model: rokaModel.fallbackModelName },
+        'Gemini unavailable, answering this turn with the fallback model'
+      )
+      return requestTimeoutFor(true)
+    }
+
+    return requestTimeoutFor(false)
+  }
+}
+
 /** Generate an in-character response using the ADK agent pipeline
  * @param options - Channel ID, user message, display name, and optional image attachments
  * @returns Response text and detected tone
@@ -347,10 +443,6 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     safetyLadder,
     composePrompt
   } = context
-  let safetyRung = 0
-  let dropMedia = false
-  let systemPrompt = context.systemPrompt
-
   const {
     directParts: mediaParts,
     mediaTextParts,
@@ -364,6 +456,17 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     refusedAttachments,
     watchOutcome
   } = await mediaWork
+
+  // Read the sticky window only now: a long media watch can outlast it, or another channel's outage can open it.
+  const turn = new TurnAttempt({
+    systemPrompt: context.systemPrompt,
+    channelId,
+    memory,
+    asksAboutReplies: options.asksAboutReplies,
+    useFallback: rokaModel.hasFallback && hasStickyFallback(),
+    safetyLadder,
+    composePrompt
+  })
 
   // Tell the model when files are absent or refused so it does not search for their missing contents.
   const failedAttachmentNotice = [
@@ -394,9 +497,9 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   const buildNewMessage = (): Content => ({
     role: 'user',
     parts: [
-      ...(dropMedia ? [] : mediaParts),
+      ...(turn.dropMedia ? [] : mediaParts),
       // Rung 3 drops what was watched along with what was seen: either may be what tripped the filter.
-      ...(dropMedia ? [] : mediaTextParts),
+      ...(turn.dropMedia ? [] : mediaTextParts),
       ...failedAttachmentNotice,
       { text: `[${displayName}]: ${userMessage}` }
     ]
@@ -411,54 +514,21 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   const usedToolNames = new Set<string>(prefetchUsed ? [PREFETCH_TOOL_NAME] : [])
   const geminiToolNames = new Set<string>()
   const toolCalls = { usedToolNames, geminiToolNames }
-  const testRunTurn = testRunTurnFactory?.(systemPrompt)
-  let sessionWasReset = false
-  const steering: { prompt?: string; memory?: boolean; replies?: boolean } = {
-    memory,
-    replies: options.asksAboutReplies
-  }
+  const testRunTurn = testRunTurnFactory?.(turn.systemPrompt)
   const verdict: ModelVerdict = {}
   // The watcher spent its calls from the same reservation before ADK starts.
   const modelCalls = { count: watcherCalls }
-  const route: ModelRoute = {
-    useFallback: rokaModel.hasFallback && hasStickyFallback(),
-    hedged: false,
-    answeredBy: null,
-    pinned: null
-  }
-  let movedAwayFromGemini = false
-  let switchKind: FailureKind | undefined
-  let emptyReplyDiagnostic: ReplyDiagnostic | undefined
-  const reliability = await modelRouteForRequest.run(route, () =>
+  const reliability = await modelRouteForRequest.run(turn.route, () =>
     modelCallsForRequest.run(modelCalls, () =>
       toolCallsForRequest.run(toolCalls, () =>
         modelVerdictForRequest.run(verdict, () =>
-          steeringForRequest.run(steering, () =>
+          steeringForRequest.run(turn.steering, () =>
             runTurnWithReliability({
               maxRetries: config.gemini.liveMaxRetries,
               retryBackoffCapMs: config.gemini.retryBackoffCapMs,
-              requestTimeoutMs: requestTimeoutFor(route.useFallback),
+              requestTimeoutMs: requestTimeoutFor(turn.route.useFallback),
               turnDeadlineMs: config.gemini.turnDeadlineMs,
-              switchModel: (kind) => {
-                if (!rokaModel.hasFallback) return undefined
-
-                // A hedge can pin the fallback while useFallback is still false, so the pin names the failed side.
-                const failedOnFallback = route.pinned ? route.pinned === 'fallback' : route.useFallback
-                route.useFallback = !failedOnFallback
-                // A ladder switch is a new attempt on the other side, so that side's first answer sets the pin.
-                route.pinned = null
-                switchKind = kind
-                if (route.useFallback) {
-                  movedAwayFromGemini = true
-                  logger.warn(
-                    { channelId, kind, model: rokaModel.fallbackModelName },
-                    'Gemini unavailable, answering this turn with the fallback model'
-                  )
-                  return requestTimeoutFor(true)
-                }
-
-                return requestTimeoutFor(false)
-              },
+              switchModel: (kind) => turn.switchModel(kind),
               tryConsumeRetry: () => getSharedRateLimiter().tryConsumeAboveFloor(config.gemini.retryRpmFloor),
               // Bound each advertised backoff by the configured total retry ceiling.
               computeBackoff: (attempt) =>
@@ -467,44 +537,25 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
               safetyDeflection: SAFETY_DEFLECTION,
               recitationDeflection: RECITATION_DEFLECTION,
               terminalDeflection: TERMINAL_DEFLECTION,
-              resetSession: async () => {
-                await destroySession(channelId)
-                await ensureSession(channelId)
-                resetIdleTimer(channelId)
-                sessionWasReset = true
-              },
+              resetSession: () => turn.resetSession(),
               safetyLadderLength: safetyLadder.length,
               onEmptyReply: (diagnostic) => {
-                emptyReplyDiagnostic = diagnostic
+                turn.noteEmptyReply(diagnostic)
               },
-              escalateSafety: async () => {
-                if (safetyRung >= safetyLadder.length) return undefined
-                safetyRung++
-
-                if (safetyRung === 3) {
-                  // Carried history is the only remaining suspect: rebuild the window empty and drop images.
-                  dropMedia = true
-                  await destroySession(channelId)
-                  suppressSessionRehydration(channelId)
-                  await ensureSession(channelId)
-                  resetIdleTimer(channelId)
-                  sessionWasReset = true
-                }
-
-                systemPrompt = composePrompt(safetyRung)
-                steering.prompt = systemPrompt
-                return safetyLadder[safetyRung - 1]
-              },
+              escalateSafety: () => turn.escalateSafety(),
               runTurn: async (attempt, signal) => {
-                const includeCurrentTurn = attempt === 0 || sessionWasReset
+                const includeCurrentTurn = turn.shouldIncludeCurrentTurn(attempt)
                 // One attempt's whole budget, so a native search the model asks for inside it knows how much
                 // time is left before the chat model's next call still has to fit.
-                const searchAttempt = { deadlineAtMs: performance.now() + requestTimeoutFor(route.useFallback), signal }
+                const searchAttempt = {
+                  deadlineAtMs: performance.now() + requestTimeoutFor(turn.route.useFallback),
+                  signal
+                }
                 const testRequest: TestTurnRequest = {
                   newMessage: includeCurrentTurn ? buildNewMessage() : undefined,
                   stateDelta: includeCurrentTurn
                     ? {
-                        _systemPrompt: systemPrompt,
+                        _systemPrompt: turn.systemPrompt,
                         _userId: userId,
                         _channelId: channelId,
                         _guildId: guildId,
@@ -554,7 +605,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
                       event.customMetadata as { replyDiagnostic?: ReplyDiagnostic } | undefined
                     )?.replyDiagnostic
                     replyDiagnostic = suppliedDiagnostic ?? {
-                      provider: route.useFallback ? (config.llm.fallback?.provider ?? 'unknown') : 'google',
+                      provider: turn.route.useFallback ? (config.llm.fallback?.provider ?? 'unknown') : 'google',
                       modelId: modelNameForCurrentRequest(),
                       finishReason: event.finishReason === undefined ? null : String(event.finishReason),
                       ...(event.usageMetadata?.candidatesTokenCount !== undefined
@@ -601,12 +652,12 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   const llmMs = Math.round(performance.now() - llmStartMs)
 
   if (reliability.success) {
-    if (route.useFallback) {
+    if (turn.route.useFallback) {
       logger.info(
         { channelId, model: rokaModel.fallbackModelName, attempts: reliability.attempts },
         'Fallback model answered'
       )
-      if (movedAwayFromGemini && switchKind !== undefined && STICKY_KINDS.has(switchKind)) {
+      if (turn.movedAwayFromGemini && turn.switchKind !== undefined && STICKY_KINDS.has(turn.switchKind)) {
         setFallbackUntilMs(config.llm.stickyMs > 0 ? Date.now() + config.llm.stickyMs : 0)
       }
     } else {
@@ -669,8 +720,8 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
       blockSide: verdict.blockSide,
       finishReason: verdict.finishReason,
       safetyRatings: verdict.safetyRatings,
-      errorMessage: emptyReplyDiagnostic ? JSON.stringify(emptyReplyDiagnostic) : undefined,
-      safetyRungsUsed: safetyRung,
+      errorMessage: turn.emptyReplyDiagnostic ? JSON.stringify(turn.emptyReplyDiagnostic) : undefined,
+      safetyRungsUsed: turn.safetyRung,
       attempts: reliability.attempts,
       tone,
       imageCount: mediaParts.length + digests.length,
@@ -683,7 +734,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   }
   // Reuse one estimate for both reported and charged token cost.
   const tokensInEst =
-    estimateTokens(systemPrompt) +
+    estimateTokens(turn.systemPrompt) +
     fakeMessages.reduce((total, message) => total + estimateTokens(`[${message.displayName}]: ${message.content}`), 0) +
     toolsTok +
     estimateTokens(`[${displayName}]: ${userMessage}`) +
@@ -694,7 +745,11 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   chargeTokens(tokensInEst)
 
   const answeredModel =
-    route.answeredBy === 'fallback' ? config.llm.fallback : route.answeredBy === 'main' ? config.llm.main : null
+    turn.route.answeredBy === 'fallback'
+      ? config.llm.fallback
+      : turn.route.answeredBy === 'main'
+        ? config.llm.main
+        : null
   const metrics: ResponseMetrics = {
     generateMs: Math.round(performance.now() - generateStartMs),
     llmMs,
@@ -705,10 +760,10 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     failureMarker: reliability.failureMarker,
     tokensInEst,
     tokensOutEst: estimateTokens(reliability.text),
-    routeRole: route.answeredBy ?? undefined,
+    routeRole: turn.route.answeredBy ?? undefined,
     provider: answeredModel?.provider,
     modelId: answeredModel?.model,
-    hedged: route.hedged ? 1 : 0
+    hedged: turn.route.hedged ? 1 : 0
   }
 
   return {

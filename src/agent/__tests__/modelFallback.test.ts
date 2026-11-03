@@ -58,10 +58,22 @@ vi.mock('../../utils/rateLimiter.js', () => ({
 
 vi.mock('../../utils/timezone.js', () => ({ getLocalHour: () => 12 }))
 
+vi.mock('../media/turnMedia.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../media/turnMedia.js')>()
+  return { ...original, prepareTurnMedia: vi.fn(original.prepareTurnMedia) }
+})
+
 import { RoutedLlm, modelRouteForRequest } from '../llm/fallbackModel.js'
 import type { FailureKind } from '../llm/geminiReliability.js'
 import { profileFor } from '../llm/profiles.js'
-import { STICKY_KINDS, SWITCH_KINDS, __resetModelFallbackForTest, runTurnWithReliability } from '../reliability.js'
+import { prepareTurnMedia } from '../media/turnMedia.js'
+import {
+  STICKY_KINDS,
+  SWITCH_KINDS,
+  __resetModelFallbackForTest,
+  runTurnWithReliability,
+  setFallbackUntilMs
+} from '../reliability.js'
 import type { TurnOutcome } from '../reliability.js'
 import { __resetTestRunTurnFactory, __setTestRunTurnFactory, generateResponse, rokaAgent } from '../roka.js'
 import { destroySession } from '../session.js'
@@ -395,6 +407,26 @@ describe('generateResponse model fallback', () => {
     expect(seen[1].remainingMs).toBeGreaterThan(39_000)
     expect(seen[1].remainingMs).toBeLessThanOrEqual(40_000)
     expect(seen.map(({ sameSignal }) => sameSignal)).toEqual([true, true])
+  })
+
+  it('reads the sticky window after the turn media settles, not before', async () => {
+    const realMedia = vi.mocked(prepareTurnMedia).getMockImplementation()
+    if (!realMedia) throw new Error('expected the prepareTurnMedia passthrough')
+    vi.mocked(prepareTurnMedia).mockImplementationOnce(async (input) => {
+      // A long video watch outlasts the turn context, and another channel's outage can open the window meanwhile.
+      await new Promise((resolve) => setTimeout(resolve, 200))
+      setFallbackUntilMs(Date.now() + 10_000)
+      return realMedia(input)
+    })
+    const routes: Array<boolean | undefined> = []
+    __setTestRunTurnFactory(() => async () => {
+      routes.push(modelRouteForRequest.getStore()?.useFallback)
+      return { text: 'Answer~', hasText: true, hasFunctionCall: false }
+    })
+
+    await generateResponse(responseOptions())
+
+    expect(routes).toEqual([true])
   })
 
   it('uses the fallback for the retry and sends the next turn there within the sticky window', async () => {
