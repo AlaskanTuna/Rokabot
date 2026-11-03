@@ -14,5 +14,5 @@ const TONE_STYLES: Readonly<Record<ToneKey, ToneStyle>> = Object.fromEntries(
 )
 
 export function getToneStyle(tone: ToneKey): ToneStyle {
-  return TONE_STYLES[tone]
+  return TONE_STYLES[tone] ?? TONE_STYLES[character.defaultMood]
 }

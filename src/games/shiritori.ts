@@ -10,12 +10,17 @@ import { logger } from '../utils/logger.js'
 
 const require = createRequire(import.meta.url)
 
+export interface ShiritoriPlayer {
+  id: string
+  name: string
+}
+
 export interface ShiritoriGame {
   channelId: string
-  players: Map<string, number> // displayName -> score
+  players: Map<string, { name: string; score: number }> // user ID -> display name and score
   usedWords: Set<string>
   currentWord: string
-  currentPlayerOrder: string[] // ordered list of player displayNames
+  currentPlayerOrder: string[] // ordered list of user IDs
   currentTurnIndex: number
   active: boolean
   started: boolean // true once first move has been made (joining locked)
@@ -106,7 +111,8 @@ function resetTimeout(game: ShiritoriGame): void {
 function handleTimeout(game: ShiritoriGame): void {
   if (!game.active || !game.started) return
 
-  const timedOutPlayer = game.currentPlayerOrder[game.currentTurnIndex]
+  const timedOutPlayerId = game.currentPlayerOrder[game.currentTurnIndex]
+  const timedOutPlayer = game.players.get(timedOutPlayerId)?.name ?? timedOutPlayerId
   logger.info({ channelId: game.channelId, player: timedOutPlayer }, 'Shiritori player timed out')
 
   // Remove the player from order
@@ -117,26 +123,27 @@ function handleTimeout(game: ShiritoriGame): void {
     game.currentTurnIndex = 0
   }
 
-  // Fire the timeout callback if set
-  if (game.onTimeout) {
-    game.onTimeout(game.channelId, timedOutPlayer)
-  }
-
-  // Check if only one player remains
+  // Finish the game before notifying when one player remains
   if (game.currentPlayerOrder.length <= 1) {
     game.active = false
     if (game.timeoutTimer) {
       clearTimeout(game.timeoutTimer)
       game.timeoutTimer = null
     }
-    return
   }
+
+  // Fire the timeout callback if set
+  if (game.onTimeout) {
+    game.onTimeout(game.channelId, timedOutPlayer)
+  }
+
+  if (game.currentPlayerOrder.length <= 1) return
 
   // Reset timeout for next player
   resetTimeout(game)
 }
 
-export function startGame(channelId: string, starterName: string): ShiritoriResult {
+export function startGame(channelId: string, starter: ShiritoriPlayer): ShiritoriResult {
   if (activeGames.has(channelId)) {
     return { success: false, message: 'There is already an active game in this channel!' }
   }
@@ -145,10 +152,10 @@ export function startGame(channelId: string, starterName: string): ShiritoriResu
 
   const game: ShiritoriGame = {
     channelId,
-    players: new Map([[starterName, 0]]),
+    players: new Map([[starter.id, { name: starter.name, score: 0 }]]),
     usedWords: new Set([starterWord]),
     currentWord: starterWord,
-    currentPlayerOrder: [starterName],
+    currentPlayerOrder: [starter.id],
     currentTurnIndex: 0,
     active: true,
     started: false,
@@ -158,7 +165,7 @@ export function startGame(channelId: string, starterName: string): ShiritoriResu
   }
 
   activeGames.set(channelId, game)
-  logger.info({ channelId, starterName, starterWord }, 'Shiritori game started')
+  logger.info({ channelId, starterName: starter.name, starterWord }, 'Shiritori game started')
 
   return {
     success: true,
@@ -166,7 +173,7 @@ export function startGame(channelId: string, starterName: string): ShiritoriResu
   }
 }
 
-export function joinGame(channelId: string, playerName: string): ShiritoriResult {
+export function joinGame(channelId: string, player: ShiritoriPlayer): ShiritoriResult {
   const game = activeGames.get(channelId)
 
   if (!game || !game.active) {
@@ -177,22 +184,22 @@ export function joinGame(channelId: string, playerName: string): ShiritoriResult
     return { success: false, message: 'The game has already started! Wait for the next round~' }
   }
 
-  if (game.players.has(playerName)) {
+  if (game.players.has(player.id)) {
     return { success: false, message: 'You are already in the game!' }
   }
 
-  game.players.set(playerName, 0)
-  game.currentPlayerOrder.push(playerName)
+  game.players.set(player.id, { name: player.name, score: 0 })
+  game.currentPlayerOrder.push(player.id)
 
-  logger.info({ channelId, playerName }, 'Player joined shiritori')
+  logger.info({ channelId, playerName: player.name }, 'Player joined shiritori')
 
   return {
     success: true,
-    message: `**${playerName}** joined the game! (${game.currentPlayerOrder.length} players)`
+    message: `**${player.name}** joined the game! (${game.currentPlayerOrder.length} players)`
   }
 }
 
-export function submitWord(channelId: string, playerName: string, word: string): ShiritoriResult {
+export function submitWord(channelId: string, player: ShiritoriPlayer, word: string): ShiritoriResult {
   const game = activeGames.get(channelId)
 
   if (!game || !game.active) {
@@ -215,11 +222,12 @@ export function submitWord(channelId: string, playerName: string, word: string):
   }
 
   // Check turn order
-  const currentPlayer = game.currentPlayerOrder[game.currentTurnIndex]
-  if (playerName !== currentPlayer) {
+  const currentPlayerId = game.currentPlayerOrder[game.currentTurnIndex]
+  if (player.id !== currentPlayerId) {
+    const currentName = game.players.get(currentPlayerId)?.name ?? currentPlayerId
     return {
       success: false,
-      message: `It's not your turn! It's **${currentPlayer}**'s turn~`
+      message: `It's not your turn! It's **${currentName}**'s turn~`
     }
   }
 
@@ -246,18 +254,19 @@ export function submitWord(channelId: string, playerName: string, word: string):
   // Valid word!
   game.usedWords.add(normalizedWord)
   game.currentWord = normalizedWord
-  const score = (game.players.get(playerName) ?? 0) + 1
-  game.players.set(playerName, score)
+  const score = (game.players.get(player.id)?.score ?? 0) + 1
+  game.players.set(player.id, { name: player.name, score })
 
   // Advance turn
   game.currentTurnIndex = (game.currentTurnIndex + 1) % game.currentPlayerOrder.length
-  const nextPlayer = game.currentPlayerOrder[game.currentTurnIndex]
+  const nextPlayerId = game.currentPlayerOrder[game.currentTurnIndex]
+  const nextPlayer = game.players.get(nextPlayerId)?.name ?? nextPlayerId
   const nextLetter = getLastLetter(normalizedWord)
 
   // Reset timeout
   resetTimeout(game)
 
-  logger.debug({ channelId, playerName, word: normalizedWord, nextPlayer }, 'Shiritori word accepted')
+  logger.debug({ channelId, playerName: player.name, word: normalizedWord, nextPlayer }, 'Shiritori word accepted')
 
   return {
     success: true,
@@ -278,14 +287,16 @@ export function endGame(channelId: string): { message: string; scores: Map<strin
   }
 
   game.active = false
-  const scores = new Map(game.players)
+  const scores = new Map([...game.players].map(([id, entry]) => [id, entry.score] as [string, number]))
   activeGames.delete(channelId)
 
   logger.info({ channelId, scores: Object.fromEntries(scores) }, 'Shiritori game ended')
 
   // Build scoreboard
-  const sorted = [...scores.entries()].sort((a, b) => b[1] - a[1])
-  const scoreboard = sorted.map(([name, s], i) => `${i + 1}. **${name}** — ${s} point${s !== 1 ? 's' : ''}`).join('\n')
+  const sorted = [...game.players.entries()].sort((a, b) => b[1].score - a[1].score)
+  const scoreboard = sorted
+    .map(([, entry], i) => `${i + 1}. **${entry.name}** — ${entry.score} point${entry.score !== 1 ? 's' : ''}`)
+    .join('\n')
 
   return {
     message: `Game over!\n\n${scoreboard}`,
@@ -315,10 +326,15 @@ export function getScores(channelId: string): ShiritoriResult {
     return { success: false, message: 'There is no active game in this channel!' }
   }
 
-  const sorted = [...game.players.entries()].sort((a, b) => b[1] - a[1])
-  const scoreboard = sorted.map(([name, s], i) => `${i + 1}. **${name}** — ${s} point${s !== 1 ? 's' : ''}`).join('\n')
+  const sorted = [...game.players.entries()].sort((a, b) => b[1].score - a[1].score)
+  const scoreboard = sorted
+    .map(([, entry], i) => `${i + 1}. **${entry.name}** — ${entry.score} point${entry.score !== 1 ? 's' : ''}`)
+    .join('\n')
 
-  const currentPlayer = game.started ? game.currentPlayerOrder[game.currentTurnIndex] : '(waiting for players)'
+  const currentPlayerId = game.currentPlayerOrder[game.currentTurnIndex]
+  const currentPlayer = game.started
+    ? (game.players.get(currentPlayerId)?.name ?? currentPlayerId)
+    : '(waiting for players)'
   const nextLetter = getLastLetter(game.currentWord).toUpperCase()
 
   return {

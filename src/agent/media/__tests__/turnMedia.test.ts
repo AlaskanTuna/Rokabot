@@ -1342,6 +1342,85 @@ describe('the qwen watcher', () => {
     expect(result.mediaTextParts[0].text).toBe("[A video was shared, but it couldn't be watched right now.]")
   })
 
+  it('remembers an inline upload watched by Qwen under its Discord path key', async () => {
+    const scope = { guildId: 'guild-1', channelId: 'c1', messageId: 'trigger-1', userId: 'asker-1' }
+    mocks.findMediaDigest.mockReturnValue(null)
+    mocks.transcriberUrl = 'http://asr:8000'
+    mocks.transcribeSource.mockResolvedValue({ reason: 'no_audio' })
+
+    await prepareTurnMedia({
+      ...input([
+        {
+          url: 'https://cdn.discordapp.com/attachments/1/2/clip.mp4',
+          contentType: 'video/mp4',
+          size: 300,
+          durationSec: 40
+        }
+      ]),
+      memoryScope: scope,
+      geminiUnavailable: true
+    })
+
+    expect(mocks.saveMediaDigest).toHaveBeenCalledWith(
+      expect.objectContaining({ contentKey: 'discord:/attachments/1/2/clip.mp4' })
+    )
+  })
+
+  it('reuses a remembered inline upload instead of watching it again with Qwen', async () => {
+    const scope = { guildId: 'guild-1', channelId: 'c1', messageId: 'trigger-1', userId: 'asker-1' }
+    const digest = qwenDigest()
+    mocks.findMediaDigest.mockReturnValue({
+      id: 7,
+      guildId: 'guild-1',
+      contentKey: 'discord:/attachments/1/2/clip.mp4',
+      kind: 'video',
+      label: 'video',
+      summary: digest.observations.summary,
+      digestJson: JSON.stringify(digest),
+      embedding: null,
+      createdAt: 1,
+      lastSharedAt: 1
+    })
+
+    const result = await prepareTurnMedia({
+      ...input([
+        {
+          url: 'https://cdn.discordapp.com/attachments/1/2/clip.mp4',
+          contentType: 'video/mp4',
+          size: 300,
+          durationSec: 40
+        }
+      ]),
+      memoryScope: scope,
+      geminiUnavailable: true
+    })
+
+    expect(mocks.findMediaDigest).toHaveBeenCalledWith('guild-1', 'discord:/attachments/1/2/clip.mp4')
+    expect(mocks.watchFramesWithQwen).not.toHaveBeenCalled()
+    expect(result.watchOutcome).toEqual({ status: 'remembered', kind: 'video' })
+  })
+
+  it('stays unremembered when an inline upload is not on the Discord CDN', async () => {
+    const scope = { guildId: 'guild-1', channelId: 'c1', messageId: 'trigger-1', userId: 'asker-1' }
+    mocks.findMediaDigest.mockReturnValue(null)
+
+    await prepareTurnMedia({
+      ...input([
+        {
+          url: 'https://media.example.com/attachments/1/2/clip.mp4',
+          contentType: 'video/mp4',
+          size: 300,
+          durationSec: 40
+        }
+      ]),
+      memoryScope: scope,
+      geminiUnavailable: true
+    })
+
+    expect(mocks.watchFramesWithQwen).toHaveBeenCalledTimes(1)
+    expect(mocks.saveMediaDigest).not.toHaveBeenCalled()
+  })
+
   describe('with a transcriber', () => {
     const speech = {
       language: 'en',

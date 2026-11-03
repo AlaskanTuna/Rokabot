@@ -34,12 +34,16 @@ function saveShiritoriScore(userId: string, score: number): void {
   }
 }
 
+export function saveShiritoriScores(scores: Map<string, number>): void {
+  for (const [userId, score] of scores) saveShiritoriScore(userId, score)
+}
+
 export function handleShiritoriStart(interaction: ChatInputCommandInteraction) {
   const channelId = interaction.channelId
   const member = interaction.member
   const displayName = member && 'displayName' in member ? member.displayName : interaction.user.displayName
 
-  const result = startShiritori(channelId, displayName)
+  const result = startShiritori(channelId, { id: interaction.user.id, name: displayName })
 
   if (!result.success) {
     return buildGameContainer({
@@ -62,7 +66,7 @@ export function handleShiritoriJoin(interaction: ChatInputCommandInteraction) {
   const member = interaction.member
   const displayName = member && 'displayName' in member ? member.displayName : interaction.user.displayName
 
-  const result = joinShiritori(channelId, displayName)
+  const result = joinShiritori(channelId, { id: interaction.user.id, name: displayName })
 
   if (!result.success) {
     return buildGameContainer({
@@ -88,7 +92,7 @@ export function handleShiritoriPlay(interaction: ChatInputCommandInteraction) {
   const displayName = member && 'displayName' in member ? member.displayName : interaction.user.displayName
   const word = interaction.options.getString('word', true)
 
-  const result = submitShiritoriWord(channelId, displayName, word)
+  const result = submitShiritoriWord(channelId, { id: interaction.user.id, name: displayName }, word)
 
   if (!result.success) {
     return buildGameContainer({
@@ -121,18 +125,10 @@ export function handleShiritoriEnd(interaction: ChatInputCommandInteraction) {
   }
 
   // Save scores for all players before ending
-  const playerUserIds = new Map<string, string>()
-  const member = interaction.member
-  const displayName = member && 'displayName' in member ? member.displayName : interaction.user.displayName
-  playerUserIds.set(displayName, interaction.user.id)
-
   const result = endShiritori(channelId)
 
   // Save scores to SQLite
-  for (const [name, score] of result.scores) {
-    const userId = playerUserIds.get(name) ?? name
-    saveShiritoriScore(userId, score)
-  }
+  saveShiritoriScores(result.scores)
 
   return buildGameContainer({
     accentColor: SHIRITORI_COLORS.end,
