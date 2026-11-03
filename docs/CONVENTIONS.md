@@ -8,7 +8,7 @@ Scripts live in `package.json`. It cannot tell you these:
 
 - **Full Verification:** `npm test`, `npm run test:perf`, `npm run typecheck` and `npm run format:check`.
 - **Typecheck:** `npm run build` checks only `src/`, and Vitest strips types, so `npm run typecheck` is the only gate that sees a test file.
-- **Live Gate:** `npm run test:live` needs `GRAPHIFY_GEMINI_API_KEY` and spends real Gemini calls. It is outside full verification.
+- **Test Scopes:** `npm test` runs contract and eval tests with the unit suite, except the perf-only memory-shadow test and live tests. `npm run test:contract` runs contract (`.contract.test.ts`) and eval (`.eval.test.ts`) files only. `npm run test:perf` runs only the perf-only memory-shadow test. `npm run test:live` needs `GRAPHIFY_GEMINI_API_KEY` and spends real Gemini calls, so it stays outside full verification.
 
 ## Configuration
 

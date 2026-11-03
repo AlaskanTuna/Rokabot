@@ -5,7 +5,7 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     setupFiles: ['./tests/vitest.setup.ts'],
-    include: ['tests/harness/__tests__/memoryShadow.eval.test.ts'],
+    include: ['tests/harness/__tests__/memoryShadow.perf.test.ts'],
     fileParallelism: false,
     testTimeout: 30_000
   }

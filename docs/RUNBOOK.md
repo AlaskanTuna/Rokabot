@@ -234,6 +234,12 @@ Gemini reports no per-call query cap, so one `search_web` call can bill several 
 Gemini reports. The record prices every Gemini query at the list rate, so it can overstate a month inside the free
 allowance and cannot understate it.
 
+```bash
+# Compare native search providers live (spends quota on the measured backends)
+npm run measure:native-search -- --live --provider anthropic
+npm run measure:native-search -- --live --provider gemini
+```
+
 - **`off` Removes the Tool:** she registers 13 tools instead of 14, and every prompt and tool description drops its mention of `search_web`. A prompt that names a tool she does not have invites "let me look that up", so the text changes with the tool list.
 - **`native` Needs a Tested Model:** only the four models in the table above carry a search tool, and only the two Claude ones have run one live. The two Gemini models are mock-tested only, because the two non-production keys returned 429 on grounded calls. On any other `llm.main`, startup warns naming the model and `search_web` is not registered, so the deployment behaves as `off`. Set `search.provider: tavily` to search with an API key instead.
 - **A Missing Key Keeps the Tool:** with `tavily` or `exa` and no key, startup warns and the tool stays registered. She answers `Web search is not configured.` when she calls it. This is the same behaviour a missing Tavily key had before.
@@ -354,7 +360,7 @@ sqlite3 ~/rokabot/data/rokabot.db "SELECT provider, ROUND(usd, 4) FROM llm_spend
 
 ```bash
 # Compare Jev tone with the regex tone on stored turns (needs TYPESAFE_API_KEY)
-npm run replay:jev -- data/rokabot.db --max-turns 100
+npm run memory:replay:jev -- data/rokabot.db --max-turns 100
 # Re-run the prefetch A/B before switching jev.prefetch to on
 npm run measure:prefetch -- --live --prefetch off --out /tmp/prefetch-off.json
 npm run measure:prefetch -- --live --prefetch on --out /tmp/prefetch-on.json

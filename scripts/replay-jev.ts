@@ -4,7 +4,7 @@ import { loadJevReplayTurns, renderJevReplayReport, runJevReplay } from '../test
 
 export function parseReplayArgs(argv: string[]): { databasePath: string; maxTurns: number } {
   const databasePath = argv[0]
-  if (!databasePath) throw new Error('Usage: npm run replay:jev -- data/rokabot.db --max-turns 100')
+  if (!databasePath) throw new Error('Usage: npm run memory:replay:jev -- data/rokabot.db --max-turns 100')
   const optionIndex = argv.indexOf('--max-turns')
   const rawMaxTurns = optionIndex === -1 ? '100' : argv[optionIndex + 1]
   if (!rawMaxTurns || !/^\d+$/.test(rawMaxTurns)) {
