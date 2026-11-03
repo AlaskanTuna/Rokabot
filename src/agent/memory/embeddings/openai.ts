@@ -1,5 +1,5 @@
+import { isEmbeddingVector } from '../../../storage/vectorProvenance.js'
 import type { EmbeddingClient, EmbeddingSettings } from './client.js'
-import { isEmbeddingVector } from './fingerprint.js'
 
 const OPENAI_EMBEDDINGS_URL = 'https://api.openai.com/v1/embeddings'
 

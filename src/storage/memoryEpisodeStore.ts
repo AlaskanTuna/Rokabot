@@ -1,9 +1,8 @@
-import { embeddingFingerprint } from '../agent/memory/embeddings/fingerprint.js'
 import { config } from '../config.js'
 import { getDb } from './database.js'
 import { enqueueEpisode } from './extractionQueue.js'
 import type { EpisodeCursor, ExtractionEpisode, ExtractionQueueJob } from './extractionQueue.js'
-import { UNKNOWN_FINGERPRINT } from './vectorProvenance.js'
+import { UNKNOWN_FINGERPRINT, embeddingFingerprint } from './vectorProvenance.js'
 
 const LEGACY_GEMINI_FINGERPRINT = embeddingFingerprint('gemini', 'gemini-embedding-2', 768)
 

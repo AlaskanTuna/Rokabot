@@ -20,8 +20,6 @@ import { resolveGuildFactDate } from './guildFactDates.js'
 import { reconcileHiddenRetractions } from './hiddenRetractions.js'
 import { admitThreshold, verifyThreshold } from './judgeThresholds.js'
 import {
-  type ClaimPeriod,
-  type ClaimStatus,
   type MemoryClaim,
   appendEvidence,
   assertClaim,
@@ -30,6 +28,7 @@ import {
   getActiveClaims,
   getActiveGuildClaimById,
   getActiveGuildClaims,
+  priorClaimStatus,
   rejectActiveClaimById,
   rejectActiveGuildClaimById,
   replaceActiveClaim,
@@ -216,17 +215,6 @@ function operationAllowed(op: EpisodeWriteOp, subjectIds: Set<string>): boolean 
 
 function operationSafe(op: EpisodeWriteOp): boolean {
   return !sensitiveFactReason(op.predicate, op.value)
-}
-
-function priorClaimStatus(guildId: string, op: EpisodeWriteOp, period: ClaimPeriod): ClaimStatus | undefined {
-  const [subjectUserId, predicate] =
-    op.subject.kind === 'guild' ? [null, op.predicate] : [op.subject.userId, normalizePredicate(op.predicate)]
-  const row = getDb()
-    .prepare(
-      'SELECT status FROM memory_claim WHERE guild_id = ? AND subject_kind = ? AND subject_user_id IS ? AND predicate = ? AND value = ? AND period = ?'
-    )
-    .get(guildId, op.subject.kind, subjectUserId, predicate, op.value, period) as { status: ClaimStatus } | undefined
-  return row?.status
 }
 
 function keyApplied(
@@ -450,7 +438,15 @@ export async function verifyAndApplyOperations(input: {
           }
         }
 
-        const priorStatus = priorClaimStatus(input.guildId, op, period)
+        const priorStatus = isGuildWriteOperation(op)
+          ? priorClaimStatus(input.guildId, { kind: 'guild' }, op.predicate, op.value, period)
+          : priorClaimStatus(
+              input.guildId,
+              { kind: 'user', userId: op.subject.userId },
+              normalizePredicate(op.predicate),
+              op.value,
+              period
+            )
         if (isGuildWriteOperation(op)) {
           const claim = assertGuildClaim(
             {

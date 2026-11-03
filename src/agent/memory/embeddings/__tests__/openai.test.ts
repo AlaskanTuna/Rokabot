@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { embeddingFingerprint } from '../../../../storage/vectorProvenance.js'
 import type { EmbeddingSettings } from '../client.js'
-import { embeddingFingerprint } from '../fingerprint.js'
 import { createOpenAiEmbeddingClient } from '../openai.js'
 import { fakeFetch, hangingFetch, json } from './fakeFetch.js'
 

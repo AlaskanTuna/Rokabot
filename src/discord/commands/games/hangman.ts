@@ -10,8 +10,7 @@ import {
   guessWord,
   startGame as startHangman
 } from '../../../games/hangman.js'
-import { getDb } from '../../../storage/database.js'
-import { logger } from '../../../utils/logger.js'
+import { saveGameScore } from '../../../storage/gameStore.js'
 import { buildGameContainer } from './shared.js'
 
 export const HANGMAN_COLORS = {
@@ -33,16 +32,6 @@ function buildHangmanBody(display: string, art: string, lives: number, timeoutAt
   }
 
   return lines.join('\n')
-}
-
-function saveHangmanScore(playerId: string, score: number): void {
-  try {
-    getDb()
-      .prepare('INSERT INTO game_scores (user_id, game, score, played_at) VALUES (?, ?, ?, ?)')
-      .run(playerId, 'hangman', score, Date.now())
-  } catch (error) {
-    logger.error({ error, playerId, score }, 'Failed to save hangman score')
-  }
 }
 
 export function handleHangmanStart(interaction: ChatInputCommandInteraction) {
@@ -108,7 +97,7 @@ export function handleHangmanGuess(interaction: ChatInputCommandInteraction) {
 
       if (result.won) {
         const score = result.remainingLives
-        saveHangmanScore(playerId, score)
+        saveGameScore(playerId, 'hangman', score)
         return buildGameContainer({
           accentColor: HANGMAN_COLORS.win,
           title: 'Hangman',
@@ -116,7 +105,7 @@ export function handleHangmanGuess(interaction: ChatInputCommandInteraction) {
           footer: `Score: ${score} point${score !== 1 ? 's' : ''}`
         })
       } else {
-        saveHangmanScore(playerId, 0)
+        saveGameScore(playerId, 'hangman', 0)
         return buildGameContainer({
           accentColor: HANGMAN_COLORS.lose,
           title: 'Hangman',
@@ -154,7 +143,7 @@ export function handleHangmanGuess(interaction: ChatInputCommandInteraction) {
 
     if (result.won) {
       const score = result.remainingLives
-      saveHangmanScore(playerId, score)
+      saveGameScore(playerId, 'hangman', score)
       return buildGameContainer({
         accentColor: HANGMAN_COLORS.win,
         title: 'Hangman',
@@ -162,7 +151,7 @@ export function handleHangmanGuess(interaction: ChatInputCommandInteraction) {
         footer: `Score: ${score} point${score !== 1 ? 's' : ''}`
       })
     } else {
-      saveHangmanScore(playerId, 0)
+      saveGameScore(playerId, 'hangman', 0)
       return buildGameContainer({
         accentColor: HANGMAN_COLORS.lose,
         title: 'Hangman',

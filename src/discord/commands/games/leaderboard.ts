@@ -1,24 +1,11 @@
 /** Shared leaderboard handler for hangman and shiritori */
 
 import type { ChatInputCommandInteraction } from 'discord.js'
-import { getDb } from '../../../storage/database.js'
+import { gameLeaderboard, gamePlayerTotal } from '../../../storage/gameStore.js'
 import { buildGameContainer } from './shared.js'
 
 export function handleLeaderboard(game: 'hangman' | 'shiritori', interaction: ChatInputCommandInteraction) {
-  const db = getDb()
-
-  const rows = db
-    .prepare(
-      `
-    SELECT user_id, SUM(score) as total_score, COUNT(*) as games_played
-    FROM game_scores
-    WHERE game = ?
-    GROUP BY user_id
-    ORDER BY total_score DESC
-    LIMIT 10
-  `
-    )
-    .all(game) as Array<{ user_id: string; total_score: number; games_played: number }>
+  const rows = gameLeaderboard(game)
 
   if (rows.length === 0) {
     return buildGameContainer({
@@ -38,15 +25,7 @@ export function handleLeaderboard(game: 'hangman' | 'shiritori', interaction: Ch
   const userInTop = rows.some((r) => r.user_id === userId)
   let footer: string | undefined
   if (!userInTop) {
-    const userRow = db
-      .prepare(
-        `
-      SELECT SUM(score) as total_score, COUNT(*) as games_played
-      FROM game_scores
-      WHERE game = ? AND user_id = ?
-    `
-      )
-      .get(game, userId) as { total_score: number | null; games_played: number } | undefined
+    const userRow = gamePlayerTotal(game, userId)
 
     if (userRow?.total_score !== null && userRow?.total_score !== undefined) {
       footer = `Your score: ${userRow.total_score} pts (${userRow.games_played} games)`

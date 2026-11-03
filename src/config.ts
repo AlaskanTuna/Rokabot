@@ -14,9 +14,9 @@ import {
   compatibleProfile,
   profileFor
 } from './agent/llm/profiles.js'
-// All four are pure leaves — attachmentLimits.ts, llm/profiles.ts and embeddings/fingerprint.ts import nothing,
-// mediaRules.ts only node built-ins — so reading them here derives values instead of restating them, and cannot
-// close a cycle back into config.
+// All four are pure leaves — attachmentLimits.ts, llm/profiles.ts and vectorProvenance.ts import nothing at
+// runtime (its better-sqlite3 import is type-only), mediaRules.ts only node built-ins — so reading them here
+// derives values instead of restating them, and cannot close a cycle back into config.
 import { GEMINI_IMAGE_TOKENS, MAX_DOCUMENT_SIZE_BYTES } from './agent/media/attachmentLimits.js'
 import { MAX_ATTACHMENTS } from './agent/media/mediaRules.js'
 import {
@@ -25,7 +25,7 @@ import {
   defaultEmbeddingProvider,
   embeddingDimensions,
   embeddingFingerprint
-} from './agent/memory/embeddings/fingerprint.js'
+} from './storage/vectorProvenance.js'
 
 function requiredEnv(key: string): string {
   const value = process.env[key]
@@ -1092,12 +1092,12 @@ if (!/^[\w.-]+\/[\w.-]+$/.test(config.updates.repo)) {
   throw new Error(`Config value updates.repo must be "owner/name", got: ${config.updates.repo}`)
 }
 
-// logger.ts imports this module, so awaiting the import here would deadlock startup. Under Vitest's module
-// runner the import can also resolve with `logger` still undefined mid-cycle — a live binding, not Node's
-// would-wait-or-throw cycle — so the call is guarded against `TypeError: Cannot read properties of undefined`.
-// A test's logger mock may also resolve without a `warn` at all, hence the second guard.
+// logger.ts imports this module, so it cannot log here; warnings collect until index.ts drains them at boot.
+const pendingStartupWarnings: Array<{ fields: Record<string, unknown>; message: string }> = []
+export const startupWarnings: ReadonlyArray<{ fields: Record<string, unknown>; message: string }> =
+  pendingStartupWarnings
 function warnAfterStartup(fields: Record<string, unknown>, message: string) {
-  void import('./utils/logger.js').then(({ logger }) => logger?.warn?.(fields, message))
+  pendingStartupWarnings.push({ fields, message })
 }
 
 if (config.embeddings.provider !== 'gemini' && !similarityFloors) {

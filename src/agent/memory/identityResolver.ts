@@ -2,6 +2,7 @@ import { config } from '../../config.js'
 import { getDb } from '../../storage/database.js'
 import { getClaimSourceChannels } from '../../storage/memoryRecallStore.js'
 import { getUserName } from '../../storage/userNames.js'
+import { USER_CLAIM_PRESENCE, activeNicknameClaims } from './memoryClaims.js'
 import { type RecallScope, canRecall } from './privacy.js'
 
 type MatchKind = 'display_name' | 'username' | 'nickname'
@@ -29,7 +30,7 @@ const MATCH_PRIORITY: Record<MatchKind, number> = {
 }
 
 const GUILD_PRESENCE = `(
-  EXISTS(SELECT 1 FROM memory_claim WHERE guild_id = ? AND subject_kind = 'user' AND subject_user_id = user_names.user_id)
+  ${USER_CLAIM_PRESENCE}
   OR EXISTS(SELECT 1 FROM response_events WHERE guild_id = ? AND user_id = user_names.user_id)
 )`
 
@@ -38,14 +39,7 @@ function nicknameRows(guildId: string, scope: RecallScope | undefined): Array<{ 
   const level = config.memory.privacy
   if (guildId === 'global' || level === 'off') return []
   // A past nickname no longer names anyone, so it never resolves.
-  const rows = getDb()
-    .prepare(
-      `SELECT id, subject_user_id AS user_id, value FROM memory_claim
-       WHERE guild_id = ? AND subject_kind = 'user' AND status = 'active' AND needs_review = 0 AND period = 'current'
-         AND predicate = 'nickname'
-       ORDER BY id`
-    )
-    .all(guildId) as Array<{ id: number; user_id: string; value: string }>
+  const rows = activeNicknameClaims(guildId)
   if (level === 'relaxed') return rows
   if (!scope) return []
   const sources = getClaimSourceChannels(rows.map(({ id }) => id))

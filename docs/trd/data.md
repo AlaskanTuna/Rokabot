@@ -157,6 +157,6 @@ Every reply turn runs the ADK `LlmAgent` named `roka` on the model that `llm.mai
 - `src/utils/rateLimiter.ts`
 - `src/agent/promptAssembler.ts`, `src/character/`, `characters/roka/moods.yml`
 - `src/storage/database.ts`, `src/storage/memoryClaimSchema.ts`, `src/storage/vectorProvenance.ts`
-- `src/storage/sessionStore.ts`, `src/storage/metricsStore.ts`, `src/storage/reportStore.ts`
+- `src/storage/sessionStore.ts`, `src/storage/gameStore.ts`, `src/storage/statsStore.ts`, `src/storage/metricsStore.ts`, `src/storage/reportStore.ts`
 - `src/agent/session.ts`, `src/agent/roka.ts`, `src/agent/llm/safetySettings.ts`
 - `src/index.ts` (prune schedule)

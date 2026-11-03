@@ -5,6 +5,13 @@ import { join } from 'node:path'
 import { dump, load } from 'js-yaml'
 import { afterEach, describe, expect, it } from 'vitest'
 
+// The same import order and loop as src/index.ts, which cannot run here without logging in to Discord.
+const DRAIN_LIKE_INDEX = `
+const { startupWarnings } = await import('./src/config.ts')
+const { logger } = await import('./src/utils/logger.ts')
+for (const { fields, message } of startupWarnings) logger.warn(fields, message)
+`
+
 describe('config startup with the real logger', () => {
   const tempDirs: string[] = []
 
@@ -20,16 +27,12 @@ describe('config startup with the real logger', () => {
     const configPath = join(dir, 'config.yml')
     writeFileSync(configPath, dump(base))
 
-    return spawnSync(
-      process.execPath,
-      ['--import', 'tsx', '--input-type=module', '-e', "await import('./src/config.ts')"],
-      {
-        encoding: 'utf8',
-        // The suite sets LOG_LEVEL=error to quiet startup warnings; these cases assert on the warnings themselves.
-        env: { ...process.env, ROKABOT_CONFIG_PATH: configPath, NODE_ENV: 'production', LOG_LEVEL: 'warn' },
-        timeout: 10_000
-      }
-    )
+    return spawnSync(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', DRAIN_LIKE_INDEX], {
+      encoding: 'utf8',
+      // The suite sets LOG_LEVEL=error to quiet startup warnings; these cases assert on the warnings themselves.
+      env: { ...process.env, ROKABOT_CONFIG_PATH: configPath, NODE_ENV: 'production', LOG_LEVEL: 'warn' },
+      timeout: 10_000
+    })
   }
 
   it('settles and logs the turn deadline warning when gemini.timeout outgrows the deadline budget', () => {

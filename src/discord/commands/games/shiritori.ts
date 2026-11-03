@@ -10,8 +10,7 @@ import {
   startGame as startShiritori,
   submitWord as submitShiritoriWord
 } from '../../../games/shiritori.js'
-import { getDb } from '../../../storage/database.js'
-import { logger } from '../../../utils/logger.js'
+import { saveGameScore } from '../../../storage/gameStore.js'
 import { buildGameContainer } from './shared.js'
 
 export const SHIRITORI_COLORS = {
@@ -25,13 +24,7 @@ export const SHIRITORI_COLORS = {
 }
 
 function saveShiritoriScore(userId: string, score: number): void {
-  try {
-    getDb()
-      .prepare('INSERT INTO game_scores (user_id, game, score, played_at) VALUES (?, ?, ?, ?)')
-      .run(userId, 'shiritori', score, Date.now())
-  } catch (error) {
-    logger.error({ error, userId, score }, 'Failed to save shiritori score')
-  }
+  saveGameScore(userId, 'shiritori', score)
 }
 
 export function saveShiritoriScores(scores: Map<string, number>): void {

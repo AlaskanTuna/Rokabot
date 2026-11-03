@@ -3,23 +3,25 @@ import { getDb } from '../../storage/database.js'
 import { recordMemoryEvent } from '../../storage/metricsStore.js'
 import { logger } from '../../utils/logger.js'
 import { verifyThreshold } from './judgeThresholds.js'
-import { assertClaim, confidenceForEvidence, getActiveClaimById, retireClaim } from './memoryClaims.js'
+import {
+  type ReclassifyRow,
+  assertClaim,
+  confidenceForEvidence,
+  countActiveClaimsForUser,
+  findReclassifiedClaim,
+  findReclassifyRows,
+  findUserClaimStatus,
+  getActiveClaimById,
+  retireClaim
+} from './memoryClaims.js'
 import { type PredicateId, isMoveTarget } from './predicates.js'
 import { jevConfirm, proposePredicates } from './reclassifyModels.js'
 
-export type ReclassifyCandidate = {
-  id: number
-  guildId: string
-  subjectUserId: string
-  predicate: PredicateId
-  value: string
-}
+export type ReclassifyCandidate = ReclassifyRow
 
 /** Facts reviewed per run, as a multiple of the cap: facts the model keeps must not starve the ones behind them. */
 const POOL_PER_MOVE = 5
 const MAX_POOL = 100
-
-type CandidateRow = { id: number; guild_id: string; subject_user_id: string; predicate: PredicateId; value: string }
 
 /**
  * Active current facts filed under misc, plus the weaker side of any pair that one member filed twice under
@@ -28,46 +30,7 @@ type CandidateRow = { id: number; guild_id: string; subject_user_id: string; pre
  * active row with a `claim_reclassified` event of its own was put back by hand.
  */
 export function findReclassifyCandidates(limit: number): ReclassifyCandidate[] {
-  const rows = getDb()
-    .prepare(
-      `SELECT c.id, c.guild_id, c.subject_user_id, c.predicate, c.value
-       FROM memory_claim c
-       WHERE c.subject_kind = 'user' AND c.status = 'active' AND c.period = 'current'
-         AND c.id NOT IN (
-           SELECT json_extract(detail, '$.oldId') FROM memory_events
-           WHERE kind = 'claim_reclassified' AND json_extract(detail, '$.oldId') IS NOT NULL
-         )
-         AND (
-           c.predicate = 'misc'
-           OR EXISTS (
-             SELECT 1 FROM memory_claim o
-             WHERE o.subject_kind = 'user' AND o.status = 'active' AND o.period = 'current'
-               AND o.guild_id = c.guild_id AND o.subject_user_id = c.subject_user_id
-               AND o.predicate != c.predicate AND o.predicate != 'misc' AND lower(o.value) = lower(c.value)
-               AND (o.salience > c.salience OR (o.salience = c.salience AND o.id < c.id))
-           )
-         )
-       ORDER BY random()
-       LIMIT ?`
-    )
-    .all(limit) as CandidateRow[]
-  return rows.map((row) => ({
-    id: row.id,
-    guildId: row.guild_id,
-    subjectUserId: row.subject_user_id,
-    predicate: row.predicate,
-    value: row.value
-  }))
-}
-
-function activeCount(guildId: string, subjectUserId: string): number {
-  return (
-    getDb()
-      .prepare(
-        "SELECT COUNT(*) AS count FROM memory_claim WHERE subject_kind = 'user' AND guild_id = ? AND subject_user_id = ? AND status = 'active'"
-      )
-      .get(guildId, subjectUserId) as { count: number }
-  ).count
+  return findReclassifyRows(limit)
 }
 
 /**
@@ -82,14 +45,8 @@ export function moveClaim(claim: ReclassifyCandidate, to: PredicateId, probabili
     if (!original) throw new Error('Claim is not active')
     if (original.predicate === to) throw new Error('Claim is already filed there')
 
-    const before = activeCount(original.guildId, original.subjectUserId)
-    const target = db
-      .prepare(
-        "SELECT status, end_reason FROM memory_claim WHERE subject_kind = 'user' AND guild_id = ? AND subject_user_id = ? AND predicate = ? AND value = ? AND period = 'current'"
-      )
-      .get(original.guildId, original.subjectUserId, to, original.value) as
-      | { status: string; end_reason: string | null }
-      | undefined
+    const before = countActiveClaimsForUser(original.guildId, original.subjectUserId)
+    const target = findUserClaimStatus(original.guildId, original.subjectUserId, to, original.value)
     // The member ended that fact on purpose; a copy left under another predicate must not bring it back.
     if (
       target &&
@@ -145,7 +102,7 @@ export function moveClaim(claim: ReclassifyCandidate, to: PredicateId, probabili
     )
     db.prepare('UPDATE memory_claim SET superseded_by = ? WHERE id = ?').run(moved.id, original.id)
 
-    if (activeCount(original.guildId, original.subjectUserId) < (created ? before : before - 1)) {
+    if (countActiveClaimsForUser(original.guildId, original.subjectUserId) < (created ? before : before - 1)) {
       throw new Error('Move would retire another fact')
     }
 
@@ -170,11 +127,7 @@ export function moveClaim(claim: ReclassifyCandidate, to: PredicateId, probabili
 export function undoReclassify(oldClaimId: number): boolean {
   const db = getDb()
   return db.transaction(() => {
-    const old = db
-      .prepare(
-        "SELECT guild_id, subject_user_id, superseded_by FROM memory_claim WHERE id = ? AND subject_kind = 'user' AND status = 'rejected' AND end_reason = 'reclassified'"
-      )
-      .get(oldClaimId) as { guild_id: string; subject_user_id: string; superseded_by: number | null } | undefined
+    const old = findReclassifiedClaim(oldClaimId)
     if (!old || old.superseded_by === null) return false
 
     const event = db
