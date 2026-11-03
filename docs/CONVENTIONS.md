@@ -38,4 +38,4 @@ Scripts live in `package.json`. It cannot tell you these:
 
 ## Commits
 
-Use Conventional Commits, `<type>[scope]: <description>`: one imperative sentence, no trailing period, no body or footer. `commitlint.config.js` holds the allowed values. **Titles:** check issue and PR titles with `commitlint` before creating them.
+Use Conventional Commits, `<type>[scope]: <description>`: one imperative sentence, no trailing period, no body or footer. `commitlint.config.js` holds the allowed values. **Types and Scopes:** both are enforced. The `type:` and `area:` labels in `.github/labels.yml` mirror them, and a test keeps the two in step. **Titles:** check issue and PR titles with `commitlint` before creating them.

@@ -1,0 +1,20 @@
+name: Bug
+description: Report something broken
+title: 'fix(<scope>): '
+labels: [needs-triage, 'type:fix']
+assignees: [AlaskanTuna]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What Happened
+      description: What went wrong, and what you expected instead
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: How to make it happen again
+    validations:
+      required: false
