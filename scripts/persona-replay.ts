@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import Anthropic from '@anthropic-ai/sdk'
-import { GoogleGenAI } from '@google/genai'
+import { type FunctionDeclaration, type GenerateContentConfig, GoogleGenAI } from '@google/genai'
 import Database from 'better-sqlite3'
 import * as dotenv from 'dotenv'
 import { messageEdge } from '../src/agent/replyShape.js'
@@ -239,7 +239,7 @@ async function runClaude(
       ...(settings.thinking.type === 'adaptive'
         ? { thinking: settings.thinking, output_config: settings.outputConfig }
         : { thinking: settings.thinking })
-    } as Anthropic.MessageCreateParams)
+    } as Anthropic.MessageCreateParamsNonStreaming)
     const uses = response.content.filter((block) => block.type === 'tool_use')
     const text = response.content
       .filter((block) => block.type === 'text')
@@ -279,7 +279,11 @@ async function runGemini(
     const response = await client.models.generateContent({
       model: 'gemini-3.5-flash-lite',
       contents,
-      config: { ...GEMINI_CONFIG, systemInstruction: prompt, tools: [{ functionDeclarations: [GEMINI_SEARCH] }] }
+      config: {
+        ...(GEMINI_CONFIG as GenerateContentConfig),
+        systemInstruction: prompt,
+        tools: [{ functionDeclarations: [GEMINI_SEARCH as FunctionDeclaration] }]
+      }
     })
     const candidate = response.candidates?.[0]
     const parts = candidate?.content?.parts ?? []
@@ -381,7 +385,7 @@ async function main(argv: readonly string[]): Promise<void> {
   const gemini = geminiKeys[0] ? new GoogleGenAI({ apiKey: geminiKeys[0] }) : undefined
   const search = async (query: string): Promise<SearchResult> => {
     const { searchWeb } = await import('../src/agent/tools/searchWeb.js')
-    return searchWeb({ query }) as Promise<SearchResult>
+    return searchWeb({ query }) as unknown as Promise<SearchResult>
   }
   const done = new Set<string>()
   if (existsSync(output))

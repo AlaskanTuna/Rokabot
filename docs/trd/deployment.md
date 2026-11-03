@@ -27,19 +27,17 @@ _A PR runs the checks; a merge builds both images, tags them in GHCR, and the Pi
 
 ### Jobs
 
-| Job                     | Runs On                 | When                                              | Does                                                                                                                         |
-| ----------------------- | ----------------------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `test`                  | `ubuntu-latest`         | PR and push                                       | `npm ci`, `npx tsc --noEmit` (src only), `biome check .`, `npm test`, `npm run test:perf`. Dummy Discord and Gemini secrets. |
-| `compose`               | `ubuntu-24.04`          | PR and push                                       | Validates both compose profiles, checks the `config.yml` mount is read-only and refuses a missing file, lints workflows.     |
-| `images`                | amd64 and arm64 runners | After `test`                                      | Builds `rokabot` and `rokabot-asr` per platform with `GIT_COMMIT`. On push, pushes by digest to GHCR.                        |
-| `manifest`              | `ubuntu-24.04`          | Push, after `images`                              | Joins the digests into `sha-<7>` and `edge`. Fails if an anonymous pull does not work.                                       |
-| `images-ok`             | `ubuntu-24.04`          | Always                                            | Fails unless `images` and `compose` both succeeded. One stable check name for the ruleset.                                   |
-| `notify-images-failure` | `ubuntu-24.04`          | Push, on failure                                  | Posts to `DISCORD_WEBHOOK_URL` when `images` or `manifest` failed.                                                           |
-| `deploy`                | `self-hosted` (the Pi)  | Push, after `test` and `manifest`                 | Pulls and restarts the bot. See [Deploy on the Pi](#deploy-on-the-pi).                                                       |
-| `release`               | `ubuntu-24.04`          | Push, after `test`                                | Runs release-please. Outputs whether a release was created, its tag, major, minor and SHA.                                   |
-| `promote`               | `ubuntu-24.04`          | After a successful `deploy` of the release commit | Re-tags `sha-<7>` as `vX.Y.Z`, `vX.Y` and `stable` for both images. Nothing is rebuilt.                                      |
-
-`npm run typecheck`, which also checks `tests/`, is not part of CI.
+| Job                     | Runs On                 | When                                              | Does                                                                                                                                             |
+| ----------------------- | ----------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `test`                  | `ubuntu-latest`         | PR and push                                       | `npm ci`, `npm run typecheck` (src, tests, scripts, Studio), `biome check .`, `npm test`, `npm run test:perf`. Dummy Discord and Gemini secrets. |
+| `compose`               | `ubuntu-24.04`          | PR and push                                       | Validates both compose profiles, checks the `config.yml` mount is read-only and refuses a missing file, lints workflows.                         |
+| `images`                | amd64 and arm64 runners | After `test`                                      | Builds `rokabot` and `rokabot-asr` per platform with `GIT_COMMIT`. On push, pushes by digest to GHCR.                                            |
+| `manifest`              | `ubuntu-24.04`          | Push, after `images`                              | Joins the digests into `sha-<7>` and `edge`. Fails if an anonymous pull does not work.                                                           |
+| `images-ok`             | `ubuntu-24.04`          | Always                                            | Fails unless `images` and `compose` both succeeded. One stable check name for the ruleset.                                                       |
+| `notify-images-failure` | `ubuntu-24.04`          | Push, on failure                                  | Posts to `DISCORD_WEBHOOK_URL` when `images` or `manifest` failed.                                                                               |
+| `deploy`                | `self-hosted` (the Pi)  | Push, after `test` and `manifest`                 | Pulls and restarts the bot. See [Deploy on the Pi](#deploy-on-the-pi).                                                                           |
+| `release`               | `ubuntu-24.04`          | Push, after `test`                                | Runs release-please. Outputs whether a release was created, its tag, major, minor and SHA.                                                       |
+| `promote`               | `ubuntu-24.04`          | After a successful `deploy` of the release commit | Re-tags `sha-<7>` as `vX.Y.Z`, `vX.Y` and `stable` for both images. Nothing is rebuilt.                                                          |
 
 ### Image Tags
 

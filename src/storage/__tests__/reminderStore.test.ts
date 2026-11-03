@@ -21,6 +21,7 @@ import {
   deleteReminder,
   getActiveReminders,
   getDueReminders,
+  getReminderById,
   markDelivered
 } from '../reminderStore.js'
 
@@ -142,6 +143,14 @@ describe('reminderStore', () => {
       const due = getDueReminders()
       expect(due).toHaveLength(2)
     })
+
+    it('drops reminders more than 5 minutes past due', () => {
+      createReminder('Alice', 'ch-1', 'stale reminder', Date.now() - 6 * 60_000)
+
+      const due = getDueReminders()
+
+      expect(due).toHaveLength(0)
+    })
   })
 
   describe('markDelivered', () => {
@@ -163,6 +172,35 @@ describe('reminderStore', () => {
 
       const row = testDb.prepare('SELECT delivered FROM reminders WHERE id = ?').get(result.id) as { delivered: number }
       expect(row.delivered).toBe(1)
+    })
+  })
+
+  describe('getReminderById', () => {
+    it('returns the reminder for a live id', () => {
+      const result = createReminder('Alice', 'ch-1', 'buy milk', Date.now() + 60_000)
+
+      const found = getReminderById(result.id)
+
+      expect(found).not.toBeNull()
+      expect(found?.reminder).toBe('buy milk')
+    })
+
+    it('returns null after delivery', () => {
+      const result = createReminder('Alice', 'ch-1', 'test', Date.now() - 60_000)
+      markDelivered(result.id)
+
+      expect(getReminderById(result.id)).toBeNull()
+    })
+
+    it('returns null for a non-existent id', () => {
+      expect(getReminderById(99999)).toBeNull()
+    })
+
+    it('returns null after delete', () => {
+      const result = createReminder('Alice', 'ch-1', 'to delete', Date.now() + 60_000)
+      deleteReminder(result.id)
+
+      expect(getReminderById(result.id)).toBeNull()
     })
   })
 

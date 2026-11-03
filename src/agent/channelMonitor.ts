@@ -81,10 +81,6 @@ export function cleanupExpired(): void {
   }
 }
 
-export function getMonitoredCount(): number {
-  return monitoredChannels.size
-}
-
 /** Reset for testing */
 export function resetMonitor(): void {
   monitoredChannels.clear()
