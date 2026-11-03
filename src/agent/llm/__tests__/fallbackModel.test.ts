@@ -16,10 +16,8 @@ const configState = vi.hoisted(() => ({
   }
 }))
 
-// Under this tsconfig vitest loads tests as CJS, and the RelativePath.keys tsc emits for this file do not
-// collide with the literal key the source keeps, so both forms are registered.
+// The adapter defaults its hedge threshold from config, so this pins that value for the suite.
 vi.mock('../../../config.js', () => ({ config: configState }))
-vi.mock('../src/agent/../config.js', () => ({ config: configState }))
 
 const budgetState = vi.hoisted(() => ({ release: vi.fn(), startCall: vi.fn() }))
 
