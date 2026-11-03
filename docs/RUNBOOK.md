@@ -9,7 +9,7 @@ Commands and facts for running Rokabot on the Raspberry Pi 5.
 | Host           | Raspberry Pi 5 (8 GB), Docker Compose                                                      |
 | Checkout       | `~/rokabot`, reset to the deployed commit on every deploy                                  |
 | Compose File   | `~/rokabot/docker-compose.yml`                                                             |
-| Containers     | `rokabot-roka-1` (bot), `rokabot-asr-1` (speech), `embeddings` (opt-in profile)            |
+| Containers     | `rokabot-roka-1` (bot), `rokabot-asr-1` (speech), `rokabot-embeddings-1` (opt-in profile)  |
 | Secrets        | `~/rokabot/.env`, which also records `ROKA_TAG`                                            |
 | Tunables       | `~/rokabot/config.yml`, mounted read-only at `/app/config.yml`                             |
 | Database       | `~/rokabot/data/rokabot.db`, mounted at `/app/data`                                        |
@@ -409,14 +409,14 @@ A guild install must request both `bot` and `applications.commands`. With only `
 
 The guild permissions follow from the Discord API calls the bot makes:
 
-| Discord Operation                          | Where (Under `src/discord/`)                                                | Permission           |
-| ------------------------------------------ | --------------------------------------------------------------------------- | -------------------- |
-| Receiving `messageCreate`                  | gateway intents in `client.ts`                                              | View Channels        |
-| `message.reply(...)` / `channel.send(...)` | `events/messageCreate.ts`, `events/gameCommands.ts`, `reminderScheduler.ts` | Send Messages        |
-| `channel.messages.fetch(...)`              | `events/messageCreate.ts`, to resolve the message a reply points to         | Read Message History |
-| `message.react(...)`                       | `events/messageCreate.ts`                                                   | Add Reactions        |
-| `AttachmentBuilder` on the reply           | `events/stats/views.ts`, the `/stats` chart PNGs                            | Attach Files         |
-| None today                                 | no `EmbedBuilder` and no `embeds:` anywhere in `src/`                       | Embed Links          |
+| Discord Operation                          | Where (Under `src/discord/`)                                                  | Permission           |
+| ------------------------------------------ | ----------------------------------------------------------------------------- | -------------------- |
+| Receiving `messageCreate`                  | gateway intents in `client.ts`                                                | View Channels        |
+| `message.reply(...)` / `channel.send(...)` | `events/messageCreate.ts`, `commands/games/router.ts`, `reminderScheduler.ts` | Send Messages        |
+| `channel.messages.fetch(...)`              | `events/messageCreate.ts`, to resolve the message a reply points to           | Read Message History |
+| `message.react(...)`                       | `events/messageCreate.ts`                                                     | Add Reactions        |
+| `AttachmentBuilder` on the reply           | `commands/stats/views.ts`, the `/stats` chart PNGs                            | Attach Files         |
+| None today                                 | no `EmbedBuilder` and no `embeds:` anywhere in `src/`                         | Embed Links          |
 
 - **Embed Links:** granted but unused. It is kept for masked hyperlink footnotes (issue #19).
 - **Reminders:** `src/discord/reminderScheduler.ts` posts to the original channel first and falls back to a DM only when that channel is unreachable, so it needs guild Send Messages.

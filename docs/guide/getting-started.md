@@ -52,7 +52,7 @@ Optional keys:
 2. On the **Bot** page, reset the token. Save it as `DISCORD_TOKEN`.
 3. On the **Bot** page, turn on **Message Content Intent**. The bot connects with the Guilds, GuildMessages and MessageContent intents, and MessageContent is privileged.
 4. On the **General Information** page, copy the **Application ID**. Save it as `DISCORD_CLIENT_ID`.
-5. Install the app in your server with both scopes, `bot` and `applications.commands`. With `applications.commands` alone, only `/ask` works. Mentions, replies and name triggers never fire.
+5. Install the app in your server with both scopes, `bot` and `applications.commands`. With `applications.commands` alone, only the commands that work anywhere run: `/ask`, `/anime`, `/remind`, `/gacha` and `/report`. Mentions, replies and name triggers never fire.
 6. Grant these permissions: View Channels, Send Messages, Read Message History, Add Reactions, Attach Files and Embed Links.
 
 ## Install and Configure
