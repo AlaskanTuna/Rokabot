@@ -110,6 +110,7 @@ vi.mock('../../memory/episodeEmbeddings.js', () => ({ embedEpisodeText: mocks.em
 vi.mock('../../llm/tokenBudget.js', () => ({ remainingTokensThisMinute: mocks.remainingTokensThisMinute }))
 
 import { registerChannelVisibility, resetChannelVisibilityForTest } from '../../memory/channelVisibility.js'
+import { validateObservations } from '../digest.js'
 import { prepareTurnMedia } from '../turnMedia.js'
 
 const emptyPrepared = {
@@ -653,6 +654,31 @@ describe('remembering watched media in a server', () => {
       sourceAuthorId: null,
       origin: 'link'
     })
+  })
+
+  it('reuses a remembered digest whose note was clipped to its limit', async () => {
+    const validated = validateObservations(
+      {
+        summary: 'A man at a zoo talks about elephants.',
+        timeline: [],
+        speech: [],
+        onScreenText: [],
+        uncertainties: [],
+        style: 's'.repeat(350)
+      },
+      3
+    )
+    expect(validated?.incomplete).toBe(false)
+    if (!validated) throw new Error('expected clipped notes to validate')
+    const clipped = digestFor({ label: 'YouTube video', observations: validated.observations, incomplete: false })
+    mocks.findMediaDigest.mockReturnValue(stored(clipped, ['private-channel']))
+
+    const result = await prepareTurnMedia({ ...input([youtube]), memoryScope: scope })
+
+    expect(mocks.findMediaDigest).toHaveBeenCalledWith('guild-1', 'youtube:abc')
+    expect(mocks.watchMedia).not.toHaveBeenCalled()
+    expect(result.watchOutcome).toEqual({ status: 'remembered', kind: 'video', fromLink: true })
+    expect(result.mediaTextParts[0].text).toContain('A man at a zoo talks about elephants.')
   })
 
   it.each([

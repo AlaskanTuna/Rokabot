@@ -68,12 +68,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function boundedString(value: unknown, limit: number, markIncomplete: () => void): string | null {
+function boundedString(value: unknown, limit: number): string | null {
   if (typeof value !== 'string') return null
-  const trimmed = value.trim()
-  const bounded = trimmed.slice(0, limit)
-  if (bounded !== trimmed) markIncomplete()
-  return bounded
+  return value.trim().slice(0, limit)
 }
 
 function validBin(value: unknown, binCount: number): value is number {
@@ -94,7 +91,7 @@ export function validateObservations(
   const markIncomplete = () => {
     incomplete = true
   }
-  const summary = boundedString(raw.summary, 500, markIncomplete)
+  const summary = boundedString(raw.summary, 500)
   if (summary === null) return null
 
   const timeline: MediaObservations['timeline'] = []
@@ -106,8 +103,8 @@ export function validateObservations(
         markIncomplete()
         continue
       }
-      const visual = boundedString(value.visual, 300, markIncomplete)
-      const audio = boundedString(value.audio, 300, markIncomplete)
+      const visual = boundedString(value.visual, 300)
+      const audio = boundedString(value.audio, 300)
       if (visual === null || audio === null) {
         markIncomplete()
         continue
@@ -129,7 +126,7 @@ export function validateObservations(
         markIncomplete()
         continue
       }
-      const quote = boundedString(value.quote, 200, markIncomplete)
+      const quote = boundedString(value.quote, 200)
       if (quote === null) {
         markIncomplete()
         continue
@@ -138,7 +135,7 @@ export function validateObservations(
       if (value.speaker === null) {
         speaker = null
       } else if (typeof value.speaker === 'string') {
-        speaker = boundedString(value.speaker, 300, markIncomplete)
+        speaker = boundedString(value.speaker, 300)
       } else {
         markIncomplete()
       }
@@ -159,7 +156,7 @@ export function validateObservations(
         markIncomplete()
         continue
       }
-      const text = boundedString(value.text, 300, markIncomplete)
+      const text = boundedString(value.text, 300)
       if (text === null) {
         markIncomplete()
         continue
@@ -177,7 +174,7 @@ export function validateObservations(
     markIncomplete()
   } else {
     for (const value of raw.uncertainties) {
-      const text = boundedString(value, 300, markIncomplete)
+      const text = boundedString(value, 300)
       if (text === null) {
         markIncomplete()
         continue
@@ -202,7 +199,7 @@ export function validateObservations(
           markIncomplete()
           continue
         }
-        const note = boundedString(value.note, 300, markIncomplete)
+        const note = boundedString(value.note, 300)
         if (note === null) {
           markIncomplete()
           continue
@@ -222,7 +219,7 @@ export function validateObservations(
       markIncomplete()
     } else {
       for (const value of raw.claims) {
-        const claim = boundedString(value, 300, markIncomplete)
+        const claim = boundedString(value, 300)
         if (claim === null || claims.length >= MAX_CLAIMS) {
           markIncomplete()
           continue
@@ -233,7 +230,7 @@ export function validateObservations(
   }
   let style: string | undefined
   if (raw.style !== undefined) {
-    style = boundedString(raw.style, 300, markIncomplete) ?? undefined
+    style = boundedString(raw.style, 300) ?? undefined
     if (style === undefined) markIncomplete()
   }
 
