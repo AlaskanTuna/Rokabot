@@ -281,10 +281,10 @@ function mediaWatcher(): MediaWatcher {
   throw new Error(`${source} must be gemini, qwen, direct or off, got: ${String(value)}`)
 }
 
-// Unset means tavily until the native backend exists; PR 2 flips this default to native.
+// Unset means native, which runs on `llm.main` itself and needs no search API key.
 function searchProvider(): SearchProvider {
   const envValue = envString('SEARCH_PROVIDER')
-  const value = envValue ?? yaml.search?.provider ?? 'tavily'
+  const value = envValue ?? yaml.search?.provider ?? 'native'
   if (value === 'off' || value === 'native' || value === 'tavily' || value === 'exa') return value
   const source = envValue ? 'Environment variable SEARCH_PROVIDER' : 'Config value search.provider'
   throw new Error(`${source} must be off, native, tavily or exa, got: ${String(value)}`)

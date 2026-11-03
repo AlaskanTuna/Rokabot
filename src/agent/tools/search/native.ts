@@ -19,7 +19,7 @@ export interface NativeCall {
 export type NativeCaller = (route: ResolvedModel, call: NativeCall) => Promise<BackendOutcome>
 
 const BASE_PROMPT =
-  "Search the web for the user's message before answering. Then state what the results say in a few plain sentences, with no preamble and no mention of searching."
+  "Always run one web search for the user's message before answering, even when you think you already know the answer, because what you remember may be out of date. Then state what the results say in a few plain sentences, with no preamble and no mention of searching."
 
 export function nativeSearchPrompt(topic: 'general' | 'news'): string {
   return topic === 'news' ? `${BASE_PROMPT} Prefer recent news coverage.` : BASE_PROMPT

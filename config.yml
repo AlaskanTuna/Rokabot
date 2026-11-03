@@ -94,7 +94,7 @@ socialPosts:
   ytDlpPath: yt-dlp # yt-dlp binary for YouTube, TikTok, Reddit, Instagram and Bilibili
 
 search:
-  provider: tavily # off | native | tavily | exa; unset means tavily. tavily needs TAVILY_API_KEY, exa needs EXA_API_KEY; no model supports native yet
+  provider: tavily # off | native | tavily | exa; unset means native. native uses llm.main's own search and bills that provider (see docs/runbook.md, including the Gemini terms)
   nativeTimeoutMs: 8000 # Longest one native search may take
   nativeReserveMs: 5000 # Attempt time a native search must leave for the chat model's next call
 

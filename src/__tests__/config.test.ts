@@ -688,7 +688,7 @@ describe('config module', () => {
   })
 
   describe('search provider', () => {
-    it('defaults search.provider to tavily while no native backend exists', async () => {
+    it('defaults search.provider to native when unset', async () => {
       setRequiredEnvVars()
       clearTunableEnvVars()
       withYamlOverride({ search: undefined })
@@ -696,7 +696,7 @@ describe('config module', () => {
       const { config } = await import('../config.js')
 
       expect(config.search).toEqual({
-        provider: 'tavily',
+        provider: 'native',
         available: true,
         nativeTimeoutMs: 8000,
         nativeReserveMs: 5000

@@ -243,10 +243,10 @@ describe('createNativeSearch', () => {
 describe('nativeSearchPrompt', () => {
   it('adds the recent-coverage line only for news', () => {
     expect(nativeSearchPrompt('general')).toBe(
-      "Search the web for the user's message before answering. Then state what the results say in a few plain sentences, with no preamble and no mention of searching."
+      "Always run one web search for the user's message before answering, even when you think you already know the answer, because what you remember may be out of date. Then state what the results say in a few plain sentences, with no preamble and no mention of searching."
     )
     expect(nativeSearchPrompt('news')).toBe(
-      "Search the web for the user's message before answering. Then state what the results say in a few plain sentences, with no preamble and no mention of searching. Prefer recent news coverage."
+      "Always run one web search for the user's message before answering, even when you think you already know the answer, because what you remember may be out of date. Then state what the results say in a few plain sentences, with no preamble and no mention of searching. Prefer recent news coverage."
     )
   })
 })

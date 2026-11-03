@@ -53,12 +53,16 @@ Other environment variables:
 
 ## `search`
 
-| Key               | Default  | Env Override      | What It Does                                                                                                                                          |
-| ----------------- | -------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `search.provider` | `tavily` | `SEARCH_PROVIDER` | How `search_web` looks things up: `off` removes the tool, `tavily` needs `TAVILY_API_KEY`, `exa` needs `EXA_API_KEY`. An unknown value stops the bot. |
+| Key                      | Default  | Env Override      | What It Does                                                                                                                                                                                                                                                                                            |
+| ------------------------ | -------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `search.provider`        | `native` | `SEARCH_PROVIDER` | How `search_web` looks things up: `off` removes the tool, `native` searches through `llm.main`'s own search tool, `tavily` needs `TAVILY_API_KEY`, `exa` needs `EXA_API_KEY`. An unknown value stops the bot. `native` on Gemini needs a paid key, because Google offers no grounding on the free tier. |
+| `search.nativeTimeoutMs` | `8000`   | —                 | Longest one native search may take, in ms. Bounds `2000..60000`.                                                                                                                                                                                                                                        |
+| `search.nativeReserveMs` | `5000`   | —                 | Attempt time a native search must leave for the chat model's next call, in ms. Bounds `0..60000`.                                                                                                                                                                                                       |
 
-`native` is a valid value, but no model profile supports it yet, so the bot starts without `search_web` and logs a
-warning. See [Runbook](../runbook.md#web-search-provider).
+`native` needs a model that carries a tested search tool. Only four do, and `llm.main` must name one of them:
+`gemini-3.5-flash-lite`, `gemini-3.8-flash`, `claude-haiku-5-5` and `claude-sonnet-5-5`. On any other model the bot
+starts without `search_web` and logs a warning naming the model and the fix. See
+[Runbook](../runbook.md#web-search-provider).
 
 ## `jev`
 

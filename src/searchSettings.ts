@@ -3,7 +3,7 @@
 import { type SearchProvider, config } from './config.js'
 
 export function searchProviderSetting(): SearchProvider {
-  return config.search?.provider ?? 'tavily'
+  return config.search?.provider ?? 'native'
 }
 
 export function searchIsAvailable(): boolean {

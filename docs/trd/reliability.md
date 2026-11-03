@@ -264,6 +264,29 @@ the runner misses them. Reliability code must classify the yielded events and `L
   `finishReason` (for example `SAFETY`) into `errorCode` and drops `candidate.safetyRatings`. The loop sees the coarse
   `finishReason` only, never the per-category rating.
 
+## Native Time Budget
+
+A native `search_web` call runs a provider request of its own inside the reply attempt, so it must finish inside the
+attempt timer. An overrun would throw away a paid result, move the turn to the fallback, open the sticky window, and
+pay for the same search again on the retry.
+
+`attemptBudget.ts` (`src/agent/tools/search/`) holds the deadline and abort signal of the running attempt in
+`AsyncLocalStorage`, the way `roka.ts` already carries per-request state.
+
+- **Budget:** `nativeSearchTimeMs` is the smaller of `search.nativeTimeoutMs` and the attempt's remaining time minus
+  `search.nativeReserveMs`. The reserve is what the chat model's next call needs.
+- **No Attempt:** with no attempt in the store, the budget is `search.nativeTimeoutMs` alone.
+- **Too Short:** below `MIN_NATIVE_SEARCH_MS` (2,000 ms), `nativeSearchTimeMs` returns `null` and `search_web` returns
+  the failure text at once, with no provider call.
+- **Abort:** the search races its own timeout and the attempt's signal. A shutdown or an abandoned attempt cancels it,
+  and the call returns the failure text rather than throwing.
+- **Unchanged Timing:** `reliability.ts` does not change. The attempt timer stays the one clock, and `tavily` and
+  `exa` keep their current timing.
+- **Sticky Window:** native search still runs while the sticky window is open. One transient failure on the main model
+  must not remove search for five minutes, and a hung provider costs the turn at most `search.nativeTimeoutMs`.
+- **Searchless Deployment:** with `native` on a main model that has no search tool, `search_web` is not registered at
+  all, so no attempt budget is read.
+
 ## Configuration
 
 | Key                            | Default                        | Bounds                                                                                  |
@@ -281,6 +304,8 @@ the runner misses them. Reliability code must classify the yielded events and `L
 | `rateLimit.rpm`                | 15                             | min `gemini.maxLlmCalls`                                                                |
 | `rateLimit.rpd`                | 500                            | min 1                                                                                   |
 | `llm.modelscopeDailyMagicubes` | 250                            | min 1                                                                                   |
+| `search.nativeTimeoutMs`       | 8,000                          | 2,000 to 60,000                                                                         |
+| `search.nativeReserveMs`       | 5,000                          | 0 to 60,000                                                                             |
 
 Environment overrides are wired in `src/config.ts` (for example `GEMINI_LIVE_MAX_RETRIES`, `RATE_LIMIT_RPM`).
 

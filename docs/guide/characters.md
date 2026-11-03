@@ -154,9 +154,10 @@ Adding a footer tool or a memory predicate in code means adding its label to eve
 
 Any other `{{…}}` is a load error that names the file. `{{memory_tools}}` becomes `memory-tools.md` and
 `forget-tool.md` on a normal turn, `forget-tool.md` alone with `memory.privacy: off`, and nothing on `/ask`.
-`{{search_tools}}` becomes `search-tools.md` when `search.provider` is `tavily` or `exa`, and `no-search-tools.md`
-with `off` or `native`. A missing key does not change it: the prompts still name `search_web`, and the tool reports
-that search is not configured. The search state is fixed at startup, so both macros fill the same way on every turn.
+`{{search_tools}}` becomes `search-tools.md` when a search can run, and `no-search-tools.md` when it cannot. Search
+cannot run under `off`, or under `native` on a main model with no search tool. A missing key does not change it: the
+prompts still name `search_web`, and the tool reports that search is not configured. The search state is fixed at
+startup, so both macros fill the same way on every turn.
 
 ## Harness Prompts and Overrides
 

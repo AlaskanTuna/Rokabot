@@ -79,22 +79,22 @@ How each way of reaching Roka leads to her features. Only mention, reply and nam
 
 Roka decides when to call a tool. Each reply ends with a one-line footer that names up to two tools she used, then a count of the rest (`+2`). A web search adds a second line with up to three linked source sites.
 
-| Tool                 | What It Does                                       | Footer Label         | Matching Command  |
-| -------------------- | -------------------------------------------------- | -------------------- | ----------------- |
-| `roll_dice`          | Roll 1 to 10 dice with 2 to 100 sides              | cast the dice        | none              |
-| `flip_coin`          | Heads or tails                                     | tossed a coin        | none              |
-| `get_current_time`   | Time and date for a city or IANA timezone          | checked the clock    | none              |
-| `get_weather`        | Current weather for a city (Open-Meteo)            | checked the weather  | none              |
-| `search_web`         | Web search (Tavily or Exa, by `search.provider`)   | searched the web     | `/ask`            |
-| `search_anime`       | Anime search (Jikan)                               | looked up anime      | `/anime`          |
-| `get_anime_schedule` | Airing schedule by day, week or season (Jikan)     | checked airing times | `/anime schedule` |
-| `read_replies`       | Most-liked replies on a linked social post         | read the replies     | none              |
-| `set_reminder`       | Set a reminder for the speaker                     | set a reminder       | `/remind`         |
-| `list_reminders`     | List the speaker's reminders                       | listed reminders     | `/remind list`    |
-| `cancel_reminder`    | Cancel one of the speaker's reminders              | cancelled a reminder | `/remind cancel`  |
-| `remember_user`      | Save a fact the speaker asked her to keep          | saved a memory       | none              |
-| `recall_user`        | Look up what she knows about a member              | recalled a memory    | none              |
-| `forget_user`        | Forget the speaker's own notes that match keywords | forgot a memory      | none              |
+| Tool                 | What It Does                                             | Footer Label         | Matching Command  |
+| -------------------- | -------------------------------------------------------- | -------------------- | ----------------- |
+| `roll_dice`          | Roll 1 to 10 dice with 2 to 100 sides                    | cast the dice        | none              |
+| `flip_coin`          | Heads or tails                                           | tossed a coin        | none              |
+| `get_current_time`   | Time and date for a city or IANA timezone                | checked the clock    | none              |
+| `get_weather`        | Current weather for a city (Open-Meteo)                  | checked the weather  | none              |
+| `search_web`         | Web search (native, Tavily or Exa, by `search.provider`) | searched the web     | `/ask`            |
+| `search_anime`       | Anime search (Jikan)                                     | looked up anime      | `/anime`          |
+| `get_anime_schedule` | Airing schedule by day, week or season (Jikan)           | checked airing times | `/anime schedule` |
+| `read_replies`       | Most-liked replies on a linked social post               | read the replies     | none              |
+| `set_reminder`       | Set a reminder for the speaker                           | set a reminder       | `/remind`         |
+| `list_reminders`     | List the speaker's reminders                             | listed reminders     | `/remind list`    |
+| `cancel_reminder`    | Cancel one of the speaker's reminders                    | cancelled a reminder | `/remind cancel`  |
+| `remember_user`      | Save a fact the speaker asked her to keep                | saved a memory       | none              |
+| `recall_user`        | Look up what she knows about a member                    | recalled a memory    | none              |
+| `forget_user`        | Forget the speaker's own notes that match keywords       | forgot a memory      | none              |
 
 - **Withheld Tools:** `/ask` turns never get `remember_user`, `recall_user` or `forget_user`. With `memory.privacy: off` she keeps only `forget_user`. She gets `read_replies` only when the message asks about a post's replies. With `search.provider: off` she has no `search_web`, and the prompt stops offering one.
 - **Social Footer Labels:** an opened post leads the footer, for example `peeked at the X post`, and becomes the first citation. A post she could not open shows as `couldn't open the X post`.

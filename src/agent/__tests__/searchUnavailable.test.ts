@@ -33,7 +33,8 @@ describe.each(['off', 'native'] as const)('a deployment whose search provider is
       'Get anime airing schedule. Can check a specific day, the full week, or current season.'
     )
     expect(declarations.get('read_replies')?.description).toContain('and then call it. Never call it just because')
-  })
+    // Re-imports the whole tool module, which is slow enough to trip the 5 s default under full-suite load.
+  }, 20_000)
 
   it(`still strips a search_web call the model narrates under ${provider}`, async () => {
     vi.resetModules()
