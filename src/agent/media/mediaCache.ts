@@ -7,7 +7,7 @@ import {
 } from '../../storage/mediaDigestStore.js'
 import { logger } from '../../utils/logger.js'
 import { embedEpisodeText } from '../memory/episodeEmbeddings.js'
-import type { ImageAttachment } from './attachments.js'
+import type { MediaAttachment } from './attachments.js'
 import { renderCompactDigest, renderDigestBlock } from './digest.js'
 import { HALVES_MAX_DURATION_SEC, HALVES_MIN_DURATION_SEC, planHalves } from './plan.js'
 import type { MediaDigest } from './types.js'
@@ -53,7 +53,7 @@ export function remembered(scope: MediaMemoryScope, contentKey: string): { id: n
   }
 }
 
-export function recordShare(scope: MediaMemoryScope, attachment: ImageAttachment, digestId: number): void {
+export function recordShare(scope: MediaMemoryScope, attachment: MediaAttachment, digestId: number): void {
   try {
     recordMediaOccurrence({
       digestId,
@@ -71,7 +71,7 @@ export function recordShare(scope: MediaMemoryScope, attachment: ImageAttachment
 
 export function remember(
   scope: MediaMemoryScope,
-  attachment: ImageAttachment,
+  attachment: MediaAttachment,
   contentKey: string,
   digest: MediaDigest
 ) {

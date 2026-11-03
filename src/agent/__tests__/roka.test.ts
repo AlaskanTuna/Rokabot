@@ -1940,7 +1940,7 @@ describe('attachment intake', () => {
       displayName: 'Mio',
       username: 'mio',
       userId: 'mio-id',
-      imageAttachments: [{ url: 'https://cdn.test/file', contentType, size: serveOpts?.statedSize }]
+      mediaAttachments: [{ url: 'https://cdn.test/file', contentType, size: serveOpts?.statedSize }]
     })
     await destroySession('roka-attachment-channel')
 
@@ -2088,7 +2088,7 @@ describe('attachment intake', () => {
       displayName: 'Mio',
       username: 'mio',
       userId: 'mio-id',
-      imageAttachments: [{ url: 'https://cdn.test/file', contentType }]
+      mediaAttachments: [{ url: 'https://cdn.test/file', contentType }]
     })
     await destroySession(channelId)
     return result.droppedAttachments
@@ -2129,7 +2129,7 @@ describe('attachment intake', () => {
       displayName: 'Mio',
       username: 'mio',
       userId: 'mio-id',
-      imageAttachments: attachments.length
+      mediaAttachments: attachments.length
         ? attachments.map((a, i) => ({ url: `https://cdn.test/f${i}`, contentType: a.contentType }))
         : undefined
     })
@@ -2292,7 +2292,7 @@ describe('attachment intake', () => {
       displayName: 'Mio',
       username: 'mio',
       userId: 'mio-id',
-      imageAttachments: [{ url: 'https://cdn.test/file', contentType: 'audio/mpeg', size: 20 * MB }]
+      mediaAttachments: [{ url: 'https://cdn.test/file', contentType: 'audio/mpeg', size: 20 * MB }]
     })
     await destroySession('roka-truncated')
 
@@ -2310,7 +2310,7 @@ describe('attachment intake', () => {
       displayName: 'Mio',
       username: 'mio',
       userId: 'mio-id',
-      imageAttachments: [{ url: 'https://cdn.test/file', contentType: 'audio/mpeg', size: 1024 }]
+      mediaAttachments: [{ url: 'https://cdn.test/file', contentType: 'audio/mpeg', size: 1024 }]
     })
     await destroySession('roka-untruncated')
 
@@ -2332,7 +2332,7 @@ describe('attachment intake', () => {
       displayName: 'Mio',
       username: 'mio',
       userId: 'mio-id',
-      imageAttachments: attachment ? [attachment] : undefined
+      mediaAttachments: attachment ? [attachment] : undefined
     })
     await destroySession(channelId)
     return result.metrics.tokensInEst
@@ -2396,7 +2396,7 @@ describe('attachment intake', () => {
       displayName: 'Mio',
       username: 'mio',
       userId: 'mio-id',
-      imageAttachments: [{ url: 'https://cdn.test/file', contentType: 'application/pdf' }]
+      mediaAttachments: [{ url: 'https://cdn.test/file', contentType: 'application/pdf' }]
     })
     await destroySession('refuse-cost')
 
@@ -2429,7 +2429,7 @@ describe('attachment intake', () => {
       displayName: 'Mio',
       username: 'mio',
       userId: 'mio-id',
-      imageAttachments: [
+      mediaAttachments: [
         { url: 'https://cdn.test/file', contentType: 'application/pdf' },
         { url: 'https://cdn.test/file', contentType: 'application/pdf' },
         { url: 'https://cdn.test/file', contentType: 'application/pdf' }
@@ -2466,7 +2466,7 @@ describe('attachment intake', () => {
       displayName: 'Mio',
       username: 'mio',
       userId: 'mio-id',
-      imageAttachments: [
+      mediaAttachments: [
         { url: 'https://cdn.test/file', contentType: 'application/pdf' },
         { url: 'https://cdn.test/file', contentType: 'application/pdf' }
       ]
@@ -2523,7 +2523,7 @@ describe('attachment intake', () => {
       displayName: 'Mio',
       username: 'mio',
       userId: 'mio-id',
-      imageAttachments: [{ url: 'https://cdn.test/file', contentType: 'application/pdf' }]
+      mediaAttachments: [{ url: 'https://cdn.test/file', contentType: 'application/pdf' }]
     })
     await destroySession('admit-cost')
 
@@ -2662,7 +2662,7 @@ describe('watched media', () => {
       displayName: 'Mio',
       username: 'mio',
       userId: 'mio-id',
-      imageAttachments: [youtube]
+      mediaAttachments: [youtube]
     })
     await destroySession(channelId)
     return { result, parts: captured?.newMessage?.parts ?? [] }

@@ -40,7 +40,7 @@ vi.mock('../responses.js', () => ({
 }))
 vi.mock('../../utils/logger.js', () => ({ logger: { debug: vi.fn(), error: vi.fn(), info: vi.fn(), warn: vi.fn() } }))
 
-import type { ImageAttachment } from '../../agent/media/attachments.js'
+import type { MediaAttachment } from '../../agent/media/attachments.js'
 import { config } from '../../config.js'
 import type { RateLimiter } from '../../utils/rateLimiter.js'
 import type { ModelTurn } from '../turnPipeline.js'
@@ -82,7 +82,7 @@ const deliveryFor = (turn: ModelTurn, overrides = {}) => ({
   ...overrides
 })
 
-const attachment = (size: number): ImageAttachment => ({
+const attachment = (size: number): MediaAttachment => ({
   url: 'https://cdn.example/i.png',
   contentType: 'image/png',
   size

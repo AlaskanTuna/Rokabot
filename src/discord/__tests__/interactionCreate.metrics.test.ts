@@ -306,7 +306,7 @@ describe('interaction handler metrics', () => {
 
     expect(mocks.beginSocialPostLookup.mock.calls[0][0]).toContain('https://vxtwitter.com/roka/status/123')
     expect(mocks.resolveMediaUrl).toHaveBeenCalledWith('https://pbs.twimg.com/post.jpg')
-    expect(mocks.generateResponse.mock.calls[0][0].imageAttachments).toEqual([
+    expect(mocks.generateResponse.mock.calls[0][0].mediaAttachments).toEqual([
       { url: 'https://pbs.twimg.com/post.jpg', contentType: 'image/jpeg' }
     ])
   })
@@ -323,7 +323,7 @@ describe('interaction handler metrics', () => {
     await createInteractionHandler(rateLimiterStub() as never)(interaction as never)
 
     expect(mocks.resolveMediaUrl).not.toHaveBeenCalled()
-    expect(mocks.generateResponse.mock.calls[0][0].imageAttachments).toEqual([
+    expect(mocks.generateResponse.mock.calls[0][0].mediaAttachments).toEqual([
       {
         url: youtube.canonicalUrl,
         contentType: 'video/mp4',
@@ -423,7 +423,7 @@ describe('interaction handler metrics', () => {
 
     await createInteractionHandler(rateLimiterStub() as never)(interaction as never)
 
-    const forwarded = mocks.generateResponse.mock.calls[0][0].imageAttachments
+    const forwarded = mocks.generateResponse.mock.calls[0][0].mediaAttachments
     expect(forwarded).toHaveLength(ASK_ATTACHMENT_SLOTS)
     expect(forwarded.map((a: { url: string }) => a.url)).toEqual(
       offered.slice(0, ASK_ATTACHMENT_SLOTS).map((a) => a.url)
@@ -435,7 +435,7 @@ describe('interaction handler metrics', () => {
 
     await createInteractionHandler(rateLimiterStub() as never)(interaction as never)
 
-    expect(mocks.generateResponse.mock.calls[0][0].imageAttachments).toBeUndefined()
+    expect(mocks.generateResponse.mock.calls[0][0].mediaAttachments).toBeUndefined()
   })
 
   // Silence reads as hallucination: she answered "what is this?" as though nothing were attached.
@@ -474,7 +474,7 @@ describe('interaction handler metrics', () => {
 
     await createInteractionHandler(rateLimiterStub() as never)(interaction as never)
 
-    expect(mocks.generateResponse.mock.calls[0][0].imageAttachments).toEqual([
+    expect(mocks.generateResponse.mock.calls[0][0].mediaAttachments).toEqual([
       { url: 'https://cdn.test/notes.pdf', contentType: 'application/pdf' }
     ])
     expect(mocks.splitResponse.mock.calls[0][0]).toBe('Hello~')
@@ -486,7 +486,7 @@ describe('interaction handler metrics', () => {
 
     await createInteractionHandler(rateLimiterStub() as never)(interaction as never)
 
-    expect(mocks.generateResponse.mock.calls[0][0].imageAttachments).toEqual([
+    expect(mocks.generateResponse.mock.calls[0][0].mediaAttachments).toEqual([
       { url: 'https://cdn.test/voice.ogg', contentType: 'audio/ogg' }
     ])
   })
@@ -496,7 +496,7 @@ describe('interaction handler metrics', () => {
 
     await createInteractionHandler(rateLimiterStub() as never)(interaction as never)
 
-    expect(mocks.generateResponse.mock.calls[0][0].imageAttachments).toHaveLength(1)
+    expect(mocks.generateResponse.mock.calls[0][0].mediaAttachments).toHaveLength(1)
   })
 
   // Not every audio/* type is one the model accepts, and an .m4a is the common way to find that out.
@@ -588,7 +588,7 @@ describe('interaction handler metrics', () => {
 
     await createInteractionHandler(rateLimiterStub() as never)(interaction as never)
 
-    expect(mocks.generateResponse.mock.calls[0][0].imageAttachments).toEqual([
+    expect(mocks.generateResponse.mock.calls[0][0].mediaAttachments).toEqual([
       { url: 'https://cdn.test/linked.png', contentType: 'image/png' }
     ])
     vi.unstubAllGlobals()
@@ -613,7 +613,7 @@ describe('interaction handler metrics', () => {
 
     await createInteractionHandler(rateLimiterStub() as never)(interaction as never)
 
-    expect(mocks.generateResponse.mock.calls[0][0].imageAttachments).toHaveLength(ASK_ATTACHMENT_SLOTS + 1)
+    expect(mocks.generateResponse.mock.calls[0][0].mediaAttachments).toHaveLength(ASK_ATTACHMENT_SLOTS + 1)
     expect(fetchMock).toHaveBeenCalledTimes(1)
     vi.unstubAllGlobals()
   })

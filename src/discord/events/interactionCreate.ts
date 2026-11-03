@@ -1,6 +1,6 @@
 import type { Attachment, Client, Interaction } from 'discord.js'
 import { DiscordAPIError, MessageFlags } from 'discord.js'
-import type { ImageAttachment } from '../../agent/media/attachments.js'
+import type { MediaAttachment } from '../../agent/media/attachments.js'
 import { MAX_ATTACHMENTS, isSupportedMedia, resolveMediaUrl } from '../../agent/media/mediaRules.js'
 import { asksAboutReplies } from '../../agent/replyIntent.js'
 import { SOCIAL_POST_FAILURE_MARKER, formatSocialPostLine } from '../../agent/social/format.js'
@@ -135,21 +135,21 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
 
     // Documents ride the existing attachment slots rather than getting their own option: Discord's attachment
     // options accept any file already, so admitting the type is the whole change.
-    let imageAttachments: ImageAttachment[] = attached
+    let mediaAttachments: MediaAttachment[] = attached
       .filter(isSupportedMedia)
       .map((supported) => ({ url: supported.url, contentType: supported.contentType as string, size: supported.size }))
-    let unsupportedCount = attached.length - imageAttachments.length
+    let unsupportedCount = attached.length - mediaAttachments.length
 
     // One budget per turn regardless of where the file came from: a linked file competes for the same
     // MAX_ATTACHMENTS slots as an uploaded one, so the cost of a turn stays one number.
     if (linkedUrl && (!config.socialPosts.enabled || !parseSocialPostUrl(linkedUrl))) {
-      const resolved = imageAttachments.length < MAX_ATTACHMENTS ? await resolveMediaUrl(linkedUrl) : null
-      if (resolved) imageAttachments.push(resolved)
+      const resolved = mediaAttachments.length < MAX_ATTACHMENTS ? await resolveMediaUrl(linkedUrl) : null
+      if (resolved) mediaAttachments.push(resolved)
       else unsupportedCount += 1
     }
 
     logger.debug({ channelId, command: 'ask' }, 'Slash command received')
-    logger.debug({ channelId, message, imageCount: imageAttachments.length, unsupportedCount }, 'Slash command details')
+    logger.debug({ channelId, message, imageCount: mediaAttachments.length, unsupportedCount }, 'Slash command details')
 
     const vanish = () => setTimeout(() => interaction.deleteReply().catch(() => {}), 5000)
     const sayBeforeDefer: VanishingReply = async (text) => {
@@ -198,9 +198,9 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
       const socialPostResult = socialPostWork ? await socialPostWork : { status: 'none' as const }
       if (socialPostResult.status === 'found') {
         userMessage = `${userMessage}\n${formatSocialPostLine(socialPostResult.post, config.socialPosts.maxTextChars)}`
-        if (imageAttachments.length < MAX_ATTACHMENTS) {
-          const imageAttachment = await socialPostMedia(socialPostResult.post)
-          if (imageAttachment) imageAttachments.push(imageAttachment)
+        if (mediaAttachments.length < MAX_ATTACHMENTS) {
+          const mediaAttachment = await socialPostMedia(socialPostResult.post)
+          if (mediaAttachment) mediaAttachments.push(mediaAttachment)
         }
       } else if (socialPostResult.status === 'failed') {
         userMessage = `${userMessage}\n${SOCIAL_POST_FAILURE_MARKER}`
@@ -208,7 +208,7 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
 
       const budget = reserveTurnBudget({
         channelId,
-        attachments: imageAttachments,
+        attachments: mediaAttachments,
         rateLimiter,
         onDeclined: cancelTurnEntryWork
       })
@@ -217,7 +217,7 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
         return
       }
       const { skippedAttachments } = budget
-      imageAttachments = budget.attachments
+      mediaAttachments = budget.attachments
       callReservation = budget.callReservation
       reservedBytes = budget.reservedBytes
 
@@ -233,7 +233,7 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
         asksAboutReplies: asksAboutReplies(message),
         turnEntryWork,
         skippedAttachments,
-        imageAttachments: imageAttachments.length > 0 ? imageAttachments : undefined
+        mediaAttachments: mediaAttachments.length > 0 ? mediaAttachments : undefined
       })
 
       // Now that the turn is done, hand back the slots it never used. Reserved at the ceiling, released

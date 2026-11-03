@@ -1,6 +1,6 @@
 import { config } from '../../config.js'
 import { MAX_VIDEO_SIZE_BYTES } from '../media/attachmentLimits.js'
-import type { ImageAttachment } from '../media/attachments.js'
+import type { MediaAttachment } from '../media/attachments.js'
 import { postContentKey, youtubeContentKey } from '../media/contentKey.js'
 import { resolveMediaUrl } from '../media/mediaRules.js'
 import type { SocialPost } from './types.js'
@@ -10,7 +10,7 @@ function postIdentity(post: SocialPost): string {
   return post.platform === 'bluesky' ? `${post.target.profile?.toLowerCase()}/${post.id}` : post.id
 }
 
-async function playableVideo(post: SocialPost): Promise<ImageAttachment | null> {
+async function playableVideo(post: SocialPost): Promise<MediaAttachment | null> {
   if (!post.video) return null
   // A third-party file URL gets the same public-address, redirect and type checks as any linked file. No
   // extractor headers are sent: a host that needs them fails here and the post falls back to its picture.
@@ -31,7 +31,7 @@ async function playableVideo(post: SocialPost): Promise<ImageAttachment | null> 
 }
 
 /** What a found post contributes to the turn's one media slot: its video to watch, else its picture. */
-export async function socialPostMedia(post: SocialPost): Promise<ImageAttachment | null> {
+export async function socialPostMedia(post: SocialPost): Promise<MediaAttachment | null> {
   const watched = config.media.watcher === 'gemini' || config.media.watcher === 'qwen'
   if (watched && post.platform === 'youtube') {
     return {

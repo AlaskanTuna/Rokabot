@@ -170,7 +170,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
     const username = message.author.username
     const trigger: ResponseEventInput['trigger'] = isMentioned ? 'mention' : isReplyToBot ? 'reply' : 'name_keyword'
 
-    let { content, imageAttachments, unsupportedCount } = extractMessageContent(
+    let { content, mediaAttachments, unsupportedCount } = extractMessageContent(
       message,
       referencedMessage,
       isReplyToBot,
@@ -187,12 +187,12 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
       }
     }
 
-    if (!content && imageAttachments.length === 0) {
+    if (!content && mediaAttachments.length === 0) {
       content = '(pinged you without saying anything)'
     }
 
     logger.debug({ channelId, trigger }, 'Message trigger detected')
-    logger.debug({ channelId, content, imageCount: imageAttachments.length }, 'Message content extracted')
+    logger.debug({ channelId, content, imageCount: mediaAttachments.length }, 'Message content extracted')
 
     if (isChannelBusy(channelId)) {
       cancelTurnEntryWork()
@@ -246,21 +246,21 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
           componentTextsForTrigger,
           presentation
         )
-        if (enriched.imageAttachments.length < MAX_ATTACHMENTS) {
-          const imageAttachment = await socialPostMedia(socialPostResult.post)
-          if (imageAttachment) {
+        if (enriched.mediaAttachments.length < MAX_ATTACHMENTS) {
+          const mediaAttachment = await socialPostMedia(socialPostResult.post)
+          if (mediaAttachment) {
             enriched = extractMessageContent(
               message,
               referencedMessage,
               isReplyToBot,
               client.user.id,
               componentTextsForTrigger,
-              { ...presentation, imageAttachment }
+              { ...presentation, mediaAttachment }
             )
           }
         }
         content = enriched.content
-        imageAttachments = enriched.imageAttachments
+        mediaAttachments = enriched.mediaAttachments
         unsupportedCount = enriched.unsupportedCount
       } else if (socialPostResult.status === 'failed') {
         content = content ? `${content}\n${SOCIAL_POST_FAILURE_MARKER}` : SOCIAL_POST_FAILURE_MARKER
@@ -268,7 +268,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
 
       const budget = reserveTurnBudget({
         channelId,
-        attachments: imageAttachments,
+        attachments: mediaAttachments,
         rateLimiter,
         onDeclined: cancelTurnEntryWork
       })
@@ -277,7 +277,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
         return
       }
       const { skippedAttachments } = budget
-      imageAttachments = budget.attachments
+      mediaAttachments = budget.attachments
       callReservation = budget.callReservation
       reservedBytes = budget.reservedBytes
 
@@ -295,7 +295,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
         mentionedUserIds: [...(message.mentions.users?.keys() ?? [])].filter((userId) => userId !== client.user?.id),
         turnEntryWork,
         skippedAttachments,
-        imageAttachments: imageAttachments.length > 0 ? imageAttachments : undefined
+        mediaAttachments: mediaAttachments.length > 0 ? mediaAttachments : undefined
       })
 
       // Now that the turn is done, hand back the slots it never used. Reserved at the ceiling, released

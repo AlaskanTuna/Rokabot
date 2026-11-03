@@ -6,7 +6,7 @@ import { geminiMimeType, sizeLimitFor } from './attachmentLimits.js'
 import { GEMINI_IMAGE_TOKENS, processImageForGemini } from './imageProcessor.js'
 import { isobmffAllowsPrefix, prefixPolicyFor } from './mediaPrefix.js'
 
-export interface ImageAttachment {
+export interface MediaAttachment {
   url: string
   contentType: string
   /** Bytes, when the source states them. Discord does on an upload; an embed or a resolved link does not. */
@@ -79,7 +79,7 @@ async function readWithinLimit(
 
 /** Download and normalize one attachment. */
 export async function downloadAttachment(
-  attachment: ImageAttachment
+  attachment: MediaAttachment
 ): Promise<{ data: string; mimeType: string; tokens: number; truncated: boolean; bytes?: Buffer } | null> {
   const { url, contentType } = attachment
   // Keep media admission in Discord to avoid an agent-to-Discord dependency.
@@ -146,7 +146,7 @@ export async function downloadAttachment(
 }
 
 export interface PreparedAttachments {
-  imageParts: Part[]
+  mediaParts: Part[]
   imageTokens: number
   droppedAttachments: number
   truncatedAttachments: number
@@ -155,33 +155,33 @@ export interface PreparedAttachments {
 
 export async function prepareAttachments(
   channelId: string,
-  imageAttachments?: ImageAttachment[]
+  mediaAttachments?: MediaAttachment[]
 ): Promise<PreparedAttachments> {
-  const imageParts: Part[] = []
+  const mediaParts: Part[] = []
   let imageTokens = 0
   let droppedAttachments = 0
   let truncatedAttachments = 0
-  if (imageAttachments?.length) {
-    const downloads = await Promise.all(imageAttachments.map((img) => downloadAttachment(img)))
+  if (mediaAttachments?.length) {
+    const downloads = await Promise.all(mediaAttachments.map((img) => downloadAttachment(img)))
     droppedAttachments = downloads.filter((result) => result === null).length
     truncatedAttachments = downloads.filter((result) => result?.truncated).length
     for (const result of downloads) {
       if (result) {
-        imageParts.push({ inlineData: { data: result.data, mimeType: result.mimeType } })
+        mediaParts.push({ inlineData: { data: result.data, mimeType: result.mimeType } })
         imageTokens += result.tokens
       }
     }
-    if (imageParts.length > 0) {
-      logger.debug({ imageCount: imageParts.length, imageTokens }, 'Attached images to request')
+    if (mediaParts.length > 0) {
+      logger.debug({ imageCount: mediaParts.length, imageTokens }, 'Attached images to request')
     }
   }
 
   // Images have a fixed cost; only measure turns containing media with a variable cost.
   let refusedAttachments = 0
-  if (imageParts.length > 0 && needsMeasuring(imageParts)) {
+  if (mediaParts.length > 0 && needsMeasuring(mediaParts)) {
     const individualCosts: Array<{ part: Part; tokens: number }> = []
     let needsWholeSetFallback = false
-    for (const part of imageParts) {
+    for (const part of mediaParts) {
       const measured = await measureAttachmentTokens([part])
       if (measured === undefined) {
         needsWholeSetFallback = true
@@ -191,14 +191,14 @@ export async function prepareAttachments(
     }
 
     if (needsWholeSetFallback) {
-      const measured = await measureAttachmentTokens(imageParts)
+      const measured = await measureAttachmentTokens(mediaParts)
       if (measured !== undefined && measured > config.gemini.maxAttachmentTokens) {
         logger.info(
-          { channelId, measured, ceiling: config.gemini.maxAttachmentTokens, count: imageParts.length },
+          { channelId, measured, ceiling: config.gemini.maxAttachmentTokens, count: mediaParts.length },
           'Attachments cost more than one turn may spend, refusing them'
         )
-        refusedAttachments = imageParts.length
-        imageParts.length = 0
+        refusedAttachments = mediaParts.length
+        mediaParts.length = 0
         imageTokens = 0
       } else if (measured !== undefined) {
         imageTokens = measured
@@ -227,10 +227,10 @@ export async function prepareAttachments(
           'Attachments cost more than one turn may spend, refusing some'
         )
       }
-      imageParts.splice(0, imageParts.length, ...kept)
+      mediaParts.splice(0, mediaParts.length, ...kept)
       imageTokens = measuredTotal
     }
   }
 
-  return { imageParts, imageTokens, droppedAttachments, truncatedAttachments, refusedAttachments }
+  return { mediaParts, imageTokens, droppedAttachments, truncatedAttachments, refusedAttachments }
 }

@@ -1,5 +1,5 @@
 import type { Attachment, Message } from 'discord.js'
-import type { ImageAttachment } from '../agent/media/attachments.js'
+import type { MediaAttachment } from '../agent/media/attachments.js'
 import { MAX_ATTACHMENTS, isSupportedMedia } from '../agent/media/mediaRules.js'
 import type { SocialPostTarget } from '../agent/social/urls.js'
 import { findSocialPostTarget } from '../agent/social/urls.js'
@@ -55,7 +55,7 @@ function describeEmbed(embed: Message['embeds'][number]): string | null {
 export interface SocialPostPresentation {
   target: SocialPostTarget
   line: string
-  imageAttachment?: ImageAttachment
+  mediaAttachment?: MediaAttachment
 }
 
 function embedMatchesSocialPost(
@@ -104,8 +104,8 @@ export function extractComponentTexts(components: Message['components']): string
   return texts
 }
 
-function extractComponentMedia(components: Message['components']): { media: ImageAttachment[]; unreadable: number } {
-  const media: ImageAttachment[] = []
+function extractComponentMedia(components: Message['components']): { media: MediaAttachment[]; unreadable: number } {
+  const media: MediaAttachment[] = []
   let unreadable = 0
 
   const take = (item: UnfurledMedia | undefined, statedSize?: number) => {
@@ -133,19 +133,19 @@ function extractComponentMedia(components: Message['components']): { media: Imag
 
 interface ForwardedContent {
   parts: string[]
-  images: ImageAttachment[]
+  images: MediaAttachment[]
   hasSocialPost: boolean
 }
 
-function toMediaAttachment(attachment: Attachment): ImageAttachment {
+function toMediaAttachment(attachment: Attachment): MediaAttachment {
   const { url, contentType, size, duration } = attachment
   return { url, contentType: contentType!, size, ...(duration ? { durationSec: duration } : {}) }
 }
 
-type MediaSource = Required<Pick<ImageAttachment, 'origin' | 'sourceMessageId' | 'sourceAuthorId'>>
+type MediaSource = Required<Pick<MediaAttachment, 'origin' | 'sourceMessageId' | 'sourceAuthorId'>>
 
 // Only watched media (audio and video) is remembered, so only it carries where it came from.
-function fromSource(source: MediaSource): (attachment: ImageAttachment) => ImageAttachment {
+function fromSource(source: MediaSource): (attachment: MediaAttachment) => MediaAttachment {
   return (attachment) =>
     attachment.contentType.startsWith('audio/') || attachment.contentType.startsWith('video/')
       ? { ...attachment, ...source }
@@ -163,7 +163,7 @@ function mediaKind(contentType: string): MediaKind {
   return 'document'
 }
 
-function mediaMarker(prefix: 'forwarded' | 'attached', candidates: ImageAttachment[], taken: number): string[] {
+function mediaMarker(prefix: 'forwarded' | 'attached', candidates: MediaAttachment[], taken: number): string[] {
   const counts = new Map<MediaKind, { total: number; taken: number }>()
 
   candidates.forEach((candidate, index) => {
@@ -189,7 +189,7 @@ function describeForwardedSnapshots(
   socialPost?: SocialPostPresentation
 ): ForwardedContent {
   const parts: string[] = []
-  const images: ImageAttachment[] = []
+  const images: MediaAttachment[] = []
   let hasSocialPost = false
 
   for (const snapshot of snapshots.values()) {
@@ -232,7 +232,7 @@ function describeForwardedSnapshots(
 
 export interface ExtractedMessageContent {
   content: string
-  imageAttachments: ImageAttachment[]
+  mediaAttachments: MediaAttachment[]
   unsupportedCount: number
 }
 
@@ -247,14 +247,14 @@ export function extractMessageContent(
   let content = replaceUserMentions(message, botId)
 
   const ownSource = fromSource({ origin: 'upload', sourceMessageId: message.id, sourceAuthorId: message.author.id })
-  const imageAttachments: ImageAttachment[] = message.attachments
+  const mediaAttachments: MediaAttachment[] = message.attachments
     .filter(isSupportedMedia)
     .map(toMediaAttachment)
     .map(ownSource)
     .slice(0, MAX_ATTACHMENTS)
 
   const componentMedia = extractComponentMedia(message.components)
-  imageAttachments.push(...componentMedia.media.map(ownSource).slice(0, MAX_ATTACHMENTS - imageAttachments.length))
+  mediaAttachments.push(...componentMedia.media.map(ownSource).slice(0, MAX_ATTACHMENTS - mediaAttachments.length))
 
   const ownParts: string[] = []
   if (componentTextsForTrigger.length > 0) ownParts.push(`[Container: ${componentTextsForTrigger.join(' | ')}]`)
@@ -277,7 +277,7 @@ export function extractMessageContent(
     ownParts.push(`(sticker: ${message.stickers.map((sticker) => sticker.name).join(', ')})`)
   }
 
-  const ownEmbedImages: ImageAttachment[] = []
+  const ownEmbedImages: MediaAttachment[] = []
   for (const embed of message.embeds) {
     if (embedMatchesSocialPost(embed, socialPost)) continue
     const embedImageUrl = embed.image?.url ?? embed.thumbnail?.url
@@ -286,12 +286,12 @@ export function extractMessageContent(
 
   const forwarded = describeForwardedSnapshots(
     message.messageSnapshots,
-    MAX_ATTACHMENTS - imageAttachments.length,
+    MAX_ATTACHMENTS - mediaAttachments.length,
     message.id,
     socialPost
   )
   ownParts.push(...forwarded.parts)
-  imageAttachments.push(...forwarded.images)
+  mediaAttachments.push(...forwarded.images)
   socialPostIncluded ||= forwarded.hasSocialPost
 
   if (ownParts.length > 0) {
@@ -300,7 +300,7 @@ export function extractMessageContent(
   const ownAttachments = [...message.attachments.values()]
   const unsupportedCount =
     ownAttachments.length - ownAttachments.filter(isSupportedMedia).length + componentMedia.unreadable
-  const referencedEmbedImages: ImageAttachment[] = []
+  const referencedEmbedImages: MediaAttachment[] = []
 
   if (referencedMessage) {
     const refAuthor = referencedMessage.member?.displayName ?? referencedMessage.author.displayName
@@ -326,12 +326,12 @@ export function extractMessageContent(
 
     const forwardedRef = describeForwardedSnapshots(
       referencedMessage.messageSnapshots,
-      MAX_ATTACHMENTS - imageAttachments.length,
+      MAX_ATTACHMENTS - mediaAttachments.length,
       referencedMessage.id,
       socialPost
     )
     refParts.push(...forwardedRef.parts)
-    imageAttachments.push(...forwardedRef.images)
+    mediaAttachments.push(...forwardedRef.images)
     socialPostIncluded ||= forwardedRef.hasSocialPost
 
     if (referencedMessage.components.length > 0) {
@@ -347,7 +347,7 @@ export function extractMessageContent(
     }
 
     const refAttachments = [...referencedMessage.attachments.values()]
-    const refMediaCandidates: ImageAttachment[] = refAttachments
+    const refMediaCandidates: MediaAttachment[] = refAttachments
       .filter(isSupportedMedia)
       .map(toMediaAttachment)
       .map(
@@ -357,7 +357,7 @@ export function extractMessageContent(
           sourceAuthorId: referencedMessage.author.id
         })
       )
-    const refMediaTaken = isReplyToBot ? [] : refMediaCandidates.slice(0, MAX_ATTACHMENTS - imageAttachments.length)
+    const refMediaTaken = isReplyToBot ? [] : refMediaCandidates.slice(0, MAX_ATTACHMENTS - mediaAttachments.length)
     refParts.push(...mediaMarker('attached', refMediaCandidates, refMediaTaken.length))
     const unsupportedRefCount = refAttachments.length - refAttachments.filter(isSupportedMedia).length
     if (unsupportedRefCount > 0) refParts.push("(attached file(s) of a type that can't be opened)")
@@ -368,7 +368,7 @@ export function extractMessageContent(
     }
 
     if (!isReplyToBot) {
-      imageAttachments.push(...refMediaTaken)
+      mediaAttachments.push(...refMediaTaken)
 
       for (const embed of referencedMessage.embeds) {
         if (embedMatchesSocialPost(embed, socialPost)) continue
@@ -378,15 +378,15 @@ export function extractMessageContent(
     }
   }
 
-  imageAttachments.push(...ownEmbedImages.slice(0, MAX_ATTACHMENTS - imageAttachments.length))
-  imageAttachments.push(...referencedEmbedImages.slice(0, MAX_ATTACHMENTS - imageAttachments.length))
+  mediaAttachments.push(...ownEmbedImages.slice(0, MAX_ATTACHMENTS - mediaAttachments.length))
+  mediaAttachments.push(...referencedEmbedImages.slice(0, MAX_ATTACHMENTS - mediaAttachments.length))
 
   if (socialPost && !socialPostIncluded) content = content ? `${content}\n${socialPost.line}` : socialPost.line
-  if (socialPost?.imageAttachment && imageAttachments.length < MAX_ATTACHMENTS) {
-    imageAttachments.push(socialPost.imageAttachment)
+  if (socialPost?.mediaAttachment && mediaAttachments.length < MAX_ATTACHMENTS) {
+    mediaAttachments.push(socialPost.mediaAttachment)
   }
 
-  return { content, imageAttachments, unsupportedCount }
+  return { content, mediaAttachments, unsupportedCount }
 }
 
 export function extractCurrentMessageContent(

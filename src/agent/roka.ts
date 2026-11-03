@@ -21,7 +21,7 @@ import { historyEndedOnToolResult } from './llm/replyDiagnostic.js'
 import type { ReplyDiagnostic } from './llm/replyDiagnostic.js'
 import { SAFETY_SETTINGS } from './llm/safetySettings.js'
 import { chargeTokens } from './llm/tokenBudget.js'
-import type { ImageAttachment } from './media/attachments.js'
+import type { MediaAttachment } from './media/attachments.js'
 import { prepareTurnMedia } from './media/turnMedia.js'
 import type { WatchOutcome } from './media/types.js'
 import { stripNarratedToolCalls } from './narratedToolCalls.js'
@@ -59,7 +59,7 @@ import type { TurnContextOptions, TurnEntryWork } from './turnContext.js'
 
 interface GenerateOptions extends TurnContextOptions {
   turnEntryWork?: TurnEntryWork
-  imageAttachments?: ImageAttachment[]
+  mediaAttachments?: MediaAttachment[]
   skippedAttachments?: number
   /** The Discord message that triggered the turn, recorded with any media remembered from it. */
   messageId?: string
@@ -308,7 +308,7 @@ function requestTimeoutFor(useFallback: boolean): number {
  */
 export async function generateResponse(options: GenerateOptions): Promise<GenerateResult> {
   const generateStartMs = performance.now()
-  const { channelId, guildId, userMessage, displayName, username, userId, memory, imageAttachments } = options
+  const { channelId, guildId, userMessage, displayName, username, userId, memory, mediaAttachments } = options
 
   const turnEntryWork =
     options.turnEntryWork ??
@@ -323,7 +323,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   // Watching runs alongside memory retrieval rather than after it.
   const mediaWork = prepareTurnMedia({
     channelId,
-    attachments: imageAttachments,
+    attachments: mediaAttachments,
     focus: userMessage,
     mayRetry: () => getSharedRateLimiter().tryConsumeAboveFloor(config.gemini.retryRpmFloor),
     geminiUnavailable: rokaModel.hasFallback && hasStickyFallback(),
@@ -348,11 +348,11 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     composePrompt
   } = context
   let safetyRung = 0
-  let dropImages = false
+  let dropMedia = false
   let systemPrompt = context.systemPrompt
 
   const {
-    directParts: imageParts,
+    directParts: mediaParts,
     mediaTextParts,
     compactions,
     compactDigests,
@@ -394,16 +394,16 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   const buildNewMessage = (): Content => ({
     role: 'user',
     parts: [
-      ...(dropImages ? [] : imageParts),
+      ...(dropMedia ? [] : mediaParts),
       // Rung 3 drops what was watched along with what was seen: either may be what tripped the filter.
-      ...(dropImages ? [] : mediaTextParts),
+      ...(dropMedia ? [] : mediaTextParts),
       ...failedAttachmentNotice,
       { text: `[${displayName}]: ${userMessage}` }
     ]
   })
 
   logger.debug(
-    { model: config.llm.main.model, sessionEvents: session.events?.length ?? 0, hasImages: imageParts.length > 0 },
+    { model: config.llm.main.model, sessionEvents: session.events?.length ?? 0, hasImages: mediaParts.length > 0 },
     'Sending ADK request'
   )
 
@@ -483,7 +483,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
 
                 if (safetyRung === 3) {
                   // Carried history is the only remaining suspect: rebuild the window empty and drop images.
-                  dropImages = true
+                  dropMedia = true
                   await destroySession(channelId)
                   suppressSessionRehydration(channelId)
                   await ensureSession(channelId)
@@ -673,8 +673,8 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
       safetyRungsUsed: safetyRung,
       attempts: reliability.attempts,
       tone,
-      imageCount: imageParts.length + digests.length,
-      imageMimes: imageAttachments?.map((img) => img.contentType).join(',') || undefined,
+      imageCount: mediaParts.length + digests.length,
+      imageMimes: mediaAttachments?.map((img) => img.contentType).join(',') || undefined,
       overheardChars: overheardSection.length,
       historyDepth: session.events?.length ?? 0,
       factEntries: factEntryCount,

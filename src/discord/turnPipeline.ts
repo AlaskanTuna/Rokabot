@@ -1,6 +1,6 @@
 import type { DiscordAPIError } from 'discord.js'
 import { canAffordAttachments } from '../agent/llm/tokenBudget.js'
-import type { ImageAttachment } from '../agent/media/attachments.js'
+import type { MediaAttachment } from '../agent/media/attachments.js'
 import { type ReplyOutcome, withReplyOutcomes } from '../agent/replyOutcomes.js'
 import { type GenerateResult, generateResponse } from '../agent/roka.js'
 import { type SearchCitation, withSearchCitations } from '../agent/searchCitations.js'
@@ -129,7 +129,7 @@ export function releaseTurn(input: {
 export type VanishingReply = (text: string) => Promise<void>
 
 export interface TurnBudget {
-  attachments: ImageAttachment[]
+  attachments: MediaAttachment[]
   skippedAttachments: number
   callReservation: CallReservation
   reservedBytes: number
@@ -137,7 +137,7 @@ export interface TurnBudget {
 
 export function reserveTurnBudget(input: {
   channelId: string
-  attachments: ImageAttachment[]
+  attachments: MediaAttachment[]
   rateLimiter: RateLimiter
   onDeclined: () => void
 }): TurnBudget | undefined {
