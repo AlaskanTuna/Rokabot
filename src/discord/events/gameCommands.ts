@@ -8,6 +8,7 @@ import { character } from '../../character/index.js'
 import { fillLine } from '../../character/lines.js'
 import { setTimeoutCallback } from '../../games/hangman.js'
 import {
+  endGame as endShiritori,
   getGame as getShiritoriGame,
   setTimeoutCallback as setShiritoriTimeoutCallback
 } from '../../games/shiritori.js'
@@ -31,7 +32,8 @@ import {
   handleShiritoriJoin,
   handleShiritoriPlay,
   handleShiritoriScoresCmd,
-  handleShiritoriStart
+  handleShiritoriStart,
+  saveShiritoriScores
 } from './games/shiritori.js'
 
 const GAME_COMMAND_NAMES = new Set(['gacha', 'hangman', 'shiritori'])
@@ -62,9 +64,10 @@ export function createGameCommandHandler(client?: Client) {
       const channel = client.channels.cache.get(channelId)
       if (g && channel && 'send' in channel) {
         const sendable = channel as Extract<typeof channel, { send: unknown }>
+        const nameOf = (id: string) => g.players?.get(id)?.name ?? id
         const remaining = g.currentPlayerOrder
         if (!g.active && remaining.length === 1) {
-          const winner = remaining[0]
+          const winner = nameOf(remaining[0])
           const payload = buildTimeoutContainer(
             SHIRITORI_COLORS.info,
             'Shiritori',
@@ -75,8 +78,10 @@ export function createGameCommandHandler(client?: Client) {
             .catch((err: unknown) =>
               logger.error({ error: err, channelId }, 'Failed to send shiritori timeout message')
             )
+          const { scores } = endShiritori(channelId)
+          saveShiritoriScores(scores)
         } else {
-          const nextPlayer = remaining[g.currentTurnIndex]
+          const nextPlayer = nameOf(remaining[g.currentTurnIndex])
           const payload = buildTimeoutContainer(
             SHIRITORI_COLORS.info,
             'Shiritori',

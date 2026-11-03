@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as shiritori from '../shiritori.js'
+import type { ShiritoriPlayer } from '../shiritori.js'
 
 const { testConfig } = vi.hoisted(() => ({
   testConfig: {
@@ -60,6 +61,8 @@ const TEST_DICTIONARY = new Set([
   'eat'
 ])
 
+const player = (id: string, name: string = id): ShiritoriPlayer => ({ id, name })
+
 describe('shiritori', () => {
   beforeEach(() => {
     vi.useFakeTimers()
@@ -75,22 +78,22 @@ describe('shiritori', () => {
 
   describe('startGame', () => {
     it('creates a new game successfully', () => {
-      const result = startGame('ch-1', 'Alice')
+      const result = startGame('ch-1', player('Alice'))
       expect(result.success).toBe(true)
       expect(result.message).toContain('Game started')
       expect(isGameActive('ch-1')).toBe(true)
     })
 
     it('rejects starting a second game in the same channel', () => {
-      startGame('ch-1', 'Alice')
-      const result = startGame('ch-1', 'Bob')
+      startGame('ch-1', player('Alice'))
+      const result = startGame('ch-1', player('Bob'))
       expect(result.success).toBe(false)
       expect(result.message).toContain('already an active game')
     })
 
     it('allows games in different channels', () => {
-      const r1 = startGame('ch-1', 'Alice')
-      const r2 = startGame('ch-2', 'Bob')
+      const r1 = startGame('ch-1', player('Alice'))
+      const r2 = startGame('ch-2', player('Bob'))
       expect(r1.success).toBe(true)
       expect(r2.success).toBe(true)
       expect(isGameActive('ch-1')).toBe(true)
@@ -98,11 +101,11 @@ describe('shiritori', () => {
     })
 
     it('initializes the game with correct state', () => {
-      startGame('ch-1', 'Alice')
+      startGame('ch-1', player('Alice'))
       const game = getGame('ch-1')
       expect(game).toBeDefined()
       expect(game!.players.has('Alice')).toBe(true)
-      expect(game!.players.get('Alice')).toBe(0)
+      expect(game!.players.get('Alice')).toEqual({ name: 'Alice', score: 0 })
       expect(game!.currentPlayerOrder).toEqual(['Alice'])
       expect(game!.active).toBe(true)
       expect(game!.started).toBe(false)
@@ -112,8 +115,8 @@ describe('shiritori', () => {
 
   describe('joinGame', () => {
     it('allows a player to join an active game', () => {
-      startGame('ch-1', 'Alice')
-      const result = joinGame('ch-1', 'Bob')
+      startGame('ch-1', player('Alice'))
+      const result = joinGame('ch-1', player('Bob'))
       expect(result.success).toBe(true)
       expect(result.message).toContain('Bob')
 
@@ -123,28 +126,28 @@ describe('shiritori', () => {
     })
 
     it('rejects joining a nonexistent game', () => {
-      const result = joinGame('ch-1', 'Alice')
+      const result = joinGame('ch-1', player('Alice'))
       expect(result.success).toBe(false)
       expect(result.message).toContain('no active game')
     })
 
     it('rejects duplicate joins', () => {
-      startGame('ch-1', 'Alice')
-      joinGame('ch-1', 'Bob')
-      const result = joinGame('ch-1', 'Bob')
+      startGame('ch-1', player('Alice'))
+      joinGame('ch-1', player('Bob'))
+      const result = joinGame('ch-1', player('Bob'))
       expect(result.success).toBe(false)
       expect(result.message).toContain('already in the game')
     })
 
     it('rejects joining after game has started', () => {
-      startGame('ch-1', 'Alice')
-      joinGame('ch-1', 'Bob')
+      startGame('ch-1', player('Alice'))
+      joinGame('ch-1', player('Bob'))
 
       // Directly mark game as started (avoids flakiness from random starter word)
       const game = getGame('ch-1')!
       game.started = true
 
-      const result = joinGame('ch-1', 'Charlie')
+      const result = joinGame('ch-1', player('Charlie'))
       expect(result.success).toBe(false)
       expect(result.message).toContain('already started')
     })
@@ -153,24 +156,24 @@ describe('shiritori', () => {
   describe('submitWord', () => {
     beforeEach(() => {
       // Set up a game with a known starter word
-      startGame('ch-1', 'Alice')
-      joinGame('ch-1', 'Bob')
+      startGame('ch-1', player('Alice'))
+      joinGame('ch-1', player('Bob'))
     })
 
     it('rejects submission when no game exists', () => {
-      const result = submitWord('ch-999', 'Alice', 'hello')
+      const result = submitWord('ch-999', player('Alice'), 'hello')
       expect(result.success).toBe(false)
       expect(result.message).toContain('no active game')
     })
 
     it('rejects non-alphabetic words', () => {
-      const result = submitWord('ch-1', 'Alice', 'hello123')
+      const result = submitWord('ch-1', player('Alice'), 'hello123')
       expect(result.success).toBe(false)
       expect(result.message).toContain('2+ letters')
     })
 
     it('rejects single-character words', () => {
-      const result = submitWord('ch-1', 'Alice', 'a')
+      const result = submitWord('ch-1', player('Alice'), 'a')
       expect(result.success).toBe(false)
       expect(result.message).toContain('2+ letters')
     })
@@ -181,7 +184,7 @@ describe('shiritori', () => {
       // Find a word that does NOT start with the required letter
       const wrongWord = [...TEST_DICTIONARY].find((w) => w[0] !== requiredLetter)
       if (wrongWord) {
-        const result = submitWord('ch-1', 'Alice', wrongWord)
+        const result = submitWord('ch-1', player('Alice'), wrongWord)
         expect(result.success).toBe(false)
         expect(result.message).toContain("doesn't start with")
       }
@@ -190,7 +193,7 @@ describe('shiritori', () => {
     it('rejects words not in dictionary', () => {
       const game = getGame('ch-1')!
       const requiredLetter = game.currentWord[game.currentWord.length - 1]
-      const result = submitWord('ch-1', 'Alice', requiredLetter + 'zzzzz')
+      const result = submitWord('ch-1', player('Alice'), requiredLetter + 'zzzzz')
       expect(result.success).toBe(false)
       expect(result.message).toContain("don't think")
     })
@@ -205,18 +208,18 @@ describe('shiritori', () => {
 
       if (validWords.length >= 1) {
         const word1 = validWords[0]
-        submitWord('ch-1', 'Alice', word1) // Alice plays
+        submitWord('ch-1', player('Alice'), word1) // Alice plays
 
         // Bob needs to play a word ending in the right letter for Alice to reuse
         const bobLetter = word1[word1.length - 1]
         const bobWord = [...TEST_DICTIONARY].find((w) => w[0] === bobLetter && !game.usedWords.has(w))
         if (bobWord) {
-          submitWord('ch-1', 'Bob', bobWord) // Bob plays
+          submitWord('ch-1', player('Bob'), bobWord) // Bob plays
 
           // Now try to reuse word1 (if its starting letter matches)
           const nextLetter = bobWord[bobWord.length - 1]
           if (word1[0] === nextLetter) {
-            const result = submitWord('ch-1', 'Alice', word1)
+            const result = submitWord('ch-1', player('Alice'), word1)
             expect(result.success).toBe(false)
             expect(result.message).toContain('already used')
           }
@@ -231,7 +234,7 @@ describe('shiritori', () => {
 
       if (validWord) {
         // Bob tries to play when it's Alice's turn
-        const result = submitWord('ch-1', 'Bob', validWord)
+        const result = submitWord('ch-1', player('Bob'), validWord)
         expect(result.success).toBe(false)
         expect(result.message).toContain('not your turn')
       }
@@ -243,13 +246,13 @@ describe('shiritori', () => {
       const validWord = [...TEST_DICTIONARY].find((w) => w[0] === requiredLetter && !game.usedWords.has(w))
 
       if (validWord) {
-        const result = submitWord('ch-1', 'Alice', validWord)
+        const result = submitWord('ch-1', player('Alice'), validWord)
         expect(result.success).toBe(true)
         expect(result.message).toContain(validWord)
         expect(result.message).toContain('Bob')
 
         // Score should increment
-        expect(game.players.get('Alice')).toBe(1)
+        expect(game.players.get('Alice')).toEqual({ name: 'Alice', score: 1 })
 
         // Turn should advance to Bob
         expect(game.currentPlayerOrder[game.currentTurnIndex]).toBe('Bob')
@@ -258,7 +261,7 @@ describe('shiritori', () => {
 
     it('requires at least 2 players before first move', () => {
       destroyAllGames()
-      startGame('ch-2', 'Alice')
+      startGame('ch-2', player('Alice'))
       // Only Alice, no one else joined
 
       const game = getGame('ch-2')!
@@ -266,7 +269,7 @@ describe('shiritori', () => {
       const validWord = [...TEST_DICTIONARY].find((w) => w[0] === requiredLetter && !game.usedWords.has(w))
 
       if (validWord) {
-        const result = submitWord('ch-2', 'Alice', validWord)
+        const result = submitWord('ch-2', player('Alice'), validWord)
         expect(result.success).toBe(false)
         expect(result.message).toContain('at least 2 players')
       }
@@ -278,7 +281,7 @@ describe('shiritori', () => {
       const validWord = [...TEST_DICTIONARY].find((w) => w[0] === requiredLetter && !game.usedWords.has(w))
 
       if (validWord) {
-        const result = submitWord('ch-1', 'Alice', validWord.toUpperCase())
+        const result = submitWord('ch-1', player('Alice'), validWord.toUpperCase())
         expect(result.success).toBe(true)
       }
     })
@@ -288,13 +291,13 @@ describe('shiritori', () => {
     it('uses the registered callback and configured timeout', () => {
       const onTimeout = vi.fn()
       shiritori.setTimeoutCallback(onTimeout)
-      startGame('ch-timeout', 'Alice')
-      joinGame('ch-timeout', 'Bob')
+      startGame('ch-timeout', player('Alice'))
+      joinGame('ch-timeout', player('Bob'))
 
       const game = getGame('ch-timeout')!
       game.currentWord = 'apple'
       game.usedWords.add('apple')
-      submitWord('ch-timeout', 'Alice', 'energy')
+      submitWord('ch-timeout', player('Alice'), 'energy')
 
       expect(getTimeoutAt('ch-timeout') * 1000 - Date.now()).toBe(120_000)
 
@@ -302,12 +305,46 @@ describe('shiritori', () => {
 
       expect(onTimeout).toHaveBeenCalledWith('ch-timeout', 'Bob')
     })
+
+    it('marks the game finished before the timeout callback when one player remains', () => {
+      const seen: Array<boolean | undefined> = []
+      shiritori.setTimeoutCallback((channelId) => {
+        seen.push(getGame(channelId)?.active)
+      })
+      startGame('ch-early', player('u1', 'Alice'))
+      joinGame('ch-early', player('u2', 'Bob'))
+
+      const game = getGame('ch-early')!
+      game.currentWord = 'apple'
+      game.usedWords.add('apple')
+      submitWord('ch-early', player('u1', 'Alice'), 'energy')
+
+      vi.advanceTimersByTime(120_000)
+
+      expect(seen).toEqual([false])
+    })
+
+    it('still fires with the timed-out player name', () => {
+      const onTimeout = vi.fn()
+      shiritori.setTimeoutCallback(onTimeout)
+      startGame('ch-name', player('u1', 'Alice'))
+      joinGame('ch-name', player('u2', 'Bob'))
+
+      const game = getGame('ch-name')!
+      game.currentWord = 'apple'
+      game.usedWords.add('apple')
+      submitWord('ch-name', player('u1', 'Alice'), 'energy')
+
+      vi.advanceTimersByTime(120_000)
+
+      expect(onTimeout).toHaveBeenCalledWith('ch-name', 'Bob')
+    })
   })
 
   describe('endGame', () => {
     it('ends an active game and returns scores', () => {
-      startGame('ch-1', 'Alice')
-      joinGame('ch-1', 'Bob')
+      startGame('ch-1', player('Alice'))
+      joinGame('ch-1', player('Bob'))
 
       const result = endGame('ch-1')
       expect(result.message).toContain('Game over')
@@ -325,12 +362,36 @@ describe('shiritori', () => {
       expect(result.message).toContain('no active game')
       expect(result.scores.size).toBe(0)
     })
+
+    it('keeps separate scores for two players with the same display name', () => {
+      startGame('ch-same', { id: 'u1', name: 'Sam' })
+      joinGame('ch-same', { id: 'u2', name: 'Sam' })
+
+      const game = getGame('ch-same')!
+      game.currentWord = 'apple'
+      game.usedWords.clear()
+      game.usedWords.add('apple')
+
+      expect(submitWord('ch-same', { id: 'u1', name: 'Sam' }, 'eagle').success).toBe(true)
+      expect(submitWord('ch-same', { id: 'u2', name: 'Sam' }, 'ear').success).toBe(true)
+
+      const { scores } = endGame('ch-same')
+      expect(scores.get('u1')).toBe(1)
+      expect(scores.get('u2')).toBe(1)
+    })
+
+    it('returns scores keyed by user ID', () => {
+      startGame('ch-ids', { id: 'u1', name: 'Sam' })
+      joinGame('ch-ids', { id: 'u2', name: 'Sam' })
+
+      expect([...endGame('ch-ids').scores.keys()]).toEqual(['u1', 'u2'])
+    })
   })
 
   describe('getScores', () => {
     it('returns scores for active game', () => {
-      startGame('ch-1', 'Alice')
-      joinGame('ch-1', 'Bob')
+      startGame('ch-1', player('Alice'))
+      joinGame('ch-1', player('Bob'))
 
       const result = getScores('ch-1')
       expect(result.success).toBe(true)
@@ -351,12 +412,12 @@ describe('shiritori', () => {
     })
 
     it('returns true for active game', () => {
-      startGame('ch-1', 'Alice')
+      startGame('ch-1', player('Alice'))
       expect(isGameActive('ch-1')).toBe(true)
     })
 
     it('returns false after game ends', () => {
-      startGame('ch-1', 'Alice')
+      startGame('ch-1', player('Alice'))
       endGame('ch-1')
       expect(isGameActive('ch-1')).toBe(false)
     })
@@ -368,7 +429,7 @@ describe('shiritori', () => {
     })
 
     it('returns game state for active game', () => {
-      startGame('ch-1', 'Alice')
+      startGame('ch-1', player('Alice'))
       const game = getGame('ch-1')
       expect(game).toBeDefined()
       expect(game!.channelId).toBe('ch-1')
@@ -377,8 +438,8 @@ describe('shiritori', () => {
 
   describe('destroyAllGames', () => {
     it('clears all active games', () => {
-      startGame('ch-1', 'Alice')
-      startGame('ch-2', 'Bob')
+      startGame('ch-1', player('Alice'))
+      startGame('ch-2', player('Bob'))
 
       expect(isGameActive('ch-1')).toBe(true)
       expect(isGameActive('ch-2')).toBe(true)
@@ -395,8 +456,8 @@ describe('shiritori', () => {
       // Override dictionary with known words for predictable test
       setDictionary(new Set(['apple', 'eagle', 'ear', 'red', 'dog', 'green', 'net', 'tea', 'ace', 'end']))
 
-      startGame('ch-1', 'Alice')
-      joinGame('ch-1', 'Bob')
+      startGame('ch-1', player('Alice'))
+      joinGame('ch-1', player('Bob'))
 
       const game = getGame('ch-1')!
       // Force a known starter word for test determinism
@@ -405,23 +466,23 @@ describe('shiritori', () => {
       game.usedWords.add('apple')
 
       // Alice plays: apple -> e word
-      const r1 = submitWord('ch-1', 'Alice', 'eagle')
+      const r1 = submitWord('ch-1', player('Alice'), 'eagle')
       expect(r1.success).toBe(true)
       expect(game.currentWord).toBe('eagle')
 
       // Bob plays: eagle -> e word
-      const r2 = submitWord('ch-1', 'Bob', 'ear')
+      const r2 = submitWord('ch-1', player('Bob'), 'ear')
       expect(r2.success).toBe(true)
       expect(game.currentWord).toBe('ear')
 
       // Alice plays: ear -> r word
-      const r3 = submitWord('ch-1', 'Alice', 'red')
+      const r3 = submitWord('ch-1', player('Alice'), 'red')
       expect(r3.success).toBe(true)
       expect(game.currentWord).toBe('red')
 
       // Check scores
-      expect(game.players.get('Alice')).toBe(2)
-      expect(game.players.get('Bob')).toBe(1)
+      expect(game.players.get('Alice')).toEqual({ name: 'Alice', score: 2 })
+      expect(game.players.get('Bob')).toEqual({ name: 'Bob', score: 1 })
 
       // End game
       const endResult = endGame('ch-1')

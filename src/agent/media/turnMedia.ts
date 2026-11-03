@@ -571,7 +571,15 @@ async function watchWithGemini(context: WatchContext): Promise<Attempt> {
 }
 
 async function watchWithQwen(context: WatchContext): Promise<Attempt> {
-  const { attachment, kind, label, input, result, scope, contentKey } = context
+  const { attachment, kind, label, input, result, scope, reuse } = context
+  const contentKey =
+    context.contentKey ?? (scope ? (discordAttachmentContentKey(attachment.url) ?? undefined) : undefined)
+  // A link key was already checked before the watcher ran, so only the Discord path key looks here.
+  const inlineHit = !context.contentKey && scope && contentKey ? remembered(scope, contentKey) : null
+  if (inlineHit) {
+    reuse(inlineHit)
+    return { ok: true }
+  }
   const failed = (reason: string): Attempt => {
     logger.info({ channelId: input.channelId, kind, watcher: 'qwen', outcome: reason }, 'Watched media')
     return { ok: false, notice: UNWATCHABLE }
