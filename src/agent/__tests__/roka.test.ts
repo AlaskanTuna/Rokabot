@@ -53,6 +53,7 @@ import { __resetTokenBudgetForTest, remainingTokensThisMinute } from '../llm/tok
 import { measureAttachmentTokens, needsMeasuring } from '../media/attachmentCost.js'
 import { GEMINI_IMAGE_TOKENS } from '../media/imageProcessor.js'
 import { resolveReferences } from '../memory/identityResolver.js'
+import { resolveMemoryScope } from '../memory/memoryScope.js'
 import { getMessages } from '../memory/passiveBuffer.js'
 import { retrieveForTurn } from '../memory/retriever.js'
 import { assembleSystemPrompt } from '../promptAssembler.js'
@@ -979,7 +980,7 @@ describe('beforeModelCallback memory-tool filtering', () => {
   it('offers none of the memory tools on a memory-free turn', async () => {
     const request = requestWithEveryTool()
 
-    await steeringForRequest.run({ memory: false }, () => callback({ context, request }))
+    await steeringForRequest.run({ memoryScope: 'none' }, () => callback({ context, request }))
 
     const names = declaredNames(request)
     expect(names.length).toBe(rokaTools.length - MEMORY_TOOL_NAMES.length)
@@ -991,7 +992,7 @@ describe('beforeModelCallback memory-tool filtering', () => {
   it('resolves no memory tool on a memory-free turn', async () => {
     const request = requestWithEveryTool()
 
-    await steeringForRequest.run({ memory: false }, () => callback({ context, request }))
+    await steeringForRequest.run({ memoryScope: 'none' }, () => callback({ context, request }))
 
     for (const name of MEMORY_TOOL_NAMES) expect(request.toolsDict[name]).toBeUndefined()
     expect(Object.keys(request.toolsDict).length).toBe(rokaTools.length - MEMORY_TOOL_NAMES.length)
@@ -1000,7 +1001,7 @@ describe('beforeModelCallback memory-tool filtering', () => {
   it('leaves the non-memory tools alone', async () => {
     const request = requestWithEveryTool()
 
-    await steeringForRequest.run({ memory: false }, () => callback({ context, request }))
+    await steeringForRequest.run({ memoryScope: 'none' }, () => callback({ context, request }))
 
     expect(declaredNames(request)).toContain('search_web')
     expect(request.toolsDict.search_web).toBeDefined()
@@ -1011,7 +1012,7 @@ describe('beforeModelCallback memory-tool filtering', () => {
   it('withholds read_replies when the turn does not ask about replies, and nothing else', async () => {
     const request = requestWithEveryTool()
 
-    await steeringForRequest.run({ memory: true, replies: false }, () => callback({ context, request }))
+    await steeringForRequest.run({ memoryScope: 'full', replies: false }, () => callback({ context, request }))
 
     expect(declaredNames(request)).not.toContain('read_replies')
     expect(request.toolsDict.read_replies).toBeUndefined()
@@ -1021,7 +1022,7 @@ describe('beforeModelCallback memory-tool filtering', () => {
   it('offers read_replies when the turn asks about replies', async () => {
     const request = requestWithEveryTool()
 
-    await steeringForRequest.run({ memory: true, replies: true }, () => callback({ context, request }))
+    await steeringForRequest.run({ memoryScope: 'full', replies: true }, () => callback({ context, request }))
 
     expect(declaredNames(request)).toContain('read_replies')
     expect(request.toolsDict.read_replies).toBeDefined()
@@ -1030,7 +1031,7 @@ describe('beforeModelCallback memory-tool filtering', () => {
   it('keeps every tool on a turn that does have memory', async () => {
     const request = requestWithEveryTool()
 
-    await steeringForRequest.run({ memory: true }, () => callback({ context, request }))
+    await steeringForRequest.run({ memoryScope: 'full' }, () => callback({ context, request }))
 
     expect(declaredNames(request)).toHaveLength(rokaTools.length)
     for (const name of MEMORY_TOOL_NAMES) expect(request.toolsDict[name]).toBeDefined()
@@ -1072,7 +1073,9 @@ describe('memory privacy off on the model request', () => {
   it('withholds remember_user and recall_user but keeps forget_user', async () => {
     const request = requestWithEveryTool()
 
-    await steeringForRequest.run({ memory: true }, () => callback({ context, request }))
+    await steeringForRequest.run({ memoryScope: resolveMemoryScope(true, config.memory.privacy) }, () =>
+      callback({ context, request })
+    )
 
     const names = declaredNames(request)
     expect(names).not.toContain(rememberUserTool.name)
@@ -1196,7 +1199,7 @@ describe('generateResponse memory-free turn', () => {
       displayName: 'Mio',
       username: 'mio',
       userId: 'mio-ladder-id',
-      memory: false,
+      memoryScope: 'none',
       turnEntryWork: {
         judgment: Promise.resolve(null),
         prefetch: Promise.resolve({ decision: { fire: false, reason: 'no_judgment' as const }, outcome: null }),
@@ -1219,7 +1222,7 @@ describe('generateResponse memory-free turn', () => {
       displayName: 'Mio',
       username: 'mio',
       userId: 'mio-id',
-      memory: true,
+      memoryScope: 'full',
       turnEntryWork: {
         judgment: Promise.resolve(null),
         prefetch: Promise.resolve({ decision: { fire: false, reason: 'no_judgment' as const }, outcome: null }),
@@ -1382,7 +1385,7 @@ describe('generateResponse metrics', () => {
 
     const expectedTokensIn =
       estimateTokens(
-        `${assembleSystemPrompt({ tone: result.tone, hour: 12, displayName: 'Mio', memory: true })}\n\n- The current user's Discord ID is "mio-id". remember_user and recall_user target the current user automatically; to recall a different server member, pass their name as user_name.\n\n## Reply Shape\n- Length: two short paragraphs.`
+        `${assembleSystemPrompt({ tone: result.tone, hour: 12, displayName: 'Mio', memoryScope: 'full' })}\n\n- The current user's Discord ID is "mio-id". remember_user and recall_user target the current user automatically; to recall a different server member, pass their name as user_name.\n\n## Reply Shape\n- Length: two short paragraphs.`
       ) +
       estimateTokens(JSON.stringify(rokaTools)) +
       estimateTokens('[Mio]: Hello metrics.')
@@ -1769,7 +1772,7 @@ describe('generateResponse prompt safety', () => {
       userId: 'mio-id'
     })
 
-    const kernel = assembleSystemPrompt({ tone: result.tone, hour: 12, displayName: 'Mio', memory: true })
+    const kernel = assembleSystemPrompt({ tone: result.tone, hour: 12, displayName: 'Mio', memoryScope: 'full' })
     const factsHeading = '## What You Remember About People In This Channel\n'
     const overheardHeading = '\n\n## Recent Channel Activity (messages you overheard)\n'
     const factsStart = capturedPrompt.indexOf(factsHeading) + factsHeading.length
@@ -2848,7 +2851,9 @@ describe('Jev turn judgments', () => {
     })
     expect(result.tone).toBe('confident')
     expect(
-      capturedPrompt.startsWith(assembleSystemPrompt({ tone: 'confident', hour: 12, displayName: 'Mio', memory: true }))
+      capturedPrompt.startsWith(
+        assembleSystemPrompt({ tone: 'confident', hour: 12, displayName: 'Mio', memoryScope: 'full' })
+      )
     ).toBe(true)
   })
 
@@ -2881,7 +2886,9 @@ describe('Jev turn judgments', () => {
 
     expect(result.tone).toBe('sleepy')
     expect(
-      capturedPrompt.startsWith(assembleSystemPrompt({ tone: 'sleepy', hour: 12, displayName: 'Mio', memory: true }))
+      capturedPrompt.startsWith(
+        assembleSystemPrompt({ tone: 'sleepy', hour: 12, displayName: 'Mio', memoryScope: 'full' })
+      )
     ).toBe(true)
     expect(info.mock.calls.filter(([, message]) => message === 'Jev turn judgment')).toHaveLength(1)
     expect(info).toHaveBeenCalledWith(

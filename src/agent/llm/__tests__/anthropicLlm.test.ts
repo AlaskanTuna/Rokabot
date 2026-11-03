@@ -118,7 +118,7 @@ describe('AnthropicLlm requests', () => {
   })
 
   it('caches the core and speech layers as one system block and sends the per-turn layers after it', async () => {
-    const prompt = `${assembleSystemPrompt({ tone: 'playful', hour: 14, displayName: 'Mio', memory: true })}\n\n## Memory\n- Mio likes tea`
+    const prompt = `${assembleSystemPrompt({ tone: 'playful', hour: 14, displayName: 'Mio', memoryScope: 'full' })}\n\n## Memory\n- Mio likes tea`
     const stable = `${CORE_PROMPT}\n\n${SPEECH_PROMPT}`
 
     const { body } = await sent([hi], { systemInstruction: prompt })

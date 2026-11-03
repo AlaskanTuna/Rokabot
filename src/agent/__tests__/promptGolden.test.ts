@@ -32,9 +32,9 @@ const digest = (parts: readonly string[]) => createHash('sha256').update(parts.j
 
 const TONES = Object.keys(TONE_PROMPTS) as ToneKey[]
 const MODES = [
-  { name: 'memory', memory: true, forgetOnly: false },
-  { name: 'forgetOnly', memory: true, forgetOnly: true },
-  { name: 'memoryFree', memory: false, forgetOnly: false }
+  { name: 'memory', memoryScope: 'full' },
+  { name: 'forgetOnly', memoryScope: 'forget' },
+  { name: 'memoryFree', memoryScope: 'none' }
 ] as const
 
 const MESSAGES = [
@@ -61,7 +61,7 @@ function computeGolden(): Record<string, string> {
   for (const tone of TONES) {
     for (const mode of MODES) {
       const prompts = Array.from({ length: 24 }, (_, hour) =>
-        assembleSystemPrompt({ tone, hour, displayName: 'Ikuyo', memory: mode.memory, forgetOnly: mode.forgetOnly })
+        assembleSystemPrompt({ tone, hour, displayName: 'Ikuyo', memoryScope: mode.memoryScope })
       )
       const split = splitStablePrefix(prompts[0])
       golden[`system.${tone}.${mode.name}`] = digest([...prompts, split?.stable ?? '', split?.rest ?? ''])

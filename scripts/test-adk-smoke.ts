@@ -72,7 +72,7 @@ async function runQuery(
       tone: 'playful',
       hour: new Date().getHours(),
       displayName: 'Tester',
-      memory: false
+      memoryScope: 'none'
     }),
     tools: [...rokaTools],
     disallowTransferToParent: true,

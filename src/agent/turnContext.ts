@@ -18,6 +18,7 @@ import { buildEpisodeRecallBlock } from './memory/episodeRetriever.js'
 import { resolveReferences } from './memory/identityResolver.js'
 import { buildMediaRecallBlock } from './memory/mediaRecall.js'
 import { touchRecalled } from './memory/memoryClaims.js'
+import type { MemoryScope } from './memory/memoryScope.js'
 import { getMessages as getBufferMessages } from './memory/passiveBuffer.js'
 import type { RecallScope } from './memory/privacy.js'
 import { type RecallInput, type RecallResult, recallForTurn } from './memory/recall.js'
@@ -42,8 +43,8 @@ export interface TurnContextOptions {
   username: string
   userId: string
   mentionedUserIds?: string[]
-  /** `/ask` passes `false`: no retrieval, no facts, no memory tools, no `context_build` telemetry (#207). */
-  memory: boolean
+  /** `/ask` passes `none`: no retrieval, no facts, no memory tools, no `context_build` telemetry (#207). */
+  memoryScope: MemoryScope
 }
 
 export interface StartTurnEntryWorkInput {
@@ -273,7 +274,7 @@ function eventsToWindowMessages(events: Event[]): WindowMessage[] {
 }
 
 export async function createTurnContext(options: TurnContextEntryOptions) {
-  const { channelId, guildId, userMessage, displayName, username, userId, memory } = options
+  const { channelId, guildId, userMessage, displayName, username, userId, memoryScope } = options
   const session = await ensureSession(channelId)
   resetIdleTimer(channelId)
 
@@ -286,7 +287,7 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
   let tone = ruleTone
   let references: ReturnType<typeof resolveReferences> = { resolved: [], ambiguous: [] }
 
-  if (memory) {
+  if (memoryScope !== 'none') {
     try {
       references = resolveReferences({
         guildId,
@@ -426,25 +427,22 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
     }
   }
 
-  // The prompt layer and the mention lines still follow `memory`; every long-term read follows `longTerm`.
-  const longTerm = memory && config.memory.privacy !== 'off'
-  const forgetOnly = memory && !longTerm
-  const basePrompt = assembleSystemPrompt({ tone, hour, displayName, memory, forgetOnly })
+  const basePrompt = assembleSystemPrompt({ tone, hour, displayName, memoryScope })
   const scope: RecallScope | undefined = guildId && !guildId.startsWith('dm:') ? { guildId, channelId } : undefined
   // DM facts live under a `dm:` tenant the unified recall does not read, so DMs keep the legacy facts block.
   const recallMode = scope ? config.memory.recall : 'legacy'
   // Taken before the legacy retriever marks its picks as recalled, so the shadow run does not see them as cooling.
   const recallNow = Date.now()
-  const recallEmbedding = longTerm && scope ? options.turnEntryWork.queryEmbedding : undefined
+  const recallEmbedding = memoryScope === 'full' && scope ? options.turnEntryWork.queryEmbedding : undefined
   const queryEmbedding = recallEmbedding ? awaitQueryEmbedding(recallEmbedding) : Promise.resolve(null)
   const episodeSectionPromise =
-    longTerm && recallMode !== 'unified'
+    memoryScope === 'full' && recallMode !== 'unified'
       ? awaitRecallSection(queryEmbedding, (embedding) =>
           buildEpisodeRecallBlock({ guildId, queryEmbedding: embedding, scope })
         )
       : Promise.resolve('')
   const mediaSectionPromise =
-    longTerm && recallMode !== 'unified'
+    memoryScope === 'full' && recallMode !== 'unified'
       ? awaitRecallSection(queryEmbedding, (embedding) =>
           buildMediaRecallBlock({ guildId, queryEmbedding: embedding, scope })
         )
@@ -457,7 +455,7 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
 
   // A memory-free turn (`/ask`) reads nothing: no claims retrieval, no legacy facts, and no
   // `context_build` telemetry, because nothing was built to measure (#207).
-  if (longTerm) {
+  if (memoryScope === 'full') {
     try {
       // Resolve user identities from persistent lookup table (survives restarts)
       const knownUsers = getAllUserNames()
@@ -571,13 +569,13 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
     })
   }
   const unifiedPromise =
-    longTerm && recallMode === 'unified'
+    memoryScope === 'full' && recallMode === 'unified'
       ? queryEmbedding.then((embedding) => {
           const input = recallInput(embedding)
           return input ? runRecall(input, channelId) : null
         })
       : null
-  if (longTerm && recallMode === 'shadow') {
+  if (memoryScope === 'full' && recallMode === 'shadow') {
     // Shadow output feeds only telemetry, so it runs after the turn's own work instead of delaying the prompt.
     void queryEmbedding.then((embedding) =>
       setImmediate(() => {
@@ -590,7 +588,7 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
 
   // Names people and nothing else, so it survives a memory-free turn as the identity line the brief allows.
   let whoIsMentionedSection = ''
-  if (memory) {
+  if (memoryScope !== 'none') {
     const namedAliases = references.resolved.filter(
       ({ alias, displayName: referenceName, matchedBy }) =>
         (matchedBy === 'nickname' || matchedBy === 'username') && alias.toLowerCase() !== referenceName.toLowerCase()
@@ -612,10 +610,11 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
 
   // The Discord ID stays either way; only the half naming the memory tools is dropped, because a
   // memory-free turn is offered none of them and cannot act on the instruction (#207).
-  const tailSection = longTerm
-    ? `\n\n- The current user's Discord ID is "${userId}".` +
-      ' remember_user and recall_user target the current user automatically; to recall a different server member, pass their name as user_name.'
-    : `\n\n- The current user's Discord ID is "${userId}".`
+  const tailSection =
+    memoryScope === 'full'
+      ? `\n\n- The current user's Discord ID is "${userId}".` +
+        ' remember_user and recall_user target the current user automatically; to recall a different server member, pass their name as user_name.'
+      : `\n\n- The current user's Discord ID is "${userId}".`
 
   const prefetch = await awaitTurnPrefetch(options.turnEntryWork, channelId)
   const episodeSection = await episodeSectionPromise
@@ -655,9 +654,7 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
   const SAFETY_LADDER = ['drop_overheard', 'drop_facts', 'clear_history'] as const
   function composePrompt(safetyRung: number): string {
     const head =
-      safetyRung >= 3
-        ? assembleSystemPrompt({ tone: character.safeMood, hour, displayName, memory, forgetOnly })
-        : basePrompt
+      safetyRung >= 3 ? assembleSystemPrompt({ tone: character.safeMood, hour, displayName, memoryScope }) : basePrompt
     const peopleSection = recallMode === 'unified' ? memorySection : factsSection
     return [
       head,
