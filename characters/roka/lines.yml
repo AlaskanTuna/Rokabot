@@ -73,7 +73,32 @@ reminders: # The /remind command and the reminders it delivers
   deliveredByDm: "Hey~ you asked me to remind you: \"{{task}}\" ♪\n\n-# (Sent as DM because I couldn't reach the original channel)" # Sent by DM when the channel is gone
 games: # Game lines that are not part of a game's own rules
   error: Nn... something went wrong. Maybe try again later? # A game command failed
+  hangmanAlreadyRunning: There's already a game running in this channel~ Finish it first! # A second /hangman start
+  hangmanStart: Let's play hangman~ ♪ # A new hangman game opens
+  hangmanNoGame: No active game in this channel~ Use `/hangman start` to begin! # A guess with no game running
+  hangmanDuplicate: You already tried **{{letter}}**~ Pay attention! # A repeated letter; {{letter}} is lowercase
+  hangmanCorrect: Nice~ **{{letter}}** is in there! ♪ # A right letter; {{letter}} is lowercase
+  hangmanWrong: Mou~ **{{letter}}** isn't in the word! # A wrong letter; {{letter}} is lowercase
+  hangmanWinLetter: You got it! The word was **{{word}}**! 🎉 As expected~ # Won by letters; {{word}} is lowercase
+  hangmanWinWord: Wow, you figured it out! The word was **{{word}}**! ✨ # Won by full-word guess; {{word}} is lowercase
+  hangmanWrongWord: Nope, that's not it~ And that costs you a life! # A wrong full-word guess
+  hangmanLose: Oh no... the word was **{{word}}**. Better luck next time~ 💕 # Lost; {{word}} is lowercase
   hangmanTimeout: "Time's up~ The word was **{{word}}**. You took too long! 💤" # Hangman ran out of time; {{word}}
+  shiritoriAlreadyActive: There is already an active game in this channel! # A second /shiritori start
+  shiritoriStart: 'Game started! The starting word is **{{word}}**. Next letter: **{{letter}}**. Use `/shiritori join` to join, then `/shiritori play` to start!' # A new game opens; {{word}} is lowercase, {{letter}} upper
+  shiritoriNoGame: There is no active game in this channel! # A move with no game running
+  shiritoriAlreadyStarted: The game has already started! Wait for the next round~ # A join after the first move
+  shiritoriAlreadyIn: You are already in the game! # A repeat /shiritori join
+  shiritoriJoined: '**{{name}}** joined the game! ({{count}} players)' # A join; {{name}} is display, {{count}} the roster size
+  shiritoriInvalid: Words must be 2+ letters and contain only letters! # A move that is not a clean word
+  shiritoriNeedPlayers: Need at least 2 players! Ask someone to `/shiritori join` first~ # The first move with one player
+  shiritoriWrongTurn: It's not your turn! It's **{{current}}**'s turn~ # Out of turn; {{current}} names whose turn it is
+  shiritoriWrongLetter: That word doesn't start with **{{letter}}**! Try again~ # Wrong first letter; {{letter}} is upper
+  shiritoriAlreadyUsed: '**{{word}}** was already used! Try something else~' # A repeat; {{word}} is lowercase
+  shiritoriNotWord: I don't think **{{word}}** is a real word... # Not in the dictionary; {{word}} is lowercase
+  shiritoriCorrect: '**{{word}}** is correct! Next letter: **{{letter}}**. Your turn, **{{next}}**!' # A valid move; {{word}} lowercase, {{letter}} upper, {{next}} is next
+  shiritoriGameOver: "Game over!\n\n{{board}}" # An ended game; {{board}} is the ranked scoreboard
+  shiritoriScores: "**Current Scores**\n{{board}}\n\nCurrent word: **{{word}}** | Next letter: **{{letter}}** | Turn: **{{turn}}**" # /shiritori scores; {{board}} ranked, {{letter}} upper
   shiritoriWinner: "**{{player}}** took too long... they're out! 💤\n\n**{{winner}}** wins the game! Congratulations~ ♪" # The last player standing wins
   shiritoriNext: "**{{player}}** took too long... they're out! 💤 Your turn, **{{next}}**!" # The game goes on with {{next}}
 status: # The bot's Discord status by hour, [from, to) in config.yml's timezone; the bands must cover all 24 hours

@@ -42,7 +42,32 @@ reminders: # The /remind command and the reminders it delivers
   deliveredByDm: "Hey, you asked me to remind you: \"{{task}}\"\n\n-# (Sent as a DM because I could not reach the original channel)" # Sent by DM when the channel is gone
 games: # Game lines that are not part of a game's own rules
   error: Something went wrong. Try again later? # A game command failed
+  hangmanAlreadyRunning: There is already a game running in this channel. # A second /hangman start
+  hangmanStart: Let us play hangman. # A new hangman game opens
+  hangmanNoGame: No active game in this channel. # A guess with no game running
+  hangmanDuplicate: 'You already tried {{letter}}.' # A repeated letter; {{letter}} is lowercase
+  hangmanCorrect: '{{letter}} is in the word.' # A right letter; {{letter}} is lowercase
+  hangmanWrong: '{{letter}} is not in the word.' # A wrong letter; {{letter}} is lowercase
+  hangmanWinLetter: 'You got it! The word was {{word}}!' # Won by letters; {{word}} is lowercase
+  hangmanWinWord: 'You figured it out! The word was {{word}}!' # Won by full-word guess; {{word}} is lowercase
+  hangmanWrongWord: That is not it, and that costs you a life. # A wrong full-word guess
+  hangmanLose: 'Oh no. The word was {{word}}.' # Lost; {{word}} is lowercase
   hangmanTimeout: "Time's up! The word was **{{word}}**." # Hangman ran out of time; {{word}}
+  shiritoriAlreadyActive: There is already an active game in this channel. # A second /shiritori start
+  shiritoriStart: 'Game started! The starting word is {{word}}. Next letter: {{letter}}.' # A new game opens; {{word}} lowercase, {{letter}} upper
+  shiritoriNoGame: There is no active game in this channel. # A move with no game running
+  shiritoriAlreadyStarted: The game has already started. # A join after the first move
+  shiritoriAlreadyIn: You are already in the game. # A repeat /shiritori join
+  shiritoriJoined: '{{name}} joined the game! ({{count}} players)' # A join; {{name}} is display, {{count}} the roster size
+  shiritoriInvalid: Words must be 2+ letters and contain only letters. # A move that is not a clean word
+  shiritoriNeedPlayers: Need at least 2 players first. # The first move with one player
+  shiritoriWrongTurn: "It is not your turn! It is {{current}}'s turn." # Out of turn; {{current}} names whose turn it is
+  shiritoriWrongLetter: 'That word does not start with {{letter}}!' # Wrong first letter; {{letter}} is upper
+  shiritoriAlreadyUsed: '{{word}} was already used!' # A repeat; {{word}} is lowercase
+  shiritoriNotWord: 'I do not think {{word}} is a real word.' # Not in the dictionary; {{word}} is lowercase
+  shiritoriCorrect: '{{word}} is correct! Next letter: {{letter}}. Your turn, {{next}}!' # A valid move; {{word}} lowercase, {{letter}} upper, {{next}} is next
+  shiritoriGameOver: 'Game over! {{board}}' # An ended game; {{board}} is the ranked scoreboard
+  shiritoriScores: 'Current scores: {{board}}. Current word: {{word}}. Next letter: {{letter}}. Turn: {{turn}}.' # /shiritori scores; {{board}} ranked, {{letter}} upper
   shiritoriWinner: '**{{player}}** ran out of time. **{{winner}}** wins!' # The last player standing wins
   shiritoriNext: '**{{player}}** ran out of time. Your turn, **{{next}}**!' # The game goes on with {{next}}
 status: # The bot's Discord status by hour, [from, to) in config.yml's timezone; the bands must cover all 24 hours

@@ -5,10 +5,14 @@
  */
 
 import { createRequire } from 'node:module'
+import { character } from '../character/index.js'
+import { fillLine } from '../character/lines.js'
 import { config } from '../config.js'
 import { logger } from '../utils/logger.js'
 
 const require = createRequire(import.meta.url)
+
+const LINES = character.lines.games
 
 export interface ShiritoriPlayer {
   id: string
@@ -145,7 +149,7 @@ function handleTimeout(game: ShiritoriGame): void {
 
 export function startGame(channelId: string, starter: ShiritoriPlayer): ShiritoriResult {
   if (activeGames.has(channelId)) {
-    return { success: false, message: 'There is already an active game in this channel!' }
+    return { success: false, message: LINES.shiritoriAlreadyActive }
   }
 
   const starterWord = STARTER_WORDS[Math.floor(Math.random() * STARTER_WORDS.length)]
@@ -169,7 +173,7 @@ export function startGame(channelId: string, starter: ShiritoriPlayer): Shiritor
 
   return {
     success: true,
-    message: `Game started! The starting word is **${starterWord}**. Next letter: **${getLastLetter(starterWord).toUpperCase()}**. Use \`/shiritori join\` to join, then \`/shiritori play\` to start!`
+    message: fillLine(LINES.shiritoriStart, { word: starterWord, letter: getLastLetter(starterWord).toUpperCase() })
   }
 }
 
@@ -177,15 +181,15 @@ export function joinGame(channelId: string, player: ShiritoriPlayer): ShiritoriR
   const game = activeGames.get(channelId)
 
   if (!game || !game.active) {
-    return { success: false, message: 'There is no active game in this channel!' }
+    return { success: false, message: LINES.shiritoriNoGame }
   }
 
   if (game.started) {
-    return { success: false, message: 'The game has already started! Wait for the next round~' }
+    return { success: false, message: LINES.shiritoriAlreadyStarted }
   }
 
   if (game.players.has(player.id)) {
-    return { success: false, message: 'You are already in the game!' }
+    return { success: false, message: LINES.shiritoriAlreadyIn }
   }
 
   game.players.set(player.id, { name: player.name, score: 0 })
@@ -195,7 +199,7 @@ export function joinGame(channelId: string, player: ShiritoriPlayer): ShiritoriR
 
   return {
     success: true,
-    message: `**${player.name}** joined the game! (${game.currentPlayerOrder.length} players)`
+    message: fillLine(LINES.shiritoriJoined, { name: player.name, count: game.currentPlayerOrder.length })
   }
 }
 
@@ -203,20 +207,20 @@ export function submitWord(channelId: string, player: ShiritoriPlayer, word: str
   const game = activeGames.get(channelId)
 
   if (!game || !game.active) {
-    return { success: false, message: 'There is no active game in this channel!' }
+    return { success: false, message: LINES.shiritoriNoGame }
   }
 
   const normalizedWord = word.toLowerCase().trim()
 
   // Validate alphabetic only and 2+ letters
   if (!/^[a-z]{2,}$/.test(normalizedWord)) {
-    return { success: false, message: 'Words must be 2+ letters and contain only letters!' }
+    return { success: false, message: LINES.shiritoriInvalid }
   }
 
   // Mark game as started on first move (locks joining)
   if (!game.started) {
     if (game.currentPlayerOrder.length < 2) {
-      return { success: false, message: 'Need at least 2 players! Ask someone to `/shiritori join` first~' }
+      return { success: false, message: LINES.shiritoriNeedPlayers }
     }
     game.started = true
   }
@@ -227,7 +231,7 @@ export function submitWord(channelId: string, player: ShiritoriPlayer, word: str
     const currentName = game.players.get(currentPlayerId)?.name ?? currentPlayerId
     return {
       success: false,
-      message: `It's not your turn! It's **${currentName}**'s turn~`
+      message: fillLine(LINES.shiritoriWrongTurn, { current: currentName })
     }
   }
 
@@ -236,19 +240,19 @@ export function submitWord(channelId: string, player: ShiritoriPlayer, word: str
   if (normalizedWord[0] !== requiredLetter) {
     return {
       success: false,
-      message: `That word doesn't start with **${requiredLetter.toUpperCase()}**! Try again~`
+      message: fillLine(LINES.shiritoriWrongLetter, { letter: requiredLetter.toUpperCase() })
     }
   }
 
   // Check if already used
   if (game.usedWords.has(normalizedWord)) {
-    return { success: false, message: `**${normalizedWord}** was already used! Try something else~` }
+    return { success: false, message: fillLine(LINES.shiritoriAlreadyUsed, { word: normalizedWord }) }
   }
 
   // Check dictionary
   const dict = loadDictionary()
   if (!dict.has(normalizedWord)) {
-    return { success: false, message: `I don't think **${normalizedWord}** is a real word...` }
+    return { success: false, message: fillLine(LINES.shiritoriNotWord, { word: normalizedWord }) }
   }
 
   // Valid word!
@@ -270,7 +274,11 @@ export function submitWord(channelId: string, player: ShiritoriPlayer, word: str
 
   return {
     success: true,
-    message: `**${normalizedWord}** is correct! Next letter: **${nextLetter.toUpperCase()}**. Your turn, **${nextPlayer}**!`
+    message: fillLine(LINES.shiritoriCorrect, {
+      word: normalizedWord,
+      letter: nextLetter.toUpperCase(),
+      next: nextPlayer
+    })
   }
 }
 
@@ -278,7 +286,7 @@ export function endGame(channelId: string): { message: string; scores: Map<strin
   const game = activeGames.get(channelId)
 
   if (!game) {
-    return { message: 'There is no active game in this channel!', scores: new Map() }
+    return { message: LINES.shiritoriNoGame, scores: new Map() }
   }
 
   if (game.timeoutTimer) {
@@ -299,7 +307,7 @@ export function endGame(channelId: string): { message: string; scores: Map<strin
     .join('\n')
 
   return {
-    message: `Game over!\n\n${scoreboard}`,
+    message: fillLine(LINES.shiritoriGameOver, { board: scoreboard }),
     scores
   }
 }
@@ -323,7 +331,7 @@ export function getScores(channelId: string): ShiritoriResult {
   const game = activeGames.get(channelId)
 
   if (!game || !game.active) {
-    return { success: false, message: 'There is no active game in this channel!' }
+    return { success: false, message: LINES.shiritoriNoGame }
   }
 
   const sorted = [...game.players.entries()].sort((a, b) => b[1].score - a[1].score)
@@ -339,7 +347,12 @@ export function getScores(channelId: string): ShiritoriResult {
 
   return {
     success: true,
-    message: `**Current Scores**\n${scoreboard}\n\nCurrent word: **${game.currentWord}** | Next letter: **${nextLetter}** | Turn: **${currentPlayer}**`
+    message: fillLine(LINES.shiritoriScores, {
+      board: scoreboard,
+      word: game.currentWord,
+      letter: nextLetter,
+      turn: currentPlayer
+    })
   }
 }
 
