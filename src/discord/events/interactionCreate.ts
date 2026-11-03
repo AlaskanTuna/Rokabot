@@ -256,7 +256,10 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
       await replyToFailedTurn(error, {
         channelId,
         label: 'Error handling /ask command',
-        send: (text) => interaction.editReply({ content: text })
+        send: (text) => {
+          if (interaction.deferred || interaction.replied) return interaction.editReply({ content: text })
+          return interaction.reply({ content: text, flags: MessageFlags.Ephemeral })
+        }
       })
     } finally {
       releaseTurn({ channelId, reservedBytes, callReservation, modelCallsUsed })

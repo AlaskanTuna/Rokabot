@@ -6,9 +6,10 @@ const OPINION =
 /**
  * Whether the speaker's own words ask about a post's replies. read_replies is offered only then: Flash Lite
  * otherwise fetched replies on turns that only asked what a post was about. Links are dropped first because a
- * Reddit post's path contains /comments/. Generous on purpose: a false match only offers the tool.
+ * Reddit post's path contains /comments/, and Discord <...> tokens because a custom emoji's name can match,
+ * such as <:replies:123>. Generous on purpose: a false match only offers the tool.
  */
 export function asksAboutReplies(text: string): boolean {
-  const words = text.replace(/https?:\/\/\S+/g, ' ')
+  const words = text.replace(/https?:\/\/\S+/g, ' ').replace(/<[^>]*>/g, ' ')
   return REPLY_WORDS.test(words) || OPINION.test(words)
 }
