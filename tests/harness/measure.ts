@@ -4,7 +4,7 @@ import { basename, extname } from 'node:path'
 import { GoogleGenAI } from '@google/genai'
 import * as dotenv from 'dotenv'
 
-import { sizeLimitFor } from '../../src/agent/attachmentLimits.js'
+import { sizeLimitFor } from '../../src/agent/media/attachmentLimits.js'
 
 /**
  * `npm run measure -- path/to/file [...]` — what one attachment costs, and which ceilings it meets.

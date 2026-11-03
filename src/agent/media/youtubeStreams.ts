@@ -1,6 +1,6 @@
 import { config } from '../../config.js'
-import { array, object, string } from '../../discord/socialPosts/parsers.js'
-import { runYtDlp } from '../../discord/socialPosts/ytDlp.js'
+import { array, object, string } from '../social/parsers.js'
+import { runYtDlp } from '../social/ytDlp.js'
 
 export interface MediaStream {
   url: string

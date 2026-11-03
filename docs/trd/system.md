@@ -72,15 +72,15 @@ The health body is JSON: `status`, `uptime`, `memory` (RSS in MB) and `discord` 
 | `src/discord/markdownGuard.ts`            | Guard reply markdown before the split: keep fenced and inline code, turn a kaomoji backtick into `｀`, escape `*` `_` `~` inside kaomoji, and escape stray backticks and `~~` elsewhere. |
 | `src/discord/responses.ts`                | In-character busy, decline and error lines; `splitResponse` closes and reopens a code block cut across chunks.                                                                           |
 | `src/discord/messageBuilder.ts`           | Build the Components V2 reply: accent color, expression thumbnail, `---` separators, tool footer, citations.                                                                             |
-| `src/discord/socialPosts/`                | Validate social post URLs, fetch bounded metadata, cache posts, and format them as untrusted quoted context. See [Media](media.md).                                                      |
-| `src/discord/events/reportCommand.ts`     | Store `/report` submissions and bounded Discord CDN attachment copies without entering the model path.                                                                                   |
+| `src/agent/social/`                       | Validate social post URLs, fetch bounded metadata, cache posts, and format them as untrusted quoted context. See [Media](media.md).                                                      |
+| `src/discord/commands/reportHandler.ts`   | Store `/report` submissions and bounded Discord CDN attachment copies without entering the model path.                                                                                   |
 | `src/agent/roka.ts`                       | Configure the ADK agent and runner, then orchestrate `generateResponse`.                                                                                                                 |
 | `src/agent/turnContext.ts`                | Assemble session, tone, Jev, identity, retrieval and prompt context for each turn.                                                                                                       |
 | `src/agent/session.ts`                    | Own the ADK session service, the idle timers and SQLite rehydration.                                                                                                                     |
 | `src/agent/narratedToolCalls.ts`          | Strip tool calls the model wrote as text (`*(recall_user: X)*`, a `tool_code` fence, Qwen's `<tool_call>`) in `afterModelCallback`, so they never reach Discord or session history.      |
 | `src/agent/replyBlocks.ts`                | Hold every reply to three blocks in `afterModelCallback`; a `---` divider does not count as a block.                                                                                     |
 | `src/agent/replyShape.ts`                 | Pick each reply's shape in code and render the `## Reply Shape` note that closes the prompt. See [Prompt Engine](prompt-engine.md).                                                      |
-| `src/agent/attachments.ts`                | Download and measure media, prepare model parts, and provide attachment markers.                                                                                                         |
+| `src/agent/media/attachments.ts`          | Download and measure media, prepare model parts, and provide attachment markers.                                                                                                         |
 | `src/agent/media/`                        | Plan, watch and validate audio and video digests. See [Media](media.md).                                                                                                                 |
 | `src/agent/reliability.ts`                | Run retry and fallback orchestration and register the error recovery plugin. See [Reliability](reliability.md).                                                                          |
 | `src/agent/llm/`                          | Model profiles and provider adapters (Gemini, Anthropic, Chat Completions). See [Models](models.md).                                                                                     |
@@ -290,8 +290,8 @@ Each tone sets the accent color and draws one expression thumbnail from its pool
 - `src/index.ts`
 - `src/discord/client.ts`, `src/discord/events/ready.ts`
 - `src/discord/events/messageCreate.ts`, `src/discord/events/interactionCreate.ts`
-- `src/discord/commands/`, `src/discord/events/reportCommand.ts`
-- `src/discord/concurrency.ts`, `src/discord/byteBudget.ts`, `src/agent/tokenBudget.ts`, `src/utils/rateLimiter.ts`
+- `src/discord/commands/`, `src/discord/commands/reportHandler.ts`
+- `src/discord/concurrency.ts`, `src/discord/byteBudget.ts`, `src/agent/llm/tokenBudget.ts`, `src/utils/rateLimiter.ts`
 - `src/discord/messageBuilder.ts`, `src/discord/responses.ts`, `src/discord/markdownGuard.ts`
 - `src/agent/roka.ts`, `src/agent/turnContext.ts`, `src/agent/session.ts`
 - `src/storage/database.ts`, `src/storage/sessionStore.ts`

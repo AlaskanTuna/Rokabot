@@ -47,7 +47,7 @@ vi.mock('../config.js', () => ({
     session: { historyRetentionDays: 7 }
   }
 }))
-vi.mock('../agent/channelMonitor.js', () => ({ cleanupExpired: vi.fn(), restoreMonitoredChannels: vi.fn() }))
+vi.mock('../agent/memory/channelMonitor.js', () => ({ cleanupExpired: vi.fn(), restoreMonitoredChannels: vi.fn() }))
 vi.mock('../agent/memory/memoryClaims.js', () => ({ pruneStaleClaims: mocks.pruneStaleClaims }))
 vi.mock('../agent/memory/reclassify.js', () => ({ reclassifyClaims: mocks.reclassifyClaims }))
 vi.mock('../agent/memory/scheduler.js', () => ({

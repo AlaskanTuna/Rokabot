@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createReplyReader } from '../socialPosts/replies/service.js'
-import type { ReplyFetcher, ReplyLookup } from '../socialPosts/replies/types.js'
-import { parseSocialPostUrl } from '../socialPosts/urls.js'
+import { createReplyReader } from '../../agent/social/replies/service.js'
+import type { ReplyFetcher, ReplyLookup } from '../../agent/social/replies/types.js'
+import { parseSocialPostUrl } from '../../agent/social/urls.js'
 
 const SETTINGS = {
   enabled: true,

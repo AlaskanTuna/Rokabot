@@ -2,7 +2,7 @@
 
 import { ApplicationIntegrationType, InteractionContextType, SlashCommandBuilder } from 'discord.js'
 import { character } from '../../character/index.js'
-import { ASK_ATTACHMENT_SLOTS, attachmentOptionName } from '../attachments.js'
+import { ASK_ATTACHMENT_SLOTS, attachmentOptionName } from './askOptions.js'
 
 const command = new SlashCommandBuilder()
   .setName('ask')

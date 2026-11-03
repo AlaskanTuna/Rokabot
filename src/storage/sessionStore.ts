@@ -3,9 +3,16 @@
  * Wraps SQLite operations on the `session_history` table.
  */
 
-import type { WindowMessage } from '../session/types.js'
 import { logger } from '../utils/logger.js'
 import { getDb } from './database.js'
+
+/** Single message in the per-channel FIFO window. */
+export interface WindowMessage {
+  role: 'user' | 'assistant'
+  displayName: string
+  content: string
+  timestamp: number
+}
 
 /**
  * Persist a single message to the session history table.

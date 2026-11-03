@@ -14,8 +14,8 @@ vi.mock('../../utils/logger.js', () => ({ logger: loggerMock }))
 vi.mock('../../config.js', () => ({ config: { gemini: { model: 'gemini-test' }, llm: { hedgeAfterMs: 0 } } }))
 vi.mock('../src/agent/../config.js', () => ({ config: { gemini: { model: 'gemini-test' }, llm: { hedgeAfterMs: 0 } } }))
 
-import { RoutedLlm, modelRouteForRequest } from '../fallbackModel.js'
-import type { ModelRoute } from '../fallbackModel.js'
+import { RoutedLlm, modelRouteForRequest } from '../llm/fallbackModel.js'
+import type { ModelRoute } from '../llm/fallbackModel.js'
 
 type Outcome = { text: string } | { error: Error }
 

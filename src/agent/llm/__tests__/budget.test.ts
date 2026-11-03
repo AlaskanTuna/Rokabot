@@ -42,7 +42,6 @@ vi.mock('../../../storage/spendStore.js', async (importOriginal) => {
 import { closeDb, getDb } from '../../../storage/database.js'
 import { addSpend, readSpend } from '../../../storage/spendStore.js'
 import { getSharedRateLimiter } from '../../../utils/rateLimiter.js'
-import { canAffordAttachments, chargeTokens, remainingTokensThisMinute, tokenBucketFor } from '../../tokenBudget.js'
 import {
   type BudgetReservation,
   type CallInput,
@@ -55,6 +54,7 @@ import {
   startCall
 } from '../budget.js'
 import { ProviderError } from '../providerError.js'
+import { canAffordAttachments, chargeTokens, remainingTokensThisMinute, tokenBucketFor } from '../tokenBudget.js'
 import { type CallUsage, recordUsage } from '../usage.js'
 
 const reply = { provider: 'gemini', model: 'gemini-test', workload: 'reply', estTokens: 1_000 } as const

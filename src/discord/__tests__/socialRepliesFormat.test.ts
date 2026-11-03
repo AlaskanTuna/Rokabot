@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatRepliesForModel } from '../socialPosts/replies/format.js'
+import { formatRepliesForModel } from '../../agent/social/replies/format.js'
 
 describe('formatRepliesForModel', () => {
   it('labels the replies as untrusted and lists them with likes, rank and total', () => {

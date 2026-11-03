@@ -12,8 +12,8 @@ vi.mock('../../../storage/database.js', () => ({
 vi.mock('../scheduler.js', () => ({ startExtractionScheduler: mocks.startExtractionScheduler }))
 
 import { getEpisodeCursor } from '../../../storage/memoryEpisodeStore.js'
-import { addMessage, getMessages, getUserMap, resetAllBuffers } from '../../passiveBuffer.js'
 import { flushEpisode, flushOpenEpisodes, recordEpisodeMessage, resetEpisodeTrackerForTest } from '../episodeTracker.js'
+import { addMessage, getMessages, getUserMap, resetAllBuffers } from '../passiveBuffer.js'
 
 function line(overrides: Partial<EpisodeLine> = {}): EpisodeLine {
   return {

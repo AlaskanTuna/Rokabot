@@ -84,7 +84,7 @@
       "width": 140,
       "sources": [
         {
-          "path": "src/discord/socialPosts/service.ts",
+          "path": "src/agent/social/service.ts",
           "line": 74,
           "end_line": 108,
           "label": "lookup"
@@ -101,7 +101,7 @@
       "width": 140,
       "sources": [
         {
-          "path": "src/discord/socialPosts/media.ts",
+          "path": "src/agent/social/media.ts",
           "line": 34,
           "end_line": 54,
           "label": "socialPostMedia"
@@ -134,7 +134,7 @@
       "width": 140,
       "sources": [
         {
-          "path": "src/agent/attachments.ts",
+          "path": "src/agent/media/attachments.ts",
           "line": 156,
           "end_line": 236,
           "label": "prepareAttachments"

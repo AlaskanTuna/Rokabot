@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { SocialPostLookup } from '../socialPosts/types.js'
+import type { SocialPostLookup } from '../../agent/social/types.js'
 
 const mocks = vi.hoisted(() => ({
   generateResponse: vi.fn(),
@@ -37,7 +37,7 @@ vi.mock('node:dns/promises', () => ({ lookup: mocks.lookup }))
 
 vi.mock('../../agent/roka.js', () => ({ generateResponse: mocks.generateResponse }))
 vi.mock('../../agent/turnContext.js', () => ({ startTurnEntryWork: mocks.startTurnEntryWork }))
-vi.mock('../../agent/tokenBudget.js', () => ({ canAffordAttachments: mocks.canAffordAttachments }))
+vi.mock('../../agent/llm/tokenBudget.js', () => ({ canAffordAttachments: mocks.canAffordAttachments }))
 vi.mock('../../storage/metricsStore.js', () => ({ recordResponseEvent: mocks.recordResponseEvent }))
 vi.mock('../../utils/logger.js', () => ({
   logger: { debug: vi.fn(), error: mocks.error, info: mocks.info, warn: mocks.warn }
@@ -53,12 +53,12 @@ vi.mock('../byteBudget.js', () => ({
   reservationFor: vi.fn(() => 0),
   tryReserve: mocks.tryReserve
 }))
-vi.mock('../attachments.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../attachments.js')>()
+vi.mock('../../agent/media/mediaRules.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../agent/media/mediaRules.js')>()
   mocks.resolveMediaUrl.mockImplementation(actual.resolveMediaUrl)
   return { ...actual, resolveMediaUrl: mocks.resolveMediaUrl }
 })
-vi.mock('../socialPosts/service.js', () => ({ beginSocialPostLookup: mocks.beginSocialPostLookup }))
+vi.mock('../../agent/social/service.js', () => ({ beginSocialPostLookup: mocks.beginSocialPostLookup }))
 vi.mock('../errorHandler.js', () => ({ isIgnorableDiscordError: () => false }))
 vi.mock('../responses.js', () => ({
   getRandomBusy: () => 'busy',
@@ -68,18 +68,18 @@ vi.mock('../responses.js', () => ({
   getRandomPartialAttachment: () => 'I only got through the beginning of that~',
   splitResponse: mocks.splitResponse
 }))
-vi.mock('../events/gameCommands.js', () => ({ createGameCommandHandler: () => mocks.gameCommandHandler }))
-vi.mock('../events/stats/statsCommand.js', () => ({ handleStatsCommand: mocks.handleStatsCommand }))
-vi.mock('../events/reportCommand.js', () => ({ handleReportCommand: mocks.handleReportCommand }))
-vi.mock('../events/toolCommands.js', () => ({ createToolCommandHandler: () => mocks.toolCommandHandler }))
+vi.mock('../commands/games/router.js', () => ({ createGameCommandHandler: () => mocks.gameCommandHandler }))
+vi.mock('../commands/stats/statsCommand.js', () => ({ handleStatsCommand: mocks.handleStatsCommand }))
+vi.mock('../commands/reportHandler.js', () => ({ handleReportCommand: mocks.handleReportCommand }))
+vi.mock('../commands/tools/router.js', () => ({ createToolCommandHandler: () => mocks.toolCommandHandler }))
 
 import { recordReplyOutcome } from '../../agent/replyOutcomes.js'
 import { recordSearchCitations } from '../../agent/searchCitations.js'
+import { parseSocialPostUrl } from '../../agent/social/urls.js'
 import { config } from '../../config.js'
 import { RateLimiter } from '../../utils/rateLimiter.js'
-import { ASK_ATTACHMENT_SLOTS, attachmentOptionName } from '../attachments.js'
+import { ASK_ATTACHMENT_SLOTS, attachmentOptionName } from '../commands/askOptions.js'
 import { createInteractionHandler } from '../events/interactionCreate.js'
-import { parseSocialPostUrl } from '../socialPosts/urls.js'
 import { assertTurnEntryRejections } from './turnEntryRejections.js'
 
 const metrics = {

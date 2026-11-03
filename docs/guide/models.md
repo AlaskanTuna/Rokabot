@@ -256,5 +256,5 @@ once._
 - `src/config.ts` (`resolveLlm`, `resolveRole`, `compatibleEntry`)
 - `src/agent/llm/profiles.ts`
 - `src/agent/llm/budget.ts`
-- `src/agent/fallbackModel.ts`
+- `src/agent/llm/fallbackModel.ts`
 - `src/agent/reliability.ts`

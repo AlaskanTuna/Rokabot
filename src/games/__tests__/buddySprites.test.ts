@@ -1,13 +1,13 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { buddySprite, buildBuddyContainer } from '../../discord/events/games/shared.js'
+import { buddySprite, buildBuddyContainer } from '../../discord/commands/games/shared.js'
 import { SPECIES } from '../data/buddySpecies.js'
 
 const buddySourceFiles = [
-  ...readdirSync(resolve(process.cwd(), 'src/discord/events/games'))
+  ...readdirSync(resolve(process.cwd(), 'src/discord/commands/games'))
     .filter((file) => file.endsWith('.ts'))
-    .map((file) => resolve(process.cwd(), 'src/discord/events/games', file)),
+    .map((file) => resolve(process.cwd(), 'src/discord/commands/games', file)),
   resolve(process.cwd(), 'src/discord/events/gachaMention.ts'),
   resolve(process.cwd(), 'src/games/data/buddySpecies.ts')
 ]

@@ -22,7 +22,7 @@ if (process.env.ADK_QUIET) {
 }
 
 import http from 'node:http'
-import { cleanupExpired, restoreMonitoredChannels } from './agent/channelMonitor.js'
+import { cleanupExpired, restoreMonitoredChannels } from './agent/memory/channelMonitor.js'
 import { registerChannelVisibility } from './agent/memory/channelVisibility.js'
 import { pruneEpisodesAndReembed } from './agent/memory/episodeMaintenance.js'
 import { flushOpenEpisodes } from './agent/memory/episodeTracker.js'
@@ -35,13 +35,13 @@ import {
 } from './agent/memory/scheduler.js'
 import { destroyAllSessions } from './agent/session.js'
 import { beginShutdown } from './agent/shutdownSignal.js'
+import { initializeSocialPosts } from './agent/social/service.js'
 import { character } from './character/index.js'
 import { config } from './config.js'
 import { createChannelVisibilityResolver } from './discord/channelVisibility.js'
 import { createClient } from './discord/client.js'
 import { cleanupExpiredCooldowns } from './discord/emojiReactor.js'
 import { startReminderScheduler, stopReminderScheduler } from './discord/reminderScheduler.js'
-import { initializeSocialPosts } from './discord/socialPosts/service.js'
 import { stopStatusCycler } from './discord/statusCycler.js'
 import { stopUpdateNotifier } from './discord/updateNotifier.js'
 import { destroyAllGames as destroyAllShiritoriGames } from './games/shiritori.js'

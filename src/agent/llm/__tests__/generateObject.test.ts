@@ -18,10 +18,10 @@ vi.mock('../createModel.js', () => ({ createLlm: mocks.createLlm }))
 vi.mock('../../../utils/logger.js', () => ({ logger: { warn: mocks.warn } }))
 vi.mock('../../../config.js', () => ({ config: mocks.config }))
 
-import { SAFETY_SETTINGS } from '../../safetySettings.js'
 import { StructuredOutputError, generateObject, resetGenerateObjectForTest } from '../generateObject.js'
 import { COMPATIBLE_DEFAULTS, type ModelProfile, compatibleProfile, profileFor } from '../profiles.js'
 import { ProviderError } from '../providerError.js'
+import { SAFETY_SETTINGS } from '../safetySettings.js'
 
 const gemini = profileFor('gemini', 'gemini-3.5-flash-lite') as ModelProfile
 const haiku = profileFor('anthropic', 'claude-haiku-5-5') as ModelProfile

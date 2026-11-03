@@ -5,7 +5,7 @@ import {
   getEpisodeCursor,
   recordOpenEpisodeMessage
 } from '../../storage/memoryEpisodeStore.js'
-import { type BufferedMessage, addMessage, getMessages } from '../passiveBuffer.js'
+import { type BufferedMessage, addMessage, getMessages } from './passiveBuffer.js'
 import { startExtractionScheduler } from './scheduler.js'
 
 const timers = new Map<string, ReturnType<typeof setTimeout>>()

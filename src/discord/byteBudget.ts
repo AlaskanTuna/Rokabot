@@ -1,7 +1,7 @@
-import { isStreamedUpload, sizeLimitFor } from '../agent/attachmentLimits.js'
-import type { ImageAttachment } from '../agent/attachments.js'
+import { isStreamedUpload, sizeLimitFor } from '../agent/media/attachmentLimits.js'
+import type { ImageAttachment } from '../agent/media/attachments.js'
+import { MAX_ATTACHMENTS, isSupportedAudio, isSupportedVideo } from '../agent/media/mediaRules.js'
 import { config } from '../config.js'
-import { MAX_ATTACHMENTS, isSupportedAudio, isSupportedVideo } from './attachments.js'
 
 /**
  * Global ceiling on attachment bytes in flight across every channel at once.

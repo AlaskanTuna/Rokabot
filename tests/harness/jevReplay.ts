@@ -4,7 +4,7 @@ import Database from 'better-sqlite3'
 import type { TurnJudgment, TurnJudgmentInput } from '../../src/agent/jev/judgments.js'
 import { TONE_PROMPTS, type ToneKey } from '../../src/agent/prompts/tones.js'
 import { detectToneWithSource } from '../../src/agent/toneDetector.js'
-import type { WindowMessage } from '../../src/session/types.js'
+import type { WindowMessage } from '../../src/storage/sessionStore.js'
 
 export interface JevReplayTurn {
   source: 'database' | 'transcript'

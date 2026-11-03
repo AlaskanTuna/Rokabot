@@ -41,7 +41,7 @@ _Each guard passes the turn on or sends an in-character reply, which the handler
 
 ## Failure Kinds
 
-`classifyGeminiFailure` (`src/agent/geminiReliability.ts`) gives each failed attempt one kind. A `ProviderError` keeps
+`classifyGeminiFailure` (`src/agent/llm/geminiReliability.ts`) gives each failed attempt one kind. A `ProviderError` keeps
 the kind its adapter set. A plain error is checked in this order: safety, recitation, session corruption, spent day,
 terminal words, transient words, network words, terminal status, transient status. A status code matches only as a
 whole number, so the `400` inside `4000000` is not terminal.
@@ -171,7 +171,7 @@ can make up to `gemini.maxLlmCalls` of them: one call, plus one more after each 
 ## The Per-Minute Token Budget
 
 `rateLimit.rpm` limits how many turns run, not what they cost, and bytes do not predict tokens. `TokenBucket`
-(`src/agent/tokenBudget.ts`) meters tokens per rolling minute, one bucket per model, because TPM is the provider's
+(`src/agent/llm/tokenBudget.ts`) meters tokens per rolling minute, one bucket per model, because TPM is the provider's
 quota on the model.
 
 - **Admission:** an attachment turn needs room for the costliest turn `gemini.maxAttachmentTokens` allows. The check
@@ -315,11 +315,11 @@ Environment overrides are wired in `src/config.ts` (for example `GEMINI_LIVE_MAX
 ## Source Files
 
 - `src/agent/reliability.ts`: retry loop, model switch, `ErrorRecoveryPlugin`, attempt aborts
-- `src/agent/geminiReliability.ts`: failure kinds, classification order, backoff
+- `src/agent/llm/geminiReliability.ts`: failure kinds, classification order, backoff
 - `src/agent/roka.ts`: loop wiring, safety rung actions, reply lines, token charge, failure diagnostics
 - `src/agent/turnContext.ts`: safety ladder and `composePrompt`
 - `src/utils/rateLimiter.ts`: sliding-window limiter, call reservations, retry floor
-- `src/agent/tokenBudget.ts`: per-model token bucket and attachment admission
+- `src/agent/llm/tokenBudget.ts`: per-model token bucket and attachment admission
 - `src/agent/llm/budget.ts`: per-call budgets, ModelScope slot, monthly spend
 - `src/discord/events/messageCreate.ts`, `src/discord/events/interactionCreate.ts`: turn admission
 - `src/discord/concurrency.ts`, `src/discord/byteBudget.ts`, `src/discord/responses.ts`: busy flag, byte budget, reply

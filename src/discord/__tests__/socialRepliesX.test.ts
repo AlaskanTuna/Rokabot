@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { fetchXReplies } from '../socialPosts/replies/x.js'
-import { parseSocialPostUrl } from '../socialPosts/urls.js'
+import { fetchXReplies } from '../../agent/social/replies/x.js'
+import { parseSocialPostUrl } from '../../agent/social/urls.js'
 import { jsonResponse, replyContext, replyFixture, requestedHeaders, requestedUrl } from './replyFetchTestContext.js'
 
 const target = parseSocialPostUrl('https://x.com/ClaudeDevs/status/2107895957933408429')!

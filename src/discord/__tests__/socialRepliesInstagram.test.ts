@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { fetchInstagramReplies } from '../socialPosts/replies/instagram.js'
-import { parseSocialPostUrl } from '../socialPosts/urls.js'
+import { fetchInstagramReplies } from '../../agent/social/replies/instagram.js'
+import { parseSocialPostUrl } from '../../agent/social/urls.js'
 import { replyContext, replyFixture } from './replyFetchTestContext.js'
 
 const target = parseSocialPostUrl('https://www.instagram.com/p/Cabc123xyz/')!

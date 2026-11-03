@@ -3,7 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-import type { WindowMessage } from '../../session/types.js'
+import type { WindowMessage } from '../../storage/sessionStore.js'
 import { TONE_CRITERIA } from '../jev/judgments.js'
 import { assembleSystemPrompt, splitStablePrefix } from '../promptAssembler.js'
 import { FACES, TONE_FACES } from '../prompts/kaomoji.js'

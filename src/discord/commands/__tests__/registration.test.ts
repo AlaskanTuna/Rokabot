@@ -1,6 +1,6 @@
 import { ApplicationIntegrationType, InteractionContextType } from 'discord.js'
 import { describe, expect, it } from 'vitest'
-import { ASK_ATTACHMENT_SLOTS, attachmentOptionName } from '../../attachments.js'
+import { ASK_ATTACHMENT_SLOTS, attachmentOptionName } from '../askOptions.js'
 import { buildCommandBody } from '../index.js'
 
 // /ask replaced both /chat and /search (#19). Retiring two names and adding one moves this list, and the

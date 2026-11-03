@@ -3,9 +3,9 @@ import { resolve } from 'node:path'
 import type { BaseLlm, LlmRequest, LlmResponse } from '@google/adk'
 import { FinishReason } from '@google/genai'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { ModelScopeLlm as ReexportedModelScopeLlm } from '../../fallbackModel.js'
 import { type BudgetDenial, grantOrThrow } from '../budget.js'
 import { ChatCompletionsLlm, type ChatCompletionsOptions, ModelScopeLlm } from '../chatCompletionsLlm.js'
+import { ModelScopeLlm as ReexportedModelScopeLlm } from '../fallbackModel.js'
 import {
   COMPATIBLE_DEFAULTS,
   type CompatibleCapabilities,

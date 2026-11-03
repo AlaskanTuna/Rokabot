@@ -767,7 +767,7 @@ X and Bluesky use public APIs and Threads reads its public post page. YouTube, T
 - **Failures:** logged as `Social post lookup failed` with only `platform` and `reason`.
 - **YouTube Refusals:** YouTube can refuse yt-dlp from the Pi's home IP (`exit_1`). Run yt-dlp by hand in the container to see `HTTP Error 429` or `Sign in to confirm you're not a bot`. Those links fall back to YouTube oEmbed (title, channel, thumbnail) and log a failure only when oEmbed fails too.
 - **Missing Binary:** startup logs `Social video extractors disabled` with reason `binary_missing`. Lookups on the yt-dlp platforms then get the normal "could not be opened" marker.
-- **Threads `no_post_data`:** the page came back without its post. The post is private or deleted, or Threads changed what it renders for a logged-out request (check the headers in `src/discord/socialPosts/threads.ts`).
+- **Threads `no_post_data`:** the page came back without its post. The post is private or deleted, or Threads changed what it renders for a logged-out request (check the headers in `src/agent/social/threads.ts`).
 
 ### Local Embeddings Sidecar
 
@@ -909,26 +909,26 @@ cd ~/rokabot && sudo docker compose build --no-cache && sudo docker compose up -
 
 ## Troubleshooting
 
-| Symptom                                               | Check                                            | Fix                                                                                |
-| ----------------------------------------------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------- |
-| Container shows `Restarting`                          | `docker compose ps`, then `logs --tail 50`       | Fix the error in the logs, then `up -d`                                            |
-| Startup stops and names a key                         | Logs                                             | Add that provider key to `.env`, then recreate                                     |
-| Startup refuses the model                             | `verified` in `src/agent/llm/profiles.ts`        | Pick a verified profile, or probe the candidate                                    |
-| `roka` fails with `bind source path does not exist`   | `ls ~/rokabot/config.yml`                        | Restore `config.yml`; Compose never creates it                                     |
-| Deploy failed at the pull                             | Actions run log                                  | The old container still runs; `gh run rerun <run-id> --failed`                     |
-| `manifest` failed at "Check anonymous pulls work"     | Package visibility on GitHub                     | Set the package to Public, then re-run failed jobs                                 |
-| `stable` did not move after a release                 | `docker buildx imagetools inspect ...:stable`    | Re-run failed jobs, or re-tag by hand ([Release to Stable](#release-to-stable))    |
-| Bot answers `/ask` but ignores mentions and replies   | The install's OAuth scopes                       | Reinstall with both `bot` and `applications.commands`                              |
-| Passive memory writes nothing                         | Logs for `Passive memory extraction is disabled` | Set `TYPESAFE_API_KEY`, or use a config with an `llm:` block                       |
-| Calls refused by `monthly` budget                     | `llm_spend` query                                | Wait for the UTC month, or raise `llm.monthlyBudgetUsd` and restart                |
-| Watches end `invalid` on long, dense videos           | `Watched media` lines                            | Raise `media.digestMaxOutputTokens` within 400-4,000                               |
-| Qwen watches show `transcript: unreachable`           | `asr` health and logs                            | Wait for `asr` to restart (OOM) or start it; frames-only works meanwhile           |
-| Files left in the Gemini Files API                    | Files API list (command below)                   | The list must be empty between turns                                               |
-| YouTube lookups fail with `exit_1`                    | yt-dlp by hand in the container                  | Expected (429 or bot check); oEmbed covers it                                      |
-| `Social video extractors disabled` (`binary_missing`) | `which yt-dlp` in the container                  | Fix the yt-dlp step in `Dockerfile` and ship a new image                           |
-| Threads `no_post_data`                                | The post in a logged-out browser                 | Private or deleted post, or update headers in `src/discord/socialPosts/threads.ts` |
-| Embedding backfill counts stop moving                 | Per-space query and sidecar health               | Make the sidecar healthy, then `docker compose restart roka`                       |
-| Hosted image shows blank                              | `curl` the URL for `200` and body size           | Re-upload under a new prefix and swap the URLs                                     |
+| Symptom                                               | Check                                            | Fix                                                                             |
+| ----------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------- |
+| Container shows `Restarting`                          | `docker compose ps`, then `logs --tail 50`       | Fix the error in the logs, then `up -d`                                         |
+| Startup stops and names a key                         | Logs                                             | Add that provider key to `.env`, then recreate                                  |
+| Startup refuses the model                             | `verified` in `src/agent/llm/profiles.ts`        | Pick a verified profile, or probe the candidate                                 |
+| `roka` fails with `bind source path does not exist`   | `ls ~/rokabot/config.yml`                        | Restore `config.yml`; Compose never creates it                                  |
+| Deploy failed at the pull                             | Actions run log                                  | The old container still runs; `gh run rerun <run-id> --failed`                  |
+| `manifest` failed at "Check anonymous pulls work"     | Package visibility on GitHub                     | Set the package to Public, then re-run failed jobs                              |
+| `stable` did not move after a release                 | `docker buildx imagetools inspect ...:stable`    | Re-run failed jobs, or re-tag by hand ([Release to Stable](#release-to-stable)) |
+| Bot answers `/ask` but ignores mentions and replies   | The install's OAuth scopes                       | Reinstall with both `bot` and `applications.commands`                           |
+| Passive memory writes nothing                         | Logs for `Passive memory extraction is disabled` | Set `TYPESAFE_API_KEY`, or use a config with an `llm:` block                    |
+| Calls refused by `monthly` budget                     | `llm_spend` query                                | Wait for the UTC month, or raise `llm.monthlyBudgetUsd` and restart             |
+| Watches end `invalid` on long, dense videos           | `Watched media` lines                            | Raise `media.digestMaxOutputTokens` within 400-4,000                            |
+| Qwen watches show `transcript: unreachable`           | `asr` health and logs                            | Wait for `asr` to restart (OOM) or start it; frames-only works meanwhile        |
+| Files left in the Gemini Files API                    | Files API list (command below)                   | The list must be empty between turns                                            |
+| YouTube lookups fail with `exit_1`                    | yt-dlp by hand in the container                  | Expected (429 or bot check); oEmbed covers it                                   |
+| `Social video extractors disabled` (`binary_missing`) | `which yt-dlp` in the container                  | Fix the yt-dlp step in `Dockerfile` and ship a new image                        |
+| Threads `no_post_data`                                | The post in a logged-out browser                 | Private or deleted post, or update headers in `src/agent/social/threads.ts`     |
+| Embedding backfill counts stop moving                 | Per-space query and sidecar health               | Make the sidecar healthy, then `docker compose restart roka`                    |
+| Hosted image shows blank                              | `curl` the URL for `200` and body size           | Re-upload under a new prefix and swap the URLs                                  |
 
 ```bash
 # List files in the Gemini Files API; expect none between turns
@@ -939,6 +939,6 @@ curl -s "https://generativelanguage.googleapis.com/v1beta/files" -H "x-goog-api-
 
 - `docker-compose.yml`, `Dockerfile`, `asr/Dockerfile`, `sidecar/embeddings/`
 - `.github/workflows/deploy.yml`, `scripts/prune-images.sh`
-- `config.yml`, `src/config.ts`, `src/agent/llm/profiles.ts`, `src/agent/llm/budget.ts`, `src/agent/fallbackModel.ts`
-- `src/agent/media/`, `src/discord/socialPosts/`, `src/agent/memory/reclassify.ts`, `src/storage/database.ts`
+- `config.yml`, `src/config.ts`, `src/agent/llm/profiles.ts`, `src/agent/llm/budget.ts`, `src/agent/llm/fallbackModel.ts`
+- `src/agent/media/`, `src/agent/social/`, `src/agent/memory/reclassify.ts`, `src/storage/database.ts`
 - `scripts/probe-llm-profile.ts`, `scripts/undo-reclassify.ts`, `scripts/reports.ts`, `scripts/migrate-memory-v2.ts`, `scripts/export-vault.ts`

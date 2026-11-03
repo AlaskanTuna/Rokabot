@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { fetchTikTokReplies } from '../socialPosts/replies/tiktok.js'
-import { parseSocialPostUrl } from '../socialPosts/urls.js'
+import { fetchTikTokReplies } from '../../agent/social/replies/tiktok.js'
+import { parseSocialPostUrl } from '../../agent/social/urls.js'
 import { jsonResponse, replyContext, replyFixture, requestedHeaders, requestedUrl } from './replyFetchTestContext.js'
 
 const target = parseSocialPostUrl('https://www.tiktok.com/@pokemonlife22/video/7059698374567611694')!

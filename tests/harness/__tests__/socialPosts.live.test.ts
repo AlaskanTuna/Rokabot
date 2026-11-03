@@ -1,9 +1,9 @@
 import { performance } from 'node:perf_hooks'
 import { expect, it } from 'vitest'
+import { createSocialPostViewer } from '../../../src/agent/social/service.js'
+import { parseSocialPostUrl } from '../../../src/agent/social/urls.js'
+import { isYtDlpAvailable } from '../../../src/agent/social/ytDlp.js'
 import { config } from '../../../src/config.js'
-import { createSocialPostViewer } from '../../../src/discord/socialPosts/service.js'
-import { parseSocialPostUrl } from '../../../src/discord/socialPosts/urls.js'
-import { isYtDlpAvailable } from '../../../src/discord/socialPosts/ytDlp.js'
 
 const ytDlpAvailable = await isYtDlpAvailable(config.socialPosts.ytDlpPath)
 

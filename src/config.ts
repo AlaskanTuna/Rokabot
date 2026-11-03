@@ -4,10 +4,6 @@ import 'dotenv/config'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { load } from 'js-yaml'
-// All four are pure leaves — attachmentLimits.ts, llm/profiles.ts and embeddings/fingerprint.ts import nothing,
-// attachments.ts only node built-ins — so reading them here derives values instead of restating them, and cannot
-// close a cycle back into config.
-import { GEMINI_IMAGE_TOKENS, MAX_DOCUMENT_SIZE_BYTES } from './agent/attachmentLimits.js'
 import {
   COMPATIBLE_DEFAULTS,
   type CompatibleCapabilities,
@@ -18,6 +14,11 @@ import {
   compatibleProfile,
   profileFor
 } from './agent/llm/profiles.js'
+// All four are pure leaves — attachmentLimits.ts, llm/profiles.ts and embeddings/fingerprint.ts import nothing,
+// mediaRules.ts only node built-ins — so reading them here derives values instead of restating them, and cannot
+// close a cycle back into config.
+import { GEMINI_IMAGE_TOKENS, MAX_DOCUMENT_SIZE_BYTES } from './agent/media/attachmentLimits.js'
+import { MAX_ATTACHMENTS } from './agent/media/mediaRules.js'
 import {
   DEFAULT_EMBEDDING_MODELS,
   type EmbeddingProvider,
@@ -25,7 +26,6 @@ import {
   embeddingDimensions,
   embeddingFingerprint
 } from './agent/memory/embeddings/fingerprint.js'
-import { MAX_ATTACHMENTS } from './discord/attachments.js'
 
 function requiredEnv(key: string): string {
   const value = process.env[key]

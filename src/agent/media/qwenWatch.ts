@@ -1,6 +1,6 @@
 import { estimateTokens } from '../../utils/tokens.js'
-import { GEMINI_IMAGE_TOKENS } from '../attachmentLimits.js'
 import { type BudgetReservation, startCall } from '../llm/budget.js'
+import { GEMINI_IMAGE_TOKENS } from './attachmentLimits.js'
 import { formatClock, validateObservations } from './digest.js'
 import type { MediaClip, MediaDigest } from './types.js'
 import { instructions } from './watch.js'

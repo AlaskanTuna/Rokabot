@@ -14,7 +14,7 @@ The shared data shapes, the SQLite tables and the modules that own them, and the
 
 ### WindowMessage
 
-One text message in a channel window (`src/session/types.ts`). `loadHistory` returns these from `session_history`, and tone detection reads them.
+One text message in a channel window (`src/storage/sessionStore.ts`). `loadHistory` returns these from `session_history`, and tone detection reads them.
 
 | Field         | Type                    | Description                               |
 | ------------- | ----------------------- | ----------------------------------------- |
@@ -96,11 +96,11 @@ override. `src/agent/__tests__/promptAssembler.test.ts` fails when this table an
 | `failure_diagnostics`                                 | Detail for failed turns, including the triggering message verbatim.                                                               | `src/storage/metricsStore.ts`                                          |
 | `extraction_events`                                   | Retained historical extraction telemetry.                                                                                         | `src/storage/metricsStore.ts`                                          |
 | `reminders`                                           | Scheduled user reminders and delivery state.                                                                                      | `src/storage/reminderStore.ts`                                         |
-| `game_scores`                                         | Game scores per user and game.                                                                                                    | `src/discord/events/games/*.ts`                                        |
+| `game_scores`                                         | Game scores per user and game.                                                                                                    | `src/discord/commands/games/*.ts`                                      |
 | `gacha_daily`, `buddy`                                | Daily draw state and companion pets.                                                                                              | `src/games/buddy.ts`                                                   |
 | `gacha_collection`                                    | Created at startup. No code reads or writes it.                                                                                   | `src/storage/database.ts`                                              |
 | `user_names`                                          | Durable user ID to username and display name lookup.                                                                              | `src/storage/userNames.ts`                                             |
-| `monitored_channels`                                  | Passive-monitoring channels and their expiry.                                                                                     | `src/agent/channelMonitor.ts`                                          |
+| `monitored_channels`                                  | Passive-monitoring channels and their expiry.                                                                                     | `src/agent/memory/channelMonitor.ts`                                   |
 | `bug_reports`                                         | `/report` submissions with context snapshot and attachment metadata.                                                              | `src/storage/reportStore.ts`                                           |
 | `llm_spend`                                           | Estimated USD spend per UTC month and provider, read against `llm.monthlyBudgetUsd`.                                              | `src/storage/spendStore.ts`                                            |
 | `update_notices`                                      | Release tags the owner was already told about, so each release is announced once.                                                 | `src/storage/updateNoticeStore.ts`                                     |
@@ -153,10 +153,10 @@ Every reply turn runs the ADK `LlmAgent` named `roka` on the model that `llm.mai
 
 ## Source Files
 
-- `src/session/types.ts`
+- `src/storage/sessionStore.ts`
 - `src/utils/rateLimiter.ts`
 - `src/agent/promptAssembler.ts`, `src/character/`, `characters/roka/moods.yml`
 - `src/storage/database.ts`, `src/storage/memoryClaimSchema.ts`, `src/storage/vectorProvenance.ts`
 - `src/storage/sessionStore.ts`, `src/storage/metricsStore.ts`, `src/storage/reportStore.ts`
-- `src/agent/session.ts`, `src/agent/roka.ts`, `src/agent/safetySettings.ts`
+- `src/agent/session.ts`, `src/agent/roka.ts`, `src/agent/llm/safetySettings.ts`
 - `src/index.ts` (prune schedule)

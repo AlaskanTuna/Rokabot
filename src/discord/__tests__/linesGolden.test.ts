@@ -49,7 +49,7 @@ vi.mock('../../games/shiritori.js', async (importOriginal) => ({
     fakes.shiritoriTimeout = callback
   }
 }))
-vi.mock('../events/stats/charts.js', async (importOriginal) => ({
+vi.mock('../commands/stats/charts.js', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   renderActivityHeatmap: async () => null,
   renderChannelHistogram: async () => null,
@@ -57,7 +57,7 @@ vi.mock('../events/stats/charts.js', async (importOriginal) => ({
   renderMemoryGrowth: async () => null,
   renderMoodDonut: async () => null
 }))
-vi.mock('../events/stats/queries.js', () => {
+vi.mock('../commands/stats/queries.js', () => {
   const either =
     <T>(rich: T, empty: T) =>
     () =>
@@ -147,17 +147,19 @@ vi.mock('../events/stats/queries.js', () => {
 import type { WatchOutcome } from '../../agent/media/types.js'
 import type { ReplyOutcome } from '../../agent/replyOutcomes.js'
 import { KNOWN_FALLBACKS, RECITATION_DEFLECTION, SAFETY_DEFLECTION, TERMINAL_DEFLECTION } from '../../agent/roka.js'
+import type { SocialPostLookup } from '../../agent/social/types.js'
+import type { SocialPlatform } from '../../agent/social/urls.js'
 import { config } from '../../config.js'
+import { handleHangmanGuide } from '../commands/games/hangman.js'
+import { createGameCommandHandler } from '../commands/games/router.js'
 import { buildCommandBody } from '../commands/index.js'
-import { createGameCommandHandler } from '../events/gameCommands.js'
-import { handleHangmanGuide } from '../events/games/hangman.js'
-import { ROKA_CHART_PALETTE } from '../events/stats/charts.js'
-import { handleStatsCommand } from '../events/stats/statsCommand.js'
-import { STATS_VIEWS, buildStatsView } from '../events/stats/views.js'
-import { createToolCommandHandler } from '../events/toolCommands.js'
-import { handleAnime } from '../events/tools/anime.js'
-import { handleRemind } from '../events/tools/reminder.js'
-import { handleSchedule } from '../events/tools/schedule.js'
+import { ROKA_CHART_PALETTE } from '../commands/stats/charts.js'
+import { handleStatsCommand } from '../commands/stats/statsCommand.js'
+import { STATS_VIEWS, buildStatsView } from '../commands/stats/views.js'
+import { handleAnime } from '../commands/tools/anime.js'
+import { handleRemind } from '../commands/tools/reminder.js'
+import { createToolCommandHandler } from '../commands/tools/router.js'
+import { handleSchedule } from '../commands/tools/schedule.js'
 import { MAX_TOOL_FOOTER_CHARS, buildRokaMessage } from '../messageBuilder.js'
 import { startReminderScheduler, stopReminderScheduler } from '../reminderScheduler.js'
 import {
@@ -169,8 +171,6 @@ import {
   getRandomSkippedAttachments,
   getRandomUnsupportedAttachment
 } from '../responses.js'
-import type { SocialPostLookup } from '../socialPosts/types.js'
-import type { SocialPlatform } from '../socialPosts/urls.js'
 import { startStatusCycler, stopStatusCycler } from '../statusCycler.js'
 
 /**

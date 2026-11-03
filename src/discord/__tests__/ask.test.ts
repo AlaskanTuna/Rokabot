@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { ALLOWED_MEDIA_TYPES, ASK_ATTACHMENT_SLOTS } from '../attachments.js'
+import { ALLOWED_MEDIA_TYPES } from '../../agent/media/mediaRules.js'
 import { askCommand } from '../commands/ask.js'
+import { ASK_ATTACHMENT_SLOTS } from '../commands/askOptions.js'
 
 const options = askCommand.toJSON().options ?? []
 const slots = options.filter((option) => /^attachment(_\d+)?$/.test(option.name))

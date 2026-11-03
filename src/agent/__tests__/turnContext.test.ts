@@ -73,7 +73,7 @@ vi.mock('../memory/memoryClaims.js', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   touchRecalled: mocks.touchRecalled
 }))
-vi.mock('../passiveBuffer.js', () => ({ getMessages: mocks.getMessages }))
+vi.mock('../memory/passiveBuffer.js', () => ({ getMessages: mocks.getMessages }))
 vi.mock('../promptAssembler.js', () => ({ assembleSystemPrompt: mocks.assembleSystemPrompt }))
 vi.mock('../promptSafety.js', () => ({
   buildFactsEnvelope: mocks.buildFactsEnvelope,

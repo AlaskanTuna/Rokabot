@@ -212,7 +212,7 @@ must not disable the others. Errors from an `openai-compatible` endpoint start w
 
 ## Routing
 
-`rokaModel` is a `RoutedLlm` (`src/agent/fallbackModel.ts`) built by `createRokaModel`. Each reply turn runs inside
+`rokaModel` is a `RoutedLlm` (`src/agent/llm/fallbackModel.ts`) built by `createRokaModel`. Each reply turn runs inside
 one `ModelRoute` store (`modelRouteForRequest`):
 
 | Field         | Meaning                                                                     |
@@ -357,6 +357,6 @@ Without an `llm:` block, `legacyLlm` synthesises the route the bot ran before mo
 - `src/agent/llm/requestShape.ts`, `src/agent/llm/objectSchema.ts`
 - `src/agent/llm/anthropicLlm.ts`, `src/agent/llm/chatCompletionsLlm.ts`
 - `src/agent/llm/budget.ts`, `src/agent/llm/usage.ts`, `src/agent/llm/generateObject.ts`
-- `src/agent/fallbackModel.ts`
+- `src/agent/llm/fallbackModel.ts`
 - `src/agent/reliability.ts`, `src/agent/roka.ts`
 - `config.yml`, `.env.example`

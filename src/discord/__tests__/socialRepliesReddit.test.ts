@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { fetchRedditReplies, parseRedditComments } from '../socialPosts/replies/reddit.js'
-import { parseSocialPostUrl } from '../socialPosts/urls.js'
+import { fetchRedditReplies, parseRedditComments } from '../../agent/social/replies/reddit.js'
+import { parseSocialPostUrl } from '../../agent/social/urls.js'
 import { replyContext, replyFixture, requestedHeaders, requestedUrl } from './replyFetchTestContext.js'
 
 const target = parseSocialPostUrl('https://www.reddit.com/r/videos/comments/6rrwyj/that_small_heart_attack/')!

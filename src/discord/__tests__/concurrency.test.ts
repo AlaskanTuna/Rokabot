@@ -26,12 +26,12 @@ vi.mock('../concurrency.js', () => ({
   markBusy: mocks.markBusy,
   markFree: mocks.markFree
 }))
-vi.mock('../socialPosts/service.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../socialPosts/service.js')>()),
+vi.mock('../../agent/social/service.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../agent/social/service.js')>()),
   beginSocialPostLookup: mocks.beginSocialPostLookup
 }))
-vi.mock('../../agent/channelMonitor.js', () => ({ isMonitored: () => false, markActive: vi.fn() }))
-vi.mock('../../agent/passiveBuffer.js', () => ({ addMessage: vi.fn() }))
+vi.mock('../../agent/memory/channelMonitor.js', () => ({ isMonitored: () => false, markActive: vi.fn() }))
+vi.mock('../../agent/memory/passiveBuffer.js', () => ({ addMessage: vi.fn() }))
 vi.mock('../../storage/userNames.js', () => ({ upsertUserName: vi.fn() }))
 vi.mock('../emojiReactor.js', () => ({ shouldReact: () => null }))
 vi.mock('../errorHandler.js', () => ({ isIgnorableDiscordError: () => false }))
@@ -45,8 +45,8 @@ vi.mock('../responses.js', () => ({
   splitResponse: (response: string) => [response]
 }))
 vi.mock('../events/gachaMention.js', () => ({ handleGachaMention: vi.fn() }))
-vi.mock('../events/gameCommands.js', () => ({ createGameCommandHandler: () => vi.fn() }))
-vi.mock('../events/toolCommands.js', () => ({ createToolCommandHandler: () => vi.fn() }))
+vi.mock('../commands/games/router.js', () => ({ createGameCommandHandler: () => vi.fn() }))
+vi.mock('../commands/tools/router.js', () => ({ createToolCommandHandler: () => vi.fn() }))
 vi.mock('../../utils/logger.js', () => ({ logger: { debug: vi.fn(), error: vi.fn(), info: vi.fn(), warn: vi.fn() } }))
 
 import { createInteractionHandler } from '../events/interactionCreate.js'

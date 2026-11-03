@@ -21,7 +21,7 @@ vi.mock('../../../config.js', async (importOriginal) => {
 })
 
 import { config } from '../../../config.js'
-import { modelRouteForRequest } from '../../fallbackModel.js'
+import { modelRouteForRequest } from '../../llm/fallbackModel.js'
 import { currentSearchAttempt, nativeSearchTimeMs, withSearchAttempt } from '../search/attemptBudget.js'
 import { createNativeSearch, nativeSearchPrompt } from '../search/native.js'
 import type { NativeCall } from '../search/native.js'

@@ -18,7 +18,7 @@ How Roka takes in files, watches audio and video, and opens linked social posts.
 
 ### Types and Ceilings
 
-`src/discord/attachments.ts` declares every admitted type. `src/agent/attachmentLimits.ts` holds the ceilings and `sizeLimitFor`, so the download and the byte budget use the same number.
+`src/agent/media/mediaRules.ts` declares every admitted type. `src/agent/media/attachmentLimits.ts` holds the ceilings and `sizeLimitFor`, so the download and the byte budget use the same number.
 
 | Kind     | Types                                                                                 | Ceiling | Path                                                 |
 | -------- | ------------------------------------------------------------------------------------- | ------- | ---------------------------------------------------- |
@@ -77,7 +77,7 @@ An attachment holds about 4.7× its size in memory. Part of that is outside the 
 
 ## Download
 
-`downloadAttachment` in `src/agent/attachments.ts` fetches one file with a 15 s timeout.
+`downloadAttachment` in `src/agent/media/attachments.ts` fetches one file with a 15 s timeout.
 
 - **Streaming Cap:** `readWithinLimit` counts bytes as they arrive and cancels the reader at the ceiling. There is no `arrayBuffer()` fallback. A `Content-Length` above the ceiling refuses before any byte is read.
 - **Oversized Media:** a file whose stated size is above its ceiling is cut to a prefix when its container survives the cut, and refused otherwise. A refused file is never requested.
@@ -304,7 +304,7 @@ A found post adds one line to the user message, headed by `SOCIAL_POST_UNTRUSTED
 
 ### Post Media
 
-`socialPostMedia` (`src/discord/socialPosts/media.ts`) adds one item as the last attachment candidate, when a slot is free. It then goes through the normal byte, count and token checks.
+`socialPostMedia` (`src/agent/social/media.ts`) adds one item as the last attachment candidate, when a slot is free. It then goes through the normal byte, count and token checks.
 
 - **YouTube (watcher on):** the canonical URL as a `uri` item, with any `startSec`.
 - **Other Video (watcher on):** the playable MP4 with muxed sound first, then the smallest, then the lowest bitrate. It must pass `resolveMediaUrl` with no extractor headers, be `video/*`, and fit `media.maxStreamedUploadBytes` (10 MiB when no size is stated). A known-silent stream (Reddit DASH) is watched and marked silent.
@@ -362,10 +362,10 @@ Derivations: [Multimodal Intake Research](../research/multimodal.md) and [Social
 
 ## Source Files
 
-- `src/discord/attachments.ts`, `src/discord/byteBudget.ts`, `src/discord/messageContent.ts`
-- `src/agent/attachments.ts`, `src/agent/attachmentCost.ts`, `src/agent/attachmentLimits.ts`, `src/agent/mediaPrefix.ts`
+- `src/agent/media/mediaRules.ts`, `src/discord/byteBudget.ts`, `src/discord/messageContent.ts`
+- `src/agent/media/attachments.ts`, `src/agent/media/attachmentCost.ts`, `src/agent/media/attachmentLimits.ts`, `src/agent/media/mediaPrefix.ts`
 - `src/agent/media/` (`turnMedia.ts`, `plan.ts`, `watch.ts`, `qwenWatch.ts`, `frames.ts`, `transcribe.ts`, `filesUpload.ts`, `digest.ts`, `contentKey.ts`, `youtubeStreams.ts`)
 - `src/agent/session.ts` (`stripAttachmentBytes`), `src/agent/roka.ts` (turn wiring)
-- `src/discord/socialPosts/` (`service.ts`, `urls.ts`, `ytDlp.ts`, `media.ts`, `format.ts`, `threads.ts`, `replies/`)
+- `src/agent/social/` (`service.ts`, `urls.ts`, `ytDlp.ts`, `media.ts`, `format.ts`, `threads.ts`, `replies/`)
 - `src/agent/tools/readReplies.ts`, `src/agent/replyIntent.ts`, `src/agent/promptSafety.ts`
 - `asr/server.py`, `docker-compose.yml` (`asr` service)
