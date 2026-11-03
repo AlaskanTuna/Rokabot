@@ -1,7 +1,7 @@
 import { config } from '../../config.js'
 import { MAX_VIDEO_SIZE_BYTES } from '../media/attachmentLimits.js'
 import type { MediaAttachment } from '../media/attachments.js'
-import { postContentKey, youtubeContentKey } from '../media/contentKey.js'
+import { embedVideoContentKey, postContentKey, youtubeContentKey } from '../media/contentKey.js'
 import { resolveMediaUrl } from '../media/mediaRules.js'
 import type { SocialPost } from './types.js'
 
@@ -45,7 +45,7 @@ export async function embedVideoMedia(url: string): Promise<MediaAttachment | nu
   if (!watched) return null
   const resolved = await resolveWatchableVideo(url, null)
   if (!resolved) return null
-  return { ...resolved, origin: 'link', sourceAuthorId: null }
+  return { ...resolved, origin: 'link', sourceAuthorId: null, contentKey: embedVideoContentKey(url) }
 }
 
 /** What a found post contributes to the turn's one media slot: its video to watch, else its picture. */

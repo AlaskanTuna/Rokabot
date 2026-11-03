@@ -88,20 +88,22 @@ const metrics = {
   tokensOutEst: 10
 }
 
-function videoEmbed(url: string, thumbnail = 'https://cdn.test/still.jpg') {
+function videoEmbed(proxyURL: string, thumbnail = 'https://cdn.test/still.jpg') {
   return {
     author: null,
     title: 'A clip',
     description: 'watch this',
     fields: [],
     footer: null,
-    video: { url, proxyURL: url, width: 640, height: 360 },
+    video: { url: 'https://video.example/direct.mp4', proxyURL, width: 640, height: 360 },
     image: null,
     thumbnail: { url: thumbnail },
     data: { type: 'video' },
     url: 'https://example.com/post'
   }
 }
+
+const PROXY_CLIP = 'https://images-ext-1.discordapp.net/embed_proxy/clip.mp4'
 
 function gifvEmbed() {
   return {
@@ -127,18 +129,23 @@ function createMessage({ content = '<@bot-1> look', embeds = [] as object[], fet
       createdTimestamp: 1_000,
       channelId: 'channel-1',
       content,
-      mentions: { has: vi.fn(() => true), repliedUser: null },
+      mentions: { has: vi.fn(() => true), repliedUser: null as { id: string } | null },
       components: [],
-      reference: null,
+      reference: null as { messageId: string } | null,
       guild: null,
       guildId: 'guild-1',
       member: { displayName: 'Alice' },
       attachments: new Collection(),
       embeds,
       poll: null,
+      flags: undefined as { has: (flag: string) => boolean } | undefined,
       stickers: new Collection(),
       messageSnapshots: new Collection(),
-      channel: { sendTyping: vi.fn().mockResolvedValue(undefined), send: vi.fn() },
+      channel: {
+        sendTyping: vi.fn().mockResolvedValue(undefined),
+        send: vi.fn(),
+        messages: { fetch: vi.fn() }
+      },
       reply
     },
     reply
@@ -181,61 +188,215 @@ async function handle(message: object) {
 describe('embed video on the mention path', () => {
   beforeEach(resetMocks)
 
-  it('watches a playable video from an embed on any host', async () => {
+  it("watches a playable video from Discord's proxy embed", async () => {
     mocks.resolveMediaUrl.mockResolvedValueOnce({
-      url: 'https://video.example/clip.mp4',
+      url: PROXY_CLIP,
       contentType: 'video/mp4',
       size: 1_000_000
     })
-    const { message } = createMessage({ embeds: [videoEmbed('https://video.example/clip.mp4')] })
+    const { message } = createMessage({ embeds: [videoEmbed(PROXY_CLIP)] })
 
     const result = await handle(message)
 
     expect(result.mediaAttachments).toEqual([
       {
-        url: 'https://video.example/clip.mp4',
+        url: PROXY_CLIP,
         contentType: 'video/mp4',
         size: 1_000_000,
         origin: 'link',
-        sourceAuthorId: null
+        sourceAuthorId: null,
+        contentKey: 'embedvideo:images-ext-1.discordapp.net/embed_proxy/clip.mp4'
       }
     ])
     expect(result.userMessage).toContain('watch this')
   })
 
+  it("ignores an embed video whose proxy URL is not Discord's", async () => {
+    const { message } = createMessage({ embeds: [videoEmbed('https://proxy.example/clip.mp4')] })
+
+    const result = await handle(message)
+
+    expect(mocks.resolveMediaUrl).not.toHaveBeenCalled()
+    expect(result.mediaAttachments).toEqual([{ url: 'https://cdn.test/still.jpg', contentType: 'image/png' }])
+  })
+
+  it('stops at the first playable video', async () => {
+    const first = 'https://images-ext-1.discordapp.net/embed_proxy/first.mp4'
+    const second = 'https://images-ext-2.discordapp.net/embed_proxy/second.mp4'
+    mocks.resolveMediaUrl.mockResolvedValueOnce({ url: first, contentType: 'video/mp4', size: 500_000 })
+    const { message } = createMessage({ embeds: [videoEmbed(first), videoEmbed(second)] })
+
+    const result = await handle(message)
+
+    expect(mocks.resolveMediaUrl).toHaveBeenCalledTimes(1)
+    expect(mocks.resolveMediaUrl).toHaveBeenCalledWith(first)
+    expect(result.mediaAttachments).toHaveLength(2)
+    expect(result.mediaAttachments[1]).toMatchObject({ url: first, origin: 'link' })
+  })
+
+  it('watches no embed video when an upload already fills the timed slot', async () => {
+    const { message } = createMessage({ embeds: [videoEmbed(PROXY_CLIP)] })
+    message.attachments.set('0', { url: 'https://cdn.test/own.mp4', contentType: 'video/mp4', size: 1_000 })
+
+    const result = await handle(message)
+
+    expect(mocks.resolveMediaUrl).not.toHaveBeenCalledWith(PROXY_CLIP)
+    expect(result.mediaAttachments.some((attachment: { origin?: string }) => attachment.origin === 'link')).toBe(false)
+  })
+
+  it("watches no embed video when the post's own video won", async () => {
+    const postVideoUrl = 'https://video.example/post.mp4'
+    mocks.resolveMediaUrl.mockImplementation(async (url: string) =>
+      url === postVideoUrl ? { url, contentType: 'video/mp4', size: 800_000 } : { url, contentType: 'image/jpeg' }
+    )
+    mocks.beginSocialPostLookup.mockResolvedValueOnce({
+      status: 'found',
+      post: {
+        platform: 'x',
+        id: '123',
+        canonicalUrl: 'https://x.com/i/status/123',
+        target: { lookupKey: 'x:123' },
+        authorHandle: 'roka',
+        authorName: 'Roka',
+        createdAt: '2026-10-06',
+        text: 'The linked post text',
+        quotedText: '',
+        quotedAuthorHandle: '',
+        photoCount: 0,
+        videoCount: 1,
+        imageUrl: null,
+        externalTitle: '',
+        replyCount: null,
+        durationSec: null,
+        video: { url: postVideoUrl, bytes: 800_000, headers: null, hasAudio: true }
+      }
+    } as never)
+    const { message } = createMessage({
+      content: '<@bot-1> look https://x.com/roka/status/123',
+      embeds: [videoEmbed(PROXY_CLIP)]
+    })
+
+    const result = await handle(message)
+
+    expect(mocks.resolveMediaUrl).not.toHaveBeenCalledWith(PROXY_CLIP)
+    expect((result.mediaAttachments ?? []).some((attachment: { url: string }) => attachment.url === PROXY_CLIP)).toBe(
+      false
+    )
+  })
+
+  it('watches no embed video when the attachment list is already full', async () => {
+    const { message } = createMessage({ embeds: [videoEmbed(PROXY_CLIP)] })
+    for (let index = 0; index < 10; index += 1) {
+      message.attachments.set(String(index), {
+        url: `https://cdn.test/own-${index}.png`,
+        contentType: 'image/png',
+        size: 1_000
+      })
+    }
+
+    const result = await handle(message)
+
+    expect(mocks.resolveMediaUrl).not.toHaveBeenCalled()
+    expect(result.mediaAttachments).toHaveLength(10)
+  })
+
+  it('takes no embed from a reply to Roka herself', async () => {
+    const { message } = createMessage({ content: 'nice one', embeds: [] })
+    const referencedMessage = {
+      id: 'message-0',
+      author: { id: 'bot-1', displayName: 'Roka' },
+      member: null,
+      content: 'look at this',
+      embeds: [videoEmbed(PROXY_CLIP)],
+      poll: null,
+      components: [],
+      stickers: new Collection(),
+      attachments: new Collection(),
+      messageSnapshots: new Collection()
+    }
+    message.reference = { messageId: 'message-0' }
+    message.mentions = { has: (() => false) as never, repliedUser: { id: 'bot-1' } }
+    message.channel.messages = { fetch: vi.fn().mockResolvedValue(referencedMessage) }
+
+    const result = await handle(message)
+
+    expect(mocks.resolveMediaUrl).not.toHaveBeenCalledWith(PROXY_CLIP)
+    expect((result.mediaAttachments ?? []).some((attachment: { url: string }) => attachment.url === PROXY_CLIP)).toBe(
+      false
+    )
+  })
+
+  it('keeps the video slot when thumbnails would crowd it out', async () => {
+    mocks.resolveMediaUrl.mockResolvedValueOnce({ url: PROXY_CLIP, contentType: 'video/mp4', size: 500_000 })
+    const { message } = createMessage({ content: '<@bot-1> look https://example.com/clip', embeds: [] })
+    for (let index = 0; index < 9; index += 1) {
+      message.attachments.set(String(index), {
+        url: `https://cdn.test/own-${index}.png`,
+        contentType: 'image/png',
+        size: 1_000
+      })
+    }
+    setTimeout(() => {
+      message.embeds.push(videoEmbed(PROXY_CLIP))
+    }, 100)
+
+    const result = await handle(message)
+
+    expect(result.mediaAttachments).toHaveLength(10)
+    expect(result.mediaAttachments[9]).toMatchObject({ url: PROXY_CLIP, origin: 'link' })
+  })
+
   it('uses the embed video when her own lookup failed', async () => {
     mocks.beginSocialPostLookup.mockResolvedValueOnce({ status: 'failed', platform: 'reddit', reason: 'http_403' })
     mocks.resolveMediaUrl.mockResolvedValueOnce({
-      url: 'https://v.redd.it/abc/DASH_240.mp4',
+      url: PROXY_CLIP,
       contentType: 'video/mp4',
       size: 800_000
     })
     const { message } = createMessage({
       content: '<@bot-1> what happens? https://www.reddit.com/r/videos/comments/xyz/post/',
-      embeds: [videoEmbed('https://v.redd.it/abc/DASH_240.mp4')]
+      embeds: [videoEmbed(PROXY_CLIP)]
     })
 
     const result = await handle(message)
 
     expect(result.mediaAttachments).toEqual([
       {
-        url: 'https://v.redd.it/abc/DASH_240.mp4',
+        url: PROXY_CLIP,
         contentType: 'video/mp4',
         size: 800_000,
         origin: 'link',
-        sourceAuthorId: null
+        sourceAuthorId: null,
+        contentKey: 'embedvideo:images-ext-1.discordapp.net/embed_proxy/clip.mp4'
       }
     ])
     expect(result.userMessage).toContain('(the linked post could not be opened)')
   })
 
+  it('keeps the failure marker exactly once when a failed lookup falls back to the embed', async () => {
+    mocks.beginSocialPostLookup.mockResolvedValueOnce({ status: 'failed', platform: 'reddit', reason: 'http_403' })
+    mocks.resolveMediaUrl.mockResolvedValueOnce({
+      url: PROXY_CLIP,
+      contentType: 'video/mp4',
+      size: 800_000
+    })
+    const { message } = createMessage({
+      content: '<@bot-1> what happens? https://www.reddit.com/r/videos/comments/xyz/post/',
+      embeds: [videoEmbed(PROXY_CLIP)]
+    })
+
+    const result = await handle(message)
+
+    expect(result.userMessage.split('(the linked post could not be opened)')).toHaveLength(2)
+  })
+
   it('keeps text and thumbnail when the embed URL is not a video', async () => {
     mocks.resolveMediaUrl.mockResolvedValueOnce({
-      url: 'https://www.youtube.com/embed/abc',
+      url: PROXY_CLIP,
       contentType: 'text/html',
       size: 5_000
     })
-    const { message } = createMessage({ embeds: [videoEmbed('https://www.youtube.com/embed/abc')] })
+    const { message } = createMessage({ embeds: [videoEmbed(PROXY_CLIP)] })
 
     const result = await handle(message)
 
@@ -257,7 +418,7 @@ describe('embed video on the mention path', () => {
 
   it('keeps the thumbnail when the address checks refuse the video', async () => {
     mocks.resolveMediaUrl.mockResolvedValueOnce(null)
-    const { message } = createMessage({ embeds: [videoEmbed('https://video.example/private.mp4')] })
+    const { message } = createMessage({ embeds: [videoEmbed(PROXY_CLIP)] })
 
     const result = await handle(message)
 
@@ -265,25 +426,27 @@ describe('embed video on the mention path', () => {
   })
 
   it('sees the video when Discord patches a late embed onto the same message', async () => {
+    const late = 'https://images-ext-1.discordapp.net/embed_proxy/late.mp4'
     mocks.resolveMediaUrl.mockResolvedValueOnce({
-      url: 'https://video.example/late.mp4',
+      url: late,
       contentType: 'video/mp4',
       size: 500_000
     })
     const { message } = createMessage({ content: '<@bot-1> look https://example.com/clip', embeds: [] })
     setTimeout(() => {
-      message.embeds.push(videoEmbed('https://video.example/late.mp4'))
+      message.embeds.push(videoEmbed(late))
     }, 100)
 
     const result = await handle(message)
 
     expect(result.mediaAttachments).toEqual([
       {
-        url: 'https://video.example/late.mp4',
+        url: late,
         contentType: 'video/mp4',
         size: 500_000,
         origin: 'link',
-        sourceAuthorId: null
+        sourceAuthorId: null,
+        contentKey: 'embedvideo:images-ext-1.discordapp.net/embed_proxy/late.mp4'
       }
     ])
   })
@@ -307,6 +470,27 @@ describe('embed video on the mention path', () => {
     await handle(message)
 
     expect(performance.now() - started).toBeLessThan(config.media.embedWaitMs)
+  })
+
+  it('does not wait when embeds are suppressed on the message', async () => {
+    const { message } = createMessage({ content: '<@bot-1> look https://example.com/clip', embeds: [] })
+    message.flags = { has: () => true }
+    const started = performance.now()
+
+    await handle(message)
+
+    expect(performance.now() - started).toBeLessThan(config.media.embedWaitMs)
+    expect(mocks.resolveMediaUrl).not.toHaveBeenCalled()
+  })
+
+  it('does not wait when every link is wrapped so Discord never embeds it', async () => {
+    const { message } = createMessage({ content: '<@bot-1> look <https://example.com/clip>', embeds: [] })
+    const started = performance.now()
+
+    await handle(message)
+
+    expect(performance.now() - started).toBeLessThan(config.media.embedWaitMs)
+    expect(mocks.resolveMediaUrl).not.toHaveBeenCalled()
   })
 
   it('keeps the text and thumbnail of a late embed with no playable video', async () => {

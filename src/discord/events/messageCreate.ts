@@ -287,7 +287,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
         content = content ? `${content}\n${SOCIAL_POST_FAILURE_MARKER}` : SOCIAL_POST_FAILURE_MARKER
       }
 
-      // A playable video in an embed, on any host. Skipped when the turn already carries timed media
+      // A playable video in an embed, from Discord's proxy only. Skipped when the turn already carries timed media
       // (an upload or the post's own video wins the one timed slot) and when the post's own video won.
       const hasTimedMedia = mediaAttachments.some(
         (attachment) => attachment.contentType.startsWith('video/') || attachment.contentType.startsWith('audio/')
@@ -305,7 +305,11 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
           : text
       if (!hasTimedMedia && !socialVideoWon && mediaAttachments.length < MAX_ATTACHMENTS) {
         // A message with no link pays no wait, so the typing acknowledgement keeps its order for it.
-        const embedsMayArrive = message.embeds.length === 0 && /https?:\/\//i.test(message.content ?? '')
+        // Suppressed embeds and wrapped-only links never produce one either.
+        const embedsSuppressed = message.flags?.has('SuppressEmbeds') ?? false
+        const unwrappedContent = (message.content ?? '').replace(/<https?:\/\/[^<>\s]+>/g, '')
+        const embedsMayArrive =
+          message.embeds.length === 0 && !embedsSuppressed && /https?:\/\//i.test(unwrappedContent)
         if (embedsMayArrive) await waitForLateEmbeds(message)
         let embedVideo: MediaAttachment | null = null
         let embedVideoUrl: string | undefined
@@ -327,8 +331,10 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
             embedVideoUrl ? new Set([embedVideoUrl]) : undefined
           )
           content = withFailureMarker(reExtracted.content)
-          // The re-extract drops the watched thumbnail, then the video takes its slot.
-          if (embedVideo) reExtracted.mediaAttachments.push(embedVideo)
+          // The re-extract drops the watched thumbnail, then the video keeps its own slot.
+          if (embedVideo) {
+            reExtracted.mediaAttachments = [...reExtracted.mediaAttachments.slice(0, MAX_ATTACHMENTS - 1), embedVideo]
+          }
           mediaAttachments = reExtracted.mediaAttachments.slice(0, MAX_ATTACHMENTS)
           unsupportedCount = reExtracted.unsupportedCount
         }

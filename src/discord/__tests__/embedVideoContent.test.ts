@@ -2,14 +2,14 @@ import { Collection } from 'discord.js'
 import { describe, expect, it } from 'vitest'
 import { collectEmbedVideoUrls, embedVideoUrl, extractMessageContent } from '../messageContent.js'
 
-function videoEmbed(url: string, overrides: object = {}) {
+function videoEmbed(proxyURL: string, overrides: object = {}) {
   return {
     author: null,
     title: null,
     description: 'a clip',
     fields: [],
     footer: null,
-    video: { url, proxyURL: url, width: 640, height: 360 },
+    video: { url: 'https://video.example/direct.mp4', proxyURL, width: 640, height: 360 },
     image: { url: 'https://cdn.test/thumb.jpg' },
     thumbnail: null,
     data: { type: 'video' },
@@ -17,6 +17,9 @@ function videoEmbed(url: string, overrides: object = {}) {
     ...overrides
   }
 }
+
+const PROXY_A = 'https://images-ext-1.discordapp.net/embed_proxy/a.mp4'
+const PROXY_B = 'https://media.discordapp.net/embed_proxy/b.mp4'
 
 function gifvEmbed() {
   return {
@@ -68,12 +71,27 @@ function snapshotWithEmbed(embed: object) {
 }
 
 describe('embedVideoUrl', () => {
-  it('prefers the proxy URL over the direct URL', () => {
-    const embed = videoEmbed('https://video.example/direct.mp4', {
-      video: { url: 'https://video.example/direct.mp4', proxyURL: 'https://proxy.example/clip.mp4' }
-    })
+  it('takes the proxy URL on a discordapp.net subdomain', () => {
+    expect(embedVideoUrl(videoEmbed(PROXY_A) as never)).toBe(PROXY_A)
+  })
 
-    expect(embedVideoUrl(embed as never)).toBe('https://proxy.example/clip.mp4')
+  it('takes the proxy URL on media.discordapp.net', () => {
+    expect(embedVideoUrl(videoEmbed(PROXY_B) as never)).toBe(PROXY_B)
+  })
+
+  it('takes the proxy URL on a discordapp.com subdomain', () => {
+    const proxyURL = 'https://images-ext-1.discordapp.com/embed_proxy/c.mp4'
+    expect(embedVideoUrl(videoEmbed(proxyURL) as never)).toBe(proxyURL)
+  })
+
+  it('returns null when the embed carries only url and no proxyURL', () => {
+    const embed = videoEmbed(PROXY_A, { video: { url: 'https://video.example/direct.mp4' } })
+
+    expect(embedVideoUrl(embed as never)).toBeNull()
+  })
+
+  it('returns null for a proxy URL on another host', () => {
+    expect(embedVideoUrl(videoEmbed('https://proxy.example/clip.mp4') as never)).toBeNull()
   })
 
   it('leaves gifv embeds as text and never watches them', () => {
@@ -87,27 +105,30 @@ describe('embedVideoUrl', () => {
 
 describe('collectEmbedVideoUrls', () => {
   it('takes a playable video from the message itself', () => {
-    const urls = collectEmbedVideoUrls(message({ embeds: [videoEmbed('https://video.example/a.mp4')] }) as never, null)
+    const urls = collectEmbedVideoUrls(message({ embeds: [videoEmbed(PROXY_A)] }) as never, null)
 
-    expect(urls).toEqual(['https://video.example/a.mp4'])
+    expect(urls).toEqual([PROXY_A])
   })
 
   it('takes a playable video from a replied-to message', () => {
-    const urls = collectEmbedVideoUrls(
-      message() as never,
-      referenceMessage([videoEmbed('https://video.example/reply.mp4')]) as never
-    )
+    const urls = collectEmbedVideoUrls(message() as never, referenceMessage([videoEmbed(PROXY_B)]) as never)
 
-    expect(urls).toEqual(['https://video.example/reply.mp4'])
+    expect(urls).toEqual([PROXY_B])
   })
 
   it('takes a playable video from a forwarded snapshot', () => {
-    const urls = collectEmbedVideoUrls(
-      message({ snapshots: [snapshotWithEmbed(videoEmbed('https://video.example/fwd.mp4'))] }) as never,
-      null
-    )
+    const urls = collectEmbedVideoUrls(message({ snapshots: [snapshotWithEmbed(videoEmbed(PROXY_A))] }) as never, null)
 
-    expect(urls).toEqual(['https://video.example/fwd.mp4'])
+    expect(urls).toEqual([PROXY_A])
+  })
+
+  it('returns at most 3 URLs, since each costs a HEAD request', () => {
+    const embeds = [0, 1, 2, 3, 4].map((index) =>
+      videoEmbed(`https://images-ext-${index}.discordapp.net/embed_proxy/${index}.mp4`)
+    )
+    const urls = collectEmbedVideoUrls(message({ embeds }) as never, null)
+
+    expect(urls).toHaveLength(3)
   })
 
   it('skips a gifv embed everywhere it is read', () => {
@@ -125,25 +146,17 @@ describe('collectEmbedVideoUrls', () => {
 
 describe('embed video thumbnail suppression', () => {
   it('does not also send the thumbnail as an image when the video is used', () => {
-    const embed = videoEmbed('https://video.example/a.mp4')
+    const embed = videoEmbed(PROXY_A)
     const trigger = message({ embeds: [embed] }) as never
 
-    const extracted = extractMessageContent(
-      trigger,
-      null,
-      false,
-      'bot',
-      [],
-      undefined,
-      new Set(['https://video.example/a.mp4'])
-    )
+    const extracted = extractMessageContent(trigger, null, false, 'bot', [], undefined, new Set([PROXY_A]))
 
     expect(extracted.mediaAttachments).toEqual([])
     expect(extracted.content).toContain('video')
   })
 
   it('keeps the thumbnail when the video URL does not resolve to video', () => {
-    const embed = videoEmbed('https://www.youtube.com/embed/abc')
+    const embed = videoEmbed(PROXY_A)
     const trigger = message({ embeds: [embed] }) as never
 
     const extracted = extractMessageContent(trigger, null, false, 'bot', [], undefined, new Set())

@@ -59,11 +59,26 @@ export interface SocialPostPresentation {
   mediaAttachment?: MediaAttachment
 }
 
-/** A playable video URL from an embed, preferring the proxied file. Null for gifv and video-less embeds. */
+/** A playable video URL from an embed: only Discord's proxy file, so the Pi never fetches a sender-chosen host. Null for gifv and video-less embeds. */
 export function embedVideoUrl(embed: Message['embeds'][number]): string | null {
   if (!embed.video) return null
   if (embed.data.type === 'gifv') return null
-  return embed.video.proxyURL ?? embed.video.url ?? null
+  const proxyURL = embed.video.proxyURL
+  if (!proxyURL) return null
+  let host: string
+  try {
+    host = new URL(proxyURL).hostname.toLowerCase()
+  } catch {
+    return null
+  }
+  if (
+    host !== 'discordapp.net' &&
+    host !== 'discordapp.com' &&
+    !host.endsWith('.discordapp.net') &&
+    !host.endsWith('.discordapp.com')
+  )
+    return null
+  return proxyURL
 }
 
 function snapshotEmbeds(snapshot: unknown): Array<Message['embeds'][number]> {
@@ -76,7 +91,7 @@ function snapshotEmbeds(snapshot: unknown): Array<Message['embeds'][number]> {
  * Playable embed-video URLs in intake order: the triggering message, the replied-to message, then
  * forwarded snapshots on each. gifv embeds stay as text. An embed her own lookup already fetched stays
  * on that path so it is not watched twice — unless the caller passes no presentation (a failed lookup),
- * in which case the embed's video is the fallback.
+ * in which case the embed's video is the fallback. Capped at 3, since each URL costs a HEAD request.
  */
 export function collectEmbedVideoUrls(
   message: Message,
@@ -86,6 +101,7 @@ export function collectEmbedVideoUrls(
   const urls: string[] = []
   const seen = new Set<string>()
   const take = (embed: Message['embeds'][number]) => {
+    if (urls.length >= 3) return
     const url = embedVideoUrl(embed)
     if (url && !seen.has(url)) {
       seen.add(url)

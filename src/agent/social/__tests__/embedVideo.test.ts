@@ -36,8 +36,21 @@ describe('embedVideoMedia', () => {
       contentType: 'video/mp4',
       size: 1_000_000,
       origin: 'link',
-      sourceAuthorId: null
+      sourceAuthorId: null,
+      contentKey: 'embedvideo:video.example/clip.mp4'
     })
+  })
+
+  it('keys the attachment by proxy host and path without the query', async () => {
+    mocks.resolveMediaUrl.mockResolvedValueOnce({
+      url: 'https://images-ext-1.discordapp.net/embed_proxy/abcd/clip.mp4',
+      contentType: 'video/mp4',
+      size: 1_000_000
+    })
+
+    const media = await embedVideoMedia('https://images-ext-1.discordapp.net/embed_proxy/abcd/clip.mp4?ex=65f&hm=abc')
+
+    expect(media?.contentKey).toBe('embedvideo:images-ext-1.discordapp.net/embed_proxy/abcd/clip.mp4')
   })
 
   it('keeps the thumbnail path when the URL does not resolve to video', async () => {

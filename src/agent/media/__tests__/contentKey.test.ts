@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { bytesContentKey, discordAttachmentContentKey, postContentKey, youtubeContentKey } from '../contentKey.js'
+import {
+  bytesContentKey,
+  discordAttachmentContentKey,
+  embedVideoContentKey,
+  postContentKey,
+  youtubeContentKey
+} from '../contentKey.js'
 
 describe('content keys', () => {
   it('formats YouTube keys from the video id', () => {
@@ -34,6 +40,15 @@ describe('content keys', () => {
 
   it('gives different buffers different keys', () => {
     expect(bytesContentKey(Buffer.from('first clip'))).not.toBe(bytesContentKey(Buffer.from('second clip')))
+  })
+
+  it('keys an embed video by proxy host and path, not its query', () => {
+    expect(embedVideoContentKey('https://images-ext-1.discordapp.net/embed_proxy/abcd/clip.mp4?ex=65f&hm=abc')).toBe(
+      'embedvideo:images-ext-1.discordapp.net/embed_proxy/abcd/clip.mp4'
+    )
+    expect(embedVideoContentKey('https://media.discordapp.net/attachments/1/2/clip.mp4')).not.toBe(
+      embedVideoContentKey('https://media.discordapp.net/attachments/1/3/clip.mp4')
+    )
   })
 
   it('rejects empty ids', () => {
