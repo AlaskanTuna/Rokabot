@@ -70,9 +70,9 @@ async function runQuery(
     model: MODEL,
     instruction: assembleSystemPrompt({
       tone: 'playful',
-      participants: ['Tester'],
       hour: new Date().getHours(),
-      displayName: 'Tester'
+      displayName: 'Tester',
+      memory: false
     }),
     tools: [...rokaTools],
     disallowTransferToParent: true,

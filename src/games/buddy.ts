@@ -388,16 +388,6 @@ export function getStreak(userId: string): number {
   return 0
 }
 
-/** Update a buddy's name and personality (updates the latest buddy). */
-export function updateBuddyName(userId: string, name: string, personality: string): void {
-  const db = getDb()
-  db.prepare(
-    `UPDATE buddy SET name = ?, personality = ? WHERE id = (
-      SELECT id FROM buddy WHERE user_id = ? ORDER BY hatched_at DESC LIMIT 1
-    )`
-  ).run(name, personality, userId)
-}
-
 /** Get the top buddies by total stat sum, for leaderboard. Ranks by best single buddy per user. */
 export function getTopBuddies(limit: number = 10): BuddyData[] {
   const db = getDb()

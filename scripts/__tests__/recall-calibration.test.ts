@@ -218,6 +218,7 @@ describe('sampling shadow turns', () => {
             subjectUserId: 'alice',
             guildId: guild,
             createdAt,
+            message: 'hello',
             durationMs: 12,
             tokensEst: 40,
             fallback: false,

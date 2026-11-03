@@ -16,7 +16,6 @@ export type BufferedMessageOptions = Readonly<{
 interface ChannelBuffer {
   messages: BufferedMessage[]
   userMap: Map<string, string> // displayName → userId
-  usernameMap: Map<string, string> // userId → username
   nextLocalMessageId: number
 }
 
@@ -32,13 +31,12 @@ export function addMessage(
   options: BufferedMessageOptions = {}
 ): number {
   if (!buffers.has(channelId)) {
-    buffers.set(channelId, { messages: [], userMap: new Map(), usernameMap: new Map(), nextLocalMessageId: 0 })
+    buffers.set(channelId, { messages: [], userMap: new Map(), nextLocalMessageId: 0 })
   }
   const buf = buffers.get(channelId)!
   const isBot = options.isBot ?? false
   if (!isBot) {
     buf.userMap.set(displayName, userId)
-    buf.usernameMap.set(userId, username)
   }
   const messageId = options.messageId ?? `${channelId}-local-${++buf.nextLocalMessageId}`
   buf.messages.push({
@@ -56,7 +54,6 @@ export function addMessage(
       buf.userMap.delete(removed.displayName)
     }
     if (removed && !removed.isBot && !buf.messages.some((m) => !m.isBot && m.userId === removed.userId)) {
-      buf.usernameMap.delete(removed.userId)
     }
   }
   return buf.messages.length
@@ -68,21 +65,6 @@ export function getMessages(channelId: string): BufferedMessage[] {
 
 export function getUserMap(channelId: string): Map<string, string> {
   return buffers.get(channelId)?.userMap ?? new Map()
-}
-
-export function getUsernameMap(channelId: string): Map<string, string> {
-  return buffers.get(channelId)?.usernameMap ?? new Map()
-}
-
-export function clearBuffer(channelId: string): void {
-  const buf = buffers.get(channelId)
-  if (buf) {
-    buf.messages = []
-  }
-}
-
-export function getMessageCount(channelId: string): number {
-  return buffers.get(channelId)?.messages.length ?? 0
 }
 
 /** Reset all buffers for testing */

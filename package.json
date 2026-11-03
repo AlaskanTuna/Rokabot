@@ -25,8 +25,6 @@
     "measure": "tsx tests/harness/measure.ts",
     "measure:prefetch": "tsx scripts/measure-prefetch.ts",
     "test:smoke": "tsx scripts/test-adk-smoke.ts",
-    "test:features": "tsx scripts/test-features.ts",
-    "test:phase8": "tsx scripts/test-phase8.ts",
     "labels:sync": "tsx scripts/sync-labels.ts",
     "memory:prune-overflow": "tsx scripts/prune-claim-overflow.ts",
     "memory:undo-reclassify": "tsx scripts/undo-reclassify.ts",
@@ -54,7 +52,6 @@
     "pino": "^9.6.0",
     "sharp": "^0.34.5",
     "undici": "^8.11.2",
-    "uuid": "^11.1.1",
     "zod": "^4.6.5"
   },
   "devDependencies": {

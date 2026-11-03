@@ -8,8 +8,6 @@ const coreOf = (mode: MemoryMode) =>
     .map(({ text }) => text)
     .join('\n\n')
 
-export const MEMORY_TOOL_RULES = character.prompts.memoryTools
-
 export const CORE_PROMPT = coreOf('full')
 
 /**

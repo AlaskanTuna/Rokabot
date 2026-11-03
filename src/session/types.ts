@@ -5,11 +5,3 @@ export interface WindowMessage {
   content: string
   timestamp: number
 }
-
-/** Per-channel session state with message history and idle timeout. */
-export interface ChannelSession {
-  channelId: string
-  messages: WindowMessage[]
-  idleTimer: ReturnType<typeof setTimeout> | null
-  lastActivity: number
-}
