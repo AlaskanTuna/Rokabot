@@ -14,7 +14,8 @@ const mocks = vi.hoisted(() => {
     mainReplies: [] as Reply[],
     fallbackReplies: [] as Reply[],
     mainRequests: [] as LlmRequest[],
-    fallbackRequests: [] as LlmRequest[]
+    fallbackRequests: [] as LlmRequest[],
+    hasFallback: true
   }
 })
 
@@ -44,11 +45,14 @@ vi.mock('../llm/createModel.js', async (importOriginal) => {
 
   return {
     ...original,
-    createRokaModel: () =>
-      new RoutedLlm(
+    createRokaModel: () => {
+      const model = new RoutedLlm(
         new ScriptedLlm('main-test', mocks.mainReplies, mocks.mainRequests),
         new ScriptedLlm('fallback-test', mocks.fallbackReplies, mocks.fallbackRequests)
       )
+      Object.defineProperty(model, 'hasFallback', { get: () => mocks.hasFallback })
+      return model
+    }
   }
 })
 
@@ -116,6 +120,7 @@ beforeEach(() => {
   mocks.fallbackReplies.length = 0
   mocks.mainRequests.length = 0
   mocks.fallbackRequests.length = 0
+  mocks.hasFallback = true
   mutableGemini.retryBackoffBaseMs = 1
   mutableGemini.retryBackoffCapMs = 1
 })
@@ -148,5 +153,37 @@ describe('a turn whose first attempt fails', () => {
     expect(await userEventsInSession()).toBe(1)
     const texts = JSON.stringify(mocks.fallbackRequests[0])
     expect(texts.match(/When does Frieren season 2 start\?/g)).toHaveLength(1)
+  })
+
+  it('retries on the same model when there is no fallback', async () => {
+    mocks.hasFallback = false
+    mocks.mainReplies.push(failure, answer('It premiered in January.'))
+
+    const result = await ask()
+
+    expect(mocks.mainRequests).toHaveLength(2)
+    expect(mocks.fallbackRequests).toHaveLength(0)
+    expect(result.text).toBe('It premiered in January.')
+    expect(await userEventsInSession()).toBe(1)
+  })
+
+  it('carries a tool result into the fallback instead of running the tool again', async () => {
+    mocks.mainReplies.push(
+      { content: { role: 'model', parts: [{ functionCall: { id: 'call_1', name: 'get_current_time', args: {} } }] } },
+      failure
+    )
+    mocks.fallbackReplies.push(answer('It is late.'))
+
+    const result = await ask('What time is it?')
+
+    expect(result.text).toBe('It is late.')
+    const sent = JSON.stringify(mocks.fallbackRequests[0])
+    expect(sent.match(/What time is it\?/g)).toHaveLength(1)
+    expect(sent).toContain('functionResponse')
+    const session = await sessionService.getSession({ appName: APP_NAME, userId: channelId, sessionId: channelId })
+    const toolResults = (session?.events ?? []).filter((event) =>
+      event.content?.parts?.some((part) => part.functionResponse)
+    )
+    expect(toolResults).toHaveLength(1)
   })
 })
