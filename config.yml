@@ -112,7 +112,7 @@ media:
     timeoutMs: 45000 # Deadline for transcribing one video's audio
     maxSpeechSec: 120 # Speech transcribed per video after silence and music are skipped; longer speech is sampled across the video
     maxAudioSec: 180 # Audio sent per video; a longer video sends four windows spread across it
-  watchTimeoutMs: 20000 # Deadline for one watch call; measured 2-15 s for clips up to 20 min at low frame rates
+  watchTimeoutMs: 30000 # Deadline for one watch call; measured 6-17 s for clips up to 29 min at low frame rates, but one 29-min YouTube video ran past 20 s
   digestMaxOutputTokens: 3200 # Output ceiling for the digest JSON; a dense 20-minute talk overran 1200 and came back cut off, and standout moments and a style line add up to ~600 more
   skimClips: 8 # Most evenly spaced clips taken from a video too long to watch whole
   skimClipSeconds: 10 # Length of each skim clip
