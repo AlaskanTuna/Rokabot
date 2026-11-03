@@ -36294,7 +36294,7 @@
       "file_type": "code",
       "norm_label": "gemininativesearch()",
       "source_file": "src/agent/tools/search/nativeGemini.ts",
-      "source_location": "L143"
+      "source_location": "L144"
     },
     {
       "id": "src_agent_tools_search_nativegemini_params",
@@ -36318,7 +36318,7 @@
       "file_type": "code",
       "norm_label": "quotafailure()",
       "source_file": "src/agent/tools/search/nativeGemini.ts",
-      "source_location": "L138"
+      "source_location": "L139"
     },
     {
       "id": "src_agent_tools_search_nativegemini_readresponse",
@@ -38034,7 +38034,7 @@
       "file_type": "code",
       "norm_label": "loadfloors()",
       "source_file": "src/__tests__/config.test.ts",
-      "source_location": "L1783"
+      "source_location": "L1802"
     },
     {
       "id": "src_tests_config_test_merge",
@@ -38058,7 +38058,7 @@
       "file_type": "code",
       "norm_label": "setanthropiconlyenv()",
       "source_file": "src/__tests__/config.test.ts",
-      "source_location": "L2652"
+      "source_location": "L2671"
     },
     {
       "id": "src_tests_config_test_setrequiredenvvars",
@@ -43787,7 +43787,7 @@
       "node_kind": "heading",
       "norm_label": "concurrency and lifecycle under retry",
       "source_file": "docs/trd/reliability.md",
-      "source_location": "L242"
+      "source_location": "L241"
     },
     {
       "id": "scripts_test_phase8",
@@ -45344,7 +45344,7 @@
       "node_kind": "heading",
       "norm_label": "source files",
       "source_file": "docs/guide/configuration.md",
-      "source_location": "L375"
+      "source_location": "L376"
     },
     {
       "id": "docs_guide_configuration_startup_checks",
@@ -54640,7 +54640,7 @@
       "node_kind": "heading",
       "norm_label": "adk error delivery constraint",
       "source_file": "docs/trd/reliability.md",
-      "source_location": "L257"
+      "source_location": "L256"
     },
     {
       "id": "docs_trd_reliability_at_a_glance",
@@ -54664,7 +54664,7 @@
       "node_kind": "heading",
       "norm_label": "configuration",
       "source_file": "docs/trd/reliability.md",
-      "source_location": "L294"
+      "source_location": "L293"
     },
     {
       "id": "docs_trd_reliability_failure_kinds",
@@ -54700,7 +54700,7 @@
       "node_kind": "heading",
       "norm_label": "native time budget",
       "source_file": "docs/trd/reliability.md",
-      "source_location": "L270"
+      "source_location": "L269"
     },
     {
       "id": "docs_trd_reliability_per_call_budgets",
@@ -55058,7 +55058,7 @@
       "node_kind": "heading",
       "norm_label": "source files",
       "source_file": "docs/trd/reliability.md",
-      "source_location": "L316"
+      "source_location": "L315"
     },
     {
       "id": "biome",
@@ -84863,7 +84863,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/agent/tools/search/nativeGemini.ts",
-      "source_location": "L154",
+      "source_location": "L155",
       "weight": 1.0
     },
     {
@@ -84875,7 +84875,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/agent/tools/search/nativeGemini.ts",
-      "source_location": "L160",
+      "source_location": "L161",
       "weight": 1.0
     },
     {
@@ -84887,7 +84887,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/agent/tools/search/nativeGemini.ts",
-      "source_location": "L160",
+      "source_location": "L161",
       "weight": 1.0
     },
     {
@@ -84928,14 +84928,14 @@
     },
     {
       "source": "src_agent_tools_search_nativegemini_request",
-      "target": "src_agent_llm_usage_geminiusage",
+      "target": "src_agent_tools_search_nativegemini_generatecontent",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/agent/tools/search/nativeGemini.ts",
-      "source_location": "L107",
+      "source_location": "L100",
       "weight": 1.0
     },
     {
@@ -84952,6 +84952,18 @@
     },
     {
       "source": "src_agent_tools_search_nativegemini_request",
+      "target": "src_agent_llm_usage_geminiusage",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "src/agent/tools/search/nativeGemini.ts",
+      "source_location": "L127",
+      "weight": 1.0
+    },
+    {
+      "source": "src_agent_tools_search_nativegemini_request",
       "target": "src_agent_tools_search_nativegemini_readresponse",
       "relation": "calls",
       "_origin": "ast",
@@ -84959,7 +84971,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/agent/tools/search/nativeGemini.ts",
-      "source_location": "L115",
+      "source_location": "L135",
       "weight": 1.0
     },
     {
@@ -84996,18 +85008,6 @@
       "context": "call",
       "source_file": "src/agent/tools/search/nativeGemini.ts",
       "source_location": "L95",
-      "weight": 1.0
-    },
-    {
-      "source": "src_agent_tools_search_nativegemini_request",
-      "target": "src_agent_tools_search_nativegemini_generatecontent",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "src/agent/tools/search/nativeGemini.ts",
-      "source_location": "L99",
       "weight": 1.0
     },
     {
@@ -97199,7 +97199,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/__tests__/config.test.ts",
-      "source_location": "L1827",
+      "source_location": "L1846",
       "weight": 1.0
     },
     {
@@ -97211,7 +97211,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/__tests__/config.test.ts",
-      "source_location": "L2324",
+      "source_location": "L2343",
       "weight": 1.0
     },
     {
@@ -97223,7 +97223,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/__tests__/config.test.ts",
-      "source_location": "L2465",
+      "source_location": "L2484",
       "weight": 1.0
     },
     {
@@ -97235,7 +97235,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/__tests__/config.test.ts",
-      "source_location": "L2667",
+      "source_location": "L2686",
       "weight": 1.0
     },
     {
@@ -97259,7 +97259,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/__tests__/config.test.ts",
-      "source_location": "L2653",
+      "source_location": "L2672",
       "weight": 1.0
     },
     {
@@ -97271,7 +97271,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/__tests__/config.test.ts",
-      "source_location": "L2654",
+      "source_location": "L2673",
       "weight": 1.0
     },
     {
@@ -116591,7 +116591,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/__tests__/config.test.ts",
-      "source_location": "L1783",
+      "source_location": "L1802",
       "weight": 1.0
     },
     {
@@ -116603,7 +116603,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/__tests__/config.test.ts",
-      "source_location": "L2652",
+      "source_location": "L2671",
       "weight": 1.0
     },
     {
@@ -120023,7 +120023,7 @@
       "context": "import",
       "deferred": true,
       "source_file": "src/__tests__/config.test.ts",
-      "source_location": "L1454",
+      "source_location": "L1473",
       "weight": 1.0
     },
     {
@@ -120036,7 +120036,7 @@
       "context": "import",
       "deferred": true,
       "source_file": "src/__tests__/config.test.ts",
-      "source_location": "L1455",
+      "source_location": "L1474",
       "weight": 1.0
     },
     {
@@ -120049,7 +120049,7 @@
       "context": "import",
       "deferred": true,
       "source_file": "src/__tests__/config.test.ts",
-      "source_location": "L1467",
+      "source_location": "L1486",
       "weight": 1.0
     },
     {
@@ -120062,7 +120062,7 @@
       "context": "import",
       "deferred": true,
       "source_file": "src/__tests__/config.test.ts",
-      "source_location": "L1825",
+      "source_location": "L1844",
       "weight": 1.0
     },
     {
@@ -120075,7 +120075,7 @@
       "context": "import",
       "deferred": true,
       "source_file": "src/__tests__/config.test.ts",
-      "source_location": "L2047",
+      "source_location": "L2066",
       "weight": 1.0
     },
     {
@@ -120088,7 +120088,7 @@
       "context": "import",
       "deferred": true,
       "source_file": "src/__tests__/config.test.ts",
-      "source_location": "L2048",
+      "source_location": "L2067",
       "weight": 1.0
     },
     {
@@ -120101,7 +120101,7 @@
       "context": "import",
       "deferred": true,
       "source_file": "src/__tests__/config.test.ts",
-      "source_location": "L2313",
+      "source_location": "L2332",
       "weight": 1.0
     },
     {
@@ -120114,7 +120114,7 @@
       "context": "import",
       "deferred": true,
       "source_file": "src/__tests__/config.test.ts",
-      "source_location": "L2314",
+      "source_location": "L2333",
       "weight": 1.0
     },
     {
@@ -120140,7 +120140,7 @@
       "context": "import",
       "deferred": true,
       "source_file": "src/__tests__/config.test.ts",
-      "source_location": "L1784",
+      "source_location": "L1803",
       "weight": 1.0
     },
     {
@@ -200341,7 +200341,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "docs/guide/configuration.md",
-      "source_location": "L375",
+      "source_location": "L376",
       "weight": 1.0
     },
     {
@@ -203344,7 +203344,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "docs/trd/reliability.md",
-      "source_location": "L242",
+      "source_location": "L241",
       "weight": 1.0
     },
     {
@@ -203355,7 +203355,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "docs/trd/reliability.md",
-      "source_location": "L257",
+      "source_location": "L256",
       "weight": 1.0
     },
     {
@@ -203366,7 +203366,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "docs/trd/reliability.md",
-      "source_location": "L270",
+      "source_location": "L269",
       "weight": 1.0
     },
     {
@@ -203377,7 +203377,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "docs/trd/reliability.md",
-      "source_location": "L294",
+      "source_location": "L293",
       "weight": 1.0
     },
     {
@@ -203388,7 +203388,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "docs/trd/reliability.md",
-      "source_location": "L316",
+      "source_location": "L315",
       "weight": 1.0
     },
     {
@@ -221417,7 +221417,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/agent/tools/search/nativeGemini.ts",
-      "source_location": "L138",
+      "source_location": "L139",
       "weight": 1.0
     },
     {
@@ -221428,7 +221428,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/agent/tools/search/nativeGemini.ts",
-      "source_location": "L143",
+      "source_location": "L144",
       "weight": 1.0
     },
     {
@@ -248918,7 +248918,7 @@
       "confidence_score": 0.95,
       "context": "ProviderError",
       "source_file": "docs/trd/reliability.md",
-      "source_location": "L263",
+      "source_location": "L262",
       "weight": 1.0
     },
     {
@@ -249482,7 +249482,7 @@
       "confidence_score": 0.95,
       "context": "composePrompt",
       "source_file": "docs/trd/reliability.md",
-      "source_location": "L321",
+      "source_location": "L320",
       "weight": 1.0
     },
     {
@@ -249674,7 +249674,7 @@
       "confidence_score": 0.95,
       "context": "destroyAllSessions",
       "source_file": "docs/trd/reliability.md",
-      "source_location": "L252",
+      "source_location": "L251",
       "weight": 1.0
     },
     {
@@ -250394,7 +250394,7 @@
       "confidence_score": 0.95,
       "context": "maxLlmCalls",
       "source_file": "docs/trd/reliability.md",
-      "source_location": "L216",
+      "source_location": "L215",
       "weight": 1.0
     },
     {
@@ -250682,7 +250682,7 @@
       "confidence_score": 0.95,
       "context": "nativeSearchTimeMs",
       "source_file": "docs/trd/reliability.md",
-      "source_location": "L279",
+      "source_location": "L278",
       "weight": 1.0
     },
     {
@@ -251150,7 +251150,7 @@
       "confidence_score": 0.95,
       "context": "requiredEnv",
       "source_file": "docs/guide/configuration.md",
-      "source_location": "L379",
+      "source_location": "L380",
       "weight": 1.0
     },
     {
@@ -251390,7 +251390,7 @@
       "confidence_score": 0.95,
       "context": "search",
       "source_file": "docs/trd/reliability.md",
-      "source_location": "L207",
+      "source_location": "L206",
       "weight": 1.0
     },
     {
@@ -251906,7 +251906,7 @@
       "confidence_score": 0.95,
       "context": "tryConsumeAboveFloor",
       "source_file": "docs/trd/reliability.md",
-      "source_location": "L248",
+      "source_location": "L247",
       "weight": 1.0
     },
     {
@@ -257068,5 +257068,5 @@
       "source_file": "docs/prd.md"
     }
   ],
-  "built_at_commit": "07306fb6b1f01f4ffdd38d8f91af37af63c40a31"
+  "built_at_commit": "78ee41b9f0714e0857a9120d27c050b78d465f33"
 }

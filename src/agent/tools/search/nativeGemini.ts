@@ -95,24 +95,9 @@ async function request(route: ResolvedModel, call: NativeCall, client: GeminiGen
     estTokens: requestTokenEstimate([body.config?.systemInstruction, call.query]),
     signal: call.signal
   })
+  let response: GenerateContentResponse
   try {
-    const response = await client.models.generateContent(body)
-    // Each query the provider reports is one billed search; a blank entry is not a query.
-    const searches = (response.candidates?.[0]?.groundingMetadata?.webSearchQueries ?? []).filter(
-      (query) => typeof query === 'string' && query.trim() !== ''
-    ).length
-    // A search that ran is billed even when the provider reports no metadata for it. The retrieved page text sits in
-    // its own usage bucket, which geminiUsage does not read. Recorded before the response is read, so a body the
-    // reader cannot parse still leaves the cap its record.
-    const billed = geminiUsage(route.model, 'search', response.usageMetadata ?? {})
-    const usage = {
-      ...billed,
-      inputTokens: billed.inputTokens + (response.usageMetadata?.toolUsePromptTokenCount ?? 0),
-      ...(searches > 0 ? { searchRequests: searches } : {})
-    }
-    recordUsage(usage)
-    reservation.release(usage)
-    return readResponse(response, call.maxResults, searches > 0)
+    response = await client.models.generateContent(body)
   } catch (error) {
     // A search cut off after it reached the provider may still be billed, and a call that recorded nothing is
     // invisible to the monthly cap.
@@ -132,6 +117,22 @@ async function request(route: ResolvedModel, call: NativeCall, client: GeminiGen
     }
     throw error
   }
+  // Each query the provider reports is one billed search; a blank entry is not a query.
+  const searches = (response.candidates?.[0]?.groundingMetadata?.webSearchQueries ?? []).filter(
+    (query) => typeof query === 'string' && query.trim() !== ''
+  ).length
+  // A search that ran is billed even when the provider reports no metadata for it. The retrieved page text sits in
+  // its own usage bucket, which geminiUsage does not read. Recorded before the response is read, so a body the
+  // reader cannot parse still leaves the cap its record.
+  const billed = geminiUsage(route.model, 'search', response.usageMetadata ?? {})
+  const usage = {
+    ...billed,
+    inputTokens: billed.inputTokens + (response.usageMetadata?.toolUsePromptTokenCount ?? 0),
+    ...(searches > 0 ? { searchRequests: searches } : {})
+  }
+  recordUsage(usage)
+  reservation.release(usage)
+  return readResponse(response, call.maxResults, searches > 0)
 }
 
 /** A spent account and a spent local minute both read as a quota wall, not as a fault. */

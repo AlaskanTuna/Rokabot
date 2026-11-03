@@ -1119,7 +1119,7 @@ if (searchProviderId === 'native' && !nativeSearchSupported) {
     { provider: searchProviderId },
     `search.provider is ${searchProviderId}, but ${searchKeys[searchProviderId]} is not set, so search_web will report that search is not configured.`
   )
-} else if (envString('SEARCH_PROVIDER') === undefined && yaml.search?.provider === undefined && nativeSearchSupported) {
+} else if (envString('SEARCH_PROVIDER') === undefined && !yaml.search?.provider && nativeSearchSupported) {
   // Neither setting names a provider, so search silently started billing `llm.main`'s provider.
   warnAfterStartup(
     { provider: searchProviderId, model: llm.main.model },

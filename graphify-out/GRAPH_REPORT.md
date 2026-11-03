@@ -1,7 +1,7 @@
 # Graph Report - native-search  (2026-11-03)
 
 ## Corpus Check
-- 701 files · ~592,522 words
+- 701 files · ~592,630 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 30 file(s) not represented in the graph (top: (none) 13, .jsonl 11, .rss 2)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `07306fb6`
+- Built from commit: `78ee41b9`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -1065,7 +1065,7 @@ _Questions this graph is uniquely positioned to answer:_
   _High betweenness centrality (0.227) - this node is a cross-community bridge._
 - **Why does `react` connect `PackFileScreen.tsx` to `YamlForm.tsx`, `UI Styling Assets`, `package.json`, `configShared.tsx`, `parts.tsx`, `DiscordPreview.tsx`, `Sidebar.tsx`, `HeaderUtilities.tsx`, `Moods.tsx`, `Secrets.tsx`, `workspace.ts`?**
   _High betweenness centrality (0.046) - this node is a cross-community bridge._
-- **Why does `config` connect `config` to `buddy.ts`, `test-gemini-ga-compare.ts`, `memoryEpisodeStore.ts`, `gacha.ts`, `getDb`, `linesGolden.test.ts`, `scheduler.ts`, `estimateTokens`, `profiles.ts`, `roka.test.ts`, `messageCreate.ts`, `discord.js`, `tools/index.ts`, `test-features.ts`, `replies/service.ts`, `agent/attachments.ts`, `memoryEpisodeReplay.ts`, `guildFactDates.ts`, `test-phase8.ts`, `memoryShadow.ts`, `extractor.ts`, `retriever.ts`, `turnContext.ts`, `run.ts`, `RateLimiter`, `updateNotifier.ts`, `turnMedia.ts`, `recall-calibration-thresholds.ts`, `recall-calibration-sample.ts`, `src/games/shiritori.ts`, `YouTube Media Stream`, `getAnimeSchedule.ts`, `fallbackModel.ts`, `discord/attachments.ts`, `roka.ts`, `generateObject.ts`, `mediaDigestStore.ts`, `identityResolver.ts`, `obsidianExport.ts`, `toolTrigger.ts`, `memoryTools.test.ts`, `reportCommand.ts`, `judgments.ts`, `Functional Requirements`, `socialPosts/service.ts`, `File Upload Handling`, `interactionCreate.metrics.test.ts`, `watch.ts`, `logger.ts`, `hiddenRetractions.test.ts`, `src/index.ts`, `config.ts`, `embeddings/client.ts`, `anthropicLlm.ts`, `emojiReactor.ts`, `predicates.ts`, `timezone.ts`, `media.ts`, `recall.ts`, `recall-calibration.test.ts`, `gemini.test.ts`, `discord/client.ts`?**
+- **Why does `getDb()` connect `getDb` to `buddy.ts`, `memoryEpisodeStore.ts`, `gacha.ts`, `test-features.ts`, `scheduler.ts`, `queries.ts`, `messageCreate.ts`, `test-phase8.ts`, `views.ts`, `memoryEpisodeReplay.ts`, `memoryShadow.ts`, `extractor.ts`, `retriever.ts`, `turnContext.ts`, `interactionCreate.memory.test.ts`, `run.ts`, `updateNotifier.ts`, `src/games/shiritori.ts`, `queries.test.ts`, `mediaDigestStore.ts`, `gameCommands.ts`, `identityResolver.ts`, `obsidianExport.ts`, `config`, `memoryTools.test.ts`, `reportCommand.ts`, `anthropicMain.eval.test.ts`, `toolTriggerScoring.ts`, `logger.ts`, `hiddenRetractions.test.ts`, `src/index.ts`, `predicates.ts`, `recall.ts`, `recall-calibration.test.ts`, `database.ts`?**
   _High betweenness centrality (0.040) - this node is a cross-community bridge._
 - **What connects `$schema`, `indentStyle`, `indentWidth` to the rest of the system?**
   _1543 weakly-connected nodes found - possible documentation gaps or missing edges._

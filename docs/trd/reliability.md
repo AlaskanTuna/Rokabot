@@ -4,16 +4,16 @@ How a reply turn is admitted, retried, de-escalated and budgeted when a model ca
 
 ## At a Glance
 
-| Concern           | Rule                                                                                   | Default                                              |
-| ----------------- | -------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| Concurrency       | One turn per channel. A second message gets a busy reply.                              | n/a                                                  |
-| Turn Reservation  | A turn reserves `gemini.maxLlmCalls` request slots and returns the unused ones.        | 4                                                    |
-| Live Retries      | Up to `gemini.liveMaxRetries` retries after the first attempt.                         | 2                                                    |
-| Retry Gate        | A retry needs `gemini.retryRpmFloor` free slots and takes one.                         | 2                                                    |
-| Turn Deadline     | A retry starts only if one attempt timeout still fits in `gemini.turnDeadlineMs`.      | 63,000 ms (`config.yml`)                             |
-| Safety Ladder     | Up to 3 rungs. Each rung sheds carried context and tries again.                        | 3                                                    |
-| Per-Minute Tokens | An attachment turn needs `gemini.maxAttachmentTokens` free in the main model's minute. | 125,000 of 125,000                                   |
-| Per-Call Budgets  | Every provider call passes `startCall`. Replies outrank background work.               | Off for replies and searches without an `llm:` block |
+| Concern           | Rule                                                                                   | Default                                             |
+| ----------------- | -------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| Concurrency       | One turn per channel. A second message gets a busy reply.                              | n/a                                                 |
+| Turn Reservation  | A turn reserves `gemini.maxLlmCalls` request slots and returns the unused ones.        | 4                                                   |
+| Live Retries      | Up to `gemini.liveMaxRetries` retries after the first attempt.                         | 2                                                   |
+| Retry Gate        | A retry needs `gemini.retryRpmFloor` free slots and takes one.                         | 2                                                   |
+| Turn Deadline     | A retry starts only if one attempt timeout still fits in `gemini.turnDeadlineMs`.      | 63,000 ms (`config.yml`)                            |
+| Safety Ladder     | Up to 3 rungs. Each rung sheds carried context and tries again.                        | 3                                                   |
+| Per-Minute Tokens | An attachment turn needs `gemini.maxAttachmentTokens` free in the main model's minute. | 125,000 of 125,000                                  |
+| Per-Call Budgets  | Every provider call passes `startCall`. Replies outrank background work.               | Off without an `llm:` block, except native searches |
 
 ## Turn Admission
 
@@ -203,8 +203,7 @@ charge, and halving `rpm` would give up half the request budget.
 Every provider call passes `startCall` (`src/agent/llm/budget.ts`) before it is sent. That covers replies, native
 searches, background memory jobs, both watchers and both sides of a hedge.
 
-- **Legacy Config:** without an `llm:` block (`config.llm.main.key` is `legacy-gemini`), a reply's `startCall` counts
-  nothing, never waits and never refuses. A `search` call is not covered that way: it takes one slot on the shared
+- **Legacy Config:** without an `llm:` block (`config.llm.main.key` is `legacy-gemini`), `startCall` counts nothing on every call except `search`, never waits and never refuses. A `search` call is not covered that way: it takes one slot on the shared
   limiter and records its spend, with no cap. Spend still goes to `llm_spend` in both cases.
 - **Limits Per Model:** an `llm.models` entry may set `limits: { rpm, rpd, tpm }`. On the main route, `rpm` must be at
   least `gemini.maxLlmCalls` and `tpm` at least `gemini.maxAttachmentTokens`, or startup stops. A model that is

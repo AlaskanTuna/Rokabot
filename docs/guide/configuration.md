@@ -64,7 +64,7 @@ Other environment variables:
 tested profile, so `gemini-3.8-flash` is a candidate and startup refuses it as `llm.main`; it reaches native search
 only through a legacy `gemini.model`. On any other model the bot starts without `search_web` and logs a warning naming
 the model and the fix. The two Gemini models are mock-tested only: their native search has never run against the live
-API, because the available keys are free tier. See [Runbook](../runbook.md#web-search-provider).
+API, because the two non-production keys returned 429 on grounded calls. See [Runbook](../runbook.md#web-search-provider).
 
 ## `jev`
 
@@ -369,6 +369,7 @@ The bot starts but logs a warning when:
 - `memory.contextSize` is above `memory.bufferSize`.
 - A non-Gemini embedding provider has no `embeddings.minSimilarity` entry.
 - `search.provider` is `native`, and the main model has no web search.
+- `search.provider` is unset, and the main model can search. Search then bills that model's provider.
 - `search.provider` is `tavily` or `exa`, and its key is empty.
 - `jev.prefetch` is `on`, and `search.provider` is `off` or `native`.
 
