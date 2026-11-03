@@ -34,8 +34,9 @@ _Each guard passes the turn on or sends an in-character reply, which the handler
    (`canAffordAttachments`). If not, busy line. Text turns skip this step.
 6. **Reserve Calls:** `reserveCalls(gemini.maxLlmCalls)` takes all the slots and one daily unit, or nothing. A turn that
    lost the race since step 3 gets a busy line. This step is the real guard; the peek only saves a Discord round trip.
-7. **Reserve Bytes:** `tryReserve` takes the attachment bytes from `discord.maxInFlightAttachmentBytes`. If that budget
-   is full, the handler calls `release(0)` to return the slots and the daily unit, then sends a busy line.
+7. **Reserve Bytes:** `tryReserve` takes the attachment bytes from `discord.maxInFlightAttachmentBytes`. If that
+   budget is full, `reserveTurnBudget` calls `release(0)` to return the slots and the daily unit, and the handler
+   sends a busy line.
 8. **Run:** `generateResponse` runs the turn.
 9. **Finally:** the handler frees the channel, returns the bytes and calls `release(used)`.
 
@@ -321,7 +322,9 @@ Environment overrides are wired in `src/config.ts` (for example `GEMINI_LIVE_MAX
 - `src/utils/rateLimiter.ts`: sliding-window limiter, call reservations, retry floor
 - `src/agent/llm/tokenBudget.ts`: per-model token bucket and attachment admission
 - `src/agent/llm/budget.ts`: per-call budgets, ModelScope slot, monthly spend
-- `src/discord/events/messageCreate.ts`, `src/discord/events/interactionCreate.ts`: turn admission
+- `src/discord/turnPipeline.ts`: shared turn budget (`reserveTurnBudget`), delivery, metrics, failure replies and release
+- `src/discord/events/messageCreate.ts`, `src/discord/events/interactionCreate.ts`: trigger intake, busy check,
+  call-ceiling peek and send callbacks for the shared turn path
 - `src/discord/concurrency.ts`, `src/discord/byteBudget.ts`, `src/discord/responses.ts`: busy flag, byte budget, reply
   pools
 - `src/config.ts`: defaults, environment overrides, `NUMERIC_BOUNDS`, startup warnings

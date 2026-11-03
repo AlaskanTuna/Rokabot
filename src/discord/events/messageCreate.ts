@@ -1,13 +1,8 @@
 import type { Client, Message } from 'discord.js'
-import { DiscordAPIError } from 'discord.js'
-import { canAffordAttachments } from '../../agent/llm/tokenBudget.js'
 import { MAX_ATTACHMENTS } from '../../agent/media/mediaRules.js'
 import { isMonitored, markActive } from '../../agent/memory/channelMonitor.js'
 import { recordEpisodeMessage } from '../../agent/memory/episodeTracker.js'
 import { asksAboutReplies } from '../../agent/replyIntent.js'
-import { withReplyOutcomes } from '../../agent/replyOutcomes.js'
-import { generateResponse } from '../../agent/roka.js'
-import { withSearchCitations } from '../../agent/searchCitations.js'
 import { SOCIAL_POST_FAILURE_MARKER, formatSocialPostLine } from '../../agent/social/format.js'
 import { socialPostMedia } from '../../agent/social/media.js'
 import { beginSocialPostLookup, socialPostSnapshotTexts, socialPostTexts } from '../../agent/social/service.js'
@@ -15,32 +10,29 @@ import { findSocialPostTarget } from '../../agent/social/urls.js'
 import { startTurnEntryWork } from '../../agent/turnContext.js'
 import { character } from '../../character/index.js'
 import { config } from '../../config.js'
-import { type ResponseEventInput, recordResponseEvent } from '../../storage/metricsStore.js'
+import type { ResponseEventInput } from '../../storage/metricsStore.js'
 import { upsertUserName } from '../../storage/userNames.js'
 import { logger } from '../../utils/logger.js'
 import { type CallReservation, RateLimiter } from '../../utils/rateLimiter.js'
-import { fitAttachmentsToTurn, release, reservationFor, tryReserve } from '../byteBudget.js'
-import { isChannelBusy, markBusy, markFree } from '../concurrency.js'
+import { isChannelBusy, markBusy } from '../concurrency.js'
 import { shouldReact } from '../emojiReactor.js'
-import { isIgnorableDiscordError } from '../errorHandler.js'
-import { guardMarkdown } from '../markdownGuard.js'
-import { buildRokaMessage, openedPostCitation } from '../messageBuilder.js'
+import { openedPostCitation } from '../messageBuilder.js'
 import {
   extractComponentTexts,
   extractCurrentMessageContent,
   extractMessageContent,
   replaceUserMentions
 } from '../messageContent.js'
+import { getRandomBusy, getRandomDecline } from '../responses.js'
 import {
-  getRandomBusy,
-  getRandomDecline,
-  getRandomError,
-  getRandomOversizedAttachment,
-  getRandomPartialAttachment,
-  getRandomSkippedAttachments,
-  getRandomUnsupportedAttachment,
-  splitResponse
-} from '../responses.js'
+  type VanishingReply,
+  deliverTurn,
+  recordTurnEvent,
+  releaseTurn,
+  replyToFailedTurn,
+  reserveTurnBudget,
+  runModelTurn
+} from '../turnPipeline.js'
 import { handleGachaMention } from './gachaMention.js'
 
 /** Whole-word, case-insensitive match for the bot's name as a trigger keyword */
@@ -141,6 +133,11 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
       }
     }
 
+    const say: VanishingReply = async (text) => {
+      const sent = await message.reply(text)
+      setTimeout(() => sent.delete().catch(() => {}), 5000)
+    }
+
     const referencedMessage = await replyFetch
 
     const isReplyToBot = referencedMessage?.author?.id === client.user.id
@@ -200,8 +197,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
     if (isChannelBusy(channelId)) {
       cancelTurnEntryWork()
       logger.debug({ channelId }, 'Channel busy — sending busy message')
-      const busyMsg = await message.reply(getRandomBusy())
-      setTimeout(() => busyMsg.delete().catch(() => {}), 5000)
+      await say(getRandomBusy())
       return
     }
 
@@ -222,8 +218,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
           'Rate limit hit — declining'
         )
 
-        const declineMsg = await message.reply(getRandomDecline())
-        setTimeout(() => declineMsg.delete().catch(() => {}), 5000)
+        await say(getRandomDecline())
         return
       }
 
@@ -271,141 +266,64 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
         content = content ? `${content}\n${SOCIAL_POST_FAILURE_MARKER}` : SOCIAL_POST_FAILURE_MARKER
       }
 
-      const { kept, skipped: skippedAttachments } = fitAttachmentsToTurn(imageAttachments)
-      imageAttachments = kept
-
-      // Attachment token cost is independent of the byte and call budgets.
-      if (imageAttachments.length > 0 && !canAffordAttachments()) {
-        cancelTurnEntryWork()
-        logger.debug({ channelId }, 'Per-minute token budget too low for an attachment turn — sending busy message')
-        const tokenMsg = await message.reply(getRandomBusy())
-        setTimeout(() => tokenMsg.delete().catch(() => {}), 5000)
+      const budget = reserveTurnBudget({
+        channelId,
+        attachments: imageAttachments,
+        rateLimiter,
+        onDeclined: cancelTurnEntryWork
+      })
+      if (!budget) {
+        await say(getRandomBusy())
         return
       }
-
-      // Reserve the call ceiling and attachment bytes last, so a declined turn has taken nothing it must hand back.
-      callReservation = rateLimiter.reserveCalls(config.gemini.maxLlmCalls)
-      if (!callReservation) {
-        cancelTurnEntryWork()
-        logger.debug({ channelId, remainingRpm: rateLimiter.remainingRpm }, 'Lost the race for call slots')
-        const rpmMsg = await message.reply(getRandomBusy())
-        setTimeout(() => rpmMsg.delete().catch(() => {}), 5000)
-        return
-      }
-
-      const bytes = reservationFor(imageAttachments)
-      if (!tryReserve(bytes)) {
-        cancelTurnEntryWork()
-        // Released here with nothing spent, before the `finally` below would charge the whole reservation.
-        // Nothing was sent to the model, so the turn owes neither the slots nor its daily unit.
-        callReservation.release(0)
-        logger.debug({ channelId, reservedBytes: bytes }, 'In-flight attachment budget full — sending busy message')
-        const budgetMsg = await message.reply(getRandomBusy())
-        setTimeout(() => budgetMsg.delete().catch(() => {}), 5000)
-        return
-      }
-      reservedBytes = bytes
+      const { skippedAttachments } = budget
+      imageAttachments = budget.attachments
+      callReservation = budget.callReservation
+      reservedBytes = budget.reservedBytes
 
       turnEntryWorkHandedOff = true
-      const [
-        [
-          {
-            text: responseText,
-            tone,
-            toolsUsed,
-            metrics,
-            droppedAttachments,
-            truncatedAttachments,
-            refusedAttachments,
-            watchOutcome,
-            modelCalls
-          },
-          sources
-        ],
-        replyOutcome
-      ] = await withReplyOutcomes(() =>
-        withSearchCitations(() =>
-          generateResponse({
-            channelId,
-            guildId,
-            userMessage: content || '(shared an image)',
-            displayName,
-            username,
-            userId: message.author.id,
-            messageId: message.id,
-            memory: true,
-            asksAboutReplies: asksAboutReplies(message.content),
-            mentionedUserIds: [...(message.mentions.users?.keys() ?? [])].filter(
-              (userId) => userId !== client.user?.id
-            ),
-            turnEntryWork,
-            skippedAttachments,
-            imageAttachments: imageAttachments.length > 0 ? imageAttachments : undefined
-          })
-        )
-      )
+      const turn = await runModelTurn({
+        channelId,
+        guildId,
+        userMessage: content || '(shared an image)',
+        displayName,
+        username,
+        userId: message.author.id,
+        messageId: message.id,
+        memory: true,
+        asksAboutReplies: asksAboutReplies(message.content),
+        mentionedUserIds: [...(message.mentions.users?.keys() ?? [])].filter((userId) => userId !== client.user?.id),
+        turnEntryWork,
+        skippedAttachments,
+        imageAttachments: imageAttachments.length > 0 ? imageAttachments : undefined
+      })
 
       // Now that the turn is done, hand back the slots it never used. Reserved at the ceiling, released
       // to the truth.
-      modelCallsUsed = modelCalls
+      modelCallsUsed = turn.modelCalls
 
-      logger.debug({ channelId, tone, responseLength: responseText.length }, 'ADK response received')
+      logger.debug({ channelId, tone: turn.tone, responseLength: turn.text.length }, 'ADK response received')
 
-      // Keep unsupported, failed, truncated, and refused attachment notes distinct.
-      const notes: string[] = []
-      if (unsupportedCount > 0 || droppedAttachments > 0) notes.push(getRandomUnsupportedAttachment())
-      if (truncatedAttachments > 0) notes.push(getRandomPartialAttachment())
-      if (refusedAttachments > 0) notes.push(getRandomOversizedAttachment())
-      if (skippedAttachments > 0) notes.push(getRandomSkippedAttachments())
-      const withNudge = notes.length > 0 ? `${responseText}\n\n${notes.join('\n\n')}` : responseText
-      // Escaped before the split, not after: escaping lengthens the text, so doing it downstream would let a
-      // chunk sized against the raw length overrun the TextDisplay budget it was measured for.
-      const chunks = splitResponse(guardMarkdown(withNudge))
-      logger.debug({ channelId, chunkCount: chunks.length }, 'Response split into chunks')
-      await message.reply(
-        buildRokaMessage(chunks[0], tone, toolsUsed, sources, socialPostResult, replyOutcome, watchOutcome)
+      const channel = message.channel
+      await deliverTurn(
+        { turn, socialPostResult, unsupported: unsupportedCount, skipped: skippedAttachments },
+        channelId,
+        {
+          sendFirst: (payload) => message.reply(payload),
+          sendRest: 'send' in channel ? (payload) => channel.send(payload) : undefined
+        }
       )
 
-      for (let i = 1; i < chunks.length; i++) {
-        if ('send' in message.channel) {
-          await message.channel.send(buildRokaMessage(chunks[i], tone))
-        }
-      }
-
-      const responseEvent: ResponseEventInput = {
-        guildId,
-        channelId,
-        userId: message.author.id,
-        trigger,
-        tone,
-        toolsUsed,
-        e2eMs: Math.max(1, Math.round(performance.now() - handlerStartMs)),
-        ...metrics
-      }
-      logger.info(responseEvent, 'Response completed')
-      recordResponseEvent(responseEvent)
+      recordTurnEvent({ guildId, channelId, userId: message.author.id, trigger }, turn, handlerStartMs)
     } catch (error) {
-      if (isIgnorableDiscordError(error)) {
-        logger.warn({ error, channelId, code: (error as DiscordAPIError).code }, 'Discord API error (ignored)')
-        return
-      }
-      const errDetail =
-        error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : error
-      logger.error({ error: errDetail, channelId }, 'Error handling message')
-      try {
-        await message.reply(getRandomError())
-      } catch (replyError) {
-        if (isIgnorableDiscordError(replyError)) {
-          logger.warn({ error: replyError, channelId }, 'Could not send error reply (ignored)')
-        } else {
-          logger.error({ error: replyError, channelId }, 'Failed to send error reply')
-        }
-      }
+      await replyToFailedTurn(error, {
+        channelId,
+        label: 'Error handling message',
+        send: (text) => message.reply(text)
+      })
     } finally {
       if (typingInterval) clearInterval(typingInterval)
-      markFree(channelId)
-      release(reservedBytes)
-      callReservation?.release(modelCallsUsed)
+      releaseTurn({ channelId, reservedBytes, callReservation, modelCallsUsed })
     }
   }
 }

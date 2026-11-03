@@ -66,8 +66,9 @@ The health body is JSON: `status`, `uptime`, `memory` (RSS in MB) and `discord` 
 | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `src/index.ts`                            | Boot, timers, health server and graceful shutdown.                                                                                                                                       |
 | `src/discord/client.ts`                   | Build the discord.js client with its intents and partials, and wire the event handlers.                                                                                                  |
-| `src/discord/events/messageCreate.ts`     | Detect triggers, admit turns, reserve call and byte budgets, and send replies.                                                                                                           |
-| `src/discord/events/interactionCreate.ts` | Route slash commands; run `/ask` through the same admission and reply path.                                                                                                              |
+| `src/discord/events/messageCreate.ts`     | Detect mention, reply and name triggers and run message turns through the shared pipeline.                                                                                               |
+| `src/discord/events/interactionCreate.ts` | Route slash commands; run `/ask` through the shared pipeline.                                                                                                                            |
+| `src/discord/turnPipeline.ts`             | Own the shared turn pipeline: budget reservation, the model call, delivery, metrics, failure replies and release.                                                                        |
 | `src/discord/messageContent.ts`           | Convert messages, embeds, polls, stickers, forwards, Components V2 and reply context into prompt text and attachments.                                                                   |
 | `src/discord/markdownGuard.ts`            | Guard reply markdown before the split: keep fenced and inline code, turn a kaomoji backtick into `｀`, escape `*` `_` `~` inside kaomoji, and escape stray backticks and `~~` elsewhere. |
 | `src/discord/responses.ts`                | In-character busy, decline and error lines; `splitResponse` closes and reopens a code block cut across chunks.                                                                           |
@@ -292,6 +293,7 @@ Each tone sets the accent color and draws one expression thumbnail from its pool
 - `src/discord/events/messageCreate.ts`, `src/discord/events/interactionCreate.ts`
 - `src/discord/commands/`, `src/discord/commands/reportHandler.ts`
 - `src/discord/concurrency.ts`, `src/discord/byteBudget.ts`, `src/agent/llm/tokenBudget.ts`, `src/utils/rateLimiter.ts`
+- `src/discord/turnPipeline.ts`: shared turn budget, delivery, metrics, failure replies and release
 - `src/discord/messageBuilder.ts`, `src/discord/responses.ts`, `src/discord/markdownGuard.ts`
 - `src/agent/roka.ts`, `src/agent/turnContext.ts`, `src/agent/session.ts`
 - `src/storage/database.ts`, `src/storage/sessionStore.ts`
