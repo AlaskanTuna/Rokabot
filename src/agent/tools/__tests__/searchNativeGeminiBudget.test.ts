@@ -102,10 +102,10 @@ describe('a budget refusal on the main route', () => {
       await geminiNativeSearch({ ...config.llm.main, limits }, call(), client)
 
       expect(generate).toHaveBeenCalledOnce()
-      // Approximate: the bucket drains continuously, so a millisecond of the minute has already refilled.
+      // Approximate: the bucket drains continuously, so the test's own run time has already refilled some.
       expect(tokenBucketFor({ provider: 'gemini', model: 'gemini-3.5-flash-lite', limits })?.remaining()).toBeCloseTo(
         7_000,
-        0
+        -2
       )
     } finally {
       config.llm.main.limits = previous

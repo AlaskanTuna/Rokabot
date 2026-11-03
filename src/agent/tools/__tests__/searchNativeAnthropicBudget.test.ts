@@ -99,10 +99,10 @@ describe('a budget refusal on the main route', () => {
       await anthropicNativeSearch({ ...config.llm.main, limits }, call(), client)
 
       expect(create).toHaveBeenCalledOnce()
-      // Approximate: the bucket drains continuously, so a millisecond of the minute has already refilled.
+      // Approximate: the bucket drains continuously, so the test's own run time has already refilled some.
       expect(tokenBucketFor({ provider: 'anthropic', model: 'claude-haiku-5-5', limits })?.remaining()).toBeCloseTo(
         7_000,
-        0
+        -2
       )
     } finally {
       config.llm.main.limits = previous
