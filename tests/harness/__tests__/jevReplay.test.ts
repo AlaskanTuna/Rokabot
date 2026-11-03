@@ -170,7 +170,7 @@ describe('Jev replay report', () => {
 
   it('parses a default cap and rejects missing paths or caps outside one through one hundred', () => {
     expect(parseReplayArgs(['snapshot.db'])).toEqual({ databasePath: 'snapshot.db', maxTurns: 100 })
-    expect(() => parseReplayArgs([])).toThrow('Usage: npm run replay:jev -- data/rokabot.db --max-turns 100')
+    expect(() => parseReplayArgs([])).toThrow('Usage: npm run memory:replay:jev -- data/rokabot.db --max-turns 100')
     expect(() => parseReplayArgs(['snapshot.db', '--max-turns', '0'])).toThrow('integer from 1 through 100')
     expect(() => parseReplayArgs(['snapshot.db', '--max-turns', '101'])).toThrow('integer from 1 through 100')
   })

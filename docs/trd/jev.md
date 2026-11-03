@@ -155,7 +155,7 @@ The defaults are what `config.yml` ships. `NUMERIC_BOUNDS` in `src/config.ts` en
 
 ## Tools
 
-- **Replay:** `npm run replay:jev -- data/rokabot.db --max-turns 100` compares Jev tone labels with the rule tone on retained history and transcript fixtures, including CJK turns. Agreement shows overlap only. The tone threshold comes from blind labels of which moods fit each production turn.
+- **Replay:** `npm run memory:replay:jev -- data/rokabot.db --max-turns 100` compares Jev tone labels with the rule tone on retained history and transcript fixtures, including CJK turns. Agreement shows overlap only. The tone threshold comes from blind labels of which moods fit each production turn.
 - **Prefetch Measure:** `npm run measure:prefetch` runs the search tool-trigger cases with prefetch.
 
 ## Source Files

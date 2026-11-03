@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3'
 import { describe, expect, it } from 'vitest'
-import { chatTurns, localHour, parseWindow } from '../persona-turns.js'
+import { chatTurns, localHour, parseWindow } from '../../tests/harness/persona-turns.js'
 
 const MIN = 60_000
 const T0 = Date.UTC(2026, 9, 15, 12, 0, 0)

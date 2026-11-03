@@ -10,7 +10,7 @@ import { type FunctionDeclaration, type GenerateContentConfig, GoogleGenAI } fro
 import Database from 'better-sqlite3'
 import * as dotenv from 'dotenv'
 import { messageEdge } from '../src/agent/replyShape.js'
-import { type Turn, type TurnKind, type Window, chatTurns, parseWindow } from './persona-turns.js'
+import { type Turn, type TurnKind, type Window, chatTurns, parseWindow } from '../tests/harness/persona-turns.js'
 
 export type PromptSource = Readonly<{ kind: 'worktree' } | { kind: 'ref'; ref: string }>
 export type Arm = Readonly<{ name: string; source: PromptSource; model: string }>

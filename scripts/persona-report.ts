@@ -15,8 +15,8 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import Database from 'better-sqlite3'
+import { type Window, chatTurns, mulberry32, parseWindow } from '../tests/harness/persona-turns.js'
 import { countSlurRepetitions } from './persona-replay.js'
-import { type Window, chatTurns, mulberry32, parseWindow } from './persona-turns.js'
 
 const FACE = /[(（][^()（）\n]{1,18}[)）]/g
 const ITALIC = /(?<![*\w])\*(?!\*)([^*\n]+?)(?<!\s)\*(?!\*)|(?<![_\w])_([^_\n]+?)_(?![_\w])/g

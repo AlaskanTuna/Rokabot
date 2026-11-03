@@ -5,7 +5,7 @@
  */
 
 import type Database from 'better-sqlite3'
-import { messageEdge } from '../src/agent/replyShape.js'
+import { messageEdge } from '../../src/agent/replyShape.js'
 
 export type Window = Readonly<{ name: string; from: number; to: number; count?: number }>
 export type Message = Readonly<{ role: 'user' | 'assistant'; content: string }>
