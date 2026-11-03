@@ -1,4 +1,4 @@
-import { assembleSystemPrompt } from '../../src/agent/promptAssembler.js'
+import { type AssemblerInput, assembleSystemPrompt } from '../../src/agent/promptAssembler.js'
 import { buildContextPrompt } from '../../src/agent/prompts/context.js'
 import { CORE_PROMPT } from '../../src/agent/prompts/core.js'
 import { SPEECH_PROMPT } from '../../src/agent/prompts/speech.js'
@@ -70,13 +70,13 @@ function serializeToolSchemas(tools: readonly ToolSchemaSource[]): string {
 
 /** Measure the prompt parts and ADK function declarations that make up one outgoing Gemini request. */
 export function measureRequest(input: MeasureRequestInput): RequestTokenBreakdown {
-  const assemblerInput = {
+  const assemblerInput: AssemblerInput = {
     tone: input.tone,
     hour: input.hour,
     displayName: input.displayName,
     // The cap is set against the full kernel, which is the larger of the two; a memory-free prompt
     // is a subset of it and so cannot exceed the same ceiling.
-    memory: true
+    memoryScope: 'full'
   }
   const contextPrompt = buildContextPrompt(assemblerInput.hour, assemblerInput.displayName)
   const systemPrompt = assembleSystemPrompt(assemblerInput)

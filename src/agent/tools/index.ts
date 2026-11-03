@@ -6,6 +6,7 @@ import { config } from '../../config.js'
 import { searchIsAvailable } from '../../searchSettings.js'
 import { logger } from '../../utils/logger.js'
 import { minutesUntilClockTime } from '../../utils/timezone.js'
+import type { MemoryScope } from '../memory/memoryScope.js'
 import { flipCoin } from './flipCoin.js'
 import { forgetUser } from './forgetUser.js'
 import { getAnimeSchedule } from './getAnimeSchedule.js'
@@ -323,3 +324,10 @@ export const rokaTools = [
  * these out per request instead (#207) — adding a fourth memory tool means adding it here too.
  */
 export const MEMORY_TOOL_NAMES = [rememberUserTool.name, recallUserTool.name, forgetUserTool.name]
+
+/** The memory tools one scope withholds: `/ask` loses all three, privacy `off` keeps forget only (#207). */
+export function withheldMemoryToolNames(scope: MemoryScope): readonly string[] {
+  if (scope === 'none') return MEMORY_TOOL_NAMES
+  if (scope === 'forget') return [rememberUserTool.name, recallUserTool.name]
+  return []
+}

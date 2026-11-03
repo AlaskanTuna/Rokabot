@@ -2,6 +2,7 @@ import type { Client, Message } from 'discord.js'
 import { MAX_ATTACHMENTS } from '../../agent/media/mediaRules.js'
 import { isMonitored, markActive } from '../../agent/memory/channelMonitor.js'
 import { recordEpisodeMessage } from '../../agent/memory/episodeTracker.js'
+import { resolveMemoryScope } from '../../agent/memory/memoryScope.js'
 import { asksAboutReplies } from '../../agent/replyIntent.js'
 import { SOCIAL_POST_FAILURE_MARKER, formatSocialPostLine } from '../../agent/social/format.js'
 import { socialPostMedia } from '../../agent/social/media.js'
@@ -122,7 +123,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
         message: currentMessage,
         lookupQuery: replaceUserMentions(message, client.user.id),
         mentionedUserIds: [...(message.mentions.users?.keys() ?? [])].filter((userId) => userId !== client.user?.id),
-        includeEpisodeRecall: Boolean(message.guildId) && config.memory.privacy !== 'off'
+        includeEpisodeRecall: Boolean(message.guildId) && resolveMemoryScope(true, config.memory.privacy) === 'full'
       })
     }
     let turnEntryWorkHandedOff = false

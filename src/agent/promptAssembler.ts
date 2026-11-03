@@ -1,15 +1,13 @@
 import { character } from '../character/index.js'
 import { assembleSystemPrompt as assembleForCharacter } from '../character/prompt.js'
+import type { MemoryScope } from './memory/memoryScope.js'
 import type { ToneKey } from './prompts/tones.js'
 
 export interface AssemblerInput {
   tone: ToneKey
   hour: number
   displayName: string
-  /** `/ask` turns carry no memory tools, so the kernel drops the guidance that names them (#207). */
-  memory: boolean
-  /** `memory.privacy: off` withholds remember_user and recall_user but still offers forget_user. */
-  forgetOnly?: boolean
+  memoryScope: MemoryScope
 }
 
 /** Assemble the full system prompt from all 4 layers */
@@ -18,7 +16,7 @@ export function assembleSystemPrompt(input: AssemblerInput): string {
     mood: input.tone,
     hour: input.hour,
     displayName: input.displayName,
-    memory: input.memory ? (input.forgetOnly ? 'forget' : 'full') : 'none'
+    memory: input.memoryScope
   })
 }
 

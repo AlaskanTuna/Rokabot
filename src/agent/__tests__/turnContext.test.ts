@@ -92,6 +92,7 @@ vi.mock('../searchPrefetch.js', () => ({
 import { geminiVector } from '../../../tests/harness/vectors.js'
 import { config } from '../../config.js'
 import type { TurnJudgment } from '../jev/judgments.js'
+import { resolveMemoryScope } from '../memory/memoryScope.js'
 import { withSearchCitations } from '../searchCitations.js'
 import { applyJevTone, awaitTurnPrefetch, createTurnContext, startTurnEntryWork } from '../turnContext.js'
 
@@ -132,7 +133,7 @@ function turnOptions(turnEntryWork: ReturnType<typeof startTurnEntryWork>) {
     displayName: 'Alice',
     username: 'alice',
     userId: 'user-1',
-    memory: true,
+    memoryScope: resolveMemoryScope(true, config.memory.privacy),
     turnEntryWork
   }
 }
@@ -454,7 +455,7 @@ describe('turn entry work', () => {
       cancel: vi.fn()
     }
 
-    const context = await createTurnContext({ ...turnOptions(work), memory: false })
+    const context = await createTurnContext({ ...turnOptions(work), memoryScope: 'none' })
 
     expect(mocks.buildEpisodeRecallBlock).not.toHaveBeenCalled()
     expect(mocks.buildMediaRecallBlock).not.toHaveBeenCalled()
@@ -748,7 +749,7 @@ describe('turn entry work', () => {
   it('skips both user and guild retrieval on memory-free turns', async () => {
     const context = await createTurnContext({
       ...turnOptions(startTurnEntryWork(entryWork())),
-      memory: false
+      memoryScope: 'none'
     })
 
     expect(mocks.retrieveForTurn).not.toHaveBeenCalled()
@@ -1037,6 +1038,7 @@ describe('memory recall modes', () => {
 
     const context = await turnWith()
 
+    await flushShadowRecall()
     expect(mocks.recallForTurn).not.toHaveBeenCalled()
     expect(mocks.retrieveForTurn).not.toHaveBeenCalled()
     expect(mocks.retrieveGuildFacts).not.toHaveBeenCalled()
@@ -1047,9 +1049,48 @@ describe('memory recall modes', () => {
     expect(context.systemPrompt).not.toContain(episodeBlock)
     expect(recalledRows('recall')).toHaveLength(0)
     expect(recalledRows('recall_shadow')).toHaveLength(0)
-    expect(mocks.assembleSystemPrompt).toHaveBeenCalledWith(expect.objectContaining({ memory: true, forgetOnly: true }))
+    expect(mocks.assembleSystemPrompt).toHaveBeenCalledWith(expect.objectContaining({ memoryScope: 'forget' }))
     expect(context.systemPrompt).not.toContain('remember_user')
     expect(context.systemPrompt).not.toContain('recall_user')
+  })
+
+  it('does not resolve references for a memory-free turn', async () => {
+    const context = await turnWith({ memoryScope: 'none' })
+
+    expect(mocks.resolveReferences).not.toHaveBeenCalled()
+    expect(context.systemPrompt).not.toContain('## Who Is Mentioned')
+  })
+
+  it('resolves references and names mentions for a forget-only turn', async () => {
+    memoryConfig.privacy = 'off'
+    mocks.resolveReferences.mockReturnValue({
+      resolved: [{ alias: 'Ali', displayName: 'Alice', matchedBy: 'nickname', userId: 'user-2' }],
+      ambiguous: []
+    } as never)
+
+    const context = await turnWith()
+
+    expect(mocks.resolveReferences).toHaveBeenCalledWith(
+      expect.objectContaining({ scope: { guildId: 'guild-1', channelId: 'channel-1' } })
+    )
+    expect(context.systemPrompt).toContain('## Who Is Mentioned\n- "Ali" means Alice')
+  })
+
+  it('rebuilds the kernel forget-only on rung 3 with privacy off', async () => {
+    memoryConfig.privacy = 'off'
+    const { assembleSystemPrompt: realAssemble } =
+      await vi.importActual<typeof import('../promptAssembler.js')>('../promptAssembler.js')
+    mocks.assembleSystemPrompt.mockImplementation(((input: never) => realAssemble(input)) as never)
+    try {
+      const context = await turnWith()
+
+      const rung3 = context.composePrompt(3)
+      expect(rung3).toContain('forget_user')
+      expect(rung3).not.toContain('remember_user')
+      expect(rung3).not.toContain('recall_user')
+    } finally {
+      mocks.assembleSystemPrompt.mockImplementation(() => 'prompt')
+    }
   })
 
   it.each(['shadow', 'unified'])('does no recall for a DM or a memory-free turn in %s mode', async (recall) => {
@@ -1057,8 +1098,9 @@ describe('memory recall modes', () => {
     mocks.recallForTurn.mockImplementation(() => unifiedRecall())
 
     await turnWith({ guildId: 'dm:user-1' })
-    await turnWith({ memory: false })
+    await turnWith({ memoryScope: 'none' })
 
+    await flushShadowRecall()
     expect(mocks.recallForTurn).not.toHaveBeenCalled()
     expect(recalledRows('recall')).toHaveLength(0)
     expect(recalledRows('recall_shadow')).toHaveLength(0)

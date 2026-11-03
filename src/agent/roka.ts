@@ -24,6 +24,8 @@ import { chargeTokens } from './llm/tokenBudget.js'
 import type { MediaAttachment } from './media/attachments.js'
 import { prepareTurnMedia } from './media/turnMedia.js'
 import type { WatchOutcome } from './media/types.js'
+import type { MemoryScope } from './memory/memoryScope.js'
+import { resolveMemoryScope } from './memory/memoryScope.js'
 import { stripNarratedToolCalls } from './narratedToolCalls.js'
 import type { ToneKey } from './prompts/tones.js'
 import {
@@ -51,13 +53,15 @@ import {
   sessionService,
   suppressSessionRehydration
 } from './session.js'
-import { MEMORY_TOOL_NAMES, readRepliesTool, recallUserTool, rememberUserTool, rokaTools } from './tools/index.js'
+import { readRepliesTool, rokaTools, withheldMemoryToolNames } from './tools/index.js'
 import { withSearchAttempt } from './tools/search/attemptBudget.js'
 import { ROKA_TOOL_NAMES } from './tools/toolNames.js'
 import { createTurnContext, startTurnEntryWork } from './turnContext.js'
 import type { TurnContextOptions, TurnEntryWork } from './turnContext.js'
 
-interface GenerateOptions extends TurnContextOptions {
+interface GenerateOptions extends Omit<TurnContextOptions, 'memoryScope'> {
+  /** The Discord-facing input: `/ask` passes `false`. */
+  memory: boolean
   turnEntryWork?: TurnEntryWork
   mediaAttachments?: MediaAttachment[]
   skippedAttachments?: number
@@ -111,7 +115,11 @@ const toolCallsForRequest = new AsyncLocalStorage<{
 const modelCallsForRequest = new AsyncLocalStorage<{ count: number }>()
 const requestHistoryForRequest = new AsyncLocalStorage<{ historyEndedOnToolResult: boolean }>()
 // Exported so tests can drive the beforeModelCallback ALS seam directly (task 122's only observable proof point)
-export const steeringForRequest = new AsyncLocalStorage<{ prompt?: string; memory?: boolean; replies?: boolean }>()
+export const steeringForRequest = new AsyncLocalStorage<{
+  prompt?: string
+  memoryScope?: MemoryScope
+  replies?: boolean
+}>()
 export const SAFETY_DEFLECTION = character.lines.reliability.safety
 export const RECITATION_DEFLECTION = character.lines.reliability.recitation
 export const TERMINAL_DEFLECTION = character.lines.reliability.terminal
@@ -197,14 +205,9 @@ export const rokaAgent = new LlmAgent({
     // ADK resolves a call against, so a declaration removed on its own would leave the model able to name a tool
     // with nothing behind it (#207).
     const steering = steeringForRequest.getStore()
-    const withheld = [
-      ...(steering?.memory === false
-        ? MEMORY_TOOL_NAMES
-        : config.memory.privacy === 'off'
-          ? [rememberUserTool.name, recallUserTool.name]
-          : []),
-      ...(steering?.replies === false ? [readRepliesTool.name] : [])
-    ]
+    // No store outside a steered request reads as a full turn; the turn itself always sets `memoryScope`.
+    const scope: MemoryScope = steering?.memoryScope ?? resolveMemoryScope(true, config.memory.privacy)
+    const withheld = [...withheldMemoryToolNames(scope), ...(steering?.replies === false ? [readRepliesTool.name] : [])]
     if (withheld.length > 0) {
       for (const declaration of request.config?.tools ?? []) {
         // `ToolUnion` is `Tool | CallableTool`; only `Tool` carries declarations, and only
@@ -305,7 +308,7 @@ function requestTimeoutFor(useFallback: boolean): number {
 interface TurnAttemptInit {
   systemPrompt: string
   channelId: string
-  memory: boolean
+  memoryScope: MemoryScope
   asksAboutReplies?: boolean
   useFallback: boolean
   safetyLadder: readonly string[]
@@ -322,7 +325,7 @@ class TurnAttempt {
   movedAwayFromGemini = false
   switchKind: FailureKind | undefined = undefined
   emptyReplyDiagnostic: ReplyDiagnostic | undefined = undefined
-  readonly steering: { prompt?: string; memory?: boolean; replies?: boolean }
+  readonly steering: { prompt?: string; memoryScope?: MemoryScope; replies?: boolean }
   readonly route: ModelRoute
 
   private readonly channelId: string
@@ -334,7 +337,7 @@ class TurnAttempt {
     this.channelId = init.channelId
     this.safetyLadder = init.safetyLadder
     this.composePrompt = init.composePrompt
-    this.steering = { memory: init.memory, replies: init.asksAboutReplies }
+    this.steering = { memoryScope: init.memoryScope, replies: init.asksAboutReplies }
     this.route = { useFallback: init.useFallback, hedged: false, answeredBy: null, pinned: null }
   }
 
@@ -405,6 +408,7 @@ class TurnAttempt {
 export async function generateResponse(options: GenerateOptions): Promise<GenerateResult> {
   const generateStartMs = performance.now()
   const { channelId, guildId, userMessage, displayName, username, userId, memory, mediaAttachments } = options
+  const memoryScope = resolveMemoryScope(memory, config.memory.privacy)
 
   const turnEntryWork =
     options.turnEntryWork ??
@@ -425,13 +429,13 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     geminiUnavailable: rokaModel.hasFallback && hasStickyFallback(),
     // Servers only: DMs, group DMs, `/ask` and privacy `off` keep what was watched in the transcript alone.
     memoryScope:
-      memory && config.memory.privacy !== 'off' && !guildId.startsWith('dm:') && options.messageId
+      memoryScope === 'full' && !guildId.startsWith('dm:') && options.messageId
         ? { guildId, channelId, messageId: options.messageId, userId }
         : null
   })
   // Handled here so a failure in createTurnContext cannot leave it as an unhandled rejection.
   mediaWork.catch(() => undefined)
-  const context = await createTurnContext({ ...options, turnEntryWork })
+  const context = await createTurnContext({ ...options, memoryScope, turnEntryWork })
   const {
     session,
     fakeMessages,
@@ -461,7 +465,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   const turn = new TurnAttempt({
     systemPrompt: context.systemPrompt,
     channelId,
-    memory,
+    memoryScope,
     asksAboutReplies: options.asksAboutReplies,
     useFallback: rokaModel.hasFallback && hasStickyFallback(),
     safetyLadder,

@@ -40,13 +40,12 @@ Limits for one `RateLimiter` (`src/utils/rateLimiter.ts`).
 
 Input to `assembleSystemPrompt` (`src/agent/promptAssembler.ts`), which joins the four prompt layers.
 
-| Field         | Type       | Description                                                                    |
-| ------------- | ---------- | ------------------------------------------------------------------------------ |
-| `tone`        | `ToneKey`  | The mood for the tone layer.                                                   |
-| `hour`        | `number`   | Local hour (0–23) for the context layer.                                       |
-| `displayName` | `string`   | Display name of the user being answered.                                       |
-| `memory`      | `boolean`  | `false` on `/ask`. The core layer then drops guidance that names memory tools. |
-| `forgetOnly`  | `boolean?` | `true` under `memory.privacy: off`. Only `forget_user` stays offered.          |
+| Field         | Type          | Description                                                                                                                                       |
+| ------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tone`        | `ToneKey`     | The mood for the tone layer.                                                                                                                      |
+| `hour`        | `number`      | Local hour (0–23) for the context layer.                                                                                                          |
+| `displayName` | `string`      | Display name of the user being answered.                                                                                                          |
+| `memoryScope` | `MemoryScope` | `'none'` on `/ask`, `'forget'` under `memory.privacy: off`, else `'full'`. The core layer then drops or narrows guidance that names memory tools. |
 
 ### ToneKey
 
