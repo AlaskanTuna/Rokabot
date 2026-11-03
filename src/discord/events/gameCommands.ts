@@ -61,13 +61,16 @@ export function createGameCommandHandler(client?: Client) {
   if (client) {
     setShiritoriTimeoutCallback((channelId: string, playerName: string) => {
       const g = getShiritoriGame(channelId)
+      if (!g) return
       const channel = client.channels.cache.get(channelId)
-      if (g && channel && 'send' in channel) {
-        const sendable = channel as Extract<typeof channel, { send: unknown }>
-        const nameOf = (id: string) => g.players?.get(id)?.name ?? id
-        const remaining = g.currentPlayerOrder
-        if (!g.active && remaining.length === 1) {
-          const winner = nameOf(remaining[0])
+      const nameOf = (id: string) => g.players?.get(id)?.name ?? id
+      const remaining = g.currentPlayerOrder
+      if (!g.active && remaining.length === 1) {
+        const winner = nameOf(remaining[0])
+        const { scores } = endShiritori(channelId)
+        saveShiritoriScores(scores)
+        if (channel && 'send' in channel) {
+          const sendable = channel as Extract<typeof channel, { send: unknown }>
           const payload = buildTimeoutContainer(
             SHIRITORI_COLORS.info,
             'Shiritori',
@@ -78,21 +81,20 @@ export function createGameCommandHandler(client?: Client) {
             .catch((err: unknown) =>
               logger.error({ error: err, channelId }, 'Failed to send shiritori timeout message')
             )
-          const { scores } = endShiritori(channelId)
-          saveShiritoriScores(scores)
-        } else {
-          const nextPlayer = nameOf(remaining[g.currentTurnIndex])
-          const payload = buildTimeoutContainer(
-            SHIRITORI_COLORS.info,
-            'Shiritori',
-            fillLine(character.lines.games.shiritoriNext, { player: playerName, next: nextPlayer })
-          )
-          sendable
-            .send(payload)
-            .catch((err: unknown) =>
-              logger.error({ error: err, channelId }, 'Failed to send shiritori timeout message')
-            )
         }
+        return
+      }
+      if (channel && 'send' in channel) {
+        const sendable = channel as Extract<typeof channel, { send: unknown }>
+        const nextPlayer = nameOf(remaining[g.currentTurnIndex])
+        const payload = buildTimeoutContainer(
+          SHIRITORI_COLORS.info,
+          'Shiritori',
+          fillLine(character.lines.games.shiritoriNext, { player: playerName, next: nextPlayer })
+        )
+        sendable
+          .send(payload)
+          .catch((err: unknown) => logger.error({ error: err, channelId }, 'Failed to send shiritori timeout message'))
       }
     })
   }
