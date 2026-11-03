@@ -172,7 +172,9 @@ const BOUNDS: Bound[] = [
   { path: 'updates.checkIntervalHours', min: 1, max: 168 },
   { path: 'llm.hedgeAfterMs', min: 0 },
   { path: 'llm.stickyMs', min: 0 },
-  { path: 'llm.monthlyBudgetUsd.*', min: 0 }
+  { path: 'llm.monthlyBudgetUsd.*', min: 0 },
+  { path: 'search.nativeTimeoutMs', min: 2000, max: 60_000 },
+  { path: 'search.nativeReserveMs', min: 0, max: 60_000 }
 ]
 
 /** The bot names a few values by their resolved name; the user edits them under another key. */

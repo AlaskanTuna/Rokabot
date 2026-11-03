@@ -10,7 +10,7 @@ import { normalizeReply, requestSchema } from './objectSchema.js'
 import type { ProviderId } from './profiles.js'
 import { type CallUsage, WORKLOAD_LABEL, type Workload } from './usage.js'
 
-export type BackgroundWorkload = Exclude<Workload, 'reply' | 'embedding' | 'watcher'>
+export type BackgroundWorkload = Exclude<Workload, 'reply' | 'embedding' | 'watcher' | 'search'>
 
 type GenerateObjectInput<T> = {
   schema: z.ZodType<T>

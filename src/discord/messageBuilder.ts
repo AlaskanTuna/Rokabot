@@ -150,7 +150,7 @@ export function buildRokaMessage(
   text: string,
   tone: ToneKey,
   toolsUsed: readonly string[] = [],
-  sources: ReadonlyArray<{ url: string }> = [],
+  sources: ReadonlyArray<{ url: string; title?: string }> = [],
   socialPost: SocialPostLookup = { status: 'none' },
   replyOutcome: ReplyOutcome = 'none',
   watchOutcome: WatchOutcome | null = null

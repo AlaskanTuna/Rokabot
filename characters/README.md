@@ -58,9 +58,10 @@ uses a named slot, such as `{{task}}` or `{{mention}}`; the comment on each key 
 
 Any other `{{…}}` is a load error that names the file. With full memory `{{memory_tools}}` becomes
 `memory-tools.md` and `forget-tool.md`; with memory off it becomes `forget-tool.md`; on `/ask` the line is removed.
-`{{search_tools}}` becomes `search-tools.md` when `search.provider` is `tavily` or `exa`, and `no-search-tools.md`
-with `off` or `native`. A missing key does not change it: the prompts still name `search_web`, and the tool reports
-that search is not configured. The search state is fixed at startup, so both macros fill the same way on every turn.
+`{{search_tools}}` becomes `search-tools.md` when a search can run, and `no-search-tools.md` when it cannot. Search
+cannot run under `off`, or under `native` on a main model with no search tool. A missing key does not change it: the
+prompts still name `search_web`, and the tool reports that search is not configured. The search state is fixed at
+startup, so both macros fill the same way on every turn.
 
 ## Search Prompts
 

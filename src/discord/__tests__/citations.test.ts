@@ -54,6 +54,36 @@ describe('fitCitations', () => {
     )
   })
 
+  // Gemini returns its grounded results behind this redirector, so every source would otherwise render as one
+  // repeated host and the row would collapse to a single link.
+  describe('a Gemini redirect URI', () => {
+    const REDIRECT = 'https://vertexaisearch.cloud.google.com/grounding-api-redirect/AbC123'
+
+    it('labels three redirect URIs with the domain-like title each one carries', () => {
+      const sources = [
+        { url: `${REDIRECT}1`, title: 'wikipedia.org' },
+        { url: `${REDIRECT}2`, title: 'myanimelist.net' },
+        { url: `${REDIRECT}3`, title: 'crunchyroll.com' }
+      ]
+
+      expect(fitCitations(sources, 4000)).toBe(
+        `-# 🔗 [wikipedia.org](<${REDIRECT}1>)  ·  [myanimelist.net](<${REDIRECT}2>)  ·  [crunchyroll.com](<${REDIRECT}3>)`
+      )
+    })
+
+    it('keeps the host label for a redirect URI whose title is not a domain', () => {
+      expect(fitCitations([{ url: REDIRECT, title: 'Frieren - Wikipedia' }], 4000)).toBe(
+        `-# 🔗 [vertexaisearch.cloud.google.com](<${REDIRECT}>)`
+      )
+    })
+
+    it('leaves a direct URL labelled by its own host', () => {
+      expect(fitCitations([{ url: 'https://www.crunchyroll.com/news/a', title: 'wikipedia.org' }], 4000)).toBe(
+        '-# 🔗 [crunchyroll.com](<https://www.crunchyroll.com/news/a>)'
+      )
+    })
+  })
+
   it('leaves a URL it cannot parse as its own label rather than throwing', () => {
     expect(fitCitations([{ url: 'not a url' }], 4000)).toBe('-# 🔗 [not a url](<not a url>)')
   })

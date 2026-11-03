@@ -109,7 +109,7 @@ interface YamlConfig {
     maxReplyChars?: number
     ytDlpPath?: string
   }
-  search?: { provider?: string }
+  search?: { provider?: string; nativeTimeoutMs?: number; nativeReserveMs?: number }
   media?: {
     watcher?: string
     watchTimeoutMs?: number
@@ -281,10 +281,10 @@ function mediaWatcher(): MediaWatcher {
   throw new Error(`${source} must be gemini, qwen, direct or off, got: ${String(value)}`)
 }
 
-// Unset means tavily until the native backend exists; PR 2 flips this default to native.
+// Unset means native, which runs on `llm.main` itself and needs no search API key.
 function searchProvider(): SearchProvider {
   const envValue = envString('SEARCH_PROVIDER')
-  const value = envValue ?? yaml.search?.provider ?? 'tavily'
+  const value = envValue ?? yaml.search?.provider ?? 'native'
   if (value === 'off' || value === 'native' || value === 'tavily' || value === 'exa') return value
   const source = envValue ? 'Environment variable SEARCH_PROVIDER' : 'Config value search.provider'
   throw new Error(`${source} must be off, native, tavily or exa, got: ${String(value)}`)
@@ -672,7 +672,9 @@ const baseConfig = {
     ytDlpPath: yaml.socialPosts?.ytDlpPath ?? 'yt-dlp'
   },
   search: {
-    provider: searchProvider()
+    provider: searchProvider(),
+    nativeTimeoutMs: yaml.search?.nativeTimeoutMs ?? 8000,
+    nativeReserveMs: yaml.search?.nativeReserveMs ?? 5000
   },
   media: {
     watcher: mediaWatcher(),
@@ -819,11 +821,15 @@ const baseConfig = {
 
 const llm = resolveLlm(baseConfig)
 const searchProviderId = baseConfig.search.provider
-// `native` needs a model that supports it, which no profile declares yet, so only the two keyed backends can run.
-const searchAvailable = searchProviderId === 'tavily' || searchProviderId === 'exa'
+const keyedSearch = searchProviderId === 'tavily' || searchProviderId === 'exa'
+// `native` searches with the main model itself, which needs a profile declaring web search. Read the route's own
+// provider and model, never `main.profile`: a legacy route synthesises its profile by copying one of the family's,
+// so that copy's capabilities say nothing about the model `gemini.model` names (Review Focus 4).
+const nativeSearchSupported = profileFor(llm.main.provider, llm.main.model)?.nativeSearch !== undefined
+const searchAvailable = searchProviderId === 'native' ? nativeSearchSupported : keyedSearch
 const searchKeys: Readonly<Record<string, string>> = { tavily: 'TAVILY_API_KEY', exa: 'EXA_API_KEY' }
-// A `native` or `off` deployment has no backend prefetch can call inside `jev.prefetchWaitMs`.
-const jevPrefetch: JevMode = searchAvailable || baseConfig.jev.prefetch !== 'on' ? baseConfig.jev.prefetch : 'shadow'
+// Prefetch calls a keyed backend inside `jev.prefetchWaitMs`; `native` and `off` have none to call.
+const jevPrefetch: JevMode = keyedSearch || baseConfig.jev.prefetch !== 'on' ? baseConfig.jev.prefetch : 'shadow'
 
 // A legacy config (no llm: block) has a Gemini main, so the key stays required there with this same message.
 if (
@@ -1048,6 +1054,10 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'updates.checkIntervalHours', value: config.updates.checkIntervalHours, min: 1, max: 168 },
   { path: 'llm.hedgeAfterMs', value: config.llm.hedgeAfterMs, min: 0 },
   { path: 'llm.stickyMs', value: config.llm.stickyMs, min: 0 },
+  // Below 2 s no native search could ever start: MIN_NATIVE_SEARCH_MS refuses it.
+  { path: 'search.nativeTimeoutMs', value: config.search.nativeTimeoutMs, min: 2000, max: 60_000 },
+  // min: 0 because a reserve of zero is a deliberate choice to let a search spend the whole attempt.
+  { path: 'search.nativeReserveMs', value: config.search.nativeReserveMs, min: 0, max: 60_000 },
   // Synthesised legacy values are already bounded as gemini.* and fallback.*, so only a block adds rows.
   ...(yaml.llm
     ? [
@@ -1099,15 +1109,21 @@ if (config.embeddings.provider !== 'gemini' && !similarityFloors) {
 
 // A native-unsupported deployment can last the life of an install, so it warns once here rather than spending a
 // model round per lookup; a missing key is an operator mistake and only degrades the tool's answer.
-if (searchProviderId === 'native') {
+if (searchProviderId === 'native' && !nativeSearchSupported) {
   warnAfterStartup(
     { provider: searchProviderId },
     `search.provider is native, but ${llm.main.model} has no web search, so Roka runs without it. Set search.provider to tavily or exa to search with an API key.`
   )
-} else if (searchAvailable && !envString(searchKeys[searchProviderId])) {
+} else if (searchProviderId !== 'native' && searchAvailable && !envString(searchKeys[searchProviderId])) {
   warnAfterStartup(
     { provider: searchProviderId },
     `search.provider is ${searchProviderId}, but ${searchKeys[searchProviderId]} is not set, so search_web will report that search is not configured.`
+  )
+} else if (envString('SEARCH_PROVIDER') === undefined && !yaml.search?.provider && nativeSearchSupported) {
+  // Neither setting names a provider, so search silently started billing `llm.main`'s provider.
+  warnAfterStartup(
+    { provider: searchProviderId, model: llm.main.model },
+    `search.provider is unset, so web search runs on ${llm.main.model} and bills that provider. A free-tier Gemini key cannot search. Set search.provider to tavily, exa or off to choose another.`
   )
 }
 

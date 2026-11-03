@@ -4,16 +4,16 @@ How a reply turn is admitted, retried, de-escalated and budgeted when a model ca
 
 ## At a Glance
 
-| Concern           | Rule                                                                                   | Default                     |
-| ----------------- | -------------------------------------------------------------------------------------- | --------------------------- |
-| Concurrency       | One turn per channel. A second message gets a busy reply.                              | n/a                         |
-| Turn Reservation  | A turn reserves `gemini.maxLlmCalls` request slots and returns the unused ones.        | 4                           |
-| Live Retries      | Up to `gemini.liveMaxRetries` retries after the first attempt.                         | 2                           |
-| Retry Gate        | A retry needs `gemini.retryRpmFloor` free slots and takes one.                         | 2                           |
-| Turn Deadline     | A retry starts only if one attempt timeout still fits in `gemini.turnDeadlineMs`.      | 63,000 ms (`config.yml`)    |
-| Safety Ladder     | Up to 3 rungs. Each rung sheds carried context and tries again.                        | 3                           |
-| Per-Minute Tokens | An attachment turn needs `gemini.maxAttachmentTokens` free in the main model's minute. | 125,000 of 125,000          |
-| Per-Call Budgets  | Every provider call passes `startCall`. Replies outrank background work.               | Off without an `llm:` block |
+| Concern           | Rule                                                                                   | Default                                             |
+| ----------------- | -------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| Concurrency       | One turn per channel. A second message gets a busy reply.                              | n/a                                                 |
+| Turn Reservation  | A turn reserves `gemini.maxLlmCalls` request slots and returns the unused ones.        | 4                                                   |
+| Live Retries      | Up to `gemini.liveMaxRetries` retries after the first attempt.                         | 2                                                   |
+| Retry Gate        | A retry needs `gemini.retryRpmFloor` free slots and takes one.                         | 2                                                   |
+| Turn Deadline     | A retry starts only if one attempt timeout still fits in `gemini.turnDeadlineMs`.      | 63,000 ms (`config.yml`)                            |
+| Safety Ladder     | Up to 3 rungs. Each rung sheds carried context and tries again.                        | 3                                                   |
+| Per-Minute Tokens | An attachment turn needs `gemini.maxAttachmentTokens` free in the main model's minute. | 125,000 of 125,000                                  |
+| Per-Call Budgets  | Every provider call passes `startCall`. Replies outrank background work.               | Off without an `llm:` block, except native searches |
 
 ## Turn Admission
 
@@ -200,18 +200,18 @@ charge, and halving `rpm` would give up half the request budget.
 
 ## Per-Call Budgets
 
-Every provider call passes `startCall` (`src/agent/llm/budget.ts`) before it is sent. That covers replies, background
-memory jobs, both watchers and both sides of a hedge.
+Every provider call passes `startCall` (`src/agent/llm/budget.ts`) before it is sent. That covers replies, native
+searches, background memory jobs, both watchers and both sides of a hedge.
 
-- **Legacy Config:** without an `llm:` block (`config.llm.main.key` is `legacy-gemini`), `startCall` counts nothing,
-  never waits and never refuses. Spend still goes to `llm_spend`, with no cap.
+- **Legacy Config:** without an `llm:` block (`config.llm.main.key` is `legacy-gemini`), `startCall` counts nothing on every call except `search`, never waits and never refuses. A `search` call is not covered that way: it takes one slot on the shared
+  limiter and records its spend, with no cap. Spend still goes to `llm_spend` in both cases.
 - **Limits Per Model:** an `llm.models` entry may set `limits: { rpm, rpd, tpm }`. On the main route, `rpm` must be at
   least `gemini.maxLlmCalls` and `tpm` at least `gemini.maxAttachmentTokens`, or startup stops. A model that is
   neither main nor fallback has no limits.
 - **Covered by the Turn:** the turn reservation and the turn's token charge already count reply and watcher calls on
   the main model. Every other call takes one `rpm` slot and one `rpd` unit and charges its model's minute at its
   estimate. On release, the provider's reported prompt tokens replace the estimate.
-- **Replies First:** a background call (any workload but `reply` and `watcher`) is refused unless one whole reply turn
+- **Replies First:** a background call (any workload but `reply`, `search` and `watcher`) is refused unless one whole reply turn
   still fits after it: `maxLlmCalls` slots, daily units and Magicubes (ModelScope), plus `maxAttachmentTokens` tokens.
   Reply and watcher calls are never refused on tokens. Nothing in flight is preempted.
 - **ModelScope:** one request in flight per account. A later call waits, for as long as its own abort signal allows.
@@ -219,7 +219,9 @@ memory jobs, both watchers and both sides of a hedge.
   `llm.modelscopeDailyMagicubes` (250): one per call, counted at start, reset at UTC midnight, kept in memory.
 - **Monthly Spend:** each usage event is priced from the model profile and added to `llm_spend`. Cache reads cost the
   cached rate, cache writes the profile's write price or 1.25x input, and reasoning the output rate. Completed retries
-  and losing hedge calls count; an aborted call adds nothing. At `llm.monthlyBudgetUsd[provider]`, every call to that
+  and losing hedge calls count; an aborted reply adds nothing, while an aborted `search` counts its one search
+  request with no tokens, because a search cut off after it reached the provider may still be billed. At
+  `llm.monthlyBudgetUsd[provider]`, every call to that
   provider is refused until the UTC month turns, across restarts. Background calls stop at 80% of the cap. An `llm:`
   block without `monthlyBudgetUsd` caps `anthropic` and `openai` at 5 USD; setting the key replaces both defaults.
 - **Provider Billing Errors:** when an adapter sees the provider's own billing error, it disables that provider in
@@ -264,6 +266,30 @@ the runner misses them. Reliability code must classify the yielded events and `L
   `finishReason` (for example `SAFETY`) into `errorCode` and drops `candidate.safetyRatings`. The loop sees the coarse
   `finishReason` only, never the per-category rating.
 
+## Native Time Budget
+
+A native `search_web` call runs a provider request of its own inside the reply attempt, so it must finish inside the
+attempt timer. An overrun would throw away a paid result, move the turn to the fallback, open the sticky window, and
+pay for the same search again on the retry.
+
+`attemptBudget.ts` (`src/agent/tools/search/`) holds the deadline and abort signal of the running attempt in
+`AsyncLocalStorage`, the way `roka.ts` already carries per-request state.
+
+- **Budget:** `nativeSearchTimeMs` is the smaller of `search.nativeTimeoutMs` and the attempt's remaining time minus
+  `search.nativeReserveMs`. The reserve is what the chat model's next call needs.
+- **No Attempt:** with no attempt in the store, the budget is `search.nativeTimeoutMs` alone.
+- **Too Short:** below `MIN_NATIVE_SEARCH_MS` (2,000 ms), `nativeSearchTimeMs` returns `null`, a warning names the
+  provider, and `search_web` returns the failure text at once, with no provider call.
+- **Abort:** the search races its own timeout and the attempt's signal. A shutdown or an abandoned attempt cancels it,
+  and the call returns the failure text rather than throwing.
+- **Unchanged Timing:** `reliability.ts` does not change. The attempt timer stays the one clock, and `tavily` and
+  `exa` keep their current timing.
+- **Sticky Window:** native search still runs while the sticky window is open. One transient failure on the main model
+  must not remove search for five minutes, and a hung provider costs at most `search.nativeTimeoutMs` per search. A
+  turn where the model calls `search_web` more than once pays that ceiling for each call.
+- **Searchless Deployment:** with `native` on a main model that has no search tool, `search_web` is not registered at
+  all, so no attempt budget is read.
+
 ## Configuration
 
 | Key                            | Default                        | Bounds                                                                                  |
@@ -281,6 +307,8 @@ the runner misses them. Reliability code must classify the yielded events and `L
 | `rateLimit.rpm`                | 15                             | min `gemini.maxLlmCalls`                                                                |
 | `rateLimit.rpd`                | 500                            | min 1                                                                                   |
 | `llm.modelscopeDailyMagicubes` | 250                            | min 1                                                                                   |
+| `search.nativeTimeoutMs`       | 8,000                          | 2,000 to 60,000                                                                         |
+| `search.nativeReserveMs`       | 5,000                          | 0 to 60,000                                                                             |
 
 Environment overrides are wired in `src/config.ts` (for example `GEMINI_LIVE_MAX_RETRIES`, `RATE_LIMIT_RPM`).
 

@@ -14,6 +14,9 @@ describe.each(['off', 'native'] as const)('a deployment whose search provider is
   it(`offers no search under ${provider}`, async () => {
     vi.resetModules()
     vi.stubEnv('SEARCH_PROVIDER', provider)
+    // These tests run the legacy Gemini route, which now supports native; its own unsupported model keeps the
+    // deployment searchless, as a Pi without an llm: block and a native provider would be.
+    if (provider === 'native') vi.stubEnv('GEMINI_MODEL', 'gemini-2.0-flash-lite')
 
     const { rokaTools } = await import('../tools/index.js')
     const { character } = await import('../../character/index.js')
@@ -30,11 +33,13 @@ describe.each(['off', 'native'] as const)('a deployment whose search provider is
       'Get anime airing schedule. Can check a specific day, the full week, or current season.'
     )
     expect(declarations.get('read_replies')?.description).toContain('and then call it. Never call it just because')
-  })
+    // Re-imports the whole tool module, which is slow enough to trip the 5 s default under full-suite load.
+  }, 20_000)
 
   it(`still strips a search_web call the model narrates under ${provider}`, async () => {
     vi.resetModules()
     vi.stubEnv('SEARCH_PROVIDER', provider)
+    if (provider === 'native') vi.stubEnv('GEMINI_MODEL', 'gemini-2.0-flash-lite')
 
     expect(stripNarratedToolCalls('*(search_web: x)* hi', ROKA_TOOL_NAMES)).toEqual({ text: 'hi', stripped: 1 })
   })

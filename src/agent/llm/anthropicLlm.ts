@@ -262,7 +262,7 @@ function structuredVia(profile: ModelProfile): 'forced_tool' | 'json_schema_stri
     : undefined
 }
 
-function thinkingParams(resolved: ResolvedModel, schema: unknown): Pick<Params, 'thinking' | 'output_config'> {
+export function thinkingParams(resolved: ResolvedModel, schema: unknown): Pick<Params, 'thinking' | 'output_config'> {
   const effort = resolved.effort ?? resolved.profile.thinking.defaultEffort
   const strict = schema !== undefined && structuredVia(resolved.profile) === 'json_schema_strict'
   const format = strict
@@ -305,7 +305,8 @@ function structuredParts(message: Anthropic.Message): Part[] {
 }
 
 // Thinking tokens are part of output_tokens and billed at the output rate, so they get no bucket of their own.
-function callUsage(model: string, workload: Workload, usage: Anthropic.Usage): CallUsage {
+export function callUsage(model: string, workload: Workload, usage: Anthropic.Usage): CallUsage {
+  const searches = usage.server_tool_use?.web_search_requests
   return {
     provider: 'anthropic',
     model,
@@ -313,7 +314,9 @@ function callUsage(model: string, workload: Workload, usage: Anthropic.Usage): C
     inputTokens: usage.input_tokens,
     outputTokens: usage.output_tokens,
     ...(usage.cache_read_input_tokens ? { cacheReadTokens: usage.cache_read_input_tokens } : {}),
-    ...(usage.cache_creation_input_tokens ? { cacheWriteTokens: usage.cache_creation_input_tokens } : {})
+    ...(usage.cache_creation_input_tokens ? { cacheWriteTokens: usage.cache_creation_input_tokens } : {}),
+    // A chat turn runs no server-side tool, so the field stays off its record unless a search really billed.
+    ...(searches ? { searchRequests: searches } : {})
   }
 }
 

@@ -688,14 +688,19 @@ describe('config module', () => {
   })
 
   describe('search provider', () => {
-    it('defaults search.provider to tavily while no native backend exists', async () => {
+    it('defaults search.provider to native when unset', async () => {
       setRequiredEnvVars()
       clearTunableEnvVars()
       withYamlOverride({ search: undefined })
 
       const { config } = await import('../config.js')
 
-      expect(config.search).toEqual({ provider: 'tavily', available: true })
+      expect(config.search).toEqual({
+        provider: 'native',
+        available: true,
+        nativeTimeoutMs: 8000,
+        nativeReserveMs: 5000
+      })
     })
 
     it('reads search.provider from config.yml, and SEARCH_PROVIDER overrides it', async () => {
@@ -733,18 +738,63 @@ describe('config module', () => {
       )
     })
 
-    it('marks a native provider unavailable and warns, naming the model and the fix', async () => {
+    it('names exactly the four models that support native search', async () => {
+      const { MODEL_PROFILES } = await import('../agent/llm/profiles.js')
+
+      const native: Array<{ model: string; tool: string; usdPerSearch: number }> = []
+      for (const profile of MODEL_PROFILES) {
+        if (profile.nativeSearch) native.push({ model: profile.model, ...profile.nativeSearch })
+      }
+
+      expect(native).toEqual([
+        { model: 'gemini-3.5-flash-lite', tool: 'google_search', usdPerSearch: 0.014 },
+        { model: 'claude-haiku-5-5', tool: 'web_search_20250305', usdPerSearch: 0.01 },
+        { model: 'claude-sonnet-5-5', tool: 'web_search_20250305', usdPerSearch: 0.01 },
+        { model: 'gemini-3.8-flash', tool: 'google_search', usdPerSearch: 0.014 }
+      ])
+    })
+
+    it('makes native available on a supporting main model', async () => {
       setRequiredEnvVars()
       clearTunableEnvVars()
+      vi.stubEnv('ANTHROPIC_API_KEY', 'test-anthropic-key')
       vi.stubEnv('SEARCH_PROVIDER', 'native')
+      withYamlOverride({
+        llm: { main: 'haiku', models: { haiku: { provider: 'anthropic', model: 'claude-haiku-5-5' } } }
+      })
 
       const { config } = await import('../config.js')
       await vi.dynamicImportSettled()
 
-      expect(config.search).toEqual({ provider: 'native', available: false })
+      expect(config.search).toEqual({
+        provider: 'native',
+        available: true,
+        nativeTimeoutMs: 8000,
+        nativeReserveMs: 5000
+      })
+      expect(warn).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('has no web search'))
+    })
+
+    // The legacy route copies its family's profile for an untested `gemini.model`, so the copy's capabilities
+    // must not make native available there.
+    it('treats native on a legacy Gemini model with no tested profile as unsupported', async () => {
+      setRequiredEnvVars()
+      clearTunableEnvVars()
+      vi.stubEnv('SEARCH_PROVIDER', 'native')
+      vi.stubEnv('GEMINI_MODEL', 'gemini-2.0-flash-lite')
+
+      const { config } = await import('../config.js')
+      await vi.dynamicImportSettled()
+
+      expect(config.search).toEqual({
+        provider: 'native',
+        available: false,
+        nativeTimeoutMs: 8000,
+        nativeReserveMs: 5000
+      })
       expect(warn).toHaveBeenCalledWith(
         { provider: 'native' },
-        `search.provider is native, but ${config.llm.main.model} has no web search, so Roka runs without it. Set search.provider to tavily or exa to search with an API key.`
+        'search.provider is native, but gemini-2.0-flash-lite has no web search, so Roka runs without it. Set search.provider to tavily or exa to search with an API key.'
       )
     })
 
@@ -756,7 +806,12 @@ describe('config module', () => {
       const { config } = await import('../config.js')
       await vi.dynamicImportSettled()
 
-      expect(config.search).toEqual({ provider: 'off', available: false })
+      expect(config.search).toEqual({
+        provider: 'off',
+        available: false,
+        nativeTimeoutMs: 8000,
+        nativeReserveMs: 5000
+      })
       expect(warn).not.toHaveBeenCalled()
     })
 
@@ -772,7 +827,7 @@ describe('config module', () => {
       const { config } = await import('../config.js')
       await vi.dynamicImportSettled()
 
-      expect(config.search).toEqual({ provider, available: true })
+      expect(config.search).toEqual({ provider, available: true, nativeTimeoutMs: 8000, nativeReserveMs: 5000 })
       expect(warn).toHaveBeenCalledWith(
         { provider },
         `search.provider is ${provider}, but ${key} is not set, so search_web will report that search is not configured.`
@@ -809,8 +864,10 @@ describe('config module', () => {
       const { config } = await import('../config.js')
       await vi.dynamicImportSettled()
 
+      // The legacy route runs a model that now supports native, so search is available; prefetch stays shadow
+      // anyway, because only a keyed backend can answer inside `jev.prefetchWaitMs`.
+      expect(config.search.available).toBe(true)
       expect(config.jev.prefetch).toBe('shadow')
-      expect(config.search.available).toBe(false)
     })
 
     it('leaves jev.prefetch on under tavily and exa', async () => {
@@ -825,6 +882,85 @@ describe('config module', () => {
 
       expect(config.jev.prefetch).toBe('on')
       expect(warn).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('prefetch runs as shadow'))
+    })
+
+    // Neither setting names a provider, so search runs on the main model and bills that provider. The
+    // warning is the only signal an operator gets before the bill.
+    it('warns when neither SEARCH_PROVIDER nor search.provider is set, naming the model', async () => {
+      setRequiredEnvVars()
+      clearTunableEnvVars()
+      vi.stubEnv('ANTHROPIC_API_KEY', 'test-anthropic-key')
+      withYamlOverride({
+        search: { provider: undefined },
+        llm: { main: 'haiku', models: { haiku: { provider: 'anthropic', model: 'claude-haiku-5-5' } } }
+      })
+
+      const { config } = await import('../config.js')
+      await vi.dynamicImportSettled()
+
+      expect(config.search.provider).toBe('native')
+      expect(warn).toHaveBeenCalledWith(
+        { provider: 'native', model: 'claude-haiku-5-5' },
+        'search.provider is unset, so web search runs on claude-haiku-5-5 and bills that provider. A free-tier Gemini key cannot search. Set search.provider to tavily, exa or off to choose another.'
+      )
+    })
+
+    it('warns when search.provider is an empty YAML key', async () => {
+      setRequiredEnvVars()
+      clearTunableEnvVars()
+      vi.stubEnv('ANTHROPIC_API_KEY', 'test-anthropic-key')
+      withYamlOverride({
+        search: { provider: null },
+        llm: { main: 'haiku', models: { haiku: { provider: 'anthropic', model: 'claude-haiku-5-5' } } }
+      })
+
+      const { config } = await import('../config.js')
+      await vi.dynamicImportSettled()
+
+      expect(config.search.provider).toBe('native')
+      expect(warn).toHaveBeenCalledWith(
+        { provider: 'native', model: 'claude-haiku-5-5' },
+        'search.provider is unset, so web search runs on claude-haiku-5-5 and bills that provider. A free-tier Gemini key cannot search. Set search.provider to tavily, exa or off to choose another.'
+      )
+    })
+
+    it.each([
+      ['SEARCH_PROVIDER set', { search: { provider: undefined } }, 'SEARCH_PROVIDER'],
+      ['search.provider set', { search: { provider: 'tavily' } }, undefined]
+    ])('does not warn when %s', async (_name, override, env) => {
+      setRequiredEnvVars()
+      clearTunableEnvVars()
+      vi.stubEnv('ANTHROPIC_API_KEY', 'test-anthropic-key')
+      if (env) vi.stubEnv(env, 'native')
+      withYamlOverride({
+        ...override,
+        llm: { main: 'haiku', models: { haiku: { provider: 'anthropic', model: 'claude-haiku-5-5' } } }
+      })
+
+      await import('../config.js')
+      await vi.dynamicImportSettled()
+
+      expect(warn).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('search.provider is unset'))
+    })
+
+    it('bounds the native search time and its reserve', async () => {
+      setRequiredEnvVars()
+      clearTunableEnvVars()
+
+      const { config, NUMERIC_BOUNDS } = await import('../config.js')
+
+      expect(config.search.nativeTimeoutMs).toBe(8000)
+      expect(config.search.nativeReserveMs).toBe(5000)
+      expect(NUMERIC_BOUNDS.find(({ path }) => path === 'search.nativeTimeoutMs')).toMatchObject({
+        value: 8000,
+        min: 2000,
+        max: 60_000
+      })
+      expect(NUMERIC_BOUNDS.find(({ path }) => path === 'search.nativeReserveMs')).toMatchObject({
+        value: 5000,
+        min: 0,
+        max: 60_000
+      })
     })
   })
 
@@ -1473,7 +1609,9 @@ describe('config module', () => {
       { path: 'statusCycleMs', min: 1 },
       { path: 'updates.checkIntervalHours', min: 1, max: 168 },
       { path: 'llm.hedgeAfterMs', min: 0 },
-      { path: 'llm.stickyMs', min: 0 }
+      { path: 'llm.stickyMs', min: 0 },
+      { path: 'search.nativeTimeoutMs', min: 2000, max: 60_000 },
+      { path: 'search.nativeReserveMs', min: 0, max: 60_000 }
     ]
 
     const { NUMERIC_BOUNDS } = await import('../config.js')

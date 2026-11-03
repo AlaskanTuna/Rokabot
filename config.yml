@@ -49,7 +49,7 @@ llm: # Main and fallback model selection; without this block the bot runs gemini
     anthropic: 5
     openai: 5
   modelscopeDailyMagicubes: 250 # Magicubes one ModelScope key is expected to get a day (200 on login + 50 with Alibaba Cloud linked). Qwen and DeepSeek share it, the qwen watcher included; each call counts as one, and background jobs stop while a whole reply turn is left
-  # Any entry may set limits: { rpm, rpd, tpm }; per-call budgets apply only with this block. A gemini entry inherits rateLimit and gemini.maxTokensPerMinute; other providers are unlimited unless set. Set tpm to half the provider's real TPM: the bucket drains continuously and can admit twice its value in the worst minute
+  # Any entry may set limits: { rpm, rpd, tpm }; a per-call budget comes from this block, except for a native search, which takes one slot on the shared limiter even without an llm: block. A gemini entry inherits rateLimit and gemini.maxTokensPerMinute; other providers are unlimited unless set. Set tpm to half the provider's real TPM: the bucket drains continuously and can admit twice its value in the worst minute
   models: # Only tested profiles start (src/agent/llm/profiles.ts), except provider openai-compatible, which declares its own; optional per model: timeoutMs, maxOutputTokens, baseUrl
     flash: { provider: gemini, model: gemini-3.5-flash-lite }
     haiku: { provider: anthropic, model: claude-haiku-5-5, effort: low } # Needs ANTHROPIC_API_KEY; effort none turns thinking off (for a Haiku fallback)
@@ -94,7 +94,9 @@ socialPosts:
   ytDlpPath: yt-dlp # yt-dlp binary for YouTube, TikTok, Reddit, Instagram and Bilibili
 
 search:
-  provider: tavily # off | native | tavily | exa; unset means tavily. tavily needs TAVILY_API_KEY, exa needs EXA_API_KEY; no model supports native yet
+  provider: tavily # off | native | tavily | exa; unset means native. native uses llm.main's own search and bills that provider (see docs/runbook.md, including the Gemini terms)
+  nativeTimeoutMs: 8000 # Longest one native search may take
+  nativeReserveMs: 5000 # Attempt time a native search must leave for the chat model's next call
 
 media:
   watcher: gemini # How Roka takes in audio and video. gemini or qwen (frames + speech transcript on ModelScope) watches it first and she replies from the notes, the other taking over when it fails; direct sends the file straight to the reply model, with no backup; off neither watches nor sends it and tells her so. The Pi sets MEDIA_WATCHER=qwen

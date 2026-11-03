@@ -39,20 +39,21 @@ synthesised `legacy-fallback` route, and only when its provider is `modelscope`.
 
 `ModelProfile` (`src/agent/llm/profiles.ts`) describes one model. Adapters and shaping read it.
 
-| Field               | Type                                                                       | Use                                                                                      |
-| ------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `provider`, `model` | `ProviderId`, string                                                       | Lookup key for `profileFor`.                                                             |
-| `input`             | `{ image, pdf, audio, video }`                                             | Which attachments go as content. Others become a text marker.                            |
-| `tools`             | `{ supported, parallel }`                                                  | `supported: false` sends no tools. `parallel: false` sends `parallel_tool_calls: false`. |
-| `thinking`          | `{ efforts, defaultEffort?, offMode?, replayWithinTurn }`                  | Allowed efforts, the default, how to spell "off", and whether to pin turns.              |
-| `sampling`          | `{ temperature, topP }`                                                    | `false` drops that field from the request.                                               |
-| `structuredOutput`  | `response_json_schema`, `json_schema_strict`, `forced_tool`, `json_object` | How a JSON-schema request is encoded.                                                    |
-| `maxOutputTokens`   | number                                                                     | Ceiling for the entry's `maxOutputTokens`.                                               |
-| `contextWindow`     | number                                                                     | Documented input size. No runtime check reads it.                                        |
-| `promptCaching`     | `implicit`, `explicit`, `none`                                             | No code reads it. `AnthropicLlm` always caches.                                          |
-| `tokenCounter`      | `gemini`, `anthropic`, `estimate`                                          | How the main model's attachment tokens are counted.                                      |
-| `price`             | `{ input, output, cachedInput?, cacheWrite? }` USD per 1M tokens           | Spend estimate. `0` for Magicube-billed ModelScope.                                      |
-| `verified`          | boolean                                                                    | `false` marks a candidate.                                                               |
+| Field               | Type                                                                       | Use                                                                                        |
+| ------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `provider`, `model` | `ProviderId`, string                                                       | Lookup key for `profileFor`.                                                               |
+| `input`             | `{ image, pdf, audio, video }`                                             | Which attachments go as content. Others become a text marker.                              |
+| `tools`             | `{ supported, parallel }`                                                  | `supported: false` sends no tools. `parallel: false` sends `parallel_tool_calls: false`.   |
+| `thinking`          | `{ efforts, defaultEffort?, offMode?, replayWithinTurn }`                  | Allowed efforts, the default, how to spell "off", and whether to pin turns.                |
+| `sampling`          | `{ temperature, topP }`                                                    | `false` drops that field from the request.                                                 |
+| `structuredOutput`  | `response_json_schema`, `json_schema_strict`, `forced_tool`, `json_object` | How a JSON-schema request is encoded.                                                      |
+| `maxOutputTokens`   | number                                                                     | Ceiling for the entry's `maxOutputTokens`.                                                 |
+| `contextWindow`     | number                                                                     | Documented input size. No runtime check reads it.                                          |
+| `promptCaching`     | `implicit`, `explicit`, `none`                                             | No code reads it. `AnthropicLlm` always caches.                                            |
+| `tokenCounter`      | `gemini`, `anthropic`, `estimate`                                          | How the main model's attachment tokens are counted.                                        |
+| `price`             | `{ input, output, cachedInput?, cacheWrite? }` USD per 1M tokens           | Spend estimate. `0` for Magicube-billed ModelScope.                                        |
+| `nativeSearch`      | `{ tool, usdPerSearch }`                                                   | Optional. The provider's own web-search tool; a profile without it cannot search natively. |
+| `verified`          | boolean                                                                    | `false` marks a candidate.                                                                 |
 
 ### Tested-Profile Rule
 
@@ -300,13 +301,18 @@ replies-first admission are in [Reliability](reliability.md#per-call-budgets). M
 - **Price:** a tested provider prices a call from `profileFor(provider, model)`. An `openai-compatible` call uses the
   matching route's declared `price`, so two such routes on one model id share the main entry's price.
 - **Cost:** `estimateCostUsd` = input x `input` + cache reads x `cachedInput` (else `input`) + cache writes x
-  `cacheWrite` (else 1.25 x `input`) + (output + reasoning) x `output`, per 1M tokens.
+  `cacheWrite` (else 1.25 x `input`) + (output + reasoning) x `output`, per 1M tokens, plus `searchRequests` x the
+  profile's `nativeSearch.usdPerSearch`.
 - **Monthly Cap:** spend accumulates per provider id in `llm_spend` (UTC month). Background calls stop at 80% of
   `llm.monthlyBudgetUsd[provider]`; every call stops at 100%. A provider with no cap is recorded, never refused. All
   `openai-compatible` entries share the `openai-compatible` key.
 - **`CallUsage`:** buckets are disjoint. `inputTokens` excludes cache reads and writes. `outputTokens` excludes
   `reasoningTokens` when the provider reports reasoning apart; Anthropic does not, so its `outputTokens` is the
   billed output.
+- **Search Calls:** a native `search_web` call runs on `config.llm.main` under the `search` workload. It takes its own
+  RPM slot and token charge, because the turn's reservation does not cover it, and it counts as reply-side for
+  admission. On a legacy config it still takes an RPM slot. Gemini reports no per-call query cap, so
+  `searchRequests` can exceed one per call.
 - **Recording:** `recordUsage` feeds `onUsage` listeners. `response_events` gets `provider`, `model_id`,
   `route_role` (`main` or `fallback`), `workload` and `hedged`.
 

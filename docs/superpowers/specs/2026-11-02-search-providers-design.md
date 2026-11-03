@@ -164,7 +164,7 @@ A native search must fit inside the attempt timer. An overrun would throw away a
 - The call goes through `startCall()`. `search` counts as reply-side for priority, so it can use the last fifth of the monthly cap.
 - `search` must not count as covered by the turn. The turn's reservation does not include this call, so it takes its own RPM slot and token charge.
 - `reserveCall()` skips all accounting when `legacyAccounting()` is true, which is a config with no `llm:` block. That config now runs native search on Gemini by default, so a `search` call must still take an RPM slot there. RPM is the binding limit on Gemini.
-- Gemini queries count at the $14 per 1,000 list price, ignoring the 5,000 free each month. The record can overstate Gemini spend, and it cannot understate it. No Gemini monthly cap is set by default.
+- Gemini queries count at the $14 per 1,000 list price, ignoring the 5,000 free each month on a paid key. The record can overstate Gemini spend, and it cannot understate it. No Gemini monthly cap is set by default.
 
 ### When Search Is Unavailable
 
@@ -188,7 +188,8 @@ With search available, the assembled prompt and tool descriptions must be byte-i
 A self-hoster whose `config.yml` has no `search:` block moves to `native` on upgrade. The result depends on their main model:
 
 - **Anthropic:** paid search starts, at $0.01 per search plus tokens.
-- **Gemini:** search moves to grounding, free for the first 5,000 queries a month, then $14 per 1,000.
+- **Gemini, Paid Key:** search moves to grounding, free for the first 5,000 queries a month, then $14 per 1,000.
+- **Gemini, Free-Tier Key:** every search answers `Search quota exceeded. Try again later.`, because Google lists grounding as not available on the free tier. This was found during the live check, after approval. The two non-production keys returned 429 on grounded calls, so Gemini has no live verification.
 - **Any Other Model:** search stops, even with a Tavily key set.
 
 The startup warning names `search.provider: tavily` as the fix, and the release notes for the second PR must say this.

@@ -51,6 +51,7 @@ import {
 } from './session.js'
 import { chargeTokens } from './tokenBudget.js'
 import { MEMORY_TOOL_NAMES, readRepliesTool, recallUserTool, rememberUserTool, rokaTools } from './tools/index.js'
+import { withSearchAttempt } from './tools/search/attemptBudget.js'
 import { ROKA_TOOL_NAMES } from './tools/toolNames.js'
 import { createTurnContext, startTurnEntryWork } from './turnContext.js'
 import type { TurnContextOptions, TurnEntryWork } from './turnContext.js'
@@ -495,6 +496,9 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
               },
               runTurn: async (attempt, signal) => {
                 const includeCurrentTurn = attempt === 0 || sessionWasReset
+                // One attempt's whole budget, so a native search the model asks for inside it knows how much
+                // time is left before the chat model's next call still has to fit.
+                const searchAttempt = { deadlineAtMs: performance.now() + requestTimeoutFor(route.useFallback), signal }
                 const testRequest: TestTurnRequest = {
                   newMessage: includeCurrentTurn ? buildNewMessage() : undefined,
                   stateDelta: includeCurrentTurn
@@ -507,7 +511,8 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
                       }
                     : undefined
                 }
-                if (testRunTurn) return testRunTurn(attempt, signal, testRequest)
+                if (testRunTurn)
+                  return withSearchAttempt(searchAttempt, () => testRunTurn(attempt, signal, testRequest))
 
                 let responseText = ''
                 let hasFunctionCall = false
@@ -527,7 +532,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
                 const eventStream = runner.runAsync(request)[Symbol.asyncIterator]()
                 while (true) {
                   const { value: event, done } = await requestHistoryForRequest.run(requestHistory, () =>
-                    eventStream.next()
+                    withSearchAttempt(searchAttempt, () => eventStream.next())
                   )
                   if (done) break
                   if (signal.aborted) break
