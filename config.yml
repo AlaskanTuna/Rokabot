@@ -10,8 +10,8 @@ jev:
   memoryTimeoutMs: 5000 # Deadline for background memory admission and verification judgments
   tone: on # off | shadow (ask Jev and log, change nothing) | on (Jev picks the tone)
   referents: shadow # off | shadow | on (Jev settles names the resolver found ambiguous)
-  prefetch: shadow # off | shadow (ask Jev, log and persist what it would have prefetched, change nothing) | on (search ahead of the first Gemini call when the noul clears the threshold); stays shadow because a live A/B lost recall and latency (docs/runbook.md)
-  toneMinProbability: 0.3 # Selected-choice probability (0..1) below which the regex tone stays; on 163 labeled production turns Jev matched or beat the regex in every band from 0.3 up (docs/runbook.md)
+  prefetch: shadow # off | shadow (ask Jev, log and persist what it would have prefetched, change nothing) | on (search ahead of the first Gemini call when the noul clears the threshold); stays shadow because a live A/B lost recall and latency (docs/RUNBOOK.md)
+  toneMinProbability: 0.3 # Selected-choice probability (0..1) below which the regex tone stays; on 163 labeled production turns Jev matched or beat the regex in every band from 0.3 up (docs/RUNBOOK.md)
   prefetchMinNoul: 0.7 # In on mode, the needs_lookup probability at or above which a Tavily search starts at handler entry
   prefetchWaitMs: 4000 # How long the first Gemini call waits for a started prefetch before answering without it; a slower or failed search costs the turn at most this much
   referentMinConfidence: 0.8 # In on mode, below this confidence an ambiguous name stays unresolved
@@ -94,7 +94,7 @@ socialPosts:
   ytDlpPath: yt-dlp # yt-dlp binary for YouTube, TikTok, Reddit, Instagram and Bilibili
 
 search:
-  provider: tavily # off | native | tavily | exa; unset means native. native uses llm.main's own search and bills that provider (see docs/runbook.md, including the Gemini terms)
+  provider: tavily # off | native | tavily | exa; unset means native. native uses llm.main's own search and bills that provider (see docs/RUNBOOK.md, including the Gemini terms)
   nativeTimeoutMs: 8000 # Longest one native search may take
   nativeReserveMs: 5000 # Attempt time a native search must leave for the chat model's next call
 
@@ -162,7 +162,7 @@ memory:
   reclassifyMaxPerRun: 20 # Most misfiled facts moved to a better category per daily run; 0 turns automatic reclassification off
 
 embeddings:
-  provider: gemini # Who turns memory text into vectors: local (the sidecar in sidecar/embeddings, compose profile local-embeddings), gemini or openai (needs OPENAI_API_KEY). A block that leaves this out uses local; this file pins gemini so the Pi keeps its vectors until the sidecar passes its Pi memory check (docs/runbook.md). EMBEDDINGS_PROVIDER overrides it
+  provider: gemini # Who turns memory text into vectors: local (the sidecar in sidecar/embeddings, compose profile local-embeddings), gemini or openai (needs OPENAI_API_KEY). A block that leaves this out uses local; this file pins gemini so the Pi keeps its vectors until the sidecar passes its Pi memory check (docs/RUNBOOK.md). EMBEDDINGS_PROVIDER overrides it
   # model: gemini-embedding-2 # Optional; each provider defaults to its tested model: gemini-embedding-2 (768 dimensions), Xenova/multilingual-e5-small@761b726d-q8 (384), text-embedding-3-small (1536)
   timeoutMs: 1500 # Maximum wait for one embedding before memory fails open to keyword recall (replaces memory.embeddingTimeoutMs)
   sidecarUrl: http://embeddings:8080 # Where the bot reaches the local sidecar; the compose service name resolves on the compose network

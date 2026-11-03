@@ -50,9 +50,6 @@ temp/
 *.tsx
 *.js
 
-# Local-only history logs (git-excluded)
-docs/progress.md
-docs/decisions.md
 graphify-out/
 
 # Captured fixtures stay byte-exact

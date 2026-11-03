@@ -47,7 +47,7 @@ describe('live-gate trial pacing', { timeout: 30_000 }, () => {
     expect(callsPerMinute).toBeLessThanOrEqual(config.rateLimit.rpm)
   })
 
-  // docs/decisions.md, Gate-1 amendment 2026-07-29: never below 12000. The derived floor is above it at
+  // Gate-1 amendment 2026-07-29: never below 12000. The derived floor is above it at
   // today's config, so this drives the branch that would otherwise never run — a cheaper `maxLlmCalls`
   // makes the derivation alone return 4000, and the amendment is what refuses it.
   it('never paces faster than the Gate-1 floor, however cheap the derivation gets', async () => {

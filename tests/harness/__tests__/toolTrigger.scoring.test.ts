@@ -75,7 +75,7 @@ describe('tool-trigger fixture integrity', () => {
   })
 
   // R6 collides with its own seeded world on purpose. That is normally a fixture defect — the 2026-07-29
-  // rule in docs/decisions.md says a live-eval case must not restate what the world already holds — and it
+  // rule says a live-eval case must not restate what the world already holds — and it
   // is the stated exception, because #118's carve-out ("call it even if you already know the fact") cannot
   // be exercised by a case whose fact is new. Asserting the collision keeps a future tidy-up from removing
   // the only thing testing that clause.
@@ -475,7 +475,7 @@ describe('tool-trigger scoring verdict', () => {
     expect(meetsLiveVerdict(report)).toBe(true)
   })
 
-  // main's per-case fire rates (docs/progress.md:529), rounded to trial counts at 3 trials: N1
+  // main's per-case fire rates, rounded to trial counts at 3 trials: N1
   // 7/9->2/3, N2 2/9->1/3, N3 1/9->0/3, N4 0/9->0/3, N5 9/9->3/3, N6 3/9->1/3 — FP=7, the modal
   // total, now attributed to the case (N5) that actually drives it. main is red in 98.47% of real
   // runs, not deterministically: the exact central-95% interval for FP is [5, 10] (not a normal

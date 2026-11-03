@@ -289,7 +289,7 @@ describe('harness token measurement', () => {
     // Bound systemTok (core + speech + tone + context) only, not totalTok. The runtime
     // "What You Remember About People In This Channel" facts block scales with channel
     // population, so bounding the whole request would make this gate flap on a busy
-    // server instead of on a code change — see AGENTS.md / docs/trd.md.
+    // server instead of on a code change — see docs/TRD.md.
     // The context layer stopped scaling with the channel's population when the group-conversation roster
     // was removed (#52), so the only name it still carries is the speaker's — worst case is one long one.
     const worstCaseDisplayName = 'Bartholomew Christopherson-Yamanaka'

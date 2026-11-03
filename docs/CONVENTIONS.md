@@ -25,9 +25,9 @@ Scripts live in `package.json`. It cannot tell you these:
 
 - **Casing:** TitleCase for headings, table headers and bold bullet labels. Never re-case identifiers, paths, commands, config keys, env vars, model IDs or URLs.
 - **Docs Names:** files directly in `docs/` are in full uppercase. Files in its subfolders stay lowercase.
-- **Architecture:** it lives in `docs/trd.md` and `docs/trd/`. Do not create `docs/architecture.md`.
+- **Architecture:** it lives in `docs/TRD.md` and `docs/trd/`. Do not create `docs/architecture.md`.
 - **Planning Files:** design documents go in `docs/specs/YYYY-MM-DD-topic.md`. Plans and run notes go in `.superpowers/`. This overrides any skill's default path.
-- **Local History:** `docs/decisions.md` and `docs/progress.md` are git-excluded logs. Check the first before reversing an earlier choice.
+- **Decisions:** check `docs/DECISIONS.md` before reversing an earlier choice. A new lasting decision adds a row in the PR that makes it.
 
 ## Shipping
 

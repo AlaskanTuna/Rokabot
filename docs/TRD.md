@@ -7,8 +7,8 @@ The canonical index of Rokabot's technical contracts. Each subsystem has one mod
 - **Canonical:** this index and its modules are the contract. Code, tests and guides follow them.
 - **One Owner per Fact:** a behavior, limit, default or key lives in one module. Other pages link to it.
 - **Start Here:** [System](trd/system.md) walks one turn end to end and links every other module.
-- **Requirements:** [Product Requirements](prd.md) says what the bot must do. These modules say how.
-- **Operations:** the [Runbook](runbook.md) holds commands. The guides under [`guide/`](guide/getting-started.md) hold setup.
+- **Requirements:** [Product Requirements](PRD.md) says what the bot must do. These modules say how.
+- **Operations:** the [Runbook](RUNBOOK.md) holds commands. The guides under [`guide/`](guide/getting-started.md) hold setup.
 
 ## Modules
 

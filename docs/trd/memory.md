@@ -271,7 +271,7 @@ The predicate list and tiers live in `src/agent/memory/predicates.ts`.
 - **Audit:** `claim_reclassified` rows with `detail` `{ oldId, newId, from, to, probability, created }`, no values,
   exempt from the `metrics.retentionDays` prune.
 - **Undo:** `undoReclassify(oldClaimId)` reactivates the old row and, when `created`, ends the replacement as
-  `removed`. Dev: `npm run memory:undo-reclassify -- <old claim id>`. Production: [Runbook](../runbook.md).
+  `removed`. Dev: `npm run memory:undo-reclassify -- <old claim id>`. Production: [Runbook](../RUNBOOK.md).
 
 ## Privacy Modes
 

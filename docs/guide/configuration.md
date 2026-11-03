@@ -64,7 +64,7 @@ Other environment variables:
 tested profile, so `gemini-3.8-flash` is a candidate and startup refuses it as `llm.main`; it reaches native search
 only through a legacy `gemini.model`. On any other model the bot starts without `search_web` and logs a warning naming
 the model and the fix. The two Gemini models are mock-tested only: their native search has never run against the live
-API, because the two non-production keys returned 429 on grounded calls. See [Runbook](../runbook.md#web-search-provider).
+API, because the two non-production keys returned 429 on grounded calls. See [Runbook](../RUNBOOK.md#web-search-provider).
 
 ## `jev`
 

@@ -1,15 +1,17 @@
 # Keep the knowledge graph focused. Merged with .gitignore (! re-includes).
 docs/*
-!docs/prd.md
-!docs/trd.md
+!docs/PRD.md
+!docs/TRD.md
 !docs/trd/
 !docs/guide/
-!docs/README.md
-!docs/runbook.md
+!docs/RUNBOOK.md
 !docs/research/
-!docs/decisions.md
+!docs/DECISIONS.md
+!docs/CONVENTIONS.md
+!docs/agents/
 .claude/
 CLAUDE.md
+GEMINI.md
 data/
 assets/
 *.pdf

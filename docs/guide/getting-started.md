@@ -146,7 +146,7 @@ To run without a clone, or to update and roll back, follow [Docker](../deploy/do
 - **Tune the Bot:** [Configuration](configuration.md).
 - **Choose Models:** [Models](models.md).
 - **Deploy to a Platform:** [Docker](../deploy/docker.md), [Coolify](../deploy/coolify.md), [Fly.io](../deploy/fly.md), [Railway](../deploy/railway.md), [Render](../deploy/render.md).
-- **Operate the Bot:** [Runbook](../runbook.md).
+- **Operate the Bot:** [Runbook](../RUNBOOK.md).
 
 ## Source Files
 

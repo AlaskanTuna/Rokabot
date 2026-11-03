@@ -59,6 +59,13 @@ describe('pullRequestProblems', () => {
 })
 
 describe('labels.yml', () => {
+  it('gives every label a colour gh accepts, which YAML can misread as a number', () => {
+    const raw = readFileSync(new URL('../../.github/labels.yml', import.meta.url), 'utf8')
+    for (const label of yaml.load(raw) as Array<{ color: unknown }>) {
+      expect(label.color).toMatch(/^[0-9a-fA-F]{6}$/)
+    }
+  })
+
   it('covers the commitlint vocabulary', async () => {
     const live = await loadVocabulary()
     const raw = readFileSync(new URL('../../.github/labels.yml', import.meta.url), 'utf8')

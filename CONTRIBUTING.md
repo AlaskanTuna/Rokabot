@@ -16,7 +16,7 @@ Every issue and pull request carries a `type:` label, an `area:` label and an as
 
 ## Pull Requests
 
-Fill in the template: Summary, Evidence and Merge Danger. Name the issue the pull request closes. When a change alters a contract, update its [TRD](docs/trd.md) module in the same pull request.
+Fill in the template: Summary, Evidence and Merge Danger. Name the issue the pull request closes. When a change alters a contract, update its [TRD](docs/TRD.md) module in the same pull request.
 
 ## Gates
 

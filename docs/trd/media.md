@@ -218,7 +218,7 @@ The `asr` container (`asr/server.py`, sherpa-onnx) transcribes audio for the Qwe
 4. `media.transcriber.timeoutMs` bounds the whole video. Windows not reached are skipped.
 5. Segments go to Qwen as a separate untrusted text part (6,000 characters at most). The coverage line reads `16 frames, speech heard from a transcript but not music or other sound`.
 
-A failed or empty transcript leaves a frames-only watch (`heard: 'none'`), with reason `disabled`, `no_audio`, `timeout`, `unreachable`, `http_<status>` or `invalid`. The sidecar has no published port, runs one request at a time, and is capped at 2 GiB and 3 CPUs. See the [Runbook](../runbook.md).
+A failed or empty transcript leaves a frames-only watch (`heard: 'none'`), with reason `disabled`, `no_audio`, `timeout`, `unreachable`, `http_<status>` or `invalid`. The sidecar has no published port, runs one request at a time, and is capped at 2 GiB and 3 CPUs. See the [Runbook](../RUNBOOK.md).
 
 ### Digest and Turn Input
 
@@ -241,7 +241,7 @@ In a server turn with memory on, each digest is saved per guild in `media_digest
 
 - Watcher calls come out of the turn's reserved `gemini.maxLlmCalls`. ADK gets `max(1, maxLlmCalls − watcherCalls)`.
 - The watcher's billed prompt tokens are charged to the token bucket. A timed-out call is charged its estimate.
-- Each watch logs one `Watched media` line. The [Runbook](../runbook.md) lists its fields.
+- Each watch logs one `Watched media` line. The [Runbook](../RUNBOOK.md) lists its fields.
 
 ### Footer
 

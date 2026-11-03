@@ -75,7 +75,7 @@ Set `memory.privacy` in `config.yml`, or `MEMORY_PRIVACY` in `.env`, then restar
 - **Only Their Own:** a member cannot make her forget someone else's notes or server facts.
 - **No Opt-Out Command:** there is no per-member opt-out. To stop all learning, set `memory.privacy: off`. To keep a
   channel out, do not mention Roka there; monitoring ends 24 hours after the last trigger.
-- **Owner Deletes:** to remove rows by hand, follow the database steps in the [Runbook](../runbook.md).
+- **Owner Deletes:** to remove rows by hand, follow the database steps in the [Runbook](../RUNBOOK.md).
 
 ## Key Settings
 
@@ -100,7 +100,7 @@ Every key, default and bound is in [Configuration](configuration.md#memory). The
 ## Maintenance Scripts
 
 Run these from a repository checkout. Set `ROKABOT_DB_PATH` to point a script at the live database. Stop the bot and
-back up `data/rokabot.db` before the migration. The [Runbook](../runbook.md) has the production steps.
+back up `data/rokabot.db` before the migration. The [Runbook](../RUNBOOK.md) has the production steps.
 
 | Command                                           | What It Does                                                                                              |
 | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
