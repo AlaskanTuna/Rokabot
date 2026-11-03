@@ -50,7 +50,7 @@ In the stack it runs as the `embeddings` service under the compose profile `loca
 
 ## Tests
 
-`npm test` in the repository root runs `src/__tests__/` with a stubbed pipeline. It downloads no model.
+`npm test` in the repository root runs these specs with a stubbed pipeline, along with the rest of the suite. It downloads no model.
 
 ## Smoke Test
 

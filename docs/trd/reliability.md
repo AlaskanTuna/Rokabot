@@ -76,8 +76,8 @@ even at `OFF`.
 
 ## The Retry Loop
 
-`runTurnWithReliability` (`src/agent/reliability.ts`) runs one turn. The user message goes out on the first attempt.
-A later attempt sends it again only after a session reset.
+`runTurnWithReliability` (`src/agent/reliability.ts`) runs one turn. The user message goes out on every attempt.
+A retry carries the same message with a marker so the session does not store it twice. Only the state delta is limited to the first attempt and a reset session.
 
 ![Live turn retry loop: attempt, classify, safety rung, model switch, retry gate, backoff and the two outcomes](../diagrams/reliability-retry.svg)
 

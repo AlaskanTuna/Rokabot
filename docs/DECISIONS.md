@@ -85,12 +85,14 @@ The lasting choices behind Rokabot, with why they were made. Check here before r
 
 ## Repository
 
-| Date       | Decision                                                                                     | Why                                                          |
-| ---------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| 2026-07-29 | Live-model behavior runs in its own gate outside the offline correctness and latency gates   | A network hiccup must not read as a regression               |
-| 2026-07-30 | Every numeric tunable lives in one bounded registry with environment overrides               | One registry means one place to keep in sync                 |
-| 2026-09-24 | The generated knowledge graph is committed, and graph-only changes skip deployment           | Keeps the map fresh without redeploying the bot              |
-| 2026-11-03 | `AGENTS.md` is a short router to modular rule files                                          | Agents read it on every turn, so it stays short              |
-| 2026-11-03 | `README.md` lives at the root, reversing the 2026-07-23 choice of `docs/README.md`           | It is where readers and tools look first                     |
-| 2026-11-03 | Issue and PR labels come from Conventional Commit titles, and a required check enforces them | One vocabulary, and a valid title is all a contributor needs |
-| 2026-11-03 | Design documents are tracked in `docs/specs/`, while plans and run notes stay local          | Designs outlast the work, and plans go stale once merged     |
+| Date       | Decision                                                                                     | Why                                                                                    |
+| ---------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| 2026-07-29 | Live-model behavior runs in its own gate outside the offline correctness and latency gates   | A network hiccup must not read as a regression                                         |
+| 2026-07-30 | Every numeric tunable lives in one bounded registry with environment overrides               | One registry means one place to keep in sync                                           |
+| 2026-09-24 | The generated knowledge graph is committed, and graph-only changes skip deployment           | Keeps the map fresh without redeploying the bot                                        |
+| 2026-11-03 | `AGENTS.md` is a short router to modular rule files                                          | Agents read it on every turn, so it stays short                                        |
+| 2026-11-03 | `README.md` lives at the root, reversing the 2026-07-23 choice of `docs/README.md`           | It is where readers and tools look first                                               |
+| 2026-11-03 | Issue and PR labels come from Conventional Commit titles, and a required check enforces them | One vocabulary, and a valid title is all a contributor needs                           |
+| 2026-11-03 | Design documents are tracked in `docs/specs/`, while plans and run notes stay local          | Designs outlast the work, and plans go stale once merged                               |
+| 2026-11-04 | The Pi watches video with Gemini, with Qwen as the backup                                    | A 202-second video went from 78 s to 21 s end to end; removing Qwen is tracked in #442 |
+| 2026-11-04 | Embed videos are watched only through Discord's proxy URL                                    | A sender's own URL would make the Pi contact a host they chose                         |

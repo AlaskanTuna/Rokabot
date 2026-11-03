@@ -12,7 +12,7 @@ jev:
   referents: shadow # off | shadow | on (Jev settles names the resolver found ambiguous)
   prefetch: shadow # off | shadow (ask Jev, log and persist what it would have prefetched, change nothing) | on (search ahead of the first Gemini call when the noul clears the threshold); stays shadow because a live A/B lost recall and latency (docs/RUNBOOK.md)
   toneMinProbability: 0.3 # Selected-choice probability (0..1) below which the regex tone stays; on 163 labeled production turns Jev matched or beat the regex in every band from 0.3 up (docs/RUNBOOK.md)
-  prefetchMinNoul: 0.7 # In on mode, the needs_lookup probability at or above which a Tavily search starts at handler entry
+  prefetchMinNoul: 0.7 # In on mode, the needs_lookup probability at or above which a Tavily or Exa search starts at handler entry
   prefetchWaitMs: 4000 # How long the first Gemini call waits for a started prefetch before answering without it; a slower or failed search costs the turn at most this much
   referentMinConfidence: 0.8 # In on mode, below this confidence an ambiguous name stays unresolved
 
@@ -99,7 +99,7 @@ search:
   nativeReserveMs: 5000 # Attempt time a native search must leave for the chat model's next call
 
 media:
-  watcher: gemini # How Roka takes in audio and video. gemini or qwen (frames + speech transcript on ModelScope) watches it first and she replies from the notes, the other taking over when it fails; direct sends the file straight to the reply model, with no backup; off neither watches nor sends it and tells her so. The Pi sets MEDIA_WATCHER=qwen
+  watcher: gemini # How Roka takes in audio and video. gemini or qwen (frames + speech transcript on ModelScope) watches it first and she replies from the notes, the other taking over when it fails; direct sends the file straight to the reply model, with no backup; off neither watches nor sends it and tells her so
   qwen:
     model: Qwen/Qwen3.5-35B-A3B # ModelScope vision model for the qwen watcher; 35B-A3B measured fastest and most specific (5-12 s for 16 frames)
     secondsPerFrame: 4 # One frame per this many seconds of the watched span, one per timeline bin, between minFrames and maxFrames

@@ -61,8 +61,8 @@ A link to a supported social post goes to [Social Post Viewing](#social-post-vie
 
 A turn with files passes these checks in order. Each refusal takes the in-character busy or decline reply. [Reliability](./reliability.md) covers the rate limiter and token bucket.
 
-1. **Fit:** `fitAttachmentsToTurn` keeps candidates in intake order while the count stays ≤ 10, there is at most one audio or video item, and the reservation stays ≤ `discord.maxAttachmentBytesPerTurn`. It continues past a candidate that does not fit. Skipped files add a "left out" notice for the model.
-2. **Rate Limit:** an advisory `canAdmitCalls(gemini.maxLlmCalls)` check.
+1. **Rate Limit:** an advisory `canAdmitCalls(gemini.maxLlmCalls)` check.
+2. **Fit:** `fitAttachmentsToTurn` keeps candidates in intake order while the count stays ≤ 10, there is at most one audio or video item, and the reservation stays ≤ `discord.maxAttachmentBytesPerTurn`. It continues past a candidate that does not fit. Skipped files add a "left out" notice for the model.
 3. **Token Minute:** `canAffordAttachments` needs one whole `gemini.maxAttachmentTokens` left in this minute's token bucket.
 4. **Call Reservation:** the turn reserves `gemini.maxLlmCalls` calls.
 5. **Byte Budget:** `tryReserve` takes the turn's reservation from the global in-flight budget.
@@ -332,7 +332,8 @@ The `read_replies` tool (`src/agent/tools/readReplies.ts`) fetches a post's repl
 | `gemini.maxAttachmentTokens`         | 125,000                | 10,890 to 125,000                 |
 | `gemini.maxTokensPerMinute`          | 125,000                | `maxAttachmentTokens` to 125,000  |
 | `media.watcher`                      | `gemini`               | `gemini`, `qwen`, `direct`, `off` |
-| `media.watchTimeoutMs`               | 20,000                 | 5,000 to 60,000                   |
+| `media.embedWaitMs`                  | 2,000                  | 0 to 5,000                        |
+| `media.watchTimeoutMs`               | 30,000                 | 5,000 to 60,000                   |
 | `media.digestMaxOutputTokens`        | 3,200                  | 400 to 4,000                      |
 | `media.skimClips`                    | 8                      | 3 to 9                            |
 | `media.skimClipSeconds`              | 10                     | 2 to 30                           |
