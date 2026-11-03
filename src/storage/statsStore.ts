@@ -1,4 +1,4 @@
-import { getDb } from '../../../storage/database.js'
+import { getDb } from './database.js'
 
 export interface CountByTone {
   tone: string

@@ -1,39 +1,20 @@
 import { config } from '../../config.js'
-import { getDb } from '../../storage/database.js'
 import { getClaimSourceChannels } from '../../storage/memoryRecallStore.js'
 import { recordMemoryEvent } from '../../storage/metricsStore.js'
 import { getAllUserNames } from '../../storage/userNames.js'
 import { getLocalDate } from '../../utils/timezone.js'
 import { estimateTokens } from '../../utils/tokens.js'
 import { factKey } from './factSentences.js'
-import type { ClaimPeriod, ClaimSource, GuildMemoryClaim, UserMemoryClaim } from './memoryClaims.js'
-import { getActiveGuildClaims, touchRecalled } from './memoryClaims.js'
+import type { GuildMemoryClaim, UserMemoryClaim } from './memoryClaims.js'
+import {
+  SOURCE_WEIGHT,
+  getActiveClaimsForUsers,
+  getActiveGuildClaims,
+  searchClaimIds,
+  touchRecalled
+} from './memoryClaims.js'
 import { PREDICATES, type PredicateId, predicateCategory, routeTopics } from './predicates.js'
 import { type RecallScope, canRecall } from './privacy.js'
-
-type ClaimRow = {
-  id: number
-  guild_id: string
-  subject_kind: 'user'
-  subject_user_id: string
-  predicate: PredicateId
-  value: string
-  object_kind: 'user' | null
-  object_user_id: string | null
-  source_kind: ClaimSource
-  status: UserMemoryClaim['status']
-  period: string
-  confidence: number
-  salience: number
-  pinned: number
-  needs_review: number
-  superseded_by: number | null
-  first_seen_at: number
-  last_seen_at: number
-  last_recalled_at: number | null
-  expires_at: number | null
-  event_date: string | null
-}
 
 export type RetrieveForTurnInput = Readonly<{
   guildId: string
@@ -60,76 +41,11 @@ export type RetrievalResult = Readonly<{
   trace: RetrievalTrace
 }>
 
-const SOURCE_WEIGHT: Readonly<Record<ClaimSource, number>> = {
-  explicit: 1,
-  human: 1,
-  passive: 0.75,
-  legacy: 0.5
-}
-
-function mapClaim(row: ClaimRow): UserMemoryClaim {
-  return {
-    id: row.id,
-    guildId: row.guild_id,
-    subjectKind: 'user',
-    subjectUserId: row.subject_user_id,
-    predicate: row.predicate,
-    value: row.value,
-    objectKind: row.object_kind,
-    objectUserId: row.object_user_id,
-    sourceKind: row.source_kind,
-    status: row.status,
-    period: row.period as ClaimPeriod,
-    confidence: row.confidence,
-    salience: row.salience,
-    pinned: row.pinned === 1,
-    needsReview: row.needs_review === 1,
-    supersededBy: row.superseded_by,
-    firstSeenAt: row.first_seen_at,
-    lastSeenAt: row.last_seen_at,
-    lastRecalledAt: row.last_recalled_at,
-    expiresAt: row.expires_at,
-    eventDate: row.event_date
-  }
-}
-
 /** At `relaxed` the lookup is skipped entirely so the legacy queries stay byte-identical. */
 function withinScope<T extends { id: number }>(items: T[], scope: RecallScope | undefined): T[] {
   if (!scope || config.memory.privacy === 'relaxed') return items
   const sources = getClaimSourceChannels(items.map(({ id }) => id))
   return items.filter((item) => canRecall(sources.get(item.id) ?? [null], scope))
-}
-
-function getActiveClaims(guildId: string, userIds: string[]): UserMemoryClaim[] {
-  if (userIds.length === 0) return []
-  const placeholders = userIds.map(() => '?').join(', ')
-  const rows = getDb()
-    .prepare(
-      `SELECT * FROM memory_claim
-       WHERE guild_id = ? AND subject_kind = 'user' AND status = 'active' AND subject_user_id IN (${placeholders})`
-    )
-    .all(guildId, ...userIds) as ClaimRow[]
-  return rows.map(mapClaim)
-}
-
-export function searchClaimIds(guildId: string, userIds: string[], message: string): Set<number> {
-  const terms = [...new Set(message.toLowerCase().match(/[a-z0-9]{2,}/g) ?? [])].slice(0, 12)
-  if (userIds.length === 0 || terms.length === 0) return new Set()
-
-  const placeholders = userIds.map(() => '?').join(', ')
-  const query = terms.map((term) => `"${term}"`).join(' OR ')
-  const rows = getDb()
-    .prepare(
-      `SELECT memory_claim.id FROM memory_claim
-       JOIN memory_claim_fts ON memory_claim.id = memory_claim_fts.rowid
-       WHERE memory_claim.guild_id = ? AND memory_claim.subject_kind = 'user' AND memory_claim.status = 'active'
-         AND memory_claim.needs_review = 0 AND memory_claim.subject_user_id IN (${placeholders})
-         AND memory_claim_fts MATCH ?
-       ORDER BY bm25(memory_claim_fts), memory_claim.salience DESC
-       LIMIT ?`
-    )
-    .all(guildId, ...userIds, query, config.memory.maxClaimsPerTurn * 3) as Array<{ id: number }>
-  return new Set(rows.map(({ id }) => id))
 }
 
 function scoreClaim(
@@ -207,7 +123,7 @@ export function retrieveForSubject(
   limit: number,
   scope?: RecallScope
 ): RetrievedClaim[] {
-  const activeClaims = withinScope(getActiveClaims(guildId, [subjectUserId]), scope)
+  const activeClaims = withinScope(getActiveClaimsForUsers(guildId, [subjectUserId]), scope)
   const ftsIds = searchClaimIds(guildId, [subjectUserId], message)
   const routedPredicates = routedPredicatesFor(message)
   const now = Date.now()
@@ -225,7 +141,7 @@ export function retrieveForTurn(input: RetrieveForTurnInput): RetrievalResult {
     config.memory.recentParticipantLimit
   )
   const userIds = [input.speakerId, ...participantIds]
-  const activeClaims = withinScope(getActiveClaims(input.guildId, userIds), input.scope)
+  const activeClaims = withinScope(getActiveClaimsForUsers(input.guildId, userIds), input.scope)
   const ftsIds = searchClaimIds(input.guildId, userIds, input.message)
   const routedPredicates = routedPredicatesFor(input.message)
   const now = Date.now()

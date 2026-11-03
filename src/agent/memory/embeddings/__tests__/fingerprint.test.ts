@@ -5,7 +5,7 @@ import {
   embeddingDimensions,
   embeddingFingerprint,
   isEmbeddingVector
-} from '../fingerprint.js'
+} from '../../../../storage/vectorProvenance.js'
 
 describe('embedding fingerprints', () => {
   it('names the provider, model, dimension and preprocessing', () => {

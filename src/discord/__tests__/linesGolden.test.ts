@@ -57,7 +57,7 @@ vi.mock('../commands/stats/charts.js', async (importOriginal) => ({
   renderMemoryGrowth: async () => null,
   renderMoodDonut: async () => null
 }))
-vi.mock('../commands/stats/queries.js', () => {
+vi.mock('../../storage/statsStore.js', () => {
   const either =
     <T>(rich: T, empty: T) =>
     () =>

@@ -379,5 +379,5 @@ The bot starts but logs a warning when:
 - `.env.example`
 - `src/config.ts` (loader, `requiredEnv`, `NUMERIC_BOUNDS`)
 - `src/agent/llm/profiles.ts` (tested model profiles)
-- `src/agent/memory/embeddings/fingerprint.ts` (embedding defaults)
+- `src/storage/vectorProvenance.ts` (embedding defaults)
 - `docker-compose.yml` (compose variables)

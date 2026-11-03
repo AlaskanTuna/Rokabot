@@ -2,20 +2,20 @@ import type { LlmRequest } from '@google/adk'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 describe('config module', () => {
-  const warn = vi.fn()
-
   beforeEach(() => {
     vi.resetModules()
-    warn.mockReset()
-    vi.doMock('../utils/logger.js', () => ({ logger: { warn } }))
   })
 
   afterEach(() => {
     vi.unstubAllEnvs()
-    vi.doUnmock('../utils/logger.js')
     vi.doUnmock('js-yaml')
     vi.doUnmock('../agent/llm/profiles.js')
   })
+
+  async function warningMessages(): Promise<string[]> {
+    const { startupWarnings } = await import('../config.js')
+    return startupWarnings.map((warning) => warning.message)
+  }
 
   /** Shallow-recursive merge used only to layer a test override onto the real parsed config.yml */
   function merge(base: unknown, override: Record<string, unknown>): unknown {
@@ -175,7 +175,6 @@ describe('config module', () => {
     clearTunableEnvVars()
 
     const { config } = await import('../config.js')
-    await vi.dynamicImportSettled()
 
     expect(config.gemini.model).toBe('gemini-3.5-flash-lite')
     expect(config.gemini.extractionModel).toBe(config.gemini.model)
@@ -311,7 +310,7 @@ describe('config module', () => {
     // Status cycle
     expect(config.statusCycleMs).toBe(900_000)
     expect(config.updates).toEqual({ notify: true, repo: 'AlaskanTuna/Rokabot', checkIntervalHours: 24 })
-    expect(warn).not.toHaveBeenCalled()
+    expect(await warningMessages()).toEqual([])
   })
 
   it.each([
@@ -764,7 +763,6 @@ describe('config module', () => {
       })
 
       const { config } = await import('../config.js')
-      await vi.dynamicImportSettled()
 
       expect(config.search).toEqual({
         provider: 'native',
@@ -772,7 +770,7 @@ describe('config module', () => {
         nativeTimeoutMs: 8000,
         nativeReserveMs: 5000
       })
-      expect(warn).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('has no web search'))
+      expect(await warningMessages()).not.toContainEqual(expect.stringContaining('has no web search'))
     })
 
     // The legacy route copies its family's profile for an untested `gemini.model`, so the copy's capabilities
@@ -783,8 +781,7 @@ describe('config module', () => {
       vi.stubEnv('SEARCH_PROVIDER', 'native')
       vi.stubEnv('GEMINI_MODEL', 'gemini-2.0-flash-lite')
 
-      const { config } = await import('../config.js')
-      await vi.dynamicImportSettled()
+      const { config, startupWarnings } = await import('../config.js')
 
       expect(config.search).toEqual({
         provider: 'native',
@@ -792,10 +789,11 @@ describe('config module', () => {
         nativeTimeoutMs: 8000,
         nativeReserveMs: 5000
       })
-      expect(warn).toHaveBeenCalledWith(
-        { provider: 'native' },
-        'search.provider is native, but gemini-2.0-flash-lite has no web search, so Roka runs without it. Set search.provider to tavily or exa to search with an API key.'
-      )
+      expect(startupWarnings).toContainEqual({
+        fields: { provider: 'native' },
+        message:
+          'search.provider is native, but gemini-2.0-flash-lite has no web search, so Roka runs without it. Set search.provider to tavily or exa to search with an API key.'
+      })
     })
 
     it('marks off unavailable without warning', async () => {
@@ -804,7 +802,6 @@ describe('config module', () => {
       withYamlOverride({ search: { provider: 'off' } })
 
       const { config } = await import('../config.js')
-      await vi.dynamicImportSettled()
 
       expect(config.search).toEqual({
         provider: 'off',
@@ -812,7 +809,7 @@ describe('config module', () => {
         nativeTimeoutMs: 8000,
         nativeReserveMs: 5000
       })
-      expect(warn).not.toHaveBeenCalled()
+      expect(await warningMessages()).toEqual([])
     })
 
     it.each([
@@ -824,33 +821,29 @@ describe('config module', () => {
       vi.stubEnv('SEARCH_PROVIDER', provider)
       vi.stubEnv(key, '')
 
-      const { config } = await import('../config.js')
-      await vi.dynamicImportSettled()
+      const { config, startupWarnings } = await import('../config.js')
 
       expect(config.search).toEqual({ provider, available: true, nativeTimeoutMs: 8000, nativeReserveMs: 5000 })
-      expect(warn).toHaveBeenCalledWith(
-        { provider },
-        `search.provider is ${provider}, but ${key} is not set, so search_web will report that search is not configured.`
-      )
+      expect(startupWarnings).toContainEqual({
+        fields: { provider },
+        message: `search.provider is ${provider}, but ${key} is not set, so search_web will report that search is not configured.`
+      })
     })
 
-    // One load reaches warnAfterStartup's logger only once, so a provider that fires two warnings is split
-    // across two tests: each asserts the single warning its own condition produces.
     it('runs jev.prefetch on as shadow under off, and warns', async () => {
       setRequiredEnvVars()
       clearTunableEnvVars()
       vi.stubEnv('SEARCH_PROVIDER', 'off')
       vi.stubEnv('JEV_PREFETCH', 'on')
 
-      const { config } = await import('../config.js')
-      await vi.dynamicImportSettled()
+      const { config, startupWarnings } = await import('../config.js')
 
       expect(config.jev.prefetch).toBe('shadow')
       expect(config.search.available).toBe(false)
-      expect(warn).toHaveBeenCalledWith(
-        { provider: 'off' },
-        'jev.prefetch is on, but search.provider is off, so prefetch runs as shadow.'
-      )
+      expect(startupWarnings).toContainEqual({
+        fields: { provider: 'off' },
+        message: 'jev.prefetch is on, but search.provider is off, so prefetch runs as shadow.'
+      })
     })
 
     it('runs jev.prefetch on as shadow under native', async () => {
@@ -858,11 +851,8 @@ describe('config module', () => {
       clearTunableEnvVars()
       vi.stubEnv('SEARCH_PROVIDER', 'native')
       vi.stubEnv('JEV_PREFETCH', 'on')
-      // Two warnings cannot both reach the mock in one load, so the second escapes to the real logger.
-      vi.stubEnv('LOG_LEVEL', 'error')
 
       const { config } = await import('../config.js')
-      await vi.dynamicImportSettled()
 
       // The legacy route runs a model that now supports native, so search is available; prefetch stays shadow
       // anyway, because only a keyed backend can answer inside `jev.prefetchWaitMs`.
@@ -878,10 +868,9 @@ describe('config module', () => {
       vi.stubEnv('SEARCH_PROVIDER', 'exa')
 
       const { config } = await import('../config.js')
-      await vi.dynamicImportSettled()
 
       expect(config.jev.prefetch).toBe('on')
-      expect(warn).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('prefetch runs as shadow'))
+      expect(await warningMessages()).not.toContainEqual(expect.stringContaining('prefetch runs as shadow'))
     })
 
     // Neither setting names a provider, so search runs on the main model and bills that provider. The
@@ -895,14 +884,14 @@ describe('config module', () => {
         llm: { main: 'haiku', models: { haiku: { provider: 'anthropic', model: 'claude-haiku-5-5' } } }
       })
 
-      const { config } = await import('../config.js')
-      await vi.dynamicImportSettled()
+      const { config, startupWarnings } = await import('../config.js')
 
       expect(config.search.provider).toBe('native')
-      expect(warn).toHaveBeenCalledWith(
-        { provider: 'native', model: 'claude-haiku-5-5' },
-        'search.provider is unset, so web search runs on claude-haiku-5-5 and bills that provider. A free-tier Gemini key cannot search. Set search.provider to tavily, exa or off to choose another.'
-      )
+      expect(startupWarnings).toContainEqual({
+        fields: { provider: 'native', model: 'claude-haiku-5-5' },
+        message:
+          'search.provider is unset, so web search runs on claude-haiku-5-5 and bills that provider. A free-tier Gemini key cannot search. Set search.provider to tavily, exa or off to choose another.'
+      })
     })
 
     it('warns when search.provider is an empty YAML key', async () => {
@@ -914,14 +903,14 @@ describe('config module', () => {
         llm: { main: 'haiku', models: { haiku: { provider: 'anthropic', model: 'claude-haiku-5-5' } } }
       })
 
-      const { config } = await import('../config.js')
-      await vi.dynamicImportSettled()
+      const { config, startupWarnings } = await import('../config.js')
 
       expect(config.search.provider).toBe('native')
-      expect(warn).toHaveBeenCalledWith(
-        { provider: 'native', model: 'claude-haiku-5-5' },
-        'search.provider is unset, so web search runs on claude-haiku-5-5 and bills that provider. A free-tier Gemini key cannot search. Set search.provider to tavily, exa or off to choose another.'
-      )
+      expect(startupWarnings).toContainEqual({
+        fields: { provider: 'native', model: 'claude-haiku-5-5' },
+        message:
+          'search.provider is unset, so web search runs on claude-haiku-5-5 and bills that provider. A free-tier Gemini key cannot search. Set search.provider to tavily, exa or off to choose another.'
+      })
     })
 
     it.each([
@@ -938,9 +927,8 @@ describe('config module', () => {
       })
 
       await import('../config.js')
-      await vi.dynamicImportSettled()
 
-      expect(warn).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('search.provider is unset'))
+      expect(await warningMessages()).not.toContainEqual(expect.stringContaining('search.provider is unset'))
     })
 
     it('bounds the native search time and its reserve', async () => {
@@ -1086,10 +1074,9 @@ describe('config module', () => {
     clearTunableEnvVars()
     vi.stubEnv('SESSION_TTL_MS', '50000')
 
-    await import('../config.js')
-    await vi.dynamicImportSettled()
+    const { startupWarnings } = await import('../config.js')
 
-    expect(warn).toHaveBeenCalledOnce()
+    expect(startupWarnings).toHaveLength(1)
   })
 
   it('warns when the turn deadline cannot reach all live retry attempts', async () => {
@@ -1097,13 +1084,13 @@ describe('config module', () => {
     clearTunableEnvVars()
     vi.stubEnv('GEMINI_TURN_DEADLINE_MS', '10000')
 
-    await import('../config.js')
-    await vi.dynamicImportSettled()
+    const { startupWarnings } = await import('../config.js')
 
-    expect(warn).toHaveBeenCalledWith(
-      expect.objectContaining({ turnDeadlineMs: 10_000, timeout: 20_000 }),
-      'Turn deadline is smaller than the requiredMs budget needed for all liveMaxRetries + 1 attempts, so the last attempt(s) can never be admitted'
-    )
+    expect(startupWarnings).toContainEqual({
+      fields: expect.objectContaining({ turnDeadlineMs: 10_000, timeout: 20_000 }),
+      message:
+        'Turn deadline is smaller than the requiredMs budget needed for all liveMaxRetries + 1 attempts, so the last attempt(s) can never be admitted'
+    })
   })
 
   it('warns when the turn deadline is below the live retry reachability budget', async () => {
@@ -1111,13 +1098,13 @@ describe('config module', () => {
     clearTunableEnvVars()
     vi.stubEnv('GEMINI_TURN_DEADLINE_MS', '39999')
 
-    await import('../config.js')
-    await vi.dynamicImportSettled()
+    const { startupWarnings } = await import('../config.js')
 
-    expect(warn).toHaveBeenCalledWith(
-      expect.objectContaining({ turnDeadlineMs: 39_999, timeout: 20_000 }),
-      'Turn deadline is smaller than the requiredMs budget needed for all liveMaxRetries + 1 attempts, so the last attempt(s) can never be admitted'
-    )
+    expect(startupWarnings).toContainEqual({
+      fields: expect.objectContaining({ turnDeadlineMs: 39_999, timeout: 20_000 }),
+      message:
+        'Turn deadline is smaller than the requiredMs budget needed for all liveMaxRetries + 1 attempts, so the last attempt(s) can never be admitted'
+    })
   })
 
   it('warns when the turn deadline leaves no room for all live retry attempts', async () => {
@@ -1125,13 +1112,13 @@ describe('config module', () => {
     clearTunableEnvVars()
     vi.stubEnv('GEMINI_TURN_DEADLINE_MS', '40000')
 
-    await import('../config.js')
-    await vi.dynamicImportSettled()
+    const { startupWarnings } = await import('../config.js')
 
-    expect(warn).toHaveBeenCalledWith(
-      expect.objectContaining({ turnDeadlineMs: 40_000, timeout: 20_000 }),
-      'Turn deadline is smaller than the requiredMs budget needed for all liveMaxRetries + 1 attempts, so the last attempt(s) can never be admitted'
-    )
+    expect(startupWarnings).toContainEqual({
+      fields: expect.objectContaining({ turnDeadlineMs: 40_000, timeout: 20_000 }),
+      message:
+        'Turn deadline is smaller than the requiredMs budget needed for all liveMaxRetries + 1 attempts, so the last attempt(s) can never be admitted'
+    })
   })
 
   it('warns when the turn deadline is just below the live retry reachability budget', async () => {
@@ -1139,11 +1126,10 @@ describe('config module', () => {
     clearTunableEnvVars()
     vi.stubEnv('GEMINI_TURN_DEADLINE_MS', '62999')
 
-    await import('../config.js')
-    await vi.dynamicImportSettled()
+    const { startupWarnings } = await import('../config.js')
 
-    expect(warn).toHaveBeenCalledWith(
-      {
+    expect(startupWarnings).toContainEqual({
+      fields: {
         turnDeadlineMs: 62_999,
         timeout: 20_000,
         liveMaxRetries: 2,
@@ -1151,8 +1137,9 @@ describe('config module', () => {
         retryBackoffCapMs: 12_000,
         requiredMs: 63_000
       },
-      'Turn deadline is smaller than the requiredMs budget needed for all liveMaxRetries + 1 attempts, so the last attempt(s) can never be admitted'
-    )
+      message:
+        'Turn deadline is smaller than the requiredMs budget needed for all liveMaxRetries + 1 attempts, so the last attempt(s) can never be admitted'
+    })
   })
 
   it('does not warn when the turn deadline equals the live retry reachability budget', async () => {
@@ -1161,9 +1148,8 @@ describe('config module', () => {
     vi.stubEnv('GEMINI_TURN_DEADLINE_MS', '63000')
 
     await import('../config.js')
-    await vi.dynamicImportSettled()
 
-    expect(warn).not.toHaveBeenCalled()
+    expect(await warningMessages()).toEqual([])
   })
 
   it('does not warn when configured live retries equal what the cumulative backoff cap can reach under minimum jitter', async () => {
@@ -1173,10 +1159,8 @@ describe('config module', () => {
     vi.stubEnv('GEMINI_TURN_DEADLINE_MS', '150000')
 
     await import('../config.js')
-    await vi.dynamicImportSettled()
 
-    expect(warn).not.toHaveBeenCalledWith(
-      expect.any(Object),
+    expect(await warningMessages()).not.toContain(
       'Configured live retry count can never be reached because the cumulative backoff cap fires first'
     )
   })
@@ -1187,18 +1171,17 @@ describe('config module', () => {
     vi.stubEnv('GEMINI_LIVE_MAX_RETRIES', '6')
     vi.stubEnv('GEMINI_TURN_DEADLINE_MS', '150000')
 
-    await import('../config.js')
-    await vi.dynamicImportSettled()
+    const { startupWarnings } = await import('../config.js')
 
-    expect(warn).toHaveBeenCalledWith(
-      {
+    expect(startupWarnings).toContainEqual({
+      fields: {
         liveMaxRetries: 6,
         achievableRetries: 5,
         retryBackoffBaseMs: 1_000,
         retryBackoffCapMs: 12_000
       },
-      'Configured live retry count can never be reached because the cumulative backoff cap fires first'
-    )
+      message: 'Configured live retry count can never be reached because the cumulative backoff cap fires first'
+    })
   })
 
   it('does not warn when the cumulative backoff cap makes the deadline sufficient', async () => {
@@ -1208,9 +1191,8 @@ describe('config module', () => {
     vi.stubEnv('GEMINI_TURN_DEADLINE_MS', '112000')
 
     await import('../config.js')
-    await vi.dynamicImportSettled()
 
-    expect(warn).not.toHaveBeenCalled()
+    expect(await warningMessages()).toEqual([])
   })
 
   it('does not warn about retry reachability or deadline at shipped defaults', async () => {
@@ -1218,9 +1200,8 @@ describe('config module', () => {
     clearTunableEnvVars()
 
     await import('../config.js')
-    await vi.dynamicImportSettled()
 
-    expect(warn).not.toHaveBeenCalled()
+    expect(await warningMessages()).toEqual([])
   })
 
   it('warns when the attempt-count budget exceeds the turn deadline', async () => {
@@ -1228,11 +1209,10 @@ describe('config module', () => {
     clearTunableEnvVars()
     vi.stubEnv('GEMINI_TURN_DEADLINE_MS', '50000')
 
-    await import('../config.js')
-    await vi.dynamicImportSettled()
+    const { startupWarnings } = await import('../config.js')
 
-    expect(warn).toHaveBeenCalledWith(
-      {
+    expect(startupWarnings).toContainEqual({
+      fields: {
         turnDeadlineMs: 50_000,
         timeout: 20_000,
         liveMaxRetries: 2,
@@ -1240,8 +1220,9 @@ describe('config module', () => {
         retryBackoffCapMs: 12_000,
         requiredMs: 63_000
       },
-      'Turn deadline is smaller than the requiredMs budget needed for all liveMaxRetries + 1 attempts, so the last attempt(s) can never be admitted'
-    )
+      message:
+        'Turn deadline is smaller than the requiredMs budget needed for all liveMaxRetries + 1 attempts, so the last attempt(s) can never be admitted'
+    })
   })
 
   it('warns when the backoff budget exceeds the turn deadline', async () => {
@@ -1249,11 +1230,10 @@ describe('config module', () => {
     clearTunableEnvVars()
     vi.stubEnv('GEMINI_TURN_DEADLINE_MS', '61000')
 
-    await import('../config.js')
-    await vi.dynamicImportSettled()
+    const { startupWarnings } = await import('../config.js')
 
-    expect(warn).toHaveBeenCalledWith(
-      {
+    expect(startupWarnings).toContainEqual({
+      fields: {
         turnDeadlineMs: 61_000,
         timeout: 20_000,
         liveMaxRetries: 2,
@@ -1261,8 +1241,9 @@ describe('config module', () => {
         retryBackoffCapMs: 12_000,
         requiredMs: 63_000
       },
-      'Turn deadline is smaller than the requiredMs budget needed for all liveMaxRetries + 1 attempts, so the last attempt(s) can never be admitted'
-    )
+      message:
+        'Turn deadline is smaller than the requiredMs budget needed for all liveMaxRetries + 1 attempts, so the last attempt(s) can never be admitted'
+    })
   })
 
   it('does not warn when the session TTL exceeds the maximum live retry window', async () => {
@@ -1271,9 +1252,8 @@ describe('config module', () => {
     vi.stubEnv('SESSION_TTL_MS', '120000')
 
     await import('../config.js')
-    await vi.dynamicImportSettled()
 
-    expect(warn).not.toHaveBeenCalled()
+    expect(await warningMessages()).toEqual([])
   })
 
   it('warns when a reminder can be swept stale before a scheduler tick can deliver it', async () => {
@@ -1281,13 +1261,12 @@ describe('config module', () => {
     clearTunableEnvVars()
     withYamlOverride({ reminders: { staleThresholdMs: 4000 } })
 
-    await import('../config.js')
-    await vi.dynamicImportSettled()
+    const { startupWarnings } = await import('../config.js')
 
-    expect(warn).toHaveBeenCalledWith(
-      { staleThresholdMs: 4000, checkIntervalMs: 5000 },
-      'Reminder stale threshold can sweep a reminder before any scheduler tick can deliver it'
-    )
+    expect(startupWarnings).toContainEqual({
+      fields: { staleThresholdMs: 4000, checkIntervalMs: 5000 },
+      message: 'Reminder stale threshold can sweep a reminder before any scheduler tick can deliver it'
+    })
   })
 
   it('warns when a reminder stale threshold equals the scheduler interval', async () => {
@@ -1295,13 +1274,12 @@ describe('config module', () => {
     clearTunableEnvVars()
     withYamlOverride({ reminders: { staleThresholdMs: 5000 } })
 
-    await import('../config.js')
-    await vi.dynamicImportSettled()
+    const { startupWarnings } = await import('../config.js')
 
-    expect(warn).toHaveBeenCalledWith(
-      { staleThresholdMs: 5000, checkIntervalMs: 5000 },
-      'Reminder stale threshold can sweep a reminder before any scheduler tick can deliver it'
-    )
+    expect(startupWarnings).toContainEqual({
+      fields: { staleThresholdMs: 5000, checkIntervalMs: 5000 },
+      message: 'Reminder stale threshold can sweep a reminder before any scheduler tick can deliver it'
+    })
   })
 
   it('does not warn when a reminder stale threshold exceeds the scheduler interval by 1ms', async () => {
@@ -1310,9 +1288,8 @@ describe('config module', () => {
     withYamlOverride({ reminders: { staleThresholdMs: 5001 } })
 
     await import('../config.js')
-    await vi.dynamicImportSettled()
 
-    expect(warn).not.toHaveBeenCalled()
+    expect(await warningMessages()).toEqual([])
   })
 
   it('warns when values above the memory buffer size are silently ineffective', async () => {
@@ -1320,13 +1297,12 @@ describe('config module', () => {
     clearTunableEnvVars()
     withYamlOverride({ memory: { contextSize: 31 } })
 
-    await import('../config.js')
-    await vi.dynamicImportSettled()
+    const { startupWarnings } = await import('../config.js')
 
-    expect(warn).toHaveBeenCalledWith(
-      { contextSize: 31, bufferSize: 30 },
-      'Memory context size above passive buffer size is silently ineffective'
-    )
+    expect(startupWarnings).toContainEqual({
+      fields: { contextSize: 31, bufferSize: 30 },
+      message: 'Memory context size above passive buffer size is silently ineffective'
+    })
   })
 
   it('does not warn when the memory context size equals the buffer size', async () => {
@@ -1335,9 +1311,8 @@ describe('config module', () => {
     withYamlOverride({ memory: { contextSize: 30 } })
 
     await import('../config.js')
-    await vi.dynamicImportSettled()
 
-    expect(warn).not.toHaveBeenCalled()
+    expect(await warningMessages()).toEqual([])
   })
 
   it('throws if env int override is non-numeric', async () => {
@@ -1800,9 +1775,10 @@ describe('config module', () => {
       'No embeddings.minSimilarity entry for this fingerprint, so recall uses the Gemini floors in memory.*MinSimilarity'
 
     async function loadFloors() {
-      const { config } = await import('../config.js')
+      const { config, startupWarnings } = await import('../config.js')
       return {
         config,
+        startupWarnings,
         floors: [
           config.memory.episodeMinSimilarity,
           config.memory.mediaMinSimilarity,
@@ -1821,7 +1797,6 @@ describe('config module', () => {
       })
 
       const { config, floors } = await loadFloors()
-      await vi.dynamicImportSettled()
 
       expect(config.embeddings).toEqual({
         provider: 'gemini',
@@ -1837,11 +1812,11 @@ describe('config module', () => {
       expect(config.memory.embeddingModel).toBe('gemini-embedding-2')
       expect(config.memory.embeddingTimeoutMs).toBe(1500)
       expect(floors).toEqual([0.7, 0.7, 0.65, 0.65])
-      expect(warn).not.toHaveBeenCalledWith(expect.anything(), NO_FLOORS_WARNING)
+      expect(await warningMessages()).not.toContain(NO_FLOORS_WARNING)
     })
 
     it('defaults a config without an embeddings block to gemini only while GEMINI_API_KEY is set', async () => {
-      const { defaultEmbeddingProvider } = await import('../agent/memory/embeddings/fingerprint.js')
+      const { defaultEmbeddingProvider } = await import('../storage/vectorProvenance.js')
 
       expect(defaultEmbeddingProvider({ hasBlock: false, hasGeminiKey: true })).toBe('gemini')
       expect(defaultEmbeddingProvider({ hasBlock: false, hasGeminiKey: false })).toBe('local')
@@ -1890,7 +1865,6 @@ describe('config module', () => {
       withYamlOverride({ embeddings: { provider: undefined } })
 
       const { config, floors } = await loadFloors()
-      await vi.dynamicImportSettled()
 
       expect(config.embeddings).toMatchObject({
         provider: 'local',
@@ -1901,7 +1875,7 @@ describe('config module', () => {
         apiKey: undefined
       })
       expect(floors).toEqual([0.86, 0.86, 0.84, 0.84])
-      expect(warn).not.toHaveBeenCalledWith(expect.anything(), NO_FLOORS_WARNING)
+      expect(await warningMessages()).not.toContain(NO_FLOORS_WARNING)
     })
 
     it("lets EMBEDDINGS_PROVIDER pick OpenAI and warns that its floors are Gemini's", async () => {
@@ -1910,8 +1884,7 @@ describe('config module', () => {
       vi.stubEnv('EMBEDDINGS_PROVIDER', 'openai')
       vi.stubEnv('OPENAI_API_KEY', 'sk-test')
 
-      const { config, floors } = await loadFloors()
-      await vi.dynamicImportSettled()
+      const { config, floors, startupWarnings } = await loadFloors()
 
       expect(config.embeddings).toMatchObject({
         provider: 'openai',
@@ -1921,7 +1894,10 @@ describe('config module', () => {
         apiKey: 'sk-test'
       })
       expect(floors).toEqual([0.7, 0.7, 0.65, 0.65])
-      expect(warn).toHaveBeenCalledWith({ fingerprint: 'openai:text-embedding-3-small:1536:raw' }, NO_FLOORS_WARNING)
+      expect(startupWarnings).toContainEqual({
+        fields: { fingerprint: 'openai:text-embedding-3-small:1536:raw' },
+        message: NO_FLOORS_WARNING
+      })
     })
 
     it('requires OPENAI_API_KEY only when OpenAI embeds', async () => {

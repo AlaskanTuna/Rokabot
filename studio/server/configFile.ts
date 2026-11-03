@@ -37,11 +37,6 @@ function checkConfig(text: string, paths: ConfigPaths): Promise<string | undefin
       (error, _stdout, stderr) => {
         if (!error) done(undefined)
         else if (error.killed) done(`the config check did not finish within ${CHECK_TIMEOUT_MS / 1000} s`)
-        // src/config.ts awaits its logger to print some warnings, and the logger awaits config.ts: the bot hangs too.
-        else if (/unsettled top-level await/.test(stderr))
-          done(
-            'The bot would hang at startup with these values: it deadlocks while logging a config warning. Undo the change.'
-          )
         else done(stderr.trim() || error.message)
       }
     )

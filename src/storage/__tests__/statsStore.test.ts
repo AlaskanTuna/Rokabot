@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('../../../../utils/logger.js', () => ({
+vi.mock('../../utils/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn() }
 }))
 
-import { closeDb, getDb } from '../../../../storage/database.js'
-import { saveMemoryEpisode } from '../../../../storage/memoryEpisodeStore.js'
-import * as statsQueries from '../queries.js'
+import { closeDb, getDb } from '../database.js'
+import { saveMemoryEpisode } from '../memoryEpisodeStore.js'
+import * as statsQueries from '../statsStore.js'
 import {
   MEMORY_STATS_SQL,
   activeClaimCount,
@@ -20,7 +20,7 @@ import {
   retrySummary,
   tokenTotals,
   topTones
-} from '../queries.js'
+} from '../statsStore.js'
 
 const HOUR_MS = 60 * 60 * 1000
 const DAY_MS = 24 * HOUR_MS

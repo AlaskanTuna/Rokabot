@@ -107,7 +107,7 @@ type ClaimRow = {
   event_date: string | null
 }
 
-const SOURCE_WEIGHT: Readonly<Record<ClaimSource, number>> = {
+export const SOURCE_WEIGHT: Readonly<Record<ClaimSource, number>> = {
   explicit: 1,
   human: 1,
   passive: 0.75,
@@ -512,6 +512,38 @@ export function getActiveClaims(guildId: string, userId: string): UserMemoryClai
   ).map(mapUserClaim)
 }
 
+export function getActiveClaimsForUsers(guildId: string, userIds: string[]): UserMemoryClaim[] {
+  if (userIds.length === 0) return []
+  const placeholders = userIds.map(() => '?').join(', ')
+  const rows = getDb()
+    .prepare(
+      `SELECT * FROM memory_claim
+       WHERE guild_id = ? AND subject_kind = 'user' AND status = 'active' AND subject_user_id IN (${placeholders})`
+    )
+    .all(guildId, ...userIds) as ClaimRow[]
+  return rows.map(mapUserClaim)
+}
+
+export function searchClaimIds(guildId: string, userIds: string[], message: string): Set<number> {
+  const terms = [...new Set(message.toLowerCase().match(/[a-z0-9]{2,}/g) ?? [])].slice(0, 12)
+  if (userIds.length === 0 || terms.length === 0) return new Set()
+
+  const placeholders = userIds.map(() => '?').join(', ')
+  const query = terms.map((term) => `"${term}"`).join(' OR ')
+  const rows = getDb()
+    .prepare(
+      `SELECT memory_claim.id FROM memory_claim
+       JOIN memory_claim_fts ON memory_claim.id = memory_claim_fts.rowid
+       WHERE memory_claim.guild_id = ? AND memory_claim.subject_kind = 'user' AND memory_claim.status = 'active'
+         AND memory_claim.needs_review = 0 AND memory_claim.subject_user_id IN (${placeholders})
+         AND memory_claim_fts MATCH ?
+       ORDER BY bm25(memory_claim_fts), memory_claim.salience DESC
+       LIMIT ?`
+    )
+    .all(guildId, ...userIds, query, config.memory.maxClaimsPerTurn * 3) as Array<{ id: number }>
+  return new Set(rows.map(({ id }) => id))
+}
+
 export function getActiveClaimById(
   guildId: string,
   subjectUserId: string,
@@ -627,6 +659,25 @@ export function searchClaims(guildId: string, userId: string, ftsQuery: string, 
   ).map(mapUserClaim)
 }
 
+export type ClaimSubjectKey = Readonly<{ kind: 'guild' } | { kind: 'user'; userId: string }>
+
+export function priorClaimStatus(
+  guildId: string,
+  subject: ClaimSubjectKey,
+  predicate: string,
+  value: string,
+  period: ClaimPeriod
+): ClaimStatus | undefined {
+  const row = getDb()
+    .prepare(
+      'SELECT status FROM memory_claim WHERE guild_id = ? AND subject_kind = ? AND subject_user_id IS ? AND predicate = ? AND value = ? AND period = ?'
+    )
+    .get(guildId, subject.kind, subject.kind === 'user' ? subject.userId : null, predicate, value, period) as
+    | { status: ClaimStatus }
+    | undefined
+  return row?.status
+}
+
 export function rejectClaimIdsForSpeaker(guildId: string, userId: string, claimIds: number[]): boolean {
   if (claimIds.length === 0) return false
   const write = () => {
@@ -657,6 +708,103 @@ export function getEdges(guildId: string, userId: string): UserMemoryClaim[] {
       )
       .all(guildId, userId) as ClaimRow[]
   ).map(mapUserClaim)
+}
+
+export function activeNicknameClaims(guildId: string): Array<{ id: number; user_id: string; value: string }> {
+  return getDb()
+    .prepare(
+      `SELECT id, subject_user_id AS user_id, value FROM memory_claim
+       WHERE guild_id = ? AND subject_kind = 'user' AND status = 'active' AND needs_review = 0 AND period = 'current'
+         AND predicate = 'nickname'
+       ORDER BY id`
+    )
+    .all(guildId) as Array<{ id: number; user_id: string; value: string }>
+}
+
+/** Correlated half of the name-index presence check: this user_names row holds a claim in the guild. */
+export const USER_CLAIM_PRESENCE =
+  "EXISTS(SELECT 1 FROM memory_claim WHERE guild_id = ? AND subject_kind = 'user' AND subject_user_id = user_names.user_id)"
+
+export type ReclassifyRow = Readonly<{
+  id: number
+  guildId: string
+  subjectUserId: string
+  predicate: PredicateId
+  value: string
+}>
+
+type ReclassifyCandidateRow = {
+  id: number
+  guild_id: string
+  subject_user_id: string
+  predicate: PredicateId
+  value: string
+}
+
+export function findReclassifyRows(limit: number): ReclassifyRow[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT c.id, c.guild_id, c.subject_user_id, c.predicate, c.value
+       FROM memory_claim c
+       WHERE c.subject_kind = 'user' AND c.status = 'active' AND c.period = 'current'
+         AND c.id NOT IN (
+           SELECT json_extract(detail, '$.oldId') FROM memory_events
+           WHERE kind = 'claim_reclassified' AND json_extract(detail, '$.oldId') IS NOT NULL
+         )
+         AND (
+           c.predicate = 'misc'
+           OR EXISTS (
+             SELECT 1 FROM memory_claim o
+             WHERE o.subject_kind = 'user' AND o.status = 'active' AND o.period = 'current'
+               AND o.guild_id = c.guild_id AND o.subject_user_id = c.subject_user_id
+               AND o.predicate != c.predicate AND o.predicate != 'misc' AND lower(o.value) = lower(c.value)
+               AND (o.salience > c.salience OR (o.salience = c.salience AND o.id < c.id))
+           )
+         )
+       ORDER BY random()
+       LIMIT ?`
+    )
+    .all(limit) as ReclassifyCandidateRow[]
+  return rows.map((row) => ({
+    id: row.id,
+    guildId: row.guild_id,
+    subjectUserId: row.subject_user_id,
+    predicate: row.predicate,
+    value: row.value
+  }))
+}
+
+export function countActiveClaimsForUser(guildId: string, subjectUserId: string): number {
+  return (
+    getDb()
+      .prepare(
+        "SELECT COUNT(*) AS count FROM memory_claim WHERE subject_kind = 'user' AND guild_id = ? AND subject_user_id = ? AND status = 'active'"
+      )
+      .get(guildId, subjectUserId) as { count: number }
+  ).count
+}
+
+export function findUserClaimStatus(
+  guildId: string,
+  subjectUserId: string,
+  predicate: PredicateId,
+  value: string
+): { status: string; end_reason: string | null } | undefined {
+  return getDb()
+    .prepare(
+      "SELECT status, end_reason FROM memory_claim WHERE subject_kind = 'user' AND guild_id = ? AND subject_user_id = ? AND predicate = ? AND value = ? AND period = 'current'"
+    )
+    .get(guildId, subjectUserId, predicate, value) as { status: string; end_reason: string | null } | undefined
+}
+
+export function findReclassifiedClaim(
+  id: number
+): { guild_id: string; subject_user_id: string; superseded_by: number | null } | undefined {
+  return getDb()
+    .prepare(
+      "SELECT guild_id, subject_user_id, superseded_by FROM memory_claim WHERE id = ? AND subject_kind = 'user' AND status = 'rejected' AND end_reason = 'reclassified'"
+    )
+    .get(id) as { guild_id: string; subject_user_id: string; superseded_by: number | null } | undefined
 }
 
 export function assertGuildClaim(

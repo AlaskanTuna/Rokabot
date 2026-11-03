@@ -12,10 +12,11 @@ import {
   type GuildMemoryClaim,
   type UserMemoryClaim,
   getActiveClaims,
-  getActiveGuildClaims
+  getActiveGuildClaims,
+  searchClaimIds
 } from './memoryClaims.js'
 import { type RecallScope, canRecall } from './privacy.js'
-import { formatGuildFactDate, searchClaimIds } from './retriever.js'
+import { formatGuildFactDate } from './retriever.js'
 
 export type RecallItemKind = 'fact' | 'server_fact' | 'conversation' | 'media'
 export type RecallItem = Readonly<{

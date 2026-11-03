@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => {
     },
     resetStuckProcessing: vi.fn(),
     logger: { error: vi.fn(), fatal: vi.fn(), info: vi.fn(), warn: vi.fn() },
+    startupWarnings: [] as Array<{ fields: Record<string, unknown>; message: string }>,
     startExtractionScheduler: vi.fn(),
     pruneEpisodesAndReembed: vi.fn().mockResolvedValue({ deleted: 0, reembedded: 0, failed: 0 }),
     stopExtractionScheduler: vi.fn(),
@@ -38,6 +39,7 @@ vi.mock('../discord/client.js', () => ({
   })
 }))
 vi.mock('../config.js', () => ({
+  startupWarnings: mocks.startupWarnings,
   config: {
     discord: { token: 'token' },
     socialPosts: { enabled: false, ytDlpPath: 'yt-dlp' },
@@ -77,6 +79,7 @@ describe('startup memory tasks', () => {
   beforeEach(() => {
     vi.resetModules()
     vi.clearAllMocks()
+    mocks.startupWarnings.length = 0
     mocks.pruneEpisodesAndReembed.mockResolvedValue({ deleted: 0, reembedded: 0, failed: 0 })
     mocks.reclassifyClaims.mockResolvedValue(0)
   })
@@ -216,6 +219,18 @@ describe('startup memory tasks', () => {
       mocks.closeDb.mock.invocationCallOrder[0]
     )
     expect(exit).toHaveBeenCalledWith(0)
+  })
+
+  it('logs each startup warning once at boot', async () => {
+    mocks.startupWarnings.push(
+      { fields: { provider: 'native' }, message: 'first warning' },
+      { fields: { sessionTtlMs: 1, maxLiveRetryWindow: 2 }, message: 'second warning' }
+    )
+    await import('../index.js')
+
+    expect(mocks.logger.warn).toHaveBeenCalledTimes(2)
+    expect(mocks.logger.warn).toHaveBeenNthCalledWith(1, { provider: 'native' }, 'first warning')
+    expect(mocks.logger.warn).toHaveBeenNthCalledWith(2, { sessionTtlMs: 1, maxLiveRetryWindow: 2 }, 'second warning')
   })
 
   it('contains startup memory task failures', async () => {

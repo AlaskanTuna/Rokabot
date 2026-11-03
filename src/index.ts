@@ -37,7 +37,7 @@ import { destroyAllSessions } from './agent/session.js'
 import { beginShutdown } from './agent/shutdownSignal.js'
 import { initializeSocialPosts } from './agent/social/service.js'
 import { character } from './character/index.js'
-import { config } from './config.js'
+import { config, startupWarnings } from './config.js'
 import { createChannelVisibilityResolver } from './discord/channelVisibility.js'
 import { createClient } from './discord/client.js'
 import { cleanupExpiredCooldowns } from './discord/emojiReactor.js'
@@ -51,6 +51,9 @@ import { pruneExtractionSamples } from './storage/extractionSampleStore.js'
 import { pruneFailureDiagnostics, pruneOldMetrics } from './storage/metricsStore.js'
 import { pruneOldHistory } from './storage/sessionStore.js'
 import { logger } from './utils/logger.js'
+
+// Config collects warnings during load because it cannot log itself; drain them once logging is available.
+for (const { fields, message } of startupWarnings) logger.warn(fields, message)
 
 await initializeSocialPosts()
 

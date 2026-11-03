@@ -13,15 +13,6 @@ import { AttachmentBuilder, type Guild, MessageFlags, SeparatorSpacingSize } fro
 import type { ToneKey } from '../../../agent/prompts/tones.js'
 import { character } from '../../../character/index.js'
 import { fillLine } from '../../../character/lines.js'
-import { getToneStyle } from '../../toneStyles.js'
-import {
-  TONE_EMOJI,
-  renderActivityHeatmap,
-  renderChannelHistogram,
-  renderLatencyTrend,
-  renderMemoryGrowth,
-  renderMoodDonut
-} from './charts.js'
 import {
   activeClaimCount,
   activityByDay,
@@ -46,7 +37,16 @@ import {
   topTones,
   triggerSplit,
   uniqueChatters
-} from './queries.js'
+} from '../../../storage/statsStore.js'
+import { getToneStyle } from '../../toneStyles.js'
+import {
+  TONE_EMOJI,
+  renderActivityHeatmap,
+  renderChannelHistogram,
+  renderLatencyTrend,
+  renderMemoryGrowth,
+  renderMoodDonut
+} from './charts.js'
 
 export const STATS_VIEWS = ['overview', 'mood', 'memory', 'nerd'] as const
 export type StatsView = (typeof STATS_VIEWS)[number]

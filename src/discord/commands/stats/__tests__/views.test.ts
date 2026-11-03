@@ -37,7 +37,7 @@ const charts = vi.hoisted(() => ({
 
 const errors = vi.hoisted(() => ({ error: vi.fn(), warn: vi.fn() }))
 
-vi.mock('../queries.js', () => queries)
+vi.mock('../../../../storage/statsStore.js', () => queries)
 vi.mock('../charts.js', () => charts)
 vi.mock('../../../errorHandler.js', () => ({ isIgnorableDiscordError: () => false }))
 vi.mock('../../../../utils/logger.js', () => ({

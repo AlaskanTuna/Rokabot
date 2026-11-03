@@ -1,6 +1,6 @@
+import { isEmbeddingVector } from '../../../storage/vectorProvenance.js'
 import { logger } from '../../../utils/logger.js'
 import type { EmbeddingClient, EmbeddingSettings } from './client.js'
-import { isEmbeddingVector } from './fingerprint.js'
 
 type SidecarReply = { model?: unknown; dim?: unknown; vectors?: unknown; truncated?: unknown }
 
