@@ -115,6 +115,7 @@ interface YamlConfig {
   search?: { provider?: string; nativeTimeoutMs?: number; nativeReserveMs?: number }
   media?: {
     watcher?: string
+    embedWaitMs?: number
     watchTimeoutMs?: number
     digestMaxOutputTokens?: number
     skimClips?: number
@@ -609,6 +610,7 @@ const baseConfig = {
   },
   media: {
     watcher: mediaWatcher(),
+    embedWaitMs: yaml.media?.embedWaitMs ?? 2000,
     watchTimeoutMs: yaml.media?.watchTimeoutMs ?? 20_000,
     digestMaxOutputTokens: yaml.media?.digestMaxOutputTokens ?? 2400,
     skimClips: yaml.media?.skimClips ?? 8,
@@ -838,6 +840,7 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'socialPosts.maxReplies', value: config.socialPosts.maxReplies, min: 1, max: 10 },
   { path: 'socialPosts.maxRepliesOnRequest', value: config.socialPosts.maxRepliesOnRequest, min: 1, max: 50 },
   { path: 'socialPosts.maxReplyChars', value: config.socialPosts.maxReplyChars, min: 40, max: 1000 },
+  { path: 'media.embedWaitMs', value: config.media.embedWaitMs, min: 0, max: 5000 },
   { path: 'media.watchTimeoutMs', value: config.media.watchTimeoutMs, min: 5000, max: 60_000 },
   { path: 'media.digestMaxOutputTokens', value: config.media.digestMaxOutputTokens, min: 400, max: 4000 },
   { path: 'media.skimClips', value: config.media.skimClips, min: 3, max: 9 },

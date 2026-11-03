@@ -47,7 +47,8 @@ function describeEmbed(embed: Message['embeds'][number]): string | null {
     parts.push(`${field.name}: ${field.value}`)
   }
   if (embed.footer?.text) parts.push(`Footer: ${embed.footer.text}`)
-  // Embedded video stays textual until video intake can process it.
+  // An embed video is watched through resolveMediaUrl (see embedVideoMedia); its word here stays so a
+  // turn that could not watch it still names what was shared.
   if (embed.video) parts.push(embed.data.type === 'gifv' ? 'animated GIF' : 'video')
   return parts.length > 0 ? `[Embed: ${parts.join(' | ')}]` : null
 }
@@ -56,6 +57,71 @@ export interface SocialPostPresentation {
   target: SocialPostTarget
   line: string
   mediaAttachment?: MediaAttachment
+}
+
+/** A playable video URL from an embed: only Discord's proxy file, so the Pi never fetches a sender-chosen host. Null for gifv and video-less embeds. */
+export function embedVideoUrl(embed: Message['embeds'][number]): string | null {
+  if (!embed.video) return null
+  if (embed.data.type === 'gifv') return null
+  const proxyURL = embed.video.proxyURL
+  if (!proxyURL) return null
+  let host: string
+  try {
+    host = new URL(proxyURL).hostname.toLowerCase()
+  } catch {
+    return null
+  }
+  if (
+    host !== 'discordapp.net' &&
+    host !== 'discordapp.com' &&
+    !host.endsWith('.discordapp.net') &&
+    !host.endsWith('.discordapp.com')
+  )
+    return null
+  return proxyURL
+}
+
+function snapshotEmbeds(snapshot: unknown): Array<Message['embeds'][number]> {
+  if (!snapshot || typeof snapshot !== 'object') return []
+  const embeds = (snapshot as { embeds?: unknown }).embeds
+  return Array.isArray(embeds) ? (embeds as Array<Message['embeds'][number]>) : []
+}
+
+/**
+ * Playable embed-video URLs in intake order: the triggering message, the replied-to message, then
+ * forwarded snapshots on each. gifv embeds stay as text. An embed her own lookup already fetched stays
+ * on that path so it is not watched twice — unless the caller passes no presentation (a failed lookup),
+ * in which case the embed's video is the fallback. Capped at 3, since each URL costs a HEAD request.
+ */
+export function collectEmbedVideoUrls(
+  message: Message,
+  referencedMessage: Message | null,
+  isReplyToBot = false
+): string[] {
+  const urls: string[] = []
+  const seen = new Set<string>()
+  const take = (embed: Message['embeds'][number]) => {
+    if (urls.length >= 3) return
+    const url = embedVideoUrl(embed)
+    if (url && !seen.has(url)) {
+      seen.add(url)
+      urls.push(url)
+    }
+  }
+
+  for (const embed of message.embeds) take(embed)
+  if (referencedMessage && !isReplyToBot) {
+    for (const embed of referencedMessage.embeds) take(embed)
+  }
+  for (const snapshot of message.messageSnapshots.values()) {
+    for (const embed of snapshotEmbeds(snapshot)) take(embed)
+  }
+  if (referencedMessage) {
+    for (const snapshot of referencedMessage.messageSnapshots.values()) {
+      for (const embed of snapshotEmbeds(snapshot)) take(embed)
+    }
+  }
+  return urls
 }
 
 function embedMatchesSocialPost(
@@ -242,7 +308,8 @@ export function extractMessageContent(
   isReplyToBot: boolean,
   botId: string | undefined,
   componentTextsForTrigger: string[],
-  socialPost?: SocialPostPresentation
+  socialPost?: SocialPostPresentation,
+  watchedEmbedVideoUrls?: Set<string>
 ): ExtractedMessageContent {
   let content = replaceUserMentions(message, botId)
 
@@ -280,6 +347,9 @@ export function extractMessageContent(
   const ownEmbedImages: MediaAttachment[] = []
   for (const embed of message.embeds) {
     if (embedMatchesSocialPost(embed, socialPost)) continue
+    // A watched video replaces its still frame; sending both burns a vision slot on a duplicate.
+    const videoUrl = embedVideoUrl(embed)
+    if (videoUrl && watchedEmbedVideoUrls?.has(videoUrl)) continue
     const embedImageUrl = embed.image?.url ?? embed.thumbnail?.url
     if (embedImageUrl) ownEmbedImages.push({ url: embedImageUrl, contentType: 'image/png' })
   }
@@ -372,6 +442,8 @@ export function extractMessageContent(
 
       for (const embed of referencedMessage.embeds) {
         if (embedMatchesSocialPost(embed, socialPost)) continue
+        const videoUrl = embedVideoUrl(embed)
+        if (videoUrl && watchedEmbedVideoUrls?.has(videoUrl)) continue
         const embedImageUrl = embed.image?.url ?? embed.thumbnail?.url
         if (embedImageUrl) referencedEmbedImages.push({ url: embedImageUrl, contentType: 'image/png' })
       }

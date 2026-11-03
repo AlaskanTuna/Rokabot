@@ -24,6 +24,12 @@ export function discordAttachmentContentKey(url: string): string | null {
   return DISCORD_CDN_HOSTS.has(parsed.hostname) ? `discord:${parsed.pathname}` : null
 }
 
+/** A watched embed video keeps its proxy host and path; the query is a signed grant that changes. */
+export function embedVideoContentKey(url: string): string {
+  const parsed = new URL(url)
+  return `embedvideo:${parsed.hostname}${parsed.pathname}`
+}
+
 export function bytesContentKey(bytes: Buffer): string {
   return `sha256:${createHash('sha256').update(bytes).digest('hex')}`
 }

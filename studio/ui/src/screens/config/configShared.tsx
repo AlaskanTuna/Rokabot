@@ -74,6 +74,7 @@ const BOUNDS: Bound[] = [
   { path: 'socialPosts.maxReplies', min: 1, max: 10 },
   { path: 'socialPosts.maxRepliesOnRequest', min: 1, max: 50 },
   { path: 'socialPosts.maxReplyChars', min: 40, max: 1000 },
+  { path: 'media.embedWaitMs', min: 0, max: 5000 },
   { path: 'media.watchTimeoutMs', min: 5000, max: 60_000 },
   { path: 'media.digestMaxOutputTokens', min: 400, max: 4000 },
   { path: 'media.skimClips', min: 3, max: 9 },
