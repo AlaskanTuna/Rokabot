@@ -13,30 +13,30 @@ import { type RunTrace, timeStage } from './extractionRun.js'
 import {
   EXTRACTION_RESPONSE_SCHEMA,
   type ExtractionOutput as EpisodeExtractionOutput,
-  type ExtractionOp as EpisodeOperation,
   ExtractionOutputSchema
 } from './extractionSchema.js'
 import { resolveGuildFactDate } from './guildFactDates.js'
 import { reconcileHiddenRetractions } from './hiddenRetractions.js'
 import { admitThreshold, verifyThreshold } from './judgeThresholds.js'
+import type { MemoryClaim } from './memoryClaims.js'
 import {
-  type MemoryClaim,
-  appendEvidence,
-  assertClaim,
-  assertGuildClaim,
   getActiveClaimById,
   getActiveClaims,
   getActiveGuildClaimById,
   getActiveGuildClaims,
-  priorClaimStatus,
-  rejectActiveClaimById,
-  rejectActiveGuildClaimById,
-  replaceActiveClaim,
-  replaceActiveGuildClaim,
-  retireClaim,
   retractClaim
 } from './memoryClaims.js'
-import { type PredicateId, cardinalityOf, normalizePredicate } from './predicates.js'
+import {
+  type EpisodeWriteOp,
+  type OperationApplierContext,
+  type OperationResult,
+  type PlannedOperation,
+  applyAddOperation,
+  applyRemoveOperation,
+  applyRetractOperation,
+  applyUpdateOperation
+} from './operationAppliers.js'
+import { cardinalityOf } from './predicates.js'
 import { type RecallScope, canRecall } from './privacy.js'
 import { sensitiveFactReason } from './privacyGuard.js'
 import { proposedPeriod, retractCandidates, sameAsCandidates } from './verificationCandidates.js'
@@ -132,23 +132,6 @@ export type OperationApplicationReport = {
   rewordOps: number
   retractedOps: number
   inputTokens: number
-}
-
-type EpisodeWriteOp = Exclude<EpisodeOperation, { op: 'noop' }>
-type GuildWriteOperation = Extract<EpisodeWriteOp, { subject: { kind: 'guild' } }>
-type PlannedOperation = {
-  index: number
-  op: EpisodeWriteOp
-  sameAsClaims: MemoryClaim[]
-  retractClaims: MemoryClaim[]
-  questionKeys: string[]
-  expiresAt: number | null
-  eventDate: string | null
-  dateValid: boolean
-}
-
-function isGuildWriteOperation(op: EpisodeWriteOp): op is GuildWriteOperation {
-  return op.subject.kind === 'guild'
 }
 
 function planVerification(
@@ -266,17 +249,9 @@ export async function verifyAndApplyOperations(input: {
   const verified = hasCompleteVerification(verification, planned)
   const threshold = verifyThreshold()
   const holds = (key: string) => (verification?.answers[key]?.noul ?? 0) >= threshold
-  const results: Array<{
-    applied: boolean
-    duplicate: boolean
-    staged?: boolean
-    changed?: boolean
-    past?: boolean
-    reword?: boolean
-    retracted?: number
-  }> = []
+  const results: OperationResult[] = []
   const appliedKeys = new Set<string>()
-  const verifiedRetracts: Array<{ subjectUserId: string; predicate: PredicateId; value: string }> = []
+  const verifiedRetracts: OperationApplierContext['verifiedRetracts'] = []
 
   // A multi-value retraction frees its cap slot before the adds, or the cap evicts an unrelated fact. A single-value
   // retraction goes last, so a switch sent as retract-then-add lets the add supersede the old value and inherit its pin.
@@ -287,9 +262,20 @@ export async function verifyAndApplyOperations(input: {
     ...planned.filter(({ op }) => op.op !== 'retract'),
     ...planned.filter((entry) => entry.op.op === 'retract' && !retractsFirst(entry))
   ]
+  const ctx: OperationApplierContext = {
+    guildId: input.guildId,
+    channelId: input.channelId,
+    observedAt,
+    verified,
+    verification,
+    threshold,
+    holds,
+    appliedKeys,
+    verifiedRetracts
+  }
   getDb().transaction(() => {
     for (const entry of applyOrder) {
-      const { op, index, sameAsClaims, retractClaims } = entry
+      const { op, index } = entry
       if (!operationAllowed(op, subjectIds) || !operationSafe(op)) {
         results[index] = { applied: false, duplicate: false }
         continue
@@ -338,211 +324,14 @@ export async function verifyAndApplyOperations(input: {
       }
 
       if (op.op === 'retract') {
-        verifiedRetracts.push({ subjectUserId: op.subject.userId, predicate: op.predicate, value: op.value })
-        let retired = 0
-        for (const [claimIndex, claim] of retractClaims.entries()) {
-          const key = `retracts_${index}_${claimIndex}`
-          if (holds(key) && retireClaim(input.guildId, claim.id, 'retracted', undefined, { transaction: true })) {
-            appliedKeys.add(key)
-            retired += 1
-          }
-        }
-        results[index] = { applied: retired > 0, duplicate: false, changed: retired > 0, retracted: retired }
-        continue
+        results[index] = applyRetractOperation(op, entry, ctx)
+      } else if (op.op === 'add') {
+        results[index] = applyAddOperation(op, entry, ctx)
+      } else if (op.op === 'update') {
+        results[index] = applyUpdateOperation(op, entry, target, ctx)
+      } else {
+        results[index] = applyRemoveOperation(op, ctx)
       }
-
-      let period = proposedPeriod(op)
-      if (verified && 'tense' in op) {
-        const stillHolds = holds(`current_${index}`)
-        if (op.tense === 'past' && stillHolds) {
-          // The speaker still holds it, so there is no history to record: it can only refresh the matching current fact.
-          const match = getActiveClaims(input.guildId, op.subject.userId).find(
-            (claim) => claim.period === 'current' && claim.predicate === op.predicate && claim.value === op.value
-          )
-          if (match) {
-            appendEvidence(
-              match.id,
-              { channelId: input.channelId, sourceKind: 'passive', observedAt },
-              { transaction: true }
-            )
-          }
-          results[index] = { applied: false, duplicate: Boolean(match) }
-          continue
-        }
-        const resolved = op.tense === 'current' && stillHolds ? 'current' : holds(`past_${index}`) ? 'past' : null
-        if (resolved === null) {
-          results[index] = { applied: false, duplicate: false }
-          continue
-        }
-        period = resolved
-        if (op.op === 'update' && period === 'current' && target?.period === 'current' && !holds(`changes_${index}`)) {
-          appendEvidence(
-            target.id,
-            { channelId: input.channelId, sourceKind: 'passive', observedAt },
-            { transaction: true }
-          )
-          results[index] = { applied: false, duplicate: true, reword: true }
-          continue
-        }
-      }
-
-      // A past mention is written as its own row: it never replaces the claim an update targeted. A verified current
-      // update aimed at a past claim is written the same way, as the current fact, so the history stays untouched.
-      if (op.op === 'add' || (op.op === 'update' && (period === 'past' || (verified && target?.period === 'past')))) {
-        // Same-as candidates were chosen for the proposed period, so they only apply while Jev kept it.
-        if (verified && period === proposedPeriod(op)) {
-          const exactSameAs = sameAsClaims.find((claim) => claim.value === op.value)
-          if (exactSameAs) {
-            const active =
-              op.subject.kind === 'guild'
-                ? getActiveGuildClaimById(input.guildId, exactSameAs.id)
-                : getActiveClaimById(input.guildId, op.subject.userId, exactSameAs.id)
-            if (active) {
-              appendEvidence(
-                active.id,
-                { channelId: input.channelId, sourceKind: 'passive', observedAt },
-                { transaction: true }
-              )
-              appliedKeys.add(`same_as_${index}_${sameAsClaims.indexOf(exactSameAs)}`)
-              results[index] = { applied: false, duplicate: true }
-            } else {
-              results[index] = { applied: false, duplicate: false }
-            }
-            continue
-          }
-          const sameAs = sameAsClaims.find((claim, claimIndex) => {
-            const answer = verification.answers[`same_as_${index}_${claimIndex}`]
-            return answer.noul >= threshold
-          })
-          if (sameAs) {
-            const active =
-              op.subject.kind === 'guild'
-                ? getActiveGuildClaimById(input.guildId, sameAs.id)
-                : getActiveClaimById(input.guildId, op.subject.userId, sameAs.id)
-            if (active) {
-              appendEvidence(
-                active.id,
-                { channelId: input.channelId, sourceKind: 'passive', observedAt },
-                { transaction: true }
-              )
-              appliedKeys.add(`same_as_${index}_${sameAsClaims.indexOf(sameAs)}`)
-              results[index] = { applied: false, duplicate: true }
-            } else {
-              results[index] = { applied: false, duplicate: false }
-            }
-            continue
-          }
-          if (sameAsClaims.some((claim) => claim.value === op.value)) {
-            results[index] = { applied: false, duplicate: false }
-            continue
-          }
-        }
-
-        const priorStatus = isGuildWriteOperation(op)
-          ? priorClaimStatus(input.guildId, { kind: 'guild' }, op.predicate, op.value, period)
-          : priorClaimStatus(
-              input.guildId,
-              { kind: 'user', userId: op.subject.userId },
-              normalizePredicate(op.predicate),
-              op.value,
-              period
-            )
-        if (isGuildWriteOperation(op)) {
-          const claim = assertGuildClaim(
-            {
-              guildId: input.guildId,
-              predicate: op.predicate,
-              value: op.value,
-              expiresAt: entry.expiresAt,
-              eventDate: entry.eventDate,
-              sourceKind: 'passive',
-              channelId: input.channelId,
-              observedAt,
-              needsReview: !verified,
-              status: verified ? 'active' : 'candidate'
-            },
-            { transaction: true }
-          )
-          const applied = claim.status === 'active' || claim.status === 'candidate'
-          results[index] = {
-            applied,
-            duplicate: false,
-            staged: !verified && claim.status === 'candidate',
-            changed: applied && claim.status !== priorStatus
-          }
-          continue
-        }
-
-        const claim = assertClaim(
-          {
-            guildId: input.guildId,
-            subjectUserId: op.subject.userId,
-            predicate: op.predicate,
-            value: op.value,
-            objectUserId: op.objectUserId,
-            sourceKind: 'passive',
-            channelId: input.channelId,
-            observedAt,
-            needsReview: !verified,
-            status: verified ? 'active' : 'candidate',
-            period
-          },
-          { transaction: true }
-        )
-        const applied = claim.status === 'active' || claim.status === 'candidate'
-        results[index] = {
-          applied,
-          duplicate: false,
-          staged: !verified && claim.status === 'candidate',
-          changed: applied && claim.status !== priorStatus,
-          past: applied && verified && period === 'past'
-        }
-        continue
-      }
-
-      if (op.op === 'update') {
-        const replacement = isGuildWriteOperation(op)
-          ? replaceActiveGuildClaim(
-              {
-                guildId: input.guildId,
-                existingId: op.existingId,
-                predicate: op.predicate,
-                value: op.value,
-                expiresAt: entry.expiresAt,
-                eventDate: entry.eventDate,
-                channelId: input.channelId,
-                observedAt,
-                needsReview: !verified
-              },
-              { transaction: true }
-            )
-          : replaceActiveClaim(
-              {
-                guildId: input.guildId,
-                subjectUserId: op.subject.userId,
-                existingId: op.existingId,
-                predicate: op.predicate,
-                value: op.value,
-                objectUserId: op.objectUserId,
-                channelId: input.channelId,
-                observedAt,
-                needsReview: !verified
-              },
-              { transaction: true }
-            )
-        const duplicate = replacement?.id === op.existingId
-        const applied = Boolean(replacement) && !duplicate
-        results[index] = { applied, duplicate, staged: !verified && Boolean(replacement), changed: applied }
-        continue
-      }
-
-      const applied = isGuildWriteOperation(op)
-        ? rejectActiveGuildClaimById({ guildId: input.guildId, existingId: op.existingId }, { transaction: true })
-        : rejectActiveClaimById(
-            { guildId: input.guildId, subjectUserId: op.subject.userId, existingId: op.existingId },
-            { transaction: true }
-          )
-      results[index] = { applied, duplicate: false, changed: applied }
     }
   })()
 
