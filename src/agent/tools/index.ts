@@ -6,6 +6,7 @@ import { config } from '../../config.js'
 import { searchIsAvailable } from '../../searchSettings.js'
 import { getUserName } from '../../storage/userNames.js'
 import { logger } from '../../utils/logger.js'
+import { minutesUntilClockTime } from '../../utils/timezone.js'
 import { resolveName } from '../memory/identityResolver.js'
 import { flipCoin } from './flipCoin.js'
 import { forgetUser } from './forgetUser.js'
@@ -264,29 +265,7 @@ export const setReminderTool = new FunctionTool({
     let delayMinutes: number
 
     if (input.target_hour !== undefined) {
-      // Compute delay from target clock time using configured timezone
-      const tz = config.timezone ?? undefined
-      const now = new Date()
-      let currentHours: number, currentMins: number
-      try {
-        const formatter = new Intl.DateTimeFormat('en-US', {
-          hour: 'numeric',
-          minute: 'numeric',
-          hour12: false,
-          timeZone: tz
-        })
-        const parts = formatter.format(now).split(':')
-        currentHours = parseInt(parts[0], 10)
-        currentMins = parseInt(parts[1], 10)
-      } catch {
-        currentHours = now.getHours()
-        currentMins = now.getMinutes()
-      }
-
-      const targetMins = input.target_hour * 60 + (input.target_minute ?? 0)
-      const currentTotalMins = currentHours * 60 + currentMins
-      delayMinutes = targetMins - currentTotalMins
-      if (delayMinutes <= 0) delayMinutes += 24 * 60
+      delayMinutes = minutesUntilClockTime(input.target_hour, input.target_minute ?? 0, config.timezone ?? undefined)
     } else if (input.delay_minutes !== undefined) {
       delayMinutes = input.delay_minutes
     } else {

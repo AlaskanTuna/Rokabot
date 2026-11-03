@@ -8,7 +8,8 @@ import {
   ThumbnailBuilder
 } from '@discordjs/builders'
 import { MessageFlags } from 'discord.js'
-import { SPECIES } from '../../../games/data/buddySpecies.js'
+import { type BuddyData, getSpeciesInfo } from '../../../games/buddy.js'
+import { RARITY_EMOJI, SPECIES, STAT_NAMES } from '../../../games/data/buddySpecies.js'
 
 export function buddySprite(speciesId: string): string {
   return SPECIES.find(({ id }) => id === speciesId)?.spriteUrl ?? ''
@@ -90,4 +91,36 @@ export function buildTimeoutContainer(accentColor: number, title: string, body: 
 
 export function randomFrom<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)]
+}
+
+/** Build a stat bar: e.g. "CHARM/魅力  ████░░░░░░  4/10" */
+export function statBar(value: number, max: number = 10): string {
+  const filled = '█'.repeat(value)
+  const empty = '░'.repeat(max - value)
+  return `${filled}${empty}`
+}
+
+/** Format a buddy summary for display. */
+export function formatBuddySummary(buddy: BuddyData): string {
+  const info = getSpeciesInfo(buddy.species)
+  const rarityEmoji = RARITY_EMOJI[buddy.rarity]
+  const shinyTag = buddy.shiny ? ' ✨ **SHINY**' : ''
+  const hatDisplay = buddy.hat !== 'none' ? ` | Hat: ${buddy.hat}` : ''
+
+  const lines = [
+    `${info?.emoji ?? ''} **${buddy.name ?? 'Unknown'}** ${rarityEmoji} ${buddy.rarity.toUpperCase()}${shinyTag}`,
+    `*${info?.name ?? buddy.species}*${hatDisplay} | Eyes: ${buddy.eyes}`,
+    ''
+  ]
+
+  if (buddy.personality) {
+    lines.push(`> ${buddy.personality}`, '')
+  }
+
+  for (const { key, display } of STAT_NAMES) {
+    const val = buddy.stats[key] ?? 0
+    lines.push(`${display}  ${statBar(val)}  **${val}**/10`)
+  }
+
+  return lines.join('\n')
 }

@@ -2,9 +2,10 @@
 
 import { ActionRowBuilder, ButtonBuilder, ContainerBuilder, TextDisplayBuilder } from '@discordjs/builders'
 import type { ChatInputCommandInteraction } from 'discord.js'
-import { ButtonStyle, ComponentType, MessageFlags } from 'discord.js'
+import { ButtonStyle, MessageFlags } from 'discord.js'
 import { getAnimeSchedule } from '../../../agent/tools/getAnimeSchedule.js'
 import { character } from '../../../character/index.js'
+import { collectPageButtons } from '../../pagination.js'
 import { CURIOUS_COLOR, FLAVOR, buildToolMessage, randomFrom } from './shared.js'
 
 function capitalize(str: string): string {
@@ -109,8 +110,6 @@ export async function handleSchedule(interaction: ChatInputCommandInteraction) {
     return buildToolMessage(buildPage(0), CURIOUS_COLOR)
   }
 
-  let currentPage = 0
-
   const buildPageContainer = (page: number, buttonsEnabled: boolean) => {
     const container = new ContainerBuilder()
       .setAccentColor(CURIOUS_COLOR)
@@ -135,40 +134,29 @@ export async function handleSchedule(interaction: ChatInputCommandInteraction) {
   }
 
   const reply = await interaction.editReply({
-    components: [buildPageContainer(currentPage, true)],
+    components: [buildPageContainer(0, true)],
     flags: MessageFlags.IsComponentsV2 as typeof MessageFlags.IsComponentsV2
   })
 
-  const collector = reply.createMessageComponentCollector({
-    componentType: ComponentType.Button,
-    time: 60_000
-  })
-
-  collector.on('collect', async (btnInteraction) => {
-    if (btnInteraction.user.id !== interaction.user.id) {
-      await btnInteraction.reply({ content: character.lines.tools.notYours, flags: MessageFlags.Ephemeral })
-      return
-    }
-
-    if (btnInteraction.customId.startsWith('sched_next') && currentPage < totalPages - 1) {
-      currentPage++
-    } else if (btnInteraction.customId.startsWith('sched_prev') && currentPage > 0) {
-      currentPage--
-    }
-
-    await btnInteraction.update({
-      components: [buildPageContainer(currentPage, true)],
-      flags: MessageFlags.IsComponentsV2 as typeof MessageFlags.IsComponentsV2
-    })
-  })
-
-  collector.on('end', async () => {
-    await interaction
-      .editReply({
-        components: [buildPageContainer(currentPage, false)],
+  collectPageButtons({
+    reply,
+    ownerId: interaction.user.id,
+    prefix: 'sched',
+    pageCount: totalPages,
+    update: async (button, page) => {
+      await button.update({
+        components: [buildPageContainer(page, true)],
         flags: MessageFlags.IsComponentsV2 as typeof MessageFlags.IsComponentsV2
       })
-      .catch(() => {})
+    },
+    finish: async (page) => {
+      await interaction
+        .editReply({
+          components: [buildPageContainer(page, false)],
+          flags: MessageFlags.IsComponentsV2 as typeof MessageFlags.IsComponentsV2
+        })
+        .catch(() => {})
+    }
   })
 
   return undefined as unknown as ReturnType<typeof buildToolMessage>

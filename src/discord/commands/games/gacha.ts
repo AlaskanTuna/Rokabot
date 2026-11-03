@@ -3,7 +3,6 @@
 import type { ChatInputCommandInteraction } from 'discord.js'
 import { config } from '../../../config.js'
 import {
-  type BuddyData,
   getBuddy,
   getBuddyCollection,
   getBuddyCount,
@@ -20,39 +19,14 @@ import {
   SPECIES,
   STAT_NAMES
 } from '../../../games/data/buddySpecies.js'
-import { buddySprite, buildBuddyContainer, buildGameContainer, randomFrom } from './shared.js'
-
-/** Build a stat bar: e.g. "CHARM/魅力  ████░░░░░░  4/10" */
-function statBar(value: number, max: number = 10): string {
-  const filled = '\u2588'.repeat(value)
-  const empty = '\u2591'.repeat(max - value)
-  return `${filled}${empty}`
-}
-
-/** Format a buddy summary for display. */
-function formatBuddySummary(buddy: BuddyData): string {
-  const info = getSpeciesInfo(buddy.species)
-  const rarityEmoji = RARITY_EMOJI[buddy.rarity]
-  const shinyTag = buddy.shiny ? ' \u2728 **SHINY**' : ''
-  const hatDisplay = buddy.hat !== 'none' ? ` | Hat: ${buddy.hat}` : ''
-
-  const lines = [
-    `${info?.emoji ?? ''} **${buddy.name ?? 'Unknown'}** ${rarityEmoji} ${buddy.rarity.toUpperCase()}${shinyTag}`,
-    `*${info?.name ?? buddy.species}*${hatDisplay} | Eyes: ${buddy.eyes}`,
-    ''
-  ]
-
-  if (buddy.personality) {
-    lines.push(`> ${buddy.personality}`, '')
-  }
-
-  for (const { key, display } of STAT_NAMES) {
-    const val = buddy.stats[key] ?? 0
-    lines.push(`${display}  ${statBar(val)}  **${val}**/10`)
-  }
-
-  return lines.join('\n')
-}
+import {
+  buddySprite,
+  buildBuddyContainer,
+  buildGameContainer,
+  formatBuddySummary,
+  randomFrom,
+  statBar
+} from './shared.js'
 
 function formatHatchTimeRemaining(ms: number): string {
   const minutes = Math.ceil(ms / 60_000)
