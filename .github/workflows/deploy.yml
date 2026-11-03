@@ -8,6 +8,12 @@ on:
       - 'docs/**'
       - '.claude/**'
       - 'graphify-out/**'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/pull_request_template.md'
+      - '.github/labels.yml'
+      - '.github/workflows/metadata.yml'
+      - '.gitignore'
+      - '.graphifyignore'
   pull_request:
     branches: [main]
 

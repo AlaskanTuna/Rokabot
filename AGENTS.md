@@ -14,3 +14,4 @@ Read these when the task needs them:
 - docs/trd.md: before changing a contract or the architecture
 - docs/prd.md: for requirements
 - docs/runbook.md: for Pi deployment and operations
+- docs/agents/issue-tracker.md: before creating or changing an issue or PR

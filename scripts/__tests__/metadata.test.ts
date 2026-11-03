@@ -114,4 +114,91 @@ describe('main', () => {
       rmSync(dir, { recursive: true, force: true })
     }
   })
+
+  it('handles pull_request_target: posts labels and exits 1 when the re-read PR still lacks assignee and labels', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'rokabot-metadata-'))
+    try {
+      const argsFile = join(dir, 'gh-args.txt')
+      const prFile = join(dir, 'pr.json')
+      writeFileSync(
+        join(dir, 'gh'),
+        '#!/bin/sh\nprintf "%s\\n" "$*" >> "$GH_ARGS_FILE"\ncase "$*" in\n*pulls/7*) cat "$GH_PR_FILE" ;;\nesac\nexit 0\n',
+        { mode: 0o755 }
+      )
+      chmodSync(join(dir, 'gh'), 0o755)
+      const eventPath = join(dir, 'event.json')
+      const pullRequest = {
+        number: 7,
+        title: 'fix(agent): mend it',
+        labels: [],
+        assignees: [],
+        user: { login: 'someone' },
+        head: { ref: 'fix/mend' }
+      }
+      writeFileSync(eventPath, JSON.stringify({ pull_request: pullRequest }))
+      writeFileSync(prFile, JSON.stringify(pullRequest))
+      let status = -1
+      try {
+        execFileSync('node', [fileURLToPath(new URL('../metadata.ts', import.meta.url))], {
+          env: {
+            ...process.env,
+            PATH: `${dir}:${process.env.PATH ?? ''}`,
+            GH_ARGS_FILE: argsFile,
+            GH_PR_FILE: prFile,
+            GITHUB_EVENT_PATH: eventPath,
+            GITHUB_EVENT_NAME: 'pull_request_target',
+            GITHUB_REPOSITORY: 'octo/repo'
+          }
+        })
+      } catch (error) {
+        status = (error as { status: number }).status
+      }
+      expect(status).toBe(1)
+      const recorded = readFileSync(argsFile, 'utf8')
+      expect(recorded).toContain('issues/7/labels')
+      expect(recorded).toContain('type:fix')
+      expect(recorded).toContain('area:agent')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('removes needs-triage when the title parses and the item already has it', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'rokabot-metadata-'))
+    try {
+      const argsFile = join(dir, 'gh-args.txt')
+      writeFileSync(join(dir, 'gh'), '#!/bin/sh\nprintf "%s\\n" "$*" >> "$GH_ARGS_FILE"\nexit 0\n', {
+        mode: 0o755
+      })
+      chmodSync(join(dir, 'gh'), 0o755)
+      const eventPath = join(dir, 'event.json')
+      writeFileSync(
+        eventPath,
+        JSON.stringify({
+          issue: {
+            number: 9,
+            title: 'fix(agent): mend it',
+            labels: [{ name: 'needs-triage' }],
+            assignees: [{ login: 'someone' }],
+            user: { login: 'someone' }
+          }
+        })
+      )
+      execFileSync('node', [fileURLToPath(new URL('../metadata.ts', import.meta.url))], {
+        env: {
+          ...process.env,
+          PATH: `${dir}:${process.env.PATH ?? ''}`,
+          GH_ARGS_FILE: argsFile,
+          GITHUB_EVENT_PATH: eventPath,
+          GITHUB_EVENT_NAME: 'issues',
+          GITHUB_REPOSITORY: 'octo/repo'
+        }
+      })
+      const recorded = readFileSync(argsFile, 'utf8')
+      expect(recorded).toContain('issues/9/labels/needs-triage')
+      expect(recorded).toContain('DELETE')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
 })

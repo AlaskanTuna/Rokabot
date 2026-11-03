@@ -183,5 +183,9 @@ coverage/
 # Discord preview output
 preview-out/
 
+# Local planning scratch
+/.superpowers/
+/.dkm/
+
 # Archify scratch output (diagram sources live in docs/diagrams/src)
 .archify/

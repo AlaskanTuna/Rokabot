@@ -14,6 +14,7 @@
     "scripts/__tests__/character.test.ts",
     "scripts/metadata.ts",
     "scripts/__tests__/metadata.test.ts",
+    "scripts/sync-labels.ts",
     "sidecar/embeddings/src/embedder.ts",
     "sidecar/embeddings/src/handler.ts",
     "sidecar/embeddings/src/__tests__/**/*",

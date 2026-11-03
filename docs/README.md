@@ -226,11 +226,7 @@ _The bot and its speech sidecar in Docker Compose, between Discord and the remot
 
 ## Contributing
 
-1. Branch from `main`. Every change, small ones included, lands through a pull request.
-2. Run the gates: `npm test && npm run test:perf`, then `npm run lint`, `npm run format:check` and `npm run typecheck`.
-3. Write commits as [Conventional Commits](https://www.conventionalcommits.org/). A commit hook checks them.
-4. Open the pull request. It can merge only after the `test` check passes.
-5. When a change alters a contract, update its [TRD](trd.md) module in the same pull request.
+See [CONTRIBUTING](../CONTRIBUTING.md) for branches, titles, labels, gates and merge rules.
 
 <details>
   <summary><strong>Repository Layout</strong></summary>

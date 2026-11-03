@@ -94,7 +94,7 @@ function assignable(repo: string, login: string): boolean {
   }
 }
 
-async function labelAndAssign(
+function labelAndAssign(
   repo: string,
   number: number,
   title: string,
@@ -102,10 +102,13 @@ async function labelAndAssign(
   assignees: string[],
   author: string,
   vocabulary: Vocabulary
-): Promise<void> {
+): void {
   const parsed = parseTitle(title, vocabulary)
   const wanted = parsed === null ? ['needs-triage'] : labelsFor(parsed)
   api(repo, `issues/${number}/labels`, ['--method', 'POST', ...wanted.flatMap((label) => ['-f', `labels[]=${label}`])])
+  if (parsed !== null && labels.includes('needs-triage')) {
+    api(repo, `issues/${number}/labels/needs-triage`, ['--method', 'DELETE'])
+  }
   if (assignees.length === 0) {
     const login = assignable(repo, author) ? author : FALLBACK_ASSIGNEE
     api(repo, `issues/${number}/assignees`, ['--method', 'POST', '-f', `assignees[]=${login}`])
@@ -123,12 +126,12 @@ async function main(): Promise<void> {
   }
   const payload: unknown = JSON.parse(readFileSync(eventPath, 'utf8'))
   const vocabulary = await loadVocabulary()
-  if (eventName === 'pull_request') {
+  if (eventName === 'pull_request' || eventName === 'pull_request_target') {
     const pr = (payload as { pull_request: GitHubPullRequest }).pull_request
     if (pr.head.ref.startsWith(RELEASE_PLEASE_PREFIX)) return
     const labels = pr.labels.map((label) => label.name)
     const assignees = pr.assignees.map((user) => user.login)
-    await labelAndAssign(repo, pr.number, pr.title, labels, assignees, pr.user.login, vocabulary)
+    labelAndAssign(repo, pr.number, pr.title, labels, assignees, pr.user.login, vocabulary)
     const options = { encoding: 'utf8', stdio: 'pipe' } as const
     const fresh = JSON.parse(
       execFileSync('gh', ['api', `repos/${repo}/pulls/${pr.number}`], options)
@@ -148,7 +151,7 @@ async function main(): Promise<void> {
     const issue = (payload as { issue: GitHubIssue }).issue
     const labels = issue.labels.map((label) => label.name)
     const assignees = issue.assignees.map((user) => user.login)
-    await labelAndAssign(repo, issue.number, issue.title, labels, assignees, issue.user.login, vocabulary)
+    labelAndAssign(repo, issue.number, issue.title, labels, assignees, issue.user.login, vocabulary)
   }
 }
 
