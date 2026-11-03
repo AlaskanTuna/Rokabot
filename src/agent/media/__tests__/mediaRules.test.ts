@@ -50,6 +50,25 @@ describe('attachment limits', () => {
 
 describe('isPrivateAddress', () => {
   it.each([
+    ['::ffff:7f00:1', '127.0.0.1'],
+    ['[::ffff:7f00:1]', '127.0.0.1'],
+    ['::ffff:a00:1', '10.0.0.1'],
+    ['::ffff:c0a8:101', '192.168.1.1'],
+    ['::ffff:6440:1', '100.64.0.1'],
+    ['::ffff:a9fe:a9fe', '169.254.169.254']
+  ])('refuses the hex v4-mapped form %s of %s', (address) => {
+    expect(isPrivateAddress(address)).toBe(true)
+  })
+
+  it('refuses the unspecified address, which reaches this host', () => {
+    expect(isPrivateAddress('::')).toBe(true)
+  })
+
+  it('allows a public address in hex v4-mapped form', () => {
+    expect(isPrivateAddress('::ffff:808:808')).toBe(false)
+  })
+
+  it.each([
     '127.0.0.1',
     '10.0.0.5',
     '192.168.1.1',
