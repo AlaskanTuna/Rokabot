@@ -1,7 +1,7 @@
 <a id="readme-top"></a>
 
 <div align="center">
-  <img src="../assets/app-icon.jpg" alt="Rokabot" width="128" height="128" style="border-radius: 50%;" />
+  <img src="assets/app-icon.jpg" alt="Rokabot" width="128" height="128" style="border-radius: 50%;" />
 
   <h1>Rokabot</h1>
 
@@ -39,15 +39,15 @@
 
 ## Who Is Maniwa Roka and Rokabot?
 
-<img align="left" src="../assets/roka-sticker-1.png" alt="Roka serving drinks" width="100" />
+<img align="left" src="assets/roka-sticker-1.png" alt="Roka serving drinks" width="100" />
 
 **Maniwa Roka** (馬庭 芦花) is a warm, gently teasing onee-san side character from [Senren\*Banka](https://vndb.org/v19073) (千恋＊万花). **Rokabot** brings her observant, affectionate energy to a Discord server through in-character conversation.
 
-<img align="right" src="../assets/roka-sticker-2.png" alt="Roka in casual outfit" width="80" />
+<img align="right" src="assets/roka-sticker-2.png" alt="Roka in casual outfit" width="80" />
 
 She can chat with a server, remember useful context without carrying it into another server or DM, help with everyday requests, and make downtime more playful.
 
-<img src="../assets/banner.png" alt="Yuzucook" />
+<img src="assets/banner.png" alt="Yuzucook" />
 
 <p align="right"><a href="#readme-top">↑</a></p>
 
@@ -59,45 +59,45 @@ She can chat with a server, remember useful context without carrying it into ano
 
 She answers @mentions, replies to her, her name and `/ask`. Each channel keeps its own window of recent messages, rebuilt from SQLite after a restart. Every reply draws its length, opener, ending and kaomoji in code, and one of 12 moods sets her tone, so she sounds like herself without repeating herself. Replies arrive as Discord components with an expression portrait.
 
-→ [Features guide](guide/features.md) · [Prompt engine](trd/prompt-engine.md)
+→ [Features guide](docs/guide/features.md) · [Prompt engine](docs/trd/prompt-engine.md)
 
 ### Bring Your Own Character
 
 Persona, voice, moods and every line she posts live in one pack folder of Markdown and YAML. `characters/roka` ships; point `character:` at another folder to run someone else. `npm run character -- check` validates a pack, and `npm run character -- preview` prints the exact system prompt for a mood and hour. The safety prompts are locked, so no pack can drop them.
 
-→ [Characters guide](guide/characters.md) · [Prompt engine](trd/prompt-engine.md)
+→ [Characters guide](docs/guide/characters.md) · [Prompt engine](docs/trd/prompt-engine.md)
 
 ### Persona Studio
 
 `npm run studio` opens a local dashboard for the character pack, `config.yml` and `.env`. It checks each edit with the bot's own rules before it saves, previews the exact prompt for any mood and hour, and leaves your YAML comments untouched.
 
-![Persona Studio editing a prompt, with the live preview on the right](../studio/screenshot.png)
+![Persona Studio editing a prompt, with the live preview on the right](studio/screenshot.png)
 
-→ [Persona Studio](../studio/README.md)
+→ [Persona Studio](studio/README.md)
 
 ### Any Model
 
 `llm.main` writes the replies, and `llm.fallback` takes over when it fails. Tested profiles cover Gemini, Anthropic, OpenAI and ModelScope. `provider: openai-compatible` runs any `/chat/completions` server, such as Ollama, OpenRouter or DeepSeek. Each model can carry its own request and token limits, and each paid provider a monthly USD cap.
 
-→ [Models guide](guide/models.md) · [Models internals](trd/models.md)
+→ [Models guide](docs/guide/models.md) · [Models internals](docs/trd/models.md)
 
 ### Memory
 
 She learns facts about members and the server in channels where someone talked to her, and brings a bounded set back into later replies. Memory never leaves its server, and DMs and `/ask` never read or write it. `memory.privacy` can keep memories inside one channel, and a member can ask her to forget them.
 
-→ [Memory guide](guide/memory.md) · [Memory internals](trd/memory.md)
+→ [Memory guide](docs/guide/memory.md) · [Memory internals](docs/trd/memory.md)
 
 ### Eyes and Ears
 
 She reads images and PDFs, and watches audio and video into notes before she replies. She opens X, Bluesky, Threads, YouTube, TikTok, Reddit, Instagram and Bilibili links the same way. Each file type has its own size limit, and she tells the member in character when she can't read one.
 
-→ [Features guide](guide/features.md#seeing-and-watching) · [Media internals](trd/media.md)
+→ [Features guide](docs/guide/features.md#seeing-and-watching) · [Media internals](docs/trd/media.md)
 
 ### Tools
 
 In chat she searches the web, checks the weather and time, rolls dice, flips coins, looks up anime and airing schedules, and sets reminders. A short footer shows what she did.
 
-→ [Features guide](guide/features.md#tools-she-uses)
+→ [Features guide](docs/guide/features.md#tools-she-uses)
 
 ### Games and Stats
 
@@ -114,19 +114,19 @@ In chat she searches the web, checks the weather and time, rolls dice, flips coi
 | `/stats`     | Open the server activity notebook                       |
 | `/report`    | File a bug report, with an optional file                |
 
-→ [Features guide](guide/features.md#commands)
+→ [Features guide](docs/guide/features.md#commands)
 
 ### Built to Stay Up
 
 One turn runs per channel at a time. Retries, the fallback model and an in-character safety ladder keep a reply coming when a provider fails. `GET /` on port 3000 reports her health, and every deploy waits for it.
 
-→ [Reliability internals](trd/reliability.md) · [Runbook](runbook.md)
+→ [Reliability internals](docs/trd/reliability.md) · [Runbook](docs/RUNBOOK.md)
 
 ### Runs Anywhere
 
 One Docker Compose stack, published as amd64 and arm64 images. It runs on a Raspberry Pi 5, any Docker host, Railway, Render, Fly.io or Coolify.
 
-→ [Docker](deploy/docker.md) · [Railway](deploy/railway.md) · [Render](deploy/render.md) · [Fly.io](deploy/fly.md) · [Coolify](deploy/coolify.md)
+→ [Docker](docs/deploy/docker.md) · [Railway](docs/deploy/railway.md) · [Render](docs/deploy/render.md) · [Fly.io](docs/deploy/fly.md) · [Coolify](docs/deploy/coolify.md)
 
 <p align="right"><a href="#readme-top">↑</a></p>
 
@@ -134,7 +134,7 @@ One Docker Compose stack, published as amd64 and arm64 images. It runs on a Rasp
 
 ## How It Works
 
-![System Overview](diagrams/system-overview.svg)
+![System Overview](docs/diagrams/system-overview.svg)
 
 _The bot and its speech sidecar in Docker Compose, between Discord and the remote model and Jev APIs. SQLite holds all durable state._
 
@@ -143,7 +143,7 @@ _The bot and its speech sidecar in Docker Compose, between Discord and the remot
 3. **Answer:** the main model writes the reply and calls tools when it needs them. The fallback model takes over on a failure.
 4. **Remember:** the reply renders as Discord components. Later, memory extraction reads the closed conversation and keeps what matters.
 
-→ [System internals](trd/system.md)
+→ [System internals](docs/trd/system.md)
 
 <p align="right"><a href="#readme-top">↑</a></p>
 
@@ -169,7 +169,7 @@ _The bot and its speech sidecar in Docker Compose, between Discord and the remot
 
 5. Check it. `curl http://localhost:3000/` returns HTTP 200 once she is online. Then mention the bot in a channel.
 
-→ [Getting Started](guide/getting-started.md) has local development, tests and startup errors. To run without a clone, follow [Docker](deploy/docker.md).
+→ [Getting Started](docs/guide/getting-started.md) has local development, tests and startup errors. To run without a clone, follow [Docker](docs/deploy/docker.md).
 
 <p align="right"><a href="#readme-top">↑</a></p>
 
@@ -177,16 +177,16 @@ _The bot and its speech sidecar in Docker Compose, between Discord and the remot
 
 ## Documentation
 
-| Goal                  | Start Here                                              | Go Deeper                                                                                                                                                                                                                                                                                             |
-| --------------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Run Rokabot           | [Getting Started](guide/getting-started.md)             | [Configuration](guide/configuration.md) · [Runbook](runbook.md)                                                                                                                                                                                                                                       |
-| Deploy to a platform  | [Docker](deploy/docker.md)                              | [Railway](deploy/railway.md) · [Render](deploy/render.md) · [Fly.io](deploy/fly.md) · [Coolify](deploy/coolify.md) · [Deployment](trd/deployment.md)                                                                                                                                                  |
-| Choose models         | [Models](guide/models.md)                               | [Models internals](trd/models.md)                                                                                                                                                                                                                                                                     |
-| Create a character    | [Characters](guide/characters.md)                       | [Persona Studio](../studio/README.md) · [Prompt Engine](trd/prompt-engine.md)                                                                                                                                                                                                                         |
-| Know what members see | [Features](guide/features.md)                           | [Media](trd/media.md) · [Jev Judgments](trd/jev.md)                                                                                                                                                                                                                                                   |
-| Manage memory         | [Memory](guide/memory.md)                               | [Memory internals](trd/memory.md)                                                                                                                                                                                                                                                                     |
-| Understand the system | [TRD Index](trd.md)                                     | [System](trd/system.md) · [Reliability](trd/reliability.md) · [Data](trd/data.md) · [Product Requirements](prd.md)                                                                                                                                                                                    |
-| Read the research     | [Character Harness](research/character-harness-2026.md) | [Roka Voice v3](research/roka-voice-v3.md) · [Roka Voice v4](research/roka-voice-v4.md) · [Multimodal](research/multimodal.md) · [Jev Integration](research/jev-integration.md) · [Social Post Viewing](research/social-post-viewing.md) · [Auto-Deploy Platforms](research/auto-deploy-platforms.md) |
+| Goal                  | Start Here                                                   | Go Deeper                                                                                                                                                                                                                                                                                                                           |
+| --------------------- | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Run Rokabot           | [Getting Started](docs/guide/getting-started.md)             | [Configuration](docs/guide/configuration.md) · [Runbook](docs/RUNBOOK.md)                                                                                                                                                                                                                                                           |
+| Deploy to a platform  | [Docker](docs/deploy/docker.md)                              | [Railway](docs/deploy/railway.md) · [Render](docs/deploy/render.md) · [Fly.io](docs/deploy/fly.md) · [Coolify](docs/deploy/coolify.md) · [Deployment](docs/trd/deployment.md)                                                                                                                                                       |
+| Choose models         | [Models](docs/guide/models.md)                               | [Models internals](docs/trd/models.md)                                                                                                                                                                                                                                                                                              |
+| Create a character    | [Characters](docs/guide/characters.md)                       | [Persona Studio](studio/README.md) · [Prompt Engine](docs/trd/prompt-engine.md)                                                                                                                                                                                                                                                     |
+| Know what members see | [Features](docs/guide/features.md)                           | [Media](docs/trd/media.md) · [Jev Judgments](docs/trd/jev.md)                                                                                                                                                                                                                                                                       |
+| Manage memory         | [Memory](docs/guide/memory.md)                               | [Memory internals](docs/trd/memory.md)                                                                                                                                                                                                                                                                                              |
+| Understand the system | [TRD Index](docs/TRD.md)                                     | [System](docs/trd/system.md) · [Reliability](docs/trd/reliability.md) · [Data](docs/trd/data.md) · [Product Requirements](docs/PRD.md)                                                                                                                                                                                              |
+| Read the research     | [Character Harness](docs/research/character-harness-2026.md) | [Roka Voice v3](docs/research/roka-voice-v3.md) · [Roka Voice v4](docs/research/roka-voice-v4.md) · [Multimodal](docs/research/multimodal.md) · [Jev Integration](docs/research/jev-integration.md) · [Social Post Viewing](docs/research/social-post-viewing.md) · [Auto-Deploy Platforms](docs/research/auto-deploy-platforms.md) |
 
 <p align="right"><a href="#readme-top">↑</a></p>
 
@@ -226,7 +226,7 @@ _The bot and its speech sidecar in Docker Compose, between Discord and the remot
 
 ## Contributing
 
-See [CONTRIBUTING](../CONTRIBUTING.md) for branches, titles, labels, gates and merge rules.
+See [CONTRIBUTING](CONTRIBUTING.md) for branches, titles, labels, gates and merge rules.
 
 <details>
   <summary><strong>Repository Layout</strong></summary>
@@ -254,4 +254,4 @@ See [CONTRIBUTING](../CONTRIBUTING.md) for branches, titles, labels, gates and m
 
 ## License
 
-[MIT](../LICENSE).
+[MIT](LICENSE).

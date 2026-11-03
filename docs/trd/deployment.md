@@ -53,7 +53,7 @@ _A PR runs the checks; a merge builds both images, tags them in GHCR, and the Pi
 
 - **Public Packages:** the Pi and users pull without logging in. A private package fails the `manifest` job.
 - **Promote Check:** `promote` confirms `stable` and `sha-<7>` resolve to the same digest.
-- **Skipped Promote:** if the release commit's deploy failed, never ran or was superseded, `stable` stays on the previous release. [Runbook](../runbook.md) has the manual steps.
+- **Skipped Promote:** if the release commit's deploy failed, never ran or was superseded, `stable` stays on the previous release. [Runbook](../RUNBOOK.md) has the manual steps.
 
 ### Deploy on the Pi
 
@@ -69,7 +69,7 @@ The `deploy` job runs on the Pi's self-hosted runner. The runner polls GitHub ou
 8. Post success or failure to `DISCORD_WEBHOOK_URL`, when set.
 
 - **Failed Pull:** the old container keeps running. There is no automatic rollback.
-- **Rollback:** set an older `ROKA_TAG` in `.env` and restore that commit's `config.yml`. The [Runbook](../runbook.md) lists the steps.
+- **Rollback:** set an older `ROKA_TAG` in `.env` and restore that commit's `config.yml`. The [Runbook](../RUNBOOK.md) lists the steps.
 - **Authorization:** a merge to `main` restarts production unless every changed path is in `paths-ignore`. It needs the same human authorization as a restart.
 
 ### release-please
@@ -138,7 +138,7 @@ A release PR opened with `github.token` never triggers CI, so its required `test
 - **Memory:** the Pi has 8 GB. The caps above total 4 GB with the `embeddings` profile on.
 - **Disk:** log rotation and the image prune keep disk use bounded. The first pull after a speech-model change downloads about 1 GB of layers.
 - **Boot:** Docker must start on boot for `restart: unless-stopped` to bring the bot back after a reboot.
-- **Runner:** a systemd service. The [Runbook](../runbook.md) covers setup and management.
+- **Runner:** a systemd service. The [Runbook](../RUNBOOK.md) covers setup and management.
 
 ## Source Files
 

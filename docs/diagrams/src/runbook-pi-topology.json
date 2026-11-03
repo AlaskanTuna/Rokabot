@@ -109,7 +109,7 @@
       "sublabel": "~/rokabot, compose",
       "pos": [540, 520],
       "size": [170, 64],
-      "sources": [{ "path": "docs/runbook.md", "line": 22, "end_line": 59, "label": "bot management" }]
+      "sources": [{ "path": "docs/RUNBOOK.md", "line": 22, "end_line": 59, "label": "bot management" }]
     },
     {
       "id": "tailscale",
@@ -127,7 +127,7 @@
       "sublabel": "dev machine",
       "pos": [60, 520],
       "size": [140, 64],
-      "sources": [{ "path": "docs/runbook.md", "line": 7, "end_line": 15, "label": "SSH access" }]
+      "sources": [{ "path": "docs/RUNBOOK.md", "line": 7, "end_line": 15, "label": "SSH access" }]
     },
     {
       "id": "discord",

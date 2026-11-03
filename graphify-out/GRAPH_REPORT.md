@@ -1,22 +1,22 @@
-# Graph Report - github-rules  (2026-11-03)
+# Graph Report - restructure  (2026-11-03)
 
 ## Corpus Check
-- 708 files · ~592,963 words
+- 713 files · ~595,805 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 30 file(s) not represented in the graph (top: (none) 13, .jsonl 11, .rss 2)
 
 ## Summary
-- 5754 nodes · 16195 edges · 247 communities (199 shown, 48 thin omitted)
-- Extraction: 96% EXTRACTED · 4% INFERRED · 0% AMBIGUOUS · INFERRED: 612 edges (avg confidence: 0.91)
+- 5780 nodes · 16058 edges · 257 communities (208 shown, 49 thin omitted)
+- Extraction: 97% EXTRACTED · 3% INFERRED · 0% AMBIGUOUS · INFERRED: 532 edges (avg confidence: 0.91)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `435d743e`
+- Built from commit: `a1900a60`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
-- attachmentLimits.ts
+- media.ts
 - jevReplay.ts
 - qwenWatch.ts
 - memoryEpisodeStore.ts
@@ -24,24 +24,24 @@
 - buddy.ts
 - messageBuilder.ts
 - getDb
-- src/games/hangman.ts
+- test-features.ts
 - scheduler.ts
 - searchNativeAnthropic.test.ts
 - queries.ts
 - discordDoubles.ts
 - messageCreate.ts
 - reminder.ts
-- tools/index.ts
+- __tests__/tools.test.ts
 - views.ts
 - replies/service.ts
 - guildFactDates.ts
-- memoryEpisodeReplay.ts
+- episodeTracker.ts
 - Dev Tooling Dependencies
 - WindowedSessionService
 - workspace.ts
 - memoryShadow.ts
 - database.ts
-- recall.ts
+- turnContext.ts
 - run.ts
 - Project Dependencies
 - Secrets.tsx
@@ -51,18 +51,18 @@
 - turnMedia.ts
 - YamlForm.tsx
 - scripts
-- recall-calibration-sample.ts
+- recall-calibration.test.ts
 - gameCommands.ts
 - youtubeStreams.ts
 - toolTriggerScoring.ts
-- replay-memory-v2.ts
+- memoryEpisodeReplay.ts
 - getAnimeSchedule.ts
 - worst-case.ts
 - profiles.ts
 - pack.ts
 - configShared.tsx
 - discord/attachments.ts
-- reliability.ts
+- recall.ts
 - generateObject.ts
 - discord.js
 - charts.ts
@@ -70,7 +70,7 @@
 - Inline Data Contract
 - TypeScript Build Config
 - handler.ts
-- legacyGeminiExtractionSchema.ts
+- extractionSchema.test.ts
 - anthropicLlm.ts
 - obsidianExport.ts
 - budget.ts
@@ -79,7 +79,7 @@
 - reportStore.ts
 - extractor.ts
 - digest.ts
-- Multimodal Intake Research
+- markdown.ts
 - Speech-to-Text HTTP Server
 - socialPosts/service.ts
 - serve.ts
@@ -88,24 +88,24 @@
 - vitest
 - Prefetch Measurement Tools
 - package.json
-- Deployment
+- test
 - File Upload Handling
 - interactionCreate.metrics.test.ts
-- harness.eval.test.ts
+- anthropicMain.eval.test.ts
 - roka Service
-- toolTrigger.ts
+- quotaDiagnostic.ts
 - getWeather.ts
 - views.test.ts
 - watch.ts
-- nativeAnthropic.ts
+- logger.ts
 - Search Prefetch Reporting
 - models.ts
 - messageContent.ts
 - PackFileScreen.tsx
-- config
+- src/index.ts
 - config.ts
-- Social Viewing Research
-- promptGolden.test.ts
+- Social Post Viewing Research
+- ToneKey
 - reportCommand.ts
 - extractionSchema.ts
 - test-chat.ts
@@ -114,17 +114,17 @@
 - chatCompletionsLlm.ts
 - WAV File Validation
 - load.ts
-- usage.ts
+- reclassifyModels.ts
 - ASR Sidecar Service
 - app.test.ts
 - fallbackModel.ts
 - timezone.ts
-- Architecture (AGENTS.md)
+- GPT-6-Astra
 - duration.ts
 - turnMedia.test.ts
 - Commit Linting Rules
-- @google/adk
-- Rokabot Character Data
+- verifyThreshold
+- Raspberry Pi Runbook
 - Speech Budget Management
 - gacha.ts
 - redditFeed.ts
@@ -132,14 +132,14 @@
 - Documentation Style Guide
 - Git Commit Standards
 - Coding Best Practices
-- Character Harness Research 2026
+- Prompt Engine
 - promptSafety.ts
 - Audio Decoding Tests
 - Memory
 - metadata.ts
 - emojiReactor.ts
 - hiddenRetractions.test.ts
-- socialPosts/types.ts
+- cli.ts
 - replyReader
 - transcribe.test.ts
 - Speech Server Engines
@@ -152,66 +152,66 @@
 - textEdit.ts
 - displayName
 - linesGolden.test.ts
-- CI/CD Deployment Pipeline
+- deploy Job
 - ref_node_fs
-- discord/channelVisibility.ts
+- config
 - Text Cleaning Utilities
-- roka.test.ts
-- secrets.ts
-- test-features.ts
+- roka.ts
+- verification.test.ts
+- test-phase8.ts
 - UI TypeScript Configuration
 - System Architecture
-- Gemini Failure Taxonomy
+- metrics.eval.test.ts
 - agent/attachments.ts
 - anthropicLlm.test.ts
 - yamlEdit.ts
 - render.ts
 - Configuration
 - persona-replay.ts
-- turnContext.ts
+- searchPrefetch.ts
 - privacy
 - app.ts
 - Reliability
 - queries.test.ts
 - updateNotifier.ts
-- toneDetector.ts
+- promptGolden.test.ts
 - Jev Judgments
-- Raspberry Pi Command Reference
+- README.md
 - recall-calibration-thresholds.ts
 - Characters
 - judgments.ts
 - Product
 - API and Security Tests
 - Models
-- Claims Memory Architecture
-- main.test.ts
+- tools/index.ts
+- scheduler.test.ts
 - Deployment and Setup Guide
 - Auto-Deploy Platforms
-- Roka Voice v3: Restoring Variety on Haiku
+- searchWeb
 - guildFactDates.test.ts
 - persona-report.ts
 - Embedding Project Config
 - searchAnime.ts
 - reportCommand.test.ts
 - FakeInteraction
-- searchNativeGemini.test.ts
+- toolTrigger.retry.test.ts
 - Features
 - Embedding Service Docs
-- persona-turns.ts
+- turnContext.test.ts
 - react
 - models.spec.ts
 - playwright.config.ts
-- fallbackModel.test.ts
+- admission.ts
 - yamlText.ts
 - Speech Pattern Documentation
 - Persona Identity Definition
 - collection.ts
 - fingerprint.ts
-- markdownGuard.ts
-- extractionSchema.test.ts
+- local.test.ts
+- reminderScheduler.ts
 - Changelog
 - Character Packs
-- configFile.ts
+- packs.ts
 - Contributing
 - Audio Video Documentation
 - Release Configuration
@@ -238,68 +238,71 @@
 - Calm Mood Prompt
 - Prompts.tsx
 - fixtures.ts
-- Media
-- measure.ts
-- Product Requirements Document
-- stripNarratedToolCalls
-- roka.ts
+- toolTrigger.ts
+- attachmentLimits.ts
+- Product Requirements
+- getCurrentTime.ts
+- replyBlocks.ts
 - UI Styling Assets
 - pull_request_template.md
 - gemini.test.ts
-- readReplies.ts
-- ScriptedLlm
-- ScriptedLlm
+- socialPosts/format.ts
+- extractionErrors.ts
+- statusCycler.test.ts
 - reports.ts
-- GEMINI.md
-- .appendEvent
+- Decisions
+- smoke.ts
 - Template Speaking Prompts
 - Template Calm Mood
 - Cheerful Mood Prompt
 - Persona Identity Prompts
+- interactionCreate.memory.test.ts
+- Media Watching
+- citations.ts
+- Coding Guidelines (Andrej Karpathy)
+- embeddings/__tests__/client.test.ts
+- graphify.md
+- issue-tracker.md
+- rtk.md
+- Deliberately Not Done
+- Reference Docs (AGENTS.md)
 
 ## God Nodes (most connected - your core abstractions)
 1. `getDb()` - 247 edges
 2. `vitest` - 241 edges
-3. `config` - 120 edges
+3. `config` - 119 edges
 4. `logger` - 79 edges
 5. `createMessageHandler()` - 54 edges
-6. `generateResponse()` - 53 edges
-7. `closeDb()` - 53 edges
-8. `discord.js` - 50 edges
+6. `closeDb()` - 53 edges
+7. `discord.js` - 50 edges
+8. `generateResponse()` - 49 edges
 9. `createInteractionHandler()` - 48 edges
 10. `assertClaim()` - 46 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `Attachment Types and Their Ceilings` --implements--> `GEMINI_SPELLINGS`  [INFERRED]
-  docs/trd.md → src/agent/attachmentLimits.ts
 - `Token Admission` --references--> `prepareAttachments()`  [INFERRED]
   docs/trd/media.md → src/agent/attachments.ts
+- `A Spent Day Is Not a Spent Minute` --references--> `computeBackoff()`  [INFERRED]
+  docs/trd/reliability.md → src/agent/geminiReliability.ts
 - `Client` --references--> `getJevClient()`  [INFERRED]
   docs/trd/jev.md → src/agent/jev/client.ts
+- `Reply Model and Fallback` --references--> `luna()`  [INFERRED]
+  docs/RUNBOOK.md → src/agent/llm/__tests__/chatCompletionsLlm.test.ts
 - `At a Glance` --references--> `startCall()`  [INFERRED]
   docs/trd/reliability.md → src/agent/llm/budget.ts
-- `ADK Error Delivery Constraint` --references--> `ProviderError`  [INFERRED]
-  docs/trd/reliability.md → src/agent/llm/providerError.ts
 
 ## Import Cycles
 - None detected.
 
 ## Hyperedges (group relationships)
-- **Jev Judgment Shadow-Mode System** — config_jev, docs_runbook_jev_shadow_mode, docs_readme_getting_started [EXTRACTED 0.85]
 - **Deploy-to-Pi CI/CD Pipeline** — _github_workflows_deploy_workflow, _github_workflows_deploy_test_job, _github_workflows_deploy_deploy_job, agents_working_conventions [EXTRACTED 0.90]
-- **ModelScope Qwen Fallback Feature** — config_fallback, docs_readme_modelscope_fallback, docs_runbook_fallback_model [EXTRACTED 0.90]
-- **Gemini Reliability & Failure Handling** — docs_trd_failure_taxonomy, docs_trd_fallback_model, docs_trd_adk_error_delivery, docs_trd_rpm_budget_accounting, docs_trd_concurrency_lifecycle_retry [INFERRED 0.80]
-- **Rate-Limit and Token-Budget Guard Mechanisms** — src_agent_tokenbudget, src_discord_bytebudget, docs_trd_rpm_budget_accounting, docs_trd_turn_reserves_calls, docs_trd_two_limiters_diff, docs_trd_per_minute_token_budget [INFERRED 0.80]
-- **Conversational Turn Lifecycle** — docs_prd_user_workflow_overview, docs_prd_fr_3_per_channel_conversational_memory, docs_prd_fr_4_layered_personality_prompts, docs_prd_fr_5_tone_detection, src_agent_roka_rokaagent [INFERRED 0.85]
-- **Jev Shadow-Mode Judgment Integration** — docs_trd_jev_judgments, docs_trd_jev_turn_judgment, docs_trd_jev_memory_admission, src_agent_jev_client, docs_research_jev_integration_jev, docs_research_jev_integration_design [INFERRED 0.85]
 - **Multimodal Attachment Safety Pipeline** — docs_research_multimodal_global_byte_budget, docs_research_multimodal_streaming_size_guard, docs_research_multimodal_attachment_strip_history, docs_research_multimodal_tpm_ceiling_measurement, src_discord_bytebudget [INFERRED 0.95]
-- **Rate and Token Budgeting Architecture** — docs_prd_fr_6_rate_limiting, docs_research_multimodal_tpm_ceiling_measurement, src_utils_ratelimiter_ratelimiter, src_agent_tokenbudget [INFERRED 0.95]
 
-## Communities (247 total, 48 thin omitted)
+## Communities (257 total, 49 thin omitted)
 
-### Community 0 - "attachmentLimits.ts"
-Cohesion: 0.09
-Nodes (28): RFC-3003, Footer, Link Priority, Lookup Limits, Model Input, Post Media, Replies, Social Post Viewing (+20 more)
+### Community 0 - "media.ts"
+Cohesion: 0.10
+Nodes (28): At a Glance, Attachment Intake, Configuration, Global In-Flight Byte Budget, Link Priority, Linked Files (`attachment_url`), Lookup Limits, Media (+20 more)
 
 ### Community 1 - "jevReplay.ts"
 Cohesion: 0.13
@@ -307,39 +310,39 @@ Nodes (26): parseReplayArgs(), runReplayCli(), TurnJudgment, TurnJudgmentInput, 
 
 ### Community 2 - "qwenWatch.ts"
 Cohesion: 0.10
-Nodes (22): binOf(), ChatCompletion, ContentPart, promptFor(), quoted(), QwenFrame, QwenWatchInput, QwenWatchResult (+14 more)
+Nodes (23): Qwen Watcher, binOf(), ChatCompletion, ContentPart, promptFor(), quoted(), QwenFrame, QwenWatchInput (+15 more)
 
 ### Community 3 - "memoryEpisodeStore.ts"
-Cohesion: 0.05
-Nodes (83): better-sqlite3, EmbeddingResult, GEMINI_FINGERPRINT, geminiVector(), LOCAL_FINGERPRINT, localVector(), persistEpisodeResult(), buildEpisodeRecallBlock() (+75 more)
+Cohesion: 0.04
+Nodes (92): better-sqlite3, EmbeddingResult, GEMINI_FINGERPRINT, geminiVector(), LOCAL_FINGERPRINT, localVector(), BackfillPace, delay() (+84 more)
 
 ### Community 4 - "Project Linting Config"
 Cohesion: 0.05
 Nodes (39): useLiteralKeys, css, formatter, files, ignore, formatter, enabled, indentStyle (+31 more)
 
 ### Community 5 - "buddy.ts"
-Cohesion: 0.11
-Nodes (32): SQLite Database Reference, BuddyRow, DailyBuddyHatch, DailyHatchRow, generateBuddy(), generateName(), generatePersonality(), getDailyHatchRow() (+24 more)
+Cohesion: 0.12
+Nodes (29): BuddyRow, DailyBuddyHatch, DailyHatchRow, generateBuddy(), generateName(), generatePersonality(), getDailyHatchRow(), getStreak() (+21 more)
 
 ### Community 6 - "messageBuilder.ts"
-Cohesion: 0.06
-Nodes (46): Expressions & Tones, Message Pipeline, System Architecture, ReplyOutcome, clampToBudget(), fitCitations(), sourceHost(), sourceLabel() (+38 more)
+Cohesion: 0.08
+Nodes (37): discord Config Section, getExpressionUrl(), lastExpressionByTone, __resetExpressionState(), TONE_EXPRESSIONS, buildRokaMessage(), buildToolFooter(), footerLeads (+29 more)
 
 ### Community 7 - "getDb"
-Cohesion: 0.05
-Nodes (105): Claims Tenancy Model, attestedScopes(), backfillLegacyRows(), ClaimReviewRow, findUnbackfilledRows(), hasBackfillMarker(), isUnsafeClaimError(), LegacyMemoryRow (+97 more)
+Cohesion: 0.07
+Nodes (82): attestedScopes(), backfillLegacyRows(), ClaimReviewRow, findUnbackfilledRows(), hasBackfillMarker(), isUnsafeClaimError(), LegacyMemoryRow, legalScopes() (+74 more)
 
-### Community 8 - "src/games/hangman.ts"
-Cohesion: 0.18
-Nodes (23): buildHangmanBody(), handleHangmanGuess(), handleHangmanStart(), HANGMAN_COLORS, saveHangmanScore(), src_games_data_hangmanwords, src_games_data_hangmanwords_hangman_words, activeGames (+15 more)
+### Community 8 - "test-features.ts"
+Cohesion: 0.15
+Nodes (28): assert(), fail(), pass(), results, TestResult, buildHangmanBody(), handleHangmanGuess(), handleHangmanStart() (+20 more)
 
 ### Community 9 - "scheduler.ts"
-Cohesion: 0.06
-Nodes (58): Memory, ABORT_CODES, classifyExtractionError(), ExtractionErrorClassification, SHUTDOWN_SENSITIVE_NAMES, TRANSIENT_HTTP_STATUSES, TRANSIENT_NETWORK_CODES, finishRunTrace() (+50 more)
+Cohesion: 0.10
+Nodes (33): classifyExtractionError(), finishRunTrace(), noteError(), noteSummary(), RunOutcome, RunStage, RunTrace, startRunTrace() (+25 more)
 
 ### Community 10 - "searchNativeAnthropic.test.ts"
 Cohesion: 0.08
-Nodes (15): Failure Classification, FailureKind, AnthropicMessagesClient, ProviderId, ProviderError, budget, route(), ROUTES (+7 more)
+Nodes (16): Failure Classification, FailureKind, AnthropicMessagesClient, ProviderId, ProviderError, budget, route(), ROUTES (+8 more)
 
 ### Community 11 - "queries.ts"
 Cohesion: 0.10
@@ -347,63 +350,63 @@ Nodes (28): activityByDay(), busiestChannel, ChannelCount, chatsSince(), CountBy
 
 ### Community 12 - "discordDoubles.ts"
 Cohesion: 0.05
-Nodes (47): AttachmentSpec, CaptureKind, CaptureSink, ChannelSpec, ClientSpec, ComponentData, ComponentSpec, EmbedSpec (+39 more)
+Nodes (43): AttachmentSpec, CaptureKind, CaptureSink, ChannelSpec, ClientSpec, ComponentData, ComponentSpec, EmbedSpec (+35 more)
 
 ### Community 13 - "messageCreate.ts"
-Cohesion: 0.08
-Nodes (59): Global In-Flight Attachment Budget, Global In-Flight Byte Budget, Turn Admission, isStreamedUpload(), sizeLimitFor(), isMonitored(), markActive(), SOCIAL_POST_UNTRUSTED_DATA_LABEL (+51 more)
+Cohesion: 0.10
+Nodes (45): Replies, isMonitored(), markActive(), asksAboutReplies(), withReplyOutcomes(), withSearchCitations(), startTurnEntryWork(), release() (+37 more)
 
 ### Community 14 - "reminder.ts"
-Cohesion: 0.18
-Nodes (23): ref_discordjs_builders, fillLine(), mocks, createToolCommandHandler(), TOOL_COMMAND_NAMES, handleAnime(), dueSlots(), handleRemind() (+15 more)
+Cohesion: 0.20
+Nodes (22): ref_discordjs_builders, mocks, createToolCommandHandler(), TOOL_COMMAND_NAMES, handleAnime(), dueSlots(), handleRemind(), handleRemindAt() (+14 more)
 
-### Community 15 - "tools/index.ts"
-Cohesion: 0.11
-Nodes (27): Tool Footer, flipCoin(), FlipCoinResult, ForgetUserParams, cityToTimezone, getCurrentTime(), GetCurrentTimeFound, GetCurrentTimeParams (+19 more)
+### Community 15 - "__tests__/tools.test.ts"
+Cohesion: 0.25
+Nodes (7): flipCoin(), FlipCoinResult, flipCoinTool, rollDiceTool, rollDice(), RollDiceParams, RollDiceResult
 
 ### Community 16 - "views.ts"
 Cohesion: 0.13
 Nodes (31): episodeCount(), memoryGrowthSeries(), newClaimsThisMonth(), retrySummary, tokenTotals, topChannels(), topPredicates(), topRememberedMembers() (+23 more)
 
 ### Community 17 - "replies/service.ts"
-Cohesion: 0.22
-Nodes (27): resolveBlueskyDid(), array(), nonNegativeInteger(), bilibiliAid(), fetchBilibiliReplies(), fetchBlueskyReplies(), BROWSER_USER_AGENT, compactReplyText() (+19 more)
+Cohesion: 0.20
+Nodes (30): array(), nonNegativeInteger(), bilibiliAid(), fetchBilibiliReplies(), fetchBlueskyReplies(), BROWSER_USER_AGENT, compactReplyText(), failed() (+22 more)
 
 ### Community 18 - "guildFactDates.ts"
 Cohesion: 0.26
 Nodes (16): addDays(), addMonths(), CalendarDate, CalendarMonth, dateForMonthDay(), isoDate(), isoMonth(), monthForMonth() (+8 more)
 
-### Community 19 - "memoryEpisodeReplay.ts"
-Cohesion: 0.08
-Nodes (41): resetMonitor(), asEpisodeLine(), clearTimer(), deltaStart(), flushEpisode(), flushOpenEpisodes(), recordEpisodeMessage(), resetEpisodeTrackerForTest() (+33 more)
+### Community 19 - "episodeTracker.ts"
+Cohesion: 0.14
+Nodes (22): asEpisodeLine(), clearTimer(), deltaStart(), flushEpisode(), flushOpenEpisodes(), recordEpisodeMessage(), resetEpisodeTrackerForTest(), scheduleLull() (+14 more)
 
 ### Community 20 - "Dev Tooling Dependencies"
 Cohesion: 0.07
 Nodes (29): devDependencies, @axe-core/playwright, @biomejs/biome, @commitlint/cli, @commitlint/config-conventional, diff, @fontsource-variable/geist, @fontsource-variable/geist-mono (+21 more)
 
 ### Community 21 - "WindowedSessionService"
-Cohesion: 0.18
-Nodes (5): attachmentMarker(), WindowedSessionService, CapturingLlm, newConversation(), PNG_BASE64
+Cohesion: 0.14
+Nodes (7): Bytes Do Not Stay in History, attachmentMarker(), isStrippable(), WindowedSessionService, CapturingLlm, newConversation(), PNG_BASE64
 
 ### Community 22 - "workspace.ts"
 Cohesion: 0.09
 Nodes (56): App(), CommandPalette(), Item, Ambient(), Page(), PageProps, SaveActions(), StatusBadges() (+48 more)
 
 ### Community 23 - "memoryShadow.ts"
-Cohesion: 0.07
-Nodes (40): Where Rokabot Decides Today, Who-Is-Who Resolver, Bounded Retrieval Contract, buildNameIndex(), escapeRegex(), isAscii(), MATCH_PRIORITY, MatchKind (+32 more)
+Cohesion: 0.20
+Nodes (14): asClaim(), asScenario(), evaluateMemoryShadow(), FixtureClaim, loadReplaySet(), MemoryShadowReport, percentile95(), REPLAY_PATH (+6 more)
 
 ### Community 24 - "database.ts"
-Cohesion: 0.04
-Nodes (46): Failure Diagnostics Table, Database File, axis(), detailOf(), fact(), history(), mix(), openFixture() (+38 more)
-
-### Community 25 - "recall.ts"
 Cohesion: 0.05
-Nodes (85): memory Config Section, Storage Schema, Unified Recall, channelVisibility, registerChannelVisibility(), resetChannelVisibilityForTest(), UNKNOWN, cosineSimilarity() (+77 more)
+Nodes (35): metrics Config Section, Database File, openFixture(), oldClaimId, undone, REMEMBER_TURN, runTurn(), ScriptedLlm (+27 more)
+
+### Community 25 - "turnContext.ts"
+Cohesion: 0.05
+Nodes (74): Where Rokabot Decides Today, Models Summary, Prompt Engine Summary, Turn Walkthrough, getEmbeddingClient(), embedEpisodeText(), EpisodeEmbeddingRole, buildNameIndex() (+66 more)
 
 ### Community 26 - "run.ts"
-Cohesion: 0.09
-Nodes (35): CaptureInput, CaptureKind, CaptureRecord, CaptureSink, createCaptureSink(), makeGuild(), main(), rokaAuthor() (+27 more)
+Cohesion: 0.10
+Nodes (33): createCaptureSink(), makeClient(), makeGuild(), makeInteraction(), makeMember(), makeUser(), fixturePath(), loadTranscript() (+25 more)
 
 ### Community 27 - "Project Dependencies"
 Cohesion: 0.13
@@ -414,8 +417,8 @@ Cohesion: 0.15
 Nodes (26): fieldClass(), Dialog(), Secret, middleEllipsis(), middleSplit(), actionId(), announce(), Bar() (+18 more)
 
 ### Community 29 - "rateLimiter.ts"
-Cohesion: 0.10
-Nodes (18): FR-6: Rate Limiting, RateLimiterConfig, Discord Gateway Layer, RateLimiterConfig, RPM-Budget Accounting, A Turn Reserves the Calls It May Make, The Two Limiters Bound Their Windows Differently, modelCallsForRequest (+10 more)
+Cohesion: 0.09
+Nodes (17): RateLimiterConfig, attachmentOptionName(), client, createInteraction(), mocks, rateLimiter(), mocks, askWith() (+9 more)
 
 ### Community 30 - "PreviewPanel.tsx"
 Cohesion: 0.12
@@ -426,8 +429,8 @@ Cohesion: 0.11
 Nodes (17): compilerOptions, declaration, declarationMap, esModuleInterop, forceConsistentCasingInFileNames, lib, module, moduleResolution (+9 more)
 
 ### Community 32 - "turnMedia.ts"
-Cohesion: 0.09
-Nodes (47): watchOutcomeFor(), durationFromTokens(), frameBins(), frameCount(), frameTimestamps(), equalBins(), estimateMediaTokens(), focusWindow() (+39 more)
+Cohesion: 0.10
+Nodes (44): Coverage Plan, isStreamedUpload(), durationFromTokens(), equalBins(), estimateMediaTokens(), FPS_LADDER, HalfWatch, HALVES_MAX_DURATION_SEC (+36 more)
 
 ### Community 33 - "YamlForm.tsx"
 Cohesion: 0.15
@@ -437,29 +440,29 @@ Nodes (35): cleanComment(), Context, Group(), helpFor(), humanize(), isRecord(),
 Cohesion: 0.06
 Nodes (36): scripts, build, character, dev, dev:quiet, export:vault, format, format:check (+28 more)
 
-### Community 35 - "recall-calibration-sample.ts"
-Cohesion: 0.12
-Nodes (27): CandidateRow, chunk(), configuredEmbed(), Embed, loadShadowRows(), main(), MATCH_WINDOW_MS, matchTurnMessage() (+19 more)
+### Community 35 - "recall-calibration.test.ts"
+Cohesion: 0.09
+Nodes (35): CandidateRow, chunk(), configuredEmbed(), Embed, loadShadowRows(), main(), MATCH_WINDOW_MS, matchTurnMessage() (+27 more)
 
 ### Community 36 - "gameCommands.ts"
 Cohesion: 0.11
-Nodes (40): ref_node_module, createGameCommandHandler(), GAME_COMMAND_NAMES, handleBuddyGuide(), handleHangmanGuide(), handleLeaderboard(), buildGameContainer(), buildTimeoutContainer() (+32 more)
+Nodes (41): games Config Section, ref_node_module, createGameCommandHandler(), GAME_COMMAND_NAMES, handleBuddyGuide(), handleHangmanGuide(), handleLeaderboard(), buildGameContainer() (+33 more)
 
 ### Community 37 - "youtubeStreams.ts"
 Cohesion: 0.19
 Nodes (19): metadata, realisticFormats, AudioFormat, audioFormats(), directHttpsUrl(), finiteNumber(), hasCodec(), headersOf() (+11 more)
 
 ### Community 38 - "toolTriggerScoring.ts"
-Cohesion: 0.10
-Nodes (28): fixturePath, header, rememberFixturePath, searchWebFixturePath, temporaryDirectories, testCase, CaseSetRun, asCase() (+20 more)
+Cohesion: 0.09
+Nodes (28): CASE_SETS, fixturePath, header, rememberFixturePath, searchWebFixturePath, temporaryDirectories, testCase, asCase() (+20 more)
 
-### Community 39 - "replay-memory-v2.ts"
-Cohesion: 0.13
-Nodes (16): ref_node_perf_hooks, argumentsFrom(), estimatedTokens(), inputText(), measure(), loadTranscriptLines(), main(), offlineAdapters() (+8 more)
+### Community 39 - "memoryEpisodeReplay.ts"
+Cohesion: 0.10
+Nodes (29): ref_node_perf_hooks, argumentsFrom(), estimatedTokens(), inputText(), liveAdapters(), measure(), loadTranscriptLines(), main() (+21 more)
 
 ### Community 40 - "getAnimeSchedule.ts"
-Cohesion: 0.19
-Nodes (17): BROADCAST_TIMEZONES, clampLimit(), convertBroadcastTime(), fetchJikan(), getAnimeSchedule(), GetAnimeScheduleParams, getCurrentSeason(), getTodayName() (+9 more)
+Cohesion: 0.18
+Nodes (18): BROADCAST_TIMEZONES, clampLimit(), convertBroadcastTime(), fetchJikan(), getAnimeSchedule(), GetAnimeScheduleParams, getCurrentSeason(), getTodayName() (+10 more)
 
 ### Community 41 - "worst-case.ts"
 Cohesion: 0.12
@@ -467,31 +470,31 @@ Nodes (32): sandboxPaths(), appendToBlock(), applyDataset(), applyEmpty(), apply
 
 ### Community 42 - "profiles.ts"
 Cohesion: 0.04
-Nodes (51): Entry Options, Profile Facts, Tested Providers, At a Glance, Model Profiles, Models, Provider IDs, Request Shaping (+43 more)
+Nodes (55): Budgets, Usage and Cost, @google/adk, scripted(), BudgetDenial, ChatCompletionsLlm, ChatCompletionsProvider, ModelScopeLlm, COMPATIBLE_DEFAULTS (+47 more)
 
 ### Community 43 - "pack.ts"
-Cohesion: 0.13
-Nodes (36): ConfigPaths, setTopLevelValue(), apiPath(), ErrorBody, assemble(), FileEdit, invalid(), loadScratch() (+28 more)
+Cohesion: 0.16
+Nodes (25): writeAtomic(), StudioError, assemble(), FileEdit, invalid(), loadScratch(), markdownUnder(), MEMORY_MODES (+17 more)
 
 ### Community 44 - "configShared.tsx"
 Cohesion: 0.09
 Nodes (51): diff, FOCUS_ORDER, Route, DiscordScreen(), ELSEWHERE, OWN, LimitsScreen(), BLOCKS (+43 more)
 
 ### Community 45 - "discord/attachments.ts"
-Cohesion: 0.11
-Nodes (29): attachment_url, Handing Her a File, Audio Intake Recommendation, Multimodal Research Doc, PDF Intake Recommendation, Video Low Resolution Recommendation, Attachment Types and Their Ceilings, ALLOWED_AUDIO_TYPES (+21 more)
+Cohesion: 0.06
+Nodes (44): ALLOWED_IMAGE_TYPES Consolidation, Attachment History Stripping, Audio Intake Recommendation, Byte Cap as Duration Proxy, Concurrency Binding Constraint, Container Memory Cap Correction, Flash-Lite Modality Verification, Global In-Flight Byte Budget (+36 more)
 
-### Community 46 - "reliability.ts"
-Cohesion: 0.07
-Nodes (37): A Spent Day Is Not a Spent Minute, Failure Kinds, The Retry Loop, BackoffOptions, classifyGeminiFailure(), classifyMarker(), computeBackoff(), DEFAULT_MAX_BACKOFF_MS (+29 more)
+### Community 46 - "recall.ts"
+Cohesion: 0.16
+Nodes (31): cosineSimilarity(), factKey(), nicknameRows(), canRecall(), byScore(), cooldownPenalty(), coreRank(), countKind() (+23 more)
 
 ### Community 47 - "generateObject.ts"
 Cohesion: 0.06
-Nodes (46): Extraction Run Trace, Background Jobs, @google/genai, zod, ModelJudgment, SYSTEM, adapterFor(), adapters (+38 more)
+Nodes (31): Background Jobs, @google/genai, adapterFor(), adapters, attempt(), BackgroundWorkload, callUsage(), GenerateObjectInput (+23 more)
 
 ### Community 48 - "discord.js"
-Cohesion: 0.09
-Nodes (28): FR-1: Slash Command Interaction, Features, discord.js, character, createClient(), askCommand, command, gachaCommand (+20 more)
+Cohesion: 0.13
+Nodes (21): discord.js, character, askCommand, command, gachaCommand, gameCommands, hangmanCommand, shiritoriCommand (+13 more)
 
 ### Community 49 - "charts.ts"
 Cohesion: 0.21
@@ -510,24 +513,24 @@ Cohesion: 0.22
 Nodes (8): ./tsconfig.json, compilerOptions, noEmit, rootDir, types, exclude, extends, include
 
 ### Community 53 - "handler.ts"
-Cohesion: 0.05
-Nodes (40): @huggingface/transformers, ref_node_net, @types/node, dependencies, @huggingface/transformers, devDependencies, @types/node, typescript (+32 more)
+Cohesion: 0.06
+Nodes (39): @huggingface/transformers, @types/node, dependencies, @huggingface/transformers, devDependencies, @types/node, typescript, engines (+31 more)
 
-### Community 54 - "legacyGeminiExtractionSchema.ts"
-Cohesion: 0.15
-Nodes (11): GUILD_PREDICATES, calendarDateProperties, datedGuildPredicates, guildFactDateResponseSchema, guildPredicates, guildSubjectResponseSchema, monthDateProperties, relativeDateProperties (+3 more)
+### Community 54 - "extractionSchema.test.ts"
+Cohesion: 0.09
+Nodes (20): EXTRACTION_RESPONSE_SCHEMA, ExtractionOutputSchema, GUILD_PREDICATES, comparable(), DateVariant, GEMINI_SCHEMA, keysIn(), subject (+12 more)
 
 ### Community 55 - "anthropicLlm.ts"
-Cohesion: 0.11
-Nodes (29): Block, classifyAnthropicError(), create(), Effort, ImageMediaType, markerBlock(), mediaBlock(), mergeTurns() (+21 more)
+Cohesion: 0.07
+Nodes (60): Block, callUsage(), classifyAnthropicError(), create(), Effort, ImageMediaType, markerBlock(), mediaBlock() (+52 more)
 
 ### Community 56 - "obsidianExport.ts"
-Cohesion: 0.18
-Nodes (16): Browsing Memory in Obsidian, ActiveClaimSubject, ActiveGuildSubject, ExportedClaim, ExportedGuildClaim, exportVault(), formatClaimGroups(), formatEpisodeNote() (+8 more)
+Cohesion: 0.15
+Nodes (18): memory Config Section, PAST_FACT_MARKER, GuildMemoryClaim, ActiveClaimSubject, ActiveGuildSubject, ExportedClaim, ExportedGuildClaim, exportVault() (+10 more)
 
 ### Community 57 - "budget.ts"
-Cohesion: 0.06
-Nodes (50): Free-Tier TPM Ceiling Measurement, The Per-Minute Token Budget, The Per-Minute Token Budget, acquireSlot(), backgroundShareSpent(), billingExhaustedIn, CallInput, CallReservation (+42 more)
+Cohesion: 0.05
+Nodes (53): Free-Tier TPM Ceiling Measurement, The Per-Minute Token Budget, acquireSlot(), backgroundShareSpent(), billingExhaustedIn, BudgetReservation, CallInput, CallReservation (+45 more)
 
 ### Community 58 - "schedule.test.ts"
 Cohesion: 0.14
@@ -538,20 +541,20 @@ Cohesion: 0.11
 Nodes (36): lucide-react, estimateTokens(), TextEditor, TextEditorHandle, TextEditorProps, inMood(), addMoodText(), dependents() (+28 more)
 
 ### Community 60 - "reportStore.ts"
-Cohesion: 0.16
-Nodes (14): BugReportContext, BugReportInput, captureSnapshot(), countReportsSince(), createReportIfAllowed(), MAX_CONTEXT_JSON_BYTES, queryRecentRows(), ReportAttachmentMetadata (+6 more)
+Cohesion: 0.15
+Nodes (14): BugReportContext, BugReportInput, BugReportType, captureSnapshot(), countReportsSince(), MAX_CONTEXT_JSON_BYTES, queryRecentRows(), ReportAttachmentMetadata (+6 more)
 
 ### Community 61 - "extractor.ts"
-Cohesion: 0.04
-Nodes (72): Extraction, liveAdapters(), AdmissionResult, admitEpisode(), isTrivial(), normalize(), precheckEpisode(), SENSITIVE_PATTERNS (+64 more)
+Cohesion: 0.05
+Nodes (61): judgeEpisodeOperations(), ExtractionOp, episodeObservedAt(), episodePrompt(), EpisodeWriteOp, ExtractedEpisode, extractEpisode(), formatEpisodeLine() (+53 more)
 
 ### Community 62 - "digest.ts"
-Cohesion: 0.09
-Nodes (38): Accounting, Coverage Plan, Digest and Turn Input, Gemini Watcher, Media Watching, Qwen Watcher, Remembered Media, Speech Sidecar (+30 more)
-
-### Community 63 - "Multimodal Intake Research"
 Cohesion: 0.13
-Nodes (18): FR-8: Response Formatting, FR-9: Docker Deployment, ALLOWED_IMAGE_TYPES Consolidation, Byte Cap as Duration Proxy, Concurrency Binding Constraint, Container Memory Cap Correction, Flash-Lite Modality Verification, Global In-Flight Byte Budget (+10 more)
+Nodes (28): Gemini Watcher, boundedString(), coverageLine(), cutAtWord(), formatClock(), frameInterval(), framesLine(), HEARD_LINES (+20 more)
+
+### Community 63 - "markdown.ts"
+Cohesion: 0.09
+Nodes (26): blockQuote(), buildList(), codeBlock, EMOJI, emojiImage(), emphasis(), EMPHASIS_RULES, formatTimestamp() (+18 more)
 
 ### Community 64 - "Speech-to-Text HTTP Server"
 Cohesion: 0.13
@@ -559,23 +562,23 @@ Nodes (17): Speech-to-text HTTP sidecar: Silero VAD -> SenseVoice language ID ->
 
 ### Community 65 - "socialPosts/service.ts"
 Cohesion: 0.09
-Nodes (22): Process Lifecycle, ref_node_os, endpoint(), ReplyReaderDependencies, createSocialPostViewer(), failure(), initializeSocialPosts(), isAbort() (+14 more)
+Nodes (24): Process Lifecycle, resolveBlueskyDid(), ParsedBlueskyThread, ReplyReaderDependencies, createSocialPostViewer(), failure(), initializeSocialPosts(), isAbort() (+16 more)
 
 ### Community 66 - "serve.ts"
 Cohesion: 0.11
 Nodes (13): item(), lists(), ORDER, row(), ENV_TEXT, REPO, SANDBOX, app (+5 more)
 
 ### Community 67 - "parsers.ts"
-Cohesion: 0.15
-Nodes (34): base(), BlueskyBlob, blueskyQuote(), capped(), compact(), date(), finiteNumber(), headers() (+26 more)
+Cohesion: 0.12
+Nodes (40): base(), BlueskyBlob, blueskyQuote(), capped(), compact(), date(), finiteNumber(), headers() (+32 more)
 
 ### Community 68 - "Design System Documentation"
 Cohesion: 0.07
 Nodes (27): 1. Overview, 2. Colors, 3. Typography, 4. Elevation, 5. Components, 6. Do's and Don'ts, Action Chips, Badges (+19 more)
 
 ### Community 69 - "vitest"
-Cohesion: 0.14
-Nodes (26): vitest, ReplyFetchContext, hostMatches(), HOSTS, parseSocialPostUrl(), platformForHost(), target(), youtubeStartSec() (+18 more)
+Cohesion: 0.12
+Nodes (29): vitest, ReplyFetchContext, hostMatches(), HOSTS, parseSocialPostUrl(), platformForHost(), target(), youtubeStartSec() (+21 more)
 
 ### Community 70 - "Prefetch Measurement Tools"
 Cohesion: 0.21
@@ -585,29 +588,29 @@ Nodes (9): main(), MeasurementAnomaly, Options, parseOptions(), percentile(), Pr
 Cohesion: 0.07
 Nodes (27): description, engines, node, typescript, main, name, type, version (+19 more)
 
-### Community 72 - "Deployment"
-Cohesion: 0.14
-Nodes (17): At a Glance, Bot Image (`Dockerfile`), Deploy on the Pi, Deployment, Docker Build, Docker Compose, Image Tags, Jobs (+9 more)
+### Community 72 - "test"
+Cohesion: 0.09
+Nodes (25): Shipping, Deploy and Roll Back, GHCR Visibility, How a Deploy Runs, Redeploy, Release to Stable, Roll Back, Self-Hosted Runner (+17 more)
 
 ### Community 73 - "File Upload Handling"
 Cohesion: 0.17
 Nodes (9): countedBody(), deleteFile(), FileResource, getFile(), sleep(), streamToFiles(), UploadedFile, videoDurationSec() (+1 more)
 
 ### Community 74 - "interactionCreate.metrics.test.ts"
-Cohesion: 0.08
-Nodes (18): outcomeForTurn, recordReplyOutcome(), attachmentOptionName(), NAME_MENTION_REGEX, createInteraction(), askWith(), metrics, mocks (+10 more)
+Cohesion: 0.07
+Nodes (22): outcomeForTurn, recordReplyOutcome(), ReplyOutcome, MEMORY_TOOL_NAMES, readRepliesTool, MAX_REQUESTED_REPLIES, readReplies(), ReadRepliesParams (+14 more)
 
-### Community 75 - "harness.eval.test.ts"
-Cohesion: 0.11
-Nodes (21): asObject(), asObjects(), chunkLabel(), componentDetails(), walk(), isComponentsV2Payload(), PayloadObject, renderEmbeds() (+13 more)
+### Community 75 - "anthropicMain.eval.test.ts"
+Cohesion: 0.19
+Nodes (15): asObject(), asObjects(), chunkLabel(), componentDetails(), walk(), isComponentsV2Payload(), PayloadObject, renderEmbeds() (+7 more)
 
 ### Community 76 - "roka Service"
 Cohesion: 0.22
 Nodes (9): ADK_QUIET Environment Variable, Data Volume Mount, Environment File (.env), Docker Logging (json-file), Memory Limit (1g), Memory Swap Limit (1g), Management Panel Labels, Port 3000 Mapping (+1 more)
 
-### Community 77 - "toolTrigger.ts"
-Cohesion: 0.09
-Nodes (28): emitTrialRecord(), formatTrialRecord(), TrialRecord, BACKEND_OUT_OF_CAPACITY, describeQuotaFailure(), diagnoseKey(), DIAGNOSTIC_TIMEOUT_MS, errorText() (+20 more)
+### Community 77 - "quotaDiagnostic.ts"
+Cohesion: 0.20
+Nodes (12): BACKEND_OUT_OF_CAPACITY, describeQuotaFailure(), diagnoseKey(), DIAGNOSTIC_TIMEOUT_MS, errorText(), KEY_IS_LIVE, OUTPACING_THE_CAP, SPENT_FOR_THE_DAY (+4 more)
 
 ### Community 78 - "getWeather.ts"
 Cohesion: 0.15
@@ -618,47 +621,47 @@ Cohesion: 0.24
 Nodes (9): charts, contentFor(), errors, guild, jsonFor(), queries, selectsFor(), getMoodLabel() (+1 more)
 
 ### Community 80 - "watch.ts"
-Cohesion: 0.11
-Nodes (16): BudgetReservation, mocks, elapsedSince(), getClient(), instructions(), mediaPart(), messageOf(), reasonFor() (+8 more)
+Cohesion: 0.12
+Nodes (15): mocks, elapsedSince(), getClient(), instructions(), mediaPart(), messageOf(), reasonFor(), requestFor() (+7 more)
 
-### Community 81 - "nativeAnthropic.ts"
-Cohesion: 0.06
-Nodes (52): callUsage(), SEARCH_EXCERPTS_UNTRUSTED_DATA_LABEL, buildAnswer(), cut(), ExaResponse, ExaResult, exaSearch(), NativeCall (+44 more)
+### Community 81 - "logger.ts"
+Cohesion: 0.05
+Nodes (57): Tech Stack (AGENTS.md), logging Config Section, ref_node_async_hooks, describeUsage(), KEY_ENV, main(), MODEL, nativeRoute() (+49 more)
 
 ### Community 82 - "Search Prefetch Reporting"
 Cohesion: 0.19
 Nodes (11): needsLookupValue(), parseObject(), prefetchModeValue(), PrefetchShadowReport, readSearchPrefetchRows(), renderPrefetchShadowReport(), scorePrefetchShadow(), SearchPrefetchRow (+3 more)
 
 ### Community 83 - "models.ts"
-Cohesion: 0.19
-Nodes (15): stringField(), BuiltIn, detail(), errorText(), failure(), listed(), listRequest(), ModelPaths (+7 more)
+Cohesion: 0.16
+Nodes (17): Extraction Run Trace, Fact Reclassification, PROVIDER_KEY_ENV, BuiltIn, detail(), errorText(), failure(), listed() (+9 more)
 
 ### Community 84 - "messageContent.ts"
-Cohesion: 0.08
-Nodes (36): Attachment Intake, Linked Files (`attachment_url`), Types and Ceilings, Where Files Come From, ImageAttachment, isSupportedMedia(), describeEmbed(), describeForwardedSnapshots() (+28 more)
+Cohesion: 0.09
+Nodes (33): ImageAttachment, isSupportedMedia(), MAX_ATTACHMENTS, describeEmbed(), describeForwardedSnapshots(), describePoll(), embedMatchesSocialPost(), extractComponentMedia() (+25 more)
 
 ### Community 85 - "PackFileScreen.tsx"
 Cohesion: 0.06
 Nodes (63): ApiError, call(), ModelTest, PackFile, PackSummary, Problem, query(), Validation (+55 more)
 
-### Community 86 - "config"
-Cohesion: 0.07
-Nodes (41): cleanupExpired(), monitoredChannels, restoreMonitoredChannels(), BackfillPace, delay(), EpisodeMaintenanceReport, pruneEpisodesAndReembed(), runPass() (+33 more)
+### Community 86 - "src/index.ts"
+Cohesion: 0.13
+Nodes (20): waitForInFlightExtractions(), stopUpdateNotifier(), destroyAllGames(), client, healthServer, pruneEpisodesInBackground(), pruneExpiredExtractionSamples(), pruneExpiredFailedExtractions() (+12 more)
 
 ### Community 87 - "config.ts"
-Cohesion: 0.05
-Nodes (54): Configuration (AGENTS.md), Source Files, Legacy Config, Resolution, Source Files, Validation Errors, CompatibleCapabilities, defaultEmbeddingProvider() (+46 more)
+Cohesion: 0.04
+Nodes (67): Configuration (AGENTS.md), Source Files, At a Glance, Legacy Config, Model Profiles, Models, Provider IDs, Request Shaping (+59 more)
 
-### Community 88 - "Social Viewing Research"
-Cohesion: 0.29
+### Community 88 - "Social Post Viewing Research"
+Cohesion: 0.33
 Nodes (6): Decision, Limits, Live Experiments, Platform Findings, Social Post Viewing Research, X/Twitter Finding
 
-### Community 89 - "promptGolden.test.ts"
-Cohesion: 0.07
-Nodes (48): FR-10: Graceful Shutdown, FR-2: Mention/Reply Interaction, FR-4: Layered Personality Prompts, FR-5: Tone Detection, Functional Requirements, Prompt System, AssemblerInput, Stable Prefix and Caching (+40 more)
+### Community 89 - "ToneKey"
+Cohesion: 0.12
+Nodes (25): AssemblerInput, assembleSystemPrompt(), CORE_PROMPT, CORE_PROMPT_FORGET_ONLY, CORE_PROMPT_MEMORY_FREE, MEMORY_TOOL_RULES, FaceGroup, FACES (+17 more)
 
 ### Community 90 - "reportCommand.ts"
-Cohesion: 0.25
+Cohesion: 0.26
 Nodes (13): isAllowedDiscordCdnUrl(), AttachmentCopyError, copyAttachment(), handleReportCommand(), moduleDirectory, packageMetadata, projectDirectory, readLimitedBody() (+5 more)
 
 ### Community 91 - "extractionSchema.ts"
@@ -666,20 +669,20 @@ Cohesion: 0.05
 Nodes (40): AddOperationSchema, calendarDateProperties, DATED_GUILD_PREDICATES, DatedGuildAddOperationSchema, DatedGuildPredicateId, datedGuildPredicates, DatedGuildPredicateSchema, DatedGuildUpdateOperationSchema (+32 more)
 
 ### Community 92 - "test-chat.ts"
-Cohesion: 0.29
-Nodes (7): ref_node_readline, args, handleInput(), htmlIndex, main(), previewMessages, username
+Cohesion: 0.19
+Nodes (13): ref_node_readline, args, handleInput(), htmlIndex, main(), previewMessages, username, eachOutside() (+5 more)
 
 ### Community 93 - "embeddings/client.ts"
-Cohesion: 0.13
-Nodes (21): EmbeddingClient, EmbeddingRole, EmbeddingSettings, FACTORIES, resetEmbeddingClientForTest(), isEmbeddingVector(), createLocalEmbeddingClient(), SidecarReply (+13 more)
+Cohesion: 0.27
+Nodes (9): EmbeddingClient, EmbeddingRole, EmbeddingSettings, FACTORIES, isEmbeddingVector(), createGeminiEmbeddingClient(), createLocalEmbeddingClient(), SidecarReply (+1 more)
 
 ### Community 94 - "memoryClaimSchema.ts"
 Cohesion: 0.40
 Nodes (9): columnsOf(), createEvidenceTable(), createFts(), createIndexes(), ensureMemoryClaimSchema(), migrateClaimLifecycle(), migrateClaimTable(), needsSubjectMigration() (+1 more)
 
 ### Community 95 - "chatCompletionsLlm.ts"
-Cohesion: 0.07
-Nodes (43): systemBlocks(), arrayOf(), callUsage(), CHAT_COMPLETIONS_BASE_URLS, ChatCompletionsOptions, ChatCompletionsProvider, ChatCompletionsResponse, ChatMessage (+35 more)
+Cohesion: 0.05
+Nodes (56): markBillingExhausted(), arrayOf(), callUsage(), CHAT_COMPLETIONS_BASE_URLS, ChatCompletionsOptions, ChatCompletionsResponse, ChatMessage, constsMatch() (+48 more)
 
 ### Community 96 - "WAV File Validation"
 Cohesion: 0.38
@@ -687,11 +690,11 @@ Nodes (5): read_wav(), WavError, make_wav(), ReadWavTest, ValueError
 
 ### Community 97 - "load.ts"
 Cohesion: 0.05
-Nodes (47): Character, deepFreeze(), escapeRegExp(), loadCharacter(), expand(), prompt(), readYaml(), LoadOptions (+39 more)
+Nodes (53): moods.yml, buildContextPrompt(), Character, deepFreeze(), escapeRegExp(), inHours(), loadCharacter(), expand() (+45 more)
 
-### Community 98 - "usage.ts"
-Cohesion: 0.11
-Nodes (27): Budgets, Usage and Cost, dotenv, describeUsage(), KEY_ENV, main(), MODEL, nativeRoute(), Options (+19 more)
+### Community 98 - "reclassifyModels.ts"
+Cohesion: 0.10
+Nodes (21): Main-Model Judge, zod, ModelJudgment, SYSTEM, mocks, questions, failureFields(), generateObject() (+13 more)
 
 ### Community 99 - "ASR Sidecar Service"
 Cohesion: 0.22
@@ -702,84 +705,84 @@ Cohesion: 0.12
 Nodes (18): StudioOptions, DEFAULT_BASE_URLS, ApiError, commentedConfig(), ENV_TEXT, FilesBody, json(), MODEL_ENV (+10 more)
 
 ### Community 101 - "fallbackModel.ts"
-Cohesion: 0.06
-Nodes (32): fallback Config Section, gemini Config Section, rateLimit Config Section, ModelScope Qwen Fallback, Tech Stack (README), Logs, Pinning, Routing (+24 more)
+Cohesion: 0.07
+Nodes (26): Architecture (AGENTS.md), Critical Do-Nots, Project (Rokabot description), fallback Config Section, gemini Config Section, rateLimit Config Section, session Config Section, Logs (+18 more)
 
 ### Community 102 - "timezone.ts"
-Cohesion: 0.35
-Nodes (9): loadGetLocalHour(), loadTimezoneModule(), unpinnedHour(), dateString(), dateTimeParts(), getLocalDate(), localDateStartEpoch(), localDateTimeFormatter() (+1 more)
+Cohesion: 0.33
+Nodes (8): loadGetLocalHour(), loadTimezoneModule(), unpinnedHour(), dateString(), dateTimeParts(), localDateStartEpoch(), localDateTimeFormatter(), LocalDateTimeParts
 
-### Community 103 - "Architecture (AGENTS.md)"
-Cohesion: 0.24
-Nodes (11): Architecture (AGENTS.md), Critical Do-Nots, Project (Rokabot description), Reference Docs (AGENTS.md), Rokabot PRD, Documentation (README index), Jev Integration (Research Doc), GPT-6-Astra (+3 more)
+### Community 103 - "GPT-6-Astra"
+Cohesion: 0.50
+Nodes (4): GPT-6-Astra, Jev Rollout Plan, Second Opinion, Who-Is-Who Resolver
 
 ### Community 104 - "duration.ts"
-Cohesion: 0.26
-Nodes (10): Box, movieDuration(), mp4DurationSec(), readBox(), box(), BoxSize, mvhdV0(), mvhdV1() (+2 more)
+Cohesion: 0.33
+Nodes (8): Box, movieDuration(), mp4DurationSec(), readBox(), box(), BoxSize, mvhdV0(), mvhdV1()
 
 ### Community 105 - "turnMedia.test.ts"
-Cohesion: 0.20
-Nodes (5): digestFor(), emptyPrepared, mocks, okWatch(), watchedHalf()
+Cohesion: 0.18
+Nodes (6): apiKey(), digestFor(), emptyPrepared, mocks, okWatch(), watchedHalf()
 
-### Community 107 - "@google/adk"
+### Community 107 - "verifyThreshold"
 Cohesion: 0.10
-Nodes (19): Native Time Budget, @google/adk, ref_node_async_hooks, hasStickyFallback(), setFallbackUntilMs(), runSearchTurn(), ScriptedLlm, SEARCH_TURN (+11 more)
+Nodes (23): Capture and Prompt, Extraction, `memory`, Recall, Retention, Bug Reports, Data and Backups, Episodes, Media Memory and Recall (+15 more)
 
-### Community 108 - "Rokabot Character Data"
-Cohesion: 0.67
-Nodes (3): Maniwa Roka, Rokabot, Senren*Banka
+### Community 108 - "Raspberry Pi Runbook"
+Cohesion: 0.08
+Nodes (25): Access, Any OpenAI-Compatible Model, At a Glance, Bot Lifecycle, Budgets and Monthly Spend, Configuration Changes, Discord App Install and Permissions, Docker (+17 more)
 
 ### Community 109 - "Speech Budget Management"
 Cohesion: 0.42
 Nodes (4): Keep time-ordered segments within the speech budget, spread across the clip.…, Segment, select_segments(), SelectSegmentsTest
 
 ### Community 110 - "gacha.ts"
-Cohesion: 0.18
-Nodes (25): handleGachaMention(), statBar(), formatBuddySummary(), formatHatchTimeRemaining(), handleBuddyLeaderboard(), handleBuddyStats(), handleBuddyView(), handleHatch() (+17 more)
+Cohesion: 0.20
+Nodes (23): handleGachaMention(), statBar(), formatBuddySummary(), formatHatchTimeRemaining(), handleBuddyLeaderboard(), handleBuddyStats(), handleBuddyView(), handleHatch() (+15 more)
 
 ### Community 111 - "redditFeed.ts"
 Cohesion: 0.56
 Nodes (9): decodeEntities(), entryAuthor(), entryContent(), feedEntries(), feedField(), htmlToText(), NAMED_ENTITIES, parseRedditFeedPost() (+1 more)
 
 ### Community 112 - "replyShape.ts"
-Cohesion: 0.06
-Nodes (47): Tunables, Evidence, Known Limits, Rerunning the Check, Results, Roka Voice v4: Looked-Up Turns and Saying No, Root Causes, Tunables (+39 more)
+Cohesion: 0.09
+Nodes (35): Tunables, Known Limits, Rerunning the Check, Results, Roka Voice v4: Looked-Up Turns and Saying No, Root Causes, Tunables, What Changed (+27 more)
 
-### Community 116 - "Character Harness Research 2026"
-Cohesion: 0.11
-Nodes (18): 1. Character as a Folder Pack, 2. Static First, Dynamic After, Reply Shape Last, 3. Any OpenAI-Compatible Endpoint, 4. Files First, Dashboard Later, Character Formats, Character Harness Research 2026, Decisions for Rokabot, Evidence-Backed (+10 more)
+### Community 116 - "Prompt Engine"
+Cohesion: 0.08
+Nodes (25): At a Glance, Beats, Edge, Ending, Memory Modes, Message Weight, Mood Detection, Opener (+17 more)
 
 ### Community 117 - "promptSafety.ts"
-Cohesion: 0.20
-Nodes (16): Bounded Retrieval (Legacy), buildFactsEnvelope(), buildOverheardBlock(), FACTS_UNTRUSTED_DATA_LABEL, isSafeFactKey(), isSafeFactScalar(), MAX_FACT_KEY_LEN, MAX_FACT_VALUE_LEN (+8 more)
+Cohesion: 0.10
+Nodes (28): At a Glance, Changing a Contract, Bounded Retrieval (Legacy), Modules, Rules Across Modules, SQLite Is Canonical, Technical Requirements, The Character Pack Is the Persona Source (+20 more)
 
 ### Community 119 - "Memory"
-Cohesion: 0.10
-Nodes (21): Admission, Capture, Claim Lifecycle and Retention, Deferred Items, Embeddings and Episodic Recall, Extraction, Fact Reclassification, Guild Facts and Dates (+13 more)
+Cohesion: 0.11
+Nodes (20): Admission, At a Glance, Capture, Claim Lifecycle and Retention, Deferred Items, Extraction, Guild Facts and Dates, Hidden-Fact Reconciliation (+12 more)
 
 ### Community 120 - "metadata.ts"
-Cohesion: 0.19
-Nodes (17): api(), assignable(), CommitlintConfig, GitHubActor, GitHubIssue, GitHubLabel, GitHubPullRequest, labelAndAssign() (+9 more)
+Cohesion: 0.18
+Nodes (18): ref_node_url, api(), assignable(), CommitlintConfig, GitHubActor, GitHubIssue, GitHubLabel, GitHubPullRequest (+10 more)
 
 ### Community 121 - "emojiReactor.ts"
-Cohesion: 0.13
-Nodes (16): discord Config Section, emoji Config Section, games Config Section, logging Config Section, metrics Config Section, reminders Config Section, session Config Section, Configuration (README) (+8 more)
+Cohesion: 0.27
+Nodes (8): emoji Config Section, cleanupExpiredCooldowns(), cooldowns, findMatchingRule(), REACTION_RULES, ReactionRule, resetCooldowns(), shouldReact()
 
 ### Community 122 - "hiddenRetractions.test.ts"
-Cohesion: 0.10
-Nodes (29): getEmbeddingClient(), embedEpisodeText(), EpisodeEmbeddingRole, delay(), sweep(), PAST_FACT_MARKER, renderFactSentence(), HiddenRetract (+21 more)
+Cohesion: 0.11
+Nodes (27): delay(), embedPendingFacts(), sweep(), renderFactSentence(), HiddenRetract, reconcileHiddenRetractions(), reconcileOne(), userFactSentence() (+19 more)
 
-### Community 123 - "socialPosts/types.ts"
-Cohesion: 0.16
-Nodes (12): ParsedBlueskyThread, ThreadsPage, PlayableVideo, SocialPost, SocialPostTarget, audioRank(), qualifies(), selectPlayableVideo() (+4 more)
+### Community 123 - "cli.ts"
+Cohesion: 0.14
+Nodes (15): ref_node_util, CaptureInput, CaptureKind, CaptureRecord, CaptureSink, main(), rokaAuthor(), transcriptMessages() (+7 more)
 
 ### Community 124 - "replyReader"
-Cohesion: 0.23
-Nodes (7): createReplyReader(), isAbort(), replyReader, ReplyLookup, FOUND, readerWith(), SETTINGS
+Cohesion: 0.39
+Nodes (3): isAbort(), replyReader, ReplyLookup
 
 ### Community 125 - "transcribe.test.ts"
-Cohesion: 0.09
-Nodes (27): EMPTY, extractFrame(), extractFrames(), FrameRunner, FrameSource, headerArgs(), isAcceptedInput(), probeDurationSec() (+19 more)
+Cohesion: 0.08
+Nodes (35): EMPTY, extractFrame(), extractFrames(), frameBins(), frameCount(), FrameRunner, FrameSource, frameTimestamps() (+27 more)
 
 ### Community 126 - "Speech Server Engines"
 Cohesion: 0.33
@@ -790,8 +793,8 @@ Cohesion: 0.67
 Nodes (3): lint-staged, *.{json,md,yml,yaml}, *.{ts,js}
 
 ### Community 129 - "probe-llm-profile.ts"
-Cohesion: 0.10
-Nodes (30): CITY_SCHEMA, hasThinkingTag(), isFilled(), isSupportedProfile(), isTimeZone(), judgeJson(), judgeText(), judgeTool() (+22 more)
+Cohesion: 0.06
+Nodes (48): 1. Character as a Folder Pack, 2. Static First, Dynamic After, Reply Shape Last, 3. Any OpenAI-Compatible Endpoint, 4. Files First, Dashboard Later, Character Formats, Character Harness Research 2026, Decisions for Rokabot, Evidence-Backed (+40 more)
 
 ### Community 130 - "test-gemini-ga-compare.ts"
 Cohesion: 0.13
@@ -810,32 +813,32 @@ Cohesion: 0.25
 Nodes (8): AssemblerInput, At a Glance, Data Models, Data Models and Storage, Outbound Model Request, Source Files, ToneKey, displayName()
 
 ### Community 135 - "linesGolden.test.ts"
-Cohesion: 0.10
-Nodes (34): Field Reference, lines.yml, Commands, Discord Install Requirements: bot Scope Is Load-Bearing, Guild Permissions Are Derived From the API Surface, There Is No Build-Time Pin, and That Is Deliberate, Bug Reports, Persistence and Storage (+26 more)
+Cohesion: 0.18
+Nodes (27): Field Reference, lines.yml, Commands, Bug Reports, Persistence and Storage, Retention, Tables, stopReminderScheduler() (+19 more)
 
-### Community 136 - "CI/CD Deployment Pipeline"
-Cohesion: 0.36
-Nodes (9): deploy Job, Notify Discord Steps, Health Check Step, test Job, Deploy to Pi Workflow, Commands (AGENTS.md), Working Conventions (PR-only shipping), Deployment & Operations (+1 more)
+### Community 136 - "deploy Job"
+Cohesion: 0.48
+Nodes (7): deploy Job, Notify Discord Steps, Health Check Step, test Job, Deploy to Pi Workflow, Commands (AGENTS.md), Working Conventions (PR-only shipping)
 
 ### Community 137 - "ref_node_fs"
 Cohesion: 0.07
-Nodes (28): js-yaml, ref_node_assert, ref_node_child_process, ref_node_fs, ref_node_path, ref_node_url, ref_node_util, ref_node_worker_threads (+20 more)
+Nodes (32): js-yaml, ref_node_child_process, ref_node_crypto, ref_node_fs, ref_node_net, ref_node_os, ref_node_path, ref_node_worker_threads (+24 more)
 
-### Community 138 - "discord/channelVisibility.ts"
-Cohesion: 0.31
-Nodes (4): ChannelVisibilityResolver, createChannelVisibilityResolver(), everyoneRole, resolverFor()
+### Community 138 - "config"
+Cohesion: 0.07
+Nodes (32): Storage Schema, Unified Recall, channelVisibility, ChannelVisibilityResolver, registerChannelVisibility(), resetChannelVisibilityForTest(), UNKNOWN, predicate() (+24 more)
 
-### Community 140 - "roka.test.ts"
-Cohesion: 0.06
-Nodes (50): abortActiveTurns(), __resetModelFallbackForTest(), generateResponse(), __setTestRunTurnFactory(), steeringForRequest, TestRunTurn, APP_NAME, clearSessionErrorCount() (+42 more)
+### Community 140 - "roka.ts"
+Cohesion: 0.03
+Nodes (97): Switch, Concurrency and Lifecycle Under Retry, The Retry Loop, BackoffOptions, classifyGeminiFailure(), classifyMarker(), computeBackoff(), DEFAULT_MAX_BACKOFF_MS (+89 more)
 
-### Community 141 - "secrets.ts"
-Cohesion: 0.26
-Nodes (15): readText(), writeAtomic(), ALWAYS_REQUIRED, checkKey(), deleteSecret(), entry(), envLine(), ExampleKey (+7 more)
+### Community 141 - "verification.test.ts"
+Cohesion: 0.14
+Nodes (14): OperationApplicationReport, activeFacts(), apply(), candidateFacts(), episode(), evidenceCount(), factsWithStatus(), jevApplied() (+6 more)
 
-### Community 142 - "test-features.ts"
+### Community 142 - "test-phase8.ts"
 Cohesion: 0.12
-Nodes (35): assert(), fail(), main(), makeMessage(), pass(), results, TestResult, assert() (+27 more)
+Nodes (26): reminders Config Section, main(), makeMessage(), assert(), fail(), main(), pass(), results (+18 more)
 
 ### Community 143 - "UI TypeScript Configuration"
 Cohesion: 0.13
@@ -845,16 +848,16 @@ Nodes (14): compilerOptions, isolatedModules, jsx, lib, module, moduleResolution
 Cohesion: 0.12
 Nodes (16): Architecture, At a Glance, Core Code Modules, Discord Events (Inbound), Durable State, Gateway Setup, Installation and Context Policy, InteractionCreate (`/ask`) (+8 more)
 
-### Community 145 - "Gemini Failure Taxonomy"
-Cohesion: 0.13
-Nodes (15): FR-7: Error Handling, Silent SIGKILL Risk, Fallback Model (runbook), ADK Error Delivery Constraint, Attachment Bytes Do Not Live in History, Concurrency & Lifecycle Under Retry, Gemini Failure Taxonomy, Gemini API (+7 more)
+### Community 145 - "metrics.eval.test.ts"
+Cohesion: 0.16
+Nodes (13): cleanupExpired(), monitoredChannels, resetMonitor(), restoreMonitoredChannels(), resetForTest(), stopExtractionScheduler(), __resetTestRunTurnFactory(), responseEventCount() (+5 more)
 
 ### Community 146 - "agent/attachments.ts"
 Cohesion: 0.08
-Nodes (36): PDF Token Cost Measurement, Attachment Token Admission, Download, sharp, spriteFiles, anthropicBlock(), countWithAnthropic(), estimateTokens() (+28 more)
+Nodes (34): PDF Token Cost Measurement, Download, sharp, spriteFiles, anthropicBlock(), countWithAnthropic(), estimateTokens(), imageTokens() (+26 more)
 
 ### Community 147 - "anthropicLlm.test.ts"
-Cohesion: 0.11
+Cohesion: 0.12
 Nodes (18): @anthropic-ai/sdk, STRUCTURED_OUTPUT_TOOL, ContentBlock, fixtures, usage(), answer(), budget, CreateOptions (+10 more)
 
 ### Community 148 - "yamlEdit.ts"
@@ -862,8 +865,8 @@ Cohesion: 0.23
 Nodes (21): yaml, character, config, repo, voice, stringifyDoc(), addItem(), deleteNode() (+13 more)
 
 ### Community 149 - "render.ts"
-Cohesion: 0.06
-Nodes (68): blockQuote(), buildList(), codeBlock, EMOJI, emojiImage(), emphasis(), EMPHASIS_RULES, escapeHtml() (+60 more)
+Cohesion: 0.11
+Nodes (41): escapeHtml(), MarkdownContext, renderMarkdown(), renderPlainText(), asObject(), asObjects(), authorKey(), avatarUrl() (+33 more)
 
 ### Community 150 - "Configuration"
 Cohesion: 0.08
@@ -873,56 +876,56 @@ Nodes (27): At a Glance, Character, Configuration, `discord`, `embeddings`, `emo
 Cohesion: 0.11
 Nodes (28): ANTHROPIC_SEARCH, appendReplyShape(), Arm, claudeSettings(), GEMINI_CONFIG, GEMINI_SEARCH, loadArm(), LoadedArm (+20 more)
 
-### Community 152 - "turnContext.ts"
-Cohesion: 0.05
-Nodes (57): Source Files, Turn Entry Work, At a Glance, Mood Detection, Prompt Engine, Safety Ladder, Search State, Source Files (+49 more)
+### Community 152 - "searchPrefetch.ts"
+Cohesion: 0.16
+Nodes (16): Source Files, Footer, recordSearchCitations(), buildLookedUpBlock(), clip(), decidePrefetch(), JevPrefetchMode, PREFETCH_TOOL_NAME (+8 more)
 
 ### Community 153 - "privacy"
-Cohesion: 0.11
-Nodes (20): Capture and Prompt, `memory`, Recall, Retention, Memory, At a Glance, Browse Memory in Obsidian, Forgetting and Opting Out (+12 more)
+Cohesion: 0.08
+Nodes (26): Memory, At a Glance, Browse Memory in Obsidian, Forgetting and Opting Out, How She Learns, Key Settings, Maintenance Scripts, Memory (+18 more)
 
 ### Community 154 - "app.ts"
-Cohesion: 0.17
-Nodes (20): ref_node_crypto, ref_node_http, createApp(), route(), Handler, PREVIEW_FIELDS, previewQuery(), fail() (+12 more)
+Cohesion: 0.13
+Nodes (34): ref_node_http, createApp(), route(), Handler, PREVIEW_FIELDS, previewQuery(), readConfig(), readText() (+26 more)
 
 ### Community 155 - "Reliability"
-Cohesion: 0.14
-Nodes (14): `search`, Hedge, ADK Error Delivery Constraint, At a Glance, Configuration, Model Switch, Per-Call Budgets, Reliability (+6 more)
+Cohesion: 0.12
+Nodes (17): `search`, Hedge, A Spent Day Is Not a Spent Minute, ADK Error Delivery Constraint, At a Glance, Configuration, Failure Kinds, Model Switch (+9 more)
 
 ### Community 156 - "queries.test.ts"
 Cohesion: 0.13
 Nodes (14): activeClaimCount(), distinctRememberedUsers(), MEMORY_STATS_SQL, outcomeBreakdown(), successRate, topTones(), insertClaim(), insertGuildClaim() (+6 more)
 
 ### Community 157 - "updateNotifier.ts"
-Cohesion: 0.15
-Nodes (16): cfg, LATEST, store, checkForUpdate(), fetchLatestRelease(), isNewerVersion(), LatestRelease, moduleDirectory (+8 more)
+Cohesion: 0.16
+Nodes (15): cfg, LATEST, store, checkForUpdate(), fetchLatestRelease(), isNewerVersion(), LatestRelease, moduleDirectory (+7 more)
 
-### Community 158 - "toneDetector.ts"
-Cohesion: 0.27
-Nodes (9): FR-3: Per-Channel Conversational Memory, Attachment History Stripping, ChannelSession, ToneKey, WindowMessage, detectTone(), detectToneWithSource(), ChannelSession (+1 more)
+### Community 158 - "promptGolden.test.ts"
+Cohesion: 0.21
+Nodes (12): computeGolden(), digest(), FIXTURE, MESSAGES, MODES, RECENT, seeded(), TONES (+4 more)
 
 ### Community 159 - "Jev Judgments"
-Cohesion: 0.15
-Nodes (13): At a Glance, Client, Configuration, Jev Judgments, Main-Model Judge, Memory Judge, Memory Judgments, Modes (+5 more)
+Cohesion: 0.12
+Nodes (17): At a Glance, Client, Configuration, Jev Judgments, Modes, Questions, Search Prefetch, Tools (+9 more)
 
-### Community 160 - "Raspberry Pi Command Reference"
-Cohesion: 0.28
-Nodes (3): Bot Management, Network Config Files, Raspberry Pi Command Reference
+### Community 160 - "README.md"
+Cohesion: 0.20
+Nodes (8): Jev Integration (Research Doc), Contributing, Documentation, How It Works, License, Quick Start, Tech Stack, Who Is Maniwa Roka and Rokabot?
 
 ### Community 161 - "recall-calibration-thresholds.ts"
 Cohesion: 0.19
 Nodes (17): chooseFloor(), cli(), cohensKappa(), currentFloorOf(), KindReport, Label, main(), MIN_AGREED_PAIRS (+9 more)
 
 ### Community 162 - "Characters"
-Cohesion: 0.12
-Nodes (19): A Pack Outside the Image, At a Glance, character.yml, Characters, Harness Prompts and Overrides, How the Bot Picks a Pack, Make a New Character, moods.yml (+11 more)
+Cohesion: 0.18
+Nodes (11): A Pack Outside the Image, At a Glance, character.yml, Characters, Harness Prompts and Overrides, How the Bot Picks a Pack, Make a New Character, Pack Layout (+3 more)
 
 ### Community 163 - "judgments.ts"
-Cohesion: 0.07
-Nodes (41): jev Config Section, Deliberately Not Done, Jev Design (Per-Feature Modes), Gemini-Outage Fallback (Qwen3.5), Jev (TypeSafe System One Model), Measured Latency From The Pi, @typesafe-ai/sdk, Jev Shadow Mode (+33 more)
+Cohesion: 0.09
+Nodes (30): jev Config Section, Jev Design (Per-Feature Modes), Jev (TypeSafe System One Model), Measured Latency From The Pi, @typesafe-ai/sdk, @typesafe-ai/sdk, undici, fetchWithKeepAlive() (+22 more)
 
 ### Community 164 - "Product"
-Cohesion: 0.20
+Cohesion: 0.18
 Nodes (10): Accessibility & Inclusion, Anti-references, Brand Personality, Design Principles, Platform, Positioning, Product, Product Purpose (+2 more)
 
 ### Community 165 - "API and Security Tests"
@@ -930,16 +933,16 @@ Cohesion: 0.20
 Nodes (10): API, Errors, Model Connection Test, Pack File Rules, Persona Studio, Security Model, Source Files, Start It (+2 more)
 
 ### Community 166 - "Models"
-Cohesion: 0.17
-Nodes (12): Any OpenAI-Compatible Model, At a Glance, Budgets and Limits, Capabilities Reference, Choose the Main and Fallback, Copy-Paste Entries, Fields for OpenAI-Compatible Entries, How the Fallback Behaves (+4 more)
+Cohesion: 0.13
+Nodes (15): Any OpenAI-Compatible Model, At a Glance, Budgets and Limits, Capabilities Reference, Choose the Main and Fallback, Copy-Paste Entries, Entry Options, Fields for OpenAI-Compatible Entries (+7 more)
 
-### Community 167 - "Claims Memory Architecture"
-Cohesion: 0.36
-Nodes (8): Claim Lifecycle, Claims Memory Architecture, extraction_queue Table, memory_claim_fts Table, memory_claim Table, memory_events Table, memory_evidence Table, Vault Export
+### Community 167 - "tools/index.ts"
+Cohesion: 0.21
+Nodes (15): ForgetUserParams, cancelReminderTool, listRemindersTool, searchAvailable, setReminderTool, RecallUserParams, RememberUserParams, cancelReminder() (+7 more)
 
-### Community 168 - "main.test.ts"
-Cohesion: 0.28
-Nodes (4): browserCommands(), Command, openBrowser(), children
+### Community 168 - "scheduler.test.ts"
+Cohesion: 0.19
+Nodes (14): maybeSample(), shouldSample(), startExtractionScheduler(), advancePastRetryDelay(), configMock, drain(), enqueue(), enqueueDelayed() (+6 more)
 
 ### Community 169 - "Deployment and Setup Guide"
 Cohesion: 0.14
@@ -949,41 +952,41 @@ Nodes (14): At a Glance, First-Run Checks, Getting Started, Install and Configur
 Cohesion: 0.14
 Nodes (13): Answer, Auto-Deploy Platforms, Coolify, Docker API Version, Fly.io, GHCR Limits, Maintained Fork, Original Project (+5 more)
 
-### Community 171 - "Roka Voice v3: Restoring Variety on Haiku"
-Cohesion: 0.20
-Nodes (9): Canon Research, Complaints After the Haiku Switch, Known Weak Spots, Replay and Blind-Judge Method, Rerunning the Check, Results, Roka Voice v3: Restoring Variety on Haiku, Root Causes (+1 more)
+### Community 171 - "searchWeb"
+Cohesion: 0.11
+Nodes (14): Canon Research, Complaints After the Haiku Switch, Known Weak Spots, Replay and Blind-Judge Method, Rerunning the Check, Results, Roka Voice v3: Restoring Variety on Haiku, Root Causes (+6 more)
 
 ### Community 172 - "guildFactDates.test.ts"
 Cohesion: 0.40
 Nodes (5): GuildFactDate, DateResolver, expectResolved(), loadResolver(), ResolvedDate
 
 ### Community 173 - "persona-report.ts"
-Cohesion: 0.26
-Nodes (13): countSlurRepetitions(), firstWord(), formatTable(), innerThoughts(), main(), MARKERS, paragraphs(), pct() (+5 more)
+Cohesion: 0.12
+Nodes (28): Reading Validation Errors, voice.yml, Faces, Golden Test, countSlurRepetitions(), faces(), firstWord(), formatTable() (+20 more)
 
 ### Community 174 - "Embedding Project Config"
 Cohesion: 0.15
 Nodes (12): compilerOptions, lib, module, moduleResolution, outDir, rootDir, skipLibCheck, strict (+4 more)
 
 ### Community 175 - "searchAnime.ts"
-Cohesion: 0.29
-Nodes (6): jikanThrottle(), AnimeResult, JikanAnimeEntry, JikanResponse, SearchAnimeParams, SearchAnimeResult
+Cohesion: 0.24
+Nodes (8): searchAnimeTool, jikanThrottle(), AnimeResult, JikanAnimeEntry, JikanResponse, searchAnime(), SearchAnimeParams, SearchAnimeResult
 
-### Community 178 - "searchNativeGemini.test.ts"
-Cohesion: 0.14
-Nodes (5): FLASH_LITE, GeminiClient, GenerateContent, mocks, usageRecords
+### Community 178 - "toolTrigger.retry.test.ts"
+Cohesion: 0.19
+Nodes (11): getLocalHour(), emitTrialRecord(), formatTrialRecord(), TrialRecord, record, cases, header, ok() (+3 more)
 
 ### Community 179 - "Features"
-Cohesion: 0.18
+Cohesion: 0.20
 Nodes (10): At a Glance, Features, Games and Gacha, Reactions, Status Rotation and Update Notices, Reminders, Seeing and Watching, Source Files, Stats (+2 more)
 
 ### Community 180 - "Embedding Service Docs"
 Cohesion: 0.20
 Nodes (9): API, Build and Run, Configuration, Embedding Sidecar, `GET /health`, Model and Licences, `POST /embed`, Smoke Test (+1 more)
 
-### Community 181 - "persona-turns.ts"
-Cohesion: 0.23
-Nodes (10): chatTurns(), localHour(), mergeRoles(), Message, sample(), Turn, TurnKind, turnKinds() (+2 more)
+### Community 181 - "turnContext.test.ts"
+Cohesion: 0.16
+Nodes (7): citationsForTurn, SearchCitation, entryWork(), jevConfig, mocks, turnOptions(), turnWith()
 
 ### Community 182 - "react"
 Cohesion: 0.11
@@ -993,9 +996,9 @@ Nodes (27): react, NoticeRow(), NotificationCenter(), THEMES, ThemeSwitch(), Toa
 Cohesion: 0.29
 Nodes (3): WindowMessage, role(), roleSelect()
 
-### Community 185 - "fallbackModel.test.ts"
-Cohesion: 0.20
-Nodes (5): budgetState, configState, RequestCall, responses(), TextLlm
+### Community 185 - "admission.ts"
+Cohesion: 0.24
+Nodes (7): AdmissionResult, admitEpisode(), isTrivial(), normalize(), precheckEpisode(), SENSITIVE_PATTERNS, mocks
 
 ### Community 186 - "yamlText.ts"
 Cohesion: 0.50
@@ -1010,20 +1013,20 @@ Cohesion: 0.25
 Nodes (7): Identity & Appearance, Insecurities, People You Know, Personality, Romantic Side, Who You Are, Your World
 
 ### Community 189 - "collection.ts"
-Cohesion: 0.35
+Cohesion: 0.36
 Nodes (9): buildCollectionPage(), buildPaginatedCollectionPage(), COLLECTION_PAGE_SIZE, getCollectionPageCount(), handleBuddyCollection(), { getBuddyCollection }, BuddyData, getBuddyCollection() (+1 more)
 
 ### Community 190 - "fingerprint.ts"
 Cohesion: 0.36
 Nodes (7): DEFAULT_EMBEDDING_MODELS, embeddingDimensions(), embeddingFingerprint(), EmbeddingProvider, LOCAL_EMBEDDING_MODEL, RECIPES, resolveEmbeddings()
 
-### Community 191 - "markdownGuard.ts"
-Cohesion: 0.50
-Nodes (6): eachOutside(), guardMarkdown(), guardProse(), guardText(), isFace(), KAOMOJI
+### Community 191 - "local.test.ts"
+Cohesion: 0.26
+Nodes (10): fakeFetch(), FetchCall, hangingFetch(), json(), logger, reply(), settings, vector384 (+2 more)
 
-### Community 192 - "extractionSchema.test.ts"
-Cohesion: 0.22
-Nodes (7): comparable(), DateVariant, GEMINI_SCHEMA, keysIn(), subject, Variant, LEGACY_GEMINI_EXTRACTION_SCHEMA
+### Community 192 - "reminderScheduler.ts"
+Cohesion: 0.21
+Nodes (4): fillLine(), startReminderScheduler(), FakeSender, NOW
 
 ### Community 193 - "Changelog"
 Cohesion: 0.20
@@ -1033,13 +1036,13 @@ Nodes (9): [0.2.0](https://github.com/AlaskanTuna/Rokabot/compare/v0.1.0...v0.2.
 Cohesion: 0.25
 Nodes (7): Character Packs, Layout, Locked Prompts, Macros, Making a New Character, Prompt Files, Search Prompts
 
-### Community 195 - "configFile.ts"
-Cohesion: 0.36
-Nodes (7): CHECK_SCRIPT, checkConfig(), configProblem(), readConfig(), validateConfig(), writeConfig(), StudioError
+### Community 195 - "packs.ts"
+Cohesion: 0.24
+Nodes (18): CHECK_SCRIPT, checkConfig(), ConfigPaths, configProblem(), setTopLevelValue(), validateConfig(), writeConfig(), apiPath() (+10 more)
 
 ### Community 196 - "Contributing"
-Cohesion: 0.25
-Nodes (7): Branches, Contributing, Gates, Labels and Assignees, Merging, Pull Requests, Titles
+Cohesion: 0.13
+Nodes (13): Branches, Contributing, Gates, Labels and Assignees, Merging, Pull Requests, Titles, Code Style (+5 more)
 
 ### Community 197 - "Audio Video Documentation"
 Cohesion: 0.50
@@ -1057,25 +1060,25 @@ Nodes (35): ActionChipProps, Button(), ButtonProps, ButtonStyle, IconButtonProps
 Cohesion: 0.07
 Nodes (20): @axe-core/playwright, @playwright/test, PAGES, at(), field(), studio_ui_e2e_fixtures_expect, Studio, test (+12 more)
 
-### Community 224 - "Media"
-Cohesion: 0.29
-Nodes (6): At a Glance, Bytes Do Not Stay in History, Configuration, Media, Source Files, Token Admission
+### Community 224 - "toolTrigger.ts"
+Cohesion: 0.21
+Nodes (11): stateAfterCase(), writeFixture(), pacingWith(), CaseSetRun, runCaseSet(), RunCaseSetOptions, seedWorld(), sleep() (+3 more)
 
-### Community 225 - "measure.ts"
+### Community 225 - "attachmentLimits.ts"
+Cohesion: 0.12
+Nodes (21): RFC-3003, Media Watching, The `openai-compatible` Exception, GEMINI_SPELLINGS, MAX_AUDIO_SIZE_BYTES, MAX_DOCUMENT_SIZE_BYTES, MAX_IMAGE_SIZE_BYTES, MAX_VIDEO_SIZE_BYTES (+13 more)
+
+### Community 226 - "Product Requirements"
+Cohesion: 0.25
+Nodes (8): At a Glance, Functional Requirements, Objectives, Problem, Product Requirements, Source Files, Target Users, User Workflow
+
+### Community 227 - "getCurrentTime.ts"
 Cohesion: 0.22
-Nodes (12): Getting Started, npm run test:live Gate, Ceiling, ceilingsFor(), formatReport(), main(), MIME_BY_EXTENSION, mimeForPath() (+4 more)
+Nodes (9): cityToTimezone, getCurrentTime(), GetCurrentTimeFound, GetCurrentTimeParams, GetCurrentTimeResult, GetCurrentTimeUnknown, resolveTimezone(), getCurrentTimeTool (+1 more)
 
-### Community 226 - "Product Requirements Document"
-Cohesion: 0.40
-Nodes (5): Problem Statement, Product Requirements Document, Project Objectives, Target Users, User Workflow Overview
-
-### Community 227 - "stripNarratedToolCalls"
-Cohesion: 0.60
-Nodes (3): escapeRegExp(), stripNarratedToolCalls(), TOOL_NAMES
-
-### Community 228 - "roka.ts"
-Cohesion: 0.10
-Nodes (27): Tech Stack (AGENTS.md), The Fallback Model, modelRouteForRequest, historyEndedOnToolResult(), blockCount(), BlockKind, capReplyBlocks(), countReplyBlocks() (+19 more)
+### Community 228 - "replyBlocks.ts"
+Cohesion: 0.38
+Nodes (8): blockCount(), BlockKind, capReplyBlocks(), countReplyBlocks(), MAX_REPLY_BLOCKS, parse(), Piece, splitAtDividers()
 
 ### Community 229 - "UI Styling Assets"
 Cohesion: 0.33
@@ -1085,37 +1088,69 @@ Nodes (5): @fontsource-variable/geist, @fontsource-variable/geist-mono, react-do
 Cohesion: 0.50
 Nodes (3): Evidence, Merge Danger, Summary
 
-### Community 232 - "readReplies.ts"
-Cohesion: 0.18
-Nodes (12): SOCIAL_REPLIES_UNTRUSTED_DATA_LABEL, MEMORY_TOOL_NAMES, readRepliesTool, MAX_REQUESTED_REPLIES, readReplies(), ReadRepliesParams, FOUND, PLATFORM_NAMES (+4 more)
+### Community 232 - "socialPosts/format.ts"
+Cohesion: 0.23
+Nodes (12): SOCIAL_POST_UNTRUSTED_DATA_LABEL, SOCIAL_REPLIES_UNTRUSTED_DATA_LABEL, author(), formatSocialPostLine(), PLATFORM_NAMES, quoted(), replies(), SOCIAL_POST_FAILURE_MARKER (+4 more)
+
+### Community 233 - "extractionErrors.ts"
+Cohesion: 0.22
+Nodes (6): ABORT_CODES, ExtractionErrorClassification, JevUnavailableError, SHUTDOWN_SENSITIVE_NAMES, TRANSIENT_HTTP_STATUSES, TRANSIENT_NETWORK_CODES
+
+### Community 234 - "statusCycler.test.ts"
+Cohesion: 0.22
+Nodes (6): Bucket, BUCKETS, cfg, lastPayload(), lastState(), PresenceMock
 
 ### Community 235 - "reports.ts"
 Cohesion: 0.43
 Nodes (6): main(), parseArgs(), ReportOptions, ReportRow, showMany(), showOne()
 
-## Ambiguous Edges - Review These
-- `Second Opinion` → `Rokabot TRD`  [AMBIGUOUS]
-  docs/research/jev-integration.md · relation: conceptually_related_to
+### Community 236 - "Decisions"
+Cohesion: 0.22
+Nodes (8): Agent and Prompts, Decisions, Deployment, Discord, Media, Memory, Models and Search, Repository
+
+### Community 238 - "smoke.ts"
+Cohesion: 0.25
+Nodes (5): ref_node_assert, EmbedReply, golden, goldenPath, record
+
+### Community 247 - "interactionCreate.memory.test.ts"
+Cohesion: 0.33
+Nodes (4): CapturingRunner, makeInteraction(), mocks, turn()
+
+### Community 248 - "Media Watching"
+Cohesion: 0.29
+Nodes (7): Accounting, Digest and Turn Input, Media Watching, Remembered Media, Speech Sidecar, Transport, Watcher Modes
+
+### Community 249 - "citations.ts"
+Cohesion: 0.48
+Nodes (5): clampToBudget(), fitCitations(), sourceHost(), sourceLabel(), THREE
+
+### Community 250 - "Coding Guidelines (Andrej Karpathy)"
+Cohesion: 0.33
+Nodes (5): 1. Think Before Coding, 2. Simplicity First, 3. Surgical Changes, 4. Goal-Driven Execution, Coding Guidelines (Andrej Karpathy)
+
+### Community 251 - "embeddings/__tests__/client.test.ts"
+Cohesion: 0.50
+Nodes (3): resetEmbeddingClientForTest(), factories, state
 
 ## Knowledge Gaps
-- **1570 isolated node(s):** `$schema`, `indentStyle`, `indentWidth`, `lineWidth`, `enabled` (+1565 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 2049 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **48 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **1648 isolated node(s):** `$schema`, `indentStyle`, `indentWidth`, `lineWidth`, `enabled` (+1643 more)
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 2129 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **49 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **What is the exact relationship between `Second Opinion` and `Rokabot TRD`?**
-  _Edge tagged AMBIGUOUS (relation: conceptually_related_to) - confidence is low._
-- **Why does `vitest` connect `vitest` to `attachmentLimits.ts`, `jevReplay.ts`, `qwenWatch.ts`, `memoryEpisodeStore.ts`, `buddy.ts`, `messageBuilder.ts`, `getDb`, `src/games/hangman.ts`, `scheduler.ts`, `searchNativeAnthropic.test.ts`, `messageCreate.ts`, `reminder.ts`, `tools/index.ts`, `replies/service.ts`, `memoryEpisodeReplay.ts`, `WindowedSessionService`, `memoryShadow.ts`, `database.ts`, `recall.ts`, `rateLimiter.ts`, `turnMedia.ts`, `gameCommands.ts`, `youtubeStreams.ts`, `toolTriggerScoring.ts`, `replay-memory-v2.ts`, `getAnimeSchedule.ts`, `profiles.ts`, `discord/attachments.ts`, `reliability.ts`, `generateObject.ts`, `discord.js`, `charts.ts`, `Inline Data Contract`, `handler.ts`, `obsidianExport.ts`, `budget.ts`, `schedule.test.ts`, `reportStore.ts`, `extractor.ts`, `digest.ts`, `socialPosts/service.ts`, `parsers.ts`, `Prefetch Measurement Tools`, `package.json`, `File Upload Handling`, `interactionCreate.metrics.test.ts`, `harness.eval.test.ts`, `toolTrigger.ts`, `getWeather.ts`, `views.test.ts`, `watch.ts`, `nativeAnthropic.ts`, `Search Prefetch Reporting`, `messageContent.ts`, `config`, `config.ts`, `promptGolden.test.ts`, `embeddings/client.ts`, `chatCompletionsLlm.ts`, `load.ts`, `usage.ts`, `app.test.ts`, `fallbackModel.ts`, `timezone.ts`, `duration.ts`, `turnMedia.test.ts`, `@google/adk`, `gacha.ts`, `replyShape.ts`, `promptSafety.ts`, `metadata.ts`, `emojiReactor.ts`, `hiddenRetractions.test.ts`, `socialPosts/types.ts`, `replyReader`, `transcribe.test.ts`, `probe-llm-profile.ts`, `linesGolden.test.ts`, `ref_node_fs`, `discord/channelVisibility.ts`, `roka.test.ts`, `test-features.ts`, `agent/attachments.ts`, `anthropicLlm.test.ts`, `yamlEdit.ts`, `persona-replay.ts`, `turnContext.ts`, `queries.test.ts`, `updateNotifier.ts`, `toneDetector.ts`, `judgments.ts`, `main.test.ts`, `guildFactDates.test.ts`, `persona-report.ts`, `reportCommand.test.ts`, `searchNativeGemini.test.ts`, `persona-turns.ts`, `fallbackModel.test.ts`, `collection.ts`, `fingerprint.ts`, `markdownGuard.ts`, `extractionSchema.test.ts`, `measure.ts`, `stripNarratedToolCalls`, `roka.ts`, `gemini.test.ts`, `readReplies.ts`?**
-  _High betweenness centrality (0.255) - this node is a cross-community bridge._
-- **Why does `config` connect `config` to `attachmentLimits.ts`, `test-gemini-ga-compare.ts`, `memoryEpisodeStore.ts`, `buddy.ts`, `getDb`, `linesGolden.test.ts`, `scheduler.ts`, `src/games/hangman.ts`, `roka.test.ts`, `messageCreate.ts`, `reminder.ts`, `tools/index.ts`, `test-features.ts`, `replies/service.ts`, `agent/attachments.ts`, `memoryEpisodeReplay.ts`, `guildFactDates.ts`, `memoryShadow.ts`, `database.ts`, `recall.ts`, `turnContext.ts`, `rateLimiter.ts`, `updateNotifier.ts`, `turnMedia.ts`, `recall-calibration-thresholds.ts`, `recall-calibration-sample.ts`, `judgments.ts`, `youtubeStreams.ts`, `gameCommands.ts`, `getAnimeSchedule.ts`, `reliability.ts`, `generateObject.ts`, `discord.js`, `obsidianExport.ts`, `budget.ts`, `extractor.ts`, `collection.ts`, `Multimodal Intake Research`, `socialPosts/service.ts`, `File Upload Handling`, `interactionCreate.metrics.test.ts`, `harness.eval.test.ts`, `toolTrigger.ts`, `getWeather.ts`, `watch.ts`, `nativeAnthropic.ts`, `config.ts`, `reportCommand.ts`, `embeddings/client.ts`, `usage.ts`, `roka.ts`, `fallbackModel.ts`, `timezone.ts`, `gemini.test.ts`, `readReplies.ts`, `@google/adk`, `gacha.ts`, `emojiReactor.ts`, `hiddenRetractions.test.ts`?**
-  _High betweenness centrality (0.049) - this node is a cross-community bridge._
-- **Why does `react` connect `react` to `YamlForm.tsx`, `UI Styling Assets`, `package.json`, `configShared.tsx`, `parts.tsx`, `PackFileScreen.tsx`, `workspace.ts`, `Moods.tsx`, `Secrets.tsx`, `Prompts.tsx`, `PreviewPanel.tsx`?**
+- **Why does `vitest` connect `vitest` to `media.ts`, `jevReplay.ts`, `qwenWatch.ts`, `memoryEpisodeStore.ts`, `buddy.ts`, `messageBuilder.ts`, `getDb`, `test-features.ts`, `scheduler.ts`, `searchNativeAnthropic.test.ts`, `messageCreate.ts`, `reminder.ts`, `replies/service.ts`, `episodeTracker.ts`, `WindowedSessionService`, `memoryShadow.ts`, `database.ts`, `turnContext.ts`, `run.ts`, `rateLimiter.ts`, `turnMedia.ts`, `recall-calibration.test.ts`, `gameCommands.ts`, `youtubeStreams.ts`, `toolTriggerScoring.ts`, `memoryEpisodeReplay.ts`, `getAnimeSchedule.ts`, `profiles.ts`, `discord/attachments.ts`, `generateObject.ts`, `discord.js`, `charts.ts`, `Inline Data Contract`, `handler.ts`, `extractionSchema.test.ts`, `budget.ts`, `schedule.test.ts`, `reportStore.ts`, `extractor.ts`, `digest.ts`, `socialPosts/service.ts`, `parsers.ts`, `Prefetch Measurement Tools`, `package.json`, `File Upload Handling`, `interactionCreate.metrics.test.ts`, `anthropicMain.eval.test.ts`, `quotaDiagnostic.ts`, `getWeather.ts`, `views.test.ts`, `watch.ts`, `logger.ts`, `Search Prefetch Reporting`, `messageContent.ts`, `src/index.ts`, `config.ts`, `ToneKey`, `test-chat.ts`, `chatCompletionsLlm.ts`, `load.ts`, `reclassifyModels.ts`, `app.test.ts`, `fallbackModel.ts`, `timezone.ts`, `duration.ts`, `turnMedia.test.ts`, `verifyThreshold`, `gacha.ts`, `replyShape.ts`, `promptSafety.ts`, `metadata.ts`, `emojiReactor.ts`, `hiddenRetractions.test.ts`, `transcribe.test.ts`, `probe-llm-profile.ts`, `linesGolden.test.ts`, `ref_node_fs`, `config`, `roka.ts`, `verification.test.ts`, `test-phase8.ts`, `metrics.eval.test.ts`, `agent/attachments.ts`, `anthropicLlm.test.ts`, `yamlEdit.ts`, `persona-replay.ts`, `searchPrefetch.ts`, `queries.test.ts`, `updateNotifier.ts`, `promptGolden.test.ts`, `judgments.ts`, `scheduler.test.ts`, `searchWeb`, `guildFactDates.test.ts`, `persona-report.ts`, `reportCommand.test.ts`, `toolTrigger.retry.test.ts`, `turnContext.test.ts`, `admission.ts`, `collection.ts`, `fingerprint.ts`, `local.test.ts`, `reminderScheduler.ts`, `toolTrigger.ts`, `attachmentLimits.ts`, `getCurrentTime.ts`, `replyBlocks.ts`, `gemini.test.ts`, `socialPosts/format.ts`, `extractionErrors.ts`, `statusCycler.test.ts`, `interactionCreate.memory.test.ts`, `citations.ts`, `embeddings/__tests__/client.test.ts`?**
+  _High betweenness centrality (0.253) - this node is a cross-community bridge._
+- **Why does `config` connect `config` to `media.ts`, `test-gemini-ga-compare.ts`, `memoryEpisodeStore.ts`, `buddy.ts`, `getDb`, `linesGolden.test.ts`, `scheduler.ts`, `test-features.ts`, `roka.ts`, `messageCreate.ts`, `reminder.ts`, `test-phase8.ts`, `metrics.eval.test.ts`, `agent/attachments.ts`, `episodeTracker.ts`, `guildFactDates.ts`, `replies/service.ts`, `memoryShadow.ts`, `turnContext.ts`, `run.ts`, `rateLimiter.ts`, `updateNotifier.ts`, `turnMedia.ts`, `recall-calibration-thresholds.ts`, `recall-calibration.test.ts`, `judgments.ts`, `youtubeStreams.ts`, `gameCommands.ts`, `tools/index.ts`, `getAnimeSchedule.ts`, `discord/attachments.ts`, `recall.ts`, `generateObject.ts`, `discord.js`, `turnContext.test.ts`, `anthropicLlm.ts`, `obsidianExport.ts`, `budget.ts`, `extractor.ts`, `collection.ts`, `reminderScheduler.ts`, `socialPosts/service.ts`, `File Upload Handling`, `interactionCreate.metrics.test.ts`, `quotaDiagnostic.ts`, `getWeather.ts`, `watch.ts`, `logger.ts`, `src/index.ts`, `config.ts`, `reportCommand.ts`, `embeddings/client.ts`, `toolTrigger.ts`, `attachmentLimits.ts`, `reclassifyModels.ts`, `getCurrentTime.ts`, `fallbackModel.ts`, `timezone.ts`, `gemini.test.ts`, `verifyThreshold`, `gacha.ts`, `emojiReactor.ts`, `hiddenRetractions.test.ts`?**
+  _High betweenness centrality (0.046) - this node is a cross-community bridge._
+- **Why does `getDb()` connect `getDb` to `memoryEpisodeStore.ts`, `buddy.ts`, `test-features.ts`, `scheduler.ts`, `config`, `queries.ts`, `messageCreate.ts`, `test-phase8.ts`, `verification.test.ts`, `views.ts`, `metrics.eval.test.ts`, `episodeTracker.ts`, `memoryShadow.ts`, `database.ts`, `turnContext.ts`, `run.ts`, `queries.test.ts`, `updateNotifier.ts`, `recall-calibration.test.ts`, `gameCommands.ts`, `toolTriggerScoring.ts`, `tools/index.ts`, `memoryEpisodeReplay.ts`, `recall.ts`, `reportCommand.test.ts`, `obsidianExport.ts`, `budget.ts`, `reportStore.ts`, `extractor.ts`, `collection.ts`, `anthropicMain.eval.test.ts`, `src/index.ts`, `reportCommand.ts`, `gacha.ts`, `interactionCreate.memory.test.ts`, `hiddenRetractions.test.ts`?**
   _High betweenness centrality (0.039) - this node is a cross-community bridge._
 - **What connects `$schema`, `indentStyle`, `indentWidth` to the rest of the system?**
-  _1570 weakly-connected nodes found - possible documentation gaps or missing edges._
-- **Should `attachmentLimits.ts` be split into smaller, more focused modules?**
-  _Cohesion score 0.08739495798319327 - nodes in this community are weakly interconnected._
+  _1648 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **Should `media.ts` be split into smaller, more focused modules?**
+  _Cohesion score 0.0989247311827957 - nodes in this community are weakly interconnected._
 - **Should `jevReplay.ts` be split into smaller, more focused modules?**
   _Cohesion score 0.1310483870967742 - nodes in this community are weakly interconnected._
+- **Should `qwenWatch.ts` be split into smaller, more focused modules?**
+  _Cohesion score 0.09885057471264368 - nodes in this community are weakly interconnected._

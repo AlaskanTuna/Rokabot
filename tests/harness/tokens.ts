@@ -15,7 +15,7 @@ export { estimateTokens }
  * accidental prompt bloat), not latency — prompt size is not the binding latency
  * constraint. With this much headroom over the measured worst case, it is a
  * catastrophe rail against a runaway prompt, not a fine-grained detector of a small
- * regression. See AGENTS.md and docs/trd.md for where this fits in the request budget.
+ * regression. See docs/TRD.md for where this fits in the request budget.
  */
 export const MAX_SYSTEM_PROMPT_TOKENS = 6500
 

@@ -1,6 +1,6 @@
 # Product Requirements
 
-What Rokabot must do, for whom, and how far each requirement has shipped. Contracts live in [`trd.md`](./trd.md).
+What Rokabot must do, for whom, and how far each requirement has shipped. Contracts live in [`TRD.md`](./TRD.md).
 
 ## At a Glance
 

@@ -198,7 +198,7 @@ export interface ToolTriggerReport {
 }
 
 // Floor placed at the *target* behaviour, not the pre-fix baseline (exact Binomial convolution over
-// main's per-case fire rates, docs/progress.md:529): main's measured precision is 0.7105, so this
+// main's per-case fire rates): main's measured precision is 0.7105, so this
 // floor sits above the known-defective baseline by construction, not beneath it. All figures below
 // are at full recall (TP=18), where precision >= 0.8 is exactly FP <= 4; at TP=15 the same floor
 // permits only FP <= 3.

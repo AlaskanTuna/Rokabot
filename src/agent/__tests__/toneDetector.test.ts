@@ -387,7 +387,7 @@ describe('detectTone', () => {
     it.each(toneKeyPrecedenceCases)('$description', ({ input, hour, expectedTone }) => {
       expect(
         detectTone([makeMessage(input)], hour),
-        "Tone precedence changed; update docs/trd.md's ToneKey section if this is intentional"
+        "Tone precedence changed; update docs/TRD.md's ToneKey section if this is intentional"
       ).toBe(expectedTone)
     })
   })
