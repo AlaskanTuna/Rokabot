@@ -8,7 +8,7 @@ import { createLlm } from './createModel.js'
 import { normalizeReply, requestSchema } from './objectSchema.js'
 import type { ProviderId } from './profiles.js'
 import { SAFETY_SETTINGS } from './safetySettings.js'
-import { type CallUsage, WORKLOAD_LABEL, type Workload } from './usage.js'
+import { type CallUsage, WORKLOAD_LABEL, type Workload, usageFromCachedPrompt } from './usage.js'
 
 export type BackgroundWorkload = Exclude<Workload, 'reply' | 'embedding' | 'watcher' | 'search'>
 
@@ -110,18 +110,16 @@ function callUsage(
   workload: BackgroundWorkload,
   metadata: LlmResponse['usageMetadata']
 ): CallUsage {
-  const cached = metadata?.cachedContentTokenCount ?? 0
-  const reasoning = metadata?.thoughtsTokenCount ?? 0
-  return {
+  return usageFromCachedPrompt({
     provider: route.provider,
     model: route.model,
     workload,
-    inputTokens: Math.max(0, (metadata?.promptTokenCount ?? 0) - cached),
+    promptTokens: metadata?.promptTokenCount ?? 0,
+    cachedTokens: metadata?.cachedContentTokenCount ?? 0,
     outputTokens: metadata?.candidatesTokenCount ?? 0,
     // Gemini counts thinking apart from candidates; Anthropic's output count already includes it.
-    ...(route.provider === 'gemini' && reasoning > 0 ? { reasoningTokens: reasoning } : {}),
-    ...(cached > 0 ? { cacheReadTokens: cached } : {})
-  }
+    reasoningTokens: route.provider === 'gemini' ? (metadata?.thoughtsTokenCount ?? 0) : 0
+  })
 }
 
 async function attempt<T>(

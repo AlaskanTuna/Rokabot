@@ -32,6 +32,19 @@ export function attachmentMarker(kind: string): string {
   return `(a ${kind} attachment that can't be opened right now)`
 }
 
+export function parseRetryAfterMs(
+  value: string | null | undefined,
+  options: { zeroMeansNow: boolean }
+): number | undefined {
+  const seconds = value ? Number(value) : Number.NaN
+  const usable = options.zeroMeansNow ? seconds >= 0 : seconds > 0
+  return Number.isFinite(seconds) && usable ? seconds * 1000 : undefined
+}
+
+export function orphanResultText(name: string, body: string): string {
+  return `(result of ${name}: ${body})`
+}
+
 export function systemText(instruction: unknown): string | undefined {
   if (typeof instruction === 'string') return instruction
   if (!isRecord(instruction)) return undefined

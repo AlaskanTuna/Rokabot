@@ -16,6 +16,8 @@ import {
   attachmentMarker,
   functionDeclarations,
   isRecord,
+  orphanResultText,
+  parseRetryAfterMs,
   shapeRequest,
   systemText
 } from './requestShape.js'
@@ -191,7 +193,7 @@ function renderContents(contents: Content[], input: ModelProfile['input']): Rend
           call.answered = true
           results.push({ type: 'tool_result', tool_use_id: call.id, content: body })
         } else {
-          others.push({ type: 'text', text: `(result of ${response.name ?? 'a tool'}: ${body})` })
+          others.push({ type: 'text', text: orphanResultText(response.name ?? 'a tool', body) })
         }
       } else if (part.text?.trim()) {
         others.push({ type: 'text', text: part.text })
@@ -380,12 +382,6 @@ function toLlmResponse(
   }
 }
 
-function retryAfterMs(headers: Headers | undefined): number | undefined {
-  const value = headers?.get('retry-after')
-  const seconds = value ? Number(value) : Number.NaN
-  return Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : undefined
-}
-
 export function classifyAnthropicError(error: unknown): ProviderError {
   if (error instanceof ProviderError) return error
   if (error instanceof APIUserAbortError || error instanceof APIConnectionError) {
@@ -414,7 +410,11 @@ export function classifyAnthropicError(error: unknown): ProviderError {
     return new ProviderError({ ...failure, kind: 'context_length' })
   }
   if (status === 429) {
-    return new ProviderError({ ...failure, kind: 'transient_http', retryAfterMs: retryAfterMs(error.headers) })
+    return new ProviderError({
+      ...failure,
+      kind: 'transient_http',
+      retryAfterMs: parseRetryAfterMs(error.headers?.get('retry-after'), { zeroMeansNow: true })
+    })
   }
   if (error.type === 'overloaded_error' || (status !== undefined && status >= 500)) {
     return new ProviderError({ ...failure, kind: 'transient_http' })
