@@ -418,7 +418,8 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
       userId,
       speakerName: displayName,
       message: userMessage,
-      mentionedUserIds: options.mentionedUserIds
+      mentionedUserIds: options.mentionedUserIds,
+      memoryScope
     })
   // Watching runs alongside memory retrieval rather than after it.
   const mediaWork = prepareTurnMedia({

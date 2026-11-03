@@ -121,7 +121,8 @@ function entryWork() {
     guildId: 'guild-1',
     userId: 'user-1',
     speakerName: 'Alice',
-    message: 'hello'
+    message: 'hello',
+    memoryScope: 'full' as const
   }
 }
 
@@ -292,6 +293,49 @@ describe('turn entry work', () => {
     expect(mocks.judgeTurn).toHaveBeenCalledOnce()
     expect(mocks.judgeTurn.mock.calls[0]?.[0].includeLookup).toBe(true)
     expect(mocks.runPrefetchForJudgment).toHaveBeenCalledTimes(2)
+  })
+
+  it('sends the judge no candidates and skips resolveReferences for a memory-free turn', async () => {
+    jevConfig.referents = 'on'
+    mocks.resolveReferences.mockReturnValue({
+      resolved: [],
+      ambiguous: [{ alias: 'Ali', candidateIds: ['user-2', 'user-3'] }]
+    } as never)
+    mocks.getUserName.mockImplementation((userId: string) => ({ userId, displayName: `Name-${userId}` }) as never)
+
+    const work = startTurnEntryWork({ ...entryWork(), memoryScope: 'none' } as never)
+    await work.judgment
+
+    expect(mocks.resolveReferences).not.toHaveBeenCalled()
+    expect(mocks.judgeTurn).toHaveBeenCalledWith(expect.objectContaining({ ambiguous: [] }), expect.anything())
+  })
+
+  it.each(['full', 'forget'] as const)('sends candidates to the judge for memory scope %s', async (memoryScope) => {
+    jevConfig.referents = 'on'
+    mocks.resolveReferences.mockReturnValue({
+      resolved: [],
+      ambiguous: [{ alias: 'Ali', candidateIds: ['user-2', 'user-3'] }]
+    } as never)
+    mocks.getUserName.mockImplementation((userId: string) => ({ userId, displayName: `Name-${userId}` }) as never)
+
+    const work = startTurnEntryWork({ ...entryWork(), memoryScope } as never)
+    await work.judgment
+
+    expect(mocks.resolveReferences).toHaveBeenCalledOnce()
+    expect(mocks.judgeTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ambiguous: [
+          {
+            alias: 'Ali',
+            candidates: [
+              { userId: 'user-2', displayName: 'Name-user-2' },
+              { userId: 'user-3', displayName: 'Name-user-3' }
+            ]
+          }
+        ]
+      }),
+      expect.anything()
+    )
   })
 
   it('aborts the in-flight prefetch when the turn is canceled', async () => {

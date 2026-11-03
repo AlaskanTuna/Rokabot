@@ -56,6 +56,7 @@ export interface StartTurnEntryWorkInput {
   lookupQuery?: string
   mentionedUserIds?: string[]
   includeEpisodeRecall?: boolean
+  memoryScope: MemoryScope
 }
 
 export type PendingTurnJudgment = Promise<TurnJudgment | null>
@@ -80,7 +81,7 @@ function formatServerFact(fact: ReturnType<typeof retrieveGuildFacts>['facts'][n
 function buildEntryJudgmentInput(input: StartTurnEntryWorkInput): TurnJudgmentInput {
   const history = loadHistory(input.channelId, 3, config.session.maxRehydrationAge)
   const ambiguous =
-    config.jev.referents !== 'off'
+    input.memoryScope !== 'none' && config.jev.referents !== 'off'
       ? resolveReferences({
           guildId: input.guildId,
           text: input.message,

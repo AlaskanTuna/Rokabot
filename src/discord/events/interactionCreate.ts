@@ -117,7 +117,8 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
       userId: interaction.user.id,
       speakerName: displayName,
       message,
-      includeEpisodeRecall: false
+      includeEpisodeRecall: false,
+      memoryScope: 'none'
     })
     let turnEntryWorkHandedOff = false
     let turnEntryWorkCancelled = false

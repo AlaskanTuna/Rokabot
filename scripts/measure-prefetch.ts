@@ -69,6 +69,7 @@ async function main(): Promise<void> {
     { config },
     { generateResponse },
     { destroySession },
+    { resolveMemoryScope },
     { startTurnEntryWork },
     { loadCaseSet },
     { TRIAL_PACING_MS, seedWorld },
@@ -79,6 +80,7 @@ async function main(): Promise<void> {
     import('../src/config.js'),
     import('../src/agent/roka.js'),
     import('../src/agent/session.js'),
+    import('../src/agent/memory/memoryScope.js'),
     import('../src/agent/turnContext.js'),
     import('../tests/harness/toolTriggerScoring.js'),
     import('../tests/harness/toolTrigger.js'),
@@ -121,6 +123,7 @@ async function main(): Promise<void> {
           message: testCase.message,
           lookupQuery: testCase.message,
           mentionedUserIds: [],
+          memoryScope: resolveMemoryScope(true, config.memory.privacy),
           includeEpisodeRecall: Boolean(header.guildId)
         })
 
