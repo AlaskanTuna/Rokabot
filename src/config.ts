@@ -4,19 +4,22 @@ import 'dotenv/config'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { load } from 'js-yaml'
+import { type LegacyModelSettings, type LlmConfig, type ResolvedModel, legacyLlm } from './agent/llm/legacy.js'
 import {
   COMPATIBLE_DEFAULTS,
   type CompatibleCapabilities,
-  MODEL_PROFILES,
   type ModelProfile,
   PROVIDER_KEY_ENV,
   type ProviderId,
   compatibleProfile,
   profileFor
 } from './agent/llm/profiles.js'
-// All four are pure leaves — attachmentLimits.ts, llm/profiles.ts and vectorProvenance.ts import nothing at
-// runtime (its better-sqlite3 import is type-only), mediaRules.ts only node built-ins — so reading them here
-// derives values instead of restating them, and cannot close a cycle back into config.
+// All five are pure leaves — attachmentLimits.ts, llm/legacy.ts, llm/profiles.ts and vectorProvenance.ts import
+// nothing at runtime beyond node built-ins and each other (vectorProvenance.ts's better-sqlite3 import is
+// type-only), mediaRules.ts only node built-ins — so reading them here derives values instead of restating them,
+// and cannot close a cycle back into config.
+
+export type { LlmConfig, ResolvedModel } from './agent/llm/legacy.js'
 import { GEMINI_IMAGE_TOKENS, MAX_DOCUMENT_SIZE_BYTES } from './agent/media/attachmentLimits.js'
 import { MAX_ATTACHMENTS } from './agent/media/mediaRules.js'
 import {
@@ -314,78 +317,6 @@ function memoryEnum<T extends string>(key: 'privacy' | 'recall', envKey: string,
   throw new Error(`${source} must be ${allowed}, got: ${String(value)}`)
 }
 
-export interface ResolvedModel {
-  /** The llm.models key, e.g. 'haiku'; 'legacy-gemini' / 'legacy-fallback' when synthesised. */
-  key: string
-  provider: ProviderId
-  model: string
-  profile: ModelProfile
-  /** Empty for a keyless openai-compatible server, which is then sent no Authorization header. */
-  apiKey: string
-  baseUrl?: string
-  timeoutMs: number
-  maxOutputTokens: number
-  effort?: string
-  limits?: { rpm?: number; rpd?: number; tpm?: number }
-  /** Declared by an openai-compatible entry; the named Chat Completions providers keep their built-in ones. */
-  maxTokensParam?: CompatibleCapabilities['maxTokensParam']
-  extraBody?: Record<string, unknown>
-}
-
-export interface LlmConfig {
-  main: ResolvedModel
-  fallback: ResolvedModel | null
-  hedgeAfterMs: number
-  stickyMs: number
-  monthlyBudgetUsd: Partial<Record<ProviderId, number>>
-  modelscopeDailyMagicubes: number
-}
-
-interface LegacyModelSettings {
-  gemini: { apiKey: string; model: string; timeout: number; maxOutputTokens: number; hedgeAfterMs: number }
-  fallback: { apiKey: string | undefined; model: string; baseUrl: string; timeoutMs: number; stickyMs: number }
-}
-
-// Inherits the family's tested capabilities so a GEMINI_MODEL or FALLBACK_MODEL override keeps working as it
-// does today; D12's tested-profile rule applies to llm.models entries only.
-function legacyProfile(provider: ProviderId, model: string): ModelProfile {
-  const family = MODEL_PROFILES.find((profile) => profile.provider === provider)
-  if (!family) throw new Error(`No ${provider} profile to synthesise the legacy route from`)
-  return profileFor(provider, model) ?? { ...family, model }
-}
-
-function legacyLlm(settings: LegacyModelSettings): LlmConfig {
-  return {
-    main: {
-      key: 'legacy-gemini',
-      provider: 'gemini',
-      model: settings.gemini.model,
-      profile: legacyProfile('gemini', settings.gemini.model),
-      apiKey: settings.gemini.apiKey,
-      timeoutMs: settings.gemini.timeout,
-      maxOutputTokens: settings.gemini.maxOutputTokens,
-      limits: resolveLimits('gemini', undefined)
-    },
-    fallback: settings.fallback.apiKey
-      ? {
-          key: 'legacy-fallback',
-          provider: 'modelscope',
-          model: settings.fallback.model,
-          profile: legacyProfile('modelscope', settings.fallback.model),
-          apiKey: settings.fallback.apiKey,
-          baseUrl: settings.fallback.baseUrl,
-          timeoutMs: settings.fallback.timeoutMs,
-          maxOutputTokens: settings.gemini.maxOutputTokens,
-          limits: resolveLimits('modelscope', undefined)
-        }
-      : null,
-    hedgeAfterMs: settings.gemini.hedgeAfterMs,
-    stickyMs: settings.fallback.stickyMs,
-    monthlyBudgetUsd: {},
-    modelscopeDailyMagicubes: yaml.llm?.modelscopeDailyMagicubes ?? 250
-  }
-}
-
 const PROVIDERS: readonly ProviderId[] = [...(Object.keys(PROVIDER_KEY_ENV) as ProviderId[]), 'openai-compatible']
 const DEFAULT_MONTHLY_BUDGET_USD: Partial<Record<ProviderId, number>> = { anthropic: 5, openai: 5 }
 
@@ -545,7 +476,7 @@ function resolveLlm(settings: LegacyModelSettings): LlmConfig {
     if (envFallback && envFallback !== 'none') {
       throw new Error(`Environment variable LLM_FALLBACK needs an llm: block in config.yml, got: ${envFallback}`)
     }
-    const legacy = legacyLlm(settings)
+    const legacy = legacyLlm(settings, resolveLimits, yaml.llm?.modelscopeDailyMagicubes ?? 250)
     return envFallback === 'none' ? { ...legacy, fallback: null } : legacy
   }
 

@@ -334,7 +334,7 @@ Extraction, reclassification and main-model memory judgments call `generateObjec
 
 ## Legacy Config
 
-Without an `llm:` block, `legacyLlm` synthesises the route the bot ran before model selection.
+Without an `llm:` block, `legacyLlm` (`src/agent/llm/legacy.ts`) synthesises the route the bot ran before model selection.
 
 | Part             | Legacy Value                                                                                                                                                   |
 | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -351,7 +351,8 @@ Without an `llm:` block, `legacyLlm` synthesises the route the bot ran before mo
 
 ## Source Files
 
-- `src/config.ts` (`resolveLlm`, `resolveRole`, `compatibleEntry`, `legacyLlm`, `NUMERIC_BOUNDS`)
+- `src/config.ts` (`resolveLlm`, `resolveRole`, `compatibleEntry`, `NUMERIC_BOUNDS`)
+- `src/agent/llm/legacy.ts` (`legacyLlm`, `legacyProfile`)
 - `src/agent/llm/profiles.ts`
 - `src/agent/llm/createModel.ts`
 - `src/agent/llm/requestShape.ts`, `src/agent/llm/objectSchema.ts`
