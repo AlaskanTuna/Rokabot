@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { geminiVector } from '../../agent/memory/embeddings/__tests__/vectors.js'
+import { geminiVector } from '../../../tests/harness/vectors.js'
 import type { ExtractionEpisode } from '../extractionQueue.js'
 
 let testDb: Database.Database

@@ -42,7 +42,7 @@ const runForget = (
     args: { query },
     toolContext: toolContextWith({ _userId: userId, _guildId: guildId, _channelId: channelId })
   }) as Promise<{ success: boolean; message: string }>
-import { geminiVector } from '../../memory/embeddings/__tests__/vectors.js'
+import { geminiVector } from '../../../../tests/harness/vectors.js'
 import { resolveName } from '../../memory/identityResolver.js'
 import { assertClaim, assertGuildClaim, getActiveClaims, getActiveGuildClaims } from '../../memory/memoryClaims.js'
 import { forgetUserTool, recallUserTool, rememberUserTool } from '../index.js'

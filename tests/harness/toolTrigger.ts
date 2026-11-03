@@ -9,6 +9,7 @@ import { config } from '../../src/config.js'
 import { saveMessage } from '../../src/storage/sessionStore.js'
 import { upsertUserName } from '../../src/storage/userNames.js'
 import { emitTrialRecord } from './gateRecord.js'
+import { GATE1_FLOOR_MS, MAX_TRIAL_RETRIES } from './limits.js'
 import { diagnoseKey } from './quotaDiagnostic.js'
 import type { CaseObservations, CaseSetHeader, ToolTriggerCase } from './toolTriggerScoring.js'
 
@@ -21,7 +22,6 @@ import type { CaseObservations, CaseSetHeader, ToolTriggerCase } from './toolTri
 // slow the gate down, it destroys the measurement (#166). Derived rather than restated so it moves when
 // either knob does. Gate-1 amendment (human, 2026-07-29): never below 12000 — the plan's original 8000
 // sits at exactly 15 RPM even on the old 2-call assumption, leaving no headroom for a real gate.
-const GATE1_FLOOR_MS = 12000
 const TRIAL_PACING_FLOOR_MS = Math.max(
   GATE1_FLOOR_MS,
   Math.ceil((60_000 * config.gemini.maxLlmCalls) / config.rateLimit.rpm)
@@ -92,21 +92,6 @@ export interface CaseSetRun {
 function sleep(delayMs: number): Promise<void> {
   return new Promise((resolveSleep) => setTimeout(resolveSleep, delayMs))
 }
-
-/** How many times one trial may be re-run after a transient before the run is abandoned.
- *
- * Not a retry-until-green dial. A prompt that genuinely makes the model return nothing would otherwise
- * hide behind unlimited retries and score as though it never had, which is the failure this file's own
- * guard exists to prevent.
- *
- * Budgeted per trial rather than across the run, because the variable that separates the two failures is
- * **concentration on one case**, not total volume: noise on the wire lands one-each on scattered cases,
- * a broken prompt lands repeatedly on the same one, and a run-level count sums that distinction away —
- * it cannot tell three unlucky cases from one broken one. Per-trial is tighter where it should be (a
- * broken case aborts on its own third failure, rather than waiting for a fourth failure anywhere) and
- * looser where it should be (four scattered transients never accumulate into an abort). It also needs no
- * fitted rate to justify it: "this trial failed three times running" is a statement about the trial. */
-const MAX_TRIAL_RETRIES = 2
 
 /** Runs every case for `options.trials` trials against the live model, one unique channel per trial
  * so nothing carries over between them, and paced at TRIAL_PACING_MS.

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
+import { fakeFetch, hangingFetch, json } from '../../../../../tests/harness/fakeFetch.js'
 import { embeddingFingerprint } from '../../../../storage/vectorProvenance.js'
 import type { EmbeddingSettings } from '../client.js'
 import { createOpenAiEmbeddingClient } from '../openai.js'
-import { fakeFetch, hangingFetch, json } from './fakeFetch.js'
 
 const vector1536 = Array.from({ length: 1536 }, (_, index) => (index === 0 ? 1 : 0))
 const settings: EmbeddingSettings = {

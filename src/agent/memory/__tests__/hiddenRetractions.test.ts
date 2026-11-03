@@ -22,10 +22,10 @@ vi.mock('../../jev/judgments.js', () => ({
 }))
 vi.mock('../../../config.js', () => ({ config: mocks.config }))
 
+import { geminiVector } from '../../../../tests/harness/vectors.js'
 import { closeDb, getDb } from '../../../storage/database.js'
 import { setClaimEmbedding } from '../../../storage/memoryRecallStore.js'
 import { registerChannelVisibility, resetChannelVisibilityForTest } from '../channelVisibility.js'
-import { geminiVector } from '../embeddings/__tests__/vectors.js'
 import { verifyAndApplyOperations } from '../extractor.js'
 import { renderFactSentence } from '../factSentences.js'
 import { reconcileHiddenRetractions } from '../hiddenRetractions.js'

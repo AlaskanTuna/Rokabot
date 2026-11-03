@@ -1,5 +1,5 @@
-import { LOCAL_EMBEDDING_MODEL, embeddingFingerprint } from '../../../../storage/vectorProvenance.js'
-import type { EmbeddingResult } from '../client.js'
+import type { EmbeddingResult } from '../../src/agent/memory/embeddings/client.js'
+import { LOCAL_EMBEDDING_MODEL, embeddingFingerprint } from '../../src/storage/vectorProvenance.js'
 
 export const GEMINI_FINGERPRINT = embeddingFingerprint('gemini', 'gemini-embedding-2', 768)
 export const LOCAL_FINGERPRINT = embeddingFingerprint('local', LOCAL_EMBEDDING_MODEL, 384)

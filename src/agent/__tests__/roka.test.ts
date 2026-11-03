@@ -28,12 +28,19 @@ const mutableJevConfig = config.jev as {
   toneMinProbability: number
   referentMinConfidence: number
 }
-mutableJevConfig.tone = 'off'
-mutableJevConfig.referents = 'off'
-mutableJevConfig.prefetch = 'shadow'
-// These tests pin the direct path, where audio and video reach the model as they arrived. The watched path is
-// covered in roka.media.test.ts.
-;(config.media as { watcher: string }).watcher = 'direct'
+/** The whole file runs this one config: Jev off except shadow prefetch, media direct. Named so the pin
+ * reads as the file's premise rather than mid-file mutation; the prefetch suite flips prefetch on per test
+ * and afterEach restores the pin. */
+function pinLegacyRoute(): void {
+  mutableJevConfig.tone = 'off'
+  mutableJevConfig.referents = 'off'
+  mutableJevConfig.prefetch = 'shadow'
+  // These tests pin the direct path, where audio and video reach the model as they arrived. The watched path is
+  // covered in roka.media.test.ts.
+  ;(config.media as { watcher: string }).watcher = 'direct'
+}
+
+pinLegacyRoute()
 import { recordFailureDiagnostic, recordMemoryEvent } from '../../storage/metricsStore.js'
 import { getChannelUsers, loadHistory, saveMessage } from '../../storage/sessionStore.js'
 import { getUserName } from '../../storage/userNames.js'

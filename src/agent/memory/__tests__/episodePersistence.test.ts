@@ -15,10 +15,10 @@ vi.mock('../../../storage/database.js', () => ({ getDb: () => testDb }))
 vi.mock('../../../utils/logger.js', () => ({ logger: mocks.logger }))
 vi.mock('../../../utils/rateLimiter.js', () => ({ getSharedRateLimiter: mocks.getSharedRateLimiter }))
 
+import { geminiVector } from '../../../../tests/harness/vectors.js'
 import { enqueueEpisode } from '../../../storage/extractionQueue.js'
 import { listEpisodesForGuild } from '../../../storage/memoryEpisodeStore.js'
 import { ensureVectorProvenanceColumns } from '../../../storage/vectorProvenance.js'
-import { geminiVector } from '../embeddings/__tests__/vectors.js'
 import { persistEpisodeResult } from '../episodePersistence.js'
 
 function oneLineEpisode(): ExtractionEpisode {

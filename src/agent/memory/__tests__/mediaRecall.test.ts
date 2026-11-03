@@ -16,11 +16,11 @@ let testDb: Database.Database
 vi.mock('../../../config.js', () => ({ config: configMock }))
 vi.mock('../../../storage/database.js', () => ({ getDb: () => testDb }))
 
+import { geminiVector } from '../../../../tests/harness/vectors.js'
 import { findMediaDigest, recordMediaOccurrence, saveMediaDigest } from '../../../storage/mediaDigestStore.js'
 import { ensureVectorProvenanceColumns } from '../../../storage/vectorProvenance.js'
 import { estimateTokens } from '../../../utils/tokens.js'
 import { registerChannelVisibility, resetChannelVisibilityForTest } from '../channelVisibility.js'
-import { geminiVector } from '../embeddings/__tests__/vectors.js'
 import { buildMediaRecallBlock, formatMediaRecallBlock, recallMedia } from '../mediaRecall.js'
 
 function vector768(first: number, second = 0): number[] {

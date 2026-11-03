@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({ embed: vi.fn() }))
 
 vi.mock('../embeddings/client.js', () => ({ getEmbeddingClient: () => ({ embed: mocks.embed }) }))
 
-import { geminiVector } from '../embeddings/__tests__/vectors.js'
+import { geminiVector } from '../../../../tests/harness/vectors.js'
 import { embedEpisodeText } from '../episodeEmbeddings.js'
 
 describe('embedEpisodeText', () => {

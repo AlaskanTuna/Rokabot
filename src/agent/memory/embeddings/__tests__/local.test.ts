@@ -3,10 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const logger = vi.hoisted(() => ({ info: vi.fn() }))
 vi.mock('../../../../utils/logger.js', () => ({ logger }))
 
+import { fakeFetch, hangingFetch, json } from '../../../../../tests/harness/fakeFetch.js'
 import { LOCAL_EMBEDDING_MODEL, embeddingFingerprint } from '../../../../storage/vectorProvenance.js'
 import type { EmbeddingSettings } from '../client.js'
 import { createLocalEmbeddingClient } from '../local.js'
-import { fakeFetch, hangingFetch, json } from './fakeFetch.js'
 
 const vector384 = Array.from({ length: 384 }, (_, index) => (index === 0 ? 1 : 0))
 const settings: EmbeddingSettings = {

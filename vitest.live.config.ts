@@ -1,10 +1,8 @@
 import { defineConfig } from 'vitest/config'
 
-const TRIAL_PACING_FLOOR_MS = 12000
-const TRIAL_PACING_MS = Math.max(
-  TRIAL_PACING_FLOOR_MS,
-  Number(process.env.ROKABOT_TRIAL_PACING_MS) || TRIAL_PACING_FLOOR_MS
-)
+import { GATE1_FLOOR_MS, MAX_TRIAL_RETRIES } from './tests/harness/limits.js'
+
+const TRIAL_PACING_MS = Math.max(GATE1_FLOOR_MS, Number(process.env.ROKABOT_TRIAL_PACING_MS) || GATE1_FLOOR_MS)
 /** 12 fixture cases x 3 trials in tests/harness/__tests__/toolTrigger.live.test.ts. */
 const TURNS_PER_RUN = 36
 
@@ -19,13 +17,11 @@ const TURNS_PER_RUN = 36
  * avoid, sprung by the term it omitted. */
 const TURN_BUDGET_MS = 13_000
 
-/** Kept in step with MAX_TRIAL_RETRIES in tests/harness/toolTrigger.ts by hand, the same way
- * TRIAL_PACING_FLOOR_MS above is: importing the harness here would load src/config.ts and dotenv while
- * vitest is still reading its own config. Retries are budgeted turns, so the timeout has to buy them —
- * and budgeted per trial means the run's worst case is every trial spending its whole allowance, not a
- * shared pool. Buying only the pool would leave the timeout aborting runs the retry budget still permits,
- * which is the failure this derivation exists to prevent. */
-const MAX_TRIAL_RETRIES = 2
+/** Shared with the harness through tests/harness/limits.ts: importing toolTrigger.ts itself here would load
+ * src/config.ts and dotenv while vitest is still reading its own config. Retries are budgeted turns, so the
+ * timeout has to buy them — and budgeted per trial means the run's worst case is every trial spending its
+ * whole allowance, not a shared pool. Buying only the pool would leave the timeout aborting runs the retry
+ * budget still permits, which is the failure this derivation exists to prevent. */
 const WORST_CASE_RETRIES = TURNS_PER_RUN * MAX_TRIAL_RETRIES
 
 export default defineConfig({

@@ -30,6 +30,7 @@ const { memoryDefaults, testConfig } = vi.hoisted(() => {
 
 vi.mock('../../../config.js', () => ({ config: testConfig }))
 
+import { geminiVector } from '../../../../tests/harness/vectors.js'
 import { closeDb, getDb } from '../../../storage/database.js'
 import { recordMediaOccurrence, saveMediaDigest } from '../../../storage/mediaDigestStore.js'
 import { saveMemoryEpisode } from '../../../storage/memoryEpisodeStore.js'
@@ -37,7 +38,6 @@ import { setClaimEmbedding } from '../../../storage/memoryRecallStore.js'
 import { upsertUserName } from '../../../storage/userNames.js'
 import { estimateTokens } from '../../../utils/tokens.js'
 import { registerChannelVisibility, resetChannelVisibilityForTest } from '../channelVisibility.js'
-import { geminiVector } from '../embeddings/__tests__/vectors.js'
 import { type ClaimPeriod, assertClaim, pinClaim } from '../memoryClaims.js'
 import {
   type RecallInput,
