@@ -115,6 +115,8 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
     let turnEntryWork: ReturnType<typeof startTurnEntryWork> | undefined
     if (isMentioned || isNameMention || isReplyCandidate) {
       const currentMessage = extractCurrentMessageContent(message, client.user.id, componentTextsForTrigger)
+      // Resolved once per turn: the entry judgment and the episode recall below share this turn's scope.
+      const memoryScope = resolveMemoryScope(true, config.memory.privacy)
       turnEntryWork = startTurnEntryWork({
         channelId: message.channelId,
         guildId: message.guildId ?? `dm:${message.channelId}`,
@@ -123,7 +125,8 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
         message: currentMessage,
         lookupQuery: replaceUserMentions(message, client.user.id),
         mentionedUserIds: [...(message.mentions.users?.keys() ?? [])].filter((userId) => userId !== client.user?.id),
-        includeEpisodeRecall: Boolean(message.guildId) && resolveMemoryScope(true, config.memory.privacy) === 'full'
+        memoryScope,
+        includeEpisodeRecall: Boolean(message.guildId) && memoryScope === 'full'
       })
     }
     let turnEntryWorkHandedOff = false
