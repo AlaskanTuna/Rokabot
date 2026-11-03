@@ -37,7 +37,7 @@ services:
   asr:
     image: ${ROKA_REGISTRY:-ghcr.io/alaskantuna}/rokabot-asr:${ROKA_TAG:-stable}
     build:
-      context: ./asr
+      context: ./sidecar/asr
     restart: unless-stopped
     labels:
       com.centurylinklabs.watchtower.enable: 'true'

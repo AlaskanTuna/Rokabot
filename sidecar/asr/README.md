@@ -38,7 +38,7 @@ Errors return `{"error": "..."}`.
 ## Build and Run
 
 ```bash
-docker build -t rokabot-asr asr/
+docker build -t rokabot-asr sidecar/asr/
 docker run --rm -p 8000:8000 rokabot-asr
 curl -s -X POST --data-binary @clip.wav -H 'Content-Type: audio/wav' 'http://localhost:8000/transcribe'
 ```
@@ -46,7 +46,7 @@ curl -s -X POST --data-binary @clip.wav -H 'Content-Type: audio/wav' 'http://loc
 ## Tests
 
 ```bash
-python -m unittest asr/test_server.py
+python -m unittest sidecar/asr/test_server.py
 ```
 
 The tests need `numpy` but not the models or `sherpa-onnx`.

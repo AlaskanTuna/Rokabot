@@ -100,7 +100,7 @@ A release PR opened with `github.token` never triggers CI, so its required `test
 
 ### Sidecar Images
 
-- **`asr` (`asr/Dockerfile`):** `python:3.12-slim` pinned by digest. A model stage downloads Silero VAD, SenseVoice and Moonshine. The runtime installs `sherpa-onnx` and `numpy`, runs as user `asr`, listens on 8000 and has a Docker `HEALTHCHECK` on `/health`.
+- **`asr` (`sidecar/asr/Dockerfile`):** `python:3.12-slim` pinned by digest. A model stage downloads Silero VAD, SenseVoice and Moonshine. The runtime installs `sherpa-onnx` and `numpy`, runs as user `asr`, listens on 8000 and has a Docker `HEALTHCHECK` on `/health`.
 - **`embeddings` (`sidecar/embeddings/Dockerfile`):** `node:24-bookworm-slim` pinned by digest, because onnxruntime needs glibc. It downloads `Xenova/multilingual-e5-small` at a pinned revision and checks its hashes. It listens on 8080 with a `HEALTHCHECK` on `/health`. CI does not publish this image; compose builds it locally.
 
 ## Docker Compose
@@ -141,7 +141,7 @@ A release PR opened with `github.token` never triggers CI, so its required `test
 ## Source Files
 
 - `.github/workflows/deploy.yml`
-- `Dockerfile`, `asr/Dockerfile`, `sidecar/embeddings/Dockerfile`
+- `Dockerfile`, `sidecar/asr/Dockerfile`, `sidecar/embeddings/Dockerfile`
 - `docker-compose.yml`
 - `release-please-config.json`, `.release-please-manifest.json`
 - `scripts/prune-images.sh`

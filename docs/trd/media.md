@@ -210,7 +210,7 @@ ModelScope bills per call, whatever the frame count. Music, sound effects and to
 
 ### Speech Sidecar
 
-The `asr` container (`asr/server.py`, sherpa-onnx) transcribes audio for the Qwen watcher. `docker-compose.yml` points the bot at `http://asr:8000` through `MEDIA_TRANSCRIBER_URL`. An empty value turns transcription off.
+The `asr` container (`sidecar/asr/server.py`, sherpa-onnx) transcribes audio for the Qwen watcher. `docker-compose.yml` points the bot at `http://asr:8000` through `MEDIA_TRANSCRIBER_URL`. An empty value turns transcription off.
 
 1. ffmpeg cuts 16 kHz mono WAV: the whole clip up to `media.transcriber.maxAudioSec`, else four windows centred in the quarters, or the focus window.
 2. The bot posts each window in turn to `POST /transcribe?maxSpeechSec=<n>` (`audio/wav` body). Each window gets `max(10, floor(maxSpeechSec / windows))` s of speech.
@@ -368,4 +368,4 @@ Derivations: [Multimodal Intake Research](../research/multimodal.md) and [Social
 - `src/agent/session.ts` (`stripAttachmentBytes`), `src/agent/roka.ts` (turn wiring)
 - `src/agent/social/` (`service.ts`, `urls.ts`, `ytDlp.ts`, `media.ts`, `format.ts`, `threads.ts`, `replies/`)
 - `src/agent/tools/readReplies.ts`, `src/agent/replyIntent.ts`, `src/agent/promptSafety.ts`
-- `asr/server.py`, `docker-compose.yml` (`asr` service)
+- `sidecar/asr/server.py`, `docker-compose.yml` (`asr` service)

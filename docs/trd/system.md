@@ -29,7 +29,7 @@ _The bot process and its sidecar on the Pi, with Discord on the left and remote 
 | Media Watcher         | Turn audio and video into a text digest before the reply call                            | `src/agent/media/`                              |
 | Passive Memory        | Capture episodes in monitored channels, queue them, extract claims in the background     | `src/agent/memory/`                             |
 | Storage               | Open SQLite and own its schema, migrations and table helpers                             | `src/storage/`                                  |
-| `asr` Sidecar         | Transcribe speech for the Qwen watcher over HTTP (`http://asr:8000`, no published port)  | `asr/server.py`, `docker-compose.yml`           |
+| `asr` Sidecar         | Transcribe speech for the Qwen watcher over HTTP (`http://asr:8000`, no published port)  | `sidecar/asr/server.py`, `docker-compose.yml`   |
 
 ### Durable State
 

@@ -69,7 +69,7 @@
       "size": [160, 64],
       "sources": [
         { "path": "docker-compose.yml", "line": 37, "end_line": 53, "label": "asr service" },
-        { "path": "asr/Dockerfile", "line": 46, "end_line": 50, "label": "health check" }
+        { "path": "sidecar/asr/Dockerfile", "line": 46, "end_line": 50, "label": "health check" }
       ]
     },
     {

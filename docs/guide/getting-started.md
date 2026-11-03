@@ -100,10 +100,10 @@ Other tools:
 
 `docker-compose.yml` defines `roka` (the bot) and `asr` (speech recognition). Pick one image source.
 
-| Source          | Command                                       | Image                                                          |
-| --------------- | --------------------------------------------- | -------------------------------------------------------------- |
-| Published image | `docker compose pull && docker compose up -d` | `ghcr.io/alaskantuna/rokabot:${ROKA_TAG:-stable}`              |
-| Local build     | `docker compose up -d --build`                | Built from `Dockerfile` and `asr/`, under the same image names |
+| Source          | Command                                       | Image                                                                  |
+| --------------- | --------------------------------------------- | ---------------------------------------------------------------------- |
+| Published image | `docker compose pull && docker compose up -d` | `ghcr.io/alaskantuna/rokabot:${ROKA_TAG:-stable}`                      |
+| Local build     | `docker compose up -d --build`                | Built from `Dockerfile` and `sidecar/asr/`, under the same image names |
 
 A local build takes the compose image name, so it replaces your local copy of the published tag. Run `docker compose pull` to get the published image back.
 
