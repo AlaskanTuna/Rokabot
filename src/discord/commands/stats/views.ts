@@ -10,8 +10,7 @@ import {
   ThumbnailBuilder
 } from '@discordjs/builders'
 import { AttachmentBuilder, type Guild, MessageFlags, SeparatorSpacingSize } from 'discord.js'
-import type { ToneKey } from '../../../agent/prompts/tones.js'
-import { character } from '../../../character/index.js'
+import { type ToneKey, character } from '../../../character/index.js'
 import { fillLine } from '../../../character/lines.js'
 import {
   activeClaimCount,
