@@ -140,7 +140,14 @@ describe.skipIf(!live)('correct-facts extraction (live)', () => {
 
       const runs: Array<{ pass: boolean; ops: string[] }> = []
       for (let run = 0; run < RUNS; run++) {
-        const { ops } = await extractEpisode({ guildId, channelId: CHANNEL, episode: episodeOf(text) })
+        const episode = episodeOf(text)
+        const { ops } = await extractEpisode({ guildId, channelId: CHANNEL, episode })
+        for (const op of ops) {
+          if (op.op === 'add') {
+            expect(op.sourceLine).toBeGreaterThanOrEqual(1)
+            expect(op.sourceLine).toBeLessThanOrEqual(episode.messages.length)
+          }
+        }
         runs.push({ pass: check(ops), ops: ops.map(describeOp) })
       }
       console.info('Correct-facts live results', JSON.stringify({ text, runs }))

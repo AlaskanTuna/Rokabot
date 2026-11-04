@@ -39,6 +39,7 @@ export type RunTrace = {
     past: number
     reword: number
     retracted: number
+    uncited: number
   }
   summary: { kept: boolean; chars: number; boilerplate: boolean }
   stageMs: Partial<Record<'admission' | 'extraction' | 'verification' | 'persistence', number>>
@@ -62,7 +63,18 @@ export function startRunTrace(job: ExtractionQueueJob, attempt: number): RunTrac
     humanCount: messages.filter((message) => !message.isBot).length,
     stage: 'precheck',
     outcome: 'admitted',
-    ops: { proposed: 0, applied: 0, duplicate: 0, staged: 0, dropped: 0, changed: 0, past: 0, reword: 0, retracted: 0 },
+    ops: {
+      proposed: 0,
+      applied: 0,
+      duplicate: 0,
+      staged: 0,
+      dropped: 0,
+      changed: 0,
+      past: 0,
+      reword: 0,
+      retracted: 0,
+      uncited: 0
+    },
     summary: { kept: false, chars: 0, boilerplate: false },
     stageMs: {},
     tokens: 0,
