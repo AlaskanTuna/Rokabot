@@ -67,7 +67,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_evidence_job
 - **Citation Check:** the line must exist in `episode.messages` and not be a bot line. For a user fact, its `userId` must equal the op's subject. A failed check stores null message and speaker, keeps `job_id`, and adds to `ops.uncited`. It does not change whether the op applies.
 - **Retry:** when a claim already has evidence from this job, `assertClaim` and `assertGuildClaim` return it unchanged, with no salience bump and no revival.
 - **Reads:** no prompt or tool reads the new columns.
-- **Richer Private Wording:** #265 asks that a brief public restatement must not expose a richer private fact. The hidden claim is not a same-as candidate under `balanced` or `strict`, so this PR adds a test and no new logic.
+- **Richer Private Wording:** #265 asks that a brief public restatement must not expose a richer private fact. The hidden claim is not a same-as candidate under `balanced` or `strict`, so this PR adds a test and no new logic. An exact public restatement still adds public evidence, as it does today, because those words are already public.
 
 ## PR 3: Summary Validation
 
@@ -88,7 +88,7 @@ before embedding
 ## Verification
 
 - Each PR passes full verification: `npm test`, `test:perf`, `typecheck`, `format:check` and `biome check .`.
-- PRs 2 and 3 change the extraction prompt. Each runs `correctFacts.live.test.ts` (12 Gemini calls per run) twice on `GRAPHIFY_GEMINI_API_KEY`.
+- PRs 2 and 3 change the extraction prompt. Each runs `correctFacts.live.test.ts` (12 Gemini calls per run) twice on `GRAPHIFY_GEMINI_API_KEY`, with the route pinned to `gemini-3.5-flash-lite` (#461). Production runs `claude-haiku-5-5`, so `ops.uncited` is the check there.
 - After the PRs ship, the runbook's funnel queries show `ops.uncited` and the summary drop rate. Review both before tuning.
 
 ## Not In Scope
