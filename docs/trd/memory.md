@@ -41,7 +41,7 @@ All tables live in `data/rokabot.db`. `memory_claim`, `memory_episode` and `medi
 | `media_digest`          | `id`, `guild_id`, `content_key`, `kind`, `label`, `summary`, `digest_json`, `embedding`, `created_at`                                                                                                                                                                                                                                                        | One digest per `(guild_id, content_key)`.                                                                                            |
 | `media_occurrence`      | `id`, `digest_id`, `guild_id`, `channel_id`, `message_id`, `shared_by_user_id`, `source_author_id`, `origin`, `observed_at`                                                                                                                                                                                                                                  | One row per share, unique per `(digest_id, message_id)`.                                                                             |
 | `memory_events`         | `id`, `kind`, `guild_id`, `channel_id`, `subject_user_id`, `duration_ms`, `n_candidates`, `n_selected`, `n_changed`, `tokens_est`, `op`, `created_at`, `detail`                                                                                                                                                                                              | Value-free. Kinds: `retrieval`, `context_build`, `recall`, `recall_shadow`, `extraction_run`, `claim_reclassified`.                  |
-| `jev_events`            | `kind`, `guild_id`, `channel_id`, `question`, `answer`, `probability`, `confidence`, `applied`, `latency_ms`, `input_tokens`, `baseline`, `job_id`, `created_at`, `judge`                                                                                                                                                                                    | No message text. `kind` is `turn`, `admission` or `verification`.                                                                    |
+| `jev_events`            | `kind`, `guild_id`, `channel_id`, `question`, `answer`, `probability`, `confidence`, `applied`, `latency_ms`, `input_tokens`, `baseline`, `job_id`, `created_at`, `judge`                                                                                                                                                                                    | No message text. `kind` is `turn`, `admission`, `verification`, or `recall`.                                                         |
 | `extraction_samples`    | `id`, `job_id`, `guild_id`, `channel_id`, `outcome`, `admission_probability`, `lines`, `created_at`, `expires_at`                                                                                                                                                                                                                                            | Private text of rejected episodes. No prompt reads it.                                                                               |
 
 The queue payload holds the delta messages, up to three earlier context lines, and the start and end times.
@@ -332,7 +332,46 @@ _Candidates pass the privacy gate, are scored against the turn's query vector, a
 - **Prompt:** `## What You Remember`, an untrusted-data sentence, then People, This Server, Past Conversations and
   Media Shared Here with JSON-quoted values. The safety ladder drops it with the legacy blocks.
 - **Telemetry:** a `recall` or `recall_shadow` row per guild memory turn: mode, privacy, fallback, gated count and the
-  selected `[kind, id, score]` tuples.
+  selected `[kind, id, score]` tuples. A `shadow` row also carries a `gate` object, described next.
+- **Jev Gate Detail:** in `shadow` mode a Jev relevance gate (`src/agent/memory/recallGateRun.ts`) judges the
+  candidates. It starts at turn entry, before the tone wait, and the reply never waits for it, so the prompt does not
+  change. The row is written once the gate, the prompt and any media work have settled. Its `gate` object holds only
+  ids, probabilities, counts, hashes and offsets, never memory text:
+  - `v`, `rubric`, `ref`: the detail version (1), the rubric version (`r1`) and an 8-character reference. The
+    `jev_events` row of kind `recall` has the question `recall:<rubric>:<ref>`.
+  - `status`: `ok`, `skipped` (empty shortlist or a request over the context cap), `no_client` (no
+    Jev key), `deadline`, `error` or `invalid` (a missing or out-of-range answer). `{ v: 1, status: 'gate_error' }`
+    alone means the gate threw.
+  - `latencyMs`, `inputTokens`, `usageUnknown`: the Jev call's latency, its input tokens, and true when the call
+    settled without a usage figure (`deadline` or `error`).
+  - `shortlist`: one `[kind, id, p, textHash]` per shortlisted candidate, `p` being Jev's probability to four
+    decimals, or `null` when that candidate was not judged. `textHash` is the first 8 hex characters of the SHA-256 of
+    the memory text Jev saw, so calibration can skip a memory that changed afterwards.
+  - `funnel`: `[pool, tooLong, shortlisted, overBudget]` per kind, from the privacy-admitted pool to the request.
+  - `outside`: up to 8 random `[kind, id, textHash]` entries that fit but missed the shortlist, for estimating what the
+    shortlist misses.
+  - `core`, `selected`: `[kind, id]` tuples for the core facts that bypass the gate and for what the gate would have
+    selected (the core facts plus every candidate at or above its kind's `memory.recallGateMinNoul` cutoff).
+  - `messageHash`: the first 16 hex characters of the SHA-256 of the message, to group runs without storing text.
+  - `fallback`: true when the pool had no usable query embedding and held keyword matches only.
+  - `model`, `embedding`: the model Jev reported answering (`null` when no response arrived) and the
+    `embeddings.fingerprint` that ranked the pool. Neither is checked against anything; they only record versions.
+  - `startMs`, `setupMs`: when the gate started, counted from the start of the turn, and how long it took to build the
+    pool and shortlist.
+  - `toneReadyMs`, `embeddingReadyMs`, `contextReadyMs`, `mediaReadyMs`, `deadlineMs`: offsets from the start of the
+    turn for the tone wait (`null` when tone did not block), the gate's embedding wait, the prompt, media work and the
+    configured deadline.
+  - `deadlineMissed`: true when a request was attempted and settled after `memory.recallGateDeadlineMs`.
+  - `projectedAddedMs`: how long the reply would have waited for the gate: the gate's settle time, capped at the
+    deadline, minus the later of the prompt and media. A turn that sent no request records 0, so count only `ok`,
+    `deadline`, `error` and `invalid` when measuring the rollout bars.
+  - In `shadow` mode the Jev request is waited on for up to `jev.memoryTimeoutMs` from the gate start rather than
+    cut at the reply deadline, so `status` shows what Jev would do and `deadlineMissed` shows what that would cost.
+    Unified mode will wait only to the reply deadline.
+- **Jev Recall Events:** each attempted Jev request writes one `jev_events` row of kind `recall`, with the question
+  `recall:<rubric>:<ref>`, the answer `{ status, decisions: [[key, p]], usage_unknown }` and NULL `probability` and
+  `confidence`. `applied` is true only in unified mode when the gate added a non-core item. A request that was never
+  sent (no client, an empty shortlist, or a deadline already past) writes no row.
 
 ## Bounded Retrieval (Legacy)
 
@@ -436,9 +475,10 @@ current facts, and reports episodes ended in the last 30 days.
 
 - `src/agent/memory/`: `episodeTracker.ts`, `scheduler.ts`, `admission.ts`, `episodePrecheck.ts`, `extractor.ts`,
   `guildFactDates.ts`, `privacyGuard.ts`, `memoryClaims.ts`, `predicates.ts`, `hiddenRetractions.ts`, `reclassify.ts`,
-  `recall.ts`, `retriever.ts`, `identityResolver.ts`, `privacy.ts`, `episodeMaintenance.ts`, `factEmbeddings.ts`,
-  `embeddings/`
-- `src/agent/jev/judgments.ts`, `src/agent/jev/modelJudge.ts`, `src/agent/turnContext.ts`, `src/agent/tools/`
+  `recall.ts`, `recallGate.ts`, `recallGateRun.ts`, `retriever.ts`, `identityResolver.ts`, `privacy.ts`,
+  `episodeMaintenance.ts`, `factEmbeddings.ts`, `embeddings/`
+- `src/agent/jev/judgments.ts`, `src/agent/jev/modelJudge.ts`, `src/agent/jev/recallJudgment.ts`,
+  `src/agent/turnContext.ts`, `src/agent/tools/`
 - `src/storage/`: `memoryClaimSchema.ts`, `database.ts`, `extractionQueue.ts`, `memoryEpisodeStore.ts`,
   `mediaDigestStore.ts`, `extractionSampleStore.ts`
 - `scripts/`: `migrate-memory-v2.ts`, `replay-memory-v2.ts`, `export-vault.ts`, `undo-reclassify.ts`,

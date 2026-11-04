@@ -611,6 +611,8 @@ sqlite3 ~/rokabot/data/rokabot.db "SELECT d.guild_id, d.label, substr(d.summary,
 sqlite3 ~/rokabot/data/rokabot.db "SELECT COUNT(*) AS active, SUM(embedding IS NOT NULL) AS embedded FROM memory_claim WHERE status = 'active';"
 # Recall shadow comparison, last 7 days: legacy fact retrieval vs unified recall
 sqlite3 ~/rokabot/data/rokabot.db "SELECT kind, COUNT(*) AS turns, ROUND(AVG(n_selected), 2) AS avg_selected, ROUND(AVG(tokens_est)) AS avg_tokens FROM memory_events WHERE kind IN ('retrieval', 'recall_shadow', 'recall') AND created_at > (strftime('%s', 'now') - 7 * 86400) * 1000 GROUP BY kind;"
+# Jev recall gate: turns per status and how many settled after the reply deadline
+sqlite3 ~/rokabot/data/rokabot.db "SELECT json_extract(detail, '\$.gate.status') AS status, COUNT(*) AS turns, SUM(json_extract(detail, '\$.gate.deadlineMissed')) AS late FROM memory_events WHERE kind = 'recall_shadow' AND json_extract(detail, '\$.gate.v') = 1 GROUP BY status;"
 ```
 
 ### Memory V2 Migration

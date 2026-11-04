@@ -106,6 +106,18 @@ describe('minutesUntilClockTime', () => {
 })
 
 describe('local date helpers', () => {
+  it('returns the cached formatter values for two timezones without change', async () => {
+    const timezone = await loadTimezoneModule()
+    const timestamp = Date.parse('2026-09-25T16:30:00Z')
+
+    expect(timezone.getLocalDate(timestamp, 'Asia/Singapore')).toBe('2026-09-26')
+    expect(timezone.getLocalDate(timestamp, 'UTC')).toBe('2026-09-25')
+    expect(timezone.getLocalDate(timestamp, 'Asia/Singapore')).toBe('2026-09-26')
+    expect(timezone.getLocalDate(timestamp, 'UTC')).toBe('2026-09-25')
+    expect(timezone.localDateStartEpoch('2026-09-26', 'Asia/Singapore')).toBe(Date.parse('2026-09-25T16:00:00Z'))
+    expect(timezone.localDateStartEpoch('2026-09-26', 'Asia/Singapore')).toBe(Date.parse('2026-09-25T16:00:00Z'))
+  })
+
   it('formats a timestamp in the configured timezone and finds the local day start', async () => {
     vi.stubEnv('TZ', 'Asia/Singapore')
     const timezone = await loadTimezoneModule()
