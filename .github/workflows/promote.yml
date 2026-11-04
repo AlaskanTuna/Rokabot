@@ -1,0 +1,75 @@
+name: Promote Release
+
+# Re-tags the image already built for a release commit. Nothing is rebuilt, and the Pi does not restart.
+on:
+  workflow_call:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Latest release tag to move `stable` to, such as v0.5.0
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  promote:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      # Read from GitHub, not from release-please's outputs: it can fail after tagging, and those are then lost.
+      - name: Find the release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_TAG: ${{ inputs.tag }}
+        run: |
+          if [ -n "$REQUESTED_TAG" ]; then
+            latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
+            if [ "$REQUESTED_TAG" != "$latest" ]; then
+              echo "::error::$REQUESTED_TAG is not the latest release ($latest). Moving stable backwards is a rollback, so re-tag it by hand."
+              exit 1
+            fi
+            tag=$REQUESTED_TAG
+            sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/$tag" --jq .sha)
+          else
+            sha=$GITHUB_SHA
+            tag=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=5" \
+              --jq ".[] | select(.draft == false and .target_commitish == \"$sha\") | .tag_name" | head -n 1)
+          fi
+          if [ -z "$tag" ]; then
+            echo "::notice::No published release at $sha, so there is nothing to promote."
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "sha=${sha::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Buildx
+        if: steps.release.outputs.tag != ''
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: steps.release.outputs.tag != ''
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Tag the release
+        if: steps.release.outputs.tag != ''
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+          SHA: ${{ steps.release.outputs.sha }}
+        run: |
+          for name in rokabot rokabot-asr; do
+            IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/$name"
+            docker buildx imagetools create \
+              -t "$IMAGE:$TAG" -t "$IMAGE:${TAG%.*}" -t "$IMAGE:stable" \
+              "$IMAGE:sha-$SHA"
+            test "$(docker buildx imagetools inspect "$IMAGE:stable" --format '{{json .Manifest.Digest}}')" = \
+                 "$(docker buildx imagetools inspect "$IMAGE:sha-$SHA" --format '{{json .Manifest.Digest}}')"
+          done
