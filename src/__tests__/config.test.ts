@@ -461,7 +461,7 @@ describe('config module', () => {
     const { config, NUMERIC_BOUNDS } = await import('../config.js')
 
     expect(config.memory.recallGateDeadlineMs).toBe(1200)
-    expect(config.memory.recallGateEmbeddingWaitMs).toBe(400)
+    expect(config.memory.recallGateEmbeddingWaitMs).toBe(1200)
     expect(config.memory.recallGateContextTokens).toBe(1000)
     expect(config.memory.recallGateInputTokens).toBe(8000)
     expect(config.memory.recallGateShortlist).toEqual({ fact: 8, server_fact: 4, conversation: 8, media: 4 })

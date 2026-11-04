@@ -156,7 +156,7 @@ memory:
   recallTokenBudget: 600 # Approximate token budget for the unified memory block
   recallCoreFacts: 3 # Speaker facts always recalled whatever the topic: pinned, then nickname, then pronouns
   recallGateDeadlineMs: 1200 # Jev recall gate: longest time from turn start until the gate must settle; a late gate counts as a Jev outage (core facts only)
-  recallGateEmbeddingWaitMs: 400 # Jev recall gate: longest wait for the turn's query embedding before the gate falls back to keyword-matched facts
+  recallGateEmbeddingWaitMs: 1200 # Jev recall gate: longest wait for the turn's query embedding before the gate falls back to keyword-matched facts. Equals the deadline because Pi embeddings took 465-823 ms (2026-11-04), so the first 400 ms setting left almost every turn keyword-only
   recallGateContextTokens: 1000 # Jev recall gate: estimated token cap for the shared turn state (message, three recent lines, people); over it the gate abstains
   recallGateInputTokens: 8000 # Jev recall gate: estimated token cap for state plus every candidate question in one request
   recallGateShortlist: # Jev recall gate: candidates offered per kind before Jev judges them; unused slots go to the next-best candidates
