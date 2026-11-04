@@ -15,7 +15,7 @@ Design for #277: make every fact traceable to its source, and stop losing conver
 ## Choices Made In Design
 
 - **Citation Format:** the prompt numbers delta lines and the model returns `sourceLine`. Code maps the line to the message ID and speaker. A number costs fewer tokens than a Discord ID, and the model cannot invent an ID that looks valid.
-- **Citation Scope:** only `add` and `update` cite, because only they write evidence. `remove` and `retract` write no evidence row.
+- **Citation Scope:** only `add` and `update` cite, because only they write evidence. `remove` and `retract` write no evidence row, so they accept the field and ignore it. A strict schema would otherwise fail the whole extraction on a stray citation.
 - **Idempotency Key:** `(claim_id, job_id)`, not `(job, source message)` as #277 first said. A retried job can cite a different line, which the original key would count twice. One conversation also should not count as two sightings of a fact.
 - **"When" In A Summary:** the check covers who and what. `memory_episode` already stores `started_at` and `ended_at`, and the extraction prompt gives the model no date, so a text check for "when" would drop almost everything.
 - **Jev Unavailable:** a summary that passed the rules is kept. Admission and verification already ran, so an outage should not erase the record.
@@ -73,14 +73,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_evidence_job
 
 ```text
 before embedding
-  every proposed change was rejected  → drop, ops_rejected
+  Jev rejected every proposed change  → drop, ops_rejected
   contains a Discord ID (15+ digits)  → drop, numeric_id
   matches the boilerplate pattern     → drop, boilerplate
   Jev: says who and what, below threshold → drop, incomplete
   Jev unavailable                     → keep, judged false
 ```
 
-- **Survivors:** applied, duplicate, staged or retracted changes count as not rejected. An episode that proposed no changes skips the rejection rule.
+- **What Counts As Rejected:** only Jev's own rejection. A rule, a judge outage or a missing target on a retry says nothing about the facts, so those summaries go on to the other checks.
 - **Tunables:** `memory.summaryThreshold` at 0.5 and `memory.modelSummaryThreshold` at 0.7, the same values as the verify thresholds. Neither is calibrated.
 - **Telemetry:** `extraction_run.detail.summary` gains `dropReason` and `judged`. Each judgement writes a `jev_events` row with `question = 'summary_complete'`.
 - **Prompt:** the summary line now forbids user IDs and "no durable fact" wording, so fewer summaries fail.
