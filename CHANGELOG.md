@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/AlaskanTuna/Rokabot/compare/v0.5.0...v0.5.1) (2026-11-04)
+
+
+### Bug Fixes
+
+* **deploy:** let promote recover when release-please fails after tagging ([#449](https://github.com/AlaskanTuna/Rokabot/issues/449)) ([251701d](https://github.com/AlaskanTuna/Rokabot/commit/251701d61526e5bf104fb5932594634510b8653c))
+
 ## [0.5.0](https://github.com/AlaskanTuna/Rokabot/compare/v0.4.0...v0.5.0) (2026-11-03)
 
 
