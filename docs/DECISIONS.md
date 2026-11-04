@@ -40,6 +40,7 @@ The lasting choices behind Rokabot, with why they were made. Check here before r
 | 2026-10-08 | Relevance recall ships behind a mode flag as one ranked block under a token budget, gated on calibrated similarity floors                                       | Switching modes needs labelled calibration, not a flip        |
 | 2026-10-09 | Past facts never supersede, revive or replace current ones, and evict first at the cap                                                                          | History stays history on every surface                        |
 | 2026-10-14 | A Jev gate decides recall relevance: similarity only proposes candidates, core facts bypass the gate, and a Jev outage leaves core-only recall                  | Similarity floors reached 9% precision on blind labels (#262) |
+| 2026-11-04 | The recall gate waits up to its full deadline for the query embedding                                                                                           | Pi embeddings take 465-823 ms                                 |
 
 ## Models and Search
 

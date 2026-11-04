@@ -725,7 +725,7 @@ const baseConfig = {
     recallTokenBudget: yaml.memory?.recallTokenBudget ?? 600,
     recallCoreFacts: yaml.memory?.recallCoreFacts ?? 3,
     recallGateDeadlineMs: yaml.memory?.recallGateDeadlineMs ?? 1200,
-    recallGateEmbeddingWaitMs: yaml.memory?.recallGateEmbeddingWaitMs ?? 400,
+    recallGateEmbeddingWaitMs: yaml.memory?.recallGateEmbeddingWaitMs ?? 1200,
     recallGateContextTokens: yaml.memory?.recallGateContextTokens ?? 1000,
     recallGateInputTokens: yaml.memory?.recallGateInputTokens ?? 8000,
     recallGateShortlist: {
