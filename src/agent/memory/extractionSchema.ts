@@ -22,6 +22,7 @@ const UndatedGuildPredicateSchema = z.enum(
 const TenseSchema = z.enum(['current', 'past', 'planned'])
 const ExistingIdSchema = z.number().int().min(1)
 // The range is checked against the episode later: a wrong line must lose only the citation, never the extraction.
+// Remove and retract write no evidence, but they accept the field too, so a stray citation cannot fail a strict parse.
 const SourceLineSchema = z.number().int().optional()
 
 const YearSchema = z
@@ -86,7 +87,8 @@ const RemoveOperationSchema = z
     subject: UserSubjectSchema,
     existingId: ExistingIdSchema,
     predicate: PredicateSchema,
-    value: z.string()
+    value: z.string(),
+    sourceLine: SourceLineSchema
   })
   .strict()
 export const RetractOperationSchema = z
@@ -94,7 +96,8 @@ export const RetractOperationSchema = z
     op: z.literal('retract'),
     subject: UserSubjectSchema,
     predicate: PredicateSchema,
-    value: z.string()
+    value: z.string(),
+    sourceLine: SourceLineSchema
   })
   .strict()
 const DatedGuildAddOperationSchema = z
@@ -124,7 +127,8 @@ const GuildRemoveOperationSchema = z
     subject: GuildSubjectSchema,
     existingId: ExistingIdSchema,
     predicate: GuildPredicateSchema,
-    value: z.string()
+    value: z.string(),
+    sourceLine: SourceLineSchema
   })
   .strict()
 const UndatedGuildAddOperationSchema = z
@@ -313,8 +317,18 @@ export const EXTRACTION_RESPONSE_SCHEMA = {
             withTense: true,
             withSourceLine: true
           }),
-          responseOperationSchema({ op: 'remove', subject: userSubjectResponseSchema, predicates: userPredicates }),
-          responseOperationSchema({ op: 'retract', subject: userSubjectResponseSchema, predicates: userPredicates }),
+          responseOperationSchema({
+            op: 'remove',
+            subject: userSubjectResponseSchema,
+            predicates: userPredicates,
+            withSourceLine: true
+          }),
+          responseOperationSchema({
+            op: 'retract',
+            subject: userSubjectResponseSchema,
+            predicates: userPredicates,
+            withSourceLine: true
+          }),
           responseOperationSchema({
             op: 'add',
             subject: guildSubjectResponseSchema,
@@ -331,7 +345,12 @@ export const EXTRACTION_RESPONSE_SCHEMA = {
             dateRequired: true,
             withSourceLine: true
           }),
-          responseOperationSchema({ op: 'remove', subject: guildSubjectResponseSchema, predicates: guildPredicates }),
+          responseOperationSchema({
+            op: 'remove',
+            subject: guildSubjectResponseSchema,
+            predicates: guildPredicates,
+            withSourceLine: true
+          }),
           responseOperationSchema({
             op: 'add',
             subject: guildSubjectResponseSchema,

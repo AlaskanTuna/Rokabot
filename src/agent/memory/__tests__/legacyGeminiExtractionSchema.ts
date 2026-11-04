@@ -131,8 +131,18 @@ export const LEGACY_GEMINI_EXTRACTION_SCHEMA = {
             withTense: true,
             withSourceLine: true
           }),
-          responseOperationSchema({ op: 'remove', subject: userSubjectResponseSchema, predicates: userPredicates }),
-          responseOperationSchema({ op: 'retract', subject: userSubjectResponseSchema, predicates: userPredicates }),
+          responseOperationSchema({
+            op: 'remove',
+            subject: userSubjectResponseSchema,
+            predicates: userPredicates,
+            withSourceLine: true
+          }),
+          responseOperationSchema({
+            op: 'retract',
+            subject: userSubjectResponseSchema,
+            predicates: userPredicates,
+            withSourceLine: true
+          }),
           responseOperationSchema({
             op: 'add',
             subject: guildSubjectResponseSchema,
@@ -149,7 +159,12 @@ export const LEGACY_GEMINI_EXTRACTION_SCHEMA = {
             dateRequired: true,
             withSourceLine: true
           }),
-          responseOperationSchema({ op: 'remove', subject: guildSubjectResponseSchema, predicates: guildPredicates }),
+          responseOperationSchema({
+            op: 'remove',
+            subject: guildSubjectResponseSchema,
+            predicates: guildPredicates,
+            withSourceLine: true
+          }),
           responseOperationSchema({
             op: 'add',
             subject: guildSubjectResponseSchema,
