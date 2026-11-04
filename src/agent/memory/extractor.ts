@@ -131,6 +131,7 @@ export type OperationApplicationReport = {
   pastOps: number
   rewordOps: number
   retractedOps: number
+  judgedOutOps: number
   inputTokens: number
 }
 
@@ -229,6 +230,7 @@ export async function verifyAndApplyOperations(input: {
       pastOps: 0,
       rewordOps: 0,
       retractedOps: 0,
+      judgedOutOps: 0,
       inputTokens: 0
     }
   }
@@ -301,7 +303,7 @@ export async function verifyAndApplyOperations(input: {
         const scopedKey = `${op.subject.kind === 'guild' ? 'guild_scoped' : 'attributed'}_${index}`
         const scoped = verification.answers[scopedKey].noul >= threshold
         if (!durable || !scoped) {
-          results[index] = { applied: false, duplicate: false }
+          results[index] = { applied: false, duplicate: false, judgedOut: true }
           continue
         }
       } else {
@@ -383,6 +385,7 @@ export async function verifyAndApplyOperations(input: {
     pastOps: results.filter(({ past }) => past).length,
     rewordOps: results.filter(({ reword }) => reword).length,
     retractedOps: results.reduce((total, { retracted }) => total + (retracted ?? 0), hiddenRetracted),
+    judgedOutOps: results.filter(({ judgedOut }) => judgedOut).length,
     inputTokens: verification?.inputTokens ?? 0
   }
 }
@@ -447,7 +450,7 @@ export async function runEpisodePipeline(job: ExtractionQueueJob, trace: RunTrac
     summary: output.summary,
     appliedOps: report.appliedOps,
     duplicateOps: report.duplicateOps,
-    opsRejected:
-      trace.ops.proposed > 0 && report.appliedOps + report.duplicateOps + report.stagedOps + report.retractedOps === 0
+    // Only Jev's own rejection counts. A rule, a missing target on a retry or a judge outage says nothing about the facts.
+    opsRejected: trace.ops.proposed > 0 && report.judgedOutOps === trace.ops.proposed && report.retractedOps === 0
   }
 }

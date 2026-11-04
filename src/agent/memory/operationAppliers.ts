@@ -39,6 +39,7 @@ export type OperationResult = {
   past?: boolean
   reword?: boolean
   retracted?: number
+  judgedOut?: boolean
 }
 
 export type OperationApplierContext = {
@@ -86,7 +87,7 @@ function resolveWritePeriod(
     }
     const resolved = op.tense === 'current' && stillHolds ? 'current' : holds(`past_${index}`) ? 'past' : null
     if (resolved === null) {
-      return { result: { applied: false, duplicate: false } }
+      return { result: { applied: false, duplicate: false, judgedOut: true } }
     }
     period = resolved
     if (op.op === 'update' && period === 'current' && target?.period === 'current' && !holds(`changes_${index}`)) {
@@ -219,7 +220,13 @@ export function applyRetractOperation(
       retired += 1
     }
   }
-  return { applied: retired > 0, duplicate: false, changed: retired > 0, retracted: retired }
+  return {
+    applied: retired > 0,
+    duplicate: false,
+    changed: retired > 0,
+    retracted: retired,
+    judgedOut: retractClaims.length > 0 && retired === 0
+  }
 }
 
 export function applyAddOperation(

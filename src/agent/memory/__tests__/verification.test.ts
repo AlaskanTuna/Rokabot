@@ -64,6 +64,7 @@ function report(counts: Partial<OperationApplicationReport> = {}): OperationAppl
     pastOps: 0,
     rewordOps: 0,
     retractedOps: 0,
+    judgedOutOps: 0,
     inputTokens: expect.any(Number),
     ...counts
   }
@@ -295,7 +296,7 @@ describe('verifyAndApplyOperations', () => {
         output: output(add()),
         subjectIds: new Set(['u-1'])
       })
-    ).resolves.toEqual(report({ appliedOps: 0, droppedOps: 1, duplicateOps: 0, changedOps: 0 }))
+    ).resolves.toEqual(report({ appliedOps: 0, droppedOps: 1, judgedOutOps: 1, duplicateOps: 0, changedOps: 0 }))
     expect(getActiveClaims('g-1', 'u-1')).toEqual([])
 
     setAnswers({
@@ -942,7 +943,7 @@ describe('verifyAndApplyOperations', () => {
         output: output(guildPlan()),
         subjectIds: new Set()
       })
-    ).resolves.toEqual(report({ appliedOps: 0, droppedOps: 1, duplicateOps: 0, changedOps: 0 }))
+    ).resolves.toEqual(report({ appliedOps: 0, droppedOps: 1, judgedOutOps: 1, duplicateOps: 0, changedOps: 0 }))
     expect(getDb().prepare('SELECT COUNT(*) AS count FROM memory_claim').get()).toEqual({ count: 0 })
   })
 

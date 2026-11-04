@@ -268,6 +268,84 @@ describe('runEpisodePipeline', () => {
     expect(trace.ops.dropped).toBe(1)
   })
 
+  it('does not call the ops rejected when Jev could not verify a retract-only episode', async () => {
+    mocks.modelReply.mockResolvedValueOnce({
+      text: JSON.stringify({
+        ops: [{ op: 'retract', subject: { kind: 'user', userId: 'user-1' }, predicate: 'hobby', value: 'chess' }],
+        summary: 'Alex said they quit chess.'
+      }),
+      usageMetadata: { promptTokenCount: 400 }
+    })
+    mocks.judgeEpisodeOperations.mockResolvedValueOnce(null)
+    const trace = startRunTrace(queueJob, 1)
+
+    await expect(runEpisodePipeline(queueJob, trace)).resolves.toMatchObject({ opsRejected: false })
+    expect(trace.ops.dropped).toBe(1)
+  })
+
+  it('does not call the ops rejected when a retried job finds its update target already gone', async () => {
+    mocks.modelReply.mockResolvedValueOnce({
+      text: JSON.stringify({
+        ops: [
+          {
+            op: 'update',
+            subject: { kind: 'user', userId: 'user-1' },
+            existingId: 999,
+            predicate: 'likes',
+            value: 'tea',
+            tense: 'current'
+          }
+        ],
+        summary: 'Alex said they like tea now.'
+      }),
+      usageMetadata: { promptTokenCount: 400 }
+    })
+    mocks.judgeEpisodeOperations.mockResolvedValueOnce({
+      answers: {
+        durable_0: { noul: 0.9, confidence: null },
+        attributed_0: { noul: 0.9, confidence: null },
+        current_0: { noul: 0.9, confidence: null },
+        past_0: { noul: 0.1, confidence: null },
+        changes_0: { noul: 0.9, confidence: null }
+      },
+      latencyMs: 5,
+      inputTokens: 60
+    })
+    const trace = startRunTrace(queueJob, 1)
+
+    await expect(runEpisodePipeline(queueJob, trace)).resolves.toMatchObject({ opsRejected: false })
+    expect(trace.ops.dropped).toBe(1)
+  })
+
+  it('calls the ops rejected when Jev declines the only retraction candidate', async () => {
+    assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'hobby',
+      value: 'chess',
+      sourceKind: 'passive'
+    })
+    mocks.modelReply.mockResolvedValueOnce({
+      text: JSON.stringify({
+        ops: [{ op: 'retract', subject: { kind: 'user', userId: 'user-1' }, predicate: 'hobby', value: 'chess' }],
+        summary: 'Alex said they quit chess.'
+      }),
+      usageMetadata: { promptTokenCount: 400 }
+    })
+    mocks.judgeEpisodeOperations.mockResolvedValueOnce({
+      answers: {
+        durable_0: { noul: 0.9, confidence: null },
+        attributed_0: { noul: 0.9, confidence: null },
+        retracts_0_0: { noul: 0.1, confidence: null }
+      },
+      latencyMs: 5,
+      inputTokens: 60
+    })
+    const trace = startRunTrace(queueJob, 1)
+
+    await expect(runEpisodePipeline(queueJob, trace)).resolves.toMatchObject({ opsRejected: true })
+  })
+
   it('traces past mentions, rewordings and retractions and counts a retraction as a written run', async () => {
     const claim = (predicate: string, value: string) =>
       assertClaim({ guildId: 'guild-1', subjectUserId: 'user-1', predicate, value, sourceKind: 'passive' })

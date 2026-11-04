@@ -170,7 +170,7 @@ summary, and nothing is embedded or saved.
 
 | Check                                                                                               | Drop Reason    |
 | --------------------------------------------------------------------------------------------------- | -------------- |
-| Changes were proposed, and none was applied, a duplicate, staged or retracted                       | `ops_rejected` |
+| Jev rejected every proposed change                                                                  | `ops_rejected` |
 | Holds a run of 15 or more digits                                                                    | `numeric_id`   |
 | Matches the boilerplate pattern                                                                     | `boilerplate`  |
 | `summary_complete` is below `memory.summaryThreshold` (`modelSummaryThreshold` for the model judge) | `incomplete`   |
