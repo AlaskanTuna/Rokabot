@@ -35,7 +35,7 @@ import { closeDb, getDb } from '../../../storage/database.js'
 import { recordMediaOccurrence, saveMediaDigest } from '../../../storage/mediaDigestStore.js'
 import { saveMemoryEpisode } from '../../../storage/memoryEpisodeStore.js'
 import { setClaimEmbedding } from '../../../storage/memoryRecallStore.js'
-import { upsertUserName } from '../../../storage/userNames.js'
+import * as userNames from '../../../storage/userNames.js'
 import { estimateTokens } from '../../../utils/tokens.js'
 import { registerChannelVisibility, resetChannelVisibilityForTest } from '../channelVisibility.js'
 import { type ClaimPeriod, assertClaim, pinClaim } from '../memoryClaims.js'
@@ -43,8 +43,11 @@ import {
   type RecallInput,
   type RecallItem,
   formatRecallBlock,
+  recallCandidates,
+  recallCoreFacts,
   recallFactsForSubject,
-  recallForTurn
+  recallForTurn,
+  recallGatePool
 } from '../recall.js'
 
 const NOW = 1_000_000
@@ -153,8 +156,8 @@ beforeEach(() => {
   process.env.ROKABOT_DB_PATH = ':memory:'
   vi.spyOn(Date, 'now').mockReturnValue(NOW)
   Object.assign(testConfig.memory, memoryDefaults)
-  upsertUserName('speaker', 'speaker', 'Speaker')
-  upsertUserName('participant-1', 'participant-1', 'Participant One')
+  userNames.upsertUserName('speaker', 'speaker', 'Speaker')
+  userNames.upsertUserName('participant-1', 'participant-1', 'Participant One')
 })
 
 afterEach(() => {
@@ -488,6 +491,48 @@ describe('recallForTurn', () => {
 
     expect(block).toContain('- "Speaker": general_occupation (past): "nurse"')
     expect(block).toContain('- plan: "movie night"')
+  })
+})
+
+describe('floors-off packing', () => {
+  it('still packs and formats for recallForTurn while the gate pool and calibration paths skip it', () => {
+    fact('speaker', 'hobby', 'chess', axis(1))
+    const readNames = vi.spyOn(userNames, 'getAllUserNames')
+
+    const turned = recallForTurn(input())
+    expect(turned.items.map(({ text }) => text)).toEqual(['chess'])
+    expect(turned.block).toContain('chess')
+    expect(readNames).toHaveBeenCalled()
+
+    readNames.mockClear()
+    expect(recallGatePool(input()).entries.map(({ item }) => item.text)).toEqual(['chess'])
+    expect(recallCandidates(input()).map(({ text }) => text)).toEqual(['chess'])
+    expect(readNames).not.toHaveBeenCalled()
+  })
+})
+
+describe('recallCoreFacts', () => {
+  it('returns the same core facts as the gate pool, in the same order and within the same cap', () => {
+    fact('speaker', 'hobby', 'older pin', axis(9), { pinned: true, observedAt: NOW - DAY })
+    fact('speaker', 'favorite_game', 'newer pin', axis(9), { pinned: true, observedAt: NOW })
+    fact('speaker', 'nickname', 'Ali', axis(9))
+    fact('speaker', 'pronouns', 'she/her', axis(9))
+    fact('speaker', 'food', 'ramen', axis(1))
+    fact('participant-1', 'nickname', 'Pat', axis(1))
+
+    const core = recallCoreFacts(input({ participantIds: ['participant-1'] }))
+
+    expect(core.map(({ text }) => text)).toEqual(['newer pin', 'older pin', 'Ali'])
+    expect(core).toEqual(recallGatePool(input({ participantIds: ['participant-1'] })).core)
+  })
+
+  it('withholds a core fact learned in a channel the privacy gate rejects, and a past nickname', () => {
+    testConfig.memory.privacy = 'strict'
+    registerChannelVisibility({ visibility: () => 'public', parentOf: () => null })
+    fact('speaker', 'nickname', 'Hidden', axis(9), { channelId: 'chan-other' })
+    fact('speaker', 'hobby', 'Old pin', axis(9), { pinned: true, period: 'past' })
+
+    expect(recallCoreFacts(input())).toEqual([])
   })
 })
 

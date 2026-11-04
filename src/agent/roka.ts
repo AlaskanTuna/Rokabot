@@ -436,7 +436,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   })
   // Handled here so a failure in createTurnContext cannot leave it as an unhandled rejection.
   mediaWork.catch(() => undefined)
-  const context = await createTurnContext({ ...options, memoryScope, turnEntryWork })
+  const context = await createTurnContext({ ...options, memoryScope, turnEntryWork, mediaWork })
   const {
     session,
     fakeMessages,

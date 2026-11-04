@@ -12,7 +12,11 @@ type LocalDateTimeParts = {
   second: number
 }
 
+const formatters = new Map<string | undefined, Intl.DateTimeFormat>()
+
 function localDateTimeFormatter(timezone?: string): Intl.DateTimeFormat {
+  const cached = formatters.get(timezone)
+  if (cached !== undefined) return cached
   const options: Intl.DateTimeFormatOptions = {
     calendar: 'gregory',
     numberingSystem: 'latn',
@@ -25,13 +29,16 @@ function localDateTimeFormatter(timezone?: string): Intl.DateTimeFormat {
     hourCycle: 'h23',
     ...(timezone ? { timeZone: timezone } : {})
   }
+  let formatter: Intl.DateTimeFormat
   try {
-    return new Intl.DateTimeFormat('en-US', options)
+    formatter = new Intl.DateTimeFormat('en-US', options)
   } catch {
     logger.warn({ timezone }, 'Invalid timezone in config, falling back to system time')
     const { timeZone: _timeZone, ...systemOptions } = options
-    return new Intl.DateTimeFormat('en-US', systemOptions)
+    formatter = new Intl.DateTimeFormat('en-US', systemOptions)
   }
+  formatters.set(timezone, formatter)
+  return formatter
 }
 
 function dateTimeParts(formatter: Intl.DateTimeFormat, timestamp: number): LocalDateTimeParts {

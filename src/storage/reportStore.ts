@@ -121,7 +121,7 @@ function captureSnapshot(
     cutoff,
     5,
     'recentJev',
-    'SELECT * FROM jev_events WHERE channel_id = ? AND created_at >= ? ORDER BY created_at DESC LIMIT ?'
+    "SELECT * FROM jev_events WHERE channel_id = ? AND created_at >= ? AND kind != 'recall' ORDER BY created_at DESC LIMIT ?"
   )
 
   trimSnapshot(snapshot)
