@@ -410,6 +410,18 @@ export function runMigrations(database: Database.Database): void {
       message_count INTEGER NOT NULL DEFAULT 0
     );
 
+    CREATE TABLE IF NOT EXISTS memory_episode_line (
+      channel_id TEXT NOT NULL,
+      message_id TEXT NOT NULL,
+      guild_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      display_name TEXT NOT NULL,
+      content TEXT NOT NULL,
+      timestamp INTEGER NOT NULL,
+      is_bot INTEGER NOT NULL,
+      PRIMARY KEY (channel_id, message_id)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_extraction_queue_guild_status_enqueued
       ON extraction_queue (guild_id, status, enqueued_at);
 

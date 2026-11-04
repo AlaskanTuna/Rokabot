@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => {
     destroyAllSessions: vi.fn().mockResolvedValue(undefined),
     destroyClient: vi.fn(),
     flushOpenEpisodes: vi.fn(),
+    restoreOpenEpisodes: vi.fn(),
     getDb: vi.fn(),
     pruneStaleClaims: vi.fn(),
     reclassifyClaims: vi.fn().mockResolvedValue(0),
@@ -57,7 +58,10 @@ vi.mock('../agent/memory/scheduler.js', () => ({
   stopExtractionScheduler: mocks.stopExtractionScheduler,
   waitForInFlightExtractions: mocks.waitForInFlightExtractions
 }))
-vi.mock('../agent/memory/episodeTracker.js', () => ({ flushOpenEpisodes: mocks.flushOpenEpisodes }))
+vi.mock('../agent/memory/episodeTracker.js', () => ({
+  flushOpenEpisodes: mocks.flushOpenEpisodes,
+  restoreOpenEpisodes: mocks.restoreOpenEpisodes
+}))
 vi.mock('../agent/memory/episodeMaintenance.js', () => ({ pruneEpisodesAndReembed: mocks.pruneEpisodesAndReembed }))
 vi.mock('../agent/shutdownSignal.js', () => ({ beginShutdown: mocks.beginShutdown }))
 vi.mock('../agent/session.js', () => ({ destroyAllSessions: mocks.destroyAllSessions }))
@@ -100,6 +104,7 @@ describe('startup memory tasks', () => {
       mocks.reclassifyClaims.mock.invocationCallOrder[0]
     )
     expect(mocks.startExtractionScheduler).toHaveBeenCalledOnce()
+    expect(mocks.restoreOpenEpisodes).toHaveBeenCalledOnce()
     expect(mocks.resetStuckProcessing.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.startExtractionScheduler.mock.invocationCallOrder[0]
     )
