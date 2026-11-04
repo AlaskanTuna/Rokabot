@@ -18,7 +18,13 @@ vi.mock('../modelJudge.js', () => ({ judgeWithModel: mocks.judgeWithModel }))
 
 import { noul } from '@typesafe-ai/sdk'
 import type { ExtractionOp } from '../../memory/extractionSchema.js'
-import { judgeEpisodeAdmission, judgeEpisodeOperations, judgeHiddenRetractions } from '../judgments.js'
+import {
+  SUMMARY_COMPLETE_QUESTION,
+  judgeEpisodeAdmission,
+  judgeEpisodeOperations,
+  judgeEpisodeSummary,
+  judgeHiddenRetractions
+} from '../judgments.js'
 
 beforeEach(() => {
   mocks.config.memory.judge = 'none'
@@ -75,6 +81,72 @@ describe('judgeEpisodeAdmission', () => {
       'Jev judgment failed'
     )
     expect(JSON.stringify(mocks.warn.mock.calls)).not.toContain('private episode text')
+  })
+})
+
+describe('judgeEpisodeSummary', () => {
+  beforeEach(() => {
+    mocks.clientAvailable = true
+    mocks.systemOne.mockReset()
+    mocks.warn.mockReset()
+    vi.mocked(noul).mockClear()
+  })
+
+  it('asks one summary-complete question over the summary alone', async () => {
+    mocks.systemOne.mockResolvedValueOnce({
+      answers: { summary_complete: { type: 'noul', noul: 0.73 } },
+      usage: { input_tokens: 17, output_tokens: 2 }
+    })
+
+    const result = await judgeEpisodeSummary({ summary: 'Mio said she runs every morning.' })
+
+    expect(noul).toHaveBeenCalledWith(
+      'Does this summary say who was involved and what they said or did, clearly enough for a reader with no other context?'
+    )
+    expect(mocks.systemOne).toHaveBeenCalledWith(
+      {
+        state: { summary: 'Mio said she runs every morning.' },
+        questions: { summary_complete: expect.any(Object) }
+      },
+      { timeout: 5_000 }
+    )
+    expect(result).toMatchObject({ noul: 0.73, confidence: null, inputTokens: 17 })
+    expect(result?.latencyMs).toBeGreaterThanOrEqual(0)
+  })
+
+  it('returns null without a configured Jev client', async () => {
+    mocks.clientAvailable = false
+
+    await expect(judgeEpisodeSummary({ summary: 'A summary.' })).resolves.toBeNull()
+    expect(mocks.systemOne).not.toHaveBeenCalled()
+    expect(mocks.judgeWithModel).not.toHaveBeenCalled()
+  })
+
+  it('returns null for a non-noul answer and never logs the summary', async () => {
+    mocks.systemOne.mockResolvedValueOnce({
+      answers: { summary_complete: { type: 'choice', choice: 'yes' } },
+      usage: { input_tokens: 5, output_tokens: 1 }
+    })
+
+    await expect(judgeEpisodeSummary({ summary: 'A summary.' })).resolves.toBeNull()
+  })
+
+  it('fails closed and does not log the summary when Jev fails', async () => {
+    mocks.systemOne.mockRejectedValueOnce(new Error('private summary text'))
+
+    await expect(judgeEpisodeSummary({ summary: 'private summary text' })).resolves.toBeNull()
+
+    expect(mocks.warn).toHaveBeenCalledWith(
+      { kind: 'extraction', errorName: 'Error', status: undefined },
+      'Jev judgment failed'
+    )
+    expect(JSON.stringify(mocks.warn.mock.calls)).not.toContain('private summary text')
+  })
+
+  it('exposes the question as an exported constant', () => {
+    expect(SUMMARY_COMPLETE_QUESTION).toBe(
+      'Does this summary say who was involved and what they said or did, clearly enough for a reader with no other context?'
+    )
   })
 })
 
@@ -588,6 +660,29 @@ describe('main-model memory judgments without a Jev key', () => {
     const request = mocks.judgeWithModel.mock.calls[0][0]
     expect(request.workload).toBe('verification')
     expect(Object.keys(request.questions)).toEqual(['durable_0', 'attributed_0', 'current_0', 'past_0'])
+  })
+
+  it('judges a summary complete with the same question under the verification workload', async () => {
+    mocks.judgeWithModel.mockResolvedValueOnce({
+      answers: { summary_complete: 0.77 },
+      latencyMs: 11,
+      inputTokens: 80,
+      judge
+    })
+
+    await expect(judgeEpisodeSummary({ summary: 'Mio said she runs.' })).resolves.toEqual({
+      noul: 0.77,
+      confidence: null,
+      latencyMs: 11,
+      inputTokens: 80,
+      judge
+    })
+    expect(mocks.judgeWithModel).toHaveBeenCalledWith({
+      workload: 'verification',
+      state: { summary: 'Mio said she runs.' },
+      questions: { summary_complete: SUMMARY_COMPLETE_QUESTION }
+    })
+    expect(mocks.systemOne).not.toHaveBeenCalled()
   })
 
   it('judges hidden retractions per candidate', async () => {

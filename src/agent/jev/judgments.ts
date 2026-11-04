@@ -181,6 +181,47 @@ export async function judgeEpisodeAdmission(input: {
   }
 }
 
+export const SUMMARY_COMPLETE_QUESTION =
+  'Does this summary say who was involved and what they said or did, clearly enough for a reader with no other context?'
+
+export async function judgeEpisodeSummary(input: {
+  summary: string
+}): Promise<{ noul: number; confidence: null; latencyMs: number; inputTokens: number; judge?: string } | null> {
+  try {
+    const client = getJevClient()
+    if (!client) {
+      if (config.memory.judge !== 'model') return null
+      const judgment = await judgeWithModel({
+        workload: 'verification',
+        state: { summary: input.summary },
+        questions: { summary_complete: SUMMARY_COMPLETE_QUESTION }
+      })
+      return judgment
+        ? {
+            noul: judgment.answers.summary_complete,
+            confidence: null,
+            latencyMs: judgment.latencyMs,
+            inputTokens: judgment.inputTokens,
+            judge: judgment.judge
+          }
+        : null
+    }
+
+    const startedAt = performance.now()
+    const result = await client.systemOne(
+      { state: { summary: input.summary }, questions: { summary_complete: noul(SUMMARY_COMPLETE_QUESTION) } },
+      { timeout: config.jev.memoryTimeoutMs }
+    )
+    const latencyMs = performance.now() - startedAt
+    const answer = result.answers.summary_complete
+    if (answer?.type !== 'noul') return null
+    return { noul: answer.noul, confidence: null, latencyMs, inputTokens: result.usage.input_tokens }
+  } catch (error) {
+    logger.warn(warningDetails('extraction', error), 'Jev judgment failed')
+    return null
+  }
+}
+
 export type MemoryVerification = {
   answers: Record<string, { noul: number; confidence: null }>
   latencyMs: number

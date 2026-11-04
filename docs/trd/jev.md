@@ -121,11 +121,12 @@ Under `none`, startup logs `Passive memory extraction is disabled: no TypeSafe A
 | Verification       | `durable_<i>`, `attributed_<i>` or `guild_scoped_<i>`, plus tense, change, `same_as_*`, `retracts_*` | Checks each proposed operation for durability, attribution and duplicates. Below threshold: the operation is skipped. |
 | Hidden Retractions | `retracts_<id>`                                                                                      | Probability that the messages end an existing fact.                                                                   |
 | Reclassification   | Per proposed move                                                                                    | Confirms a move to a better category.                                                                                 |
+| Summary            | `summary_complete`                                                                                   | Probability that a summary says who and what. Below threshold: the summary is dropped. No answer: it is kept.         |
 
 - **Timeout:** Jev memory calls are bounded by `jev.memoryTimeoutMs` (5000 ms).
 - **No Admission Answer:** a missing judge, timeout or unusable answer marks the job unjudged. The queue retries it once after 5 minutes, then drops it.
 - **Incomplete Verification:** removals and retractions are blocked. Allowed additions and updates are written with `needs_review` set.
-- **Events:** admission and verification write `jev_events` rows with question key, answer, probability, confidence, `applied`, latency, input tokens, optional `job_id` and `judge`. Source messages are not stored.
+- **Events:** admission, verification and summary checks write `jev_events` rows with question key, answer, probability, confidence, `applied`, latency, input tokens, optional `job_id` and `judge`. Source messages are not stored.
 
 ### Main-Model Judge
 

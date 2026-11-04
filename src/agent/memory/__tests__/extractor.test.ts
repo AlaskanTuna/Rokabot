@@ -106,7 +106,8 @@ describe('runEpisodePipeline', () => {
       status: 'dropped',
       summary: null,
       appliedOps: 0,
-      duplicateOps: 0
+      duplicateOps: 0,
+      opsRejected: false
     })
     expect(mocks.modelReply).not.toHaveBeenCalled()
     expect(trace).toMatchObject({
@@ -155,7 +156,8 @@ describe('runEpisodePipeline', () => {
       status: 'completed',
       summary: 'Alice likes tea.',
       appliedOps: 0,
-      duplicateOps: 0
+      duplicateOps: 0,
+      opsRejected: false
     })
     expect(mocks.admitEpisode).toHaveBeenCalledWith({
       guildId: 'guild-1',
@@ -202,7 +204,11 @@ describe('runEpisodePipeline', () => {
     })
     const trace = startRunTrace(queueJob, 1)
 
-    await expect(runEpisodePipeline(queueJob, trace)).resolves.toMatchObject({ status: 'completed', appliedOps: 1 })
+    await expect(runEpisodePipeline(queueJob, trace)).resolves.toMatchObject({
+      status: 'completed',
+      appliedOps: 1,
+      opsRejected: false
+    })
 
     expect(trace).toMatchObject({ stage: 'applied', outcome: 'written', tokens: 30 + 400 + 60 })
     expect(trace.ops).toEqual({
@@ -217,6 +223,49 @@ describe('runEpisodePipeline', () => {
       retracted: 0
     })
     expect(getDb().prepare('SELECT DISTINCT job_id FROM jev_events').all()).toEqual([{ job_id: 1 }])
+  })
+
+  it('does not call the ops rejected when one was staged because Jev could not verify it', async () => {
+    mocks.modelReply.mockResolvedValueOnce({
+      text: JSON.stringify({
+        ops: [
+          { op: 'add', subject: { kind: 'user', userId: 'user-1' }, predicate: 'likes', value: 'tea', tense: 'current' }
+        ],
+        summary: 'Alice likes tea.'
+      }),
+      usageMetadata: { promptTokenCount: 400 }
+    })
+    mocks.judgeEpisodeOperations.mockResolvedValueOnce(null)
+    const trace = startRunTrace(queueJob, 1)
+
+    await expect(runEpisodePipeline(queueJob, trace)).resolves.toMatchObject({ opsRejected: false })
+    expect(trace.ops.staged).toBe(1)
+  })
+
+  it('calls the ops rejected when Jev rejects every proposed change', async () => {
+    mocks.modelReply.mockResolvedValueOnce({
+      text: JSON.stringify({
+        ops: [
+          { op: 'add', subject: { kind: 'user', userId: 'user-1' }, predicate: 'likes', value: 'tea', tense: 'current' }
+        ],
+        summary: 'Alice likes tea.'
+      }),
+      usageMetadata: { promptTokenCount: 400 }
+    })
+    mocks.judgeEpisodeOperations.mockResolvedValueOnce({
+      answers: {
+        durable_0: { noul: 0.1, confidence: null },
+        attributed_0: { noul: 0.1, confidence: null },
+        current_0: { noul: 0.1, confidence: null },
+        past_0: { noul: 0.1, confidence: null }
+      },
+      latencyMs: 5,
+      inputTokens: 60
+    })
+    const trace = startRunTrace(queueJob, 1)
+
+    await expect(runEpisodePipeline(queueJob, trace)).resolves.toMatchObject({ opsRejected: true })
+    expect(trace.ops.dropped).toBe(1)
   })
 
   it('traces past mentions, rewordings and retractions and counts a retraction as a written run', async () => {
@@ -263,7 +312,10 @@ describe('runEpisodePipeline', () => {
     })
     const trace = startRunTrace(queueJob, 1)
 
-    await runEpisodePipeline(queueJob, trace)
+    await expect(runEpisodePipeline(queueJob, trace)).resolves.toMatchObject({
+      status: 'completed',
+      opsRejected: false
+    })
 
     expect(trace.outcome).toBe('written')
     expect(trace.ops).toEqual({
@@ -393,7 +445,9 @@ describe('extractEpisode', () => {
     expect(request.prompt).toContain('Never add a rewording.')
     expect(request.prompt).toContain('Return noop only when no durable fact, change or retraction came up.')
     expect(request.prompt).not.toContain('context only claim')
-    expect(request.prompt).toContain('one-to-two sentence third-person summary')
+    expect(request.prompt).toContain(
+      'Return a one-to-two sentence third-person summary saying who said or did what. Name people by display name and never write a user ID. Never mention whether a durable fact came up.'
+    )
   })
 
   it('counts cached prompt tokens in the prompt tokens it reports', async () => {

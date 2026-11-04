@@ -153,8 +153,10 @@ interface YamlConfig {
     episodeMaxMessages?: number
     admitThreshold?: number
     verifyThreshold?: number
+    summaryThreshold?: number
     modelAdmitThreshold?: number
     modelVerifyThreshold?: number
+    modelSummaryThreshold?: number
     episodeRecallK?: number
     episodeTokenBudget?: number
     episodeMinSimilarity?: number
@@ -707,8 +709,10 @@ const baseConfig = {
     episodeMaxMessages,
     admitThreshold: yaml.memory?.admitThreshold ?? 0.5,
     verifyThreshold: yaml.memory?.verifyThreshold ?? 0.5,
+    summaryThreshold: yaml.memory?.summaryThreshold ?? 0.5,
     modelAdmitThreshold: yaml.memory?.modelAdmitThreshold ?? 0.7,
     modelVerifyThreshold: yaml.memory?.modelVerifyThreshold ?? 0.7,
+    modelSummaryThreshold: yaml.memory?.modelSummaryThreshold ?? 0.7,
     judge: memoryJudge(),
     episodeRecallK: yaml.memory?.episodeRecallK ?? 3,
     episodeTokenBudget: yaml.memory?.episodeTokenBudget ?? 200,
@@ -982,8 +986,10 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   },
   { path: 'memory.admitThreshold', value: config.memory.admitThreshold, min: 0, max: 1 },
   { path: 'memory.verifyThreshold', value: config.memory.verifyThreshold, min: 0, max: 1 },
+  { path: 'memory.summaryThreshold', value: config.memory.summaryThreshold, min: 0, max: 1 },
   { path: 'memory.modelAdmitThreshold', value: config.memory.modelAdmitThreshold, min: 0, max: 1 },
   { path: 'memory.modelVerifyThreshold', value: config.memory.modelVerifyThreshold, min: 0, max: 1 },
+  { path: 'memory.modelSummaryThreshold', value: config.memory.modelSummaryThreshold, min: 0, max: 1 },
   { path: 'memory.episodeRecallK', value: config.memory.episodeRecallK, min: 1, max: 10 },
   { path: 'memory.episodeTokenBudget', value: config.memory.episodeTokenBudget, min: 1 },
   { path: 'memory.episodeMinSimilarity', value: config.memory.episodeMinSimilarity, min: 0, max: 1 },

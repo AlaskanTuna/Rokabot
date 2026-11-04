@@ -96,7 +96,7 @@ function episodePrompt(guildId: string, channelId: string, episode: ExtractionEp
     'Use remove with an existing claim ID only for a claim that was never true or was attributed to the wrong person; use retract for a fact that has ended.',
     'Never update or remove a claim whose "period" is "past"; to restate history, use add with tense past.',
     'Choose the most specific predicate; use misc only when no other predicate fits. "I draw on weekends" is hobby, not misc; "my cat Mochi" is pets, not misc; "I like spicy food" is likes, not misc. A game or sport they play is hobby, not favorite_game, unless they call it their favorite.',
-    'Return a one-to-two sentence third-person summary.',
+    'Return a one-to-two sentence third-person summary saying who said or did what. Name people by display name and never write a user ID. Never mention whether a durable fact came up.',
     `Allowed human user IDs: ${humanIds.join(', ') || '(none)'}`,
     `Current active claims:\n${JSON.stringify(claims, null, 2)}`,
     `Current active guild facts:\n${JSON.stringify(guildClaims, null, 2)}`,
@@ -392,6 +392,7 @@ export type EpisodeRunResult = Readonly<{
   summary: string | null
   appliedOps: number
   duplicateOps: number
+  opsRejected: boolean
 }>
 
 export async function runEpisodePipeline(job: ExtractionQueueJob, trace: RunTrace): Promise<EpisodeRunResult> {
@@ -407,7 +408,7 @@ export async function runEpisodePipeline(job: ExtractionQueueJob, trace: RunTrac
   if (!admission.admitted) {
     if (admission.reason === 'trivial' || admission.reason === 'sensitive') trace.stage = 'precheck'
     if (admission.reason === 'jev_unavailable') throw new JevUnavailableError()
-    return { status: 'dropped', summary: null, appliedOps: 0, duplicateOps: 0 }
+    return { status: 'dropped', summary: null, appliedOps: 0, duplicateOps: 0, opsRejected: false }
   }
 
   trace.stage = 'extraction'
@@ -445,6 +446,8 @@ export async function runEpisodePipeline(job: ExtractionQueueJob, trace: RunTrac
     status: 'completed',
     summary: output.summary,
     appliedOps: report.appliedOps,
-    duplicateOps: report.duplicateOps
+    duplicateOps: report.duplicateOps,
+    opsRejected:
+      trace.ops.proposed > 0 && report.appliedOps + report.duplicateOps + report.stagedOps + report.retractedOps === 0
   }
 }
