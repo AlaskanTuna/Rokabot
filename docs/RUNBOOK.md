@@ -128,14 +128,16 @@ Users run `:stable`. It moves only when a release PR merges.
 ```bash
 # Step 3: show the stable digest
 docker buildx imagetools inspect ghcr.io/alaskantuna/rokabot:stable
-# Re-tag by hand when promote skipped; run it for rokabot and rokabot-asr
+# Re-tag from Actions when promote skipped; only the latest release is accepted
+gh workflow run promote.yml -f tag=vX.Y.Z
+# Re-tag by hand to roll stable back; needs a token with write:packages; run it for rokabot and rokabot-asr
 docker buildx imagetools create -t ghcr.io/alaskantuna/<name>:stable -t ghcr.io/alaskantuna/<name>:vX.Y.Z -t ghcr.io/alaskantuna/<name>:vX.Y ghcr.io/alaskantuna/<name>:sha-<first 7 of the release commit>
 ```
 
 `promote` runs only after the Pi deploy of the release commit succeeds. Re-running `deploy` for an older run resets the Pi to that older commit.
 
 - **Release Deploy Failed or Never Ran** (for example, the runner was offline): `stable` stays on the old release. When the Pi is healthy, run `gh run rerun <run-id> --failed`.
-- **Newer Push Superseded the Deploy**, or raced it so `promote` skipped: re-tag both images by hand with the release commit (command above).
+- **Newer Push Superseded the Deploy**, or raced it so `promote` skipped: run `gh workflow run promote.yml -f tag=vX.Y.Z`. It re-tags the release commit's image, whatever the newest commit is.
 
 ### GHCR Visibility
 
