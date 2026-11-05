@@ -4,13 +4,13 @@ Design for #277: make every fact traceable to its source, and stop losing conver
 
 ## Owner Decisions (2026-11-05)
 
-| Topic        | Decision                                                                                        |
-| ------------ | ----------------------------------------------------------------------------------------------- |
-| Provenance   | The extractor cites the source message for each add and update. Code validates the citation.    |
-| Capture      | Open episode lines are saved to SQLite and restored at boot.                                    |
-| Summaries    | Rules plus Jev. A failed summary is dropped, and the loss is logged.                            |
-| Rejected Ops | A summary is dropped when every proposed change was rejected.                                   |
-| Merge Timing | Build now. Merge only after #262 calibration ends, so collection sees no restart or mix change. |
+| Topic        | Decision                                                                                                            |
+| ------------ | ------------------------------------------------------------------------------------------------------------------- |
+| Provenance   | The extractor cites the source message for each add and update. Code validates the citation.                        |
+| Capture      | Open episode lines are saved to SQLite and restored at boot.                                                        |
+| Summaries    | Rules plus Jev. A failed summary is dropped, and the loss is logged.                                                |
+| Rejected Ops | A summary is dropped when every proposed change was rejected.                                                       |
+| Merge Timing | Build now. The owner first chose to hold until #262 calibration ended, then merged on 2026-11-05 during collection. |
 
 ## Choices Made In Design
 
