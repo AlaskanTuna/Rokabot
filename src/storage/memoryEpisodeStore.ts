@@ -1,7 +1,7 @@
 import { config } from '../config.js'
 import { getDb } from './database.js'
 import { enqueueEpisode } from './extractionQueue.js'
-import type { EpisodeCursor, ExtractionEpisode, ExtractionQueueJob } from './extractionQueue.js'
+import type { EpisodeCursor, EpisodeLine, ExtractionEpisode, ExtractionQueueJob } from './extractionQueue.js'
 import { UNKNOWN_FINGERPRINT, embeddingFingerprint } from './vectorProvenance.js'
 
 const LEGACY_GEMINI_FINGERPRINT = embeddingFingerprint('gemini', 'gemini-embedding-2', 768)
@@ -199,17 +199,37 @@ export function recordOpenEpisodeMessage(input: {
   guildId: string
   channelId: string
   openedAt: number
+  line: EpisodeLine
 }): EpisodeCursor {
   const db = getDb()
-  db.prepare(
-    `INSERT INTO memory_episode_cursor (channel_id, guild_id, last_message_id, opened_at, message_count)
-     VALUES (?, ?, NULL, ?, 1)
-     ON CONFLICT(channel_id) DO UPDATE SET
-       guild_id = excluded.guild_id,
-       opened_at = COALESCE(memory_episode_cursor.opened_at, excluded.opened_at),
-       message_count = memory_episode_cursor.message_count + 1`
-  ).run(input.channelId, input.guildId, input.openedAt)
-  return getEpisodeCursor(input.channelId) as EpisodeCursor
+  return db.transaction(() => {
+    const inserted = db
+      .prepare(
+        `INSERT OR IGNORE INTO memory_episode_line
+           (channel_id, message_id, guild_id, user_id, display_name, content, timestamp, is_bot)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        input.channelId,
+        input.line.messageId,
+        input.guildId,
+        input.line.userId,
+        input.line.displayName,
+        input.line.content,
+        input.line.timestamp,
+        input.line.isBot ? 1 : 0
+      )
+    if (inserted.changes === 0) return getEpisodeCursor(input.channelId) as EpisodeCursor
+    db.prepare(
+      `INSERT INTO memory_episode_cursor (channel_id, guild_id, last_message_id, opened_at, message_count)
+       VALUES (?, ?, NULL, ?, 1)
+       ON CONFLICT(channel_id) DO UPDATE SET
+         guild_id = excluded.guild_id,
+         opened_at = COALESCE(memory_episode_cursor.opened_at, excluded.opened_at),
+         message_count = memory_episode_cursor.message_count + 1`
+    ).run(input.channelId, input.guildId, input.openedAt)
+    return getEpisodeCursor(input.channelId) as EpisodeCursor
+  })()
 }
 
 export function enqueueEpisodeAndAdvanceCursor(input: {
@@ -221,6 +241,13 @@ export function enqueueEpisodeAndAdvanceCursor(input: {
   const db = getDb()
   return db.transaction(() => {
     const job = enqueueEpisode(input, { transaction: true })
+    if (input.episode.messages.length > 0) {
+      const placeholders = input.episode.messages.map(() => '?').join(', ')
+      db.prepare(`DELETE FROM memory_episode_line WHERE channel_id = ? AND message_id IN (${placeholders})`).run(
+        input.channelId,
+        ...input.episode.messages.map((message) => message.messageId)
+      )
+    }
     const cursor = db
       .prepare(
         `UPDATE memory_episode_cursor
@@ -230,5 +257,70 @@ export function enqueueEpisodeAndAdvanceCursor(input: {
       .run(input.lastMessageId, input.channelId, input.guildId)
     if (cursor.changes !== 1) throw new Error('Episode cursor not found')
     return job
+  })()
+}
+
+export type SavedOpenEpisodeLine = Readonly<{
+  channelId: string
+  guildId: string
+  messageId: string
+  userId: string
+  displayName: string
+  content: string
+  timestamp: number
+  isBot: boolean
+}>
+
+type OpenEpisodeLineRow = {
+  channel_id: string
+  guild_id: string
+  message_id: string
+  user_id: string
+  display_name: string
+  content: string
+  timestamp: number
+  is_bot: number
+}
+
+/** Open episode lines in capture order: oldest first, ties broken by insertion order. */
+export function listOpenEpisodeLines(): SavedOpenEpisodeLine[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT channel_id, guild_id, message_id, user_id, display_name, content, timestamp, is_bot
+       FROM memory_episode_line
+       ORDER BY timestamp ASC, rowid ASC`
+    )
+    .all() as OpenEpisodeLineRow[]
+  return rows.map((row) => ({
+    channelId: row.channel_id,
+    guildId: row.guild_id,
+    messageId: row.message_id,
+    userId: row.user_id,
+    displayName: row.display_name,
+    content: row.content,
+    timestamp: row.timestamp,
+    isBot: row.is_bot !== 0
+  }))
+}
+
+/** Trust the saved lines over the cursor: a count from before this table covers lines that were never saved. */
+export function syncOpenEpisodeCursorsToLineCounts(): void {
+  getDb().transaction(() => {
+    getDb().exec(`
+        UPDATE memory_episode_cursor
+        SET message_count = (SELECT COUNT(*) FROM memory_episode_line
+                             WHERE memory_episode_line.channel_id = memory_episode_cursor.channel_id),
+            opened_at = CASE WHEN (SELECT COUNT(*) FROM memory_episode_line
+                                   WHERE memory_episode_line.channel_id = memory_episode_cursor.channel_id) = 0
+                             THEN NULL ELSE opened_at END
+      `)
+  })()
+}
+
+/** Privacy off keeps no open text and no open count. */
+export function clearSavedOpenEpisodes(): void {
+  getDb().transaction(() => {
+    getDb().prepare('DELETE FROM memory_episode_line').run()
+    getDb().prepare('UPDATE memory_episode_cursor SET opened_at = NULL, message_count = 0').run()
   })()
 }

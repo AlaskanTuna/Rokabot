@@ -36,6 +36,7 @@ All tables live in `data/rokabot.db`. `memory_claim`, `memory_episode` and `medi
 | `memory_evidence`       | `id`, `claim_id`, `channel_id`, `source_kind`, `observed_at`, `effective_at`                                                                                                                                                                                                                                                                                 | One row per observation. Passive rows use the latest episode message time. `effective_at` equals it.                                 |
 | `memory_claim_fts`      | `value`, `predicate`                                                                                                                                                                                                                                                                                                                                         | FTS5 mirror of active claims, kept by triggers.                                                                                      |
 | `memory_episode_cursor` | `channel_id`, `guild_id`, `last_message_id`, `opened_at`, `message_count`                                                                                                                                                                                                                                                                                    | Per-channel checkpoint of the open episode.                                                                                          |
+| `memory_episode_line`   | `channel_id`, `message_id`, `guild_id`, `user_id`, `display_name`, `content`, `timestamp`, `is_bot`                                                                                                                                                                                                                                                          | Saved text of the open episode, one row per message, deleted at flush.                                                               |
 | `extraction_queue`      | `id`, `guild_id`, `channel_id`, `payload`, `status`, `attempts`, `enqueued_at`, `available_at`, `transient_retries`                                                                                                                                                                                                                                          | `pending`, `processing` or `failed`. Success deletes the row. A failed row keeps its payload.                                        |
 | `memory_episode`        | `id`, `guild_id`, `channel_id`, `started_at`, `ended_at`, `summary`, `embedding`, `created_at`                                                                                                                                                                                                                                                               | One summary per queue job ID (the idempotency key). Nullable vector.                                                                 |
 | `media_digest`          | `id`, `guild_id`, `content_key`, `kind`, `label`, `summary`, `digest_json`, `embedding`, `created_at`                                                                                                                                                                                                                                                        | One digest per `(guild_id, content_key)`.                                                                                            |
@@ -54,12 +55,16 @@ _A monitored message becomes an episode, a queued job, a judged extraction, and 
 
 ### Capture
 
-1. Each monitored guild message enters the channel buffer, and the cursor counts it as a delta.
+1. Each monitored guild message enters the channel buffer, its text is saved in `memory_episode_line`,
+   and the cursor counts it as a delta. A redelivered message saves nothing and leaves the count alone.
 2. The episode closes after `memory.episodeLullMs` (180 s) of silence or at `memory.episodeMaxMessages` (25) deltas,
    capped at `memory.bufferSize - 3` so three context lines fit.
-3. The queue insert and cursor advance share one SQLite transaction.
+3. The queue insert, the saved-line delete and the cursor advance share one SQLite transaction.
 4. Startup converts legacy array payloads to the episode shape, keeps every row and status, and returns `processing`
    rows to `pending`.
+5. At boot, `restoreOpenEpisodes` rebuilds each open episode from its saved lines and resumes its lull timer
+   with the remaining silence. The context lines from before the crash are lost. Under `memory.privacy: off` it
+   deletes the saved lines instead.
 
 ### Scheduling and Retries
 

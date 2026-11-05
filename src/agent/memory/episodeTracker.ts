@@ -1,9 +1,12 @@
 import { config } from '../../config.js'
 import type { EpisodeCursor, EpisodeLine } from '../../storage/extractionQueue.js'
 import {
+  clearSavedOpenEpisodes,
   enqueueEpisodeAndAdvanceCursor,
   getEpisodeCursor,
-  recordOpenEpisodeMessage
+  listOpenEpisodeLines,
+  recordOpenEpisodeMessage,
+  syncOpenEpisodeCursorsToLineCounts
 } from '../../storage/memoryEpisodeStore.js'
 import { type BufferedMessage, addMessage, getMessages } from './passiveBuffer.js'
 import { startExtractionScheduler } from './scheduler.js'
@@ -37,9 +40,9 @@ function clearTimer(channelId: string): void {
   timers.delete(channelId)
 }
 
-function scheduleLull(channelId: string): void {
+function scheduleLull(channelId: string, delay: number = config.memory.episodeLullMs): void {
   clearTimer(channelId)
-  const timer = setTimeout(() => flushEpisode(channelId), config.memory.episodeLullMs)
+  const timer = setTimeout(() => flushEpisode(channelId), delay)
   timer.unref?.()
   timers.set(channelId, timer)
 }
@@ -67,7 +70,7 @@ export function recordEpisodeMessage(input: { guildId: string; channelId: string
     timestamp: message.timestamp,
     isBot: message.isBot
   })
-  const nextCursor = recordOpenEpisodeMessage({ guildId, channelId, openedAt: message.timestamp })
+  const nextCursor = recordOpenEpisodeMessage({ guildId, channelId, openedAt: message.timestamp, line: message })
   scheduleLull(channelId)
   if (nextCursor.messageCount >= config.memory.episodeMaxMessages) flushEpisode(channelId)
 }
@@ -104,6 +107,35 @@ export function flushEpisode(channelId: string): void {
 
 export function flushOpenEpisodes(): void {
   for (const channelId of [...timers.keys()]) flushEpisode(channelId)
+}
+
+/** Rebuild the in-memory open episodes from the lines saved before a crash or restart. */
+export function restoreOpenEpisodes(): void {
+  if (config.memory.privacy === 'off') {
+    clearSavedOpenEpisodes()
+    return
+  }
+  syncOpenEpisodeCursorsToLineCounts()
+  const lines = listOpenEpisodeLines()
+  if (lines.length === 0) return
+  const byChannel = new Map<string, typeof lines>()
+  for (const line of lines) {
+    const channelLines = byChannel.get(line.channelId)
+    if (channelLines) channelLines.push(line)
+    else byChannel.set(line.channelId, [line])
+  }
+  const now = Date.now()
+  for (const [channelId, channelLines] of byChannel) {
+    for (const line of channelLines) {
+      addMessage(channelId, line.userId, line.displayName, line.displayName, line.content, {
+        messageId: line.messageId,
+        timestamp: line.timestamp,
+        isBot: line.isBot
+      })
+    }
+    const newest = channelLines.at(-1)!.timestamp
+    scheduleLull(channelId, Math.max(0, config.memory.episodeLullMs - (now - newest)))
+  }
 }
 
 export function resetEpisodeTrackerForTest(): void {
