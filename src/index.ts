@@ -25,7 +25,7 @@ import http from 'node:http'
 import { cleanupExpired, restoreMonitoredChannels } from './agent/memory/channelMonitor.js'
 import { registerChannelVisibility } from './agent/memory/channelVisibility.js'
 import { pruneEpisodesAndReembed } from './agent/memory/episodeMaintenance.js'
-import { flushOpenEpisodes } from './agent/memory/episodeTracker.js'
+import { flushOpenEpisodes, restoreOpenEpisodes } from './agent/memory/episodeTracker.js'
 import { pruneStaleClaims } from './agent/memory/memoryClaims.js'
 import { reclassifyClaims } from './agent/memory/reclassify.js'
 import {
@@ -123,6 +123,7 @@ function stopMemoryTasks(): void {
 client.once('clientReady', () => {
   getDb()
   restoreMonitoredChannels()
+  restoreOpenEpisodes()
   startReminderScheduler(client)
 
   pruneOldHistory(config.session.historyRetentionDays)

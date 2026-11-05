@@ -1,6 +1,6 @@
 import type { MemoryVerification } from '../jev/judgments.js'
 import type { ExtractionOp as EpisodeOperation } from './extractionSchema.js'
-import type { ClaimPeriod, MemoryClaim } from './memoryClaims.js'
+import type { ClaimPeriod, EvidenceProvenance, MemoryClaim } from './memoryClaims.js'
 import {
   appendEvidence,
   assertClaim,
@@ -25,6 +25,7 @@ export type PlannedOperation = {
   op: EpisodeWriteOp
   sameAsClaims: MemoryClaim[]
   retractClaims: MemoryClaim[]
+  provenance: EvidenceProvenance
   questionKeys: string[]
   expiresAt: number | null
   eventDate: string | null
@@ -81,7 +82,11 @@ function resolveWritePeriod(
         (claim) => claim.period === 'current' && claim.predicate === op.predicate && claim.value === op.value
       )
       if (match) {
-        appendEvidence(match.id, { channelId, sourceKind: 'passive', observedAt }, { transaction: true })
+        appendEvidence(
+          match.id,
+          { channelId, sourceKind: 'passive', observedAt, provenance: entry.provenance },
+          { transaction: true }
+        )
       }
       return { result: { applied: false, duplicate: Boolean(match) } }
     }
@@ -91,7 +96,11 @@ function resolveWritePeriod(
     }
     period = resolved
     if (op.op === 'update' && period === 'current' && target?.period === 'current' && !holds(`changes_${index}`)) {
-      appendEvidence(target.id, { channelId, sourceKind: 'passive', observedAt }, { transaction: true })
+      appendEvidence(
+        target.id,
+        { channelId, sourceKind: 'passive', observedAt, provenance: entry.provenance },
+        { transaction: true }
+      )
       return { result: { applied: false, duplicate: true, reword: true } }
     }
   }
@@ -117,7 +126,11 @@ function insertWriteClaim(
           ? getActiveGuildClaimById(guildId, exactSameAs.id)
           : getActiveClaimById(guildId, op.subject.userId, exactSameAs.id)
       if (active) {
-        appendEvidence(active.id, { channelId, sourceKind: 'passive', observedAt }, { transaction: true })
+        appendEvidence(
+          active.id,
+          { channelId, sourceKind: 'passive', observedAt, provenance: entry.provenance },
+          { transaction: true }
+        )
         appliedKeys.add(`same_as_${index}_${sameAsClaims.indexOf(exactSameAs)}`)
         return { applied: false, duplicate: true }
       }
@@ -133,7 +146,11 @@ function insertWriteClaim(
           ? getActiveGuildClaimById(guildId, sameAs.id)
           : getActiveClaimById(guildId, op.subject.userId, sameAs.id)
       if (active) {
-        appendEvidence(active.id, { channelId, sourceKind: 'passive', observedAt }, { transaction: true })
+        appendEvidence(
+          active.id,
+          { channelId, sourceKind: 'passive', observedAt, provenance: entry.provenance },
+          { transaction: true }
+        )
         appliedKeys.add(`same_as_${index}_${sameAsClaims.indexOf(sameAs)}`)
         return { applied: false, duplicate: true }
       }
@@ -165,7 +182,8 @@ function insertWriteClaim(
         channelId,
         observedAt,
         needsReview: !verified,
-        status: verified ? 'active' : 'candidate'
+        status: verified ? 'active' : 'candidate',
+        provenance: entry.provenance
       },
       { transaction: true }
     )
@@ -190,7 +208,8 @@ function insertWriteClaim(
       observedAt,
       needsReview: !verified,
       status: verified ? 'active' : 'candidate',
-      period
+      period,
+      provenance: entry.provenance
     },
     { transaction: true }
   )
@@ -263,7 +282,8 @@ export function applyUpdateOperation(
           eventDate: entry.eventDate,
           channelId,
           observedAt,
-          needsReview: !verified
+          needsReview: !verified,
+          provenance: entry.provenance
         },
         { transaction: true }
       )
@@ -277,7 +297,8 @@ export function applyUpdateOperation(
           objectUserId: op.objectUserId,
           channelId,
           observedAt,
-          needsReview: !verified
+          needsReview: !verified,
+          provenance: entry.provenance
         },
         { transaction: true }
       )

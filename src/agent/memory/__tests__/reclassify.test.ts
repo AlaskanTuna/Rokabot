@@ -361,6 +361,21 @@ describe('moveClaim', () => {
     expect(row(movedId)).toMatchObject({ status: 'active', pinned: 1 })
   })
 
+  it('keeps the job, message and speaker columns on moved evidence', () => {
+    const old = seedClaim({ predicate: 'misc', value: 'draws on weekends' })
+    getDb()
+      .prepare('UPDATE memory_evidence SET job_id = ?, source_message_id = ?, speaker_user_id = ? WHERE claim_id = ?')
+      .run(7, 'm-1', USER, old.id)
+
+    const movedId = moveClaim(candidateOf(old), 'hobby', 0.9)
+
+    expect(
+      getDb()
+        .prepare('SELECT job_id, source_message_id, speaker_user_id FROM memory_evidence WHERE claim_id = ?')
+        .all(movedId)
+    ).toEqual([{ job_id: 7, source_message_id: 'm-1', speaker_user_id: USER }])
+  })
+
   it('will not replace a different fact in a single-valued predicate', () => {
     const existing = seedClaim({ predicate: 'pronouns', value: 'she/her' })
     const old = seedClaim({ predicate: 'misc', value: 'he/him' })

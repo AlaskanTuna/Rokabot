@@ -229,6 +229,13 @@ export type MemoryVerification = {
   judge?: string
 }
 
+// Jev reads unnumbered lines, so a citation would mean nothing to it.
+function judgedOperation(op: ExtractionOp) {
+  if (op.op === 'noop') return { ...op }
+  const { sourceLine: _sourceLine, ...rest } = op as Extract<ExtractionOp, { op: 'add' }>
+  return { ...rest, subject: { ...op.subject } }
+}
+
 export async function judgeEpisodeOperations(input: {
   lines: string[]
   ops: readonly ExtractionOp[]
@@ -280,7 +287,7 @@ export async function judgeEpisodeOperations(input: {
 
     const state = {
       messages: input.lines,
-      operations: input.ops.map((op) => (op.op === 'noop' ? { ...op } : { ...op, subject: { ...op.subject } })),
+      operations: input.ops.map(judgedOperation),
       existing: input.existing.map(({ id, subjectKind, subjectUserId, predicate, value }) => ({
         id,
         subjectKind,

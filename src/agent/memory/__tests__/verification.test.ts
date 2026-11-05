@@ -65,6 +65,7 @@ function report(counts: Partial<OperationApplicationReport> = {}): OperationAppl
     rewordOps: 0,
     retractedOps: 0,
     judgedOutOps: 0,
+    uncited: 1,
     inputTokens: expect.any(Number),
     ...counts
   }
@@ -277,7 +278,7 @@ describe('verifyAndApplyOperations', () => {
         output: output({ op: 'noop' }),
         subjectIds: new Set(['u-1'])
       })
-    ).resolves.toEqual(report({ appliedOps: 0, droppedOps: 0, duplicateOps: 0, changedOps: 0 }))
+    ).resolves.toEqual(report({ appliedOps: 0, droppedOps: 0, duplicateOps: 0, changedOps: 0, uncited: 0 }))
     expect(mocks.judgeEpisodeOperations).not.toHaveBeenCalled()
   })
 
@@ -530,7 +531,7 @@ describe('verifyAndApplyOperations', () => {
         }),
         subjectIds: new Set(['u-1'])
       })
-    ).resolves.toEqual(report({ appliedOps: 1, droppedOps: 0, duplicateOps: 0, changedOps: 1 }))
+    ).resolves.toEqual(report({ appliedOps: 1, droppedOps: 0, duplicateOps: 0, changedOps: 1, uncited: 0 }))
     expect(
       getDb().prepare('SELECT status, superseded_by, end_reason FROM memory_claim WHERE id = ?').get(replacement.id)
     ).toEqual({
@@ -565,7 +566,7 @@ describe('verifyAndApplyOperations', () => {
         }),
         subjectIds: new Set(['u-1'])
       })
-    ).resolves.toEqual(report({ appliedOps: 0, droppedOps: 1, duplicateOps: 0, changedOps: 0 }))
+    ).resolves.toEqual(report({ appliedOps: 0, droppedOps: 1, duplicateOps: 0, changedOps: 0, uncited: 0 }))
     expect(getActiveClaims('g-1', 'u-2')).toEqual([expect.objectContaining({ id: other.id, status: 'active' })])
   })
 
@@ -1047,7 +1048,9 @@ describe('verifyAndApplyOperations', () => {
           ),
           subjectIds: new Set()
         })
-      ).resolves.toEqual(report({ appliedOps: 0, droppedOps: 1, duplicateOps: 0, changedOps: 0 }))
+      ).resolves.toEqual(
+        report({ appliedOps: 0, droppedOps: 1, duplicateOps: 0, changedOps: 0, uncited: op === 'update' ? 1 : 0 })
+      )
       setAnswers(positiveAnswers('durable_0', 'guild_scoped_0'))
     }
     expect(getDb().prepare('SELECT status FROM memory_claim WHERE id = ?').get(other.id)).toEqual({ status: 'active' })

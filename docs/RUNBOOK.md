@@ -509,7 +509,8 @@ GROUP BY bucket ORDER BY bucket;
 SELECT sum(json_extract(detail, '$.ops.proposed')), sum(json_extract(detail, '$.ops.applied')),
        sum(json_extract(detail, '$.ops.duplicate')), sum(json_extract(detail, '$.ops.staged')),
        sum(json_extract(detail, '$.ops.dropped')), sum(json_extract(detail, '$.ops.past')),
-       sum(json_extract(detail, '$.ops.reword')), sum(json_extract(detail, '$.ops.retracted'))
+       sum(json_extract(detail, '$.ops.reword')), sum(json_extract(detail, '$.ops.retracted')),
+       sum(json_extract(detail, '$.ops.uncited'))
 FROM memory_events WHERE kind = 'extraction_run';
 
 -- Errors and whether retries recovered them

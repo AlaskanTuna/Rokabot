@@ -49,6 +49,12 @@ export type GuildMemoryClaim = MemoryClaimBase &
 
 export type MemoryClaim = UserMemoryClaim | GuildMemoryClaim
 
+export type EvidenceProvenance = Readonly<{
+  jobId?: number
+  sourceMessageId?: string
+  speakerUserId?: string
+}>
+
 export type ClaimAssert = Readonly<{
   guildId: string
   subjectUserId: string
@@ -61,6 +67,7 @@ export type ClaimAssert = Readonly<{
   status?: Extract<ClaimStatus, 'candidate' | 'active'>
   needsReview?: boolean
   period?: ClaimPeriod
+  provenance?: EvidenceProvenance
 }>
 
 export type ClaimRetract = Readonly<{
@@ -75,6 +82,7 @@ export type EvidenceInput = Readonly<{
   sourceKind: ClaimSource
   observedAt?: number
   effectiveAt?: number
+  provenance?: EvidenceProvenance
 }>
 
 export type ClaimWriteOptions = Readonly<{
@@ -203,9 +211,19 @@ function getGuildClaim(id: number): GuildMemoryClaim | undefined {
 function appendEvidenceInTransaction(claimId: number, input: EvidenceInput): MemoryClaim {
   const db = getDb()
   const observedAt = input.observedAt ?? Date.now()
+  // A retried extraction job replays its writes: the (claim_id, job_id) index turns the replay into a no-op.
   db.prepare(
-    'INSERT INTO memory_evidence (claim_id, channel_id, source_kind, observed_at, effective_at) VALUES (?, ?, ?, ?, ?)'
-  ).run(claimId, input.channelId ?? null, input.sourceKind, observedAt, input.effectiveAt ?? observedAt)
+    'INSERT OR IGNORE INTO memory_evidence (claim_id, channel_id, source_kind, observed_at, effective_at, job_id, source_message_id, speaker_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(
+    claimId,
+    input.channelId ?? null,
+    input.sourceKind,
+    observedAt,
+    input.effectiveAt ?? observedAt,
+    input.provenance?.jobId ?? null,
+    input.provenance?.sourceMessageId ?? null,
+    input.provenance?.speakerUserId ?? null
+  )
   const evidenceCount = (
     db.prepare('SELECT COUNT(*) AS count FROM memory_evidence WHERE claim_id = ?').get(claimId) as {
       count: number
@@ -352,6 +370,14 @@ function assertClaimInTransaction(op: ClaimAssert, inheritedPin = false): UserMe
   }
 
   if (existing) {
+    // A retried job replays its own writes: the row already carries this job's evidence, so the replay ends here
+    // with no salience bump, no revival and no new evidence.
+    if (op.provenance?.jobId !== undefined) {
+      const replayed = db
+        .prepare('SELECT 1 FROM memory_evidence WHERE claim_id = ? AND job_id = ?')
+        .get(existing.id, op.provenance.jobId)
+      if (replayed) return mapUserClaim(existing)
+    }
     const current = mapUserClaim(existing)
     const dead = current.status === 'rejected' || current.status === 'superseded'
     // An unverified statement may stage or revive a value, but never demote or flag one that is already active.
@@ -384,7 +410,8 @@ function assertClaimInTransaction(op: ClaimAssert, inheritedPin = false): UserMe
     appendEvidenceInTransaction(current.id, {
       channelId: op.channelId,
       sourceKind: op.sourceKind,
-      observedAt
+      observedAt,
+      provenance: op.provenance
     })
     const claim = getUserClaim(current.id) as UserMemoryClaim
     if ((dead || activating) && claim.status === 'active') {
@@ -423,7 +450,8 @@ function assertClaimInTransaction(op: ClaimAssert, inheritedPin = false): UserMe
   appendEvidenceInTransaction(Number(result.lastInsertRowid), {
     channelId: op.channelId,
     sourceKind: op.sourceKind,
-    observedAt
+    observedAt,
+    provenance: op.provenance
   })
   const claim = getUserClaim(Number(result.lastInsertRowid)) as UserMemoryClaim
 
@@ -569,6 +597,7 @@ export function replaceActiveClaim(
     observedAt?: number
     objectUserId?: string
     needsReview?: boolean
+    provenance?: EvidenceProvenance
   },
   options: ClaimWriteOptions = {}
 ): UserMemoryClaim | null {
@@ -596,7 +625,8 @@ export function replaceActiveClaim(
       channelId: input.channelId,
       observedAt: input.observedAt,
       needsReview: input.needsReview,
-      period: 'current'
+      period: 'current',
+      provenance: input.provenance
     }
     if (input.needsReview && prior.value === input.value) return prior
     if (input.needsReview) {
@@ -819,6 +849,7 @@ export function assertGuildClaim(
     observedAt?: number
     needsReview?: boolean
     status?: Extract<ClaimStatus, 'candidate' | 'active'>
+    provenance?: EvidenceProvenance
   },
   options: ClaimWriteOptions = {}
 ): GuildMemoryClaim {
@@ -840,6 +871,14 @@ export function assertGuildClaim(
       .get(input.guildId, input.predicate, input.value) as ClaimRow | undefined
 
     if (existing) {
+      // A retried job replays its own writes: the row already carries this job's evidence, so the replay ends here
+      // with no salience bump, no revival and no new evidence.
+      if (input.provenance?.jobId !== undefined) {
+        const replayed = db
+          .prepare('SELECT 1 FROM memory_evidence WHERE claim_id = ? AND job_id = ?')
+          .get(existing.id, input.provenance.jobId)
+        if (replayed) return mapGuildClaim(existing)
+      }
       const current = mapGuildClaim(existing)
       const dead = current.status === 'rejected' || current.status === 'superseded'
       const keepActive = current.status === 'active'
@@ -863,7 +902,8 @@ export function assertGuildClaim(
       return appendEvidenceInTransaction(current.id, {
         channelId: input.channelId,
         sourceKind: input.sourceKind,
-        observedAt
+        observedAt,
+        provenance: input.provenance
       }) as GuildMemoryClaim
     }
 
@@ -890,7 +930,8 @@ export function assertGuildClaim(
     appendEvidenceInTransaction(Number(result.lastInsertRowid), {
       channelId: input.channelId,
       sourceKind: input.sourceKind,
-      observedAt
+      observedAt,
+      provenance: input.provenance
     })
     return getGuildClaim(Number(result.lastInsertRowid)) as GuildMemoryClaim
   }
@@ -931,6 +972,7 @@ export function replaceActiveGuildClaim(
     channelId: string
     observedAt?: number
     needsReview?: boolean
+    provenance?: EvidenceProvenance
   },
   options: ClaimWriteOptions = {}
 ): GuildMemoryClaim | null {
@@ -949,7 +991,8 @@ export function replaceActiveGuildClaim(
       channelId: input.channelId,
       observedAt: input.observedAt,
       needsReview: input.needsReview,
-      status: input.needsReview ? ('candidate' as const) : ('active' as const)
+      status: input.needsReview ? ('candidate' as const) : ('active' as const),
+      provenance: input.provenance
     }
     if (input.needsReview && prior.value === input.value) return prior
     if (input.needsReview) return assertGuildClaim(replacementInput, { transaction: true })

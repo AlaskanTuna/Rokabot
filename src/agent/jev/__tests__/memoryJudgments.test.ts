@@ -215,6 +215,39 @@ describe('judgeEpisodeOperations', () => {
     })
   })
 
+  it('strips sourceLine from the operations it sends Jev', async () => {
+    mocks.systemOne.mockImplementationOnce(async (request: { questions: Record<string, unknown> }) => ({
+      answers: Object.fromEntries(Object.keys(request.questions).map((key) => [key, { type: 'noul', noul: 0.7 }])),
+      usage: { input_tokens: 5, output_tokens: 1 }
+    }))
+
+    await judgeEpisodeOperations({
+      lines: ['[u-1|Mio]: I like tea'],
+      ops: [
+        {
+          op: 'add',
+          subject: { kind: 'user', userId: 'u-1' },
+          predicate: 'likes',
+          value: 'tea',
+          tense: 'current',
+          sourceLine: 1
+        }
+      ] as never,
+      existing: []
+    })
+
+    expect(mocks.systemOne).toHaveBeenCalledOnce()
+    expect(mocks.systemOne.mock.calls[0][0].state.operations).toEqual([
+      {
+        op: 'add',
+        subject: { kind: 'user', userId: 'u-1' },
+        predicate: 'likes',
+        value: 'tea',
+        tense: 'current'
+      }
+    ])
+  })
+
   it('returns null for partial verification answers and skips an empty request', async () => {
     mocks.systemOne.mockResolvedValueOnce({
       answers: { durable_0: { type: 'noul', noul: 0.9 } },
