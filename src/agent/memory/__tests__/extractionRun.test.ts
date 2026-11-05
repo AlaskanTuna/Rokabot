@@ -58,7 +58,7 @@ it('writes one text-free extraction_run row', () => {
   expect(row.detail).not.toContain('Alice')
 })
 
-it('starts every op counter at zero, including past, reword and retracted', () => {
+it('starts every op counter at zero, including past, reword, retracted and uncited', () => {
   expect(startRunTrace(job, 1).ops).toEqual({
     proposed: 0,
     applied: 0,
@@ -68,7 +68,8 @@ it('starts every op counter at zero, including past, reword and retracted', () =
     changed: 0,
     past: 0,
     reword: 0,
-    retracted: 0
+    retracted: 0,
+    uncited: 0
   })
 })
 

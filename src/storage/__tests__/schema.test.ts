@@ -7,6 +7,7 @@ vi.mock('../../utils/logger.js', () => ({
 }))
 
 import { closeDb, getDb } from '../database.js'
+import { ensureMemoryClaimSchema } from '../memoryClaimSchema.js'
 
 beforeEach(() => {
   process.env.ROKABOT_DB_PATH = ':memory:'
@@ -62,7 +63,10 @@ describe('claims schema', () => {
       'channel_id',
       'source_kind',
       'observed_at',
-      'effective_at'
+      'effective_at',
+      'job_id',
+      'source_message_id',
+      'speaker_user_id'
     ])
     expect(columns('extraction_queue')).toEqual([
       'id',
@@ -99,6 +103,7 @@ describe('claims schema', () => {
       ])
     )
     expect(indexes('memory_evidence')).toContain('idx_memory_evidence_claim')
+    expect(indexes('memory_evidence')).toContain('idx_memory_evidence_job')
     expect(indexes('extraction_queue')).toContain('idx_extraction_queue_guild_status_enqueued')
     expect(indexes('extraction_queue')).toContain('idx_extraction_queue_status_available')
     expect(indexes('memory_events')).toEqual(
@@ -144,5 +149,46 @@ describe('claims schema', () => {
     ).toEqual({
       name: 'memory_claim'
     })
+  })
+
+  it('migrates an old evidence table to provenance columns, keeps nulls, and reruns cleanly', () => {
+    const db = getDb()
+    db.exec('DROP INDEX IF EXISTS idx_memory_evidence_job')
+    db.exec('ALTER TABLE memory_evidence DROP COLUMN job_id')
+    db.exec('ALTER TABLE memory_evidence DROP COLUMN source_message_id')
+    db.exec('ALTER TABLE memory_evidence DROP COLUMN speaker_user_id')
+    db.prepare(
+      'INSERT INTO memory_evidence (claim_id, channel_id, source_kind, observed_at, effective_at) VALUES (?, ?, ?, ?, ?)'
+    ).run(1, 'c-1', 'passive', 1000, 1000)
+
+    ensureMemoryClaimSchema(db)
+
+    expect(
+      (db.prepare("PRAGMA table_info('memory_evidence')").all() as Array<{ name: string }>).map(({ name }) => name)
+    ).toEqual([
+      'id',
+      'claim_id',
+      'channel_id',
+      'source_kind',
+      'observed_at',
+      'effective_at',
+      'job_id',
+      'source_message_id',
+      'speaker_user_id'
+    ])
+    expect(
+      (db.prepare("PRAGMA index_list('memory_evidence')").all() as Array<{ name: string }>).map(({ name }) => name)
+    ).toContain('idx_memory_evidence_job')
+    expect(db.prepare('SELECT job_id, source_message_id, speaker_user_id FROM memory_evidence').all()).toEqual([
+      { job_id: null, source_message_id: null, speaker_user_id: null }
+    ])
+
+    const schemaBefore = db.prepare('SELECT type, name, sql FROM sqlite_master ORDER BY type, name').all()
+    ensureMemoryClaimSchema(db)
+
+    expect(db.prepare('SELECT type, name, sql FROM sqlite_master ORDER BY type, name').all()).toEqual(schemaBefore)
+    expect(db.prepare('SELECT job_id, source_message_id, speaker_user_id FROM memory_evidence').all()).toEqual([
+      { job_id: null, source_message_id: null, speaker_user_id: null }
+    ])
   })
 })

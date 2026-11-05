@@ -45,6 +45,7 @@ function report(counts: Partial<OperationApplicationReport> = {}): OperationAppl
     pastOps: 0,
     rewordOps: 0,
     retractedOps: 0,
+    uncited: 1,
     inputTokens: expect.any(Number),
     ...counts
   }
@@ -183,7 +184,7 @@ describe('operation applier dispatch', () => {
       subjectIds: new Set(['u-1'])
     })
 
-    expect(result).toEqual(report({ appliedOps: 4, changedOps: 4, retractedOps: 1 }))
+    expect(result).toEqual(report({ appliedOps: 4, changedOps: 4, retractedOps: 1, uncited: 2 }))
     expect(statusOf(chess.id)).toEqual({ status: 'rejected', end_reason: 'retracted' })
     expect(statusOf(go.id)).toEqual({ status: 'rejected', end_reason: 'removed' })
     expect(statusOf(tea.id)).toEqual({ status: 'superseded', end_reason: 'superseded' })
@@ -271,7 +272,7 @@ describe('operation applier dispatch', () => {
       subjectIds: new Set(['u-1'])
     })
 
-    expect(result).toEqual(report({ appliedOps: 2, stagedOps: 2, changedOps: 2 }))
+    expect(result).toEqual(report({ appliedOps: 2, stagedOps: 2, changedOps: 2, uncited: 2 }))
     expect(getActiveClaims('g-1', 'u-1')).toEqual([expect.objectContaining({ id: tea.id, value: 'tea' })])
     expect(
       getDb().prepare("SELECT value, status FROM memory_claim WHERE status = 'candidate' ORDER BY value").all()
@@ -616,7 +617,7 @@ describe('operation applier dispatch', () => {
       subjectIds: new Set()
     })
 
-    expect(result).toEqual(report({ appliedOps: 1, changedOps: 1 }))
+    expect(result).toEqual(report({ appliedOps: 1, changedOps: 1, uncited: 0 }))
     expect(statusOf(rule.id)).toEqual({ status: 'rejected', end_reason: 'removed' })
     expect(getActiveGuildClaims('g-1')).toEqual([])
   })
@@ -809,7 +810,7 @@ describe('operation applier dispatch', () => {
       subjectIds: new Set(['u-1', 'u-2'])
     })
 
-    expect(result).toEqual(report({ appliedOps: 2, changedOps: 2 }))
+    expect(result).toEqual(report({ appliedOps: 2, changedOps: 2, uncited: 2 }))
     expect(getDb().prepare("SELECT object_user_id FROM memory_claim WHERE value = 'sibling'").get()).toEqual({
       object_user_id: 'u-2'
     })

@@ -18,7 +18,7 @@ import {
 import { resolveGuildFactDate } from './guildFactDates.js'
 import { reconcileHiddenRetractions } from './hiddenRetractions.js'
 import { admitThreshold, verifyThreshold } from './judgeThresholds.js'
-import type { MemoryClaim } from './memoryClaims.js'
+import type { EvidenceProvenance, MemoryClaim } from './memoryClaims.js'
 import {
   getActiveClaimById,
   getActiveClaims,
@@ -88,6 +88,7 @@ function episodePrompt(guildId: string, channelId: string, episode: ExtractionEp
     'A member\'s own job, trade or line of work is general_occupation and is never sensitive: record the role itself ("line cook", "freelance illustrator"), never the employer, workplace, or location.',
     'For user facts, use only the supplied user IDs and attribute facts only to the person who stated them, not someone quoted, addressed, or joked about. Use subject {"kind":"guild"} only for a fact established about this server or its members collectively. Context lines are background only and cannot supply a subject or fact.',
     'Use only these guild predicates: upcoming_event, plan, running_joke, place, rule, announcement. For upcoming_event and plan, date the fact from the messages: if they name a calendar day, give the month and day, plus the year only when the messages state it; if they name a month but no day, give just the month, and never invent a day; if they only say today, tomorrow, this week, next week, this month, or next month, give the relative form. Never guess a date the messages do not support, and never decide whether it is in the future.',
+    'Every add and update gives sourceLine: the # of the delta message that states the fact. Context lines have no # and are never cited.',
     'Add a new claim only for a durable fact. Return noop only when no durable fact, change or retraction came up.',
     'Every user add and update has a tense: current if it is true of them now, past if it was true before but not now ("back when I was a nurse", "I used to play chess"), planned if they intend it.',
     'Use retract when a member says a fact about themselves no longer holds ("I quit chess", "I\'m not vegetarian anymore"), naming the predicate and the value that ended, even if it is not in the current active claims. A switch ("switched from chess to go") is a retract of the old value plus an add of the new one.',
@@ -101,7 +102,7 @@ function episodePrompt(guildId: string, channelId: string, episode: ExtractionEp
     `Current active claims:\n${JSON.stringify(claims, null, 2)}`,
     `Current active guild facts:\n${JSON.stringify(guildClaims, null, 2)}`,
     `Context (background only, never a subject):\n${episode.context.map(formatEpisodeLine).join('\n') || '(none)'}`,
-    `Delta messages:\n${episode.messages.map(formatEpisodeLine).join('\n')}`
+    `Delta messages:\n${episode.messages.map((message, index) => `#${index + 1} ${formatEpisodeLine(message)}`).join('\n')}`
   ].join('\n\n')
 }
 
@@ -131,18 +132,30 @@ export type OperationApplicationReport = {
   pastOps: number
   rewordOps: number
   retractedOps: number
+  uncited: number
   inputTokens: number
+}
+
+function planProvenance(op: EpisodeWriteOp, episode: ExtractionEpisode, jobId: number | undefined): EvidenceProvenance {
+  if (op.op !== 'add' && op.op !== 'update') return { jobId }
+  const line = 'sourceLine' in op && op.sourceLine !== undefined ? episode.messages[op.sourceLine - 1] : undefined
+  // A bad citation only loses the message link: the op applies exactly as it would cited.
+  if (!line || line.isBot || (op.subject.kind === 'user' && line.userId !== op.subject.userId)) return { jobId }
+  return { jobId, sourceMessageId: line.messageId, speakerUserId: line.userId }
 }
 
 function planVerification(
   ops: readonly EpisodeWriteOp[],
   existing: MemoryClaim[],
+  episode: ExtractionEpisode,
+  jobId: number | undefined,
   now: number,
   timezone: string | undefined
 ): PlannedOperation[] {
   return ops.map((op, index) => {
     const sameAsClaims = op.op === 'add' ? sameAsCandidates(existing, op) : []
     const retractClaims = op.op === 'retract' ? retractCandidates(existing, op) : []
+    const provenance = planProvenance(op, episode, jobId)
     const expires =
       op.subject.kind === 'guild' &&
       op.op !== 'remove' &&
@@ -160,6 +173,7 @@ function planVerification(
       op,
       sameAsClaims,
       retractClaims,
+      provenance,
       expiresAt: expires?.expiresAt ?? null,
       eventDate: expires?.eventDate ?? null,
       dateValid: !requiresDate || expires !== null,
@@ -229,6 +243,7 @@ export async function verifyAndApplyOperations(input: {
       pastOps: 0,
       rewordOps: 0,
       retractedOps: 0,
+      uncited: 0,
       inputTokens: 0
     }
   }
@@ -243,7 +258,7 @@ export async function verifyAndApplyOperations(input: {
     ...getActiveGuildClaims(input.guildId)
   ]
   const visibleClaims = recallableHere(existing, { guildId: input.guildId, channelId: input.channelId })
-  const planned = planVerification(writeOps, visibleClaims, observedAt, config.timezone)
+  const planned = planVerification(writeOps, visibleClaims, input.episode, input.jobId, observedAt, config.timezone)
   const lines = input.episode.messages.map(formatEpisodeLine)
   const verification = await judgeEpisodeOperations({ lines, ops: writeOps, existing: visibleClaims })
   const verified = hasCompleteVerification(verification, planned)
@@ -383,6 +398,9 @@ export async function verifyAndApplyOperations(input: {
     pastOps: results.filter(({ past }) => past).length,
     rewordOps: results.filter(({ reword }) => reword).length,
     retractedOps: results.reduce((total, { retracted }) => total + (retracted ?? 0), hiddenRetracted),
+    uncited: planned.filter(
+      (entry) => (entry.op.op === 'add' || entry.op.op === 'update') && entry.provenance.sourceMessageId === undefined
+    ).length,
     inputTokens: verification?.inputTokens ?? 0
   }
 }
@@ -437,6 +455,7 @@ export async function runEpisodePipeline(job: ExtractionQueueJob, trace: RunTrac
   trace.ops.past = report.pastOps
   trace.ops.reword = report.rewordOps
   trace.ops.retracted = report.retractedOps
+  trace.ops.uncited = report.uncited
   trace.tokens += report.inputTokens
 
   trace.stage = 'applied'

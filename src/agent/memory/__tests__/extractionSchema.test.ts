@@ -184,6 +184,27 @@ describe('parseExtractionOutput', () => {
     expect(parseExtractionOutput(JSON.stringify(output))).toEqual(output)
   })
 
+  it('accepts a zero sourceLine, which later loses only the citation', () => {
+    const output = {
+      ops: [{ op: 'add', subject, predicate: 'likes', value: 'tea', tense: 'current', sourceLine: 0 }],
+      summary: 'A member shared a preference.'
+    }
+
+    expect(parseExtractionOutput(JSON.stringify(output))).toEqual(output)
+  })
+
+  it('accepts a stray sourceLine on a retract and a remove', () => {
+    const output = {
+      ops: [
+        { op: 'retract', subject, predicate: 'hobby', value: 'chess', sourceLine: 1 },
+        { op: 'remove', subject, existingId: 3, predicate: 'likes', value: 'tea', sourceLine: 2 }
+      ],
+      summary: 'A member retracted a fact.'
+    }
+
+    expect(parseExtractionOutput(JSON.stringify(output))).toEqual(output)
+  })
+
   it('requires a tense on user add and update', () => {
     const user = { kind: 'user', userId: 'u1' }
     const parse = (op: object) => parseExtractionOutput(JSON.stringify({ ops: [op], summary: 's' }))

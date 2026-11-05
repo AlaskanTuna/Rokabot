@@ -80,8 +80,8 @@ export function moveClaim(claim: ReclassifyCandidate, to: PredicateId, probabili
       moved.id
     )
     db.prepare(
-      `INSERT INTO memory_evidence (claim_id, channel_id, source_kind, observed_at, effective_at)
-       SELECT ?, channel_id, source_kind, observed_at, effective_at FROM memory_evidence WHERE claim_id = ?`
+      `INSERT OR IGNORE INTO memory_evidence (claim_id, channel_id, source_kind, observed_at, effective_at, job_id, source_message_id, speaker_user_id)
+       SELECT ?, channel_id, source_kind, observed_at, effective_at, job_id, source_message_id, speaker_user_id FROM memory_evidence WHERE claim_id = ?`
     ).run(moved.id, original.id)
     const evidence = (
       db.prepare('SELECT COUNT(*) AS count FROM memory_evidence WHERE claim_id = ?').get(moved.id) as {

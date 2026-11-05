@@ -175,7 +175,8 @@ describe('runEpisodePipeline', () => {
       changed: 0,
       past: 0,
       reword: 0,
-      retracted: 0
+      retracted: 0,
+      uncited: 0
     })
     expect(Object.keys(trace.stageMs).sort()).toEqual(['admission', 'extraction', 'verification'])
   })
@@ -214,7 +215,8 @@ describe('runEpisodePipeline', () => {
       changed: 1,
       past: 0,
       reword: 0,
-      retracted: 0
+      retracted: 0,
+      uncited: 1
     })
     expect(getDb().prepare('SELECT DISTINCT job_id FROM jev_events').all()).toEqual([{ job_id: 1 }])
   })
@@ -275,7 +277,8 @@ describe('runEpisodePipeline', () => {
       changed: 2,
       past: 1,
       reword: 1,
-      retracted: 1
+      retracted: 1,
+      uncited: 2
     })
     expect(getDb().prepare('SELECT end_reason FROM memory_claim WHERE id = ?').get(chess.id)).toEqual({
       end_reason: 'retracted'
@@ -378,8 +381,8 @@ describe('extractEpisode', () => {
     expect(request.legacyResponseSchema).toBe(EXTRACTION_RESPONSE_SCHEMA)
     expect(request).toMatchObject({ workload: 'extraction', maxOutputTokens: 700 })
     expect(request.prompt).toContain('Delta messages:')
-    expect(request.prompt).toContain('[user-1|Alex]: I like tea')
-    expect(request.prompt).toContain('[bot-1|Roka (bot context only)]: Nice!')
+    expect(request.prompt).toContain('#1 [user-1|Alex]: I like tea')
+    expect(request.prompt).toContain('#3 [bot-1|Roka (bot context only)]: Nice!')
     expect(request.prompt).toContain('Context (background only, never a subject):')
     expect(request.prompt).toContain('[context-user|Context User]: I like running')
     expect(request.prompt).toContain('Allowed human user IDs: user-1, user-2')
@@ -394,6 +397,45 @@ describe('extractEpisode', () => {
     expect(request.prompt).toContain('Return noop only when no durable fact, change or retraction came up.')
     expect(request.prompt).not.toContain('context only claim')
     expect(request.prompt).toContain('one-to-two sentence third-person summary')
+  })
+
+  it('tells Gemini that add and update cite a numbered delta line, never context', async () => {
+    mocks.modelReply.mockResolvedValueOnce({ text: JSON.stringify({ ops: [{ op: 'noop' }], summary: 'A fact.' }) })
+    const numbered: ExtractionEpisode = {
+      messages: [
+        {
+          messageId: 'm-1',
+          userId: 'user-1',
+          displayName: 'Alex',
+          content: 'I like tea',
+          timestamp: 1_000,
+          isBot: false
+        },
+        { messageId: 'm-2', userId: 'user-2', displayName: 'Rin', content: 'Hi', timestamp: 2_000, isBot: false }
+      ],
+      context: [
+        {
+          messageId: 'c-1',
+          userId: 'user-3',
+          displayName: 'Bo',
+          content: 'I like running',
+          timestamp: 500,
+          isBot: false
+        }
+      ],
+      startedAt: 1_000,
+      endedAt: 2_000
+    }
+
+    await extractEpisode({ guildId: 'guild-1', channelId: 'channel-1', episode: numbered })
+
+    const prompt: string = mocks.modelReply.mock.calls[0][0].prompt
+    expect(prompt).toContain('Every add and update gives sourceLine')
+    expect(prompt).toContain('#1 [user-1|Alex]: I like tea')
+    expect(prompt).toContain('#2 [user-2|Rin]: Hi')
+    const contextBlock = prompt.slice(prompt.indexOf('Context (background only'), prompt.indexOf('Delta messages:'))
+    expect(contextBlock).toContain('[user-3|Bo]: I like running')
+    expect(contextBlock).not.toContain('#')
   })
 
   it('counts cached prompt tokens in the prompt tokens it reports', async () => {

@@ -21,6 +21,9 @@ const UndatedGuildPredicateSchema = z.enum(
 )
 const TenseSchema = z.enum(['current', 'past', 'planned'])
 const ExistingIdSchema = z.number().int().min(1)
+// The range is checked against the episode later: a wrong line must lose only the citation, never the extraction.
+// Remove and retract write no evidence, but they accept the field too, so a stray citation cannot fail a strict parse.
+const SourceLineSchema = z.number().int().optional()
 
 const YearSchema = z
   .number()
@@ -62,7 +65,8 @@ const AddOperationSchema = z
     predicate: PredicateSchema,
     value: z.string(),
     tense: TenseSchema,
-    objectUserId: z.string().optional()
+    objectUserId: z.string().optional(),
+    sourceLine: SourceLineSchema
   })
   .strict()
 const UpdateOperationSchema = z
@@ -73,7 +77,8 @@ const UpdateOperationSchema = z
     predicate: PredicateSchema,
     value: z.string(),
     tense: TenseSchema,
-    objectUserId: z.string().optional()
+    objectUserId: z.string().optional(),
+    sourceLine: SourceLineSchema
   })
   .strict()
 const RemoveOperationSchema = z
@@ -82,7 +87,8 @@ const RemoveOperationSchema = z
     subject: UserSubjectSchema,
     existingId: ExistingIdSchema,
     predicate: PredicateSchema,
-    value: z.string()
+    value: z.string(),
+    sourceLine: SourceLineSchema
   })
   .strict()
 export const RetractOperationSchema = z
@@ -90,7 +96,8 @@ export const RetractOperationSchema = z
     op: z.literal('retract'),
     subject: UserSubjectSchema,
     predicate: PredicateSchema,
-    value: z.string()
+    value: z.string(),
+    sourceLine: SourceLineSchema
   })
   .strict()
 const DatedGuildAddOperationSchema = z
@@ -99,7 +106,8 @@ const DatedGuildAddOperationSchema = z
     subject: GuildSubjectSchema,
     predicate: DatedGuildPredicateSchema,
     value: z.string(),
-    date: GuildFactDateSchema
+    date: GuildFactDateSchema,
+    sourceLine: SourceLineSchema
   })
   .strict()
 const DatedGuildUpdateOperationSchema = z
@@ -109,7 +117,8 @@ const DatedGuildUpdateOperationSchema = z
     existingId: ExistingIdSchema,
     predicate: DatedGuildPredicateSchema,
     value: z.string(),
-    date: GuildFactDateSchema
+    date: GuildFactDateSchema,
+    sourceLine: SourceLineSchema
   })
   .strict()
 const GuildRemoveOperationSchema = z
@@ -118,7 +127,8 @@ const GuildRemoveOperationSchema = z
     subject: GuildSubjectSchema,
     existingId: ExistingIdSchema,
     predicate: GuildPredicateSchema,
-    value: z.string()
+    value: z.string(),
+    sourceLine: SourceLineSchema
   })
   .strict()
 const UndatedGuildAddOperationSchema = z
@@ -127,7 +137,8 @@ const UndatedGuildAddOperationSchema = z
     subject: GuildSubjectSchema,
     predicate: UndatedGuildPredicateSchema,
     value: z.string(),
-    date: GuildFactDateSchema.optional()
+    date: GuildFactDateSchema.optional(),
+    sourceLine: SourceLineSchema
   })
   .strict()
 const UndatedGuildUpdateOperationSchema = z
@@ -137,7 +148,8 @@ const UndatedGuildUpdateOperationSchema = z
     existingId: ExistingIdSchema,
     predicate: UndatedGuildPredicateSchema,
     value: z.string(),
-    date: GuildFactDateSchema.optional()
+    date: GuildFactDateSchema.optional(),
+    sourceLine: SourceLineSchema
   })
   .strict()
 const NoopOperationSchema = z.object({ op: z.literal('noop') }).strict()
@@ -241,6 +253,7 @@ function responseOperationSchema(input: {
   withTense?: boolean
   withDate?: boolean
   dateRequired?: boolean
+  withSourceLine?: boolean
 }): Record<string, unknown> {
   if (input.op === 'noop') {
     return {
@@ -270,6 +283,9 @@ function responseOperationSchema(input: {
     properties.date = guildFactDateResponseSchema
     if (input.dateRequired) required.push('date')
   }
+  if (input.withSourceLine) {
+    properties.sourceLine = { type: Type.INTEGER, minimum: 1 }
+  }
   return { type: Type.OBJECT, properties, required }
 }
 
@@ -290,43 +306,64 @@ export const EXTRACTION_RESPONSE_SCHEMA = {
             subject: userSubjectResponseSchema,
             predicates: userPredicates,
             withObjectUserId: true,
-            withTense: true
+            withTense: true,
+            withSourceLine: true
           }),
           responseOperationSchema({
             op: 'update',
             subject: userSubjectResponseSchema,
             predicates: userPredicates,
             withObjectUserId: true,
-            withTense: true
+            withTense: true,
+            withSourceLine: true
           }),
-          responseOperationSchema({ op: 'remove', subject: userSubjectResponseSchema, predicates: userPredicates }),
-          responseOperationSchema({ op: 'retract', subject: userSubjectResponseSchema, predicates: userPredicates }),
+          responseOperationSchema({
+            op: 'remove',
+            subject: userSubjectResponseSchema,
+            predicates: userPredicates,
+            withSourceLine: true
+          }),
+          responseOperationSchema({
+            op: 'retract',
+            subject: userSubjectResponseSchema,
+            predicates: userPredicates,
+            withSourceLine: true
+          }),
           responseOperationSchema({
             op: 'add',
             subject: guildSubjectResponseSchema,
             predicates: datedGuildPredicates,
             withDate: true,
-            dateRequired: true
+            dateRequired: true,
+            withSourceLine: true
           }),
           responseOperationSchema({
             op: 'update',
             subject: guildSubjectResponseSchema,
             predicates: datedGuildPredicates,
             withDate: true,
-            dateRequired: true
+            dateRequired: true,
+            withSourceLine: true
           }),
-          responseOperationSchema({ op: 'remove', subject: guildSubjectResponseSchema, predicates: guildPredicates }),
+          responseOperationSchema({
+            op: 'remove',
+            subject: guildSubjectResponseSchema,
+            predicates: guildPredicates,
+            withSourceLine: true
+          }),
           responseOperationSchema({
             op: 'add',
             subject: guildSubjectResponseSchema,
             predicates: undatedGuildPredicates,
-            withDate: true
+            withDate: true,
+            withSourceLine: true
           }),
           responseOperationSchema({
             op: 'update',
             subject: guildSubjectResponseSchema,
             predicates: undatedGuildPredicates,
-            withDate: true
+            withDate: true,
+            withSourceLine: true
           }),
           responseOperationSchema({ op: 'noop' })
         ]
