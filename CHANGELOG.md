@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.6.0](https://github.com/AlaskanTuna/Rokabot/compare/v0.5.1...v0.6.0) (2026-11-05)
+
+
+### Features
+
+* **agent:** run a Jev relevance gate on recalled memories in shadow and log its picks ([#451](https://github.com/AlaskanTuna/Rokabot/issues/451)) ([ba927f1](https://github.com/AlaskanTuna/Rokabot/commit/ba927f198b461478296206387993fa4d1ab3adad))
+* **memory:** check episode summaries and drop the ones that fail before embedding ([#460](https://github.com/AlaskanTuna/Rokabot/issues/460)) ([ce2bf97](https://github.com/AlaskanTuna/Rokabot/commit/ce2bf97dd2be42447ae21f44da1cc260b08a35c2))
+* **memory:** record the source message and speaker on evidence and count each job once ([#462](https://github.com/AlaskanTuna/Rokabot/issues/462)) ([1b57ecd](https://github.com/AlaskanTuna/Rokabot/commit/1b57ecd600e154e157354f5bd9def598d490ca94))
+* **memory:** save open episode lines so a crash does not lose them ([#459](https://github.com/AlaskanTuna/Rokabot/issues/459)) ([fcbeee7](https://github.com/AlaskanTuna/Rokabot/commit/fcbeee7c452d1ef10e6aa761b3267621c9ca58f1))
+
+
+### Bug Fixes
+
+* **agent:** wait long enough for the query embedding in the Jev recall gate ([#456](https://github.com/AlaskanTuna/Rokabot/issues/456)) ([e3f60cb](https://github.com/AlaskanTuna/Rokabot/commit/e3f60cb42bcfbfaffb0c1bed355fec5e58146069))
+* **storage:** stop rewriting the claim search index on every boot ([#457](https://github.com/AlaskanTuna/Rokabot/issues/457)) ([cf2296c](https://github.com/AlaskanTuna/Rokabot/commit/cf2296c3110ffe190c64fe9cc14eb450798d9842))
+
 ## [0.5.1](https://github.com/AlaskanTuna/Rokabot/compare/v0.5.0...v0.5.1) (2026-11-04)
 
 
