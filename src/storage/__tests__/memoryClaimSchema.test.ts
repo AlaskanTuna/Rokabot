@@ -302,4 +302,29 @@ describe('ensureMemoryClaimSchema', () => {
     ).toContain('period')
     db.close()
   })
+
+  it('leaves the FTS bytes unchanged when a second migration has nothing to repair', () => {
+    const db = prePeriodClaimDatabase()
+    runMigrations(db)
+    const ftsBytes = () => db.prepare('SELECT id, hex(block) AS block FROM memory_claim_fts_data ORDER BY id').all()
+    const claims = () => db.prepare('SELECT * FROM memory_claim ORDER BY id').all()
+    const lastSeen = (id: number) => db.prepare('SELECT last_seen_at FROM memory_claim WHERE id = ?').get(id)
+    const ftsBefore = ftsBytes()
+    const claimsBefore = claims()
+
+    runMigrations(db)
+
+    expect(ftsBytes()).toEqual(ftsBefore)
+    expect(claims()).toEqual(claimsBefore)
+
+    db.exec(
+      "INSERT INTO memory_evidence (claim_id, channel_id, source_kind, observed_at) VALUES (1, 'c-1', 'passive', 300)"
+    )
+    runMigrations(db)
+
+    expect(lastSeen(1)).toEqual({ last_seen_at: 300 })
+    expect(lastSeen(2)).toEqual({ last_seen_at: 120 })
+    expect(lastSeen(4)).toEqual({ last_seen_at: 140 })
+    db.close()
+  })
 })

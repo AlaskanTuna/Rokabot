@@ -166,7 +166,8 @@ function migrateClaimLifecycle(database: Database.Database): void {
         last_seen_at,
         COALESCE((SELECT MAX(observed_at) FROM memory_evidence WHERE claim_id = memory_claim.id), last_seen_at)
       )
-      WHERE status = 'active';
+      WHERE status = 'active'
+        AND last_seen_at < (SELECT MAX(observed_at) FROM memory_evidence WHERE claim_id = memory_claim.id);
     `)
   })()
 }
