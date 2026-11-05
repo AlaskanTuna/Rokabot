@@ -570,45 +570,6 @@ describe('extractEpisode', () => {
     expect(contextBlock).not.toContain('#')
   })
 
-  it('tells Gemini that add and update cite a numbered delta line, never context', async () => {
-    mocks.modelReply.mockResolvedValueOnce({ text: JSON.stringify({ ops: [{ op: 'noop' }], summary: 'A fact.' }) })
-    const numbered: ExtractionEpisode = {
-      messages: [
-        {
-          messageId: 'm-1',
-          userId: 'user-1',
-          displayName: 'Alex',
-          content: 'I like tea',
-          timestamp: 1_000,
-          isBot: false
-        },
-        { messageId: 'm-2', userId: 'user-2', displayName: 'Rin', content: 'Hi', timestamp: 2_000, isBot: false }
-      ],
-      context: [
-        {
-          messageId: 'c-1',
-          userId: 'user-3',
-          displayName: 'Bo',
-          content: 'I like running',
-          timestamp: 500,
-          isBot: false
-        }
-      ],
-      startedAt: 1_000,
-      endedAt: 2_000
-    }
-
-    await extractEpisode({ guildId: 'guild-1', channelId: 'channel-1', episode: numbered })
-
-    const prompt: string = mocks.modelReply.mock.calls[0][0].prompt
-    expect(prompt).toContain('Every add and update gives sourceLine')
-    expect(prompt).toContain('#1 [user-1|Alex]: I like tea')
-    expect(prompt).toContain('#2 [user-2|Rin]: Hi')
-    const contextBlock = prompt.slice(prompt.indexOf('Context (background only'), prompt.indexOf('Delta messages:'))
-    expect(contextBlock).toContain('[user-3|Bo]: I like running')
-    expect(contextBlock).not.toContain('#')
-  })
-
   it('counts cached prompt tokens in the prompt tokens it reports', async () => {
     const output = { ops: [{ op: 'noop' }], summary: 'A fact.' }
     mocks.generateObject.mockResolvedValueOnce({
