@@ -3,6 +3,7 @@ import type { ExtractionQueueJob } from '../../storage/extractionQueue.js'
 import { recordMemoryEvent } from '../../storage/metricsStore.js'
 import { logger } from '../../utils/logger.js'
 import type { ExtractionErrorClassification } from './extractionErrors.js'
+import type { SummaryDropReason } from './summaryValidation.js'
 
 export type RunStage = 'precheck' | 'admission' | 'extraction' | 'verification' | 'applied'
 export type RunOutcome =
@@ -41,13 +42,13 @@ export type RunTrace = {
     retracted: number
     uncited: number
   }
-  summary: { kept: boolean; chars: number; boilerplate: boolean }
+  summary: { kept: boolean; chars: number; boilerplate: boolean; dropReason: SummaryDropReason | null; judged: boolean }
   stageMs: Partial<Record<'admission' | 'extraction' | 'verification' | 'persistence', number>>
   tokens: number
   models: { extraction: string; jev: string; embedding: string }
 }
 
-const BOILERPLATE = /\bno (?:new )?(?:durable|lasting|personal)\b/i
+export const BOILERPLATE = /\bno (?:new )?(?:durable|lasting|personal)\b/i
 
 export function startRunTrace(job: ExtractionQueueJob, attempt: number): RunTrace {
   const messages = job.episode.messages
@@ -75,7 +76,7 @@ export function startRunTrace(job: ExtractionQueueJob, attempt: number): RunTrac
       retracted: 0,
       uncited: 0
     },
-    summary: { kept: false, chars: 0, boilerplate: false },
+    summary: { kept: false, chars: 0, boilerplate: false, dropReason: null, judged: false },
     stageMs: {},
     tokens: 0,
     models: {
@@ -99,8 +100,20 @@ export async function timeStage<T>(
   }
 }
 
-export function noteSummary(trace: RunTrace, summary: string | null, kept: boolean): void {
-  trace.summary = { kept, chars: summary?.length ?? 0, boilerplate: summary ? BOILERPLATE.test(summary) : false }
+export function noteSummary(
+  trace: RunTrace,
+  summary: string | null,
+  kept: boolean,
+  dropReason: SummaryDropReason | null = null,
+  judged = false
+): void {
+  trace.summary = {
+    kept,
+    chars: summary?.length ?? 0,
+    boilerplate: summary ? BOILERPLATE.test(summary) : false,
+    dropReason,
+    judged
+  }
 }
 
 export function noteError(trace: RunTrace, errorClass: ExtractionErrorClassification, error: unknown): void {

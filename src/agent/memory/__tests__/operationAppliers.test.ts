@@ -45,6 +45,7 @@ function report(counts: Partial<OperationApplicationReport> = {}): OperationAppl
     pastOps: 0,
     rewordOps: 0,
     retractedOps: 0,
+    judgedOutOps: 0,
     uncited: 1,
     inputTokens: expect.any(Number),
     ...counts

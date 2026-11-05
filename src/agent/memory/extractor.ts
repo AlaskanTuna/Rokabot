@@ -97,7 +97,7 @@ function episodePrompt(guildId: string, channelId: string, episode: ExtractionEp
     'Use remove with an existing claim ID only for a claim that was never true or was attributed to the wrong person; use retract for a fact that has ended.',
     'Never update or remove a claim whose "period" is "past"; to restate history, use add with tense past.',
     'Choose the most specific predicate; use misc only when no other predicate fits. "I draw on weekends" is hobby, not misc; "my cat Mochi" is pets, not misc; "I like spicy food" is likes, not misc. A game or sport they play is hobby, not favorite_game, unless they call it their favorite.',
-    'Return a one-to-two sentence third-person summary.',
+    'Return a one-to-two sentence third-person summary saying who said or did what. Name people by display name and never write a user ID. Never mention whether a durable fact came up.',
     `Allowed human user IDs: ${humanIds.join(', ') || '(none)'}`,
     `Current active claims:\n${JSON.stringify(claims, null, 2)}`,
     `Current active guild facts:\n${JSON.stringify(guildClaims, null, 2)}`,
@@ -132,6 +132,7 @@ export type OperationApplicationReport = {
   pastOps: number
   rewordOps: number
   retractedOps: number
+  judgedOutOps: number
   uncited: number
   inputTokens: number
 }
@@ -243,6 +244,7 @@ export async function verifyAndApplyOperations(input: {
       pastOps: 0,
       rewordOps: 0,
       retractedOps: 0,
+      judgedOutOps: 0,
       uncited: 0,
       inputTokens: 0
     }
@@ -316,7 +318,7 @@ export async function verifyAndApplyOperations(input: {
         const scopedKey = `${op.subject.kind === 'guild' ? 'guild_scoped' : 'attributed'}_${index}`
         const scoped = verification.answers[scopedKey].noul >= threshold
         if (!durable || !scoped) {
-          results[index] = { applied: false, duplicate: false }
+          results[index] = { applied: false, duplicate: false, judgedOut: true }
           continue
         }
       } else {
@@ -398,6 +400,7 @@ export async function verifyAndApplyOperations(input: {
     pastOps: results.filter(({ past }) => past).length,
     rewordOps: results.filter(({ reword }) => reword).length,
     retractedOps: results.reduce((total, { retracted }) => total + (retracted ?? 0), hiddenRetracted),
+    judgedOutOps: results.filter(({ judgedOut }) => judgedOut).length,
     uncited: planned.filter(
       (entry) => (entry.op.op === 'add' || entry.op.op === 'update') && entry.provenance.sourceMessageId === undefined
     ).length,
@@ -410,6 +413,7 @@ export type EpisodeRunResult = Readonly<{
   summary: string | null
   appliedOps: number
   duplicateOps: number
+  opsRejected: boolean
 }>
 
 export async function runEpisodePipeline(job: ExtractionQueueJob, trace: RunTrace): Promise<EpisodeRunResult> {
@@ -425,7 +429,7 @@ export async function runEpisodePipeline(job: ExtractionQueueJob, trace: RunTrac
   if (!admission.admitted) {
     if (admission.reason === 'trivial' || admission.reason === 'sensitive') trace.stage = 'precheck'
     if (admission.reason === 'jev_unavailable') throw new JevUnavailableError()
-    return { status: 'dropped', summary: null, appliedOps: 0, duplicateOps: 0 }
+    return { status: 'dropped', summary: null, appliedOps: 0, duplicateOps: 0, opsRejected: false }
   }
 
   trace.stage = 'extraction'
@@ -464,6 +468,8 @@ export async function runEpisodePipeline(job: ExtractionQueueJob, trace: RunTrac
     status: 'completed',
     summary: output.summary,
     appliedOps: report.appliedOps,
-    duplicateOps: report.duplicateOps
+    duplicateOps: report.duplicateOps,
+    // Only Jev's own rejection counts. A rule, a missing target on a retry or a judge outage says nothing about the facts.
+    opsRejected: trace.ops.proposed > 0 && report.judgedOutOps === trace.ops.proposed && report.retractedOps === 0
   }
 }

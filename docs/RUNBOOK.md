@@ -486,8 +486,15 @@ Every extraction attempt writes one `memory_events` row with `kind = 'extraction
 - **`stage`:** the furthest stage reached: `precheck`, `admission`, `extraction`, `verification` or `applied`.
 - **`outcome`:** `trivial` and `sensitive` are precheck drops. `below_threshold` is a Jev admission rejection. `jev_unavailable` is an admission Jev could not judge (retried once). `noop` and `written` are completed runs. `error` is a failure.
 - **`errorClass`:** `transient` or `permanent` with `error`. `unjudged` appears only with `jev_unavailable`.
+- **`summary`:** `dropReason` is `ops_rejected`, `numeric_id`, `boilerplate` or `incomplete`. `judged` is false when Jev gave no answer. `jev_events` holds each score with `question = 'summary_complete'`.
 
 ```sql
+-- Summary drops by reason, last 7 days
+SELECT json_extract(detail, '$.summary.dropReason') AS reason, count(*)
+FROM memory_events WHERE kind = 'extraction_run' AND created_at > (strftime('%s','now') - 7*86400) * 1000
+  AND json_extract(detail, '$.summary.dropReason') IS NOT NULL
+GROUP BY reason;
+
 -- Funnel by stage and outcome, last 7 days
 SELECT json_extract(detail, '$.stage') AS stage, json_extract(detail, '$.outcome') AS outcome, count(*)
 FROM memory_events WHERE kind = 'extraction_run' AND created_at > (strftime('%s','now') - 7*86400) * 1000

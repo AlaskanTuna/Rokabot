@@ -171,6 +171,21 @@ fact, never inherits a pin and never refreshes an active duplicate. Removes and 
 Admission writes one `jev_events` row (`kind = 'admission'`, `lasting_fact`). Complete verification writes one row
 per key with the job in `job_id`. `judge` is `provider:model` for the main model and NULL for Jev.
 
+### Summary Validation
+
+Before a summary is embedded, `persistEpisodeResult` runs `validateEpisodeSummary`. The first failed check drops the
+summary, and nothing is embedded or saved.
+
+| Check                                                                                               | Drop Reason    |
+| --------------------------------------------------------------------------------------------------- | -------------- |
+| Jev rejected every proposed change                                                                  | `ops_rejected` |
+| Holds a run of 15 or more digits                                                                    | `numeric_id`   |
+| Matches the boilerplate pattern                                                                     | `boilerplate`  |
+| `summary_complete` is below `memory.summaryThreshold` (`modelSummaryThreshold` for the model judge) | `incomplete`   |
+
+An unavailable judge keeps the summary, with `judged: false`. The check covers who and what, because `started_at` and
+`ended_at` already carry the time.
+
 ## Hidden-Fact Reconciliation
 
 Under `balanced` and `strict`, the extractor and judge see only claims this channel may recall. After the write
@@ -201,7 +216,7 @@ counts, message IDs, timings and model names, never text, display names or error
 | `errorClass`, `errorStatus`       | `transient`, `permanent` or `unjudged`, and the HTTP status                                            |
 | `admission`                       | `{ probability, threshold }`                                                                           |
 | `ops`                             | `{ proposed, applied, duplicate, staged, dropped, changed, past, reword, retracted, uncited }`         |
-| `summary`                         | `{ kept, chars, boilerplate }`                                                                         |
+| `summary`                         | `{ kept, chars, boilerplate, dropReason, judged }`                                                     |
 | `stageMs`                         | `{ admission, extraction, verification, persistence }`                                                 |
 | `models`                          | `{ extraction, jev, embedding }`: `gemini.extractionModel`, `jev.model`, the embedding model           |
 

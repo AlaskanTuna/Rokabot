@@ -81,8 +81,9 @@ function runJob(job: NonNullable<ReturnType<typeof claimNextForGuild>>): void {
   const trace = startRunTrace(job, job.attempts + job.transientRetries + 1)
   const task = runEpisodePipeline(job, trace)
     .then(async (result) => {
-      const kept = await timeStage(trace, 'persistence', () => persistEpisodeResult({ job, result }))
-      noteSummary(trace, result.summary, kept)
+      const verdict = await timeStage(trace, 'persistence', () => persistEpisodeResult({ job, result }))
+      noteSummary(trace, result.summary, verdict.kept, verdict.dropReason, verdict.judged)
+      trace.tokens += verdict.inputTokens
       markDone(job.id)
       void embedPendingFacts({ limit: 20 })
     })

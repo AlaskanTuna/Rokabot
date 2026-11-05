@@ -363,6 +363,41 @@ describe('config module', () => {
     expect(config.memory.modelVerifyThreshold).toBe(0.7)
   })
 
+  it('loads bounded summary thresholds next to the verify ones', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+
+    const { config, NUMERIC_BOUNDS } = await import('../config.js')
+
+    expect(config.memory.summaryThreshold).toBe(0.5)
+    expect(config.memory.modelSummaryThreshold).toBe(0.7)
+    expect(NUMERIC_BOUNDS.find(({ path }) => path === 'memory.summaryThreshold')).toMatchObject({ min: 0, max: 1 })
+    expect(NUMERIC_BOUNDS.find(({ path }) => path === 'memory.modelSummaryThreshold')).toMatchObject({
+      min: 0,
+      max: 1
+    })
+  })
+
+  it('throws if memory.summaryThreshold exceeds 1 in config.yml', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    withYamlOverride({ memory: { summaryThreshold: 1.5 } })
+
+    await expect(() => import('../config.js')).rejects.toThrow(
+      'Config value memory.summaryThreshold must be <= 1, got: 1.5'
+    )
+  })
+
+  it('throws if memory.modelSummaryThreshold exceeds 1 in config.yml', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    withYamlOverride({ memory: { modelSummaryThreshold: 1.5 } })
+
+    await expect(() => import('../config.js')).rejects.toThrow(
+      'Config value memory.modelSummaryThreshold must be <= 1, got: 1.5'
+    )
+  })
+
   it('throws if memory.modelVerifyThreshold exceeds 1 in config.yml', async () => {
     setRequiredEnvVars()
     clearTunableEnvVars()
@@ -1063,8 +1098,10 @@ describe('config module', () => {
       { path: 'jev.referentMinConfidence', min: 0, max: 1 },
       { path: 'memory.admitThreshold', min: 0, max: 1 },
       { path: 'memory.verifyThreshold', min: 0, max: 1 },
+      { path: 'memory.summaryThreshold', min: 0, max: 1 },
       { path: 'memory.modelAdmitThreshold', min: 0, max: 1 },
       { path: 'memory.modelVerifyThreshold', min: 0, max: 1 },
+      { path: 'memory.modelSummaryThreshold', min: 0, max: 1 },
       { path: 'gemini.turnDeadlineMs', min: 1 },
       { path: 'gemini.retryBackoffCapMs', min: 1 },
       { path: 'gemini.maxRetries', min: 0 },
