@@ -5,9 +5,12 @@ import { extractMessageContent } from '../messageContent.js'
 
 interface Attachment {
   url: string
+  proxyURL?: string
   contentType: string | null
   size?: number
   duration?: number | null
+  width?: number | null
+  height?: number | null
 }
 
 function collection<T>(items: T[]) {
@@ -206,5 +209,78 @@ describe('where watched media came from', () => {
     const image = { url: 'https://cdn.discordapp.com/i.png', contentType: 'image/png', size: 10 }
 
     expect(extract(message({ attachments: [image] })).mediaAttachments[0]).not.toHaveProperty('origin')
+  })
+})
+
+describe('image resizing through the Discord proxy', () => {
+  const proxy = 'https://media.discordapp.net/attachments/1/2/IMG.png?ex=1&is=2&hm=3'
+  const resized = `${proxy}&width=472&height=1024`
+
+  it('downloads an upload at vision size through the proxy', () => {
+    const image = {
+      url: 'https://cdn.discordapp.com/attachments/1/2/IMG.png?ex=1&is=2&hm=3',
+      proxyURL: proxy,
+      contentType: 'image/png',
+      size: 9_968_897,
+      width: 1179,
+      height: 2556
+    }
+
+    expect(extract(message({ attachments: [image] })).mediaAttachments).toEqual([
+      { url: resized, contentType: 'image/png', size: 9_968_897, proxyResized: true }
+    ])
+  })
+
+  it('keeps the original URL when Discord states no dimensions', () => {
+    const image = { url: 'https://cdn.discordapp.com/i.png', proxyURL: proxy, contentType: 'image/png', size: 10 }
+
+    expect(extract(message({ attachments: [image] })).mediaAttachments).toEqual([
+      { url: 'https://cdn.discordapp.com/i.png', contentType: 'image/png', size: 10 }
+    ])
+  })
+
+  it('resizes a Components V2 gallery image', () => {
+    const trigger = {
+      ...message(),
+      components: [
+        {
+          toJSON: () => ({
+            type: 17,
+            components: [
+              {
+                type: 12,
+                items: [
+                  {
+                    media: {
+                      url: 'https://cdn.discordapp.com/attachments/1/2/IMG.png?ex=1&is=2&hm=3',
+                      proxy_url: proxy,
+                      content_type: 'image/png',
+                      width: 1179,
+                      height: 2556
+                    }
+                  }
+                ]
+              }
+            ]
+          })
+        }
+      ]
+    }
+
+    expect(extract(trigger).mediaAttachments).toEqual([
+      { url: resized, contentType: 'image/png', size: undefined, proxyResized: true }
+    ])
+  })
+
+  it("resizes an embed image through Discord's external proxy, not the sender's host", () => {
+    const external = 'https://images-ext-1.discordapp.net/external/abc/https/static.klipy.com/x.webp'
+    const embed = {
+      ...thumbnailEmbed('https://static.klipy.com/x.webp'),
+      thumbnail: { url: 'https://static.klipy.com/x.webp', proxyURL: external, width: 2048, height: 1024 }
+    }
+
+    expect(extract(message({ embeds: [embed] })).mediaAttachments).toEqual([
+      { url: `${external}?width=1024&height=512`, contentType: 'image/png', proxyResized: true }
+    ])
   })
 })

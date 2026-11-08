@@ -11,6 +11,8 @@ export interface MediaAttachment {
   contentType: string
   /** Bytes, when the source states them. Discord does on an upload; an embed or a resolved link does not. */
   size?: number
+  /** Discord's proxy shrinks the image before it downloads, so `size` is the original's and not what arrives. */
+  proxyResized?: boolean
   /** Gemini fetches the URL itself (a YouTube link), so the Pi never downloads it. */
   transport?: 'uri'
   /** Seconds, when the source states them. Discord does for a voice message. */
@@ -31,6 +33,20 @@ export interface MediaAttachment {
 
 // Bounds stalled attachment hosts as well as oversized responses.
 const ATTACHMENT_DOWNLOAD_TIMEOUT_MS = 15_000
+// One retry after a dropped connection, which the Pi's Wi-Fi produces. A timeout is not retried: it would
+// only spend the same 15 s again.
+const DROPPED_CONNECTION_RETRY_MS = 500
+
+async function fetchOnceMore(url: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, init)
+  } catch (error) {
+    if (!(error instanceof TypeError)) throw error
+    logger.info({ url, err: error }, 'Attachment connection dropped, trying once more')
+    await new Promise((resolve) => setTimeout(resolve, DROPPED_CONNECTION_RETRY_MS))
+    return fetch(url, { ...init, signal: AbortSignal.timeout(ATTACHMENT_DOWNLOAD_TIMEOUT_MS) })
+  }
+}
 
 export function attachmentMarker(mimeType: string): string {
   if (mimeType.startsWith('image/')) return '(an image)'
@@ -86,18 +102,19 @@ export async function downloadAttachment(
   const isImage = contentType.startsWith('image/')
   const limit = sizeLimitFor(contentType)
 
-  // Missing source sizes never trigger prefix truncation.
+  // Missing source sizes never trigger prefix truncation. A resized image is held to the cap as it streams.
+  const size = attachment.proxyResized ? undefined : attachment.size
   const policy = prefixPolicyFor(contentType)
-  const wantsPrefix = attachment.size !== undefined && attachment.size > limit && policy !== 'none'
+  const wantsPrefix = size !== undefined && size > limit && policy !== 'none'
 
-  if (attachment.size !== undefined && attachment.size > limit && policy === 'none') {
-    logger.warn({ url, size: attachment.size, limit, contentType }, 'Oversized and not safely prefixable, refusing')
+  if (size !== undefined && size > limit && policy === 'none') {
+    logger.warn({ url, size, limit, contentType }, 'Oversized and not safely prefixable, refusing')
     return null
   }
 
   try {
     // Streaming enforces the cap when the CDN ignores Range and returns 200.
-    const response = await fetch(url, {
+    const response = await fetchOnceMore(url, {
       ...(wantsPrefix ? { headers: { Range: `bytes=0-${limit - 1}` } } : {}),
       signal: AbortSignal.timeout(ATTACHMENT_DOWNLOAD_TIMEOUT_MS)
     })
@@ -140,7 +157,7 @@ export async function downloadAttachment(
       truncated: wantsPrefix
     }
   } catch (error) {
-    logger.warn({ url, error }, 'Error downloading attachment')
+    logger.warn({ url, err: error }, 'Error downloading attachment')
     return null
   }
 }

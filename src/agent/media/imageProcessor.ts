@@ -5,8 +5,9 @@ import { GEMINI_IMAGE_TOKENS } from './attachmentLimits.js'
 export { GEMINI_IMAGE_TOKENS }
 import sharp from 'sharp'
 import { logger } from '../../utils/logger.js'
+import { VISION_MAX_DIMENSION } from './imageProxy.js'
 
-const MAX_DIMENSION = 1024
+const MAX_DIMENSION = VISION_MAX_DIMENSION
 const MIN_DIMENSION = 512
 const JPEG_QUALITY = 80
 
