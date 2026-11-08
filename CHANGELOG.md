@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.6.0](https://github.com/AlaskanTuna/Rokabot/compare/v0.5.1...v0.6.0) (2026-11-08)
+
+
+### Features
+
+* **agent:** run a Jev relevance gate on recalled memories in shadow and log its picks ([#451](https://github.com/AlaskanTuna/Rokabot/issues/451)) ([ba927f1](https://github.com/AlaskanTuna/Rokabot/commit/ba927f198b461478296206387993fa4d1ab3adad))
+* **memory:** check episode summaries and drop the ones that fail before embedding ([#460](https://github.com/AlaskanTuna/Rokabot/issues/460)) ([ce2bf97](https://github.com/AlaskanTuna/Rokabot/commit/ce2bf97dd2be42447ae21f44da1cc260b08a35c2))
+* **memory:** record the source message and speaker on evidence and count each job once ([#462](https://github.com/AlaskanTuna/Rokabot/issues/462)) ([1b57ecd](https://github.com/AlaskanTuna/Rokabot/commit/1b57ecd600e154e157354f5bd9def598d490ca94))
+* **memory:** save open episode lines so a crash does not lose them ([#459](https://github.com/AlaskanTuna/Rokabot/issues/459)) ([fcbeee7](https://github.com/AlaskanTuna/Rokabot/commit/fcbeee7c452d1ef10e6aa761b3267621c9ca58f1))
+
+
+### Bug Fixes
+
+* **agent:** let background work run on a Gemini route and pin the live harness route ([#471](https://github.com/AlaskanTuna/Rokabot/issues/471)) ([e009f86](https://github.com/AlaskanTuna/Rokabot/commit/e009f86e99af2d0344564b1825d4b0ec0169f87f))
+* **agent:** wait long enough for the query embedding in the Jev recall gate ([#456](https://github.com/AlaskanTuna/Rokabot/issues/456)) ([e3f60cb](https://github.com/AlaskanTuna/Rokabot/commit/e3f60cb42bcfbfaffb0c1bed355fec5e58146069))
+* **deploy:** retry the yt-dlp release download so a GitHub hiccup does not fail the image build ([#468](https://github.com/AlaskanTuna/Rokabot/issues/468)) ([6e573ba](https://github.com/AlaskanTuna/Rokabot/commit/6e573bade4ae7cea0c96ad37e9428180aba71365))
+* **media:** download images at vision size so large photos and slow links stop dropping them ([#466](https://github.com/AlaskanTuna/Rokabot/issues/466)) ([2d4bf7f](https://github.com/AlaskanTuna/Rokabot/commit/2d4bf7fc6fbbc690f28e8eb12de3fffdfea2c2b8))
+* **media:** label an image the processor could not convert with its real type ([#469](https://github.com/AlaskanTuna/Rokabot/issues/469)) ([42824ba](https://github.com/AlaskanTuna/Rokabot/commit/42824bab9404121781f3f643a8734cfbd7c7a7ba))
+* **storage:** stop rewriting the claim search index on every boot ([#457](https://github.com/AlaskanTuna/Rokabot/issues/457)) ([cf2296c](https://github.com/AlaskanTuna/Rokabot/commit/cf2296c3110ffe190c64fe9cc14eb450798d9842))
+
 ## [0.5.1](https://github.com/AlaskanTuna/Rokabot/compare/v0.5.0...v0.5.1) (2026-11-04)
 
 
