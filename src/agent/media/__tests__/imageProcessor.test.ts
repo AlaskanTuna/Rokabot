@@ -20,7 +20,7 @@ describe('processImageForGemini', () => {
       .png()
       .toBuffer()
 
-    const result = await processImageForGemini(large)
+    const result = await processImageForGemini(large, 'image/png')
 
     expect(result.mimeType).toBe('image/jpeg')
   })
@@ -32,7 +32,7 @@ describe('processImageForGemini', () => {
       .png()
       .toBuffer()
 
-    const result = await processImageForGemini(large)
+    const result = await processImageForGemini(large, 'image/png')
 
     expect(result.data.length).toBeLessThan(large.length)
   })
@@ -44,7 +44,7 @@ describe('processImageForGemini', () => {
       .png()
       .toBuffer()
 
-    const result = await processImageForGemini(large)
+    const result = await processImageForGemini(large, 'image/png')
     const meta = await sharp(result.data).metadata()
 
     expect(meta.width ?? 0).toBeLessThanOrEqual(1024)
@@ -58,7 +58,7 @@ describe('processImageForGemini', () => {
       .png()
       .toBuffer()
 
-    const result = await processImageForGemini(small)
+    const result = await processImageForGemini(small, 'image/png')
     const meta = await sharp(result.data).metadata()
 
     expect(Math.max(meta.width ?? 0, meta.height ?? 0)).toBeGreaterThanOrEqual(512)
@@ -71,10 +71,46 @@ describe('processImageForGemini', () => {
       .png()
       .toBuffer()
 
-    const result = await processImageForGemini(normal)
+    const result = await processImageForGemini(normal, 'image/png')
     const meta = await sharp(result.data).metadata()
 
     expect(meta.width ?? 0).toBeGreaterThanOrEqual(512)
     expect(meta.width ?? 0).toBeLessThanOrEqual(1024)
+  })
+
+  it('preserves malformed PNG bytes with the PNG MIME type', async () => {
+    const png = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.from('garbage')])
+
+    const result = await processImageForGemini(png, 'image/jpeg')
+
+    expect(result.data).toEqual(png)
+    expect(result.mimeType).toBe('image/png')
+  })
+
+  it('preserves malformed WebP bytes with the WebP MIME type', async () => {
+    const webp = Buffer.concat([Buffer.from('RIFFxxxxWEBP'), Buffer.from('garbage')])
+
+    const result = await processImageForGemini(webp, 'image/jpeg')
+
+    expect(result.data).toEqual(webp)
+    expect(result.mimeType).toBe('image/webp')
+  })
+
+  it('preserves malformed GIF bytes with the GIF MIME type', async () => {
+    const gif = Buffer.concat([Buffer.from('GIF89a'), Buffer.from('garbage')])
+
+    const result = await processImageForGemini(gif, 'image/jpeg')
+
+    expect(result.data).toEqual(gif)
+    expect(result.mimeType).toBe('image/gif')
+  })
+
+  it('uses the declared MIME type when malformed bytes have no known signature', async () => {
+    const garbage = Buffer.from('not an image')
+
+    const result = await processImageForGemini(garbage, 'image/avif')
+
+    expect(result.data).toEqual(garbage)
+    expect(result.mimeType).toBe('image/avif')
   })
 })
