@@ -1,5 +1,6 @@
 import type { Attachment, Message } from 'discord.js'
 import type { MediaAttachment } from '../agent/media/attachments.js'
+import { proxyResizeUrl } from '../agent/media/imageProxy.js'
 import { MAX_ATTACHMENTS, isSupportedMedia } from '../agent/media/mediaRules.js'
 import type { SocialPostTarget } from '../agent/social/urls.js'
 import { findSocialPostTarget } from '../agent/social/urls.js'
@@ -23,8 +24,11 @@ const FILE = 13
 
 interface UnfurledMedia {
   url?: string
+  proxy_url?: string
   content_type?: string
   size?: number
+  width?: number | null
+  height?: number | null
 }
 
 interface RawComponent {
@@ -181,7 +185,14 @@ function extractComponentMedia(components: Message['components']): { media: Medi
       unreadable += 1
       return
     }
-    media.push({ url: item.url, contentType, size: item.size ?? statedSize })
+    media.push(
+      resizedImage(
+        { url: item.url, contentType, size: item.size ?? statedSize },
+        item.proxy_url,
+        item.width,
+        item.height
+      )
+    )
   }
 
   function walk(items: RawComponent[]) {
@@ -203,9 +214,32 @@ interface ForwardedContent {
   hasSocialPost: boolean
 }
 
+/** An image fetched at vision size through Discord's proxy when Discord states its size; anything else as is. */
+function resizedImage(
+  media: MediaAttachment,
+  proxyUrl: string | null | undefined,
+  width: number | null | undefined,
+  height: number | null | undefined
+): MediaAttachment {
+  if (!media.contentType.startsWith('image/')) return media
+  const url = proxyResizeUrl(proxyUrl, width, height)
+  return url ? { ...media, url, proxyResized: true } : media
+}
+
+function embedImage(embed: Message['embeds'][number]): MediaAttachment | null {
+  const image = embed.image?.url ? embed.image : embed.thumbnail
+  if (!image?.url) return null
+  return resizedImage({ url: image.url, contentType: 'image/png' }, image.proxyURL, image.width, image.height)
+}
+
 function toMediaAttachment(attachment: Attachment): MediaAttachment {
-  const { url, contentType, size, duration } = attachment
-  return { url, contentType: contentType!, size, ...(duration ? { durationSec: duration } : {}) }
+  const { url, proxyURL, contentType, size, duration, width, height } = attachment
+  return resizedImage(
+    { url, contentType: contentType!, size, ...(duration ? { durationSec: duration } : {}) },
+    proxyURL,
+    width,
+    height
+  )
 }
 
 type MediaSource = Required<Pick<MediaAttachment, 'origin' | 'sourceMessageId' | 'sourceAuthorId'>>
@@ -350,8 +384,8 @@ export function extractMessageContent(
     // A watched video replaces its still frame; sending both burns a vision slot on a duplicate.
     const videoUrl = embedVideoUrl(embed)
     if (videoUrl && watchedEmbedVideoUrls?.has(videoUrl)) continue
-    const embedImageUrl = embed.image?.url ?? embed.thumbnail?.url
-    if (embedImageUrl) ownEmbedImages.push({ url: embedImageUrl, contentType: 'image/png' })
+    const image = embedImage(embed)
+    if (image) ownEmbedImages.push(image)
   }
 
   const forwarded = describeForwardedSnapshots(
@@ -444,8 +478,8 @@ export function extractMessageContent(
         if (embedMatchesSocialPost(embed, socialPost)) continue
         const videoUrl = embedVideoUrl(embed)
         if (videoUrl && watchedEmbedVideoUrls?.has(videoUrl)) continue
-        const embedImageUrl = embed.image?.url ?? embed.thumbnail?.url
-        if (embedImageUrl) referencedEmbedImages.push({ url: embedImageUrl, contentType: 'image/png' })
+        const image = embedImage(embed)
+        if (image) referencedEmbedImages.push(image)
       }
     }
   }

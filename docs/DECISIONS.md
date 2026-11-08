@@ -66,6 +66,7 @@ The lasting choices behind Rokabot, with why they were made. Check here before r
 | 2026-08-20 | The model is told what was dropped or refused instead of meeting silence                                                        | Silence measured four fabrications in four turns                         |
 | 2026-10-08 | Audio and video reach the character as a tool-less digest call producing structured text, never raw bytes                       | Stops tool rounds re-billing the media and gives memory a text form      |
 | 2026-10-08 | Provider-side files stream up and are deleted after the watch, splitting long videos only when budget allows and never retrying | Keeps large uploads inside token and call budgets                        |
+| 2026-11-08 | Images with a stated size download at vision size through Discord's media proxy, past the 4 MB cap on the original              | Phone photos passed the cap, and full files outlasted the Pi's Wi-Fi     |
 | 2026-10-08 | Watched media is remembered as server-scoped text under exact content keys for 90 days, with embeddings for recall only         | Reposts match without re-watching                                        |
 
 ## Discord
