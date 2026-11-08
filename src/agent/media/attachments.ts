@@ -149,7 +149,7 @@ export async function downloadAttachment(
       }
     }
 
-    const processed = await processImageForGemini(buffer)
+    const processed = await processImageForGemini(buffer, contentType)
     return {
       data: processed.data.toString('base64'),
       mimeType: processed.mimeType,
