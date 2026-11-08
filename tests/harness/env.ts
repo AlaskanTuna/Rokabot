@@ -20,6 +20,12 @@ if (process.argv.includes('--live') || process.env.ROKABOT_HARNESS_LIVE === '1')
   process.env.GEMINI_API_KEY = harnessKey
   process.env.GOOGLE_GENAI_API_KEY = harnessKey
 
+  // Keep live calls on the harness Gemini key; callers can override the route.
+  process.env.LLM_MAIN ??= 'flash'
+  process.env.LLM_FALLBACK ??= 'none'
+  // The suite's 12 background calls need room beyond the 15 rpm limit's maxLlmCalls headroom.
+  process.env.RATE_LIMIT_RPM ??= '60'
+
   // Holds the prompt still for the length of the run. Without it a case set that happens to straddle 05:00
   // scores one prompt for its first cases and a different one for the rest, and two runs at different hours
   // are not comparable at all — which is what made "two green runs" read as reproducibility while delivering

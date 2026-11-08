@@ -7,8 +7,8 @@ import { assertClaim } from '../../../src/agent/memory/memoryClaims.js'
 import { closeDb } from '../../../src/storage/database.js'
 import type { ExtractionEpisode } from '../../../src/storage/extractionQueue.js'
 
-// Spends real Gemini calls (12 per run) on synthetic text only. Needs ROKABOT_HARNESS_LIVE=1 so tests/harness/env.ts
-// swaps in GRAPHIFY_GEMINI_API_KEY, never the bot's own key; `npm run test:live` sets it.
+// Spends real Gemini calls (12 per run) on synthetic text using the flash route and harness Gemini key unless
+// LLM_MAIN overrides it. Needs ROKABOT_HARNESS_LIVE=1; `npm run test:live` sets it.
 const live = process.env.ROKABOT_HARNESS_LIVE === '1' && Boolean(process.env.GRAPHIFY_GEMINI_API_KEY)
 
 const CHANNEL = 'live-channel'

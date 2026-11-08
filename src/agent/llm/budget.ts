@@ -183,13 +183,15 @@ export function reserveCall(input: CallInput): CallReservation | BudgetDenial {
   const limits = routeFor(provider, model)?.limits
   const limiter = rateLimiterFor({ provider, model, limits })
   const tokens = coveredByTurn ? null : tokenBucketFor({ provider, model, limits })
+  // A reserve cannot be the whole bucket, or background work never runs.
+  const reserve = tokens ? Math.min(config.gemini.maxAttachmentTokens, Math.floor(tokens.capacity / 2)) : 0
 
   let denied: BudgetDenial['denied'] | null = null
   if (isMonthlyExhausted(provider) || (!replySide && backgroundShareSpent(provider))) denied = 'monthly'
   else if (!coveredByTurn && limiter.remainingRpd < 1 + headroom) denied = 'rpd'
   else if (!coveredByTurn && limiter.remainingRpm < 1 + headroom) denied = 'rpm'
   // Text replies are never refused on tokens: `rpm` bounds them, and attachment turns were gated before they began.
-  else if (!replySide && tokens && tokens.remaining() < estTokens + config.gemini.maxAttachmentTokens) denied = 'tpm'
+  else if (!replySide && tokens && tokens.remaining() < estTokens + reserve) denied = 'tpm'
   else if (provider === 'modelscope' && magicubesLeft() < MAGICUBES_PER_CALL * (1 + headroom)) denied = 'rpd'
   if (denied) {
     logger.info({ provider, model, workload, denied }, 'Budget declined a model call')
