@@ -20,6 +20,10 @@ export class TokenBucket {
 
   constructor(private readonly perMinute: number) {}
 
+  get capacity(): number {
+    return this.perMinute
+  }
+
   /** Tokens drain continuously rather than resetting on a boundary, mirroring the RPM bucket's refill. */
   private drain(): void {
     const now = Date.now()

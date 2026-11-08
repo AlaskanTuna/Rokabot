@@ -219,6 +219,34 @@ describe('searches', () => {
 })
 
 describe('tokens per minute', () => {
+  it('admits background work on a fresh route with one attachment of TPM capacity', () => {
+    configState.llm.main.limits = {
+      rpm: 15,
+      rpd: 500,
+      tpm: configState.gemini.maxAttachmentTokens
+    }
+    __resetBudgetsForTest()
+
+    expect(reserveCall({ ...extraction, estTokens: 1_000 })).not.toHaveProperty('denied')
+  })
+
+  it('denies background work when the bucket is nearly spent', () => {
+    configState.llm.main.limits = { rpm: 15, rpd: 500, tpm: 50_000 }
+    __resetBudgetsForTest()
+    chargeTokens(49_000)
+
+    expect(reserveCall({ ...extraction, estTokens: 1_000 })).toEqual({ denied: 'tpm' })
+  })
+
+  it('keeps the full attachment reserve on a large TPM route', () => {
+    configState.llm.main.limits = { rpm: 15, rpd: 500, tpm: 1_000_000 }
+    __resetBudgetsForTest()
+    chargeTokens(949_001)
+
+    expect(tokenBucketFor(configState.llm.main)?.capacity).toBe(1_000_000)
+    expect(reserveCall({ ...extraction, estTokens: 1_000 })).toEqual({ denied: 'tpm' })
+  })
+
   it('never refuses a text reply on tokens', () => {
     useRoutes({ tpm: 1_000 })
 
