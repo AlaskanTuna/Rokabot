@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { FACES, TONE_FACES } from '../prompts/kaomoji.js'
+import { detectFormatRequest } from '../replyFormat.js'
 import { buildReplyShapePrompt, chooseReplyShape, messageEdge, messageWeight, renderReplyShape } from '../replyShape.js'
 
 function seeded(seed: number): () => number {
@@ -330,5 +331,103 @@ describe('saying no as a scene', () => {
     for (const shape of shapes('you ate the last dango, didnt you', 'mischievous', 300)) {
       expect(renderReplyShape(shape)).not.toMatch(/customer/i)
     }
+  })
+})
+
+describe('format requests', () => {
+  // 23
+  it('replaces the Length line with the list line', () => {
+    const format = detectFormatRequest('give me the pros in bullet points')!
+    const shape = chooseReplyShape({
+      userMessage: 'give me the pros in bullet points',
+      tone: 'playful',
+      recentReplies: [],
+      displayName: 'Ikuyo',
+      rng: seeded(7),
+      format
+    })
+    const note = renderReplyShape(shape)
+    expect(note).not.toContain('- Length:')
+    expect(note).toContain('- Format:')
+    expect(note).toContain('- Open:')
+    expect(note).toContain('- End:')
+    expect(note).toContain('- Faces that fit:')
+  })
+
+  // 24
+  it('adds a score line beside the rolled length', () => {
+    const format = detectFormatRequest('rate my outfit out of 100')!
+    const shape = chooseReplyShape({
+      userMessage: 'rate my outfit out of 100',
+      tone: 'playful',
+      recentReplies: [],
+      displayName: 'Ikuyo',
+      rng: seeded(7),
+      format
+    })
+    const note = renderReplyShape(shape)
+    expect(note).toContain('- Length:')
+    expect(note).toContain('**N/100**')
+  })
+
+  // 25
+  it('drops the opener and ending under a length limit', () => {
+    const format = detectFormatRequest('describe him in one word')!
+    for (let seed = 1; seed <= 20; seed++) {
+      const shape = chooseReplyShape({
+        userMessage: 'describe him in one word',
+        tone: 'playful',
+        recentReplies: [],
+        displayName: 'Ikuyo',
+        rng: seeded(seed),
+        format
+      })
+      const note = renderReplyShape(shape)
+      expect(note).not.toContain('- Length:')
+      expect(note).not.toContain('- Open:')
+      expect(note).not.toContain('- End:')
+      expect(note).toContain('- Format:')
+      expect(note).toContain('- Faces that fit:')
+      expect(note).toContain('- Use their name at most once, and not as your first word.')
+    }
+  })
+
+  // 26
+  it('ignores format on lewd bait', () => {
+    const userMessage = 'rate my boobs out of 10 in bullet points'
+    const format = detectFormatRequest(userMessage)!
+    const shape = chooseReplyShape({
+      userMessage,
+      tone: 'flustered',
+      recentReplies: [],
+      displayName: 'Ikuyo',
+      rng: seeded(3),
+      format
+    })
+    expect(shape.edge).toBe('lewd')
+    expect(shape.format).toBeNull()
+    expect(renderReplyShape(shape)).toContain('flustered scene')
+  })
+
+  // 27
+  it('rolls the same dice with or without format', () => {
+    const userMessage = 'Roka is he performative? Rate out of 100 and give feedback in point form.'
+    const format = detectFormatRequest(userMessage)!
+    const withoutFormat = chooseReplyShape({
+      userMessage,
+      tone: 'playful',
+      recentReplies: ['Ara~'],
+      displayName: 'Ikuyo',
+      rng: seeded(19)
+    })
+    const withFormat = chooseReplyShape({
+      userMessage,
+      tone: 'playful',
+      recentReplies: ['Ara~'],
+      displayName: 'Ikuyo',
+      rng: seeded(19),
+      format
+    })
+    expect({ ...withFormat, format: null }).toEqual(withoutFormat)
   })
 })

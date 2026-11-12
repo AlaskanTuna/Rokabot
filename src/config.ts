@@ -207,6 +207,13 @@ interface YamlConfig {
   updates?: { notify?: boolean; repo?: string; checkIntervalHours?: number }
   timezone?: string
   logging?: { level?: string }
+  format?: {
+    mode?: string
+    repair?: string
+    minListItems?: number
+    minListShare?: number
+    wordSlack?: number
+  }
 }
 
 function loadYamlConfig(): YamlConfig {
@@ -283,6 +290,25 @@ function jevMode(key: 'tone' | 'referents' | 'prefetch', envKey: string): JevMod
   if (value === 'off' || value === 'shadow' || value === 'on') return value
   const source = envValue ? `Environment variable ${envKey}` : `Config value jev.${key}`
   throw new Error(`${source} must be off, shadow or on, got: ${String(value)}`)
+}
+
+export type FormatMode = 'off' | 'shadow' | 'on'
+export type FormatRepairMode = 'off' | 'reformat'
+
+function formatMode(): FormatMode {
+  const envValue = envString('FORMAT_MODE')
+  const value = envValue ?? yaml.format?.mode ?? 'on'
+  if (value === 'off' || value === 'shadow' || value === 'on') return value
+  const source = envValue ? 'Environment variable FORMAT_MODE' : 'Config value format.mode'
+  throw new Error(`${source} must be off, shadow or on, got: ${String(value)}`)
+}
+
+function formatRepair(): FormatRepairMode {
+  const envValue = envString('FORMAT_REPAIR')
+  const value = envValue ?? yaml.format?.repair ?? 'reformat'
+  if (value === 'off' || value === 'reformat') return value
+  const source = envValue ? 'Environment variable FORMAT_REPAIR' : 'Config value format.repair'
+  throw new Error(`${source} must be off or reformat, got: ${String(value)}`)
 }
 
 function mediaWatcher(): MediaWatcher {
@@ -784,7 +810,14 @@ const baseConfig = {
     repo: yaml.updates?.repo ?? 'AlaskanTuna/Rokabot',
     checkIntervalHours: yaml.updates?.checkIntervalHours ?? 24
   },
-  timezone: (envString('TZ') ?? yaml.timezone) as string | undefined
+  timezone: (envString('TZ') ?? yaml.timezone) as string | undefined,
+  format: {
+    mode: formatMode(),
+    repair: formatRepair(),
+    minListItems: yaml.format?.minListItems ?? 3,
+    minListShare: yaml.format?.minListShare ?? 0.5,
+    wordSlack: yaml.format?.wordSlack ?? 0.1
+  }
 } as const
 
 const llm = resolveLlm(baseConfig)
@@ -1054,6 +1087,9 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'updates.checkIntervalHours', value: config.updates.checkIntervalHours, min: 1, max: 168 },
   { path: 'llm.hedgeAfterMs', value: config.llm.hedgeAfterMs, min: 0 },
   { path: 'llm.stickyMs', value: config.llm.stickyMs, min: 0 },
+  { path: 'format.minListItems', value: config.format.minListItems, min: 2, max: 5 },
+  { path: 'format.minListShare', value: config.format.minListShare, min: 0, max: 1 },
+  { path: 'format.wordSlack', value: config.format.wordSlack, min: 0, max: 1 },
   // Below 2 s no native search could ever start: MIN_NATIVE_SEARCH_MS refuses it.
   { path: 'search.nativeTimeoutMs', value: config.search.nativeTimeoutMs, min: 2000, max: 60_000 },
   // min: 0 because a reserve of zero is a deliberate choice to let a search spend the whole attempt.

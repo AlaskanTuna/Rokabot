@@ -4,15 +4,16 @@ How one Discord turn becomes the system prompt and user message the model reads.
 
 ## At a Glance
 
-| Item             | Contract                                                                                                    |
-| ---------------- | ----------------------------------------------------------------------------------------------------------- |
-| Character Source | One character pack, loaded and validated once at startup. See [Characters](../guide/characters.md).         |
-| System Prompt    | 14 blocks in a fixed order. Blocks 1-2 are static and cached. Blocks 3-14 change per turn.                  |
-| Mood             | Rule-based detection on the last 3 messages. Jev can replace it when `jev.tone: on`.                        |
-| Reply Shape      | Length, opener, ending, faces, beats and the saying-no scene are rolled in code, then rendered as block 14. |
-| Safety Ladder    | Up to 3 rungs. Each rung removes carried context. The current message always stays.                         |
-| Size Cap         | Blocks 1-4 stay at or under `MAX_SYSTEM_PROMPT_TOKENS` (6,500) for every mood.                              |
-| Regression Gate  | `promptGolden.test.ts` pins every prompt and reply shape by hash.                                           |
+| Item             | Contract                                                                                                                                        |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Character Source | One character pack, loaded and validated once at startup. See [Characters](../guide/characters.md).                                             |
+| System Prompt    | 14 blocks in a fixed order. Blocks 1-2 are static and cached. Blocks 3-14 change per turn.                                                      |
+| Mood             | Rule-based detection on the last 3 messages. Jev can replace it when `jev.tone: on`.                                                            |
+| Reply Shape      | Length, opener, ending, faces, beats and the saying-no scene are rolled in code, then rendered as block 14.                                     |
+| Format Requests  | Explicit list, score, word and sentence requests yield block 14 (unless an edge fires) and are checked and reformatted in `afterModelCallback`. |
+| Safety Ladder    | Up to 3 rungs. Each rung removes carried context. The current message always stays.                                                             |
+| Size Cap         | Blocks 1-4 stay at or under `MAX_SYSTEM_PROMPT_TOKENS` (6,500) for every mood.                                                                  |
+| Regression Gate  | `promptGolden.test.ts` pins every prompt and reply shape by hash.                                                                               |
 
 ![Prompt Stack](../diagrams/prompt-stack.svg)
 
@@ -246,10 +247,17 @@ No Roka beat lists `hard`, so none fires on a hard edge.
 - **Note Line:** `note.lewd` (the flustered scene) or `note.hard` (one burst of real outrage), with `{{threat}}`
   filled.
 
+### Format Requests
+
+`detectFormatRequest` in `src/agent/replyFormat.ts` reads only the speaker's own words (`speakerWords`, stripping quotes, URLs, mentions, embeds, forwarded blocks, stickers, untrusted-data headers and fenced code). It detects optional `list` (`bullets` or `numbered`), `score` (`{ max }`, 2–100), and `length` (`words` or `sentences`, keeping `words` if both match).
+
+- **Precedence:** turns with `edge !== 'none'` or safety rungs 1–3 suppress the format request. When `format.mode` is `off`, detection is skipped; when `shadow`, block 14 stays unyielded and `afterModelCallback` checks without rewriting.
+- **Harness Prompts:** `prompts/format-bullets.md`, `format-numbered.md`, `format-score.md` (`{{max}}`), `format-words.md` (`{{count}}`) and `format-sentences.md` (`{{count}}`).
+- **Verification and Reformat:** on a final single-part text response (no `functionCall`), `afterModelCallback` runs `enforceReplyFormat` after `capReplyBlocks`. With `format.repair: reformat`, it can renumber bullet items to numbered (`numbered_from_bullets`) or split pure-prose replies into a lead-in, bullet or numbered list, and optional closer (`list_from_prose`).
+
 ### The Rendered Note
 
-Lines in order: `header`, `intro`, the length line, the open line, the end line, the faces line, each fired beat,
-the lewd or hard line, then `nameOnce` unless the opener is `name`.
+Lines in order: `header`, `intro`, the length line (or format list/limit lines when `list` or `length` yields it), the score line if `score` is set, the open and end lines (omitted under a `length` limit), the faces line, each fired beat (omitted under a `length` limit), the lewd or hard line, then `nameOnce` when a `length` limit applies or the opener is not `name`.
 
 ### RNG Order
 
@@ -300,14 +308,16 @@ prompt on every model call, from the rung's rebuilt prompt or the turn's `_syste
 `src/agent/__tests__/promptGolden.test.ts` pins every prompt the bot can send as SHA-256 hashes in
 `tests/fixtures/prompt-golden.json`.
 
-| Key                      | What It Pins                                                                                                       |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------ |
-| `system.<mood>.<mode>`   | Blocks 1-4 for every mood, memory mode (`memory`, `forgetOnly`, `memoryFree`) and hour 0-23, plus the prefix split |
-| `replyShape.<mood>`      | Block 14 for 40 seeds × 10 messages × 3 sets of recent replies                                                     |
-| `replyShape.classifiers` | `messageEdge` and `messageWeight` for the 10 messages                                                              |
-| `tones`                  | `detectToneWithSource` for the 10 messages at hours 3, 14 and 23                                                   |
-| `faces`                  | The face groups and each mood's groups                                                                             |
-| `jevToneCriteria`        | Each mood's `judge` text                                                                                           |
+| Key                         | What It Pins                                                                                                       |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `system.<mood>.<mode>`      | Blocks 1-4 for every mood, memory mode (`memory`, `forgetOnly`, `memoryFree`) and hour 0-23, plus the prefix split |
+| `replyShape.<mood>`         | Block 14 for 40 seeds × 10 messages × 3 sets of recent replies                                                     |
+| `replyShape.classifiers`    | `messageEdge` and `messageWeight` for the 10 messages                                                              |
+| `replyShape.format`         | Block 14 for 40 seeds × 5 format-request messages                                                                  |
+| `formatRequest.classifiers` | `detectFormatRequest` across all 10 standard and 5 format messages                                                 |
+| `tones`                     | `detectToneWithSource` for the 10 messages at hours 3, 14 and 23                                                   |
+| `faces`                     | The face groups and each mood's groups                                                                             |
+| `jevToneCriteria`           | Each mood's `judge` text                                                                                           |
 
 `src/discord/__tests__/linesGolden.test.ts` does the same for every line the bot posts from the pack's `lines.yml`
 (`tests/fixtures/lines-golden.json`).
@@ -322,6 +332,7 @@ a regression. The test pins the shipped Roka pack.
 - `src/agent/turnContext.ts` (`createTurnContext`, `composePrompt`)
 - `src/agent/toneDetector.ts`
 - `src/agent/replyShape.ts`
+- `src/agent/replyFormat.ts`
 - `src/agent/roka.ts` (`buildNewMessage`, `beforeModelCallback`, `escalateSafety`)
 - `src/agent/llm/anthropicLlm.ts` (`systemBlocks`)
 - `src/agent/promptSafety.ts`, `src/agent/searchPrefetch.ts`

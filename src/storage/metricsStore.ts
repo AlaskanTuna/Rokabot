@@ -25,6 +25,10 @@ export interface ResponseMetrics {
   modelId?: string
   /** 1 once any model call of the turn has fired a hedge. */
   hedged: number
+  /** JSON array of requested format kinds; absent when the speaker made no format request. */
+  formatKinds?: string
+  formatOutcome?: 'met' | 'repaired' | 'unmet' | 'suppressed'
+  formatDetail?: string
 }
 
 export interface ResponseEventInput extends ResponseMetrics {
@@ -109,8 +113,8 @@ function getResponseEventStatement(): Database.Statement {
     `INSERT INTO response_events (
       guild_id, channel_id, user_id, trigger, tone, outcome, kind, e2e_ms, generate_ms, llm_ms,
       retry_latency_ms, retries, tokens_in_est, tokens_out_est, tools_used, failure_marker, hedged,
-      provider, model_id, route_role, workload, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      provider, model_id, route_role, workload, format_kinds, format_outcome, format_detail, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
   return responseEventStatement
 }
@@ -224,6 +228,9 @@ export function recordResponseEvent(row: ResponseEventInput): void {
       row.modelId ?? null,
       row.routeRole ?? null,
       'reply',
+      row.formatKinds ?? null,
+      row.formatOutcome ?? null,
+      row.formatDetail ?? null,
       Date.now()
     )
   } catch (error) {

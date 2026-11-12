@@ -217,6 +217,27 @@
       ]
     },
     {
+      "id": "format",
+      "lane": "out",
+      "col": 2,
+      "type": "backend",
+      "label": "Format Request",
+      "sublabel": "list, score, word or sentence cap",
+      "width": 160,
+      "sources": [
+        {
+          "path": "src/agent/replyFormat.ts",
+          "line": 1,
+          "end_line": 220
+        },
+        {
+          "path": "src/agent/replyShape.ts",
+          "line": 212,
+          "end_line": 261
+        }
+      ]
+    },
+    {
       "id": "note",
       "lane": "out",
       "col": 5,
@@ -338,6 +359,30 @@
       "label": "beat odds",
       "variant": "dashed",
       "role": "async"
+    },
+    {
+      "id": "detect-format",
+      "from": "message",
+      "to": "format",
+      "label": "own words",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "id": "edge-suppress-format",
+      "from": "edge",
+      "to": "format",
+      "label": "lewd or hard drops format",
+      "variant": "security",
+      "role": "branch"
+    },
+    {
+      "id": "format-note",
+      "from": "format",
+      "to": "note",
+      "label": "replaces Length or adds Score",
+      "variant": "emphasis",
+      "role": "branch"
     }
   ],
   "cards": [
@@ -348,6 +393,15 @@
         "Paragraphs, opener style, opener word or bit, ending, face shuffle, beats, threat",
         "A hard line skips the ending roll: the ending is always a statement",
         "Every beat the edge allows rolls, even at zero odds"
+      ]
+    },
+    {
+      "dot": "blue",
+      "title": "Format Override",
+      "items": [
+        "List or length limit replaces Length; score adds **N/max**",
+        "Length limits drop Open, End and beats, keeping Faces and nameOnce",
+        "Lewd or hard edge, or safety rungs 1-3, suppresses format"
       ]
     },
     {

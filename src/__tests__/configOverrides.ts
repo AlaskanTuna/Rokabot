@@ -93,4 +93,6 @@ export function clearTunableEnvVars() {
   vi.stubEnv('GEMINI_HEDGE_AFTER_MS', '')
   vi.stubEnv('SEARCH_PROVIDER', '')
   vi.stubEnv('EXA_API_KEY', '')
+  vi.stubEnv('FORMAT_MODE', '')
+  vi.stubEnv('FORMAT_REPAIR', '')
 }

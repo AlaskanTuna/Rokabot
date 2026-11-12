@@ -1189,7 +1189,10 @@ describe('config module', () => {
       { path: 'llm.hedgeAfterMs', min: 0 },
       { path: 'llm.stickyMs', min: 0 },
       { path: 'search.nativeTimeoutMs', min: 2000, max: 60_000 },
-      { path: 'search.nativeReserveMs', min: 0, max: 60_000 }
+      { path: 'search.nativeReserveMs', min: 0, max: 60_000 },
+      { path: 'format.minListItems', min: 2, max: 5 },
+      { path: 'format.minListShare', min: 0, max: 1 },
+      { path: 'format.wordSlack', min: 0, max: 1 }
     ]
 
     const { NUMERIC_BOUNDS } = await import('../config.js')
@@ -1766,5 +1769,31 @@ describe('config module', () => {
     const { config } = await import('../config.js')
 
     expect(config.memory.judge).toBe('jev')
+  })
+
+  // 34
+  it('validates format bounds, rejects unknown format.mode, and allows FORMAT_MODE override', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('FORMAT_MODE', 'shadow')
+
+    const { config } = await import('../config.js')
+    expect(config.format).toEqual({
+      mode: 'shadow',
+      repair: 'reformat',
+      minListItems: 3,
+      minListShare: 0.5,
+      wordSlack: 0.1
+    })
+
+    vi.resetModules()
+    clearTunableEnvVars()
+    vi.stubEnv('FORMAT_MODE', 'bogus')
+    await expect(() => import('../config.js')).rejects.toThrow('FORMAT_MODE must be off, shadow or on')
+
+    vi.resetModules()
+    clearTunableEnvVars()
+    withYamlOverride({ format: { minListShare: 1.5 } })
+    await expect(() => import('../config.js')).rejects.toThrow('format.minListShare')
   })
 })

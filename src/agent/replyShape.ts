@@ -6,6 +6,7 @@
  */
 import { character } from '../character/index.js'
 import type { ToneKey } from './prompts/tones.js'
+import type { FormatRequest } from './replyFormat.js'
 
 export type MessageWeight = 'quick' | 'ordinary' | 'rich'
 const OPENER_STYLES = ['content', 'soft', 'particle', 'gasp', 'comedy', 'name'] as const
@@ -21,6 +22,7 @@ export interface ReplyShapeInput {
   recentReplies: readonly string[]
   displayName: string
   rng?: () => number
+  format?: FormatRequest | null
 }
 
 export interface Opener {
@@ -40,6 +42,7 @@ export interface ReplyShape {
   beats: Readonly<Record<string, boolean>>
   /** The over-the-top threat a saying-no scene is built on. */
   threat?: string
+  format?: FormatRequest | null
 }
 
 const voice = character.voice
@@ -68,7 +71,7 @@ function splitReply(message: string): { quoted: string; text: string } {
 }
 
 /** What the user wrote, without the message they replied to, so only their own words are weighed. */
-function ownWords(message: string): string {
+export function ownWords(message: string): string {
   return splitReply(message)
     .text.replace(/https?:\/\/\S+/g, '')
     .replace(/<[@#:][^>]+>/g, '')
@@ -207,23 +210,53 @@ export function chooseReplyShape(input: ReplyShapeInput): ReplyShape {
   const beats: Record<string, boolean> = {}
   for (const beat of voice.beats) beats[beat.name] = beat.edges.includes(edge) && rng() < (odds[beat.name] ?? 0)
   const threat = edge === 'none' ? undefined : chooseThreat(input.recentReplies, rng)
-  return { paragraphs, edge, opener, ending, faces, beats, threat }
+  const format = edge === 'none' ? (input.format ?? null) : null
+  return { paragraphs, edge, opener, ending, faces, beats, threat, format }
 }
 
 export function renderReplyShape(shape: ReplyShape): string {
   const { note } = voice
-  const lines = [
-    note.header,
-    note.intro,
-    fill(note.length, { length: voice.lengths[shape.paragraphs] }),
-    fill(note.open, { opener: shape.opener.instruction }),
-    fill(note.end, { ending: voice.endings[shape.ending].line }),
-    fill(note.faces, { faces: shape.faces.join(' ') })
-  ]
-  for (const beat of voice.beats) if (shape.beats[beat.name]) lines.push(beat.line)
+  const format = shape.format ?? null
+  if (!format) {
+    const lines = [
+      note.header,
+      note.intro,
+      fill(note.length, { length: voice.lengths[shape.paragraphs] }),
+      fill(note.open, { opener: shape.opener.instruction }),
+      fill(note.end, { ending: voice.endings[shape.ending].line }),
+      fill(note.faces, { faces: shape.faces.join(' ') })
+    ]
+    for (const beat of voice.beats) if (shape.beats[beat.name]) lines.push(beat.line)
+    if (shape.edge === 'lewd') lines.push(fill(note.lewd, { threat: shape.threat }))
+    if (shape.edge === 'hard') lines.push(fill(note.hard, { threat: shape.threat }))
+    if (shape.opener.style !== 'name') lines.push(note.nameOnce)
+    return lines.join('\n')
+  }
+
+  const lines = [note.header, note.intro]
+  const formatPrompts = character.prompts.format
+  if (format.list || format.length) {
+    if (format.list) lines.push(formatPrompts[format.list])
+    if (format.length) {
+      lines.push(fill(formatPrompts[format.length.unit], { count: String(format.length.max) }))
+    }
+  } else {
+    lines.push(fill(note.length, { length: voice.lengths[shape.paragraphs] }))
+  }
+  if (format.score) {
+    lines.push(fill(formatPrompts.score, { max: String(format.score.max) }))
+  }
+  if (!format.length) {
+    lines.push(fill(note.open, { opener: shape.opener.instruction }))
+    lines.push(fill(note.end, { ending: voice.endings[shape.ending].line }))
+  }
+  lines.push(fill(note.faces, { faces: shape.faces.join(' ') }))
+  if (!format.length) {
+    for (const beat of voice.beats) if (shape.beats[beat.name]) lines.push(beat.line)
+  }
   if (shape.edge === 'lewd') lines.push(fill(note.lewd, { threat: shape.threat }))
   if (shape.edge === 'hard') lines.push(fill(note.hard, { threat: shape.threat }))
-  if (shape.opener.style !== 'name') lines.push(note.nameOnce)
+  if (format.length || shape.opener.style !== 'name') lines.push(note.nameOnce)
   return lines.join('\n')
 }
 

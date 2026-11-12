@@ -27,7 +27,8 @@ import { formatGuildFactDate, retrieveForTurn, retrieveGuildFacts } from './memo
 import { assembleSystemPrompt } from './promptAssembler.js'
 import { buildFactsEnvelope, buildOverheardBlock } from './promptSafety.js'
 import type { ToneKey } from './prompts/tones.js'
-import { buildReplyShapePrompt } from './replyShape.js'
+import { detectFormatRequest } from './replyFormat.js'
+import { chooseReplyShape, renderReplyShape } from './replyShape.js'
 import { recordSearchCitations } from './searchCitations.js'
 import { buildLookedUpBlock, decidePrefetch, runPrefetchForJudgment, settlePrefetch } from './searchPrefetch.js'
 import type { PrefetchResult } from './searchPrefetch.js'
@@ -777,12 +778,15 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
   turnEvent.prefetch = prefetch
   persistTurnEventWhenReady()
   const lookedUpSection = prefetch.block ? `\n\n${prefetch.block}` : ''
-  const replyShapeSection = `\n\n${buildReplyShapePrompt({
+  const formatRequest = config.format.mode === 'off' ? null : detectFormatRequest(userMessage)
+  const replyShape = chooseReplyShape({
     userMessage,
     tone,
     recentReplies: fakeMessages.filter((message) => message.role === 'assistant').map((message) => message.content),
-    displayName
-  })}`
+    displayName,
+    format: config.format.mode === 'on' ? formatRequest : null
+  })
+  const replyShapeSection = `\n\n${renderReplyShape(replyShape)}`
 
   // Safety de-escalation ladder. Each rung strictly removes carried context — never the current message —
   // so Roka answers with less surrounding context rather than refusing outright.
@@ -819,6 +823,12 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
     overheardSection,
     prefetchUsed: prefetch.usedTool,
     safetyLadder: SAFETY_LADDER,
-    composePrompt
+    composePrompt,
+    format: formatRequest
+      ? {
+          request: formatRequest,
+          suppressed: replyShape.edge !== 'none' ? ('edge' as const) : null
+        }
+      : null
   }
 }

@@ -8,7 +8,8 @@ import { TONE_CRITERIA } from '../jev/judgments.js'
 import { assembleSystemPrompt, splitStablePrefix } from '../promptAssembler.js'
 import { FACES, TONE_FACES } from '../prompts/kaomoji.js'
 import { TONE_PROMPTS, type ToneKey } from '../prompts/tones.js'
-import { buildReplyShapePrompt, messageEdge, messageWeight } from '../replyShape.js'
+import { detectFormatRequest } from '../replyFormat.js'
+import { buildReplyShapePrompt, chooseReplyShape, messageEdge, messageWeight, renderReplyShape } from '../replyShape.js'
 import { detectToneWithSource } from '../toneDetector.js'
 
 /**
@@ -50,6 +51,14 @@ const MESSAGES = [
   'bet you cannot beat my score in this game, rematch?'
 ]
 
+const FORMAT_MESSAGES = [
+  'Roka is he performative? Rate out of 100 and give feedback in point form with examples. Make no mistake.',
+  'can you explain how sencha is brewed step by step?',
+  'rate my outfit 1-10',
+  'describe him in one word',
+  'sum it up in two sentences'
+]
+
 const RECENT = [
   [],
   ['Ara~ you again? (¬‿¬) Fine, fine.', 'Mou~ you never listen, do you? (｀へ´)'],
@@ -79,6 +88,29 @@ function computeGolden(): Record<string, string> {
   }
   golden['replyShape.classifiers'] = digest(
     MESSAGES.flatMap((message) => [messageEdge(message), messageWeight(message)])
+  )
+  const formatShapes: string[] = []
+  for (let seed = 1; seed <= 40; seed++) {
+    const rng = seeded(seed)
+    for (const userMessage of FORMAT_MESSAGES) {
+      const format = detectFormatRequest(userMessage)
+      formatShapes.push(
+        renderReplyShape(
+          chooseReplyShape({
+            userMessage,
+            tone: 'playful',
+            recentReplies: RECENT[0],
+            displayName: 'Ikuyo',
+            rng,
+            format
+          })
+        )
+      )
+    }
+  }
+  golden['replyShape.format'] = digest(formatShapes)
+  golden['formatRequest.classifiers'] = digest(
+    [...MESSAGES, ...FORMAT_MESSAGES].map((message) => JSON.stringify(detectFormatRequest(message)))
   )
   const window = (content: string): WindowMessage[] => [{ role: 'user', displayName: 'Ikuyo', content, timestamp: 0 }]
   golden.tones = digest(

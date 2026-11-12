@@ -634,16 +634,33 @@ describe('runMigrations', () => {
     const columns = (testDb.prepare("PRAGMA table_info('response_events')").all() as Array<{ name: string }>).map(
       (column) => column.name
     )
-    expect(columns).toEqual(expect.arrayContaining(['provider', 'model_id', 'route_role', 'workload']))
+    expect(columns).toEqual(
+      expect.arrayContaining([
+        'provider',
+        'model_id',
+        'route_role',
+        'workload',
+        'format_kinds',
+        'format_outcome',
+        'format_detail'
+      ])
+    )
     expect(
-      testDb.prepare('SELECT model, hedged, provider, model_id, route_role, workload FROM response_events').get()
+      testDb
+        .prepare(
+          'SELECT model, hedged, provider, model_id, route_role, workload, format_kinds, format_outcome, format_detail FROM response_events'
+        )
+        .get()
     ).toEqual({
       model: 'fallback',
       hedged: 1,
       provider: null,
       model_id: null,
       route_role: null,
-      workload: null
+      workload: null,
+      format_kinds: null,
+      format_outcome: null,
+      format_detail: null
     })
   })
 })

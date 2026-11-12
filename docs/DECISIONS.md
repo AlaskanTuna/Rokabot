@@ -18,6 +18,7 @@ The lasting choices behind Rokabot, with why they were made. Check here before r
 | 2026-07-23 | Replies run short beats inside a stated word band with natural endings, and the token cap is headroom only                                                        | Keeps her voice compact without clipping thoughts           |
 | 2026-07-23 | Faces are kaomoji only, with object and decor emoji sparing                                                                                                       | Purely facial emoji are banned, faces stay typed            |
 | 2026-11-03 | A retry resends the message, marked so the session does not store it twice                                                                                        | ADK runs the agent only when a message is present           |
+| 2026-11-13 | Explicit format requests are detected in code, override the rolled reply shape, and are checked and repaired at the model boundary for every provider             | The shape note beat the user's own request                  |
 
 ## Memory
 
