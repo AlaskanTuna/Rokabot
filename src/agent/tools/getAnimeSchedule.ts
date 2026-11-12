@@ -182,7 +182,7 @@ async function fetchJikan(url: string): Promise<JikanResponse | null> {
   try {
     await jikanThrottle()
 
-    const response = await fetch(url)
+    const response = await fetch(url, { signal: AbortSignal.timeout(5000) })
     if (!response.ok) {
       logger.warn({ status: response.status, url }, 'Jikan API error')
       return null
@@ -190,7 +190,14 @@ async function fetchJikan(url: string): Promise<JikanResponse | null> {
 
     return (await response.json()) as JikanResponse
   } catch (error) {
-    logger.error({ error, url }, 'Failed to fetch from Jikan API')
+    logger.error(
+      {
+        errorName: error instanceof Error ? error.name : 'Error',
+        errorMessage: error instanceof Error ? error.message : String(error),
+        url
+      },
+      'Failed to fetch from Jikan API'
+    )
     return null
   }
 }

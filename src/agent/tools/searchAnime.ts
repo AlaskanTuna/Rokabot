@@ -73,7 +73,7 @@ export async function searchAnime(params: SearchAnimeParams): Promise<SearchAnim
     if (params.status) urlParams.push(`status=${params.status}`)
 
     const url = `https://api.jikan.moe/v4/anime?${urlParams.join('&')}`
-    const response = await fetch(url)
+    const response = await fetch(url, { signal: AbortSignal.timeout(5000) })
 
     if (!response.ok) {
       logger.warn({ status: response.status, url }, 'Jikan API error')
@@ -98,7 +98,14 @@ export async function searchAnime(params: SearchAnimeParams): Promise<SearchAnim
 
     return { results, query, total }
   } catch (error) {
-    logger.error({ error, query }, 'Failed to search anime')
+    logger.error(
+      {
+        errorName: error instanceof Error ? error.name : 'Error',
+        errorMessage: error instanceof Error ? error.message : String(error),
+        query
+      },
+      'Failed to search anime'
+    )
     return { results: [], query, total: 0 }
   }
 }

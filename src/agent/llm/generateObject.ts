@@ -152,6 +152,7 @@ async function attempt<T>(
 function failureFields(error: unknown) {
   return {
     errorName: (Object(error) as { constructor?: { name?: string } }).constructor?.name ?? 'Error',
+    errorMessage: (error instanceof Error ? error.message : String(error)).slice(0, 300),
     ...(error instanceof StructuredOutputError ? { reason: error.reason } : {})
   }
 }

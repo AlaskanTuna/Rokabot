@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { logger } from '../../../utils/logger.js'
+
 vi.mock('../../../utils/logger.js', () => ({
   logger: { debug: vi.fn(), error: vi.fn(), fatal: vi.fn(), info: vi.fn(), warn: vi.fn() }
 }))
@@ -34,6 +36,7 @@ describe('getAnimeSchedule ranking', () => {
 
   afterEach(() => {
     globalThis.fetch = originalFetch
+    vi.restoreAllMocks()
     vi.clearAllMocks()
   })
 
@@ -87,5 +90,30 @@ describe('getAnimeSchedule ranking', () => {
     fetchMock.mockClear()
     await getAnimeSchedule({ scope: 'season', limit: 5 })
     expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('passes a five-second timeout signal to Jikan fetch', async () => {
+    const signal = new AbortController().signal
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(signal)
+
+    await getAnimeSchedule({ scope: 'week' })
+
+    expect(timeout).toHaveBeenCalledWith(5000)
+    expect(fetchMock.mock.calls[0][1]?.signal).toBe(signal)
+  })
+
+  it('logs the error name and message when a Jikan request fails', async () => {
+    fetchMock.mockRejectedValueOnce(new TypeError('fetch failed: DNS lookup failed'))
+
+    await getAnimeSchedule({ scope: 'week' })
+
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        errorName: 'TypeError',
+        errorMessage: 'fetch failed: DNS lookup failed',
+        url: expect.stringContaining('api.jikan.moe')
+      }),
+      'Failed to fetch from Jikan API'
+    )
   })
 })

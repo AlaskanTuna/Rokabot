@@ -150,6 +150,7 @@ export async function downloadAttachment(
     }
 
     const processed = await processImageForGemini(buffer, contentType)
+    if (!processed) return null
     return {
       data: processed.data.toString('base64'),
       mimeType: processed.mimeType,
@@ -179,7 +180,21 @@ export async function prepareAttachments(
   let droppedAttachments = 0
   let truncatedAttachments = 0
   if (mediaAttachments?.length) {
-    const downloads = await Promise.all(mediaAttachments.map((img) => downloadAttachment(img)))
+    const downloads: Array<Awaited<ReturnType<typeof downloadAttachment>>> = Array.from(
+      { length: mediaAttachments.length },
+      () => null
+    )
+    const regularDownloads = Promise.all(
+      mediaAttachments.map(async (attachment, index) => {
+        if (attachment.contentType !== 'image/gif') downloads[index] = await downloadAttachment(attachment)
+      })
+    )
+    const gifDownloads = (async () => {
+      for (const [index, attachment] of mediaAttachments.entries()) {
+        if (attachment.contentType === 'image/gif') downloads[index] = await downloadAttachment(attachment)
+      }
+    })()
+    await Promise.all([regularDownloads, gifDownloads])
     droppedAttachments = downloads.filter((result) => result === null).length
     truncatedAttachments = downloads.filter((result) => result?.truncated).length
     for (const result of downloads) {

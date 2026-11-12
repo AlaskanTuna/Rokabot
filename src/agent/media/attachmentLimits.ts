@@ -5,6 +5,8 @@
  */
 
 export const MAX_IMAGE_SIZE_BYTES = 4 * 1024 * 1024
+// GIFs are reduced to their first frame before the image reaches the model.
+export const MAX_GIF_SIZE_BYTES = 16 * 1024 * 1024
 
 // Documents get their own ceiling rather than sharing the image one: a PDF is not resized before sending, so
 // its bytes reach the request as-is, and 10 MB is what upload latency admits inside gemini.timeout at the
@@ -30,6 +32,7 @@ export const MAX_VIDEO_SIZE_BYTES = 10 * 1024 * 1024
  * enforced another would either over-admit or refuse turns it had room for.
  */
 export function sizeLimitFor(contentType: string): number {
+  if (contentType === 'image/gif') return MAX_GIF_SIZE_BYTES
   if (contentType.startsWith('image/')) return MAX_IMAGE_SIZE_BYTES
   if (contentType.startsWith('audio/')) return MAX_AUDIO_SIZE_BYTES
   if (contentType.startsWith('video/')) return MAX_VIDEO_SIZE_BYTES
