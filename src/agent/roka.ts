@@ -41,6 +41,8 @@ import {
 } from './reliability.js'
 import type { ModelVerdict, TurnOutcome } from './reliability.js'
 import { MAX_REPLY_BLOCKS, capReplyBlocks } from './replyBlocks.js'
+import { enforceReplyFormat, formatKinds } from './replyFormat.js'
+import type { FormatEnforcement, FormatRequest, FormatTunables } from './replyFormat.js'
 import { PREFETCH_TOOL_NAME } from './searchPrefetch.js'
 import {
   APP_NAME,
@@ -114,11 +116,22 @@ const toolCallsForRequest = new AsyncLocalStorage<{
 // Count every ADK request so retries and tool calls are included in the reservation refund.
 const modelCallsForRequest = new AsyncLocalStorage<{ count: number }>()
 const requestHistoryForRequest = new AsyncLocalStorage<{ historyEndedOnToolResult: boolean }>()
+export interface FormatSteering {
+  request: FormatRequest
+  mode: 'shadow' | 'on'
+  repair: 'off' | 'reformat'
+  tunables: FormatTunables
+}
+
+export type FormatSuppressed = 'edge' | 'safety'
+
 // Exported so tests can drive the beforeModelCallback ALS seam directly (task 122's only observable proof point)
 export const steeringForRequest = new AsyncLocalStorage<{
   prompt?: string
   memoryScope?: MemoryScope
   replies?: boolean
+  format?: FormatSteering | null
+  formatResult?: FormatEnforcement
 }>()
 export const SAFETY_DEFLECTION = character.lines.reliability.safety
 export const RECITATION_DEFLECTION = character.lines.reliability.recitation
@@ -252,6 +265,33 @@ export const rokaAgent = new LlmAgent({
     const hasText = response.content.parts.some((p) => p.text?.trim() && !p.thought)
     const hasFunctionCall = response.content.parts.some((p) => 'functionCall' in p && p.functionCall)
 
+    const steering = steeringForRequest.getStore()
+    if (steering?.format && hasText && !hasFunctionCall) {
+      const textParts = response.content.parts.filter((p) => p.text?.trim() && !p.thought)
+      if (textParts.length === 1) {
+        const part = textParts[0]
+        const { request, mode, repair, tunables } = steering.format
+        const result = enforceReplyFormat(part.text ?? '', request, {
+          ...tunables,
+          repair: mode === 'shadow' ? 'off' : repair
+        })
+        if (mode === 'on') part.text = result.text
+        steering.formatResult = result
+        logger.info(
+          {
+            model: modelNameForCurrentRequest(),
+            kinds: formatKinds(request),
+            outcome: result.outcome,
+            repair: result.repair,
+            first: result.first,
+            final: result.final,
+            mode
+          },
+          'Reply format check'
+        )
+      }
+    }
+
     const verdict = modelVerdictForRequest.getStore()
     if (verdict) {
       const raw = response as unknown as { safetyRatings?: unknown; promptFeedback?: { blockReason?: string } }
@@ -313,6 +353,7 @@ interface TurnAttemptInit {
   useFallback: boolean
   safetyLadder: readonly string[]
   composePrompt: (safetyRung: number) => string
+  format?: { request: FormatRequest; suppressed: 'edge' | null } | null
 }
 
 /** Per-turn mutable state threaded through the reliability loop. One home for what attempt N sends, so a
@@ -325,19 +366,42 @@ class TurnAttempt {
   movedAwayFromGemini = false
   switchKind: FailureKind | undefined = undefined
   emptyReplyDiagnostic: ReplyDiagnostic | undefined = undefined
-  readonly steering: { prompt?: string; memoryScope?: MemoryScope; replies?: boolean }
+  formatSuppressed: FormatSuppressed | null
+  readonly steering: {
+    prompt?: string
+    memoryScope?: MemoryScope
+    replies?: boolean
+    format?: FormatSteering | null
+    formatResult?: FormatEnforcement
+  }
   readonly route: ModelRoute
 
   private readonly channelId: string
   private readonly safetyLadder: readonly string[]
   private readonly composePrompt: (safetyRung: number) => string
+  private readonly formatRequest: FormatRequest | null
 
   constructor(init: TurnAttemptInit) {
     this.systemPrompt = init.systemPrompt
     this.channelId = init.channelId
     this.safetyLadder = init.safetyLadder
     this.composePrompt = init.composePrompt
-    this.steering = { memoryScope: init.memoryScope, replies: init.asksAboutReplies }
+    this.formatRequest = init.format?.request ?? null
+    this.formatSuppressed = init.format?.suppressed ?? null
+    const formatSteering: FormatSteering | null =
+      this.formatRequest && this.formatSuppressed === null && config.format.mode !== 'off'
+        ? {
+            request: this.formatRequest,
+            mode: config.format.mode,
+            repair: config.format.repair,
+            tunables: {
+              minListItems: config.format.minListItems,
+              minListShare: config.format.minListShare,
+              wordSlack: config.format.wordSlack
+            }
+          }
+        : null
+    this.steering = { memoryScope: init.memoryScope, replies: init.asksAboutReplies, format: formatSteering }
     this.route = { useFallback: init.useFallback, hedged: false, answeredBy: null, pinned: null }
   }
 
@@ -373,6 +437,11 @@ class TurnAttempt {
 
     this.systemPrompt = this.composePrompt(this.safetyRung)
     this.steering.prompt = this.systemPrompt
+    this.steering.format = null
+    this.steering.formatResult = undefined
+    if (this.formatRequest !== null && this.formatSuppressed === null) {
+      this.formatSuppressed = 'safety'
+    }
     return this.safetyLadder[this.safetyRung - 1]
   }
 
@@ -470,7 +539,8 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     asksAboutReplies: options.asksAboutReplies,
     useFallback: rokaModel.hasFallback && hasStickyFallback(),
     safetyLadder,
-    composePrompt
+    composePrompt,
+    format: context.format
   })
 
   // Tell the model when files are absent or refused so it does not search for their missing contents.
@@ -755,6 +825,48 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
       : turn.route.answeredBy === 'main'
         ? config.llm.main
         : null
+  const requestedFormat = context.format?.request ?? null
+  const formatResult = turn.steering.formatResult
+  const formatOutcome: ResponseMetrics['formatOutcome'] =
+    !reliability.success || requestedFormat === null
+      ? undefined
+      : turn.formatSuppressed !== null
+        ? 'suppressed'
+        : formatResult?.outcome
+  const formatDetail =
+    requestedFormat === null
+      ? undefined
+      : JSON.stringify({
+          v: 1,
+          mode: config.format.mode,
+          cues: requestedFormat.cues,
+          params: {
+            scoreMax: requestedFormat.score?.max ?? null,
+            lengthUnit: requestedFormat.length?.unit ?? null,
+            lengthMax: requestedFormat.length?.max ?? null
+          },
+          first: formatResult?.first ?? null,
+          final: formatResult?.final ?? null,
+          repair: formatResult?.repair ?? null,
+          suppressed: turn.formatSuppressed
+        })
+  const requestedKinds = requestedFormat === null ? undefined : formatKinds(requestedFormat)
+  if (reliability.success && requestedFormat !== null && formatOutcome === 'unmet' && formatResult) {
+    const unmetKinds = formatKinds(requestedFormat).filter((kind) => formatResult.final[kind] === false)
+    recordFailureDiagnostic({
+      guildId,
+      channelId,
+      userId,
+      outcome: 'ok',
+      kind: 'format_unmet',
+      failureMarker: unmetKinds.join(','),
+      errorMessage: formatDetail,
+      attempts: reliability.attempts,
+      tone,
+      userMessage
+    })
+  }
+
   const metrics: ResponseMetrics = {
     generateMs: Math.round(performance.now() - generateStartMs),
     llmMs,
@@ -768,7 +880,10 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     routeRole: turn.route.answeredBy ?? undefined,
     provider: answeredModel?.provider,
     modelId: answeredModel?.model,
-    hedged: turn.route.hedged ? 1 : 0
+    hedged: turn.route.hedged ? 1 : 0,
+    formatKinds: requestedKinds ? JSON.stringify(requestedKinds) : undefined,
+    formatOutcome,
+    formatDetail
   }
 
   return {

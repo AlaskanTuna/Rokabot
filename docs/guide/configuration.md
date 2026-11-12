@@ -350,6 +350,16 @@ Two keys are deprecated. `memory.embeddingModel` is read only for the Gemini pro
 | --------------- | ------- | ------------ | ------------------------------------------------------------------------------- |
 | `logging.level` | `info`  | `LOG_LEVEL`  | Pino log level: `debug`, `info`, `warn` or `error`. `npm run dev` sets `debug`. |
 
+## `format`
+
+| Key                   | Default    | Env Override    | Bounds | What It Does                                                                                              |
+| --------------------- | ---------- | --------------- | ------ | --------------------------------------------------------------------------------------------------------- |
+| `format.mode`         | `on`       | `FORMAT_MODE`   | —      | `off` disables, `shadow` detects and checks without altering prompts or replies, `on` yields and repairs. |
+| `format.repair`       | `reformat` | `FORMAT_REPAIR` | —      | `off` logs misses only, `reformat` rebuilds prose to a list or renumbers bullets deterministically.       |
+| `format.minListItems` | `3`        | —               | `2..5` | Minimum matching list lines required to satisfy a requested list.                                         |
+| `format.minListShare` | `0.5`      | —               | `0..1` | Minimum share of reply words that must live in list items.                                                |
+| `format.wordSlack`    | `0.1`      | —               | `0..1` | Fractional tolerance applied to word limits of 10 or more.                                                |
+
 ## Character
 
 For persona and character settings, see [Characters](characters.md).

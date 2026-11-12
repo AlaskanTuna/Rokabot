@@ -77,7 +77,8 @@ vi.mock('../memory/memoryClaims.js', async (importOriginal) => ({
 }))
 vi.mock('../memory/passiveBuffer.js', () => ({ getMessages: mocks.getMessages }))
 vi.mock('../promptAssembler.js', () => ({ assembleSystemPrompt: mocks.assembleSystemPrompt }))
-vi.mock('../promptSafety.js', () => ({
+vi.mock('../promptSafety.js', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   buildFactsEnvelope: mocks.buildFactsEnvelope,
   buildOverheardBlock: mocks.buildOverheardBlock
 }))

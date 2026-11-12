@@ -1,0 +1,1 @@
+- Format: they asked for at most {{count}} sentences. Keep your whole reply within that sentence limit. This overrides the paragraph and length guidance in Formatting Your Reply.

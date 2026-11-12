@@ -109,6 +109,9 @@ describe('metricsStore', () => {
       'model_id',
       'route_role',
       'workload',
+      'format_kinds',
+      'format_outcome',
+      'format_detail',
       'created_at'
     ])
     expect(extractionColumns.map((column) => column.name)).toEqual([
@@ -465,5 +468,31 @@ describe('metricsStore', () => {
     db.prepare('UPDATE failure_diagnostics SET created_at = ?').run(Date.now() - 96 * 60 * 60 * 1000)
     expect(pruneFailureDiagnostics(72)).toBe(1)
     expect(db.prepare('SELECT COUNT(*) AS count FROM failure_diagnostics').get()).toEqual({ count: 0 })
+  })
+
+  // 33 (store side)
+  it('stores the format telemetry columns, with NULLs when absent', () => {
+    const db = getDb()
+    db.prepare('DELETE FROM response_events').run()
+
+    recordResponseEvent(responseEvent)
+    recordResponseEvent({
+      ...responseEvent,
+      formatKinds: JSON.stringify(['bullets', 'score']),
+      formatOutcome: 'repaired',
+      formatDetail: JSON.stringify({ v: 1, mode: 'on', cues: ['point_form', 'score_scale'] })
+    })
+
+    const rows = db
+      .prepare('SELECT format_kinds, format_outcome, format_detail FROM response_events ORDER BY id ASC')
+      .all() as Array<Record<string, unknown>>
+    expect(rows).toEqual([
+      { format_kinds: null, format_outcome: null, format_detail: null },
+      {
+        format_kinds: '["bullets","score"]',
+        format_outcome: 'repaired',
+        format_detail: '{"v":1,"mode":"on","cues":["point_form","score_scale"]}'
+      }
+    ])
   })
 })

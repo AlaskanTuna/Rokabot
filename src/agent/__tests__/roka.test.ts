@@ -12,7 +12,15 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../jev/judgments.js', () => ({ judgeTurn: mocks.judgeTurn }))
 // The reply shape is drawn at random each turn; a fixed one keeps the token counts below comparable.
-vi.mock('../replyShape.js', () => ({ buildReplyShapePrompt: () => '## Reply Shape\n- Length: two short paragraphs.' }))
+vi.mock('../replyShape.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../replyShape.js')>()
+  return {
+    ...actual,
+    renderReplyShape: (shape: Parameters<typeof actual.renderReplyShape>[0]) =>
+      shape.format ? actual.renderReplyShape(shape) : '## Reply Shape\n- Length: two short paragraphs.',
+    buildReplyShapePrompt: () => '## Reply Shape\n- Length: two short paragraphs.'
+  }
+})
 vi.mock('../../storage/jevEventStore.js', () => ({ recordJevEvent: mocks.recordJevEvent }))
 vi.mock('../media/watch.js', () => ({ watchMedia: mocks.watchMedia, countUriTokens: mocks.countUriTokens }))
 vi.mock('../media/turnMedia.js', async (importOriginal) => {
@@ -60,7 +68,8 @@ import { assembleSystemPrompt } from '../promptAssembler.js'
 import { FACTS_UNTRUSTED_DATA_LABEL, OVERHEARD_UNTRUSTED_DATA_LABEL, buildFactsEnvelope } from '../promptSafety.js'
 import type { TurnOutcome } from '../reliability.js'
 import { runTurnWithReliability } from '../reliability.js'
-import type { TestRunTurn } from '../roka.js'
+import { type FormatEnforcement, detectFormatRequest } from '../replyFormat.js'
+import type { FormatSteering, TestRunTurn } from '../roka.js'
 import {
   __resetTestRunTurnFactory,
   __setTestRunTurnFactory,
@@ -874,6 +883,57 @@ describe('afterModelCallback reply blocks', () => {
     expect(response.content?.parts?.[0].text).toBe(text)
     expect(warn).toHaveBeenCalledWith(expect.objectContaining({ blocks: 5 }), 'Reply is over the block cap')
     warn.mockRestore()
+  })
+})
+
+describe('afterModelCallback reply format', () => {
+  const callback = rokaAgent.afterModelCallback as (params: { response: LlmResponse }) => Promise<unknown>
+  const request = detectFormatRequest('give me feedback in point form')!
+  const tunables = { minListItems: 3, minListShare: 0.5, wordSlack: 0.1 }
+
+  // 28
+  it('rebuilds prose as a list before session history', async () => {
+    const prose = 'Lead sentence. First detail. Second detail. Third detail. Closing remark.'
+    const response = { content: { role: 'model', parts: [{ text: prose }] } } as LlmResponse
+    const format: FormatSteering = { request, mode: 'on', repair: 'reformat', tunables }
+    const steering: { format?: FormatSteering | null; formatResult?: FormatEnforcement } = { format }
+
+    await steeringForRequest.run(steering, () => callback({ response }))
+
+    expect(response.content?.parts?.[0].text).toBe(
+      'Lead sentence.\n- First detail.\n- Second detail.\n- Third detail.\n\nClosing remark.'
+    )
+    expect(steering.formatResult).toMatchObject({ outcome: 'repaired', repair: 'list_from_prose' })
+  })
+
+  // 29
+  it('checks only the final response', async () => {
+    const response = {
+      content: {
+        role: 'model',
+        parts: [{ text: 'Let me check that.' }, { functionCall: { name: 'search_web', args: {} } }]
+      }
+    } as unknown as LlmResponse
+    const format: FormatSteering = { request, mode: 'on', repair: 'reformat', tunables }
+    const steering: { format?: FormatSteering | null; formatResult?: FormatEnforcement } = { format }
+
+    await steeringForRequest.run(steering, () => callback({ response }))
+
+    expect(response.content?.parts?.[0].text).toBe('Let me check that.')
+    expect(steering.formatResult).toBeUndefined()
+  })
+
+  // 30
+  it('in shadow, records but never rewrites', async () => {
+    const prose = 'Lead sentence. First detail. Second detail. Third detail. Closing remark.'
+    const response = { content: { role: 'model', parts: [{ text: prose }] } } as LlmResponse
+    const format: FormatSteering = { request, mode: 'shadow', repair: 'reformat', tunables }
+    const steering: { format?: FormatSteering | null; formatResult?: FormatEnforcement } = { format }
+
+    await steeringForRequest.run(steering, () => callback({ response }))
+
+    expect(response.content?.parts?.[0].text).toBe(prose)
+    expect(steering.formatResult).toMatchObject({ outcome: 'unmet', repair: 'off' })
   })
 })
 
@@ -3126,5 +3186,82 @@ describe('Jev turn judgments', () => {
         userId: 'mio-id'
       })
     ).resolves.toMatchObject({ text: 'Hello~' })
+  })
+
+  // 31
+  it('writes format metrics when formatResult is recorded', async () => {
+    __setTestRunTurnFactory(() => async () => {
+      const store = steeringForRequest.getStore()
+      if (store) {
+        store.formatResult = {
+          text: 'Lead.\n- one\n- two\n- three',
+          first: { bullets: false },
+          final: { bullets: true },
+          repair: 'list_from_prose',
+          outcome: 'repaired'
+        }
+      }
+      return { text: 'Lead.\n- one\n- two\n- three', hasText: true, hasFunctionCall: false }
+    })
+
+    const result = await generateResponse({
+      channelId: 'roka-format-metrics-channel',
+      guildId: 'format-metrics-guild',
+      memory: true,
+      userMessage: 'give me feedback in point form',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id'
+    })
+
+    expect(result.metrics.formatKinds).toBe(JSON.stringify(['bullets']))
+    expect(result.metrics.formatOutcome).toBe('repaired')
+    expect(JSON.parse(result.metrics.formatDetail ?? '{}')).toMatchObject({
+      v: 1,
+      mode: 'on',
+      cues: ['point_form'],
+      repair: 'list_from_prose',
+      suppressed: null
+    })
+  })
+
+  // 32
+  it('files a format_unmet diagnostic', async () => {
+    __setTestRunTurnFactory(() => async () => {
+      const store = steeringForRequest.getStore()
+      if (store) {
+        store.formatResult = {
+          text: '- one\n- two\n- three',
+          first: { bullets: true, score: false },
+          final: { bullets: true, score: false },
+          repair: 'not_possible',
+          outcome: 'unmet'
+        }
+      }
+      return { text: '- one\n- two\n- three', hasText: true, hasFunctionCall: false }
+    })
+
+    const result = await generateResponse({
+      channelId: 'roka-format-diag-channel',
+      guildId: 'format-diag-guild',
+      memory: true,
+      userMessage: 'rate out of 100 in point form',
+      displayName: 'Mio',
+      username: 'mio',
+      userId: 'mio-id'
+    })
+
+    expect(result.metrics.formatOutcome).toBe('unmet')
+    const diagnostic = vi.mocked(recordFailureDiagnostic).mock.calls.at(-1)?.[0]
+    expect(diagnostic).toMatchObject({
+      guildId: 'format-diag-guild',
+      outcome: 'ok',
+      kind: 'format_unmet',
+      failureMarker: 'score'
+    })
+    expect(JSON.parse(diagnostic?.errorMessage ?? '{}')).toMatchObject({
+      v: 1,
+      params: { scoreMax: 100 }
+    })
   })
 })

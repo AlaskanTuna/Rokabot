@@ -48,6 +48,8 @@
   "system.competitive.memoryFree": "06de00b31843b756fb09c1edcf46634bb3090fc32b29d890a24fb402b789339a",
   "replyShape.competitive": "a3c24ed792a6bf12a05051201b0a2dbe0ca18133c3a07adce538bf7f9c397876",
   "replyShape.classifiers": "4394e35b3283a0e1215f730ef74fd9fc872e8743134f0c6caab6e84b1e27bab6",
+  "replyShape.format": "348e1cb7c0668452dfa2fcc2fea3297e7be17d978e24a5023aafee469850630b",
+  "formatRequest.classifiers": "a95b9616f5333b88425095051419659c5552fffe17729fffc6b115f64413ccd7",
   "tones": "474f670fe0c91f937a2c5f696ba067ff1580639dde7c711e46a9509af5228024",
   "faces": "9fa86199b2dcdf2d543ed2d5ace7da28e5219189c3d15fa19390a11c7d98c703",
   "jevToneCriteria": "23caf81e6919dd875f920c3d97549dc4ac568614eff7570218a1c4670a3a0b6f"

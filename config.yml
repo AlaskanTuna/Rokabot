@@ -229,3 +229,10 @@ timezone: Asia/Singapore # IANA timezone for time-of-day features (override with
 
 logging:
   level: info # Log level: debug, info, warn, error
+
+format: # Explicit reply-format requests: point form, steps, a score, a word or sentence limit
+  mode: on # off | shadow (detect and check, log only; prompt and reply unchanged) | on (the reply shape yields and misses are repaired). FORMAT_MODE overrides
+  repair: reformat # off | reformat (rebuild a prose reply as the requested list, in code). FORMAT_REPAIR overrides
+  minListItems: 3 # A requested list counts as met with at least this many items
+  minListShare: 0.5 # ...and with at least this share of the reply's words in list items
+  wordSlack: 0.1 # A word limit of 10 or more counts as met up to this share over it

@@ -128,6 +128,9 @@ function createTables(database: Database.Database): void {
       model_id TEXT DEFAULT NULL,
       route_role TEXT DEFAULT NULL,
       workload TEXT DEFAULT NULL,
+      format_kinds TEXT DEFAULT NULL,
+      format_outcome TEXT DEFAULT NULL,
+      format_detail TEXT DEFAULT NULL,
       created_at INTEGER NOT NULL
     );
 
@@ -332,7 +335,15 @@ export function runMigrations(database: Database.Database): void {
   if (responseEventCols.length > 0 && !responseEventCols.some((column) => column.name === 'hedged')) {
     database.exec('ALTER TABLE response_events ADD COLUMN hedged INTEGER NOT NULL DEFAULT 0')
   }
-  for (const column of ['provider', 'model_id', 'route_role', 'workload']) {
+  for (const column of [
+    'provider',
+    'model_id',
+    'route_role',
+    'workload',
+    'format_kinds',
+    'format_outcome',
+    'format_detail'
+  ]) {
     if (responseEventCols.length > 0 && !responseEventCols.some(({ name }) => name === column)) {
       database.exec(`ALTER TABLE response_events ADD COLUMN ${column} TEXT DEFAULT NULL`)
     }

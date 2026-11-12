@@ -146,6 +146,9 @@ describe('memory promotion harness evaluation', () => {
       'model_id',
       'route_role',
       'workload',
+      'format_kinds',
+      'format_outcome',
+      'format_detail',
       'created_at'
     ])
 
