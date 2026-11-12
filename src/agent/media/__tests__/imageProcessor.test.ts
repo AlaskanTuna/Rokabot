@@ -2,6 +2,12 @@ import sharp from 'sharp'
 import { describe, expect, it } from 'vitest'
 import { GEMINI_IMAGE_TOKENS, processImageForGemini } from '../imageProcessor.js'
 
+async function processSupportedImage(buffer: Buffer, mimeType: string) {
+  const result = await processImageForGemini(buffer, mimeType)
+  if (!result) throw new Error('Expected image processing to return image data')
+  return result
+}
+
 describe('GEMINI_IMAGE_TOKENS', () => {
   // Measured with countTokens against gemini-3.5-flash-lite on 2026-08-19 (#121). Pinned as a literal
   // because the number is an external fact about the model, not something the code derives: 64x64,
@@ -20,7 +26,7 @@ describe('processImageForGemini', () => {
       .png()
       .toBuffer()
 
-    const result = await processImageForGemini(large, 'image/png')
+    const result = await processSupportedImage(large, 'image/png')
 
     expect(result.mimeType).toBe('image/jpeg')
   })
@@ -32,7 +38,7 @@ describe('processImageForGemini', () => {
       .png()
       .toBuffer()
 
-    const result = await processImageForGemini(large, 'image/png')
+    const result = await processSupportedImage(large, 'image/png')
 
     expect(result.data.length).toBeLessThan(large.length)
   })
@@ -44,7 +50,7 @@ describe('processImageForGemini', () => {
       .png()
       .toBuffer()
 
-    const result = await processImageForGemini(large, 'image/png')
+    const result = await processSupportedImage(large, 'image/png')
     const meta = await sharp(result.data).metadata()
 
     expect(meta.width ?? 0).toBeLessThanOrEqual(1024)
@@ -58,7 +64,7 @@ describe('processImageForGemini', () => {
       .png()
       .toBuffer()
 
-    const result = await processImageForGemini(small, 'image/png')
+    const result = await processSupportedImage(small, 'image/png')
     const meta = await sharp(result.data).metadata()
 
     expect(Math.max(meta.width ?? 0, meta.height ?? 0)).toBeGreaterThanOrEqual(512)
@@ -71,7 +77,7 @@ describe('processImageForGemini', () => {
       .png()
       .toBuffer()
 
-    const result = await processImageForGemini(normal, 'image/png')
+    const result = await processSupportedImage(normal, 'image/png')
     const meta = await sharp(result.data).metadata()
 
     expect(meta.width ?? 0).toBeGreaterThanOrEqual(512)
@@ -81,7 +87,7 @@ describe('processImageForGemini', () => {
   it('preserves malformed PNG bytes with the PNG MIME type', async () => {
     const png = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.from('garbage')])
 
-    const result = await processImageForGemini(png, 'image/jpeg')
+    const result = await processSupportedImage(png, 'image/jpeg')
 
     expect(result.data).toEqual(png)
     expect(result.mimeType).toBe('image/png')
@@ -90,7 +96,7 @@ describe('processImageForGemini', () => {
   it('preserves malformed WebP bytes with the WebP MIME type', async () => {
     const webp = Buffer.concat([Buffer.from('RIFFxxxxWEBP'), Buffer.from('garbage')])
 
-    const result = await processImageForGemini(webp, 'image/jpeg')
+    const result = await processSupportedImage(webp, 'image/jpeg')
 
     expect(result.data).toEqual(webp)
     expect(result.mimeType).toBe('image/webp')
@@ -99,18 +105,17 @@ describe('processImageForGemini', () => {
   it('preserves malformed GIF bytes with the GIF MIME type', async () => {
     const gif = Buffer.concat([Buffer.from('GIF89a'), Buffer.from('garbage')])
 
-    const result = await processImageForGemini(gif, 'image/jpeg')
+    const result = await processSupportedImage(gif, 'image/jpeg')
 
     expect(result.data).toEqual(gif)
     expect(result.mimeType).toBe('image/gif')
   })
 
-  it('uses the declared MIME type when malformed bytes have no known signature', async () => {
-    const garbage = Buffer.from('not an image')
+  it('drops AVIF bytes when the embed declares PNG', async () => {
+    const avif = Buffer.concat([Buffer.from([0, 0, 0, 16]), Buffer.from('ftypavif'), Buffer.alloc(8)])
 
-    const result = await processImageForGemini(garbage, 'image/avif')
+    const result = await processImageForGemini(avif, 'image/png')
 
-    expect(result.data).toEqual(garbage)
-    expect(result.mimeType).toBe('image/avif')
+    expect(result).toBeNull()
   })
 })

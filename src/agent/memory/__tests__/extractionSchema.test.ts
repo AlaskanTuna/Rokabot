@@ -33,6 +33,28 @@ function keysIn(node: unknown, found = new Set<string>()): Set<string> {
   return found
 }
 
+function anthropicParameterCounts(node: unknown): { optional: number; unions: number } {
+  let optional = 0
+  let unions = 0
+  const visit = (current: unknown): void => {
+    if (Array.isArray(current)) {
+      for (const item of current) visit(item)
+    } else if (current && typeof current === 'object') {
+      const schema = current as Record<string, unknown>
+      if (Array.isArray(schema.anyOf) || (Array.isArray(schema.type) && schema.type.length > 1)) unions++
+      if (schema.type === 'object' && schema.properties && typeof schema.properties === 'object') {
+        const required = new Set(Array.isArray(schema.required) ? (schema.required as string[]) : [])
+        optional += Object.keys(schema.properties).filter((name) => !required.has(name)).length
+      }
+      for (const [key, value] of Object.entries(schema)) {
+        if (key !== '$ref') visit(value)
+      }
+    }
+  }
+  visit(node)
+  return { optional, unions }
+}
+
 const subject = { kind: 'user', userId: 'u-1' }
 
 describe('parseExtractionOutput', () => {
@@ -364,5 +386,11 @@ describe('parseExtractionOutput', () => {
     const strictJson = JSON.stringify(strict)
     expect(strictJson).toContain('"objectUserId":{"anyOf":[{"type":"string"},{"type":"null"}]}')
     expect(strictJson).not.toContain('minLength')
+  })
+
+  it('keeps Anthropic extraction parameters within its optional and union limits', () => {
+    const counts = anthropicParameterCounts(requestSchema(ExtractionOutputSchema, 'forced_tool'))
+    expect(counts.optional).toBeLessThanOrEqual(24)
+    expect(counts.unions).toBeLessThanOrEqual(24)
   })
 })

@@ -316,6 +316,20 @@ describe('generateObject on a configured llm block', () => {
     )
   })
 
+  it('logs a truncated main model error message before trying the fallback', async () => {
+    mocks.config.llm = { main: route('haiku', haiku), fallback: route('flash', gemini) }
+    const message = 'Anthropic 400 INVALID_ARGUMENT '.repeat(20)
+    useLlms({ haiku: fakeLlm(new Error(message)), flash: fakeLlm(reply({ answer: 'tea' })) })
+
+    await generateObject({ schema: Answer, prompt: 'Extract.', workload: 'extraction' })
+
+    expect(mocks.warn).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ errorName: 'Error', errorMessage: message.slice(0, 300) }),
+      'Background job failed on the main model, trying the fallback'
+    )
+  })
+
   it('throws the main error when the fallback fails too', async () => {
     mocks.config.llm = { main: route('haiku', haiku), fallback: route('flash', gemini) }
     const failure = new Error('overloaded')

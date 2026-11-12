@@ -11,7 +11,7 @@ const MAX_DIMENSION = VISION_MAX_DIMENSION
 const MIN_DIMENSION = 512
 const JPEG_QUALITY = 80
 
-function sniffMimeType(buffer: Buffer, declaredMimeType: string): string {
+function sniffMimeType(buffer: Buffer): string | null {
   if (buffer.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))) return 'image/jpeg'
   if (buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png'
 
@@ -22,7 +22,7 @@ function sniffMimeType(buffer: Buffer, declaredMimeType: string): string {
     return 'image/webp'
   }
 
-  return declaredMimeType
+  return null
 }
 
 /**
@@ -37,7 +37,7 @@ function sniffMimeType(buffer: Buffer, declaredMimeType: string): string {
 export async function processImageForGemini(
   buffer: Buffer,
   declaredMimeType: string
-): Promise<{ data: Buffer; mimeType: string }> {
+): Promise<{ data: Buffer; mimeType: string } | null> {
   try {
     const metadata = await sharp(buffer).metadata()
     const width = metadata.width ?? 0
@@ -79,8 +79,13 @@ export async function processImageForGemini(
 
     return { data: result, mimeType: 'image/jpeg' }
   } catch (error) {
-    const mimeType = sniffMimeType(buffer, declaredMimeType)
-    logger.warn({ error, mimeType }, 'Image processing failed, using original')
+    const mimeType = sniffMimeType(buffer)
+    const dropped = mimeType === null
+    logger.warn(
+      { error, mimeType: mimeType ?? 'unknown', declaredMimeType, dropped },
+      dropped ? 'Image processing failed, dropping image' : 'Image processing failed, using original'
+    )
+    if (dropped) return null
     return { data: buffer, mimeType }
   }
 }

@@ -1,13 +1,17 @@
 import sharp from 'sharp'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { MAX_IMAGE_SIZE_BYTES } from '../attachmentLimits.js'
-import { downloadAttachment } from '../attachments.js'
+import { downloadAttachment, prepareAttachments } from '../attachments.js'
 
 let png: Buffer
+let gif: Buffer
 
 beforeAll(async () => {
   png = await sharp({ create: { width: 600, height: 600, channels: 3, background: { r: 10, g: 20, b: 30 } } })
     .png()
+    .toBuffer()
+  gif = await sharp({ create: { width: 2, height: 2, channels: 3, background: { r: 10, g: 20, b: 30 } } })
+    .gif()
     .toBuffer()
 })
 
@@ -16,11 +20,19 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-function imageResponse(): Response {
-  return new Response(new Uint8Array(png), {
+function mediaResponse(buffer: Buffer, contentType: string): Response {
+  return new Response(new Uint8Array(buffer), {
     status: 200,
-    headers: { 'content-type': 'image/png', 'content-length': String(png.length) }
+    headers: { 'content-type': contentType, 'content-length': String(buffer.length) }
   })
+}
+
+function imageResponse(): Response {
+  return mediaResponse(png, 'image/png')
+}
+
+function largeGif(): Buffer {
+  return Buffer.concat([gif, Buffer.alloc(9_800_000 - gif.length)])
 }
 
 const oversized = MAX_IMAGE_SIZE_BYTES * 2
@@ -53,6 +65,69 @@ describe('downloadAttachment', () => {
 
     expect(result).toBeNull()
     expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('downloads a 9.8 MB GIF above the regular image limit', async () => {
+    const bytes = largeGif()
+    const fetch = vi.fn().mockResolvedValue(mediaResponse(bytes, 'image/gif'))
+    vi.stubGlobal('fetch', fetch)
+
+    const result = await downloadAttachment({
+      url: 'https://cdn.test/large.gif',
+      contentType: 'image/gif',
+      size: bytes.length
+    })
+
+    expect(result?.mimeType).toBe('image/jpeg')
+    expect(result?.data.length).toBeLessThan(bytes.length)
+    expect(fetch).toHaveBeenCalledOnce()
+  })
+
+  it('refuses GIFs larger than 16 MiB without downloading them', async () => {
+    const fetch = vi.fn()
+    vi.stubGlobal('fetch', fetch)
+
+    const result = await downloadAttachment({
+      url: 'https://cdn.test/too-large.gif',
+      contentType: 'image/gif',
+      size: 16_777_217
+    })
+
+    expect(result).toBeNull()
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('drops AVIF bytes when the embed declares PNG', async () => {
+    const avif = Buffer.concat([Buffer.from([0, 0, 0, 16]), Buffer.from('ftypavif'), Buffer.alloc(8)])
+    const fetch = vi.fn().mockResolvedValue(mediaResponse(avif, 'image/png'))
+    vi.stubGlobal('fetch', fetch)
+
+    const result = await downloadAttachment({ url: 'https://cdn.test/mislabeled.png', contentType: 'image/png' })
+
+    expect(result).toBeNull()
+    expect(fetch).toHaveBeenCalledOnce()
+  })
+
+  it('processes GIF downloads one at a time', async () => {
+    let releaseFirst!: (response: Response) => void
+    const firstResponse = new Promise<Response>((resolve) => {
+      releaseFirst = resolve
+    })
+    const fetch = vi.fn().mockReturnValueOnce(firstResponse).mockResolvedValue(mediaResponse(gif, 'image/gif'))
+    vi.stubGlobal('fetch', fetch)
+
+    const pending = prepareAttachments('channel', [
+      { url: 'https://cdn.test/first.gif', contentType: 'image/gif', size: gif.length },
+      { url: 'https://cdn.test/second.gif', contentType: 'image/gif', size: gif.length }
+    ])
+    await Promise.resolve()
+    const fetchesBeforeFirstCompletes = fetch.mock.calls.length
+    releaseFirst(mediaResponse(gif, 'image/gif'))
+
+    await pending
+
+    expect(fetchesBeforeFirstCompletes).toBe(1)
+    expect(fetch).toHaveBeenCalledTimes(2)
   })
 
   it('tries once more after the connection drops', async () => {
