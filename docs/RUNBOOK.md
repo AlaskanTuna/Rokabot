@@ -667,6 +667,41 @@ sqlite3 data/rokabot.db "SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigge
 
 The last query must return `0` after the bot starts in legacy mode. Keep the backup until the dual period is accepted.
 
+#### Offline Memory Simulator Gate (#266)
+
+Per the 2026-11-14 owner decision, each #266 phase cuts over once the offline simulator passes, with no production soak. `npm run memsim` replays 30 synthetic days (2 guilds, public and private channels, DMs, media shares and 5 restarts) through the real memory pipeline on a temporary database. It overwrites `GEMINI_API_KEY` with a sentinel in its own process and reads only `TYPESAFE_API_KEY`, `GRAPHIFY_GEMINI_API_KEY`, `DEV_GEMINI_API_KEY` and `CLIPROXY_TOKEN` from `.env`, and only when recording. The report holds counts, never memory text.
+
+Record and seeded runs need the local River proxy (`127.0.0.1:8317`), so run them on a workstation, not on the Pi:
+
+```bash
+# Replay the committed synthetic cache; no network calls, about 16 s on a workstation
+npm run memsim -- --replay
+
+# Re-record the committed cache after a scenario or pipeline change, then drop entries nothing read.
+# --budget river=N,embeddings=N,typesafe=N caps live calls (defaults 600, 1200 and 1500)
+npm run memsim:generate
+npm run memsim -- --record --prune-unused
+
+# Seeded run: copy the Pi database into a private directory outside the repo, then record and replay against the copy
+install -d -m 700 ~/memsim-private
+ssh <pi-user>@<pi-ethernet-ip> "sqlite3 ~/rokabot/data/rokabot.db '.backup /tmp/rokabot-sim-copy.db'"
+scp <pi-user>@<pi-ethernet-ip>:/tmp/rokabot-sim-copy.db ~/memsim-private/
+ssh <pi-user>@<pi-ethernet-ip> "rm /tmp/rokabot-sim-copy.db"
+npm run memsim -- --seed ~/memsim-private/rokabot-sim-copy.db --record --cache-dir ~/memsim-private/cache
+npm run memsim -- --seed ~/memsim-private/rokabot-sim-copy.db --replay --cache-dir ~/memsim-private/cache
+```
+
+A seeded run refuses a `--cache-dir` inside the repository, because its cached replies hold real memory text. Never commit that cache or the copy.
+
+The builder timing at 10,000 items runs offline from the committed cache, so it can run on the Pi:
+
+```bash
+cd ~/rokabot
+npm run memsim -- --replay --scale 10000
+```
+
+Before a cutover, the replay must print `integrity=passed` (`drift 0/0/0`), `triggers=passed`, `parity=passed`, `privacy=passed` and `crash=passed`. `npm test` runs the same seedless replay as `tests/harness/__tests__/memsim.eval.test.ts`.
+
 ### Vault Export
 
 The export writes a read-only snapshot of member notes and each guild's `guild.md` to `data/vault/` (`MEMORY_VAULT_EXPORT_DIR` changes it). Open the copy in Obsidian on a desktop, not on the Pi. Re-run it to refresh.
