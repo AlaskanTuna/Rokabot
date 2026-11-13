@@ -119,18 +119,29 @@ describe('runEpisodePipeline', () => {
     expect(trace.stageMs).toHaveProperty('admission')
   })
 
-  it.each(['trivial', 'sensitive'] as const)(
-    'records a %s precheck rejection without a probability',
-    async (reason) => {
-      mocks.admitEpisode.mockResolvedValueOnce({ admitted: false, reason, probability: null, inputTokens: 0 })
-      const trace = startRunTrace(queueJob, 1)
+  it.each([
+    ['trivial', null],
+    ['sensitive', 'email']
+  ] as const)('records a %s precheck rejection without a probability', async (reason, precheckPattern) => {
+    mocks.admitEpisode.mockResolvedValueOnce({
+      admitted: false,
+      reason,
+      probability: null,
+      inputTokens: 0,
+      ...(precheckPattern ? { precheckPattern } : {})
+    })
+    const trace = startRunTrace(queueJob, 1)
 
-      await runEpisodePipeline(queueJob, trace)
+    await runEpisodePipeline(queueJob, trace)
 
-      expect(trace).toMatchObject({ stage: 'precheck', outcome: reason, tokens: 0 })
-      expect(trace.admission).toBeUndefined()
-    }
-  )
+    expect(trace).toMatchObject({
+      stage: 'precheck',
+      outcome: reason,
+      precheckPattern,
+      tokens: 0
+    })
+    expect(trace.admission).toBeUndefined()
+  })
 
   it('throws so the queue can retry when Jev could not judge the episode', async () => {
     mocks.admitEpisode.mockResolvedValueOnce({
