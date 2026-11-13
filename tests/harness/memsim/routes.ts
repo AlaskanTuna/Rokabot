@@ -189,6 +189,11 @@ export class PacedGeminiEmbeddingClient {
 
 export function prepareSimConfigEnv(options: SimEnvOptions): { configDir: string; cleanup: () => void } {
   process.env.GEMINI_API_KEY = 'memsim-sentinel-not-a-key'
+  // getLocalHour() reads the wall clock, not the simulated Date.now, and the Jev turn request carries its
+  // time_of_day. Pin it to the hour the committed and seeded caches were recorded in (late night), so a
+  // replay hits the cache whatever time it runs.
+  process.env.ROKABOT_HARNESS_LIVE = '1'
+  process.env.ROKABOT_FIXED_HOUR = '4'
   process.env.DOTENV_CONFIG_PATH = resolve('tests/vitest-empty.env')
   // Replay needs no keys, so a replay (the CI eval test included) never loads a secret from .env.
   if (options.mode === 'record' && existsSync('.env')) {

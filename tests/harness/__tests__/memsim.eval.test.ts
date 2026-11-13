@@ -8,7 +8,9 @@ const SAVED_KEYS = [
   'ROKABOT_DB_PATH',
   'MEMORY_STORE',
   'MEMORY_PRIVACY',
-  'TYPESAFE_API_KEY'
+  'TYPESAFE_API_KEY',
+  'ROKABOT_HARNESS_LIVE',
+  'ROKABOT_FIXED_HOUR'
 ] as const
 
 describe('memory simulator replay gate', () => {
