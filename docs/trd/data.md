@@ -111,8 +111,8 @@ override. `src/agent/__tests__/promptAssembler.test.ts` fails when this table an
 | `update_notices`                                      | Release tags the owner was already told about, so each release is announced once.                                                                                                                                                    | `src/storage/updateNoticeStore.ts`                                                                             |
 
 - **Vector Provenance:** `memory_episode`, `media_digest` and `memory_claim` carry `embedding_model_id`, `embedding_dim` and `embedding_fingerprint`. A vector stored without provenance is marked `unknown` at startup.
-- **Typed Memory:** startup creates the additive `memory_item*` schema. In `legacy`, projection triggers are dropped. In `dual`, triggers mirror the five legacy source tables in the same transaction; startup and daily maintenance record value-free drift counts and fill NULL embedding hashes. `npm run migrate:memory-items` is an explicit, transactional catch-up; startup never runs it. Readers stay on legacy in this phase.
-- **No Message Text:** `memory_events`, `jev_events` and `response_events` store no message text. `response_events.failure_marker` stores only the raw `finishReason` or error-code token, such as `SAFETY`, and `format_kinds` / `format_outcome` / `format_detail` store rule IDs, requested bounds, check booleans, repair kind, mode and suppression reason only.
+- **Typed Memory:** startup creates the additive `memory_item*` schema. In `legacy` (the `config.yml` default), projection triggers are dropped. In `dual` (set on the Pi via `MEMORY_STORE=dual` in `.env`), triggers mirror the five legacy source tables in the same transaction; startup and daily maintenance record value-free drift counts and fill NULL embedding hashes. `npm run migrate:memory-items` is an explicit, transactional catch-up; startup never runs it. Readers stay on legacy in this phase.
+- **No Message Text:** `memory_events`, `jev_events` and `response_events` store no message text. `response_events.failure_marker` stores only the raw `finishReason` or error-code token, such as `SAFETY`, `format_outcome` records `met`, `repaired`, `unmet` or `suppressed`, and `format_detail` stores rule IDs, requested bounds, check booleans, repair kind, mode and suppression reason only.
 
 ### Retention
 
@@ -162,7 +162,7 @@ Every reply turn runs the ADK `LlmAgent` named `roka` on the model that `llm.mai
 - `src/storage/sessionStore.ts`
 - `src/utils/rateLimiter.ts`
 - `src/agent/promptAssembler.ts`, `src/character/`, `characters/roka/moods.yml`
-- `src/storage/database.ts`, `src/storage/memoryClaimSchema.ts`, `src/storage/vectorProvenance.ts`
+- `src/storage/database.ts`, `src/storage/memoryClaimSchema.ts`, `src/storage/memoryItemSchema.ts`, `src/storage/memoryItemProjection.ts`, `src/storage/memoryItemBackfill.ts`, `src/storage/memoryItemIntegrity.ts`, `src/storage/vectorProvenance.ts`
 - `src/storage/sessionStore.ts`, `src/storage/gameStore.ts`, `src/storage/statsStore.ts`, `src/storage/metricsStore.ts`, `src/storage/reportStore.ts`
 - `src/agent/session.ts`, `src/agent/roka.ts`, `src/agent/llm/safetySettings.ts`
 - `src/index.ts` (prune schedule)

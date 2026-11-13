@@ -20,13 +20,15 @@ How Roka takes in files, watches audio and video, and opens linked social posts.
 
 `src/agent/media/mediaRules.ts` declares every admitted type. `src/agent/media/attachmentLimits.ts` holds the ceilings and `sizeLimitFor`, so the download and the byte budget use the same number.
 
-| Kind     | Types                                                                                 | Ceiling | Path                                                 |
-| -------- | ------------------------------------------------------------------------------------- | ------- | ---------------------------------------------------- |
-| Image    | `image/png`, `image/jpeg`, `image/gif`, `image/webp`                                  | 4 MiB   | Re-encoded by `sharp`: JPEG, longest side ≤ 1,024 px |
-| Document | `application/pdf`                                                                     | 10 MiB  | Byte-identical                                       |
-| Audio    | `audio/wav`, `mp3`, `mpeg`, `aiff`, `aac`, `ogg`, `flac`                              | 8 MiB   | Watched                                              |
-| Video    | `video/mp4`, `mpeg`, `mov`, `quicktime`, `avi`, `x-flv`, `mpg`, `webm`, `wmv`, `3gpp` | 10 MiB  | Watched                                              |
+| Kind     | Types                                                                                 | Ceiling | Path                                                          |
+| -------- | ------------------------------------------------------------------------------------- | ------- | ------------------------------------------------------------- |
+| Image    | `image/png`, `image/jpeg`, `image/webp`                                               | 4 MiB   | Re-encoded by `sharp`: JPEG, longest side ≤ 1,024 px          |
+| GIF      | `image/gif`                                                                           | 16 MiB  | Reduced by `sharp` to one JPEG frame, longest side ≤ 1,024 px |
+| Document | `application/pdf`                                                                     | 10 MiB  | Byte-identical                                                |
+| Audio    | `audio/wav`, `mp3`, `mpeg`, `aiff`, `aac`, `ogg`, `flac`                              | 8 MiB   | Watched                                                       |
+| Video    | `video/mp4`, `mpeg`, `mov`, `quicktime`, `avi`, `x-flv`, `mpg`, `webm`, `wmv`, `3gpp` | 10 MiB  | Watched                                                       |
 
+- **GIF Downloads:** `prepareAttachments` downloads `image/gif` files sequentially while other attachments download concurrently.
 - **Renamed Types:** `geminiMimeType` sends `audio/mpeg` as `audio/mp3` and `video/quicktime` as `video/mov`. Gemini accepts both spellings.
 - **Large Audio and Video:** a file above its ceiling and within `media.maxStreamedUploadBytes` (50 MiB) is streamed to the Gemini Files API (see [Transport](#transport)).
 
@@ -92,6 +94,7 @@ An attachment holds about 4.7× its size in memory. Part of that is outside the 
 - **`Range`:** the request sends `Range: bytes=0-<ceiling-1>`, but Discord's CDN answers 200 with the whole body. The cancel at the ceiling bounds the transfer.
 - **No Size Stated:** such a file is never prefix-cut. It is refused if it passes the ceiling.
 - **Truncation Notice:** `truncatedAttachments` makes the Discord layer add a line that the file was cut.
+- **Image Processing:** `processImageForGemini` (`src/agent/media/imageProcessor.ts`) converts images to JPEG via `sharp`. If `sharp` fails, `sniffMimeType` checks JPEG, PNG, GIF or WebP magic bytes and falls back to the original buffer; unreadable images or other formats (such as AVIF mislabelled as PNG) are dropped (`droppedAttachments`) instead of sent raw.
 
 ## Token Admission
 
@@ -325,7 +328,7 @@ Derivations: [Multimodal Intake Research](../research/multimodal.md) and [Social
 ## Source Files
 
 - `src/agent/media/mediaRules.ts`, `src/discord/byteBudget.ts`, `src/discord/messageContent.ts`
-- `src/agent/media/attachments.ts`, `src/agent/media/attachmentCost.ts`, `src/agent/media/attachmentLimits.ts`, `src/agent/media/mediaPrefix.ts`
+- `src/agent/media/attachments.ts`, `src/agent/media/attachmentCost.ts`, `src/agent/media/attachmentLimits.ts`, `src/agent/media/imageProcessor.ts`, `src/agent/media/mediaPrefix.ts`
 - `src/agent/media/` (`turnMedia.ts`, `mediaCache.ts`, `plan.ts`, `watch.ts`, `filesUpload.ts`, `digest.ts`, `contentKey.ts`, `youtubeStreams.ts`)
 - `src/agent/session.ts` (`stripAttachmentBytes`), `src/agent/roka.ts` (turn wiring)
 - `src/agent/social/` (`service.ts`, `urls.ts`, `ytDlp.ts`, `media.ts`, `format.ts`, `threads.ts`, `replies/`)

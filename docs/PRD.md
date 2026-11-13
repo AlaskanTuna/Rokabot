@@ -10,7 +10,7 @@ What Rokabot must do, for whom, and how far each requirement has shipped. Contra
 | Users    | Server members who chat with her, and the operator who self-hosts her               |
 | Surfaces | @mention, reply, the word "Roka", `/ask`, and seven other slash commands            |
 | Host     | Docker Compose on a Raspberry Pi 5 (8 GB)                                           |
-| Status   | 24 requirements: 21 Shipped, 3 Partial                                              |
+| Status   | 24 requirements: 22 Shipped, 2 Partial                                              |
 
 ## Problem
 
@@ -52,7 +52,7 @@ and stays in character across a group conversation.
 | FR-2  | `/ask` takes a required `question`, 3 attachment slots and `attachment_url`. It works in servers, DMs and user installs. It reads no memory, offers no memory tools and writes no memory.                                                                                                  | Shipped |
 | FR-3  | Register every slash command globally on each startup.                                                                                                                                                                                                                                     | Shipped |
 | FR-4  | Keep one session per channel: the last `session.windowSize` (20) messages, closed after `session.ttl` idle, rebuilt from SQLite up to `session.maxRehydrationAge` (2 hours) old.                                                                                                           | Shipped |
-| FR-5  | Assemble the system prompt from 4 layers (core, speech, tone, context) and close it with a reply shape picked in code, including an in-character saying-no scene for lewd bait or a hard line.                                                                                             | Shipped |
+| FR-5  | Assemble the system prompt from 4 layers (core, speech, tone, context) and close it with a reply shape picked in code, yielding to detected explicit format requests (with optional repair) and an in-character saying-no scene for lewd bait or a hard line.                              | Shipped |
 | FR-6  | Keep the system prompt under `MAX_SYSTEM_PROMPT_TOKENS` (6,500) in `tests/harness/tokens.ts`, enforced by `tests/harness/__tests__/tokens.test.ts`.                                                                                                                                        | Shipped |
 | FR-7  | Detect the mood (12 for Roka, set by the character pack) with rules at zero model cost. With `jev.tone: on`, Jev picks the tone at or above `jev.toneMinProbability`.                                                                                                                      | Shipped |
 | FR-8  | Limit model calls with a sliding-window RPM (`rateLimit.rpm`, 15) and a daily RPD (`rateLimit.rpd`, 500) that resets at midnight UTC. Decline in character; the decline deletes itself after 5 seconds.                                                                                    | Shipped |
@@ -76,7 +76,7 @@ and stays in character across a group conversation.
 ## Source Files
 
 - `src/discord/events/messageCreate.ts`, `src/discord/events/interactionCreate.ts`, `src/discord/commands/`
-- `src/agent/roka.ts`, `src/agent/session.ts`, `src/agent/replyShape.ts`, `src/agent/reliability.ts`, `src/agent/llm/budget.ts`
+- `src/agent/roka.ts`, `src/agent/session.ts`, `src/agent/replyShape.ts`, `src/agent/replyFormat.ts`, `src/agent/reliability.ts`, `src/agent/llm/budget.ts`
 - `src/agent/tools/index.ts`, `src/discord/messageBuilder.ts`, `src/discord/responses.ts`
 - `src/utils/rateLimiter.ts`, `src/discord/concurrency.ts`, `src/discord/errorHandler.ts`
 - `src/index.ts`, `Dockerfile`, `docker-compose.yml`, `config.yml`

@@ -81,20 +81,21 @@ Set `memory.privacy` in `config.yml`, or `MEMORY_PRIVACY` in `.env`, then restar
 
 Every key, default and bound is in [Configuration](configuration.md#memory). The ones owners change most:
 
-| Key                                  | Default          | Env Override                        | What It Does                                       |
-| ------------------------------------ | ---------------- | ----------------------------------- | -------------------------------------------------- |
-| `memory.privacy`                     | `relaxed`        | `MEMORY_PRIVACY`                    | Where memories may come back                       |
-| `memory.channelMonitorTtlMs`         | `86400000`       | —                                   | How long a channel stays monitored (24 h)          |
-| `memory.maxActiveClaimsPerUser`      | `20`             | `MEMORY_MAX_ACTIVE_CLAIMS_PER_USER` | Unpinned facts kept per member                     |
-| `memory.stableClaimRetentionDays`    | `180`            | —                                   | Identity and social facts                          |
-| `memory.claimRetentionDays`          | `30`             | `MEMORY_CLAIM_RETENTION_DAYS`       | Lifestyle, interest and personality facts          |
-| `memory.transientClaimRetentionDays` | `14`             | —                                   | Opinions, `misc` and currently-watching facts      |
-| `memory.episodeRetentionDays`        | `90`             | —                                   | Conversation recaps                                |
-| `memory.mediaRetentionDays`          | `90`             | —                                   | Watched media notes                                |
-| `memory.extractionSampleRate`        | `0.1`            | `MEMORY_EXTRACTION_SAMPLE_RATE`     | Share of rejected conversations kept; `0` stops it |
-| `memory.reclassifyMaxPerRun`         | `20`             | `MEMORY_RECLASSIFY_MAX_PER_RUN`     | Misfiled facts moved per day; `0` stops it         |
-| `memory.vaultExportDir`              | `data/vault`     | `MEMORY_VAULT_EXPORT_DIR`           | Where `export:vault` writes                        |
-| `embeddings.provider`                | shipped `gemini` | `EMBEDDINGS_PROVIDER`               | `gemini`, `local` or `openai`                      |
+| Key                                  | Default          | Env Override                        | What It Does                                                  |
+| ------------------------------------ | ---------------- | ----------------------------------- | ------------------------------------------------------------- |
+| `memory.store`                       | `legacy`         | `MEMORY_STORE`                      | `legacy` (active tables) or `dual` (adds projection triggers) |
+| `memory.privacy`                     | `relaxed`        | `MEMORY_PRIVACY`                    | Where memories may come back                                  |
+| `memory.channelMonitorTtlMs`         | `86400000`       | —                                   | How long a channel stays monitored (24 h)                     |
+| `memory.maxActiveClaimsPerUser`      | `20`             | `MEMORY_MAX_ACTIVE_CLAIMS_PER_USER` | Unpinned facts kept per member                                |
+| `memory.stableClaimRetentionDays`    | `180`            | —                                   | Identity and social facts                                     |
+| `memory.claimRetentionDays`          | `30`             | `MEMORY_CLAIM_RETENTION_DAYS`       | Lifestyle, interest and personality facts                     |
+| `memory.transientClaimRetentionDays` | `14`             | —                                   | Opinions, `misc` and currently-watching facts                 |
+| `memory.episodeRetentionDays`        | `90`             | —                                   | Conversation recaps                                           |
+| `memory.mediaRetentionDays`          | `90`             | —                                   | Watched media notes                                           |
+| `memory.extractionSampleRate`        | `0.1`            | `MEMORY_EXTRACTION_SAMPLE_RATE`     | Share of rejected conversations kept; `0` stops it            |
+| `memory.reclassifyMaxPerRun`         | `20`             | `MEMORY_RECLASSIFY_MAX_PER_RUN`     | Misfiled facts moved per day; `0` stops it                    |
+| `memory.vaultExportDir`              | `data/vault`     | `MEMORY_VAULT_EXPORT_DIR`           | Where `export:vault` writes                                   |
+| `embeddings.provider`                | shipped `gemini` | `EMBEDDINGS_PROVIDER`               | `gemini`, `local` or `openai`                                 |
 
 ## Maintenance Scripts
 
@@ -109,6 +110,10 @@ back up `data/rokabot.db` before the migration. The [Runbook](../RUNBOOK.md) has
 | `npm run migrate:memory-v2`                       | One-time move of the old `user_memory` table to claims. A rerun does nothing.                             |
 | `npm run memory:replay -- --session-history <db>` | Replays saved chats through the pipeline offline, with no network calls.                                  |
 | `npm run memory:replay:live`                      | The same with real models. Needs `ROKABOT_MEMORY_REPLAY_LIVE=1`, `GEMINI_API_KEY` and `TYPESAFE_API_KEY`. |
+| `npm run migrate:memory-items`                    | Backfills typed memory item tables and verifies counts (`ROKABOT_DB_PATH`).                               |
+| `npm run replay:memory-items`                     | Replays stored legacy rows through the typed-memory recall builders offline.                              |
+| `npm run memsim`                                  | Runs the 30-day offline typed-memory simulator (`-- --replay` skips API calls).                           |
+| `npm run memsim:generate`                         | Regenerates the deterministic simulator fixture.                                                          |
 
 ### Browse Memory in Obsidian
 
@@ -128,4 +133,5 @@ rsync -av data/vault/ desktop-user@desktop-host:~/Rokabot-vault/
 - `src/agent/memory/`, `src/agent/tools/rememberUser.ts`, `src/agent/tools/recallUser.ts`,
   `src/agent/tools/forgetUser.ts`
 - `scripts/export-vault.ts`, `scripts/prune-claim-overflow.ts`, `scripts/undo-reclassify.ts`,
-  `scripts/migrate-memory-v2.ts`, `scripts/replay-memory-v2.ts`
+  `scripts/migrate-memory-v2.ts`, `scripts/replay-memory-v2.ts`,
+  `scripts/migrate-memory-items.ts`, `scripts/replay-memory-items.ts`, `tests/harness/memsim/cli.ts`

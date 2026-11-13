@@ -25,22 +25,22 @@ _The loader reads the pack and harness prompts once; each turn adds per-turn blo
 `createTurnContext` builds the blocks and `composePrompt(rung)` joins them. `assembleSystemPrompt` builds blocks 1-4
 and joins them with a blank line. Every later block starts with a blank line. An empty block adds nothing.
 
-| #   | Block             | Heading in the Prompt                                                                        | Scope          | Source                                                    |
-| --- | ----------------- | -------------------------------------------------------------------------------------------- | -------------- | --------------------------------------------------------- |
-| 1   | Core Sections     | The pack's sections, e.g. `## Who You Are`, `## Hard Boundaries`                             | Static, cached | Every `prompt.system` entry except `speech`               |
-| 2   | Speech Section    | `## Speech Patterns`                                                                         | Static, cached | The `speech` entry of `prompt.system`                     |
-| 3   | Mood              | `## Current Mood: …`                                                                         | Per turn       | The mood's prompt file, default `prompts/moods/<mood>.md` |
-| 4   | Situation         | `## Situation`                                                                               | Per turn       | `situation.md`                                            |
-| 5   | What You Remember | Legacy: `## What You Remember About People In This Channel`. Unified: `## What You Remember` | Memory         | `memory/retriever.ts` or `memory/recall.ts`               |
-| 6   | Who Is Mentioned  | `## Who Is Mentioned`                                                                        | Memory         | `turnContext.ts`                                          |
-| 7   | Server Facts      | `## Things You Remember About This Server`                                                   | Memory         | `memory/retriever.ts` (legacy and shadow recall)          |
-| 8   | Episodes          | `## Things you remember happening here`                                                      | Memory         | `memory/episodeRetriever.ts` (legacy and shadow recall)   |
-| 9   | Media Watched     | `## Media You Watched Here Before`                                                           | Memory         | `memory/mediaRecall.ts` (legacy and shadow recall)        |
-| 10  | Overheard         | `## Recent Channel Activity (messages you overheard)`                                        | Per turn       | Passive buffer, `promptSafety.ts`                         |
-| 11  | Discord ID Tail   | `- The current user's Discord ID is "<id>".`                                                 | Per turn       | `turnContext.ts`                                          |
-| 12  | Looked It Up      | `## Looked It Up`                                                                            | Per turn       | `searchPrefetch.ts`                                       |
-| 13  | Redirect This One | `## Redirect This One`                                                                       | Code-picked    | `prompts/safety-steer.md` (locked)                        |
-| 14  | Reply Shape       | `## Reply Shape`                                                                             | Code-picked    | `replyShape.ts` with the pack's `voice.yml`               |
+| #   | Block             | Heading in the Prompt                                            | Scope          | Source                                                    |
+| --- | ----------------- | ---------------------------------------------------------------- | -------------- | --------------------------------------------------------- |
+| 1   | Core Sections     | The pack's sections, e.g. `## Who You Are`, `## Hard Boundaries` | Static, cached | Every `prompt.system` entry except `speech`               |
+| 2   | Speech Section    | `## Speech Patterns`                                             | Static, cached | The `speech` entry of `prompt.system`                     |
+| 3   | Mood              | `## Current Mood: …`                                             | Per turn       | The mood's prompt file, default `prompts/moods/<mood>.md` |
+| 4   | Situation         | `## Situation`                                                   | Per turn       | `situation.md`                                            |
+| 5   | What You Remember | `## What You Remember About People In This Channel`              | Memory         | `memory/retriever.ts`                                     |
+| 6   | Who Is Mentioned  | `## Who Is Mentioned`                                            | Memory         | `turnContext.ts`                                          |
+| 7   | Server Facts      | `## Things You Remember About This Server`                       | Memory         | `memory/retriever.ts`                                     |
+| 8   | Episodes          | `## Things you remember happening here`                          | Memory         | `memory/episodeRetriever.ts`                              |
+| 9   | Media Watched     | `## Media You Watched Here Before`                               | Memory         | `memory/mediaRecall.ts`                                   |
+| 10  | Overheard         | `## Recent Channel Activity (messages you overheard)`            | Per turn       | Passive buffer, `promptSafety.ts`                         |
+| 11  | Discord ID Tail   | `- The current user's Discord ID is "<id>".`                     | Per turn       | `turnContext.ts`                                          |
+| 12  | Looked It Up      | `## Looked It Up`                                                | Per turn       | `searchPrefetch.ts`                                       |
+| 13  | Redirect This One | `## Redirect This One`                                           | Code-picked    | `prompts/safety-steer.md` (locked)                        |
+| 14  | Reply Shape       | `## Reply Shape`                                                 | Code-picked    | `replyShape.ts` with the pack's `voice.yml`               |
 
 - **Blocks 1-2:** one string in the request. They are the pack's `prompt.system` sections in list order. The split
   between them exists only for the token test and the `core.ts` and `speech.ts` exports.
@@ -55,16 +55,16 @@ and joins them with a blank line. Every later block starts with a blank line. An
 
 ### When Each Block Is Present
 
-| Block  | Mention, Reply or Name Turn        | `/ask` Turn | Safety Rungs |
-| ------ | ---------------------------------- | ----------- | ------------ |
-| 1-4    | Yes                                | Yes         | 0-3          |
-| 5, 7-9 | When `memory.privacy` is not `off` | No          | 0-1          |
-| 6      | When a name resolves               | No          | 0-1          |
-| 10     | When the buffer holds messages     | Same rule   | 0            |
-| 11     | Yes                                | Yes         | 0-3          |
-| 12     | When a prefetch is ready           | Same rule   | 0            |
-| 13     | No                                 | No          | 1-3          |
-| 14     | Yes                                | Yes         | 0            |
+| Block  | Mention, Reply or Name Turn                                     | `/ask` Turn | Safety Rungs |
+| ------ | --------------------------------------------------------------- | ----------- | ------------ |
+| 1-4    | Yes                                                             | Yes         | 0-3          |
+| 5, 7-9 | In a guild when `memory.privacy` is not `off` (DMs skip memory) | No          | 0-1          |
+| 6      | When a name resolves                                            | No          | 0-1          |
+| 10     | When the buffer holds messages                                  | Same rule   | 0            |
+| 11     | Yes                                                             | Yes         | 0-3          |
+| 12     | When a prefetch is ready                                        | Same rule   | 0            |
+| 13     | No                                                              | No          | 1-3          |
+| 14     | Yes                                                             | Yes         | 0            |
 
 ## Memory Modes
 
@@ -253,6 +253,8 @@ No Roka beat lists `hard`, so none fires on a hard edge.
 - **Precedence:** turns with `edge !== 'none'` or safety rungs 1–3 suppress the format request. When `format.mode` is `off`, detection is skipped; when `shadow`, block 14 stays unyielded and `afterModelCallback` checks without rewriting.
 - **Harness Prompts:** `prompts/format-bullets.md`, `format-numbered.md`, `format-score.md` (`{{max}}`), `format-words.md` (`{{count}}`) and `format-sentences.md` (`{{count}}`).
 - **Verification and Reformat:** on a final single-part text response (no `functionCall`), `afterModelCallback` runs `enforceReplyFormat` after `capReplyBlocks`. With `format.repair: reformat`, it can renumber bullet items to numbered (`numbered_from_bullets`) or split pure-prose replies into a lead-in, bullet or numbered list, and optional closer (`list_from_prose`).
+- **Configuration:** `format.mode` (`off | shadow | on`, default `on`, env `FORMAT_MODE`), `format.repair` (`off | reformat`, default `reformat`, env `FORMAT_REPAIR`), `format.minListItems` (3, bounded 2–5), `format.minListShare` (0.5, bounded 0–1) and `format.wordSlack` (0.1, bounded 0–1 for limits of 10+ words) in `config.yml` and `NUMERIC_BOUNDS`.
+- **Telemetry:** `response_events` records `format_kinds`, `format_outcome` (`met`, `repaired`, `unmet` or `suppressed`) and `format_detail`. Unmet `ok` turns also write a `kind: 'format_unmet'` row in `failure_diagnostics` (see [Data](data.md)).
 
 ### The Rendered Note
 
@@ -293,7 +295,7 @@ records its rung count in `failure_diagnostics.safety_rungs_used`.
 
 `buildNewMessage` in `src/agent/roka.ts` sends one user content with these parts, in order:
 
-1. **Media Parts:** images, video and audio sent to the model directly. Dropped at rung 3.
+1. **Media Parts:** direct image and PDF parts. Dropped at rung 3.
 2. **Media Notes:** the text notes from watched media. Dropped at rung 3.
 3. **Attachment Notices:** one line each for files that could not be retrieved, files left out over the per-turn
    limit, and files too long to read.

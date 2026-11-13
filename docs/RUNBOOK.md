@@ -197,9 +197,12 @@ Set these in `~/rokabot/.env`, then run `sudo docker compose -f ~/rokabot/docker
 | `COMPOSE_PROFILES`                          | `local-embeddings`                     | Starts the embeddings sidecar                           |
 | `JEV_TONE`, `JEV_REFERENTS`, `JEV_PREFETCH` | `off`, `shadow`, `on`                  | Jev in-reply judgments                                  |
 | `SEARCH_PROVIDER`                           | `off`, `native`, `tavily`, `exa`       | Web search backend (`search.provider`)                  |
+| `MEMORY_STORE`                              | `legacy`, `dual`                       | Typed memory store (`memory.store`); Pi runs `dual`     |
 | `MEMORY_PRIVACY`                            | `relaxed`, `balanced`, `strict`, `off` | `memory.privacy`                                        |
 | `MEMORY_EXTRACTION_SAMPLE_RATE`             | `0` to `1`                             | `0` stops rejected-conversation samples                 |
 | `MEMORY_RECLASSIFY_MAX_PER_RUN`             | `0` to `100`                           | `0` turns reclassification off                          |
+| `FORMAT_MODE`                               | `off`, `shadow`, `on`                  | Explicit reply format override and repair               |
+| `FORMAT_REPAIR`                             | `true`, `false`                        | Repairs replies that miss an explicit format ask        |
 | `TYPESAFE_API_KEY`                          | key                                    | Jev judges when it is set                               |
 
 ### Web Search Provider
@@ -482,7 +485,7 @@ sqlite3 ~/rokabot/data/rokabot.db 'SELECT status, COUNT(*) AS jobs FROM extracti
 Every extraction attempt writes one `memory_events` row with `kind = 'extraction_run'`. Its `detail` JSON holds the stage, outcome, admission probability, operation counts and stage timings, never message text (fields: [Memory](trd/memory.md)). A retried job leaves one row per attempt. Rows are pruned after `metrics.retentionDays`.
 
 - **`stage`:** the furthest stage reached: `precheck`, `admission`, `extraction`, `verification` or `applied`.
-- **`outcome`:** `trivial` and `sensitive` are precheck drops. `below_threshold` is a Jev admission rejection. `jev_unavailable` is an admission Jev could not judge (retried once). `noop` and `written` are completed runs. `error` is a failure.
+- **`outcome`:** `trivial` and `sensitive` are precheck drops (`precheckPattern` names which sensitive filter matched). `below_threshold` is a Jev admission rejection. `jev_unavailable` is an admission Jev could not judge (retried once). `noop` and `written` are completed runs. `error` is a failure.
 - **`errorClass`:** `transient` or `permanent` with `error`. `unjudged` appears only with `jev_unavailable`.
 - **`summary`:** `dropReason` is `ops_rejected`, `numeric_id`, `boilerplate` or `incomplete`. `judged` is false when Jev gave no answer. `jev_events` holds each score with `question = 'summary_complete'`.
 
@@ -504,12 +507,19 @@ FROM memory_events WHERE kind = 'extraction_run' AND json_extract(detail, '$.adm
 GROUP BY bucket ORDER BY bucket;
 
 -- Operation outcomes
-SELECT sum(json_extract(detail, '$.ops.proposed')), sum(json_extract(detail, '$.ops.applied')),
-       sum(json_extract(detail, '$.ops.duplicate')), sum(json_extract(detail, '$.ops.staged')),
-       sum(json_extract(detail, '$.ops.dropped')), sum(json_extract(detail, '$.ops.past')),
-       sum(json_extract(detail, '$.ops.reword')), sum(json_extract(detail, '$.ops.retracted')),
-       sum(json_extract(detail, '$.ops.uncited'))
+SELECT sum(json_extract(detail, '$.ops.proposed')), sum(json_extract(detail, '$.ops.invalid')),
+       sum(json_extract(detail, '$.ops.applied')), sum(json_extract(detail, '$.ops.duplicate')),
+       sum(json_extract(detail, '$.ops.staged')), sum(json_extract(detail, '$.ops.dropped')),
+       sum(json_extract(detail, '$.ops.past')), sum(json_extract(detail, '$.ops.reword')),
+       sum(json_extract(detail, '$.ops.retracted')), sum(json_extract(detail, '$.ops.uncited'))
 FROM memory_events WHERE kind = 'extraction_run';
+
+-- Extraction model and fallback usage
+SELECT json_extract(detail, '$.models.extraction') AS model,
+       json_extract(detail, '$.extractionProvider') AS provider,
+       json_extract(detail, '$.extractionFallback') AS fallback, count(*)
+FROM memory_events WHERE kind = 'extraction_run'
+GROUP BY model, provider, fallback;
 
 -- Errors and whether retries recovered them
 SELECT job, group_concat(outcome, ' > ') AS attempts
@@ -527,7 +537,7 @@ SELECT kind, question, probability, applied FROM jev_events WHERE job_id = <jobI
 
 - **Admission Buckets:** a pile-up just under `memory.admitThreshold` suggests the threshold is too strict.
 - **Retries:** a job ending in `> written` or `> noop` recovered; one ending in `> error` did not.
-- **Ops:** `ops.applied` (and `n_selected`) includes staged candidates, so active writes are `applied - staged`. `ops.dropped` counts operations neither applied nor duplicate, staged ones excluded. `ops.past` counts facts written as past ("used to be a nurse"). `ops.reword` counts updates that only restated a fact and became evidence.
+- **Ops & Models:** `ops.invalid` counts malformed operations (such as wrong-type fields) dropped individually without failing the run. `ops.applied` (and `n_selected`) includes staged candidates, so active writes are `applied - staged`. `ops.dropped` counts operations neither applied nor duplicate, staged ones excluded. `ops.past` counts facts written as past ("used to be a nurse"). `ops.reword` counts updates that only restated a fact and became evidence. `models.extraction`, `extractionProvider` and `extractionFallback` identify the model and provider that answered.
 - **Retractions:** `ops.retracted` counts retired claims, including hidden facts under `balanced` and `strict`. A run that only retired hidden facts has `ops.applied` 0 and is still `written`.
 - **Boilerplate:** `summary.boilerplate` marks summaries that only say no new durable fact came up.
 - **Job IDs:** turn judgments leave `jev_events.job_id` null.
@@ -635,10 +645,10 @@ Review the report and the backup. If the check passed, restart with `sudo docker
 
 ### Typed Memory Items (Phase 3)
 
-`config.yml` stays on `memory.store: legacy`. Enter `dual` only as an operator step. The bot must be stopped while the migration catches up rows written while projection triggers were off. The migration refreshes changed rows, removes projections whose legacy rows were deleted, and inserts new rows in one transaction. Startup installs triggers but never runs the migration. It prints counts and check results only; it never prints memory text.
+`config.yml` stays on `memory.store: legacy`, while the Pi has run `MEMORY_STORE=dual` in `.env` since 2026-11-13 (Phases 5–7 remain pending drafts, so `item` is not yet supported). Enter `dual` only as an operator step. The bot must be stopped while the migration catches up rows written while projection triggers were off. The migration refreshes changed rows, removes projections whose legacy rows were deleted, and inserts new rows in one transaction. Startup installs triggers but never runs the migration. It prints counts and check results only; it never prints memory text.
 
 1. Stop the bot and take a timestamped SQLite backup.
-2. Run `migrate:memory-items` against the Pi database and confirm the checks pass.
+2. Run `migrate:memory-items` (and optionally `replay:memory-items` to verify offline recall parity) against the Pi database and confirm the checks pass.
 3. Set `MEMORY_STORE=dual` in `.env`, then start the bot.
 4. Check the latest `item_integrity` detail. All three counts must be zero.
 
@@ -765,11 +775,14 @@ sqlite3 ~/rokabot/data/rokabot.db "SELECT user_id, SUM(score) as total, COUNT(*)
 
 ### Failure Diagnostics
 
-`failure_diagnostics` holds turns that fell back or deflected, with the triggering message verbatim. It is pruned after `metrics.diagnosticsRetentionHours` (72 hours), sooner than other metrics. It records only failures, so every safety row is a ladder that ran out of rungs.
+`failure_diagnostics` holds turns that fell back or deflected, plus missed explicit reply format asks (`kind = 'format_unmet'`, `outcome = 'ok'`), with the triggering message verbatim. It is pruned after `metrics.diagnosticsRetentionHours` (72 hours), sooner than other metrics. Safety rows still record only exhausted ladders, and `response_events` carries per-turn `format_kinds`, `format_outcome` and `format_detail` (see [Data TRD](trd/data.md)).
 
 ```bash
 # Recent failures
 sqlite3 ~/rokabot/data/rokabot.db "SELECT datetime(created_at/1000,'unixepoch','+8 hours') t, outcome, kind, failure_marker, block_side, safety_rungs_used FROM failure_diagnostics ORDER BY created_at DESC LIMIT 20;"
+# Recent missed explicit format requests (and response_events outcomes)
+sqlite3 ~/rokabot/data/rokabot.db "SELECT datetime(created_at/1000,'unixepoch','+8 hours') t, outcome, failure_marker, user_message FROM failure_diagnostics WHERE kind='format_unmet' ORDER BY created_at DESC LIMIT 10;"
+sqlite3 ~/rokabot/data/rokabot.db "SELECT format_outcome, format_kinds, COUNT(*) FROM response_events WHERE format_outcome IS NOT NULL GROUP BY format_outcome, format_kinds;"
 # Did the provider block the input or Roka's output?
 sqlite3 ~/rokabot/data/rokabot.db "SELECT block_side, COUNT(*) FROM failure_diagnostics WHERE kind='safety' GROUP BY block_side;"
 # What was sent when a turn was blocked
@@ -1002,4 +1015,4 @@ curl -s "https://generativelanguage.googleapis.com/v1beta/files" -H "x-goog-api-
 - `.github/workflows/deploy.yml`, `scripts/prune-images.sh`
 - `config.yml`, `src/config.ts`, `src/agent/llm/profiles.ts`, `src/agent/llm/budget.ts`, `src/agent/llm/fallbackModel.ts`
 - `src/agent/media/`, `src/agent/social/`, `src/agent/memory/reclassify.ts`, `src/storage/database.ts`
-- `scripts/probe-llm-profile.ts`, `scripts/undo-reclassify.ts`, `scripts/reports.ts`, `scripts/migrate-memory-v2.ts`, `scripts/export-vault.ts`
+- `scripts/probe-llm-profile.ts`, `scripts/undo-reclassify.ts`, `scripts/reports.ts`, `scripts/migrate-memory-v2.ts`, `scripts/export-vault.ts`, `scripts/migrate-memory-items.ts`, `scripts/replay-memory-items.ts`, `tests/harness/memsim/cli.ts`

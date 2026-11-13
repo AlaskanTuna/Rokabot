@@ -16,13 +16,13 @@ Set up a Discord app, configure Rokabot, and run it locally or with Docker.
 
 ## Prerequisites
 
-| What                     | Why                                                                    | Required                |
-| ------------------------ | ---------------------------------------------------------------------- | ----------------------- |
-| Node.js 24.13.0 or newer | Runs the bot and the tests.                                            | For local runs          |
-| Docker with Compose      | Runs the published image or a local build.                             | For Docker runs         |
-| A Discord application    | Gives the bot token and client ID.                                     | Yes                     |
-| Model API keys           | Pay for the main model, fallback, embeddings and media watcher.        | Yes, per `config.yml`   |
-| `ffmpeg` and `yt-dlp`    | Video frames, speech audio and social video links. The image has both. | Optional for local runs |
+| What                     | Why                                                             | Required                |
+| ------------------------ | --------------------------------------------------------------- | ----------------------- |
+| Node.js 24.13.0 or newer | Runs the bot and the tests.                                     | For local runs          |
+| Docker with Compose      | Runs the published image or a local build.                      | For Docker runs         |
+| A Discord application    | Gives the bot token and client ID.                              | Yes                     |
+| Model API keys           | Pay for the main model, fallback, embeddings and media watcher. | Yes, per `config.yml`   |
+| `ffmpeg` and `yt-dlp`    | Social video links (`yt-dlp`). The Docker image ships both.     | Optional for local runs |
 
 ### Model Keys for the Shipped Config
 
@@ -95,6 +95,7 @@ Other tools:
 | `npm run test:live`         | Opt-in live-model gate. It spends real Gemini calls. `ROKABOT_HARNESS_KEY` names the key; the default is `GRAPHIFY_GEMINI_API_KEY`. |
 | `npm run preview`           | Writes a reply as Discord draws it to `preview-out/preview.html`, without posting.                                                  |
 | `npm run measure -- <path>` | Prints the measured token cost of an attachment.                                                                                    |
+| `npm run memsim`            | Runs the 30-day offline typed-memory simulator (`-- --replay` uses the cached fixture).                                             |
 
 ## Run With Docker
 

@@ -54,7 +54,7 @@ All tables live in `data/rokabot.db`. `memory_claim`, `memory_episode` and `medi
 
 The queue payload holds the delta messages, up to three earlier context lines, and the start and end times.
 
-The typed item tables are additive. Startup creates the schema. With the default `memory.store: legacy`, the bot reads and writes legacy tables and removes projection triggers. With `MEMORY_STORE=dual`, startup installs the five source-table trigger sets and records an integrity sample; the bot still reads legacy tables. Trigger-created embeddings have a NULL `text_hash` until startup or daily maintenance fills it from stored text. `npm run migrate:memory-items` is an offline catch-up path for missing, changed and deleted legacy rows; startup never runs it. See [Typed Memory Items](../RUNBOOK.md#typed-memory-items-phase-3) before entering dual on the Pi.
+The typed item tables are additive. Startup creates the schema. With the default `memory.store: legacy`, the bot reads and writes legacy tables and removes projection triggers. With `MEMORY_STORE=dual` (used on the Pi in `.env` while `config.yml` stays `legacy`), startup installs the five source-table trigger sets and records an integrity sample; the bot still reads legacy tables. Trigger-created embeddings have a NULL `text_hash` until startup or daily maintenance fills it from stored text. `npm run migrate:memory-items` is an offline catch-up path for missing, changed and deleted legacy rows; startup never runs it. See [Typed Memory Items](../RUNBOOK.md#typed-memory-items-phase-3) before entering dual on the Pi.
 
 ## Write Path
 
@@ -92,9 +92,11 @@ limit, daily budget ratio or extraction RPM floor.
 
 ### Admission
 
-- **Precheck:** `sensitive` if any delta matches an email, phone, credential, legal name, age or birthday, address,
-  school or workplace, medical or social-handle pattern. `trivial` if every delta is empty, a greeting, a short
-  reaction or emoji only. Both drop locally.
+- **Precheck:** `episodePrecheck.ts` strips URLs and Discord tokens (`<@…>`, `<#…>`, `<:…>`) before matching. A job
+  is `sensitive` if any delta matches an email, phone (excluding ISO dates and grouped numbers), credential, legal
+  name, age (word-bounded numbers) or birthday, address, school or workplace, medical or social-handle pattern, recording
+  the name in `trace.precheckPattern`. `trivial` if every delta is empty, a greeting, a short reaction or emoji only.
+  Both drop locally.
 - **Judgment:** one `lasting_fact` question. Admit at or above `memory.admitThreshold` (0.5, Jev) or
   `memory.modelAdmitThreshold` (0.7, main model). No judge, a timeout or an unusable answer drops the episode.
 - **Judge:** `memory.judge` is derived: `jev` with `TYPESAFE_API_KEY`; `model` without it when an `llm:` block exists;
@@ -106,11 +108,14 @@ limit, daily budget ratio or extraction RPM floor.
 
 The legacy config runs `gemini.extractionModel` (default `gemini.model`) with no fallback. An `llm:` block runs the
 main model, then the fallback once. The prompt carries the human user IDs, the active claims and guild facts this
-channel may recall, up to three context lines (background only) and the deltas. The model returns a strict operation
-list and a one-to-two-sentence summary. Delta lines are numbered (`#1`, `#2`, …) while context lines carry no number.
-Every add and update cites its delta line in `sourceLine`; the write path resolves it to a message ID and speaker, and
-a missing, out-of-range, bot, or other-member line loses only the link while the op still applies. Each job counts once
-per claim: a retried job's replayed evidence is a no-op.
+channel may recall, up to three context lines (background only) and the deltas. The model returns an operation list and
+a one-to-two-sentence summary. `ExtractionTransportSchema` validates each proposed op individually, dropping malformed
+ones (`ops.invalid`) and failing `invalid_object` only when every non-empty op is invalid. Before the apply
+transaction, an op whose value fails `isSafeFactScalar` or the sensitive check is dropped and counted in `ops.dropped`,
+so one unsafe value never rolls back the rest of the batch (#491). Delta lines are numbered
+(`#1`, `#2`, …) while context lines carry no number. Every add and update cites its delta line in `sourceLine`; the
+write path resolves it to a message ID and speaker, and a missing, out-of-range, bot, or other-member line loses only
+the link while the op still applies. Each job counts once per claim: a retried job's replayed evidence is a no-op.
 
 | Operation | Subjects    | Effect                                                                                |
 | --------- | ----------- | ------------------------------------------------------------------------------------- |
@@ -416,19 +421,24 @@ Watched media is kept as text. Watching itself is in [Media](media.md).
 
 ## Maintenance Commands
 
-| Command                                                 | Contract                                                                                                                                                                                                       |
-| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `npm run migrate:memory-v2`                             | Offline, explicit. Backfills `user_memory` once, checks every row against a claim in each legal scope, reports the top ten claims per subject, then drops `user_memory`. Any miss aborts. A rerun is a no-op.  |
-| `npm run migrate:memory-items`                          | Offline, explicit. Copies legacy memory rows to typed items in one transaction, checks counts and every-column round trips, then prints counts only. Any miss rolls back. A rerun is a no-op after a full run. |
-| `npm run replay:memory-items -- <database>`             | Offline parity replay of up to 150 recent guild turns on a database copy. Uses stored vectors as query stand-ins, makes no network calls and prints counts and block hashes only.                              |
-| `npm run memory:replay -- --session-history <database>` | Offline replay with stub judges and extractor. No network calls. Prints episode, operation and gap statistics.                                                                                                 |
-| `npm run memory:replay:live`                            | Real pipeline. Needs `ROKABOT_MEMORY_REPLAY_LIVE=1`, `GEMINI_API_KEY` and `TYPESAFE_API_KEY`.                                                                                                                  |
-| `npm run export:vault`                                  | Read-only Obsidian snapshot to `memory.vaultExportDir` (env `MEMORY_VAULT_EXPORT_DIR`, default `data/vault`).                                                                                                  |
-| `npm run memory:prune-overflow`                         | Applies the active-claim cap to every member now.                                                                                                                                                              |
-| `npm run memory:undo-reclassify -- <id>`                | Undoes one reclassification.                                                                                                                                                                                   |
+| Command                                                 | Contract                                                                                                                                                                                                                            |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run migrate:memory-v2`                             | Offline, explicit. Backfills `user_memory` once, checks every row against a claim in each legal scope, reports the top ten claims per subject, then drops `user_memory`. Any miss aborts. A rerun is a no-op.                       |
+| `npm run migrate:memory-items`                          | Offline, explicit. Copies legacy memory rows to typed items in one transaction, checks counts and every-column round trips, then prints counts only. Any miss rolls back. A rerun is a no-op after a full run.                      |
+| `npm run replay:memory-items -- <database>`             | Offline parity replay of up to 150 recent guild turns on a database copy. Uses stored vectors as query stand-ins, makes no network calls and prints counts and block hashes only.                                                   |
+| `npm run memsim -- --replay`                            | Offline 30-day synthetic multi-guild simulator replay (`tests/harness/memsim/cli.ts`), also run under `npm test` (`tests/harness/__tests__/memsim.eval.test.ts`). Add `-- --record` with River proxy + `.env` to refresh the cache. |
+| `npm run memsim:generate`                               | Records and verifies the committed synthetic `memsim` cache (`tests/harness/memsim/generate.ts`).                                                                                                                                   |
+| `npm run memory:replay -- --session-history <database>` | Offline replay with stub judges and extractor. No network calls. Prints episode, operation and gap statistics.                                                                                                                      |
+| `npm run memory:replay:live`                            | Real pipeline. Needs `ROKABOT_MEMORY_REPLAY_LIVE=1`, `GEMINI_API_KEY` and `TYPESAFE_API_KEY`.                                                                                                                                       |
+| `npm run export:vault`                                  | Read-only Obsidian snapshot to `memory.vaultExportDir` (env `MEMORY_VAULT_EXPORT_DIR`, default `data/vault`).                                                                                                                       |
+| `npm run memory:prune-overflow`                         | Applies the active-claim cap to every member now.                                                                                                                                                                                   |
+| `npm run memory:undo-reclassify -- <id>`                | Undoes one reclassification.                                                                                                                                                                                                        |
 
 The migration infers scopes for old `global` rows only from recorded guild rows or response events. A row with
-several scopes gets `needs_review`. Eviction changes status and never deletes. Startup never runs the migration.
+several scopes gets `needs_review`. Eviction changes status and never deletes. Startup never runs the migration. Per
+the 2026-11-14 owner decision, each `#266` typed-memory phase cuts over once `memsim` passes with no production soak
+(Phases 4–7 remain planned/unmerged); see [Offline Memory Simulator Gate](../RUNBOOK.md#offline-memory-simulator-gate-266)
+and [Decisions](../DECISIONS.md#memory).
 
 The vault export writes `<dir>/<guildId>/<userId>.md` (frontmatter by predicate, `relationship_to` as `[[wikilinks]]`,
 past facts marked `(past)`), `guild.md` (active, unexpired guild facts not under review, with `expires_at` and
@@ -447,12 +457,13 @@ current facts, and reports episodes ended in the last 30 days.
 ## Source Files
 
 - `src/agent/memory/`: `episodeTracker.ts`, `scheduler.ts`, `admission.ts`, `episodePrecheck.ts`, `extractor.ts`,
-  `guildFactDates.ts`, `privacyGuard.ts`, `memoryClaims.ts`, `predicates.ts`, `hiddenRetractions.ts`, `reclassify.ts`,
-  `retriever.ts`, `identityResolver.ts`, `privacy.ts`,
-  `episodeMaintenance.ts`, `factEmbeddings.ts`, `embeddings/`
+  `extractionSchema.ts`, `extractionRun.ts`, `guildFactDates.ts`, `privacyGuard.ts`, `memoryClaims.ts`, `memoryScope.ts`,
+  `predicates.ts`, `hiddenRetractions.ts`, `reclassify.ts`, `retriever.ts`, `episodeRetriever.ts`, `mediaRecall.ts`,
+  `identityResolver.ts`, `privacy.ts`, `episodeMaintenance.ts`, `factEmbeddings.ts`, `embeddings/`
 - `src/agent/jev/judgments.ts`, `src/agent/jev/modelJudge.ts`,
   `src/agent/turnContext.ts`, `src/agent/tools/`
-- `src/storage/`: `memoryClaimSchema.ts`, `database.ts`, `extractionQueue.ts`, `memoryEpisodeStore.ts`,
-  `mediaDigestStore.ts`, `extractionSampleStore.ts`
-- `scripts/`: `migrate-memory-v2.ts`, `replay-memory-v2.ts`, `export-vault.ts`, `undo-reclassify.ts`,
-  `prune-claim-overflow.ts`
+- `src/storage/`: `memoryClaimSchema.ts`, `memoryItemSchema.ts`, `memoryItemProjection.ts`, `memoryItemBackfill.ts`,
+  `memoryItemIntegrity.ts`, `memoryItemReadStore.ts`, `memoryRecallStore.ts`, `database.ts`, `extractionQueue.ts`,
+  `memoryEpisodeStore.ts`, `mediaDigestStore.ts`, `extractionSampleStore.ts`
+- `scripts/`: `migrate-memory-v2.ts`, `migrate-memory-items.ts`, `replay-memory-items.ts`, `replay-memory-v2.ts`,
+  `export-vault.ts`, `undo-reclassify.ts`, `prune-claim-overflow.ts`
