@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.7.0](https://github.com/AlaskanTuna/Rokabot/compare/v0.6.1...v0.7.0) (2026-11-13)
+
+
+### Features
+
+* **memory:** add the typed memory item tables with an offline backfill and replay check ([#485](https://github.com/AlaskanTuna/Rokabot/issues/485)) ([1d2ad7e](https://github.com/AlaskanTuna/Rokabot/commit/1d2ad7e4e81fccd27b053c2adbc60c29d185a383))
+* **memory:** mirror legacy memory writes into the item tables under the dual store ([#486](https://github.com/AlaskanTuna/Rokabot/issues/486)) ([885c4fe](https://github.com/AlaskanTuna/Rokabot/commit/885c4feebbe877635ace7baef7ee9b7a36f43299))
+
+
+### Bug Fixes
+
+* **memory:** drop only the invalid ops when a Haiku extraction reply partly fails validation ([#482](https://github.com/AlaskanTuna/Rokabot/issues/482)) ([456b482](https://github.com/AlaskanTuna/Rokabot/commit/456b482aaf6cd02e1c963a79911780aa37dabcca))
+
 ## [0.6.1](https://github.com/AlaskanTuna/Rokabot/compare/v0.6.0...v0.6.1) (2026-11-13)
 
 
