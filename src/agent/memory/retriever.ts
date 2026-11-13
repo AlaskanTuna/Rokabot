@@ -1,18 +1,11 @@
 import { config } from '../../config.js'
 import { getClaimSourceChannels } from '../../storage/memoryRecallStore.js'
-import { recordMemoryEvent } from '../../storage/metricsStore.js'
 import { getAllUserNames } from '../../storage/userNames.js'
 import { getLocalDate } from '../../utils/timezone.js'
 import { estimateTokens } from '../../utils/tokens.js'
 import { factKey } from './factSentences.js'
 import type { GuildMemoryClaim, UserMemoryClaim } from './memoryClaims.js'
-import {
-  SOURCE_WEIGHT,
-  getActiveClaimsForUsers,
-  getActiveGuildClaims,
-  searchClaimIds,
-  touchRecalled
-} from './memoryClaims.js'
+import { SOURCE_WEIGHT, getActiveClaimsForUsers, getActiveGuildClaims, searchClaimIds } from './memoryClaims.js'
 import { PREDICATES, type PredicateId, predicateCategory, routeTopics } from './predicates.js'
 import { type RecallScope, canRecall } from './privacy.js'
 
@@ -21,7 +14,7 @@ export type RetrieveForTurnInput = Readonly<{
   speakerId: string
   participantIds: string[]
   message: string
-  scope?: RecallScope
+  scope: RecallScope
 }>
 
 export type RetrievedClaim = Readonly<{
@@ -41,9 +34,20 @@ export type RetrievalResult = Readonly<{
   trace: RetrievalTrace
 }>
 
+export type TurnRetrievalSnapshot = Readonly<{
+  activeClaims: UserMemoryClaim[]
+  ftsIds: Set<number>
+  names: ReturnType<typeof getAllUserNames>
+}>
+
+export type SubjectRetrievalSnapshot = Readonly<{
+  activeClaims: UserMemoryClaim[]
+  ftsIds: Set<number>
+}>
+
 /** At `relaxed` the lookup is skipped entirely so the legacy queries stay byte-identical. */
-function withinScope<T extends { id: number }>(items: T[], scope: RecallScope | undefined): T[] {
-  if (!scope || config.memory.privacy === 'relaxed') return items
+function withinScope<T extends { id: number }>(items: T[], scope: RecallScope): T[] {
+  if (config.memory.privacy === 'relaxed') return items
   const sources = getClaimSourceChannels(items.map(({ id }) => id))
   return items.filter((item) => canRecall(sources.get(item.id) ?? [null], scope))
 }
@@ -110,6 +114,32 @@ function routedPredicatesFor(message: string): Set<PredicateId> {
   )
 }
 
+function readSubjectSnapshot(
+  guildId: string,
+  subjectUserId: string,
+  message: string,
+  scope: RecallScope
+): SubjectRetrievalSnapshot {
+  return {
+    activeClaims: withinScope(getActiveClaimsForUsers(guildId, [subjectUserId]), scope),
+    ftsIds: searchClaimIds(guildId, [subjectUserId], message)
+  }
+}
+
+export function selectForSubject(
+  snapshot: SubjectRetrievalSnapshot,
+  message: string,
+  limit: number,
+  now: number
+): RetrievedClaim[] {
+  const routedPredicates = routedPredicatesFor(message)
+  return snapshot.activeClaims
+    .filter((claim) => !claim.needsReview)
+    .map((claim) => ({ claim, score: scoreClaim(claim, snapshot.ftsIds, routedPredicates, now) }))
+    .sort(compareRetrieved)
+    .slice(0, limit)
+}
+
 /**
  * Same relevance scoring as `retrieveForTurn`, for a single named subject rather than a channel's
  * whole passive envelope — no speaker anchoring, cross-user expansion, or token budget, since
@@ -121,31 +151,29 @@ export function retrieveForSubject(
   subjectUserId: string,
   message: string,
   limit: number,
-  scope?: RecallScope
+  scope: RecallScope
 ): RetrievedClaim[] {
-  const activeClaims = withinScope(getActiveClaimsForUsers(guildId, [subjectUserId]), scope)
-  const ftsIds = searchClaimIds(guildId, [subjectUserId], message)
-  const routedPredicates = routedPredicatesFor(message)
-  const now = Date.now()
-  return activeClaims
-    .filter((claim) => !claim.needsReview)
-    .map((claim) => ({ claim, score: scoreClaim(claim, ftsIds, routedPredicates, now) }))
-    .sort(compareRetrieved)
-    .slice(0, limit)
+  return selectForSubject(readSubjectSnapshot(guildId, subjectUserId, message, scope), message, limit, Date.now())
 }
 
-export function retrieveForTurn(input: RetrieveForTurnInput): RetrievalResult {
-  const startedAt = Date.now()
-  const participantIds = [...new Set(input.participantIds.filter((id) => id !== input.speakerId))].slice(
-    0,
-    config.memory.recentParticipantLimit
-  )
-  const userIds = [input.speakerId, ...participantIds]
-  const activeClaims = withinScope(getActiveClaimsForUsers(input.guildId, userIds), input.scope)
-  const ftsIds = searchClaimIds(input.guildId, userIds, input.message)
+function readTurnSnapshot(input: RetrieveForTurnInput, userIds: string[]): TurnRetrievalSnapshot {
+  return {
+    activeClaims: withinScope(getActiveClaimsForUsers(input.guildId, userIds), input.scope),
+    ftsIds: searchClaimIds(input.guildId, userIds, input.message),
+    names: getAllUserNames()
+  }
+}
+
+export function selectForTurn(
+  snapshot: TurnRetrievalSnapshot,
+  input: Pick<RetrieveForTurnInput, 'speakerId' | 'participantIds' | 'message'>,
+  now: number
+): RetrievalResult {
   const routedPredicates = routedPredicatesFor(input.message)
-  const now = Date.now()
-  const scoredClaims = activeClaims.map((claim) => ({ claim, score: scoreClaim(claim, ftsIds, routedPredicates, now) }))
+  const scoredClaims = snapshot.activeClaims.map((claim) => ({
+    claim,
+    score: scoreClaim(claim, snapshot.ftsIds, routedPredicates, now)
+  }))
   const candidates = scoredClaims.filter(({ claim }) => !claim.needsReview).sort(compareRetrieved)
   const speakerCandidates = scoredClaims.filter(
     ({ claim }) => claim.subjectUserId === input.speakerId && !claim.needsReview
@@ -155,13 +183,12 @@ export function retrieveForTurn(input: RetrieveForTurnInput): RetrievalResult {
     Math.ceil(config.memory.maxClaimsPerTurn * config.memory.speakerMinShare)
   )
   const anchors = [...speakerCandidates].sort(compareRetrieved).slice(0, speakerAnchorCount)
-  const names = getAllUserNames()
   const selected: RetrievedClaim[] = []
   const selectedIds = new Set(selected.map(({ claim }) => claim.id))
   const add = (candidate: RetrievedClaim): boolean => {
     if (selectedIds.has(candidate.claim.id) || selected.length >= config.memory.maxClaimsPerTurn) return false
     const next = [...selected, candidate]
-    if (tokensFor(next, names) > config.memory.retrievalTokenBudget) return false
+    if (tokensFor(next, snapshot.names) > config.memory.retrievalTokenBudget) return false
     selected.push(candidate)
     selectedIds.add(candidate.claim.id)
     return true
@@ -169,7 +196,7 @@ export function retrieveForTurn(input: RetrieveForTurnInput): RetrievalResult {
 
   const addExpansion = (claim: UserMemoryClaim): void => {
     if (claim.period !== 'current') return
-    if (claim.objectKind !== 'user' || !claim.objectUserId || !participantIds.includes(claim.objectUserId)) return
+    if (claim.objectKind !== 'user' || !claim.objectUserId || !input.participantIds.includes(claim.objectUserId)) return
     const expansion = candidates.find(({ claim: candidate }) => candidate.subjectUserId === claim.objectUserId)
     if (expansion) add(expansion)
   }
@@ -182,18 +209,8 @@ export function retrieveForTurn(input: RetrieveForTurnInput): RetrievalResult {
     if (add(candidate)) addExpansion(candidate.claim)
   }
 
-  const entries = toEntries(selected, names)
+  const entries = toEntries(selected, snapshot.names)
   const tokensEst = estimateTokens(JSON.stringify(entries))
-  touchRecalled(selected.map(({ claim }) => claim.id))
-  recordMemoryEvent({
-    kind: 'retrieval',
-    guildId: input.guildId,
-    subjectUserId: input.speakerId,
-    durationMs: Date.now() - startedAt,
-    nCandidates: candidates.length,
-    nSelected: selected.length,
-    tokensEst
-  })
 
   return {
     entries,
@@ -204,6 +221,15 @@ export function retrieveForTurn(input: RetrieveForTurnInput): RetrievalResult {
       tokensEst
     }
   }
+}
+
+export function retrieveForTurn(input: RetrieveForTurnInput): RetrievalResult {
+  const participantIds = [...new Set(input.participantIds.filter((id) => id !== input.speakerId))].slice(
+    0,
+    config.memory.recentParticipantLimit
+  )
+  const snapshot = readTurnSnapshot(input, [input.speakerId, ...participantIds])
+  return selectForTurn(snapshot, { ...input, participantIds }, Date.now())
 }
 
 const MONTH_NAMES = [
@@ -244,12 +270,15 @@ function serializeGuildFact(claim: GuildMemoryClaim): string {
   return JSON.stringify({ predicate: claim.predicate, ...(eventDate ? { date: eventDate } : {}), value: claim.value })
 }
 
-export function retrieveGuildFacts(
-  guildId: string,
-  now: number = Date.now(),
-  scope?: RecallScope
+function readGuildFacts(guildId: string, now: number, scope: RecallScope): GuildMemoryClaim[] {
+  return withinScope(getActiveGuildClaims(guildId, now), scope)
+}
+
+export function selectGuildFacts(
+  facts: readonly GuildMemoryClaim[],
+  now: number
 ): { facts: GuildMemoryClaim[]; tokensEst: number } {
-  const facts = withinScope(getActiveGuildClaims(guildId, now), scope)
+  const scored = facts
     .map((fact) => {
       const ageDays = Math.max(0, now - fact.lastSeenAt) / (24 * 60 * 60 * 1000)
       return { fact, score: fact.salience * 0.5 ** (ageDays / config.memory.salienceHalfLifeDays) }
@@ -261,7 +290,7 @@ export function retrieveGuildFacts(
 
   const selected: GuildMemoryClaim[] = []
   let tokensEst = 0
-  for (const { fact } of facts) {
+  for (const { fact } of scored) {
     const tokens = estimateTokens(serializeGuildFact(fact))
     if (tokensEst + tokens > config.memory.guildFactsTokenBudget) continue
     selected.push(fact)
@@ -269,4 +298,12 @@ export function retrieveGuildFacts(
   }
 
   return { facts: selected, tokensEst }
+}
+
+export function retrieveGuildFacts(
+  guildId: string,
+  now: number,
+  scope: RecallScope
+): { facts: GuildMemoryClaim[]; tokensEst: number } {
+  return selectGuildFacts(readGuildFacts(guildId, now, scope), now)
 }

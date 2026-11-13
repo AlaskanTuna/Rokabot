@@ -159,12 +159,20 @@ describe('recall relevance A/B (issue #25 phase 1 baseline)', () => {
       })
     }
 
-    const withoutMatch = retrieveForTurn({ guildId: GUILD, speakerId: subjectUserId, participantIds: [], message: '' })
+    const scope = { guildId: GUILD, channelId: 'channel-1' }
+    const withoutMatch = retrieveForTurn({
+      guildId: GUILD,
+      speakerId: subjectUserId,
+      participantIds: [],
+      message: '',
+      scope
+    })
     const withMatch = retrieveForTurn({
       guildId: GUILD,
       speakerId: subjectUserId,
       participantIds: [],
-      message: 'what hobby does she have with osu?'
+      message: 'what hobby does she have with osu?',
+      scope
     })
 
     expect(withoutMatch.trace.selected.map(({ id }) => id)).not.toContain(staleClaim.id)
@@ -182,7 +190,13 @@ describe('recall relevance A/B (issue #25 phase 1 baseline)', () => {
       sourceKind: 'explicit',
       observedAt: now
     })
-    const input = { guildId: GUILD, speakerId: 'cooldown-user', participantIds: [], message: 'tell me more' }
+    const input = {
+      guildId: GUILD,
+      speakerId: 'cooldown-user',
+      participantIds: [],
+      message: 'tell me more',
+      scope: { guildId: GUILD, channelId: 'channel-1' }
+    }
     const first = retrieveForTurn(input)
     touchRecalled([claim.id])
     const coolingDown = retrieveForTurn(input)

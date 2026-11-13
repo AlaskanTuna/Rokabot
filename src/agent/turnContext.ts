@@ -17,6 +17,7 @@ import { embedEpisodeText } from './memory/episodeEmbeddings.js'
 import { buildEpisodeRecallBlock } from './memory/episodeRetriever.js'
 import { resolveReferences } from './memory/identityResolver.js'
 import { buildMediaRecallBlock } from './memory/mediaRecall.js'
+import { touchRecalled } from './memory/memoryClaims.js'
 import type { MemoryScope } from './memory/memoryScope.js'
 import { getMessages as getBufferMessages } from './memory/passiveBuffer.js'
 import type { RecallScope } from './memory/privacy.js'
@@ -430,29 +431,28 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
   }
 
   const basePrompt = assembleSystemPrompt({ tone, hour, displayName, memoryScope })
-  const recallEmbedding = memoryScope === 'full' && scope ? options.turnEntryWork.queryEmbedding : undefined
+  const activeScope = memoryScope === 'full' ? scope : undefined
+  const recallEmbedding = activeScope ? options.turnEntryWork.queryEmbedding : undefined
   const queryEmbedding = recallEmbedding ? awaitQueryEmbedding(recallEmbedding) : Promise.resolve(null)
-  const episodeSectionPromise =
-    memoryScope === 'full'
-      ? awaitRecallSection(queryEmbedding, (embedding) =>
-          buildEpisodeRecallBlock({ guildId, queryEmbedding: embedding, scope })
-        )
-      : Promise.resolve('')
-  const mediaSectionPromise =
-    memoryScope === 'full'
-      ? awaitRecallSection(queryEmbedding, (embedding) =>
-          buildMediaRecallBlock({ guildId, queryEmbedding: embedding, scope })
-        )
-      : Promise.resolve('')
+  const episodeSectionPromise = activeScope
+    ? awaitRecallSection(queryEmbedding, (embedding) =>
+        buildEpisodeRecallBlock({ guildId, queryEmbedding: embedding, scope: activeScope })
+      )
+    : Promise.resolve('')
+  const mediaSectionPromise = activeScope
+    ? awaitRecallSection(queryEmbedding, (embedding) =>
+        buildMediaRecallBlock({ guildId, queryEmbedding: embedding, scope: activeScope })
+      )
+    : Promise.resolve('')
   let factsSection = ''
   let serverFactsSection = ''
   let overheardSection = ''
   let factEntryCount = 0
   let participantIds: string[] = []
 
-  // A memory-free turn (`/ask`) reads nothing: no claims retrieval, no legacy facts, and no
-  // `context_build` telemetry, because nothing was built to measure (#207).
-  if (memoryScope === 'full') {
+  // A memory-free turn (`/ask`) or unscoped turn (DM tenant) reads nothing: no claims retrieval,
+  // no legacy facts, and no `context_build` telemetry, because nothing was built to measure (#207).
+  if (activeScope) {
     try {
       // Resolve user identities from persistent lookup table (survives restarts)
       const knownUsers = getAllUserNames()
@@ -470,9 +470,26 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
 
       participantIds = recallParticipantIds(channelUsers.keys())
 
-      const retrieval = retrieveForTurn({ guildId, speakerId: userId, participantIds, message: userMessage, scope })
+      const retrievalStartedAt = Date.now()
+      const retrieval = retrieveForTurn({
+        guildId,
+        speakerId: userId,
+        participantIds,
+        message: userMessage,
+        scope: activeScope
+      })
       const factEntries = retrieval.entries
       const retrievalSelected = retrieval.claims.length
+      touchRecalled(retrieval.claims.map(({ claim }) => claim.id))
+      recordMemoryEvent({
+        kind: 'retrieval',
+        guildId,
+        subjectUserId: userId,
+        durationMs: Date.now() - retrievalStartedAt,
+        nCandidates: retrieval.trace.candidates.length,
+        nSelected: retrievalSelected,
+        tokensEst: retrieval.trace.tokensEst
+      })
 
       const factsEnvelope = buildFactsEnvelope(factEntries)
       if (factsEnvelope) {
@@ -484,12 +501,10 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
         )
       }
 
-      if (guildId) {
-        const serverFacts = retrieveGuildFacts(guildId, Date.now(), scope).facts
-        if (serverFacts.length > 0) {
-          serverFactsSection =
-            '\n\n## Things You Remember About This Server\n' + serverFacts.map(formatServerFact).join('\n')
-        }
+      const serverFacts = retrieveGuildFacts(guildId, Date.now(), activeScope).facts
+      if (serverFacts.length > 0) {
+        serverFactsSection =
+          '\n\n## Things You Remember About This Server\n' + serverFacts.map(formatServerFact).join('\n')
       }
 
       recordMemoryEvent({

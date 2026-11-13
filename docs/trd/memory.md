@@ -331,6 +331,14 @@ change or revert with no backfill.
 The people-facts block, built once in `src/agent/turnContext.ts`. `beforeModelCallback` only
 reads the assembled prompt. Claims use the `buildFactsEnvelope` untrusted-data envelope.
 
+- **Required Scope:** `retrieveForTurn`, `retrieveForSubject`, `retrieveGuildFacts`,
+  `recallEpisodes`/`buildEpisodeRecallBlock` and `recallMedia`/`buildMediaRecallBlock` all require a `RecallScope`
+  (`guildId` + `channelId`). There is no unscoped read path. `createTurnContext` skips all four memory blocks when
+  `scope` is absent (DM turns or empty `guildId`) or `memoryScope !== 'full'`.
+- **Read And Bookkeeping Split:** each builder reads its candidate rows through one small reader helper and runs a
+  pure selection over that snapshot. `retrieveForTurn` returns its selection without mutating state; `createTurnContext`
+  runs `touchRecalled` and writes the `retrieval` `memory_events` row once afterwards.
+
 - **Bounds:** `memory.maxClaimsPerTurn` (10) claims, about `memory.retrievalTokenBudget` (350) tokens.
 - **Anchors:** `ceil(10 × memory.speakerMinShare)` (0.5, so 5) slots go to the speaker first and are never displaced.
 - **Participants:** `memory.recentParticipantLimit` (3) non-speakers, plus one current `relationship_to` hop to an
@@ -371,9 +379,9 @@ reads the assembled prompt. Claims use the `buildFactsEnvelope` untrusted-data e
   fingerprint and dimension match, its length is `dim × 4` and its norm is nonzero. Pre-provenance vectors are
   `unknown`, readable only in the `gemini-embedding-2` space.
 - **Query:** only guild message turns embed the query, inside `TurnEntryWork`.
-- **Legacy Episode Block:** same-guild summaries strictly above the episode floor, by score, then newest. At most
-  `memory.episodeRecallK` (3) within `memory.episodeTokenBudget` (200), with UTC end dates under an untrusted heading.
-  A failed or late embedding drops the block.
+- **Legacy Episode Block:** same-guild, scope-filtered summaries strictly above the episode floor, by score, then
+  newest. At most `memory.episodeRecallK` (3) within `memory.episodeTokenBudget` (200), with UTC end dates under an
+  untrusted heading. Skipped on DM turns (no `RecallScope`) and dropped on a failed or late embedding.
 
 The maintenance pass runs at startup and every 24 hours, one pass at a time. It deletes episodes and media
 occurrences older than `memory.episodeRetentionDays` and `memory.mediaRetentionDays` (90 each). It then embeds each
@@ -388,7 +396,7 @@ Watched media is kept as text. Watching itself is in [Media](media.md).
 - **Content Keys:** `youtube:<id>`, `youtube:<id>@<startSec>`, `<platform>:<postId>:<mediaIndex>` (Bluesky `postId`
   is `<profile>/<rkey>`), `discord:<path>` for Discord CDN files, or `sha256:<hex>`. Signed URL parameters never count.
 - **Occurrences:** `origin` is `upload`, `reply`, `forward` or `link`. `source_author_id` is the replied-to poster.
-- **Scope:** guild memory turns with a message ID, never under `off`.
+- **Scope:** guild memory turns with a `RecallScope` and a message ID, never under `off` or on DM turns.
 - **Repost Cache:** a link is checked before download, an upload after hashing. A hit reuses the digest with no watcher
   call and records a new occurrence. Opening-only, incomplete or unrenderable digests are replaced.
 - **Writes:** a fresh watch saves digest and occurrence, then embeds the summary off the reply path. Failures only log.

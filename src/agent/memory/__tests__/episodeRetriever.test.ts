@@ -100,7 +100,11 @@ describe('episode retriever', () => {
     nonFinite.writeFloatLE(Number.NaN, 0)
     testDb.prepare('UPDATE memory_episode SET embedding = ? WHERE id = 6').run(nonFinite)
 
-    const entries = recallEpisodes({ guildId: 'guild-a', queryEmbedding: vector768(1) })
+    const entries = recallEpisodes({
+      guildId: 'guild-a',
+      queryEmbedding: vector768(1),
+      scope: { guildId: 'guild-a', channelId: 'channel-a' }
+    })
 
     expect(entries.map(({ id }) => id)).toEqual([1])
   })
@@ -115,8 +119,9 @@ describe('episode retriever', () => {
     expect(score).toBeCloseTo(0.45, 7)
     configMock.memory.episodeMinSimilarity = score
 
-    expect(recallEpisodes({ guildId: 'guild-a', queryEmbedding: query })).toEqual([])
-    expect(buildEpisodeRecallBlock({ guildId: 'guild-a', queryEmbedding: query })).toBe('')
+    const scope = { guildId: 'guild-a', channelId: 'channel-a' }
+    expect(recallEpisodes({ guildId: 'guild-a', queryEmbedding: query, scope })).toEqual([])
+    expect(buildEpisodeRecallBlock({ guildId: 'guild-a', queryEmbedding: query, scope })).toBe('')
   })
 
   it('orders equal scores by end time and then ID and applies the top-k limit', () => {
@@ -129,9 +134,13 @@ describe('episode retriever', () => {
       seedEpisode({ id, endedAt, summary: `Episode ${id}.`, embedding: vector768(0.8, 0.6) })
     }
 
-    expect(recallEpisodes({ guildId: 'guild-a', queryEmbedding: vector768(1) }).map(({ id }) => id)).toEqual([
-      20, 30, 5
-    ])
+    expect(
+      recallEpisodes({
+        guildId: 'guild-a',
+        queryEmbedding: vector768(1),
+        scope: { guildId: 'guild-a', channelId: 'channel-a' }
+      }).map(({ id }) => id)
+    ).toEqual([20, 30, 5])
   })
 
   it('renders UTC dates and keeps multiline summaries as untrusted JSON data', () => {
@@ -168,8 +177,24 @@ describe('episode retriever', () => {
     expect(estimateTokens(block)).toBeLessThanOrEqual(200)
   })
 
+  it('requires scope at compile time', () => {
+    const check = () => {
+      // @ts-expect-error scope is required
+      recallEpisodes({ guildId: 'guild-a', queryEmbedding: vector768(1) })
+      // @ts-expect-error scope is required
+      buildEpisodeRecallBlock({ guildId: 'guild-a', queryEmbedding: vector768(1) })
+    }
+    expect(typeof check).toBe('function')
+  })
+
   it('returns no block when the guild has no episodes', () => {
-    expect(buildEpisodeRecallBlock({ guildId: 'guild-a', queryEmbedding: vector768(1) })).toBe('')
+    expect(
+      buildEpisodeRecallBlock({
+        guildId: 'guild-a',
+        queryEmbedding: vector768(1),
+        scope: { guildId: 'guild-a', channelId: 'channel-a' }
+      })
+    ).toBe('')
   })
 
   describe('episode recall privacy levels', () => {
@@ -246,7 +271,8 @@ describe('episode retriever', () => {
       embedding: localVector(vector384(0.9, 0.43589))
     })
 
-    expect(recallEpisodes({ guildId: 'guild-a', queryEmbedding: vector384(1) }).map(({ id }) => id)).toEqual([1])
-    expect(recallEpisodes({ guildId: 'guild-a', queryEmbedding: vector768(1) })).toEqual([])
+    const scope = { guildId: 'guild-a', channelId: 'channel-a' }
+    expect(recallEpisodes({ guildId: 'guild-a', queryEmbedding: vector384(1), scope }).map(({ id }) => id)).toEqual([1])
+    expect(recallEpisodes({ guildId: 'guild-a', queryEmbedding: vector768(1), scope })).toEqual([])
   })
 })

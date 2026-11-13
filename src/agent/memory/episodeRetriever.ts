@@ -53,25 +53,36 @@ function toRecalledEpisode(episode: MemoryEpisode, queryEmbedding: EpisodeEmbedd
   }
 }
 
-export function recallEpisodes(input: {
-  guildId: string
-  queryEmbedding: EpisodeEmbedding
-  scope?: RecallScope
-}): RecalledEpisode[] {
-  if (
-    input.queryEmbedding.length !== config.embeddings.dim ||
-    input.queryEmbedding.some((value) => !Number.isFinite(value))
-  )
-    return []
+function hasValidQueryEmbedding(queryEmbedding: EpisodeEmbedding): boolean {
+  return queryEmbedding.length === config.embeddings.dim && queryEmbedding.every((value) => Number.isFinite(value))
+}
 
-  return listEpisodesForGuild(input.guildId)
-    .filter(
-      (episode) => !input.scope || config.memory.privacy === 'relaxed' || canRecall([episode.channelId], input.scope)
-    )
-    .map((episode) => toRecalledEpisode(episode, input.queryEmbedding))
+function readRecallableEpisodes(guildId: string, scope: RecallScope): MemoryEpisode[] {
+  const episodes = listEpisodesForGuild(guildId)
+  if (config.memory.privacy === 'relaxed') return episodes
+  return episodes.filter((episode) => canRecall([episode.channelId], scope))
+}
+
+export function selectEpisodes(
+  episodes: readonly MemoryEpisode[],
+  queryEmbedding: EpisodeEmbedding
+): RecalledEpisode[] {
+  if (!hasValidQueryEmbedding(queryEmbedding)) return []
+
+  return episodes
+    .map((episode) => toRecalledEpisode(episode, queryEmbedding))
     .filter((episode): episode is RecalledEpisode => episode !== null)
     .sort((left, right) => right.similarity - left.similarity || right.endedAt - left.endedAt || left.id - right.id)
     .slice(0, config.memory.episodeRecallK)
+}
+
+export function recallEpisodes(input: {
+  guildId: string
+  queryEmbedding: EpisodeEmbedding
+  scope: RecallScope
+}): RecalledEpisode[] {
+  if (!hasValidQueryEmbedding(input.queryEmbedding)) return []
+  return selectEpisodes(readRecallableEpisodes(input.guildId, input.scope), input.queryEmbedding)
 }
 
 export function selectEpisodesWithinBudget(
@@ -104,7 +115,7 @@ export function formatEpisodeRecallBlock(episodes: readonly RecalledEpisode[]): 
 export function buildEpisodeRecallBlock(input: {
   guildId: string
   queryEmbedding: EpisodeEmbedding
-  scope?: RecallScope
+  scope: RecallScope
 }): string {
   const recalled = recallEpisodes(input)
   const selected = selectEpisodesWithinBudget(recalled, config.memory.episodeRecallK, config.memory.episodeTokenBudget)
