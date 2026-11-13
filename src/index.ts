@@ -48,6 +48,8 @@ import { destroyAllGames as destroyAllShiritoriGames } from './games/shiritori.j
 import { closeDb, getDb } from './storage/database.js'
 import { pruneFailedExtractionJobs, resetStuckProcessing } from './storage/extractionQueue.js'
 import { pruneExtractionSamples } from './storage/extractionSampleStore.js'
+import { fillMemoryItemEmbeddingHashes, sweepMemoryItemIntegrity } from './storage/memoryItemIntegrity.js'
+import { configureMemoryItemProjectionTriggers } from './storage/memoryItemProjection.js'
 import { pruneFailureDiagnostics, pruneOldMetrics } from './storage/metricsStore.js'
 import { pruneOldHistory } from './storage/sessionStore.js'
 import { logger } from './utils/logger.js'
@@ -77,6 +79,7 @@ function startupMemoryTasks(botUserId?: string): void {
         reclassifyInBackground()
         pruneExpiredFailedExtractions()
         pruneEpisodesInBackground()
+        maintainMemoryItemProjection()
       },
       24 * 60 * 60 * 1000
     )
@@ -85,6 +88,16 @@ function startupMemoryTasks(botUserId?: string): void {
     pruneEpisodesInBackground()
   } catch (err) {
     logger.error({ err }, 'Failed to start memory tasks')
+  }
+}
+
+function maintainMemoryItemProjection(): void {
+  if (config.memory.store !== 'dual') return
+  try {
+    fillMemoryItemEmbeddingHashes()
+    sweepMemoryItemIntegrity()
+  } catch (err) {
+    logger.warn({ err }, 'Memory item projection maintenance failed')
   }
 }
 
@@ -121,7 +134,9 @@ function stopMemoryTasks(): void {
 }
 
 client.once('clientReady', () => {
-  getDb()
+  const database = getDb()
+  configureMemoryItemProjectionTriggers(database, config.memory.store)
+  maintainMemoryItemProjection()
   restoreMonitoredChannels()
   restoreOpenEpisodes()
   startReminderScheduler(client)

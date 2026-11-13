@@ -316,16 +316,83 @@ describe('memory item backfill', () => {
     expect(report.copied_occurrences).toBe(0)
     expect(report.copied_payloads).toBe(0)
     expect(report.copied_embeddings).toBe(0)
+    expect(report.refreshed_items).toBe(0)
+    expect(report.deleted_items).toBe(0)
     expect(report.checks_failed).toBe(0)
   })
 
-  it('rolls back newly copied rows when a planted round-trip miss is found', () => {
+  it('refreshes changed rows, removes deleted rows, and catches up new rows atomically', () => {
     seedFixture()
     const db = getDb()
     migrateMemoryItems(db)
-    db.prepare(
-      "UPDATE memory_item SET content = 'planted mismatch' WHERE legacy_table = 'memory_claim' AND legacy_id = 11"
-    ).run()
+
+    db.prepare("UPDATE memory_claim SET value = 'black' WHERE id = 11").run()
+    db.prepare('DELETE FROM memory_evidence WHERE id = 102').run()
+    db.prepare('DELETE FROM memory_episode WHERE id = 41').run()
+    db.prepare('DELETE FROM media_occurrence WHERE digest_id = 21').run()
+    db.prepare('DELETE FROM media_digest WHERE id = 21').run()
+    db.prepare("UPDATE media_digest SET label = 'Updated audio', summary = 'Updated summary.' WHERE id = 22").run()
+    db.prepare(`
+      INSERT INTO memory_claim (
+        guild_id, subject_kind, subject_user_id, predicate, value, source_kind, status, first_seen_at, last_seen_at, period
+      ) VALUES ('guild-fixture', 'user', 'user-fixture', 'new_fact', 'new value', 'explicit', 'active', 10, 20, 'current')
+    `).run()
+    db.prepare(`
+      INSERT INTO memory_episode (id, guild_id, channel_id, started_at, ended_at, summary, created_at)
+      VALUES (42, 'guild-fixture', 'channel-new', 30, 40, 'New episode.', 50)
+    `).run()
+    db.prepare(`
+      INSERT INTO media_digest (id, guild_id, content_key, kind, label, summary, digest_json, created_at)
+      VALUES (23, 'guild-fixture', 'new-content', 'audio', 'New audio', 'New media.', '{}', 60)
+    `).run()
+    db.prepare(`
+      INSERT INTO media_occurrence (
+        digest_id, guild_id, channel_id, message_id, shared_by_user_id, origin, observed_at
+      ) VALUES (22, 'guild-fixture', 'channel-new', 'message-new', 'user-fixture', 'upload', 70)
+    `).run()
+
+    const report = migrateMemoryItems(db)
+
+    expect(report.checks_failed).toBe(0)
+    expect(report.refreshed_items).toBeGreaterThan(0)
+    expect(report.deleted_items).toBeGreaterThan(0)
+    expect(
+      db.prepare("SELECT content FROM memory_item WHERE legacy_table = 'memory_claim' AND legacy_id = 11").get()
+    ).toEqual({ content: 'black' })
+    expect(
+      db
+        .prepare("SELECT COUNT(*) AS count FROM memory_item WHERE legacy_table = 'memory_episode' AND legacy_id = 41")
+        .get()
+    ).toEqual({ count: 0 })
+    expect(
+      db
+        .prepare("SELECT COUNT(*) AS count FROM memory_item WHERE legacy_table = 'media_digest' AND legacy_id = 21")
+        .get()
+    ).toEqual({ count: 0 })
+    expect(
+      db.prepare('SELECT COUNT(*) AS count FROM memory_item_occurrence WHERE legacy_id IS NOT NULL').get()
+    ).toEqual({ count: 1 })
+
+    const rerun = migrateMemoryItems(db)
+
+    expect(rerun.copied_items).toBe(0)
+    expect(rerun.refreshed_items).toBe(0)
+    expect(rerun.deleted_items).toBe(0)
+    expect(rerun.checks_failed).toBe(0)
+  })
+
+  it('rolls back catch-up when the projection would violate an item uniqueness constraint', () => {
+    seedFixture()
+    const db = getDb()
+    migrateMemoryItems(db)
+    db.prepare("UPDATE memory_claim SET value = 'planted mismatch' WHERE id = 11").run()
+    db.prepare(`
+      INSERT INTO memory_item (
+        guild_id, kind, subject_kind, subject_user_id, predicate, content, period, source_kind, status,
+        first_seen_at, last_seen_at, legacy_table, legacy_id
+      ) VALUES ('guild-fixture', 'fact', 'user', 'user-fixture', 'tea', 'planted mismatch', 'past',
+                'explicit', 'active', 1, 2, 'fixture', 999)
+    `).run()
     db.prepare(`
       INSERT INTO memory_claim (guild_id, subject_kind, subject_user_id, predicate, value, source_kind, status,
         first_seen_at, last_seen_at, period)
@@ -333,7 +400,7 @@ describe('memory item backfill', () => {
     `).run()
     const before = db.prepare('SELECT COUNT(*) AS count FROM memory_item').get()
 
-    expect(() => migrateMemoryItems(db)).toThrow('Memory item backfill verification failed')
+    expect(() => migrateMemoryItems(db)).toThrow()
 
     expect(db.prepare('SELECT COUNT(*) AS count FROM memory_item').get()).toEqual(before)
     expect(
@@ -343,7 +410,7 @@ describe('memory item backfill', () => {
     ).toEqual({ count: 0 })
     expect(
       db.prepare("SELECT content FROM memory_item WHERE legacy_table = 'memory_claim' AND legacy_id = 11").get()
-    ).toEqual({ content: 'planted mismatch' })
+    ).toEqual({ content: 'green' })
   })
 
   it('does not read the clock while copying timestamps', () => {

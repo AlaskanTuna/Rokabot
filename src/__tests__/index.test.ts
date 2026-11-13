@@ -9,6 +9,9 @@ const mocks = vi.hoisted(() => {
     destroyAllSessions: vi.fn().mockResolvedValue(undefined),
     destroyClient: vi.fn(),
     flushOpenEpisodes: vi.fn(),
+    configureMemoryItemProjectionTriggers: vi.fn(),
+    fillMemoryItemEmbeddingHashes: vi.fn(),
+    sweepMemoryItemIntegrity: vi.fn().mockReturnValue({ fact: 0, episode: 0, media: 0 }),
     restoreOpenEpisodes: vi.fn(),
     getDb: vi.fn(),
     pruneStaleClaims: vi.fn(),
@@ -45,7 +48,13 @@ vi.mock('../config.js', () => ({
     discord: { token: 'token' },
     socialPosts: { enabled: false, ytDlpPath: 'yt-dlp' },
     jev: { apiKey: undefined },
-    memory: { judge: 'none', claimRetentionDays: 90, episodeRetentionDays: 90, failedExtractionRetentionDays: 7 },
+    memory: {
+      store: 'legacy',
+      judge: 'none',
+      claimRetentionDays: 90,
+      episodeRetentionDays: 90,
+      failedExtractionRetentionDays: 7
+    },
     metrics: { retentionDays: 90 },
     session: { historyRetentionDays: 7 }
   }
@@ -75,6 +84,13 @@ vi.mock('../storage/extractionQueue.js', () => ({
   resetStuckProcessing: mocks.resetStuckProcessing
 }))
 vi.mock('../storage/extractionSampleStore.js', () => ({ pruneExtractionSamples: mocks.pruneExtractionSamples }))
+vi.mock('../storage/memoryItemProjection.js', () => ({
+  configureMemoryItemProjectionTriggers: mocks.configureMemoryItemProjectionTriggers
+}))
+vi.mock('../storage/memoryItemIntegrity.js', () => ({
+  fillMemoryItemEmbeddingHashes: mocks.fillMemoryItemEmbeddingHashes,
+  sweepMemoryItemIntegrity: mocks.sweepMemoryItemIntegrity
+}))
 vi.mock('../storage/metricsStore.js', () => ({ pruneOldMetrics: vi.fn(), pruneFailureDiagnostics: vi.fn() }))
 vi.mock('../storage/sessionStore.js', () => ({ pruneOldHistory: vi.fn() }))
 vi.mock('../utils/logger.js', () => ({ logger: mocks.logger }))
@@ -108,6 +124,33 @@ describe('startup memory tasks', () => {
     expect(mocks.resetStuckProcessing.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.startExtractionScheduler.mock.invocationCallOrder[0]
     )
+  })
+
+  it('configures legacy projection state at startup without running dual maintenance', async () => {
+    await import('../index.js')
+    mocks.triggerReady()
+
+    expect(mocks.configureMemoryItemProjectionTriggers).toHaveBeenCalledOnce()
+    expect(mocks.configureMemoryItemProjectionTriggers).toHaveBeenCalledWith(undefined, 'legacy')
+    expect(mocks.sweepMemoryItemIntegrity).not.toHaveBeenCalled()
+    expect(mocks.fillMemoryItemEmbeddingHashes).not.toHaveBeenCalled()
+  })
+
+  it('installs dual triggers and sweeps at startup and daily', async () => {
+    vi.useFakeTimers()
+    const { config } = await import('../config.js')
+    Object.assign(config.memory, { store: 'dual' })
+    await import('../index.js')
+    mocks.triggerReady()
+
+    expect(mocks.configureMemoryItemProjectionTriggers).toHaveBeenCalledWith(undefined, 'dual')
+    expect(mocks.fillMemoryItemEmbeddingHashes).toHaveBeenCalledOnce()
+    expect(mocks.sweepMemoryItemIntegrity).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1000)
+
+    expect(mocks.fillMemoryItemEmbeddingHashes).toHaveBeenCalledTimes(2)
+    expect(mocks.sweepMemoryItemIntegrity).toHaveBeenCalledTimes(2)
+    vi.useRealTimers()
   })
 
   it('warns once at startup when passive memory has no TypeSafe API key', async () => {

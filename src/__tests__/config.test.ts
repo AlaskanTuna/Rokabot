@@ -76,13 +76,23 @@ describe('config module', () => {
     expect(config.memory.store).toBe('legacy')
   })
 
-  it.each(['dual', 'item'])('rejects memory.store %s until its phase is enabled', async (store) => {
+  it('accepts memory.store dual', async () => {
     setRequiredEnvVars()
     clearTunableEnvVars()
-    withYamlOverride({ memory: { store } })
+    withYamlOverride({ memory: { store: 'dual' } })
+
+    const { config } = await import('../config.js')
+
+    expect(config.memory.store).toBe('dual')
+  })
+
+  it('rejects memory.store item until the read cutover phase is enabled', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    withYamlOverride({ memory: { store: 'item' } })
 
     await expect(() => import('../config.js')).rejects.toThrow(
-      `Config value memory.store=${store} is not supported in Phase 2; only legacy is accepted`
+      'Config value memory.store=item is not supported in Phase 3; only legacy or dual is accepted'
     )
   })
 
@@ -103,7 +113,7 @@ describe('config module', () => {
     vi.stubEnv('MEMORY_STORE', 'shadow')
 
     await expect(() => import('../config.js')).rejects.toThrow(
-      'Environment variable MEMORY_STORE must be legacy, dual or item, got: shadow'
+      'Environment variable MEMORY_STORE must be legacy or dual, got: shadow'
     )
   })
 
