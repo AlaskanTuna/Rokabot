@@ -206,20 +206,22 @@ counts, message IDs, timings and model names, never text, display names or error
 (attempt), `n_candidates` (ops proposed, no `noop`), `n_selected` (applied, staged included), `n_changed`,
 `tokens_est` (admission + extraction + verification input).
 
-| `detail` Field                    | Meaning                                                                                                                               |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `jobId`, `attempt`                | Job and `attempts + transientRetries + 1`                                                                                             |
-| `firstMessageId`, `lastMessageId` | First and last delta IDs; NULL when empty                                                                                             |
-| `messageCount`, `humanCount`      | Deltas, and how many came from non-bots                                                                                               |
-| `stage`                           | `precheck`, `admission`, `extraction`, `verification` or `applied`                                                                    |
-| `outcome`                         | `admitted`, `trivial`, `sensitive`, `below_threshold`, `jev_unavailable`, `noop`, `written` or `error`                                |
-| `precheckPattern`                 | Sensitive precheck name (`phone`, `email`, `credential`, `name`, `age`, `address`, `workplace`, `health` or `social`); NULL otherwise |
-| `errorClass`, `errorStatus`       | `transient`, `permanent` or `unjudged`, and the HTTP status                                                                           |
-| `admission`                       | `{ probability, threshold }`                                                                                                          |
-| `ops`                             | `{ proposed, applied, duplicate, staged, dropped, changed, past, reword, retracted, uncited }`                                        |
-| `summary`                         | `{ kept, chars, boilerplate, dropReason, judged }`                                                                                    |
-| `stageMs`                         | `{ admission, extraction, verification, persistence }`                                                                                |
-| `models`                          | `{ extraction, jev, embedding }`: `gemini.extractionModel`, `jev.model`, the embedding model                                          |
+| `detail` Field                    | Meaning                                                                                                                                  |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `jobId`, `attempt`                | Job and `attempts + transientRetries + 1`                                                                                                |
+| `firstMessageId`, `lastMessageId` | First and last delta IDs; NULL when empty                                                                                                |
+| `messageCount`, `humanCount`      | Deltas, and how many came from non-bots                                                                                                  |
+| `stage`                           | `precheck`, `admission`, `extraction`, `verification` or `applied`                                                                       |
+| `outcome`                         | `admitted`, `trivial`, `sensitive`, `below_threshold`, `jev_unavailable`, `noop`, `written` or `error`                                   |
+| `precheckPattern`                 | Sensitive precheck name (`phone`, `email`, `credential`, `name`, `age`, `address`, `workplace`, `health` or `social`); NULL otherwise    |
+| `errorClass`, `errorStatus`       | `transient`, `permanent` or `unjudged`, and the HTTP status                                                                              |
+| `admission`                       | `{ probability, threshold }`                                                                                                             |
+| `ops`                             | `{ proposed, applied, duplicate, staged, dropped, changed, past, reword, retracted, uncited }`                                           |
+| `summary`                         | `{ kept, chars, boilerplate, dropReason, judged }`                                                                                       |
+| `stageMs`                         | `{ admission, extraction, verification, persistence }`                                                                                   |
+| `extractionProvider`              | Provider that answered extraction; omitted when no extraction call ran                                                                   |
+| `extractionFallback`              | Whether the fallback route answered; false when extraction did not run                                                                   |
+| `models`                          | `{ extraction, jev, embedding }`: answering extraction model (`gemini.extractionModel` if no call ran), `jev.model`, the embedding model |
 
 A retried job writes one row per attempt. A summary persistence failure records `stage: 'applied'`, `outcome: 'error'`.
 

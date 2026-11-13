@@ -6,6 +6,7 @@ import { getClaimSourceChannels } from '../../storage/memoryRecallStore.js'
 import { logger } from '../../utils/logger.js'
 import { judgeEpisodeOperations } from '../jev/judgments.js'
 import { generateObject } from '../llm/generateObject.js'
+import type { ProviderId } from '../llm/profiles.js'
 import { promptTokenTotal } from '../llm/usage.js'
 import { admitEpisode } from './admission.js'
 import { JevUnavailableError } from './extractionErrors.js'
@@ -106,21 +107,38 @@ function episodePrompt(guildId: string, channelId: string, episode: ExtractionEp
   ].join('\n\n')
 }
 
-export type ExtractedEpisode = EpisodeExtractionOutput & { promptTokens?: number }
+export type ExtractedEpisode = EpisodeExtractionOutput & {
+  promptTokens?: number
+  extractionProvider: ProviderId
+  extractionModel: string
+  extractionFallback: boolean
+}
+
+function extractionAnsweredOnFallback(provider: ProviderId, model: string): boolean {
+  const main = config.llm.main
+  const mainModel = main.key === 'legacy-gemini' ? config.gemini.extractionModel : main.model
+  return provider !== main.provider || model !== mainModel
+}
 
 export async function extractEpisode(input: {
   guildId: string
   channelId: string
   episode: ExtractionEpisode
 }): Promise<ExtractedEpisode> {
-  const { value, usage } = await generateObject({
+  const { value, provider, model, usage } = await generateObject({
     schema: ExtractionOutputSchema,
     prompt: episodePrompt(input.guildId, input.channelId, input.episode),
     workload: 'extraction',
     maxOutputTokens: 700,
     legacyResponseSchema: EXTRACTION_RESPONSE_SCHEMA
   })
-  return { ...value, promptTokens: promptTokenTotal(usage) }
+  return {
+    ...value,
+    promptTokens: promptTokenTotal(usage),
+    extractionProvider: provider,
+    extractionModel: model,
+    extractionFallback: extractionAnsweredOnFallback(provider, model)
+  }
 }
 
 export type OperationApplicationReport = {
@@ -439,6 +457,9 @@ export async function runEpisodePipeline(job: ExtractionQueueJob, trace: RunTrac
   const output = await timeStage(trace, 'extraction', () =>
     extractEpisode({ guildId: job.guildId, channelId: job.channelId, episode: job.episode })
   )
+  trace.models.extraction = output.extractionModel
+  trace.extractionProvider = output.extractionProvider
+  trace.extractionFallback = output.extractionFallback
   trace.ops.proposed = output.ops.filter((op) => op.op !== 'noop').length
   trace.tokens += output.promptTokens ?? 0
 

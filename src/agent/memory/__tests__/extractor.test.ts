@@ -15,6 +15,7 @@ vi.mock('../../../config.js', () => ({
       extractionModel: 'gemini-extraction-test',
       safetyThreshold: 'OFF'
     },
+    llm: { main: { key: 'legacy-gemini', provider: 'gemini', model: 'gemini-main-test' }, fallback: null },
     logging: { level: 'silent' },
     jev: { model: 'jev-test' },
     memory: { maxActiveClaimsPerUser: 20, verifyThreshold: 0.5, admitThreshold: 0.5, embeddingModel: 'embed-test' },
@@ -35,6 +36,8 @@ import { startRunTrace } from '../extractionRun.js'
 import { EXTRACTION_RESPONSE_SCHEMA, ExtractionOutputSchema } from '../extractionSchema.js'
 import { extractEpisode, runEpisodePipeline, verifyAndApplyOperations } from '../extractor.js'
 import { assertClaim, assertGuildClaim, getActiveClaims } from '../memoryClaims.js'
+
+const mutableMain = config.llm.main as unknown as { key: string; provider: string; model: string }
 
 beforeAll(() => {
   process.env.ROKABOT_DB_PATH = ':memory:'
@@ -62,6 +65,9 @@ beforeEach(() => {
     }
   })
   mocks.judgeEpisodeOperations.mockReset()
+  mutableMain.key = 'legacy-gemini'
+  mutableMain.provider = 'gemini'
+  mutableMain.model = 'gemini-main-test'
   getDb().exec(
     'DELETE FROM memory_events; DELETE FROM memory_evidence; DELETE FROM memory_claim; DELETE FROM jev_events;'
   )
@@ -110,12 +116,16 @@ describe('runEpisodePipeline', () => {
       opsRejected: false
     })
     expect(mocks.modelReply).not.toHaveBeenCalled()
+    expect(mocks.generateObject).not.toHaveBeenCalled()
     expect(trace).toMatchObject({
       stage: 'admission',
       outcome: 'below_threshold',
       admission: { probability: 0.31, threshold: 0.5 },
       tokens: 25
     })
+    expect(trace.models.extraction).toBe('gemini-extraction-test')
+    expect(trace.extractionProvider).toBeUndefined()
+    expect(trace.extractionFallback).toBe(false)
     expect(trace.stageMs).toHaveProperty('admission')
   })
 
@@ -192,6 +202,81 @@ describe('runEpisodePipeline', () => {
       uncited: 0
     })
     expect(Object.keys(trace.stageMs).sort()).toEqual(['admission', 'extraction', 'verification'])
+  })
+
+  it('records the main model and provider that answered extraction', async () => {
+    mutableMain.key = 'haiku'
+    mutableMain.provider = 'anthropic'
+    mutableMain.model = 'claude-haiku-5-5'
+    mocks.generateObject.mockResolvedValueOnce({
+      value: { ops: [{ op: 'noop' }], summary: 'Alice likes tea.' },
+      provider: 'anthropic',
+      model: 'claude-haiku-5-5',
+      usage: {
+        provider: 'anthropic',
+        model: 'claude-haiku-5-5',
+        workload: 'extraction',
+        inputTokens: 0,
+        outputTokens: 0
+      }
+    })
+    const trace = startRunTrace(queueJob, 1)
+
+    await runEpisodePipeline(queueJob, trace)
+
+    expect(trace.models.extraction).toBe('claude-haiku-5-5')
+    expect(trace.extractionProvider).toBe('anthropic')
+    expect(trace.extractionFallback).toBe(false)
+  })
+
+  it('records the fallback model and marks that fallback answered extraction', async () => {
+    mutableMain.key = 'haiku'
+    mutableMain.provider = 'anthropic'
+    mutableMain.model = 'claude-haiku-5-5'
+    mocks.generateObject.mockResolvedValueOnce({
+      value: { ops: [{ op: 'noop' }], summary: 'Alice likes tea.' },
+      provider: 'modelscope',
+      model: 'Qwen/Qwen3.5-122B-A10B',
+      usage: {
+        provider: 'modelscope',
+        model: 'Qwen/Qwen3.5-122B-A10B',
+        workload: 'extraction',
+        inputTokens: 0,
+        outputTokens: 0
+      }
+    })
+    const trace = startRunTrace(queueJob, 1)
+
+    await runEpisodePipeline(queueJob, trace)
+
+    expect(trace.models.extraction).toBe('Qwen/Qwen3.5-122B-A10B')
+    expect(trace.extractionProvider).toBe('modelscope')
+    expect(trace.extractionFallback).toBe(true)
+  })
+
+  it('compares the legacy answer with the configured extraction model', async () => {
+    mutableMain.key = 'legacy-gemini'
+    mutableMain.provider = 'gemini'
+    mutableMain.model = 'gemini-main-test'
+    mocks.generateObject.mockResolvedValueOnce({
+      value: { ops: [{ op: 'noop' }], summary: 'Alice likes tea.' },
+      provider: 'gemini',
+      model: 'gemini-extraction-test',
+      usage: {
+        provider: 'gemini',
+        model: 'gemini-extraction-test',
+        workload: 'extraction',
+        inputTokens: 0,
+        outputTokens: 0
+      }
+    })
+    const trace = startRunTrace(queueJob, 1)
+
+    await runEpisodePipeline(queueJob, trace)
+
+    expect(trace.models.extraction).toBe('gemini-extraction-test')
+    expect(trace.extractionProvider).toBe('gemini')
+    expect(trace.extractionFallback).toBe(false)
   })
 
   it('traces the written ops and sums the tokens of admission, extraction and verification', async () => {
@@ -513,7 +598,10 @@ describe('extractEpisode', () => {
 
     await expect(extractEpisode({ guildId: 'guild-1', channelId: 'channel-1', episode })).resolves.toEqual({
       ...output,
-      promptTokens: 0
+      promptTokens: 0,
+      extractionProvider: 'gemini',
+      extractionModel: 'gemini-extraction-test',
+      extractionFallback: false
     })
 
     expect(mocks.modelReply).toHaveBeenCalledOnce()
@@ -607,7 +695,10 @@ describe('extractEpisode', () => {
 
     await expect(extractEpisode({ guildId: 'guild-1', channelId: 'channel-1', episode })).resolves.toEqual({
       ...output,
-      promptTokens: 120
+      promptTokens: 120,
+      extractionProvider: 'gemini',
+      extractionModel: 'gemini-extraction-test',
+      extractionFallback: false
     })
   })
 
