@@ -429,6 +429,42 @@ describe('generateResponse model fallback', () => {
     expect(routes).toEqual([true])
   })
 
+  it('still hands media to the Gemini watcher while the sticky window pins replies to the fallback', async () => {
+    setFallbackUntilMs(Date.now() + 10_000)
+    const seen: Array<Record<string, unknown>> = []
+    vi.mocked(prepareTurnMedia).mockImplementationOnce(async (input) => {
+      seen.push({ ...input })
+      return {
+        directParts: [],
+        mediaTextParts: [],
+        compactions: new Map(),
+        compactDigests: [],
+        digests: [],
+        watcherCalls: 0,
+        mediaTokens: 0,
+        droppedAttachments: 0,
+        truncatedAttachments: 0,
+        refusedAttachments: 0,
+        watchOutcome: null
+      }
+    })
+    const routes: Array<boolean | undefined> = []
+    __setTestRunTurnFactory(() => async () => {
+      routes.push(modelRouteForRequest.getStore()?.useFallback)
+      return { text: 'Fallback answer~', hasText: true, hasFunctionCall: false }
+    })
+
+    await generateResponse({
+      ...responseOptions(),
+      mediaAttachments: [{ url: 'https://cdn.discordapp.com/v.mp4', contentType: 'video/mp4', size: 1000 }]
+    })
+
+    // The reply rides the sticky window to the fallback, but the watch takes no fallback gate.
+    expect(routes).toEqual([true])
+    expect(seen).toHaveLength(1)
+    expect(seen[0]).not.toHaveProperty('geminiUnavailable')
+  })
+
   it('uses the fallback for the retry and sends the next turn there within the sticky window', async () => {
     expect(rokaAgent.model).toBeInstanceOf(RoutedLlm)
     const routes: Array<boolean | undefined> = []

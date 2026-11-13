@@ -98,12 +98,12 @@ Other tools:
 
 ## Run With Docker
 
-`docker-compose.yml` defines `roka` (the bot) and `asr` (speech recognition). Pick one image source.
+`docker-compose.yml` defines `roka` (the bot). Pick one image source.
 
-| Source          | Command                                       | Image                                                                  |
-| --------------- | --------------------------------------------- | ---------------------------------------------------------------------- |
-| Published image | `docker compose pull && docker compose up -d` | `ghcr.io/alaskantuna/rokabot:${ROKA_TAG:-stable}`                      |
-| Local build     | `docker compose up -d --build`                | Built from `Dockerfile` and `sidecar/asr/`, under the same image names |
+| Source          | Command                                       | Image                                              |
+| --------------- | --------------------------------------------- | -------------------------------------------------- |
+| Published image | `docker compose pull && docker compose up -d` | `ghcr.io/alaskantuna/rokabot:${ROKA_TAG:-stable}`  |
+| Local build     | `docker compose up -d --build`                | Built from `Dockerfile`, under the same image name |
 
 A local build takes the compose image name, so it replaces your local copy of the published tag. Run `docker compose pull` to get the published image back.
 
@@ -111,11 +111,10 @@ A local build takes the compose image name, so it replaces your local copy of th
 2. If your login is not UID 1000, run `sudo chown 1000:1000 data`. The container runs as user `node` (UID 1000).
 3. Check that `config.yml` and `.env` sit next to `docker-compose.yml`. Compose mounts `config.yml` read-only and does not create it.
 4. Start the stack with one command from the table above.
-5. To skip `asr` (it needs about 2 GB), add `MEDIA_TRANSCRIBER_URL=` to `.env` and start only the bot: `docker compose up -d roka`.
 
 Compose settings that matter:
 
-- **Memory:** `roka` has `mem_limit: 1g`. `asr` has `mem_limit: 2g`.
+- **Memory:** `roka` has `mem_limit: 1g`.
 - **Port:** `3000:3000` for the health check.
 - **Tag:** `ROKA_TAG` in `.env` pins a release (`vX.Y.Z`) or a minor line (`vX.Y`). The default is `stable`.
 - **Profiles:** `COMPOSE_PROFILES=autoupdate` starts Watchtower. `local-embeddings` starts the embeddings sidecar.

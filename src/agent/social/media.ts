@@ -41,7 +41,7 @@ async function playableVideo(post: SocialPost): Promise<MediaAttachment | null> 
 
 /** What an embed video contributes: the clip to watch, else null and the caller keeps the thumbnail. */
 export async function embedVideoMedia(url: string): Promise<MediaAttachment | null> {
-  const watched = config.media.watcher === 'gemini' || config.media.watcher === 'qwen'
+  const watched = config.media.watcher === 'gemini'
   if (!watched) return null
   const resolved = await resolveWatchableVideo(url, null)
   if (!resolved) return null
@@ -50,7 +50,7 @@ export async function embedVideoMedia(url: string): Promise<MediaAttachment | nu
 
 /** What a found post contributes to the turn's one media slot: its video to watch, else its picture. */
 export async function socialPostMedia(post: SocialPost): Promise<MediaAttachment | null> {
-  const watched = config.media.watcher === 'gemini' || config.media.watcher === 'qwen'
+  const watched = config.media.watcher === 'gemini'
   if (watched && post.platform === 'youtube') {
     return {
       url: post.canonicalUrl,

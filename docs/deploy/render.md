@@ -4,14 +4,13 @@ Run Rokabot on Render from the published image. Render never redeploys an image 
 
 ## At a Glance
 
-| Item               | Value                                                                               |
-| ------------------ | ----------------------------------------------------------------------------------- |
-| Image              | `ghcr.io/alaskantuna/rokabot:stable` (public, no credentials)                       |
-| Memory             | About 1 GB (the compose file caps the bot at `mem_limit: 1g`)                       |
-| Storage            | Persistent, at `/app/data`, writable by UID 1000                                    |
-| Health             | Port 3000, any path: 200 with `"status":"ok"` once Discord is connected, 503 before |
-| Speech Recognition | Optional second service from `ghcr.io/alaskantuna/rokabot-asr:stable`               |
-| Updates            | Manual deploy, or a deploy hook on a schedule you own                               |
+| Item    | Value                                                                               |
+| ------- | ----------------------------------------------------------------------------------- |
+| Image   | `ghcr.io/alaskantuna/rokabot:stable` (public, no credentials)                       |
+| Memory  | About 1 GB (the compose file caps the bot at `mem_limit: 1g`)                       |
+| Storage | Persistent, at `/app/data`, writable by UID 1000                                    |
+| Health  | Port 3000, any path: 200 with `"status":"ok"` once Discord is connected, 503 before |
+| Updates | Manual deploy, or a deploy hook on a schedule you own                               |
 
 ## Steps
 
@@ -30,15 +29,6 @@ Source: [Deploy an Image](https://render.com/docs/deploy-an-image).
 ## Configuration
 
 The image carries a built-in `config.yml`, so the bot starts with its defaults. An environment variable overrides a single value where `src/config.ts` wires one, for example `LLM_MAIN`, `LLM_FALLBACK` and `MEDIA_WATCHER`. To use your own file, mount it and set `ROKABOT_CONFIG_PATH` to its path.
-
-### Speech Recognition
-
-Speech recognition is off until you set `MEDIA_TRANSCRIBER_URL`; the built-in `config.yml` leaves it empty. It serves only the qwen media watcher, which needs `MODELSCOPE_API_KEY`. That watcher is the main one when `media.watcher` is `qwen`, and the backup when it is `gemini`. Without that key, skip this.
-
-1. Create a second service from `ghcr.io/alaskantuna/rokabot-asr:stable`. Give it about 2 GB of memory and keep it private. It listens on port 8000 and answers `GET /health`.
-2. On the bot service, set `MEDIA_TRANSCRIBER_URL` to the private address of that service, with port 8000.
-
-To keep speech recognition off, leave `MEDIA_TRANSCRIBER_URL` unset or empty.
 
 ### Automatic Updates
 
@@ -90,6 +80,5 @@ Source: [Deploy Hooks](https://render.com/docs/deploy-hooks).
 - **`imgURL` Match:** every part of `imgURL` except the tag or digest must match the service's default image URL, or Render rejects the request. Without `imgURL`, Render uses the tag or digest saved in the service settings.
 - **Moved Tag:** whether a hook call without `imgURL` pulls a `stable` that has moved is not documented. The digest in `imgURL` avoids the question.
 - **Restarts:** each call starts a deploy, which restarts the bot. Whether Render skips an unchanged digest is not documented, so keep the schedule slow.
-- **Speech Service:** the workflow redeploys only the bot. For the speech recognition service, add a second step with its own hook secret (for example `RENDER_ASR_DEPLOY_HOOK`) and `ghcr.io/alaskantuna/rokabot-asr@<digest>`.
 - **Quiet Forks:** GitHub turns off scheduled workflows in a public repository after 60 days without activity. To turn one back on, open the Actions tab, select the workflow and choose Enable workflow, or run `gh workflow enable`. Source: [Disabling and enabling a workflow](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/disable-and-enable-workflows).
 - **Not Covered:** where Render takes variables, how it mounts a file, how it sets a health check, its private address format, and its storage steps and ownership rules. See Render's own documentation. The storage must be writable by UID 1000.

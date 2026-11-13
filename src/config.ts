@@ -122,15 +122,6 @@ interface YamlConfig {
     skimClipSeconds?: number
     maxStreamedUploadBytes?: number
     uploadTimeoutMs?: number
-    qwen?: {
-      model?: string
-      secondsPerFrame?: number
-      minFrames?: number
-      maxFrames?: number
-      frameHeight?: number
-      timeoutMs?: number
-    }
-    transcriber?: { url?: string; timeoutMs?: number; maxSpeechSec?: number; maxAudioSec?: number }
   }
   memory?: {
     bufferSize?: number
@@ -273,7 +264,7 @@ function envBoolean(key: string): boolean | undefined {
 export type JevMode = 'off' | 'shadow' | 'on'
 export type MemoryPrivacy = 'relaxed' | 'balanced' | 'strict' | 'off'
 export type MemoryRecallMode = 'legacy' | 'shadow' | 'unified'
-export type MediaWatcher = 'gemini' | 'qwen' | 'direct' | 'off'
+export type MediaWatcher = 'gemini' | 'off'
 export type MemoryJudge = 'jev' | 'model' | 'none'
 export type SearchProvider = 'off' | 'native' | 'tavily' | 'exa'
 
@@ -314,9 +305,9 @@ function formatRepair(): FormatRepairMode {
 function mediaWatcher(): MediaWatcher {
   const envValue = envString('MEDIA_WATCHER')
   const value = envValue ?? yaml.media?.watcher ?? 'gemini'
-  if (value === 'gemini' || value === 'qwen' || value === 'direct' || value === 'off') return value
+  if (value === 'gemini' || value === 'off') return value
   const source = envValue ? 'Environment variable MEDIA_WATCHER' : 'Config value media.watcher'
-  throw new Error(`${source} must be gemini, qwen, direct or off, got: ${String(value)}`)
+  throw new Error(`${source} must be gemini or off, got: ${String(value)}`)
 }
 
 // Unset means native, which runs on `llm.main` itself and needs no search API key.
@@ -328,7 +319,7 @@ function searchProvider(): SearchProvider {
   throw new Error(`${source} must be off, native, tavily or exa, got: ${String(value)}`)
 }
 
-// Only the watcher's `gemini` mode requires the key, though the qwen watcher still falls back to Gemini on failure.
+// Only the watcher's `gemini` mode needs the key.
 export function geminiKeyRequired(roles: {
   main: ProviderId
   fallback: ProviderId | null
@@ -659,24 +650,7 @@ const baseConfig = {
     skimClips: yaml.media?.skimClips ?? 8,
     skimClipSeconds: yaml.media?.skimClipSeconds ?? 10,
     maxStreamedUploadBytes: yaml.media?.maxStreamedUploadBytes ?? 52_428_800,
-    uploadTimeoutMs: yaml.media?.uploadTimeoutMs ?? 45_000,
-    qwen: {
-      apiKey: envString('MODELSCOPE_API_KEY'),
-      // Read from the legacy fallback block so a custom ModelScope endpoint still reaches the watcher.
-      baseUrl: yaml.fallback?.baseUrl ?? 'https://api-inference.modelscope.ai/v1',
-      model: envString('MEDIA_QWEN_MODEL') ?? yaml.media?.qwen?.model ?? 'Qwen/Qwen3.5-35B-A3B',
-      secondsPerFrame: yaml.media?.qwen?.secondsPerFrame ?? 4,
-      minFrames: yaml.media?.qwen?.minFrames ?? 16,
-      maxFrames: yaml.media?.qwen?.maxFrames ?? 32,
-      frameHeight: yaml.media?.qwen?.frameHeight ?? 360,
-      timeoutMs: yaml.media?.qwen?.timeoutMs ?? 30_000
-    },
-    transcriber: {
-      url: envString('MEDIA_TRANSCRIBER_URL') ?? yaml.media?.transcriber?.url ?? '',
-      timeoutMs: yaml.media?.transcriber?.timeoutMs ?? 45_000,
-      maxSpeechSec: yaml.media?.transcriber?.maxSpeechSec ?? 120,
-      maxAudioSec: yaml.media?.transcriber?.maxAudioSec ?? 180
-    }
+    uploadTimeoutMs: yaml.media?.uploadTimeoutMs ?? 45_000
   },
   gemini: {
     apiKey: envString('GEMINI_API_KEY') ?? '',
@@ -920,14 +894,6 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
     max: 104_857_600
   },
   { path: 'media.uploadTimeoutMs', value: config.media.uploadTimeoutMs, min: 10_000, max: 120_000 },
-  { path: 'media.qwen.secondsPerFrame', value: config.media.qwen.secondsPerFrame, min: 0.5, max: 30 },
-  { path: 'media.qwen.minFrames', value: config.media.qwen.minFrames, min: 4, max: 32 },
-  { path: 'media.qwen.maxFrames', value: config.media.qwen.maxFrames, min: 4, max: 32 },
-  { path: 'media.qwen.frameHeight', value: config.media.qwen.frameHeight, min: 144, max: 720 },
-  { path: 'media.qwen.timeoutMs', value: config.media.qwen.timeoutMs, min: 5000, max: 90_000 },
-  { path: 'media.transcriber.timeoutMs', value: config.media.transcriber.timeoutMs, min: 5000, max: 120_000 },
-  { path: 'media.transcriber.maxSpeechSec', value: config.media.transcriber.maxSpeechSec, min: 10, max: 600 },
-  { path: 'media.transcriber.maxAudioSec', value: config.media.transcriber.maxAudioSec, min: 30, max: 900 },
   { path: 'gemini.maxOutputTokens', value: config.gemini.maxOutputTokens, min: 1 },
   // Floor is a full turn of plain images, derived rather than restated: below it a maximal image turn could
   // be refused,

@@ -7,7 +7,9 @@ const mocks = vi.hoisted(() => ({
   judgeTurn: vi.fn(),
   recordJevEvent: vi.fn(),
   watchMedia: vi.fn(),
-  countUriTokens: vi.fn()
+  countUriTokens: vi.fn(),
+  streamToFiles: vi.fn(),
+  deleteFile: vi.fn()
 }))
 
 vi.mock('../jev/judgments.js', () => ({ judgeTurn: mocks.judgeTurn }))
@@ -23,6 +25,7 @@ vi.mock('../replyShape.js', async (importOriginal) => {
 })
 vi.mock('../../storage/jevEventStore.js', () => ({ recordJevEvent: mocks.recordJevEvent }))
 vi.mock('../media/watch.js', () => ({ watchMedia: mocks.watchMedia, countUriTokens: mocks.countUriTokens }))
+vi.mock('../media/filesUpload.js', () => ({ streamToFiles: mocks.streamToFiles, deleteFile: mocks.deleteFile }))
 vi.mock('../media/turnMedia.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../media/turnMedia.js')>()
   return { ...actual, prepareTurnMedia: vi.fn(actual.prepareTurnMedia) }
@@ -36,16 +39,16 @@ const mutableJevConfig = config.jev as {
   toneMinProbability: number
   referentMinConfidence: number
 }
-/** The whole file runs this one config: Jev off except shadow prefetch, media direct. Named so the pin
+/** The whole file runs this one config: Jev off except shadow prefetch, media watched. Named so the pin
  * reads as the file's premise rather than mid-file mutation; the prefetch suite flips prefetch on per test
  * and afterEach restores the pin. */
 function pinLegacyRoute(): void {
   mutableJevConfig.tone = 'off'
   mutableJevConfig.referents = 'off'
   mutableJevConfig.prefetch = 'shadow'
-  // These tests pin the direct path, where audio and video reach the model as they arrived. The watched path is
-  // covered in roka.media.test.ts.
-  ;(config.media as { watcher: string }).watcher = 'direct'
+  // Audio and video are always watched; images and PDFs keep the direct path. The watched path is covered
+  // in depth in roka.media.test.ts.
+  ;(config.media as { watcher: string }).watcher = 'gemini'
 }
 
 pinLegacyRoute()
@@ -2016,6 +2019,44 @@ describe('attachment intake', () => {
     vi.unstubAllGlobals()
   })
 
+  const watchedDigest = {
+    kind: 'video',
+    label: 'video',
+    durationSec: 5,
+    mode: 'whole',
+    fps: 1,
+    bins: [{ startSec: 0, endSec: 5 }],
+    observations: {
+      summary: 'A clip plays.',
+      timeline: [],
+      speech: [],
+      onScreenText: [],
+      uncertainties: []
+    },
+    incomplete: false
+  }
+
+  // Audio and video are watched before the reply; without this the watch is what fails, not the download.
+  beforeEach(() => {
+    mocks.watchMedia.mockReset()
+    mocks.countUriTokens.mockReset()
+    mocks.streamToFiles.mockReset()
+    mocks.deleteFile.mockReset()
+    mocks.watchMedia.mockResolvedValue({
+      status: 'ok',
+      digest: watchedDigest,
+      promptTokens: 100,
+      calls: 1,
+      watchMs: 10
+    })
+    mocks.streamToFiles.mockResolvedValue({
+      name: 'files/abc',
+      uri: 'files/abc',
+      mimeType: 'audio/mp3',
+      durationSec: 500
+    })
+  })
+
   /**
    * Serves the bytes as a real stream, in chunks, so the download's running byte counter is actually
    * exercised. `contentLength` is separately controllable because the guard exists for responses whose
@@ -2160,24 +2201,33 @@ describe('attachment intake', () => {
     expect(await inlineFor('application/pdf', Buffer.alloc(11 * MB, 0x20))).toEqual([])
   })
 
-  it('sends an audio clip to the model as audio', async () => {
-    expect((await inlineFor('audio/ogg', OGG_BYTES)).map((part) => part.mimeType)).toEqual(['audio/ogg'])
+  it('watches an audio clip instead of handing the model the clip', async () => {
+    expect(await inlineFor('audio/ogg', OGG_BYTES)).toEqual([])
+
+    expect(mocks.watchMedia).toHaveBeenCalledTimes(1)
+    expect(mocks.watchMedia.mock.calls[0][0].source).toMatchObject({ kind: 'audio', mimeType: 'audio/ogg' })
   })
 
   // The same pair the document case is asserted as, and for the same reason: sharp handed audio throws, and
-  // its catch returns the *undecoded* bytes relabelled image/jpeg. A test checking only the data passes
-  // while the clip arrives misdeclared and unplayable, so both halves have to be asserted together.
-  it('hands the model the clip exactly as it arrived, and says so', async () => {
-    const [clip] = await inlineFor('audio/ogg', OGG_BYTES)
+  // its catch returns the *undecoded* bytes relabelled image/jpeg. The watch source carries the download's
+  // bytes and name, so both halves are asserted on what the watcher was given.
+  it('hands the watcher the clip exactly as it arrived, and says so', async () => {
+    await inlineFor('audio/ogg', OGG_BYTES)
 
-    expect(clip).toEqual({ data: OGG_BYTES.toString('base64'), mimeType: 'audio/ogg' })
+    expect(mocks.watchMedia.mock.calls[0][0].source).toMatchObject({
+      kind: 'audio',
+      mimeType: 'audio/ogg',
+      data: OGG_BYTES.toString('base64')
+    })
   })
 
   // Discord labels an MP3 audio/mpeg, the registered type; Gemini documents audio/mp3 and not audio/mpeg.
   // Both are accepted in practice, so this pins a deliberate preference for the documented name rather than
   // a workaround for a rejection — see geminiMimeType.
   it('renames an mp3 to the spelling Gemini documents', async () => {
-    expect((await inlineFor('audio/mpeg', OGG_BYTES)).map((part) => part.mimeType)).toEqual(['audio/mp3'])
+    await inlineFor('audio/mpeg', OGG_BYTES)
+
+    expect(mocks.watchMedia.mock.calls[0][0].source).toMatchObject({ kind: 'audio', mimeType: 'audio/mp3' })
   })
 
   // 9 MB is the discriminating size for audio: over the 8 MB audio ceiling, under the 10 MB document one.
@@ -2190,31 +2240,42 @@ describe('attachment intake', () => {
     expect(await inlineFor('application/pdf', Buffer.alloc(9 * MB, 0x20))).toHaveLength(1)
   })
 
-  it('accepts an audio clip larger than the image ceiling', async () => {
-    expect(await inlineFor('audio/ogg', Buffer.alloc(6 * MB, 0x20))).toHaveLength(1)
+  it('admits an audio clip larger than the image ceiling to the watcher', async () => {
+    expect(await inlineFor('audio/ogg', Buffer.alloc(6 * MB, 0x20))).toEqual([])
+    expect(mocks.watchMedia).toHaveBeenCalledTimes(1)
   })
 
-  it('sends a video to the model as video', async () => {
-    expect((await inlineFor('video/mp4', VIDEO_BYTES)).map((part) => part.mimeType)).toEqual(['video/mp4'])
+  it('watches a video instead of handing the model the file', async () => {
+    expect(await inlineFor('video/mp4', VIDEO_BYTES)).toEqual([])
+
+    expect(mocks.watchMedia).toHaveBeenCalledTimes(1)
+    expect(mocks.watchMedia.mock.calls[0][0].source).toMatchObject({ kind: 'video', mimeType: 'video/mp4' })
   })
 
   // The same pair as the document and audio cases. sharp handed MP4 bytes raises "Input buffer contains
-  // unsupported image format", and its catch returns the undecoded bytes relabelled image/jpeg — so a clip
-  // routed through it arrives byte-identical and misdeclared, and data alone cannot tell the difference.
-  it('hands the model the video exactly as it arrived, and says so', async () => {
-    const [clip] = await inlineFor('video/mp4', VIDEO_BYTES)
+  // unsupported image format", and its catch returns the undecoded bytes relabelled image/jpeg — so the
+  // download's bytes are asserted on what the watcher was given instead.
+  it('hands the watcher the video exactly as it arrived, and says so', async () => {
+    await inlineFor('video/mp4', VIDEO_BYTES)
 
-    expect(clip).toEqual({ data: VIDEO_BYTES.toString('base64'), mimeType: 'video/mp4' })
+    expect(mocks.watchMedia.mock.calls[0][0].source).toMatchObject({
+      kind: 'video',
+      mimeType: 'video/mp4',
+      data: VIDEO_BYTES.toString('base64')
+    })
   })
 
   // A .mov arrives as video/quicktime, the registered type; Gemini's list says video/mov.
   it('renames a .mov to the spelling Gemini documents', async () => {
-    expect((await inlineFor('video/quicktime', VIDEO_BYTES)).map((part) => part.mimeType)).toEqual(['video/mov'])
+    await inlineFor('video/quicktime', VIDEO_BYTES)
+
+    expect(mocks.watchMedia.mock.calls[0][0].source).toMatchObject({ kind: 'video', mimeType: 'video/mov' })
   })
 
   // 9 MB discriminates video from audio: over the 8 MB audio ceiling, under video's 10 MB.
-  it('accepts a video at a size audio is refused at', async () => {
-    expect(await inlineFor('video/mp4', Buffer.alloc(9 * MB, 0x20))).toHaveLength(1)
+  it('admits a video at a size audio is refused at to the watcher', async () => {
+    expect(await inlineFor('video/mp4', Buffer.alloc(9 * MB, 0x20))).toEqual([])
+    expect(mocks.watchMedia).toHaveBeenCalledTimes(1)
   })
 
   it('refuses a video past the video ceiling', async () => {
@@ -2247,7 +2308,9 @@ describe('attachment intake', () => {
   })
 
   it('still reads a body of exactly the ceiling to the end', async () => {
-    expect(await inlineFor('video/mp4', Buffer.alloc(10 * MB, 0x20), { contentLength: null })).toHaveLength(1)
+    expect(await inlineFor('video/mp4', Buffer.alloc(10 * MB, 0x20), { contentLength: null })).toEqual([])
+
+    expect(mocks.watchMedia).toHaveBeenCalledTimes(1)
   })
 
   async function droppedFor(contentType: string, bytes: Buffer) {
@@ -2384,18 +2447,25 @@ describe('attachment intake', () => {
   const OVERSIZED_MP3 = 20 * MB
   const OVERSIZED_MP4 = 30 * MB
 
-  it('takes the opening of an oversized mp3 rather than refusing it', async () => {
-    const parts = await inlineFor('audio/mpeg', Buffer.alloc(9 * MB, 0x20), { statedSize: OVERSIZED_MP3 })
+  it('streams an oversized mp3 rather than refusing it', async () => {
+    await inlineFor('audio/mpeg', Buffer.alloc(9 * MB, 0x20), { statedSize: OVERSIZED_MP3 })
 
-    expect(parts.map((part) => part.mimeType)).toEqual(['audio/mp3'])
+    expect(mocks.streamToFiles).toHaveBeenCalledTimes(1)
+    expect(mocks.streamToFiles.mock.calls[0][0]).toMatchObject({
+      sourceUrl: 'https://cdn.test/file',
+      size: OVERSIZED_MP3
+    })
+    expect(mocks.watchMedia).toHaveBeenCalledTimes(1)
+    expect(mocks.watchMedia.mock.calls[0][0].source).toMatchObject({ transport: 'files' })
   })
 
   // The saving is the whole point: on a 206 the excess is never sent. Asserted on the request rather than on
   // the bytes, because a server that ignores Range would still yield the right bytes and no saving at all.
-  it('asks for only the first bytes rather than the whole file', async () => {
+  it('streams an oversized upload from its URL instead of downloading it first', async () => {
     await inlineFor('audio/mpeg', Buffer.alloc(9 * MB, 0x20), { statedSize: OVERSIZED_MP3 })
 
-    expect((lastServe.init?.headers as Record<string, string>)?.Range).toBe(`bytes=0-${8 * MB - 1}`)
+    expect(lastServe.calls).toBe(0)
+    expect(mocks.streamToFiles).toHaveBeenCalledTimes(1)
   })
 
   it('asks for the whole file when it fits', async () => {
@@ -2410,34 +2480,35 @@ describe('attachment intake', () => {
   // Not an edge case: this is what Discord's CDN actually does. It advertises `accept-ranges: bytes` and
   // then answers 200 with the whole body, measured. The first version of this treated that overflow as a
   // failure, which would have turned every oversized file into a silent refusal on the only path that runs.
-  it('keeps the prefix when the server ignores Range and sends the whole file, as Discord does', async () => {
-    const parts = await inlineFor('audio/mpeg', Buffer.alloc(20 * MB, 0x20), { statedSize: OVERSIZED_MP3 })
+  it('streams the whole stated file, not a prefix of it', async () => {
+    await inlineFor('audio/mpeg', Buffer.alloc(20 * MB, 0x20), { statedSize: OVERSIZED_MP3 })
 
-    expect(parts).toHaveLength(1)
+    expect(mocks.streamToFiles.mock.calls[0][0]).toMatchObject({ size: OVERSIZED_MP3 })
+    expect(mocks.watchMedia).toHaveBeenCalledTimes(1)
   })
 
-  it('cuts the prefix at exactly the ceiling, not the chunk that crossed it', async () => {
-    const [clip] = await inlineFor('audio/mpeg', Buffer.alloc(20 * MB, 0x20), { statedSize: OVERSIZED_MP3 })
-
-    expect(Buffer.from(clip.data, 'base64').byteLength).toBe(8 * MB)
-  })
-
-  it('takes the opening of an oversized video whose index comes first', async () => {
-    const parts = await inlineFor('video/mp4', isobmff(['ftyp', 'moov', 'mdat'], 9 * MB), {
+  it('streams an oversized video whose index comes first', async () => {
+    await inlineFor('video/mp4', isobmff(['ftyp', 'moov', 'mdat'], 9 * MB), {
       statedSize: OVERSIZED_MP4
     })
 
-    expect(parts).toHaveLength(1)
+    expect(mocks.streamToFiles).toHaveBeenCalledTimes(1)
+    expect(mocks.watchMedia).toHaveBeenCalledTimes(1)
   })
 
   // A phone MP4 carries its index last, so a prefix has nothing to decode against. Sending it raises no
   // error anywhere — the request succeeds and the answer is about nothing — so it must be refused instead.
-  it('refuses an oversized video whose index sits behind its media data', async () => {
-    const parts = await inlineFor('video/mp4', isobmff(['ftyp', 'mdat', 'moov'], 9 * MB), {
+  it('streams an oversized video even when its index sits behind its media data', async () => {
+    await inlineFor('video/mp4', isobmff(['ftyp', 'mdat', 'moov'], 9 * MB), {
       statedSize: OVERSIZED_MP4
     })
 
-    expect(parts).toEqual([])
+    expect(mocks.streamToFiles).toHaveBeenCalledTimes(1)
+    expect(mocks.streamToFiles.mock.calls[0][0]).toMatchObject({
+      sourceUrl: 'https://cdn.test/file',
+      size: OVERSIZED_MP4
+    })
+    expect(mocks.watchMedia).toHaveBeenCalledTimes(1)
   })
 
   it('refuses an oversized document, which has no valid prefix at all', async () => {
@@ -2455,7 +2526,7 @@ describe('attachment intake', () => {
     expect(await droppedFor('video/mp4', Buffer.alloc(11 * MB, 0x20))).toBe(1)
   })
 
-  it('reports an oversized-but-prefixed attachment as truncated, not dropped', async () => {
+  it('reports a streamed oversized attachment as neither truncated nor dropped', async () => {
     serve(Buffer.alloc(9 * MB, 0x20))
     __setTestRunTurnFactory(() => async () => ({ text: 'Mm~', hasText: true, hasFunctionCall: false }))
     const result = await generateResponse({
@@ -2470,7 +2541,7 @@ describe('attachment intake', () => {
     })
     await destroySession('roka-truncated')
 
-    expect([result.truncatedAttachments, result.droppedAttachments]).toEqual([1, 0])
+    expect([result.truncatedAttachments, result.droppedAttachments]).toEqual([0, 0])
   })
 
   it('reports nothing truncated when the whole file fitted', async () => {
@@ -2723,14 +2794,14 @@ describe('attachment intake', () => {
     expect(withDocument - withoutDocument).toBe(0)
   })
 
-  // Audio is billed per second, so the image rate is wrong for it too. Left at 0 rather than estimated:
-  // seconds are not knowable without decoding, and decoding for a metric costs the memory the caps protect.
+  // Audio is watched, so it bills its watch rather than the image rate: the digest text and the
+  // watcher's billed tokens, both far below what one image costs.
   it('does not charge an audio clip at the image rate', async () => {
     serve(OGG_BYTES)
     const withAudio = await tokensInFor({ url: 'https://cdn.test/file', contentType: 'audio/ogg' })
     const withoutAudio = await tokensInFor()
 
-    expect(withAudio - withoutAudio).toBe(0)
+    expect(withAudio - withoutAudio).toBeLessThan(GEMINI_IMAGE_TOKENS)
   })
 })
 
@@ -2818,7 +2889,7 @@ describe('watched media', () => {
   })
 
   afterEach(() => {
-    mediaConfig.watcher = 'direct'
+    mediaConfig.watcher = 'gemini'
     __resetTestRunTurnFactory()
   })
 

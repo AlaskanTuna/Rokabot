@@ -156,8 +156,8 @@ describe('socialPostMedia', () => {
     expect(lookalike?.contentKey).not.toBe(victim?.contentKey)
   })
 
-  it.each(['direct', 'off'])('keeps thumbnails only when the watcher is %s', async (watcher) => {
-    mocks.watcher = watcher
+  it('keeps thumbnails only when the watcher is off', async () => {
+    mocks.watcher = 'off'
     mocks.resolveMediaUrl.mockResolvedValueOnce({ url: 'https://pbs.twimg.com/thumb.jpg', contentType: 'image/jpeg' })
 
     await socialPostMedia(post({ url: 'https://x.com/roka/status/123', video: xVideo }))

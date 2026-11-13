@@ -242,7 +242,6 @@ See [CONTRIBUTING](CONTRIBUTING.md) for branches, titles, labels, gates and merg
 | `src/agent/`          | The ADK agent, prompt assembly, models, memory, media, Jev, tools        |
 | `src/character/`      | The character pack loader and its schemas                                |
 | `src/storage/`        | The SQLite schema and table helpers                                      |
-| `sidecar/asr/`        | The speech recognition sidecar                                           |
 | `sidecar/embeddings/` | The optional local embeddings sidecar                                    |
 | `tests/`              | The test harness, fixtures and the prompt size cap                       |
 

@@ -32,7 +32,7 @@ Secrets, `config.yml` and environment overrides merge in `src/config.ts`, which 
 | `GEMINI_API_KEY`     | When the main or fallback model, `embeddings.provider` or `media.watcher` is Gemini. Always without an `llm:` block. | Gemini API key.                                                                                                                                       |
 | `ANTHROPIC_API_KEY`  | When `llm.main` or `llm.fallback` uses `provider: anthropic`                                                         | Anthropic API key.                                                                                                                                    |
 | `OPENAI_API_KEY`     | When `llm.main` or `llm.fallback` uses `provider: openai`, or `embeddings.provider` is `openai`                      | OpenAI API key.                                                                                                                                       |
-| `MODELSCOPE_API_KEY` | When `llm.main` or `llm.fallback` uses `provider: modelscope`                                                        | ModelScope token. Without an `llm:` block it turns on the Qwen fallback. It also funds the qwen media watcher.                                        |
+| `MODELSCOPE_API_KEY` | When `llm.main` or `llm.fallback` uses `provider: modelscope`                                                        | ModelScope token. Without an `llm:` block it turns on the Qwen fallback.                                                                              |
 | `TYPESAFE_API_KEY`   | No                                                                                                                   | Jev judgments. Without it, the main model judges passive memory when an `llm:` block exists, and passive memory drops every episode when it does not. |
 | `TAVILY_API_KEY`     | No                                                                                                                   | Web search when `search.provider` is `tavily`. Without it, the search tool answers that web search is not configured.                                 |
 | `EXA_API_KEY`        | No                                                                                                                   | Web search when `search.provider` is `exa`. Without it, the search tool answers that web search is not configured.                                    |
@@ -109,12 +109,12 @@ These keys drive the legacy route (no `llm:` block). Some apply to every route, 
 
 The legacy fallback, used when `config.yml` has no `llm:` block and `MODELSCOPE_API_KEY` is set.
 
-| Key                  | Default                                  | Env Override     | What It Does                                                                                                            |
-| -------------------- | ---------------------------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `fallback.model`     | `Qwen/Qwen3.5-122B-A10B`                 | `FALLBACK_MODEL` | ModelScope model that answers when the main model fails.                                                                |
-| `fallback.baseUrl`   | `https://api-inference.modelscope.ai/v1` | —                | OpenAI-compatible ModelScope endpoint. `provider: modelscope` entries in `llm.models` and the qwen watcher also use it. |
-| `fallback.timeoutMs` | `15000`                                  | —                | Request deadline for the fallback. Bounds `>= 1`.                                                                       |
-| `fallback.stickyMs`  | `300000`                                 | —                | After the fallback answers, later turns start on it for this long. `0` turns it off. Bounds `>= 0`.                     |
+| Key                  | Default                                  | Env Override     | What It Does                                                                                        |
+| -------------------- | ---------------------------------------- | ---------------- | --------------------------------------------------------------------------------------------------- |
+| `fallback.model`     | `Qwen/Qwen3.5-122B-A10B`                 | `FALLBACK_MODEL` | ModelScope model that answers when the main model fails.                                            |
+| `fallback.baseUrl`   | `https://api-inference.modelscope.ai/v1` | —                | OpenAI-compatible ModelScope endpoint. `provider: modelscope` entries in `llm.models` also use it.  |
+| `fallback.timeoutMs` | `15000`                                  | —                | Request deadline for the fallback. Bounds `>= 1`.                                                   |
+| `fallback.stickyMs`  | `300000`                                 | —                | After the fallback answers, later turns start on it for this long. `0` turns it off. Bounds `>= 0`. |
 
 ## `llm`
 
@@ -175,26 +175,16 @@ These limits apply to Gemini routes. A Gemini entry in `llm.models` inherits the
 
 ## `media`
 
-| Key                              | Default                  | Env Override            | What It Does                                                                                                                                                                |
-| -------------------------------- | ------------------------ | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `media.watcher`                  | `gemini`                 | `MEDIA_WATCHER`         | How audio and video reach the model. `gemini` or `qwen` watches first, and the other takes over on failure. `direct` sends the file to the reply model. `off` does neither. |
-| `media.embedWaitMs`              | `2000`                   | —                       | How long a linked message waits for Discord to add its embed. Bounds `0..5000`.                                                                                             |
-| `media.watchTimeoutMs`           | `20000`; shipped `30000` | —                       | Deadline for one watch call. Bounds `5000..60000`.                                                                                                                          |
-| `media.digestMaxOutputTokens`    | `2400`; shipped `3200`   | —                       | Output cap for the digest JSON. Bounds `400..4000`.                                                                                                                         |
-| `media.skimClips`                | `8`                      | —                       | Most evenly spaced clips taken from a video too long to watch whole. Bounds `3..9`.                                                                                         |
-| `media.skimClipSeconds`          | `10`                     | —                       | Length of each skim clip. Bounds `2..30`.                                                                                                                                   |
-| `media.maxStreamedUploadBytes`   | `52428800`               | —                       | Largest file streamed to the Gemini Files API to watch whole. Bounds `10485760..104857600`.                                                                                 |
-| `media.uploadTimeoutMs`          | `45000`                  | —                       | Deadline to stream one file and wait until it is ready. Bounds `10000..120000`.                                                                                             |
-| `media.qwen.model`               | `Qwen/Qwen3.5-35B-A3B`   | `MEDIA_QWEN_MODEL`      | ModelScope vision model for the qwen watcher. Needs `MODELSCOPE_API_KEY`.                                                                                                   |
-| `media.qwen.secondsPerFrame`     | `4`                      | —                       | One frame per this many seconds of the watched span. Bounds `0.5..30`.                                                                                                      |
-| `media.qwen.minFrames`           | `16`                     | —                       | Fewest frames for any video. Bounds `4..32`.                                                                                                                                |
-| `media.qwen.maxFrames`           | `32`                     | —                       | Most frames for any video. Bounds `4..32`.                                                                                                                                  |
-| `media.qwen.frameHeight`         | `360`                    | —                       | Frame height in pixels. Bounds `144..720`.                                                                                                                                  |
-| `media.qwen.timeoutMs`           | `30000`                  | —                       | Deadline for one qwen watch call. Bounds `5000..90000`.                                                                                                                     |
-| `media.transcriber.url`          | Empty                    | `MEDIA_TRANSCRIBER_URL` | Speech-to-text sidecar for the qwen watcher. Empty turns it off. Compose sets `http://asr:8000` unless `.env` sets the variable.                                            |
-| `media.transcriber.timeoutMs`    | `45000`                  | —                       | Deadline to transcribe one video's audio. Bounds `5000..120000`.                                                                                                            |
-| `media.transcriber.maxSpeechSec` | `120`                    | —                       | Speech transcribed per video after silence and music are skipped. Bounds `10..600`.                                                                                         |
-| `media.transcriber.maxAudioSec`  | `180`                    | —                       | Audio sent per video. Bounds `30..900`.                                                                                                                                     |
+| Key                            | Default                  | Env Override    | What It Does                                                                                      |
+| ------------------------------ | ------------------------ | --------------- | ------------------------------------------------------------------------------------------------- |
+| `media.watcher`                | `gemini`                 | `MEDIA_WATCHER` | How audio and video reach the model. `gemini` watches them; `off` neither watches nor sends them. |
+| `media.embedWaitMs`            | `2000`                   | —               | How long a linked message waits for Discord to add its embed. Bounds `0..5000`.                   |
+| `media.watchTimeoutMs`         | `20000`; shipped `30000` | —               | Deadline for one watch call. Bounds `5000..60000`.                                                |
+| `media.digestMaxOutputTokens`  | `2400`; shipped `3200`   | —               | Output cap for the digest JSON. Bounds `400..4000`.                                               |
+| `media.skimClips`              | `8`                      | —               | Most evenly spaced clips taken from a video too long to watch whole. Bounds `3..9`.               |
+| `media.skimClipSeconds`        | `10`                     | —               | Length of each skim clip. Bounds `2..30`.                                                         |
+| `media.maxStreamedUploadBytes` | `52428800`               | —               | Largest file streamed to the Gemini Files API to watch whole. Bounds `10485760..104857600`.       |
+| `media.uploadTimeoutMs`        | `45000`                  | —               | Deadline to stream one file and wait until it is ready. Bounds `10000..120000`.                   |
 
 ## `memory`
 

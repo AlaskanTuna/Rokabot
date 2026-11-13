@@ -24,8 +24,8 @@ How Roka takes in files, watches audio and video, and opens linked social posts.
 | -------- | ------------------------------------------------------------------------------------- | ------- | ---------------------------------------------------- |
 | Image    | `image/png`, `image/jpeg`, `image/gif`, `image/webp`                                  | 4 MiB   | Re-encoded by `sharp`: JPEG, longest side ≤ 1,024 px |
 | Document | `application/pdf`                                                                     | 10 MiB  | Byte-identical                                       |
-| Audio    | `audio/wav`, `mp3`, `mpeg`, `aiff`, `aac`, `ogg`, `flac`                              | 8 MiB   | Watched, or byte-identical in `direct` mode          |
-| Video    | `video/mp4`, `mpeg`, `mov`, `quicktime`, `avi`, `x-flv`, `mpg`, `webm`, `wmv`, `3gpp` | 10 MiB  | Watched, or byte-identical in `direct` mode          |
+| Audio    | `audio/wav`, `mp3`, `mpeg`, `aiff`, `aac`, `ogg`, `flac`                              | 8 MiB   | Watched                                              |
+| Video    | `video/mp4`, `mpeg`, `mov`, `quicktime`, `avi`, `x-flv`, `mpg`, `webm`, `wmv`, `3gpp` | 10 MiB  | Watched                                              |
 
 - **Renamed Types:** `geminiMimeType` sends `audio/mpeg` as `audio/mp3` and `video/quicktime` as `video/mov`. Gemini accepts both spellings.
 - **Large Audio and Video:** a file above its ceiling and within `media.maxStreamedUploadBytes` (50 MiB) is streamed to the Gemini Files API (see [Transport](#transport)).
@@ -95,7 +95,7 @@ An attachment holds about 4.7× its size in memory. Part of that is outside the 
 
 ## Token Admission
 
-Byte size does not bound token cost. A small PDF can cost tens of thousands of tokens. `prepareAttachments` prices the direct parts (images, PDFs, and audio or video in `direct` mode) before the reply call.
+Byte size does not bound token cost. A small PDF can cost tens of thousands of tokens. `prepareAttachments` prices the direct parts (images and PDFs) before the reply call.
 
 1. A set of images only is not measured. Each image is charged a flat 1,089 tokens (`GEMINI_IMAGE_TOKENS`).
 2. Otherwise each part is measured alone. A part is kept while the running total stays ≤ `gemini.maxAttachmentTokens`. A later part can still fit after an earlier one is refused.
@@ -139,13 +139,8 @@ _A file or post link passes admission, a watcher turns audio or video into notes
 
 | Mode     | Behavior                                                                                                                                                   |
 | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `gemini` | Default. Gemini watches first and Qwen is the backup.                                                                                                      |
-| `qwen`   | Qwen watches first and Gemini is the backup.                                                                                                               |
-| `direct` | No watcher. Audio and video go to the reply model as they arrived. Linked posts give their picture, not their video.                                       |
+| `gemini` | Default. Gemini watches audio and video.                                                                                                                   |
 | `off`    | No watcher and no file. Each item becomes `[A video was shared, but watching and listening are switched off right now.]`. Linked posts give their picture. |
-
-- **Backup Order:** `watchOne` tries the watchers in order and adds a failure notice only when both fail.
-- **Skip Rules:** a watcher without its key is skipped (`GEMINI_API_KEY`, `MODELSCOPE_API_KEY`). Gemini is skipped while turns are pinned to the fallback model. Qwen takes audio only when `media.transcriber.url` is set.
 
 ### Transport
 
@@ -196,31 +191,6 @@ The digest header states the coverage, for example `whole video in two halves, 3
 - **Retry:** only a 503 is retried, once, and only when the first try failed within half of `media.watchTimeoutMs` and the shared limiter's `tryConsumeAboveFloor(gemini.retryRpmFloor)` allows it. A 429 is a quota answer and is not retried.
 - **Failure Reasons:** `overloaded`, `timeout`, `unavailable` (fails with `it couldn't be opened`), `invalid`, `error`.
 
-### Qwen Watcher
-
-`watchWithQwen` and `watchFramesWithQwen` (`src/agent/media/qwenWatch.ts`) watch from still frames and a speech transcript.
-
-1. **Source:** uploads and post videos are read from their URL. A YouTube link goes through yt-dlp: its lowest stream of at least 240p, its lowest audio-only stream of at least 32 kbps, and its title and description as untrusted context.
-2. **Frames:** one per `media.qwen.secondsPerFrame` of the watched span, between `media.qwen.minFrames` and `media.qwen.maxFrames`. ffmpeg takes a JPEG at each bin's midpoint at `media.qwen.frameHeight`, 4 at a time, 8 s each, with `-protocol_whitelist file,https,tls,tcp,crypto`. The watch fails with fewer than half the frames (or fewer than 2).
-3. **Focus:** a timestamp on a video over 2 min uses the same window as Gemini.
-4. **Speech:** transcribed in parallel (see [Speech Sidecar](#speech-sidecar)). An audio item is heard from its transcript alone and fails with no speech.
-5. **Call:** labelled frames go to `media.qwen.model` on the ModelScope endpoint in `fallback.baseUrl`, with thinking off, `response_format: json_object`, `media.qwen.timeoutMs` and `media.digestMaxOutputTokens`. The timeline has at most 8 equal spans.
-6. **Result:** a `MediaDigest` with `fps: null`, `frames` and `heard: 'speech'` or `'none'`, for example `whole video, 3:06, 32 frames, no sound heard`.
-
-ModelScope bills per call, whatever the frame count. Music, sound effects and tone are never heard.
-
-### Speech Sidecar
-
-The `asr` container (`sidecar/asr/server.py`, sherpa-onnx) transcribes audio for the Qwen watcher. `docker-compose.yml` points the bot at `http://asr:8000` through `MEDIA_TRANSCRIBER_URL`. An empty value turns transcription off.
-
-1. ffmpeg cuts 16 kHz mono WAV: the whole clip up to `media.transcriber.maxAudioSec`, else four windows centred in the quarters, or the focus window.
-2. The bot posts each window in turn to `POST /transcribe?maxSpeechSec=<n>` (`audio/wav` body). Each window gets `max(10, floor(maxSpeechSec / windows))` s of speech.
-3. The sidecar runs Silero VAD, identifies the language with SenseVoice-Small, and transcribes English with Moonshine-base and zh, ja, ko and yue with SenseVoice. It returns `{ language, engine, speechSec, segments: [{ start, end, text }] }`.
-4. `media.transcriber.timeoutMs` bounds the whole video. Windows not reached are skipped.
-5. Segments go to Qwen as a separate untrusted text part (6,000 characters at most). The coverage line reads `16 frames, speech heard from a transcript but not music or other sound`.
-
-A failed or empty transcript leaves a frames-only watch (`heard: 'none'`), with reason `disabled`, `no_audio`, `timeout`, `unreachable`, `http_<status>` or `invalid`. The sidecar has no published port, runs one request at a time, and is capped at 2 GiB and 3 CPUs. See the [Runbook](../RUNBOOK.md).
-
 ### Digest and Turn Input
 
 - **Digest Block:** each watched item reaches the reply model as a text part. It starts with `MEDIA_DIGEST_UNTRUSTED_DATA_LABEL`, then `[Watched media — <label>, <coverage>]`, then summary, timeline, standout moments, claims, quotes, on-screen text, style and uncertainties.
@@ -235,7 +205,6 @@ In a server turn with memory on, each digest is saved per guild in `media_digest
 
 - **Content Keys:** `youtube:<id>` (plus `@<startSec>` with a timestamp), `<platform>:<post id>:0` for a post video, `discord:<attachment path>` for a streamed upload, and `sha256:<hex>` of the bytes for an inline upload.
 - `opening` and incomplete digests are not reused. A `skim` that two halves could now cover is redone.
-- A Qwen watch is saved when it heard speech or the silence is definite. A failed transcription is retried on a later share.
 - The summary is embedded off the reply path for recall. See [Memory](./memory.md) and [Data](./data.md).
 
 ### Accounting
@@ -266,7 +235,7 @@ Mention, reply and name-keyword turns open at most one supported post link (`soc
 | X         | `x.com`, `twitter.com`, `fxtwitter.com`, `fixupx.com`, `vxtwitter.com`, `fixvx.com` | FxTwitter status API                                                     | FxTwitter MP4 variants                                     | FxTwitter `/2/conversation`                      |
 | Bluesky   | `bsky.app`                                                                          | Public AppView `getPostThread`, depth 0; handle resolved to a DID        | MP4 blob from the author's PDS via `plc.directory` (1.5 s) | `getPostThread`, depth 1                         |
 | Threads   | `threads.com`, `threads.net`                                                        | The post page's `data-sjs` JSON, fetched with browser headers            | First `video_versions` URL                                 | Replies rendered in the post page                |
-| YouTube   | `youtube.com` (`/watch`, `/shorts/`), `youtu.be`                                    | yt-dlp metadata; oEmbed (title, channel, thumbnail) when yt-dlp fails    | Canonical URL (Gemini) or yt-dlp streams (Qwen)            | Data API v3 `commentThreads` (`YOUTUBE_API_KEY`) |
+| YouTube   | `youtube.com` (`/watch`, `/shorts/`), `youtu.be`                                    | yt-dlp metadata; oEmbed (title, channel, thumbnail) when yt-dlp fails    | Canonical URL (Gemini)                                     | Data API v3 `commentThreads` (`YOUTUBE_API_KEY`) |
 | TikTok    | `tiktok.com`                                                                        | yt-dlp metadata                                                          | yt-dlp formats                                             | `api/comment/list`                               |
 | Reddit    | `reddit.com`, `redd.it`                                                             | First entry of the comment RSS feed; yt-dlp only for a `v.redd.it` video | yt-dlp formats, watched silent                             | Comment RSS, `sort=top`                          |
 | Instagram | `instagram.com` (`/p/`, `/reel/`)                                                   | yt-dlp metadata                                                          | yt-dlp formats                                             | yt-dlp `--write-comments`                        |
@@ -309,7 +278,7 @@ A found post adds one line to the user message, headed by `SOCIAL_POST_UNTRUSTED
 
 - **YouTube (watcher on):** the canonical URL as a `uri` item, with any `startSec`.
 - **Other Video (watcher on):** the playable MP4 with muxed sound first, then the smallest, then the lowest bitrate. It must pass `resolveMediaUrl` with no extractor headers, be `video/*`, and fit `media.maxStreamedUploadBytes` (10 MiB when no size is stated). A known-silent stream (Reddit DASH) is watched and marked silent.
-- **Otherwise:** the post's first photo or cover thumbnail, through `resolveMediaUrl`. This also applies in `direct` and `off` modes.
+- **Otherwise:** the post's first photo or cover thumbnail, through `resolveMediaUrl`. This also applies in `off` mode.
 - An earlier audio or video candidate wins the one timed-media slot.
 
 ### Replies
@@ -325,40 +294,31 @@ The `read_replies` tool (`src/agent/tools/readReplies.ts`) fetches a post's repl
 
 ## Configuration
 
-| Key                                  | Default                | Bounds                            |
-| ------------------------------------ | ---------------------- | --------------------------------- |
-| `discord.maxAttachmentBytesPerTurn`  | 10 MiB                 | 10 MiB to 30 MiB                  |
-| `discord.maxInFlightAttachmentBytes` | 32 MiB                 | ≥ 30 MiB                          |
-| `gemini.maxAttachmentTokens`         | 125,000                | 10,890 to 125,000                 |
-| `gemini.maxTokensPerMinute`          | 125,000                | `maxAttachmentTokens` to 125,000  |
-| `media.watcher`                      | `gemini`               | `gemini`, `qwen`, `direct`, `off` |
-| `media.embedWaitMs`                  | 2,000                  | 0 to 5,000                        |
-| `media.watchTimeoutMs`               | 30,000                 | 5,000 to 60,000                   |
-| `media.digestMaxOutputTokens`        | 3,200                  | 400 to 4,000                      |
-| `media.skimClips`                    | 8                      | 3 to 9                            |
-| `media.skimClipSeconds`              | 10                     | 2 to 30                           |
-| `media.maxStreamedUploadBytes`       | 50 MiB                 | 10 MiB to 100 MiB                 |
-| `media.uploadTimeoutMs`              | 45,000                 | 10,000 to 120,000                 |
-| `media.qwen.model`                   | `Qwen/Qwen3.5-35B-A3B` | —                                 |
-| `media.qwen.secondsPerFrame`         | 4                      | 0.5 to 30                         |
-| `media.qwen.minFrames` / `maxFrames` | 16 / 32                | 4 to 32                           |
-| `media.qwen.frameHeight`             | 360                    | 144 to 720                        |
-| `media.qwen.timeoutMs`               | 30,000                 | 5,000 to 90,000                   |
-| `media.transcriber.url`              | empty (off)            | —                                 |
-| `media.transcriber.timeoutMs`        | 45,000                 | 5,000 to 120,000                  |
-| `media.transcriber.maxSpeechSec`     | 120                    | 10 to 600                         |
-| `media.transcriber.maxAudioSec`      | 180                    | 30 to 900                         |
-| `socialPosts.enabled`                | `true`                 | —                                 |
-| `socialPosts.timeoutMs`              | 6,000                  | 1 to 30,000                       |
-| `socialPosts.cacheTtlMs`             | 900,000                | ≥ 0                               |
-| `socialPosts.maxCacheEntries`        | 256                    | 1 to 10,000                       |
-| `socialPosts.maxTextChars`           | 1,500                  | 1 to 10,000                       |
-| `socialPosts.maxReplies`             | 5                      | 1 to 10                           |
-| `socialPosts.maxRepliesOnRequest`    | 50                     | 1 to 50                           |
-| `socialPosts.maxReplyChars`          | 280                    | 40 to 1,000                       |
-| `socialPosts.ytDlpPath`              | `yt-dlp`               | —                                 |
+| Key                                  | Default  | Bounds                           |
+| ------------------------------------ | -------- | -------------------------------- |
+| `discord.maxAttachmentBytesPerTurn`  | 10 MiB   | 10 MiB to 30 MiB                 |
+| `discord.maxInFlightAttachmentBytes` | 32 MiB   | ≥ 30 MiB                         |
+| `gemini.maxAttachmentTokens`         | 125,000  | 10,890 to 125,000                |
+| `gemini.maxTokensPerMinute`          | 125,000  | `maxAttachmentTokens` to 125,000 |
+| `media.watcher`                      | `gemini` | `gemini`, `off`                  |
+| `media.embedWaitMs`                  | 2,000    | 0 to 5,000                       |
+| `media.watchTimeoutMs`               | 30,000   | 5,000 to 60,000                  |
+| `media.digestMaxOutputTokens`        | 3,200    | 400 to 4,000                     |
+| `media.skimClips`                    | 8        | 3 to 9                           |
+| `media.skimClipSeconds`              | 10       | 2 to 30                          |
+| `media.maxStreamedUploadBytes`       | 50 MiB   | 10 MiB to 100 MiB                |
+| `media.uploadTimeoutMs`              | 45,000   | 10,000 to 120,000                |
+| `socialPosts.enabled`                | `true`   | —                                |
+| `socialPosts.timeoutMs`              | 6,000    | 1 to 30,000                      |
+| `socialPosts.cacheTtlMs`             | 900,000  | ≥ 0                              |
+| `socialPosts.maxCacheEntries`        | 256      | 1 to 10,000                      |
+| `socialPosts.maxTextChars`           | 1,500    | 1 to 10,000                      |
+| `socialPosts.maxReplies`             | 5        | 1 to 10                          |
+| `socialPosts.maxRepliesOnRequest`    | 50       | 1 to 50                          |
+| `socialPosts.maxReplyChars`          | 280      | 40 to 1,000                      |
+| `socialPosts.ytDlpPath`              | `yt-dlp` | —                                |
 
-Defaults are the shipped `config.yml` values. Bounds come from `NUMERIC_BOUNDS` in `src/config.ts`. Env overrides: `DISCORD_MAX_ATTACHMENT_BYTES_PER_TURN`, `DISCORD_MAX_INFLIGHT_ATTACHMENT_BYTES`, `GEMINI_MAX_ATTACHMENT_TOKENS`, `GEMINI_MAX_TOKENS_PER_MINUTE`, `MEDIA_WATCHER`, `MEDIA_QWEN_MODEL`, `MEDIA_TRANSCRIBER_URL` and `SOCIAL_POSTS_ENABLED`. The Qwen watcher reads `MODELSCOPE_API_KEY`; reply fetching on YouTube reads `YOUTUBE_API_KEY`.
+Defaults are the shipped `config.yml` values. Bounds come from `NUMERIC_BOUNDS` in `src/config.ts`. Env overrides: `DISCORD_MAX_ATTACHMENT_BYTES_PER_TURN`, `DISCORD_MAX_INFLIGHT_ATTACHMENT_BYTES`, `GEMINI_MAX_ATTACHMENT_TOKENS`, `GEMINI_MAX_TOKENS_PER_MINUTE`, `MEDIA_WATCHER` and `SOCIAL_POSTS_ENABLED`. Reply fetching on YouTube reads `YOUTUBE_API_KEY`.
 
 Derivations: [Multimodal Intake Research](../research/multimodal.md) and [Social Post Viewing Research](../research/social-post-viewing.md).
 
@@ -366,8 +326,7 @@ Derivations: [Multimodal Intake Research](../research/multimodal.md) and [Social
 
 - `src/agent/media/mediaRules.ts`, `src/discord/byteBudget.ts`, `src/discord/messageContent.ts`
 - `src/agent/media/attachments.ts`, `src/agent/media/attachmentCost.ts`, `src/agent/media/attachmentLimits.ts`, `src/agent/media/mediaPrefix.ts`
-- `src/agent/media/` (`turnMedia.ts`, `mediaCache.ts`, `plan.ts`, `watch.ts`, `qwenWatch.ts`, `frames.ts`, `transcribe.ts`, `filesUpload.ts`, `digest.ts`, `contentKey.ts`, `youtubeStreams.ts`)
+- `src/agent/media/` (`turnMedia.ts`, `mediaCache.ts`, `plan.ts`, `watch.ts`, `filesUpload.ts`, `digest.ts`, `contentKey.ts`, `youtubeStreams.ts`)
 - `src/agent/session.ts` (`stripAttachmentBytes`), `src/agent/roka.ts` (turn wiring)
 - `src/agent/social/` (`service.ts`, `urls.ts`, `ytDlp.ts`, `media.ts`, `format.ts`, `threads.ts`, `replies/`)
 - `src/agent/tools/readReplies.ts`, `src/agent/replyIntent.ts`, `src/agent/promptSafety.ts`
-- `sidecar/asr/server.py`, `docker-compose.yml` (`asr` service)

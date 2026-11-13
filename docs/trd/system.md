@@ -29,7 +29,6 @@ _The bot process and its sidecar on the Pi, with Discord on the left and remote 
 | Media Watcher         | Turn audio and video into a text digest before the reply call                            | `src/agent/media/`                              |
 | Passive Memory        | Capture episodes in monitored channels, queue them, extract claims in the background     | `src/agent/memory/`                             |
 | Storage               | Open SQLite and own its schema, migrations and table helpers                             | `src/storage/`                                  |
-| `asr` Sidecar         | Transcribe speech for the Qwen watcher over HTTP (`http://asr:8000`, no published port)  | `sidecar/asr/server.py`, `docker-compose.yml`   |
 
 ### Durable State
 
@@ -114,12 +113,11 @@ The health body is JSON: `status`, `uptime`, `memory` (RSS in MB) and `discord` 
 
 Compose services:
 
-| Service      | Role                                                                       | Limits                | Starts                               |
-| ------------ | -------------------------------------------------------------------------- | --------------------- | ------------------------------------ |
-| `roka`       | The bot; publishes port 3000; mounts `./data` and a read-only `config.yml` | 1 GB, no swap         | Always                               |
-| `asr`        | Speech recognition (sherpa-onnx)                                           | 2 GB, no swap, 3 CPUs | Always                               |
-| `embeddings` | Local embedding sidecar on `http://embeddings:8080`                        | 1 GB, no swap, 1 CPU  | Only with profile `local-embeddings` |
-| `watchtower` | Pulls new `roka` and `asr` images daily at 04:07 (container time)          | none set              | Only with profile `autoupdate`       |
+| Service      | Role                                                                       | Limits               | Starts                               |
+| ------------ | -------------------------------------------------------------------------- | -------------------- | ------------------------------------ |
+| `roka`       | The bot; publishes port 3000; mounts `./data` and a read-only `config.yml` | 1 GB, no swap        | Always                               |
+| `embeddings` | Local embedding sidecar on `http://embeddings:8080`                        | 1 GB, no swap, 1 CPU | Only with profile `local-embeddings` |
+| `watchtower` | Pulls the new `roka` image daily at 04:07 (container time)                 | none set             | Only with profile `autoupdate`       |
 
 Deployment detail lives in [Deployment](deployment.md).
 

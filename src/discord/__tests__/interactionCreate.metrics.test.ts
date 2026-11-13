@@ -335,9 +335,9 @@ describe('interaction handler metrics', () => {
     ])
   })
 
-  it('keeps the YouTube thumbnail when the watcher is direct', async () => {
+  it('keeps the YouTube thumbnail when the watcher is off', async () => {
     const media = config.media as { watcher: string }
-    media.watcher = 'direct'
+    media.watcher = 'off'
     try {
       const youtube = parseSocialPostUrl('https://youtu.be/jNQXAC9IVRw')!
       const found = foundSocialPost('https://i.ytimg.com/vi/jNQXAC9IVRw/hqdefault.jpg')

@@ -65,11 +65,9 @@ jobs:
           TAG: ${{ steps.release.outputs.tag }}
           SHA: ${{ steps.release.outputs.sha }}
         run: |
-          for name in rokabot rokabot-asr; do
-            IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/$name"
-            docker buildx imagetools create \
-              -t "$IMAGE:$TAG" -t "$IMAGE:${TAG%.*}" -t "$IMAGE:stable" \
-              "$IMAGE:sha-$SHA"
-            test "$(docker buildx imagetools inspect "$IMAGE:stable" --format '{{json .Manifest.Digest}}')" = \
-                 "$(docker buildx imagetools inspect "$IMAGE:sha-$SHA" --format '{{json .Manifest.Digest}}')"
-          done
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/rokabot"
+          docker buildx imagetools create \
+            -t "$IMAGE:$TAG" -t "$IMAGE:${TAG%.*}" -t "$IMAGE:stable" \
+            "$IMAGE:sha-$SHA"
+          test "$(docker buildx imagetools inspect "$IMAGE:stable" --format '{{json .Manifest.Digest}}')" = \
+               "$(docker buildx imagetools inspect "$IMAGE:sha-$SHA" --format '{{json .Manifest.Digest}}')"

@@ -85,8 +85,8 @@ describe('embedVideoMedia', () => {
     expect(media).toBeNull()
   })
 
-  it.each(['direct', 'off'])('keeps thumbnails only when the watcher is %s', async (watcher) => {
-    mocks.watcher = watcher
+  it('keeps thumbnails only when the watcher is off', async () => {
+    mocks.watcher = 'off'
 
     const media = await embedVideoMedia('https://video.example/clip.mp4')
 
