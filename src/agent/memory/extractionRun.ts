@@ -2,6 +2,7 @@ import { config } from '../../config.js'
 import type { ExtractionQueueJob } from '../../storage/extractionQueue.js'
 import { recordMemoryEvent } from '../../storage/metricsStore.js'
 import { logger } from '../../utils/logger.js'
+import type { SensitivePatternName } from './episodePrecheck.js'
 import type { ExtractionErrorClassification } from './extractionErrors.js'
 import type { SummaryDropReason } from './summaryValidation.js'
 
@@ -27,6 +28,7 @@ export type RunTrace = {
   humanCount: number
   stage: RunStage
   outcome: RunOutcome
+  precheckPattern: SensitivePatternName | null
   errorClass?: ExtractionErrorClassification
   errorStatus?: number
   admission?: { probability: number; threshold: number }
@@ -64,6 +66,7 @@ export function startRunTrace(job: ExtractionQueueJob, attempt: number): RunTrac
     humanCount: messages.filter((message) => !message.isBot).length,
     stage: 'precheck',
     outcome: 'admitted',
+    precheckPattern: null,
     ops: {
       proposed: 0,
       applied: 0,

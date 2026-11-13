@@ -50,12 +50,13 @@ describe('passive memory admission', () => {
   it('refuses a sensitive delta before Jev', async () => {
     const episode = episodeWith([line('My full name is Alice Example and my email is alice@example.com')])
 
-    expect(precheckEpisode(episode)).toBe('sensitive')
+    expect(precheckEpisode(episode)).toEqual({ outcome: 'sensitive', pattern: 'email' })
     await expect(admitEpisode({ guildId: 'g-1', channelId: 'c-1', episode })).resolves.toEqual({
       admitted: false,
       reason: 'sensitive',
       probability: null,
-      inputTokens: 0
+      inputTokens: 0,
+      precheckPattern: 'email'
     })
     expect(mocks.systemOne).not.toHaveBeenCalled()
     expect(mocks.record).not.toHaveBeenCalled()
@@ -64,7 +65,7 @@ describe('passive memory admission', () => {
   it('refuses an all-trivial delta before Jev', async () => {
     const episode = episodeWith([line('hello'), line('😂', 'm-2'), line('https://example.com', 'm-3')])
 
-    expect(precheckEpisode(episode)).toBe('trivial')
+    expect(precheckEpisode(episode)).toEqual({ outcome: 'trivial', pattern: null })
     await expect(admitEpisode({ guildId: 'g-1', channelId: 'c-1', episode })).resolves.toEqual({
       admitted: false,
       reason: 'trivial',
@@ -72,6 +73,37 @@ describe('passive memory admission', () => {
       inputTokens: 0
     })
     expect(mocks.systemOne).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['custom emoji', '<:catjam:1234567890123456789>', { outcome: 'trivial', pattern: null }],
+    ['animated custom emoji', '<a:dance:1234567890123456789>', { outcome: 'trivial', pattern: null }],
+    ['channel mention', '<#1234567890123456789>', { outcome: 'trivial', pattern: null }],
+    ['role mention', '<@&1234567890123456789>', { outcome: 'trivial', pattern: null }],
+    ['user mention', '<@1234567890123456789>', { outcome: 'trivial', pattern: null }],
+    ['ISO date', '2026-11-13', null],
+    ['ISO date-time', '2026-11-13 14:30', null],
+    ['space-grouped thousands', '1 000 000', null],
+    ['comma-grouped thousands', '10,000,000', null],
+    ['minutes away', 'im 20 min away', null],
+    ['games in', 'I am 3 games in', null],
+    ['hours late', "i'm 2 hours late", null],
+    ['percentage certainty', 'im 100% sure', null],
+    ['general birthday greeting', 'happy birthday!', null]
+  ] as const)('does not treat %s as sensitive', (_label, content, expected) => {
+    expect(precheckEpisode(episodeWith([line(content)]))).toEqual(expected)
+  })
+
+  it.each([
+    ['phone', 'call me at +60 12-345 6789'],
+    ['phone', 'my number is 012 345 6789'],
+    ['age', "i'm 19"],
+    ['age', 'im 25 years old'],
+    ['age', 'my birthday is on 3 march'],
+    ['age', 'date of birth: 1 jan 2000'],
+    ['email', 'my email is a.b@example.com']
+  ] as const)('keeps %s detail sensitive', (pattern, content) => {
+    expect(precheckEpisode(episodeWith([line(content)]))).toEqual({ outcome: 'sensitive', pattern })
   })
 
   it('fails closed when Jev is unavailable and records no admission', async () => {

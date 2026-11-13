@@ -1,7 +1,7 @@
 import type { ExtractionEpisode } from '../../storage/extractionQueue.js'
 import { recordJevEvent } from '../../storage/jevEventStore.js'
 import { judgeEpisodeAdmission } from '../jev/judgments.js'
-import { precheckEpisode } from './episodePrecheck.js'
+import { type SensitivePatternName, precheckEpisode } from './episodePrecheck.js'
 import { admitThreshold } from './judgeThresholds.js'
 
 export type AdmissionResult = {
@@ -9,6 +9,7 @@ export type AdmissionResult = {
   reason: 'sensitive' | 'trivial' | 'jev_unavailable' | 'below_threshold' | 'admitted'
   probability: number | null
   inputTokens: number
+  precheckPattern?: SensitivePatternName
 }
 
 export async function admitEpisode(input: {
@@ -18,7 +19,15 @@ export async function admitEpisode(input: {
   jobId?: number
 }): Promise<AdmissionResult> {
   const precheck = precheckEpisode(input.episode)
-  if (precheck) return { admitted: false, reason: precheck, probability: null, inputTokens: 0 }
+  if (precheck) {
+    return {
+      admitted: false,
+      reason: precheck.outcome,
+      probability: null,
+      inputTokens: 0,
+      ...(precheck.outcome === 'sensitive' ? { precheckPattern: precheck.pattern } : {})
+    }
+  }
 
   const lines = input.episode.messages.map(
     ({ userId, displayName, content }) => `[${userId}|${displayName}]: ${content}`

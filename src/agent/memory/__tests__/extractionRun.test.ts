@@ -52,6 +52,7 @@ it('writes one text-free extraction_run row', () => {
     humanCount: 1,
     stage: 'applied',
     outcome: 'written',
+    precheckPattern: null,
     summary: { kept: true, boilerplate: true }
   })
   expect(row.detail).not.toContain('nurse')

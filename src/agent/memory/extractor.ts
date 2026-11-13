@@ -427,7 +427,10 @@ export async function runEpisodePipeline(job: ExtractionQueueJob, trace: RunTrac
     trace.admission = { probability: admission.probability, threshold: admitThreshold() }
   }
   if (!admission.admitted) {
-    if (admission.reason === 'trivial' || admission.reason === 'sensitive') trace.stage = 'precheck'
+    if (admission.reason === 'trivial' || admission.reason === 'sensitive') {
+      trace.stage = 'precheck'
+      trace.precheckPattern = admission.precheckPattern ?? null
+    }
     if (admission.reason === 'jev_unavailable') throw new JevUnavailableError()
     return { status: 'dropped', summary: null, appliedOps: 0, duplicateOps: 0, opsRejected: false }
   }
