@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.6.1](https://github.com/AlaskanTuna/Rokabot/compare/v0.6.0...v0.6.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* **agent:** follow explicit reply format requests on every model ([#474](https://github.com/AlaskanTuna/Rokabot/issues/474)) ([81f2f97](https://github.com/AlaskanTuna/Rokabot/commit/81f2f979299978f0b0902c592f8c43a0879a69de))
+* **agent:** run extraction on Haiku and stop bad images and Jikan outages breaking replies ([#472](https://github.com/AlaskanTuna/Rokabot/issues/472)) ([e68dafc](https://github.com/AlaskanTuna/Rokabot/commit/e68dafcf28bc0aad9cd0fade6c37b05ea0e27983))
+* **memory:** record the model that actually answered in the extraction trace ([#480](https://github.com/AlaskanTuna/Rokabot/issues/480)) ([a2d873b](https://github.com/AlaskanTuna/Rokabot/commit/a2d873b2faf6cd78f872d4b25b60c411fc86b894))
+* **memory:** stop the sensitive precheck matching emoji, Discord IDs, dates and everyday phrases ([#478](https://github.com/AlaskanTuna/Rokabot/issues/478)) ([72a1c30](https://github.com/AlaskanTuna/Rokabot/commit/72a1c301de72657ea37f20fdae63a9caeacf1773))
+
 ## [0.6.0](https://github.com/AlaskanTuna/Rokabot/compare/v0.5.1...v0.6.0) (2026-11-08)
 
 
