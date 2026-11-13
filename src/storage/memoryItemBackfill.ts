@@ -1102,4 +1102,309 @@ export function migrateMemoryItems(database: Database.Database): MemoryItemsMigr
   return transaction()
 }
 
+export type MemoryItemsReverseExportReport = Readonly<{
+  exported_items: number
+  exported_evidence: number
+  exported_occurrences: number
+  forward_check: MemoryItemsMigrationReport
+}>
+
+/** Rebuilds the legacy writer tables from the canonical item rows for a rollback to dual mode. */
+export function exportMemoryItemsToLegacy(database: Database.Database): MemoryItemsReverseExportReport {
+  const transaction = database.transaction(() => {
+    const activeProjectionTriggers = database
+      .prepare(
+        "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'memory_item_projection_%'"
+      )
+      .get() as { count: number }
+    if (activeProjectionTriggers.count !== 0) {
+      throw new Error('Memory item reverse export requires projection triggers to be dropped')
+    }
+
+    const items = database.prepare('SELECT * FROM memory_item ORDER BY id').all() as Row[]
+    const evidence = database.prepare('SELECT * FROM memory_item_evidence ORDER BY id').all() as Row[]
+    const occurrences = database.prepare('SELECT * FROM memory_item_occurrence ORDER BY id').all() as Row[]
+    const payloads = database.prepare('SELECT * FROM memory_item_payload ORDER BY item_id').all() as Row[]
+    const embeddings = database
+      .prepare('SELECT * FROM memory_item_embedding ORDER BY item_id, fingerprint')
+      .all() as Row[]
+
+    const itemById = new Map(items.map((item) => [Number(item.id), item]))
+    const itemLegacyIds = new Map<number, number>()
+    const itemLegacyTables = new Map<number, 'memory_claim' | 'memory_episode' | 'media_digest'>()
+    const usedLegacyIds = new Map<string, Set<number>>([
+      ['memory_claim', new Set()],
+      ['memory_episode', new Set()],
+      ['media_digest', new Set()]
+    ])
+
+    for (const item of items) {
+      const itemId = Number(item.id)
+      const kind = String(item.kind)
+      const table = kind === 'fact' ? 'memory_claim' : kind === 'episode' ? 'memory_episode' : 'media_digest'
+      if (kind !== 'fact' && kind !== 'episode' && kind !== 'media') throw new Error('Unknown memory item kind')
+      if (item.legacy_table !== null && item.legacy_table !== table) {
+        throw new Error('Memory item legacy mapping has the wrong source table')
+      }
+      const sourceId =
+        item.legacy_id === null || item.legacy_id === undefined
+          ? kind === 'episode'
+            ? Number(item.source_job_id)
+            : itemId
+          : Number(item.legacy_id)
+      if (!Number.isSafeInteger(sourceId) || sourceId <= 0) throw new Error('Memory item has no exportable legacy ID')
+      if (kind === 'episode' && sourceId !== Number(item.source_job_id)) {
+        throw new Error('Episode source ID does not match its legacy ID')
+      }
+      const ids = usedLegacyIds.get(table)!
+      if (ids.has(sourceId)) throw new Error('Memory item legacy IDs are not unique')
+      ids.add(sourceId)
+      itemLegacyIds.set(itemId, sourceId)
+      itemLegacyTables.set(itemId, table)
+    }
+
+    const embeddingByItem = new Map<number, Row>()
+    for (const embedding of embeddings) {
+      const itemId = Number(embedding.item_id)
+      if (!itemById.has(itemId) || embeddingByItem.has(itemId)) {
+        throw new Error('Legacy rows can represent only one vector per memory item')
+      }
+      const expectedRenderer = itemById.get(itemId)!.kind === 'fact' ? 'fact_sentence' : 'summary'
+      if (embedding.renderer !== expectedRenderer) throw new Error('Memory item vector renderer cannot be exported')
+      embeddingByItem.set(itemId, embedding)
+    }
+
+    const evidenceByItem = new Map<number, Row[]>()
+    for (const row of evidence) {
+      const itemId = Number(row.item_id)
+      if (!itemById.has(itemId) || itemById.get(itemId)!.kind !== 'fact') {
+        throw new Error('Memory item evidence has no fact parent')
+      }
+      evidenceByItem.set(itemId, [...(evidenceByItem.get(itemId) ?? []), row])
+    }
+    const occurrencesByItem = new Map<number, Row[]>()
+    for (const row of occurrences) {
+      const itemId = Number(row.item_id)
+      const parent = itemById.get(itemId)
+      if (!parent || (parent.kind !== 'episode' && parent.kind !== 'media')) {
+        throw new Error('Memory item occurrence has no episode or media parent')
+      }
+      occurrencesByItem.set(itemId, [...(occurrencesByItem.get(itemId) ?? []), row])
+    }
+    const payloadByItem = new Map(payloads.map((row) => [Number(row.item_id), row]))
+
+    const episodeRows = new Map<number, Row>()
+    const mediaOccurrenceRows: Array<{ row: Row; digestId: number }> = []
+    for (const item of items) {
+      const itemId = Number(item.id)
+      if (item.kind === 'episode') {
+        const episodeOccurrences = (occurrencesByItem.get(itemId) ?? []).filter((row) => row.origin === 'episode')
+        if (episodeOccurrences.length !== 1 || (occurrencesByItem.get(itemId) ?? []).length !== 1) {
+          throw new Error('Each episode must have exactly one episode occurrence')
+        }
+        episodeRows.set(itemId, episodeOccurrences[0]!)
+      } else if (item.kind === 'media') {
+        if (!payloadByItem.has(itemId)) throw new Error('Media item payload is missing')
+        for (const row of occurrencesByItem.get(itemId) ?? []) {
+          if (row.origin === 'episode') throw new Error('Media item has an episode occurrence')
+          mediaOccurrenceRows.push({ row, digestId: itemLegacyIds.get(itemId)! })
+        }
+      }
+    }
+    if (payloadByItem.size !== items.filter((item) => item.kind === 'media').length) {
+      throw new Error('Memory item payload has no media parent')
+    }
+
+    const supersededByLegacyId = (item: Row): number | null => {
+      if (item.superseded_by === null || item.superseded_by === undefined) return null
+      const targetId = Number(item.superseded_by)
+      const target = itemById.get(targetId)
+      if (!target || target.kind !== 'fact') throw new Error('Fact successor does not point to another fact')
+      return itemLegacyIds.get(targetId)!
+    }
+
+    database.exec(`
+      DELETE FROM memory_evidence;
+      DELETE FROM media_occurrence;
+      DELETE FROM memory_claim;
+      DELETE FROM memory_episode;
+      DELETE FROM media_digest;
+    `)
+
+    const updateItemLegacyId = database.prepare('UPDATE memory_item SET legacy_table = ?, legacy_id = ? WHERE id = ?')
+    for (const item of items) {
+      const itemId = Number(item.id)
+      updateItemLegacyId.run(itemLegacyTables.get(itemId)!, itemLegacyIds.get(itemId)!, itemId)
+    }
+
+    const claimInsert = database.prepare(`
+      INSERT INTO memory_claim (
+        id, guild_id, subject_kind, subject_user_id, predicate, value, object_kind, object_user_id, source_kind,
+        status, confidence, salience, pinned, needs_review, superseded_by, first_seen_at, last_seen_at,
+        last_recalled_at, ended_at, end_reason, expires_at, event_date, period, embedding, embedding_model_id,
+        embedding_dim, embedding_fingerprint, embedding_text
+      ) VALUES (
+        @id, @guild_id, @subject_kind, @subject_user_id, @predicate, @value, @object_kind, @object_user_id,
+        @source_kind, @status, @confidence, @salience, @pinned, @needs_review, @superseded_by, @first_seen_at,
+        @last_seen_at, @last_recalled_at, @ended_at, @end_reason, @expires_at, @event_date, @period,
+        @embedding, @embedding_model_id, @embedding_dim, @embedding_fingerprint, @embedding_text
+      )
+    `)
+    const episodeInsert = database.prepare(`
+      INSERT INTO memory_episode (
+        id, guild_id, channel_id, started_at, ended_at, summary, embedding, created_at, embedding_model_id,
+        embedding_dim, embedding_fingerprint
+      ) VALUES (
+        @id, @guild_id, @channel_id, @started_at, @ended_at, @summary, @embedding, @created_at,
+        @embedding_model_id, @embedding_dim, @embedding_fingerprint
+      )
+    `)
+    const mediaInsert = database.prepare(`
+      INSERT INTO media_digest (
+        id, guild_id, content_key, kind, label, summary, digest_json, embedding, created_at,
+        embedding_model_id, embedding_dim, embedding_fingerprint
+      ) VALUES (
+        @id, @guild_id, @content_key, @kind, @label, @summary, @digest_json, @embedding, @created_at,
+        @embedding_model_id, @embedding_dim, @embedding_fingerprint
+      )
+    `)
+
+    for (const item of items) {
+      const itemId = Number(item.id)
+      const vector = embeddingByItem.get(itemId)
+      const vectorFields = {
+        embedding: vector?.vector ?? null,
+        embedding_model_id: vector?.model_id ?? null,
+        embedding_dim: vector?.dim ?? null,
+        embedding_fingerprint: vector?.fingerprint ?? null
+      }
+      if (item.kind === 'fact') {
+        claimInsert.run({
+          id: itemLegacyIds.get(itemId)!,
+          guild_id: item.guild_id,
+          subject_kind: item.subject_kind,
+          subject_user_id: item.subject_user_id,
+          predicate: item.predicate,
+          value: item.content,
+          object_kind: item.object_kind,
+          object_user_id: item.object_user_id,
+          source_kind: item.source_kind,
+          status: item.status,
+          confidence: item.confidence,
+          salience: item.salience,
+          pinned: item.pinned,
+          needs_review: item.needs_review,
+          superseded_by: supersededByLegacyId(item),
+          first_seen_at: item.first_seen_at,
+          last_seen_at: item.last_seen_at,
+          last_recalled_at: item.last_recalled_at,
+          ended_at: item.ended_at,
+          end_reason: item.end_reason,
+          expires_at: item.valid_until,
+          event_date: item.event_date,
+          period: item.period,
+          ...vectorFields,
+          embedding_text: item.legacy_embedding_text
+        })
+      } else if (item.kind === 'episode') {
+        const occurrence = episodeRows.get(itemId)!
+        episodeInsert.run({
+          id: itemLegacyIds.get(itemId)!,
+          guild_id: item.guild_id,
+          channel_id: occurrence.channel_id,
+          started_at: occurrence.span_start,
+          ended_at: occurrence.observed_at,
+          summary: item.content,
+          ...vectorFields,
+          created_at: item.created_at
+        })
+      } else {
+        const payload = payloadByItem.get(itemId)!
+        mediaInsert.run({
+          id: itemLegacyIds.get(itemId)!,
+          guild_id: item.guild_id,
+          content_key: item.content_key,
+          kind: item.media_kind,
+          label: item.label,
+          summary: item.content,
+          digest_json: payload.digest_json,
+          ...vectorFields,
+          created_at: item.created_at
+        })
+      }
+    }
+
+    const nextIds = (rows: Row[]) => {
+      const knownIds = rows.map((row) => row.legacy_id).filter((id): id is number => typeof id === 'number')
+      const used = new Set(knownIds)
+      let nextId = Math.max(0, ...knownIds) + 1
+      return rows.map((row) => {
+        const knownId = typeof row.legacy_id === 'number' ? row.legacy_id : null
+        if (knownId !== null) return { row, id: knownId }
+        while (used.has(nextId)) nextId += 1
+        const id = nextId++
+        used.add(id)
+        return { row, id }
+      })
+    }
+
+    const evidenceInsert = database.prepare(`
+      INSERT INTO memory_evidence (
+        id, claim_id, channel_id, source_kind, observed_at, effective_at, job_id, source_message_id, speaker_user_id
+      ) VALUES (@id, @claim_id, @channel_id, @source_kind, @observed_at, @effective_at, @job_id, @source_message_id, @speaker_user_id)
+    `)
+    const updateEvidenceLegacyId = database.prepare('UPDATE memory_item_evidence SET legacy_id = ? WHERE id = ?')
+    const assignedEvidenceIds = nextIds(evidence)
+    for (const { row, id } of assignedEvidenceIds) {
+      const itemId = Number(row.item_id)
+      evidenceInsert.run({
+        id,
+        claim_id: itemLegacyIds.get(itemId),
+        channel_id: row.channel_id,
+        source_kind: row.source_kind,
+        observed_at: row.observed_at,
+        effective_at: row.effective_at,
+        job_id: row.job_id,
+        source_message_id: row.source_message_id,
+        speaker_user_id: row.speaker_user_id
+      })
+      updateEvidenceLegacyId.run(id, row.id)
+    }
+
+    const occurrenceInsert = database.prepare(`
+      INSERT INTO media_occurrence (
+        id, digest_id, guild_id, channel_id, message_id, shared_by_user_id, source_author_id, origin, observed_at
+      ) VALUES (@id, @digest_id, @guild_id, @channel_id, @message_id, @shared_by_user_id, @source_author_id, @origin, @observed_at)
+    `)
+    const updateOccurrenceLegacyId = database.prepare('UPDATE memory_item_occurrence SET legacy_id = ? WHERE id = ?')
+    const assignedOccurrenceIds = nextIds(mediaOccurrenceRows.map(({ row }) => row))
+    for (const { row, id } of assignedOccurrenceIds) {
+      const itemId = Number(row.item_id)
+      occurrenceInsert.run({
+        id,
+        digest_id: itemLegacyIds.get(itemId),
+        guild_id: row.guild_id,
+        channel_id: row.channel_id,
+        message_id: row.message_id,
+        shared_by_user_id: row.shared_by_user_id,
+        source_author_id: row.source_author_id,
+        origin: row.origin,
+        observed_at: row.observed_at
+      })
+      updateOccurrenceLegacyId.run(id, row.id)
+    }
+
+    const forwardCheck = migrateMemoryItems(database)
+    if (forwardCheck.checks_failed !== 0) throw new Error('Memory item reverse export round-trip check failed')
+    return {
+      exported_items: items.length,
+      exported_evidence: evidence.length,
+      exported_occurrences: mediaOccurrenceRows.length,
+      forward_check: forwardCheck
+    }
+  })
+
+  return transaction()
+}
+
 export type { MemoryItemsMigrationReport }

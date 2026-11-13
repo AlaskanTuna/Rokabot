@@ -48,14 +48,14 @@ describe('memory item projection triggers', () => {
     }
   })
 
-  it('keeps all projection triggers installed in item mode for rollback to dual', async () => {
+  it('drops projection triggers in item mode so legacy tables stay frozen', async () => {
     const { db, closeDb } = await openProjectionDb('item')
     try {
       const triggers = db
         .prepare("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'memory_item_projection_%'")
         .all()
 
-      expect(triggers).toHaveLength(15)
+      expect(triggers).toHaveLength(0)
     } finally {
       closeDb()
     }
