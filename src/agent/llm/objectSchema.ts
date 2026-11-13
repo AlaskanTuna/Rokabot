@@ -115,17 +115,30 @@ function compactObjectUnions(node: unknown): unknown {
   const byOperation = new Map<string, JsonSchema[]>()
   let hasOperationTag = true
   for (const branch of branches) {
-    const operation = (branch.properties as Record<string, JsonSchema>).op
+    const properties = branch.properties as Record<string, JsonSchema>
+    const operation = properties.op
     const values = operation?.enum
     if (operation?.type !== 'string' || !Array.isArray(values) || values.length !== 1) {
       hasOperationTag = false
       break
     }
-    const key = values[0] as string
+    const operationName = values[0] as string
+    const subject = properties.subject
+    const subjectProperties =
+      subject && isRecord(subject.properties) ? (subject.properties as Record<string, JsonSchema>) : undefined
+    const subjectKind = subjectProperties?.kind
+    const subjectKinds = subjectKind && isRecord(subjectKind) && Array.isArray(subjectKind.enum) ? subjectKind.enum : []
+    // This add split fixes the observed predicate mismatch; wider subject splits exceed Anthropic's grammar limit.
+    const key =
+      operationName === 'add' && subjectKinds.length === 1
+        ? JSON.stringify([operationName, subjectKinds[0]])
+        : JSON.stringify([operationName])
     byOperation.set(key, [...(byOperation.get(key) ?? []), branch])
   }
 
-  const groups = hasOperationTag ? [...byOperation.values()] : [branches]
+  if (!hasOperationTag) return { ...out, anyOf: branches }
+
+  const groups = [...byOperation.values()]
   const merged = groups.map(mergeObjectBranches)
   if (merged.length === 1) return { ...out, ...merged[0] }
   return { ...out, anyOf: merged }

@@ -33,7 +33,7 @@ import { closeDb, getDb } from '../../../storage/database.js'
 import type { ExtractionEpisode } from '../../../storage/extractionQueue.js'
 import { JevUnavailableError } from '../extractionErrors.js'
 import { startRunTrace } from '../extractionRun.js'
-import { EXTRACTION_RESPONSE_SCHEMA, ExtractionOutputSchema } from '../extractionSchema.js'
+import { EXTRACTION_RESPONSE_SCHEMA, ExtractionOutputSchema, ExtractionTransportSchema } from '../extractionSchema.js'
 import { extractEpisode, runEpisodePipeline, verifyAndApplyOperations } from '../extractor.js'
 import { assertClaim, assertGuildClaim, getActiveClaims } from '../memoryClaims.js'
 
@@ -49,21 +49,31 @@ beforeEach(() => {
   mocks.admitEpisode.mockResolvedValue({ admitted: true, reason: 'admitted', probability: 0.8, inputTokens: 30 })
   mocks.modelReply.mockReset()
   mocks.generateObject.mockReset()
-  mocks.generateObject.mockImplementation(async (request: { workload: string }) => {
-    const answer = (await mocks.modelReply(request)) as { text: string; usageMetadata?: { promptTokenCount?: number } }
-    return {
-      value: JSON.parse(answer.text),
-      provider: 'gemini',
-      model: 'gemini-extraction-test',
-      usage: {
+  mocks.generateObject.mockImplementation(
+    async (request: {
+      workload: string
+      schema: { safeParse: (value: unknown) => { success: boolean; data?: unknown } }
+    }) => {
+      const answer = (await mocks.modelReply(request)) as {
+        text: string
+        usageMetadata?: { promptTokenCount?: number }
+      }
+      const parsed = request.schema.safeParse(JSON.parse(answer.text))
+      if (!parsed.success) throw Object.assign(new Error('invalid_object'), { reason: 'invalid_object' })
+      return {
+        value: parsed.data,
         provider: 'gemini',
         model: 'gemini-extraction-test',
-        workload: request.workload,
-        inputTokens: answer.usageMetadata?.promptTokenCount ?? 0,
-        outputTokens: 0
+        usage: {
+          provider: 'gemini',
+          model: 'gemini-extraction-test',
+          workload: request.workload,
+          inputTokens: answer.usageMetadata?.promptTokenCount ?? 0,
+          outputTokens: 0
+        }
       }
     }
-  })
+  )
   mocks.judgeEpisodeOperations.mockReset()
   mutableMain.key = 'legacy-gemini'
   mutableMain.provider = 'gemini'
@@ -191,6 +201,7 @@ describe('runEpisodePipeline', () => {
     expect(trace).toMatchObject({ stage: 'applied', outcome: 'noop', tokens: 30 })
     expect(trace.ops).toEqual({
       proposed: 0,
+      invalid: 0,
       applied: 0,
       duplicate: 0,
       staged: 0,
@@ -204,12 +215,136 @@ describe('runEpisodePipeline', () => {
     expect(Object.keys(trace.stageMs).sort()).toEqual(['admission', 'extraction', 'verification'])
   })
 
+  it('drops a guild-only predicate from a user operation and keeps valid operations', async () => {
+    const episode: ExtractionEpisode = {
+      messages: [
+        { messageId: 'm-1', userId: 'user-1', displayName: 'Alice', content: 'I like tea', timestamp: 1, isBot: false }
+      ],
+      context: [],
+      startedAt: 1,
+      endedAt: 1
+    }
+    mocks.modelReply.mockResolvedValueOnce({
+      text: JSON.stringify({
+        ops: [
+          {
+            op: 'add',
+            subject: { kind: 'user', userId: 'user-1' },
+            predicate: 'place',
+            value: 'The lobby',
+            tense: 'current'
+          },
+          {
+            op: 'add',
+            subject: { kind: 'user', userId: 'user-1' },
+            predicate: 'likes',
+            value: 'tea',
+            tense: 'current'
+          }
+        ],
+        summary: 'Alice talked about the server.'
+      })
+    })
+
+    await expect(extractEpisode({ guildId: 'guild-1', channelId: 'channel-1', episode })).resolves.toMatchObject({
+      ops: [
+        {
+          op: 'add',
+          subject: { kind: 'user', userId: 'user-1' },
+          predicate: 'likes',
+          value: 'tea',
+          tense: 'current'
+        }
+      ],
+      invalidOps: 1,
+      summary: 'Alice talked about the server.'
+    })
+  })
+
+  it('drops a mixed guild date from one operation and keeps valid operations', async () => {
+    const episode: ExtractionEpisode = {
+      messages: [
+        {
+          messageId: 'm-1',
+          userId: 'user-1',
+          displayName: 'Alice',
+          content: 'Game night next month',
+          timestamp: 1,
+          isBot: false
+        }
+      ],
+      context: [],
+      startedAt: 1,
+      endedAt: 1
+    }
+    mocks.modelReply.mockResolvedValueOnce({
+      text: JSON.stringify({
+        ops: [
+          {
+            op: 'update',
+            subject: { kind: 'guild' },
+            existingId: 7,
+            predicate: 'plan',
+            value: 'Game night',
+            date: { month: 12, day: 1, relative: 'next_month', weekday: 'friday' }
+          },
+          {
+            op: 'add',
+            subject: { kind: 'user', userId: 'user-1' },
+            predicate: 'likes',
+            value: 'tea',
+            tense: 'current'
+          }
+        ],
+        summary: 'The server discussed game night.'
+      })
+    })
+
+    await expect(extractEpisode({ guildId: 'guild-1', channelId: 'channel-1', episode })).resolves.toMatchObject({
+      ops: [
+        {
+          op: 'add',
+          subject: { kind: 'user', userId: 'user-1' },
+          predicate: 'likes',
+          value: 'tea',
+          tense: 'current'
+        }
+      ],
+      invalidOps: 1,
+      summary: 'The server discussed game night.'
+    })
+  })
+
+  it('records individually invalid extraction operations in the run trace', async () => {
+    mocks.modelReply.mockResolvedValueOnce({
+      text: JSON.stringify({
+        ops: [
+          {
+            op: 'add',
+            subject: { kind: 'user', userId: 'user-1' },
+            predicate: 'place',
+            value: 'The lobby',
+            tense: 'current'
+          },
+          { op: 'noop' }
+        ],
+        summary: 'Alice talked about the server.'
+      })
+    })
+    const trace = startRunTrace(queueJob, 1)
+
+    await runEpisodePipeline(queueJob, trace)
+
+    expect(trace.ops.invalid).toBe(1)
+    expect(trace.ops.proposed).toBe(0)
+  })
+
   it('records the main model and provider that answered extraction', async () => {
     mutableMain.key = 'haiku'
     mutableMain.provider = 'anthropic'
     mutableMain.model = 'claude-haiku-5-5'
     mocks.generateObject.mockResolvedValueOnce({
-      value: { ops: [{ op: 'noop' }], summary: 'Alice likes tea.' },
+      value: { ops: [{ op: 'noop' }], summary: 'Alice likes tea.', invalidOps: 0 },
       provider: 'anthropic',
       model: 'claude-haiku-5-5',
       usage: {
@@ -234,7 +369,7 @@ describe('runEpisodePipeline', () => {
     mutableMain.provider = 'anthropic'
     mutableMain.model = 'claude-haiku-5-5'
     mocks.generateObject.mockResolvedValueOnce({
-      value: { ops: [{ op: 'noop' }], summary: 'Alice likes tea.' },
+      value: { ops: [{ op: 'noop' }], summary: 'Alice likes tea.', invalidOps: 0 },
       provider: 'modelscope',
       model: 'Qwen/Qwen3.5-122B-A10B',
       usage: {
@@ -259,7 +394,7 @@ describe('runEpisodePipeline', () => {
     mutableMain.provider = 'gemini'
     mutableMain.model = 'gemini-main-test'
     mocks.generateObject.mockResolvedValueOnce({
-      value: { ops: [{ op: 'noop' }], summary: 'Alice likes tea.' },
+      value: { ops: [{ op: 'noop' }], summary: 'Alice likes tea.', invalidOps: 0 },
       provider: 'gemini',
       model: 'gemini-extraction-test',
       usage: {
@@ -310,6 +445,7 @@ describe('runEpisodePipeline', () => {
     expect(trace).toMatchObject({ stage: 'applied', outcome: 'written', tokens: 30 + 400 + 60 })
     expect(trace.ops).toEqual({
       proposed: 1,
+      invalid: 0,
       applied: 1,
       duplicate: 0,
       staged: 0,
@@ -496,6 +632,7 @@ describe('runEpisodePipeline', () => {
     expect(trace.outcome).toBe('written')
     expect(trace.ops).toEqual({
       proposed: 3,
+      invalid: 0,
       applied: 2,
       duplicate: 1,
       staged: 0,
@@ -598,6 +735,7 @@ describe('extractEpisode', () => {
 
     await expect(extractEpisode({ guildId: 'guild-1', channelId: 'channel-1', episode })).resolves.toEqual({
       ...output,
+      invalidOps: 0,
       promptTokens: 0,
       extractionProvider: 'gemini',
       extractionModel: 'gemini-extraction-test',
@@ -606,7 +744,8 @@ describe('extractEpisode', () => {
 
     expect(mocks.modelReply).toHaveBeenCalledOnce()
     const request = mocks.modelReply.mock.calls[0][0]
-    expect(request.schema).toBe(ExtractionOutputSchema)
+    expect(request.schema).toBe(ExtractionTransportSchema)
+    expect(request.requestSchema).toBe(ExtractionOutputSchema)
     expect(request.legacyResponseSchema).toBe(EXTRACTION_RESPONSE_SCHEMA)
     expect(request).toMatchObject({ workload: 'extraction', maxOutputTokens: 700 })
     expect(request.prompt).toContain('Delta messages:')
@@ -670,7 +809,7 @@ describe('extractEpisode', () => {
   })
 
   it('counts cached prompt tokens in the prompt tokens it reports', async () => {
-    const output = { ops: [{ op: 'noop' }], summary: 'A fact.' }
+    const output = { ops: [{ op: 'noop' }], summary: 'A fact.', invalidOps: 0 }
     mocks.generateObject.mockResolvedValueOnce({
       value: output,
       provider: 'gemini',
@@ -695,6 +834,7 @@ describe('extractEpisode', () => {
 
     await expect(extractEpisode({ guildId: 'guild-1', channelId: 'channel-1', episode })).resolves.toEqual({
       ...output,
+      invalidOps: 0,
       promptTokens: 120,
       extractionProvider: 'gemini',
       extractionModel: 'gemini-extraction-test',

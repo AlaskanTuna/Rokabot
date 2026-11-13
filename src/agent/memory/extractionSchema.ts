@@ -154,25 +154,43 @@ const UndatedGuildUpdateOperationSchema = z
   .strict()
 const NoopOperationSchema = z.object({ op: z.literal('noop') }).strict()
 
+export const ExtractionOperationSchema = z.union([
+  AddOperationSchema,
+  UpdateOperationSchema,
+  RemoveOperationSchema,
+  RetractOperationSchema,
+  DatedGuildAddOperationSchema,
+  DatedGuildUpdateOperationSchema,
+  GuildRemoveOperationSchema,
+  UndatedGuildAddOperationSchema,
+  UndatedGuildUpdateOperationSchema,
+  NoopOperationSchema
+])
+
 export const ExtractionOutputSchema = z
   .object({
-    ops: z.array(
-      z.union([
-        AddOperationSchema,
-        UpdateOperationSchema,
-        RemoveOperationSchema,
-        RetractOperationSchema,
-        DatedGuildAddOperationSchema,
-        DatedGuildUpdateOperationSchema,
-        GuildRemoveOperationSchema,
-        UndatedGuildAddOperationSchema,
-        UndatedGuildUpdateOperationSchema,
-        NoopOperationSchema
-      ])
-    ),
+    ops: z.array(ExtractionOperationSchema),
     summary: z.string().min(1)
   })
   .strict()
+
+export const ExtractionTransportSchema = z
+  .object({ ops: z.array(z.unknown()), summary: z.string().min(1) })
+  .strict()
+  .transform((output, context) => {
+    const ops: z.infer<typeof ExtractionOperationSchema>[] = []
+    let invalidOps = 0
+    for (const op of output.ops) {
+      const result = ExtractionOperationSchema.safeParse(op)
+      if (result.success) ops.push(result.data)
+      else invalidOps++
+    }
+    if (output.ops.length > 0 && ops.length === 0) {
+      context.addIssue({ code: 'custom', message: 'Every extraction operation was invalid' })
+      return z.NEVER
+    }
+    return { ...output, ops, invalidOps }
+  })
 
 export type UserSubject = z.infer<typeof UserSubjectSchema>
 export type GuildSubject = Readonly<{ kind: 'guild' }>

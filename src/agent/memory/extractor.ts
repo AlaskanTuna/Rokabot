@@ -14,7 +14,8 @@ import { type RunTrace, timeStage } from './extractionRun.js'
 import {
   EXTRACTION_RESPONSE_SCHEMA,
   type ExtractionOutput as EpisodeExtractionOutput,
-  ExtractionOutputSchema
+  ExtractionOutputSchema,
+  ExtractionTransportSchema
 } from './extractionSchema.js'
 import { resolveGuildFactDate } from './guildFactDates.js'
 import { reconcileHiddenRetractions } from './hiddenRetractions.js'
@@ -108,6 +109,7 @@ function episodePrompt(guildId: string, channelId: string, episode: ExtractionEp
 }
 
 export type ExtractedEpisode = EpisodeExtractionOutput & {
+  invalidOps: number
   promptTokens?: number
   extractionProvider: ProviderId
   extractionModel: string
@@ -126,7 +128,8 @@ export async function extractEpisode(input: {
   episode: ExtractionEpisode
 }): Promise<ExtractedEpisode> {
   const { value, provider, model, usage } = await generateObject({
-    schema: ExtractionOutputSchema,
+    schema: ExtractionTransportSchema,
+    requestSchema: ExtractionOutputSchema,
     prompt: episodePrompt(input.guildId, input.channelId, input.episode),
     workload: 'extraction',
     maxOutputTokens: 700,
@@ -460,6 +463,7 @@ export async function runEpisodePipeline(job: ExtractionQueueJob, trace: RunTrac
   trace.models.extraction = output.extractionModel
   trace.extractionProvider = output.extractionProvider
   trace.extractionFallback = output.extractionFallback
+  trace.ops.invalid = output.invalidOps
   trace.ops.proposed = output.ops.filter((op) => op.op !== 'noop').length
   trace.tokens += output.promptTokens ?? 0
 

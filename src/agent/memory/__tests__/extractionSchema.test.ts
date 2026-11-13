@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { requestSchema } from '../../llm/objectSchema.js'
-import { EXTRACTION_RESPONSE_SCHEMA, ExtractionOutputSchema } from '../extractionSchema.js'
+import { EXTRACTION_RESPONSE_SCHEMA, ExtractionOutputSchema, ExtractionTransportSchema } from '../extractionSchema.js'
 import { PREDICATES } from '../predicates.js'
 import { LEGACY_GEMINI_EXTRACTION_SCHEMA } from './legacyGeminiExtractionSchema.js'
 
@@ -388,9 +388,93 @@ describe('parseExtractionOutput', () => {
     expect(strictJson).not.toContain('minLength')
   })
 
+  it('keeps add predicates separate and preserves the three guild date shapes', () => {
+    const anthropic = requestSchema(ExtractionOutputSchema, 'forced_tool') as {
+      properties: { ops: { items: { anyOf: Array<Record<string, unknown>> } } }
+    }
+    const groups = anthropic.properties.ops.items.anyOf
+    const addGroups = groups.filter((group) => {
+      const properties = group.properties as Record<string, Record<string, unknown>>
+      return (properties.op.enum as string[])[0] === 'add'
+    })
+    const predicatesBySubject = new Map(
+      addGroups.map((group) => {
+        const properties = group.properties as Record<string, Record<string, unknown>>
+        const subject = properties.subject.properties as Record<string, { enum: string[] }>
+        return [subject.kind.enum[0], properties.predicate.enum as string[]]
+      })
+    )
+
+    expect(predicatesBySubject.get('user')).toContain('likes')
+    expect(predicatesBySubject.get('user')).not.toContain('place')
+    expect(predicatesBySubject.get('guild')).toContain('place')
+    expect(predicatesBySubject.size).toBe(2)
+
+    const dateUnions = new Set<object>()
+    const findDateUnions = (node: unknown): void => {
+      if (Array.isArray(node)) {
+        for (const child of node) findDateUnions(child)
+      } else if (node && typeof node === 'object') {
+        const schema = node as Record<string, unknown>
+        if (
+          Array.isArray(schema.anyOf) &&
+          schema.anyOf.length === 3 &&
+          schema.anyOf.every((branch) => (branch as Record<string, unknown>).type === 'object')
+        ) {
+          dateUnions.add(schema)
+        }
+        for (const child of Object.values(schema)) findDateUnions(child)
+      }
+    }
+    findDateUnions(anthropic)
+    expect(dateUnions.size).toBeGreaterThan(0)
+  })
+
   it('keeps Anthropic extraction parameters within its optional and union limits', () => {
     const counts = anthropicParameterCounts(requestSchema(ExtractionOutputSchema, 'forced_tool'))
     expect(counts.optional).toBeLessThanOrEqual(24)
     expect(counts.unions).toBeLessThanOrEqual(24)
+    expect(counts.unions).toBeGreaterThan(1)
+  })
+})
+
+describe('ExtractionTransportSchema', () => {
+  it('drops invalid ops while keeping valid ops and counts the drops', () => {
+    const result = ExtractionTransportSchema.safeParse({
+      ops: [
+        {
+          op: 'add',
+          subject: { kind: 'user', userId: 'u-1' },
+          predicate: 'place',
+          value: 'The lobby',
+          tense: 'current'
+        },
+        { op: 'noop' }
+      ],
+      summary: 'The members talked about the server.'
+    })
+
+    expect(result).toMatchObject({
+      success: true,
+      data: {
+        ops: [{ op: 'noop' }],
+        invalidOps: 1,
+        summary: 'The members talked about the server.'
+      }
+    })
+  })
+
+  it('rejects a nonempty ops array when every op is invalid', () => {
+    const result = ExtractionTransportSchema.safeParse({
+      ops: [{ op: 'add', subject: { kind: 'user', userId: 'u-1' }, predicate: 'place', value: 'The lobby' }],
+      summary: 'The members talked about the server.'
+    })
+
+    expect(result.success).toBe(false)
+  })
+
+  it('still rejects malformed top-level fields', () => {
+    expect(ExtractionTransportSchema.safeParse({ ops: [], summary: '' }).success).toBe(false)
+    expect(ExtractionTransportSchema.safeParse({ summary: 'A summary.' }).success).toBe(false)
   })
 })
