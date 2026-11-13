@@ -171,13 +171,19 @@ describe('memory tools', () => {
       sourceKind: 'explicit'
     })
     migrateMemoryItems(getDb())
+    const itemId = (
+      getDb()
+        .prepare("SELECT id FROM memory_item WHERE legacy_table = 'memory_claim' AND legacy_id = ?")
+        .get(claim.id) as { id: number }
+    ).id
     Object.assign(memoryConfig, { store: 'item', privacy: 'off' })
 
     const result = forgetUser({ user_id: 'user-1', guild_id: 'guild-1', query: 'tea' })
 
     expect(result).toEqual({ success: true, message: 'I forgot 1 note.' })
     expect(result.message).not.toContain('tea with honey')
-    expect(getDb().prepare('SELECT status FROM memory_claim WHERE id = ?').get(claim.id)).toEqual({
+    expect(getDb().prepare('SELECT status FROM memory_claim WHERE id = ?').get(claim.id)).toEqual({ status: 'active' })
+    expect(getDb().prepare('SELECT status FROM memory_item WHERE id = ?').get(itemId)).toEqual({
       status: 'rejected'
     })
   })
@@ -200,7 +206,7 @@ describe('memory tools', () => {
     expect(getActiveClaims('guild-1', 'user-1').map(({ id }) => id)).toEqual([claim.id])
   })
 
-  it('reads forget candidates from items, then applies the legacy write by mapped ID', () => {
+  it('reads and forgets candidates in items while leaving the frozen legacy source unchanged', () => {
     const claim = assertClaim({
       guildId: 'guild-1',
       subjectUserId: 'user-1',
@@ -211,6 +217,11 @@ describe('memory tools', () => {
     })
     const db = getDb()
     migrateMemoryItems(db)
+    const itemId = (
+      db.prepare("SELECT id FROM memory_item WHERE legacy_table = 'memory_claim' AND legacy_id = ?").get(claim.id) as {
+        id: number
+      }
+    ).id
     configureMemoryItemProjectionTriggers(db, 'legacy')
     db.prepare('UPDATE memory_claim SET value = ? WHERE id = ?').run('drifted legacy value', claim.id)
     Object.assign(memoryConfig, { store: 'item', privacy: 'relaxed' })
@@ -225,7 +236,11 @@ describe('memory tools', () => {
     expect(result.success).toBe(true)
     expect(result.message).toContain('likes "tea with honey"')
     expect(result.message).not.toContain('drifted legacy value')
-    expect(db.prepare('SELECT status, end_reason FROM memory_claim WHERE id = ?').get(claim.id)).toEqual({
+    expect(db.prepare('SELECT status, value FROM memory_claim WHERE id = ?').get(claim.id)).toEqual({
+      status: 'active',
+      value: 'drifted legacy value'
+    })
+    expect(db.prepare('SELECT status, end_reason FROM memory_item WHERE id = ?').get(itemId)).toEqual({
       status: 'rejected',
       end_reason: 'forgotten'
     })

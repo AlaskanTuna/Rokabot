@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3'
+import { reserveMemoryItemIds } from './memoryItemStore.js'
 import { UNKNOWN_FINGERPRINT } from './vectorProvenance.js'
 
 type MemoryStoreMode = 'legacy' | 'dual' | 'item'
@@ -432,6 +433,7 @@ function createProjectionTriggers(database: Database.Database): void {
 export function configureMemoryItemProjectionTriggers(database: Database.Database, store: MemoryStoreMode): void {
   database.transaction(() => {
     database.exec(DROP_PROJECTION_TRIGGERS)
-    if (store !== 'legacy') createProjectionTriggers(database)
+    if (store === 'dual') createProjectionTriggers(database)
+    if (store === 'item') reserveMemoryItemIds(database)
   })()
 }

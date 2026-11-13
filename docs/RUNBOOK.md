@@ -576,13 +576,15 @@ A background step moves facts filed under the wrong predicate, mostly `misc`, to
 - **Audit:** each move writes a `claim_reclassified` event with claim IDs, both predicates and the probability. `metrics.retentionDays` never prunes these, because undo reads them.
 
 ```sql
--- Recent moves; old_id is what undo takes
-SELECT created_at, json_extract(detail, '$.oldId') AS old_id, json_extract(detail, '$.newId') AS new_id,
+-- Recent moves; old_id is what undo takes. Rows with v = 2 name item IDs; older rows name legacy claim IDs.
+SELECT created_at, json_extract(detail, '$.v') AS v, json_extract(detail, '$.oldId') AS old_id,
+       json_extract(detail, '$.newId') AS new_id,
        json_extract(detail, '$.from') AS from_predicate, json_extract(detail, '$.to') AS to_predicate,
        json_extract(detail, '$.probability') AS probability
 FROM memory_events WHERE kind = 'claim_reclassified' ORDER BY created_at DESC LIMIT 20;
 
--- Both rows of one move (shows values, so run it on the Pi only)
+-- Both rows of one move (shows values, so run it on the Pi only).
+-- For a v = 2 row, use WHERE kind = 'fact' AND id IN (<old_id>, <new_id>) instead.
 SELECT id AS item_id, legacy_id, predicate, content, status, end_reason, superseded_by, pinned
 FROM memory_item WHERE legacy_table = 'memory_claim' AND legacy_id IN (<old_id>, <new_id>);
 ```
@@ -642,9 +644,9 @@ ROKABOT_DB_PATH="$PWD/data/rokabot.db" npm run migrate:memory-v2
 
 Review the report and the backup. If the check passed, restart with `sudo docker compose up -d roka`. Never delete `user_memory` by hand.
 
-### Typed Memory Items (Phases 3 and 5)
+### Typed Memory Items (Phases 3-5 and 6)
 
-`config.yml` stays on `memory.store: legacy`. Enter `dual` or `item` only as an operator step. The offline simulator is the promotion gate. Owner decision 12 (2026-11-14) removed the production shadow read and soak. The bot must be stopped while migration catches up rows written while projection triggers were off. The migration refreshes changed rows, removes projections whose legacy rows were deleted, and inserts new rows in one transaction. Startup installs triggers in both `dual` and `item`, and never runs the migration. Migration and replay output counts and hashes only; they never print memory text.
+`config.yml` stays on `memory.store: legacy`. Enter `dual` or `item` only as an operator step. The offline simulator is the promotion gate. Owner decisions 12 and 13 (2026-11-14) remove the production shadow read and soak. The bot must be stopped while migration catches up rows written while projection triggers were off. The migration refreshes changed rows, removes projections whose legacy rows were deleted, and inserts new rows in one transaction. Startup installs source projection triggers in `dual`; during Phase 5 it also installed them in `item`, but Phase 6 drops them under `item`. Startup never runs a migration. Migration and replay output counts and hashes only; they never print memory text.
 
 1. Stop the bot and take a timestamped SQLite backup.
 2. Run `migrate:memory-items` against the Pi database and confirm the checks pass.
@@ -663,17 +665,34 @@ sqlite3 data/rokabot.db "SELECT detail FROM memory_events WHERE kind = 'item_int
 
 Check `status` is `ok`, `checks_failed` is `0`, and the complete and unique legacy ID counts equal the expected count before starting. The integrity detail has only `fact`, `episode` and `media` drift counts. A failed migration rolls back its writes. If any integrity count is nonzero, roll back to legacy and investigate before trying dual again.
 
-#### Read cutover and rollback
+#### Phase 5 read cutover and rollback
 
-After the offline simulator passes, change `MEMORY_STORE` in `.env` to `item` and restart. The four prompt blocks and the other item-backed readers switch to `memory_item`; writers remain on legacy tables. The triggers and integrity sweep stay enabled. To roll back the read cutover, change `MEMORY_STORE` to `dual` and restart. This returns reads to legacy while keeping the item projection current.
+During Phase 5, after the offline simulator passes, change `MEMORY_STORE` in `.env` to `item` and restart. The four prompt blocks and the other item-backed readers switch to `memory_item`; writers remain on legacy tables. The triggers stay enabled. To roll back the Phase 5 read cutover, change `MEMORY_STORE` to `dual` and restart. This returns reads to legacy while keeping the item projection current.
 
 ```bash
+# This Phase 5 rollback was a config-only switch. Phase 6 uses the reverse export below.
 # Set MEMORY_STORE=dual in .env, then restart roka.
 sudo docker compose -f ~/rokabot/docker-compose.yml up -d roka
 sqlite3 data/rokabot.db "SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'memory_item_projection_%';"
 ```
 
-The last query must return `15` after the bot starts in `dual` or `item`. Keep the migration backup until the item store is accepted. Set `legacy` only to disable projections as a separate recovery action; after that, rerun the catch-up migration before returning to `dual` or `item`.
+Under `dual`, the last query must return `15`. Under Phase 5 `item`, it returned `15`; under Phase 6 `item`, it returns `0`. Keep the migration backup until the item store is accepted. Set `legacy` only to disable projections as a separate recovery action; after that, rerun the catch-up migration before returning to `dual`.
+
+#### Phase 6 writer cutover and rollback
+
+Under Phase 6 `item`, all five writer modules write item rows directly, and the legacy source tables stay frozen. If rollback is needed, stop the bot before rebuilding source rows. The reverse export and its Phase 2 forward checks run in one transaction. It does not print memory text, names or IDs. Set `MEMORY_STORE=dual` only after the command reports `status: ok` and `checks_failed: 0`, then start the bot.
+
+```bash
+cd ~/rokabot
+sudo docker compose -f ~/rokabot/docker-compose.yml stop roka
+sqlite3 data/rokabot.db ".backup data/rokabot.db.pre-memory-dual.$(date -u +%Y%m%d%H%M%S)"
+ROKABOT_DB_PATH="$PWD/data/rokabot.db" npm run migrate:memory-items -- --to-legacy
+# Set MEMORY_STORE=dual in .env; config.yml remains legacy.
+sudo docker compose -f ~/rokabot/docker-compose.yml up -d roka
+sqlite3 data/rokabot.db "SELECT detail FROM memory_events WHERE kind = 'item_integrity' ORDER BY id DESC LIMIT 1;"
+```
+
+After restart in `dual`, the latest integrity sample must report zero drift and the projection-trigger count must return `15`. Keep the backup until the rollback is accepted.
 
 ### Vault Export
 

@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import * as memoryClaims from '../../agent/memory/memoryClaims.js'
+import { config } from '../../config.js'
 import { closeDb, getDb } from '../database.js'
 import { fillMemoryItemEmbeddingHashes, sweepMemoryItemIntegrity } from '../memoryItemIntegrity.js'
 import { configureMemoryItemProjectionTriggers } from '../memoryItemProjection.js'
@@ -7,6 +9,7 @@ import { decodeMemoryItemEmbedding } from '../memoryItemStore.js'
 
 afterEach(() => {
   closeDb()
+  ;(config.memory as { store: 'legacy' | 'dual' | 'item' }).store = 'legacy'
   process.env.ROKABOT_DB_PATH = undefined
   vi.restoreAllMocks()
 })
@@ -54,6 +57,24 @@ describe('memory item integrity maintenance', () => {
     expect(getDb().prepare("SELECT detail FROM memory_events WHERE kind = 'item_integrity'").get()).toEqual({
       detail: JSON.stringify({ fact: 0, episode: 0, media: 0 })
     })
+  })
+
+  it('records item-native integrity counts when legacy tables are frozen', async () => {
+    process.env.ROKABOT_DB_PATH = ':memory:'
+    ;(config.memory as { store: 'legacy' | 'dual' | 'item' }).store = 'item'
+    const database = getDb()
+    configureMemoryItemProjectionTriggers(database, 'item')
+    memoryClaims.assertClaim({
+      guildId: 'guild-fixture',
+      subjectUserId: 'user-fixture',
+      predicate: 'hobby',
+      value: 'synthetic fact',
+      sourceKind: 'explicit',
+      observedAt: 10
+    })
+
+    expect(database.prepare('SELECT COUNT(*) AS count FROM memory_claim').get()).toEqual({ count: 0 })
+    expect(sweepMemoryItemIntegrity(database)).toEqual({ fact: 0, episode: 0, media: 0 })
   })
 
   it('treats NULL text hashes as readable and fills them from stored item text', async () => {
