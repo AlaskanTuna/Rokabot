@@ -2,6 +2,7 @@ import { config } from '../../config.js'
 import type { ExtractionQueueJob } from '../../storage/extractionQueue.js'
 import { recordMemoryEvent } from '../../storage/metricsStore.js'
 import { logger } from '../../utils/logger.js'
+import type { ProviderId } from '../llm/profiles.js'
 import type { SensitivePatternName } from './episodePrecheck.js'
 import type { ExtractionErrorClassification } from './extractionErrors.js'
 import type { SummaryDropReason } from './summaryValidation.js'
@@ -48,6 +49,8 @@ export type RunTrace = {
   stageMs: Partial<Record<'admission' | 'extraction' | 'verification' | 'persistence', number>>
   tokens: number
   models: { extraction: string; jev: string; embedding: string }
+  extractionProvider?: ProviderId
+  extractionFallback: boolean
 }
 
 export const BOILERPLATE = /\bno (?:new )?(?:durable|lasting|personal)\b/i
@@ -82,6 +85,7 @@ export function startRunTrace(job: ExtractionQueueJob, attempt: number): RunTrac
     summary: { kept: false, chars: 0, boilerplate: false, dropReason: null, judged: false },
     stageMs: {},
     tokens: 0,
+    extractionFallback: false,
     models: {
       extraction: config.gemini.extractionModel,
       jev: config.jev.model,
