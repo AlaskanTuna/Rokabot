@@ -459,6 +459,57 @@ describe('runEpisodePipeline', () => {
     expect(getDb().prepare('SELECT DISTINCT job_id FROM jev_events').all()).toEqual([{ job_id: 1 }])
   })
 
+  it('drops a call-shaped fact value without rolling back other extracted ops', async () => {
+    mocks.modelReply.mockResolvedValueOnce({
+      text: JSON.stringify({
+        ops: [
+          {
+            op: 'add',
+            subject: { kind: 'user', userId: 'user-1' },
+            predicate: 'likes',
+            value: 'double espresso',
+            tense: 'current'
+          },
+          {
+            op: 'add',
+            subject: { kind: 'user', userId: 'user-1' },
+            predicate: 'dislikes',
+            value: 'kiwi fruit (mild allergy)',
+            tense: 'current'
+          }
+        ],
+        summary: 'Alice likes double espresso and dislikes kiwi.'
+      })
+    })
+    const high = { noul: 0.9, confidence: null }
+    mocks.judgeEpisodeOperations.mockResolvedValueOnce({
+      answers: {
+        durable_0: high,
+        attributed_0: high,
+        current_0: high,
+        past_0: { noul: 0.1, confidence: null },
+        durable_1: high,
+        attributed_1: high,
+        current_1: high,
+        past_1: { noul: 0.1, confidence: null }
+      },
+      latencyMs: 5,
+      inputTokens: 60
+    })
+    const trace = startRunTrace(queueJob, 1)
+
+    await expect(runEpisodePipeline(queueJob, trace)).resolves.toMatchObject({
+      status: 'completed',
+      appliedOps: 1,
+      opsRejected: false
+    })
+
+    expect(getActiveClaims('guild-1', 'user-1').map(({ predicate, value }) => ({ predicate, value }))).toEqual([
+      { predicate: 'likes', value: 'double espresso' }
+    ])
+    expect(trace.ops).toMatchObject({ proposed: 2, applied: 1, dropped: 1 })
+  })
+
   it('does not call the ops rejected when one was staged because Jev could not verify it', async () => {
     mocks.modelReply.mockResolvedValueOnce({
       text: JSON.stringify({

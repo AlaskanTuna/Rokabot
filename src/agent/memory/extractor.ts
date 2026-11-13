@@ -8,6 +8,7 @@ import { judgeEpisodeOperations } from '../jev/judgments.js'
 import { generateObject } from '../llm/generateObject.js'
 import type { ProviderId } from '../llm/profiles.js'
 import { promptTokenTotal } from '../llm/usage.js'
+import { MAX_FACT_VALUE_LEN, isSafeFactScalar } from '../promptSafety.js'
 import { admitEpisode } from './admission.js'
 import { JevUnavailableError } from './extractionErrors.js'
 import { type RunTrace, timeStage } from './extractionRun.js'
@@ -233,7 +234,7 @@ function operationAllowed(op: EpisodeWriteOp, subjectIds: Set<string>): boolean 
 }
 
 function operationSafe(op: EpisodeWriteOp): boolean {
-  return !sensitiveFactReason(op.predicate, op.value)
+  return isSafeFactScalar(op.value, MAX_FACT_VALUE_LEN) && !sensitiveFactReason(op.predicate, op.value)
 }
 
 function keyApplied(
