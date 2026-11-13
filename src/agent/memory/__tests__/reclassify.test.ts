@@ -421,7 +421,11 @@ describe('moveClaim', () => {
       status: 'active',
       needs_review: 0
     })
-    expect(retrieveForSubject(GUILD, USER, 'drawing', 10).map(({ claim }) => claim.id)).toContain(staged.id)
+    expect(
+      retrieveForSubject(GUILD, USER, 'drawing', 10, { guildId: GUILD, channelId: 'channel-1' }).map(
+        ({ claim }) => claim.id
+      )
+    ).toContain(staged.id)
   })
 
   it('will not revive a fact the member retracted under the new predicate', () => {

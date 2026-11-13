@@ -34,20 +34,19 @@ function selectMediaWithinBudget(entries: readonly RecalledMedia[], tokenBudget:
   return selected
 }
 
-export function recallMedia(input: {
-  guildId: string
+function readRecallableMedia(guildId: string, scope: RecallScope): MediaRecallCandidate[] {
+  const candidates = listMediaRecallCandidates(guildId)
+  if (config.memory.privacy === 'relaxed') return candidates
+  // No recorded occurrence means no channel to judge, so it counts as private, not as an unknown source.
+  return candidates.filter((digest) => canRecall(digest.channelIds.length > 0 ? digest.channelIds : [''], scope))
+}
+
+export function selectMedia(
+  candidates: readonly MediaRecallCandidate[],
   queryEmbedding: EpisodeEmbedding
-  scope?: RecallScope
-}): RecalledMedia[] {
-  const ranked = listMediaRecallCandidates(input.guildId)
-    .filter(
-      (digest) =>
-        !input.scope ||
-        config.memory.privacy === 'relaxed' ||
-        // No recorded occurrence means no channel to judge, so it counts as private, not as an unknown source.
-        canRecall(digest.channelIds.length > 0 ? digest.channelIds : [''], input.scope)
-    )
-    .map((digest) => toRecalledMedia(digest, input.queryEmbedding))
+): RecalledMedia[] {
+  const ranked = candidates
+    .map((digest) => toRecalledMedia(digest, queryEmbedding))
     .filter((media): media is RecalledMedia => media !== null)
     .sort(
       (left, right) =>
@@ -55,6 +54,14 @@ export function recallMedia(input: {
     )
     .slice(0, config.memory.mediaRecallK)
   return selectMediaWithinBudget(ranked, config.memory.mediaTokenBudget)
+}
+
+export function recallMedia(input: {
+  guildId: string
+  queryEmbedding: EpisodeEmbedding
+  scope: RecallScope
+}): RecalledMedia[] {
+  return selectMedia(readRecallableMedia(input.guildId, input.scope), input.queryEmbedding)
 }
 
 export function formatMediaRecallBlock(items: readonly RecalledMedia[]): string {
@@ -74,7 +81,7 @@ export function formatMediaRecallBlock(items: readonly RecalledMedia[]): string 
 export function buildMediaRecallBlock(input: {
   guildId: string
   queryEmbedding: EpisodeEmbedding
-  scope?: RecallScope
+  scope: RecallScope
 }): string {
   return formatMediaRecallBlock(recallMedia(input))
 }

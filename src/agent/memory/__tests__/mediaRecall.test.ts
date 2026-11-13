@@ -119,10 +119,20 @@ describe('media recall', () => {
       embedding: vector768(0.99, 0.141)
     })
 
-    expect(recallMedia({ guildId: 'guild-a', queryEmbedding: vector768(1) }).map(({ summary }) => summary)).toEqual([
-      'Guild A cat.'
-    ])
-    expect(recallMedia({ guildId: 'guild-c', queryEmbedding: vector768(1) })).toEqual([])
+    expect(
+      recallMedia({
+        guildId: 'guild-a',
+        queryEmbedding: vector768(1),
+        scope: { guildId: 'guild-a', channelId: 'channel-1' }
+      }).map(({ summary }) => summary)
+    ).toEqual(['Guild A cat.'])
+    expect(
+      recallMedia({
+        guildId: 'guild-c',
+        queryEmbedding: vector768(1),
+        scope: { guildId: 'guild-c', channelId: 'channel-1' }
+      })
+    ).toEqual([])
   })
 
   it('excludes a score exactly equal to the configured threshold', () => {
@@ -132,8 +142,9 @@ describe('media recall', () => {
     const stored = findMediaDigest('guild-a', 'youtube:threshold')?.embedding ?? []
     configMock.memory.mediaMinSimilarity = similarity(query, stored)
 
-    expect(recallMedia({ guildId: 'guild-a', queryEmbedding: query })).toEqual([])
-    expect(buildMediaRecallBlock({ guildId: 'guild-a', queryEmbedding: query })).toBe('')
+    const scope = { guildId: 'guild-a', channelId: 'channel-1' }
+    expect(recallMedia({ guildId: 'guild-a', queryEmbedding: query, scope })).toEqual([])
+    expect(buildMediaRecallBlock({ guildId: 'guild-a', queryEmbedding: query, scope })).toBe('')
   })
 
   it('orders by similarity, then most recent share, then id, and applies the top-k limit', () => {
@@ -153,17 +164,25 @@ describe('media recall', () => {
       sharedAt: 100
     })
 
-    expect(recallMedia({ guildId: 'guild-a', queryEmbedding: vector768(1) }).map(({ summary }) => summary)).toEqual([
-      'Closest match.',
-      'Newer share.',
-      'Older share.'
-    ])
+    expect(
+      recallMedia({
+        guildId: 'guild-a',
+        queryEmbedding: vector768(1),
+        scope: { guildId: 'guild-a', channelId: 'channel-1' }
+      }).map(({ summary }) => summary)
+    ).toEqual(['Closest match.', 'Newer share.', 'Older share.'])
   })
 
   it('never recalls a digest whose embedding is still missing', () => {
     seedMedia({ contentKey: 'youtube:pending', summary: 'Pending embedding.', embedding: null })
 
-    expect(recallMedia({ guildId: 'guild-a', queryEmbedding: vector768(1) })).toEqual([])
+    expect(
+      recallMedia({
+        guildId: 'guild-a',
+        queryEmbedding: vector768(1),
+        scope: { guildId: 'guild-a', channelId: 'channel-1' }
+      })
+    ).toEqual([])
   })
 
   it('skips an oversized high-score digest and keeps the next fitting one', () => {
@@ -181,8 +200,9 @@ describe('media recall', () => {
       sharedAt: 1_000
     })
 
-    const recalled = recallMedia({ guildId: 'guild-a', queryEmbedding: vector768(1) })
-    const block = buildMediaRecallBlock({ guildId: 'guild-a', queryEmbedding: vector768(1) })
+    const scope = { guildId: 'guild-a', channelId: 'channel-1' }
+    const recalled = recallMedia({ guildId: 'guild-a', queryEmbedding: vector768(1), scope })
+    const block = buildMediaRecallBlock({ guildId: 'guild-a', queryEmbedding: vector768(1), scope })
 
     expect(recalled.map(({ summary }) => summary)).toEqual(['A cat explores a night garden.'])
     expect(block).toContain('A cat explores a night garden.')
@@ -209,9 +229,25 @@ describe('media recall', () => {
     expect(block.match(/^## .+$/gm)).toEqual(['## Media You Watched Here Before'])
   })
 
+  it('requires scope at compile time', () => {
+    const check = () => {
+      // @ts-expect-error scope is required
+      recallMedia({ guildId: 'guild-a', queryEmbedding: vector768(1) })
+      // @ts-expect-error scope is required
+      buildMediaRecallBlock({ guildId: 'guild-a', queryEmbedding: vector768(1) })
+    }
+    expect(typeof check).toBe('function')
+  })
+
   it('returns no block when no media is recalled', () => {
     expect(formatMediaRecallBlock([])).toBe('')
-    expect(buildMediaRecallBlock({ guildId: 'guild-a', queryEmbedding: vector768(1) })).toBe('')
+    expect(
+      buildMediaRecallBlock({
+        guildId: 'guild-a',
+        queryEmbedding: vector768(1),
+        scope: { guildId: 'guild-a', channelId: 'channel-1' }
+      })
+    ).toBe('')
   })
 
   describe('media recall privacy levels', () => {

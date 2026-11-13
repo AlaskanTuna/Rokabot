@@ -213,7 +213,11 @@ export async function evaluateMemoryShadow(
       for (const claim of scenario.foreignClaims ?? []) seedClaim(`${scenario.guildId}-foreign`, claim, labelToId)
 
       const startedAt = performance.now()
-      const result = retrieveForTurn({ guildId: scenario.guildId, ...scenario.turn })
+      const result = retrieveForTurn({
+        guildId: scenario.guildId,
+        ...scenario.turn,
+        scope: { guildId: scenario.guildId, channelId: `shadow-${scenario.id}` }
+      })
       latencies.push(performance.now() - startedAt)
       maxSelectedTokens = Math.max(maxSelectedTokens, result.trace.tokensEst)
       selectedClaims += result.claims.length

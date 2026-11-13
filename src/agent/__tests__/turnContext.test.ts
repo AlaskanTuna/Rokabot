@@ -15,8 +15,9 @@ const mocks = vi.hoisted(() => ({
   buildEpisodeRecallBlock: vi.fn(() => ''),
   buildMediaRecallBlock: vi.fn(() => ''),
   resolveReferences: vi.fn(() => ({ resolved: [], ambiguous: [] })),
-  retrieveForTurn: vi.fn(() => ({ entries: [], claims: [] })),
+  retrieveForTurn: vi.fn(() => ({ entries: [], claims: [], trace: { candidates: [], tokensEst: 0 } })),
   retrieveGuildFacts: vi.fn(() => ({ facts: [], tokensEst: 0 })),
+  touchRecalled: vi.fn(),
   assembleSystemPrompt: vi.fn(() => 'prompt'),
   runPrefetchForJudgment: vi.fn(),
   decidePrefetch: vi.fn(
@@ -55,6 +56,10 @@ vi.mock('../../agent/memory/retriever.js', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   retrieveForTurn: mocks.retrieveForTurn,
   retrieveGuildFacts: mocks.retrieveGuildFacts
+}))
+vi.mock('../memory/memoryClaims.js', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  touchRecalled: mocks.touchRecalled
 }))
 vi.mock('../memory/episodeEmbeddings.js', () => ({ embedEpisodeText: mocks.embedEpisodeText }))
 vi.mock('../memory/episodeRetriever.js', () => ({ buildEpisodeRecallBlock: mocks.buildEpisodeRecallBlock }))
@@ -820,7 +825,7 @@ describe('legacy memory recall', () => {
     mocks.buildEpisodeRecallBlock.mockReturnValue('')
     mocks.buildMediaRecallBlock.mockReturnValue('')
     mocks.buildFactsEnvelope.mockReturnValue('')
-    mocks.retrieveForTurn.mockReturnValue({ entries: [], claims: [] } as never)
+    mocks.retrieveForTurn.mockReturnValue({ entries: [], claims: [], trace: { candidates: [], tokensEst: 0 } } as never)
     mocks.resolveReferences.mockReturnValue({ resolved: [], ambiguous: [] } as never)
     mocks.runPrefetchForJudgment.mockResolvedValue({ decision: { fire: false, reason: 'no_judgment' }, outcome: null })
   })
@@ -838,7 +843,11 @@ describe('legacy memory recall', () => {
   })
 
   it('builds the legacy prompt with the four legacy blocks', async () => {
-    mocks.retrieveForTurn.mockReturnValue({ entries: [{ person: 'Alice', facts: [] }], claims: [{}] } as never)
+    mocks.retrieveForTurn.mockReturnValue({
+      entries: [{ person: 'Alice', facts: [] }],
+      claims: [{ claim: { id: 1 } }],
+      trace: { candidates: [], tokensEst: 0 }
+    } as never)
     mocks.buildFactsEnvelope.mockReturnValue(factsEnvelope)
     mocks.buildEpisodeRecallBlock.mockReturnValue(episodeBlock)
     mocks.buildMediaRecallBlock.mockReturnValue(mediaBlock)
@@ -893,14 +902,55 @@ describe('legacy memory recall', () => {
     expect(context.systemPrompt).not.toContain('What You Remember')
   })
 
-  it('keeps the legacy facts block for DMs, whose facts live under a dm tenant', async () => {
-    mocks.retrieveForTurn.mockReturnValue({ entries: [{ person: 'Alice', facts: [] }], claims: [{}] } as never)
+  it('skips memory blocks on DM turns where scope is absent', async () => {
+    mocks.retrieveForTurn.mockReturnValue({
+      entries: [{ person: 'Alice', facts: [] }],
+      claims: [{ claim: { id: 1 } }],
+      trace: { candidates: [], tokensEst: 0 }
+    } as never)
     mocks.buildFactsEnvelope.mockReturnValue(factsEnvelope)
 
     const context = await turnWith({ guildId: 'dm:user-1' })
 
-    expect(mocks.retrieveForTurn).toHaveBeenCalled()
-    expect(context.systemPrompt).toContain(factsEnvelope)
+    expect(mocks.retrieveForTurn).not.toHaveBeenCalled()
+    expect(mocks.retrieveGuildFacts).not.toHaveBeenCalled()
+    expect(mocks.buildEpisodeRecallBlock).not.toHaveBeenCalled()
+    expect(mocks.buildMediaRecallBlock).not.toHaveBeenCalled()
+    expect(mocks.touchRecalled).not.toHaveBeenCalled()
+    expect(recalledRows('retrieval')).toHaveLength(0)
+    expect(recalledRows('context_build')).toHaveLength(0)
+    expect(context.systemPrompt).not.toContain(factsEnvelope)
+    expect(context.systemPrompt).not.toContain('What You Remember')
+    expect(context.systemPrompt).not.toContain('Things You Remember About This Server')
+  })
+
+  it('runs retrieveForTurn selection before touchRecalled and records the retrieval event once', async () => {
+    mocks.retrieveForTurn.mockReturnValue({
+      entries: [{ person: 'Alice', facts: [{ predicate: 'hobby', value: 'chess', period: 'current' }] }],
+      claims: [{ claim: { id: 10 } }, { claim: { id: 20 } }],
+      trace: { candidates: [{}, {}, {}], tokensEst: 42 }
+    } as never)
+    mocks.buildFactsEnvelope.mockReturnValue(factsEnvelope)
+
+    await turnWith()
+
+    expect(mocks.retrieveForTurn).toHaveBeenCalledOnce()
+    expect(mocks.touchRecalled).toHaveBeenCalledOnce()
+    expect(mocks.touchRecalled).toHaveBeenCalledWith([10, 20])
+    expect(mocks.retrieveForTurn.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.touchRecalled.mock.invocationCallOrder[0]
+    )
+    expect(recalledRows('retrieval')).toEqual([
+      {
+        kind: 'retrieval',
+        guildId: 'guild-1',
+        subjectUserId: 'user-1',
+        durationMs: expect.any(Number),
+        nCandidates: 3,
+        nSelected: 2,
+        tokensEst: 42
+      }
+    ])
   })
 
   it('does not resolve references for a memory-free turn', async () => {
