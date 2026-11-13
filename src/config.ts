@@ -124,6 +124,7 @@ interface YamlConfig {
     uploadTimeoutMs?: number
   }
   memory?: {
+    store?: string
     bufferSize?: number
     contextSize?: number
     channelMonitorTtlMs?: number
@@ -252,6 +253,7 @@ function envBoolean(key: string): boolean | undefined {
 
 export type JevMode = 'off' | 'shadow' | 'on'
 export type MemoryPrivacy = 'relaxed' | 'balanced' | 'strict' | 'off'
+export type MemoryStore = 'legacy' | 'dual' | 'item'
 export type MediaWatcher = 'gemini' | 'off'
 export type MemoryJudge = 'jev' | 'model' | 'none'
 export type SearchProvider = 'off' | 'native' | 'tavily' | 'exa'
@@ -329,6 +331,19 @@ function memoryPrivacy(): MemoryPrivacy {
   const source = envValue ? 'Environment variable MEMORY_PRIVACY' : 'Config value memory.privacy'
   const allowed = 'relaxed, balanced, strict or off'
   throw new Error(`${source} must be ${allowed}, got: ${String(value)}`)
+}
+
+function memoryStore(): MemoryStore {
+  const envValue = envString('MEMORY_STORE')
+  const value = envValue ?? yaml.memory?.store ?? 'legacy'
+  const source = envValue ? 'Environment variable MEMORY_STORE' : 'Config value memory.store'
+  if (value !== 'legacy' && value !== 'dual' && value !== 'item') {
+    throw new Error(`${source} must be legacy, dual or item, got: ${String(value)}`)
+  }
+  if (value !== 'legacy') {
+    throw new Error(`${source}=${value} is not supported in Phase 2; only legacy is accepted`)
+  }
+  return value
 }
 
 const PROVIDERS: readonly ProviderId[] = [...(Object.keys(PROVIDER_KEY_ENV) as ProviderId[]), 'openai-compatible']
@@ -667,6 +682,7 @@ const baseConfig = {
     historyRetentionDays: yaml.session?.historyRetentionDays ?? 7
   },
   memory: {
+    store: memoryStore(),
     bufferSize: memoryBufferSize,
     contextSize: yaml.memory?.contextSize ?? 10,
     channelMonitorTtlMs: yaml.memory?.channelMonitorTtlMs ?? 86_400_000,

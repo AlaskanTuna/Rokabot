@@ -190,6 +190,12 @@ These limits apply to Gemini routes. A Gemini entry in `llm.models` inherits the
 
 Passive memory needs a judge. With `TYPESAFE_API_KEY`, Jev judges. Without it, the main model judges when an `llm:` block exists. Otherwise passive memory drops every episode.
 
+### Store Selection
+
+| Key            | Default  | Env Override   | What It Does                                                                                                               |
+| -------------- | -------- | -------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `memory.store` | `legacy` | `MEMORY_STORE` | Valid values are `legacy`, `dual` and `item`. Phase 2 accepts only `legacy`; `dual` and `item` stop startup with an error. |
+
 ### Capture and Prompt
 
 | Key                             | Default    | Env Override                      | What It Does                                                                                                                                             |

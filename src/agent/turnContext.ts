@@ -79,6 +79,12 @@ function formatServerFact(fact: ReturnType<typeof retrieveGuildFacts>['facts'][n
   return `- ${fact.predicate}${eventDate ? ` (${eventDate})` : ''}: ${fact.value}`
 }
 
+export function formatGuildFactsBlock(facts: ReturnType<typeof retrieveGuildFacts>['facts']): string {
+  return facts.length > 0
+    ? '\n\n## Things You Remember About This Server\n' + facts.map(formatServerFact).join('\n')
+    : ''
+}
+
 function buildEntryJudgmentInput(input: StartTurnEntryWorkInput): TurnJudgmentInput {
   const history = loadHistory(input.channelId, 3, config.session.maxRehydrationAge)
   const ambiguous =
@@ -502,10 +508,7 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
       }
 
       const serverFacts = retrieveGuildFacts(guildId, Date.now(), activeScope).facts
-      if (serverFacts.length > 0) {
-        serverFactsSection =
-          '\n\n## Things You Remember About This Server\n' + serverFacts.map(formatServerFact).join('\n')
-      }
+      serverFactsSection = formatGuildFactsBlock(serverFacts)
 
       recordMemoryEvent({
         kind: 'context_build',

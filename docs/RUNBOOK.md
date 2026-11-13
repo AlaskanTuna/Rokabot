@@ -633,6 +633,27 @@ ROKABOT_DB_PATH="$PWD/data/rokabot.db" npm run migrate:memory-v2
 
 Review the report and the backup. If the check passed, restart with `sudo docker compose up -d roka`. Never delete `user_memory` by hand.
 
+### Typed Memory Items (Phase 2)
+
+Run the migration only with the bot stopped. It copies the legacy memory tables into the additive item tables in one transaction. Startup creates the schema but never runs the backfill. The script prints counts and check results only; it never prints memory text.
+
+1. Stop the bot and take a timestamped SQLite backup.
+2. Run the migration against the live database file.
+3. Back up the migrated file to a replay copy and check that replay reports zero mismatches.
+4. Restart the bot after both commands succeed.
+
+```bash
+cd ~/rokabot
+sudo docker compose -f ~/rokabot/docker-compose.yml stop roka
+sqlite3 data/rokabot.db ".backup data/rokabot.db.pre-memory-items.$(date -u +%Y%m%d%H%M%S)"
+ROKABOT_DB_PATH="$PWD/data/rokabot.db" npm run migrate:memory-items
+sqlite3 data/rokabot.db '.backup /tmp/rokabot-memory-items-replay.db'
+npm run replay:memory-items -- /tmp/rokabot-memory-items-replay.db
+sudo docker compose -f ~/rokabot/docker-compose.yml up -d roka
+```
+
+Check `status` is `ok`, `checks_failed` is `0`, and the complete and unique legacy ID counts equal the expected count. Replay must show `mismatch_count: 0`; it uses stored vectors as query stand-ins and makes no embedding calls. A failed migration rolls back its copied rows. Keep the backup until the replay check passes.
+
 ### Vault Export
 
 The export writes a read-only snapshot of member notes and each guild's `guild.md` to `data/vault/` (`MEMORY_VAULT_EXPORT_DIR` changes it). Open the copy in Obsidian on a desktop, not on the Pi. Re-run it to refresh.

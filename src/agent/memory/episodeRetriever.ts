@@ -57,7 +57,7 @@ function hasValidQueryEmbedding(queryEmbedding: EpisodeEmbedding): boolean {
   return queryEmbedding.length === config.embeddings.dim && queryEmbedding.every((value) => Number.isFinite(value))
 }
 
-function readRecallableEpisodes(guildId: string, scope: RecallScope): MemoryEpisode[] {
+export function readRecallableEpisodes(guildId: string, scope: RecallScope): MemoryEpisode[] {
   const episodes = listEpisodesForGuild(guildId)
   if (config.memory.privacy === 'relaxed') return episodes
   return episodes.filter((episode) => canRecall([episode.channelId], scope))
