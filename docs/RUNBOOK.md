@@ -433,8 +433,11 @@ All queries run with `sqlite3 ~/rokabot/data/rokabot.db` on the Pi. `created_at`
 sqlite3 ~/rokabot/data/rokabot.db '.tables'
 # Show the database file size
 ls -lh ~/rokabot/data/rokabot.db
-# Show the memory table schemas
-sqlite3 ~/rokabot/data/rokabot.db '.schema memory_claim'
+# Show the memory item table schemas
+sqlite3 ~/rokabot/data/rokabot.db '.schema memory_item'
+sqlite3 ~/rokabot/data/rokabot.db '.schema memory_item_evidence'
+sqlite3 ~/rokabot/data/rokabot.db '.schema memory_item_occurrence'
+sqlite3 ~/rokabot/data/rokabot.db '.schema memory_item_embedding'
 sqlite3 ~/rokabot/data/rokabot.db '.schema extraction_queue'
 sqlite3 ~/rokabot/data/rokabot.db '.schema jev_events'
 # Back up the live database on the Pi (from a dev machine)
@@ -453,18 +456,19 @@ docker compose up -d
 ### Memory Claims and Extraction Queue
 
 ```bash
-# Recent active claims
-sqlite3 ~/rokabot/data/rokabot.db "SELECT id, guild_id, subject_kind, subject_user_id, predicate, value,
-  expires_at, needs_review, first_seen_at, last_seen_at
-  FROM memory_claim WHERE status='active' ORDER BY last_seen_at DESC LIMIT 100;"
-# Claims for one user in one guild
-sqlite3 ~/rokabot/data/rokabot.db "SELECT id, predicate, value, period, status, needs_review, last_seen_at, ended_at, end_reason
-  FROM memory_claim WHERE guild_id='GUILD_ID' AND subject_kind='user' AND subject_user_id='USER_ID'
+# Recent active facts (legacy_id is the claim ID that writers, audit rows and undo use)
+sqlite3 ~/rokabot/data/rokabot.db "SELECT id AS item_id, legacy_id, guild_id, subject_kind, subject_user_id, predicate, content,
+  valid_until, needs_review, first_seen_at, last_seen_at
+  FROM memory_item WHERE kind='fact' AND status='active' ORDER BY last_seen_at DESC LIMIT 100;"
+# Facts for one user in one guild
+sqlite3 ~/rokabot/data/rokabot.db "SELECT id AS item_id, legacy_id, predicate, content, period, status, needs_review,
+  last_seen_at, ended_at, end_reason
+  FROM memory_item WHERE guild_id='GUILD_ID' AND kind='fact' AND subject_kind='user' AND subject_user_id='USER_ID'
   ORDER BY last_seen_at DESC;"
-# Active claims per guild and subject
-sqlite3 ~/rokabot/data/rokabot.db "SELECT guild_id, subject_kind, subject_user_id, COUNT(*) AS active_claims
-  FROM memory_claim WHERE status='active' GROUP BY guild_id, subject_kind, subject_user_id
-  ORDER BY active_claims DESC;"
+# Active facts per guild and subject
+sqlite3 ~/rokabot/data/rokabot.db "SELECT guild_id, subject_kind, subject_user_id, COUNT(*) AS active_facts
+  FROM memory_item WHERE kind='fact' AND status='active' GROUP BY guild_id, subject_kind, subject_user_id
+  ORDER BY active_facts DESC;"
 # Queue backlog by status
 sqlite3 ~/rokabot/data/rokabot.db 'SELECT status, COUNT(*) AS jobs FROM extraction_queue GROUP BY status;'
 ```
@@ -579,8 +583,8 @@ SELECT created_at, json_extract(detail, '$.oldId') AS old_id, json_extract(detai
 FROM memory_events WHERE kind = 'claim_reclassified' ORDER BY created_at DESC LIMIT 20;
 
 -- Both rows of one move (shows values, so run it on the Pi only)
-SELECT id, predicate, value, status, end_reason, superseded_by, pinned
-FROM memory_claim WHERE id IN (<old_id>, <new_id>);
+SELECT id AS item_id, legacy_id, predicate, content, status, end_reason, superseded_by, pinned
+FROM memory_item WHERE legacy_table = 'memory_claim' AND legacy_id IN (<old_id>, <new_id>);
 ```
 
 Expect a handful of moves after the first deploy, not dozens.
@@ -601,20 +605,25 @@ npm run memory:undo-reclassify -- OLD_ID
 
 ### Episodes, Media Memory and Recall
 
-- **Episodes:** summaries and embeddings live per guild in `memory_episode`. The maintenance pass (startup, then every 24 hours) deletes episodes past `memory.episodeRetentionDays` and retries missing or unreadable embeddings.
+- **Episodes:** summaries live in `memory_item`; vectors live in `memory_item_embedding`. The maintenance pass (startup, then every 24 hours) deletes expired source episodes and retries missing or unreadable embeddings.
 - **Embedding Quota:** with `embeddings.provider: gemini` (the Pi), embeddings use `GEMINI_API_KEY` and `gemini-embedding-2` on a separate project quota. They do not debit the bot's generation rate limiter. The planning estimate is 100 RPM, 30 K TPM and 1 K RPD; check AI Studio for your limits.
-- **Media:** digests of watched media live in `media_digest`, one row per guild and content key, with an embedding. Each share is a `media_occurrence` row. No media files are stored.
+- **Media:** item summaries live in `memory_item`, vectors in `memory_item_embedding`, and each share in `memory_item_occurrence`. The payload table holds digest JSON. No media files are stored.
 - **Privacy:** `memory.privacy` (`MEMORY_PRIVACY`). A server that hides every channel from `@everyone` and grants access by role has no public channels, so `balanced` acts like `strict` there.
 - **Forget User:** the speaker can delete their own notes at every level. At `relaxed`, replies quote matching values. At `balanced` and `strict`, they quote only claims and media recallable in the current channel and count the rest. At `off`, replies give counts only.
 - **Cached Media:** a repost of the same content reuses its digest at every level and records the new share. Unprompted recall of media summaries still follows the privacy level.
 
 ```bash
 # Episodes per guild
-sqlite3 ~/rokabot/data/rokabot.db 'SELECT guild_id, COUNT(*) AS episodes FROM memory_episode GROUP BY guild_id ORDER BY guild_id;'
+sqlite3 ~/rokabot/data/rokabot.db "SELECT guild_id, COUNT(*) AS episodes FROM memory_item WHERE kind='episode' GROUP BY guild_id ORDER BY guild_id;"
 # Remembered media per guild, with share counts
-sqlite3 ~/rokabot/data/rokabot.db "SELECT d.guild_id, d.label, substr(d.summary, 1, 60), COUNT(o.id) AS shares, d.embedding IS NOT NULL AS embedded FROM media_digest d LEFT JOIN media_occurrence o ON o.digest_id = d.id GROUP BY d.id ORDER BY d.created_at DESC LIMIT 20;"
-# Active facts and how many hold a vector in any space (after a provider switch, use the per-fingerprint query)
-sqlite3 ~/rokabot/data/rokabot.db "SELECT COUNT(*) AS active, SUM(embedding IS NOT NULL) AS embedded FROM memory_claim WHERE status = 'active';"
+sqlite3 ~/rokabot/data/rokabot.db "SELECT item.guild_id, item.label, substr(item.content, 1, 60), COUNT(occurrence.id) AS shares,
+  EXISTS (SELECT 1 FROM memory_item_embedding vector WHERE vector.item_id = item.id) AS embedded
+  FROM memory_item item LEFT JOIN memory_item_occurrence occurrence ON occurrence.item_id = item.id AND occurrence.origin != 'episode'
+  WHERE item.kind='media' GROUP BY item.id ORDER BY item.created_at DESC LIMIT 20;"
+# Active facts and how many hold a vector in any space
+sqlite3 ~/rokabot/data/rokabot.db "SELECT COUNT(*) AS active,
+  SUM(EXISTS (SELECT 1 FROM memory_item_embedding vector WHERE vector.item_id = item.id)) AS embedded
+  FROM memory_item item WHERE item.kind='fact' AND item.status='active';"
 # Legacy memory recall, last 7 days: fact retrieval vs prompt blocks built
 sqlite3 ~/rokabot/data/rokabot.db "SELECT kind, COUNT(*) AS turns, ROUND(AVG(n_selected), 2) AS avg_selected, ROUND(AVG(tokens_est)) AS avg_tokens FROM memory_events WHERE kind IN ('retrieval', 'context_build') AND created_at > (strftime('%s', 'now') - 7 * 86400) * 1000 GROUP BY kind;"
 ```
@@ -633,9 +642,9 @@ ROKABOT_DB_PATH="$PWD/data/rokabot.db" npm run migrate:memory-v2
 
 Review the report and the backup. If the check passed, restart with `sudo docker compose up -d roka`. Never delete `user_memory` by hand.
 
-### Typed Memory Items (Phase 3)
+### Typed Memory Items (Phases 3 and 5)
 
-`config.yml` stays on `memory.store: legacy`. Enter `dual` only as an operator step. The bot must be stopped while the migration catches up rows written while projection triggers were off. The migration refreshes changed rows, removes projections whose legacy rows were deleted, and inserts new rows in one transaction. Startup installs triggers but never runs the migration. It prints counts and check results only; it never prints memory text.
+`config.yml` stays on `memory.store: legacy`. Enter `dual` or `item` only as an operator step. The offline simulator is the promotion gate. Owner decision 12 (2026-11-14) removed the production shadow read and soak. The bot must be stopped while migration catches up rows written while projection triggers were off. The migration refreshes changed rows, removes projections whose legacy rows were deleted, and inserts new rows in one transaction. Startup installs triggers in both `dual` and `item`, and never runs the migration. Migration and replay output counts and hashes only; they never print memory text.
 
 1. Stop the bot and take a timestamped SQLite backup.
 2. Run `migrate:memory-items` against the Pi database and confirm the checks pass.
@@ -654,18 +663,17 @@ sqlite3 data/rokabot.db "SELECT detail FROM memory_events WHERE kind = 'item_int
 
 Check `status` is `ok`, `checks_failed` is `0`, and the complete and unique legacy ID counts equal the expected count before starting. The integrity detail has only `fact`, `episode` and `media` drift counts. A failed migration rolls back its writes. If any integrity count is nonzero, roll back to legacy and investigate before trying dual again.
 
-#### Roll back to legacy
+#### Read cutover and rollback
 
-Stop the bot, change `MEMORY_STORE` in `.env` to `legacy` (or remove it), then start the bot. Startup drops the projection triggers. Legacy tables remain authoritative, and the item tables remain unused. Before a later attempt to enter dual, rerun `migrate:memory-items` while stopped to catch up.
+After the offline simulator passes, change `MEMORY_STORE` in `.env` to `item` and restart. The four prompt blocks and the other item-backed readers switch to `memory_item`; writers remain on legacy tables. The triggers and integrity sweep stay enabled. To roll back the read cutover, change `MEMORY_STORE` to `dual` and restart. This returns reads to legacy while keeping the item projection current.
 
 ```bash
-sudo docker compose -f ~/rokabot/docker-compose.yml stop roka
-# Set MEMORY_STORE=legacy in .env or remove the setting.
+# Set MEMORY_STORE=dual in .env, then restart roka.
 sudo docker compose -f ~/rokabot/docker-compose.yml up -d roka
 sqlite3 data/rokabot.db "SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'memory_item_projection_%';"
 ```
 
-The last query must return `0` after the bot starts in legacy mode. Keep the backup until the dual period is accepted.
+The last query must return `15` after the bot starts in `dual` or `item`. Keep the migration backup until the item store is accepted. Set `legacy` only to disable projections as a separate recovery action; after that, rerun the catch-up migration before returning to `dual` or `item`.
 
 ### Vault Export
 
@@ -812,7 +820,7 @@ X and Bluesky use public APIs and Threads reads its public post page. YouTube, T
 
 ```bash
 # Vectors per embedding space; NULL means no vector yet
-sqlite3 ~/rokabot/data/rokabot.db "SELECT 'episode', embedding_fingerprint, COUNT(*) FROM memory_episode GROUP BY 2 UNION ALL SELECT 'media', embedding_fingerprint, COUNT(*) FROM media_digest GROUP BY 2 UNION ALL SELECT 'fact', embedding_fingerprint, COUNT(*) FROM memory_claim WHERE status = 'active' GROUP BY 2;"
+sqlite3 ~/rokabot/data/rokabot.db "SELECT item.kind, vector.fingerprint, COUNT(*) FROM memory_item item JOIN memory_item_embedding vector ON vector.item_id = item.id GROUP BY item.kind, vector.fingerprint ORDER BY item.kind, vector.fingerprint;"
 # Build and start the sidecar alone
 docker compose --profile local-embeddings up -d --build embeddings
 # Check sidecar health

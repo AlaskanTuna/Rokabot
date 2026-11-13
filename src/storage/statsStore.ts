@@ -1,3 +1,4 @@
+import { config } from '../config.js'
 import { getDb } from './database.js'
 
 export interface CountByTone {
@@ -130,6 +131,57 @@ export const MEMORY_DETAIL_SQL = {
                             FROM memory_claim
                             WHERE guild_id = ? AND subject_kind = 'user' AND status = 'active' AND last_seen_at >= ?
                               AND subject_user_id != ? AND needs_review = 0 AND period = 'current'
+                          )
+                          SELECT subject_user_id AS userId, predicate, value
+                          FROM ranked
+                          WHERE rank = 1
+                          ORDER BY last_seen_at DESC, userId ASC
+                          LIMIT 5`
+} as const
+
+export const MEMORY_ITEM_STATS_SQL = {
+  activeClaimCount: `SELECT COUNT(*) AS count
+                    FROM memory_item
+                    WHERE guild_id = ? AND kind = 'fact' AND status = 'active'
+                      AND ((subject_kind = 'guild' AND (valid_until IS NULL OR valid_until > ?))
+                        OR (subject_kind = 'user' AND subject_user_id != ?))`,
+  distinctRememberedUsers: `SELECT COUNT(DISTINCT subject_user_id) AS count
+                            FROM memory_item
+                            WHERE guild_id = ? AND kind = 'fact' AND subject_kind = 'user'
+                              AND status = 'active' AND subject_user_id != ?`,
+  episodeCount: `SELECT COUNT(*) AS count FROM memory_item
+                 WHERE guild_id = ? AND kind = 'episode' AND last_seen_at >= ?`,
+  newClaimsThisMonth: `SELECT COUNT(*) AS count
+                       FROM memory_item
+                       WHERE guild_id = ? AND kind = 'fact' AND status = 'active' AND first_seen_at >= ?
+                         AND ((subject_kind = 'guild' AND (valid_until IS NULL OR valid_until > ?))
+                           OR (subject_kind = 'user' AND subject_user_id != ?))`,
+  memoryGrowthSeries: `SELECT strftime('%Y-%m-%d', first_seen_at / 1000, 'unixepoch') AS day, COUNT(*) AS count
+                       FROM memory_item
+                       WHERE guild_id = ? AND kind = 'fact' AND status = 'active' AND first_seen_at >= ?
+                         AND ((subject_kind = 'guild' AND (valid_until IS NULL OR valid_until > ?))
+                           OR (subject_kind = 'user' AND subject_user_id != ?))
+                       GROUP BY day ORDER BY day ASC`
+} as const
+
+export const MEMORY_ITEM_DETAIL_SQL = {
+  topPredicates: `SELECT predicate, COUNT(*) AS count
+                  FROM memory_item
+                  WHERE guild_id = ? AND kind = 'fact' AND subject_kind = 'user' AND status = 'active'
+                    AND first_seen_at >= ? AND subject_user_id != ?
+                  GROUP BY predicate
+                  ORDER BY count DESC, predicate ASC
+                  LIMIT 3`,
+  topRememberedMembers: `WITH ranked AS (
+                            SELECT subject_user_id, predicate, content AS value, last_seen_at,
+                                   ROW_NUMBER() OVER (
+                                     PARTITION BY subject_user_id
+                                     ORDER BY last_seen_at DESC, predicate ASC
+                                   ) AS rank
+                            FROM memory_item
+                            WHERE guild_id = ? AND kind = 'fact' AND subject_kind = 'user' AND status = 'active'
+                              AND last_seen_at >= ? AND subject_user_id != ?
+                              AND needs_review = 0 AND period = 'current'
                           )
                           SELECT subject_user_id AS userId, predicate, value
                           FROM ranked
@@ -349,21 +401,32 @@ export function tokenTotals(guildId: string, sinceMs: number): TokenTotals {
 }
 
 export function activeClaimCount(guildId: string, excludeUserId: string): number {
-  return (
-    getDb().prepare(MEMORY_STATS_SQL.activeClaimCount).get(guildId, Date.now(), excludeUserId) as { count: number }
-  ).count
+  const query =
+    config.memory.store === 'item' ? MEMORY_ITEM_STATS_SQL.activeClaimCount : MEMORY_STATS_SQL.activeClaimCount
+  return (getDb().prepare(query).get(guildId, Date.now(), excludeUserId) as { count: number }).count
 }
 
 export function distinctRememberedUsers(guildId: string, excludeUserId: string): number {
-  return (getDb().prepare(MEMORY_STATS_SQL.distinctRememberedUsers).get(guildId, excludeUserId) as { count: number })
-    .count
+  const query =
+    config.memory.store === 'item'
+      ? MEMORY_ITEM_STATS_SQL.distinctRememberedUsers
+      : MEMORY_STATS_SQL.distinctRememberedUsers
+  return (getDb().prepare(query).get(guildId, excludeUserId) as { count: number }).count
 }
 
 export function episodeCount(guildId: string, sinceMs: number): number {
-  return (getDb().prepare(MEMORY_STATS_SQL.episodeCount).get(guildId, sinceMs) as { count: number }).count
+  const query = config.memory.store === 'item' ? MEMORY_ITEM_STATS_SQL.episodeCount : MEMORY_STATS_SQL.episodeCount
+  return (getDb().prepare(query).get(guildId, sinceMs) as { count: number }).count
 }
 
 export function newClaimsThisMonth(guildId: string, sinceMs: number, excludeUserId: string): number {
+  if (config.memory.store === 'item') {
+    return (
+      getDb().prepare(MEMORY_ITEM_STATS_SQL.newClaimsThisMonth).get(guildId, sinceMs, Date.now(), excludeUserId) as {
+        count: number
+      }
+    ).count
+  }
   return (
     getDb()
       .prepare(
@@ -378,27 +441,30 @@ export function newClaimsThisMonth(guildId: string, sinceMs: number, excludeUser
 }
 
 export function topPredicates(guildId: string, sinceMs: number, excludeUserId: string): CountByPredicate[] {
-  return getDb().prepare(MEMORY_DETAIL_SQL.topPredicates).all(guildId, sinceMs, excludeUserId) as CountByPredicate[]
+  const query = config.memory.store === 'item' ? MEMORY_ITEM_DETAIL_SQL.topPredicates : MEMORY_DETAIL_SQL.topPredicates
+  return getDb().prepare(query).all(guildId, sinceMs, excludeUserId) as CountByPredicate[]
 }
 
 export function topRememberedMembers(guildId: string, sinceMs: number, excludeUserId: string): RememberedMember[] {
-  return getDb()
-    .prepare(MEMORY_DETAIL_SQL.topRememberedMembers)
-    .all(guildId, sinceMs, excludeUserId) as RememberedMember[]
+  const query =
+    config.memory.store === 'item'
+      ? MEMORY_ITEM_DETAIL_SQL.topRememberedMembers
+      : MEMORY_DETAIL_SQL.topRememberedMembers
+  return getDb().prepare(query).all(guildId, sinceMs, excludeUserId) as RememberedMember[]
 }
 
 export function memoryGrowthSeries(guildId: string, sinceMs: number, excludeUserId: string): MemoryGrowthPoint[] {
   const now = Date.now()
-  const rows = getDb()
-    .prepare(
-      `SELECT strftime('%Y-%m-%d', first_seen_at / 1000, 'unixepoch') AS day, COUNT(*) AS count
+  const query =
+    config.memory.store === 'item'
+      ? MEMORY_ITEM_STATS_SQL.memoryGrowthSeries
+      : `SELECT strftime('%Y-%m-%d', first_seen_at / 1000, 'unixepoch') AS day, COUNT(*) AS count
        FROM memory_claim
        WHERE guild_id = ? AND status = 'active' AND first_seen_at >= ?
          AND ((subject_kind = 'guild' AND (expires_at IS NULL OR expires_at > ?))
            OR (subject_kind = 'user' AND subject_user_id != ?))
        GROUP BY day ORDER BY day ASC`
-    )
-    .all(guildId, sinceMs, now, excludeUserId) as CountByDay[]
+  const rows = getDb().prepare(query).all(guildId, sinceMs, now, excludeUserId) as CountByDay[]
   let cumulative = 0
   const points: MemoryGrowthPoint[] = []
   for (const { day, count } of rows) {

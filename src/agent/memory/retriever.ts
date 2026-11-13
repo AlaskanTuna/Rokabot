@@ -1,4 +1,5 @@
 import { config } from '../../config.js'
+import { getDb } from '../../storage/database.js'
 import { getClaimSourceChannels } from '../../storage/memoryRecallStore.js'
 import { getAllUserNames } from '../../storage/userNames.js'
 import { getLocalDate } from '../../utils/timezone.js'
@@ -6,6 +7,7 @@ import { estimateTokens } from '../../utils/tokens.js'
 import { factKey } from './factSentences.js'
 import type { GuildMemoryClaim, UserMemoryClaim } from './memoryClaims.js'
 import { SOURCE_WEIGHT, getActiveClaimsForUsers, getActiveGuildClaims, searchClaimIds } from './memoryClaims.js'
+import { readItemGuildFacts, readItemSubjectSnapshot, readItemTurnSnapshot } from './memoryItems.js'
 import { PREDICATES, type PredicateId, predicateCategory, routeTopics } from './predicates.js'
 import { type RecallScope, canRecall } from './privacy.js'
 
@@ -120,6 +122,9 @@ export function readSubjectSnapshot(
   message: string,
   scope: RecallScope
 ): SubjectRetrievalSnapshot {
+  if (config.memory.store === 'item') {
+    return readItemSubjectSnapshot(getDb(), guildId, subjectUserId, message, scope)
+  }
   return {
     activeClaims: withinScope(getActiveClaimsForUsers(guildId, [subjectUserId]), scope),
     ftsIds: searchClaimIds(guildId, [subjectUserId], message)
@@ -157,6 +162,7 @@ export function retrieveForSubject(
 }
 
 export function readTurnSnapshot(input: RetrieveForTurnInput, userIds: string[]): TurnRetrievalSnapshot {
+  if (config.memory.store === 'item') return readItemTurnSnapshot(getDb(), input, userIds)
   return {
     activeClaims: withinScope(getActiveClaimsForUsers(input.guildId, userIds), input.scope),
     ftsIds: searchClaimIds(input.guildId, userIds, input.message),
@@ -271,6 +277,7 @@ function serializeGuildFact(claim: GuildMemoryClaim): string {
 }
 
 export function readGuildFacts(guildId: string, now: number, scope: RecallScope): GuildMemoryClaim[] {
+  if (config.memory.store === 'item') return readItemGuildFacts(getDb(), guildId, now, scope)
   return withinScope(getActiveGuildClaims(guildId, now), scope)
 }
 

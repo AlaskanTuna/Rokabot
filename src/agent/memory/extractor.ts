@@ -28,6 +28,7 @@ import {
   getActiveGuildClaims,
   retractClaim
 } from './memoryClaims.js'
+import { readItemFacts } from './memoryItems.js'
 import {
   type EpisodeWriteOp,
   type OperationApplierContext,
@@ -69,21 +70,30 @@ function episodePrompt(guildId: string, channelId: string, episode: ExtractionEp
   const humanIds = [...new Set(episode.messages.filter((message) => !message.isBot).map((message) => message.userId))]
   const claims = humanIds.map((userId) => ({
     userId,
-    claims: recallableHere(
-      getActiveClaims(guildId, userId).filter(({ needsReview }) => !needsReview),
-      scope
+    claims: (config.memory.store === 'item'
+      ? readItemFacts(scope, { subjectKind: 'user', subjectUserId: userId }).filter(
+          (claim): claim is Extract<MemoryClaim, { subjectKind: 'user' }> => claim.subjectKind === 'user'
+        )
+      : recallableHere(
+          getActiveClaims(guildId, userId).filter(({ needsReview }) => !needsReview),
+          scope
+        )
     ).map(({ id, predicate, value, period }) =>
       period === 'past' ? { id, predicate, value, period } : { id, predicate, value }
     )
   }))
-  const guildClaims = recallableHere(getActiveGuildClaims(guildId), scope).map(
-    ({ id, predicate, value, expiresAt }) => ({
-      id,
-      predicate,
-      value,
-      expiresAt
-    })
-  )
+  const guildClaims = (
+    config.memory.store === 'item'
+      ? readItemFacts(scope, { subjectKind: 'guild' }).filter(
+          (claim): claim is Extract<MemoryClaim, { subjectKind: 'guild' }> => claim.subjectKind === 'guild'
+        )
+      : recallableHere(getActiveGuildClaims(guildId), scope)
+  ).map(({ id, predicate, value, expiresAt }) => ({
+    id,
+    predicate,
+    value,
+    expiresAt
+  }))
   return [
     'You extract durable personal details about users and shared facts about this Discord server from an episode.',
     'Never extract sensitive personal information: real/legal names, age or birthday, address or specific residence, phone numbers, email addresses, social media handles, names of schools, employers, or workplaces, financial information, credentials, or medical/health details.',
@@ -274,13 +284,20 @@ export async function verifyAndApplyOperations(input: {
   const observedAt = episodeObservedAt(input.episode)
   const humanIds = new Set(input.episode.messages.filter((message) => !message.isBot).map((message) => message.userId))
   const subjectIds = new Set([...input.subjectIds].filter((userId) => humanIds.has(userId)))
-  const existing = [
-    ...[...subjectIds].flatMap((userId) =>
-      getActiveClaims(input.guildId, userId).filter(({ needsReview }) => !needsReview)
-    ),
-    ...getActiveGuildClaims(input.guildId)
-  ]
-  const visibleClaims = recallableHere(existing, { guildId: input.guildId, channelId: input.channelId })
+  const scope = { guildId: input.guildId, channelId: input.channelId }
+  const existing =
+    config.memory.store === 'item'
+      ? [
+          ...[...subjectIds].flatMap((userId) => readItemFacts(scope, { subjectKind: 'user', subjectUserId: userId })),
+          ...readItemFacts(scope, { subjectKind: 'guild' })
+        ]
+      : [
+          ...[...subjectIds].flatMap((userId) =>
+            getActiveClaims(input.guildId, userId).filter(({ needsReview }) => !needsReview)
+          ),
+          ...getActiveGuildClaims(input.guildId)
+        ]
+  const visibleClaims = config.memory.store === 'item' ? existing : recallableHere(existing, scope)
   const planned = planVerification(writeOps, visibleClaims, input.episode, input.jobId, observedAt, config.timezone)
   const lines = input.episode.messages.map(formatEpisodeLine)
   const verification = await judgeEpisodeOperations({ lines, ops: writeOps, existing: visibleClaims })

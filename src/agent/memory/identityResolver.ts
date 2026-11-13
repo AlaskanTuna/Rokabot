@@ -29,21 +29,24 @@ const MATCH_PRIORITY: Record<MatchKind, number> = {
   nickname: 2
 }
 
-const GUILD_PRESENCE = `(
-  ${USER_CLAIM_PRESENCE}
+function guildPresence(): string {
+  return `(
+  ${USER_CLAIM_PRESENCE[config.memory.store]}
   OR EXISTS(SELECT 1 FROM response_events WHERE guild_id = ? AND user_id = user_names.user_id)
 )`
+}
 
 /** A nickname is an alias learned in a channel, so `balanced` and `strict` resolve it only where that channel is recallable. */
 function nicknameRows(guildId: string, scope: RecallScope | undefined): Array<{ user_id: string; value: string }> {
   const level = config.memory.privacy
   if (guildId === 'global' || level === 'off') return []
+  const readScope = scope ?? (level === 'relaxed' ? { guildId, channelId: '' } : undefined)
+  if (!readScope) return []
   // A past nickname no longer names anyone, so it never resolves.
-  const rows = activeNicknameClaims(guildId)
-  if (level === 'relaxed') return rows
-  if (!scope) return []
+  const rows = activeNicknameClaims(guildId, readScope)
+  if (level === 'relaxed' || config.memory.store === 'item') return rows
   const sources = getClaimSourceChannels(rows.map(({ id }) => id))
-  return rows.filter(({ id }) => canRecall(sources.get(id) ?? [null], scope, level))
+  return rows.filter(({ id }) => canRecall(sources.get(id) ?? [null], readScope, level))
 }
 
 function buildNameIndex(guildId: string, scope?: RecallScope): NameIndex {
@@ -52,7 +55,7 @@ function buildNameIndex(guildId: string, scope?: RecallScope): NameIndex {
   const userRows = db
     .prepare(
       `SELECT user_id, username, display_name FROM user_names
-       ${global ? '' : `WHERE ${GUILD_PRESENCE}`}
+       ${global ? '' : `WHERE ${guildPresence()}`}
        ORDER BY rowid`
     )
     .all(...(global ? [] : [guildId, guildId])) as UserNameRow[]

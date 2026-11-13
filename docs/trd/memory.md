@@ -4,16 +4,16 @@ The contract for what Roka learns from server conversations, how she stores it, 
 
 ## At a Glance
 
-| Item       | Contract                                                                                                                                             |
-| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Scope      | Guild channels only. DMs, group DMs and `/ask` never read or write long-term memory.                                                                 |
-| Tenant     | `guild_id` is the Discord server. Claims, summaries and media digests never cross servers.                                                           |
-| Write Path | Monitored message, episode, `extraction_queue`, admission, typed extraction, verification, writes.                                                   |
-| Judge      | Jev with `TYPESAFE_API_KEY`. Otherwise the main model if `config.yml` has an `llm:` block. Otherwise none.                                           |
-| Recall     | The four legacy blocks: people facts, server facts, episode summaries and media summaries.                                                           |
-| Privacy    | `memory.privacy`: `relaxed` (default), `balanced`, `strict` or `off`.                                                                                |
-| Store      | `memory.store: legacy` stays the default. `dual` mirrors every legacy write into typed items with SQLite triggers; recall still reads legacy tables. |
-| Timing     | Memory work is asynchronous. It never blocks the reply that captured the messages.                                                                   |
+| Item       | Contract                                                                                                                                                                                                                 |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Scope      | Guild channels only. DMs, group DMs and `/ask` never read or write long-term memory.                                                                                                                                     |
+| Tenant     | `guild_id` is the Discord server. Claims, summaries and media digests never cross servers.                                                                                                                               |
+| Write Path | Monitored message, episode, `extraction_queue`, admission, typed extraction, verification, writes.                                                                                                                       |
+| Judge      | Jev with `TYPESAFE_API_KEY`. Otherwise the main model if `config.yml` has an `llm:` block. Otherwise none.                                                                                                               |
+| Recall     | The four legacy blocks: people facts, server facts, episode summaries and media summaries.                                                                                                                               |
+| Privacy    | `memory.privacy`: `relaxed` (default), `balanced`, `strict` or `off`.                                                                                                                                                    |
+| Store      | `memory.store: legacy` stays the default. `dual` reads legacy tables and mirrors writes into typed items; `item` reads typed items. Both keep projection triggers enabled so rollback from `item` is a switch to `dual`. |
+| Timing     | Memory work is asynchronous. It never blocks the reply that captured the messages.                                                                                                                                       |
 
 Deployer view: [Memory Guide](../guide/memory.md). Judge internals: [Jev](jev.md). Model routes: [Models](models.md).
 
@@ -54,7 +54,7 @@ All tables live in `data/rokabot.db`. `memory_claim`, `memory_episode` and `medi
 
 The queue payload holds the delta messages, up to three earlier context lines, and the start and end times.
 
-The typed item tables are additive. Startup creates the schema. With the default `memory.store: legacy`, the bot reads and writes legacy tables and removes projection triggers. With `MEMORY_STORE=dual`, startup installs the five source-table trigger sets and records an integrity sample; the bot still reads legacy tables. Trigger-created embeddings have a NULL `text_hash` until startup or daily maintenance fills it from stored text. `npm run migrate:memory-items` is an offline catch-up path for missing, changed and deleted legacy rows; startup never runs it. See [Typed Memory Items](../RUNBOOK.md#typed-memory-items-phase-3) before entering dual on the Pi.
+The typed item tables are additive. Startup creates the schema. With the default `memory.store: legacy`, the bot reads and writes legacy tables and removes projection triggers. With `MEMORY_STORE=dual`, startup installs the five source-table trigger sets and records an integrity sample; reads stay on legacy tables. With `MEMORY_STORE=item`, prompt-facing readers use the scoped item API while writers remain on legacy tables; projection triggers and integrity sampling stay enabled. Trigger-created embeddings have a NULL `text_hash` until startup or daily maintenance fills it from stored text. `npm run migrate:memory-items` is an offline catch-up path for missing, changed and deleted legacy rows; startup never runs it. The offline simulator is the promotion gate; owner decision 12 rules out an in-production shadow read and soak. See [Typed Memory Items](../RUNBOOK.md#typed-memory-items-phase-3) before changing the store on the Pi.
 
 ## Write Path
 

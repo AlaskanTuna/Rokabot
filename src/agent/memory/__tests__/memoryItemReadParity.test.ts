@@ -1,21 +1,17 @@
 import { createHash } from 'node:crypto'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { replayMemoryItems } from '../../../../scripts/replay-memory-items.js'
 import { config } from '../../../config.js'
 import { closeDb, getDb } from '../../../storage/database.js'
 import { migrateMemoryItems } from '../../../storage/memoryItemBackfill.js'
-import { decodeMemoryItemEmbedding } from '../../../storage/memoryItemReadStore.js'
-import {
-  readItemGuildFacts,
-  readItemMediaCandidates,
-  readItemRecallableEpisodes,
-  readItemSubjectSnapshot,
-  readItemTurnSnapshot
-} from '../../../storage/memoryItemReadStore.js'
+import { configureMemoryItemProjectionTriggers } from '../../../storage/memoryItemProjection.js'
+import { decodeMemoryItemEmbedding } from '../../../storage/memoryItemStore.js'
 import { buildFactsEnvelope } from '../../promptSafety.js'
-import { formatRecallUserFacts } from '../../tools/recallUser.js'
+import { formatRecallUserFacts, recallUser } from '../../tools/recallUser.js'
 import { formatGuildFactsBlock } from '../../turnContext.js'
+import { registerChannelVisibility, resetChannelVisibilityForTest } from '../channelVisibility.js'
 import {
+  buildEpisodeRecallBlock,
   formatEpisodeRecallBlock,
   readRecallableEpisodes,
   selectEpisodes,
@@ -23,13 +19,26 @@ import {
 } from '../episodeRetriever.js'
 import { buildMediaRecallBlock, formatMediaRecallBlock, readRecallableMedia, selectMedia } from '../mediaRecall.js'
 import {
+  readItemGuildFacts,
+  readItemMediaCandidates,
+  readItemRecallableEpisodes,
+  readItemSubjectSnapshot,
+  readItemTurnSnapshot
+} from '../memoryItems.js'
+import {
   readGuildFacts,
   readSubjectSnapshot,
   readTurnSnapshot,
+  retrieveForTurn,
+  retrieveGuildFacts,
   selectForSubject,
   selectForTurn,
   selectGuildFacts
 } from '../retriever.js'
+
+const memory = config.memory as { store: string; privacy: string }
+let previousStore = ''
+let previousPrivacy = ''
 
 const FIXED_NOW = Date.UTC(2026, 10, 13)
 const SCOPE = { guildId: 'guild-fixture', channelId: 'channel-fixture' }
@@ -55,6 +64,28 @@ function seedRows(): void {
   `).run()
   db.prepare(`
     INSERT INTO memory_claim (
+      id, guild_id, subject_kind, subject_user_id, predicate, value, source_kind, status, confidence,
+      salience, pinned, needs_review, first_seen_at, last_seen_at, period
+    ) VALUES (3, 'guild-fixture', 'user', 'user-fixture', 'hobby', 'writing', 'explicit', 'active', 0.8,
+      0.4, 1, 0, 50, 100, 'current')
+  `).run()
+  db.prepare(`
+    INSERT INTO memory_evidence (claim_id, channel_id, source_kind, observed_at)
+    VALUES (3, 'channel-fixture', 'explicit', 100)
+  `).run()
+  db.prepare(`
+    INSERT INTO memory_claim (
+      id, guild_id, subject_kind, subject_user_id, predicate, value, source_kind, status, confidence,
+      salience, pinned, needs_review, first_seen_at, last_seen_at, period
+    ) VALUES (4, 'guild-fixture', 'user', 'user-fixture', 'hobby', 'gardening', 'explicit', 'active', 0.9,
+      0.8, 0, 0, 80, 200, 'current')
+  `).run()
+  db.prepare(`
+    INSERT INTO memory_evidence (claim_id, channel_id, source_kind, observed_at)
+    VALUES (4, 'channel-fixture', 'explicit', 200)
+  `).run()
+  db.prepare(`
+    INSERT INTO memory_claim (
       id, guild_id, subject_kind, predicate, value, source_kind, status, confidence, salience, pinned,
       needs_review, expires_at, event_date, first_seen_at, last_seen_at, period
     ) VALUES (2, 'guild-fixture', 'guild', 'upcoming_event', 'picnic', 'human', 'active', 0.9, 0.8, 0,
@@ -63,6 +94,17 @@ function seedRows(): void {
   db.prepare(`
     INSERT INTO memory_evidence (claim_id, channel_id, source_kind, observed_at)
     VALUES (2, 'channel-fixture', 'human', 200)
+  `).run()
+  db.prepare(`
+    INSERT INTO memory_claim (
+      id, guild_id, subject_kind, predicate, value, source_kind, status, confidence, salience, pinned,
+      needs_review, first_seen_at, last_seen_at, period
+    ) VALUES (5, 'guild-fixture', 'guild', 'place', 'game room', 'human', 'active', 0.9, 0.7, 0,
+      0, 50, 150, 'current')
+  `).run()
+  db.prepare(`
+    INSERT INTO memory_evidence (claim_id, channel_id, source_kind, observed_at)
+    VALUES (5, 'channel-fixture', 'human', 150)
   `).run()
 
   db.prepare(`
@@ -100,12 +142,90 @@ function seedReplayTurn(): void {
   `).run(FIXED_NOW)
 }
 
+const PRIVACY_CHANNELS = [
+  ['zhere', SCOPE.channelId],
+  ['zpublic', 'channel-public'],
+  ['zprivate', 'channel-private']
+] as const
+
+/** One row of every kind per channel, plus a fact with no evidence and a digest with no share. */
+function seedPrivacyRows(): void {
+  const db = getDb()
+  const fact = db.prepare(`
+    INSERT INTO memory_claim (
+      id, guild_id, subject_kind, subject_user_id, predicate, value, source_kind, status, confidence,
+      salience, pinned, needs_review, first_seen_at, last_seen_at, period
+    ) VALUES (?, 'guild-fixture', ?, ?, ?, ?, 'explicit', 'active', 0.9, 0.5, 0, 0, 100, 200, 'current')
+  `)
+  const evidence = db.prepare(`
+    INSERT INTO memory_evidence (claim_id, channel_id, source_kind, observed_at) VALUES (?, ?, 'explicit', 200)
+  `)
+  const episode = db.prepare(`
+    INSERT INTO memory_episode (
+      id, guild_id, channel_id, started_at, ended_at, summary, embedding, created_at,
+      embedding_model_id, embedding_dim, embedding_fingerprint
+    ) VALUES (?, 'guild-fixture', ?, 100, ?, ?, ?, 300, ?, ?, ?)
+  `)
+  const digest = db.prepare(`
+    INSERT INTO media_digest (
+      id, guild_id, content_key, kind, label, summary, digest_json, embedding, created_at,
+      embedding_model_id, embedding_dim, embedding_fingerprint
+    ) VALUES (?, 'guild-fixture', ?, 'video', ?, ?, '{}', ?, 300, ?, ?, ?)
+  `)
+  const share = db.prepare(`
+    INSERT INTO media_occurrence (digest_id, guild_id, channel_id, message_id, shared_by_user_id, origin, observed_at)
+    VALUES (?, 'guild-fixture', ?, ?, 'user-fixture', 'link', 300)
+  `)
+  const { model, dim, fingerprint } = config.embeddings
+  PRIVACY_CHANNELS.forEach(([label, channelId], index) => {
+    fact.run(100 + index, 'user', 'user-fixture', 'hobby', `${label} tea`)
+    evidence.run(100 + index, channelId)
+    fact.run(200 + index, 'guild', null, 'place', `${label} room`)
+    evidence.run(200 + index, channelId)
+    episode.run(300 + index, channelId, 200 + index, `${label} episode.`, vector(), model, dim, fingerprint)
+    digest.run(400 + index, `${label}-key`, `${label} clip`, `${label} media.`, vector(), model, dim, fingerprint)
+    share.run(400 + index, channelId, `message-${label}`)
+  })
+  fact.run(110, 'user', 'user-fixture', 'hobby', 'zunknown tea')
+  digest.run(410, 'zunshared-key', 'zunshared clip', 'zunshared media.', vector(), model, dim, fingerprint)
+}
+
+async function renderAllBlocks(message: string) {
+  const query = Array.from({ length: config.embeddings.dim }, () => 0.25)
+  const people = retrieveForTurn({
+    guildId: SCOPE.guildId,
+    speakerId: 'user-fixture',
+    participantIds: [],
+    message,
+    scope: SCOPE
+  })
+  const peopleEnvelope = buildFactsEnvelope(people.entries)
+  return {
+    people: peopleEnvelope ? `## What You Remember About People In This Channel\n${peopleEnvelope}` : '',
+    guild: formatGuildFactsBlock(retrieveGuildFacts(SCOPE.guildId, FIXED_NOW, SCOPE).facts),
+    episodes: buildEpisodeRecallBlock({ guildId: SCOPE.guildId, queryEmbedding: query, scope: SCOPE }),
+    media: buildMediaRecallBlock({ guildId: SCOPE.guildId, queryEmbedding: query, scope: SCOPE }),
+    recallUser: await recallUser({
+      guild_id: SCOPE.guildId,
+      user_id: 'user-fixture',
+      message,
+      channel_id: SCOPE.channelId
+    })
+  }
+}
+
 describe('memory item readers', () => {
   beforeEach(() => {
+    previousStore = memory.store
+    previousPrivacy = memory.privacy
     process.env.ROKABOT_DB_PATH = ':memory:'
   })
 
   afterEach(() => {
+    memory.store = previousStore
+    memory.privacy = previousPrivacy
+    vi.useRealTimers()
+    resetChannelVisibilityForTest()
     closeDb()
     process.env.ROKABOT_DB_PATH = undefined
   })
@@ -184,6 +304,160 @@ describe('memory item readers', () => {
     expect(formatMediaRecallBlock(legacyMedia)).toBe(
       buildMediaRecallBlock({ guildId: SCOPE.guildId, queryEmbedding: query, scope: SCOPE })
     )
+  })
+
+  it('routes all four builders and recall_user through items when memory.store is item', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(FIXED_NOW)
+    seedRows()
+    const db = getDb()
+    migrateMemoryItems(db)
+    configureMemoryItemProjectionTriggers(db, 'dual')
+    const query = Array.from({ length: config.embeddings.dim }, () => 0.25)
+    const message = 'tea and picnic'
+    const render = async () => {
+      const people = retrieveForTurn({
+        guildId: SCOPE.guildId,
+        speakerId: 'user-fixture',
+        participantIds: [],
+        message,
+        scope: SCOPE
+      })
+      const peopleEnvelope = buildFactsEnvelope(people.entries)
+      return {
+        people: peopleEnvelope ? `## What You Remember About People In This Channel\n${peopleEnvelope}` : '',
+        guild: formatGuildFactsBlock(retrieveGuildFacts(SCOPE.guildId, FIXED_NOW, SCOPE).facts),
+        episodes: buildEpisodeRecallBlock({ guildId: SCOPE.guildId, queryEmbedding: query, scope: SCOPE }),
+        media: buildMediaRecallBlock({ guildId: SCOPE.guildId, queryEmbedding: query, scope: SCOPE }),
+        recallUser: await recallUser({
+          guild_id: SCOPE.guildId,
+          user_id: 'user-fixture',
+          message,
+          channel_id: SCOPE.channelId
+        })
+      }
+    }
+
+    memory.store = 'dual'
+    const legacy = await render()
+    configureMemoryItemProjectionTriggers(db, 'legacy')
+    db.prepare("UPDATE memory_claim SET value = 'changed legacy value' WHERE id = 1").run()
+    db.prepare("UPDATE memory_claim SET value = 'changed guild value' WHERE id = 2").run()
+    db.prepare("UPDATE memory_episode SET summary = 'changed episode value' WHERE id = 10").run()
+    db.prepare("UPDATE media_digest SET summary = 'changed media value' WHERE id = 11").run()
+
+    memory.store = 'item'
+    const item = await render()
+
+    expect(item).toEqual(legacy)
+    expect(JSON.stringify(item)).not.toContain('changed legacy value')
+    expect(JSON.stringify(item)).not.toContain('changed guild value')
+    expect(JSON.stringify(item)).not.toContain('changed episode value')
+    expect(JSON.stringify(item)).not.toContain('changed media value')
+  })
+
+  it('serves no memory from the item readers when privacy is off', async () => {
+    seedRows()
+    migrateMemoryItems(getDb())
+    memory.privacy = 'off'
+    const query = Array.from({ length: config.embeddings.dim }, () => 0.25)
+    const render = async () => {
+      const people = retrieveForTurn({
+        guildId: SCOPE.guildId,
+        speakerId: 'user-fixture',
+        participantIds: [],
+        message: 'tea and picnic',
+        scope: SCOPE
+      })
+      return {
+        people: people.entries,
+        guild: retrieveGuildFacts(SCOPE.guildId, FIXED_NOW, SCOPE).facts,
+        episodes: buildEpisodeRecallBlock({ guildId: SCOPE.guildId, queryEmbedding: query, scope: SCOPE }),
+        media: buildMediaRecallBlock({ guildId: SCOPE.guildId, queryEmbedding: query, scope: SCOPE }),
+        recallUser: await recallUser({
+          guild_id: SCOPE.guildId,
+          user_id: 'user-fixture',
+          message: 'tea and picnic',
+          channel_id: SCOPE.channelId
+        })
+      }
+    }
+
+    memory.store = 'dual'
+    const legacy = await render()
+    memory.store = 'item'
+    const item = await render()
+
+    expect(item).toEqual(legacy)
+    expect(item).toEqual({
+      people: [],
+      guild: [],
+      episodes: '',
+      media: '',
+      recallUser: { facts: "I don't have any notes about this person yet.", factCount: 0 }
+    })
+  })
+
+  it.each(['balanced', 'strict'] as const)(
+    'withholds the same memory from every builder and recall_user on both stores under %s',
+    async (privacy) => {
+      vi.useFakeTimers()
+      vi.setSystemTime(FIXED_NOW)
+      registerChannelVisibility({
+        visibility: (channelId) => (channelId === 'channel-public' ? 'public' : 'private'),
+        parentOf: () => null
+      })
+      seedPrivacyRows()
+      migrateMemoryItems(getDb())
+      memory.privacy = privacy
+
+      memory.store = 'dual'
+      const legacy = await renderAllBlocks('tea')
+      memory.store = 'item'
+      const item = await renderAllBlocks('tea')
+
+      expect(item).toEqual(legacy)
+      const text = JSON.stringify(item)
+      for (const value of ['zhere tea', 'zhere room', 'zhere episode.', 'zhere clip']) expect(text).toContain(value)
+      expect(text).not.toContain('zprivate')
+      expect(text).not.toContain('zunshared')
+      if (privacy === 'balanced') {
+        for (const value of ['zpublic tea', 'zpublic room', 'zpublic episode.', 'zpublic clip', 'zunknown tea']) {
+          expect(text).toContain(value)
+        }
+      } else {
+        expect(text).not.toContain('zpublic')
+        expect(text).not.toContain('zunknown')
+      }
+    }
+  )
+
+  it('limits the keyword boost set before the privacy filter, as the legacy search does', () => {
+    const db = getDb()
+    const insert = db.prepare(`
+      INSERT INTO memory_claim (
+        id, guild_id, subject_kind, subject_user_id, predicate, value, source_kind, status, confidence,
+        salience, pinned, needs_review, first_seen_at, last_seen_at, period
+      ) VALUES (?, 'guild-fixture', 'user', ?, 'hobby', ?, 'explicit', 'active', 0.9, ?, 0, 0, 100, 200, 'current')
+    `)
+    for (let id = 1; id <= 45; id += 1)
+      insert.run(id, `user-${id % 3}`, `tea ${'blend '.repeat(id % 4)}${id}`, id / 100)
+    migrateMemoryItems(db)
+    const userIds = ['user-0', 'user-1', 'user-2']
+    const input = {
+      guildId: SCOPE.guildId,
+      speakerId: 'user-0',
+      participantIds: [],
+      message: 'tea blend',
+      scope: SCOPE
+    }
+    memory.store = 'dual'
+
+    const legacy = [...readTurnSnapshot(input, userIds).ftsIds].sort((left, right) => left - right)
+    const item = [...readItemTurnSnapshot(db, input, userIds).ftsIds].sort((left, right) => left - right)
+
+    expect(legacy).toHaveLength(config.memory.maxClaimsPerTurn * 3)
+    expect(item).toEqual(legacy)
   })
 
   it('does not expose vectors with a wrong space, size, norm, finite values, or text hash', () => {

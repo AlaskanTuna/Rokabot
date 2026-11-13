@@ -92,7 +92,7 @@ function startupMemoryTasks(botUserId?: string): void {
 }
 
 function maintainMemoryItemProjection(): void {
-  if (config.memory.store !== 'dual') return
+  if (config.memory.store === 'legacy') return
   try {
     fillMemoryItemEmbeddingHashes()
     sweepMemoryItemIntegrity()

@@ -1,12 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { config } from '../../../config.js'
 import { closeDb, getDb } from '../../../storage/database.js'
+import { migrateMemoryItems } from '../../../storage/memoryItemBackfill.js'
+import { configureMemoryItemProjectionTriggers } from '../../../storage/memoryItemProjection.js'
 import { upsertUserName } from '../../../storage/userNames.js'
 import { resolveName, resolveReferences } from '../identityResolver.js'
 import { assertClaim } from '../memoryClaims.js'
 import type { RecallScope } from '../privacy.js'
 
 const originalPrivacy = config.memory.privacy
+const originalStore = config.memory.store
 const setPrivacy = (privacy: string) => Object.assign(config.memory, { privacy })
 
 beforeEach(() => {
@@ -17,6 +20,7 @@ afterEach(() => {
   closeDb()
   process.env.ROKABOT_DB_PATH = undefined
   setPrivacy(originalPrivacy)
+  Object.assign(config.memory, { store: originalStore })
 })
 
 function addUser(userId: string, username: string, displayName: string, guildId = 'guild-a'): void {
@@ -128,6 +132,29 @@ describe('resolveName', () => {
     addNickname('global-nickname', 'Global Name')
 
     expect(resolveName('Global Name', 'global')).toEqual(['global-name'])
+  })
+
+  it('reads nickname aliases and name presence from the item projection in item mode', () => {
+    upsertUserName('claim-only', 'claim-only', 'Claim Only')
+    const claim = assertClaim({
+      guildId: 'guild-a',
+      subjectUserId: 'claim-only',
+      predicate: 'nickname',
+      value: 'Item Alias',
+      sourceKind: 'explicit',
+      channelId: 'here'
+    })
+    const db = getDb()
+    migrateMemoryItems(db)
+    configureMemoryItemProjectionTriggers(db, 'legacy')
+    db.prepare("UPDATE memory_claim SET subject_user_id = 'moved-user', value = 'Legacy Alias' WHERE id = ?").run(
+      claim.id
+    )
+    Object.assign(config.memory, { store: 'item', privacy: 'strict' })
+
+    expect(resolveName('Claim Only', 'guild-a', here)).toEqual(['claim-only'])
+    expect(resolveName('Item Alias', 'guild-a', here)).toEqual(['claim-only'])
+    expect(resolveName('Legacy Alias', 'guild-a', here)).toEqual([])
   })
 })
 

@@ -6,6 +6,13 @@ import {
   selectEpisodesWithinBudget
 } from '../src/agent/memory/episodeRetriever.js'
 import { formatMediaRecallBlock, readRecallableMedia, selectMedia } from '../src/agent/memory/mediaRecall.js'
+import {
+  readItemGuildFacts,
+  readItemMediaCandidates,
+  readItemRecallableEpisodes,
+  readItemSubjectSnapshot,
+  readItemTurnSnapshot
+} from '../src/agent/memory/memoryItems.js'
 import type { RecallScope } from '../src/agent/memory/privacy.js'
 import {
   readGuildFacts,
@@ -23,13 +30,6 @@ import { closeDb, getDb } from '../src/storage/database.js'
 import { listMediaRecallCandidates } from '../src/storage/mediaDigestStore.js'
 import type { EpisodeEmbedding } from '../src/storage/memoryEpisodeStore.js'
 import { listEpisodesForGuild } from '../src/storage/memoryEpisodeStore.js'
-import {
-  readItemGuildFacts,
-  readItemMediaCandidates,
-  readItemRecallableEpisodes,
-  readItemSubjectSnapshot,
-  readItemTurnSnapshot
-} from '../src/storage/memoryItemReadStore.js'
 import { getClaimEmbeddings } from '../src/storage/memoryRecallStore.js'
 import { logger } from '../src/utils/logger.js'
 

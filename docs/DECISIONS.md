@@ -46,6 +46,7 @@ The lasting choices behind Rokabot, with why they were made. Check here before r
 | 2026-11-13 | Recall stays on the four legacy blocks; the unified recall and Jev gate are removed (#262)                                                                      | 2026-11-13 calibration: 0 of 4 kinds met 80% precision (18 of 2,998 pairs relevant) and the gate missed its 1200 ms deadline on 27% of turns       |
 
 | 2026-11-13 | Typed memory items use new IDs and keep `legacy_table`/`legacy_id`; Phase 2 adds the schema and offline backfill while runtime stays on legacy reads and writes | Exact row round trips keep the additive migration rollbackable; `legacy_embedding_text` preserves the non-reversible legacy vector-text column |
+| 2026-11-14 | The typed memory read cutover (`memory.store: item`) is gated by the offline simulator, with no production soak and no in-production shadow read; projection triggers stay on under `item` | Owner decision 12 (#266); rollback stays a switch to `dual` |
 
 ## Models and Search
 

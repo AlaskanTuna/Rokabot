@@ -12,13 +12,15 @@ vi.mock('../../../config.js', () => ({
       speakerMinShare: 0.5,
       salienceHalfLifeDays: 30,
       recallCooldownMs: 21_600_000,
-      privacy: 'relaxed'
+      privacy: 'relaxed',
+      store: 'legacy'
     }
   }
 }))
 
 import { config } from '../../../config.js'
 import { closeDb, getDb } from '../../../storage/database.js'
+import { configureMemoryItemProjectionTriggers } from '../../../storage/memoryItemProjection.js'
 import { recordMemoryEvent } from '../../../storage/metricsStore.js'
 import { upsertUserName } from '../../../storage/userNames.js'
 import { estimateTokens } from '../../../utils/tokens.js'
@@ -510,8 +512,8 @@ describe('formatGuildFactDate', () => {
   })
 })
 
-describe('memory privacy levels', () => {
-  const memory = config.memory as { privacy: string }
+describe.each(['legacy', 'item'] as const)('memory privacy levels on the %s store', (store) => {
+  const memory = config.memory as { privacy: string; store: string }
   const here = { guildId: 'guild-a', channelId: 'here' }
   const turn = { guildId: 'guild-a', speakerId: 'speaker', participantIds: [], message: 'hi' }
   const visibilities: Record<string, 'public' | 'private'> = { 'public-1': 'public' }
@@ -532,10 +534,14 @@ describe('memory privacy levels', () => {
       visibility: (channelId) => visibilities[channelId] ?? 'private',
       parentOf: () => null
     })
+    // The triggers mirror each legacy write into the item tables, so the item store reads the same rows.
+    if (store === 'item') configureMemoryItemProjectionTriggers(getDb(), 'dual')
+    memory.store = store
   })
 
   afterEach(() => {
     memory.privacy = 'relaxed'
+    memory.store = 'legacy'
     resetChannelVisibilityForTest()
   })
 

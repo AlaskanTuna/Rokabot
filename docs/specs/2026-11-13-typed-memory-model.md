@@ -11,6 +11,7 @@ Design for #266 (memory sub-project 3): store member facts, server facts, conver
 | Phase 1 (#483)      | Merged on 2026-11-13 (owner approved starting before one release). All legacy recall builders require `RecallScope`; reads are split from pure selections.                                                                                                                 |
 | Phase 2 (#266)      | Implemented and verified on 2026-11-13: additive item schema, offline backfill and replay readers. A private database copy passed migration checks and a 134-turn replay with zero mismatches. The bot remains on the legacy store.                                        |
 | Phase 3 (#266)      | Implemented: dual-write projection triggers, catch-up migration, NULL-hash embedding maintenance and value-free integrity sweeps. A private database copy passed the dual-write sweep and replay with zero drift and zero mismatches. The bot remains on the legacy store. |
+| Phase 5 (#266)      | Implemented on 2026-11-14: item read API and reader cutover. Private-copy migration and replay are the local gate; the separate offline simulator remains the promotion gate. No production soak or in-production shadow read.                                             |
 | #265 Write Path     | Memory 2C (#277) shipped: evidence provenance, crash-safe capture through `memory_episode_line`, summary validation. #278 (2D coverage and retention) and the crash-safe check in #463 are still open.                                                                     |
 | Extraction Route    | Extraction ran on the Qwen fallback, not Haiku: the Anthropic structured-output schema had more than 24 optional parameters. #472 fixed it on 2026-11-13.                                                                                                                  |
 | Production Envelope | 2.39 MiB database, 187 vectors (#266). 142 claims on 2026-11-08 (#463).                                                                                                                                                                                                    |
@@ -326,7 +327,7 @@ The legacy-only recall PR leaves four blocks as the only recall path. The item m
 
 - **Missing Sources:** the per-kind rule stays. A fact with no evidence is an unknown source (public under `balanced`, refused under `strict`). A media item with no occurrence is private (owner decision 5).
 - **Coverage:** the four legacy blocks, `recall_user`, `forget_user` replies, the extraction prompt (`recallableHere` in `extractor.ts`), `same_as` candidates and nickname lookup all move to the scoped read.
-- **Leak Tests:** the `balanced` and `strict` tests in `retriever.test.ts`, `episodeRetriever.test.ts` and `mediaRecall.test.ts` run on both stores at Phase 4 and again at Phase 5.
+- **Leak Tests:** at Phase 5 the `balanced` and `strict` tests in `retriever.test.ts` run on both stores. `episodeRetriever.test.ts` and `mediaRecall.test.ts` use a bare legacy schema, so `memoryItemReadParity.test.ts` renders all four blocks and `recall_user` on both stores under `balanced` and `strict`, and `memoryItemStore.test.ts` checks each kind's sources on the item store. No in-production duplicate reads run under Phase 4.
 
 ### Retention Tiers
 
@@ -417,26 +418,18 @@ The legacy builders are the recall path, so this phase makes them able to read f
 
 - **Triggers:** `AFTER INSERT`, `UPDATE` and `DELETE` triggers on `memory_claim`, `memory_evidence`, `memory_episode`, `media_digest` and `media_occurrence` mirror each legacy write into the item tables in the same transaction. They find the item by `legacy_table` and `legacy_id`. Their values match the Phase 2 backfill projection; writer tests compare each result with the migration's table-driven projection verifier.
 - **Why Triggers:** they cover exported writers and raw SQL paths in `reclassify.ts`. They install after `ensureMemoryClaimSchema` during startup. The existing `memory_item_fts` triggers remain part of `memoryItemSchema.ts`; Phase 3 adds no source-table FTS triggers.
-- **Flag:** `memory.store` accepts `legacy` or `dual`; `item` is rejected. At startup, `dual` creates the triggers after `ensureMemoryClaimSchema`, and `legacy` drops them. `config.yml` stays `legacy`. Before entering `dual`, stop the bot and run `migrate:memory-items` for catch-up. Startup never runs catch-up. See the [Pi runbook](../RUNBOOK.md#typed-memory-items-phase-3).
+- **Flag:** `memory.store` accepts `legacy`, `dual` and `item`. At startup, `dual` and `item` create the triggers after `ensureMemoryClaimSchema`, and `legacy` drops them. `config.yml` stays `legacy`. Before entering `dual`, stop the bot and run `migrate:memory-items` for catch-up. Startup never runs catch-up. See the [Pi runbook](../RUNBOOK.md#typed-memory-items-phase-3).
 - **Integrity Sweep:** at startup and daily in `dual`, a value-free `memory_events` row of kind `item_integrity` holds `fact`, `episode` and `media` drift counts. Drift above zero logs a warning and does not stop startup.
 - **Embeddings:** SQL triggers copy vectors with a NULL `text_hash`. Item readers accept NULL hashes while the legacy writer still guards summary text; maintenance fills the hash from stored item text. A non-NULL hash must still match.
 - **Catch-Up:** the offline migration inserts missing rows, refreshes changed rows and deletes item rows whose legacy source disappeared. It checks and round-trips the result in the same transaction and is a no-op on a fully synced database.
 
-### Phase 4: Shadow Read
+### Phase 4: Shadow Read (Not Run)
 
-Under `dual`, the item read API runs beside each legacy read, off the reply path:
-
-- the four legacy blocks, compared by block hash and selected IDs on one pre-`touchRecalled` snapshot
-- `recall_user` and the read half of `forget_user`
-- nickname lookup and the name-presence check (`activeNicknameClaims`, `USER_CLAIM_PRESENCE`)
-- the claims the extraction prompt may show
-- `/stats` counts
-
-Each comparison writes a value-free `memory_events` row of kind `item_parity` with counts and the first mismatch reason. Each guild turn builds its blocks twice, so watch Pi CPU and event-loop delay while it runs. Parity should be exact. Any mismatch is a bug, and the 7-day clock restarts after the fix.
+Owner decision 12 on 2026-11-14 removes the in-production shadow read and soak. No `item_parity` production event or duplicate production read is implemented. The offline simulator on the parallel branch is the promotion gate.
 
 ### Phase 5: Read Cutover
 
-`memory.store: item` points every prompt-facing reader at the item API. The four legacy builders, `obsidianExport.ts` and `statsStore.ts` all switch. Writers still write the legacy tables, and the triggers keep the items current, so rollback is a config flip. The shadow comparison keeps running with the roles swapped. The runbook's memory queries move to the item tables in the same PR.
+`memory.store: item` points every prompt-facing reader at the item API. The four legacy builders, `recall_user`, the read half of `forget_user`, nickname and name-presence reads, extraction context, `obsidianExport.ts` and `statsStore.ts` all switch. Writers still write the legacy tables, and the projection triggers stay enabled in both `dual` and `item`, so rollback is a config flip to `dual`. The runbook's memory queries move to the item tables in the same PR. The offline simulator is the promotion gate; there is no production soak or shadow comparison. Item readers return each row under its `legacy_id`, so `touchRecalled`, `forget_user`, the `retrieval` trace and the builders' ID tie-breaks keep legacy IDs until Phase 6.
 
 ### Phase 6: Writer Cutover
 
@@ -466,20 +459,20 @@ Each PR passes `npm test`, `npm run test:perf`, `npm run typecheck`, `npm run fo
 | Triggers       | Table-driven over every exported writer in `memoryClaims.ts`, `reclassify.ts`, `memoryEpisodeStore.ts`, `mediaDigestStore.ts` and `memoryRecallStore.ts`, plus raw SQL paths in `reclassify.ts`: after each call the item tables equal the backfill projection. Tests also cover trigger install/drop and `memory_item_fts` behavior.                                                                                                                                              |
 | Builders       | For fixed rows, `now`, `last_recalled_at` snapshot and query vector, each of the four blocks and `recall_user` renders byte-identical text from either store. Selection runs before `touchRecalled`, and the golden prompt test is unchanged.                                                                                                                                                                                                                                      |
 | Scope          | A call to `listRecallable` or a legacy builder with no scope, marked `// @ts-expect-error`, turns `npm run typecheck` red if the scope ever becomes optional. `global` and `dm:` tenants return nothing. `off` returns nothing.                                                                                                                                                                                                                                                    |
-| Privacy        | For every kind and level, item sources give the same `canRecall` answer as legacy sources, including missing evidence and missing occurrences. The `balanced` and `strict` tests in `retriever.test.ts`, `episodeRetriever.test.ts` and `mediaRecall.test.ts` pass on both stores.                                                                                                                                                                                                 |
+| Privacy        | For every kind and level, item sources give the same `canRecall` answer as legacy sources, including missing evidence and missing occurrences. The `balanced` and `strict` tests in `retriever.test.ts` pass on both stores, and all four blocks and `recall_user` render identically on both stores under `balanced` and `strict`.                                                                                                                                                |
 | Retention      | With a fake clock: tiers by predicate, pins exempt, the cap evicts past items first, guild date expiry, guild candidates, episodes at 90 days, media per share, dead facts purged at 30 days. Results equal the legacy prune.                                                                                                                                                                                                                                                      |
 | Keyword Search | `searchClaimIds` and `searchClaims` return the same IDs on both stores. A restart leaves the FTS bytes unchanged.                                                                                                                                                                                                                                                                                                                                                                  |
 | Embeddings     | Item readers reject wrong fingerprint, wrong size, zero norm, NaN and mismatched non-NULL `text_hash` vectors as unreadable. They accept NULL hashes from Phase 3 triggers. Startup and daily maintenance fill hashes from stored item text without embedding calls. Later writers re-embed unreadable vectors; a provider switch keeps the old space's rows.                                                                                                                      |
 | Backfill       | A rerun on a synced database is a no-op. Catch-up reconciles changed, deleted and new legacy rows. A planted miss aborts with nothing written. No item gets a timestamp its legacy row did not have.                                                                                                                                                                                                                                                                               |
 | Evals          | `recallRelevance.eval.test.ts`, `memoryGuildFacts.eval.test.ts`, `memoryPromotion.eval.test.ts` and `memoryEpisodeReplay.eval.test.ts` pass unchanged on the item store.                                                                                                                                                                                                                                                                                                           |
-| Performance    | `memoryShadow.perf.test.ts` (`npm run test:perf`) grows to time the four builders on the item store at 1,000 and 10,000 items, with BLOB decoding measured on its own. They must not be slower than on the legacy store. The #266 workstation reference is about 1.3 ms and 14 ms for brute force.                                                                                                                                                                                 |
+| Performance    | `memoryItemBuilders.perf.test.ts` (`npm run test:perf`) times the four builders on both stores at 1,000 and 10,000 items per kind under `relaxed` and `strict`, with BLOB decoding measured on its own. The item store must not be slower than legacy beyond timing noise (25% plus 2 ms). The #266 workstation reference is about 1.3 ms and 14 ms for brute force.                                                                                                               |
 
 ### Acceptance
 
-1. The four stores are read and written only through the item store, and no prompt-facing read can omit the scope.
+1. In Phase 5, prompt-facing reads go through the scoped item API while writers stay on legacy tables with projection triggers. Phase 6 moves writes. No prompt-facing read can omit the scope.
 2. The four legacy blocks are still the only recall path, with the same budgets, headings and output. `recall_user` keeps its broad lookup, and `memory.store` is gone after Phase 7.
-3. Production shows zero `item_parity` mismatches and zero `item_integrity` drift for 7 days before Phase 5, and again before Phase 6 freezes the legacy tables.
-4. The `retrieval` and `context_build` rows on the day after Phase 5 match the week before it in claims per turn, tokens and duration, within normal variation.
+3. The offline simulator passes before promotion to `item`. Production shadow reads and a 7-day production soak are not required by owner decision 12.
+4. The private-copy migration and `scripts/replay-memory-items.ts` report zero mismatches. `item_integrity` remains value-free and runs under both `dual` and `item`.
 5. Telemetry stays value-free, and old audit and telemetry IDs still resolve through `legacy_id`.
 6. `docs/trd/memory.md`, `docs/trd/data.md`, `docs/RUNBOOK.md` and `docs/DECISIONS.md` describe the item model.
 
@@ -494,7 +487,7 @@ Each PR passes `npm test`, `npm run test:perf`, `npm run typecheck`, `npm run fo
 | The legacy-only recall PR merges in a different shape than this spec assumes           | The spec names functions, not line numbers, for that code. Phase 1 re-reads the builders as merged.                                 |
 | Retention drift keeps private text longer or drops it early                            | A purge delay per kind, fake-clock parity tests, and owner decision 3                                                               |
 | The backfill invents transition dates                                                  | Timestamps copied verbatim, and a check that fails on any new timestamp                                                             |
-| Shadow work slows the Pi                                                               | Off the reply path, with event-loop delay watched in Phase 4                                                                        |
+| The offline simulator reports a cutover mismatch                                       | The simulator is the promotion gate; do not use an in-production shadow read or soak (owner decision 12)                            |
 | A migration on a live database                                                         | The bot is stopped, a `.backup` comes first, one transaction, and any miss aborts                                                   |
 | A NULL `text_hash` hides a stale vector during projection                              | The legacy writers already guard their text. Maintenance fills hashes. Phase 6 always sets them.                                    |
 | Overlap with #278 retention changes, the extraction route fix and #442 (removing Qwen) | Phase 5 waits for #265 to close (owner decision 1). The item store reads tiers from config, so a new value needs no migration.      |
@@ -510,19 +503,20 @@ Each PR passes `npm test`, `npm run test:perf`, `npm run typecheck`, `npm run fo
 - **Payload Table:** `digest_json` is the only large column, and the recall read never needs it.
 - **Exact Parity Over Sampling:** both stores feed the same builder code with the same data, so a sampled tolerance would hide bugs. The offline replay is the sampled check #266 asks for.
 
-## Owner Decisions (2026-11-13)
+## Owner Decisions (2026-11-13 and 2026-11-14)
 
-| #   | Question                  | Decision                                                                                                                      |
-| --- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Start Gate                | Phases 1 and 2 may start after the legacy-only recall PR has run one release, with #278 open. Phase 5 waits for #265 to close |
-| 2   | IDs                       | New item IDs, with `legacy_table` and `legacy_id`                                                                             |
-| 3   | Ended Summaries And Media | Deleted in the same prune pass, as today                                                                                      |
-| 4   | Reclassify Undo Window    | Keep the 30-day purge                                                                                                         |
-| 5   | Missing Sources           | Keep the per-kind rule                                                                                                        |
-| 6   | Embedding Spaces          | One vector per item and fingerprint                                                                                           |
-| 7   | Flag                      | Accept the temporary `memory.store` key and `MEMORY_STORE` override from Phase 2 to Phase 7                                   |
-| 11  | Scope After The No-Go     | Run all seven phases                                                                                                          |
-| 10  | Drop Timing               | Drop the legacy tables one release after the writer cutover; restore from backup is the rollback                              |
+| #   | Question                  | Decision                                                                                                                                                                                               |
+| --- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | Start Gate                | Phases 1 and 2 may start after the legacy-only recall PR has run one release, with #278 open. Phase 5 waits for #265 to close                                                                          |
+| 2   | IDs                       | New item IDs, with `legacy_table` and `legacy_id`                                                                                                                                                      |
+| 3   | Ended Summaries And Media | Deleted in the same prune pass, as today                                                                                                                                                               |
+| 4   | Reclassify Undo Window    | Keep the 30-day purge                                                                                                                                                                                  |
+| 5   | Missing Sources           | Keep the per-kind rule                                                                                                                                                                                 |
+| 6   | Embedding Spaces          | One vector per item and fingerprint                                                                                                                                                                    |
+| 7   | Flag                      | Accept the temporary `memory.store` key and `MEMORY_STORE` override from Phase 2 to Phase 7                                                                                                            |
+| 11  | Scope After The No-Go     | Run all seven phases                                                                                                                                                                                   |
+| 10  | Drop Timing               | Drop the legacy tables one release after the writer cutover; restore from backup is the rollback                                                                                                       |
+| 12  | Phase 5 Gate              | No production soak and no in-production shadow read. The offline simulator on a parallel branch is the promotion gate. Keep projection triggers enabled under `item`; rollback by switching to `dual`. |
 
 ## Open Questions For The Owner
 
