@@ -392,6 +392,8 @@ The tiers stay in `src/agent/memory/predicates.ts`. If #278 changes a value, the
 | 6     | 5   | Writer cutover; triggers dropped               | `item`         | One release; the reverse export tested on a Pi copy                                                      | `npm run migrate:memory-items -- --to-legacy`, then revert |
 | 7     | 6   | Drop the legacy tables                         | Key removed    | A `.backup` taken; the explicit script reports zero misses                                               | Restore the backup (owner decision 10)                     |
 
+Owner decision 12 (2026-11-14) replaces every production soak in the Exit Check column, the 7-day and one-release waits, with the offline simulator gate: `npm run memsim` passes with zero drift, zero parity mismatches, no privacy leak and every restart recovered (see the [runbook](../RUNBOOK.md#offline-memory-simulator-gate-266)). The other exit checks stay.
+
 `memory.store` is a temporary key with the env override `MEMORY_STORE` (owner decision 7). It works the way `memory.recall` and `MEMORY_RECALL` did before the legacy-only recall PR removed them. It goes in `config.yml` with an inline comment and is removed in Phase 7.
 
 ### Phase 1: Prepare The Legacy Builders For A Second Store
@@ -444,7 +446,7 @@ The writers in `memoryClaims.ts`, `reclassify.ts`, `memoryEpisodeStore.ts`, `med
 
 ### Phase 7: Drop The Legacy Tables
 
-After one release on Phase 6, take a `.backup` and run `npm run migrate:memory-items -- --drop-legacy`. It drops `memory_claim`, `memory_evidence`, `memory_claim_fts`, `memory_episode`, `media_digest` and `media_occurrence`, then removes `memory.store`. Startup never drops anything.
+After Phase 6 passes the simulator gate (owner decision 12), take a `.backup` and run `npm run migrate:memory-items -- --drop-legacy`. It drops `memory_claim`, `memory_evidence`, `memory_claim_fts`, `memory_episode`, `media_digest` and `media_occurrence`, then removes `memory.store`. Startup never drops anything.
 
 ### Docs Per Phase
 
@@ -478,7 +480,7 @@ Each PR passes `npm test`, `npm run test:perf`, `npm run typecheck`, `npm run fo
 
 1. The four stores are read and written only through the item store, and no prompt-facing read can omit the scope.
 2. The four legacy blocks are still the only recall path, with the same budgets, headings and output. `recall_user` keeps its broad lookup, and `memory.store` is gone after Phase 7.
-3. Production shows zero `item_parity` mismatches and zero `item_integrity` drift for 7 days before Phase 5, and again before Phase 6 freezes the legacy tables.
+3. The offline simulator (`npm run memsim`) shows zero parity mismatches and zero integrity drift before Phase 5, and again before Phase 6 freezes the legacy tables. Owner decision 12 replaced the 7-day production soak.
 4. The `retrieval` and `context_build` rows on the day after Phase 5 match the week before it in claims per turn, tokens and duration, within normal variation.
 5. Telemetry stays value-free, and old audit and telemetry IDs still resolve through `legacy_id`.
 6. `docs/trd/memory.md`, `docs/trd/data.md`, `docs/RUNBOOK.md` and `docs/DECISIONS.md` describe the item model.
@@ -512,17 +514,18 @@ Each PR passes `npm test`, `npm run test:perf`, `npm run typecheck`, `npm run fo
 
 ## Owner Decisions (2026-11-13)
 
-| #   | Question                  | Decision                                                                                                                      |
-| --- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Start Gate                | Phases 1 and 2 may start after the legacy-only recall PR has run one release, with #278 open. Phase 5 waits for #265 to close |
-| 2   | IDs                       | New item IDs, with `legacy_table` and `legacy_id`                                                                             |
-| 3   | Ended Summaries And Media | Deleted in the same prune pass, as today                                                                                      |
-| 4   | Reclassify Undo Window    | Keep the 30-day purge                                                                                                         |
-| 5   | Missing Sources           | Keep the per-kind rule                                                                                                        |
-| 6   | Embedding Spaces          | One vector per item and fingerprint                                                                                           |
-| 7   | Flag                      | Accept the temporary `memory.store` key and `MEMORY_STORE` override from Phase 2 to Phase 7                                   |
-| 11  | Scope After The No-Go     | Run all seven phases                                                                                                          |
-| 10  | Drop Timing               | Drop the legacy tables one release after the writer cutover; restore from backup is the rollback                              |
+| #   | Question                  | Decision                                                                                                                                                                                                                    |
+| --- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Start Gate                | Phases 1 and 2 may start after the legacy-only recall PR has run one release, with #278 open. Phase 5 waits for #265 to close                                                                                               |
+| 2   | IDs                       | New item IDs, with `legacy_table` and `legacy_id`                                                                                                                                                                           |
+| 3   | Ended Summaries And Media | Deleted in the same prune pass, as today                                                                                                                                                                                    |
+| 4   | Reclassify Undo Window    | Keep the 30-day purge                                                                                                                                                                                                       |
+| 5   | Missing Sources           | Keep the per-kind rule                                                                                                                                                                                                      |
+| 6   | Embedding Spaces          | One vector per item and fingerprint                                                                                                                                                                                         |
+| 7   | Flag                      | Accept the temporary `memory.store` key and `MEMORY_STORE` override from Phase 2 to Phase 7                                                                                                                                 |
+| 11  | Scope After The No-Go     | Run all seven phases                                                                                                                                                                                                        |
+| 10  | Drop Timing               | Drop the legacy tables one release after the writer cutover; restore from backup is the rollback                                                                                                                            |
+| 12  | Phase Cutover Gate        | Each #266 phase cuts over as soon as the offline memory simulator (`npm run memsim`) passes, with no production soak (decided 2026-11-14). This replaces the soak waits in the Migration Plan, Acceptance 3 and decision 10 |
 
 ## Open Questions For The Owner
 

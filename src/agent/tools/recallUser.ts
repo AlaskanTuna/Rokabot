@@ -21,7 +21,7 @@ export interface RecallUserResult {
 }
 
 /** Capped so the model sees her sharpest notes rather than the whole archive; retrieveForSubject owns the ordering */
-const MAX_RECALLED_FACTS = 15
+export const MAX_RECALLED_FACTS = 15
 
 type SelectedFact = Readonly<{ id: number; key: string; value: string; period: ClaimPeriod }>
 

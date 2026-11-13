@@ -36,6 +36,8 @@
     "migrate:memory-v2": "tsx scripts/migrate-memory-v2.ts",
     "migrate:memory-items": "tsx scripts/migrate-memory-items.ts",
     "replay:memory-items": "tsx scripts/replay-memory-items.ts",
+    "memsim": "tsx tests/harness/memsim/cli.ts",
+    "memsim:generate": "tsx tests/harness/memsim/generate.ts",
     "export:vault": "tsx scripts/export-vault.ts",
     "reports": "tsx scripts/reports.ts",
     "character": "tsx scripts/character.ts",
