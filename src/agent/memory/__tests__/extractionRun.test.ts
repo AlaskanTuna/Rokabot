@@ -62,6 +62,7 @@ it('writes one text-free extraction_run row', () => {
 it('starts every op counter at zero, including past, reword, retracted and uncited', () => {
   expect(startRunTrace(job, 1).ops).toEqual({
     proposed: 0,
+    invalid: 0,
     applied: 0,
     duplicate: 0,
     staged: 0,
@@ -72,6 +73,15 @@ it('starts every op counter at zero, including past, reword, retracted and uncit
     retracted: 0,
     uncited: 0
   })
+})
+
+it('records invalid model operations in the ops detail', () => {
+  const trace = startRunTrace(job, 1)
+  Object.assign(trace.ops, { invalid: 2 })
+  finishRunTrace(trace)
+
+  const detail = JSON.parse(recordMemoryEvent.mock.calls[0][0].detail)
+  expect(detail.ops.invalid).toBe(2)
 })
 
 it('keeps the error class and HTTP status but never the error message', () => {

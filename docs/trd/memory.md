@@ -216,7 +216,8 @@ counts, message IDs, timings and model names, never text, display names or error
 | `precheckPattern`                 | Sensitive precheck name (`phone`, `email`, `credential`, `name`, `age`, `address`, `workplace`, `health` or `social`); NULL otherwise    |
 | `errorClass`, `errorStatus`       | `transient`, `permanent` or `unjudged`, and the HTTP status                                                                              |
 | `admission`                       | `{ probability, threshold }`                                                                                                             |
-| `ops`                             | `{ proposed, applied, duplicate, staged, dropped, changed, past, reword, retracted, uncited }`                                           |
+| `ops`                             | `{ proposed, invalid, applied, duplicate, staged, dropped, changed, past, reword, retracted, uncited }`                                  |
+| `ops.invalid`                     | Extraction operations rejected individually before verification                                                                          |
 | `summary`                         | `{ kept, chars, boilerplate, dropReason, judged }`                                                                                       |
 | `stageMs`                         | `{ admission, extraction, verification, persistence }`                                                                                   |
 | `extractionProvider`              | Provider that answered extraction; omitted when no extraction call ran                                                                   |

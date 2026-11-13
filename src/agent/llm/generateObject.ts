@@ -14,6 +14,7 @@ export type BackgroundWorkload = Exclude<Workload, 'reply' | 'embedding' | 'watc
 
 type GenerateObjectInput<T> = {
   schema: z.ZodType<T>
+  requestSchema?: z.ZodType
   system?: string
   prompt: string
   workload: BackgroundWorkload
@@ -77,7 +78,7 @@ function requestFor<T>(route: ResolvedModel, input: GenerateObjectInput<T>, lega
   const schema =
     legacy && input.legacyResponseSchema !== undefined
       ? { responseSchema: input.legacyResponseSchema }
-      : { responseJsonSchema: requestSchema(input.schema, profile.structuredOutput) }
+      : { responseJsonSchema: requestSchema(input.requestSchema ?? input.schema, profile.structuredOutput) }
   return {
     model: route.model,
     contents: [{ role: 'user', parts: [{ text: input.prompt }] }],

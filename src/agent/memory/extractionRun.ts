@@ -35,6 +35,7 @@ export type RunTrace = {
   admission?: { probability: number; threshold: number }
   ops: {
     proposed: number
+    invalid: number
     applied: number
     duplicate: number
     staged: number
@@ -72,6 +73,7 @@ export function startRunTrace(job: ExtractionQueueJob, attempt: number): RunTrac
     precheckPattern: null,
     ops: {
       proposed: 0,
+      invalid: 0,
       applied: 0,
       duplicate: 0,
       staged: 0,

@@ -18,6 +18,7 @@ vi.mock('../createModel.js', () => ({ createLlm: mocks.createLlm }))
 vi.mock('../../../utils/logger.js', () => ({ logger: { warn: mocks.warn } }))
 vi.mock('../../../config.js', () => ({ config: mocks.config }))
 
+import { ExtractionOutputSchema, ExtractionTransportSchema } from '../../memory/extractionSchema.js'
 import { StructuredOutputError, generateObject, resetGenerateObjectForTest } from '../generateObject.js'
 import { COMPATIBLE_DEFAULTS, type ModelProfile, compatibleProfile, profileFor } from '../profiles.js'
 import { ProviderError } from '../providerError.js'
@@ -239,6 +240,30 @@ describe('generateObject on a configured llm block', () => {
     expect(mocks.createLlm.mock.calls[0][0].maxOutputTokens).toBe(1024)
   })
 
+  it('sends a provider schema separately from the schema used to validate replies', async () => {
+    mocks.config.llm = { main: route('haiku', haiku), fallback: null }
+    const providerSchema = z.object({ answer: z.string(), note: z.string() }).strict()
+    const validationSchema = z.object({ answer: z.string() })
+    const main = fakeLlm(reply({ answer: 'tea', note: 'extra provider field' }))
+    useLlms({ haiku: main })
+
+    await expect(
+      generateObject({
+        schema: validationSchema,
+        requestSchema: providerSchema,
+        prompt: 'Extract.',
+        workload: 'extraction'
+      } as Parameters<typeof generateObject>[0])
+    ).resolves.toMatchObject({ value: { answer: 'tea' } })
+
+    expect(main.requests[0].config?.responseJsonSchema).toEqual({
+      type: 'object',
+      properties: { answer: { type: 'string' }, note: { type: 'string' } },
+      required: ['answer', 'note'],
+      additionalProperties: false
+    })
+  })
+
   it('ignores a legacy response schema and sends the generated JSON schema', async () => {
     mocks.config.llm = { main: route('flash', gemini), fallback: null }
     const main = fakeLlm(reply({ answer: 'tea' }))
@@ -308,6 +333,45 @@ describe('generateObject on a configured llm block', () => {
         model: 'gemini-3.5-flash-lite'
       }
     )
+    expect(main.requests).toHaveLength(1)
+    expect(fallback.requests).toHaveLength(1)
+    expect(mocks.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ workload: 'extraction', provider: 'anthropic', reason: 'invalid_object' }),
+      expect.any(String)
+    )
+  })
+
+  it('tries the fallback when every extraction op is invalid', async () => {
+    mocks.config.llm = { main: route('haiku', haiku), fallback: route('qwen', qwen) }
+    const main = fakeLlm(
+      reply({
+        ops: [
+          {
+            op: 'add',
+            subject: { kind: 'user', userId: 'u-1' },
+            predicate: 'place',
+            value: 'The lobby',
+            tense: 'current'
+          }
+        ],
+        summary: 'The members talked about the server.'
+      })
+    )
+    const fallback = fakeLlm(reply({ ops: [{ op: 'noop' }], summary: 'The members talked about the server.' }))
+    useLlms({ haiku: main, qwen: fallback })
+
+    await expect(
+      generateObject({
+        schema: ExtractionTransportSchema,
+        requestSchema: ExtractionOutputSchema,
+        prompt: 'Extract.',
+        workload: 'extraction'
+      })
+    ).resolves.toMatchObject({
+      value: { ops: [{ op: 'noop' }], summary: 'The members talked about the server.', invalidOps: 0 },
+      provider: 'modelscope'
+    })
+
     expect(main.requests).toHaveLength(1)
     expect(fallback.requests).toHaveLength(1)
     expect(mocks.warn).toHaveBeenCalledWith(
