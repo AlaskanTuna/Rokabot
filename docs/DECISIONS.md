@@ -51,7 +51,7 @@ The lasting choices behind Rokabot, with why they were made. Check here before r
 | 2026-11-14 | Each #266 typed-memory phase cuts over as soon as the isolated offline simulator (`npm run memsim`) passes, with no production soak                                                     | 30-day multi-guild record/replay simulation checks drift, writer trigger coverage, Phase 4 block parity, privacy isolation and restart recovery offline  |
 | 2026-11-14 | The Phase 5 read cutover uses the offline simulator, with no production soak or in-production shadow read; projection triggers stay on under `item` until writer cutover                | Owner decision 12 (#266); config-only rollback to `dual` applies through Phase 5                                                                         |
 | 2026-11-14 | Phase 6 item writers drop projection triggers and freeze legacy source tables; rollback stops the bot, runs the transactional `--to-legacy` export, sets `dual`, and starts             | Owner decision 13 (#266); the offline simulator and private-copy round trip gate promotion                                                               |
-
+| 2026-11-14 | Phase 7 drops the six legacy tables with the explicit `--drop-legacy` script after a `.backup`; `memory.store` stays until a later cleanup PR and only `item` starts on a dropped schema | Owner decision 10 (#266); restore the backup is the rollback, and startup never drops anything |
 ## Models and Search
 
 | Date       | Decision                                                                                                                               | Why                                                                           |
