@@ -236,29 +236,16 @@ Passive memory needs a judge. With `TYPESAFE_API_KEY`, Jev judges. Without it, t
 
 ### Recall
 
-| Key                                | Default                                                           | Env Override    | What It Does                                                                                                                                                                          |
-| ---------------------------------- | ----------------------------------------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `memory.recall`                    | `shadow`                                                          | `MEMORY_RECALL` | `legacy` uses the four memory blocks. `shadow` uses them and logs unified recall. `unified` uses one ranked block.                                                                    |
-| `memory.recallTokenBudget`         | `600`                                                             | —               | Approximate token budget for the unified block. Bounds `200..2000`.                                                                                                                   |
-| `memory.recallCoreFacts`           | `3`                                                               | —               | Speaker facts always recalled: pinned, then nickname, then pronouns. Bounds `0..5`.                                                                                                   |
-| `memory.recallGateDeadlineMs`      | `1200`                                                            | —               | Jev recall gate: longest time from turn start until the gate must settle; a late gate counts as a Jev outage (core facts only). Bounds `100..1200`.                                   |
-| `memory.recallGateEmbeddingWaitMs` | `1200`                                                            | —               | Jev recall gate: longest wait for the turn's query embedding before the gate falls back to keyword-matched facts. Bounds `0..recallGateDeadlineMs`.                                   |
-| `memory.recallGateContextTokens`   | `1000`                                                            | —               | Jev recall gate: estimated token cap for the shared turn state (message, three recent lines, people); over it the gate abstains. Bounds `128..4000`.                                  |
-| `memory.recallGateInputTokens`     | `8000`                                                            | —               | Jev recall gate: estimated token cap for state plus every candidate question in one request. Bounds `1000..16000`.                                                                    |
-| `memory.recallGateShortlist`       | `{ fact: 8, server_fact: 4, conversation: 8, media: 4 }`          | —               | Jev recall gate: candidates offered per kind before Jev judges them; unused slots go to the next-best candidates. Bounds `0..64` per kind, `1..64` total.                             |
-| `memory.recallGateMinNoul`         | `{ fact: 0.9, server_fact: null, conversation: 0.9, media: 0.9 }` | —               | Jev recall gate: minimum Jev probability per kind (inclusive); null keeps a kind out of the prompt while shadow keeps judging it. Provisional until calibrated (#262). Bounds `0..1`. |
-| `memory.factMinSimilarity`         | `0.65`                                                            | —               | Smallest cosine similarity for a member fact in unified recall. Bounds `0..1`.                                                                                                        |
-| `memory.serverFactMinSimilarity`   | `0.65`                                                            | —               | Smallest cosine similarity for a server fact in unified recall. Bounds `0..1`.                                                                                                        |
-| `memory.episodeRecallK`            | `3`                                                               | —               | Most episode summaries recalled in one guild turn. Bounds `1..10`.                                                                                                                    |
-| `memory.episodeTokenBudget`        | `200`                                                             | —               | Approximate token budget for the episode block. Bounds `>= 1`.                                                                                                                        |
-| `memory.episodeMinSimilarity`      | `0.7`                                                             | —               | Smallest cosine similarity for episode recall. Bounds `0..1`.                                                                                                                         |
-| `memory.mediaRecallK`              | `2`                                                               | —               | Most watched-media digests recalled in one guild turn. Bounds `0..5`.                                                                                                                 |
-| `memory.mediaTokenBudget`          | `400`                                                             | —               | Approximate token budget for the watched-media block. Bounds `100..1500`.                                                                                                             |
-| `memory.mediaMinSimilarity`        | `0.7`                                                             | —               | Smallest cosine similarity for watched-media recall. Bounds `0..1`.                                                                                                                   |
+| Key                           | Default | Env Override | What It Does                                                              |
+| ----------------------------- | ------- | ------------ | ------------------------------------------------------------------------- |
+| `memory.episodeRecallK`       | `3`     | —            | Most episode summaries recalled in one guild turn. Bounds `1..10`.        |
+| `memory.episodeTokenBudget`   | `200`   | —            | Approximate token budget for the episode block. Bounds `>= 1`.            |
+| `memory.episodeMinSimilarity` | `0.7`   | —            | Smallest cosine similarity for episode recall. Bounds `0..1`.             |
+| `memory.mediaRecallK`         | `2`     | —            | Most watched-media digests recalled in one guild turn. Bounds `0..5`.     |
+| `memory.mediaTokenBudget`     | `400`   | —            | Approximate token budget for the watched-media block. Bounds `100..1500`. |
+| `memory.mediaMinSimilarity`   | `0.7`   | —            | Smallest cosine similarity for watched-media recall. Bounds `0..1`.       |
 
-While `memory.recall` is `shadow`, the `recallGate*` keys only shape what the gate measures; the prompt does not change.
-
-The four `*MinSimilarity` floors are the `gemini-embedding-2` calibration. `embeddings.minSimilarity` replaces them for another embedding fingerprint.
+The two `*MinSimilarity` floors are the `gemini-embedding-2` calibration. `embeddings.minSimilarity` replaces them for another embedding fingerprint.
 
 Two keys are deprecated. `memory.embeddingModel` is read only for the Gemini provider when `embeddings.model` is missing. `memory.embeddingTimeoutMs` is read only when `embeddings.timeoutMs` is missing.
 

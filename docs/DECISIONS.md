@@ -43,6 +43,7 @@ The lasting choices behind Rokabot, with why they were made. Check here before r
 | 2026-10-14 | A Jev gate decides recall relevance: similarity only proposes candidates, core facts bypass the gate, and a Jev outage leaves core-only recall                  | Similarity floors reached 9% precision on blind labels (#262)                                                                                      |
 | 2026-11-04 | The recall gate waits up to its full deadline for the query embedding                                                                                           | Pi embeddings take 465-823 ms                                                                                                                      |
 | 2026-11-05 | Open episode lines are saved at capture, evidence counts each job once per claim, and a failed summary is dropped                                               | A crash lost open text, retries double-counted evidence, and 41 of 101 summaries were boilerplate; see `docs/specs/2026-11-05-memory-2c-design.md` |
+| 2026-11-13 | Recall stays on the four legacy blocks; the unified recall and Jev gate are removed (#262)                                                                      | 2026-11-13 calibration: 0 of 4 kinds met 80% precision (18 of 2,998 pairs relevant) and the gate missed its 1200 ms deadline on 27% of turns       |
 
 ## Models and Search
 

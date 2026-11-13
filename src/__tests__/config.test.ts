@@ -383,11 +383,6 @@ describe('config module', () => {
     expect(config.memory.embeddingModel).toBe('gemini-embedding-2')
     expect(config.memory.embeddingTimeoutMs).toBe(1500)
     expect(config.memory.privacy).toBe('relaxed')
-    expect(config.memory.recall).toBe('shadow')
-    expect(config.memory.recallTokenBudget).toBe(600)
-    expect(config.memory.recallCoreFacts).toBe(3)
-    expect(config.memory.factMinSimilarity).toBe(0.65)
-    expect(config.memory.serverFactMinSimilarity).toBe(0.65)
     expect(NUMERIC_BOUNDS.map(({ path }) => path)).toEqual(
       expect.arrayContaining([
         'memory.episodeRecallK',
@@ -413,36 +408,6 @@ describe('config module', () => {
     expect(NUMERIC_BOUNDS.find(({ path }) => path === 'memory.mediaTokenBudget')).toMatchObject({ min: 100, max: 1500 })
     expect(NUMERIC_BOUNDS.find(({ path }) => path === 'memory.mediaMinSimilarity')).toMatchObject({ min: 0, max: 1 })
     expect(NUMERIC_BOUNDS.find(({ path }) => path === 'memory.mediaRetentionDays')).toMatchObject({ min: 1, max: 365 })
-  })
-
-  it('loads the bounded Jev recall gate settings', async () => {
-    setRequiredEnvVars()
-    clearTunableEnvVars()
-
-    const { config, NUMERIC_BOUNDS } = await import('../config.js')
-
-    expect(config.memory.recallGateDeadlineMs).toBe(1200)
-    expect(config.memory.recallGateEmbeddingWaitMs).toBe(1200)
-    expect(config.memory.recallGateContextTokens).toBe(1000)
-    expect(config.memory.recallGateInputTokens).toBe(8000)
-    expect(config.memory.recallGateShortlist).toEqual({ fact: 8, server_fact: 4, conversation: 8, media: 4 })
-    expect(config.memory.recallGateMinNoul).toEqual({ fact: 0.9, server_fact: null, conversation: 0.9, media: 0.9 })
-    expect(NUMERIC_BOUNDS.find(({ path }) => path === 'memory.recallGateDeadlineMs')).toMatchObject({
-      min: 100,
-      max: 1200
-    })
-    expect(NUMERIC_BOUNDS.some(({ path }) => path === 'memory.recallGateMinNoul.server_fact')).toBe(false)
-  })
-
-  it('rejects a recall gate cutoff above 1 and a context cap at or above the input cap', async () => {
-    setRequiredEnvVars()
-    clearTunableEnvVars()
-    withYamlOverride({ memory: { recallGateMinNoul: { fact: 1.5 } } })
-    await expect(import('../config.js')).rejects.toThrow('memory.recallGateMinNoul.fact')
-
-    vi.resetModules()
-    withYamlOverride({ memory: { recallGateContextTokens: 2000, recallGateInputTokens: 2000 } })
-    await expect(import('../config.js')).rejects.toThrow('memory.recallGateContextTokens')
   })
 
   it('loads bounded extraction sample settings and lets env vars override them', async () => {
@@ -1068,22 +1033,6 @@ describe('config module', () => {
       { path: 'memory.mediaMinSimilarity', min: 0, max: 1 },
       { path: 'memory.mediaRetentionDays', min: 1, max: 365 },
       { path: 'memory.embeddingTimeoutMs', min: 1 },
-      { path: 'memory.recallTokenBudget', min: 200, max: 2000 },
-      { path: 'memory.recallCoreFacts', min: 0, max: 5 },
-      { path: 'memory.recallGateDeadlineMs', min: 100, max: 1200 },
-      { path: 'memory.recallGateEmbeddingWaitMs', min: 0, max: 1200 },
-      { path: 'memory.recallGateContextTokens', min: 128, max: 4000 },
-      { path: 'memory.recallGateInputTokens', min: 1000, max: 16000 },
-      { path: 'memory.recallGateShortlist.fact', min: 0, max: 64 },
-      { path: 'memory.recallGateShortlist.server_fact', min: 0, max: 64 },
-      { path: 'memory.recallGateShortlist.conversation', min: 0, max: 64 },
-      { path: 'memory.recallGateShortlist.media', min: 0, max: 64 },
-      { path: 'memory.recallGateShortlist (total)', min: 1, max: 64 },
-      { path: 'memory.recallGateMinNoul.fact', min: 0, max: 1 },
-      { path: 'memory.recallGateMinNoul.conversation', min: 0, max: 1 },
-      { path: 'memory.recallGateMinNoul.media', min: 0, max: 1 },
-      { path: 'memory.factMinSimilarity', min: 0, max: 1 },
-      { path: 'memory.serverFactMinSimilarity', min: 0, max: 1 },
       { path: 'memory.extractionSampleRate', min: 0, max: 1 },
       { path: 'memory.extractionSampleDays', min: 1, max: 90 },
       { path: 'memory.reclassifyMaxPerRun', min: 0, max: 100 },
@@ -1133,17 +1082,15 @@ describe('config module', () => {
     )
   })
 
-  it('reads memory privacy and recall mode from env', async () => {
+  it('reads memory privacy from env', async () => {
     setRequiredEnvVars()
     clearTunableEnvVars()
     vi.stubEnv('MEMORY_PRIVACY', 'balanced')
-    vi.stubEnv('MEMORY_RECALL', 'unified')
     vi.stubEnv('MEMORY_FAILED_EXTRACTION_RETENTION_DAYS', '21')
 
     const { config } = await import('../config.js')
 
     expect(config.memory.privacy).toBe('balanced')
-    expect(config.memory.recall).toBe('unified')
     expect(config.memory.failedExtractionRetentionDays).toBe(21)
   })
 
@@ -1157,14 +1104,24 @@ describe('config module', () => {
     )
   })
 
-  it('throws when the config recall mode is invalid and names the config key', async () => {
+  it('ignores removed recall keys left in a deployed config.yml', async () => {
     setRequiredEnvVars()
     clearTunableEnvVars()
-    withYamlOverride({ memory: { recall: 'fancy' } })
+    withYamlOverride({
+      memory: {
+        recall: 'shadow',
+        recallTokenBudget: 600,
+        recallCoreFacts: 3,
+        recallGateDeadlineMs: 1200,
+        factMinSimilarity: 0.65,
+        serverFactMinSimilarity: 0.65
+      }
+    })
 
-    await expect(() => import('../config.js')).rejects.toThrow(
-      'Config value memory.recall must be legacy, shadow or unified, got: fancy'
-    )
+    const { config } = await import('../config.js')
+
+    expect(config.memory.privacy).toBe('relaxed')
+    expect('recall' in config.memory).toBe(false)
   })
 
   it('throws when the env prefetch mode is invalid and names the env key', async () => {

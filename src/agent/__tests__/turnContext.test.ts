@@ -35,14 +35,7 @@ const mocks = vi.hoisted(() => ({
   getLocalHour: vi.fn(() => 14),
   getLocalDate: vi.fn(() => '2026-09-26'),
   estimateTokens: vi.fn(() => 0),
-  detectTone: vi.fn(() => 'playful'),
-  recallForTurn: vi.fn((_input: { queryEmbedding: readonly number[] | null }) => ({
-    items: [],
-    block: '',
-    trace: { nCandidates: 0, gated: 0, fallback: false, tokensEst: 0 }
-  })),
-  touchRecalled: vi.fn(),
-  runRecallGate: vi.fn()
+  detectTone: vi.fn(() => 'playful')
 }))
 
 vi.mock('../jev/judgments.js', () => ({ judgeTurn: mocks.judgeTurn }))
@@ -66,15 +59,6 @@ vi.mock('../../agent/memory/retriever.js', async (importOriginal) => ({
 vi.mock('../memory/episodeEmbeddings.js', () => ({ embedEpisodeText: mocks.embedEpisodeText }))
 vi.mock('../memory/episodeRetriever.js', () => ({ buildEpisodeRecallBlock: mocks.buildEpisodeRecallBlock }))
 vi.mock('../memory/mediaRecall.js', () => ({ buildMediaRecallBlock: mocks.buildMediaRecallBlock }))
-vi.mock('../memory/recall.js', async (importOriginal) => ({
-  ...(await importOriginal<object>()),
-  recallForTurn: mocks.recallForTurn
-}))
-vi.mock('../memory/recallGateRun.js', () => ({ runRecallGate: mocks.runRecallGate }))
-vi.mock('../memory/memoryClaims.js', async (importOriginal) => ({
-  ...(await importOriginal<object>()),
-  touchRecalled: mocks.touchRecalled
-}))
 vi.mock('../memory/passiveBuffer.js', () => ({ getMessages: mocks.getMessages }))
 vi.mock('../promptAssembler.js', () => ({ assembleSystemPrompt: mocks.assembleSystemPrompt }))
 vi.mock('../promptSafety.js', async (importOriginal) => ({
@@ -94,7 +78,6 @@ vi.mock('../searchPrefetch.js', () => ({
 
 import { geminiVector } from '../../../tests/harness/vectors.js'
 import { config } from '../../config.js'
-import { logger } from '../../utils/logger.js'
 import type { TurnJudgment } from '../jev/judgments.js'
 import { resolveMemoryScope } from '../memory/memoryScope.js'
 import { withSearchCitations } from '../searchCitations.js'
@@ -807,59 +790,12 @@ describe('turn entry work', () => {
   })
 })
 
-// Drain deferred shadow work so its telemetry cannot leak into the next test.
-const flushShadowRecall = () => new Promise((resolve) => setImmediate(resolve))
-afterEach(flushShadowRecall)
-
-describe('memory recall modes', () => {
-  const memoryConfig = config.memory as { privacy: string; recall: string }
+describe('legacy memory recall', () => {
+  const memoryConfig = config.memory as { privacy: string }
   const vector = Array.from({ length: 768 }, () => 0.25)
   const episodeBlock = '## Things you remember happening here\nThe group planned a picnic.'
   const mediaBlock = '## Media You Watched Here Before\n["the picnic clip"]'
   const factsEnvelope = '- Alice: hobby: chess'
-
-  function emptyRecall() {
-    return { items: [], block: '', trace: { nCandidates: 0, gated: 0, fallback: false, tokensEst: 0 } }
-  }
-
-  function unifiedRecall() {
-    return {
-      items: [
-        {
-          kind: 'fact',
-          id: 7,
-          score: 0.8123,
-          core: false,
-          subjectUserId: 'user-1',
-          label: 'hobby',
-          text: 'chess',
-          date: null
-        },
-        {
-          kind: 'conversation',
-          id: 3,
-          score: 0.5,
-          core: false,
-          subjectUserId: null,
-          label: '',
-          text: 'picnic',
-          date: '2026-09-26'
-        },
-        {
-          kind: 'server_fact',
-          id: 9,
-          score: 0.4,
-          core: false,
-          subjectUserId: null,
-          label: 'plan',
-          text: 'Game night',
-          date: null
-        }
-      ],
-      block: '## What You Remember\n### People\n- Alice: hobby: chess',
-      trace: { nCandidates: 9, gated: 2, fallback: false, tokensEst: 33 }
-    } as never
-  }
 
   function turnWith(overrides: Partial<Parameters<typeof createTurnContext>[0]> = {}) {
     return createTurnContext({
@@ -878,7 +814,6 @@ describe('memory recall modes', () => {
     jevConfig.referents = 'off'
     jevConfig.prefetch = 'off'
     memoryConfig.privacy = 'relaxed'
-    memoryConfig.recall = 'legacy'
     mocks.ensureSession.mockResolvedValue({ events: [] })
     mocks.loadHistory.mockReturnValue([])
     mocks.embedEpisodeText.mockResolvedValue(geminiVector(vector))
@@ -887,19 +822,11 @@ describe('memory recall modes', () => {
     mocks.buildFactsEnvelope.mockReturnValue('')
     mocks.retrieveForTurn.mockReturnValue({ entries: [], claims: [] } as never)
     mocks.resolveReferences.mockReturnValue({ resolved: [], ambiguous: [] } as never)
-    mocks.recallForTurn.mockImplementation(() => emptyRecall() as never)
-    mocks.runRecallGate.mockImplementation(async () => ({
-      items: [],
-      detail: { v: 1, status: 'skipped' },
-      startedAt: performance.now(),
-      settledAt: 0
-    }))
     mocks.runPrefetchForJudgment.mockResolvedValue({ decision: { fire: false, reason: 'no_judgment' }, outcome: null })
   })
 
   afterEach(() => {
     memoryConfig.privacy = 'relaxed'
-    memoryConfig.recall = 'legacy'
   })
 
   it('resolves references within the turn channel so private nicknames stay put', async () => {
@@ -910,551 +837,29 @@ describe('memory recall modes', () => {
     )
   })
 
-  it('builds the legacy prompt with the four legacy blocks and no unified recall', async () => {
+  it('builds the legacy prompt with the four legacy blocks', async () => {
     mocks.retrieveForTurn.mockReturnValue({ entries: [{ person: 'Alice', facts: [] }], claims: [{}] } as never)
     mocks.buildFactsEnvelope.mockReturnValue(factsEnvelope)
     mocks.buildEpisodeRecallBlock.mockReturnValue(episodeBlock)
+    mocks.buildMediaRecallBlock.mockReturnValue(mediaBlock)
 
     const context = await turnWith()
 
     expect(context.systemPrompt).toContain(`## What You Remember About People In This Channel\n${factsEnvelope}`)
     expect(context.systemPrompt).toContain(episodeBlock)
+    expect(context.systemPrompt).toContain(mediaBlock)
     expect(mocks.buildEpisodeRecallBlock).toHaveBeenCalledWith({
       guildId: 'guild-1',
       queryEmbedding: vector,
       scope: { guildId: 'guild-1', channelId: 'channel-1' }
     })
-    expect(mocks.recallForTurn).not.toHaveBeenCalled()
     expect(recalledRows('recall')).toHaveLength(0)
     expect(recalledRows('recall_shadow')).toHaveLength(0)
+    expect(recalledRows('context_build')).toHaveLength(1)
   })
 
-  it('builds a shadow prompt identical to legacy and leaves its selection unused', async () => {
-    mocks.retrieveForTurn.mockReturnValue({ entries: [{ person: 'Alice', facts: [] }], claims: [{}] } as never)
-    mocks.buildFactsEnvelope.mockReturnValue(factsEnvelope)
-    mocks.buildEpisodeRecallBlock.mockReturnValue(episodeBlock)
-    mocks.buildMediaRecallBlock.mockReturnValue(mediaBlock)
-    mocks.recallForTurn.mockImplementation(() => unifiedRecall())
-
-    memoryConfig.recall = 'legacy'
-    const legacy = await turnWith()
-    memoryConfig.recall = 'shadow'
-    const shadow = await turnWith()
-    await flushShadowRecall()
-
-    // The reply shape is drawn fresh for every reply, so it is the one part two builds may not share.
-    const withoutShape = (prompt: string) => prompt.replace(/\n\n## Reply Shape\n[\s\S]*$/, '')
-    expect(legacy.systemPrompt).toContain(episodeBlock)
-    expect(withoutShape(shadow.systemPrompt)).toBe(withoutShape(legacy.systemPrompt))
-    expect(mocks.recallForTurn).toHaveBeenCalledTimes(1)
-    expect(mocks.recallForTurn).toHaveBeenCalledWith(
-      expect.objectContaining({
-        scope: { guildId: 'guild-1', channelId: 'channel-1' },
-        speakerId: 'user-1',
-        message: 'hello',
-        queryEmbedding: vector
-      })
-    )
-    expect(mocks.touchRecalled).not.toHaveBeenCalled()
-  })
-
-  it('records one shadow event with ids, scores and counts but no memory text', async () => {
-    memoryConfig.recall = 'shadow'
-    mocks.recallForTurn.mockImplementation(() => unifiedRecall())
-
-    await turnWith()
-    await vi.waitFor(() => expect(recalledRows('recall_shadow')).toHaveLength(1))
-
-    const rows = recalledRows('recall_shadow')
-    expect(rows[0]).toMatchObject({
-      guildId: 'guild-1',
-      channelId: 'channel-1',
-      subjectUserId: 'user-1',
-      nCandidates: 9,
-      nSelected: 3,
-      tokensEst: 33,
-      durationMs: expect.any(Number)
-    })
-    expect(JSON.parse(rows[0].detail)).toEqual({
-      mode: 'shadow',
-      privacy: 'relaxed',
-      fallback: false,
-      gated: 2,
-      selected: [
-        ['fact', 7, 0.812],
-        ['conversation', 3, 0.5],
-        ['server_fact', 9, 0.4]
-      ],
-      gate: {
-        v: 1,
-        status: 'skipped',
-        startMs: expect.any(Number),
-        toneReadyMs: null,
-        embeddingReadyMs: expect.any(Number),
-        contextReadyMs: expect.any(Number),
-        mediaReadyMs: 0,
-        deadlineMs: config.memory.recallGateDeadlineMs,
-        projectedAddedMs: 0
-      }
-    })
-    expect(rows[0].detail).not.toContain('chess')
-    expect(recalledRows('recall')).toHaveLength(0)
-  })
-
-  it('runs the Jev gate in shadow without changing the prompt, and logs it in the same shadow row', async () => {
-    mocks.recallForTurn.mockImplementation(() => unifiedRecall())
-    mocks.runRecallGate.mockResolvedValue({
-      items: [],
-      detail: {
-        v: 1,
-        status: 'ok',
-        latencyMs: 380,
-        shortlist: [['fact', 7, 0.95]],
-        selected: [['fact', 7]],
-        setupMs: 4,
-        deadlineMissed: true
-      },
-      startedAt: performance.now(),
-      settledAt: performance.now() + 10_000
-    })
-
-    // The reply shape is drawn at random on each turn, and only the gate's effect on the prompt is under test.
-    const random = vi.spyOn(Math, 'random').mockReturnValue(0.5)
-    memoryConfig.recall = 'legacy'
-    const legacy = await turnWith()
-    memoryConfig.recall = 'shadow'
-    const shadow = await turnWith()
-    random.mockRestore()
-    await vi.waitFor(() => expect(recalledRows('recall_shadow')).toHaveLength(1))
-
-    expect(shadow.systemPrompt).toBe(legacy.systemPrompt)
-    const detail = JSON.parse(recalledRows('recall_shadow')[0].detail)
-    expect(detail.selected).toEqual([
-      ['fact', 7, 0.812],
-      ['conversation', 3, 0.5],
-      ['server_fact', 9, 0.4]
-    ])
-    expect(detail.gate).toMatchObject({
-      status: 'ok',
-      shortlist: [['fact', 7, 0.95]],
-      setupMs: 4,
-      deadlineMissed: true
-    })
-    expect(detail.gate.projectedAddedMs).toBe(
-      Math.max(0, detail.gate.deadlineMs - Math.max(detail.gate.contextReadyMs, detail.gate.mediaReadyMs))
-    )
-    expect(detail.gate.latencyMs).toBe(380)
-    expect(detail.gate).not.toHaveProperty('settledAtMs')
-    expect(mocks.runRecallGate.mock.calls[0][0]).toMatchObject({
-      mode: 'shadow',
-      channelId: 'channel-1',
-      guildId: 'guild-1'
-    })
-  })
-
-  it('still writes the shadow row when the gate throws, and logs the failure', async () => {
-    mocks.recallForTurn.mockImplementation(() => unifiedRecall())
-    const failure = new Error('boom')
-    mocks.runRecallGate.mockRejectedValue(failure)
-    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined)
-    memoryConfig.recall = 'shadow'
-    await turnWith()
-    await vi.waitFor(() => expect(recalledRows('recall_shadow')).toHaveLength(1))
-    expect(JSON.parse(recalledRows('recall_shadow')[0].detail).gate).toEqual({ v: 1, status: 'gate_error' })
-    expect(warn).toHaveBeenCalledWith({ channelId: 'channel-1', error: failure }, 'Jev recall gate failed')
-    warn.mockRestore()
-  })
-
-  it('does not run the gate in legacy mode', async () => {
-    memoryConfig.recall = 'legacy'
-    await turnWith()
-    expect(mocks.runRecallGate).not.toHaveBeenCalled()
-  })
-
-  it('yields gate setup until a context with no blocking work returns', async () => {
-    memoryConfig.recall = 'shadow'
-
-    await turnWith()
-    expect(mocks.runRecallGate).not.toHaveBeenCalled()
-
-    await vi.waitFor(() => expect(mocks.runRecallGate).toHaveBeenCalledTimes(1))
-  })
-
-  it('gives the gate a deadline counted from the start of the turn', async () => {
-    vi.useFakeTimers()
-    try {
-      memoryConfig.recall = 'shadow'
-      mocks.ensureSession.mockImplementation(
-        () => new Promise((resolve) => setTimeout(() => resolve({ events: [] }), 300))
-      )
-      const turnStartedAt = performance.now()
-
-      const pending = turnWith()
-      await vi.advanceTimersByTimeAsync(300)
-      await pending
-      await vi.advanceTimersByTimeAsync(1)
-
-      expect(mocks.runRecallGate).toHaveBeenCalledTimes(1)
-      expect(mocks.runRecallGate.mock.calls[0][0].deadlineAt).toBe(turnStartedAt + config.memory.recallGateDeadlineMs)
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('lets the shadow gate collect Jev for the usual memory timeout instead of the reply deadline', async () => {
-    vi.useFakeTimers()
-    try {
-      memoryConfig.recall = 'shadow'
-      let calledAt = -1
-      mocks.runRecallGate.mockImplementation(async () => {
-        calledAt = performance.now()
-        return { items: [], detail: { v: 1, status: 'ok' }, startedAt: calledAt, settledAt: calledAt }
-      })
-
-      await turnWith()
-      await vi.advanceTimersByTimeAsync(1)
-
-      expect(calledAt).toBeGreaterThanOrEqual(0)
-      expect(mocks.runRecallGate.mock.calls[0][0].collectUntil).toBe(calledAt + config.jev.memoryTimeoutMs)
-      expect(config.jev.memoryTimeoutMs).toBeGreaterThan(config.memory.recallGateDeadlineMs)
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  describe('shadow gate timing offsets', () => {
-    async function shadowTurn(gateTakesMs: number, promptWaitsMs: number) {
-      vi.useFakeTimers()
-      memoryConfig.recall = 'shadow'
-      mocks.ensureSession.mockImplementation(
-        () => new Promise((resolve) => setTimeout(() => resolve({ events: [] }), 300))
-      )
-      if (promptWaitsMs > 0) {
-        jevConfig.prefetch = 'on'
-        mocks.settlePrefetch.mockImplementation(
-          () => new Promise((resolve) => setTimeout(() => resolve(null), promptWaitsMs))
-        )
-      }
-      const turnStartedAt = performance.now()
-      let gateStartedAt = -1
-      mocks.runRecallGate.mockImplementation(async () => {
-        gateStartedAt = performance.now()
-        await new Promise((resolve) => setTimeout(resolve, gateTakesMs))
-        return {
-          items: [],
-          detail: {
-            v: 1,
-            status: 'ok',
-            latencyMs: gateTakesMs,
-            setupMs: 3,
-            deadlineMissed: performance.now() > turnStartedAt + config.memory.recallGateDeadlineMs
-          },
-          startedAt: gateStartedAt,
-          settledAt: performance.now()
-        }
-      })
-      const pending = turnWith()
-      await vi.advanceTimersByTimeAsync(300 + promptWaitsMs)
-      await pending
-      await vi.advanceTimersByTimeAsync(gateTakesMs + 10)
-      return { turnStartedAt, gateStartedAt, gate: JSON.parse(recalledRows('recall_shadow')[0].detail).gate }
-    }
-
-    afterEach(() => {
-      vi.useRealTimers()
-    })
-
-    it('measures the gate start and the prompt-ready time from the turn start, and what the gate would have added', async () => {
-      const { turnStartedAt, gateStartedAt, gate } = await shadowTurn(500, 0)
-
-      expect(gate.startMs).toBe(Math.round(gateStartedAt - turnStartedAt))
-      expect(gate.contextReadyMs).toBe(300)
-      expect(gate.projectedAddedMs).toBe(gateStartedAt + 500 - (turnStartedAt + 300))
-      expect(gate).toMatchObject({
-        toneReadyMs: null,
-        embeddingReadyMs: 300,
-        mediaReadyMs: 0,
-        deadlineMs: config.memory.recallGateDeadlineMs,
-        setupMs: 3,
-        deadlineMissed: false
-      })
-      expect(gate).not.toHaveProperty('settledAtMs')
-    })
-
-    it('keeps the context-ready time when the gate settles before the prompt is ready', async () => {
-      const { gate } = await shadowTurn(5, 400)
-
-      expect(gate.contextReadyMs).toBe(700)
-      expect(gate.projectedAddedMs).toBe(0)
-    })
-
-    it('caps added delay at the virtual deadline while retaining raw gate latency', async () => {
-      const { gate } = await shadowTurn(5000, 0)
-
-      expect(gate.contextReadyMs).toBe(300)
-      expect(gate.projectedAddedMs).toBe(config.memory.recallGateDeadlineMs - 300)
-      expect(gate.latencyMs).toBe(5000)
-      expect(gate.deadlineMissed).toBe(true)
-    })
-
-    it('starts the gate while the blocking tone judgment is still pending', async () => {
-      vi.useFakeTimers()
-      memoryConfig.recall = 'shadow'
-      jevConfig.tone = 'on'
-      const judgment = deferred<TurnJudgment | null>()
-      mocks.judgeTurn.mockReturnValue(judgment.promise)
-      let gateNow = -1
-      mocks.runRecallGate.mockImplementation(async () => {
-        gateNow = Date.now()
-        return {
-          items: [],
-          detail: { v: 1, status: 'ok' },
-          startedAt: performance.now(),
-          settledAt: performance.now()
-        }
-      })
-      const turnNow = Date.now()
-      let contextReturned = false
-      const pending = turnWith().then((context) => {
-        contextReturned = true
-        return context
-      })
-
-      await vi.advanceTimersByTimeAsync(200)
-      expect(contextReturned).toBe(false)
-      expect(mocks.runRecallGate).toHaveBeenCalledOnce()
-      expect(mocks.embedEpisodeText).toHaveBeenCalledOnce()
-      expect(mocks.runRecallGate.mock.calls[0][0].input).toMatchObject({ queryEmbedding: vector, now: gateNow })
-      expect(recalledRows('recall_shadow')).toHaveLength(0)
-
-      judgment.resolve(null)
-      await pending
-      await vi.advanceTimersByTimeAsync(1)
-
-      const gate = JSON.parse(recalledRows('recall_shadow')[0].detail).gate
-      expect(gate.startMs).toBeLessThan(gate.toneReadyMs)
-      expect(gate).toMatchObject({ toneReadyMs: 200, embeddingReadyMs: 0, contextReadyMs: 200, projectedAddedMs: 0 })
-      expect(mocks.recallForTurn.mock.calls[0][0]).toMatchObject({ now: turnNow + 200 })
-    })
-
-    it('starts the gate after applied ambiguous referents settle and uses the resolved subjects', async () => {
-      vi.useFakeTimers()
-      memoryConfig.recall = 'shadow'
-      jevConfig.referents = 'on'
-      const judgment = deferred<TurnJudgment | null>()
-      mocks.judgeTurn.mockReturnValue(judgment.promise)
-      mocks.resolveReferences.mockReturnValue({
-        resolved: [],
-        ambiguous: [
-          { alias: 'Sam', candidateIds: ['user-2', 'user-3'] },
-          { alias: 'Alex', candidateIds: ['user-4', 'user-5'] }
-        ]
-      } as never)
-      mocks.runRecallGate.mockImplementation(async () => ({
-        items: [],
-        detail: { v: 1, status: 'ok' },
-        startedAt: performance.now(),
-        settledAt: performance.now()
-      }))
-      const pending = turnWith()
-
-      await vi.advanceTimersByTimeAsync(200)
-      expect(mocks.runRecallGate).not.toHaveBeenCalled()
-      judgment.resolve({
-        tone: null,
-        referents: [
-          { alias: 'Sam', userId: 'user-2', confidence: 1 },
-          { alias: 'Alex', userId: null, confidence: 0 }
-        ],
-        needsLookup: null,
-        latencyMs: 200,
-        inputTokens: 10
-      })
-      await pending
-      await vi.advanceTimersByTimeAsync(1)
-
-      expect(mocks.runRecallGate).toHaveBeenCalledOnce()
-      const input = mocks.runRecallGate.mock.calls[0][0].input
-      expect(input).toMatchObject({
-        scope: { guildId: 'guild-1', channelId: 'channel-1' },
-        speakerId: 'user-1',
-        participantIds: ['user-2'],
-        namedIds: ['user-2'],
-        message: 'hello',
-        queryEmbedding: vector
-      })
-      expect(input).toEqual({ ...mocks.recallForTurn.mock.calls[0][0], now: expect.any(Number) })
-      const gate = JSON.parse(recalledRows('recall_shadow')[0].detail).gate
-      expect(gate.startMs).toBeGreaterThanOrEqual(200)
-      expect(gate.toneReadyMs).toBeNull()
-    })
-
-    it('waits to write the row until late media settles and credits its overlap with the gate', async () => {
-      vi.useFakeTimers()
-      memoryConfig.recall = 'shadow'
-      const media = deferred<unknown>()
-      mocks.runRecallGate.mockImplementation(async () => {
-        const startedAt = performance.now()
-        await new Promise((resolve) => setTimeout(resolve, 100))
-        return { items: [], detail: { v: 1, status: 'ok' }, startedAt, settledAt: performance.now() }
-      })
-
-      await turnWith({ mediaWork: media.promise })
-      await vi.advanceTimersByTimeAsync(200)
-      expect(mocks.runRecallGate).toHaveBeenCalledOnce()
-      expect(mocks.recallForTurn).toHaveBeenCalledOnce()
-      expect(recalledRows('recall_shadow')).toHaveLength(0)
-
-      await vi.advanceTimersByTimeAsync(800)
-      media.resolve(undefined)
-      await vi.advanceTimersByTimeAsync(1)
-
-      expect(recalledRows('recall_shadow')).toHaveLength(1)
-      expect(JSON.parse(recalledRows('recall_shadow')[0].detail).gate).toMatchObject({
-        contextReadyMs: 0,
-        mediaReadyMs: 1000,
-        projectedAddedMs: 0
-      })
-    })
-
-    it('counts rejected media as settled without surfacing its rejection', async () => {
-      vi.useFakeTimers()
-      memoryConfig.recall = 'shadow'
-      const media = deferred<unknown>()
-
-      await turnWith({ mediaWork: media.promise })
-      await vi.advanceTimersByTimeAsync(200)
-      expect(recalledRows('recall_shadow')).toHaveLength(0)
-
-      media.reject(new Error('media failed'))
-      await vi.advanceTimersByTimeAsync(1)
-
-      expect(recalledRows('recall_shadow')).toHaveLength(1)
-      expect(JSON.parse(recalledRows('recall_shadow')[0].detail).gate).toMatchObject({
-        mediaReadyMs: 200,
-        projectedAddedMs: 0
-      })
-    })
-  })
-
-  it('stops waiting for the query embedding at the gate wait, before the legacy sections give up', async () => {
-    vi.useFakeTimers()
-    try {
-      memoryConfig.recall = 'shadow'
-      const gateWaitMs = config.memory.recallGateEmbeddingWaitMs
-      expect(gateWaitMs).toBeLessThan(config.memory.embeddingTimeoutMs)
-      mocks.embedEpisodeText.mockImplementation(() => new Promise(() => undefined))
-      let turnReturned = false
-
-      const pending = turnWith().then(() => {
-        turnReturned = true
-      })
-      await vi.advanceTimersByTimeAsync(gateWaitMs - 1)
-      expect(mocks.runRecallGate).not.toHaveBeenCalled()
-
-      // The gate then yields one macrotask before it starts, which fake timers count as 1 ms.
-      await vi.advanceTimersByTimeAsync(2)
-      expect(mocks.runRecallGate).toHaveBeenCalledTimes(1)
-      expect(mocks.runRecallGate.mock.calls[0][0].input.queryEmbedding).toBeNull()
-      expect(turnReturned).toBe(false)
-
-      await vi.advanceTimersByTimeAsync(config.memory.embeddingTimeoutMs)
-      await pending
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('shows only the unified block, touches the selected facts and records one recall event', async () => {
-    memoryConfig.recall = 'unified'
-    mocks.retrieveForTurn.mockReturnValue({ entries: [{ person: 'Alice', facts: [] }], claims: [{}] } as never)
-    mocks.buildFactsEnvelope.mockReturnValue(factsEnvelope)
-    mocks.buildEpisodeRecallBlock.mockReturnValue(episodeBlock)
-    mocks.buildMediaRecallBlock.mockReturnValue(mediaBlock)
-    mocks.retrieveGuildFacts.mockReturnValue({
-      facts: [{ predicate: 'plan', value: 'Game night' } as never],
-      tokensEst: 1
-    })
-    mocks.recallForTurn.mockImplementation(() => unifiedRecall())
-
-    const context = await turnWith()
-
-    expect(context.systemPrompt).toContain('## What You Remember\n### People\n- Alice: hobby: chess')
-    for (const legacyHeading of [
-      '## What You Remember About People In This Channel',
-      '## Things You Remember About This Server',
-      episodeBlock,
-      mediaBlock
-    ]) {
-      expect(context.systemPrompt).not.toContain(legacyHeading)
-    }
-    expect(mocks.retrieveForTurn).not.toHaveBeenCalled()
-    expect(mocks.retrieveGuildFacts).not.toHaveBeenCalled()
-    expect(mocks.buildEpisodeRecallBlock).not.toHaveBeenCalled()
-    expect(mocks.buildMediaRecallBlock).not.toHaveBeenCalled()
-    expect(mocks.touchRecalled).toHaveBeenCalledWith([7, 9])
-    const rows = recalledRows('recall')
-    expect(rows).toHaveLength(1)
-    expect(JSON.parse(rows[0].detail)).toMatchObject({ mode: 'unified', fallback: false, gated: 2 })
-    expect(recalledRows('context_build')).toEqual([expect.objectContaining({ nSelected: 3 })])
-  })
-
-  it('keeps the Who Is Mentioned block on the same safety rung as the unified memory block', async () => {
-    memoryConfig.recall = 'unified'
-    mocks.recallForTurn.mockImplementation(() => unifiedRecall())
-    mocks.resolveReferences.mockReturnValue({
-      resolved: [{ alias: 'Ali', displayName: 'Alice', matchedBy: 'nickname', userId: 'user-2' }],
-      ambiguous: []
-    } as never)
-
-    const context = await turnWith()
-
-    expect(context.systemPrompt).toContain('## Who Is Mentioned\n- "Ali" means Alice')
-    expect(context.composePrompt(1)).toContain('## What You Remember')
-    expect(context.composePrompt(1)).toContain('## Who Is Mentioned')
-    expect(context.composePrompt(2)).not.toContain('## What You Remember')
-    expect(context.composePrompt(2)).not.toContain('## Who Is Mentioned')
-  })
-
-  it('runs unified recall without a query embedding once the embedding timeout passes', async () => {
-    vi.useFakeTimers()
-    try {
-      memoryConfig.recall = 'unified'
-      mocks.embedEpisodeText.mockImplementation(() => new Promise(() => undefined))
-      mocks.recallForTurn.mockImplementation((input) => ({
-        ...emptyRecall(),
-        trace: { nCandidates: 0, gated: 0, fallback: input.queryEmbedding === null, tokensEst: 0 }
-      }))
-
-      const pending = turnWith()
-      await vi.advanceTimersByTimeAsync(config.memory.embeddingTimeoutMs)
-      await pending
-
-      expect(mocks.recallForTurn).toHaveBeenCalledWith(expect.objectContaining({ queryEmbedding: null }))
-      const rows = recalledRows('recall')
-      expect(rows).toHaveLength(1)
-      expect(JSON.parse(rows[0].detail).fallback).toBe(true)
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it.each(['shadow', 'unified'])('never fails the turn when recall throws in %s mode', async (recall) => {
-    memoryConfig.recall = recall
-    mocks.recallForTurn.mockImplementation(() => {
-      throw new Error('recall unavailable')
-    })
-
-    const context = await turnWith()
-
-    expect(context.systemPrompt).not.toContain('What You Remember')
-    expect(recalledRows('recall')).toHaveLength(0)
-    expect(recalledRows('recall_shadow')).toHaveLength(0)
-  })
-
-  it.each(['legacy', 'shadow', 'unified'])('reads no long-term memory with privacy off in %s mode', async (recall) => {
+  it('reads no long-term memory with privacy off', async () => {
     memoryConfig.privacy = 'off'
-    memoryConfig.recall = recall
     mocks.buildFactsEnvelope.mockReturnValue(factsEnvelope)
     mocks.buildEpisodeRecallBlock.mockReturnValue(episodeBlock)
     mocks.buildMediaRecallBlock.mockReturnValue(mediaBlock)
@@ -1462,12 +867,9 @@ describe('memory recall modes', () => {
       facts: [{ predicate: 'plan', value: 'Game night' } as never],
       tokensEst: 1
     })
-    mocks.recallForTurn.mockImplementation(() => unifiedRecall())
 
     const context = await turnWith()
 
-    await flushShadowRecall()
-    expect(mocks.recallForTurn).not.toHaveBeenCalled()
     expect(mocks.retrieveForTurn).not.toHaveBeenCalled()
     expect(mocks.retrieveGuildFacts).not.toHaveBeenCalled()
     expect(mocks.buildEpisodeRecallBlock).not.toHaveBeenCalled()
@@ -1475,11 +877,30 @@ describe('memory recall modes', () => {
     expect(context.systemPrompt).not.toContain('What You Remember')
     expect(context.systemPrompt).not.toContain('Things You Remember About This Server')
     expect(context.systemPrompt).not.toContain(episodeBlock)
-    expect(recalledRows('recall')).toHaveLength(0)
-    expect(recalledRows('recall_shadow')).toHaveLength(0)
+    expect(recalledRows('context_build')).toHaveLength(0)
     expect(mocks.assembleSystemPrompt).toHaveBeenCalledWith(expect.objectContaining({ memoryScope: 'forget' }))
     expect(context.systemPrompt).not.toContain('remember_user')
     expect(context.systemPrompt).not.toContain('recall_user')
+  })
+
+  it('does no retrieval for a memory-free turn', async () => {
+    const context = await turnWith({ memoryScope: 'none' })
+
+    expect(mocks.retrieveForTurn).not.toHaveBeenCalled()
+    expect(mocks.retrieveGuildFacts).not.toHaveBeenCalled()
+    expect(mocks.buildEpisodeRecallBlock).not.toHaveBeenCalled()
+    expect(mocks.buildMediaRecallBlock).not.toHaveBeenCalled()
+    expect(context.systemPrompt).not.toContain('What You Remember')
+  })
+
+  it('keeps the legacy facts block for DMs, whose facts live under a dm tenant', async () => {
+    mocks.retrieveForTurn.mockReturnValue({ entries: [{ person: 'Alice', facts: [] }], claims: [{}] } as never)
+    mocks.buildFactsEnvelope.mockReturnValue(factsEnvelope)
+
+    const context = await turnWith({ guildId: 'dm:user-1' })
+
+    expect(mocks.retrieveForTurn).toHaveBeenCalled()
+    expect(context.systemPrompt).toContain(factsEnvelope)
   })
 
   it('does not resolve references for a memory-free turn', async () => {
@@ -1519,42 +940,5 @@ describe('memory recall modes', () => {
     } finally {
       mocks.assembleSystemPrompt.mockImplementation(() => 'prompt')
     }
-  })
-
-  it.each(['shadow', 'unified'])('does no recall for a DM or a memory-free turn in %s mode', async (recall) => {
-    memoryConfig.recall = recall
-    mocks.recallForTurn.mockImplementation(() => unifiedRecall())
-
-    await turnWith({ guildId: 'dm:user-1' })
-    await turnWith({ memoryScope: 'none' })
-
-    await flushShadowRecall()
-    expect(mocks.recallForTurn).not.toHaveBeenCalled()
-    expect(recalledRows('recall')).toHaveLength(0)
-    expect(recalledRows('recall_shadow')).toHaveLength(0)
-  })
-
-  it('keeps the legacy facts block for DMs in unified mode, whose facts live under a dm tenant', async () => {
-    memoryConfig.recall = 'unified'
-    mocks.retrieveForTurn.mockReturnValue({ entries: [{ person: 'Alice', facts: [] }], claims: [{}] } as never)
-    mocks.buildFactsEnvelope.mockReturnValue(factsEnvelope)
-
-    const context = await turnWith({ guildId: 'dm:user-1' })
-
-    expect(mocks.retrieveForTurn).toHaveBeenCalled()
-    expect(context.systemPrompt).toContain(factsEnvelope)
-    expect(mocks.recallForTurn).not.toHaveBeenCalled()
-  })
-
-  it('pins the unified recall clock to before the legacy retriever marks its picks', async () => {
-    memoryConfig.recall = 'unified'
-    const before = Date.now()
-    mocks.recallForTurn.mockImplementation(() => unifiedRecall())
-
-    await turnWith()
-
-    const [input] = mocks.recallForTurn.mock.calls[0] as unknown as [{ now?: number }]
-    expect(input.now).toBeGreaterThanOrEqual(before)
-    expect(input.now).toBeLessThanOrEqual(Date.now())
   })
 })
