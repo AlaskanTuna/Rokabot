@@ -25,12 +25,19 @@ const FACTORIES: Readonly<Record<EmbeddingSettings['provider'], (settings: Embed
 }
 
 let client: EmbeddingClient | undefined
+let testClient: EmbeddingClient | undefined
 
 export function getEmbeddingClient(): EmbeddingClient {
+  if (testClient) return testClient
   client ??= FACTORIES[config.embeddings.provider](config.embeddings)
   return client
 }
 
 export function resetEmbeddingClientForTest(): void {
   client = undefined
+}
+
+export function __setEmbeddingClientForTest(override: EmbeddingClient | undefined): void {
+  testClient = override
+  if (!override) client = undefined
 }
