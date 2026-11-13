@@ -6,6 +6,8 @@ type Row = Record<string, unknown>
 
 type MemoryItemsMigrationReport = Readonly<{
   copied_items: number
+  refreshed_items: number
+  deleted_items: number
   copied_evidence: number
   copied_occurrences: number
   copied_payloads: number
@@ -35,6 +37,8 @@ type MemoryItemsMigrationReport = Readonly<{
 
 type MutableReport = {
   copied_items: number
+  refreshed_items: number
+  deleted_items: number
   copied_evidence: number
   copied_occurrences: number
   copied_payloads: number
@@ -45,6 +49,7 @@ type Verification = {
   passed: number
   failed: number
   roundTripColumnsChecked: number
+  driftCounts: { fact: number; episode: number; media: number }
 }
 
 const ITEM_INSERT = `
@@ -85,165 +90,252 @@ function rowForLegacyId(database: Database.Database, table: string, id: number):
     | undefined
 }
 
-function insertVector(
+function projectionValuesEqual(current: Row, values: Record<string, unknown>): boolean {
+  return Object.entries(values).every(([key, value]) => valueEqual(current[key], value))
+}
+
+function syncItem(
+  database: Database.Database,
+  values: Record<string, unknown>,
+  report: MutableReport,
+  newItemIds: Set<number>
+): number {
+  const existing = rowForLegacyId(database, String(values.legacy_table), Number(values.legacy_id))
+  if (!existing) {
+    const insertValues = Object.fromEntries(Object.entries(values).filter(([key]) => key !== 'version'))
+    const result = database.prepare(ITEM_INSERT).run(insertValues)
+    const id = Number(result.lastInsertRowid)
+    newItemIds.add(id)
+    report.copied_items += 1
+    return id
+  }
+
+  const fields = Object.fromEntries(Object.entries(values).filter(([key]) => key !== 'version'))
+  const nextVersion = typeof values.version === 'number' ? values.version : existing.version
+  if (projectionValuesEqual(existing, fields) && valueEqual(existing.version, nextVersion)) return Number(existing.id)
+
+  const changes = Object.fromEntries(
+    Object.entries({ ...fields, version: nextVersion }).filter(([key, value]) => !valueEqual(existing[key], value))
+  )
+  if (Object.keys(changes).length > 0) {
+    database
+      .prepare(
+        `UPDATE memory_item SET ${Object.keys(changes)
+          .map((key) => `${key} = @${key}`)
+          .join(', ')} WHERE id = @id`
+      )
+      .run({ ...changes, id: existing.id })
+    if (!newItemIds.has(Number(existing.id))) report.refreshed_items += 1
+  }
+  return Number(existing.id)
+}
+
+function syncVector(
   database: Database.Database,
   itemId: number,
   row: Row,
   renderer: 'fact_sentence' | 'summary',
-  legacyText: string | null
+  legacyText: string | null,
+  report: MutableReport
 ): void {
-  if (!hasVector(row)) return
+  const existing = database.prepare('SELECT * FROM memory_item_embedding WHERE item_id = ?').all(itemId) as Row[]
+  if (!hasVector(row)) {
+    if (existing.length > 0) database.prepare('DELETE FROM memory_item_embedding WHERE item_id = ?').run(itemId)
+    return
+  }
+
   const textHash = legacyText === null ? null : sha256(legacyText)
+  const expected = {
+    item_id: itemId,
+    fingerprint: fingerprint(row),
+    model_id: row.embedding_model_id ?? null,
+    dim: vectorDimension(row),
+    renderer,
+    renderer_version: 1,
+    vector: row.embedding,
+    created_at: null
+  }
+  const matches =
+    existing.length === 1 &&
+    projectionValuesEqual(existing[0]!, expected) &&
+    (existing[0]!.text_hash === null || valueEqual(existing[0]!.text_hash, textHash))
+  if (matches) return
+
+  if (existing.length > 0) database.prepare('DELETE FROM memory_item_embedding WHERE item_id = ?').run(itemId)
   database
     .prepare(`
       INSERT INTO memory_item_embedding (
         item_id, fingerprint, model_id, dim, renderer, renderer_version, text_hash, vector, created_at
       ) VALUES (?, ?, ?, ?, ?, 1, ?, ?, NULL)
     `)
-    .run(
-      itemId,
-      fingerprint(row),
-      row.embedding_model_id ?? null,
-      vectorDimension(row),
-      renderer,
-      textHash,
-      row.embedding
-    )
+    .run(itemId, expected.fingerprint, expected.model_id, expected.dim, renderer, textHash, expected.vector)
+  if (existing.length === 0) report.copied_embeddings += 1
 }
 
-function copyClaims(database: Database.Database, report: MutableReport): void {
-  const claims = database.prepare('SELECT * FROM memory_claim ORDER BY id').all() as Row[]
-  const insert = database.prepare(ITEM_INSERT)
-  const inserted: Array<{ oldId: number; itemId: number; oldSuccessor: number | null }> = []
-
-  for (const claim of claims) {
-    if (rowForLegacyId(database, 'memory_claim', Number(claim.id))) continue
-    const result = insert.run({
-      guild_id: claim.guild_id,
-      kind: 'fact',
-      subject_kind: claim.subject_kind,
-      subject_user_id: claim.subject_user_id,
-      predicate: claim.predicate,
-      content: claim.value,
-      label: null,
-      media_kind: null,
-      content_key: null,
-      source_job_id: null,
-      period: claim.period,
-      object_kind: claim.object_kind,
-      object_user_id: claim.object_user_id,
-      source_kind: claim.source_kind,
-      status: claim.status,
-      needs_review: claim.needs_review,
-      end_reason: claim.end_reason,
-      ended_at: claim.ended_at,
-      superseded_by: null,
-      confidence: claim.confidence,
-      salience: claim.salience,
-      pinned: claim.pinned,
-      valid_until: claim.expires_at,
-      event_date: claim.event_date,
-      first_seen_at: claim.first_seen_at,
-      last_seen_at: claim.last_seen_at,
-      last_recalled_at: claim.last_recalled_at,
-      created_at: null,
-      legacy_table: 'memory_claim',
-      legacy_id: claim.id,
-      legacy_embedding_text: claim.embedding_text
-    })
-    const itemId = Number(result.lastInsertRowid)
-    inserted.push({ oldId: Number(claim.id), itemId, oldSuccessor: (claim.superseded_by as number | null) ?? null })
-    report.copied_items += 1
-    insertVector(database, itemId, claim, 'fact_sentence', claim.embedding_text as string | null)
-    if (hasVector(claim)) report.copied_embeddings += 1
+function syncSupportRow(
+  database: Database.Database,
+  table: 'memory_item_evidence' | 'memory_item_occurrence',
+  where: string,
+  whereValues: readonly unknown[],
+  values: Record<string, unknown>
+): 'inserted' | 'updated' | 'same' {
+  const current = database.prepare(`SELECT * FROM ${table} WHERE ${where}`).get(...whereValues) as Row | undefined
+  if (!current) {
+    const columns = Object.keys(values)
+    database
+      .prepare(`INSERT INTO ${table} (${columns.join(', ')}) VALUES (${columns.map((key) => `@${key}`).join(', ')})`)
+      .run(values)
+    return 'inserted'
   }
+  if (projectionValuesEqual(current, values)) return 'same'
+  const changes = Object.fromEntries(Object.entries(values).filter(([key, value]) => !valueEqual(current[key], value)))
+  database
+    .prepare(
+      `UPDATE ${table} SET ${Object.keys(changes)
+        .map((key) => `${key} = ?`)
+        .join(', ')} WHERE ${where}`
+    )
+    .run(...Object.keys(changes).map((key) => changes[key]), ...whereValues)
+  return 'updated'
+}
 
-  const updateSuccessor = database.prepare('UPDATE memory_item SET superseded_by = ? WHERE id = ?')
-  for (const claim of inserted) {
-    if (claim.oldSuccessor === null) continue
-    const successor = rowForLegacyId(database, 'memory_claim', claim.oldSuccessor)
-    if (successor) updateSuccessor.run(successor.id, claim.itemId)
+function copyClaims(database: Database.Database, report: MutableReport, newItemIds: Set<number>): void {
+  const claims = database.prepare('SELECT * FROM memory_claim ORDER BY id').all() as Row[]
+  for (const claim of claims) {
+    const successorId = (claim.superseded_by as number | null) ?? null
+    const successorExists =
+      successorId !== null && Boolean(database.prepare('SELECT 1 FROM memory_claim WHERE id = ?').get(successorId))
+    const successor = successorExists ? rowForLegacyId(database, 'memory_claim', successorId) : undefined
+    const itemId = syncItem(
+      database,
+      {
+        guild_id: claim.guild_id,
+        kind: 'fact',
+        subject_kind: claim.subject_kind,
+        subject_user_id: claim.subject_user_id,
+        predicate: claim.predicate,
+        content: claim.value,
+        label: null,
+        media_kind: null,
+        content_key: null,
+        source_job_id: null,
+        period: claim.period,
+        object_kind: claim.object_kind,
+        object_user_id: claim.object_user_id,
+        source_kind: claim.source_kind,
+        status: claim.status,
+        needs_review: claim.needs_review,
+        end_reason: claim.end_reason,
+        ended_at: claim.ended_at,
+        superseded_by: successor?.id ?? null,
+        confidence: claim.confidence,
+        salience: claim.salience,
+        pinned: claim.pinned,
+        valid_until: claim.expires_at,
+        event_date: claim.event_date,
+        first_seen_at: claim.first_seen_at,
+        last_seen_at: claim.last_seen_at,
+        last_recalled_at: claim.last_recalled_at,
+        created_at: null,
+        legacy_table: 'memory_claim',
+        legacy_id: claim.id,
+        legacy_embedding_text: claim.embedding_text
+      },
+      report,
+      newItemIds
+    )
+    syncVector(database, itemId, claim, 'fact_sentence', claim.embedding_text as string | null, report)
   }
 
   const evidence = database.prepare('SELECT * FROM memory_evidence ORDER BY id').all() as Row[]
-  const insertEvidence = database.prepare(`
-    INSERT INTO memory_item_evidence (
-      item_id, channel_id, source_kind, observed_at, effective_at, job_id, source_message_id, speaker_user_id, legacy_id
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `)
   for (const row of evidence) {
     const item = rowForLegacyId(database, 'memory_claim', Number(row.claim_id))
     if (!item) continue
-    if (database.prepare('SELECT 1 FROM memory_item_evidence WHERE legacy_id = ?').get(row.id)) continue
-    insertEvidence.run(
-      item.id,
-      row.channel_id,
-      row.source_kind,
-      row.observed_at,
-      row.effective_at,
-      row.job_id,
-      row.source_message_id,
-      row.speaker_user_id,
-      row.id
-    )
-    report.copied_evidence += 1
-  }
-}
-
-function copyEpisodes(database: Database.Database, report: MutableReport): void {
-  const rows = database.prepare('SELECT * FROM memory_episode ORDER BY id').all() as Row[]
-  const insert = database.prepare(ITEM_INSERT)
-  const insertOccurrence = database.prepare(`
-    INSERT INTO memory_item_occurrence (
-      item_id, guild_id, channel_id, origin, message_id, shared_by_user_id, source_author_id, span_start, observed_at
-    ) VALUES (?, ?, ?, 'episode', NULL, NULL, NULL, ?, ?)
-  `)
-
-  for (const row of rows) {
-    if (rowForLegacyId(database, 'memory_episode', Number(row.id))) continue
-    const result = insert.run({
-      guild_id: row.guild_id,
-      kind: 'episode',
-      subject_kind: 'guild',
-      subject_user_id: null,
-      predicate: null,
-      content: row.summary,
-      label: null,
-      media_kind: null,
-      content_key: null,
-      source_job_id: row.id,
-      period: 'current',
-      object_kind: null,
-      object_user_id: null,
-      source_kind: null,
-      status: 'active',
-      needs_review: 0,
-      end_reason: null,
-      ended_at: null,
-      superseded_by: null,
-      confidence: null,
-      salience: null,
-      pinned: 0,
-      valid_until: null,
-      event_date: null,
-      first_seen_at: row.started_at,
-      last_seen_at: row.ended_at,
-      last_recalled_at: null,
-      created_at: row.created_at,
-      legacy_table: 'memory_episode',
-      legacy_id: row.id,
-      legacy_embedding_text: null
+    const result = syncSupportRow(database, 'memory_item_evidence', 'legacy_id = ?', [row.id], {
+      item_id: item.id,
+      channel_id: row.channel_id,
+      source_kind: row.source_kind,
+      observed_at: row.observed_at,
+      effective_at: row.effective_at,
+      job_id: row.job_id,
+      source_message_id: row.source_message_id,
+      speaker_user_id: row.speaker_user_id,
+      legacy_id: row.id
     })
-    const itemId = Number(result.lastInsertRowid)
-    insertOccurrence.run(itemId, row.guild_id, row.channel_id, row.started_at, row.ended_at)
-    insertVector(database, itemId, row, 'summary', row.summary as string)
-    report.copied_items += 1
-    report.copied_occurrences += 1
-    if (hasVector(row)) report.copied_embeddings += 1
+    if (result === 'inserted') report.copied_evidence += 1
   }
 }
 
-function copyMedia(database: Database.Database, report: MutableReport): void {
+function copyEpisodes(database: Database.Database, report: MutableReport, newItemIds: Set<number>): void {
+  const rows = database.prepare('SELECT * FROM memory_episode ORDER BY id').all() as Row[]
+  for (const row of rows) {
+    const existing = rowForLegacyId(database, 'memory_episode', Number(row.id))
+    const version = existing
+      ? Number(existing.version) + (valueEqual(existing.content, row.summary) ? 0 : 1)
+      : undefined
+    const itemId = syncItem(
+      database,
+      {
+        guild_id: row.guild_id,
+        kind: 'episode',
+        subject_kind: 'guild',
+        subject_user_id: null,
+        predicate: null,
+        content: row.summary,
+        label: null,
+        media_kind: null,
+        content_key: null,
+        source_job_id: row.id,
+        period: 'current',
+        object_kind: null,
+        object_user_id: null,
+        source_kind: null,
+        status: 'active',
+        needs_review: 0,
+        end_reason: null,
+        ended_at: null,
+        superseded_by: null,
+        confidence: null,
+        salience: null,
+        pinned: 0,
+        valid_until: null,
+        event_date: null,
+        first_seen_at: row.started_at,
+        last_seen_at: row.ended_at,
+        last_recalled_at: null,
+        created_at: row.created_at,
+        legacy_table: 'memory_episode',
+        legacy_id: row.id,
+        legacy_embedding_text: null,
+        ...(version === undefined ? {} : { version })
+      },
+      report,
+      newItemIds
+    )
+    const occurrence = syncSupportRow(
+      database,
+      'memory_item_occurrence',
+      "item_id = ? AND origin = 'episode'",
+      [itemId],
+      {
+        item_id: itemId,
+        guild_id: row.guild_id,
+        channel_id: row.channel_id,
+        origin: 'episode',
+        message_id: null,
+        shared_by_user_id: null,
+        source_author_id: null,
+        span_start: row.started_at,
+        observed_at: row.ended_at,
+        legacy_id: null
+      }
+    )
+    if (occurrence === 'inserted') report.copied_occurrences += 1
+    syncVector(database, itemId, row, 'summary', String(row.summary), report)
+  }
+}
+
+function copyMedia(database: Database.Database, report: MutableReport, newItemIds: Set<number>): void {
   const rows = database.prepare('SELECT * FROM media_digest ORDER BY id').all() as Row[]
   const occurrences = database.prepare('SELECT * FROM media_occurrence ORDER BY id').all() as Row[]
   const byDigest = new Map<number, Row[]>()
@@ -252,77 +344,156 @@ function copyMedia(database: Database.Database, report: MutableReport): void {
     byDigest.set(digestId, [...(byDigest.get(digestId) ?? []), occurrence])
   }
 
-  const insert = database.prepare(ITEM_INSERT)
-  const insertOccurrence = database.prepare(`
-    INSERT INTO memory_item_occurrence (
-      item_id, guild_id, channel_id, origin, message_id, shared_by_user_id, source_author_id, span_start, observed_at,
-      legacy_id
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
-  `)
-  const insertPayload = database.prepare('INSERT INTO memory_item_payload (item_id, digest_json) VALUES (?, ?)')
-
   for (const row of rows) {
-    if (rowForLegacyId(database, 'media_digest', Number(row.id))) continue
     const shares = byDigest.get(Number(row.id)) ?? []
     const latestShare = shares.reduce<number | null>(
       (latest, share) => (latest === null ? Number(share.observed_at) : Math.max(latest, Number(share.observed_at))),
       null
     )
-    const result = insert.run({
-      guild_id: row.guild_id,
-      kind: 'media',
-      subject_kind: 'guild',
-      subject_user_id: null,
-      predicate: null,
-      content: row.summary,
-      label: row.label,
-      media_kind: row.kind,
-      content_key: row.content_key,
-      source_job_id: null,
-      period: 'current',
-      object_kind: null,
-      object_user_id: null,
-      source_kind: null,
-      status: 'active',
-      needs_review: 0,
-      end_reason: null,
-      ended_at: null,
-      superseded_by: null,
-      confidence: null,
-      salience: null,
-      pinned: 0,
-      valid_until: null,
-      event_date: null,
-      first_seen_at: row.created_at,
-      last_seen_at: latestShare ?? row.created_at,
-      last_recalled_at: null,
-      created_at: row.created_at,
-      legacy_table: 'media_digest',
-      legacy_id: row.id,
-      legacy_embedding_text: null
-    })
-    const itemId = Number(result.lastInsertRowid)
-    insertPayload.run(itemId, row.digest_json)
-    report.copied_items += 1
-    report.copied_payloads += 1
-    insertVector(database, itemId, row, 'summary', row.summary as string)
-    if (hasVector(row)) report.copied_embeddings += 1
+    const existing = rowForLegacyId(database, 'media_digest', Number(row.id))
+    const version = existing
+      ? Number(existing.version) +
+        (valueEqual(existing.content, row.summary) && valueEqual(existing.label, row.label) ? 0 : 1)
+      : undefined
+    const itemId = syncItem(
+      database,
+      {
+        guild_id: row.guild_id,
+        kind: 'media',
+        subject_kind: 'guild',
+        subject_user_id: null,
+        predicate: null,
+        content: row.summary,
+        label: row.label,
+        media_kind: row.kind,
+        content_key: row.content_key,
+        source_job_id: null,
+        period: 'current',
+        object_kind: null,
+        object_user_id: null,
+        source_kind: null,
+        status: 'active',
+        needs_review: 0,
+        end_reason: null,
+        ended_at: null,
+        superseded_by: null,
+        confidence: null,
+        salience: null,
+        pinned: 0,
+        valid_until: null,
+        event_date: null,
+        first_seen_at: row.created_at,
+        last_seen_at: latestShare ?? row.created_at,
+        last_recalled_at: null,
+        created_at: row.created_at,
+        legacy_table: 'media_digest',
+        legacy_id: row.id,
+        legacy_embedding_text: null,
+        ...(version === undefined ? {} : { version })
+      },
+      report,
+      newItemIds
+    )
+
+    const payload = database.prepare('SELECT digest_json FROM memory_item_payload WHERE item_id = ?').get(itemId) as
+      | Row
+      | undefined
+    if (!payload) {
+      database
+        .prepare('INSERT INTO memory_item_payload (item_id, digest_json) VALUES (?, ?)')
+        .run(itemId, row.digest_json)
+      report.copied_payloads += 1
+    } else if (!valueEqual(payload.digest_json, row.digest_json)) {
+      database.prepare('UPDATE memory_item_payload SET digest_json = ? WHERE item_id = ?').run(row.digest_json, itemId)
+    }
+
+    syncVector(database, itemId, row, 'summary', String(row.summary), report)
 
     for (const share of shares) {
-      if (database.prepare('SELECT 1 FROM memory_item_occurrence WHERE legacy_id = ?').get(share.id)) continue
-      insertOccurrence.run(
-        itemId,
-        share.guild_id,
-        share.channel_id,
-        share.origin,
-        share.message_id,
-        share.shared_by_user_id,
-        share.source_author_id,
-        share.observed_at,
-        share.id
-      )
-      report.copied_occurrences += 1
+      const result = syncSupportRow(database, 'memory_item_occurrence', 'legacy_id = ?', [share.id], {
+        item_id: itemId,
+        guild_id: share.guild_id,
+        channel_id: share.channel_id,
+        origin: share.origin,
+        message_id: share.message_id,
+        shared_by_user_id: share.shared_by_user_id,
+        source_author_id: share.source_author_id,
+        span_start: null,
+        observed_at: share.observed_at,
+        legacy_id: share.id
+      })
+      if (result === 'inserted') report.copied_occurrences += 1
     }
+  }
+}
+
+function removeOrphanProjectionRows(database: Database.Database, report: MutableReport): void {
+  const sourceTables = [
+    ['memory_claim', 'memory_claim'],
+    ['memory_episode', 'memory_episode'],
+    ['media_digest', 'media_digest']
+  ] as const
+  for (const [legacyTable, sourceTable] of sourceTables) {
+    const orphanItems = database
+      .prepare(`
+        SELECT item.id FROM memory_item item
+        WHERE item.legacy_table = ? AND NOT EXISTS (
+          SELECT 1 FROM ${sourceTable} source WHERE source.id = item.legacy_id
+        )
+      `)
+      .all(legacyTable) as Array<{ id: number }>
+    for (const { id } of orphanItems) {
+      database.prepare('DELETE FROM memory_item_evidence WHERE item_id = ?').run(id)
+      database.prepare('DELETE FROM memory_item_occurrence WHERE item_id = ?').run(id)
+      database.prepare('DELETE FROM memory_item_payload WHERE item_id = ?').run(id)
+      database.prepare('DELETE FROM memory_item_embedding WHERE item_id = ?').run(id)
+      database.prepare('DELETE FROM memory_item WHERE id = ?').run(id)
+      report.deleted_items += 1
+    }
+  }
+  database
+    .prepare(`
+    DELETE FROM memory_item_evidence
+    WHERE legacy_id IS NULL OR NOT EXISTS (SELECT 1 FROM memory_evidence source WHERE source.id = memory_item_evidence.legacy_id)
+  `)
+    .run()
+  database
+    .prepare(`
+    DELETE FROM memory_item_occurrence
+    WHERE (legacy_id IS NOT NULL AND NOT EXISTS (
+      SELECT 1 FROM media_occurrence source WHERE source.id = memory_item_occurrence.legacy_id
+    )) OR (origin = 'episode' AND NOT EXISTS (
+      SELECT 1 FROM memory_item item WHERE item.id = memory_item_occurrence.item_id AND item.legacy_table = 'memory_episode'
+    ))
+  `)
+    .run()
+  database
+    .prepare(`
+    DELETE FROM memory_item_payload
+    WHERE NOT EXISTS (SELECT 1 FROM memory_item item WHERE item.id = memory_item_payload.item_id AND item.kind = 'media')
+  `)
+    .run()
+  database
+    .prepare(`
+    DELETE FROM memory_item_embedding
+    WHERE NOT EXISTS (SELECT 1 FROM memory_item item WHERE item.id = memory_item_embedding.item_id)
+  `)
+    .run()
+}
+
+function refreshClaimSuccessors(database: Database.Database, report: MutableReport, newItemIds: Set<number>): void {
+  const claims = database.prepare('SELECT id, superseded_by FROM memory_claim').all() as Row[]
+  const update = database.prepare('UPDATE memory_item SET superseded_by = ? WHERE id = ?')
+  for (const claim of claims) {
+    const item = rowForLegacyId(database, 'memory_claim', Number(claim.id))
+    if (!item) continue
+    const legacySuccessorId = (claim.superseded_by as number | null) ?? null
+    const successor =
+      legacySuccessorId === null ? undefined : rowForLegacyId(database, 'memory_claim', legacySuccessorId)
+    const successorId = successor?.id ?? null
+    if (valueEqual(item.superseded_by, successorId)) continue
+    update.run(successorId, item.id)
+    if (!newItemIds.has(Number(item.id))) report.refreshed_items += 1
   }
 }
 
@@ -352,15 +523,20 @@ function projectedEmbedding(database: Database.Database, itemId: number): Row | 
   return rows.length === 1 ? rows[0] : undefined
 }
 
-function projectClaim(database: Database.Database, claim: Row, result: Verification): Row | undefined {
+function projectClaim(database: Database.Database, claim: Row, result: Verification): boolean {
+  const failuresBefore = result.failed
   const item = rowForLegacyId(database, 'memory_claim', Number(claim.id))
   if (!item) {
     addCheck(result, false)
     result.roundTripColumnsChecked += Object.keys(claim).length
-    return undefined
+    return false
   }
   const embedding = projectedEmbedding(database, Number(item.id))
   addCheck(result, (claim.embedding === null) === !embedding)
+  addCheck(result, item.kind === 'fact' && item.subject_kind === claim.subject_kind)
+  const expectedHash = typeof claim.embedding_text === 'string' ? sha256(claim.embedding_text) : null
+  if (embedding?.text_hash !== null && embedding?.text_hash !== undefined)
+    addCheck(result, embedding.text_hash === expectedHash)
   const successor =
     item.superseded_by === null
       ? null
@@ -396,10 +572,11 @@ function projectClaim(database: Database.Database, claim: Row, result: Verificat
     period: item.period
   }
   compareRows(claim, projected, result)
-  return item
+  return result.failed === failuresBefore
 }
 
-function projectEvidence(database: Database.Database, evidence: Row, result: Verification): void {
+function projectEvidence(database: Database.Database, evidence: Row, result: Verification): boolean {
+  const failuresBefore = result.failed
   const row = database
     .prepare(`
       SELECT i.legacy_id AS claim_id, e.channel_id, e.source_kind, e.observed_at, e.effective_at, e.job_id,
@@ -411,20 +588,26 @@ function projectEvidence(database: Database.Database, evidence: Row, result: Ver
   if (!row) {
     addCheck(result, false)
     result.roundTripColumnsChecked += Object.keys(evidence).length
-    return
+    return false
   }
   compareRows(evidence, { id: evidence.id, ...row }, result)
+  return result.failed === failuresBefore
 }
 
-function projectEpisode(database: Database.Database, episode: Row, result: Verification): void {
+function projectEpisode(database: Database.Database, episode: Row, result: Verification): boolean {
+  const failuresBefore = result.failed
   const item = rowForLegacyId(database, 'memory_episode', Number(episode.id))
   if (!item) {
     addCheck(result, false)
     result.roundTripColumnsChecked += Object.keys(episode).length
-    return
+    return false
   }
   const embedding = projectedEmbedding(database, Number(item.id))
   addCheck(result, (episode.embedding === null) === !embedding)
+  addCheck(result, item.kind === 'episode' && item.subject_kind === 'guild')
+  const expectedHash = sha256(String(episode.summary))
+  if (embedding?.text_hash !== null && embedding?.text_hash !== undefined)
+    addCheck(result, embedding.text_hash === expectedHash)
   const occurrence = database
     .prepare(
       "SELECT guild_id, channel_id, span_start, observed_at FROM memory_item_occurrence WHERE item_id = ? AND origin = 'episode'"
@@ -445,17 +628,23 @@ function projectEpisode(database: Database.Database, episode: Row, result: Verif
     embedding_fingerprint: embedding?.fingerprint ?? null
   }
   compareRows(episode, projected, result)
+  return result.failed === failuresBefore
 }
 
-function projectMedia(database: Database.Database, digest: Row, result: Verification): void {
+function projectMedia(database: Database.Database, digest: Row, result: Verification): boolean {
+  const failuresBefore = result.failed
   const item = rowForLegacyId(database, 'media_digest', Number(digest.id))
   if (!item) {
     addCheck(result, false)
     result.roundTripColumnsChecked += Object.keys(digest).length
-    return
+    return false
   }
   const embedding = projectedEmbedding(database, Number(item.id))
   addCheck(result, (digest.embedding === null) === !embedding)
+  addCheck(result, item.kind === 'media' && item.subject_kind === 'guild')
+  const expectedHash = sha256(String(digest.summary))
+  if (embedding?.text_hash !== null && embedding?.text_hash !== undefined)
+    addCheck(result, embedding.text_hash === expectedHash)
   const payload = database.prepare('SELECT digest_json FROM memory_item_payload WHERE item_id = ?').get(item.id) as
     | Row
     | undefined
@@ -475,9 +664,11 @@ function projectMedia(database: Database.Database, digest: Row, result: Verifica
     embedding_fingerprint: embedding?.fingerprint ?? null
   }
   compareRows(digest, projected, result)
+  return result.failed === failuresBefore
 }
 
-function projectMediaOccurrence(database: Database.Database, occurrence: Row, result: Verification): void {
+function projectMediaOccurrence(database: Database.Database, occurrence: Row, result: Verification): boolean {
+  const failuresBefore = result.failed
   const row = database
     .prepare(`
       SELECT i.legacy_id AS digest_id, o.guild_id, o.channel_id, o.message_id, o.shared_by_user_id,
@@ -489,9 +680,10 @@ function projectMediaOccurrence(database: Database.Database, occurrence: Row, re
   if (!row) {
     addCheck(result, false)
     result.roundTripColumnsChecked += Object.keys(occurrence).length
-    return
+    return false
   }
   compareRows(occurrence, { id: occurrence.id, ...row }, result)
+  return result.failed === failuresBefore
 }
 
 function countBy(rows: readonly Row[], key: string): Record<string, number> {
@@ -533,6 +725,8 @@ function sourceVectorRows(
   episodes: readonly Row[],
   media: readonly Row[]
 ): Array<{
+  legacyTable: 'memory_claim' | 'memory_episode' | 'media_digest'
+  legacyId: number
   fingerprint: string
   modelId: unknown
   dim: unknown
@@ -540,18 +734,24 @@ function sourceVectorRows(
 }> {
   return [
     ...claims.filter(hasVector).map((row) => ({
+      legacyTable: 'memory_claim' as const,
+      legacyId: Number(row.id),
       fingerprint: fingerprint(row),
       modelId: row.embedding_model_id,
       dim: row.embedding_dim,
       textHash: typeof row.embedding_text === 'string' ? sha256(row.embedding_text) : null
     })),
     ...episodes.filter(hasVector).map((row) => ({
+      legacyTable: 'memory_episode' as const,
+      legacyId: Number(row.id),
       fingerprint: fingerprint(row),
       modelId: row.embedding_model_id,
       dim: row.embedding_dim,
       textHash: sha256(String(row.summary))
     })),
     ...media.filter(hasVector).map((row) => ({
+      legacyTable: 'media_digest' as const,
+      legacyId: Number(row.id),
       fingerprint: fingerprint(row),
       modelId: row.embedding_model_id,
       dim: row.embedding_dim,
@@ -571,10 +771,21 @@ function verify(
   result: Verification
   report: Omit<
     MemoryItemsMigrationReport,
-    'copied_items' | 'copied_evidence' | 'copied_occurrences' | 'copied_payloads' | 'copied_embeddings'
+    | 'copied_items'
+    | 'refreshed_items'
+    | 'deleted_items'
+    | 'copied_evidence'
+    | 'copied_occurrences'
+    | 'copied_payloads'
+    | 'copied_embeddings'
   >
 } {
-  const result: Verification = { passed: 0, failed: 0, roundTripColumnsChecked: 0 }
+  const result: Verification = {
+    passed: 0,
+    failed: 0,
+    roundTripColumnsChecked: 0,
+    driftCounts: { fact: 0, episode: 0, media: 0 }
+  }
   const items = database.prepare('SELECT * FROM memory_item ORDER BY id').all() as Row[]
   const itemEvidence = database.prepare('SELECT * FROM memory_item_evidence ORDER BY id').all() as Row[]
   const itemOccurrences = database.prepare('SELECT * FROM memory_item_occurrence ORDER BY id').all() as Row[]
@@ -602,11 +813,45 @@ function verify(
   addCheck(result, itemOccurrences.length === mediaOccurrences.length + episodes.length)
   addCheck(result, itemPayloads.length === media.length)
 
-  for (const claim of claims) projectClaim(database, claim, result)
-  for (const row of evidence) projectEvidence(database, row, result)
-  for (const row of episodes) projectEpisode(database, row, result)
-  for (const row of media) projectMedia(database, row, result)
-  for (const row of mediaOccurrences) projectMediaOccurrence(database, row, result)
+  for (const claim of claims) {
+    if (!projectClaim(database, claim, result)) result.driftCounts.fact += 1
+  }
+  for (const row of evidence) {
+    if (!projectEvidence(database, row, result)) result.driftCounts.fact += 1
+  }
+  for (const row of episodes) {
+    if (!projectEpisode(database, row, result)) result.driftCounts.episode += 1
+  }
+  for (const row of media) {
+    if (!projectMedia(database, row, result)) result.driftCounts.media += 1
+  }
+  for (const row of mediaOccurrences) {
+    if (!projectMediaOccurrence(database, row, result)) result.driftCounts.media += 1
+  }
+  const sourceIds = {
+    memory_claim: new Set(claims.map((row) => Number(row.id))),
+    memory_episode: new Set(episodes.map((row) => Number(row.id))),
+    media_digest: new Set(media.map((row) => Number(row.id)))
+  }
+  for (const item of items) {
+    const table = item.legacy_table as keyof typeof sourceIds
+    const kind = item.kind as keyof Verification['driftCounts']
+    if (!sourceIds[table]?.has(Number(item.legacy_id))) result.driftCounts[kind] += 1
+  }
+  const sourceEvidenceIds = new Set(evidence.map((row) => Number(row.id)))
+  for (const row of itemEvidence) {
+    if (!sourceEvidenceIds.has(Number(row.legacy_id))) result.driftCounts.fact += 1
+  }
+  const sourceOccurrenceIds = new Set(mediaOccurrences.map((row) => Number(row.id)))
+  for (const row of itemOccurrences) {
+    if (row.legacy_id !== null && !sourceOccurrenceIds.has(Number(row.legacy_id))) result.driftCounts.media += 1
+    if (row.origin === 'episode') {
+      const parent = database.prepare('SELECT legacy_id FROM memory_item WHERE id = ?').get(row.item_id) as
+        | Row
+        | undefined
+      if (!episodes.some((episode) => Number(episode.id) === Number(parent?.legacy_id))) result.driftCounts.episode += 1
+    }
+  }
 
   const expectedEvidenceCounts = new Map<number, number>()
   for (const row of evidence)
@@ -695,7 +940,15 @@ function verify(
       }
     }
   }
-  for (const embedding of itemEmbeddings) addCheck(result, embedding.created_at === null)
+  for (const embedding of itemEmbeddings) {
+    if (embedding.created_at !== null) {
+      addCheck(result, false)
+      const item = database.prepare('SELECT kind FROM memory_item WHERE id = ?').get(embedding.item_id) as
+        | { kind: keyof Verification['driftCounts'] }
+        | undefined
+      if (item) result.driftCounts[item.kind] += 1
+    } else addCheck(result, true)
+  }
 
   const sourceVectors = sourceVectorRows(claims, episodes, media)
   const sourceProvenance = {
@@ -710,7 +963,28 @@ function verify(
     fingerprint: itemEmbeddings.filter((row) => row.fingerprint !== null).length,
     text_hash: itemEmbeddings.filter((row) => row.text_hash !== null).length
   }
-  addCheck(result, sameCounts(sourceProvenance, itemProvenance))
+  addCheck(
+    result,
+    sameCounts(
+      { model_id: sourceProvenance.model_id, dim: sourceProvenance.dim, fingerprint: sourceProvenance.fingerprint },
+      { model_id: itemProvenance.model_id, dim: itemProvenance.dim, fingerprint: itemProvenance.fingerprint }
+    )
+  )
+  const expectedHashes = new Map(
+    sourceVectors.map((row) => [`${row.legacyTable}\u0000${row.legacyId}\u0000${row.fingerprint}`, row.textHash])
+  )
+  addCheck(result, itemProvenance.text_hash <= sourceProvenance.text_hash)
+  for (const embedding of itemEmbeddings) {
+    if (embedding.text_hash === null) continue
+    const item = database
+      .prepare('SELECT legacy_table, legacy_id FROM memory_item WHERE id = ?')
+      .get(embedding.item_id) as Row | undefined
+    addCheck(
+      result,
+      expectedHashes.get(`${item?.legacy_table}\u0000${item?.legacy_id}\u0000${embedding.fingerprint}`) ===
+        embedding.text_hash
+    )
+  }
 
   const sourceVectorsByFingerprint = countBy(
     sourceVectors.map((row) => ({ fingerprint: row.fingerprint })),
@@ -721,7 +995,13 @@ function verify(
 
   const report: Omit<
     MemoryItemsMigrationReport,
-    'copied_items' | 'copied_evidence' | 'copied_occurrences' | 'copied_payloads' | 'copied_embeddings'
+    | 'copied_items'
+    | 'refreshed_items'
+    | 'deleted_items'
+    | 'copied_evidence'
+    | 'copied_occurrences'
+    | 'copied_payloads'
+    | 'copied_embeddings'
   > = {
     kind_counts: {
       fact: kindCounts.fact ?? 0,
@@ -776,18 +1056,36 @@ function verify(
   return { result, report }
 }
 
+export function getMemoryItemDriftCounts(database: Database.Database): {
+  fact: number
+  episode: number
+  media: number
+} {
+  const claims = database.prepare('SELECT * FROM memory_claim ORDER BY id').all() as Row[]
+  const evidence = database.prepare('SELECT * FROM memory_evidence ORDER BY id').all() as Row[]
+  const episodes = database.prepare('SELECT * FROM memory_episode ORDER BY id').all() as Row[]
+  const media = database.prepare('SELECT * FROM media_digest ORDER BY id').all() as Row[]
+  const occurrences = database.prepare('SELECT * FROM media_occurrence ORDER BY id').all() as Row[]
+  return verify(database, claims, evidence, episodes, media, occurrences).result.driftCounts
+}
+
 export function migrateMemoryItems(database: Database.Database): MemoryItemsMigrationReport {
   const transaction = database.transaction(() => {
     const report: MutableReport = {
       copied_items: 0,
+      refreshed_items: 0,
+      deleted_items: 0,
       copied_evidence: 0,
       copied_occurrences: 0,
       copied_payloads: 0,
       copied_embeddings: 0
     }
-    copyClaims(database, report)
-    copyEpisodes(database, report)
-    copyMedia(database, report)
+    const newItemIds = new Set<number>()
+    copyClaims(database, report, newItemIds)
+    copyEpisodes(database, report, newItemIds)
+    copyMedia(database, report, newItemIds)
+    removeOrphanProjectionRows(database, report)
+    refreshClaimSuccessors(database, report, newItemIds)
 
     const claims = database.prepare('SELECT * FROM memory_claim ORDER BY id').all() as Row[]
     const evidence = database.prepare('SELECT * FROM memory_evidence ORDER BY id').all() as Row[]

@@ -192,9 +192,9 @@ Passive memory needs a judge. With `TYPESAFE_API_KEY`, Jev judges. Without it, t
 
 ### Store Selection
 
-| Key            | Default  | Env Override   | What It Does                                                                                                               |
-| -------------- | -------- | -------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `memory.store` | `legacy` | `MEMORY_STORE` | Valid values are `legacy`, `dual` and `item`. Phase 2 accepts only `legacy`; `dual` and `item` stop startup with an error. |
+| Key            | Default  | Env Override   | What It Does                                                                                                                                                                                                                                                                                                                  |
+| -------------- | -------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `memory.store` | `legacy` | `MEMORY_STORE` | Valid values are `legacy` and `dual`; `item` is rejected until read cutover. `legacy` drops projection triggers. `dual` installs them and records integrity counts while reads remain on legacy tables. `config.yml` stays `legacy`; enter dual as an operator using the [runbook](../RUNBOOK.md#typed-memory-items-phase-3). |
 
 ### Capture and Prompt
 

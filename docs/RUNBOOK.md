@@ -633,26 +633,39 @@ ROKABOT_DB_PATH="$PWD/data/rokabot.db" npm run migrate:memory-v2
 
 Review the report and the backup. If the check passed, restart with `sudo docker compose up -d roka`. Never delete `user_memory` by hand.
 
-### Typed Memory Items (Phase 2)
+### Typed Memory Items (Phase 3)
 
-Run the migration only with the bot stopped. It copies the legacy memory tables into the additive item tables in one transaction. Startup creates the schema but never runs the backfill. The script prints counts and check results only; it never prints memory text.
+`config.yml` stays on `memory.store: legacy`. Enter `dual` only as an operator step. The bot must be stopped while the migration catches up rows written while projection triggers were off. The migration refreshes changed rows, removes projections whose legacy rows were deleted, and inserts new rows in one transaction. Startup installs triggers but never runs the migration. It prints counts and check results only; it never prints memory text.
 
 1. Stop the bot and take a timestamped SQLite backup.
-2. Run the migration against the live database file.
-3. Back up the migrated file to a replay copy and check that replay reports zero mismatches.
-4. Restart the bot after both commands succeed.
+2. Run `migrate:memory-items` against the Pi database and confirm the checks pass.
+3. Set `MEMORY_STORE=dual` in `.env`, then start the bot.
+4. Check the latest `item_integrity` detail. All three counts must be zero.
 
 ```bash
 cd ~/rokabot
 sudo docker compose -f ~/rokabot/docker-compose.yml stop roka
-sqlite3 data/rokabot.db ".backup data/rokabot.db.pre-memory-items.$(date -u +%Y%m%d%H%M%S)"
+sqlite3 data/rokabot.db ".backup data/rokabot.db.pre-memory-dual.$(date -u +%Y%m%d%H%M%S)"
 ROKABOT_DB_PATH="$PWD/data/rokabot.db" npm run migrate:memory-items
-sqlite3 data/rokabot.db '.backup /tmp/rokabot-memory-items-replay.db'
-npm run replay:memory-items -- /tmp/rokabot-memory-items-replay.db
+# Set MEMORY_STORE=dual in .env; config.yml remains legacy.
 sudo docker compose -f ~/rokabot/docker-compose.yml up -d roka
+sqlite3 data/rokabot.db "SELECT detail FROM memory_events WHERE kind = 'item_integrity' ORDER BY id DESC LIMIT 1;"
 ```
 
-Check `status` is `ok`, `checks_failed` is `0`, and the complete and unique legacy ID counts equal the expected count. Replay must show `mismatch_count: 0`; it uses stored vectors as query stand-ins and makes no embedding calls. A failed migration rolls back its copied rows. Keep the backup until the replay check passes.
+Check `status` is `ok`, `checks_failed` is `0`, and the complete and unique legacy ID counts equal the expected count before starting. The integrity detail has only `fact`, `episode` and `media` drift counts. A failed migration rolls back its writes. If any integrity count is nonzero, roll back to legacy and investigate before trying dual again.
+
+#### Roll back to legacy
+
+Stop the bot, change `MEMORY_STORE` in `.env` to `legacy` (or remove it), then start the bot. Startup drops the projection triggers. Legacy tables remain authoritative, and the item tables remain unused. Before a later attempt to enter dual, rerun `migrate:memory-items` while stopped to catch up.
+
+```bash
+sudo docker compose -f ~/rokabot/docker-compose.yml stop roka
+# Set MEMORY_STORE=legacy in .env or remove the setting.
+sudo docker compose -f ~/rokabot/docker-compose.yml up -d roka
+sqlite3 data/rokabot.db "SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'memory_item_projection_%';"
+```
+
+The last query must return `0` after the bot starts in legacy mode. Keep the backup until the dual period is accepted.
 
 ### Vault Export
 
