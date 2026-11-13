@@ -10,6 +10,7 @@ import Database from 'better-sqlite3'
 import { logger } from '../utils/logger.js'
 import { ensureMemoryClaimSchema } from './memoryClaimSchema.js'
 import { ensureMemoryItemSchema } from './memoryItemSchema.js'
+import { isLegacyMemoryDropped } from './memoryLegacyDrop.js'
 import { ensureVectorProvenanceColumns } from './vectorProvenance.js'
 
 let db: Database.Database | null = null
@@ -228,7 +229,11 @@ function createTables(database: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_bug_reports_created_at
       ON bug_reports (created_at);
+  `)
 
+  // Phase 7 drops these tables and records it; startup must not recreate them.
+  if (!isLegacyMemoryDropped(database)) {
+    database.exec(`
     CREATE TABLE IF NOT EXISTS memory_episode (
       id INTEGER PRIMARY KEY,
       guild_id TEXT NOT NULL,
@@ -277,8 +282,8 @@ function createTables(database: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_media_occurrence_guild_user
       ON media_occurrence (guild_id, shared_by_user_id);
-
-  `)
+    `)
+  }
 }
 
 /**

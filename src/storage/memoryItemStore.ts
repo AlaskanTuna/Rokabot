@@ -4,6 +4,7 @@ import { type RecallScope, canRecall } from '../agent/memory/privacy.js'
 import { config } from '../config.js'
 import { getDb } from './database.js'
 import { type EpisodeEmbedding, isActiveVector } from './memoryEpisodeStore.js'
+import { tableExists } from './memoryLegacyDrop.js'
 
 declare const recallableMemoryItem: unique symbol
 declare const writeMemoryItem: unique symbol
@@ -374,18 +375,14 @@ export function deleteMemoryItem(database: Database.Database, itemId: number): v
 }
 
 export function reserveMemoryItemIds(database: Database.Database): void {
-  const sources = database
-    .prepare(`
-      SELECT MAX(id) AS id FROM memory_claim
-      UNION ALL SELECT MAX(id) FROM memory_episode
-      UNION ALL SELECT MAX(id) FROM media_digest
-    `)
-    .all() as Array<{ id: number | null }>
-  const maximum = Math.max(
-    0,
-    ...sources.map(({ id }) => id ?? 0),
-    (database.prepare('SELECT COALESCE(MAX(id), 0) AS id FROM memory_item').get() as { id: number }).id
-  )
+  // After the Phase 7 drop the legacy tables are gone, so migrated items' `legacy_id` keeps new IDs above them.
+  const maxima = ['memory_claim', 'memory_episode', 'media_digest']
+    .filter((table) => tableExists(database, table))
+    .map((table) => (database.prepare(`SELECT MAX(id) AS id FROM ${table}`).get() as { id: number | null }).id ?? 0)
+  const items = database
+    .prepare('SELECT COALESCE(MAX(id), 0) AS id, COALESCE(MAX(legacy_id), 0) AS legacy_id FROM memory_item')
+    .get() as { id: number; legacy_id: number }
+  const maximum = Math.max(0, ...maxima, items.id, items.legacy_id)
   const current = database.prepare("SELECT seq FROM sqlite_sequence WHERE name = 'memory_item'").get() as
     | { seq: number }
     | undefined

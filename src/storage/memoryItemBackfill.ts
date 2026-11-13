@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import type Database from 'better-sqlite3'
+import { LegacyMemoryDropRefusal, isLegacyMemoryDropped } from './memoryLegacyDrop.js'
 import { UNKNOWN_FINGERPRINT } from './vectorProvenance.js'
 
 type Row = Record<string, unknown>
@@ -1070,6 +1071,11 @@ export function getMemoryItemDriftCounts(database: Database.Database): {
 }
 
 export function migrateMemoryItems(database: Database.Database): MemoryItemsMigrationReport {
+  if (isLegacyMemoryDropped(database)) {
+    throw new LegacyMemoryDropRefusal(
+      'Memory item migration requires the legacy tables; restore the backup to roll back after the drop'
+    )
+  }
   const transaction = database.transaction(() => {
     const report: MutableReport = {
       copied_items: 0,
@@ -1111,6 +1117,11 @@ export type MemoryItemsReverseExportReport = Readonly<{
 
 /** Rebuilds the legacy writer tables from the canonical item rows for a rollback to dual mode. */
 export function exportMemoryItemsToLegacy(database: Database.Database): MemoryItemsReverseExportReport {
+  if (isLegacyMemoryDropped(database)) {
+    throw new LegacyMemoryDropRefusal(
+      'Memory item reverse export requires the legacy tables; restore the backup to roll back after the drop'
+    )
+  }
   const transaction = database.transaction(() => {
     const activeProjectionTriggers = database
       .prepare(
