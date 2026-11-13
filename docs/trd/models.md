@@ -249,7 +249,7 @@ side's `timeoutMs`.
 
 - **Opens:** a turn that switched from main to fallback for a `STICKY_KINDS` failure, and then succeeded on the
   fallback, sets `fallbackUntilMs = now + llm.stickyMs`. `stickyMs: 0` sets nothing.
-- **Effect:** while it is open, `useFallback` starts `true`, and the Gemini media watcher is skipped.
+- **Effect:** while it is open, `useFallback` starts `true`. Media watching is unaffected: the Gemini watch always runs.
 - **Closes:** any turn that succeeds on the main side sets it to `0`.
 - **No Extension:** a turn that only started on the fallback does not extend it. If that turn fails with a switch
   kind, it switches back to the main side.
@@ -291,7 +291,7 @@ The log text predates provider choice and still says "Gemini" for any main model
 
 ## Budgets, Usage and Cost
 
-Every adapter, both watchers and both hedge sides call `startCall` (`src/agent/llm/budget.ts`) before each provider
+Every adapter, the watcher and both hedge sides call `startCall` (`src/agent/llm/budget.ts`) before each provider
 request, and release the reservation with the call's usage. The rules for slots, daily units, tokens, Magicubes and
 replies-first admission are in [Reliability](reliability.md#per-call-budgets). Model-specific parts:
 

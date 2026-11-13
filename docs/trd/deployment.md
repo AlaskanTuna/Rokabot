@@ -8,7 +8,7 @@ How a merged change becomes a running bot on the Raspberry Pi: CI jobs, images, 
 | ---------- | --------------------------------------------------------------------------------------------------- |
 | Workflow   | `.github/workflows/deploy.yml` ("Deploy to Pi").                                                    |
 | Merge Gate | `main` is PR-only. The `test` check must pass; `images-ok` is the second gate check.                |
-| Images     | `ghcr.io/alaskantuna/rokabot` and `ghcr.io/alaskantuna/rokabot-asr`, built for amd64 and arm64.     |
+| Images     | `ghcr.io/alaskantuna/rokabot`, built for amd64 and arm64.                                           |
 | Deploy     | A self-hosted runner on the Pi pulls `sha-<7>` and restarts with `docker compose up -d --no-build`. |
 | Releases   | release-please opens release PRs. Merging one moves `stable`, `vX.Y` and `vX.Y.Z`.                  |
 | Host       | Raspberry Pi 5 (8 GB), arm64, Docker Compose.                                                       |
@@ -17,7 +17,7 @@ How a merged change becomes a running bot on the Raspberry Pi: CI jobs, images, 
 
 ![Deployment Pipeline](../diagrams/deployment-pipeline.svg)
 
-_A PR runs the checks; a merge builds both images, tags them in GHCR, and the Pi pulls and restarts._
+_A PR runs the checks; a merge builds the image, tags it in GHCR, and the Pi pulls and restarts._
 
 ### Triggers
 
@@ -27,17 +27,17 @@ _A PR runs the checks; a merge builds both images, tags them in GHCR, and the Pi
 
 ### Jobs
 
-| Job                     | Runs On                 | When                                              | Does                                                                                                                                              |
-| ----------------------- | ----------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `test`                  | `ubuntu-latest`         | PR and push                                       | `npm ci`, `npm run typecheck` (src, tests, scripts, Studio), `biome check .`, `npm test`, `npm run test:perf`. Dummy Discord and Gemini secrets.  |
-| `compose`               | `ubuntu-24.04`          | PR and push                                       | Validates both compose profiles, checks the `config.yml` mount is read-only and refuses a missing file, lints workflows.                          |
-| `images`                | amd64 and arm64 runners | After `test`                                      | Builds `rokabot` and `rokabot-asr` per platform with `GIT_COMMIT`. On push, pushes by digest to GHCR.                                             |
-| `manifest`              | `ubuntu-24.04`          | Push, after `images`                              | Joins the digests into `sha-<7>` and `edge`. Fails if an anonymous pull does not work.                                                            |
-| `images-ok`             | `ubuntu-24.04`          | Always                                            | Fails unless `images` and `compose` both succeeded. One stable check name for the ruleset.                                                        |
-| `notify-images-failure` | `ubuntu-24.04`          | Push, on failure                                  | Posts to `DISCORD_WEBHOOK_URL` when `images` or `manifest` failed.                                                                                |
-| `deploy`                | `self-hosted` (the Pi)  | Push, after `test` and `manifest`                 | Pulls and restarts the bot. See [Deploy on the Pi](#deploy-on-the-pi).                                                                            |
-| `release`               | `ubuntu-24.04`          | Push, after `test`                                | Runs release-please, which opens release PRs and creates the tag and GitHub Release.                                                              |
-| `promote`               | `ubuntu-24.04`          | After a successful `deploy` of the release commit | Runs `promote.yml`, which finds the release on GitHub and re-tags `sha-<7>` as `vX.Y.Z`, `vX.Y` and `stable` for both images. Nothing is rebuilt. |
+| Job                     | Runs On                 | When                                              | Does                                                                                                                                             |
+| ----------------------- | ----------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `test`                  | `ubuntu-latest`         | PR and push                                       | `npm ci`, `npm run typecheck` (src, tests, scripts, Studio), `biome check .`, `npm test`, `npm run test:perf`. Dummy Discord and Gemini secrets. |
+| `compose`               | `ubuntu-24.04`          | PR and push                                       | Validates both compose profiles, checks the `config.yml` mount is read-only and refuses a missing file, lints workflows.                         |
+| `images`                | amd64 and arm64 runners | After `test`                                      | Builds `rokabot` per platform with `GIT_COMMIT`. On push, pushes by digest to GHCR.                                                              |
+| `manifest`              | `ubuntu-24.04`          | Push, after `images`                              | Joins the digests into `sha-<7>` and `edge`. Fails if an anonymous pull does not work.                                                           |
+| `images-ok`             | `ubuntu-24.04`          | Always                                            | Fails unless `images` and `compose` both succeeded. One stable check name for the ruleset.                                                       |
+| `notify-images-failure` | `ubuntu-24.04`          | Push, on failure                                  | Posts to `DISCORD_WEBHOOK_URL` when `images` or `manifest` failed.                                                                               |
+| `deploy`                | `self-hosted` (the Pi)  | Push, after `test` and `manifest`                 | Pulls and restarts the bot. See [Deploy on the Pi](#deploy-on-the-pi).                                                                           |
+| `release`               | `ubuntu-24.04`          | Push, after `test`                                | Runs release-please, which opens release PRs and creates the tag and GitHub Release.                                                             |
+| `promote`               | `ubuntu-24.04`          | After a successful `deploy` of the release commit | Runs `promote.yml`, which finds the release on GitHub and re-tags `sha-<7>` as `vX.Y.Z`, `vX.Y` and `stable`. Nothing is rebuilt.                |
 
 ### Image Tags
 
@@ -60,9 +60,9 @@ The `deploy` job runs on the Pi's self-hosted runner. The runner polls GitHub ou
 
 1. Reset `~/rokabot` to the pushed commit (`git fetch origin main && git reset --hard <sha>`).
 2. Archive the outgoing `roka` container's logs to `~/rokabot/logs/roka-<UTC time>.log.gz`. Archives older than 30 days are deleted.
-3. Set `ROKA_TAG=sha-<7>` and run `docker compose pull roka asr`.
+3. Set `ROKA_TAG=sha-<7>` and run `docker compose pull roka`.
 4. After a successful pull, write `ROKA_TAG` into `.env`, so a manual compose command keeps this image.
-5. Run `docker compose up -d --no-build`.
+5. Run `docker compose up -d --no-build --remove-orphans`, which also removes the retired `asr` container.
 6. Health check: `GET http://localhost:3000/` must return `status: ok`. It tries 10 times, 5 s apart, then prints the last 20 log lines and fails.
 7. Prune local `sha-*` images with `scripts/prune-images.sh`. It keeps the deployed tag and one previous tag for rollback.
 8. Post success or failure to `DISCORD_WEBHOOK_URL`, when set.
@@ -101,17 +101,15 @@ A release PR opened with `github.token` never triggers CI, so its required `test
 
 ### Sidecar Images
 
-- **`asr` (`sidecar/asr/Dockerfile`):** `python:3.12-slim` pinned by digest. A model stage downloads Silero VAD, SenseVoice and Moonshine. The runtime installs `sherpa-onnx` and `numpy`, runs as user `asr`, listens on 8000 and has a Docker `HEALTHCHECK` on `/health`.
 - **`embeddings` (`sidecar/embeddings/Dockerfile`):** `node:24-bookworm-slim` pinned by digest, because onnxruntime needs glibc. It downloads `Xenova/multilingual-e5-small` at a pinned revision and checks its hashes. It listens on 8080 with a `HEALTHCHECK` on `/health`. CI does not publish this image; compose builds it locally.
 
 ## Docker Compose
 
-| Service      | Image                                      | Memory (`mem_limit` = `memswap_limit`) | CPUs | Started                    |
-| ------------ | ------------------------------------------ | -------------------------------------- | ---- | -------------------------- |
-| `roka`       | `${ROKA_REGISTRY}/rokabot:${ROKA_TAG}`     | 1g                                     | n/a  | Always                     |
-| `asr`        | `${ROKA_REGISTRY}/rokabot-asr:${ROKA_TAG}` | 2g                                     | 3    | Always                     |
-| `embeddings` | Built from `./sidecar/embeddings`          | 1g                                     | 1    | Profile `local-embeddings` |
-| `watchtower` | `nickfedor/watchtower:1.23.1`              | n/a                                    | n/a  | Profile `autoupdate`       |
+| Service      | Image                                  | Memory (`mem_limit` = `memswap_limit`) | CPUs | Started                    |
+| ------------ | -------------------------------------- | -------------------------------------- | ---- | -------------------------- |
+| `roka`       | `${ROKA_REGISTRY}/rokabot:${ROKA_TAG}` | 1g                                     | n/a  | Always                     |
+| `embeddings` | Built from `./sidecar/embeddings`      | 1g                                     | 1    | Profile `local-embeddings` |
+| `watchtower` | `nickfedor/watchtower:1.23.1`          | n/a                                    | n/a  | Profile `autoupdate`       |
 
 - **Image Defaults:** `ROKA_REGISTRY` defaults to `ghcr.io/alaskantuna`, and `ROKA_TAG` to `stable`.
 - **No Swap:** each capped service sets `memswap_limit` equal to `mem_limit`.
@@ -120,29 +118,28 @@ A release PR opened with `github.token` never triggers CI, so its required `test
 
 ### `roka` Service
 
-- **Environment:** `env_file: .env`, plus `ADK_QUIET=1` and `MEDIA_TRANSCRIBER_URL` (default `http://asr:8000`; an empty value in `.env` turns transcription off).
+- **Environment:** `env_file: .env`, plus `ADK_QUIET=1`.
 - **Port:** `3000:3000` for the health endpoint.
 - **Volumes:** `./data` at `/app/data` (SQLite and report attachments). `./config.yml` at `/app/config.yml`, read-only, with `create_host_path: false`, so a missing file fails the start instead of creating a directory.
 - **Labels:** `com.centurylinklabs.watchtower.enable: 'true'`, plus `panel.type`, `panel.name`, `panel.icon` and `panel.db` labels.
 
 ### Sidecars
 
-- **`asr`:** speech recognition for the Qwen media watcher. `ASR_THREADS=3`. No published port; the bot reaches it on the compose network.
 - **`embeddings`:** local embedding sidecar for `embeddings.provider: local`, reached at `http://embeddings:8080`.
-- **`watchtower`:** opt-in auto-update for users running `stable`. It updates only containers labeled `true` (`roka`, `asr`), removes replaced images, and runs daily at 04:07 container time (6-field cron `0 7 4 * * *`). It mounts the Docker socket, so it is never on by default. It watches the exact tag the container runs.
+- **`watchtower`:** opt-in auto-update for users running `stable`. It updates only the container labeled `true` (`roka`), removes the replaced image, and runs daily at 04:07 container time (6-field cron `0 7 4 * * *`). It mounts the Docker socket, so it is never on by default. It watches the exact tag the container runs.
 
 ## Raspberry Pi Notes
 
 - **Architecture:** arm64. CI builds the arm64 image on `ubuntu-24.04-arm`, so the Pi builds nothing.
-- **Memory:** the Pi has 8 GB. The caps above total 4 GB with the `embeddings` profile on.
-- **Disk:** log rotation and the image prune keep disk use bounded. The first pull after a speech-model change downloads about 1 GB of layers.
+- **Memory:** the Pi has 8 GB. The caps above total 2 GB with the `embeddings` profile on.
+- **Disk:** log rotation and the image prune keep disk use bounded.
 - **Boot:** Docker must start on boot for `restart: unless-stopped` to bring the bot back after a reboot.
 - **Runner:** a systemd service. The [Runbook](../RUNBOOK.md) covers setup and management.
 
 ## Source Files
 
 - `.github/workflows/deploy.yml`
-- `Dockerfile`, `sidecar/asr/Dockerfile`, `sidecar/embeddings/Dockerfile`
+- `Dockerfile`, `sidecar/embeddings/Dockerfile`
 - `docker-compose.yml`
 - `release-please-config.json`, `.release-please-manifest.json`
 - `scripts/prune-images.sh`

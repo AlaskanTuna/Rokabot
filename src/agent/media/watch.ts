@@ -220,7 +220,7 @@ export async function watchMedia(input: {
         signal: input.signal
       })
     } catch {
-      // Refused before anything was sent, so nothing was billed, and the turn's other watcher may still take it.
+      // Refused before anything was sent, so nothing was billed.
       const reason = input.signal?.aborted ? 'timeout' : 'overloaded'
       return { status: 'failed', reason, calls, watchMs: elapsedSince(startedAt) }
     }

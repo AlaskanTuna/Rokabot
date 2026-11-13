@@ -135,23 +135,7 @@ describe('config module', () => {
       skimClips: 8,
       skimClipSeconds: 10,
       maxStreamedUploadBytes: 52_428_800,
-      uploadTimeoutMs: 45_000,
-      qwen: {
-        apiKey: undefined,
-        baseUrl: 'https://api-inference.modelscope.ai/v1',
-        model: 'Qwen/Qwen3.5-35B-A3B',
-        secondsPerFrame: 4,
-        minFrames: 16,
-        maxFrames: 32,
-        frameHeight: 360,
-        timeoutMs: 30_000
-      },
-      transcriber: {
-        url: '',
-        timeoutMs: 45_000,
-        maxSpeechSec: 120,
-        maxAudioSec: 180
-      }
+      uploadTimeoutMs: 45_000
     })
 
     expect(config.jev.apiKey).toBeUndefined()
@@ -248,81 +232,23 @@ describe('config module', () => {
     expect(config.socialPosts.enabled).toBe(false)
   })
 
-  it.each(['qwen', 'direct', 'off'])('allows MEDIA_WATCHER to choose %s', async (watcher) => {
+  it('allows MEDIA_WATCHER to choose off', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('MEDIA_WATCHER', 'off')
+
+    const { config } = await import('../config.js')
+
+    expect(config.media.watcher).toBe('off')
+  })
+
+  it.each(['qwen', 'direct', 'openai'])('throws when MEDIA_WATCHER is %s and names the env key', async (watcher) => {
     setRequiredEnvVars()
     clearTunableEnvVars()
     vi.stubEnv('MEDIA_WATCHER', watcher)
 
-    const { config } = await import('../config.js')
-
-    expect(config.media.watcher).toBe(watcher)
-  })
-
-  it('throws when MEDIA_WATCHER is not a known watcher and names the env key', async () => {
-    setRequiredEnvVars()
-    clearTunableEnvVars()
-    vi.stubEnv('MEDIA_WATCHER', 'openai')
-
     await expect(() => import('../config.js')).rejects.toThrow(
-      'Environment variable MEDIA_WATCHER must be gemini, qwen, direct or off, got: openai'
-    )
-  })
-
-  it('allows MEDIA_QWEN_MODEL to override the Qwen watcher model', async () => {
-    setRequiredEnvVars()
-    clearTunableEnvVars()
-    vi.stubEnv('MEDIA_QWEN_MODEL', 'Qwen/Qwen3.5-122B-A10B')
-
-    const { config } = await import('../config.js')
-
-    expect(config.media.qwen.model).toBe('Qwen/Qwen3.5-122B-A10B')
-  })
-
-  it('allows MEDIA_TRANSCRIBER_URL to point the watcher at the speech sidecar', async () => {
-    setRequiredEnvVars()
-    clearTunableEnvVars()
-    vi.stubEnv('MEDIA_TRANSCRIBER_URL', 'http://asr:8000')
-
-    const { config } = await import('../config.js')
-
-    expect(config.media.transcriber.url).toBe('http://asr:8000')
-  })
-
-  it('throws if media.transcriber.maxSpeechSec is below its bound', async () => {
-    setRequiredEnvVars()
-    clearTunableEnvVars()
-    withYamlOverride({ media: { transcriber: { maxSpeechSec: 5 } } })
-
-    await expect(() => import('../config.js')).rejects.toThrow(
-      'Config value media.transcriber.maxSpeechSec must be >= 10, got: 5'
-    )
-  })
-
-  it('throws if media.transcriber.maxSpeechSec is above its bound', async () => {
-    setRequiredEnvVars()
-    clearTunableEnvVars()
-    withYamlOverride({ media: { transcriber: { maxSpeechSec: 601 } } })
-
-    await expect(() => import('../config.js')).rejects.toThrow(
-      'Config value media.transcriber.maxSpeechSec must be <= 600, got: 601'
-    )
-  })
-
-  it('throws if media.qwen.minFrames is below its bound', async () => {
-    setRequiredEnvVars()
-    clearTunableEnvVars()
-    withYamlOverride({ media: { qwen: { minFrames: 3 } } })
-
-    await expect(() => import('../config.js')).rejects.toThrow('Config value media.qwen.minFrames must be >= 4, got: 3')
-  })
-
-  it('throws if media.qwen.maxFrames is above its bound', async () => {
-    setRequiredEnvVars()
-    clearTunableEnvVars()
-    withYamlOverride({ media: { qwen: { maxFrames: 33 } } })
-
-    await expect(() => import('../config.js')).rejects.toThrow(
-      'Config value media.qwen.maxFrames must be <= 32, got: 33'
+      `Environment variable MEDIA_WATCHER must be gemini or off, got: ${watcher}`
     )
   })
 
@@ -1076,14 +1002,6 @@ describe('config module', () => {
       { path: 'media.skimClipSeconds', min: 2, max: 30 },
       { path: 'media.maxStreamedUploadBytes', min: 10_485_760, max: 104_857_600 },
       { path: 'media.uploadTimeoutMs', min: 10_000, max: 120_000 },
-      { path: 'media.qwen.secondsPerFrame', min: 0.5, max: 30 },
-      { path: 'media.qwen.minFrames', min: 4, max: 32 },
-      { path: 'media.qwen.maxFrames', min: 4, max: 32 },
-      { path: 'media.qwen.frameHeight', min: 144, max: 720 },
-      { path: 'media.qwen.timeoutMs', min: 5000, max: 90_000 },
-      { path: 'media.transcriber.timeoutMs', min: 5000, max: 120_000 },
-      { path: 'media.transcriber.maxSpeechSec', min: 10, max: 600 },
-      { path: 'media.transcriber.maxAudioSec', min: 30, max: 900 },
       { path: 'fallback.timeoutMs', min: 1 },
       { path: 'fallback.stickyMs', min: 0 },
       // Kept literal as a drift guard alongside the derived assertion above: ten images cost 10,890 Gemini tokens.
@@ -1727,8 +1645,6 @@ describe('config module', () => {
     expect(geminiKeyRequired({ ...none, fallback: 'gemini' })).toBe(true)
     expect(geminiKeyRequired({ ...none, embeddings: 'gemini' })).toBe(true)
     expect(geminiKeyRequired({ ...none, watcher: 'gemini' })).toBe(true)
-    expect(geminiKeyRequired({ ...none, watcher: 'qwen' })).toBe(false)
-    expect(geminiKeyRequired({ ...none, watcher: 'direct' })).toBe(false)
   })
 
   it('starts an Anthropic-only config without GEMINI_API_KEY', async () => {

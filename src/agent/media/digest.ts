@@ -284,24 +284,7 @@ export function watchOutcomeFor(digest: MediaDigest): WatchOutcome {
   }
 }
 
-const HEARD_LINES = {
-  none: 'no sound heard',
-  speech: 'speech heard from a transcript but not music or other sound'
-} as const
-
-function framesLine(digest: MediaDigest & { frames: number }): string {
-  const heard = digest.silent ? 'no sound' : HEARD_LINES[digest.heard ?? 'none']
-  const sampled = `${digest.frames} frames, ${heard}`
-  if (digest.mode === 'focus') {
-    const window = digest.bins[0]
-    const watched = window ? `${formatClock(window.startSec)}–${formatClock(window.endSec)}` : 'around it'
-    return `around ${formatClock(digest.focusSec ?? window?.startSec ?? 0)}: watched ${watched}, ${sampled}`
-  }
-  return `whole ${digest.kind}, ${formatClock(digest.durationSec)}, ${sampled}`
-}
-
 export function coverageLine(digest: MediaDigest): string {
-  if (digest.frames !== undefined) return framesLine({ ...digest, frames: digest.frames })
   if (digest.mode === 'opening')
     return `only the opening was available, about ${formatClock(digest.durationSec)} of a longer file`
   if (digest.mode === 'focus') {

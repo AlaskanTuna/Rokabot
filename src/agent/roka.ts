@@ -496,7 +496,6 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     attachments: mediaAttachments,
     focus: userMessage,
     mayRetry: () => getSharedRateLimiter().tryConsumeAboveFloor(config.gemini.retryRpmFloor),
-    geminiUnavailable: rokaModel.hasFallback && hasStickyFallback(),
     // Servers only: DMs, group DMs, `/ask` and privacy `off` keep what was watched in the transcript alone.
     memoryScope:
       memoryScope === 'full' && !guildId.startsWith('dm:') && options.messageId

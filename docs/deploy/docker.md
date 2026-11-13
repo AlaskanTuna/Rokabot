@@ -6,9 +6,9 @@ Run Rokabot from the published images on any host with Docker Compose. You need 
 
 | Item    | Value                                                                                       |
 | ------- | ------------------------------------------------------------------------------------------- |
-| Images  | `ghcr.io/alaskantuna/rokabot`, `ghcr.io/alaskantuna/rokabot-asr` (speech recognition)       |
+| Images  | `ghcr.io/alaskantuna/rokabot`                                                               |
 | Tags    | `vX.Y.Z`, `vX.Y`, `stable`                                                                  |
-| Memory  | Bot about 1 GB (`mem_limit: 1g`); `asr` about 2 GB more                                     |
+| Memory  | Bot about 1 GB (`mem_limit: 1g`)                                                            |
 | Files   | `docker-compose.yml`, `.env`, `config.yml`, `data/`                                         |
 | Health  | `curl http://localhost:3000/` contains `"status":"ok"` once the bot is connected to Discord |
 | Updates | Manual by default; Watchtower is opt-in                                                     |
@@ -29,7 +29,7 @@ Run Rokabot from the published images on any host with Docker Compose. You need 
 3. Copy the example environment file: `cp .env.example .env`.
 4. Edit `.env`. Set `DISCORD_TOKEN` and `DISCORD_CLIENT_ID`, then the model keys your `config.yml` needs. The comment on each model in `config.yml` names its key. `.env.example` explains every key.
 5. Create the data folder: `mkdir data`. Compose mounts it at `/app/data`, where the bot keeps its SQLite database. The bot runs as user `node` (UID 1000). If your login is not UID 1000, run `sudo chown 1000:1000 data`.
-6. Start it: `docker compose pull && docker compose up -d`. This also starts `asr`. To skip it, read [Speech Recognition Off](#speech-recognition-off) first.
+6. Start it: `docker compose pull && docker compose up -d`.
 7. Check it: `curl http://localhost:3000/`.
 
 ## Configuration
@@ -50,7 +50,7 @@ To let Watchtower update for you:
 2. Run `docker compose up -d`.
 
 - **Schedule:** once a day at 04:07 UTC. The service sets no `TZ`, so container time is UTC.
-- **Scope:** only `roka` and `asr`, the two containers labelled `com.centurylinklabs.watchtower.enable=true`. It removes the replaced image.
+- **Scope:** only `roka`, the container labelled `com.centurylinklabs.watchtower.enable=true`. It removes the replaced image.
 - **Tag:** it watches the exact image reference. On `stable`, it updates only when a release moves `stable`.
 - **Access:** it mounts `/var/run/docker.sock`, which gives it root-equivalent control of Docker on the host.
 - **Image:** `nickfedor/watchtower:1.23.1`, the maintained fork. `containrrr/watchtower` was archived on 2025-12-17. The fork's README does not recommend Watchtower for production use.
@@ -75,15 +75,6 @@ Sources: [Watchtower fork](https://github.com/nicholas-fedor/watchtower), [archi
 3. Run `docker compose pull && docker compose up -d`.
 
 Your `config.yml` and `data` folder stay as they are.
-
-### Speech Recognition Off
-
-The `asr` service turns the audio of videos into text for the qwen media watcher. It needs about 2 GB of memory. It runs only on the qwen watcher path, which needs `MODELSCOPE_API_KEY`. That path is the main watcher when `media.watcher` is `qwen`, and the backup when it is `gemini`. Without that key, `asr` is never used.
-
-1. Add `MEDIA_TRANSCRIBER_URL=` (empty) to `.env`.
-2. Run `docker compose pull roka && docker compose up -d roka`.
-
-Name `roka` in later commands too, so that `asr` stays off. If `asr` is already running, stop it with `docker compose stop asr`.
 
 ## Caveats
 

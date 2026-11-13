@@ -104,7 +104,7 @@ onUsage(recordSpend)
 /**
  * The legacy config keeps exactly the accounting it had before per-call budgets: the Discord turn guard, the retry
  * gate and roka's per-turn token charge. Counting its calls here as well would hand the Pi's reply slots to background
- * work, and serialising or capping ModelScope would change a fallback and a qwen watcher that never waited or stopped.
+ * work, and serialising or capping ModelScope would change a fallback that never waited or stopped.
  * A legacy config on a native-searching model is the exception: its searches are billed per call and must fit the
  * minute like any other reply-side call.
  */

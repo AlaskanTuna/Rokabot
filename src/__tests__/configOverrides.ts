@@ -56,8 +56,6 @@ export function clearTunableEnvVars() {
   vi.stubEnv('GEMINI_TURN_DEADLINE_MS', '')
   vi.stubEnv('GEMINI_SAFETY_THRESHOLD', '')
   vi.stubEnv('MEDIA_WATCHER', '')
-  vi.stubEnv('MEDIA_QWEN_MODEL', '')
-  vi.stubEnv('MEDIA_TRANSCRIBER_URL', '')
   vi.stubEnv('MODELSCOPE_API_KEY', '')
   vi.stubEnv('EMBEDDINGS_PROVIDER', '')
   vi.stubEnv('OPENAI_API_KEY', '')

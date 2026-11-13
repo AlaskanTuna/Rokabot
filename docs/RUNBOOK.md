@@ -9,13 +9,13 @@ Commands and facts for running Rokabot on the Raspberry Pi 5.
 | Host           | Raspberry Pi 5 (8 GB), Docker Compose                                                      |
 | Checkout       | `~/rokabot`, reset to the deployed commit on every deploy                                  |
 | Compose File   | `~/rokabot/docker-compose.yml`                                                             |
-| Containers     | `rokabot-roka-1` (bot), `rokabot-asr-1` (speech), `rokabot-embeddings-1` (opt-in profile)  |
+| Containers     | `rokabot-roka-1` (bot), `rokabot-embeddings-1` (opt-in profile)                            |
 | Secrets        | `~/rokabot/.env`, which also records `ROKA_TAG`                                            |
 | Tunables       | `~/rokabot/config.yml`, mounted read-only at `/app/config.yml`                             |
 | Database       | `~/rokabot/data/rokabot.db`, mounted at `/app/data`                                        |
 | Archived Logs  | `~/rokabot/logs/roka-<timestamp>.log.gz`, kept 30 days                                     |
 | Health         | `curl http://localhost:3000/` returns `"status":"ok"` once Discord is connected (else 503) |
-| Images         | `ghcr.io/alaskantuna/rokabot`, `ghcr.io/alaskantuna/rokabot-asr`                           |
+| Images         | `ghcr.io/alaskantuna/rokabot`                                                              |
 | Runner Service | `actions.runner.AlaskanTuna-rokabot.rokabot-pi`                                            |
 
 - **Approval:** a restart, a redeploy and a merge to `main` each need the owner's explicit approval.
@@ -75,9 +75,9 @@ zcat ~/rokabot/logs/roka-<timestamp>.log.gz | grep '"msg":"Watched media"'
 A push to `main` runs `.github/workflows/deploy.yml`. A push that changes only `*.md`, `docs/**`, `.claude/**` or `graphify-out/**` does not deploy. Every pull request runs the `test` job.
 
 1. `test` type-checks, lints, and runs `npm test` and `npm run test:perf`. `compose` checks the compose file.
-2. `images` builds `rokabot` and `rokabot-asr` for amd64 and arm64. `manifest` tags them `sha-<first 7 of the commit>` and `edge` on GHCR, then checks that anonymous pulls work.
+2. `images` builds `rokabot` for amd64 and arm64. `manifest` tags it `sha-<first 7 of the commit>` and `edge` on GHCR, then checks that anonymous pulls work.
 3. The self-hosted runner on the Pi takes the `deploy` job. It polls GitHub outbound, so it works through any NAT or WiFi. Deploys run one at a time (`pi-deploy` concurrency group).
-4. The runner resets `~/rokabot` to the commit, archives the outgoing `roka` logs, runs `docker compose pull roka asr`, records `ROKA_TAG=sha-<7>` in `.env` and runs `docker compose up -d --no-build`.
+4. The runner resets `~/rokabot` to the commit, archives the outgoing `roka` logs, runs `docker compose pull roka`, records `ROKA_TAG=sha-<7>` in `.env` and runs `docker compose up -d --no-build --remove-orphans`, which also removes the retired `asr` container.
 5. It polls `http://localhost:3000/` 10 times, 5 s apart, for `"status":"ok"`. On failure it prints the last 20 log lines.
 6. It prunes old `sha-*` images. It keeps the current tag and the newest other one for rollback.
 7. With the `DISCORD_WEBHOOK_URL` secret set, it posts the result to Discord.
@@ -130,7 +130,7 @@ Users run `:stable`. It moves only when a release PR merges.
 docker buildx imagetools inspect ghcr.io/alaskantuna/rokabot:stable
 # Re-tag from Actions when promote skipped; only the latest release is accepted
 gh workflow run promote.yml -f tag=vX.Y.Z
-# Re-tag by hand to roll stable back; needs a token with write:packages; run it for rokabot and rokabot-asr
+# Re-tag by hand to roll stable back; needs a token with write:packages
 docker buildx imagetools create -t ghcr.io/alaskantuna/<name>:stable -t ghcr.io/alaskantuna/<name>:vX.Y.Z -t ghcr.io/alaskantuna/<name>:vX.Y ghcr.io/alaskantuna/<name>:sha-<first 7 of the release commit>
 ```
 
@@ -145,9 +145,9 @@ The Pi and users pull without logging in, so both packages must be public. If `m
 
 After the first switch to pulled images (one time):
 
-1. New packages start private, so the first `manifest` fails. Set `rokabot` and `rokabot-asr` to Public.
+1. New packages start private, so the first `manifest` fails. Set `rokabot` to Public.
 2. Run `gh run rerun <run-id> --failed` within a day. Digest artifacts expire after one day. After that, re-run the whole run.
-3. After the first good pull deploy, remove the old local images and build cache once: `docker image rm rokabot-roka rokabot-asr && docker builder prune -af`.
+3. After the first good pull deploy, remove the old local images and build cache once: `docker image rm rokabot-roka && docker builder prune -af`.
 
 ### Self-Hosted Runner
 
@@ -191,8 +191,7 @@ Set these in `~/rokabot/.env`, then run `sudo docker compose -f ~/rokabot/docker
 | ------------------------------------------- | -------------------------------------- | ------------------------------------------------------- |
 | `LLM_MAIN`                                  | a key under `llm.models`               | Reply model (`llm.main`)                                |
 | `LLM_FALLBACK`                              | a key, or `none`                       | Fallback model; `none` turns it off                     |
-| `MEDIA_WATCHER`                             | `gemini`, `qwen`, `direct`, `off`      | Who takes in audio and video ([Media](#media-watching)) |
-| `MEDIA_TRANSCRIBER_URL`                     | URL, or empty                          | Empty turns speech transcription off                    |
+| `MEDIA_WATCHER`                             | `gemini`, `off`                        | Who takes in audio and video ([Media](#media-watching)) |
 | `SOCIAL_POSTS_ENABLED`                      | `false`                                | Turns social post viewing off                           |
 | `EMBEDDINGS_PROVIDER`                       | `gemini`, `local`, `openai`            | Who makes memory vectors                                |
 | `COMPOSE_PROFILES`                          | `local-embeddings`                     | Starts the embeddings sidecar                           |
@@ -730,51 +729,29 @@ docker logs rokabot-roka-1 2>&1 | grep '"msg":"Watched media"' | tail -20
 docker logs rokabot-roka-1 2>&1 | grep '"msg":"Watched media"' | grep -o '"watcher":"[a-z]*"' | sort | uniq -c
 ```
 
-| Field       | Values                                                                                             |
-| ----------- | -------------------------------------------------------------------------------------------------- |
-| `kind`      | `audio`, `video`                                                                                   |
-| `transport` | `inline` upload, `files` streamed upload, `uri` (YouTube)                                          |
-| `mode`      | `whole`, `halves`, `skim`, `focus`, `opening`, `decline`                                           |
-| `outcome`   | `ok`, `partial`, `overloaded`, `timeout`, `unavailable`, `invalid`, `error`                        |
-| Other       | `durationSec`, `fps`, `estimate` (admission tokens), `promptTokens` (billed), `watchMs`, `calls`   |
-| Qwen Only   | `frames`, `transcript`, `framesMs`, `transcribeMs`, `watchMs` (Qwen call), `totalMs` (whole watch) |
+| Field       | Values                                                                                           |
+| ----------- | ------------------------------------------------------------------------------------------------ |
+| `kind`      | `audio`, `video`                                                                                 |
+| `transport` | `inline` upload, `files` streamed upload, `uri` (YouTube)                                        |
+| `mode`      | `whole`, `halves`, `skim`, `focus`, `opening`, `decline`                                         |
+| `outcome`   | `ok`, `partial`, `overloaded`, `timeout`, `unavailable`, `invalid`, `error`                      |
+| Other       | `durationSec`, `fps`, `estimate` (admission tokens), `promptTokens` (billed), `watchMs`, `calls` |
 
-- **Watcher:** `media.watcher` (`MEDIA_WATCHER`) is `gemini` (default) or `qwen` (ModelScope frames plus transcript). The other one is the backup when the first fails. Qwen lines carry `watcher: qwen`; each Qwen watch is one ModelScope call.
+- **Watcher:** `media.watcher` (`MEDIA_WATCHER`) is `gemini` (default). Each watch is one Gemini call.
 - **Latency:** about 2.5-3.5 s for short clips and 8-9 s for a 12-minute YouTube video, on top of the reply.
 - **Large Uploads:** audio over 8 MiB and video over 10 MiB, up to 50 MiB, stream into the Gemini Files API, are watched whole, then deleted. `media.uploadTimeoutMs` (45 s) bounds the upload. On the Pi's 2.5 MB/s uplink, budget about 20 s for 50 MB.
 - **Long Videos:** 20-40 minute videos are watched in two parallel halves (`mode: halves`, `calls: 2`) when the token bucket has room, else skimmed. `outcome: partial` means one half failed.
 - **Linked Videos:** posts on X, Bluesky, Threads, TikTok, Reddit, Instagram and Bilibili are watched from their smallest playable MP4 if it passes the HEAD check and fits 50 MiB (above 10 MiB it streams). Else the thumbnail is used. Reddit videos have no muxed sound and are watched silent. Bluesky needs one cached `plc.directory` lookup per author.
 - **YouTube:** Gemini fetches YouTube itself, so the Pi's yt-dlp block does not apply. The free tier allows 8 hours of YouTube video per day; past that, Roka says she couldn't watch it.
-- **Qwen Frames:** videos up to 64 s get 16 frames; longer ones get one per 4 s, up to 32 (`media.qwen.*Frames`). The Pi extracts 4 frames at a time. A slow host such as archive.org can take 40-50 s for 32 frames.
-- **Transcript Field:** the sidecar's `engine` and `speechSec`, or why there was none: `disabled`, `no_audio`, `timeout`, `unreachable`, `http_<status>`. Transcription was the slowest step in Pi measurements.
-
-### Speech Sidecar
-
-The `asr` container transcribes audio for the Qwen watcher: Silero VAD, then Moonshine for English and SenseVoice for zh, ja, ko and yue.
-
-- It has no published port. The bot reaches it at `http://asr:8000`.
-- It holds about 1.2 GB of RAM and is capped at 2 GB and 3 CPUs. An out-of-memory restart takes down only `asr`; the bot then watches from frames alone (`transcript: unreachable`).
-- `sidecar/asr/Dockerfile` pins `python:3.12-slim` by digest, so an upstream base update cannot force the model download (about 500 MB) on an unrelated build.
-- To update the base, run `docker buildx imagetools inspect python:3.12-slim` and put the index `Digest` in both `FROM` lines. CI then rebuilds the image, and the next Pi pull downloads about 1 GB of layers.
-
-```bash
-# One line per transcription: duration, speechSec, language, engine, elapsed
-docker compose -f ~/rokabot/docker-compose.yml logs --tail 20 asr
-# Health; "healthy" once the models load (up to 2 minutes)
-docker inspect --format '{{.State.Health.Status}}' rokabot-asr-1
-```
 
 ### Media Kill Switches
 
 Set one in `~/rokabot/.env`, then recreate the bot container.
 
-| Setting                      | Effect                                                                    |
-| ---------------------------- | ------------------------------------------------------------------------- |
-| `MEDIA_WATCHER=qwen`         | Qwen watches first; Gemini is the backup                                  |
-| `MEDIA_WATCHER=direct`       | Audio and video go straight to the reply model, with no watcher or backup |
-| `MEDIA_WATCHER=off`          | Nothing is watched or sent; Roka says she can't watch it right now        |
-| `MEDIA_TRANSCRIBER_URL=`     | Stops transcription only; the Qwen watcher sees frames                    |
-| `SOCIAL_POSTS_ENABLED=false` | Stops social post lookups; embeds and attachments work as before          |
+| Setting                      | Effect                                                             |
+| ---------------------------- | ------------------------------------------------------------------ |
+| `MEDIA_WATCHER=off`          | Nothing is watched or sent; Roka says she can't watch it right now |
+| `SOCIAL_POSTS_ENABLED=false` | Stops social post lookups; embeds and attachments work as before   |
 
 ### Social Post Viewing
 
@@ -800,7 +777,7 @@ X and Bluesky use public APIs and Threads reads its public post page. YouTube, T
 - **Defaults:** with no `embeddings:` block, `gemini` while `GEMINI_API_KEY` is set, else `local`. A block without `provider` uses `local`.
 - **Spaces:** every vector records `embedding_model_id`, `embedding_dim` and `embedding_fingerprint`. Recall reads only the configured space. Legacy vectors marked `unknown` are read only by the `gemini-embedding-2` space.
 - **Backfill:** after a switch, the maintenance pass (startup, then every 24 hours) re-embeds other vectors at about one a second, up to `embeddings.backfillBatchSize` per pass. Keyword recall works meanwhile. The pass stops after five connection failures in a row and resumes at the next pass.
-- **Sidecar:** no published image; it builds on the Pi (about 5.5 minutes, 1.22 GB). It is healthy in about 10 s, idles near 464 MiB and peaks near 714 MiB under one-text traffic, inside its 1 GiB cap (release gate 800 MiB). It takes at most 4 texts per request; 16 × 512 tokens was OOM-killed. It shares the Pi's four cores with `asr`, so a heavy backfill can push a transcription past `media.transcriber.timeoutMs` (45 s).
+- **Sidecar:** no published image; it builds on the Pi (about 5.5 minutes, 1.22 GB). It is healthy in about 10 s, idles near 464 MiB and peaks near 714 MiB under one-text traffic, inside its 1 GiB cap (release gate 800 MiB). It takes at most 4 texts per request; 16 × 512 tokens was OOM-killed.
 
 ```bash
 # Vectors per embedding space; NULL means no vector yet
@@ -940,7 +917,7 @@ cd ~/rokabot && sudo docker compose build --no-cache && sudo docker compose up -
 | Passive memory writes nothing                         | Logs for `Passive memory extraction is disabled` | Set `TYPESAFE_API_KEY`, or use a config with an `llm:` block                    |
 | Calls refused by `monthly` budget                     | `llm_spend` query                                | Wait for the UTC month, or raise `llm.monthlyBudgetUsd` and restart             |
 | Watches end `invalid` on long, dense videos           | `Watched media` lines                            | Raise `media.digestMaxOutputTokens` within 400-4,000                            |
-| Qwen watches show `transcript: unreachable`           | `asr` health and logs                            | Wait for `asr` to restart (OOM) or start it; frames-only works meanwhile        |
+| Watch shows the switched-off notice                   | `MEDIA_WATCHER` value                            | Set it back to `gemini` to watch again                                          |
 | Files left in the Gemini Files API                    | Files API list (command below)                   | The list must be empty between turns                                            |
 | YouTube lookups fail with `exit_1`                    | yt-dlp by hand in the container                  | Expected (429 or bot check); oEmbed covers it                                   |
 | `Social video extractors disabled` (`binary_missing`) | `which yt-dlp` in the container                  | Fix the yt-dlp step in `Dockerfile` and ship a new image                        |
@@ -955,7 +932,7 @@ curl -s "https://generativelanguage.googleapis.com/v1beta/files" -H "x-goog-api-
 
 ## Source Files
 
-- `docker-compose.yml`, `Dockerfile`, `sidecar/asr/Dockerfile`, `sidecar/embeddings/`
+- `docker-compose.yml`, `Dockerfile`, `sidecar/embeddings/`
 - `.github/workflows/deploy.yml`, `scripts/prune-images.sh`
 - `config.yml`, `src/config.ts`, `src/agent/llm/profiles.ts`, `src/agent/llm/budget.ts`, `src/agent/llm/fallbackModel.ts`
 - `src/agent/media/`, `src/agent/social/`, `src/agent/memory/reclassify.ts`, `src/storage/database.ts`

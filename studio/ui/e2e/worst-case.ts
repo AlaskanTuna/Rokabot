@@ -436,7 +436,6 @@ function worstEnv(): string {
     `LANGFUSE_SECRET_KEY=sk-lf-${token('langfuse-secret', 36).toLowerCase()}`,
     'ROKA_TAG=v0.3',
     'COMPOSE_PROFILES=autoupdate,local-embeddings',
-    'MEDIA_TRANSCRIBER_URL=http://asr.internal.northwind-industries-holdings.example.com:8000',
     'UPDATES_NOTIFY=false',
     'TZ=Europe/Warsaw',
     '# The office proxy; lowercase is what curl and most CLIs read',

@@ -48,7 +48,7 @@ llm: # Main and fallback model selection; without this block the bot runs gemini
   monthlyBudgetUsd: # Local monthly spend cap per paid provider; background jobs stop at 80% of it, replies at 100%
     anthropic: 5
     openai: 5
-  modelscopeDailyMagicubes: 250 # Magicubes one ModelScope key is expected to get a day (200 on login + 50 with Alibaba Cloud linked). Qwen and DeepSeek share it, the qwen watcher included; each call counts as one, and background jobs stop while a whole reply turn is left
+  modelscopeDailyMagicubes: 250 # Magicubes one ModelScope key is expected to get a day (200 on login + 50 with Alibaba Cloud linked). Qwen and DeepSeek share it; each call counts as one, and background jobs stop while a whole reply turn is left
   # Any entry may set limits: { rpm, rpd, tpm }; a per-call budget comes from this block, except for a native search, which takes one slot on the shared limiter even without an llm: block. A gemini entry inherits rateLimit and gemini.maxTokensPerMinute; other providers are unlimited unless set. Set tpm to half the provider's real TPM: the bucket drains continuously and can admit twice its value in the worst minute
   models: # Only tested profiles start (src/agent/llm/profiles.ts), except provider openai-compatible, which declares its own; optional per model: timeoutMs, maxOutputTokens, baseUrl
     flash: { provider: gemini, model: gemini-3.5-flash-lite }
@@ -99,19 +99,7 @@ search:
   nativeReserveMs: 5000 # Attempt time a native search must leave for the chat model's next call
 
 media:
-  watcher: gemini # How Roka takes in audio and video. gemini or qwen (frames + speech transcript on ModelScope) watches it first and she replies from the notes, the other taking over when it fails; direct sends the file straight to the reply model, with no backup; off neither watches nor sends it and tells her so
-  qwen:
-    model: Qwen/Qwen3.5-35B-A3B # ModelScope vision model for the qwen watcher; 35B-A3B measured fastest and most specific (5-12 s for 16 frames)
-    secondsPerFrame: 4 # One frame per this many seconds of the watched span, one per timeline bin, between minFrames and maxFrames
-    minFrames: 16 # Floor for any video; under 16 s this is about one frame per second, since bins are whole seconds
-    maxFrames: 32 # Ceiling, reached at 128 s; on 10-minute videos 32 frames named the characters and plot where 16 gave a generic summary, at +4-6 s on the Qwen call (2026-10-09)
-    frameHeight: 360 # Frame height in pixels; Qwen reads 360p frames as well as larger ones
-    timeoutMs: 30000 # Deadline for one Qwen watch call
-  transcriber:
-    url: '' # Speech-to-text sidecar for the qwen watcher (sidecar/asr/ in docker-compose); empty disables it. The Pi sets MEDIA_TRANSCRIBER_URL=http://asr:8000
-    timeoutMs: 45000 # Deadline for transcribing one video's audio
-    maxSpeechSec: 120 # Speech transcribed per video after silence and music are skipped; longer speech is sampled across the video
-    maxAudioSec: 180 # Audio sent per video; a longer video sends four windows spread across it
+  watcher: gemini # How Roka takes in audio and video. gemini watches it and she replies from the notes; off neither watches nor sends it and tells her so
   embedWaitMs: 2000 # How long a turn waits for Discord to add a link's embed, so a playable video in it can be watched; only a linked message with no embed yet waits
   watchTimeoutMs: 30000 # Deadline for one watch call; measured 6-17 s for clips up to 29 min at low frame rates, but one 29-min YouTube video ran past 20 s
   digestMaxOutputTokens: 3200 # Output ceiling for the digest JSON; a dense 20-minute talk overran 1200 and came back cut off, and standout moments and a style line add up to ~600 more
