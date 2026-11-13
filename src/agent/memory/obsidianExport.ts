@@ -7,6 +7,7 @@ import { listEpisodeGuildIds, listEpisodesForGuild } from '../../storage/memoryE
 import type { MemoryEpisode } from '../../storage/memoryEpisodeStore.js'
 import { PAST_FACT_MARKER, factKey } from './factSentences.js'
 import { type GuildMemoryClaim, type UserMemoryClaim, getActiveClaims, getActiveGuildClaims } from './memoryClaims.js'
+import { listItemVaultFacts } from './memoryItems.js'
 
 type ActiveClaimSubject = Readonly<{
   guild_id: string
@@ -53,7 +54,7 @@ function listActiveGuildSubjects(now: number): ActiveGuildSubject[] {
     .all(now) as ActiveGuildSubject[]
 }
 
-function formatClaimGroups(claims: UserMemoryClaim[]): Record<string, ExportedClaim[]> {
+function formatClaimGroups(claims: readonly UserMemoryClaim[]): Record<string, ExportedClaim[]> {
   const groups: Record<string, ExportedClaim[]> = {}
 
   for (const { predicate, period, value, sourceKind, pinned, lastSeenAt } of claims) {
@@ -71,18 +72,18 @@ function formatClaimGroups(claims: UserMemoryClaim[]): Record<string, ExportedCl
   return groups
 }
 
-function formatRelationships(claims: UserMemoryClaim[]): string {
+function formatRelationships(claims: readonly UserMemoryClaim[]): string {
   const edges = claims.filter(({ predicate, objectUserId }) => predicate === 'relationship_to' && objectUserId)
   if (edges.length === 0) return ''
 
   return `## Relationships\n\n${edges.map(({ objectUserId, value, period }) => `- [[${objectUserId}]] — ${value}${period === 'past' ? PAST_FACT_MARKER : ''}`).join('\n')}\n`
 }
 
-function formatNote(claims: UserMemoryClaim[]): string {
+function formatNote(claims: readonly UserMemoryClaim[]): string {
   return `---\n${dump(formatClaimGroups(claims))}---\n\n${formatRelationships(claims)}`
 }
 
-function formatGuildNote(claims: GuildMemoryClaim[]): string {
+function formatGuildNote(claims: readonly GuildMemoryClaim[]): string {
   const groups: Record<string, ExportedGuildClaim[]> = {}
   for (const { predicate, value, sourceKind, pinned, lastSeenAt, expiresAt, eventDate } of claims) {
     const group = groups[predicate] ?? []
@@ -123,16 +124,23 @@ function formatEpisodeNote(episodes: readonly MemoryEpisode[]): string {
 }
 
 export async function exportVault(dir: string = config.memory.vaultExportDir): Promise<VaultExportResult> {
-  const subjects = listActiveClaimSubjects()
   const now = Date.now()
-  const guilds = listActiveGuildSubjects(now)
+  const itemFacts = config.memory.store === 'item' ? listItemVaultFacts(now) : null
+  const subjects = itemFacts
+    ? itemFacts.users.map(({ guildId, userId }) => ({ guild_id: guildId, subject_user_id: userId }))
+    : listActiveClaimSubjects()
+  const guilds = itemFacts
+    ? itemFacts.guilds.map(({ guildId }) => ({ guild_id: guildId }))
+    : listActiveGuildSubjects(now)
   const exportDir = resolve(dir)
   let claims = 0
   let notes = subjects.length
   let episodes = 0
 
   for (const { guild_id: guildId, subject_user_id: userId } of subjects) {
-    const activeClaims = getActiveClaims(guildId, userId)
+    const activeClaims = itemFacts
+      ? (itemFacts.users.find((entry) => entry.guildId === guildId && entry.userId === userId)?.claims ?? [])
+      : getActiveClaims(guildId, userId)
     const path = notePath(exportDir, guildId, `${userId}.md`)
 
     await mkdir(dirname(path), { recursive: true })
@@ -141,7 +149,9 @@ export async function exportVault(dir: string = config.memory.vaultExportDir): P
   }
 
   for (const { guild_id: guildId } of guilds) {
-    const activeClaims = getActiveGuildClaims(guildId, now)
+    const activeClaims = itemFacts
+      ? (itemFacts.guilds.find((entry) => entry.guildId === guildId)?.claims ?? [])
+      : getActiveGuildClaims(guildId, now)
     if (activeClaims.length === 0) continue
     const path = notePath(exportDir, guildId, 'guild.md')
 
@@ -151,8 +161,13 @@ export async function exportVault(dir: string = config.memory.vaultExportDir): P
     notes++
   }
 
-  for (const guildId of listEpisodeGuildIds()) {
-    const guildEpisodes = listEpisodesForGuild(guildId)
+  const episodeGuildIds = itemFacts
+    ? [...new Set(itemFacts.episodes.map(({ guildId }) => guildId))]
+    : listEpisodeGuildIds()
+  for (const guildId of episodeGuildIds) {
+    const guildEpisodes = itemFacts
+      ? itemFacts.episodes.filter((episode) => episode.guildId === guildId)
+      : listEpisodesForGuild(guildId)
     if (guildEpisodes.length === 0) continue
     const path = notePath(exportDir, guildId, 'Episodes.md')
 

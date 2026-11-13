@@ -1,8 +1,10 @@
 import { config } from '../../config.js'
+import { getDb } from '../../storage/database.js'
 import { type MediaRecallCandidate, listMediaRecallCandidates } from '../../storage/mediaDigestStore.js'
 import type { EpisodeEmbedding } from '../../storage/memoryEpisodeStore.js'
 import { estimateTokens } from '../../utils/tokens.js'
 import { cosineSimilarity } from './episodeRetriever.js'
+import { readItemMediaCandidates } from './memoryItems.js'
 import { type RecallScope, canRecall } from './privacy.js'
 
 export type RecalledMedia = Readonly<{
@@ -39,6 +41,7 @@ function selectMediaWithinBudget(entries: readonly RecalledMedia[], tokenBudget:
 }
 
 export function readRecallableMedia(guildId: string, scope: RecallScope): MediaRecallCandidate[] {
+  if (config.memory.store === 'item') return readItemMediaCandidates(getDb(), guildId, scope)
   const candidates = listMediaRecallCandidates(guildId)
   if (config.memory.privacy === 'relaxed') return candidates
   // No recorded occurrence means no channel to judge, so it counts as private, not as an unknown source.

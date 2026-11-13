@@ -8,7 +8,7 @@ afterEach(() => {
   vi.resetModules()
 })
 
-async function openProjectionDb(store: 'legacy' | 'dual') {
+async function openProjectionDb(store: 'legacy' | 'dual' | 'item') {
   vi.resetModules()
   setRequiredEnvVars()
   clearTunableEnvVars()
@@ -37,6 +37,19 @@ async function expectNoCatchUpWrites(db: Database.Database) {
 describe('memory item projection triggers', () => {
   it('installs one insert, update, and delete trigger for every legacy source in dual mode', async () => {
     const { db, closeDb } = await openProjectionDb('dual')
+    try {
+      const triggers = db
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'memory_item_projection_%'")
+        .all()
+
+      expect(triggers).toHaveLength(15)
+    } finally {
+      closeDb()
+    }
+  })
+
+  it('keeps all projection triggers installed in item mode for rollback to dual', async () => {
+    const { db, closeDb } = await openProjectionDb('item')
     try {
       const triggers = db
         .prepare("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'memory_item_projection_%'")

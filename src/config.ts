@@ -253,7 +253,7 @@ function envBoolean(key: string): boolean | undefined {
 
 export type JevMode = 'off' | 'shadow' | 'on'
 export type MemoryPrivacy = 'relaxed' | 'balanced' | 'strict' | 'off'
-export type MemoryStore = 'legacy' | 'dual'
+export type MemoryStore = 'legacy' | 'dual' | 'item'
 export type MediaWatcher = 'gemini' | 'off'
 export type MemoryJudge = 'jev' | 'model' | 'none'
 export type SearchProvider = 'off' | 'native' | 'tavily' | 'exa'
@@ -337,11 +337,8 @@ function memoryStore(): MemoryStore {
   const envValue = envString('MEMORY_STORE')
   const value = envValue ?? yaml.memory?.store ?? 'legacy'
   const source = envValue ? 'Environment variable MEMORY_STORE' : 'Config value memory.store'
-  if (value === 'legacy' || value === 'dual') return value
-  if (value === 'item') {
-    throw new Error(`${source}=item is not supported in Phase 3; only legacy or dual is accepted`)
-  }
-  throw new Error(`${source} must be legacy or dual, got: ${String(value)}`)
+  if (value === 'legacy' || value === 'dual' || value === 'item') return value
+  throw new Error(`${source} must be legacy, dual or item, got: ${String(value)}`)
 }
 
 const PROVIDERS: readonly ProviderId[] = [...(Object.keys(PROVIDER_KEY_ENV) as ProviderId[]), 'openai-compatible']

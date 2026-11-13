@@ -478,12 +478,13 @@ Each PR passes `npm test`, `npm run test:perf`, `npm run typecheck`, `npm run fo
 
 ### Acceptance
 
-1. The four stores are read and written only through the item store, and no prompt-facing read can omit the scope.
+1. In Phase 5, prompt-facing reads use the scoped item API while writers stay on legacy tables with projection triggers; no prompt-facing read can omit the scope.
 2. The four legacy blocks are still the only recall path, with the same budgets, headings and output. `recall_user` keeps its broad lookup, and `memory.store` is gone after Phase 7.
-3. The offline simulator (`npm run memsim`) shows zero parity mismatches and zero integrity drift before Phase 5, and again before Phase 6 freezes the legacy tables. Owner decision 12 replaced the 7-day production soak.
+3. The offline simulator (`npm run memsim`) shows zero parity mismatches and zero integrity drift before Phase 5, and again before Phase 6 freezes the legacy tables. No production shadow read or 7-day soak is required by owner decision 12. `item_integrity` stays value-free and runs under both `dual` and `item`.
 4. The `retrieval` and `context_build` rows on the day after Phase 5 match the week before it in claims per turn, tokens and duration, within normal variation.
-5. Telemetry stays value-free, and old audit and telemetry IDs still resolve through `legacy_id`.
-6. `docs/trd/memory.md`, `docs/trd/data.md`, `docs/RUNBOOK.md` and `docs/DECISIONS.md` describe the item model.
+5. The private-copy migration and `scripts/replay-memory-items.ts` report zero mismatches.
+6. Telemetry stays value-free, and old audit and telemetry IDs still resolve through `legacy_id`.
+7. `docs/trd/memory.md`, `docs/trd/data.md`, `docs/RUNBOOK.md` and `docs/DECISIONS.md` describe the item model.
 
 ## Risks
 
@@ -525,7 +526,7 @@ Each PR passes `npm test`, `npm run test:perf`, `npm run typecheck`, `npm run fo
 | 7   | Flag                      | Accept the temporary `memory.store` key and `MEMORY_STORE` override from Phase 2 to Phase 7                                                                                                                                 |
 | 11  | Scope After The No-Go     | Run all seven phases                                                                                                                                                                                                        |
 | 10  | Drop Timing               | Drop the legacy tables one release after the writer cutover; restore from backup is the rollback                                                                                                                            |
-| 12  | Phase Cutover Gate        | Each #266 phase cuts over as soon as the offline memory simulator (`npm run memsim`) passes, with no production soak (decided 2026-11-14). This replaces the soak waits in the Migration Plan, Acceptance 3 and decision 10 |
+| 12  | Phase Cutover Gate        | Each #266 phase cuts over as soon as the offline memory simulator (`npm run memsim`) passes, with no production soak or in-production shadow read (decided 2026-11-14). Projection triggers stay enabled under `item`; rollback switches to `dual`. This replaces the soak waits in the Migration Plan, Acceptance 3 and decision 10 |
 
 ## Open Questions For The Owner
 

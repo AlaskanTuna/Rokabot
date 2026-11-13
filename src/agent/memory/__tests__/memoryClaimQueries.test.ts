@@ -131,7 +131,7 @@ describe('memory claim queries', () => {
     // Without ORDER BY SQLite walks rows in storage order, so flip the scan to prove the sort is real.
     getDb().exec('PRAGMA reverse_unordered_selects = ON')
 
-    expect(activeNicknameClaims('guild-1')).toEqual([
+    expect(activeNicknameClaims('guild-1', { guildId: 'guild-1', channelId: 'channel-1' })).toEqual([
       { id: second, user_id: 'user-1', value: 'Rinnie' },
       { id: first, user_id: 'user-2', value: 'Rin' },
       { id: third, user_id: 'user-3', value: 'Rinny' }

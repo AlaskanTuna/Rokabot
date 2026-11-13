@@ -153,6 +153,23 @@ describe('startup memory tasks', () => {
     vi.useRealTimers()
   })
 
+  it('keeps dual triggers and daily integrity maintenance enabled in item mode', async () => {
+    vi.useFakeTimers()
+    const { config } = await import('../config.js')
+    Object.assign(config.memory, { store: 'item' })
+    await import('../index.js')
+    mocks.triggerReady()
+
+    expect(mocks.configureMemoryItemProjectionTriggers).toHaveBeenCalledWith(undefined, 'item')
+    expect(mocks.fillMemoryItemEmbeddingHashes).toHaveBeenCalledOnce()
+    expect(mocks.sweepMemoryItemIntegrity).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1000)
+
+    expect(mocks.fillMemoryItemEmbeddingHashes).toHaveBeenCalledTimes(2)
+    expect(mocks.sweepMemoryItemIntegrity).toHaveBeenCalledTimes(2)
+    vi.useRealTimers()
+  })
+
   it('warns once at startup when passive memory has no TypeSafe API key', async () => {
     await import('../index.js')
     mocks.triggerReady()

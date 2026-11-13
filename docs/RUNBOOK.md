@@ -643,9 +643,9 @@ ROKABOT_DB_PATH="$PWD/data/rokabot.db" npm run migrate:memory-v2
 
 Review the report and the backup. If the check passed, restart with `sudo docker compose up -d roka`. Never delete `user_memory` by hand.
 
-### Typed Memory Items (Phase 3)
+### Typed Memory Items (Phases 3 and 5)
 
-`config.yml` stays on `memory.store: legacy`, while the Pi has run `MEMORY_STORE=dual` in `.env` since 2026-11-13 (Phases 5–7 remain pending drafts, so `item` is not yet supported). Enter `dual` only as an operator step. The bot must be stopped while the migration catches up rows written while projection triggers were off. The migration refreshes changed rows, removes projections whose legacy rows were deleted, and inserts new rows in one transaction. Startup installs triggers but never runs the migration. It prints counts and check results only; it never prints memory text.
+`config.yml` stays on `memory.store: legacy`, while the Pi runs `MEMORY_STORE=dual` in `.env` since 2026-11-13. Phase 5 adds `item` reads; keep the Pi on `dual` until the item-capable version is deployed and its offline simulator gate passes. Owner decision 12 removes the production shadow read and soak. The bot must be stopped while the migration catches up rows written while projection triggers were off. The migration refreshes changed rows, removes projections whose legacy rows were deleted, and inserts new rows in one transaction. Startup installs triggers in both `dual` and `item`, but never runs the migration. Migration and replay output counts and hashes only; they never print memory text.
 
 1. Stop the bot and take a timestamped SQLite backup.
 2. Run `migrate:memory-items` (and optionally `replay:memory-items` to verify offline recall parity) against the Pi database and confirm the checks pass.
