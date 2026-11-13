@@ -12,17 +12,17 @@ The canonical index of Rokabot's technical contracts. Each subsystem has one mod
 
 ## Modules
 
-| Module                                 | Covers                                                                                                                               | File                        |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | --------------------------- |
-| [System Architecture](trd/system.md)   | The process and its lifecycle, core code modules, tech stack, Discord events and install contexts, one turn from message to reply    | `docs/trd/system.md`        |
-| [Prompt Engine](trd/prompt-engine.md)  | System prompt blocks and their order, memory modes, the cached prefix, mood detection, the per-turn reply shape, the golden test     | `docs/trd/prompt-engine.md` |
-| [Memory](trd/memory.md)                | Claim schema, the passive write path, verification, lifecycle and retention, reclassification, privacy modes, recall, embeddings     | `docs/trd/memory.md`        |
-| [Models](trd/models.md)                | Provider IDs, model profiles, config resolution, request shaping, failure classification, main and fallback routing, spend           | `docs/trd/models.md`        |
-| [Media](trd/media.md)                  | Attachment intake and ceilings, download and token admission, audio and video watching, social post viewing                          | `docs/trd/media.md`         |
-| [Jev Judgments](trd/jev.md)            | The Jev client, turn judgments (tone, names, lookup need), search prefetch, the memory judge                                         | `docs/trd/jev.md`           |
-| [Reliability](trd/reliability.md)      | Turn admission, failure kinds, the retry loop, the safety ladder, request slots, token and per-call budgets, concurrency under retry | `docs/trd/reliability.md`   |
-| [Data Models and Storage](trd/data.md) | Shared data shapes, the SQLite file and tables, retention, bug reports, the outbound model request                                   | `docs/trd/data.md`          |
-| [Deployment](trd/deployment.md)        | CI jobs, image tags, the Pi deploy, release-please, the Docker build, compose services, Pi notes                                     | `docs/trd/deployment.md`    |
+| Module                                 | Covers                                                                                                                                                        | File                        |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
+| [System Architecture](trd/system.md)   | The process and its lifecycle, core code modules, tech stack, Discord events and install contexts, one turn from message to reply                             | `docs/trd/system.md`        |
+| [Prompt Engine](trd/prompt-engine.md)  | System prompt blocks and their order, memory modes, the cached prefix, mood detection, the per-turn reply shape and explicit format requests, the golden test | `docs/trd/prompt-engine.md` |
+| [Memory](trd/memory.md)                | Claim schema, the passive write path, verification, lifecycle and retention, reclassification, privacy modes, recall, embeddings                              | `docs/trd/memory.md`        |
+| [Models](trd/models.md)                | Provider IDs, model profiles, config resolution, request shaping, failure classification, main and fallback routing, spend                                    | `docs/trd/models.md`        |
+| [Media](trd/media.md)                  | Attachment intake and ceilings, download and token admission, audio and video watching, social post viewing                                                   | `docs/trd/media.md`         |
+| [Jev Judgments](trd/jev.md)            | The Jev client, turn judgments (tone, names, lookup need), search prefetch, the memory judge                                                                  | `docs/trd/jev.md`           |
+| [Reliability](trd/reliability.md)      | Turn admission, failure kinds, the retry loop, the safety ladder, request slots, token and per-call budgets, concurrency under retry                          | `docs/trd/reliability.md`   |
+| [Data Models and Storage](trd/data.md) | Shared data shapes, the SQLite file and tables, retention, bug reports, the outbound model request                                                            | `docs/trd/data.md`          |
+| [Deployment](trd/deployment.md)        | CI jobs, image tags, the Pi deploy, release-please, the Docker build, compose services, Pi notes                                                              | `docs/trd/deployment.md`    |
 
 ## Rules Across Modules
 

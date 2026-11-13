@@ -57,7 +57,7 @@ She can chat with a server, remember useful context without carrying it into ano
 
 ### Conversation First
 
-She answers @mentions, replies to her, her name and `/ask`. Each channel keeps its own window of recent messages, rebuilt from SQLite after a restart. Every reply draws its length, opener, ending and kaomoji in code, and one of 12 moods sets her tone, so she sounds like herself without repeating herself. Replies arrive as Discord components with an expression portrait.
+She answers @mentions, replies to her, her name and `/ask`. Each channel keeps its own window of recent messages, rebuilt from SQLite after a restart. Every reply draws its length, opener, ending and kaomoji in code—unless the member asks for a specific format—and one of 12 moods sets her tone, so she sounds like herself without repeating herself. Replies arrive as Discord components with an expression portrait.
 
 → [Features guide](docs/guide/features.md) · [Prompt engine](docs/trd/prompt-engine.md)
 
@@ -136,7 +136,7 @@ One Docker Compose stack, published as amd64 and arm64 images. It runs on a Rasp
 
 ![System Overview](docs/diagrams/system-overview.svg)
 
-_The bot and its speech sidecar in Docker Compose, between Discord and the remote model and Jev APIs. SQLite holds all durable state._
+_The bot and its optional embeddings sidecar in Docker Compose, between Discord and the remote model and Jev APIs. SQLite holds all durable state._
 
 1. **Admit:** a message arrives from Discord. Guards check the trigger, the rate limits and the channel lock.
 2. **Assemble:** the prompt engine builds the pack's system prompt, then adds this turn's mood, situation and reply shape.
@@ -202,7 +202,7 @@ _The bot and its speech sidecar in Docker Compose, between Discord and the remot
 | Models               | Gemini, Anthropic, OpenAI, ModelScope, or any OpenAI-compatible server |
 | Judgments            | TypeSafe Jev (optional)                                                |
 | Storage              | SQLite via better-sqlite3                                              |
-| Media                | sharp, ffmpeg, yt-dlp, and a sherpa-onnx speech sidecar                |
+| Media                | sharp, ffmpeg, and yt-dlp                                              |
 | Dashboard            | React, Vite and Tailwind CSS, served by a local Node server            |
 | Quality              | Vitest, Playwright, Biome, Prettier, commitlint                        |
 | Deployment           | Docker Compose; images on GHCR, built for amd64 and arm64              |

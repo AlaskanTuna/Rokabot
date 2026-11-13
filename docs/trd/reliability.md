@@ -101,7 +101,8 @@ _After a failed attempt the loop tries a safety rung, then one model switch, the
 
 The turn's outcome metric is `ok`, `fallback` (`transient_http`, `network`, `empty_text`) or `deflection` (any other
 kind). A failed turn writes no session history. It writes one `failure_diagnostics` row with the kind, marker, block
-side and safety rungs used. `gemini.maxRetries` plays no part in this loop.
+side and safety rungs used (`ok` turns whose explicit format request stayed unmet also write `kind: 'format_unmet'`;
+see [Data](data.md)). `gemini.maxRetries` plays no part in this loop.
 
 At startup `src/config.ts` logs a warning in three cases: `session.ttl` is not above
 `liveMaxRetries × (gemini.timeout + retryBackoffCapMs)`; the backoff cap makes `liveMaxRetries` unreachable; or
@@ -164,7 +165,7 @@ can make up to `gemini.maxLlmCalls` of them: one call, plus one more after each 
 - **Unknown Spend:** a turn that throws before it reports keeps its whole reservation.
 - **Daily Units:** `rpd` takes one unit per admitted turn, one per retry or rung, and one per call that takes its own
   slot. `release(0)` returns the turn's unit; any other release keeps it. The counter resets at UTC midnight.
-- **Not Counted:** `/anime` and `/remind` take no slot. `jikanThrottle` spaces Jikan calls 350 ms apart.
+- **Not Counted:** `/anime` and `/remind` take no slot. `jikanThrottle` spaces Jikan calls 350 ms apart, with a 5 s request timeout (`AbortSignal.timeout(5000)`).
 - **Unlimited Routes:** a model entry without `limits` never refuses on `rpm`, `rpd` or `tpm`. A Gemini entry inherits
   `rateLimit` and `gemini.maxTokensPerMinute`. The main route in the repository's `config.yml`, `haiku`, sets no
   `limits`, so the peek, the reservation, the retry floor and the token floor never refuse there.
@@ -202,7 +203,7 @@ charge, and halving `rpm` would give up half the request budget.
 ## Per-Call Budgets
 
 Every provider call passes `startCall` (`src/agent/llm/budget.ts`) before it is sent. That covers replies, native
-searches, background memory jobs, both watchers and both sides of a hedge.
+searches, background memory jobs, the Gemini watcher and both sides of a hedge.
 
 - **Legacy Config:** without an `llm:` block (`config.llm.main.key` is `legacy-gemini`), `startCall` counts nothing on every call except `search`, never waits and never refuses. A `search` call is not covered that way: it takes one slot on the shared
   limiter and records its spend, with no cap. Spend still goes to `llm_spend` in both cases.
