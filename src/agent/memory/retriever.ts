@@ -114,7 +114,7 @@ function routedPredicatesFor(message: string): Set<PredicateId> {
   )
 }
 
-function readSubjectSnapshot(
+export function readSubjectSnapshot(
   guildId: string,
   subjectUserId: string,
   message: string,
@@ -156,7 +156,7 @@ export function retrieveForSubject(
   return selectForSubject(readSubjectSnapshot(guildId, subjectUserId, message, scope), message, limit, Date.now())
 }
 
-function readTurnSnapshot(input: RetrieveForTurnInput, userIds: string[]): TurnRetrievalSnapshot {
+export function readTurnSnapshot(input: RetrieveForTurnInput, userIds: string[]): TurnRetrievalSnapshot {
   return {
     activeClaims: withinScope(getActiveClaimsForUsers(input.guildId, userIds), input.scope),
     ftsIds: searchClaimIds(input.guildId, userIds, input.message),
@@ -270,7 +270,7 @@ function serializeGuildFact(claim: GuildMemoryClaim): string {
   return JSON.stringify({ predicate: claim.predicate, ...(eventDate ? { date: eventDate } : {}), value: claim.value })
 }
 
-function readGuildFacts(guildId: string, now: number, scope: RecallScope): GuildMemoryClaim[] {
+export function readGuildFacts(guildId: string, now: number, scope: RecallScope): GuildMemoryClaim[] {
   return withinScope(getActiveGuildClaims(guildId, now), scope)
 }
 

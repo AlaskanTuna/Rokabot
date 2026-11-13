@@ -1,17 +1,18 @@
 # Typed Memory Model Design
 
-Design for #266 (memory sub-project 3): store member facts, server facts, conversation summaries and media digests as one typed `memory_item` model behind one read API and one write API. The four legacy memory blocks stay the only recall path and read through that API. Roka recalls exactly what she recalls today until the owner approves a behaviour change. The owner approved this spec as a draft only. No code ships from it yet.
+Design for #266 (memory sub-project 3): store member facts, server facts, conversation summaries and media digests as one typed `memory_item` model behind one read API and one write API. The four legacy memory blocks stay the only recall path and read through that API. Roka recalls exactly what she recalls today until the owner approves a behaviour change. The owner approved this spec on 2026-11-13; implementation proceeds phase by phase.
 
 ## Status And Preconditions
 
-| Item                | State on 2026-11-13                                                                                                                                                                                                  |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| #262 Recall         | No-go on 2026-11-13: 0 of 4 kinds passed, 18 of 2,998 labelled pairs were relevant, and the gate missed its deadline on 27% of turns. The owner chose legacy recall.                                                 |
-| Legacy-Only Recall  | #481 merged: removes unified recall, the shadow recall, the Jev recall gate and the `memory.recall` setting. The four legacy memory blocks stay as the only recall path.                                             |
-| Phase 1 (#266)      | Implemented on 2026-11-13 (owner overrode the one-release start gate). Required `RecallScope` on all legacy recall builders, DM turn skip (0 `dm:%` rows on Pi), and read/select split in progress for verification. |
-| #265 Write Path     | Memory 2C (#277) shipped: evidence provenance, crash-safe capture through `memory_episode_line`, summary validation. #278 (2D coverage and retention) and the crash-safe check in #463 are still open.               |
-| Extraction Route    | Extraction ran on the Qwen fallback, not Haiku: the Anthropic structured-output schema had more than 24 optional parameters. #472 fixed it on 2026-11-13.                                                            |
-| Production Envelope | 2.39 MiB database, 187 vectors (#266). 142 claims on 2026-11-08 (#463).                                                                                                                                              |
+| Item                | State on 2026-11-13                                                                                                                                                                                                                 |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #262 Recall         | No-go on 2026-11-13: 0 of 4 kinds passed, 18 of 2,998 labelled pairs were relevant, and the gate missed its deadline on 27% of turns. The owner chose legacy recall.                                                                |
+| Legacy-Only Recall  | #481 merged: removes unified recall, the shadow recall, the Jev recall gate and the `memory.recall` setting. The four legacy memory blocks stay as the only recall path.                                                            |
+| Phase 1 (#483)      | Merged on 2026-11-13 (owner approved starting before one release). All legacy recall builders require `RecallScope`; reads are split from pure selections.                                                                          |
+| Phase 2 (#266)      | Implemented and verified on 2026-11-13: additive item schema, offline backfill and replay readers. A private database copy passed migration checks and a 134-turn replay with zero mismatches. The bot remains on the legacy store. |
+| #265 Write Path     | Memory 2C (#277) shipped: evidence provenance, crash-safe capture through `memory_episode_line`, summary validation. #278 (2D coverage and retention) and the crash-safe check in #463 are still open.                              |
+| Extraction Route    | Extraction ran on the Qwen fallback, not Haiku: the Anthropic structured-output schema had more than 24 optional parameters. #472 fixed it on 2026-11-13.                                                                           |
+| Production Envelope | 2.39 MiB database, 187 vectors (#266). 142 claims on 2026-11-08 (#463).                                                                                                                                                             |
 
 No phase below starts before the legacy-only recall PR has run one release in production. #266 then changes the store under the four legacy blocks. It does not change the blocks. This spec names functions rather than line numbers for code that PR touches, and Phase 1 starts by re-reading the builders as merged.
 
@@ -115,6 +116,7 @@ CREATE TABLE IF NOT EXISTS memory_item (
   version INTEGER NOT NULL DEFAULT 1,
   legacy_table TEXT,
   legacy_id INTEGER,
+  legacy_embedding_text TEXT,    -- exact legacy memory_claim.embedding_text for a complete round trip
   UNIQUE (legacy_table, legacy_id),
   CHECK ((subject_kind = 'user') = (subject_user_id IS NOT NULL)),
   CHECK (kind = 'fact' OR (subject_kind = 'guild' AND period = 'current' AND pinned = 0 AND needs_review = 0)),
@@ -192,20 +194,22 @@ CREATE TABLE IF NOT EXISTS memory_item_embedding (
 
 `kind` is a closed list of three values. Member and server facts share `kind = 'fact'` and differ by `subject_kind`, as in `memory_claim` today. Predicates stay free text (decision of 2026-09-25), so no `CHECK` lists them.
 
-| `memory_item` Column                  | Member Fact                                | Server Fact                          | Conversation Summary                                        | Media Digest                                  |
-| ------------------------------------- | ------------------------------------------ | ------------------------------------ | ----------------------------------------------------------- | --------------------------------------------- |
-| `kind`, `subject_kind`                | `fact`, `user`                             | `fact`, `guild`                      | `episode`, `guild`                                          | `media`, `guild`                              |
-| `predicate`, `content`, `label`       | `predicate`, `value`, NULL                 | `predicate`, `value`, NULL           | NULL, `summary`, NULL                                       | NULL, `summary`, `label`                      |
-| Natural Key                           | User dedup index                           | Guild dedup index                    | `source_job_id` = `memory_episode.id`                       | `content_key`, plus `media_kind` from `kind`  |
-| `status`, `end_reason`, `ended_at`    | Copied                                     | Copied                               | `active`, NULL, NULL                                        | `active`, NULL, NULL                          |
-| `superseded_by`                       | Mapped to the successor's item ID          | Mapped                               | NULL                                                        | NULL                                          |
-| `period`, `valid_until`, `event_date` | `period`, NULL, NULL                       | `period`, `expires_at`, `event_date` | `current`, NULL, NULL                                       | `current`, NULL, NULL                         |
-| `first_seen_at`, `last_seen_at`       | Copied                                     | Copied                               | `started_at`, `ended_at`                                    | `created_at`, latest occurrence `observed_at` |
-| `created_at`                          | NULL (the claim has none)                  | NULL                                 | `created_at`                                                | `created_at`                                  |
-| Support Rows                          | `memory_evidence` → `memory_item_evidence` | Same                                 | One `episode` occurrence: channel, `started_at`, `ended_at` | `media_occurrence` → `memory_item_occurrence` |
-| Payload                               | None                                       | None                                 | None                                                        | `digest_json` → `memory_item_payload`         |
+| `memory_item` Column                  | Member Fact                                | Server Fact                          | Conversation Summary                                        | Media Digest                                                                        |
+| ------------------------------------- | ------------------------------------------ | ------------------------------------ | ----------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `kind`, `subject_kind`                | `fact`, `user`                             | `fact`, `guild`                      | `episode`, `guild`                                          | `media`, `guild`                                                                    |
+| `predicate`, `content`, `label`       | `predicate`, `value`, NULL                 | `predicate`, `value`, NULL           | NULL, `summary`, NULL                                       | NULL, `summary`, `label`                                                            |
+| Natural Key                           | User dedup index                           | Guild dedup index                    | `source_job_id` = `memory_episode.id`                       | `content_key`, plus `media_kind` from `kind`                                        |
+| `status`, `end_reason`, `ended_at`    | Copied                                     | Copied                               | `active`, NULL, NULL                                        | `active`, NULL, NULL                                                                |
+| `superseded_by`                       | Mapped to the successor's item ID          | Mapped                               | NULL                                                        | NULL                                                                                |
+| `period`, `valid_until`, `event_date` | `period`, NULL, NULL                       | `period`, `expires_at`, `event_date` | `current`, NULL, NULL                                       | `current`, NULL, NULL                                                               |
+| `first_seen_at`, `last_seen_at`       | Copied                                     | Copied                               | `started_at`, `ended_at`                                    | `created_at`, latest occurrence `observed_at`, or `created_at` when no share exists |
+| `created_at`                          | NULL (the claim has none)                  | NULL                                 | `created_at`                                                | `created_at`                                                                        |
+| Support Rows                          | `memory_evidence` → `memory_item_evidence` | Same                                 | One `episode` occurrence: channel, `started_at`, `ended_at` | `media_occurrence` → `memory_item_occurrence`                                       |
+| Payload                               | None                                       | None                                 | None                                                        | `digest_json` → `memory_item_payload`                                               |
 
 `saveMediaDigest` rewrites `media_digest.created_at` on every upsert, so it records the last digest write, not the first share. The backfill copies it as stored.
+
+`legacy_embedding_text` is the one Phase 2 extension to the table above. `memory_claim.embedding_text` can contain text that cannot be reconstructed from its hash, so the migration retains that exact value until the legacy table is dropped. It is used only for reverse projection and is not a prompt read.
 
 Each item kind feeds exactly one legacy block, so headings, budgets and block order do not change:
 
@@ -401,12 +405,12 @@ The legacy builders are the recall path, so this phase makes them able to read f
 
 ### Phase 2: Schema And Backfill
 
-- **Schema:** `src/storage/memoryItemSchema.ts` creates the tables. Nothing reads them.
+- **Schema:** `src/storage/memoryItemSchema.ts` creates the tables. Bot code does not read or write them; item readers are used only by tests and offline replay.
 - **Script:** `npm run migrate:memory-items` (`scripts/migrate-memory-items.ts`) is offline and explicit. Startup never runs it, as with `migrate:memory-v2`. Stop the bot, take a `.backup` (`docs/RUNBOOK.md`), then run it.
 - **One Transaction:** the copy and every check run in one transaction. Any miss rolls back and exits non-zero. A rerun copies only rows with no item yet, so it is a no-op after a full run.
 - **Checks:** row counts per kind, subject, status and period; evidence and occurrence counts per item; non-null provenance counts; vector counts per fingerprint; complete and unique legacy IDs; no item timestamp the legacy row did not have.
 - **Round Trip:** the script projects each item back to its legacy columns and compares every column. Phase 6's rollback depends on this check.
-- **Offline Replay:** on a Pi database copy, replay up to 150 recent guild turns from `session_history` through the four builders and `recall_user`, once per store. The report holds counts and block hashes only. Any mismatch blocks Phase 3.
+- **Offline Replay:** on a database copy, replay up to 150 recent guild turns from `session_history` through the four builders and `recall_user`, once per store, with one fixed `now` and the same `last_recalled_at` snapshot. `session_history` has no `guild_id`, so the replay maps its channel through `response_events` and skips unmapped channels. It uses stored episode, media or claim vectors as query stand-ins; it makes no embedding calls. The report contains counts and block hashes only. Any mismatch blocks Phase 3.
 
 ### Phase 3: Dual-Write
 
@@ -443,7 +447,7 @@ After one release on Phase 6, take a `.backup` and run `npm run migrate:memory-i
 
 - **TRD:** `docs/trd/memory.md` and `docs/trd/data.md` change in the PR that changes the contract: Phase 1 (required scope in the builders), Phase 2 (new tables), Phase 5 (readers), Phase 7 (dropped tables).
 - **Decisions:** Phase 2 adds a `docs/DECISIONS.md` row for the typed item model. Phase 7 adds one for dropping the legacy tables.
-- **Config:** every key change updates `config.yml`, `NUMERIC_BOUNDS` and `docs/guide/configuration.md`.
+- **Config:** every key change updates `config.yml` and `docs/guide/configuration.md`; numeric tunables also update `NUMERIC_BOUNDS`. The categorical `memory.store` key has no numeric bound.
 
 ## Tests And Acceptance
 
@@ -462,7 +466,7 @@ Each PR passes `npm test`, `npm run test:perf`, `npm run typecheck`, `npm run fo
 | Privacy        | For every kind and level, item sources give the same `canRecall` answer as legacy sources, including missing evidence and missing occurrences. The `balanced` and `strict` tests in `retriever.test.ts`, `episodeRetriever.test.ts` and `mediaRecall.test.ts` pass on both stores.                                                                       |
 | Retention      | With a fake clock: tiers by predicate, pins exempt, the cap evicts past items first, guild date expiry, guild candidates, episodes at 90 days, media per share, dead facts purged at 30 days. Results equal the legacy prune.                                                                                                                            |
 | Keyword Search | `searchClaimIds` and `searchClaims` return the same IDs on both stores. A restart leaves the FTS bytes unchanged.                                                                                                                                                                                                                                        |
-| Embeddings     | Wrong fingerprint, wrong size, zero norm, NaN and a stale `text_hash` are unreadable and re-embedded. A zero vector is refused at write. A provider switch keeps the old space's rows.                                                                                                                                                                   |
+| Embeddings     | In Phase 2, item readers reject wrong fingerprint, wrong size, zero norm, NaN and stale `text_hash` vectors as unreadable. Later writers re-embed unreadable vectors; a zero vector is refused at write, and a provider switch keeps the old space's rows.                                                                                               |
 | Backfill       | A rerun is a no-op. A planted miss aborts with nothing written. No item gets a timestamp its legacy row did not have.                                                                                                                                                                                                                                    |
 | Evals          | `recallRelevance.eval.test.ts`, `memoryGuildFacts.eval.test.ts`, `memoryPromotion.eval.test.ts` and `memoryEpisodeReplay.eval.test.ts` pass unchanged on the item store.                                                                                                                                                                                 |
 | Performance    | `memoryShadow.perf.test.ts` (`npm run test:perf`) grows to time the four builders on the item store at 1,000 and 10,000 items, with BLOB decoding measured on its own. They must not be slower than on the legacy store. The #266 workstation reference is about 1.3 ms and 14 ms for brute force.                                                       |

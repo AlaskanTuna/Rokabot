@@ -67,6 +67,46 @@ describe('config module', () => {
     expect(config.fallback.stickyMs).toBe(0)
   })
 
+  it('defaults the memory store to legacy', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+
+    const { config } = await import('../config.js')
+
+    expect(config.memory.store).toBe('legacy')
+  })
+
+  it.each(['dual', 'item'])('rejects memory.store %s until its phase is enabled', async (store) => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    withYamlOverride({ memory: { store } })
+
+    await expect(() => import('../config.js')).rejects.toThrow(
+      `Config value memory.store=${store} is not supported in Phase 2; only legacy is accepted`
+    )
+  })
+
+  it('lets MEMORY_STORE override the YAML setting', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    withYamlOverride({ memory: { store: 'item' } })
+    vi.stubEnv('MEMORY_STORE', 'legacy')
+
+    const { config } = await import('../config.js')
+
+    expect(config.memory.store).toBe('legacy')
+  })
+
+  it('rejects unknown memory store values with the allowed values', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('MEMORY_STORE', 'shadow')
+
+    await expect(() => import('../config.js')).rejects.toThrow(
+      'Environment variable MEMORY_STORE must be legacy, dual or item, got: shadow'
+    )
+  })
+
   it('rejects a negative fallback sticky duration', async () => {
     setRequiredEnvVars()
     clearTunableEnvVars()

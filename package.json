@@ -34,6 +34,8 @@
     "memory:replay:live": "ROKABOT_MEMORY_REPLAY_LIVE=1 tsx scripts/replay-memory-v2.ts --live",
     "memory:replay:jev": "tsx scripts/replay-jev.ts",
     "migrate:memory-v2": "tsx scripts/migrate-memory-v2.ts",
+    "migrate:memory-items": "tsx scripts/migrate-memory-items.ts",
+    "replay:memory-items": "tsx scripts/replay-memory-items.ts",
     "export:vault": "tsx scripts/export-vault.ts",
     "reports": "tsx scripts/reports.ts",
     "character": "tsx scripts/character.ts",

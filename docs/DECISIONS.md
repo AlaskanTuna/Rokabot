@@ -45,6 +45,8 @@ The lasting choices behind Rokabot, with why they were made. Check here before r
 | 2026-11-05 | Open episode lines are saved at capture, evidence counts each job once per claim, and a failed summary is dropped                                               | A crash lost open text, retries double-counted evidence, and 41 of 101 summaries were boilerplate; see `docs/specs/2026-11-05-memory-2c-design.md` |
 | 2026-11-13 | Recall stays on the four legacy blocks; the unified recall and Jev gate are removed (#262)                                                                      | 2026-11-13 calibration: 0 of 4 kinds met 80% precision (18 of 2,998 pairs relevant) and the gate missed its 1200 ms deadline on 27% of turns       |
 
+| 2026-11-13 | Typed memory items use new IDs and keep `legacy_table`/`legacy_id`; Phase 2 adds the schema and offline backfill while runtime stays on legacy reads and writes | Exact row round trips keep the additive migration rollbackable; `legacy_embedding_text` preserves the non-reversible legacy vector-text column |
+
 ## Models and Search
 
 | Date       | Decision                                                                                                                               | Why                                                                           |

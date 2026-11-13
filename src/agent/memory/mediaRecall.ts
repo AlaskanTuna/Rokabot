@@ -34,7 +34,7 @@ function selectMediaWithinBudget(entries: readonly RecalledMedia[], tokenBudget:
   return selected
 }
 
-function readRecallableMedia(guildId: string, scope: RecallScope): MediaRecallCandidate[] {
+export function readRecallableMedia(guildId: string, scope: RecallScope): MediaRecallCandidate[] {
   const candidates = listMediaRecallCandidates(guildId)
   if (config.memory.privacy === 'relaxed') return candidates
   // No recorded occurrence means no channel to judge, so it counts as private, not as an unknown source.
