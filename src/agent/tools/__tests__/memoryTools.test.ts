@@ -21,7 +21,7 @@ import {
   recordMediaOccurrence,
   saveMediaDigest
 } from '../../../storage/mediaDigestStore.js'
-import { getClaimSourceChannels, setClaimEmbedding } from '../../../storage/memoryRecallStore.js'
+import { getClaimSourceChannels } from '../../../storage/memoryRecallStore.js'
 import { recordResponseEvent } from '../../../storage/metricsStore.js'
 import { upsertUserName } from '../../../storage/userNames.js'
 import { logger } from '../../../utils/logger.js'
@@ -42,7 +42,6 @@ const runForget = (
     args: { query },
     toolContext: toolContextWith({ _userId: userId, _guildId: guildId, _channelId: channelId })
   }) as Promise<{ success: boolean; message: string }>
-import { geminiVector } from '../../../../tests/harness/vectors.js'
 import { resolveName } from '../../memory/identityResolver.js'
 import { assertClaim, assertGuildClaim, getActiveClaims, getActiveGuildClaims } from '../../memory/memoryClaims.js'
 import { forgetUserTool, recallUserTool, rememberUserTool } from '../index.js'
@@ -53,7 +52,6 @@ import { rememberUser } from '../rememberUser.js'
 const memoryConfig = config.memory
 const originalMemory = {
   privacy: memoryConfig.privacy,
-  recall: memoryConfig.recall,
   embeddingTimeoutMs: memoryConfig.embeddingTimeoutMs
 }
 const setMemory = (patch: Partial<typeof originalMemory>): void => {
@@ -63,7 +61,7 @@ const setMemory = (patch: Partial<typeof originalMemory>): void => {
 beforeEach(() => {
   process.env.ROKABOT_DB_PATH = ':memory:'
   vi.clearAllMocks()
-  setMemory({ privacy: 'relaxed', recall: 'shadow' })
+  setMemory({ privacy: 'relaxed' })
   registerChannelVisibility({
     visibility: (channelId) => (channelId === 'public-channel' || channelId === 'public-source' ? 'public' : 'private'),
     parentOf: () => null
@@ -76,9 +74,6 @@ afterEach(() => {
   setMemory(originalMemory)
   resetChannelVisibilityForTest()
 })
-
-const unitVector = (index: number) =>
-  geminiVector(Array.from({ length: 768 }, (_, position) => (position === index ? 1 : 0)))
 
 function seedMedia(input: {
   guildId?: string
@@ -605,7 +600,7 @@ describe('memory tools', () => {
     expect(result.facts).toContain('general_occupation: shrine caretaker')
   })
 
-  describe.each(['shadow', 'unified'] as const)('recall_user period in %s mode', (mode) => {
+  describe('recall_user period', () => {
     const seed = (predicate: string, value: string, period?: 'current' | 'past') =>
       assertClaim({
         guildId: 'guild-1',
@@ -615,10 +610,6 @@ describe('memory tools', () => {
         sourceKind: 'explicit',
         ...(period ? { period } : {})
       })
-
-    beforeEach(() => {
-      setMemory({ recall: mode })
-    })
 
     it('lists current facts first and past facts under "In the past:"', async () => {
       seed('general_occupation', 'teacher')
@@ -843,7 +834,7 @@ describe('memory tools', () => {
   })
 })
 
-describe('memory tools across privacy levels and recall modes', () => {
+describe('memory tools across privacy levels', () => {
   const seedShelterFacts = () => {
     const now = Date.now()
     assertClaim({
@@ -954,27 +945,16 @@ describe('memory tools across privacy levels and recall modes', () => {
     })
   })
 
-  it('ranks by similarity in unified mode and never returns more than 15 facts', async () => {
-    setMemory({ recall: 'unified' })
+  it('never returns more than 15 facts', async () => {
     for (let index = 0; index < 20; index++) {
-      const claim = assertClaim({
+      assertClaim({
         guildId: 'guild-1',
         subjectUserId: 'user-1',
         predicate: 'likes',
         value: `thing-${index}`,
         sourceKind: 'explicit'
       })
-      setClaimEmbedding({ id: claim.id, embeddingText: `thing-${index}`, embedding: unitVector(0) })
     }
-    const unrelated = assertClaim({
-      guildId: 'guild-1',
-      subjectUserId: 'user-1',
-      predicate: 'hobby',
-      value: 'unrelated',
-      sourceKind: 'explicit'
-    })
-    setClaimEmbedding({ id: unrelated.id, embeddingText: 'unrelated', embedding: unitVector(1) })
-    embeddings.embedEpisodeText.mockResolvedValue(unitVector(0))
 
     const result = await recallUser({
       guild_id: 'guild-1',
@@ -982,32 +962,11 @@ describe('memory tools across privacy levels and recall modes', () => {
       message: 'tell me about things'
     })
 
-    expect(embeddings.embedEpisodeText).toHaveBeenCalledWith(
-      expect.objectContaining({ text: 'tell me about things', role: 'RETRIEVAL_QUERY' })
-    )
     expect(result.factCount).toBe(15)
-    expect(result.facts).not.toContain('unrelated')
   })
 
-  it('falls back to keyword ranking in unified mode when the query embedding rejects', async () => {
-    setMemory({ recall: 'unified' })
+  it('ranks keyword matches first', async () => {
     seedShelterFacts()
-    embeddings.embedEpisodeText.mockRejectedValue(new Error('offline'))
-
-    const result = await recallUser({
-      guild_id: 'guild-1',
-      user_id: 'user-1',
-      message: 'what does she do at the shelter?'
-    })
-
-    expect(result.facts).toContain('volunteers at the animal shelter')
-  })
-
-  it('falls back to keyword ranking in unified mode when the query embedding times out', async () => {
-    setMemory({ recall: 'unified' })
-    setMemory({ embeddingTimeoutMs: 1 })
-    seedShelterFacts()
-    embeddings.embedEpisodeText.mockReturnValue(new Promise(() => {}))
 
     const result = await recallUser({
       guild_id: 'guild-1',

@@ -76,7 +76,6 @@ export function clearTunableEnvVars() {
   vi.stubEnv('MEMORY_FAILED_EXTRACTION_RETENTION_DAYS', '')
   vi.stubEnv('MEMORY_VAULT_EXPORT_DIR', '')
   vi.stubEnv('MEMORY_PRIVACY', '')
-  vi.stubEnv('MEMORY_RECALL', '')
   vi.stubEnv('MEMORY_EXTRACTION_SAMPLE_RATE', '')
   vi.stubEnv('MEMORY_EXTRACTION_SAMPLE_DAYS', '')
   vi.stubEnv('MEMORY_RECLASSIFY_MAX_PER_RUN', '')

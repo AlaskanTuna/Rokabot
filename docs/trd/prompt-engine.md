@@ -44,8 +44,7 @@ and joins them with a blank line. Every later block starts with a blank line. An
 
 - **Blocks 1-2:** one string in the request. They are the pack's `prompt.system` sections in list order. The split
   between them exists only for the token test and the `core.ts` and `speech.ts` exports.
-- **Block 5:** `memory.recall: unified` sends one ranked block. `legacy` and `shadow` send the people facts here and
-  build blocks 7-9. DMs always use the legacy blocks.
+- **Block 5:** the people facts. Blocks 7-9 hold the server facts, conversation summaries and media summaries.
 - **Block 6:** lists a nickname or username that differs from the display name, and each Jev referent that passed
   `jev.referentMinConfidence`. It appears on any memory turn, also with `memory.privacy: off`.
 - **Block 10:** the last `memory.contextSize` (10) overheard messages. Each message is capped at 300 characters and

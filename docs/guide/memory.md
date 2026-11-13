@@ -81,21 +81,20 @@ Set `memory.privacy` in `config.yml`, or `MEMORY_PRIVACY` in `.env`, then restar
 
 Every key, default and bound is in [Configuration](configuration.md#memory). The ones owners change most:
 
-| Key                                  | Default          | Env Override                        | What It Does                                          |
-| ------------------------------------ | ---------------- | ----------------------------------- | ----------------------------------------------------- |
-| `memory.privacy`                     | `relaxed`        | `MEMORY_PRIVACY`                    | Where memories may come back                          |
-| `memory.recall`                      | `shadow`         | `MEMORY_RECALL`                     | `legacy`, `shadow` (logs the new recall) or `unified` |
-| `memory.channelMonitorTtlMs`         | `86400000`       | —                                   | How long a channel stays monitored (24 h)             |
-| `memory.maxActiveClaimsPerUser`      | `20`             | `MEMORY_MAX_ACTIVE_CLAIMS_PER_USER` | Unpinned facts kept per member                        |
-| `memory.stableClaimRetentionDays`    | `180`            | —                                   | Identity and social facts                             |
-| `memory.claimRetentionDays`          | `30`             | `MEMORY_CLAIM_RETENTION_DAYS`       | Lifestyle, interest and personality facts             |
-| `memory.transientClaimRetentionDays` | `14`             | —                                   | Opinions, `misc` and currently-watching facts         |
-| `memory.episodeRetentionDays`        | `90`             | —                                   | Conversation recaps                                   |
-| `memory.mediaRetentionDays`          | `90`             | —                                   | Watched media notes                                   |
-| `memory.extractionSampleRate`        | `0.1`            | `MEMORY_EXTRACTION_SAMPLE_RATE`     | Share of rejected conversations kept; `0` stops it    |
-| `memory.reclassifyMaxPerRun`         | `20`             | `MEMORY_RECLASSIFY_MAX_PER_RUN`     | Misfiled facts moved per day; `0` stops it            |
-| `memory.vaultExportDir`              | `data/vault`     | `MEMORY_VAULT_EXPORT_DIR`           | Where `export:vault` writes                           |
-| `embeddings.provider`                | shipped `gemini` | `EMBEDDINGS_PROVIDER`               | `gemini`, `local` or `openai`                         |
+| Key                                  | Default          | Env Override                        | What It Does                                       |
+| ------------------------------------ | ---------------- | ----------------------------------- | -------------------------------------------------- |
+| `memory.privacy`                     | `relaxed`        | `MEMORY_PRIVACY`                    | Where memories may come back                       |
+| `memory.channelMonitorTtlMs`         | `86400000`       | —                                   | How long a channel stays monitored (24 h)          |
+| `memory.maxActiveClaimsPerUser`      | `20`             | `MEMORY_MAX_ACTIVE_CLAIMS_PER_USER` | Unpinned facts kept per member                     |
+| `memory.stableClaimRetentionDays`    | `180`            | —                                   | Identity and social facts                          |
+| `memory.claimRetentionDays`          | `30`             | `MEMORY_CLAIM_RETENTION_DAYS`       | Lifestyle, interest and personality facts          |
+| `memory.transientClaimRetentionDays` | `14`             | —                                   | Opinions, `misc` and currently-watching facts      |
+| `memory.episodeRetentionDays`        | `90`             | —                                   | Conversation recaps                                |
+| `memory.mediaRetentionDays`          | `90`             | —                                   | Watched media notes                                |
+| `memory.extractionSampleRate`        | `0.1`            | `MEMORY_EXTRACTION_SAMPLE_RATE`     | Share of rejected conversations kept; `0` stops it |
+| `memory.reclassifyMaxPerRun`         | `20`             | `MEMORY_RECLASSIFY_MAX_PER_RUN`     | Misfiled facts moved per day; `0` stops it         |
+| `memory.vaultExportDir`              | `data/vault`     | `MEMORY_VAULT_EXPORT_DIR`           | Where `export:vault` writes                        |
+| `embeddings.provider`                | shipped `gemini` | `EMBEDDINGS_PROVIDER`               | `gemini`, `local` or `openai`                      |
 
 ## Maintenance Scripts
 

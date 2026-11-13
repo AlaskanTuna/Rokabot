@@ -198,7 +198,6 @@ Set these in `~/rokabot/.env`, then run `sudo docker compose -f ~/rokabot/docker
 | `JEV_TONE`, `JEV_REFERENTS`, `JEV_PREFETCH` | `off`, `shadow`, `on`                  | Jev in-reply judgments                                  |
 | `SEARCH_PROVIDER`                           | `off`, `native`, `tavily`, `exa`       | Web search backend (`search.provider`)                  |
 | `MEMORY_PRIVACY`                            | `relaxed`, `balanced`, `strict`, `off` | `memory.privacy`                                        |
-| `MEMORY_RECALL`                             | `legacy`, `shadow`, `unified`          | `memory.recall`                                         |
 | `MEMORY_EXTRACTION_SAMPLE_RATE`             | `0` to `1`                             | `0` stops rejected-conversation samples                 |
 | `MEMORY_RECLASSIFY_MAX_PER_RUN`             | `0` to `100`                           | `0` turns reclassification off                          |
 | `TYPESAFE_API_KEY`                          | key                                    | Jev judges when it is set                               |
@@ -605,7 +604,7 @@ npm run memory:undo-reclassify -- OLD_ID
 - **Episodes:** summaries and embeddings live per guild in `memory_episode`. The maintenance pass (startup, then every 24 hours) deletes episodes past `memory.episodeRetentionDays` and retries missing or unreadable embeddings.
 - **Embedding Quota:** with `embeddings.provider: gemini` (the Pi), embeddings use `GEMINI_API_KEY` and `gemini-embedding-2` on a separate project quota. They do not debit the bot's generation rate limiter. The planning estimate is 100 RPM, 30 K TPM and 1 K RPD; check AI Studio for your limits.
 - **Media:** digests of watched media live in `media_digest`, one row per guild and content key, with an embedding. Each share is a `media_occurrence` row. No media files are stored.
-- **Privacy:** `memory.privacy` (`MEMORY_PRIVACY`) and `memory.recall` (`MEMORY_RECALL`). A server that hides every channel from `@everyone` and grants access by role has no public channels, so `balanced` acts like `strict` there.
+- **Privacy:** `memory.privacy` (`MEMORY_PRIVACY`). A server that hides every channel from `@everyone` and grants access by role has no public channels, so `balanced` acts like `strict` there.
 - **Forget User:** the speaker can delete their own notes at every level. At `relaxed`, replies quote matching values. At `balanced` and `strict`, they quote only claims and media recallable in the current channel and count the rest. At `off`, replies give counts only.
 - **Cached Media:** a repost of the same content reuses its digest at every level and records the new share. Unprompted recall of media summaries still follows the privacy level.
 
@@ -616,10 +615,8 @@ sqlite3 ~/rokabot/data/rokabot.db 'SELECT guild_id, COUNT(*) AS episodes FROM me
 sqlite3 ~/rokabot/data/rokabot.db "SELECT d.guild_id, d.label, substr(d.summary, 1, 60), COUNT(o.id) AS shares, d.embedding IS NOT NULL AS embedded FROM media_digest d LEFT JOIN media_occurrence o ON o.digest_id = d.id GROUP BY d.id ORDER BY d.created_at DESC LIMIT 20;"
 # Active facts and how many hold a vector in any space (after a provider switch, use the per-fingerprint query)
 sqlite3 ~/rokabot/data/rokabot.db "SELECT COUNT(*) AS active, SUM(embedding IS NOT NULL) AS embedded FROM memory_claim WHERE status = 'active';"
-# Recall shadow comparison, last 7 days: legacy fact retrieval vs unified recall
-sqlite3 ~/rokabot/data/rokabot.db "SELECT kind, COUNT(*) AS turns, ROUND(AVG(n_selected), 2) AS avg_selected, ROUND(AVG(tokens_est)) AS avg_tokens FROM memory_events WHERE kind IN ('retrieval', 'recall_shadow', 'recall') AND created_at > (strftime('%s', 'now') - 7 * 86400) * 1000 GROUP BY kind;"
-# Jev recall gate: turns per status and how many settled after the reply deadline
-sqlite3 ~/rokabot/data/rokabot.db "SELECT json_extract(detail, '\$.gate.status') AS status, COUNT(*) AS turns, SUM(json_extract(detail, '\$.gate.deadlineMissed')) AS late FROM memory_events WHERE kind = 'recall_shadow' AND json_extract(detail, '\$.gate.v') = 1 GROUP BY status;"
+# Legacy memory recall, last 7 days: fact retrieval vs prompt blocks built
+sqlite3 ~/rokabot/data/rokabot.db "SELECT kind, COUNT(*) AS turns, ROUND(AVG(n_selected), 2) AS avg_selected, ROUND(AVG(tokens_est)) AS avg_tokens FROM memory_events WHERE kind IN ('retrieval', 'context_build') AND created_at > (strftime('%s', 'now') - 7 * 86400) * 1000 GROUP BY kind;"
 ```
 
 ### Memory V2 Migration

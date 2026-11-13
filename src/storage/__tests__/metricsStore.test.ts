@@ -296,15 +296,15 @@ describe('metricsStore', () => {
     expect(rows[1].failure_marker).toBe('SAFETY')
   })
 
-  it('stores a recall event detail string alongside the counts', () => {
+  it('stores a context build event detail string alongside the counts', () => {
     const db = getDb()
     db.prepare('DELETE FROM memory_events').run()
 
-    recordMemoryEvent({ ...memoryEvent, kind: 'recall', detail: '{"mode":"unified","selected":2}' })
+    recordMemoryEvent({ ...memoryEvent, kind: 'context_build', detail: '{"selected":2}' })
 
     expect(db.prepare('SELECT kind, detail FROM memory_events').get()).toEqual({
-      kind: 'recall',
-      detail: '{"mode":"unified","selected":2}'
+      kind: 'context_build',
+      detail: '{"selected":2}'
     })
   })
 
