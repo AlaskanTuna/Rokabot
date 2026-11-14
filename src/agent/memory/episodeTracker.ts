@@ -126,7 +126,9 @@ export function restoreOpenEpisodes(): void {
   }
   const now = Date.now()
   for (const [channelId, channelLines] of byChannel) {
+    const bufferedMessageIds = new Set(getMessages(channelId).map((message) => message.messageId))
     for (const line of channelLines) {
+      if (bufferedMessageIds.has(line.messageId)) continue
       addMessage(channelId, line.userId, line.displayName, line.displayName, line.content, {
         messageId: line.messageId,
         timestamp: line.timestamp,
