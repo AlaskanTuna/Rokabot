@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "a8dbfa238fa3b80b5feb13272b4890e03c86815c81d9d8d47923a42fcfd07c27",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af8d0ca1b42\",\"object\":\"chat.completion\",\"created\":1794691274,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\n  \\\"ops\\\": [\\n    {\\n      \\\"op\\\": \\\"add\\\",\\n      \\\"subject\\\": {\\\"kind\\\": \\\"guild\\\"},\\n      \\\"predicate\\\": \\\"upcoming_event\\\",\\n      \\\"value\\\": \\\"vinyl listening swap at Southbay lounge\\\",\\n      \\\"date\\\": {\\\"year\\\": 2026, \\\"month\\\": 10, \\\"day\\\": 30},\\n      \\\"sourceLine\\\": 1\\n    },\\n    {\\n      \\\"op\\\": \\\"add\\\",\\n      \\\"subject\\\": {\\\"kind\\\": \\\"user\\\", \\\"userId\\\": \\\"sim-user-dave\\\"},\\n      \\\"predicate\\\": \\\"hobby\\\",\\n      \\\"value\\\": \\\"Hades\\\",\\n      \\\"tense\\\": \\\"current\\\",\\n      \\\"sourceLine\\\": 5\\n    }\\n  ],\\n  \\\"summary\\\": \\\"Dave announced a vinyl listening swap at the Southbay lounge on October 30, 2026. Erin asked who plays Hades, and Roka said Dave plays Hades in Southbay.\\\"\\n}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4285,\"completion_tokens\":193,\"total_tokens\":4478,\"prompt_tokens_details\":{\"cached_tokens\":3584},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

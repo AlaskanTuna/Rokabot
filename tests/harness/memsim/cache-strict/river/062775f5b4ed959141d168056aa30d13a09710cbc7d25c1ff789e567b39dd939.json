@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "062775f5b4ed959141d168056aa30d13a09710cbc7d25c1ff789e567b39dd939",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af8d04c1740\",\"object\":\"chat.completion\",\"created\":1794691148,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"ops\\\":[],\\\"summary\\\":\\\"Erin and Grace chatted with Roka about clocks, including the old square clocktower ringing early and sun dials. No durable personal or server facts came up.\\\"}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4149,\"completion_tokens\":44,\"total_tokens\":4193,\"prompt_tokens_details\":{\"cached_tokens\":3584},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

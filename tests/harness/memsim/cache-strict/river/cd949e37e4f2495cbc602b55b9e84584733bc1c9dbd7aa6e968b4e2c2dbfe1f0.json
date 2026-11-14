@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "cd949e37e4f2495cbc602b55b9e84584733bc1c9dbd7aa6e968b4e2c2dbfe1f0",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af8d037198a\",\"object\":\"chat.completion\",\"created\":1794691127,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"ops\\\":[{\\\"op\\\":\\\"add\\\",\\\"subject\\\":{\\\"kind\\\":\\\"user\\\",\\\"userId\\\":\\\"sim-user-carol\\\"},\\\"predicate\\\":\\\"pets\\\",\\\"value\\\":\\\"rescued calico cat named Clementine\\\",\\\"tense\\\":\\\"current\\\",\\\"sourceLine\\\":1},{\\\"op\\\":\\\"add\\\",\\\"subject\\\":{\\\"kind\\\":\\\"user\\\",\\\"userId\\\":\\\"sim-user-alice\\\"},\\\"predicate\\\":\\\"favorite_anime\\\",\\\"value\\\":\\\"Mushishi\\\",\\\"tense\\\":\\\"current\\\",\\\"sourceLine\\\":2}],\\\"summary\\\":\\\"Carol mentioned her rescued calico cat Clementine, who sleeps on her drafting desk, and Alice shared that her favorite anime right now is Mushishi.\\\"}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4133,\"completion_tokens\":127,\"total_tokens\":4260,\"prompt_tokens_details\":{\"cached_tokens\":3584},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

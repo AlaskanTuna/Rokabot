@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "4b9a386ea857e64f310e7ed759f6a076db9127bd019d528374d38d8ffc794b22",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af8d07a18d9\",\"object\":\"chat.completion\",\"created\":1794691194,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"ops\\\":[{\\\"op\\\":\\\"retract\\\",\\\"subject\\\":{\\\"kind\\\":\\\"user\\\",\\\"userId\\\":\\\"sim-user-grace\\\"},\\\"predicate\\\":\\\"general_occupation\\\",\\\"value\\\":\\\"junior paralegal\\\",\\\"sourceLine\\\":1},{\\\"op\\\":\\\"add\\\",\\\"subject\\\":{\\\"kind\\\":\\\"user\\\",\\\"userId\\\":\\\"sim-user-grace\\\"},\\\"predicate\\\":\\\"general_occupation\\\",\\\"value\\\":\\\"museum archivist\\\",\\\"tense\\\":\\\"current\\\",\\\"sourceLine\\\":1}],\\\"summary\\\":\\\"Grace announced she left her paralegal job and is now working as a museum archivist. Erin asked Roka about the hobbies of Southbay members.\\\"}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4308,\"completion_tokens\":120,\"total_tokens\":4428,\"prompt_tokens_details\":{\"cached_tokens\":3840},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

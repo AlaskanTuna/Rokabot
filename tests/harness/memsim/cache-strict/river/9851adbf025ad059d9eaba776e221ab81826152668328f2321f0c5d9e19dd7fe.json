@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "9851adbf025ad059d9eaba776e221ab81826152668328f2321f0c5d9e19dd7fe",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af8d0d71c21\",\"object\":\"chat.completion\",\"created\":1794691287,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"ops\\\":[{\\\"op\\\":\\\"noop\\\"}],\\\"summary\\\":\\\"Erin counted down the days to the Southbay events week and asked Roka about the vinyl swap and arcade tournament dates, while Dave asked Roka about Erin's allergies and pets.\\\"}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4279,\"completion_tokens\":52,\"total_tokens\":4331,\"prompt_tokens_details\":{\"cached_tokens\":3840},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "eb94690dd948af9d7b35cb7afdafc1de35c910fdaf3130535dfc82e72c093f9c",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af8d0ad1af4\",\"object\":\"chat.completion\",\"created\":1794691245,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"ops\\\":[],\\\"summary\\\":\\\"Carol replaced a flickering bulb on the patio awning strand, and Bob noted that all twenty globes now glow evenly over the picnic benches. Carol and Bob also asked the bot about warm amber bulbs and evening dusk times.\\\"}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4310,\"completion_tokens\":54,\"total_tokens\":4364,\"prompt_tokens_details\":{\"cached_tokens\":3584},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

@@ -81,3 +81,74 @@ describe('memory simulator replay gate', () => {
     expect(report.gatesPassed).toBe(true)
   }, 55_000)
 })
+
+describe('memory simulator strict-privacy replay gate', () => {
+  const savedEnv = new Map<string, string | undefined>()
+  let strictDualQuality: Awaited<ReturnType<typeof runMemsim>>['quality'] | undefined
+
+  beforeEach(() => {
+    vi.resetModules()
+    for (const key of SAVED_KEYS) savedEnv.set(key, process.env[key])
+  })
+
+  afterEach(() => {
+    for (const key of SAVED_KEYS) {
+      const value = savedEnv.get(key)
+      if (value === undefined) Reflect.deleteProperty(process.env, key)
+      else process.env[key] = value
+    }
+    vi.resetModules()
+  })
+
+  it('passes all Phase 3/4, privacy, crash-safety and trigger-coverage gates offline from the strict cache', async () => {
+    const report = await runMemsim({
+      mode: 'replay',
+      store: 'dual',
+      privacy: 'strict',
+      cacheDir: 'tests/harness/memsim/cache-strict'
+    })
+    strictDualQuality = report.quality
+
+    expect(report.providerCalls.river.live).toBe(0)
+    expect(report.providerCalls.embeddings.live).toBe(0)
+    expect(report.providerCalls.typesafe.live).toBe(0)
+    expect(report.integrity.status).toBe('passed')
+    expect(report.integrity.finalDrift).toEqual({ fact: 0, episode: 0, media: 0 })
+    expect(report.triggerCoverage.status).toBe('passed')
+    expect(report.triggerCoverage.missing).toEqual([])
+    expect(report.phase4Parity.status).toBe('passed')
+    expect(report.phase4Parity.turnsChecked).toBeGreaterThanOrEqual(150)
+    expect(report.phase4Parity.mismatches).toBe(0)
+    expect(report.privacyGate.status).toBe('passed')
+    expect(report.privacyGate.privateOnlyItemsCount).toBeGreaterThanOrEqual(4)
+    expect(report.privacyGate.privateTokensLeaked).toBe(0)
+    expect(report.privacyGate.dmTurnsChecked).toBeGreaterThanOrEqual(3)
+    expect(report.privacyGate.dmMemoryBlockLeaks).toBe(0)
+    expect(report.crashSafety.status).toBe('passed')
+    expect(report.quality.overallPlanted).toBeGreaterThanOrEqual(40)
+    expect(report.gatesPassed).toBe(true)
+  }, 55_000)
+
+  it('passes applicable offline gates for a strict item-store replay', async () => {
+    const report = await runMemsim({
+      mode: 'replay',
+      store: 'item',
+      privacy: 'strict',
+      cacheDir: 'tests/harness/memsim/cache-strict'
+    })
+
+    expect(report.providerCalls.river.live).toBe(0)
+    expect(report.providerCalls.embeddings.live).toBe(0)
+    expect(report.providerCalls.typesafe.live).toBe(0)
+    expect(report.integrity.status).toBe('passed')
+    expect(report.triggerCoverage.status).toBe('passed')
+    expect(report.triggerCoverage.missing).toEqual([])
+    expect(report.phase4Parity.status).toBe('skipped')
+    expect(report.privacyGate.status).toBe('passed')
+    expect(report.privacyGate.privateTokensLeaked).toBe(0)
+    expect(report.privacyGate.dmMemoryBlockLeaks).toBe(0)
+    expect(report.quality).toEqual(strictDualQuality)
+    expect(report.crashSafety.status).toBe('passed')
+    expect(report.gatesPassed).toBe(true)
+  }, 55_000)
+})

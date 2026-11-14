@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "353ee989f2fe0a843b6480fbab3ba2fc7abed519c4c4a234a7081e36f4647997",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af8d07218a1\",\"object\":\"chat.completion\",\"created\":1794691186,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"ops\\\":[{\\\"op\\\":\\\"add\\\",\\\"subject\\\":{\\\"kind\\\":\\\"user\\\",\\\"userId\\\":\\\"sim-user-bob\\\"},\\\"predicate\\\":\\\"pets\\\",\\\"value\\\":\\\"gentle greyhound Nimbus\\\",\\\"tense\\\":\\\"current\\\",\\\"sourceLine\\\":1}],\\\"summary\\\":\\\"Bob shared that he is looking after his sister's gentle greyhound, Nimbus.\\\"}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4044,\"completion_tokens\":71,\"total_tokens\":4115,\"prompt_tokens_details\":{\"cached_tokens\":3584},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

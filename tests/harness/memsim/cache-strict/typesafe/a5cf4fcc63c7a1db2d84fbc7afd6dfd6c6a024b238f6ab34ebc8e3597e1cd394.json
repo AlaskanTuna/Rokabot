@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "typesafe",
+  "hash": "a5cf4fcc63c7a1db2d84fbc7afd6dfd6c6a024b238f6ab34ebc8e3597e1cd394",
+  "response": {
+    "status": 200,
+    "statusText": "",
+    "contentType": "application/json",
+    "body": "{\"model\":\"jev-1.13.0\",\"answers\":{\"durable_0\":{\"type\":\"noul\",\"noul\":0.45},\"attributed_0\":{\"type\":\"noul\",\"noul\":0.74},\"retracts_0_0\":{\"type\":\"noul\",\"noul\":0.92},\"durable_1\":{\"type\":\"noul\",\"noul\":0.74},\"attributed_1\":{\"type\":\"noul\",\"noul\":0.73},\"current_1\":{\"type\":\"noul\",\"noul\":0.58},\"past_1\":{\"type\":\"noul\",\"noul\":0.76},\"same_as_1_0\":{\"type\":\"noul\",\"noul\":0.03}},\"usage\":{\"input_tokens\":1108,\"output_tokens\":160}}"
+  }
+}

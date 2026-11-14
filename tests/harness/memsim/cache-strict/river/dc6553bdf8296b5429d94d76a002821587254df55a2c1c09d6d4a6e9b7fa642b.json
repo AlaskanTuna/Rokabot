@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "dc6553bdf8296b5429d94d76a002821587254df55a2c1c09d6d4a6e9b7fa642b",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af8cf7d1793\",\"object\":\"chat.completion\",\"created\":1794690941,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"ops\\\":[{\\\"op\\\":\\\"noop\\\"}],\\\"summary\\\":\\\"Dave checked in with the Southbay crew and asked Roka about his favorite drink and Grace's hobbies and job, while Erin asked Roka about her tortoise and a saxophone clip.\\\"}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4395,\"completion_tokens\":52,\"total_tokens\":4447,\"prompt_tokens_details\":{\"cached_tokens\":3840},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

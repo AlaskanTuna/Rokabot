@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "413fc26f454e196e0e036ce740fa7da42b12630fa6163cd88d177160fd12a4fd",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af8d0501869\",\"object\":\"chat.completion\",\"created\":1794691152,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\n  \\\"ops\\\": [\\n    {\\n      \\\"op\\\": \\\"add\\\",\\n      \\\"subject\\\": {\\\"kind\\\": \\\"user\\\", \\\"userId\\\": \\\"sim-user-alice\\\"},\\n      \\\"predicate\\\": \\\"general_occupation\\\",\\n      \\\"value\\\": \\\"pastry baker during college summers\\\",\\n      \\\"tense\\\": \\\"past\\\",\\n      \\\"sourceLine\\\": 1\\n    },\\n    {\\n      \\\"op\\\": \\\"add\\\",\\n      \\\"subject\\\": {\\\"kind\\\": \\\"user\\\", \\\"userId\\\": \\\"sim-user-alice\\\"},\\n      \\\"predicate\\\": \\\"hobby\\\",\\n      \\\"value\\\": \\\"backyard beekeeping with two small hives\\\",\\n      \\\"tense\\\": \\\"current\\\",\\n      \\\"sourceLine\\\": 2\\n    }\\n  ],\\n  \\\"summary\\\": \\\"Alice shared that she worked as a pastry baker during college summers and that she now keeps two beehives in her backyard. Carol asked Roka about Alice's college summers.\\\"\\n}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4228,\"completion_tokens\":190,\"total_tokens\":4418,\"prompt_tokens_details\":{\"cached_tokens\":3584},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

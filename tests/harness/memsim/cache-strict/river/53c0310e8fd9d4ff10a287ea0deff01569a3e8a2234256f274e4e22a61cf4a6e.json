@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "53c0310e8fd9d4ff10a287ea0deff01569a3e8a2234256f274e4e22a61cf4a6e",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af8d0f0185f\",\"object\":\"chat.completion\",\"created\":1794691312,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"ops\\\":[],\\\"summary\\\":\\\"Dave and Erin discussed packing and storing event banners and supplies, with Dave asking about avoiding iron marks and Erin asking for an end-of-month checklist tip.\\\"}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4176,\"completion_tokens\":39,\"total_tokens\":4215,\"prompt_tokens_details\":{\"cached_tokens\":3584},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}
