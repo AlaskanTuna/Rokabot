@@ -25,12 +25,17 @@ const MAX_POOL = 100
 
 /**
  * Active current facts filed under misc, plus the weaker side of any pair that one member filed twice under
- * different predicates (the misc one, else the lower salience, else the newer), in random order so a fact the
+ * different predicates (the misc one, else the lower salience, else the content-later one), in random order so a fact the
  * model keeps cannot crowd out the ones behind it. A fact whose move was undone is never offered again: an
  * active row with a `claim_reclassified` event of its own was put back by hand.
  */
-export function findReclassifyCandidates(limit: number): ReclassifyCandidate[] {
-  return findReclassifyRows(limit)
+export function findReclassifyCandidates(limit: number, random: () => number = Math.random): ReclassifyCandidate[] {
+  const candidates = findReclassifyRows()
+  for (let index = candidates.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(random() * (index + 1))
+    ;[candidates[index], candidates[swapIndex]] = [candidates[swapIndex]!, candidates[index]!]
+  }
+  return candidates.slice(0, Math.max(0, limit))
 }
 
 /**
@@ -154,11 +159,11 @@ export function undoReclassify(oldClaimId: number): boolean {
  * Moves misfiled facts to the predicate Gemini proposes once Jev confirms it, up to
  * `memory.reclassifyMaxPerRun` a run. Returns the number of facts moved.
  */
-export async function reclassifyClaims(): Promise<number> {
+export async function reclassifyClaims(random: () => number = Math.random): Promise<number> {
   const cap = config.memory.reclassifyMaxPerRun
   if (config.memory.privacy === 'off' || cap <= 0) return 0
 
-  const candidates = findReclassifyCandidates(Math.min(MAX_POOL, cap * POOL_PER_MOVE))
+  const candidates = findReclassifyCandidates(Math.min(MAX_POOL, cap * POOL_PER_MOVE), random)
   if (candidates.length === 0) return 0
 
   const byId = new Map(candidates.map((candidate) => [candidate.id, candidate]))

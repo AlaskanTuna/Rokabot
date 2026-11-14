@@ -560,6 +560,34 @@ describe('findReclassifyCandidates', () => {
     expect(seen.size).toBeGreaterThan(5)
   })
 
+  it('shuffles a stable content order with the injected RNG regardless of insertion IDs', () => {
+    const draw = (values: string[]) => {
+      for (const value of values) seedClaim({ predicate: 'misc', value })
+      return findReclassifyCandidates(3, () => 0).map(({ value }) => value)
+    }
+
+    const first = draw(['zebra', 'mango', 'apple'])
+    getDb().exec('DELETE FROM memory_events; DELETE FROM memory_evidence; DELETE FROM memory_claim;')
+    const second = draw(['apple', 'zebra', 'mango'])
+
+    expect(first).toEqual(['mango', 'zebra', 'apple'])
+    expect(second).toEqual(first)
+  })
+
+  it('breaks equal-salience duplicate ties by content rather than database ID', () => {
+    const draw = (predicates: ['hobby' | 'likes', 'hobby' | 'likes']) => {
+      for (const predicate of predicates) seedClaim({ predicate, value: 'tea' })
+      return findReclassifyCandidates(10, () => 0).map(({ predicate }) => predicate)
+    }
+
+    const first = draw(['likes', 'hobby'])
+    getDb().exec('DELETE FROM memory_events; DELETE FROM memory_evidence; DELETE FROM memory_claim;')
+    const second = draw(['hobby', 'likes'])
+
+    expect(first).toEqual(['likes'])
+    expect(second).toEqual(first)
+  })
+
   it('leaves out a fact whose reclassification was undone', () => {
     const undone = seedClaim({ predicate: 'misc', value: 'draws on weekends' })
     const untouched = seedClaim({ predicate: 'misc', value: 'plays chess' })

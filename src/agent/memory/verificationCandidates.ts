@@ -6,6 +6,14 @@ type WriteOp = Exclude<ExtractionOp, { op: 'noop' }>
 
 const MAX_RETRACT_CANDIDATES = 5
 
+function compareContentKey(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0
+}
+
+function claimContentKey(claim: MemoryClaim): string {
+  return JSON.stringify([claim.subjectKind, claim.subjectUserId ?? '', claim.predicate, claim.value, claim.period])
+}
+
 export function proposedPeriod(op: WriteOp): ClaimPeriod {
   return 'tense' in op && op.tense === 'past' ? 'past' : 'current'
 }
@@ -13,10 +21,12 @@ export function proposedPeriod(op: WriteOp): ClaimPeriod {
 // Planning and judging both derive their question keys from these lists, so the order must stay shared.
 export function sameAsCandidates(existing: readonly MemoryClaim[], op: Extract<WriteOp, { op: 'add' }>): MemoryClaim[] {
   const period = proposedPeriod(op)
-  return existing.filter((claim) => {
-    if (claim.subjectKind !== op.subject.kind || claim.predicate !== op.predicate) return false
-    return op.subject.kind === 'guild' || (claim.subjectUserId === op.subject.userId && claim.period === period)
-  })
+  return existing
+    .filter((claim) => {
+      if (claim.subjectKind !== op.subject.kind || claim.predicate !== op.predicate) return false
+      return op.subject.kind === 'guild' || (claim.subjectUserId === op.subject.userId && claim.period === period)
+    })
+    .sort((left, right) => compareContentKey(claimContentKey(left), claimContentKey(right)))
 }
 
 function squash(value: string): string {
@@ -26,7 +36,7 @@ function squash(value: string): string {
 // A fact may sit under a sibling predicate of the one the retract names (a legacy `favorite_game` row when the member
 // now says `hobby`), so every visible current claim of the category is asked about. The claim the member named goes
 // first, whatever its predicate, so the cap can never push it out of the questions; the retract's own predicate comes
-// before a sibling, and ties keep the order they were given in.
+// before a sibling, and content order breaks remaining ties.
 export function retractCandidates(
   existing: readonly MemoryClaim[],
   op: Extract<WriteOp, { op: 'retract' }>
@@ -43,6 +53,11 @@ export function retractCandidates(
         claim.period === 'current' &&
         predicateCategory(claim.predicate) === category
     )
-    .sort((left, right) => valueRank(left) - valueRank(right) || predicateRank(left) - predicateRank(right))
+    .sort(
+      (left, right) =>
+        valueRank(left) - valueRank(right) ||
+        predicateRank(left) - predicateRank(right) ||
+        compareContentKey(claimContentKey(left), claimContentKey(right))
+    )
     .slice(0, MAX_RETRACT_CANDIDATES)
 }

@@ -65,27 +65,50 @@ function recallableHere<T extends { id: number }>(items: T[], scope: RecallScope
   return items.filter(({ id }) => canRecall(sources.get(id) ?? [null], scope, level))
 }
 
-function episodePrompt(guildId: string, channelId: string, episode: ExtractionEpisode): string {
+function compareContentKey(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0
+}
+
+function episodePrompt(
+  guildId: string,
+  channelId: string,
+  episode: ExtractionEpisode
+): { prompt: string; claimIdByRef: Map<number, number> } {
   const scope = { guildId, channelId }
   const humanIds = [...new Set(episode.messages.filter((message) => !message.isBot).map((message) => message.userId))]
+  const claimIdByRef = new Map<number, number>()
+  let nextRef = 1
   const claims = humanIds.map((userId) => ({
     userId,
     claims: recallableHere(
       getActiveClaims(guildId, userId).filter(({ needsReview }) => !needsReview),
       scope
-    ).map(({ id, predicate, value, period }) =>
-      period === 'past' ? { id, predicate, value, period } : { id, predicate, value }
     )
+      .map(({ id, predicate, value, period }) => ({ id, predicate, value, period }))
+      .sort((left, right) => {
+        const key = ({ predicate, value, period }: { predicate: string; value: string; period: string }) =>
+          JSON.stringify(period === 'past' ? { predicate, value, period } : { predicate, value })
+        return compareContentKey(key(left), key(right))
+      })
+      .map(({ id, predicate, value, period }) => {
+        const ref = nextRef++
+        claimIdByRef.set(ref, id)
+        return period === 'past' ? { id: ref, predicate, value, period } : { id: ref, predicate, value }
+      })
   }))
-  const guildClaims = recallableHere(getActiveGuildClaims(guildId), scope).map(
-    ({ id, predicate, value, expiresAt }) => ({
-      id,
-      predicate,
-      value,
-      expiresAt
+  const guildClaims = recallableHere(getActiveGuildClaims(guildId), scope)
+    .map(({ id, predicate, value, expiresAt }) => ({ id, predicate, value, expiresAt }))
+    .sort((left, right) => {
+      const key = ({ predicate, value, expiresAt }: { predicate: string; value: string; expiresAt: number | null }) =>
+        JSON.stringify({ predicate, value, expiresAt })
+      return compareContentKey(key(left), key(right))
     })
-  )
-  return [
+    .map(({ id, predicate, value, expiresAt }) => {
+      const ref = nextRef++
+      claimIdByRef.set(ref, id)
+      return { id: ref, predicate, value, expiresAt }
+    })
+  const prompt = [
     'You extract durable personal details about users and shared facts about this Discord server from an episode.',
     'Never extract sensitive personal information: real/legal names, age or birthday, address or specific residence, phone numbers, email addresses, social media handles, names of schools, employers, or workplaces, financial information, credentials, or medical/health details.',
     'A member\'s own job, trade or line of work is general_occupation and is never sensitive: record the role itself ("line cook", "freelance illustrator"), never the employer, workplace, or location.',
@@ -107,6 +130,7 @@ function episodePrompt(guildId: string, channelId: string, episode: ExtractionEp
     `Context (background only, never a subject):\n${episode.context.map(formatEpisodeLine).join('\n') || '(none)'}`,
     `Delta messages:\n${episode.messages.map((message, index) => `#${index + 1} ${formatEpisodeLine(message)}`).join('\n')}`
   ].join('\n\n')
+  return { prompt, claimIdByRef }
 }
 
 export type ExtractedEpisode = EpisodeExtractionOutput & {
@@ -128,16 +152,33 @@ export async function extractEpisode(input: {
   channelId: string
   episode: ExtractionEpisode
 }): Promise<ExtractedEpisode> {
+  const prompt = episodePrompt(input.guildId, input.channelId, input.episode)
   const { value, provider, model, usage } = await generateObject({
     schema: ExtractionTransportSchema,
     requestSchema: ExtractionOutputSchema,
-    prompt: episodePrompt(input.guildId, input.channelId, input.episode),
+    prompt: prompt.prompt,
     workload: 'extraction',
     maxOutputTokens: 700,
     legacyResponseSchema: EXTRACTION_RESPONSE_SCHEMA
   })
+  let invalidOps = value.invalidOps
+  const ops: EpisodeExtractionOutput['ops'] = []
+  for (const op of value.ops) {
+    if (!('existingId' in op)) {
+      ops.push(op)
+      continue
+    }
+    const id = prompt.claimIdByRef.get(op.existingId)
+    if (id === undefined) {
+      invalidOps += 1
+      continue
+    }
+    ops.push({ ...op, existingId: id })
+  }
   return {
     ...value,
+    ops,
+    invalidOps,
     promptTokens: promptTokenTotal(usage),
     extractionProvider: provider,
     extractionModel: model,

@@ -117,6 +117,10 @@ so one unsafe value never rolls back the rest of the batch (#491). Delta lines a
 write path resolves it to a message ID and speaker, and a missing, out-of-range, bot, or other-member line loses only
 the link while the op still applies. Each job counts once per claim: a retried job's replayed evidence is a no-op.
 
+Claims and guild facts are ordered by stable content keys and receive request-local refs `1..n`. The prompt uses those
+refs for claim IDs. An update or remove returns its local ref; extraction maps it back to the database row before
+verification. An unknown or out-of-range ref drops that op and increments `ops.invalid`. Refs never persist.
+
 | Operation | Subjects    | Effect                                                                                |
 | --------- | ----------- | ------------------------------------------------------------------------------------- |
 | `add`     | User, guild | Insert or refresh an active claim. A user add has a `tense`.                          |
@@ -159,8 +163,12 @@ same-subject, same-predicate, same-period claim. Past ops and retracts get their
 | -------------- | ------------------------------------------------------------------- | --------------------------------------------- |
 | `current_N`    | Every user add and update: true of the subject now?                 | It cannot be written as current               |
 | `past_N`       | Every user add and update: true at some earlier time?               | With `current_N` failing too, the op drops    |
-| `changes_N`    | Every user update: does it change claim #ID into a different fact?  | Becomes evidence on the target; wording stays |
+| `changes_N`    | Every user update: does it change claim #ref into a different fact? | Becomes evidence on the target; wording stays |
 | `retracts_N_M` | A retract, per visible current claim in its category (best 5 first) | That claim is not retired                     |
+
+Jev receives visible claims in stable content order with refs `1..n`; request state, update targets, and question text
+use those refs instead of database IDs. `same_as_N_M` and `retracts_N_M` keep their operation and candidate indices,
+with candidates ordered by stable content keys.
 
 Thresholds are `memory.verifyThreshold` (0.5, Jev) or `memory.modelVerifyThreshold` (0.7, main model). Verification is
 complete only when every key has a probability in 0..1.
@@ -174,7 +182,7 @@ With complete verification:
    each other. A current update aimed at a past claim writes a new current fact.
 5. **Duplicates:** an exact active value adds evidence even below the `same_as` threshold. Other duplicates must pass.
 6. **Retraction:** retires each visible current claim whose `retracts_N_M` holds (`end_reason = 'retracted'`).
-   Candidates span the predicate category, ordered by value match, then own predicate, then listing order.
+   Candidates span the predicate category, ordered by value match, then own predicate, then stable content key.
 7. **Order:** multi-value retracts first (to free a cap slot), then all other ops, then single-value retracts, so a
    retract-then-add switch lets the add supersede the old value and inherit its pin.
 8. **Pins:** a verified op that supersedes a pinned current claim writes `pinned = 1`.
@@ -206,9 +214,10 @@ Under `balanced` and `strict`, the extractor and judge see only claims this chan
 transaction, `reconcileHiddenRetractions` handles each verified `retract`:
 
 1. **Candidates:** the subject's active current claims in the same category, not under review, not visible here.
-2. **Ranking:** cosine similarity of the retracted fact's sentence to each stored claim vector. Top 3; no vector, skip.
-3. **Judgment:** one judge call. Each candidate at or above the verify threshold retires with `retracted` and counts in
-   `ops.retracted`.
+2. **Ranking:** cosine similarity of the retracted fact's sentence to each stored claim vector. Top 3, with sentence
+   content breaking ties; no vector, skip.
+3. **Judgment:** one judge call with request-local refs `1..n` for candidate facts. Each candidate at or above the
+   verify threshold retires with `retracted` and counts in `ops.retracted`.
 
 Nothing hidden reaches the prompt, reply or logs (logs carry IDs, predicate and counts). `relaxed` and `off` make no
 calls. The pass never throws; a failure retires nothing.
@@ -301,11 +310,12 @@ The predicate list and tiers live in `src/agent/memory/predicates.ts`.
 - **Limits:** never under `off`. `memory.reclassifyMaxPerRun` (env `MEMORY_RECLASSIFY_MAX_PER_RUN`, 20, bounded 0..100)
   caps moves per run; 0 turns it off.
 - **Candidates:** active current `misc` claims, plus the weaker side of an equal-value pair under two predicates (the
-  `misc` one, else lower salience, else newer). Up to `min(100, 5 × cap)` in random order. Undone moves are never
-  offered again.
-- **Proposal:** one call on the extraction model route returns a predicate or `keep`. `misc` and `relationship_to` are
-  never targets.
-- **Confirmation:** one judge call asks `fits_<id>` for at most `cap` proposals, held to the verify threshold.
+  `misc` one, else lower salience, else newer). The stable content-ordered pool is shuffled in application code, then
+  limited to `min(100, 5 × cap)`. Undone moves are never offered again.
+- **Proposal:** one call on the extraction model route returns a predicate or `keep`, using request-local refs `1..n`
+  rather than claim IDs. `misc` and `relationship_to` are never targets.
+- **Confirmation:** one judge call asks `fits_<ref>` for at most `cap` proposals, held to the verify threshold. The
+  returned refs map back to claim IDs in application code.
 - **Move:** one transaction retires the old row (`reclassified`), writes the value as an active, verified fact under
   the new predicate, copies evidence, keeps the pin and `first_seen_at`, and links old to new. It rolls back if it would
   end any other fact. It skips a value the member retracted or forgot.

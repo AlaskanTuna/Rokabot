@@ -1,0 +1,1 @@
+{"version":1,"provider":"typesafe","hash":"1d03d66a3323c98d54c635486c8c4f9722d2c27b326e4f78118ef53d09410da6","response":{"status":200,"statusText":"","contentType":"application/json","body":"{\"model\":\"jev-1.13.0\",\"answers\":{\"summary_complete\":{\"type\":\"noul\",\"noul\":0.77}},\"usage\":{\"input_tokens\":350,\"output_tokens\":21}}"}}

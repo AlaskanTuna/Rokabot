@@ -215,6 +215,31 @@ describe('runEpisodePipeline', () => {
     expect(Object.keys(trace.stageMs).sort()).toEqual(['admission', 'extraction', 'verification'])
   })
 
+  it('drops an extraction operation whose existing-claim reference is out of range and traces it as invalid', async () => {
+    mocks.modelReply.mockResolvedValueOnce({
+      text: JSON.stringify({
+        ops: [
+          {
+            op: 'update',
+            subject: { kind: 'user', userId: 'user-1' },
+            existingId: 1,
+            predicate: 'likes',
+            value: 'coffee',
+            tense: 'current'
+          }
+        ],
+        summary: 'Alice talked about coffee.'
+      })
+    })
+    const trace = startRunTrace(queueJob, 1)
+
+    await runEpisodePipeline(queueJob, trace)
+
+    expect(trace.ops.invalid).toBe(1)
+    expect(trace.ops.proposed).toBe(0)
+    expect(mocks.judgeEpisodeOperations).not.toHaveBeenCalled()
+  })
+
   it('drops a guild-only predicate from a user operation and keeps valid operations', async () => {
     const episode: ExtractionEpisode = {
       messages: [
@@ -568,7 +593,7 @@ describe('runEpisodePipeline', () => {
     expect(trace.ops.dropped).toBe(1)
   })
 
-  it('does not call the ops rejected when a retried job finds its update target already gone', async () => {
+  it('drops an update with an unknown local reference before Jev', async () => {
     mocks.modelReply.mockResolvedValueOnce({
       text: JSON.stringify({
         ops: [
@@ -599,7 +624,8 @@ describe('runEpisodePipeline', () => {
     const trace = startRunTrace(queueJob, 1)
 
     await expect(runEpisodePipeline(queueJob, trace)).resolves.toMatchObject({ opsRejected: false })
-    expect(trace.ops.dropped).toBe(1)
+    expect(trace.ops).toMatchObject({ proposed: 0, invalid: 1, dropped: 0 })
+    expect(mocks.judgeEpisodeOperations).not.toHaveBeenCalled()
   })
 
   it('calls the ops rejected when Jev declines the only retraction candidate', async () => {
@@ -636,7 +662,7 @@ describe('runEpisodePipeline', () => {
       assertClaim({ guildId: 'guild-1', subjectUserId: 'user-1', predicate, value, sourceKind: 'passive' })
     const subject = { kind: 'user', userId: 'user-1' }
     const chess = claim('hobby', 'chess')
-    const cooking = claim('teasing_habit', 'teases friends about their cooking')
+    claim('teasing_habit', 'teases friends about their cooking')
     mocks.modelReply.mockResolvedValueOnce({
       text: JSON.stringify({
         ops: [
@@ -645,7 +671,7 @@ describe('runEpisodePipeline', () => {
           {
             op: 'update',
             subject,
-            existingId: cooking.id,
+            existingId: 2,
             predicate: 'teasing_habit',
             value: 'jokes about how friends cook',
             tense: 'current'
@@ -818,6 +844,90 @@ describe('extractEpisode', () => {
     expect(request.prompt).toContain(
       'Return a one-to-two sentence third-person summary saying who said or did what. Name people by display name and never write a user ID. Never mention whether a durable fact came up.'
     )
+  })
+
+  it('uses stable prompt-local claim refs and maps returned refs to database IDs', async () => {
+    for (const value of ['unrelated-a', 'unrelated-b', 'unrelated-c']) {
+      assertClaim({
+        guildId: 'guild-1',
+        subjectUserId: 'user-2',
+        predicate: 'likes',
+        value,
+        sourceKind: 'explicit'
+      })
+    }
+    const zebra = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'likes',
+      value: 'zebra',
+      sourceKind: 'explicit'
+    })
+    const apple = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'likes',
+      value: 'apple',
+      sourceKind: 'explicit'
+    })
+    const guildFact = assertGuildClaim({
+      guildId: 'guild-1',
+      predicate: 'place',
+      value: 'the lobby',
+      expiresAt: null,
+      sourceKind: 'explicit'
+    })
+    const episode: ExtractionEpisode = {
+      messages: [
+        {
+          messageId: 'm-1',
+          userId: 'user-1',
+          displayName: 'Alice',
+          content: 'I like apples',
+          timestamp: 1,
+          isBot: false
+        }
+      ],
+      context: [],
+      startedAt: 1,
+      endedAt: 1
+    }
+    mocks.modelReply.mockResolvedValueOnce({
+      text: JSON.stringify({
+        ops: [
+          {
+            op: 'update',
+            subject: { kind: 'user', userId: 'user-1' },
+            existingId: 1,
+            predicate: 'likes',
+            value: 'fruit',
+            tense: 'current'
+          }
+        ],
+        summary: 'Alice likes fruit.'
+      })
+    })
+
+    const result = await extractEpisode({ guildId: 'guild-1', channelId: 'channel-1', episode })
+    const prompt: string = mocks.modelReply.mock.calls[0][0].prompt
+    const claimsText = prompt.split('Current active claims:\n')[1]?.split('\n\nCurrent active guild facts:')[0]
+    const guildClaimsText = prompt.split('Current active guild facts:\n')[1]?.split('\n\nContext (background only')[0]
+
+    expect(JSON.parse(claimsText ?? 'null')).toEqual([
+      {
+        userId: 'user-1',
+        claims: [
+          { id: 1, predicate: 'likes', value: 'apple' },
+          { id: 2, predicate: 'likes', value: 'zebra' }
+        ]
+      }
+    ])
+    expect(JSON.parse(guildClaimsText ?? 'null')).toEqual([
+      { id: 3, predicate: 'place', value: 'the lobby', expiresAt: null }
+    ])
+    expect(result.ops).toMatchObject([{ existingId: apple.id }])
+    expect(result.ops[0]).not.toHaveProperty('existingId', zebra.id)
+    expect(result.ops[0]).not.toHaveProperty('existingId', guildFact.id)
   })
 
   it('tells Gemini that add and update cite a numbered delta line, never context', async () => {

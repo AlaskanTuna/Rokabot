@@ -61,8 +61,8 @@ describe('proposePredicates', () => {
   it('asks one structured question listing every predicate with its category and keywords', async () => {
     mocks.generateObject.mockResolvedValueOnce(
       proposal([
-        { id: 7, predicate: 'hobby' },
-        { id: 9, predicate: 'keep' }
+        { id: 1, predicate: 'hobby' },
+        { id: 2, predicate: 'keep' }
       ])
     )
 
@@ -76,6 +76,9 @@ describe('proposePredicates', () => {
     expect(request).toMatchObject({ workload: 'reclassify', maxOutputTokens: 100 + batch.length * 40 })
     expect(request.prompt).toContain('hobby (interests): hobby, hobbies, pastime, pastimes, craft, crafts')
     expect(request.prompt).toContain('draws on weekends')
+    expect(request.prompt).toContain('"id":1')
+    expect(request.prompt).not.toContain('"id":7')
+    expect(request.prompt).not.toContain('"id":9')
     expect(request.legacyResponseSchema).toEqual({
       type: 'OBJECT',
       properties: {
@@ -116,8 +119,8 @@ describe('proposePredicates', () => {
   it('drops proposals for facts outside the batch and repeated facts', async () => {
     mocks.generateObject.mockResolvedValueOnce(
       proposal([
-        { id: 7, predicate: 'hobby' },
-        { id: 7, predicate: 'likes' },
+        { id: 1, predicate: 'hobby' },
+        { id: 1, predicate: 'likes' },
         { id: 99, predicate: 'hobby' }
       ])
     )
@@ -147,7 +150,7 @@ describe('jevConfirm', () => {
 
   it('asks whether each value fits the proposed predicate and maps IDs to probabilities', async () => {
     mocks.systemOne.mockResolvedValueOnce({
-      answers: { fits_7: { type: 'noul', noul: 0.91 }, fits_9: { type: 'noul', noul: 0.12 } },
+      answers: { fits_1: { type: 'noul', noul: 0.91 }, fits_2: { type: 'noul', noul: 0.12 } },
       usage: { input_tokens: 10, output_tokens: 2 }
     })
 
@@ -156,14 +159,22 @@ describe('jevConfirm', () => {
     expect(noul).toHaveBeenCalledWith('Is "draws on weekends" this person\'s hobby?')
     expect(noul).toHaveBeenCalledWith('Is "plays piano" this person\'s general occupation?')
     expect(mocks.systemOne).toHaveBeenCalledWith(
-      { state: expect.any(Object), questions: { fits_7: expect.any(Object), fits_9: expect.any(Object) } },
+      {
+        state: {
+          facts: [
+            { id: 1, predicate: 'hobby', value: 'draws on weekends' },
+            { id: 2, predicate: 'general_occupation', value: 'plays piano' }
+          ]
+        },
+        questions: { fits_1: expect.any(Object), fits_2: expect.any(Object) }
+      },
       { timeout: 5_000 }
     )
   })
 
   it('leaves out an answer that is missing or not a probability', async () => {
     mocks.systemOne.mockResolvedValueOnce({
-      answers: { fits_7: { type: 'noul', noul: 0.91 }, fits_9: { type: 'noul', noul: 1.5 } },
+      answers: { fits_1: { type: 'noul', noul: 0.91 }, fits_2: { type: 'noul', noul: 1.5 } },
       usage: { input_tokens: 10, output_tokens: 2 }
     })
     await expect(jevConfirm(moves)).resolves.toEqual({ 7: 0.91 })
@@ -187,7 +198,7 @@ describe('jevConfirm', () => {
     mocks.clientAvailable = false
     mocks.config.memory.judge = 'model'
     mocks.judgeWithModel.mockResolvedValueOnce({
-      answers: { fits_7: 0.91, fits_9: 0.12 },
+      answers: { fits_1: 0.91, fits_2: 0.12 },
       latencyMs: 10,
       inputTokens: 60,
       judge: 'anthropic:claude-haiku-5-5'
@@ -196,10 +207,12 @@ describe('jevConfirm', () => {
     await expect(jevConfirm(moves)).resolves.toEqual({ 7: 0.91, 9: 0.12 })
     expect(mocks.judgeWithModel).toHaveBeenCalledWith({
       workload: 'verification',
-      state: { facts: moves.map(({ id, predicate, value }) => ({ id, predicate, value })) },
+      state: {
+        facts: moves.map(({ predicate, value }, index) => ({ id: index + 1, predicate, value }))
+      },
       questions: {
-        fits_7: 'Is "draws on weekends" this person\'s hobby?',
-        fits_9: 'Is "plays piano" this person\'s general occupation?'
+        fits_1: 'Is "draws on weekends" this person\'s hobby?',
+        fits_2: 'Is "plays piano" this person\'s general occupation?'
       }
     })
   })

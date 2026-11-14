@@ -147,7 +147,7 @@ describe('media recall', () => {
     expect(buildMediaRecallBlock({ guildId: 'guild-a', queryEmbedding: query, scope })).toBe('')
   })
 
-  it('orders by similarity, then most recent share, then id, and applies the top-k limit', () => {
+  it('orders by similarity, then most recent share, then stable media content, and applies the top-k limit', () => {
     configMock.memory.mediaRecallK = 3
     seedMedia({
       contentKey: 'youtube:closest',
@@ -156,10 +156,10 @@ describe('media recall', () => {
       sharedAt: 50
     })
     seedMedia({ contentKey: 'youtube:newer', summary: 'Newer share.', embedding: vector768(0.8, 0.6), sharedAt: 200 })
-    seedMedia({ contentKey: 'youtube:older', summary: 'Older share.', embedding: vector768(0.8, 0.6), sharedAt: 100 })
+    seedMedia({ contentKey: 'youtube:older', summary: 'Zebra share.', embedding: vector768(0.8, 0.6), sharedAt: 100 })
     seedMedia({
       contentKey: 'youtube:tied',
-      summary: 'Tied older share.',
+      summary: 'Apple share.',
       embedding: vector768(0.8, 0.6),
       sharedAt: 100
     })
@@ -170,7 +170,7 @@ describe('media recall', () => {
         queryEmbedding: vector768(1),
         scope: { guildId: 'guild-a', channelId: 'channel-1' }
       }).map(({ summary }) => summary)
-    ).toEqual(['Closest match.', 'Newer share.', 'Older share.'])
+    ).toEqual(['Closest match.', 'Newer share.', 'Apple share.'])
   })
 
   it('never recalls a digest whose embedding is still missing', () => {

@@ -165,7 +165,7 @@ const scenarios: readonly Scenario[] = [
     name: 'reclassify.moveClaim raw SQL path',
     run: ({ seedClaim, check }) => {
       seedClaim({ predicate: 'misc' })
-      const claim = memoryClaims.findReclassifyRows(10)[0]!
+      const claim = memoryClaims.findReclassifyRows()[0]!
       moveClaim(claim, 'hobby', 0.9)
       check()
     }
@@ -174,7 +174,7 @@ const scenarios: readonly Scenario[] = [
     name: 'reclassify.undoReclassify raw SQL path',
     run: ({ seedClaim, check }) => {
       const id = seedClaim({ predicate: 'misc' })
-      moveClaim(memoryClaims.findReclassifyRows(10)[0]!, 'hobby', 0.9)
+      moveClaim(memoryClaims.findReclassifyRows()[0]!, 'hobby', 0.9)
       check()
       undoReclassify(id)
     }

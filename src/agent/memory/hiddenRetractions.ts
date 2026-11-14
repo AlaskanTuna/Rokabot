@@ -11,6 +11,10 @@ import { PREDICATES, type PredicateId } from './predicates.js'
 
 const MAX_HIDDEN_CANDIDATES = 3
 
+function compareContentKey(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0
+}
+
 type HiddenRetract = Readonly<{ subjectUserId: string; predicate: PredicateId; value: string }>
 
 function userFactSentence(predicate: PredicateId, value: string): string {
@@ -44,7 +48,11 @@ async function reconcileOne(input: {
       const similarity = embedding ? cosineSimilarity(queryEmbedding, embedding) : null
       return similarity === null ? [] : [{ claim, similarity }]
     })
-    .sort((left, right) => right.similarity - left.similarity || left.claim.id - right.claim.id)
+    .sort(
+      (left, right) =>
+        right.similarity - left.similarity ||
+        compareContentKey(renderFactSentence(left.claim), renderFactSentence(right.claim))
+    )
     .slice(0, MAX_HIDDEN_CANDIDATES)
   if (candidates.length === 0) return []
 

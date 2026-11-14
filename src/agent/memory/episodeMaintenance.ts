@@ -29,6 +29,10 @@ export type EpisodeMaintenanceReport = Readonly<{
 
 const MAX_CONSECUTIVE_FAILURES = 5
 
+function compareContentKey(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0
+}
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
@@ -79,8 +83,10 @@ async function runPass(nowMs: number): Promise<EpisodeMaintenanceReport> {
   let failed = 0
 
   for (const guildId of embedOn ? listEpisodeGuildIds() : []) {
-    for (const episode of listEpisodesForGuild(guildId)) {
-      if (episode.embedding) continue
+    const episodes = listEpisodesForGuild(guildId)
+      .filter((episode) => !episode.embedding)
+      .sort((left, right) => compareContentKey(left.summary, right.summary))
+    for (const episode of episodes) {
       if (!(await pace.next())) break
       try {
         const embedding = await embedEpisodeText({ text: episode.summary, role: 'RETRIEVAL_DOCUMENT' })
@@ -100,8 +106,10 @@ async function runPass(nowMs: number): Promise<EpisodeMaintenanceReport> {
   let mediaFailed = 0
 
   for (const guildId of embedOn ? listMediaGuildIds() : []) {
-    for (const digest of listMediaDigestsForGuild(guildId)) {
-      if (digest.embedding) continue
+    const digests = listMediaDigestsForGuild(guildId)
+      .filter((digest) => !digest.embedding)
+      .sort((left, right) => compareContentKey(left.summary, right.summary))
+    for (const digest of digests) {
       if (!(await pace.next())) break
       try {
         const embedding = await embedEpisodeText({ text: digest.summary, role: 'RETRIEVAL_DOCUMENT' })
