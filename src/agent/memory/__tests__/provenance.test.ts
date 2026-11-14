@@ -137,7 +137,6 @@ describe('evidence provenance', () => {
     ['a missing line', undefined],
     ['line zero', 0],
     ['a line out of range', 99],
-    ['a bot line', 3],
     ["another member's line", 2]
   ])('keeps only the job when the citation is %s, and still applies the op', async (_, sourceLine) => {
     await expect(run([add('tea', sourceLine)], 7)).resolves.toEqual(
@@ -148,6 +147,12 @@ describe('evidence provenance', () => {
     expect(evidenceRows(claim.id)).toEqual([
       { job_id: 7, source_message_id: null, speaker_user_id: null, channel_id: 'c-1' }
     ])
+  })
+
+  it("drops an op that cites Roka's own line", async () => {
+    await expect(run([add('tea', 3)], 7)).resolves.toEqual(report({ droppedOps: 1, uncited: 1 }))
+
+    expect(getActiveClaims('g-1', 'u-1')).toEqual([])
   })
 
   it('lets a guild fact cite any human line', async () => {
