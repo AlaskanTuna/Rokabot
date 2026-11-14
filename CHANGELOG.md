@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/AlaskanTuna/Rokabot/compare/v0.8.0...v0.8.1) (2026-11-14)
+
+
+### Bug Fixes
+
+* **memory:** keep more stated server events and self-stated allergies as facts ([#505](https://github.com/AlaskanTuna/Rokabot/issues/505)) ([12bee72](https://github.com/AlaskanTuna/Rokabot/commit/12bee728ead74ec0992989bcf94228cdc9de0cbb))
+
 ## [0.8.0](https://github.com/AlaskanTuna/Rokabot/compare/v0.7.0...v0.8.0) (2026-11-14)
 
 
