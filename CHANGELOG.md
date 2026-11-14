@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.8.0](https://github.com/AlaskanTuna/Rokabot/compare/v0.7.0...v0.8.0) (2026-11-14)
+
+
+### Features
+
+* **memory:** drop the legacy memory tables through an explicit backup-guarded script ([#501](https://github.com/AlaskanTuna/Rokabot/issues/501)) ([8f93a49](https://github.com/AlaskanTuna/Rokabot/commit/8f93a49406fc359e59fd4e239f20ecbb317c7541))
+* **memory:** read prompt-facing memory through the scoped item store under memory.store item ([#499](https://github.com/AlaskanTuna/Rokabot/issues/499)) ([777c6ca](https://github.com/AlaskanTuna/Rokabot/commit/777c6cad5db4cbff4afc696a56267b6dda8c02b2))
+* **memory:** write memory items directly under memory.store item, with a reverse export to legacy ([#500](https://github.com/AlaskanTuna/Rokabot/issues/500)) ([e62d520](https://github.com/AlaskanTuna/Rokabot/commit/e62d520123365c7922446c474b26f0090ec39da8))
+
+
+### Bug Fixes
+
+* **memory:** drop a call-shaped fact value instead of failing the whole extraction batch ([#492](https://github.com/AlaskanTuna/Rokabot/issues/492)) ([1da3f9a](https://github.com/AlaskanTuna/Rokabot/commit/1da3f9a67080cc4e97840a45a692fcb2eee55ff2))
+* **memory:** send memory model calls prompt-local refs in a stable order ([#498](https://github.com/AlaskanTuna/Rokabot/issues/498)) ([1e2ea4f](https://github.com/AlaskanTuna/Rokabot/commit/1e2ea4fb21e74693e9dc5ebdba71611c0079a207))
+
 ## [0.7.0](https://github.com/AlaskanTuna/Rokabot/compare/v0.6.1...v0.7.0) (2026-11-13)
 
 
