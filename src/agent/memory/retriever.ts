@@ -83,8 +83,29 @@ function compareRetrieved(left: RetrievedClaim, right: RetrievedClaim): number {
     right.score - left.score ||
     right.claim.salience - left.claim.salience ||
     right.claim.lastSeenAt - left.claim.lastSeenAt ||
-    left.claim.id - right.claim.id
+    compareContentKey(
+      JSON.stringify([
+        left.claim.subjectUserId,
+        left.claim.predicate,
+        left.claim.period,
+        left.claim.value,
+        left.claim.objectKind,
+        left.claim.objectUserId
+      ]),
+      JSON.stringify([
+        right.claim.subjectUserId,
+        right.claim.predicate,
+        right.claim.period,
+        right.claim.value,
+        right.claim.objectKind,
+        right.claim.objectUserId
+      ])
+    )
   )
+}
+
+function compareContentKey(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0
 }
 
 function toEntries(claims: RetrievedClaim[], names: ReturnType<typeof getAllUserNames>): RetrievalResult['entries'] {
@@ -285,7 +306,12 @@ export function selectGuildFacts(
     })
     .sort(
       (left, right) =>
-        right.score - left.score || right.fact.lastSeenAt - left.fact.lastSeenAt || left.fact.id - right.fact.id
+        right.score - left.score ||
+        right.fact.lastSeenAt - left.fact.lastSeenAt ||
+        compareContentKey(
+          JSON.stringify([left.fact.predicate, left.fact.eventDate, left.fact.value, left.fact.expiresAt]),
+          JSON.stringify([right.fact.predicate, right.fact.eventDate, right.fact.value, right.fact.expiresAt])
+        )
     )
 
   const selected: GuildMemoryClaim[] = []

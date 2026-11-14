@@ -141,6 +141,21 @@ describe('retrieveForTurn', () => {
     expect(result.entries[0]?.facts).toContainEqual({ key: 'general_occupation', value: 'teacher' })
   })
 
+  it('orders equal-score personal facts by content instead of claim ID', () => {
+    claim('speaker', 'misc', 'zebra')
+    claim('speaker', 'misc', 'apple')
+
+    const result = retrieveForTurn({
+      guildId: 'guild-a',
+      speakerId: 'speaker',
+      participantIds: [],
+      message: 'What facts do you remember?',
+      scope: DEFAULT_SCOPE
+    })
+
+    expect(result.entries[0]?.facts.map(({ value }) => value)).toEqual(['apple', 'zebra'])
+  })
+
   it('routes game topics and expands a relationship edge to a present participant', () => {
     const favoriteGame = claim('speaker', 'favorite_game', 'Senren Banka')
     const relationship = claim('speaker', 'relationship_to', 'friend', { objectUserId: 'participant-1' })
@@ -415,7 +430,7 @@ describe('retrieveGuildFacts', () => {
     expect(result.tokensEst).toBeLessThanOrEqual(config.memory.guildFactsTokenBudget)
   })
 
-  it('breaks equal-score ties by recency and then ascending claim ID', () => {
+  it('breaks equal-score ties by recency and then stable fact content', () => {
     const older = assertGuildClaim({
       guildId: 'guild-a',
       predicate: 'place',
@@ -454,8 +469,8 @@ describe('retrieveGuildFacts', () => {
     getDb().prepare('UPDATE memory_claim SET salience = ? WHERE id = ?').run(0.4, sameTimeSecond.id)
 
     expect(retrieveGuildFacts('guild-a', now, DEFAULT_SCOPE).facts.map(({ id }) => id)).toEqual([
-      recent.id,
       sameTimeFirst.id,
+      recent.id,
       sameTimeSecond.id,
       older.id
     ])

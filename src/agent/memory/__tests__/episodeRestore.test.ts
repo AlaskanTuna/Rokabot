@@ -12,7 +12,7 @@ vi.mock('../../../storage/database.js', () => ({
 vi.mock('../scheduler.js', () => ({ startExtractionScheduler: mocks.startExtractionScheduler }))
 
 import { config } from '../../../config.js'
-import { getEpisodeCursor } from '../../../storage/memoryEpisodeStore.js'
+import { getEpisodeCursor, listOpenEpisodeLines } from '../../../storage/memoryEpisodeStore.js'
 import {
   flushEpisode,
   recordEpisodeMessage,
@@ -35,7 +35,7 @@ function queuedJobs(): Array<{ channelId: string; messages: EpisodeLine[] }> {
 function savedLines(): Array<{ channelId: string; messageId: string }> {
   return testDb
     .prepare(
-      'SELECT channel_id AS channelId, message_id AS messageId FROM memory_episode_line ORDER BY timestamp ASC, rowid ASC'
+      'SELECT channel_id AS channelId, message_id AS messageId FROM memory_episode_line ORDER BY timestamp ASC, message_id COLLATE BINARY ASC'
     )
     .all() as Array<{ channelId: string; messageId: string }>
 }
@@ -72,6 +72,25 @@ describe('episode crash restore', () => {
     resetAllBuffers()
     testDb.close()
     vi.useRealTimers()
+  })
+
+  it('breaks equal-timestamp line order by message ID instead of row insertion order', () => {
+    testDb
+      .prepare(
+        `INSERT INTO memory_episode_line
+          (channel_id, message_id, guild_id, user_id, display_name, content, timestamp, is_bot)
+         VALUES ('channel-1', ?, 'guild-1', ?, ?, ?, 1000, 0)`
+      )
+      .run('m-2', 'u-2', 'Second', 'second')
+    testDb
+      .prepare(
+        `INSERT INTO memory_episode_line
+          (channel_id, message_id, guild_id, user_id, display_name, content, timestamp, is_bot)
+         VALUES ('channel-1', ?, 'guild-1', ?, ?, ?, 1000, 0)`
+      )
+      .run('m-1', 'u-1', 'First', 'first')
+
+    expect(listOpenEpisodeLines().map(({ messageId }) => messageId)).toEqual(['m-1', 'm-2'])
   })
 
   it('recovers a crashed open episode and flushes its exact lines in order', () => {

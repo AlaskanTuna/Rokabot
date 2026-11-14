@@ -261,7 +261,8 @@ function evictOverflow(guildId: string, subjectUserId: string): number {
       .prepare(
         `SELECT * FROM memory_claim
        WHERE guild_id = ? AND subject_kind = 'user' AND subject_user_id = ? AND status = 'active' AND pinned = 0
-       ORDER BY (period = 'past') DESC, salience ASC, last_seen_at ASC, id ASC
+       ORDER BY (period = 'past') DESC, salience ASC, last_seen_at ASC,
+                predicate COLLATE BINARY ASC, value COLLATE BINARY ASC, period COLLATE BINARY ASC
        LIMIT MAX(0, (SELECT COUNT(*) FROM memory_claim WHERE guild_id = ? AND subject_kind = 'user' AND subject_user_id = ? AND status = 'active' AND pinned = 0) - ?)`
       )
       .all(guildId, subjectUserId, guildId, subjectUserId, config.memory.maxActiveClaimsPerUser) as ClaimRow[]
@@ -746,7 +747,7 @@ export function activeNicknameClaims(guildId: string): Array<{ id: number; user_
       `SELECT id, subject_user_id AS user_id, value FROM memory_claim
        WHERE guild_id = ? AND subject_kind = 'user' AND status = 'active' AND needs_review = 0 AND period = 'current'
          AND predicate = 'nickname'
-       ORDER BY id`
+       ORDER BY subject_user_id COLLATE BINARY, value COLLATE BINARY`
     )
     .all(guildId) as Array<{ id: number; user_id: string; value: string }>
 }
@@ -771,7 +772,7 @@ type ReclassifyCandidateRow = {
   value: string
 }
 
-export function findReclassifyRows(limit: number): ReclassifyRow[] {
+export function findReclassifyRows(): ReclassifyRow[] {
   const rows = getDb()
     .prepare(
       `SELECT c.id, c.guild_id, c.subject_user_id, c.predicate, c.value
@@ -788,13 +789,16 @@ export function findReclassifyRows(limit: number): ReclassifyRow[] {
              WHERE o.subject_kind = 'user' AND o.status = 'active' AND o.period = 'current'
                AND o.guild_id = c.guild_id AND o.subject_user_id = c.subject_user_id
                AND o.predicate != c.predicate AND o.predicate != 'misc' AND lower(o.value) = lower(c.value)
-               AND (o.salience > c.salience OR (o.salience = c.salience AND o.id < c.id))
+               AND (
+                 o.salience > c.salience OR
+                 (o.salience = c.salience AND o.predicate < c.predicate COLLATE BINARY)
+               )
            )
          )
-       ORDER BY random()
-       LIMIT ?`
+       ORDER BY c.guild_id COLLATE BINARY, c.subject_user_id COLLATE BINARY, c.predicate COLLATE BINARY,
+                lower(c.value) COLLATE BINARY, c.value COLLATE BINARY`
     )
-    .all(limit) as ReclassifyCandidateRow[]
+    .all() as ReclassifyCandidateRow[]
   return rows.map((row) => ({
     id: row.id,
     guildId: row.guild_id,

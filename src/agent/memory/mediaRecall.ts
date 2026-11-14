@@ -13,6 +13,10 @@ export type RecalledMedia = Readonly<{
   similarity: number
 }>
 
+function compareContentKey(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0
+}
+
 function toRecalledMedia(digest: MediaRecallCandidate, queryEmbedding: EpisodeEmbedding): RecalledMedia | null {
   const similarity = cosineSimilarity(queryEmbedding, digest.embedding)
   if (similarity === null || similarity <= config.memory.mediaMinSimilarity) return null
@@ -50,7 +54,9 @@ export function selectMedia(
     .filter((media): media is RecalledMedia => media !== null)
     .sort(
       (left, right) =>
-        right.similarity - left.similarity || right.lastSharedAt - left.lastSharedAt || left.id - right.id
+        right.similarity - left.similarity ||
+        right.lastSharedAt - left.lastSharedAt ||
+        compareContentKey(JSON.stringify([left.label, left.summary]), JSON.stringify([right.label, right.summary]))
     )
     .slice(0, config.memory.mediaRecallK)
   return selectMediaWithinBudget(ranked, config.memory.mediaTokenBudget)

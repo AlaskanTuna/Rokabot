@@ -290,17 +290,14 @@ export async function runMemsim(options: MemsimRunOptions): Promise<MemsimReport
     }
   }
 
-  let sqlitePrngState = 0x5f3759df
-  function installDeterministicRandom(db: ReturnType<typeof getDb>): void {
-    db.function('random', { deterministic: false }, () => {
-      sqlitePrngState = (Math.imul(sqlitePrngState, 1664525) + 1013904223) | 0
-      return sqlitePrngState
-    })
+  let simRandomState = 0x5f3759df
+  const simRandom = () => {
+    simRandomState = (Math.imul(simRandomState, 1664525) + 1013904223) | 0
+    return (simRandomState >>> 0) / 0x1_0000_0000
   }
 
   configureMemoryItemProjectionTriggers(simDb, storeMode === 'item' ? 'dual' : storeMode)
   installDbAuditTriggers(simDb)
-  installDeterministicRandom(simDb)
   fillMemoryItemEmbeddingHashes(simDb)
   sweepMemoryItemIntegrity(simDb)
   restoreMonitoredChannels()
@@ -494,10 +491,15 @@ export async function runMemsim(options: MemsimRunOptions): Promise<MemsimReport
     let restoredLines = 0
     let flushedLines = 0
     let remainingLinesAfterFlush = 0
+    let gracefulPayloads: Array<{ payload: string }> | undefined
 
     if (ev.mode === 'graceful') {
       gracefulRestarts += 1
       await flushOpenEpisodes()
+      gracefulPayloads = db
+        .prepare('SELECT payload FROM extraction_queue WHERE id > ?')
+        .all(maxQueueIdBefore) as Array<{ payload: string }>
+      await drainExtractionAndEmbeds()
       collectDbAuditWriters(db, writerTracker)
       flushedLines = preOpenLines
       openLinesFlushed += flushedLines
@@ -524,7 +526,6 @@ export async function runMemsim(options: MemsimRunOptions): Promise<MemsimReport
     const reopened = getDb()
     configureMemoryItemProjectionTriggers(reopened, storeMode === 'item' ? 'dual' : storeMode)
     installDbAuditTriggers(reopened)
-    installDeterministicRandom(reopened)
     fillMemoryItemEmbeddingHashes(reopened)
     sweepMemoryItemIntegrity(reopened)
     restoreMonitoredChannels()
@@ -562,9 +563,11 @@ export async function runMemsim(options: MemsimRunOptions): Promise<MemsimReport
       }
     }
 
-    const newPayloads = reopened
-      .prepare('SELECT payload FROM extraction_queue WHERE id > ?')
-      .all(maxQueueIdBefore) as Array<{ payload: string }>
+    const newPayloads =
+      gracefulPayloads ??
+      (reopened.prepare('SELECT payload FROM extraction_queue WHERE id > ?').all(maxQueueIdBefore) as Array<{
+        payload: string
+      }>)
     // Only episode messages count; a line that reappears as another job's context was not flushed.
     const enqueuedMessageIds = new Set(
       newPayloads.flatMap((r) =>
@@ -1044,7 +1047,6 @@ export async function runMemsim(options: MemsimRunOptions): Promise<MemsimReport
         runDropLegacyMigration(dbPath)
         legacyDropped = true
         const reopenedAfterDrop = getDb()
-        installDeterministicRandom(reopenedAfterDrop)
         fillMemoryItemEmbeddingHashes(reopenedAfterDrop)
         sweepMemoryItemIntegrity(reopenedAfterDrop)
         restoreMonitoredChannels()
@@ -1060,7 +1062,7 @@ export async function runMemsim(options: MemsimRunOptions): Promise<MemsimReport
         pruneStaleClaims(config.memory.claimRetentionDays, scenario.botUserId)
         collectDbAuditWriters(db, writerTracker, 'pipeline')
 
-        await reclassifyClaims()
+        await reclassifyClaims(simRandom)
         const recSeen = collectDbAuditWriters(db, writerTracker, 'pipeline')
         if (recSeen.has('reclassify.moveClaim')) {
           writerTracker.recordPipeline('reclassify.reclassifyClaims')

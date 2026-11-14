@@ -197,7 +197,7 @@ describe('an Anthropic-only config', () => {
       sourceKind: 'passive',
       channelId: 'channel-1'
     })
-    mocks.replies.push({ moves: [{ id: misc.id, predicate: 'hobby' }] }, { answers: { [`fits_${misc.id}`]: 0.92 } })
+    mocks.replies.push({ moves: [{ id: 1, predicate: 'hobby' }] }, { answers: { fits_1: 0.92 } })
 
     await expect(reclassifyClaims()).resolves.toBe(1)
     expect(getActiveClaims('guild-1', 'u-1')).toEqual([

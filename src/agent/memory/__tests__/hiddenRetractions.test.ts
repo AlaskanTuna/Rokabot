@@ -153,6 +153,20 @@ describe('reconcileHiddenRetractions', () => {
     ])
   })
 
+  it('breaks equal-similarity candidate ties by fact content instead of claim ID', async () => {
+    for (const value of ['zebra', 'apple', 'mango', 'banana']) {
+      seedClaim({ predicate: 'hobby', value, channelId: 'private-channel', embedding: unit(0.4) })
+    }
+    mocks.embedEpisodeText.mockResolvedValue(unit(0.4))
+    mocks.judgeHiddenRetractions.mockResolvedValue({})
+
+    await reconcile({ lines: [] })
+
+    expect(
+      mocks.judgeHiddenRetractions.mock.calls[0]?.[0].candidates.map(({ sentence }: { sentence: string }) => sentence)
+    ).toEqual(["This person's hobby: apple.", "This person's hobby: banana.", "This person's hobby: mango."])
+  })
+
   it('makes no calls at relaxed or when nothing is hidden, and retires nothing when Jev fails', async () => {
     const hidden = seedClaim({ predicate: 'hobby', value: 'chess', channelId: 'private-channel', embedding: unit(0) })
 

@@ -113,6 +113,20 @@ describe('resolveName', () => {
     expect(resolveName('  aLiAs ', 'guild-a')).toEqual(['display-match', 'username-match', 'nickname-match'])
   })
 
+  it('orders ambiguous members independently of user_names row insertion order', () => {
+    addUser('z-member', 'z-member', 'Kiki')
+    addUser('a-member', 'a-member', 'Kiki')
+
+    expect(
+      resolveReferences({
+        guildId: 'guild-a',
+        text: 'Ask Kiki about it.',
+        speakerId: 'speaker',
+        mentionedUserIds: []
+      }).ambiguous
+    ).toEqual([{ alias: 'Kiki', candidateIds: ['a-member', 'z-member'] }])
+  })
+
   it('scopes display and username matches to guild presence and excludes other guild nicknames', () => {
     addUser('other-guild', 'alice', 'Alice', 'guild-b')
     addUser('nickname-other-guild', 'kiki', 'Kiki', 'guild-b')

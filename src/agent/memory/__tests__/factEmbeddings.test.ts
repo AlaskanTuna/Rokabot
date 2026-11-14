@@ -136,6 +136,41 @@ describe('embedPendingFacts', () => {
     expect(mocks.setClaimEmbedding).not.toHaveBeenCalled()
   })
 
+  it('chooses limited embedding work by fact text instead of row order', async () => {
+    mocks.listActiveClaimsForEmbedding.mockReturnValue([
+      {
+        id: 1,
+        subjectKind: 'user',
+        predicate: 'hobby',
+        value: 'zebra',
+        eventDate: null,
+        embeddingText: null,
+        hasEmbedding: false
+      },
+      {
+        id: 2,
+        subjectKind: 'user',
+        predicate: 'hobby',
+        value: 'apple',
+        eventDate: null,
+        embeddingText: null,
+        hasEmbedding: false
+      }
+    ])
+    mocks.embedEpisodeText.mockResolvedValue(Array(768).fill(0.1))
+    mocks.setClaimEmbedding.mockReturnValue(true)
+
+    await embedPendingFacts({ limit: 1, gapMs: 0 })
+
+    expect(mocks.embedEpisodeText).toHaveBeenCalledWith({
+      text: "This person's hobby: apple.",
+      role: 'RETRIEVAL_DOCUMENT'
+    })
+    expect(mocks.setClaimEmbedding).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 2, embeddingText: "This person's hobby: apple." })
+    )
+  })
+
   it('resolves instead of rejecting when the facts cannot be listed', async () => {
     mocks.listActiveClaimsForEmbedding.mockImplementation(() => {
       throw new Error('database is locked')

@@ -282,13 +282,13 @@ type OpenEpisodeLineRow = {
   is_bot: number
 }
 
-/** Open episode lines in capture order: oldest first, ties broken by insertion order. */
+/** Open episode lines in capture order: oldest first, ties broken by stable message ID. */
 export function listOpenEpisodeLines(): SavedOpenEpisodeLine[] {
   const rows = getDb()
     .prepare(
       `SELECT channel_id, guild_id, message_id, user_id, display_name, content, timestamp, is_bot
        FROM memory_episode_line
-       ORDER BY timestamp ASC, rowid ASC`
+       ORDER BY timestamp ASC, message_id COLLATE BINARY ASC`
     )
     .all() as OpenEpisodeLineRow[]
   return rows.map((row) => ({

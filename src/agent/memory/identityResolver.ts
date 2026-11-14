@@ -53,7 +53,7 @@ function buildNameIndex(guildId: string, scope?: RecallScope): NameIndex {
     .prepare(
       `SELECT user_id, username, display_name FROM user_names
        ${global ? '' : `WHERE ${GUILD_PRESENCE}`}
-       ORDER BY rowid`
+       ORDER BY user_id COLLATE BINARY`
     )
     .all(...(global ? [] : [guildId, guildId])) as UserNameRow[]
   const nicknames = nicknameRows(guildId, scope)
@@ -81,7 +81,9 @@ function buildNameIndex(guildId: string, scope?: RecallScope): NameIndex {
 
 function orderedCandidates(candidates: Map<string, NameCandidate>): NameCandidate[] {
   return [...candidates.values()].sort(
-    (left, right) => MATCH_PRIORITY[left.matchedBy] - MATCH_PRIORITY[right.matchedBy]
+    (left, right) =>
+      MATCH_PRIORITY[left.matchedBy] - MATCH_PRIORITY[right.matchedBy] ||
+      (left.userId < right.userId ? -1 : left.userId > right.userId ? 1 : 0)
   )
 }
 

@@ -124,7 +124,7 @@ describe('episode retriever', () => {
     expect(buildEpisodeRecallBlock({ guildId: 'guild-a', queryEmbedding: query, scope })).toBe('')
   })
 
-  it('orders equal scores by end time and then ID and applies the top-k limit', () => {
+  it('orders equal scores by end time and then summary content and applies the top-k limit', () => {
     for (const [id, endedAt] of [
       [10, 100],
       [20, 200],
@@ -140,7 +140,7 @@ describe('episode retriever', () => {
         queryEmbedding: vector768(1),
         scope: { guildId: 'guild-a', channelId: 'channel-a' }
       }).map(({ id }) => id)
-    ).toEqual([20, 30, 5])
+    ).toEqual([20, 30, 10])
   })
 
   it('renders UTC dates and keeps multiline summaries as untrusted JSON data', () => {

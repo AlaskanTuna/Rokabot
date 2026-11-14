@@ -12,6 +12,10 @@ export type RecalledEpisode = Readonly<{
   similarity: number
 }>
 
+function compareContentKey(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0
+}
+
 export function cosineSimilarity(left: EpisodeEmbedding, right: EpisodeEmbedding): number | null {
   const dimensions = config.embeddings.dim
   if (left.length !== dimensions || right.length !== dimensions) return null
@@ -72,7 +76,15 @@ export function selectEpisodes(
   return episodes
     .map((episode) => toRecalledEpisode(episode, queryEmbedding))
     .filter((episode): episode is RecalledEpisode => episode !== null)
-    .sort((left, right) => right.similarity - left.similarity || right.endedAt - left.endedAt || left.id - right.id)
+    .sort(
+      (left, right) =>
+        right.similarity - left.similarity ||
+        right.endedAt - left.endedAt ||
+        compareContentKey(
+          JSON.stringify([left.summary, left.startedAt]),
+          JSON.stringify([right.summary, right.startedAt])
+        )
+    )
     .slice(0, config.memory.episodeRecallK)
 }
 
