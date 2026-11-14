@@ -14,6 +14,7 @@ import {
   getActiveClaimById,
   retireClaim
 } from './memoryClaims.js'
+import { itemIdForClaimRef, linkItemReclassification, undoItemReclassifyInTransaction } from './memoryItems.js'
 import { type PredicateId, isMoveTarget } from './predicates.js'
 import { jevConfirm, proposePredicates } from './reclassifyModels.js'
 
@@ -81,31 +82,37 @@ export function moveClaim(claim: ReclassifyCandidate, to: PredicateId, probabili
     if (moved.status !== 'active') throw new Error('Target fact is not active')
 
     // assertClaim logged a sighting of its own with no channel; the evidence copied below replaces it.
-    db.prepare('DELETE FROM memory_evidence WHERE id = (SELECT MAX(id) FROM memory_evidence WHERE claim_id = ?)').run(
-      moved.id
-    )
-    db.prepare(
-      `INSERT OR IGNORE INTO memory_evidence (claim_id, channel_id, source_kind, observed_at, effective_at, job_id, source_message_id, speaker_user_id)
-       SELECT ?, channel_id, source_kind, observed_at, effective_at, job_id, source_message_id, speaker_user_id FROM memory_evidence WHERE claim_id = ?`
-    ).run(moved.id, original.id)
-    const evidence = (
-      db.prepare('SELECT COUNT(*) AS count FROM memory_evidence WHERE claim_id = ?').get(moved.id) as {
-        count: number
-      }
-    ).count
-    db.prepare(
-      `UPDATE memory_claim
-       SET pinned = MAX(pinned, ?), first_seen_at = MIN(first_seen_at, ?), salience = MAX(salience, ?),
-           confidence = MAX(confidence, ?)
-       WHERE id = ?`
-    ).run(
-      original.pinned ? 1 : 0,
-      original.firstSeenAt,
-      original.salience,
-      Math.max(original.confidence, confidenceForEvidence(evidence, original.lastSeenAt)),
-      moved.id
-    )
-    db.prepare('UPDATE memory_claim SET superseded_by = ? WHERE id = ?').run(moved.id, original.id)
+    let audit: { v?: 2; oldId: number; newId: number }
+    if (config.memory.store === 'item') {
+      audit = { v: 2, ...linkItemReclassification(original, moved) }
+    } else {
+      db.prepare('DELETE FROM memory_evidence WHERE id = (SELECT MAX(id) FROM memory_evidence WHERE claim_id = ?)').run(
+        moved.id
+      )
+      db.prepare(
+        `INSERT OR IGNORE INTO memory_evidence (claim_id, channel_id, source_kind, observed_at, effective_at, job_id, source_message_id, speaker_user_id)
+         SELECT ?, channel_id, source_kind, observed_at, effective_at, job_id, source_message_id, speaker_user_id FROM memory_evidence WHERE claim_id = ?`
+      ).run(moved.id, original.id)
+      const evidence = (
+        db.prepare('SELECT COUNT(*) AS count FROM memory_evidence WHERE claim_id = ?').get(moved.id) as {
+          count: number
+        }
+      ).count
+      db.prepare(
+        `UPDATE memory_claim
+         SET pinned = MAX(pinned, ?), first_seen_at = MIN(first_seen_at, ?), salience = MAX(salience, ?),
+             confidence = MAX(confidence, ?)
+         WHERE id = ?`
+      ).run(
+        original.pinned ? 1 : 0,
+        original.firstSeenAt,
+        original.salience,
+        Math.max(original.confidence, confidenceForEvidence(evidence, original.lastSeenAt)),
+        moved.id
+      )
+      db.prepare('UPDATE memory_claim SET superseded_by = ? WHERE id = ?').run(moved.id, original.id)
+      audit = { oldId: original.id, newId: moved.id }
+    }
 
     if (countActiveClaimsForUser(original.guildId, original.subjectUserId) < (created ? before : before - 1)) {
       throw new Error('Move would retire another fact')
@@ -116,8 +123,7 @@ export function moveClaim(claim: ReclassifyCandidate, to: PredicateId, probabili
       guildId: original.guildId,
       subjectUserId: original.subjectUserId,
       detail: JSON.stringify({
-        oldId: original.id,
-        newId: moved.id,
+        ...audit,
         from: original.predicate,
         to,
         probability,
@@ -128,24 +134,52 @@ export function moveClaim(claim: ReclassifyCandidate, to: PredicateId, probabili
   })()
 }
 
+type ReclassifyAudit = Readonly<{ itemId: number | null; legacyId: number | null; created: boolean }>
+
+/**
+ * Resolves the ID an undo is given. A `"v": 2` audit row names an item ID; an older row, or a fact moved before
+ * any audit row named it, names a legacy claim ID, which resolves through `legacy_id`.
+ */
+function findReclassifyAudit(oldId: number): ReclassifyAudit {
+  const db = getDb()
+  const latest = (version: 'v2' | 'v1', id: number) =>
+    db
+      .prepare(
+        `SELECT json_extract(detail, '$.created') AS created FROM memory_events
+         WHERE kind = 'claim_reclassified' AND json_extract(detail, '$.v') ${version === 'v2' ? '= 2' : 'IS NULL'}
+           AND json_extract(detail, '$.oldId') = ?
+         ORDER BY id DESC LIMIT 1`
+      )
+      .get(id) as { created: number | null } | undefined
+
+  const v2 = latest('v2', oldId)
+  if (v2) {
+    const item = db.prepare("SELECT legacy_id FROM memory_item WHERE id = ? AND kind = 'fact'").get(oldId) as
+      | { legacy_id: number | null }
+      | undefined
+    return { itemId: item ? oldId : null, legacyId: item?.legacy_id ?? null, created: v2.created === 1 }
+  }
+  const itemId = itemIdForClaimRef(db, oldId) ?? null
+  const audit = latest('v1', oldId) ?? (itemId === null ? undefined : latest('v2', itemId))
+  return { itemId, legacyId: oldId, created: audit?.created === 1 }
+}
+
 /** Puts a reclassified fact back and, when the move created or revived its replacement, ends the replacement. */
 export function undoReclassify(oldClaimId: number): boolean {
   const db = getDb()
   return db.transaction(() => {
-    const old = findReclassifiedClaim(oldClaimId)
+    const audit = findReclassifyAudit(oldClaimId)
+    if (config.memory.store === 'item') {
+      return audit.itemId !== null && undoItemReclassifyInTransaction(audit.itemId, audit.created)
+    }
+    if (audit.legacyId === null) return false
+    const old = findReclassifiedClaim(audit.legacyId)
     if (!old || old.superseded_by === null) return false
-
-    const event = db
-      .prepare(
-        "SELECT detail FROM memory_events WHERE kind = 'claim_reclassified' AND json_extract(detail, '$.oldId') = ? ORDER BY id DESC LIMIT 1"
-      )
-      .get(oldClaimId) as { detail: string } | undefined
-    const created = event !== undefined && (JSON.parse(event.detail) as { created?: boolean }).created === true
 
     db.prepare(
       "UPDATE memory_claim SET status = 'active', ended_at = NULL, end_reason = NULL, superseded_by = NULL WHERE id = ?"
-    ).run(oldClaimId)
-    if (created) {
+    ).run(audit.legacyId)
+    if (audit.created) {
       db.prepare(
         `UPDATE memory_claim SET status = 'rejected', superseded_by = NULL, ended_at = ?, end_reason = 'removed'
          WHERE id = ? AND guild_id = ? AND subject_kind = 'user' AND subject_user_id = ? AND status = 'active'`

@@ -15,6 +15,7 @@ const SAVED_KEYS = [
 
 describe('memory simulator replay gate', () => {
   const savedEnv = new Map<string, string | undefined>()
+  let dualQuality: Awaited<ReturnType<typeof runMemsim>>['quality'] | undefined
 
   beforeEach(() => {
     vi.resetModules()
@@ -37,6 +38,7 @@ describe('memory simulator replay gate', () => {
       privacy: 'balanced',
       cacheDir: 'tests/harness/memsim/cache'
     })
+    dualQuality = report.quality
 
     expect(report.providerCalls.river.live).toBe(0)
     expect(report.providerCalls.embeddings.live).toBe(0)
@@ -71,8 +73,10 @@ describe('memory simulator replay gate', () => {
     expect(report.providerCalls.typesafe.live).toBe(0)
     expect(report.integrity.status).toBe('passed')
     expect(report.triggerCoverage.status).toBe('passed')
+    expect(report.triggerCoverage.missing).toEqual([])
     expect(report.phase4Parity.status).toBe('skipped')
     expect(report.privacyGate.status).toBe('passed')
+    expect(report.quality).toEqual(dualQuality)
     expect(report.crashSafety.status).toBe('passed')
     expect(report.gatesPassed).toBe(true)
   }, 55_000)

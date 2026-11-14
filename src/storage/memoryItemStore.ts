@@ -120,6 +120,9 @@ export type WriteMemoryItem = WriteBrand &
     sourceKind: string | null
     status: string
     needsReview: boolean
+    endReason: string | null
+    endedAt: number | null
+    supersededBy: number | null
     period: 'current' | 'past'
     objectKind: 'user' | null
     objectUserId: string | null
@@ -132,6 +135,8 @@ export type WriteMemoryItem = WriteBrand &
     lastSeenAt: number
     lastRecalledAt: number | null
     createdAt: number | null
+    version: number
+    sourceJobId: number | null
     sourceChannels: readonly (string | null)[]
     occurrences: readonly Readonly<{
       channelId: string
@@ -152,6 +157,244 @@ export type MemoryItemEmbeddingRow = Readonly<{
   text_hash: string | null
   vector: Buffer
 }>
+
+export type StoredMemoryItem = Readonly<{
+  id: number
+  guild_id: string
+  kind: MemoryItemKind
+  subject_kind: 'user' | 'guild'
+  subject_user_id: string | null
+  predicate: string | null
+  content: string
+  label: string | null
+  media_kind: 'audio' | 'video' | null
+  content_key: string | null
+  source_job_id: number | null
+  period: 'current' | 'past'
+  object_kind: 'user' | null
+  object_user_id: string | null
+  source_kind: string | null
+  status: string
+  needs_review: number
+  end_reason: string | null
+  ended_at: number | null
+  superseded_by: number | null
+  confidence: number | null
+  salience: number | null
+  pinned: number
+  valid_until: number | null
+  event_date: string | null
+  first_seen_at: number
+  last_seen_at: number
+  last_recalled_at: number | null
+  created_at: number | null
+  version: number
+  legacy_table: string | null
+  legacy_id: number | null
+  legacy_embedding_text: string | null
+}>
+
+export type NewMemoryItem = Readonly<Omit<StoredMemoryItem, 'id' | 'version'> & { id?: number; version?: number }>
+
+export type ItemEvidenceWrite = Readonly<{
+  channelId: string | null
+  sourceKind: string
+  observedAt: number
+  effectiveAt: number | null
+  jobId: number | null
+  sourceMessageId: string | null
+  speakerUserId: string | null
+}>
+
+const ITEM_COLUMNS = new Set<keyof StoredMemoryItem>([
+  'guild_id',
+  'kind',
+  'subject_kind',
+  'subject_user_id',
+  'predicate',
+  'content',
+  'label',
+  'media_kind',
+  'content_key',
+  'source_job_id',
+  'period',
+  'object_kind',
+  'object_user_id',
+  'source_kind',
+  'status',
+  'needs_review',
+  'end_reason',
+  'ended_at',
+  'superseded_by',
+  'confidence',
+  'salience',
+  'pinned',
+  'valid_until',
+  'event_date',
+  'first_seen_at',
+  'last_seen_at',
+  'last_recalled_at',
+  'created_at',
+  'version',
+  'legacy_table',
+  'legacy_id',
+  'legacy_embedding_text'
+])
+
+/**
+ * Resolves the ID callers see: `legacy_id` for a migrated item, the item's own ID for one written under `item`.
+ * `reserveMemoryItemIds` keeps the second above every legacy ID, so the two never collide.
+ */
+export function findMemoryItemById(
+  database: Database.Database,
+  kind: MemoryItemKind,
+  id: number,
+  legacyTable: string
+): StoredMemoryItem | undefined {
+  return database
+    .prepare(`
+      SELECT * FROM memory_item
+      WHERE kind = ? AND ((legacy_table = ? AND legacy_id = ?) OR (legacy_id IS NULL AND id = ?))
+    `)
+    .get(kind, legacyTable, id, id) as StoredMemoryItem | undefined
+}
+
+export function insertMemoryItem(database: Database.Database, input: NewMemoryItem): number {
+  const values = { version: 1, ...input }
+  const columns = Object.keys(values)
+  const result = database
+    .prepare(
+      `INSERT INTO memory_item (${columns.join(', ')}) VALUES (${columns.map((column) => `@${column}`).join(', ')})`
+    )
+    .run(values)
+  return Number(result.lastInsertRowid)
+}
+
+export function updateMemoryItem(
+  database: Database.Database,
+  itemId: number,
+  values: Partial<Omit<StoredMemoryItem, 'id'>>
+): number {
+  const entries = Object.entries(values) as Array<[keyof StoredMemoryItem, unknown]>
+  if (entries.some(([column]) => !ITEM_COLUMNS.has(column))) throw new Error('Unsupported memory item column')
+  if (entries.length === 0) return 0
+  const result = database
+    .prepare(`UPDATE memory_item SET ${entries.map(([column]) => `${column} = @${column}`).join(', ')} WHERE id = @id`)
+    .run({ ...values, id: itemId })
+  return result.changes
+}
+
+export function insertMemoryItemEvidence(
+  database: Database.Database,
+  itemId: number,
+  input: ItemEvidenceWrite
+): number {
+  return database
+    .prepare(`
+      INSERT OR IGNORE INTO memory_item_evidence
+        (item_id, channel_id, source_kind, observed_at, effective_at, job_id, source_message_id, speaker_user_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+    .run(
+      itemId,
+      input.channelId,
+      input.sourceKind,
+      input.observedAt,
+      input.effectiveAt,
+      input.jobId,
+      input.sourceMessageId,
+      input.speakerUserId
+    ).changes
+}
+
+export function copyMemoryItemEvidence(database: Database.Database, fromItemId: number, toItemId: number): void {
+  database
+    .prepare(`
+      INSERT OR IGNORE INTO memory_item_evidence
+        (item_id, channel_id, source_kind, observed_at, effective_at, job_id, source_message_id, speaker_user_id)
+      SELECT ?, channel_id, source_kind, observed_at, effective_at, job_id, source_message_id, speaker_user_id
+      FROM memory_item_evidence WHERE item_id = ?
+    `)
+    .run(toItemId, fromItemId)
+}
+
+export function deleteLatestMemoryItemEvidence(database: Database.Database, itemId: number): void {
+  database
+    .prepare('DELETE FROM memory_item_evidence WHERE id = (SELECT MAX(id) FROM memory_item_evidence WHERE item_id = ?)')
+    .run(itemId)
+}
+
+export function writeMemoryItemEmbedding(
+  database: Database.Database,
+  input: {
+    itemId: number
+    fingerprint: string
+    modelId: string | null
+    dim: number
+    renderer: 'fact_sentence' | 'summary'
+    text: string
+    vector: Buffer
+  }
+): void {
+  database
+    .prepare('DELETE FROM memory_item_embedding WHERE item_id = ? AND fingerprint != ?')
+    .run(input.itemId, input.fingerprint)
+  database
+    .prepare(`
+      INSERT INTO memory_item_embedding
+        (item_id, fingerprint, model_id, dim, renderer, renderer_version, text_hash, vector, created_at)
+      VALUES (?, ?, ?, ?, ?, 1, ?, ?, NULL)
+      ON CONFLICT (item_id, fingerprint) DO UPDATE SET
+        model_id = excluded.model_id,
+        dim = excluded.dim,
+        renderer = excluded.renderer,
+        renderer_version = excluded.renderer_version,
+        text_hash = excluded.text_hash,
+        vector = excluded.vector,
+        created_at = NULL
+    `)
+    .run(
+      input.itemId,
+      input.fingerprint,
+      input.modelId,
+      input.dim,
+      input.renderer,
+      createHash('sha256').update(input.text).digest('hex'),
+      input.vector
+    )
+}
+
+export function deleteMemoryItem(database: Database.Database, itemId: number): void {
+  database.prepare('UPDATE memory_item SET superseded_by = NULL WHERE superseded_by = ?').run(itemId)
+  database.prepare('DELETE FROM memory_item_evidence WHERE item_id = ?').run(itemId)
+  database.prepare('DELETE FROM memory_item_occurrence WHERE item_id = ?').run(itemId)
+  database.prepare('DELETE FROM memory_item_payload WHERE item_id = ?').run(itemId)
+  database.prepare('DELETE FROM memory_item_embedding WHERE item_id = ?').run(itemId)
+  database.prepare('DELETE FROM memory_item WHERE id = ?').run(itemId)
+}
+
+export function reserveMemoryItemIds(database: Database.Database): void {
+  const sources = database
+    .prepare(`
+      SELECT MAX(id) AS id FROM memory_claim
+      UNION ALL SELECT MAX(id) FROM memory_episode
+      UNION ALL SELECT MAX(id) FROM media_digest
+    `)
+    .all() as Array<{ id: number | null }>
+  const maximum = Math.max(
+    0,
+    ...sources.map(({ id }) => id ?? 0),
+    (database.prepare('SELECT COALESCE(MAX(id), 0) AS id FROM memory_item').get() as { id: number }).id
+  )
+  const current = database.prepare("SELECT seq FROM sqlite_sequence WHERE name = 'memory_item'").get() as
+    | { seq: number }
+    | undefined
+  if (current) {
+    database.prepare("UPDATE sqlite_sequence SET seq = MAX(seq, ?) WHERE name = 'memory_item'").run(maximum)
+  } else {
+    database.prepare("INSERT INTO sqlite_sequence (name, seq) VALUES ('memory_item', ?)").run(maximum)
+  }
+}
 
 type ItemIdRow = Readonly<{ item_id: number }>
 
@@ -182,6 +425,7 @@ type FactRow = Readonly<{
 type EpisodeRow = Readonly<{
   item_id: number
   legacy_id: number | null
+  source_job_id: number
   guild_id: string
   content: string
   first_seen_at: number
@@ -454,11 +698,11 @@ function selectRecallableEpisodes(
 ): RecallableEpisodeItem[] {
   const rows = database
     .prepare(`
-      SELECT id AS item_id, legacy_id, guild_id, content, first_seen_at, last_seen_at, created_at
+      SELECT id AS item_id, legacy_id, source_job_id, guild_id, content, first_seen_at, last_seen_at, created_at
       FROM memory_item
       WHERE guild_id = ? AND kind = 'episode' AND status = 'active' AND needs_review = 0
         AND (valid_until IS NULL OR valid_until > ?)
-      ORDER BY last_seen_at DESC, COALESCE(legacy_id, id) DESC
+      ORDER BY last_seen_at DESC, source_job_id DESC
     `)
     .all(scope.guildId, filter.now ?? Date.now()) as EpisodeRow[]
   const { rows: visible, sources } = recallableRows(database, 'episode', rows, scope)
@@ -471,7 +715,8 @@ function selectRecallableEpisodes(
       {
         kind: 'episode' as const,
         itemId: row.item_id,
-        id: legacyId(row.item_id, row.legacy_id),
+        // An episode's ID is its extraction job, the legacy `memory_episode.id`, whichever store wrote it.
+        id: row.source_job_id,
         legacyId: row.legacy_id,
         guildId: row.guild_id,
         content: row.content,
@@ -567,6 +812,9 @@ type WriteItemRow = Readonly<{
   source_kind: string | null
   status: string
   needs_review: number
+  end_reason: string | null
+  ended_at: number | null
+  superseded_by: number | null
   period: 'current' | 'past'
   object_kind: 'user' | null
   object_user_id: string | null
@@ -579,6 +827,8 @@ type WriteItemRow = Readonly<{
   last_seen_at: number
   last_recalled_at: number | null
   created_at: number | null
+  version: number
+  source_job_id: number | null
 }>
 
 function writeRows(database: Database.Database, filter: WriteItemFilter): WriteItemRow[] {
@@ -639,9 +889,10 @@ function writeRows(database: Database.Database, filter: WriteItemFilter): WriteI
     .prepare(`
       SELECT item.id AS item_id, item.legacy_id, item.guild_id, item.kind, item.subject_kind,
              item.subject_user_id, item.predicate, item.content, item.label, item.media_kind, item.content_key,
-             item.source_kind, item.status, item.needs_review, item.period, item.object_kind, item.object_user_id,
+             item.source_kind, item.status, item.needs_review, item.end_reason, item.ended_at, item.superseded_by,
+             item.period, item.object_kind, item.object_user_id,
              item.confidence, item.salience, item.pinned, item.valid_until, item.event_date, item.first_seen_at,
-             item.last_seen_at, item.last_recalled_at, item.created_at
+             item.last_seen_at, item.last_recalled_at, item.created_at, item.version, item.source_job_id
       FROM memory_item item ${termsJoin}
       ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
       ORDER BY ${filter.ftsQuery ? 'bm25(memory_item_fts), item.salience DESC, COALESCE(item.legacy_id, item.id)' : 'COALESCE(item.legacy_id, item.id)'}
@@ -713,6 +964,9 @@ export function listForWrite(filter: WriteItemFilter = {}, database: Database.Da
       sourceKind: row.source_kind,
       status: row.status,
       needsReview: row.needs_review === 1,
+      endReason: row.end_reason,
+      endedAt: row.ended_at,
+      supersededBy: row.superseded_by,
       period: row.period,
       objectKind: row.object_kind,
       objectUserId: row.object_user_id,
@@ -725,6 +979,8 @@ export function listForWrite(filter: WriteItemFilter = {}, database: Database.Da
       lastSeenAt: row.last_seen_at,
       lastRecalledAt: row.last_recalled_at,
       createdAt: row.created_at,
+      version: row.version,
+      sourceJobId: row.source_job_id,
       sourceChannels: itemSources,
       occurrences: (occurrences.get(row.item_id) ?? []).map((occurrence) => ({
         channelId: occurrence.channel_id,

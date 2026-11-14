@@ -251,6 +251,7 @@ export async function runMemsim(options: MemsimRunOptions): Promise<MemsimReport
     '../../../src/agent/memory/mediaRecall.js'
   )
   const {
+    itemIdForClaimRef,
     readItemGuildFacts,
     readItemMediaCandidates,
     readItemRecallableEpisodes,
@@ -296,8 +297,8 @@ export async function runMemsim(options: MemsimRunOptions): Promise<MemsimReport
     return (simRandomState >>> 0) / 0x1_0000_0000
   }
 
-  configureMemoryItemProjectionTriggers(simDb, storeMode === 'item' ? 'dual' : storeMode)
-  installDbAuditTriggers(simDb)
+  configureMemoryItemProjectionTriggers(simDb, storeMode)
+  installDbAuditTriggers(simDb, storeMode)
   fillMemoryItemEmbeddingHashes(simDb)
   sweepMemoryItemIntegrity(simDb)
   restoreMonitoredChannels()
@@ -345,7 +346,13 @@ export async function runMemsim(options: MemsimRunOptions): Promise<MemsimReport
   const turnObservations: TurnRecallObservation[] = []
   let messagesProcessed = 0
   const episodesExtractedBeforeStart = (
-    getDb().prepare('SELECT COUNT(*) AS count FROM memory_episode').get() as { count: number }
+    getDb()
+      .prepare(
+        storeMode === 'item'
+          ? "SELECT COUNT(*) AS count FROM memory_item WHERE kind = 'episode'"
+          : 'SELECT COUNT(*) AS count FROM memory_episode'
+      )
+      .get() as { count: number }
   ).count
 
   let restartsTotal = 0
@@ -524,8 +531,8 @@ export async function runMemsim(options: MemsimRunOptions): Promise<MemsimReport
     closeDb()
 
     const reopened = getDb()
-    configureMemoryItemProjectionTriggers(reopened, storeMode === 'item' ? 'dual' : storeMode)
-    installDbAuditTriggers(reopened)
+    configureMemoryItemProjectionTriggers(reopened, storeMode)
+    installDbAuditTriggers(reopened, storeMode)
     fillMemoryItemEmbeddingHashes(reopened)
     sweepMemoryItemIntegrity(reopened)
     restoreMonitoredChannels()
@@ -674,7 +681,8 @@ export async function runMemsim(options: MemsimRunOptions): Promise<MemsimReport
           expectedGtIds: msg.expectedRecallGtIds ?? [],
           visibility,
           preParity,
-          privateOnlyItemsCount: ep.isDm || legacyDropped ? 0 : countPrivateOnlyItemsInDb(getDb(), isPrivateChannel)
+          privateOnlyItemsCount:
+            ep.isDm || legacyDropped ? 0 : countPrivateOnlyItemsInDb(getDb(), isPrivateChannel, storeMode)
         }
       } else {
         activeTurnMeta = null
@@ -710,7 +718,11 @@ export async function runMemsim(options: MemsimRunOptions): Promise<MemsimReport
 
   async function runMedia(ev: SimMediaEvent): Promise<void> {
     const existingDigest = getDb()
-      .prepare('SELECT id FROM media_digest WHERE content_key = ? AND guild_id = ?')
+      .prepare(
+        storeMode === 'item'
+          ? "SELECT COALESCE(legacy_id, id) AS id FROM memory_item WHERE kind = 'media' AND content_key = ? AND guild_id = ?"
+          : 'SELECT id FROM media_digest WHERE content_key = ? AND guild_id = ?'
+      )
       .get(ev.contentKey, ev.guildId) as { id: number } | undefined
     if (existingDigest) {
       mediaCache.recordShare(
@@ -802,11 +814,24 @@ export async function runMemsim(options: MemsimRunOptions): Promise<MemsimReport
           sourceKind: 'passive',
           observedAt: simNowMs
         })
-        db.prepare('UPDATE memory_claim SET expires_at = ? WHERE id = ?').run(savedNow - DAY_MS, expiredClaim.id)
+        if (storeMode === 'item') {
+          const itemId = itemIdForClaimRef(db, expiredClaim.id)
+          if (itemId === undefined) throw new Error('Could not resolve the aged claim in memory_item')
+          db.prepare('UPDATE memory_item SET valid_until = ? WHERE id = ?').run(savedNow - DAY_MS, itemId)
+        } else {
+          db.prepare('UPDATE memory_claim SET expires_at = ? WHERE id = ?').run(savedNow - DAY_MS, expiredClaim.id)
+        }
 
         const nextEpId =
-          (db.prepare('SELECT COALESCE(MAX(id), 0) AS maxId FROM memory_episode').get() as { maxId: number }).maxId +
-          1000
+          (
+            db
+              .prepare(
+                storeMode === 'item'
+                  ? "SELECT COALESCE(MAX(source_job_id), 0) AS maxId FROM memory_item WHERE kind = 'episode'"
+                  : 'SELECT COALESCE(MAX(id), 0) AS maxId FROM memory_episode'
+              )
+              .get() as { maxId: number }
+          ).maxId + 1000
         const syntheticVec = {
           values: deterministicVectorArray(77),
           modelId: config.embeddings.model,
@@ -897,7 +922,9 @@ export async function runMemsim(options: MemsimRunOptions): Promise<MemsimReport
     } else if (ev.action === 'activate_candidate') {
       let row = db
         .prepare(
-          "SELECT id FROM memory_claim WHERE guild_id = ? AND subject_kind = 'user' AND status = 'candidate' LIMIT 1"
+          storeMode === 'item'
+            ? "SELECT COALESCE(legacy_id, id) AS id FROM memory_item WHERE kind = 'fact' AND guild_id = ? AND subject_kind = 'user' AND status = 'candidate' LIMIT 1"
+            : "SELECT id FROM memory_claim WHERE guild_id = ? AND subject_kind = 'user' AND status = 'candidate' LIMIT 1"
         )
         .get(ev.guildId) as { id: number } | undefined
       if (!row) {
@@ -916,7 +943,11 @@ export async function runMemsim(options: MemsimRunOptions): Promise<MemsimReport
       activateClaim(ev.guildId, row.id)
     } else if (ev.action === 'undo_last_reclassify') {
       const row = db
-        .prepare("SELECT id FROM memory_claim WHERE end_reason = 'reclassified' ORDER BY id DESC LIMIT 1")
+        .prepare(
+          storeMode === 'item'
+            ? "SELECT COALESCE(legacy_id, id) AS id FROM memory_item WHERE kind = 'fact' AND end_reason = 'reclassified' ORDER BY id DESC LIMIT 1"
+            : "SELECT id FROM memory_claim WHERE end_reason = 'reclassified' ORDER BY id DESC LIMIT 1"
+        )
         .get() as { id: number } | undefined
       if (row) {
         undoReclassify(row.id)
@@ -1023,7 +1054,7 @@ export async function runMemsim(options: MemsimRunOptions): Promise<MemsimReport
         else if (ev.kind === 'restart') await runRestart(ev)
 
         if (!legacyDropped) {
-          const evDrift = checkIntegrityDrift(getDb())
+          const evDrift = checkIntegrityDrift(getDb(), storeMode)
           if (evDrift.total > 0 && !firstEventDrift) {
             firstEventDrift = {
               eventId: ev.id,
@@ -1047,6 +1078,8 @@ export async function runMemsim(options: MemsimRunOptions): Promise<MemsimReport
         runDropLegacyMigration(dbPath)
         legacyDropped = true
         const reopenedAfterDrop = getDb()
+        configureMemoryItemProjectionTriggers(reopenedAfterDrop, storeMode)
+        installDbAuditTriggers(reopenedAfterDrop, storeMode)
         fillMemoryItemEmbeddingHashes(reopenedAfterDrop)
         sweepMemoryItemIntegrity(reopenedAfterDrop)
         restoreMonitoredChannels()
@@ -1093,10 +1126,12 @@ export async function runMemsim(options: MemsimRunOptions): Promise<MemsimReport
 
     const db = getDb()
     fillMemoryItemEmbeddingHashes(db)
-    const finalDriftRaw = legacyDropped ? { fact: 0, episode: 0, media: 0, total: 0 } : checkIntegrityDrift(db)
+    const finalDriftRaw = legacyDropped
+      ? { fact: 0, episode: 0, media: 0, total: 0 }
+      : checkIntegrityDrift(db, storeMode)
     const finalDrift = { fact: finalDriftRaw.fact, episode: finalDriftRaw.episode, media: finalDriftRaw.media }
     const triggerSummary = writerTracker.summary()
-    const quality = evaluateGroundTruth(db, groundTruth, turnObservations, isPrivateChannel)
+    const quality = evaluateGroundTruth(db, groundTruth, turnObservations, isPrivateChannel, storeMode)
 
     // Optional --scale N benchmark
     let scale10k: MemsimReport['performance']['scale10k']
@@ -1371,6 +1406,8 @@ export async function runMemsim(options: MemsimRunOptions): Promise<MemsimReport
       }
     }
 
+    const claimsTable = storeMode === 'item' ? 'memory_item' : 'memory_claim'
+    const claimKindFilter = storeMode === 'item' ? " WHERE kind = 'fact'" : ''
     const claimStats = db
       .prepare(
         `SELECT
@@ -1379,7 +1416,7 @@ export async function runMemsim(options: MemsimRunOptions): Promise<MemsimReport
           SUM(CASE WHEN subject_kind='user' AND status='rejected' THEN 1 ELSE 0 END) AS rejectedUser,
           SUM(CASE WHEN subject_kind='user' AND end_reason='retracted' THEN 1 ELSE 0 END) AS retractedUser,
           SUM(CASE WHEN subject_kind='guild' AND status='active' THEN 1 ELSE 0 END) AS activeGuild
-        FROM memory_claim`
+        FROM ${claimsTable}${claimKindFilter}`
       )
       .get() as {
       activeUser: number
@@ -1388,8 +1425,24 @@ export async function runMemsim(options: MemsimRunOptions): Promise<MemsimReport
       retractedUser: number
       activeGuild: number
     }
-    const epTotal = (db.prepare('SELECT COUNT(*) AS count FROM memory_episode').get() as { count: number }).count
-    const mediaTotal = (db.prepare('SELECT COUNT(*) AS count FROM media_digest').get() as { count: number }).count
+    const epTotal = (
+      db
+        .prepare(
+          storeMode === 'item'
+            ? "SELECT COUNT(*) AS count FROM memory_item WHERE kind = 'episode'"
+            : 'SELECT COUNT(*) AS count FROM memory_episode'
+        )
+        .get() as { count: number }
+    ).count
+    const mediaTotal = (
+      db
+        .prepare(
+          storeMode === 'item'
+            ? "SELECT COUNT(*) AS count FROM memory_item WHERE kind = 'media'"
+            : 'SELECT COUNT(*) AS count FROM media_digest'
+        )
+        .get() as { count: number }
+    ).count
 
     if (options.pruneUnused) {
       const genReplayCache = new MemsimCache({ mode: 'replay', cacheDir, budgets: options.budgets })

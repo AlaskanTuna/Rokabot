@@ -27,6 +27,7 @@ import { MAX_RECALLED_FACTS, formatRecallUserFacts } from '../../../src/agent/to
 import { formatGuildFactsBlock } from '../../../src/agent/turnContext.js'
 import { config } from '../../../src/config.js'
 import { getMemoryItemDriftCounts } from '../../../src/storage/memoryItemBackfill.js'
+import { getMemoryItemNativeIntegrityCounts } from '../../../src/storage/memoryItemIntegrity.js'
 import type { BuilderTimingStats, GroundTruthFile, GroundTruthLabel, LabelQualityMetrics } from './types.js'
 
 export const EXPECTED_TRIGGER_WRITERS: readonly string[] = [
@@ -98,7 +99,12 @@ export class WriterTracker {
   }
 }
 
-export function installDbAuditTriggers(db: Database.Database): void {
+export function installDbAuditTriggers(db: Database.Database, storeMode: 'legacy' | 'dual' | 'item' = 'dual'): void {
+  if (storeMode === 'item') {
+    installItemDbAuditTriggers(db)
+    return
+  }
+
   db.exec(`
     CREATE TEMP TABLE IF NOT EXISTS memsim_writer_events (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -248,6 +254,129 @@ export function installDbAuditTriggers(db: Database.Database): void {
   `)
 }
 
+function installItemDbAuditTriggers(db: Database.Database): void {
+  db.exec(`
+    CREATE TEMP TABLE IF NOT EXISTS memsim_writer_events (id INTEGER PRIMARY KEY AUTOINCREMENT, writer TEXT NOT NULL);
+
+    DROP TRIGGER IF EXISTS temp.memsim_tr_item_insert;
+    CREATE TEMP TRIGGER memsim_tr_item_insert AFTER INSERT ON memory_item BEGIN
+      INSERT INTO memsim_writer_events(writer) VALUES (
+        CASE
+          WHEN new.kind = 'fact' AND new.subject_kind = 'guild' THEN 'memoryClaims.assertGuildClaim'
+          WHEN new.kind = 'fact' THEN 'memoryClaims.assertClaim'
+          WHEN new.kind = 'episode' THEN 'memoryEpisodeStore.saveMemoryEpisode'
+          WHEN new.kind = 'media' THEN 'mediaDigestStore.saveMediaDigest'
+        END
+      );
+    END;
+
+    DROP TRIGGER IF EXISTS temp.memsim_tr_item_update;
+    CREATE TEMP TRIGGER memsim_tr_item_update AFTER UPDATE ON memory_item BEGIN
+      INSERT INTO memsim_writer_events(writer)
+      SELECT 'memoryClaims.activateClaim' WHERE new.kind = 'fact' AND old.status = 'candidate' AND new.status = 'active';
+      INSERT INTO memsim_writer_events(writer)
+      SELECT 'memoryClaims.pinClaim' WHERE new.kind = 'fact' AND old.pinned = 0 AND new.pinned = 1;
+      INSERT INTO memsim_writer_events(writer)
+      SELECT 'memoryClaims.unpinClaim' WHERE new.kind = 'fact' AND old.pinned = 1 AND new.pinned = 0;
+      INSERT INTO memsim_writer_events(writer)
+      SELECT CASE
+        WHEN new.kind = 'fact' AND new.end_reason = 'superseded' AND new.subject_kind = 'user' THEN 'memoryClaims.replaceActiveClaim'
+        WHEN new.kind = 'fact' AND new.end_reason = 'superseded' AND new.subject_kind = 'guild' THEN 'memoryClaims.replaceActiveGuildClaim'
+        WHEN new.kind = 'fact' AND new.end_reason = 'removed' AND new.subject_kind = 'user' THEN 'memoryClaims.rejectActiveClaimById'
+        WHEN new.kind = 'fact' AND new.end_reason = 'removed' AND new.subject_kind = 'guild' THEN 'memoryClaims.rejectActiveGuildClaimById'
+        WHEN new.kind = 'fact' AND new.end_reason = 'forgotten' THEN 'memoryClaims.rejectClaimIdsForSpeaker'
+        WHEN new.kind = 'fact' AND new.end_reason = 'evicted' THEN 'memoryClaims.evictOverflowForAllSubjects'
+        WHEN new.kind = 'fact' AND new.end_reason IN ('retracted', 'reclassified') THEN 'memoryClaims.retireClaim'
+      END
+      WHERE old.status = 'active' AND new.status IN ('rejected', 'superseded')
+        AND new.end_reason IN ('superseded', 'removed', 'forgotten', 'evicted', 'retracted', 'reclassified');
+      INSERT INTO memsim_writer_events(writer)
+      SELECT 'memoryClaims.pruneStaleClaims'
+      WHERE new.kind = 'fact' AND old.status IN ('candidate', 'active') AND new.status = 'rejected'
+        AND new.end_reason IN ('expired', 'self');
+      INSERT INTO memsim_writer_events(writer)
+      SELECT 'reclassify.undoReclassify'
+      WHERE new.kind = 'fact' AND old.status = 'rejected' AND old.end_reason = 'reclassified'
+        AND new.status = 'active' AND new.end_reason IS NULL;
+      INSERT INTO memsim_writer_events(writer)
+      SELECT 'reclassify.moveClaim'
+      WHERE new.kind = 'fact' AND old.status = 'active' AND new.status IN ('rejected', 'superseded')
+        AND new.end_reason = 'reclassified';
+      INSERT INTO memsim_writer_events(writer)
+      SELECT 'memoryClaims.touchRecalled'
+      WHERE new.kind = 'fact' AND new.last_recalled_at IS NOT old.last_recalled_at AND new.last_recalled_at IS NOT NULL;
+    END;
+
+    DROP TRIGGER IF EXISTS temp.memsim_tr_item_evidence;
+    CREATE TEMP TRIGGER memsim_tr_item_evidence AFTER INSERT ON memory_item_evidence BEGIN
+      INSERT INTO memsim_writer_events(writer)
+      SELECT 'memoryClaims.appendEvidence'
+      WHERE EXISTS (SELECT 1 FROM memory_item WHERE id = new.item_id AND kind = 'fact');
+    END;
+
+    DROP TRIGGER IF EXISTS temp.memsim_tr_item_occurrence;
+    CREATE TEMP TRIGGER memsim_tr_item_occurrence AFTER INSERT ON memory_item_occurrence BEGIN
+      INSERT INTO memsim_writer_events(writer)
+      SELECT 'mediaDigestStore.recordMediaOccurrence'
+      WHERE new.origin != 'episode' AND EXISTS (SELECT 1 FROM memory_item WHERE id = new.item_id AND kind = 'media');
+    END;
+
+    DROP TRIGGER IF EXISTS temp.memsim_tr_item_occurrence_delete;
+    CREATE TEMP TRIGGER memsim_tr_item_occurrence_delete AFTER DELETE ON memory_item_occurrence BEGIN
+      INSERT INTO memsim_writer_events(writer)
+      SELECT 'mediaDigestStore.forgetMediaForUser'
+      WHERE old.origin != 'episode' AND EXISTS (SELECT 1 FROM memory_item WHERE id = old.item_id AND kind = 'media');
+    END;
+
+    DROP TRIGGER IF EXISTS temp.memsim_tr_item_delete;
+    CREATE TEMP TRIGGER memsim_tr_item_delete AFTER DELETE ON memory_item BEGIN
+      INSERT INTO memsim_writer_events(writer)
+      SELECT CASE WHEN old.kind = 'episode' THEN 'memoryEpisodeStore.pruneExpiredEpisodes'
+                  WHEN old.kind = 'media' THEN 'mediaDigestStore.pruneExpiredMediaDigests' END
+      WHERE old.kind IN ('episode', 'media');
+    END;
+
+    DROP TRIGGER IF EXISTS temp.memsim_tr_item_embedding;
+    CREATE TEMP TRIGGER memsim_tr_item_embedding AFTER INSERT ON memory_item_embedding BEGIN
+      INSERT INTO memsim_writer_events(writer)
+      SELECT CASE item.kind WHEN 'fact' THEN 'memoryRecallStore.setClaimEmbedding'
+                            WHEN 'episode' THEN 'memoryEpisodeStore.setEpisodeEmbedding'
+                            WHEN 'media' THEN 'mediaDigestStore.setMediaDigestEmbedding' END
+      FROM memory_item item WHERE item.id = new.item_id;
+    END;
+    DROP TRIGGER IF EXISTS temp.memsim_tr_item_embedding_update;
+    CREATE TEMP TRIGGER memsim_tr_item_embedding_update AFTER UPDATE ON memory_item_embedding BEGIN
+      INSERT INTO memsim_writer_events(writer)
+      SELECT CASE item.kind WHEN 'fact' THEN 'memoryRecallStore.setClaimEmbedding'
+                            WHEN 'episode' THEN 'memoryEpisodeStore.setEpisodeEmbedding'
+                            WHEN 'media' THEN 'mediaDigestStore.setMediaDigestEmbedding' END
+      FROM memory_item item WHERE item.id = new.item_id;
+    END;
+
+    DROP TRIGGER IF EXISTS temp.memsim_tr_open_ep_line;
+    CREATE TEMP TRIGGER memsim_tr_open_ep_line AFTER INSERT ON memory_episode_line BEGIN
+      INSERT INTO memsim_writer_events(writer) VALUES ('memoryEpisodeStore.recordOpenEpisodeMessage');
+    END;
+    DROP TRIGGER IF EXISTS temp.memsim_tr_open_ep_queue;
+    CREATE TEMP TRIGGER memsim_tr_open_ep_queue AFTER INSERT ON extraction_queue BEGIN
+      INSERT INTO memsim_writer_events(writer) VALUES ('memoryEpisodeStore.enqueueEpisodeAndAdvanceCursor');
+    END;
+    DROP TRIGGER IF EXISTS temp.memsim_tr_open_ep_line_del;
+    CREATE TEMP TRIGGER memsim_tr_open_ep_line_del AFTER DELETE ON memory_episode_line BEGIN
+      INSERT INTO memsim_writer_events(writer) VALUES ('__internal.open_ep_line_deleted');
+    END;
+    DROP TRIGGER IF EXISTS temp.memsim_tr_open_ep_cursor_upd;
+    CREATE TEMP TRIGGER memsim_tr_open_ep_cursor_upd AFTER UPDATE ON memory_episode_cursor BEGIN
+      INSERT INTO memsim_writer_events(writer)
+      SELECT CASE
+        WHEN old.opened_at IS NOT NULL AND new.opened_at IS NULL THEN '__internal.open_ep_cursor_cleared'
+        WHEN new.opened_at IS NOT NULL THEN '__internal.open_ep_cursor_synced'
+      END
+      WHERE (old.opened_at IS NOT NULL AND new.opened_at IS NULL) OR new.opened_at IS NOT NULL;
+    END;
+  `)
+}
+
 export function collectDbAuditWriters(
   db: Database.Database,
   tracker: WriterTracker,
@@ -314,16 +443,26 @@ export function extractMemoryBlocksFromSystemPrompt(systemPrompt: string): {
 
 export function countPrivateOnlyItemsInDb(
   db: Database.Database,
-  isPrivateChannel: (channelId: string | null) => boolean
+  isPrivateChannel: (channelId: string | null) => boolean,
+  storeMode: 'legacy' | 'dual' | 'item' = config.memory.store
 ): number {
-  const claimRows = db
-    .prepare(
-      `SELECT c.id AS id, e.channel_id AS channel_id
-       FROM memory_claim c
-       LEFT JOIN memory_evidence e ON e.claim_id = c.id
-       WHERE c.status IN ('active', 'candidate')`
-    )
-    .all() as Array<{ id: number; channel_id: string | null }>
+  const claimRows = (
+    storeMode === 'item'
+      ? db
+          .prepare(
+            `SELECT c.id AS id, e.channel_id AS channel_id FROM memory_item c
+           LEFT JOIN memory_item_evidence e ON e.item_id = c.id
+           WHERE c.kind = 'fact' AND c.status IN ('active', 'candidate')`
+          )
+          .all()
+      : db
+          .prepare(
+            `SELECT c.id AS id, e.channel_id AS channel_id FROM memory_claim c
+           LEFT JOIN memory_evidence e ON e.claim_id = c.id
+           WHERE c.status IN ('active', 'candidate')`
+          )
+          .all()
+  ) as Array<{ id: number; channel_id: string | null }>
 
   const claimChannels = new Map<number, Array<string | null>>()
   for (const row of claimRows) {
@@ -336,19 +475,39 @@ export function countPrivateOnlyItemsInDb(
     if (channels.length > 0 && channels.every((ch) => isPrivateChannel(ch))) privateFacts += 1
   }
 
-  const episodeRows = db.prepare('SELECT id, channel_id FROM memory_episode').all() as Array<{
+  const episodeRows = (
+    storeMode === 'item'
+      ? db
+          .prepare(
+            `SELECT item.id, occurrence.channel_id FROM memory_item item
+           LEFT JOIN memory_item_occurrence occurrence
+             ON occurrence.item_id = item.id AND occurrence.origin = 'episode'
+           WHERE item.kind = 'episode'`
+          )
+          .all()
+      : db.prepare('SELECT id, channel_id FROM memory_episode').all()
+  ) as Array<{
     id: number
     channel_id: string | null
   }>
   const privateEpisodes = episodeRows.filter((row) => isPrivateChannel(row.channel_id)).length
 
-  const mediaRows = db
-    .prepare(
-      `SELECT m.id AS id, o.channel_id AS channel_id
-       FROM media_digest m
-       LEFT JOIN media_occurrence o ON o.digest_id = m.id`
-    )
-    .all() as Array<{ id: number; channel_id: string | null }>
+  const mediaRows = (
+    storeMode === 'item'
+      ? db
+          .prepare(
+            `SELECT m.id AS id, o.channel_id AS channel_id FROM memory_item m
+           LEFT JOIN memory_item_occurrence o ON o.item_id = m.id AND o.origin != 'episode'
+           WHERE m.kind = 'media'`
+          )
+          .all()
+      : db
+          .prepare(
+            `SELECT m.id AS id, o.channel_id AS channel_id FROM media_digest m
+           LEFT JOIN media_occurrence o ON o.digest_id = m.id`
+          )
+          .all()
+  ) as Array<{ id: number; channel_id: string | null }>
   const mediaChannels = new Map<number, Array<string | null>>()
   for (const row of mediaRows) {
     const list = mediaChannels.get(row.id) ?? []
@@ -582,13 +741,16 @@ export async function runPhase4ParityCheck(
   }
 }
 
-export function checkIntegrityDrift(db: Database.Database): {
+export function checkIntegrityDrift(
+  db: Database.Database,
+  storeMode: 'legacy' | 'dual' | 'item' = config.memory.store
+): {
   fact: number
   episode: number
   media: number
   total: number
 } {
-  const drift = getMemoryItemDriftCounts(db)
+  const drift = storeMode === 'item' ? getMemoryItemNativeIntegrityCounts(db) : getMemoryItemDriftCounts(db)
   return { ...drift, total: drift.fact + drift.episode + drift.media }
 }
 
@@ -627,7 +789,8 @@ export function evaluateGroundTruth(
   db: Database.Database,
   groundTruth: GroundTruthFile,
   observations: readonly TurnRecallObservation[],
-  isPrivateChannel: (channelId: string | null) => boolean
+  isPrivateChannel: (channelId: string | null) => boolean,
+  storeMode: 'legacy' | 'dual' | 'item' = config.memory.store
 ): {
   overallPlanted: number
   overallMatched: number
@@ -652,11 +815,21 @@ export function evaluateGroundTruth(
     'media_share'
   ]
 
-  const allClaims = db
-    .prepare(
-      'SELECT id, guild_id, subject_kind, subject_user_id, predicate, value, period, status, end_reason, event_date, expires_at FROM memory_claim'
-    )
-    .all() as Array<{
+  const allClaims = (
+    storeMode === 'item'
+      ? db
+          .prepare(
+            `SELECT id, guild_id, subject_kind, subject_user_id, predicate, content AS value, period, status,
+                  end_reason, event_date, valid_until AS expires_at
+           FROM memory_item WHERE kind = 'fact'`
+          )
+          .all()
+      : db
+          .prepare(
+            'SELECT id, guild_id, subject_kind, subject_user_id, predicate, value, period, status, end_reason, event_date, expires_at FROM memory_claim'
+          )
+          .all()
+  ) as Array<{
     id: number
     guild_id: string
     subject_kind: string
@@ -670,7 +843,11 @@ export function evaluateGroundTruth(
     expires_at: number | null
   }>
 
-  const allMedia = db.prepare('SELECT id, guild_id, summary, label FROM media_digest').all() as Array<{
+  const allMedia = (
+    storeMode === 'item'
+      ? db.prepare("SELECT id, guild_id, content AS summary, label FROM memory_item WHERE kind = 'media'").all()
+      : db.prepare('SELECT id, guild_id, summary, label FROM media_digest').all()
+  ) as Array<{
     id: number
     guild_id: string
     summary: string
@@ -702,7 +879,7 @@ export function evaluateGroundTruth(
   const dmMemoryBlockLeaks = dmObservations.filter((obs) => obs.dmHeadingsFound.length > 0).length
   const maxPrivateSeenAtPublicTurn =
     publicObservations.length === 0 ? 0 : Math.max(...publicObservations.map((obs) => obs.privateOnlyItemsCount))
-  const finalPrivateOnlyCount = countPrivateOnlyItemsInDb(db, isPrivateChannel)
+  const finalPrivateOnlyCount = countPrivateOnlyItemsInDb(db, isPrivateChannel, storeMode)
   const privateOnlyItemsCount = Math.min(maxPrivateSeenAtPublicTurn, finalPrivateOnlyCount)
 
   const byLabel: LabelQualityMetrics[] = []

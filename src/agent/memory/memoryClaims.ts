@@ -2,7 +2,36 @@ import { config } from '../../config.js'
 import { getDb } from '../../storage/database.js'
 import { logger } from '../../utils/logger.js'
 import { MAX_FACT_VALUE_LEN, isSafeFactScalar } from '../promptSafety.js'
-import { readItemNicknameClaims } from './memoryItems.js'
+import { SOURCE_WEIGHT, confidenceForEvidence } from './memoryClaimScoring.js'
+import {
+  activateItemClaimInTransaction,
+  appendItemEvidenceInTransaction,
+  assertItemClaimInTransaction,
+  assertItemGuildClaimInTransaction,
+  countItemActiveClaimsForUser,
+  evictItemOverflowForAllSubjectsInTransaction,
+  findItemReclassifyRows,
+  findItemUserClaimStatus,
+  getItemActiveClaimById,
+  getItemActiveClaims,
+  getItemActiveClaimsForUsers,
+  getItemActiveGuildClaimById,
+  getItemActiveGuildClaims,
+  getItemEdges,
+  getItemPriorClaimStatus,
+  pinItemClaim,
+  pruneItemClaimsInTransaction,
+  readItemNicknameClaims,
+  rejectItemClaimIdsForSpeakerInTransaction,
+  rejectItemClaimInTransaction,
+  rejectItemClaimsByRef,
+  replaceItemActiveClaimInTransaction,
+  replaceItemActiveGuildClaimInTransaction,
+  retireItemClaimInTransaction,
+  searchItemClaimIds,
+  searchItemClaims,
+  touchItemClaims
+} from './memoryItems.js'
 import {
   type GuildPredicateId,
   type MemoryPredicateId,
@@ -14,6 +43,8 @@ import {
 } from './predicates.js'
 import type { RecallScope } from './privacy.js'
 import { sensitiveValueReason } from './privacyGuard.js'
+
+export { SOURCE_WEIGHT, confidenceForEvidence } from './memoryClaimScoring.js'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -117,13 +148,6 @@ type ClaimRow = {
   event_date: string | null
 }
 
-export const SOURCE_WEIGHT: Readonly<Record<ClaimSource, number>> = {
-  explicit: 1,
-  human: 1,
-  passive: 0.75,
-  legacy: 0.5
-}
-
 function mapClaim(row: ClaimRow): MemoryClaim {
   const base = {
     id: row.id,
@@ -184,13 +208,6 @@ function sourceWeight(sourceKind: ClaimSource): number {
   return SOURCE_WEIGHT[sourceKind]
 }
 
-/** Evidence count raises confidence, while recent observation gets a small freshness bonus. */
-export function confidenceForEvidence(evidenceCount: number, observedAt: number, now: number = Date.now()): number {
-  const age = Math.max(0, now - observedAt)
-  const freshness = age <= 24 * 60 * 60 * 1000 ? 0.1 : age <= 7 * 24 * 60 * 60 * 1000 ? 0.05 : 0
-  return Math.min(0.95, 0.4 + Math.min(0.4, evidenceCount * 0.1) + freshness)
-}
-
 function getClaim(id: number): MemoryClaim | undefined {
   const row = getDb().prepare('SELECT * FROM memory_claim WHERE id = ?').get(id) as ClaimRow | undefined
   return row ? mapClaim(row) : undefined
@@ -211,6 +228,7 @@ function getGuildClaim(id: number): GuildMemoryClaim | undefined {
 }
 
 function appendEvidenceInTransaction(claimId: number, input: EvidenceInput): MemoryClaim {
+  if (config.memory.store === 'item') return appendItemEvidenceInTransaction(claimId, input)
   const db = getDb()
   const observedAt = input.observedAt ?? Date.now()
   // A retried extraction job replays its writes: the (claim_id, job_id) index turns the replay into a no-op.
@@ -275,6 +293,7 @@ function evictOverflow(guildId: string, subjectUserId: string): number {
 }
 
 function evictOverflowForAllSubjectsInTransaction(): number {
+  if (config.memory.store === 'item') return evictItemOverflowForAllSubjectsInTransaction()
   const subjects = getDb()
     .prepare(
       "SELECT DISTINCT guild_id, subject_user_id FROM memory_claim WHERE subject_kind = 'user' AND status = 'active'"
@@ -347,6 +366,7 @@ function supersedePriorActive(claim: UserMemoryClaim): void {
 function assertClaimInTransaction(op: ClaimAssert, inheritedPin = false): UserMemoryClaim {
   assertWritableGuild(op.guildId)
   assertSafeValue(op.value)
+  if (config.memory.store === 'item') return assertItemClaimInTransaction(op, inheritedPin)
 
   const db = getDb()
   const predicate = normalizePredicate(op.predicate)
@@ -472,6 +492,7 @@ export function assertClaim(op: ClaimAssert, options: ClaimWriteOptions = {}): U
 export function activateClaim(guildId: string, claimId: number, options: ClaimWriteOptions = {}): UserMemoryClaim {
   const write = () => {
     assertWritableGuild(guildId)
+    if (config.memory.store === 'item') return activateItemClaimInTransaction(guildId, claimId)
     const row = getDb()
       .prepare(
         "SELECT * FROM memory_claim WHERE id = ? AND guild_id = ? AND subject_kind = 'user' AND status = 'candidate'"
@@ -492,6 +513,14 @@ export function retractClaim(op: ClaimRetract, options: ClaimWriteOptions = {}):
   const write = () => {
     assertWritableGuild(op.guildId)
     const predicate = normalizePredicate(op.predicate)
+    if (config.memory.store === 'item') {
+      const claim = getItemActiveClaims(op.guildId, op.subjectUserId).find(
+        (item) => item.predicate === predicate && item.value === op.value
+      )
+      if (!claim) return false
+      rejectItemClaimsByRef([claim], 'removed')
+      return true
+    }
     const row = getDb()
       .prepare(
         "SELECT * FROM memory_claim WHERE subject_kind = 'user' AND guild_id = ? AND subject_user_id = ? AND predicate = ? AND value = ? AND status = 'active'"
@@ -513,6 +542,9 @@ export function retireClaim(
 ): boolean {
   const write = () => {
     assertWritableGuild(guildId)
+    if (config.memory.store === 'item') {
+      return retireItemClaimInTransaction(guildId, claimId, reason, supersededBy)
+    }
     const result = getDb()
       .prepare(
         "UPDATE memory_claim SET status = 'rejected', ended_at = ?, end_reason = ?, superseded_by = ? WHERE id = ? AND guild_id = ? AND status = 'active'"
@@ -524,14 +556,23 @@ export function retireClaim(
 }
 
 export function pinClaim(claimId: number): void {
+  if (config.memory.store === 'item') {
+    pinItemClaim(claimId, true)
+    return
+  }
   getDb().prepare("UPDATE memory_claim SET pinned = 1 WHERE id = ? AND subject_kind = 'user'").run(claimId)
 }
 
 export function unpinClaim(claimId: number): void {
+  if (config.memory.store === 'item') {
+    pinItemClaim(claimId, false)
+    return
+  }
   getDb().prepare("UPDATE memory_claim SET pinned = 0 WHERE id = ? AND subject_kind = 'user'").run(claimId)
 }
 
 export function getActiveClaims(guildId: string, userId: string): UserMemoryClaim[] {
+  if (config.memory.store === 'item') return getItemActiveClaims(guildId, userId)
   return (
     getDb()
       .prepare(
@@ -545,6 +586,7 @@ export function getActiveClaims(guildId: string, userId: string): UserMemoryClai
 
 export function getActiveClaimsForUsers(guildId: string, userIds: string[]): UserMemoryClaim[] {
   if (userIds.length === 0) return []
+  if (config.memory.store === 'item') return getItemActiveClaimsForUsers(guildId, userIds)
   const placeholders = userIds.map(() => '?').join(', ')
   const rows = getDb()
     .prepare(
@@ -556,6 +598,7 @@ export function getActiveClaimsForUsers(guildId: string, userIds: string[]): Use
 }
 
 export function searchClaimIds(guildId: string, userIds: string[], message: string): Set<number> {
+  if (config.memory.store === 'item') return searchItemClaimIds(guildId, userIds, message)
   const terms = [...new Set(message.toLowerCase().match(/[a-z0-9]{2,}/g) ?? [])].slice(0, 12)
   if (userIds.length === 0 || terms.length === 0) return new Set()
 
@@ -580,6 +623,7 @@ export function getActiveClaimById(
   subjectUserId: string,
   claimId: number
 ): UserMemoryClaim | undefined {
+  if (config.memory.store === 'item') return getItemActiveClaimById(guildId, subjectUserId, claimId)
   const row = getDb()
     .prepare(
       `SELECT * FROM memory_claim
@@ -606,6 +650,7 @@ export function replaceActiveClaim(
 ): UserMemoryClaim | null {
   const write = () => {
     assertWritableGuild(input.guildId)
+    if (config.memory.store === 'item') return replaceItemActiveClaimInTransaction(input, assertClaimInTransaction)
     const prior = getActiveClaimById(input.guildId, input.subjectUserId, input.existingId)
     if (!prior || prior.predicate !== input.predicate || prior.period !== 'current') return null
 
@@ -664,6 +709,13 @@ export function rejectActiveClaimById(
 ): boolean {
   const write = () => {
     assertWritableGuild(input.guildId)
+    if (config.memory.store === 'item') {
+      return rejectItemClaimInTransaction(input.existingId, 'removed', {
+        guildId: input.guildId,
+        subjectKind: 'user',
+        subjectUserId: input.subjectUserId
+      })
+    }
     const result = getDb()
       .prepare(
         `UPDATE memory_claim SET status = 'rejected', superseded_by = NULL, ended_at = ?, end_reason = 'removed'
@@ -676,6 +728,7 @@ export function rejectActiveClaimById(
 }
 
 export function searchClaims(guildId: string, userId: string, ftsQuery: string, limit: number): UserMemoryClaim[] {
+  if (config.memory.store === 'item') return searchItemClaims(guildId, userId, ftsQuery, limit)
   if (!ftsQuery.trim() || limit <= 0) return []
   return (
     getDb()
@@ -701,6 +754,7 @@ export function priorClaimStatus(
   value: string,
   period: ClaimPeriod
 ): ClaimStatus | undefined {
+  if (config.memory.store === 'item') return getItemPriorClaimStatus(guildId, subject, predicate, value, period)
   const row = getDb()
     .prepare(
       'SELECT status FROM memory_claim WHERE guild_id = ? AND subject_kind = ? AND subject_user_id IS ? AND predicate = ? AND value = ? AND period = ?'
@@ -715,6 +769,7 @@ export function rejectClaimIdsForSpeaker(guildId: string, userId: string, claimI
   if (claimIds.length === 0) return false
   const write = () => {
     assertWritableGuild(guildId)
+    if (config.memory.store === 'item') return rejectItemClaimIdsForSpeakerInTransaction(guildId, userId, claimIds)
     const placeholders = claimIds.map(() => '?').join(', ')
     const claims = (
       getDb()
@@ -732,6 +787,7 @@ export function rejectClaimIdsForSpeaker(guildId: string, userId: string, claimI
 }
 
 export function getEdges(guildId: string, userId: string): UserMemoryClaim[] {
+  if (config.memory.store === 'item') return getItemEdges(guildId, userId)
   return (
     getDb()
       .prepare(
@@ -782,15 +838,28 @@ type ReclassifyCandidateRow = {
   value: string
 }
 
-export function findReclassifyRows(): ReclassifyRow[] {
+export function findReclassifyRows(limit?: number): ReclassifyRow[] {
+  if (config.memory.store === 'item') {
+    return findItemReclassifyRows(limit).map(({ id, guildId, subjectUserId, predicate, value }) => ({
+      id,
+      guildId,
+      subjectUserId,
+      predicate: predicate as PredicateId,
+      value
+    }))
+  }
   const rows = getDb()
     .prepare(
       `SELECT c.id, c.guild_id, c.subject_user_id, c.predicate, c.value
        FROM memory_claim c
        WHERE c.subject_kind = 'user' AND c.status = 'active' AND c.period = 'current'
          AND c.id NOT IN (
-           SELECT json_extract(detail, '$.oldId') FROM memory_events
-           WHERE kind = 'claim_reclassified' AND json_extract(detail, '$.oldId') IS NOT NULL
+           SELECT old_id FROM (
+             SELECT CASE WHEN json_extract(detail, '$.v') = 2
+                      THEN (SELECT legacy_id FROM memory_item WHERE id = json_extract(detail, '$.oldId'))
+                      ELSE json_extract(detail, '$.oldId') END AS old_id
+             FROM memory_events WHERE kind = 'claim_reclassified'
+           ) WHERE old_id IS NOT NULL
          )
          AND (
            c.predicate = 'misc'
@@ -809,7 +878,7 @@ export function findReclassifyRows(): ReclassifyRow[] {
                 lower(c.value) COLLATE BINARY, c.value COLLATE BINARY`
     )
     .all() as ReclassifyCandidateRow[]
-  return rows.map((row) => ({
+  return (limit === undefined ? rows : rows.slice(0, limit)).map((row) => ({
     id: row.id,
     guildId: row.guild_id,
     subjectUserId: row.subject_user_id,
@@ -819,6 +888,7 @@ export function findReclassifyRows(): ReclassifyRow[] {
 }
 
 export function countActiveClaimsForUser(guildId: string, subjectUserId: string): number {
+  if (config.memory.store === 'item') return countItemActiveClaimsForUser(guildId, subjectUserId)
   return (
     getDb()
       .prepare(
@@ -834,6 +904,7 @@ export function findUserClaimStatus(
   predicate: PredicateId,
   value: string
 ): { status: string; end_reason: string | null } | undefined {
+  if (config.memory.store === 'item') return findItemUserClaimStatus(guildId, subjectUserId, predicate, value)
   return getDb()
     .prepare(
       "SELECT status, end_reason FROM memory_claim WHERE subject_kind = 'user' AND guild_id = ? AND subject_user_id = ? AND predicate = ? AND value = ? AND period = 'current'"
@@ -875,6 +946,8 @@ export function assertGuildClaim(
       throw new Error('Guild events and plans require a valid expiry')
     }
     if (!requiresExpiry && input.expiresAt !== null) throw new Error('Only guild events and plans may expire')
+
+    if (config.memory.store === 'item') return assertItemGuildClaimInTransaction(input)
 
     const db = getDb()
     const observedAt = input.observedAt ?? Date.now()
@@ -953,6 +1026,7 @@ export function assertGuildClaim(
 }
 
 export function getActiveGuildClaims(guildId: string, now: number = Date.now()): GuildMemoryClaim[] {
+  if (config.memory.store === 'item') return getItemActiveGuildClaims(guildId, now)
   return (
     getDb()
       .prepare(
@@ -966,6 +1040,7 @@ export function getActiveGuildClaims(guildId: string, now: number = Date.now()):
 }
 
 export function getActiveGuildClaimById(guildId: string, claimId: number): GuildMemoryClaim | undefined {
+  if (config.memory.store === 'item') return getItemActiveGuildClaimById(guildId, claimId)
   const row = getDb()
     .prepare(
       `SELECT * FROM memory_claim
@@ -992,6 +1067,11 @@ export function replaceActiveGuildClaim(
 ): GuildMemoryClaim | null {
   const write = () => {
     assertWritableGuild(input.guildId)
+    if (config.memory.store === 'item') {
+      return replaceItemActiveGuildClaimInTransaction(input, (replacement) =>
+        assertGuildClaim({ ...replacement, predicate: input.predicate }, { transaction: true })
+      )
+    }
     const prior = getActiveGuildClaimById(input.guildId, input.existingId)
     if (!prior || prior.predicate !== input.predicate) return null
 
@@ -1039,6 +1119,12 @@ export function rejectActiveGuildClaimById(
 ): boolean {
   const write = () => {
     assertWritableGuild(input.guildId)
+    if (config.memory.store === 'item') {
+      return rejectItemClaimInTransaction(input.existingId, 'removed', {
+        guildId: input.guildId,
+        subjectKind: 'guild'
+      })
+    }
     const result = getDb()
       .prepare(
         `UPDATE memory_claim SET status = 'rejected', superseded_by = NULL, ended_at = ?, end_reason = 'removed'
@@ -1052,6 +1138,10 @@ export function rejectActiveGuildClaimById(
 
 export function touchRecalled(claimIds: number[]): void {
   if (claimIds.length === 0) return
+  if (config.memory.store === 'item') {
+    touchItemClaims(claimIds)
+    return
+  }
   const placeholders = claimIds.map(() => '?').join(', ')
   getDb()
     .prepare(`UPDATE memory_claim SET last_recalled_at = ? WHERE subject_kind = 'user' AND id IN (${placeholders})`)
@@ -1063,6 +1153,11 @@ export function pruneStaleClaims(
   botUserId?: string
 ): number {
   const now = Date.now()
+  if (config.memory.store === 'item') {
+    const pruned = getDb().transaction(() => pruneItemClaimsInTransaction(now, standardRetentionDays, botUserId))()
+    if (pruned > 0) logger.info({ pruned, standardRetentionDays }, 'Pruned memory claims')
+    return pruned
+  }
   const retentionDays = {
     stable: config.memory.stableClaimRetentionDays,
     standard: standardRetentionDays,
