@@ -47,6 +47,22 @@ export class MemsimBudgetExceededError extends Error {
   }
 }
 
+export class MemsimLiveCallError extends Error {
+  readonly provider: ProviderName
+  readonly hash: string
+  readonly attempts: number
+
+  constructor(provider: ProviderName, hash: string, attempts: number, cause: unknown) {
+    super(`Live ${provider} call failed after ${attempts} attempts for ${hash}: ${cause}`)
+    this.name = 'MemsimLiveCallError'
+    this.provider = provider
+    this.hash = hash
+    this.attempts = attempts
+  }
+}
+
+const LIVE_ATTEMPTS = 4
+
 export interface CachedHttpResponse {
   status: number
   statusText: string
@@ -86,11 +102,18 @@ export class MemsimCache {
   private readonly accessedPaths = new Set<string>()
   private writes = 0
   private fatalError: Error | null = null
+  private readonly retryBaseMs: number
 
-  constructor(options: { mode: CacheMode; cacheDir: string; budgets?: Partial<ProviderBudgets> }) {
+  constructor(options: {
+    mode: CacheMode
+    cacheDir: string
+    budgets?: Partial<ProviderBudgets>
+    retryBaseMs?: number
+  }) {
     this.mode = options.mode
     this.cacheDir = options.cacheDir
     this.budgets = { ...DEFAULT_PROVIDER_BUDGETS, ...options.budgets }
+    this.retryBaseMs = options.retryBaseMs ?? 500
   }
 
   throwIfFatal(): void {
@@ -178,15 +201,30 @@ export class MemsimCache {
       throw err
     }
 
-    if (this.liveCalls[provider] >= this.budgets[provider]) {
-      const err = new MemsimBudgetExceededError(provider, this.liveCalls[provider], this.budgets[provider])
-      this.fatalError ??= err
-      throw err
-    }
+    // A recording must hold every response the app saw, or replay misses. So a failed live call is retried, and never handed back uncached.
+    let cause: unknown
+    for (let attempt = 0; attempt < LIVE_ATTEMPTS; attempt += 1) {
+      if (attempt > 0) await new Promise((r) => setTimeout(r, this.retryBaseMs * 2 ** (attempt - 1)))
 
-    this.liveCalls[provider] += 1
-    const response = await liveFn()
-    if (shouldCache(response)) {
+      if (this.liveCalls[provider] >= this.budgets[provider]) {
+        const err = new MemsimBudgetExceededError(provider, this.liveCalls[provider], this.budgets[provider])
+        this.fatalError ??= err
+        throw err
+      }
+
+      this.liveCalls[provider] += 1
+      let response: T
+      try {
+        response = await liveFn()
+      } catch (error) {
+        cause = error
+        continue
+      }
+      if (!shouldCache(response)) {
+        cause = new Error('shouldCache rejected the response')
+        continue
+      }
+
       const dir = join(this.cacheDir, provider)
       mkdirSync(dir, { recursive: true })
       const envelope: CacheEnvelope<T> = { version: 1, provider, hash, response }
@@ -194,8 +232,12 @@ export class MemsimCache {
       writeFileSync(tmpPath, `${JSON.stringify(envelope)}\n`, 'utf8')
       renameSync(tmpPath, path)
       this.writes += 1
+      return { value: response, cached: false }
     }
-    return { value: response, cached: false }
+
+    const err = new MemsimLiveCallError(provider, hash, LIVE_ATTEMPTS, cause)
+    this.fatalError ??= err
+    throw err
   }
 }
 

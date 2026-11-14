@@ -20,6 +20,7 @@ let timer: ReturnType<typeof setTimeout> | undefined
 let timerDeadline: number | undefined
 let lastGuildId: string | undefined
 let stopped = false
+let serialDrain = false
 const inFlightGuilds = new Set<string>()
 const inFlightTasks = new Set<Promise<void>>()
 
@@ -120,6 +121,7 @@ function runJob(job: NonNullable<ReturnType<typeof claimNextForGuild>>): void {
 
 function drainOnce(): void {
   if (stopped || isShuttingDown() || config.memory.privacy === 'off') return
+  if (serialDrain && inFlightTasks.size > 0) return
 
   const now = Date.now()
   const guildId = orderedGuilds(listGuildsWithPending(now).filter((id) => !inFlightGuilds.has(id)))[0]
@@ -165,4 +167,9 @@ export function resetForTest(): void {
   stopExtractionScheduler()
   lastGuildId = undefined
   inFlightGuilds.clear()
+}
+
+/** Runs one job at a time across all guilds, so simulator recordings replay in the same order. */
+export function setSerialDrainForTest(on: boolean): void {
+  serialDrain = on
 }

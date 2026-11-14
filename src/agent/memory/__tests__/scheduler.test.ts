@@ -127,6 +127,7 @@ import { startRunTrace } from '../extractionRun.js'
 import {
   maybeSample,
   resetForTest,
+  setSerialDrainForTest,
   shouldSample,
   startExtractionScheduler,
   stopExtractionScheduler
@@ -272,6 +273,37 @@ describe('episode extraction scheduler', () => {
     await drain()
 
     expect(mocks.runEpisodePipeline.mock.calls.map(([job]) => job.guildId)).toEqual(['A', 'B', 'A'])
+  })
+
+  it('runs one job at a time across guilds when serial drain is on', async () => {
+    let finishA: (() => void) | undefined
+    const blockedA = new Promise<{ status: 'completed'; summary: null; appliedOps: number; duplicateOps: number }>(
+      (resolve) => {
+        finishA = () => resolve({ status: 'completed', summary: null, appliedOps: 1, duplicateOps: 0 })
+      }
+    )
+    mocks.runEpisodePipeline.mockImplementation((job: { guildId: string }) =>
+      job.guildId === 'A'
+        ? blockedA
+        : Promise.resolve({ status: 'completed', summary: null, appliedOps: 1, duplicateOps: 0 })
+    )
+    enqueue('A', 'first A')
+    enqueue('B', 'first B')
+
+    setSerialDrainForTest(true)
+    try {
+      startExtractionScheduler()
+      await drain()
+
+      expect(mocks.runEpisodePipeline.mock.calls.map(([job]) => job.guildId)).toEqual(['A'])
+      expect(mocks.jobs.filter((job) => job.status === 'processing')).toHaveLength(1)
+      finishA?.()
+      await drain()
+
+      expect(mocks.runEpisodePipeline.mock.calls.map(([job]) => job.guildId)).toEqual(['A', 'B'])
+    } finally {
+      setSerialDrainForTest(false)
+    }
   })
 
   it('retries a thrown episode pipeline once and retains the failed job', async () => {
