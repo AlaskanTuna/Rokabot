@@ -57,4 +57,23 @@ describe('memory simulator replay gate', () => {
     expect(report.quality.overallPlanted).toBeGreaterThanOrEqual(40)
     expect(report.gatesPassed).toBe(true)
   }, 55_000)
+
+  it('passes applicable offline gates for an item-store replay', async () => {
+    const report = await runMemsim({
+      mode: 'replay',
+      store: 'item',
+      privacy: 'balanced',
+      cacheDir: 'tests/harness/memsim/cache'
+    })
+
+    expect(report.providerCalls.river.live).toBe(0)
+    expect(report.providerCalls.embeddings.live).toBe(0)
+    expect(report.providerCalls.typesafe.live).toBe(0)
+    expect(report.integrity.status).toBe('passed')
+    expect(report.triggerCoverage.status).toBe('passed')
+    expect(report.phase4Parity.status).toBe('skipped')
+    expect(report.privacyGate.status).toBe('passed')
+    expect(report.crashSafety.status).toBe('passed')
+    expect(report.gatesPassed).toBe(true)
+  }, 55_000)
 })

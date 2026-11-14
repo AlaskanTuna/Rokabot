@@ -2,6 +2,7 @@ import { config } from '../../config.js'
 import { getDb } from '../../storage/database.js'
 import { logger } from '../../utils/logger.js'
 import { MAX_FACT_VALUE_LEN, isSafeFactScalar } from '../promptSafety.js'
+import { readItemNicknameClaims } from './memoryItems.js'
 import {
   type GuildPredicateId,
   type MemoryPredicateId,
@@ -11,6 +12,7 @@ import {
   cardinalityOf,
   normalizePredicate
 } from './predicates.js'
+import type { RecallScope } from './privacy.js'
 import { sensitiveValueReason } from './privacyGuard.js'
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -741,7 +743,11 @@ export function getEdges(guildId: string, userId: string): UserMemoryClaim[] {
   ).map(mapUserClaim)
 }
 
-export function activeNicknameClaims(guildId: string): Array<{ id: number; user_id: string; value: string }> {
+export function activeNicknameClaims(
+  guildId: string,
+  scope: RecallScope
+): Array<{ id: number; user_id: string; value: string }> {
+  if (config.memory.store === 'item') return readItemNicknameClaims(guildId, scope)
   return getDb()
     .prepare(
       `SELECT id, subject_user_id AS user_id, value FROM memory_claim
@@ -753,8 +759,12 @@ export function activeNicknameClaims(guildId: string): Array<{ id: number; user_
 }
 
 /** Correlated half of the name-index presence check: this user_names row holds a claim in the guild. */
-export const USER_CLAIM_PRESENCE =
-  "EXISTS(SELECT 1 FROM memory_claim WHERE guild_id = ? AND subject_kind = 'user' AND subject_user_id = user_names.user_id)"
+export const USER_CLAIM_PRESENCE = {
+  legacy:
+    "EXISTS(SELECT 1 FROM memory_claim WHERE guild_id = ? AND subject_kind = 'user' AND subject_user_id = user_names.user_id)",
+  dual: "EXISTS(SELECT 1 FROM memory_claim WHERE guild_id = ? AND subject_kind = 'user' AND subject_user_id = user_names.user_id)",
+  item: "EXISTS(SELECT 1 FROM memory_item WHERE guild_id = ? AND kind = 'fact' AND subject_kind = 'user' AND subject_user_id = user_names.user_id)"
+} as const
 
 export type ReclassifyRow = Readonly<{
   id: number

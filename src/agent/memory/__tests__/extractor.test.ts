@@ -31,6 +31,8 @@ vi.mock('../../llm/generateObject.js', () => ({ generateObject: mocks.generateOb
 import { config } from '../../../config.js'
 import { closeDb, getDb } from '../../../storage/database.js'
 import type { ExtractionEpisode } from '../../../storage/extractionQueue.js'
+import { migrateMemoryItems } from '../../../storage/memoryItemBackfill.js'
+import { configureMemoryItemProjectionTriggers } from '../../../storage/memoryItemProjection.js'
 import { JevUnavailableError } from '../extractionErrors.js'
 import { startRunTrace } from '../extractionRun.js'
 import { EXTRACTION_RESPONSE_SCHEMA, ExtractionOutputSchema, ExtractionTransportSchema } from '../extractionSchema.js'
@@ -45,6 +47,7 @@ beforeAll(() => {
 })
 
 beforeEach(() => {
+  Object.assign(config.memory, { store: 'legacy', privacy: 'relaxed' })
   mocks.admitEpisode.mockReset()
   mocks.admitEpisode.mockResolvedValue({ admitted: true, reason: 'admitted', probability: 0.8, inputTokens: 30 })
   mocks.modelReply.mockReset()
@@ -1099,6 +1102,55 @@ describe('extractEpisode', () => {
     const current = claims.find(({ predicate }) => predicate === 'likes')
     expect(current).toBeDefined()
     expect(current).not.toHaveProperty('period')
+  })
+
+  it('shows byte-identical scoped claims in the extraction prompt after the item cutover', async () => {
+    const db = getDb()
+    db.exec(
+      'DELETE FROM memory_item_evidence; DELETE FROM memory_item_occurrence; DELETE FROM memory_item_embedding; DELETE FROM memory_item_payload; DELETE FROM memory_item;'
+    )
+    configureMemoryItemProjectionTriggers(db, 'legacy')
+    assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'likes',
+      value: 'tea',
+      sourceKind: 'explicit',
+      channelId: 'channel-1'
+    })
+    assertGuildClaim({
+      guildId: 'guild-1',
+      predicate: 'place',
+      value: 'Tea room',
+      expiresAt: null,
+      sourceKind: 'explicit',
+      channelId: 'channel-1'
+    })
+    migrateMemoryItems(db)
+    const episode: ExtractionEpisode = {
+      messages: [
+        { messageId: 'm-1', userId: 'user-1', displayName: 'Ari', content: 'Hello', timestamp: 1, isBot: false }
+      ],
+      context: [],
+      startedAt: 1,
+      endedAt: 1
+    }
+    Object.assign(config.memory, { store: 'dual', privacy: 'strict' })
+    mocks.modelReply.mockResolvedValueOnce({ text: JSON.stringify({ ops: [{ op: 'noop' }], summary: 'A fact.' }) })
+    await extractEpisode({ guildId: 'guild-1', channelId: 'channel-1', episode })
+    const legacyPrompt = mocks.modelReply.mock.calls[0][0].prompt as string
+
+    configureMemoryItemProjectionTriggers(db, 'legacy')
+    db.prepare("UPDATE memory_claim SET value = 'legacy only value' WHERE subject_kind = 'user'").run()
+    db.prepare("UPDATE memory_claim SET value = 'legacy guild value' WHERE subject_kind = 'guild'").run()
+    Object.assign(config.memory, { store: 'item' })
+    mocks.modelReply.mockResolvedValueOnce({ text: JSON.stringify({ ops: [{ op: 'noop' }], summary: 'A fact.' }) })
+    await extractEpisode({ guildId: 'guild-1', channelId: 'channel-1', episode })
+    const itemPrompt = mocks.modelReply.mock.calls[1][0].prompt as string
+
+    expect(itemPrompt).toBe(legacyPrompt)
+    expect(itemPrompt).not.toContain('legacy only value')
+    expect(itemPrompt).not.toContain('legacy guild value')
   })
 
   it('requires the day but leaves the year to the messages', async () => {

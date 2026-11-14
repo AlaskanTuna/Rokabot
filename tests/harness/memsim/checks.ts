@@ -8,6 +8,13 @@ import {
 } from '../../../src/agent/memory/episodeRetriever.js'
 import { formatMediaRecallBlock, readRecallableMedia, selectMedia } from '../../../src/agent/memory/mediaRecall.js'
 import {
+  readItemGuildFacts,
+  readItemMediaCandidates,
+  readItemRecallableEpisodes,
+  readItemSubjectSnapshot,
+  readItemTurnSnapshot
+} from '../../../src/agent/memory/memoryItems.js'
+import {
   readGuildFacts,
   readSubjectSnapshot,
   readTurnSnapshot,
@@ -20,13 +27,6 @@ import { MAX_RECALLED_FACTS, formatRecallUserFacts } from '../../../src/agent/to
 import { formatGuildFactsBlock } from '../../../src/agent/turnContext.js'
 import { config } from '../../../src/config.js'
 import { getMemoryItemDriftCounts } from '../../../src/storage/memoryItemBackfill.js'
-import {
-  readItemGuildFacts,
-  readItemMediaCandidates,
-  readItemRecallableEpisodes,
-  readItemSubjectSnapshot,
-  readItemTurnSnapshot
-} from '../../../src/storage/memoryItemReadStore.js'
 import type { BuilderTimingStats, GroundTruthFile, GroundTruthLabel, LabelQualityMetrics } from './types.js'
 
 export const EXPECTED_TRIGGER_WRITERS: readonly string[] = [
@@ -363,24 +363,7 @@ export function countPrivateOnlyItemsInDb(
   return privateFacts + privateEpisodes + privateMedia
 }
 
-function mapItemIdsToLegacyIds(
-  db: Database.Database,
-  itemIds: readonly number[],
-  expectedLegacyTable: 'memory_claim' | 'memory_episode' | 'media_digest'
-): Array<number | null> {
-  if (itemIds.length === 0) return []
-  const placeholders = itemIds.map(() => '?').join(', ')
-  const rows = db
-    .prepare(`SELECT id, legacy_table, legacy_id FROM memory_item WHERE id IN (${placeholders})`)
-    .all(...itemIds) as Array<{ id: number; legacy_table: string | null; legacy_id: number | null }>
-  const byId = new Map<number, number | null>()
-  for (const row of rows) {
-    byId.set(row.id, row.legacy_table === expectedLegacyTable ? row.legacy_id : null)
-  }
-  return itemIds.map((id) => byId.get(id) ?? null)
-}
-
-function sameIdList(left: readonly number[], right: ReadonlyArray<number | null>): boolean {
+function sameLegacyIdList(left: readonly number[], right: readonly number[]): boolean {
   if (left.length !== right.length) return false
   for (let i = 0; i < left.length; i += 1) {
     if (left[i] !== right[i]) return false
@@ -519,13 +502,9 @@ export async function runPhase4ParityCheck(
   if (input.storeMode === 'dual') {
     if (legacyUserFactsBlock !== itemUserFactsBlock) mismatches.push('userFacts:text')
     if (
-      !sameIdList(
+      !sameLegacyIdList(
         legacyUserSelected.claims.map((c) => c.claim.id),
-        mapItemIdsToLegacyIds(
-          db,
-          itemUserSelected.claims.map((c) => c.claim.id),
-          'memory_claim'
-        )
+        itemUserSelected.claims.map((c) => c.claim.id)
       )
     ) {
       mismatches.push('userFacts:ids')
@@ -533,13 +512,9 @@ export async function runPhase4ParityCheck(
 
     if (legacyGuildFactsBlock !== itemGuildFactsBlock) mismatches.push('guildFacts:text')
     if (
-      !sameIdList(
+      !sameLegacyIdList(
         legacyGuildSelected.facts.map((f) => f.id),
-        mapItemIdsToLegacyIds(
-          db,
-          itemGuildSelected.facts.map((f) => f.id),
-          'memory_claim'
-        )
+        itemGuildSelected.facts.map((f) => f.id)
       )
     ) {
       mismatches.push('guildFacts:ids')
@@ -547,13 +522,9 @@ export async function runPhase4ParityCheck(
 
     if (legacyEpisodesBlock !== itemEpisodesBlock) mismatches.push('episodes:text')
     if (
-      !sameIdList(
+      !sameLegacyIdList(
         legacyEpSelected.map((e) => e.id),
-        mapItemIdsToLegacyIds(
-          db,
-          itemEpSelected.map((e) => e.id),
-          'memory_episode'
-        )
+        itemEpSelected.map((e) => e.id)
       )
     ) {
       mismatches.push('episodes:ids')
@@ -561,13 +532,9 @@ export async function runPhase4ParityCheck(
 
     if (legacyMediaBlock !== itemMediaBlock) mismatches.push('media:text')
     if (
-      !sameIdList(
+      !sameLegacyIdList(
         legacyMediaSelected.map((m) => m.id),
-        mapItemIdsToLegacyIds(
-          db,
-          itemMediaSelected.map((m) => m.id),
-          'media_digest'
-        )
+        itemMediaSelected.map((m) => m.id)
       )
     ) {
       mismatches.push('media:ids')
@@ -575,13 +542,9 @@ export async function runPhase4ParityCheck(
 
     if (legacyRecallBlock !== itemRecallBlock) mismatches.push('recallUser:text')
     if (
-      !sameIdList(
+      !sameLegacyIdList(
         legacyRecallSelected.map((c) => c.claim.id),
-        mapItemIdsToLegacyIds(
-          db,
-          itemRecallSelected.map((c) => c.claim.id),
-          'memory_claim'
-        )
+        itemRecallSelected.map((c) => c.claim.id)
       )
     ) {
       mismatches.push('recallUser:ids')

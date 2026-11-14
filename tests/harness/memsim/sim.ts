@@ -256,7 +256,7 @@ export async function runMemsim(options: MemsimRunOptions): Promise<MemsimReport
     readItemRecallableEpisodes,
     readItemSubjectSnapshot,
     readItemTurnSnapshot
-  } = await import('../../../src/storage/memoryItemReadStore.js')
+  } = await import('../../../src/agent/memory/memoryItems.js')
   const { buildFactsEnvelope } = await import('../../../src/agent/promptSafety.js')
   const { formatRecallUserFacts, MAX_RECALLED_FACTS } = await import('../../../src/agent/tools/recallUser.js')
   const { formatGuildFactsBlock } = await import('../../../src/agent/turnContext.js')
@@ -1365,7 +1365,8 @@ export async function runMemsim(options: MemsimRunOptions): Promise<MemsimReport
       ['phase4Parity', parityStatus, paritySkipReason],
       ['crashSafety', crashStatus, crashSkipReason]
     ] as const) {
-      if (st === 'skipped') {
+      const expectedSkip = (name === 'integrity' && legacyDropped) || (name === 'phase4Parity' && storeMode === 'item')
+      if (st === 'skipped' && !expectedSkip) {
         failures.push(`${name} skipped: ${reason}`)
       }
     }
@@ -1398,9 +1399,10 @@ export async function runMemsim(options: MemsimRunOptions): Promise<MemsimReport
     }
 
     const cacheStats = cache.stats()
-    const gatesPassed = [integrityStatus, triggerStatus, parityStatus, privacyStatus, crashStatus].every(
-      (s) => s === 'passed'
-    )
+    const requiredGateStatuses = [triggerStatus, privacyStatus, crashStatus]
+    if (!legacyDropped) requiredGateStatuses.push(integrityStatus)
+    if (storeMode !== 'item') requiredGateStatuses.push(parityStatus)
+    const gatesPassed = requiredGateStatuses.every((status) => status === 'passed')
     return {
       version: 1,
       mode: options.mode,

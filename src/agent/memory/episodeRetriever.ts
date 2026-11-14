@@ -1,7 +1,9 @@
 import { config } from '../../config.js'
+import { getDb } from '../../storage/database.js'
 import type { EpisodeEmbedding, MemoryEpisode } from '../../storage/memoryEpisodeStore.js'
 import { listEpisodesForGuild } from '../../storage/memoryEpisodeStore.js'
 import { estimateTokens } from '../../utils/tokens.js'
+import { readItemRecallableEpisodes } from './memoryItems.js'
 import { type RecallScope, canRecall } from './privacy.js'
 
 export type RecalledEpisode = Readonly<{
@@ -62,6 +64,7 @@ function hasValidQueryEmbedding(queryEmbedding: EpisodeEmbedding): boolean {
 }
 
 export function readRecallableEpisodes(guildId: string, scope: RecallScope): MemoryEpisode[] {
+  if (config.memory.store === 'item') return readItemRecallableEpisodes(getDb(), guildId, scope)
   const episodes = listEpisodesForGuild(guildId)
   if (config.memory.privacy === 'relaxed') return episodes
   return episodes.filter((episode) => canRecall([episode.channelId], scope))

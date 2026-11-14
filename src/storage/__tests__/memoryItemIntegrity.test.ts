@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { closeDb, getDb } from '../database.js'
 import { fillMemoryItemEmbeddingHashes, sweepMemoryItemIntegrity } from '../memoryItemIntegrity.js'
 import { configureMemoryItemProjectionTriggers } from '../memoryItemProjection.js'
-import { decodeMemoryItemEmbedding } from '../memoryItemReadStore.js'
+import { decodeMemoryItemEmbedding } from '../memoryItemStore.js'
 
 afterEach(() => {
   closeDb()

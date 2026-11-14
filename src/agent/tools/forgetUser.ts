@@ -2,6 +2,7 @@ import { config } from '../../config.js'
 import { findMediaSharedBy, forgetMediaForUser } from '../../storage/mediaDigestStore.js'
 import { getClaimSourceChannels } from '../../storage/memoryRecallStore.js'
 import { rejectClaimIdsForSpeaker, searchClaims } from '../memory/memoryClaims.js'
+import { findItemForgetCandidates } from '../memory/memoryItems.js'
 import { type RecallScope, canRecall } from '../memory/privacy.js'
 import { sensitiveFactReason } from '../memory/privacyGuard.js'
 
@@ -21,8 +22,31 @@ export function forgetUser(params: ForgetUserParams): ForgetUserResult {
   const { user_id, guild_id, query, channel_id } = params
   const terms = query.match(/[\p{L}\p{N}]{2,}/gu)?.slice(0, 6) ?? []
   const ftsQuery = terms.map((term) => `"${term}"`).join(' ')
-  const matches = searchClaims(guild_id, user_id, ftsQuery, 4)
-  const mediaMatches = terms.length === 0 ? [] : findMediaSharedBy(guild_id, user_id, terms, 4)
+  const scope: RecallScope | undefined = channel_id ? { guildId: guild_id, channelId: channel_id } : undefined
+  const itemCandidates =
+    config.memory.store === 'item'
+      ? findItemForgetCandidates({
+          guildId: guild_id,
+          userId: user_id,
+          ftsQuery,
+          terms,
+          scope,
+          limit: 4
+        })
+      : null
+  const matches = itemCandidates
+    ? itemCandidates.facts.map(({ id, predicate, content }) => ({ id, predicate: predicate ?? '', value: content }))
+    : searchClaims(guild_id, user_id, ftsQuery, 4)
+  const mediaMatches = itemCandidates
+    ? itemCandidates.media.map(({ id, label, content, sourceChannels }) => ({
+        id,
+        label: label ?? '',
+        summary: content,
+        channelIds: sourceChannels.filter((channel): channel is string => channel !== null)
+      }))
+    : terms.length === 0
+      ? []
+      : findMediaSharedBy(guild_id, user_id, terms, 4)
   const matchCount = matches.length + mediaMatches.length
 
   if (matchCount === 0) {
@@ -30,18 +54,21 @@ export function forgetUser(params: ForgetUserParams): ForgetUserResult {
   }
 
   const level = config.memory.privacy
-  const scope: RecallScope | undefined = channel_id ? { guildId: guild_id, channelId: channel_id } : undefined
-  const claimSources = getClaimSourceChannels(matches.map(({ id }) => id))
-  const visibleMatches = matches.filter(({ id }) => {
-    if (level === 'relaxed') return true
-    if (level === 'off' || !scope) return false
-    return canRecall(claimSources.get(id) ?? [null], scope, level)
-  })
-  const visibleMediaMatches = mediaMatches.filter(({ channelIds }) => {
-    if (level === 'relaxed') return true
-    if (level === 'off' || !scope) return false
-    return canRecall(channelIds.length > 0 ? channelIds : [''], scope, level)
-  })
+  const claimSources = itemCandidates ? new Map() : getClaimSourceChannels(matches.map(({ id }) => id))
+  const visibleMatches = itemCandidates
+    ? itemCandidates.visibleFacts
+    : matches.filter(({ id }) => {
+        if (level === 'relaxed') return true
+        if (level === 'off' || !scope) return false
+        return canRecall(claimSources.get(id) ?? [null], scope, level)
+      })
+  const visibleMediaMatches = itemCandidates
+    ? itemCandidates.visibleMedia
+    : mediaMatches.filter(({ channelIds }) => {
+        if (level === 'relaxed') return true
+        if (level === 'off' || !scope) return false
+        return canRecall(channelIds.length > 0 ? channelIds : [''], scope, level)
+      })
   const visibleNotes = [
     ...visibleMatches.map(
       ({ predicate, value }) => `${predicate} "${sensitiveFactReason(predicate, value) ? 'a sensitive note' : value}"`

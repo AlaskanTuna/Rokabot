@@ -54,7 +54,7 @@ All tables live in `data/rokabot.db`. `memory_claim`, `memory_episode` and `medi
 
 The queue payload holds the delta messages, up to three earlier context lines, and the start and end times.
 
-The typed item tables are additive. Startup creates the schema. With the default `memory.store: legacy`, the bot reads and writes legacy tables and removes projection triggers. With `MEMORY_STORE=dual` (used on the Pi in `.env` while `config.yml` stays `legacy`), startup installs the five source-table trigger sets and records an integrity sample; the bot still reads legacy tables. Trigger-created embeddings have a NULL `text_hash` until startup or daily maintenance fills it from stored text. `npm run migrate:memory-items` is an offline catch-up path for missing, changed and deleted legacy rows; startup never runs it. See [Typed Memory Items](../RUNBOOK.md#typed-memory-items-phase-3) before entering dual on the Pi.
+The typed item tables are additive. Startup creates the schema. With the default `memory.store: legacy`, the bot reads and writes legacy tables and removes projection triggers. With `MEMORY_STORE=dual` (currently used on the Pi while `config.yml` stays `legacy`), startup installs the five source-table trigger sets and records an integrity sample; reads stay on legacy tables. With `MEMORY_STORE=item`, prompt-facing readers use the scoped item API while Phase 5 writers remain on legacy tables; projection triggers and integrity sampling stay enabled. Rollback from `item` switches to `dual`. Trigger-created embeddings have a NULL `text_hash` until startup or daily maintenance fills it from stored text. `npm run migrate:memory-items` is an offline catch-up path for missing, changed and deleted legacy rows; startup never runs it. The offline simulator gates promotion, with no production shadow read or soak. See [Typed Memory Items](../RUNBOOK.md#typed-memory-items-phases-3-and-5) before changing the store on the Pi.
 
 ## Write Path
 
@@ -473,7 +473,7 @@ current facts, and reports episodes ended in the last 30 days.
 - `src/agent/jev/judgments.ts`, `src/agent/jev/modelJudge.ts`,
   `src/agent/turnContext.ts`, `src/agent/tools/`
 - `src/storage/`: `memoryClaimSchema.ts`, `memoryItemSchema.ts`, `memoryItemProjection.ts`, `memoryItemBackfill.ts`,
-  `memoryItemIntegrity.ts`, `memoryItemReadStore.ts`, `memoryRecallStore.ts`, `database.ts`, `extractionQueue.ts`,
+  `memoryItemIntegrity.ts`, `memoryItems.ts`, `memoryRecallStore.ts`, `database.ts`, `extractionQueue.ts`,
   `memoryEpisodeStore.ts`, `mediaDigestStore.ts`, `extractionSampleStore.ts`
 - `scripts/`: `migrate-memory-v2.ts`, `migrate-memory-items.ts`, `replay-memory-items.ts`, `replay-memory-v2.ts`,
   `export-vault.ts`, `undo-reclassify.ts`, `prune-claim-overflow.ts`
