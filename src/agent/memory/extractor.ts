@@ -122,7 +122,7 @@ function episodePrompt(
     })
   const prompt = [
     'You extract durable personal details about users and shared facts about this Discord server from an episode.',
-    'Never extract sensitive personal information: real/legal names, age or birthday, address or specific residence, phone numbers, email addresses, social media handles, names of schools, employers, or workplaces, financial information, credentials, or medical/health details.',
+    'Never extract sensitive personal information: real/legal names, age or birthday, address or specific residence, phone numbers, email addresses, social media handles, names of schools, employers, or workplaces, financial information, credentials, or medical/health details. A food allergy, intolerance or diet a member states about themselves is diet, not a medical detail.',
     'A member\'s own job, trade or line of work is general_occupation and is never sensitive: record the role itself ("line cook", "freelance illustrator"), never the employer, workplace, or location.',
     'For user facts, use only the supplied user IDs and attribute facts only to the person who stated them, not someone quoted, addressed, or joked about. Use subject {"kind":"guild"} only for a fact established about this server or its members collectively. Context lines are background only and cannot supply a subject or fact.',
     'Use only these guild predicates: upcoming_event, plan, running_joke, place, rule, announcement. For upcoming_event and plan, date the fact from the messages: if they name a calendar day, give the month and day, plus the year only when the messages state it; if they name a month but no day, give just the month, and never invent a day; if they only say today, tomorrow, this week, next week, this month, or next month, give the relative form. Never guess a date the messages do not support, and never decide whether it is in the future.',
@@ -286,6 +286,12 @@ function operationAllowed(op: EpisodeWriteOp, subjectIds: Set<string>): boolean 
   return subjectIds.has(op.subject.userId) && (!objectUserId || subjectIds.has(objectUserId))
 }
 
+// Roka's own lines repeat what she was told or guessed, so a fact may never rest on one.
+function citesBotLine(op: EpisodeWriteOp, episode: ExtractionEpisode): boolean {
+  if (op.op !== 'add' && op.op !== 'update') return false
+  return op.sourceLine !== undefined && episode.messages[op.sourceLine - 1]?.isBot === true
+}
+
 function operationSafe(op: EpisodeWriteOp): boolean {
   return isSafeFactScalar(op.value, MAX_FACT_VALUE_LEN) && !sensitiveFactReason(op.predicate, op.value)
 }
@@ -375,7 +381,7 @@ export async function verifyAndApplyOperations(input: {
   getDb().transaction(() => {
     for (const entry of applyOrder) {
       const { op, index } = entry
-      if (!operationAllowed(op, subjectIds) || !operationSafe(op)) {
+      if (!operationAllowed(op, subjectIds) || !operationSafe(op) || citesBotLine(op, input.episode)) {
         results[index] = { applied: false, duplicate: false }
         continue
       }

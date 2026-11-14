@@ -275,7 +275,7 @@ export async function judgeEpisodeOperations(input: {
               : 'Is this operation a lasting trait, preference, relationship or plan rather than a momentary state or an event that has already happened?'
       prompts[`${op.subject.kind === 'guild' ? 'guild_scoped' : 'attributed'}_${index}`] =
         op.subject.kind === 'guild'
-          ? 'Do the episode messages establish this fact as about this Discord server or its members collectively, rather than one person, a quoted person, or another group?'
+          ? "Do the episode messages present this as shared business of this Discord server, such as its own event, plan, rule, place or running joke, rather than a fact about one person or someone's quoted claim?"
           : 'Do the episode messages attribute this fact to the named user, rather than quoting, addressing or joking about them?'
       if ('tense' in op) {
         prompts[`current_${index}`] = 'Is this true of the subject now, at the time of these messages?'
