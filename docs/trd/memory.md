@@ -473,7 +473,7 @@ current facts, and reports episodes ended in the last 30 days.
 - `src/agent/jev/judgments.ts`, `src/agent/jev/modelJudge.ts`,
   `src/agent/turnContext.ts`, `src/agent/tools/`
 - `src/storage/`: `memoryClaimSchema.ts`, `memoryItemSchema.ts`, `memoryItemProjection.ts`, `memoryItemBackfill.ts`,
-  `memoryItemIntegrity.ts`, `memoryItemReadStore.ts`, `memoryRecallStore.ts`, `database.ts`, `extractionQueue.ts`,
+  `memoryItemIntegrity.ts`, `memoryItems.ts`, `memoryRecallStore.ts`, `database.ts`, `extractionQueue.ts`,
   `memoryEpisodeStore.ts`, `mediaDigestStore.ts`, `extractionSampleStore.ts`
 - `scripts/`: `migrate-memory-v2.ts`, `migrate-memory-items.ts`, `replay-memory-items.ts`, `replay-memory-v2.ts`,
   `export-vault.ts`, `undo-reclassify.ts`, `prune-claim-overflow.ts`

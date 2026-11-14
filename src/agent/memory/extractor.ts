@@ -81,8 +81,7 @@ function episodePrompt(
   let nextRef = 1
   const claims = humanIds.map((userId) => ({
     userId,
-    claims: (
-      config.memory.store === 'item'
+    claims: (config.memory.store === 'item'
       ? readItemFacts(scope, { subjectKind: 'user', subjectUserId: userId }).filter(
           (claim): claim is Extract<MemoryClaim, { subjectKind: 'user' }> => claim.subjectKind === 'user'
         )
