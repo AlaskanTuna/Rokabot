@@ -746,7 +746,7 @@ npm run memsim -- --replay --store item --drop-legacy-at-day 15
 
 #### Phase 7 drop the legacy tables
 
-After one release on Phase 6, stop the bot, take a timestamped SQLite backup, and run the explicit drop against the Pi database with that backup as the guard. The script refuses unless `MEMORY_STORE` is `item`, the projection triggers are gone, and the backup is a separate file that exists and holds the six legacy tables. It drops `memory_claim`, `memory_evidence`, `memory_claim_fts` (and its shadow tables), `memory_episode`, `media_digest` and `media_occurrence` in one transaction, reports per-table row counts, and records `memory_legacy_drop`. Startup never drops anything and never recreates dropped tables; only `item` starts afterwards. Rollback restores the backup file, never `--to-legacy`.
+After one release on Phase 6, stop the bot, take a timestamped SQLite backup, and run the explicit drop against the Pi database with that backup as the guard. The script refuses unless `MEMORY_STORE` is `item`, the projection triggers are gone, and the backup is a separate readable SQLite file that holds the six legacy tables with matching per-table row counts and an mtime newer than the newest detectable legacy write (or newer than 24 hours ago if no legacy write is detectable). It drops `memory_claim`, `memory_evidence`, `memory_claim_fts` (and its shadow tables), `memory_episode`, `media_digest` and `media_occurrence` in one transaction, reports per-table row counts, and records `memory_legacy_drop`. Startup never drops anything and never recreates dropped tables; only `item` starts afterwards. Rollback restores the backup file, never `--to-legacy`.
 
 ```bash
 cd ~/rokabot

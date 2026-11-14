@@ -1,4 +1,4 @@
-import { copyFileSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import Database from 'better-sqlite3'
@@ -31,7 +31,12 @@ import { closeDb, getDb, runMigrations } from '../database.js'
 import { migrateMemoryItems } from '../memoryItemBackfill.js'
 import { fillMemoryItemEmbeddingHashes, sweepMemoryItemIntegrity } from '../memoryItemIntegrity.js'
 import { configureMemoryItemProjectionTriggers } from '../memoryItemProjection.js'
-import { MEMORY_LEGACY_DROP_MARKER, dropLegacyMemoryTables, isLegacyMemoryDropped } from '../memoryLegacyDrop.js'
+import {
+  LEGACY_MEMORY_TABLES,
+  MEMORY_LEGACY_DROP_MARKER,
+  dropLegacyMemoryTables,
+  isLegacyMemoryDropped
+} from '../memoryLegacyDrop.js'
 
 const memoryStoreConfig = config.memory as { store: 'legacy' | 'dual' | 'item' }
 const previousStore = memoryStoreConfig.store
@@ -135,7 +140,7 @@ describe('memory legacy drop refusals', () => {
     )
   })
 
-  it('refuses a backup that is not SQLite or lacks the legacy tables', () => {
+  it('refuses a backup that is not SQLite or lacks a legacy table and leaves live tables in place', async () => {
     process.env.ROKABOT_DB_PATH = ':memory:'
     seedLegacyFixture()
     migrateMemoryItems(getDb())
@@ -151,6 +156,84 @@ describe('memory legacy drop refusals', () => {
     expect(() => dropLegacyMemoryTables(getDb(), { store: 'item', backupPath: bare })).toThrow(
       'backup is missing legacy tables'
     )
+
+    const partial = tempPath('partial.db')
+    await getDb().backup(partial)
+    const partialDb = new Database(partial)
+    partialDb.exec('DROP TABLE media_occurrence')
+    partialDb.close()
+    expect(() => dropLegacyMemoryTables(getDb(), { store: 'item', backupPath: partial })).toThrow(
+      /backup is missing legacy tables: .*media_occurrence/
+    )
+    expect(isLegacyMemoryDropped(getDb())).toBe(false)
+    for (const table of LEGACY_MEMORY_TABLES) {
+      expect(getDb().prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table)).toBeDefined()
+    }
+  })
+
+  it('refuses a backup with a row-count mismatch and leaves live tables in place', async () => {
+    process.env.ROKABOT_DB_PATH = ':memory:'
+    seedLegacyFixture()
+    migrateMemoryItems(getDb())
+    const backup = tempPath('mismatch.db')
+    await getDb().backup(backup)
+
+    getDb()
+      .prepare(`
+        INSERT INTO memory_claim (
+          guild_id, subject_kind, subject_user_id, predicate, value, source_kind, status,
+          confidence, salience, first_seen_at, last_seen_at, period
+        ) VALUES ('guild-1', 'user', 'user-1', 'hobby', 'chess', 'explicit', 'active', 0.7, 0.8, 1000, 2000, 'current')
+      `)
+      .run()
+
+    expect(() => dropLegacyMemoryTables(getDb(), { store: 'item', backupPath: backup })).toThrow(
+      /row count mismatch.*memory_claim/
+    )
+    expect(isLegacyMemoryDropped(getDb())).toBe(false)
+    expect((getDb().prepare('SELECT COUNT(*) AS count FROM memory_claim').get() as { count: number }).count).toBe(2)
+    for (const table of LEGACY_MEMORY_TABLES) {
+      expect(getDb().prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table)).toBeDefined()
+    }
+  })
+
+  it('refuses a stale backup older than the newest legacy write and leaves live tables in place', async () => {
+    process.env.ROKABOT_DB_PATH = ':memory:'
+    seedLegacyFixture()
+    const recentWriteAt = Date.now()
+    getDb().prepare('UPDATE memory_claim SET last_seen_at = ? WHERE id = 1').run(recentWriteAt)
+    migrateMemoryItems(getDb())
+    const backup = tempPath('stale-write.db')
+    await getDb().backup(backup)
+    const olderTime = new Date(recentWriteAt - 60_000)
+    utimesSync(backup, olderTime, olderTime)
+
+    expect(() => dropLegacyMemoryTables(getDb(), { store: 'item', backupPath: backup })).toThrow(/stale.*memory_claim/)
+    expect(isLegacyMemoryDropped(getDb())).toBe(false)
+    for (const table of LEGACY_MEMORY_TABLES) {
+      expect(getDb().prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table)).toBeDefined()
+    }
+  })
+
+  it('refuses a backup older than 24 hours when no legacy writes are detectable, and accepts a fresh one', async () => {
+    process.env.ROKABOT_DB_PATH = ':memory:'
+    migrateMemoryItems(getDb())
+    const backup = tempPath('stale-empty.db')
+    await getDb().backup(backup)
+    const oldTime = new Date(Date.now() - 25 * 60 * 60 * 1000)
+    utimesSync(backup, oldTime, oldTime)
+
+    expect(() => dropLegacyMemoryTables(getDb(), { store: 'item', backupPath: backup })).toThrow(/stale.*24 hours/)
+    expect(isLegacyMemoryDropped(getDb())).toBe(false)
+    for (const table of LEGACY_MEMORY_TABLES) {
+      expect(getDb().prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table)).toBeDefined()
+    }
+
+    const freshTime = new Date()
+    utimesSync(backup, freshTime, freshTime)
+    const report = dropLegacyMemoryTables(getDb(), { store: 'item', backupPath: backup })
+    expect(report.dropped_tables).toEqual([...LEGACY_MEMORY_TABLES])
+    expect(isLegacyMemoryDropped(getDb())).toBe(true)
   })
 
   it('refuses a backup path that is the live database', async () => {
