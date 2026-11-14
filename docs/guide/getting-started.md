@@ -85,7 +85,7 @@ You do not run a command for this. On each Discord `ready` event, the bot sends 
 ## Run Tests
 
 1. Run the main gate: `npm test`. It sets fake keys and an in-memory database, so it needs no `.env`.
-2. Run the performance gate: `npm run test:perf`. Full verification is `npm test && npm run test:perf`.
+2. Run the performance gate: `npm run test:perf`. Its item builder benchmark (`tests/harness/__tests__/memoryItemBuilders.perf.test.ts`) has a 180 s timeout because seeding 40,000 rows takes about 35 s on CI. Full verification is `npm test && npm run test:perf`.
 3. Run the static checks: `npm run lint`, `npm run format:check` and `npm run typecheck`. Only `typecheck` checks the types in `tests/`.
 
 Other tools:

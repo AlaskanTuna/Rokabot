@@ -48,12 +48,12 @@ Table contracts live in [Data](data.md).
 1. **Boot:** set IPv4-first DNS, check for `yt-dlp` (`initializeSocialPosts`), create the Discord client, start the
    health server on port 3000, then log in with `DISCORD_TOKEN`.
 2. **Ready:** register the slash commands globally over REST, start the status cycler and the release notifier, open
-   SQLite, configure typed-memory projection triggers (and under `dual`, fill NULL embedding hashes and record an
-   integrity sweep), restore monitored channels, start the reminder scheduler, run the first prune pass, and start the
-   memory tasks and the extraction scheduler.
+   SQLite, configure typed-memory triggers and item ID reservation (under `dual` and `item`, fill NULL embedding hashes
+   and record an `item_integrity` sweep), restore monitored channels, start the reminder scheduler, run the first prune
+   pass, and start the memory tasks and the extraction scheduler.
 3. **Timers:** prune `session_history` and failure diagnostics hourly; prune metrics and extraction samples daily;
    clear expired channel monitors and emoji cooldowns hourly; prune stale claims, reclassify claims, prune failed
-   extraction jobs, prune episodes and run `dual` projection maintenance daily.
+   extraction jobs, prune episodes and run item hash and integrity maintenance daily.
 4. **Shutdown (`SIGTERM`, `SIGINT`):** flush open episodes, stop the schedulers and memory tasks, end Shiritori
    games, destroy every ADK session (which aborts active turns), wait for in-flight extractions, close SQLite,
    destroy the Discord client, exit.

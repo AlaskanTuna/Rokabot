@@ -20,7 +20,7 @@ Fill in the template: Summary, Evidence and Merge Danger. Name the issue the pul
 
 ## Gates
 
-Run these before asking for review: `npm test`, `npm run test:perf`, `npm run typecheck`, `npm run lint` and `npm run format:check`.
+Run these before asking for review: `npm test`, `npm run test:perf`, `npm run typecheck`, `npm run lint` and `npm run format:check`. `npm run test:perf` includes `tests/harness/__tests__/memoryItemBuilders.perf.test.ts`, which has a 180 s timeout because seeding 40,000 rows takes about 35 s on CI.
 
 ## Merging
 
