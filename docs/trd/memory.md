@@ -140,6 +140,7 @@ Prompt rules:
 - **Past Claims:** listed with `"period": "past"`, never updated or removed. History is an `add` of tense `past`.
 - **Predicates:** the most specific one over `misc`. A game they play is `hobby` unless they call it their favorite.
   A retract of a listed fact uses its listed predicate.
+- **Diets:** a food allergy, intolerance or diet a member states about themselves is `diet`, not a medical detail (#496).
 
 Write guards: a user subject (and object user) must be a human author of the deltas. `privacyGuard.ts` rejects
 sensitive keys and values shaped like emails, phone numbers, account numbers or API credentials. `planned` ops drop.

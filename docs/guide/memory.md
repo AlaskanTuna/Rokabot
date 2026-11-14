@@ -26,7 +26,8 @@ What Roka remembers in your server, how to set its privacy, how members make her
 - Each member keeps at most 20 unpinned active facts. Old history goes first, then the least important facts.
 - She keeps past facts as history ("used to be a nurse") apart from current ones.
 - She never stores contact details, passwords, tokens, bank or card numbers. A conversation that mentions an email,
-  phone number, address, age, school, workplace or a medical term is dropped before any model sees it.
+  phone number, address, age, school, workplace or a medical term is dropped before any model sees it. A food allergy,
+  intolerance or diet a member states about themselves is kept as a `diet` fact, not a medical detail.
 - A member can also ask "what do you know about me?" or about another member. She answers from the notes this channel
   may see.
 
