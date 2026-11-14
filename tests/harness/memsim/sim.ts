@@ -194,6 +194,7 @@ export async function runMemsim(options: MemsimRunOptions): Promise<MemsimReport
   const { closeDb, getDb } = await import('../../../src/storage/database.js')
   const {
     resetForTest: resetExtractionScheduler,
+    setSerialDrainForTest,
     startExtractionScheduler,
     stopExtractionScheduler,
     waitForInFlightExtractions
@@ -310,6 +311,7 @@ export async function runMemsim(options: MemsimRunOptions): Promise<MemsimReport
   restoreMonitoredChannels()
   resetStuckProcessing()
   restoreOpenEpisodes()
+  setSerialDrainForTest(true)
   startExtractionScheduler()
   simDb.exec('DELETE FROM memsim_writer_events')
 
@@ -431,7 +433,9 @@ export async function runMemsim(options: MemsimRunOptions): Promise<MemsimReport
 
   async function drainExtractionAndEmbeds(): Promise<void> {
     const db = getDb()
-    for (let round = 0; round < 60; round += 1) {
+    // waitForInFlightExtractions resolves only once nothing is in flight, so a zero count here means nothing is queued.
+    let drained = false
+    for (let round = 0; round < 2000; round += 1) {
       cache.throwIfFatal()
       await waitForInFlightExtractions()
       cache.throwIfFatal()
@@ -440,9 +444,13 @@ export async function runMemsim(options: MemsimRunOptions): Promise<MemsimReport
           "SELECT COUNT(*) AS count FROM extraction_queue WHERE status IN ('pending', 'processing') AND available_at <= ?"
         )
         .get(simNowMs) as { count: number }
-      if (row.count === 0) break
+      if (row.count === 0) {
+        drained = true
+        break
+      }
       await new Promise((r) => setTimeout(r, 15))
     }
+    if (!drained) throw new Error('memsim: extraction queue did not drain')
     await waitForInFlightExtractions()
     cache.throwIfFatal()
     await embedPendingFacts({ limit: 100, gapMs: 0 })
@@ -1575,6 +1583,7 @@ export async function runMemsim(options: MemsimRunOptions): Promise<MemsimReport
     await stopExtractionScheduler()
     resetEpisodeTrackerForTest()
     resetExtractionScheduler()
+    setSerialDrainForTest(false)
     await destroyTrackedSessions()
     closeDb()
     await routesHandle.restore()
