@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "c928ebd038844262442de596ac09c40579b43084f449fba69dadb7f8d980f197",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af8d0881785\",\"object\":\"chat.completion\",\"created\":1794691208,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"ops\\\":[{\\\"op\\\":\\\"retract\\\",\\\"subject\\\":{\\\"kind\\\":\\\"user\\\",\\\"userId\\\":\\\"sim-user-bob\\\"},\\\"predicate\\\":\\\"hobby\\\",\\\"value\\\":\\\"foil fencing at the community gym on Tuesdays\\\",\\\"sourceLine\\\":1},{\\\"op\\\":\\\"noop\\\"}],\\\"summary\\\":\\\"Bob said he quit fencing completely this month and sold all his masks and blades. Carol asked Roka about crafts and cats in Northgate.\\\"}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4313,\"completion_tokens\":86,\"total_tokens\":4399,\"prompt_tokens_details\":{\"cached_tokens\":3584},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

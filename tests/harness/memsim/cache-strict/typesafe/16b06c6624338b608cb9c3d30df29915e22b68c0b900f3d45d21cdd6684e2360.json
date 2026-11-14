@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "typesafe",
+  "hash": "16b06c6624338b608cb9c3d30df29915e22b68c0b900f3d45d21cdd6684e2360",
+  "response": {
+    "status": 200,
+    "statusText": "",
+    "contentType": "application/json",
+    "body": "{\"model\":\"jev-1.13.0\",\"answers\":{\"durable_0\":{\"type\":\"noul\",\"noul\":0.82},\"attributed_0\":{\"type\":\"noul\",\"noul\":0.73},\"current_0\":{\"type\":\"noul\",\"noul\":0.53},\"past_0\":{\"type\":\"noul\",\"noul\":0.47},\"durable_1\":{\"type\":\"noul\",\"noul\":0.82},\"attributed_1\":{\"type\":\"noul\",\"noul\":0.72},\"current_1\":{\"type\":\"noul\",\"noul\":0.53},\"past_1\":{\"type\":\"noul\",\"noul\":0.45},\"durable_2\":{\"type\":\"noul\",\"noul\":0.82},\"attributed_2\":{\"type\":\"noul\",\"noul\":0.71},\"current_2\":{\"type\":\"noul\",\"noul\":0.53},\"past_2\":{\"type\":\"noul\",\"noul\":0.46},\"durable_3\":{\"type\":\"noul\",\"noul\":0.82},\"attributed_3\":{\"type\":\"noul\",\"noul\":0.72},\"current_3\":{\"type\":\"noul\",\"noul\":0.54},\"past_3\":{\"type\":\"noul\",\"noul\":0.46}},\"usage\":{\"input_tokens\":1197,\"output_tokens\":304}}"
+  }
+}

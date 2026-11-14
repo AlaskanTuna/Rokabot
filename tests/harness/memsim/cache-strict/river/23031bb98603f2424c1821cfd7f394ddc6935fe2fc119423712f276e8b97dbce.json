@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "23031bb98603f2424c1821cfd7f394ddc6935fe2fc119423712f276e8b97dbce",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af8cf69147a\",\"object\":\"chat.completion\",\"created\":1794690921,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"ops\\\":[{\\\"op\\\":\\\"add\\\",\\\"subject\\\":{\\\"kind\\\":\\\"user\\\",\\\"userId\\\":\\\"sim-user-erin\\\"},\\\"predicate\\\":\\\"pets\\\",\\\"value\\\":\\\"Hermann tortoise named Pebble\\\",\\\"tense\\\":\\\"current\\\",\\\"sourceLine\\\":1},{\\\"op\\\":\\\"add\\\",\\\"subject\\\":{\\\"kind\\\":\\\"user\\\",\\\"userId\\\":\\\"sim-user-dave\\\"},\\\"predicate\\\":\\\"hobby\\\",\\\"value\\\":\\\"sea kayaking every weekend\\\",\\\"tense\\\":\\\"past\\\",\\\"sourceLine\\\":2}],\\\"summary\\\":\\\"Erin mentioned caring for an elderly Hermann tortoise named Pebble, and Dave recalled going sea kayaking every weekend during his college years.\\\"}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4382,\"completion_tokens\":123,\"total_tokens\":4505,\"prompt_tokens_details\":{\"cached_tokens\":3840},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

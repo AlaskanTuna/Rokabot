@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "bfb6455e4dfa4e0e1f24722759347d80e2be7869caaa4eb8e2e01abd3d1147d5",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af8d06d16f0\",\"object\":\"chat.completion\",\"created\":1794691181,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"moves\\\":[{\\\"id\\\":1,\\\"predicate\\\":\\\"keep\\\"},{\\\"id\\\":2,\\\"predicate\\\":\\\"keep\\\"},{\\\"id\\\":3,\\\"predicate\\\":\\\"keep\\\"}]}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":766,\"completion_tokens\":37,\"total_tokens\":803,\"prompt_tokens_details\":{\"cached_tokens\":512},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

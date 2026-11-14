@@ -729,7 +729,7 @@ sudo docker compose -f ~/rokabot/docker-compose.yml up -d roka
 
 #### Offline Memory Simulator Gate (#266)
 
-The seedless committed-cache replay gated every phase cutover in `#266`. Both `--store dual` and `--store item` pass with `0` cache misses, `0` live calls, and identical quality (`0.732` recall, `0.968` precision at the time; the cache re-recorded for #496 on 2026-11-15 scores `0.829` and `0.971`); Phase 7 also passes with `--drop-legacy-at-day 15`. `npm run memsim` replays 30 synthetic days across two guilds, public and private channels, DMs, media shares and five restarts through the real memory pipeline on a temporary database. `npm test` runs the same seedless replay. The simulator overwrites `GEMINI_API_KEY` with a sentinel in its own process and reads `TYPESAFE_API_KEY`, `GRAPHIFY_GEMINI_API_KEY`, `DEV_GEMINI_API_KEY` and `CLIPROXY_TOKEN` from `.env` only when recording. Its report holds counts and hashes only, never memory text.
+The seedless committed-cache replay gated every phase cutover in `#266`. Both `--store dual` and `--store item` pass with `0` cache misses, `0` live calls, and identical quality (`0.732` recall, `0.968` precision at the time; the cache re-recorded for #496 on 2026-11-15 scores `0.829` and `0.971`); Phase 7 also passes with `--drop-legacy-at-day 15`. `npm run memsim` replays 30 synthetic days across two guilds, public and private channels, DMs, media shares and five restarts through the real memory pipeline on a temporary database. `npm test` runs the same seedless replay. Extraction prompts change with the privacy level, so `strict` has its own committed cache in `tests/harness/memsim/cache-strict/`, and `npm test` replays it too (2026-11-15: `0.805` recall, `1.0` precision, no leaks). The simulator overwrites `GEMINI_API_KEY` with a sentinel in its own process and reads `TYPESAFE_API_KEY`, `GRAPHIFY_GEMINI_API_KEY`, `DEV_GEMINI_API_KEY` and `CLIPROXY_TOKEN` from `.env` only when recording. Its report holds counts and hashes only, never memory text.
 
 Record and seeded runs need the local River proxy (`127.0.0.1:8317`), so run them on a workstation, not on the Pi:
 
@@ -738,11 +738,14 @@ Record and seeded runs need the local River proxy (`127.0.0.1:8317`), so run the
 npm run memsim -- --replay --store dual
 npm run memsim -- --replay --store item
 npm run memsim -- --replay --store item --drop-legacy-at-day 15
+npm run memsim -- --replay --store item --privacy strict --cache-dir tests/harness/memsim/cache-strict
 # Record the committed cache after a scenario or pipeline change, then drop entries nothing read.
 # --budget river=N,embeddings=N,typesafe=N caps live calls (defaults 600, 1200 and 1500).
 npm run memsim:generate
 npm run memsim -- --record --prune-unused --store dual
 npm run memsim -- --record --prune-unused --store item
+npm run memsim -- --record --prune-unused --store dual --privacy strict --cache-dir tests/harness/memsim/cache-strict
+npm run memsim -- --record --store item --privacy strict --cache-dir tests/harness/memsim/cache-strict
 # Seeded run: copy the Pi database into a private directory outside the repo, then record and replay against the copy.
 install -d -m 700 ~/memsim-private
 ssh <pi-user>@<pi-ethernet-ip> "sqlite3 ~/rokabot/data/rokabot.db '.backup /tmp/rokabot-sim-copy.db'"

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "7ab0a28c6854a7c9e6cf8c94f5770723a0e991cacf90d70864b76109deed569f",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af8d06019e9\",\"object\":\"chat.completion\",\"created\":1794691168,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"ops\\\":[{\\\"op\\\":\\\"add\\\",\\\"subject\\\":{\\\"kind\\\":\\\"user\\\",\\\"userId\\\":\\\"sim-user-erin\\\"},\\\"predicate\\\":\\\"general_occupation\\\",\\\"value\\\":\\\"paramedic supervisor\\\",\\\"tense\\\":\\\"planned\\\",\\\"sourceLine\\\":1}],\\\"summary\\\":\\\"Erin shared backstage that she was offered a paramedic supervisor role starting next quarter, and Roka recalled the confidential job role Erin had mentioned.\\\"}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":3933,\"completion_tokens\":81,\"total_tokens\":4014,\"prompt_tokens_details\":{\"cached_tokens\":3584},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

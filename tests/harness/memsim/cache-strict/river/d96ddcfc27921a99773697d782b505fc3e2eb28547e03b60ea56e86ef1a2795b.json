@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "d96ddcfc27921a99773697d782b505fc3e2eb28547e03b60ea56e86ef1a2795b",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af8d0e7196f\",\"object\":\"chat.completion\",\"created\":1794691303,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"ops\\\":[{\\\"op\\\":\\\"noop\\\"}],\\\"summary\\\":\\\"Alice mentioned reviewing private mod-vault notes before the end of the month and asked Roka what private notes exist there. Roka replied that four private vault notes are still stored and visible only in that channel.\\\"}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":3961,\"completion_tokens\":56,\"total_tokens\":4017,\"prompt_tokens_details\":{\"cached_tokens\":3840},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

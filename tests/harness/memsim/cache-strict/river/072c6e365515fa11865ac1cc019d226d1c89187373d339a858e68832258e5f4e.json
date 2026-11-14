@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "072c6e365515fa11865ac1cc019d226d1c89187373d339a858e68832258e5f4e",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af8cdf9118e\",\"object\":\"chat.completion\",\"created\":1794690553,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"ops\\\":[{\\\"op\\\":\\\"add\\\",\\\"subject\\\":{\\\"kind\\\":\\\"user\\\",\\\"userId\\\":\\\"sim-user-erin\\\"},\\\"predicate\\\":\\\"hobby\\\",\\\"value\\\":\\\"playing violin in the youth orchestra\\\",\\\"tense\\\":\\\"past\\\",\\\"sourceLine\\\":1}],\\\"summary\\\":\\\"Erin mentioned she used to play violin in the youth orchestra back in high school, and Dave asked the bot what instrument she played.\\\"}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4204,\"completion_tokens\":79,\"total_tokens\":4283,\"prompt_tokens_details\":{\"cached_tokens\":3584},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

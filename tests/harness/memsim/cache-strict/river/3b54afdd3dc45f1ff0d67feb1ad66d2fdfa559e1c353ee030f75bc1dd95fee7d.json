@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "3b54afdd3dc45f1ff0d67feb1ad66d2fdfa559e1c353ee030f75bc1dd95fee7d",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af8d058170b\",\"object\":\"chat.completion\",\"created\":1794691160,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"ops\\\":[{\\\"op\\\":\\\"add\\\",\\\"subject\\\":{\\\"kind\\\":\\\"guild\\\"},\\\"predicate\\\":\\\"upcoming_event\\\",\\\"value\\\":\\\"lantern pottery workshop in the craft hall\\\",\\\"date\\\":{\\\"year\\\":2026,\\\"month\\\":10,\\\"day\\\":25},\\\"sourceLine\\\":1},{\\\"op\\\":\\\"add\\\",\\\"subject\\\":{\\\"kind\\\":\\\"user\\\",\\\"userId\\\":\\\"sim-user-bob\\\"},\\\"predicate\\\":\\\"hobby\\\",\\\"value\\\":\\\"baking crusty sourdough loaves on Saturday mornings\\\",\\\"tense\\\":\\\"current\\\",\\\"sourceLine\\\":2},{\\\"op\\\":\\\"add\\\",\\\"subject\\\":{\\\"kind\\\":\\\"user\\\",\\\"userId\\\":\\\"sim-user-carol\\\"},\\\"predicate\\\":\\\"hobby\\\",\\\"value\\\":\\\"pottery classes in Sapporo\\\",\\\"tense\\\":\\\"past\\\",\\\"sourceLine\\\":3}],\\\"summary\\\":\\\"Alice announced the guild's lantern pottery workshop on October 25, 2026 in the craft hall. Bob shared his love of baking sourdough on Saturday mornings, and Carol recalled taking pottery classes in Sapporo back in 2019.\\\"}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4400,\"completion_tokens\":201,\"total_tokens\":4601,\"prompt_tokens_details\":{\"cached_tokens\":3584},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

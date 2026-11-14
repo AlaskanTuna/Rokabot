@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "64f9a36fc50ca00048843b17e94247e4d1124e55df8f447eafd79e91785ec986",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af8d0301642\",\"object\":\"chat.completion\",\"created\":1794691120,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"ops\\\":[{\\\"op\\\":\\\"add\\\",\\\"subject\\\":{\\\"kind\\\":\\\"user\\\",\\\"userId\\\":\\\"sim-user-bob\\\"},\\\"predicate\\\":\\\"pets\\\",\\\"value\\\":\\\"rescue shiba puppy named Mochi\\\",\\\"tense\\\":\\\"current\\\",\\\"sourceLine\\\":1},{\\\"op\\\":\\\"add\\\",\\\"subject\\\":{\\\"kind\\\":\\\"user\\\",\\\"userId\\\":\\\"sim-user-bob\\\"},\\\"predicate\\\":\\\"daily_routine\\\",\\\"value\\\":\\\"morning routine starts at 6am with a quiet swim lap session\\\",\\\"tense\\\":\\\"current\\\",\\\"sourceLine\\\":2}],\\\"summary\\\":\\\"Bob shared that he adopted a rescue shiba puppy named Mochi and described his 6am morning swim routine, while Alice asked Roka about the craft bench.\\\"}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4043,\"completion_tokens\":141,\"total_tokens\":4184,\"prompt_tokens_details\":{\"cached_tokens\":3840},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

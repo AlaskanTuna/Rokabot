@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "9095556b45e8f02f9e6ce0dfd2bece35a5725b538bd7646094cf6a75acf7b440",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af8d0c11abd\",\"object\":\"chat.completion\",\"created\":1794691265,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"ops\\\":[{\\\"op\\\":\\\"retract\\\",\\\"subject\\\":{\\\"kind\\\":\\\"user\\\",\\\"userId\\\":\\\"sim-user-carol\\\"},\\\"predicate\\\":\\\"hobby\\\",\\\"value\\\":\\\"target archery\\\",\\\"sourceLine\\\":1}],\\\"summary\\\":\\\"Carol said she quit target archery and returned her bow to the club. Alice asked about a video Carol shared on alpine terrariums.\\\"}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4164,\"completion_tokens\":73,\"total_tokens\":4237,\"prompt_tokens_details\":{\"cached_tokens\":3584},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}
