@@ -1075,6 +1075,7 @@ export async function runMemsim(options: MemsimRunOptions): Promise<MemsimReport
 
       if (options.dropLegacyAtDay !== undefined && dayPlan.day === options.dropLegacyAtDay && !legacyDropped) {
         await stopExtractionScheduler()
+        resetAllBuffers()
         resetEpisodeTrackerForTest()
         resetExtractionScheduler()
         await destroyTrackedSessions()
