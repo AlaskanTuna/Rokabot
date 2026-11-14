@@ -1,3 +1,4 @@
+import { renderFactSentence } from '../agent/memory/factSentences.js'
 import { config } from '../config.js'
 import { getDb } from './database.js'
 import {
@@ -157,7 +158,16 @@ export function getClaimEmbeddings(claimIds: readonly number[]): Map<number, Epi
           }
         | undefined
       if (!row) continue
-      const embedding = decodeMemoryItemEmbedding(row, item.legacy_embedding_text ?? '', 'fact_sentence')
+      const embeddingText =
+        item.legacy_embedding_text ??
+        renderFactSentence({
+          subjectKind: item.subject_kind,
+          predicate: item.predicate ?? '',
+          value: item.content,
+          eventDate: item.event_date,
+          period: item.period
+        })
+      const embedding = decodeMemoryItemEmbedding(row, embeddingText, 'fact_sentence')
       if (embedding) embeddings.set(claimId, embedding)
     }
     return embeddings

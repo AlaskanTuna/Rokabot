@@ -1,13 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { geminiVector, localVector } from '../../../tests/harness/vectors.js'
+import { renderFactSentence } from '../../agent/memory/factSentences.js'
 import { appendEvidence, assertClaim, rejectActiveClaimById } from '../../agent/memory/memoryClaims.js'
-import { closeDb } from '../database.js'
+import { config } from '../../config.js'
+import { closeDb, getDb } from '../database.js'
+import { configureMemoryItemProjectionTriggers } from '../memoryItemProjection.js'
+import { writeMemoryItemEmbedding } from '../memoryItemStore.js'
 import {
   getClaimEmbeddings,
   getClaimSourceChannels,
   listActiveClaimsForEmbedding,
   setClaimEmbedding
 } from '../memoryRecallStore.js'
+import { encodeFloat32Embedding } from '../memoryVector.js'
+
+const memoryStoreConfig = config.memory as { store: 'legacy' | 'dual' | 'item' }
 
 beforeEach(() => {
   process.env.ROKABOT_DB_PATH = ':memory:'
@@ -15,6 +22,7 @@ beforeEach(() => {
 
 afterEach(() => {
   closeDb()
+  memoryStoreConfig.store = 'legacy'
   process.env.ROKABOT_DB_PATH = undefined
 })
 
@@ -114,5 +122,55 @@ describe('memoryRecallStore', () => {
 
     expect(listActiveClaimsForEmbedding()[0]).toMatchObject({ hasEmbedding: false })
     expect(getClaimEmbeddings([fact.id]).has(fact.id)).toBe(false)
+  })
+
+  it('rebuilds missing fact embedding text under item mode when decoding, and rejects mismatched text', () => {
+    memoryStoreConfig.store = 'item'
+    const database = getDb()
+    configureMemoryItemProjectionTriggers(database, 'item')
+
+    const matching = assertClaim({
+      guildId: 'g',
+      subjectUserId: 'u',
+      predicate: 'hobby',
+      value: 'chess',
+      sourceKind: 'explicit'
+    })
+    const mismatched = assertClaim({
+      guildId: 'g',
+      subjectUserId: 'u',
+      predicate: 'hobby',
+      value: 'go',
+      sourceKind: 'explicit'
+    })
+
+    const vector = geminiVector(Array(768).fill(0.1))
+    const buffer = encodeFloat32Embedding(vector, 'Fact')
+    writeMemoryItemEmbedding(database, {
+      itemId: matching.id,
+      fingerprint: vector.fingerprint,
+      modelId: vector.modelId,
+      dim: vector.dim,
+      renderer: 'fact_sentence',
+      text: renderFactSentence(matching),
+      vector: buffer
+    })
+    writeMemoryItemEmbedding(database, {
+      itemId: mismatched.id,
+      fingerprint: vector.fingerprint,
+      modelId: vector.modelId,
+      dim: vector.dim,
+      renderer: 'fact_sentence',
+      text: "This person's hobby: shogi.",
+      vector: buffer
+    })
+
+    expect(database.prepare('SELECT legacy_embedding_text FROM memory_item WHERE id = ?').get(matching.id)).toEqual({
+      legacy_embedding_text: null
+    })
+
+    const decoded = getClaimEmbeddings([matching.id, mismatched.id])
+    expect(decoded.get(matching.id)).toHaveLength(768)
+    expect(decoded.has(mismatched.id)).toBe(false)
   })
 })
