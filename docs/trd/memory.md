@@ -4,16 +4,16 @@ The contract for what Roka learns from server conversations, how she stores it, 
 
 ## At a Glance
 
-| Item       | Contract                                                                                                                                                                                                                                                                            |
-| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Scope      | Guild channels only. DMs, group DMs and `/ask` never read or write long-term memory.                                                                                                                                                                                                |
-| Tenant     | `guild_id` is the Discord server. Claims, summaries and media digests never cross servers.                                                                                                                                                                                          |
-| Write Path | Monitored message, episode, `extraction_queue`, admission, typed extraction, verification, writes.                                                                                                                                                                                  |
-| Judge      | Jev with `TYPESAFE_API_KEY`. Otherwise the main model if `config.yml` has an `llm:` block. Otherwise none.                                                                                                                                                                          |
-| Recall     | The four legacy blocks: people facts, server facts, episode summaries and media summaries.                                                                                                                                                                                          |
-| Privacy    | `memory.privacy`: `relaxed` (default), `balanced`, `strict` or `off`.                                                                                                                                                                                                               |
-| Store      | `memory.store: legacy` stays the default. `dual` reads legacy tables and mirrors writes into typed items; `item` reads and writes typed items. Projection triggers run only in `dual`. After Phase 6, rollback from `item` exports items to legacy rows before switching to `dual`. |
-| Timing     | Memory work is asynchronous. It never blocks the reply that captured the messages.                                                                                                                                                                                                  |
+| Item       | Contract                                                                                                                                                                                                                                                                                                                                                             |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Scope      | Guild channels only. DMs, group DMs and `/ask` never read or write long-term memory.                                                                                                                                                                                                                                                                                 |
+| Tenant     | `guild_id` is the Discord server. Claims, summaries and media digests never cross servers.                                                                                                                                                                                                                                                                           |
+| Write Path | Monitored message, episode, `extraction_queue`, admission, typed extraction, verification, writes.                                                                                                                                                                                                                                                                   |
+| Judge      | Jev with `TYPESAFE_API_KEY`. Otherwise the main model if `config.yml` has an `llm:` block. Otherwise none.                                                                                                                                                                                                                                                           |
+| Recall     | The four legacy blocks: people facts, server facts, episode summaries and media summaries.                                                                                                                                                                                                                                                                           |
+| Privacy    | `memory.privacy`: `relaxed` (default), `balanced`, `strict` or `off`.                                                                                                                                                                                                                                                                                                |
+| Store      | `memory.store: legacy` stays the default. `dual` reads legacy tables and mirrors writes into typed items. During Phase 5, `item` reads items while legacy writers and projection triggers stay on; Phase 6 moves writers to items and drops source projection triggers. After Phase 6, rollback from `item` exports items to legacy rows before switching to `dual`. |
+| Timing     | Memory work is asynchronous. It never blocks the reply that captured the messages.                                                                                                                                                                                                                                                                                   |
 
 Deployer view: [Memory Guide](../guide/memory.md). Judge internals: [Jev](jev.md). Model routes: [Models](models.md).
 
@@ -92,9 +92,11 @@ limit, daily budget ratio or extraction RPM floor.
 
 ### Admission
 
-- **Precheck:** `sensitive` if any delta matches an email, phone, credential, legal name, age or birthday, address,
-  school or workplace, medical or social-handle pattern. `trivial` if every delta is empty, a greeting, a short
-  reaction or emoji only. Both drop locally.
+- **Precheck:** `episodePrecheck.ts` strips URLs and Discord tokens (`<@…>`, `<#…>`, `<:…>`) before matching. A job
+  is `sensitive` if any delta matches an email, phone (excluding ISO dates and grouped numbers), credential, legal
+  name, age (word-bounded numbers) or birthday, address, school or workplace, medical or social-handle pattern, recording
+  the name in `trace.precheckPattern`. `trivial` if every delta is empty, a greeting, a short reaction or emoji only.
+  Both drop locally.
 - **Judgment:** one `lasting_fact` question. Admit at or above `memory.admitThreshold` (0.5, Jev) or
   `memory.modelAdmitThreshold` (0.7, main model). No judge, a timeout or an unusable answer drops the episode.
 - **Judge:** `memory.judge` is derived: `jev` with `TYPESAFE_API_KEY`; `model` without it when an `llm:` block exists;
@@ -107,10 +109,17 @@ limit, daily budget ratio or extraction RPM floor.
 The legacy config runs `gemini.extractionModel` (default `gemini.model`) with no fallback. An `llm:` block runs the
 main model, then the fallback once. The prompt carries the human user IDs, the active claims and guild facts this
 channel may recall, up to three context lines (background only) and the deltas. The model returns a strict operation
-list and a one-to-two-sentence summary. Delta lines are numbered (`#1`, `#2`, …) while context lines carry no number.
-Every add and update cites its delta line in `sourceLine`; the write path resolves it to a message ID and speaker, and
-a missing, out-of-range, bot, or other-member line loses only the link while the op still applies. Each job counts once
-per claim: a retried job's replayed evidence is a no-op.
+list and a one-to-two-sentence summary. `ExtractionTransportSchema` validates each proposed op individually, dropping
+malformed ones (`ops.invalid`) and failing `invalid_object` only when every non-empty op is invalid. Before the apply
+transaction, an op whose value fails `isSafeFactScalar` or the sensitive check is dropped and counted in `ops.dropped`,
+so one unsafe value never rolls back the rest of the batch (#491). Delta lines are numbered (`#1`, `#2`, …) while
+context lines carry no number. Every add and update cites its delta line in `sourceLine`; the write path resolves it to
+a message ID and speaker, and a missing, out-of-range, bot, or other-member line loses only the link while the op still
+applies. Each job counts once per claim: a retried job's replayed evidence is a no-op.
+
+Claims and guild facts are ordered by stable content keys and receive request-local refs `1..n`. The prompt uses those
+refs for claim IDs. An update or remove returns its local ref; extraction maps it back to the database row before
+verification. An unknown or out-of-range ref drops that op and increments `ops.invalid`. Refs never persist.
 
 | Operation | Subjects    | Effect                                                                                |
 | --------- | ----------- | ------------------------------------------------------------------------------------- |
@@ -154,8 +163,12 @@ same-subject, same-predicate, same-period claim. Past ops and retracts get their
 | -------------- | ------------------------------------------------------------------- | --------------------------------------------- |
 | `current_N`    | Every user add and update: true of the subject now?                 | It cannot be written as current               |
 | `past_N`       | Every user add and update: true at some earlier time?               | With `current_N` failing too, the op drops    |
-| `changes_N`    | Every user update: does it change claim #ID into a different fact?  | Becomes evidence on the target; wording stays |
+| `changes_N`    | Every user update: does it change claim #ref into a different fact? | Becomes evidence on the target; wording stays |
 | `retracts_N_M` | A retract, per visible current claim in its category (best 5 first) | That claim is not retired                     |
+
+Jev receives visible claims in stable content order with refs `1..n`; request state, update targets, and question text
+use those refs instead of database IDs. `same_as_N_M` and `retracts_N_M` keep their operation and candidate indices,
+with candidates ordered by stable content keys.
 
 Thresholds are `memory.verifyThreshold` (0.5, Jev) or `memory.modelVerifyThreshold` (0.7, main model). Verification is
 complete only when every key has a probability in 0..1.
@@ -169,7 +182,7 @@ With complete verification:
    each other. A current update aimed at a past claim writes a new current fact.
 5. **Duplicates:** an exact active value adds evidence even below the `same_as` threshold. Other duplicates must pass.
 6. **Retraction:** retires each visible current claim whose `retracts_N_M` holds (`end_reason = 'retracted'`).
-   Candidates span the predicate category, ordered by value match, then own predicate, then listing order.
+   Candidates span the predicate category, ordered by value match, then own predicate, then stable content key.
 7. **Order:** multi-value retracts first (to free a cap slot), then all other ops, then single-value retracts, so a
    retract-then-add switch lets the add supersede the old value and inherit its pin.
 8. **Pins:** a verified op that supersedes a pinned current claim writes `pinned = 1`.
@@ -201,8 +214,10 @@ Under `balanced` and `strict`, the extractor and judge see only claims this chan
 transaction, `reconcileHiddenRetractions` handles each verified `retract`:
 
 1. **Candidates:** the subject's active current claims in the same category, not under review, not visible here.
-2. **Ranking:** cosine similarity of the retracted fact's sentence to each stored claim vector. Top 3; no vector, skip.
-3. **Judgment:** one judge call. Each candidate at or above the verify threshold retires with `retracted` and counts in
+2. **Ranking:** cosine similarity of the retracted fact's sentence to each stored claim vector. Top 3, with sentence
+   content breaking ties; no vector, skip.
+3. **Judgment:** one judge call with request-local refs `1..n` for candidate facts. Each candidate at or above the
+   verify threshold retires with `retracted` and counts in
    `ops.retracted`.
 
 Nothing hidden reaches the prompt, reply or logs (logs carry IDs, predicate and counts). `relaxed` and `off` make no
@@ -296,11 +311,12 @@ The predicate list and tiers live in `src/agent/memory/predicates.ts`.
 - **Limits:** never under `off`. `memory.reclassifyMaxPerRun` (env `MEMORY_RECLASSIFY_MAX_PER_RUN`, 20, bounded 0..100)
   caps moves per run; 0 turns it off.
 - **Candidates:** active current `misc` claims, plus the weaker side of an equal-value pair under two predicates (the
-  `misc` one, else lower salience, else newer). Up to `min(100, 5 × cap)` in random order. Undone moves are never
-  offered again.
-- **Proposal:** one call on the extraction model route returns a predicate or `keep`. `misc` and `relationship_to` are
-  never targets.
-- **Confirmation:** one judge call asks `fits_<id>` for at most `cap` proposals, held to the verify threshold.
+  `misc` one, else lower salience, else newer). The stable content-ordered pool is shuffled in application code, then
+  limited to `min(100, 5 × cap)`. Undone moves are never offered again.
+- **Proposal:** one call on the extraction model route returns a predicate or `keep`, using request-local refs `1..n`.
+  `misc` and `relationship_to` are never targets.
+- **Confirmation:** one judge call asks `fits_<ref>` for at most `cap` proposals, held to the verify threshold;
+  returned refs map back to claim IDs in application code.
 - **Move:** one transaction retires the old row (`reclassified`), writes the value as an active, verified fact under
   the new predicate, copies evidence, keeps the pin and `first_seen_at`, and links old to new. It rolls back if it would
   end any other fact. It skips a value the member retracted or forgot.
@@ -421,6 +437,8 @@ Watched media is kept as text. Watching itself is in [Media](media.md).
 | `npm run migrate:memory-v2`                             | Offline, explicit. Backfills `user_memory` once, checks every row against a claim in each legal scope, reports the top ten claims per subject, then drops `user_memory`. Any miss aborts. A rerun is a no-op.  |
 | `npm run migrate:memory-items`                          | Offline, explicit. Copies legacy memory rows to typed items in one transaction, checks counts and every-column round trips, then prints counts only. Any miss rolls back. A rerun is a no-op after a full run. |
 | `npm run replay:memory-items -- <database>`             | Offline parity replay of up to 150 recent guild turns on a database copy. Uses stored vectors as query stand-ins, makes no network calls and prints counts and block hashes only.                              |
+| `npm run memsim -- --replay --store item`               | Offline 30-day synthetic multi-guild simulator replay (`tests/harness/memsim/cli.ts`), also run under `npm test` (`tests/harness/__tests__/memsim.eval.test.ts`). No network calls; prints counts and hashes.  |
+| `npm run memsim:generate`                               | Records and verifies the committed synthetic `memsim` cache (`tests/harness/memsim/generate.ts`).                                                                                                              |
 | `npm run memory:replay -- --session-history <database>` | Offline replay with stub judges and extractor. No network calls. Prints episode, operation and gap statistics.                                                                                                 |
 | `npm run memory:replay:live`                            | Real pipeline. Needs `ROKABOT_MEMORY_REPLAY_LIVE=1`, `GEMINI_API_KEY` and `TYPESAFE_API_KEY`.                                                                                                                  |
 | `npm run export:vault`                                  | Read-only Obsidian snapshot to `memory.vaultExportDir` (env `MEMORY_VAULT_EXPORT_DIR`, default `data/vault`).                                                                                                  |
@@ -446,13 +464,15 @@ current facts, and reports episodes ended in the last 30 days.
 
 ## Source Files
 
-- `src/agent/memory/`: `episodeTracker.ts`, `scheduler.ts`, `admission.ts`, `episodePrecheck.ts`, `extractor.ts`,
-  `guildFactDates.ts`, `privacyGuard.ts`, `memoryClaims.ts`, `predicates.ts`, `hiddenRetractions.ts`, `reclassify.ts`,
-  `retriever.ts`, `identityResolver.ts`, `privacy.ts`,
+- `src/agent/memory/`: `episodeTracker.ts`, `scheduler.ts`, `admission.ts`, `episodePrecheck.ts`, `extractionSchema.ts`,
+  `extractionRun.ts`, `extractor.ts`, `memoryItems.ts`, `memoryClaimScoring.ts`, `guildFactDates.ts`, `privacyGuard.ts`,
+  `memoryClaims.ts`, `predicates.ts`, `hiddenRetractions.ts`, `reclassify.ts`, `reclassifyModels.ts`, `retriever.ts`,
+  `episodeRetriever.ts`, `mediaRecall.ts`, `identityResolver.ts`, `privacy.ts`,
   `episodeMaintenance.ts`, `factEmbeddings.ts`, `embeddings/`
 - `src/agent/jev/judgments.ts`, `src/agent/jev/modelJudge.ts`,
   `src/agent/turnContext.ts`, `src/agent/tools/`
-- `src/storage/`: `memoryClaimSchema.ts`, `database.ts`, `extractionQueue.ts`, `memoryEpisodeStore.ts`,
-  `mediaDigestStore.ts`, `extractionSampleStore.ts`
-- `scripts/`: `migrate-memory-v2.ts`, `replay-memory-v2.ts`, `export-vault.ts`, `undo-reclassify.ts`,
-  `prune-claim-overflow.ts`
+- `src/storage/`: `memoryClaimSchema.ts`, `memoryItemSchema.ts`, `memoryItemProjection.ts`, `memoryItemBackfill.ts`,
+  `memoryItemIntegrity.ts`, `memoryItemStore.ts`, `memoryRecallStore.ts`, `memoryVector.ts`, `database.ts`,
+  `extractionQueue.ts`, `memoryEpisodeStore.ts`, `mediaDigestStore.ts`, `extractionSampleStore.ts`
+- `scripts/`: `migrate-memory-v2.ts`, `replay-memory-v2.ts`, `migrate-memory-items.ts`, `replay-memory-items.ts`,
+  `export-vault.ts`, `undo-reclassify.ts`, `prune-claim-overflow.ts`, `tests/harness/memsim/cli.ts`

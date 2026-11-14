@@ -398,6 +398,8 @@ The tiers stay in `src/agent/memory/predicates.ts`. If #278 changes a value, the
 
 `memory.store` is a temporary key with the env override `MEMORY_STORE` (owner decision 7). It works the way `memory.recall` and `MEMORY_RECALL` did before the legacy-only recall PR removed them. It goes in `config.yml` with an inline comment and is removed in Phase 7.
 
+Owner decision 12 (2026-11-14) replaces the production soak waits in the Migration Plan, including the 7-day and one-release waits, with the offline simulator gate: `npm run memsim` passes with zero drift, zero parity mismatches, no privacy leak and every restart recovered (see the [runbook](../RUNBOOK.md#offline-memory-simulator-gate-266)). The other exit checks stay.
+
 ### Phase 1: Prepare The Legacy Builders For A Second Store
 
 The legacy builders are the recall path, so this phase makes them able to read from either store. Storage is untouched, and no block changes its output.

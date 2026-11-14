@@ -197,9 +197,12 @@ Set these in `~/rokabot/.env`, then run `sudo docker compose -f ~/rokabot/docker
 | `COMPOSE_PROFILES`                          | `local-embeddings`                     | Starts the embeddings sidecar                           |
 | `JEV_TONE`, `JEV_REFERENTS`, `JEV_PREFETCH` | `off`, `shadow`, `on`                  | Jev in-reply judgments                                  |
 | `SEARCH_PROVIDER`                           | `off`, `native`, `tavily`, `exa`       | Web search backend (`search.provider`)                  |
+| `MEMORY_STORE`                              | `legacy`, `dual`, `item`               | Typed memory store (`memory.store`)                     |
 | `MEMORY_PRIVACY`                            | `relaxed`, `balanced`, `strict`, `off` | `memory.privacy`                                        |
 | `MEMORY_EXTRACTION_SAMPLE_RATE`             | `0` to `1`                             | `0` stops rejected-conversation samples                 |
 | `MEMORY_RECLASSIFY_MAX_PER_RUN`             | `0` to `100`                           | `0` turns reclassification off                          |
+| `FORMAT_MODE`                               | `off`, `shadow`, `on`                  | Explicit reply format override and repair               |
+| `FORMAT_REPAIR`                             | `true`, `false`                        | Repairs replies that miss an explicit format ask        |
 | `TYPESAFE_API_KEY`                          | key                                    | Jev judges when it is set                               |
 
 ### Web Search Provider
@@ -438,6 +441,7 @@ sqlite3 ~/rokabot/data/rokabot.db '.schema memory_item'
 sqlite3 ~/rokabot/data/rokabot.db '.schema memory_item_evidence'
 sqlite3 ~/rokabot/data/rokabot.db '.schema memory_item_occurrence'
 sqlite3 ~/rokabot/data/rokabot.db '.schema memory_item_embedding'
+sqlite3 ~/rokabot/data/rokabot.db '.schema memory_claim'
 sqlite3 ~/rokabot/data/rokabot.db '.schema extraction_queue'
 sqlite3 ~/rokabot/data/rokabot.db '.schema jev_events'
 # Back up the live database on the Pi (from a dev machine)
@@ -486,7 +490,7 @@ sqlite3 ~/rokabot/data/rokabot.db 'SELECT status, COUNT(*) AS jobs FROM extracti
 Every extraction attempt writes one `memory_events` row with `kind = 'extraction_run'`. Its `detail` JSON holds the stage, outcome, admission probability, operation counts and stage timings, never message text (fields: [Memory](trd/memory.md)). A retried job leaves one row per attempt. Rows are pruned after `metrics.retentionDays`.
 
 - **`stage`:** the furthest stage reached: `precheck`, `admission`, `extraction`, `verification` or `applied`.
-- **`outcome`:** `trivial` and `sensitive` are precheck drops. `below_threshold` is a Jev admission rejection. `jev_unavailable` is an admission Jev could not judge (retried once). `noop` and `written` are completed runs. `error` is a failure.
+- **`outcome`:** `trivial` and `sensitive` are precheck drops (`precheckPattern` names which sensitive filter matched). `below_threshold` is a Jev admission rejection. `jev_unavailable` is an admission Jev could not judge (retried once). `noop` and `written` are completed runs. `error` is a failure.
 - **`errorClass`:** `transient` or `permanent` with `error`. `unjudged` appears only with `jev_unavailable`.
 - **`summary`:** `dropReason` is `ops_rejected`, `numeric_id`, `boilerplate` or `incomplete`. `judged` is false when Jev gave no answer. `jev_events` holds each score with `question = 'summary_complete'`.
 
@@ -508,12 +512,20 @@ FROM memory_events WHERE kind = 'extraction_run' AND json_extract(detail, '$.adm
 GROUP BY bucket ORDER BY bucket;
 
 -- Operation outcomes
-SELECT sum(json_extract(detail, '$.ops.proposed')), sum(json_extract(detail, '$.ops.applied')),
+SELECT sum(json_extract(detail, '$.ops.proposed')), sum(json_extract(detail, '$.ops.invalid')),
+       sum(json_extract(detail, '$.ops.applied')),
        sum(json_extract(detail, '$.ops.duplicate')), sum(json_extract(detail, '$.ops.staged')),
        sum(json_extract(detail, '$.ops.dropped')), sum(json_extract(detail, '$.ops.past')),
        sum(json_extract(detail, '$.ops.reword')), sum(json_extract(detail, '$.ops.retracted')),
        sum(json_extract(detail, '$.ops.uncited'))
 FROM memory_events WHERE kind = 'extraction_run';
+
+-- Extraction model and fallback usage
+SELECT json_extract(detail, '$.models.extraction') AS model,
+       json_extract(detail, '$.extractionProvider') AS provider,
+       json_extract(detail, '$.extractionFallback') AS fallback, count(*)
+FROM memory_events WHERE kind = 'extraction_run'
+GROUP BY model, provider, fallback;
 
 -- Errors and whether retries recovered them
 SELECT job, group_concat(outcome, ' > ') AS attempts
@@ -531,7 +543,7 @@ SELECT kind, question, probability, applied FROM jev_events WHERE job_id = <jobI
 
 - **Admission Buckets:** a pile-up just under `memory.admitThreshold` suggests the threshold is too strict.
 - **Retries:** a job ending in `> written` or `> noop` recovered; one ending in `> error` did not.
-- **Ops:** `ops.applied` (and `n_selected`) includes staged candidates, so active writes are `applied - staged`. `ops.dropped` counts operations neither applied nor duplicate, staged ones excluded. `ops.past` counts facts written as past ("used to be a nurse"). `ops.reword` counts updates that only restated a fact and became evidence.
+- **Ops & Models:** `ops.invalid` counts malformed operations (such as wrong-type fields) dropped individually without failing the run. `ops.applied` (and `n_selected`) includes staged candidates, so active writes are `applied - staged`. `ops.dropped` counts operations neither applied nor duplicate, staged ones excluded. `ops.past` counts facts written as past ("used to be a nurse"). `ops.reword` counts updates that only restated a fact and became evidence. `models.extraction`, `extractionProvider` and `extractionFallback` identify the model and provider that answered.
 - **Retractions:** `ops.retracted` counts retired claims, including hidden facts under `balanced` and `strict`. A run that only retired hidden facts has `ops.applied` 0 and is still `written`.
 - **Boilerplate:** `summary.boilerplate` marks summaries that only say no new durable fact came up.
 - **Job IDs:** turn judgments leave `jev_events.job_id` null.
@@ -696,7 +708,35 @@ After restart in `dual`, the latest integrity sample must report zero drift and 
 
 #### Offline Memory Simulator Gate (#266)
 
-Run the seedless committed-cache replay from a workstation before each phase cutover. It makes no network calls and writes counts and hashes only. Both stores must pass the hard gates, and the `item` quality metrics must match `dual` exactly. Phase 7 also checks replay after the legacy tables are dropped.
+Run the seedless committed-cache replay from a workstation before each phase cutover. It makes no network calls and writes counts and hashes only. Both stores must pass the hard gates, and the `item` quality metrics must match `dual` exactly. Phase 7 also checks replay after the legacy tables are dropped. `npm run memsim` replays 30 synthetic days across two guilds, public and private channels, DMs, media shares and five restarts through the real memory pipeline on a temporary database. `npm test` runs the same seedless replay. The simulator overwrites `GEMINI_API_KEY` with a sentinel in its own process and reads `TYPESAFE_API_KEY`, `GRAPHIFY_GEMINI_API_KEY`, `DEV_GEMINI_API_KEY` and `CLIPROXY_TOKEN` from `.env` only when recording. Its report holds counts, never memory text.
+
+Record and seeded runs need the local River proxy (`127.0.0.1:8317`), so run them on a workstation, not on the Pi:
+
+```bash
+# Replay the committed synthetic cache; no network calls.
+npm run memsim -- --replay --store dual
+npm run memsim -- --replay --store item
+# Record the committed cache after a scenario or pipeline change, then drop entries nothing read.
+# --budget river=N,embeddings=N,typesafe=N caps live calls (defaults 600, 1200 and 1500).
+npm run memsim:generate
+npm run memsim -- --record --prune-unused --store dual
+npm run memsim -- --record --prune-unused --store item
+# Seeded run: copy the Pi database into a private directory outside the repo, then record and replay against the copy.
+install -d -m 700 ~/memsim-private
+ssh <pi-user>@<pi-ethernet-ip> "sqlite3 ~/rokabot/data/rokabot.db '.backup /tmp/rokabot-sim-copy.db'"
+scp <pi-user>@<pi-ethernet-ip>:/tmp/rokabot-sim-copy.db ~/memsim-private/
+ssh <pi-user>@<pi-ethernet-ip> "rm /tmp/rokabot-sim-copy.db"
+npm run memsim -- --seed ~/memsim-private/rokabot-sim-copy.db --record --cache-dir ~/memsim-private/cache --store dual
+npm run memsim -- --seed ~/memsim-private/rokabot-sim-copy.db --replay --cache-dir ~/memsim-private/cache --store dual
+```
+
+A seeded run refuses a `--cache-dir` inside the repository because its cached replies hold real memory text. Never commit that cache or the copy. Before a cutover, the replay must print `integrity=passed` (`drift 0/0/0`), `triggers=passed`, `parity=passed`, `privacy=passed` and `crash=passed`.
+
+The builder timing at 10,000 items runs offline from the committed cache, so it can run on the Pi:
+
+```bash
+npm run memsim -- --replay --scale 10000 --store item
+```
 
 ```bash
 npm run memsim -- --replay --store dual
@@ -767,11 +807,14 @@ sqlite3 ~/rokabot/data/rokabot.db "SELECT user_id, SUM(score) as total, COUNT(*)
 
 ### Failure Diagnostics
 
-`failure_diagnostics` holds turns that fell back or deflected, with the triggering message verbatim. It is pruned after `metrics.diagnosticsRetentionHours` (72 hours), sooner than other metrics. It records only failures, so every safety row is a ladder that ran out of rungs.
+`failure_diagnostics` holds turns that fell back or deflected, plus missed explicit reply format asks (`kind = 'format_unmet'`, `outcome = 'ok'`), with the triggering message verbatim. It is pruned after `metrics.diagnosticsRetentionHours` (72 hours), sooner than other metrics. Safety rows still record only exhausted ladders, and `response_events` carries per-turn `format_kinds`, `format_outcome` and `format_detail` (see [Data TRD](trd/data.md)).
 
 ```bash
 # Recent failures
 sqlite3 ~/rokabot/data/rokabot.db "SELECT datetime(created_at/1000,'unixepoch','+8 hours') t, outcome, kind, failure_marker, block_side, safety_rungs_used FROM failure_diagnostics ORDER BY created_at DESC LIMIT 20;"
+# Recent missed explicit format requests (and response_events outcomes)
+sqlite3 ~/rokabot/data/rokabot.db "SELECT datetime(created_at/1000,'unixepoch','+8 hours') t, outcome, failure_marker, user_message FROM failure_diagnostics WHERE kind='format_unmet' ORDER BY created_at DESC LIMIT 10;"
+sqlite3 ~/rokabot/data/rokabot.db "SELECT format_outcome, format_kinds, COUNT(*) FROM response_events WHERE format_outcome IS NOT NULL GROUP BY format_outcome, format_kinds;"
 # Did the provider block the input or Roka's output?
 sqlite3 ~/rokabot/data/rokabot.db "SELECT block_side, COUNT(*) FROM failure_diagnostics WHERE kind='safety' GROUP BY block_side;"
 # What was sent when a turn was blocked
@@ -1004,4 +1047,4 @@ curl -s "https://generativelanguage.googleapis.com/v1beta/files" -H "x-goog-api-
 - `.github/workflows/deploy.yml`, `scripts/prune-images.sh`
 - `config.yml`, `src/config.ts`, `src/agent/llm/profiles.ts`, `src/agent/llm/budget.ts`, `src/agent/llm/fallbackModel.ts`
 - `src/agent/media/`, `src/agent/social/`, `src/agent/memory/reclassify.ts`, `src/storage/database.ts`
-- `scripts/probe-llm-profile.ts`, `scripts/undo-reclassify.ts`, `scripts/reports.ts`, `scripts/migrate-memory-v2.ts`, `scripts/export-vault.ts`
+- `scripts/probe-llm-profile.ts`, `scripts/undo-reclassify.ts`, `scripts/reports.ts`, `scripts/migrate-memory-v2.ts`, `scripts/export-vault.ts`, `scripts/migrate-memory-items.ts`, `scripts/replay-memory-items.ts`, `tests/harness/memsim/cli.ts`

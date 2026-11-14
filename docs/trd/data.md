@@ -112,7 +112,7 @@ override. `src/agent/__tests__/promptAssembler.test.ts` fails when this table an
 
 - **Vector Provenance:** `memory_episode`, `media_digest` and `memory_claim` carry `embedding_model_id`, `embedding_dim` and `embedding_fingerprint`. A vector stored without provenance is marked `unknown` at startup.
 - **Typed Memory:** startup creates the additive `memory_item*` schema. In `legacy` and Phase 6 `item`, source projection triggers are dropped. In `dual`, triggers mirror the five legacy source tables in the same transaction; startup and daily maintenance record value-free source drift counts and fill NULL embedding hashes. `dual` reads legacy tables; `item` reads and writes prompt-facing memory through the scoped item API and checks item-native invariants. `npm run migrate:memory-items` is an explicit, transactional catch-up; `npm run migrate:memory-items -- --to-legacy` rebuilds source rows from items and runs forward checks in one transaction. Startup never runs either migration. The offline simulator and private-copy round trip gate Phase 6; production soak and in-production shadow reads are not required. Rollback from Phase 6 stops the bot, runs `--to-legacy`, switches to `dual`, then starts.
-- **No Message Text:** `memory_events`, `jev_events` and `response_events` store no message text. `response_events.failure_marker` stores only the raw `finishReason` or error-code token, such as `SAFETY`, and `format_kinds` / `format_outcome` / `format_detail` store rule IDs, requested bounds, check booleans, repair kind, mode and suppression reason only.
+- **No Message Text:** `memory_events`, `jev_events` and `response_events` store no message text. `response_events.failure_marker` stores only the raw `finishReason` or error-code token, such as `SAFETY`; `format_outcome` records `met`, `repaired`, `unmet` or `suppressed`; and `format_kinds` / `format_detail` store requested formats, rule IDs, requested bounds, check booleans, repair kind, mode and suppression reason only.
 
 ### Retention
 
@@ -162,7 +162,7 @@ Every reply turn runs the ADK `LlmAgent` named `roka` on the model that `llm.mai
 - `src/storage/sessionStore.ts`
 - `src/utils/rateLimiter.ts`
 - `src/agent/promptAssembler.ts`, `src/character/`, `characters/roka/moods.yml`
-- `src/storage/database.ts`, `src/storage/memoryClaimSchema.ts`, `src/storage/vectorProvenance.ts`
+- `src/storage/database.ts`, `src/storage/memoryClaimSchema.ts`, `src/storage/memoryItemSchema.ts`, `src/storage/memoryItemProjection.ts`, `src/storage/memoryItemBackfill.ts`, `src/storage/memoryItemIntegrity.ts`, `src/storage/memoryItemStore.ts`, `src/storage/memoryRecallStore.ts`, `src/storage/memoryVector.ts`, `src/storage/vectorProvenance.ts`
 - `src/storage/sessionStore.ts`, `src/storage/gameStore.ts`, `src/storage/statsStore.ts`, `src/storage/metricsStore.ts`, `src/storage/reportStore.ts`
 - `src/agent/session.ts`, `src/agent/roka.ts`, `src/agent/llm/safetySettings.ts`
 - `src/index.ts` (prune schedule)
