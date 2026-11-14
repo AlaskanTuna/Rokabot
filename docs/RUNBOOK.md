@@ -197,7 +197,7 @@ Set these in `~/rokabot/.env`, then run `sudo docker compose -f ~/rokabot/docker
 | `COMPOSE_PROFILES`                          | `local-embeddings`                     | Starts the embeddings sidecar                           |
 | `JEV_TONE`, `JEV_REFERENTS`, `JEV_PREFETCH` | `off`, `shadow`, `on`                  | Jev in-reply judgments                                  |
 | `SEARCH_PROVIDER`                           | `off`, `native`, `tavily`, `exa`       | Web search backend (`search.provider`)                  |
-| `MEMORY_STORE`                              | `legacy`, `dual`, `item`               | Typed memory store (`memory.store`)                     |
+| `MEMORY_STORE`                              | `legacy`, `dual`, `item`               | Typed memory store (`memory.store`); Pi runs `item`     |
 | `MEMORY_PRIVACY`                            | `relaxed`, `balanced`, `strict`, `off` | `memory.privacy`                                        |
 | `MEMORY_EXTRACTION_SAMPLE_RATE`             | `0` to `1`                             | `0` stops rejected-conversation samples                 |
 | `MEMORY_RECLASSIFY_MAX_PER_RUN`             | `0` to `100`                           | `0` turns reclassification off                          |
@@ -440,8 +440,9 @@ ls -lh ~/rokabot/data/rokabot.db
 sqlite3 ~/rokabot/data/rokabot.db '.schema memory_item'
 sqlite3 ~/rokabot/data/rokabot.db '.schema memory_item_evidence'
 sqlite3 ~/rokabot/data/rokabot.db '.schema memory_item_occurrence'
+sqlite3 ~/rokabot/data/rokabot.db '.schema memory_item_payload'
 sqlite3 ~/rokabot/data/rokabot.db '.schema memory_item_embedding'
-sqlite3 ~/rokabot/data/rokabot.db '.schema memory_claim'
+sqlite3 ~/rokabot/data/rokabot.db '.schema memory_legacy_drop'
 sqlite3 ~/rokabot/data/rokabot.db '.schema extraction_queue'
 sqlite3 ~/rokabot/data/rokabot.db '.schema jev_events'
 # Back up the live database on the Pi (from a dev machine)
@@ -460,7 +461,7 @@ docker compose up -d
 ### Memory Claims and Extraction Queue
 
 ```bash
-# Recent active facts (legacy_id is the claim ID that writers, audit rows and undo use)
+# Recent active facts (item_id is the primary key; legacy_id is null on item-native rows)
 sqlite3 ~/rokabot/data/rokabot.db "SELECT id AS item_id, legacy_id, guild_id, subject_kind, subject_user_id, predicate, content,
   valid_until, needs_review, first_seen_at, last_seen_at
   FROM memory_item WHERE kind='fact' AND status='active' ORDER BY last_seen_at DESC LIMIT 100;"
@@ -603,7 +604,7 @@ FROM memory_item WHERE legacy_table = 'memory_claim' AND legacy_id IN (<old_id>,
 
 Expect a handful of moves after the first deploy, not dozens.
 
-**Undo a Move.** Undo reactivates the old row and ends the replacement when the move created or revived it. That fact is never offered again. It prints `undone`, or `nothing to undo` when the row was not reclassified or is already restored. It runs in one transaction while the bot keeps running. Opening the second connection runs the startup migrations, which recreate the `memory_claim` full-text triggers, so run it while the bot is idle.
+**Undo a Move.** Undo reactivates the old row and ends the replacement when the move created or revived it. That fact is never offered again. It prints `undone`, or `nothing to undo` when the row was not reclassified or is already restored. It runs in one transaction while the bot keeps running. Opening the second connection runs startup schema checks (with `memory_legacy_drop` present, legacy `memory_claim` tables and full-text triggers are skipped), so run it while the bot is idle.
 
 ```bash
 # Production: run the compiled module in the container (the image has no scripts/ and no tsx); replace OLD_ID
@@ -638,7 +639,7 @@ sqlite3 ~/rokabot/data/rokabot.db "SELECT item.guild_id, item.label, substr(item
 sqlite3 ~/rokabot/data/rokabot.db "SELECT COUNT(*) AS active,
   SUM(EXISTS (SELECT 1 FROM memory_item_embedding vector WHERE vector.item_id = item.id)) AS embedded
   FROM memory_item item WHERE item.kind='fact' AND item.status='active';"
-# Legacy memory recall, last 7 days: fact retrieval vs prompt blocks built
+# Memory recall, last 7 days: fact retrieval vs prompt blocks built
 sqlite3 ~/rokabot/data/rokabot.db "SELECT kind, COUNT(*) AS turns, ROUND(AVG(n_selected), 2) AS avg_selected, ROUND(AVG(tokens_est)) AS avg_tokens FROM memory_events WHERE kind IN ('retrieval', 'context_build') AND created_at > (strftime('%s', 'now') - 7 * 86400) * 1000 GROUP BY kind;"
 ```
 
@@ -656,59 +657,79 @@ ROKABOT_DB_PATH="$PWD/data/rokabot.db" npm run migrate:memory-v2
 
 Review the report and the backup. If the check passed, restart with `sudo docker compose up -d roka`. Never delete `user_memory` by hand.
 
-### Typed Memory Items (Phases 3-5 and 6)
+### Typed Memory Items
 
-`config.yml` stays on `memory.store: legacy`. Enter `dual` or `item` only as an operator step. The offline simulator is the promotion gate. Owner decisions 12 and 13 (2026-11-14) remove the production shadow read and soak. The bot must be stopped while migration catches up rows written while projection triggers were off. The migration refreshes changed rows, removes projections whose legacy rows were deleted, and inserts new rows in one transaction. Startup installs source projection triggers in `dual`; during Phase 5 it also installed them in `item`, but Phase 6 drops them under `item`. Startup never runs a migration. Migration and replay output counts and hashes only; they never print memory text.
+The `#266` typed memory cutover is complete in production (2026-11-14). The phases landed in order: `#498` (prompt-local refs `1..n` and stable content ordering in every memory model and Jev call, so both stores send identical requests), `#499` Phase 5 read cutover (`777c6ca`), `#500` Phase 6 writer cutover (`e62d520`), and `#501` Phase 7 legacy drop (`8f93a49`). Owner decisions 12 and 13 replaced production shadow reads and soaks with the offline simulator gate.
 
-1. Stop the bot and take a timestamped SQLite backup.
-2. Run `migrate:memory-items` against the Pi database and confirm the checks pass.
-3. Set `MEMORY_STORE=dual` in `.env`, then start the bot.
-4. Check the latest `item_integrity` detail. All three counts must be zero.
+#### Production State
+
+- **Store Mode:** the Pi runs `MEMORY_STORE=item` in `~/rokabot/.env`. `config.yml` stays on `memory.store: legacy`.
+- **Readers and Writers:** all prompt readers and memory writers use `memory_item` directly. Projection triggers are gone (`0`).
+- **Dropped Legacy Tables:** on 2026-11-14, `npm run migrate:memory-items -- --drop-legacy --backup` dropped `memory_claim`, `memory_evidence`, `memory_claim_fts` (plus its shadow tables), `memory_episode`, `media_digest` and `media_occurrence`, and recorded the drop in `memory_legacy_drop`. Item counts after the drop: `129` facts, `396` episodes, `43` media.
+- **Startup Guard:** only `item` starts on this database. Startup refuses `legacy` or `dual` and never recreates the dropped tables. `item_integrity` checks item-native invariants.
+- **Open Follow-Ups:** `#496` (server events and private facts rarely stored) and `#497` (strict-privacy simulator run).
+
+```bash
+# Verify current production state on the Pi
+sqlite3 ~/rokabot/data/rokabot.db "SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'memory_item_projection_%';"
+sqlite3 ~/rokabot/data/rokabot.db "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('memory_claim', 'memory_evidence', 'memory_claim_fts', 'memory_episode', 'media_digest', 'media_occurrence');"
+sqlite3 ~/rokabot/data/rokabot.db "SELECT dropped_at, detail FROM memory_legacy_drop;"
+sqlite3 ~/rokabot/data/rokabot.db "SELECT kind, COUNT(*) FROM memory_item GROUP BY kind;"
+sqlite3 ~/rokabot/data/rokabot.db "SELECT detail FROM memory_events WHERE kind = 'item_integrity' ORDER BY id DESC LIMIT 1;"
+```
+
+The first two queries return `0`. The third returns the drop timestamp and per-table pre-drop counts.
+
+#### Rollback from the Pre-Drop Backup
+
+Because the legacy tables are dropped, `migrate:memory-items` and `migrate:memory-items -- --to-legacy` refuse on the Pi database. Keep the pre-drop backup (`data/rokabot.db.pre-memory-drop.<timestamp>`).
+
+1. Stop the bot.
+2. Copy the pre-drop backup over `data/rokabot.db` and delete any `data/rokabot.db-wal` and `data/rokabot.db-shm`.
+3. Start the bot with `MEMORY_STORE=item` in `.env` to return to the pre-drop Phase 6 database.
 
 ```bash
 cd ~/rokabot
 sudo docker compose -f ~/rokabot/docker-compose.yml stop roka
-sqlite3 data/rokabot.db ".backup data/rokabot.db.pre-memory-dual.$(date -u +%Y%m%d%H%M%S)"
-ROKABOT_DB_PATH="$PWD/data/rokabot.db" npm run migrate:memory-items
-# Set MEMORY_STORE=dual in .env; config.yml remains legacy.
+cp data/rokabot.db.pre-memory-drop.<timestamp> data/rokabot.db
+rm -f data/rokabot.db-wal data/rokabot.db-shm
+# Keep MEMORY_STORE=item in .env
 sudo docker compose -f ~/rokabot/docker-compose.yml up -d roka
-sqlite3 data/rokabot.db "SELECT detail FROM memory_events WHERE kind = 'item_integrity' ORDER BY id DESC LIMIT 1;"
 ```
 
-Check `status` is `ok`, `checks_failed` is `0`, and the complete and unique legacy ID counts equal the expected count before starting. The integrity detail has only `fact`, `episode` and `media` drift counts. A failed migration rolls back its writes. If any integrity count is nonzero, roll back to legacy and investigate before trying dual again.
-
-#### Phase 5 read cutover and rollback
-
-During Phase 5, after the offline simulator passes, change `MEMORY_STORE` in `.env` to `item` and restart. The four prompt blocks and the other item-backed readers switch to `memory_item`; writers remain on legacy tables. The triggers stay enabled. To roll back the Phase 5 read cutover, change `MEMORY_STORE` to `dual` and restart. This returns reads to legacy while keeping the item projection current.
-
-```bash
-# This Phase 5 rollback was a config-only switch. Phase 6 uses the reverse export below.
-# Set MEMORY_STORE=dual in .env, then restart roka.
-sudo docker compose -f ~/rokabot/docker-compose.yml up -d roka
-sqlite3 data/rokabot.db "SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'memory_item_projection_%';"
-```
-
-Under `dual`, the last query must return `15`. Under Phase 5 `item`, it returned `15`; under Phase 6 `item`, it returns `0`. Keep the migration backup until the item store is accepted. Set `legacy` only to disable projections as a separate recovery action; after that, rerun the catch-up migration before returning to `dual`.
-
-#### Phase 6 writer cutover and rollback
-
-Under Phase 6 `item`, all five writer modules write item rows directly, and the legacy source tables stay frozen. If rollback is needed, stop the bot before rebuilding source rows. The reverse export and its Phase 2 forward checks run in one transaction. It does not print memory text, names or IDs. Set `MEMORY_STORE=dual` only after the command reports `status: ok` and `checks_failed: 0`, then start the bot.
+To roll back further from a restored Phase 6 database to `dual`: stop the bot, export the item rows back to the legacy tables in one transaction, confirm `status: ok` and `checks_failed: 0`, set `MEMORY_STORE=dual` in `.env`, and start the bot.
 
 ```bash
 cd ~/rokabot
 sudo docker compose -f ~/rokabot/docker-compose.yml stop roka
-sqlite3 data/rokabot.db ".backup data/rokabot.db.pre-memory-dual.$(date -u +%Y%m%d%H%M%S)"
 ROKABOT_DB_PATH="$PWD/data/rokabot.db" npm run migrate:memory-items -- --to-legacy
 # Set MEMORY_STORE=dual in .env; config.yml remains legacy.
 sudo docker compose -f ~/rokabot/docker-compose.yml up -d roka
 sqlite3 data/rokabot.db "SELECT detail FROM memory_events WHERE kind = 'item_integrity' ORDER BY id DESC LIMIT 1;"
+sqlite3 data/rokabot.db "SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'memory_item_projection_%';"
 ```
 
-After restart in `dual`, the latest integrity sample must report zero drift and the projection-trigger count must return `15`. Keep the backup until the rollback is accepted.
+After restart in `dual`, `item_integrity` reports zero drift and the trigger count returns `15`.
+
+#### Un-Dropped Databases and Phase 7 Drop
+
+For a fresh database or an un-dropped backup moving from `legacy` to `item`:
+
+1. Stop the bot, take a timestamped `.backup`, run `ROKABOT_DB_PATH="$PWD/data/rokabot.db" npm run migrate:memory-items`, and confirm `status` is `ok` and `checks_failed` is `0`.
+2. Set `MEMORY_STORE=item` in `.env` and start the bot. Startup drops the 15 projection triggers (`0` remain) and freezes the legacy tables.
+3. To drop the six legacy tables after a backup, stop the bot and run `migrate:memory-items -- --drop-legacy --backup`. The script refuses unless `MEMORY_STORE` is `item`, projection triggers are `0`, and `--backup` points to a separate readable SQLite file with all six legacy tables, matching row counts, and an mtime newer than the newest detectable legacy write (or newer than 24 hours ago if none is detectable).
+
+```bash
+cd ~/rokabot
+sudo docker compose -f ~/rokabot/docker-compose.yml stop roka
+sqlite3 data/rokabot.db ".backup data/rokabot.db.pre-memory-drop.$(date -u +%Y%m%d%H%M%S)"
+ROKABOT_DB_PATH="$PWD/data/rokabot.db" MEMORY_STORE=item npm run migrate:memory-items -- --drop-legacy --backup "$PWD/data/rokabot.db.pre-memory-drop.<timestamp>"
+sudo docker compose -f ~/rokabot/docker-compose.yml up -d roka
+```
 
 #### Offline Memory Simulator Gate (#266)
 
-Run the seedless committed-cache replay from a workstation before each phase cutover. It makes no network calls and writes counts and hashes only. Both stores must pass the hard gates, and the `item` quality metrics must match `dual` exactly. Phase 7 also checks replay after the legacy tables are dropped. `npm run memsim` replays 30 synthetic days across two guilds, public and private channels, DMs, media shares and five restarts through the real memory pipeline on a temporary database. `npm test` runs the same seedless replay. The simulator overwrites `GEMINI_API_KEY` with a sentinel in its own process and reads `TYPESAFE_API_KEY`, `GRAPHIFY_GEMINI_API_KEY`, `DEV_GEMINI_API_KEY` and `CLIPROXY_TOKEN` from `.env` only when recording. Its report holds counts, never memory text.
+The seedless committed-cache replay gated every phase cutover in `#266`. Both `--store dual` and `--store item` pass with `0` cache misses, `0` live calls, and identical quality (`0.732` recall, `0.968` precision); Phase 7 also passes with `--drop-legacy-at-day 15`. `npm run memsim` replays 30 synthetic days across two guilds, public and private channels, DMs, media shares and five restarts through the real memory pipeline on a temporary database. `npm test` runs the same seedless replay. The simulator overwrites `GEMINI_API_KEY` with a sentinel in its own process and reads `TYPESAFE_API_KEY`, `GRAPHIFY_GEMINI_API_KEY`, `DEV_GEMINI_API_KEY` and `CLIPROXY_TOKEN` from `.env` only when recording. Its report holds counts and hashes only, never memory text.
 
 Record and seeded runs need the local River proxy (`127.0.0.1:8317`), so run them on a workstation, not on the Pi:
 
@@ -716,6 +737,7 @@ Record and seeded runs need the local River proxy (`127.0.0.1:8317`), so run the
 # Replay the committed synthetic cache; no network calls.
 npm run memsim -- --replay --store dual
 npm run memsim -- --replay --store item
+npm run memsim -- --replay --store item --drop-legacy-at-day 15
 # Record the committed cache after a scenario or pipeline change, then drop entries nothing read.
 # --budget river=N,embeddings=N,typesafe=N caps live calls (defaults 600, 1200 and 1500).
 npm run memsim:generate
@@ -730,36 +752,13 @@ npm run memsim -- --seed ~/memsim-private/rokabot-sim-copy.db --record --cache-d
 npm run memsim -- --seed ~/memsim-private/rokabot-sim-copy.db --replay --cache-dir ~/memsim-private/cache --store dual
 ```
 
-A seeded run refuses a `--cache-dir` inside the repository because its cached replies hold real memory text. Never commit that cache or the copy. Before a cutover, the replay must print `integrity=passed` (`drift 0/0/0`), `triggers=passed`, `parity=passed`, `privacy=passed` and `crash=passed`.
+A seeded run refuses a `--cache-dir` inside the repository because its cached replies hold real memory text. Never commit that cache or the copy. The dual replay gate requires `integrity=passed` (`drift 0/0/0`), `triggers=passed`, `parity=passed`, `privacy=passed` and `crash=passed` (under `--store item`, `parity` is `skipped`).
 
 The builder timing at 10,000 items runs offline from the committed cache, so it can run on the Pi:
 
 ```bash
 npm run memsim -- --replay --scale 10000 --store item
 ```
-
-```bash
-npm run memsim -- --replay --store dual
-npm run memsim -- --replay --store item
-npm run memsim -- --replay --store item --drop-legacy-at-day 15
-```
-
-#### Phase 7 drop the legacy tables
-
-After one release on Phase 6, stop the bot, take a timestamped SQLite backup, and run the explicit drop against the Pi database with that backup as the guard. The script refuses unless `MEMORY_STORE` is `item`, the projection triggers are gone, and the backup is a separate readable SQLite file that holds the six legacy tables with matching per-table row counts and an mtime newer than the newest detectable legacy write (or newer than 24 hours ago if no legacy write is detectable). It drops `memory_claim`, `memory_evidence`, `memory_claim_fts` (and its shadow tables), `memory_episode`, `media_digest` and `media_occurrence` in one transaction, reports per-table row counts, and records `memory_legacy_drop`. Startup never drops anything and never recreates dropped tables; only `item` starts afterwards. Rollback restores the backup file, never `--to-legacy`.
-
-```bash
-cd ~/rokabot
-sudo docker compose -f ~/rokabot/docker-compose.yml stop roka
-sqlite3 data/rokabot.db ".backup data/rokabot.db.pre-memory-drop.$(date -u +%Y%m%d%H%M%S)"
-ROKABOT_DB_PATH="$PWD/data/rokabot.db" MEMORY_STORE=item npm run migrate:memory-items -- --drop-legacy --backup "$PWD/data/rokabot.db.pre-memory-drop.<timestamp>"
-# Set MEMORY_STORE=item in .env; config.yml remains legacy.
-sudo docker compose -f ~/rokabot/docker-compose.yml up -d roka
-sqlite3 data/rokabot.db "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('memory_claim', 'memory_evidence', 'memory_claim_fts', 'memory_episode', 'media_digest', 'media_occurrence');"
-sqlite3 data/rokabot.db "SELECT dropped_at FROM memory_legacy_drop;"
-```
-
-The first query must return `0` and the second a timestamp. If the drop refuses, fix the named precondition and rerun; a refusal writes nothing. Keep the backup: if the bot must go back, stop it, copy the backup over `data/rokabot.db`, delete any `data/rokabot.db-wal` and `data/rokabot.db-shm`, and start it with `MEMORY_STORE=item`. That returns the Phase 6 database; to go back further, follow the Phase 6 rollback above.
 
 ### Vault Export
 

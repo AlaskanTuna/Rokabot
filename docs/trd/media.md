@@ -204,7 +204,7 @@ The digest header states the coverage, for example `whole video in two halves, 3
 
 ### Remembered Media
 
-In a server turn with memory on, each digest is saved per guild in `media_digest`, and each share in `media_occurrence`. A later share of the same item reuses the digest, and the footer says `remembered the video`. DMs, `/ask` and `memory.privacy: off` keep the digest in the transcript only.
+In a server turn with memory on, each digest is saved per guild as a `media` `memory_item` (with `memory_item_payload`), and each share in `memory_item_occurrence`. A later share of the same item reuses the digest, and the footer says `remembered the video`. DMs, `/ask` and `memory.privacy: off` keep the digest in the transcript only.
 
 - **Content Keys:** `youtube:<id>` (plus `@<startSec>` with a timestamp), `<platform>:<post id>:0` for a post video, `discord:<attachment path>` for a streamed upload, and `sha256:<hex>` of the bytes for an inline upload.
 - `opening` and incomplete digests are not reused. A `skim` that two halves could now cover is redone.
