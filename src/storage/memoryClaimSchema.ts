@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3'
+import { isLegacyMemoryDropped } from './memoryLegacyDrop.js'
 
 const CREATE_MEMORY_CLAIM = `
   CREATE TABLE memory_claim (
@@ -212,6 +213,8 @@ function createFts(database: Database.Database, rebuild: boolean): void {
 }
 
 export function ensureMemoryClaimSchema(database: Database.Database): void {
+  // Phase 7 drops the legacy tables and records it; startup must not recreate them.
+  if (isLegacyMemoryDropped(database)) return
   const exists = tableExists(database, 'memory_claim')
   let rebuildFts = !tableExists(database, 'memory_claim_fts')
 

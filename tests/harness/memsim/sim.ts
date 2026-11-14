@@ -97,10 +97,16 @@ function verifyDropLegacySupport(day: number): void {
 
 function runDropLegacyMigration(dbPath: string): void {
   const tsxBin = resolve('node_modules/.bin/tsx')
-  const result = spawnSync(tsxBin, [resolve('scripts/migrate-memory-items.ts'), '--drop-legacy'], {
-    env: { ...process.env, ROKABOT_DB_PATH: dbPath },
-    encoding: 'utf8'
-  })
+  const backupPath = `${dbPath}.pre-legacy-drop`
+  copyFileSync(dbPath, backupPath)
+  const result = spawnSync(
+    tsxBin,
+    [resolve('scripts/migrate-memory-items.ts'), '--drop-legacy', '--backup', backupPath],
+    {
+      env: { ...process.env, ROKABOT_DB_PATH: dbPath },
+      encoding: 'utf8'
+    }
+  )
   if (result.status !== 0) {
     throw new Error(
       `migrate-memory-items --drop-legacy failed (status ${result.status}): ${result.stderr || result.stdout}`
@@ -1083,6 +1089,7 @@ export async function runMemsim(options: MemsimRunOptions): Promise<MemsimReport
         fillMemoryItemEmbeddingHashes(reopenedAfterDrop)
         sweepMemoryItemIntegrity(reopenedAfterDrop)
         restoreMonitoredChannels()
+        restoreOpenEpisodes()
         startExtractionScheduler()
       }
 
@@ -1090,38 +1097,37 @@ export async function runMemsim(options: MemsimRunOptions): Promise<MemsimReport
       simNowMs = dayStartMs + 22 * 60 * 60 * 1000
       await drainExtractionAndEmbeds()
       const db = getDb()
-      if (!legacyDropped) {
-        collectDbAuditWriters(db, writerTracker, 'pipeline')
-        pruneStaleClaims(config.memory.claimRetentionDays, scenario.botUserId)
-        collectDbAuditWriters(db, writerTracker, 'pipeline')
+      // Item-native maintenance continues to run after the legacy tables are dropped.
+      collectDbAuditWriters(db, writerTracker, 'pipeline')
+      pruneStaleClaims(config.memory.claimRetentionDays, scenario.botUserId)
+      collectDbAuditWriters(db, writerTracker, 'pipeline')
 
-        await reclassifyClaims(simRandom)
-        const recSeen = collectDbAuditWriters(db, writerTracker, 'pipeline')
-        if (recSeen.has('reclassify.moveClaim')) {
-          writerTracker.recordPipeline('reclassify.reclassifyClaims')
-        }
-
-        pruneFailedExtractionJobs(config.memory.failedExtractionRetentionDays)
-        await pruneEpisodesAndReembed(simNowMs)
-        pruneExtractionSamples()
-        fillMemoryItemEmbeddingHashes(db)
-
-        const beforeMaxEventId = (
-          db.prepare("SELECT COALESCE(MAX(id), 0) AS id FROM memory_events WHERE kind = 'item_integrity'").get() as {
-            id: number
-          }
-        ).id
-        sweepMemoryItemIntegrity(db)
-        const integrityRow = db
-          .prepare("SELECT detail FROM memory_events WHERE kind = 'item_integrity' AND id > ? ORDER BY id DESC LIMIT 1")
-          .get(beforeMaxEventId) as { detail: string } | undefined
-        if (!integrityRow) {
-          throw new Error(`sweepMemoryItemIntegrity did not write an item_integrity row on day ${dayPlan.day}`)
-        }
-        const drift = JSON.parse(integrityRow.detail) as { fact: number; episode: number; media: number }
-        dailyDrifts.push({ day: dayPlan.day, fact: drift.fact, episode: drift.episode, media: drift.media })
-        collectDbAuditWriters(db, writerTracker, 'pipeline')
+      await reclassifyClaims(simRandom)
+      const recSeen = collectDbAuditWriters(db, writerTracker, 'pipeline')
+      if (recSeen.has('reclassify.moveClaim')) {
+        writerTracker.recordPipeline('reclassify.reclassifyClaims')
       }
+
+      pruneFailedExtractionJobs(config.memory.failedExtractionRetentionDays)
+      await pruneEpisodesAndReembed(simNowMs)
+      pruneExtractionSamples()
+      fillMemoryItemEmbeddingHashes(db)
+
+      const beforeMaxEventId = (
+        db.prepare("SELECT COALESCE(MAX(id), 0) AS id FROM memory_events WHERE kind = 'item_integrity'").get() as {
+          id: number
+        }
+      ).id
+      sweepMemoryItemIntegrity(db)
+      const integrityRow = db
+        .prepare("SELECT detail FROM memory_events WHERE kind = 'item_integrity' AND id > ? ORDER BY id DESC LIMIT 1")
+        .get(beforeMaxEventId) as { detail: string } | undefined
+      if (!integrityRow) {
+        throw new Error(`sweepMemoryItemIntegrity did not write an item_integrity row on day ${dayPlan.day}`)
+      }
+      const drift = JSON.parse(integrityRow.detail) as { fact: number; episode: number; media: number }
+      dailyDrifts.push({ day: dayPlan.day, fact: drift.fact, episode: drift.episode, media: drift.media })
+      collectDbAuditWriters(db, writerTracker, 'pipeline')
     }
 
     const db = getDb()

@@ -744,6 +744,23 @@ npm run memsim -- --replay --store item
 npm run memsim -- --replay --store item --drop-legacy-at-day 15
 ```
 
+#### Phase 7 drop the legacy tables
+
+After one release on Phase 6, stop the bot, take a timestamped SQLite backup, and run the explicit drop against the Pi database with that backup as the guard. The script refuses unless `MEMORY_STORE` is `item`, the projection triggers are gone, and the backup is a separate readable SQLite file that holds the six legacy tables with matching per-table row counts and an mtime newer than the newest detectable legacy write (or newer than 24 hours ago if no legacy write is detectable). It drops `memory_claim`, `memory_evidence`, `memory_claim_fts` (and its shadow tables), `memory_episode`, `media_digest` and `media_occurrence` in one transaction, reports per-table row counts, and records `memory_legacy_drop`. Startup never drops anything and never recreates dropped tables; only `item` starts afterwards. Rollback restores the backup file, never `--to-legacy`.
+
+```bash
+cd ~/rokabot
+sudo docker compose -f ~/rokabot/docker-compose.yml stop roka
+sqlite3 data/rokabot.db ".backup data/rokabot.db.pre-memory-drop.$(date -u +%Y%m%d%H%M%S)"
+ROKABOT_DB_PATH="$PWD/data/rokabot.db" MEMORY_STORE=item npm run migrate:memory-items -- --drop-legacy --backup "$PWD/data/rokabot.db.pre-memory-drop.<timestamp>"
+# Set MEMORY_STORE=item in .env; config.yml remains legacy.
+sudo docker compose -f ~/rokabot/docker-compose.yml up -d roka
+sqlite3 data/rokabot.db "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('memory_claim', 'memory_evidence', 'memory_claim_fts', 'memory_episode', 'media_digest', 'media_occurrence');"
+sqlite3 data/rokabot.db "SELECT dropped_at FROM memory_legacy_drop;"
+```
+
+The first query must return `0` and the second a timestamp. If the drop refuses, fix the named precondition and rerun; a refusal writes nothing. Keep the backup: if the bot must go back, stop it, copy the backup over `data/rokabot.db`, delete any `data/rokabot.db-wal` and `data/rokabot.db-shm`, and start it with `MEMORY_STORE=item`. That returns the Phase 6 database; to go back further, follow the Phase 6 rollback above.
+
 ### Vault Export
 
 The export writes a read-only snapshot of member notes and each guild's `guild.md` to `data/vault/` (`MEMORY_VAULT_EXPORT_DIR` changes it). Open the copy in Obsidian on a desktop, not on the Pi. Re-run it to refresh.
