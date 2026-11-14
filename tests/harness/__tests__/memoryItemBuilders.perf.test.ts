@@ -197,5 +197,6 @@ describe('memory item builders performance', () => {
     }
 
     console.info(`Memory item builders: ${observations.join(', ')}`)
-  })
+    // Seeding 40,000 rows takes about 35 s on a CI runner, beyond the perf suite's 30 s default.
+  }, 180_000)
 })
