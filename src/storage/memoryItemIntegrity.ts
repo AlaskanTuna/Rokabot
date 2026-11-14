@@ -84,6 +84,10 @@ function countItemNativeIntegrityIssues(database: Database.Database): MemoryItem
   return counts
 }
 
+export function getMemoryItemNativeIntegrityCounts(database: Database.Database = getDb()): MemoryItemDriftCounts {
+  return countItemNativeIntegrityIssues(database)
+}
+
 /** Record a value-free projection health sample and warn when any kind has drift. */
 export function sweepMemoryItemIntegrity(database: Database.Database = getDb()): MemoryItemDriftCounts {
   const counts = database.transaction(() => {
