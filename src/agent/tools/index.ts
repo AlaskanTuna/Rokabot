@@ -176,7 +176,7 @@ export const rememberUserTool = new FunctionTool({
 export const recallUserTool = new FunctionTool({
   name: 'recall_user',
   description:
-    'Look up what you remember about a server member. Call this whenever another member is the topic of the message — a direct question ("what do you know about X?"), a story or claim involving them ("X promised to attend the seminar"), or a request about them — not only explicit memory questions. Call it even if you might have no notes; an empty result is fine. Omit user_name to recall facts about the current speaker.',
+    'Look up what you remember about a server member. Call this whenever another member is the topic of the message — a direct question ("what do you know about X?"), a story or claim involving them ("X promised to attend the seminar"), a request about them, or your opinion or guess about them ("what gift would X like?", "who is tidier, X or Y?") — not only explicit memory questions. Call it even if you might have no notes; an empty result is fine. Omit user_name to recall facts about the current speaker.',
   parameters: z.object({
     user_name: z
       .string()

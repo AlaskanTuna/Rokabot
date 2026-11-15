@@ -1448,7 +1448,7 @@ describe('generateResponse metrics', () => {
 
     const expectedTokensIn =
       estimateTokens(
-        `${assembleSystemPrompt({ tone: result.tone, hour: 12, displayName: 'Mio', memoryScope: 'full' })}\n\n- The current user's Discord ID is "mio-id". remember_user and recall_user target the current user automatically; to recall a different server member, pass their name as user_name.\n\n## Reply Shape\n- Length: two short paragraphs.`
+        `${assembleSystemPrompt({ tone: result.tone, hour: 12, displayName: 'Mio', memoryScope: 'full' })}\n\n- The current user's Discord ID is "mio-id". remember_user and recall_user target the current user automatically; to recall a different server member, pass their name as user_name. Whenever another server member is the topic, call recall_user with their name before you answer, even for an opinion or a guess about them.\n\n## Reply Shape\n- Length: two short paragraphs.`
       ) +
       estimateTokens(JSON.stringify(rokaTools)) +
       estimateTokens('[Mio]: Hello metrics.')
