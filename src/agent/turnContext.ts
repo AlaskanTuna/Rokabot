@@ -558,7 +558,8 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
   const tailSection =
     memoryScope === 'full'
       ? `\n\n- The current user's Discord ID is "${userId}".` +
-        ' remember_user and recall_user target the current user automatically; to recall a different server member, pass their name as user_name.'
+        ' remember_user and recall_user target the current user automatically; to recall a different server member, pass their name as user_name.' +
+        ' Whenever another server member is the topic, call recall_user with their name before you answer, even for an opinion or a guess about them.'
       : `\n\n- The current user's Discord ID is "${userId}".`
 
   const prefetch = await awaitTurnPrefetch(options.turnEntryWork, channelId)
