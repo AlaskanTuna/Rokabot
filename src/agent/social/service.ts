@@ -40,6 +40,19 @@ function isYtDlpPlatform(platform: SocialPlatform): boolean {
   return platform !== 'x' && platform !== 'bluesky' && platform !== 'threads'
 }
 
+function delay(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal.aborted) return resolve()
+    const finish = (): void => {
+      clearTimeout(timer)
+      signal.removeEventListener('abort', finish)
+      resolve()
+    }
+    const timer = setTimeout(finish, ms)
+    signal.addEventListener('abort', finish)
+  })
+}
+
 const MAX_BLUESKY_PDS_CACHE_ENTRIES = 256
 const BLUESKY_PDS_TIMEOUT_MS = 1500
 
@@ -221,15 +234,20 @@ export class SocialPostViewer {
   }
 
   private async lookupRedditMirror(target: SocialPostTarget, signal: AbortSignal): Promise<SocialPost | null> {
-    try {
-      const response = await this.fetcher(`https://vxreddit.com/comments/${target.id}/`, {
-        headers: { 'User-Agent': BROWSER_USER_AGENT },
-        signal
-      })
-      return response.ok ? parseVxRedditPage(await response.text(), target, this.settings.maxTextChars) : null
-    } catch {
-      return null
+    // vxreddit intermittently redirects instead of serving the page, so retry before giving up.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) await delay(1000 * attempt, signal)
+      if (signal.aborted) return null
+      try {
+        const response = await this.fetcher(`https://vxreddit.com/comments/${target.id}/`, {
+          headers: { 'User-Agent': BROWSER_USER_AGENT },
+          redirect: 'manual',
+          signal
+        })
+        if (response.ok) return parseVxRedditPage(await response.text(), target, this.settings.maxTextChars)
+      } catch {}
     }
+    return null
   }
 
   private async lookupUncached(target: SocialPostTarget, signal: AbortSignal): Promise<SocialPostLookup> {
