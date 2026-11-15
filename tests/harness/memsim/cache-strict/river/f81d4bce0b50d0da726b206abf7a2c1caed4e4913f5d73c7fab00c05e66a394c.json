@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "f81d4bce0b50d0da726b206abf7a2c1caed4e4913f5d73c7fab00c05e66a394c",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af977a9792f\",\"object\":\"chat.completion\",\"created\":1794733993,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"ops\\\":[],\\\"summary\\\":\\\"Dave and Erin exchanged practical tips about rolling canvas banners and organizing end-of-month supplies, with Erin noting twine rolls stored for next month.\\\"}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4262,\"completion_tokens\":37,\"total_tokens\":4299,\"prompt_tokens_details\":{\"cached_tokens\":3840},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

@@ -37,6 +37,7 @@ describe('PREDICATES', () => {
       'recommends',
       'complains_about',
       'strong_opinion',
+      'upcoming_change',
       'misc'
     ])
 

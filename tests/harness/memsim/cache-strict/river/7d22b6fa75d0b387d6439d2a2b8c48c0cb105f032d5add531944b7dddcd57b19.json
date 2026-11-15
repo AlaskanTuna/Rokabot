@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "7d22b6fa75d0b387d6439d2a2b8c48c0cb105f032d5add531944b7dddcd57b19",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af976d97676\",\"object\":\"chat.completion\",\"created\":1794733785,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\n  \\\"ops\\\": [\\n    {\\n      \\\"op\\\": \\\"add\\\",\\n      \\\"subject\\\": {\\\"kind\\\": \\\"user\\\", \\\"userId\\\": \\\"sim-user-bob\\\"},\\n      \\\"predicate\\\": \\\"hobby\\\",\\n      \\\"value\\\": \\\"foil fencing at the community gym on Tuesdays\\\",\\n      \\\"tense\\\": \\\"current\\\",\\n      \\\"sourceLine\\\": 1\\n    }\\n  ],\\n  \\\"summary\\\": \\\"Bob mentioned that his regular Tuesday hobby is foil fencing at the community gym, and Alice asked Roka about her work.\\\"\\n}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4267,\"completion_tokens\":111,\"total_tokens\":4378,\"prompt_tokens_details\":{\"cached_tokens\":3840},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

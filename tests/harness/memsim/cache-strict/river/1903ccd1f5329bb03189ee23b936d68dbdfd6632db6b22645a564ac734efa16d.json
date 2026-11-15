@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "1903ccd1f5329bb03189ee23b936d68dbdfd6632db6b22645a564ac734efa16d",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af976c2777b\",\"object\":\"chat.completion\",\"created\":1794733762,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"ops\\\":[{\\\"op\\\":\\\"add\\\",\\\"subject\\\":{\\\"kind\\\":\\\"user\\\",\\\"userId\\\":\\\"sim-user-grace\\\"},\\\"predicate\\\":\\\"general_occupation\\\",\\\"value\\\":\\\"junior paralegal handling case filings\\\",\\\"tense\\\":\\\"current\\\",\\\"sourceLine\\\":1}],\\\"summary\\\":\\\"Grace said she is currently a junior paralegal downtown handling case filings, and Dave asked whether acoustic lo-fi suits evening reading.\\\"}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4099,\"completion_tokens\":80,\"total_tokens\":4179,\"prompt_tokens_details\":{\"cached_tokens\":4096},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

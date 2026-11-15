@@ -126,6 +126,7 @@ stats: # The /stats notebook
     recommends: I remember what they recommend.
     complains_about: I remember what gets on their nerves.
     strong_opinion: I remember what they feel strongly about.
+    upcoming_change: I remember what they have coming up.
     misc: I remember a little something about them.
   remembersOther: I remember their {{label}}. # A predicate missing above; {{label}} is its name in lower case
   chartColors: # The chart images

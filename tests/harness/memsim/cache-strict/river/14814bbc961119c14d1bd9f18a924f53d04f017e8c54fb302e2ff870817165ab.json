@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "14814bbc961119c14d1bd9f18a924f53d04f017e8c54fb302e2ff870817165ab",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af9774e1dcb3\",\"object\":\"chat.completion\",\"created\":1794733902,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\n  \\\"ops\\\": [\\n    {\\n      \\\"op\\\": \\\"update\\\",\\n      \\\"subject\\\": {\\\"kind\\\": \\\"user\\\", \\\"userId\\\": \\\"sim-user-alice\\\"},\\n      \\\"existingId\\\": 1,\\n      \\\"predicate\\\": \\\"favorite_anime\\\",\\n      \\\"value\\\": \\\"Aria the Animation\\\",\\n      \\\"tense\\\": \\\"current\\\",\\n      \\\"sourceLine\\\": 1\\n    }\\n  ],\\n  \\\"summary\\\": \\\"Alice corrected her favorite anime from Mushishi to Aria the Animation. Bob asked Roka about a video Alice shared, and Roka recalled it was about raku kiln glazing.\\\"\\n}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4253,\"completion_tokens\":129,\"total_tokens\":4382,\"prompt_tokens_details\":{\"cached_tokens\":3840},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

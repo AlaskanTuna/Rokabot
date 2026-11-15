@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "95ac2712d7fabb90290ee731d5f8f13bec7c0a9359a53e54de8c7fc67b995dc0",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af977751e23d\",\"object\":\"chat.completion\",\"created\":1794733941,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\n  \\\"ops\\\": [\\n    {\\n      \\\"op\\\": \\\"update\\\",\\n      \\\"subject\\\": {\\\"kind\\\": \\\"guild\\\"},\\n      \\\"existingId\\\": 5,\\n      \\\"predicate\\\": \\\"upcoming_event\\\",\\n      \\\"value\\\": \\\"Southbay Club arcade tournament at 7pm\\\",\\n      \\\"date\\\": {\\\"year\\\": 2026, \\\"month\\\": 10, \\\"day\\\": 29},\\n      \\\"sourceLine\\\": 1\\n    },\\n    {\\n      \\\"op\\\": \\\"retract\\\",\\n      \\\"subject\\\": {\\\"kind\\\": \\\"user\\\", \\\"userId\\\": \\\"sim-user-grace\\\"},\\n      \\\"predicate\\\": \\\"hobby\\\",\\n      \\\"value\\\": \\\"linocut printmaking\\\",\\n      \\\"sourceLine\\\": 2\\n    },\\n    {\\n      \\\"op\\\": \\\"add\\\",\\n      \\\"subject\\\": {\\\"kind\\\": \\\"user\\\", \\\"userId\\\": \\\"sim-user-dave\\\"},\\n      \\\"predicate\\\": \\\"favorite_game\\\",\\n      \\\"value\\\": \\\"Hades\\\",\\n      \\\"tense\\\": \\\"current\\\",\\n      \\\"sourceLine\\\": 4\\n    },\\n    {\\n      \\\"op\\\": \\\"add\\\",\\n      \\\"subject\\\": {\\\"kind\\\": \\\"user\\\", \\\"userId\\\": \\\"sim-user-dave\\\"},\\n      \\\"predicate\\\": \\\"likes\\\",\\n      \\\"value\\\": \\\"cold brew coffee\\\",\\n      \\\"tense\\\": \\\"current\\\",\\n      \\\"sourceLine\\\": 4\\n    }\\n  ],\\n  \\\"summary\\\": \\\"Erin announced the Southbay arcade tournament moved to October 29, 2026 at 7pm, and Grace said she gave up linocut printmaking and donated her carving tools. Dave learned from Roka that his favorite game is Hades and his favorite drink is now cold brew coffee.\\\"\\n}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4277,\"completion_tokens\":351,\"total_tokens\":4628,\"prompt_tokens_details\":{\"cached_tokens\":3840},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

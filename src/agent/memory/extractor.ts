@@ -129,6 +129,7 @@ function episodePrompt(
     'Every add and update gives sourceLine: the # of the delta message that states the fact. Context lines have no # and are never cited.',
     'Add a new claim only for a durable fact. Return noop only when no durable fact, change or retraction came up.',
     'Every user add and update has a tense: current if it is true of them now, past if it was true before but not now ("back when I was a nurse", "I used to play chess"), planned if they intend it.',
+    'A change a member has already committed to that has not happened yet ("I\'m relocating to Rotterdam next month", "I took the supervisor role, I start next quarter") is upcoming_change with tense current: state the change and its timing in the value. A wish or a maybe ("I might learn guitar someday") stays planned.',
     'Use retract when a member says a fact about themselves no longer holds ("I quit chess", "I\'m not vegetarian anymore"), naming the predicate and the value that ended, even if it is not in the current active claims. A switch ("switched from chess to go") is a retract of the old value plus an add of the new one.',
     'When retracting a fact listed in the active claims, use its listed predicate.',
     'If a member restates a current durable fact, return add with the same subject, predicate and exact value as its existing claim. Never add a rewording. Use update with an existing claim ID only when the fact itself changed.',
@@ -314,7 +315,10 @@ export async function verifyAndApplyOperations(input: {
   subjectIds: Set<string>
   jobId?: number
 }): Promise<OperationApplicationReport> {
-  const writeOps = input.output.ops.filter((op): op is EpisodeWriteOp => op.op !== 'noop')
+  // A committed future change is kept as a current fact; the standard retention tier lapses it unless restated.
+  const writeOps = input.output.ops
+    .filter((op): op is EpisodeWriteOp => op.op !== 'noop')
+    .map((op) => ('tense' in op && op.predicate === 'upcoming_change' ? { ...op, tense: 'current' as const } : op))
   if (writeOps.length === 0) {
     return {
       appliedOps: 0,

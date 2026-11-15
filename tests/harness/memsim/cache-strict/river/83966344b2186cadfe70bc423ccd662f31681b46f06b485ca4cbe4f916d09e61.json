@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "83966344b2186cadfe70bc423ccd662f31681b46f06b485ca4cbe4f916d09e61",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af976cd76ed\",\"object\":\"chat.completion\",\"created\":1794733773,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"ops\\\":[{\\\"op\\\":\\\"add\\\",\\\"subject\\\":{\\\"kind\\\":\\\"user\\\",\\\"userId\\\":\\\"sim-user-dave\\\"},\\\"predicate\\\":\\\"diet\\\",\\\"value\\\":\\\"vegetarian\\\",\\\"tense\\\":\\\"current\\\",\\\"sourceLine\\\":1},{\\\"op\\\":\\\"add\\\",\\\"subject\\\":{\\\"kind\\\":\\\"user\\\",\\\"userId\\\":\\\"sim-user-dave\\\"},\\\"predicate\\\":\\\"hobby\\\",\\\"value\\\":\\\"cooking lentil curries\\\",\\\"tense\\\":\\\"current\\\",\\\"sourceLine\\\":1},{\\\"op\\\":\\\"add\\\",\\\"subject\\\":{\\\"kind\\\":\\\"user\\\",\\\"userId\\\":\\\"sim-user-dave\\\"},\\\"predicate\\\":\\\"favorite_game\\\",\\\"value\\\":\\\"Hollow Knight\\\",\\\"tense\\\":\\\"current\\\",\\\"sourceLine\\\":2}],\\\"summary\\\":\\\"Dave mentioned switching to a vegetarian diet and cooking lentil curries, and named Hollow Knight as his favorite game for quiet boss runs. Erin asked Roka about rainy-day puzzle games.\\\"}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4219,\"completion_tokens\":169,\"total_tokens\":4388,\"prompt_tokens_details\":{\"cached_tokens\":4096},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

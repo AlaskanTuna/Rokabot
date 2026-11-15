@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "256d8f85aa4cb804e885762b6e675fbd4452e5bf4a7e3cff5b369867074ef529",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af976d1751b\",\"object\":\"chat.completion\",\"created\":1794733777,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"ops\\\":[],\\\"summary\\\":\\\"Frank and Carol chat about the courtyard gate hinges being oiled and ask Roka about squeaky and quiet doors.\\\"}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4262,\"completion_tokens\":32,\"total_tokens\":4294,\"prompt_tokens_details\":{\"cached_tokens\":4096},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

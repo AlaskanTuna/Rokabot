@@ -91,6 +91,7 @@ export const HUMANIZED_LABEL: Record<string, string> = {
   recommends: 'Recommendations',
   complains_about: 'Pet Peeves',
   strong_opinion: 'Strong Opinions',
+  upcoming_change: 'Upcoming',
   misc: 'Misc'
 }
 

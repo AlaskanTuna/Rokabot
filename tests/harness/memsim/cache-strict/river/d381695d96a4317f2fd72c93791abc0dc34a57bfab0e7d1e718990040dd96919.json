@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "d381695d96a4317f2fd72c93791abc0dc34a57bfab0e7d1e718990040dd96919",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af977521e1e2\",\"object\":\"chat.completion\",\"created\":1794733906,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"ops\\\":[{\\\"op\\\":\\\"add\\\",\\\"subject\\\":{\\\"kind\\\":\\\"user\\\",\\\"userId\\\":\\\"sim-user-grace\\\"},\\\"predicate\\\":\\\"hobby\\\",\\\"value\\\":\\\"leather bookbinding\\\",\\\"tense\\\":\\\"current\\\",\\\"sourceLine\\\":1},{\\\"op\\\":\\\"add\\\",\\\"subject\\\":{\\\"kind\\\":\\\"user\\\",\\\"userId\\\":\\\"sim-user-grace\\\"},\\\"predicate\\\":\\\"general_occupation\\\",\\\"value\\\":\\\"marine biologist\\\",\\\"tense\\\":\\\"current\\\",\\\"sourceLine\\\":5},{\\\"op\\\":\\\"add\\\",\\\"subject\\\":{\\\"kind\\\":\\\"user\\\",\\\"userId\\\":\\\"sim-user-grace\\\"},\\\"predicate\\\":\\\"likes\\\",\\\"value\\\":\\\"hojicha tea\\\",\\\"tense\\\":\\\"current\\\",\\\"sourceLine\\\":5},{\\\"op\\\":\\\"add\\\",\\\"subject\\\":{\\\"kind\\\":\\\"user\\\",\\\"userId\\\":\\\"sim-user-grace\\\"},\\\"predicate\\\":\\\"likes\\\",\\\"value\\\":\\\"sparkling water\\\",\\\"tense\\\":\\\"current\\\",\\\"sourceLine\\\":5}],\\\"summary\\\":\\\"Grace mentioned that she practices leather bookbinding every week, and Roka stated that Grace works as a marine biologist and enjoys hojicha tea and sparkling water.\\\"}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4360,\"completion_tokens\":205,\"total_tokens\":4565,\"prompt_tokens_details\":{\"cached_tokens\":3840},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

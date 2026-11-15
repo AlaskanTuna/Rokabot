@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "279901213c11a8fdae1698e77f034bb5d248a6dedc9af447bffa8dbff063e91e",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af977597900\",\"object\":\"chat.completion\",\"created\":1794733913,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"ops\\\":[{\\\"op\\\":\\\"retract\\\",\\\"subject\\\":{\\\"kind\\\":\\\"user\\\",\\\"userId\\\":\\\"sim-user-bob\\\"},\\\"predicate\\\":\\\"hobby\\\",\\\"value\\\":\\\"foil fencing at the community gym on Tuesdays\\\",\\\"sourceLine\\\":1}],\\\"summary\\\":\\\"Bob said he quit fencing entirely this month and sold all his masks and blades. Alice asked the bot about her favorite anime, and Carol asked about crafts and cats in Northgate.\\\"}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4396,\"completion_tokens\":89,\"total_tokens\":4485,\"prompt_tokens_details\":{\"cached_tokens\":3840},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

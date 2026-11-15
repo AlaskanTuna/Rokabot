@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "319b1670a763e6d6ddbac28680b4773c9a2011b8f6618958c6da0effba17117d",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af976e51dba5\",\"object\":\"chat.completion\",\"created\":1794733797,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"ops\\\":[{\\\"op\\\":\\\"noop\\\"}],\\\"summary\\\":\\\"Alice asked Roka to keep nut allergy awareness in mind in mod-vault, and Roka agreed to flag pistachios and remember her EpiPen note.\\\"}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4035,\"completion_tokens\":47,\"total_tokens\":4082,\"prompt_tokens_details\":{\"cached_tokens\":3840},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

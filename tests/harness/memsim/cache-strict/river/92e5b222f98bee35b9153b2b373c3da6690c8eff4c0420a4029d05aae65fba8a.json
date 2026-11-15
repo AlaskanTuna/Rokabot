@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "92e5b222f98bee35b9153b2b373c3da6690c8eff4c0420a4029d05aae65fba8a",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af9776e1df4d\",\"object\":\"chat.completion\",\"created\":1794733934,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\n  \\\"ops\\\": [\\n    {\\n      \\\"op\\\": \\\"update\\\",\\n      \\\"subject\\\": {\\\"kind\\\": \\\"user\\\", \\\"userId\\\": \\\"sim-user-dave\\\"},\\n      \\\"existingId\\\": 2,\\n      \\\"predicate\\\": \\\"favorite_game\\\",\\n      \\\"value\\\": \\\"Hades\\\",\\n      \\\"tense\\\": \\\"current\\\",\\n      \\\"sourceLine\\\": 1\\n    }\\n  ],\\n  \\\"summary\\\": \\\"Dave updated his favorite game from Hollow Knight to Hades. Erin and Grace asked Roka about their pets and hobbies.\\\"\\n}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4619,\"completion_tokens\":111,\"total_tokens\":4730,\"prompt_tokens_details\":{\"cached_tokens\":3840},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

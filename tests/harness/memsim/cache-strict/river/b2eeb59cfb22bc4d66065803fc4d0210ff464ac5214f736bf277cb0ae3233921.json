@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "b2eeb59cfb22bc4d66065803fc4d0210ff464ac5214f736bf277cb0ae3233921",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af977041de2e\",\"object\":\"chat.completion\",\"created\":1794733828,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"ops\\\":[{\\\"op\\\":\\\"add\\\",\\\"subject\\\":{\\\"kind\\\":\\\"user\\\",\\\"userId\\\":\\\"sim-user-dave\\\"},\\\"predicate\\\":\\\"upcoming_change\\\",\\\"value\\\":\\\"Accepted a fellowship and will relocate to Rotterdam next month\\\",\\\"tense\\\":\\\"current\\\",\\\"sourceLine\\\":1}],\\\"summary\\\":\\\"Dave shared that he accepted a fellowship and will relocate to Rotterdam next month.\\\"}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4028,\"completion_tokens\":72,\"total_tokens\":4100,\"prompt_tokens_details\":{\"cached_tokens\":3840},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}
