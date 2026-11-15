@@ -885,7 +885,7 @@ Set one in `~/rokabot/.env`, then recreate the bot container.
 
 ### Social Post Viewing
 
-X and Bluesky use public APIs and Threads reads its public post page. YouTube, TikTok, Reddit, Instagram and Bilibili need yt-dlp.
+X and Bluesky use public APIs, Threads reads its public post page, and Reddit falls back to the vxreddit mirror. YouTube, TikTok, Reddit, Instagram and Bilibili need yt-dlp.
 
 - **Binary:** the image carries the official yt-dlp musl onedir build (`yt-dlp_musllinux_aarch64.zip` on the Pi, `yt-dlp_musllinux.zip` on amd64) in `/opt/yt-dlp`, linked as `/usr/local/bin/yt-dlp`. The single-file build unpacks itself on every run and cost the Pi 0.6-1.4 s per lookup.
 - **Update:** take the latest stable release from the [yt-dlp releases page](https://github.com/yt-dlp/yt-dlp/releases). Set `YTDLP_VERSION`, `YTDLP_AMD64_SHA256` and `YTDLP_ARM64_SHA256` in `Dockerfile` from the `.zip` entries of its `SHA2-256SUMS`. The build checks both the checksum-file entry and the zip. Ship it through the normal release process.

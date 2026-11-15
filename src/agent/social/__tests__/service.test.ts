@@ -353,6 +353,40 @@ describe('SocialPostViewer', () => {
     })
   })
 
+  it('reads a Reddit post from the vxreddit mirror when Reddit refuses the feed', async () => {
+    const mirrorPage =
+      '<meta property="og:site_name" content="u/poster_one on r/osugame - ⬆️ 3 | 💬 1" /><meta property="og:title" content="Mirror title" />'
+    const fetcher = vi
+      .fn(async (_input: string | URL | Request, _init?: RequestInit) => new Response('', { status: 500 }))
+      .mockResolvedValueOnce(new Response('', { status: 429 }))
+      .mockResolvedValueOnce(new Response(mirrorPage))
+    const runExtractor = vi.fn(async (_binaryPath: string, _url: string, _timeoutMs: number) => ({ reason: 'exit_1' }))
+    const viewer = createSocialPostViewer(settings, { fetcher, runExtractor, warn: vi.fn() })
+
+    const result = await viewer.lookup(parseSocialPostUrl('https://www.reddit.com/comments/1x0b7lo/')!)
+
+    expect(result).toMatchObject({
+      status: 'found',
+      post: { platform: 'reddit', authorHandle: 'poster_one', authorName: 'r/osugame', text: 'Mirror title' }
+    })
+    expect(String(fetcher.mock.calls[1][0])).toBe('https://vxreddit.com/comments/1x0b7lo/')
+    expect(runExtractor).not.toHaveBeenCalled()
+  })
+
+  it('keeps the feed refusal when the vxreddit mirror fails too', async () => {
+    const fetcher = vi
+      .fn(async (_input: string | URL | Request, _init?: RequestInit) => new Response('', { status: 500 }))
+      .mockResolvedValueOnce(new Response('', { status: 403 }))
+    const runExtractor = vi.fn(async (_binaryPath: string, _url: string, _timeoutMs: number) => ({ reason: 'exit_1' }))
+    const viewer = createSocialPostViewer(settings, { fetcher, runExtractor, warn: vi.fn() })
+
+    expect(await viewer.lookup(parseSocialPostUrl('https://www.reddit.com/comments/1x0b7lo/')!)).toEqual({
+      status: 'failed',
+      platform: 'reddit',
+      reason: 'http_403'
+    })
+  })
+
   it("keeps yt-dlp's failure reason when YouTube oEmbed fails too", async () => {
     const fetcher = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) => jsonResponse({}, 401))
     const runExtractor = vi.fn(async (_binaryPath: string, _url: string, _timeoutMs: number) => ({ reason: 'exit_1' }))
