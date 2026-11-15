@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.2](https://github.com/AlaskanTuna/Rokabot/compare/v0.8.1...v0.8.2) (2026-11-15)
+
+
+### Bug Fixes
+
+* **media:** read Reddit posts through the vxreddit mirror when Reddit refuses ([#511](https://github.com/AlaskanTuna/Rokabot/issues/511)) ([e6081ca](https://github.com/AlaskanTuna/Rokabot/commit/e6081ca9f732ece0c044cb2ca2a295729ae08258))
+
 ## [0.8.1](https://github.com/AlaskanTuna/Rokabot/compare/v0.8.0...v0.8.1) (2026-11-14)
 
 
