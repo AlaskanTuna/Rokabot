@@ -24,6 +24,8 @@ it.skipIf(!ytDlpAvailable)(
       const startedAt = performance.now()
       const result = await viewer.lookup(target!)
       results.push({ platform, wallTimeMs: Math.round(performance.now() - startedAt), status: result.status })
+      // Reddit refuses unauthenticated clients by fingerprint and rate (#509); an explicit refusal is the designed failure.
+      if (platform === 'reddit' && result.status === 'failed' && /^http_(403|429)$/.test(result.reason)) continue
       expect(result.status, `${platform} live lookup`).toBe('found')
     }
 
