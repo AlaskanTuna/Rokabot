@@ -54,6 +54,7 @@ The lasting choices behind Rokabot, with why they were made. Check here before r
 | 2026-11-14 | Phase 7 drops the six legacy tables with the explicit `--drop-legacy` script after a `.backup`; `memory.store` stays until a later cleanup PR and only `item` starts on a dropped schema | Owner decision 10 (#266); restore the backup is the rollback, and startup never drops anything                                                           |
 | 2026-11-14 | Memory model and Jev calls order inputs by stable content keys and pass prompt-local refs `1..n`, never database row IDs (#498)                                                          | Keeps requests identical across legacy and typed item stores and stops storage IDs from leaking into prompts or Jev state                                |
 | 2026-11-15 | An extracted fact that cites Roka's own line is dropped, reversing the earlier rule that a bad citation only loses its link (#496)                                                       | Roka's replies repeat guesses and told facts, and the simulator showed one laundering a wrong event date into a server fact                              |
+| 2026-11-15 | Decided future changes are stored under `upcoming_change` and lapse through standard retention unless restated (#504)                                                                    | A lightweight upcoming-fact option, chosen over storing them as plain current facts or dropping them                                                     |
 
 ## Models and Search
 

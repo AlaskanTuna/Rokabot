@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "ebf07268e863e0f7d97edc1aec2c0518676f911c2cb2572f71cc46d2f1ddd3d3",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af977837860\",\"object\":\"chat.completion\",\"created\":1794733955,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\n  \\\"ops\\\": [\\n    {\\n      \\\"op\\\": \\\"retract\\\",\\n      \\\"subject\\\": { \\\"kind\\\": \\\"user\\\", \\\"userId\\\": \\\"sim-user-grace\\\" },\\n      \\\"predicate\\\": \\\"language_spoken\\\",\\n      \\\"value\\\": \\\"Spanish\\\",\\n      \\\"sourceLine\\\": 1\\n    },\\n    {\\n      \\\"op\\\": \\\"add\\\",\\n      \\\"subject\\\": { \\\"kind\\\": \\\"user\\\", \\\"userId\\\": \\\"sim-user-grace\\\" },\\n      \\\"predicate\\\": \\\"language_spoken\\\",\\n      \\\"value\\\": \\\"Portuguese\\\",\\n      \\\"tense\\\": \\\"current\\\",\\n      \\\"sourceLine\\\": 1\\n    },\\n    {\\n      \\\"op\\\": \\\"add\\\",\\n      \\\"subject\\\": { \\\"kind\\\": \\\"user\\\", \\\"userId\\\": \\\"sim-user-erin\\\" },\\n      \\\"predicate\\\": \\\"favorite_music\\\",\\n      \\\"value\\\": \\\"Japanese Breakfast\\\",\\n      \\\"tense\\\": \\\"current\\\",\\n      \\\"sourceLine\\\": 3\\n    }\\n  ],\\n  \\\"summary\\\": \\\"Grace corrected that she speaks Portuguese at home rather than Spanish, and Erin's favorite music artist is now Japanese Breakfast.\\\"\\n}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4355,\"completion_tokens\":228,\"total_tokens\":4583,\"prompt_tokens_details\":{\"cached_tokens\":3840},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "ab2bb699672e406fd6a2443dcca0ac53c9b3ce6b372c669a9455855ac16e146d",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af976e21d944\",\"object\":\"chat.completion\",\"created\":1794733794,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"ops\\\":[{\\\"op\\\":\\\"add\\\",\\\"subject\\\":{\\\"kind\\\":\\\"user\\\",\\\"userId\\\":\\\"sim-user-grace\\\"},\\\"predicate\\\":\\\"hobby\\\",\\\"value\\\":\\\"linocut printmaking\\\",\\\"tense\\\":\\\"current\\\",\\\"sourceLine\\\":1}],\\\"summary\\\":\\\"Grace mentioned she has taken up linocut printmaking as a regular evening hobby, and Dave asked the bot whether Erin had mentioned fruit snacks earlier.\\\"}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4366,\"completion_tokens\":81,\"total_tokens\":4447,\"prompt_tokens_details\":{\"cached_tokens\":3840},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

@@ -75,6 +75,13 @@ export const PREDICATES = Object.freeze({
   recommends: predicate('opinions', 'multi', ['recommend', 'recommends', 'recommendation', 'suggest', 'suggests']),
   complains_about: predicate('opinions', 'multi', ['complain', 'complains', 'complaint', 'annoyed by']),
   strong_opinion: predicate('opinions', 'multi', ['opinion', 'opinions', 'believe', 'believes', 'think']),
+  upcoming_change: predicate(
+    'lifestyle',
+    'multi',
+    ['moving', 'relocating', 'relocate', 'starting', 'new job', 'upcoming'],
+    undefined,
+    'standard'
+  ),
   misc: predicate('misc', 'multi', ['misc'])
 } satisfies Record<string, PredicateDefinition>)
 

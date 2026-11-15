@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "8c8e1ae8734d30cc287e5d19cb639619cb6d909b21df45f531f4e6671c3469eb",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af977ae1e185\",\"object\":\"chat.completion\",\"created\":1794733998,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"ops\\\":[],\\\"summary\\\":\\\"Carol checked in from Kyoto and asked Roka what the server remembers about everyone, and Bob asked Roka to verify stored details about Carol and Alice.\\\"}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4344,\"completion_tokens\":39,\"total_tokens\":4383,\"prompt_tokens_details\":{\"cached_tokens\":3840},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

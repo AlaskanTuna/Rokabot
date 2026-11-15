@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "6fff3244bbd859ab1868e9efaf128c4014c76e4bdbc2769d0bcdd525f199e268",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af977b21e18e\",\"object\":\"chat.completion\",\"created\":1794734002,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"ops\\\":[],\\\"summary\\\":\\\"Frank sharpened a batch of carpenter pencils and asked Roka about lead grades on cedar, while Bob prepped a tray of sharpened leads for next week's woodworking sketches and asked Roka for a closing remark for the workshop.\\\"}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4266,\"completion_tokens\":56,\"total_tokens\":4322,\"prompt_tokens_details\":{\"cached_tokens\":3840},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

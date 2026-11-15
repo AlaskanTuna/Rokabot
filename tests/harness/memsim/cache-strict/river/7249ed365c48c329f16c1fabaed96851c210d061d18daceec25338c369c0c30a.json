@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "7249ed365c48c329f16c1fabaed96851c210d061d18daceec25338c369c0c30a",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af976c97647\",\"object\":\"chat.completion\",\"created\":1794733769,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\n  \\\"ops\\\": [\\n    {\\n      \\\"op\\\": \\\"add\\\",\\n      \\\"subject\\\": { \\\"kind\\\": \\\"user\\\", \\\"userId\\\": \\\"sim-user-bob\\\" },\\n      \\\"predicate\\\": \\\"pets\\\",\\n      \\\"value\\\": \\\"rescue shiba puppy named Mochi\\\",\\n      \\\"tense\\\": \\\"current\\\",\\n      \\\"sourceLine\\\": 1\\n    },\\n    {\\n      \\\"op\\\": \\\"add\\\",\\n      \\\"subject\\\": { \\\"kind\\\": \\\"user\\\", \\\"userId\\\": \\\"sim-user-bob\\\" },\\n      \\\"predicate\\\": \\\"daily_routine\\\",\\n      \\\"value\\\": \\\"morning routine starts at 6am with a quiet swim lap session\\\",\\n      \\\"tense\\\": \\\"current\\\",\\n      \\\"sourceLine\\\": 2\\n    }\\n  ],\\n  \\\"summary\\\": \\\"Bob shared that he adopted a rescue shiba puppy named Mochi and described his 6am morning swim routine. Alice asked Roka about the craft bench.\\\"\\n}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4126,\"completion_tokens\":198,\"total_tokens\":4324,\"prompt_tokens_details\":{\"cached_tokens\":3840},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

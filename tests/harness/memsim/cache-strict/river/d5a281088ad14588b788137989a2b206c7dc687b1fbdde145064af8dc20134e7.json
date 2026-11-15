@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "d5a281088ad14588b788137989a2b206c7dc687b1fbdde145064af8dc20134e7",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af976ea1e054\",\"object\":\"chat.completion\",\"created\":1794733802,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"ops\\\":[{\\\"op\\\":\\\"add\\\",\\\"subject\\\":{\\\"kind\\\":\\\"user\\\",\\\"userId\\\":\\\"sim-user-frank\\\"},\\\"predicate\\\":\\\"hobby\\\",\\\"value\\\":\\\"building cedar bookshelves in the backyard shed on weekends\\\",\\\"tense\\\":\\\"current\\\",\\\"sourceLine\\\":1}],\\\"summary\\\":\\\"Frank said he builds cedar bookshelves in the backyard shed on weekends and asked Roka which wood oil best resists mug rings.\\\"}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4018,\"completion_tokens\":84,\"total_tokens\":4102,\"prompt_tokens_details\":{\"cached_tokens\":3840},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

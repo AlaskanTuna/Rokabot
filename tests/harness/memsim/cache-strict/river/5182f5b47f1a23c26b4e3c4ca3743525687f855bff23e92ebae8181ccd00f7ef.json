@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "5182f5b47f1a23c26b4e3c4ca3743525687f855bff23e92ebae8181ccd00f7ef",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af977877a88\",\"object\":\"chat.completion\",\"created\":1794733959,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"ops\\\":[{\\\"op\\\":\\\"retract\\\",\\\"subject\\\":{\\\"kind\\\":\\\"user\\\",\\\"userId\\\":\\\"sim-user-carol\\\"},\\\"predicate\\\":\\\"hobby\\\",\\\"value\\\":\\\"target archery\\\",\\\"sourceLine\\\":1}],\\\"summary\\\":\\\"Carol said she quit target archery and returned her bow to the club, and Alice asked about a video Carol shared on alpine plants.\\\"}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4247,\"completion_tokens\":72,\"total_tokens\":4319,\"prompt_tokens_details\":{\"cached_tokens\":3840},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

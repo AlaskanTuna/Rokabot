@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "5b8a6c4a8441a17df4574751e75972552cf7eb624ee354d46b9ef77f74503ee1",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af9776b1dcfb\",\"object\":\"chat.completion\",\"created\":1794733931,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\n  \\\"ops\\\": [\\n    {\\n      \\\"op\\\": \\\"update\\\",\\n      \\\"subject\\\": {\\\"kind\\\": \\\"user\\\", \\\"userId\\\": \\\"sim-user-bob\\\"},\\n      \\\"existingId\\\": 2,\\n      \\\"predicate\\\": \\\"nickname\\\",\\n      \\\"value\\\": \\\"Rob\\\",\\n      \\\"tense\\\": \\\"current\\\",\\n      \\\"sourceLine\\\": 1\\n    },\\n    {\\n      \\\"op\\\": \\\"add\\\",\\n      \\\"subject\\\": {\\\"kind\\\": \\\"user\\\", \\\"userId\\\": \\\"sim-user-alice\\\"},\\n      \\\"predicate\\\": \\\"favorite_anime\\\",\\n      \\\"value\\\": \\\"Cowboy Bebop\\\",\\n      \\\"tense\\\": \\\"current\\\",\\n      \\\"sourceLine\\\": 5\\n    }\\n  ],\\n  \\\"summary\\\": \\\"Bob asked to be called Rob instead of Bobby. Alice confirmed her favorite anime is Cowboy Bebop.\\\"\\n}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4423,\"completion_tokens\":176,\"total_tokens\":4599,\"prompt_tokens_details\":{\"cached_tokens\":3840},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

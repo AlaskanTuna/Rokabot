@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "d5b89b1d0aaf29bab4336aa5db985a94b8cba8b144dc562019ecfaa57b42d4ff",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af976d6764e\",\"object\":\"chat.completion\",\"created\":1794733782,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\n  \\\"ops\\\": [\\n    {\\n      \\\"op\\\": \\\"add\\\",\\n      \\\"subject\\\": { \\\"kind\\\": \\\"user\\\", \\\"userId\\\": \\\"sim-user-dave\\\" },\\n      \\\"predicate\\\": \\\"likes\\\",\\n      \\\"value\\\": \\\"double espresso in the morning\\\",\\n      \\\"tense\\\": \\\"current\\\",\\n      \\\"sourceLine\\\": 1\\n    },\\n    {\\n      \\\"op\\\": \\\"add\\\",\\n      \\\"subject\\\": { \\\"kind\\\": \\\"user\\\", \\\"userId\\\": \\\"sim-user-erin\\\" },\\n      \\\"predicate\\\": \\\"diet\\\",\\n      \\\"value\\\": \\\"mild allergy to kiwi fruit\\\",\\n      \\\"tense\\\": \\\"current\\\",\\n      \\\"sourceLine\\\": 2\\n    },\\n    {\\n      \\\"op\\\": \\\"add\\\",\\n      \\\"subject\\\": { \\\"kind\\\": \\\"user\\\", \\\"userId\\\": \\\"sim-user-erin\\\" },\\n      \\\"predicate\\\": \\\"favorite_music\\\",\\n      \\\"value\\\": \\\"Nujabes\\\",\\n      \\\"tense\\\": \\\"current\\\",\\n      \\\"sourceLine\\\": 3\\n    }\\n  ],\\n  \\\"summary\\\": \\\"Dave shared that his favorite drink right now is a morning double espresso, while Erin mentioned a mild kiwi allergy and named Nujabes as her favorite music artist.\\\"\\n}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4348,\"completion_tokens\":256,\"total_tokens\":4604,\"prompt_tokens_details\":{\"cached_tokens\":3840},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

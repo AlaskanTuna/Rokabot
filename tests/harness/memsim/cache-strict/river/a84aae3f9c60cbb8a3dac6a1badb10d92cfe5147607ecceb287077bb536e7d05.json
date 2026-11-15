@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "a84aae3f9c60cbb8a3dac6a1badb10d92cfe5147607ecceb287077bb536e7d05",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af9779c7ab4\",\"object\":\"chat.completion\",\"created\":1794733980,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"ops\\\":[],\\\"summary\\\":\\\"Erin adjusted a radiator valve in the Southbay events hall, and Grace asked Roka about cozy blankets after chatting about cool rooms for board game setup.\\\"}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4355,\"completion_tokens\":40,\"total_tokens\":4395,\"prompt_tokens_details\":{\"cached_tokens\":3840},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "1169bf2658f6ba3dabb86083f46a4562f43bbfefe5aecb2b0060b17fdf8887ff",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af977941e395\",\"object\":\"chat.completion\",\"created\":1794733972,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"ops\\\":[{\\\"op\\\":\\\"retract\\\",\\\"subject\\\":{\\\"kind\\\":\\\"user\\\",\\\"userId\\\":\\\"sim-user-alice\\\"},\\\"predicate\\\":\\\"hobby\\\",\\\"value\\\":\\\"beekeeping\\\",\\\"sourceLine\\\":1}],\\\"summary\\\":\\\"Alice said she gave up beekeeping this autumn and donated her hive boxes. Bob asked about the raku glaze video in Northgate.\\\"}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4460,\"completion_tokens\":73,\"total_tokens\":4533,\"prompt_tokens_details\":{\"cached_tokens\":3840},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

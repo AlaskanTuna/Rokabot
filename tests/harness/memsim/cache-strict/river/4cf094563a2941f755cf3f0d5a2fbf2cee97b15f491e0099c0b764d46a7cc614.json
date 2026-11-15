@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "4cf094563a2941f755cf3f0d5a2fbf2cee97b15f491e0099c0b764d46a7cc614",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af977a578aa\",\"object\":\"chat.completion\",\"created\":1794733989,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"ops\\\":[{\\\"op\\\":\\\"retract\\\",\\\"subject\\\":{\\\"kind\\\":\\\"user\\\",\\\"userId\\\":\\\"sim-user-alice\\\"},\\\"predicate\\\":\\\"hobby\\\",\\\"value\\\":\\\"beekeeping\\\",\\\"sourceLine\\\":3}],\\\"summary\\\":\\\"Alice remarked on a productive October in Northgate Commons and asked Roka about the status of beekeeping on her list, which Roka confirmed had been dropped earlier this month.\\\"}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4200,\"completion_tokens\":81,\"total_tokens\":4281,\"prompt_tokens_details\":{\"cached_tokens\":3840},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

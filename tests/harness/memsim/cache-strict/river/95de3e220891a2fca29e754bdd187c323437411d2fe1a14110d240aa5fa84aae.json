@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "95de3e220891a2fca29e754bdd187c323437411d2fe1a14110d240aa5fa84aae",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af9772a77ff\",\"object\":\"chat.completion\",\"created\":1794733866,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"ops\\\":[{\\\"op\\\":\\\"noop\\\"}],\\\"summary\\\":\\\"Bob asked Roka about Alice's work, Carol's move, and his pet, while Carol asked about upcoming Northgate workshops and Alice asked how Bob's dog Mochi is remembered; Roka answered each query.\\\"}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4629,\"completion_tokens\":58,\"total_tokens\":4687,\"prompt_tokens_details\":{\"cached_tokens\":3840},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "7a8775ebb16f03261a35a194f277190890f4aed1b0b49a2913dba30a00bae901",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af9773a78b7\",\"object\":\"chat.completion\",\"created\":1794733882,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"ops\\\":[],\\\"summary\\\":\\\"Dave stacked thirty folding chairs along the side wall and asked Roka about row capacity for a medium hall, while Erin left two broom handles by the backstage curtain and asked Roka for an upbeat setup soundtrack.\\\"}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4227,\"completion_tokens\":51,\"total_tokens\":4278,\"prompt_tokens_details\":{\"cached_tokens\":3840},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

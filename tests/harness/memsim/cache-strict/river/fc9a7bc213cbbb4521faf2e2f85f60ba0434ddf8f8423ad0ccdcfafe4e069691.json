@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "fc9a7bc213cbbb4521faf2e2f85f60ba0434ddf8f8423ad0ccdcfafe4e069691",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af9773179c5\",\"object\":\"chat.completion\",\"created\":1794733873,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"ops\\\":[{\\\"op\\\":\\\"retract\\\",\\\"subject\\\":{\\\"kind\\\":\\\"user\\\",\\\"userId\\\":\\\"sim-user-grace\\\"},\\\"predicate\\\":\\\"general_occupation\\\",\\\"value\\\":\\\"junior paralegal handling case filings\\\",\\\"sourceLine\\\":1},{\\\"op\\\":\\\"add\\\",\\\"subject\\\":{\\\"kind\\\":\\\"user\\\",\\\"userId\\\":\\\"sim-user-grace\\\"},\\\"predicate\\\":\\\"general_occupation\\\",\\\"value\\\":\\\"museum archivist\\\",\\\"tense\\\":\\\"current\\\",\\\"sourceLine\\\":1}],\\\"summary\\\":\\\"Grace announced she quit paralegal work and has started as a museum archivist.\\\"}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4388,\"completion_tokens\":109,\"total_tokens\":4497,\"prompt_tokens_details\":{\"cached_tokens\":3840},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

@@ -1629,6 +1629,24 @@ describe('tense, changes and retractions', () => {
     expect(activeFacts()).toEqual([])
   })
 
+  it('applies a planned upcoming_change fact as a current claim', async () => {
+    const report = await apply(
+      [{ op: 'add', subject, predicate: 'upcoming_change', value: 'moving to Rotterdam next month', tense: 'planned' }],
+      { durable_0: 0.9, attributed_0: 0.9, current_0: 0.9, past_0: 0.1 }
+    )
+    expect(report).toMatchObject({ appliedOps: 1, droppedOps: 0 })
+    expect(activeFacts()).toEqual([{ value: 'moving to Rotterdam next month', period: 'current' }])
+  })
+
+  it('applies a current upcoming_change fact', async () => {
+    const report = await apply(
+      [{ op: 'add', subject, predicate: 'upcoming_change', value: 'starting a new job in March', tense: 'current' }],
+      { durable_0: 0.9, attributed_0: 0.9, current_0: 0.9, past_0: 0.1 }
+    )
+    expect(report).toMatchObject({ appliedOps: 1, droppedOps: 0 })
+    expect(activeFacts()).toEqual([{ value: 'starting a new job in March', period: 'current' }])
+  })
+
   it('drops a planned member fact even when verification is unavailable', async () => {
     mocks.judgeEpisodeOperations.mockResolvedValueOnce(null)
     const report = await verifyAndApplyOperations({

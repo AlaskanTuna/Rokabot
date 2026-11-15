@@ -108,6 +108,7 @@ stats:
     recommends: I know what they recommend.
     complains_about: I know their pet peeves.
     strong_opinion: I know their opinions.
+    upcoming_change: I know what they have coming up.
     misc: I know something about them.
   remembersOther: I know their {{label}}.
   chartColors:
