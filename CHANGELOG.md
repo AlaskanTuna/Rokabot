@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.4](https://github.com/AlaskanTuna/Rokabot/compare/v0.8.3...v0.8.4) (2026-11-15)
+
+
+### Bug Fixes
+
+* **memory:** remember decided future changes as upcoming facts that lapse unless restated ([#517](https://github.com/AlaskanTuna/Rokabot/issues/517)) ([442aa44](https://github.com/AlaskanTuna/Rokabot/commit/442aa447517746485c144c89fc1e4dc9d276586b))
+
 ## [0.8.3](https://github.com/AlaskanTuna/Rokabot/compare/v0.8.2...v0.8.3) (2026-11-15)
 
 
