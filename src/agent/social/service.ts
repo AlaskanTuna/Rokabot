@@ -3,7 +3,7 @@ import { logger } from '../../utils/logger.js'
 import { resolvesToPublicAddress } from '../media/mediaRules.js'
 import { resolveBlueskyDid } from './blueskyDid.js'
 import { parseBlueskyThread, parseFxTwitterResponse, parseYouTubeOEmbed, parseYtDlpMetadata } from './parsers.js'
-import { parseRedditFeedPost } from './redditFeed.js'
+import { parseRedditFeedPost, parseVxRedditPage } from './redditFeed.js'
 import { BROWSER_USER_AGENT } from './replies/common.js'
 import { replyReader } from './replies/service.js'
 import { THREADS_PAGE_HEADERS, parseThreadsPage } from './threads.js'
@@ -211,11 +211,23 @@ export class SocialPostViewer {
     feedUrl.searchParams.set('limit', '1')
     try {
       const response = await this.fetcher(feedUrl, { headers: { 'User-Agent': BROWSER_USER_AGENT }, signal })
-      // Reddit refuses a flagged IP here and on the JSON yt-dlp reads alike, so yt-dlp would only spend ~9 s failing.
+      // Reddit refuses unauthenticated Node clients here, so the vxreddit mirror stands in for the post.
       if (response.status === 403 || response.status === 429) return { refused: `http_${response.status}` }
       return response.ok ? parseRedditFeedPost(await response.text(), target, this.settings.maxTextChars) : null
     } catch {
       // A refused or failed feed still leaves yt-dlp to try.
+      return null
+    }
+  }
+
+  private async lookupRedditMirror(target: SocialPostTarget, signal: AbortSignal): Promise<SocialPost | null> {
+    try {
+      const response = await this.fetcher(`https://vxreddit.com/comments/${target.id}/`, {
+        headers: { 'User-Agent': BROWSER_USER_AGENT },
+        signal
+      })
+      return response.ok ? parseVxRedditPage(await response.text(), target, this.settings.maxTextChars) : null
+    } catch {
       return null
     }
   }
@@ -266,13 +278,20 @@ export class SocialPostViewer {
     // yt-dlp takes ~9 s to refuse a Reddit post with no hosted video, past the lookup budget; the feed answers
     // in well under a second for every kind of post, so yt-dlp runs only for the video.
     const redditFeed = target.platform === 'reddit' ? await this.lookupRedditFeed(target, signal) : null
-    if (redditFeed && 'refused' in redditFeed) return failure('reddit', redditFeed.refused)
+    if (redditFeed && 'refused' in redditFeed) {
+      const mirrored = await this.lookupRedditMirror(target, signal)
+      return mirrored ? { status: 'found', post: mirrored } : failure('reddit', redditFeed.refused)
+    }
     const redditFeedPost = redditFeed
     if (redditFeedPost && redditFeedPost.videoCount === 0) return { status: 'found', post: redditFeedPost }
 
     const result = await this.runExtractor(this.settings.ytDlpPath, target.extractorUrl, this.settings.timeoutMs)
     if ('reason' in result) {
       if (redditFeedPost) return { status: 'found', post: redditFeedPost }
+      if (target.platform === 'reddit') {
+        const mirrored = await this.lookupRedditMirror(target, signal)
+        if (mirrored) return { status: 'found', post: mirrored }
+      }
       if (target.platform !== 'youtube' || signal.aborted) return failure(target.platform, result.reason)
       // YouTube walls repeated requests from one home IP behind a bot check that oEmbed does not have.
       const oembedUrl = new URL('https://www.youtube.com/oembed')

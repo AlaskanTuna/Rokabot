@@ -82,6 +82,7 @@ The lasting choices behind Rokabot, with why they were made. Check here before r
 | 2026-10-08 | Watched media is remembered as server-scoped text under exact content keys for 90 days, with embeddings for recall only         | Reposts match without re-watching                                                                                            |
 | 2026-11-12 | Qwen watcher, ASR sidecar and direct mode removed; Gemini is the only watcher (#442)                                            | Production ran 7 Gemini watches, all ok, since 2026-11-03; all audio/video now depends on Google, freeing ~725 MiB on the Pi |
 | 2026-11-12 | Unreadable or unsupported images (such as AVIF) are dropped instead of breaking a turn, and the GIF cap rises to 16 MB          | Animated GIFs get converted to a first-frame JPEG so larger GIFs stay within the 4 MB reply budget after decoding            |
+| 2026-11-15 | Reddit post lookups fall back to the public vxreddit mirror when Reddit refuses the feed (#509)                                 | Reddit refuses unauthenticated Node clients and yt-dlp now needs cookies; X already reads through FxTwitter the same way     |
 
 ## Discord
 
