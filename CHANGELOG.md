@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.3](https://github.com/AlaskanTuna/Rokabot/compare/v0.8.2...v0.8.3) (2026-11-15)
+
+
+### Bug Fixes
+
+* **agent:** call recall_user for opinions and guesses about another member ([#514](https://github.com/AlaskanTuna/Rokabot/issues/514)) ([369eb8f](https://github.com/AlaskanTuna/Rokabot/commit/369eb8f64d606c01673487ffd9ae38ccc7a373fc))
+* **media:** retry the vxreddit mirror when it redirects instead of serving the post ([#516](https://github.com/AlaskanTuna/Rokabot/issues/516)) ([d72ac00](https://github.com/AlaskanTuna/Rokabot/commit/d72ac00595690b81b3b9d2a10d89477ba3bc9ca7))
+
 ## [0.8.2](https://github.com/AlaskanTuna/Rokabot/compare/v0.8.1...v0.8.2) (2026-11-15)
 
 
