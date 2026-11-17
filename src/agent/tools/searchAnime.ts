@@ -3,12 +3,35 @@
 import { logger } from '../../utils/logger.js'
 import { jikanThrottle } from './jikanThrottle.js'
 
+/** MyAnimeList genre ids sent as `genres=<id>` on /v4/anime */
+export const GENRE_IDS = {
+  action: 1,
+  adventure: 2,
+  comedy: 4,
+  drama: 8,
+  fantasy: 10,
+  horror: 14,
+  mecha: 18,
+  music: 19,
+  mystery: 7,
+  psychological: 40,
+  romance: 22,
+  'sci-fi': 24,
+  'slice of life': 36,
+  sports: 30,
+  supernatural: 37,
+  suspense: 41
+} as const
+
+export type AnimeGenre = keyof typeof GENRE_IDS
+
 export interface SearchAnimeParams {
   query?: string
   limit?: number // 1-25, default 5
   sort_by?: 'score' | 'popularity' | 'members' | 'title' | 'start_date'
   type?: 'tv' | 'movie' | 'ova' | 'special' | 'ona' | 'music'
   status?: 'airing' | 'complete' | 'upcoming'
+  genre?: AnimeGenre
 }
 
 export interface AnimeResult {
@@ -49,7 +72,7 @@ interface JikanResponse {
 /** Search for anime by title or keyword with optional filters and sorting */
 export async function searchAnime(params: SearchAnimeParams): Promise<SearchAnimeResult> {
   const query = (params.query ?? '').trim()
-  const hasFilters = params.sort_by || params.type || params.status
+  const hasFilters = params.sort_by || params.type || params.status || params.genre
 
   if (!query && !hasFilters) {
     return { results: [], query, total: 0 }
@@ -71,6 +94,7 @@ export async function searchAnime(params: SearchAnimeParams): Promise<SearchAnim
     }
     if (params.type) urlParams.push(`type=${params.type}`)
     if (params.status) urlParams.push(`status=${params.status}`)
+    if (params.genre) urlParams.push(`genres=${GENRE_IDS[params.genre]}`)
 
     const url = `https://api.jikan.moe/v4/anime?${urlParams.join('&')}`
     const response = await fetch(url, { signal: AbortSignal.timeout(5000) })

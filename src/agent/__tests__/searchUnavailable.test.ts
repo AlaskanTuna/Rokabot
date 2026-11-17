@@ -28,9 +28,11 @@ describe.each(['off', 'native'] as const)('a deployment whose search provider is
     for (const mode of ['full', 'forget', 'none'] as const) {
       expect(character.prompts.stable[mode]).not.toContain('search_web')
     }
-    expect(declarations.get('search_anime')?.description).toBe('Search for anime by title or keyword.')
+    expect(declarations.get('search_anime')?.description).toBe(
+      'Search anime catalogue data by title, keyword, or genre: titles, Japanese title, synopsis, score, episodes, type, status, members. Use genre for ranked recommendations by genre.'
+    )
     expect(declarations.get('get_anime_schedule')?.description).toBe(
-      'Get anime airing schedule. Can check a specific day, the full week, or current season.'
+      'Get anime airing schedule by day, week, season, or anime name. Can check a specific day, the full week, or current season.'
     )
     expect(declarations.get('read_replies')?.description).toContain('and then call it. Never call it just because')
     // Re-imports the whole tool module, which is slow enough to trip the 5 s default under full-suite load.

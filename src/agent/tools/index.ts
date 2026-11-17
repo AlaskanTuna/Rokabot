@@ -56,17 +56,38 @@ export const getCurrentTimeTool = new FunctionTool({
 export const searchAnimeTool = new FunctionTool({
   name: 'search_anime',
   description: searchAvailable
-    ? 'Search for anime by title or keyword. ALWAYS use this first for anime questions before trying search_web.'
-    : 'Search for anime by title or keyword.',
+    ? 'Search anime catalogue data by title, keyword, or genre: titles, Japanese title, synopsis, score, episodes, type, status, members. Use genre for ranked recommendations by genre. Jikan holds no opinions or "worth it" takes, merch, prices, where to buy, news and announcements, voice cast, manga or source chapters, or events — use search_web for those. When Jikan answers the question fully, answer from it without search_web; when it comes back empty or lacks the asked field, use search_web in the same turn.'
+    : 'Search anime catalogue data by title, keyword, or genre: titles, Japanese title, synopsis, score, episodes, type, status, members. Use genre for ranked recommendations by genre.',
   parameters: z.object({
-    query: z.string().describe('Anime title or search keyword'),
+    query: z.string().describe('Anime title or search keyword. Optional when genre is given.').optional(),
     limit: z.number().int().describe('Number of results to return (1-25). Defaults to 5.').optional(),
     sort_by: z
       .enum(['score', 'popularity', 'members', 'title', 'start_date'])
       .describe('Sort results by. Defaults to relevance.')
       .optional(),
     type: z.enum(['tv', 'movie', 'ova', 'special', 'ona', 'music']).describe('Filter by anime type.').optional(),
-    status: z.enum(['airing', 'complete', 'upcoming']).describe('Filter by airing status.').optional()
+    status: z.enum(['airing', 'complete', 'upcoming']).describe('Filter by airing status.').optional(),
+    genre: z
+      .enum([
+        'action',
+        'adventure',
+        'comedy',
+        'drama',
+        'fantasy',
+        'horror',
+        'mecha',
+        'music',
+        'mystery',
+        'psychological',
+        'romance',
+        'sci-fi',
+        'slice of life',
+        'sports',
+        'supernatural',
+        'suspense'
+      ])
+      .describe('Filter by genre: the way to ask for ranked recommendations by genre.')
+      .optional()
   }),
   execute: async (input) => await searchAnime(input)
 })
@@ -74,8 +95,8 @@ export const searchAnimeTool = new FunctionTool({
 export const getAnimeScheduleTool = new FunctionTool({
   name: 'get_anime_schedule',
   description: searchAvailable
-    ? 'Get anime airing schedule. ALWAYS use this first for schedule/airing questions before trying search_web. Can check a specific day, the full week, or current season.'
-    : 'Get anime airing schedule. Can check a specific day, the full week, or current season.',
+    ? 'Get anime airing schedule by day, week, season, or anime name: titles, broadcast day and time, score, members, type, episodes, status. Jikan holds no opinions or "worth it" takes, merch, prices, where to buy, news and announcements, voice cast, manga or source chapters, or events — use search_web for those. When the schedule answers the question fully, answer from it without search_web; when it comes back empty or lacks the asked field, use search_web in the same turn. Can check a specific day, the full week, or current season.'
+    : 'Get anime airing schedule by day, week, season, or anime name. Can check a specific day, the full week, or current season.',
   parameters: z.object({
     scope: z
       .enum(['day', 'week', 'season'])
