@@ -97,6 +97,11 @@ search:
   provider: tavily # off | native | tavily | exa; unset means native. native uses llm.main's own search and bills that provider (see docs/RUNBOOK.md, including the Gemini terms)
   nativeTimeoutMs: 8000 # Longest one native search may take
   nativeReserveMs: 5000 # Attempt time a native search must leave for the chat model's next call
+  maxPageChars: 8000 # Most page text kept per read_pages source; longer pages are cut with truncated set
+  maxSearches: 2 # search_web calls admitted per turn; further calls answer with what the turn already has
+  maxPageReads: 2 # Page reads admitted per turn, on the same terms as searches
+  maxProviderCalls: 3 # Provider calls in total per turn across searches and page reads
+  replyReserveMs: 6000 # Attempt time a lookup must leave for the chat model's next call
 
 media:
   watcher: gemini # How Roka takes in audio and video. gemini watches it and she replies from the notes; off neither watches nor sends it and tells her so
