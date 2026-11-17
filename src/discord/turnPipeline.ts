@@ -4,7 +4,9 @@ import type { MediaAttachment } from '../agent/media/attachments.js'
 import { type ReplyOutcome, withReplyOutcomes } from '../agent/replyOutcomes.js'
 import { type GenerateResult, generateResponse } from '../agent/roka.js'
 import { type SearchCitation, withSearchCitations } from '../agent/searchCitations.js'
+import { registerMessageSources, withSearchSources } from '../agent/searchSources.js'
 import type { SocialPostLookup } from '../agent/social/types.js'
+import { withTurnBudget } from '../agent/tools/search/turnBudget.js'
 import { config } from '../config.js'
 import { type ResponseEventInput, recordResponseEvent } from '../storage/metricsStore.js'
 import { logger } from '../utils/logger.js'
@@ -27,7 +29,15 @@ export type ModelTurn = GenerateResult & { sources: SearchCitation[]; replyOutco
 
 export async function runModelTurn(options: Parameters<typeof generateResponse>[0]): Promise<ModelTurn> {
   const [[result, sources], replyOutcome] = await withReplyOutcomes(() =>
-    withSearchCitations(() => generateResponse(options))
+    withSearchCitations(() =>
+      withSearchSources(() =>
+        withTurnBudget(() => {
+          // URLs in the triggering message enter the source registry, so a later page read can name them.
+          registerMessageSources(options.userMessage)
+          return generateResponse(options)
+        })
+      )
+    )
   )
   return { ...result, sources, replyOutcome }
 }

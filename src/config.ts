@@ -112,7 +112,16 @@ interface YamlConfig {
     maxReplyChars?: number
     ytDlpPath?: string
   }
-  search?: { provider?: string; nativeTimeoutMs?: number; nativeReserveMs?: number }
+  search?: {
+    provider?: string
+    nativeTimeoutMs?: number
+    nativeReserveMs?: number
+    maxPageChars?: number
+    maxSearches?: number
+    maxPageReads?: number
+    maxProviderCalls?: number
+    replyReserveMs?: number
+  }
   media?: {
     watcher?: string
     embedWaitMs?: number
@@ -629,7 +638,12 @@ const baseConfig = {
   search: {
     provider: searchProvider(),
     nativeTimeoutMs: yaml.search?.nativeTimeoutMs ?? 8000,
-    nativeReserveMs: yaml.search?.nativeReserveMs ?? 5000
+    nativeReserveMs: yaml.search?.nativeReserveMs ?? 5000,
+    maxPageChars: yaml.search?.maxPageChars ?? 8000,
+    maxSearches: yaml.search?.maxSearches ?? 2,
+    maxPageReads: yaml.search?.maxPageReads ?? 2,
+    maxProviderCalls: yaml.search?.maxProviderCalls ?? 3,
+    replyReserveMs: yaml.search?.replyReserveMs ?? 6000
   },
   media: {
     watcher: mediaWatcher(),
@@ -996,6 +1010,12 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'search.nativeTimeoutMs', value: config.search.nativeTimeoutMs, min: 2000, max: 60_000 },
   // min: 0 because a reserve of zero is a deliberate choice to let a search spend the whole attempt.
   { path: 'search.nativeReserveMs', value: config.search.nativeReserveMs, min: 0, max: 60_000 },
+  { path: 'search.maxPageChars', value: config.search.maxPageChars, min: 1 },
+  { path: 'search.maxSearches', value: config.search.maxSearches, min: 1 },
+  { path: 'search.maxPageReads', value: config.search.maxPageReads, min: 1 },
+  { path: 'search.maxProviderCalls', value: config.search.maxProviderCalls, min: 1 },
+  // min: 0 because a reserve of zero is a deliberate choice to let a lookup spend the whole attempt.
+  { path: 'search.replyReserveMs', value: config.search.replyReserveMs, min: 0, max: 60_000 },
   // Synthesised legacy values are already bounded as gemini.* and fallback.*, so only a block adds rows.
   ...(yaml.llm
     ? [
