@@ -396,7 +396,7 @@ describe('denials and estimates', () => {
 
 describe('ModelScope', () => {
   const qwen = { provider: 'modelscope', model: 'Qwen/Qwen3.5-122B-A10B', workload: 'reply', estTokens: 500 } as const
-  const deepseek = { ...qwen, model: 'deepseek-ai/DeepSeek-V4.1-Flash' } as const
+  const deepseek = { ...qwen, model: 'deepseek-ai/DeepSeek-V4.1-Flash-1017' } as const
 
   it('shares one daily Magicube estimate across every ModelScope model', () => {
     for (let call = 0; call < 125; call += 1) {
