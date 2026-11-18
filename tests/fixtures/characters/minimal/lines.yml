@@ -136,7 +136,7 @@ footers:
     get_weather: checked the weather
     search_web: searched the web
     identify_image: searched the picture
-    identify_image_auto: auto-checked the picture
+    identify_image_auto: checked the image
     search_anime: searched anime
     get_anime_schedule: checked the schedule
     set_reminder: set a reminder
