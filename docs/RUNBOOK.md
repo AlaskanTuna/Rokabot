@@ -894,6 +894,16 @@ X and Bluesky use public APIs, Threads reads its public post page, and Reddit fa
 - **Missing Binary:** startup logs `Social video extractors disabled` with reason `binary_missing`. Lookups on the yt-dlp platforms then get the normal "could not be opened" marker.
 - **Threads `no_post_data`:** the page came back without its post. The post is private or deleted, or Threads changed what it renders for a logged-out request (check the headers in `src/agent/social/threads.ts`).
 
+### Image Identification Bake-Off
+
+`scripts/bake-off-image-id.ts` compares identification backends (`ownVision`, `cloudVision`, `serpapiLens`) over a folder of labelled photos without touching the agent. Photos go through the bot's own `processImageForGemini` first, so sizes match production.
+
+1. Make a folder with the photos plus a `labels.json` next to them: `[{ "file": "roka-nendo.jpg", "expected": { "name": "Maniwa Roka", "maker": "Good Smile" } }, { "file": "mystery.jpg", "expected": null }]`. `expected: null` marks an unknown the backends should abstain on.
+2. Set keys in `.env` (bake-off only; the bot never reads them): `GOOGLE_CLOUD_VISION_API_KEY` for `cloudVision`, `SERPAPI_API_KEY` for `serpapiLens`. A backend whose key is missing is skipped with a printed notice.
+3. Run `npx tsx scripts/bake-off-image-id.ts --photos <dir> --out <dir>`. It writes `results.csv` (one row per photo per backend) and `summary.md` (exact-ID precision, recall, abstention rate on unknowns, p50/p95 latency, estimated cost).
+
+- **Cost per 20 photos:** about $0.03 on `cloudVision` ($0.0015 each), about $0.20 on `serpapiLens` ($0.01 each), and $0 extra on `ownVision`, which bills the configured main-model budget (plus whatever the configured search backend charges for its one lookup per photo).
+
 ### Local Embeddings Sidecar
 
 `embeddings.provider` (`EMBEDDINGS_PROVIDER`) picks who makes memory vectors:
