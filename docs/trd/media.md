@@ -308,10 +308,26 @@ a hint agrees with what she sees.
 - **What it returns:** up to `imageId.maxMatches` match titles, each with its link registered as a `search`
   source (`sN`) and recorded as a citation, or `No matches` when Lens has none. A failed lookup (non-200,
   timeout, abort) returns a short reason instead of throwing.
+- **Vision gate:** before any Lens search, Roka's own route (`generateObject` on `llm.main`, falling back
+  exactly as it does today) judges the speaker text and the eligible images
+  (`src/agent/tools/imageId/lookupGate.ts`). The lookup fires only when the text asks who or what something
+  pictured is and the pictured subject is one of `character_art`, `figure_or_merch`, `product`, `place`,
+  `food` or `game_screen`. `imageId.gate` picks the mode: `off` keeps the old prefilter-only lookup, `shadow`
+  runs the gate and logs its verdict but still fires on the prefilter alone, `on` fires only when the gate
+  agrees. Any gate error, timeout (`imageId.gateTimeoutMs`) or invalid output never fires.
+- **Automatic lookup:** `planImageLookup` (`src/agent/tools/imageId/autoIdentify.ts`) starts beside the media
+  watch, needing only the speaker text and the turn images, and its note reaches the reply model so a skipped
+  tool call cannot leave her guessing. A link preview is the article's furniture, not the question: only images
+  whose origin is not `link_preview` are eligible, and the gate's 1-based target is clamped to them.
 - **Budget:** one call spends one `search` lookup from the turn budget (`search.maxSearches`,
-  `search.maxProviderCalls`); a spent budget answers with the usual budget-spent text.
-- **Rules:** before naming an exact product or edition, confirm a maker or retailer listing with `search_web`.
-  Otherwise describe the image and say she is not sure (see the `search-tools.md` prompt).
+  `search.maxProviderCalls`); a spent budget answers with the usual budget-spent text. The shared monthly and
+  automatic-daily ledger caps refuse with the lookups-used-up text, and a cached image answers from the 24 h
+  cache with no new search.
+- **Rules:** hints cover the main subject only. Never look up or name real people from a photo: the model-called
+  path runs the same gate on its one image and refuses real-person photos with `I won't look up photos of real
+people.` (a gate error refuses too). Before naming an exact product or edition, confirm a maker or retailer
+  listing with `search_web`. Otherwise describe the image and say she is not sure (see the `search-tools.md`
+  prompt).
 
 ## Configuration
 
@@ -341,8 +357,10 @@ a hint agrees with what she sees.
 | `imageId.enabled`                    | `true`   | —                                |
 | `imageId.maxMatches`                 | 5        | 1 to 10                          |
 | `imageId.timeoutMs`                  | 6,000    | 1,000 to 15,000                  |
+| `imageId.gate`                       | `on`     | `off`, `shadow`, `on`            |
+| `imageId.gateTimeoutMs`              | 4,000    | 500 to 15,000                    |
 
-Defaults are the shipped `config.yml` values. Bounds come from `NUMERIC_BOUNDS` in `src/config.ts`. Env overrides: `DISCORD_MAX_ATTACHMENT_BYTES_PER_TURN`, `DISCORD_MAX_INFLIGHT_ATTACHMENT_BYTES`, `GEMINI_MAX_ATTACHMENT_TOKENS`, `GEMINI_MAX_TOKENS_PER_MINUTE`, `MEDIA_WATCHER`, `SOCIAL_POSTS_ENABLED` and `IMAGE_ID_ENABLED`. Reply fetching on YouTube reads `GCP_API_KEY`; `identify_image` reads `SERPAPI_API_KEY`.
+Defaults are the shipped `config.yml` values. Bounds come from `NUMERIC_BOUNDS` in `src/config.ts`. Env overrides: `DISCORD_MAX_ATTACHMENT_BYTES_PER_TURN`, `DISCORD_MAX_INFLIGHT_ATTACHMENT_BYTES`, `GEMINI_MAX_ATTACHMENT_TOKENS`, `GEMINI_MAX_TOKENS_PER_MINUTE`, `MEDIA_WATCHER`, `SOCIAL_POSTS_ENABLED` and `IMAGE_ID_ENABLED`; `IMAGE_ID_GATE` overrides `imageId.gate`. Reply fetching on YouTube reads `GCP_API_KEY`; `identify_image` reads `SERPAPI_API_KEY`.
 
 Derivations: [Multimodal Intake Research](../research/multimodal.md) and [Social Post Viewing Research](../research/social-post-viewing.md).
 

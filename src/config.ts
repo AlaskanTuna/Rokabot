@@ -130,6 +130,8 @@ interface YamlConfig {
     monthlyCap?: number
     autoDailyCap?: number
     resetDay?: number
+    gate?: string
+    gateTimeoutMs?: number
   }
   media?: {
     watcher?: string
@@ -293,6 +295,7 @@ function jevMode(key: 'tone' | 'referents' | 'prefetch', envKey: string): JevMod
 
 export type FormatMode = 'off' | 'shadow' | 'on'
 export type FormatRepairMode = 'off' | 'reformat'
+export type ImageIdGateMode = 'off' | 'shadow' | 'on'
 
 function formatMode(): FormatMode {
   const envValue = envString('FORMAT_MODE')
@@ -325,6 +328,14 @@ function searchProvider(): SearchProvider {
   if (value === 'off' || value === 'native' || value === 'tavily' || value === 'exa') return value
   const source = envValue ? 'Environment variable SEARCH_PROVIDER' : 'Config value search.provider'
   throw new Error(`${source} must be off, native, tavily or exa, got: ${String(value)}`)
+}
+
+function imageIdGate(): ImageIdGateMode {
+  const envValue = envString('IMAGE_ID_GATE')
+  const value = envValue ?? yaml.imageId?.gate ?? 'on'
+  if (value === 'off' || value === 'shadow' || value === 'on') return value
+  const source = envValue ? 'Environment variable IMAGE_ID_GATE' : 'Config value imageId.gate'
+  throw new Error(`${source} must be off, shadow or on, got: ${String(value)}`)
 }
 
 // Only the watcher's `gemini` mode needs the key.
@@ -662,7 +673,9 @@ const baseConfig = {
     timeoutMs: yaml.imageId?.timeoutMs ?? 6000,
     monthlyCap: envInt('IMAGE_ID_MONTHLY_CAP') ?? yaml.imageId?.monthlyCap ?? 230,
     autoDailyCap: envInt('IMAGE_ID_AUTO_DAILY_CAP') ?? yaml.imageId?.autoDailyCap ?? 6,
-    resetDay: yaml.imageId?.resetDay ?? 1
+    resetDay: yaml.imageId?.resetDay ?? 1,
+    gate: imageIdGate(),
+    gateTimeoutMs: yaml.imageId?.gateTimeoutMs ?? 4000
   },
   media: {
     watcher: mediaWatcher(),
@@ -1041,6 +1054,7 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'imageId.monthlyCap', value: config.imageId.monthlyCap, min: 0, max: 100_000 },
   { path: 'imageId.autoDailyCap', value: config.imageId.autoDailyCap, min: 0, max: 1000 },
   { path: 'imageId.resetDay', value: config.imageId.resetDay, min: 1, max: 28 },
+  { path: 'imageId.gateTimeoutMs', value: config.imageId.gateTimeoutMs, min: 500, max: 15_000 },
   // Synthesised legacy values are already bounded as gemini.* and fallback.*, so only a block adds rows.
   ...(yaml.llm
     ? [

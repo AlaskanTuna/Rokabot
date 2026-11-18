@@ -473,3 +473,54 @@ describe('generateObject on a configured llm block', () => {
     expect(fallback.requests[0]?.config).not.toHaveProperty('safetySettings')
   })
 })
+
+describe('generateObject with images', () => {
+  const imageInput = () => [{ mimeType: 'image/jpeg', data: Buffer.from([1, 2, 3]) }]
+  const imageless = () => profileFor('modelscope', 'deepseek-ai/DeepSeek-V4.1-Flash-1017') as ModelProfile
+
+  it('sends inline image parts on an image-capable route', async () => {
+    mocks.config.llm = { main: route('haiku', haiku), fallback: null }
+    const main = fakeLlm(reply({ answer: 'tea' }))
+    useLlms({ haiku: main })
+
+    await expect(
+      generateObject({ schema: Answer, prompt: 'Judge.', workload: 'admission', images: imageInput() })
+    ).resolves.toMatchObject({ value: { answer: 'tea' }, provider: 'anthropic' })
+
+    expect(main.requests[0].contents).toEqual([
+      {
+        role: 'user',
+        parts: [
+          { text: 'Judge.' },
+          { inlineData: { data: Buffer.from([1, 2, 3]).toString('base64'), mimeType: 'image/jpeg' } }
+        ]
+      }
+    ])
+  })
+
+  it('falls back when the main route cannot take images', async () => {
+    mocks.config.llm = { main: route('deepseek', imageless()), fallback: route('flash', gemini) }
+    const main = fakeLlm(reply({ answer: 'no' }))
+    const fallback = fakeLlm(reply({ answer: 'tea' }))
+    useLlms({ deepseek: main, flash: fallback })
+
+    await expect(
+      generateObject({ schema: Answer, prompt: 'Judge.', workload: 'admission', images: imageInput() })
+    ).resolves.toMatchObject({ value: { answer: 'tea' }, provider: 'gemini' })
+
+    expect(mocks.createLlm.mock.calls.map(([resolved]) => (resolved as ResolvedModel).key)).toEqual(['flash'])
+    expect(main.requests).toHaveLength(0)
+    expect(fallback.requests[0]?.contents[0]?.parts?.[1]).toEqual({
+      inlineData: { data: Buffer.from([1, 2, 3]).toString('base64'), mimeType: 'image/jpeg' }
+    })
+  })
+
+  it('fails when neither route takes images', async () => {
+    mocks.config.llm = { main: route('deepseek', imageless()), fallback: null }
+
+    await expect(
+      generateObject({ schema: Answer, prompt: 'Judge.', workload: 'admission', images: imageInput() })
+    ).rejects.toMatchObject({ reason: 'blocked' })
+    expect(mocks.createLlm).not.toHaveBeenCalled()
+  })
+})

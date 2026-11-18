@@ -111,6 +111,8 @@ imageId:
   monthlyCap: 230 # Lens searches allowed per billing month, automatic and model-called together (IMAGE_ID_MONTHLY_CAP overrides); at the cap the tool answers that lookups are used up
   autoDailyCap: 6 # Automatic lookups allowed per UTC day (IMAGE_ID_AUTO_DAILY_CAP overrides); at the cap the turn answers without one
   resetDay: 1 # First day of the billing month, in UTC (1-28); the monthly count rolls over on this day
+  gate: on # off | shadow | on (IMAGE_ID_GATE overrides); off keeps the old prefilter-only lookup, shadow runs the vision gate and logs its verdict but still fires on the prefilter, on fires only when the gate agrees
+  gateTimeoutMs: 4000 # Longest one vision-gate judgment may take, in ms (500-15000); a slower or failed gate never fires
 
 media:
   watcher: gemini # How Roka takes in audio and video. gemini watches it and she replies from the notes; off neither watches nor sends it and tells her so

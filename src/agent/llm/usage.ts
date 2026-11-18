@@ -10,6 +10,7 @@ export type Workload =
   | 'embedding'
   | 'watcher'
   | 'search'
+  | 'imageGate'
 
 /** The token buckets are disjoint, so a cost is the sum of each bucket times its own rate. */
 export interface CallUsage {
@@ -81,7 +82,8 @@ const WORKLOADS: readonly Workload[] = [
   'verification',
   'embedding',
   'watcher',
-  'search'
+  'search',
+  'imageGate'
 ]
 const listeners = new Set<(usage: CallUsage) => void>()
 

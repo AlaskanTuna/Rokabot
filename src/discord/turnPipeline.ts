@@ -1,7 +1,7 @@
 import type { DiscordAPIError } from 'discord.js'
 import { canAffordAttachments } from '../agent/llm/tokenBudget.js'
 import type { MediaAttachment } from '../agent/media/attachments.js'
-import { registerTurnImages, withTurnImages } from '../agent/media/turnImages.js'
+import { registerTurnImages, withTurnImages, withTurnSpeakerText } from '../agent/media/turnImages.js'
 import { type ReplyOutcome, withReplyOutcomes } from '../agent/replyOutcomes.js'
 import { type GenerateResult, generateResponse } from '../agent/roka.js'
 import { type SearchCitation, withSearchCitations } from '../agent/searchCitations.js'
@@ -42,7 +42,7 @@ export async function runModelTurn(options: Parameters<typeof generateResponse>[
               registerTurnImages(options.mediaAttachments ?? [])
               // Embed links often differ from the message text, and enter under their own origin.
               if (options.embedUrls) registerSources(options.embedUrls, 'embed')
-              return generateResponse(options)
+              return withTurnSpeakerText(options.speakerText ?? options.userMessage, () => generateResponse(options))
             })
           )
         )
