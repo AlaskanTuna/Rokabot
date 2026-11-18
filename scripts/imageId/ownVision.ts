@@ -10,6 +10,9 @@ import { config } from '../../src/config.js'
 import type { IdentifyOutput, ImageIdBackend } from './types.js'
 
 export const OWN_VISION_NAME = 'ownVision'
+export const HYBRID_LENS_NAME = 'hybridLens'
+/** Lens titles passed as hints: enough to carry a product name, few enough to keep the prompt small. */
+export const LENS_HINT_COUNT = 5
 // No per-photo estimate: the call bills the configured main-model budget, not a bake-off key.
 export const OWN_VISION_COST_USD = 0
 
@@ -30,9 +33,11 @@ const VISION_PROMPT =
 export interface OwnVisionDeps {
   runVision: (request: LlmRequest) => Promise<string>
   runSearch: (query: string) => Promise<{ title: string; url: string }[]>
+  /** Reverse-image match titles for the photo's public URL; set only for the hybrid. */
+  lensHints?: (publicUrl: string) => Promise<string[]>
 }
 
-const defaultDeps: OwnVisionDeps = {
+export const ownVisionDefaults: OwnVisionDeps = {
   async runVision(request) {
     let text = ''
     for await (const response of createRokaModel().generateContentAsync(request, false)) {
@@ -50,13 +55,21 @@ const defaultDeps: OwnVisionDeps = {
 }
 
 /** The exact ADK request the bot would send for this photo, exported for tests. */
-export function buildVisionRequest(imageBytes: Buffer, mime: string): LlmRequest {
+export function buildVisionRequest(imageBytes: Buffer, mime: string, hints: readonly string[] = []): LlmRequest {
+  const hintText =
+    hints.length > 0
+      ? '\n\nA reverse image search found these page titles. They may be wrong or about something else; use one ' +
+        `only if the photo matches it:\n${hints.map((hint) => `- ${hint}`).join('\n')}`
+      : ''
   return {
     model: config.llm.main.model,
     contents: [
       {
         role: 'user',
-        parts: [{ text: VISION_PROMPT }, { inlineData: { mimeType: mime, data: imageBytes.toString('base64') } }]
+        parts: [
+          { text: VISION_PROMPT + hintText },
+          { inlineData: { mimeType: mime, data: imageBytes.toString('base64') } }
+        ]
       }
     ],
     config: { maxOutputTokens: 512, responseMimeType: 'application/json' },
@@ -76,11 +89,12 @@ function parseVisionJson(text: string): z.infer<typeof visionSchema> | null {
   }
 }
 
-export function createOwnVisionBackend(deps: OwnVisionDeps = defaultDeps): ImageIdBackend {
+export function createOwnVisionBackend(deps: OwnVisionDeps = ownVisionDefaults): ImageIdBackend {
   return {
-    name: OWN_VISION_NAME,
-    async identify(imageBytes: Buffer, mime: string): Promise<IdentifyOutput> {
-      const parsed = parseVisionJson(await deps.runVision(buildVisionRequest(imageBytes, mime)))
+    name: deps.lensHints ? HYBRID_LENS_NAME : OWN_VISION_NAME,
+    async identify(imageBytes: Buffer, mime: string, publicUrl?: string): Promise<IdentifyOutput> {
+      const hints = deps.lensHints && publicUrl ? await deps.lensHints(publicUrl) : []
+      const parsed = parseVisionJson(await deps.runVision(buildVisionRequest(imageBytes, mime, hints)))
       const name = parsed?.name.trim()
       if (!name) return { candidates: [], abstained: true, rawCost: OWN_VISION_COST_USD }
       const sources = await deps.runSearch(name)

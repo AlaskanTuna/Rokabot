@@ -17,8 +17,8 @@ import { pathToFileURL } from 'node:url'
 import { z } from 'zod'
 import { processImageForGemini } from '../src/agent/media/imageProcessor.js'
 import { cloudVisionKey, createCloudVisionBackend } from './imageId/cloudVision.js'
-import { createOwnVisionBackend } from './imageId/ownVision.js'
-import { createSerpapiLensBackend, serpapiKey } from './imageId/serpapiLens.js'
+import { LENS_HINT_COUNT, createOwnVisionBackend, ownVisionDefaults } from './imageId/ownVision.js'
+import { createSerpapiLensBackend, lensMatches, serpapiKey } from './imageId/serpapiLens.js'
 import type { ExpectedIdentity, IdentifyOutput, ImageIdBackend, PhotoLabel } from './imageId/types.js'
 import { exactMatch, percentile } from './imageId/types.js'
 
@@ -242,10 +242,19 @@ export function selectBackends(): { backends: ImageIdBackend[]; skipped: string[
     skipped.push('cloudVision')
     console.log('Skipping cloudVision: GCP_API_KEY is not set')
   }
-  if (serpapiKey()) backends.push(createSerpapiLensBackend())
-  else {
+  const lensKey = serpapiKey()
+  if (lensKey) {
+    backends.push(createSerpapiLensBackend())
+    backends.push(
+      createOwnVisionBackend({
+        ...ownVisionDefaults,
+        lensHints: async (publicUrl) =>
+          (await lensMatches(publicUrl, lensKey)).candidates.slice(0, LENS_HINT_COUNT).map(({ name }) => name)
+      })
+    )
+  } else {
     skipped.push('serpapiLens')
-    console.log('Skipping serpapiLens: SERPAPI_API_KEY is not set')
+    console.log('Skipping serpapiLens and hybridLens: SERPAPI_API_KEY is not set')
   }
   return { backends, skipped }
 }
