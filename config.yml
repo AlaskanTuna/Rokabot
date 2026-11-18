@@ -101,6 +101,7 @@ search:
   maxSearches: 2 # search_web calls admitted per turn; further calls answer with what the turn already has
   maxPageReads: 2 # Page reads admitted per turn, on the same terms as searches
   maxProviderCalls: 3 # Provider calls in total per turn across searches and page reads
+  maxBriefChars: 4000 # Longest the depth-loop brief handed to the model; the Still-missing line survives the cut
   replyReserveMs: 6000 # Attempt time a lookup must leave for the chat model's next call
 
 media:

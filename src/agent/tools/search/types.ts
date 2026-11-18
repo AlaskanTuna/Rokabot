@@ -4,6 +4,12 @@ export interface SearchWebParams {
   query: string
   topic?: 'general' | 'news'
   max_results?: number
+  /** What the answer needs, e.g. ["menu items", "drink prices"]: runs the bounded depth loop. */
+  fields?: string[]
+  /** The same question in the place's language, e.g. Japanese: the loop's second search. */
+  local_query?: string
+  /** A source id (s1, s2, ...) from this turn, or a URL sent in it: reads that link instead of searching. */
+  source?: string
   signal?: AbortSignal
 }
 

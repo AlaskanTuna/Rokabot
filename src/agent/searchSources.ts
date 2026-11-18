@@ -45,6 +45,12 @@ export function resolveSource(id: string): string | undefined {
   return sourcesForTurn.getStore()?.byId.get(id)?.url
 }
 
+/** The registry entry behind a URL, or undefined when it was never registered or no turn scope is open. */
+export function lookupSourceUrl(url: string): { id: string; origin: SourceOrigin } | undefined {
+  const entry = sourcesForTurn.getStore()?.byUrl.get(url)
+  return entry ? { id: entry.id, origin: entry.origin } : undefined
+}
+
 const URL_PATTERN = /https?:\/\/[^\s<>\]`]+/g
 
 function count(haystack: string, needle: string): number {

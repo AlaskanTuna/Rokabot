@@ -134,11 +134,23 @@ export const getWeatherTool = new FunctionTool({
 export const searchWebTool = new FunctionTool({
   name: 'search_web',
   description:
-    'Look something up on the web. Call this for any specific factual question you are not fully certain of — names, numbers, prices, versions, release dates, availability, local details — and for anything recent or time-sensitive. When you are unsure whether to search, search.',
+    "Look something up on the web. Call this for any specific factual question you are not fully certain of — names, numbers, prices, versions, release dates, availability, local details — and for anything recent or time-sensitive. When you are unsure whether to search, search. Pass fields when they ask for a full list, a specific number or price, or several details about a local place (with local_query in the place's language when it is not English); pass source with a source id (s1, s2, ...) when they ask about a link.",
   parameters: z.object({
     query: z.string().describe('Search query'),
     topic: z.enum(['general', 'news']).describe('Search topic. Use news for current events.').optional(),
-    max_results: z.number().int().describe('Number of results (1-10). Defaults to 5.').optional()
+    max_results: z.number().int().describe('Number of results (1-10). Defaults to 5.').optional(),
+    fields: z
+      .array(z.string())
+      .describe('What the answer needs, e.g. ["menu items", "drink prices"]. Runs a deeper lookup.')
+      .optional(),
+    local_query: z
+      .string()
+      .describe("The same question in the place's language, e.g. Japanese. A second search when snippets fall short.")
+      .optional(),
+    source: z
+      .string()
+      .describe('A source id from this turn (s1, s2, ...) or a shared link, to look into that link.')
+      .optional()
   }),
   execute: async (input) => await searchWeb(input)
 })

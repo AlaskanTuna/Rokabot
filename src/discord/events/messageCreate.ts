@@ -21,6 +21,7 @@ import { shouldReact } from '../emojiReactor.js'
 import { openedPostCitation } from '../messageBuilder.js'
 import {
   type SocialPostPresentation,
+  collectEmbedUrls,
   collectEmbedVideoUrls,
   extractComponentTexts,
   extractCurrentMessageContent,
@@ -356,10 +357,12 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
       reservedBytes = budget.reservedBytes
 
       turnEntryWorkHandedOff = true
+      const embedUrls = collectEmbedUrls(message)
       const turn = await runModelTurn({
         channelId,
         guildId,
         userMessage: content || '(shared an image)',
+        embedUrls: embedUrls.length > 0 ? embedUrls : undefined,
         displayName,
         username,
         userId: message.author.id,
