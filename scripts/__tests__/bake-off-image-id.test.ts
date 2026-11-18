@@ -15,13 +15,13 @@ import {
   summarize
 } from '../bake-off-image-id.js'
 import { cloudVisionRequest, createCloudVisionBackend, parseCloudVisionResponse } from '../imageId/cloudVision.js'
-import { buildVisionRequest, createOwnVisionBackend } from '../imageId/ownVision.js'
+import { HYBRID_LENS_NAME, buildVisionRequest, createOwnVisionBackend } from '../imageId/ownVision.js'
 import {
+  __resetLensCacheForTest,
   createSerpapiLensBackend,
-  downscaleForLens,
+  lensMatches,
   lensSearchRequest,
-  parseLensResponse,
-  uploadImageBytesForLens
+  parseLensResponse
 } from '../imageId/serpapiLens.js'
 import { type ImageIdBackend, exactMatch, normalizeIdentity, percentile } from '../imageId/types.js'
 
@@ -244,6 +244,43 @@ describe('ownVision', () => {
   })
 })
 
+describe('hybridLens', () => {
+  it('passes Lens titles into the vision prompt and reports as hybridLens', async () => {
+    let prompt = ''
+    const backend = createOwnVisionBackend({
+      runVision: async (request) => {
+        prompt = JSON.stringify(request.contents)
+        return '{"name": "Lian Li DAN A3"}'
+      },
+      runSearch: async () => [{ title: 'Lian Li', url: 'https://lian-li.com/a3' }],
+      lensHints: async (url) => (url === 'https://cdn.example/pc.jpg' ? ['Lian Li DAN Cases A3-mATX Wood Edition'] : [])
+    })
+    const output = await backend.identify(Buffer.from('img'), 'image/jpeg', 'https://cdn.example/pc.jpg')
+    expect(backend.name).toBe(HYBRID_LENS_NAME)
+    expect(prompt).toContain('Lian Li DAN Cases A3-mATX Wood Edition')
+    expect(output.candidates[0]?.name).toBe('Lian Li DAN A3')
+  })
+
+  it('keeps the plain prompt when there are no hints', () => {
+    expect(JSON.stringify(buildVisionRequest(Buffer.from('x'), 'image/jpeg').contents)).not.toContain('reverse image')
+  })
+
+  it('spends one Lens search per photo URL across the Lens backend and the hints', async () => {
+    __resetLensCacheForTest()
+    const { fetchImpl, calls } = fakeFetch(() =>
+      json({ visual_matches: [{ title: 'Miku Fuwa Fuwa', link: 'https://x' }] })
+    )
+    await createSerpapiLensBackend(fetchImpl, 'key').identify(
+      Buffer.from('a'),
+      'image/jpeg',
+      'https://cdn.example/m.jpg'
+    )
+    const again = await lensMatches('https://cdn.example/m.jpg', 'key', fetchImpl)
+    expect(again.candidates[0]?.name).toBe('Miku Fuwa Fuwa')
+    expect(calls).toHaveLength(1)
+  })
+})
+
 describe('cloudVision', () => {
   it('posts WEB_DETECTION with base64 content and reads candidates and sources', async () => {
     const { fetchImpl, calls } = fakeFetch(() =>
@@ -284,34 +321,29 @@ describe('cloudVision', () => {
 })
 
 describe('serpapiLens', () => {
-  it('uploads the photo then searches Lens over the returned URL', async () => {
-    const { fetchImpl, calls } = fakeFetch((call) => {
-      if (call.init.method === 'POST') return json({ image_url: 'https://lens.example/upload.jpg' })
-      return json({ visual_matches: [{ title: 'Roka Nendoroid', link: 'https://shop.example/roka' }] })
-    })
-    vi.stubGlobal('fetch', fetchImpl)
-    const uploaded = await uploadImageBytesForLens(fetchImpl, 'key', Buffer.from('img'), 'image/jpeg')
-    expect(uploaded).toBe('https://lens.example/upload.jpg')
+  it('searches Lens over the photo URL and keeps the visual matches', async () => {
+    __resetLensCacheForTest()
+    const { fetchImpl, calls } = fakeFetch(() =>
+      json({ visual_matches: [{ title: 'Roka Nendoroid', link: 'https://shop.example/roka' }] })
+    )
     const backend = createSerpapiLensBackend(fetchImpl, 'key')
-    const output = await backend.identify(Buffer.from('img'), 'image/jpeg')
+    const output = await backend.identify(Buffer.from('img'), 'image/jpeg', 'https://cdn.example/roka.jpg')
     expect(output).toMatchObject({
       abstained: false,
       candidates: [{ name: 'Roka Nendoroid', sourceUrls: ['https://shop.example/roka'] }]
     })
-    const search = calls.find((call) => call.init.method === 'GET')
-    expect(search?.url).toContain('engine=google_lens')
-    expect(lensSearchRequest('https://lens.example/upload.jpg', 'key').url).toBe(search?.url)
+    expect(calls).toHaveLength(1)
+    expect(calls[0]?.url).toBe(lensSearchRequest('https://cdn.example/roka.jpg', 'key').url)
+  })
+
+  it('refuses a photo with no URL instead of uploading its bytes', async () => {
+    const { fetchImpl, calls } = fakeFetch(() => json({}))
+    const backend = createSerpapiLensBackend(fetchImpl, 'key')
+    await expect(backend.identify(Buffer.from('img'), 'image/jpeg')).rejects.toThrow('needs a url')
+    expect(calls).toHaveLength(0)
   })
 
   it('abstains on empty visual matches', () => {
     expect(parseLensResponse({ visual_matches: [] }).abstained).toBe(true)
-  })
-
-  it('downscales a large photo under the 500 KB upload cap', async () => {
-    const big = await sharp({ create: { width: 2000, height: 2000, channels: 3, background: { r: 1, g: 2, b: 3 } } })
-      .jpeg({ quality: 95 })
-      .toBuffer()
-    const fitted = await downscaleForLens(big)
-    expect(fitted.length).toBeLessThanOrEqual(500 * 1024)
   })
 })

@@ -14,7 +14,7 @@ export interface IdentifyOutput {
 
 export interface ImageIdBackend {
   name: string
-  identify(imageBytes: Buffer, mime: string): Promise<IdentifyOutput>
+  identify(imageBytes: Buffer, mime: string, publicUrl?: string): Promise<IdentifyOutput>
 }
 
 export interface ExpectedIdentity {
@@ -27,6 +27,8 @@ export interface ExpectedIdentity {
 export interface PhotoLabel {
   file: string
   expected: ExpectedIdentity | null
+  /** A public URL of the same photo (a Discord CDN link), for backends that search by URL. */
+  url?: string
 }
 
 /** Lowercase alphanumeric only, so casing and punctuation never decide a match. */

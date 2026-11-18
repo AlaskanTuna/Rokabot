@@ -1,55 +1,14 @@
 /**
- * SerpApi Google Lens: the photo is uploaded first (500 KB cap, so it is downscaled with sharp),
- * then identified through a Lens search over the uploaded image. Visual matches are the
- * candidates; no matches means abstain.
+ * SerpApi Google Lens: a Lens search over the photo's public URL (a Discord CDN link in the bake-off and in
+ * identify_image). Visual matches are the candidates; no matches means abstain.
  */
-import sharp from 'sharp'
 import type { IdentifyOutput, ImageCandidate, ImageIdBackend } from './types.js'
 
 export const SERPAPI_LENS_NAME = 'serpapiLens'
 // Roughly one pay-as-you-go search; SerpApi plans move, so the summary treats this as an estimate.
 export const SERPAPI_LENS_COST_USD = 0.01
-export const SERPAPI_LENS_MAX_BYTES = 500 * 1024
 
 const SEARCH_URL = 'https://serpapi.com/search.json'
-
-/**
- * Shrink the photo until it fits the upload cap. Only reached when the bot's own processor
- * still leaves an image over the limit, so it runs rarely.
- */
-export async function downscaleForLens(imageBytes: Buffer): Promise<Buffer> {
-  let bytes = imageBytes
-  for (let scale = 0.8; bytes.length > SERPAPI_LENS_MAX_BYTES && scale > 0.1; scale -= 0.2) {
-    const metadata = await sharp(bytes).metadata()
-    const width = Math.max(1, Math.floor((metadata.width ?? 1024) * scale))
-    bytes = await sharp(bytes).resize({ width }).jpeg({ quality: 80 }).toBuffer()
-  }
-  return bytes
-}
-
-/**
- * Upload photo bytes for a Lens search and return the image URL to search over.
- *
- * SerpApi has no documented raw-bytes upload endpoint for Google Lens that this repo could
- * verify without a live key, so this posts multipart bytes to the Lens endpoint and reads the
- * `image_url` it answers with. If that shape is wrong, replace this function only.
- */
-export async function uploadImageBytesForLens(
-  fetchImpl: typeof fetch,
-  apiKey: string,
-  imageBytes: Buffer,
-  mime: string
-): Promise<string> {
-  const form = new FormData()
-  form.append('engine', 'google_lens')
-  form.append('api_key', apiKey)
-  form.append('image', new Blob([new Uint8Array(imageBytes)], { type: mime }), 'photo.jpg')
-  const response = await fetchImpl(SEARCH_URL, { method: 'POST', body: form })
-  if (!response.ok) throw new Error(`Lens upload failed with status ${response.status}`)
-  const json = (await response.json()) as { image_url?: string }
-  if (!json.image_url) throw new Error('Lens upload answered without an image_url')
-  return json.image_url
-}
 
 export function lensSearchRequest(imageUrl: string, apiKey: string): { url: string; init: RequestInit } {
   const params = new URLSearchParams({ engine: 'google_lens', url: imageUrl, api_key: apiKey })
@@ -74,6 +33,30 @@ export function serpapiKey(): string | undefined {
   return process.env.SERPAPI_API_KEY || undefined
 }
 
+const lensRuns = new Map<string, Promise<Omit<IdentifyOutput, 'rawCost'>>>()
+
+/** One Lens search per photo URL, shared by the Lens backend and the hybrid's hints, so a run spends one search a photo. */
+export function lensMatches(
+  publicUrl: string,
+  apiKey: string,
+  fetchImpl: typeof fetch = globalThis.fetch
+): Promise<Omit<IdentifyOutput, 'rawCost'>> {
+  const cached = lensRuns.get(publicUrl)
+  if (cached) return cached
+  const run = (async () => {
+    const { url, init } = lensSearchRequest(publicUrl, apiKey)
+    const response = await fetchImpl(url, init)
+    if (!response.ok) return { candidates: [], abstained: true }
+    return parseLensResponse(await response.json())
+  })()
+  lensRuns.set(publicUrl, run)
+  return run
+}
+
+export function __resetLensCacheForTest(): void {
+  lensRuns.clear()
+}
+
 export function createSerpapiLensBackend(
   fetchImpl: typeof fetch = globalThis.fetch,
   apiKey: string | undefined = serpapiKey()
@@ -81,13 +64,10 @@ export function createSerpapiLensBackend(
   if (!apiKey) throw new Error('SERPAPI_API_KEY is not set')
   return {
     name: SERPAPI_LENS_NAME,
-    async identify(imageBytes: Buffer, mime: string): Promise<IdentifyOutput> {
-      const fitted = await downscaleForLens(imageBytes)
-      const imageUrl = await uploadImageBytesForLens(fetchImpl, apiKey, fitted, mime)
-      const { url, init } = lensSearchRequest(imageUrl, apiKey)
-      const response = await fetchImpl(url, init)
-      if (!response.ok) return { candidates: [], abstained: true, rawCost: SERPAPI_LENS_COST_USD }
-      return { ...parseLensResponse(await response.json()), rawCost: SERPAPI_LENS_COST_USD }
+    // SerpApi's Lens engine searches a public image URL and takes no bytes, as identify_image would pass a Discord CDN link.
+    async identify(_imageBytes: Buffer, _mime: string, publicUrl?: string): Promise<IdentifyOutput> {
+      if (!publicUrl) throw new Error('serpapiLens needs a url for this photo in labels.json')
+      return { ...(await lensMatches(publicUrl, apiKey, fetchImpl)), rawCost: SERPAPI_LENS_COST_USD }
     }
   }
 }
