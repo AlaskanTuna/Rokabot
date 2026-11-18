@@ -1,0 +1,90 @@
+{
+  "caseId": "P2",
+  "recordedAt": "2026-11-17T21:17:09.993Z",
+  "commit": "2f6dac20658fc7b1625a3298b81d0170496bd5c0",
+  "toolCalls": [
+    {
+      "tool": "search_web",
+      "args": {
+        "query": "Nendoroid typical price and where to preorder 2025",
+        "max_results": 5
+      }
+    }
+  ],
+  "exchanges": [
+    {
+      "provider": "exa",
+      "method": "POST",
+      "url": "https://api.exa.ai/search",
+      "requestBody": {
+        "query": "Nendoroid typical price and where to preorder 2025",
+        "type": "auto",
+        "numResults": 5,
+        "contents": {
+          "highlights": true
+        }
+      },
+      "status": 200,
+      "responseBody": {
+        "requestId": "28e576acaf2f19ca70148def3faeafc1",
+        "resolvedSearchType": "",
+        "results": [
+          {
+            "id": "https://www.goodsmileus.com/collections/nendoroid",
+            "title": "Nendoroid – Good Smile US",
+            "url": "https://www.goodsmileus.com/collections/nendoroid",
+            "highlights": [
+              "## Nendoroid \n\nThe Nendoroid figure line from Good Smile Company brings your favorite characters to life in an adorable, chibi style. Each Nendoroid is a highly detailed, posable figure that includes interchangeable face plates and accessories, allowing you to recreate iconic scenes or customize your display. With over 2,000 characters from popular anime, manga, video games, and movies, the Nendoroid collection has something for every fan and collector. Discover new ways to collect with Nendoroid Doll, Nendoroid More, Nendoroid Surprise and more!\n\n \n\n- \n\n \n\nNew\n\nPre-Order\n\nBonuses\n\n GIRLS BAND CRY - Nendoroid Subaru Awa Figure \n\n $67.99 \n\n Pre-Order Now \n- \n\n \n\nNew\n\nPre-Order\n\nBonuses\n\n Kyouiku Bangumi - Nendoroid Tama Figure \n\n $46.99 \n\n Pre-Order Now \n- \n\n \n\nNew\n\nAlmost Gone\n\nBonuses\n\n REBORN! - Nendoroid Kyoya Hibari: Ten-Years-Later Ver. Figure \n\n $40.99 \n\n Buy Now \n- \n\n \n\nNew\n\nAlmost Gone\n\nBonuses\n\n Blue Archive - Nendoroid Hikari Tachibana Figure \n\n $40.99 \n\n Buy Now \n- \n\n \n\nNew\n\nBonuses\n\n Limbus Company - Nendoroid Ishmael Figure \n\n $43.99 \n\n Buy Now \n- \n\n \n\nNew\n\nBonuses\n\n New PANTY & STOCKING with GARTERBELT - Nendoroid Scanty Figure \n\n $40.99 \n\n Buy Now \n- \n\n \n\nNew\n\nBonuses\n\n New PANTY & STOCKING with GARTERBELT - Nendoroid Kneesocks Figure \n\n $40.99 \n\n Buy Now \n- \n\n \n\nNew\n\nBonuses\n\n New PANTY & STOCKING with GARTERBELT - Nendoroid Stocking: New Ver. Figure \n\n $40.99 \n\n Buy Now \n- \n\n \n\nNew\n\nBonuses\n\n New PANTY & STOCKING with GARTERBELT - Nendoroid Panty: New Ver. Figure \n\n $40.99 \n\n Buy Now \n- \n\n \n\nNew\n\nPre-Order\n\nBonuses\n\n Duolingo - Nendoroid Duo Figure \n\n $47.99 \n\n Pre-Order Now \n- \n\n \n\nNew\n\n hololive production - Nendoroid Usada Pekora Figure (Mash Kyrielight Collaboration Ver.) \n\n $46.89 $66.99 \n\n Buy Now \n- \n\n \n\nNew\n\nPre-Order\n\nBonuses\n\n Yu-Gi-Oh! - Nendoroid Seto Kaiba Figure \n\n $50.99 \n\n Pre-Order Now \n- \n\n \n\nNew\n\nPre-Order\n\nBonuses\n\n Yu-Gi-Oh! - Nendoroid Blue-Eyes White Dragon Figure \n\n $61.99 \n\n Pre-Order Now \n- \n\n \n\nNew\n\nPre-Order\n\nBonuses\n\n Arknights: Endfield - Nendoroid Gilberta Figure \n\n $61.99 \n\n Pre-Order Now \n- \n\n \n\nNew\n\nPre-Order\n\n Chaos Zero Nightmare - Nendoroid Mei Lin Figure \n\n $61.99 \n\n Pre-Order Now \n- \n\n \n\nNew\n\nPre-Order\n\n Monster Hunter - Nendoroid Palico: Rathalos Armor Ver. Figure \n\n $54.99 \n\n Pre-Order Now \n- \n\n \n\nNew\n\nPre-Order\n\n Arknights -Nendoroid Lappland Figure (Rerelease) \n\n $53.99 \n\n Pre-Order Now \n- \n\n \n\nNew\n\nPre-Order\n\n Monster Hunter - Nendoroid Palico: Rathalos Armor Ver. DX Figure \n\n $66.99 \n\n Pre-Order Now \n- \n\n \n\nNew\n\nPre-Order\n\n Expelled from Paradise: Resonance - Nendoroid Gabriel Figure \n\n $47.99 \n\n Pre-Order Now \n- \n\n \n\nNew\n\nPre-Order\n\nBonuses\n\n Final Fantasy XIV - Nendoroid Emet-Selch Figure \n\n $54.99 \n\n Pre-Order Now \n- \n\n \n\nNew\n\nPre-Order\n\nBonuses\n\n Love and Deepspace - Nendoroid Caleb Figure \n\n $49.99 \n\n Pre-Order Now \n- \n\n \n\nNew\n\nPre-Order\n\nBonuses\n\n Blue Archive - Nendoroid Kei Tendou Figure \n\n $53.99 \n\n Pre-Order Now \n- \n\n \n\nNew\n\nPre-Order\n\nBonuses\n\n CLANNAD - Nendoroid Tomoyo Sakagami Figure \n\n $46.99 \n\n Pre-Order Now \n- \n\n \n\nNew\n\nPre-Order\n\nBonuses\n\n GIRLS BAND CRY - Nendoroid Momoka Kawaragi Figure \n\n $49.99 \n\n Pre-Order Now \n- \n\n \n\nNew\n\nPre-Order\n\nBonuses\n\n RIDDLE JOKER - Nendoroid Nanami Arihara Figure (Rerelease) \n\n $46.99 \n\n Pre-Order Now"
+            ],
+            "image": "http://www.goodsmileus.com/cdn/shop/collections/000_7bda3b44-93f3-4072-ae4c-1a2effc7e4da.jpg?v=1675809506"
+          },
+          {
+            "id": "https://www.goodsmileus.com/collections/pre-orders",
+            "title": "Pre-Orders – Good Smile US",
+            "url": "https://www.goodsmileus.com/collections/pre-orders",
+            "highlights": [
+              "# Pre-Orders\n\n...\n\nNew\n\nPre-Order\n\n NEEDY GIRL OVERDOSE - Nendoroid Doll OMGkawaiiAngel \n\n $65.99 \n\n Pre-Order Now \n- \n\n \n\nNew\n\nPre-Order\n\nBonuses\n\n GIRLS BAND CRY - Nendoroid Subaru Awa Figure \n\n $67.99 \n\n Pre-Order Now\n\n...\n\nNew\n\nPre-Order\n\n NEEDY GIRL OVERDOSE - Nendoroid Doll Outfit Set: Ame-chan \n\n $34.99 \n\n Pre-Order Now \n- \n\n \n\nNew\n\nPre-Order\n\n NEEDY GIRL OVERDOSE - Nendoroid Doll Ame-chan \n\n $65.99 \n\n Pre-Order Now\n\n...\n\nNew\n\nPre-Order\n\n NEEDY GIRL OVERDOSE - Nendoroid Doll Outfit Set: OMGkawaiiAngel \n\n $34.99 \n\n Pre-Order Now\n\n...\n\nNew\n\nPre-Order\n\nBonuses\n\n Kyouiku Bangumi - Nendoroid Tama Figure \n\n $46.99 \n\n Pre-Order Now"
+            ]
+          },
+          {
+            "id": "https://www.kirbyinformer.com/post/pre-order-guide-get-your-kirby-nendoroids-while-you-can",
+            "title": "Pre-Order Guide: Where to buy every Kirby Nendoroid releasing this year",
+            "url": "https://www.kirbyinformer.com/post/pre-order-guide-get-your-kirby-nendoroids-while-you-can",
+            "publishedDate": "2025-02-13T17:51:40.000Z",
+            "author": "Marc Kaliroff",
+            "highlights": [
+              "# Pre-Order Guide: Where to buy every Kirby Nendoroid releasing this year\n\nMarc Kaliroff\n\nFeb 14, 2025\n\nUpdated: Feb 15, 2025\n\nAre you excited for the latest batch of Kirby Nendoroid releases and reissues? Do you need help deciding where to pre-order each figure?\n\nIn this guide, you will find trusted links to pre-order every Kirby Nendoroid (as of Feb. 13) that will be released this year!\n\nExpand image\n\n### Kirby Café Kirby & Waddle Dee Ver.\n\n- Good Smile Company Store\n\nKirby | Waddle Dee\n- Amazon\n\nKirby | Waddle Dee\n- CDJapan\n\nKirby | Waddle Dee (Sold Out)\n- Hobby Genki\n\nKirby | Waddle Dee\n- AmiAmi\n\nKirby | Waddle Dee\n- Crunchyroll Store\n\nKirby | Waddle Dee\n\nExpand image\n\n### Nendoroid Ice Kirby Reissue\n\n- Good Smile Company\n- Amazon\n- CDJapan\n- Hobby Genki\n- AmiAmi\n- Crunchyroll Store\n\nExpand image\n\n### Nendoroid Beam Kirby Reissue\n\n- Good Smile Company\n- Amazon\n- CDJapan\n- Hobby Genki\n- AmiAmi\n- Crunchyroll Store\n\nExpand image\n\n### Original Nendoroid Kirby Reissue\n\n- Good Smile Company\n- CDJapan\n- Hobby Genki\n- AmiAmi\n- Crunchyroll Store\n\nExpand image\n\n### Nendoroid More: Robobot Armor Reissue\n\nUnlike every other figure in this guide, the Robobot Armor comes in two variants: the standard edition and a package that does not include a Nendoroid Kirby. Before you make a purchase though, please be aware that the expression and goggles included with the Nendoroid Kirby in the standard Robobot Armor bundle are exclusive to that product and cannot be purchased separately. Once again, if you purchase an original Nendoroid Kirby, that figure DOES NOT come with the variant accessories included with the Robobot Armor.\n\n- Good Smile Company Store\n\nRobobot Armor | Robobot Armor (without Kirby)\n\n- CDJapan\n\nRobobot Armor | Robobot Armor (without Kirby)\n\n- Hobby Genki\n\nRobobot Armor | Robobot Armor (without Kirby)\n\n- AmiAmi\n\nRobobot Armor | Robobot Armor (without Kirby)\n- Crunchyroll Store\n\nRobobot Armor | Robobot Armor (without Kirby)\n\nExpand image\n\n### Nendoroid Waddle Dee Reissue\n\nHave you pre-ordered any of these upcoming Nendoroid releases and reissues?"
+            ],
+            "image": "https://static.wixstatic.com/media/2d98b8_c41f1004fdc84eb6aabf762ce47477e0~mv2.jpg/v1/fill/w_1024,h_576,al_c,q_85/2d98b8_c41f1004fdc84eb6aabf762ce47477e0~mv2.jpg"
+          },
+          {
+            "id": "https://www.goodsmile.com/en/news/6415",
+            "title": "Good Smile Company Online Store Nendoroid Preorder Campaign Announcement (2025/08)|Good Smile Company",
+            "url": "https://www.goodsmile.com/en/news/6415",
+            "publishedDate": "2025-07-30T00:00:00.000Z",
+            "highlights": [
+              "# Good Smile Company Online Store Nendoroid Preorder Campaign Announcement (2025/08) \n\n 2025.07.30 \n\nAnother way to enjoy your Nendoroids! The Nendoroid Preorder Campaign is back!\n\n### ◆Campaign Details\n\nAll new Nendoroids going up for preorder from the 1st of August 2025 (Fri) to the 31st of August 2025 (Sun) will come with a special Sign + Hand Parts as a bonus when preordered from the Good Smile Company Online Store or GOODSMILE ONLINE SHOP US! *This bonus is identical to the bonus from the June 2023 Good Smile Company Online Store & GOODSMILE ONLINE SHOP US Nendoroid Preorder Campaign.\n\n«Set Contents» \n\n *One set from A~D will be sent randomly as a bonus.\n\n«Example» \n\n### ◆Applicable Products\n\nNendoroids with preorder dates starting between the 1st of August 2025 (Fri) to the 31st of August 2025 (Sun). Click here for applicable products.\n\n### ◆Applicable Websites\n\n■ Good Smile Company Online Store ■ GOODSMILE ONLINE SHOP US We look forward to your continued patronage of the Good Smile Company Online Store and GOODSMILE ONLINE SHOP US. \n\n- Images are of samples in development. Actual products may vary.\n- Purchases for purpose of resale are refused.\n- One set will be sent for each eligible product purchased.\n- Bonus parts will be shipped together with your order.\n- Exchanges or returns are not accepted once the product is received.\n- Some products may not be eligible for the campaign even if they are made available for preorder during the campaign period. Thank you for your understanding.\n- The bonuses may be used for other campaigns."
+            ]
+          },
+          {
+            "id": "https://www.gamespot.com/articles/sekiro-shadows-die-twice-nendoroid-figures-available-to-preorder-at-amazon/1100-6525595/",
+            "title": "Sekiro: Shadows Die Twice Nendoroid Figures Available To Preorder At Amazon - GameSpot",
+            "url": "https://www.gamespot.com/articles/sekiro-shadows-die-twice-nendoroid-figures-available-to-preorder-at-amazon/1100-6525595/",
+            "author": "Darryn Bonthuys",
+            "highlights": [
+              "Sekiro: Shadows Die Twice Nendoroid Figures Available To Preorder At Amazon - GameSpot\n\n...\n\nA sequel to Sekiro: Shadows Die Twice doesn’t seem likely, but at least you can make your own follow-up to the brilliant From Software action game with a pair of cute Nendoroid figures. Available to preorder now at Amazon, these two figures of Wolf ($46) and Genichiro Ashina ($52) will begin shipping out May 2025.\n\n- Sekiro: Shadows Die Twice Wolf Nendoroid— $46 | May 14, 2025\n- Sekiro: Shadows Die Twice Genichiro Ashina Nendoroid— $52 | May 14, 2025\n\n...\n\nThere are quite a few other Nendoroid figures available to preorder now, each one boasting a similar level of screen-accurate design and pocket-sized cuteness. If you’re looking to build a collection of gaming Nendoroids, you can check out the Elden Ring and Metal Gear Solid figures."
+            ],
+            "image": "https://www.gamespot.com/wp-content/uploads/original/1601/16018044/4346882-sekiro-nendoroids.jpg"
+          }
+        ],
+        "searchTime": 1633.3,
+        "costDollars": {
+          "total": 0.007,
+          "search": {
+            "neural": 0.007
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,208 @@
+{
+  "caseId": "A8",
+  "recordedAt": "2026-11-18T08:27:09.161Z",
+  "commit": "2f6dac20658fc7b1625a3298b81d0170496bd5c0",
+  "toolCalls": [
+    {
+      "tool": "search_web",
+      "args": {
+        "query": "Anime Expo 2027 dates and location",
+        "max_results": 5
+      }
+    }
+  ],
+  "exchanges": [
+    {
+      "provider": "exa",
+      "method": "POST",
+      "url": "https://api.exa.ai/search",
+      "requestBody": {
+        "query": "Anime Expo 2027 dates and location",
+        "type": "auto",
+        "numResults": 5,
+        "contents": {
+          "highlights": true
+        }
+      },
+      "status": 200,
+      "responseBody": {
+        "requestId": "efd37be7c9ce3eaf69d27e9f2a092114",
+        "resolvedSearchType": "",
+        "results": [
+          {
+            "id": "https://www.anime-expo.org/ax/",
+            "title": "Anime Expo",
+            "url": "https://www.anime-expo.org/ax/",
+            "highlights": [
+              "Anime Expo - Anime Expo\n\n### AX 2027 Programming (Coming Soon)\n\n### AX 2027 Talent List (Coming Soon)\n\nCatch talent at Anime Expo®, ranging from Directors to Voice Actors to Content Creators!"
+            ],
+            "entities": [
+              {
+                "id": "https://exa.ai/library/organization/s44hn20qk06",
+                "type": "company",
+                "version": 1,
+                "properties": {
+                  "name": "Anime Expo",
+                  "foundedYear": null,
+                  "description": "Anime Expo is the largest celebration of Japanese pop culture in North America! Join us in downtown Los Angeles on July 2-5, 2020!",
+                  "workforce": {
+                    "total": 31
+                  },
+                  "headquarters": {
+                    "address": "1201 S FIGUEROA ST, Los Angeles, California 90015, us",
+                    "city": "Los Angeles",
+                    "postalCode": null,
+                    "country": "United States"
+                  },
+                  "financials": null,
+                  "webTraffic": {
+                    "visitsMonthly": 205154,
+                    "countryRank": 183464,
+                    "avgDurationSeconds": 29,
+                    "history": [
+                      {
+                        "value": 276088,
+                        "dateFrom": "2026-05",
+                        "dateTo": "2026-05"
+                      },
+                      {
+                        "value": 441542,
+                        "dateFrom": "2026-06",
+                        "dateTo": "2026-06"
+                      },
+                      {
+                        "value": 978270,
+                        "dateFrom": "2026-07",
+                        "dateTo": "2026-07"
+                      },
+                      {
+                        "value": 1036066,
+                        "dateFrom": "2026-08",
+                        "dateTo": "2026-08"
+                      },
+                      {
+                        "value": 294224,
+                        "dateFrom": "2026-09",
+                        "dateTo": "2026-09"
+                      },
+                      {
+                        "value": 205154,
+                        "dateFrom": "2026-10",
+                        "dateTo": "2026-10"
+                      }
+                    ]
+                  },
+                  "research": null
+                }
+              }
+            ]
+          },
+          {
+            "id": "https://www.anime-expo.org/resources/",
+            "title": "Anime Expo | Resources | Los Angeles Anime Convention",
+            "url": "https://www.anime-expo.org/resources/",
+            "highlights": [
+              "Anime Expo | Resources | Los Angeles Anime Convention\n\n# Resources\n\nEvent Dates: July 2-5, 2027\n\nLocation: Los Angeles Convention Center\n\n#### Panel Application Process\n...\n#### Petree Hall \n\n- Location: Los Angeles Convention Center\n-"
+            ],
+            "image": "https://www.anime-expo.org/wp-content/uploads/2026/07/i-cB37bKK-X4.jpg"
+          },
+          {
+            "id": "https://www.anime-expo.org/ax/plan/exhibitor-info/",
+            "title": "Exhibitor Info - Anime Expo",
+            "url": "https://www.anime-expo.org/ax/plan/exhibitor-info/",
+            "highlights": [
+              "##### Anime Expo July 2-5, 2027 Los Angeles Convention Center \n\n- ## Exhibitor Information ® \n\nLast Updated: May 26, 2026\n\nReview the information on this page for the latest updates on Exhibit Hall and Artist Alley move-in and move-out procedures, hours of operation, and more for Anime Expo 2026!\n\n...\n\n## Show Site Address\n\n### Los Angeles Convention Center\n\n1201 S Figueroa St, Los Angeles, CA 90015\n\nView on Google Maps"
+            ]
+          },
+          {
+            "id": "https://www.anime-expo.org/",
+            "title": "Anime Expo | Los Angeles Anime Convention",
+            "url": "https://www.anime-expo.org/",
+            "highlights": [
+              "Anime Expo ® - Los Angeles, California July 2-5, 2027\n\n...\n\nLocated in the heart of Downtown Los Angeles held during 4th of July weekend annually, Anime Expo® is an expansive event brimming with tens of thousands of enthusiastic fans and a plethora of exhibitors, events, and activities to indulge in."
+            ],
+            "image": "https://www.anime-expo.org/wp-content/uploads/2024/05/6093633a2830a3e2b5bd8667_ax-logo-slider.png",
+            "entities": [
+              {
+                "id": "https://exa.ai/library/organization/s44hn20qk06",
+                "type": "company",
+                "version": 1,
+                "properties": {
+                  "name": "Anime Expo",
+                  "foundedYear": null,
+                  "description": "Anime Expo is the largest celebration of Japanese pop culture in North America! Join us in downtown Los Angeles on July 2-5, 2020!",
+                  "workforce": {
+                    "total": 31
+                  },
+                  "headquarters": {
+                    "address": "1201 S FIGUEROA ST, Los Angeles, California 90015, us",
+                    "city": "Los Angeles",
+                    "postalCode": null,
+                    "country": "United States"
+                  },
+                  "financials": null,
+                  "webTraffic": {
+                    "visitsMonthly": 205154,
+                    "countryRank": 183464,
+                    "avgDurationSeconds": 29,
+                    "history": [
+                      {
+                        "value": 276088,
+                        "dateFrom": "2026-05",
+                        "dateTo": "2026-05"
+                      },
+                      {
+                        "value": 441542,
+                        "dateFrom": "2026-06",
+                        "dateTo": "2026-06"
+                      },
+                      {
+                        "value": 978270,
+                        "dateFrom": "2026-07",
+                        "dateTo": "2026-07"
+                      },
+                      {
+                        "value": 1036066,
+                        "dateFrom": "2026-08",
+                        "dateTo": "2026-08"
+                      },
+                      {
+                        "value": 294224,
+                        "dateFrom": "2026-09",
+                        "dateTo": "2026-09"
+                      },
+                      {
+                        "value": 205154,
+                        "dateFrom": "2026-10",
+                        "dateTo": "2026-10"
+                      }
+                    ]
+                  },
+                  "research": null
+                }
+              }
+            ]
+          },
+          {
+            "id": "https://www.animenewsnetwork.com/news/2026-07-11/anime-expo-sets-new-record-of-422000-turnstile-attendees/.239520",
+            "title": "Anime Expo Sets New Record of 422,000 Turnstile Attendees - News - Anime News Network",
+            "url": "https://www.animenewsnetwork.com/news/2026-07-11/anime-expo-sets-new-record-of-422000-turnstile-attendees/.239520",
+            "publishedDate": "2026-07-11T11:00:00.000Z",
+            "author": "Aug 22, 02:39 \n          \n           \n             \n              events",
+            "highlights": [
+              "posted on 2026-07-11 07:00 EDT by Crystalyn Hodgkins \n\nNext year's event to be held on July 2-5\n\n...\n\nAnime Expo 2027 will again be held at the Los Angeles Convention Center, and will take place on July 2-5 (a Friday through Monday). The SPJA stated credentials for the event will go on sale early next year.\n\n...\n\nSource: Press release"
+            ],
+            "image": "https://www.animenewsnetwork.com/thumbnails/crop600x315gEH/cms/news.8/225921/ax.jpg"
+          }
+        ],
+        "searchTime": 1043,
+        "costDollars": {
+          "total": 0.007,
+          "search": {
+            "neural": 0.007
+          }
+        }
+      }
+    }
+  ]
+}

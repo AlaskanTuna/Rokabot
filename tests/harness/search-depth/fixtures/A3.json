@@ -1,0 +1,119 @@
+{
+  "caseId": "A3",
+  "recordedAt": "2026-11-17T21:21:40.045Z",
+  "commit": "2f6dac20658fc7b1625a3298b81d0170496bd5c0",
+  "toolCalls": [
+    {
+      "tool": "search_web",
+      "args": {
+        "query": "Frieren nendoroid price and where to buy",
+        "max_results": 5
+      }
+    }
+  ],
+  "exchanges": [
+    {
+      "provider": "exa",
+      "method": "POST",
+      "url": "https://api.exa.ai/search",
+      "requestBody": {
+        "query": "Frieren nendoroid price and where to buy",
+        "type": "auto",
+        "numResults": 5,
+        "contents": {
+          "highlights": true
+        }
+      },
+      "status": 200,
+      "responseBody": {
+        "requestId": "ac803abe2e454d645747a5ab88df4de3",
+        "resolvedSearchType": "",
+        "results": [
+          {
+            "id": "https://www.goodsmile.com/en/product/56111/Nendoroid+Frieren",
+            "title": "Nendoroid Frieren｜Good Smile Company",
+            "url": "https://www.goodsmile.com/en/product/56111/Nendoroid+Frieren",
+            "highlights": [
+              "# Nendoroid Frieren\n\n ￥6,500 \n\n Preorders of this product made on the Good Smile Company Online Store are eligible for the Nendoroid Preorder Campaign! \n\n \n\n## Good Smile Company Bonus \n\n## Product Description \n\n### \"The person standing before you is a mage who's lived for over a thousand years.\"\n\nFrom the anime \"Frieren: Beyond Journey's End\" comes a Nendoroid of Frieren! Face plates: · Neutral face · Smug face · Chibi face Optional parts: · Staff · Grimoire · Blue-moon weed · Other optional parts for different poses.\n\n## Where to Purchase \n\n■Good Smile Company Online Store\n\n All orders placed on the Good Smile Company Online Store during the specified preorder period are guaranteed to be fulfilled.* *Please note that this does not apply to orders with incorrect payment and/or shipping information provided. *Dates and times listed are in Japan Standard Time (JST) unless otherwise stated. \n\n This product is available from our partner shops. Please see the following listing to find a partner shop in your area: Partner Shop Listing \n\n## Product Specifications \n\n### Series\n: Frieren: Beyond Journey's End\n\n### Specifications\n: Painted plastic non-scale articulated figure with stand included. Approximately 100mm in height.\n\n### Sculptor\n: Pumpkin\n\n### Production Cooperation\n: Nendoron\n\n### Related Information\n: [Available: 07/2024][Rerelease:08/2026][Rerelease:05/2025]\n\n### Manufacturer\n: Good Smile Company \n\n### Distributed by\n: Good Smile Company\n\n...\n\n### About Orders for This Product\n\n- Purchases are limited to 3 per person.\n- Orders will close when stock runs out.\n- Items may not be available for purchase depending on your region. Please log in or check with your local partner shop for item availability."
+            ],
+            "image": "https://www.goodsmile.com/gsc-webrevo-sdk-storage-prd/product/image/56111/751f1215c9303dc1cfbfb03e3d3b4dfb.jpg"
+          },
+          {
+            "id": "https://figurecompare.com/figure/nendoroid-frieren-2367",
+            "title": "Nendoroid Frieren: Beyond Journey's End - Action Frieren 10 cm price: compare 25 stores | FigureCompare",
+            "url": "https://figurecompare.com/figure/nendoroid-frieren-2367",
+            "highlights": [
+              "# Nendoroid Frieren: Beyond Journey's End - Action Frieren 10 cm price\n\nPrices in\n\nCheapest in the US \n\nUS$49.95\n\nat Gundam Planet · 6 stores compared · save up to 13%\n\nCheapest in the UK (pre-order)\n\n£42.95\n\nat Hobby Figures · 2 stores compared · save up to 9%\n\nCheapest in Canada \n\nC$74.99\n\nat Hobby Bee Canada · 4 stores compared · save up to 29%\n\nCheapest in Australia \n\nA$83.45\n\nat Gameology · 3 stores compared · save up to 21%\n\nSold out at every store in New Zealand right now.\n\nIt is sold in the US, in the UK, in Canada, in Australia, in Europe, in Singapore: pick a region above, or check eBay.\n\nCheapest in Europe \n\n€52.90\n\nat fictionary world · 6 stores compared · save up to 16%\n\nSold out at every store in Singapore right now.\n\nIt is sold in the US, in the UK, in Canada, in Australia, in New Zealand, in Europe: pick a region above, or check eBay.\n\nNo store from Japan lists this figure yet.\n\nIt is sold in the US, in the UK, in Canada, in Australia, in New Zealand, in Europe, in Singapore: pick a region above, or check eBay.\n\n## Every store's price\n\neBay Thumbs up for eBay Thumbs down for eBay\n\nIn stock incl. postage, +138% vs cheapest store Paid link + Add to cart\n\n1. Gundam Planet Thumbs up for Gundam Planet Thumbs down for Gundam Planet\n\nIn stock Cheapest store · Above Good Smile US's US$38.99 + Add to cart\n\nUS$49.95 Add to cart Buy →\n2. Solaris Japan Thumbs up for Solaris Japan Thumbs down for Solaris Japan\n\nIn stock Above Good Smile US's US$38.99 + Add to cart\n\nUS$51.65 Add to cart Buy →\n3. Japan Figure Store Thumbs up for Japan Figure Store Thumbs down for Japan Figure Store\n\nIn stock Above Good Smile US's US$38.99 + Add to cart\n\nUS$57.09 Add to cart Buy →\n4. Kappa Hobby Thumbs up for Kappa Hobby Thumbs down for Kappa Hobby\n\nPre-order Above Good Smile US's US$38.99 + Add to cart\n\nUS$53.88 Add to cart Buy →\n5. Good Smile US Thumbs up for Good Smile US Thumbs down for Good Smile US\n\nSold out\n\nUS$38.99 View →\n6. Nekotwo Thumbs up for Nekotwo Thumbs down for Nekotwo\n\nSold out Above Good Smile US's US$38.99\n\nUS$44.90 View →\n7. Check on Amazon\n\namazon.com · no price shown, check the seller Paid link\n\nShop →\n\neBay Thumbs up for eBay Thumbs down for eBay\n\n1. Loaded Dice Thumbs up for Loaded Dice Thumbs down for Loaded Dice\n\nIn stock Cheapest store + Add to cart\n\n£46.99 Add to cart Buy →\n2. Hobby Figures Thumbs up for Hobby Figures Thumbs down for Hobby Figures\n\nPre-order + Add to cart\n\n£42.95 Add to cart Buy →\n3. Check on Amazon\n\namazon.co.uk · no price shown, check the seller Paid link\n\nShop →\n\neBay Thumbs up for eBay Thumbs down for eBay\n\nIn stock free postage, +96% vs cheapest store Paid link + Add to cart\n\n1. Hobby Bee Canada Thumbs up for Hobby Bee Canada Thumbs down for Hobby Bee Canada\n\nIn stock Cheapest store + Add to cart\n\nC$74.99 Add to cart Buy →\n2. P-Rex Hobby Thumbs up for P-Rex Hobby Thumbs down for P-Rex Hobby\n\nIn stock + Add to cart\n\nC$83.00 Add to cart Buy →\n3. Navito World Thumbs up for Navito World Thumbs down for Navito World\n\nPre-order + Add to cart\n\nC$105.00 Add to cart Buy →\n4. Panda Hobby Thumbs up for Panda Hobby Thumbs down for Panda Hobby\n\nSold out\n\nC$70.19 View →\n5. Check on Amazon\n\namazon.ca · no price shown, check the seller Paid link\n\nShop →\n\neBay Thumbs up for eBay Thumbs down for eBay\n\n1. Gameology Thumbs up for Gameology Thumbs down for Gameology\n\nIn stock Cheapest store + Add to cart\n\nA$83.45 Add to cart Buy →\n2. MegaCulture Thumbs up for MegaCulture Thumbs down for MegaCulture\n\nIn stock + Add to cart\n\nA$104.99 Add to cart Buy →\n3. JapanToys Thumbs up for JapanToys Thumbs down for JapanToys\n\nSold out\n\nA$85.00 View →\n4. Check on Amazon\n\namazon.com.au · no price shown, check the seller Paid link\n\nShop →\n\neBay Thumbs up for eBay Thumbs down for eBay\n\n1. Otaku Mart Thumbs up for Otaku Mart Thumbs down for Otaku Mart\n\nSold out\n\nNZ$115.00 View →\n\neBay Thumbs up for eBay Thumbs down for eBay\n\n1. fictionary world Thumbs up for fictionary world Thumbs down for fictionary world\n\nIn stock Cheapest store + Add to cart\n\n€52.90 Add to cart Buy →\n2. Kurogami Thumbs up for Kurogami Thumbs down for Kurogami\n\nIn stock + Add to cart\n\n€54.90 Add to cart Buy →\n3. Nendo Addicts Thumbs up for Nendo Addicts Thumbs down for Nendo Addicts\n\nIn stock + Add to cart\n\n€60.00 Add to cart Buy →\n4. Amuzzi Thumbs up for Amuzzi Thumbs down for Amuzzi\n\nPre-order + Add to cart\n\n€63.00 Add to cart Buy →\n5. Figuya Thumbs up for Figuya Thumbs down for Figuya\n\nSold out\n\n€54.99 View →\n6. AniMuchuu Thumbs up for AniMuchuu Thumbs down for AniMuchuu\n\nSold out\n\n€58.99 View →\n7. Check on Amazon\n\namazon.de · no price shown, check the seller Paid link\n\nShop →\n\neBay Thumbs up for eBay Thumbs down for eBay\n\n1. Candytoyo Thumbs up for Candytoyo Thumbs down for Candytoyo\n\nSold out\n\nS$62.00 View →\n\nPrices are what each store showed at our last check (Nov 16, 4:53 PM UTC) and exclude shipping. Compared across 23 stores; see every store we check, and the ones we can't yet. Every listing here carries this figure's barcode (JAN 4580828679139), so it is the same product, not a look-alike. Two stores print no barcode and are matched another way: BigBadToyStore by the Nendoroid or figma catalogue number and the character's name, only when that number belongs to one figure; Gamersheek by the figure's whole name, only when it fits exactly one figure and its price sits near the other UK stores'.\n\n...\n\nNot sure / several Gundam Planet (US) (US$49.95) Solaris Japan (US) (US$51.65) Japan Figure Store (US) (US$57.09) Kappa Hobby (US) (US$53.88) Good Smile US (US) (US$38.99) Nekotwo (US) (US$44.90) Loaded Dice (UK) (£46.99) Hobby Figures (UK) (£42.95) Hobby Bee ... (CA) (C$74. ... P ... $83. ... 0 ... Nav ... $8 ... 5 ... AU ... 9 ... 0 ... 5 ... world ... 2 ... 90 ... Kuro ... EU ... (€54 ... 0) Nendo Addicts ... ) (€ ... 0 ... 0) Amuz ... EU ... 3 ... 0 ... uya\n\n...\n\n## Figure facts\n\nLine\n: Nendoroid\nNumber\n: 2367\nMaker\n: Good Smile Company\nBarcode (JAN)\n: 4580828679139\nStores\n: 23\nFirst seen\n: 29 October 2026\n\nGood Smile Company's numbered chibi figures, about 10 cm tall, with swappable faces and parts.\n\n...\n\n▸ Where is Nendoroid Frieren: Beyond Journey's End - Action Frieren 10 cm cheapest in the US?\n\nGundam Planet at US$49.95, the lowest of 6 stores we compared at our last check.\n\n▸ Where is Nendoroid Frieren: Beyond Journey's End - Action Frieren 10 cm cheapest in the UK?\n\nHobby Figures at £42.95 (pre-order), the lowest of 2 stores we compared at our last check.\n\n...\n\n▸ How do you know every store sells the same Nendoroid Frieren: Beyond Journey's End - Action Frieren 10 cm?\n\nWe match listings by the barcode printed on the box (JAN 4580828679139). A listing without a barcode is left out rather than guessed, so re-releases, exclusives and look-alikes never get mixed up. The one exception is BigBadToyStore, whose pages carry no barcode: it is matched by the Nendoroid or figma catalogue number together with the character's name, and only when that number belongs to a single figure.\n\n▸ Are these prices with shipping?\n\nNo: they are the store's own listed price. Shipping, tax and import charges depend on where you live, so check the store's checkout before you buy.\n\nCheapest in the US: Gundam Planet\n\nUS$49.95\n\nCheapest in the UK: Hobby Figures\n\n£42.95\n\nCheapest in Canada: Hobby Bee Canada\n\nC$74.99\n\nCheapest in Australia: Gameology\n\nA$83.45\n\nNo store in New Zealand has it in stock\n\nCheapest in Europe: fictionary world\n\n€52.90\n\nNo store in Singapore has it in stock\n\nNo store from Japan has it in stock\n\nNendoroid, figma and POP UP PARADE prices from real figure stores, matched by barcode and checked every day.\n\nPrices updated 16 November 2026."
+            ],
+            "image": "https://cdn.shopify.com/s/files/1/0921/7330/files/frieren_beyond_journeys_end_nendoroid_frieren_cb36b.jpg?v=1778299475&width=600"
+          },
+          {
+            "id": "https://ja.myfigurecollection.net/item/2059185",
+            "title": "Sousou no Frieren - Frieren - Nendoroid  (#2367) (Good Smile Company) — MyFigureCollection.net",
+            "url": "https://ja.myfigurecollection.net/item/2059185",
+            "highlights": [
+              "# Sousou no Frieren - Frieren - Nendoroid (#2367) (Good Smile Company)\n\nカテゴリー Action/Dolls\n\n分類\n\nNendoroid (#2367) as Product line\n\nオリジナル\n\nSousou no Frieren\n\nキャラクター\n\nFrieren\n\nメーカー\n\nGood Smile Company as Manufacturer\n\nアーティスト\n\nPumpkin as Sculptor\n\nNendoron as Cooperation\n\n発売\n\n08/27/2026 as Standard (Japan) 5,909 JPY (USD) • 4580828679139\n\n05/20/2025 as Standard (Japan) 5,909 JPY (USD) • 4580590206113\n\n07/23/2024 as Standard (Japan) 5,909 JPY (USD) • 4580590178878\n\n...\n\nサイズ H= 100 mm (3.9in)\n\nその他 警告： 偽造品有\n\n...\n\nHobby Genki\n\n発売中 | 5,590 JPY (5% OFF)\n\n発売中 | 42.99 USD\n\n## コメント 145\n\nSolarisJapan \n\nIn stock @ Solaris Japan (MFC Partner) (51.65 USD) Brand New for ¥8,116 / ~$51.65 / ~€46.90 └ Carefully packed with ♥\n\n1日前 Sponsored by Solaris Japan (MFC Partner)\n\n...\n\nPlazaJapan \n\nAvailable for pre-order @ PlazaJapan (MFC Partner) (7,605 JPY) 20 years of fast Global Shipping and 5 Star reviews!! >>> Click here! Good Smile Company Nendoroid Frieren Figure (Frieren: Beyond Journey's End) \n\n1ヶ月前 Sponsored by PlazaJapan (MFC Partner)"
+            ],
+            "image": "https://static.myfigurecollection.net/upload/items/1/2059185-ad1f1.jpg"
+          },
+          {
+            "id": "https://www.goodsmile.com/en/product/1141244/Nendoroid+Frieren+Basic+",
+            "title": "Nendoroid Frieren [Basic]｜Good Smile Company",
+            "url": "https://www.goodsmile.com/en/product/1141244/Nendoroid+Frieren+Basic+",
+            "highlights": [
+              "# Nendoroid Frieren [Basic]\n\n- 3026\n- Limited Quantity \n\n ￥3,900 \n\n Download Instruction Manual（PDF: 1,259KB） \n\n## Product Description \n\n### Presenting a Nendoroid [Basic] of Frieren!\n\nFrom \"Frieren: Beyond Journey's End\" comes a Nendoroid [Basic] of Frieren, depicted as she appears when receiving her ring in episode 14 of the anime! What is Nendoroid [Basic]? Nendoroid [Basic] is a lineup of Nendoroids that omit face plates and optional parts, resulting in more affordability and faster production! They feature the same functionality as regular Nendoroids, allowing them to share interchangeable hand parts, leg parts, head parts and face plates with other Nendoroids!\n\n## Where to Purchase \n\n■Good Smile Fest 2026 Tokyo/Osaka (Event Sales)\n\n This product is scheduled to be available for purchase at Good Smile Fest 2026. Click here for event details.\n\n*While stocks last. \n\n■Good Smile Company Online Store (Limited Quantity)\n\n This product will be available on the Good Smile Company Online Store in limited quantity from 6 June 2026 (Sat) at 10:00 (JST). *Dates and times listed are in Japan Standard Time (JST) unless otherwise stated. *While stocks last.\n\n...\n\n### About Orders for This Product\n\n- Purchases are limited to 3 per person.\n- Orders will close when stock runs out.\n- Items may not be available for purchase depending on your region. Please log in or check with your local partner shop for item availability."
+            ],
+            "image": "https://www.goodsmile.com/gsc-webrevo-sdk-storage-prd/product/image/1141244/sRAEFUY5LPhv9QXMynGVBrCSudHz30i1.jpg"
+          },
+          {
+            "id": "https://www.rabbittailhobby.com/products/good-smile-company-2367-nendoroid-frieren-frieren-beyond-journeys-end-chibi-figure",
+            "title": "Good Smile Company 2367 Nendoroid Frieren - Frieren: Beyond Journey's End Chibi Figure",
+            "url": "https://www.rabbittailhobby.com/products/good-smile-company-2367-nendoroid-frieren-frieren-beyond-journeys-end-chibi-figure",
+            "highlights": [
+              "# Good Smile Company 2367 Nendoroid Frieren - Frieren: Beyond Journey's End Chibi Figure\nSold by: rabbittailhobby.com\n\n## Specifications\nAvailability: In-Stock\n\n## Pricing & Reviews\nPrice: 63.99 USD.\n\n## Description\nIn-stock orders would be processed in 24 hours. ... DETAILS Series: Frieren: Beyond Journey's End Manufacturer: Good Smile Company Category: Nendoroid US Release Date: FEB 2025 Specifications: Painted plastic non-scale articulated figure with stand included."
+            ],
+            "entities": [
+              {
+                "id": "https://www.rabbittailhobby.com/products/good-smile-company-2367-nendoroid-frieren-frieren-beyond-journeys-end-chibi-figure",
+                "type": "product",
+                "version": 1,
+                "properties": {
+                  "name": "Good Smile Company 2367 Nendoroid Frieren - Frieren: Beyond Journey's End Chibi Figure",
+                  "description": "In-stock orders would be processed in 24 hours. \"The person standing before you is a mage who's lived for over a thousand years.\" From the anime \"Frieren: Beyond Journey's End\" comes a Nendoroid of Frieren! Face plates: · Neutral face · Smug face · Chibi face Optional parts: · Staff · Grimoire · Blue-moon weed · Other optional parts for different poses. DETAILS Series: Frieren: Beyond Journey's End Manufacturer: Good Smile Company Category: Nendoroid US Release Date: FEB 2025 Specifications: Painted plastic non-scale articulated figure with stand included. Magnets used in some areas. Approximately 110mm in height. WARNING Please note that images shown may differ from the final product. Paintwork is done partially by hand and therefore final products may vary. The base shown is a prototype. The final version may differ. All of our figurines are for Adult Collectors and not suitable for children under 15 years of age. They may contain sharp points, small parts that are choking hazards, and other elements not for children under 3 years of age.",
+                  "images": [
+                    "https://cdn.shopify.com/s/files/1/0576/8904/7226/files/NendoroidFrieren_3.jpg?v=1739660036"
+                  ],
+                  "brand": null,
+                  "identifiers": null,
+                  "offer": {
+                    "price": {
+                      "amount": 63.99,
+                      "currency": "USD"
+                    },
+                    "availability": "out_of_stock",
+                    "sku": null,
+                    "seller": null
+                  },
+                  "rating": null,
+                  "attributes": [
+                    {
+                      "name": "Availability",
+                      "value": "In-Stock"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ],
+        "searchTime": 2433.1,
+        "costDollars": {
+          "total": 0.007,
+          "search": {
+            "neural": 0.007
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,87 @@
+{
+  "caseId": "J1",
+  "recordedAt": "2026-11-17T21:16:27.084Z",
+  "commit": "2f6dac20658fc7b1625a3298b81d0170496bd5c0",
+  "toolCalls": [
+    {
+      "tool": "search_web",
+      "args": {
+        "query": "Mugi to Olive Ginza opening hours credit card payment accepted",
+        "max_results": 5
+      }
+    }
+  ],
+  "exchanges": [
+    {
+      "provider": "exa",
+      "method": "POST",
+      "url": "https://api.exa.ai/search",
+      "requestBody": {
+        "query": "Mugi to Olive Ginza opening hours credit card payment accepted",
+        "type": "auto",
+        "numResults": 5,
+        "contents": {
+          "highlights": true
+        }
+      },
+      "status": 200,
+      "responseBody": {
+        "requestId": "5966c2efc72973f23d789d464dca876f",
+        "resolvedSearchType": "",
+        "results": [
+          {
+            "id": "https://tabelog.com/en/tokyo/A1301/A130101/13164932/",
+            "title": "Mugi to Olive Ginza honten - Higashi Ginza/Ramen | Tabelog",
+            "url": "https://tabelog.com/en/tokyo/A1301/A130101/13164932/",
+            "highlights": [
+              "# Mugi to Olive Ginza honten - Higashi Ginza(Ramen) \n\n## Mugi to Olive Ginza honten \n\n(むぎとオリーブ 銀座本店)\n\n...\n\nClosed： \n: Wednesday\n\n...\n\n### Restaurant information \n\n#### Details \n\n| Restaurant name | Mugi to Olive Ginza honten |\n| --- | --- |\n\n...\n\n| | 03-3571-2123 |\n| Reservation availability | Reservations unavailable |\n| Address | 東京都中央区銀座6-12-12 銀座ステラビル 1F Show larger map Find nearby restaurants |\n| Transportation | ・5 minutes walk from Higashi-Ginza Station (A1 exit) on the ... Metro ... ei Asak ... Line ・ ... from Ginza ... ( ... 5 ... Marunouch ... , Gin ... Line ... or Hib ... 0 ... Ginza-itch ... Exit ... Yur ... 12 minutes ... from JR Shinbashi Station ... Shiodome ... 253 meters from Higashi Ginza. |\n| Business hours | Mon, Tue, Thu, Fri, Sat, Sun 11:00 AM - 9:30 PM Wed Closed Closed for New Year holidays Hours and closed days may change, so please check with the restaurant before visiting. |\n| Average price | JPY 1,000 - JPY 1,999 JPY 1,000 - JPY 1,999 |\n| Average price (Based on reviews) | JPY 1,000 - JPY 1,999 JPY 1,000 - JPY 1,999 View spending breakdown |\n| Payment methods | Credit card accepted (VISA, Master, JCB, AMEX, Diners) Electronic money accepted QR code payments accepted (PayPay, d Barai, Rakuten Pay, au PAY) |\n| Service charge & fee | Service Charge Information for Mugi to Olive: Please note that a service charge may be added to your bill. Original text なし This section has been automatically translated. Please check with the restaurant for accurate information. |"
+            ]
+          },
+          {
+            "id": "https://japanramenguide.com/shop/tokyo/mugi-to-olive-ginza-hon-ten",
+            "title": "Mugi to Olive Ginza Hon Ten — Shoyu Ramen in Tokyo",
+            "url": "https://japanramenguide.com/shop/tokyo/mugi-to-olive-ginza-hon-ten",
+            "highlights": [
+              "# Mugi to Olive Ginza Hon Ten\n\n麦と橄欖 銀座本店\n\n...\n\n### Ground Intel & Counter Rules\n\n...\n\nPayment Acceptance\n\nCredit Cards\n\nTap or insert Visa, Mastercard, or JCB directly at the counter or digital kiosk.\n\n...\n\nCard and electronic payments accepted. Closed Wednesdays.\n\n...\n\n## Hours\n\n11:30–21:30 (Mon–Fri), 11:30–21:00 (Sat–Sun). Closed Wednesdays.\n\nClosed: Wednesday\n\n...\n\nWhen is Mugi to Olive Ginza Hon Ten open?\n\n11:30–21:30 (Mon–Fri), 11:30–21:00 (Sat–Sun). Closed Wednesdays. Closed Wednesday.\n\n...\n\nWhat payment methods does Mugi to Olive Ginza Hon Ten accept?\n\nCredit cards and electronic payments are accepted at Mugi to Olive Ginza Hon Ten."
+            ],
+            "image": "https://japanramenguide.com/cities/tokyo.jpg"
+          },
+          {
+            "id": "https://dishnote.com/en/restaurants/1013",
+            "title": "Mugi-To-Olive Ginza Honten Menu: 14 Items & Prices (Higashiginza Station, Ramen) | dishnote",
+            "url": "https://dishnote.com/en/restaurants/1013",
+            "highlights": [
+              "# Mugi-To-Olive Ginza Honten\n\nむぎとオリーブ 銀座本店\n\n...\n\n## Details\n\n...\n\nAddress\n\n6-12-12 Ginza, Chuo-ku, Tokyo 104-0061, Japan (Ginza Stella Bldg. 1F)\n\nAddress in Japanese: 東京都中央区銀座6-12-12 銀座ステラビル 1F\n\n...\n\nPayment\n\n- Credit card Accepted(VISA, Mastercard, JCB, American Express, Diners Club)\n- E-money Accepted\n- QR code payment Accepted(PayPay, d Barai, Rakuten Pay, au PAY)\n\n...\n\n## Opening hours\n\n| Mon–Tue | 11:00–21:30 |\n| --- | --- |\n| Wed | Closed |\n| Thu–Sun | 11:00–21:30 |\n| Holidays | Closed |\n\nOpening hours and closing days may change. Please check with the restaurant before visiting.\n\n...\n\nInformation reflects the time it was collected. Hours, prices and accommodations may change, so please confirm with each restaurant."
+            ],
+            "image": "https://dishnote.com/api/og/en/restaurants/1013"
+          },
+          {
+            "id": "https://exa.ai/library/place/k2hs6tnyp36",
+            "title": "Mugi to Olive Ginza",
+            "url": "https://exa.ai/library/place/k2hs6tnyp36",
+            "publishedDate": "2026-09-14T04:03:48.000Z",
+            "highlights": [
+              "## Opening hours\n\n| Day | Hours |\n| --- | --- |\n| Monday | 11 AM–9:30 PM |\n| Tuesday | 11 AM–9:30 PM |\n| Wednesday | Closed |\n| Thursday | 11 AM–9:30 PM |\n| Friday | 11 AM–9:30 PM |\n| Saturday | 11 AM–9:30 PM |\n| Sunday | 11 AM–9:30 PM |"
+            ]
+          },
+          {
+            "id": "https://jp.openrice.com/ja/tokyo-kanto/r-%E3%82%80%E3%81%8E%E3%81%A8%E3%82%AA%E3%83%AA%E3%83%BC%E3%83%96-%E9%8A%80%E5%BA%A7%E5%BA%97-%E9%8A%80%E5%BA%A7%E3%83%BB%E6%9C%89%E6%A5%BD%E7%94%BA%E3%83%BB%E6%97%A5%E6%AF%94%E8%B0%B7-%E3%83%A9%E3%83%BC%E3%83%A1%E3%83%B3-r550198",
+            "title": "むぎとオリーブ 銀座店 - ラーメン 銀座 銀座 の  東京/関東 | OpenRice 日本",
+            "url": "https://jp.openrice.com/ja/tokyo-kanto/r-%E3%82%80%E3%81%8E%E3%81%A8%E3%82%AA%E3%83%AA%E3%83%BC%E3%83%96-%E9%8A%80%E5%BA%A7%E5%BA%97-%E9%8A%80%E5%BA%A7%E3%83%BB%E6%9C%89%E6%A5%BD%E7%94%BA%E3%83%BB%E6%97%A5%E6%AF%94%E8%B0%B7-%E3%83%A9%E3%83%BC%E3%83%A1%E3%83%B3-r550198",
+            "highlights": [
+              "# むぎとオリーブ 銀座店\n\n住所\n\n東京都中央区銀座6-12-12 銀座ステラビル 1F\n\n全支店(1)\n\n電話番号 03-3571-2123\n\n...\n\n営業時間\n\n 月曜 \n\n 11:30 - 22:00 \n\n 火曜 \n\n 11:30 - 22:00 \n\n 水曜 \n\n 11:30 - 22:00 \n\n 木曜 \n\n 11:30 - 22:00 \n\n 金曜 \n\n 11:30 - 22:00 \n\n 土曜 \n\n 11:30 - 21:00 \n\n 日曜 \n\n 定休日 \n\n 祝日 \n\n 11:30 - 21:00 \n\n*スープがなくなり次第終了\n\n支払方法 現金 \n\nその他情報\n\n駐車場英語・中国語メニュー英語・中国語対応スタッフ現金払いのみ喫煙可 予約可\n\n...\n\n上記は参考情報です。詳細はレストランでご確認ください。"
+            ],
+            "image": "https://cdn-jp.orstatic.com/userphoto/photo/6/57O/0112P36AE62EB82E1F7A4Alv.jpg?og=1"
+          }
+        ],
+        "searchTime": 2001.7,
+        "costDollars": {
+          "total": 0.007,
+          "search": {
+            "neural": 0.007
+          }
+        }
+      }
+    }
+  ]
+}

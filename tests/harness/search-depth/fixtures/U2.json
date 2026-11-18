@@ -1,0 +1,71 @@
+{
+  "caseId": "U2",
+  "recordedAt": "2026-11-17T21:19:43.053Z",
+  "commit": "2f6dac20658fc7b1625a3298b81d0170496bd5c0",
+  "toolCalls": [
+    {
+      "tool": "search_web",
+      "args": {
+        "query": "Ichiran Shibuya branch wifi password",
+        "max_results": 3
+      }
+    }
+  ],
+  "exchanges": [
+    {
+      "provider": "exa",
+      "method": "POST",
+      "url": "https://api.exa.ai/search",
+      "requestBody": {
+        "query": "Ichiran Shibuya branch wifi password",
+        "type": "auto",
+        "numResults": 3,
+        "contents": {
+          "highlights": true
+        }
+      },
+      "status": 200,
+      "responseBody": {
+        "requestId": "5ec35a46cb068ad3993cd8194d89623f",
+        "resolvedSearchType": "",
+        "results": [
+          {
+            "id": "https://en.ichiran.com/shop/tokyo/shibuya/",
+            "title": "Shibuya Store | Store Information | Ichiran Natural Tonkotsu ICHIRAN",
+            "url": "https://en.ichiran.com/shop/tokyo/shibuya/",
+            "highlights": [
+              "### First time at ICHIRAN\n\nFor instructions on how to use ICHIRAN, please watch the video below.\n\n*Some parts of the video may differ depending on the store.\n\n...\n\n| Address | 150-0041 B1F, 1-22-7 Jinnan Sibuya-ku Tokyo-to [MAP] |\n| --- | --- |\n| Telephone | 050-1808-2546 *Please note that we may not be able to answer Telephone depending on the volume of calls. |\n| Number of Seats | 21 counter-seats ・0 tables ・0 private dining rooms *Child-friendly Environment (Utensils for children are available) |\n| Parking Area | No |\n| Business Hours | 24 hours *Depending on how crowded the restaurant is, you may not be able to enter even before the last order time. |\n\n...\n\nmethods ... ticket\n\n...\n\n| Access Route​ | Cross scramble intersection, walk on Inokashi-dori along the 109 Men's Dept Store heading towards Harajuku. Next to Shibuya Marui JAM 3-minute walk from JR Shibuya Station (Hachiko Exit) 3 minute walk from Tokyo Metro Subway's Shibuya Station |\n| --- | --- |"
+            ],
+            "image": "https://ichiran.com/shop/img/shibuya_5.jpg"
+          },
+          {
+            "id": "https://www.gotokyo.org/en/plan/wifi-connectivity/wifi_hotspotguide.html",
+            "title": "Wi-Fi Hotspot Guide | The Official Tokyo Travel Guide, GO TOKYO",
+            "url": "https://www.gotokyo.org/en/plan/wifi-connectivity/wifi_hotspotguide.html",
+            "author": "Tokyo Convention, Visitors Bureau.",
+            "highlights": [
+              "Wi-Fi Hotspot Guide | The Official Tokyo Travel Guide, GO TOKYO\n\nUpdated: September 1, 2026\n\n# Wi-Fi Hotspot Guide\n\n...\n\nNote: For details, visit the website of each service provider.\n\n...\n\n## Services by area\n\n### TOKYO FREE Wi-Fi\n\nThis is a safe, convenient, public Wi-Fi provided by the Tokyo Metropolitan Government. After signing up once, it will automatically connect thereafter. You can connect at government facilities, tourist attractions, public phone booths, and more.\n\n| | |\n| --- | --- |\n| Tourist information sign | Public phone booths |\n\n| Coverage areas and facilities | Parks, gardens, cultural facilities, office buildings, tourist information sign/digital signage areas, near public phone booths, etc. Tokyo Metropolitan Area Wi-Fi Spot list, search |\n| --- | --- |\n| SSID | TOKYO_FREE_Wi-Fi |\n| Languages | Japanese, English, Chinese (simplified), Chinese (traditional), Korean |\n| User Registration | Register here |\n\n### Wide-area services\n\n### FREE Wi-Fi PASSPORT\n\n| Coverage areas and facilities | Service provided by SoftBank, the largest provider of Wi-Fi hotspots in Japan. 400,000 SoftBank Wi-Fi hotspots in Japan including cafes and restaurants Wi-Fi Spot list, search |\n| --- | --- |\n| SSID | .FREE_Wi-Fi_PASSPORT |\n| Languages | English, Chinese (simplified), Chinese (traditional), Korean |\n| User Registration | Phone or email registration Note: Gender and age group required for registration on first time only |\n| How to connect | Connection method |\n\n### FREESPOT\n\n| Coverage areas and facilities | 700 locations in Tokyo including cafes, hotels, and public facilities Wi-Fi Spot list, search |\n| --- | --- |\n| SSID | FREESPOT, 'freespot'=SecurityPassword (AES), original SSID set by each facility |\n| Languages | Japanese, English, Chinese (simplified), Chinese (traditional), Korean Note, however, that in general the facilities do not provide support for inquiries in foreign languages. |\n| User Registration | Email registration (In some areas, only need to provide an email address, or no registration is required.) Social media account registration |\n| How to connect | Connection method |\n\n### Area services\n\n| Areas | Service names | | SSID |\n| --- | --- | --- | --- |\n| Shinjuku | | Shinjuku Free Wi-Fi | [Outdoors] Shinjuku_Free_Wi-Fi [Offices/stores] Shinjuku_Free_Wi-Fi_02 |\n| Shibuya | | SHIBUYA CITY Wi-Fi | [Outdoors] 0000Shibuya_City |\n| Shibuya | | SHIBUYA Wi-Wi-Fi | -SHIBUYA-Wi-Wi-Fi- |\n| Odaiba/ Tokyo Waterfront Subcenter area | | Tokyo Odaiba FreeWiFi | FreeWiFi_ODAIBA |"
+            ],
+            "image": "https://www.gotokyo.org/en/plan/wifi-connectivity/images/main_pxfree_PYT39.webp"
+          },
+          {
+            "id": "https://tabelog.com/en/tokyo/A1303/A130301/13001762",
+            "title": "Ichiran（いちらん） - Shibuya(Ramen)",
+            "url": "https://tabelog.com/en/tokyo/A1303/A130301/13001762",
+            "highlights": [
+              "This restaurant is registered on Tabelog as a corporate member. Business information is released by the staff.\n\n...\n\nThe text on this page has been automatically translated using Wovn.io. Please note that there may be inaccuracies in the translation.\n\n...\n\n### Restaurant information\n\n#### Details\n\nIchiran（Ichiran）\n\n050-1808-2546\n\nCannot be reserved\n\n東京都渋谷区神南1-22-7 岩本ビル Ｂ１Ｆ\n\nShow larger map Find the restaurants in the surrounding area\n\nFrom JR Shibuya Station (Hachiko Exit), cross the scramble crossing and follow 109-2 towards Harajuku. Next to Marui JAM, B1F. 3 minutes walk from JR Shibuya Station (Hachiko Exit) 3 minutes walk from Tokyo Metro Shibuya Station\n\n...\n\nSend information by email\n\n050-1808-2546\n\nCurrently out of telephone opening hours.\n\n*For reservations, please use the online booking system."
+            ],
+            "image": "https://tblg.k-img.com/restaurant/images/Rvw/43279/150x150_square_43279464.jpg"
+          }
+        ],
+        "searchTime": 852,
+        "costDollars": {
+          "total": 0.007,
+          "search": {
+            "neural": 0.007
+          }
+        }
+      }
+    }
+  ]
+}

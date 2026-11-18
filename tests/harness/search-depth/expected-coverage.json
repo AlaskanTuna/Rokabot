@@ -1,0 +1,118 @@
+{
+  "F1": {
+    "covered": ["Capital is Thimphu", "Population around 140,000"],
+    "missing": []
+  },
+  "F2": {
+    "covered": ["Height 634 meters"],
+    "missing": []
+  },
+  "F3": {
+    "covered": ["Launched June 5, 2025"],
+    "missing": []
+  },
+  "L1": {
+    "covered": ["Other items such as pudding or sandwiches"],
+    "missing": ["Hotcakes on the menu", "Coffee or blend drinks"]
+  },
+  "L2": {
+    "covered": ["Mario Kart: Koopa's Challenge", "Donkey Kong Country area or Mine-Cart Madness"],
+    "missing": ["Yoshi's Adventure"]
+  },
+  "L3": {
+    "covered": [
+      "Flavor strength options",
+      "Richness or fat options",
+      "Garlic options",
+      "Green onion options",
+      "Chashu options",
+      "Spicy or red sauce options",
+      "Noodle firmness options"
+    ],
+    "missing": []
+  },
+  "J1": {
+    "covered": ["Opening hours", "Card payment brands"],
+    "missing": []
+  },
+  "J2": {
+    "covered": ["Price varies by branch"],
+    "missing": ["Hotcake set price in yen"]
+  },
+  "J3": {
+    "covered": ["Pokemon Center Osaka at LUCUA SOUTH 13F"],
+    "missing": ["Pokemon Center Osaka DX at Shinsaibashi"]
+  },
+  "P1": {
+    "covered": ["Malaysian retailer names", "Prices in MYR"],
+    "missing": []
+  },
+  "P2": {
+    "covered": ["Good Smile preorder store"],
+    "missing": ["Price range in yen"]
+  },
+  "P3": {
+    "covered": ["Official price $249", "Sale price caveat"],
+    "missing": []
+  },
+  "N1": {
+    "covered": ["Dated source material"],
+    "missing": ["GTA 6 release date status"]
+  },
+  "N2": {
+    "covered": ["Dated OpenAI items", "This-week items"],
+    "missing": []
+  },
+  "N3": {
+    "covered": ["Dated index moves", "Market date"],
+    "missing": []
+  },
+  "C1": {
+    "covered": [],
+    "missing": ["Steam Deck library and verdict evidence", "Price numbers"]
+  },
+  "C2": {
+    "covered": ["Kindle Paperwhite verdict evidence"],
+    "missing": ["Price evidence"]
+  },
+  "C3": {
+    "covered": ["JR Pass 7-day price"],
+    "missing": ["Ticket-price comparison"]
+  },
+  "O1": {
+    "covered": ["Critic and player scores"],
+    "missing": ["Sale price evidence"]
+  },
+  "O2": {
+    "covered": ["Rapid trigger evidence", "Adjustable actuation evidence"],
+    "missing": []
+  },
+  "O3": {
+    "covered": ["Airwrap price evidence", "Review consensus evidence"],
+    "missing": []
+  },
+  "A3": {
+    "covered": ["Good Smile shop names", "Price in yen or USD"],
+    "missing": []
+  },
+  "A4": {
+    "covered": [],
+    "missing": ["Season 2 confirmed status", "Dated announcement evidence"]
+  },
+  "A5": {
+    "covered": [],
+    "missing": ["Mallorie Rodak voices Frieren"]
+  },
+  "A6": {
+    "covered": ["Anime ends around chapter 71"],
+    "missing": ["Manga ahead at about 250 chapters"]
+  },
+  "A7": {
+    "covered": ["Solo Leveling adaptation comparison evidence"],
+    "missing": []
+  },
+  "A8": {
+    "covered": ["Dates July 2-5, 2027", "Los Angeles venue"],
+    "missing": []
+  }
+}

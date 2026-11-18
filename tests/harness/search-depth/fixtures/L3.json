@@ -1,0 +1,90 @@
+{
+  "caseId": "L3",
+  "recordedAt": "2026-11-17T21:16:15.438Z",
+  "commit": "2f6dac20658fc7b1625a3298b81d0170496bd5c0",
+  "toolCalls": [
+    {
+      "tool": "search_web",
+      "args": {
+        "query": "Ichiran ramen order sheet customization options",
+        "max_results": 5
+      }
+    }
+  ],
+  "exchanges": [
+    {
+      "provider": "exa",
+      "method": "POST",
+      "url": "https://api.exa.ai/search",
+      "requestBody": {
+        "query": "Ichiran ramen order sheet customization options",
+        "type": "auto",
+        "numResults": 5,
+        "contents": {
+          "highlights": true
+        }
+      },
+      "status": 200,
+      "responseBody": {
+        "requestId": "a80bbdbd553d59a4898c56e936bc25d4",
+        "resolvedSearchType": "",
+        "results": [
+          {
+            "id": "https://thestandardjapan.com/food/how-to-order-ichiran-ramen",
+            "title": "How to Order at Ichiran: Tickets, Booths and Kaedama",
+            "url": "https://thestandardjapan.com/food/how-to-order-ichiran-ramen",
+            "publishedDate": "2026-08-19T18:53:26.000Z",
+            "author": "Food Desk",
+            "highlights": [
+              "| Updated Oct 8, 2026· 4 min read\n\n...\n\n## 3. Fill in the order sheet\n\nIn your booth there is an order sheet, available in English, Chinese and Korean at most branches. Circle your choices:\n\n| Choice | Options |\n| --- | --- |\n| Flavor strength | Light, medium or rich |\n| Richness (fat) | None, light, medium, rich or extra rich |\n| Garlic | None, a little, medium, or more |\n| Green onion | None, white onion or green onion |\n| Chashu (pork) | With or without |\n| Red sauce | A spicy sauce, from none up to extra-strong levels |\n| Noodle firmness | Extra soft to extra firm |\n\nIf you're unsure, Ichiran recommends the medium or standard option for everything. Go easy on the red sauce the first time."
+            ],
+            "image": "https://images.unsplash.com/photo-1569718212165-3a8278d5f624?w=1200&q=80"
+          },
+          {
+            "id": "https://ayastokyocompass.com/articles/how-to-eat-at-ichiran-ramen",
+            "title": "Ichiran Order Sheet: Best Settings & How to Order",
+            "url": "https://ayastokyocompass.com/articles/how-to-eat-at-ichiran-ramen",
+            "publishedDate": "2026-09-24T18:58:34.000Z",
+            "author": "Aya",
+            "highlights": [
+              "By Aya Published September 24, 2026 · Last updated November 7, 2026· 10 min read\n\n...\n\nFor this guide, I am sharing exactly what happened on my visit to the Shimbashi branch, a convenient option a short JR ride from Tokyo Station.\n\n...\n\n### Recommended Ichiran order sheet settings for first-timers\n\nFor an easy first bowl, my recommendation is Medium flavor strength, Medium richness, Medium garlic, green onion, sliced pork, 1/2 spicy red sauce, and Firm noodles. Medium noodles are also a safe choice if you are unsure, and children or anyone sensitive to heat should choose no spicy red sauce.\n\n## 1. How to fill out the Ichiran order sheet\n\nIchiran’s order sheet lets you customize the same bowl before it is prepared. Circle one answer in every row: flavor strength, richness, garlic, green onion, sliced pork, Original Spicy Red Sauce, and noodle texture. If this is your first visit, the faint dotted circles printed on the sheet are the easiest starting point.\n\nThe red numbers correspond to the No. column in the table below. The faint dotted circles show Ichiran’s recommended balance.\n\n◎ My order-sheet picks\n\n- Flavor strength: If this is your first visit, choose Medium—the standard setting.\n- Richness: Medium is also my pick for a first bowl. Choosing Rich adds more body, helping the soup cling to the noodles and making the overall flavor feel stronger.\n- Garlic: Medium is an easy choice for most people. If you enjoy bold, garlicky ramen such as Jiro-style ramen, 1 clove is a good option.\n- Noodle texture: Firm is my recommendation, but Medium is a safe choice for a first visit.\n\n| No. | Option | What it means | First-time recommendation |\n| --- | --- | --- | --- |\n| 1 | Flavor Strength (Dashi) | How strongly seasoned the soup tastes | Medium |\n| 2 | Richness | How rich and full-bodied the soup feels | Medium |\n| 3 | Garlic | The amount of garlic added | Medium |\n| 4 | Green Onion | No onion, white onion, or green onion | Green onion—or your preference |\n| 5 | Sliced Pork (Chashu) | Whether the standard pork topping is included | With pork |\n| 6 | Original Spicy Red Sauce | Ichiran’s chili-based spicy sauce | Mild (1/2); choose none for children |\n| 7 | Noodle Texture | How firm or soft the thin noodles are | Medium or firm |\n\n### Where to circle on your first visit\n\nIf you are unsure what to choose, use this marked example as an easy starting point. You can adjust any row to match your taste.\n\nThis example circles Medium flavor strength, Medium richness, Medium garlic, green onion, sliced pork, 1/2 spicy red sauce, and Medium noodles. I personally prefer Firm noodles, but Medium is the safest starting point if you are unsure.\n\nOrdering for a child?\n\nChoose “none” for the Original Spicy Red Sauce. The order sheet itself warns that the sauce may be too spicy for children."
+            ],
+            "image": "https://ayastokyocompass.com/images/ichiran-shimbashi-ramen.webp"
+          },
+          {
+            "id": "https://chainstorejapan.com/ichiran-guide",
+            "title": "Ichiran Japan Guide for Tourists: Flavor Concentration Booths, Ordering Sheets & Tips",
+            "url": "https://chainstorejapan.com/ichiran-guide",
+            "highlights": [
+              "Last checked against official information: 2026-11-17.\n\n...\n\n## How to order\n\n...\n\n3. Fill out the Multilingual Order Sheet: Take the paper order sheet sitting on your booth counter (available in English, Chinese, and Korean) and circle your preferences:\n\n- Dashi Taste: Medium, Rich, or Mild\n- Richness (Oil): None, Light, Medium, Rich, or Ultra Rich\n- Garlic: None, A Little, Regular (1/4 clove), 1/2 clove, or 1 clove\n- Green Onion: None, White Scallion, or Green Scallion\n- Sliced Pork (Chashu): Without or With\n- Original Spicy Red Sauce: None, 1/2, Regular, or Double (warning: chili-based and spicy)\n- Noodle Texture: Extra Firm, Firm, Medium, Soft, or Extra Soft\n\n...\n\n## Sources\n\n- Ichiran Official Website: https://ichiran.com/ (Verified: 2026-09-16)\n\n...\n\n- Ichiran Official Ordering Guide (\"How to Order\"): https://ichiran.com/shop/howto.html (Verified: 2026-09-16)"
+            ]
+          },
+          {
+            "id": "https://ramen.hk/en-ichiran-hong-kong-menu/",
+            "title": "Ichiran Hong Kong Menu and Customisation Guide",
+            "url": "https://ramen.hk/en-ichiran-hong-kong-menu/",
+            "highlights": [
+              "Ichiran serves one bowl — natural tonkotsu — and lets you set it seven ways on a paper sheet. The menu is the sheet, so understanding each line matters more than reading a list of dishes. Details below come from operator pages and current listings; verify hours, menus and prices on the day.\n\n...\n\nThe sheet, line by line. Flavour strength (light/medium/strong), richness/oil (none to extra), garlic (none to a clove), spring onion (none, white, green), chashu (yes/no), secret red sauce (none to 2x, or more for a charge), noodle firmness (extra firm to extra soft). First visit: choose medium/standard throughout.\n\n## 🧾 1. How the sheet works\n\nYou receive the sheet in the queue or at the booth, tick each line, and pass it through the curtain. Kaedama (noodle refill) is ordered later with a separate slip placed on the tray.\n\n...\n\n## 🍜 2. What each choice changes\n\nRichness controls back fat and oil; red sauce controls heat; garlic is pressed fresh; firmness matters because thin Hakata noodles soften fast.\n\n...\n\n## 🥚 3. Add-ons\n\nThe marinated egg, extra chashu, kikurage, nori and kaedama are priced separately and are where the bill grows; the arithmetic is in Ichiran price tier and add-ons.\n\n...\n\nThe Hong Kong sheet is not identical to Japan’s. Options, portion and price differ by market; compare in Ichiran in Japan versus Hong Kong."
+            ],
+            "image": "https://cdn.sheetany.com/files/mawyvoqjGa.jpeg"
+          },
+          {
+            "id": "https://ichiran.com/ganso/m/order.html",
+            "title": "天然とんこつﾗｰﾒﾝ 一蘭 [公式ｻｲﾄ]",
+            "url": "https://ichiran.com/ganso/m/order.html",
+            "highlights": [
+              "## オーダー用紙\n\n7項目それぞれから好みをお選びいただくことで、お客様こだわりの一杯をご提供いたします。オーダー用紙で好みが選べるので、何通りもの美味しさが楽しめます。食通のお客様の微妙な味覚の違いにお応えできるシステムです。 ※英語・韓国語・中国語の用紙もご用意しております。\n\n### 誕生秘話\n\nメニューをラーメン一杯に特化した結果、それぞれの材料において、お客様の好みが大きく分かれるという事がわかりました。そんなお客様一人ひとりのご要望にお応えすべく、「麺・出汁・こってり度・チャーシュー・ねぎ・秘伝のたれ・にんにく」について、お客様の好みにお応えするようになりました。 当初は、代表の吉冨がお客様一人ひとりに口頭でお伺いしており、それが面白いと、わざわざそのやり取りを聞きに来られるお客様も多くいらっしゃいました。お客様が段々と増えていくにつれ、より確実で簡潔なかたちを模索し続け、現在のオーダー用紙が誕生いたしました。 どこにもなかったこのシステムは、元祖「オーダーシステム」として注目を浴び、舌の肥えた多くのお客様のご要望に応えてきました。これからもそれぞれのお客様に合わせた最高の一杯をお届けしてまいります。"
+            ]
+          }
+        ],
+        "searchTime": 1459.6,
+        "costDollars": {
+          "total": 0.007,
+          "search": {
+            "neural": 0.007
+          }
+        }
+      }
+    }
+  ]
+}

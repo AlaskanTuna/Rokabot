@@ -1,0 +1,90 @@
+{
+  "caseId": "L1",
+  "recordedAt": "2026-11-17T21:15:52.629Z",
+  "commit": "2f6dac20658fc7b1625a3298b81d0170496bd5c0",
+  "toolCalls": [
+    {
+      "tool": "search_web",
+      "args": {
+        "query": "Coffee Marufuku Osaka menu",
+        "max_results": 5
+      }
+    }
+  ],
+  "exchanges": [
+    {
+      "provider": "exa",
+      "method": "POST",
+      "url": "https://api.exa.ai/search",
+      "requestBody": {
+        "query": "Coffee Marufuku Osaka menu",
+        "type": "auto",
+        "numResults": 5,
+        "contents": {
+          "highlights": true
+        }
+      },
+      "status": 200,
+      "responseBody": {
+        "requestId": "88fd29a20e22a4de787841fd4215ec68",
+        "resolvedSearchType": "",
+        "results": [
+          {
+            "id": "https://marufukucoffeeten.com/store/marufukucoffee-sennichimae/",
+            "title": "丸福珈琲店 千日前本店 - 昭和九年創業 丸福珈琲店公式サイト",
+            "url": "https://marufukucoffeeten.com/store/marufukucoffee-sennichimae/",
+            "publishedDate": "2020-05-25T08:47:10.000Z",
+            "highlights": [
+              "## 丸福珈琲店 千日前本店\n\n \n\n| 住所 | 〒542-0074 大阪市中央区千日前1-9-1 |\n| --- | --- |\n| 電話番号 | 06-6211-3474 |\n| 営業時間 | 8:00～23:00 ※新型コロナウィルスの影響により、予期せず営業時間が変更となる場合がございます。 |\n| その他 | 【席数】1F:95席／2F：22席 【禁煙・喫煙】禁煙 【モーニングの提供】平日のみあり 【予約の可否】平日のみ可能 |\n\n 道頓堀・法善寺といった”こてこて大阪”の中心、ミナミのど真ん中に千日前本店があります。 2階は約30名様収容可能で、平日に限り会合や２次会などの貸切のご予約をお受けいたします。 田辺聖子著「薔薇の雨」で小説の舞台として登場したりと、昔から老若男女世代にかかわらず珈琲好きのお客様に愛されてまいりました。アンティークな調度品に飾られたレトロな空間でゆったりとした時間をお過ごしいただけます。 千日前本店のおすすめメニューの、銅板でやきあげる懐かしい味と香りのホットケーキは、料理研究家の小林カツ代氏も愛して下さる丸福オリジナルレシピです。オーダーを頂いてから１枚１枚焼き上げるホットケーキにたっぷりのバターと蜂蜜・メープルシロップでお召し上がり下さい。"
+            ],
+            "image": "https://marufukucoffeeten.com/wp-content/uploads/2020/05/a34f9f2f88a524e9e19b950ed134a344-1.jpg"
+          },
+          {
+            "id": "https://marufukucoffeeten.com/store/marufukucoffee-nakanoshima/",
+            "title": "丸福珈琲店 中之島ダイビル店 - 昭和九年創業 丸福珈琲店公式サイト",
+            "url": "https://marufukucoffeeten.com/store/marufukucoffee-nakanoshima/",
+            "publishedDate": "2020-05-25T08:47:13.000Z",
+            "highlights": [
+              "## 丸福珈琲店 中之島ダイビル店\n\n \n\n| 住所 | 〒530-0005 大阪市北区中之島3-3-23 中之島ダイビル1F |\n| --- | --- |\n| 電話番号 | 06-6225-2202 |\n| 営業時間 | 平日8:00～18:00 祝10:00～18:00 （定休日：土・日曜日） ※新型コロナウィルスの影響により、予期せず営業時間が変更となる場合がございます。 |\n| その他 | 【席数】64席 【モーニングの提供】平日のみあり ※ 全席禁煙 |\n\n 中之島ダイビルのエントランスに大人のカフェレストランとしてオープンしました。 創業者が考案、開発した独自の焙煎技術、抽出器具、それを使いこなせる職人と。。。 全てがそろわなければ丸福の珈琲は作ることはできません。そのこだわりを日々のオフィスライフの中で、間宮吉彦氏プロデュースによる落ち着いた空 間で楽しんでいただければと思います。モーニングサービス、ランチタイム、スイーツセット、簡単なパーティやご予約にも対応させて頂きます。 珈琲ポイントカード、ランチポイントカード（６回ご利用で１回無料）などお得な企画や、サトウ花店さんとのフラワーアレンジメント会の開催なども定期的に実施しております。"
+            ],
+            "image": "https://marufukucoffeeten.com/wp-content/uploads/2020/05/004-1.jpg"
+          },
+          {
+            "id": "https://www.tripadvisor.com/Restaurant_Review-g14135003-d1669149-Reviews-Marufuku_Coffee_Shop_Sennichimae_Honten-Sennichimae_Chuo_Osaka_Osaka_Prefecture.html",
+            "title": "MARUFUKU COFFEE SHOP, SENNICHIMAE HONTEN - Menu, Prices & Restaurant Reviews - Tripadvisor",
+            "url": "https://www.tripadvisor.com/Restaurant_Review-g14135003-d1669149-Reviews-Marufuku_Coffee_Shop_Sennichimae_Honten-Sennichimae_Chuo_Osaka_Osaka_Prefecture.html",
+            "highlights": [
+              "# Marufuku Coffee Shop, Sennichimae Honten\n\nSomeone from this business manages this listing.\n\n...\n\nInterior 33\n\nFood 74\n\nMenu 7\n\nMarufuku Coffee Shop, Sennichimae Honten\n\nAt a glance\n\nOpen until 11:00 PM\n\n, 8:00 AM - 11:00 PM\n\n1-9-1, Sennichimae, Chuo, Osaka 542-0074 Osaka Prefecture\n\nWebsite\n\n+81 6-6211-3474\n\nBreakfast, Lunch, Brunch\n\nSeating\n\n...\n\nSome reviews may have been automatically translated.\n\n4 of 5 bubbles\n\n(114 reviews)\n\n- yutapurio g\n\n·\n\nFeb 2025\n\nMarufuku Coffee Store Sennichimae Honten in Chuo-ku, Osaka We visited the famous retro coffee shop \"Marufuku Coffee Store Sennichimae Honten\" located three to four minutes on foot from Nihonbashi Station on the Osaka Metro Sakaisuji Line, Sennichimae Line and Kintetsu Railway for breakfast before going to work. The restaurant has a calm atmosphere full of cleanliness and retro feel, and together with the second floor seating, it has a total of 117 seats, making it the largest coffee shop in the area. Order Set A of the morning menu (until 11:00) (※Toast is free for drinks only) ★ Order Hot Coffee (680 yen) and Butter Toast (Free) The customer service is as wonderful as ever~ You feel better in the morning. Order Blended Coffee. Marufuku Coffee is characterized by its \"rich and rich taste but refreshing aftertaste.\" Coffee is a favorite, so it is difficult to describe in detail, but it certainly has a deep and refreshing taste that you can feel. You can also feel the bitterness of European-type deep-roasted beans, so many of you might ask for American, which tastes a little less. I like this gutsy rich taste. The cup was made by Okura Toen. That's impressive. ... ■\"Marufuku Coffee Store Sennichimae Main Store\" ■Business Hours 8:00～23:00 ■Closed 1/1 ■Address 1-9-1 Sennichimae, Chuo-ku, Osaka ■Parking None ※There are many paid parking lots nearby\n\n...\n\n- Jimbo64\n\n·\n\nSep 2023\n\nA gem discovered. Nice ambience. A mix between Japanese and colonial feel. Sit back and relax, enjoy your coffee here in a cool air conditioned environment. Relaxing nice soft music Coffee is good, sugar cubes provided (rare today) for you. Try the rum and raisin ice cream with black jelly. Recommended\n\n...\n\n- rachaellcs\n\n·\n\nSep 2018\n\nThis place serve really good latte, the americano is slightly acidic. Cheese toast was the highlight. I came with a high expectation for their pancake however is not the type of pancakes I like, the outer is slight crunch and I find it a little too dry. The traditional donutes set can skip nothing special. I will return for their latte and chesse toast.\n\n...\n\n·\n\nMar 2018\n\n...\n\nI ordered a cup of coffee and an ice cream/fruit dish. ... Wow! My friend had the French toast with ice cream and strawberry sauce and he loved it. Price was fair for what we got. Loved it here!\n\n...\n\n- montymoo778\n\n·\n\nMar 2018\n\nFound this cafe on trip advisor and we were not disappointed. Cheesy bread is a must! Ham / cucumber sandwich is also a must! Roughly $3000 yen for 2 people with 3 dishes and ice coffee. We could have shared the cheesy toast though.\n\n...\n\n- michellelbs93\n\n·\n\nJan 2018\n\n...\n\nThe Pancakes were amazing, my Fiancé and I have never had anything like it! It’s crisp on the outside but soft and delectable on the inside. With two options to choose from syrup or honey. We both picked one, and the pancakes with honey was ridiculously yummy ! I recommend to try the Cheesy brick toast ! It’s delicious and spilt between us two was the perfect amount. Also they have really great coffee from what we’ve read and heard. But we settled for 1 hot and 1 iced cocoa. My iced cocoa one best drink!\n\n...\n\nはとびぃ\n\nA retro coffee shop I often go to\n\nThis is a shop I've visited several times! When I visited around 2:30 PM, there were about three groups waiting, and I was around the fourth group in line. It was a hot day, so I hesitated, but since my companion was already lined up, I came in as is! I waited about 20 minutes and was shown around! I'd like to order a hot Almond Au Lait (tax included 700 yen). I didn't think it had coffee because I don't like coffee, but it definitely had coffee in it. I think it would be easier to understand if it were listed not only on the sign but also on the in-store menu. It had a slightly bitter, mature flavor. Also, the lightbulb above was flickering a little, so I hope it gets fixed soon.\n\nTranslated from Japanese Show original\n\nWritten August 31, 2026\n\n...\n\nryu0803\n\nTravel back in time\n\nFeb 2026 • Couples\n\n...\n\nWe ordered the hotcakes, which were as good as we remembered. Coffee was excellent. However, the egg sandwiches and the curry rice were nothing special. We were there mainly for the experience and not for the food.\n\n...\n\nyutapurio g\n\nRich taste that comes with a tangy taste\n\nJan 2025 • Solo\n\nMarufuku Coffee Store Sennichimae Honten in Chuo-ku, Osaka We visited the famous retro coffee shop \"Marufuku Coffee Store Sennichimae Honten\" located three to four minutes on foot from Nihonbashi Station on the Osaka Metro Sakaisuji Line, Sennichimae Line and Kintetsu Railway for breakfast before going to work. The restaurant has a calm atmosphere full of cleanliness and retro feel, and together with the second floor seating, it has a total of 117 seats, making it the largest coffee shop in the area. Order Set A of the morning menu (until 11:00) (※Toast is free for drinks only) ★ Order Hot Coffee (680 yen) and Butter Toast (Free) The customer service is as wonderful as ever~ You feel better in the morning. Order Blended Coffee.\n\n...\n\nDonovanChua\n\nCurry toast...something to try\n\nDec 2019\n\n...\n\nThe curry toast was something unique and I tried that, If you tried Japanese curry before, just imaging a toast topped with the gravy. It is not bad but may not suit everyone."
+            ],
+            "image": "https://media-cdn.tripadvisor.com/media/photo-m/1280/13/ac/cb/99/photo0jpg.jpg"
+          },
+          {
+            "id": "https://www.osaka-airport.co.jp/en/shop-and-dine/dine/marufuku",
+            "title": "café Marufuku Coffee | Osaka Itami Airport",
+            "url": "https://www.osaka-airport.co.jp/en/shop-and-dine/dine/marufuku",
+            "highlights": [
+              "# café Marufuku Coffee\n\n Café Light Meals Local_gourmet Kids’_menu Quick_menu KIX-ITM_card \n\n Central Terminal / 2F / Before security check \n\n Weekdays 7:00～21:00（L.O.20:30）, Weekend 6:30～21:00 (L.O.20:30) \n\n View on Map \n\n## Shop Details\n\nKids menu\n\n No \n\nPhone Number\n\n 06-6151-5019\n\n...\n\n## Information from the store\n\nEstablished in 1934. Enjoy coffee with a rich aroma, old-fashioned hotcakes, and seasonal sweets. Since their establishment in 1934, Marufuku Coffee has prided themselves on coffee with a rich aroma and flavor. Their roasting technique is nicknamed “the ultimate dark roast,” and their coffee is made using an extraction device invented by the company's founder — but their coffee also requires the skilled hand of an expert to perfectly bring these together. The menu also offers hotcakes, custard pudding, a frequently updated selection of sweets made by pastry chefs, and more items that have been beloved for decades. Marufuku takeout items are also available.\n\n 6:30～21:30（L.O.21:00） \n\n 6:30～21:30（Hot pot L.O.20:30, Non-hot pot menus L.O.21:00), alldays temporary closed 10:00 ～ 10:30 \n\n Central Terminal 2F Before security check \n\n 10:00 ～ 20:00 （L.O. 19:30） \n\n Central Terminal 4F Before security check"
+            ]
+          },
+          {
+            "id": "https://stancylife.com/en/marufuku/",
+            "title": "Marufuku Coffee Sennichimae in Osaka: Our Egg Sandwich Breakfast | StancyLife",
+            "url": "https://stancylife.com/en/marufuku/",
+            "author": "Stancy",
+            "highlights": [
+              "## Marufuku Coffee Sennichimae Main Store Getting There | A Popular Longstanding Café Near Dotonbori\n\nName: Marufuku Coffee Sennichimae Main Store (MARUFUKU COFFEE) Address: 1 Chome-9-1 Sennichimae, Chuo Ward, Osaka, 542-0074, Japan Our original guide gives about three minutes on foot from Nipponbashi Station or five minutes from Namba Station. This is the Sennichimae main store in the Namba area, separate from Marufuku’s other Osaka branches. Our visit guide listed 08:00–23:00, last orders 22:30. The shop’s current store page could not be retrieved during this check, so confirm service hours before an early or late visit. On our photographed egg-feature menu, each sandwich was ¥1,150 including tax on its own, or ¥1,645 with a listed set drink. The separate morning menu had other options until 11:00. These are visit-menu prices; check current menus and serving times.\n\nThe location is incredibly convenient, close to both Kuromon Market and the Dotonbori shopping area. It’s a great place to stop for breakfast and coffee before starting your day’s itinerary.\n\n...\n\n## Marufuku Coffee Menu\n\n \n\n## Breakfast at Marufuku Coffee | Thick Omelet Sandwich & Egg Salad Sandwich\n\n## The Star of Breakfast at Marufuku Coffee | The Ultimate Egg Sandwich\n\nWe chose two egg sandwiches for breakfast and enjoyed comparing their textures. The photographed feature menu gives their exact names and set choices.\n\n### Dashi-Rolled Egg Sandwich\n\n \n\nThe rolled-egg sandwich had thick, soft layers of egg. Our menu photograph names a dashi version of Tamagodake and describes using stock from the long-established egg specialist Mikuri in Kobe. I enjoyed its savoury flavour, without assuming a specific bonito recipe.\n\nThe soft white bread paired well with the thick omelet and did not feel dry or heavy. I liked the contrast between the egg and bread; it was a satisfying part of our breakfast.\n\n### Original Egg Sandwich: Ganso Tamagodake\n\n \n\nCompared with the thick omelet version, the egg salad sandwich offers a different kind of comfort. Marufuku’s egg salad is smooth and moist with a little texture from finely chopped boiled eggs. The gentle flavor of mayonnaise comes through in just the right amount, without being too oily or too tangy.\n\nIt uses their specially made, light and soft white bread, which has a slightly chilled feel that makes each bite cool and refreshing—perfect for the morning. To me, this is the breakfast that goes best with coffee. It doesn’t leave you feeling weighed down; instead, it makes you want to slowly finish a whole iced café au lait.\n\nBoth sandwiches can be made into a set with a drink. I recommend their iced café au lait or hot coffee. The iced café au lait is a highlight here! Their house-roasted beans have a rich aroma, balanced by just the right amount of milk. As the ice slowly melts, the coffee aroma seems to grow stronger. One sip and you’re hooked. The menu calls the milk coffee café au lait; it is not proof that an espresso-based latte was served.\n\n## Recommended Desserts and Drinks | Seasonal Autumn Mont Blanc Pancakes & Iced Café au Lait\n\nThe autumn Mont Blanc pancakes on the visit menu looked tempting, with chestnut cream and ice cream pictured. I was too full from breakfast to order them and only saw another diner’s serving. I cannot offer a first-hand tasting review of that pancake dish. Seasonal availability changes."
+            ],
+            "image": "https://i0.wp.com/stancylife.com/wp-content/uploads/2025/10/batch_IMG_5054.jpg?fit=1200%2C900&ssl=1"
+          }
+        ],
+        "searchTime": 1185,
+        "costDollars": {
+          "total": 0.007,
+          "search": {
+            "neural": 0.007
+          }
+        }
+      }
+    }
+  ]
+}

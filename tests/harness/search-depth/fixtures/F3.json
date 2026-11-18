@@ -1,0 +1,72 @@
+{
+  "caseId": "F3",
+  "recordedAt": "2026-11-17T21:15:42.734Z",
+  "commit": "2f6dac20658fc7b1625a3298b81d0170496bd5c0",
+  "toolCalls": [
+    {
+      "tool": "search_web",
+      "args": {
+        "query": "Nintendo Switch 2 launch date release",
+        "max_results": 3
+      }
+    }
+  ],
+  "exchanges": [
+    {
+      "provider": "exa",
+      "method": "POST",
+      "url": "https://api.exa.ai/search",
+      "requestBody": {
+        "query": "Nintendo Switch 2 launch date release",
+        "type": "auto",
+        "numResults": 3,
+        "contents": {
+          "highlights": true
+        }
+      },
+      "status": 200,
+      "responseBody": {
+        "requestId": "a97064bac6c2d2bc08e1c4ce3cc713e5",
+        "resolvedSearchType": "",
+        "results": [
+          {
+            "id": "https://www.nintendo.com/us/whatsnew/nintendo-switch-2-launches-june-5-bringing-new-forms-of-game-communication-to-life/",
+            "title": "Nintendo Switch 2 launches June 5 at $449.99, bringing new forms of game communication to life - News - Nintendo Official Site",
+            "url": "https://www.nintendo.com/us/whatsnew/nintendo-switch-2-launches-june-5-bringing-new-forms-of-game-communication-to-life/",
+            "publishedDate": "2025-04-02T16:00:00.000Z",
+            "highlights": [
+              "04/02/25\n\n# Nintendo Switch 2 launches June 5 at $449.99, bringing new forms of game communication to life\n\n## System Provides Powerful New Hardware, Reimagined Online Capabilities and a Broad Range of Games\n\nAll Together, Anytime, Anywhere. With new ways to play and new ways to connect players, the Nintendo Switch 2 system arrives June 5 for a suggested retail price of $449.99 in the United States.Discover reimagined Joy ... Con\n\n...\n\nRace into Nintendo Switch 2 with the Nintendo Switch 2 + Mario Kart World Bundle* for a suggested retail price of $499.99 in the United States, which includes a system and a download code for the Mario Kart World game, available from Nintendo Switch 2 launch day on June 5."
+            ],
+            "image": "https://assets.nintendo.com/image/upload/v1643742733/ncom/global/social-share.jpg"
+          },
+          {
+            "id": "https://www.nintendo.com/us/store/products/nintendo-switch-2-system-123669/",
+            "title": "Nintendo Switch™ 2 System - Nintendo Official Site",
+            "url": "https://www.nintendo.com/us/store/products/nintendo-switch-2-system-123669/",
+            "highlights": [
+              "## About this item\n\n### System\n\nNintendo Switch 2\n\n### Internal battery\n\nLithium-ion battery / 5220 mAh\n\n### Release date\n\nJune 5, 2025\n\n### Manufacturer\n\nNintendo\n\n### SKU\n\n123669\n\n### UPC\n\n00045496885816"
+            ],
+            "image": "https://assets.nintendo.com/image/upload/c_fill,w_1200/q_auto/f_auto/dpr_2.0/ncom/My%20Nintendo%20Store/EN-US/Nintendo%20Switch%202/Hardware/123669-nintendo-switch-2-package-front-2000x2000"
+          },
+          {
+            "id": "https://www.nintendo.com/us/whatsnew/power-up-your-play-with-nintendo-switch-2-and-mario-kart-world-launching-today/",
+            "title": "Power up your play with Nintendo Switch 2 and Mario Kart World launching today - News - Nintendo Official Site",
+            "url": "https://www.nintendo.com/us/whatsnew/power-up-your-play-with-nintendo-switch-2-and-mario-kart-world-launching-today/",
+            "publishedDate": "2025-06-05T16:00:00.000Z",
+            "highlights": [
+              "06/05/25\n\n# Power up your play with Nintendo Switch 2 and Mario Kart World launching today\n\n## Nintendo Switch 2 - Featuring a reimagined online experience with GameChat - arrives in stores today along with the biggest Mario Kart game in history and more\n\nThe Joy-Con 2 controllers are snapped in place, the bigger, bolder screen is lit up, and Mario and friends are revving their rides for the biggest Mario Kart yet. It’s official: the Nintendo Switch 2 system, the Mario Kart World game and over 20 titles are now available to power up your play.\n\nToday, Nintendo launched its first brand-new gaming platform in eight years with Nintendo Switch 2, and the latest Mario Kart game for consoles in over a decade with Mario Kart World. Nintendo Switch 2 brings to life new ways to connect and play with friends and family with new features and reimagined online capabilities such as GameChat*.\n\n...\n\nLast night, Nintendo held the first-ever simultaneous launch event that took place at the newly opened Nintendo SAN FRANCISCO, and Nintendo NEW YORK with activations in Rockefeller Center. Fans that attended the coast-to-coast celebration were among the first to usher in this new chapter for Nintendo games. The event culminated when the first systems and games were purchased at 9 p.m. PT in San Francisco and 12 a.m. ET in New York. Each event featured photo ops, and gameplay for Nintendo Switch 2 launch games including Mario Kart World and titles from Nintendo’s global publishing and development partners.\n\n...\n\nNintendo Switch 2 is now available at a suggested retail price of $449.99 in the United States. Also available today is the Nintendo Switch 2 + Mario Kart World Bundle****** at a suggested retail price of $499.99 in the U.S., which includes a system and a digital version of the Mario Kart World game."
+            ],
+            "image": "https://assets.nintendo.com/image/upload/v1643742733/ncom/global/social-share.jpg"
+          }
+        ],
+        "searchTime": 1698.2,
+        "costDollars": {
+          "total": 0.007,
+          "search": {
+            "neural": 0.007
+          }
+        }
+      }
+    }
+  ]
+}

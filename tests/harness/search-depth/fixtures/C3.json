@@ -1,0 +1,96 @@
+{
+  "caseId": "C3",
+  "recordedAt": "2026-11-17T21:18:22.305Z",
+  "commit": "2f6dac20658fc7b1625a3298b81d0170496bd5c0",
+  "toolCalls": [
+    {
+      "tool": "search_web",
+      "args": {
+        "query": "JR Pass price increase 2025 worth it Tokyo Kyoto Osaka",
+        "max_results": 5
+      }
+    }
+  ],
+  "exchanges": [
+    {
+      "provider": "exa",
+      "method": "POST",
+      "url": "https://api.exa.ai/search",
+      "requestBody": {
+        "query": "JR Pass price increase 2025 worth it Tokyo Kyoto Osaka",
+        "type": "auto",
+        "numResults": 5,
+        "contents": {
+          "highlights": true
+        }
+      },
+      "status": 200,
+      "responseBody": {
+        "requestId": "fec0ff460d7394e875eae90d0c6f38ad",
+        "resolvedSearchType": "",
+        "results": [
+          {
+            "id": "https://japambience.com/article/is-the-japan-rail-pass-worth-it-2025/",
+            "title": "Is the Japan Rail Pass Worth It in 2025? Exact Break-Even Routes & Prices - Japambience",
+            "url": "https://japambience.com/article/is-the-japan-rail-pass-worth-it-2025/",
+            "publishedDate": "2025-11-12T08:00:00.000Z",
+            "author": "Webosquekun",
+            "highlights": [
+              "The Japan Rail Pass (JR Pass) is a special ... It allows unlimited travel on most Japan Railways (JR) trains, including the famous Shinkansen bullet trains (except Nozomi and Mizuho services), limited express, rapid, and local lines. The pass also covers certain JR buses and ferries, such as the JR Miyajima ferry.\n\nAs of 2025, prices for the Japan Rail Pass are:\n\n| Type | Duration | Ordinary | Green (First Class) |\n| --- | --- | --- | --- |\n| Japan Rail Pass | 7 days | ¥50,000 | ¥70,000 |\n| Japan Rail Pass | 14 days | ¥80,000 | ¥110,000 |\n| Japan Rail Pass | 21 days | ¥100,000 | ¥140,000 |\n\n...\n\n## The 2025 Price Increase and What Changed\n\nIn October 2023, the JR Pass underwent a significant price increase of around 65–70%, the first major hike in decades. This change has carried through into 2025, reshaping how travelers evaluate the pass’s value.\n\n| Period | 7-Day Ordinary | 14-Day Ordinary | 21-Day Ordinary |\n| --- | --- | --- | --- |\n| Before Oct 2023 | ¥29,650 | ¥47,250 | ¥60,450 |\n| After Oct 2023 | ¥50,000 | ¥80,000 | ¥100,000 |\n\nJR cited rising operational costs, inflation, and post-pandemic tourism demand as primary reasons for the increase. The Green Car (first-class) option also saw a proportional hike, though it now offers a slightly improved reservation experience and access to quieter, more comfortable cabins.\n\nDespite the price change, some high-speed trains such as the Nozomi and Mizuho remain excluded from the JR Pass. However, JR introduced a new digital reservation platform after 2023, allowing users to book seats online, making travel planning more seamless.\n\n## Cost Comparison — JR Pass vs. Individual Tickets\n\nHere’s how the 2025 math looks for common itineraries:\n\n| Route | Regular Tickets (¥) | 7-Day JR Pass (¥50,000) | Savings (+/–) |\n| --- | --- | --- | --- |\n| Tokyo → Kyoto → Osaka → Hiroshima | ~¥55,000 | ¥50,000 | +¥5,000 |\n| Tokyo → Kanazawa → Kyoto | ~¥36,000 | ¥50,000 | –¥14,000 |\n| Tokyo → Sapporo | ~¥44,000 (one way) | ¥50,000 | –¥38,000 (roundtrip needed) |\n\nThe break-even point typically comes after two to three long-distance Shinkansen trips. For travelers planning extensive journeys—like the Golden Route plus Hiroshima—the pass still offers solid value. But for single-region or shorter trips, individual tickets are usually cheaper.\n\n## When the Japan Rail Pass Is Worth It\n\nThe JR Pass remains worthwhile in these situations:\n\n- Multi-city itineraries: Tokyo, Kyoto, Osaka, Hiroshima, or beyond.\n- Travelers who value convenience: Skip ticket machines and enjoy unlimited rides.\n- Families or groups: Simplifies logistics and saves time.\n\nPro Tip: If your itinerary includes three or more long-distance Shinkansen rides, the JR Pass usually pays off.\n\nFor those exploring widely in 7–14 days, the peace of mind and flexibility often justify the cost—even if savings are modest.\n\n## When the Japan Rail Pass Is Not Worth It\n\nIf you’re staying primarily in one region—say, Tokyo or Kansai—the pass won’t pay off. For example:\n\n| T rip | Individual Tickets (¥) | JR Pass (¥) | Difference |\n| --- | --- | --- | --- |\n| Tokyo → Kyoto (roundtrip) | ¥28,000 | ¥50,000 | –¥22,000 |\n| Osaka → Hiroshima (roundtrip) | ¥21,000 | ¥50,000 | –¥29,000 |\n\nShort itineraries, single-region trips, or those including domestic flights (e.g., Tokyo–Okinawa) are better served by regional passes or individual fares."
+            ],
+            "image": "https://japambience.com/wp-content/uploads/2025/11/33378922_m.jpg"
+          },
+          {
+            "id": "https://www.travelcaffeine.com/japan-rail-pass-worth-money-tips/",
+            "title": "Is Japan Rail Pass Worth Buying? (2025 Prices & Review) - Travel Caffeine",
+            "url": "https://www.travelcaffeine.com/japan-rail-pass-worth-money-tips/",
+            "publishedDate": "2025-01-03T17:39:57.000Z",
+            "author": "Tom Bricker",
+            "highlights": [
+              "January 3, 2025/ 37 Comments/ in Tips & Tricks Japan / by Tom Bricker\n\n...\n\nThe JR Pass allows visitors unlimited travel for 7, 14, or 21 days via the JR lines. There are also two versions of the JR Pass: the more expensive Green pass, and less expensive Ordinary one (we always buy the latter—more on that below).\n\nHere’s current 2025 pricing for the Japan Rail Pass, which will probably be valid for 2025 and 2026:\n\n7-Day Japan Rail Pass\n\n- Adult: 50,000 yen\n- Child: 25,000 yen\n- Adult: 70,000 (Green)\n- Child: 35,000 (Green)\n\n14-Day Japan Rail Pass\n\n- Adult: 80,000 yen\n- Child: 40,000 yen\n- Adult: 110,000 yen (Green)\n- Child: 55,000 yen (Green)\n\n21-Day Japan Rail Pass\n\n- Adult: 100,000 yen\n- Child: 50,000 yen\n- Adult: 140,000 yen (Green)\n- Child: 70,000 yen (Green)\n\nHere’s the previous pricing for the Japan Rail Pass that was valid from 1989 to 2023:\n\n7-Day Japan Rail Pass\n\n- Adult: 29,650 yen\n- Child: 14,820 yen\n- Adult: 39,600 yen (Green)\n- Child: 19,800 yen (Green)\n\n14-Day Japan Rail Pass\n\n- Adult: 47,250 yen\n- Child: 23,620 yen\n- Adult: 64,120 yen (Green)\n- Child: 32,600 yen (Green)\n\n21-Day Japan Rail Pass\n\n- Adult: 60,450 yen\n- Child: 30,220 yen\n- Adult: 83,390 yen (Green)\n- Child: 41,690 yen (Green)\n\nAs you can see, JR introduced some truly massive price increases. The regular 7-day pass skyrocketed from JPY 29,650 to JPY 50,000, the 14-day pass increased from JPY 47,250 to JPY 80,000, and the 21-day pass went up the most “modest” amount, from JPY 60,450 to JPY 100,000. That last one is “only” a 65% increase, whereas the weeklong and two-week passes shoot up 70%.\n\nDespite this massive price increase, the fastest Nozomi trains on the Tokaido/Sanyo Shinkansen and the Mizuho trains on the Sanyo/Kyushu Shinkansen still are not included in the base Japan Rail Pass. What is changing is that JR is offering an additional special ticket that can be purchased to upgrade to the Nozomi and Mizuho services.\n\n...\n\nPrices have not gone up for 2025 yet…and probably won’t.\n\n...\n\nFor most first-timers to Japan, whether the JR Pass is for you is quite a simple question to answer. It usually boils down to whether you’re traveling to another major city after going from Tokyo to Kyoto via the Shinkansen (bullet train). All Shinkansen in Japan are operated by the JR Group, meaning the entire network in Japan is covered with the pass.\n\nIn other words, you need to be taking at least three Shinkansen rides in a 7-day window. Keep in mind that this is just a rule of thumb, and operates under the assumption that you will continue to regularly use public transportation on in-between days. One example would be taking the Shinkansen from Tokyo to Kyoto, and then a roundtrip between Kyoto and Hiroshima, and then taking the train to Osaka and departing from Kansai International Airport–all within the span of a week.\n\nIt used to be the case that all you needed to justify the Japan Rail Pass was a roundtrip Shinkansen ride between Tokyo and Kyoto. That was it. Between that roundtrip on the Shinkansen trip and getting to and from the airport, you’d come out ahead by purchasing the Japan Rail Pass. Everything else was gravy. That is no longer the case due to the massive price increases.\n\nIf you’re only visiting Tokyo, do not buy the Japan Rail Pass. If you’re only visiting Kyoto, definitely do not buy the JR Pass. (There are some JR lines in Kyoto, but most are other companies.) Same goes for literally any single city trip to Japan. Even any trip to a single region in Japan does not necessitate purchase of the JR Pass. For those sticking to the Kansai (Osaka, Kyoto, Nara, etc.) or Kanto (Tokyo, Yokohama, etc.) regions, the Japan Rail Pass is almost certainly not for you.\n\nBasically, if you won’t be using the Shinkansen at least 3 times, the question ends there. Do NOT buy the JR Pass. Pretty simple and straightforward, right? It’s almost impossible to justify the Japan Rail Pass from a cost perspective if you are not venturing beyond Tokyo. Unless you intend upon spending the entire day riding the JR lines around (not a bad way to spend a day!), there’s little chance that the Japan Rail Pass will pay for itself over the course of a single-city or regional trip.\n\nAs of 2025, the Japan Rail Pass really only works with a multiple Shinkansen scenario. If you’re going from region to region, using the bullet train to get around. With that said, it can make sense going from Tokyo to Kyoto, and then making day trips from there.\n\nIn this scenario, we use Kyoto as a home base and take a variety of day trips throughout the Kansai region to Kobe, Himeji, Nara, and elsewhere. For us, these day trips–and the flexibility and convenience offered by the JR Pass–are the tipping point. We’ve done spontaneous day trips to Kanazawa, Hikone, Uji, and a number of other cities and spots.\n\nWe’ve used the JR Pass to visit nighttime illuminations during fall colors and sakura seasons, as well as other special events in far-flung locales, using the long train rides to get work done on multi-month trips. We never would’ve visited these places or had these experiences if paying out of pocket for additional Shinkansen tickets.\n\nThe thing is, we’re undoubtedly unique in that regard. Most visitors to Japan–especially ones asking “is the Japan Rail Pass worth the money?”–are not taking spontaneous day trips. More likely, it’s your first visit to Japan and you are, understandably, going to stick to the script and see the highlights around Tokyo and Kyoto.\n\nNevertheless, you might be considering flying into one of the cities and out of the other. This is especially true for those taking a trip to Japan lasting 10 or fewer days, as the open-jaw route is more efficient and gives you more time to spend in both Kyoto and Tokyo. To that point, if you only have 7-10 days in Japan, you may not have extra time for day trips…and thus not need the JR Pass.\n\nIf you do have more than 10 days, or are just planning a whirlwind trip to Japan that’ll take you to as many different places as possible, the JR Pass can be worth it. From Kyoto or Osaka, it’s pretty easy to do a ton of different day trips within the Kansai region, which would be pricey Shinkansen rides without the Japan Rail Pass. If you’re thinking about adding days in the aforementioned cities–or even Hiroshima, Nagoya, or Yokohama–it becomes a very close call even with only doing a one-way Shinkansen trip.\n\nIn our view, day trips in that scenario are what tip the scales in favor of buying the JR Pass. If you plan on doing a few of those, it can make sense to purchase the pass. Even if you can’t quite see that in the math ahead of time, it will often come “close enough” to working out.\n\nYou’ll end up taking the train more than you otherwise anticipate for shorter commutes, and it’ll work out in the end. That coupled with convenience and pre-planning makes the pass make sense. Just be warned that you might lose money with the Japan Rail Pass and certainly won’t save as much in 2025 as the halcyon days the last 3 decades when the JR Pass cost about as much as two Shinkansen rides.\n\n...\n\nUltimately, the math on the Japan Rail Pass is far less favorable as of 2025 than it was from 1989 until 2023. Previously, we advised that most of you who are researching this question are going to want to buy the Japan Rail Pass. Now, we think that a small minority of you will probably want to purchase it–maybe 25% or less.\n\nWe still think that making the trek from Tokyo to Kyoto and beyond (and possibly back!) is well worth your time and money, and riding a state of the art bullet train is an experience in itself. The problem is that doing all of this in the span of only 7-days is going to be very difficult, so you’ll either want or need a longer pass for those 3+ Shinkansen trips–and thus pay more and have a higher breakeven point–or won’t be traveling to as many cities.\n\nWith that said, it can be done– even today! We’ve used the JR Pass to travel from Tokyo to Hiroshima, with stops at Nagoya, Kobe, Himeji, and Hikone along the way, before ending up in Kyoto all within the span of 7-days–and probably got double the current value of the pass in the process. However, that required a ton of strategic pre-planning and the results are not going to be replicable for most tourists. Basically, unless you’re doing a whirlwind trip across Japan on the Shinkansen, the Japan Rail Pass probably no longer makes sense."
+            ],
+            "image": "https://www.travelcaffeine.com/wp-content/uploads/2017/02/japan-rail-pass-20170219348.jpg"
+          },
+          {
+            "id": "https://japanflo.com/travel/is-the-japan-rail-pass-worth-it-in-2025-an-honest-post-price-hike-analysis/",
+            "title": "Is the Japan Rail Pass Worth It in 2025? An Honest Post-Price-Hike Analysis | JapanFlo",
+            "url": "https://japanflo.com/travel/is-the-japan-rail-pass-worth-it-in-2025-an-honest-post-price-hike-analysis/",
+            "publishedDate": "2025-06-28T06:25:53.000Z",
+            "highlights": [
+              "Example Itinerary – JR Pass Not Worth It:\n\n| Route | Single Tickets | JR Pass | Verdict |\n| --- | --- | --- | --- |\n| Tokyo → Nikko → Kamakura ... |\n| Osaka → Kyoto → Nara → Osaka | ~$80 | ~$365 | Overpay by ~$285 |\n|"
+            ],
+            "image": "https://japanflo.com/wp-content/uploads/2025/06/9138FD74-5986-4C4D-8FE5-3B073C1B6C37.jpg"
+          },
+          {
+            "id": "https://www.japan-experience.com/plan-your-trip/travel-by-train/the-best-itineraries-with-the-jr-pass-7-days",
+            "title": "The best train itineraries in Japan with the 7-Day JR Pass | Japan Experience",
+            "url": "https://www.japan-experience.com/plan-your-trip/travel-by-train/the-best-itineraries-with-the-jr-pass-7-days",
+            "publishedDate": "2025-02-26T08:21:46.000Z",
+            "highlights": [
+              "### Route 1: Visit Japan's iconic landmarks\n\nThis itinerary takes in all of Japan's most famous landmarks. From Kyoto to Kanazawa, via Miyajima and Osaka, visit the big cities bursting with energy, the must-see historical and religious sites and the wonderful natural areas that are easily accessible with the JR Pass 7 days!\n\nRecommended route:\n\nDay 1: Tokyo → Kyoto = ¥14,000 (2 h)\n\nDay 2: Kyoto ↔ Nara = ¥1,500 (40 min)\n\nDay 3: Kyoto → Osaka = ¥600 (30 min)\n\nDay 4: Osaka → Hiroshima = ¥11,000 (1 h 30 min)\n\nDay 5: Hiroshima ↔ Miyajima = ¥1,500 (1 h)\n\nDay 6: Hiroshima → Kanazawa = ¥20,000 (4 h)\n\nDay 7: Kanazawa → Tokyo = ¥15,000 (2 h 30)\n\n= ¥63,600 (JR Pass ¥50,000) 27% savings 💴"
+            ],
+            "image": "https://www.japan-experience.com/sites/default/files/styles/scale_crop_420x232/public/images/2025-02/chikap-unsplash-furano-train.jpg.webp?h=67b63e34&itok=c0V2wqzs"
+          },
+          {
+            "id": "https://www.klook.com/en-US/blog/japan-klook-rail-value-pass/",
+            "title": "Klook Rail Value Pass: Your JR Pass Alternative To Travel Tokyo, Osaka & Kyoto! - Klook Travel Blog",
+            "url": "https://www.klook.com/en-US/blog/japan-klook-rail-value-pass/",
+            "publishedDate": "2025-02-18T05:31:52.000Z",
+            "author": "Klook Team",
+            "highlights": [
+              "Update: The Klook Rail Value Pass is no longer available, but you can still purchase all your essential train tickets on Klook for your next trip to Japan!\n...\n, the Klook Value Rail Pass will give you up to ¥19,480 (~US$138) in savings. Here's how:"
+            ],
+            "image": "https://res.klook.com/image/upload/fl_lossy.progressive,w_1200,h_630,c_fill,q_85/v1703761738/sf9jnria89ge0qwqhoj4.jpg"
+          }
+        ],
+        "searchTime": 213.5,
+        "costDollars": {
+          "total": 0.007,
+          "search": {
+            "neural": 0.007
+          }
+        }
+      }
+    }
+  ]
+}

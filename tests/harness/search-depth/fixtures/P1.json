@@ -1,0 +1,89 @@
+{
+  "caseId": "P1",
+  "recordedAt": "2026-11-17T21:17:00.425Z",
+  "commit": "2f6dac20658fc7b1625a3298b81d0170496bd5c0",
+  "toolCalls": [
+    {
+      "tool": "search_web",
+      "args": {
+        "query": "Steam Deck OLED Malaysia price where to buy",
+        "max_results": 5
+      }
+    }
+  ],
+  "exchanges": [
+    {
+      "provider": "exa",
+      "method": "POST",
+      "url": "https://api.exa.ai/search",
+      "requestBody": {
+        "query": "Steam Deck OLED Malaysia price where to buy",
+        "type": "auto",
+        "numResults": 5,
+        "contents": {
+          "highlights": true
+        }
+      },
+      "status": 200,
+      "responseBody": {
+        "requestId": "f515fc4d6c1086540528d13805a9dcd9",
+        "resolvedSearchType": "",
+        "results": [
+          {
+            "id": "https://gmzonemy.com/products/valve-steam-deck-oled-512gb",
+            "title": "Valve Steam Deck OLED 512GB | GMZONE",
+            "url": "https://gmzonemy.com/products/valve-steam-deck-oled-512gb",
+            "highlights": [
+              "Valve Steam Deck OLED 512GB | GMZONE\n\n# Valve Steam Deck OLED 512GB\n\nSteam Deck In stock\n\nA portable PC gaming handheld with OLED display, Steam library support, and flexible play for home, travel, and docked setups.\n\nPrice\n\nRM 3,059\n\nOriginal price RM 3,399 You save RM 340\n\nPayment Methods\n\n## Shipping & Delivery\n\nFree delivery throughout Malaysia, including Sabah and Sarawak. Singapore orders use GMZONE Standard Delivery by GMZONE's own delivery fleet. Delivery or tracking information will be provided after dispatch where applicable.\n\n## Warranty & Claims\n\n1 Year Supplier warranty\n\nView Warranty Info →\n\n## Returns Policy\n\nEligible requests are handled under GMZONE returns and warranty terms.\n\nView Return Policy →\n\n- 512GB storage\n- OLED handheld display\n- Steam library support\n- Portable PC gaming\n\n### Overview\n\n- 512GB storage\n- OLED handheld display\n- Steam library support\n- Portable PC gaming\n\n### Key Specifications\n\nBrand\n\nValve\n\nCategory\n\nGaming Consoles\n\nCondition\n\nNew\n\nSKU\n\nGMZ-CON-VALVE-STEAM-DECK-OLED-512GB\n\nModel\n\nSteam Deck OLED\n\nPlatform\n\nSteam Deck\n\nStorage\n\n512GB\n\nDocked mode\n\nSupported\n\n...\n\n### Warranty\n\n1 Year Supplier warranty"
+            ],
+            "image": "https://gmzonemy.com/opengraph/products/valve-steam-deck-oled-512gb"
+          },
+          {
+            "id": "https://pocketsmarts.com.my/product/steam-deck-oled/",
+            "title": "Steam Deck OLED - Pocketsmarts Sdn Bhd",
+            "url": "https://pocketsmarts.com.my/product/steam-deck-oled/",
+            "highlights": [
+              "Steam Deck OLED - Pocketsmarts Sdn Bhd\n\n# Steam Deck OLED\n\n–\n\nPrice range: RM3,699.00 through RM4,899.00\n\nBRIGHTER COLORS, BLACKER BLACKS | PLAY LONGER, DOWNLOAD FASTER MORE THAN OLED: IMPROVEMENTS INSIDE AND OUT\n\n...\n\n512GB NVMe SSD\n\n1280 x 800 HDR OLED display\n\n7.4″ diagonal display size\n\nUp to 90Hz refresh rate\n\n6 nm APU\n\nWi-Fi 6E\n\n50Whr battery; 3-12 hrs of gameplay (content dependent)\n\n45W power supply with 2.5m cable\n\nCarrying case\n\nSteam profile bundle\n\n1TB NVMe SSD\n\n1280 x 800 HDR OLED display\n\n7.4″ diagonal display size\n\nUp to 90Hz refresh rate\n\nPremium anti-glare etched glass\n\n6 nm APU\n\nWi-Fi 6E\n\n50Whr battery; 3-12 hrs of gameplay (content dependent)\n\n45W power supply with 2.5m cable\n\nCarrying case with removable liner\n\nSteam profile bundle\n\nExclusive startup movie\n\n## Additional information\n\n| Storage | 512GB, 1TB |\n| --- | --- |\n\nUnit 17-04, Level 17, Amoda Building, 22, Jalan Imbi, 55100 Kuala Lumpur. +6010-368 8624 +6010-368 8746"
+            ]
+          },
+          {
+            "id": "https://gmzonemy.com/products/valve-steam-deck-oled-1tb",
+            "title": "Valve Steam Deck OLED 1TB | GMZONE",
+            "url": "https://gmzonemy.com/products/valve-steam-deck-oled-1tb",
+            "highlights": [
+              "Valve Steam Deck OLED 1TB | GMZONE\n\n# Valve Steam Deck OLED 1TB\n\nSteam Deck In stock\n\nValve Steam Deck OLED 1TB is a handheld gaming PC listing for portable Windows gaming, cloud play, and docked desk setups. Verified catalog fields include model Steam Deck OLED, 1TB storage, and OLED handheld display. Product notes menti...\n\nPrice\n\nRM 3,599\n\nOriginal price RM 3,999 You save RM 400\n\nPayment Methods\n\n## Shipping & Delivery\n\nFree delivery throughout Malaysia, including Sabah and Sarawak. Singapore orders use GMZONE Standard Delivery by GMZONE's own delivery fleet. Delivery or tracking information will be provided after dispatch where applicable.\n\n## Warranty & Claims\n\n1 Year Supplier warranty\n\nView Warranty Info →\n\n## Returns Policy\n\nEligible requests are handled under GMZONE returns and warranty terms.\n\nView Return Policy →\n\n- 1TB storage\n- OLED handheld display\n- Steam library support\n- Portable PC gaming\n\n...\n\n### Key Specifications\n\nBrand\n\nValve\n\nCategory\n\nGaming Consoles\n\nCondition\n\nNew\n\nSKU\n\nGMZ-CON-VALVE-STEAM-DECK-OLED-1TB\n\nModel\n\nSteam Deck OLED\n\nPlatform\n\nSteam Deck\n\nStorage\n\n1TB\n\n...\n\n### Warranty\n\n1 Year Supplier warranty"
+            ],
+            "image": "https://gmzonemy.com/opengraph/products/valve-steam-deck-oled-1tb"
+          },
+          {
+            "id": "https://www.m4g.com.my/pc-gaming/steam-deck-oled-limited-edition-white",
+            "title": "Steam Deck OLED All-in-one portable PC gaming Limited Edition White - [1TB ]",
+            "url": "https://www.m4g.com.my/pc-gaming/steam-deck-oled-limited-edition-white",
+            "highlights": [
+              "Steam Deck OLED All-in-one portable PC gaming Limited Edition White - [1TB ] \n\n RM3,899.00 \n\n Steam Deck OLED All-in-one portable PC gaming Limited Edition White - [1TB ] \n\n| Price | RM3,899.00 |\n| --- | --- |\n| Brand | Steam (1) |\n| Availability | In Stock |\n| Quantity | 1 This product has a maximum quantity of 1 |\n\nHighlight\n\n...\n\nStorage Steam Deck 1TB NVMe SSD Both include high-speed microSD card slot"
+            ],
+            "image": "https://www.m4g.com.my/image/m4g/image/data/all_product_images/product-5577/5AhpUEGO1732095502.jpg"
+          },
+          {
+            "id": "https://lepakmou.com/entertainment/steam-deck-malaysia-2/",
+            "title": "Steam Deck Malaysia 2026: Prices, Where to Buy & Warranty",
+            "url": "https://lepakmou.com/entertainment/steam-deck-malaysia-2/",
+            "publishedDate": "2026-11-13T09:55:14.000Z",
+            "author": "Jason Wong Kok Leong",
+            "highlights": [
+              "# Steam Deck Malaysia 2026: Prices, Where to Buy & Warranty\n\n Published by: Jason Wong Kok Leong Published On: November 13, 2026 \n\nValve does not sell the Steam Deck in Malaysia. Every unit you see here is a parallel (grey) import, brought in by a shop or an individual. That means you pay more than the US price, and any warranty comes from the seller, not from Valve. This Steam Deck Malaysia guide covers RM prices, LCD vs OLED, where to buy, warranty and repair, and how to buy second-hand without getting burned.\n\n## Is the Steam Deck officially available in Malaysia?\n\nNo. Valve doesn’t sell the Steam Deck in Malaysia, so every unit here is imported by a shop or an individual. The official Steam Deck store page only sells and ships the device to selected regions, and Malaysia is not on that list.\n\nIn parts of Asia, specifically Japan, South Korea, Taiwan and Hong Kong, Valve sells the Deck through an official reseller called Komodo. That is why so many Malaysian listings say “Japan set”. The label just means the unit came through Komodo’s Japan channel before a Malaysian shop imported it. The hardware is the same Steam Deck sold everywhere else.\n\nWhat changes is the after-sales side. Because local shops import these units themselves, there is no Valve service centre here and no official Malaysian warranty. Whatever cover you get is the shop’s own policy, so the seller you choose matters as much as the price.\n\nThe good news is that the software side is not affected at all. Your Malaysian Steam account, your existing library and the MYR-priced Steam store work normally on the Deck, whichever region the hardware came from. You log in, and your games are there.\n\n## Steam Deck price in Malaysia\n\nValve’s current line-up has three models. These are Valve’s own US list prices, which are the baseline every importer starts from.\n\n| Model | Storage | Screen | Valve US list price |\n| --- | --- | --- | --- |\n| Steam Deck LCD | 256GB | 7-inch LCD | US$399 |\n| Steam Deck OLED | 512GB | 7.4-inch HDR OLED | US$549 |\n| Steam Deck OLED | 1TB | 7.4-inch HDR OLED | US$649 |\n\nFor a real local reference point, Impulse Penang advertised the Steam Deck OLED at RM2,899 for the 512GB model and RM3,399 for the 1TB model in a “back in stock” post. Treat those as one retailer’s advertised prices at the time, not a fixed market rate. Stock and pricing move around, so ask the shop for its current figure before you go.\n\nIf you do a straight USD to RM conversion, you’ll notice local prices sit well above it. That gap is not just profit. Importers pay for buying the unit overseas, international shipping or forwarding, possible duties and taxes on arrival, their own margin, and the cost of honouring a shop warranty when Valve won’t. A seller offering repair or replacement cover is carrying risk, and that risk is priced in.\n\nOn Shopee and Mudah, prices swing widely. You’ll see listings both above and below retail shop prices, depending on the seller, the region of the set, whether it’s sealed, and what warranty (if any) is attached. The LCD model in particular tends to show up cheaper on the second-hand market, because many early buyers have since upgraded to the OLED. If budget is the main concern, a used LCD is usually where the value sits, but only if you test it properly.\n\n...\n\nMy pick for most buyers is the OLED 512GB. The 1TB is nice to have, but storage is easy to expand with a microSD card, so the extra money is better saved for games during a Steam sale.\n\n## Where to buy a Steam Deck in Malaysia\n\nThere are four realistic routes: local gaming retailers, Shopee and Lazada, ordering from overseas, and the second-hand market. The question that should guide your choice is simple. If the screen or a joystick fails in month three, who replaces it?\n\n### Local gaming retailers\n\nA few Malaysian retailers show up in search results selling the Deck. Impulse Penang has advertised the OLED in both storage sizes, Gameshop.my lists the OLED as a Japan set, and Heavyarm Asia lists the LCD model.\n\nThe big advantage of buying locally is accountability. You have a shop or a registered local company to go back to, a shop warranty, and sometimes bundled extras like a case or screen protector. Before you transfer anything, confirm got warranty or not, and ask:\n\n- How long is the shop warranty: 6 months, 12 months, or something else?\n- Is it repair or replacement, and who pays for shipping if it needs to go back?\n- Is the unit sealed and brand new, or opened and checked?\n- Which plug does the charger come with?\n\nGet the answers written on the receipt or invoice. A verbal promise is worth nothing once there’s a dispute.\n\nImpulse Penang\n\n- Location: Penang. Find it on Google Maps\n- Opening hours: Check the shop’s Google Maps listing or Facebook page for current hours before visiting\n- Advertised prices: Steam Deck OLED 512GB RM2,899, 1TB RM3,399 (as advertised by the shop; ask for current pricing)\n\n### Shopee and Lazada\n\nThe appeal is obvious. Vouchers, cashback, platform payment protection and fast delivery can make the online route cheaper and easier than driving to a shop. During double-digit sales like 11.11 or 12.12, the savings can be meaningful on a RM2,000+ item.\n\nThe risks are just as real. Some listings are resealed units sold as new, some promise a vague “local warranty” with no details, and some come from sellers with very little history. A practical filter:\n\n- Prefer Shopee Mall or LazMall stores, or sellers with years of history and plenty of photo reviews.\n- Read the warranty terms in the listing itself. If it isn’t written there, assume it doesn’t exist.\n- Record a continuous unboxing video from sealed parcel to first boot. Platforms take return claims much more seriously with video proof.\n- Don’t release payment or confirm receipt until you’ve tested the unit.\n\n### Buying from overseas or through a forwarder\n\nSome Malaysians order directly from a Komodo-served region, or from the US Steam store using a parcel forwarder with an overseas address. On paper, this gets you closer to Valve’s list price.\n\nIn practice, the trade-offs add up. You pay shipping and handling fees, and you may be charged import duty and SST when the parcel lands in Malaysia. You’ll wait longer, and if something goes wrong there is no practical way to claim Valve’s warranty from here. Sending a faulty unit back overseas costs time and money, and you’d likely need a forwarder to handle the return too.\n\nThis route only makes sense for confident buyers who are comfortable repairing the unit themselves or using a local repair shop if anything fails. If you want peace of mind, a local retailer with a written warranty is the safer bet.\n\n### Second-hand: Mudah, Facebook groups and Carousell\n\nUsed units are listed on Mudah, Carousell, and community groups like Steam Deck Malaysia and Steam Deck Kaki on Facebook. Prices can be very tempting, but test everything before money changes hands.\n\nMeet-up checklist:\n\n- Test every button, both trackpads and both joysticks. Watch for stick drift, where the cursor or camera moves on its own.\n- Check the screen for dead pixels. On an OLED, open a plain grey or white image and look for burn-in.\n- Confirm the unit is logged out of the seller’s Steam account, or ask them to factory reset it in front of you.\n- Check that it charges with the original 45W charger.\n- Ask for the original receipt, which helps prove it isn’t stolen and shows any remaining shop warranty.\n\nMeet somewhere public, like a busy mall, and pay only after testing. Never send a deposit to a stranger on Facebook to “hold” a unit. That’s one of the most common ways buyers lose money in trade groups.\n\n## Steam Deck warranty and repair in Malaysia\n\nValve’s own warranty cannot practically be claimed from Malaysia. Your real protection is whatever the seller offers, so get it in writing on the receipt or in the listing, including the duration and whether it covers repair or replacement.\n\nThe faults Deck owners commonly report are joystick drift, SSD failure and cracked screens. Drift tends to appear with heavy use over time, while screen damage is usually down to drops. A good case and a screen protector are cheap insurance.\n\n...\n\nFor most Malaysian buyers, the Steam Deck OLED 512GB from a local retailer that offers a written warranty is the best balance of price, comfort and peace of mind."
+            ],
+            "image": "https://lepakmou.com/wp-content/uploads/2026/11/steam-deck-malaysia-1.png"
+          }
+        ],
+        "searchTime": 1402.6,
+        "costDollars": {
+          "total": 0.007,
+          "search": {
+            "neural": 0.007
+          }
+        }
+      }
+    }
+  ]
+}
