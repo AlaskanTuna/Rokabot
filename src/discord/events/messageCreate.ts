@@ -125,8 +125,12 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
           )
         : null
     let turnEntryWork: ReturnType<typeof startTurnEntryWork> | undefined
+    let speakerText: string | undefined
     if (isMentioned || isNameMention || isReplyCandidate) {
       const currentMessage = extractCurrentMessageContent(message, client.user.id, componentTextsForTrigger)
+      // The speaker's own words alone: the reply quote and forwarded text belong to someone else, so the
+      // automatic image lookup must never test them.
+      speakerText = replaceUserMentions(message, client.user.id)
       // Resolved once per turn: the entry judgment and the episode recall below share this turn's scope.
       const memoryScope = resolveMemoryScope(true, config.memory.privacy)
       turnEntryWork = startTurnEntryWork({
@@ -135,7 +139,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
         userId: message.author.id,
         speakerName: message.member?.displayName ?? message.author.displayName,
         message: currentMessage,
-        lookupQuery: replaceUserMentions(message, client.user.id),
+        lookupQuery: speakerText,
         mentionedUserIds: [...(message.mentions.users?.keys() ?? [])].filter((userId) => userId !== client.user?.id),
         memoryScope,
         includeEpisodeRecall: Boolean(message.guildId) && memoryScope === 'full'
@@ -362,6 +366,7 @@ export function createMessageHandler(client: Client, rateLimiter: RateLimiter) {
         channelId,
         guildId,
         userMessage: content || '(shared an image)',
+        speakerText,
         embedUrls: embedUrls.length > 0 ? embedUrls : undefined,
         displayName,
         username,

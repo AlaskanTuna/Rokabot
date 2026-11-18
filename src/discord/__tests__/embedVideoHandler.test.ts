@@ -217,7 +217,9 @@ describe('embed video on the mention path', () => {
     const result = await handle(message)
 
     expect(mocks.resolveMediaUrl).not.toHaveBeenCalled()
-    expect(result.mediaAttachments).toEqual([{ url: 'https://cdn.test/still.jpg', contentType: 'image/png' }])
+    expect(result.mediaAttachments).toEqual([
+      { url: 'https://cdn.test/still.jpg', contentType: 'image/png', imageOrigin: 'link_preview' }
+    ])
   })
 
   it('stops at the first playable video', async () => {
@@ -400,7 +402,9 @@ describe('embed video on the mention path', () => {
 
     const result = await handle(message)
 
-    expect(result.mediaAttachments).toEqual([{ url: 'https://cdn.test/still.jpg', contentType: 'image/png' }])
+    expect(result.mediaAttachments).toEqual([
+      { url: 'https://cdn.test/still.jpg', contentType: 'image/png', imageOrigin: 'link_preview' }
+    ])
     expect(result.userMessage).toContain('watch this')
   })
 
@@ -412,7 +416,7 @@ describe('embed video on the mention path', () => {
     expect(mocks.resolveMediaUrl).not.toHaveBeenCalled()
     expect(result.userMessage).toContain('animated GIF')
     expect(result.mediaAttachments).toEqual([
-      { url: 'https://media.tenor.com/abc/still.png', contentType: 'image/png' }
+      { url: 'https://media.tenor.com/abc/still.png', contentType: 'image/png', imageOrigin: 'embed' }
     ])
   })
 
@@ -422,7 +426,9 @@ describe('embed video on the mention path', () => {
 
     const result = await handle(message)
 
-    expect(result.mediaAttachments).toEqual([{ url: 'https://cdn.test/still.jpg', contentType: 'image/png' }])
+    expect(result.mediaAttachments).toEqual([
+      { url: 'https://cdn.test/still.jpg', contentType: 'image/png', imageOrigin: 'link_preview' }
+    ])
   })
 
   it('sees the video when Discord patches a late embed onto the same message', async () => {
@@ -507,6 +513,8 @@ describe('embed video on the mention path', () => {
     const result = await handle(message)
 
     expect(result.userMessage).toContain('A late title')
-    expect(result.mediaAttachments).toEqual([{ url: 'https://images.example/still.png', contentType: 'image/png' }])
+    expect(result.mediaAttachments).toEqual([
+      { url: 'https://images.example/still.png', contentType: 'image/png', imageOrigin: 'link_preview' }
+    ])
   })
 })

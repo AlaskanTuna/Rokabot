@@ -666,6 +666,28 @@ export function runMigrations(database: Database.Database): void {
       tag TEXT PRIMARY KEY,
       notified_at INTEGER NOT NULL
     );
+
+    -- Shared ledger for Google Lens searches: one row per search that reached SerpApi, plus a 24 h
+    -- result cache keyed by attachment id so a repost never pays twice.
+    CREATE TABLE IF NOT EXISTS lens_search (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      kind TEXT NOT NULL,
+      month TEXT NOT NULL,
+      day TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_lens_search_month
+      ON lens_search (month);
+
+    CREATE INDEX IF NOT EXISTS idx_lens_search_kind_day
+      ON lens_search (kind, day);
+
+    CREATE TABLE IF NOT EXISTS lens_cache (
+      key TEXT PRIMARY KEY,
+      result TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
   `)
 }
 

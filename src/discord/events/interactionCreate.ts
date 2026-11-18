@@ -227,6 +227,7 @@ export function createInteractionHandler(rateLimiter: RateLimiter, client?: Clie
         channelId,
         guildId,
         userMessage,
+        speakerText: message,
         displayName,
         username: interaction.user.username,
         userId: interaction.user.id,

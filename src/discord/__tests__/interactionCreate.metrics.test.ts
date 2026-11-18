@@ -282,6 +282,7 @@ describe('interaction handler metrics', () => {
 
     expect(mocks.startTurnEntryWork).toHaveBeenCalledWith(expect.objectContaining({ message: question }))
     expect(mocks.generateResponse.mock.calls[0][0].userMessage).toBe(question)
+    expect(mocks.generateResponse.mock.calls[0][0].speakerText).toBe(question)
   })
 
   it('opens a social URL in the /ask question before building model input', async () => {

@@ -108,6 +108,9 @@ imageId:
   enabled: true # Reverse-image identification of the turn's images (IMAGE_ID_ENABLED overrides); off removes identify_image
   maxMatches: 5 # Lens matches kept per identify_image call (1-10)
   timeoutMs: 6000 # Longest one Lens lookup may take, in ms (1000-15000)
+  monthlyCap: 230 # Lens searches allowed per billing month, automatic and model-called together (IMAGE_ID_MONTHLY_CAP overrides); at the cap the tool answers that lookups are used up
+  autoDailyCap: 6 # Automatic lookups allowed per UTC day (IMAGE_ID_AUTO_DAILY_CAP overrides); at the cap the turn answers without one
+  resetDay: 1 # First day of the billing month, in UTC (1-28); the monthly count rolls over on this day
 
 media:
   watcher: gemini # How Roka takes in audio and video. gemini watches it and she replies from the notes; off neither watches nor sends it and tells her so

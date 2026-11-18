@@ -6,6 +6,9 @@ import { geminiMimeType, sizeLimitFor } from './attachmentLimits.js'
 import { GEMINI_IMAGE_TOKENS, processImageForGemini } from './imageProcessor.js'
 import { isobmffAllowsPrefix, prefixPolicyFor } from './mediaPrefix.js'
 
+/** Where an image came from: an upload, a forwarded or replied-to message, an embed, or a link preview. */
+export type ImageOrigin = 'upload' | 'forward' | 'reply' | 'own_embed' | 'reply_embed' | 'link_preview' | 'embed'
+
 export interface MediaAttachment {
   url: string
   contentType: string
@@ -23,6 +26,8 @@ export interface MediaAttachment {
   silent?: boolean
   /** How the item reached the turn; recorded with what was watched so a server can remember who shared it. */
   origin?: 'upload' | 'reply' | 'forward' | 'link'
+  /** Where an image came from, so the automatic lookup can skip link previews. Never `origin`, which watched-media memory reads. */
+  imageOrigin?: ImageOrigin
   /** The Discord message the item was attached to. */
   sourceMessageId?: string
   /** Who posted the item, when known; a forward does not say. */

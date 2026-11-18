@@ -61,7 +61,7 @@ describe('social post message content', () => {
       presentation
     )
 
-    expect(extracted.mediaAttachments).toEqual([ownImage, presentation.mediaAttachment])
+    expect(extracted.mediaAttachments).toEqual([{ ...ownImage, imageOrigin: 'upload' }, presentation.mediaAttachment])
     expect(extracted.content).toContain(presentation.line)
   })
 

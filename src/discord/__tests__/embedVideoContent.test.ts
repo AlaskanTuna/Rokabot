@@ -161,6 +161,8 @@ describe('embed video thumbnail suppression', () => {
 
     const extracted = extractMessageContent(trigger, null, false, 'bot', [], undefined, new Set())
 
-    expect(extracted.mediaAttachments).toEqual([{ url: 'https://cdn.test/thumb.jpg', contentType: 'image/png' }])
+    expect(extracted.mediaAttachments).toEqual([
+      { url: 'https://cdn.test/thumb.jpg', contentType: 'image/png', imageOrigin: 'link_preview' }
+    ])
   })
 })

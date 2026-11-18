@@ -127,6 +127,9 @@ interface YamlConfig {
     enabled?: boolean
     maxMatches?: number
     timeoutMs?: number
+    monthlyCap?: number
+    autoDailyCap?: number
+    resetDay?: number
   }
   media?: {
     watcher?: string
@@ -656,7 +659,10 @@ const baseConfig = {
     apiKey: envString('SERPAPI_API_KEY'),
     enabled: envBoolean('IMAGE_ID_ENABLED') ?? yaml.imageId?.enabled ?? true,
     maxMatches: yaml.imageId?.maxMatches ?? 5,
-    timeoutMs: yaml.imageId?.timeoutMs ?? 6000
+    timeoutMs: yaml.imageId?.timeoutMs ?? 6000,
+    monthlyCap: envInt('IMAGE_ID_MONTHLY_CAP') ?? yaml.imageId?.monthlyCap ?? 230,
+    autoDailyCap: envInt('IMAGE_ID_AUTO_DAILY_CAP') ?? yaml.imageId?.autoDailyCap ?? 6,
+    resetDay: yaml.imageId?.resetDay ?? 1
   },
   media: {
     watcher: mediaWatcher(),
@@ -1032,6 +1038,9 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'search.replyReserveMs', value: config.search.replyReserveMs, min: 0, max: 60_000 },
   { path: 'imageId.maxMatches', value: config.imageId.maxMatches, min: 1, max: 10 },
   { path: 'imageId.timeoutMs', value: config.imageId.timeoutMs, min: 1000, max: 15_000 },
+  { path: 'imageId.monthlyCap', value: config.imageId.monthlyCap, min: 0, max: 100_000 },
+  { path: 'imageId.autoDailyCap', value: config.imageId.autoDailyCap, min: 0, max: 1000 },
+  { path: 'imageId.resetDay', value: config.imageId.resetDay, min: 1, max: 28 },
   // Synthesised legacy values are already bounded as gemini.* and fallback.*, so only a block adds rows.
   ...(yaml.llm
     ? [

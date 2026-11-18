@@ -268,6 +268,32 @@ describe('message handler metrics', () => {
     )
   })
 
+  it('threads the bare speaker text without the reply quote for the image lookup', async () => {
+    const { message } = createMessage({
+      mentioned: false,
+      content: 'Roka',
+      referencedMessage: {
+        author: { id: 'user-2', displayName: 'X' },
+        member: null,
+        content: 'who wants mamak?',
+        embeds: [],
+        poll: null,
+        messageSnapshots: new Map(),
+        components: [],
+        stickers: new Map(),
+        attachments: [{ url: 'https://cdn.test/photo.png', contentType: 'image/png' }]
+      }
+    })
+    await createMessageHandler({ user: { id: 'bot-1' } } as never, createRateLimiter() as never)(message as never)
+
+    expect(mocks.generateResponse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        speakerText: 'Roka',
+        userMessage: expect.stringContaining('[Replying to X: who wants mamak?')
+      })
+    )
+  })
+
   it.each([
     ['mention', createMessage()],
     [
@@ -872,7 +898,7 @@ describe("reading what the sender's own message shows", () => {
     const { message } = createMessage({ content: '<@bot-1> what is this?', embeds: [LINK_PREVIEW] })
 
     expect((await handle(message)).mediaAttachments).toEqual([
-      { url: 'https://cdn.test/preview.png', contentType: 'image/png' }
+      { url: 'https://cdn.test/preview.png', contentType: 'image/png', imageOrigin: 'link_preview' }
     ])
   })
 
@@ -1100,7 +1126,7 @@ describe("reading what the sender's own message shows", () => {
     const result = await handle(message)
 
     expect(result.mediaAttachments).toEqual([
-      ownImage,
+      { ...ownImage, imageOrigin: 'upload' },
       { url: 'https://pbs.twimg.com/post.jpg', contentType: 'image/jpeg' }
     ])
     expect(mocks.resolveMediaUrl).toHaveBeenCalledWith('https://pbs.twimg.com/post.jpg')
@@ -1182,7 +1208,7 @@ describe("reading what the sender's own message shows", () => {
     ] as never
 
     expect((await handle(message)).mediaAttachments).toEqual([
-      { url: 'https://cdn.test/gallery.png', contentType: 'image/png', size: undefined }
+      { url: 'https://cdn.test/gallery.png', contentType: 'image/png', size: undefined, imageOrigin: 'upload' }
     ])
   })
 
@@ -1296,7 +1322,7 @@ describe("reading what the sender's own message shows", () => {
 
     const result = await handle(message)
     expect(result.mediaAttachments).toEqual([
-      { url: 'https://media.tenor.com/abc/still.png', contentType: 'image/png' }
+      { url: 'https://media.tenor.com/abc/still.png', contentType: 'image/png', imageOrigin: 'embed' }
     ])
     expect(result.userMessage).toContain('animated GIF')
   })
@@ -1398,7 +1424,7 @@ describe('reading a message forwarded straight to her', () => {
       snapshots: [snapshot({ attachments: new Collection([['0', PNG('fwd')]]) })]
     })
 
-    expect((await handle(message)).mediaAttachments).toEqual([PNG('fwd')])
+    expect((await handle(message)).mediaAttachments).toEqual([{ ...PNG('fwd'), imageOrigin: 'forward' }])
   })
 
   // A forward is someone else's post: it draws on the same ceiling as the sender's own files, and only
@@ -1420,7 +1446,12 @@ describe('reading a message forwarded straight to her', () => {
     // Priority, not count: the sender's own attachments fill the slots first and the forward takes what is
     // left.
     expect((await handle(message)).mediaAttachments).toEqual(
-      [PNG('own-a'), PNG('own-b'), PNG('fwd-a'), PNG('fwd-b')].slice(0, MAX_ATTACHMENTS)
+      [
+        { ...PNG('own-a'), imageOrigin: 'upload' },
+        { ...PNG('own-b'), imageOrigin: 'upload' },
+        { ...PNG('fwd-a'), imageOrigin: 'forward' },
+        { ...PNG('fwd-b'), imageOrigin: 'forward' }
+      ].slice(0, MAX_ATTACHMENTS)
     )
   })
 
