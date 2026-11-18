@@ -31,7 +31,8 @@ const labelSchema = z.object({
       maker: z.string().optional(),
       product: z.string().optional()
     })
-    .nullable()
+    .nullable(),
+  url: z.string().url().optional()
 })
 
 const MIME_BY_EXTENSION: Record<string, string> = {
@@ -47,6 +48,7 @@ export interface LoadedPhoto {
   bytes: Buffer
   mime: string
   expected: ExpectedIdentity | null
+  url?: string
 }
 
 export interface PhotoResult {
@@ -110,7 +112,13 @@ export async function loadPhotos(photosDir: string): Promise<LoadedPhoto[]> {
       console.warn(`Skipping ${label.file}: the image processor dropped it`)
       continue
     }
-    photos.push({ file: label.file, bytes: processed.data, mime: processed.mimeType, expected: label.expected })
+    photos.push({
+      file: label.file,
+      bytes: processed.data,
+      mime: processed.mimeType,
+      expected: label.expected,
+      ...(label.url ? { url: label.url } : {})
+    })
   }
   return photos
 }
@@ -121,7 +129,7 @@ export async function runBakeOff(photos: LoadedPhoto[], backends: ImageIdBackend
     for (const backend of backends) {
       const started = performance.now()
       try {
-        const output = await backend.identify(photo.bytes, photo.mime)
+        const output = await backend.identify(photo.bytes, photo.mime, photo.url)
         results.push(toResult(photo, backend.name, output, started))
       } catch (error) {
         console.warn(`${backend.name} failed on ${photo.file}: ${error instanceof Error ? error.message : error}`)
