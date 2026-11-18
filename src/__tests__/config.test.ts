@@ -1036,6 +1036,8 @@ describe('config module', () => {
       { path: 'memory.modelVerifyThreshold', min: 0, max: 1 },
       { path: 'memory.modelSummaryThreshold', min: 0, max: 1 },
       { path: 'gemini.turnDeadlineMs', min: 1 },
+      { path: 'imageId.maxMatches', min: 1, max: 10 },
+      { path: 'imageId.timeoutMs', min: 1000, max: 15_000 },
       { path: 'gemini.retryBackoffCapMs', min: 1 },
       { path: 'gemini.maxRetries', min: 0 },
       { path: 'gemini.liveMaxRetries', min: 0 },

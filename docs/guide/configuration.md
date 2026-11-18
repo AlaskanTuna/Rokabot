@@ -37,6 +37,7 @@ Secrets, `config.yml` and environment overrides merge in `src/config.ts`, which 
 | `TAVILY_API_KEY`     | No                                                                                                                   | Web search when `search.provider` is `tavily`. Without it, the search tool answers that web search is not configured.                                 |
 | `EXA_API_KEY`        | No                                                                                                                   | Web search when `search.provider` is `exa`. Without it, the search tool answers that web search is not configured.                                    |
 | `GCP_API_KEY`        | No                                                                                                                   | Top comments on linked YouTube videos. Without it, YouTube replies report as unavailable.                                                             |
+| `SERPAPI_API_KEY`    | No                                                                                                                   | Reverse-image search for `identify_image` (Google Lens via SerpApi). Without it, the tool is not offered.                                             |
 
 Other environment variables:
 

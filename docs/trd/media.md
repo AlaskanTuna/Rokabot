@@ -295,6 +295,24 @@ The `read_replies` tool (`src/agent/tools/readReplies.ts`) fetches a post's repl
 - **Safety:** the result is headed by `SOCIAL_REPLIES_UNTRUSTED_DATA_LABEL`. Mass mentions are defanged.
 - **Footer:** `read the replies` or `couldn't read the replies`.
 
+## Identify Image
+
+The `identify_image` tool names who or what is in one of the turn's images. Roka already sees the image
+herself; the tool only adds Google Lens match titles as unverified hints, and she names something only when
+a hint agrees with what she sees.
+
+- **Availability:** only when `imageId.enabled` is true and `SERPAPI_API_KEY` is set. Otherwise the tool is not offered.
+- **What it sends:** the turn image registry (`src/agent/media/turnImages.ts`) holds the turn's image
+  attachment URLs in message order. The tool's `attachment` parameter (1-based, default 1) picks one, and
+  SerpApi's Lens engine searches that public Discord CDN URL. No bytes are uploaded.
+- **What it returns:** up to `imageId.maxMatches` match titles, each with its link registered as a `search`
+  source (`sN`) and recorded as a citation, or `No matches` when Lens has none. A failed lookup (non-200,
+  timeout, abort) returns a short reason instead of throwing.
+- **Budget:** one call spends one `search` lookup from the turn budget (`search.maxSearches`,
+  `search.maxProviderCalls`); a spent budget answers with the usual budget-spent text.
+- **Rules:** before naming an exact product or edition, confirm a maker or retailer listing with `search_web`.
+  Otherwise describe the image and say she is not sure (see the `search-tools.md` prompt).
+
 ## Configuration
 
 | Key                                  | Default  | Bounds                           |
@@ -320,8 +338,11 @@ The `read_replies` tool (`src/agent/tools/readReplies.ts`) fetches a post's repl
 | `socialPosts.maxRepliesOnRequest`    | 50       | 1 to 50                          |
 | `socialPosts.maxReplyChars`          | 280      | 40 to 1,000                      |
 | `socialPosts.ytDlpPath`              | `yt-dlp` | —                                |
+| `imageId.enabled`                    | `true`   | —                                |
+| `imageId.maxMatches`                 | 5        | 1 to 10                          |
+| `imageId.timeoutMs`                  | 6,000    | 1,000 to 15,000                  |
 
-Defaults are the shipped `config.yml` values. Bounds come from `NUMERIC_BOUNDS` in `src/config.ts`. Env overrides: `DISCORD_MAX_ATTACHMENT_BYTES_PER_TURN`, `DISCORD_MAX_INFLIGHT_ATTACHMENT_BYTES`, `GEMINI_MAX_ATTACHMENT_TOKENS`, `GEMINI_MAX_TOKENS_PER_MINUTE`, `MEDIA_WATCHER` and `SOCIAL_POSTS_ENABLED`. Reply fetching on YouTube reads `GCP_API_KEY`.
+Defaults are the shipped `config.yml` values. Bounds come from `NUMERIC_BOUNDS` in `src/config.ts`. Env overrides: `DISCORD_MAX_ATTACHMENT_BYTES_PER_TURN`, `DISCORD_MAX_INFLIGHT_ATTACHMENT_BYTES`, `GEMINI_MAX_ATTACHMENT_TOKENS`, `GEMINI_MAX_TOKENS_PER_MINUTE`, `MEDIA_WATCHER`, `SOCIAL_POSTS_ENABLED` and `IMAGE_ID_ENABLED`. Reply fetching on YouTube reads `GCP_API_KEY`; `identify_image` reads `SERPAPI_API_KEY`.
 
 Derivations: [Multimodal Intake Research](../research/multimodal.md) and [Social Post Viewing Research](../research/social-post-viewing.md).
 

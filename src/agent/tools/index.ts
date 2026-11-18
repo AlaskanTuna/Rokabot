@@ -12,6 +12,7 @@ import { forgetUser } from './forgetUser.js'
 import { getAnimeSchedule } from './getAnimeSchedule.js'
 import { getCurrentTime } from './getCurrentTime.js'
 import { getWeather } from './getWeather.js'
+import { identifyImage, identifyImageAvailable } from './imageId/identifyImage.js'
 import { MAX_REQUESTED_REPLIES, readReplies } from './readReplies.js'
 import { recallUser } from './recallUser.js'
 import { rememberUser } from './rememberUser.js'
@@ -189,6 +190,20 @@ export const readRepliesTool = new FunctionTool({
   execute: async (input) => await readReplies(input)
 })
 
+export const identifyImageTool = new FunctionTool({
+  name: 'identify_image',
+  description:
+    "Find who or what is in one of this turn's images through reverse-image search. Returns unverified match hints: name something only when a match agrees with what you see, and before naming an exact product or edition, confirm a maker or retailer listing with search_web.",
+  parameters: z.object({
+    attachment: z
+      .number()
+      .int()
+      .describe('Which image of this message to identify, counting only images from 1. Defaults to 1.')
+      .optional()
+  }),
+  execute: async (input) => await identifyImage(input)
+})
+
 export const rememberUserTool = new FunctionTool({
   name: 'remember_user',
   description:
@@ -354,6 +369,7 @@ export const rokaTools = [
   searchAnimeTool,
   getAnimeScheduleTool,
   ...(searchAvailable ? [searchWebTool] : []),
+  ...(identifyImageAvailable() ? [identifyImageTool] : []),
   readRepliesTool,
   rememberUserTool,
   recallUserTool,
