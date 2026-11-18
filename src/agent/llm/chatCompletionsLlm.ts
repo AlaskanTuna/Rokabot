@@ -393,6 +393,11 @@ export const CHAT_COMPLETIONS_BASE_URLS: Readonly<Partial<Record<ChatCompletions
 const DEFAULT_EXTRA_BODY: Readonly<Partial<Record<ChatCompletionsProvider, JsonObject>>> = {
   modelscope: { enable_thinking: false }
 }
+// With thinking off and Roka's long persona prompt, Qwen called a tool 0 of 6 times and DeepSeek 2 of 6; with it on,
+// both called 6 of 6 at the same median latency (#537). Turns that offer tools think; plain text turns stay fast.
+const TOOL_TURN_BODY: Readonly<Partial<Record<ChatCompletionsProvider, JsonObject>>> = {
+  modelscope: { enable_thinking: true }
+}
 // GPT-6 models refuse max_tokens and take max_completion_tokens instead.
 const DEFAULT_MAX_TOKENS_PARAM: Readonly<Partial<Record<ChatCompletionsProvider, MaxTokensParam>>> = {
   openai: 'max_completion_tokens'
@@ -429,6 +434,7 @@ export class ChatCompletionsLlm extends BaseLlm {
   private readonly maxOutputTokens: number | undefined
   private readonly maxTokensParam: MaxTokensParam
   private readonly extraBody: JsonObject
+  private readonly toolTurnBody: JsonObject
   private readonly fetchImpl: typeof fetch
 
   constructor(options: ChatCompletionsOptions) {
@@ -447,6 +453,8 @@ export class ChatCompletionsLlm extends BaseLlm {
     this.maxOutputTokens = options.maxOutputTokens
     this.maxTokensParam = options.maxTokensParam ?? DEFAULT_MAX_TOKENS_PARAM[options.provider] ?? 'max_tokens'
     this.extraBody = options.extraBody ?? DEFAULT_EXTRA_BODY[options.provider] ?? {}
+    // An explicit extraBody is the operator's choice and wins on every turn.
+    this.toolTurnBody = options.extraBody ? {} : (TOOL_TURN_BODY[options.provider] ?? {})
     this.fetchImpl = options.fetchImpl ?? fetch
   }
 
@@ -521,7 +529,7 @@ export class ChatCompletionsLlm extends BaseLlm {
     if (topP !== undefined) body.top_p = topP
     if (maxTokens !== undefined) body[this.maxTokensParam] = maxTokens
     const tools = this.profile?.tools.supported === false ? [] : openAiTools(llmRequest)
-    if (tools.length) body.tools = tools
+    if (tools.length) Object.assign(body, this.toolTurnBody, { tools })
     if (tools.length && this.profile?.tools.parallel === false) body.parallel_tool_calls = false
     if (schema) {
       body.response_format = strict
