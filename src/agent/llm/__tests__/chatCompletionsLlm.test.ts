@@ -392,7 +392,7 @@ describe('ModelScopeLlm legacy translation', () => {
             ]
           }
         ],
-        enable_thinking: false,
+        enable_thinking: true,
         stream: false,
         temperature: 0.9,
         top_p: 0.95,
@@ -1489,6 +1489,36 @@ describe('openai-compatible requests', () => {
       { role: 'system', content: 'Extract facts.' },
       { role: 'user', content: 'Kyoto?' }
     ])
+  })
+
+  // #537: with thinking off and the persona prompt, ModelScope models answered in character instead of calling a tool.
+  it('turns ModelScope thinking on only for a turn that offers tools, unless extraBody says otherwise', async () => {
+    const withTools = () =>
+      request([{ role: 'user', parts: [{ text: 'look it up' }] }], {
+        tools: [{ functionDeclarations: [{ name: 'search_web', parametersJsonSchema: { type: 'object' } }] }]
+      })
+    const tooled = replay(modelscope.qwenText)
+    const plain = replay(modelscope.qwenText)
+    const pinned = replay(modelscope.qwenText)
+
+    await responses(onModelScope('Qwen/Qwen3.5-122B-A10B', tooled.fetchImpl), withTools())
+    await responses(onModelScope('Qwen/Qwen3.5-122B-A10B', plain.fetchImpl), hello())
+    await responses(
+      new ChatCompletionsLlm({
+        provider: 'modelscope',
+        model: 'Qwen/Qwen3.5-122B-A10B',
+        apiKey: 'modelscope-key',
+        timeoutMs: 2000,
+        profile: profileFor('modelscope', 'Qwen/Qwen3.5-122B-A10B'),
+        extraBody: { enable_thinking: false },
+        fetchImpl: pinned.fetchImpl
+      }),
+      withTools()
+    )
+
+    expect(bodyOf(tooled.calls[0]).enable_thinking).toBe(true)
+    expect(bodyOf(plain.calls[0]).enable_thinking).toBe(false)
+    expect(bodyOf(pinned.calls[0]).enable_thinking).toBe(false)
   })
 
   it('leaves tools out for a model without tool support, and asks for one call at a time when declared', async () => {
