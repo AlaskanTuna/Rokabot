@@ -279,7 +279,13 @@ jobs:
         run: |
           cd ~/rokabot
           export ROKA_TAG="sha-${GITHUB_SHA::7}" GIT_COMMIT="${GITHUB_SHA::7}"
-          docker compose pull roka
+          # A layer download from GHCR can fail once on the Pi's network; retry before failing the deploy.
+          for try in 1 2 3; do
+            docker compose pull roka && break
+            [ "$try" = 3 ] && exit 1
+            echo "Pull failed (try $try of 3), retrying in $((try * 10))s"
+            sleep $((try * 10))
+          done
           # Recorded after a successful pull, so .env only names an image that is on disk.
           # A manual compose command on the Pi then keeps this image rather than :stable.
           sed -i '/^ROKA_TAG=/d' .env && { [ -z "$(tail -c1 .env)" ] || echo >> .env; } && echo "ROKA_TAG=$ROKA_TAG" >> .env
