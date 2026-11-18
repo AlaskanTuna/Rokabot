@@ -18,10 +18,10 @@ are the evidence. Each fact in `facts.json` is a case-insensitive regex over tha
 - A fact listed as `missing` that now shows up prints as an improvement without failing.
 - News cases (`N1`-`N3`, `volatile: true`) never fail: their facts expire.
 - With no fixtures present the test reports zero cases and passes.
-- Two L1 brief tests pin the depth loop (issue #534): the saved `L1` fixture replayed with the live gate's
-  `fields` must surface hotcakes, a named drink and another food item inside a cited brief, and the
-  hand-built `L1-thin` fixture (thin snippets, one recorded `/contents` exchange) must need a page read
-  with no `local_query` and pass via that read.
+- Four L1 brief tests pin the depth loop (issue #534): the saved `L1` fixture replayed with three
+  typed `fields` sets must surface hotcakes, a named drink and another food item inside a cited brief, and the
+  hand-built `L1-thin` fixture (thin snippets, one recorded `/contents` exchange) replayed with the typed
+  equivalents of its recorded fields must need a page read with no `local_query` and pass via that read.
 
 ## Recording fixtures
 

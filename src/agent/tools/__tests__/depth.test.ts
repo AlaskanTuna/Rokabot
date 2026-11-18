@@ -28,7 +28,7 @@ import { assessField } from '../search/coverage.js'
 import { LOOKUP_TEXT, runLookup } from '../search/depth.js'
 import { didReadPage, readPages, withPageReadFlag } from '../search/readPages.js'
 import { withTurnBudget } from '../search/turnBudget.js'
-import { SEARCH_TEXT, type SearchWebParams } from '../search/types.js'
+import { SEARCH_TEXT, type SearchField, type SearchWebParams } from '../search/types.js'
 import { searchWeb } from '../searchWeb.js'
 
 const PUBLIC_ANSWER = [{ address: '93.184.216.34', family: 4 }]
@@ -121,29 +121,34 @@ describe('runLookup search path', () => {
     vi.clearAllMocks()
   })
 
-  it('returns the first search untouched when it covers every field, with no further calls', async () => {
+  it('returns a cited brief and reads one page even when the first search covers every field', async () => {
     searchReplies = [
       {
         answer: 'The hotcake set is ¥1,100 at Hoshino Coffee.',
         results: [{ title: 'Hoshino menu', url: 'https://example.test/hoshino', content: 'hotcake set ¥1,100' }]
       }
     ]
+    extractBodies = {
+      'https://example.test/hoshino': {
+        title: 'Hoshino menu',
+        content: 'The hotcake set is ¥1,100 at Hoshino Coffee. Hot coffee ¥600, iced latte ¥650.'
+      }
+    }
 
+    const field: SearchField = { kind: 'price', subject: 'hotcake set' }
     const result = await scoped(() =>
       searchWeb({
         query: 'price of the hotcake set at hoshino coffee',
-        fields: ['price'],
+        fields: [field],
         local_query: '星乃珈琲 ホットケーキ 値段'
       })
     )
 
     expect(searchQueries).toEqual(['price of the hotcake set at hoshino coffee'])
-    expect(extractUrls).toEqual([])
-    expect(result).toEqual({
-      answer: 'The hotcake set is ¥1,100 at Hoshino Coffee.',
-      results: [{ title: 'Hoshino menu', url: 'https://example.test/hoshino', snippet: 'hotcake set ¥1,100' }],
-      resultCount: 1
-    })
+    expect(extractUrls).toEqual(['https://example.test/hoshino'])
+    expect(result.answer).not.toContain('Still missing')
+    expect(result.answer).toContain('[s1]')
+    expect(result.answer).toContain('hotcake set')
   })
 
   it('runs the local query and then a page read when a field is missing', async () => {
@@ -164,7 +169,7 @@ describe('runLookup search path', () => {
     const result = await scoped(() =>
       searchWeb({
         query: 'menu of coffee marufuku osaka',
-        fields: ['drink prices'],
+        fields: [{ kind: 'price', subject: 'drinks' }],
         local_query: 'コーヒー丸福 メニュー 値段'
       })
     )
@@ -192,14 +197,14 @@ describe('runLookup search path', () => {
     const result = await scoped(() =>
       searchWeb({
         query: 'menu of coffee marufuku osaka',
-        fields: ['drink prices'],
+        fields: [{ kind: 'price', subject: 'drinks' }],
         local_query: 'コーヒー丸福 メニュー 値段'
       })
     )
 
     expect(searchQueries).toHaveLength(2)
     expect(extractUrls).toHaveLength(1)
-    expect(result.answer).toContain('Still missing: drink prices.')
+    expect(result.answer).toContain('Still missing: drinks.')
   })
 
   it('gives a partial brief when the deadline arrives mid-loop', async () => {
@@ -227,7 +232,7 @@ describe('runLookup search path', () => {
           runLookup(
             {
               query: 'menu of coffee marufuku osaka',
-              fields: ['drink prices'],
+              fields: [{ kind: 'price', subject: 'drinks' }],
               local_query: 'コーヒー丸福 メニュー 値段'
             },
             single
@@ -236,7 +241,7 @@ describe('runLookup search path', () => {
       )
     )
 
-    expect(result.answer).toContain('Still missing: drink prices.')
+    expect(result.answer).toContain('Still missing: drinks.')
   })
 
   it('caps the brief at search.maxBriefChars', async () => {
@@ -245,7 +250,9 @@ describe('runLookup search path', () => {
       'https://example.test/marufuku/menu': { title: 'Marufuku drinks', content: `ブレンド ¥500 ${'x'.repeat(9000)}` }
     }
 
-    const result = await scoped(() => searchWeb({ query: 'menu of coffee marufuku osaka', fields: ['drink prices'] }))
+    const result = await scoped(() =>
+      searchWeb({ query: 'menu of coffee marufuku osaka', fields: [{ kind: 'price', subject: 'drinks' }] })
+    )
 
     expect(result.answer.length).toBeLessThanOrEqual(4000)
     expect(result.answer).toContain('¥500')
@@ -282,7 +289,7 @@ describe('runLookup source path', () => {
 
     const result = await scoped(async () => {
       registerMessageSources('look at https://example.test/marufuku/menu')
-      return searchWeb({ query: 'what is on this menu?', source: 's1', fields: ['drink prices'] })
+      return searchWeb({ query: 'what is on this menu?', source: 's1', fields: [{ kind: 'price', subject: 'drinks' }] })
     })
 
     expect(searchQueries).toEqual([])
@@ -323,24 +330,24 @@ describe('assessField', () => {
   const one = (body: string) => [{ sourceId: 's1', heading: 'Title', body }]
 
   it('covers English fields per passage, and no longer trusts a menu title alone', () => {
-    expect(assessField('price', one('The hotcake set is ¥1,100.')).covered).toBe(true)
+    expect(assessField({ kind: 'price', subject: 'hotcake set' }, one('The hotcake set is ¥1,100.')).covered).toBe(true)
     // The Tripadvisor "See our menu" positive is now reported missing: the title carries no items.
-    expect(assessField('menu items', one('See our menu for details.')).covered).toBe(false)
-    expect(assessField('opening hours', one('We are open daily.')).covered).toBe(true)
-    expect(assessField('drinks', one('Try the morning coffee blend.')).covered).toBe(true)
+    expect(assessField({ kind: 'list', subject: 'menu items' }, one('See our menu for details.')).covered).toBe(false)
+    expect(assessField({ kind: 'other', subject: 'opening hours' }, one('We are open daily.')).covered).toBe(true)
+    expect(assessField({ kind: 'other', subject: 'drinks' }, one('Try the morning coffee blend.')).covered).toBe(true)
   })
 
   it('covers Japanese pages through the hint table, one passage at a time', () => {
-    expect(assessField('drink price', one('ブレンド ¥500')).covered).toBe(true)
-    // A plural prices field needs two distinct pairs; one pair leaves it missing.
-    expect(assessField('drink prices', one('ブレンド ¥500')).covered).toBe(false)
-    expect(assessField('menu items', one('ドリンクメニュー')).covered).toBe(false)
-    expect(assessField('opening hours', one('営業時間 9:00-22:00')).covered).toBe(true)
+    expect(assessField({ kind: 'price', subject: 'ブレンド' }, one('ブレンド ¥500')).covered).toBe(true)
+    // A category price field needs two distinct pairs; one pair leaves it missing.
+    expect(assessField({ kind: 'price', subject: 'drinks' }, one('ブレンド ¥500')).covered).toBe(false)
+    expect(assessField({ kind: 'list', subject: 'menu items' }, one('ドリンクメニュー')).covered).toBe(false)
+    expect(assessField({ kind: 'hours', subject: 'opening hours' }, one('営業時間 9:00-22:00')).covered).toBe(true)
   })
 
   it('leaves genuinely missing fields uncovered', () => {
-    expect(assessField('drink prices', one('Coffee Marufuku is in Osaka.')).covered).toBe(false)
-    expect(assessField('price', one('The hotcakes are fluffy.')).covered).toBe(false)
+    expect(assessField({ kind: 'price', subject: 'drinks' }, one('Coffee Marufuku is in Osaka.')).covered).toBe(false)
+    expect(assessField({ kind: 'other', subject: 'price' }, one('The hotcakes are fluffy.')).covered).toBe(false)
   })
 })
 

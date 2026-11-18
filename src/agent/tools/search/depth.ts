@@ -4,10 +4,17 @@ import { config } from '../../../config.js'
 import { PAGE_UNTRUSTED_DATA_LABEL, SEARCH_EXCERPTS_UNTRUSTED_DATA_LABEL } from '../../promptSafety.js'
 import { lookupSourceUrl, resolveSource } from '../../searchSources.js'
 import { parseSocialPostUrl } from '../../social/urls.js'
-import { type Passage, assessField, fieldKind, relevantBlocks } from './coverage.js'
+import { type Passage, assessField, relevantBlocks } from './coverage.js'
 import { PAGE_TEXT, readPages } from './readPages.js'
 import { timeLeftForLookupMs } from './turnBudget.js'
-import { type BackendOutcome, SEARCH_TEXT, type SearchResult, type SearchWebParams, clipSnippet } from './types.js'
+import {
+  type BackendOutcome,
+  SEARCH_TEXT,
+  type SearchField,
+  type SearchResult,
+  type SearchWebParams,
+  clipSnippet
+} from './types.js'
 
 /** One ordinary search, with the budget spend, citations and source registration searchWeb always does. */
 export type SingleSearch = (params: SearchWebParams) => Promise<BackendOutcome>
@@ -53,12 +60,16 @@ function outcomePassages(outcome: BackendOutcome): { sources: Passage[]; answer:
 }
 
 /**
- * Whether each field is covered yet. Lists and prices read the per-source passages only; other fields read
- * one passage body at a time, never titles and snippets pooled together.
+ * Whether each field is covered yet. Hours, lists and prices read the per-source passages only; other
+ * fields read one passage body at a time, never titles and snippets pooled together.
  */
-function missingAfter(fields: readonly string[], sources: readonly Passage[], answer: readonly Passage[]): string[] {
+function missingAfter(
+  fields: readonly SearchField[],
+  sources: readonly Passage[],
+  answer: readonly Passage[]
+): SearchField[] {
   return fields.filter((field) => {
-    const passages = fieldKind(field) === 'other' ? [...answer, ...sources] : sources
+    const passages = field.kind === 'other' ? [...answer, ...sources] : sources
     return !assessField(field, passages).covered
   })
 }
@@ -115,9 +126,13 @@ function clipAtEntry(text: string, room: number): string {
   return (at > room / 2 ? cut.slice(0, at) : cut).trimEnd()
 }
 
-function buildBrief(answers: readonly string[], supports: readonly BriefSupport[], missing: readonly string[]): string {
+function buildBrief(
+  answers: readonly string[],
+  supports: readonly BriefSupport[],
+  missing: readonly SearchField[]
+): string {
   const max = config.search.maxBriefChars
-  const tail = missing.length > 0 ? `Still missing: ${missing.join(', ')}.` : ''
+  const tail = missing.length > 0 ? `Still missing: ${missing.map((field) => field.subject).join(', ')}.` : ''
   const room = max - (tail ? tail.length + 2 : 0)
   if (room <= 0) return tail.slice(0, max)
   // Each cited source gets an even share, so one long review never crowds out the others.
@@ -160,7 +175,7 @@ function resolveLookupSource(source: string): { url: string; id: string } | { re
 }
 
 /** "Look into this link": resolve the source, refuse what is not openable, read the page and brief it. */
-async function runSourceLookup(params: SearchWebParams, fields: string[], source: string): Promise<SearchResult> {
+async function runSourceLookup(params: SearchWebParams, fields: SearchField[], source: string): Promise<SearchResult> {
   const resolved = resolveLookupSource(source)
   if ('refused' in resolved) return refused(resolved.refused)
 
@@ -185,13 +200,15 @@ async function runSourceLookup(params: SearchWebParams, fields: string[], source
 
 /**
  * The bounded loop: search, check coverage of each field, run local_query as the second search, then
- * read up to the top 2 result URLs most likely to hold the missing fields. Stops when every field is
- * covered, the turn budget is spent, or the attempt has no time left past the reply reserve. When fields
- * are given and something is still missing, the returned answer is the brief with the cited partial
- * evidence — even when no second search or page read succeeded.
+ * read up to the top 2 result URLs most likely to hold the missing fields. A lookup with fields always
+ * returns the cited brief; it also reads the top page by default even when the searches covered every
+ * field, unless the attempt has too little time left past the reply reserve. Stops when the turn budget
+ * is spent or the attempt has no time left past the reply reserve. When fields are given and something
+ * is still missing, the returned answer is the brief with the cited partial evidence — even when no
+ * second search or page read succeeded.
  */
 export async function runLookup(params: SearchWebParams, search: SingleSearch): Promise<SearchResult> {
-  const fields = (params.fields ?? []).map((field) => field.trim()).filter(Boolean)
+  const fields = (params.fields ?? []).filter((field) => field.subject.trim().length > 0)
   if (params.source) return runSourceLookup(params, fields, params.source)
 
   const first = await search(params)
@@ -202,9 +219,7 @@ export async function runLookup(params: SearchWebParams, search: SingleSearch): 
   let missing = missingAfter(fields, sources, firstPassages.answer)
 
   const localQuery = params.local_query?.trim()
-  let secondRan = false
   if (missing.length > 0 && localQuery && timeRemains()) {
-    secondRan = true
     const second = await search({ ...params, query: localQuery })
     if (second.succeeded) answers.push(second.answer)
     const secondPassages = outcomePassages(second)
@@ -220,12 +235,18 @@ export async function runLookup(params: SearchWebParams, search: SingleSearch): 
     missing = missingAfter(fields, sources, firstPassages.answer)
   }
 
-  let readRan = false
+  let readCount = 0
   if (results.length > 0) {
     for (const url of rankCandidates(results)) {
-      if (missing.length === 0 || !timeRemains()) break
+      if (readCount >= 2) break
+      if (missing.length === 0) {
+        // One page read by default, even with every field covered; missing fields keep today's loop.
+        if (readCount > 0) break
+        const left = timeLeftForLookupMs()
+        if (left !== null && left < 2500) break
+      } else if (!timeRemains()) break
       const known = lookupSourceUrl(url)
-      readRan = true
+      readCount += 1
       const [page] = await readPages([{ id: known?.id ?? url, url }], {
         ...(params.signal ? { signal: params.signal } : {})
       })
@@ -240,10 +261,6 @@ export async function runLookup(params: SearchWebParams, search: SingleSearch): 
     }
   }
 
-  // Nothing past the first search ran and every field held: it stands exactly as a plain call would return it.
-  if (!secondRan && !readRan && missing.length === 0) {
-    return { answer: first.answer, results: first.results, resultCount: first.resultCount }
-  }
   // One entry per source, its blocks merged across fields, so a page supporting two fields keeps both.
   const bySource = new Map<string, { title: string; blocks: Set<string> }>()
   const answerAndSources = [...firstPassages.answer, ...sources]

@@ -21,7 +21,9 @@ import { closeDb } from '../../../../storage/database.js'
 import { __resetBudgetsForTest } from '../../../llm/budget.js'
 import { withSearchSources } from '../../../searchSources.js'
 import { searchWeb } from '../../searchWeb.js'
+import { withSearchAttempt } from '../attemptBudget.js'
 import { withTurnBudget } from '../turnBudget.js'
+import type { SearchField } from '../types.js'
 
 const PUBLIC_ANSWER = [{ address: '93.184.216.34', family: 4 }]
 
@@ -67,6 +69,17 @@ function scoped<T>(run: () => Promise<T>): Promise<T> {
   return withSearchSources(() => withTurnBudget(run))
 }
 
+const list = (subject: string, aliases?: string[]): SearchField => ({
+  kind: 'list',
+  subject,
+  ...(aliases ? { aliases } : {})
+})
+const price = (subject: string, aliases?: string[]): SearchField => ({
+  kind: 'price',
+  subject,
+  ...(aliases ? { aliases } : {})
+})
+
 describe('runLookup brief', () => {
   beforeEach(() => {
     process.env.EXA_API_KEY = 'test-key'
@@ -90,7 +103,7 @@ describe('runLookup brief', () => {
     vi.clearAllMocks()
   })
 
-  it('returns the first search untouched when every field is covered on it', async () => {
+  it('returns a cited brief and reads one page even when the first search covers every field', async () => {
     searchReplies = [
       [
         {
@@ -100,23 +113,47 @@ describe('runLookup brief', () => {
         }
       ]
     ]
+    contentBodies = {
+      'https://example.test/hoshino': {
+        title: 'Hoshino menu',
+        text: 'The hotcake set is ¥1,100 at Hoshino Coffee. Hot coffee ¥600, iced latte ¥650.'
+      }
+    }
 
-    const result = await scoped(() => searchWeb({ query: 'price of the hotcake set', fields: ['price'] }))
+    const result = await scoped(() => searchWeb({ query: 'price of the hotcake set', fields: [price('hotcake set')] }))
+
+    expect(searchQueries).toEqual(['price of the hotcake set'])
+    expect(contentUrls).toEqual(['https://example.test/hoshino'])
+    expect(result.answer).not.toContain('Still missing')
+    expect(result.answer).toContain('[s1]')
+    expect(result.answer).toContain('hotcake set')
+  })
+
+  it('reads no page by default when under 2500 ms is left past the reply reserve', async () => {
+    searchReplies = [
+      [
+        {
+          title: 'Hoshino menu',
+          url: 'https://example.test/hoshino',
+          highlights: ['The hotcake set is ¥1,100 at Hoshino Coffee.']
+        }
+      ]
+    ]
+    // 1000 ms left past the reply reserve: the search runs, but the default page read does not.
+    const attempt = { deadlineAtMs: performance.now() + 6000 + 1000, signal: new AbortController().signal }
+
+    const result = await withSearchSources(() =>
+      withTurnBudget(() =>
+        withSearchAttempt(attempt, () =>
+          searchWeb({ query: 'price of the hotcake set', fields: [price('hotcake set')] })
+        )
+      )
+    )
 
     expect(searchQueries).toEqual(['price of the hotcake set'])
     expect(contentUrls).toEqual([])
     expect(result.answer).not.toContain('Still missing')
-    expect(result).toEqual({
-      answer: result.answer,
-      results: [
-        {
-          title: 'Hoshino menu',
-          url: 'https://example.test/hoshino',
-          snippet: 'The hotcake set is ¥1,100 at Hoshino Coffee.'
-        }
-      ],
-      resultCount: 1
-    })
+    expect(result.answer).toContain('[s1]')
   })
 
   it('briefs with Still missing when the first search falls short and its page read finds nothing', async () => {
@@ -130,7 +167,7 @@ describe('runLookup brief', () => {
       ]
     ]
 
-    const result = await scoped(() => searchWeb({ query: 'menu of coffee marufuku', fields: ['menu items'] }))
+    const result = await scoped(() => searchWeb({ query: 'menu of coffee marufuku', fields: [list('menu items')] }))
 
     expect(searchQueries).toEqual(['menu of coffee marufuku'])
     expect(contentUrls).toEqual(['https://example.test/marufuku'])
@@ -161,7 +198,7 @@ describe('runLookup brief', () => {
     }
 
     const result = await scoped(() =>
-      searchWeb({ query: 'menu of coffee marufuku', fields: ['menu items', 'drink prices'] })
+      searchWeb({ query: 'menu of coffee marufuku', fields: [list('menu items'), price('drinks')] })
     )
 
     expect(contentUrls).toEqual(['https://menu.example.test/menu'])
@@ -180,12 +217,12 @@ describe('runLookup brief', () => {
       ]
     ]
 
-    const result = await scoped(() => searchWeb({ query: 'drinks at marufuku', fields: ['drink prices'] }))
+    const result = await scoped(() => searchWeb({ query: 'drinks at marufuku', fields: [price('drinks')] }))
 
     expect(contentUrls).toHaveLength(1)
     expect(result.answer).toContain('[s1] Marufuku Coffee')
     expect(result.answer).toContain('Hot Coffee')
-    expect(result.answer).toContain('Still missing: drink prices.')
+    expect(result.answer).toContain('Still missing: drinks.')
   })
 
   it('keeps list entries whole when the brief is capped', async () => {
@@ -203,11 +240,11 @@ describe('runLookup brief', () => {
     contentBodies = { 'https://example.test/shop': { title: 'Old shop menu', text } }
 
     const result = await scoped(() =>
-      searchWeb({ query: 'menu of the old shop', fields: ['menu items', 'drink prices'] })
+      searchWeb({ query: 'menu of the old shop', fields: [list('menu items'), price('drinks')] })
     )
 
     expect(result.answer.length).toBeLessThanOrEqual(4000)
-    expect(result.answer).toContain('Still missing: drink prices.')
+    expect(result.answer).toContain('Still missing: drinks.')
     const evidence = result.answer.split('Still missing:')[0] as string
     for (const line of evidence.split('\n')) {
       if (line.startsWith('[') || line.trim() === '' || !line.includes('curry')) continue

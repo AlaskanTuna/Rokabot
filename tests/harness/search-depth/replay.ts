@@ -4,7 +4,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { withSearchSources } from '../../../src/agent/searchSources.js'
-import type { SearchResult } from '../../../src/agent/tools/search/types.js'
+import type { SearchField, SearchResult } from '../../../src/agent/tools/search/types.js'
 import { searchWeb } from '../../../src/agent/tools/searchWeb.js'
 import { fakeFetch, json } from '../fakeFetch.js'
 
@@ -24,7 +24,7 @@ export interface FixtureExchange {
 
 export interface FixtureToolCall {
   tool: string
-  args?: { query?: string; max_results?: number; fields?: string[]; local_query?: string; source?: string }
+  args?: { query?: string; max_results?: number; fields?: SearchField[]; local_query?: string; source?: string }
 }
 
 export interface CaseFixture {
