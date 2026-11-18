@@ -1,0 +1,71 @@
+{
+  "caseId": "F2",
+  "recordedAt": "2026-11-17T21:15:31.549Z",
+  "commit": "2f6dac20658fc7b1625a3298b81d0170496bd5c0",
+  "toolCalls": [
+    {
+      "tool": "search_web",
+      "args": {
+        "query": "Tokyo Skytree height",
+        "max_results": 3
+      }
+    }
+  ],
+  "exchanges": [
+    {
+      "provider": "exa",
+      "method": "POST",
+      "url": "https://api.exa.ai/search",
+      "requestBody": {
+        "query": "Tokyo Skytree height",
+        "type": "auto",
+        "numResults": 3,
+        "contents": {
+          "highlights": true
+        }
+      },
+      "status": 200,
+      "responseBody": {
+        "requestId": "23499a9ba98c501d88fd8c0483785b44",
+        "resolvedSearchType": "",
+        "results": [
+          {
+            "id": "https://en.tokyo-skytree.jp/about/spec/",
+            "title": "TOKYO SKYTREE Specifications (Height: 634m) [Official] TOKYO SKYTREE",
+            "url": "https://en.tokyo-skytree.jp/about/spec/",
+            "highlights": [
+              "# 東京スカイツリーを知る Discover TOKYO SKYTREE \n\n## Maximum height: 634m \n\nThe more you know, the more fun it becomes to look up\n\n### Decision on a height of 634m \n\n \n\n \n\n Aiming to be the best in the world, The answer was 634m. \n\nThe height of TOKYO SKYTREE was initially set at \"approximately 610m\" from the start of the project. However, from the beginning, we considered making it the world's Free-standing broadcasting tower, and we made structural adjustments based on the scope of achieving that goal. As a result, amidst the planning and construction of high-rise buildings all over the world, we aimed to make it the world's tallest Free-standing broadcasting tower, and after much consideration, we finally decided on 634m. Thanks to these efforts, the 634m tall TOKYO SKYTREE was certified as the world's tallest Tower by Guinness World Records on November 17, 2011."
+            ],
+            "image": "https://en.tokyo-skytree.jp/ogp.jpg"
+          },
+          {
+            "id": "https://en.tokyo-skytree.jp/about/outline/",
+            "title": "Outline [Official] TOKYO SKYTREE",
+            "url": "https://en.tokyo-skytree.jp/about/outline/",
+            "highlights": [
+              "It is 634 meters tall. It was built in 2012 as the world's tallest Free-standing broadcasting tower.\n\n...\n\n## 数字で知る 東京スカイツリー TOKYO SKYTREE in Numbers\n\n...\n\n### 1 Tower height \n\n634 m\n\nIt is the world's Free-standing broadcasting tower. The world's tallest Tower. It's a symbolic Tower reaching towards the sky.\n\n...\n\n- Top 634m"
+            ],
+            "image": "https://en.tokyo-skytree.jp/ogp.jpg"
+          },
+          {
+            "id": "https://www.japan.travel/en/spot/1680/",
+            "title": "Tokyo Skytree | Travel Japan - Japan National Tourism Organization (Official Site)",
+            "url": "https://www.japan.travel/en/spot/1680/",
+            "author": "Japan National Tourism Organization",
+            "highlights": [
+              "## A bird's-eye view of Tokyo from the tallest structure in Japan\n\nTowering above the capital's skyline, Tokyo Skytree soars 634 meters high and gives incredible, panoramic views of Tokyo. On a clear day, you can't quite see infinity, but it's one of the few spots you can see Mt. Fuji from Tokyo.\n\n...\n\nWhen it was completed, it was the tallest tower in the world and is still the tallest structure in Japan.\n\n...\n\nThere are two decks open to the public."
+            ],
+            "image": "https://res-4.cloudinary.com/jnto/image/upload/w_1000,h_667,c_fill,f_auto,fl_lossy,q_auto/v1513936454/tokyo/Tokyo2307_1"
+          }
+        ],
+        "searchTime": 1418,
+        "costDollars": {
+          "total": 0.007,
+          "search": {
+            "neural": 0.007
+          }
+        }
+      }
+    }
+  ]
+}

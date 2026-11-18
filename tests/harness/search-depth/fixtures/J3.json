@@ -1,0 +1,69 @@
+{
+  "caseId": "J3",
+  "recordedAt": "2026-11-17T21:16:50.222Z",
+  "commit": "2f6dac20658fc7b1625a3298b81d0170496bd5c0",
+  "toolCalls": [
+    {
+      "tool": "search_web",
+      "args": {
+        "query": "Pokemon Center Osaka location address",
+        "max_results": 3
+      }
+    }
+  ],
+  "exchanges": [
+    {
+      "provider": "exa",
+      "method": "POST",
+      "url": "https://api.exa.ai/search",
+      "requestBody": {
+        "query": "Pokemon Center Osaka location address",
+        "type": "auto",
+        "numResults": 3,
+        "contents": {
+          "highlights": true
+        }
+      },
+      "status": 200,
+      "responseBody": {
+        "requestId": "c87468982842b7029b12def640613fe6",
+        "resolvedSearchType": "",
+        "results": [
+          {
+            "id": "https://shop.pokemon.co.jp/en/shop/pokemoncenter-osaka/",
+            "title": "Pokémon Center OSAKA | Pokémon Center Official Website",
+            "url": "https://shop.pokemon.co.jp/en/shop/pokemoncenter-osaka/",
+            "highlights": [
+              "Center OSAKA\n\n## Shop Information\n\nHours\n: Monday - Sunday 10:00 - ... shop pages for details.\nLocation\n: LUCUA SOUTH 13F 3-1-1, Umeda, Kita-ku, Osaka-shi, Osaka 530-8373 View Map\nDirections\n: 5-minute walk from the central exit of JR \"Osaka Station\" 5"
+            ],
+            "image": "https://shop.pokemon.co.jp/en/shop/pokemoncenter-osaka/images/mv-pokemoncenter-osaka-001.webp"
+          },
+          {
+            "id": "https://www.lucua.jp/en/shopguide/id2061_e.html",
+            "title": "Pokémon Center OSAKA | Shop Guide | LUCUA osaka",
+            "url": "https://www.lucua.jp/en/shopguide/id2061_e.html",
+            "highlights": [
+              "## Basic Information\n\n| Category | Sundries |\n| --- | --- |\n| Subcategory | Hobby Kits |\n| Location | LUCUA CHARACTERS WORLD 13F |\n\n| Business Hours | 10:00 - 20:00 |\n| --- | --- |\n| Address | 3-1-1 Umeda, Kita-ku, Osaka 530-8373 |\n| WEB | https://www.pokemon.co.jp/shop/pokecen/osaka/ |\n\n3-1-3 Umeda, Kita-ku, Osaka 530-8558, Japan"
+            ],
+            "image": "https://www.lucua.jp/assets/thumbnails/thumb-1040xauto-4447-file.jpg"
+          },
+          {
+            "id": "https://osaka-info.jp/en/osaka/pop-culture/pop-culture-pokemoncenter-osaka/",
+            "title": "Pokémon Center Osaka | Official store located a 5-minute walk from JR Osaka Station | OSAKA-INFO",
+            "url": "https://osaka-info.jp/en/osaka/pop-culture/pop-culture-pokemoncenter-osaka/",
+            "highlights": [
+              "# Pokémon Center Osaka\n\nOfficial Pokémon shop, a 5-minute walk from JR Osaka\n...\n## Basic information\n\nAddress\n: 13th floor, Daimaru Umeda store, 3-1-1 Umeda, Kita-ku, Osaka\n\nAccess\n...\n\" Exit the central ticket gate and walk for about 5 minutes from the"
+            ]
+          }
+        ],
+        "searchTime": 1447.4,
+        "costDollars": {
+          "total": 0.007,
+          "search": {
+            "neural": 0.007
+          }
+        }
+      }
+    }
+  ]
+}

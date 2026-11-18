@@ -1,0 +1,108 @@
+{
+  "caseId": "A2",
+  "recordedAt": "2026-11-17T21:21:27.622Z",
+  "commit": "2f6dac20658fc7b1625a3298b81d0170496bd5c0",
+  "toolCalls": [
+    {
+      "tool": "search_anime"
+    },
+    {
+      "tool": "search_web",
+      "args": {
+        "query": "highest rated romance anime of all time MyAnimeList",
+        "max_results": 5
+      }
+    }
+  ],
+  "exchanges": [
+    {
+      "provider": "jikan",
+      "method": "GET",
+      "url": "https://api.jikan.moe/v4/anime?limit=5&sfw=true&q=romance&order_by=score&sort=desc&type=tv",
+      "requestBody": null,
+      "status": null,
+      "responseBody": null,
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "provider": "jikan",
+      "method": "GET",
+      "url": "https://api.jikan.moe/v4/anime?limit=5&sfw=true&q=romance&order_by=score&sort=desc",
+      "requestBody": null,
+      "status": null,
+      "responseBody": null,
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "provider": "exa",
+      "method": "POST",
+      "url": "https://api.exa.ai/search",
+      "requestBody": {
+        "query": "highest rated romance anime of all time MyAnimeList",
+        "type": "auto",
+        "numResults": 5,
+        "contents": {
+          "highlights": true
+        }
+      },
+      "status": 200,
+      "responseBody": {
+        "requestId": "8502bfa95027fdc4fc94aa535b082bef",
+        "resolvedSearchType": "",
+        "results": [
+          {
+            "id": "https://myanimelist.net/featured/1533/Top_25_Best_Romance_Anime_of_All_Time",
+            "title": "Top Romance Anime to Keep you ...",
+            "url": "https://myanimelist.net/featured/1533/Top_25_Best_Romance_Anime_of_All_Time",
+            "highlights": [
+              "Top 25 Best Romance Anime of All Time - MyAnimeList.net\n\nTop 25 Best Romance Anime of All Time - MyAnimeList.net"
+            ],
+            "image": "https://cdn.myanimelist.net/s/common/uploaded_files/1460603253-2b93f5f88137a80252be295d6fb7be43.jpeg"
+          },
+          {
+            "id": "https://myanimelist.net/stacks/18777",
+            "title": "Iconic Romance Anime - Interest Stacks - MyAnimeList.net",
+            "url": "https://myanimelist.net/stacks/18777",
+            "highlights": [
+              "Interest Stacks\n\n## Iconic Romance Anime\n\n by linguiztomaniac Dec 01 2022, 10:17 PM | Updated Jan 26, 2025 8:13 PM\n\nSorted by MAL score, here are some of the most impactful and influential anime of all time—by that I mean true to the genre, emotional, popular, etc. If you’re just starting out with the romance genre, there’s a lot of great ones here.\n\n \n\n Clannad: After Story \n\n TV, 2008 \n\n8.93 1,306,503\n\n \n\n Kimi no Na wa. \n\n Movie, 2016 \n\n8.82 3,086,313\n\n \n\n Howl no Ugoku Shiro \n\n Movie, 2004 \n\n8.67 1,520,918\n\n \n\n Shigatsu wa Kimi no Uso \n\n TV, 2014 \n\n8.64 2,472,331\n\n \n\n Nana \n\n TV, 2006 \n\n8.58 807,442\n\n \n\n Shouwa Genroku Rakugo Shinjuu \n\n TV, 2016 \n\n8.54 319,257\n\n \n\n Kaguya-sama wa Kokurasetai: Tensai-tachi no Renai Zunousen \n\n TV, 2019 \n\n8.40 1,985,287\n\n \n\n Josee to Tora to Sakana-tachi \n\n8.38 553,374\n\n \n\n Bakemonogatari \n\n TV, 2009 \n\n8.32 1,513,157\n\n \n\n Sakamichi no Apollon \n\n TV, 2012 \n\n8.29 421,307\n\n \n\n Ano Hi Mita Hana no Namae wo Bokutachi wa Mada Shiranai. \n\n TV, 2011 \n\n8.28 1,731,715\n\n \n\n Hotarubi no Mori e \n\n Movie, 2011 \n\n8.26 889,983\n\n \n\n Tenki no Ko \n\n Movie, 2019 \n\n8.26 1,158,146\n\n \n\n Nodame Cantabile \n\n8.25 335,649\n\n \n\n Mimi wo Sumaseba \n\n8.23 415,917\n\n \n\n Fruits Basket 1st Season \n\n8.20 970,064\n\n \n\n Horimiya \n\n8.18 1,701,586\n\n \n\n Chihayafuru \n\n8.17 503,412\n\n \n\n Ouran Koukou Host Club \n\n8.16 1,253,333\n\n \n\n Kamisama Hajimemashita \n\n8.13 746,297\n\n \n\n Toki wo Kakeru Shoujo \n\n8.08 850,018\n\n \n\n Toradora! \n\n8.03 2,402,814\n\n \n\n Akatsuki no Yona \n\n8.04 955,324\n\n \n\n Lovely★Complex \n\n8.03 672,598\n\n \n\n Tsuki ga Kirei \n\n8.01 607,394\n\n \n\n Kimi ni Todoke \n\n8.01 1,097,428\n\n \n\n Yahari Ore no Seishun Love Comedy wa Machigatteiru. \n\n8.00 1,598,978\n\n \n\n Kaichou wa Maid-sama! \n\n7.98 1,359,735\n\n ReLIFE \n\n7.96 1,162,267\n\n \n\n Wotaku ni Koi wa Muzukashii \n\n7.91 1,125,716\n\n \n\n Tamako Love Story \n\n7.91 436,343\n\n \n\n Ore Monogatari!! \n\n7.88 747,266\n\n \n\n Ie Naki Ko Remy \n\n7.92 24,319\n\n Tonikaku Kawaii \n\n7.83 860,546\n\n \n\n Gekkan Shoujo Nozaki-kun \n\n7.81 1,008,611\n\n \n\n Kokoro ga Sakebitagatterunda. \n\n7.79 359,559\n\n \n\n Akagami no Shirayuki-hime \n\n7.76 752,623\n\n \n\n Charlotte \n\n7.76 1,797,859\n\n \n\n Golden Time \n\n7.74 1,159,349\n\n \n\n Higashi no Eden \n\n7.72 604,327\n\n \n\n7.72 900,329\n\n Kyoukai no Kanata \n\n7.71 1,258,113\n\n \n\n Chuunibyou demo Koi ga Shitai! \n\n7.70 1,489,954\n\n \n\n Karakai Jouzu no Takagi-san \n\n7.67 649,412\n\n \n\n Ao Haru Ride \n\n TV, 2014 \n\n7.63 1,031,163\n\n \n\n Orange \n\n TV, 2016 \n\n7.63 915,789\n\n \n\n Tokidoki Bosotto Russia-go de Dereru Tonari no Alya-san \n\n7.53 544,241\n\n \n\n Tsurezure Children \n\n7.53 796,093\n\n \n\n Tonari no Kaibutsu-kun \n\n7.45 1,190,335\n\n \n\n Itazura na Kiss \n\n7.38 302,258"
+            ],
+            "image": "https://cdn.myanimelist.net/images/anime/1299/110774.jpg"
+          },
+          {
+            "id": "https://myanimelist.net/anime/genre/22/Romance",
+            "title": "Romance - Anime",
+            "url": "https://myanimelist.net/anime/genre/22/Romance",
+            "highlights": [
+              "# Romance Anime\n\nFalling in love and struggling to progress towards—or maintain—a romantic relationship take priority, while other subplots either take backseat or are designed to develop the main love story. The narrative focuses on the thoughts and emotions of the characters, illustrating the connections between them and explaining their reactions to events or conflict. Almost always, the story ends happily and the couple is rewarded for their efforts with lasting love. Romance stories require significant romantic development leading to some kind of conclusion: either to begin the relationship, continue it, or end it. Open-ended romantic endings are only acceptable when the work is an incomplete adaptation of a Romance source. \"Teasing\" stories which do not narrate significant romantic development but have a conclusion should be tagged Romantic Subplot. A story can be simply Romance. Since they are plot-driven stories showing humans experiencing romantic struggle, most Romance has some Drama inherently. For both tags, the drama should be focused not only on the relationship but also on the side storylines; for example, one character overcoming the death of a loved one or a drug addiction.\n\n...\n\n## Shigatsu wa Kimi no Uso\n\n### Your Lie in April\n\nTV, 2014 Finished 22 eps, 22 min \n\n Drama Romance \n\n Shigatsu wa Kimi no Uso\n\n...\n\n8.64 2.5M\n\n...\n\n## Seishun Buta Yarou wa Bunny Girl Senpai no Yume wo Minai\n\n...\n\n8.23 2.0M \n\n## Kaguya-sama wa Kokurasetai: Tensai-tachi no Renai Zunousen\n\n### Kaguya-sama: Love is War\n\nTV, 2019 Finished 12 eps, 25 min \n\n Comedy Romance\n\n...\n\n8.40 2.0M\n\n...\n\n## Clannad\n\nTV, 2007 Finished 23 eps, 24 min \n\n Drama Romance\n\n...\n\n7.99 1.5M \n\n## Kaguya-sama wa Kokurasetai? Tensai-tachi no Renai Zunousen\n\n### Kaguya-sama: Love is War?\n\nTV, 2020 Finished 12 eps, 24 min \n\n Comedy Romance\n\n...\n\n8.61 1.5M \n\n## Howl no Ugoku Shiro\n\n### Howl's Moving Castle\n\nMovie, 2004 Finished 1 ep, 119 min\n\n...\n\n8.67 1.5M\n\n...\n\n## Clannad: After Story\n\nTV, 2008 Finished 24 eps, 24 min \n\n Clannad: After Story \n\nTomoya Okazaki and Nagisa Furukawa have graduated from high school, and together, they experience the emotional rollercoaster of growing up.\n\n...\n\nStudio Kyoto Animation Source Visual novel \n\n 8.93 1.3M\n\n...\n\n8.26 1.2M\n\n...\n\n## Kaguya-sama wa Kokurasetai: Ultra Romantic\n\n### Kaguya-sama: Love is War -Ultra Romantic-\n\nTV, 2022 Finished 13 eps, 23 min \n\n Comedy Romance\n\n...\n\n8.94 1.1M\n\n...\n\n## Fruits Basket 1st Season"
+            ],
+            "image": "https://cdn.myanimelist.net/img/sp/icon/apple-touch-icon-256.png"
+          },
+          {
+            "id": "https://animeintel.app/top/romance-anime",
+            "title": "Best Romance Anime of All Time — Anime Intel",
+            "url": "https://animeintel.app/top/romance-anime",
+            "highlights": [
+              "Best Romance Anime of All Time — Anime Intel\n\n# Best Romance Anime of All Time\n\nRanked by community ratings from MyAnimeList across 1264 romance titles spanning 1990–present.\n\n1\n\nClannad: After Story\n\nKyoto Animation · 2008 · 696,020 ratings\n\nClannad: After Story is a highly emotional anime that profoundly impacts many viewers, eliciting strong feelings of...\n\n8.9\n\n2\n\nFruits Basket: The Final Season\n\nTMS Entertainment · 2021 · 276,525 ratings\n\nFruits Basket: The Final receives high praise for its emotional depth, character development, and exploration of...\n\n8.9\n\n3\n\nKaguya-sama: Love is War -Ultra Romantic-\n\nA-1 Pictures · 2022 · 624,167 ratings\n\nAudience sentiment is divided on 'Kaguya-sama wa Kokurasetai: Ultra Romantic.' While some praise the show for its...\n\n8.9\n\n4\n\nHowl's Moving Castle\n\nStudio Ghibli · 2004 · 1,016,877 ratings\n\nAudience opinions are divided on Howl's Moving Castle. While praised for its stunning visuals, animation, and music,...\n\n8.7\n\n5\n\nMonogatari Series: Second Season\n\nShaft · 2013 · 378,194 ratings\n\nThe Monogatari Series: Second Season is praised for its unique storytelling, character depth, and philosophical themes,...\n\n8.7\n\n6\n\nSamurai X: Trust and Betrayal\n\nStudio Deen · 1999 · 145,027 ratings\n\nThe audience overwhelmingly regards Rurouni Kenshin: Tsuiokuhen as a masterpiece, praising its mature storytelling,...\n\n8.6\n\n7\n\nYour Lie in April\n\nA-1 Pictures · 2015 · 1,455,498 ratings\n\nShigatsu wa Kimi no Uso is a visually stunning and musically rich anime that evokes strong emotions in its audience....\n\n8.6\n\n8\n\nRascal Does Not Dream of a Dreaming Girl\n\nCloverWorks · 2019 · 513,110 ratings\n\nAudience opinions are divided, with some praising the movie's emotional depth, character development, and satisfying...\n\n8.6\n\n9\n\nThe Dangers in My Heart Season 2\n\nShin-Ei Animation · 2024 · 186,477 ratings\n\nThe audience overwhelmingly praises Boku no Kokoro no Yabai Yatsu Season 2 as a near-perfect continuation that elevates...\n\n8.6\n\n10\n\nNana\n\nMadhouse · 2007 · 298,538 ratings\n\nThe audience largely appreciates Nana for its realistic portrayal of love, friendship, and the struggles of adulthood,...\n\n8.5\n\n11\n\nThe Tatami Galaxy\n\nMadhouse · 2010 · 155,807 ratings\n\nThe audience is divided on Yojouhan Shinwa Taikei. Some viewers praise its unique storytelling, artistic style, and...\n\n8.5\n\n12\n\nBakuman. Season 3\n\nJ.C.Staff · 2013 · 202,841 ratings\n\nThe final season of Bakuman is well-received, continuing the engaging story and character development that fans have...\n\n8.5\n\n13\n\nI Want To Eat Your Pancreas\n\nStudio VOLN · 2018 · 658,453 ratings\n\nAudience reception is polarized. Some viewers found the movie deeply moving and appreciated its exploration of life and...\n\n8.5\n\n14\n\nThe Fragrant Flower Blooms with Dignity\n\nCloverWorks · 2025 · 196,425 ratings\n\nAudience opinions are strongly divided on 'Kaoru Hana wa Rin to Saku'. Some viewers appreciate the wholesome romance,...\n\n8.5\n\n15\n\nThe Garden of Sinners Chapter 5: Paradox Spiral\n\nufotable · 2008 · 138,995 ratings\n\nAudience reviews are largely positive, praising the film's complex narrative and high production values. Some find the...\n\n8.4\n\n16\n\nChihayafuru 3\n\nMadhouse · 2020 · 70,354 ratings\n\nThe audience generally appreciates Chihayafuru 3 for maintaining the series' high quality, character development, and...\n\n8.4\n\n17\n\nJosee, the Tiger and the Fish\n\nBones · 2020 · 270,607 ratings\n\nAudience sentiment is mixed. While praised for its beautiful visuals, soundtrack, and heartwarming moments, many find...\n\n8.4\n\n18\n\nYou and I Are Polar Opposites Season 2\n\nLapin Track · 2026 · 35,510 ratings\n\nThe audience overwhelmingly praises \"Seihantai na Kimi to Boku 2nd Season\" for its authentic character writing,...\n\n8.4\n\n19\n\nWelcome to the N.H.K.\n\nGonzo · 2006 · 368,568 ratings\n\nAudience opinions on NHK ni Youkoso! are mixed, with some praising its realistic portrayal of social issues,...\n\n8.3\n\nSpice and Wolf II\n\nBrain's Base · 2009 · 288,683 ratings\n\nAudience sentiment is divided. While many appreciate the focus on character relationships and accurate adaptation,...\n\n8.3"
+            ]
+          },
+          {
+            "id": "https://myanimelist.net/stacks/4912",
+            "title": "Romance Anime - Interest Stacks - MyAnimeList.net",
+            "url": "https://myanimelist.net/stacks/4912",
+            "highlights": [
+              "Interest Stacks\n\n## Romance Anime\n\n by F3O6C2U6S9 May 23 2022, 5:17 AM | Updated Sep 19, 2022 1:21 PM\n\n \n\n Seishun Buta Yarou wa Bunny Girl Senpai no Yume wo Minai \n\n TV, 2018 \n\n8.23 2,007,654\n\n \n\n Seishun Buta Yarou wa Yumemiru Shoujo no Yume wo Minai \n\n Movie, 2019 \n\n8.59 844,827\n\n \n\n Golden Time \n\n TV, 2013 \n\n7.74 1,159,597\n\n \n\n Shigatsu wa Kimi no Uso \n\n TV, 2014 \n\n8.64 2,472,890\n\n \n\n Koe no Katachi \n\n Movie, 2016 \n\n8.93 2,680,308\n\n \n\n Hyouka \n\n TV, 2012 \n\n8.04 1,501,559\n\n...\n\nYahari Ore no Seishun Love Comedy wa Machigatteiru. \n\n8.00 1,599,309\n\n \n\n Yahari Ore no Seishun Love Comedy wa Machigatteiru. Kan \n\n8.35 841,634\n\n \n\n Yahari Ore no Seishun Love Comedy wa Machigatteiru.\n\n...\n\n8.20 1,185,152\n\n \n\n Violet Evergarden \n\n TV, 2018 \n\n8.70 2,043,820\n\n \n\n Violet Evergarden Gaiden: Eien to Jidou Shuki Ningyou \n\n8.43 495,722\n\n \n\n Violet Evergarden Movie \n\n8.83 752,345\n\n \n\n Toradora! \n\n8.03 2,403,270\n\n \n\n Kimi ni Todoke \n\n8.01 1,097,721\n\n...\n\nKimi no Na wa. \n\n8.82 3,087,006\n\n \n\n Tenki no Ko \n\n8.26 1,158,490\n\n...\n\nClannad \n\n7.99 1,536,205\n\n \n\n Clannad: After Story \n\n8.93 1,306,747\n\n...\n\nKimi no Suizou wo Tabetai \n\n8.55 1,153,437\n\n...\n\n8.18 1,702,283"
+            ],
+            "image": "https://cdn.myanimelist.net/images/anime/1301/93586.jpg"
+          }
+        ],
+        "searchTime": 1167.3,
+        "costDollars": {
+          "total": 0.007,
+          "search": {
+            "neural": 0.007
+          }
+        }
+      }
+    }
+  ]
+}

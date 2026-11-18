@@ -1,0 +1,11 @@
+{
+  "caseId": "D1",
+  "recordedAt": "2026-11-17T21:20:01.563Z",
+  "commit": "2f6dac20658fc7b1625a3298b81d0170496bd5c0",
+  "toolCalls": [
+    {
+      "tool": "get_weather"
+    }
+  ],
+  "exchanges": []
+}

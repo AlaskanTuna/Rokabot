@@ -1,0 +1,38 @@
+{"id":"F1","scenario":"quick-fact","depth":"1 search","message":"roka what's the capital of bhutan's population roughly","mustHave":["Thimphu","population figure"]}
+{"id":"F2","scenario":"quick-fact","depth":"1 search","message":"how tall is the tokyo skytree","mustHave":["634 m"]}
+{"id":"F3","scenario":"quick-fact","depth":"1 search","message":"when did the nintendo switch 2 launch","mustHave":["June 5, 2025"]}
+{"id":"L1","scenario":"list","depth":"search + read","message":"Roka list me the menu of coffee marufuku osaka in point form","mustHave":["hotcakes","coffee/blend items","several other items (pudding, sandwiches, etc.)"]}
+{"id":"L2","scenario":"list","depth":"search + read","message":"roka what are all the attractions at super nintendo world osaka, list them","mustHave":["Mario Kart: Koopa's Challenge","Yoshi's Adventure","Donkey Kong Country area / Mine-Cart Madness"]}
+{"id":"L3","scenario":"list","depth":"search + read","message":"list the ichiran ramen customisation options on the order sheet","mustHave":["flavor strength","richness/fat","garlic","green onion","chashu","spicy sauce","noodle firmness"]}
+{"id":"J1","scenario":"local-nonenglish","depth":"search again in JP","message":"roka what are the opening hours of Mugi to Olive ginza and do they take cards","mustHave":["hours","payment info or says unknown"]}
+{"id":"J2","scenario":"local-nonenglish","depth":"search again in JP","message":"what's the price of the hotcake set at hoshino coffee","mustHave":["yen price","caveat that it varies"]}
+{"id":"J3","scenario":"local-nonenglish","depth":"search again in JP","message":"is there a pokemon center in osaka and where exactly","mustHave":["Daimaru Umeda (Pokemon Center Osaka)","Shinsaibashi DX"]}
+{"id":"P1","scenario":"price-stock","depth":"several shops","message":"where can I buy a steam deck oled in malaysia and how much","mustHave":["shop/retailer names","MYR prices"]}
+{"id":"P2","scenario":"price-stock","depth":"several shops","message":"how much is a nendoroid usually and where do people preorder them","mustHave":["yen/USD price range","Good Smile shop, AmiAmi or similar"]}
+{"id":"P3","scenario":"price-stock","depth":"several shops","message":"roka how much is the airpods pro 3","mustHave":["price","date/region caveat"]}
+{"id":"N1","scenario":"news","depth":"news, dated","message":"what's the latest news on GTA 6","mustHave":["release date status","dated source"]}
+{"id":"N2","scenario":"news","depth":"news, dated","message":"anything new happening with openai this week","mustHave":["specific recent items","dates"]}
+{"id":"N3","scenario":"news","depth":"news, dated","message":"did anything big happen in the stock market today","mustHave":["specific index moves or says what it found with date"]}
+{"id":"C1","scenario":"comparison","depth":"2+ searches, verdict","message":"switch 2 vs steam deck for playing JRPGs, which should i get","mustHave":["verdict","library/performance/price evidence"]}
+{"id":"C2","scenario":"comparison","depth":"2+ searches, verdict","message":"kindle paperwhite or kobo clara for reading manga","mustHave":["verdict","screen/size/format evidence"]}
+{"id":"C3","scenario":"comparison","depth":"2+ searches, verdict","message":"is the JR pass still worth it after the price hike for a tokyo-kyoto-osaka trip","mustHave":["verdict","price numbers"]}
+{"id":"H1","scenario":"howto","depth":"read doc, steps","message":"how do i fix 'error: externally-managed-environment' when pip installing on ubuntu","mustHave":["venv","pipx or --break-system-packages caveat"]}
+{"id":"H2","scenario":"howto","depth":"read doc, steps","message":"how do i set up a discord bot slash command with discord.js","mustHave":["register commands via REST","interactionCreate handler"]}
+{"id":"H3","scenario":"howto","depth":"read doc, steps","message":"how do i enable 5ghz only wifi on a raspberry pi 5","mustHave":["country code","band/freq setting steps"]}
+{"id":"O1","scenario":"opinion","depth":"several sources, verdict","message":"is the new monster hunter wilds worth buying now","mustHave":["verdict","review/player consensus evidence"]}
+{"id":"O2","scenario":"opinion","depth":"several sources, verdict","message":"are mechanical keyboards with hall effect switches actually better","mustHave":["verdict","rapid trigger/adjustable actuation evidence"]}
+{"id":"O3","scenario":"opinion","depth":"several sources, verdict","message":"is the dyson airwrap worth the money","mustHave":["verdict","evidence"]}
+{"id":"U1","scenario":"unanswerable","depth":"stop, say not found","message":"what did the barista at coffee marufuku sennichimae wear on 3 march 2026","mustHave":["says it can't be found","no invention"]}
+{"id":"U2","scenario":"unanswerable","depth":"stop, say not found","message":"what's the wifi password at the ichiran shibuya branch","mustHave":["says not public/unknown","no invention"]}
+{"id":"U3","scenario":"unanswerable","depth":"stop, say not found","message":"how many cats live on my street in petaling jaya","mustHave":["says unknowable","no invention"]}
+{"id":"D1","scenario":"dedicated-tool","depth":"weather tool, no web","message":"what's the weather in kyoto right now","mustHave":["get_weather used"]}
+{"id":"D2","scenario":"dedicated-tool","depth":"time tool, no web","message":"what time is it in new york","mustHave":["get_current_time used"]}
+{"id":"D3","scenario":"dedicated-tool","depth":"anime schedule tool","message":"what anime airs on saturday","mustHave":["get_anime_schedule used"]}
+{"id":"A1","scenario":"anime-catalogue","depth":"jikan","message":"what's the score and episode count of frieren","mustHave":["search_anime used","score","episodes"]}
+{"id":"A2","scenario":"anime-catalogue","depth":"jikan","message":"recommend me a few highly rated romance anime","mustHave":["search_anime used","titles"]}
+{"id":"A3","scenario":"anime-web","depth":"web (merch)","message":"where can i buy a frieren nendoroid and how much is it","mustHave":["search_web used","shop names","price"]}
+{"id":"A4","scenario":"anime-web","depth":"web (news)","message":"is chainsaw man season 2 confirmed","mustHave":["search_web used","announcement status with date"]}
+{"id":"A5","scenario":"anime-web","depth":"web (character)","message":"who voices frieren in the english dub","mustHave":["search_web used or correct VA","Mallorie Rodak"]}
+{"id":"A6","scenario":"anime-web","depth":"web (manga/source)","message":"how far ahead is the dandadan manga compared to the anime","mustHave":["search_web used","chapter/episode mapping"]}
+{"id":"A7","scenario":"anime-web","depth":"web (opinion)","message":"is the solo leveling anime worth watching or should i read the manhwa","mustHave":["search_web used","verdict"]}
+{"id":"A8","scenario":"anime-web","depth":"web (event)","message":"when is anime expo 2027 and where","mustHave":["search_web used","date","Los Angeles"]}

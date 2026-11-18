@@ -1,0 +1,91 @@
+{
+  "caseId": "O1",
+  "recordedAt": "2026-11-17T21:19:00.894Z",
+  "commit": "2f6dac20658fc7b1625a3298b81d0170496bd5c0",
+  "toolCalls": [
+    {
+      "tool": "search_web",
+      "args": {
+        "query": "Monster Hunter Wilds worth buying review current state price updates",
+        "max_results": 5
+      }
+    }
+  ],
+  "exchanges": [
+    {
+      "provider": "exa",
+      "method": "POST",
+      "url": "https://api.exa.ai/search",
+      "requestBody": {
+        "query": "Monster Hunter Wilds worth buying review current state price updates",
+        "type": "auto",
+        "numResults": 5,
+        "contents": {
+          "highlights": true
+        }
+      },
+      "status": 200,
+      "responseBody": {
+        "requestId": "869b116c8c1c2ee4ead023c03777cea3",
+        "resolvedSearchType": "",
+        "results": [
+          {
+            "id": "https://www.metacritic.com/game/monster-hunter-wilds/",
+            "title": "Monster Hunter Wilds Reviews - Metacritic",
+            "url": "https://www.metacritic.com/game/monster-hunter-wilds/",
+            "highlights": [
+              "Develop\n\n...\n\n# Monster Hunter Wilds\n\nReleased On: Feb 28, 2025\n\nMetascore\n\nGenerally Favorable Based on 107 Critic Reviews\n\n88\n\nUser score\n\nMixed or Average Based on 1,690 User Ratings\n\n7.1\n\n -27% \n\n$27.49 ($37.88) \n\n -10% \n\n$22.39 ($24.99)\n\n...\n\n## Critic Reviews\n\nMetascore\n\nGenerally Favorable Based on 107 Critic Reviews\n\n88\n\n97% Positive 104 Reviews 3% Mixed 3 Reviews 0% Negative 0 Reviews\n\nApr 14, 2025\n\n100\n\n Cultura Geek\n\nMonster Hunter: Wilds represents the natural evolution of the franchise, introducing a series of improvements and, above all, quality-of-life features that make it more accessible to all kinds of players. It's a title that notably changes the traditional structure of separate missions and hunting zones, opting instead for an open world featuring distinct ecosystems and areas filled with a vast number of monsters to hunt. These enhancements don't stray far from the series' original formula, although they do make playing Monster Hunter somewhat easier and less frustrating.\n\nFeb 24, 2025\n\n95\n\n PlayStation Universe\n\nEndlessly ambitious and full of detail, Monster Hunter: Wilds manages to deliver on everything that it sets out to do and then some. I have complete faith in Capcom to keep building off of this launch as one of their strongest foundations yet. Putting the game down genuinely seems like an impossibility with just how much there is to do. The wait has been long and tense, but Capcom haven't missed the mark with their latest and arguably, greatest.\n\n## User Reviews\n\nUser score\n\nMixed or Average Based on 1,690 User Ratings\n\n7.1\n\n59% Positive 1004 Ratings 23% Mixed 386 Ratings 18% Negative 300 Ratings\n\n...\n\nFeb 24, 2025\n\n90\n\n TechRadar Gaming\n\nMonster Hunter Wilds is a bold and bustling continuation of its predecessor’s approach to streamlining the once-niche series. By stripping away some of the more frustrating elements of the past, and focusing on getting players into hunts as quickly as possible, Monster Hunter Wilds has the potential to launch the series to new heights. Aside from some head-scratching omissions, Monster Hunter Wilds is a collection of the greatest hits from past games, one that finally delivers on the promise of a truly vibrant and living open world.\n\nFeb 24, 2025\n\n85\n\n Gaming Nexus\n\nMonster Hunter Wilds delivers a ton of incredible new content, buried underneath the usual UI nightmare plus a long, interminable campaign. The new features of the game are fun and exciting once the game opens up, and there are a ton of awesome new monsters to battle. The graphics, as always, are stunning. But wading through the mud of this story for 15-20 hours is downright painful, and the franchise's tradition of not explaining itself is getting extremely old. There is a fabulous Monster Hunter game here, but sooner or later this franchise is going to have to wake up to the need to wipe the slate clean and open the doors for new players. Instead, Monster Hunter Wilds feels like it is going in the other direction. \n\nMar 13, 2025\n\n Slant Magazine\n\nAs great as its action may be, the game’s secret sauce is expectedly its fascinating creatures. \n\nFeb 24, 2025\n\n70\n\n Gamekult\n\nThe problem when reviewing a game of this scale, part of a series with more than ten entries, is that personal attachment and nostalgia inevitably play a crucial role. It’s clear that the franchise no longer offers the same experience as it did years ago. The rough, unwelcoming, and flamboyant feel of the past has given way to unwavering accessibility, a clear pursuit of simplicity, and a deliberate openness to newcomers. While the game’s addictive foundations are still present, they are nonetheless hindered by an at times excessive simplification of its mechanics. However, Monster Hunter Wilds remains a thrilling experience, even for veterans—provided they accept that it is no longer the game they once knew.\n\nFeb 26, 2026\n\n10\n\n URA1224\n\nThe game has been significantly optimized and expanded through updates; creating the best end-game gear will take over 300 hours.\n\nMar 24, 2026\n\n7\n\n Dagher\n\nThe best combat system in the series, but everything else is inferior to the previous chapters and the game has lost the soul of Monster Hunter, including the concept of \"hunting.\" There are large, lively maps that are pointless to explore because as soon as you enter, by pressing a button, you are taken to the monster within seconds. It is gradually improving with updates, I hope the DLC will address the issues because it has great potential."
+            ]
+          },
+          {
+            "id": "https://www.polygon.com/monster-hunter-wilds-nintendo-switch-2-release-date/",
+            "title": "Nintendo Switch 2 Is Finally Getting Capcom’s Fastest-Selling Game Ever",
+            "url": "https://www.polygon.com/monster-hunter-wilds-nintendo-switch-2-release-date/",
+            "publishedDate": "2026-11-15T19:00:17.000Z",
+            "author": "Jen Glennon",
+            "highlights": [
+              "By Jen Glennon \n\n Published Nov 15, 2026, 2:00 PM EST \n\n# Nintendo Switch 2 is finally getting Capcom’s fastest-selling game ever\n\nImage: Capcom\n\nWith the success of Resident Evil Requiem, Pragmata, and Onimusha: Way of the Sword, it's safe to say that Capcom has had a fantastic 2026. And the venerable developer's 2025 wasn't too shabby either. Last February, it released Monster Hunter Wilds for PlayStation 5, Windows PC, and Xbox Series X. It went on to sell a whopping eight million copies in just three days, making it the company's fastest-selling game of all time. As of September 2026, Monster Hunter Wilds has sold 12.2 million copies, making it Capcom's 11th-best-selling game of all time. That number is set to go up significantly after Dec. 4, when it finally launches for Nintendo Switch 2.\n\nMonster Hunter Wilds is the first game in the series to let players bring two weapons into the field — you can swap your loadout on the go thanks to your helpful bird friend known as a Seikret. It also adds pop-up camps to allow for a more seamless experience with less backtracking. The new wound system allows players to target a beast's weak points and dole out even bigger damage. You can play with couch co-op, or online with up to three buddies. Best of all, it doesn't matter which console they have — Monster Hunter Wilds supports cross-platform play between all versions, including Nintendo Switch 2,\n\nFolks who pre-order the game ahead of the Dec. 4 launch, will also get a substantial discount. Through Dec. 3, Monster Hunter Wilds is on sale through the Nintendo eShop for $29.99, a 25% discount from its MSRP of $39.99. If you want to try before you buy, there's also a demo featuring the game's prologue available now on all platforms. Save data from the demo will transfer over to the full game if you decide to make a purchase.\n\n...\n\nIf you're a die-hard Monster Hunter fan, the Gold Edition includes an extensive collection of more than 170 DLC cosmetics to customize your character. The Gold Edition isn't currently on sale, and retails for $79.99. That said, the DLC bundle on its own retails for a cool $59.99, so The Gold Edition is slightly cheaper than purchasing the DLC later.\n\nCapcom also has big plans for Monster Hunter Wilds in 2027. The upcoming Ascendance DLC is billed by Capcom as a \"massive expansion,\" which will add a new location called the Skybound Eyrie, which is a network of ancient floating island ruins. It will also introduce challenging Master Rank quests and new monster types. Back in February, series director Ryōzō Tsujimoto said Ascendance will be comparable in scope to previous paid expansions, like Monster Hunter World's massive Iceborne DLC."
+            ],
+            "image": "https://static0.polygonimages.com/wordpress/wp-content/uploads/2026/11/capcom-characters.jpg?w=1200&h=675&fit=crop"
+          },
+          {
+            "id": "https://dropwatch.gg/app/2246340/monster-hunter-wilds",
+            "title": "Will Monster Hunter Wilds go on sale? Next discount from 3 Dec | DropWatch",
+            "url": "https://dropwatch.gg/app/2246340/monster-hunter-wilds",
+            "highlights": [
+              "# Monster Hunter Wilds\n\nSteam\n\nUSD 39.99\n\nNot on sale\n\nFull price right now · ❄️ Winter Sale starts in 30 days\n\nMonster Hunter Wilds costs USD 39.99 on Steam, with no discount today. Its lowest price ever, in any store, is USD 16.79 (Sep 2026); today's US price is 138% above it. Steam's rules allow its next discount from 3 Dec 2026 at the earliest, and it can join the Winter Sale on 17 Dec. The lowest price we have recorded since 29 Aug 2026 is USD 29.99 (-25%).\n\n## Price stats\n\nAll-time low · all stores\n\nUSD 16.79 Sep 2026+138%\n\nLowest in 81 days\n\nUSD 29.99\n\nHighest in 81 days\n\nUSD 39.99\n\nThe all-time low is CheapShark's, across every store it tracks. Our own record starts 29 Aug 2026.\n\n👍 Mixed · 53% 204.3K reviews👥 9K playing daily peak, 17 Nov 2026🎮 Steam Deck: Verified🐧 ProtonDB: Gold 1.3K reports💾~122 GB on disk🏅 50 achievements rarest 4%🧩 64 DLC view on Steam\n\n## Price history USD 29.99 – USD 39.99\n\n29 Aug 2026 17 Nov 2026\n\n## Does Monster Hunter Wilds go on sale?\n\nYes. Since we started watching on 29 Aug 2026, Monster Hunter Wilds has been on sale 3 times, the cheapest at -25% (USD 29.99, 8 Sep – 22 Sep 2026). In the Autumn Sale (1 Oct – 8 Oct 2026) it was USD 29.99 (-25%). Its lowest price ever, in any store, is USD 16.79 (Sep 2026), by CheapShark's records.\n\nNext possible discount: 3 Dec 2026 at the earliest. Steam allows no discount within 30 days of another. Steam's rules let it join the Winter Sale (17 Dec).\n\n| 22 Oct – 3 Nov 2026 | -25% | USD 29.99 |\n| --- | --- | --- |\n| 1 Oct – 8 Oct 2026 | -25% | USD 29.99 |\n| 8 Sep – 22 Sep 2026 | -25% | USD 29.99 |\n\nRecorded from Steam since 29 Aug 2026, in USD. Earliest dates follow Steam's discount rules and Valve's sale dates; a publisher may not discount at all.\n\n...\n\n## Review sentiment trend · now 71% positive\n\nFeb 2025 Oct 2026\n\nShare of each month's Steam reviews that were positive.\n\n## Regional prices on Steam\n\n| United States | USD 39.99 |\n| --- | --- |\n\n...\n\nToday's price in each region we collect."
+            ],
+            "image": "https://dropwatch.gg/app/2246340/card.jpg"
+          },
+          {
+            "id": "https://steambase.io/games/monster-hunter-wilds/reviews",
+            "title": "Monster Hunter Wilds Reviews | Steambase",
+            "url": "https://steambase.io/games/monster-hunter-wilds/reviews",
+            "highlights": [
+              "# Monster Hunter Wilds Reviews\n\n Monster Hunter Wilds has earned a Player Score of 50 / 100. This score is calculated from 333,961 total reviews which give it a rating of Mixed. Monster Hunter Wilds review data is updated in real-time as more players share their feedback on Steam.\n\nLast Updated: 11/14/2026\n\n| Steam Price | $69.99 |\n| --- | --- |\n| Release Date | 2/28/2025 |\n| Franchise | Capcom |\n| Developer | CAPCOM Co., Ltd. |\n| Publisher | CAPCOM Co., Ltd. |\n| Steam App Id | 2246340 |\n\n...\n\n## Monster Hunter Wilds Steam Reviews\n\n Monster Hunter Wilds has achieved a Steambase Player Score of 50 / 100. This score is calculated from 333,961 total reviews on Steam — giving it a rating of Mixed. These are split between 166,164 positive reviews, 167,797 negative reviews, and will be updated in real-time as more players leave their feedback.\n\n...\n\n### Steam Review Data \n\n Explore the full breakdown of reviews left by Monster Hunter Wilds players on Steam. Track positive reviews, negative reviews, and how sentiment trends month by month. \n\n| Month | Positive | Negative | Total Reviews | Review Change Percent | Description |\n| --- | --- | --- | --- | --- | --- |\n| October 2026 | 166,164 | 167,797 | 333,961 | +0.25% | Mixed |\n| September 2026 | 164,282 | 167,579 | 331,861 | +0.44% | Mixed |"
+            ],
+            "image": "https://cdn.akamai.steamstatic.com/steam/apps/2246340/header.jpg"
+          },
+          {
+            "id": "https://www.pcgamer.com/monster-hunter-wilds/",
+            "title": "Monster Hunter Wilds news, guides, and updates | PC Gamer",
+            "url": "https://www.pcgamer.com/monster-hunter-wilds/",
+            "publishedDate": "2026-09-18T21:02:43.000Z",
+            "author": "Lincoln Carpenter",
+            "highlights": [
+              "Monster Hunter Wilds has \"entered the area,\" as it would say of one of its giant roaring enemies storming onto the scene. Far from an unbeatable monstrosity though, Wilds is the best starting point yet for the long-running series with its open world, streamlined combat systems, and slightly less clunky co-op system than past games. (Slightly).\n\nCapcom has been in the monster slaying biz for a long time, as have Monster Hunter fans, so expectations and opinions around how it plays to the series formula are plenty varied. Our Monster Hunter Wilds review calls it \"best in class monster combat,\" but also notes it has \"a wilderness that's a touch too streamlined,\" compared to series history. But we have so, so much more to say about it, and a mountain of advice on how to smoothly ascend through the ranks of the Hunter's Guild.\n\n...\n\n## Monster Hunter Wilds facts:\n\n- Release date: February 28, 2025\n- Developer: Capcom\n- Platforms: PC (via Steam), PlayStation 5, Xbox Series X|S\n- Multiplayer: Yes\n\n At last: Monster Hunter Wilds is willing to kick my ass Title Update 1 gives Wilds the teeth I was waiting for.\n\n...\n\n'Players got better than we expected': Monster Hunter Wilds DLC director says Capcom is retuning its difficulty standards for the expansion's endgame\n\n By Lincoln Carpenter Published 18 September 26 \n\nNews \"We're working on that balance.\"\n\n...\n\nMonster Hunter Wilds is getting a permanent price cut less than 18 months after launch\n\n By Mollie Taylor Published 15 July 26\n\n...\n\nMonster Hunter Wilds: Ascendance caps off Capcom's redemption arc with a 'massive' expansion in 2027\n\n By Lincoln Carpenter Published 5 June 26\n\n...\n\nMonster Hunter Wilds will get a 'large scale expansion' in the style of Iceborne and Sunbreak, as it winds down major content updates to the base game\n\n By Shaun Prescott Published 10 February 26\n\n...\n\nSorry if this jinxes it, but the latest Monster Hunter Wilds performance improvement patch seems like it actually improved performance"
+            ],
+            "image": "https://cdn.mos.cms.futurecdn.net/NPDDNWYaVLUMyPCgAmuNbU-1920-80.png"
+          }
+        ],
+        "searchTime": 1852.1,
+        "costDollars": {
+          "total": 0.007,
+          "search": {
+            "neural": 0.007
+          }
+        }
+      }
+    }
+  ]
+}

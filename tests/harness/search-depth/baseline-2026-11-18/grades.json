@@ -1,0 +1,58 @@
+{
+  "F1": ["pass", "Thimphu and a population figure, with the census year."],
+  "F2": ["pass", "634 m, correct."],
+  "F3": ["pass", "June 5, 2025, correct."],
+  "L1": [
+    "fail",
+    "Three items, no drinks. The snippets never carried the menu page, and she did not search again or read the official site."
+  ],
+  "L2": [
+    "flag",
+    "The ride list is usable, but 'Super Mario Land, a Donkey Kong area' is wrong: the area is Donkey Kong Country."
+  ],
+  "L3": ["pass", "All seven order-sheet lines."],
+  "J1": [
+    "flag",
+    "Hours for three days only, then 'couldn't confirm Friday onward'. Card brands found. Acceptable, but a Japanese search would likely complete it."
+  ],
+  "J2": ["fail", "No price. She said she couldn't find it and pointed to the branch menu."],
+  "J3": [
+    "pass",
+    "Both stores with addresses. Corrected 18 Nov: an earlier grade called LUCUA wrong, but the official Pokémon store page confirms LUCUA SOUTH 13F."
+  ],
+  "P1": ["pass", "Three Malaysian shops with MYR prices and a 'prices change' note."],
+  "P2": ["pass", "Yen range, USD estimate, Good Smile store named."],
+  "P3": ["pass", "List price plus current sale price, with a check-on-the-day note."],
+  "N1": ["pass", "Release date and recent items."],
+  "N2": ["pass", "Dated items from this week."],
+  "N3": ["pass", "Index moves with the date, and a note that sources disagree."],
+  "C1": ["pass", "Verdict with price and library evidence."],
+  "C2": ["pass", "Verdict with screen size and price."],
+  "C3": ["pass", "Clear 'no' with the yen numbers behind it."],
+  "H1": ["pass", "No search. Correct steps from her own knowledge."],
+  "H2": ["pass", "No search. Correct steps from her own knowledge."],
+  "H3": ["pass", "No search. Correct nmcli steps."],
+  "O1": ["pass", "Verdict with critic and player scores."],
+  "O2": ["pass", "Verdict with rapid-trigger evidence."],
+  "O3": ["pass", "Verdict with the price and who it suits."],
+  "U1": ["pass", "No search, no invention."],
+  "U2": ["pass", "No search, no invention."],
+  "U3": ["pass", "No search, no invention."],
+  "D1": ["pass", "Weather tool only."],
+  "D2": ["pass", "Time tool only."],
+  "D3": ["pass", "Jikan came back empty, so she chained to search_web. Chaining works."],
+  "A1": [
+    "flag",
+    "Right answer, but Jikan twice plus a web search: 19.2 s, near the 20 s turn timer. Jikan already had the score and episodes."
+  ],
+  "A2": ["flag", "Right answer, but Jikan twice plus a web search: 20.8 s, at the turn timer."],
+  "A3": ["pass", "Went straight to search_web. Shops and prices."],
+  "A4": ["pass", "Went straight to search_web. Announcement with dates."],
+  "A5": ["pass", "Went straight to search_web. Mallorie Rodak, correct."],
+  "A6": ["pass", "Went straight to search_web. Chapter mapping."],
+  "A7": [
+    "flag",
+    "Opinion question, yet she called Jikan twice first: 17.1 s. The 'ALWAYS use this first' wording is the likely cause."
+  ],
+  "A8": ["pass", "Went straight to search_web. Dates and Los Angeles."]
+}

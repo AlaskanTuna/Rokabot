@@ -1,0 +1,96 @@
+{
+  "caseId": "A6",
+  "recordedAt": "2026-11-18T08:26:53.187Z",
+  "commit": "2f6dac20658fc7b1625a3298b81d0170496bd5c0",
+  "toolCalls": [
+    {
+      "tool": "search_web",
+      "args": {
+        "query": "Dandadan manga vs anime how far ahead chapters episodes",
+        "max_results": 5
+      }
+    }
+  ],
+  "exchanges": [
+    {
+      "provider": "exa",
+      "method": "POST",
+      "url": "https://api.exa.ai/search",
+      "requestBody": {
+        "query": "Dandadan manga vs anime how far ahead chapters episodes",
+        "type": "auto",
+        "numResults": 5,
+        "contents": {
+          "highlights": true
+        }
+      },
+      "status": 200,
+      "responseBody": {
+        "requestId": "429350043dfb3cccda01c74a3786cda0",
+        "resolvedSearchType": "",
+        "results": [
+          {
+            "id": "https://www.animefillerguide.com/anime/dandadan/",
+            "title": "Dandadan Filler List, Watch Order & Episode to Chapter Conversion | Anime Filler Guide",
+            "url": "https://www.animefillerguide.com/anime/dandadan/",
+            "publishedDate": "2025-11-16T06:15:01.000Z",
+            "author": "s0uh1r0",
+            "highlights": [
+              "# Dandadan Filler List, Watch Order & Episode to Chapter Conversion\n\n Published by s0uh1r0 on November 16, 2025 Genres: Action, Comedy, Supernatural \n\nDandadan stylized ‘ DAN DA DAN‘, is an anime that has 24 episodes divided into 2 seasons, with 0 filler episodes and its percentage is 0%. The anime adapted up to chapter 71 of the manga (this has 209 chapters, being published)\n\n...\n\n- Original run (manga): April 6, 2021 – present\n\n...\n\n- Original run (anime): October 4, 2024 – September 19, 2025\n\n...\n\n## Dandadan Filler Episodes List\n\nThe list will highlight the filler episodes of Dandadan (if any) and detail the episode-to-chapter conversion. Additionally, to help you watch the anime in order, any extra material, such as OVAs or movies, will be arranged according to its chronology. Finally, I will indicate the manga chapter where the anime ends and where to start reading from.\n\n### SEASON 1\n\nThe first season has 12 episodes, the opening used is Otonoke (1-12); the ending used is Taidada (1-12). ~ Adapted from manga 1 to 34.\n\n| # | Title | Chapters |\n| --- | --- | --- |\n| 01. | That’s How Love Starts, Ya Know! | 1 |\n| 02. | That’s a Space Alien, Ain’t It?! | 2 |\n| 03. | It’s a Granny vs. Granny Clash! | 3, 4 |\n| 04. | Kicking Turbo Granny’s Ass | 5, 6, 7, 8 |\n| 05. | Like, Where Are Your Balls?! | 8, 9, 10, 11 |\n| 06. | A Dangerous Woman Arrives | 12, 13, 14, 15 |\n| 07. | To a Kinder World | 15, 16, 17 |\n| 08. | I’ve Got This Funny Feeling | 18, 19, 20 |\n| 09. | Merge! Serpo Dover Demon Nessie! | 21, 22, 23, 24, 25 |\n| 10. | Have You Ever Seen a Cattle Mutilation? | 25, 26, 27 |\n| 11. | First Love | 28, 29, 30 |\n| 12. | Let’s Go to the Cursed House | 31, 32, 33, 34 |\n\n### SEASON 2\n\nThe second season has 12 episodes, the opening used is Kakumei Dōchū (1-12); the ending used is Doukashiteru (1-12). ~ Adapted from manga 34 to 71.\n\n| # | | Title | Chapters |\n| --- | --- | --- | --- |\n| 13. | (01). | Like, This Is the Legend of the Giant Snake | 34, 35, 36, 37 |\n| 14. | (02). | The Evil Eye | 38, 39, 40, 41 |\n| 15. | (03). | You Won’t Get Away with This! | 42, 43, 44, 45 |\n| 16. | (04). | That’s, Like, Way Deadly | 45, 46, 47, 48 |\n| 17. | (05). | We Can All Stay There Together! | 49, 50, 51 |\n| 18. | (06). | We Became a Family | 52, 53, 54 |\n| 19. | (07). | Feeling Kinda Gloomy | 54, 55, 56, 57 |\n| 20. | (08). | You Can Do It, Okarun! | 57, 58, 59, 60 |\n| 21. | (09). | I Want to Rebuild the House | 61, 62, 63 |\n| 22. | (10). | The Secret Art of Being Attractive | 64, 65, 66 |\n| 23. | (11). | Hey, It’s a Kaiju | 66, 67, 68 |\n| 24. | (12). | Clash! Space Kaiju vs. Giant Robot! | 69, 70, 71 |\n\n Where to start Dandadan manga after anime? \n\n| Where Does the Anime End? | Where Should I Start Reading? |\n| --- | --- |\n| The anime ended at episode 24 (12 of Season 2), which corresponds to Chapter 69, 70 and 71 of the manga. The adaptation covers up to this point. | After watching the anime, to continue the story in the manga, start reading from Chapter 72, which corresponds to Volume 9 (collecting chapters 68 to 76). |"
+            ]
+          },
+          {
+            "id": "https://www.ani-nova.com/2026/10/dandadan-manga-full-guide-chapters.html",
+            "title": "Dandadan Manga: Full Guide (Chapters, Status, Anime) | ANIMENOVA",
+            "url": "https://www.ani-nova.com/2026/10/dandadan-manga-full-guide-chapters.html",
+            "publishedDate": "2026-10-24T14:06:00.000Z",
+            "author": "NOVA",
+            "highlights": [
+              "NOVA October 24, 2026 3 min read\n\n...\n\nDandadan manga guide: 249 chapters so far, a 9.40 rating from 11,846 votes, 112,791 followers and two anime seasons, plus where to read it legally.\n\nDandadan manga is a Japanese shounen series written and drawn by Tatsu Yukinobu, running in Shueisha's Shounen Jump+ since April 2021. On MangaDex it holds 112,791 followers and a 9.40 rating from 11,846 votes, and the newest numbered chapter is 249, readable since 19 October 2026. It is also one of the few current hits whose anime is already two seasons deep while the comic keeps publishing.\n\n...\n\nThe series began in 2021 and is still ongoing. MangaDex currently lists 16 translated languages for the title, and the highest chapter number visible anywhere in its feed is 249.\n\n...\n\n| Item | Detail |\n| --- | --- |\n\n...\n\n| Status | Ongoing (AniList: releasing; MyAnimeList: publishing) |\n\n...\n\n| Latest numbered chapter | 249, \"Soldiers of Love\", readable 19 October 2026 |\n| Cover art on MangaDex | 25 volumes (Japanese, English and French editions) |\n| Anime | Two 12-episode TV seasons (2024, 2025); a third listed for 2027 |\n\n...\n\n## Manga vs anime\n\nThe anime exists, is finished twice over, and is behind the source. According to AniList, the first TV season ran 12 episodes from 4 October to 20 December 2024, and the second season ran 12 episodes from 4 July to 19 September 2025. A third season is listed on the same page as not yet released, with a 2027 date.\n\nThat arithmetic matters if you are deciding how to spend your time. Twenty-four episodes of anime against 249 numbered chapters means the adaptation covers a fraction of what is on the page, so anime-first readers who want to continue will be reading ahead of the broadcast for a long time. The manga is also the version where the pacing is denser and the horror beats land without sound design doing the work for them.\n\n## How to read it in order\n\nThere is only one series to follow, which makes this simple:\n\n1. Start at chapter 1. Dandadan has no prequel or sequel series you need first; the opening bet is the actual starting point.\n\n...\n\nOne practical warning: the English chapters on MangaDex are a slice, not the whole run. The English feed there currently carries 13 readable chapters, the opening chapters plus the newest stretch, all of them supplied through MangaPlus.\n\n...\n\nIt is ongoing, so there is no ending to judge and no clean stopping point.\n\n...\n\n### Is Dandadan finished?\n\nNo. MangaDex lists the status as ongoing, AniList shows it as releasing, and MyAnimeList shows publication as open-ended, running since April 2021. The most recent numbered chapter, 249, was published on 19 October 2026.\n\n### How many chapters does Dandadan have?\n\nThe highest numbered chapter published so far is 249. MangaDex does not carry a total-chapter attribute for this title, so the API itself gives no single figure; what is measurable is the feed, which currently exposes 240 readable chapter entries across all languages, covering 139 distinct chapter numbers. Always treat a \"readable now\" count as smaller than the total."
+            ],
+            "image": "https://lh3.googleusercontent.com/blogger_img_proxy/AEn0k_vzwe1lvhBbGystmpYdGJWxkioxzIh8NYGWRbTpDBdSryI2iuWNIqG-TbWqzm08zsbTbwyS4ZkBbUQSNy4Tyct3MhEb6LCFCO7QOg5vSPJaQLgi4jeTXKD2j3J7RJKHpTaehvh8hHgs0-8WXidJvfcmvKtJExro03QWKL8=w1200-h630-p-k-no-nu"
+          },
+          {
+            "id": "https://fandomwire.com/where-does-dandadan-season-2-end-in-the-manga/",
+            "title": "Where Does Dandadan Season 2 End In The Manga?",
+            "url": "https://fandomwire.com/where-does-dandadan-season-2-end-in-the-manga/",
+            "publishedDate": "2025-10-11T12:07:56.000Z",
+            "author": "Moumita Chakraborty",
+            "highlights": [
+              "Written by Moumita Chakraborty\n\nAuthor\n\nPublished Oct 11, 2025, 8:07 AM NY Time\n\nDandadan Season 2 adapts up to Chapter 71 of the manga.\n\n...\n\n## Dandadan Season 2 Wraps Up Around Chapter 71 \n\nOkay, okay, here’s the lowdown: Dandadan Season 2 ends in Chapter 71 of the manga, which concludes the Kaiju arc with the chapter name “I’m Sick of Robots and Kaiju!”. \n\n- ⛶\n- ⛶\n- ⛶\n- ⛶\n- ⛶\n\nThis is when Okarun breaks the Space Kaiju and finds Vamola inside, leading to that accidental-but-legendary kiss that melts Momo’s heart and destroys her house. Classic Dandadan chaos, right? \n\nThe pacing is on point: Season 1 covered Chapters 1-33, and then Season 2 went through Chapters 34-71. That’s like 37 chapters of nonstop action, laughs, and feels, just the kind of pacing fans love. And with that cliffhanger, it’s obvious Season 3 is set to kick things up to a new height. \n\nBelow is the table showing Dandadan anime vs. manga: arcs covered so far: \n\n| Season | Anime Episodes | Manga Chapters Covered | Main Arc(s) |\n| --- | --- | --- | --- |\n| Season 1 | Episodes 1-12 | Chapters 1-33 | Ghost & Turbo Granny Arc |\n| Season 2 | Episodes 13-24 | Chapters 34-71 | Kaiju & Mecha Arc |\n| Season 3 | TBD | Chapters 72-100+ (expected) | Space Globalists Arc |\n\n## What Will Dandadan Season 3 Adapt? \n\nHere’s where it gets really insane. Season 3 will supposedly continue from Chapter 72 and jump right into the Space Globalists Arc (Chapters 74-120). It will be bigger, wilder, and more post-apocalyptic than anything the series has served up so far.\n\n...\n\n## Where to Read the Manga After Dandadan Season 2\n\nSo can’t wait for Season 3? Start reading from Chapter 72. Official English releases are available on Viz Media’s Shonen Jump and MANGA Plus. With the manga already past Chapter 200, there’s plenty of insane, funny, and emotional Dandadan chaos waiting for you.\n\n...\n\nEach season adapts roughly 35-40 chapters, which is just enough to let the story breathe without dragging."
+            ],
+            "image": "https://fwmedia.fandomwire.com/wp-content/uploads/2025/10/11080730/Dandadan.jpg"
+          },
+          {
+            "id": "https://mangashed.com/where-does-the-dandadan-anime-end-in-the-manga/",
+            "title": "Where Dandadan Anime Ends In Manga Your Full Guide - MangaShed",
+            "url": "https://mangashed.com/where-does-the-dandadan-anime-end-in-the-manga/",
+            "publishedDate": "2026-01-06T22:05:31.000Z",
+            "author": "Andrea Horbinski",
+            "highlights": [
+              "Andrea Horbinski Expert Dedicated Manga Enthusiast and Anime analyst Updated January 6, 2026 · 11 min read\n\n January 6, 2026 by Andrea Horbinski\n\n...\n\nDandadan Season 1 concludes its story by adapting up to Chapter 33 of the \n\n. To continue the narrative without missing any plot, you must start reading from Chapter 34.\n\n This chapter marks the beginning of the thrilling “Evil Eye Arc” and is the first chapter in Volume 5.\n\n...\n\nThe first season of the Dandadan anime adapts the \n\nmanga\n\n up to the conclusion of Chapter 33, which wraps up the “Curse House Arc.”\n\n This means for viewers wanting to transition seamlessly from the anime to the \n\nmanga\n\n, the correct and official starting point is Chapter 34. This chapter kicks off a brand-new storyline, the “Evil Eye Arc,” introducing new characters and challenges for Momo Ayase and Okarun.\n\n...\n\nArcs and Chapters Does Dandadan Season 1 Cover?\n\nDandadan Season 1 covers the first three major story arcs of the \n\nmanga\n\n, spanning Chapters 1 through 33.\n\n This foundational part of the story introduces the core concepts, main characters like Momo, Okarun, and Jiji, and establishes the series’ unique blend of supernatural horror and sci-fi comedy. The adaptation corresponds directly to Volumes 1 through 4 of the physical \n\n releases.\n\nHere is a clear breakdown of the content covered in the first season, along with a projection for Season 2 based on the established pacing.\n\n| Anime Season | Key Story Arc(s) Covered | Corresponding Manga Volumes | Corresponding Manga Chapters |\n| --- | --- | --- | --- |\n| Season 1 | Turbo Granny Arc, Serpoians Arc, Curse House Arc | Volumes 1 – 4 | Chapters 1 – 33 |\n| Season 2 (Projected) | Evil Eye Arc, Kaiju Arc | Volumes 5 – 8 (approx.) | Chapters 34 – 71 (approx.) |\n\n...\n\nWhere Will Dandadan Season 2 Likely End in the \n\n?\n\nBased on the pacing of the first season, Dandadan Season 2 is expected to adapt the ‘Evil Eye Arc’ and the ‘Kaiju Arc,’ concluding around \n\n Chapter 71.\n\n This is a logical and widely accepted projection, as it provides a climactic endpoint with the conclusion of a massive battle, offering a satisfying finale for a second season.\n\nHere’s the analytical breakdown of this projection:\n\n- Established Pacing: Season 1 adapted 33 chapters over 12 episodes, averaging about 2.75 chapters per episode. Applying this pacing to future arcs gives us a reliable estimate.\n- The Evil Eye Arc (Chapters 34-58): This is the next major storyline, introducing the pivotal character Aira Shiratori and the powerful Evil Eye entity. Its length makes it a perfect centerpiece for the first half of a new season.\n- The Kaiju Arc (Chapters 59-71): Following immediately after, this arc delivers one of the most spectacular and action-packed battles in the entire series. The conclusion of this fight at Chapter 71 serves as a powerful and dramatic stopping point, ideal for a season finale cliffhanger.\n\n...\n\n### How many chapters does the Dandadan anime cover per episode?\n\nOn average, the first season of the Dandadan anime adapts approximately 2.75 \n\n chapters per episode.\n\n This pacing allows the anime to be a faithful adaptation while maintaining a dynamic pace suitable for animation, covering 33 chapters across its 12-episode run."
+            ],
+            "image": "https://mangashed.com/wp-content/uploads/2026/01/Where-Dandadan-Anime-Ends-in-Manga-Your-Full-Guide-1-1.jpg"
+          },
+          {
+            "id": "https://anime.stackexchange.com/questions/69492/which-chapter-of-the-manga-does-season-2-of-dandadan-anime-start-in",
+            "title": "Which chapter of the manga does Season 2 of Dandadan anime start in?",
+            "url": "https://anime.stackexchange.com/questions/69492/which-chapter-of-the-manga-does-season-2-of-dandadan-anime-start-in",
+            "publishedDate": "2025-07-11T03:17:28.000Z",
+            "author": "Pablo",
+            "highlights": [
+              "## Question\n\nI've just watched episode 2 of season 2 of Dandadan. I want to continue reading the manga from that point on, since I don't like cliffhangers\n\nWhich chapter of the manga does Season 2 of Dandadan anime start in?\n\n---\n\n## Accepted Answer — Score: 2\n\n- By: sundowner (4,233 rep)\n- Answered on: Jul 19, 2025\n\nFrom [this website](https://programming-cafe.com/amazon/primevideo/anime/anicomi-dandadan-lsit/), S1 Episode 12 and S2 Episode 1 are around Episode 34 in Volume 5 of the manga."
+            ]
+          }
+        ],
+        "searchTime": 1283.1,
+        "costDollars": {
+          "total": 0.007,
+          "search": {
+            "neural": 0.007
+          }
+        }
+      }
+    }
+  ]
+}

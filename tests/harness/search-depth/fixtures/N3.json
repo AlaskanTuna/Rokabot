@@ -1,0 +1,92 @@
+{
+  "caseId": "N3",
+  "recordedAt": "2026-11-17T21:17:51.714Z",
+  "commit": "2f6dac20658fc7b1625a3298b81d0170496bd5c0",
+  "toolCalls": [
+    {
+      "tool": "search_web",
+      "args": {
+        "query": "stock market today major moves",
+        "max_results": 5
+      }
+    }
+  ],
+  "exchanges": [
+    {
+      "provider": "exa",
+      "method": "POST",
+      "url": "https://api.exa.ai/search",
+      "requestBody": {
+        "query": "stock market today major moves",
+        "type": "auto",
+        "numResults": 5,
+        "contents": {
+          "highlights": true
+        }
+      },
+      "status": 200,
+      "responseBody": {
+        "requestId": "8551c9f8ebaa648fa470819570ce8f1a",
+        "resolvedSearchType": "",
+        "results": [
+          {
+            "id": "https://finance.yahoo.com/markets/live/stock-market-today-tuesday-november-17-dow-sp-500-nasdaq-nvidia-earnings-retail-sales-143848454.html",
+            "title": "Stock market today: Dow, S&P 500, Nasdaq losses pick up in countdown to Nvidia earnings",
+            "url": "https://finance.yahoo.com/markets/live/stock-market-today-tuesday-november-17-dow-sp-500-nasdaq-nvidia-earnings-retail-sales-143848454.html",
+            "publishedDate": "2026-11-17T21:02:53.000Z",
+            "author": "Grace O'Donnell, David Hollerith",
+            "highlights": [
+              "Grace O'Donnell and David Hollerith Updated Tue, November 17, 2026 at 4:02 PM EST 1 min read\n\n...\n\nA sell-off in US stocks accelerated on Tuesday in the lead-up to Nvidia (NVDA) first earnings release without Jensen Huang at the wheel, which carries high stakes for the rest of the AI trade. \n\nThe Dow Jones Industrial Average (^DJI) dropped 1.6%, or about 850 points, while the S&P 500 (^GSPC) fell by around 1%. The Nasdaq Composite (^IXIC) dropped 0.7%, extending a rough sell-off that kicked off the week. \n\nThe focus is on Nvidia's (NVDA) earnings report after the bell in what will likely be one of the biggest events of the week — eclipsed only by Anthropic's (ANTH.PVT) IPO on Thursday. Nvidia's CFO and now interim CEO Colette Kress is no stranger to speaking on the earnings call, but she'll do so in a new capacity as the company's leader following Jensen Huang's abrupt resignation last week amid affair allegations. \n\nNvidia stock declined on Tuesday, falling more than 3% before paring losses after Huang said he would be willing to return as CEO if the board decided it was in shareholders' best interests. The stock closed 0.4% lower. \n\n At close: 4:12:41 PM EST \n\nIn other earnings news, Disney (DIS) reported an earnings beat and continued growth in the company's parks and streaming businesses in its fiscal fourth quarter. The Home Depot (HD) also reported an earnings beat and named its CFO, Richard McPhail, as the company's new CEO, effective next week. \n\nInvestors were also treated to a bevy of minor economic data. Retail sales rose 0.2% month over month in October, which was above economists' estimates."
+            ],
+            "image": "https://s.yimg.com/lo/mysterio/api/9e7131ceec709f4bcd37f6438a62124066746fef921dcc953fbd24ded1a0c74e/lightyear_networkapi/resizefill_w1200%3Bquality_80%3Bformat_webp/https%3A%2F%2Fd29szjachogqwa.cloudfront.net%2Fimages%2F2026-11%2F2dda29db-ce3c-4502-84ce-887560eee328"
+          },
+          {
+            "id": "https://exa.ai/library/news/story/2bl6rvk3mvzpnvpkq1rb5htrr",
+            "title": "Dow Plunges 700 Points as S&P 500 and Nasdaq Fall Ahead of Nvidia Earnings",
+            "url": "https://exa.ai/library/news/story/2bl6rvk3mvzpnvpkq1rb5htrr",
+            "publishedDate": "2026-11-17T20:10:08.000Z",
+            "highlights": [
+              "First reported 2026-11-17 14:42 UTC · last updated 2026-11-17 20:10 UTC · 10 publishers\n...\n- [Dow falls 337 points as Home Depot drops ahead of Nvidia earnings](https://qz.com/dow-falls-337-points-home-depot-nvidia-earnings-111726) · qz.com"
+            ]
+          },
+          {
+            "id": "https://www.cnbc.com/2026/11/17/stocks-moving-the-most-today-live-updates.html",
+            "title": "Stocks moving the most today: Live updates",
+            "url": "https://www.cnbc.com/2026/11/17/stocks-moving-the-most-today-live-updates.html",
+            "publishedDate": "2026-11-17T12:13:14.000Z",
+            "author": "Sarah Min, Fred Imbert",
+            "highlights": [
+              "Updated Tue, Nov 17 2026 3:44 PM EST\n\n# Stocks making the biggest moves Tuesday: Salesforce, Nvidia, SpaceX, Strategy & more\n\nSarah Min\n\nFred Imbert\n\n...\n\nNvidia slipped into negative territory on Tuesday as traders eagerly awaited the company's third-quarter earnings report.\n\nThe embattled chipmaker is slated to release its results after the market close.\n\nSoftware stocks also slipped in the session's sell-off, with Salesforce, Palo Alto Networks and Oracle dropping.\n\nFollow along as CNBC highlights the biggest stock market moves of the day.\n\n28 Min Ago\n\n## Solar ETF tumbles to lowest level since August 2025\n\nThe Invesco Solar ETF (TAN) Add To Watchlist dropped roughly 5% in afternoon trading, sliding to its lowest level since August 2025. \n\nThe Invesco Solar ETF (TAN) on Tuesday\n\nThe fall also places the ETF on pace for its worst session since June 5, 2026.\n\nEnphase Energy, First Solar and SolarEdge dragged the ETF lower, with the three stocks touching at least 52-week lows.\n\nThe declines occur as the Dec. 4 effective date for President Trump's Section 232 tariffs on solar products approaches. \n\n-- Darla Mercado, Gina Francolla\n\n3 Hours Ago\n\n## Nvidia ticks lower ahead of results\n\nGene Medi | Nurphoto | Getty Images\n\nNvidia Add To Watchlist shares flipped negative on the day and were last down more than 1% as its quarterly report loomed. \n\nThe company's third-quarter report, due after Tuesday's market close, comes less than a week after co-founder Jensen Huang resigned as CEO. \n\nNvidia on Tuesday\n\nHuang, in his first public statement since leaving the helm, also indicated in a written statement obtained by CNBC's David Faber that he would be willing to come back as CEO. \n\n\"If the Board of Directors decides that my return is in the best interest of our shareholders, our employees, the company, and America, I would be honored to answer these calls and return as CEO,\" Huang said in the statement.\n\n-- Darla Mercado, Kif Leswing\n\n3 Hours Ago\n\n## Software stocks tumble as traders shun tech\n\nSoftware companies were caught up in Tuesday's sell off, with the iShares Expanded Tech-Software Sector ETF (IGV) Add To Watchlist down more than 3% on the day.\n\nThe iShares Expanded Tech-Software Sector ETF (IGV) in Tuesday's trading\n\nSalesforce Add To Watchlist plummeted nearly 10%, while cybersecurity play Palo Alto Networks Add To Watchlist and cloud platform service giant Oracle Add To Watchlist both lost 4%. Microsoft Add To Watchlist and Palantir Add To Watchlist slid 3%.\n\n— Darla Mercado\n\n3 Hours Ago\n\n## SpaceX rises on Bloomberg report that some of its debt could soon go on sale\n\nElon Musk's SpaceX Add To Watchlist rose Tuesday afternoon following a Bloomberg report that a tranche of the company's $40 billion in debt financing could be sold to investors as early as this week.\n\nBloomberg, which cited people with knowledge of the matter, said that around $4 billion of these bonds could go on the market in the approaching days. SpaceX aims to use this debt sale to cover the cost of artificial intelligence chips, Bloomberg reported.\n\nSpaceX was last up almost 3% on the day.\n\nSpaceX on Tuesday\n\n— Darla Mercado\n\n5\n\n...\n\n## TD Cowen names Coca-Cola top pick for 2027\n\n...\n\nShares of Coca-Cola Add To Watchlist are down a fraction after TD Cowen named the soft drink maker its best idea for 2027, citing pricing power, global reach and Coke's franchise bottling system. \n\nTD Cowen reiterated Coke's buy rating and raised its 12-month price target to $112 from $104, implying roughly 13% upside from Monday's close.\n\n...\n\n## Bernstein downgrades PepsiCo, sees 13% downside\n\n...\n\nShare of PepsiCo Add To Watchlist were down nearly 2% after Bernstein downgraded the Gatorade and Frito-Lay snack maker to underperform from market-perform. The brokerage and researcher also cut its price target to $128, implying roughly 13% downside from Monday's close, from an earlier $131.\n\nBernstein also cut its 2027 adjusted earnings estimate to $8.27 per share from $8.49. \"We forecast a miss on EPS expectations over the next 12 months, driven by underperformance in North America,\" Bernstein analyst Cristian Rios wrote Tuesday.\n\nPepsi stock price - YTD\n\nRios said North American snack volumes will decline in 2027 as potato and tortilla chip consumption falls, leading Pepsi to continue to lose market share. \"Limited pricing power and sustained inflation will eat into productivity savings and pressure margins,\" the analyst said.\n\n...\n\n## Nucor upgraded to overweight with higher price target at Morgan Stanley \n\nCharlotte, N.C.-based steelmaker Nucor Add To Watchlist won an upgrade to overweight from equal weight, and an increased price target of $310 from $300, at Morgan Stanley by analysts led by Carlos De Alba, who said Nucor will benefit from stronger free cash flow as capital investment spending declines.\n\nThe Wall Street investment bank, which also raised its price target on Steel Dynamics Add To Watchlist to $270 from $260, lifted its near term steel price forecasts due to tight supplies probably keeping hot rolled coil prices above $1,100 per short ton in the first half of 2027.\n\n...\n\nBoth Nucor and Steel Dynamics are about 1% higher in early trading Tuesday.\n\n...\n\n## JPMorgan downgrades Tyson Foods after sharp rally\n\nJPMorgan downgraded Tyson Foods Add To Watchlist to neutral from overweight, saying its 23% rally over two months leaves limited upside. The bank raised the price target to $65, implying about 2% upside from Monday's close.\n\n...\n\n## Data center and infrastructure stocks rally\n\nData center and infrastructure stocks rallied after a Reuters report, citing people briefed on the matter, said the Trump administration plans to block imports of Chinese data center equipment.\n\nShares of photonic technology companies rallied following the news. Here are some of the moves. \n\nCoherent\n\n— Sarah Min \n\n## Sellas Life Sciences rises after cancer vaccine trial results\n\nShares of biopharmaceutical company Sellas Life Sciences Add To Watchlist rose more than 7% after it reported positive trial results for one of its immunotherapeutic cancer vaccines. \n\nGalinpepimut-S, which is designed to treat acute myeloid leukemia, in a phase 3 trial met its primary endpoint for overall survival. The company added it reduced the risk of death by 41% and showed no new safety risks compared to previous trials. \n\nSellas Life Sciences 3-month. \n\n— Davis Giangiulio\n\n## Deutsche Bank shares slip after internal files leak points to suspicious activity at bank\n\nShares for Deutsche Bank fell over 2.5% after whistleblowers leaked about 15 million internal files from the bank, exposing alleged, systemic failures and suspicious payments linked to convicted sex offender Jeffrey Epstein. \n\n— Ananya Chetia\n\n9 Hours Ago\n\n## Intel slides after Nvidia cuts its stake\n\nIntel slipped after Nvidia Add To Watchlist disclosed that it cut its stake in the company.\n\nNvidia said in a regulatory filing that it trimmed its stake by 25% in the quarter ending Sept. 30, selling nearly $5.5 billion in shares. The move lowers Nvidia's holding in Intel to 161 million shares from 215 million.\n\n— Darla Mercado\n\n## Nvidia shares rise ahead of earnings \n\nNvidia shares gained 1% ahead of the chipmaker's earnings, and following days of decline amid the fallout from Jensen Huang's resignation as CEO. Huang resigned from Nvidia, the company's board announced on Thursday, following reports that he had a relationship with a woman U.S. intelligence reportedly believes to be a Chinese spy. Huang told employees he had an affair in an email on Nov. 8.\n\n— Kai Nicol-Schwarz and Sarah Min\n\n## Home Depot falls after CEO change\n\nHome Depot Add To Watchlist shares were down nearly 2% after the home improvement giant announced Richard McPhail would take over as CEO from Ted Decker, effective next week. Decker, who will remain as chairman, had been on medical leave since August. \n\nDisney Add To Watchlist reported fiscal fourth-quarter results that beat the Street, sending the stock higher by nearly 2%. \n\nThe media giant earned an adjusted $1.77 per share on revenue of $25.95 billion. Analysts polled by LSEG expected a profit of $1.67 per share on revenue of $25.18 billion. The company also announced it's targeting $3 billion in cost cuts by fiscal 2029."
+            ],
+            "image": "https://image.cnbcfm.com/api/v1/image/108305564-1778591195464-gettyimages-2273088843-NVIDIA_Nemotron_3_Nano_Omni.jpeg?v=1787612443&w=1920&h=1080"
+          },
+          {
+            "id": "https://live.euronext.com/en/financial-news/stocks-fall-nvidia-focus-oil-ticks",
+            "title": "Stocks fall with Nvidia in focus, oil ticks up | live",
+            "url": "https://live.euronext.com/en/financial-news/stocks-fall-nvidia-focus-oil-ticks",
+            "publishedDate": "2026-11-17T18:12:08.000Z",
+            "highlights": [
+              "# Stocks fall with Nvidia in focus, oil ticks up \n\n Tue 17/11/2026 - 19:12 \n\nBy Rodrigo Campos and Johann M Cherian\n\nNov 17 (Reuters) - Stocks fell across the globe on Tuesday, weighed by tech shares, as investors geared up for AI bellwether Nvidia's first earnings report without Jensen Huang at the helm.\n\nThe dollar dipped against a basket of peers but was still near a 19-month high, while crude oil edged up with traders jittery amid continued tanker attacks. \n\nStocks in Europe ended lower as Deutsche Bank fell 6% following media reports based on leaked internal records that renewed scrutiny of the lender's past dealings with clients, including Russian oligarchs, sex offender Jeffrey Epstein, and US President Donald Trump.\n\nTraders also braced for Nvidia's results after the US market close, seen as crucial to the future of the AI-fuelled bull market, and Anthropic's highly anticipated public debut on Thursday.\n\nHuang's resignation as CEO following reports of an affair with a suspected informant for China has pressured technology shares from Tokyo to New York for more than a week. Washington said overnight it would further restrict China's access to advanced AI chips from companies, further weighing on the sector.\n\n\"I can't imagine (Nvidia) going to come out and say something extremely positive about guidance. I'd be really surprised if that happens,\" said Robert Pavlik, senior portfolio manager at Dakota Wealth. Nvidia shares fell 1.6%.\n\nThe Dow Jones Industrial Average fell 1.62%, to 50,770.74, the S&P 500 fell 1.39%, to 7,312.79 and the Nasdaq Composite fell 1.50%, to 24,141.64. \n\nMSCI's gauge of stocks across the globe fell 15.59 points, or 1.43%, to 1,077.10. The pan-European STOXX 600 index fell 1.68%, while emerging market stocks fell 19.85 points, or 1.32%, to 1,487.66. MSCI's broadest index of Asia-Pacific shares outside Japan closed lower by 1.48%, while Japan's Nikkei fell 1.34%.\n\nDOLLAR OFF BUT STRONG\n\nThe US dollar index touched a fresh 19-month high before ticking lower on the day, rose to its strongest level since April 2025 on Tuesday, helped by growing bets on more aggressive Federal Reserve rate hikes as inflationary pressures in the world's largest economy persist. \n\nThe dollar index fell 0.16% to 103.41, with the euro up 0.18% at $1.1016. Against the Japanese yen, the dollar weakened 0.09% to 159.26.\n\nIn commodities, oil prices inched higher as traders were concerned about continued attacks on tankers in the region.\n\nUS crude rose 0.96% to $86.51 a barrel and Brent rose to $93.26 per barrel, up 0.89% on the day."
+            ]
+          },
+          {
+            "id": "https://exa.ai/library/news/story/h22jjqpw7dynwgch8c9ljrc7v",
+            "title": "Global stocks fall as Nvidia earnings, Anthropic debut put AI rally to test | Markets News - Business Standard",
+            "url": "https://exa.ai/library/news/story/h22jjqpw7dynwgch8c9ljrc7v",
+            "publishedDate": "2026-11-17T21:02:03.000Z",
+            "highlights": [
+              "debut put AI rally to test \\| Markets News - Business ... · business-standard.com\n\nFirst reported 2026-11-16 12:00 UTC · last updated 2026-11-17 21:02 UTC · 26 publishers"
+            ]
+          }
+        ],
+        "searchTime": 1276.9,
+        "costDollars": {
+          "total": 0.007,
+          "search": {
+            "neural": 0.007
+          }
+        }
+      }
+    }
+  ]
+}
