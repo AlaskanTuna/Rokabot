@@ -77,6 +77,8 @@ interface GenerateOptions extends Omit<TurnContextOptions, 'memoryScope'> {
   memory: boolean
   /** Link URLs from the triggering message's own embeds, registered under the `embed` origin. */
   embedUrls?: string[]
+  /** The speaker's own text without the reply quote, embed descriptions, forwarded or container text. */
+  speakerText?: string
   turnEntryWork?: TurnEntryWork
   mediaAttachments?: MediaAttachment[]
   skippedAttachments?: number
@@ -604,9 +606,9 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   ]
 
   // A who-is-this question about an image gets its Lens hints before the model answers, so a skipped tool call
-  // cannot leave her guessing (#526).
-  const imageCount = (mediaAttachments ?? []).filter((attachment) => attachment.contentType.startsWith('image/')).length
-  const identifyNote = await autoIdentifyNote(userMessage, imageCount)
+  // cannot leave her guessing (#526). Only the speaker's own text counts: the reply quote and forwarded text
+  // belong to someone else, and must never trigger a lookup by themselves.
+  const identifyNote = await autoIdentifyNote(options.speakerText ?? userMessage)
   const identifyParts = identifyNote ? [{ text: identifyNote }] : []
 
   // Keep attachment notices in both ordinary and safety-rebuilt turns.

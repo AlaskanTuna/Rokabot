@@ -93,4 +93,6 @@ export function clearTunableEnvVars() {
   vi.stubEnv('EXA_API_KEY', '')
   vi.stubEnv('FORMAT_MODE', '')
   vi.stubEnv('FORMAT_REPAIR', '')
+  vi.stubEnv('IMAGE_ID_MONTHLY_CAP', '')
+  vi.stubEnv('IMAGE_ID_AUTO_DAILY_CAP', '')
 }

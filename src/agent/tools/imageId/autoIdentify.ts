@@ -1,7 +1,9 @@
 /** Runs identify_image before Roka answers when a turn shows an image and asks who or what it is. */
 
 import { logger } from '../../../utils/logger.js'
+import { turnImages } from '../../media/turnImages.js'
 import { identifyImage, identifyImageAvailable } from './identifyImage.js'
+import { lensAllowed } from './lensLedger.js'
 
 /** Footer key for a lookup the turn ran on its own, so the reply says it was automatic. */
 export const AUTO_IDENTIFY_TOOL_NAME = 'identify_image_auto'
@@ -16,12 +18,22 @@ export function asksWhoIsPictured(message: string, imageCount: number): boolean 
 }
 
 /**
- * The automatic lookup for the turn's first image, as a note for Roka's message, or null when the turn does not
- * ask or the tool is unavailable. Runs inside the turn's image, source and budget scopes, like the tool itself.
+ * The automatic lookup for the turn's first identifying image, as a note for Roka's message, or null when
+ * the turn does not ask or the tool is unavailable. Tests only the speaker's own text — the caller strips
+ * the reply quote, embed descriptions, forwarded text and container text before calling. Runs inside the
+ * turn's image, source and budget scopes, like the tool itself.
  */
-export async function autoIdentifyNote(message: string, imageCount: number): Promise<string | null> {
-  if (!identifyImageAvailable() || !asksWhoIsPictured(message, imageCount)) return null
-  const result = await identifyImage({ attachment: 1 })
-  logger.info({ imageCount }, 'Identified the first image before the reply')
-  return `[A reverse-image lookup already ran for image 1; do not call identify_image again for it.\n${result}]`
+export async function autoIdentifyNote(
+  message: string,
+  fetchImpl: typeof fetch = globalThis.fetch
+): Promise<string | null> {
+  if (!identifyImageAvailable() || !lensAllowed('auto')) return null
+  // A link preview is the article's furniture, not the question: look past it at what was actually shared.
+  const images = turnImages()
+  const found = images.findIndex((image) => image.origin !== 'link_preview')
+  if (found === -1 || !asksWhoIsPictured(message, 1)) return null
+  const attachment = found + 1
+  const result = await identifyImage({ attachment }, fetchImpl, 'auto')
+  logger.info({ imageCount: images.length, attachment }, 'Identified an image before the reply')
+  return `[A reverse-image lookup already ran for image ${attachment}; do not call identify_image again for it.\n${result}]`
 }
