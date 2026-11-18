@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.9.0](https://github.com/AlaskanTuna/Rokabot/compare/v0.8.4...v0.9.0) (2026-11-18)
+
+
+### Features
+
+* **agent:** dig deeper inside search_web and read a linked page on request ([#533](https://github.com/AlaskanTuna/Rokabot/issues/533)) ([7ee36ac](https://github.com/AlaskanTuna/Rokabot/commit/7ee36ac9e8c81e73ab9c22cb6768f8154b3f38c1))
+* **agent:** read pages and keep every source within a per-turn search budget ([#528](https://github.com/AlaskanTuna/Rokabot/issues/528)) ([7b21e8b](https://github.com/AlaskanTuna/Rokabot/commit/7b21e8bfd6d7318607eca2bdacca4b113fb8bdc4))
+
+
+### Bug Fixes
+
+* **agent:** count a search field as covered only when a passage supports it ([#535](https://github.com/AlaskanTuna/Rokabot/issues/535)) ([fb4b047](https://github.com/AlaskanTuna/Rokabot/commit/fb4b0474d494503962b9ed6508df720379bec8c8))
+* **agent:** let ModelScope models think on turns that offer tools ([#545](https://github.com/AlaskanTuna/Rokabot/issues/545)) ([34734f2](https://github.com/AlaskanTuna/Rokabot/commit/34734f2fa93a94b70316c698d9ac71759e1e7204))
+* **agent:** route anime questions by the fields Jikan returns ([#527](https://github.com/AlaskanTuna/Rokabot/issues/527)) ([fab0ca1](https://github.com/AlaskanTuna/Rokabot/commit/fab0ca19a47df0d097ae9151fe024bec5022a778))
+* **agent:** type search fields and always return the cited brief ([#540](https://github.com/AlaskanTuna/Rokabot/issues/540)) ([6c86fb7](https://github.com/AlaskanTuna/Rokabot/commit/6c86fb7b588c64222c419b0729f8a797038e7bf6))
+* **config:** fall back to Gemini Flash while ModelScope models skip tool calls ([#539](https://github.com/AlaskanTuna/Rokabot/issues/539)) ([b562c06](https://github.com/AlaskanTuna/Rokabot/commit/b562c06b989854aa82387ef7dfd92c7cf31e0ec4))
+* **deploy:** retry the image pull on the Pi ([#544](https://github.com/AlaskanTuna/Rokabot/issues/544)) ([7f54b60](https://github.com/AlaskanTuna/Rokabot/commit/7f54b6065ade27fca88d6c842350186f6c8b8e6b))
+
 ## [0.8.4](https://github.com/AlaskanTuna/Rokabot/compare/v0.8.3...v0.8.4) (2026-11-15)
 
 
