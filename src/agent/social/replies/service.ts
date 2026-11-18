@@ -68,7 +68,7 @@ export class ReplyReader {
     this.warn =
       dependencies.warn ??
       ((platform, reason) => logger.warn({ platform, reason }, 'Social post replies lookup failed'))
-    this.youtubeApiKey = dependencies.youtubeApiKey ?? (() => process.env.YOUTUBE_API_KEY)
+    this.youtubeApiKey = dependencies.youtubeApiKey ?? (() => process.env.GCP_API_KEY)
   }
 
   setYtDlpAvailable(available: boolean): void {

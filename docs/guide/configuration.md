@@ -36,7 +36,7 @@ Secrets, `config.yml` and environment overrides merge in `src/config.ts`, which 
 | `TYPESAFE_API_KEY`   | No                                                                                                                   | Jev judgments. Without it, the main model judges passive memory when an `llm:` block exists, and passive memory drops every episode when it does not. |
 | `TAVILY_API_KEY`     | No                                                                                                                   | Web search when `search.provider` is `tavily`. Without it, the search tool answers that web search is not configured.                                 |
 | `EXA_API_KEY`        | No                                                                                                                   | Web search when `search.provider` is `exa`. Without it, the search tool answers that web search is not configured.                                    |
-| `YOUTUBE_API_KEY`    | No                                                                                                                   | Top comments on linked YouTube videos. Without it, YouTube replies report as unavailable.                                                             |
+| `GCP_API_KEY`        | No                                                                                                                   | Top comments on linked YouTube videos. Without it, YouTube replies report as unavailable.                                                             |
 
 Other environment variables:
 
