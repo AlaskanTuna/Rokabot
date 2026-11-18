@@ -193,7 +193,7 @@ export const readRepliesTool = new FunctionTool({
 export const identifyImageTool = new FunctionTool({
   name: 'identify_image',
   description:
-    "Find who or what is in one of this turn's images through reverse-image search. Returns unverified match hints: name something only when a match agrees with what you see, and before naming an exact product or edition, confirm a maker or retailer listing with search_web.",
+    "Find who or what is in one of this turn's images through reverse-image search. Returns unverified match hints: name something only when a match agrees with what you see, and before naming an exact product or edition, confirm a maker or retailer listing with search_web. Hints cover the main subject only. Never look up or name real people from a photo.",
   parameters: z.object({
     attachment: z
       .number()

@@ -11,7 +11,9 @@ import { fakeFetch, json } from '../../../../tests/harness/fakeFetch.js'
 import type { MediaAttachment } from '../../media/attachments.js'
 import { registerTurnImages, withTurnImages } from '../../media/turnImages.js'
 import { withSearchSources } from '../../searchSources.js'
-import { asksWhoIsPictured, autoIdentifyNote } from '../imageId/autoIdentify.js'
+import { autoIdentifyNote, planImageLookup, prefilter } from '../imageId/autoIdentify.js'
+import { recordLensSearch } from '../imageId/lensLedger.js'
+import type { GateJudge, GateVerdict } from '../imageId/lookupGate.js'
 import { withTurnBudget } from '../search/turnBudget.js'
 
 beforeEach(() => {
@@ -39,29 +41,182 @@ function autoScopes(images: MediaAttachment[], run: () => Promise<string | null>
   )
 }
 
-describe('asksWhoIsPictured', () => {
+function planScopes<T>(images: MediaAttachment[], run: () => Promise<T>): Promise<T> {
+  return withTurnBudget(() =>
+    withSearchSources(() =>
+      withTurnImages(() => {
+        registerTurnImages(images)
+        return run()
+      })
+    )
+  )
+}
+
+function verdict(overrides: Partial<GateVerdict> = {}): GateVerdict {
+  return { asks: true, target: 1, subject: 'figure_or_merch', ...overrides }
+}
+
+const fireJudge: GateJudge = async () => verdict()
+const denyJudge: GateJudge = async () => null
+const throwingJudge: GateJudge = async () => {
+  throw new Error('gate is down')
+}
+
+describe('prefilter', () => {
   it.each([
-    'Roka who is this',
-    'Roka look again who is this',
-    'U sure? Same person in this image, who is this?',
-    "what's this figure?",
-    'which character is she',
-    'can you identify this plush',
-    'これは誰？',
-    'なにこれ'
-  ])('fires on %s with an image', (message) => {
-    expect(asksWhoIsPictured(message, 1)).toBe(true)
+    // Fire rows: the text alone passes, the gate decides the rest.
+    ['Roka who is this', 1, true],
+    ['Roka what about this', 1, true],
+    ['roka wtf is that', 1, true],
+    ['wat dis', 1, true],
+    ['whos she', 1, true],
+    ['which anime', 1, true],
+    ['how to do these', 1, true],
+    ['where is this place', 1, true],
+    ['when did this come out', 1, true],
+    ['why is he like that', 1, true],
+    ['siapa ni', 1, true],
+    ['apa ni', 1, true],
+    ['ni apa', 1, true],
+    ['这是什么', 1, true],
+    ['谁', 1, true],
+    ['これ誰？', 1, true],
+    ['なにこれ', 1, true],
+    ['U sure? same person in this image', 1, true],
+    ['u sure?', 1, true],
+    ['look again', 1, true],
+    ['and this one?', 1, true],
+    ['who is the 2nd one', 2, true],
+    ['kiri siapa', 2, true],
+    ['who are both', 2, true],
+    ['who is this', 1, true],
+    ['what does this say', 1, true],
+    ['what is this chart', 1, true],
+    ['what time is the event tmr', 1, true],
+    ['what is this', 1, true],
+    ['which anime is this gif from', 1, true],
+    // No-fire rows the text alone decides.
+    ['u sure?', 0, false],
+    ['look again', 0, false],
+    ['Roka', 1, false],
+    ['Roka thoughts?', 1, false],
+    // Broad on purpose: "what" passes the prefilter, and the gate turns a share like this away.
+    ['look what I got', 1, true],
+    ['cute right?', 1, false],
+    ['explain this meme', 1, false],
+    ['who was that girl I sent earlier', 0, false],
+    ['what is this', 0, false],
+    ['who is this', 0, false],
+    ['Roka', 1, false],
+    ['who is this <@123456>', 1, false],
+    ['rate my selfie', 1, false],
+    ['what is this pfp', 1, false]
+  ])('prefilter(%s, %d) is %s', (text, count, expected) => {
+    expect(prefilter(text, count)).toBe(expected)
+  })
+})
+
+describe('planImageLookup', () => {
+  it('fires image 2 for "who is the 2nd one" over two uploads', async () => {
+    const judge: GateJudge = async () => verdict({ target: 2, subject: 'figure_or_merch' })
+    const plan = await planScopes([image('https://cdn.example/a.png'), image('https://cdn.example/b.png')], () =>
+      planImageLookup('who is the 2nd one', judge, globalThis.fetch, 'on')
+    )
+    expect(plan?.attachment).toBe(2)
   })
 
-  it.each(['Roka', 'Roka look at this', 'cute right?', 'I bought this today'])(
-    'stays quiet on %s, leaving the call to Roka',
-    (message) => {
-      expect(asksWhoIsPictured(message, 1)).toBe(false)
-    }
-  )
+  it('fires image 1 for "kiri siapa"', async () => {
+    const plan = await planScopes([image('https://cdn.example/a.png'), image('https://cdn.example/b.png')], () =>
+      planImageLookup('kiri siapa', fireJudge, globalThis.fetch, 'on')
+    )
+    expect(plan?.attachment).toBe(1)
+  })
 
-  it('never fires without an image', () => {
-    expect(asksWhoIsPictured('who is this', 0)).toBe(false)
+  it('clamps the gate target into the eligible range', async () => {
+    const high: GateJudge = async () => verdict({ target: 99, subject: 'product' })
+    const highPlan = await planScopes([image('https://cdn.example/a.png'), image('https://cdn.example/b.png')], () =>
+      planImageLookup('which one', high, globalThis.fetch, 'on')
+    )
+    expect(highPlan?.attachment).toBe(2)
+    const low: GateJudge = async () => verdict({ target: 0, subject: 'product' })
+    const lowPlan = await planScopes([image('https://cdn.example/a.png'), image('https://cdn.example/b.png')], () =>
+      planImageLookup('which one', low, globalThis.fetch, 'on')
+    )
+    expect(lowPlan?.attachment).toBe(1)
+  })
+
+  it('does not fire a selfie: real_person never fires', async () => {
+    const judge: GateJudge = async () => verdict({ subject: 'real_person' })
+    const plan = await planScopes([image('https://cdn.example/selfie.png')], () =>
+      planImageLookup('who is this', judge, globalThis.fetch, 'on')
+    )
+    expect(plan).toBeNull()
+  })
+
+  it('does not fire a chat screenshot', async () => {
+    const judge: GateJudge = async () => verdict({ subject: 'text_or_chat' })
+    const plan = await planScopes([image('https://cdn.example/chat.png')], () =>
+      planImageLookup('what does this say', judge, globalThis.fetch, 'on')
+    )
+    expect(plan).toBeNull()
+  })
+
+  it('does not fire a meme', async () => {
+    const judge: GateJudge = async () => verdict({ subject: 'meme' })
+    const plan = await planScopes([image('https://cdn.example/meme.png')], () =>
+      planImageLookup('what is this', judge, globalThis.fetch, 'on')
+    )
+    expect(plan).toBeNull()
+  })
+
+  it('does not fire when the gate says the text does not ask', async () => {
+    const judge: GateJudge = async () => verdict({ asks: false, subject: 'other' })
+    const plan = await planScopes([image('https://cdn.example/meme.png')], () =>
+      planImageLookup('what time is the event tmr', judge, globalThis.fetch, 'on')
+    )
+    expect(plan).toBeNull()
+  })
+
+  it('does not fire when the gate errors', async () => {
+    const plan = await planScopes([image('https://cdn.example/a.png')], () =>
+      planImageLookup('who is this', denyJudge, globalThis.fetch, 'on')
+    )
+    expect(plan).toBeNull()
+    const thrown = await planScopes([image('https://cdn.example/a.png')], () =>
+      planImageLookup('who is this', throwingJudge, globalThis.fetch, 'on')
+    )
+    expect(thrown).toBeNull()
+  })
+
+  it('in shadow mode fires on the prefilter even when the gate errors', async () => {
+    const plan = await planScopes([image('https://cdn.example/a.png')], () =>
+      planImageLookup('who is this', denyJudge, globalThis.fetch, 'shadow')
+    )
+    expect(plan?.attachment).toBe(1)
+  })
+
+  it('in off mode uses the first eligible image without calling the gate', async () => {
+    const plan = await planScopes(
+      [image('https://cdn.example/preview.jpg', 'link_preview'), image('https://cdn.example/p.png')],
+      () => planImageLookup('who is this', throwingJudge, globalThis.fetch, 'off')
+    )
+    expect(plan?.attachment).toBe(2)
+  })
+
+  it('stays quiet when every image is a link preview, without calling the gate', async () => {
+    const plan = await planScopes([image('https://cdn.example/preview.jpg', 'link_preview')], () =>
+      planImageLookup('what is this', throwingJudge, globalThis.fetch, 'on')
+    )
+    expect(plan).toBeNull()
+  })
+
+  it('stays quiet when the shared ledger is spent, without calling the gate', async () => {
+    const now = Date.now()
+    for (let index = 0; index < 230; index++) recordLensSearch('auto', now)
+    const plan = await planScopes([image('https://cdn.example/p.png')], () =>
+      planImageLookup('who is this', throwingJudge, globalThis.fetch, 'on')
+    )
+    expect(plan).toBeNull()
   })
 })
 
@@ -69,7 +224,7 @@ describe('autoIdentifyNote', () => {
   it('does not fire on a bare name when the identity question sits in the quoted reply', async () => {
     const { fetchImpl, calls } = fakeFetch(() => json({ visual_matches: [{ title: 'Someone' }] }))
     const note = await autoScopes([image('https://cdn.example/p.png', 'reply')], () =>
-      autoIdentifyNote('Roka', fetchImpl)
+      autoIdentifyNote('Roka', fetchImpl, throwingJudge, 'on')
     )
     expect(note).toBeNull()
     expect(calls).toHaveLength(0)
@@ -80,7 +235,7 @@ describe('autoIdentifyNote', () => {
       json({ visual_matches: [{ title: 'Roka Nendoroid', link: 'https://shop.example/r', source: 'Shop' }] })
     )
     const note = await autoScopes([image('https://cdn.example/p.png', 'upload')], () =>
-      autoIdentifyNote('who is this', fetchImpl)
+      autoIdentifyNote('who is this', fetchImpl, fireJudge, 'on')
     )
     expect(note).toContain('Roka Nendoroid')
     expect(calls).toHaveLength(1)
@@ -90,7 +245,7 @@ describe('autoIdentifyNote', () => {
     const { fetchImpl } = fakeFetch(() => json({ visual_matches: [] }))
     const note = await autoScopes(
       [image('https://cdn.example/preview.jpg', 'link_preview'), image('https://cdn.example/p.png', 'upload')],
-      () => autoIdentifyNote('who is this', fetchImpl)
+      () => autoIdentifyNote('who is this', fetchImpl, fireJudge, 'on')
     )
     expect(note).toContain('image 2')
   })
@@ -98,7 +253,7 @@ describe('autoIdentifyNote', () => {
   it('stays quiet when every image is a link preview', async () => {
     const { fetchImpl, calls } = fakeFetch(() => json({ visual_matches: [{ title: 'Someone' }] }))
     const note = await autoScopes([image('https://cdn.example/preview.jpg', 'link_preview')], () =>
-      autoIdentifyNote('who is this', fetchImpl)
+      autoIdentifyNote('who is this', fetchImpl, throwingJudge, 'on')
     )
     expect(note).toBeNull()
     expect(calls).toHaveLength(0)

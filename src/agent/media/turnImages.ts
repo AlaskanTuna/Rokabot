@@ -10,10 +10,16 @@ export interface TurnImage {
 }
 
 const imagesForTurn = new AsyncLocalStorage<TurnImage[]>()
+const speakerTextForTurn = new AsyncLocalStorage<string>()
 
 /** Opens one turn's image registry. Entered beside withSearchSources in turnPipeline.ts. */
 export function withTurnImages<T>(run: () => T): T {
   return imagesForTurn.run([], run)
+}
+
+/** Carries the speaker's own request text beside the image registry, so the model-called identify_image path can screen it. Entered in runModelTurn. */
+export function withTurnSpeakerText<T>(text: string, run: () => T): T {
+  return speakerTextForTurn.run(text, run)
 }
 
 /** Keeps the urls of the turn's image attachments, in message order. A safe no-op with no turn scope open. */
@@ -35,4 +41,9 @@ export function turnImageUrl(index: number): string | undefined {
 /** The turn's images in message order, or an empty list with no turn scope open. */
 export function turnImages(): TurnImage[] {
   return (imagesForTurn.getStore() ?? []).map((image) => ({ ...image }))
+}
+
+/** The speaker's own request text for the turn, or undefined with no turn scope open. */
+export function turnSpeakerText(): string | undefined {
+  return speakerTextForTurn.getStore()
 }

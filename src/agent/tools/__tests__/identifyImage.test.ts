@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+const gateMocks = vi.hoisted(() => ({ judgeImageLookup: vi.fn() }))
+
+vi.mock('../imageId/lookupGate.js', () => ({ judgeImageLookup: gateMocks.judgeImageLookup }))
+
 // config reads the key at import, so it is set before any module that loads config.
 vi.hoisted(() => {
   process.env.SERPAPI_API_KEY = 'test-key'
@@ -7,16 +11,25 @@ vi.hoisted(() => {
 import { fakeFetch, json } from '../../../../tests/harness/fakeFetch.js'
 import { config } from '../../../config.js'
 import { closeDb, getDb } from '../../../storage/database.js'
-import { registerTurnImages, withTurnImages } from '../../media/turnImages.js'
+import { registerTurnImages, withTurnImages, withTurnSpeakerText } from '../../media/turnImages.js'
 import { resolveSource, withSearchSources } from '../../searchSources.js'
-import { LENS_EXHAUSTED_TEXT, identifyImage } from '../imageId/identifyImage.js'
+import {
+  GATE_UNAVAILABLE_TEXT,
+  LENS_EXHAUSTED_TEXT,
+  REAL_PERSON_REFUSAL_TEXT,
+  identifyImage
+} from '../imageId/identifyImage.js'
 import { lensCacheKey, recordLensSearch, storeLens } from '../imageId/lensLedger.js'
+import { judgeImageLookup } from '../imageId/lookupGate.js'
 import { trySpend, withTurnBudget } from '../search/turnBudget.js'
 import { SEARCH_TEXT } from '../search/types.js'
 
 beforeEach(() => {
   process.env.ROKABOT_DB_PATH = ':memory:'
   getDb()
+  gateMocks.judgeImageLookup.mockReset()
+  // Existing tests drive the tool directly and expect a Lens answer: the gate clears them by default.
+  gateMocks.judgeImageLookup.mockResolvedValue({ asks: true, target: 1, subject: 'figure_or_merch' })
 })
 
 afterEach(() => {
@@ -29,10 +42,12 @@ afterEach(() => {
 function scopes<T>(imageUrl: string, run: () => T): T {
   return withTurnBudget(() =>
     withSearchSources(() =>
-      withTurnImages(() => {
-        registerTurnImages([{ url: imageUrl, contentType: 'image/png' }])
-        return run()
-      })
+      withTurnImages(() =>
+        withTurnSpeakerText('who is this', () => {
+          registerTurnImages([{ url: imageUrl, contentType: 'image/png' }])
+          return run()
+        })
+      )
     )
   )
 }
@@ -127,4 +142,60 @@ describe('identify_image', () => {
     const withKey = await import('../index.js')
     expect(withKey.rokaTools.map((tool) => tool.name)).toContain('identify_image')
   }, 20_000)
+})
+
+describe('identify_image model-path privacy gate', () => {
+  function mockVerdict(verdict: unknown) {
+    vi.mocked(judgeImageLookup).mockResolvedValue(verdict as never)
+  }
+
+  it('refuses a real person with zero Lens fetches', async () => {
+    mockVerdict({ asks: true, target: 1, subject: 'real_person' })
+    const { fetchImpl, calls } = fakeFetch(() => json({ visual_matches: [{ title: 'Someone' }] }))
+    const answer = await scopes('https://cdn.example/selfie.jpg', () =>
+      identifyImage({ attachment: 1 }, fetchImpl, 'model')
+    )
+    expect(answer).toBe(REAL_PERSON_REFUSAL_TEXT)
+    expect(calls).toHaveLength(0)
+    expect(judgeImageLookup).toHaveBeenCalledOnce()
+  })
+
+  it('looks up a pictured thing the gate clears', async () => {
+    mockVerdict({ asks: true, target: 1, subject: 'figure_or_merch' })
+    const { fetchImpl, calls } = fakeFetch(() =>
+      json({ visual_matches: [{ title: 'Roka Nendoroid', link: 'https://shop.example/r', source: 'Shop' }] })
+    )
+    const answer = await scopes('https://cdn.example/p.jpg', () => identifyImage({ attachment: 1 }, fetchImpl, 'model'))
+    expect(answer).toContain('Roka Nendoroid')
+    expect(calls).toHaveLength(1)
+  })
+
+  it('fails closed when the gate errors', async () => {
+    vi.mocked(judgeImageLookup).mockResolvedValue(null)
+    const errored = fakeFetch(() => json({ visual_matches: [{ title: 'Someone' }] }))
+    const refused = await scopes('https://cdn.example/p.jpg', () =>
+      identifyImage({ attachment: 1 }, errored.fetchImpl, 'model')
+    )
+    expect(refused).toBe(GATE_UNAVAILABLE_TEXT)
+    expect(errored.calls).toHaveLength(0)
+
+    vi.mocked(judgeImageLookup).mockRejectedValue(new Error('gate is down'))
+    const thrown = fakeFetch(() => json({ visual_matches: [{ title: 'Someone' }] }))
+    const refusedThrow = await scopes('https://cdn.example/p.jpg', () =>
+      identifyImage({ attachment: 1 }, thrown.fetchImpl, 'model')
+    )
+    expect(refusedThrow).toBe(GATE_UNAVAILABLE_TEXT)
+    expect(thrown.calls).toHaveLength(0)
+  })
+
+  it('does not screen the automatic path, which the plan already gated', async () => {
+    mockVerdict({ asks: true, target: 1, subject: 'real_person' })
+    const { fetchImpl, calls } = fakeFetch(() =>
+      json({ visual_matches: [{ title: 'Roka Nendoroid', link: 'https://shop.example/r', source: 'Shop' }] })
+    )
+    const answer = await scopes('https://cdn.example/p.jpg', () => identifyImage({ attachment: 1 }, fetchImpl, 'auto'))
+    expect(answer).toContain('Roka Nendoroid')
+    expect(calls).toHaveLength(1)
+    expect(judgeImageLookup).not.toHaveBeenCalled()
+  })
 })

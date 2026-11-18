@@ -56,7 +56,7 @@ import {
   sessionService,
   suppressSessionRehydration
 } from './session.js'
-import { AUTO_IDENTIFY_TOOL_NAME, autoIdentifyNote } from './tools/imageId/autoIdentify.js'
+import { AUTO_IDENTIFY_TOOL_NAME, noteForPlan, planImageLookup } from './tools/imageId/autoIdentify.js'
 import {
   cancelReminderTool,
   forgetUserTool,
@@ -542,6 +542,9 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   })
   // Handled here so a failure in createTurnContext cannot leave it as an unhandled rejection.
   mediaWork.catch(() => undefined)
+  // The vision gate needs only the speaker text and the turn images, so its downloads and model call
+  // overlap the media watch and context creation instead of waiting behind them. The plan never rejects.
+  const planWork = planImageLookup(options.speakerText ?? userMessage)
   const context = await createTurnContext({ ...options, memoryScope, turnEntryWork, mediaWork })
   const {
     session,
@@ -608,7 +611,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   // A who-is-this question about an image gets its Lens hints before the model answers, so a skipped tool call
   // cannot leave her guessing (#526). Only the speaker's own text counts: the reply quote and forwarded text
   // belong to someone else, and must never trigger a lookup by themselves.
-  const identifyNote = await autoIdentifyNote(options.speakerText ?? userMessage)
+  const identifyNote = await noteForPlan(await planWork)
   const identifyParts = identifyNote ? [{ text: identifyNote }] : []
 
   // Keep attachment notices in both ordinary and safety-rebuilt turns.

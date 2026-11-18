@@ -1041,6 +1041,7 @@ describe('config module', () => {
       { path: 'imageId.monthlyCap', min: 0, max: 100_000 },
       { path: 'imageId.autoDailyCap', min: 0, max: 1000 },
       { path: 'imageId.resetDay', min: 1, max: 28 },
+      { path: 'imageId.gateTimeoutMs', min: 500, max: 15_000 },
       { path: 'gemini.retryBackoffCapMs', min: 1 },
       { path: 'gemini.maxRetries', min: 0 },
       { path: 'gemini.liveMaxRetries', min: 0 },

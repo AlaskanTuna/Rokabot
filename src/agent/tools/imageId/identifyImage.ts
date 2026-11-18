@@ -2,13 +2,14 @@
 
 import { config } from '../../../config.js'
 import { logger } from '../../../utils/logger.js'
-import { turnImageUrl } from '../../media/turnImages.js'
+import { turnImageUrl, turnImages, turnSpeakerText } from '../../media/turnImages.js'
 import { registerSources } from '../../searchSources.js'
 import { trySpend } from '../search/turnBudget.js'
 import { SEARCH_TEXT } from '../search/types.js'
 import { lookupLensImage } from './lens.js'
 import { cachedLens, lensAllowed, lensCacheKey, recordLensSearch, storeLens } from './lensLedger.js'
 import type { LensKind } from './lensLedger.js'
+import { judgeImageLookup } from './lookupGate.js'
 
 export interface IdentifyImageParams {
   attachment?: number
@@ -21,6 +22,12 @@ export function identifyImageAvailable(): boolean {
 
 /** Plain text when the shared ledger is spent; the tool stays listed and just refuses. */
 export const LENS_EXHAUSTED_TEXT = 'Image lookups are used up for now.'
+
+/** Refusal when the turn pictures a real person; the tool stays listed and just refuses. */
+export const REAL_PERSON_REFUSAL_TEXT = "I won't look up photos of real people."
+
+/** Refusal when the privacy gate errored or timed out: it fails closed, but says why. */
+export const GATE_UNAVAILABLE_TEXT = "I couldn't check that image right now."
 
 let lastCapWarnDay = ''
 
@@ -60,6 +67,27 @@ export async function identifyImage(
   const key = lensCacheKey(url)
   const hit = cachedLens(key)
   if (hit !== undefined) return renderMatches(attachment, JSON.parse(hit) as LensMatch[])
+  // The model asked for this lookup herself, so the gate screens only for privacy: a real-person photo
+  // is refused before any Lens call, and a gate that errored fails closed too.
+  if (kind === 'model' && config.imageId.gate === 'on') {
+    let verdict = null
+    try {
+      const eligible = turnImages()
+        .map((image, index) => ({ ...image, turnIndex: index + 1 }))
+        .filter((image) => image.turnIndex === attachment)
+      verdict = await judgeImageLookup(turnSpeakerText() ?? '', eligible, { fetchImpl })
+    } catch {
+      verdict = null
+    }
+    if (verdict === null) {
+      logger.info({ attachment }, 'Refused an image lookup: the gate could not judge it')
+      return GATE_UNAVAILABLE_TEXT
+    }
+    if (verdict.subject === 'real_person') {
+      logger.info({ attachment }, 'Refused a real-person image lookup')
+      return REAL_PERSON_REFUSAL_TEXT
+    }
+  }
   if (!lensAllowed(kind)) {
     const day = new Date().toISOString().slice(0, 10)
     if (day !== lastCapWarnDay) {
