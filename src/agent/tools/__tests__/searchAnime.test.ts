@@ -51,4 +51,45 @@ describe('searchAnime', () => {
       'Failed to search anime'
     )
   })
+
+  it('maps genre names to MyAnimeList genre ids', async () => {
+    const { GENRE_IDS } = await import('../searchAnime.js')
+
+    expect(GENRE_IDS).toEqual({
+      action: 1,
+      adventure: 2,
+      comedy: 4,
+      drama: 8,
+      fantasy: 10,
+      horror: 14,
+      mecha: 18,
+      music: 19,
+      mystery: 7,
+      psychological: 40,
+      romance: 22,
+      'sci-fi': 24,
+      'slice of life': 36,
+      sports: 30,
+      supernatural: 37,
+      suspense: 41
+    })
+  })
+
+  it('sends genres=<id> on /v4/anime when genre is given without a query', async () => {
+    await searchAnime({ genre: 'romance', sort_by: 'score' })
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const calledUrl = fetchMock.mock.calls[0][0] as string
+    expect(calledUrl).toContain('/v4/anime?')
+    expect(calledUrl).toContain('genres=22')
+    expect(calledUrl).not.toContain('q=')
+  })
+
+  it('combines genre with a query keyword', async () => {
+    await searchAnime({ query: 'romance', genre: 'sci-fi' })
+
+    const calledUrl = fetchMock.mock.calls[0][0] as string
+    expect(calledUrl).toContain(`q=${encodeURIComponent('romance')}`)
+    expect(calledUrl).toContain('genres=24')
+  })
 })

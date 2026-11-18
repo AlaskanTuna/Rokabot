@@ -67,10 +67,10 @@ describe('utility FunctionTools', () => {
 
     expect(rokaTools).toHaveLength(14)
     expect(declarations.get('search_anime')?.description).toBe(
-      'Search for anime by title or keyword. ALWAYS use this first for anime questions before trying search_web.'
+      'Search anime catalogue data by title, keyword, or genre: titles, Japanese title, synopsis, score, episodes, type, status, members. Use genre for ranked recommendations by genre. Jikan holds no opinions or "worth it" takes, merch, prices, where to buy, news and announcements, voice cast, manga or source chapters, or events — use search_web for those. When Jikan answers the question fully, answer from it without search_web; when it comes back empty or lacks the asked field, use search_web in the same turn.'
     )
     expect(declarations.get('get_anime_schedule')?.description).toBe(
-      'Get anime airing schedule. ALWAYS use this first for schedule/airing questions before trying search_web. Can check a specific day, the full week, or current season.'
+      'Get anime airing schedule by day, week, season, or anime name: titles, broadcast day and time, score, members, type, episodes, status. Jikan holds no opinions or "worth it" takes, merch, prices, where to buy, news and announcements, voice cast, manga or source chapters, or events — use search_web for those. When the schedule answers the question fully, answer from it without search_web; when it comes back empty or lacks the asked field, use search_web in the same turn. Can check a specific day, the full week, or current season.'
     )
     expect(declarations.get('read_replies')?.description).toContain(
       'and then call it instead of search_web. Never call it just because'
