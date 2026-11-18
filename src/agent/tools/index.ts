@@ -134,14 +134,29 @@ export const getWeatherTool = new FunctionTool({
 export const searchWebTool = new FunctionTool({
   name: 'search_web',
   description:
-    "Look something up on the web. Call this for any specific factual question you are not fully certain of — names, numbers, prices, versions, release dates, availability, local details — and for anything recent or time-sensitive. When you are unsure whether to search, search. Pass fields when they ask for a full list, a specific number or price, or several details about a local place (with local_query in the place's language when it is not English); pass source with a source id (s1, s2, ...) when they ask about a link. Verify population figures, measurements and release dates with `search_web`. For one simple fact, pass `query` alone.",
+    "Look something up on the web. Call this for any specific factual question you are not fully certain of — names, numbers, prices, versions, release dates, availability, local details — and for anything recent or time-sensitive. When you are unsure whether to search, search. Always call this before you state a population, a height, length or distance, or a release date, even when you think you know it. Pass typed fields (a kind plus a subject, with aliases in the place's language for named items) when they ask for a full list, a specific number or price, or several details about a local place (with local_query in the place's language when it is not English); pass source with a source id (s1, s2, ...) when they ask about a link. For one simple fact, pass `query` alone.",
   parameters: z.object({
     query: z.string().describe('Search query'),
     topic: z.enum(['general', 'news']).describe('Search topic. Use news for current events.').optional(),
     max_results: z.number().int().describe('Number of results (1-10). Defaults to 5.').optional(),
     fields: z
-      .array(z.string())
-      .describe('What the answer needs, e.g. ["menu items", "drink prices"]. Runs a deeper lookup.')
+      .array(
+        z.object({
+          kind: z
+            .enum(['list', 'price', 'hours', 'other'])
+            .describe(
+              "What the subject is: 'list' for a menu or attraction list, 'price' for a cost, 'hours' for opening times, 'other' for the rest"
+            ),
+          subject: z.string().describe('What is listed or priced, e.g. "menu", "drinks", "hotcake set", "attractions"'),
+          aliases: z
+            .array(z.string())
+            .describe(
+              `Other names for the subject, the place's language included, e.g. ["ホットケーキセット", "パンケーキ"]`
+            )
+            .optional()
+        })
+      )
+      .describe('What the answer needs, e.g. [{kind: "list", subject: "menu"}]. Runs a deeper lookup.')
       .optional(),
     local_query: z
       .string()

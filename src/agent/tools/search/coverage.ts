@@ -1,5 +1,7 @@
 /** Per-field coverage over collected passages: decides whether the depth loop must keep looking. */
 
+import type { SearchField } from './types.js'
+
 export interface Passage {
   sourceId: string
   heading: string
@@ -9,18 +11,6 @@ export interface Passage {
 export interface FieldAssessment {
   covered: boolean
   support: Passage[]
-}
-
-type FieldKind = 'price' | 'list' | 'other'
-
-type FieldCategory = 'drink' | 'food' | 'dessert'
-
-/** Price wins over list: "drink prices" is a price field. */
-export function fieldKind(field: string): FieldKind {
-  const lowered = field.toLowerCase()
-  if (/price|prices|cost|fee|charge|値段|料金|価格|いくら|yen|¥|円|\$/.test(lowered)) return 'price'
-  if (/menu|item|list|dish|attraction|メニュー/.test(lowered)) return 'list'
-  return 'other'
 }
 
 const DRINK_WORDS = [
@@ -168,6 +158,8 @@ const DESSERT_WORDS = [
   'チョコ'
 ]
 
+type FieldCategory = 'drink' | 'food' | 'dessert'
+
 function categoryWords(category: FieldCategory): readonly string[] {
   if (category === 'drink') return DRINK_WORDS
   if (category === 'food') return FOOD_WORDS
@@ -198,14 +190,8 @@ const GENERIC_WORDS = new Set([
 
 const ALL_ITEM_WORDS: readonly string[] = [...DRINK_WORDS, ...FOOD_WORDS].filter((word) => !GENERIC_WORDS.has(word))
 
-/** The category the field itself names, if any: "drink prices" is about drinks, "food prices" about food. */
-function fieldCategory(field: string): FieldCategory | null {
-  const lowered = field.toLowerCase()
-  if (matchesAny(lowered, DRINK_WORDS)) return 'drink'
-  if (matchesAny(lowered, FOOD_WORDS)) return 'food'
-  if (matchesAny(lowered, DESSERT_WORDS)) return 'dessert'
-  return null
-}
+/** Drink words that name an actual drink: a bare "drink" never counts as one of three named drinks. */
+const DRINK_ITEM_WORDS: readonly string[] = DRINK_WORDS.filter((word) => !GENERIC_WORDS.has(word))
 
 function escapeRegExp(word: string): string {
   return word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -272,14 +258,42 @@ function wordCovered(word: string, hay: string): boolean {
   return false
 }
 
-/** Whether an "other" field is covered by one passage body: every load-bearing word is. */
-function otherCovered(field: string, body: string): boolean {
+/** Every name the field answers to: the subject plus its aliases. */
+function fieldNames(field: SearchField): string[] {
+  return [field.subject, ...(field.aliases ?? [])].filter((name) => name.trim().length > 0)
+}
+
+/** The subject and aliases as one lowercase text, for category detection. */
+function subjectText(field: SearchField): string {
+  return fieldNames(field).join(' ').toLowerCase()
+}
+
+type ListMode = 'drink-items' | 'items' | 'entries'
+
+/** Subjects naming food or drink need named items; anything else ("attractions") needs entry lines. */
+const MENU_LIST = /menu|dish|メニュー|料理/
+
+function listMode(field: SearchField): ListMode {
+  const text = subjectText(field)
+  if (matchesAny(text, DRINK_WORDS)) return 'drink-items'
+  if (matchesAny(text, FOOD_WORDS) || MENU_LIST.test(text)) return 'items'
+  return 'entries'
+}
+
+/** Whether an "other" field is covered by one passage body: every load-bearing word of the subject, or of one alias. */
+function otherCovered(field: SearchField, body: string): boolean {
   const hay = body.toLowerCase()
-  const words = field
-    .toLowerCase()
-    .split(/[^a-z0-9぀-ヿ一-龯]+/)
-    .filter(Boolean)
-  return words.length > 0 && words.every((word) => wordCovered(word, hay))
+  const wordsOf = (text: string): string[] =>
+    text
+      .toLowerCase()
+      .split(/[^a-z0-9぀-ヿ一-龯]+/)
+      .filter(Boolean)
+  const subjectWords = wordsOf(field.subject)
+  if (subjectWords.length > 0 && subjectWords.every((word) => wordCovered(word, hay))) return true
+  return (field.aliases ?? []).some((alias) => {
+    const words = wordsOf(alias)
+    return words.length > 0 && words.every((word) => wordCovered(word, hay))
+  })
 }
 
 const PRICE_SOURCE =
@@ -289,7 +303,7 @@ const PRICE_SOURCE =
 const BIND_WINDOW = 40
 
 /** Splits running text into candidate item segments: bullets, table cells and comma/、 enumerations. */
-const SEGMENT_DELIMITER = /\n|[.!?…。！？；;：:|｜★※●○■◆◇・]|[,，、/／|｜&+＋]|(?:\band\b|\bor\b|\bwith\b)/i
+const SEGMENT_DELIMITER = /\n|[.!?…。！？；;：:|｜★※○●◆◇・]|[,，、/／|｜&+＋]|(?:\band\b|\bor\b|\bwith\b)/i
 
 /** Lines that start a new branch scope: a markdown heading naming a branch, shop or store. Prose that merely mentions one never splits. */
 const BRANCH_HEADING = /^#{1,4}\s.*(?:支店|本店|分店|店舗|店|branch|shop|store)/i
@@ -354,12 +368,12 @@ function pairsInLine(line: string): PricePair[] {
 }
 
 /** The named items of one block: each short segment carrying a food or drink word. */
-function itemsInBlock(block: string): string[] {
+function itemsInBlock(block: string, words: readonly string[] = ALL_ITEM_WORDS): string[] {
   const items: string[] = []
   for (const segment of block.split(SEGMENT_DELIMITER)) {
     const cleaned = normalizeItem(segment)
     if (cleaned.length === 0 || cleaned.length > MAX_ITEM_CHARS) continue
-    if (itemIn(cleaned, ALL_ITEM_WORDS)) items.push(cleaned)
+    if (itemIn(cleaned, words)) items.push(cleaned)
   }
   for (const line of block.split('\n')) {
     for (const pair of pairsInLine(line)) {
@@ -408,42 +422,123 @@ function scopesIn(body: string): Scope[] {
   return scopes
 }
 
-/** Menus and dishes are judged by food and drink names; any other list ("attractions") by its entry lines. */
-const FOOD_LIST = /menu|dish|メニュー|料理/
-
-function listCovered(field: string, scopes: readonly Scope[]): boolean {
-  const category = fieldCategory(field)
-  const words = category ? categoryWords(category) : null
-  if (!words && !FOOD_LIST.test(field.toLowerCase())) return scopes.some((scope) => scope.entries.size >= 3)
-  return scopes.some((scope) => {
-    if (scope.items.size < 3) return false
-    if (!words) return true
-    return [...scope.items].some((item) => itemIn(item, words) !== undefined)
-  })
+function listCovered(field: SearchField, scopes: readonly Scope[]): boolean {
+  const mode = listMode(field)
+  if (mode === 'entries') return scopes.some((scope) => scope.entries.size >= 3)
+  const words = mode === 'drink-items' ? DRINK_ITEM_WORDS : ALL_ITEM_WORDS
+  return scopes.some(
+    (scope) => scope.items.size >= 3 && [...scope.items].filter((item) => itemIn(item, words) !== undefined).length >= 3
+  )
 }
 
-function priceCovered(field: string, scopes: readonly Scope[]): boolean {
-  const category = fieldCategory(field)
-  const need = /\bprices\b|料金|値段|価格/.test(field.toLowerCase()) ? 2 : 1
-  return scopes.some((scope) => {
-    const keys = new Set<string>()
-    for (const pair of scope.pairs) {
-      if (category && pair.category !== category) continue
-      keys.add(pair.key)
+/** A category subject ("drinks", "food") or null when the subject names a specific item. */
+function priceCategory(field: SearchField): 'drink' | 'food' | null {
+  const text = subjectText(field)
+  if (matchesAny(text, DRINK_WORDS)) return 'drink'
+  if (matchesAny(text, FOOD_WORDS)) return 'food'
+  return null
+}
+
+/** Where one name occurs in folded text: Latin words need boundaries with a plural "s" allowed, the rest match by inclusion. */
+function nameSpans(name: string, hay: string): Array<{ start: number; end: number }> {
+  const spans: Array<{ start: number; end: number }> = []
+  if (/^[a-z\s]+$/.test(name)) {
+    const pattern = new RegExp(`\\b${name.split(/\s+/).map(escapeRegExp).join('\\s+')}(?:es|s)?\\b`, 'g')
+    for (const match of hay.matchAll(pattern)) {
+      const start = match.index ?? 0
+      spans.push({ start, end: start + match[0].length })
     }
-    return keys.size >= need
-  })
+  } else {
+    let at = hay.indexOf(name)
+    while (at !== -1) {
+      spans.push({ start: at, end: at + name.length })
+      at = hay.indexOf(name, at + 1)
+    }
+  }
+  return spans
 }
 
 /**
- * Whether one field is covered by the passages, with the passages that evidence it. Titles never count:
- * a result titled "See our menu" carries no items. Coverage is per passage — evidence split across two
- * sources never combines — and for lists per branch scope within it.
+ * A price within 40 characters of one of the names, in one row or clause: a price beside a different
+ * item never pays, so "plain pancake ¥750" never covers a "hotcake set" field.
  */
-export function assessField(field: string, passages: readonly Passage[]): FieldAssessment {
-  const kind = fieldKind(field)
-  if (kind === 'other') {
+function itemPriceIn(piece: string, names: string[]): boolean {
+  const hay = piece.normalize('NFKC').toLowerCase()
+  const lowered = names.map((name) => name.normalize('NFKC').toLowerCase()).filter(Boolean)
+  const prices = [...hay.matchAll(new RegExp(PRICE_SOURCE, 'gi'))].map((match) => {
+    const start = match.index ?? 0
+    return { start, end: start + match[0].length }
+  })
+  if (prices.length === 0) return false
+  const mentions = lowered.flatMap((name) => nameSpans(name, hay))
+  if (mentions.length === 0) return false
+  return prices.some((price) =>
+    mentions.some((mention) => Math.max(price.start, mention.start) - Math.min(price.end, mention.end) <= BIND_WINDOW)
+  )
+}
+
+/** One block as rows or clauses: a long prose line is split so a distant price never pays. */
+function clauses(block: string): string[] {
+  const out: string[] = []
+  for (const line of block.split('\n')) {
+    if (line.length > 200) out.push(...line.split(/(?<=[.!?。！？；;])\s+/))
+    else out.push(line)
+  }
+  return out
+}
+
+function priceCovered(field: SearchField, scopes: readonly Scope[], body: string): boolean {
+  // A price beside the named item pays first, even when the name carries a category word ("hot coffee"):
+  // one pair is enough for a specific item.
+  if (body.split(/\n\s*\n/).some((block) => clauses(block).some((clause) => itemPriceIn(clause, fieldNames(field)))))
+    return true
+  const category = priceCategory(field)
+  if (!category) return false
+  return scopes.some((scope) => {
+    const keys = new Set<string>()
+    for (const pair of scope.pairs) {
+      if (pair.category !== category) continue
+      keys.add(pair.key)
+    }
+    return keys.size >= 2
+  })
+}
+
+/** Words that mark a passage as being about opening times. */
+const HOURS_WORDS = ['hours', 'open', '営業時間']
+
+/** A clock time: 8:00, a range like 8:00～23:00, 8am, or 8時. */
+const TIME_PATTERN = /\d{1,2}:\d{2}(\s*[～~〜\-–—]\s*\d{1,2}:\d{2})?|\d{1,2}\s?(am|pm)|\d{1,2}\s?時/i
+
+function mentionsSubjectOrHours(field: SearchField, body: string): boolean {
+  const folded = body.normalize('NFKC').toLowerCase()
+  if (
+    fieldNames(field).some((name) => {
+      const needle = name.normalize('NFKC').toLowerCase()
+      return needle.length > 0 && folded.includes(needle)
+    })
+  )
+    return true
+  return HOURS_WORDS.some((word) => wordFound(word, folded))
+}
+
+/** An hours field is covered by a time in a passage that mentions the subject or an hours word. */
+function hoursCovered(field: SearchField, body: string): boolean {
+  return TIME_PATTERN.test(body.normalize('NFKC')) && mentionsSubjectOrHours(field, body)
+}
+
+/**
+ * Whether one typed field is covered by the passages, with the passages that evidence it. Titles never
+ * count: a result titled "See our menu" carries no items. Coverage is per passage — evidence split across
+ * two sources never combines — and for lists per branch scope within it.
+ */
+export function assessField(field: SearchField, passages: readonly Passage[]): FieldAssessment {
+  if (field.kind === 'other') {
     const support = passages.filter((passage) => otherCovered(field, passage.body))
+    return { covered: support.length > 0, support }
+  }
+  if (field.kind === 'hours') {
+    const support = passages.filter((passage) => hoursCovered(field, passage.body))
     return { covered: support.length > 0, support }
   }
   const ranked: Array<{ passage: Passage; signals: number }> = []
@@ -455,34 +550,49 @@ export function assessField(field: string, passages: readonly Passage[]): FieldA
       0
     )
     if (signals > 0) ranked.push({ passage, signals })
-    if (kind === 'list' ? listCovered(field, scopes) : priceCovered(field, scopes)) covered = true
+    if (field.kind === 'list' ? listCovered(field, scopes) : priceCovered(field, scopes, passage.body)) covered = true
   }
   // Strongest evidence first, so the brief cites the covering passage before a partial one from the same source.
   ranked.sort((a, b) => b.signals - a.signals)
   return { covered, support: ranked.map(({ passage }) => passage) }
 }
 
-/** The blocks of a passage body that evidence a field, for the brief: item blocks, pair lines, or word hits. */
-export function relevantBlocks(field: string, body: string): string[] {
-  const kind = fieldKind(field)
-  // A menu is evidenced by named food and drink; entry lines count only for other lists.
-  const entriesCount = kind === 'list' && !fieldCategory(field) && !FOOD_LIST.test(field.toLowerCase())
+/** The blocks of a passage body that evidence a field, for the brief: item blocks, pair lines, times, or word hits. */
+export function relevantBlocks(field: SearchField, body: string): string[] {
+  if (field.kind === 'other') {
+    const kept: string[] = []
+    for (const block of body.split(/\n\s*\n/)) {
+      const trimmed = block.trim()
+      if (trimmed.length === 0) continue
+      if (otherCovered(field, block)) kept.push(trimmed)
+    }
+    return kept
+  }
+  if (field.kind === 'hours') {
+    if (!mentionsSubjectOrHours(field, body)) return []
+    const kept: string[] = []
+    for (const block of body.split(/\n\s*\n/)) {
+      const trimmed = block.trim()
+      if (trimmed.length > 0 && TIME_PATTERN.test(trimmed.normalize('NFKC'))) kept.push(trimmed)
+    }
+    return kept
+  }
+  const mode = field.kind === 'list' ? listMode(field) : null
+  const category = field.kind === 'price' ? priceCategory(field) : undefined
+  const words = mode === 'drink-items' ? DRINK_ITEM_WORDS : ALL_ITEM_WORDS
   const kept: string[] = []
   for (const block of body.split(/\n\s*\n/)) {
     const trimmed = block.trim()
     if (trimmed.length === 0) continue
-    if (kind === 'other') {
-      if (otherCovered(field, block)) kept.push(trimmed)
-      continue
-    }
     // Lines stay whole (a list entry or table row); a long prose line keeps only its sentences naming an item or price.
     for (const line of trimmed.split('\n')) {
       const pieces = line.length > 200 ? line.split(/(?<=[.!?。！？])\s+/) : [line]
       for (const piece of pieces) {
-        const evidences =
-          kind === 'list'
-            ? itemsInBlock(piece).length > 0 || (entriesCount && entriesInBlock(piece).length > 0)
-            : pairsInLine(piece).length > 0
+        let evidences: boolean
+        if (field.kind === 'list')
+          evidences = mode === 'entries' ? entriesInBlock(piece).length > 0 : itemsInBlock(piece, words).length > 0
+        else if (category) evidences = pairsInLine(piece).some((pair) => pair.category === category)
+        else evidences = itemPriceIn(piece, fieldNames(field))
         if (evidences) kept.push(piece.trim())
       }
     }

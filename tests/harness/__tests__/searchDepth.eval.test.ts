@@ -82,7 +82,65 @@ describe('search depth brief (issue #534)', () => {
           args: {
             query,
             max_results: 5,
-            fields: ['menu items', 'drink prices', 'food prices']
+            fields: [
+              { kind: 'list', subject: 'menu items' },
+              { kind: 'price', subject: 'drinks' },
+              { kind: 'price', subject: 'food' }
+            ]
+          }
+        }
+      ]
+    })
+    expect(evidence).toMatch(/hotcakes?/i)
+    expect(evidence).toMatch(/hot coffee|blended coffee|almond au lait|latte|iced cocoa/i)
+    expect(evidence).toMatch(/sandwich|curry toast|cheese toast|pudding/i)
+    expect(evidence).toMatch(/\[s\d+\]/)
+  })
+
+  it('covers the L1 menu with the split drink and food fields', async () => {
+    const fixture = loadFixtures().find((f) => f.caseId === 'L1')
+    expect(fixture).toBeDefined()
+    const query = fixture?.toolCalls.find((call) => call.tool === 'search_web')?.args?.query ?? ''
+    const evidence = await replayFixture({
+      ...(fixture as NonNullable<typeof fixture>),
+      toolCalls: [
+        {
+          tool: 'search_web',
+          args: {
+            query,
+            max_results: 5,
+            fields: [
+              { kind: 'list', subject: 'coffee drinks' },
+              { kind: 'list', subject: 'other drinks' },
+              { kind: 'list', subject: 'food items' },
+              { kind: 'price', subject: 'drinks' }
+            ]
+          }
+        }
+      ]
+    })
+    expect(evidence).toMatch(/hotcakes?/i)
+    expect(evidence).toMatch(/hot coffee|blended coffee|almond au lait|latte|iced cocoa/i)
+    expect(evidence).toMatch(/sandwich|curry toast|cheese toast|pudding/i)
+    expect(evidence).toMatch(/\[s\d+\]/)
+  })
+
+  it('covers the L1 menu with the short menu and drinks price fields', async () => {
+    const fixture = loadFixtures().find((f) => f.caseId === 'L1')
+    expect(fixture).toBeDefined()
+    const query = fixture?.toolCalls.find((call) => call.tool === 'search_web')?.args?.query ?? ''
+    const evidence = await replayFixture({
+      ...(fixture as NonNullable<typeof fixture>),
+      toolCalls: [
+        {
+          tool: 'search_web',
+          args: {
+            query,
+            max_results: 5,
+            fields: [
+              { kind: 'list', subject: 'menu' },
+              { kind: 'price', subject: 'drinks' }
+            ]
           }
         }
       ]
@@ -96,7 +154,25 @@ describe('search depth brief (issue #534)', () => {
   it('reads the menu page for the thin L1 case, with no local query', async () => {
     const fixture = loadFixtures().find((f) => f.caseId === 'L1-thin')
     expect(fixture).toBeDefined()
-    const evidence = await replayFixture(fixture as NonNullable<typeof fixture>)
+    const query = fixture?.toolCalls.find((call) => call.tool === 'search_web')?.args?.query ?? ''
+    // The recorded args still carry the old string fields; replay with their typed equivalents instead.
+    const evidence = await replayFixture({
+      ...(fixture as NonNullable<typeof fixture>),
+      toolCalls: [
+        {
+          tool: 'search_web',
+          args: {
+            query,
+            max_results: 5,
+            fields: [
+              { kind: 'list', subject: 'menu items' },
+              { kind: 'price', subject: 'drinks' },
+              { kind: 'price', subject: 'food' }
+            ]
+          }
+        }
+      ]
+    })
     expect(evidence).toMatch(/ブレンドコーヒー|アイスコーヒー/)
     expect(evidence).toMatch(/タマゴサンド|ホットケーキ/)
     expect(evidence).toMatch(/\[s\d+\]/)
