@@ -60,14 +60,14 @@ export function parseCloudVisionResponse(json: unknown): Omit<IdentifyOutput, 'r
 }
 
 export function cloudVisionKey(): string | undefined {
-  return process.env.GOOGLE_CLOUD_VISION_API_KEY || undefined
+  return process.env.GCP_API_KEY || undefined
 }
 
 export function createCloudVisionBackend(
   fetchImpl: typeof fetch = globalThis.fetch,
   apiKey: string | undefined = cloudVisionKey()
 ): ImageIdBackend {
-  if (!apiKey) throw new Error('GOOGLE_CLOUD_VISION_API_KEY is not set')
+  if (!apiKey) throw new Error('GCP_API_KEY is not set')
   return {
     name: CLOUD_VISION_NAME,
     async identify(imageBytes: Buffer): Promise<IdentifyOutput> {

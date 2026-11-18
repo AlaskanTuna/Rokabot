@@ -418,7 +418,7 @@ function worstEnv(): string {
     'DEV_GEMINI_API_KEY=',
     'ROKABOT_DB_PATH=data/aleksandra-wisniewska-kowalczyk2/rokabot.db',
     `TAVILY_API_KEY=${key('tavily', 'tvly-dev-', 41)}`,
-    'YOUTUBE_API_KEY=',
+    'GCP_API_KEY=',
     `MODELSCOPE_API_KEY=ms-${token('modelscope', 8).toLowerCase()}-${token('modelscope-2', 4).toLowerCase()}-${token('modelscope-3', 20).toLowerCase()}`,
     `ANTHROPIC_API_KEY=${key('anthropic', 'sk-ant-api03-', 108)}`,
     `OPENAI_API_KEY=${key('openai', 'sk-proj-', 164)}`,

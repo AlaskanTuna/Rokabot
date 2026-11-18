@@ -42,7 +42,7 @@ Optional keys:
 - **`TAVILY_API_KEY`:** turns on web search when `search.provider` is `tavily`.
 - **`EXA_API_KEY`:** turns on web search when `search.provider` is `exa`.
 - **`TYPESAFE_API_KEY`:** turns on Jev judgments for tone, names and passive memory.
-- **`YOUTUBE_API_KEY`:** lets Roka read top comments on YouTube links.
+- **`GCP_API_KEY`:** a Google Cloud key that lets Roka read top comments on YouTube links (enable the YouTube Data API v3 on it).
 
 [Configuration](configuration.md#secrets) lists every key and when it is required. [Models](models.md) explains each model profile.
 

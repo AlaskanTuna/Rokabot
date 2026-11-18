@@ -232,7 +232,7 @@ export function selectBackends(): { backends: ImageIdBackend[]; skipped: string[
   if (cloudVisionKey()) backends.push(createCloudVisionBackend())
   else {
     skipped.push('cloudVision')
-    console.log('Skipping cloudVision: GOOGLE_CLOUD_VISION_API_KEY is not set')
+    console.log('Skipping cloudVision: GCP_API_KEY is not set')
   }
   if (serpapiKey()) backends.push(createSerpapiLensBackend())
   else {
