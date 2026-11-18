@@ -104,6 +104,11 @@ search:
   maxBriefChars: 4000 # Longest the depth-loop brief handed to the model; the Still-missing line survives the cut
   replyReserveMs: 6000 # Attempt time a lookup must leave for the chat model's next call
 
+imageId:
+  enabled: true # Reverse-image identification of the turn's images (IMAGE_ID_ENABLED overrides); off removes identify_image
+  maxMatches: 5 # Lens matches kept per identify_image call (1-10)
+  timeoutMs: 6000 # Longest one Lens lookup may take, in ms (1000-15000)
+
 media:
   watcher: gemini # How Roka takes in audio and video. gemini watches it and she replies from the notes; off neither watches nor sends it and tells her so
   embedWaitMs: 2000 # How long a turn waits for Discord to add a link's embed, so a playable video in it can be watched; only a linked message with no embed yet waits

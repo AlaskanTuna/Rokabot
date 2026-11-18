@@ -123,6 +123,11 @@ interface YamlConfig {
     maxBriefChars?: number
     replyReserveMs?: number
   }
+  imageId?: {
+    enabled?: boolean
+    maxMatches?: number
+    timeoutMs?: number
+  }
   media?: {
     watcher?: string
     embedWaitMs?: number
@@ -647,6 +652,12 @@ const baseConfig = {
     maxBriefChars: yaml.search?.maxBriefChars ?? 4000,
     replyReserveMs: yaml.search?.replyReserveMs ?? 6000
   },
+  imageId: {
+    apiKey: envString('SERPAPI_API_KEY'),
+    enabled: envBoolean('IMAGE_ID_ENABLED') ?? yaml.imageId?.enabled ?? true,
+    maxMatches: yaml.imageId?.maxMatches ?? 5,
+    timeoutMs: yaml.imageId?.timeoutMs ?? 6000
+  },
   media: {
     watcher: mediaWatcher(),
     embedWaitMs: yaml.media?.embedWaitMs ?? 2000,
@@ -1019,6 +1030,8 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'search.maxBriefChars', value: config.search.maxBriefChars, min: 1 },
   // min: 0 because a reserve of zero is a deliberate choice to let a lookup spend the whole attempt.
   { path: 'search.replyReserveMs', value: config.search.replyReserveMs, min: 0, max: 60_000 },
+  { path: 'imageId.maxMatches', value: config.imageId.maxMatches, min: 1, max: 10 },
+  { path: 'imageId.timeoutMs', value: config.imageId.timeoutMs, min: 1000, max: 15_000 },
   // Synthesised legacy values are already bounded as gemini.* and fallback.*, so only a block adds rows.
   ...(yaml.llm
     ? [
