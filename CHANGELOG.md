@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/AlaskanTuna/Rokabot/compare/v0.10.0...v0.11.0) (2026-11-18)
+
+
+### Features
+
+* **agent:** identify a pictured character or product with Lens hints ([#552](https://github.com/AlaskanTuna/Rokabot/issues/552)) ([c20bf13](https://github.com/AlaskanTuna/Rokabot/commit/c20bf13e8b90d7b74fe278f7118f2dc1e95310bd))
+
 ## [0.10.0](https://github.com/AlaskanTuna/Rokabot/compare/v0.9.1...v0.10.0) (2026-11-18)
 
 
