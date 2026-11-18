@@ -56,8 +56,17 @@ import {
   sessionService,
   suppressSessionRehydration
 } from './session.js'
-import { readRepliesTool, rokaTools, withheldMemoryToolNames } from './tools/index.js'
+import {
+  cancelReminderTool,
+  forgetUserTool,
+  readRepliesTool,
+  rememberUserTool,
+  rokaTools,
+  setReminderTool,
+  withheldMemoryToolNames
+} from './tools/index.js'
 import { withSearchAttempt } from './tools/search/attemptBudget.js'
+import { didReadPage } from './tools/search/readPages.js'
 import { ROKA_TOOL_NAMES } from './tools/toolNames.js'
 import { createTurnContext, startTurnEntryWork } from './turnContext.js'
 import type { TurnContextOptions, TurnEntryWork } from './turnContext.js'
@@ -65,6 +74,8 @@ import type { TurnContextOptions, TurnEntryWork } from './turnContext.js'
 interface GenerateOptions extends Omit<TurnContextOptions, 'memoryScope'> {
   /** The Discord-facing input: `/ask` passes `false`. */
   memory: boolean
+  /** Link URLs from the triggering message's own embeds, registered under the `embed` origin. */
+  embedUrls?: string[]
   turnEntryWork?: TurnEntryWork
   mediaAttachments?: MediaAttachment[]
   skippedAttachments?: number
@@ -221,7 +232,14 @@ export const rokaAgent = new LlmAgent({
     const steering = steeringForRequest.getStore()
     // No store outside a steered request reads as a full turn; the turn itself always sets `memoryScope`.
     const scope: MemoryScope = steering?.memoryScope ?? resolveMemoryScope(true, config.memory.privacy)
-    const withheld = [...withheldMemoryToolNames(scope), ...(steering?.replies === false ? [readRepliesTool.name] : [])]
+    const withheld = [
+      ...withheldMemoryToolNames(scope),
+      ...(steering?.replies === false ? [readRepliesTool.name] : []),
+      // A turn that has read page text answers from it; it no longer changes memory or reminders on it.
+      ...(didReadPage()
+        ? [rememberUserTool.name, forgetUserTool.name, setReminderTool.name, cancelReminderTool.name]
+        : [])
+    ]
     if (withheld.length > 0) {
       for (const declaration of request.config?.tools ?? []) {
         // `ToolUnion` is `Tool | CallableTool`; only `Tool` carries declarations, and only

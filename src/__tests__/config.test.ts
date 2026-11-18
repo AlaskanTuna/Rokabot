@@ -1111,6 +1111,7 @@ describe('config module', () => {
       { path: 'search.maxSearches', min: 1 },
       { path: 'search.maxPageReads', min: 1 },
       { path: 'search.maxProviderCalls', min: 1 },
+      { path: 'search.maxBriefChars', min: 1 },
       { path: 'search.replyReserveMs', min: 0, max: 60_000 },
       { path: 'format.minListItems', min: 2, max: 5 },
       { path: 'format.minListShare', min: 0, max: 1 },

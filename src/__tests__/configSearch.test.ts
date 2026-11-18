@@ -29,6 +29,7 @@ describe('config module', () => {
         maxSearches: 2,
         maxPageReads: 2,
         maxProviderCalls: 3,
+        maxBriefChars: 4000,
         replyReserveMs: 6000
       })
     })
@@ -104,6 +105,7 @@ describe('config module', () => {
         maxSearches: 2,
         maxPageReads: 2,
         maxProviderCalls: 3,
+        maxBriefChars: 4000,
         replyReserveMs: 6000
       })
       expect(await warningMessages()).not.toContainEqual(expect.stringContaining('has no web search'))
@@ -128,6 +130,7 @@ describe('config module', () => {
         maxSearches: 2,
         maxPageReads: 2,
         maxProviderCalls: 3,
+        maxBriefChars: 4000,
         replyReserveMs: 6000
       })
       expect(startupWarnings).toContainEqual({
@@ -153,6 +156,7 @@ describe('config module', () => {
         maxSearches: 2,
         maxPageReads: 2,
         maxProviderCalls: 3,
+        maxBriefChars: 4000,
         replyReserveMs: 6000
       })
       expect(await warningMessages()).toEqual([])
@@ -178,6 +182,7 @@ describe('config module', () => {
         maxSearches: 2,
         maxPageReads: 2,
         maxProviderCalls: 3,
+        maxBriefChars: 4000,
         replyReserveMs: 6000
       })
       expect(startupWarnings).toContainEqual({
@@ -313,6 +318,10 @@ describe('config module', () => {
       expect(NUMERIC_BOUNDS.find(({ path }) => path === 'search.maxPageReads')).toMatchObject({ value: 2, min: 1 })
       expect(NUMERIC_BOUNDS.find(({ path }) => path === 'search.maxProviderCalls')).toMatchObject({
         value: 3,
+        min: 1
+      })
+      expect(NUMERIC_BOUNDS.find(({ path }) => path === 'search.maxBriefChars')).toMatchObject({
+        value: 4000,
         min: 1
       })
       expect(NUMERIC_BOUNDS.find(({ path }) => path === 'search.replyReserveMs')).toMatchObject({

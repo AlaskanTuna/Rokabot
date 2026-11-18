@@ -308,14 +308,26 @@ around the model turn and shared across its retry attempts.
   citations in place. The sink resets when a new reply attempt starts, so a retried turn cites only what that
   attempt used; the first attempt keeps the prefetch's citations.
 - **Sources:** `searchSources.ts` maps stable ids (`s1`, `s2`, ...) to URLs from the triggering message
-  (embed text is already inlined into it), and from each successful search. `resolveSource` maps an id back to
+  (embed text is already inlined into it, and embed links register under the `embed` origin), and from each successful search. `resolveSource` maps an id back to
   its URL, or undefined when unknown.
 - **Pages:** `readPages` reads whole pages through the active provider — Exa `contents`, Tavily `extract`, or
   a one-shot Messages call with the `web_fetch` server tool on an Anthropic main — capped at
   `search.maxPageChars` (8000) characters with `truncated` set past it, and prefixed with the page
   untrusted-data label. Other native mains and `off` report page reading unavailable. Private addresses and
   non-http schemes are refused before any provider call, and quota (402/429) versus failure maps exactly as a
-  search does.
+  search does. A read that returns text marks the turn, and the model-call filter in `roka.ts` then withholds
+  `remember_user`, `forget_user`, `set_reminder` and `cancel_reminder` for the rest of the turn.
+- **Depth Loop:** `search_web` with `fields` (what the answer needs) or `source` (a source id or a shared link)
+  runs `depth.ts` instead of a single search; a plain call keeps today's single search exactly. A source id
+  resolves through the registry (a raw URL only when the message or its embeds registered it), social links
+  refuse with the note that the post was already read, and the page is read and briefed. Otherwise the loop
+  searches, checks each field's coverage against the snippets, runs `local_query` as the second search, then
+  reads up to the top 2 result URLs most likely to hold the missing fields (the top result's host first,
+  menu/price/hours paths next). Coverage is deterministic lowercase token overlap with a small hint table
+  (¥/円/$ for prices, メニュー, 営業時間, coffee/ドリンク). The brief is the provider answer, each read page's
+  title, source id and field paragraphs, and a `Still missing:` line, capped at `search.maxBriefChars` (4000)
+  with the missing line surviving the cut. Stop conditions: every field covered, the turn budget spent, or no
+  attempt time left past the reply reserve — each yields a partial brief, never a throw.
 
 ## Configuration
 
@@ -340,6 +352,7 @@ around the model turn and shared across its retry attempts.
 | `search.maxSearches`           | 2                              | min 1                                                                                   |
 | `search.maxPageReads`          | 2                              | min 1                                                                                   |
 | `search.maxProviderCalls`      | 3                              | min 1                                                                                   |
+| `search.maxBriefChars`         | 4,000                          | min 1                                                                                   |
 | `search.replyReserveMs`        | 6,000                          | 0 to 60,000                                                                             |
 
 Environment overrides are wired in `src/config.ts` (for example `GEMINI_LIVE_MAX_RETRIES`, `RATE_LIMIT_RPM`).

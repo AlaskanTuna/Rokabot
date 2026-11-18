@@ -4,8 +4,9 @@ import type { MediaAttachment } from '../agent/media/attachments.js'
 import { type ReplyOutcome, withReplyOutcomes } from '../agent/replyOutcomes.js'
 import { type GenerateResult, generateResponse } from '../agent/roka.js'
 import { type SearchCitation, withSearchCitations } from '../agent/searchCitations.js'
-import { registerMessageSources, withSearchSources } from '../agent/searchSources.js'
+import { registerMessageSources, registerSources, withSearchSources } from '../agent/searchSources.js'
 import type { SocialPostLookup } from '../agent/social/types.js'
+import { withPageReadFlag } from '../agent/tools/search/readPages.js'
 import { withTurnBudget } from '../agent/tools/search/turnBudget.js'
 import { config } from '../config.js'
 import { type ResponseEventInput, recordResponseEvent } from '../storage/metricsStore.js'
@@ -31,11 +32,15 @@ export async function runModelTurn(options: Parameters<typeof generateResponse>[
   const [[result, sources], replyOutcome] = await withReplyOutcomes(() =>
     withSearchCitations(() =>
       withSearchSources(() =>
-        withTurnBudget(() => {
-          // URLs in the triggering message enter the source registry, so a later page read can name them.
-          registerMessageSources(options.userMessage)
-          return generateResponse(options)
-        })
+        withTurnBudget(() =>
+          withPageReadFlag(() => {
+            // URLs in the triggering message enter the source registry, so a later page read can name them.
+            registerMessageSources(options.userMessage)
+            // Embed links often differ from the message text, and enter under their own origin.
+            if (options.embedUrls) registerSources(options.embedUrls, 'embed')
+            return generateResponse(options)
+          })
+        )
       )
     )
   )
