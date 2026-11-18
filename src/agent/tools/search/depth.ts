@@ -1,8 +1,10 @@
 /** The bounded depth loop inside search_web: a second search and page reads that fill what snippets cannot. */
 
 import { config } from '../../../config.js'
+import { PAGE_UNTRUSTED_DATA_LABEL, SEARCH_EXCERPTS_UNTRUSTED_DATA_LABEL } from '../../promptSafety.js'
 import { lookupSourceUrl, resolveSource } from '../../searchSources.js'
 import { parseSocialPostUrl } from '../../social/urls.js'
+import { type Passage, assessField, fieldKind, relevantBlocks } from './coverage.js'
 import { PAGE_TEXT, readPages } from './readPages.js'
 import { timeLeftForLookupMs } from './turnBudget.js'
 import { type BackendOutcome, SEARCH_TEXT, type SearchResult, type SearchWebParams, clipSnippet } from './types.js'
@@ -17,92 +19,54 @@ export const LOOKUP_TEXT = {
     'That post was already read and is quoted in the conversation. Answer from that quote instead of opening it again.'
 }
 
-/**
- * Hint terms that count as covering a field. Currency marks cover a price field, the local words cover
- * menu, hours and drink fields — a Japanese page carries the fact without ever using the English word.
- */
-const FIELD_HINTS: Record<string, string[]> = {
-  price: ['¥', '円', '$', 'rm', 'yen', 'price'],
-  menu: ['メニュー', 'menu'],
-  hours: ['営業時間', 'open', 'hours'],
-  drink: ['coffee', 'ドリンク', 'ブレンド', 'blend', 'tea', 'drink']
-}
-
-/** A hint found in the text: plain Latin words need word boundaries (so the RM in "firm" never pays), symbols and CJK match by inclusion. */
-function hintFound(hint: string, hay: string): boolean {
-  if (/^[a-z]+$/.test(hint)) return new RegExp(`\\b${hint}\\b`).test(hay)
-  return hay.includes(hint)
-}
-
-/** Filler words that never decide coverage: the field's load-bearing words name the price, menu or hours kind. */
-const FIELD_STOPWORDS = new Set([
-  'a',
-  'an',
-  'the',
-  'of',
-  'for',
-  'and',
-  'or',
-  'items',
-  'item',
-  'list',
-  'lists',
-  'details',
-  'detail',
-  'number',
-  'numbers',
-  'specific',
-  'several',
-  'full'
-])
-
-/** Whether one field word is covered by the text. */
-function wordCovered(word: string, hay: string): boolean {
-  if (FIELD_STOPWORDS.has(word)) return true
-  if (hintFound(word, hay)) return true
-  for (const [kind, hints] of Object.entries(FIELD_HINTS)) {
-    // An inflected form names the kind too: "opening" carries the "open" hint, "prices" the price kind.
-    const names = word.includes(kind) || hints.some((hint) => hint.length >= 3 && word.includes(hint))
-    if (names && hints.some((hint) => hintFound(hint, hay))) return true
-  }
-  return false
-}
-
-/**
- * Whether a field is covered by the text: every load-bearing word is. A word is covered when it appears
- * itself, when the kind it names has a hint present ("prices" is covered by ¥, "opening" by the "open"
- * hint of hours), or when it is filler ("menu items" needs only the menu). Decides only whether to dig
- * further, never what to answer.
- */
-export function fieldCovered(field: string, text: string): boolean {
-  const hay = text.toLowerCase()
-  const words = field
-    .toLowerCase()
-    .split(/[^a-z0-9぀-ヿ一-龯]+/)
-    .filter(Boolean)
-  return words.length > 0 && words.every((word) => wordCovered(word, hay))
-}
-
-/** The fields no collected text covers yet. */
-function missingFields(fields: readonly string[], text: string): string[] {
-  return fields.filter((field) => !fieldCovered(field, text))
-}
-
-/** A search outcome as one coverable text: the provider answer plus every result's title and snippet. */
-function corpusOf(outcome: BackendOutcome): string {
-  return [outcome.answer, ...outcome.results.flatMap((result) => [result.title, result.snippet])].join('\n')
-}
-
 /** The attempt time left past the reply reserve still funds another lookup; null with no attempt in scope. */
 function timeRemains(): boolean {
   const left = timeLeftForLookupMs()
   return left === null || left > 0
 }
 
-/** Paths that suggest a page holds the missing details: menus, prices, hours, drinks, or the local shop guides. */
-const PAGE_PATH_HINT = /menu|price|pricing|hour|drink|coffee|tea|food|shop|store|料金|メニュー|営業時間|ドリンク/i
+/** The label lines readPages and the backends prepend, dropped before coverage sees the blocks. */
+function bodyBlocks(body: string): string[] {
+  return body
+    .split(/\n\s*\n/)
+    .map((block) => block.trim())
+    .filter(
+      (block) =>
+        block.length > 0 && block !== PAGE_UNTRUSTED_DATA_LABEL && block !== SEARCH_EXCERPTS_UNTRUSTED_DATA_LABEL
+    )
+}
 
-/** The two result URLs most likely to hold the missing fields: the top result's host first, telling paths next. */
+/**
+ * One search outcome as coverable passages: one per result, heading excluded — a title like "See our menu"
+ * carries no items — plus the provider answer. The answer blends every result's text, so only "other"
+ * fields may use it; lists and prices need per-source attribution for the branch scopes.
+ */
+function outcomePassages(outcome: BackendOutcome): { sources: Passage[]; answer: Passage[] } {
+  const sources = outcome.results.map((result) => ({
+    sourceId: lookupSourceUrl(result.url)?.id ?? result.url,
+    heading: result.title,
+    body: result.text || result.snippet
+  }))
+  const answer: Passage[] =
+    outcome.succeeded && outcome.answer ? [{ sourceId: '', heading: '', body: outcome.answer }] : []
+  return { sources, answer }
+}
+
+/**
+ * Whether each field is covered yet. Lists and prices read the per-source passages only; other fields read
+ * one passage body at a time, never titles and snippets pooled together.
+ */
+function missingAfter(fields: readonly string[], sources: readonly Passage[], answer: readonly Passage[]): string[] {
+  return fields.filter((field) => {
+    const passages = fieldKind(field) === 'other' ? [...answer, ...sources] : sources
+    return !assessField(field, passages).covered
+  })
+}
+
+/** Paths that suggest a page holds the missing details: menus, prices, hours, drinks, or the local shop guides. */
+const MENU_PATH_HINT = /menu|メニュー|drink|price|料金|値段/i
+
+/** Menu-specific results first — by URL path or title — so the top-host bonus never outranks a menu page. */
 function rankCandidates(results: ReadonlyArray<{ title: string; url: string; snippet: string }>): string[] {
   const urls = [...new Set(results.map((result) => result.url))]
   const hostOf = (url: string): string => {
@@ -112,18 +76,20 @@ function rankCandidates(results: ReadonlyArray<{ title: string; url: string; sni
       return ''
     }
   }
+  const titles = new Map(results.map((result) => [result.url, result.title]))
   const topHost = urls.length > 0 ? hostOf(urls[0] as string) : ''
-  const pathHints = (url: string): boolean => {
+  const menuSpecific = (url: string): boolean => {
     try {
-      return PAGE_PATH_HINT.test(new URL(url).pathname)
+      if (MENU_PATH_HINT.test(new URL(url).pathname)) return true
     } catch {
-      return false
+      // A relative URL carries no path to test; the title still decides below.
     }
+    return MENU_PATH_HINT.test(titles.get(url) ?? '')
   }
   return urls
     .map((url, index) => ({
       url,
-      score: (hostOf(url) !== '' && hostOf(url) === topHost ? 2 : 0) + (pathHints(url) ? 1 : 0),
+      score: (menuSpecific(url) ? 2 : 0) + (hostOf(url) !== '' && hostOf(url) === topHost ? 1 : 0),
       index
     }))
     .sort((a, b) => b.score - a.score || a.index - b.index)
@@ -131,30 +97,36 @@ function rankCandidates(results: ReadonlyArray<{ title: string; url: string; sni
     .map(({ url }) => url)
 }
 
-/** The page paragraphs that mention a field term; the untrusted-data label stays on top. */
-function paragraphsForFields(pageText: string, fields: readonly string[]): string {
-  const [label, ...rest] = pageText.split('\n')
-  const lines = rest.map((line) => line.trim()).filter(Boolean)
-  const kept = lines.filter((line) => fields.some((field) => fieldCovered(field, line)))
-  return `${label}\n${kept.join('\n')}`
-}
-
-interface BriefPage {
+interface BriefSupport {
   id: string
   title: string
   kept: string
 }
 
-/** The provider answer, then each read page's title, source id and field paragraphs, then what is still missing. The missing line survives the cap: it is the point of the brief. */
-function buildBrief(answer: string, pages: readonly BriefPage[], missing: readonly string[]): string {
+/**
+ * Each field's support passages with their source ids, then the provider answer, then what is still missing.
+ * Support is cut at a line boundary so a list entry never breaks mid-entry; the missing line survives the cap.
+ */
+/** Text clipped to a length, at an entry boundary unless that throws away most of the room: one huge line is better clipped than lost. */
+function clipAtEntry(text: string, room: number): string {
+  if (text.length <= room) return text
+  const cut = text.slice(0, Math.max(0, room))
+  const at = cut.lastIndexOf('\n')
+  return (at > room / 2 ? cut.slice(0, at) : cut).trimEnd()
+}
+
+function buildBrief(answers: readonly string[], supports: readonly BriefSupport[], missing: readonly string[]): string {
   const max = config.search.maxBriefChars
-  const head = [answer, ...pages.map((page) => `[${page.id}] ${page.title}\n${page.kept}`)].filter(Boolean).join('\n\n')
-  if (missing.length === 0) return head.length > max ? head.slice(0, max) : head
-  const tail = `Still missing: ${missing.join(', ')}.`
-  const full = head ? `${head}\n\n${tail}` : tail
-  if (full.length <= max) return full
-  const keep = max - tail.length - 2
-  return keep <= 0 ? tail.slice(0, max) : `${head.slice(0, keep)}\n\n${tail}`
+  const tail = missing.length > 0 ? `Still missing: ${missing.join(', ')}.` : ''
+  const room = max - (tail ? tail.length + 2 : 0)
+  if (room <= 0) return tail.slice(0, max)
+  // Each cited source gets an even share, so one long review never crowds out the others.
+  const share = supports.length > 0 ? Math.floor(room / supports.length) : room
+  const cited = supports.map((page) => clipAtEntry(`[${page.id}] ${page.title}\n${page.kept}`, share - 2))
+  // Cited support leads: the provider answer often restates the same excerpts, so the cap trims it first.
+  const head = clipAtEntry([...cited, ...answers].filter(Boolean).join('\n\n'), room)
+  if (!tail) return head
+  return head ? `${head}\n\n${tail}` : tail
 }
 
 /** A refused source: no provider call, just the reason as the answer. */
@@ -197,11 +169,13 @@ async function runSourceLookup(params: SearchWebParams, fields: string[], source
   })
   if (!page || !page.ok) return refused(page?.error ?? PAGE_TEXT.failed)
 
-  const missing = missingFields(fields, page.text)
-  const brief =
+  const passage: Passage = { sourceId: resolved.id, heading: page.title, body: bodyBlocks(page.text).join('\n\n') }
+  const missing = missingAfter(fields, [passage], [])
+  const kept =
     fields.length > 0
-      ? buildBrief('', [{ id: resolved.id, title: page.title, kept: paragraphsForFields(page.text, fields) }], missing)
-      : buildBrief('', [{ id: resolved.id, title: page.title, kept: page.text }], missing)
+      ? fields.flatMap((field) => relevantBlocks(field, passage.body)).join('\n')
+      : bodyBlocks(page.text).join('\n')
+  const brief = buildBrief([], [{ id: resolved.id, title: page.title, kept }], missing)
   return {
     answer: brief,
     results: [{ title: page.title, url: resolved.url, snippet: clipSnippet(page.text) }],
@@ -212,7 +186,9 @@ async function runSourceLookup(params: SearchWebParams, fields: string[], source
 /**
  * The bounded loop: search, check coverage of each field, run local_query as the second search, then
  * read up to the top 2 result URLs most likely to hold the missing fields. Stops when every field is
- * covered, the turn budget is spent, or the attempt has no time left past the reply reserve.
+ * covered, the turn budget is spent, or the attempt has no time left past the reply reserve. When fields
+ * are given and something is still missing, the returned answer is the brief with the cited partial
+ * evidence — even when no second search or page read succeeded.
  */
 export async function runLookup(params: SearchWebParams, search: SingleSearch): Promise<SearchResult> {
   const fields = (params.fields ?? []).map((field) => field.trim()).filter(Boolean)
@@ -220,9 +196,10 @@ export async function runLookup(params: SearchWebParams, search: SingleSearch): 
 
   const first = await search(params)
   let results = first.results
+  const firstPassages = outcomePassages(first)
+  const sources: Passage[] = [...firstPassages.sources]
   const answers = first.succeeded ? [first.answer] : []
-  const texts = [corpusOf(first)]
-  let missing = missingFields(fields, texts.join('\n'))
+  let missing = missingAfter(fields, sources, firstPassages.answer)
 
   const localQuery = params.local_query?.trim()
   let secondRan = false
@@ -230,7 +207,9 @@ export async function runLookup(params: SearchWebParams, search: SingleSearch): 
     secondRan = true
     const second = await search({ ...params, query: localQuery })
     if (second.succeeded) answers.push(second.answer)
-    texts.push(corpusOf(second))
+    const secondPassages = outcomePassages(second)
+    sources.push(...secondPassages.sources)
+    firstPassages.answer.push(...secondPassages.answer)
     const seen = new Set(results.map((result) => result.url))
     for (const result of second.results) {
       if (!seen.has(result.url)) {
@@ -238,14 +217,15 @@ export async function runLookup(params: SearchWebParams, search: SingleSearch): 
         results = [...results, result]
       }
     }
-    missing = missingFields(fields, texts.join('\n'))
+    missing = missingAfter(fields, sources, firstPassages.answer)
   }
 
-  const pages: BriefPage[] = []
+  let readRan = false
   if (results.length > 0) {
     for (const url of rankCandidates(results)) {
       if (missing.length === 0 || !timeRemains()) break
       const known = lookupSourceUrl(url)
+      readRan = true
       const [page] = await readPages([{ id: known?.id ?? url, url }], {
         ...(params.signal ? { signal: params.signal } : {})
       })
@@ -254,18 +234,29 @@ export async function runLookup(params: SearchWebParams, search: SingleSearch): 
         if (page?.error === SEARCH_TEXT.budgetSpent) break
         continue
       }
-      texts.push(page.text)
-      const id = known?.id ?? url
-      pages.push({ id, title: page.title, kept: paragraphsForFields(page.text, missing) })
+      sources.push({ sourceId: known?.id ?? url, heading: page.title, body: bodyBlocks(page.text).join('\n\n') })
       results = [...results, { title: page.title, url, snippet: clipSnippet(page.text) }]
-      missing = missingFields(fields, texts.join('\n'))
+      missing = missingAfter(fields, sources, firstPassages.answer)
     }
   }
 
-  // Nothing past the first search ran: it stands exactly as a plain call would return it.
-  if (!secondRan && pages.length === 0) {
+  // Nothing past the first search ran and every field held: it stands exactly as a plain call would return it.
+  if (!secondRan && !readRan && missing.length === 0) {
     return { answer: first.answer, results: first.results, resultCount: first.resultCount }
   }
-  const answer = answers.length > 0 ? answers.join('\n\n') : first.answer
-  return { answer: buildBrief(answer, pages, missing), results, resultCount: results.length }
+  // One entry per source, its blocks merged across fields, so a page supporting two fields keeps both.
+  const bySource = new Map<string, { title: string; blocks: Set<string> }>()
+  const answerAndSources = [...firstPassages.answer, ...sources]
+  for (const field of fields) {
+    for (const passage of assessField(field, answerAndSources).support) {
+      if (passage.sourceId === '') continue
+      const entry = bySource.get(passage.sourceId) ?? { title: passage.heading, blocks: new Set<string>() }
+      for (const block of relevantBlocks(field, passage.body)) entry.blocks.add(block)
+      bySource.set(passage.sourceId, entry)
+    }
+  }
+  const supports: BriefSupport[] = [...bySource]
+    .filter(([, entry]) => entry.blocks.size > 0)
+    .map(([id, entry]) => ({ id, title: entry.title, kept: [...entry.blocks].join('\n') }))
+  return { answer: buildBrief(answers, supports, missing), results, resultCount: results.length }
 }

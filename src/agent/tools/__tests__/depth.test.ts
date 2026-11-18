@@ -24,7 +24,8 @@ import { rokaAgent, steeringForRequest } from '../../roka.js'
 import { registerMessageSources, registerSources, withSearchSources } from '../../searchSources.js'
 import { rokaTools } from '../index.js'
 import { withSearchAttempt } from '../search/attemptBudget.js'
-import { LOOKUP_TEXT, fieldCovered, runLookup } from '../search/depth.js'
+import { assessField } from '../search/coverage.js'
+import { LOOKUP_TEXT, runLookup } from '../search/depth.js'
 import { didReadPage, readPages, withPageReadFlag } from '../search/readPages.js'
 import { withTurnBudget } from '../search/turnBudget.js'
 import { SEARCH_TEXT, type SearchWebParams } from '../search/types.js'
@@ -154,7 +155,10 @@ describe('runLookup search path', () => {
       }
     ]
     extractBodies = {
-      'https://example.test/marufuku/menu': { title: 'Marufuku drinks', content: 'ブレンド ¥500 ドリンクメニュー' }
+      'https://example.test/marufuku/menu': {
+        title: 'Marufuku drinks',
+        content: 'ブレンド ¥500 アイスコーヒー ¥550 ドリンクメニュー'
+      }
     }
 
     const result = await scoped(() =>
@@ -315,23 +319,28 @@ describe('runLookup source path', () => {
   })
 })
 
-describe('fieldCovered', () => {
-  it('covers English fields on token overlap', () => {
-    expect(fieldCovered('price', 'The hotcake set is ¥1,100.')).toBe(true)
-    expect(fieldCovered('menu items', 'See our menu for details.')).toBe(true)
-    expect(fieldCovered('opening hours', 'We are open daily.')).toBe(true)
-    expect(fieldCovered('drinks', 'Try the morning coffee blend.')).toBe(true)
+describe('assessField', () => {
+  const one = (body: string) => [{ sourceId: 's1', heading: 'Title', body }]
+
+  it('covers English fields per passage, and no longer trusts a menu title alone', () => {
+    expect(assessField('price', one('The hotcake set is ¥1,100.')).covered).toBe(true)
+    // The Tripadvisor "See our menu" positive is now reported missing: the title carries no items.
+    expect(assessField('menu items', one('See our menu for details.')).covered).toBe(false)
+    expect(assessField('opening hours', one('We are open daily.')).covered).toBe(true)
+    expect(assessField('drinks', one('Try the morning coffee blend.')).covered).toBe(true)
   })
 
-  it('covers Japanese pages through the hint table', () => {
-    expect(fieldCovered('drink prices', 'ブレンド ¥500')).toBe(true)
-    expect(fieldCovered('menu items', 'ドリンクメニュー')).toBe(true)
-    expect(fieldCovered('opening hours', '営業時間 9:00-22:00')).toBe(true)
+  it('covers Japanese pages through the hint table, one passage at a time', () => {
+    expect(assessField('drink price', one('ブレンド ¥500')).covered).toBe(true)
+    // A plural prices field needs two distinct pairs; one pair leaves it missing.
+    expect(assessField('drink prices', one('ブレンド ¥500')).covered).toBe(false)
+    expect(assessField('menu items', one('ドリンクメニュー')).covered).toBe(false)
+    expect(assessField('opening hours', one('営業時間 9:00-22:00')).covered).toBe(true)
   })
 
   it('leaves genuinely missing fields uncovered', () => {
-    expect(fieldCovered('drink prices', 'Coffee Marufuku is in Osaka.')).toBe(false)
-    expect(fieldCovered('price', 'The hotcakes are fluffy.')).toBe(false)
+    expect(assessField('drink prices', one('Coffee Marufuku is in Osaka.')).covered).toBe(false)
+    expect(assessField('price', one('The hotcakes are fluffy.')).covered).toBe(false)
   })
 })
 

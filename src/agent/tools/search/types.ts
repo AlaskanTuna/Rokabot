@@ -13,9 +13,17 @@ export interface SearchWebParams {
   signal?: AbortSignal
 }
 
+export interface SearchResultHit {
+  title: string
+  url: string
+  snippet: string
+  /** The result's fuller text for the depth loop's coverage check; backends that clip keep it unset. */
+  text?: string
+}
+
 export interface SearchResult {
   answer: string
-  results: { title: string; url: string; snippet: string }[]
+  results: SearchResultHit[]
   resultCount: number
 }
 

@@ -70,6 +70,7 @@ The lasting choices behind Rokabot, with why they were made. Check here before r
 | 2026-11-03 | A native search takes at most `search.nativeTimeoutMs` and leaves `search.nativeReserveMs` for the next chat call                                                                                   | An overrun would waste a paid result and force a fallback switch                                                                            |
 | 2026-11-18 | Anime tools are described by the fields Jikan returns, not as the first stop for every anime question (#523)                                                                                        | A baseline showed opinion and news questions calling Jikan twice before the web, taking 17-21 s against the 20 s attempt timer              |
 | 2026-11-18 | Search depth lives in code behind `search_web` with a per-turn budget (2 searches, 2 page reads, 3 provider calls, 6 s reply reserve); `maxLlmCalls` stays 4 and citations append within an attempt | A code loop behaves the same on every fallback model and keeps page text out of history; see `docs/specs/2026-11-18-search-depth-design.md` |
+| 2026-11-18 | A `search_web` field counts as covered only when one cited passage supports it: 3 named items for a list, a currency bound to the item for a price; titles never count (#534)                       | The pooled check passed L1 from a Tripadvisor title and a photo count, so no menu page was read                                             |
 
 ## Media
 

@@ -8,15 +8,20 @@ Model grading stays live and manual.
 ## What the gate checks
 
 `tests/harness/__tests__/searchDepth.eval.test.ts` replays every fixture in `fixtures/` through the real
-`searchWeb` under `SEARCH_PROVIDER=exa` with a dummy key. HTTP is faked per fixture: requests are answered
-from that fixture's recorded exchanges by URL and request body, and an unmatched request gets a 599 so the
-test sees the miss. The concatenated tool results are the evidence. Each fact in `facts.json` is a
-case-insensitive regex over that evidence.
+`searchWeb` under `SEARCH_PROVIDER=exa` with a dummy key. HTTP is faked per fixture: search requests are
+answered from that fixture's recorded exchanges by URL and query, page-read requests (`/contents`,
+`/extract`) by requested URL, and an unmatched request gets a 599 so the test sees the miss. DNS for page
+reads is stubbed to a public address, so replay never resolves real hosts. The concatenated tool results
+are the evidence. Each fact in `facts.json` is a case-insensitive regex over that evidence.
 
 - A fact listed as `covered` in `expected-coverage.json` that the replay no longer finds fails the test.
 - A fact listed as `missing` that now shows up prints as an improvement without failing.
 - News cases (`N1`-`N3`, `volatile: true`) never fail: their facts expire.
 - With no fixtures present the test reports zero cases and passes.
+- Two L1 brief tests pin the depth loop (issue #534): the saved `L1` fixture replayed with the live gate's
+  `fields` must surface hotcakes, a named drink and another food item inside a cited brief, and the
+  hand-built `L1-thin` fixture (thin snippets, one recorded `/contents` exchange) must need a page read
+  with no `local_query` and pass via that read.
 
 ## Recording fixtures
 
@@ -27,10 +32,12 @@ npx tsx run.mts "" out.jsonl --record ../fixtures/
 RECORD_COMMIT="$(git rev-parse HEAD)" npx tsx run.mts "" out.jsonl --record ../fixtures/
 ```
 
-`run.mts` keeps its existing JSONL output and also writes one `<caseId>.json` per case: the case id,
-recording time, commit (from `RECORD_COMMIT`, else null), the model's tool calls (`search_web` args are
-derived from the recorded Exa request bodies), and every Exa, Tavily and Jikan request and response
-(method, URL, request body, status, response JSON). Recording is a live run and spends real calls.
+`run.mts` runs each case through `runModelTurn`, so the per-turn budget and deadline apply, and keeps its
+existing JSONL output and also writes one `<caseId>.json` per case: the case id, recording time, commit
+(from `RECORD_COMMIT`, else null), the model's real `search_web` arguments as the wrapped tool saw them
+(including `fields`, `local_query` and `source`), and every Exa, Tavily and Jikan request and response
+(method, URL, request body, status, response JSON), `/contents` and `/extract` included. Recording is a
+live run and spends real calls.
 
 ## Updating coverage
 

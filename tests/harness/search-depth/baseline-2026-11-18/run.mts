@@ -1,4 +1,4 @@
-// Baseline search eval: runs each case through the real generateResponse with live Haiku + Exa.
+// Baseline search eval: runs each case through the real runModelTurn with live Haiku + Exa.
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 const dotenv = await import(new URL('../../../../node_modules/dotenv/lib/main.js', import.meta.url).href)
@@ -84,9 +84,25 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
   }
 }) as typeof fetch
 
+// The search_web arguments the model actually sent, in call order. The tool object is shared with the
+// agent, so wrapping its execute before the agent runs records every call, including fields,
+// local_query and source — which the provider request bodies never carry.
+const { searchWebTool } = await import(`${REPO}/src/agent/tools/index.ts`)
+type RecordedCall = { tool: string; args?: Record<string, unknown> }
+let recordedToolCalls: RecordedCall[] = []
+const originalExecute = searchWebTool.execute.bind(searchWebTool)
+searchWebTool.execute = (async (input: unknown, context?: unknown) => {
+  const params = (input ?? {}) as Record<string, unknown>
+  const args: Record<string, unknown> = {}
+  for (const key of ['query', 'topic', 'max_results', 'fields', 'local_query', 'source']) {
+    if (params[key] !== undefined) args[key] = params[key]
+  }
+  recordedToolCalls.push({ tool: 'search_web', args })
+  return originalExecute(input as never, context as never)
+}) as typeof searchWebTool.execute
+
 const { seedWorld } = await import(`${REPO}/tests/harness/toolTrigger.ts`)
-const { generateResponse } = await import(`${REPO}/src/agent/roka.ts`)
-const { withSearchCitations } = await import(`${REPO}/src/agent/searchCitations.ts`)
+const { runModelTurn } = await import(`${REPO}/src/discord/turnPipeline.ts`)
 const { destroySession } = await import(`${REPO}/src/agent/session.ts`)
 
 const header = {
@@ -113,26 +129,13 @@ const only = positionals[0] ? positionals[0].split(',') : undefined
 const out = positionals[1] ?? 'results.jsonl'
 if (recordDir) mkdirSync(recordDir, { recursive: true })
 
-// searchWeb and searchAnime cannot be wrapped, so search_web args are derived from the recorded Exa/Tavily
-// request bodies and the remaining tool names come straight from the turn's toolsUsed.
-function toolCallsFor(
-  toolsUsed: string[],
-  caseExchanges: Exchange[]
-): Array<{ tool: string; args?: Record<string, unknown> }> {
-  const webArgs = caseExchanges
-    .filter((e) => e.provider === 'exa' || e.provider === 'tavily')
-    .map((e) => {
-      const body = (e.requestBody ?? {}) as { query?: unknown; numResults?: unknown; max_results?: unknown }
-      const args: Record<string, unknown> = {}
-      if (typeof body.query === 'string') args.query = body.query
-      const maxResults = body.numResults ?? body.max_results
-      if (typeof maxResults === 'number') args.max_results = maxResults
-      return args
-    })
+// The model's own tool calls come from the wrapped execute above; other tools keep their bare names.
+// Exa /contents and Tavily /extract payloads ride along in the exchanges for the replay to read from.
+function toolCallsFor(toolsUsed: string[], recorded: RecordedCall[]): RecordedCall[] {
   let webIndex = 0
   return toolsUsed.flatMap((tool) => {
     if (tool !== 'search_web') return [{ tool }]
-    const args = webArgs[webIndex++]
+    const args = recorded[webIndex++]?.args
     return args && Object.keys(args).length > 0 ? [{ tool, args }] : [{ tool }]
   })
 }
@@ -148,31 +151,30 @@ for (const c of cases) {
   await seedWorld(header, channelId)
   calls = []
   exchanges = []
+  recordedToolCalls = []
   const started = Date.now()
   try {
-    const [result, citations] = await withSearchCitations(() =>
-      generateResponse({
-        channelId,
-        guildId: 'eval-guild',
-        userMessage: c.message,
-        displayName: 'Sora',
-        username: 'sora',
-        userId: 'sora',
-        memory: true,
-        asksAboutReplies: false
-      })
-    )
+    const turn = await runModelTurn({
+      channelId,
+      guildId: 'eval-guild',
+      userMessage: c.message,
+      displayName: 'Sora',
+      username: 'sora',
+      userId: 'sora',
+      memory: true,
+      asksAboutReplies: false
+    })
     appendFileSync(
       out,
       JSON.stringify({
         ...c,
         elapsedMs: Date.now() - started,
-        toolsUsed: result.toolsUsed,
+        toolsUsed: turn.toolsUsed,
         calls,
-        citations: citations.map((x: { url: string }) => x.url),
-        outcome: result.metrics.outcome,
-        kind: result.metrics.kind,
-        text: result.text
+        citations: turn.sources.map((x: { url: string }) => x.url),
+        outcome: turn.metrics.outcome,
+        kind: turn.metrics.kind,
+        text: turn.text
       }) + '\n'
     )
     if (recordDir) {
@@ -183,7 +185,7 @@ for (const c of cases) {
             caseId: c.id,
             recordedAt: new Date().toISOString(),
             commit: process.env.RECORD_COMMIT ?? null,
-            toolCalls: toolCallsFor(result.toolsUsed, exchanges),
+            toolCalls: toolCallsFor(turn.toolsUsed, recordedToolCalls),
             exchanges
           },
           null,
@@ -192,7 +194,7 @@ for (const c of cases) {
       )
     }
     console.log(
-      `${c.id} ${result.metrics.outcome} ${Date.now() - started}ms tools=${result.toolsUsed.join(',')} calls=${calls.length}`
+      `${c.id} ${turn.metrics.outcome} ${Date.now() - started}ms tools=${turn.toolsUsed.join(',')} calls=${calls.length}`
     )
   } catch (e) {
     appendFileSync(out, JSON.stringify({ ...c, error: String(e) }) + '\n')
