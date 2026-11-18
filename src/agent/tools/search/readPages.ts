@@ -1,5 +1,6 @@
 /** Reads whole pages back through the search provider, for the follow-up reads a summary cannot answer. */
 
+import { AsyncLocalStorage } from 'node:async_hooks'
 import Anthropic from '@anthropic-ai/sdk'
 import type { ResolvedModel, SearchProvider } from '../../../config.js'
 import { config } from '../../../config.js'
@@ -45,6 +46,19 @@ export const PAGE_TEXT = {
   unavailable: 'Page reading is not available with the current search provider.',
   failed: 'Page reading failed.',
   refused: 'That page cannot be read.'
+}
+
+/** Turn-scoped mark that a page read returned text. The tool filter in roka.ts withholds the side-effect tools on it. */
+const pageReadForTurn = new AsyncLocalStorage<{ read: boolean }>()
+
+/** Opens one turn's page-read mark. Entered beside withTurnBudget in turnPipeline.ts. */
+export function withPageReadFlag<T>(run: () => T): T {
+  return pageReadForTurn.run({ read: false }, run)
+}
+
+/** True once readPages has returned page text this turn. False with no turn scope open. */
+export function didReadPage(): boolean {
+  return pageReadForTurn.getStore()?.read ?? false
 }
 
 type Params = Anthropic.MessageCreateParamsNonStreaming
@@ -364,6 +378,9 @@ export async function readPages(sources: readonly PageSource[], opts: ReadPagesO
 
   const read = results.filter((result) => result.ok)
   if (read.length > 0) {
+    // A turn that has seen page text no longer gets the side-effect tools; roka.ts reads this mark.
+    const mark = pageReadForTurn.getStore()
+    if (mark) mark.read = true
     recordPageCitations(read.map(({ title, url }) => ({ title, url })))
   }
   return results

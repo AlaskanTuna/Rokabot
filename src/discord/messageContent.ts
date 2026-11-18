@@ -502,3 +502,16 @@ export function extractCurrentMessageContent(
 ): string {
   return extractMessageContent(message, null, false, botId, componentTextsForTrigger).content
 }
+
+/** The link URLs carried by the triggering message's own embeds, in order, for the source registry. */
+export function collectEmbedUrls(message: Message): string[] {
+  const urls: string[] = []
+  const seen = new Set<string>()
+  for (const embed of message.embeds) {
+    if (embed.url && !seen.has(embed.url)) {
+      seen.add(embed.url)
+      urls.push(embed.url)
+    }
+  }
+  return urls
+}
