@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/AlaskanTuna/Rokabot/compare/v0.9.1...v0.10.0) (2026-11-18)
+
+
+### Features
+
+* **agent:** add a Lens-hint hybrid to the image bake-off and search Lens by URL ([#550](https://github.com/AlaskanTuna/Rokabot/issues/550)) ([c74c3a5](https://github.com/AlaskanTuna/Rokabot/commit/c74c3a567f941dffa2db5ee08b1ad47eeb123ee0))
+
 ## [0.9.1](https://github.com/AlaskanTuna/Rokabot/compare/v0.9.0...v0.9.1) (2026-11-18)
 
 
