@@ -15,7 +15,7 @@ const BRAINS: Brain[] = ['gemini', 'anthropic', 'openai', 'qwen', 'deepseek']
 const CHAT_COMPLETIONS: Partial<Record<Brain, { provider: ChatCompletionsProvider; model: string }>> = {
   openai: { provider: 'openai', model: 'gpt-6-luna' },
   qwen: { provider: 'modelscope', model: 'Qwen/Qwen3.5-35B-A3B' },
-  deepseek: { provider: 'modelscope', model: 'deepseek-ai/DeepSeek-V4.1-Flash' }
+  deepseek: { provider: 'modelscope', model: 'deepseek-ai/DeepSeek-V4.1-Flash-1017' }
 }
 const PAIRS = BRAINS.flatMap((main) =>
   BRAINS.filter((fallback) => fallback !== main).map((fallback): [Brain, Brain] => [main, fallback])

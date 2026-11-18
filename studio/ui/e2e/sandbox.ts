@@ -38,7 +38,11 @@ export function resetSandbox(root: string): void {
   cpSync(join(REPO, 'prompts'), paths.harnessDir, { recursive: true })
   // The bot resolves character: against the repo root, so the sandbox config points at the sandbox pack.
   const config = readFileSync(join(REPO, 'config.yml'), 'utf8')
-  writeFileSync(paths.configPath, config.replace(/^character: \S+/m, `character: ${relative(REPO, paths.packDir)}`))
+  // The specs assert a ModelScope fallback (its key, its row); production may route elsewhere, so the sandbox pins it.
+  const pinned = config
+    .replace(/^character: \S+/m, `character: ${relative(REPO, paths.packDir)}`)
+    .replace(/^ {2}fallback: \S+/m, '  fallback: qwen122')
+  writeFileSync(paths.configPath, pinned)
   cpSync(join(REPO, '.env.example'), paths.envExamplePath)
   writeFileSync(paths.envPath, ENV_TEXT, { mode: 0o600 })
 }

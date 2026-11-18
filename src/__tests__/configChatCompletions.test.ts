@@ -59,7 +59,7 @@ describe('config module', () => {
 
     it.each([
       ['qwen', 'Qwen/Qwen3.5-35B-A3B'],
-      ['deepseek', 'deepseek-ai/DeepSeek-V4.1-Flash']
+      ['deepseek', 'deepseek-ai/DeepSeek-V4.1-Flash-1017']
     ])('accepts the verified %s profile as main', async (key, model) => {
       vi.stubEnv('MODELSCOPE_API_KEY', 'modelscope-test-key')
       withYamlOverride({ llm: { main: key, fallback: null, models: { [key]: { provider: 'modelscope', model } } } })

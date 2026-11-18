@@ -10,7 +10,7 @@ describe('model profiles', () => {
       { provider: 'modelscope', model: 'Qwen/Qwen3.5-122B-A10B', verified: true },
       { provider: 'openai', model: 'gpt-6-luna', verified: true },
       { provider: 'modelscope', model: 'Qwen/Qwen3.5-35B-A3B', verified: true },
-      { provider: 'modelscope', model: 'deepseek-ai/DeepSeek-V4.1-Flash', verified: true },
+      { provider: 'modelscope', model: 'deepseek-ai/DeepSeek-V4.1-Flash-1017', verified: true },
       { provider: 'gemini', model: 'gemini-3.8-flash', verified: false },
       { provider: 'gemini', model: 'gemini-3.1-flash-lite', verified: false },
       { provider: 'openai', model: 'gpt-6-sol', verified: true },
