@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.1](https://github.com/AlaskanTuna/Rokabot/compare/v0.9.0...v0.9.1) (2026-11-18)
+
+
+### Bug Fixes
+
+* **agent:** log the stored tool results a retried turn resumes from ([#546](https://github.com/AlaskanTuna/Rokabot/issues/546)) ([175d507](https://github.com/AlaskanTuna/Rokabot/commit/175d507ed71793536ae04ab6bb64301d496fa1cb))
+
 ## [0.9.0](https://github.com/AlaskanTuna/Rokabot/compare/v0.8.4...v0.9.0) (2026-11-18)
 
 
