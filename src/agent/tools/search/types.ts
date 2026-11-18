@@ -24,7 +24,8 @@ export const SEARCH_TEXT = {
   notConfigured: 'Web search is not configured.',
   quota: 'Search quota exceeded. Try again later.',
   failed: 'Search request failed.',
-  noSummary: 'No summary available.'
+  noSummary: 'No summary available.',
+  budgetSpent: 'No lookups left this turn. Answer now with what you already have.'
 }
 
 export function failedSearch(answer: string): BackendOutcome {

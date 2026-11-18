@@ -95,7 +95,7 @@ In `on` mode:
 4. A successful result becomes a `## Looked It Up` block in the system prompt: answer clipped to 1200 characters, up to 3 sources, 2000 characters in total.
 5. The block invokes the core prompt's "When You've Looked Something Up" rules. Those rules tell the model to call `search_web` again when results are thin or off-topic.
 
-- **Citations:** the search footer uses the prefetched URLs. A later `search_web` call by the model replaces the list.
+- **Citations:** the search footer uses the prefetched URLs. A later `search_web` call by the model appends to the list, de-duplicated by URL.
 - **Tool Count:** a used prefetch counts `search_web` once in `toolsUsed`, even if the model also calls the tool.
 - **Tool Registration:** `search_web` stays registered in every prefetch mode.
 - **No Result:** an empty, failed, aborted, canceled or timed-out search adds no block. The turn answers normally.

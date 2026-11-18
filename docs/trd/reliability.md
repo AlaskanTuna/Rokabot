@@ -292,6 +292,31 @@ pay for the same search again on the retry.
 - **Searchless Deployment:** with `native` on a main model that has no search tool, `search_web` is not registered at
   all, so no attempt budget is read.
 
+## Lookup Budget, Sources and Page Reads
+
+A turn's lookups share one budget, one citation sink and one source registry, all opened in `turnPipeline.ts`
+around the model turn and shared across its retry attempts.
+
+- **Budget:** `search.maxSearches` (2) caps `search_web` calls, `search.maxPageReads` (2) caps page reads, and
+  `search.maxProviderCalls` (3) caps provider calls in total across both — each lookup spends its own kind plus
+  one provider call. `search.replyReserveMs` (6000 ms) is the attempt time a lookup must leave for the chat
+  model's next call; `timeLeftForLookupMs` returns what is left past it. When the budget or the time is spent,
+  `search_web` returns the budget-spent answer at once — the model answers with what it already has — and the
+  attempt never fails on it, so no lookup path opens the sticky fallback.
+- **Citations:** `recordSearchCitations` appends with URL de-duplication within one attempt, and
+  `recordPageCitations` feeds the same sink for read pages. A failed lookup records nothing, leaving earlier
+  citations in place. The sink resets when a new reply attempt starts, so a retried turn cites only what that
+  attempt used; the first attempt keeps the prefetch's citations.
+- **Sources:** `searchSources.ts` maps stable ids (`s1`, `s2`, ...) to URLs from the triggering message
+  (embed text is already inlined into it), and from each successful search. `resolveSource` maps an id back to
+  its URL, or undefined when unknown.
+- **Pages:** `readPages` reads whole pages through the active provider — Exa `contents`, Tavily `extract`, or
+  a one-shot Messages call with the `web_fetch` server tool on an Anthropic main — capped at
+  `search.maxPageChars` (8000) characters with `truncated` set past it, and prefixed with the page
+  untrusted-data label. Other native mains and `off` report page reading unavailable. Private addresses and
+  non-http schemes are refused before any provider call, and quota (402/429) versus failure maps exactly as a
+  search does.
+
 ## Configuration
 
 | Key                            | Default                        | Bounds                                                                                  |
@@ -311,6 +336,11 @@ pay for the same search again on the retry.
 | `llm.modelscopeDailyMagicubes` | 250                            | min 1                                                                                   |
 | `search.nativeTimeoutMs`       | 8,000                          | 2,000 to 60,000                                                                         |
 | `search.nativeReserveMs`       | 5,000                          | 0 to 60,000                                                                             |
+| `search.maxPageChars`          | 8,000                          | min 1                                                                                   |
+| `search.maxSearches`           | 2                              | min 1                                                                                   |
+| `search.maxPageReads`          | 2                              | min 1                                                                                   |
+| `search.maxProviderCalls`      | 3                              | min 1                                                                                   |
+| `search.replyReserveMs`        | 6,000                          | 0 to 60,000                                                                             |
 
 Environment overrides are wired in `src/config.ts` (for example `GEMINI_LIVE_MAX_RETRIES`, `RATE_LIMIT_RPM`).
 

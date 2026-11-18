@@ -43,6 +43,7 @@ import type { ModelVerdict, TurnOutcome } from './reliability.js'
 import { MAX_REPLY_BLOCKS, capReplyBlocks } from './replyBlocks.js'
 import { enforceReplyFormat, formatKinds } from './replyFormat.js'
 import type { FormatEnforcement, FormatRequest, FormatTunables } from './replyFormat.js'
+import { resetSearchCitations } from './searchCitations.js'
 import { PREFETCH_TOOL_NAME } from './searchPrefetch.js'
 import {
   APP_NAME,
@@ -618,6 +619,9 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
               },
               escalateSafety: () => turn.escalateSafety(),
               runTurn: async (attempt, signal) => {
+                // A retried attempt answers from scratch, so it resets the sink and cites only the
+                // sources that attempt looks up itself. The first attempt keeps the prefetch's.
+                if (attempt > 0) resetSearchCitations()
                 const includeCurrentTurn = turn.shouldIncludeCurrentTurn(attempt)
                 // One attempt's whole budget, so a native search the model asks for inside it knows how much
                 // time is left before the chat model's next call still has to fit.
