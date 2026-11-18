@@ -440,6 +440,22 @@ class TurnAttempt {
     this.emptyReplyDiagnostic = diagnostic
   }
 
+  /** Tool results stored by earlier attempts, so a retry can log what it resumes from (#543). */
+  readonly storedToolResults: Array<{ attempt: number; tool: string; chars: number; head: string }> = []
+
+  noteToolResults(attempt: number, parts: readonly Part[]): void {
+    for (const part of parts) {
+      if (!part.functionResponse) continue
+      const text = JSON.stringify(part.functionResponse.response ?? {})
+      this.storedToolResults.push({
+        attempt,
+        tool: part.functionResponse.name ?? 'unknown',
+        chars: text.length,
+        head: text.slice(0, 200)
+      })
+    }
+  }
+
   async escalateSafety(): Promise<string | undefined> {
     if (this.safetyRung >= this.safetyLadder.length) return undefined
     this.safetyRung++
@@ -640,6 +656,13 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
                 // A retried attempt answers from scratch, so it resets the sink and cites only the
                 // sources that attempt looks up itself. The first attempt keeps the prefetch's.
                 if (attempt > 0) resetSearchCitations()
+                // A retry resumes from what earlier attempts stored; off-topic retried replies (#543) need this to diagnose.
+                if (attempt > 0 && turn.storedToolResults.length > 0) {
+                  logger.warn(
+                    { attempt, channelId, toolResults: turn.storedToolResults },
+                    'Retrying after stored tool results'
+                  )
+                }
                 const includeCurrentTurn = turn.shouldIncludeCurrentTurn(attempt)
                 // One attempt's whole budget, so a native search the model asks for inside it knows how much
                 // time is left before the chat model's next call still has to fit.
@@ -684,6 +707,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
                   )
                   if (done) break
                   if (signal.aborted) break
+                  if (event.content?.parts) turn.noteToolResults(attempt, event.content.parts)
                   if (event.errorCode) {
                     return {
                       errorCode: event.errorCode,
