@@ -56,6 +56,7 @@ import {
   sessionService,
   suppressSessionRehydration
 } from './session.js'
+import { AUTO_IDENTIFY_TOOL_NAME, autoIdentifyNote } from './tools/imageId/autoIdentify.js'
 import {
   cancelReminderTool,
   forgetUserTool,
@@ -602,6 +603,12 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
       : [])
   ]
 
+  // A who-is-this question about an image gets its Lens hints before the model answers, so a skipped tool call
+  // cannot leave her guessing (#526).
+  const imageCount = (mediaAttachments ?? []).filter((attachment) => attachment.contentType.startsWith('image/')).length
+  const identifyNote = await autoIdentifyNote(userMessage, imageCount)
+  const identifyParts = identifyNote ? [{ text: identifyNote }] : []
+
   // Keep attachment notices in both ordinary and safety-rebuilt turns.
   const buildNewMessage = (): Content => ({
     role: 'user',
@@ -610,6 +617,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
       // Rung 3 drops what was watched along with what was seen: either may be what tripped the filter.
       ...(turn.dropMedia ? [] : mediaTextParts),
       ...failedAttachmentNotice,
+      ...identifyParts,
       { text: `[${displayName}]: ${userMessage}` }
     ]
   })
@@ -620,7 +628,10 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   )
 
   const llmStartMs = performance.now()
-  const usedToolNames = new Set<string>(prefetchUsed ? [PREFETCH_TOOL_NAME] : [])
+  const usedToolNames = new Set<string>([
+    ...(prefetchUsed ? [PREFETCH_TOOL_NAME] : []),
+    ...(identifyNote ? [AUTO_IDENTIFY_TOOL_NAME] : [])
+  ])
   const geminiToolNames = new Set<string>()
   const toolCalls = { usedToolNames, geminiToolNames }
   const testRunTurn = testRunTurnFactory?.(turn.systemPrompt)

@@ -219,6 +219,8 @@ export const linesFileSchema = z.strictObject({
       get_current_time: text,
       get_weather: text,
       search_web: text,
+      identify_image: text,
+      identify_image_auto: text,
       search_anime: text,
       get_anime_schedule: text,
       set_reminder: text,
