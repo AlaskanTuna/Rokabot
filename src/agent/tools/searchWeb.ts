@@ -38,10 +38,13 @@ export async function searchWeb(params: SearchWebParams): Promise<SearchResult> 
   }
 
   // Fields or a source ask for the bounded depth loop; a plain call keeps today's single search exactly.
-  if ((params.fields ?? []).length > 0 || params.source) return runLookup(params, singleSearch)
-
-  const outcome = await singleSearch(params)
-  return { answer: outcome.answer, results: outcome.results, resultCount: outcome.resultCount }
+  const outcome =
+    (params.fields ?? []).length > 0 || params.source
+      ? await runLookup(params, singleSearch)
+      : await singleSearch(params)
+  // A result's full text feeds only the depth loop's coverage check; the model sees the clipped snippet.
+  const results = outcome.results.map(({ title, url, snippet }) => ({ title, url, snippet }))
+  return { answer: outcome.answer, results, resultCount: outcome.resultCount }
 }
 
 /** One search: the budget spend, the backend call, the citations and the source registration. */

@@ -66,7 +66,10 @@ export const exaSearch: SearchBackend = async (params) => {
       // An empty title is no title, and the reply still has to cite the link it used.
       title: r.title || r.url,
       url: r.url,
-      snippet: clipSnippet(r.highlights?.[0] ?? '')
+      snippet: clipSnippet(r.highlights?.[0] ?? ''),
+      // The joined highlights stay on the result for the depth loop: the fact often sits past the
+      // 200 characters the clipped snippet keeps, and only the loop reads this, never the reply.
+      text: (r.highlights ?? []).filter(Boolean).join('\n')
     }))
 
     logger.debug({ query, resultCount: results.length }, 'Exa search completed')

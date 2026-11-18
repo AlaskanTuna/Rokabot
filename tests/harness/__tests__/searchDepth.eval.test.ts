@@ -5,6 +5,13 @@ vi.mock('../../../src/searchSettings.js', () => ({
   searchProviderSetting: () => 'exa'
 }))
 
+const dnsMocks = vi.hoisted(() => ({ lookup: vi.fn() }))
+
+// Page reads check the address before fetching; the replay fakes fetch, so DNS resolves to a public
+// address the same way readPages.test.ts does and never touches a real resolver.
+vi.mock('node:dns/promises', () => ({ lookup: dnsMocks.lookup }))
+dnsMocks.lookup.mockResolvedValue([{ address: '93.184.216.34', family: 4 }])
+
 import {
   diffCoverage,
   loadExpected,
@@ -59,5 +66,39 @@ describe('search depth replay gate (issue #522)', () => {
     // Improvements print without failing: promote them deliberately with updateCoverage.ts.
     if (improvements.length > 0) console.log(`search-depth replay improvements to promote:\n${improvements.join('\n')}`)
     expect(regressions).toEqual([])
+  })
+})
+
+describe('search depth brief (issue #534)', () => {
+  it('covers the L1 menu through a cited brief with the live gate fields', async () => {
+    const fixture = loadFixtures().find((f) => f.caseId === 'L1')
+    expect(fixture).toBeDefined()
+    const query = fixture?.toolCalls.find((call) => call.tool === 'search_web')?.args?.query ?? ''
+    const evidence = await replayFixture({
+      ...(fixture as NonNullable<typeof fixture>),
+      toolCalls: [
+        {
+          tool: 'search_web',
+          args: {
+            query,
+            max_results: 5,
+            fields: ['menu items', 'drink prices', 'food prices']
+          }
+        }
+      ]
+    })
+    expect(evidence).toMatch(/hotcakes?/i)
+    expect(evidence).toMatch(/hot coffee|blended coffee|almond au lait|latte|iced cocoa/i)
+    expect(evidence).toMatch(/sandwich|curry toast|cheese toast|pudding/i)
+    expect(evidence).toMatch(/\[s\d+\]/)
+  })
+
+  it('reads the menu page for the thin L1 case, with no local query', async () => {
+    const fixture = loadFixtures().find((f) => f.caseId === 'L1-thin')
+    expect(fixture).toBeDefined()
+    const evidence = await replayFixture(fixture as NonNullable<typeof fixture>)
+    expect(evidence).toMatch(/ブレンドコーヒー|アイスコーヒー/)
+    expect(evidence).toMatch(/タマゴサンド|ホットケーキ/)
+    expect(evidence).toMatch(/\[s\d+\]/)
   })
 })

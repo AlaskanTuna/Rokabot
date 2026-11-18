@@ -3,6 +3,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { withSearchSources } from '../../../src/agent/searchSources.js'
 import type { SearchResult } from '../../../src/agent/tools/search/types.js'
 import { searchWeb } from '../../../src/agent/tools/searchWeb.js'
 import { fakeFetch, json } from '../fakeFetch.js'
@@ -23,7 +24,7 @@ export interface FixtureExchange {
 
 export interface FixtureToolCall {
   tool: string
-  args?: { query?: string; max_results?: number }
+  args?: { query?: string; max_results?: number; fields?: string[]; local_query?: string; source?: string }
 }
 
 export interface CaseFixture {
@@ -81,9 +82,24 @@ function parseJsonBody(body: unknown): unknown {
 }
 
 // A replayed searchWeb call rebuilds its provider body from the recorded args, so an exact body match
-// would fail on any future body-shape change. Matching on URL plus the query keeps the gate about evidence.
+// would fail on any future body-shape change. Search exchanges match on URL plus the query; page-read
+// exchanges (/contents, /extract) match on the requested URL, since their bodies carry no query.
+function urlsIn(body: unknown): string[] {
+  const parsed = typeof body === 'string' ? parseJsonBody(body) : body
+  if (typeof parsed !== 'object' || parsed === null) return []
+  const urls: string[] = []
+  for (const key of ['urls', 'ids']) {
+    const value = (parsed as Record<string, unknown>)[key]
+    if (Array.isArray(value)) for (const url of value) if (typeof url === 'string') urls.push(url)
+  }
+  return urls
+}
+
 function exchangeMatches(exchange: FixtureExchange, url: string, body: unknown): boolean {
   if (exchange.url !== url) return false
+  const wantUrls = urlsIn(exchange.requestBody)
+  const gotUrls = urlsIn(body)
+  if (wantUrls.length > 0 || gotUrls.length > 0) return wantUrls.some((want) => gotUrls.includes(want))
   const want = (exchange.requestBody ?? {}) as { query?: unknown }
   const got = (body ?? {}) as { query?: unknown }
   if (typeof want.query === 'string' || typeof got.query === 'string') return want.query === got.query
@@ -96,7 +112,8 @@ export function evidenceText(result: SearchResult): string {
 
 /**
  * Replays one fixture's search_web calls through the real searchWeb with the recorded provider
- * payloads. Needs SEARCH_PROVIDER=exa and a dummy EXA_API_KEY; the caller sets both.
+ * payloads. Needs SEARCH_PROVIDER=exa and a dummy EXA_API_KEY; the caller sets both. Reads run
+ * inside a source scope, so the brief cites the stable source ids a live turn would use.
  */
 export async function replayFixture(fixture: CaseFixture): Promise<string> {
   const realFetch = globalThis.fetch
@@ -109,13 +126,21 @@ export async function replayFixture(fixture: CaseFixture): Promise<string> {
   })
   globalThis.fetch = fetchImpl
   try {
-    const parts: string[] = []
-    for (const call of fixture.toolCalls) {
-      if (call.tool !== 'search_web' || typeof call.args?.query !== 'string') continue
-      const result = await searchWeb({ query: call.args.query, max_results: call.args.max_results })
-      parts.push(evidenceText(result))
-    }
-    return parts.join('\n')
+    return await withSearchSources(async () => {
+      const parts: string[] = []
+      for (const call of fixture.toolCalls) {
+        if (call.tool !== 'search_web' || typeof call.args?.query !== 'string') continue
+        const result = await searchWeb({
+          query: call.args.query,
+          ...(call.args.max_results !== undefined ? { max_results: call.args.max_results } : {}),
+          ...(call.args.fields !== undefined ? { fields: call.args.fields } : {}),
+          ...(call.args.local_query !== undefined ? { local_query: call.args.local_query } : {}),
+          ...(call.args.source !== undefined ? { source: call.args.source } : {})
+        })
+        parts.push(evidenceText(result))
+      }
+      return parts.join('\n')
+    })
   } finally {
     globalThis.fetch = realFetch
   }

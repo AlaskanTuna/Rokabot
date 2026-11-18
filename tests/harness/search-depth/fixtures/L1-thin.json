@@ -1,0 +1,71 @@
+{
+  "caseId": "L1-thin",
+  "recordedAt": "2026-11-18T10:00:00.000Z",
+  "commit": null,
+  "toolCalls": [
+    {
+      "tool": "search_web",
+      "args": {
+        "query": "Coffee Marufuku Osaka menu",
+        "max_results": 5,
+        "fields": ["menu items", "drink prices", "food prices"]
+      }
+    }
+  ],
+  "exchanges": [
+    {
+      "provider": "exa",
+      "method": "POST",
+      "url": "https://api.exa.ai/search",
+      "requestBody": {
+        "query": "Coffee Marufuku Osaka menu",
+        "type": "auto",
+        "numResults": 5,
+        "contents": {
+          "highlights": true
+        }
+      },
+      "status": 200,
+      "responseBody": {
+        "requestId": "l1-thin-search",
+        "results": [
+          {
+            "id": "https://marufukucoffeeten.com/store/marufukucoffee-sennichimae/",
+            "title": "丸福珈琲店 千日前本店 - 昭和九年創業 丸福珈琲店公式サイト",
+            "url": "https://marufukucoffeeten.com/store/marufukucoffee-sennichimae/",
+            "highlights": [
+              "## 丸福珈琲店 千日前本店\n\n住所: 大阪市中央区千日前1-9-1\n営業時間: 8:00～23:00\n看板メニューのホットケーキが名物です。"
+            ]
+          },
+          {
+            "id": "https://marufukucoffeeten.com/menu/",
+            "title": "Marufuku Coffee Drink Menu - Sennichimae",
+            "url": "https://marufukucoffeeten.com/menu/",
+            "highlights": ["Marufuku coffee shop. See the full menu page for seasonal items."]
+          }
+        ]
+      }
+    },
+    {
+      "provider": "exa",
+      "method": "POST",
+      "url": "https://api.exa.ai/contents",
+      "requestBody": {
+        "urls": ["https://marufukucoffeeten.com/menu/"],
+        "text": {
+          "maxCharacters": 8000
+        }
+      },
+      "status": 200,
+      "responseBody": {
+        "results": [
+          {
+            "url": "https://marufukucoffeeten.com/menu/",
+            "title": "Marufuku drink menu",
+            "text": "ブレンドコーヒー 680円\nアイスコーヒー 550円\nホットケーキ 700円\nタマゴサンド 800円\n季節のスイーツ各種"
+          }
+        ]
+      }
+    }
+  ]
+}
