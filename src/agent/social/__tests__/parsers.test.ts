@@ -1,6 +1,12 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { parseBlueskyThread, parseFxTwitterResponse, parseYouTubeOEmbed, parseYtDlpMetadata } from '../parsers.js'
+import {
+  parseBlueskyThread,
+  parseFxTwitterResponse,
+  parseInstagramGraphqlPage,
+  parseYouTubeOEmbed,
+  parseYtDlpMetadata
+} from '../parsers.js'
 import { parseSocialPostUrl } from '../urls.js'
 import type { SocialPostTarget } from '../urls.js'
 
@@ -431,5 +437,152 @@ describe('social post parsers', () => {
       photoCount: 1,
       videoCount: 0
     })
+  })
+
+  it('parses an Instagram GraphQL photo post from a saved dump page', () => {
+    const target = parseSocialPostUrl('https://www.instagram.com/p/AbCdEf12345/')!
+    const page = JSON.stringify({
+      data: {
+        xig_polaris_media: {
+          __typename: 'XIGPolarisImageMedia',
+          code: 'AbCdEf12345',
+          if_not_gated_logged_out: {
+            code: 'AbCdEf12345',
+            media_type: 1,
+            taken_at: 1794744000,
+            comment_count: 42,
+            like_count: 500,
+            user: { username: 'synth_user', full_name: 'Synthetic User' },
+            caption: { text: 'Morning coffee by the window' },
+            accessibility_caption: 'Photo by Synthetic User on November 15, 2026.',
+            display_uri: 'https://scontent.cdninstagram.com/v/photo-display.jpg',
+            image_versions2: {
+              candidates: [{ url: 'https://scontent.cdninstagram.com/v/photo-candidate.jpg' }]
+            }
+          }
+        }
+      }
+    })
+
+    expect(parseInstagramGraphqlPage(page, target, 1500)).toMatchObject({
+      platform: 'instagram',
+      id: 'AbCdEf12345',
+      authorHandle: 'synth_user',
+      authorName: 'Synthetic User',
+      createdAt: '2026-11-15',
+      text: 'Morning coffee by the window',
+      photoCount: 1,
+      videoCount: 0,
+      imageUrl: 'https://scontent.cdninstagram.com/v/photo-display.jpg',
+      replyCount: 42,
+      video: null
+    })
+  })
+
+  it('parses an Instagram GraphQL carousel with null caption using accessibility_caption', () => {
+    const target = parseSocialPostUrl('https://www.instagram.com/p/AbCdEf12345/')!
+    const page = JSON.stringify({
+      data: {
+        xig_polaris_media: {
+          code: 'AbCdEf12345',
+          if_not_gated_logged_out: {
+            code: 'AbCdEf12345',
+            media_type: 8,
+            taken_at: 1794744000,
+            comment_count: 0,
+            user: { username: 'synth_user', full_name: 'Synthetic User' },
+            caption: null,
+            accessibility_caption: 'Photo by Synthetic User on November 15, 2026. May be an image of text.',
+            display_uri: 'https://scontent.cdninstagram.com/v/carousel-cover.jpg',
+            carousel_media_count: 3
+          }
+        }
+      }
+    })
+
+    expect(parseInstagramGraphqlPage(page, target, 1500)).toMatchObject({
+      photoCount: 3,
+      videoCount: 0,
+      text: 'Photo by Synthetic User on November 15, 2026. May be an image of text.',
+      imageUrl: 'https://scontent.cdninstagram.com/v/carousel-cover.jpg',
+      replyCount: 0,
+      video: null
+    })
+  })
+
+  it('falls back to image_versions2 when display_uri is missing in an Instagram GraphQL page', () => {
+    const target = parseSocialPostUrl('https://www.instagram.com/p/AbCdEf12345/')!
+    const page = JSON.stringify({
+      data: {
+        xig_polaris_media: {
+          code: 'AbCdEf12345',
+          media_type: 1,
+          user: { username: 'synth_user', full_name: '' },
+          caption: { text: 'Fallback image' },
+          image_versions2: {
+            candidates: [{ url: 'https://scontent.cdninstagram.com/v/fallback.jpg' }]
+          }
+        }
+      }
+    })
+
+    expect(parseInstagramGraphqlPage(page, target, 1500)).toMatchObject({
+      photoCount: 1,
+      imageUrl: 'https://scontent.cdninstagram.com/v/fallback.jpg',
+      text: 'Fallback image'
+    })
+  })
+
+  it('returns null on mismatched Instagram GraphQL code or invalid JSON', () => {
+    const target = parseSocialPostUrl('https://www.instagram.com/p/AbCdEf12345/')!
+    const mismatched = JSON.stringify({
+      data: {
+        xig_polaris_media: {
+          code: 'OtherPost99',
+          media_type: 1,
+          caption: { text: 'Wrong post' },
+          display_uri: 'https://scontent.cdninstagram.com/v/other.jpg'
+        }
+      }
+    })
+
+    expect(parseInstagramGraphqlPage(mismatched, target, 1500)).toBeNull()
+    expect(parseInstagramGraphqlPage('{not valid json', target, 1500)).toBeNull()
+  })
+
+  it('defaults carousel photoCount to 1, sets 0 for other media types, and returns null when empty', () => {
+    const target = parseSocialPostUrl('https://www.instagram.com/p/AbCdEf12345/')!
+    const carouselNoCount = JSON.stringify({
+      data: {
+        xig_polaris_media: {
+          code: 'AbCdEf12345',
+          media_type: 8,
+          caption: { text: 'Carousel without count' }
+        }
+      }
+    })
+    const videoMedia = JSON.stringify({
+      data: {
+        xig_polaris_media: {
+          code: 'AbCdEf12345',
+          media_type: 2,
+          caption: { text: 'Video post' }
+        }
+      }
+    })
+    const emptyMedia = JSON.stringify({
+      data: {
+        xig_polaris_media: {
+          code: 'AbCdEf12345',
+          media_type: 1,
+          caption: null,
+          user: { username: 'synth_user' }
+        }
+      }
+    })
+
+    expect(parseInstagramGraphqlPage(carouselNoCount, target, 1500)).toMatchObject({ photoCount: 1, videoCount: 0 })
+    expect(parseInstagramGraphqlPage(videoMedia, target, 1500)).toMatchObject({ photoCount: 0, videoCount: 0 })
+    expect(parseInstagramGraphqlPage(emptyMedia, target, 1500)).toBeNull()
   })
 })

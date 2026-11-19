@@ -231,6 +231,8 @@ Mention, reply and name-keyword turns open at most one supported post link (`soc
 3. When replying to Roka, the post she opened: `openedPostCitation` reads the first citation of her Components V2 reply when its footer says she opened a post.
 4. Forwarded snapshots on the triggering message, then on the replied-to message.
 
+A link inside a Discord spoiler (`||https://…||`) counts. `findSocialPostTarget` strips the trailing `|`.
+
 ### Supported Platforms
 
 | Platform  | Hosts                                                                               | Post Source                                                                                                                         | Video Watched From                                         | Replies Source                               |
@@ -241,17 +243,19 @@ Mention, reply and name-keyword turns open at most one supported post link (`soc
 | YouTube   | `youtube.com` (`/watch`, `/shorts/`), `youtu.be`                                    | yt-dlp metadata; oEmbed (title, channel, thumbnail) when yt-dlp fails                                                               | Canonical URL (Gemini)                                     | Data API v3 `commentThreads` (`GCP_API_KEY`) |
 | TikTok    | `tiktok.com`                                                                        | yt-dlp metadata                                                                                                                     | yt-dlp formats                                             | `api/comment/list`                           |
 | Reddit    | `reddit.com`, `redd.it`                                                             | First entry of the comment RSS feed, or the vxreddit page's OpenGraph tags when Reddit refuses; yt-dlp only for a `v.redd.it` video | yt-dlp formats, watched silent                             | Comment RSS, `sort=top`                      |
-| Instagram | `instagram.com` (`/p/`, `/reel/`)                                                   | yt-dlp metadata                                                                                                                     | yt-dlp formats                                             | yt-dlp `--write-comments`                    |
+| Instagram | `instagram.com` (`/p/`, `/reel/`)                                                   | yt-dlp metadata; saved GraphQL page for photos and carousels when yt-dlp finds no video                                             | yt-dlp formats                                             | yt-dlp `--write-comments`                    |
 | Bilibili  | `bilibili.com` (`/video/BV…`, `/video/av…`)                                         | yt-dlp metadata                                                                                                                     | yt-dlp formats                                             | `x/v2/reply`, with a locally computed `aid`  |
 
 - **Threads Headers:** without `Accept: text/html` and the `Sec-Fetch-*` navigation headers in `THREADS_PAGE_HEADERS`, Threads serves an empty shell and the lookup fails as `no_post_data`. Related posts on the page are ignored.
 - **Reddit Feed:** Reddit refuses unauthenticated Node clients with 403 or 429. The lookup then reads `vxreddit.com/comments/<id>/` OpenGraph tags and fails only when that also fails. If yt-dlp fails on a video post, the feed entry or the mirror stands in.
+- **Instagram Photos:** yt-dlp exits non-zero on a photo or carousel post ("There is no video in this post"). The lookup then reads the saved `api_graphql` page and builds the post from it: image, caption (or accessibility caption), author, comment count and carousel size. If that page has no usable post, the lookup fails as usual.
 
 ### URL and Extractor Safety
 
-- **URL Allowlist:** only HTTPS URLs on the hosts above, with a matching path, are accepted. Ports, userinfo and IP literals are refused.
+- **Request Allowlist:** requests go only to the first-party hosts above, through the canonical URL. Only HTTPS URLs are accepted. Ports, userinfo and IP literals are refused.
+- **Shape Recognition:** on any other host, a strict post path is recognised and rebuilt as the first-party URL; the unknown host is never contacted, and YouTube is matched by host only. Accepted shapes are X (`/<user>/status/<15–20 digits>`), Instagram reels (`/reel/<11 chars>` or `/reels/<11 chars>`), Instagram posts (`/p/<11 chars>`, only when the host contains `insta`), TikTok (`/@<user>/video/<digits>`), Reddit (`/r/<sub>/comments/<id>`), Bluesky (`/profile/<handle>/post/<id>`), Threads (`/@<user>/post/<id>`), and Bilibili (`/video/BV<10 chars>`).
 - **Canonical URLs:** each post is rebuilt from its parsed IDs (for example `https://x.com/i/status/<id>`) before any request. A YouTube `t=`, `start=` or `#t=` timestamp is kept as `startSec`.
-- **yt-dlp Sandbox:** argument array with `shell: false`, a fresh temporary `HOME`, `--ignore-config`, `--no-plugin-dirs`, `--no-cache-dir`, `--no-playlist`, `--skip-download`, zero retries, a timeout with `SIGKILL`, and a 2 MiB stdout cap.
+- **yt-dlp Sandbox:** argument array with `shell: false`, a fresh temporary `HOME`, `--ignore-config`, `--no-plugin-dirs`, `--no-cache-dir`, `--no-playlist`, `--skip-download`, zero retries, a timeout with `SIGKILL`, and a 2 MiB stdout cap. Instagram lookups also pass `--write-pages`, and only the matching GraphQL page is read from the temporary `HOME` before it is removed.
 - **Selected Metadata Only:** format lists and signed media URLs never reach the model.
 - **Missing Binary:** if yt-dlp is missing at startup, YouTube, TikTok, Reddit, Instagram and Bilibili fail as `binary_missing`. X, Bluesky and Threads keep working. The log says `Social video extractors disabled`.
 - **Logs:** `Social post lookup failed` carries only `platform` and `reason`.

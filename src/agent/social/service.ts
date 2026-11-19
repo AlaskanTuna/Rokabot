@@ -2,7 +2,13 @@ import { config } from '../../config.js'
 import { logger } from '../../utils/logger.js'
 import { resolvesToPublicAddress } from '../media/mediaRules.js'
 import { resolveBlueskyDid } from './blueskyDid.js'
-import { parseBlueskyThread, parseFxTwitterResponse, parseYouTubeOEmbed, parseYtDlpMetadata } from './parsers.js'
+import {
+  parseBlueskyThread,
+  parseFxTwitterResponse,
+  parseInstagramGraphqlPage,
+  parseYouTubeOEmbed,
+  parseYtDlpMetadata
+} from './parsers.js'
 import { parseRedditFeedPost, parseVxRedditPage } from './redditFeed.js'
 import { BROWSER_USER_AGENT } from './replies/common.js'
 import { replyReader } from './replies/service.js'
@@ -303,8 +309,19 @@ export class SocialPostViewer {
     const redditFeedPost = redditFeed
     if (redditFeedPost && redditFeedPost.videoCount === 0) return { status: 'found', post: redditFeedPost }
 
-    const result = await this.runExtractor(this.settings.ytDlpPath, target.extractorUrl, this.settings.timeoutMs)
+    const result =
+      target.platform === 'instagram'
+        ? await this.runExtractor(this.settings.ytDlpPath, target.extractorUrl, this.settings.timeoutMs, [], {
+            keepPages: /api_graphql\.dump$/
+          })
+        : await this.runExtractor(this.settings.ytDlpPath, target.extractorUrl, this.settings.timeoutMs)
     if ('reason' in result) {
+      if (target.platform === 'instagram' && result.pages) {
+        for (const page of result.pages) {
+          const post = parseInstagramGraphqlPage(page, target, this.settings.maxTextChars)
+          if (post) return { status: 'found', post }
+        }
+      }
       if (redditFeedPost) return { status: 'found', post: redditFeedPost }
       if (target.platform === 'reddit') {
         const mirrored = await this.lookupRedditMirror(target, signal)
