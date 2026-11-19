@@ -231,6 +231,8 @@ Mention, reply and name-keyword turns open at most one supported post link (`soc
 3. When replying to Roka, the post she opened: `openedPostCitation` reads the first citation of her Components V2 reply when its footer says she opened a post.
 4. Forwarded snapshots on the triggering message, then on the replied-to message.
 
+A link inside a Discord spoiler (`||https://…||`) counts. `findSocialPostTarget` strips the trailing `|`.
+
 ### Supported Platforms
 
 | Platform  | Hosts                                                                               | Post Source                                                                                                                         | Video Watched From                                         | Replies Source                               |
@@ -246,6 +248,7 @@ Mention, reply and name-keyword turns open at most one supported post link (`soc
 
 - **Threads Headers:** without `Accept: text/html` and the `Sec-Fetch-*` navigation headers in `THREADS_PAGE_HEADERS`, Threads serves an empty shell and the lookup fails as `no_post_data`. Related posts on the page are ignored.
 - **Reddit Feed:** Reddit refuses unauthenticated Node clients with 403 or 429. The lookup then reads `vxreddit.com/comments/<id>/` OpenGraph tags and fails only when that also fails. If yt-dlp fails on a video post, the feed entry or the mirror stands in.
+- **Instagram Photos:** yt-dlp exits non-zero on a photo or carousel post ("There is no video in this post"). The lookup then reads the saved `api_graphql` page and builds the post from it: image, caption (or accessibility caption), author, comment count and carousel size. If that page has no usable post, the lookup fails as usual.
 
 ### URL and Extractor Safety
 

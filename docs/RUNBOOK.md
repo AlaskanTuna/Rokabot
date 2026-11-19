@@ -893,6 +893,8 @@ X and Bluesky use public APIs, Threads reads its public post page, and Reddit fa
 - **YouTube Refusals:** YouTube can refuse yt-dlp from the Pi's home IP (`exit_1`). Run yt-dlp by hand in the container to see `HTTP Error 429` or `Sign in to confirm you're not a bot`. Those links fall back to YouTube oEmbed (title, channel, thumbnail) and log a failure only when oEmbed fails too.
 - **Missing Binary:** startup logs `Social video extractors disabled` with reason `binary_missing`. Lookups on the yt-dlp platforms then get the normal "could not be opened" marker.
 - **Threads `no_post_data`:** the page came back without its post. The post is private or deleted, or Threads changed what it renders for a logged-out request (check the headers in `src/agent/social/threads.ts`).
+- **Instagram Photos:** yt-dlp finds no video in a photo or carousel post and exits non-zero. The lookup then reads the saved GraphQL page and still opens the post. No log line marks this fallback. A `Social post lookup failed` line for Instagram means the page held no post too.
+- **Mirror Links:** a link on an unknown mirror host opens when its path has a post shape (see [Media](trd/media.md#url-and-extractor-safety)). The bot rebuilds the first-party URL and never contacts the mirror. A YouTube link must use a YouTube host.
 
 ### Image Identification Bake-Off
 
@@ -1064,10 +1066,18 @@ cd ~/rokabot && sudo docker compose build --no-cache && sudo docker compose up -
 | Threads `no_post_data`                                | The post in a logged-out browser                 | Private or deleted post, or update headers in `src/agent/social/threads.ts`     |
 | Embedding backfill counts stop moving                 | Per-space query and sidecar health               | Make the sidecar healthy, then `docker compose restart roka`                    |
 | Hosted image shows blank                              | `curl` the URL for `200` and body size           | Re-upload under a new prefix and swap the URLs                                  |
+| `Failed to embed memory episode` with `status: 402`   | Logs; billing in Google AI Studio                | Top up prepay credits or replace `GEMINI_API_KEY`, then recreate `roka` (below) |
 
 ```bash
 # List files in the Gemini Files API; expect none between turns
 curl -s "https://generativelanguage.googleapis.com/v1beta/files" -H "x-goog-api-key: $GEMINI_API_KEY"
+```
+
+**Gemini 402:** a `402 RESOURCE_EXHAUSTED: Your prepayment credits are depleted` error hits embeddings and generation alike. It follows a billing change on the Google AI Studio project, such as a move from the free tier to a prepay tier. The logs show `Failed to embed memory episode` and `Failed to re-embed memory episode` with `status: 402`. After you top up the credits or put a new key in `~/rokabot/.env`, recreate the container and open `http://localhost:3000/` to check it:
+
+```bash
+# Recreate only the bot container so it reads the new .env
+sudo docker compose -f ~/rokabot/docker-compose.yml up -d --force-recreate --no-deps roka
 ```
 
 ## Source Files
