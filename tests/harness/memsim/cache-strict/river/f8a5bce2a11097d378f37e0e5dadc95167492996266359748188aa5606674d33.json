@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "f8a5bce2a11097d378f37e0e5dadc95167492996266359748188aa5606674d33",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af9775d1dc74\",\"object\":\"chat.completion\",\"created\":1794733917,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"ops\\\":[{\\\"op\\\":\\\"noop\\\"}],\\\"summary\\\":\\\"Dave checked in with the Southbay crew after lunch, and Erin asked the bot about her tortoise and a saxophone clip.\\\"}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4472,\"completion_tokens\":40,\"total_tokens\":4512,\"prompt_tokens_details\":{\"cached_tokens\":3840},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

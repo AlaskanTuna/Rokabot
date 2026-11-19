@@ -1,0 +1,110 @@
+{
+  "caseId": "D3",
+  "recordedAt": "2026-11-17T21:20:38.636Z",
+  "commit": "2f6dac20658fc7b1625a3298b81d0170496bd5c0",
+  "toolCalls": [
+    {
+      "tool": "get_anime_schedule"
+    },
+    {
+      "tool": "search_web",
+      "args": {
+        "query": "anime airing Saturday this week schedule",
+        "max_results": 5
+      }
+    }
+  ],
+  "exchanges": [
+    {
+      "provider": "jikan",
+      "method": "GET",
+      "url": "https://api.jikan.moe/v4/schedules?filter=saturday&sfw=true&limit=25",
+      "requestBody": null,
+      "status": null,
+      "responseBody": null,
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "provider": "jikan",
+      "method": "GET",
+      "url": "https://api.jikan.moe/v4/schedules?sfw=true&limit=25",
+      "requestBody": null,
+      "status": null,
+      "responseBody": null,
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "provider": "exa",
+      "method": "POST",
+      "url": "https://api.exa.ai/search",
+      "requestBody": {
+        "query": "anime airing Saturday this week schedule",
+        "type": "auto",
+        "numResults": 5,
+        "contents": {
+          "highlights": true
+        }
+      },
+      "status": 200,
+      "responseBody": {
+        "requestId": "ed19a0b489232a9771dc7c2b1183b3d2",
+        "resolvedSearchType": "",
+        "results": [
+          {
+            "id": "https://whereanime.com/schedule",
+            "title": "Anime Airing Schedule This Week: 17 November to 23 November | WhereAnime",
+            "url": "https://whereanime.com/schedule",
+            "highlights": [
+              "Anime Airing Schedule This Week: 17 November to 23 November | WhereAnime\n\n# Anime airing this week\n\nTuesday 17 November to Monday 23 November. Each time is the first broadcast in Japan, shown in your own time zone, with a countdown.\n\nepisodes\n\n105\n\nshows\n\n104\n\nbusiest day\n\nSat\n\nTimes in UTC.\n\n...\n\n## Saturday 21 November Today \n\n1. 00:26 UTC RILAKKUMA Episode 33 On Crunchyroll and YouTube Sat, Nov 21 UTC\n2. 00:30 UTC Nezumi-kun no Chokki (TV) 2nd Season Episode 8 No official stream listed yet Sat, Nov 21 UTC\n3. 00:30 UTC KERORO☆ Episode 8 On YouTube and Crunchyroll Sat, Nov 21 UTC\n4. 07:29 UTC Sirotan Episode 8 On YouTube Sat, Nov 21 UTC\n5. 07:30 UTC Shin Chan Episode 1362 No official stream listed yet Sat, Nov 21 UTC\n6. 08:00 UTC Doraemon (2005) Episode 942 On YouTube Sat, Nov 21 UTC\n7. 08:30 UTC The Vermilion Mask Episode 7 On Crunchyroll Sat, Nov 21 UTC\n8. 09:00 UTC Detective Conan Episode 1221 On Crunchyroll, Netflix, Crackle and Amazon Prime Video Sat, Nov 21 UTC\n9. 09:25 UTC The Seven Knights of the Marronnier Kingdom Episode 8 of 20 On Amazon Prime Video Sat, Nov 21 UTC\n10. 12:00 UTC Romelia War Chronicle Episode 8 of 12 On YouTube and Crunchyroll Sat, Nov 21 UTC\n11. 13:00 UTC A Tale of the Secret Saint Episode 9 On Crunchyroll, Bilibili TV, YouTube and iQ Sat, Nov 21 UTC\n12. 13:30 UTC A Wild Last Boss Appeared! Season 2 Episode 9 On Crunchyroll and YouTube Sat, Nov 21 UTC\n13. 14:00 UTC Black Clover Season 2 Episode 8 On Crunchyroll, Bilibili TV and iQ Sat, Nov 21 UTC\n14. 14:30 UTC #I'm Looking For a Zombie Episode 7 of 12 On Crunchyroll Sat, Nov 21 UTC\n15. 14:30 UTC VERTEX FORCE Episode 8 On Crunchyroll Sat, Nov 21 UTC\n16. 14:30 UTC CARDFIGHT!! VANGUARD Divinez: Parallactic Fate Episode 3 of 3, final No official stream listed yet Sat, Nov 21 UTC\n17. 14:45 UTC HORROR COLLECTOR Episode 7 of 12 On Crunchyroll Sat, Nov 21 UTC\n18. 15:00 UTC Magical Explorer Episode 9 of 13 On Crunchyroll Sat, Nov 21 UTC\n19. 15:30 UTC Even the Student Council Has Its Holes! Episode 8 of 12 On OceanVeil, Bilibili TV and iQ Sat, Nov 21 UTC\n20. 15:56 UTC Ranma1/2 (2024) Season 3 Episode 8 On Netflix Sat, Nov 21 UTC\n21. 16:30 UTC Magic Repo Man: Dumped by My Party, I’ll Cash In With a Cute Support Fairy to Become the Strongest! Episode 8 On Crunchyroll, Bilibili TV and YouTube Sat, Nov 21 UTC\n22. 22:00 UTC Little Shark's Day Out Season 2 Episode 33 of 72 On YouTube Sat, Nov 21 UTC\n23. 22:00 UTC Yuruyuru Zukan Episode 8 No official stream listed yet Sat, Nov 21 UTC\n24. 22:00 UTC Raccoon Dog & Fox Episode 8 No official stream listed yet Sat, Nov 21 UTC\n25. 23:00 UTC Koupen-chan Episode 85 On YouTube Sat, Nov 21 UTC\n26. 23:30 UTC Star Detective Precure! Episode 42 of 51 On Crunchyroll and YouTube Sat, Nov 21 UTC\n\n## Sunday 22 November Today \n\n1. 00:16 UTC Punirunes Puni 4 Episode 8 No official stream listed yet Sun, Nov 22 UTC\n2. 00:30 UTC Onegai AiPri Episode 34 No official stream listed yet Sun, Nov 22 UTC\n3. 01:00 UTC Pop Pap Polters Episode 8 No official stream listed yet Sun, Nov 22 UTC\n\n...\n\n04:00 UTC Doupo Cangqiong Movie: Shuang Di Zhi Zhan Episode 1 of 1, final No official stream listed yet Sun, Nov 22 UTC\n5. 07:30 UTC Blue Box Season 2 Episode 7 of 12 On Netflix Sun, Nov 22 UTC\n6.\n\n...\n\nWhat time zone are these times in?\n\nYour own. The page is built in UTC, then your browser shows each time in your time zone and moves each episode to your own day. Each time is the first broadcast in Japan.\n\nHow often is this page updated?\n\nOnce a day. The airing calendar comes from AniList and the page is rebuilt every day, so an episode that moves is corrected within a day."
+            ],
+            "image": "https://whereanime.com/og-image.png"
+          },
+          {
+            "id": "https://neosek.ai/schedule?week=2026-W47",
+            "title": "Airing schedule",
+            "url": "https://neosek.ai/schedule?week=2026-W47",
+            "highlights": [
+              "# Airing schedule\n\nThis season's anime\n\nNovember 16 – November 22\n\n...\n\n6. Saturday11/21 12:00 AMExpectedホタルの嫁入り 12:00 AMExpected桃源暗鬼 ～日光・華厳の滝編～ 12:30 AMExpectedうちの弟どもがすみません 1:30 AMOut東京リベンジャーズ 三天戦争編07.A sense of foreboding 9:00 AMExpectedケロロ軍曹☆ 5:30 PMExpected朱色の仮面 9:00 PMExpected転生した大聖女は、聖女であることをひた隠す 9:00 PMOutマロニエ王国の七人の騎士07.捎来的讯息 9:30 PMExpected野生のラスボスが現れた！第2期 10:00 PMExpectedロメリア戦記 10:00 PMExpected大王饶命 第三季 11:00 PMExpected#ゾンビさがしてます 11:00 PMExpectedブラッククローバー 2nd Season"
+            ]
+          },
+          {
+            "id": "https://www.livechart.me/schedule?date=2026-11-19",
+            "title": "Anime Schedule | LiveChart.me",
+            "url": "https://www.livechart.me/schedule?date=2026-11-19",
+            "highlights": [
+              "Sat Nov 21\n\n1:29 AM\n\nSirotan (TV) EP8 · TV (JP)\n\n2:30 AM\n\nThe Vermilion Mask EP7 · TV (JP)\n\n3:00 AM\n\nDetective Conan EP1221 · TV (JP)\n\n3:25 AM\n\nThe Seven Knights of the Marronnier Kingdom EP8 · TV (JP)\n\n6:00 AM\n\nRomelia War Chronicle EP8 · Streaming (JP)\n\n7:00 AM\n\nA Tale of the Secret Saint EP9 · Streaming (JP)\n\n7:30 AM\n\nA Wild Last Boss Appeared! Season 2 EP9 · Streaming (JP)\n\n8:00 AM\n\nBlack Clover Second Season EP8 · TV (JP)\n\n8:30 AM\n\n#I'm Looking For a Zombie EP7 · TV (JP)\n\nVERTEX FORCE EP8 · TV (JP)\n\n8:45 AM\n\nHORROR COLLECTOR EP7 · TV (JP)\n\n9:00 AM\n\nMagical Explorer EP9 · Streaming (JP)\n\n9:30 AM\n\nEven the Student Council Has Its Holes! EP8 · TV (JP): CEN\n\n9:55 AM\n\nRanma1/2 3rd Season EP8 · TV (JP)\n\n10:30 AM\n\nMagic Repo Man: Dumped by My Party, I’ll Cash In With a Cute Support Fairy to Become the Strongest! EP8 · TV (JP)\n\n4:00 PM\n\nyuruyuru zukan: The Lo-fi creatures Guide EP8 · TV (JP)\n\nTanuki & Kitsune EP8 · TV (JP)\n\nShou-3 Ashibe QQ Goma-chan EP33 · TV (JP)\n\n5:00 PM\n\nKoupen Chan EP85 · TV (JP)\n\n6:15 PM\n\nPunirunes Puni 4 EP8 · TV (JP)\n\n6:30 PM\n\nOnegai AIPRI EP34 · TV (JP)\n\n7:00 PM\n\nPop Pap Polters EP7 · TV (JP)\n\nNothing scheduled\n\nSun Nov 22\n\n1:30 AM\n\nBlue Box Season 2 EP7 · TV (JP)\n\n2:00 AM\n\nMission: Yozakura Family Season 2 Cour 2 EP7 · TV (JP)\n\nAoashi Season 2 EP8 · TV (JP)\n\n2:30 AM\n\nAce of the Diamond act II -Second Season- Cour 2 EP7 · TV (JP)\n\n6:00 AM\n\nUmayuru: Full Gate! EP9 · Streaming: Sub - YT\n\n6:30 AM\n\nReborn as a Space Mercenary: I Woke Up Piloting the Strongest Starship! EP8 · TV (JP)\n\n7:00 AM\n\nUncle's Obsession with Cute Things EP8 · TV (JP)\n\n7:30 AM\n\nMagical Sisters LuluttoLilly Cour 2 EP8 · TV (JP)\n\n8:00 AM\n\nTANK CHAIR EP8 · TV (JP)\n\n8:15 AM\n\nDragon Ball Super: Beerus EP7 · TV (JP)\n\n8:30 AM\n\nFull Clearing Another World under a Goddess with Zero Believers EP7 · TV (JP)\n\nEven Though I'm a Super Timid Noble Girl, I Accepted the Bet From My Cunning Fiancé EP8 · TV (JP)\n\nOvergeared EP9 · Streaming (JP)\n\nAs a Reincarnated Aristocrat, I'll Use My Appraisal Skill to Rise in the World Season 3 EP9 · TV (JP)\n\n8:45 AM\n\nHOTEL INHUMANS Season 2 EP8 · TV (JP)\n\n9:00 AM\n\nFrom Far Away EP8 · TV (JP)\n\n10:00 AM\n\nNow That I Can Control Reality With A Mouse Cursor, I'm Gonna Click Away On The Girls! EP7 · TV (JP)\n\n10:05 AM\n\nThe Shy Snow Woman and the Cursed Ring EP7 · TV (JP)\n\nMy Girlfriend's Friend EP8 · TV (JP): CEN\n\nMy Girlfriend's Friend Mini Anime EP8 · Streaming (JP)\n\n10:20 AM\n\nI'm Dating a Dark Summoner Mini Anime EP8 · TV (JP)\n\nI'm Dating a Dark Summoner EP8 · TV (JP): CEN\n\n9:00 PM\n\nThe Maomao Diaries EP56 · Streaming - YT"
+            ],
+            "image": "https://s.livechart.me/assets/social-media-887f29a9.png"
+          },
+          {
+            "id": "https://animeupdates.net/guides/what-to-watch-this-week",
+            "title": "What to watch this week: November 16–22, 2026 | Anime Updates",
+            "url": "https://animeupdates.net/guides/what-to-watch-this-week",
+            "publishedDate": "2026-11-16T00:00:00.000Z",
+            "author": "Ren",
+            "highlights": [
+              "# What to watch this week: November 16–22, 2026\n\n...\n\nBy Ren · November 16, 2026\n\n...\n\nDays below are when each episode airs in Japan. Streaming services usually post them the same day, but times vary by region, so check the weekly schedule for your own local times.\n\n...\n\nBlack Clover Season 2, episode 8 (Saturday). Asta and the Magic Knights are deep in the Spade Kingdom, trying to get their captains back from the Dark Triad. At 88%, it’s still the highest-rated show on the air. Crunchyroll.\n\n...\n\nStreaming availability differs by country, so check your service before you start."
+            ],
+            "image": "https://animeupdates.net/og/guides/what-to-watch-this-week-november-16-22-2026.jpg"
+          },
+          {
+            "id": "https://oshicharts.com/schedule/",
+            "title": "今週のアニメ放送予定（11/17〜11/23）｜100作品・日付別・放送時間",
+            "url": "https://oshicharts.com/schedule/",
+            "highlights": [
+              "今週のアニメ放送予定（11/18〜11/24）｜99作品・日付別・放送時間\n\n# 今週のアニメ放送予定\n\n11/18〜11/24に放送されるテレビアニメ・ONAの、次回の放送予定です（99作品）。日付・時刻・話数・放送局を、番組表の並びでまとめています。毎日更新しています。\n\n- 11/18（水） 10\n- 11/19（木） 10\n- 11/20（金） 14\n- 11/21（土） 22\n- 11/22（日） 30\n- 11/23（月） 6\n- 11/24（火） 7\n\n...\n\n## 11月20日（金） 14作品\n\n...\n\n- 25:53 JST東京リベンジャーズ 三天戦争編第8話放送済み\n\n## 11月21日（土） 22作品\n\n- 8:30 JSTパンの赤ちゃん第21話 AniList放送済み\n- 9:26 JSTリラックマ第33話 AniList放送済み\n- 9:30 JSTケロロ軍曹☆第8話放送済み\n- 9:30 JSTねずみくんのチョッキ (TV) 第2期第8話 AniList放送済み\n- 16:29 JSTしろたん第8話放送済み\n- 16:30 JSTクレヨンしんちゃん第1362話テレビ朝日放送済み\n- 17:00 JSTドラえもん (2005)第942話放送済み\n- 17:30 JST朱色の仮面第7話放送済み\n- 18:00 JST名探偵コナン第1221話日本テレビ放送済み\n- 18:25 JSTマロニエ王国の七人の騎士第8話放送済み\n- 21:00 JSTロメリア戦記 〜魔王を倒した後も人類やばそうだから軍隊組織した〜第8話放送済み\n- 22:00 JST転生した大聖女は、聖女であることをひた隠す第9話放送済み\n- 22:30 JST野生のラスボスが現れた！ 第2期第9話放送済み\n- 23:00 JSTブラッククローバー 第2期第8話放送済み\n- 23:30 JST#ゾンビさがしてます第7話放送済み\n- 23:30 JSTバーテックスフォース第8話放送済み\n- 23:30 JSTカードファイト!! ヴァンガード Divinez 運命星戦編最終話放送済み\n- 23:45 JST恐怖コレクター第7話放送済み\n- 24:00 JSTマジカル★エクスプローラー エロゲの友人キャラに転生したけど、ゲーム知識使って自由に生きる第9話放送済み\n- 24:30 JST生徒会にも穴はある！第8話放送済み\n- 24:56 JSTらんま1/2 (2024) 第3期第8話放送済み\n- 25:30 JST貸した魔力は【リボ払い】で強制徴収第8話放送済み\n\n## 11月22日（日） 30作品\n\n- 7:00 JSTおでかけ子ザメ シーズン2第33話 AniList放送済み\n- 7:00 JSTゆるゆる図鑑第8話 AniList放送済み\n- 7:00 JSTタヌキとキツネ第8話 AniList放送済み\n- 8:00 JSTコウペンちゃん第85話テレビ朝日ほか1局放送済み\n- 8:30 JST名探偵プリキュア！第42話テレビ朝日ほか2局放送済み\n- 9:16 JSTぷにるんず ぷに４第8話 AniList放送済み\n- 9:30 JSTおねがいアイプリ第34話 AniList放送済み\n- 10:00 JSTポップパップポルターズ第8話 AniList放送済み\n- 16:30 JSTアオのハコ Season２第7話放送済み\n- 17:00 JSTアオアシ 第2期第8話放送済み\n- 17:00 JST夜桜さんちの大作戦 第2期 第2クール第7話放送済み\n- 17:30 JSTダイヤのA actⅡ -Second Season- 第2クール第7話放送済み\n- 18:00 JSTホロのぐらふぃてぃ第393話放送済み\n- 18:30 JSTサザエさん第2859話フジテレビ放送済み\n- 21:00 JSTうまゆるふるげ〜と!第9話放送済み\n- 21:30 JST目覚めたら最強装備と宇宙船持ちだったので、一戸建て目指して傭兵として自由に生きたい第8話放送済み\n- 22:00 JSTおじさんはカワイイものがお好き。第8話放送済み\n- 22:30 JST魔法の姉妹ルルットリリィ 第2クール第8話放送済み\n- 23:00 JST TANK CHAIR-戦車椅子-第8話放送済み\n- 23:16 JSTドラゴンボール超 ビルス第7話放送済み\n- 23:30 JSTテムパル～アイテムの力～第9話放送済み\n- 23:30 JST転生貴族、鑑定スキルで成り上がる 第3期第9話放送済み\n- 23:30 JST信者ゼロの女神サマと始める異世界攻略第7話放送済み\n- 23:30 JST弱気MAX令嬢なのに、辣腕婚約者様の賭けに乗ってしまった第8話放送済み\n- 23:45 JSTホテル・インヒューマンズ 第2期第8話放送済み\n- 24:00 JST彼方から第8話放送済み\n- 25:05 JST彼女の友達第8話放送済み\n- 25:17 JST彼女の友達 ミニアニメ劇場第8話放送済み\n- 25:20 JSTダークサモナーとデキている第8話放送済み\n- 27:00 JST JKダークサモナーとデキ。。。。。。でいない!?第8話放送済み\n\n## 11月23日（月） 6作品\n\n- 12:00 JST猫猫のひとりごと 第3期第8話放送済み\n- 18:00 JSTホタルの嫁入り ちょいたし第7話放送済み\n- 21:30 JSTどうも、好きな人に惚れ薬を依頼された魔女です。第8話放送済み\n- 22:00 JST転生ゴブリンだけど質問ある？第8話放送済み\n- 23:00 JST PSYREN -サイレン-第7話放送済み\n- 26:00 JST魔法少女育成計画 restart第8話放送済み\n\n## 11月24日（火） 7作品\n\n- 21:26 JST凶乱令嬢ニア・リストン第8話放送済み\n- 22:00 JST塩対応の佐藤さんが俺にだけ甘い第8話放送済み\n- 23:00 JST千歳くんはラムネ瓶のなか 2クール第7話放送済み\n- 23:00 JST超巡！超条先輩第8話放送済み\n- 23:00 JST Battle Spirits [Re] 絶界の空第8話放送済み\n- 23:30 JST幻想水滸伝第8話放送済み\n- 24:00 JST追放されたチート付与魔術師は気ままなセカンドライフを謳歌する。 ～俺は武器だけじゃなく、あらゆるものに『強化ポイント』を付与できるし、俺の意思でいつでも効果を解除できるけど、残った人たち大丈夫？～第8話放送済み\n\n時刻は日本時間で、番組表の数え方です。深夜（0:00〜4:59）の放送は、前日の24〜28時台として前の日の欄に入れています（例: 10/18 の 1:30 は、10/17 の 25:30）。時刻は AniList に登録された次回の放送予定で、局や地域によって異なる場合があります。放送局は、しょぼいカレンダーに記録がある作品だけ表示しています。「放送済み」の表示は、お使いの端末の時計をもとにしています。"
+            ],
+            "image": "https://oshicharts.com/brand/icon-512.png"
+          }
+        ],
+        "searchTime": 961.7,
+        "costDollars": {
+          "total": 0.007,
+          "search": {
+            "neural": 0.007
+          }
+        }
+      }
+    }
+  ]
+}

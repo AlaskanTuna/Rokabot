@@ -9,7 +9,6 @@ services:
     env_file: .env
     environment:
       - ADK_QUIET=1
-      - MEDIA_TRANSCRIBER_URL=${MEDIA_TRANSCRIBER_URL-http://asr:8000} # Empty in .env turns transcription off
     labels:
       panel.type: bot
       panel.name: Maniwa Roka
@@ -34,23 +33,6 @@ services:
       options:
         max-size: '10m'
         max-file: '3'
-  asr:
-    image: ${ROKA_REGISTRY:-ghcr.io/alaskantuna}/rokabot-asr:${ROKA_TAG:-stable}
-    build:
-      context: ./sidecar/asr
-    restart: unless-stopped
-    labels:
-      com.centurylinklabs.watchtower.enable: 'true'
-    environment:
-      - ASR_THREADS=3
-    mem_limit: 2g # Both models hold ~1.2 GB resident on the Pi (measured 2026-10-08, peak 1.55 GB with cache); an overrun restarts only this container
-    memswap_limit: 2g # Equal to mem_limit, as on roka: no swap
-    cpus: 3 # Leaves one core for the bot's event loop and Discord traffic
-    logging:
-      driver: json-file
-      options:
-        max-size: '10m'
-        max-file: '3'
   embeddings:
     build:
       context: ./sidecar/embeddings
@@ -58,7 +40,7 @@ services:
     restart: unless-stopped
     mem_limit: 1g # D6 cap; on a Pi 5: 464 MiB idle, 714 MiB peak at one text per request, 797 MiB at the largest batch (4 x 512 tokens) (2026-10-12, docs/RUNBOOK.md)
     memswap_limit: 1g # Equal to mem_limit, as on roka: no swap
-    cpus: 1 # One inference thread; leaves the other cores to the bot and speech recognition
+    cpus: 1 # One inference thread; leaves the other cores to the bot
     logging:
       driver: json-file
       options:
@@ -69,7 +51,7 @@ services:
     profiles: ['autoupdate'] # Opt-in: COMPOSE_PROFILES=autoupdate. Needs the Docker socket, so it is never on by default
     restart: unless-stopped
     environment:
-      - WATCHTOWER_LABEL_ENABLE=true # Only roka and asr carry the label
+      - WATCHTOWER_LABEL_ENABLE=true # Only roka carries the label
       - WATCHTOWER_CLEANUP=true # Remove the replaced image
       - WATCHTOWER_SCHEDULE=0 7 4 * * * # Daily at 04:07 container time (UTC unless TZ is set; 6-field cron)
     volumes:

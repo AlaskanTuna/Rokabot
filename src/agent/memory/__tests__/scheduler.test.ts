@@ -27,7 +27,7 @@ const mocks = vi.hoisted(() => {
     runEpisodePipeline: vi
       .fn()
       .mockResolvedValue({ status: 'completed', summary: null, appliedOps: 0, duplicateOps: 0 }),
-    persistEpisodeResult: vi.fn().mockResolvedValue(false),
+    persistEpisodeResult: vi.fn().mockResolvedValue({ kept: false, dropReason: null, judged: false, inputTokens: 0 }),
     recordMemoryEvent: vi.fn<(row: { kind: string; detail: string }) => void>(),
     recordExtractionSample: vi.fn(),
     isShuttingDown: vi.fn(() => false),
@@ -127,6 +127,7 @@ import { startRunTrace } from '../extractionRun.js'
 import {
   maybeSample,
   resetForTest,
+  setSerialDrainForTest,
   shouldSample,
   startExtractionScheduler,
   stopExtractionScheduler
@@ -212,7 +213,9 @@ describe('episode extraction scheduler', () => {
     mocks.resetQueue()
     mocks.runEpisodePipeline.mockReset()
     mocks.runEpisodePipeline.mockResolvedValue({ status: 'completed', summary: null, appliedOps: 0, duplicateOps: 0 })
-    mocks.persistEpisodeResult.mockReset().mockResolvedValue(false)
+    mocks.persistEpisodeResult
+      .mockReset()
+      .mockResolvedValue({ kept: false, dropReason: null, judged: false, inputTokens: 0 })
     mocks.recordMemoryEvent.mockReset()
     mocks.recordExtractionSample.mockReset()
     mocks.markDone.mockClear()
@@ -270,6 +273,37 @@ describe('episode extraction scheduler', () => {
     await drain()
 
     expect(mocks.runEpisodePipeline.mock.calls.map(([job]) => job.guildId)).toEqual(['A', 'B', 'A'])
+  })
+
+  it('runs one job at a time across guilds when serial drain is on', async () => {
+    let finishA: (() => void) | undefined
+    const blockedA = new Promise<{ status: 'completed'; summary: null; appliedOps: number; duplicateOps: number }>(
+      (resolve) => {
+        finishA = () => resolve({ status: 'completed', summary: null, appliedOps: 1, duplicateOps: 0 })
+      }
+    )
+    mocks.runEpisodePipeline.mockImplementation((job: { guildId: string }) =>
+      job.guildId === 'A'
+        ? blockedA
+        : Promise.resolve({ status: 'completed', summary: null, appliedOps: 1, duplicateOps: 0 })
+    )
+    enqueue('A', 'first A')
+    enqueue('B', 'first B')
+
+    setSerialDrainForTest(true)
+    try {
+      startExtractionScheduler()
+      await drain()
+
+      expect(mocks.runEpisodePipeline.mock.calls.map(([job]) => job.guildId)).toEqual(['A'])
+      expect(mocks.jobs.filter((job) => job.status === 'processing')).toHaveLength(1)
+      finishA?.()
+      await drain()
+
+      expect(mocks.runEpisodePipeline.mock.calls.map(([job]) => job.guildId)).toEqual(['A', 'B'])
+    } finally {
+      setSerialDrainForTest(false)
+    }
   })
 
   it('retries a thrown episode pipeline once and retains the failed job', async () => {
@@ -410,8 +444,13 @@ describe('episode extraction scheduler', () => {
 
   it('persists a completed summary before marking its queue job done', async () => {
     let finishPersistence: (() => void) | undefined
-    const persistence = new Promise<void>((resolve) => {
-      finishPersistence = resolve
+    const persistence = new Promise<{
+      kept: boolean
+      dropReason: null
+      judged: boolean
+      inputTokens: number
+    }>((resolve) => {
+      finishPersistence = () => resolve({ kept: true, dropReason: null, judged: false, inputTokens: 0 })
     })
     mocks.runEpisodePipeline.mockResolvedValueOnce({
       status: 'completed',
@@ -503,12 +542,43 @@ describe('episode extraction scheduler', () => {
       trace.ops.applied = 1
       return { status: 'completed', summary: 'Alice talked about work.', appliedOps: 1, duplicateOps: 0 }
     })
-    mocks.persistEpisodeResult.mockResolvedValue(true)
+    mocks.persistEpisodeResult.mockResolvedValue({ kept: true, dropReason: null, judged: false, inputTokens: 0 })
     enqueueJob()
     await drain()
     const detail = JSON.parse(lastRunEvent().detail)
     expect(detail).toMatchObject({ stage: 'applied', outcome: 'written', attempt: 1, summary: { kept: true } })
     expect(detail.stageMs).toHaveProperty('persistence')
+  })
+
+  it('records a dropped summary dropReason and judged flag in the extraction_run detail', async () => {
+    mocks.runEpisodePipeline.mockImplementation(async (_job, trace) => {
+      trace.stage = 'applied'
+      trace.outcome = 'noop'
+      return { status: 'completed', summary: 'User 123456789012345678 said hello.', appliedOps: 0, duplicateOps: 0 }
+    })
+    mocks.persistEpisodeResult.mockResolvedValue({
+      kept: false,
+      dropReason: 'numeric_id',
+      judged: false,
+      inputTokens: 0
+    })
+    enqueueJob()
+    await drain()
+    const detail = JSON.parse(lastRunEvent().detail)
+    expect(detail.summary).toMatchObject({ kept: false, dropReason: 'numeric_id', judged: false })
+  })
+
+  it('adds the summary judgment input tokens to the recorded token total', async () => {
+    mocks.runEpisodePipeline.mockImplementation(async (_job, trace) => {
+      trace.stage = 'applied'
+      trace.outcome = 'noop'
+      trace.tokens = 40
+      return { status: 'completed', summary: 'Alice talked about work.', appliedOps: 0, duplicateOps: 0 }
+    })
+    mocks.persistEpisodeResult.mockResolvedValue({ kept: true, dropReason: null, judged: true, inputTokens: 25 })
+    enqueueJob()
+    await drain()
+    expect(lastRunEvent()).toMatchObject({ tokensEst: 65 })
   })
 
   it('records a failed run with its error class, then the retry as the next attempt', async () => {

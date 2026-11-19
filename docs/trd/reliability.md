@@ -101,7 +101,8 @@ _After a failed attempt the loop tries a safety rung, then one model switch, the
 
 The turn's outcome metric is `ok`, `fallback` (`transient_http`, `network`, `empty_text`) or `deflection` (any other
 kind). A failed turn writes no session history. It writes one `failure_diagnostics` row with the kind, marker, block
-side and safety rungs used. `gemini.maxRetries` plays no part in this loop.
+side and safety rungs used (`ok` turns whose explicit format request stayed unmet also write `kind: 'format_unmet'`;
+see [Data](data.md)). `gemini.maxRetries` plays no part in this loop.
 
 At startup `src/config.ts` logs a warning in three cases: `session.ttl` is not above
 `liveMaxRetries × (gemini.timeout + retryBackoffCapMs)`; the backoff cap makes `liveMaxRetries` unreachable; or
@@ -164,7 +165,7 @@ can make up to `gemini.maxLlmCalls` of them: one call, plus one more after each 
 - **Unknown Spend:** a turn that throws before it reports keeps its whole reservation.
 - **Daily Units:** `rpd` takes one unit per admitted turn, one per retry or rung, and one per call that takes its own
   slot. `release(0)` returns the turn's unit; any other release keeps it. The counter resets at UTC midnight.
-- **Not Counted:** `/anime` and `/remind` take no slot. `jikanThrottle` spaces Jikan calls 350 ms apart.
+- **Not Counted:** `/anime` and `/remind` take no slot. `jikanThrottle` spaces Jikan calls 350 ms apart, with a 5 s request timeout (`AbortSignal.timeout(5000)`).
 - **Unlimited Routes:** a model entry without `limits` never refuses on `rpm`, `rpd` or `tpm`. A Gemini entry inherits
   `rateLimit` and `gemini.maxTokensPerMinute`. The main route in the repository's `config.yml`, `haiku`, sets no
   `limits`, so the peek, the reservation, the retry floor and the token floor never refuse there.
@@ -202,7 +203,7 @@ charge, and halving `rpm` would give up half the request budget.
 ## Per-Call Budgets
 
 Every provider call passes `startCall` (`src/agent/llm/budget.ts`) before it is sent. That covers replies, native
-searches, background memory jobs, both watchers and both sides of a hedge.
+searches, background memory jobs, the Gemini watcher and both sides of a hedge.
 
 - **Legacy Config:** without an `llm:` block (`config.llm.main.key` is `legacy-gemini`), `startCall` counts nothing on every call except `search`, never waits and never refuses. A `search` call is not covered that way: it takes one slot on the shared
   limiter and records its spend, with no cap. Spend still goes to `llm_spend` in both cases.
@@ -291,6 +292,43 @@ pay for the same search again on the retry.
 - **Searchless Deployment:** with `native` on a main model that has no search tool, `search_web` is not registered at
   all, so no attempt budget is read.
 
+## Lookup Budget, Sources and Page Reads
+
+A turn's lookups share one budget, one citation sink and one source registry, all opened in `turnPipeline.ts`
+around the model turn and shared across its retry attempts.
+
+- **Budget:** `search.maxSearches` (2) caps `search_web` calls, `search.maxPageReads` (2) caps page reads, and
+  `search.maxProviderCalls` (3) caps provider calls in total across both — each lookup spends its own kind plus
+  one provider call. `search.replyReserveMs` (6000 ms) is the attempt time a lookup must leave for the chat
+  model's next call; `timeLeftForLookupMs` returns what is left past it. When the budget or the time is spent,
+  `search_web` returns the budget-spent answer at once — the model answers with what it already has — and the
+  attempt never fails on it, so no lookup path opens the sticky fallback.
+- **Citations:** `recordSearchCitations` appends with URL de-duplication within one attempt, and
+  `recordPageCitations` feeds the same sink for read pages. A failed lookup records nothing, leaving earlier
+  citations in place. The sink resets when a new reply attempt starts, so a retried turn cites only what that
+  attempt used; the first attempt keeps the prefetch's citations.
+- **Sources:** `searchSources.ts` maps stable ids (`s1`, `s2`, ...) to URLs from the triggering message
+  (embed text is already inlined into it, and embed links register under the `embed` origin), and from each successful search. `resolveSource` maps an id back to
+  its URL, or undefined when unknown.
+- **Pages:** `readPages` reads whole pages through the active provider — Exa `contents`, Tavily `extract`, or
+  a one-shot Messages call with the `web_fetch` server tool on an Anthropic main — capped at
+  `search.maxPageChars` (8000) characters with `truncated` set past it, and prefixed with the page
+  untrusted-data label. Other native mains and `off` report page reading unavailable. Private addresses and
+  non-http schemes are refused before any provider call, and quota (402/429) versus failure maps exactly as a
+  search does. A read that returns text marks the turn, and the model-call filter in `roka.ts` then withholds
+  `remember_user`, `forget_user`, `set_reminder` and `cancel_reminder` for the rest of the turn.
+- **Depth Loop:** `search_web` with `fields` (what the answer needs) or `source` (a source id or a shared link)
+  runs `depth.ts` instead of a single search; a plain call keeps today's single search exactly. A source id
+  resolves through the registry (a raw URL only when the message or its embeds registered it), social links
+  refuse with the note that the post was already read, and the page is read and briefed. Otherwise the loop
+  searches, checks each field's coverage against the snippets, runs `local_query` as the second search, then
+  reads up to the top 2 result URLs most likely to hold the missing fields (the top result's host first,
+  menu/price/hours paths next). Coverage is deterministic lowercase token overlap with a small hint table
+  (¥/円/$ for prices, メニュー, 営業時間, coffee/ドリンク). The brief is the provider answer, each read page's
+  title, source id and field paragraphs, and a `Still missing:` line, capped at `search.maxBriefChars` (4000)
+  with the missing line surviving the cut. Stop conditions: every field covered, the turn budget spent, or no
+  attempt time left past the reply reserve — each yields a partial brief, never a throw.
+
 ## Configuration
 
 | Key                            | Default                        | Bounds                                                                                  |
@@ -310,6 +348,12 @@ pay for the same search again on the retry.
 | `llm.modelscopeDailyMagicubes` | 250                            | min 1                                                                                   |
 | `search.nativeTimeoutMs`       | 8,000                          | 2,000 to 60,000                                                                         |
 | `search.nativeReserveMs`       | 5,000                          | 0 to 60,000                                                                             |
+| `search.maxPageChars`          | 8,000                          | min 1                                                                                   |
+| `search.maxSearches`           | 2                              | min 1                                                                                   |
+| `search.maxPageReads`          | 2                              | min 1                                                                                   |
+| `search.maxProviderCalls`      | 3                              | min 1                                                                                   |
+| `search.maxBriefChars`         | 4,000                          | min 1                                                                                   |
+| `search.replyReserveMs`        | 6,000                          | 0 to 60,000                                                                             |
 
 Environment overrides are wired in `src/config.ts` (for example `GEMINI_LIVE_MAX_RETRIES`, `RATE_LIMIT_RPM`).
 

@@ -8,15 +8,15 @@
 
 export const MAX_REPLY_BLOCKS = 3
 
-type BlockKind = 'prose' | 'list' | 'quote' | 'code'
-type Piece = { kind: BlockKind; text: string } | { kind: 'divider' }
+export type BlockKind = 'prose' | 'list' | 'quote' | 'code'
+export type Piece = { kind: BlockKind; text: string } | { kind: 'divider' }
 
 const FENCE = /^```/
 const DIVIDER = /^-{3,}\s*$/
-const LIST_ITEM = /^(?:[-*•]|\d+[.)])\s/
+export const LIST_ITEM = /^(?:[-*•]|\d+[.)])\s/
 const QUOTE = /^>/
 
-function parse(text: string): Piece[] {
+export function parseReplyBlocks(text: string): Piece[] {
   const pieces: Piece[] = []
   const lines = text.split('\n')
   let current = null as { kind: BlockKind; lines: string[] } | null
@@ -69,11 +69,11 @@ function blockCount(pieces: Piece[]): number {
 }
 
 export function countReplyBlocks(text: string): number {
-  return blockCount(parse(text))
+  return blockCount(parseReplyBlocks(text))
 }
 
 export function capReplyBlocks(text: string, max = MAX_REPLY_BLOCKS): { text: string; blocks: number; merged: number } {
-  const pieces = parse(text)
+  const pieces = parseReplyBlocks(text)
   let blocks = blockCount(pieces)
   let merged = 0
 

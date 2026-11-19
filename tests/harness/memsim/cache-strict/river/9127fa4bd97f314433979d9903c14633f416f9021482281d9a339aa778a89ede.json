@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "9127fa4bd97f314433979d9903c14633f416f9021482281d9a339aa778a89ede",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af9776777fa\",\"object\":\"chat.completion\",\"created\":1794733927,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\n  \\\"ops\\\": [\\n    {\\n      \\\"op\\\": \\\"add\\\",\\n      \\\"subject\\\": { \\\"kind\\\": \\\"guild\\\" },\\n      \\\"predicate\\\": \\\"upcoming_event\\\",\\n      \\\"value\\\": \\\"Southbay Club arcade tournament at 7pm\\\",\\n      \\\"date\\\": { \\\"year\\\": 2026, \\\"month\\\": 10, \\\"day\\\": 28 },\\n      \\\"sourceLine\\\": 1\\n    },\\n    {\\n      \\\"op\\\": \\\"add\\\",\\n      \\\"subject\\\": { \\\"kind\\\": \\\"user\\\", \\\"userId\\\": \\\"sim-user-erin\\\" },\\n      \\\"predicate\\\": \\\"pets\\\",\\n      \\\"value\\\": \\\"Pebble the tortoise\\\",\\n      \\\"tense\\\": \\\"current\\\",\\n      \\\"sourceLine\\\": 2\\n    },\\n    {\\n      \\\"op\\\": \\\"add\\\",\\n      \\\"subject\\\": { \\\"kind\\\": \\\"user\\\", \\\"userId\\\": \\\"sim-user-erin\\\" },\\n      \\\"predicate\\\": \\\"pets\\\",\\n      \\\"value\\\": \\\"two zebra finches\\\",\\n      \\\"tense\\\": \\\"current\\\",\\n      \\\"sourceLine\\\": 2\\n    }\\n  ],\\n  \\\"summary\\\": \\\"Erin announced that Southbay Club is holding an arcade tournament on October 28, 2026 at 7pm, and shared that she has adopted two zebra finches alongside her tortoise Pebble.\\\"\\n}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4225,\"completion_tokens\":278,\"total_tokens\":4503,\"prompt_tokens_details\":{\"cached_tokens\":3840},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

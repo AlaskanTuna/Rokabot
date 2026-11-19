@@ -67,6 +67,56 @@ describe('config module', () => {
     expect(config.fallback.stickyMs).toBe(0)
   })
 
+  it('defaults the memory store to legacy', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+
+    const { config } = await import('../config.js')
+
+    expect(config.memory.store).toBe('legacy')
+  })
+
+  it('accepts memory.store dual', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    withYamlOverride({ memory: { store: 'dual' } })
+
+    const { config } = await import('../config.js')
+
+    expect(config.memory.store).toBe('dual')
+  })
+
+  it('accepts memory.store item for the read cutover phase', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    withYamlOverride({ memory: { store: 'item' } })
+
+    const { config } = await import('../config.js')
+
+    expect(config.memory.store).toBe('item')
+  })
+
+  it('lets MEMORY_STORE override the YAML setting', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    withYamlOverride({ memory: { store: 'item' } })
+    vi.stubEnv('MEMORY_STORE', 'legacy')
+
+    const { config } = await import('../config.js')
+
+    expect(config.memory.store).toBe('legacy')
+  })
+
+  it('rejects unknown memory store values with the allowed values', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('MEMORY_STORE', 'shadow')
+
+    await expect(() => import('../config.js')).rejects.toThrow(
+      'Environment variable MEMORY_STORE must be legacy, dual or item, got: shadow'
+    )
+  })
+
   it('rejects a negative fallback sticky duration', async () => {
     setRequiredEnvVars()
     clearTunableEnvVars()
@@ -135,23 +185,7 @@ describe('config module', () => {
       skimClips: 8,
       skimClipSeconds: 10,
       maxStreamedUploadBytes: 52_428_800,
-      uploadTimeoutMs: 45_000,
-      qwen: {
-        apiKey: undefined,
-        baseUrl: 'https://api-inference.modelscope.ai/v1',
-        model: 'Qwen/Qwen3.5-35B-A3B',
-        secondsPerFrame: 4,
-        minFrames: 16,
-        maxFrames: 32,
-        frameHeight: 360,
-        timeoutMs: 30_000
-      },
-      transcriber: {
-        url: '',
-        timeoutMs: 45_000,
-        maxSpeechSec: 120,
-        maxAudioSec: 180
-      }
+      uploadTimeoutMs: 45_000
     })
 
     expect(config.jev.apiKey).toBeUndefined()
@@ -248,81 +282,23 @@ describe('config module', () => {
     expect(config.socialPosts.enabled).toBe(false)
   })
 
-  it.each(['qwen', 'direct', 'off'])('allows MEDIA_WATCHER to choose %s', async (watcher) => {
+  it('allows MEDIA_WATCHER to choose off', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('MEDIA_WATCHER', 'off')
+
+    const { config } = await import('../config.js')
+
+    expect(config.media.watcher).toBe('off')
+  })
+
+  it.each(['qwen', 'direct', 'openai'])('throws when MEDIA_WATCHER is %s and names the env key', async (watcher) => {
     setRequiredEnvVars()
     clearTunableEnvVars()
     vi.stubEnv('MEDIA_WATCHER', watcher)
 
-    const { config } = await import('../config.js')
-
-    expect(config.media.watcher).toBe(watcher)
-  })
-
-  it('throws when MEDIA_WATCHER is not a known watcher and names the env key', async () => {
-    setRequiredEnvVars()
-    clearTunableEnvVars()
-    vi.stubEnv('MEDIA_WATCHER', 'openai')
-
     await expect(() => import('../config.js')).rejects.toThrow(
-      'Environment variable MEDIA_WATCHER must be gemini, qwen, direct or off, got: openai'
-    )
-  })
-
-  it('allows MEDIA_QWEN_MODEL to override the Qwen watcher model', async () => {
-    setRequiredEnvVars()
-    clearTunableEnvVars()
-    vi.stubEnv('MEDIA_QWEN_MODEL', 'Qwen/Qwen3.5-122B-A10B')
-
-    const { config } = await import('../config.js')
-
-    expect(config.media.qwen.model).toBe('Qwen/Qwen3.5-122B-A10B')
-  })
-
-  it('allows MEDIA_TRANSCRIBER_URL to point the watcher at the speech sidecar', async () => {
-    setRequiredEnvVars()
-    clearTunableEnvVars()
-    vi.stubEnv('MEDIA_TRANSCRIBER_URL', 'http://asr:8000')
-
-    const { config } = await import('../config.js')
-
-    expect(config.media.transcriber.url).toBe('http://asr:8000')
-  })
-
-  it('throws if media.transcriber.maxSpeechSec is below its bound', async () => {
-    setRequiredEnvVars()
-    clearTunableEnvVars()
-    withYamlOverride({ media: { transcriber: { maxSpeechSec: 5 } } })
-
-    await expect(() => import('../config.js')).rejects.toThrow(
-      'Config value media.transcriber.maxSpeechSec must be >= 10, got: 5'
-    )
-  })
-
-  it('throws if media.transcriber.maxSpeechSec is above its bound', async () => {
-    setRequiredEnvVars()
-    clearTunableEnvVars()
-    withYamlOverride({ media: { transcriber: { maxSpeechSec: 601 } } })
-
-    await expect(() => import('../config.js')).rejects.toThrow(
-      'Config value media.transcriber.maxSpeechSec must be <= 600, got: 601'
-    )
-  })
-
-  it('throws if media.qwen.minFrames is below its bound', async () => {
-    setRequiredEnvVars()
-    clearTunableEnvVars()
-    withYamlOverride({ media: { qwen: { minFrames: 3 } } })
-
-    await expect(() => import('../config.js')).rejects.toThrow('Config value media.qwen.minFrames must be >= 4, got: 3')
-  })
-
-  it('throws if media.qwen.maxFrames is above its bound', async () => {
-    setRequiredEnvVars()
-    clearTunableEnvVars()
-    withYamlOverride({ media: { qwen: { maxFrames: 33 } } })
-
-    await expect(() => import('../config.js')).rejects.toThrow(
-      'Config value media.qwen.maxFrames must be <= 32, got: 33'
+      `Environment variable MEDIA_WATCHER must be gemini or off, got: ${watcher}`
     )
   })
 
@@ -361,6 +337,41 @@ describe('config module', () => {
     expect(config.memory.verifyThreshold).toBe(0.5)
     expect(config.memory.modelAdmitThreshold).toBe(0.7)
     expect(config.memory.modelVerifyThreshold).toBe(0.7)
+  })
+
+  it('loads bounded summary thresholds next to the verify ones', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+
+    const { config, NUMERIC_BOUNDS } = await import('../config.js')
+
+    expect(config.memory.summaryThreshold).toBe(0.5)
+    expect(config.memory.modelSummaryThreshold).toBe(0.7)
+    expect(NUMERIC_BOUNDS.find(({ path }) => path === 'memory.summaryThreshold')).toMatchObject({ min: 0, max: 1 })
+    expect(NUMERIC_BOUNDS.find(({ path }) => path === 'memory.modelSummaryThreshold')).toMatchObject({
+      min: 0,
+      max: 1
+    })
+  })
+
+  it('throws if memory.summaryThreshold exceeds 1 in config.yml', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    withYamlOverride({ memory: { summaryThreshold: 1.5 } })
+
+    await expect(() => import('../config.js')).rejects.toThrow(
+      'Config value memory.summaryThreshold must be <= 1, got: 1.5'
+    )
+  })
+
+  it('throws if memory.modelSummaryThreshold exceeds 1 in config.yml', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    withYamlOverride({ memory: { modelSummaryThreshold: 1.5 } })
+
+    await expect(() => import('../config.js')).rejects.toThrow(
+      'Config value memory.modelSummaryThreshold must be <= 1, got: 1.5'
+    )
   })
 
   it('throws if memory.modelVerifyThreshold exceeds 1 in config.yml', async () => {
@@ -422,11 +433,6 @@ describe('config module', () => {
     expect(config.memory.embeddingModel).toBe('gemini-embedding-2')
     expect(config.memory.embeddingTimeoutMs).toBe(1500)
     expect(config.memory.privacy).toBe('relaxed')
-    expect(config.memory.recall).toBe('shadow')
-    expect(config.memory.recallTokenBudget).toBe(600)
-    expect(config.memory.recallCoreFacts).toBe(3)
-    expect(config.memory.factMinSimilarity).toBe(0.65)
-    expect(config.memory.serverFactMinSimilarity).toBe(0.65)
     expect(NUMERIC_BOUNDS.map(({ path }) => path)).toEqual(
       expect.arrayContaining([
         'memory.episodeRecallK',
@@ -1011,14 +1017,6 @@ describe('config module', () => {
       { path: 'media.skimClipSeconds', min: 2, max: 30 },
       { path: 'media.maxStreamedUploadBytes', min: 10_485_760, max: 104_857_600 },
       { path: 'media.uploadTimeoutMs', min: 10_000, max: 120_000 },
-      { path: 'media.qwen.secondsPerFrame', min: 0.5, max: 30 },
-      { path: 'media.qwen.minFrames', min: 4, max: 32 },
-      { path: 'media.qwen.maxFrames', min: 4, max: 32 },
-      { path: 'media.qwen.frameHeight', min: 144, max: 720 },
-      { path: 'media.qwen.timeoutMs', min: 5000, max: 90_000 },
-      { path: 'media.transcriber.timeoutMs', min: 5000, max: 120_000 },
-      { path: 'media.transcriber.maxSpeechSec', min: 10, max: 600 },
-      { path: 'media.transcriber.maxAudioSec', min: 30, max: 900 },
       { path: 'fallback.timeoutMs', min: 1 },
       { path: 'fallback.stickyMs', min: 0 },
       // Kept literal as a drift guard alongside the derived assertion above: ten images cost 10,890 Gemini tokens.
@@ -1033,9 +1031,17 @@ describe('config module', () => {
       { path: 'jev.referentMinConfidence', min: 0, max: 1 },
       { path: 'memory.admitThreshold', min: 0, max: 1 },
       { path: 'memory.verifyThreshold', min: 0, max: 1 },
+      { path: 'memory.summaryThreshold', min: 0, max: 1 },
       { path: 'memory.modelAdmitThreshold', min: 0, max: 1 },
       { path: 'memory.modelVerifyThreshold', min: 0, max: 1 },
+      { path: 'memory.modelSummaryThreshold', min: 0, max: 1 },
       { path: 'gemini.turnDeadlineMs', min: 1 },
+      { path: 'imageId.maxMatches', min: 1, max: 10 },
+      { path: 'imageId.timeoutMs', min: 1000, max: 15_000 },
+      { path: 'imageId.monthlyCap', min: 0, max: 100_000 },
+      { path: 'imageId.autoDailyCap', min: 0, max: 1000 },
+      { path: 'imageId.resetDay', min: 1, max: 28 },
+      { path: 'imageId.gateTimeoutMs', min: 500, max: 15_000 },
       { path: 'gemini.retryBackoffCapMs', min: 1 },
       { path: 'gemini.maxRetries', min: 0 },
       { path: 'gemini.liveMaxRetries', min: 0 },
@@ -1083,10 +1089,6 @@ describe('config module', () => {
       { path: 'memory.mediaMinSimilarity', min: 0, max: 1 },
       { path: 'memory.mediaRetentionDays', min: 1, max: 365 },
       { path: 'memory.embeddingTimeoutMs', min: 1 },
-      { path: 'memory.recallTokenBudget', min: 200, max: 2000 },
-      { path: 'memory.recallCoreFacts', min: 0, max: 5 },
-      { path: 'memory.factMinSimilarity', min: 0, max: 1 },
-      { path: 'memory.serverFactMinSimilarity', min: 0, max: 1 },
       { path: 'memory.extractionSampleRate', min: 0, max: 1 },
       { path: 'memory.extractionSampleDays', min: 1, max: 90 },
       { path: 'memory.reclassifyMaxPerRun', min: 0, max: 100 },
@@ -1110,7 +1112,16 @@ describe('config module', () => {
       { path: 'llm.hedgeAfterMs', min: 0 },
       { path: 'llm.stickyMs', min: 0 },
       { path: 'search.nativeTimeoutMs', min: 2000, max: 60_000 },
-      { path: 'search.nativeReserveMs', min: 0, max: 60_000 }
+      { path: 'search.nativeReserveMs', min: 0, max: 60_000 },
+      { path: 'search.maxPageChars', min: 1 },
+      { path: 'search.maxSearches', min: 1 },
+      { path: 'search.maxPageReads', min: 1 },
+      { path: 'search.maxProviderCalls', min: 1 },
+      { path: 'search.maxBriefChars', min: 1 },
+      { path: 'search.replyReserveMs', min: 0, max: 60_000 },
+      { path: 'format.minListItems', min: 2, max: 5 },
+      { path: 'format.minListShare', min: 0, max: 1 },
+      { path: 'format.wordSlack', min: 0, max: 1 }
     ]
 
     const { NUMERIC_BOUNDS } = await import('../config.js')
@@ -1133,17 +1144,15 @@ describe('config module', () => {
     )
   })
 
-  it('reads memory privacy and recall mode from env', async () => {
+  it('reads memory privacy from env', async () => {
     setRequiredEnvVars()
     clearTunableEnvVars()
     vi.stubEnv('MEMORY_PRIVACY', 'balanced')
-    vi.stubEnv('MEMORY_RECALL', 'unified')
     vi.stubEnv('MEMORY_FAILED_EXTRACTION_RETENTION_DAYS', '21')
 
     const { config } = await import('../config.js')
 
     expect(config.memory.privacy).toBe('balanced')
-    expect(config.memory.recall).toBe('unified')
     expect(config.memory.failedExtractionRetentionDays).toBe(21)
   })
 
@@ -1157,14 +1166,24 @@ describe('config module', () => {
     )
   })
 
-  it('throws when the config recall mode is invalid and names the config key', async () => {
+  it('ignores removed recall keys left in a deployed config.yml', async () => {
     setRequiredEnvVars()
     clearTunableEnvVars()
-    withYamlOverride({ memory: { recall: 'fancy' } })
+    withYamlOverride({
+      memory: {
+        recall: 'shadow',
+        recallTokenBudget: 600,
+        recallCoreFacts: 3,
+        recallGateDeadlineMs: 1200,
+        factMinSimilarity: 0.65,
+        serverFactMinSimilarity: 0.65
+      }
+    })
 
-    await expect(() => import('../config.js')).rejects.toThrow(
-      'Config value memory.recall must be legacy, shadow or unified, got: fancy'
-    )
+    const { config } = await import('../config.js')
+
+    expect(config.memory.privacy).toBe('relaxed')
+    expect('recall' in config.memory).toBe(false)
   })
 
   it('throws when the env prefetch mode is invalid and names the env key', async () => {
@@ -1645,8 +1664,6 @@ describe('config module', () => {
     expect(geminiKeyRequired({ ...none, fallback: 'gemini' })).toBe(true)
     expect(geminiKeyRequired({ ...none, embeddings: 'gemini' })).toBe(true)
     expect(geminiKeyRequired({ ...none, watcher: 'gemini' })).toBe(true)
-    expect(geminiKeyRequired({ ...none, watcher: 'qwen' })).toBe(false)
-    expect(geminiKeyRequired({ ...none, watcher: 'direct' })).toBe(false)
   })
 
   it('starts an Anthropic-only config without GEMINI_API_KEY', async () => {
@@ -1687,5 +1704,31 @@ describe('config module', () => {
     const { config } = await import('../config.js')
 
     expect(config.memory.judge).toBe('jev')
+  })
+
+  // 34
+  it('validates format bounds, rejects unknown format.mode, and allows FORMAT_MODE override', async () => {
+    setRequiredEnvVars()
+    clearTunableEnvVars()
+    vi.stubEnv('FORMAT_MODE', 'shadow')
+
+    const { config } = await import('../config.js')
+    expect(config.format).toEqual({
+      mode: 'shadow',
+      repair: 'reformat',
+      minListItems: 3,
+      minListShare: 0.5,
+      wordSlack: 0.1
+    })
+
+    vi.resetModules()
+    clearTunableEnvVars()
+    vi.stubEnv('FORMAT_MODE', 'bogus')
+    await expect(() => import('../config.js')).rejects.toThrow('FORMAT_MODE must be off, shadow or on')
+
+    vi.resetModules()
+    clearTunableEnvVars()
+    withYamlOverride({ format: { minListShare: 1.5 } })
+    await expect(() => import('../config.js')).rejects.toThrow('format.minListShare')
   })
 })

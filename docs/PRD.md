@@ -10,7 +10,7 @@ What Rokabot must do, for whom, and how far each requirement has shipped. Contra
 | Users    | Server members who chat with her, and the operator who self-hosts her               |
 | Surfaces | @mention, reply, the word "Roka", `/ask`, and seven other slash commands            |
 | Host     | Docker Compose on a Raspberry Pi 5 (8 GB)                                           |
-| Status   | 24 requirements: 21 Shipped, 3 Partial                                              |
+| Status   | 24 requirements: 22 Shipped, 2 Partial                                              |
 
 ## Problem
 
@@ -52,7 +52,7 @@ and stays in character across a group conversation.
 | FR-2  | `/ask` takes a required `question`, 3 attachment slots and `attachment_url`. It works in servers, DMs and user installs. It reads no memory, offers no memory tools and writes no memory.                                                                                                  | Shipped |
 | FR-3  | Register every slash command globally on each startup.                                                                                                                                                                                                                                     | Shipped |
 | FR-4  | Keep one session per channel: the last `session.windowSize` (20) messages, closed after `session.ttl` idle, rebuilt from SQLite up to `session.maxRehydrationAge` (2 hours) old.                                                                                                           | Shipped |
-| FR-5  | Assemble the system prompt from 4 layers (core, speech, tone, context) and close it with a reply shape picked in code, including an in-character saying-no scene for lewd bait or a hard line.                                                                                             | Shipped |
+| FR-5  | Assemble the system prompt from 4 layers (core, speech, tone, context) and close it with a reply shape picked in code, yielding to detected explicit format requests (with optional repair) and an in-character saying-no scene for lewd bait or a hard line.                              | Shipped |
 | FR-6  | Keep the system prompt under `MAX_SYSTEM_PROMPT_TOKENS` (6,500) in `tests/harness/tokens.ts`, enforced by `tests/harness/__tests__/tokens.test.ts`.                                                                                                                                        | Shipped |
 | FR-7  | Detect the mood (12 for Roka, set by the character pack) with rules at zero model cost. With `jev.tone: on`, Jev picks the tone at or above `jev.toneMinProbability`.                                                                                                                      | Shipped |
 | FR-8  | Limit model calls with a sliding-window RPM (`rateLimit.rpm`, 15) and a daily RPD (`rateLimit.rpd`, 500) that resets at midnight UTC. Decline in character; the decline deletes itself after 5 seconds.                                                                                    | Shipped |
@@ -65,7 +65,7 @@ and stays in character across a group conversation.
 | FR-15 | Read images, PDFs, audio and video by upload or link, under per-type size ceilings and per-turn byte and token budgets. Say so when a file cannot be read.                                                                                                                                 | Shipped |
 | FR-16 | Open linked posts from X, Bluesky, YouTube, TikTok, Reddit, Instagram, Bilibili and Threads, and read their most-liked replies on request.                                                                                                                                                 | Shipped |
 | FR-17 | Write passive memory from monitored server channels: user claims, guild facts and episode summaries, gated by Jev or the main model. Honor `memory.privacy` (`relaxed`, `balanced`, `strict`, `off`).                                                                                      | Shipped |
-| FR-18 | Recall memory as one relevance-ranked block (`memory.recall: unified`). The default `shadow` mode logs the unified recall and keeps the legacy blocks.                                                                                                                                     | Partial |
+| FR-18 | Recall memory with the four legacy blocks: people facts, server facts, episode summaries and media summaries.                                                                                                                                                                              | Shipped |
 | FR-19 | Start a web search before the first model call when Jev predicts a lookup (`jev.prefetch: on`). It runs in `shadow` mode by default.                                                                                                                                                       | Partial |
 | FR-20 | Embed memory with a local sidecar (`embeddings.provider: local`). `config.yml` pins `gemini` until the sidecar passes its Pi memory check, and its recall floors still need calibration.                                                                                                   | Partial |
 | FR-21 | Run games with SQLite progress: `/gacha` companions, `/hangman` and `/shiritori`, each with a top-10 leaderboard.                                                                                                                                                                          | Shipped |
@@ -76,7 +76,7 @@ and stays in character across a group conversation.
 ## Source Files
 
 - `src/discord/events/messageCreate.ts`, `src/discord/events/interactionCreate.ts`, `src/discord/commands/`
-- `src/agent/roka.ts`, `src/agent/session.ts`, `src/agent/replyShape.ts`, `src/agent/reliability.ts`, `src/agent/llm/budget.ts`
+- `src/agent/roka.ts`, `src/agent/session.ts`, `src/agent/replyShape.ts`, `src/agent/replyFormat.ts`, `src/agent/reliability.ts`, `src/agent/llm/budget.ts`
 - `src/agent/tools/index.ts`, `src/discord/messageBuilder.ts`, `src/discord/responses.ts`
 - `src/utils/rateLimiter.ts`, `src/discord/concurrency.ts`, `src/discord/errorHandler.ts`
 - `src/index.ts`, `Dockerfile`, `docker-compose.yml`, `config.yml`

@@ -1,0 +1,97 @@
+{
+  "caseId": "N1",
+  "recordedAt": "2026-11-17T21:17:32.474Z",
+  "commit": "2f6dac20658fc7b1625a3298b81d0170496bd5c0",
+  "toolCalls": [
+    {
+      "tool": "search_web",
+      "args": {
+        "query": "GTA 6 latest news",
+        "max_results": 5
+      }
+    }
+  ],
+  "exchanges": [
+    {
+      "provider": "exa",
+      "method": "POST",
+      "url": "https://api.exa.ai/search",
+      "requestBody": {
+        "query": "GTA 6 latest news",
+        "type": "auto",
+        "numResults": 5,
+        "contents": {
+          "highlights": true
+        }
+      },
+      "status": 200,
+      "responseBody": {
+        "requestId": "a116fdee0a8a34d403278d516dc1a0c8",
+        "resolvedSearchType": "",
+        "results": [
+          {
+            "id": "https://www.gamespot.com/articles/gta-6-has-teamed-up-with-the-weather-channel-to-show-how-dynamic-leonida-can-be/",
+            "title": "GTA 6 Has Teamed Up With The Weather Channel To Show How Dynamic Leonida Can Be - GameSpot",
+            "url": "https://www.gamespot.com/articles/gta-6-has-teamed-up-with-the-weather-channel-to-show-how-dynamic-leonida-can-be/",
+            "publishedDate": "2026-11-17T10:15:33.000Z",
+            "author": "Cheri Faulkner",
+            "highlights": [
+              "# GTA 6 Has Teamed Up With The Weather Channel To Show How Dynamic Leonida Can Be\n\nThe dynamic weather in GTA 6 has been shown off via six new screenshots and weather reports.\n\n By Cheri Faulkner on November 17, 2026 at 2:15AM PST \n\nRockstar Games has found an unexpected partner to show off one of GTA 6′ s most impressive features: The Weather Channel. The US broadcaster has shared an exclusive look at Leonida’s weather system via six new screenshots and forecasts that make the fictional destination sound like somewhere you’d need to check the weather before visiting.\n\nIt’s an unusual collaboration, but a very fitting one. GTA 6 takes place in Leonida, a fictional state inspired by Florida, where sunshine, torrential rain, thunderstorms and tropical storms are all part of the ecosystem. Who better to show off the unpredictable climate than The Weather Channel? \n\n> Nobody knows weather like we do. That’s why @rockstargames gave us an exclusive look at the forecast for Leonida and the dynamic weather in GTAVI. “Grand Theft Auto VI takes place in Leonida – a fictional world inspired by modern-day Florida, a landscape with one of the most…\n> \n> — The Weather Channel (@weatherchannel) November 16, 2026\n\nThe broadcaster posted the collaboration on X, writing “Nobody knows weather like we do. That’s why Rockstar gave us an exclusive look at the forecast for Leonida and the dynamic weather in GTAVI.” \n\nInstead of just posting the six new screenshots, The Weather Channel provided six different weather reports for the various locations across Leonida. Each has its own conditions and some local facts, making the entire post sound like a genuine forecast. \n\nThe reports include heavy rain reducing visibility across the Keys, a thunderstorm rolling over the swamps of Pelican Valley–and obscuring some feisty “nippers” at the same time–and sea fog threatening to obscure the expensive beachfront views at South Ocean Beach. There’s also a tropical storm making the waters around the Rusty Anchor particularly choppy, and Gambit Bay has a low-lying morning mist ahead of hunting season.\n\nOne forecast warns commuters traveling from Key Lento to expect more rain and wind. It seems like an almost mundane detail for a game about a pair of criminals, but it’s this exact impressive world-building that makes Leonida feel real.\n\nThe six new screenshots are especially impressive, showing off the towering storm clouds and lightning strikes through to dense fog that makes entire stretches of the coastline disappear. Rockstar isn’t treating weather as just a visual effect–it will have a real impact on the way you play the game.\n\nOwen Shepherd, Rockstar’s VP of Art: Light and Rendering, explained that the studio had to completely reimagine its in-game weather systems to make them feel “more localized, persistent, and above all dynamic.” He added that Leonida’s weather can range from clear blue skies to towering cumulonimbus clouds, reflecting the unpredictable conditions of the real-world Florida climate.\n\nThe emphasis on localized weather is interesting. Instead of having the entire map experience the same conditions, Leonida’s different environments can have their own atmospheric conditions. A coastal resort might be swallowed by fog, while a storm rolls over the wetlands in the distance. This approach will make exploring the enormous map feel different depending on when and where players visit. The screenshots don’t confirm how individual gameplay mechanics will be affected, but they offer a deeper look at the environmental detail Rockstar is aiming for."
+            ],
+            "image": "https://www.gamespot.com/wp-content/uploads/2026/11/large-2-1.jpg"
+          },
+          {
+            "id": "https://www.gamesradar.com/gta-6/",
+            "title": "GTA 6 | GamesRadar+",
+            "url": "https://www.gamesradar.com/gta-6/",
+            "publishedDate": "2026-11-17T17:29:22.000Z",
+            "author": "Austin Wood",
+            "highlights": [
+              "## Editor's top picks\n\nLatest updates on GTA 6\n\nAustin Wood Nov 10, 2026\n\n## I want an uglier GTA 6 that runs at 60 FPS – 30 FPS on console is more reason to wait for PC\n\nOpinion | Please, Rockstar, join us in the light of 60 FPS \n\n Dustin Bailey Nov 17, 2026 \n\n### \"30fps makes sense\" for GTA 6, tech analyst says, and anything above that is \"asking for trouble\"\n\nRockstar's settled on its frame rate target for a reason\n\n Scott McCrae Nov 17, 2026 \n\n Save We got GTA 6 nominated for Game of the Year at The Game Awards before GTA 6 Share We got GTA 6 nominated for Game of the Year at The Game Awards before GTA 6 \n\n### We got GTA 6 nominated for Game of the Year at The Game Awards before GTA 6\n\nThe Legend of Zelda: Ocarina of Time, Resident Evil Requiem join it in competition for the top award\n\n Scott McCrae Nov 17, 2026 \n\n Save GTA 6 Lucia actor revealed thanks to The Game Awards Best Performance nomination, and it's exactly who everyone expected Share GTA 6 Lucia actor revealed thanks to The Game Awards Best Performance nomination, and it's exactly who everyone expected \n\n### GTA 6 Lucia actor revealed thanks to The Game Awards Best Performance nomination, and it's exactly who everyone expected\n\nManni L. Perez is finally confirmed for the role\n\n Iain Wilson Nov 17, 2026 \n\n### How to play GTA 6 early with the New Zealand trick\n\nIf you're on Xbox then it's possible to use the New Zealand time zone trick to play GTA 6 early, and here's how to do it\n\n Iain Wilson Nov 17, 2026 \n\n### GTA 6 release time in your region explained\n\nOfficially the release time for GTA 6 is midnight locally, though there are potentially some regional variations\n\n Scott McCrae Nov 17, 2026"
+            ]
+          },
+          {
+            "id": "https://www.vice.com/en/article/gta-6-second-day-one-patch-ps5-xbox/",
+            "title": "GTA 6 Gets a Second Day One Patch on PS5 and Xbox Ahead of Launch",
+            "url": "https://www.vice.com/en/article/gta-6-second-day-one-patch-ps5-xbox/",
+            "publishedDate": "2026-11-16T11:08:42.000Z",
+            "author": "Brent Koepp",
+            "highlights": [
+              "# GTA 6 Gets a Second Day One Patch on PS5 and Xbox Ahead of Launch\n\nGTA 6’s second day one patch is 1.6 GB on Xbox and 602.5 MB on PS5. See the PS5 rollout times and what we know about patch notes.\n\n By Brent Koepp\n\nNovember 16, 2026, 6:08am\n\nA new GTA 6 update is now rolling out on PS5 and Xbox ahead of the game’s November 19 launch. The surprise patch brings Grand Theft Auto VI to version 01.002.001. Here is what you need to know about the second GTA 6 day one patch, including when you can download it.\n\n## A Second GTA 6 update Is Rolling Out on PS5\n\nScreenshot: Rockstar Games, PlayStation\n\nGTA 6 update 01.002.001 is now live for some PS5 users, and is around 602.5 MB in size. Sony is releasing the patch in waves. As a result, some players can already download it, while others will have to wait for it to appear on their console.\n\n## Videos by VICE \n\nThis is the second update Rockstar has released for the game ahead of launch this week. The first GTA 6 day one patch, version 01.002.000, was released on November 13 and took up about 1GB of storage space.\n\n## What Time Does the Second GTA 6 Update Release on PS5?\n\nScreenshot: Rockstar Games\n\nGTA 6 update 01.002.001 is expected to be available to all PS5 players by 2 AM PT / 5 AM ET on Tuesday, November 17, according to a rollout schedule shared by dataminers. The patch started rolling out on November 16, with three waves scheduled 12 hours apart.\n\n| PS5 players with access | Pacific Time | Eastern Time | UK / UTC |\n| --- | --- | --- | --- |\n| 33% | Nov. 16 at 2 AM | Nov. 16 at 5 AM | Nov. 16 at 10 AM |\n| 66% | Nov. 16 at 2 PM | Nov. 16 at 5 PM | Nov. 16 at 10 PM |\n| 100% | Nov. 17 at 2 AM | Nov. 17 at 5 AM | Nov. 17 at 10 AM |\n\n> New GTA 6 update on PlayStation! Version 01.002.001 Size: ~602.5 MB Staged rollout: 33% → Nov 16, 10:00 UTC 66% → Nov 16, 22:00 UTC 100% → Nov 17, 10:00 UTC#GTAVI pic.twitter.com/PYxpXCQFqt\n> \n> — iGrandTheftAuto.com (@iGrandTheftAuto) November 16, 2026\n\nIf you’ve already preloaded Grand Theft Auto VI, you can check for the patch by highlighting the game on your PS5 home screen, pressing the Options button on your controller, and selecting Check for Update. If your PS5 says the game is up to date and you’re still on version 01.002.000, check again after the next wave.\n\n## How Big Is the New GTA 6 Update on Xbox?\n\nScreenshot: Rockstar Games, Xbox\n\nThe second GTA 6 day one patch is also now live on Xbox Series X|S and is around 1.6 GB, according to dataminers. For comparison, the same update is around 602.5 MB on PS5, making the Xbox download roughly 1 GB larger. \n\n## Are There GTA 6 Patch Notes for Update 01.002.001?\n\nScreenshot: Rockstar Games\n\nRockstar hasn’t released patch notes for GTA 6 update 01.002.001 at the time of writing. We know the version number and download size, but Rockstar hasn’t confirmed what changed between the November 13 patch and this latest update."
+            ],
+            "image": "https://www.vice.com/wp-content/uploads/sites/2/2026/11/When-Does-GTA-6-Preload-Start-Download-Times-by-Region.jpg?w=1280"
+          },
+          {
+            "id": "https://rockstarreport.com/news/gta-6-ultimate-edition-87-percent-preorders",
+            "title": "GTA 6 Ultimate Edition Holds 87% of Pre-Orders | Rockstar Report",
+            "url": "https://rockstarreport.com/news/gta-6-ultimate-edition-87-percent-preorders",
+            "publishedDate": "2026-11-17T13:47:09.000Z",
+            "author": "Rockstar Report Staff",
+            "highlights": [
+              "# GTA 6 Ultimate Edition Holds 87% of Pre-Orders\n\nBy Rockstar Report Staff Published Nov 17, 2026, 1:47 PM GMT\n\nSensor Tower estimates 87% of GTA 6 pre-orders are for the $99.99 Ultimate Edition. The premium edition has retained nearly all of its early share close to launch.\n\nGrand Theft Auto VI's $99.99 Ultimate Edition still accounts for 87% of estimated pre-orders with launch two days away, according to Sensor Tower's new consumer-impact report. The split is an estimate, not sales data released by Rockstar Games or Take-Two Interactive.\n\nThe premium edition held almost all of its early share as the audience expanded. Sensor Tower estimated in August that 89% of buyers had selected Ultimate, so the figure fell by only two percentage points by November 9. The firm's live tracker now estimates 15.88 million total pre-orders and $1.54 billion in revenue as of November 17.\n\nThose totals come from Sensor Tower's model for digital console sales. Rockstar and Take-Two have not confirmed the unit count, revenue or edition split. Take-Two has only said pre-orders are far above its initial expectations.\n\n## Ultimate demand did not shift toward the standard edition\n\nThe Ultimate Edition costs $20 more than the $79.99 standard release in the US. It adds premium vehicles, weapons, apparel and story content, but it does not unlock GTA 6 before the November 19 release date. Both editions can be pre-loaded and launch at the same time.\n\nThat makes the 87% share unusually durable. In August, Sensor Tower executive Karl Kontus said premium editions usually account for around 10% to 20% of sales and expected GTA 6's mix to move closer to the standard edition as launch approached. Our earlier breakdown of Sensor Tower's estimates covered that 89% starting point.\n\nInstead, late buyers have continued selecting the more expensive package. The available data cannot explain each purchase decision, but it shows that demand for the Ultimate content has remained strong without an early-access incentive.\n\nRockstar's official pre-order announcement says every order placed before November 20 also receives the Vintage Vice City Pack. Digital pre-orders of either edition include a free month of GTA+, so those bonuses do not account for the price difference.\n\n## The Extended Look produced another preorder spike\n\nSensor Tower's report also traces a sixfold jump in daily pre-orders to Netflix's Extended Look on August 27. Daily revenue had ranged from $2.4 million to $3.8 million through most of that month, according to GamesIndustry.biz, before reaching $16.3 million the day after the special premiered.\n\nThe video arrived after pre-orders opened on June 25, giving undecided buyers a longer look at Jason, Lucia and Leonida. Sensor Tower's figures suggest it moved sales immediately, while the edition data shows those additional buyers largely followed the early audience into Ultimate.\n\nGTA 6 launches November 19 for PlayStation 5 and Xbox Series X|S. Rockstar has not announced a PC release date."
+            ],
+            "image": "https://rockstarreport.com/graphics-v2/hero-images/gta-6-ultimate-edition-87-percent-preorders-bd90f81a04.jpg"
+          },
+          {
+            "id": "https://www.itechpost.com/articles/237818/20261117/gta-6-update-1002-arrives-ahead-launch-good-news-ps5-xbox-players.htm",
+            "title": "'GTA 6' Update 1.002 Arrives Ahead of Launch With Good News for PS5 and Xbox Players",
+            "url": "https://www.itechpost.com/articles/237818/20261117/gta-6-update-1002-arrives-ahead-launch-good-news-ps5-xbox-players.htm",
+            "publishedDate": "2026-11-17T08:40:05.000Z",
+            "author": "Gio Farley",
+            "highlights": [
+              "Gio Farley Games Published: Nov 17 2026, 3:40 AM EST\n\n...\n\n\" Grand Theft Auto 6\" has received its first pre-launch update ahead of its November 19 release, giving PlayStation 5 and Xbox players additional files to download before the highly anticipated game becomes available. Identified as version 01.002.000, the update began rolling out on November 13, just six days before launch. The patch has attracted attention because\n\n...\n\nThese figures also refer to the update rather than the complete \"GTA 6\" installation. Rockstar previously confirmed that the game's preload could require up to 212 GB of storage, depending on the device. As reported by The Verge, the substantial storage requirement was announced alongside the November 10 preload schedule.\n\nPlayers therefore need to account for the full game installation rather than treating the smaller patch download as the game's total storage requirement.\n\n...\n\nDespite the update's arrival, Rockstar Games has not released official patch notes explaining what version 01.002.000 changes. The update is listed as an installation file, but its description does not provide a breakdown of fixes, adjustments, or new features.\n\nAs a result, claims about specific improvements to graphics, performance, loading times, or gameplay stability remain unconfirmed."
+            ],
+            "image": "https://d.itechpost.com/en/full/223560/gta-6.png"
+          }
+        ],
+        "searchTime": 988.7,
+        "costDollars": {
+          "total": 0.007,
+          "search": {
+            "neural": 0.007
+          }
+        }
+      }
+    }
+  ]
+}

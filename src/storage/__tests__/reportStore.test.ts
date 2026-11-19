@@ -166,4 +166,24 @@ describe('reportStore', () => {
       'Failed to capture bug report context snapshot'
     )
   })
+
+  it("excludes jev_events rows of kind 'recall' from the recentJev snapshot", () => {
+    const db = getDb()
+    const now = Date.now()
+    const insertJev = db.prepare(
+      `INSERT INTO jev_events (kind, guild_id, channel_id, question, answer, applied, latency_ms, input_tokens, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    insertJev.run('recall', 'guild-1', 'channel-1', 'q-recall', 'a-recall', 1, 5, 2, now - 30)
+    insertJev.run('turn', 'guild-1', 'channel-1', 'q-turn', 'a-turn', 1, 8, 3, now - 50)
+
+    const reportId = createReportIfAllowed(reportInput(), options)
+    const row = db.prepare('SELECT context_json FROM bug_reports WHERE id = ?').get(reportId) as {
+      context_json: string
+    }
+    const snapshot = JSON.parse(row.context_json)
+
+    expect(snapshot.recentJev).toHaveLength(1)
+    expect(snapshot.recentJev[0]).toMatchObject({ kind: 'turn', answer: 'a-turn' })
+  })
 })

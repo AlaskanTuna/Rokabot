@@ -2,7 +2,7 @@ import Database from 'better-sqlite3'
 import { logger } from '../utils/logger.js'
 import { getDb } from './database.js'
 
-export type JevEventKind = 'turn' | 'admission' | 'verification'
+export type JevEventKind = 'turn' | 'admission' | 'verification' | 'recall'
 
 export interface JevEventInput {
   kind: JevEventKind

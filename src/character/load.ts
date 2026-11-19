@@ -66,6 +66,13 @@ export interface Character {
     /** Still holds `{{user}}` and `{{time_of_day}}`, filled each turn. */
     situation: string
     safetySteer: string
+    format: {
+      bullets: string
+      numbered: string
+      score: string
+      words: string
+      sentences: string
+    }
   }
   timeOfDay: ReadonlyArray<{ from: number; to: number; text: string }>
   judge: { lookupQuestion: string; moodQuestion: string }
@@ -94,7 +101,9 @@ const SLOT_HOMES: Record<string, string> = {
   time_of_day: 'situation.md',
   memory_tools: 'tools.md, on a line of its own',
   search_tools: 'tools.md, on a line of its own',
-  search_before_judging: 'answering.md'
+  search_before_judging: 'answering.md',
+  max: 'format-score.md',
+  count: 'format-words.md or format-sentences.md'
 }
 
 /** Whether `hour` falls in [from, to); a range whose `to` is not after `from` wraps past midnight. */
@@ -211,7 +220,11 @@ export function loadCharacter(dir: string, harnessDir: string, options: LoadOpti
           ? ['memory_tools', 'search_tools']
           : name === 'answering'
             ? ['search_before_judging']
-            : []
+            : name === 'format-score'
+              ? ['max']
+              : name === 'format-words' || name === 'format-sentences'
+                ? ['count']
+                : []
     const text = expand(raw.endsWith('\n') ? raw.slice(0, -1) : raw, source, '', slots)
     for (const macro of [MEMORY_LINE, SEARCH_TOOLS_LINE]) {
       if (text.split('\n').some((line) => line !== macro && line.includes(macro))) {
@@ -422,6 +435,13 @@ export function loadCharacter(dir: string, harnessDir: string, options: LoadOpti
 
   const situation = prompt('situation', characterPath, 'situation')
   const safetySteer = prompt('safety-steer', characterPath, 'safety-steer')
+  const format = {
+    bullets: prompt('format-bullets', characterPath, 'format-bullets'),
+    numbered: prompt('format-numbered', characterPath, 'format-numbered'),
+    score: prompt('format-score', characterPath, 'format-score'),
+    words: prompt('format-words', characterPath, 'format-words'),
+    sentences: prompt('format-sentences', characterPath, 'format-sentences')
+  }
   if (problems.length > 0) throw new Error(problems.join('\n'))
 
   return deepFreeze({
@@ -434,7 +454,7 @@ export function loadCharacter(dir: string, harnessDir: string, options: LoadOpti
     nameTrigger: new RegExp(`\\b(?:${file.triggers.names.map(escapeRegExp).join('|')})\\b`, 'i'),
     nameTag: new RegExp(`^\\[?${escapeRegExp(file.name)}\\]?:\\s*`, 'i'),
     model: file.model,
-    prompts: { system, stable, situation, safetySteer },
+    prompts: { system, stable, situation, safetySteer, format },
     timeOfDay,
     judge,
     moodKeys: Object.keys(moods),

@@ -14,6 +14,7 @@ export type BackgroundWorkload = Exclude<Workload, 'reply' | 'embedding' | 'watc
 
 type GenerateObjectInput<T> = {
   schema: z.ZodType<T>
+  requestSchema?: z.ZodType
   system?: string
   prompt: string
   workload: BackgroundWorkload
@@ -21,6 +22,8 @@ type GenerateObjectInput<T> = {
   signal?: AbortSignal
   /** The exact Gemini `responseSchema` this job sent before #296; only the legacy config sends it, unchanged. */
   legacyResponseSchema?: GenerateContentConfig['responseSchema']
+  /** Downscaled image bytes, sent as inline parts on routes whose profile accepts images. */
+  images?: Array<{ mimeType: string; data: Buffer }>
 }
 
 // Today's per-job settings, so the legacy config sends exactly what it sent before.
@@ -28,7 +31,8 @@ const TEMPERATURE: Record<BackgroundWorkload, number> = {
   extraction: 0.3,
   reclassify: 0,
   admission: 0,
-  verification: 0
+  verification: 0,
+  imageGate: 0
 }
 const DEFAULT_MAX_OUTPUT_TOKENS = 1024
 
@@ -77,10 +81,20 @@ function requestFor<T>(route: ResolvedModel, input: GenerateObjectInput<T>, lega
   const schema =
     legacy && input.legacyResponseSchema !== undefined
       ? { responseSchema: input.legacyResponseSchema }
-      : { responseJsonSchema: requestSchema(input.schema, profile.structuredOutput) }
+      : { responseJsonSchema: requestSchema(input.requestSchema ?? input.schema, profile.structuredOutput) }
   return {
     model: route.model,
-    contents: [{ role: 'user', parts: [{ text: input.prompt }] }],
+    contents: [
+      {
+        role: 'user',
+        parts: [
+          { text: input.prompt },
+          ...(input.images ?? []).map((image) => ({
+            inlineData: { data: image.data.toString('base64'), mimeType: image.mimeType }
+          }))
+        ]
+      }
+    ],
     config: {
       ...(input.system ? { systemInstruction: input.system } : {}),
       responseMimeType: 'application/json',
@@ -152,6 +166,7 @@ async function attempt<T>(
 function failureFields(error: unknown) {
   return {
     errorName: (Object(error) as { constructor?: { name?: string } }).constructor?.name ?? 'Error',
+    errorMessage: (error instanceof Error ? error.message : String(error)).slice(0, 300),
     ...(error instanceof StructuredOutputError ? { reason: error.reason } : {})
   }
 }
@@ -160,21 +175,44 @@ export async function generateObject<T>(
   input: GenerateObjectInput<T>
 ): Promise<{ value: T; provider: ProviderId; model: string; usage: CallUsage }> {
   const { main, fallback, legacy } = routes()
+  // An image-carrying job runs only where the profile accepts images: past the main route when it cannot
+  // take them, and failing outright when the fallback cannot either.
+  const needsImages = (input.images?.length ?? 0) > 0
+  const imageFallback = fallback && (!needsImages || fallback.profile.input.image) ? fallback : null
+  if (needsImages && !main.profile.input.image) {
+    if (!imageFallback || input.signal?.aborted) {
+      throw new StructuredOutputError('blocked', main.provider)
+    }
+    logger.warn(
+      { workload: input.workload, provider: main.provider },
+      'Background job carries images the main model cannot take, trying the fallback'
+    )
+    try {
+      const { value, usage } = await attempt(imageFallback, input, false)
+      return { value, provider: imageFallback.provider, model: imageFallback.model, usage }
+    } catch (fallbackError) {
+      logger.warn(
+        { workload: input.workload, provider: imageFallback.provider, ...failureFields(fallbackError) },
+        'Background job failed on the fallback too'
+      )
+      throw fallbackError
+    }
+  }
   try {
     const { value, usage } = await attempt(main, input, legacy)
     return { value, provider: main.provider, model: main.model, usage }
   } catch (error) {
-    if (!fallback || input.signal?.aborted) throw error
+    if (!imageFallback || input.signal?.aborted) throw error
     logger.warn(
       { workload: input.workload, provider: main.provider, ...failureFields(error) },
       'Background job failed on the main model, trying the fallback'
     )
     try {
-      const { value, usage } = await attempt(fallback, input, false)
-      return { value, provider: fallback.provider, model: fallback.model, usage }
+      const { value, usage } = await attempt(imageFallback, input, false)
+      return { value, provider: imageFallback.provider, model: imageFallback.model, usage }
     } catch (fallbackError) {
       logger.warn(
-        { workload: input.workload, provider: fallback.provider, ...failureFields(fallbackError) },
+        { workload: input.workload, provider: imageFallback.provider, ...failureFields(fallbackError) },
         'Background job failed on the fallback too'
       )
       // The main model's failure is the one the extraction queue's retry policy should judge.

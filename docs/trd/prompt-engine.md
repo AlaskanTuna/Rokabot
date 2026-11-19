@@ -4,15 +4,16 @@ How one Discord turn becomes the system prompt and user message the model reads.
 
 ## At a Glance
 
-| Item             | Contract                                                                                                    |
-| ---------------- | ----------------------------------------------------------------------------------------------------------- |
-| Character Source | One character pack, loaded and validated once at startup. See [Characters](../guide/characters.md).         |
-| System Prompt    | 14 blocks in a fixed order. Blocks 1-2 are static and cached. Blocks 3-14 change per turn.                  |
-| Mood             | Rule-based detection on the last 3 messages. Jev can replace it when `jev.tone: on`.                        |
-| Reply Shape      | Length, opener, ending, faces, beats and the saying-no scene are rolled in code, then rendered as block 14. |
-| Safety Ladder    | Up to 3 rungs. Each rung removes carried context. The current message always stays.                         |
-| Size Cap         | Blocks 1-4 stay at or under `MAX_SYSTEM_PROMPT_TOKENS` (6,500) for every mood.                              |
-| Regression Gate  | `promptGolden.test.ts` pins every prompt and reply shape by hash.                                           |
+| Item             | Contract                                                                                                                                        |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Character Source | One character pack, loaded and validated once at startup. See [Characters](../guide/characters.md).                                             |
+| System Prompt    | 14 blocks in a fixed order. Blocks 1-2 are static and cached. Blocks 3-14 change per turn.                                                      |
+| Mood             | Rule-based detection on the last 3 messages. Jev can replace it when `jev.tone: on`.                                                            |
+| Reply Shape      | Length, opener, ending, faces, beats and the saying-no scene are rolled in code, then rendered as block 14.                                     |
+| Format Requests  | Explicit list, score, word and sentence requests yield block 14 (unless an edge fires) and are checked and reformatted in `afterModelCallback`. |
+| Safety Ladder    | Up to 3 rungs. Each rung removes carried context. The current message always stays.                                                             |
+| Size Cap         | Blocks 1-4 stay at or under `MAX_SYSTEM_PROMPT_TOKENS` (6,500) for every mood.                                                                  |
+| Regression Gate  | `promptGolden.test.ts` pins every prompt and reply shape by hash.                                                                               |
 
 ![Prompt Stack](../diagrams/prompt-stack.svg)
 
@@ -24,27 +25,26 @@ _The loader reads the pack and harness prompts once; each turn adds per-turn blo
 `createTurnContext` builds the blocks and `composePrompt(rung)` joins them. `assembleSystemPrompt` builds blocks 1-4
 and joins them with a blank line. Every later block starts with a blank line. An empty block adds nothing.
 
-| #   | Block             | Heading in the Prompt                                                                        | Scope          | Source                                                    |
-| --- | ----------------- | -------------------------------------------------------------------------------------------- | -------------- | --------------------------------------------------------- |
-| 1   | Core Sections     | The pack's sections, e.g. `## Who You Are`, `## Hard Boundaries`                             | Static, cached | Every `prompt.system` entry except `speech`               |
-| 2   | Speech Section    | `## Speech Patterns`                                                                         | Static, cached | The `speech` entry of `prompt.system`                     |
-| 3   | Mood              | `## Current Mood: …`                                                                         | Per turn       | The mood's prompt file, default `prompts/moods/<mood>.md` |
-| 4   | Situation         | `## Situation`                                                                               | Per turn       | `situation.md`                                            |
-| 5   | What You Remember | Legacy: `## What You Remember About People In This Channel`. Unified: `## What You Remember` | Memory         | `memory/retriever.ts` or `memory/recall.ts`               |
-| 6   | Who Is Mentioned  | `## Who Is Mentioned`                                                                        | Memory         | `turnContext.ts`                                          |
-| 7   | Server Facts      | `## Things You Remember About This Server`                                                   | Memory         | `memory/retriever.ts` (legacy and shadow recall)          |
-| 8   | Episodes          | `## Things you remember happening here`                                                      | Memory         | `memory/episodeRetriever.ts` (legacy and shadow recall)   |
-| 9   | Media Watched     | `## Media You Watched Here Before`                                                           | Memory         | `memory/mediaRecall.ts` (legacy and shadow recall)        |
-| 10  | Overheard         | `## Recent Channel Activity (messages you overheard)`                                        | Per turn       | Passive buffer, `promptSafety.ts`                         |
-| 11  | Discord ID Tail   | `- The current user's Discord ID is "<id>".`                                                 | Per turn       | `turnContext.ts`                                          |
-| 12  | Looked It Up      | `## Looked It Up`                                                                            | Per turn       | `searchPrefetch.ts`                                       |
-| 13  | Redirect This One | `## Redirect This One`                                                                       | Code-picked    | `prompts/safety-steer.md` (locked)                        |
-| 14  | Reply Shape       | `## Reply Shape`                                                                             | Code-picked    | `replyShape.ts` with the pack's `voice.yml`               |
+| #   | Block             | Heading in the Prompt                                            | Scope          | Source                                                    |
+| --- | ----------------- | ---------------------------------------------------------------- | -------------- | --------------------------------------------------------- |
+| 1   | Core Sections     | The pack's sections, e.g. `## Who You Are`, `## Hard Boundaries` | Static, cached | Every `prompt.system` entry except `speech`               |
+| 2   | Speech Section    | `## Speech Patterns`                                             | Static, cached | The `speech` entry of `prompt.system`                     |
+| 3   | Mood              | `## Current Mood: …`                                             | Per turn       | The mood's prompt file, default `prompts/moods/<mood>.md` |
+| 4   | Situation         | `## Situation`                                                   | Per turn       | `situation.md`                                            |
+| 5   | What You Remember | `## What You Remember About People In This Channel`              | Memory         | `memory/retriever.ts`                                     |
+| 6   | Who Is Mentioned  | `## Who Is Mentioned`                                            | Memory         | `turnContext.ts`                                          |
+| 7   | Server Facts      | `## Things You Remember About This Server`                       | Memory         | `memory/retriever.ts`                                     |
+| 8   | Episodes          | `## Things you remember happening here`                          | Memory         | `memory/episodeRetriever.ts`                              |
+| 9   | Media Watched     | `## Media You Watched Here Before`                               | Memory         | `memory/mediaRecall.ts`                                   |
+| 10  | Overheard         | `## Recent Channel Activity (messages you overheard)`            | Per turn       | Passive buffer, `promptSafety.ts`                         |
+| 11  | Discord ID Tail   | `- The current user's Discord ID is "<id>".`                     | Per turn       | `turnContext.ts`                                          |
+| 12  | Looked It Up      | `## Looked It Up`                                                | Per turn       | `searchPrefetch.ts`                                       |
+| 13  | Redirect This One | `## Redirect This One`                                           | Code-picked    | `prompts/safety-steer.md` (locked)                        |
+| 14  | Reply Shape       | `## Reply Shape`                                                 | Code-picked    | `replyShape.ts` with the pack's `voice.yml`               |
 
 - **Blocks 1-2:** one string in the request. They are the pack's `prompt.system` sections in list order. The split
   between them exists only for the token test and the `core.ts` and `speech.ts` exports.
-- **Block 5:** `memory.recall: unified` sends one ranked block. `legacy` and `shadow` send the people facts here and
-  build blocks 7-9. DMs always use the legacy blocks.
+- **Block 5:** the people facts. Blocks 7-9 hold the server facts, conversation summaries and media summaries.
 - **Block 6:** lists a nickname or username that differs from the display name, and each Jev referent that passed
   `jev.referentMinConfidence`. It appears on any memory turn, also with `memory.privacy: off`.
 - **Block 10:** the last `memory.contextSize` (10) overheard messages. Each message is capped at 300 characters and
@@ -55,16 +55,16 @@ and joins them with a blank line. Every later block starts with a blank line. An
 
 ### When Each Block Is Present
 
-| Block  | Mention, Reply or Name Turn        | `/ask` Turn | Safety Rungs |
-| ------ | ---------------------------------- | ----------- | ------------ |
-| 1-4    | Yes                                | Yes         | 0-3          |
-| 5, 7-9 | When `memory.privacy` is not `off` | No          | 0-1          |
-| 6      | When a name resolves               | No          | 0-1          |
-| 10     | When the buffer holds messages     | Same rule   | 0            |
-| 11     | Yes                                | Yes         | 0-3          |
-| 12     | When a prefetch is ready           | Same rule   | 0            |
-| 13     | No                                 | No          | 1-3          |
-| 14     | Yes                                | Yes         | 0            |
+| Block  | Mention, Reply or Name Turn                                     | `/ask` Turn | Safety Rungs |
+| ------ | --------------------------------------------------------------- | ----------- | ------------ |
+| 1-4    | Yes                                                             | Yes         | 0-3          |
+| 5, 7-9 | In a guild when `memory.privacy` is not `off` (DMs skip memory) | No          | 0-1          |
+| 6      | When a name resolves                                            | No          | 0-1          |
+| 10     | When the buffer holds messages                                  | Same rule   | 0            |
+| 11     | Yes                                                             | Yes         | 0-3          |
+| 12     | When a prefetch is ready                                        | Same rule   | 0            |
+| 13     | No                                                              | No          | 1-3          |
+| 14     | Yes                                                             | Yes         | 0            |
 
 ## Memory Modes
 
@@ -246,10 +246,19 @@ No Roka beat lists `hard`, so none fires on a hard edge.
 - **Note Line:** `note.lewd` (the flustered scene) or `note.hard` (one burst of real outrage), with `{{threat}}`
   filled.
 
+### Format Requests
+
+`detectFormatRequest` in `src/agent/replyFormat.ts` reads only the speaker's own words (`speakerWords`, stripping quotes, URLs, mentions, embeds, forwarded blocks, stickers, untrusted-data headers and fenced code). It detects optional `list` (`bullets` or `numbered`), `score` (`{ max }`, 2–100), and `length` (`words` or `sentences`, keeping `words` if both match).
+
+- **Precedence:** turns with `edge !== 'none'` or safety rungs 1–3 suppress the format request. When `format.mode` is `off`, detection is skipped; when `shadow`, block 14 stays unyielded and `afterModelCallback` checks without rewriting.
+- **Harness Prompts:** `prompts/format-bullets.md`, `format-numbered.md`, `format-score.md` (`{{max}}`), `format-words.md` (`{{count}}`) and `format-sentences.md` (`{{count}}`).
+- **Verification and Reformat:** on a final single-part text response (no `functionCall`), `afterModelCallback` runs `enforceReplyFormat` after `capReplyBlocks`. With `format.repair: reformat`, it can renumber bullet items to numbered (`numbered_from_bullets`) or split pure-prose replies into a lead-in, bullet or numbered list, and optional closer (`list_from_prose`).
+- **Configuration:** `format.mode` (`off | shadow | on`, default `on`, env `FORMAT_MODE`), `format.repair` (`off | reformat`, default `reformat`, env `FORMAT_REPAIR`), `format.minListItems` (3, bounded 2–5), `format.minListShare` (0.5, bounded 0–1) and `format.wordSlack` (0.1, bounded 0–1 for limits of 10+ words) in `config.yml` and `NUMERIC_BOUNDS`.
+- **Telemetry:** `response_events` records `format_kinds`, `format_outcome` (`met`, `repaired`, `unmet` or `suppressed`) and `format_detail`. Unmet `ok` turns also write a `kind: 'format_unmet'` row in `failure_diagnostics` (see [Data](data.md)).
+
 ### The Rendered Note
 
-Lines in order: `header`, `intro`, the length line, the open line, the end line, the faces line, each fired beat,
-the lewd or hard line, then `nameOnce` unless the opener is `name`.
+Lines in order: `header`, `intro`, the length line (or format list/limit lines when `list` or `length` yields it), the score line if `score` is set, the open and end lines (omitted under a `length` limit), the faces line, each fired beat (omitted under a `length` limit), the lewd or hard line, then `nameOnce` when a `length` limit applies or the opener is not `name`.
 
 ### RNG Order
 
@@ -286,7 +295,7 @@ records its rung count in `failure_diagnostics.safety_rungs_used`.
 
 `buildNewMessage` in `src/agent/roka.ts` sends one user content with these parts, in order:
 
-1. **Media Parts:** images, video and audio sent to the model directly. Dropped at rung 3.
+1. **Media Parts:** direct image and PDF parts. Dropped at rung 3.
 2. **Media Notes:** the text notes from watched media. Dropped at rung 3.
 3. **Attachment Notices:** one line each for files that could not be retrieved, files left out over the per-turn
    limit, and files too long to read.
@@ -300,14 +309,16 @@ prompt on every model call, from the rung's rebuilt prompt or the turn's `_syste
 `src/agent/__tests__/promptGolden.test.ts` pins every prompt the bot can send as SHA-256 hashes in
 `tests/fixtures/prompt-golden.json`.
 
-| Key                      | What It Pins                                                                                                       |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------ |
-| `system.<mood>.<mode>`   | Blocks 1-4 for every mood, memory mode (`memory`, `forgetOnly`, `memoryFree`) and hour 0-23, plus the prefix split |
-| `replyShape.<mood>`      | Block 14 for 40 seeds × 10 messages × 3 sets of recent replies                                                     |
-| `replyShape.classifiers` | `messageEdge` and `messageWeight` for the 10 messages                                                              |
-| `tones`                  | `detectToneWithSource` for the 10 messages at hours 3, 14 and 23                                                   |
-| `faces`                  | The face groups and each mood's groups                                                                             |
-| `jevToneCriteria`        | Each mood's `judge` text                                                                                           |
+| Key                         | What It Pins                                                                                                       |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `system.<mood>.<mode>`      | Blocks 1-4 for every mood, memory mode (`memory`, `forgetOnly`, `memoryFree`) and hour 0-23, plus the prefix split |
+| `replyShape.<mood>`         | Block 14 for 40 seeds × 10 messages × 3 sets of recent replies                                                     |
+| `replyShape.classifiers`    | `messageEdge` and `messageWeight` for the 10 messages                                                              |
+| `replyShape.format`         | Block 14 for 40 seeds × 5 format-request messages                                                                  |
+| `formatRequest.classifiers` | `detectFormatRequest` across all 10 standard and 5 format messages                                                 |
+| `tones`                     | `detectToneWithSource` for the 10 messages at hours 3, 14 and 23                                                   |
+| `faces`                     | The face groups and each mood's groups                                                                             |
+| `jevToneCriteria`           | Each mood's `judge` text                                                                                           |
 
 `src/discord/__tests__/linesGolden.test.ts` does the same for every line the bot posts from the pack's `lines.yml`
 (`tests/fixtures/lines-golden.json`).
@@ -322,6 +333,7 @@ a regression. The test pins the shipped Roka pack.
 - `src/agent/turnContext.ts` (`createTurnContext`, `composePrompt`)
 - `src/agent/toneDetector.ts`
 - `src/agent/replyShape.ts`
+- `src/agent/replyFormat.ts`
 - `src/agent/roka.ts` (`buildNewMessage`, `beforeModelCallback`, `escalateSafety`)
 - `src/agent/llm/anthropicLlm.ts` (`systemBlocks`)
 - `src/agent/promptSafety.ts`, `src/agent/searchPrefetch.ts`

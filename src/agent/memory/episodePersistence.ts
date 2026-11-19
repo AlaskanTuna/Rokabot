@@ -4,13 +4,25 @@ import type { EmbeddingVector } from '../../storage/memoryEpisodeStore.js'
 import { logger } from '../../utils/logger.js'
 import { embedEpisodeText } from './episodeEmbeddings.js'
 import type { EpisodeRunResult } from './extractor.js'
+import { type SummaryVerdict, validateEpisodeSummary } from './summaryValidation.js'
 
 export async function persistEpisodeResult(input: {
   job: { id: number; guildId: string; channelId: string; episode: ExtractionEpisode }
   result: EpisodeRunResult
-}): Promise<boolean> {
+}): Promise<SummaryVerdict> {
   const { job, result } = input
-  if (result.status !== 'completed' || result.summary === null) return false
+  if (result.status !== 'completed' || result.summary === null) {
+    return { kept: false, dropReason: null, judged: false, inputTokens: 0 }
+  }
+
+  const verdict = await validateEpisodeSummary({
+    summary: result.summary,
+    opsRejected: result.opsRejected,
+    guildId: job.guildId,
+    channelId: job.channelId,
+    jobId: job.id
+  })
+  if (!verdict.kept) return verdict
 
   let embedding: EmbeddingVector | null = null
   try {
@@ -31,5 +43,5 @@ export async function persistEpisodeResult(input: {
     summary: result.summary,
     embedding
   })
-  return true
+  return verdict
 }

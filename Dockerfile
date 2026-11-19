@@ -37,10 +37,11 @@ RUN set -eu; \
       *) echo "Unsupported yt-dlp architecture: $TARGETARCH" >&2; exit 1 ;; \
     esac; \
     base="https://github.com/yt-dlp/yt-dlp/releases/download/$YTDLP_VERSION"; \
-    wget -q -O /tmp/SHA2-256SUMS "$base/SHA2-256SUMS"; \
+    fetch() { n=1; until wget -q -O "$1" "$2"; do [ "$n" -ge 4 ] && return 1; n=$((n + 1)); sleep 5; done; }; \
+    fetch /tmp/SHA2-256SUMS "$base/SHA2-256SUMS"; \
     release_sha256="$(awk -v asset="$asset.zip" '$2 == asset { print $1 }' /tmp/SHA2-256SUMS)"; \
     test "$release_sha256" = "$expected"; \
-    wget -q -O /tmp/yt-dlp.zip "$base/$asset.zip"; \
+    fetch /tmp/yt-dlp.zip "$base/$asset.zip"; \
     echo "$expected  /tmp/yt-dlp.zip" | sha256sum -c -; \
     mkdir -p /opt/yt-dlp; \
     unzip -q /tmp/yt-dlp.zip -d /opt/yt-dlp; \

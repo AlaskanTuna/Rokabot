@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "8fb28436d2f9c327dbd8552cea3e7bac5f06fdcebcfcb017e0472034052337ef",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af9770d77a6\",\"object\":\"chat.completion\",\"created\":1794733837,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\n  \\\"ops\\\": [\\n    {\\n      \\\"op\\\": \\\"add\\\",\\n      \\\"subject\\\": { \\\"kind\\\": \\\"user\\\", \\\"userId\\\": \\\"sim-user-erin\\\" },\\n      \\\"predicate\\\": \\\"pets\\\",\\n      \\\"value\\\": \\\"an elderly Hermann tortoise named Pebble\\\",\\n      \\\"tense\\\": \\\"current\\\",\\n      \\\"sourceLine\\\": 1\\n    },\\n    {\\n      \\\"op\\\": \\\"add\\\",\\n      \\\"subject\\\": { \\\"kind\\\": \\\"user\\\", \\\"userId\\\": \\\"sim-user-dave\\\" },\\n      \\\"predicate\\\": \\\"hobby\\\",\\n      \\\"value\\\": \\\"sea kayaking every weekend in college\\\",\\n      \\\"tense\\\": \\\"past\\\",\\n      \\\"sourceLine\\\": 2\\n    }\\n  ],\\n  \\\"summary\\\": \\\"Erin said she cares for an elderly Hermann tortoise named Pebble, and Dave mentioned he used to go sea kayaking every weekend during his college years.\\\"\\n}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4465,\"completion_tokens\":188,\"total_tokens\":4653,\"prompt_tokens_details\":{\"cached_tokens\":3840},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

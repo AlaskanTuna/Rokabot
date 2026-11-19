@@ -21,12 +21,12 @@ import { touchRecalled } from './memory/memoryClaims.js'
 import type { MemoryScope } from './memory/memoryScope.js'
 import { getMessages as getBufferMessages } from './memory/passiveBuffer.js'
 import type { RecallScope } from './memory/privacy.js'
-import { type RecallInput, type RecallResult, recallForTurn } from './memory/recall.js'
 import { formatGuildFactDate, retrieveForTurn, retrieveGuildFacts } from './memory/retriever.js'
 import { assembleSystemPrompt } from './promptAssembler.js'
 import { buildFactsEnvelope, buildOverheardBlock } from './promptSafety.js'
 import type { ToneKey } from './prompts/tones.js'
-import { buildReplyShapePrompt } from './replyShape.js'
+import { detectFormatRequest } from './replyFormat.js'
+import { chooseReplyShape, renderReplyShape } from './replyShape.js'
 import { recordSearchCitations } from './searchCitations.js'
 import { buildLookedUpBlock, decidePrefetch, runPrefetchForJudgment, settlePrefetch } from './searchPrefetch.js'
 import type { PrefetchResult } from './searchPrefetch.js'
@@ -71,11 +71,18 @@ export interface TurnEntryWork {
 
 interface TurnContextEntryOptions extends TurnContextOptions {
   turnEntryWork: TurnEntryWork
+  mediaWork?: Promise<unknown>
 }
 
 function formatServerFact(fact: ReturnType<typeof retrieveGuildFacts>['facts'][number]): string {
   const eventDate = formatGuildFactDate(fact)
   return `- ${fact.predicate}${eventDate ? ` (${eventDate})` : ''}: ${fact.value}`
+}
+
+export function formatGuildFactsBlock(facts: ReturnType<typeof retrieveGuildFacts>['facts']): string {
+  return facts.length > 0
+    ? '\n\n## Things You Remember About This Server\n' + facts.map(formatServerFact).join('\n')
+    : ''
 }
 
 function buildEntryJudgmentInput(input: StartTurnEntryWorkInput): TurnJudgmentInput {
@@ -210,19 +217,6 @@ async function awaitRecallSection(
   }
 }
 
-type TimedRecall = { result: RecallResult; durationMs: number }
-
-function runRecall(input: RecallInput, channelId: string): TimedRecall | null {
-  const startedAt = performance.now()
-  try {
-    const result = recallForTurn(input)
-    return { result, durationMs: Math.round(performance.now() - startedAt) }
-  } catch (error) {
-    logger.warn({ channelId, error }, 'Failed to recall memories for the turn')
-    return null
-  }
-}
-
 export type TurnPrefetch = { block: string; usedTool: boolean; result: PrefetchResult | null }
 
 function prefetchStatusOf(judgment: TurnJudgment, result: PrefetchResult | null): string {
@@ -315,6 +309,19 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
   const toneActive = config.jev.tone !== 'off'
   const referentsActive = config.jev.referents !== 'off' && references.ambiguous.length > 0
   const appliedJevReferents: Array<{ alias: string; userId: string; displayName: string }> = []
+  const scope: RecallScope | undefined = guildId && !guildId.startsWith('dm:') ? { guildId, channelId } : undefined
+  const namedRecallIds = () => [
+    ...new Set([
+      ...references.resolved.map(({ userId: referenceId }) => referenceId),
+      ...appliedJevReferents.map(({ userId: referenceId }) => referenceId)
+    ])
+  ]
+  const recallParticipantIds = (channelUserIds: Iterable<string>) =>
+    [...new Set([...namedRecallIds(), ...channelUserIds].filter((participantId) => participantId !== userId))].slice(
+      0,
+      config.memory.recentParticipantLimit
+    )
+
   const turnEvent: {
     prefetch?: TurnPrefetch
     pending?: { judgment: TurnJudgment; toneApplied: boolean }
@@ -422,41 +429,36 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
     }
 
     if (blocking) {
-      settleJudgment(await options.turnEntryWork.judgment, true)
+      const judgment = await options.turnEntryWork.judgment
+      settleJudgment(judgment, true)
     } else {
       void options.turnEntryWork.judgment.then((judgment) => settleJudgment(judgment, false))
     }
   }
 
   const basePrompt = assembleSystemPrompt({ tone, hour, displayName, memoryScope })
-  const scope: RecallScope | undefined = guildId && !guildId.startsWith('dm:') ? { guildId, channelId } : undefined
-  // DM facts live under a `dm:` tenant the unified recall does not read, so DMs keep the legacy facts block.
-  const recallMode = scope ? config.memory.recall : 'legacy'
-  // Taken before the legacy retriever marks its picks as recalled, so the shadow run does not see them as cooling.
-  const recallNow = Date.now()
-  const recallEmbedding = memoryScope === 'full' && scope ? options.turnEntryWork.queryEmbedding : undefined
+  const activeScope = memoryScope === 'full' ? scope : undefined
+  const recallEmbedding = activeScope ? options.turnEntryWork.queryEmbedding : undefined
   const queryEmbedding = recallEmbedding ? awaitQueryEmbedding(recallEmbedding) : Promise.resolve(null)
-  const episodeSectionPromise =
-    memoryScope === 'full' && recallMode !== 'unified'
-      ? awaitRecallSection(queryEmbedding, (embedding) =>
-          buildEpisodeRecallBlock({ guildId, queryEmbedding: embedding, scope })
-        )
-      : Promise.resolve('')
-  const mediaSectionPromise =
-    memoryScope === 'full' && recallMode !== 'unified'
-      ? awaitRecallSection(queryEmbedding, (embedding) =>
-          buildMediaRecallBlock({ guildId, queryEmbedding: embedding, scope })
-        )
-      : Promise.resolve('')
+  const episodeSectionPromise = activeScope
+    ? awaitRecallSection(queryEmbedding, (embedding) =>
+        buildEpisodeRecallBlock({ guildId, queryEmbedding: embedding, scope: activeScope })
+      )
+    : Promise.resolve('')
+  const mediaSectionPromise = activeScope
+    ? awaitRecallSection(queryEmbedding, (embedding) =>
+        buildMediaRecallBlock({ guildId, queryEmbedding: embedding, scope: activeScope })
+      )
+    : Promise.resolve('')
   let factsSection = ''
   let serverFactsSection = ''
   let overheardSection = ''
   let factEntryCount = 0
   let participantIds: string[] = []
 
-  // A memory-free turn (`/ask`) reads nothing: no claims retrieval, no legacy facts, and no
-  // `context_build` telemetry, because nothing was built to measure (#207).
-  if (memoryScope === 'full') {
+  // A memory-free turn (`/ask`) or unscoped turn (DM tenant) reads nothing: no claims retrieval,
+  // no legacy facts, and no `context_build` telemetry, because nothing was built to measure (#207).
+  if (activeScope) {
     try {
       // Resolve user identities from persistent lookup table (survives restarts)
       const knownUsers = getAllUserNames()
@@ -472,119 +474,61 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
       // Ensure current speaker is included
       knownUsers.set(userId, { userId, username, displayName })
 
-      participantIds = [
-        ...new Set(
-          [
-            ...references.resolved.map(({ userId: referenceId }) => referenceId),
-            ...appliedJevReferents.map(({ userId: referenceId }) => referenceId),
-            ...channelUsers.keys()
-          ].filter((participantId) => participantId !== userId)
+      participantIds = recallParticipantIds(channelUsers.keys())
+
+      const retrievalStartedAt = Date.now()
+      const retrieval = retrieveForTurn({
+        guildId,
+        speakerId: userId,
+        participantIds,
+        message: userMessage,
+        scope: activeScope
+      })
+      const factEntries = retrieval.entries
+      const retrievalSelected = retrieval.claims.length
+      touchRecalled(retrieval.claims.map(({ claim }) => claim.id))
+      recordMemoryEvent({
+        kind: 'retrieval',
+        guildId,
+        subjectUserId: userId,
+        durationMs: Date.now() - retrievalStartedAt,
+        nCandidates: retrieval.trace.candidates.length,
+        nSelected: retrievalSelected,
+        tokensEst: retrieval.trace.tokensEst
+      })
+
+      const factsEnvelope = buildFactsEnvelope(factEntries)
+      if (factsEnvelope) {
+        factsSection = `\n\n## What You Remember About People In This Channel\n${factsEnvelope}`
+        factEntryCount = factEntries.length
+        logger.info(
+          { channelId, usersWithFacts: factEntries.length, totalUsers: knownUsers.size },
+          'User facts injected into prompt'
         )
-      ].slice(0, config.memory.recentParticipantLimit)
-
-      // The unified recall replaces the legacy blocks, so a unified turn reads none of them.
-      if (recallMode !== 'unified') {
-        const retrieval = retrieveForTurn({ guildId, speakerId: userId, participantIds, message: userMessage, scope })
-        const factEntries = retrieval.entries
-        const retrievalSelected = retrieval.claims.length
-
-        const factsEnvelope = buildFactsEnvelope(factEntries)
-        if (factsEnvelope) {
-          factsSection = `\n\n## What You Remember About People In This Channel\n${factsEnvelope}`
-          factEntryCount = factEntries.length
-          logger.info(
-            { channelId, usersWithFacts: factEntries.length, totalUsers: knownUsers.size },
-            'User facts injected into prompt'
-          )
-        }
-
-        if (guildId) {
-          const serverFacts = retrieveGuildFacts(guildId, Date.now(), scope).facts
-          if (serverFacts.length > 0) {
-            serverFactsSection =
-              '\n\n## Things You Remember About This Server\n' + serverFacts.map(formatServerFact).join('\n')
-          }
-        }
-
-        recordMemoryEvent({
-          kind: 'context_build',
-          guildId,
-          channelId,
-          subjectUserId: userId,
-          nSelected: retrievalSelected,
-          tokensEst: factsEnvelope ? estimateTokens(factsEnvelope) : 0
-        })
       }
+
+      const serverFacts = retrieveGuildFacts(guildId, Date.now(), activeScope).facts
+      serverFactsSection = formatGuildFactsBlock(serverFacts)
+
+      recordMemoryEvent({
+        kind: 'context_build',
+        guildId,
+        channelId,
+        subjectUserId: userId,
+        nSelected: retrievalSelected,
+        tokensEst: factsEnvelope ? estimateTokens(factsEnvelope) : 0
+      })
     } catch (error) {
-      if (recallMode !== 'unified') {
-        recordMemoryEvent({
-          kind: 'context_build',
-          guildId,
-          channelId,
-          subjectUserId: userId,
-          nSelected: 0,
-          tokensEst: 0
-        })
-      }
+      recordMemoryEvent({
+        kind: 'context_build',
+        guildId,
+        channelId,
+        subjectUserId: userId,
+        nSelected: 0,
+        tokensEst: 0
+      })
       logger.warn({ userId, error }, 'Failed to load user memory for prompt injection')
     }
-  }
-
-  // Shadow and unified both run the unified recall on the query embedding the legacy sections use.
-  const namedIds = [
-    ...new Set([
-      ...references.resolved.map(({ userId: referenceId }) => referenceId),
-      ...appliedJevReferents.map(({ userId: referenceId }) => referenceId)
-    ])
-  ]
-  const recallInput = (embedding: EpisodeEmbedding | null): RecallInput | null =>
-    scope
-      ? {
-          scope,
-          speakerId: userId,
-          participantIds,
-          namedIds,
-          message: userMessage,
-          queryEmbedding: embedding,
-          now: recallNow
-        }
-      : null
-  const recordRecall = (recalled: TimedRecall, mode: 'shadow' | 'unified'): void => {
-    const { result, durationMs } = recalled
-    recordMemoryEvent({
-      kind: mode === 'unified' ? 'recall' : 'recall_shadow',
-      guildId,
-      channelId,
-      subjectUserId: userId,
-      durationMs,
-      nCandidates: result.trace.nCandidates,
-      nSelected: result.items.length,
-      tokensEst: result.trace.tokensEst,
-      detail: JSON.stringify({
-        mode,
-        privacy: config.memory.privacy,
-        fallback: result.trace.fallback,
-        gated: result.trace.gated,
-        selected: result.items.map((item) => [item.kind, item.id, Number(item.score.toFixed(3))])
-      })
-    })
-  }
-  const unifiedPromise =
-    memoryScope === 'full' && recallMode === 'unified'
-      ? queryEmbedding.then((embedding) => {
-          const input = recallInput(embedding)
-          return input ? runRecall(input, channelId) : null
-        })
-      : null
-  if (memoryScope === 'full' && recallMode === 'shadow') {
-    // Shadow output feeds only telemetry, so it runs after the turn's own work instead of delaying the prompt.
-    void queryEmbedding.then((embedding) =>
-      setImmediate(() => {
-        const input = recallInput(embedding)
-        const recalled = input ? runRecall(input, channelId) : null
-        if (recalled) recordRecall(recalled, 'shadow')
-      })
-    )
   }
 
   // Names people and nothing else, so it survives a memory-free turn as the identity line the brief allows.
@@ -614,41 +558,25 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
   const tailSection =
     memoryScope === 'full'
       ? `\n\n- The current user's Discord ID is "${userId}".` +
-        ' remember_user and recall_user target the current user automatically; to recall a different server member, pass their name as user_name.'
+        ' remember_user and recall_user target the current user automatically; to recall a different server member, pass their name as user_name.' +
+        ' Whenever another server member is the topic, call recall_user with their name before you answer, even for an opinion or a guess about them.'
       : `\n\n- The current user's Discord ID is "${userId}".`
 
   const prefetch = await awaitTurnPrefetch(options.turnEntryWork, channelId)
   const episodeSection = await episodeSectionPromise
   const mediaSection = await mediaSectionPromise
-  const recalled = unifiedPromise ? await unifiedPromise : null
-  let memorySection = ''
-  if (recalled) {
-    const { result } = recalled
-    memorySection = result.block ? `\n\n${result.block}` : ''
-    try {
-      touchRecalled(result.items.filter(({ kind }) => kind === 'fact' || kind === 'server_fact').map(({ id }) => id))
-    } catch (error) {
-      logger.warn({ channelId, error }, 'Failed to record recalled memories')
-    }
-    recordMemoryEvent({
-      kind: 'context_build',
-      guildId,
-      channelId,
-      subjectUserId: userId,
-      nSelected: result.items.length,
-      tokensEst: result.trace.tokensEst
-    })
-    recordRecall(recalled, 'unified')
-  }
   turnEvent.prefetch = prefetch
   persistTurnEventWhenReady()
   const lookedUpSection = prefetch.block ? `\n\n${prefetch.block}` : ''
-  const replyShapeSection = `\n\n${buildReplyShapePrompt({
+  const formatRequest = config.format.mode === 'off' ? null : detectFormatRequest(userMessage)
+  const replyShape = chooseReplyShape({
     userMessage,
     tone,
     recentReplies: fakeMessages.filter((message) => message.role === 'assistant').map((message) => message.content),
-    displayName
-  })}`
+    displayName,
+    format: config.format.mode === 'on' ? formatRequest : null
+  })
+  const replyShapeSection = `\n\n${renderReplyShape(replyShape)}`
 
   // Safety de-escalation ladder. Each rung strictly removes carried context — never the current message —
   // so Roka answers with less surrounding context rather than refusing outright.
@@ -656,10 +584,9 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
   function composePrompt(safetyRung: number): string {
     const head =
       safetyRung >= 3 ? assembleSystemPrompt({ tone: character.safeMood, hour, displayName, memoryScope }) : basePrompt
-    const peopleSection = recallMode === 'unified' ? memorySection : factsSection
     return [
       head,
-      safetyRung < 2 ? `${peopleSection}${whoIsMentionedSection}` : '',
+      safetyRung < 2 ? `${factsSection}${whoIsMentionedSection}` : '',
       safetyRung < 2 ? serverFactsSection : '',
       safetyRung < 2 ? episodeSection : '',
       safetyRung < 2 ? mediaSection : '',
@@ -684,6 +611,12 @@ export async function createTurnContext(options: TurnContextEntryOptions) {
     overheardSection,
     prefetchUsed: prefetch.usedTool,
     safetyLadder: SAFETY_LADDER,
-    composePrompt
+    composePrompt,
+    format: formatRequest
+      ? {
+          request: formatRequest,
+          suppressed: replyShape.edge !== 'none' ? ('edge' as const) : null
+        }
+      : null
   }
 }

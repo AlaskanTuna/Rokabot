@@ -1,0 +1,98 @@
+{
+  "caseId": "O3",
+  "recordedAt": "2026-11-17T21:19:24.967Z",
+  "commit": "2f6dac20658fc7b1625a3298b81d0170496bd5c0",
+  "toolCalls": [
+    {
+      "tool": "search_web",
+      "args": {
+        "query": "Dyson Airwrap worth the money review",
+        "max_results": 5
+      }
+    }
+  ],
+  "exchanges": [
+    {
+      "provider": "exa",
+      "method": "POST",
+      "url": "https://api.exa.ai/search",
+      "requestBody": {
+        "query": "Dyson Airwrap worth the money review",
+        "type": "auto",
+        "numResults": 5,
+        "contents": {
+          "highlights": true
+        }
+      },
+      "status": 200,
+      "responseBody": {
+        "requestId": "8f826e993604faa99343025508e4ed5b",
+        "resolvedSearchType": "",
+        "results": [
+          {
+            "id": "https://www.cnn.com/cnn-underscored/reviews/dyson-airwrap-review",
+            "title": "Dyson Airwrap review: Is it the best multi-styler? | CNN Underscored",
+            "url": "https://www.cnn.com/cnn-underscored/reviews/dyson-airwrap-review",
+            "publishedDate": "2025-10-23T21:00:02.000Z",
+            "author": "Sophie Shaw",
+            "highlights": [
+              "And before we dive into the review, please note that I have long, straight hair that’s medium to thick, so I tested only the straight/wavy versions of the Airwrap. Hair type, texture and length greatly impacts how these tools will work with your hair, so keep that in mind.\n\n...\n\n### It’s not great at curling short hair \n\n I recently added short layers into my hair and realized that the Airwrap isn’t great at reaching and styling those pieces when I’m using the curling barrels. You give up a bit of styling control when you let the Airwrap do it’s thing, but with shorter pieces, you need a bit more precision. I found both the 1.2-inch and 1.6-inch barrels could create some big waves at best with my chin-length pieces.\n\n...\n\n## Bottom line \n\n Is the Airwrap one of the most expensive hair tools out there? Yes. Is it one of the most impressive? Also yes. So, is the Dyson Airwrap worth it? I think so. I’ve been lucky enough to have used every iteration of the Airwrap to hit the market, so"
+            ],
+            "image": "https://media.cnn.com/api/v1/images/stellar/prod/dyson-airwrap-2025-cnnu-04.jpg?c=16x9&q=w_800,c_fill"
+          },
+          {
+            "id": "https://www.cosmopolitan.com/style-beauty/beauty/a74054359/dyson-airwrap-tool-review/",
+            "title": "An Honest Dyson Airwrap Review for Styling Fine Long Hair",
+            "url": "https://www.cosmopolitan.com/style-beauty/beauty/a74054359/dyson-airwrap-tool-review/",
+            "publishedDate": "2026-10-06T17:52:19.000Z",
+            "author": "Beth Gillette, Brooke Shunatona",
+            "highlights": [
+              "## Is it worth buying Dyson Airwrap?\n\nIt might have been love at first sight (so beautiful!), but did I love the Dyson Airwrap the first time I used it? Or the second or third? Not so much. The curling barrels are so different from traditional curling irons, so there was definitely a learning curve. But once I got the hang of it and figured out the right product combination to use first, the Airwrap really was a game changer.\n\nI've never been able to make my hair look so bouncy and voluminous on my own, and it's never looked so good (or, at least, not bad) by the end of the day. And as someone who always has to check a bag, I appreciate how light it is and how easy it makes traveling with all your hair tools. I really thought the hype wasn't going to be deserved, but I've found that I've only used the Airwrap since getting it, and my hair seems healthier for it, which is surprising.\n\nDoes that make the price easier to stomach? Kinda, yeah. But would I also recommend you beg for this for your next birthday/holiday/wish list instead of spending the money yourself? 100 percent yes, absolutely. Time to go ingratiate yourself with your parents/significant other!"
+            ],
+            "image": "https://hips.hearstapps.com/hmg-prod/images/5db76b79-4b58-4db7-b28c-15e05c735d07.png?crop=1xw:0.99537037037xh;center,top&resize=1200:*"
+          },
+          {
+            "id": "https://www.theguardian.com/thefilter/2025/sep/21/dyson-airwrap-co-anda-2x-review",
+            "title": "Dyson Airwrap Co-anda 2x review: does the new multi-styler justify its hefty price tag? I put it to the test | Women's hair | The Guardian",
+            "url": "https://www.theguardian.com/thefilter/2025/sep/21/dyson-airwrap-co-anda-2x-review",
+            "publishedDate": "2025-09-21T14:00:44.000Z",
+            "author": "Lise Smith",
+            "highlights": [
+              "## Dyson Airwrap Co-anda 2x: what we don’t love\n\nThe Co-anda 2x’s biggest upgrade is also its biggest drawback: the new motor and increased airflow mean any existing Airwrap attachments you already own are not compatible with the new styler. That’s a bit of a blow, if you’ll excuse the pun, especially if you’ve invested in additional attachments for your previous models. There’s currently no equivalent to the Airwrap id’s conical barrel, a versatile attachment that I found I missed when using the Co-anda 2x.\n\nAt £580, the Co-anda 2x is Dyson’s most expensive styling product to date and one of the most expensive beauty products on the market. This might feel like an investment too far if you’ve recently bought another Airwrap, particularly given that you won’t be able to use your old attachments.\n\nDespite following the instructions to the letter, I didn’t get on very well with the new straightening attachment, which, like Dyson’s Airstrait stand-alone straightener, uses air jets rather"
+            ],
+            "image": "https://i.guim.co.uk/img/media/49d8219b27dd5f678d56424602e0e7b7bed2e418/298_0_1404_1124/master/1404.jpg?width=1200&height=630&quality=85&auto=format&fit=crop&precrop=40:21,offset-x50,offset-y0&overlay-align=bottom%2Cleft&overlay-width=100p&overlay-base64=L2ltZy9zdGF0aWMvb3ZlcmxheXMvZmlsdGVyLXVrLnBuZw&enable=upscale&s=cd190a6bccbf075e1c7020a4ac0b0b3f"
+          },
+          {
+            "id": "https://www.telegraph.co.uk/recommended/beauty-style/reviews/dyson-airwrap-id-review/",
+            "title": "Dyson Airwrap i.d. review: After six months of use, this is what I love (and what could be better)",
+            "url": "https://www.telegraph.co.uk/recommended/beauty-style/reviews/dyson-airwrap-id-review/",
+            "publishedDate": "2025-06-27T15:04:00.000Z",
+            "author": "Britta O'Boyle",
+            "highlights": [
+              "On friends with finer or shorter hair, the slimmer barrel produced curls that held for about a day, compared to several days on my hair. If your hair struggles to hold a curl, the i.d. curl sequence can help, but it may not work miracles. For very curly hair, I found the Airwrap i.d. worked best from wet. Overall, I think those with medium to thick, mid to long hair will see the best results.\n\n...\n\n## Should you buy the Dyson Airwrap i.d.?\n\nThe Dyson Airwrap i.d. is a fantastic multi styler that has a premium build quality, some excellent attachments for multiple hair styles and uses Bluetooth connectivity to deliver personalised curling results that can last for days on certain hair types.\n\nIt is expensive and only being able to save one hair profile means it’s not a hair styler you could easily share in a household, but if you’re looking for bouncy, effortless curls with the option of a few other styles, it is the only hair styler you’ll need in your life.\n\nYes, if:\n\n- You want bouncy curls with minimal effort\n- You want a hair styler that can deliver multiple styles\n- You want to protect your hair from extreme heat\n\nNo, if:\n\n- You have short hair that doesn’t hold a curl\n- You are more interested in wearing your hair straight\n- You’re on a budget\n\n...\n\n## Is the Dyson Airwrap i.d. worth it?\n\nYes, the Dyson Airwrap i.d. is worth every penny, if you have the right hair for it. Results do somewhat depend on your hair type despite the clever technology on board.\n\nOn my hair, it is superb and my favourite hair styler, but on some friends I tested it on, the results weren’t as impressive or the curls held for less time. If your hair has never managed to hold a curl, there’s a good chance the Airwrap i.d. won’t be able to perform a miracle."
+            ],
+            "image": "https://www.telegraph.co.uk/content/dam/recommended/2025/06/27/TELEMMGLPICT000430304049_17510320316790_trans_NvBQzQNjv4BqqVzuuqpFlyLIwiB6NTmJwfSVWeZ_vEN7c6bHu2jJnT8.jpeg?impolicy=OG-Standard"
+          },
+          {
+            "id": "https://www.whowhatwear.com/dyson-airwrap-review",
+            "title": "Is the $600 Dyson Airwrap Worth It? Here's What 3 Editors Say | Who What Wear",
+            "url": "https://www.whowhatwear.com/dyson-airwrap-review",
+            "publishedDate": "2022-03-23T17:04:47.000Z",
+            "author": "Kaitlyn McLintock, Katie Berohn",
+            "highlights": [
+              "## Kaitlyn McLintock, Associate Beauty Editor\n\n(Image credit: @kaitlyn_mclintock)\n\nHair type: Fine and naturally wavy\n\nHair length: Long\n\nHair goal: I want to achieve a big, bouncy blowout at home.\n\n\"I'm going to cut right to the chase. I'm kind of obsessed with the Dyson Airwrap. There was a learning curve at first with figuring out how to use the curling barrels correctly (it literally picks up my hair and curls it around the barrel by itself due to the unique Coanda effect airflow), but once it clicked, it was easy. I simply moved it in an up-and-down motion while it did its thing. Then, I released the curl and moved on to the next section of my hair. I started with dry hair, so I didn't need to use the smoothing dryer attachment, and even though my hair is naturally wavy, I didn't need to smooth or straighten it beforehand. The curling barrel was enough to smooth, soften, and curl my hair all in one go! Here's a tip that wasn't obvious to me: When you're using the curling barrels, there's a little notch at the top to switch the direction of airflow. That way, you can switch it halfway through hairstyling to make sure the curls on both sides of your head are styled in the same way. I didn't notice that at first, and it took me a couple of tries to figure it out.\n\n\"When I was done, I was amazed at how big and bouncy my curls were. It was definitely the best at-home hairstyle I've ever accomplished—and one of the easiest, too. For this reason, I think the Dyson Airwrap is well worth the money. However, one thing to note is that my hair is stubborn and doesn't like to hold shape. I was hoping the Airwrap curls would hold better than my curls have from other heat tools. Unfortunately, that wasn't the case. Even though they looked amazing for most of the first day, the curls began to fall out significantly on the second day. Next time, I think I'll pin each curl with a clip until it cools. Then, I'll add some hair spray. Hopefully, that will be enough to make the style last longer.\"\n\nFinal Rating: 4.5/5\n\n## Shawna Hudson, Associate Beauty Editor\n\n(Image credit: Shawna Hudson)\n\nHair type: Coarse, thick, and curly\n\nHair length: Mid-length\n\nHair goal: I want a true all-in-one styling tool that can straighten, curl, create waves, etc.\n\n\"I've heard wonderful things about the Dyson Airwrap from friends and co-workers, but I came into this experiment with a healthy dose of skepticism. My hair is incredibly coarse, thick, and curly, so I always do a little digging before trying out a new hot tool. After going down a YouTube review hole for a bit, I discovered that the reviews are mixed for thick, curly hair. \"I decided to give it a try on my natural texture anyway with the brush attachment. The results were okay, but not amazing enough for me to feel confident walking out the door. So instead, I went in with my trusty flat iron first and then decided to use the brush attachment every morning for touch-ups and before going in with the curling attachment. I loved the brush for this. It touched up my hair lightning fast and made it look so sleek. I think it only took me about five minutes, which is so much better than the usual 20 it takes me to touch up my whole head with a flat iron.\n\n\"Next, I moved on to the curling attachment. It definitely takes some getting used to. The first attempt I made at using it didn't go very smoothly. Once I got the hang of it, though, I loved the light, bouncy curls it created. I've been looking for an easy way to create that sleek '90s blowout at home for a long time, and luckily, I think I've found it. Overall, I'll be honest. I'm fully aware that the price is pretty steep, and if you have thick hair, some of you may not be able to justify spending $600 on it if you have to go in with a flat iron first. For such an expensive hair tool, I would hope they would at least give the option to up the heat settings for coarser hair types since they're more resistant to styling and need more heat to curl/straighten.\"\n\nFinal Rating: 3.5/5\n\n## Katie Berohn, Beauty Editor\n\n(Image credit: @ktberohn)\n\nHair type: Super thick, wavy\n\nHair length: Mid-length\n\nHair goal: I want to minimize the amount of time and effort it takes to style my hair.\n\n\"If you were to ask me what I'm bad at, the first thing on the list would be blow-drying my hair. I do not know my way around a hair dryer. I have really thick hair that feels like it takes hours to blow-dry—my arms get tired, I get sweaty, and my hair never ends up looking good at all. For a long time, I would let my hair air-dry and add curls in or straighten from there because it just felt easier to me.\n\n\"For obvious reasons, I've been intrigued by the Dyson Airwrap ever since it was released. After trying it out, everyone kept asking me if I'd gotten my hair blown out. The Airwrap is pricey, but for the effect it gives, it's 100% worth it. At a salon, an average blowout is around $50, so if you use your Airwrap 12 times, it will already make up for it.\"\n\nFinal rating: 5/5"
+            ],
+            "image": "https://cdn.mos.cms.futurecdn.net/WFXZrnS2Xt2yERBWMuUpQe-1200-80.jpg"
+          }
+        ],
+        "searchTime": 1201.8,
+        "costDollars": {
+          "total": 0.007,
+          "search": {
+            "neural": 0.007
+          }
+        }
+      }
+    }
+  ]
+}

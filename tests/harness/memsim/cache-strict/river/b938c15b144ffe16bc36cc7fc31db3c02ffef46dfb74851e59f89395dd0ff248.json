@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "b938c15b144ffe16bc36cc7fc31db3c02ffef46dfb74851e59f89395dd0ff248",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af9772e1dbe2\",\"object\":\"chat.completion\",\"created\":1794733870,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"ops\\\":[{\\\"op\\\":\\\"add\\\",\\\"subject\\\":{\\\"kind\\\":\\\"user\\\",\\\"userId\\\":\\\"sim-user-bob\\\"},\\\"predicate\\\":\\\"pets\\\",\\\"value\\\":\\\"gentle greyhound Nimbus\\\",\\\"tense\\\":\\\"current\\\",\\\"sourceLine\\\":1}],\\\"summary\\\":\\\"Bob shared in the mod-vault that he is looking after his sister's gentle greyhound, Nimbus, and asked Roka about his private pet update and Dave's move.\\\"}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4127,\"completion_tokens\":90,\"total_tokens\":4217,\"prompt_tokens_details\":{\"cached_tokens\":3840},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

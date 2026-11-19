@@ -1,0 +1,1 @@
+- Format: they asked for a numbered list: a lead-in line, then a numbered list with one item per line and as many items as the answer needs, then a closing line. This overrides the paragraph, three-block and five-item limits in Formatting Your Reply.

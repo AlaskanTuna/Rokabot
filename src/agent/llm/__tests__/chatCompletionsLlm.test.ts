@@ -114,7 +114,7 @@ describe('Chat Completions profiles', () => {
     })
   })
 
-  it.each(['Qwen/Qwen3.5-35B-A3B', 'deepseek-ai/DeepSeek-V4.1-Flash'])(
+  it.each(['Qwen/Qwen3.5-35B-A3B', 'deepseek-ai/DeepSeek-V4.1-Flash-1017'])(
     'describes %s as a verified json_object model with thinking off',
     (model) => {
       expect(profileFor('modelscope', model)).toMatchObject({
@@ -132,7 +132,7 @@ describe('Chat Completions profiles', () => {
 
   it('reads images on Qwen but not yet on DeepSeek', () => {
     expect(profileFor('modelscope', 'Qwen/Qwen3.5-35B-A3B')?.input.image).toBe(true)
-    expect(profileFor('modelscope', 'deepseek-ai/DeepSeek-V4.1-Flash')?.input.image).toBe(false)
+    expect(profileFor('modelscope', 'deepseek-ai/DeepSeek-V4.1-Flash-1017')?.input.image).toBe(false)
   })
 
   it('leaves the legacy ModelScope fallback profile as it was and lists each new model once', () => {
@@ -142,7 +142,7 @@ describe('Chat Completions profiles', () => {
       verified: true
     })
     expect(profileFor('modelscope', 'Qwen/Qwen3.5-122B-A10B')?.thinking.defaultEffort).toBeUndefined()
-    for (const model of ['gpt-6-luna', 'Qwen/Qwen3.5-35B-A3B', 'deepseek-ai/DeepSeek-V4.1-Flash']) {
+    for (const model of ['gpt-6-luna', 'Qwen/Qwen3.5-35B-A3B', 'deepseek-ai/DeepSeek-V4.1-Flash-1017']) {
       expect(MODEL_PROFILES.filter((profile) => profile.model === model)).toHaveLength(1)
     }
   })
@@ -194,7 +194,7 @@ describe('ChatCompletionsLlm requests', () => {
     })
   })
 
-  it.each(['Qwen/Qwen3.5-35B-A3B', 'deepseek-ai/DeepSeek-V4.1-Flash'])(
+  it.each(['Qwen/Qwen3.5-35B-A3B', 'deepseek-ai/DeepSeek-V4.1-Flash-1017'])(
     'sends %s to ModelScope with thinking off and max_tokens',
     async (model) => {
       const { fetchImpl, calls } = replay(modelscope.qwenText)
@@ -223,7 +223,7 @@ describe('ChatCompletionsLlm requests', () => {
     const deepseek = replay(modelscope.qwenText)
 
     await responses(onModelScope('Qwen/Qwen3.5-35B-A3B', qwen.fetchImpl), request(contents))
-    await responses(onModelScope('deepseek-ai/DeepSeek-V4.1-Flash', deepseek.fetchImpl), request(contents))
+    await responses(onModelScope('deepseek-ai/DeepSeek-V4.1-Flash-1017', deepseek.fetchImpl), request(contents))
 
     expect(bodyOf(qwen.calls[0]).messages).toEqual([
       {
@@ -392,7 +392,7 @@ describe('ModelScopeLlm legacy translation', () => {
             ]
           }
         ],
-        enable_thinking: false,
+        enable_thinking: true,
         stream: false,
         temperature: 0.9,
         top_p: 0.95,
@@ -412,10 +412,10 @@ describe('ModelScopeLlm legacy translation', () => {
 
     await responses(
       new ModelScopeLlm({
-        model: 'deepseek-ai/DeepSeek-V4.1-Flash',
+        model: 'deepseek-ai/DeepSeek-V4.1-Flash-1017',
         apiKey: 'modelscope-key',
         timeoutMs: 2000,
-        profile: profileFor('modelscope', 'deepseek-ai/DeepSeek-V4.1-Flash'),
+        profile: profileFor('modelscope', 'deepseek-ai/DeepSeek-V4.1-Flash-1017'),
         fetchImpl
       }),
       legacyRequest()
@@ -905,7 +905,7 @@ describe('ChatCompletionsLlm failures', () => {
   })
 
   it('treats an HTTP 200 with choices: null as transient_http with a clear message', async () => {
-    const llm = onModelScope('deepseek-ai/DeepSeek-V4.1-Flash', replay(modelscope.deepseekChoicesNull).fetchImpl)
+    const llm = onModelScope('deepseek-ai/DeepSeek-V4.1-Flash-1017', replay(modelscope.deepseekChoicesNull).fetchImpl)
 
     await expect(responses(llm, hello())).rejects.toMatchObject({
       kind: 'transient_http',
@@ -1219,12 +1219,15 @@ describe('ChatCompletionsLlm usage and budget', () => {
   })
 
   it('still counts a 200 that brought no choices, and nothing for a call that failed before answering', async () => {
-    const deepseek = onModelScope('deepseek-ai/DeepSeek-V4.1-Flash', replay(modelscope.deepseekChoicesNull).fetchImpl)
+    const deepseek = onModelScope(
+      'deepseek-ai/DeepSeek-V4.1-Flash-1017',
+      replay(modelscope.deepseekChoicesNull).fetchImpl
+    )
 
     expect(await usageOf(() => responses(deepseek, hello()))).toEqual([
       {
         provider: 'modelscope',
-        model: 'deepseek-ai/DeepSeek-V4.1-Flash',
+        model: 'deepseek-ai/DeepSeek-V4.1-Flash-1017',
         workload: 'reply',
         inputTokens: 0,
         outputTokens: 0
@@ -1486,6 +1489,36 @@ describe('openai-compatible requests', () => {
       { role: 'system', content: 'Extract facts.' },
       { role: 'user', content: 'Kyoto?' }
     ])
+  })
+
+  // #537: with thinking off and the persona prompt, ModelScope models answered in character instead of calling a tool.
+  it('turns ModelScope thinking on only for a turn that offers tools, unless extraBody says otherwise', async () => {
+    const withTools = () =>
+      request([{ role: 'user', parts: [{ text: 'look it up' }] }], {
+        tools: [{ functionDeclarations: [{ name: 'search_web', parametersJsonSchema: { type: 'object' } }] }]
+      })
+    const tooled = replay(modelscope.qwenText)
+    const plain = replay(modelscope.qwenText)
+    const pinned = replay(modelscope.qwenText)
+
+    await responses(onModelScope('Qwen/Qwen3.5-122B-A10B', tooled.fetchImpl), withTools())
+    await responses(onModelScope('Qwen/Qwen3.5-122B-A10B', plain.fetchImpl), hello())
+    await responses(
+      new ChatCompletionsLlm({
+        provider: 'modelscope',
+        model: 'Qwen/Qwen3.5-122B-A10B',
+        apiKey: 'modelscope-key',
+        timeoutMs: 2000,
+        profile: profileFor('modelscope', 'Qwen/Qwen3.5-122B-A10B'),
+        extraBody: { enable_thinking: false },
+        fetchImpl: pinned.fetchImpl
+      }),
+      withTools()
+    )
+
+    expect(bodyOf(tooled.calls[0]).enable_thinking).toBe(true)
+    expect(bodyOf(plain.calls[0]).enable_thinking).toBe(false)
+    expect(bodyOf(pinned.calls[0]).enable_thinking).toBe(false)
   })
 
   it('leaves tools out for a model without tool support, and asks for one call at a time when declared', async () => {

@@ -1,0 +1,96 @@
+{
+  "caseId": "J2",
+  "recordedAt": "2026-11-17T21:16:37.005Z",
+  "commit": "2f6dac20658fc7b1625a3298b81d0170496bd5c0",
+  "toolCalls": [
+    {
+      "tool": "search_web",
+      "args": {
+        "query": "Hoshino Coffee hotcake set price",
+        "max_results": 5
+      }
+    }
+  ],
+  "exchanges": [
+    {
+      "provider": "exa",
+      "method": "POST",
+      "url": "https://api.exa.ai/search",
+      "requestBody": {
+        "query": "Hoshino Coffee hotcake set price",
+        "type": "auto",
+        "numResults": 5,
+        "contents": {
+          "highlights": true
+        }
+      },
+      "status": 200,
+      "responseBody": {
+        "requestId": "25aa4f843bcd48a1b5fda957ffa9fae3",
+        "resolvedSearchType": "",
+        "results": [
+          {
+            "id": "https://www.ryoko-traveler.com/hoshino-coffee-funabashi-tobu1/",
+            "title": "Funabashi: Fluffy Pancakes breakfast at Hoshino Coffee (星乃珈琲店)",
+            "url": "https://www.ryoko-traveler.com/hoshino-coffee-funabashi-tobu1/",
+            "publishedDate": "2014-02-22T05:00:26.000Z",
+            "author": "Ryoko",
+            "highlights": [
+              "Chiba\n\n 2024.12.14 2014.02.22 \n\nHoshino Coffee (星乃珈琲店) is managed by Doutor, one of the most popular café chains in Japan. They are especially well-known for their pancakes. I was familiar with them but didn’t have a branch nearby. Finally, a branch opened in Funabashi, which is close to where I live, so I visited with a friend. 😊\n\nHoshino Coffee opens at 10 a.m. and serves a breakfast menu until 11 a.m. Each drink comes with half a slice of toast and an egg—this morning café tradition is called a “Morning Set,” which is especially famous in Nagoya. Interestingly, Hoshino Coffee originated in Saitama.\n\nFrom the breakfast menu, I ordered the Salad and toast set, which includes a fresh salad and toasted bread. It was nutritious but not very filling—I found myself getting hungry soon after.\n\nSalad and toast set (サラダトーストセット) 580 yen\n\nThe set also comes with one drink. I chose the Hoshino Blend, their signature coffee.\n\nHoshino Blend\n\nOf course, their specialty pancakes are available all day. I ordered Soufflé pancake (Double). As the name suggests, it’s like a soufflé—fluffy and thick! Since it takes about 20 minutes to bake, and because pancakes are popular here, you might have to wait a little longer. The double pancake is a better value, as the single costs 530 yen.\n\nSoufflé pancake (Double) (スフレパンケーキダブル) 680 yen"
+            ],
+            "image": "https://www.ryoko-traveler.com/blog/wp-content/uploads/2014/02/Eyecatch-Hoshino-Coffee-Funabashi.jpg?v=1700837507"
+          },
+          {
+            "id": "https://singaporemenus.org/menu/hoshino-coffee-menu/",
+            "title": "Hoshino Coffee Menu Guide to Dishes, Locations, and Reviews",
+            "url": "https://singaporemenus.org/menu/hoshino-coffee-menu/",
+            "publishedDate": "2025-09-30T15:12:16.000Z",
+            "author": "Otis Finn",
+            "highlights": [
+              "By Otis Finn September 30, 2025 October 1, 2026\n\n...\n\nThe menu can vary between locations, so some dishes may only be available at selected branches.\n\n...\n\nMenu items and prices can vary by location, while some seasonal dishes may only remain available for a limited period.\n\n...\n\n### Pancakes\n\nHoshino Coffee is especially known for its soft and fluffy pancakes, which give customers a popular Japanese café dessert option and the menu also includes French toast and smaller pancake servings for customers who want a lighter sweet dish\n\n| Item | Price |\n| --- | --- |\n| Kiln Baked Soufflé Pancake | ¥800 |\n| Mini Pancakes | ¥450 |\n| French Toast with Whipped Cream | ¥780 |\n| French Toast | ¥650 |\n\n...\n\n### Hoshino Coffee Toast\n\n...\n\n| Item | Price |\n| --- | --- |\n| Thick Cut Toast and Boiled Egg | ¥450 |\n| Honey Cheese Toast | ¥500 |\n| Ham and Cheese Toast | ¥550 |"
+            ],
+            "image": "https://singaporemenus.org/wp-content/uploads/2025/09/Hoshino-Coffee-Menu.webp"
+          },
+          {
+            "id": "https://smart-tokyo.info/hoshino-coffee-japan-guide/",
+            "title": "Hoshino Coffee is one of the most popular Japanese coffee chains known for its soufflé pancakes and retro café atmosphere.",
+            "url": "https://smart-tokyo.info/hoshino-coffee-japan-guide/",
+            "publishedDate": "2026-03-07T07:53:31.000Z",
+            "author": "Akirakajino3",
+            "highlights": [
+              "# Hoshino Coffee 101: Japan’s Retro Café Famous for Soufflé Pancakes\n\n 2026 3/06 \n\n cafe 2026年3月7日\n\n...\n\n## 🍳 Morning Set\n\nA popular feature is the free morning set.\n\nOrder a cup of coffee in the morning and you receive a complimentary light breakfast such as toast and eggs. This makes Hoshino Coffee a comfortable and affordable breakfast option.\n\n...\n\n## 📊 Basic Info\n\n- Budget:\n\n- Coffee + soufflé pancake: around ¥1,000\n- Coffee + cake set: ¥700–¥800\n- Locations: About 280 shops nationwide, around 35 in Tokyo\n- Where to find them: Near major areas such as Ginza, Shinjuku, Asakusa, and Akasaka\n- Hours: Typically 9:00–21:30 (varies by location)"
+            ],
+            "image": "https://smart-tokyo.info/wp-content/uploads/2026/03/ChatGPT-Image-2026年3月6日-16_58_18.png"
+          },
+          {
+            "id": "https://www.tripadvisor.com/Restaurant_Review-g14133707-d6541746-Reviews-or15-Hoshino_Coffee_Shinjuku_Higashiguchi-Shinjuku_3_Chome_Shinjuku_Tokyo_Tokyo.html",
+            "title": "HOSHINO COFFEE, SHINJUKU HIGASHIGUCHI, Shinjuku 3 Chome",
+            "url": "https://www.tripadvisor.com/Restaurant_Review-g14133707-d6541746-Reviews-or15-Hoshino_Coffee_Shinjuku_Higashiguchi-Shinjuku_3_Chome_Shinjuku_Tokyo_Tokyo.html",
+            "highlights": [
+              "# Hoshino Coffee, Shinjuku Higashiguchi\n\n...\n\nCroquette set meal and a drip coffee\n\n...\n\ngoodtimer\n\nVery good Hoshino drip coffee and soufflé pancakes\n\nJun 2017 • Family\n\nVery good drip coffee. The pancake with crema catalan ice cream was the bomb! It's served warm with soft soufflé inside and crispy outside. The taste is so rich and delicate and flavors are well balanced and not cloying. I also like their light cheesecake. Pancake was ¥750, soufflé cheesecake was ¥380 and the special blend coffee ¥600 with 50% off refill.\n\n...\n\nWritten June 10, 2017"
+            ],
+            "image": "https://media-cdn.tripadvisor.com/media/photo-m/1280/0a/ae/ef/6e/photo2jpg.jpg"
+          },
+          {
+            "id": "https://shimarisu8.com/hoshinocoffee/",
+            "title": "那覇市泉崎「星乃珈琲店」が復活！パンケーキがおいしい昔ながらの喫茶店 | 沖縄移住ブログ～As you like～",
+            "url": "https://shimarisu8.com/hoshinocoffee/",
+            "publishedDate": "2021-03-11T23:06:38.000Z",
+            "author": "Yumix",
+            "highlights": [
+              "2021.03.12 2025.08.05\n\n...\n\nその名は「星乃珈琲店」です。チェーン店ですが、沖縄では那覇オーパ店が第1号店です。\n\n...\n\n## 星乃珈琲店でコーヒーとパンケーキを食べました\n\n星乃珈琲店は一杯ずつ丁寧にハンドドリップで淹れたコーヒーとスフレパンケーキが自慢のお店です。\n\nメニューはこちら。\n\n星乃珈琲店はコーヒーやデザート、食事メニューもあります\n\nやはり、パンケーキを食べようと、パンケーキ（780円）とコーヒー（450円）を注文しました。\n\nパンケーキは焼きあがるまでに時間がかかるとのことです。のんびり待つことにしましょう。\n\n...\n\n## 星乃珈琲店でミニ削りのセットを食べました\n\n用事を済ませた後で、休憩しようと再度、星乃珈琲店に立ち寄りました。\n\n飲み物も飲みたいけれど、何か食べたいとメニューを見ているとミニ削り苺パフェとドリンクのセットがあることがわかりました。(1,000円）\n\n星乃珈琲店のミニ削り苺パフェ\n\n苺のシーズンは終わってしまったので、苺を使ったメニューがあるだけでも嬉しいです。冷やしたイチゴを削ってパフェにしてあります。添えられた練乳をかけながら食べるとにんまりしてしまいます。\n\nドリンクが選べたので、星乃ブレンドをお願いしました。好きなタイミングでドリンクをお願いすることが出来たので、冷たいパフェを食べた後でアツアツのホットコーヒーを飲むことが出来ました。それぞれを適した温度で頂けるのは嬉しいですね。\n\n## ミニモンブランパフェのセット\n\n10月に再訪したところ、栗を使ったデザートがたくさんありました。私はミニモンブランパフェとホットコーヒーをセットでお願いすることにしました。（1,050円）\n\n星乃珈琲店の彦星ブレンド\n\n今回はコーヒーを好きなタイミングでオーダーすることは出来ず、先に運ばれてきました。"
+            ],
+            "image": "https://shimarisu8.com/wp-content/uploads/2021/03/5d991166e7af4d14308398b66b036f85.jpg"
+          }
+        ],
+        "searchTime": 1599.8,
+        "costDollars": {
+          "total": 0.007,
+          "search": {
+            "neural": 0.007
+          }
+        }
+      }
+    }
+  ]
+}

@@ -147,7 +147,7 @@ export const MODEL_PROFILES: readonly ModelProfile[] = [
   },
   {
     provider: 'modelscope',
-    model: 'deepseek-ai/DeepSeek-V4.1-Flash',
+    model: 'deepseek-ai/DeepSeek-V4.1-Flash-1017',
     // The model reads images, but image input on ModelScope is unverified.
     input: { image: false, pdf: false, audio: false, video: false },
     tools: { supported: true, parallel: true },

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "95f2a76d73a168f2a6cee39ce7309dd3996e5f0518b1f3baf3f3b812e07ca9d3",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af9778d1dcf8\",\"object\":\"chat.completion\",\"created\":1794733965,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\n  \\\"ops\\\": [\\n    {\\n      \\\"op\\\": \\\"add\\\",\\n      \\\"subject\\\": {\\\"kind\\\": \\\"guild\\\"},\\n      \\\"predicate\\\": \\\"upcoming_event\\\",\\n      \\\"value\\\": \\\"vinyl listening swap at Southbay lounge in the evening\\\",\\n      \\\"date\\\": {\\\"year\\\": 2026, \\\"month\\\": 10, \\\"day\\\": 30},\\n      \\\"sourceLine\\\": 1\\n    },\\n    {\\n      \\\"op\\\": \\\"update\\\",\\n      \\\"subject\\\": {\\\"kind\\\": \\\"guild\\\"},\\n      \\\"existingId\\\": 5,\\n      \\\"predicate\\\": \\\"upcoming_event\\\",\\n      \\\"value\\\": \\\"Southbay Club arcade tournament at 7pm\\\",\\n      \\\"date\\\": {\\\"year\\\": 2026, \\\"month\\\": 11, \\\"day\\\": 14},\\n      \\\"sourceLine\\\": 3\\n    },\\n    {\\n      \\\"op\\\": \\\"add\\\",\\n      \\\"subject\\\": {\\\"kind\\\": \\\"user\\\", \\\"userId\\\": \\\"sim-user-dave\\\"},\\n      \\\"predicate\\\": \\\"hobby\\\",\\n      \\\"value\\\": \\\"plays Hades\\\",\\n      \\\"tense\\\": \\\"current\\\",\\n      \\\"sourceLine\\\": 5\\n    }\\n  ],\\n  \\\"summary\\\": \\\"Dave announced a vinyl listening swap at the Southbay lounge on October 30, 2026, and Grace confirmed the arcade tournament date as November 14, 2026. Erin asked who plays Hades in Southbay, and Roka answered that Dave does.\\\"\\n}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4368,\"completion_tokens\":300,\"total_tokens\":4668,\"prompt_tokens_details\":{\"cached_tokens\":3840},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

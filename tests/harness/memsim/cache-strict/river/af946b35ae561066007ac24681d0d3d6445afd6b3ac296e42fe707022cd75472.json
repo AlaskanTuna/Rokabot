@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "af946b35ae561066007ac24681d0d3d6445afd6b3ac296e42fe707022cd75472",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af9771d7992\",\"object\":\"chat.completion\",\"created\":1794733853,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\n  \\\"ops\\\": [\\n    {\\n      \\\"op\\\": \\\"retract\\\",\\n      \\\"subject\\\": { \\\"kind\\\": \\\"user\\\", \\\"userId\\\": \\\"sim-user-carol\\\" },\\n      \\\"predicate\\\": \\\"misc\\\",\\n      \\\"value\\\": \\\"based in Osaka near Namba\\\",\\n      \\\"sourceLine\\\": 1\\n    },\\n    {\\n      \\\"op\\\": \\\"add\\\",\\n      \\\"subject\\\": { \\\"kind\\\": \\\"user\\\", \\\"userId\\\": \\\"sim-user-carol\\\" },\\n      \\\"predicate\\\": \\\"misc\\\",\\n      \\\"value\\\": \\\"settled in Kyoto\\\",\\n      \\\"tense\\\": \\\"current\\\",\\n      \\\"sourceLine\\\": 1\\n    }\\n  ],\\n  \\\"summary\\\": \\\"Carol announced she has left Osaka and settled into Kyoto this week. Alice asked Roka about Carol's past pottery city.\\\"\\n}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4400,\"completion_tokens\":168,\"total_tokens\":4568,\"prompt_tokens_details\":{\"cached_tokens\":3840},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

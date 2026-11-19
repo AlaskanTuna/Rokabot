@@ -59,7 +59,7 @@ describe('config module', () => {
 
     it.each([
       ['qwen', 'Qwen/Qwen3.5-35B-A3B'],
-      ['deepseek', 'deepseek-ai/DeepSeek-V4.1-Flash']
+      ['deepseek', 'deepseek-ai/DeepSeek-V4.1-Flash-1017']
     ])('accepts the verified %s profile as main', async (key, model) => {
       vi.stubEnv('MODELSCOPE_API_KEY', 'modelscope-test-key')
       withYamlOverride({ llm: { main: key, fallback: null, models: { [key]: { provider: 'modelscope', model } } } })
@@ -124,36 +124,6 @@ describe('config module', () => {
           max_tokens: maxOutputTokens
         })
       )
-    })
-
-    it('sends a custom fallback base URL to the legacy fallback and the qwen watcher', async () => {
-      vi.stubEnv('MODELSCOPE_API_KEY', 'modelscope-test-key')
-      withYamlOverride({ llm: undefined, fallback: { baseUrl: 'https://ms.example/v1' } })
-
-      const { config } = await import('../config.js')
-
-      expect(config.fallback.baseUrl).toBe('https://ms.example/v1')
-      expect(config.llm.fallback?.baseUrl).toBe(config.fallback.baseUrl)
-      expect(config.media.qwen.baseUrl).toBe(config.fallback.baseUrl)
-    })
-
-    it('gives the qwen watcher its own ModelScope key, whatever the fallback model is', async () => {
-      vi.stubEnv('MODELSCOPE_API_KEY', 'modelscope-test-key')
-      withYamlOverride({
-        llm: {
-          main: 'flash',
-          fallback: null,
-          models: { flash: { provider: 'gemini', model: 'gemini-3.5-flash-lite' } }
-        }
-      })
-
-      const { config } = await import('../config.js')
-
-      expect(config.llm.fallback).toBeNull()
-      expect(config.media.qwen).toMatchObject({
-        apiKey: 'modelscope-test-key',
-        baseUrl: 'https://api-inference.modelscope.ai/v1'
-      })
     })
   })
 })

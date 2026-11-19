@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { load } from 'js-yaml'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { config } from '../../../config.js'
 
 vi.mock('../../../config.js', () => ({
   config: {
@@ -10,7 +11,9 @@ vi.mock('../../../config.js', () => ({
     embeddings: { provider: 'gemini', dim: 768, fingerprint: 'gemini:gemini-embedding-2:768:gemini-task-prefix' },
     memory: {
       maxActiveClaimsPerUser: 20,
-      vaultExportDir: 'data/vault'
+      vaultExportDir: 'data/vault',
+      store: 'legacy',
+      privacy: 'relaxed'
     }
   }
 }))
@@ -18,13 +21,17 @@ vi.mock('../../../config.js', () => ({
 import { geminiVector } from '../../../../tests/harness/vectors.js'
 import { closeDb, getDb } from '../../../storage/database.js'
 import { saveMemoryEpisode } from '../../../storage/memoryEpisodeStore.js'
+import { migrateMemoryItems } from '../../../storage/memoryItemBackfill.js'
+import { configureMemoryItemProjectionTriggers } from '../../../storage/memoryItemProjection.js'
 import { assertClaim, assertGuildClaim, pinClaim } from '../memoryClaims.js'
 
 let vaultDir: string
 let escapeDir: string
+const memoryStore = config.memory as { store: string; privacy: string }
 
 beforeEach(async () => {
   process.env.ROKABOT_DB_PATH = ':memory:'
+  Object.assign(memoryStore, { store: 'legacy', privacy: 'relaxed' })
   vaultDir = await mkdtemp(join(tmpdir(), 'rokabot-vault-'))
   escapeDir = await mkdtemp(join(tmpdir(), 'rokabot-escape-'))
 })
@@ -32,6 +39,7 @@ beforeEach(async () => {
 afterEach(async () => {
   closeDb()
   process.env.ROKABOT_DB_PATH = undefined
+  Object.assign(memoryStore, { store: 'legacy', privacy: 'relaxed' })
   await rm(vaultDir, { recursive: true, force: true })
   await rm(escapeDir, { recursive: true, force: true })
   vi.restoreAllMocks()
@@ -299,6 +307,54 @@ describe('exportVault', () => {
       ]
     })
     expect(guildNote).not.toContain('Expired game night')
+  })
+
+  it('exports the same vault from items after legacy content changes', async () => {
+    const userClaim = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'hobby',
+      value: 'tea blending',
+      sourceKind: 'explicit',
+      observedAt: 1_000
+    })
+    const guildClaim = assertGuildClaim({
+      guildId: 'guild-1',
+      predicate: 'place',
+      value: 'the game room',
+      expiresAt: null,
+      sourceKind: 'explicit',
+      observedAt: 1_500
+    })
+    saveMemoryEpisode({
+      id: 99,
+      guildId: 'guild-1',
+      channelId: 'channel-1',
+      startedAt: 2_000,
+      endedAt: 3_000,
+      summary: 'The group met after lunch.',
+      embedding: null
+    })
+    const db = getDb()
+    migrateMemoryItems(db)
+    memoryStore.store = 'dual'
+    const { exportVault } = await import('../obsidianExport.js')
+    const legacyResult = await exportVault(vaultDir)
+    const legacyUser = await readFile(join(vaultDir, 'guild-1', 'user-1.md'), 'utf8')
+    const legacyGuild = await readFile(join(vaultDir, 'guild-1', 'guild.md'), 'utf8')
+    const legacyEpisodes = await readFile(join(vaultDir, 'guild-1', 'Episodes.md'), 'utf8')
+
+    configureMemoryItemProjectionTriggers(db, 'legacy')
+    db.prepare('UPDATE memory_claim SET value = ? WHERE id = ?').run('changed legacy hobby', userClaim.id)
+    db.prepare('UPDATE memory_claim SET value = ? WHERE id = ?').run('changed legacy place', guildClaim.id)
+    db.prepare('UPDATE memory_episode SET summary = ? WHERE id = 99').run('changed legacy summary')
+    memoryStore.store = 'item'
+    const itemResult = await exportVault(vaultDir)
+
+    expect(itemResult).toEqual(legacyResult)
+    await expect(readFile(join(vaultDir, 'guild-1', 'user-1.md'), 'utf8')).resolves.toBe(legacyUser)
+    await expect(readFile(join(vaultDir, 'guild-1', 'guild.md'), 'utf8')).resolves.toBe(legacyGuild)
+    await expect(readFile(join(vaultDir, 'guild-1', 'Episodes.md'), 'utf8')).resolves.toBe(legacyEpisodes)
   })
 
   it('rejects a guild scope that would write outside the export directory', async () => {

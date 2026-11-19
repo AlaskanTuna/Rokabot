@@ -42,13 +42,13 @@ fallback:
   stickyMs: 300000 # After Gemini fails and the fallback answers, later turns go straight to the fallback for this long; 0 disables
 llm: # Main and fallback model selection; without this block the bot runs gemini.model with the fallback model above
   main: haiku # Required; a key under llm.models (LLM_MAIN overrides)
-  fallback: qwen122 # Optional; a key under llm.models (LLM_FALLBACK overrides; LLM_FALLBACK=none disables)
+  fallback: flash # Optional; a key under llm.models (LLM_FALLBACK overrides; LLM_FALLBACK=none disables)
   hedgeAfterMs: 0 # Start the same call on the fallback after this many ms; paid routes start at 0 (off)
   stickyMs: 300000 # After the main model fails and the fallback answers, later turns start on the fallback this long
   monthlyBudgetUsd: # Local monthly spend cap per paid provider; background jobs stop at 80% of it, replies at 100%
     anthropic: 5
     openai: 5
-  modelscopeDailyMagicubes: 250 # Magicubes one ModelScope key is expected to get a day (200 on login + 50 with Alibaba Cloud linked). Qwen and DeepSeek share it, the qwen watcher included; each call counts as one, and background jobs stop while a whole reply turn is left
+  modelscopeDailyMagicubes: 250 # Magicubes one ModelScope key is expected to get a day (200 on login + 50 with Alibaba Cloud linked). Qwen and DeepSeek share it; each call counts as one, and background jobs stop while a whole reply turn is left
   # Any entry may set limits: { rpm, rpd, tpm }; a per-call budget comes from this block, except for a native search, which takes one slot on the shared limiter even without an llm: block. A gemini entry inherits rateLimit and gemini.maxTokensPerMinute; other providers are unlimited unless set. Set tpm to half the provider's real TPM: the bucket drains continuously and can admit twice its value in the worst minute
   models: # Only tested profiles start (src/agent/llm/profiles.ts), except provider openai-compatible, which declares its own; optional per model: timeoutMs, maxOutputTokens, baseUrl
     flash: { provider: gemini, model: gemini-3.5-flash-lite }
@@ -58,7 +58,7 @@ llm: # Main and fallback model selection; without this block the bot runs gemini
     sol: { provider: openai, model: gpt-6-sol, effort: none } # Needs OPENAI_API_KEY; 20x luna's price per token, tools only at effort none
     qwen122: { provider: modelscope, model: Qwen/Qwen3.5-122B-A10B } # Needs MODELSCOPE_API_KEY; the legacy fallback model
     qwen: { provider: modelscope, model: Qwen/Qwen3.5-35B-A3B } # Needs MODELSCOPE_API_KEY
-    deepseek: { provider: modelscope, model: deepseek-ai/DeepSeek-V4.1-Flash } # Shares qwen's Magicube balance
+    deepseek: { provider: modelscope, model: deepseek-ai/DeepSeek-V4.1-Flash-1017 } # Shares qwen's Magicube balance
     # provider: openai-compatible runs any /chat/completions server. baseUrl is required; optional: apiKeyEnv (the env var holding its key; omit for a keyless server), effort (sent as reasoning_effort; must be listed in capabilities.efforts or startup stops), extraBody (merged into every request), price { input, output } (USD per 1M tokens, default 0; every openai-compatible entry shares llm.monthlyBudgetUsd.openai-compatible) and capabilities (defaults: tools true, parallelToolCalls true, vision false, structuredOutput json_object, maxTokensParam max_tokens, temperature true, topP true, efforts [], contextWindow 131072, maxOutputTokens 8192)
     # local: { provider: openai-compatible, model: 'qwen3:32b', baseUrl: 'http://localhost:11434/v1' } # Ollama, keyless; inside the bot's container, use the host's address instead of localhost
     # openrouter: { provider: openai-compatible, model: qwen/qwen3-235b-a22b, baseUrl: 'https://openrouter.ai/api/v1', apiKeyEnv: OPENROUTER_API_KEY } # Needs OPENROUTER_API_KEY; any OpenRouter model id, set price to count it against the monthly budget
@@ -97,21 +97,25 @@ search:
   provider: tavily # off | native | tavily | exa; unset means native. native uses llm.main's own search and bills that provider (see docs/RUNBOOK.md, including the Gemini terms)
   nativeTimeoutMs: 8000 # Longest one native search may take
   nativeReserveMs: 5000 # Attempt time a native search must leave for the chat model's next call
+  maxPageChars: 8000 # Most page text kept per read_pages source; longer pages are cut with truncated set
+  maxSearches: 2 # search_web calls admitted per turn; further calls answer with what the turn already has
+  maxPageReads: 2 # Page reads admitted per turn, on the same terms as searches
+  maxProviderCalls: 3 # Provider calls in total per turn across searches and page reads
+  maxBriefChars: 4000 # Longest the depth-loop brief handed to the model; the Still-missing line survives the cut
+  replyReserveMs: 6000 # Attempt time a lookup must leave for the chat model's next call
+
+imageId:
+  enabled: true # Reverse-image identification of the turn's images (IMAGE_ID_ENABLED overrides); off removes identify_image
+  maxMatches: 5 # Lens matches kept per identify_image call (1-10)
+  timeoutMs: 6000 # Longest one Lens lookup may take, in ms (1000-15000)
+  monthlyCap: 230 # Lens searches allowed per billing month, automatic and model-called together (IMAGE_ID_MONTHLY_CAP overrides); at the cap the tool answers that lookups are used up
+  autoDailyCap: 6 # Automatic lookups allowed per UTC day (IMAGE_ID_AUTO_DAILY_CAP overrides); at the cap the turn answers without one
+  resetDay: 1 # First day of the billing month, in UTC (1-28); the monthly count rolls over on this day
+  gate: on # off | shadow | on (IMAGE_ID_GATE overrides); off keeps the old prefilter-only lookup, shadow runs the vision gate and logs its verdict but still fires on the prefilter, on fires only when the gate agrees
+  gateTimeoutMs: 4000 # Longest one vision-gate judgment may take, in ms (500-15000); a slower or failed gate never fires
 
 media:
-  watcher: gemini # How Roka takes in audio and video. gemini or qwen (frames + speech transcript on ModelScope) watches it first and she replies from the notes, the other taking over when it fails; direct sends the file straight to the reply model, with no backup; off neither watches nor sends it and tells her so
-  qwen:
-    model: Qwen/Qwen3.5-35B-A3B # ModelScope vision model for the qwen watcher; 35B-A3B measured fastest and most specific (5-12 s for 16 frames)
-    secondsPerFrame: 4 # One frame per this many seconds of the watched span, one per timeline bin, between minFrames and maxFrames
-    minFrames: 16 # Floor for any video; under 16 s this is about one frame per second, since bins are whole seconds
-    maxFrames: 32 # Ceiling, reached at 128 s; on 10-minute videos 32 frames named the characters and plot where 16 gave a generic summary, at +4-6 s on the Qwen call (2026-10-09)
-    frameHeight: 360 # Frame height in pixels; Qwen reads 360p frames as well as larger ones
-    timeoutMs: 30000 # Deadline for one Qwen watch call
-  transcriber:
-    url: '' # Speech-to-text sidecar for the qwen watcher (sidecar/asr/ in docker-compose); empty disables it. The Pi sets MEDIA_TRANSCRIBER_URL=http://asr:8000
-    timeoutMs: 45000 # Deadline for transcribing one video's audio
-    maxSpeechSec: 120 # Speech transcribed per video after silence and music are skipped; longer speech is sampled across the video
-    maxAudioSec: 180 # Audio sent per video; a longer video sends four windows spread across it
+  watcher: gemini # How Roka takes in audio and video. gemini watches it and she replies from the notes; off neither watches nor sends it and tells her so
   embedWaitMs: 2000 # How long a turn waits for Discord to add a link's embed, so a playable video in it can be watched; only a linked message with no embed yet waits
   watchTimeoutMs: 30000 # Deadline for one watch call; measured 6-17 s for clips up to 29 min at low frame rates, but one 29-min YouTube video ran past 20 s
   digestMaxOutputTokens: 3200 # Output ceiling for the digest JSON; a dense 20-minute talk overran 1200 and came back cut off, and standout moments and a style line add up to ~600 more
@@ -121,6 +125,7 @@ media:
   uploadTimeoutMs: 45000 # Deadline for streaming one file into the Files API and waiting until it is ready; a 21.6 MB MP4 took 12-13 s
 
 memory:
+  store: legacy # legacy | dual | item; after the Phase 7 drop only item starts (see the runbook)
   bufferSize: 30 # Max messages in passive ring buffer per channel (in-memory)
   contextSize: 10 # Max overheard messages injected into system prompt per request
   channelMonitorTtlMs: 86400000 # How long a channel stays monitored after last @mention (24h)
@@ -141,8 +146,10 @@ memory:
   episodeMaxMessages: 25 # Close an episode at this many delta messages; leave room for three context lines
   admitThreshold: 0.5 # Minimum Jev lasting_fact probability; unavailable or lower judgments drop the episode
   verifyThreshold: 0.5 # Minimum Jev probability for durable and attributed operations
+  summaryThreshold: 0.5 # Minimum Jev summary_complete probability; lower summaries are dropped before embedding
   modelAdmitThreshold: 0.7 # Without TYPESAFE_API_KEY (and with an llm block), the minimum main-model lasting_fact probability. Uncalibrated: self-reported model probabilities run high, so calibrate on labelled episodes (jev_events rows with a judge) before trusting it
   modelVerifyThreshold: 0.7 # Without TYPESAFE_API_KEY (and with an llm block), the minimum main-model probability for durable and attributed operations, reclassification moves and hidden retractions. Uncalibrated, like modelAdmitThreshold
+  modelSummaryThreshold: 0.7 # Without TYPESAFE_API_KEY (and with an llm block), the minimum main-model summary_complete probability. Uncalibrated, like modelVerifyThreshold
   episodeRecallK: 3 # Maximum episode summaries recalled for one guild turn
   episodeTokenBudget: 200 # Approximate token budget for the dated episode block
   episodeMinSimilarity: 0.7 # Minimum cosine similarity required for episode recall. A 648-pair calibration (2026-09-25) admitted 0 of 624 unrelated query-summary pairs at 0.7 and kept 20 of 24 related ones; 0.45 admitted 622 unrelated
@@ -152,11 +159,6 @@ memory:
   mediaMinSimilarity: 0.7 # Minimum cosine similarity required for watched-media recall
   mediaRetentionDays: 90 # Days after the last share before a watched-media digest and its occurrences are deleted
   privacy: relaxed # relaxed: remembers across the whole server (default); balanced: private channels keep their memories to themselves, public ones are shared; strict: every channel keeps its own memories; off: no long-term memory, only the current chat
-  recall: shadow # legacy: today's four memory blocks; shadow: legacy prompt plus the unified recall logged only; unified: one relevance-ranked memory block
-  recallTokenBudget: 600 # Approximate token budget for the unified memory block
-  recallCoreFacts: 3 # Speaker facts always recalled whatever the topic: pinned, then nickname, then pronouns
-  factMinSimilarity: 0.65 # Minimum cosine similarity for a member fact in unified recall. A live check (2026-10-08) scored real matches 0.73-0.78 and small talk 0.61-0.62 against fact sentences; calibrated before recall is switched to unified
-  serverFactMinSimilarity: 0.65 # Minimum cosine similarity for a server fact in unified recall; calibrated before recall is switched to unified
   vaultExportDir: data/vault # Directory for read-only Obsidian vault exports
   extractionSampleRate: 0.1 # Share of rejected conversations (trivial or below Jev's admission threshold) kept as text for offline labelling; 0 disables, never sampled under privacy off
   extractionSampleDays: 14 # Days a rejected-conversation sample is kept before deletion
@@ -213,3 +215,10 @@ timezone: Asia/Singapore # IANA timezone for time-of-day features (override with
 
 logging:
   level: info # Log level: debug, info, warn, error
+
+format: # Explicit reply-format requests: point form, steps, a score, a word or sentence limit
+  mode: on # off | shadow (detect and check, log only; prompt and reply unchanged) | on (the reply shape yields and misses are repaired). FORMAT_MODE overrides
+  repair: reformat # off | reformat (rebuild a prose reply as the requested list, in code). FORMAT_REPAIR overrides
+  minListItems: 3 # A requested list counts as met with at least this many items
+  minListShare: 0.5 # ...and with at least this share of the reply's words in list items
+  wordSlack: 0.1 # A word limit of 10 or more counts as met up to this share over it

@@ -172,6 +172,9 @@ resolved cap.
 - **Strict Schemas:** a `json_schema_strict` profile makes optional fields required-nullable, turns `oneOf` into
   `anyOf`, closes objects with `additionalProperties: false`, and drops unsupported keywords. The reply's nulls are
   stripped again.
+- **Forced Tool Compaction:** for `forced_tool` (`objectSchema.ts`), `compactObjectUnions` merges operation-tagged
+  `anyOf` branches by `op` (keeping `add` split by `subject.kind` and keeping the guild-date `anyOf`) so optional and
+  union parameters stay within Anthropic's 24-each limit. The original Zod schema validates the full union afterwards.
 - **JSON Object Mode:** the schema goes into the system prompt, and a fenced reply is unwrapped.
 - **Media on Chat Completions:** images go as data URLs when `input.image` is true (the legacy fallback always sends
   them). Audio, video, PDFs and other files become a text marker.
@@ -249,7 +252,7 @@ side's `timeoutMs`.
 
 - **Opens:** a turn that switched from main to fallback for a `STICKY_KINDS` failure, and then succeeded on the
   fallback, sets `fallbackUntilMs = now + llm.stickyMs`. `stickyMs: 0` sets nothing.
-- **Effect:** while it is open, `useFallback` starts `true`, and the Gemini media watcher is skipped.
+- **Effect:** while it is open, `useFallback` starts `true`. Media watching is unaffected: the Gemini watch always runs.
 - **Closes:** any turn that succeeds on the main side sets it to `0`.
 - **No Extension:** a turn that only started on the fallback does not extend it. If that turn fails with a switch
   kind, it switches back to the main side.
@@ -291,7 +294,7 @@ The log text predates provider choice and still says "Gemini" for any main model
 
 ## Budgets, Usage and Cost
 
-Every adapter, both watchers and both hedge sides call `startCall` (`src/agent/llm/budget.ts`) before each provider
+Every adapter, the watcher and both hedge sides call `startCall` (`src/agent/llm/budget.ts`) before each provider
 request, and release the reservation with the call's usage. The rules for slots, daily units, tokens, Magicubes and
 replies-first admission are in [Reliability](reliability.md#per-call-budgets). Model-specific parts:
 
@@ -323,8 +326,9 @@ Extraction, reclassification and main-model memory judgments call `generateObjec
 
 - **Request:** one JSON request. `responseJsonSchema` comes from the job's zod schema, adjusted per encoding by
   `requestSchema` (`objectSchema.ts`). Claude Haiku receives it as the forced output tool.
-- **Order:** the main model, then the fallback once. An aborted signal skips the fallback. When both fail, the main
-  model's error is thrown, because the extraction queue's retry policy judges that one.
+- **Order:** the main model, then the fallback once. An aborted signal skips the fallback. Fallback warnings log
+  `errorName`, `errorMessage` (truncated to 300 characters) and optional `reason`. When both fail, the main model's
+  error is thrown, because the extraction queue's retry policy judges that one.
 - **Validation:** the reply is re-parsed against the zod schema. A blocked, truncated, empty or invalid reply throws
   `StructuredOutputError`. No partial object is returned.
 - **Cap:** the job's own cap (default 1,024), limited by the profile's `maxOutputTokens`.

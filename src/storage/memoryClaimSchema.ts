@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3'
+import { isLegacyMemoryDropped } from './memoryLegacyDrop.js'
 
 const CREATE_MEMORY_CLAIM = `
   CREATE TABLE memory_claim (
@@ -124,6 +125,8 @@ function createIndexes(database: Database.Database): void {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_claim_guild_dedup
       ON memory_claim (guild_id, predicate, value, period)
       WHERE subject_kind = 'guild';
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_evidence_job
+      ON memory_evidence (claim_id, job_id) WHERE job_id IS NOT NULL;
   `)
 }
 
@@ -157,6 +160,11 @@ function migrateClaimLifecycle(database: Database.Database): void {
     }
     if (!evidenceColumns.has('effective_at'))
       database.exec('ALTER TABLE memory_evidence ADD COLUMN effective_at INTEGER')
+    if (!evidenceColumns.has('job_id')) database.exec('ALTER TABLE memory_evidence ADD COLUMN job_id INTEGER')
+    if (!evidenceColumns.has('source_message_id'))
+      database.exec('ALTER TABLE memory_evidence ADD COLUMN source_message_id TEXT')
+    if (!evidenceColumns.has('speaker_user_id'))
+      database.exec('ALTER TABLE memory_evidence ADD COLUMN speaker_user_id TEXT')
     database
       .prepare("UPDATE memory_claim SET ended_at = ? WHERE status IN ('rejected', 'superseded') AND ended_at IS NULL")
       .run(migratedAt)
@@ -166,7 +174,8 @@ function migrateClaimLifecycle(database: Database.Database): void {
         last_seen_at,
         COALESCE((SELECT MAX(observed_at) FROM memory_evidence WHERE claim_id = memory_claim.id), last_seen_at)
       )
-      WHERE status = 'active';
+      WHERE status = 'active'
+        AND last_seen_at < (SELECT MAX(observed_at) FROM memory_evidence WHERE claim_id = memory_claim.id);
     `)
   })()
 }
@@ -204,6 +213,8 @@ function createFts(database: Database.Database, rebuild: boolean): void {
 }
 
 export function ensureMemoryClaimSchema(database: Database.Database): void {
+  // Phase 7 drops the legacy tables and records it; startup must not recreate them.
+  if (isLegacyMemoryDropped(database)) return
   const exists = tableExists(database, 'memory_claim')
   let rebuildFts = !tableExists(database, 'memory_claim_fts')
 

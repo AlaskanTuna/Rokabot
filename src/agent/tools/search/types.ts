@@ -1,15 +1,35 @@
 /** The contract every search backend satisfies, so searchWeb() dispatches without knowing the provider. */
 
+export interface SearchField {
+  kind: 'list' | 'price' | 'hours' | 'other'
+  subject: string
+  aliases?: string[]
+}
+
 export interface SearchWebParams {
   query: string
   topic?: 'general' | 'news'
   max_results?: number
+  /** What the answer needs, e.g. [{kind: 'list', subject: 'menu'}]: runs the bounded depth loop. */
+  fields?: SearchField[]
+  /** The same question in the place's language, e.g. Japanese: the loop's second search. */
+  local_query?: string
+  /** A source id (s1, s2, ...) from this turn, or a URL sent in it: reads that link instead of searching. */
+  source?: string
   signal?: AbortSignal
+}
+
+export interface SearchResultHit {
+  title: string
+  url: string
+  snippet: string
+  /** The result's fuller text for the depth loop's coverage check; backends that clip keep it unset. */
+  text?: string
 }
 
 export interface SearchResult {
   answer: string
-  results: { title: string; url: string; snippet: string }[]
+  results: SearchResultHit[]
   resultCount: number
 }
 
@@ -24,7 +44,8 @@ export const SEARCH_TEXT = {
   notConfigured: 'Web search is not configured.',
   quota: 'Search quota exceeded. Try again later.',
   failed: 'Search request failed.',
-  noSummary: 'No summary available.'
+  noSummary: 'No summary available.',
+  budgetSpent: 'No lookups left this turn. Answer now with what you already have.'
 }
 
 export function failedSearch(answer: string): BackendOutcome {

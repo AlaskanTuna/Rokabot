@@ -41,6 +41,9 @@ import {
 } from './reliability.js'
 import type { ModelVerdict, TurnOutcome } from './reliability.js'
 import { MAX_REPLY_BLOCKS, capReplyBlocks } from './replyBlocks.js'
+import { enforceReplyFormat, formatKinds } from './replyFormat.js'
+import type { FormatEnforcement, FormatRequest, FormatTunables } from './replyFormat.js'
+import { resetSearchCitations } from './searchCitations.js'
 import { PREFETCH_TOOL_NAME } from './searchPrefetch.js'
 import {
   APP_NAME,
@@ -53,8 +56,18 @@ import {
   sessionService,
   suppressSessionRehydration
 } from './session.js'
-import { readRepliesTool, rokaTools, withheldMemoryToolNames } from './tools/index.js'
+import { AUTO_IDENTIFY_TOOL_NAME, noteForPlan, planImageLookup } from './tools/imageId/autoIdentify.js'
+import {
+  cancelReminderTool,
+  forgetUserTool,
+  readRepliesTool,
+  rememberUserTool,
+  rokaTools,
+  setReminderTool,
+  withheldMemoryToolNames
+} from './tools/index.js'
 import { withSearchAttempt } from './tools/search/attemptBudget.js'
+import { didReadPage } from './tools/search/readPages.js'
 import { ROKA_TOOL_NAMES } from './tools/toolNames.js'
 import { createTurnContext, startTurnEntryWork } from './turnContext.js'
 import type { TurnContextOptions, TurnEntryWork } from './turnContext.js'
@@ -62,6 +75,10 @@ import type { TurnContextOptions, TurnEntryWork } from './turnContext.js'
 interface GenerateOptions extends Omit<TurnContextOptions, 'memoryScope'> {
   /** The Discord-facing input: `/ask` passes `false`. */
   memory: boolean
+  /** Link URLs from the triggering message's own embeds, registered under the `embed` origin. */
+  embedUrls?: string[]
+  /** The speaker's own text without the reply quote, embed descriptions, forwarded or container text. */
+  speakerText?: string
   turnEntryWork?: TurnEntryWork
   mediaAttachments?: MediaAttachment[]
   skippedAttachments?: number
@@ -114,11 +131,22 @@ const toolCallsForRequest = new AsyncLocalStorage<{
 // Count every ADK request so retries and tool calls are included in the reservation refund.
 const modelCallsForRequest = new AsyncLocalStorage<{ count: number }>()
 const requestHistoryForRequest = new AsyncLocalStorage<{ historyEndedOnToolResult: boolean }>()
+export interface FormatSteering {
+  request: FormatRequest
+  mode: 'shadow' | 'on'
+  repair: 'off' | 'reformat'
+  tunables: FormatTunables
+}
+
+export type FormatSuppressed = 'edge' | 'safety'
+
 // Exported so tests can drive the beforeModelCallback ALS seam directly (task 122's only observable proof point)
 export const steeringForRequest = new AsyncLocalStorage<{
   prompt?: string
   memoryScope?: MemoryScope
   replies?: boolean
+  format?: FormatSteering | null
+  formatResult?: FormatEnforcement
 }>()
 export const SAFETY_DEFLECTION = character.lines.reliability.safety
 export const RECITATION_DEFLECTION = character.lines.reliability.recitation
@@ -207,7 +235,14 @@ export const rokaAgent = new LlmAgent({
     const steering = steeringForRequest.getStore()
     // No store outside a steered request reads as a full turn; the turn itself always sets `memoryScope`.
     const scope: MemoryScope = steering?.memoryScope ?? resolveMemoryScope(true, config.memory.privacy)
-    const withheld = [...withheldMemoryToolNames(scope), ...(steering?.replies === false ? [readRepliesTool.name] : [])]
+    const withheld = [
+      ...withheldMemoryToolNames(scope),
+      ...(steering?.replies === false ? [readRepliesTool.name] : []),
+      // A turn that has read page text answers from it; it no longer changes memory or reminders on it.
+      ...(didReadPage()
+        ? [rememberUserTool.name, forgetUserTool.name, setReminderTool.name, cancelReminderTool.name]
+        : [])
+    ]
     if (withheld.length > 0) {
       for (const declaration of request.config?.tools ?? []) {
         // `ToolUnion` is `Tool | CallableTool`; only `Tool` carries declarations, and only
@@ -251,6 +286,33 @@ export const rokaAgent = new LlmAgent({
 
     const hasText = response.content.parts.some((p) => p.text?.trim() && !p.thought)
     const hasFunctionCall = response.content.parts.some((p) => 'functionCall' in p && p.functionCall)
+
+    const steering = steeringForRequest.getStore()
+    if (steering?.format && hasText && !hasFunctionCall) {
+      const textParts = response.content.parts.filter((p) => p.text?.trim() && !p.thought)
+      if (textParts.length === 1) {
+        const part = textParts[0]
+        const { request, mode, repair, tunables } = steering.format
+        const result = enforceReplyFormat(part.text ?? '', request, {
+          ...tunables,
+          repair: mode === 'shadow' ? 'off' : repair
+        })
+        if (mode === 'on') part.text = result.text
+        steering.formatResult = result
+        logger.info(
+          {
+            model: modelNameForCurrentRequest(),
+            kinds: formatKinds(request),
+            outcome: result.outcome,
+            repair: result.repair,
+            first: result.first,
+            final: result.final,
+            mode
+          },
+          'Reply format check'
+        )
+      }
+    }
 
     const verdict = modelVerdictForRequest.getStore()
     if (verdict) {
@@ -313,6 +375,7 @@ interface TurnAttemptInit {
   useFallback: boolean
   safetyLadder: readonly string[]
   composePrompt: (safetyRung: number) => string
+  format?: { request: FormatRequest; suppressed: 'edge' | null } | null
 }
 
 /** Per-turn mutable state threaded through the reliability loop. One home for what attempt N sends, so a
@@ -325,19 +388,42 @@ class TurnAttempt {
   movedAwayFromGemini = false
   switchKind: FailureKind | undefined = undefined
   emptyReplyDiagnostic: ReplyDiagnostic | undefined = undefined
-  readonly steering: { prompt?: string; memoryScope?: MemoryScope; replies?: boolean }
+  formatSuppressed: FormatSuppressed | null
+  readonly steering: {
+    prompt?: string
+    memoryScope?: MemoryScope
+    replies?: boolean
+    format?: FormatSteering | null
+    formatResult?: FormatEnforcement
+  }
   readonly route: ModelRoute
 
   private readonly channelId: string
   private readonly safetyLadder: readonly string[]
   private readonly composePrompt: (safetyRung: number) => string
+  private readonly formatRequest: FormatRequest | null
 
   constructor(init: TurnAttemptInit) {
     this.systemPrompt = init.systemPrompt
     this.channelId = init.channelId
     this.safetyLadder = init.safetyLadder
     this.composePrompt = init.composePrompt
-    this.steering = { memoryScope: init.memoryScope, replies: init.asksAboutReplies }
+    this.formatRequest = init.format?.request ?? null
+    this.formatSuppressed = init.format?.suppressed ?? null
+    const formatSteering: FormatSteering | null =
+      this.formatRequest && this.formatSuppressed === null && config.format.mode !== 'off'
+        ? {
+            request: this.formatRequest,
+            mode: config.format.mode,
+            repair: config.format.repair,
+            tunables: {
+              minListItems: config.format.minListItems,
+              minListShare: config.format.minListShare,
+              wordSlack: config.format.wordSlack
+            }
+          }
+        : null
+    this.steering = { memoryScope: init.memoryScope, replies: init.asksAboutReplies, format: formatSteering }
     this.route = { useFallback: init.useFallback, hedged: false, answeredBy: null, pinned: null }
   }
 
@@ -357,6 +443,22 @@ class TurnAttempt {
     this.emptyReplyDiagnostic = diagnostic
   }
 
+  /** Tool results stored by earlier attempts, so a retry can log what it resumes from (#543). */
+  readonly storedToolResults: Array<{ attempt: number; tool: string; chars: number; head: string }> = []
+
+  noteToolResults(attempt: number, parts: readonly Part[]): void {
+    for (const part of parts) {
+      if (!part.functionResponse) continue
+      const text = JSON.stringify(part.functionResponse.response ?? {})
+      this.storedToolResults.push({
+        attempt,
+        tool: part.functionResponse.name ?? 'unknown',
+        chars: text.length,
+        head: text.slice(0, 200)
+      })
+    }
+  }
+
   async escalateSafety(): Promise<string | undefined> {
     if (this.safetyRung >= this.safetyLadder.length) return undefined
     this.safetyRung++
@@ -373,6 +475,11 @@ class TurnAttempt {
 
     this.systemPrompt = this.composePrompt(this.safetyRung)
     this.steering.prompt = this.systemPrompt
+    this.steering.format = null
+    this.steering.formatResult = undefined
+    if (this.formatRequest !== null && this.formatSuppressed === null) {
+      this.formatSuppressed = 'safety'
+    }
     return this.safetyLadder[this.safetyRung - 1]
   }
 
@@ -427,7 +534,6 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     attachments: mediaAttachments,
     focus: userMessage,
     mayRetry: () => getSharedRateLimiter().tryConsumeAboveFloor(config.gemini.retryRpmFloor),
-    geminiUnavailable: rokaModel.hasFallback && hasStickyFallback(),
     // Servers only: DMs, group DMs, `/ask` and privacy `off` keep what was watched in the transcript alone.
     memoryScope:
       memoryScope === 'full' && !guildId.startsWith('dm:') && options.messageId
@@ -436,7 +542,10 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   })
   // Handled here so a failure in createTurnContext cannot leave it as an unhandled rejection.
   mediaWork.catch(() => undefined)
-  const context = await createTurnContext({ ...options, memoryScope, turnEntryWork })
+  // The vision gate needs only the speaker text and the turn images, so its downloads and model call
+  // overlap the media watch and context creation instead of waiting behind them. The plan never rejects.
+  const planWork = planImageLookup(options.speakerText ?? userMessage)
+  const context = await createTurnContext({ ...options, memoryScope, turnEntryWork, mediaWork })
   const {
     session,
     fakeMessages,
@@ -470,7 +579,8 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     asksAboutReplies: options.asksAboutReplies,
     useFallback: rokaModel.hasFallback && hasStickyFallback(),
     safetyLadder,
-    composePrompt
+    composePrompt,
+    format: context.format
   })
 
   // Tell the model when files are absent or refused so it does not search for their missing contents.
@@ -498,6 +608,12 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
       : [])
   ]
 
+  // A who-is-this question about an image gets its Lens hints before the model answers, so a skipped tool call
+  // cannot leave her guessing (#526). Only the speaker's own text counts: the reply quote and forwarded text
+  // belong to someone else, and must never trigger a lookup by themselves.
+  const identifyNote = await noteForPlan(await planWork)
+  const identifyParts = identifyNote ? [{ text: identifyNote }] : []
+
   // Keep attachment notices in both ordinary and safety-rebuilt turns.
   const buildNewMessage = (): Content => ({
     role: 'user',
@@ -506,6 +622,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
       // Rung 3 drops what was watched along with what was seen: either may be what tripped the filter.
       ...(turn.dropMedia ? [] : mediaTextParts),
       ...failedAttachmentNotice,
+      ...identifyParts,
       { text: `[${displayName}]: ${userMessage}` }
     ]
   })
@@ -516,7 +633,10 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
   )
 
   const llmStartMs = performance.now()
-  const usedToolNames = new Set<string>(prefetchUsed ? [PREFETCH_TOOL_NAME] : [])
+  const usedToolNames = new Set<string>([
+    ...(prefetchUsed ? [PREFETCH_TOOL_NAME] : []),
+    ...(identifyNote ? [AUTO_IDENTIFY_TOOL_NAME] : [])
+  ])
   const geminiToolNames = new Set<string>()
   const toolCalls = { usedToolNames, geminiToolNames }
   const testRunTurn = testRunTurnFactory?.(turn.systemPrompt)
@@ -549,6 +669,16 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
               },
               escalateSafety: () => turn.escalateSafety(),
               runTurn: async (attempt, signal) => {
+                // A retried attempt answers from scratch, so it resets the sink and cites only the
+                // sources that attempt looks up itself. The first attempt keeps the prefetch's.
+                if (attempt > 0) resetSearchCitations()
+                // A retry resumes from what earlier attempts stored; off-topic retried replies (#543) need this to diagnose.
+                if (attempt > 0 && turn.storedToolResults.length > 0) {
+                  logger.warn(
+                    { attempt, channelId, toolResults: turn.storedToolResults },
+                    'Retrying after stored tool results'
+                  )
+                }
                 const includeCurrentTurn = turn.shouldIncludeCurrentTurn(attempt)
                 // One attempt's whole budget, so a native search the model asks for inside it knows how much
                 // time is left before the chat model's next call still has to fit.
@@ -593,6 +723,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
                   )
                   if (done) break
                   if (signal.aborted) break
+                  if (event.content?.parts) turn.noteToolResults(attempt, event.content.parts)
                   if (event.errorCode) {
                     return {
                       errorCode: event.errorCode,
@@ -755,6 +886,48 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
       : turn.route.answeredBy === 'main'
         ? config.llm.main
         : null
+  const requestedFormat = context.format?.request ?? null
+  const formatResult = turn.steering.formatResult
+  const formatOutcome: ResponseMetrics['formatOutcome'] =
+    !reliability.success || requestedFormat === null
+      ? undefined
+      : turn.formatSuppressed !== null
+        ? 'suppressed'
+        : formatResult?.outcome
+  const formatDetail =
+    requestedFormat === null
+      ? undefined
+      : JSON.stringify({
+          v: 1,
+          mode: config.format.mode,
+          cues: requestedFormat.cues,
+          params: {
+            scoreMax: requestedFormat.score?.max ?? null,
+            lengthUnit: requestedFormat.length?.unit ?? null,
+            lengthMax: requestedFormat.length?.max ?? null
+          },
+          first: formatResult?.first ?? null,
+          final: formatResult?.final ?? null,
+          repair: formatResult?.repair ?? null,
+          suppressed: turn.formatSuppressed
+        })
+  const requestedKinds = requestedFormat === null ? undefined : formatKinds(requestedFormat)
+  if (reliability.success && requestedFormat !== null && formatOutcome === 'unmet' && formatResult) {
+    const unmetKinds = formatKinds(requestedFormat).filter((kind) => formatResult.final[kind] === false)
+    recordFailureDiagnostic({
+      guildId,
+      channelId,
+      userId,
+      outcome: 'ok',
+      kind: 'format_unmet',
+      failureMarker: unmetKinds.join(','),
+      errorMessage: formatDetail,
+      attempts: reliability.attempts,
+      tone,
+      userMessage
+    })
+  }
+
   const metrics: ResponseMetrics = {
     generateMs: Math.round(performance.now() - generateStartMs),
     llmMs,
@@ -768,7 +941,10 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     routeRole: turn.route.answeredBy ?? undefined,
     provider: answeredModel?.provider,
     modelId: answeredModel?.model,
-    hedged: turn.route.hedged ? 1 : 0
+    hedged: turn.route.hedged ? 1 : 0,
+    formatKinds: requestedKinds ? JSON.stringify(requestedKinds) : undefined,
+    formatOutcome,
+    formatDetail
   }
 
   return {

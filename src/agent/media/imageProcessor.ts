@@ -5,10 +5,25 @@ import { GEMINI_IMAGE_TOKENS } from './attachmentLimits.js'
 export { GEMINI_IMAGE_TOKENS }
 import sharp from 'sharp'
 import { logger } from '../../utils/logger.js'
+import { VISION_MAX_DIMENSION } from './imageProxy.js'
 
-const MAX_DIMENSION = 1024
+const MAX_DIMENSION = VISION_MAX_DIMENSION
 const MIN_DIMENSION = 512
 const JPEG_QUALITY = 80
+
+function sniffMimeType(buffer: Buffer): string | null {
+  if (buffer.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))) return 'image/jpeg'
+  if (buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png'
+
+  const gifSignature = buffer.toString('ascii', 0, 6)
+  if (gifSignature === 'GIF87a' || gifSignature === 'GIF89a') return 'image/gif'
+
+  if (buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP') {
+    return 'image/webp'
+  }
+
+  return null
+}
 
 /**
  * Process an image buffer for optimal Gemini vision input.
@@ -19,7 +34,10 @@ const JPEG_QUALITY = 80
  * - Strip EXIF metadata
  * - Output as JPEG at 80% quality
  */
-export async function processImageForGemini(buffer: Buffer): Promise<{ data: Buffer; mimeType: string }> {
+export async function processImageForGemini(
+  buffer: Buffer,
+  declaredMimeType: string
+): Promise<{ data: Buffer; mimeType: string } | null> {
   try {
     const metadata = await sharp(buffer).metadata()
     const width = metadata.width ?? 0
@@ -61,7 +79,13 @@ export async function processImageForGemini(buffer: Buffer): Promise<{ data: Buf
 
     return { data: result, mimeType: 'image/jpeg' }
   } catch (error) {
-    logger.warn({ error }, 'Image processing failed, using original')
-    return { data: buffer, mimeType: 'image/jpeg' }
+    const mimeType = sniffMimeType(buffer)
+    const dropped = mimeType === null
+    logger.warn(
+      { error, mimeType: mimeType ?? 'unknown', declaredMimeType, dropped },
+      dropped ? 'Image processing failed, dropping image' : 'Image processing failed, using original'
+    )
+    if (dropped) return null
+    return { data: buffer, mimeType }
   }
 }

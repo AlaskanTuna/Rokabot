@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "7066d51d1966b65d0851ccefe141685cfd22756143e08f72e0cde3d4d90029c2",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af976f91db61\",\"object\":\"chat.completion\",\"created\":1794733817,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\n  \\\"ops\\\": [\\n    {\\n      \\\"op\\\": \\\"add\\\",\\n      \\\"subject\\\": { \\\"kind\\\": \\\"user\\\", \\\"userId\\\": \\\"sim-user-grace\\\" },\\n      \\\"predicate\\\": \\\"language_spoken\\\",\\n      \\\"value\\\": \\\"Spanish\\\",\\n      \\\"tense\\\": \\\"current\\\",\\n      \\\"sourceLine\\\": 1\\n    },\\n    {\\n      \\\"op\\\": \\\"add\\\",\\n      \\\"subject\\\": { \\\"kind\\\": \\\"user\\\", \\\"userId\\\": \\\"sim-user-grace\\\" },\\n      \\\"predicate\\\": \\\"hobby\\\",\\n      \\\"value\\\": \\\"backyard astronomy with a small refractor\\\",\\n      \\\"tense\\\": \\\"current\\\",\\n      \\\"sourceLine\\\": 2\\n    },\\n    {\\n      \\\"op\\\": \\\"add\\\",\\n      \\\"subject\\\": { \\\"kind\\\": \\\"user\\\", \\\"userId\\\": \\\"sim-user-erin\\\" },\\n      \\\"predicate\\\": \\\"favorite_music\\\",\\n      \\\"value\\\": \\\"lo-fi hip hop and ambient electronic\\\",\\n      \\\"tense\\\": \\\"current\\\",\\n      \\\"sourceLine\\\": 6\\n    }\\n  ],\\n  \\\"summary\\\": \\\"Grace mentioned she mostly speaks Spanish at home and enjoys backyard astronomy with a small refractor. Erin asked about her recent music listening, which was noted as lo-fi hip hop and ambient electronic.\\\"\\n}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4222,\"completion_tokens\":261,\"total_tokens\":4483,\"prompt_tokens_details\":{\"cached_tokens\":3840},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

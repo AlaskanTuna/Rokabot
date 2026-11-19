@@ -1,0 +1,75 @@
+{
+  "caseId": "O2",
+  "recordedAt": "2026-11-17T21:19:15.031Z",
+  "commit": "2f6dac20658fc7b1625a3298b81d0170496bd5c0",
+  "toolCalls": [
+    {
+      "tool": "search_web",
+      "args": {
+        "query": "hall effect switches mechanical keyboard better than mechanical switches pros cons",
+        "max_results": 3
+      }
+    }
+  ],
+  "exchanges": [
+    {
+      "provider": "exa",
+      "method": "POST",
+      "url": "https://api.exa.ai/search",
+      "requestBody": {
+        "query": "hall effect switches mechanical keyboard better than mechanical switches pros cons",
+        "type": "auto",
+        "numResults": 3,
+        "contents": {
+          "highlights": true
+        }
+      },
+      "status": 200,
+      "responseBody": {
+        "requestId": "b9eb4a8c217e1ccf56da0f9c7297ea0a",
+        "resolvedSearchType": "",
+        "results": [
+          {
+            "id": "https://www.xda-developers.com/ways-hall-effect-beats-mechanical-keyboards/",
+            "title": "3 ways Hall effect keyboards beat mechanical keyboards (& 3 ways they don’t)",
+            "url": "https://www.xda-developers.com/ways-hall-effect-beats-mechanical-keyboards/",
+            "publishedDate": "2024-10-05T14:00:14.000Z",
+            "author": "Brady Snyder",
+            "highlights": [
+              "switch doesn't need to touch the sensor on the PCB.\n\nA consequence of this design and technology is that tactile and clicky switch types ... for Hall effect keyboards. It's not inconceivable that a clicky or tactile switch option could exist for"
+            ],
+            "image": "https://static0.xdaimages.com/wordpress/wp-content/uploads/wm/2024/02/untitled-design.png?w=1600&h=900&fit=crop"
+          },
+          {
+            "id": "https://www.soldermag.com/posts/hall-effect-vs-mechanical-keyboards",
+            "title": "Hall Effect vs Mechanical Keyboards: Is Rapid Trigger Worth It?",
+            "url": "https://www.soldermag.com/posts/hall-effect-vs-mechanical-keyboards",
+            "publishedDate": "2026-07-10T12:42:38.000Z",
+            "highlights": [
+              "heavy linears, mild and strong tactiles, clicky switches, silent options, low-profile designs ... and a much larger aftermarket.\n\nThe rest of the keyboard still matters more than the sensor:\n\n- stabilizer quality under the spacebar, enter, shift,"
+            ],
+            "image": "https://www.soldermag.com/images/heroes/mechanical-keyboards-editorial-v2.webp"
+          },
+          {
+            "id": "https://g3ar4ub.com/hall-effect-vs-mechanical-switches/",
+            "title": "Hall Effect vs Mechanical Switches: Which Is Better?",
+            "url": "https://g3ar4ub.com/hall-effect-vs-mechanical-switches/",
+            "publishedDate": "2026-08-04T04:44:33.000Z",
+            "author": "Ola Nordmann",
+            "highlights": [
+              "Neither technology is automatically faster, better sounding or more durable as a complete keyboard. Sensor quality, firmware, polling behavior, switch design, case construction and software all affect the result.\n\n...\n\n| Feature | Hall Effect switches | Traditional mechanical switches |\n| --- | --- | --- |\n| Input detection | Magnet movement measured by a sensor on the PCB | Metal electrical contacts close at a fixed point |\n| Actuation point | Usually software-adjustable on supported keyboards | Normally fixed by the switch design |\n| Reset behavior | Can be dynamic with Rapid Trigger | Normally resets at a fixed physical point |\n| Analog input | Available on supported models and software | Normally binary on/off input |\n\n...\n\n| Switch feel | Most commonly linear; tactile options are more limited | Extensive linear, tactile, clicky and silent choices |\n| Sound options | Growing, but tied closely to the keyboard ecosystem | Very broad range of acoustic profiles and materials |\n| Hot-swap compatibility | Requires a compatible magnetic PCB and approved switch | Broad MX hot-swap ecosystem, subject to pin and socket type |\n| Modding ecosystem | Expanding but fragmented by sensor and magnet specifications | Mature ecosystem for switches, plates, PCBs and cases |\n\n...\n\n### 1. Actuation and reset behavior\n\nTraditional mechanical switches normally register at one physical actuation point and reset at another fixed point as the key rises. A switch with shorter pre-travel may feel faster, but the physical geometry remains fixed unless the switch itself is replaced.\n\nHall Effect keyboards can let the user move the actuation point in software. A shallow setting may respond to a light press, while a deeper setting can reduce accidental inputs. The available range and adjustment increments vary by keyboard.\n\nRapid Trigger is the more meaningful gaming difference. Instead of waiting for the key to return past a fixed reset point, compatible firmware can deactivate the key as soon as upward movement meets a configured distance. It can then reactivate during the next downward movement. Wooting’s Rapid Trigger documentation explains the feature across its analog Hall Effect keyboards.\n\nThis can help when repeatedly tapping a movement key, correcting a counter-strafe or playing rapid note patterns. It does not make aim, positioning or decision-making better, and the advantage will be smaller in games that do not depend on fast repeated directional inputs.\n\nWinner: Hall Effect, when adjustable actuation and dynamic reset are implemented well.\n\n### 2. Gaming performance and latency\n\nHall Effect is often described as “faster,” but switch technology is only one part of end-to-end latency. The complete path includes:\n\n1. Physical key movement\n2. Sensor or contact detection\n3. Matrix scanning\n4. Firmware processing\n5. USB polling\n6. Game and operating-system processing\n7. Display output\n\nA Hall Effect sensor can avoid the electrical contact-bounce behavior associated with metal contacts, and adjustable actuation can reduce the physical travel required before registration. However, a poorly tuned magnetic keyboard can still have slower processing than a well-engineered mechanical model.\n\nSimilarly, an 8,000Hz polling label does not prove that every key event reaches the computer in 0.125 milliseconds. Polling interval, scan synchronization, firmware consistency and measured latency all matter. Treat manufacturer latency figures as product-specific claims, not a property of every keyboard using the same switch category.\n\nFor competitive buying, compare independent latency measurements for the exact keyboard model. Do not decide from “Hall Effect” or “8K” branding alone.\n\nWinner: Hall Effect for its performance ceiling and dynamic input features; tie for ordinary use, where implementation matters more than the sensor label.\n\n### 3. Typing feel\n\nHall Effect keyboards have improved significantly, but most magnetic switch ecosystems still focus on smooth linear travel. That works well for rapid gaming inputs and for typists who already like linear switches. It is less appealing to users who want a pronounced tactile event or click at actuation.\n\nTraditional mechanical keyboards provide far more feel choices. A light linear switch, medium tactile switch, sharp tactile switch, click-jacket design, click bar, silent dampened switch and long-pole switch can all feel dramatically different even when installed in similar keyboards.\n\nAdjustable actuation changes where a Hall Effect key activates; it does not automatically create tactile feedback. Key feel still comes from the physical stem, spring, housing, lubrication and mounting system.\n\nWinner: Mechanical for tactile, clicky and highly specific typing preferences. Hall Effect is competitive for linear-switch users.\n\n...\n\nIt does not eliminate mechanical wear elsewhere: springs can change, stems and housings rub,\n\n...\n\n### 6. Switch choice and customization\n\nTraditional mechanical keyboards have the larger and more mature customization market. MX-compatible users can change spring weight, switch feel, travel, materials and sound without replacing the PCB. Many switches can also be opened, lubricated, filmed or spring-swapped.\n\nThe Hall Effect market now includes more magnetic switches, cases and barebones boards, but compatibility is fragmented. Two switches may look MX-compatible from above and accept the same keycaps while using different magnet positions, magnetic strength or travel calibration. A magnetic switch must work with the board’s sensor layout and firmware profile.\n\nSome HE keyboards support only a listed set of switches. Others allow calibration for several magnetic switch families. Always check the keyboard manufacturer’s exact compatibility list before ordering replacements.\n\nWinner: Mechanical, especially for collectors and custom builders.\n\n### 7. Hot-swap compatibility\n\nCompatibility warning\n\nMX hot-swap and magnetic hot-swap are different systems. A switch may accept the same keycap and fit the same plate opening while remaining electrically or magnetically incompatible with the PCB.\n\nThis is the most important purchasing warning in the comparison.\n\nA five-pin or three-pin mechanical switch uses electrical legs that enter a compatible hot-swap socket or soldered PCB. A magnetic switch does not send its signal through conventional contact pins; the PCB sensor reads its magnet. A normal MX hot-swap PCB therefore cannot gain Hall Effect features just because a magnetic switch physically fits the plate.\n\nThe reverse is also normally true: a standard mechanical switch cannot provide input on a Hall Effect-only sensor PCB unless that keyboard was specifically engineered as a dual-mode design.\n\nEven within the HE category, magnetic does not mean universal. Confirm:\n\n- Keyboard model and PCB revision\n- Approved magnetic switch models\n- Magnet orientation and position\n- Supported travel range\n- Plate compatibility\n- Firmware calibration support\n\nWinner: Mechanical for broad interchangeability. Hall Effect buyers must treat the keyboard and switch as one ecosystem.\n\n...\n\n### Hall Effect switch advantages\n\n...\n\n### Hall Effect switch disadvantages\n\n- Magnetic switch compatibility is not universal\n- Main benefits depend on firmware and software quality\n- Fewer tactile, clicky and silent choices\n- Smaller custom ecosystem\n- Aggressive sensitivity can increase accidental inputs\n- “HE” branding alone does not guarantee low latency"
+            ],
+            "image": "https://g3ar4ub.com/wp-content/uploads/2026/08/hall-effect-vs-mechanical-switches.webp"
+          }
+        ],
+        "searchTime": 1965.6,
+        "costDollars": {
+          "total": 0.007,
+          "search": {
+            "neural": 0.007
+          }
+        }
+      }
+    }
+  ]
+}

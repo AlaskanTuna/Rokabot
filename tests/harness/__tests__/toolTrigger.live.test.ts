@@ -66,7 +66,7 @@ describe('live tool-trigger evaluation', () => {
       })
       console.log(`Tool-trigger live per-case table [${tool}]:`, report.perCase)
 
-      expect(report.caseCount).toBe(12)
+      expect(report.caseCount).toBe(cases.length)
       expect(report.trials).toBe(TRIALS)
       expect(meetsLiveVerdict(report)).toBe(true)
       expect(getDb().prepare('SELECT COUNT(*) AS count FROM extraction_events').get()).toEqual({ count: 0 })

@@ -98,10 +98,10 @@ describe('reservationFor', () => {
   })
 
   // Without a watcher a video is sent directly and downloads as a 10 MB prefix, so it must still reserve that.
-  it('keeps the video ceiling when the watcher is direct', () => {
+  it('keeps the video ceiling when the watcher is off', () => {
     const media: { watcher: string } = config.media
     const watcher = media.watcher
-    media.watcher = 'direct'
+    media.watcher = 'off'
     try {
       expect(reservationFor([video(20 * 1024 * 1024)])).toBe(MAX_VIDEO_SIZE_BYTES)
     } finally {

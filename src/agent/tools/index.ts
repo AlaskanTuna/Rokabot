@@ -12,6 +12,7 @@ import { forgetUser } from './forgetUser.js'
 import { getAnimeSchedule } from './getAnimeSchedule.js'
 import { getCurrentTime } from './getCurrentTime.js'
 import { getWeather } from './getWeather.js'
+import { identifyImage, identifyImageAvailable } from './imageId/identifyImage.js'
 import { MAX_REQUESTED_REPLIES, readReplies } from './readReplies.js'
 import { recallUser } from './recallUser.js'
 import { rememberUser } from './rememberUser.js'
@@ -56,17 +57,38 @@ export const getCurrentTimeTool = new FunctionTool({
 export const searchAnimeTool = new FunctionTool({
   name: 'search_anime',
   description: searchAvailable
-    ? 'Search for anime by title or keyword. ALWAYS use this first for anime questions before trying search_web.'
-    : 'Search for anime by title or keyword.',
+    ? 'Search anime catalogue data by title, keyword, or genre: titles, Japanese title, synopsis, score, episodes, type, status, members. Use genre for ranked recommendations by genre. Jikan holds no opinions or "worth it" takes, merch, prices, where to buy, news and announcements, voice cast, manga or source chapters, or events — use search_web for those. When Jikan answers the question fully, answer from it without search_web; when it comes back empty or lacks the asked field, use search_web in the same turn.'
+    : 'Search anime catalogue data by title, keyword, or genre: titles, Japanese title, synopsis, score, episodes, type, status, members. Use genre for ranked recommendations by genre.',
   parameters: z.object({
-    query: z.string().describe('Anime title or search keyword'),
+    query: z.string().describe('Anime title or search keyword. Optional when genre is given.').optional(),
     limit: z.number().int().describe('Number of results to return (1-25). Defaults to 5.').optional(),
     sort_by: z
       .enum(['score', 'popularity', 'members', 'title', 'start_date'])
       .describe('Sort results by. Defaults to relevance.')
       .optional(),
     type: z.enum(['tv', 'movie', 'ova', 'special', 'ona', 'music']).describe('Filter by anime type.').optional(),
-    status: z.enum(['airing', 'complete', 'upcoming']).describe('Filter by airing status.').optional()
+    status: z.enum(['airing', 'complete', 'upcoming']).describe('Filter by airing status.').optional(),
+    genre: z
+      .enum([
+        'action',
+        'adventure',
+        'comedy',
+        'drama',
+        'fantasy',
+        'horror',
+        'mecha',
+        'music',
+        'mystery',
+        'psychological',
+        'romance',
+        'sci-fi',
+        'slice of life',
+        'sports',
+        'supernatural',
+        'suspense'
+      ])
+      .describe('Filter by genre: the way to ask for ranked recommendations by genre.')
+      .optional()
   }),
   execute: async (input) => await searchAnime(input)
 })
@@ -74,8 +96,8 @@ export const searchAnimeTool = new FunctionTool({
 export const getAnimeScheduleTool = new FunctionTool({
   name: 'get_anime_schedule',
   description: searchAvailable
-    ? 'Get anime airing schedule. ALWAYS use this first for schedule/airing questions before trying search_web. Can check a specific day, the full week, or current season.'
-    : 'Get anime airing schedule. Can check a specific day, the full week, or current season.',
+    ? 'Get anime airing schedule by day, week, season, or anime name: titles, broadcast day and time, score, members, type, episodes, status. Jikan holds no opinions or "worth it" takes, merch, prices, where to buy, news and announcements, voice cast, manga or source chapters, or events — use search_web for those. When the schedule answers the question fully, answer from it without search_web; when it comes back empty or lacks the asked field, use search_web in the same turn. Can check a specific day, the full week, or current season.'
+    : 'Get anime airing schedule by day, week, season, or anime name. Can check a specific day, the full week, or current season.',
   parameters: z.object({
     scope: z
       .enum(['day', 'week', 'season'])
@@ -113,11 +135,38 @@ export const getWeatherTool = new FunctionTool({
 export const searchWebTool = new FunctionTool({
   name: 'search_web',
   description:
-    'Look something up on the web. Call this for any specific factual question you are not fully certain of — names, numbers, prices, versions, release dates, availability, local details — and for anything recent or time-sensitive. When you are unsure whether to search, search.',
+    "Look something up on the web. Call this for any specific factual question you are not fully certain of — names, numbers, prices, versions, release dates, availability, local details — and for anything recent or time-sensitive. When you are unsure whether to search, search. Always call this before you state a population, a height, length or distance, or a release date, even when you think you know it. Pass typed fields (a kind plus a subject, with aliases in the place's language for named items) when they ask for a full list, a specific number or price, or several details about a local place (with local_query in the place's language when it is not English); pass source with a source id (s1, s2, ...) when they ask about a link. For one simple fact, pass `query` alone.",
   parameters: z.object({
     query: z.string().describe('Search query'),
     topic: z.enum(['general', 'news']).describe('Search topic. Use news for current events.').optional(),
-    max_results: z.number().int().describe('Number of results (1-10). Defaults to 5.').optional()
+    max_results: z.number().int().describe('Number of results (1-10). Defaults to 5.').optional(),
+    fields: z
+      .array(
+        z.object({
+          kind: z
+            .enum(['list', 'price', 'hours', 'other'])
+            .describe(
+              "What the subject is: 'list' for a menu or attraction list, 'price' for a cost, 'hours' for opening times, 'other' for the rest"
+            ),
+          subject: z.string().describe('What is listed or priced, e.g. "menu", "drinks", "hotcake set", "attractions"'),
+          aliases: z
+            .array(z.string())
+            .describe(
+              `Other names for the subject, the place's language included, e.g. ["ホットケーキセット", "パンケーキ"]`
+            )
+            .optional()
+        })
+      )
+      .describe('What the answer needs, e.g. [{kind: "list", subject: "menu"}]. Runs a deeper lookup.')
+      .optional(),
+    local_query: z
+      .string()
+      .describe("The same question in the place's language, e.g. Japanese. A second search when snippets fall short.")
+      .optional(),
+    source: z
+      .string()
+      .describe('A source id from this turn (s1, s2, ...) or a shared link, to look into that link.')
+      .optional()
   }),
   execute: async (input) => await searchWeb(input)
 })
@@ -139,6 +188,20 @@ export const readRepliesTool = new FunctionTool({
       .optional()
   }),
   execute: async (input) => await readReplies(input)
+})
+
+export const identifyImageTool = new FunctionTool({
+  name: 'identify_image',
+  description:
+    "Find who or what is in one of this turn's images through reverse-image search. Returns unverified match hints: name something only when a match agrees with what you see, and before naming an exact product or edition, confirm a maker or retailer listing with search_web. Hints cover the main subject only. Never look up or name real people from a photo.",
+  parameters: z.object({
+    attachment: z
+      .number()
+      .int()
+      .describe('Which image of this message to identify, counting only images from 1. Defaults to 1.')
+      .optional()
+  }),
+  execute: async (input) => await identifyImage(input)
 })
 
 export const rememberUserTool = new FunctionTool({
@@ -176,7 +239,7 @@ export const rememberUserTool = new FunctionTool({
 export const recallUserTool = new FunctionTool({
   name: 'recall_user',
   description:
-    'Look up what you remember about a server member. Call this whenever another member is the topic of the message — a direct question ("what do you know about X?"), a story or claim involving them ("X promised to attend the seminar"), or a request about them — not only explicit memory questions. Call it even if you might have no notes; an empty result is fine. Omit user_name to recall facts about the current speaker.',
+    'Look up what you remember about a server member. Call this whenever another member is the topic of the message — a direct question ("what do you know about X?"), a story or claim involving them ("X promised to attend the seminar"), a request about them, or your opinion or guess about them ("what gift would X like?", "who is tidier, X or Y?") — not only explicit memory questions. Call it even if you might have no notes; an empty result is fine. Omit user_name to recall facts about the current speaker.',
   parameters: z.object({
     user_name: z
       .string()
@@ -306,6 +369,7 @@ export const rokaTools = [
   searchAnimeTool,
   getAnimeScheduleTool,
   ...(searchAvailable ? [searchWebTool] : []),
+  ...(identifyImageAvailable() ? [identifyImageTool] : []),
   readRepliesTool,
   rememberUserTool,
   recallUserTool,

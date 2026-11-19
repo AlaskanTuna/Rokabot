@@ -1,0 +1,1 @@
+- Score: they asked for a rating, so state it plainly as **N/{{max}}** in your lead-in.

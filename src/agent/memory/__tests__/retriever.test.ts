@@ -12,22 +12,25 @@ vi.mock('../../../config.js', () => ({
       speakerMinShare: 0.5,
       salienceHalfLifeDays: 30,
       recallCooldownMs: 21_600_000,
-      privacy: 'relaxed'
+      privacy: 'relaxed',
+      store: 'legacy'
     }
   }
 }))
 
 import { config } from '../../../config.js'
 import { closeDb, getDb } from '../../../storage/database.js'
+import { configureMemoryItemProjectionTriggers } from '../../../storage/memoryItemProjection.js'
 import { recordMemoryEvent } from '../../../storage/metricsStore.js'
 import { upsertUserName } from '../../../storage/userNames.js'
 import { estimateTokens } from '../../../utils/tokens.js'
 import { registerChannelVisibility, resetChannelVisibilityForTest } from '../channelVisibility.js'
-import { assertClaim, assertGuildClaim } from '../memoryClaims.js'
+import { assertClaim, assertGuildClaim, touchRecalled } from '../memoryClaims.js'
 import { formatGuildFactDate, retrieveForSubject, retrieveForTurn, retrieveGuildFacts } from '../retriever.js'
 
 const NOW = 1_000_000
 const DAY = 24 * 60 * 60 * 1000
+const DEFAULT_SCOPE = { guildId: 'guild-a', channelId: 'channel-1' }
 
 function claim(
   userId: string,
@@ -82,7 +85,8 @@ describe('retrieveForTurn', () => {
       guildId: 'guild-a',
       speakerId: 'speaker',
       participantIds: ['participant-1', 'participant-2', 'participant-3'],
-      message: 'Which anime games would you recommend?'
+      message: 'Which anime games would you recommend?',
+      scope: DEFAULT_SCOPE
     })
 
     expect(result.claims).toHaveLength(10)
@@ -90,9 +94,7 @@ describe('retrieveForTurn', () => {
     expect(estimateTokens(JSON.stringify(result.entries))).toBeLessThanOrEqual(350)
     expect(result.trace.selected).toHaveLength(10)
     expect(result.trace.selected.every(({ id, score }) => id > 0 && Number.isFinite(score))).toBe(true)
-    expect(getDb().prepare("SELECT kind, n_selected FROM memory_events WHERE kind = 'retrieval'").all()).toEqual([
-      { kind: 'retrieval', n_selected: 10 }
-    ])
+    expect(getDb().prepare("SELECT kind, n_selected FROM memory_events WHERE kind = 'retrieval'").all()).toEqual([])
   })
 
   it('never returns claims from another guild or a DM scope', () => {
@@ -116,7 +118,8 @@ describe('retrieveForTurn', () => {
       guildId: 'guild-a',
       speakerId: 'speaker',
       participantIds: ['participant-1', 'participant-2'],
-      message: 'What do you like?'
+      message: 'What do you like?',
+      scope: DEFAULT_SCOPE
     })
 
     expect(result.claims.map(({ claim: candidate }) => candidate.id)).toEqual([inGuild.id])
@@ -130,13 +133,29 @@ describe('retrieveForTurn', () => {
       guildId: 'guild-a',
       speakerId: 'speaker',
       participantIds: [],
-      message: 'What do I do for work?'
+      message: 'What do I do for work?',
+      scope: DEFAULT_SCOPE
     })
 
     expect(result.entries).toHaveLength(1)
     expect(result.entries[0]?.facts).toHaveLength(2)
     expect(result.entries[0]?.facts).toContainEqual({ key: 'general_occupation (past)', value: 'nurse' })
     expect(result.entries[0]?.facts).toContainEqual({ key: 'general_occupation', value: 'teacher' })
+  })
+
+  it('orders equal-score personal facts by content instead of claim ID', () => {
+    claim('speaker', 'misc', 'zebra')
+    claim('speaker', 'misc', 'apple')
+
+    const result = retrieveForTurn({
+      guildId: 'guild-a',
+      speakerId: 'speaker',
+      participantIds: [],
+      message: 'What facts do you remember?',
+      scope: DEFAULT_SCOPE
+    })
+
+    expect(result.entries[0]?.facts.map(({ value }) => value)).toEqual(['apple', 'zebra'])
   })
 
   it('routes game topics and expands a relationship edge to a present participant', () => {
@@ -148,7 +167,8 @@ describe('retrieveForTurn', () => {
       guildId: 'guild-a',
       speakerId: 'speaker',
       participantIds: ['participant-1'],
-      message: 'Any good games?'
+      message: 'Any good games?',
+      scope: DEFAULT_SCOPE
     })
 
     expect(result.claims.map(({ claim: candidate }) => candidate.id)).toEqual(
@@ -181,7 +201,8 @@ describe('retrieveForTurn', () => {
       guildId: 'guild-a',
       speakerId: 'speaker',
       participantIds: ['participant-1', 'participant-2'],
-      message: 'hello'
+      message: 'hello',
+      scope: DEFAULT_SCOPE
     })
 
     expect(result.claims).toHaveLength(10)
@@ -199,7 +220,8 @@ describe('retrieveForTurn', () => {
       guildId: 'guild-a',
       speakerId: 'speaker',
       participantIds: ['participant-1'],
-      message: 'Any good Senren Banka games?'
+      message: 'Any good Senren Banka games?',
+      scope: DEFAULT_SCOPE
     })
 
     expect(result.claims.map(({ claim: candidate }) => candidate.id)).toContain(relationship.id)
@@ -215,7 +237,8 @@ describe('retrieveForTurn', () => {
       guildId: 'guild-a',
       speakerId: 'speaker',
       participantIds: ['participant-1'],
-      message: 'Any good games?'
+      message: 'Any good games?',
+      scope: DEFAULT_SCOPE
     })
 
     expect(result.claims.map(({ claim: candidate }) => candidate.id)).not.toContain(needsReview.id)
@@ -229,27 +252,40 @@ describe('retrieveForTurn', () => {
       guildId: 'guild-a',
       speakerId: 'speaker',
       participantIds: [],
-      message: 'hello'
+      message: 'hello',
+      scope: DEFAULT_SCOPE
     })
-    const subject = retrieveForSubject('guild-a', 'speaker', 'hello', 10)
+    const subject = retrieveForSubject('guild-a', 'speaker', 'hello', 10, DEFAULT_SCOPE)
 
     expect(turn.claims.map(({ claim: candidate }) => candidate.id)).not.toContain(staged.id)
     expect(subject.map(({ claim: candidate }) => candidate.id)).not.toContain(staged.id)
   })
 
-  it('touches only selected claims without changing their evidence timestamps', () => {
+  it('leaves last_recalled_at untouched during selection and replays identically on the same snapshot', () => {
     const claims = Array.from({ length: 12 }, (_, index) => claim('speaker', 'likes', `interest ${index}`))
     const lastSeenById = new Map(
       claims.map(({ id }) => [id, getDb().prepare('SELECT last_seen_at FROM memory_claim WHERE id = ?').get(id)])
     )
     vi.spyOn(Date, 'now').mockReturnValue(NOW + 1)
 
-    const result = retrieveForTurn({
+    const input = {
       guildId: 'guild-a',
       speakerId: 'speaker',
       participantIds: [],
-      message: 'Tell me more'
-    })
+      message: 'Tell me more',
+      scope: DEFAULT_SCOPE
+    }
+    const result = retrieveForTurn(input)
+    const secondResult = retrieveForTurn(input)
+
+    expect(secondResult).toEqual(result)
+    const beforeTouch = getDb().prepare('SELECT id, last_recalled_at FROM memory_claim ORDER BY id').all() as Array<{
+      id: number
+      last_recalled_at: number | null
+    }>
+    expect(beforeTouch.every(({ last_recalled_at }) => last_recalled_at === null)).toBe(true)
+
+    touchRecalled(result.claims.map(({ claim: selected }) => selected.id))
     const selectedIds = new Set(result.trace.selected.map(({ id }) => id))
     const recalled = getDb()
       .prepare('SELECT id, last_seen_at, last_recalled_at FROM memory_claim ORDER BY id')
@@ -272,7 +308,7 @@ describe('retrieveForTurn', () => {
       .prepare('UPDATE memory_claim SET salience = ?, confidence = ?, last_seen_at = ?, pinned = 0 WHERE id = ?')
       .run(0.8, 0.6, NOW - 30 * DAY, oldClaim.id)
 
-    const result = retrieveForSubject('guild-a', 'speaker', '', 1)
+    const result = retrieveForSubject('guild-a', 'speaker', '', 1, DEFAULT_SCOPE)
 
     expect(result[0].score).toBeCloseTo(1.65)
     expect(getDb().prepare('SELECT salience FROM memory_claim WHERE id = ?').get(oldClaim.id)).toEqual({
@@ -286,9 +322,9 @@ describe('retrieveForTurn', () => {
       .prepare('UPDATE memory_claim SET salience = ?, confidence = ?, last_recalled_at = ? WHERE id = ?')
       .run(0.7, 0.8, NOW - 1, recalled.id)
 
-    const damped = retrieveForSubject('guild-a', 'speaker', '', 1)[0].score
+    const damped = retrieveForSubject('guild-a', 'speaker', '', 1, DEFAULT_SCOPE)[0].score
     getDb().prepare('UPDATE memory_claim SET last_recalled_at = NULL WHERE id = ?').run(recalled.id)
-    const undamped = retrieveForSubject('guild-a', 'speaker', '', 1)[0].score
+    const undamped = retrieveForSubject('guild-a', 'speaker', '', 1, DEFAULT_SCOPE)[0].score
 
     expect(undamped - damped).toBeCloseTo(0.75)
   })
@@ -299,9 +335,9 @@ describe('retrieveForTurn', () => {
       .prepare('UPDATE memory_claim SET salience = ?, confidence = ?, last_recalled_at = ? WHERE id = ?')
       .run(0.7, 0.8, NOW - 1, recalled.id)
 
-    const withCooldown = retrieveForSubject('guild-a', 'speaker', message, 1)[0].score
+    const withCooldown = retrieveForSubject('guild-a', 'speaker', message, 1, DEFAULT_SCOPE)[0].score
     getDb().prepare('UPDATE memory_claim SET last_recalled_at = NULL WHERE id = ?').run(recalled.id)
-    const withoutCooldown = retrieveForSubject('guild-a', 'speaker', message, 1)[0].score
+    const withoutCooldown = retrieveForSubject('guild-a', 'speaker', message, 1, DEFAULT_SCOPE)[0].score
 
     expect(withCooldown).toBeCloseTo(withoutCooldown)
   })
@@ -322,7 +358,8 @@ describe('retrieveForTurn', () => {
       guildId: 'guild-a',
       speakerId: 'speaker',
       participantIds: [],
-      message: ''
+      message: '',
+      scope: DEFAULT_SCOPE
     })
 
     expect(result.claims.slice(0, 5).map(({ claim: candidate }) => candidate.id)).not.toContain(stale.id)
@@ -386,7 +423,7 @@ describe('retrieveGuildFacts', () => {
     getDb().prepare('UPDATE memory_claim SET salience = ? WHERE id = ?').run(0.8, plan.id)
     getDb().prepare('UPDATE memory_claim SET salience = ? WHERE id = ?').run(0.9, place.id)
 
-    const result = retrieveGuildFacts('guild-a', now)
+    const result = retrieveGuildFacts('guild-a', now, DEFAULT_SCOPE)
 
     expect(result.facts.map(({ predicate, value }) => [predicate, value])).toEqual([
       ['plan', 'Game night on September 26'],
@@ -395,7 +432,7 @@ describe('retrieveGuildFacts', () => {
     expect(result.tokensEst).toBeLessThanOrEqual(config.memory.guildFactsTokenBudget)
   })
 
-  it('breaks equal-score ties by recency and then ascending claim ID', () => {
+  it('breaks equal-score ties by recency and then stable fact content', () => {
     const older = assertGuildClaim({
       guildId: 'guild-a',
       predicate: 'place',
@@ -433,9 +470,9 @@ describe('retrieveGuildFacts', () => {
     getDb().prepare('UPDATE memory_claim SET salience = ? WHERE id = ?').run(0.4, sameTimeFirst.id)
     getDb().prepare('UPDATE memory_claim SET salience = ? WHERE id = ?').run(0.4, sameTimeSecond.id)
 
-    expect(retrieveGuildFacts('guild-a', now).facts.map(({ id }) => id)).toEqual([
-      recent.id,
+    expect(retrieveGuildFacts('guild-a', now, DEFAULT_SCOPE).facts.map(({ id }) => id)).toEqual([
       sameTimeFirst.id,
+      recent.id,
       sameTimeSecond.id,
       older.id
     ])
@@ -490,8 +527,8 @@ describe('formatGuildFactDate', () => {
   })
 })
 
-describe('memory privacy levels', () => {
-  const memory = config.memory as { privacy: string }
+describe.each(['legacy', 'item'] as const)('memory privacy levels on the %s store', (store) => {
+  const memory = config.memory as { privacy: string; store: string }
   const here = { guildId: 'guild-a', channelId: 'here' }
   const turn = { guildId: 'guild-a', speakerId: 'speaker', participantIds: [], message: 'hi' }
   const visibilities: Record<string, 'public' | 'private'> = { 'public-1': 'public' }
@@ -512,10 +549,14 @@ describe('memory privacy levels', () => {
       visibility: (channelId) => visibilities[channelId] ?? 'private',
       parentOf: () => null
     })
+    // The triggers mirror each legacy write into the item tables, so the item store reads the same rows.
+    if (store === 'item') configureMemoryItemProjectionTriggers(getDb(), 'dual')
+    memory.store = store
   })
 
   afterEach(() => {
     memory.privacy = 'relaxed'
+    memory.store = 'legacy'
     resetChannelVisibilityForTest()
   })
 
@@ -553,11 +594,16 @@ describe('memory privacy levels', () => {
     expect(result.claims.map(({ claim: candidate }) => candidate.value)).toEqual(['chess'])
   })
 
-  it('applies no gate when a turn has no scope, even under strict', () => {
-    claim('speaker', 'hobby', 'chess', { channelId: 'other' })
-    memory.privacy = 'strict'
-    const result = retrieveForTurn(turn)
-    expect(result.claims).toHaveLength(1)
+  it('requires a recall scope at compile time on every retriever helper', () => {
+    const rejectWithoutScope = () => {
+      // @ts-expect-error retrieveForTurn requires scope
+      retrieveForTurn(turn)
+      // @ts-expect-error retrieveForSubject requires scope
+      retrieveForSubject('guild-a', 'speaker', 'hi', 10)
+      // @ts-expect-error retrieveGuildFacts requires scope
+      retrieveGuildFacts('guild-a', NOW)
+    }
+    expect(typeof rejectWithoutScope).toBe('function')
   })
 
   it('withholds guild facts learned only in another channel under strict', () => {

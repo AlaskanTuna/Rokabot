@@ -50,6 +50,17 @@ describe('memoryEpisodeStore', () => {
         opened_at INTEGER,
         message_count INTEGER NOT NULL DEFAULT 0
       );
+      CREATE TABLE memory_episode_line (
+        channel_id TEXT NOT NULL,
+        message_id TEXT NOT NULL,
+        guild_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        display_name TEXT NOT NULL,
+        content TEXT NOT NULL,
+        timestamp INTEGER NOT NULL,
+        is_bot INTEGER NOT NULL,
+        PRIMARY KEY (channel_id, message_id)
+      );
       CREATE TABLE memory_episode (
         id INTEGER PRIMARY KEY,
         guild_id TEXT NOT NULL,
@@ -77,7 +88,15 @@ describe('memoryEpisodeStore', () => {
   afterEach(() => testDb.close())
 
   it('records an open cursor and increments its unique message count', () => {
-    expect(recordOpenEpisodeMessage({ guildId: 'g-1', channelId: 'c-1', openedAt: 1_000 })).toMatchObject({
+    const first = {
+      messageId: 'm-1',
+      userId: 'u-1',
+      displayName: 'Mio',
+      content: 'I like tea',
+      timestamp: 1_000,
+      isBot: false
+    }
+    expect(recordOpenEpisodeMessage({ guildId: 'g-1', channelId: 'c-1', openedAt: 1_000, line: first })).toMatchObject({
       guildId: 'g-1',
       channelId: 'c-1',
       lastMessageId: null,
@@ -85,13 +104,30 @@ describe('memoryEpisodeStore', () => {
       messageCount: 1
     })
 
-    recordOpenEpisodeMessage({ guildId: 'g-1', channelId: 'c-1', openedAt: 2_000 })
+    recordOpenEpisodeMessage({
+      guildId: 'g-1',
+      channelId: 'c-1',
+      openedAt: 2_000,
+      line: { ...first, messageId: 'm-2' }
+    })
 
     expect(getEpisodeCursor('c-1')).toMatchObject({ openedAt: 1_000, messageCount: 2 })
   })
 
   it('enqueues an episode and advances its cursor atomically', () => {
-    recordOpenEpisodeMessage({ guildId: 'g-1', channelId: 'c-1', openedAt: 1_000 })
+    recordOpenEpisodeMessage({
+      guildId: 'g-1',
+      channelId: 'c-1',
+      openedAt: 1_000,
+      line: {
+        messageId: 'm-1',
+        userId: 'u-1',
+        displayName: 'Mio',
+        content: 'I like tea',
+        timestamp: 1_000,
+        isBot: false
+      }
+    })
 
     const job = enqueueEpisodeAndAdvanceCursor({
       guildId: 'g-1',
@@ -106,7 +142,19 @@ describe('memoryEpisodeStore', () => {
   })
 
   it('rolls back episode enqueue when cursor advancement fails', () => {
-    recordOpenEpisodeMessage({ guildId: 'g-1', channelId: 'c-1', openedAt: 1_000 })
+    recordOpenEpisodeMessage({
+      guildId: 'g-1',
+      channelId: 'c-1',
+      openedAt: 1_000,
+      line: {
+        messageId: 'm-1',
+        userId: 'u-1',
+        displayName: 'Mio',
+        content: 'I like tea',
+        timestamp: 1_000,
+        isBot: false
+      }
+    })
     testDb.exec(`
       CREATE TRIGGER fail_episode_cursor BEFORE UPDATE ON memory_episode_cursor
       BEGIN SELECT RAISE(ABORT, 'cursor failure'); END;

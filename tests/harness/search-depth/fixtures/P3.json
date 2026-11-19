@@ -1,0 +1,72 @@
+{
+  "caseId": "P3",
+  "recordedAt": "2026-11-17T21:17:20.315Z",
+  "commit": "2f6dac20658fc7b1625a3298b81d0170496bd5c0",
+  "toolCalls": [
+    {
+      "tool": "search_web",
+      "args": {
+        "query": "AirPods Pro 3 price",
+        "max_results": 3
+      }
+    }
+  ],
+  "exchanges": [
+    {
+      "provider": "exa",
+      "method": "POST",
+      "url": "https://api.exa.ai/search",
+      "requestBody": {
+        "query": "AirPods Pro 3 price",
+        "type": "auto",
+        "numResults": 3,
+        "contents": {
+          "highlights": true
+        }
+      },
+      "status": 200,
+      "responseBody": {
+        "requestId": "31fe2d2c992aac3f528641f4d1de8c34",
+        "resolvedSearchType": "",
+        "results": [
+          {
+            "id": "https://www.apple.com/shop/buy-airpods/airpods-pro-3",
+            "title": "Buy AirPods Pro 3 - Apple",
+            "url": "https://www.apple.com/shop/buy-airpods/airpods-pro-3",
+            "highlights": [
+              "# Buy AirPods Pro 3 \n\n Now with the world’s best in‑ear Active\n...\n.\n\n## AirPods Pro 3\n\n$249.00\n\n $41.50/mo. per month for 6 mo. months Footnote * \n\n- Gallery Image 1\n- Gallery Image 2\n- Gallery Image 3\n- Gallery Image 4\n- Gallery Image 5\n\n $249.00"
+            ],
+            "image": "https://store.storeimages.cdn-apple.com/1/as-images.apple.com/is/airpods-pro-3-hero-select-202509?wid=1200&hei=630&fmt=jpeg&qlt=95&.v=1758077264484"
+          },
+          {
+            "id": "https://www.macrumors.com/2026/11/15/airpods-pro-3-discounted/",
+            "title": "AirPods Pro 3 Discounted to $179.99 in Early Black Friday Sale - MacRumors",
+            "url": "https://www.macrumors.com/2026/11/15/airpods-pro-3-discounted/",
+            "publishedDate": "2026-11-15T17:27:23.000Z",
+            "author": "Mitchel Broussard",
+            "highlights": [
+              "# AirPods Pro 3 Discounted to $179.99 in Early Black Friday Sale\n\nSunday November 15, 2026 9:27 am PST by Mitchel Broussard\n\nOne of the best early Black Friday deals has arrived today, with Amazon discounting the AirPods Pro 3 down to $179.99, from $249.00.\n\nNote: MacRumors is an affiliate partner with Amazon. When you click a link and make a purchase, we may receive a small payment, which helps us keep the site running.\n\nThis is just $0.99 higher compared to Amazon's previous record low price on the AirPods Pro 3, and Amazon provides free delivery dates around November 20, or overnight deliveries for Prime members.\n\n...\n\nIt was $169 for a short time back in June.\n\n...\n\nozoneraider\n\n2 days ago at 11:51 am\n\nIf warranty is important, Costco is still offering them at $200 including two years of AppleCare+ which goes for $35 (although the theft/loss coverage does not apply to AirPods)."
+            ],
+            "image": "https://images.macrumors.com/t/OjVinRc6ItQhqUq38Zv6EWJ3Aqg=/2500x/article-new/2026/11/airpods-pro-3-orange-new.jpeg"
+          },
+          {
+            "id": "https://www.amazon.com/Apple-Cancellation-Translation-Headphones-High-Fidelity/dp/B0FQFB8FMG",
+            "title": "Apple AirPods Pro 3 Wireless Earbuds with Active Noise Cancellation",
+            "url": "https://www.amazon.com/Apple-Cancellation-Translation-Headphones-High-Fidelity/dp/B0FQFB8FMG",
+            "author": "Visit the Apple Store",
+            "highlights": [
+              "$199.00$ 199. 00 \n\n FREE delivery Sunday, November 15 \n\n Ships from: Amazon.com \n\n Sold by: Amazon.com \n\n FREE delivery Sunday, November 15 \n\n Or Prime members get FREE delivery Tomorrow, November 11. Order within 14 hrs 57 mins. Join Prime \n\n In Stock \n\n Shipper / Seller\n\n...\n\n$187.16$ 187. 16 \n\n FREE delivery Sunday, November 15 \n\n Ships from: Amazon \n\n Sold by: Amazon Resale \n\n No item damage observed during inspection. Item may not come in original packaging. \n\n FREE delivery Sunday, November 15 \n\n Or Prime members get FREE delivery Thursday, November 12. Order within 4 hrs 42 mins. Join Prime \n\n Only 1 left in stock - order soon. \n\n$$199.00 199. 00 () Includes selected options. Includes initial monthly payment and selected options. \n\n Shipping cost, delivery date, and order total (including tax) shown at checkout. \n\n Sold by Amazon Resale and Fulfilled by Amazon.\n\n...\n\n# Apple AirPods Pro 3 Wireless Earbuds with Active Noise Cancellation \n\n Live Translation, Heart Rate Sensing, Hearing Aid Feature, Bluetooth Headphones, Spatial Audio, USB-C Charging \n\n 4.4 4.4 out of 5 stars (17,697) \n\n $199.00 with 20 percent savings -20% $ 199. 00 \n\nWe offer easy, convenient returns with at least one free return option: no shipping charges. All returns must comply with our returns policy.\n\n Available at a lower price from other sellers that may not offer free Prime shipping."
+            ]
+          }
+        ],
+        "searchTime": 1309.6,
+        "costDollars": {
+          "total": 0.007,
+          "search": {
+            "neural": 0.007
+          }
+        }
+      }
+    }
+  ]
+}

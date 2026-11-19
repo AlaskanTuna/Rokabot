@@ -1,5 +1,15 @@
+import { config } from '../config.js'
 import { getDb } from './database.js'
 import { type EmbeddingVector, type StoredVector, decodeFloat32Embedding, vectorParams } from './memoryEpisodeStore.js'
+import {
+  type StoredMemoryItem,
+  decodeMemoryItemEmbedding,
+  deleteMemoryItem,
+  findMemoryItemById,
+  insertMemoryItem,
+  updateMemoryItem,
+  writeMemoryItemEmbedding
+} from './memoryItemStore.js'
 
 export type MediaOrigin = 'upload' | 'reply' | 'forward' | 'link'
 
@@ -62,6 +72,149 @@ function mediaDigestSelect(where: string): string {
   `
 }
 
+function mapItemMediaDigest(database: ReturnType<typeof getDb>, item: StoredMemoryItem): StoredMediaDigest {
+  const payload = database.prepare('SELECT digest_json FROM memory_item_payload WHERE item_id = ?').get(item.id) as
+    | { digest_json: string }
+    | undefined
+  const shares = database
+    .prepare(`
+      SELECT channel_id, observed_at FROM memory_item_occurrence
+      WHERE item_id = ? AND origin != 'episode'
+      ORDER BY observed_at, id
+    `)
+    .all(item.id) as Array<{ channel_id: string; observed_at: number }>
+  const vectors = database
+    .prepare(`
+      SELECT fingerprint, model_id, dim, renderer, renderer_version, text_hash, vector
+      FROM memory_item_embedding WHERE item_id = ?
+      ORDER BY (fingerprint = ?) DESC, fingerprint
+    `)
+    .all(item.id, config.embeddings.fingerprint) as Array<{
+    fingerprint: string
+    model_id: string | null
+    dim: number
+    renderer: 'fact_sentence' | 'summary'
+    renderer_version: number
+    text_hash: string | null
+    vector: Buffer
+  }>
+  const embedding = vectors
+    .map((row) => decodeMemoryItemEmbedding(row, item.content, 'summary'))
+    .find((value) => value !== null)
+  const createdAt = item.created_at ?? item.first_seen_at
+  return {
+    id: item.legacy_id ?? item.id,
+    guildId: item.guild_id,
+    contentKey: item.content_key as string,
+    kind: item.media_kind as 'audio' | 'video',
+    label: item.label as string,
+    summary: item.content,
+    digestJson: payload?.digest_json ?? '{}',
+    embedding: embedding ?? null,
+    channelIds: [...new Set(shares.map(({ channel_id }) => channel_id))].sort(),
+    createdAt,
+    lastSharedAt: shares.reduce((latest, share) => Math.max(latest, share.observed_at), createdAt)
+  }
+}
+
+function saveItemMediaDigest(input: {
+  guildId: string
+  contentKey: string
+  kind: 'audio' | 'video'
+  label: string
+  summary: string
+  digestJson: string
+  embedding?: EmbeddingVector | null
+  createdAt?: number
+}): StoredMediaDigest {
+  const database = getDb()
+  const createdAt = input.createdAt ?? Date.now()
+  const result = database.transaction(() => {
+    const existing = database
+      .prepare("SELECT * FROM memory_item WHERE kind = 'media' AND guild_id = ? AND content_key = ?")
+      .get(input.guildId, input.contentKey) as StoredMemoryItem | undefined
+    const hasNewVector = input.embedding !== undefined
+    let itemId: number
+    if (existing) {
+      itemId = existing.id
+      const textChanged = existing.content !== input.summary
+      const labelChanged = existing.label !== input.label
+      updateMemoryItem(database, itemId, {
+        media_kind: input.kind,
+        label: input.label,
+        content: input.summary,
+        first_seen_at: createdAt,
+        // The latest share, or the digest write when nobody has shared it yet, as the legacy projection reads it.
+        last_seen_at: (
+          database
+            .prepare(
+              "SELECT COALESCE(MAX(observed_at), ?) AS latest FROM memory_item_occurrence WHERE item_id = ? AND origin != 'episode'"
+            )
+            .get(createdAt, itemId) as { latest: number }
+        ).latest,
+        created_at: createdAt,
+        version: existing.version + (textChanged || labelChanged ? 1 : 0)
+      })
+      if (hasNewVector || textChanged)
+        database.prepare('DELETE FROM memory_item_embedding WHERE item_id = ?').run(itemId)
+    } else {
+      itemId = insertMemoryItem(database, {
+        guild_id: input.guildId,
+        kind: 'media',
+        subject_kind: 'guild',
+        subject_user_id: null,
+        predicate: null,
+        content: input.summary,
+        label: input.label,
+        media_kind: input.kind,
+        content_key: input.contentKey,
+        source_job_id: null,
+        period: 'current',
+        object_kind: null,
+        object_user_id: null,
+        source_kind: null,
+        status: 'active',
+        needs_review: 0,
+        end_reason: null,
+        ended_at: null,
+        superseded_by: null,
+        confidence: null,
+        salience: null,
+        pinned: 0,
+        valid_until: null,
+        event_date: null,
+        first_seen_at: createdAt,
+        last_seen_at: createdAt,
+        last_recalled_at: null,
+        created_at: createdAt,
+        legacy_table: null,
+        legacy_id: null,
+        legacy_embedding_text: null
+      })
+    }
+    database
+      .prepare(`
+        INSERT INTO memory_item_payload (item_id, digest_json) VALUES (?, ?)
+        ON CONFLICT (item_id) DO UPDATE SET digest_json = excluded.digest_json
+      `)
+      .run(itemId, input.digestJson)
+    if (input.embedding) {
+      const [vector, modelId, dim, fingerprint] = vectorParams(input.embedding, 'Media')
+      writeMemoryItemEmbedding(database, {
+        itemId,
+        fingerprint: fingerprint ?? config.embeddings.fingerprint,
+        modelId,
+        dim: dim ?? input.embedding.dim,
+        renderer: 'summary',
+        text: input.summary,
+        vector: vector as Buffer
+      })
+    }
+    return database.prepare('SELECT * FROM memory_item WHERE id = ?').get(itemId) as StoredMemoryItem
+  })()
+  return mapItemMediaDigest(database, result)
+}
+
 export function saveMediaDigest(input: {
   guildId: string
   contentKey: string
@@ -73,6 +226,8 @@ export function saveMediaDigest(input: {
   createdAt?: number
 }): StoredMediaDigest | null {
   if (isDirectMessageGuild(input.guildId)) return null
+
+  if (config.memory.store === 'item') return saveItemMediaDigest(input)
 
   const [embedding, embeddingModelId, embeddingDim, embeddingFingerprint] = vectorParams(input.embedding, 'Media')
   getDb()
@@ -129,6 +284,14 @@ export function saveMediaDigest(input: {
 export function findMediaDigest(guildId: string, contentKey: string): StoredMediaDigest | null {
   if (isDirectMessageGuild(guildId)) return null
 
+  if (config.memory.store === 'item') {
+    const database = getDb()
+    const item = database
+      .prepare("SELECT * FROM memory_item WHERE kind = 'media' AND guild_id = ? AND content_key = ?")
+      .get(guildId, contentKey) as StoredMemoryItem | undefined
+    return item ? mapItemMediaDigest(database, item) : null
+  }
+
   const row = getDb()
     .prepare(mediaDigestSelect('WHERE d.guild_id = ? AND d.content_key = ?'))
     .get(guildId, contentKey) as MediaDigestRow | undefined
@@ -148,6 +311,47 @@ export function recordMediaOccurrence(input: {
   if (isDirectMessageGuild(input.guildId)) return
 
   const db = getDb()
+  if (config.memory.store === 'item') {
+    const item = findMemoryItemById(db, 'media', input.digestId, 'media_digest')
+    if (!item) throw new Error('Media digest not found')
+    if (item.guild_id !== input.guildId) throw new Error('Media digest guild mismatch')
+    const observedAt = input.observedAt ?? Date.now()
+    db.transaction(() => {
+      const existing = db
+        .prepare('SELECT id, observed_at FROM memory_item_occurrence WHERE item_id = ? AND message_id = ?')
+        .get(item.id, input.messageId) as { id: number; observed_at: number } | undefined
+      if (existing) {
+        db.prepare('UPDATE memory_item_occurrence SET observed_at = MAX(observed_at, ?) WHERE id = ?').run(
+          observedAt,
+          existing.id
+        )
+      } else {
+        db.prepare(`
+          INSERT INTO memory_item_occurrence
+            (item_id, guild_id, channel_id, message_id, shared_by_user_id, source_author_id, origin, observed_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          item.id,
+          input.guildId,
+          input.channelId,
+          input.messageId,
+          input.sharedByUserId,
+          input.sourceAuthorId,
+          input.origin,
+          observedAt
+        )
+      }
+      const latest = (
+        db
+          .prepare(
+            "SELECT MAX(observed_at) AS latest FROM memory_item_occurrence WHERE item_id = ? AND origin != 'episode'"
+          )
+          .get(item.id) as { latest: number | null }
+      ).latest
+      updateMemoryItem(db, item.id, { last_seen_at: latest ?? item.created_at ?? item.first_seen_at })
+    })()
+    return
+  }
   const digest = db.prepare('SELECT guild_id FROM media_digest WHERE id = ?').get(input.digestId) as
     | { guild_id: string }
     | undefined
@@ -175,6 +379,14 @@ export function recordMediaOccurrence(input: {
 export function listMediaDigestsForGuild(guildId: string): StoredMediaDigest[] {
   if (isDirectMessageGuild(guildId)) return []
 
+  if (config.memory.store === 'item') {
+    const database = getDb()
+    const items = database
+      .prepare("SELECT * FROM memory_item WHERE guild_id = ? AND kind = 'media' ORDER BY COALESCE(legacy_id, id)")
+      .all(guildId) as StoredMemoryItem[]
+    return items.map((item) => mapItemMediaDigest(database, item))
+  }
+
   const rows = getDb()
     .prepare(`${mediaDigestSelect('WHERE d.guild_id = ?')} ORDER BY d.id`)
     .all(guildId) as MediaDigestRow[]
@@ -193,6 +405,19 @@ export type MediaRecallCandidate = Readonly<{
 /** The few columns recall ranks on, without the stored digest JSON. */
 export function listMediaRecallCandidates(guildId: string): MediaRecallCandidate[] {
   if (isDirectMessageGuild(guildId)) return []
+
+  if (config.memory.store === 'item') {
+    return listMediaDigestsForGuild(guildId)
+      .filter((digest) => digest.embedding !== null)
+      .map((digest) => ({
+        id: digest.id,
+        label: digest.label,
+        summary: digest.summary,
+        embedding: digest.embedding as readonly number[],
+        lastSharedAt: digest.lastSharedAt,
+        channelIds: digest.channelIds
+      }))
+  }
 
   const rows = getDb()
     .prepare(
@@ -219,6 +444,14 @@ export function listMediaRecallCandidates(guildId: string): MediaRecallCandidate
 }
 
 export function listMediaGuildIds(): string[] {
+  if (config.memory.store === 'item') {
+    const rows = getDb()
+      .prepare(
+        "SELECT DISTINCT guild_id FROM memory_item WHERE kind = 'media' AND guild_id NOT LIKE 'dm:%' ORDER BY guild_id"
+      )
+      .all() as Array<{ guild_id: string }>
+    return rows.map(({ guild_id }) => guild_id)
+  }
   const rows = getDb()
     .prepare("SELECT DISTINCT guild_id FROM media_digest WHERE guild_id NOT LIKE 'dm:%' ORDER BY guild_id")
     .all() as Array<{ guild_id: string }>
@@ -234,6 +467,25 @@ export function setMediaDigestEmbedding(input: {
 }): boolean {
   if (isDirectMessageGuild(input.guildId)) return false
 
+  if (config.memory.store === 'item') {
+    const database = getDb()
+    return database.transaction(() => {
+      const item = findMemoryItemById(database, 'media', input.id, 'media_digest')
+      if (!item || item.guild_id !== input.guildId || item.content !== input.summary) return false
+      const [vector, modelId, dim, fingerprint] = vectorParams(input.embedding, 'Media')
+      writeMemoryItemEmbedding(database, {
+        itemId: item.id,
+        fingerprint: fingerprint ?? config.embeddings.fingerprint,
+        modelId,
+        dim: dim ?? input.embedding.dim,
+        renderer: 'summary',
+        text: input.summary,
+        vector: vector as Buffer
+      })
+      return true
+    })()
+  }
+
   const result = getDb()
     .prepare(
       `UPDATE media_digest SET embedding = ?, embedding_model_id = ?, embedding_dim = ?, embedding_fingerprint = ?
@@ -245,6 +497,21 @@ export function setMediaDigestEmbedding(input: {
 
 export function pruneExpiredMediaDigests(cutoffMs: number): number {
   const db = getDb()
+  if (config.memory.store === 'item') {
+    return db.transaction(() => {
+      db.prepare("DELETE FROM memory_item_occurrence WHERE origin != 'episode' AND observed_at < ?").run(cutoffMs)
+      const expired = db
+        .prepare(`
+          SELECT item.id FROM memory_item item
+          WHERE item.kind = 'media' AND NOT EXISTS (
+            SELECT 1 FROM memory_item_occurrence occurrence WHERE occurrence.item_id = item.id AND occurrence.origin != 'episode'
+          )
+        `)
+        .all() as Array<{ id: number }>
+      for (const { id } of expired) deleteMemoryItem(db, id)
+      return expired.length
+    })()
+  }
   return db.transaction(() => {
     db.prepare('DELETE FROM media_occurrence WHERE observed_at < ?').run(cutoffMs)
     return db
@@ -262,6 +529,31 @@ export function findMediaSharedBy(
   limit: number
 ): StoredMediaDigest[] {
   if (isDirectMessageGuild(guildId) || limit <= 0) return []
+
+  if (config.memory.store === 'item') {
+    const normalizedTerms = terms.map((term) => term.toLowerCase())
+    const database = getDb()
+    return listMediaDigestsForGuild(guildId)
+      .filter((digest) => {
+        const item = findMemoryItemById(database, 'media', digest.id, 'media_digest')
+        if (!item) return false
+        return Boolean(
+          database
+            .prepare(`
+              SELECT 1 FROM memory_item_occurrence
+              WHERE item_id = ? AND (shared_by_user_id = ? OR source_author_id = ?)
+              LIMIT 1
+            `)
+            .get(item.id, userId, userId)
+        )
+      })
+      .filter(({ label, summary }) => {
+        const normalizedLabel = label.toLowerCase()
+        const normalizedSummary = summary.toLowerCase()
+        return normalizedTerms.every((term) => normalizedLabel.includes(term) || normalizedSummary.includes(term))
+      })
+      .slice(0, Math.floor(limit))
+  }
 
   const rows = getDb()
     .prepare(
@@ -292,6 +584,46 @@ export function forgetMediaForUser(guildId: string, userId: string, digestIds: n
   if (isDirectMessageGuild(guildId) || digestIds.length === 0) return 0
 
   const db = getDb()
+  if (config.memory.store === 'item') {
+    return db.transaction(() => {
+      const itemIds = digestIds
+        .map((id) => findMemoryItemById(db, 'media', id, 'media_digest')?.id)
+        .filter((id): id is number => id !== undefined)
+      if (itemIds.length === 0) return 0
+      const placeholders = itemIds.map(() => '?').join(', ')
+      const touched = db
+        .prepare(`
+          SELECT DISTINCT item_id FROM memory_item_occurrence
+          WHERE guild_id = ? AND (shared_by_user_id = ? OR source_author_id = ?) AND item_id IN (${placeholders})
+        `)
+        .all(guildId, userId, userId, ...itemIds) as Array<{ item_id: number }>
+      if (touched.length === 0) return 0
+      db.prepare(`
+        DELETE FROM memory_item_occurrence
+        WHERE guild_id = ? AND (shared_by_user_id = ? OR source_author_id = ?) AND item_id IN (${placeholders})
+      `).run(guildId, userId, userId, ...itemIds)
+      for (const { item_id: itemId } of touched) {
+        const remaining = db
+          .prepare("SELECT 1 FROM memory_item_occurrence WHERE item_id = ? AND origin != 'episode' LIMIT 1")
+          .get(itemId)
+        if (!remaining) deleteMemoryItem(db, itemId)
+        else {
+          const item = db.prepare('SELECT created_at FROM memory_item WHERE id = ?').get(itemId) as
+            | { created_at: number | null }
+            | undefined
+          const latest = (
+            db
+              .prepare(
+                "SELECT MAX(observed_at) AS latest FROM memory_item_occurrence WHERE item_id = ? AND origin != 'episode'"
+              )
+              .get(itemId) as { latest: number | null }
+          ).latest
+          updateMemoryItem(db, itemId, { last_seen_at: latest ?? item?.created_at ?? Date.now() })
+        }
+      }
+      return touched.length
+    })()
+  }
   const placeholders = digestIds.map(() => '?').join(', ')
   return db.transaction(() => {
     const touchedRows = db

@@ -6,32 +6,20 @@ import { measureAttachmentTokens } from './attachmentCost.js'
 import { geminiMimeType, isStreamedUpload } from './attachmentLimits.js'
 import { type MediaAttachment, downloadAttachment, prepareAttachments } from './attachments.js'
 import { bytesContentKey, discordAttachmentContentKey } from './contentKey.js'
-import {
-  MAX_TIMELINE,
-  formatClock,
-  mergeHalves,
-  renderCompactDigest,
-  renderDigestBlock,
-  watchOutcomeFor
-} from './digest.js'
+import { formatClock, mergeHalves, renderCompactDigest, renderDigestBlock, watchOutcomeFor } from './digest.js'
 import { durationFromTokens, mp4DurationSec } from './duration.js'
 import { type UploadedFile, deleteFile, streamToFiles } from './filesUpload.js'
-import { type FrameSource, extractFrames, frameBins, frameCount, frameTimestamps, probeDurationSec } from './frames.js'
 import { ESTIMATED_DURATION_HEADROOM, type MediaMemoryScope, recordShare, remember, remembered } from './mediaCache.js'
 import {
   HALVES_MAX_DURATION_SEC,
   HALVES_MIN_DURATION_SEC,
   type HalvesPlan,
-  focusWindow,
   planCoverage,
   planFocus,
   planHalves
 } from './plan.js'
-import { watchFramesWithQwen } from './qwenWatch.js'
-import { type Transcript, audioWindows, transcribeSource } from './transcribe.js'
 import type { CoveragePlan, MediaClip, MediaDigest, MediaKind, WatchOutcome } from './types.js'
 import { type WatchResult, type WatchSource, countUriTokens, watchMedia } from './watch.js'
-import { resolveYouTubeStreams } from './youtubeStreams.js'
 
 export interface PreparedTurnMedia {
   /** Image and PDF parts for ADK, exactly as prepareAttachments returns them. */
@@ -284,7 +272,6 @@ interface WatchInput {
   channelId: string
   focus: string
   mayRetry: () => boolean
-  geminiUnavailable?: boolean
   memoryScope?: MediaMemoryScope | null
 }
 
@@ -304,32 +291,6 @@ interface WatchContext {
 
 const UNWATCHABLE = "it couldn't be watched right now"
 const SWITCHED_OFF = 'watching and listening are switched off right now'
-// Fewer than half the frames, or a single one, is too little to describe a video from.
-const MIN_FRAME_SHARE = 0.5
-const FRAME_TIMEOUT_MS = 8000
-
-// Whichever watcher is not configured is the backup, and each runs only on its own key. Gemini is skipped while turns
-// are pinned to the fallback model, since waiting on it would only add delay; Qwen hears audio only through the
-// transcriber.
-function watcherOrder(kind: MediaKind, geminiUnavailable?: boolean): Array<'gemini' | 'qwen'> {
-  const order: Array<'gemini' | 'qwen'> = config.media.watcher === 'qwen' ? ['qwen', 'gemini'] : ['gemini', 'qwen']
-  return order.filter((watcher) =>
-    watcher === 'gemini'
-      ? Boolean(config.gemini.apiKey) && !geminiUnavailable
-      : Boolean(config.media.qwen.apiKey) && (kind === 'video' || Boolean(config.media.transcriber.url))
-  )
-}
-
-async function transcribe(source: FrameSource, windows: MediaClip[]): Promise<Transcript | { reason: string }> {
-  const { url, timeoutMs, maxSpeechSec } = config.media.transcriber
-  if (!url) return { reason: 'disabled' }
-  if (windows.length === 0) return { reason: 'no_audio' }
-  return transcribeSource(source, windows, { url, timeoutMs, maxSpeechSec }, { signal: AbortSignal.timeout(timeoutMs) })
-}
-
-function definitiveSilence(heard: Transcript | { reason: string }): boolean {
-  return 'reason' in heard ? heard.reason === 'no_audio' : heard.segments.length === 0
-}
 
 async function watchOne(
   attachment: MediaAttachment,
@@ -354,16 +315,11 @@ async function watchOne(
   if (linkHit) return reuse(linkHit)
 
   const context: WatchContext = { attachment, kind, label, input, result, scope, contentKey, reuse }
-  let failure: Attempt = { ok: false, notice: UNWATCHABLE }
-  for (const watcher of watcherOrder(kind, input.geminiUnavailable)) {
-    const attempt = watcher === 'gemini' ? await watchWithGemini(context) : await watchWithQwen(context)
-    if (attempt.ok) return
-    failure = attempt
-  }
+  const attempt = await watchWithGemini(context)
+  if (attempt.ok) return
   noteOutcome(result, { status: 'failed', kind })
-  if (failure.ok) return
-  if (failure.notice === null) result.droppedAttachments += 1
-  else result.mediaTextParts.push(notice(label, failure.notice))
+  if (attempt.notice === null) result.droppedAttachments += 1
+  else result.mediaTextParts.push(notice(label, attempt.notice))
 }
 
 async function watchWithGemini(context: WatchContext): Promise<Attempt> {
@@ -485,143 +441,19 @@ async function watchWithGemini(context: WatchContext): Promise<Attempt> {
   }
 }
 
-async function watchWithQwen(context: WatchContext): Promise<Attempt> {
-  const { attachment, kind, label, input, result, scope, reuse } = context
-  const contentKey =
-    context.contentKey ?? (scope ? (discordAttachmentContentKey(attachment.url) ?? undefined) : undefined)
-  // A link key was already checked before the watcher ran, so only the Discord path key looks here.
-  const inlineHit = !context.contentKey && scope && contentKey ? remembered(scope, contentKey) : null
-  if (inlineHit) {
-    reuse(inlineHit)
-    return { ok: true }
-  }
-  const failed = (reason: string): Attempt => {
-    logger.info({ channelId: input.channelId, kind, watcher: 'qwen', outcome: reason }, 'Watched media')
-    return { ok: false, notice: UNWATCHABLE }
-  }
-
-  let source: FrameSource = { input: attachment.url, headers: null }
-  let audioSource: FrameSource | null = source
-  let durationSec = attachment.durationSec ?? null
-  let postContext: string | undefined
-  if (attachment.transport === 'uri') {
-    const streams = await resolveYouTubeStreams(attachment.url)
-    if ('reason' in streams) return failed(streams.reason)
-    if (!streams.video) return failed('no_stream')
-    source = { input: streams.video.url, headers: streams.video.headers }
-    audioSource = streams.audio ? { input: streams.audio.url, headers: streams.audio.headers } : null
-    durationSec ??= streams.durationSec
-    postContext = [streams.title, streams.description].filter(Boolean).join(' — ') || undefined
-  }
-  durationSec ??= await probeDurationSec(source)
-  if (!durationSec) return failed('unknown_duration')
-
-  const window =
-    attachment.startSec !== undefined && durationSec > FOCUS_MIN_DURATION_SEC
-      ? focusWindow(durationSec, attachment.startSec)
-      : undefined
-  const bins = frameBins(
-    durationSec,
-    frameCount(window ? window.endSec - window.startSec : durationSec, config.media.qwen),
-    window
-  )
-  const timestamps = frameTimestamps(bins)
-  const audio = kind === 'audio'
-  // watchMs times only the Qwen call; these say where the rest of the watch went.
-  const preparedAt = Date.now()
-  const elapsed = <T>(work: Promise<T>) => work.then((value) => ({ value, ms: Date.now() - preparedAt }))
-  const [framesTaken, transcribed] = await Promise.all([
-    elapsed(
-      audio
-        ? Promise.resolve([])
-        : extractFrames(source, timestamps, { height: config.media.qwen.frameHeight, timeoutMs: FRAME_TIMEOUT_MS })
-    ),
-    elapsed(
-      audioSource
-        ? transcribe(audioSource, audioWindows(durationSec, config.media.transcriber.maxAudioSec, window))
-        : Promise.resolve({ reason: 'no_audio' })
-    )
-  ])
-  const taken = framesTaken.value
-  const heard = transcribed.value
-  const transcript = 'reason' in heard || heard.segments.length === 0 ? undefined : heard
-  const kept = bins.flatMap((bin, index) => {
-    const frame = taken.find((item) => item.atSec === timestamps[index])
-    return frame ? [{ bin, frame }] : []
-  })
-  if (audio && !transcript) return failed('reason' in heard ? heard.reason : 'no_speech')
-  if (!audio && kept.length < Math.max(2, Math.ceil(bins.length * MIN_FRAME_SHARE))) return failed('too_few_frames')
-
-  // The notes keep MAX_TIMELINE entries, so the timeline gets that many spans of the window rather than one per frame,
-  // which stopped the notes of a 19-frame watch a third of the way in.
-  const segments = frameBins(durationSec, Math.min(MAX_TIMELINE, bins.length), window)
-  const watched = await watchFramesWithQwen(
-    {
-      kind,
-      frames: kept.map(({ frame }) => frame),
-      bins: segments,
-      ...(transcript ? { transcript } : {}),
-      durationSec,
-      label,
-      focus: input.focus,
-      mode: window ? 'focus' : 'whole',
-      ...(window && attachment.startSec !== undefined ? { focusSec: attachment.startSec } : {}),
-      ...(postContext ? { context: postContext } : {})
-    },
-    {
-      apiKey: config.media.qwen.apiKey,
-      baseUrl: config.media.qwen.baseUrl,
-      model: config.media.qwen.model,
-      timeoutMs: config.media.qwen.timeoutMs,
-      maxOutputTokens: config.media.digestMaxOutputTokens
-    }
-  )
-  logger.info(
-    {
-      channelId: input.channelId,
-      kind,
-      watcher: 'qwen',
-      mode: window ? 'focus' : 'whole',
-      durationSec: Math.round(durationSec),
-      frames: kept.length,
-      transcript: 'reason' in heard ? heard.reason : { engine: heard.engine, speechSec: Math.round(heard.speechSec) },
-      framesMs: framesTaken.ms,
-      transcribeMs: transcribed.ms,
-      watchMs: watched.watchMs,
-      totalMs: Date.now() - preparedAt,
-      outcome: watched.status === 'ok' ? 'ok' : watched.reason
-    },
-    'Watched media'
-  )
-  if (watched.status !== 'ok') return { ok: false, notice: UNWATCHABLE }
-
-  present(result, watched.digest)
-  noteOutcome(result, watchOutcomeFor(watched.digest))
-  // Keep definitive silence for reuse; retry only when transcription might succeed on a later share.
-  if (scope && contentKey && (watched.digest.heard !== 'none' || definitiveSilence(heard))) {
-    remember(scope, attachment, contentKey, watched.digest)
-  }
-  return { ok: true }
-}
-
 /** Turn a turn's attachments into model parts, watching audio and video into digests first. */
 export async function prepareTurnMedia(input: {
   channelId: string
   attachments: MediaAttachment[] | undefined
   focus: string
   mayRetry: () => boolean
-  /** True while turns are pinned to the fallback model, which cannot watch. */
-  geminiUnavailable?: boolean
   memoryScope?: MediaMemoryScope | null
 }): Promise<PreparedTurnMedia> {
   const attachments = input.attachments ?? []
-  const watchable =
-    config.media.watcher === 'direct'
-      ? []
-      : attachments.flatMap((attachment) => {
-          const kind = watchableKind(attachment.contentType)
-          return kind ? [{ attachment, kind }] : []
-        })
+  const watchable = attachments.flatMap((attachment) => {
+    const kind = watchableKind(attachment.contentType)
+    return kind ? [{ attachment, kind }] : []
+  })
   const direct = attachments.filter((attachment) => !watchable.some((item) => item.attachment === attachment))
 
   const prepared = await prepareAttachments(input.channelId, direct.length > 0 ? direct : undefined)

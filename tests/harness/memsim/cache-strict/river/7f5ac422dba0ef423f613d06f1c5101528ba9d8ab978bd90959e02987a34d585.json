@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "7f5ac422dba0ef423f613d06f1c5101528ba9d8ab978bd90959e02987a34d585",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af977211e27c\",\"object\":\"chat.completion\",\"created\":1794733857,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"ops\\\":[{\\\"op\\\":\\\"add\\\",\\\"subject\\\":{\\\"kind\\\":\\\"user\\\",\\\"userId\\\":\\\"sim-user-carol\\\"},\\\"predicate\\\":\\\"diet\\\",\\\"value\\\":\\\"mild celiac gluten sensitivity; always packs lunch\\\",\\\"tense\\\":\\\"current\\\",\\\"sourceLine\\\":1}],\\\"summary\\\":\\\"Carol privately noted that she manages a mild celiac gluten sensitivity and always packs her own lunch.\\\"}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4101,\"completion_tokens\":75,\"total_tokens\":4176,\"prompt_tokens_details\":{\"cached_tokens\":4096},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

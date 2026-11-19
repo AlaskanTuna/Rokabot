@@ -2,7 +2,10 @@ import { config } from '../../config.js'
 import type { ExtractionQueueJob } from '../../storage/extractionQueue.js'
 import { recordMemoryEvent } from '../../storage/metricsStore.js'
 import { logger } from '../../utils/logger.js'
+import type { ProviderId } from '../llm/profiles.js'
+import type { SensitivePatternName } from './episodePrecheck.js'
 import type { ExtractionErrorClassification } from './extractionErrors.js'
+import type { SummaryDropReason } from './summaryValidation.js'
 
 export type RunStage = 'precheck' | 'admission' | 'extraction' | 'verification' | 'applied'
 export type RunOutcome =
@@ -26,11 +29,13 @@ export type RunTrace = {
   humanCount: number
   stage: RunStage
   outcome: RunOutcome
+  precheckPattern: SensitivePatternName | null
   errorClass?: ExtractionErrorClassification
   errorStatus?: number
   admission?: { probability: number; threshold: number }
   ops: {
     proposed: number
+    invalid: number
     applied: number
     duplicate: number
     staged: number
@@ -39,14 +44,17 @@ export type RunTrace = {
     past: number
     reword: number
     retracted: number
+    uncited: number
   }
-  summary: { kept: boolean; chars: number; boilerplate: boolean }
+  summary: { kept: boolean; chars: number; boilerplate: boolean; dropReason: SummaryDropReason | null; judged: boolean }
   stageMs: Partial<Record<'admission' | 'extraction' | 'verification' | 'persistence', number>>
   tokens: number
   models: { extraction: string; jev: string; embedding: string }
+  extractionProvider?: ProviderId
+  extractionFallback: boolean
 }
 
-const BOILERPLATE = /\bno (?:new )?(?:durable|lasting|personal)\b/i
+export const BOILERPLATE = /\bno (?:new )?(?:durable|lasting|personal)\b/i
 
 export function startRunTrace(job: ExtractionQueueJob, attempt: number): RunTrace {
   const messages = job.episode.messages
@@ -62,10 +70,24 @@ export function startRunTrace(job: ExtractionQueueJob, attempt: number): RunTrac
     humanCount: messages.filter((message) => !message.isBot).length,
     stage: 'precheck',
     outcome: 'admitted',
-    ops: { proposed: 0, applied: 0, duplicate: 0, staged: 0, dropped: 0, changed: 0, past: 0, reword: 0, retracted: 0 },
-    summary: { kept: false, chars: 0, boilerplate: false },
+    precheckPattern: null,
+    ops: {
+      proposed: 0,
+      invalid: 0,
+      applied: 0,
+      duplicate: 0,
+      staged: 0,
+      dropped: 0,
+      changed: 0,
+      past: 0,
+      reword: 0,
+      retracted: 0,
+      uncited: 0
+    },
+    summary: { kept: false, chars: 0, boilerplate: false, dropReason: null, judged: false },
     stageMs: {},
     tokens: 0,
+    extractionFallback: false,
     models: {
       extraction: config.gemini.extractionModel,
       jev: config.jev.model,
@@ -87,8 +109,20 @@ export async function timeStage<T>(
   }
 }
 
-export function noteSummary(trace: RunTrace, summary: string | null, kept: boolean): void {
-  trace.summary = { kept, chars: summary?.length ?? 0, boilerplate: summary ? BOILERPLATE.test(summary) : false }
+export function noteSummary(
+  trace: RunTrace,
+  summary: string | null,
+  kept: boolean,
+  dropReason: SummaryDropReason | null = null,
+  judged = false
+): void {
+  trace.summary = {
+    kept,
+    chars: summary?.length ?? 0,
+    boilerplate: summary ? BOILERPLATE.test(summary) : false,
+    dropReason,
+    judged
+  }
 }
 
 export function noteError(trace: RunTrace, errorClass: ExtractionErrorClassification, error: unknown): void {

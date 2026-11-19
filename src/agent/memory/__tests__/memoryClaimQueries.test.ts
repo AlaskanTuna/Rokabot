@@ -124,16 +124,16 @@ describe('memory claim queries', () => {
     expect(SOURCE_WEIGHT).toEqual({ explicit: 1, human: 1, passive: 0.75, legacy: 0.5 })
   })
 
-  it('returns nickname claims in id order', () => {
+  it('returns nickname claims in stable user and content order', () => {
     const first = insertClaim({ userId: 'user-2', predicate: 'nickname', value: 'Rin' })
     const second = insertClaim({ userId: 'user-1', predicate: 'nickname', value: 'Rinnie' })
     const third = insertClaim({ userId: 'user-3', predicate: 'nickname', value: 'Rinny' })
     // Without ORDER BY SQLite walks rows in storage order, so flip the scan to prove the sort is real.
     getDb().exec('PRAGMA reverse_unordered_selects = ON')
 
-    expect(activeNicknameClaims('guild-1')).toEqual([
-      { id: first, user_id: 'user-2', value: 'Rin' },
+    expect(activeNicknameClaims('guild-1', { guildId: 'guild-1', channelId: 'channel-1' })).toEqual([
       { id: second, user_id: 'user-1', value: 'Rinnie' },
+      { id: first, user_id: 'user-2', value: 'Rin' },
       { id: third, user_id: 'user-3', value: 'Rinny' }
     ])
   })

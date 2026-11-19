@@ -1,0 +1,94 @@
+{
+  "caseId": "L2",
+  "recordedAt": "2026-11-17T21:16:03.830Z",
+  "commit": "2f6dac20658fc7b1625a3298b81d0170496bd5c0",
+  "toolCalls": [
+    {
+      "tool": "search_web",
+      "args": {
+        "query": "Super Nintendo World Osaka attractions list Universal Studios Japan",
+        "max_results": 5
+      }
+    }
+  ],
+  "exchanges": [
+    {
+      "provider": "exa",
+      "method": "POST",
+      "url": "https://api.exa.ai/search",
+      "requestBody": {
+        "query": "Super Nintendo World Osaka attractions list Universal Studios Japan",
+        "type": "auto",
+        "numResults": 5,
+        "contents": {
+          "highlights": true
+        }
+      },
+      "status": 200,
+      "responseBody": {
+        "requestId": "9e7f7274410d08e904244fb69f8d03b5",
+        "resolvedSearchType": "",
+        "results": [
+          {
+            "id": "https://www.usj.co.jp/web/en/us/areas/super-nintendo-world",
+            "title": "SUPER NINTENDO WORLD™ | Universal Studios Japan | USJ",
+            "url": "https://www.usj.co.jp/web/en/us/areas/super-nintendo-world",
+            "highlights": [
+              "# We are all STARS! Time to play! The invincible 5th anniversary with everyone!\n\nUnleash your passion to play at the invincible 5th anniversary of SUPER NINTENDO WORLD™—where you can team up and power up together! Your anticipation builds as you step through the Warp Pipe with anniversary-exclusive Super Star decorations. Awaiting you are a special Meet-Up just for the 5th anniversary, an adventure in the Mushroom Kingdom with Mario and his friends, collaboration merchandise that lights up, anniversary-exclusive food, and lots of other exciting fun! You'll find Bowser’s Castle, Mount Beanpole, the Golden Temple, and more in this vast world of Mario and Donkey Kong, so plunge right in and team up for wild and exciting play experiences! Go all out for fun at the 5th anniversary of SUPER NINTENDO WORLD™!\n\n...\n\nMar. 18, 2026 - Jan.\n\n...\n\nTV CM\n\n### Super Mario Land™\n\nPlay with NO LIMIT at Super Mario Land™!\n\nGo on a wild adventure in the world of Donkey Kong!\n\n- ATTRACTION\n\n### Mario Kart: Koopa's Challenge™\n- ATTRACTION\n\n### Yoshi's Adventure™\n- ATTRACTION\n\n### Mine Cart Madness™\n- ### All Attractions\n\n- PLAYLAND / OTHER\n\n### Power-Up Band™ Key Challenges\n- PLAYLAND / OTHER\n\n### Play Experience"
+            ],
+            "image": "https://www.usj.co.jp/contentdata/usj/ja/jp/files/assets/logos/universal-japan-logo-b.png"
+          },
+          {
+            "id": "https://chrisandwrensworld.com/super-nintendo-world-japan/",
+            "title": "Super Nintendo World Japan: The Ultimate Guide (2026) - Chris and Wren's World",
+            "url": "https://chrisandwrensworld.com/super-nintendo-world-japan/",
+            "publishedDate": "2025-04-28T20:07:23.000Z",
+            "author": "Chris + Wren",
+            "highlights": [
+              "### Ride the attractions\n\nThere are now three main rides in Super Nintendo World, and each one offers something completely different.\n\nMario Kart: Koopa’s Challenge: The most popular ride in the park and for good reason. You enter through Bowser’s Castle before racing through a real‑life Mario Kart course with AR goggles – it’s chaotic but lots of fun!\n\nYoshi’s Adventure: Our personal favourite. It’s a gentle, adorable ride where you hop onto your own Yoshi and glide through the land. It’s slow, sweet, and perfect for taking in all the animatronics up close.\n\nMine Cart Madness (Donkey Kong Country): New for 2026! This is the only roller coaster in Super Nintendo World and easily the most thrilling ride. If you love fast rides, head here first as queues build quickly!\n\n### Shop for Nintendo merch\n\n...\n\n### Eat at Kinopio’s Cafe\n\nKinopio’s Café (run by Chef Toad!) is the only sit‑down restaurant in the land, and it’s absolutely adorable. The food is themed – think Mario’s Bacon Cheeseburger, Yoshi’s Spinach Carbonara, and the Mario tiramisu we ordered, which was surprisingly delicious.\n\nThere’s usually a queue to get in, so allow extra time if you want to eat here. If you’re in a rush, there are also snack stands selling popcorn, drinks, and milkshakes.\n\n### Meet Super Mario and friends\n\nKeep your eyes peeled as you explore the park, as Mario and friends frequently roam the area for spontaneous photo opportunities. Because character appearances do not follow a fixed schedule, you will want to stay alert so you don’t miss them!\n\nYou can meet Mario, Luigi, Toad, and Princess Peach in the main plaza. If you venture into Donkey Kong Country, you can even meet Donkey Kong himself."
+            ],
+            "image": "https://chrisandwrensworld.com/wp-content/uploads/2025/01/universal-studios-osaka.jpeg"
+          },
+          {
+            "id": "https://tokyocandies.com/mario-bros-park-japan-in-2025-super-nintendo-world-at-usj-how-to-visit-what-to-expect/",
+            "title": "Mario Bros Park Japan In 2026: Super Nintendo World At USJ (How To Visit, What To Expect)",
+            "url": "https://tokyocandies.com/mario-bros-park-japan-in-2025-super-nintendo-world-at-usj-how-to-visit-what-to-expect/",
+            "publishedDate": "2025-11-12T13:14:12.000Z",
+            "author": "Eimee Rodriguez",
+            "highlights": [
+              "Below, I’ll briefly tell you what you’ll find at Super Nintendo World. For now, we know there are two attractions, each lasting about five minutes. One will be ideal for younger children and the other for older ones.\n\nIn addition, there’s a restaurant, a snack stand, a popcorn stand, and two shops with all sorts of Nintendo merchandise. So be careful with your credit cards; they might take a hit.\n\n### Mario Kart: Koopa’s Challenge\n\n“Koopa” is the name Bowser is given in Japan, Mario’s archenemy in the Nintendo video game series. So the translation of this attraction would be “Mario Kart: Bowser’s Challenge.”\n\nThis attraction, inspired by the Mario Kart franchise, is an interactive roller coaster that uses augmented reality technology. During the ride, which recreates races from the famous game, you must throw turtle shells at your opponents. And, after visiting several Mario Kart worlds, you have to cross the finish line alongside Mario and Peach.\n\nThe goal of this attraction is to remind you of the excitement you feel when playing Mario Kart races, so… get ready!\n\n### Yoshi’s Adventure\n\n“Yoshi’s Adventure” is an omnimover attraction— a train ride that never stops and travels at a low speed, ideal for young children. Inspired by the character of Yoshi, you’ll actually climb aboard Yoshi to search for Captain Toad. The attraction is a relaxed treasure hunt, perfect for the whole family.\n\nThe attraction is known for its incredible views of the Mushroom Kingdom. So even if you’re not a kid anymore, don’t miss it if you want to enjoy those views.\n\n### Power-Up Band Bracelets\n\nWith the “ Power-Up Band” wristbands, you can fully enjoy the Super Nintendo World themed area. These wristbands let you participate in an interactive treasure hunt. They are actually a series of activities where you must defeat Bowser and obtain the Golden Mushroom.\n\nIn addition, you can also collect virtual coins, keys, and items by hitting question blocks and note blocks, using POW blocks, and so on. The idea is to make you feel like you’re inside one of the Mario games. It’s a fun way to make your visit to the park more “intense” and “real,” and we can’t wait to try it.\n\n### Photos with Mario, Luigi and Peach\n\nWant to meet Mario, Luigi, and Princess Peach? Well, at Super Nintendo World, you can! Here you’ll have the chance to take photos with Mario and Luigi, as well as with Princess Peach and her castle. And if you’re lucky, you might even meet one of the famous Toads, the mushrooms that live in the Mushroom Kingdom.\n\nAnd if you wear a “Power-Up Band” bracelet, the experience is even better.\n\n...\n\n### Kinopio’s Cafe\n\n...\n\n### Yoshi’s Snack Island\n\n...\n\nOne is 1Up Factory, located near Princess Peach’s castle. The other is Mario Motors, located next to the Mario Kart: Koopa’s Challenge attraction."
+            ],
+            "image": "https://tokyocandies.com/wp-content/uploads/2025/11/506356719_18311383882210903_1166008722352395301_n-2.jpeg"
+          },
+          {
+            "id": "https://www.osakatourism.org/super-nintendo-world/",
+            "title": "Super Nintendo World Japan: Entry, Rides and Timing",
+            "url": "https://www.osakatourism.org/super-nintendo-world/",
+            "publishedDate": "2026-09-10T09:00:00.000Z",
+            "author": "Osaka Tourism",
+            "highlights": [
+              "By Osaka Tourism Last verified 15 Nov 2026\n\n...\n\n## What Super Nintendo World actually is\n\nIt opened at Universal Studios Japan in March 2021 — the first of the Nintendo areas anywhere, ahead of Hollywood and Orlando — and it was expanded in late 2024 with Donkey Kong Country, which added the Mine-Cart Madness coaster.\n\nThe area is compact: a walled bowl you enter through a pipe, with Peach’s Castle on one side, Bowser’s Castle on the other, and the Mushroom Kingdom laid out between them in three dimensions. There are three rides, one restaurant, one large shop, and a layer of interactive games threaded through the scenery that you only unlock if you buy a wristband.\n\nTwo to three hours is the honest visit length. Enthusiasts with a Power-Up Band and a full key hunt can stretch it to four. Anybody expecting a whole day here will be finished by lunchtime.\n\n...\n\n## Mario Kart: Koopa’s Challenge\n\nA giant Bowser head looms over the castle entrance to Mario Kart: Koopa’s Challenge.\n\nThe headline ride, and the technically most ambitious thing in the park. You enter through Bowser’s Castle — the queue itself is worth slowing down for, running past trophies, murals and a life-size Bowser — then put on an augmented-reality visor that clips to a Mario cap, sit in a four-person kart, and race.\n\nThe ride is a physical dark-ride track with AR layered over it. You steer within a limited arc, and you throw shells at targets by aiming your head and pressing a button on the wheel. Hitting targets scores; the outcome varies between runs, which is what makes it re-rideable.\n\nHonest verdict: extraordinary and slightly divisive. The AR takes a full run to learn — first-timers frequently spend the ride working out what they are looking at, then wish they could go again. The visor is heavy, and it does not always sit comfortably over glasses. Nothing else in the world does what this does, and if you have one ride in the area, this is it.\n\nPractical: the visor requires the cap, which is provided. It is a physically dark, enclosed experience. There is a height requirement, and this is one of the rides at which visiting families most often get caught out at the gate.\n\n## Yoshi’s Adventure\n\nA slow, elevated track ride on which you sit on a Yoshi and follow Captain Toad’s treasure map, spotting coloured eggs hidden around the land. There are no drops, no dark tunnels and no thrills at all, which is precisely the point — this is the ride small children can do.\n\nHonest verdict: genuinely charming with a five-year-old and a waste of an hour without one. The real payoff for adults is the elevated view over the whole area, which is the best vantage point in Nintendo World and the source of most good photographs of it. If the queue is under fifteen minutes, ride it for the view. If it is forty, do not.\n\n## Donkey Kong Country and Mine-Cart Madness\n\nA yellow arch marks the entrance to Donkey Kong Country within Super Nintendo World.\n\nDonkey Kong Country opened inside Nintendo World in late 2024, after a delay from its original spring target, and it substantially changed the area — both by adding the best ride in it and by adding a second layer of crowding.\n\nMine-Cart Madness sits inside the Golden Temple and uses a ride system built to sell one specific illusion: that your cart jumps a broken track. It does it by running the cart on a hidden lower rail while the visible rail appears to end. It is convincing, it is genuinely thrilling without being frightening, and it includes a barrel-blast launch. This is a better ride than Mario Kart on pure ride-craft terms, though less novel.\n\nThe catch: at peak times Donkey Kong Country can carry its own entry requirement on top of Nintendo World’s, which means getting into the area is not the same as getting on this coaster. The VIP Pass tier includes access; a number of Express Pass variants do not. This is the second thing to check on the product page, after Nintendo World entry itself.\n\n## The Power-Up Band\n\nPower-Up Bands come in\n\n...\n\n### What it does\n\nThe Power-Up Band is a wristband, ¥5,600 for the standard design on USJ’s online store in 2026, sold in several character designs, that pairs with the USJ app. Wearing it, you can punch question blocks and they respond, register hits on the interactive games scattered around the land, collect digital coins, and track your total against everyone else in the park on the leaderboards.\n\nIt is also the only way to play the key challenges — a set of physical mini-games hidden through the area, each guarded by a Bowser Jr. minion. Beat them, collect the keys, and you unlock the boss battle inside Bowser’s Castle, which is the closing set-piece and is only available to band holders.\n\n...\n\nCritically, the band is not required for any of the three rides. Staff will offer it enthusiastically at the entrance. It is entirely optional.\n\n...\n\nToadstool Cafe — known as Kinopio’s Cafe in Japanese — is the area’s restaurant, and it is themed to the point of absurdity, with Toad visible in the kitchen window and food shaped like the game.\n\n...\n\n## A plan for the area\n\nAssuming a morning timed-entry slot:\n\n...\n\n- Mario Kart first. It has the longest queue and it will only get longer.\n- Mine-Cart Madness second, if your entry covers Donkey Kong Country.\n- Then the land. A slow lap, the upper walkway, Peach’s Castle.\n- Key challenges next, if you have bands, working outward from the least crowded.\n- Yoshi’s Adventure last, and only if the queue is short.\n- Boss battle to close, for band holders.\n- Buy anything you want on the way out, or earlier if the shop looks calm."
+            ],
+            "image": "https://www.osakatourism.org/wp-content/uploads/2026/10/colorful-mushroom-kingdom-terraces-yoshi-vehicles-bowsers-castle.png"
+          },
+          {
+            "id": "https://www.usj.co.jp/web/en/us/areas/super-nintendo-world/donkey-kong-country",
+            "title": "Donkey Kong Country | Universal Studios Japan | USJ",
+            "url": "https://www.usj.co.jp/web/en/us/areas/super-nintendo-world/donkey-kong-country",
+            "highlights": [
+              "# Go on a wild adventure in the world of Donkey Kong!\n\nStep foot into an unknown, wild space with lush greenery. In this jungle where Donkey Kong and his friends live, you can hop on a mine cart from The Golden Temple for a thrilling ride through the mines, challenge yourself at a play experience using your whole body, and have loads of other wild adventures! Plus, you can enjoy an exciting meet-up with Donkey Kong himself and check out all the food and merchandise in the middle of the jungle! Awaken your instinct to play and enjoy all the fun and surprises that the world of Donkey Kong has to offer!\n\n...\n\n## Attractions\n\n- ATTRACTION\n\n### Mine Cart Madness™\n- ### All Attractions\n\n## Play Experience\n\n- PLAYLAND / OTHER\n\n### Play Experience\n- PLAYLAND / OTHER\n\n### Power-Up Band™ Key Challenges\n- ### All Play Experience\n\n## Food and Restaurant\n\n- FOOD AND RESTAURANTS\n\n### Jungle Beat Shakes\n- ### All Restaurants and Food Carts\n\n## Merchandise and Shops\n\n- MERCHANDISE AND SHOPS\n\n### Funky's Fly 'n' Buy\n- MERCHANDISE AND SHOPS\n\n### Donkey Kong Photo Opportunity\n- MERCHANDISE AND SHOPS\n\n### Mine Cart Madness Photo\n- ### All Merchandise and Shops"
+            ],
+            "image": "https://www.usj.co.jp/contentdata/usj/ja/jp/files/assets/logos/universal-japan-logo-b.png"
+          }
+        ],
+        "searchTime": 1210.5,
+        "costDollars": {
+          "total": 0.007,
+          "search": {
+            "neural": 0.007
+          }
+        }
+      }
+    }
+  ]
+}

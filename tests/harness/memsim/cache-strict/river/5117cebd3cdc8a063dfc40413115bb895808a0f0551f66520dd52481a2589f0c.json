@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "5117cebd3cdc8a063dfc40413115bb895808a0f0551f66520dd52481a2589f0c",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af976f2790e\",\"object\":\"chat.completion\",\"created\":1794733810,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"ops\\\":[{\\\"op\\\":\\\"add\\\",\\\"subject\\\":{\\\"kind\\\":\\\"user\\\",\\\"userId\\\":\\\"sim-user-bob\\\"},\\\"predicate\\\":\\\"nickname\\\",\\\"value\\\":\\\"Bobby\\\",\\\"tense\\\":\\\"current\\\",\\\"sourceLine\\\":1},{\\\"op\\\":\\\"add\\\",\\\"subject\\\":{\\\"kind\\\":\\\"user\\\",\\\"userId\\\":\\\"sim-user-carol\\\"},\\\"predicate\\\":\\\"hobby\\\",\\\"value\\\":\\\"target archery at the outdoor range\\\",\\\"tense\\\":\\\"current\\\",\\\"sourceLine\\\":2},{\\\"op\\\":\\\"add\\\",\\\"subject\\\":{\\\"kind\\\":\\\"user\\\",\\\"userId\\\":\\\"sim-user-carol\\\"},\\\"predicate\\\":\\\"pets\\\",\\\"value\\\":\\\"calico cat named Clementine\\\",\\\"tense\\\":\\\"current\\\",\\\"sourceLine\\\":4},{\\\"op\\\":\\\"add\\\",\\\"subject\\\":{\\\"kind\\\":\\\"user\\\",\\\"userId\\\":\\\"sim-user-bob\\\"},\\\"predicate\\\":\\\"pets\\\",\\\"value\\\":\\\"Mochi\\\",\\\"tense\\\":\\\"current\\\",\\\"sourceLine\\\":5}],\\\"summary\\\":\\\"Bob said people can call him Bobby for short and asked about Mochi at the park, while Carol shared that she has taken up target archery at the outdoor range and that she has a calico cat named Clementine.\\\"}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4224,\"completion_tokens\":221,\"total_tokens\":4445,\"prompt_tokens_details\":{\"cached_tokens\":3840},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

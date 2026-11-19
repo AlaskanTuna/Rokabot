@@ -54,6 +54,7 @@ graphify-out/
 
 # Captured fixtures stay byte-exact
 tests/fixtures/
+tests/harness/memsim/cache/
 
 # Model-facing prompt text stays byte-exact; Prettier would turn *italic* into _italic_
 characters/**/*.md

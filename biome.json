@@ -75,6 +75,7 @@
       "docs/diagrams/src/**",
       "dist/**",
       "data/**",
+      "tests/harness/memsim/cache/**",
       "CHANGELOG.md",
       ".release-please-manifest.json"
     ]

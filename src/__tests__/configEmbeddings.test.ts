@@ -24,12 +24,7 @@ describe('config module', () => {
       return {
         config,
         startupWarnings,
-        floors: [
-          config.memory.episodeMinSimilarity,
-          config.memory.mediaMinSimilarity,
-          config.memory.factMinSimilarity,
-          config.memory.serverFactMinSimilarity
-        ]
+        floors: [config.memory.episodeMinSimilarity, config.memory.mediaMinSimilarity]
       }
     }
 
@@ -56,7 +51,7 @@ describe('config module', () => {
       })
       expect(config.memory.embeddingModel).toBe('gemini-embedding-2')
       expect(config.memory.embeddingTimeoutMs).toBe(1500)
-      expect(floors).toEqual([0.7, 0.7, 0.65, 0.65])
+      expect(floors).toEqual([0.7, 0.7])
       expect(await warningMessages()).not.toContain(NO_FLOORS_WARNING)
     })
 
@@ -101,7 +96,7 @@ describe('config module', () => {
         fingerprint: GEMINI_FINGERPRINT,
         timeoutMs: 1500
       })
-      expect(floors).toEqual([0.7, 0.7, 0.65, 0.65])
+      expect(floors).toEqual([0.7, 0.7])
     })
 
     it('defaults an embeddings block without a provider to the local sidecar and its own floors', async () => {
@@ -119,7 +114,7 @@ describe('config module', () => {
         sidecarUrl: 'http://embeddings:8080',
         apiKey: undefined
       })
-      expect(floors).toEqual([0.86, 0.86, 0.84, 0.84])
+      expect(floors).toEqual([0.86, 0.86])
       expect(await warningMessages()).not.toContain(NO_FLOORS_WARNING)
     })
 
@@ -138,7 +133,7 @@ describe('config module', () => {
         fingerprint: 'openai:text-embedding-3-small:1536:raw',
         apiKey: 'sk-test'
       })
-      expect(floors).toEqual([0.7, 0.7, 0.65, 0.65])
+      expect(floors).toEqual([0.7, 0.7])
       expect(startupWarnings).toContainEqual({
         fields: { fingerprint: 'openai:text-embedding-3-small:1536:raw' },
         message: NO_FLOORS_WARNING

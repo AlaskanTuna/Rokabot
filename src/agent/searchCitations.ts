@@ -1,4 +1,4 @@
-/** Per-turn capture of the sources search_web returned, so the reply can cite what it was built on. */
+/** Per-turn capture of the sources a lookup returned, so the reply can cite what it was built on. */
 
 import { AsyncLocalStorage } from 'node:async_hooks'
 
@@ -19,10 +19,31 @@ export async function withSearchCitations<T>(run: () => Promise<T>): Promise<[T,
   return [result, sink]
 }
 
-/** Replaces rather than appends: a retried turn should cite the search it actually answered from. */
+/** Appends, skipping URLs already cited: one attempt may look twice, and a retried attempt starts empty. */
+function appendUnique(citations: readonly SearchCitation[]): void {
+  const sink = citationsForTurn.getStore()
+  if (!sink) return
+  const seen = new Set(sink.map(({ url }) => url))
+  for (const citation of citations) {
+    if (seen.has(citation.url)) continue
+    seen.add(citation.url)
+    sink.push(citation)
+  }
+}
+
+/** Records the URLs a search answered from. A failed search records nothing, leaving earlier citations. */
 export function recordSearchCitations(citations: readonly SearchCitation[]): void {
+  appendUnique(citations)
+}
+
+/** Records the pages a page read returned, into the same sink the reply cites. */
+export function recordPageCitations(citations: readonly SearchCitation[]): void {
+  appendUnique(citations)
+}
+
+/** Empties the sink when a new reply attempt starts, so a retried turn cites only what that attempt used. */
+export function resetSearchCitations(): void {
   const sink = citationsForTurn.getStore()
   if (!sink) return
   sink.length = 0
-  sink.push(...citations)
 }

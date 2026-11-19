@@ -18,6 +18,7 @@ vi.mock('../createModel.js', () => ({ createLlm: mocks.createLlm }))
 vi.mock('../../../utils/logger.js', () => ({ logger: { warn: mocks.warn } }))
 vi.mock('../../../config.js', () => ({ config: mocks.config }))
 
+import { ExtractionOutputSchema, ExtractionTransportSchema } from '../../memory/extractionSchema.js'
 import { StructuredOutputError, generateObject, resetGenerateObjectForTest } from '../generateObject.js'
 import { COMPATIBLE_DEFAULTS, type ModelProfile, compatibleProfile, profileFor } from '../profiles.js'
 import { ProviderError } from '../providerError.js'
@@ -239,6 +240,30 @@ describe('generateObject on a configured llm block', () => {
     expect(mocks.createLlm.mock.calls[0][0].maxOutputTokens).toBe(1024)
   })
 
+  it('sends a provider schema separately from the schema used to validate replies', async () => {
+    mocks.config.llm = { main: route('haiku', haiku), fallback: null }
+    const providerSchema = z.object({ answer: z.string(), note: z.string() }).strict()
+    const validationSchema = z.object({ answer: z.string() })
+    const main = fakeLlm(reply({ answer: 'tea', note: 'extra provider field' }))
+    useLlms({ haiku: main })
+
+    await expect(
+      generateObject({
+        schema: validationSchema,
+        requestSchema: providerSchema,
+        prompt: 'Extract.',
+        workload: 'extraction'
+      } as Parameters<typeof generateObject>[0])
+    ).resolves.toMatchObject({ value: { answer: 'tea' } })
+
+    expect(main.requests[0].config?.responseJsonSchema).toEqual({
+      type: 'object',
+      properties: { answer: { type: 'string' }, note: { type: 'string' } },
+      required: ['answer', 'note'],
+      additionalProperties: false
+    })
+  })
+
   it('ignores a legacy response schema and sends the generated JSON schema', async () => {
     mocks.config.llm = { main: route('flash', gemini), fallback: null }
     const main = fakeLlm(reply({ answer: 'tea' }))
@@ -313,6 +338,59 @@ describe('generateObject on a configured llm block', () => {
     expect(mocks.warn).toHaveBeenCalledWith(
       expect.objectContaining({ workload: 'extraction', provider: 'anthropic', reason: 'invalid_object' }),
       expect.any(String)
+    )
+  })
+
+  it('tries the fallback when every extraction op is invalid', async () => {
+    mocks.config.llm = { main: route('haiku', haiku), fallback: route('qwen', qwen) }
+    const main = fakeLlm(
+      reply({
+        ops: [
+          {
+            op: 'add',
+            subject: { kind: 'user', userId: 'u-1' },
+            predicate: 'place',
+            value: 'The lobby',
+            tense: 'current'
+          }
+        ],
+        summary: 'The members talked about the server.'
+      })
+    )
+    const fallback = fakeLlm(reply({ ops: [{ op: 'noop' }], summary: 'The members talked about the server.' }))
+    useLlms({ haiku: main, qwen: fallback })
+
+    await expect(
+      generateObject({
+        schema: ExtractionTransportSchema,
+        requestSchema: ExtractionOutputSchema,
+        prompt: 'Extract.',
+        workload: 'extraction'
+      })
+    ).resolves.toMatchObject({
+      value: { ops: [{ op: 'noop' }], summary: 'The members talked about the server.', invalidOps: 0 },
+      provider: 'modelscope'
+    })
+
+    expect(main.requests).toHaveLength(1)
+    expect(fallback.requests).toHaveLength(1)
+    expect(mocks.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ workload: 'extraction', provider: 'anthropic', reason: 'invalid_object' }),
+      expect.any(String)
+    )
+  })
+
+  it('logs a truncated main model error message before trying the fallback', async () => {
+    mocks.config.llm = { main: route('haiku', haiku), fallback: route('flash', gemini) }
+    const message = 'Anthropic 400 INVALID_ARGUMENT '.repeat(20)
+    useLlms({ haiku: fakeLlm(new Error(message)), flash: fakeLlm(reply({ answer: 'tea' })) })
+
+    await generateObject({ schema: Answer, prompt: 'Extract.', workload: 'extraction' })
+
+    expect(mocks.warn).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ errorName: 'Error', errorMessage: message.slice(0, 300) }),
+      'Background job failed on the main model, trying the fallback'
     )
   })
 
@@ -393,5 +471,56 @@ describe('generateObject on a configured llm block', () => {
     ])
     expect(fallback.requests[0]?.config).toMatchObject({ temperature: 0.3, maxOutputTokens: 1024 })
     expect(fallback.requests[0]?.config).not.toHaveProperty('safetySettings')
+  })
+})
+
+describe('generateObject with images', () => {
+  const imageInput = () => [{ mimeType: 'image/jpeg', data: Buffer.from([1, 2, 3]) }]
+  const imageless = () => profileFor('modelscope', 'deepseek-ai/DeepSeek-V4.1-Flash-1017') as ModelProfile
+
+  it('sends inline image parts on an image-capable route', async () => {
+    mocks.config.llm = { main: route('haiku', haiku), fallback: null }
+    const main = fakeLlm(reply({ answer: 'tea' }))
+    useLlms({ haiku: main })
+
+    await expect(
+      generateObject({ schema: Answer, prompt: 'Judge.', workload: 'admission', images: imageInput() })
+    ).resolves.toMatchObject({ value: { answer: 'tea' }, provider: 'anthropic' })
+
+    expect(main.requests[0].contents).toEqual([
+      {
+        role: 'user',
+        parts: [
+          { text: 'Judge.' },
+          { inlineData: { data: Buffer.from([1, 2, 3]).toString('base64'), mimeType: 'image/jpeg' } }
+        ]
+      }
+    ])
+  })
+
+  it('falls back when the main route cannot take images', async () => {
+    mocks.config.llm = { main: route('deepseek', imageless()), fallback: route('flash', gemini) }
+    const main = fakeLlm(reply({ answer: 'no' }))
+    const fallback = fakeLlm(reply({ answer: 'tea' }))
+    useLlms({ deepseek: main, flash: fallback })
+
+    await expect(
+      generateObject({ schema: Answer, prompt: 'Judge.', workload: 'admission', images: imageInput() })
+    ).resolves.toMatchObject({ value: { answer: 'tea' }, provider: 'gemini' })
+
+    expect(mocks.createLlm.mock.calls.map(([resolved]) => (resolved as ResolvedModel).key)).toEqual(['flash'])
+    expect(main.requests).toHaveLength(0)
+    expect(fallback.requests[0]?.contents[0]?.parts?.[1]).toEqual({
+      inlineData: { data: Buffer.from([1, 2, 3]).toString('base64'), mimeType: 'image/jpeg' }
+    })
+  })
+
+  it('fails when neither route takes images', async () => {
+    mocks.config.llm = { main: route('deepseek', imageless()), fallback: null }
+
+    await expect(
+      generateObject({ schema: Answer, prompt: 'Judge.', workload: 'admission', images: imageInput() })
+    ).rejects.toMatchObject({ reason: 'blocked' })
+    expect(mocks.createLlm).not.toHaveBeenCalled()
   })
 })

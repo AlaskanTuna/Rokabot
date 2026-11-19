@@ -1,7 +1,9 @@
 import { config } from '../../config.js'
+import { getDb } from '../../storage/database.js'
 import type { EpisodeEmbedding, MemoryEpisode } from '../../storage/memoryEpisodeStore.js'
 import { listEpisodesForGuild } from '../../storage/memoryEpisodeStore.js'
 import { estimateTokens } from '../../utils/tokens.js'
+import { readItemRecallableEpisodes } from './memoryItems.js'
 import { type RecallScope, canRecall } from './privacy.js'
 
 export type RecalledEpisode = Readonly<{
@@ -11,6 +13,10 @@ export type RecalledEpisode = Readonly<{
   summary: string
   similarity: number
 }>
+
+function compareContentKey(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0
+}
 
 export function cosineSimilarity(left: EpisodeEmbedding, right: EpisodeEmbedding): number | null {
   const dimensions = config.embeddings.dim
@@ -53,25 +59,45 @@ function toRecalledEpisode(episode: MemoryEpisode, queryEmbedding: EpisodeEmbedd
   }
 }
 
+function hasValidQueryEmbedding(queryEmbedding: EpisodeEmbedding): boolean {
+  return queryEmbedding.length === config.embeddings.dim && queryEmbedding.every((value) => Number.isFinite(value))
+}
+
+export function readRecallableEpisodes(guildId: string, scope: RecallScope): MemoryEpisode[] {
+  if (config.memory.store === 'item') return readItemRecallableEpisodes(getDb(), guildId, scope)
+  const episodes = listEpisodesForGuild(guildId)
+  if (config.memory.privacy === 'relaxed') return episodes
+  return episodes.filter((episode) => canRecall([episode.channelId], scope))
+}
+
+export function selectEpisodes(
+  episodes: readonly MemoryEpisode[],
+  queryEmbedding: EpisodeEmbedding
+): RecalledEpisode[] {
+  if (!hasValidQueryEmbedding(queryEmbedding)) return []
+
+  return episodes
+    .map((episode) => toRecalledEpisode(episode, queryEmbedding))
+    .filter((episode): episode is RecalledEpisode => episode !== null)
+    .sort(
+      (left, right) =>
+        right.similarity - left.similarity ||
+        right.endedAt - left.endedAt ||
+        compareContentKey(
+          JSON.stringify([left.summary, left.startedAt]),
+          JSON.stringify([right.summary, right.startedAt])
+        )
+    )
+    .slice(0, config.memory.episodeRecallK)
+}
+
 export function recallEpisodes(input: {
   guildId: string
   queryEmbedding: EpisodeEmbedding
-  scope?: RecallScope
+  scope: RecallScope
 }): RecalledEpisode[] {
-  if (
-    input.queryEmbedding.length !== config.embeddings.dim ||
-    input.queryEmbedding.some((value) => !Number.isFinite(value))
-  )
-    return []
-
-  return listEpisodesForGuild(input.guildId)
-    .filter(
-      (episode) => !input.scope || config.memory.privacy === 'relaxed' || canRecall([episode.channelId], input.scope)
-    )
-    .map((episode) => toRecalledEpisode(episode, input.queryEmbedding))
-    .filter((episode): episode is RecalledEpisode => episode !== null)
-    .sort((left, right) => right.similarity - left.similarity || right.endedAt - left.endedAt || left.id - right.id)
-    .slice(0, config.memory.episodeRecallK)
+  if (!hasValidQueryEmbedding(input.queryEmbedding)) return []
+  return selectEpisodes(readRecallableEpisodes(input.guildId, input.scope), input.queryEmbedding)
 }
 
 export function selectEpisodesWithinBudget(
@@ -104,7 +130,7 @@ export function formatEpisodeRecallBlock(episodes: readonly RecalledEpisode[]): 
 export function buildEpisodeRecallBlock(input: {
   guildId: string
   queryEmbedding: EpisodeEmbedding
-  scope?: RecallScope
+  scope: RecallScope
 }): string {
   const recalled = recallEpisodes(input)
   const selected = selectEpisodesWithinBudget(recalled, config.memory.episodeRecallK, config.memory.episodeTokenBudget)

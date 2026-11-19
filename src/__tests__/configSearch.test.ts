@@ -24,7 +24,13 @@ describe('config module', () => {
         provider: 'native',
         available: true,
         nativeTimeoutMs: 8000,
-        nativeReserveMs: 5000
+        nativeReserveMs: 5000,
+        maxPageChars: 8000,
+        maxSearches: 2,
+        maxPageReads: 2,
+        maxProviderCalls: 3,
+        maxBriefChars: 4000,
+        replyReserveMs: 6000
       })
     })
 
@@ -94,7 +100,13 @@ describe('config module', () => {
         provider: 'native',
         available: true,
         nativeTimeoutMs: 8000,
-        nativeReserveMs: 5000
+        nativeReserveMs: 5000,
+        maxPageChars: 8000,
+        maxSearches: 2,
+        maxPageReads: 2,
+        maxProviderCalls: 3,
+        maxBriefChars: 4000,
+        replyReserveMs: 6000
       })
       expect(await warningMessages()).not.toContainEqual(expect.stringContaining('has no web search'))
     })
@@ -113,7 +125,13 @@ describe('config module', () => {
         provider: 'native',
         available: false,
         nativeTimeoutMs: 8000,
-        nativeReserveMs: 5000
+        nativeReserveMs: 5000,
+        maxPageChars: 8000,
+        maxSearches: 2,
+        maxPageReads: 2,
+        maxProviderCalls: 3,
+        maxBriefChars: 4000,
+        replyReserveMs: 6000
       })
       expect(startupWarnings).toContainEqual({
         fields: { provider: 'native' },
@@ -133,7 +151,13 @@ describe('config module', () => {
         provider: 'off',
         available: false,
         nativeTimeoutMs: 8000,
-        nativeReserveMs: 5000
+        nativeReserveMs: 5000,
+        maxPageChars: 8000,
+        maxSearches: 2,
+        maxPageReads: 2,
+        maxProviderCalls: 3,
+        maxBriefChars: 4000,
+        replyReserveMs: 6000
       })
       expect(await warningMessages()).toEqual([])
     })
@@ -149,7 +173,18 @@ describe('config module', () => {
 
       const { config, startupWarnings } = await import('../config.js')
 
-      expect(config.search).toEqual({ provider, available: true, nativeTimeoutMs: 8000, nativeReserveMs: 5000 })
+      expect(config.search).toEqual({
+        provider,
+        available: true,
+        nativeTimeoutMs: 8000,
+        nativeReserveMs: 5000,
+        maxPageChars: 8000,
+        maxSearches: 2,
+        maxPageReads: 2,
+        maxProviderCalls: 3,
+        maxBriefChars: 4000,
+        replyReserveMs: 6000
+      })
       expect(startupWarnings).toContainEqual({
         fields: { provider },
         message: `search.provider is ${provider}, but ${key} is not set, so search_web will report that search is not configured.`
@@ -272,6 +307,25 @@ describe('config module', () => {
       })
       expect(NUMERIC_BOUNDS.find(({ path }) => path === 'search.nativeReserveMs')).toMatchObject({
         value: 5000,
+        min: 0,
+        max: 60_000
+      })
+      expect(NUMERIC_BOUNDS.find(({ path }) => path === 'search.maxPageChars')).toMatchObject({
+        value: 8000,
+        min: 1
+      })
+      expect(NUMERIC_BOUNDS.find(({ path }) => path === 'search.maxSearches')).toMatchObject({ value: 2, min: 1 })
+      expect(NUMERIC_BOUNDS.find(({ path }) => path === 'search.maxPageReads')).toMatchObject({ value: 2, min: 1 })
+      expect(NUMERIC_BOUNDS.find(({ path }) => path === 'search.maxProviderCalls')).toMatchObject({
+        value: 3,
+        min: 1
+      })
+      expect(NUMERIC_BOUNDS.find(({ path }) => path === 'search.maxBriefChars')).toMatchObject({
+        value: 4000,
+        min: 1
+      })
+      expect(NUMERIC_BOUNDS.find(({ path }) => path === 'search.replyReserveMs')).toMatchObject({
+        value: 6000,
         min: 0,
         max: 60_000
       })

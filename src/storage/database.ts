@@ -9,6 +9,8 @@ import { resolve } from 'node:path'
 import Database from 'better-sqlite3'
 import { logger } from '../utils/logger.js'
 import { ensureMemoryClaimSchema } from './memoryClaimSchema.js'
+import { ensureMemoryItemSchema } from './memoryItemSchema.js'
+import { isLegacyMemoryDropped } from './memoryLegacyDrop.js'
 import { ensureVectorProvenanceColumns } from './vectorProvenance.js'
 
 let db: Database.Database | null = null
@@ -128,6 +130,9 @@ function createTables(database: Database.Database): void {
       model_id TEXT DEFAULT NULL,
       route_role TEXT DEFAULT NULL,
       workload TEXT DEFAULT NULL,
+      format_kinds TEXT DEFAULT NULL,
+      format_outcome TEXT DEFAULT NULL,
+      format_detail TEXT DEFAULT NULL,
       created_at INTEGER NOT NULL
     );
 
@@ -178,7 +183,7 @@ function createTables(database: Database.Database): void {
       ON extraction_events (guild_id, created_at);
 
     CREATE TABLE IF NOT EXISTS jev_events (
-      kind TEXT NOT NULL CHECK (kind IN ('turn', 'admission', 'verification')),
+      kind TEXT NOT NULL CHECK (kind IN ('turn', 'admission', 'verification', 'recall')),
       guild_id TEXT NOT NULL,
       channel_id TEXT NOT NULL,
       question TEXT NOT NULL,
@@ -224,7 +229,11 @@ function createTables(database: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_bug_reports_created_at
       ON bug_reports (created_at);
+  `)
 
+  // Phase 7 drops these tables and records it; startup must not recreate them.
+  if (!isLegacyMemoryDropped(database)) {
+    database.exec(`
     CREATE TABLE IF NOT EXISTS memory_episode (
       id INTEGER PRIMARY KEY,
       guild_id TEXT NOT NULL,
@@ -273,8 +282,8 @@ function createTables(database: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_media_occurrence_guild_user
       ON media_occurrence (guild_id, shared_by_user_id);
-
-  `)
+    `)
+  }
 }
 
 /**
@@ -332,7 +341,15 @@ export function runMigrations(database: Database.Database): void {
   if (responseEventCols.length > 0 && !responseEventCols.some((column) => column.name === 'hedged')) {
     database.exec('ALTER TABLE response_events ADD COLUMN hedged INTEGER NOT NULL DEFAULT 0')
   }
-  for (const column of ['provider', 'model_id', 'route_role', 'workload']) {
+  for (const column of [
+    'provider',
+    'model_id',
+    'route_role',
+    'workload',
+    'format_kinds',
+    'format_outcome',
+    'format_detail'
+  ]) {
     if (responseEventCols.length > 0 && !responseEventCols.some(({ name }) => name === column)) {
       database.exec(`ALTER TABLE response_events ADD COLUMN ${column} TEXT DEFAULT NULL`)
     }
@@ -410,6 +427,18 @@ export function runMigrations(database: Database.Database): void {
       message_count INTEGER NOT NULL DEFAULT 0
     );
 
+    CREATE TABLE IF NOT EXISTS memory_episode_line (
+      channel_id TEXT NOT NULL,
+      message_id TEXT NOT NULL,
+      guild_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      display_name TEXT NOT NULL,
+      content TEXT NOT NULL,
+      timestamp INTEGER NOT NULL,
+      is_bot INTEGER NOT NULL,
+      PRIMARY KEY (channel_id, message_id)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_extraction_queue_guild_status_enqueued
       ON extraction_queue (guild_id, status, enqueued_at);
 
@@ -449,6 +478,44 @@ export function runMigrations(database: Database.Database): void {
     database.exec('ALTER TABLE jev_events ADD COLUMN judge TEXT DEFAULT NULL')
   }
 
+  // SQLite cannot alter a CHECK constraint, so existing tables are rebuilt. Rowids are copied so
+  // row order survives, and the index is recreated because DROP TABLE removes it.
+  const jevEventsSql = (
+    database.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'jev_events'").get() as
+      | { sql: string }
+      | undefined
+  )?.sql
+  if (jevEventsSql && !jevEventsSql.includes("'recall'")) {
+    database.transaction(() => {
+      database.exec(`
+        CREATE TABLE jev_events_new (
+          kind TEXT NOT NULL CHECK (kind IN ('turn', 'admission', 'verification', 'recall')),
+          guild_id TEXT NOT NULL,
+          channel_id TEXT NOT NULL,
+          question TEXT NOT NULL,
+          answer TEXT NOT NULL,
+          probability REAL,
+          confidence REAL,
+          applied INTEGER NOT NULL CHECK (applied IN (0, 1)),
+          latency_ms INTEGER NOT NULL,
+          input_tokens INTEGER NOT NULL,
+          baseline TEXT,
+          created_at INTEGER NOT NULL,
+          job_id INTEGER DEFAULT NULL,
+          judge TEXT DEFAULT NULL
+        );
+        INSERT INTO jev_events_new (rowid, kind, guild_id, channel_id, question, answer, probability, confidence,
+          applied, latency_ms, input_tokens, baseline, created_at, job_id, judge)
+          SELECT rowid, kind, guild_id, channel_id, question, answer, probability, confidence,
+          applied, latency_ms, input_tokens, baseline, created_at, job_id, judge FROM jev_events;
+        DROP TABLE jev_events;
+        ALTER TABLE jev_events_new RENAME TO jev_events;
+        CREATE INDEX IF NOT EXISTS idx_jev_events_created_at ON jev_events (created_at);
+      `)
+    })()
+    logger.info('Migrated jev_events to allow recall judgments')
+  }
+
   database.exec(`
     CREATE TABLE IF NOT EXISTS extraction_samples (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -468,6 +535,7 @@ export function runMigrations(database: Database.Database): void {
   for (const table of ['memory_episode', 'media_digest', 'memory_claim'] as const) {
     ensureVectorProvenanceColumns(database, table)
   }
+  ensureMemoryItemSchema(database)
 
   let extractionQueueCols = database.prepare("PRAGMA table_info('extraction_queue')").all() as Array<{ name: string }>
   const extractionQueueColNames = new Set(extractionQueueCols.map((column) => column.name))
@@ -597,6 +665,28 @@ export function runMigrations(database: Database.Database): void {
     CREATE TABLE IF NOT EXISTS update_notices (
       tag TEXT PRIMARY KEY,
       notified_at INTEGER NOT NULL
+    );
+
+    -- Shared ledger for Google Lens searches: one row per search that reached SerpApi, plus a 24 h
+    -- result cache keyed by attachment id so a repost never pays twice.
+    CREATE TABLE IF NOT EXISTS lens_search (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      kind TEXT NOT NULL,
+      month TEXT NOT NULL,
+      day TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_lens_search_month
+      ON lens_search (month);
+
+    CREATE INDEX IF NOT EXISTS idx_lens_search_kind_day
+      ON lens_search (kind, day);
+
+    CREATE TABLE IF NOT EXISTS lens_cache (
+      key TEXT PRIMARY KEY,
+      result TEXT NOT NULL,
+      created_at INTEGER NOT NULL
     );
   `)
 }

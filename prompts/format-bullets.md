@@ -1,0 +1,1 @@
+- Format: they asked for point form: a lead-in line, then a bulleted list with one point per line and as many points as the answer needs, then a closing line. This overrides the paragraph, three-block and five-item limits in Formatting Your Reply.

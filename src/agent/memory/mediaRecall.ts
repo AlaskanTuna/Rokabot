@@ -1,8 +1,10 @@
 import { config } from '../../config.js'
+import { getDb } from '../../storage/database.js'
 import { type MediaRecallCandidate, listMediaRecallCandidates } from '../../storage/mediaDigestStore.js'
 import type { EpisodeEmbedding } from '../../storage/memoryEpisodeStore.js'
 import { estimateTokens } from '../../utils/tokens.js'
 import { cosineSimilarity } from './episodeRetriever.js'
+import { readItemMediaCandidates } from './memoryItems.js'
 import { type RecallScope, canRecall } from './privacy.js'
 
 export type RecalledMedia = Readonly<{
@@ -12,6 +14,10 @@ export type RecalledMedia = Readonly<{
   lastSharedAt: number
   similarity: number
 }>
+
+function compareContentKey(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0
+}
 
 function toRecalledMedia(digest: MediaRecallCandidate, queryEmbedding: EpisodeEmbedding): RecalledMedia | null {
   const similarity = cosineSimilarity(queryEmbedding, digest.embedding)
@@ -34,27 +40,37 @@ function selectMediaWithinBudget(entries: readonly RecalledMedia[], tokenBudget:
   return selected
 }
 
-export function recallMedia(input: {
-  guildId: string
+export function readRecallableMedia(guildId: string, scope: RecallScope): MediaRecallCandidate[] {
+  if (config.memory.store === 'item') return readItemMediaCandidates(getDb(), guildId, scope)
+  const candidates = listMediaRecallCandidates(guildId)
+  if (config.memory.privacy === 'relaxed') return candidates
+  // No recorded occurrence means no channel to judge, so it counts as private, not as an unknown source.
+  return candidates.filter((digest) => canRecall(digest.channelIds.length > 0 ? digest.channelIds : [''], scope))
+}
+
+export function selectMedia(
+  candidates: readonly MediaRecallCandidate[],
   queryEmbedding: EpisodeEmbedding
-  scope?: RecallScope
-}): RecalledMedia[] {
-  const ranked = listMediaRecallCandidates(input.guildId)
-    .filter(
-      (digest) =>
-        !input.scope ||
-        config.memory.privacy === 'relaxed' ||
-        // No recorded occurrence means no channel to judge, so it counts as private, not as an unknown source.
-        canRecall(digest.channelIds.length > 0 ? digest.channelIds : [''], input.scope)
-    )
-    .map((digest) => toRecalledMedia(digest, input.queryEmbedding))
+): RecalledMedia[] {
+  const ranked = candidates
+    .map((digest) => toRecalledMedia(digest, queryEmbedding))
     .filter((media): media is RecalledMedia => media !== null)
     .sort(
       (left, right) =>
-        right.similarity - left.similarity || right.lastSharedAt - left.lastSharedAt || left.id - right.id
+        right.similarity - left.similarity ||
+        right.lastSharedAt - left.lastSharedAt ||
+        compareContentKey(JSON.stringify([left.label, left.summary]), JSON.stringify([right.label, right.summary]))
     )
     .slice(0, config.memory.mediaRecallK)
   return selectMediaWithinBudget(ranked, config.memory.mediaTokenBudget)
+}
+
+export function recallMedia(input: {
+  guildId: string
+  queryEmbedding: EpisodeEmbedding
+  scope: RecallScope
+}): RecalledMedia[] {
+  return selectMedia(readRecallableMedia(input.guildId, input.scope), input.queryEmbedding)
 }
 
 export function formatMediaRecallBlock(items: readonly RecalledMedia[]): string {
@@ -74,7 +90,7 @@ export function formatMediaRecallBlock(items: readonly RecalledMedia[]): string 
 export function buildMediaRecallBlock(input: {
   guildId: string
   queryEmbedding: EpisodeEmbedding
-  scope?: RecallScope
+  scope: RecallScope
 }): string {
   return formatMediaRecallBlock(recallMedia(input))
 }

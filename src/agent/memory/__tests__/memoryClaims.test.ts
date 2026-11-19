@@ -1395,6 +1395,20 @@ describe('memoryClaims', () => {
       expect(activeValues()).toEqual(['chess (current)', 'tea (current)'])
       expect(nurse).toMatchObject({ status: 'rejected' })
     })
+
+    it('breaks equal-rank eviction ties by fact content instead of database ID', () => {
+      const zebra = write('hobby', 'zebra', 1_000)
+      const apple = write('hobby', 'apple', 1_000)
+      write('hobby', 'mango', 1_000)
+
+      expect(getDb().prepare('SELECT status, end_reason FROM memory_claim WHERE id = ?').get(apple.id)).toEqual({
+        status: 'rejected',
+        end_reason: 'evicted'
+      })
+      expect(getDb().prepare('SELECT status FROM memory_claim WHERE id = ?').get(zebra.id)).toEqual({
+        status: 'active'
+      })
+    })
   })
 
   // #111: pinClaim/unpinClaim had no production callers, so the eviction exemption config.yml documents

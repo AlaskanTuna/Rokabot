@@ -6,19 +6,22 @@ import { getClaimSourceChannels } from '../../storage/memoryRecallStore.js'
 import { logger } from '../../utils/logger.js'
 import { judgeEpisodeOperations } from '../jev/judgments.js'
 import { generateObject } from '../llm/generateObject.js'
+import type { ProviderId } from '../llm/profiles.js'
 import { promptTokenTotal } from '../llm/usage.js'
+import { MAX_FACT_VALUE_LEN, isSafeFactScalar } from '../promptSafety.js'
 import { admitEpisode } from './admission.js'
 import { JevUnavailableError } from './extractionErrors.js'
 import { type RunTrace, timeStage } from './extractionRun.js'
 import {
   EXTRACTION_RESPONSE_SCHEMA,
   type ExtractionOutput as EpisodeExtractionOutput,
-  ExtractionOutputSchema
+  ExtractionOutputSchema,
+  ExtractionTransportSchema
 } from './extractionSchema.js'
 import { resolveGuildFactDate } from './guildFactDates.js'
 import { reconcileHiddenRetractions } from './hiddenRetractions.js'
 import { admitThreshold, verifyThreshold } from './judgeThresholds.js'
-import type { MemoryClaim } from './memoryClaims.js'
+import type { EvidenceProvenance, MemoryClaim } from './memoryClaims.js'
 import {
   getActiveClaimById,
   getActiveClaims,
@@ -26,6 +29,7 @@ import {
   getActiveGuildClaims,
   retractClaim
 } from './memoryClaims.js'
+import { readItemFacts } from './memoryItems.js'
 import {
   type EpisodeWriteOp,
   type OperationApplierContext,
@@ -62,64 +66,137 @@ function recallableHere<T extends { id: number }>(items: T[], scope: RecallScope
   return items.filter(({ id }) => canRecall(sources.get(id) ?? [null], scope, level))
 }
 
-function episodePrompt(guildId: string, channelId: string, episode: ExtractionEpisode): string {
+function compareContentKey(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0
+}
+
+function episodePrompt(
+  guildId: string,
+  channelId: string,
+  episode: ExtractionEpisode
+): { prompt: string; claimIdByRef: Map<number, number> } {
   const scope = { guildId, channelId }
   const humanIds = [...new Set(episode.messages.filter((message) => !message.isBot).map((message) => message.userId))]
+  const claimIdByRef = new Map<number, number>()
+  let nextRef = 1
   const claims = humanIds.map((userId) => ({
     userId,
-    claims: recallableHere(
-      getActiveClaims(guildId, userId).filter(({ needsReview }) => !needsReview),
-      scope
-    ).map(({ id, predicate, value, period }) =>
-      period === 'past' ? { id, predicate, value, period } : { id, predicate, value }
+    claims: (config.memory.store === 'item'
+      ? readItemFacts(scope, { subjectKind: 'user', subjectUserId: userId }).filter(
+          (claim): claim is Extract<MemoryClaim, { subjectKind: 'user' }> => claim.subjectKind === 'user'
+        )
+      : recallableHere(
+          getActiveClaims(guildId, userId).filter(({ needsReview }) => !needsReview),
+          scope
+        )
     )
+      .map(({ id, predicate, value, period }) => ({ id, predicate, value, period }))
+      .sort((left, right) => {
+        const key = ({ predicate, value, period }: { predicate: string; value: string; period: string }) =>
+          JSON.stringify(period === 'past' ? { predicate, value, period } : { predicate, value })
+        return compareContentKey(key(left), key(right))
+      })
+      .map(({ id, predicate, value, period }) => {
+        const ref = nextRef++
+        claimIdByRef.set(ref, id)
+        return period === 'past' ? { id: ref, predicate, value, period } : { id: ref, predicate, value }
+      })
   }))
-  const guildClaims = recallableHere(getActiveGuildClaims(guildId), scope).map(
-    ({ id, predicate, value, expiresAt }) => ({
-      id,
-      predicate,
-      value,
-      expiresAt
-    })
+  const guildClaims = (
+    config.memory.store === 'item'
+      ? readItemFacts(scope, { subjectKind: 'guild' }).filter(
+          (claim): claim is Extract<MemoryClaim, { subjectKind: 'guild' }> => claim.subjectKind === 'guild'
+        )
+      : recallableHere(getActiveGuildClaims(guildId), scope)
   )
-  return [
+    .map(({ id, predicate, value, expiresAt }) => ({ id, predicate, value, expiresAt }))
+    .sort((left, right) => {
+      const key = ({ predicate, value, expiresAt }: { predicate: string; value: string; expiresAt: number | null }) =>
+        JSON.stringify({ predicate, value, expiresAt })
+      return compareContentKey(key(left), key(right))
+    })
+    .map(({ id, predicate, value, expiresAt }) => {
+      const ref = nextRef++
+      claimIdByRef.set(ref, id)
+      return { id: ref, predicate, value, expiresAt }
+    })
+  const prompt = [
     'You extract durable personal details about users and shared facts about this Discord server from an episode.',
-    'Never extract sensitive personal information: real/legal names, age or birthday, address or specific residence, phone numbers, email addresses, social media handles, names of schools, employers, or workplaces, financial information, credentials, or medical/health details.',
+    'Never extract sensitive personal information: real/legal names, age or birthday, address or specific residence, phone numbers, email addresses, social media handles, names of schools, employers, or workplaces, financial information, credentials, or medical/health details. A food allergy, intolerance or diet a member states about themselves is diet, not a medical detail.',
     'A member\'s own job, trade or line of work is general_occupation and is never sensitive: record the role itself ("line cook", "freelance illustrator"), never the employer, workplace, or location.',
     'For user facts, use only the supplied user IDs and attribute facts only to the person who stated them, not someone quoted, addressed, or joked about. Use subject {"kind":"guild"} only for a fact established about this server or its members collectively. Context lines are background only and cannot supply a subject or fact.',
     'Use only these guild predicates: upcoming_event, plan, running_joke, place, rule, announcement. For upcoming_event and plan, date the fact from the messages: if they name a calendar day, give the month and day, plus the year only when the messages state it; if they name a month but no day, give just the month, and never invent a day; if they only say today, tomorrow, this week, next week, this month, or next month, give the relative form. Never guess a date the messages do not support, and never decide whether it is in the future.',
+    'Every add and update gives sourceLine: the # of the delta message that states the fact. Context lines have no # and are never cited.',
     'Add a new claim only for a durable fact. Return noop only when no durable fact, change or retraction came up.',
     'Every user add and update has a tense: current if it is true of them now, past if it was true before but not now ("back when I was a nurse", "I used to play chess"), planned if they intend it.',
+    'A change a member has already committed to that has not happened yet ("I\'m relocating to Rotterdam next month", "I took the supervisor role, I start next quarter") is upcoming_change with tense current: state the change and its timing in the value. A wish or a maybe ("I might learn guitar someday") stays planned.',
     'Use retract when a member says a fact about themselves no longer holds ("I quit chess", "I\'m not vegetarian anymore"), naming the predicate and the value that ended, even if it is not in the current active claims. A switch ("switched from chess to go") is a retract of the old value plus an add of the new one.',
     'When retracting a fact listed in the active claims, use its listed predicate.',
     'If a member restates a current durable fact, return add with the same subject, predicate and exact value as its existing claim. Never add a rewording. Use update with an existing claim ID only when the fact itself changed.',
     'Use remove with an existing claim ID only for a claim that was never true or was attributed to the wrong person; use retract for a fact that has ended.',
     'Never update or remove a claim whose "period" is "past"; to restate history, use add with tense past.',
     'Choose the most specific predicate; use misc only when no other predicate fits. "I draw on weekends" is hobby, not misc; "my cat Mochi" is pets, not misc; "I like spicy food" is likes, not misc. A game or sport they play is hobby, not favorite_game, unless they call it their favorite.',
-    'Return a one-to-two sentence third-person summary.',
+    'Return a one-to-two sentence third-person summary saying who said or did what. Name people by display name and never write a user ID. Never mention whether a durable fact came up.',
     `Allowed human user IDs: ${humanIds.join(', ') || '(none)'}`,
     `Current active claims:\n${JSON.stringify(claims, null, 2)}`,
     `Current active guild facts:\n${JSON.stringify(guildClaims, null, 2)}`,
     `Context (background only, never a subject):\n${episode.context.map(formatEpisodeLine).join('\n') || '(none)'}`,
-    `Delta messages:\n${episode.messages.map(formatEpisodeLine).join('\n')}`
+    `Delta messages:\n${episode.messages.map((message, index) => `#${index + 1} ${formatEpisodeLine(message)}`).join('\n')}`
   ].join('\n\n')
+  return { prompt, claimIdByRef }
 }
 
-export type ExtractedEpisode = EpisodeExtractionOutput & { promptTokens?: number }
+export type ExtractedEpisode = EpisodeExtractionOutput & {
+  invalidOps: number
+  promptTokens?: number
+  extractionProvider: ProviderId
+  extractionModel: string
+  extractionFallback: boolean
+}
+
+function extractionAnsweredOnFallback(provider: ProviderId, model: string): boolean {
+  const main = config.llm.main
+  const mainModel = main.key === 'legacy-gemini' ? config.gemini.extractionModel : main.model
+  return provider !== main.provider || model !== mainModel
+}
 
 export async function extractEpisode(input: {
   guildId: string
   channelId: string
   episode: ExtractionEpisode
 }): Promise<ExtractedEpisode> {
-  const { value, usage } = await generateObject({
-    schema: ExtractionOutputSchema,
-    prompt: episodePrompt(input.guildId, input.channelId, input.episode),
+  const prompt = episodePrompt(input.guildId, input.channelId, input.episode)
+  const { value, provider, model, usage } = await generateObject({
+    schema: ExtractionTransportSchema,
+    requestSchema: ExtractionOutputSchema,
+    prompt: prompt.prompt,
     workload: 'extraction',
     maxOutputTokens: 700,
     legacyResponseSchema: EXTRACTION_RESPONSE_SCHEMA
   })
-  return { ...value, promptTokens: promptTokenTotal(usage) }
+  let invalidOps = value.invalidOps
+  const ops: EpisodeExtractionOutput['ops'] = []
+  for (const op of value.ops) {
+    if (!('existingId' in op)) {
+      ops.push(op)
+      continue
+    }
+    const id = prompt.claimIdByRef.get(op.existingId)
+    if (id === undefined) {
+      invalidOps += 1
+      continue
+    }
+    ops.push({ ...op, existingId: id })
+  }
+  return {
+    ...value,
+    ops,
+    invalidOps,
+    promptTokens: promptTokenTotal(usage),
+    extractionProvider: provider,
+    extractionModel: model,
+    extractionFallback: extractionAnsweredOnFallback(provider, model)
+  }
 }
 
 export type OperationApplicationReport = {
@@ -131,18 +208,31 @@ export type OperationApplicationReport = {
   pastOps: number
   rewordOps: number
   retractedOps: number
+  judgedOutOps: number
+  uncited: number
   inputTokens: number
+}
+
+function planProvenance(op: EpisodeWriteOp, episode: ExtractionEpisode, jobId: number | undefined): EvidenceProvenance {
+  if (op.op !== 'add' && op.op !== 'update') return { jobId }
+  const line = 'sourceLine' in op && op.sourceLine !== undefined ? episode.messages[op.sourceLine - 1] : undefined
+  // A bad citation only loses the message link: the op applies exactly as it would cited.
+  if (!line || line.isBot || (op.subject.kind === 'user' && line.userId !== op.subject.userId)) return { jobId }
+  return { jobId, sourceMessageId: line.messageId, speakerUserId: line.userId }
 }
 
 function planVerification(
   ops: readonly EpisodeWriteOp[],
   existing: MemoryClaim[],
+  episode: ExtractionEpisode,
+  jobId: number | undefined,
   now: number,
   timezone: string | undefined
 ): PlannedOperation[] {
   return ops.map((op, index) => {
     const sameAsClaims = op.op === 'add' ? sameAsCandidates(existing, op) : []
     const retractClaims = op.op === 'retract' ? retractCandidates(existing, op) : []
+    const provenance = planProvenance(op, episode, jobId)
     const expires =
       op.subject.kind === 'guild' &&
       op.op !== 'remove' &&
@@ -160,6 +250,7 @@ function planVerification(
       op,
       sameAsClaims,
       retractClaims,
+      provenance,
       expiresAt: expires?.expiresAt ?? null,
       eventDate: expires?.eventDate ?? null,
       dateValid: !requiresDate || expires !== null,
@@ -196,8 +287,14 @@ function operationAllowed(op: EpisodeWriteOp, subjectIds: Set<string>): boolean 
   return subjectIds.has(op.subject.userId) && (!objectUserId || subjectIds.has(objectUserId))
 }
 
+// Roka's own lines repeat what she was told or guessed, so a fact may never rest on one.
+function citesBotLine(op: EpisodeWriteOp, episode: ExtractionEpisode): boolean {
+  if (op.op !== 'add' && op.op !== 'update') return false
+  return op.sourceLine !== undefined && episode.messages[op.sourceLine - 1]?.isBot === true
+}
+
 function operationSafe(op: EpisodeWriteOp): boolean {
-  return !sensitiveFactReason(op.predicate, op.value)
+  return isSafeFactScalar(op.value, MAX_FACT_VALUE_LEN) && !sensitiveFactReason(op.predicate, op.value)
 }
 
 function keyApplied(
@@ -218,7 +315,10 @@ export async function verifyAndApplyOperations(input: {
   subjectIds: Set<string>
   jobId?: number
 }): Promise<OperationApplicationReport> {
-  const writeOps = input.output.ops.filter((op): op is EpisodeWriteOp => op.op !== 'noop')
+  // A committed future change is kept as a current fact; the standard retention tier lapses it unless restated.
+  const writeOps = input.output.ops
+    .filter((op): op is EpisodeWriteOp => op.op !== 'noop')
+    .map((op) => ('tense' in op && op.predicate === 'upcoming_change' ? { ...op, tense: 'current' as const } : op))
   if (writeOps.length === 0) {
     return {
       appliedOps: 0,
@@ -229,6 +329,8 @@ export async function verifyAndApplyOperations(input: {
       pastOps: 0,
       rewordOps: 0,
       retractedOps: 0,
+      judgedOutOps: 0,
+      uncited: 0,
       inputTokens: 0
     }
   }
@@ -236,14 +338,21 @@ export async function verifyAndApplyOperations(input: {
   const observedAt = episodeObservedAt(input.episode)
   const humanIds = new Set(input.episode.messages.filter((message) => !message.isBot).map((message) => message.userId))
   const subjectIds = new Set([...input.subjectIds].filter((userId) => humanIds.has(userId)))
-  const existing = [
-    ...[...subjectIds].flatMap((userId) =>
-      getActiveClaims(input.guildId, userId).filter(({ needsReview }) => !needsReview)
-    ),
-    ...getActiveGuildClaims(input.guildId)
-  ]
-  const visibleClaims = recallableHere(existing, { guildId: input.guildId, channelId: input.channelId })
-  const planned = planVerification(writeOps, visibleClaims, observedAt, config.timezone)
+  const scope = { guildId: input.guildId, channelId: input.channelId }
+  const existing =
+    config.memory.store === 'item'
+      ? [
+          ...[...subjectIds].flatMap((userId) => readItemFacts(scope, { subjectKind: 'user', subjectUserId: userId })),
+          ...readItemFacts(scope, { subjectKind: 'guild' })
+        ]
+      : [
+          ...[...subjectIds].flatMap((userId) =>
+            getActiveClaims(input.guildId, userId).filter(({ needsReview }) => !needsReview)
+          ),
+          ...getActiveGuildClaims(input.guildId)
+        ]
+  const visibleClaims = config.memory.store === 'item' ? existing : recallableHere(existing, scope)
+  const planned = planVerification(writeOps, visibleClaims, input.episode, input.jobId, observedAt, config.timezone)
   const lines = input.episode.messages.map(formatEpisodeLine)
   const verification = await judgeEpisodeOperations({ lines, ops: writeOps, existing: visibleClaims })
   const verified = hasCompleteVerification(verification, planned)
@@ -276,7 +385,7 @@ export async function verifyAndApplyOperations(input: {
   getDb().transaction(() => {
     for (const entry of applyOrder) {
       const { op, index } = entry
-      if (!operationAllowed(op, subjectIds) || !operationSafe(op)) {
+      if (!operationAllowed(op, subjectIds) || !operationSafe(op) || citesBotLine(op, input.episode)) {
         results[index] = { applied: false, duplicate: false }
         continue
       }
@@ -301,7 +410,7 @@ export async function verifyAndApplyOperations(input: {
         const scopedKey = `${op.subject.kind === 'guild' ? 'guild_scoped' : 'attributed'}_${index}`
         const scoped = verification.answers[scopedKey].noul >= threshold
         if (!durable || !scoped) {
-          results[index] = { applied: false, duplicate: false }
+          results[index] = { applied: false, duplicate: false, judgedOut: true }
           continue
         }
       } else {
@@ -383,6 +492,10 @@ export async function verifyAndApplyOperations(input: {
     pastOps: results.filter(({ past }) => past).length,
     rewordOps: results.filter(({ reword }) => reword).length,
     retractedOps: results.reduce((total, { retracted }) => total + (retracted ?? 0), hiddenRetracted),
+    judgedOutOps: results.filter(({ judgedOut }) => judgedOut).length,
+    uncited: planned.filter(
+      (entry) => (entry.op.op === 'add' || entry.op.op === 'update') && entry.provenance.sourceMessageId === undefined
+    ).length,
     inputTokens: verification?.inputTokens ?? 0
   }
 }
@@ -392,6 +505,7 @@ export type EpisodeRunResult = Readonly<{
   summary: string | null
   appliedOps: number
   duplicateOps: number
+  opsRejected: boolean
 }>
 
 export async function runEpisodePipeline(job: ExtractionQueueJob, trace: RunTrace): Promise<EpisodeRunResult> {
@@ -405,15 +519,22 @@ export async function runEpisodePipeline(job: ExtractionQueueJob, trace: RunTrac
     trace.admission = { probability: admission.probability, threshold: admitThreshold() }
   }
   if (!admission.admitted) {
-    if (admission.reason === 'trivial' || admission.reason === 'sensitive') trace.stage = 'precheck'
+    if (admission.reason === 'trivial' || admission.reason === 'sensitive') {
+      trace.stage = 'precheck'
+      trace.precheckPattern = admission.precheckPattern ?? null
+    }
     if (admission.reason === 'jev_unavailable') throw new JevUnavailableError()
-    return { status: 'dropped', summary: null, appliedOps: 0, duplicateOps: 0 }
+    return { status: 'dropped', summary: null, appliedOps: 0, duplicateOps: 0, opsRejected: false }
   }
 
   trace.stage = 'extraction'
   const output = await timeStage(trace, 'extraction', () =>
     extractEpisode({ guildId: job.guildId, channelId: job.channelId, episode: job.episode })
   )
+  trace.models.extraction = output.extractionModel
+  trace.extractionProvider = output.extractionProvider
+  trace.extractionFallback = output.extractionFallback
+  trace.ops.invalid = output.invalidOps
   trace.ops.proposed = output.ops.filter((op) => op.op !== 'noop').length
   trace.tokens += output.promptTokens ?? 0
 
@@ -437,6 +558,7 @@ export async function runEpisodePipeline(job: ExtractionQueueJob, trace: RunTrac
   trace.ops.past = report.pastOps
   trace.ops.reword = report.rewordOps
   trace.ops.retracted = report.retractedOps
+  trace.ops.uncited = report.uncited
   trace.tokens += report.inputTokens
 
   trace.stage = 'applied'
@@ -445,6 +567,8 @@ export async function runEpisodePipeline(job: ExtractionQueueJob, trace: RunTrac
     status: 'completed',
     summary: output.summary,
     appliedOps: report.appliedOps,
-    duplicateOps: report.duplicateOps
+    duplicateOps: report.duplicateOps,
+    // Only Jev's own rejection counts. A rule, a missing target on a retry or a judge outage says nothing about the facts.
+    opsRejected: trace.ops.proposed > 0 && report.judgedOutOps === trace.ops.proposed && report.retractedOps === 0
   }
 }

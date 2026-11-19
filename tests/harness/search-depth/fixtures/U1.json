@@ -1,0 +1,92 @@
+{
+  "caseId": "U1",
+  "recordedAt": "2026-11-17T21:19:34.496Z",
+  "commit": "2f6dac20658fc7b1625a3298b81d0170496bd5c0",
+  "toolCalls": [
+    {
+      "tool": "search_web",
+      "args": {
+        "query": "Coffee Marufuku Sennichimae barista uniform March 3 2026",
+        "max_results": 5
+      }
+    }
+  ],
+  "exchanges": [
+    {
+      "provider": "exa",
+      "method": "POST",
+      "url": "https://api.exa.ai/search",
+      "requestBody": {
+        "query": "Coffee Marufuku Sennichimae barista uniform March 3 2026",
+        "type": "auto",
+        "numResults": 5,
+        "contents": {
+          "highlights": true
+        }
+      },
+      "status": 200,
+      "responseBody": {
+        "requestId": "68a0315b386e73131f8ef89ec0d7bdce",
+        "resolvedSearchType": "",
+        "results": [
+          {
+            "id": "https://www.ryoko-traveler.com/marufuku-coffee-honten/",
+            "title": "Osaka: Retro Coffee and Desserts at Marufuku Coffee Sennichimae ...",
+            "url": "https://www.ryoko-traveler.com/marufuku-coffee-honten/",
+            "publishedDate": "2015-06-18T05:00:31.000Z",
+            "author": "Ryoko",
+            "highlights": [
+              "# Osaka: Retro Coffee and Desserts at Marufuku Coffee Sennichimae Honten (丸福珈琲店 千日前本店) in Namba \n\nOSAKA\n\n 2024.12.16 2015.06.18 \n\nAfter having lunch, we stopped by Marufuku Coffee Sennichimae Honten (丸福珈琲店 千日前本店) for dessert. This is the flagship store of Marufuku Coffee.\n\nAbout 80 years have passed since Marufuku Coffee was founded by Tadao Ibuki in Osaka in 1934. What started as a small coffee shop has grown into a popular café chain with numerous branches, not only in Osaka but also in other areas, including Tokyo. The brand continues to expand even today.\n\nWhile all Marufuku Coffee locations are loved by many, the flagship store stands out for its unique and historic ambiance. The building exudes a sense of history, and stepping inside feels like being transported back to the Showa era.\n\nThe shop can accommodate up to 150 customers across two floors. However, when we arrived, every table was occupied. After waiting for a few minutes, a staff member dressed in a charming maid-style uniform guided us to our seats.\n\nWhen it comes to Marufuku Coffee, their strong coffee is a highlight. Naturally, we ordered coffee-based drinks. I chose a cafe au lait float. The coffee is pre-sweetened with sugar and syrup, so if you prefer your drink unsweetened, be sure to request “no sugar” when placing your order. (Staff sometimes ask if you’d like sugar when taking your order.) The iced café au lait was smooth and creamy, and the ice cream added a delightful touch. If you’re not a fan of strong black coffee, I recommend the café au lait for a milder experience."
+            ],
+            "image": "https://www.ryoko-traveler.com/blog/wp-content/uploads/2015/06/Eyecatch-Marufuku-Coffee-Sennichimae-Honten-Namba.jpg?v=1734440448"
+          },
+          {
+            "id": "https://stancylife.com/en/marufuku/",
+            "title": "Marufuku Coffee Sennichimae in Osaka: Our Egg Sandwich Breakfast | StancyLife",
+            "url": "https://stancylife.com/en/marufuku/",
+            "author": "Stancy",
+            "highlights": [
+              "## Marufuku Coffee Sennichimae Main Store Getting There | A Popular Longstanding Café Near Dotonbori\n\nName: Marufuku Coffee Sennichimae Main Store (MARUFUKU COFFEE) Address: 1 Chome-9-1 Sennichimae, Chuo Ward, Osaka, 542-0074, Japan Our original guide gives about three minutes on foot from Nipponbashi Station or five minutes from Namba Station. This is the Sennichimae main store in the Namba area, separate from Marufuku’s other Osaka branches. Our visit guide listed 08:00–23:00, last orders 22:30. The shop’s current store page could not be retrieved during this check, so confirm service hours before an early or late visit.\n\n...\n\n## Marufuku Coffee × Sumikko Gurashi | Limited Collaboration Merchandise and Miniature Displays\n\n \n\nDuring our visit, the display case combined vintage tea sets, model desserts and collaboration figures featuring Sumikko Gurashi (すみっコぐらし). Dressed in staff uniforms and holding coffee and desserts, they’re so cute! The shelves also stock the café’s own drip coffee gift sets, mugs, and miniature sets, which make great souvenirs for visitors to Osaka. Availability of collaboration merchandise changes, so the photographs are a record of that visit."
+            ],
+            "image": "https://i0.wp.com/stancylife.com/wp-content/uploads/2025/10/batch_IMG_5054.jpg?fit=1200%2C900&ssl=1"
+          },
+          {
+            "id": "https://www.tripadvisor.com.sg/ShowUserReviews-g14135003-d1669149-r1051024491-Marufuku_Coffee_Shop_Sennichimae_Honten-Sennichimae_Chuo_Osaka_Osaka_Prefectu.html",
+            "title": "Travel back in time - Marufuku Coffee Shop, Sennichimae Honten, Sennichimae Traveller Reviews - Tripadvisor",
+            "url": "https://www.tripadvisor.com.sg/ShowUserReviews-g14135003-d1669149-r1051024491-Marufuku_Coffee_Shop_Sennichimae_Honten-Sennichimae_Chuo_Osaka_Osaka_Prefectu.html",
+            "publishedDate": "2026-02-25T14:21:13.000Z",
+            "highlights": [
+              "Marufuku Coffee Shop, Sennichimae Honten \n\n1-9-1, Sennichimae, Chuo, Osaka 542-0074, Osaka Prefecture \n\n+81 6-6211-3474\n\n Website\n\n...\n\nRestaurant details\n\nryu0803\n\nHong Kong, China\n\n285 321\n\nReviewed 25 February 2026 \n\nTravel back in time\n\nOur first visit was many years ago at their coffee shop in Ginza, Tokyo. We loved the hotcakes and returned many times. Decor of the cafe felt wonderfully nostalgic. After visiting their honten in Osaka, we realized the shop in Tokyo was deliberately designed to recreate the atmosphere of the original. We ordered the hotcakes, which were as good as we remembered. Coffee was excellent. However, the egg sandwiches and the curry rice were nothing special. We were there mainly for the experience and not for the food. Stepping inside the cafe felt like being transported back to the Showa era. The place was not touristy, mostly locals enjoying tea with cakes, and chatting about their day. We enjoyed tremendously this short journey back to the past.\n\nDate of visit: February 2026\n\nThank ryu0803\n\n...\n\narthurl18\n\n1\n\nReviewed 4 December 2019 \n\nTotal lack of service\n\nThis morning, my family of 4 when to Osaka nice looking old coffee breakfast place, upon entrance, met a busy serving Jap girl, b4 we say anything, \"no table, wait outside\" . Told her cold outside, request to be seated in."
+            ],
+            "image": "https://media-cdn.tripadvisor.com/media/photo-s/13/ac/cb/99/photo0jpg.jpg"
+          },
+          {
+            "id": "https://restaurantguru.jp/Marufuku-Coffee-Sennichimae-honten-Osaka-Osaka-Prefecture",
+            "title": "丸福珈琲店千日前本店, 大阪市 - レストランメニュー、価格とレビュー",
+            "url": "https://restaurantguru.jp/Marufuku-Coffee-Sennichimae-honten-Osaka-Osaka-Prefecture",
+            "publishedDate": "2026-05-13T07:05:00.000Z",
+            "highlights": [
+              "# 丸福珈琲店千日前本店 \n\n3199 票\n\n 大阪市のカフェ 9573軒中511位 \n\n 閉店開店時間 08:00 「3 か月前に更新されました」\n\n...\n\n## レビューで頻繁に言及される\n\n s Famous Hotcakes cafe au lait uniforms with maple syrup from Namba Station cheese toast showa charm egg salad sandwich a long-established\n\n...\n\n〒542-0074 大阪府大阪市中央区千日前１丁目９−1\n\n...\n\n営業時間 \n\n| 日曜日日曜 | 08:00-23:00 |\n| --- | --- |\n| 月曜日月曜 | 08:00-23:00 |\n| 火曜日火曜 | 08:00-23:00 |\n| 水曜日水曜 | 08:00-23:00 |\n| 木曜日木曜 | 08:00-23:00 |\n| 金曜日金曜 | 08:00-23:00 |\n| 土曜日土曜 | 08:00-23:00 |"
+            ],
+            "image": "https://img4.restaurantguru.com/w550/h367/r2ed-Marufuku-Coffee-Sennichimae-honten-design.jpg"
+          },
+          {
+            "id": "https://www.marufukucoffeeten.co.jp/",
+            "title": "【公式】丸福珈琲店オンラインショップ｜深煎り珈琲・コーヒー豆 販売",
+            "url": "https://www.marufukucoffeeten.co.jp/",
+            "highlights": [
+              "### TREATMEタイ\n\n 「たまには自分を甘やかそう！」というメッセージをこめた25SS TIE COLLECTION。 そんな時に立ち寄りたい老舗喫茶店・丸福珈琲店とのコラボデザインのネクタイです。 丸福珈琲店の\"甘やかしメニュー\"は、スタッフが手焼きで作る自慢のホットケーキ。 たっぷりのメープルシロップとバターで思いっきりギルティにして楽しみたい逸品。 シロップが染み出したような織模様と、ホットケーキの焼き加減にこだわった織の表現にも注目です。 \n\n 〒542-0074 大阪府大阪市中央区千日前1-9-1 TEL：06-6211-1547"
+            ]
+          }
+        ],
+        "searchTime": 892.2,
+        "costDollars": {
+          "total": 0.007,
+          "search": {
+            "neural": 0.007
+          }
+        }
+      }
+    }
+  ]
+}

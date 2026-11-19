@@ -6,11 +6,16 @@ import { geminiMimeType, sizeLimitFor } from './attachmentLimits.js'
 import { GEMINI_IMAGE_TOKENS, processImageForGemini } from './imageProcessor.js'
 import { isobmffAllowsPrefix, prefixPolicyFor } from './mediaPrefix.js'
 
+/** Where an image came from: an upload, a forwarded or replied-to message, an embed, or a link preview. */
+export type ImageOrigin = 'upload' | 'forward' | 'reply' | 'own_embed' | 'reply_embed' | 'link_preview' | 'embed'
+
 export interface MediaAttachment {
   url: string
   contentType: string
   /** Bytes, when the source states them. Discord does on an upload; an embed or a resolved link does not. */
   size?: number
+  /** Discord's proxy shrinks the image before it downloads, so `size` is the original's and not what arrives. */
+  proxyResized?: boolean
   /** Gemini fetches the URL itself (a YouTube link), so the Pi never downloads it. */
   transport?: 'uri'
   /** Seconds, when the source states them. Discord does for a voice message. */
@@ -21,6 +26,8 @@ export interface MediaAttachment {
   silent?: boolean
   /** How the item reached the turn; recorded with what was watched so a server can remember who shared it. */
   origin?: 'upload' | 'reply' | 'forward' | 'link'
+  /** Where an image came from, so the automatic lookup can skip link previews. Never `origin`, which watched-media memory reads. */
+  imageOrigin?: ImageOrigin
   /** The Discord message the item was attached to. */
   sourceMessageId?: string
   /** Who posted the item, when known; a forward does not say. */
@@ -31,6 +38,20 @@ export interface MediaAttachment {
 
 // Bounds stalled attachment hosts as well as oversized responses.
 const ATTACHMENT_DOWNLOAD_TIMEOUT_MS = 15_000
+// One retry after a dropped connection, which the Pi's Wi-Fi produces. A timeout is not retried: it would
+// only spend the same 15 s again.
+const DROPPED_CONNECTION_RETRY_MS = 500
+
+async function fetchOnceMore(url: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, init)
+  } catch (error) {
+    if (!(error instanceof TypeError)) throw error
+    logger.info({ url, err: error }, 'Attachment connection dropped, trying once more')
+    await new Promise((resolve) => setTimeout(resolve, DROPPED_CONNECTION_RETRY_MS))
+    return fetch(url, { ...init, signal: AbortSignal.timeout(ATTACHMENT_DOWNLOAD_TIMEOUT_MS) })
+  }
+}
 
 export function attachmentMarker(mimeType: string): string {
   if (mimeType.startsWith('image/')) return '(an image)'
@@ -86,18 +107,19 @@ export async function downloadAttachment(
   const isImage = contentType.startsWith('image/')
   const limit = sizeLimitFor(contentType)
 
-  // Missing source sizes never trigger prefix truncation.
+  // Missing source sizes never trigger prefix truncation. A resized image is held to the cap as it streams.
+  const size = attachment.proxyResized ? undefined : attachment.size
   const policy = prefixPolicyFor(contentType)
-  const wantsPrefix = attachment.size !== undefined && attachment.size > limit && policy !== 'none'
+  const wantsPrefix = size !== undefined && size > limit && policy !== 'none'
 
-  if (attachment.size !== undefined && attachment.size > limit && policy === 'none') {
-    logger.warn({ url, size: attachment.size, limit, contentType }, 'Oversized and not safely prefixable, refusing')
+  if (size !== undefined && size > limit && policy === 'none') {
+    logger.warn({ url, size, limit, contentType }, 'Oversized and not safely prefixable, refusing')
     return null
   }
 
   try {
     // Streaming enforces the cap when the CDN ignores Range and returns 200.
-    const response = await fetch(url, {
+    const response = await fetchOnceMore(url, {
       ...(wantsPrefix ? { headers: { Range: `bytes=0-${limit - 1}` } } : {}),
       signal: AbortSignal.timeout(ATTACHMENT_DOWNLOAD_TIMEOUT_MS)
     })
@@ -132,7 +154,8 @@ export async function downloadAttachment(
       }
     }
 
-    const processed = await processImageForGemini(buffer)
+    const processed = await processImageForGemini(buffer, contentType)
+    if (!processed) return null
     return {
       data: processed.data.toString('base64'),
       mimeType: processed.mimeType,
@@ -140,7 +163,7 @@ export async function downloadAttachment(
       truncated: wantsPrefix
     }
   } catch (error) {
-    logger.warn({ url, error }, 'Error downloading attachment')
+    logger.warn({ url, err: error }, 'Error downloading attachment')
     return null
   }
 }
@@ -162,7 +185,21 @@ export async function prepareAttachments(
   let droppedAttachments = 0
   let truncatedAttachments = 0
   if (mediaAttachments?.length) {
-    const downloads = await Promise.all(mediaAttachments.map((img) => downloadAttachment(img)))
+    const downloads: Array<Awaited<ReturnType<typeof downloadAttachment>>> = Array.from(
+      { length: mediaAttachments.length },
+      () => null
+    )
+    const regularDownloads = Promise.all(
+      mediaAttachments.map(async (attachment, index) => {
+        if (attachment.contentType !== 'image/gif') downloads[index] = await downloadAttachment(attachment)
+      })
+    )
+    const gifDownloads = (async () => {
+      for (const [index, attachment] of mediaAttachments.entries()) {
+        if (attachment.contentType === 'image/gif') downloads[index] = await downloadAttachment(attachment)
+      }
+    })()
+    await Promise.all([regularDownloads, gifDownloads])
     droppedAttachments = downloads.filter((result) => result === null).length
     truncatedAttachments = downloads.filter((result) => result?.truncated).length
     for (const result of downloads) {

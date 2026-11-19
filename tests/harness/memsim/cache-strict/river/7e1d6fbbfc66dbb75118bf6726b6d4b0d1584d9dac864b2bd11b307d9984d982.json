@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "7e1d6fbbfc66dbb75118bf6726b6d4b0d1584d9dac864b2bd11b307d9984d982",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af977a176fe\",\"object\":\"chat.completion\",\"created\":1794733985,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"ops\\\":[],\\\"summary\\\":\\\"Alice and Bob asked Roka about clips shared this month, with Roka recalling the raku kiln glaze clip and the alpine terrarium clip. No durable personal or server facts were stated.\\\"}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4296,\"completion_tokens\":48,\"total_tokens\":4344,\"prompt_tokens_details\":{\"cached_tokens\":3840},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

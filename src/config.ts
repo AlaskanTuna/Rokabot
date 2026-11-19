@@ -112,7 +112,27 @@ interface YamlConfig {
     maxReplyChars?: number
     ytDlpPath?: string
   }
-  search?: { provider?: string; nativeTimeoutMs?: number; nativeReserveMs?: number }
+  search?: {
+    provider?: string
+    nativeTimeoutMs?: number
+    nativeReserveMs?: number
+    maxPageChars?: number
+    maxSearches?: number
+    maxPageReads?: number
+    maxProviderCalls?: number
+    maxBriefChars?: number
+    replyReserveMs?: number
+  }
+  imageId?: {
+    enabled?: boolean
+    maxMatches?: number
+    timeoutMs?: number
+    monthlyCap?: number
+    autoDailyCap?: number
+    resetDay?: number
+    gate?: string
+    gateTimeoutMs?: number
+  }
   media?: {
     watcher?: string
     embedWaitMs?: number
@@ -122,17 +142,9 @@ interface YamlConfig {
     skimClipSeconds?: number
     maxStreamedUploadBytes?: number
     uploadTimeoutMs?: number
-    qwen?: {
-      model?: string
-      secondsPerFrame?: number
-      minFrames?: number
-      maxFrames?: number
-      frameHeight?: number
-      timeoutMs?: number
-    }
-    transcriber?: { url?: string; timeoutMs?: number; maxSpeechSec?: number; maxAudioSec?: number }
   }
   memory?: {
+    store?: string
     bufferSize?: number
     contextSize?: number
     channelMonitorTtlMs?: number
@@ -153,8 +165,10 @@ interface YamlConfig {
     episodeMaxMessages?: number
     admitThreshold?: number
     verifyThreshold?: number
+    summaryThreshold?: number
     modelAdmitThreshold?: number
     modelVerifyThreshold?: number
+    modelSummaryThreshold?: number
     episodeRecallK?: number
     episodeTokenBudget?: number
     episodeMinSimilarity?: number
@@ -166,11 +180,6 @@ interface YamlConfig {
     embeddingModel?: string
     embeddingTimeoutMs?: number
     privacy?: string
-    recall?: string
-    recallTokenBudget?: number
-    recallCoreFacts?: number
-    factMinSimilarity?: number
-    serverFactMinSimilarity?: number
     vaultExportDir?: string
     extractionSampleRate?: number
     extractionSampleDays?: number
@@ -199,6 +208,13 @@ interface YamlConfig {
   updates?: { notify?: boolean; repo?: string; checkIntervalHours?: number }
   timezone?: string
   logging?: { level?: string }
+  format?: {
+    mode?: string
+    repair?: string
+    minListItems?: number
+    minListShare?: number
+    wordSlack?: number
+  }
 }
 
 function loadYamlConfig(): YamlConfig {
@@ -257,8 +273,8 @@ function envBoolean(key: string): boolean | undefined {
 
 export type JevMode = 'off' | 'shadow' | 'on'
 export type MemoryPrivacy = 'relaxed' | 'balanced' | 'strict' | 'off'
-export type MemoryRecallMode = 'legacy' | 'shadow' | 'unified'
-export type MediaWatcher = 'gemini' | 'qwen' | 'direct' | 'off'
+export type MemoryStore = 'legacy' | 'dual' | 'item'
+export type MediaWatcher = 'gemini' | 'off'
 export type MemoryJudge = 'jev' | 'model' | 'none'
 export type SearchProvider = 'off' | 'native' | 'tavily' | 'exa'
 
@@ -277,12 +293,32 @@ function jevMode(key: 'tone' | 'referents' | 'prefetch', envKey: string): JevMod
   throw new Error(`${source} must be off, shadow or on, got: ${String(value)}`)
 }
 
+export type FormatMode = 'off' | 'shadow' | 'on'
+export type FormatRepairMode = 'off' | 'reformat'
+export type ImageIdGateMode = 'off' | 'shadow' | 'on'
+
+function formatMode(): FormatMode {
+  const envValue = envString('FORMAT_MODE')
+  const value = envValue ?? yaml.format?.mode ?? 'on'
+  if (value === 'off' || value === 'shadow' || value === 'on') return value
+  const source = envValue ? 'Environment variable FORMAT_MODE' : 'Config value format.mode'
+  throw new Error(`${source} must be off, shadow or on, got: ${String(value)}`)
+}
+
+function formatRepair(): FormatRepairMode {
+  const envValue = envString('FORMAT_REPAIR')
+  const value = envValue ?? yaml.format?.repair ?? 'reformat'
+  if (value === 'off' || value === 'reformat') return value
+  const source = envValue ? 'Environment variable FORMAT_REPAIR' : 'Config value format.repair'
+  throw new Error(`${source} must be off or reformat, got: ${String(value)}`)
+}
+
 function mediaWatcher(): MediaWatcher {
   const envValue = envString('MEDIA_WATCHER')
   const value = envValue ?? yaml.media?.watcher ?? 'gemini'
-  if (value === 'gemini' || value === 'qwen' || value === 'direct' || value === 'off') return value
+  if (value === 'gemini' || value === 'off') return value
   const source = envValue ? 'Environment variable MEDIA_WATCHER' : 'Config value media.watcher'
-  throw new Error(`${source} must be gemini, qwen, direct or off, got: ${String(value)}`)
+  throw new Error(`${source} must be gemini or off, got: ${String(value)}`)
 }
 
 // Unset means native, which runs on `llm.main` itself and needs no search API key.
@@ -294,7 +330,15 @@ function searchProvider(): SearchProvider {
   throw new Error(`${source} must be off, native, tavily or exa, got: ${String(value)}`)
 }
 
-// Only the watcher's `gemini` mode requires the key, though the qwen watcher still falls back to Gemini on failure.
+function imageIdGate(): ImageIdGateMode {
+  const envValue = envString('IMAGE_ID_GATE')
+  const value = envValue ?? yaml.imageId?.gate ?? 'on'
+  if (value === 'off' || value === 'shadow' || value === 'on') return value
+  const source = envValue ? 'Environment variable IMAGE_ID_GATE' : 'Config value imageId.gate'
+  throw new Error(`${source} must be off, shadow or on, got: ${String(value)}`)
+}
+
+// Only the watcher's `gemini` mode needs the key.
 export function geminiKeyRequired(roles: {
   main: ProviderId
   fallback: ProviderId | null
@@ -309,13 +353,21 @@ export function geminiKeyRequired(roles: {
   )
 }
 
-function memoryEnum<T extends string>(key: 'privacy' | 'recall', envKey: string, values: readonly T[], fallback: T): T {
-  const envValue = envString(envKey)
-  const value = envValue ?? yaml.memory?.[key] ?? fallback
-  if ((values as readonly string[]).includes(String(value))) return value as T
-  const source = envValue ? `Environment variable ${envKey}` : `Config value memory.${key}`
-  const allowed = `${values.slice(0, -1).join(', ')} or ${values.at(-1)}`
+function memoryPrivacy(): MemoryPrivacy {
+  const envValue = envString('MEMORY_PRIVACY')
+  const value = envValue ?? yaml.memory?.privacy ?? 'relaxed'
+  if (value === 'relaxed' || value === 'balanced' || value === 'strict' || value === 'off') return value
+  const source = envValue ? 'Environment variable MEMORY_PRIVACY' : 'Config value memory.privacy'
+  const allowed = 'relaxed, balanced, strict or off'
   throw new Error(`${source} must be ${allowed}, got: ${String(value)}`)
+}
+
+function memoryStore(): MemoryStore {
+  const envValue = envString('MEMORY_STORE')
+  const value = envValue ?? yaml.memory?.store ?? 'legacy'
+  const source = envValue ? 'Environment variable MEMORY_STORE' : 'Config value memory.store'
+  if (value === 'legacy' || value === 'dual' || value === 'item') return value
+  throw new Error(`${source} must be legacy, dual or item, got: ${String(value)}`)
 }
 
 const PROVIDERS: readonly ProviderId[] = [...(Object.keys(PROVIDER_KEY_ENV) as ProviderId[]), 'openai-compatible']
@@ -606,7 +658,24 @@ const baseConfig = {
   search: {
     provider: searchProvider(),
     nativeTimeoutMs: yaml.search?.nativeTimeoutMs ?? 8000,
-    nativeReserveMs: yaml.search?.nativeReserveMs ?? 5000
+    nativeReserveMs: yaml.search?.nativeReserveMs ?? 5000,
+    maxPageChars: yaml.search?.maxPageChars ?? 8000,
+    maxSearches: yaml.search?.maxSearches ?? 2,
+    maxPageReads: yaml.search?.maxPageReads ?? 2,
+    maxProviderCalls: yaml.search?.maxProviderCalls ?? 3,
+    maxBriefChars: yaml.search?.maxBriefChars ?? 4000,
+    replyReserveMs: yaml.search?.replyReserveMs ?? 6000
+  },
+  imageId: {
+    apiKey: envString('SERPAPI_API_KEY'),
+    enabled: envBoolean('IMAGE_ID_ENABLED') ?? yaml.imageId?.enabled ?? true,
+    maxMatches: yaml.imageId?.maxMatches ?? 5,
+    timeoutMs: yaml.imageId?.timeoutMs ?? 6000,
+    monthlyCap: envInt('IMAGE_ID_MONTHLY_CAP') ?? yaml.imageId?.monthlyCap ?? 230,
+    autoDailyCap: envInt('IMAGE_ID_AUTO_DAILY_CAP') ?? yaml.imageId?.autoDailyCap ?? 6,
+    resetDay: yaml.imageId?.resetDay ?? 1,
+    gate: imageIdGate(),
+    gateTimeoutMs: yaml.imageId?.gateTimeoutMs ?? 4000
   },
   media: {
     watcher: mediaWatcher(),
@@ -616,24 +685,7 @@ const baseConfig = {
     skimClips: yaml.media?.skimClips ?? 8,
     skimClipSeconds: yaml.media?.skimClipSeconds ?? 10,
     maxStreamedUploadBytes: yaml.media?.maxStreamedUploadBytes ?? 52_428_800,
-    uploadTimeoutMs: yaml.media?.uploadTimeoutMs ?? 45_000,
-    qwen: {
-      apiKey: envString('MODELSCOPE_API_KEY'),
-      // Read from the legacy fallback block so a custom ModelScope endpoint still reaches the watcher.
-      baseUrl: yaml.fallback?.baseUrl ?? 'https://api-inference.modelscope.ai/v1',
-      model: envString('MEDIA_QWEN_MODEL') ?? yaml.media?.qwen?.model ?? 'Qwen/Qwen3.5-35B-A3B',
-      secondsPerFrame: yaml.media?.qwen?.secondsPerFrame ?? 4,
-      minFrames: yaml.media?.qwen?.minFrames ?? 16,
-      maxFrames: yaml.media?.qwen?.maxFrames ?? 32,
-      frameHeight: yaml.media?.qwen?.frameHeight ?? 360,
-      timeoutMs: yaml.media?.qwen?.timeoutMs ?? 30_000
-    },
-    transcriber: {
-      url: envString('MEDIA_TRANSCRIBER_URL') ?? yaml.media?.transcriber?.url ?? '',
-      timeoutMs: yaml.media?.transcriber?.timeoutMs ?? 45_000,
-      maxSpeechSec: yaml.media?.transcriber?.maxSpeechSec ?? 120,
-      maxAudioSec: yaml.media?.transcriber?.maxAudioSec ?? 180
-    }
+    uploadTimeoutMs: yaml.media?.uploadTimeoutMs ?? 45_000
   },
   gemini: {
     apiKey: envString('GEMINI_API_KEY') ?? '',
@@ -671,6 +723,7 @@ const baseConfig = {
     historyRetentionDays: yaml.session?.historyRetentionDays ?? 7
   },
   memory: {
+    store: memoryStore(),
     bufferSize: memoryBufferSize,
     contextSize: yaml.memory?.contextSize ?? 10,
     channelMonitorTtlMs: yaml.memory?.channelMonitorTtlMs ?? 86_400_000,
@@ -692,8 +745,10 @@ const baseConfig = {
     episodeMaxMessages,
     admitThreshold: yaml.memory?.admitThreshold ?? 0.5,
     verifyThreshold: yaml.memory?.verifyThreshold ?? 0.5,
+    summaryThreshold: yaml.memory?.summaryThreshold ?? 0.5,
     modelAdmitThreshold: yaml.memory?.modelAdmitThreshold ?? 0.7,
     modelVerifyThreshold: yaml.memory?.modelVerifyThreshold ?? 0.7,
+    modelSummaryThreshold: yaml.memory?.modelSummaryThreshold ?? 0.7,
     judge: memoryJudge(),
     episodeRecallK: yaml.memory?.episodeRecallK ?? 3,
     episodeTokenBudget: yaml.memory?.episodeTokenBudget ?? 200,
@@ -705,12 +760,7 @@ const baseConfig = {
     mediaRetentionDays: yaml.memory?.mediaRetentionDays ?? 90,
     embeddingModel: embeddings.model,
     embeddingTimeoutMs: embeddings.timeoutMs,
-    privacy: memoryEnum('privacy', 'MEMORY_PRIVACY', ['relaxed', 'balanced', 'strict', 'off'], 'relaxed'),
-    recall: memoryEnum('recall', 'MEMORY_RECALL', ['legacy', 'shadow', 'unified'], 'shadow'),
-    recallTokenBudget: yaml.memory?.recallTokenBudget ?? 600,
-    recallCoreFacts: yaml.memory?.recallCoreFacts ?? 3,
-    factMinSimilarity: similarityFloors?.fact ?? yaml.memory?.factMinSimilarity ?? 0.65,
-    serverFactMinSimilarity: similarityFloors?.serverFact ?? yaml.memory?.serverFactMinSimilarity ?? 0.65,
+    privacy: memoryPrivacy(),
     vaultExportDir: envString('MEMORY_VAULT_EXPORT_DIR') ?? yaml.memory?.vaultExportDir ?? 'data/vault',
     extractionSampleRate: envNumber('MEMORY_EXTRACTION_SAMPLE_RATE') ?? yaml.memory?.extractionSampleRate ?? 0.1,
     extractionSampleDays: envInt('MEMORY_EXTRACTION_SAMPLE_DAYS') ?? yaml.memory?.extractionSampleDays ?? 14,
@@ -749,7 +799,14 @@ const baseConfig = {
     repo: yaml.updates?.repo ?? 'AlaskanTuna/Rokabot',
     checkIntervalHours: yaml.updates?.checkIntervalHours ?? 24
   },
-  timezone: (envString('TZ') ?? yaml.timezone) as string | undefined
+  timezone: (envString('TZ') ?? yaml.timezone) as string | undefined,
+  format: {
+    mode: formatMode(),
+    repair: formatRepair(),
+    minListItems: yaml.format?.minListItems ?? 3,
+    minListShare: yaml.format?.minListShare ?? 0.5,
+    wordSlack: yaml.format?.wordSlack ?? 0.1
+  }
 } as const
 
 const llm = resolveLlm(baseConfig)
@@ -852,14 +909,6 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
     max: 104_857_600
   },
   { path: 'media.uploadTimeoutMs', value: config.media.uploadTimeoutMs, min: 10_000, max: 120_000 },
-  { path: 'media.qwen.secondsPerFrame', value: config.media.qwen.secondsPerFrame, min: 0.5, max: 30 },
-  { path: 'media.qwen.minFrames', value: config.media.qwen.minFrames, min: 4, max: 32 },
-  { path: 'media.qwen.maxFrames', value: config.media.qwen.maxFrames, min: 4, max: 32 },
-  { path: 'media.qwen.frameHeight', value: config.media.qwen.frameHeight, min: 144, max: 720 },
-  { path: 'media.qwen.timeoutMs', value: config.media.qwen.timeoutMs, min: 5000, max: 90_000 },
-  { path: 'media.transcriber.timeoutMs', value: config.media.transcriber.timeoutMs, min: 5000, max: 120_000 },
-  { path: 'media.transcriber.maxSpeechSec', value: config.media.transcriber.maxSpeechSec, min: 10, max: 600 },
-  { path: 'media.transcriber.maxAudioSec', value: config.media.transcriber.maxAudioSec, min: 30, max: 900 },
   { path: 'gemini.maxOutputTokens', value: config.gemini.maxOutputTokens, min: 1 },
   // Floor is a full turn of plain images, derived rather than restated: below it a maximal image turn could
   // be refused,
@@ -951,8 +1000,10 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   },
   { path: 'memory.admitThreshold', value: config.memory.admitThreshold, min: 0, max: 1 },
   { path: 'memory.verifyThreshold', value: config.memory.verifyThreshold, min: 0, max: 1 },
+  { path: 'memory.summaryThreshold', value: config.memory.summaryThreshold, min: 0, max: 1 },
   { path: 'memory.modelAdmitThreshold', value: config.memory.modelAdmitThreshold, min: 0, max: 1 },
   { path: 'memory.modelVerifyThreshold', value: config.memory.modelVerifyThreshold, min: 0, max: 1 },
+  { path: 'memory.modelSummaryThreshold', value: config.memory.modelSummaryThreshold, min: 0, max: 1 },
   { path: 'memory.episodeRecallK', value: config.memory.episodeRecallK, min: 1, max: 10 },
   { path: 'memory.episodeTokenBudget', value: config.memory.episodeTokenBudget, min: 1 },
   { path: 'memory.episodeMinSimilarity', value: config.memory.episodeMinSimilarity, min: 0, max: 1 },
@@ -962,10 +1013,6 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'memory.mediaMinSimilarity', value: config.memory.mediaMinSimilarity, min: 0, max: 1 },
   { path: 'memory.mediaRetentionDays', value: config.memory.mediaRetentionDays, min: 1, max: 365 },
   { path: 'memory.embeddingTimeoutMs', value: config.memory.embeddingTimeoutMs, min: 1 },
-  { path: 'memory.recallTokenBudget', value: config.memory.recallTokenBudget, min: 200, max: 2000 },
-  { path: 'memory.recallCoreFacts', value: config.memory.recallCoreFacts, min: 0, max: 5 },
-  { path: 'memory.factMinSimilarity', value: config.memory.factMinSimilarity, min: 0, max: 1 },
-  { path: 'memory.serverFactMinSimilarity', value: config.memory.serverFactMinSimilarity, min: 0, max: 1 },
   { path: 'memory.extractionSampleRate', value: config.memory.extractionSampleRate, min: 0, max: 1 },
   { path: 'memory.extractionSampleDays', value: config.memory.extractionSampleDays, min: 1, max: 90 },
   { path: 'memory.reclassifyMaxPerRun', value: config.memory.reclassifyMaxPerRun, min: 0, max: 100 },
@@ -988,10 +1035,26 @@ export const NUMERIC_BOUNDS: ReadonlyArray<{ path: string; value: number; min: n
   { path: 'updates.checkIntervalHours', value: config.updates.checkIntervalHours, min: 1, max: 168 },
   { path: 'llm.hedgeAfterMs', value: config.llm.hedgeAfterMs, min: 0 },
   { path: 'llm.stickyMs', value: config.llm.stickyMs, min: 0 },
+  { path: 'format.minListItems', value: config.format.minListItems, min: 2, max: 5 },
+  { path: 'format.minListShare', value: config.format.minListShare, min: 0, max: 1 },
+  { path: 'format.wordSlack', value: config.format.wordSlack, min: 0, max: 1 },
   // Below 2 s no native search could ever start: MIN_NATIVE_SEARCH_MS refuses it.
   { path: 'search.nativeTimeoutMs', value: config.search.nativeTimeoutMs, min: 2000, max: 60_000 },
   // min: 0 because a reserve of zero is a deliberate choice to let a search spend the whole attempt.
   { path: 'search.nativeReserveMs', value: config.search.nativeReserveMs, min: 0, max: 60_000 },
+  { path: 'search.maxPageChars', value: config.search.maxPageChars, min: 1 },
+  { path: 'search.maxSearches', value: config.search.maxSearches, min: 1 },
+  { path: 'search.maxPageReads', value: config.search.maxPageReads, min: 1 },
+  { path: 'search.maxProviderCalls', value: config.search.maxProviderCalls, min: 1 },
+  { path: 'search.maxBriefChars', value: config.search.maxBriefChars, min: 1 },
+  // min: 0 because a reserve of zero is a deliberate choice to let a lookup spend the whole attempt.
+  { path: 'search.replyReserveMs', value: config.search.replyReserveMs, min: 0, max: 60_000 },
+  { path: 'imageId.maxMatches', value: config.imageId.maxMatches, min: 1, max: 10 },
+  { path: 'imageId.timeoutMs', value: config.imageId.timeoutMs, min: 1000, max: 15_000 },
+  { path: 'imageId.monthlyCap', value: config.imageId.monthlyCap, min: 0, max: 100_000 },
+  { path: 'imageId.autoDailyCap', value: config.imageId.autoDailyCap, min: 0, max: 1000 },
+  { path: 'imageId.resetDay', value: config.imageId.resetDay, min: 1, max: 28 },
+  { path: 'imageId.gateTimeoutMs', value: config.imageId.gateTimeoutMs, min: 500, max: 15_000 },
   // Synthesised legacy values are already bounded as gemini.* and fallback.*, so only a block adds rows.
   ...(yaml.llm
     ? [

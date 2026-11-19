@@ -219,6 +219,34 @@ describe('searches', () => {
 })
 
 describe('tokens per minute', () => {
+  it('admits background work on a fresh route with one attachment of TPM capacity', () => {
+    configState.llm.main.limits = {
+      rpm: 15,
+      rpd: 500,
+      tpm: configState.gemini.maxAttachmentTokens
+    }
+    __resetBudgetsForTest()
+
+    expect(reserveCall({ ...extraction, estTokens: 1_000 })).not.toHaveProperty('denied')
+  })
+
+  it('denies background work when the bucket is nearly spent', () => {
+    configState.llm.main.limits = { rpm: 15, rpd: 500, tpm: 50_000 }
+    __resetBudgetsForTest()
+    chargeTokens(49_000)
+
+    expect(reserveCall({ ...extraction, estTokens: 1_000 })).toEqual({ denied: 'tpm' })
+  })
+
+  it('keeps the full attachment reserve on a large TPM route', () => {
+    configState.llm.main.limits = { rpm: 15, rpd: 500, tpm: 1_000_000 }
+    __resetBudgetsForTest()
+    chargeTokens(949_001)
+
+    expect(tokenBucketFor(configState.llm.main)?.capacity).toBe(1_000_000)
+    expect(reserveCall({ ...extraction, estTokens: 1_000 })).toEqual({ denied: 'tpm' })
+  })
+
   it('never refuses a text reply on tokens', () => {
     useRoutes({ tpm: 1_000 })
 
@@ -368,7 +396,7 @@ describe('denials and estimates', () => {
 
 describe('ModelScope', () => {
   const qwen = { provider: 'modelscope', model: 'Qwen/Qwen3.5-122B-A10B', workload: 'reply', estTokens: 500 } as const
-  const deepseek = { ...qwen, model: 'deepseek-ai/DeepSeek-V4.1-Flash' } as const
+  const deepseek = { ...qwen, model: 'deepseek-ai/DeepSeek-V4.1-Flash-1017' } as const
 
   it('shares one daily Magicube estimate across every ModelScope model', () => {
     for (let call = 0; call < 125; call += 1) {

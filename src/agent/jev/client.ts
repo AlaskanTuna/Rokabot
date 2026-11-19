@@ -4,6 +4,7 @@ import { config } from '../../config.js'
 
 let client: TypeSafeClient | undefined
 let jevAgent: Agent | undefined
+let fetchOverride: typeof fetch | undefined
 
 const fetchWithKeepAlive: typeof fetch = (input, init) => {
   jevAgent ??= new Agent({ keepAliveTimeout: 60_000 })
@@ -24,9 +25,14 @@ export function getJevClient(): TypeSafeClient | null {
     timeout: config.jev.timeoutMs,
     retry: { maxRetries: 0 },
     logLevel: 'off',
-    fetch: fetchWithKeepAlive
+    fetch: fetchOverride ?? fetchWithKeepAlive
   })
   return client
+}
+
+export function __setJevFetchForTest(override: typeof fetch | undefined): void {
+  fetchOverride = override
+  client = undefined
 }
 
 export async function resetJevClientForTest(): Promise<void> {

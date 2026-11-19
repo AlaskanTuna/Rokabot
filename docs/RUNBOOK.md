@@ -9,13 +9,13 @@ Commands and facts for running Rokabot on the Raspberry Pi 5.
 | Host           | Raspberry Pi 5 (8 GB), Docker Compose                                                      |
 | Checkout       | `~/rokabot`, reset to the deployed commit on every deploy                                  |
 | Compose File   | `~/rokabot/docker-compose.yml`                                                             |
-| Containers     | `rokabot-roka-1` (bot), `rokabot-asr-1` (speech), `rokabot-embeddings-1` (opt-in profile)  |
+| Containers     | `rokabot-roka-1` (bot), `rokabot-embeddings-1` (opt-in profile)                            |
 | Secrets        | `~/rokabot/.env`, which also records `ROKA_TAG`                                            |
 | Tunables       | `~/rokabot/config.yml`, mounted read-only at `/app/config.yml`                             |
 | Database       | `~/rokabot/data/rokabot.db`, mounted at `/app/data`                                        |
 | Archived Logs  | `~/rokabot/logs/roka-<timestamp>.log.gz`, kept 30 days                                     |
 | Health         | `curl http://localhost:3000/` returns `"status":"ok"` once Discord is connected (else 503) |
-| Images         | `ghcr.io/alaskantuna/rokabot`, `ghcr.io/alaskantuna/rokabot-asr`                           |
+| Images         | `ghcr.io/alaskantuna/rokabot`                                                              |
 | Runner Service | `actions.runner.AlaskanTuna-rokabot.rokabot-pi`                                            |
 
 - **Approval:** a restart, a redeploy and a merge to `main` each need the owner's explicit approval.
@@ -75,9 +75,9 @@ zcat ~/rokabot/logs/roka-<timestamp>.log.gz | grep '"msg":"Watched media"'
 A push to `main` runs `.github/workflows/deploy.yml`. A push that changes only `*.md`, `docs/**`, `.claude/**` or `graphify-out/**` does not deploy. Every pull request runs the `test` job.
 
 1. `test` type-checks, lints, and runs `npm test` and `npm run test:perf`. `compose` checks the compose file.
-2. `images` builds `rokabot` and `rokabot-asr` for amd64 and arm64. `manifest` tags them `sha-<first 7 of the commit>` and `edge` on GHCR, then checks that anonymous pulls work.
+2. `images` builds `rokabot` for amd64 and arm64. `manifest` tags it `sha-<first 7 of the commit>` and `edge` on GHCR, then checks that anonymous pulls work.
 3. The self-hosted runner on the Pi takes the `deploy` job. It polls GitHub outbound, so it works through any NAT or WiFi. Deploys run one at a time (`pi-deploy` concurrency group).
-4. The runner resets `~/rokabot` to the commit, archives the outgoing `roka` logs, runs `docker compose pull roka asr`, records `ROKA_TAG=sha-<7>` in `.env` and runs `docker compose up -d --no-build`.
+4. The runner resets `~/rokabot` to the commit, archives the outgoing `roka` logs, runs `docker compose pull roka`, records `ROKA_TAG=sha-<7>` in `.env` and runs `docker compose up -d --no-build --remove-orphans`, which also removes the retired `asr` container.
 5. It polls `http://localhost:3000/` 10 times, 5 s apart, for `"status":"ok"`. On failure it prints the last 20 log lines.
 6. It prunes old `sha-*` images. It keeps the current tag and the newest other one for rollback.
 7. With the `DISCORD_WEBHOOK_URL` secret set, it posts the result to Discord.
@@ -128,14 +128,16 @@ Users run `:stable`. It moves only when a release PR merges.
 ```bash
 # Step 3: show the stable digest
 docker buildx imagetools inspect ghcr.io/alaskantuna/rokabot:stable
-# Re-tag by hand when promote skipped; run it for rokabot and rokabot-asr
+# Re-tag from Actions when promote skipped; only the latest release is accepted
+gh workflow run promote.yml -f tag=vX.Y.Z
+# Re-tag by hand to roll stable back; needs a token with write:packages
 docker buildx imagetools create -t ghcr.io/alaskantuna/<name>:stable -t ghcr.io/alaskantuna/<name>:vX.Y.Z -t ghcr.io/alaskantuna/<name>:vX.Y ghcr.io/alaskantuna/<name>:sha-<first 7 of the release commit>
 ```
 
 `promote` runs only after the Pi deploy of the release commit succeeds. Re-running `deploy` for an older run resets the Pi to that older commit.
 
 - **Release Deploy Failed or Never Ran** (for example, the runner was offline): `stable` stays on the old release. When the Pi is healthy, run `gh run rerun <run-id> --failed`.
-- **Newer Push Superseded the Deploy**, or raced it so `promote` skipped: re-tag both images by hand with the release commit (command above).
+- **Newer Push Superseded the Deploy**, or raced it so `promote` skipped: run `gh workflow run promote.yml -f tag=vX.Y.Z`. It re-tags the release commit's image, whatever the newest commit is.
 
 ### GHCR Visibility
 
@@ -143,9 +145,9 @@ The Pi and users pull without logging in, so both packages must be public. If `m
 
 After the first switch to pulled images (one time):
 
-1. New packages start private, so the first `manifest` fails. Set `rokabot` and `rokabot-asr` to Public.
+1. New packages start private, so the first `manifest` fails. Set `rokabot` to Public.
 2. Run `gh run rerun <run-id> --failed` within a day. Digest artifacts expire after one day. After that, re-run the whole run.
-3. After the first good pull deploy, remove the old local images and build cache once: `docker image rm rokabot-roka rokabot-asr && docker builder prune -af`.
+3. After the first good pull deploy, remove the old local images and build cache once: `docker image rm rokabot-roka && docker builder prune -af`.
 
 ### Self-Hosted Runner
 
@@ -189,17 +191,18 @@ Set these in `~/rokabot/.env`, then run `sudo docker compose -f ~/rokabot/docker
 | ------------------------------------------- | -------------------------------------- | ------------------------------------------------------- |
 | `LLM_MAIN`                                  | a key under `llm.models`               | Reply model (`llm.main`)                                |
 | `LLM_FALLBACK`                              | a key, or `none`                       | Fallback model; `none` turns it off                     |
-| `MEDIA_WATCHER`                             | `gemini`, `qwen`, `direct`, `off`      | Who takes in audio and video ([Media](#media-watching)) |
-| `MEDIA_TRANSCRIBER_URL`                     | URL, or empty                          | Empty turns speech transcription off                    |
+| `MEDIA_WATCHER`                             | `gemini`, `off`                        | Who takes in audio and video ([Media](#media-watching)) |
 | `SOCIAL_POSTS_ENABLED`                      | `false`                                | Turns social post viewing off                           |
 | `EMBEDDINGS_PROVIDER`                       | `gemini`, `local`, `openai`            | Who makes memory vectors                                |
 | `COMPOSE_PROFILES`                          | `local-embeddings`                     | Starts the embeddings sidecar                           |
 | `JEV_TONE`, `JEV_REFERENTS`, `JEV_PREFETCH` | `off`, `shadow`, `on`                  | Jev in-reply judgments                                  |
 | `SEARCH_PROVIDER`                           | `off`, `native`, `tavily`, `exa`       | Web search backend (`search.provider`)                  |
+| `MEMORY_STORE`                              | `legacy`, `dual`, `item`               | Typed memory store (`memory.store`); Pi runs `item`     |
 | `MEMORY_PRIVACY`                            | `relaxed`, `balanced`, `strict`, `off` | `memory.privacy`                                        |
-| `MEMORY_RECALL`                             | `legacy`, `shadow`, `unified`          | `memory.recall`                                         |
 | `MEMORY_EXTRACTION_SAMPLE_RATE`             | `0` to `1`                             | `0` stops rejected-conversation samples                 |
 | `MEMORY_RECLASSIFY_MAX_PER_RUN`             | `0` to `100`                           | `0` turns reclassification off                          |
+| `FORMAT_MODE`                               | `off`, `shadow`, `on`                  | Explicit reply format override and repair               |
+| `FORMAT_REPAIR`                             | `true`, `false`                        | Repairs replies that miss an explicit format ask        |
 | `TYPESAFE_API_KEY`                          | key                                    | Jev judges when it is set                               |
 
 ### Web Search Provider
@@ -433,8 +436,13 @@ All queries run with `sqlite3 ~/rokabot/data/rokabot.db` on the Pi. `created_at`
 sqlite3 ~/rokabot/data/rokabot.db '.tables'
 # Show the database file size
 ls -lh ~/rokabot/data/rokabot.db
-# Show the memory table schemas
-sqlite3 ~/rokabot/data/rokabot.db '.schema memory_claim'
+# Show the memory item table schemas
+sqlite3 ~/rokabot/data/rokabot.db '.schema memory_item'
+sqlite3 ~/rokabot/data/rokabot.db '.schema memory_item_evidence'
+sqlite3 ~/rokabot/data/rokabot.db '.schema memory_item_occurrence'
+sqlite3 ~/rokabot/data/rokabot.db '.schema memory_item_payload'
+sqlite3 ~/rokabot/data/rokabot.db '.schema memory_item_embedding'
+sqlite3 ~/rokabot/data/rokabot.db '.schema memory_legacy_drop'
 sqlite3 ~/rokabot/data/rokabot.db '.schema extraction_queue'
 sqlite3 ~/rokabot/data/rokabot.db '.schema jev_events'
 # Back up the live database on the Pi (from a dev machine)
@@ -453,18 +461,19 @@ docker compose up -d
 ### Memory Claims and Extraction Queue
 
 ```bash
-# Recent active claims
-sqlite3 ~/rokabot/data/rokabot.db "SELECT id, guild_id, subject_kind, subject_user_id, predicate, value,
-  expires_at, needs_review, first_seen_at, last_seen_at
-  FROM memory_claim WHERE status='active' ORDER BY last_seen_at DESC LIMIT 100;"
-# Claims for one user in one guild
-sqlite3 ~/rokabot/data/rokabot.db "SELECT id, predicate, value, period, status, needs_review, last_seen_at, ended_at, end_reason
-  FROM memory_claim WHERE guild_id='GUILD_ID' AND subject_kind='user' AND subject_user_id='USER_ID'
+# Recent active facts (item_id is the primary key; legacy_id is null on item-native rows)
+sqlite3 ~/rokabot/data/rokabot.db "SELECT id AS item_id, legacy_id, guild_id, subject_kind, subject_user_id, predicate, content,
+  valid_until, needs_review, first_seen_at, last_seen_at
+  FROM memory_item WHERE kind='fact' AND status='active' ORDER BY last_seen_at DESC LIMIT 100;"
+# Facts for one user in one guild
+sqlite3 ~/rokabot/data/rokabot.db "SELECT id AS item_id, legacy_id, predicate, content, period, status, needs_review,
+  last_seen_at, ended_at, end_reason
+  FROM memory_item WHERE guild_id='GUILD_ID' AND kind='fact' AND subject_kind='user' AND subject_user_id='USER_ID'
   ORDER BY last_seen_at DESC;"
-# Active claims per guild and subject
-sqlite3 ~/rokabot/data/rokabot.db "SELECT guild_id, subject_kind, subject_user_id, COUNT(*) AS active_claims
-  FROM memory_claim WHERE status='active' GROUP BY guild_id, subject_kind, subject_user_id
-  ORDER BY active_claims DESC;"
+# Active facts per guild and subject
+sqlite3 ~/rokabot/data/rokabot.db "SELECT guild_id, subject_kind, subject_user_id, COUNT(*) AS active_facts
+  FROM memory_item WHERE kind='fact' AND status='active' GROUP BY guild_id, subject_kind, subject_user_id
+  ORDER BY active_facts DESC;"
 # Queue backlog by status
 sqlite3 ~/rokabot/data/rokabot.db 'SELECT status, COUNT(*) AS jobs FROM extraction_queue GROUP BY status;'
 ```
@@ -482,10 +491,17 @@ sqlite3 ~/rokabot/data/rokabot.db 'SELECT status, COUNT(*) AS jobs FROM extracti
 Every extraction attempt writes one `memory_events` row with `kind = 'extraction_run'`. Its `detail` JSON holds the stage, outcome, admission probability, operation counts and stage timings, never message text (fields: [Memory](trd/memory.md)). A retried job leaves one row per attempt. Rows are pruned after `metrics.retentionDays`.
 
 - **`stage`:** the furthest stage reached: `precheck`, `admission`, `extraction`, `verification` or `applied`.
-- **`outcome`:** `trivial` and `sensitive` are precheck drops. `below_threshold` is a Jev admission rejection. `jev_unavailable` is an admission Jev could not judge (retried once). `noop` and `written` are completed runs. `error` is a failure.
+- **`outcome`:** `trivial` and `sensitive` are precheck drops (`precheckPattern` names which sensitive filter matched). `below_threshold` is a Jev admission rejection. `jev_unavailable` is an admission Jev could not judge (retried once). `noop` and `written` are completed runs. `error` is a failure.
 - **`errorClass`:** `transient` or `permanent` with `error`. `unjudged` appears only with `jev_unavailable`.
+- **`summary`:** `dropReason` is `ops_rejected`, `numeric_id`, `boilerplate` or `incomplete`. `judged` is false when Jev gave no answer. `jev_events` holds each score with `question = 'summary_complete'`.
 
 ```sql
+-- Summary drops by reason, last 7 days
+SELECT json_extract(detail, '$.summary.dropReason') AS reason, count(*)
+FROM memory_events WHERE kind = 'extraction_run' AND created_at > (strftime('%s','now') - 7*86400) * 1000
+  AND json_extract(detail, '$.summary.dropReason') IS NOT NULL
+GROUP BY reason;
+
 -- Funnel by stage and outcome, last 7 days
 SELECT json_extract(detail, '$.stage') AS stage, json_extract(detail, '$.outcome') AS outcome, count(*)
 FROM memory_events WHERE kind = 'extraction_run' AND created_at > (strftime('%s','now') - 7*86400) * 1000
@@ -497,11 +513,20 @@ FROM memory_events WHERE kind = 'extraction_run' AND json_extract(detail, '$.adm
 GROUP BY bucket ORDER BY bucket;
 
 -- Operation outcomes
-SELECT sum(json_extract(detail, '$.ops.proposed')), sum(json_extract(detail, '$.ops.applied')),
+SELECT sum(json_extract(detail, '$.ops.proposed')), sum(json_extract(detail, '$.ops.invalid')),
+       sum(json_extract(detail, '$.ops.applied')),
        sum(json_extract(detail, '$.ops.duplicate')), sum(json_extract(detail, '$.ops.staged')),
        sum(json_extract(detail, '$.ops.dropped')), sum(json_extract(detail, '$.ops.past')),
-       sum(json_extract(detail, '$.ops.reword')), sum(json_extract(detail, '$.ops.retracted'))
+       sum(json_extract(detail, '$.ops.reword')), sum(json_extract(detail, '$.ops.retracted')),
+       sum(json_extract(detail, '$.ops.uncited'))
 FROM memory_events WHERE kind = 'extraction_run';
+
+-- Extraction model and fallback usage
+SELECT json_extract(detail, '$.models.extraction') AS model,
+       json_extract(detail, '$.extractionProvider') AS provider,
+       json_extract(detail, '$.extractionFallback') AS fallback, count(*)
+FROM memory_events WHERE kind = 'extraction_run'
+GROUP BY model, provider, fallback;
 
 -- Errors and whether retries recovered them
 SELECT job, group_concat(outcome, ' > ') AS attempts
@@ -519,7 +544,7 @@ SELECT kind, question, probability, applied FROM jev_events WHERE job_id = <jobI
 
 - **Admission Buckets:** a pile-up just under `memory.admitThreshold` suggests the threshold is too strict.
 - **Retries:** a job ending in `> written` or `> noop` recovered; one ending in `> error` did not.
-- **Ops:** `ops.applied` (and `n_selected`) includes staged candidates, so active writes are `applied - staged`. `ops.dropped` counts operations neither applied nor duplicate, staged ones excluded. `ops.past` counts facts written as past ("used to be a nurse"). `ops.reword` counts updates that only restated a fact and became evidence.
+- **Ops & Models:** `ops.invalid` counts malformed operations (such as wrong-type fields) dropped individually without failing the run. `ops.applied` (and `n_selected`) includes staged candidates, so active writes are `applied - staged`. `ops.dropped` counts operations neither applied nor duplicate, staged ones excluded. `ops.past` counts facts written as past ("used to be a nurse"). `ops.reword` counts updates that only restated a fact and became evidence. `models.extraction`, `extractionProvider` and `extractionFallback` identify the model and provider that answered.
 - **Retractions:** `ops.retracted` counts retired claims, including hidden facts under `balanced` and `strict`. A run that only retired hidden facts has `ops.applied` 0 and is still `written`.
 - **Boilerplate:** `summary.boilerplate` marks summaries that only say no new durable fact came up.
 - **Job IDs:** turn judgments leave `jev_events.job_id` null.
@@ -564,20 +589,22 @@ A background step moves facts filed under the wrong predicate, mostly `misc`, to
 - **Audit:** each move writes a `claim_reclassified` event with claim IDs, both predicates and the probability. `metrics.retentionDays` never prunes these, because undo reads them.
 
 ```sql
--- Recent moves; old_id is what undo takes
-SELECT created_at, json_extract(detail, '$.oldId') AS old_id, json_extract(detail, '$.newId') AS new_id,
+-- Recent moves; old_id is what undo takes. Rows with v = 2 name item IDs; older rows name legacy claim IDs.
+SELECT created_at, json_extract(detail, '$.v') AS v, json_extract(detail, '$.oldId') AS old_id,
+       json_extract(detail, '$.newId') AS new_id,
        json_extract(detail, '$.from') AS from_predicate, json_extract(detail, '$.to') AS to_predicate,
        json_extract(detail, '$.probability') AS probability
 FROM memory_events WHERE kind = 'claim_reclassified' ORDER BY created_at DESC LIMIT 20;
 
--- Both rows of one move (shows values, so run it on the Pi only)
-SELECT id, predicate, value, status, end_reason, superseded_by, pinned
-FROM memory_claim WHERE id IN (<old_id>, <new_id>);
+-- Both rows of one move (shows values, so run it on the Pi only).
+-- For a v = 2 row, use WHERE kind = 'fact' AND id IN (<old_id>, <new_id>) instead.
+SELECT id AS item_id, legacy_id, predicate, content, status, end_reason, superseded_by, pinned
+FROM memory_item WHERE legacy_table = 'memory_claim' AND legacy_id IN (<old_id>, <new_id>);
 ```
 
 Expect a handful of moves after the first deploy, not dozens.
 
-**Undo a Move.** Undo reactivates the old row and ends the replacement when the move created or revived it. That fact is never offered again. It prints `undone`, or `nothing to undo` when the row was not reclassified or is already restored. It runs in one transaction while the bot keeps running. Opening the second connection runs the startup migrations, which recreate the `memory_claim` full-text triggers, so run it while the bot is idle.
+**Undo a Move.** Undo reactivates the old row and ends the replacement when the move created or revived it. That fact is never offered again. It prints `undone`, or `nothing to undo` when the row was not reclassified or is already restored. It runs in one transaction while the bot keeps running. Opening the second connection runs startup schema checks (with `memory_legacy_drop` present, legacy `memory_claim` tables and full-text triggers are skipped), so run it while the bot is idle.
 
 ```bash
 # Production: run the compiled module in the container (the image has no scripts/ and no tsx); replace OLD_ID
@@ -593,22 +620,27 @@ npm run memory:undo-reclassify -- OLD_ID
 
 ### Episodes, Media Memory and Recall
 
-- **Episodes:** summaries and embeddings live per guild in `memory_episode`. The maintenance pass (startup, then every 24 hours) deletes episodes past `memory.episodeRetentionDays` and retries missing or unreadable embeddings.
+- **Episodes:** summaries live in `memory_item`; vectors live in `memory_item_embedding`. The maintenance pass (startup, then every 24 hours) deletes expired source episodes and retries missing or unreadable embeddings.
 - **Embedding Quota:** with `embeddings.provider: gemini` (the Pi), embeddings use `GEMINI_API_KEY` and `gemini-embedding-2` on a separate project quota. They do not debit the bot's generation rate limiter. The planning estimate is 100 RPM, 30 K TPM and 1 K RPD; check AI Studio for your limits.
-- **Media:** digests of watched media live in `media_digest`, one row per guild and content key, with an embedding. Each share is a `media_occurrence` row. No media files are stored.
-- **Privacy:** `memory.privacy` (`MEMORY_PRIVACY`) and `memory.recall` (`MEMORY_RECALL`). A server that hides every channel from `@everyone` and grants access by role has no public channels, so `balanced` acts like `strict` there.
+- **Media:** item summaries live in `memory_item`, vectors in `memory_item_embedding`, and each share in `memory_item_occurrence`. The payload table holds digest JSON. No media files are stored.
+- **Privacy:** `memory.privacy` (`MEMORY_PRIVACY`). A server that hides every channel from `@everyone` and grants access by role has no public channels, so `balanced` acts like `strict` there.
 - **Forget User:** the speaker can delete their own notes at every level. At `relaxed`, replies quote matching values. At `balanced` and `strict`, they quote only claims and media recallable in the current channel and count the rest. At `off`, replies give counts only.
 - **Cached Media:** a repost of the same content reuses its digest at every level and records the new share. Unprompted recall of media summaries still follows the privacy level.
 
 ```bash
 # Episodes per guild
-sqlite3 ~/rokabot/data/rokabot.db 'SELECT guild_id, COUNT(*) AS episodes FROM memory_episode GROUP BY guild_id ORDER BY guild_id;'
+sqlite3 ~/rokabot/data/rokabot.db "SELECT guild_id, COUNT(*) AS episodes FROM memory_item WHERE kind='episode' GROUP BY guild_id ORDER BY guild_id;"
 # Remembered media per guild, with share counts
-sqlite3 ~/rokabot/data/rokabot.db "SELECT d.guild_id, d.label, substr(d.summary, 1, 60), COUNT(o.id) AS shares, d.embedding IS NOT NULL AS embedded FROM media_digest d LEFT JOIN media_occurrence o ON o.digest_id = d.id GROUP BY d.id ORDER BY d.created_at DESC LIMIT 20;"
-# Active facts and how many hold a vector in any space (after a provider switch, use the per-fingerprint query)
-sqlite3 ~/rokabot/data/rokabot.db "SELECT COUNT(*) AS active, SUM(embedding IS NOT NULL) AS embedded FROM memory_claim WHERE status = 'active';"
-# Recall shadow comparison, last 7 days: legacy fact retrieval vs unified recall
-sqlite3 ~/rokabot/data/rokabot.db "SELECT kind, COUNT(*) AS turns, ROUND(AVG(n_selected), 2) AS avg_selected, ROUND(AVG(tokens_est)) AS avg_tokens FROM memory_events WHERE kind IN ('retrieval', 'recall_shadow', 'recall') AND created_at > (strftime('%s', 'now') - 7 * 86400) * 1000 GROUP BY kind;"
+sqlite3 ~/rokabot/data/rokabot.db "SELECT item.guild_id, item.label, substr(item.content, 1, 60), COUNT(occurrence.id) AS shares,
+  EXISTS (SELECT 1 FROM memory_item_embedding vector WHERE vector.item_id = item.id) AS embedded
+  FROM memory_item item LEFT JOIN memory_item_occurrence occurrence ON occurrence.item_id = item.id AND occurrence.origin != 'episode'
+  WHERE item.kind='media' GROUP BY item.id ORDER BY item.created_at DESC LIMIT 20;"
+# Active facts and how many hold a vector in any space
+sqlite3 ~/rokabot/data/rokabot.db "SELECT COUNT(*) AS active,
+  SUM(EXISTS (SELECT 1 FROM memory_item_embedding vector WHERE vector.item_id = item.id)) AS embedded
+  FROM memory_item item WHERE item.kind='fact' AND item.status='active';"
+# Memory recall, last 7 days: fact retrieval vs prompt blocks built
+sqlite3 ~/rokabot/data/rokabot.db "SELECT kind, COUNT(*) AS turns, ROUND(AVG(n_selected), 2) AS avg_selected, ROUND(AVG(tokens_est)) AS avg_tokens FROM memory_events WHERE kind IN ('retrieval', 'context_build') AND created_at > (strftime('%s', 'now') - 7 * 86400) * 1000 GROUP BY kind;"
 ```
 
 ### Memory V2 Migration
@@ -624,6 +656,112 @@ ROKABOT_DB_PATH="$PWD/data/rokabot.db" npm run migrate:memory-v2
 ```
 
 Review the report and the backup. If the check passed, restart with `sudo docker compose up -d roka`. Never delete `user_memory` by hand.
+
+### Typed Memory Items
+
+The `#266` typed memory cutover is complete in production (2026-11-14). The phases landed in order: `#498` (prompt-local refs `1..n` and stable content ordering in every memory model and Jev call, so both stores send identical requests), `#499` Phase 5 read cutover (`777c6ca`), `#500` Phase 6 writer cutover (`e62d520`), and `#501` Phase 7 legacy drop (`8f93a49`). Owner decisions 12 and 13 replaced production shadow reads and soaks with the offline simulator gate.
+
+#### Production State
+
+- **Store Mode:** the Pi runs `MEMORY_STORE=item` in `~/rokabot/.env`. `config.yml` stays on `memory.store: legacy`.
+- **Readers and Writers:** all prompt readers and memory writers use `memory_item` directly. Projection triggers are gone (`0`).
+- **Dropped Legacy Tables:** on 2026-11-14, `npm run migrate:memory-items -- --drop-legacy --backup` dropped `memory_claim`, `memory_evidence`, `memory_claim_fts` (plus its shadow tables), `memory_episode`, `media_digest` and `media_occurrence`, and recorded the drop in `memory_legacy_drop`. Item counts after the drop: `129` facts, `396` episodes, `43` media.
+- **Startup Guard:** only `item` starts on this database. Startup refuses `legacy` or `dual` and never recreates the dropped tables. `item_integrity` checks item-native invariants.
+- **Open Follow-Ups:** `#496` (server events and private facts rarely stored) and `#497` (strict-privacy simulator run).
+
+```bash
+# Verify current production state on the Pi
+sqlite3 ~/rokabot/data/rokabot.db "SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'memory_item_projection_%';"
+sqlite3 ~/rokabot/data/rokabot.db "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('memory_claim', 'memory_evidence', 'memory_claim_fts', 'memory_episode', 'media_digest', 'media_occurrence');"
+sqlite3 ~/rokabot/data/rokabot.db "SELECT dropped_at, detail FROM memory_legacy_drop;"
+sqlite3 ~/rokabot/data/rokabot.db "SELECT kind, COUNT(*) FROM memory_item GROUP BY kind;"
+sqlite3 ~/rokabot/data/rokabot.db "SELECT detail FROM memory_events WHERE kind = 'item_integrity' ORDER BY id DESC LIMIT 1;"
+```
+
+The first two queries return `0`. The third returns the drop timestamp and per-table pre-drop counts.
+
+#### Rollback from the Pre-Drop Backup
+
+Because the legacy tables are dropped, `migrate:memory-items` and `migrate:memory-items -- --to-legacy` refuse on the Pi database. Keep the pre-drop backup (`data/rokabot.db.pre-memory-drop.<timestamp>`).
+
+1. Stop the bot.
+2. Copy the pre-drop backup over `data/rokabot.db` and delete any `data/rokabot.db-wal` and `data/rokabot.db-shm`.
+3. Start the bot with `MEMORY_STORE=item` in `.env` to return to the pre-drop Phase 6 database.
+
+```bash
+cd ~/rokabot
+sudo docker compose -f ~/rokabot/docker-compose.yml stop roka
+cp data/rokabot.db.pre-memory-drop.<timestamp> data/rokabot.db
+rm -f data/rokabot.db-wal data/rokabot.db-shm
+# Keep MEMORY_STORE=item in .env
+sudo docker compose -f ~/rokabot/docker-compose.yml up -d roka
+```
+
+To roll back further from a restored Phase 6 database to `dual`: stop the bot, export the item rows back to the legacy tables in one transaction, confirm `status: ok` and `checks_failed: 0`, set `MEMORY_STORE=dual` in `.env`, and start the bot.
+
+```bash
+cd ~/rokabot
+sudo docker compose -f ~/rokabot/docker-compose.yml stop roka
+ROKABOT_DB_PATH="$PWD/data/rokabot.db" npm run migrate:memory-items -- --to-legacy
+# Set MEMORY_STORE=dual in .env; config.yml remains legacy.
+sudo docker compose -f ~/rokabot/docker-compose.yml up -d roka
+sqlite3 data/rokabot.db "SELECT detail FROM memory_events WHERE kind = 'item_integrity' ORDER BY id DESC LIMIT 1;"
+sqlite3 data/rokabot.db "SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'memory_item_projection_%';"
+```
+
+After restart in `dual`, `item_integrity` reports zero drift and the trigger count returns `15`.
+
+#### Un-Dropped Databases and Phase 7 Drop
+
+For a fresh database or an un-dropped backup moving from `legacy` to `item`:
+
+1. Stop the bot, take a timestamped `.backup`, run `ROKABOT_DB_PATH="$PWD/data/rokabot.db" npm run migrate:memory-items`, and confirm `status` is `ok` and `checks_failed` is `0`.
+2. Set `MEMORY_STORE=item` in `.env` and start the bot. Startup drops the 15 projection triggers (`0` remain) and freezes the legacy tables.
+3. To drop the six legacy tables after a backup, stop the bot and run `migrate:memory-items -- --drop-legacy --backup`. The script refuses unless `MEMORY_STORE` is `item`, projection triggers are `0`, and `--backup` points to a separate readable SQLite file with all six legacy tables, matching row counts, and an mtime newer than the newest detectable legacy write (or newer than 24 hours ago if none is detectable).
+
+```bash
+cd ~/rokabot
+sudo docker compose -f ~/rokabot/docker-compose.yml stop roka
+sqlite3 data/rokabot.db ".backup data/rokabot.db.pre-memory-drop.$(date -u +%Y%m%d%H%M%S)"
+ROKABOT_DB_PATH="$PWD/data/rokabot.db" MEMORY_STORE=item npm run migrate:memory-items -- --drop-legacy --backup "$PWD/data/rokabot.db.pre-memory-drop.<timestamp>"
+sudo docker compose -f ~/rokabot/docker-compose.yml up -d roka
+```
+
+#### Offline Memory Simulator Gate (#266)
+
+The seedless committed-cache replay gated every phase cutover in `#266`. Both `--store dual` and `--store item` pass with `0` cache misses, `0` live calls, and identical quality (`0.732` recall, `0.968` precision at the time; the cache re-recorded for #504 on 2026-11-15 scores `0.878` and `0.973`); Phase 7 also passes with `--drop-legacy-at-day 15`. `npm run memsim` replays 30 synthetic days across two guilds, public and private channels, DMs, media shares and five restarts through the real memory pipeline on a temporary database. `npm test` runs the same seedless replay. Extraction prompts change with the privacy level, so `strict` has its own committed cache in `tests/harness/memsim/cache-strict/`, and `npm test` replays it too (2026-11-15, #504: `0.878` recall, `0.973` precision, no leaks). The simulator overwrites `GEMINI_API_KEY` with a sentinel in its own process and reads `TYPESAFE_API_KEY`, `GRAPHIFY_GEMINI_API_KEY`, `DEV_GEMINI_API_KEY` and `CLIPROXY_TOKEN` from `.env` only when recording. Its report holds counts and hashes only, never memory text.
+
+Record and seeded runs need the local River proxy (`127.0.0.1:8317`), so run them on a workstation, not on the Pi. A record run also needs `.env` in the working directory. A live call that still fails after 4 attempts stops the run with `MemsimLiveCallError`, so a recording never leaves a request that replay cannot find. The simulator runs one extraction job at a time, so a fresh recording replays itself exactly:
+
+```bash
+# Replay the committed synthetic cache; no network calls.
+npm run memsim -- --replay --store dual
+npm run memsim -- --replay --store item
+npm run memsim -- --replay --store item --drop-legacy-at-day 15
+npm run memsim -- --replay --store item --privacy strict --cache-dir tests/harness/memsim/cache-strict
+# Record the committed cache after a scenario or pipeline change, then drop entries nothing read.
+# --budget river=N,embeddings=N,typesafe=N caps live calls (defaults 600, 1200 and 1500).
+npm run memsim:generate
+npm run memsim -- --record --prune-unused --store dual
+npm run memsim -- --record --prune-unused --store item
+npm run memsim -- --record --prune-unused --store dual --privacy strict --cache-dir tests/harness/memsim/cache-strict
+npm run memsim -- --record --store item --privacy strict --cache-dir tests/harness/memsim/cache-strict
+# Seeded run: copy the Pi database into a private directory outside the repo, then record and replay against the copy.
+install -d -m 700 ~/memsim-private
+ssh <pi-user>@<pi-ethernet-ip> "sqlite3 ~/rokabot/data/rokabot.db '.backup /tmp/rokabot-sim-copy.db'"
+scp <pi-user>@<pi-ethernet-ip>:/tmp/rokabot-sim-copy.db ~/memsim-private/
+ssh <pi-user>@<pi-ethernet-ip> "rm /tmp/rokabot-sim-copy.db"
+npm run memsim -- --seed ~/memsim-private/rokabot-sim-copy.db --record --cache-dir ~/memsim-private/cache --store dual
+npm run memsim -- --seed ~/memsim-private/rokabot-sim-copy.db --replay --cache-dir ~/memsim-private/cache --store dual
+```
+
+A seeded run refuses a `--cache-dir` inside the repository because its cached replies hold real memory text. Never commit that cache or the copy. The dual replay gate requires `integrity=passed` (`drift 0/0/0`), `triggers=passed`, `parity=passed`, `privacy=passed` and `crash=passed` (under `--store item`, `parity` is `skipped`).
+
+The builder timing at 10,000 items runs offline from the committed cache, so it can run on the Pi:
+
+```bash
+npm run memsim -- --replay --scale 10000 --store item
+```
 
 ### Vault Export
 
@@ -688,11 +826,14 @@ sqlite3 ~/rokabot/data/rokabot.db "SELECT user_id, SUM(score) as total, COUNT(*)
 
 ### Failure Diagnostics
 
-`failure_diagnostics` holds turns that fell back or deflected, with the triggering message verbatim. It is pruned after `metrics.diagnosticsRetentionHours` (72 hours), sooner than other metrics. It records only failures, so every safety row is a ladder that ran out of rungs.
+`failure_diagnostics` holds turns that fell back or deflected, plus missed explicit reply format asks (`kind = 'format_unmet'`, `outcome = 'ok'`), with the triggering message verbatim. It is pruned after `metrics.diagnosticsRetentionHours` (72 hours), sooner than other metrics. Safety rows still record only exhausted ladders, and `response_events` carries per-turn `format_kinds`, `format_outcome` and `format_detail` (see [Data TRD](trd/data.md)).
 
 ```bash
 # Recent failures
 sqlite3 ~/rokabot/data/rokabot.db "SELECT datetime(created_at/1000,'unixepoch','+8 hours') t, outcome, kind, failure_marker, block_side, safety_rungs_used FROM failure_diagnostics ORDER BY created_at DESC LIMIT 20;"
+# Recent missed explicit format requests (and response_events outcomes)
+sqlite3 ~/rokabot/data/rokabot.db "SELECT datetime(created_at/1000,'unixepoch','+8 hours') t, outcome, failure_marker, user_message FROM failure_diagnostics WHERE kind='format_unmet' ORDER BY created_at DESC LIMIT 10;"
+sqlite3 ~/rokabot/data/rokabot.db "SELECT format_outcome, format_kinds, COUNT(*) FROM response_events WHERE format_outcome IS NOT NULL GROUP BY format_outcome, format_kinds;"
 # Did the provider block the input or Roka's output?
 sqlite3 ~/rokabot/data/rokabot.db "SELECT block_side, COUNT(*) FROM failure_diagnostics WHERE kind='safety' GROUP BY block_side;"
 # What was sent when a turn was blocked
@@ -718,55 +859,33 @@ docker logs rokabot-roka-1 2>&1 | grep '"msg":"Watched media"' | tail -20
 docker logs rokabot-roka-1 2>&1 | grep '"msg":"Watched media"' | grep -o '"watcher":"[a-z]*"' | sort | uniq -c
 ```
 
-| Field       | Values                                                                                             |
-| ----------- | -------------------------------------------------------------------------------------------------- |
-| `kind`      | `audio`, `video`                                                                                   |
-| `transport` | `inline` upload, `files` streamed upload, `uri` (YouTube)                                          |
-| `mode`      | `whole`, `halves`, `skim`, `focus`, `opening`, `decline`                                           |
-| `outcome`   | `ok`, `partial`, `overloaded`, `timeout`, `unavailable`, `invalid`, `error`                        |
-| Other       | `durationSec`, `fps`, `estimate` (admission tokens), `promptTokens` (billed), `watchMs`, `calls`   |
-| Qwen Only   | `frames`, `transcript`, `framesMs`, `transcribeMs`, `watchMs` (Qwen call), `totalMs` (whole watch) |
+| Field       | Values                                                                                           |
+| ----------- | ------------------------------------------------------------------------------------------------ |
+| `kind`      | `audio`, `video`                                                                                 |
+| `transport` | `inline` upload, `files` streamed upload, `uri` (YouTube)                                        |
+| `mode`      | `whole`, `halves`, `skim`, `focus`, `opening`, `decline`                                         |
+| `outcome`   | `ok`, `partial`, `overloaded`, `timeout`, `unavailable`, `invalid`, `error`                      |
+| Other       | `durationSec`, `fps`, `estimate` (admission tokens), `promptTokens` (billed), `watchMs`, `calls` |
 
-- **Watcher:** `media.watcher` (`MEDIA_WATCHER`) is `gemini` (default) or `qwen` (ModelScope frames plus transcript). The other one is the backup when the first fails. Qwen lines carry `watcher: qwen`; each Qwen watch is one ModelScope call.
+- **Watcher:** `media.watcher` (`MEDIA_WATCHER`) is `gemini` (default). Each watch is one Gemini call.
 - **Latency:** about 2.5-3.5 s for short clips and 8-9 s for a 12-minute YouTube video, on top of the reply.
 - **Large Uploads:** audio over 8 MiB and video over 10 MiB, up to 50 MiB, stream into the Gemini Files API, are watched whole, then deleted. `media.uploadTimeoutMs` (45 s) bounds the upload. On the Pi's 2.5 MB/s uplink, budget about 20 s for 50 MB.
 - **Long Videos:** 20-40 minute videos are watched in two parallel halves (`mode: halves`, `calls: 2`) when the token bucket has room, else skimmed. `outcome: partial` means one half failed.
 - **Linked Videos:** posts on X, Bluesky, Threads, TikTok, Reddit, Instagram and Bilibili are watched from their smallest playable MP4 if it passes the HEAD check and fits 50 MiB (above 10 MiB it streams). Else the thumbnail is used. Reddit videos have no muxed sound and are watched silent. Bluesky needs one cached `plc.directory` lookup per author.
 - **YouTube:** Gemini fetches YouTube itself, so the Pi's yt-dlp block does not apply. The free tier allows 8 hours of YouTube video per day; past that, Roka says she couldn't watch it.
-- **Qwen Frames:** videos up to 64 s get 16 frames; longer ones get one per 4 s, up to 32 (`media.qwen.*Frames`). The Pi extracts 4 frames at a time. A slow host such as archive.org can take 40-50 s for 32 frames.
-- **Transcript Field:** the sidecar's `engine` and `speechSec`, or why there was none: `disabled`, `no_audio`, `timeout`, `unreachable`, `http_<status>`. Transcription was the slowest step in Pi measurements.
-
-### Speech Sidecar
-
-The `asr` container transcribes audio for the Qwen watcher: Silero VAD, then Moonshine for English and SenseVoice for zh, ja, ko and yue.
-
-- It has no published port. The bot reaches it at `http://asr:8000`.
-- It holds about 1.2 GB of RAM and is capped at 2 GB and 3 CPUs. An out-of-memory restart takes down only `asr`; the bot then watches from frames alone (`transcript: unreachable`).
-- `sidecar/asr/Dockerfile` pins `python:3.12-slim` by digest, so an upstream base update cannot force the model download (about 500 MB) on an unrelated build.
-- To update the base, run `docker buildx imagetools inspect python:3.12-slim` and put the index `Digest` in both `FROM` lines. CI then rebuilds the image, and the next Pi pull downloads about 1 GB of layers.
-
-```bash
-# One line per transcription: duration, speechSec, language, engine, elapsed
-docker compose -f ~/rokabot/docker-compose.yml logs --tail 20 asr
-# Health; "healthy" once the models load (up to 2 minutes)
-docker inspect --format '{{.State.Health.Status}}' rokabot-asr-1
-```
 
 ### Media Kill Switches
 
 Set one in `~/rokabot/.env`, then recreate the bot container.
 
-| Setting                      | Effect                                                                    |
-| ---------------------------- | ------------------------------------------------------------------------- |
-| `MEDIA_WATCHER=qwen`         | Qwen watches first; Gemini is the backup                                  |
-| `MEDIA_WATCHER=direct`       | Audio and video go straight to the reply model, with no watcher or backup |
-| `MEDIA_WATCHER=off`          | Nothing is watched or sent; Roka says she can't watch it right now        |
-| `MEDIA_TRANSCRIBER_URL=`     | Stops transcription only; the Qwen watcher sees frames                    |
-| `SOCIAL_POSTS_ENABLED=false` | Stops social post lookups; embeds and attachments work as before          |
+| Setting                      | Effect                                                             |
+| ---------------------------- | ------------------------------------------------------------------ |
+| `MEDIA_WATCHER=off`          | Nothing is watched or sent; Roka says she can't watch it right now |
+| `SOCIAL_POSTS_ENABLED=false` | Stops social post lookups; embeds and attachments work as before   |
 
 ### Social Post Viewing
 
-X and Bluesky use public APIs and Threads reads its public post page. YouTube, TikTok, Reddit, Instagram and Bilibili need yt-dlp.
+X and Bluesky use public APIs, Threads reads its public post page, and Reddit falls back to the vxreddit mirror. YouTube, TikTok, Reddit, Instagram and Bilibili need yt-dlp.
 
 - **Binary:** the image carries the official yt-dlp musl onedir build (`yt-dlp_musllinux_aarch64.zip` on the Pi, `yt-dlp_musllinux.zip` on amd64) in `/opt/yt-dlp`, linked as `/usr/local/bin/yt-dlp`. The single-file build unpacks itself on every run and cost the Pi 0.6-1.4 s per lookup.
 - **Update:** take the latest stable release from the [yt-dlp releases page](https://github.com/yt-dlp/yt-dlp/releases). Set `YTDLP_VERSION`, `YTDLP_AMD64_SHA256` and `YTDLP_ARM64_SHA256` in `Dockerfile` from the `.zip` entries of its `SHA2-256SUMS`. The build checks both the checksum-file entry and the zip. Ship it through the normal release process.
@@ -774,6 +893,16 @@ X and Bluesky use public APIs and Threads reads its public post page. YouTube, T
 - **YouTube Refusals:** YouTube can refuse yt-dlp from the Pi's home IP (`exit_1`). Run yt-dlp by hand in the container to see `HTTP Error 429` or `Sign in to confirm you're not a bot`. Those links fall back to YouTube oEmbed (title, channel, thumbnail) and log a failure only when oEmbed fails too.
 - **Missing Binary:** startup logs `Social video extractors disabled` with reason `binary_missing`. Lookups on the yt-dlp platforms then get the normal "could not be opened" marker.
 - **Threads `no_post_data`:** the page came back without its post. The post is private or deleted, or Threads changed what it renders for a logged-out request (check the headers in `src/agent/social/threads.ts`).
+
+### Image Identification Bake-Off
+
+`scripts/bake-off-image-id.ts` compares identification backends (`ownVision`, `cloudVision`, `serpapiLens`) over a folder of labelled photos without touching the agent. Photos go through the bot's own `processImageForGemini` first, so sizes match production.
+
+1. Make a folder with the photos plus a `labels.json` next to them: `[{ "file": "roka-nendo.jpg", "expected": { "name": "Maniwa Roka", "maker": "Good Smile" } }, { "file": "mystery.jpg", "expected": null }]`. `expected: null` marks an unknown the backends should abstain on.
+2. Set keys in `.env` (the bot never reads `SERPAPI_API_KEY`): `GCP_API_KEY` for `cloudVision` (the same key the bot uses for YouTube comments), `SERPAPI_API_KEY` for `serpapiLens`. A backend whose key is missing is skipped with a printed notice.
+3. Run `npx tsx scripts/bake-off-image-id.ts --photos <dir> --out <dir>`. It writes `results.csv` (one row per photo per backend) and `summary.md` (exact-ID precision, recall, abstention rate on unknowns, p50/p95 latency, estimated cost).
+
+- **Cost per 20 photos:** about $0.03 on `cloudVision` ($0.0015 each), about $0.20 on `serpapiLens` ($0.01 each), and $0 extra on `ownVision`, which bills the configured main-model budget (plus whatever the configured search backend charges for its one lookup per photo).
 
 ### Local Embeddings Sidecar
 
@@ -788,11 +917,11 @@ X and Bluesky use public APIs and Threads reads its public post page. YouTube, T
 - **Defaults:** with no `embeddings:` block, `gemini` while `GEMINI_API_KEY` is set, else `local`. A block without `provider` uses `local`.
 - **Spaces:** every vector records `embedding_model_id`, `embedding_dim` and `embedding_fingerprint`. Recall reads only the configured space. Legacy vectors marked `unknown` are read only by the `gemini-embedding-2` space.
 - **Backfill:** after a switch, the maintenance pass (startup, then every 24 hours) re-embeds other vectors at about one a second, up to `embeddings.backfillBatchSize` per pass. Keyword recall works meanwhile. The pass stops after five connection failures in a row and resumes at the next pass.
-- **Sidecar:** no published image; it builds on the Pi (about 5.5 minutes, 1.22 GB). It is healthy in about 10 s, idles near 464 MiB and peaks near 714 MiB under one-text traffic, inside its 1 GiB cap (release gate 800 MiB). It takes at most 4 texts per request; 16 × 512 tokens was OOM-killed. It shares the Pi's four cores with `asr`, so a heavy backfill can push a transcription past `media.transcriber.timeoutMs` (45 s).
+- **Sidecar:** no published image; it builds on the Pi (about 5.5 minutes, 1.22 GB). It is healthy in about 10 s, idles near 464 MiB and peaks near 714 MiB under one-text traffic, inside its 1 GiB cap (release gate 800 MiB). It takes at most 4 texts per request; 16 × 512 tokens was OOM-killed.
 
 ```bash
 # Vectors per embedding space; NULL means no vector yet
-sqlite3 ~/rokabot/data/rokabot.db "SELECT 'episode', embedding_fingerprint, COUNT(*) FROM memory_episode GROUP BY 2 UNION ALL SELECT 'media', embedding_fingerprint, COUNT(*) FROM media_digest GROUP BY 2 UNION ALL SELECT 'fact', embedding_fingerprint, COUNT(*) FROM memory_claim WHERE status = 'active' GROUP BY 2;"
+sqlite3 ~/rokabot/data/rokabot.db "SELECT item.kind, vector.fingerprint, COUNT(*) FROM memory_item item JOIN memory_item_embedding vector ON vector.item_id = item.id GROUP BY item.kind, vector.fingerprint ORDER BY item.kind, vector.fingerprint;"
 # Build and start the sidecar alone
 docker compose --profile local-embeddings up -d --build embeddings
 # Check sidecar health
@@ -928,7 +1057,7 @@ cd ~/rokabot && sudo docker compose build --no-cache && sudo docker compose up -
 | Passive memory writes nothing                         | Logs for `Passive memory extraction is disabled` | Set `TYPESAFE_API_KEY`, or use a config with an `llm:` block                    |
 | Calls refused by `monthly` budget                     | `llm_spend` query                                | Wait for the UTC month, or raise `llm.monthlyBudgetUsd` and restart             |
 | Watches end `invalid` on long, dense videos           | `Watched media` lines                            | Raise `media.digestMaxOutputTokens` within 400-4,000                            |
-| Qwen watches show `transcript: unreachable`           | `asr` health and logs                            | Wait for `asr` to restart (OOM) or start it; frames-only works meanwhile        |
+| Watch shows the switched-off notice                   | `MEDIA_WATCHER` value                            | Set it back to `gemini` to watch again                                          |
 | Files left in the Gemini Files API                    | Files API list (command below)                   | The list must be empty between turns                                            |
 | YouTube lookups fail with `exit_1`                    | yt-dlp by hand in the container                  | Expected (429 or bot check); oEmbed covers it                                   |
 | `Social video extractors disabled` (`binary_missing`) | `which yt-dlp` in the container                  | Fix the yt-dlp step in `Dockerfile` and ship a new image                        |
@@ -943,8 +1072,8 @@ curl -s "https://generativelanguage.googleapis.com/v1beta/files" -H "x-goog-api-
 
 ## Source Files
 
-- `docker-compose.yml`, `Dockerfile`, `sidecar/asr/Dockerfile`, `sidecar/embeddings/`
+- `docker-compose.yml`, `Dockerfile`, `sidecar/embeddings/`
 - `.github/workflows/deploy.yml`, `scripts/prune-images.sh`
 - `config.yml`, `src/config.ts`, `src/agent/llm/profiles.ts`, `src/agent/llm/budget.ts`, `src/agent/llm/fallbackModel.ts`
 - `src/agent/media/`, `src/agent/social/`, `src/agent/memory/reclassify.ts`, `src/storage/database.ts`
-- `scripts/probe-llm-profile.ts`, `scripts/undo-reclassify.ts`, `scripts/reports.ts`, `scripts/migrate-memory-v2.ts`, `scripts/export-vault.ts`
+- `scripts/probe-llm-profile.ts`, `scripts/undo-reclassify.ts`, `scripts/reports.ts`, `scripts/migrate-memory-v2.ts`, `scripts/export-vault.ts`, `scripts/migrate-memory-items.ts`, `scripts/replay-memory-items.ts`, `tests/harness/memsim/cli.ts`

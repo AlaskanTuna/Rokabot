@@ -1,5 +1,153 @@
 # Changelog
 
+## [0.12.0](https://github.com/AlaskanTuna/Rokabot/compare/v0.11.0...v0.12.0) (2026-11-18)
+
+
+### Features
+
+* **agent:** gate automatic image lookups with a main-model vision check ([#560](https://github.com/AlaskanTuna/Rokabot/issues/560)) ([41a5674](https://github.com/AlaskanTuna/Rokabot/commit/41a5674eab71ce39933b6905033e1dbcfeecf2e7))
+* **agent:** look up a pictured identity before Roka answers who is in an image ([#554](https://github.com/AlaskanTuna/Rokabot/issues/554)) ([ea74d2a](https://github.com/AlaskanTuna/Rokabot/commit/ea74d2a82eb60cd8c734ddefc70df4e7658a34c5))
+
+
+### Bug Fixes
+
+* **agent:** cap image lookups in a shared ledger and trigger on the speaker's own text ([#559](https://github.com/AlaskanTuna/Rokabot/issues/559)) ([2669692](https://github.com/AlaskanTuna/Rokabot/commit/26696923f379a0b1cb02dfe773f248cddbedc368))
+* **agent:** keep every persona from narrating her tools and lookups ([#558](https://github.com/AlaskanTuna/Rokabot/issues/558)) ([eb6ae72](https://github.com/AlaskanTuna/Rokabot/commit/eb6ae721fd58f70494d3d82e89fbd750ff990eb9))
+* **agent:** label the automatic image lookup "checked the image" ([#557](https://github.com/AlaskanTuna/Rokabot/issues/557)) ([b957be2](https://github.com/AlaskanTuna/Rokabot/commit/b957be200079c6cc4cfe9bfb25b90abf1f820dbc))
+
+## [0.11.0](https://github.com/AlaskanTuna/Rokabot/compare/v0.10.0...v0.11.0) (2026-11-18)
+
+
+### Features
+
+* **agent:** identify a pictured character or product with Lens hints ([#552](https://github.com/AlaskanTuna/Rokabot/issues/552)) ([c20bf13](https://github.com/AlaskanTuna/Rokabot/commit/c20bf13e8b90d7b74fe278f7118f2dc1e95310bd))
+
+## [0.10.0](https://github.com/AlaskanTuna/Rokabot/compare/v0.9.1...v0.10.0) (2026-11-18)
+
+
+### Features
+
+* **agent:** add a Lens-hint hybrid to the image bake-off and search Lens by URL ([#550](https://github.com/AlaskanTuna/Rokabot/issues/550)) ([c74c3a5](https://github.com/AlaskanTuna/Rokabot/commit/c74c3a567f941dffa2db5ee08b1ad47eeb123ee0))
+
+## [0.9.1](https://github.com/AlaskanTuna/Rokabot/compare/v0.9.0...v0.9.1) (2026-11-18)
+
+
+### Bug Fixes
+
+* **agent:** log the stored tool results a retried turn resumes from ([#546](https://github.com/AlaskanTuna/Rokabot/issues/546)) ([175d507](https://github.com/AlaskanTuna/Rokabot/commit/175d507ed71793536ae04ab6bb64301d496fa1cb))
+
+## [0.9.0](https://github.com/AlaskanTuna/Rokabot/compare/v0.8.4...v0.9.0) (2026-11-18)
+
+
+### Features
+
+* **agent:** dig deeper inside search_web and read a linked page on request ([#533](https://github.com/AlaskanTuna/Rokabot/issues/533)) ([7ee36ac](https://github.com/AlaskanTuna/Rokabot/commit/7ee36ac9e8c81e73ab9c22cb6768f8154b3f38c1))
+* **agent:** read pages and keep every source within a per-turn search budget ([#528](https://github.com/AlaskanTuna/Rokabot/issues/528)) ([7b21e8b](https://github.com/AlaskanTuna/Rokabot/commit/7b21e8bfd6d7318607eca2bdacca4b113fb8bdc4))
+
+
+### Bug Fixes
+
+* **agent:** count a search field as covered only when a passage supports it ([#535](https://github.com/AlaskanTuna/Rokabot/issues/535)) ([fb4b047](https://github.com/AlaskanTuna/Rokabot/commit/fb4b0474d494503962b9ed6508df720379bec8c8))
+* **agent:** let ModelScope models think on turns that offer tools ([#545](https://github.com/AlaskanTuna/Rokabot/issues/545)) ([34734f2](https://github.com/AlaskanTuna/Rokabot/commit/34734f2fa93a94b70316c698d9ac71759e1e7204))
+* **agent:** route anime questions by the fields Jikan returns ([#527](https://github.com/AlaskanTuna/Rokabot/issues/527)) ([fab0ca1](https://github.com/AlaskanTuna/Rokabot/commit/fab0ca19a47df0d097ae9151fe024bec5022a778))
+* **agent:** type search fields and always return the cited brief ([#540](https://github.com/AlaskanTuna/Rokabot/issues/540)) ([6c86fb7](https://github.com/AlaskanTuna/Rokabot/commit/6c86fb7b588c64222c419b0729f8a797038e7bf6))
+* **config:** fall back to Gemini Flash while ModelScope models skip tool calls ([#539](https://github.com/AlaskanTuna/Rokabot/issues/539)) ([b562c06](https://github.com/AlaskanTuna/Rokabot/commit/b562c06b989854aa82387ef7dfd92c7cf31e0ec4))
+* **deploy:** retry the image pull on the Pi ([#544](https://github.com/AlaskanTuna/Rokabot/issues/544)) ([7f54b60](https://github.com/AlaskanTuna/Rokabot/commit/7f54b6065ade27fca88d6c842350186f6c8b8e6b))
+
+## [0.8.4](https://github.com/AlaskanTuna/Rokabot/compare/v0.8.3...v0.8.4) (2026-11-15)
+
+
+### Bug Fixes
+
+* **memory:** remember decided future changes as upcoming facts that lapse unless restated ([#517](https://github.com/AlaskanTuna/Rokabot/issues/517)) ([442aa44](https://github.com/AlaskanTuna/Rokabot/commit/442aa447517746485c144c89fc1e4dc9d276586b))
+
+## [0.8.3](https://github.com/AlaskanTuna/Rokabot/compare/v0.8.2...v0.8.3) (2026-11-15)
+
+
+### Bug Fixes
+
+* **agent:** call recall_user for opinions and guesses about another member ([#514](https://github.com/AlaskanTuna/Rokabot/issues/514)) ([369eb8f](https://github.com/AlaskanTuna/Rokabot/commit/369eb8f64d606c01673487ffd9ae38ccc7a373fc))
+* **media:** retry the vxreddit mirror when it redirects instead of serving the post ([#516](https://github.com/AlaskanTuna/Rokabot/issues/516)) ([d72ac00](https://github.com/AlaskanTuna/Rokabot/commit/d72ac00595690b81b3b9d2a10d89477ba3bc9ca7))
+
+## [0.8.2](https://github.com/AlaskanTuna/Rokabot/compare/v0.8.1...v0.8.2) (2026-11-15)
+
+
+### Bug Fixes
+
+* **media:** read Reddit posts through the vxreddit mirror when Reddit refuses ([#511](https://github.com/AlaskanTuna/Rokabot/issues/511)) ([e6081ca](https://github.com/AlaskanTuna/Rokabot/commit/e6081ca9f732ece0c044cb2ca2a295729ae08258))
+
+## [0.8.1](https://github.com/AlaskanTuna/Rokabot/compare/v0.8.0...v0.8.1) (2026-11-14)
+
+
+### Bug Fixes
+
+* **memory:** keep more stated server events and self-stated allergies as facts ([#505](https://github.com/AlaskanTuna/Rokabot/issues/505)) ([12bee72](https://github.com/AlaskanTuna/Rokabot/commit/12bee728ead74ec0992989bcf94228cdc9de0cbb))
+
+## [0.8.0](https://github.com/AlaskanTuna/Rokabot/compare/v0.7.0...v0.8.0) (2026-11-14)
+
+
+### Features
+
+* **memory:** drop the legacy memory tables through an explicit backup-guarded script ([#501](https://github.com/AlaskanTuna/Rokabot/issues/501)) ([8f93a49](https://github.com/AlaskanTuna/Rokabot/commit/8f93a49406fc359e59fd4e239f20ecbb317c7541))
+* **memory:** read prompt-facing memory through the scoped item store under memory.store item ([#499](https://github.com/AlaskanTuna/Rokabot/issues/499)) ([777c6ca](https://github.com/AlaskanTuna/Rokabot/commit/777c6cad5db4cbff4afc696a56267b6dda8c02b2))
+* **memory:** write memory items directly under memory.store item, with a reverse export to legacy ([#500](https://github.com/AlaskanTuna/Rokabot/issues/500)) ([e62d520](https://github.com/AlaskanTuna/Rokabot/commit/e62d520123365c7922446c474b26f0090ec39da8))
+
+
+### Bug Fixes
+
+* **memory:** drop a call-shaped fact value instead of failing the whole extraction batch ([#492](https://github.com/AlaskanTuna/Rokabot/issues/492)) ([1da3f9a](https://github.com/AlaskanTuna/Rokabot/commit/1da3f9a67080cc4e97840a45a692fcb2eee55ff2))
+* **memory:** send memory model calls prompt-local refs in a stable order ([#498](https://github.com/AlaskanTuna/Rokabot/issues/498)) ([1e2ea4f](https://github.com/AlaskanTuna/Rokabot/commit/1e2ea4fb21e74693e9dc5ebdba71611c0079a207))
+
+## [0.7.0](https://github.com/AlaskanTuna/Rokabot/compare/v0.6.1...v0.7.0) (2026-11-13)
+
+
+### Features
+
+* **memory:** add the typed memory item tables with an offline backfill and replay check ([#485](https://github.com/AlaskanTuna/Rokabot/issues/485)) ([1d2ad7e](https://github.com/AlaskanTuna/Rokabot/commit/1d2ad7e4e81fccd27b053c2adbc60c29d185a383))
+* **memory:** mirror legacy memory writes into the item tables under the dual store ([#486](https://github.com/AlaskanTuna/Rokabot/issues/486)) ([885c4fe](https://github.com/AlaskanTuna/Rokabot/commit/885c4feebbe877635ace7baef7ee9b7a36f43299))
+
+
+### Bug Fixes
+
+* **memory:** drop only the invalid ops when a Haiku extraction reply partly fails validation ([#482](https://github.com/AlaskanTuna/Rokabot/issues/482)) ([456b482](https://github.com/AlaskanTuna/Rokabot/commit/456b482aaf6cd02e1c963a79911780aa37dabcca))
+
+## [0.6.1](https://github.com/AlaskanTuna/Rokabot/compare/v0.6.0...v0.6.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* **agent:** follow explicit reply format requests on every model ([#474](https://github.com/AlaskanTuna/Rokabot/issues/474)) ([81f2f97](https://github.com/AlaskanTuna/Rokabot/commit/81f2f979299978f0b0902c592f8c43a0879a69de))
+* **agent:** run extraction on Haiku and stop bad images and Jikan outages breaking replies ([#472](https://github.com/AlaskanTuna/Rokabot/issues/472)) ([e68dafc](https://github.com/AlaskanTuna/Rokabot/commit/e68dafcf28bc0aad9cd0fade6c37b05ea0e27983))
+* **memory:** record the model that actually answered in the extraction trace ([#480](https://github.com/AlaskanTuna/Rokabot/issues/480)) ([a2d873b](https://github.com/AlaskanTuna/Rokabot/commit/a2d873b2faf6cd78f872d4b25b60c411fc86b894))
+* **memory:** stop the sensitive precheck matching emoji, Discord IDs, dates and everyday phrases ([#478](https://github.com/AlaskanTuna/Rokabot/issues/478)) ([72a1c30](https://github.com/AlaskanTuna/Rokabot/commit/72a1c301de72657ea37f20fdae63a9caeacf1773))
+
+## [0.6.0](https://github.com/AlaskanTuna/Rokabot/compare/v0.5.1...v0.6.0) (2026-11-08)
+
+
+### Features
+
+* **agent:** run a Jev relevance gate on recalled memories in shadow and log its picks ([#451](https://github.com/AlaskanTuna/Rokabot/issues/451)) ([ba927f1](https://github.com/AlaskanTuna/Rokabot/commit/ba927f198b461478296206387993fa4d1ab3adad))
+* **memory:** check episode summaries and drop the ones that fail before embedding ([#460](https://github.com/AlaskanTuna/Rokabot/issues/460)) ([ce2bf97](https://github.com/AlaskanTuna/Rokabot/commit/ce2bf97dd2be42447ae21f44da1cc260b08a35c2))
+* **memory:** record the source message and speaker on evidence and count each job once ([#462](https://github.com/AlaskanTuna/Rokabot/issues/462)) ([1b57ecd](https://github.com/AlaskanTuna/Rokabot/commit/1b57ecd600e154e157354f5bd9def598d490ca94))
+* **memory:** save open episode lines so a crash does not lose them ([#459](https://github.com/AlaskanTuna/Rokabot/issues/459)) ([fcbeee7](https://github.com/AlaskanTuna/Rokabot/commit/fcbeee7c452d1ef10e6aa761b3267621c9ca58f1))
+
+
+### Bug Fixes
+
+* **agent:** let background work run on a Gemini route and pin the live harness route ([#471](https://github.com/AlaskanTuna/Rokabot/issues/471)) ([e009f86](https://github.com/AlaskanTuna/Rokabot/commit/e009f86e99af2d0344564b1825d4b0ec0169f87f))
+* **agent:** wait long enough for the query embedding in the Jev recall gate ([#456](https://github.com/AlaskanTuna/Rokabot/issues/456)) ([e3f60cb](https://github.com/AlaskanTuna/Rokabot/commit/e3f60cb42bcfbfaffb0c1bed355fec5e58146069))
+* **deploy:** retry the yt-dlp release download so a GitHub hiccup does not fail the image build ([#468](https://github.com/AlaskanTuna/Rokabot/issues/468)) ([6e573ba](https://github.com/AlaskanTuna/Rokabot/commit/6e573bade4ae7cea0c96ad37e9428180aba71365))
+* **media:** download images at vision size so large photos and slow links stop dropping them ([#466](https://github.com/AlaskanTuna/Rokabot/issues/466)) ([2d4bf7f](https://github.com/AlaskanTuna/Rokabot/commit/2d4bf7fc6fbbc690f28e8eb12de3fffdfea2c2b8))
+* **media:** label an image the processor could not convert with its real type ([#469](https://github.com/AlaskanTuna/Rokabot/issues/469)) ([42824ba](https://github.com/AlaskanTuna/Rokabot/commit/42824bab9404121781f3f643a8734cfbd7c7a7ba))
+* **storage:** stop rewriting the claim search index on every boot ([#457](https://github.com/AlaskanTuna/Rokabot/issues/457)) ([cf2296c](https://github.com/AlaskanTuna/Rokabot/commit/cf2296c3110ffe190c64fe9cc14eb450798d9842))
+
+## [0.5.1](https://github.com/AlaskanTuna/Rokabot/compare/v0.5.0...v0.5.1) (2026-11-04)
+
+
+### Bug Fixes
+
+* **deploy:** let promote recover when release-please fails after tagging ([#449](https://github.com/AlaskanTuna/Rokabot/issues/449)) ([251701d](https://github.com/AlaskanTuna/Rokabot/commit/251701d61526e5bf104fb5932594634510b8653c))
+
 ## [0.5.0](https://github.com/AlaskanTuna/Rokabot/compare/v0.4.0...v0.5.0) (2026-11-03)
 
 

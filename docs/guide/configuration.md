@@ -32,11 +32,12 @@ Secrets, `config.yml` and environment overrides merge in `src/config.ts`, which 
 | `GEMINI_API_KEY`     | When the main or fallback model, `embeddings.provider` or `media.watcher` is Gemini. Always without an `llm:` block. | Gemini API key.                                                                                                                                       |
 | `ANTHROPIC_API_KEY`  | When `llm.main` or `llm.fallback` uses `provider: anthropic`                                                         | Anthropic API key.                                                                                                                                    |
 | `OPENAI_API_KEY`     | When `llm.main` or `llm.fallback` uses `provider: openai`, or `embeddings.provider` is `openai`                      | OpenAI API key.                                                                                                                                       |
-| `MODELSCOPE_API_KEY` | When `llm.main` or `llm.fallback` uses `provider: modelscope`                                                        | ModelScope token. Without an `llm:` block it turns on the Qwen fallback. It also funds the qwen media watcher.                                        |
+| `MODELSCOPE_API_KEY` | When `llm.main` or `llm.fallback` uses `provider: modelscope`                                                        | ModelScope token. Without an `llm:` block it turns on the Qwen fallback.                                                                              |
 | `TYPESAFE_API_KEY`   | No                                                                                                                   | Jev judgments. Without it, the main model judges passive memory when an `llm:` block exists, and passive memory drops every episode when it does not. |
 | `TAVILY_API_KEY`     | No                                                                                                                   | Web search when `search.provider` is `tavily`. Without it, the search tool answers that web search is not configured.                                 |
 | `EXA_API_KEY`        | No                                                                                                                   | Web search when `search.provider` is `exa`. Without it, the search tool answers that web search is not configured.                                    |
-| `YOUTUBE_API_KEY`    | No                                                                                                                   | Top comments on linked YouTube videos. Without it, YouTube replies report as unavailable.                                                             |
+| `GCP_API_KEY`        | No                                                                                                                   | Top comments on linked YouTube videos. Without it, YouTube replies report as unavailable.                                                             |
+| `SERPAPI_API_KEY`    | No                                                                                                                   | Reverse-image search for `identify_image` (Google Lens via SerpApi). Without it, the tool is not offered.                                             |
 
 Other environment variables:
 
@@ -109,12 +110,12 @@ These keys drive the legacy route (no `llm:` block). Some apply to every route, 
 
 The legacy fallback, used when `config.yml` has no `llm:` block and `MODELSCOPE_API_KEY` is set.
 
-| Key                  | Default                                  | Env Override     | What It Does                                                                                                            |
-| -------------------- | ---------------------------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `fallback.model`     | `Qwen/Qwen3.5-122B-A10B`                 | `FALLBACK_MODEL` | ModelScope model that answers when the main model fails.                                                                |
-| `fallback.baseUrl`   | `https://api-inference.modelscope.ai/v1` | —                | OpenAI-compatible ModelScope endpoint. `provider: modelscope` entries in `llm.models` and the qwen watcher also use it. |
-| `fallback.timeoutMs` | `15000`                                  | —                | Request deadline for the fallback. Bounds `>= 1`.                                                                       |
-| `fallback.stickyMs`  | `300000`                                 | —                | After the fallback answers, later turns start on it for this long. `0` turns it off. Bounds `>= 0`.                     |
+| Key                  | Default                                  | Env Override     | What It Does                                                                                        |
+| -------------------- | ---------------------------------------- | ---------------- | --------------------------------------------------------------------------------------------------- |
+| `fallback.model`     | `Qwen/Qwen3.5-122B-A10B`                 | `FALLBACK_MODEL` | ModelScope model that answers when the main model fails.                                            |
+| `fallback.baseUrl`   | `https://api-inference.modelscope.ai/v1` | —                | OpenAI-compatible ModelScope endpoint. `provider: modelscope` entries in `llm.models` also use it.  |
+| `fallback.timeoutMs` | `15000`                                  | —                | Request deadline for the fallback. Bounds `>= 1`.                                                   |
+| `fallback.stickyMs`  | `300000`                                 | —                | After the fallback answers, later turns start on it for this long. `0` turns it off. Bounds `>= 0`. |
 
 ## `llm`
 
@@ -175,30 +176,26 @@ These limits apply to Gemini routes. A Gemini entry in `llm.models` inherits the
 
 ## `media`
 
-| Key                              | Default                  | Env Override            | What It Does                                                                                                                                                                |
-| -------------------------------- | ------------------------ | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `media.watcher`                  | `gemini`                 | `MEDIA_WATCHER`         | How audio and video reach the model. `gemini` or `qwen` watches first, and the other takes over on failure. `direct` sends the file to the reply model. `off` does neither. |
-| `media.embedWaitMs`              | `2000`                   | —                       | How long a linked message waits for Discord to add its embed. Bounds `0..5000`.                                                                                             |
-| `media.watchTimeoutMs`           | `20000`; shipped `30000` | —                       | Deadline for one watch call. Bounds `5000..60000`.                                                                                                                          |
-| `media.digestMaxOutputTokens`    | `2400`; shipped `3200`   | —                       | Output cap for the digest JSON. Bounds `400..4000`.                                                                                                                         |
-| `media.skimClips`                | `8`                      | —                       | Most evenly spaced clips taken from a video too long to watch whole. Bounds `3..9`.                                                                                         |
-| `media.skimClipSeconds`          | `10`                     | —                       | Length of each skim clip. Bounds `2..30`.                                                                                                                                   |
-| `media.maxStreamedUploadBytes`   | `52428800`               | —                       | Largest file streamed to the Gemini Files API to watch whole. Bounds `10485760..104857600`.                                                                                 |
-| `media.uploadTimeoutMs`          | `45000`                  | —                       | Deadline to stream one file and wait until it is ready. Bounds `10000..120000`.                                                                                             |
-| `media.qwen.model`               | `Qwen/Qwen3.5-35B-A3B`   | `MEDIA_QWEN_MODEL`      | ModelScope vision model for the qwen watcher. Needs `MODELSCOPE_API_KEY`.                                                                                                   |
-| `media.qwen.secondsPerFrame`     | `4`                      | —                       | One frame per this many seconds of the watched span. Bounds `0.5..30`.                                                                                                      |
-| `media.qwen.minFrames`           | `16`                     | —                       | Fewest frames for any video. Bounds `4..32`.                                                                                                                                |
-| `media.qwen.maxFrames`           | `32`                     | —                       | Most frames for any video. Bounds `4..32`.                                                                                                                                  |
-| `media.qwen.frameHeight`         | `360`                    | —                       | Frame height in pixels. Bounds `144..720`.                                                                                                                                  |
-| `media.qwen.timeoutMs`           | `30000`                  | —                       | Deadline for one qwen watch call. Bounds `5000..90000`.                                                                                                                     |
-| `media.transcriber.url`          | Empty                    | `MEDIA_TRANSCRIBER_URL` | Speech-to-text sidecar for the qwen watcher. Empty turns it off. Compose sets `http://asr:8000` unless `.env` sets the variable.                                            |
-| `media.transcriber.timeoutMs`    | `45000`                  | —                       | Deadline to transcribe one video's audio. Bounds `5000..120000`.                                                                                                            |
-| `media.transcriber.maxSpeechSec` | `120`                    | —                       | Speech transcribed per video after silence and music are skipped. Bounds `10..600`.                                                                                         |
-| `media.transcriber.maxAudioSec`  | `180`                    | —                       | Audio sent per video. Bounds `30..900`.                                                                                                                                     |
+| Key                            | Default                  | Env Override    | What It Does                                                                                      |
+| ------------------------------ | ------------------------ | --------------- | ------------------------------------------------------------------------------------------------- |
+| `media.watcher`                | `gemini`                 | `MEDIA_WATCHER` | How audio and video reach the model. `gemini` watches them; `off` neither watches nor sends them. |
+| `media.embedWaitMs`            | `2000`                   | —               | How long a linked message waits for Discord to add its embed. Bounds `0..5000`.                   |
+| `media.watchTimeoutMs`         | `20000`; shipped `30000` | —               | Deadline for one watch call. Bounds `5000..60000`.                                                |
+| `media.digestMaxOutputTokens`  | `2400`; shipped `3200`   | —               | Output cap for the digest JSON. Bounds `400..4000`.                                               |
+| `media.skimClips`              | `8`                      | —               | Most evenly spaced clips taken from a video too long to watch whole. Bounds `3..9`.               |
+| `media.skimClipSeconds`        | `10`                     | —               | Length of each skim clip. Bounds `2..30`.                                                         |
+| `media.maxStreamedUploadBytes` | `52428800`               | —               | Largest file streamed to the Gemini Files API to watch whole. Bounds `10485760..104857600`.       |
+| `media.uploadTimeoutMs`        | `45000`                  | —               | Deadline to stream one file and wait until it is ready. Bounds `10000..120000`.                   |
 
 ## `memory`
 
 Passive memory needs a judge. With `TYPESAFE_API_KEY`, Jev judges. Without it, the main model judges when an `llm:` block exists. Otherwise passive memory drops every episode.
+
+### Store Selection
+
+| Key            | Default  | Env Override   | What It Does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| -------------- | -------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `memory.store` | `legacy` | `MEMORY_STORE` | Valid values are `legacy` (reads and writes legacy tables; drops projection triggers), `dual` (reads legacy tables and keeps `memory_item` projection triggers active) and `item` (reads and writes `memory_item` directly; drops projection triggers). `config.yml` stays `legacy`; production sets `MEMORY_STORE=item` in `.env` and has dropped the six legacy tables (`memory_legacy_drop`), so only `item` starts on that database. Rollback restores the pre-drop backup (on an un-dropped database, `migrate:memory-items -- --to-legacy` exports back to `dual`). See the [runbook](../RUNBOOK.md#typed-memory-items). |
 
 ### Capture and Prompt
 
@@ -246,21 +243,16 @@ Passive memory needs a judge. With `TYPESAFE_API_KEY`, Jev judges. Without it, t
 
 ### Recall
 
-| Key                              | Default  | Env Override    | What It Does                                                                                                       |
-| -------------------------------- | -------- | --------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `memory.recall`                  | `shadow` | `MEMORY_RECALL` | `legacy` uses the four memory blocks. `shadow` uses them and logs unified recall. `unified` uses one ranked block. |
-| `memory.recallTokenBudget`       | `600`    | —               | Approximate token budget for the unified block. Bounds `200..2000`.                                                |
-| `memory.recallCoreFacts`         | `3`      | —               | Speaker facts always recalled: pinned, then nickname, then pronouns. Bounds `0..5`.                                |
-| `memory.factMinSimilarity`       | `0.65`   | —               | Smallest cosine similarity for a member fact in unified recall. Bounds `0..1`.                                     |
-| `memory.serverFactMinSimilarity` | `0.65`   | —               | Smallest cosine similarity for a server fact in unified recall. Bounds `0..1`.                                     |
-| `memory.episodeRecallK`          | `3`      | —               | Most episode summaries recalled in one guild turn. Bounds `1..10`.                                                 |
-| `memory.episodeTokenBudget`      | `200`    | —               | Approximate token budget for the episode block. Bounds `>= 1`.                                                     |
-| `memory.episodeMinSimilarity`    | `0.7`    | —               | Smallest cosine similarity for episode recall. Bounds `0..1`.                                                      |
-| `memory.mediaRecallK`            | `2`      | —               | Most watched-media digests recalled in one guild turn. Bounds `0..5`.                                              |
-| `memory.mediaTokenBudget`        | `400`    | —               | Approximate token budget for the watched-media block. Bounds `100..1500`.                                          |
-| `memory.mediaMinSimilarity`      | `0.7`    | —               | Smallest cosine similarity for watched-media recall. Bounds `0..1`.                                                |
+| Key                           | Default | Env Override | What It Does                                                              |
+| ----------------------------- | ------- | ------------ | ------------------------------------------------------------------------- |
+| `memory.episodeRecallK`       | `3`     | —            | Most episode summaries recalled in one guild turn. Bounds `1..10`.        |
+| `memory.episodeTokenBudget`   | `200`   | —            | Approximate token budget for the episode block. Bounds `>= 1`.            |
+| `memory.episodeMinSimilarity` | `0.7`   | —            | Smallest cosine similarity for episode recall. Bounds `0..1`.             |
+| `memory.mediaRecallK`         | `2`     | —            | Most watched-media digests recalled in one guild turn. Bounds `0..5`.     |
+| `memory.mediaTokenBudget`     | `400`   | —            | Approximate token budget for the watched-media block. Bounds `100..1500`. |
+| `memory.mediaMinSimilarity`   | `0.7`   | —            | Smallest cosine similarity for watched-media recall. Bounds `0..1`.       |
 
-The four `*MinSimilarity` floors are the `gemini-embedding-2` calibration. `embeddings.minSimilarity` replaces them for another embedding fingerprint.
+The two `*MinSimilarity` floors are the `gemini-embedding-2` calibration. `embeddings.minSimilarity` replaces them for another embedding fingerprint.
 
 Two keys are deprecated. `memory.embeddingModel` is read only for the Gemini provider when `embeddings.model` is missing. `memory.embeddingTimeoutMs` is read only when `embeddings.timeoutMs` is missing.
 
@@ -341,6 +333,16 @@ Two keys are deprecated. `memory.embeddingModel` is read only for the Gemini pro
 | Key             | Default | Env Override | What It Does                                                                    |
 | --------------- | ------- | ------------ | ------------------------------------------------------------------------------- |
 | `logging.level` | `info`  | `LOG_LEVEL`  | Pino log level: `debug`, `info`, `warn` or `error`. `npm run dev` sets `debug`. |
+
+## `format`
+
+| Key                   | Default    | Env Override    | Bounds | What It Does                                                                                              |
+| --------------------- | ---------- | --------------- | ------ | --------------------------------------------------------------------------------------------------------- |
+| `format.mode`         | `on`       | `FORMAT_MODE`   | —      | `off` disables, `shadow` detects and checks without altering prompts or replies, `on` yields and repairs. |
+| `format.repair`       | `reformat` | `FORMAT_REPAIR` | —      | `off` logs misses only, `reformat` rebuilds prose to a list or renumbers bullets deterministically.       |
+| `format.minListItems` | `3`        | —               | `2..5` | Minimum matching list lines required to satisfy a requested list.                                         |
+| `format.minListShare` | `0.5`      | —               | `0..1` | Minimum share of reply words that must live in list items.                                                |
+| `format.wordSlack`    | `0.1`      | —               | `0..1` | Fractional tolerance applied to word limits of 10 or more.                                                |
 
 ## Character
 

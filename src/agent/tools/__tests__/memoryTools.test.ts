@@ -21,7 +21,9 @@ import {
   recordMediaOccurrence,
   saveMediaDigest
 } from '../../../storage/mediaDigestStore.js'
-import { getClaimSourceChannels, setClaimEmbedding } from '../../../storage/memoryRecallStore.js'
+import { migrateMemoryItems } from '../../../storage/memoryItemBackfill.js'
+import { configureMemoryItemProjectionTriggers } from '../../../storage/memoryItemProjection.js'
+import { getClaimSourceChannels } from '../../../storage/memoryRecallStore.js'
 import { recordResponseEvent } from '../../../storage/metricsStore.js'
 import { upsertUserName } from '../../../storage/userNames.js'
 import { logger } from '../../../utils/logger.js'
@@ -42,9 +44,9 @@ const runForget = (
     args: { query },
     toolContext: toolContextWith({ _userId: userId, _guildId: guildId, _channelId: channelId })
   }) as Promise<{ success: boolean; message: string }>
-import { geminiVector } from '../../../../tests/harness/vectors.js'
 import { resolveName } from '../../memory/identityResolver.js'
 import { assertClaim, assertGuildClaim, getActiveClaims, getActiveGuildClaims } from '../../memory/memoryClaims.js'
+import { forgetUser } from '../forgetUser.js'
 import { forgetUserTool, recallUserTool, rememberUserTool } from '../index.js'
 import { recallUser } from '../recallUser.js'
 import { rememberUser } from '../rememberUser.js'
@@ -53,8 +55,8 @@ import { rememberUser } from '../rememberUser.js'
 const memoryConfig = config.memory
 const originalMemory = {
   privacy: memoryConfig.privacy,
-  recall: memoryConfig.recall,
-  embeddingTimeoutMs: memoryConfig.embeddingTimeoutMs
+  embeddingTimeoutMs: memoryConfig.embeddingTimeoutMs,
+  store: memoryConfig.store
 }
 const setMemory = (patch: Partial<typeof originalMemory>): void => {
   Object.assign(memoryConfig, patch)
@@ -63,7 +65,7 @@ const setMemory = (patch: Partial<typeof originalMemory>): void => {
 beforeEach(() => {
   process.env.ROKABOT_DB_PATH = ':memory:'
   vi.clearAllMocks()
-  setMemory({ privacy: 'relaxed', recall: 'shadow' })
+  setMemory({ privacy: 'relaxed' })
   registerChannelVisibility({
     visibility: (channelId) => (channelId === 'public-channel' || channelId === 'public-source' ? 'public' : 'private'),
     parentOf: () => null
@@ -74,11 +76,9 @@ afterEach(() => {
   closeDb()
   process.env.ROKABOT_DB_PATH = undefined
   setMemory(originalMemory)
+  Object.assign(memoryConfig, { store: originalMemory.store })
   resetChannelVisibilityForTest()
 })
-
-const unitVector = (index: number) =>
-  geminiVector(Array.from({ length: 768 }, (_, position) => (position === index ? 1 : 0)))
 
 function seedMedia(input: {
   guildId?: string
@@ -113,6 +113,139 @@ function seedMedia(input: {
 }
 
 describe('memory tools', () => {
+  it('returns the same forget clarification from items after legacy content changes', () => {
+    const claims = ['guitar lessons', 'guitar practice', 'guitar collection', 'guitar covers'].map((value) =>
+      assertClaim({
+        guildId: 'guild-1',
+        subjectUserId: 'user-1',
+        predicate: 'likes',
+        value,
+        sourceKind: 'explicit'
+      })
+    )
+    const media = seedMedia({
+      contentKey: 'guitar-item-parity',
+      label: 'guitar video',
+      summary: 'A guitar performance.',
+      sharedBy: ['user-1']
+    })
+    const db = getDb()
+    migrateMemoryItems(db)
+    configureMemoryItemProjectionTriggers(db, 'legacy')
+    Object.assign(memoryConfig, { store: 'dual', privacy: 'relaxed' })
+    const legacy = forgetUser({
+      user_id: 'user-1',
+      guild_id: 'guild-1',
+      channel_id: 'public-channel',
+      query: 'guitar'
+    })
+
+    for (const claim of claims) {
+      db.prepare('UPDATE memory_claim SET value = ? WHERE id = ?').run(`changed legacy ${claim.id}`, claim.id)
+    }
+    db.prepare('UPDATE media_digest SET label = ?, summary = ? WHERE id = ?').run(
+      'changed legacy label',
+      'changed legacy summary',
+      media.id
+    )
+    Object.assign(memoryConfig, { store: 'item' })
+    const item = forgetUser({
+      user_id: 'user-1',
+      guild_id: 'guild-1',
+      channel_id: 'public-channel',
+      query: 'guitar'
+    })
+
+    expect(item).toEqual(legacy)
+    expect(item.message).toContain('guitar lessons')
+    expect(item.message).toContain('guitar video: A guitar performance.')
+    expect(item.message).not.toContain('changed legacy')
+  })
+
+  it('keeps item-store forget replies value-free when privacy is off', () => {
+    const claim = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'likes',
+      value: 'tea with honey',
+      sourceKind: 'explicit'
+    })
+    migrateMemoryItems(getDb())
+    const itemId = (
+      getDb()
+        .prepare("SELECT id FROM memory_item WHERE legacy_table = 'memory_claim' AND legacy_id = ?")
+        .get(claim.id) as { id: number }
+    ).id
+    Object.assign(memoryConfig, { store: 'item', privacy: 'off' })
+
+    const result = forgetUser({ user_id: 'user-1', guild_id: 'guild-1', query: 'tea' })
+
+    expect(result).toEqual({ success: true, message: 'I forgot 1 note.' })
+    expect(result.message).not.toContain('tea with honey')
+    expect(getDb().prepare('SELECT status FROM memory_claim WHERE id = ?').get(claim.id)).toEqual({ status: 'active' })
+    expect(getDb().prepare('SELECT status FROM memory_item WHERE id = ?').get(itemId)).toEqual({
+      status: 'rejected'
+    })
+  })
+
+  it('does not search item facts when the forget query has no terms', () => {
+    const claim = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'likes',
+      value: 'tea with honey',
+      sourceKind: 'explicit'
+    })
+    migrateMemoryItems(getDb())
+    Object.assign(memoryConfig, { store: 'item', privacy: 'relaxed' })
+
+    expect(forgetUser({ user_id: 'user-1', guild_id: 'guild-1', query: '!!!' })).toEqual({
+      success: false,
+      message: "I couldn't find a matching note to forget."
+    })
+    expect(getActiveClaims('guild-1', 'user-1').map(({ id }) => id)).toEqual([claim.id])
+  })
+
+  it('reads and forgets candidates in items while leaving the frozen legacy source unchanged', () => {
+    const claim = assertClaim({
+      guildId: 'guild-1',
+      subjectUserId: 'user-1',
+      predicate: 'likes',
+      value: 'tea with honey',
+      sourceKind: 'explicit',
+      channelId: 'public-channel'
+    })
+    const db = getDb()
+    migrateMemoryItems(db)
+    const itemId = (
+      db.prepare("SELECT id FROM memory_item WHERE legacy_table = 'memory_claim' AND legacy_id = ?").get(claim.id) as {
+        id: number
+      }
+    ).id
+    configureMemoryItemProjectionTriggers(db, 'legacy')
+    db.prepare('UPDATE memory_claim SET value = ? WHERE id = ?').run('drifted legacy value', claim.id)
+    Object.assign(memoryConfig, { store: 'item', privacy: 'relaxed' })
+
+    const result = forgetUser({
+      user_id: 'user-1',
+      guild_id: 'guild-1',
+      channel_id: 'public-channel',
+      query: 'tea'
+    })
+
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('likes "tea with honey"')
+    expect(result.message).not.toContain('drifted legacy value')
+    expect(db.prepare('SELECT status, value FROM memory_claim WHERE id = ?').get(claim.id)).toEqual({
+      status: 'active',
+      value: 'drifted legacy value'
+    })
+    expect(db.prepare('SELECT status, end_reason FROM memory_item WHERE id = ?').get(itemId)).toEqual({
+      status: 'rejected',
+      end_reason: 'forgotten'
+    })
+  })
+
   it('forgets only the speaker’s user claim and leaves guild facts intact', async () => {
     assertClaim({
       guildId: 'guild-1',
@@ -605,7 +738,7 @@ describe('memory tools', () => {
     expect(result.facts).toContain('general_occupation: shrine caretaker')
   })
 
-  describe.each(['shadow', 'unified'] as const)('recall_user period in %s mode', (mode) => {
+  describe('recall_user period', () => {
     const seed = (predicate: string, value: string, period?: 'current' | 'past') =>
       assertClaim({
         guildId: 'guild-1',
@@ -615,10 +748,6 @@ describe('memory tools', () => {
         sourceKind: 'explicit',
         ...(period ? { period } : {})
       })
-
-    beforeEach(() => {
-      setMemory({ recall: mode })
-    })
 
     it('lists current facts first and past facts under "In the past:"', async () => {
       seed('general_occupation', 'teacher')
@@ -843,7 +972,7 @@ describe('memory tools', () => {
   })
 })
 
-describe('memory tools across privacy levels and recall modes', () => {
+describe('memory tools across privacy levels', () => {
   const seedShelterFacts = () => {
     const now = Date.now()
     assertClaim({
@@ -954,27 +1083,16 @@ describe('memory tools across privacy levels and recall modes', () => {
     })
   })
 
-  it('ranks by similarity in unified mode and never returns more than 15 facts', async () => {
-    setMemory({ recall: 'unified' })
+  it('never returns more than 15 facts', async () => {
     for (let index = 0; index < 20; index++) {
-      const claim = assertClaim({
+      assertClaim({
         guildId: 'guild-1',
         subjectUserId: 'user-1',
         predicate: 'likes',
         value: `thing-${index}`,
         sourceKind: 'explicit'
       })
-      setClaimEmbedding({ id: claim.id, embeddingText: `thing-${index}`, embedding: unitVector(0) })
     }
-    const unrelated = assertClaim({
-      guildId: 'guild-1',
-      subjectUserId: 'user-1',
-      predicate: 'hobby',
-      value: 'unrelated',
-      sourceKind: 'explicit'
-    })
-    setClaimEmbedding({ id: unrelated.id, embeddingText: 'unrelated', embedding: unitVector(1) })
-    embeddings.embedEpisodeText.mockResolvedValue(unitVector(0))
 
     const result = await recallUser({
       guild_id: 'guild-1',
@@ -982,32 +1100,11 @@ describe('memory tools across privacy levels and recall modes', () => {
       message: 'tell me about things'
     })
 
-    expect(embeddings.embedEpisodeText).toHaveBeenCalledWith(
-      expect.objectContaining({ text: 'tell me about things', role: 'RETRIEVAL_QUERY' })
-    )
     expect(result.factCount).toBe(15)
-    expect(result.facts).not.toContain('unrelated')
   })
 
-  it('falls back to keyword ranking in unified mode when the query embedding rejects', async () => {
-    setMemory({ recall: 'unified' })
+  it('ranks keyword matches first', async () => {
     seedShelterFacts()
-    embeddings.embedEpisodeText.mockRejectedValue(new Error('offline'))
-
-    const result = await recallUser({
-      guild_id: 'guild-1',
-      user_id: 'user-1',
-      message: 'what does she do at the shelter?'
-    })
-
-    expect(result.facts).toContain('volunteers at the animal shelter')
-  })
-
-  it('falls back to keyword ranking in unified mode when the query embedding times out', async () => {
-    setMemory({ recall: 'unified' })
-    setMemory({ embeddingTimeoutMs: 1 })
-    seedShelterFacts()
-    embeddings.embedEpisodeText.mockReturnValue(new Promise(() => {}))
 
     const result = await recallUser({
       guild_id: 'guild-1',

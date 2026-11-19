@@ -108,6 +108,7 @@ stats:
     recommends: I know what they recommend.
     complains_about: I know their pet peeves.
     strong_opinion: I know their opinions.
+    upcoming_change: I know what they have coming up.
     misc: I know something about them.
   remembersOther: I know their {{label}}.
   chartColors:
@@ -134,6 +135,8 @@ footers:
     get_current_time: checked the time
     get_weather: checked the weather
     search_web: searched the web
+    identify_image: searched the picture
+    identify_image_auto: checked the image
     search_anime: searched anime
     get_anime_schedule: checked the schedule
     set_reminder: set a reminder

@@ -41,7 +41,7 @@ describe('prune-images.sh', () => {
   })
 
   it('keeps the previous image when the running tag is not the newest', () => {
-    const repo = 'ghcr.io/alaskantuna/rokabot-asr'
+    const repo = 'ghcr.io/alaskantuna/rokabot'
     const docker = fakeDocker([`${repo}:sha-ccccccc`, `${repo}:sha-bbbbbbb`, `${repo}:sha-aaaaaaa`])
 
     run(docker.dir, repo, 'sha-aaaaaaa')

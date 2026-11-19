@@ -9,7 +9,7 @@ import {
   parseYouTubeOEmbed,
   parseYtDlpMetadata
 } from './parsers.js'
-import { parseRedditFeedPost } from './redditFeed.js'
+import { parseRedditFeedPost, parseVxRedditPage } from './redditFeed.js'
 import { BROWSER_USER_AGENT } from './replies/common.js'
 import { replyReader } from './replies/service.js'
 import { THREADS_PAGE_HEADERS, parseThreadsPage } from './threads.js'
@@ -44,6 +44,19 @@ function isAbort(error: unknown): boolean {
 
 function isYtDlpPlatform(platform: SocialPlatform): boolean {
   return platform !== 'x' && platform !== 'bluesky' && platform !== 'threads'
+}
+
+function delay(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal.aborted) return resolve()
+    const finish = (): void => {
+      clearTimeout(timer)
+      signal.removeEventListener('abort', finish)
+      resolve()
+    }
+    const timer = setTimeout(finish, ms)
+    signal.addEventListener('abort', finish)
+  })
 }
 
 const MAX_BLUESKY_PDS_CACHE_ENTRIES = 256
@@ -217,13 +230,30 @@ export class SocialPostViewer {
     feedUrl.searchParams.set('limit', '1')
     try {
       const response = await this.fetcher(feedUrl, { headers: { 'User-Agent': BROWSER_USER_AGENT }, signal })
-      // Reddit refuses a flagged IP here and on the JSON yt-dlp reads alike, so yt-dlp would only spend ~9 s failing.
+      // Reddit refuses unauthenticated Node clients here, so the vxreddit mirror stands in for the post.
       if (response.status === 403 || response.status === 429) return { refused: `http_${response.status}` }
       return response.ok ? parseRedditFeedPost(await response.text(), target, this.settings.maxTextChars) : null
     } catch {
       // A refused or failed feed still leaves yt-dlp to try.
       return null
     }
+  }
+
+  private async lookupRedditMirror(target: SocialPostTarget, signal: AbortSignal): Promise<SocialPost | null> {
+    // vxreddit intermittently redirects instead of serving the page, so retry before giving up.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) await delay(1000 * attempt, signal)
+      if (signal.aborted) return null
+      try {
+        const response = await this.fetcher(`https://vxreddit.com/comments/${target.id}/`, {
+          headers: { 'User-Agent': BROWSER_USER_AGENT },
+          redirect: 'manual',
+          signal
+        })
+        if (response.ok) return parseVxRedditPage(await response.text(), target, this.settings.maxTextChars)
+      } catch {}
+    }
+    return null
   }
 
   private async lookupUncached(target: SocialPostTarget, signal: AbortSignal): Promise<SocialPostLookup> {
@@ -272,7 +302,10 @@ export class SocialPostViewer {
     // yt-dlp takes ~9 s to refuse a Reddit post with no hosted video, past the lookup budget; the feed answers
     // in well under a second for every kind of post, so yt-dlp runs only for the video.
     const redditFeed = target.platform === 'reddit' ? await this.lookupRedditFeed(target, signal) : null
-    if (redditFeed && 'refused' in redditFeed) return failure('reddit', redditFeed.refused)
+    if (redditFeed && 'refused' in redditFeed) {
+      const mirrored = await this.lookupRedditMirror(target, signal)
+      return mirrored ? { status: 'found', post: mirrored } : failure('reddit', redditFeed.refused)
+    }
     const redditFeedPost = redditFeed
     if (redditFeedPost && redditFeedPost.videoCount === 0) return { status: 'found', post: redditFeedPost }
 
@@ -290,6 +323,10 @@ export class SocialPostViewer {
         }
       }
       if (redditFeedPost) return { status: 'found', post: redditFeedPost }
+      if (target.platform === 'reddit') {
+        const mirrored = await this.lookupRedditMirror(target, signal)
+        if (mirrored) return { status: 'found', post: mirrored }
+      }
       if (target.platform !== 'youtube' || signal.aborted) return failure(target.platform, result.reason)
       // YouTube walls repeated requests from one home IP behind a bot check that oEmbed does not have.
       const oembedUrl = new URL('https://www.youtube.com/oembed')

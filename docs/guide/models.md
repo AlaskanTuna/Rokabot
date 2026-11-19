@@ -185,7 +185,7 @@ one exception: it turns off the legacy fallback.
 - **Provider Says No Credit:** when Anthropic or OpenAI reports spent credit, the bot stops calling it until the month
   turns. A restart turns it back on after you top up.
 - **Magicubes:** `llm.modelscopeDailyMagicubes` (250) is the daily ModelScope balance. Each call counts as one. All
-  ModelScope models and the `qwen` media watcher share it. It resets at UTC midnight.
+  ModelScope models share it. It resets at UTC midnight.
 - **Per-Model Limits:** an entry may set `limits: { rpm, rpd, tpm }`. A `gemini` entry inherits `rateLimit` and
   `gemini.maxTokensPerMinute`. Other providers have no limits unless you set them.
 - **Main Model Floors:** on the main entry, `rpm` must be at least `gemini.maxLlmCalls` (4) and `tpm` at least
@@ -226,9 +226,7 @@ once._
 | Memory admission and verification      | Jev on TypeSafe when `TYPESAFE_API_KEY` is set. Otherwise the main model, then the fallback once. Without the key and without an `llm:` block, passive memory is off. |
 | Tone, name and search judgments        | Jev on TypeSafe (`jev.model`). Not an `llm.models` entry.                                                                                                             |
 | Memory embeddings                      | `embeddings.provider`: `local`, `gemini` or `openai`. Not an `llm.models` entry.                                                                                      |
-| Media watcher, `gemini`                | `gemini.model` with `GEMINI_API_KEY`. Skipped while the sticky window is open.                                                                                        |
-| Media watcher, `qwen`                  | `media.qwen.model` with `MODELSCOPE_API_KEY`. Spends Magicubes.                                                                                                       |
-| Media watcher, `direct`                | The reply model reads the file itself.                                                                                                                                |
+| Media watcher                          | `gemini.model` with `GEMINI_API_KEY`. Always runs, even while the sticky window pins replies to the fallback.                                                         |
 
 `GEMINI_API_KEY` is needed only when the main or fallback model is Gemini, `embeddings.provider` is `gemini`, or
 `media.watcher` is `gemini`. Details are in [Memory](../trd/memory.md), [Jev](../trd/jev.md) and

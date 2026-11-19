@@ -28,7 +28,7 @@ const STREAMED_CHUNK_BYTES = 4 * 1024 * 1024
 export function reservationFor(attachments: MediaAttachment[]): number {
   return attachments.reduce((total, attachment) => {
     if (attachment.transport === 'uri') return total
-    const watched = config.media.watcher === 'gemini' || config.media.watcher === 'qwen'
+    const watched = config.media.watcher === 'gemini'
     if (watched && isStreamedUpload(attachment, config.media.maxStreamedUploadBytes)) {
       return total + STREAMED_CHUNK_BYTES
     }

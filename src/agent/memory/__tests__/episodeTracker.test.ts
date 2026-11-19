@@ -40,6 +40,11 @@ describe('episodeTracker', () => {
         channel_id TEXT PRIMARY KEY, guild_id TEXT NOT NULL, last_message_id TEXT, opened_at INTEGER,
         message_count INTEGER NOT NULL DEFAULT 0
       );
+      CREATE TABLE memory_episode_line (
+        channel_id TEXT NOT NULL, message_id TEXT NOT NULL, guild_id TEXT NOT NULL, user_id TEXT NOT NULL,
+        display_name TEXT NOT NULL, content TEXT NOT NULL, timestamp INTEGER NOT NULL, is_bot INTEGER NOT NULL,
+        PRIMARY KEY (channel_id, message_id)
+      );
       CREATE TABLE extraction_queue (
         id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id TEXT NOT NULL, channel_id TEXT NOT NULL,
         payload TEXT NOT NULL, status TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,

@@ -4,15 +4,16 @@ The contract for what Roka learns from server conversations, how she stores it, 
 
 ## At a Glance
 
-| Item       | Contract                                                                                                   |
-| ---------- | ---------------------------------------------------------------------------------------------------------- |
-| Scope      | Guild channels only. DMs, group DMs and `/ask` never read or write long-term memory.                       |
-| Tenant     | `guild_id` is the Discord server. Claims, summaries and media digests never cross servers.                 |
-| Write Path | Monitored message, episode, `extraction_queue`, admission, typed extraction, verification, writes.         |
-| Judge      | Jev with `TYPESAFE_API_KEY`. Otherwise the main model if `config.yml` has an `llm:` block. Otherwise none. |
-| Recall     | `memory.recall`: `legacy`, `shadow` (default) or `unified`.                                                |
-| Privacy    | `memory.privacy`: `relaxed` (default), `balanced`, `strict` or `off`.                                      |
-| Timing     | Memory work is asynchronous. It never blocks the reply that captured the messages.                         |
+| Item       | Contract                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Scope      | Guild channels only. DMs, group DMs and `/ask` never read or write long-term memory.                                                                                                                                                                                                                                                                                                                             |
+| Tenant     | `guild_id` is the Discord server. Claims, summaries and media digests never cross servers.                                                                                                                                                                                                                                                                                                                       |
+| Write Path | Monitored message, episode, `extraction_queue`, admission, typed extraction, verification, writes.                                                                                                                                                                                                                                                                                                               |
+| Judge      | Jev with `TYPESAFE_API_KEY`. Otherwise the main model if `config.yml` has an `llm:` block. Otherwise none.                                                                                                                                                                                                                                                                                                       |
+| Recall     | The four legacy blocks: people facts, server facts, episode summaries and media summaries.                                                                                                                                                                                                                                                                                                                       |
+| Privacy    | `memory.privacy`: `relaxed` (default), `balanced`, `strict` or `off`.                                                                                                                                                                                                                                                                                                                                            |
+| Store      | `memory.store` (`MEMORY_STORE` overrides) accepts `legacy`, `dual`, and `item`. `config.yml` keeps `legacy` as default; production runs `MEMORY_STORE=item` in `.env` with projection triggers removed and the six legacy tables dropped on 2026-11-14 (`memory_legacy_drop`). Only `item` starts on a dropped schema, and rollback restores the pre-drop backup. `memory.store` stays until a later cleanup PR. |
+| Timing     | Memory work is asynchronous. It never blocks the reply that captured the messages.                                                                                                                                                                                                                                                                                                                               |
 
 Deployer view: [Memory Guide](../guide/memory.md). Judge internals: [Jev](jev.md). Model routes: [Models](models.md).
 
@@ -27,24 +28,36 @@ Deployer view: [Memory Guide](../guide/memory.md). Judge internals: [Jev](jev.md
 
 ## Storage Schema
 
-All tables live in `data/rokabot.db`. `memory_claim`, `memory_episode` and `media_digest` also carry
-`embedding_model_id`, `embedding_dim` and `embedding_fingerprint`.
+All tables live in `data/rokabot.db`. The typed item tables (`memory_item*`) are canonical. The six legacy source tables
+(`memory_claim`, `memory_evidence`, `memory_claim_fts`, `memory_episode`, `media_digest`, `media_occurrence`) were dropped
+in production on 2026-11-14 (`memory_legacy_drop`); on undropped legacy schemas, `memory_claim`, `memory_episode` and
+`media_digest` also carry `embedding_model_id`, `embedding_dim` and `embedding_fingerprint`.
 
-| Table                   | Columns                                                                                                                                                                                                                                                                                                                                                      | Contract                                                                                                                             |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `memory_claim`          | `id`, `guild_id`, `subject_kind`, `subject_user_id`, `predicate`, `value`, `period`, `object_kind`, `object_user_id`, `source_kind`, `status`, `confidence`, `salience`, `pinned`, `needs_review`, `superseded_by`, `expires_at`, `event_date`, `first_seen_at`, `last_seen_at`, `last_recalled_at`, `ended_at`, `end_reason`, `embedding`, `embedding_text` | User rows need a user ID, guild rows NULL. Guild `upcoming_event` and `plan` need `expires_at`. Both dedup indexes include `period`. |
-| `memory_evidence`       | `id`, `claim_id`, `channel_id`, `source_kind`, `observed_at`, `effective_at`                                                                                                                                                                                                                                                                                 | One row per observation. Passive rows use the latest episode message time. `effective_at` equals it.                                 |
-| `memory_claim_fts`      | `value`, `predicate`                                                                                                                                                                                                                                                                                                                                         | FTS5 mirror of active claims, kept by triggers.                                                                                      |
-| `memory_episode_cursor` | `channel_id`, `guild_id`, `last_message_id`, `opened_at`, `message_count`                                                                                                                                                                                                                                                                                    | Per-channel checkpoint of the open episode.                                                                                          |
-| `extraction_queue`      | `id`, `guild_id`, `channel_id`, `payload`, `status`, `attempts`, `enqueued_at`, `available_at`, `transient_retries`                                                                                                                                                                                                                                          | `pending`, `processing` or `failed`. Success deletes the row. A failed row keeps its payload.                                        |
-| `memory_episode`        | `id`, `guild_id`, `channel_id`, `started_at`, `ended_at`, `summary`, `embedding`, `created_at`                                                                                                                                                                                                                                                               | One summary per queue job ID (the idempotency key). Nullable vector.                                                                 |
-| `media_digest`          | `id`, `guild_id`, `content_key`, `kind`, `label`, `summary`, `digest_json`, `embedding`, `created_at`                                                                                                                                                                                                                                                        | One digest per `(guild_id, content_key)`.                                                                                            |
-| `media_occurrence`      | `id`, `digest_id`, `guild_id`, `channel_id`, `message_id`, `shared_by_user_id`, `source_author_id`, `origin`, `observed_at`                                                                                                                                                                                                                                  | One row per share, unique per `(digest_id, message_id)`.                                                                             |
-| `memory_events`         | `id`, `kind`, `guild_id`, `channel_id`, `subject_user_id`, `duration_ms`, `n_candidates`, `n_selected`, `n_changed`, `tokens_est`, `op`, `created_at`, `detail`                                                                                                                                                                                              | Value-free. Kinds: `retrieval`, `context_build`, `recall`, `recall_shadow`, `extraction_run`, `claim_reclassified`.                  |
-| `jev_events`            | `kind`, `guild_id`, `channel_id`, `question`, `answer`, `probability`, `confidence`, `applied`, `latency_ms`, `input_tokens`, `baseline`, `job_id`, `created_at`, `judge`                                                                                                                                                                                    | No message text. `kind` is `turn`, `admission` or `verification`.                                                                    |
-| `extraction_samples`    | `id`, `job_id`, `guild_id`, `channel_id`, `outcome`, `admission_probability`, `lines`, `created_at`, `expires_at`                                                                                                                                                                                                                                            | Private text of rejected episodes. No prompt reads it.                                                                               |
+| Table                    | Columns                                                                                                                                                                                                                                                                                                                                                      | Contract                                                                                                                                                                                                                                                                                                              |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `memory_claim`           | `id`, `guild_id`, `subject_kind`, `subject_user_id`, `predicate`, `value`, `period`, `object_kind`, `object_user_id`, `source_kind`, `status`, `confidence`, `salience`, `pinned`, `needs_review`, `superseded_by`, `expires_at`, `event_date`, `first_seen_at`, `last_seen_at`, `last_recalled_at`, `ended_at`, `end_reason`, `embedding`, `embedding_text` | User rows need a user ID, guild rows NULL. Guild `upcoming_event` and `plan` need `expires_at`. Both dedup indexes include `period`. Legacy table dropped in production on 2026-11-14 via `--drop-legacy`; absent on dropped schemas.                                                                                 |
+| `memory_evidence`        | `id`, `claim_id`, `channel_id`, `source_kind`, `observed_at`, `effective_at`, `job_id`, `source_message_id`, `speaker_user_id`                                                                                                                                                                                                                               | One row per observation. Passive rows use the latest episode message time. `effective_at` equals it. Provenance is the citing job, message and speaker; each job counts once per claim. Legacy table dropped in production on 2026-11-14 via `--drop-legacy`; absent on dropped schemas.                              |
+| `memory_claim_fts`       | `value`, `predicate`                                                                                                                                                                                                                                                                                                                                         | FTS5 mirror of active claims, kept by triggers. Legacy table dropped in production on 2026-11-14 via `--drop-legacy`; absent on dropped schemas.                                                                                                                                                                      |
+| `memory_item`            | `id`, `guild_id`, `kind`, subject and content fields, lifecycle and time fields, `version`, `legacy_table`, `legacy_id`, `legacy_embedding_text`                                                                                                                                                                                                             | Canonical store for facts, episodes and media. Migrated rows keep `legacy_table` and `legacy_id` for audit and undo; `legacy_embedding_text` holds rendered claim vector text.                                                                                                                                        |
+| `memory_item_evidence`   | `item_id`, source, observation and provenance fields, `legacy_id`                                                                                                                                                                                                                                                                                            | Fact evidence, written with each lifecycle change in one transaction.                                                                                                                                                                                                                                                 |
+| `memory_item_occurrence` | `item_id`, guild and channel, origin, message and speaker fields, episode span, observation time, `legacy_id`                                                                                                                                                                                                                                                | Media shares and episode spans, written with each lifecycle change in one transaction.                                                                                                                                                                                                                                |
+| `memory_item_payload`    | `item_id`, `digest_json`                                                                                                                                                                                                                                                                                                                                     | Media payload, kept outside prompt-facing reads.                                                                                                                                                                                                                                                                      |
+| `memory_item_embedding`  | `item_id`, `fingerprint`, model, dimensions, renderer, renderer version, `text_hash`, vector and creation time                                                                                                                                                                                                                                               | The schema is keyed by item and fingerprint. `item` writers match the one-vector-per-item behavior and set `text_hash` on every vector they write. Legacy projection triggers can leave hashes NULL; startup and daily maintenance fill them. Invalid vectors remain stored but readers do not expose them as usable. |
+| `memory_item_fts`        | `content`, `predicate`                                                                                                                                                                                                                                                                                                                                       | External-content FTS5 index of active fact items. `memoryItemSchema.ts` owns its insert, update and delete triggers.                                                                                                                                                                                                  |
+| `memory_legacy_drop`     | `id`, `dropped_at`, `detail`                                                                                                                                                                                                                                                                                                                                 | Single-row marker (`id = 1`) recorded by `--drop-legacy`. Prevents startup from recreating legacy tables or starting non-`item` stores.                                                                                                                                                                               |
+| `memory_episode_cursor`  | `channel_id`, `guild_id`, `last_message_id`, `opened_at`, `message_count`                                                                                                                                                                                                                                                                                    | Per-channel checkpoint of the open episode.                                                                                                                                                                                                                                                                           |
+| `memory_episode_line`    | `channel_id`, `message_id`, `guild_id`, `user_id`, `display_name`, `content`, `timestamp`, `is_bot`                                                                                                                                                                                                                                                          | Saved text of the open episode, one row per message, deleted at flush.                                                                                                                                                                                                                                                |
+| `extraction_queue`       | `id`, `guild_id`, `channel_id`, `payload`, `status`, `attempts`, `enqueued_at`, `available_at`, `transient_retries`                                                                                                                                                                                                                                          | `pending`, `processing` or `failed`. Success deletes the row. A failed row keeps its payload.                                                                                                                                                                                                                         |
+| `memory_episode`         | `id`, `guild_id`, `channel_id`, `started_at`, `ended_at`, `summary`, `embedding`, `created_at`                                                                                                                                                                                                                                                               | One summary per queue job ID (the idempotency key). Nullable vector. Legacy table dropped in production on 2026-11-14 via `--drop-legacy`; absent on dropped schemas.                                                                                                                                                 |
+| `media_digest`           | `id`, `guild_id`, `content_key`, `kind`, `label`, `summary`, `digest_json`, `embedding`, `created_at`                                                                                                                                                                                                                                                        | One digest per `(guild_id, content_key)`. Legacy table dropped in production on 2026-11-14 via `--drop-legacy`; absent on dropped schemas.                                                                                                                                                                            |
+| `media_occurrence`       | `id`, `digest_id`, `guild_id`, `channel_id`, `message_id`, `shared_by_user_id`, `source_author_id`, `origin`, `observed_at`                                                                                                                                                                                                                                  | One row per share, unique per `(digest_id, message_id)`. Legacy table dropped in production on 2026-11-14 via `--drop-legacy`; absent on dropped schemas.                                                                                                                                                             |
+| `memory_events`          | `id`, `kind`, `guild_id`, `channel_id`, `subject_user_id`, `duration_ms`, `n_candidates`, `n_selected`, `n_changed`, `tokens_est`, `op`, `created_at`, `detail`                                                                                                                                                                                              | Value-free. Kinds include `retrieval`, `context_build`, `extraction_run`, `claim_reclassified` and `item_integrity` (per-kind drift counts).                                                                                                                                                                          |
+| `jev_events`             | `kind`, `guild_id`, `channel_id`, `question`, `answer`, `probability`, `confidence`, `applied`, `latency_ms`, `input_tokens`, `baseline`, `job_id`, `created_at`, `judge`                                                                                                                                                                                    | No message text. `kind` is `turn`, `admission`, or `verification`.                                                                                                                                                                                                                                                    |
+| `extraction_samples`     | `id`, `job_id`, `guild_id`, `channel_id`, `outcome`, `admission_probability`, `lines`, `created_at`, `expires_at`                                                                                                                                                                                                                                            | Private text of rejected episodes. No prompt reads it.                                                                                                                                                                                                                                                                |
 
 The queue payload holds the delta messages, up to three earlier context lines, and the start and end times.
+
+The typed item tables are additive, and startup creates the schema. With `memory.store: legacy`, the bot reads and writes legacy tables and removes projection triggers. With `MEMORY_STORE=dual`, startup installs the five source-table trigger sets and records source-projection drift counts; reads stay on legacy tables. With `MEMORY_STORE=item`, prompt-facing readers and memory writers use the scoped item API, source projection triggers are dropped, new item IDs reserve space above legacy IDs, and `item_integrity` checks item-native invariants. Startup and daily maintenance fill any NULL embedding hashes from stored text; `item` writers set `text_hash` directly. Production runs `MEMORY_STORE=item` in `.env` (`config.yml` stays `legacy`), with 0 projection triggers and the six legacy tables dropped on 2026-11-14 via `npm run migrate:memory-items -- --drop-legacy --backup <path>` (`memory_legacy_drop` recorded, leaving 129 facts, 396 episodes, and 43 media). That drop script refuses unless `memory.store` is `item`, no projection trigger remains, and the backup is a separate readable SQLite file with matching legacy row counts and an mtime newer than the newest detectable legacy write (or 24 hours ago if none is detectable), then drops the six legacy tables and FTS shadows in one transaction and records `memory_legacy_drop`. Startup never recreates dropped tables, and only `item` starts on a dropped schema; rollback restores the backup file. On undropped schemas, `npm run migrate:memory-items` is an offline catch-up path and `-- --to-legacy` exports items to legacy rows in one transaction. Each #266 phase passed the offline simulator (`npm run memsim`) with no production soak or in-production shadow read (owner decision). See [Typed Memory Items](../RUNBOOK.md#typed-memory-items-phases-3-5-and-6) before changing the store on the Pi.
 
 ## Write Path
 
@@ -54,12 +67,16 @@ _A monitored message becomes an episode, a queued job, a judged extraction, and 
 
 ### Capture
 
-1. Each monitored guild message enters the channel buffer, and the cursor counts it as a delta.
+1. Each monitored guild message enters the channel buffer, its text is saved in `memory_episode_line`,
+   and the cursor counts it as a delta. A redelivered message saves nothing and leaves the count alone.
 2. The episode closes after `memory.episodeLullMs` (180 s) of silence or at `memory.episodeMaxMessages` (25) deltas,
    capped at `memory.bufferSize - 3` so three context lines fit.
-3. The queue insert and cursor advance share one SQLite transaction.
+3. The queue insert, the saved-line delete and the cursor advance share one SQLite transaction.
 4. Startup converts legacy array payloads to the episode shape, keeps every row and status, and returns `processing`
    rows to `pending`.
+5. At boot, `restoreOpenEpisodes` rebuilds each open episode from its saved lines and resumes its lull timer
+   with the remaining silence. The context lines from before the crash are lost. Under `memory.privacy: off` it
+   deletes the saved lines instead.
 
 ### Scheduling and Retries
 
@@ -78,9 +95,11 @@ limit, daily budget ratio or extraction RPM floor.
 
 ### Admission
 
-- **Precheck:** `sensitive` if any delta matches an email, phone, credential, legal name, age or birthday, address,
-  school or workplace, medical or social-handle pattern. `trivial` if every delta is empty, a greeting, a short
-  reaction or emoji only. Both drop locally.
+- **Precheck:** `episodePrecheck.ts` strips URLs and Discord tokens (`<@…>`, `<#…>`, `<:…>`) before matching. A job
+  is `sensitive` if any delta matches an email, phone (excluding ISO dates and grouped numbers), credential, legal
+  name, age (word-bounded numbers) or birthday, address, school or workplace, medical or social-handle pattern, recording
+  the name in `trace.precheckPattern`. `trivial` if every delta is empty, a greeting, a short reaction or emoji only.
+  Both drop locally.
 - **Judgment:** one `lasting_fact` question. Admit at or above `memory.admitThreshold` (0.5, Jev) or
   `memory.modelAdmitThreshold` (0.7, main model). No judge, a timeout or an unusable answer drops the episode.
 - **Judge:** `memory.judge` is derived: `jev` with `TYPESAFE_API_KEY`; `model` without it when an `llm:` block exists;
@@ -93,7 +112,17 @@ limit, daily budget ratio or extraction RPM floor.
 The legacy config runs `gemini.extractionModel` (default `gemini.model`) with no fallback. An `llm:` block runs the
 main model, then the fallback once. The prompt carries the human user IDs, the active claims and guild facts this
 channel may recall, up to three context lines (background only) and the deltas. The model returns a strict operation
-list and a one-to-two-sentence summary.
+list and a one-to-two-sentence summary. `ExtractionTransportSchema` validates each proposed op individually, dropping
+malformed ones (`ops.invalid`) and failing `invalid_object` only when every non-empty op is invalid. Before the apply
+transaction, an op whose value fails `isSafeFactScalar` or the sensitive check is dropped and counted in `ops.dropped`,
+so one unsafe value never rolls back the rest of the batch (#491). Delta lines are numbered (`#1`, `#2`, …) while
+context lines carry no number. Every add and update cites its delta line in `sourceLine`; the write path resolves it to
+a message ID and speaker. A missing, out-of-range or other-member line loses only the link while the op still applies,
+but an op citing a bot line is dropped and counted in `ops.dropped`, so Roka's own words never become a fact (#496). Each job counts once per claim: a retried job's replayed evidence is a no-op.
+
+Claims and guild facts are ordered by stable content keys and receive request-local refs `1..n`. The prompt uses those
+refs for claim IDs. An update or remove returns its local ref; extraction maps it back to the database row before
+verification. An unknown or out-of-range ref drops that op and increments `ops.invalid`. Refs never persist.
 
 | Operation | Subjects    | Effect                                                                                |
 | --------- | ----------- | ------------------------------------------------------------------------------------- |
@@ -107,13 +136,15 @@ Prompt rules:
 
 - **Restatement:** `add` with the exact existing value. Never add a rewording. `noop` only when nothing durable came up.
 - **Tense:** user adds and updates are `current`, `past` ("I used to play chess") or `planned`.
+- **Upcoming:** a committed future change ("I start next quarter") is `upcoming_change` with tense `current`. It is kept as a current fact and lapses through the standard 30-day retention unless restated.
 - **Switch:** "switched from chess to go" is a `retract` of the old value plus an `add` of the new.
 - **Past Claims:** listed with `"period": "past"`, never updated or removed. History is an `add` of tense `past`.
 - **Predicates:** the most specific one over `misc`. A game they play is `hobby` unless they call it their favorite.
   A retract of a listed fact uses its listed predicate.
+- **Diets:** a food allergy, intolerance or diet a member states about themselves is `diet`, not a medical detail (#496).
 
 Write guards: a user subject (and object user) must be a human author of the deltas. `privacyGuard.ts` rejects
-sensitive keys and values shaped like emails, phone numbers, account numbers or API credentials. `planned` ops drop.
+sensitive keys and values shaped like emails, phone numbers, account numbers or API credentials. `planned` ops drop, except `upcoming_change`, which is kept as above (#504).
 
 ### Guild Facts and Dates
 
@@ -137,8 +168,12 @@ same-subject, same-predicate, same-period claim. Past ops and retracts get their
 | -------------- | ------------------------------------------------------------------- | --------------------------------------------- |
 | `current_N`    | Every user add and update: true of the subject now?                 | It cannot be written as current               |
 | `past_N`       | Every user add and update: true at some earlier time?               | With `current_N` failing too, the op drops    |
-| `changes_N`    | Every user update: does it change claim #ID into a different fact?  | Becomes evidence on the target; wording stays |
+| `changes_N`    | Every user update: does it change claim #ref into a different fact? | Becomes evidence on the target; wording stays |
 | `retracts_N_M` | A retract, per visible current claim in its category (best 5 first) | That claim is not retired                     |
+
+Jev receives visible claims in stable content order with refs `1..n`; request state, update targets, and question text
+use those refs instead of database IDs. `same_as_N_M` and `retracts_N_M` keep their operation and candidate indices,
+with candidates ordered by stable content keys.
 
 Thresholds are `memory.verifyThreshold` (0.5, Jev) or `memory.modelVerifyThreshold` (0.7, main model). Verification is
 complete only when every key has a probability in 0..1.
@@ -152,7 +187,7 @@ With complete verification:
    each other. A current update aimed at a past claim writes a new current fact.
 5. **Duplicates:** an exact active value adds evidence even below the `same_as` threshold. Other duplicates must pass.
 6. **Retraction:** retires each visible current claim whose `retracts_N_M` holds (`end_reason = 'retracted'`).
-   Candidates span the predicate category, ordered by value match, then own predicate, then listing order.
+   Candidates span the predicate category, ordered by value match, then own predicate, then stable content key.
 7. **Order:** multi-value retracts first (to free a cap slot), then all other ops, then single-value retracts, so a
    retract-then-add switch lets the add supersede the old value and inherit its pin.
 8. **Pins:** a verified op that supersedes a pinned current claim writes `pinned = 1`.
@@ -163,14 +198,31 @@ fact, never inherits a pin and never refreshes an active duplicate. Removes and 
 Admission writes one `jev_events` row (`kind = 'admission'`, `lasting_fact`). Complete verification writes one row
 per key with the job in `job_id`. `judge` is `provider:model` for the main model and NULL for Jev.
 
+### Summary Validation
+
+Before a summary is embedded, `persistEpisodeResult` runs `validateEpisodeSummary`. The first failed check drops the
+summary, and nothing is embedded or saved.
+
+| Check                                                                                               | Drop Reason    |
+| --------------------------------------------------------------------------------------------------- | -------------- |
+| Jev rejected every proposed change                                                                  | `ops_rejected` |
+| Holds a run of 15 or more digits                                                                    | `numeric_id`   |
+| Matches the boilerplate pattern                                                                     | `boilerplate`  |
+| `summary_complete` is below `memory.summaryThreshold` (`modelSummaryThreshold` for the model judge) | `incomplete`   |
+
+An unavailable judge keeps the summary, with `judged: false`. The check covers who and what, because `started_at` and
+`ended_at` already carry the time.
+
 ## Hidden-Fact Reconciliation
 
 Under `balanced` and `strict`, the extractor and judge see only claims this channel may recall. After the write
 transaction, `reconcileHiddenRetractions` handles each verified `retract`:
 
 1. **Candidates:** the subject's active current claims in the same category, not under review, not visible here.
-2. **Ranking:** cosine similarity of the retracted fact's sentence to each stored claim vector. Top 3; no vector, skip.
-3. **Judgment:** one judge call. Each candidate at or above the verify threshold retires with `retracted` and counts in
+2. **Ranking:** cosine similarity of the retracted fact's sentence to each stored claim vector. Top 3, with sentence
+   content breaking ties; no vector, skip.
+3. **Judgment:** one judge call with request-local refs `1..n` for candidate facts. Each candidate at or above the
+   verify threshold retires with `retracted` and counts in
    `ops.retracted`.
 
 Nothing hidden reaches the prompt, reply or logs (logs carry IDs, predicate and counts). `relaxed` and `off` make no
@@ -183,19 +235,23 @@ counts, message IDs, timings and model names, never text, display names or error
 (attempt), `n_candidates` (ops proposed, no `noop`), `n_selected` (applied, staged included), `n_changed`,
 `tokens_est` (admission + extraction + verification input).
 
-| `detail` Field                    | Meaning                                                                                                |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `jobId`, `attempt`                | Job and `attempts + transientRetries + 1`                                                              |
-| `firstMessageId`, `lastMessageId` | First and last delta IDs; NULL when empty                                                              |
-| `messageCount`, `humanCount`      | Deltas, and how many came from non-bots                                                                |
-| `stage`                           | `precheck`, `admission`, `extraction`, `verification` or `applied`                                     |
-| `outcome`                         | `admitted`, `trivial`, `sensitive`, `below_threshold`, `jev_unavailable`, `noop`, `written` or `error` |
-| `errorClass`, `errorStatus`       | `transient`, `permanent` or `unjudged`, and the HTTP status                                            |
-| `admission`                       | `{ probability, threshold }`                                                                           |
-| `ops`                             | `{ proposed, applied, duplicate, staged, dropped, changed, past, reword, retracted }`                  |
-| `summary`                         | `{ kept, chars, boilerplate }`                                                                         |
-| `stageMs`                         | `{ admission, extraction, verification, persistence }`                                                 |
-| `models`                          | `{ extraction, jev, embedding }`: `gemini.extractionModel`, `jev.model`, the embedding model           |
+| `detail` Field                    | Meaning                                                                                                                                  |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `jobId`, `attempt`                | Job and `attempts + transientRetries + 1`                                                                                                |
+| `firstMessageId`, `lastMessageId` | First and last delta IDs; NULL when empty                                                                                                |
+| `messageCount`, `humanCount`      | Deltas, and how many came from non-bots                                                                                                  |
+| `stage`                           | `precheck`, `admission`, `extraction`, `verification` or `applied`                                                                       |
+| `outcome`                         | `admitted`, `trivial`, `sensitive`, `below_threshold`, `jev_unavailable`, `noop`, `written` or `error`                                   |
+| `precheckPattern`                 | Sensitive precheck name (`phone`, `email`, `credential`, `name`, `age`, `address`, `workplace`, `health` or `social`); NULL otherwise    |
+| `errorClass`, `errorStatus`       | `transient`, `permanent` or `unjudged`, and the HTTP status                                                                              |
+| `admission`                       | `{ probability, threshold }`                                                                                                             |
+| `ops`                             | `{ proposed, invalid, applied, duplicate, staged, dropped, changed, past, reword, retracted, uncited }`                                  |
+| `ops.invalid`                     | Extraction operations rejected individually before verification                                                                          |
+| `summary`                         | `{ kept, chars, boilerplate, dropReason, judged }`                                                                                       |
+| `stageMs`                         | `{ admission, extraction, verification, persistence }`                                                                                   |
+| `extractionProvider`              | Provider that answered extraction; omitted when no extraction call ran                                                                   |
+| `extractionFallback`              | Whether the fallback route answered; false when extraction did not run                                                                   |
+| `models`                          | `{ extraction, jev, embedding }`: answering extraction model (`gemini.extractionModel` if no call ran), `jev.model`, the embedding model |
 
 A retried job writes one row per attempt. A summary persistence failure records `stage: 'applied'`, `outcome: 'error'`.
 
@@ -260,11 +316,12 @@ The predicate list and tiers live in `src/agent/memory/predicates.ts`.
 - **Limits:** never under `off`. `memory.reclassifyMaxPerRun` (env `MEMORY_RECLASSIFY_MAX_PER_RUN`, 20, bounded 0..100)
   caps moves per run; 0 turns it off.
 - **Candidates:** active current `misc` claims, plus the weaker side of an equal-value pair under two predicates (the
-  `misc` one, else lower salience, else newer). Up to `min(100, 5 × cap)` in random order. Undone moves are never
-  offered again.
-- **Proposal:** one call on the extraction model route returns a predicate or `keep`. `misc` and `relationship_to` are
-  never targets.
-- **Confirmation:** one judge call asks `fits_<id>` for at most `cap` proposals, held to the verify threshold.
+  `misc` one, else lower salience, else newer). The stable content-ordered pool is shuffled in application code, then
+  limited to `min(100, 5 × cap)`. Undone moves are never offered again.
+- **Proposal:** one call on the extraction model route returns a predicate or `keep`, using request-local refs `1..n`.
+  `misc` and `relationship_to` are never targets.
+- **Confirmation:** one judge call asks `fits_<ref>` for at most `cap` proposals, held to the verify threshold;
+  returned refs map back to claim IDs in application code.
 - **Move:** one transaction retires the old row (`reclassified`), writes the value as an active, verified fact under
   the new predicate, copies evidence, keeps the pin and `first_seen_at`, and links old to new. It rolls back if it would
   end any other fact. It skips a value the member retracted or forgot.
@@ -285,7 +342,7 @@ change or revert with no backfill.
 | `strict`            | Every channel keeps its own memories                                                              |
 | `off`               | No writes or recall. `remember_user` and `recall_user` are withheld; `forget_user` still deletes. |
 
-- **Sources:** a fact's `memory_evidence` channels, a summary's `channel_id`, a digest's `media_occurrence` channels.
+- **Sources:** a fact's `memory_item_evidence` channels, an episode's `memory_item_occurrence` (`origin = 'episode'`) channel, and a media item's `memory_item_occurrence` (`origin != 'episode'`) channels (or the legacy source tables on undropped schemas).
 - **Gate:** `canRecall` (`src/agent/memory/privacy.ts`) is the only check. An item passes if any source does. `strict`
   allows the current channel or the thread's parent; `balanced` also allows any public channel. A missing source is
   public under `balanced` and fails under `strict`. A digest with no occurrence is private.
@@ -293,51 +350,25 @@ change or revert with no backfill.
   parent; private threads and unknown channels are private. `src/discord/channelVisibility.ts` resolves this at recall
   time, so a channel that turns private stops sharing at once.
 - **Limit:** with no channel visible to `@everyone`, `balanced` acts like `strict`.
-- **Coverage:** unified and legacy recall, `recall_user`, `forget_user` replies, the extraction prompt, `same_as`
+- **Coverage:** recall, `recall_user`, `forget_user` replies, the extraction prompt, `same_as`
   candidates and nickname lookup.
 - **Forget User:** works at every level. `relaxed` quotes values; `balanced` and `strict` quote only what is
   recallable here and count the rest; `off` reports counts only.
 - **Cached Media:** except under `off`, a repost reuses its stored digest even if the first share is hidden here.
   Recall of the summary is still gated.
 
-## Unified Recall
+## Bounded Retrieval
 
-![Unified Memory Recall](../diagrams/memory-recall.svg)
-
-_Candidates pass the privacy gate, are scored against the turn's query vector, and fill one budgeted block._
-
-| `memory.recall`    | Prompt                                                        | Unified Recall      |
-| ------------------ | ------------------------------------------------------------- | ------------------- |
-| `legacy`           | People facts, server facts, episode and media blocks          | Not run             |
-| `shadow` (default) | The legacy blocks                                             | Runs, logged only   |
-| `unified`          | One block from `recallForTurn` (`src/agent/memory/recall.ts`) | Replaces the blocks |
-
-- **Candidates:** live facts (not under review, not expired) about the speaker, up to
-  `memory.recentParticipantLimit` (3) participants, named members and one current `relationship_to` hop. With a query
-  vector: also server facts, conversation summaries and media summaries.
-- **Fact Vectors:** each active fact is embedded as a subject-neutral sentence ("This person's past hobby: chess.") in
-  `memory_claim.embedding`, with the sentence in `embedding_text`. New facts embed after each job (20) and after
-  `remember_user` (5); maintenance fills gaps and changed sentences.
-- **Floors:** similarity must exceed `memory.factMinSimilarity` (0.65), `memory.serverFactMinSimilarity` (0.65),
-  `memory.episodeMinSimilarity` (0.7) or `memory.mediaMinSimilarity` (0.7), or the fingerprint's
-  `embeddings.minSimilarity` entry.
-- **Boosts:** +0.05 speaker, +0.05 named member, +0.05 pinned, up to +0.03 recency halving every
-  `memory.salienceHalfLifeDays` (30). A fact recalled within `memory.recallCooldownMs` (6 h) loses 0.1 unless keyword-matched.
-  Summaries and media get only recency.
-- **Selection:** up to `memory.recallCoreFacts` (3) core speaker facts first (pinned, `nickname`, `pronouns`; never
-  past). The rest fill `memory.recallTokenBudget` (600) best-first, with at most `memory.episodeRecallK` (3) summaries
-  and `memory.mediaRecallK` (2) media.
-- **Past Facts:** keyed `<predicate> (past)`. A past relationship is not followed; a past nickname names no one.
-- **Fallback:** no query vector within `embeddings.timeoutMs` (1500 ms) means core facts plus keyword-matched facts.
-- **Prompt:** `## What You Remember`, an untrusted-data sentence, then People, This Server, Past Conversations and
-  Media Shared Here with JSON-quoted values. The safety ladder drops it with the legacy blocks.
-- **Telemetry:** a `recall` or `recall_shadow` row per guild memory turn: mode, privacy, fallback, gated count and the
-  selected `[kind, id, score]` tuples.
-
-## Bounded Retrieval (Legacy)
-
-The people-facts block under `legacy` or `shadow`, built once in `src/agent/turnContext.ts`. `beforeModelCallback` only
+The people-facts block, built once in `src/agent/turnContext.ts`. `beforeModelCallback` only
 reads the assembled prompt. Claims use the `buildFactsEnvelope` untrusted-data envelope.
+
+- **Required Scope:** `retrieveForTurn`, `retrieveForSubject`, `retrieveGuildFacts`,
+  `recallEpisodes`/`buildEpisodeRecallBlock` and `recallMedia`/`buildMediaRecallBlock` all require a `RecallScope`
+  (`guildId` + `channelId`). There is no unscoped read path. `createTurnContext` skips all four memory blocks when
+  `scope` is absent (DM turns or empty `guildId`) or `memoryScope !== 'full'`.
+- **Read And Bookkeeping Split:** each builder reads its candidate rows through one small reader helper and runs a
+  pure selection over that snapshot. `retrieveForTurn` returns its selection without mutating state; `createTurnContext`
+  runs `touchRecalled` and writes the `retrieval` `memory_events` row once afterwards.
 
 - **Bounds:** `memory.maxClaimsPerTurn` (10) claims, about `memory.retrievalTokenBudget` (350) tokens.
 - **Anchors:** `ceil(10 × memory.speakerMinShare)` (0.5, so 5) slots go to the speaker first and are never displaced.
@@ -358,7 +389,7 @@ reads the assembled prompt. Claims use the `buildFactsEnvelope` untrusted-data e
 | Tool            | Contract                                                                                                                                                            |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `remember_user` | Pinned `explicit` claim about the speaker. Refuses sensitive keys and values.                                                                                       |
-| `recall_user`   | Up to 15 facts about one member, current then "In the past:". Unified mode uses the unified scorer with no floor; else `retrieveForSubject`. Asks when ambiguous.   |
+| `recall_user`   | Up to 15 facts about one member, current then "In the past:", via `retrieveForSubject`. Asks when ambiguous.                                                        |
 | `forget_user`   | The speaker's own active claims and shared media, AND across up to six keywords. Forgets one to three matches; more asks which. Sensitive values print generically. |
 
 `/ask` offers none of them. `forget_user` never touches guild facts.
@@ -379,9 +410,9 @@ reads the assembled prompt. Claims use the `buildFactsEnvelope` untrusted-data e
   fingerprint and dimension match, its length is `dim × 4` and its norm is nonzero. Pre-provenance vectors are
   `unknown`, readable only in the `gemini-embedding-2` space.
 - **Query:** only guild message turns embed the query, inside `TurnEntryWork`.
-- **Legacy Episode Block:** same-guild summaries strictly above the episode floor, by score, then newest. At most
-  `memory.episodeRecallK` (3) within `memory.episodeTokenBudget` (200), with UTC end dates under an untrusted heading.
-  A failed or late embedding drops the block.
+- **Legacy Episode Block:** same-guild, scope-filtered summaries strictly above the episode floor, by score, then
+  newest. At most `memory.episodeRecallK` (3) within `memory.episodeTokenBudget` (200), with UTC end dates under an
+  untrusted heading. Skipped on DM turns (no `RecallScope`) and dropped on a failed or late embedding.
 
 The maintenance pass runs at startup and every 24 hours, one pass at a time. It deletes episodes and media
 occurrences older than `memory.episodeRetentionDays` and `memory.mediaRetentionDays` (90 each). It then embeds each
@@ -396,7 +427,7 @@ Watched media is kept as text. Watching itself is in [Media](media.md).
 - **Content Keys:** `youtube:<id>`, `youtube:<id>@<startSec>`, `<platform>:<postId>:<mediaIndex>` (Bluesky `postId`
   is `<profile>/<rkey>`), `discord:<path>` for Discord CDN files, or `sha256:<hex>`. Signed URL parameters never count.
 - **Occurrences:** `origin` is `upload`, `reply`, `forward` or `link`. `source_author_id` is the replied-to poster.
-- **Scope:** guild memory turns with a message ID, never under `off`.
+- **Scope:** guild memory turns with a `RecallScope` and a message ID, never under `off` or on DM turns.
 - **Repost Cache:** a link is checked before download, an upload after hashing. A hit reuses the digest with no watcher
   call and records a new occurrence. Opening-only, incomplete or unrenderable digests are replaced.
 - **Writes:** a fresh watch saves digest and occurrence, then embeds the summary off the reply path. Failures only log.
@@ -406,14 +437,20 @@ Watched media is kept as text. Watching itself is in [Media](media.md).
 
 ## Maintenance Commands
 
-| Command                                                 | Contract                                                                                                                                                                                                      |
-| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `npm run migrate:memory-v2`                             | Offline, explicit. Backfills `user_memory` once, checks every row against a claim in each legal scope, reports the top ten claims per subject, then drops `user_memory`. Any miss aborts. A rerun is a no-op. |
-| `npm run memory:replay -- --session-history <database>` | Offline replay with stub judges and extractor. No network calls. Prints episode, operation and gap statistics.                                                                                                |
-| `npm run memory:replay:live`                            | Real pipeline. Needs `ROKABOT_MEMORY_REPLAY_LIVE=1`, `GEMINI_API_KEY` and `TYPESAFE_API_KEY`.                                                                                                                 |
-| `npm run export:vault`                                  | Read-only Obsidian snapshot to `memory.vaultExportDir` (env `MEMORY_VAULT_EXPORT_DIR`, default `data/vault`).                                                                                                 |
-| `npm run memory:prune-overflow`                         | Applies the active-claim cap to every member now.                                                                                                                                                             |
-| `npm run memory:undo-reclassify -- <id>`                | Undoes one reclassification.                                                                                                                                                                                  |
+| Command                                                 | Contract                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run migrate:memory-v2`                             | Offline, explicit. Backfills `user_memory` once, checks every row against a claim in each legal scope, reports the top ten claims per subject, then drops `user_memory`. Any miss aborts. A rerun is a no-op.                                                                                                                                                                                                                               |
+| `npm run migrate:memory-items`                          | Offline, explicit. Copies legacy memory rows to typed items in one transaction, checks counts and every-column round trips, then prints counts only; `-- --to-legacy` exports items back to legacy rows (refuses on a dropped schema); `-- --drop-legacy --backup <path>` drops the six legacy tables after verifying the backup and records `memory_legacy_drop`.                                                                          |
+| `npm run replay:memory-items -- <database>`             | Offline parity replay of up to 150 recent guild turns on a database copy. Uses stored vectors as query stand-ins, makes no network calls and prints counts and block hashes only.                                                                                                                                                                                                                                                           |
+| `npm run memsim -- --replay --store item`               | Offline 30-day synthetic multi-guild simulator replay (`tests/harness/memsim/cli.ts`), also run under `npm test` (`tests/harness/__tests__/memsim.eval.test.ts`) for `--store dual` and `--store item`, and `--drop-legacy-at-day 15`. `npm test` also replays the `strict` cache (`tests/harness/memsim/cache-strict/`) for both stores. Zero cache misses, zero live calls, 0.878 recall, 0.973 precision (re-recorded 2026-11-15, #504). |
+| `npm run memsim:generate`                               | Records and verifies the committed synthetic `memsim` cache (`tests/harness/memsim/generate.ts`).                                                                                                                                                                                                                                                                                                                                           |
+| `npm run memory:replay -- --session-history <database>` | Offline replay with stub judges and extractor. No network calls. Prints episode, operation and gap statistics.                                                                                                                                                                                                                                                                                                                              |
+| `npm run memory:replay:live`                            | Real pipeline. Needs `ROKABOT_MEMORY_REPLAY_LIVE=1`, `GEMINI_API_KEY` and `TYPESAFE_API_KEY`.                                                                                                                                                                                                                                                                                                                                               |
+| `npm run export:vault`                                  | Read-only Obsidian snapshot to `memory.vaultExportDir` (env `MEMORY_VAULT_EXPORT_DIR`, default `data/vault`).                                                                                                                                                                                                                                                                                                                               |
+| `npm run memory:prune-overflow`                         | Applies the active-claim cap to every member now.                                                                                                                                                                                                                                                                                                                                                                                           |
+| `npm run memory:undo-reclassify -- <id>`                | Undoes one reclassification.                                                                                                                                                                                                                                                                                                                                                                                                                |
+
+The item builder perf test (`tests/harness/__tests__/memoryItemBuilders.perf.test.ts`, run by `npm run test:perf`) uses a 180 s timeout because seeding 40,000 rows takes about 35 s on CI.
 
 The migration infers scopes for old `global` rows only from recorded guild rows or response events. A row with
 several scopes gets `needs_review`. Eviction changes status and never deletes. Startup never runs the migration.
@@ -434,12 +471,16 @@ current facts, and reports episodes ended in the last 30 days.
 
 ## Source Files
 
-- `src/agent/memory/`: `episodeTracker.ts`, `scheduler.ts`, `admission.ts`, `episodePrecheck.ts`, `extractor.ts`,
-  `guildFactDates.ts`, `privacyGuard.ts`, `memoryClaims.ts`, `predicates.ts`, `hiddenRetractions.ts`, `reclassify.ts`,
-  `recall.ts`, `retriever.ts`, `identityResolver.ts`, `privacy.ts`, `episodeMaintenance.ts`, `factEmbeddings.ts`,
-  `embeddings/`
-- `src/agent/jev/judgments.ts`, `src/agent/jev/modelJudge.ts`, `src/agent/turnContext.ts`, `src/agent/tools/`
-- `src/storage/`: `memoryClaimSchema.ts`, `database.ts`, `extractionQueue.ts`, `memoryEpisodeStore.ts`,
-  `mediaDigestStore.ts`, `extractionSampleStore.ts`
-- `scripts/`: `migrate-memory-v2.ts`, `replay-memory-v2.ts`, `export-vault.ts`, `undo-reclassify.ts`,
-  `prune-claim-overflow.ts`
+- `src/agent/memory/`: `episodeTracker.ts`, `scheduler.ts`, `admission.ts`, `episodePrecheck.ts`, `extractionSchema.ts`,
+  `extractionRun.ts`, `extractor.ts`, `memoryItems.ts`, `memoryClaimScoring.ts`, `guildFactDates.ts`, `privacyGuard.ts`,
+  `memoryClaims.ts`, `predicates.ts`, `hiddenRetractions.ts`, `reclassify.ts`, `reclassifyModels.ts`, `retriever.ts`,
+  `episodeRetriever.ts`, `mediaRecall.ts`, `identityResolver.ts`, `privacy.ts`,
+  `episodeMaintenance.ts`, `factEmbeddings.ts`, `embeddings/`
+- `src/agent/jev/judgments.ts`, `src/agent/jev/modelJudge.ts`,
+  `src/agent/turnContext.ts`, `src/agent/tools/`
+- `src/storage/`: `memoryClaimSchema.ts`, `memoryItemSchema.ts`, `memoryItemProjection.ts`, `memoryItemBackfill.ts`,
+  `memoryItemIntegrity.ts`, `memoryItemStore.ts`, `memoryLegacyDrop.ts`, `memoryRecallStore.ts`, `memoryVector.ts`, `database.ts`,
+  `extractionQueue.ts`, `memoryEpisodeStore.ts`, `mediaDigestStore.ts`, `extractionSampleStore.ts`
+- `scripts/`: `migrate-memory-v2.ts`, `replay-memory-v2.ts`, `migrate-memory-items.ts`, `replay-memory-items.ts`,
+  `export-vault.ts`, `undo-reclassify.ts`, `prune-claim-overflow.ts`, `tests/harness/memsim/cli.ts`,
+  `tests/harness/__tests__/memoryItemBuilders.perf.test.ts`

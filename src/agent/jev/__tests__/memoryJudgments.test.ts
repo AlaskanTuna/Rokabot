@@ -18,7 +18,13 @@ vi.mock('../modelJudge.js', () => ({ judgeWithModel: mocks.judgeWithModel }))
 
 import { noul } from '@typesafe-ai/sdk'
 import type { ExtractionOp } from '../../memory/extractionSchema.js'
-import { judgeEpisodeAdmission, judgeEpisodeOperations, judgeHiddenRetractions } from '../judgments.js'
+import {
+  SUMMARY_COMPLETE_QUESTION,
+  judgeEpisodeAdmission,
+  judgeEpisodeOperations,
+  judgeEpisodeSummary,
+  judgeHiddenRetractions
+} from '../judgments.js'
 
 beforeEach(() => {
   mocks.config.memory.judge = 'none'
@@ -78,6 +84,72 @@ describe('judgeEpisodeAdmission', () => {
   })
 })
 
+describe('judgeEpisodeSummary', () => {
+  beforeEach(() => {
+    mocks.clientAvailable = true
+    mocks.systemOne.mockReset()
+    mocks.warn.mockReset()
+    vi.mocked(noul).mockClear()
+  })
+
+  it('asks one summary-complete question over the summary alone', async () => {
+    mocks.systemOne.mockResolvedValueOnce({
+      answers: { summary_complete: { type: 'noul', noul: 0.73 } },
+      usage: { input_tokens: 17, output_tokens: 2 }
+    })
+
+    const result = await judgeEpisodeSummary({ summary: 'Mio said she runs every morning.' })
+
+    expect(noul).toHaveBeenCalledWith(
+      'Does this summary say who was involved and what they said or did, clearly enough for a reader with no other context?'
+    )
+    expect(mocks.systemOne).toHaveBeenCalledWith(
+      {
+        state: { summary: 'Mio said she runs every morning.' },
+        questions: { summary_complete: expect.any(Object) }
+      },
+      { timeout: 5_000 }
+    )
+    expect(result).toMatchObject({ noul: 0.73, confidence: null, inputTokens: 17 })
+    expect(result?.latencyMs).toBeGreaterThanOrEqual(0)
+  })
+
+  it('returns null without a configured Jev client', async () => {
+    mocks.clientAvailable = false
+
+    await expect(judgeEpisodeSummary({ summary: 'A summary.' })).resolves.toBeNull()
+    expect(mocks.systemOne).not.toHaveBeenCalled()
+    expect(mocks.judgeWithModel).not.toHaveBeenCalled()
+  })
+
+  it('returns null for a non-noul answer and never logs the summary', async () => {
+    mocks.systemOne.mockResolvedValueOnce({
+      answers: { summary_complete: { type: 'choice', choice: 'yes' } },
+      usage: { input_tokens: 5, output_tokens: 1 }
+    })
+
+    await expect(judgeEpisodeSummary({ summary: 'A summary.' })).resolves.toBeNull()
+  })
+
+  it('fails closed and does not log the summary when Jev fails', async () => {
+    mocks.systemOne.mockRejectedValueOnce(new Error('private summary text'))
+
+    await expect(judgeEpisodeSummary({ summary: 'private summary text' })).resolves.toBeNull()
+
+    expect(mocks.warn).toHaveBeenCalledWith(
+      { kind: 'extraction', errorName: 'Error', status: undefined },
+      'Jev judgment failed'
+    )
+    expect(JSON.stringify(mocks.warn.mock.calls)).not.toContain('private summary text')
+  })
+
+  it('exposes the question as an exported constant', () => {
+    expect(SUMMARY_COMPLETE_QUESTION).toBe(
+      'Does this summary say who was involved and what they said or did, clearly enough for a reader with no other context?'
+    )
+  })
+})
+
 describe('judgeEpisodeOperations', () => {
   beforeEach(() => {
     mocks.clientAvailable = true
@@ -121,7 +193,7 @@ describe('judgeEpisodeOperations', () => {
       state: {
         messages: ['[u-1|Mio]: I like tea'],
         operations: [ops[0]],
-        existing: [expect.objectContaining({ id: 7, predicate: 'likes', value: 'green tea' })]
+        existing: [expect.objectContaining({ id: 1, predicate: 'likes', value: 'green tea' })]
       },
       questions: {
         durable_0: expect.any(Object),
@@ -131,6 +203,8 @@ describe('judgeEpisodeOperations', () => {
         same_as_0_0: expect.any(Object)
       }
     })
+    expect(mocks.systemOne.mock.calls[0]?.[0].questions.same_as_0_0.instructions).toContain('claim #1')
+    expect(mocks.systemOne.mock.calls[0]?.[0].questions.same_as_0_0.instructions).not.toContain('claim #7')
     expect(result).toMatchObject({
       answers: {
         durable_0: { noul: 0.9, confidence: null },
@@ -141,6 +215,39 @@ describe('judgeEpisodeOperations', () => {
       },
       inputTokens: 24
     })
+  })
+
+  it('strips sourceLine from the operations it sends Jev', async () => {
+    mocks.systemOne.mockImplementationOnce(async (request: { questions: Record<string, unknown> }) => ({
+      answers: Object.fromEntries(Object.keys(request.questions).map((key) => [key, { type: 'noul', noul: 0.7 }])),
+      usage: { input_tokens: 5, output_tokens: 1 }
+    }))
+
+    await judgeEpisodeOperations({
+      lines: ['[u-1|Mio]: I like tea'],
+      ops: [
+        {
+          op: 'add',
+          subject: { kind: 'user', userId: 'u-1' },
+          predicate: 'likes',
+          value: 'tea',
+          tense: 'current',
+          sourceLine: 1
+        }
+      ] as never,
+      existing: []
+    })
+
+    expect(mocks.systemOne).toHaveBeenCalledOnce()
+    expect(mocks.systemOne.mock.calls[0][0].state.operations).toEqual([
+      {
+        op: 'add',
+        subject: { kind: 'user', userId: 'u-1' },
+        predicate: 'likes',
+        value: 'tea',
+        tense: 'current'
+      }
+    ])
   })
 
   it('returns null for partial verification answers and skips an empty request', async () => {
@@ -263,8 +370,25 @@ describe('judgeEpisodeOperations', () => {
 
       expect(Object.keys(questions)).toEqual(['durable_0', 'attributed_0', 'current_0', 'past_0', 'changes_0'])
       expect(questions.changes_0.instructions).toBe(
-        'Does this change the existing claim #7 into a different fact, rather than restate it in other words?'
+        'Does this change the existing claim #1 into a different fact, rather than restate it in other words?'
       )
+      expect(mocks.systemOne.mock.calls[0]?.[0].state.operations[0]).toMatchObject({ existingId: 1 })
+      expect(mocks.systemOne.mock.calls[0]?.[0].state.existing[0]).toMatchObject({ id: 1 })
+      expect(JSON.stringify(mocks.systemOne.mock.calls[0]?.[0].state)).not.toContain('"id":7')
+    })
+
+    it('sorts same-as facts by content and numbers their local refs independently of database IDs', async () => {
+      const existing = [existingClaim(93, 'zebra'), existingClaim(17, 'apple')]
+      await ask([{ op: 'add', subject, predicate: 'hobby', value: 'fruit', tense: 'current' }], existing)
+
+      const request = mocks.systemOne.mock.calls[0]?.[0]
+      expect(request.state.existing).toEqual([
+        expect.objectContaining({ id: 1, value: 'apple' }),
+        expect.objectContaining({ id: 2, value: 'zebra' })
+      ])
+      expect(request.questions.same_as_0_0.instructions).toContain('claim #1: apple')
+      expect(request.questions.same_as_0_1.instructions).toContain('claim #2: zebra')
+      expect(JSON.stringify(request.state)).not.toMatch(/"id":(?:17|93)/)
     })
 
     it('asks about the history of a past-tense operation and keeps the usual wording otherwise', async () => {
@@ -469,9 +593,9 @@ describe('judgeHiddenRetractions', () => {
     vi.mocked(noul).mockClear()
   })
 
-  it('asks one retraction question per candidate, keyed by claim id', async () => {
+  it('asks one retraction question per candidate using local refs and maps probabilities back to claim IDs', async () => {
     mocks.systemOne.mockResolvedValueOnce({
-      answers: { retracts_11: { type: 'noul', noul: 0.93 }, retracts_12: { type: 'noul', noul: 0.04 } },
+      answers: { retracts_1: { type: 'noul', noul: 0.93 }, retracts_2: { type: 'noul', noul: 0.04 } },
       usage: { input_tokens: 12, output_tokens: 2 }
     })
 
@@ -479,12 +603,19 @@ describe('judgeHiddenRetractions', () => {
 
     expect(mocks.systemOne).toHaveBeenCalledOnce()
     const [request, options] = mocks.systemOne.mock.calls[0]
-    expect(request.state).toEqual({ messages: input.lines, statement: input.statement, facts: candidates })
-    expect(Object.keys(request.questions)).toEqual(['retracts_11', 'retracts_12'])
-    expect(request.questions.retracts_11.instructions).toBe(
+    expect(request.state).toEqual({
+      messages: input.lines,
+      statement: input.statement,
+      facts: [
+        { id: 1, sentence: candidates[0]?.sentence },
+        { id: 2, sentence: candidates[1]?.sentence }
+      ]
+    })
+    expect(Object.keys(request.questions)).toEqual(['retracts_1', 'retracts_2'])
+    expect(request.questions.retracts_1.instructions).toBe(
       'Do the messages say that this fact about the speaker no longer holds: "This person\'s hobby: chess."?'
     )
-    expect(request.questions.retracts_12.instructions).toBe(
+    expect(request.questions.retracts_2.instructions).toBe(
       'Do the messages say that this fact about the speaker no longer holds: "This person\'s hobby: go."?'
     )
     expect(options).toEqual({ timeout: 5_000 })
@@ -500,13 +631,10 @@ describe('judgeHiddenRetractions', () => {
   })
 
   it.each([
-    ['a missing answer', { retracts_11: { type: 'noul', noul: 0.9 } }],
-    ['a non-noul answer', { retracts_11: { type: 'noul', noul: 0.9 }, retracts_12: { type: 'choice', choice: 'a' } }],
-    ['an out-of-range answer', { retracts_11: { type: 'noul', noul: 0.9 }, retracts_12: { type: 'noul', noul: 1.5 } }],
-    [
-      'a non-finite answer',
-      { retracts_11: { type: 'noul', noul: Number.NaN }, retracts_12: { type: 'noul', noul: 0.1 } }
-    ]
+    ['a missing answer', { retracts_1: { type: 'noul', noul: 0.9 } }],
+    ['a non-noul answer', { retracts_1: { type: 'noul', noul: 0.9 }, retracts_2: { type: 'choice', choice: 'a' } }],
+    ['an out-of-range answer', { retracts_1: { type: 'noul', noul: 0.9 }, retracts_2: { type: 'noul', noul: 1.5 } }],
+    ['a non-finite answer', { retracts_1: { type: 'noul', noul: Number.NaN }, retracts_2: { type: 'noul', noul: 0.1 } }]
   ])('returns null for %s', async (_, answers) => {
     mocks.systemOne.mockResolvedValueOnce({ answers, usage: { input_tokens: 1, output_tokens: 1 } })
     await expect(judgeHiddenRetractions(input)).resolves.toBeNull()
@@ -590,8 +718,31 @@ describe('main-model memory judgments without a Jev key', () => {
     expect(Object.keys(request.questions)).toEqual(['durable_0', 'attributed_0', 'current_0', 'past_0'])
   })
 
+  it('judges a summary complete with the same question under the verification workload', async () => {
+    mocks.judgeWithModel.mockResolvedValueOnce({
+      answers: { summary_complete: 0.77 },
+      latencyMs: 11,
+      inputTokens: 80,
+      judge
+    })
+
+    await expect(judgeEpisodeSummary({ summary: 'Mio said she runs.' })).resolves.toEqual({
+      noul: 0.77,
+      confidence: null,
+      latencyMs: 11,
+      inputTokens: 80,
+      judge
+    })
+    expect(mocks.judgeWithModel).toHaveBeenCalledWith({
+      workload: 'verification',
+      state: { summary: 'Mio said she runs.' },
+      questions: { summary_complete: SUMMARY_COMPLETE_QUESTION }
+    })
+    expect(mocks.systemOne).not.toHaveBeenCalled()
+  })
+
   it('judges hidden retractions per candidate', async () => {
-    mocks.judgeWithModel.mockResolvedValueOnce({ answers: { retracts_5: 0.88 }, latencyMs: 9, inputTokens: 70, judge })
+    mocks.judgeWithModel.mockResolvedValueOnce({ answers: { retracts_1: 0.88 }, latencyMs: 9, inputTokens: 70, judge })
 
     await expect(
       judgeHiddenRetractions({

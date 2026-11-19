@@ -361,6 +361,21 @@ describe('moveClaim', () => {
     expect(row(movedId)).toMatchObject({ status: 'active', pinned: 1 })
   })
 
+  it('keeps the job, message and speaker columns on moved evidence', () => {
+    const old = seedClaim({ predicate: 'misc', value: 'draws on weekends' })
+    getDb()
+      .prepare('UPDATE memory_evidence SET job_id = ?, source_message_id = ?, speaker_user_id = ? WHERE claim_id = ?')
+      .run(7, 'm-1', USER, old.id)
+
+    const movedId = moveClaim(candidateOf(old), 'hobby', 0.9)
+
+    expect(
+      getDb()
+        .prepare('SELECT job_id, source_message_id, speaker_user_id FROM memory_evidence WHERE claim_id = ?')
+        .all(movedId)
+    ).toEqual([{ job_id: 7, source_message_id: 'm-1', speaker_user_id: USER }])
+  })
+
   it('will not replace a different fact in a single-valued predicate', () => {
     const existing = seedClaim({ predicate: 'pronouns', value: 'she/her' })
     const old = seedClaim({ predicate: 'misc', value: 'he/him' })
@@ -406,7 +421,11 @@ describe('moveClaim', () => {
       status: 'active',
       needs_review: 0
     })
-    expect(retrieveForSubject(GUILD, USER, 'drawing', 10).map(({ claim }) => claim.id)).toContain(staged.id)
+    expect(
+      retrieveForSubject(GUILD, USER, 'drawing', 10, { guildId: GUILD, channelId: 'channel-1' }).map(
+        ({ claim }) => claim.id
+      )
+    ).toContain(staged.id)
   })
 
   it('will not revive a fact the member retracted under the new predicate', () => {
@@ -539,6 +558,34 @@ describe('findReclassifyCandidates', () => {
     }
     expect([...seen].some((id) => !lowestFive.has(id))).toBe(true)
     expect(seen.size).toBeGreaterThan(5)
+  })
+
+  it('shuffles a stable content order with the injected RNG regardless of insertion IDs', () => {
+    const draw = (values: string[]) => {
+      for (const value of values) seedClaim({ predicate: 'misc', value })
+      return findReclassifyCandidates(3, () => 0).map(({ value }) => value)
+    }
+
+    const first = draw(['zebra', 'mango', 'apple'])
+    getDb().exec('DELETE FROM memory_events; DELETE FROM memory_evidence; DELETE FROM memory_claim;')
+    const second = draw(['apple', 'zebra', 'mango'])
+
+    expect(first).toEqual(['mango', 'zebra', 'apple'])
+    expect(second).toEqual(first)
+  })
+
+  it('breaks equal-salience duplicate ties by content rather than database ID', () => {
+    const draw = (predicates: ['hobby' | 'likes', 'hobby' | 'likes']) => {
+      for (const predicate of predicates) seedClaim({ predicate, value: 'tea' })
+      return findReclassifyCandidates(10, () => 0).map(({ predicate }) => predicate)
+    }
+
+    const first = draw(['likes', 'hobby'])
+    getDb().exec('DELETE FROM memory_events; DELETE FROM memory_evidence; DELETE FROM memory_claim;')
+    const second = draw(['hobby', 'likes'])
+
+    expect(first).toEqual(['likes'])
+    expect(second).toEqual(first)
   })
 
   it('leaves out a fact whose reclassification was undone', () => {

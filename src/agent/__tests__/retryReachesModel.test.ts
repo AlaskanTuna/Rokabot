@@ -84,6 +84,7 @@ vi.mock('../../utils/rateLimiter.js', async (importOriginal) => ({
 vi.mock('../../utils/timezone.js', () => ({ getLocalHour: () => 12 }))
 
 import { config } from '../../config.js'
+import { logger } from '../../utils/logger.js'
 import { __resetModelFallbackForTest } from '../reliability.js'
 import { generateResponse } from '../roka.js'
 import { APP_NAME } from '../session.js'
@@ -173,8 +174,19 @@ describe('a turn whose first attempt fails', () => {
       failure
     )
     mocks.fallbackReplies.push(answer('It is late.'))
+    const warn = vi.spyOn(logger, 'warn')
 
     const result = await ask('What time is it?')
+
+    // The retry names what it resumes from, so an off-topic retried reply can be traced (#543).
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attempt: 1,
+        toolResults: [expect.objectContaining({ attempt: 0, tool: 'get_current_time' })]
+      }),
+      'Retrying after stored tool results'
+    )
+    warn.mockRestore()
 
     expect(result.text).toBe('It is late.')
     const sent = JSON.stringify(mocks.fallbackRequests[0])

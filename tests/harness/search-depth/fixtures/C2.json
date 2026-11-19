@@ -1,0 +1,76 @@
+{
+  "caseId": "C2",
+  "recordedAt": "2026-11-17T21:18:12.167Z",
+  "commit": "2f6dac20658fc7b1625a3298b81d0170496bd5c0",
+  "toolCalls": [
+    {
+      "tool": "search_web",
+      "args": {
+        "query": "Kindle Paperwhite vs Kobo Clara manga reading screen size comparison",
+        "max_results": 3
+      }
+    }
+  ],
+  "exchanges": [
+    {
+      "provider": "exa",
+      "method": "POST",
+      "url": "https://api.exa.ai/search",
+      "requestBody": {
+        "query": "Kindle Paperwhite vs Kobo Clara manga reading screen size comparison",
+        "type": "auto",
+        "numResults": 3,
+        "contents": {
+          "highlights": true
+        }
+      },
+      "status": 200,
+      "responseBody": {
+        "requestId": "1987564febba2648d04f9a446f3abca9",
+        "resolvedSearchType": "",
+        "results": [
+          {
+            "id": "https://www.pocket-lint.com/reasons-to-choose-kindle-paperwhite-over-kobo-clara/",
+            "title": "4 reasons my loyalty lies with the Kindle Paperwhite over the Kobo Clara",
+            "url": "https://www.pocket-lint.com/reasons-to-choose-kindle-paperwhite-over-kobo-clara/",
+            "publishedDate": "2025-01-26T17:00:17.000Z",
+            "author": "Charlotte Maracina",
+            "highlights": [
+              "By Charlotte Maracina \n\n Published Jan 26, 2025, 12:00 PM EST\n\n...\n\nAt the beginning of 2024, I swapped lugging physical books around for traveling light with e-readers. The Kobo Clara B&W e-reader was the first e-reader I ever used, and truthfully, I loved it. The design is simple and portable; it fits perfectly in my fanny pack and has an impressive battery life. However, my e-reader journey changed once I began using the Kindle Paperwhite. \n\nI'm still a big fan of the Kobo Clara B&W, but the Kindle Paperwhite instantly became my preferred e-reader. ... On a more technical side, the Paperwhite has a faster page turn rate than the Kobo and a slightly larger display and longer battery life, all of which put it ahead of the Kobo Clara B&W e-reader for me.\n\n...\n\nAmazon's 7-inch Paperwhite display technology with built-in light, 300 ppi, optimized font technology, 16-level gray scale.\n\n...\n\n## 4 Slightly larger display \n\n### Bigger is better \n\n The Kindle Paperwhite (12th gen) has a seven-inch display compared to Kobo Clara's six-inch display. While I prefer Kobo's smaller design when I need an easy e-reader to put in my fanny pack or purse, Kindle Paperwhite's larger display is better for casual reading. With a resolution of 1264x1680 (300 ppi), the Paperwhite's new seven-inch display is clearer than previous generations and much easier to read compared to Kobo's smaller screen.\n\nThe larger screen also means there are more options when changing the font sizes. My mom, who wears glasses with a prescription so strong I'm not sure if she really has any eyesight left, praised the Kindle Paperwhite's large screen and sharp display. She even gave me her exclusive review: \"Much better than reading on my iPhone.\""
+            ],
+            "image": "https://static0.pocketlintimages.com/wordpress/wp-content/uploads/2025/01/4-reasons-my-loyalty-likes-with-kindle-paperwhite-over-the-kobo-clara.jpg?w=1600&h=900&fit=crop"
+          },
+          {
+            "id": "https://overeview.com/kindle-paperwhite-vs-kobo-clara/",
+            "title": "Kindle Paperwhite vs Kobo Clara Colour: Best E-Reader Compared - OveReview",
+            "url": "https://overeview.com/kindle-paperwhite-vs-kobo-clara/",
+            "publishedDate": "2026-05-15T12:30:00.000Z",
+            "author": "Gaurav Tiwari",
+            "highlights": [
+              "This comparison was checked on October 22, 2026, using Amazon Creators API data and official documentation, not a new hands-on test. The selected 2026 Paperwhite was listed for pre-order with an October 28 release; Clara Colour was in stock. Confirm current delivery and price before buying.\n\n...\n\n## Kindle Paperwhite 2026: Choose It for a Kindle Library\n\n- 2026 16GB Graphite model selected\n- 7-inch monochrome display\n- Adjustable warm front light\n\n...\n\nThe larger screen is useful if you prefer more room around enlarged text, but it does not prove a faster or more comfortable experience for every reader.\n\nBe precise about the generation. Amazon’s 2026 Kindle announcement describes a redesigned Paperwhite family, while 2024 stock remains a separate product. The selected ordinary 16GB model is not the\n\n...\n\n## Kobo Clara Colour: Choose It for Compact Color Reading\n\n- White 16GB variant selected\n- 6-inch Kaleido 3 color E Ink screen\n- 300ppi B/W and 150ppi color specification\n- ComfortLight PRO warmth and brightness controls\n- IPX8 water-resistance rating listed\n\n The white 16GB Clara Colour for color highlights, supported library borrowing, and compatible EPUB reading in a compact six-inch device.\n\nClara Colour is the better fit when color highlights and compatible EPUB reading solve an actual problem for you. Its six-inch format is compact, and the selected offer is the white 16GB device. Do not confuse it with Clara BW, the monochrome alternative, or Libra Colour, a different model with a larger screen and different features.\n\nThe official Clara Colour specifications separate monochrome and color resolution. That matters more than calling the whole screen 300ppi without qualification. Illustrations and color-coded highlights can be useful, but a full comic page remains small on six inches. I would not choose it for dense graphic novels without considering the reading layout first.\n\n...\n\n| Feature | Kindle Paperwhite 2026, selected model | Kobo Clara Colour, selected model |\n| --- | --- | --- |\n| Screen | 7-inch monochrome | 6-inch Kaleido 3 color |\n\n...\n\n## Which Screen Is Better for Novels and Large Text?\n\nPaperwhite is my pick between these two for a larger text-first reading surface. Its seven-inch panel provides more room than Clara Colour’s six-inch panel, but diagonal size alone is not a measured readability score. Font choice, margins, line spacing, front-light settings, and how you hold the reader all affect the experience.\n\nClara Colour is more compelling when color itself is useful. For ordinary novels, also compare Clara BW rather than paying for color you rarely use. Our Kindle, Kobo, and BOOX buying guide places that alternative in context. For a comic, textbook, or PDF, consider the full page layout instead of assuming the newer or more colorful panel wins automatically."
+            ],
+            "image": "https://overeview.com/wp-content/uploads/2026/10/amazon-post-24665-B0DL7CCVFM-1.webp"
+          },
+          {
+            "id": "https://price.review/articles/kindle-paperwhite-vs-kobo-clara",
+            "title": "Kindle Paperwhite vs Kobo Clara BW: Which E-Reader Deserves Your Bookshelf in 2026? | Price.Review",
+            "url": "https://price.review/articles/kindle-paperwhite-vs-kobo-clara",
+            "publishedDate": "2026-02-19T07:35:38.000Z",
+            "author": "Price.Review Team",
+            "highlights": [
+              "Tech & Computing February 19, 2026\n\n...\n\nBy Price.Review Team· Published February 19, 2026\n\n...\n\n## Quick Spec Comparison\n\n| Feature | Kindle Paperwhite (2024) | Kobo Clara BW |\n| --- | --- | --- |\n| Display | 7\" E Ink Carta 1300, 300 ppi | 6\" E Ink Carta 1300, 300 ppi |\n| Front Light | 17 LEDs, warm adjustment | ComfortLight PRO, warm adjustment |\n| Storage | 16GB | 16GB |\n| Battery | Up to 12 weeks | Up to 6 weeks |\n| Waterproof | IPX8 (2m, 60 min) | IPX8 (2m, 60 min) |\n| Weight | 211g | 174g |\n| Formats | AZW3, AZW, KFX, MOBI, TXT, PDF | EPUB, KEPUB, PDF, MOBI, TXT, HTML, RTF, CBZ, CBR |\n| Library Integration | Overdrive via Libby (multi-step) | Overdrive built-in (native) |\n| Audiobooks | Audible via Bluetooth | Kobo Audiobooks via Bluetooth |\n| Subscription | Kindle Unlimited ($11.99/mo) | Kobo Plus ($7.99/mo ebooks, $12.99 w/ audio) |\n| Price tier | $$ | $ |\n\nPrice tier — $ = lower price · $$ = higher price. Tiers are relative within this guide and reflect typical prices when it was written — check the current price on Amazon.\n\n## Category Breakdown\n\n### 📱 Display — Kindle Wins\n\nBoth use identical E Ink Carta 1300 technology at 300 ppi — text is crisp and indistinguishable from print. The difference is size: Kindle's 7-inch screen provides ~36% more area than Kobo's 6-inch. More text per page, fewer page turns, better PDF and manga display. The extra inch is genuinely noticeable.\n\nThe Kobo's 6-inch display is more compact and easier to hold one-handed. If you want a paperback-sized reader that fits in a jacket pocket, the smaller screen is a feature.\n\nWinner: Kindle — Same tech, more screen. More text per page reduces interruptions.\n\n...\n\n### 📂 Format Support — Kobo Wins (Decisively)\n\nThis is the Kobo's ace. Native EPUB support (the universal ebook format), plus KEPUB, PDF, MOBI, TXT, HTML, RTF, CBZ, and CBR. Side-load books from anywhere — DRM-free stores, Project Gutenberg, Humble Bundle, your personal collection.\n\nThe Kindle doesn't support EPUB natively. You can convert via Send to Kindle, but it adds friction. Amazon's ecosystem lock-in means your library is trapped if you ever want to switch platforms.\n\nWinner: Kobo — Open format support is a massive advantage. If you own DRM-free ebooks or read comics (CBZ/CBR), the Kobo is the only choice.\n\n...\n\n## Get the Kobo Clara BW If...\n\n- You borrow heavily from your public library\n- You own DRM-free ebooks or use EPUB format\n- Privacy and less data tracking matter to you\n- You want no ads at the lowest price\n- You read manga or comics (CBZ/CBR support)\n- You want a lighter, more pocketable device\n- You side-load books from multiple sources\n\n...\n\n### Which is better for PDFs?\n\nKindle's 7\" is marginally better, but honestly, neither 6\" nor 7\" handles PDFs well. PDFs are designed for letter-size pages. For serious PDF reading, you need a 10\" e-reader like the Kobo Elipsa or Kindle Scribe.\n\n...\n\nLast updated: March 2026."
+            ],
+            "image": "https://price.review/og-image.png"
+          }
+        ],
+        "searchTime": 1286.4,
+        "costDollars": {
+          "total": 0.007,
+          "search": {
+            "neural": 0.007
+          }
+        }
+      }
+    }
+  ]
+}

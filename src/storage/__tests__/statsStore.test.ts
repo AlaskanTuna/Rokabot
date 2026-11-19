@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { config } from '../../config.js'
 
 vi.mock('../../utils/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn() }
@@ -6,6 +7,7 @@ vi.mock('../../utils/logger.js', () => ({
 
 import { closeDb, getDb } from '../database.js'
 import { saveMemoryEpisode } from '../memoryEpisodeStore.js'
+import { migrateMemoryItems } from '../memoryItemBackfill.js'
 import * as statsQueries from '../statsStore.js'
 import {
   MEMORY_STATS_SQL,
@@ -27,9 +29,12 @@ const DAY_MS = 24 * HOUR_MS
 const now = Date.UTC(2026, 6, 23, 12)
 const sinceMs = now - 7 * DAY_MS
 const monthSinceMs = now - 30 * DAY_MS
+const memoryStore = config.memory as { store: string }
+const previousStore = memoryStore.store
 
 beforeEach(() => {
   vi.stubEnv('ROKABOT_DB_PATH', ':memory:')
+  memoryStore.store = 'legacy'
   getDb()
 })
 
@@ -37,6 +42,8 @@ afterEach(() => {
   closeDb()
   vi.unstubAllEnvs()
   vi.restoreAllMocks()
+  vi.useRealTimers()
+  memoryStore.store = previousStore
 })
 
 function insertResponse({
@@ -190,6 +197,35 @@ function seedMemory(): void {
 }
 
 describe('stats queries', () => {
+  it('returns identical memory stats from the item store', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(now)
+    seedMemory()
+    seedEpisode(21, 'guild-1', sinceMs + 1)
+    seedEpisode(22, 'guild-1', sinceMs - 1)
+    seedEpisode(23, 'guild-2', sinceMs + 1)
+    migrateMemoryItems(getDb())
+
+    const read = () => ({
+      active: statsQueries.activeClaimCount('guild-1', 'roka-user'),
+      users: statsQueries.distinctRememberedUsers('guild-1', 'roka-user'),
+      episodes: statsQueries.episodeCount('guild-1', sinceMs),
+      newClaims: statsQueries.newClaimsThisMonth('guild-1', monthSinceMs, 'roka-user'),
+      predicates: statsQueries.topPredicates('guild-1', monthSinceMs, 'roka-user'),
+      members: statsQueries.topRememberedMembers('guild-1', monthSinceMs, 'roka-user'),
+      growth: statsQueries.memoryGrowthSeries('guild-1', monthSinceMs, 'roka-user')
+    })
+    const legacy = read()
+    memoryStore.store = 'item'
+
+    expect(read()).toEqual(legacy)
+
+    getDb()
+      .prepare("UPDATE memory_claim SET status = 'rejected' WHERE guild_id = 'guild-1' AND subject_user_id = 'user-1'")
+      .run()
+    expect(read()).toEqual(legacy)
+  })
+
   it('counts recent episodes for only the requested guild', () => {
     seedEpisode(11, 'guild-a', sinceMs + 1)
     seedEpisode(12, 'guild-a', sinceMs - 1)

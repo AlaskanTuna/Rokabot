@@ -4,9 +4,12 @@ import type { SearchProvider } from '../../config.js'
 import { searchIsAvailable, searchProviderSetting } from '../../searchSettings.js'
 import { logger } from '../../utils/logger.js'
 import { recordSearchCitations } from '../searchCitations.js'
+import { registerSources } from '../searchSources.js'
+import { runLookup } from './search/depth.js'
 import { exaSearch } from './search/exa.js'
 import { nativeSearch } from './search/native.js'
 import { tavilySearch } from './search/tavily.js'
+import { timeLeftForLookupMs, trySpend } from './search/turnBudget.js'
 import {
   type BackendOutcome,
   SEARCH_TEXT,
@@ -32,6 +35,26 @@ export async function searchWeb(params: SearchWebParams): Promise<SearchResult> 
   if (!searchIsAvailable()) {
     const failed = failedSearch(SEARCH_TEXT.notConfigured)
     return { answer: failed.answer, results: failed.results, resultCount: failed.resultCount }
+  }
+
+  // Fields or a source ask for the bounded depth loop; a plain call keeps today's single search exactly.
+  const outcome =
+    (params.fields ?? []).length > 0 || params.source
+      ? await runLookup(params, singleSearch)
+      : await singleSearch(params)
+  // A result's full text feeds only the depth loop's coverage check; the model sees the clipped snippet.
+  const results = outcome.results.map(({ title, url, snippet }) => ({ title, url, snippet }))
+  return { answer: outcome.answer, results, resultCount: outcome.resultCount }
+}
+
+/** One search: the budget spend, the backend call, the citations and the source registration. */
+async function singleSearch(params: SearchWebParams): Promise<BackendOutcome> {
+  // One search and the provider call behind it. When either is spent, or the attempt has no time left once
+  // the reply reserve is set aside, the model answers now with what it already has.
+  const timeLeftMs = timeLeftForLookupMs()
+  if ((timeLeftMs !== null && timeLeftMs <= 0) || !trySpend('search')) {
+    logger.debug({ provider: searchProviderSetting() }, 'Web search skipped: turn budget spent')
+    return failedSearch(SEARCH_TEXT.budgetSpent)
   }
 
   const provider = searchProviderSetting()
@@ -61,7 +84,12 @@ export async function searchWeb(params: SearchWebParams): Promise<SearchResult> 
   if (outcome.succeeded) {
     // The model receives these as text; the reply surface needs the URLs to cite them.
     recordSearchCitations(outcome.results.map(({ title, url }) => ({ title, url })))
+    // The source registry keeps the same URLs under stable ids, so a later page read can name them.
+    registerSources(
+      outcome.results.map(({ url }) => url),
+      'search'
+    )
   }
 
-  return { answer: outcome.answer, results: outcome.results, resultCount: outcome.resultCount }
+  return outcome
 }

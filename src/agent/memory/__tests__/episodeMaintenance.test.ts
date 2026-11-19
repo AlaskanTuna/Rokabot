@@ -166,22 +166,33 @@ describe('episode maintenance', () => {
       factsFailed: 0
     })
     expect(retained).toEqual([
-      expect.objectContaining({ id: 3, summary: 'retained episode B', embedding: vector768() }),
-      expect.objectContaining({ id: 2, summary: 'retained episode A', embedding: null })
+      expect.objectContaining({ id: 3, summary: 'retained episode B', embedding: null }),
+      expect.objectContaining({ id: 2, summary: 'retained episode A', embedding: vector768() })
     ])
     expect(mocks.embedEpisodeText).toHaveBeenNthCalledWith(1, {
-      text: 'retained episode B',
-      role: 'RETRIEVAL_DOCUMENT'
-    })
-    expect(mocks.embedEpisodeText).toHaveBeenNthCalledWith(2, {
       text: 'retained episode A',
       role: 'RETRIEVAL_DOCUMENT'
     })
+    expect(mocks.embedEpisodeText).toHaveBeenNthCalledWith(2, {
+      text: 'retained episode B',
+      role: 'RETRIEVAL_DOCUMENT'
+    })
     expect(mocks.logger.warn).toHaveBeenCalledWith(
-      expect.objectContaining({ guildId: 'guild-a', episodeId: 2 }),
+      expect.objectContaining({ guildId: 'guild-a', episodeId: 3 }),
       'Failed to re-embed memory episode'
     )
-    expect(JSON.stringify(mocks.logger.warn.mock.calls)).not.toContain('retained episode A')
+    expect(JSON.stringify(mocks.logger.warn.mock.calls)).not.toContain('retained episode B')
+  })
+
+  it('spends a bounded episode embedding batch in summary-content order', async () => {
+    configMock.embeddings.backfillBatchSize = 1
+    seedEpisode({ id: 1, guildId: 'guild-a', endedAt: now - DAY_MS, summary: 'Zebra episode.' })
+    seedEpisode({ id: 2, guildId: 'guild-a', endedAt: now - DAY_MS, summary: 'Apple episode.' })
+    mocks.embedEpisodeText.mockResolvedValue(geminiVector(vector768()))
+
+    await pruneEpisodesAndReembed(now)
+
+    expect(mocks.embedEpisodeText).toHaveBeenCalledWith({ text: 'Apple episode.', role: 'RETRIEVAL_DOCUMENT' })
   })
 
   it('repairs corrupt vectors by enumerating and reading each guild separately', async () => {
@@ -254,6 +265,29 @@ describe('episode maintenance', () => {
       'Failed to re-embed media digest'
     )
     expect(JSON.stringify(mocks.logger.warn.mock.calls)).not.toContain('offline media')
+  })
+
+  it('spends a bounded media embedding batch in summary-content order', async () => {
+    configMock.embeddings.backfillBatchSize = 1
+    seedMedia({
+      guildId: 'guild-a',
+      contentKey: 'youtube:zebra',
+      summary: 'Zebra media.',
+      embedding: null,
+      observedAt: [now - DAY_MS]
+    })
+    seedMedia({
+      guildId: 'guild-a',
+      contentKey: 'youtube:apple',
+      summary: 'Apple media.',
+      embedding: null,
+      observedAt: [now - DAY_MS]
+    })
+    mocks.embedEpisodeText.mockResolvedValue(geminiVector(vector768()))
+
+    await pruneEpisodesAndReembed(now)
+
+    expect(mocks.embedEpisodeText).toHaveBeenCalledWith({ text: 'Apple media.', role: 'RETRIEVAL_DOCUMENT' })
   })
 
   it('embeds pending facts once at the end of each pass and reports their counts', async () => {

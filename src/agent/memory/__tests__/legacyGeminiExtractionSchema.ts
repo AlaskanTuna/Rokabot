@@ -1,4 +1,5 @@
-// Frozen copy of the hand-written Gemini schema extraction sent before #296; the generated schema must match it.
+// Frozen copy of the hand-written Gemini schema extraction sent before #296, plus the optional sourceLine from #277;
+// the generated schema must match it.
 import { Type } from '@google/genai'
 import { GUILD_PREDICATES, PREDICATES } from '../predicates.js'
 
@@ -66,6 +67,7 @@ function responseOperationSchema(input: {
   withTense?: boolean
   withDate?: boolean
   dateRequired?: boolean
+  withSourceLine?: boolean
 }): Record<string, unknown> {
   if (input.op === 'noop') {
     return {
@@ -95,6 +97,9 @@ function responseOperationSchema(input: {
     properties.date = guildFactDateResponseSchema
     if (input.dateRequired) required.push('date')
   }
+  if (input.withSourceLine) {
+    properties.sourceLine = { type: Type.INTEGER, minimum: 1 }
+  }
   return { type: Type.OBJECT, properties, required }
 }
 
@@ -115,43 +120,64 @@ export const LEGACY_GEMINI_EXTRACTION_SCHEMA = {
             subject: userSubjectResponseSchema,
             predicates: userPredicates,
             withObjectUserId: true,
-            withTense: true
+            withTense: true,
+            withSourceLine: true
           }),
           responseOperationSchema({
             op: 'update',
             subject: userSubjectResponseSchema,
             predicates: userPredicates,
             withObjectUserId: true,
-            withTense: true
+            withTense: true,
+            withSourceLine: true
           }),
-          responseOperationSchema({ op: 'remove', subject: userSubjectResponseSchema, predicates: userPredicates }),
-          responseOperationSchema({ op: 'retract', subject: userSubjectResponseSchema, predicates: userPredicates }),
+          responseOperationSchema({
+            op: 'remove',
+            subject: userSubjectResponseSchema,
+            predicates: userPredicates,
+            withSourceLine: true
+          }),
+          responseOperationSchema({
+            op: 'retract',
+            subject: userSubjectResponseSchema,
+            predicates: userPredicates,
+            withSourceLine: true
+          }),
           responseOperationSchema({
             op: 'add',
             subject: guildSubjectResponseSchema,
             predicates: datedGuildPredicates,
             withDate: true,
-            dateRequired: true
+            dateRequired: true,
+            withSourceLine: true
           }),
           responseOperationSchema({
             op: 'update',
             subject: guildSubjectResponseSchema,
             predicates: datedGuildPredicates,
             withDate: true,
-            dateRequired: true
+            dateRequired: true,
+            withSourceLine: true
           }),
-          responseOperationSchema({ op: 'remove', subject: guildSubjectResponseSchema, predicates: guildPredicates }),
+          responseOperationSchema({
+            op: 'remove',
+            subject: guildSubjectResponseSchema,
+            predicates: guildPredicates,
+            withSourceLine: true
+          }),
           responseOperationSchema({
             op: 'add',
             subject: guildSubjectResponseSchema,
             predicates: undatedGuildPredicates,
-            withDate: true
+            withDate: true,
+            withSourceLine: true
           }),
           responseOperationSchema({
             op: 'update',
             subject: guildSubjectResponseSchema,
             predicates: undatedGuildPredicates,
-            withDate: true
+            withDate: true,
+            withSourceLine: true
           }),
           responseOperationSchema({ op: 'noop' })
         ]

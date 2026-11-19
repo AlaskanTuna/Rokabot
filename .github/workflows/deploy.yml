@@ -12,6 +12,7 @@ on:
       - '.github/pull_request_template.md'
       - '.github/labels.yml'
       - '.github/workflows/metadata.yml'
+      - '.github/workflows/promote.yml'
       - '.gitignore'
       - '.graphifyignore'
   pull_request:
@@ -85,7 +86,6 @@ jobs:
           touch "$dir/.env"
           docker pull busybox:1.36
           docker tag busybox:1.36 local/rokabot:t
-          docker tag busybox:1.36 local/rokabot-asr:t
           cd "$dir"
           status=0
           out=$(ROKA_REGISTRY=local ROKA_TAG=t docker compose create --no-build --pull never roka 2>&1) || status=$?
@@ -105,7 +105,6 @@ jobs:
       matrix:
         image:
           - { name: rokabot, context: . }
-          - { name: rokabot-asr, context: ./sidecar/asr }
         platform:
           - { arch: amd64, runner: ubuntu-24.04 }
           - { arch: arm64, runner: ubuntu-24.04-arm }
@@ -176,9 +175,8 @@ jobs:
       packages: write
     strategy:
       matrix:
-        name: [rokabot, rokabot-asr]
+        name: [rokabot]
     steps:
-      # Exact names, not a pattern: `digest-rokabot-*` also matches the rokabot-asr artifacts.
       - name: Download amd64 digests
         uses: actions/download-artifact@v4
         with:
@@ -259,7 +257,6 @@ jobs:
     needs: [test, manifest]
     if: github.event_name == 'push'
     runs-on: self-hosted
-    # The first pull after a speech-model change downloads about 1 GB of image layers.
     timeout-minutes: 25
     concurrency:
       group: pi-deploy
@@ -282,11 +279,17 @@ jobs:
         run: |
           cd ~/rokabot
           export ROKA_TAG="sha-${GITHUB_SHA::7}" GIT_COMMIT="${GITHUB_SHA::7}"
-          docker compose pull roka asr
+          # A layer download from GHCR can fail once on the Pi's network; retry before failing the deploy.
+          for try in 1 2 3; do
+            docker compose pull roka && break
+            [ "$try" = 3 ] && exit 1
+            echo "Pull failed (try $try of 3), retrying in $((try * 10))s"
+            sleep $((try * 10))
+          done
           # Recorded after a successful pull, so .env only names an image that is on disk.
           # A manual compose command on the Pi then keeps this image rather than :stable.
           sed -i '/^ROKA_TAG=/d' .env && { [ -z "$(tail -c1 .env)" ] || echo >> .env; } && echo "ROKA_TAG=$ROKA_TAG" >> .env
-          docker compose up -d --no-build
+          docker compose up -d --no-build --remove-orphans
 
       - name: Health check
         run: |
@@ -307,9 +310,7 @@ jobs:
       - name: Prune old images
         run: |
           cd ~/rokabot
-          for repo in ghcr.io/alaskantuna/rokabot ghcr.io/alaskantuna/rokabot-asr; do
-            bash scripts/prune-images.sh "$repo" "sha-${GITHUB_SHA::7}" || echo "::warning::prune failed for $repo"
-          done
+          bash scripts/prune-images.sh "ghcr.io/alaskantuna/rokabot" "sha-${GITHUB_SHA::7}" || echo "::warning::prune failed"
           docker image prune -f > /dev/null
 
       - name: Notify Discord (success)
@@ -343,17 +344,10 @@ jobs:
       contents: write
       issues: write
       pull-requests: write
-    outputs:
-      created: ${{ steps.rp.outputs.release_created }}
-      tag: ${{ steps.rp.outputs.tag_name }}
-      major: ${{ steps.rp.outputs.major }}
-      minor: ${{ steps.rp.outputs.minor }}
-      sha: ${{ steps.rp.outputs.sha }}
     steps:
       # A PR opened with GITHUB_TOKEN never triggers CI, so the release PR could not pass the required `test`
       # check. The fallback keeps forks without the secret from failing every push.
-      - id: rp
-        uses: googleapis/release-please-action@v4
+      - uses: googleapis/release-please-action@v4
         with:
           token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
           config-file: release-please-config.json
@@ -361,35 +355,12 @@ jobs:
 
   promote:
     needs: [manifest, release, deploy]
-    if: needs.release.outputs.created == 'true' && needs.release.outputs.sha == github.sha
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    # Not release-please's outputs: it can fail after tagging, and those are then lost (#448).
+    if: >-
+      ${{ !cancelled() && github.event_name == 'push' &&
+      startsWith(github.event.head_commit.message, 'chore(main): release') &&
+      needs.manifest.result == 'success' && needs.deploy.result == 'success' }}
     permissions:
       contents: read
       packages: write
-    steps:
-      - name: Set up Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      # Re-tags the image the Pi already deployed for this commit; nothing is rebuilt.
-      - name: Tag the release
-        env:
-          TAG: ${{ needs.release.outputs.tag }}
-          MAJOR: ${{ needs.release.outputs.major }}
-          MINOR: ${{ needs.release.outputs.minor }}
-        run: |
-          for name in rokabot rokabot-asr; do
-            IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/$name"
-            docker buildx imagetools create \
-              -t "$IMAGE:$TAG" -t "$IMAGE:v$MAJOR.$MINOR" -t "$IMAGE:stable" \
-              "$IMAGE:sha-${GITHUB_SHA::7}"
-            test "$(docker buildx imagetools inspect "$IMAGE:stable" --format '{{json .Manifest.Digest}}')" = \
-                 "$(docker buildx imagetools inspect "$IMAGE:sha-${GITHUB_SHA::7}" --format '{{json .Manifest.Digest}}')"
-          done
+    uses: ./.github/workflows/promote.yml

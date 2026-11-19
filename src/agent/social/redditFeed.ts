@@ -56,3 +56,25 @@ export function parseRedditFeedPost(feed: string, target: SocialPostTarget, maxT
   post.videoCount = link.startsWith('https://v.redd.it/') ? 1 : 0
   return post
 }
+
+function openGraph(html: string, property: string): string | null {
+  const match = new RegExp(`<meta property="${property}" content="([^"]*)"`).exec(html)
+  return match ? decodeEntities(match[1]) : null
+}
+
+// The vxreddit page is the Reddit counterpart of FxTwitter: its OpenGraph tags carry the post when Reddit refuses the feed.
+export function parseVxRedditPage(html: string, target: SocialPostTarget, maxTextChars: number): SocialPost | null {
+  const title = openGraph(html, 'og:title')
+  if (title === null) return null
+
+  const site = openGraph(html, 'og:site_name') ?? ''
+  const subreddit = site.match(/\br\/([\w-]+)/)?.[1]
+  const post = base(target)
+  post.authorHandle = site.match(/\bu\/([\w-]+)/)?.[1] ?? ''
+  post.authorName = subreddit ? `r/${subreddit}` : ''
+  post.text = [title, openGraph(html, 'og:description')].filter(Boolean).join(' — ').slice(0, maxTextChars)
+  post.imageUrl = imageUrl(openGraph(html, 'og:image') ?? '')
+  post.photoCount = post.imageUrl ? 1 : 0
+  post.videoCount = openGraph(html, 'og:video') === null ? 0 : 1
+  return post
+}

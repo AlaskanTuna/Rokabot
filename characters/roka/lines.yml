@@ -187,6 +187,7 @@ stats: # The /stats notebook
     recommends: I remember their little recommendations~
     complains_about: I remember what gets under their skin~
     strong_opinion: I remember what they feel strongly about~
+    upcoming_change: I remember what they have coming up~
     misc: I remember a little something about them~
   remembersOther: I remember their {{label}}~ # A predicate missing above; {{label}} is its name in lower case
   chartColors: # The chart images
@@ -213,6 +214,8 @@ footers: # Labels in the line under a reply that says what she did; code adds th
     get_current_time: checked the clock
     get_weather: checked the weather
     search_web: searched the web
+    identify_image: searched the picture
+    identify_image_auto: checked the image
     search_anime: looked up anime
     get_anime_schedule: checked airing times
     set_reminder: set a reminder

@@ -81,9 +81,15 @@ describe('episode persistence', () => {
     await expect(
       persistEpisodeResult({
         job,
-        result: { status: 'completed', summary: 'The group planned a picnic.', appliedOps: 0, duplicateOps: 0 }
+        result: {
+          status: 'completed',
+          summary: 'The group planned a picnic.',
+          appliedOps: 0,
+          duplicateOps: 0,
+          opsRejected: false
+        }
       })
-    ).resolves.toBe(true)
+    ).resolves.toEqual({ kept: true, dropReason: null, judged: false, inputTokens: 0 })
 
     expect(mocks.embedEpisodeText).toHaveBeenCalledWith({
       text: 'The group planned a picnic.',
@@ -108,9 +114,75 @@ describe('episode persistence', () => {
     await expect(
       persistEpisodeResult({
         job,
-        result: { status: 'dropped', summary: null, appliedOps: 0, duplicateOps: 0 }
+        result: {
+          status: 'dropped',
+          summary: null,
+          appliedOps: 0,
+          duplicateOps: 0,
+          opsRejected: false
+        }
       })
-    ).resolves.toBe(false)
+    ).resolves.toEqual({ kept: false, dropReason: null, judged: false, inputTokens: 0 })
+
+    expect(mocks.embedEpisodeText).not.toHaveBeenCalled()
+    expect(listEpisodesForGuild('guild-a')).toEqual([])
+  })
+
+  it('does not embed or store a summary holding a numeric Discord ID', async () => {
+    const job = enqueueEpisode({ guildId: 'guild-a', channelId: 'channel-a', episode: oneLineEpisode() })
+
+    await expect(
+      persistEpisodeResult({
+        job,
+        result: {
+          status: 'completed',
+          summary: 'User 123456789012345678 planned the picnic.',
+          appliedOps: 0,
+          duplicateOps: 0,
+          opsRejected: false
+        }
+      })
+    ).resolves.toEqual({ kept: false, dropReason: 'numeric_id', judged: false, inputTokens: 0 })
+
+    expect(mocks.embedEpisodeText).not.toHaveBeenCalled()
+    expect(listEpisodesForGuild('guild-a')).toEqual([])
+  })
+
+  it('does not embed or store a boilerplate summary', async () => {
+    const job = enqueueEpisode({ guildId: 'guild-a', channelId: 'channel-a', episode: oneLineEpisode() })
+
+    await expect(
+      persistEpisodeResult({
+        job,
+        result: {
+          status: 'completed',
+          summary: 'No new durable facts came up.',
+          appliedOps: 0,
+          duplicateOps: 0,
+          opsRejected: false
+        }
+      })
+    ).resolves.toEqual({ kept: false, dropReason: 'boilerplate', judged: false, inputTokens: 0 })
+
+    expect(mocks.embedEpisodeText).not.toHaveBeenCalled()
+    expect(listEpisodesForGuild('guild-a')).toEqual([])
+  })
+
+  it('does not embed or store a summary whose every proposed op was rejected', async () => {
+    const job = enqueueEpisode({ guildId: 'guild-a', channelId: 'channel-a', episode: oneLineEpisode() })
+
+    await expect(
+      persistEpisodeResult({
+        job,
+        result: {
+          status: 'completed',
+          summary: 'Mio planned a picnic.',
+          appliedOps: 0,
+          duplicateOps: 0,
+          opsRejected: true
+        }
+      })
+    ).resolves.toEqual({ kept: false, dropReason: 'ops_rejected', judged: false, inputTokens: 0 })
 
     expect(mocks.embedEpisodeText).not.toHaveBeenCalled()
     expect(listEpisodesForGuild('guild-a')).toEqual([])
@@ -122,7 +194,13 @@ describe('episode persistence', () => {
 
     await persistEpisodeResult({
       job,
-      result: { status: 'completed', summary: 'The group planned a picnic.', appliedOps: 0, duplicateOps: 0 }
+      result: {
+        status: 'completed',
+        summary: 'The group planned a picnic.',
+        appliedOps: 0,
+        duplicateOps: 0,
+        opsRejected: false
+      }
     })
 
     expect(listEpisodesForGuild('guild-a')).toEqual([

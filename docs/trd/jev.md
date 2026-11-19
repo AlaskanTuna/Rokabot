@@ -95,7 +95,7 @@ In `on` mode:
 4. A successful result becomes a `## Looked It Up` block in the system prompt: answer clipped to 1200 characters, up to 3 sources, 2000 characters in total.
 5. The block invokes the core prompt's "When You've Looked Something Up" rules. Those rules tell the model to call `search_web` again when results are thin or off-topic.
 
-- **Citations:** the search footer uses the prefetched URLs. A later `search_web` call by the model replaces the list.
+- **Citations:** the search footer uses the prefetched URLs. A later `search_web` call by the model appends to the list, de-duplicated by URL.
 - **Tool Count:** a used prefetch counts `search_web` once in `toolsUsed`, even if the model also calls the tool.
 - **Tool Registration:** `search_web` stays registered in every prefetch mode.
 - **No Result:** an empty, failed, aborted, canceled or timed-out search adds no block. The turn answers normally.
@@ -119,13 +119,18 @@ Under `none`, startup logs `Passive memory extraction is disabled: no TypeSafe A
 | ------------------ | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | Admission          | `lasting_fact`                                                                                       | Runs after the local sensitive/trivial precheck. Below threshold: the episode is dropped.                             |
 | Verification       | `durable_<i>`, `attributed_<i>` or `guild_scoped_<i>`, plus tense, change, `same_as_*`, `retracts_*` | Checks each proposed operation for durability, attribution and duplicates. Below threshold: the operation is skipped. |
-| Hidden Retractions | `retracts_<id>`                                                                                      | Probability that the messages end an existing fact.                                                                   |
+| Hidden Retractions | `retracts_<ref>`                                                                                     | Probability that the messages end an existing fact.                                                                   |
 | Reclassification   | Per proposed move                                                                                    | Confirms a move to a better category.                                                                                 |
+| Summary            | `summary_complete`                                                                                   | Probability that a summary says who and what. Below threshold: the summary is dropped. No answer: it is kept.         |
 
 - **Timeout:** Jev memory calls are bounded by `jev.memoryTimeoutMs` (5000 ms).
 - **No Admission Answer:** a missing judge, timeout or unusable answer marks the job unjudged. The queue retries it once after 5 minutes, then drops it.
 - **Incomplete Verification:** removals and retractions are blocked. Allowed additions and updates are written with `needs_review` set.
-- **Events:** admission and verification write `jev_events` rows with question key, answer, probability, confidence, `applied`, latency, input tokens, optional `job_id` and `judge`. Source messages are not stored.
+- **Events:** admission, verification and summary checks write `jev_events` rows with question key, answer, probability, confidence, `applied`, latency, input tokens, optional `job_id` and `judge`. Source messages are not stored.
+
+Memory requests assign visible claims and facts stable request-local refs `1..n`. Jev state and question text use these
+refs instead of database IDs. Hidden-retraction question keys use the candidate ref. Results map back to database rows
+in the caller, and refs are not persisted.
 
 ### Main-Model Judge
 

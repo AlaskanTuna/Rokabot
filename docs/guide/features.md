@@ -34,6 +34,7 @@ How each way of reaching Roka leads to her features. Only mention, reply and nam
 - **One Turn per Channel:** while she answers in a channel, a second trigger there gets a short busy line. The line deletes itself after 5 seconds.
 - **Rate Limits:** when the minute or day budget runs out, she declines in character. The decline deletes itself after 5 seconds.
 - **Reply Card:** each reply is a Components V2 card with an expression portrait that matches the detected tone. Long replies split into several messages at `discord.maxMessageLength`.
+- **Reply Format:** explicit requests in a message (lists, numbered steps, a score/rating, or word/sentence limits) override the usual reply shape so she follows what was asked.
 - **Direct Messages:** the bot has no direct-message intent, so mentions in a DM never reach it. Slash commands marked "Anywhere" below do work in DMs.
 
 ## Commands
@@ -116,7 +117,7 @@ She reads files and links on both `/ask` and the mention path. Full contract: [M
 
 | Input            | Accepted Formats                                                  | Per-File Ceiling                                                         |
 | ---------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| Image            | PNG, JPEG, GIF, WebP                                              | 4 MB                                                                     |
+| Image            | PNG, JPEG, GIF (first frame), WebP                                | 4 MB (16 MB for GIF)                                                     |
 | PDF              | PDF                                                               | 10 MB                                                                    |
 | Audio            | MP3, WAV, OGG, FLAC, AAC, AIFF                                    | 8 MB, or up to `media.maxStreamedUploadBytes` (50 MB) with a watcher on  |
 | Video            | MP4, MOV, WebM, AVI, MPEG, FLV, WMV, 3GP                          | 10 MB, or up to `media.maxStreamedUploadBytes` (50 MB) with a watcher on |
@@ -124,7 +125,7 @@ She reads files and links on both `/ask` and the mention path. Full contract: [M
 | Social Post Link | X, Bluesky, YouTube, TikTok, Reddit, Instagram, Bilibili, Threads | `socialPosts.maxLookupsPerTurn` (1) post per turn                        |
 
 - **Per Turn:** up to 10 files (on `/ask`, 3 uploads and 1 link), at most one audio or video file, and at most `discord.maxAttachmentBytesPerTurn` (10 MB) reserved.
-- **Watcher:** `media.watcher` picks how she takes in audio and video: `gemini`, `qwen`, `direct` or `off`.
+- **Watcher:** `media.watcher` picks how she takes in audio and video: `gemini` or `off`.
 - **Unreadable Files:** she tells the member when she cannot open a file, or could read only its opening.
 - **Other Message Parts:** she also reads forwarded messages, embeds, polls, stickers and files inside Components V2 messages.
 

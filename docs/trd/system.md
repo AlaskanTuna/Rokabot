@@ -4,15 +4,15 @@ How the Rokabot process is built, what it accepts from Discord, and how one turn
 
 ## At a Glance
 
-| Item              | Value                                                                                    |
-| ----------------- | ---------------------------------------------------------------------------------------- |
-| Process           | One Node.js service (`src/index.ts`): Discord gateway, reply generation, local storage   |
-| Agent             | Google ADK `LlmAgent` and `Runner` (`src/agent/roka.ts`), 14 function tools              |
-| Conversation Unit | One ADK session per Discord channel; one active turn per channel                         |
-| Durable Store     | SQLite at `data/rokabot.db` (better-sqlite3, WAL); `ROKABOT_DB_PATH` overrides the path  |
-| Models            | `llm.main` and optional `llm.fallback` in `config.yml`; see [Models](models.md)          |
-| Host              | Docker Compose on a Raspberry Pi 5; the `roka` container is capped at 1 GB, with no swap |
-| Health            | HTTP on port 3000: `200` while the Discord client is ready, `503` otherwise              |
+| Item              | Value                                                                                                 |
+| ----------------- | ----------------------------------------------------------------------------------------------------- |
+| Process           | One Node.js service (`src/index.ts`): Discord gateway, reply generation, local storage                |
+| Agent             | Google ADK `LlmAgent` and `Runner` (`src/agent/roka.ts`), 14 function tools (13 without `search_web`) |
+| Conversation Unit | One ADK session per Discord channel; one active turn per channel                                      |
+| Durable Store     | SQLite at `data/rokabot.db` (better-sqlite3, WAL); `ROKABOT_DB_PATH` overrides the path               |
+| Models            | `llm.main` and optional `llm.fallback` in `config.yml`; see [Models](models.md)                       |
+| Host              | Docker Compose on a Raspberry Pi 5; the `roka` container is capped at 1 GB, with no swap              |
+| Health            | HTTP on port 3000: `200` while the Discord client is ready, `503` otherwise                           |
 
 ## Architecture
 
@@ -29,7 +29,6 @@ _The bot process and its sidecar on the Pi, with Discord on the left and remote 
 | Media Watcher         | Turn audio and video into a text digest before the reply call                            | `src/agent/media/`                              |
 | Passive Memory        | Capture episodes in monitored channels, queue them, extract claims in the background     | `src/agent/memory/`                             |
 | Storage               | Open SQLite and own its schema, migrations and table helpers                             | `src/storage/`                                  |
-| `asr` Sidecar         | Transcribe speech for the Qwen watcher over HTTP (`http://asr:8000`, no published port)  | `sidecar/asr/server.py`, `docker-compose.yml`   |
 
 ### Durable State
 
@@ -49,11 +48,12 @@ Table contracts live in [Data](data.md).
 1. **Boot:** set IPv4-first DNS, check for `yt-dlp` (`initializeSocialPosts`), create the Discord client, start the
    health server on port 3000, then log in with `DISCORD_TOKEN`.
 2. **Ready:** register the slash commands globally over REST, start the status cycler and the release notifier, open
-   SQLite, restore monitored channels, start the reminder scheduler, run the first prune pass, and start the memory
-   tasks and the extraction scheduler.
+   SQLite, configure typed-memory triggers and item ID reservation (under `dual` and `item`, fill NULL embedding hashes
+   and record an `item_integrity` sweep), restore monitored channels, start the reminder scheduler, run the first prune
+   pass, and start the memory tasks and the extraction scheduler.
 3. **Timers:** prune `session_history` and failure diagnostics hourly; prune metrics and extraction samples daily;
    clear expired channel monitors and emoji cooldowns hourly; prune stale claims, reclassify claims, prune failed
-   extraction jobs and prune episodes daily.
+   extraction jobs, prune episodes and run item hash and integrity maintenance daily.
 4. **Shutdown (`SIGTERM`, `SIGINT`):** flush open episodes, stop the schedulers and memory tasks, end Shiritori
    games, destroy every ADK session (which aborts active turns), wait for in-flight extractions, close SQLite,
    destroy the Discord client, exit.
@@ -81,13 +81,14 @@ The health body is JSON: `status`, `uptime`, `memory` (RSS in MB) and `discord` 
 | `src/agent/narratedToolCalls.ts`          | Strip tool calls the model wrote as text (`*(recall_user: X)*`, a `tool_code` fence, Qwen's `<tool_call>`) in `afterModelCallback`, so they never reach Discord or session history.      |
 | `src/agent/replyBlocks.ts`                | Hold every reply to three blocks in `afterModelCallback`; a `---` divider does not count as a block.                                                                                     |
 | `src/agent/replyShape.ts`                 | Pick each reply's shape in code and render the `## Reply Shape` note that closes the prompt. See [Prompt Engine](prompt-engine.md).                                                      |
+| `src/agent/replyFormat.ts`                | Detect explicit list, score, word and sentence format requests in speaker words, check replies, and perform deterministic list/numbering repair in `afterModelCallback`.                 |
 | `src/agent/media/attachments.ts`          | Download and measure media, prepare model parts, and provide attachment markers.                                                                                                         |
 | `src/agent/media/`                        | Plan, watch and validate audio and video digests. See [Media](media.md).                                                                                                                 |
 | `src/agent/reliability.ts`                | Run retry and fallback orchestration and register the error recovery plugin. See [Reliability](reliability.md).                                                                          |
 | `src/agent/llm/`                          | Model profiles and provider adapters (Gemini, Anthropic, Chat Completions). See [Models](models.md).                                                                                     |
 | `src/agent/jev/`                          | TypeSafe Jev client and judgments. See [Jev](jev.md).                                                                                                                                    |
 | `src/agent/memory/`                       | Episode capture, extraction, verification, retrieval and recall. See [Memory](memory.md).                                                                                                |
-| `src/agent/tools/`                        | The 14 ADK function tools offered to the model.                                                                                                                                          |
+| `src/agent/tools/`                        | The 14 ADK function tools offered to the model (13 when web search is off or unsupported).                                                                                               |
 | `src/utils/rateLimiter.ts`                | Sliding 60 s RPM window and UTC-day RPD count per provider and model; turns reserve and release call slots.                                                                              |
 | `src/storage/database.ts`                 | Open SQLite in WAL mode, create tables and run migrations.                                                                                                                               |
 | `src/storage/reportStore.ts`              | Enforce the per-user report window and persist report rows with bounded channel snapshots.                                                                                               |
@@ -113,12 +114,11 @@ The health body is JSON: `status`, `uptime`, `memory` (RSS in MB) and `discord` 
 
 Compose services:
 
-| Service      | Role                                                                       | Limits                | Starts                               |
-| ------------ | -------------------------------------------------------------------------- | --------------------- | ------------------------------------ |
-| `roka`       | The bot; publishes port 3000; mounts `./data` and a read-only `config.yml` | 1 GB, no swap         | Always                               |
-| `asr`        | Speech recognition (sherpa-onnx)                                           | 2 GB, no swap, 3 CPUs | Always                               |
-| `embeddings` | Local embedding sidecar on `http://embeddings:8080`                        | 1 GB, no swap, 1 CPU  | Only with profile `local-embeddings` |
-| `watchtower` | Pulls new `roka` and `asr` images daily at 04:07 (container time)          | none set              | Only with profile `autoupdate`       |
+| Service      | Role                                                                       | Limits               | Starts                               |
+| ------------ | -------------------------------------------------------------------------- | -------------------- | ------------------------------------ |
+| `roka`       | The bot; publishes port 3000; mounts `./data` and a read-only `config.yml` | 1 GB, no swap        | Always                               |
+| `embeddings` | Local embedding sidecar on `http://embeddings:8080`                        | 1 GB, no swap, 1 CPU | Only with profile `local-embeddings` |
+| `watchtower` | Pulls the new `roka` image daily at 04:07 (container time)                 | none set             | Only with profile `autoupdate`       |
 
 Deployment detail lives in [Deployment](deployment.md).
 
@@ -227,8 +227,8 @@ _One @mention from Discord to reply, with admission guards and media work folded
    See [Media](media.md).
 4. **Context:** `createTurnContext` calls `ensureSession`, which rebuilds a missing session from `session_history`.
    It detects tone by rule, resolves names, and waits for the Jev judgment when `jev.tone` is `on`. It then
-   retrieves memory and overheard channel lines, awaits the prefetch, and composes the system prompt. See
-   [Memory](memory.md) and [Prompt Engine](prompt-engine.md).
+   retrieves memory (guild turns only; DM turns skip memory) and overheard channel lines, awaits the prefetch, and
+   composes the system prompt. See [Memory](memory.md) and [Prompt Engine](prompt-engine.md).
 5. **Model Call:** `runTurnWithReliability` drives `runner.runAsync`. ADK may call tools, up to
    `gemini.maxLlmCalls` minus the watcher's calls. Retries, model switching and the safety ladder are in
    [Reliability](reliability.md).
@@ -243,7 +243,7 @@ The system prompt starts with the character pack's static sections (`prompt.syst
 `characters/<id>/character.yml`, cached as one prefix), then the mood's prompt and the situation block
 (`assembleSystemPrompt` in `src/agent/promptAssembler.ts`). `createTurnContext` appends the turn's sections:
 memory, who is mentioned, overheard channel activity, the speaker's Discord ID, any looked-up results, and a
-`## Reply Shape` note chosen in code. The mood comes from the pack's detection rules, with no model call, unless Jev
+`## Reply Shape` note chosen in code (which yields to an explicit format request handled by `replyFormat.ts`). The mood comes from the pack's detection rules, with no model call, unless Jev
 overrides it. The full contract is in [Prompt Engine](prompt-engine.md); the pack format is in
 [Characters](../guide/characters.md).
 

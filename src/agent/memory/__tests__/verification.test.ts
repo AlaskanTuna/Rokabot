@@ -64,6 +64,8 @@ function report(counts: Partial<OperationApplicationReport> = {}): OperationAppl
     pastOps: 0,
     rewordOps: 0,
     retractedOps: 0,
+    judgedOutOps: 0,
+    uncited: 1,
     inputTokens: expect.any(Number),
     ...counts
   }
@@ -276,7 +278,7 @@ describe('verifyAndApplyOperations', () => {
         output: output({ op: 'noop' }),
         subjectIds: new Set(['u-1'])
       })
-    ).resolves.toEqual(report({ appliedOps: 0, droppedOps: 0, duplicateOps: 0, changedOps: 0 }))
+    ).resolves.toEqual(report({ appliedOps: 0, droppedOps: 0, duplicateOps: 0, changedOps: 0, uncited: 0 }))
     expect(mocks.judgeEpisodeOperations).not.toHaveBeenCalled()
   })
 
@@ -295,7 +297,7 @@ describe('verifyAndApplyOperations', () => {
         output: output(add()),
         subjectIds: new Set(['u-1'])
       })
-    ).resolves.toEqual(report({ appliedOps: 0, droppedOps: 1, duplicateOps: 0, changedOps: 0 }))
+    ).resolves.toEqual(report({ appliedOps: 0, droppedOps: 1, judgedOutOps: 1, duplicateOps: 0, changedOps: 0 }))
     expect(getActiveClaims('g-1', 'u-1')).toEqual([])
 
     setAnswers({
@@ -529,7 +531,7 @@ describe('verifyAndApplyOperations', () => {
         }),
         subjectIds: new Set(['u-1'])
       })
-    ).resolves.toEqual(report({ appliedOps: 1, droppedOps: 0, duplicateOps: 0, changedOps: 1 }))
+    ).resolves.toEqual(report({ appliedOps: 1, droppedOps: 0, duplicateOps: 0, changedOps: 1, uncited: 0 }))
     expect(
       getDb().prepare('SELECT status, superseded_by, end_reason FROM memory_claim WHERE id = ?').get(replacement.id)
     ).toEqual({
@@ -564,7 +566,7 @@ describe('verifyAndApplyOperations', () => {
         }),
         subjectIds: new Set(['u-1'])
       })
-    ).resolves.toEqual(report({ appliedOps: 0, droppedOps: 1, duplicateOps: 0, changedOps: 0 }))
+    ).resolves.toEqual(report({ appliedOps: 0, droppedOps: 1, duplicateOps: 0, changedOps: 0, uncited: 0 }))
     expect(getActiveClaims('g-1', 'u-2')).toEqual([expect.objectContaining({ id: other.id, status: 'active' })])
   })
 
@@ -942,7 +944,7 @@ describe('verifyAndApplyOperations', () => {
         output: output(guildPlan()),
         subjectIds: new Set()
       })
-    ).resolves.toEqual(report({ appliedOps: 0, droppedOps: 1, duplicateOps: 0, changedOps: 0 }))
+    ).resolves.toEqual(report({ appliedOps: 0, droppedOps: 1, judgedOutOps: 1, duplicateOps: 0, changedOps: 0 }))
     expect(getDb().prepare('SELECT COUNT(*) AS count FROM memory_claim').get()).toEqual({ count: 0 })
   })
 
@@ -1046,7 +1048,9 @@ describe('verifyAndApplyOperations', () => {
           ),
           subjectIds: new Set()
         })
-      ).resolves.toEqual(report({ appliedOps: 0, droppedOps: 1, duplicateOps: 0, changedOps: 0 }))
+      ).resolves.toEqual(
+        report({ appliedOps: 0, droppedOps: 1, duplicateOps: 0, changedOps: 0, uncited: op === 'update' ? 1 : 0 })
+      )
       setAnswers(positiveAnswers('durable_0', 'guild_scoped_0'))
     }
     expect(getDb().prepare('SELECT status FROM memory_claim WHERE id = ?').get(other.id)).toEqual({ status: 'active' })
@@ -1623,6 +1627,24 @@ describe('tense, changes and retractions', () => {
     })
     expect(report).toMatchObject({ appliedOps: 0, droppedOps: 1 })
     expect(activeFacts()).toEqual([])
+  })
+
+  it('applies a planned upcoming_change fact as a current claim', async () => {
+    const report = await apply(
+      [{ op: 'add', subject, predicate: 'upcoming_change', value: 'moving to Rotterdam next month', tense: 'planned' }],
+      { durable_0: 0.9, attributed_0: 0.9, current_0: 0.9, past_0: 0.1 }
+    )
+    expect(report).toMatchObject({ appliedOps: 1, droppedOps: 0 })
+    expect(activeFacts()).toEqual([{ value: 'moving to Rotterdam next month', period: 'current' }])
+  })
+
+  it('applies a current upcoming_change fact', async () => {
+    const report = await apply(
+      [{ op: 'add', subject, predicate: 'upcoming_change', value: 'starting a new job in March', tense: 'current' }],
+      { durable_0: 0.9, attributed_0: 0.9, current_0: 0.9, past_0: 0.1 }
+    )
+    expect(report).toMatchObject({ appliedOps: 1, droppedOps: 0 })
+    expect(activeFacts()).toEqual([{ value: 'starting a new job in March', period: 'current' }])
   })
 
   it('drops a planned member fact even when verification is unavailable', async () => {

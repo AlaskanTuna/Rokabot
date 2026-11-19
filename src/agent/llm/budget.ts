@@ -104,7 +104,7 @@ onUsage(recordSpend)
 /**
  * The legacy config keeps exactly the accounting it had before per-call budgets: the Discord turn guard, the retry
  * gate and roka's per-turn token charge. Counting its calls here as well would hand the Pi's reply slots to background
- * work, and serialising or capping ModelScope would change a fallback and a qwen watcher that never waited or stopped.
+ * work, and serialising or capping ModelScope would change a fallback that never waited or stopped.
  * A legacy config on a native-searching model is the exception: its searches are billed per call and must fit the
  * minute like any other reply-side call.
  */
@@ -183,13 +183,15 @@ export function reserveCall(input: CallInput): CallReservation | BudgetDenial {
   const limits = routeFor(provider, model)?.limits
   const limiter = rateLimiterFor({ provider, model, limits })
   const tokens = coveredByTurn ? null : tokenBucketFor({ provider, model, limits })
+  // A reserve cannot be the whole bucket, or background work never runs.
+  const reserve = tokens ? Math.min(config.gemini.maxAttachmentTokens, Math.floor(tokens.capacity / 2)) : 0
 
   let denied: BudgetDenial['denied'] | null = null
   if (isMonthlyExhausted(provider) || (!replySide && backgroundShareSpent(provider))) denied = 'monthly'
   else if (!coveredByTurn && limiter.remainingRpd < 1 + headroom) denied = 'rpd'
   else if (!coveredByTurn && limiter.remainingRpm < 1 + headroom) denied = 'rpm'
   // Text replies are never refused on tokens: `rpm` bounds them, and attachment turns were gated before they began.
-  else if (!replySide && tokens && tokens.remaining() < estTokens + config.gemini.maxAttachmentTokens) denied = 'tpm'
+  else if (!replySide && tokens && tokens.remaining() < estTokens + reserve) denied = 'tpm'
   else if (provider === 'modelscope' && magicubesLeft() < MAGICUBES_PER_CALL * (1 + headroom)) denied = 'rpd'
   if (denied) {
     logger.info({ provider, model, workload, denied }, 'Budget declined a model call')

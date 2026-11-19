@@ -1,0 +1,1 @@
+- Format: they asked for at most {{count}} words. Answer within that word limit, with no filler. This overrides the paragraph and length guidance in Formatting Your Reply.

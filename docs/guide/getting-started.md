@@ -16,13 +16,13 @@ Set up a Discord app, configure Rokabot, and run it locally or with Docker.
 
 ## Prerequisites
 
-| What                     | Why                                                                    | Required                |
-| ------------------------ | ---------------------------------------------------------------------- | ----------------------- |
-| Node.js 24.13.0 or newer | Runs the bot and the tests.                                            | For local runs          |
-| Docker with Compose      | Runs the published image or a local build.                             | For Docker runs         |
-| A Discord application    | Gives the bot token and client ID.                                     | Yes                     |
-| Model API keys           | Pay for the main model, fallback, embeddings and media watcher.        | Yes, per `config.yml`   |
-| `ffmpeg` and `yt-dlp`    | Video frames, speech audio and social video links. The image has both. | Optional for local runs |
+| What                     | Why                                                             | Required                |
+| ------------------------ | --------------------------------------------------------------- | ----------------------- |
+| Node.js 24.13.0 or newer | Runs the bot and the tests.                                     | For local runs          |
+| Docker with Compose      | Runs the published image or a local build.                      | For Docker runs         |
+| A Discord application    | Gives the bot token and client ID.                              | Yes                     |
+| Model API keys           | Pay for the main model, fallback, embeddings and media watcher. | Yes, per `config.yml`   |
+| `ffmpeg` and `yt-dlp`    | Social video links (`yt-dlp`). The Docker image ships both.     | Optional for local runs |
 
 ### Model Keys for the Shipped Config
 
@@ -42,7 +42,7 @@ Optional keys:
 - **`TAVILY_API_KEY`:** turns on web search when `search.provider` is `tavily`.
 - **`EXA_API_KEY`:** turns on web search when `search.provider` is `exa`.
 - **`TYPESAFE_API_KEY`:** turns on Jev judgments for tone, names and passive memory.
-- **`YOUTUBE_API_KEY`:** lets Roka read top comments on YouTube links.
+- **`GCP_API_KEY`:** a Google Cloud key that lets Roka read top comments on YouTube links (enable the YouTube Data API v3 on it).
 
 [Configuration](configuration.md#secrets) lists every key and when it is required. [Models](models.md) explains each model profile.
 
@@ -85,7 +85,7 @@ You do not run a command for this. On each Discord `ready` event, the bot sends 
 ## Run Tests
 
 1. Run the main gate: `npm test`. It sets fake keys and an in-memory database, so it needs no `.env`.
-2. Run the performance gate: `npm run test:perf`. Full verification is `npm test && npm run test:perf`.
+2. Run the performance gate: `npm run test:perf`. Its item builder benchmark (`tests/harness/__tests__/memoryItemBuilders.perf.test.ts`) has a 180 s timeout because seeding 40,000 rows takes about 35 s on CI. Full verification is `npm test && npm run test:perf`.
 3. Run the static checks: `npm run lint`, `npm run format:check` and `npm run typecheck`. Only `typecheck` checks the types in `tests/`.
 
 Other tools:
@@ -95,15 +95,16 @@ Other tools:
 | `npm run test:live`         | Opt-in live-model gate. It spends real Gemini calls. `ROKABOT_HARNESS_KEY` names the key; the default is `GRAPHIFY_GEMINI_API_KEY`. |
 | `npm run preview`           | Writes a reply as Discord draws it to `preview-out/preview.html`, without posting.                                                  |
 | `npm run measure -- <path>` | Prints the measured token cost of an attachment.                                                                                    |
+| `npm run memsim`            | Runs the 30-day offline typed-memory simulator (`-- --replay` uses the cached fixture).                                             |
 
 ## Run With Docker
 
-`docker-compose.yml` defines `roka` (the bot) and `asr` (speech recognition). Pick one image source.
+`docker-compose.yml` defines `roka` (the bot). Pick one image source.
 
-| Source          | Command                                       | Image                                                                  |
-| --------------- | --------------------------------------------- | ---------------------------------------------------------------------- |
-| Published image | `docker compose pull && docker compose up -d` | `ghcr.io/alaskantuna/rokabot:${ROKA_TAG:-stable}`                      |
-| Local build     | `docker compose up -d --build`                | Built from `Dockerfile` and `sidecar/asr/`, under the same image names |
+| Source          | Command                                       | Image                                              |
+| --------------- | --------------------------------------------- | -------------------------------------------------- |
+| Published image | `docker compose pull && docker compose up -d` | `ghcr.io/alaskantuna/rokabot:${ROKA_TAG:-stable}`  |
+| Local build     | `docker compose up -d --build`                | Built from `Dockerfile`, under the same image name |
 
 A local build takes the compose image name, so it replaces your local copy of the published tag. Run `docker compose pull` to get the published image back.
 
@@ -111,11 +112,10 @@ A local build takes the compose image name, so it replaces your local copy of th
 2. If your login is not UID 1000, run `sudo chown 1000:1000 data`. The container runs as user `node` (UID 1000).
 3. Check that `config.yml` and `.env` sit next to `docker-compose.yml`. Compose mounts `config.yml` read-only and does not create it.
 4. Start the stack with one command from the table above.
-5. To skip `asr` (it needs about 2 GB), add `MEDIA_TRANSCRIBER_URL=` to `.env` and start only the bot: `docker compose up -d roka`.
 
 Compose settings that matter:
 
-- **Memory:** `roka` has `mem_limit: 1g`. `asr` has `mem_limit: 2g`.
+- **Memory:** `roka` has `mem_limit: 1g`.
 - **Port:** `3000:3000` for the health check.
 - **Tag:** `ROKA_TAG` in `.env` pins a release (`vX.Y.Z`) or a minor line (`vX.Y`). The default is `stable`.
 - **Profiles:** `COMPOSE_PROFILES=autoupdate` starts Watchtower. `local-embeddings` starts the embeddings sidecar.

@@ -1,10 +1,14 @@
 import type { DiscordAPIError } from 'discord.js'
 import { canAffordAttachments } from '../agent/llm/tokenBudget.js'
 import type { MediaAttachment } from '../agent/media/attachments.js'
+import { registerTurnImages, withTurnImages, withTurnSpeakerText } from '../agent/media/turnImages.js'
 import { type ReplyOutcome, withReplyOutcomes } from '../agent/replyOutcomes.js'
 import { type GenerateResult, generateResponse } from '../agent/roka.js'
 import { type SearchCitation, withSearchCitations } from '../agent/searchCitations.js'
+import { registerMessageSources, registerSources, withSearchSources } from '../agent/searchSources.js'
 import type { SocialPostLookup } from '../agent/social/types.js'
+import { withPageReadFlag } from '../agent/tools/search/readPages.js'
+import { withTurnBudget } from '../agent/tools/search/turnBudget.js'
 import { config } from '../config.js'
 import { type ResponseEventInput, recordResponseEvent } from '../storage/metricsStore.js'
 import { logger } from '../utils/logger.js'
@@ -27,7 +31,23 @@ export type ModelTurn = GenerateResult & { sources: SearchCitation[]; replyOutco
 
 export async function runModelTurn(options: Parameters<typeof generateResponse>[0]): Promise<ModelTurn> {
   const [[result, sources], replyOutcome] = await withReplyOutcomes(() =>
-    withSearchCitations(() => generateResponse(options))
+    withSearchCitations(() =>
+      withTurnImages(() =>
+        withSearchSources(() =>
+          withTurnBudget(() =>
+            withPageReadFlag(() => {
+              // URLs in the triggering message enter the source registry, so a later page read can name them.
+              registerMessageSources(options.userMessage)
+              // The turn's images enter their own registry, so identify_image can name one by number.
+              registerTurnImages(options.mediaAttachments ?? [])
+              // Embed links often differ from the message text, and enter under their own origin.
+              if (options.embedUrls) registerSources(options.embedUrls, 'embed')
+              return withTurnSpeakerText(options.speakerText ?? options.userMessage, () => generateResponse(options))
+            })
+          )
+        )
+      )
+    )
   )
   return { ...result, sources, replyOutcome }
 }

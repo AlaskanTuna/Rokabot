@@ -1,0 +1,189 @@
+{
+  "F1": {
+    "checkedOn": "2026-11-18",
+    "facts": [
+      { "text": "Capital is Thimphu", "pattern": "thimphu" },
+      { "text": "Population around 140,000", "pattern": "14[01],?\\d{3}" }
+    ]
+  },
+  "F2": {
+    "checkedOn": "2026-11-18",
+    "facts": [{ "text": "Height 634 meters", "pattern": "634\\s*(m|meter)" }]
+  },
+  "F3": {
+    "checkedOn": "2026-11-18",
+    "facts": [{ "text": "Launched June 5, 2025", "pattern": "june\\s*5,?\\s*2025" }]
+  },
+  "L1": {
+    "checkedOn": "2026-11-18",
+    "facts": [
+      { "text": "Hotcakes on the menu", "pattern": "hotcake" },
+      { "text": "Coffee or blend drinks", "pattern": "blend" },
+      { "text": "Other items such as pudding or sandwiches", "pattern": "pudding|sandwich" }
+    ]
+  },
+  "L2": {
+    "checkedOn": "2026-11-18",
+    "facts": [
+      { "text": "Mario Kart: Koopa's Challenge", "pattern": "koopa" },
+      { "text": "Yoshi's Adventure", "pattern": "yoshi" },
+      { "text": "Donkey Kong Country area or Mine-Cart Madness", "pattern": "mine.?cart|donkey\\s*kong\\s*country" }
+    ]
+  },
+  "L3": {
+    "checkedOn": "2026-11-18",
+    "facts": [
+      { "text": "Flavor strength options", "pattern": "flavor" },
+      { "text": "Richness or fat options", "pattern": "richness|\\bfat\\b" },
+      { "text": "Garlic options", "pattern": "garlic" },
+      { "text": "Green onion options", "pattern": "green\\s*onion" },
+      { "text": "Chashu options", "pattern": "chashu|char\\s*siu" },
+      { "text": "Spicy or red sauce options", "pattern": "(spicy|red)\\s*sauce" },
+      { "text": "Noodle firmness options", "pattern": "noodle" }
+    ]
+  },
+  "J1": {
+    "checkedOn": "2026-11-18",
+    "facts": [
+      { "text": "Opening hours", "pattern": "hours|open\\s*11|11\\s*am" },
+      { "text": "Card payment brands", "pattern": "visa|mastercard|credit\\s*card" }
+    ]
+  },
+  "J2": {
+    "checkedOn": "2026-11-18",
+    "facts": [
+      { "text": "Hotcake set price in yen", "pattern": "(¥|￥|yen|円)\\s*\\d" },
+      { "text": "Price varies by branch", "pattern": "\\bvar(y|ies)\\b|branch" }
+    ]
+  },
+  "J3": {
+    "checkedOn": "2026-11-18",
+    "facts": [
+      { "text": "Pokemon Center Osaka at LUCUA SOUTH 13F", "pattern": "lucua" },
+      { "text": "Pokemon Center Osaka DX at Shinsaibashi", "pattern": "shinsaibashi" }
+    ]
+  },
+  "P1": {
+    "checkedOn": "2026-11-18",
+    "facts": [
+      { "text": "Malaysian retailer names", "pattern": "game\\s*wiz|gmzone|pocketsmarts" },
+      { "text": "Prices in MYR", "pattern": "rm\\s*[\\d,]+" }
+    ]
+  },
+  "P2": {
+    "checkedOn": "2026-11-18",
+    "facts": [
+      { "text": "Price range in yen", "pattern": "(¥|￥)\\s*[\\d,]+" },
+      { "text": "Good Smile preorder store", "pattern": "good\\s*smile" }
+    ]
+  },
+  "P3": {
+    "checkedOn": "2026-11-18",
+    "facts": [
+      { "text": "Official price $249", "pattern": "\\$249" },
+      { "text": "Sale price caveat", "pattern": "179\\.99|sale" }
+    ]
+  },
+  "N1": {
+    "checkedOn": "2026-11-18",
+    "volatile": true,
+    "facts": [
+      { "text": "GTA 6 release date status", "pattern": "november\\s*19,?\\s*2026" },
+      { "text": "Dated source material", "pattern": "pre-?order|rockstar|trailer" }
+    ]
+  },
+  "N2": {
+    "checkedOn": "2026-11-18",
+    "volatile": true,
+    "facts": [
+      { "text": "Dated OpenAI items", "pattern": "november\\s*17|astra" },
+      { "text": "This-week items", "pattern": "openai|chatgpt|gpt-?6" }
+    ]
+  },
+  "N3": {
+    "checkedOn": "2026-11-18",
+    "volatile": true,
+    "facts": [
+      { "text": "Dated index moves", "pattern": "dow|s&p|nasdaq" },
+      { "text": "Market date", "pattern": "november\\s*17" }
+    ]
+  },
+  "C1": {
+    "checkedOn": "2026-11-18",
+    "facts": [
+      { "text": "Steam Deck library and verdict evidence", "pattern": "steam\\s*deck" },
+      { "text": "Price numbers", "pattern": "\\$\\s*(399|549|449)" }
+    ]
+  },
+  "C2": {
+    "checkedOn": "2026-11-18",
+    "facts": [
+      { "text": "Kindle Paperwhite verdict evidence", "pattern": "paperwhite" },
+      { "text": "Price evidence", "pattern": "139\\.99|249\\.99" }
+    ]
+  },
+  "C3": {
+    "checkedOn": "2026-11-18",
+    "facts": [
+      { "text": "JR Pass 7-day price", "pattern": "50,?000" },
+      { "text": "Ticket-price comparison", "pattern": "28,?000|individual|separate" }
+    ]
+  },
+  "O1": {
+    "checkedOn": "2026-11-18",
+    "facts": [
+      { "text": "Critic and player scores", "pattern": "metascore|88|mixed" },
+      { "text": "Sale price evidence", "pattern": "29\\.99" }
+    ]
+  },
+  "O2": {
+    "checkedOn": "2026-11-18",
+    "facts": [
+      { "text": "Rapid trigger evidence", "pattern": "rapid\\s*trigger" },
+      { "text": "Adjustable actuation evidence", "pattern": "actuation" }
+    ]
+  },
+  "O3": {
+    "checkedOn": "2026-11-18",
+    "facts": [
+      { "text": "Airwrap price evidence", "pattern": "750|airwrap" },
+      { "text": "Review consensus evidence", "pattern": "review|worth" }
+    ]
+  },
+  "A3": {
+    "checkedOn": "2026-11-18",
+    "facts": [
+      { "text": "Good Smile shop names", "pattern": "good\\s*smile" },
+      { "text": "Price in yen or USD", "pattern": "6,?500|49\\.95" }
+    ]
+  },
+  "A4": {
+    "checkedOn": "2026-11-18",
+    "facts": [
+      { "text": "Season 2 confirmed status", "pattern": "confirm" },
+      { "text": "Dated announcement evidence", "pattern": "jump\\s*festa|2027" }
+    ]
+  },
+  "A5": {
+    "checkedOn": "2026-11-18",
+    "facts": [{ "text": "Mallorie Rodak voices Frieren", "pattern": "mallorie\\s*rodak" }]
+  },
+  "A6": {
+    "checkedOn": "2026-11-18",
+    "facts": [
+      { "text": "Anime ends around chapter 71", "pattern": "chapter\\s*71" },
+      { "text": "Manga ahead at about 250 chapters", "pattern": "250" }
+    ]
+  },
+  "A7": {
+    "checkedOn": "2026-11-18",
+    "facts": [{ "text": "Solo Leveling adaptation comparison evidence", "pattern": "manhwa|web\\s*novel" }]
+  },
+  "A8": {
+    "checkedOn": "2026-11-18",
+    "facts": [
+      { "text": "Dates July 2-5, 2027", "pattern": "july\\s*2" },
+      { "text": "Los Angeles venue", "pattern": "los\\s*angeles" }
+    ]
+  }
+}

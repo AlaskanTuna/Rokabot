@@ -311,4 +311,18 @@ describe('loadCharacter', () => {
       /remember_user[\s\S]*It's currently night\./
     )
   })
+
+  // 35
+  it('loads the format prompts, and rejects a pack override with an unknown macro', () => {
+    const mina = loadCharacter(MINIMAL, HARNESS)
+    expect(mina.prompts.format.bullets).toContain('- Format:')
+    expect(mina.prompts.format.numbered).toContain('- Format:')
+    expect(mina.prompts.format.score).toContain('{{max}}')
+    expect(mina.prompts.format.words).toContain('{{count}}')
+    expect(mina.prompts.format.sentences).toContain('{{count}}')
+
+    const dir = copyOf(MINIMAL)
+    writeFileSync(join(dir, 'prompts/format-bullets.md'), 'Keep it tidy for {{usr}}.\n')
+    expect(loadError(dir)).toContain('unknown macro {{usr}}')
+  })
 })

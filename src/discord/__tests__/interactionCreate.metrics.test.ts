@@ -282,6 +282,7 @@ describe('interaction handler metrics', () => {
 
     expect(mocks.startTurnEntryWork).toHaveBeenCalledWith(expect.objectContaining({ message: question }))
     expect(mocks.generateResponse.mock.calls[0][0].userMessage).toBe(question)
+    expect(mocks.generateResponse.mock.calls[0][0].speakerText).toBe(question)
   })
 
   it('opens a social URL in the /ask question before building model input', async () => {
@@ -335,9 +336,9 @@ describe('interaction handler metrics', () => {
     ])
   })
 
-  it('keeps the YouTube thumbnail when the watcher is direct', async () => {
+  it('keeps the YouTube thumbnail when the watcher is off', async () => {
     const media = config.media as { watcher: string }
-    media.watcher = 'direct'
+    media.watcher = 'off'
     try {
       const youtube = parseSocialPostUrl('https://youtu.be/jNQXAC9IVRw')!
       const found = foundSocialPost('https://i.ytimg.com/vi/jNQXAC9IVRw/hqdefault.jpg')

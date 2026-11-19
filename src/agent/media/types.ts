@@ -55,10 +55,6 @@ export interface MediaDigest {
   focusSec?: number
   /** The file had no sound track. */
   silent?: boolean
-  /** Set when the watcher saw single frames rather than video: how many. */
-  frames?: number
-  /** What was heard, when less than everything: 'speech' is a transcript only, 'none' is nothing at all. */
-  heard?: 'speech' | 'none'
   bins: MediaClip[]
   observations: MediaObservations
   /** True when validation dropped or truncated anything the model returned. */

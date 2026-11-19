@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "470eef99b0f491baba0dcf10c08654b36d54de6f5592e8cee807769c88634faf",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af977a21e3b5\",\"object\":\"chat.completion\",\"created\":1794733986,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"ops\\\":[{\\\"op\\\":\\\"noop\\\"}],\\\"summary\\\":\\\"Alice reviewed the private mod-vault notes before the end of the month, and Roka confirmed the stored notes remain visible only in that channel.\\\"}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4044,\"completion_tokens\":43,\"total_tokens\":4087,\"prompt_tokens_details\":{\"cached_tokens\":3840},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

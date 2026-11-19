@@ -9,6 +9,10 @@ const FACT_EMBED_GAP_MS = 250
 
 let running: Promise<{ embedded: number; failed: number }> | null = null
 
+function compareContentKey(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0
+}
+
 /** Embeds active facts that have no embedding or whose sentence changed. One sweep at a time. */
 export function embedPendingFacts(
   input: { limit?: number; gapMs?: number } = {}
@@ -33,6 +37,7 @@ async function sweep(gapMs: number, limit = Number.POSITIVE_INFINITY): Promise<{
   const pending = listActiveClaimsForEmbedding()
     .map((claim) => ({ claim, sentence: renderFactSentence(claim) }))
     .filter(({ claim, sentence }) => !claim.hasEmbedding || claim.embeddingText !== sentence)
+    .sort((left, right) => compareContentKey(left.sentence, right.sentence))
     .slice(0, limit)
   let embedded = 0
   let failed = 0

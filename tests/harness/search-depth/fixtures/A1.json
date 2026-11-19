@@ -1,0 +1,110 @@
+{
+  "caseId": "A1",
+  "recordedAt": "2026-11-17T21:20:57.582Z",
+  "commit": "2f6dac20658fc7b1625a3298b81d0170496bd5c0",
+  "toolCalls": [
+    {
+      "tool": "search_anime"
+    },
+    {
+      "tool": "search_web",
+      "args": {
+        "query": "Frieren Beyond Journey's End anime score episode count MyAnimeList",
+        "max_results": 5
+      }
+    }
+  ],
+  "exchanges": [
+    {
+      "provider": "jikan",
+      "method": "GET",
+      "url": "https://api.jikan.moe/v4/anime?limit=1&sfw=true&q=Frieren",
+      "requestBody": null,
+      "status": null,
+      "responseBody": null,
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "provider": "jikan",
+      "method": "GET",
+      "url": "https://api.jikan.moe/v4/anime?limit=1&sfw=true&q=Sousou%20no%20Frieren",
+      "requestBody": null,
+      "status": null,
+      "responseBody": null,
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "provider": "exa",
+      "method": "POST",
+      "url": "https://api.exa.ai/search",
+      "requestBody": {
+        "query": "Frieren Beyond Journey's End anime score episode count MyAnimeList",
+        "type": "auto",
+        "numResults": 5,
+        "contents": {
+          "highlights": true
+        }
+      },
+      "status": 200,
+      "responseBody": {
+        "requestId": "457b07f5a47d7e4bed9a8e19cb3b3b05",
+        "resolvedSearchType": "",
+        "results": [
+          {
+            "id": "https://myanimelist.net/anime/52991/Sousou_no_Frieren/stats?m=all",
+            "title": "Sousou no Frieren (Frieren: Beyond Journey's End) - Statistics - MyAnimeList.net",
+            "url": "https://myanimelist.net/anime/52991/Sousou_no_Frieren/stats?m=all",
+            "highlights": [
+              "# Sousou no Frieren\n\nFrieren: Beyond Journey's End\n\n \n\nStatus:\n\n / 28\n\n## Alternative Titles\n\n Synonyms: Frieren at the Funeral, Frieren The Slayer \n\n Japanese: 葬送のフリーレン \n\n English: Frieren: Beyond Journey's End \n\n## Information\n\n Type: TV \n\n Episodes: 28 \n\n Status: Finished Airing \n\n Aired: Sep 29, 2023 to Mar 22, 2024 \n\n Premiered: Fall 2023 \n\n Broadcast: Fridays at 23:00 (JST)\n\n...\n\n## Statistics\n\nScore: 9.24 1 (scored by 948,099 users) \n\n 1 indicates a weighted score. \n\nRanked: #1 2 \n\n 2 based on the top anime page. Please note that 'Not yet aired' and 'R18+' titles are excluded."
+            ],
+            "image": "https://cdn.myanimelist.net/images/anime/1015/138006.jpg"
+          },
+          {
+            "id": "https://myanimelist.net/anime/52991/Sousou_no_Frieren/episode",
+            "title": "Sousou no Frieren - Episodes - MyAnimeList.net",
+            "url": "https://myanimelist.net/anime/52991/Sousou_no_Frieren/episode",
+            "highlights": [
+              "# Sousou no Frieren\n\nFrieren: Beyond Journey's End\n\n \n\n## Alternative Titles\n\n Synonyms: Frieren at the Funeral, Frieren The Slayer \n\n Japanese: 葬送のフリーレン \n\n English: Frieren: Beyond Journey's End \n\n## Information\n\n Type: TV \n\n Episodes: 28 \n\n Status: Finished Airing \n\n Aired: Sep 29, 2023 to Mar 22, 2024 \n\n Premiered: Fall 2023\n\n...\n\n## Statistics\n\nScore: 9.24 1 (scored by 953,885 users) \n\n 1 indicates a weighted score. \n\nRanked: #1 2 \n\n 2 based on the top anime page.\n\n...\n\n## Episodes\n\n(28/28)\n\n| | | Episode Title | Aired | Poll | Replies |\n| --- | --- | --- | --- | --- | --- |\n| 1 | | The Journey's End Bouken no Owari (冒険の終わり) | Sep 29, 2023 | Vote average 4.3 | 791 |\n| 2 | | It Didn't Have to Be Magic… Betsu ni Mahou ja Nakutatte... (別に魔法じゃなくたって...) | Sep 29, 2023 | Vote average 4.3 | 414 |\n| 3 | | Killing Magic Hito o Korosu Mahou (人を殺す魔法) | Sep 29, 2023 | Vote average 4.3 | 344 |\n| 4 | | The Land Where Souls Rest Tamashii no Nemuru Tsuchi (魂の眠る地) | Sep 29, 2023 | Vote average 4.4 | 402 |\n| 5 | | Phantoms of the Dead Shisha no Gen'ei (死者の幻影) | Oct 6, 2023 | Vote average 4.4 | 303 |\n| 6 | | The Hero of the Village Mura no Eiyuu (村の英雄) | Oct 13, 2023 | Vote average 4.5 | 345 |\n| 7 | | Like a Fairy Tale Otogibanashi no You na Mono (おとぎ話のようなもの) | Oct 20, 2023 | Vote average 4.5 | 338 |\n| 8 | | Frieren the Slayer Sousou no Frieren (葬送のフリーレン) | Oct 27, 2023 | Vote average 4.7 | 402 |\n| 9 | | Aura the Guillotine Dantoudai no Aura (断頭台のアウラ) | Nov 3, 2023 | Vote average 4.7 | 519 |\n| 10 | | A Powerful Mage Tsuyoi Mahou Tsukai (強い魔法使い) | Nov 10, 2023 | Vote average 4.7 | 689 |\n| 11 | | Winter in the Northern Lands Kitagawa Shokoku no Fuyu (北側諸国の冬) | Nov 17, 2023 | Vote average 4.5 | 329 |\n| 12 | | A Real Hero Honmono no Yuusha (本物の勇者) | Nov 24, 2023 | Vote average 4.7 | 449 |\n| 13 | | Aversion to One's Own Kind Douzoku Ken'o (同族嫌悪) | Dec 1, 2023 | Vote average 4.5 | 287 |\n| 14 | | Privilege of the Young Wakamono no Tokken (若者の特権) | Dec 8, 2023 | Vote average 4.6 | 423 |\n| 15 | | Smells Like Trouble Yakkai Goto no Nioi (厄介事の匂い) | Dec 15, 2023 | Vote average 4.6 | 344 |\n| 16 | | Long-Lived Friends Chouju Tomodachi (長寿友達) | Dec 22, 2023 | Vote average 4.5 | 270 |\n| 17 | | Take Care Jaa Genki de (じゃあ元気で) | Jan 5, 2024 | Vote average 4.5 | 300 |\n| 18 | | First-Class Mage Exam Ikkyuu Mahou Tsukai Senbatsu Shiken (一級魔法使い選抜試験) | Jan 12, 2024 | Vote average 4.5 | 257 |\n| 19 | | Well-Laid Plans Nyuunen na Keikaku (入念な計画) | Jan 19, 2024 | Vote average 4.6 | 292 |\n| 20 | | Necessary Killing Hitsuyou na Koroshi (必要な殺し) | Jan 26, 2024 | Vote average 4.5 | 323 |\n| 21 | | The World of Magic Mahou no Sekai (魔法の世界) | Feb 2, 2024 | Vote average 4.7 | 331 |\n| 22 | | Future Enemies Tsugi kara wa Katakidoushi (次からは敵同士) | Feb 9, 2024 | Vote average 4.5 | 230 |\n| 23 | | Conquering the Labyrinth Dungeon Kouryaku (迷宮［ダンジョン］攻略) | Feb 16, 2024 | Vote average 4.7 | 360 |\n| 24 | | Perfect Replicas Kanpeki na Fukuseitai (完璧な複製体) | Feb 23, 2024 | Vote average 4.6 | 274 |\n| 25 | | A Fatal Vulnerability Chimeiteki na Suki (致命的な隙) | Mar 1, 2024 | Vote average 4.7 | 310 |\n| 26 | | The Height of Magic Mahou no Takami (魔法の高み) | Mar 8, 2024 | Vote average 4.8 | 575 |\n| 27 | | An Era of Humans Ningen no Jidai (人間の時代) | Mar 15, 2024 | Vote average 4.7 | 438 |\n| 28 | | It Would Be Embarrassing When We Met Again Mata Atta Toki ni Hazukashii kara ne (また会ったときに恥ずかしいからね) | Mar 22, 2024 | Vote average 4.6 | 1,200 |"
+            ],
+            "image": "https://cdn.myanimelist.net/images/anime/1015/138006.webp"
+          },
+          {
+            "id": "https://myanimelist.net/anime/52991/Sousou/_no/_Frieren",
+            "title": "Sousou no Frieren",
+            "url": "https://myanimelist.net/anime/52991/Sousou/_no/_Frieren",
+            "author": "Madhouse",
+            "highlights": [
+              "# Sousou no Frieren\n\nFrieren: Beyond Journey's End\n\n...\n\n## Alternative Titles\n\nSynonyms: Frieren at the Funeral\n\nJapanese: 葬送のフリーレン\n\nEnglish: Frieren: Beyond Journey's End\n\nMore titles\n\n## Information\n\nType: TV\n\nEpisodes: 28\n\nStatus: Finished Airing\n\nAired: Sep 29, 2023 to Mar 22, 2024\n\nPremiered: Fall 2023\n\n...\n\n## Statistics\n\nScore: 9.361 (scored by 425400425,400 users)\n\n1 indicates a weighted score.\n\nRanked: #12\n\n2 based on the top anime page. Please note that 'Not yet aired' and 'R18+' titles are excluded."
+            ],
+            "image": "https://cdn.myanimelist.net/images/anime/1015/138006.jpg"
+          },
+          {
+            "id": "https://myanimelist.net/anime/52991/Sousou_no_Frieren/moreinfo",
+            "title": "Sousou no Frieren (Frieren: Beyond Journey's End) - More Info - MyAnimeList.net",
+            "url": "https://myanimelist.net/anime/52991/Sousou_no_Frieren/moreinfo",
+            "highlights": [
+              "# Sousou no Frieren\n\nFrieren: Beyond Journey's End\n\n...\n\nEnglish: Frieren: Beyond Journey's End \n\n## Information\n\n Type: TV \n\n Episodes: 28 \n\n Status: Finished Airing \n\n Aired: Sep 29, 2023 to Mar 22, 2024\n\n...\n\n## Statistics\n\nScore: 9.24 1 (scored by 953,700 users) \n\n 1 indicates a weighted score."
+            ],
+            "image": "https://cdn.myanimelist.net/images/anime/1015/138006.jpg"
+          },
+          {
+            "id": "https://www.anigems.com/en/anime/52991",
+            "title": "Frieren: Beyond Journey's End ratings and score history | AniGems",
+            "url": "https://www.anigems.com/en/anime/52991",
+            "highlights": [
+              "# Frieren: Beyond Journey's End\n\n...\n\n1.1M ratings included\n\nConsensus data: Aug 29, 2026\n\n## Original platform scores\n\nScores are shown exactly as published on each platform. Scale conversion happens only inside the Global Score calculation.\n\n### MyAnimeList\n\n9.25/10\n\n929K voters\n\nAug 29, 2026\n\nView original source ↗\n\n...\n\n## Series scores by episode milestone\n\nSeries scores by episode milestone\n\n| Episode | MyAnimeList /10 | Bangumi /10 | Filmarks /5 | Gamer /5 |\n| --- | --- | --- | --- | --- |\n| Episode 28 | 9.25 | 8.50 | 4.30 | 5.00 |"
+            ],
+            "image": "https://www.anigems.com/opengraph-image"
+          }
+        ],
+        "searchTime": 764.9,
+        "costDollars": {
+          "total": 0.007,
+          "search": {
+            "neural": 0.007
+          }
+        }
+      }
+    }
+  ]
+}

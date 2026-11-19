@@ -1,5 +1,6 @@
 import type { Attachment, Message } from 'discord.js'
-import type { MediaAttachment } from '../agent/media/attachments.js'
+import type { ImageOrigin, MediaAttachment } from '../agent/media/attachments.js'
+import { proxyResizeUrl } from '../agent/media/imageProxy.js'
 import { MAX_ATTACHMENTS, isSupportedMedia } from '../agent/media/mediaRules.js'
 import type { SocialPostTarget } from '../agent/social/urls.js'
 import { findSocialPostTarget } from '../agent/social/urls.js'
@@ -23,8 +24,11 @@ const FILE = 13
 
 interface UnfurledMedia {
   url?: string
+  proxy_url?: string
   content_type?: string
   size?: number
+  width?: number | null
+  height?: number | null
 }
 
 interface RawComponent {
@@ -181,7 +185,14 @@ function extractComponentMedia(components: Message['components']): { media: Medi
       unreadable += 1
       return
     }
-    media.push({ url: item.url, contentType, size: item.size ?? statedSize })
+    media.push(
+      resizedImage(
+        { url: item.url, contentType, size: item.size ?? statedSize },
+        item.proxy_url,
+        item.width,
+        item.height
+      )
+    )
   }
 
   function walk(items: RawComponent[]) {
@@ -203,19 +214,69 @@ interface ForwardedContent {
   hasSocialPost: boolean
 }
 
+/** An image fetched at vision size through Discord's proxy when Discord states its size; anything else as is. */
+function resizedImage(
+  media: MediaAttachment,
+  proxyUrl: string | null | undefined,
+  width: number | null | undefined,
+  height: number | null | undefined
+): MediaAttachment {
+  if (!media.contentType.startsWith('image/')) return media
+  const url = proxyResizeUrl(proxyUrl, width, height)
+  return url ? { ...media, url, proxyResized: true } : media
+}
+
+function embedImage(embed: Message['embeds'][number], side: 'own' | 'reply'): MediaAttachment | null {
+  const image = embed.image?.url ? embed.image : embed.thumbnail
+  if (!image?.url) return null
+  const resized = resizedImage({ url: image.url, contentType: 'image/png' }, image.proxyURL, image.width, image.height)
+  return { ...resized, imageOrigin: embedImageOrigin(embed, image.url, side) }
+}
+
+// A gifv embed or a GIF provider's thumbnail is the message's reaction, not a pictured identity question.
+function isGifProviderUrl(value: string | null | undefined): boolean {
+  if (!value) return false
+  try {
+    return /tenor|giphy|klipy|gifer/i.test(new URL(value).hostname)
+  } catch {
+    return /tenor|giphy|klipy|gifer/i.test(value)
+  }
+}
+
+function embedImageOrigin(embed: Message['embeds'][number], imageUrl: string, side: 'own' | 'reply'): ImageOrigin {
+  if (embed.data?.type === 'gifv' || isGifProviderUrl(embed.url) || isGifProviderUrl(imageUrl)) return 'embed'
+  // A titled or described embed pictures its link's preview, not an upload of the pictured thing.
+  if (embed.title || embed.description || embed.fields?.length) return 'link_preview'
+  return side === 'reply' ? 'reply_embed' : 'own_embed'
+}
+
 function toMediaAttachment(attachment: Attachment): MediaAttachment {
-  const { url, contentType, size, duration } = attachment
-  return { url, contentType: contentType!, size, ...(duration ? { durationSec: duration } : {}) }
+  const { url, proxyURL, contentType, size, duration, width, height } = attachment
+  return resizedImage(
+    { url, contentType: contentType!, size, ...(duration ? { durationSec: duration } : {}) },
+    proxyURL,
+    width,
+    height
+  )
 }
 
 type MediaSource = Required<Pick<MediaAttachment, 'origin' | 'sourceMessageId' | 'sourceAuthorId'>>
 
-// Only watched media (audio and video) is remembered, so only it carries where it came from.
+// Only watched media (audio and video) is remembered, so only it carries `origin`; images carry the
+// lighter `imageOrigin` instead, which that memory never reads.
 function fromSource(source: MediaSource): (attachment: MediaAttachment) => MediaAttachment {
-  return (attachment) =>
-    attachment.contentType.startsWith('audio/') || attachment.contentType.startsWith('video/')
-      ? { ...attachment, ...source }
-      : attachment
+  return (attachment) => {
+    if (attachment.contentType.startsWith('audio/') || attachment.contentType.startsWith('video/')) {
+      return { ...attachment, ...source }
+    }
+    if (
+      attachment.contentType.startsWith('image/') &&
+      (source.origin === 'upload' || source.origin === 'forward' || source.origin === 'reply')
+    ) {
+      return { ...attachment, imageOrigin: source.origin }
+    }
+    return attachment
+  }
 }
 
 type MediaKind = 'image' | 'video' | 'audio clip' | 'document'
@@ -350,8 +411,8 @@ export function extractMessageContent(
     // A watched video replaces its still frame; sending both burns a vision slot on a duplicate.
     const videoUrl = embedVideoUrl(embed)
     if (videoUrl && watchedEmbedVideoUrls?.has(videoUrl)) continue
-    const embedImageUrl = embed.image?.url ?? embed.thumbnail?.url
-    if (embedImageUrl) ownEmbedImages.push({ url: embedImageUrl, contentType: 'image/png' })
+    const image = embedImage(embed, 'own')
+    if (image) ownEmbedImages.push(image)
   }
 
   const forwarded = describeForwardedSnapshots(
@@ -444,8 +505,8 @@ export function extractMessageContent(
         if (embedMatchesSocialPost(embed, socialPost)) continue
         const videoUrl = embedVideoUrl(embed)
         if (videoUrl && watchedEmbedVideoUrls?.has(videoUrl)) continue
-        const embedImageUrl = embed.image?.url ?? embed.thumbnail?.url
-        if (embedImageUrl) referencedEmbedImages.push({ url: embedImageUrl, contentType: 'image/png' })
+        const image = embedImage(embed, 'reply')
+        if (image) referencedEmbedImages.push(image)
       }
     }
   }
@@ -467,4 +528,17 @@ export function extractCurrentMessageContent(
   componentTextsForTrigger: string[]
 ): string {
   return extractMessageContent(message, null, false, botId, componentTextsForTrigger).content
+}
+
+/** The link URLs carried by the triggering message's own embeds, in order, for the source registry. */
+export function collectEmbedUrls(message: Message): string[] {
+  const urls: string[] = []
+  const seen = new Set<string>()
+  for (const embed of message.embeds) {
+    if (embed.url && !seen.has(embed.url)) {
+      seen.add(embed.url)
+      urls.push(embed.url)
+    }
+  }
+  return urls
 }

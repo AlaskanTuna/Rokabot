@@ -4,15 +4,14 @@ Run Rokabot on Coolify from the published image. Coolify documents no automatic 
 
 ## At a Glance
 
-| Item               | Value                                                                               |
-| ------------------ | ----------------------------------------------------------------------------------- |
-| Image              | `ghcr.io/alaskantuna/rokabot:stable` (public, no registry credentials)              |
-| Port               | Ports Exposes `3000` (Docker Image applications start with 80)                      |
-| Memory             | About 1 GB (the compose file caps the bot at `mem_limit: 1g`)                       |
-| Storage            | Persistent, at `/app/data`, writable by UID 1000                                    |
-| Health             | Port 3000, any path: 200 with `"status":"ok"` once Discord is connected, 503 before |
-| Speech Recognition | Optional second application from `ghcr.io/alaskantuna/rokabot-asr:stable`           |
-| Updates            | Redeploy by hand, or call the deploy API on a schedule                              |
+| Item    | Value                                                                               |
+| ------- | ----------------------------------------------------------------------------------- |
+| Image   | `ghcr.io/alaskantuna/rokabot:stable` (public, no registry credentials)              |
+| Port    | Ports Exposes `3000` (Docker Image applications start with 80)                      |
+| Memory  | About 1 GB (the compose file caps the bot at `mem_limit: 1g`)                       |
+| Storage | Persistent, at `/app/data`, writable by UID 1000                                    |
+| Health  | Port 3000, any path: 200 with `"status":"ok"` once Discord is connected, 503 before |
+| Updates | Redeploy by hand, or call the deploy API on a schedule                              |
 
 ## Steps
 
@@ -31,15 +30,6 @@ Source: [Docker Image](https://coolify.io/docs/applications/deployments/docker-i
 ## Configuration
 
 The image carries a built-in `config.yml`, so the bot starts with its defaults. An environment variable overrides a single value where `src/config.ts` wires one, for example `LLM_MAIN`, `LLM_FALLBACK` and `MEDIA_WATCHER`. To use your own file, mount it and set `ROKABOT_CONFIG_PATH` to its path.
-
-### Speech Recognition
-
-Speech recognition is off until you set `MEDIA_TRANSCRIBER_URL`; the built-in `config.yml` leaves it empty. It serves only the qwen media watcher, which needs `MODELSCOPE_API_KEY`. That watcher is the main one when `media.watcher` is `qwen`, and the backup when it is `gemini`. Without that key, skip this.
-
-1. Create a second Docker Image application from `ghcr.io/alaskantuna/rokabot-asr:stable`. Give it about 2 GB of memory and keep it private. It listens on port 8000 and answers `GET /health`.
-2. On the bot application, set `MEDIA_TRANSCRIBER_URL` to the private address of that application, with port 8000.
-
-To keep speech recognition off, leave `MEDIA_TRANSCRIBER_URL` unset or empty.
 
 ### Automatic Updates
 

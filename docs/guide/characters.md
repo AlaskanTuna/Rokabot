@@ -164,20 +164,25 @@ startup, so both macros fill the same way on every turn.
 A prompt name such as `intro` or `moods/playful` resolves to `characters/<id>/prompts/<name>.md` first, then to
 `prompts/<name>.md`. A pack overrides a harness prompt by shipping a file with the same name.
 
-| Harness Prompt             | Used When                          | Override |
-| -------------------------- | ---------------------------------- | -------- |
-| `answering.md`             | Named in `prompt.system`           | Allowed  |
-| `audio-video.md`           | Named in `prompt.system`           | Allowed  |
-| `images.md`                | Named in `prompt.system`           | Allowed  |
-| `tools.md`                 | Named in `prompt.system`           | Allowed  |
-| `memory-tools.md`          | A section holds `{{memory_tools}}` | Allowed  |
-| `forget-tool.md`           | A section holds `{{memory_tools}}` | Allowed  |
-| `search-tools.md`          | `{{search_tools}}`, search on      | Allowed  |
-| `no-search-tools.md`       | `{{search_tools}}`, search off     | Allowed  |
-| `search-before-judging.md` | `{{search_before_judging}}`        | Allowed  |
-| `situation.md`             | Every turn                         | Allowed  |
-| `boundaries.md`            | Named in `prompt.system`           | Locked   |
-| `safety-steer.md`          | Safety ladder rungs 1-3            | Locked   |
+| Harness Prompt             | Used When                                        | Override |
+| -------------------------- | ------------------------------------------------ | -------- |
+| `answering.md`             | Named in `prompt.system`                         | Allowed  |
+| `audio-video.md`           | Named in `prompt.system`                         | Allowed  |
+| `images.md`                | Named in `prompt.system`                         | Allowed  |
+| `tools.md`                 | Named in `prompt.system`                         | Allowed  |
+| `memory-tools.md`          | A section holds `{{memory_tools}}`               | Allowed  |
+| `forget-tool.md`           | A section holds `{{memory_tools}}`               | Allowed  |
+| `search-tools.md`          | `{{search_tools}}`, search on                    | Allowed  |
+| `no-search-tools.md`       | `{{search_tools}}`, search off                   | Allowed  |
+| `search-before-judging.md` | `{{search_before_judging}}`                      | Allowed  |
+| `situation.md`             | Every turn                                       | Allowed  |
+| `format-bullets.md`        | Format request asks for bullets                  | Allowed  |
+| `format-numbered.md`       | Format request asks for numbered                 | Allowed  |
+| `format-score.md`          | Format request asks for score (`{{max}}`)        | Allowed  |
+| `format-words.md`          | Format request sets word limit (`{{count}}`)     | Allowed  |
+| `format-sentences.md`      | Format request sets sentence limit (`{{count}}`) | Allowed  |
+| `boundaries.md`            | Named in `prompt.system`                         | Locked   |
+| `safety-steer.md`          | Safety ladder rungs 1-3                          | Locked   |
 
 Locked prompts hold the hard limits and the safety redirect, so every character keeps them. Edit them in `prompts/`.
 The list is `LOCKED_PROMPTS` in `src/character/load.ts`. A lock stops a pack from replacing `boundaries.md`. It does

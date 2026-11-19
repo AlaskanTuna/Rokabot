@@ -120,8 +120,13 @@ describe('exaSearch', () => {
     const result = await exaSearch({ query: 'q' })
 
     expect(result.results).toEqual([
-      { title: 'Crunchyroll', url: 'https://www.crunchyroll.com/a', snippet: `${'x'.repeat(200)}...` },
-      { title: 'Polygon', url: 'https://www.polygon.com/b', snippet: 'b' }
+      {
+        title: 'Crunchyroll',
+        url: 'https://www.crunchyroll.com/a',
+        snippet: `${'x'.repeat(200)}...`,
+        text: `${'x'.repeat(500)}\nsecond`
+      },
+      { title: 'Polygon', url: 'https://www.polygon.com/b', snippet: 'b', text: 'b' }
     ])
     expect(result.resultCount).toBe(2)
     expect(result.succeeded).toBe(true)
@@ -280,10 +285,10 @@ describe('exaSearch', () => {
     const result = await exaSearch({ query: 'q' })
 
     expect(result.results).toEqual([
-      { title: 'https://untitled.test/a', url: 'https://untitled.test/a', snippet: 'a fact' },
-      { title: 'No highlights', url: 'https://empty.test/b', snippet: '' },
+      { title: 'https://untitled.test/a', url: 'https://untitled.test/a', snippet: 'a fact', text: 'a fact' },
+      { title: 'No highlights', url: 'https://empty.test/b', snippet: '', text: '' },
       // An empty title is no title either.
-      { title: 'https://whitespace.test/c', url: 'https://whitespace.test/c', snippet: 'c fact' }
+      { title: 'https://whitespace.test/c', url: 'https://whitespace.test/c', snippet: 'c fact', text: 'c fact' }
     ])
     expect(result.succeeded).toBe(true)
   })

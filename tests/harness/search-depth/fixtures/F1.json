@@ -1,0 +1,70 @@
+{
+  "caseId": "F1",
+  "recordedAt": "2026-11-17T21:15:23.808Z",
+  "commit": "2f6dac20658fc7b1625a3298b81d0170496bd5c0",
+  "toolCalls": [
+    {
+      "tool": "search_web",
+      "args": {
+        "query": "Thimphu population Bhutan capital",
+        "max_results": 3
+      }
+    }
+  ],
+  "exchanges": [
+    {
+      "provider": "exa",
+      "method": "POST",
+      "url": "https://api.exa.ai/search",
+      "requestBody": {
+        "query": "Thimphu population Bhutan capital",
+        "type": "auto",
+        "numResults": 3,
+        "contents": {
+          "highlights": true
+        }
+      },
+      "status": 200,
+      "responseBody": {
+        "requestId": "afcf851439b0ae9ace5368b02b72bbb9",
+        "resolvedSearchType": "",
+        "results": [
+          {
+            "id": "https://worldpopulationreview.com/cities/bhutan/thimphu",
+            "title": "Thimphu Population 2026",
+            "url": "https://worldpopulationreview.com/cities/bhutan/thimphu",
+            "publishedDate": "2026-07-30T13:54:12.000Z",
+            "highlights": [
+              "# Thimphu\n\nCountry:\n\nBhutan\n\nContinent:\n\nAsia\n\nThimphu's 2026 population is now estimated at 141,076. In 2005, the population of Thimphu was 79,185. Thimphu has grown by 2,948 in the last year, which represents a 2.13% annual change. These population values and projections come from National Statistics Bureau Bhutan - Town population census table (via CityPopulation extraction) and World Population Review Internal Projections.\n\n141.1K Total Population\n\n 2.9K 2.13% \n\nGrowth\n\nYes Capital of Bhutan?\n\n## Thimphu Population\n\n| City | 2026 Pop.↓ | Growth |\n| --- | --- | --- |\n| Thimphu | 141,076 | 2.13% |\n\n...\n\n### Sources\n\n1. National Statistics Bureau Bhutan - Town population census table (via CityPopulation extraction)\n2. World Population Review Internal Projections"
+            ],
+            "image": "https://worldpopulationreview.com/og-image.png"
+          },
+          {
+            "id": "https://en.wikipedia.org/wiki/Thimphu",
+            "title": "Thimphu",
+            "url": "https://en.wikipedia.org/wiki/Thimphu",
+            "publishedDate": "2026-11-03T20:02:21.000Z",
+            "highlights": [
+              "| Thimphu ཐིམ་ཕུག་ | |\n| --- | --- |\n| Capital city and Thromde | |\n| Tashichho Dzong National Library of Bhutan Aerial view of Thimphu Thimphu Business District | |\n\n...\n\n| Country | Bhutan |\n| District | Thimphu |\n| Gewogs | Chang, Kawang |\n| Established as capital | 1955 |\n| Township | 1961 |\n| Municipality | 2009 |\n| Government | |\n\n...\n\n| • Thrompon | Ugyen Dorji [1] |\n| Area | |\n| • Total | 26.1 km 2 (10.1 sq mi) |\n| Elevation | 2,320 m (7,610 ft) |\n| Population (2017) | |\n| • Total | 114,551 |\n| • Density | 4,389/km 2 (11,370/sq mi) |\n\n...\n\n| Website | thimphucity.bt |\n\nThimphu (/ tɪ mˈ p uː/ tim- POOH; Dzongkha: ཐིམ་ཕུག་ [tʰim˥.pʰu˥]) is the capital and largest city of Bhutan. It is situated in the western central part of Bhutan, and the surrounding valley is one of Bhutan's dzongkhags, the Thimphu District. The ancient capital city of Punakha was replaced by Thimphu as the capital in 1955, and in 1961 Thimphu was officially declared the capital of the Kingdom of Bhutan by the 3rd Druk Gyalpo Jigme Dorji Wangchuck.\n\n...\n\nBhutanese people\n\nAccording to the census of 31 May 2005, the population of the city was 79,185 with a density of 3,029 per square kilometre (7,850/sq mi), with 92,929 over an area of 1,843 square kilometres (712 mi 2) in the entire district; the corresponding figure projected in 2010 for the district was 104,200. [15] In 2011, the city's population was about 91,000. [16]"
+            ]
+          },
+          {
+            "id": "https://nsb.gov.bt/wp-content/uploads/2026/08/PHCB2017_Thimphu.pdf",
+            "title": "འབྲུག་གི་མི་རློབས་དང་ཁྱིམ་གྱི་གྲངས་རྩིས་༢༠༡༧།།",
+            "url": "https://nsb.gov.bt/wp-content/uploads/2026/08/PHCB2017_Thimphu.pdf",
+            "highlights": [
+              "2017\n\n### POPULATION & HOUSING CENSUS OF BHUTAN\n\nNational Statistics Bureau \nRoyal Government of Bhutan \nwww.nsb.gov.bt \nNATIONAL STATISTICS BUREAU ROYAL GOVERNMENT OF BHUTAN \n\n## འབྲུག་གི་མི་རློབས་དང་ཁྱིམ་གྱི་གྲངས་རྩིས་༢༠༡༧།།\n\n2017\n\nPOPULATION\n\n& HOUSING CENSUS\n\nOF\n\nBHUTAN\n\n#### THIMPHU DZONGKHAG\n\n9 789993 628644\n\nISBN 978-99936-28-64-4\n\n...\n\nThe 2017 PHCB was conducted from 30 May to 01 June 2017 using the de facto approach.\n\n...\n\n##### SUMMARY TABLE OF KEY FINDINGS\n\nTopic Indicator 2017\n\nDemographic Characteristics\n\nTotal Population 138,736* \nMale 72,522 \nFemale 66,214 \nSex Ratio (Males per 100 Females) 109.5 \nTotal Dependency Ratio 38.0 \nChild Dependency Ratio 32.7 \nAged Dependency Ratio 5.3 \nPopulation by Broad Age Group\n\n...\n\n15-64 years 100,559 \n65 years and over 5,316\n\n...\n\n*Note: 1) Excludes 2,535 tourists/non-Bhutanese found in hotels on census day. 2) Out of the total population of Thimphu, 114,551 persons reside in Thimphu Thromde.\n\n...\n\n##### 2.1 Concepts and Definition\n\nA population census is the total process of collecting, compiling, evaluating, analysing, and publishing or otherwise disseminating demographic, economic, and social data pertaining, at a specified time, to all persons in a country or in a well-delimited part of a country. The essential features of a population census are individual enumeration, universality within a defined territory, simultaneity, and defined periodicity. 1 The 2017 PHCB was conducted from 30 May to 01 June 2017. The reference time and date for the census enumera tion was midnight of 29 May 2017. This means that the 2017 PHCB provides\n\npopulation data of Thimphu as of 00:00 hours on 30th May 2017. The 2017 PHCB was conducted based on the de-facto method of enumer ation (meaning that the enumeration is done on the basis of where a person is found at the census moment) though in some isolated cases, a combination of the de-facto and de-jure methods was also adopted.\n\n##### 2.2 Population of Thimphu\n\nThe total population of Thimphu Dzongkhag as of 30 May 2017 was 141,271 persons (Annex Table A2.1). This is the total number of people found within the territory of Thimphu Dzongkhag on the census reference day irrespective of their nationality. It includes 2,535 non-Bhutanese/tourists staying in hotels and those on the move on the census reference day. The analy ses in this Report is based on 138,736 persons as no detailed information was collected from the 2,535 non-Bhutanese/ tourists enumerated. Table 2.1 presents the population of Thimphu by sex, and by Gewog/Town. Of the total 138,736 persons, 52.3% were males and 47.7% were females. The total population of Thimphu Dzongkhag represents 19.1% of the total population of Bhutan. 2.3 Size and Change of Population Thimphu Dzongkhag experienced an increase in population size by about 42,595 persons during the intercensal period, a population growth of about 43.2% between 2005 and 2017. The pop ulation of Thimphu Dzongkhag in 2005 was 98,676 persons. Thimphu Dzongkhag ranks the highest in terms of population size among all Dzongkhags in the country.\n\n##### 2.4 Population by Area\n\nIn 2017, for every 100 persons in the Dzongkhag, 17 persons lived in rural areas, while 83 persons lived in the urban areas (Figure 2.1). At the national level, 62.2 % of the total population live in rural areas, while 37.8 % live in urban areas. The size of urban population in Thimphu Dzongkhag is 115,517 persons.\n\n...\n\nTable 2.1 Distribution of the Population by Gewog/ Town, Sex, Thimphu 2017\n\nGewog/Town\n\nPersons Male Female Total\n\nUrban Thimphu Thromde 58,996 55,555 114,551 Khasadrapchu Town 457 509 966 Rural Kawang 3,185 2,292 5,477 Lingzhi 276 214 490 Naro 163 87 250 Soe 101 81 182 Chang 3,801 2,951 6,752 Darkarla 1,387 707 2,094 Ge-nyen 597 544 1,141 Maedwang 3,559 3,274 6,833 Total 72,522 66,214 138,736 Note: Excludes 2,535 tourists/non-Bhutanese found in hotels on census day.\n\n...\n\nOf the two towns in Thimphu Dzongkhag, Thimphu thromde has 108,611 persons (99.0%) of the total regular household population living in urban areas, while Khasadrapchu Town has 966 persons (1.0%).\n\n...\n\n##### 2.10 Bhutanese and Non Bhutanese Population\n\nThe total Bhutanese population in Thimphu Dzongkhag as of 30 May 2017 was 128,207 persons (Table 2.2). Of the total, 63,718 persons were males and 64,489 persons were females. ... The total number of non-Bhuta nese population in Thimphu Dzongkhag was 10,529 persons.\n\n...\n\n##### ANNEX 2: STATISTICAL TABLES\n\nTable A2.1 Population by Sex and Gewog/Town, Thimphu Dzongkhag 2017\n\nNumber of Persons Percent\n\n| Gewog/Town | Male | Female | Total | Male | Female | Total | Sex Ratio |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n| THIMPHU | 72,522 | 66,214 | 138,736 | 52.3 | 47.7 | 100.0 | 109.5 |\n| Urban | 59,453 | 56,064 | 115,517 | 51.5 | 48.5 | 100.0 | 106.0 |\n| Thimphu Thromde | 58,996 | 55,555 | 114,551 | 51.5 | 48.5 | 100.0 | 106.2 |\n| Khasadrapchu Town | 457 | 509 | 966 | 47.3 | 52.7 | 100.0 | 89.8 |\n| Rural | 13,069 | 10,150 | 23,219 | 56.3 | 43.7 | 100.0 | 128.8 |"
+            ]
+          }
+        ],
+        "searchTime": 1404,
+        "costDollars": {
+          "total": 0.007,
+          "search": {
+            "neural": 0.007
+          }
+        }
+      }
+    }
+  ]
+}

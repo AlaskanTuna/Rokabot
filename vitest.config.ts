@@ -14,7 +14,7 @@ export default defineConfig({
     ],
     exclude: [
       ...configDefaults.exclude,
-      'tests/harness/__tests__/memoryShadow.perf.test.ts',
+      'tests/harness/__tests__/*.perf.test.ts',
       'tests/harness/__tests__/*.live.test.ts'
     ],
     coverage: {

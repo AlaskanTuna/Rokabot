@@ -5,9 +5,12 @@ import { extractMessageContent } from '../messageContent.js'
 
 interface Attachment {
   url: string
+  proxyURL?: string
   contentType: string | null
   size?: number
   duration?: number | null
+  width?: number | null
+  height?: number | null
 }
 
 function collection<T>(items: T[]) {
@@ -142,7 +145,7 @@ describe('media message content', () => {
 
     expect(extracted.mediaAttachments).toEqual([
       { ...video, ...repliedTo },
-      { url: thumbnail, contentType: 'image/png' }
+      { url: thumbnail, contentType: 'image/png', imageOrigin: 'own_embed' }
     ])
   })
 
@@ -151,7 +154,9 @@ describe('media message content', () => {
 
     const extracted = extract(message(), referenceMessage([], 'user-2', [thumbnailEmbed(thumbnail)]))
 
-    expect(extracted.mediaAttachments).toEqual([{ url: thumbnail, contentType: 'image/png' }])
+    expect(extracted.mediaAttachments).toEqual([
+      { url: thumbnail, contentType: 'image/png', imageOrigin: 'reply_embed' }
+    ])
   })
 })
 
@@ -202,9 +207,136 @@ describe('where watched media came from', () => {
     })
   })
 
-  it('leaves images without provenance, since only audio and video are remembered', () => {
-    const image = { url: 'https://cdn.discordapp.com/i.png', contentType: 'image/png', size: 10 }
+  it('leaves watched media provenance on origin, not on images', () => {
+    const clip = { url: 'https://cdn.discordapp.com/c.mp4', contentType: 'video/mp4', size: 1_000 }
+    const result = extract(message({ attachments: [clip] }))
 
-    expect(extract(message({ attachments: [image] })).mediaAttachments[0]).not.toHaveProperty('origin')
+    expect(result.mediaAttachments[0]).toMatchObject({
+      origin: 'upload',
+      sourceMessageId: 'trigger-1',
+      sourceAuthorId: 'asker-1'
+    })
+    expect(result.mediaAttachments[0]).not.toHaveProperty('imageOrigin')
+  })
+})
+
+describe('where images came from', () => {
+  const image = { url: 'https://cdn.discordapp.com/i.png', contentType: 'image/png', size: 10 }
+
+  it("marks the asker's own upload as upload", () => {
+    expect(extract(message({ attachments: [image] })).mediaAttachments[0]).toMatchObject({ imageOrigin: 'upload' })
+  })
+
+  it('marks a forwarded image as forward', () => {
+    const result = extract(message({ snapshots: [snapshot([image])] }))
+
+    expect(result.mediaAttachments[0]).toMatchObject({ imageOrigin: 'forward' })
+  })
+
+  it('marks a replied-to image as reply', () => {
+    const result = extract(message(), referenceMessage([image]))
+
+    expect(result.mediaAttachments[0]).toMatchObject({ imageOrigin: 'reply' })
+  })
+
+  it('marks a plain own embed image as own_embed', () => {
+    const result = extract(message({ embeds: [thumbnailEmbed('https://cdn.test/pic.jpg')] }))
+
+    expect(result.mediaAttachments[0]).toMatchObject({ imageOrigin: 'own_embed' })
+  })
+
+  it('marks an article link preview as link_preview', () => {
+    const preview = {
+      ...thumbnailEmbed('https://cdn.test/preview.jpg'),
+      url: 'https://news.example/article',
+      title: 'Cool article',
+      description: 'Read all about it'
+    }
+    const result = extract(message({ embeds: [preview] }))
+
+    expect(result.mediaAttachments[0]).toMatchObject({ imageOrigin: 'link_preview' })
+  })
+
+  it('marks a Tenor thumbnail as embed', () => {
+    const tenor = {
+      ...thumbnailEmbed('https://media.tenor.com/x.gif'),
+      url: 'https://tenor.com/view/cat-123'
+    }
+    const result = extract(message({ embeds: [tenor] }))
+
+    expect(result.mediaAttachments[0]).toMatchObject({ imageOrigin: 'embed' })
+  })
+})
+
+describe('image resizing through the Discord proxy', () => {
+  const proxy = 'https://media.discordapp.net/attachments/1/2/IMG.png?ex=1&is=2&hm=3'
+  const resized = `${proxy}&width=472&height=1024`
+
+  it('downloads an upload at vision size through the proxy', () => {
+    const image = {
+      url: 'https://cdn.discordapp.com/attachments/1/2/IMG.png?ex=1&is=2&hm=3',
+      proxyURL: proxy,
+      contentType: 'image/png',
+      size: 9_968_897,
+      width: 1179,
+      height: 2556
+    }
+
+    expect(extract(message({ attachments: [image] })).mediaAttachments).toEqual([
+      { url: resized, contentType: 'image/png', size: 9_968_897, proxyResized: true, imageOrigin: 'upload' }
+    ])
+  })
+
+  it('keeps the original URL when Discord states no dimensions', () => {
+    const image = { url: 'https://cdn.discordapp.com/i.png', proxyURL: proxy, contentType: 'image/png', size: 10 }
+
+    expect(extract(message({ attachments: [image] })).mediaAttachments).toEqual([
+      { url: 'https://cdn.discordapp.com/i.png', contentType: 'image/png', size: 10, imageOrigin: 'upload' }
+    ])
+  })
+
+  it('resizes a Components V2 gallery image', () => {
+    const trigger = {
+      ...message(),
+      components: [
+        {
+          toJSON: () => ({
+            type: 17,
+            components: [
+              {
+                type: 12,
+                items: [
+                  {
+                    media: {
+                      url: 'https://cdn.discordapp.com/attachments/1/2/IMG.png?ex=1&is=2&hm=3',
+                      proxy_url: proxy,
+                      content_type: 'image/png',
+                      width: 1179,
+                      height: 2556
+                    }
+                  }
+                ]
+              }
+            ]
+          })
+        }
+      ]
+    }
+
+    expect(extract(trigger).mediaAttachments).toEqual([
+      { url: resized, contentType: 'image/png', size: undefined, proxyResized: true, imageOrigin: 'upload' }
+    ])
+  })
+
+  it("resizes an embed image through Discord's external proxy, not the sender's host", () => {
+    const external = 'https://images-ext-1.discordapp.net/external/abc/https/static.klipy.com/x.webp'
+    const embed = {
+      ...thumbnailEmbed('https://static.klipy.com/x.webp'),
+      thumbnail: { url: 'https://static.klipy.com/x.webp', proxyURL: external, width: 2048, height: 1024 }
+    }
+
+    expect(extract(message({ embeds: [embed] })).mediaAttachments).toEqual([
+      { url: `${external}?width=1024&height=512`, contentType: 'image/png', proxyResized: true, imageOrigin: 'embed' }
+    ])
   })
 })

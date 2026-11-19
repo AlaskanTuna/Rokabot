@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "60b2780ea645912e0d23ac2c5e19f9d1718aa6c9c9fa894e4828f8ec9ca525cf",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af9779a7905\",\"object\":\"chat.completion\",\"created\":1794733978,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"ops\\\":[{\\\"op\\\":\\\"add\\\",\\\"subject\\\":{\\\"kind\\\":\\\"user\\\",\\\"userId\\\":\\\"sim-user-dave\\\"},\\\"predicate\\\":\\\"likes\\\",\\\"value\\\":\\\"roasted hojicha tea\\\",\\\"tense\\\":\\\"current\\\",\\\"sourceLine\\\":1}],\\\"summary\\\":\\\"Dave mentioned brewing roasted hojicha in his cast iron kettle before heading out, and Grace asked the bot about Dave's favorite tea.\\\"}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4238,\"completion_tokens\":79,\"total_tokens\":4317,\"prompt_tokens_details\":{\"cached_tokens\":3840},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

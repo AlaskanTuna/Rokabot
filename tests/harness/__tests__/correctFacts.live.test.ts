@@ -7,8 +7,8 @@ import { assertClaim } from '../../../src/agent/memory/memoryClaims.js'
 import { closeDb } from '../../../src/storage/database.js'
 import type { ExtractionEpisode } from '../../../src/storage/extractionQueue.js'
 
-// Spends real Gemini calls (12 per run) on synthetic text only. Needs ROKABOT_HARNESS_LIVE=1 so tests/harness/env.ts
-// swaps in GRAPHIFY_GEMINI_API_KEY, never the bot's own key; `npm run test:live` sets it.
+// Spends real Gemini calls (12 per run) on synthetic text using the flash route and harness Gemini key unless
+// LLM_MAIN overrides it. Needs ROKABOT_HARNESS_LIVE=1; `npm run test:live` sets it.
 const live = process.env.ROKABOT_HARNESS_LIVE === '1' && Boolean(process.env.GRAPHIFY_GEMINI_API_KEY)
 
 const CHANNEL = 'live-channel'
@@ -140,7 +140,14 @@ describe.skipIf(!live)('correct-facts extraction (live)', () => {
 
       const runs: Array<{ pass: boolean; ops: string[] }> = []
       for (let run = 0; run < RUNS; run++) {
-        const { ops } = await extractEpisode({ guildId, channelId: CHANNEL, episode: episodeOf(text) })
+        const episode = episodeOf(text)
+        const { ops } = await extractEpisode({ guildId, channelId: CHANNEL, episode })
+        for (const op of ops) {
+          if (op.op === 'add') {
+            expect(op.sourceLine).toBeGreaterThanOrEqual(1)
+            expect(op.sourceLine).toBeLessThanOrEqual(episode.messages.length)
+          }
+        }
         runs.push({ pass: check(ops), ops: ops.map(describeOp) })
       }
       console.info('Correct-facts live results', JSON.stringify({ text, runs }))

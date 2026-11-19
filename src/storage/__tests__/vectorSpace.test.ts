@@ -2,6 +2,7 @@ import Database from 'better-sqlite3'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const configMock = vi.hoisted(() => ({
+  memory: { store: 'legacy' },
   embeddings: { provider: 'gemini', dim: 768, fingerprint: 'gemini:gemini-embedding-2:768:gemini-task-prefix' }
 }))
 let testDb: Database.Database

@@ -15,8 +15,9 @@ const mocks = vi.hoisted(() => ({
   buildEpisodeRecallBlock: vi.fn(() => ''),
   buildMediaRecallBlock: vi.fn(() => ''),
   resolveReferences: vi.fn(() => ({ resolved: [], ambiguous: [] })),
-  retrieveForTurn: vi.fn(() => ({ entries: [], claims: [] })),
+  retrieveForTurn: vi.fn(() => ({ entries: [], claims: [], trace: { candidates: [], tokensEst: 0 } })),
   retrieveGuildFacts: vi.fn(() => ({ facts: [], tokensEst: 0 })),
+  touchRecalled: vi.fn(),
   assembleSystemPrompt: vi.fn(() => 'prompt'),
   runPrefetchForJudgment: vi.fn(),
   decidePrefetch: vi.fn(
@@ -35,13 +36,7 @@ const mocks = vi.hoisted(() => ({
   getLocalHour: vi.fn(() => 14),
   getLocalDate: vi.fn(() => '2026-09-26'),
   estimateTokens: vi.fn(() => 0),
-  detectTone: vi.fn(() => 'playful'),
-  recallForTurn: vi.fn((_input: { queryEmbedding: readonly number[] | null }) => ({
-    items: [],
-    block: '',
-    trace: { nCandidates: 0, gated: 0, fallback: false, tokensEst: 0 }
-  })),
-  touchRecalled: vi.fn()
+  detectTone: vi.fn(() => 'playful')
 }))
 
 vi.mock('../jev/judgments.js', () => ({ judgeTurn: mocks.judgeTurn }))
@@ -62,20 +57,17 @@ vi.mock('../../agent/memory/retriever.js', async (importOriginal) => ({
   retrieveForTurn: mocks.retrieveForTurn,
   retrieveGuildFacts: mocks.retrieveGuildFacts
 }))
-vi.mock('../memory/episodeEmbeddings.js', () => ({ embedEpisodeText: mocks.embedEpisodeText }))
-vi.mock('../memory/episodeRetriever.js', () => ({ buildEpisodeRecallBlock: mocks.buildEpisodeRecallBlock }))
-vi.mock('../memory/mediaRecall.js', () => ({ buildMediaRecallBlock: mocks.buildMediaRecallBlock }))
-vi.mock('../memory/recall.js', async (importOriginal) => ({
-  ...(await importOriginal<object>()),
-  recallForTurn: mocks.recallForTurn
-}))
 vi.mock('../memory/memoryClaims.js', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   touchRecalled: mocks.touchRecalled
 }))
+vi.mock('../memory/episodeEmbeddings.js', () => ({ embedEpisodeText: mocks.embedEpisodeText }))
+vi.mock('../memory/episodeRetriever.js', () => ({ buildEpisodeRecallBlock: mocks.buildEpisodeRecallBlock }))
+vi.mock('../memory/mediaRecall.js', () => ({ buildMediaRecallBlock: mocks.buildMediaRecallBlock }))
 vi.mock('../memory/passiveBuffer.js', () => ({ getMessages: mocks.getMessages }))
 vi.mock('../promptAssembler.js', () => ({ assembleSystemPrompt: mocks.assembleSystemPrompt }))
-vi.mock('../promptSafety.js', () => ({
+vi.mock('../promptSafety.js', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   buildFactsEnvelope: mocks.buildFactsEnvelope,
   buildOverheardBlock: mocks.buildOverheardBlock
 }))
@@ -803,59 +795,12 @@ describe('turn entry work', () => {
   })
 })
 
-// Shadow recall only feeds telemetry, so it settles a macrotask after the prompt is built.
-const flushShadowRecall = () => new Promise((resolve) => setImmediate(resolve))
-afterEach(flushShadowRecall)
-
-describe('memory recall modes', () => {
-  const memoryConfig = config.memory as { privacy: string; recall: string }
+describe('legacy memory recall', () => {
+  const memoryConfig = config.memory as { privacy: string }
   const vector = Array.from({ length: 768 }, () => 0.25)
   const episodeBlock = '## Things you remember happening here\nThe group planned a picnic.'
   const mediaBlock = '## Media You Watched Here Before\n["the picnic clip"]'
   const factsEnvelope = '- Alice: hobby: chess'
-
-  function emptyRecall() {
-    return { items: [], block: '', trace: { nCandidates: 0, gated: 0, fallback: false, tokensEst: 0 } }
-  }
-
-  function unifiedRecall() {
-    return {
-      items: [
-        {
-          kind: 'fact',
-          id: 7,
-          score: 0.8123,
-          core: false,
-          subjectUserId: 'user-1',
-          label: 'hobby',
-          text: 'chess',
-          date: null
-        },
-        {
-          kind: 'conversation',
-          id: 3,
-          score: 0.5,
-          core: false,
-          subjectUserId: null,
-          label: '',
-          text: 'picnic',
-          date: '2026-09-26'
-        },
-        {
-          kind: 'server_fact',
-          id: 9,
-          score: 0.4,
-          core: false,
-          subjectUserId: null,
-          label: 'plan',
-          text: 'Game night',
-          date: null
-        }
-      ],
-      block: '## What You Remember\n### People\n- Alice: hobby: chess',
-      trace: { nCandidates: 9, gated: 2, fallback: false, tokensEst: 33 }
-    } as never
-  }
 
   function turnWith(overrides: Partial<Parameters<typeof createTurnContext>[0]> = {}) {
     return createTurnContext({
@@ -874,22 +819,19 @@ describe('memory recall modes', () => {
     jevConfig.referents = 'off'
     jevConfig.prefetch = 'off'
     memoryConfig.privacy = 'relaxed'
-    memoryConfig.recall = 'legacy'
     mocks.ensureSession.mockResolvedValue({ events: [] })
     mocks.loadHistory.mockReturnValue([])
     mocks.embedEpisodeText.mockResolvedValue(geminiVector(vector))
     mocks.buildEpisodeRecallBlock.mockReturnValue('')
     mocks.buildMediaRecallBlock.mockReturnValue('')
     mocks.buildFactsEnvelope.mockReturnValue('')
-    mocks.retrieveForTurn.mockReturnValue({ entries: [], claims: [] } as never)
+    mocks.retrieveForTurn.mockReturnValue({ entries: [], claims: [], trace: { candidates: [], tokensEst: 0 } } as never)
     mocks.resolveReferences.mockReturnValue({ resolved: [], ambiguous: [] } as never)
-    mocks.recallForTurn.mockImplementation(() => emptyRecall() as never)
     mocks.runPrefetchForJudgment.mockResolvedValue({ decision: { fire: false, reason: 'no_judgment' }, outcome: null })
   })
 
   afterEach(() => {
     memoryConfig.privacy = 'relaxed'
-    memoryConfig.recall = 'legacy'
   })
 
   it('resolves references within the turn channel so private nicknames stay put', async () => {
@@ -900,177 +842,33 @@ describe('memory recall modes', () => {
     )
   })
 
-  it('builds the legacy prompt with the four legacy blocks and no unified recall', async () => {
-    mocks.retrieveForTurn.mockReturnValue({ entries: [{ person: 'Alice', facts: [] }], claims: [{}] } as never)
+  it('builds the legacy prompt with the four legacy blocks', async () => {
+    mocks.retrieveForTurn.mockReturnValue({
+      entries: [{ person: 'Alice', facts: [] }],
+      claims: [{ claim: { id: 1 } }],
+      trace: { candidates: [], tokensEst: 0 }
+    } as never)
     mocks.buildFactsEnvelope.mockReturnValue(factsEnvelope)
     mocks.buildEpisodeRecallBlock.mockReturnValue(episodeBlock)
+    mocks.buildMediaRecallBlock.mockReturnValue(mediaBlock)
 
     const context = await turnWith()
 
     expect(context.systemPrompt).toContain(`## What You Remember About People In This Channel\n${factsEnvelope}`)
     expect(context.systemPrompt).toContain(episodeBlock)
+    expect(context.systemPrompt).toContain(mediaBlock)
     expect(mocks.buildEpisodeRecallBlock).toHaveBeenCalledWith({
       guildId: 'guild-1',
       queryEmbedding: vector,
       scope: { guildId: 'guild-1', channelId: 'channel-1' }
     })
-    expect(mocks.recallForTurn).not.toHaveBeenCalled()
     expect(recalledRows('recall')).toHaveLength(0)
     expect(recalledRows('recall_shadow')).toHaveLength(0)
+    expect(recalledRows('context_build')).toHaveLength(1)
   })
 
-  it('builds a shadow prompt identical to legacy and leaves its selection unused', async () => {
-    mocks.retrieveForTurn.mockReturnValue({ entries: [{ person: 'Alice', facts: [] }], claims: [{}] } as never)
-    mocks.buildFactsEnvelope.mockReturnValue(factsEnvelope)
-    mocks.buildEpisodeRecallBlock.mockReturnValue(episodeBlock)
-    mocks.buildMediaRecallBlock.mockReturnValue(mediaBlock)
-    mocks.recallForTurn.mockImplementation(() => unifiedRecall())
-
-    memoryConfig.recall = 'legacy'
-    const legacy = await turnWith()
-    memoryConfig.recall = 'shadow'
-    const shadow = await turnWith()
-    await flushShadowRecall()
-
-    // The reply shape is drawn fresh for every reply, so it is the one part two builds may not share.
-    const withoutShape = (prompt: string) => prompt.replace(/\n\n## Reply Shape\n[\s\S]*$/, '')
-    expect(legacy.systemPrompt).toContain(episodeBlock)
-    expect(withoutShape(shadow.systemPrompt)).toBe(withoutShape(legacy.systemPrompt))
-    expect(mocks.recallForTurn).toHaveBeenCalledTimes(1)
-    expect(mocks.recallForTurn).toHaveBeenCalledWith(
-      expect.objectContaining({
-        scope: { guildId: 'guild-1', channelId: 'channel-1' },
-        speakerId: 'user-1',
-        message: 'hello',
-        queryEmbedding: vector
-      })
-    )
-    expect(mocks.touchRecalled).not.toHaveBeenCalled()
-  })
-
-  it('records one shadow event with ids, scores and counts but no memory text', async () => {
-    memoryConfig.recall = 'shadow'
-    mocks.recallForTurn.mockImplementation(() => unifiedRecall())
-
-    await turnWith()
-    await flushShadowRecall()
-
-    const rows = recalledRows('recall_shadow')
-    expect(rows).toHaveLength(1)
-    expect(rows[0]).toMatchObject({
-      guildId: 'guild-1',
-      channelId: 'channel-1',
-      subjectUserId: 'user-1',
-      nCandidates: 9,
-      nSelected: 3,
-      tokensEst: 33,
-      durationMs: expect.any(Number)
-    })
-    expect(JSON.parse(rows[0].detail)).toEqual({
-      mode: 'shadow',
-      privacy: 'relaxed',
-      fallback: false,
-      gated: 2,
-      selected: [
-        ['fact', 7, 0.812],
-        ['conversation', 3, 0.5],
-        ['server_fact', 9, 0.4]
-      ]
-    })
-    expect(rows[0].detail).not.toContain('chess')
-    expect(recalledRows('recall')).toHaveLength(0)
-  })
-
-  it('shows only the unified block, touches the selected facts and records one recall event', async () => {
-    memoryConfig.recall = 'unified'
-    mocks.retrieveForTurn.mockReturnValue({ entries: [{ person: 'Alice', facts: [] }], claims: [{}] } as never)
-    mocks.buildFactsEnvelope.mockReturnValue(factsEnvelope)
-    mocks.buildEpisodeRecallBlock.mockReturnValue(episodeBlock)
-    mocks.buildMediaRecallBlock.mockReturnValue(mediaBlock)
-    mocks.retrieveGuildFacts.mockReturnValue({
-      facts: [{ predicate: 'plan', value: 'Game night' } as never],
-      tokensEst: 1
-    })
-    mocks.recallForTurn.mockImplementation(() => unifiedRecall())
-
-    const context = await turnWith()
-
-    expect(context.systemPrompt).toContain('## What You Remember\n### People\n- Alice: hobby: chess')
-    for (const legacyHeading of [
-      '## What You Remember About People In This Channel',
-      '## Things You Remember About This Server',
-      episodeBlock,
-      mediaBlock
-    ]) {
-      expect(context.systemPrompt).not.toContain(legacyHeading)
-    }
-    expect(mocks.retrieveForTurn).not.toHaveBeenCalled()
-    expect(mocks.retrieveGuildFacts).not.toHaveBeenCalled()
-    expect(mocks.buildEpisodeRecallBlock).not.toHaveBeenCalled()
-    expect(mocks.buildMediaRecallBlock).not.toHaveBeenCalled()
-    expect(mocks.touchRecalled).toHaveBeenCalledWith([7, 9])
-    const rows = recalledRows('recall')
-    expect(rows).toHaveLength(1)
-    expect(JSON.parse(rows[0].detail)).toMatchObject({ mode: 'unified', fallback: false, gated: 2 })
-    expect(recalledRows('context_build')).toEqual([expect.objectContaining({ nSelected: 3 })])
-  })
-
-  it('keeps the Who Is Mentioned block on the same safety rung as the unified memory block', async () => {
-    memoryConfig.recall = 'unified'
-    mocks.recallForTurn.mockImplementation(() => unifiedRecall())
-    mocks.resolveReferences.mockReturnValue({
-      resolved: [{ alias: 'Ali', displayName: 'Alice', matchedBy: 'nickname', userId: 'user-2' }],
-      ambiguous: []
-    } as never)
-
-    const context = await turnWith()
-
-    expect(context.systemPrompt).toContain('## Who Is Mentioned\n- "Ali" means Alice')
-    expect(context.composePrompt(1)).toContain('## What You Remember')
-    expect(context.composePrompt(1)).toContain('## Who Is Mentioned')
-    expect(context.composePrompt(2)).not.toContain('## What You Remember')
-    expect(context.composePrompt(2)).not.toContain('## Who Is Mentioned')
-  })
-
-  it('runs unified recall without a query embedding once the embedding timeout passes', async () => {
-    vi.useFakeTimers()
-    try {
-      memoryConfig.recall = 'unified'
-      mocks.embedEpisodeText.mockImplementation(() => new Promise(() => undefined))
-      mocks.recallForTurn.mockImplementation((input) => ({
-        ...emptyRecall(),
-        trace: { nCandidates: 0, gated: 0, fallback: input.queryEmbedding === null, tokensEst: 0 }
-      }))
-
-      const pending = turnWith()
-      await vi.advanceTimersByTimeAsync(config.memory.embeddingTimeoutMs)
-      await pending
-
-      expect(mocks.recallForTurn).toHaveBeenCalledWith(expect.objectContaining({ queryEmbedding: null }))
-      const rows = recalledRows('recall')
-      expect(rows).toHaveLength(1)
-      expect(JSON.parse(rows[0].detail).fallback).toBe(true)
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it.each(['shadow', 'unified'])('never fails the turn when recall throws in %s mode', async (recall) => {
-    memoryConfig.recall = recall
-    mocks.recallForTurn.mockImplementation(() => {
-      throw new Error('recall unavailable')
-    })
-
-    const context = await turnWith()
-
-    expect(context.systemPrompt).not.toContain('What You Remember')
-    expect(recalledRows('recall')).toHaveLength(0)
-    expect(recalledRows('recall_shadow')).toHaveLength(0)
-  })
-
-  it.each(['legacy', 'shadow', 'unified'])('reads no long-term memory with privacy off in %s mode', async (recall) => {
+  it('reads no long-term memory with privacy off', async () => {
     memoryConfig.privacy = 'off'
-    memoryConfig.recall = recall
     mocks.buildFactsEnvelope.mockReturnValue(factsEnvelope)
     mocks.buildEpisodeRecallBlock.mockReturnValue(episodeBlock)
     mocks.buildMediaRecallBlock.mockReturnValue(mediaBlock)
@@ -1078,12 +876,9 @@ describe('memory recall modes', () => {
       facts: [{ predicate: 'plan', value: 'Game night' } as never],
       tokensEst: 1
     })
-    mocks.recallForTurn.mockImplementation(() => unifiedRecall())
 
     const context = await turnWith()
 
-    await flushShadowRecall()
-    expect(mocks.recallForTurn).not.toHaveBeenCalled()
     expect(mocks.retrieveForTurn).not.toHaveBeenCalled()
     expect(mocks.retrieveGuildFacts).not.toHaveBeenCalled()
     expect(mocks.buildEpisodeRecallBlock).not.toHaveBeenCalled()
@@ -1091,11 +886,71 @@ describe('memory recall modes', () => {
     expect(context.systemPrompt).not.toContain('What You Remember')
     expect(context.systemPrompt).not.toContain('Things You Remember About This Server')
     expect(context.systemPrompt).not.toContain(episodeBlock)
-    expect(recalledRows('recall')).toHaveLength(0)
-    expect(recalledRows('recall_shadow')).toHaveLength(0)
+    expect(recalledRows('context_build')).toHaveLength(0)
     expect(mocks.assembleSystemPrompt).toHaveBeenCalledWith(expect.objectContaining({ memoryScope: 'forget' }))
     expect(context.systemPrompt).not.toContain('remember_user')
     expect(context.systemPrompt).not.toContain('recall_user')
+  })
+
+  it('does no retrieval for a memory-free turn', async () => {
+    const context = await turnWith({ memoryScope: 'none' })
+
+    expect(mocks.retrieveForTurn).not.toHaveBeenCalled()
+    expect(mocks.retrieveGuildFacts).not.toHaveBeenCalled()
+    expect(mocks.buildEpisodeRecallBlock).not.toHaveBeenCalled()
+    expect(mocks.buildMediaRecallBlock).not.toHaveBeenCalled()
+    expect(context.systemPrompt).not.toContain('What You Remember')
+  })
+
+  it('skips memory blocks on DM turns where scope is absent', async () => {
+    mocks.retrieveForTurn.mockReturnValue({
+      entries: [{ person: 'Alice', facts: [] }],
+      claims: [{ claim: { id: 1 } }],
+      trace: { candidates: [], tokensEst: 0 }
+    } as never)
+    mocks.buildFactsEnvelope.mockReturnValue(factsEnvelope)
+
+    const context = await turnWith({ guildId: 'dm:user-1' })
+
+    expect(mocks.retrieveForTurn).not.toHaveBeenCalled()
+    expect(mocks.retrieveGuildFacts).not.toHaveBeenCalled()
+    expect(mocks.buildEpisodeRecallBlock).not.toHaveBeenCalled()
+    expect(mocks.buildMediaRecallBlock).not.toHaveBeenCalled()
+    expect(mocks.touchRecalled).not.toHaveBeenCalled()
+    expect(recalledRows('retrieval')).toHaveLength(0)
+    expect(recalledRows('context_build')).toHaveLength(0)
+    expect(context.systemPrompt).not.toContain(factsEnvelope)
+    expect(context.systemPrompt).not.toContain('What You Remember')
+    expect(context.systemPrompt).not.toContain('Things You Remember About This Server')
+  })
+
+  it('runs retrieveForTurn selection before touchRecalled and records the retrieval event once', async () => {
+    mocks.retrieveForTurn.mockReturnValue({
+      entries: [{ person: 'Alice', facts: [{ predicate: 'hobby', value: 'chess', period: 'current' }] }],
+      claims: [{ claim: { id: 10 } }, { claim: { id: 20 } }],
+      trace: { candidates: [{}, {}, {}], tokensEst: 42 }
+    } as never)
+    mocks.buildFactsEnvelope.mockReturnValue(factsEnvelope)
+
+    await turnWith()
+
+    expect(mocks.retrieveForTurn).toHaveBeenCalledOnce()
+    expect(mocks.touchRecalled).toHaveBeenCalledOnce()
+    expect(mocks.touchRecalled).toHaveBeenCalledWith([10, 20])
+    expect(mocks.retrieveForTurn.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.touchRecalled.mock.invocationCallOrder[0]
+    )
+    expect(recalledRows('retrieval')).toEqual([
+      {
+        kind: 'retrieval',
+        guildId: 'guild-1',
+        subjectUserId: 'user-1',
+        durationMs: expect.any(Number),
+        nCandidates: 3,
+        nSelected: 2,
+        tokensEst: 42
+      }
+    ])
   })
 
   it('does not resolve references for a memory-free turn', async () => {
@@ -1135,42 +990,5 @@ describe('memory recall modes', () => {
     } finally {
       mocks.assembleSystemPrompt.mockImplementation(() => 'prompt')
     }
-  })
-
-  it.each(['shadow', 'unified'])('does no recall for a DM or a memory-free turn in %s mode', async (recall) => {
-    memoryConfig.recall = recall
-    mocks.recallForTurn.mockImplementation(() => unifiedRecall())
-
-    await turnWith({ guildId: 'dm:user-1' })
-    await turnWith({ memoryScope: 'none' })
-
-    await flushShadowRecall()
-    expect(mocks.recallForTurn).not.toHaveBeenCalled()
-    expect(recalledRows('recall')).toHaveLength(0)
-    expect(recalledRows('recall_shadow')).toHaveLength(0)
-  })
-
-  it('keeps the legacy facts block for DMs in unified mode, whose facts live under a dm tenant', async () => {
-    memoryConfig.recall = 'unified'
-    mocks.retrieveForTurn.mockReturnValue({ entries: [{ person: 'Alice', facts: [] }], claims: [{}] } as never)
-    mocks.buildFactsEnvelope.mockReturnValue(factsEnvelope)
-
-    const context = await turnWith({ guildId: 'dm:user-1' })
-
-    expect(mocks.retrieveForTurn).toHaveBeenCalled()
-    expect(context.systemPrompt).toContain(factsEnvelope)
-    expect(mocks.recallForTurn).not.toHaveBeenCalled()
-  })
-
-  it('pins the unified recall clock to before the legacy retriever marks its picks', async () => {
-    memoryConfig.recall = 'unified'
-    const before = Date.now()
-    mocks.recallForTurn.mockImplementation(() => unifiedRecall())
-
-    await turnWith()
-
-    const [input] = mocks.recallForTurn.mock.calls[0] as unknown as [{ now?: number }]
-    expect(input.now).toBeGreaterThanOrEqual(before)
-    expect(input.now).toBeLessThanOrEqual(Date.now())
   })
 })

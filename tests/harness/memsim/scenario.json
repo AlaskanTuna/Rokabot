@@ -1,0 +1,3342 @@
+{
+  "version": 1,
+  "baseTimeMs": 1790848800000,
+  "botUserId": "sim-roka-bot",
+  "botDisplayName": "Roka",
+  "guilds": [
+    {
+      "id": "sim-guild-north",
+      "name": "Northgate Commons",
+      "channels": [
+        {
+          "id": "sim-north-general",
+          "name": "general",
+          "visibility": "public"
+        },
+        {
+          "id": "sim-north-craft",
+          "name": "craft-shop",
+          "visibility": "public"
+        },
+        {
+          "id": "sim-north-vault",
+          "name": "mod-vault",
+          "visibility": "private"
+        }
+      ]
+    },
+    {
+      "id": "sim-guild-south",
+      "name": "Southbay Club",
+      "channels": [
+        {
+          "id": "sim-south-lounge",
+          "name": "lounge",
+          "visibility": "public"
+        },
+        {
+          "id": "sim-south-events",
+          "name": "events",
+          "visibility": "public"
+        },
+        {
+          "id": "sim-south-secret",
+          "name": "backstage-private",
+          "visibility": "private"
+        }
+      ]
+    }
+  ],
+  "dmChannels": [
+    {
+      "id": "sim-dm-alice",
+      "userId": "sim-user-alice"
+    },
+    {
+      "id": "sim-dm-dave",
+      "userId": "sim-user-dave"
+    },
+    {
+      "id": "sim-dm-carol",
+      "userId": "sim-user-carol"
+    }
+  ],
+  "personas": [
+    {
+      "id": "sim-user-alice",
+      "username": "alice_k",
+      "displayName": "Alice"
+    },
+    {
+      "id": "sim-user-bob",
+      "username": "bob_r",
+      "displayName": "Bob"
+    },
+    {
+      "id": "sim-user-carol",
+      "username": "carol_m",
+      "displayName": "Carol"
+    },
+    {
+      "id": "sim-user-dave",
+      "username": "dave_t",
+      "displayName": "Dave"
+    },
+    {
+      "id": "sim-user-erin",
+      "username": "erin_v",
+      "displayName": "Erin"
+    },
+    {
+      "id": "sim-user-frank",
+      "username": "frank_l",
+      "displayName": "Frank"
+    },
+    {
+      "id": "sim-user-grace",
+      "username": "grace_h",
+      "displayName": "Grace"
+    }
+  ],
+  "days": [
+    {
+      "day": 1,
+      "events": [
+        {
+          "kind": "operator",
+          "id": "op-d01-seed-aged-throwaways",
+          "offsetMs": 20000,
+          "action": "seed_aged_throwaways",
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-general",
+          "userId": "sim-user-frank"
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d01-north-intro",
+          "offsetMs": 60000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-general",
+          "messages": [
+            {
+              "id": "sim-msg-1-1",
+              "userId": "sim-user-alice",
+              "content": "Hi everyone, I am a greenhouse botanist cultivating alpine ferns.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-1-2",
+              "userId": "sim-user-carol",
+              "content": "Right now I am based in Osaka near Namba.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-1-3",
+              "userId": "sim-user-alice",
+              "content": "Roka, how is everyone settling into the commons?",
+              "delayMs": 10000,
+              "rokaReply": "It sounds like folks are finding their rhythm here, with a few familiar faces already making the commons feel lived-in."
+            },
+            {
+              "id": "sim-msg-1-4",
+              "userId": "sim-user-carol",
+              "content": "Roka, any autumn tea tips for the channel?",
+              "delayMs": 10000,
+              "rokaReply": "For autumn, try hojicha or a lightly spiced chai in the afternoon; both are cozy without being too heavy."
+            }
+          ]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d01-south-grace-job",
+          "offsetMs": 240000,
+          "guildId": "sim-guild-south",
+          "channelId": "sim-south-lounge",
+          "messages": [
+            {
+              "id": "sim-msg-1-5",
+              "userId": "sim-user-grace",
+              "content": "I am currently a junior paralegal downtown handling case filings.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-1-6",
+              "userId": "sim-user-grace",
+              "content": "Roka, what helps unwind after paperwork?",
+              "delayMs": 10000,
+              "rokaReply": "A short walk, a warm drink, and maybe a low-key playlist usually help the brain step away from filing deadlines."
+            },
+            {
+              "id": "sim-msg-1-7",
+              "userId": "sim-user-dave",
+              "content": "Roka, does acoustic lo-fi suit evening reading?",
+              "delayMs": 10000,
+              "rokaReply": "Acoustic lo-fi is a great fit for evening reading; it stays gentle enough to keep the page in focus."
+            }
+          ]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d01-chatter-1",
+          "offsetMs": 420000,
+          "guildId": "sim-guild-south",
+          "channelId": "sim-south-events",
+          "messages": [
+            {
+              "id": "sim-msg-1-8",
+              "userId": "sim-user-dave",
+              "content": "The harbor ferry bells sounded extra muffled in this morning sea fog.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-1-9",
+              "userId": "sim-user-erin",
+              "content": "Even the seagulls perched quietly along the pier railings today.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-1-10",
+              "userId": "sim-user-dave",
+              "content": "Dave asks Roka if foggy mornings make harbor bells sound deeper.",
+              "delayMs": 10000,
+              "rokaReply": "Fog does muffle and deepen sounds, so the ferry bells would definitely seem lower and more distant."
+            },
+            {
+              "id": "sim-msg-1-11",
+              "userId": "sim-user-erin",
+              "content": "Erin asks Roka for a lighthearted greeting for rainy commuters.",
+              "delayMs": 10000,
+              "rokaReply": "Here's a lighthearted one: 'Rain or shine, you're doing fine—just add a splash of courage!'"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "day": 2,
+      "events": [
+        {
+          "kind": "episode",
+          "id": "ep-d02-north-pets-routine",
+          "offsetMs": 120000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-craft",
+          "messages": [
+            {
+              "id": "sim-msg-2-12",
+              "userId": "sim-user-bob",
+              "content": "We just adopted a rescue shiba puppy named Mochi.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-2-13",
+              "userId": "sim-user-bob",
+              "content": "My morning routine starts at 6am with a quiet swim lap session.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-2-14",
+              "userId": "sim-user-bob",
+              "content": "Roka, any dog-friendly park trail ideas?",
+              "delayMs": 10000,
+              "rokaReply": "Look for shaded loops with water access and not too many stairs; early mornings are usually calmer for a young shiba."
+            },
+            {
+              "id": "sim-msg-2-15",
+              "userId": "sim-user-alice",
+              "content": "Roka, how does the craft bench look tonight?",
+              "delayMs": 10000,
+              "rokaReply": "The craft bench looks tidy and ready, with a few half-finished projects waiting for their next quiet hour."
+            }
+          ]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d02-south-diet-game",
+          "offsetMs": 280000,
+          "guildId": "sim-guild-south",
+          "channelId": "sim-south-lounge",
+          "messages": [
+            {
+              "id": "sim-msg-2-16",
+              "userId": "sim-user-dave",
+              "content": "I switched to a vegetarian diet this autumn and cook lentil curries.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-2-17",
+              "userId": "sim-user-dave",
+              "content": "My favorite game lately is Hollow Knight for quiet boss runs.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-2-18",
+              "userId": "sim-user-dave",
+              "content": "Roka, does roasted cumin go well in lentil stew?",
+              "delayMs": 10000,
+              "rokaReply": "Yes, roasted cumin adds a warm, earthy note that works especially well with lentils and a little tomato."
+            },
+            {
+              "id": "sim-msg-2-19",
+              "userId": "sim-user-erin",
+              "content": "Roka, what are your favorite rainy-day puzzle games?",
+              "delayMs": 10000,
+              "rokaReply": "For rainy days, something like Tetris Effect or a gentle Picross session tends to hit the right mood."
+            }
+          ]
+        },
+        {
+          "kind": "tool",
+          "id": "tool-d02-remember-misc",
+          "offsetMs": 360000,
+          "action": "remember_user",
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-general",
+          "userId": "sim-user-grace",
+          "factKey": "misc",
+          "factValue": "Collects vintage brass mechanical compasses from flea markets"
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d02-chatter-2",
+          "offsetMs": 510000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-general",
+          "messages": [
+            {
+              "id": "sim-msg-2-20",
+              "userId": "sim-user-frank",
+              "content": "Someone finally oiled the rusty courtyard gate hinges outside the lounge.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-2-21",
+              "userId": "sim-user-carol",
+              "content": "Closing the latch without a metallic shriek feels almost suspiciously quiet.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-2-22",
+              "userId": "sim-user-frank",
+              "content": "Frank asks Roka what noises a squeaky hinge usually reminds people of.",
+              "delayMs": 10000,
+              "rokaReply": "A squeaky hinge often reminds people of old horror movies, haunted houses, or a creaky ship at sea."
+            },
+            {
+              "id": "sim-msg-2-23",
+              "userId": "sim-user-carol",
+              "content": "Carol asks Roka if quiet doors startle afternoon daydreamers.",
+              "delayMs": 10000,
+              "rokaReply": "Quiet doors can definitely startle daydreamers—sudden silence can be just as jarring as a loud noise."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "day": 3,
+      "events": [
+        {
+          "kind": "episode",
+          "id": "ep-d03-south-drinks-allergy-music",
+          "offsetMs": 90000,
+          "guildId": "sim-guild-south",
+          "channelId": "sim-south-lounge",
+          "messages": [
+            {
+              "id": "sim-msg-3-24",
+              "userId": "sim-user-dave",
+              "content": "My favorite drink right now is double espresso in the morning.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-3-25",
+              "userId": "sim-user-erin",
+              "content": "Heads-up for fruit bowls: I have a mild allergy to kiwi fruit.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-3-26",
+              "userId": "sim-user-erin",
+              "content": "My favorite music artist these days is Nujabes.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-3-27",
+              "userId": "sim-user-dave",
+              "content": "Roka, what diet and food restrictions does Southbay have?",
+              "delayMs": 10000,
+              "rokaReply": "Southbay has a vegetarian in the mix and a mild kiwi allergy to keep in mind, so fruit bowls and shared snacks should be labeled clearly.",
+              "expectedRecallGtIds": ["gt-dave-diet"]
+            },
+            {
+              "id": "sim-msg-3-28",
+              "userId": "sim-user-erin",
+              "content": "Roka, any snack-safe citrus platter pairings?",
+              "delayMs": 10000,
+              "rokaReply": "Try orange segments with grapes, apple slices, and a few almonds; they keep the platter bright without crossing into kiwi territory."
+            }
+          ]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d03-north-fencing",
+          "offsetMs": 600000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-craft",
+          "messages": [
+            {
+              "id": "sim-msg-3-29",
+              "userId": "sim-user-bob",
+              "content": "My regular Tuesday hobby is foil fencing at the community gym.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-3-30",
+              "userId": "sim-user-bob",
+              "content": "Roka, how often do people stretch after footwork drills?",
+              "delayMs": 10000,
+              "rokaReply": "A short stretch after every drill session is ideal, especially calves and hips, since fencing footwork loads them quickly."
+            },
+            {
+              "id": "sim-msg-3-31",
+              "userId": "sim-user-alice",
+              "content": "Roka, what does Alice do for work?",
+              "delayMs": 10000,
+              "rokaReply": "Alice is a greenhouse botanist, working with alpine ferns and other careful plant cultivation.",
+              "expectedRecallGtIds": ["gt-alice-job"]
+            }
+          ]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d03-chatter-3",
+          "offsetMs": 600000,
+          "guildId": "sim-guild-south",
+          "channelId": "sim-south-events",
+          "messages": [
+            {
+              "id": "sim-msg-3-32",
+              "userId": "sim-user-grace",
+              "content": "The corner table crossword still has a stubborn seven-letter clue in the bottom right.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-3-33",
+              "userId": "sim-user-dave",
+              "content": "Half the page already has ink smudges from enthusiastic brainstorming.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-3-34",
+              "userId": "sim-user-grace",
+              "content": "Grace asks Roka for a clue-solving pep talk.",
+              "delayMs": 10000,
+              "rokaReply": "You've got this! Take a breath, look at the crossing letters, and the answer will come. Every puzzle has a solution."
+            },
+            {
+              "id": "sim-msg-3-35",
+              "userId": "sim-user-dave",
+              "content": "Dave asks Roka whether pencil always beats pen for Sunday grids.",
+              "delayMs": 10000,
+              "rokaReply": "Pencil is usually safer for Sunday grids because you can erase, but pen gives you that bold, committed feeling."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "day": 4,
+      "events": [
+        {
+          "kind": "episode",
+          "id": "ep-d04-north-carol-alice",
+          "offsetMs": 90000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-craft",
+          "messages": [
+            {
+              "id": "sim-msg-4-36",
+              "userId": "sim-user-carol",
+              "content": "My rescued calico cat named Clementine sleeps on my drafting desk.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-4-37",
+              "userId": "sim-user-alice",
+              "content": "My favorite anime right now is Mushishi.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-4-38",
+              "userId": "sim-user-carol",
+              "content": "<@sim-roka-bot> How do I keep cat fur off watercolor paper?",
+              "delayMs": 10000,
+              "rokaReply": "A lint roller and a covered paper tray help a lot; keep the desk zone cat-free when you're painting."
+            },
+            {
+              "id": "sim-msg-4-39",
+              "userId": "sim-user-alice",
+              "content": "<@sim-roka-bot> Why do calm travel anime fit foggy mornings?",
+              "delayMs": 10000,
+              "rokaReply": "They match the slow, misty mood—quiet journeys feel like fog rolling in."
+            }
+          ]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d04-south-grace-linocut",
+          "offsetMs": 140000,
+          "guildId": "sim-guild-south",
+          "channelId": "sim-south-lounge",
+          "messages": [
+            {
+              "id": "sim-msg-4-40",
+              "userId": "sim-user-grace",
+              "content": "I took up linocut printmaking as a regular evening hobby.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-4-41",
+              "userId": "sim-user-grace",
+              "content": "<@sim-roka-bot> What kind of paper absorbs block ink best?",
+              "delayMs": 10000,
+              "rokaReply": "Smooth, slightly absorbent printmaking paper like Japanese washi or a good cotton rag works well."
+            },
+            {
+              "id": "sim-msg-4-42",
+              "userId": "sim-user-dave",
+              "content": "<@sim-roka-bot> Did Erin mention fruit snacks earlier?",
+              "delayMs": 10000,
+              "rokaReply": "Yes—she said fruit snacks are a no-go because of her allergy.",
+              "expectedRecallGtIds": ["gt-erin-allergy"]
+            }
+          ]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d04-north-priv",
+          "offsetMs": 200000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-vault",
+          "messages": [
+            {
+              "id": "sim-msg-4-43",
+              "userId": "sim-user-alice",
+              "content": "Confidential note for mod-vault catering: I have a severe pistachio allergy and carry an EpiPen.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-4-44",
+              "userId": "sim-user-alice",
+              "content": "<@sim-roka-bot> Can you keep nut allergy awareness in mind here in mod-vault?",
+              "delayMs": 10000,
+              "rokaReply": "Absolutely—I'll flag pistachios and keep your EpiPen note in mind for this space.",
+              "expectedRecallGtIds": ["gt-alice-priv-allergy"]
+            }
+          ]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d04-crash-open",
+          "offsetMs": 300000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-general",
+          "leaveOpen": true,
+          "messages": [
+            {
+              "id": "sim-msg-4-45",
+              "userId": "sim-user-frank",
+              "content": "Frank builds cedar bookshelves in the backyard shed on weekends.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-4-46",
+              "userId": "sim-user-frank",
+              "content": "<@sim-roka-bot> What wood oil resists mug rings best?",
+              "delayMs": 10000,
+              "rokaReply": "A penetrating oil like tung or a polyurethane topcoat handles mug rings better than plain oil."
+            }
+          ]
+        },
+        {
+          "kind": "restart",
+          "id": "restart-d04-crash",
+          "offsetMs": 350000,
+          "mode": "crash"
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d04-chatter-33",
+          "offsetMs": 600000,
+          "guildId": "sim-guild-south",
+          "channelId": "sim-south-events",
+          "messages": [
+            {
+              "id": "sim-msg-4-47",
+              "userId": "sim-user-dave",
+              "content": "Wound the vintage brass wall clock above the Southbay bulletin rail.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-4-48",
+              "userId": "sim-user-erin",
+              "content": "Steady ticking sets a calm rhythm while waiting for afternoon tea.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-4-49",
+              "userId": "sim-user-dave",
+              "content": "<@sim-roka-bot> Why do mechanical ticks feel calmer than blinking digits?",
+              "delayMs": 10000,
+              "rokaReply": "A steady tick is a gentle heartbeat—predictable and warm, unlike the sharp blink of a screen."
+            },
+            {
+              "id": "sim-msg-4-50",
+              "userId": "sim-user-erin",
+              "content": "<@sim-roka-bot> Give me a cozy late-afternoon remark.",
+              "delayMs": 10000,
+              "rokaReply": "The light's going soft, the kettle's warm, and there's nowhere else you'd rather be."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "day": 5,
+      "events": [
+        {
+          "kind": "episode",
+          "id": "ep-d05-south-past",
+          "offsetMs": 120000,
+          "guildId": "sim-guild-south",
+          "channelId": "sim-south-lounge",
+          "messages": [
+            {
+              "id": "sim-msg-5-51",
+              "userId": "sim-user-erin",
+              "content": "Back in high school I used to play violin in the youth orchestra, though I stopped years ago.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-5-52",
+              "userId": "sim-user-erin",
+              "content": "<@sim-roka-bot> Do stringed chamber tunes feel nostalgic?",
+              "delayMs": 10000,
+              "rokaReply": "They often do—strings can bring back that warm, remembered feeling."
+            },
+            {
+              "id": "sim-msg-5-53",
+              "userId": "sim-user-dave",
+              "content": "<@sim-roka-bot> What instrument did Erin play in high school?",
+              "delayMs": 10000,
+              "rokaReply": "She played violin in the youth orchestra.",
+              "expectedRecallGtIds": ["gt-erin-past-violin"]
+            }
+          ]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d05-north-nick-archery",
+          "offsetMs": 240000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-general",
+          "messages": [
+            {
+              "id": "sim-msg-5-54",
+              "userId": "sim-user-bob",
+              "content": "People here can use my old nickname Bobby for short.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-5-55",
+              "userId": "sim-user-carol",
+              "content": "My Sunday hobby lately is target archery at the outdoor range.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-5-56",
+              "userId": "sim-user-carol",
+              "content": "<@sim-roka-bot> What pet did I mention yesterday?",
+              "delayMs": 10000,
+              "rokaReply": "You mentioned your calico cat, Clementine.",
+              "expectedRecallGtIds": ["gt-carol-cat"]
+            },
+            {
+              "id": "sim-msg-5-57",
+              "userId": "sim-user-bob",
+              "content": "<@sim-roka-bot> How does Mochi like the park?",
+              "delayMs": 10000,
+              "rokaReply": "Mochi seems to love it—lots of sniffing and happy trotting.",
+              "expectedRecallGtIds": ["gt-bob-pet"]
+            }
+          ]
+        },
+        {
+          "kind": "operator",
+          "id": "op-d05-undo-reclassify",
+          "offsetMs": 320000,
+          "action": "undo_last_reclassify",
+          "guildId": "sim-guild-north",
+          "userId": "sim-user-grace"
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d05-chatter-4",
+          "offsetMs": 420000,
+          "guildId": "sim-guild-south",
+          "channelId": "sim-south-events",
+          "messages": [
+            {
+              "id": "sim-msg-5-58",
+              "userId": "sim-user-erin",
+              "content": "Notice the old square clocktower rang two minutes early at noon today.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-5-59",
+              "userId": "sim-user-grace",
+              "content": "Nobody minds except the bakery timer syncing to the bell.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-5-60",
+              "userId": "sim-user-erin",
+              "content": "Erin asks Roka if slightly fast clocks ever help people arrive on time.",
+              "delayMs": 10000,
+              "rokaReply": "A slightly fast clock can be a sneaky way to ensure people are never late—it's like a built-in buffer."
+            },
+            {
+              "id": "sim-msg-5-61",
+              "userId": "sim-user-grace",
+              "content": "Grace asks Roka a playful trivia remark about sun dials.",
+              "delayMs": 10000,
+              "rokaReply": "Sun dials are the original solar-powered clocks—they only work when the sun shines, which is a pretty exclusive schedule!"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "day": 6,
+      "events": [
+        {
+          "kind": "episode",
+          "id": "ep-d06-south-lang-hobby",
+          "offsetMs": 180000,
+          "guildId": "sim-guild-south",
+          "channelId": "sim-south-events",
+          "messages": [
+            {
+              "id": "sim-msg-6-62",
+              "userId": "sim-user-grace",
+              "content": "I told neighbors I mostly speak Spanish at home.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-6-63",
+              "userId": "sim-user-grace",
+              "content": "One of my favorite hobbies is backyard astronomy with a small refractor.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-6-64",
+              "userId": "sim-user-grace",
+              "content": "Grace asks Roka for good October constellations to spot early.",
+              "delayMs": 10000,
+              "rokaReply": "For early October evenings, look for Pegasus and Andromeda high in the east, with Cassiopeia as a handy pointer."
+            },
+            {
+              "id": "sim-msg-6-65",
+              "userId": "sim-user-erin",
+              "content": "Erin asks Roka what music Erin listens to lately.",
+              "delayMs": 10000,
+              "rokaReply": "You've been into lo-fi hip hop and ambient electronic lately, especially while winding down.",
+              "expectedRecallGtIds": ["gt-erin-music"]
+            }
+          ]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d06-north-past-beekeeping",
+          "offsetMs": 280000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-general",
+          "messages": [
+            {
+              "id": "sim-msg-6-66",
+              "userId": "sim-user-alice",
+              "content": "Years ago I worked as a pastry baker during college summers before botany.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-6-67",
+              "userId": "sim-user-alice",
+              "content": "My weekend hobby right now is backyard beekeeping with two small hives.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-6-68",
+              "userId": "sim-user-alice",
+              "content": "Alice asks Roka about pairing wildflower honey with chamomile.",
+              "delayMs": 10000,
+              "rokaReply": "Wildflower honey's floral notes can round out chamomile's apple-like softness; a teaspoon per cup works nicely."
+            },
+            {
+              "id": "sim-msg-6-69",
+              "userId": "sim-user-carol",
+              "content": "Carol asks Roka what Alice did in college summers.",
+              "delayMs": 10000,
+              "rokaReply": "Alice worked as a pastry baker during college summers before she moved into botany.",
+              "expectedRecallGtIds": ["gt-alice-past-bakery"]
+            }
+          ]
+        },
+        {
+          "kind": "tool",
+          "id": "tool-d06-remember-frank-temp",
+          "offsetMs": 320000,
+          "action": "remember_user",
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-general",
+          "userId": "sim-user-frank",
+          "factKey": "misc",
+          "factValue": "Temporary keyfob number forty-two for craft locker"
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d06-chatter-5",
+          "offsetMs": 510000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-craft",
+          "messages": [
+            {
+              "id": "sim-msg-6-70",
+              "userId": "sim-user-frank",
+              "content": "Dumped the jar of mismatched bolts and washers across the rubber mat to sort by size.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-6-71",
+              "userId": "sim-user-bob",
+              "content": "Turns out half of them belong to nobody in the workshop anymore.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-6-72",
+              "userId": "sim-user-frank",
+              "content": "Frank asks Roka why hardware jars always accumulate mystery screws.",
+              "delayMs": 10000,
+              "rokaReply": "Hardware jars attract mystery screws because every project leaves a few extras, and they all end up in the same jar over time."
+            },
+            {
+              "id": "sim-msg-6-73",
+              "userId": "sim-user-bob",
+              "content": "Bob asks Roka how to label small drawer bins clearly.",
+              "delayMs": 10000,
+              "rokaReply": "Use a label maker or clear tape with bold writing, and include the size and type—like 'M4 x 10mm bolts'—so it's easy to spot."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "day": 7,
+      "events": [
+        {
+          "kind": "episode",
+          "id": "ep-d07-north-event-sourdough-past",
+          "offsetMs": 100000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-general",
+          "messages": [
+            {
+              "id": "sim-msg-7-74",
+              "userId": "sim-user-alice",
+              "content": "Our guild is hosting a lantern pottery workshop on 2026-10-25 in the craft hall.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-7-75",
+              "userId": "sim-user-bob",
+              "content": "I really love baking crusty sourdough loaves on Saturday mornings.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-7-76",
+              "userId": "sim-user-carol",
+              "content": "Back in 2019 I used to take pottery classes in Sapporo before coming south.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-7-77",
+              "userId": "sim-user-alice",
+              "content": "Alice asks Roka for glaze safety tips before the workshop.",
+              "delayMs": 10000,
+              "rokaReply": "Wear a fitted N95 when mixing dry glazes, keep the area ventilated, and never eat or drink in the glaze room."
+            },
+            {
+              "id": "sim-msg-7-78",
+              "userId": "sim-user-bob",
+              "content": "Bob asks Roka how steam vents help sourdough crust.",
+              "delayMs": 10000,
+              "rokaReply": "Steam vents let trapped moisture escape early, so the crust sets and crisps instead of turning soggy."
+            }
+          ]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d07-north-priv-dave",
+          "offsetMs": 260000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-vault",
+          "messages": [
+            {
+              "id": "sim-msg-7-79",
+              "userId": "sim-user-dave",
+              "content": "Mod-vault only heads-up: I accepted a fellowship and will relocate to Rotterdam next month.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-7-80",
+              "userId": "sim-user-dave",
+              "content": "Dave asks Roka in mod-vault what private fellowship note was shared here.",
+              "delayMs": 10000,
+              "rokaReply": "You shared that you accepted a fellowship and will relocate to Rotterdam next month; Alice also mentioned a private allergy note here.",
+              "expectedRecallGtIds": ["gt-dave-priv-move", "gt-alice-priv-allergy"]
+            }
+          ]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d07-chatter-6",
+          "offsetMs": 600000,
+          "guildId": "sim-guild-south",
+          "channelId": "sim-south-lounge",
+          "messages": [
+            {
+              "id": "sim-msg-7-81",
+              "userId": "sim-user-grace",
+              "content": "The ginkgo trees down by the east tram stop just turned bright saffron yellow.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-7-82",
+              "userId": "sim-user-erin",
+              "content": "Sidewalks look like they rolled out a golden carpet after the breeze.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-7-83",
+              "userId": "sim-user-grace",
+              "content": "<@sim-roka-bot> Why do autumn winds pick up right as leaves turn bright yellow?",
+              "delayMs": 10000,
+              "rokaReply": "The winds often arrive with the first strong cold fronts, and those same cool snaps trigger the color change in leaves, so the timing lines up."
+            },
+            {
+              "id": "sim-msg-7-84",
+              "userId": "sim-user-erin",
+              "content": "<@sim-roka-bot> Describe cool October air in one sentence.",
+              "delayMs": 10000,
+              "rokaReply": "Cool October air feels like a crisp, clean breath that carries the scent of dry leaves and woodsmoke."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "day": 8,
+      "events": [
+        {
+          "kind": "episode",
+          "id": "ep-d08-south-tortoise-kayak",
+          "offsetMs": 120000,
+          "guildId": "sim-guild-south",
+          "channelId": "sim-south-lounge",
+          "messages": [
+            {
+              "id": "sim-msg-8-85",
+              "userId": "sim-user-erin",
+              "content": "I care for an elderly Hermann tortoise named Pebble as a pet.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-8-86",
+              "userId": "sim-user-dave",
+              "content": "In my college years I used to go sea kayaking every weekend, though I stopped long ago.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-8-87",
+              "userId": "sim-user-erin",
+              "content": "Erin asks Roka whether dandelion greens make good tortoise treats.",
+              "delayMs": 10000,
+              "rokaReply": "Yes, dandelion greens are a great occasional treat for Hermann's tortoises—just make sure they're pesticide-free."
+            },
+            {
+              "id": "sim-msg-8-88",
+              "userId": "sim-user-dave",
+              "content": "Dave asks Roka what water sport he used to do in college.",
+              "delayMs": 10000,
+              "rokaReply": "You used to go sea kayaking every weekend during college.",
+              "expectedRecallGtIds": ["gt-dave-past-kayaking"]
+            }
+          ]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d08-south-priv-erin",
+          "offsetMs": 260000,
+          "guildId": "sim-guild-south",
+          "channelId": "sim-south-secret",
+          "messages": [
+            {
+              "id": "sim-msg-8-89",
+              "userId": "sim-user-erin",
+              "content": "Just between us backstage: I got offered a paramedic supervisor role starting next quarter.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-8-90",
+              "userId": "sim-user-erin",
+              "content": "Erin asks Roka backstage what confidential job role Erin just mentioned.",
+              "delayMs": 10000,
+              "rokaReply": "You mentioned being offered a paramedic supervisor role starting next quarter.",
+              "expectedRecallGtIds": ["gt-erin-priv-job"]
+            }
+          ]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d08-chatter-7",
+          "offsetMs": 420000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-general",
+          "messages": [
+            {
+              "id": "sim-msg-8-91",
+              "userId": "sim-user-alice",
+              "content": "Pink cirrus streaks stretched right across the western ridge after five oclock.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-8-92",
+              "userId": "sim-user-carol",
+              "content": "Everyone paused at the windows for five full minutes just watching them fade.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-8-93",
+              "userId": "sim-user-alice",
+              "content": "<@sim-roka-bot> What do high wispy clouds usually mean for next day weather?",
+              "delayMs": 10000,
+              "rokaReply": "High wispy clouds often signal that a warm front is approaching, which can mean rain within a day or so."
+            },
+            {
+              "id": "sim-msg-8-94",
+              "userId": "sim-user-carol",
+              "content": "<@sim-roka-bot> Give me a cozy sunset color palette name.",
+              "delayMs": 10000,
+              "rokaReply": "How about 'Amber Dusk'?"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "day": 9,
+      "events": [
+        {
+          "kind": "episode",
+          "id": "ep-d09-carol-update",
+          "offsetMs": 120000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-general",
+          "messages": [
+            {
+              "id": "sim-msg-9-95",
+              "userId": "sim-user-carol",
+              "content": "Moving update everyone: I left Osaka completely and settled into Kyoto this week.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-9-96",
+              "userId": "sim-user-carol",
+              "content": "Roka, what Northgate event is scheduled this month?",
+              "delayMs": 10000,
+              "rokaReply": "This month Northgate has the pottery event on the calendar.",
+              "expectedRecallGtIds": ["gt-north-pottery-event"]
+            },
+            {
+              "id": "sim-msg-9-97",
+              "userId": "sim-user-alice",
+              "content": "Roka, what past pottery city did Carol study in?",
+              "delayMs": 10000,
+              "rokaReply": "Carol studied pottery in Sapporo in the past.",
+              "expectedRecallGtIds": ["gt-carol-past-sapporo"]
+            }
+          ]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d09-south-priv-carol",
+          "offsetMs": 260000,
+          "guildId": "sim-guild-south",
+          "channelId": "sim-south-secret",
+          "messages": [
+            {
+              "id": "sim-msg-9-98",
+              "userId": "sim-user-carol",
+              "content": "Private backstage note: I manage mild celiac gluten sensitivity, so I always pack lunch.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-9-99",
+              "userId": "sim-user-carol",
+              "content": "Roka, backstage, what dietary sensitivity did Erin and I note privately?",
+              "delayMs": 10000,
+              "rokaReply": "You noted a mild celiac gluten sensitivity privately, and Erin's private job note is also in the vault.",
+              "expectedRecallGtIds": ["gt-carol-priv-health", "gt-erin-priv-job"]
+            }
+          ]
+        },
+        {
+          "kind": "media",
+          "id": "media-d09-raku-kiln",
+          "offsetMs": 400000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-craft",
+          "userId": "sim-user-alice",
+          "messageId": "sim-msg-media-d09-1",
+          "contentKey": "sim:video:raku-kiln-glaze",
+          "mediaKind": "video",
+          "label": "raku-kiln-glaze.mp4",
+          "summary": "Alice demonstrates reduction firing and copper glaze inside her backyard raku kiln.",
+          "subjects": ["sim-user-alice"],
+          "groundTruthId": "gt-media-kiln-video"
+        },
+        {
+          "kind": "media",
+          "id": "media-d09-sketch-forget",
+          "offsetMs": 420000,
+          "guildId": "sim-guild-south",
+          "channelId": "sim-south-lounge",
+          "userId": "sim-user-bob",
+          "messageId": "sim-msg-media-d09-2",
+          "contentKey": "sim:image:sketchbook-page",
+          "mediaKind": "image",
+          "label": "sketchbook-page.png",
+          "summary": "Bob shares a quick charcoal sketch page titled sketchbookdrop from Tuesday practice.",
+          "subjects": ["sim-user-bob"]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d09-chatter-8",
+          "offsetMs": 510000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-craft",
+          "messages": [
+            {
+              "id": "sim-msg-9-100",
+              "userId": "sim-user-bob",
+              "content": "Found a fresh sleeve of low-tack painter tape at the back of the supply cabinet.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-9-101",
+              "userId": "sim-user-frank",
+              "content": "Tested a strip on scrap cardstock and it peeled off cleanly without tearing.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-9-102",
+              "userId": "sim-user-bob",
+              "content": "<@sim-roka-bot> Does cold make masking tape stiffer?",
+              "delayMs": 10000,
+              "rokaReply": "Yes, cold temperatures can make the adhesive stiffer and less tacky, so it might not stick as well until it warms up."
+            },
+            {
+              "id": "sim-msg-9-103",
+              "userId": "sim-user-frank",
+              "content": "<@sim-roka-bot> What's a neat rule of thumb for crisp tape edges?",
+              "delayMs": 10000,
+              "rokaReply": "Press the tape down firmly and pull it at a low angle for the cleanest edge."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "day": 10,
+      "events": [
+        {
+          "kind": "episode",
+          "id": "ep-d10-north-recall-privtest",
+          "offsetMs": 180000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-general",
+          "messages": [
+            {
+              "id": "sim-msg-10-104",
+              "userId": "sim-user-bob",
+              "content": "Happy tenth day in the commons — planning autumn snacks!",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-10-105",
+              "userId": "sim-user-bob",
+              "content": "Roka, what does Alice do for work, where did Carol move, and what is my pet?",
+              "delayMs": 10000,
+              "rokaReply": "Alice works as a data analyst, Carol moved to Kyoto, and your pet is a rescue dog named Mochi. The Northgate pottery event is also on the calendar.",
+              "expectedRecallGtIds": ["gt-alice-job", "gt-carol-city", "gt-bob-pet", "gt-north-pottery-event"]
+            },
+            {
+              "id": "sim-msg-10-106",
+              "userId": "sim-user-carol",
+              "content": "Roka, has anyone mentioned upcoming workshops in Northgate?",
+              "delayMs": 10000,
+              "rokaReply": "Yes, the Northgate pottery event is the upcoming workshop mentioned.",
+              "expectedRecallGtIds": ["gt-north-pottery-event"]
+            },
+            {
+              "id": "sim-msg-10-107",
+              "userId": "sim-user-alice",
+              "content": "Roka, how is Bob's rescue dog Mochi remembered here?",
+              "delayMs": 10000,
+              "rokaReply": "Bob's rescue dog Mochi is remembered as his pet here.",
+              "expectedRecallGtIds": ["gt-bob-pet"]
+            }
+          ]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d10-north-priv-bob",
+          "offsetMs": 260000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-vault",
+          "messages": [
+            {
+              "id": "sim-msg-10-108",
+              "userId": "sim-user-bob",
+              "content": "Private mod-vault note: my sister asked me to look after her gentle greyhound Nimbus.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-10-109",
+              "userId": "sim-user-bob",
+              "content": "Roka, in mod-vault, what is my private pet update and Dave's move?",
+              "delayMs": 10000,
+              "rokaReply": "Your private pet update is the gentle greyhound Nimbus, Dave's private move is noted, and the media private vault is where these are kept.",
+              "expectedRecallGtIds": ["gt-bob-priv-pet", "gt-dave-priv-move", "gt-media-private-vault"]
+            }
+          ]
+        },
+        {
+          "kind": "media",
+          "id": "media-d10-priv-baffle",
+          "offsetMs": 300000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-vault",
+          "userId": "sim-user-alice",
+          "messageId": "sim-msg-media-d10-priv",
+          "contentKey": "sim:video:mod-acoustic-baffle",
+          "mediaKind": "video",
+          "label": "mod-baffle-walkthrough.mp4",
+          "summary": "Alice walks the moderators through the confidential acoustic baffle installation.",
+          "subjects": ["sim-user-alice"],
+          "groundTruthId": "gt-media-private-vault"
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d10-south-grace-job-update",
+          "offsetMs": 360000,
+          "guildId": "sim-guild-south",
+          "channelId": "sim-south-lounge",
+          "messages": [
+            {
+              "id": "sim-msg-10-110",
+              "userId": "sim-user-grace",
+              "content": "Job change news: I quit paralegal work and started as a museum archivist!",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-10-111",
+              "userId": "sim-user-grace",
+              "content": "Roka, do catalog boxes smell faintly of old linen?",
+              "delayMs": 10000,
+              "rokaReply": "They might, if the old linen scent lingers in the catalog boxes."
+            },
+            {
+              "id": "sim-msg-10-112",
+              "userId": "sim-user-erin",
+              "content": "Roka, what hobbies do Southbay members enjoy?",
+              "delayMs": 10000,
+              "rokaReply": "Southbay members enjoy hobbies like Grace's hobby, which is noted in the vault.",
+              "expectedRecallGtIds": ["gt-grace-hobby-1"]
+            }
+          ]
+        },
+        {
+          "kind": "operator",
+          "id": "op-d10-seed-overflow",
+          "offsetMs": 500000,
+          "action": "seed_overflow_facts",
+          "guildId": "sim-guild-north",
+          "userId": "sim-user-frank"
+        },
+        {
+          "kind": "operator",
+          "id": "op-d10-clear-open-episodes",
+          "offsetMs": 540000,
+          "action": "clear_saved_open_episodes",
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-general",
+          "userId": "sim-user-frank"
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d10-chatter-9",
+          "offsetMs": 600000,
+          "guildId": "sim-guild-south",
+          "channelId": "sim-south-events",
+          "messages": [
+            {
+              "id": "sim-msg-10-113",
+              "userId": "sim-user-dave",
+              "content": "Stacked thirty folding chairs along the side wall so the floor stays open for rehearsals.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-10-114",
+              "userId": "sim-user-erin",
+              "content": "Left two broom handles beside the backstage curtain for sweeping later.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-10-115",
+              "userId": "sim-user-dave",
+              "content": "<@sim-roka-bot> How many rows fit neatly across a medium hall?",
+              "delayMs": 10000,
+              "rokaReply": "For a medium hall, about 8 to 10 rows usually fit comfortably, depending on chair spacing."
+            },
+            {
+              "id": "sim-msg-10-116",
+              "userId": "sim-user-erin",
+              "content": "<@sim-roka-bot> What's an upbeat soundtrack mood for room setup?",
+              "delayMs": 10000,
+              "rokaReply": "Try a lively indie pop or upbeat jazz playlist to keep everyone energized."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "day": 11,
+      "events": [
+        {
+          "kind": "episode",
+          "id": "ep-d11-north-open-for-stuck",
+          "offsetMs": 100000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-general",
+          "leaveOpen": true,
+          "messages": [
+            {
+              "id": "sim-msg-11-117",
+              "userId": "sim-user-alice",
+              "content": "Crisp fog rolled over the greenhouse roofs before sunrise today.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-11-118",
+              "userId": "sim-user-alice",
+              "content": "Roka, do misty mornings feel peaceful?",
+              "delayMs": 10000,
+              "rokaReply": "Misty mornings can feel peaceful, especially with the fog over the greenhouse roofs."
+            }
+          ]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d11-dave-correction",
+          "offsetMs": 140000,
+          "guildId": "sim-guild-south",
+          "channelId": "sim-south-lounge",
+          "leaveOpen": true,
+          "messages": [
+            {
+              "id": "sim-msg-11-119",
+              "userId": "sim-user-dave",
+              "content": "Correction: I actually stopped drinking espresso and only drink roasted hojicha tea now.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-11-120",
+              "userId": "sim-user-dave",
+              "content": "Roka, could you toast some tea leaves lightly in your thoughts for me?",
+              "delayMs": 10000,
+              "rokaReply": "Sure, Dave. I'll imagine them turning fragrant and warm, just a gentle golden toast."
+            }
+          ]
+        },
+        {
+          "kind": "restart",
+          "id": "restart-d11-crash",
+          "offsetMs": 170000,
+          "mode": "crash",
+          "simulateStuckProcessing": true
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d11-chatter-10",
+          "offsetMs": 420000,
+          "guildId": "sim-guild-south",
+          "channelId": "sim-south-events",
+          "messages": [
+            {
+              "id": "sim-msg-11-121",
+              "userId": "sim-user-grace",
+              "content": "Every slot in the entryway umbrella stand finally filled up during the noon shower.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-11-122",
+              "userId": "sim-user-dave",
+              "content": "Two bright yellow umbrellas look identical enough to cause a friendly mix-up.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-11-123",
+              "userId": "sim-user-grace",
+              "content": "<@sim-roka-bot> How do people keep matching umbrellas apart on rainy days?",
+              "delayMs": 10000,
+              "rokaReply": "A little tag, a colored ribbon, or even a sticker on the handle can help tell them apart."
+            },
+            {
+              "id": "sim-msg-11-124",
+              "userId": "sim-user-dave",
+              "content": "<@sim-roka-bot> Does misty drizzle count as real rain?",
+              "delayMs": 10000,
+              "rokaReply": "Misty drizzle is still rain, just very light and fine."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "day": 12,
+      "events": [
+        {
+          "kind": "episode",
+          "id": "ep-d12-dm-alice",
+          "offsetMs": 180000,
+          "guildId": null,
+          "channelId": "sim-dm-alice",
+          "isDm": true,
+          "messages": [
+            {
+              "id": "sim-msg-12-125",
+              "userId": "sim-user-alice",
+              "content": "Quick DM hello before misting the fern shelves.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-12-126",
+              "userId": "sim-user-alice",
+              "content": "Roka, can you give me a warm morning pep talk in DM?",
+              "delayMs": 10000,
+              "rokaReply": "Good morning, Alice. May your day be as fresh as the ferns you tend, and may every small task feel like a gentle win."
+            }
+          ]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d12-north-alice-anime-corr",
+          "offsetMs": 260000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-craft",
+          "messages": [
+            {
+              "id": "sim-msg-12-127",
+              "userId": "sim-user-alice",
+              "content": "Wait, correction on my favorite anime: it is actually Aria the Animation, not Mushishi.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-12-128",
+              "userId": "sim-user-bob",
+              "content": "Roka, what video did Alice share in the craft shop?",
+              "delayMs": 10000,
+              "rokaReply": "Alice shared a video about raku kiln glazing, I believe.",
+              "expectedRecallGtIds": ["gt-media-kiln-video"]
+            },
+            {
+              "id": "sim-msg-12-129",
+              "userId": "sim-user-alice",
+              "content": "Roka, what do you remember about my raku kiln glaze clip?",
+              "delayMs": 10000,
+              "rokaReply": "You shared a clip about raku kiln glazing, showing the process and the finished pieces.",
+              "expectedRecallGtIds": ["gt-media-kiln-video"]
+            }
+          ]
+        },
+        {
+          "kind": "media",
+          "id": "media-d12-harbor-sax",
+          "offsetMs": 320000,
+          "guildId": "sim-guild-south",
+          "channelId": "sim-south-lounge",
+          "userId": "sim-user-dave",
+          "messageId": "sim-msg-media-d12-1",
+          "contentKey": "sim:audio:night-harbor-sax",
+          "mediaKind": "audio",
+          "label": "night-harbor-sax.mp3",
+          "summary": "Dave shares an evening harbor saxophone rehearsal recording with warm echo.",
+          "subjects": ["sim-user-dave"],
+          "groundTruthId": "gt-media-harbor-audio"
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d12-chatter-11",
+          "offsetMs": 510000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-general",
+          "messages": [
+            {
+              "id": "sim-msg-12-130",
+              "userId": "sim-user-carol",
+              "content": "Replaced the tiny dusty chalk nubs on the bulletin rail with a full fresh box.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-12-131",
+              "userId": "sim-user-frank",
+              "content": "Nothing beats snapping open a brand-new stick of white chalk.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-12-132",
+              "userId": "sim-user-carol",
+              "content": "<@sim-roka-bot> Does colored chalk or plain white read clearest from afar?",
+              "delayMs": 10000,
+              "rokaReply": "Plain white chalk usually reads clearest from a distance because of the high contrast against a dark board."
+            },
+            {
+              "id": "sim-msg-12-133",
+              "userId": "sim-user-frank",
+              "content": "<@sim-roka-bot> Suggest a cheerful header doodle for the board.",
+              "delayMs": 10000,
+              "rokaReply": "How about a smiling sun with a few rays and a little cloud?"
+            }
+          ]
+        },
+        {
+          "kind": "tool",
+          "id": "tool-d12-recall-user",
+          "offsetMs": 600000,
+          "action": "recall_user",
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-general",
+          "userId": "sim-user-alice",
+          "query": "botanist"
+        }
+      ]
+    },
+    {
+      "day": 13,
+      "events": [
+        {
+          "kind": "episode",
+          "id": "ep-d13-south-bookbinding",
+          "offsetMs": 120000,
+          "guildId": "sim-guild-south",
+          "channelId": "sim-south-lounge",
+          "messages": [
+            {
+              "id": "sim-msg-13-134",
+              "userId": "sim-user-grace",
+              "content": "Besides astronomy, another active hobby I practice every week is leather bookbinding.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-13-135",
+              "userId": "sim-user-dave",
+              "content": "Roka, what audio recording did Dave share recently?",
+              "delayMs": 10000,
+              "rokaReply": "Dave shared a harbor audio recording recently.",
+              "expectedRecallGtIds": ["gt-media-harbor-audio"]
+            },
+            {
+              "id": "sim-msg-13-136",
+              "userId": "sim-user-grace",
+              "content": "Roka, what does Grace do for work and what are her favorite drinks for Dave?",
+              "delayMs": 10000,
+              "rokaReply": "Grace works as a marine biologist, and her favorite drinks are hojicha tea and sparkling water.",
+              "expectedRecallGtIds": ["gt-grace-job", "gt-dave-drink-correction"]
+            }
+          ]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d13-chatter-34",
+          "offsetMs": 420000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-craft",
+          "messages": [
+            {
+              "id": "sim-msg-13-141",
+              "userId": "sim-user-frank",
+              "content": "Organized tarnished brass wire spools onto wooden dowel pegs above the bench.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-13-142",
+              "userId": "sim-user-bob",
+              "content": "Every gauge label faces outward cleanly now.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-13-143",
+              "userId": "sim-user-frank",
+              "content": "<@sim-roka-bot> Do pegboards beat shallow storage trays?",
+              "delayMs": 10000,
+              "rokaReply": "Pegboards win for visibility—you can see every spool at a glance and grab the right gauge without digging."
+            },
+            {
+              "id": "sim-msg-13-144",
+              "userId": "sim-user-bob",
+              "content": "<@sim-roka-bot> Got a quick bench inventory tip?",
+              "delayMs": 10000,
+              "rokaReply": "Do a five-minute sweep at day's end: return stray tools, note what's low, and wipe the bench clean."
+            }
+          ]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d13-chatter-12",
+          "offsetMs": 600000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-general",
+          "messages": [
+            {
+              "id": "sim-msg-13-137",
+              "userId": "sim-user-alice",
+              "content": "The rain puddle by the courtyard bench acts like a clean pocket mirror right now.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-13-138",
+              "userId": "sim-user-bob",
+              "content": "Stepping around it keeps boots dry and reflections intact.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-13-139",
+              "userId": "sim-user-alice",
+              "content": "<@sim-roka-bot> What do ripples in quiet puddles resemble?",
+              "delayMs": 10000,
+              "rokaReply": "Ripples in a still puddle look like slow, spreading rings—each one a tiny echo of whatever touched the surface."
+            },
+            {
+              "id": "sim-msg-13-140",
+              "userId": "sim-user-bob",
+              "content": "<@sim-roka-bot> Do clear October skies usually follow brief afternoon squalls?",
+              "delayMs": 10000,
+              "rokaReply": "Often, yes. A quick afternoon squall tends to clear the air, leaving crisp blue skies behind."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "day": 14,
+      "events": [
+        {
+          "kind": "episode",
+          "id": "ep-d14-north-retract-fencing",
+          "offsetMs": 120000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-craft",
+          "messages": [
+            {
+              "id": "sim-msg-14-145",
+              "userId": "sim-user-bob",
+              "content": "I quit fencing completely this month and sold all my masks and blades.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-14-146",
+              "userId": "sim-user-alice",
+              "content": "Roka, what is Alice's favorite anime now?",
+              "delayMs": 10000,
+              "rokaReply": "Alice's favorite anime is now Aria the Animation.",
+              "expectedRecallGtIds": ["gt-alice-anime-corr"]
+            },
+            {
+              "id": "sim-msg-14-147",
+              "userId": "sim-user-carol",
+              "content": "Roka, what do you know about crafts and cats in Northgate?",
+              "delayMs": 10000,
+              "rokaReply": "In Northgate, Carol runs a craft shop and has a cat named Miso.",
+              "expectedRecallGtIds": ["gt-carol-cat"]
+            }
+          ]
+        },
+        {
+          "kind": "media",
+          "id": "media-d14-alpine-terrarium-1",
+          "offsetMs": 300000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-general",
+          "userId": "sim-user-carol",
+          "messageId": "sim-msg-media-d14-1",
+          "contentKey": "sim:video:alpine-terrarium",
+          "mediaKind": "video",
+          "label": "alpine-terrarium.mp4",
+          "summary": "Carol films an indoor alpine moss terrarium misting jar beside her desk.",
+          "subjects": ["sim-user-carol"],
+          "groundTruthId": "gt-media-alpine-terrarium"
+        },
+        {
+          "kind": "media",
+          "id": "media-d14-alpine-terrarium-reshare",
+          "offsetMs": 340000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-craft",
+          "userId": "sim-user-bob",
+          "messageId": "sim-msg-media-d14-2",
+          "contentKey": "sim:video:alpine-terrarium",
+          "mediaKind": "video",
+          "label": "alpine-terrarium.mp4",
+          "summary": "Carol films an indoor alpine moss terrarium misting jar beside her desk.",
+          "subjects": ["sim-user-carol"]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d14-chatter-13",
+          "offsetMs": 420000,
+          "guildId": "sim-guild-south",
+          "channelId": "sim-south-lounge",
+          "messages": [
+            {
+              "id": "sim-msg-14-148",
+              "userId": "sim-user-dave",
+              "content": "Last night wind scattered crisp pine needles across every wooden porch step.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-14-149",
+              "userId": "sim-user-grace",
+              "content": "Five minutes with the corn broom cleared the whole walkway cleanly.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-14-150",
+              "userId": "sim-user-dave",
+              "content": "<@sim-roka-bot> Why do pine needles smell stronger after windstorms?",
+              "delayMs": 10000,
+              "rokaReply": "Windstorms bruise and break the needles, releasing more of their aromatic oils into the air."
+            },
+            {
+              "id": "sim-msg-14-151",
+              "userId": "sim-user-grace",
+              "content": "<@sim-roka-bot> Do woven brooms beat plastic bristles outdoors?",
+              "delayMs": 10000,
+              "rokaReply": "Woven brooms usually sweep better outdoors—they flex, grab debris, and last longer on rough surfaces."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "day": 15,
+      "events": [
+        {
+          "kind": "episode",
+          "id": "ep-d15-south-recall",
+          "offsetMs": 200000,
+          "guildId": "sim-guild-south",
+          "channelId": "sim-south-lounge",
+          "messages": [
+            {
+              "id": "sim-msg-15-152",
+              "userId": "sim-user-dave",
+              "content": "Checking in with the Southbay crew after lunch.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-15-153",
+              "userId": "sim-user-dave",
+              "content": "Roka, what is my favorite drink now and what are Grace's hobbies and job?",
+              "delayMs": 10000,
+              "rokaReply": "Your favorite drink is now roasted hojicha tea. Grace's hobbies are astronomy and leather bookbinding, and she works as a marine biologist.",
+              "expectedRecallGtIds": [
+                "gt-dave-drink-correction",
+                "gt-grace-hobby-1",
+                "gt-grace-hobby-2",
+                "gt-grace-job"
+              ]
+            },
+            {
+              "id": "sim-msg-15-154",
+              "userId": "sim-user-erin",
+              "content": "Roka, what do you know about my tortoise pet and saxophone clip?",
+              "delayMs": 10000,
+              "rokaReply": "You have a tortoise named Sheldon, and you shared a saxophone clip from the harbor.",
+              "expectedRecallGtIds": ["gt-erin-pets-1", "gt-media-harbor-audio"]
+            }
+          ]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d15-north-bob-updates",
+          "offsetMs": 320000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-craft",
+          "messages": [
+            {
+              "id": "sim-msg-15-155",
+              "userId": "sim-user-bob",
+              "content": "Updated my daily routine — I dropped morning swims and now train with kettlebell swings at dusk.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-15-156",
+              "userId": "sim-user-bob",
+              "content": "Besides baking sourdough, I also love spinning vintage jazz vinyl records.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-15-157",
+              "userId": "sim-user-carol",
+              "content": "Carol asks Roka about the alpine terrarium video shared recently.",
+              "delayMs": 10000,
+              "rokaReply": "That alpine terrarium video was a beautiful build — the moss and stone layering looked great.",
+              "expectedRecallGtIds": ["gt-media-alpine-terrarium"]
+            },
+            {
+              "id": "sim-msg-15-158",
+              "userId": "sim-user-bob",
+              "content": "Bob asks Roka how Roka remembers his fencing status.",
+              "delayMs": 10000,
+              "rokaReply": "You told me you quit fencing, so I've kept that in mind.",
+              "expectedRecallGtIds": ["gt-bob-quit-fencing"]
+            }
+          ]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d15-chatter-14",
+          "offsetMs": 510000,
+          "guildId": "sim-guild-south",
+          "channelId": "sim-south-events",
+          "messages": [
+            {
+              "id": "sim-msg-15-159",
+              "userId": "sim-user-erin",
+              "content": "Tightened the clutch collars on all three boom stands so none droop mid-announcement.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-15-160",
+              "userId": "sim-user-dave",
+              "content": "Taped down the extension cord neatly along the baseboard.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-15-161",
+              "userId": "sim-user-erin",
+              "content": "<@sim-roka-bot> Give me a crisp soundcheck test phrase.",
+              "delayMs": 10000,
+              "rokaReply": "Try: 'Check, one, two—plosives and sibilants, clear and true.'"
+            },
+            {
+              "id": "sim-msg-15-162",
+              "userId": "sim-user-dave",
+              "content": "<@sim-roka-bot> How loud does stage feedback usually start?",
+              "delayMs": 10000,
+              "rokaReply": "Feedback usually creeps in quietly at first, then spikes fast once the gain crosses the threshold."
+            }
+          ]
+        },
+        {
+          "kind": "operator",
+          "id": "op-d15-pin-unpin",
+          "offsetMs": 600000,
+          "action": "pin_unpin_claim",
+          "guildId": "sim-guild-north",
+          "userId": "sim-user-alice"
+        },
+        {
+          "kind": "operator",
+          "id": "op-d15-prune-overflow",
+          "offsetMs": 620000,
+          "action": "prune_overflow",
+          "guildId": "sim-guild-north",
+          "userId": "sim-user-frank"
+        }
+      ]
+    },
+    {
+      "day": 16,
+      "events": [
+        {
+          "kind": "episode",
+          "id": "ep-d16-south-event-finches",
+          "offsetMs": 120000,
+          "guildId": "sim-guild-south",
+          "channelId": "sim-south-events",
+          "messages": [
+            {
+              "id": "sim-msg-16-163",
+              "userId": "sim-user-erin",
+              "content": "Southbay Club is scheduling an arcade tournament on 2026-10-28 at 7pm.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-16-164",
+              "userId": "sim-user-erin",
+              "content": "Also besides Pebble the tortoise, I just adopted two zebra finches!",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-16-165",
+              "userId": "sim-user-erin",
+              "content": "Erin asks Roka if finches chirp loudly at dawn.",
+              "delayMs": 10000,
+              "rokaReply": "Zebra finches can be quite chatty at dawn, so you might hear them early."
+            },
+            {
+              "id": "sim-msg-16-166",
+              "userId": "sim-user-dave",
+              "content": "Dave asks Roka what foods Dave prefers and avoids for snacks.",
+              "delayMs": 10000,
+              "rokaReply": "You prefer dark chocolate and almonds, and you avoid peanuts due to Erin's allergy.",
+              "expectedRecallGtIds": ["gt-dave-diet", "gt-erin-allergy"]
+            }
+          ]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d16-north-bob-nickname",
+          "offsetMs": 260000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-general",
+          "messages": [
+            {
+              "id": "sim-msg-16-167",
+              "userId": "sim-user-bob",
+              "content": "Quick nickname correction: call me Rob rather than Bobby from now on.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-16-168",
+              "userId": "sim-user-bob",
+              "content": "Bob asks Roka what he likes baking and listening to.",
+              "delayMs": 10000,
+              "rokaReply": "You love baking sourdough and spinning vintage jazz vinyl records.",
+              "expectedRecallGtIds": ["gt-bob-likes-1", "gt-bob-likes-2", "gt-bob-routine"]
+            },
+            {
+              "id": "sim-msg-16-169",
+              "userId": "sim-user-alice",
+              "content": "Alice asks Roka what Carol moved to and what Alice favorite anime is.",
+              "delayMs": 10000,
+              "rokaReply": "Carol moved to Portland, and your favorite anime is Cowboy Bebop.",
+              "expectedRecallGtIds": ["gt-carol-city", "gt-alice-anime-corr"]
+            }
+          ]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d16-chatter-15",
+          "offsetMs": 600000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-craft",
+          "messages": [
+            {
+              "id": "sim-msg-16-170",
+              "userId": "sim-user-frank",
+              "content": "Snapped off dull knife tips into the steel disposal tin before trimming mat board.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-16-171",
+              "userId": "sim-user-carol",
+              "content": "Fresh steel glides through thick backing cardboard with zero ragged fuzz.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-16-172",
+              "userId": "sim-user-frank",
+              "content": "<@sim-roka-bot> Why do fresh blades actually cut safer than dull ones?",
+              "delayMs": 10000,
+              "rokaReply": "A sharp blade cuts with less force and better control, so it's less likely to slip and injure you."
+            },
+            {
+              "id": "sim-msg-16-173",
+              "userId": "sim-user-carol",
+              "content": "<@sim-roka-bot> Give me a quick bench cleanup motto.",
+              "delayMs": 10000,
+              "rokaReply": "Clear the bench, clear the mind—scraps in the bin, tools in line."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "day": 17,
+      "events": [
+        {
+          "kind": "episode",
+          "id": "ep-d17-dm-dave",
+          "offsetMs": 120000,
+          "guildId": null,
+          "channelId": "sim-dm-dave",
+          "isDm": true,
+          "messages": [
+            {
+              "id": "sim-msg-17-174",
+              "userId": "sim-user-dave",
+              "content": "Just waving hi in DM while sorting spice jars.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-17-175",
+              "userId": "sim-user-dave",
+              "content": "Dave asks Roka in DM for a quick riddle.",
+              "delayMs": 10000,
+              "rokaReply": "I speak without a mouth and hear without ears. I have no body, but I come alive with wind. What am I? An echo."
+            }
+          ]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d17-south-dave-game-update",
+          "offsetMs": 240000,
+          "guildId": "sim-guild-south",
+          "channelId": "sim-south-lounge",
+          "messages": [
+            {
+              "id": "sim-msg-17-176",
+              "userId": "sim-user-dave",
+              "content": "Update on my favorite game: Hades replaced Hollow Knight as my #1 pick.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-17-177",
+              "userId": "sim-user-erin",
+              "content": "Erin asks Roka what pets Erin has right now.",
+              "delayMs": 10000,
+              "rokaReply": "You have Pebble the tortoise and two zebra finches.",
+              "expectedRecallGtIds": ["gt-erin-pets-1", "gt-erin-pets-2"]
+            },
+            {
+              "id": "sim-msg-17-178",
+              "userId": "sim-user-grace",
+              "content": "Grace asks Roka what Grace hobbies are.",
+              "delayMs": 10000,
+              "rokaReply": "You enjoy watercolor painting and urban sketching.",
+              "expectedRecallGtIds": ["gt-grace-hobby-1", "gt-grace-hobby-2"]
+            },
+            {
+              "id": "sim-msg-17-179",
+              "userId": "sim-user-dave",
+              "content": "Dave asks Roka what his favorite game is after updating today.",
+              "delayMs": 10000,
+              "rokaReply": "Your favorite game is now Hades.",
+              "expectedRecallGtIds": ["gt-dave-game"]
+            }
+          ]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d17-chatter-16",
+          "offsetMs": 420000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-general",
+          "messages": [
+            {
+              "id": "sim-msg-17-180",
+              "userId": "sim-user-bob",
+              "content": "A bundle of flat mailers arrived by hand truck and rests neatly beside the coat hooks.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-17-181",
+              "userId": "sim-user-alice",
+              "content": "Stamped return labels sit in the top tray ready for anyone mailing zines.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-17-182",
+              "userId": "sim-user-bob",
+              "content": "<@sim-roka-bot> Why do corner creases always target heavy envelopes?",
+              "delayMs": 10000,
+              "rokaReply": "Heavier contents shift and press against the corners during handling, so that's where creases form first."
+            },
+            {
+              "id": "sim-msg-17-183",
+              "userId": "sim-user-alice",
+              "content": "<@sim-roka-bot> Do flat kraft mailers recycle cleanly?",
+              "delayMs": 10000,
+              "rokaReply": "Yes, plain kraft mailers without plastic windows or heavy tape recycle very cleanly."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "day": 18,
+      "events": [
+        {
+          "kind": "episode",
+          "id": "ep-d18-south-update-event",
+          "offsetMs": 120000,
+          "guildId": "sim-guild-south",
+          "channelId": "sim-south-events",
+          "leaveOpen": true,
+          "messages": [
+            {
+              "id": "sim-msg-18-184",
+              "userId": "sim-user-erin",
+              "content": "Schedule update: the Southbay arcade tournament moved to 2026-10-29 at 7pm.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-18-185",
+              "userId": "sim-user-grace",
+              "content": "Also I gave up linocut printmaking completely and donated my carving tools.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-18-186",
+              "userId": "sim-user-dave",
+              "content": "Dave asks Roka what Dave favorite game and drink are now.",
+              "delayMs": 10000,
+              "rokaReply": "Your favorite game is Hades, and your favorite drink is now cold brew coffee.",
+              "expectedRecallGtIds": ["gt-dave-game", "gt-dave-drink-correction"]
+            }
+          ]
+        },
+        {
+          "kind": "restart",
+          "id": "restart-d18-crash",
+          "offsetMs": 170000,
+          "mode": "crash"
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d18-chatter-17",
+          "offsetMs": 510000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-general",
+          "messages": [
+            {
+              "id": "sim-msg-18-187",
+              "userId": "sim-user-carol",
+              "content": "Replaced one flickering warm-white bulb along the patio awning strand.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-18-188",
+              "userId": "sim-user-bob",
+              "content": "All twenty globes glow evenly over the picnic benches now.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-18-189",
+              "userId": "sim-user-carol",
+              "content": "<@sim-roka-bot> Do warm amber bulbs feel cozier than daylight LEDs?",
+              "delayMs": 10000,
+              "rokaReply": "Warm amber bulbs usually feel cozier—their softer, yellower glow is easier on the eyes at night."
+            },
+            {
+              "id": "sim-msg-18-190",
+              "userId": "sim-user-bob",
+              "content": "<@sim-roka-bot> How early does evening dusk arrive this week?",
+              "delayMs": 10000,
+              "rokaReply": "Dusk is arriving noticeably earlier now, around 6:30 or 6:45 in the evening."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "day": 19,
+      "events": [
+        {
+          "kind": "episode",
+          "id": "ep-d19-south-erin-music-update",
+          "offsetMs": 120000,
+          "guildId": "sim-guild-south",
+          "channelId": "sim-south-lounge",
+          "messages": [
+            {
+              "id": "sim-msg-19-191",
+              "userId": "sim-user-erin",
+              "content": "Music update: my new favorite music artist is Japanese Breakfast instead of Nujabes.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-19-192",
+              "userId": "sim-user-erin",
+              "content": "Erin asks Roka when the Southbay arcade tournament takes place.",
+              "delayMs": 10000,
+              "rokaReply": "The Southbay arcade tournament is planned for the weekend of 2026-11-14.",
+              "expectedRecallGtIds": ["gt-south-tournament-plan"]
+            },
+            {
+              "id": "sim-msg-19-193",
+              "userId": "sim-user-grace",
+              "content": "Grace asks Roka if Grace still does printmaking or moved on to archivist duties.",
+              "delayMs": 10000,
+              "rokaReply": "Grace, you've moved on to archivist duties and dropped printmaking.",
+              "expectedRecallGtIds": ["gt-grace-job", "gt-grace-drop-linocut"]
+            }
+          ]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d19-chatter-35",
+          "offsetMs": 510000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-general",
+          "messages": [
+            {
+              "id": "sim-msg-19-198",
+              "userId": "sim-user-carol",
+              "content": "Cracked the high transom louver an inch to let cool breeze circulate past the window.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-19-199",
+              "userId": "sim-user-alice",
+              "content": "Notice the curtains sway gently without chilling the room.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-19-200",
+              "userId": "sim-user-carol",
+              "content": "<@sim-roka-bot> Do cross-breezes clear stale afternoon warmth?",
+              "delayMs": 10000,
+              "rokaReply": "Yes—cross-breezes swap warm, stale air for cooler outdoor air, freshening the room without a chill."
+            },
+            {
+              "id": "sim-msg-19-201",
+              "userId": "sim-user-alice",
+              "content": "<@sim-roka-bot> Give me a brief autumn courtyard proverb.",
+              "delayMs": 10000,
+              "rokaReply": "A leaf that drifts where the wind wills still finds the courtyard floor."
+            }
+          ]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d19-chatter-18",
+          "offsetMs": 600000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-craft",
+          "messages": [
+            {
+              "id": "sim-msg-19-194",
+              "userId": "sim-user-alice",
+              "content": "Scrubbed dried white glue speckles off the green cutting mat with warm soapy cloth.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-19-195",
+              "userId": "sim-user-frank",
+              "content": "Grid lines look sharp as day one again under the task lamp.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-19-196",
+              "userId": "sim-user-alice",
+              "content": "Alice asks Roka how to remove stubborn dried paper glue without scratching vinyl.",
+              "delayMs": 10000,
+              "rokaReply": "Try a little isopropyl alcohol on a soft cloth and let it sit for a minute before wiping gently."
+            },
+            {
+              "id": "sim-msg-19-197",
+              "userId": "sim-user-frank",
+              "content": "Frank asks Roka if task lamps flicker less with diffusers.",
+              "delayMs": 10000,
+              "rokaReply": "Diffusers spread the light and reduce visible flicker, especially with cheaper LED bulbs."
+            }
+          ]
+        },
+        {
+          "kind": "tool",
+          "id": "tool-d19-forget-bob-media",
+          "offsetMs": 600000,
+          "action": "forget_user",
+          "guildId": "sim-guild-south",
+          "channelId": "sim-south-lounge",
+          "userId": "sim-user-bob",
+          "query": "sketchbookdrop"
+        },
+        {
+          "kind": "tool",
+          "id": "tool-d19-forget-frank-claim",
+          "offsetMs": 610000,
+          "action": "forget_user",
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-general",
+          "userId": "sim-user-frank",
+          "query": "keyfob"
+        },
+        {
+          "kind": "operator",
+          "id": "op-d19-activate-candidate",
+          "offsetMs": 620000,
+          "action": "activate_candidate",
+          "guildId": "sim-guild-north",
+          "userId": "sim-user-carol"
+        },
+        {
+          "kind": "operator",
+          "id": "op-d19-reject-user-claim",
+          "offsetMs": 630000,
+          "action": "reject_user_claim",
+          "guildId": "sim-guild-north",
+          "userId": "sim-user-frank"
+        },
+        {
+          "kind": "operator",
+          "id": "op-d19-replace-guild-claim",
+          "offsetMs": 640000,
+          "action": "replace_guild_claim",
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-general",
+          "userId": "sim-user-alice"
+        },
+        {
+          "kind": "operator",
+          "id": "op-d19-reject-guild-claim",
+          "offsetMs": 650000,
+          "action": "reject_guild_claim",
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-general",
+          "userId": "sim-user-alice"
+        }
+      ]
+    },
+    {
+      "day": 20,
+      "events": [
+        {
+          "kind": "episode",
+          "id": "ep-d20-north-stargaze",
+          "offsetMs": 120000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-general",
+          "messages": [
+            {
+              "id": "sim-msg-20-202",
+              "userId": "sim-user-alice",
+              "content": "Northgate Commons is organizing a rooftop meteor stargazing meetup on 2026-10-27.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-20-203",
+              "userId": "sim-user-alice",
+              "content": "Alice asks Roka what blankets work best on a cold roof.",
+              "delayMs": 10000,
+              "rokaReply": "Wool blankets with a thermal layer underneath work best on a cold roof."
+            },
+            {
+              "id": "sim-msg-20-204",
+              "userId": "sim-user-bob",
+              "content": "Bob asks Roka what nickname he goes by now.",
+              "delayMs": 10000,
+              "rokaReply": "Bob, you go by Corvid now.",
+              "expectedRecallGtIds": ["gt-bob-nickname-corr"]
+            }
+          ]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d20-south-grace-lang-corr",
+          "offsetMs": 240000,
+          "guildId": "sim-guild-south",
+          "channelId": "sim-south-events",
+          "messages": [
+            {
+              "id": "sim-msg-20-205",
+              "userId": "sim-user-grace",
+              "content": "Correction from earlier: the language I speak at home is Portuguese, not Spanish.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-20-206",
+              "userId": "sim-user-erin",
+              "content": "Erin asks Roka what music artist Erin loves now.",
+              "delayMs": 10000,
+              "rokaReply": "Erin, you love Japanese Breakfast now.",
+              "expectedRecallGtIds": ["gt-erin-music"]
+            },
+            {
+              "id": "sim-msg-20-207",
+              "userId": "sim-user-dave",
+              "content": "Dave asks Roka about the harbor audio track he shared.",
+              "delayMs": 10000,
+              "rokaReply": "Dave, you shared a harbor audio track.",
+              "expectedRecallGtIds": ["gt-media-harbor-audio"]
+            }
+          ]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d20-chatter-19",
+          "offsetMs": 420000,
+          "guildId": "sim-guild-south",
+          "channelId": "sim-south-lounge",
+          "messages": [
+            {
+              "id": "sim-msg-20-208",
+              "userId": "sim-user-dave",
+              "content": "Rinsed the little mesh spout screen in the lounge electric kettle.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-20-209",
+              "userId": "sim-user-erin",
+              "content": "Water pours smoothly again without sputtering sideways.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-20-210",
+              "userId": "sim-user-dave",
+              "content": "Dave asks Roka whether citric acid cleans kettle mineral scale gently.",
+              "delayMs": 10000,
+              "rokaReply": "Yes, citric acid is gentle and effective for dissolving mineral scale in kettles."
+            },
+            {
+              "id": "sim-msg-20-211",
+              "userId": "sim-user-erin",
+              "content": "Erin asks Roka why hard water leaves chalky rings.",
+              "delayMs": 10000,
+              "rokaReply": "Hard water contains dissolved calcium and magnesium that precipitate out as chalky deposits when heated."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "day": 21,
+      "events": [
+        {
+          "kind": "episode",
+          "id": "ep-d21-north-carol-retract-archery",
+          "offsetMs": 120000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-craft",
+          "messages": [
+            {
+              "id": "sim-msg-21-212",
+              "userId": "sim-user-carol",
+              "content": "I quit target archery completely and gave my bow back to the club.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-21-213",
+              "userId": "sim-user-carol",
+              "content": "Carol asks Roka what Northgate workshops and stargazing events are coming up.",
+              "delayMs": 10000,
+              "rokaReply": "Northgate has a pottery workshop and a stargazing event coming up.",
+              "expectedRecallGtIds": ["gt-north-pottery-event", "gt-north-stargaze-event"]
+            },
+            {
+              "id": "sim-msg-21-214",
+              "userId": "sim-user-alice",
+              "content": "Alice asks Roka what video Carol shared about alpine plants.",
+              "delayMs": 10000,
+              "rokaReply": "Carol shared a video about alpine terrariums.",
+              "expectedRecallGtIds": ["gt-media-alpine-terrarium"]
+            }
+          ]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d21-chatter-20",
+          "offsetMs": 510000,
+          "guildId": "sim-guild-south",
+          "channelId": "sim-south-events",
+          "messages": [
+            {
+              "id": "sim-msg-21-215",
+              "userId": "sim-user-grace",
+              "content": "Tacked the hand-lettered directional arrows onto the lobby easel.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-21-216",
+              "userId": "sim-user-dave",
+              "content": "Thick black marker strokes show cleanly from clear across the hall.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-21-217",
+              "userId": "sim-user-grace",
+              "content": "Grace asks Roka whether diagonal arrows confuse hallway turns.",
+              "delayMs": 10000,
+              "rokaReply": "Diagonal arrows can be ambiguous; straight or angled arrows with clear labels work better."
+            },
+            {
+              "id": "sim-msg-21-218",
+              "userId": "sim-user-dave",
+              "content": "Dave asks Roka for a polite two-word doorway welcome line.",
+              "delayMs": 10000,
+              "rokaReply": "Welcome in."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "day": 22,
+      "events": [
+        {
+          "kind": "episode",
+          "id": "ep-d22-south-vinyl-event",
+          "offsetMs": 200000,
+          "guildId": "sim-guild-south",
+          "channelId": "sim-south-events",
+          "messages": [
+            {
+              "id": "sim-msg-22-219",
+              "userId": "sim-user-dave",
+              "content": "Southbay lounge is holding a vinyl listening swap on 2026-10-30 evening.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-22-220",
+              "userId": "sim-user-grace",
+              "content": "Grace asks Roka what language Grace speaks at home and when the tournament is.",
+              "delayMs": 10000,
+              "rokaReply": "Grace, you speak Portuguese at home, and the tournament is on 2026-11-14.",
+              "expectedRecallGtIds": ["gt-grace-lang-corr", "gt-south-tournament-plan"]
+            },
+            {
+              "id": "sim-msg-22-221",
+              "userId": "sim-user-erin",
+              "content": "Erin asks Roka who plays Hades in Southbay.",
+              "delayMs": 10000,
+              "rokaReply": "Dave plays Hades in Southbay.",
+              "expectedRecallGtIds": ["gt-dave-game"]
+            }
+          ]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d22-chatter-21",
+          "offsetMs": 600000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-general",
+          "messages": [
+            {
+              "id": "sim-msg-22-222",
+              "userId": "sim-user-bob",
+              "content": "A noisy V-formation of geese honked clear over the courtyard oaks at four.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-22-223",
+              "userId": "sim-user-alice",
+              "content": "Everyone heard them through closed double panes.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-22-224",
+              "userId": "sim-user-bob",
+              "content": "Bob asks Roka how far migrating flocks fly in one clear afternoon.",
+              "delayMs": 10000,
+              "rokaReply": "Geese can cover several hundred miles in a day with favorable winds."
+            },
+            {
+              "id": "sim-msg-22-225",
+              "userId": "sim-user-alice",
+              "content": "Alice asks Roka why geese trade off the lead spot in V-formations.",
+              "delayMs": 10000,
+              "rokaReply": "The lead bird breaks the wind resistance, so they rotate to share the effort and reduce fatigue."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "day": 23,
+      "events": [
+        {
+          "kind": "episode",
+          "id": "ep-d23-north-alice-retract-bees",
+          "offsetMs": 120000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-general",
+          "messages": [
+            {
+              "id": "sim-msg-23-226",
+              "userId": "sim-user-alice",
+              "content": "I gave up beekeeping completely this autumn and donated the hive boxes.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-23-227",
+              "userId": "sim-user-alice",
+              "content": "Alice asks Roka what Carol cat name/breed and hobbies are.",
+              "delayMs": 10000,
+              "rokaReply": "Carol's cat is Miso, a calico, and she dropped archery.",
+              "expectedRecallGtIds": ["gt-carol-cat", "gt-carol-drop-archery"]
+            },
+            {
+              "id": "sim-msg-23-228",
+              "userId": "sim-user-bob",
+              "content": "Bob asks Roka about the raku glaze video in Northgate.",
+              "delayMs": 10000,
+              "rokaReply": "The raku glaze video was shared in Northgate.",
+              "expectedRecallGtIds": ["gt-media-kiln-video"]
+            }
+          ]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d23-chatter-22",
+          "offsetMs": 420000,
+          "guildId": "sim-guild-south",
+          "channelId": "sim-south-lounge",
+          "messages": [
+            {
+              "id": "sim-msg-23-229",
+              "userId": "sim-user-erin",
+              "content": "Slipped a folded cork shim under the crooked round side table.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-23-230",
+              "userId": "sim-user-grace",
+              "content": "Teacups sit completely level without rattling saucers anymore.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-23-231",
+              "userId": "sim-user-erin",
+              "content": "Erin asks Roka whether cork or felt pads last longer under heavy tables.",
+              "delayMs": 10000,
+              "rokaReply": "Cork tends to last longer under heavy tables because it resists compression better than felt."
+            },
+            {
+              "id": "sim-msg-23-232",
+              "userId": "sim-user-grace",
+              "content": "Grace asks Roka for a playful math joke about four-legged tables.",
+              "delayMs": 10000,
+              "rokaReply": "Why did the four-legged table get promoted? It had great stability."
+            }
+          ]
+        },
+        {
+          "kind": "operator",
+          "id": "op-d23-retract-explicit",
+          "offsetMs": 500000,
+          "action": "retract_explicit",
+          "guildId": "sim-guild-south",
+          "userId": "sim-user-frank"
+        }
+      ]
+    },
+    {
+      "day": 24,
+      "events": [
+        {
+          "kind": "episode",
+          "id": "ep-d24-dm-carol",
+          "offsetMs": 100000,
+          "guildId": null,
+          "channelId": "sim-dm-carol",
+          "isDm": true,
+          "messages": [
+            {
+              "id": "sim-msg-24-233",
+              "userId": "sim-user-carol",
+              "content": "Evening! Just sketching streetlamps by the window and thought I'd say hi.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-24-234",
+              "userId": "sim-user-carol",
+              "content": "Carol asks Roka in DM for a calm sign-off quote.",
+              "delayMs": 10000,
+              "rokaReply": "Goodnight, Carol — may your lines stay steady and your evening stay soft."
+            }
+          ]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d24-south-vinyl-recall",
+          "offsetMs": 260000,
+          "guildId": "sim-guild-south",
+          "channelId": "sim-south-events",
+          "messages": [
+            {
+              "id": "sim-msg-24-235",
+              "userId": "sim-user-erin",
+              "content": "Counting down days until the Southbay events week!",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-24-236",
+              "userId": "sim-user-erin",
+              "content": "Erin asks Roka about the upcoming vinyl swap date and arcade tournament.",
+              "delayMs": 10000,
+              "rokaReply": "The vinyl swap is on the calendar for the Southbay events week, and the arcade tournament plan is set for the same stretch — I'll ping you when the exact day firms up.",
+              "expectedRecallGtIds": ["gt-south-vinyl-event", "gt-south-tournament-plan"]
+            },
+            {
+              "id": "sim-msg-24-237",
+              "userId": "sim-user-dave",
+              "content": "Dave asks Roka what Erin allergies and pets are.",
+              "delayMs": 10000,
+              "rokaReply": "Erin's allergic to shellfish, and she has two pets: a corgi named Pixel and a tabby cat called Miso.",
+              "expectedRecallGtIds": ["gt-erin-allergy", "gt-erin-pets-1", "gt-erin-pets-2"]
+            }
+          ]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d24-chatter-23",
+          "offsetMs": 510000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-craft",
+          "messages": [
+            {
+              "id": "sim-msg-24-238",
+              "userId": "sim-user-carol",
+              "content": "Fresh cool water in the porcelain brush rinse dishes on the craft counter.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-24-239",
+              "userId": "sim-user-bob",
+              "content": "Clean water keeps pastel washes from turning muddy halfway through a page.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-24-240",
+              "userId": "sim-user-carol",
+              "content": "Carol asks Roka why using two rinse jars keeps brush water cleaner.",
+              "delayMs": 10000,
+              "rokaReply": "Two jars let you rinse off most pigment in the first, then use the second for a final clean rinse."
+            },
+            {
+              "id": "sim-msg-24-241",
+              "userId": "sim-user-bob",
+              "content": "Bob asks Roka if rag blotters absorb drips better than paper towels.",
+              "delayMs": 10000,
+              "rokaReply": "Rag blotters are more absorbent and reusable than paper towels, so they handle drips better."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "day": 25,
+      "events": [
+        {
+          "kind": "episode",
+          "id": "ep-d25-crash-south",
+          "offsetMs": 300000,
+          "guildId": "sim-guild-south",
+          "channelId": "sim-south-lounge",
+          "leaveOpen": true,
+          "messages": [
+            {
+              "id": "sim-msg-25-242",
+              "userId": "sim-user-dave",
+              "content": "Brewing roasted hojicha in the cast iron kettle before heading out.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-25-243",
+              "userId": "sim-user-grace",
+              "content": "Grace asks Roka what Dave favorite tea is now.",
+              "delayMs": 10000,
+              "rokaReply": "Dave's favorite tea is roasted hojicha — he corrected it from the earlier pick, so that's the one to remember.",
+              "expectedRecallGtIds": ["gt-dave-drink-correction"]
+            }
+          ]
+        },
+        {
+          "kind": "restart",
+          "id": "restart-d25-crash",
+          "offsetMs": 350000,
+          "mode": "crash"
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d25-chatter-24",
+          "offsetMs": 600000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-general",
+          "messages": [
+            {
+              "id": "sim-msg-25-244",
+              "userId": "sim-user-alice",
+              "content": "Window latches rattled softly before dawn as crisp northerly wind dropped the temperature.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-25-245",
+              "userId": "sim-user-frank",
+              "content": "Moved tender potted mint inside from the courtyard ledge overnight.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-25-246",
+              "userId": "sim-user-alice",
+              "content": "Alice asks Roka what nighttime temperature brings first windowpane frost.",
+              "delayMs": 10000,
+              "rokaReply": "Frost usually starts forming on glass when the overnight low dips to around 32°F (0°C), especially on clear, calm nights when surfaces radiate heat away quickly."
+            },
+            {
+              "id": "sim-msg-25-247",
+              "userId": "sim-user-frank",
+              "content": "Frank asks Roka whether weatherstripping stops draft whistles.",
+              "delayMs": 10000,
+              "rokaReply": "Weatherstripping can cut down on draft whistles by sealing gaps, but if the wind is strong, some sound may still slip through unless the seal is tight and the frame itself is solid."
+            }
+          ]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d25-chatter-36",
+          "offsetMs": 600000,
+          "guildId": "sim-guild-south",
+          "channelId": "sim-south-events",
+          "messages": [
+            {
+              "id": "sim-msg-25-248",
+              "userId": "sim-user-erin",
+              "content": "Adjusted the radiator valve in Southbay events hall down one notch.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-25-249",
+              "userId": "sim-user-grace",
+              "content": "Comfortably cool air beats overheating during board game setup.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-25-250",
+              "userId": "sim-user-erin",
+              "content": "Erin asks Roka why cool rooms help board game focus.",
+              "delayMs": 10000,
+              "rokaReply": "Cooler air keeps your brain from overheating, so you can think through tricky moves without feeling sluggish."
+            },
+            {
+              "id": "sim-msg-25-251",
+              "userId": "sim-user-grace",
+              "content": "Grace asks Roka for a short cozy blanket comparison.",
+              "delayMs": 10000,
+              "rokaReply": "A chunky knit blanket traps warmth and feels cozy, while a fleece throw is lighter and easier to toss over your shoulders."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "day": 26,
+      "events": [
+        {
+          "kind": "episode",
+          "id": "ep-d26-chatter-25",
+          "offsetMs": 420000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-general",
+          "messages": [
+            {
+              "id": "sim-msg-26-252",
+              "userId": "sim-user-frank",
+              "content": "Rubbed the tarnish off the little counter bell until it gleamed like new copper.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-26-253",
+              "userId": "sim-user-carol",
+              "content": "One tap rings bright enough to wake the whole stairwell.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-26-254",
+              "userId": "sim-user-frank",
+              "content": "Frank asks Roka why brass darkens faster near coastal air.",
+              "delayMs": 10000,
+              "rokaReply": "Brass tarnishes faster near the coast because salt in the air speeds up oxidation, forming that dark patina more quickly than in dry inland conditions."
+            },
+            {
+              "id": "sim-msg-26-255",
+              "userId": "sim-user-carol",
+              "content": "Carol asks Roka for a polite counter sign note.",
+              "delayMs": 10000,
+              "rokaReply": "A polite sign could read: 'Please ring once for service — thank you!' Simple and clear works best."
+            }
+          ]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d26-chatter-26",
+          "offsetMs": 510000,
+          "guildId": "sim-guild-south",
+          "channelId": "sim-south-lounge",
+          "messages": [
+            {
+              "id": "sim-msg-26-256",
+              "userId": "sim-user-dave",
+              "content": "Sorted loose cardboard tokens back into zip bags inside the lounge closet.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-26-257",
+              "userId": "sim-user-grace",
+              "content": "No stray dice rolling around the bottom shelf anymore.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-26-258",
+              "userId": "sim-user-dave",
+              "content": "Dave asks Roka why wooden game tokens age nicer than plastic ones.",
+              "delayMs": 10000,
+              "rokaReply": "Wooden tokens often develop a warm patina and resist chipping better than plastic, which can crack or fade with heavy use."
+            },
+            {
+              "id": "sim-msg-26-259",
+              "userId": "sim-user-grace",
+              "content": "Grace asks Roka what makes setup time faster on game nights.",
+              "delayMs": 10000,
+              "rokaReply": "Keeping components sorted in labeled bags or trays cuts setup time dramatically — everything is ready to place without hunting."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "day": 27,
+      "events": [
+        {
+          "kind": "episode",
+          "id": "ep-d27-north-media-recall",
+          "offsetMs": 240000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-craft",
+          "messages": [
+            {
+              "id": "sim-msg-27-260",
+              "userId": "sim-user-alice",
+              "content": "Looking back at the kiln and moss clips shared this month.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-27-261",
+              "userId": "sim-user-alice",
+              "content": "Alice asks Roka what she remembers about the raku kiln glaze clip.",
+              "delayMs": 10000,
+              "rokaReply": "The raku kiln clip showed the glaze crackle as it came out of the reduction bin — you narrated the copper-red flash right at the peak.",
+              "expectedRecallGtIds": ["gt-media-kiln-video"]
+            },
+            {
+              "id": "sim-msg-27-262",
+              "userId": "sim-user-bob",
+              "content": "Bob asks Roka what she remembers about the alpine terrarium clip.",
+              "delayMs": 10000,
+              "rokaReply": "The alpine terrarium clip was the one with the tiny saxifrage and the misting routine — you showed the drainage layer first, then the moss cap.",
+              "expectedRecallGtIds": ["gt-media-alpine-terrarium"]
+            }
+          ]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d27-chatter-37",
+          "offsetMs": 420000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-general",
+          "messages": [
+            {
+              "id": "sim-msg-27-267",
+              "userId": "sim-user-frank",
+              "content": "Swept a pocketful of glossy oak acorns off the flagstone stoop after dusk.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-27-268",
+              "userId": "sim-user-carol",
+              "content": "Squirrels already stashed half the cap cups under the hedge.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-27-269",
+              "userId": "sim-user-frank",
+              "content": "Frank asks Roka why oak masts drop heavier some autumns.",
+              "delayMs": 10000,
+              "rokaReply": "Oak trees often produce heavier acorn crops in cycles, and a warm, dry summer can boost that yield even more."
+            },
+            {
+              "id": "sim-msg-27-270",
+              "userId": "sim-user-carol",
+              "content": "Carol asks Roka for a crisp twilight sound description.",
+              "delayMs": 10000,
+              "rokaReply": "The crisp twilight air carries the soft rustle of leaves and the distant chirp of crickets, like a gentle lullaby."
+            }
+          ]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d27-chatter-27",
+          "offsetMs": 600000,
+          "guildId": "sim-guild-south",
+          "channelId": "sim-south-events",
+          "messages": [
+            {
+              "id": "sim-msg-27-263",
+              "userId": "sim-user-erin",
+              "content": "Clipped the thick stage curtain back onto brass rings along the back alcove.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-27-264",
+              "userId": "sim-user-dave",
+              "content": "Room echo dropped noticeably as soon as the pleats hung straight.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-27-265",
+              "userId": "sim-user-erin",
+              "content": "Erin asks Roka why heavy fabric cuts sharp high-pitched echo.",
+              "delayMs": 10000,
+              "rokaReply": "Heavy fabric absorbs high-frequency sound waves by trapping air in its fibers, so those sharp echoes fade instead of bouncing around the room."
+            },
+            {
+              "id": "sim-msg-27-266",
+              "userId": "sim-user-dave",
+              "content": "Dave asks Roka if wooden walls reflect sound faster than plaster.",
+              "delayMs": 10000,
+              "rokaReply": "Wooden walls tend to reflect sound more efficiently than plaster, which is slightly more porous and can dampen some frequencies."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "day": 28,
+      "events": [
+        {
+          "kind": "episode",
+          "id": "ep-d28-north-priv-check",
+          "offsetMs": 200000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-vault",
+          "messages": [
+            {
+              "id": "sim-msg-28-271",
+              "userId": "sim-user-alice",
+              "content": "Reviewing our private mod-vault notes before end of month.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-28-272",
+              "userId": "sim-user-alice",
+              "content": "Alice asks Roka in mod-vault what private allergy, move, pet, and baffle notes exist here.",
+              "delayMs": 10000,
+              "rokaReply": "In the private vault: your allergy note, Dave's move note, Bob's pet note, and the baffle media note — all four are still stored here and only visible in this channel.",
+              "expectedRecallGtIds": [
+                "gt-alice-priv-allergy",
+                "gt-dave-priv-move",
+                "gt-bob-priv-pet",
+                "gt-media-private-vault"
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d28-chatter-28",
+          "offsetMs": 420000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-general",
+          "messages": [
+            {
+              "id": "sim-msg-28-273",
+              "userId": "sim-user-bob",
+              "content": "Cleared a handful of spinning maple seed helicopters off the porch awning.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-28-274",
+              "userId": "sim-user-alice",
+              "content": "Sunlight streams cleanly onto the reading bench now.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-28-275",
+              "userId": "sim-user-bob",
+              "content": "Bob asks Roka how maple samara wings spin gently to the ground.",
+              "delayMs": 10000,
+              "rokaReply": "Maple samaras have a wing-like shape that creates lift and drag as they fall, causing them to autorotate slowly and drift sideways instead of dropping straight down."
+            },
+            {
+              "id": "sim-msg-28-276",
+              "userId": "sim-user-alice",
+              "content": "Alice asks Roka for an October nature observation.",
+              "delayMs": 10000,
+              "rokaReply": "In October, you might notice leaves turning color and falling more steadily, and the air often carries a crisp, earthy scent from decaying foliage."
+            }
+          ]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d28-chatter-29",
+          "offsetMs": 510000,
+          "guildId": "sim-guild-south",
+          "channelId": "sim-south-lounge",
+          "messages": [
+            {
+              "id": "sim-msg-28-277",
+              "userId": "sim-user-grace",
+              "content": "Swapped out the dead candelabra bulb inside the corner floor lamp.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-28-278",
+              "userId": "sim-user-erin",
+              "content": "Soft amber light reaches the top fiction shelf evenly again.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-28-279",
+              "userId": "sim-user-grace",
+              "content": "Grace asks Roka whether frosted glass softens glare near bookshelves.",
+              "delayMs": 10000,
+              "rokaReply": "Yes, frosted glass diffuses light and reduces harsh glare, making it easier on the eyes when reading near shelves."
+            },
+            {
+              "id": "sim-msg-28-280",
+              "userId": "sim-user-erin",
+              "content": "Erin asks Roka for a calm evening reading mood.",
+              "delayMs": 10000,
+              "rokaReply": "A calm evening reading mood often comes from warm, low lighting and a quiet corner — maybe with a soft blanket and a favorite book."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "day": 29,
+      "events": [
+        {
+          "kind": "episode",
+          "id": "ep-d29-grace-restart-episode",
+          "offsetMs": 120000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-general",
+          "leaveOpen": true,
+          "messages": [
+            {
+              "id": "sim-msg-29-281",
+              "userId": "sim-user-alice",
+              "content": "What a productive October in Northgate Commons!",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-29-282",
+              "userId": "sim-user-alice",
+              "content": "Alice asks Roka whether beekeeping is still listed or removed.",
+              "delayMs": 10000,
+              "rokaReply": "Beekeeping was removed from your list — you dropped it earlier this month, so it's no longer active.",
+              "expectedRecallGtIds": ["gt-alice-drop-beekeeping"]
+            }
+          ]
+        },
+        {
+          "kind": "restart",
+          "id": "restart-d29-graceful",
+          "offsetMs": 170000,
+          "mode": "graceful"
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d29-chatter-38",
+          "offsetMs": 510000,
+          "guildId": "sim-guild-south",
+          "channelId": "sim-south-lounge",
+          "messages": [
+            {
+              "id": "sim-msg-29-287",
+              "userId": "sim-user-dave",
+              "content": "Rinsed citrus tea rings off the dark slate mug coasters by the sideboard.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-29-288",
+              "userId": "sim-user-grace",
+              "content": "Set them upright along the drying rack in neat rows.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-29-289",
+              "userId": "sim-user-dave",
+              "content": "Dave asks Roka whether natural slate darkens when wiped damp.",
+              "delayMs": 10000,
+              "rokaReply": "Yes, natural slate often looks darker when damp because water fills the tiny pores and changes how light reflects off the surface."
+            },
+            {
+              "id": "sim-msg-29-290",
+              "userId": "sim-user-grace",
+              "content": "Grace asks Roka for a polite lounge cleanup line.",
+              "delayMs": 10000,
+              "rokaReply": "A simple 'Let's keep the lounge tidy' works well, or 'Mind if I straighten up a bit?' if you want to be extra polite."
+            }
+          ]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d29-chatter-30",
+          "offsetMs": 600000,
+          "guildId": "sim-guild-south",
+          "channelId": "sim-south-events",
+          "messages": [
+            {
+              "id": "sim-msg-29-283",
+              "userId": "sim-user-dave",
+              "content": "Rolled canvas event banners around cardboard tubes so corners stay crease-free.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-29-284",
+              "userId": "sim-user-erin",
+              "content": "Tucked twine rolls inside the bin for next month.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-29-285",
+              "userId": "sim-user-dave",
+              "content": "<@sim-roka-bot> Why does rolling cloth banners avoid iron marks?",
+              "delayMs": 10000,
+              "rokaReply": "Rolling keeps the fabric from folding sharply, so the weave doesn't get crushed and you skip ironing altogether."
+            },
+            {
+              "id": "sim-msg-29-286",
+              "userId": "sim-user-erin",
+              "content": "<@sim-roka-bot> Got a tip for an organized end-of-month checklist?",
+              "delayMs": 10000,
+              "rokaReply": "Start with a quick sweep of what's left, then group items by next use—storage, repair, or toss—so nothing lingers."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "day": 30,
+      "events": [
+        {
+          "kind": "episode",
+          "id": "ep-d30-final-recall",
+          "offsetMs": 360000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-general",
+          "messages": [
+            {
+              "id": "sim-msg-30-291",
+              "userId": "sim-user-carol",
+              "content": "End of month check-in from Kyoto! I'm still getting used to the time difference, but I wanted to see what Northgate remembers about everyone.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-30-292",
+              "userId": "sim-user-carol",
+              "content": "Carol asks Roka what Northgate remembers about Alice, Bob, Carol, and upcoming events.",
+              "delayMs": 10000,
+              "rokaReply": "Northgate remembers Alice's new job, Bob's pet, your move to Kyoto, and the pottery event coming up. It's all still there.",
+              "expectedRecallGtIds": ["gt-alice-job", "gt-bob-pet", "gt-carol-city", "gt-north-pottery-event"]
+            },
+            {
+              "id": "sim-msg-30-293",
+              "userId": "sim-user-bob",
+              "content": "Bob asks Roka to verify Carol cat and Alice past baking job.",
+              "delayMs": 10000,
+              "rokaReply": "Yes, Carol's cat and Alice's past bakery job are both stored correctly. The memory system is holding up well.",
+              "expectedRecallGtIds": ["gt-carol-cat", "gt-alice-past-bakery"]
+            }
+          ]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d30-chatter-31",
+          "offsetMs": 420000,
+          "guildId": "sim-guild-south",
+          "channelId": "sim-south-lounge",
+          "messages": [
+            {
+              "id": "sim-msg-30-294",
+              "userId": "sim-user-grace",
+              "content": "Turned to a clean fresh page in the Southbay clubhouse guest logbook.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-30-295",
+              "userId": "sim-user-dave",
+              "content": "Every bench and kettle sits tidy for November.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-30-296",
+              "userId": "sim-user-grace",
+              "content": "<@sim-roka-bot> Give me an upbeat end-of-month reflection.",
+              "delayMs": 10000,
+              "rokaReply": "October's pages are full of small wins—every tidy corner and shared laugh is worth celebrating as you flip ahead."
+            },
+            {
+              "id": "sim-msg-30-297",
+              "userId": "sim-user-dave",
+              "content": "<@sim-roka-bot> What do November harbor mornings feel like?",
+              "delayMs": 10000,
+              "rokaReply": "Crisp air, low golden light on the water, and the quiet hum of boats waking up—November mornings have a calm, salty promise."
+            }
+          ]
+        },
+        {
+          "kind": "episode",
+          "id": "ep-d30-chatter-32",
+          "offsetMs": 510000,
+          "guildId": "sim-guild-north",
+          "channelId": "sim-north-craft",
+          "messages": [
+            {
+              "id": "sim-msg-30-298",
+              "userId": "sim-user-frank",
+              "content": "Cranked every blunt carpenter pencil through the brass sharpener.",
+              "delayMs": 0
+            },
+            {
+              "id": "sim-msg-30-299",
+              "userId": "sim-user-bob",
+              "content": "Tidy tray of sharp leads ready for next week woodworking sketches.",
+              "delayMs": 12000
+            },
+            {
+              "id": "sim-msg-30-300",
+              "userId": "sim-user-frank",
+              "content": "<@sim-roka-bot> Does soft lead smudge less on rough cedar?",
+              "delayMs": 10000,
+              "rokaReply": "Soft lead actually smudges more on rough cedar—try a harder grade for crisp lines that hold."
+            },
+            {
+              "id": "sim-msg-30-301",
+              "userId": "sim-user-bob",
+              "content": "<@sim-roka-bot> Give me a crisp closing remark for the workshop.",
+              "delayMs": 10000,
+              "rokaReply": "Sharp tools, clear bench, ready hands—November's projects are already taking shape."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

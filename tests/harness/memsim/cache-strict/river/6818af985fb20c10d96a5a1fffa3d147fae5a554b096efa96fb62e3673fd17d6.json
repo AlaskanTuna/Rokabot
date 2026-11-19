@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": "river",
+  "hash": "6818af985fb20c10d96a5a1fffa3d147fae5a554b096efa96fb62e3673fd17d6",
+  "response": {
+    "status": 200,
+    "statusText": "OK",
+    "contentType": "application/json",
+    "body": "{\"id\":\"chatcmpl-6af9777c1dd2a\",\"object\":\"chat.completion\",\"created\":1794733948,\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\n  \\\"ops\\\": [\\n    {\\n      \\\"op\\\": \\\"update\\\",\\n      \\\"subject\\\": {\\\"kind\\\": \\\"user\\\", \\\"userId\\\": \\\"sim-user-erin\\\"},\\n      \\\"existingId\\\": 2,\\n      \\\"predicate\\\": \\\"favorite_music\\\",\\n      \\\"value\\\": \\\"Japanese Breakfast\\\",\\n      \\\"tense\\\": \\\"current\\\",\\n      \\\"sourceLine\\\": 1\\n    },\\n    {\\n      \\\"op\\\": \\\"add\\\",\\n      \\\"subject\\\": {\\\"kind\\\": \\\"guild\\\"},\\n      \\\"predicate\\\": \\\"upcoming_event\\\",\\n      \\\"value\\\": \\\"Southbay arcade tournament\\\",\\n      \\\"date\\\": {\\\"year\\\": 2026, \\\"month\\\": 11, \\\"day\\\": 14},\\n      \\\"sourceLine\\\": 3\\n    }\\n  ],\\n  \\\"summary\\\": \\\"Erin said her new favorite music artist is Japanese Breakfast, and Roka confirmed the Southbay arcade tournament is planned for the weekend of November 14, 2026. Grace asked whether she still does printmaking or has moved on to archivist duties.\\\"\\n}\"},\"finish_reason\":\"stop\",\"matched_stop\":null}],\"usage\":{\"prompt_tokens\":4317,\"completion_tokens\":215,\"total_tokens\":4532,\"prompt_tokens_details\":{\"cached_tokens\":3840},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}"
+  }
+}

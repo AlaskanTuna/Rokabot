@@ -327,18 +327,27 @@ describe('SocialPostViewer', () => {
   // Reddit refuses an IP it has flagged for both the feed and the JSON yt-dlp reads, so waiting ~9 s for yt-dlp
   // to be refused as well would only spend the turn's lookup budget.
   it('gives up at once when Reddit refuses the feed', async () => {
-    const fetcher = vi.fn(
-      async (_input: string | URL | Request, _init?: RequestInit) => new Response('', { status: 429 })
-    )
-    const runExtractor = vi.fn(async (_binaryPath: string, _url: string, _timeoutMs: number) => ({ reason: 'exit_1' }))
-    const viewer = createSocialPostViewer(settings, { fetcher, runExtractor, warn: vi.fn() })
+    vi.useFakeTimers()
+    try {
+      const fetcher = vi.fn(
+        async (_input: string | URL | Request, _init?: RequestInit) => new Response('', { status: 429 })
+      )
+      const runExtractor = vi.fn(async (_binaryPath: string, _url: string, _timeoutMs: number) => ({
+        reason: 'exit_1'
+      }))
+      const viewer = createSocialPostViewer(
+        { ...settings, timeoutMs: 10_000 },
+        { fetcher, runExtractor, warn: vi.fn() }
+      )
 
-    expect(await viewer.lookup(parseSocialPostUrl('https://www.reddit.com/comments/1x0b7lo/')!)).toEqual({
-      status: 'failed',
-      platform: 'reddit',
-      reason: 'http_429'
-    })
-    expect(runExtractor).not.toHaveBeenCalled()
+      const lookup = viewer.lookup(parseSocialPostUrl('https://www.reddit.com/comments/1x0b7lo/')!)
+      await vi.advanceTimersByTimeAsync(3000)
+
+      expect(await lookup).toEqual({ status: 'failed', platform: 'reddit', reason: 'http_429' })
+      expect(runExtractor).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("keeps yt-dlp's failure reason when the Reddit feed has no post either", async () => {
@@ -351,6 +360,81 @@ describe('SocialPostViewer', () => {
       platform: 'reddit',
       reason: 'exit_1'
     })
+  })
+
+  it('reads a Reddit post from the vxreddit mirror when Reddit refuses the feed', async () => {
+    const mirrorPage =
+      '<meta property="og:site_name" content="u/poster_one on r/osugame - ⬆️ 3 | 💬 1" /><meta property="og:title" content="Mirror title" />'
+    const fetcher = vi
+      .fn(async (_input: string | URL | Request, _init?: RequestInit) => new Response('', { status: 500 }))
+      .mockResolvedValueOnce(new Response('', { status: 429 }))
+      .mockResolvedValueOnce(new Response(mirrorPage))
+    const runExtractor = vi.fn(async (_binaryPath: string, _url: string, _timeoutMs: number) => ({ reason: 'exit_1' }))
+    const viewer = createSocialPostViewer(settings, { fetcher, runExtractor, warn: vi.fn() })
+
+    const result = await viewer.lookup(parseSocialPostUrl('https://www.reddit.com/comments/1x0b7lo/')!)
+
+    expect(result).toMatchObject({
+      status: 'found',
+      post: { platform: 'reddit', authorHandle: 'poster_one', authorName: 'r/osugame', text: 'Mirror title' }
+    })
+    expect(String(fetcher.mock.calls[1][0])).toBe('https://vxreddit.com/comments/1x0b7lo/')
+    expect(runExtractor).not.toHaveBeenCalled()
+  })
+
+  it('keeps the feed refusal when the vxreddit mirror fails too', async () => {
+    vi.useFakeTimers()
+    try {
+      const fetcher = vi
+        .fn(async (_input: string | URL | Request, _init?: RequestInit) => new Response('', { status: 500 }))
+        .mockResolvedValueOnce(new Response('', { status: 403 }))
+      const runExtractor = vi.fn(async (_binaryPath: string, _url: string, _timeoutMs: number) => ({
+        reason: 'exit_1'
+      }))
+      const viewer = createSocialPostViewer(
+        { ...settings, timeoutMs: 10_000 },
+        { fetcher, runExtractor, warn: vi.fn() }
+      )
+
+      const lookup = viewer.lookup(parseSocialPostUrl('https://www.reddit.com/comments/1x0b7lo/')!)
+      await vi.advanceTimersByTimeAsync(3000)
+
+      expect(await lookup).toEqual({ status: 'failed', platform: 'reddit', reason: 'http_403' })
+      expect(fetcher).toHaveBeenCalledTimes(4)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('retries the vxreddit mirror when it redirects instead of serving the page', async () => {
+    vi.useFakeTimers()
+    try {
+      const mirrorPage =
+        '<meta property="og:site_name" content="u/poster_one on r/osugame - ⬆️ 3 | 💬 1" /><meta property="og:title" content="Mirror title" />'
+      const fetcher = vi
+        .fn(async (_input: string | URL | Request, _init?: RequestInit) => new Response('', { status: 500 }))
+        .mockResolvedValueOnce(new Response('', { status: 429 }))
+        .mockResolvedValueOnce(
+          new Response(null, { status: 302, headers: { location: 'https://www.reddit.com/comments/x/' } })
+        )
+        .mockResolvedValueOnce(new Response(mirrorPage))
+      const runExtractor = vi.fn(async (_binaryPath: string, _url: string, _timeoutMs: number) => ({
+        reason: 'exit_1'
+      }))
+      const viewer = createSocialPostViewer(
+        { ...settings, timeoutMs: 10_000 },
+        { fetcher, runExtractor, warn: vi.fn() }
+      )
+
+      const lookup = viewer.lookup(parseSocialPostUrl('https://www.reddit.com/comments/1x0b7lo/')!)
+      await vi.advanceTimersByTimeAsync(1000)
+
+      expect(await lookup).toMatchObject({ status: 'found', post: { platform: 'reddit', text: 'Mirror title' } })
+      expect(fetcher.mock.calls[1][1]).toMatchObject({ redirect: 'manual' })
+      expect(fetcher.mock.calls[2][1]).toMatchObject({ redirect: 'manual' })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("keeps yt-dlp's failure reason when YouTube oEmbed fails too", async () => {

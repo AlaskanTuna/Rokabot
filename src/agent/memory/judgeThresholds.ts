@@ -8,3 +8,7 @@ export function admitThreshold(): number {
 export function verifyThreshold(): number {
   return config.memory.judge === 'model' ? config.memory.modelVerifyThreshold : config.memory.verifyThreshold
 }
+
+export function summaryThreshold(): number {
+  return config.memory.judge === 'model' ? config.memory.modelSummaryThreshold : config.memory.summaryThreshold
+}
