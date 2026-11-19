@@ -446,4 +446,81 @@ describe('SocialPostViewer', () => {
     expect(runExtractor).toHaveBeenCalledOnce()
     expect(second).toMatchObject({ status: 'found', post: { target: { startSec: 754 } } })
   })
+
+  it('reads an Instagram /p/ photo post from saved GraphQL pages when yt-dlp exits 1', async () => {
+    const fixture = JSON.stringify({
+      data: {
+        xig_polaris_media: {
+          __typename: 'XIGPolarisImageMedia',
+          code: 'AbCdEf12345',
+          if_not_gated_logged_out: {
+            code: 'AbCdEf12345',
+            media_type: 1,
+            taken_at: 1794744000,
+            comment_count: 12,
+            user: { username: 'synth_user', full_name: 'Synthetic User' },
+            caption: { text: 'Synthetic photo post' },
+            display_uri: 'https://scontent.cdninstagram.com/v/photo.jpg'
+          }
+        }
+      }
+    })
+    const runExtractor = vi.fn(async () => ({ reason: 'exit_1', pages: [fixture] }))
+    const viewer = createSocialPostViewer(settings, { fetcher: vi.fn(), runExtractor, warn: vi.fn() })
+    const target = parseSocialPostUrl('https://www.instagram.com/p/AbCdEf12345/')!
+
+    const result = await viewer.lookup(target)
+
+    expect(result).toMatchObject({
+      status: 'found',
+      post: {
+        platform: 'instagram',
+        id: 'AbCdEf12345',
+        authorHandle: 'synth_user',
+        photoCount: 1,
+        videoCount: 0,
+        text: 'Synthetic photo post',
+        imageUrl: 'https://scontent.cdninstagram.com/v/photo.jpg'
+      }
+    })
+    expect(runExtractor).toHaveBeenCalledWith(
+      settings.ytDlpPath,
+      'https://www.instagram.com/p/AbCdEf12345/',
+      settings.timeoutMs,
+      [],
+      { keepPages: expect.any(RegExp) }
+    )
+  })
+
+  it('does not pass keepPages for non-Instagram targets such as TikTok', async () => {
+    const runExtractor = vi.fn(async () => ({ reason: 'exit_1' }))
+    const viewer = createSocialPostViewer(settings, { fetcher: vi.fn(), runExtractor, warn: vi.fn() })
+    const target = parseSocialPostUrl('https://www.tiktok.com/@synth_user/video/7059698374567611694')!
+
+    const result = await viewer.lookup(target)
+
+    expect(result).toEqual({ status: 'failed', platform: 'tiktok', reason: 'exit_1' })
+    expect(runExtractor).toHaveBeenCalledWith(
+      settings.ytDlpPath,
+      'https://www.tiktok.com/@synth_user/video/7059698374567611694',
+      settings.timeoutMs
+    )
+    expect(runExtractor.mock.calls[0]).toHaveLength(3)
+  })
+
+  it('fails with exit_1 when saved Instagram pages do not parse as the target post', async () => {
+    const warn = vi.fn()
+    const runExtractor = vi.fn(async () => ({
+      reason: 'exit_1',
+      pages: ['not-json', JSON.stringify({ data: { xig_polaris_media: { code: 'OtherCode99' } } })]
+    }))
+    const viewer = createSocialPostViewer(settings, { fetcher: vi.fn(), runExtractor, warn })
+
+    await expect(viewer.lookup(parseSocialPostUrl('https://www.instagram.com/p/AbCdEf12345/')!)).resolves.toEqual({
+      status: 'failed',
+      platform: 'instagram',
+      reason: 'exit_1'
+    })
+    expect(warn).toHaveBeenCalledWith('instagram', 'exit_1')
+  })
 })

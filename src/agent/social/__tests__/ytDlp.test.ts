@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { parseYtDlpMetadata } from '../parsers.js'
 import type { SocialPostTarget } from '../urls.js'
-import { buildYtDlpArgs, runYtDlp } from '../ytDlp.js'
+import { MAX_YTDLP_STDOUT_BYTES, buildYtDlpArgs, runYtDlp } from '../ytDlp.js'
 
 const tempDirs: string[] = []
 
@@ -73,6 +73,60 @@ describe('yt-dlp metadata runner', () => {
     const binary = await fakeBinary("process.stderr.write('private URL detail'); process.exit(4)")
 
     await expect(runYtDlp(binary, target.extractorUrl, 1000)).resolves.toEqual({ reason: 'exit_4' })
+  })
+
+  it('collects matching saved pages on non-zero exit only when keepPages is set', async () => {
+    const binary = await fakeBinary(`
+      const fs = require('node:fs')
+      fs.writeFileSync('abc_https_-_www.instagram.com_api_graphql.dump', JSON.stringify({ args: process.argv.slice(2) }))
+      fs.writeFileSync('x.dump', 'unrelated dump')
+      process.exit(1)
+    `)
+    const instagramUrl = 'https://www.instagram.com/p/abc/'
+
+    const withPages = await runYtDlp(binary, instagramUrl, 1000, [], { keepPages: /api_graphql\.dump$/ })
+    expect(withPages).toMatchObject({ reason: 'exit_1' })
+    expect('pages' in withPages && withPages.pages).toHaveLength(1)
+    const saved = JSON.parse(('pages' in withPages && withPages.pages?.[0]) || '{}') as { args: string[] }
+    expect(saved.args).toContain('--write-pages')
+
+    const withoutKeep = await runYtDlp(binary, instagramUrl, 1000)
+    expect(withoutKeep).toEqual({ reason: 'exit_1' })
+    expect('pages' in withoutKeep).toBe(false)
+  })
+
+  it('skips saved pages larger than MAX_YTDLP_STDOUT_BYTES and omits pages when nothing matches', async () => {
+    const binary = await fakeBinary(`
+      const fs = require('node:fs')
+      fs.writeFileSync('big_api_graphql.dump', Buffer.alloc(${MAX_YTDLP_STDOUT_BYTES + 1}, 'a'))
+      process.exit(1)
+    `)
+
+    const result = await runYtDlp(binary, 'https://www.instagram.com/p/abc/', 1000, [], {
+      keepPages: /api_graphql\.dump$/
+    })
+    expect(result).toEqual({ reason: 'exit_1' })
+    expect('pages' in result).toBe(false)
+  })
+
+  it('does not attach saved pages on timeout or stdout cap failures', async () => {
+    const timedOut = await fakeBinary(`
+      const fs = require('node:fs')
+      fs.writeFileSync('abc_api_graphql.dump', '{}')
+      setTimeout(() => process.exit(1), 5000)
+    `)
+    await expect(
+      runYtDlp(timedOut, 'https://www.instagram.com/p/abc/', 50, [], { keepPages: /api_graphql\.dump$/ })
+    ).resolves.toEqual({ reason: 'timeout' })
+
+    const oversized = await fakeBinary(`
+      const fs = require('node:fs')
+      fs.writeFileSync('abc_api_graphql.dump', '{}')
+      process.stdout.write('x'.repeat(${MAX_YTDLP_STDOUT_BYTES + 1}))
+    `)
+    await expect(
+      runYtDlp(oversized, 'https://www.instagram.com/p/abc/', 1000, [], { keepPages: /api_graphql\.dump$/ })
+    ).resolves.toEqual({ reason: 'output_too_large' })
   })
 
   it('keeps signed format URLs out of normalized metadata', () => {

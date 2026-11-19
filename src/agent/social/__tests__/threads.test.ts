@@ -79,12 +79,15 @@ describe('Threads links', () => {
     })
   })
 
-  it.each([
-    'https://www.threads.com/@poster_one',
-    'https://www.threads.com/@poster_one/post/',
-    'https://threads.com.evil.com/@poster_one/post/DFixtur3abc'
-  ])('rejects %s', (url) => {
+  it.each(['https://www.threads.com/@poster_one', 'https://www.threads.com/@poster_one/post/'])('rejects %s', (url) => {
     expect(parseSocialPostUrl(url)).toBeNull()
+  })
+
+  it('resolves a lookalike host only to the first-party URL', () => {
+    expect(parseSocialPostUrl('https://threads.com.evil.com/@poster_one/post/DFixtur3abc')).toMatchObject({
+      canonicalUrl: 'https://www.threads.com/@poster_one/post/DFixtur3abc',
+      extractorUrl: 'https://www.threads.com/@poster_one/post/DFixtur3abc'
+    })
   })
 })
 

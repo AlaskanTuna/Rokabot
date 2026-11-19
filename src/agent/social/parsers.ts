@@ -271,3 +271,50 @@ export function parseYtDlpMetadata(payload: unknown, target: SocialPostTarget, m
   post.photoCount = target.platform === 'instagram' && post.videoCount === 0 ? 1 : 0
   return post
 }
+
+function unixSecondsDate(value: unknown): string | null {
+  const seconds = nonNegativeInteger(value)
+  if (seconds === null) return null
+  const parsed = new Date(seconds * 1000)
+  return Number.isNaN(parsed.valueOf()) ? null : date(parsed.toISOString())
+}
+
+export function parseInstagramGraphqlPage(
+  page: string,
+  target: SocialPostTarget,
+  maxTextChars: number
+): SocialPost | null {
+  let payload: unknown
+  try {
+    payload = JSON.parse(page)
+  } catch {
+    return null
+  }
+
+  const polarisMedia = object(object(object(payload).data).xig_polaris_media)
+  const media = object(polarisMedia.if_not_gated_logged_out ?? polarisMedia)
+  if (media.code !== target.id) return null
+
+  const user = object(media.user)
+  const firstCandidate = object(array(object(media.image_versions2).candidates)[0])
+  const post = base(target)
+  post.authorHandle = string(user.username)
+  post.authorName = string(user.full_name)
+  post.createdAt = unixSecondsDate(media.taken_at)
+  post.text = capped(object(media.caption).text, maxTextChars) || capped(media.accessibility_caption, maxTextChars)
+  post.imageUrl = imageUrl(media.display_uri) ?? imageUrl(firstCandidate.url)
+  post.replyCount = nonNegativeInteger(media.comment_count)
+  if (media.media_type === 8) {
+    const carouselCount = nonNegativeInteger(media.carousel_media_count)
+    post.photoCount = carouselCount !== null && carouselCount > 0 ? carouselCount : 1
+  } else if (media.media_type === 1) {
+    post.photoCount = 1
+  } else {
+    post.photoCount = 0
+  }
+  post.videoCount = 0
+  post.video = null
+
+  if (!post.imageUrl && !post.text) return null
+  return post
+}

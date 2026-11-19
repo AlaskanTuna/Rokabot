@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { lstat, mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -37,16 +37,30 @@ function isolatedEnvironment(home: string): NodeJS.ProcessEnv {
   }
 }
 
+async function readMatchingPages(home: string, pattern: RegExp): Promise<string[]> {
+  const names = (await readdir(home)).filter((name) => name.search(pattern) !== -1).sort()
+  const pages: string[] = []
+  for (const name of names) {
+    const filePath = join(home, name)
+    const info = await lstat(filePath)
+    if (!info.isFile() || info.size > MAX_YTDLP_STDOUT_BYTES) continue
+    pages.push(await readFile(filePath, 'utf8'))
+  }
+  return pages
+}
+
 export async function runYtDlp(
   binaryPath: string,
   url: string,
   timeoutMs: number,
-  extraArgs: readonly string[] = []
-): Promise<{ metadata: unknown } | { reason: string }> {
+  extraArgs: readonly string[] = [],
+  options: { keepPages?: RegExp } = {}
+): Promise<{ metadata: unknown } | { reason: string; pages?: string[] }> {
+  const args = options.keepPages ? [...extraArgs, '--write-pages'] : extraArgs
   const home = await mkdtemp(join(tmpdir(), 'rokabot-social-'))
   try {
     return await new Promise((resolve) => {
-      const child = spawn(binaryPath, buildYtDlpArgs(url, timeoutMs, extraArgs), {
+      const child = spawn(binaryPath, buildYtDlpArgs(url, timeoutMs, args), {
         cwd: home,
         env: isolatedEnvironment(home),
         shell: false,
@@ -56,7 +70,7 @@ export async function runYtDlp(
       let outputBytes = 0
       let failure: string | null = null
       let settled = false
-      const finish = (result: { metadata: unknown } | { reason: string }) => {
+      const finish = (result: { metadata: unknown } | { reason: string; pages?: string[] }) => {
         if (settled) return
         settled = true
         clearTimeout(timer)
@@ -80,12 +94,21 @@ export async function runYtDlp(
         finish({ reason: error.code === 'ENOENT' ? 'binary_missing' : 'spawn_error' })
       })
       child.once('close', (code) => {
+        clearTimeout(timer)
         if (failure) {
           finish({ reason: failure })
           return
         }
         if (code !== 0) {
-          finish({ reason: `exit_${code ?? 'unknown'}` })
+          const reason = `exit_${code ?? 'unknown'}`
+          if (!options.keepPages) {
+            finish({ reason })
+            return
+          }
+          void readMatchingPages(home, options.keepPages).then(
+            (pages) => finish(pages.length > 0 ? { reason, pages } : { reason }),
+            () => finish({ reason })
+          )
           return
         }
 
