@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.12.0](https://github.com/AlaskanTuna/Rokabot/compare/v0.11.0...v0.12.0) (2026-11-18)
+
+
+### Features
+
+* **agent:** gate automatic image lookups with a main-model vision check ([#560](https://github.com/AlaskanTuna/Rokabot/issues/560)) ([41a5674](https://github.com/AlaskanTuna/Rokabot/commit/41a5674eab71ce39933b6905033e1dbcfeecf2e7))
+* **agent:** look up a pictured identity before Roka answers who is in an image ([#554](https://github.com/AlaskanTuna/Rokabot/issues/554)) ([ea74d2a](https://github.com/AlaskanTuna/Rokabot/commit/ea74d2a82eb60cd8c734ddefc70df4e7658a34c5))
+
+
+### Bug Fixes
+
+* **agent:** cap image lookups in a shared ledger and trigger on the speaker's own text ([#559](https://github.com/AlaskanTuna/Rokabot/issues/559)) ([2669692](https://github.com/AlaskanTuna/Rokabot/commit/26696923f379a0b1cb02dfe773f248cddbedc368))
+* **agent:** keep every persona from narrating her tools and lookups ([#558](https://github.com/AlaskanTuna/Rokabot/issues/558)) ([eb6ae72](https://github.com/AlaskanTuna/Rokabot/commit/eb6ae721fd58f70494d3d82e89fbd750ff990eb9))
+* **agent:** label the automatic image lookup "checked the image" ([#557](https://github.com/AlaskanTuna/Rokabot/issues/557)) ([b957be2](https://github.com/AlaskanTuna/Rokabot/commit/b957be200079c6cc4cfe9bfb25b90abf1f820dbc))
+
 ## [0.11.0](https://github.com/AlaskanTuna/Rokabot/compare/v0.10.0...v0.11.0) (2026-11-18)
 
 
