@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.1](https://github.com/AlaskanTuna/Rokabot/compare/v0.12.0...v0.12.1) (2026-11-19)
+
+
+### Bug Fixes
+
+* **media:** open social posts shared through mirror domains, spoilers and Instagram photo posts ([#562](https://github.com/AlaskanTuna/Rokabot/issues/562)) ([8221295](https://github.com/AlaskanTuna/Rokabot/commit/82212957b503c8a725b8a9e43143cf06bfde4331))
+
 ## [0.12.0](https://github.com/AlaskanTuna/Rokabot/compare/v0.11.0...v0.12.0) (2026-11-18)
 
 
